@@ -9,6 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": { "node": "20.x" },
   "type": "commonjs",
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
@@ -16,4 +17,3 @@
     "node-fetch": "^3.3.2"
   }
 }
-
