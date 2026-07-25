@@ -9,9 +9,12 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "engines": { "node": "20.x" },
+  "engines": {
+    "node": "20.x"
+  },
   "type": "commonjs",
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
     "dotenv": "^17.4.2"
   }
 }
