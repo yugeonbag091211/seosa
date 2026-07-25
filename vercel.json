@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "newapi/search.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
   "routes": [
     { "src": "/api/search", "dest": "/newapi/search.js" }
   ]
