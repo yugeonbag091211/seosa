@@ -1,6 +1,6 @@
 const { readBody } = require('./_http');
 
-const MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+const MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-5';
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
