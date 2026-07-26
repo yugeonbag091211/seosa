@@ -2,5 +2,11 @@
   "version": 2,
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/public/$1" }
+  ],
+  "functions": {
+    "api/cron.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/cron", "schedule": "0 18 * * *" }
   ]
 }
