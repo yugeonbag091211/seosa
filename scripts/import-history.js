@@ -86,6 +86,30 @@ function toPrice(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/* 시트에 쇼핑몰 컬럼이 없을 때 링크 도메인에서 판매처를 복원한다.
+   프론트가 isCoupang(mall === '쿠팡')으로 쿠팡 상품을 구분하므로 전부 '기타'로 넣으면 안 된다. */
+const MALL_BY_HOST = [
+  [/(^|\.)coupang\.com$/,     '쿠팡'],
+  [/(^|\.)naver\.com$/,       '네이버'],
+  [/(^|\.)11st\.co\.kr$/,     '11번가'],
+  [/(^|\.)gmarket\.co\.kr$/,  'G마켓'],
+  [/(^|\.)auction\.co\.kr$/,  '옥션'],
+  [/(^|\.)lotteon\.com$/,     '롯데온'],
+  [/(^|\.)ssg\.com$/,         'SSG'],
+  [/(^|\.)e-himart\.co\.kr$/, '하이마트'],
+  [/(^|\.)29cm\.co\.kr$/,     '29CM'],
+  [/(^|\.)kurly\.com$/,       '마켓컬리'],
+  [/(^|\.)aliexpress\.com$/,  '알리익스프레스']
+];
+
+function mallFromLink(link) {
+  if (!link) return '기타';
+  let host;
+  try { host = new URL(link).hostname.replace(/^www\./, ''); } catch (e) { return '기타'; }
+  for (const [re, name] of MALL_BY_HOST) if (re.test(host)) return name;
+  return host;   // 모르는 도메인은 호스트명 그대로 (기타보다 정보가 많다)
+}
+
 function toDate(v) {
   const s = String(v == null ? '' : v).trim();
   if (!s) return null;
@@ -175,7 +199,8 @@ async function readInput(src) {
     if (!price)  return skipped.push(`${lineNo}행: 가격 없음/0 (${cell(r, 'price')})`);
     if (!date)   return skipped.push(`${lineNo}행: 날짜 해석 실패 (${cell(r, 'date')})`);
 
-    const mall = cell(r, 'mall') || '기타';
+    const link = cell(r, 'link');
+    const mall = cell(r, 'mall') || mallFromLink(link);
     const productId = cell(r, 'product_id') || title;
     const key = `${productId}|${mall}|${date}`;
     if (seen.has(key)) return skipped.push(`${lineNo}행: 중복 (${key})`);
@@ -186,7 +211,7 @@ async function readInput(src) {
       mall,
       title,
       price,
-      link: cell(r, 'link'),
+      link,
       recorded_at: new Date(`${date}T00:00:00Z`).toISOString(),
       recorded_date: date
     });
@@ -195,6 +220,13 @@ async function readInput(src) {
   const dates = out.map(o => o.recorded_date).sort();
   console.log(`\n원본 ${rows.length - 1}행 -> 이관 대상 ${out.length}행, 건너뜀 ${skipped.length}행`);
   if (out.length) console.log(`날짜 범위: ${dates[0]} ~ ${dates[dates.length - 1]}`);
+  const mallCount = {};
+  out.forEach(o => { mallCount[o.mall] = (mallCount[o.mall] || 0) + 1; });
+  const malls = Object.entries(mallCount).sort((a, b) => b[1] - a[1]);
+  console.log('\n판매처 분포' + (map.mall === undefined ? ' (링크 도메인에서 추론)' : '') + ':');
+  malls.slice(0, 10).forEach(([m, n]) => console.log(`  ${m.padEnd(22)} ${n}건`));
+  if (malls.length > 10) console.log(`  ... 외 ${malls.length - 10}개`);
+
   console.log('\n샘플 3건:');
   out.slice(0, 3).forEach(o => console.log('  ' + JSON.stringify(o)));
   if (skipped.length) {
