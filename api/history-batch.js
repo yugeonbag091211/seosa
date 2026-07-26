@@ -22,11 +22,24 @@ module.exports = async function handler(req, res) {
       .order('recorded_date', { ascending: true });
     if (error) throw new Error(error.message);
 
+    // 같은 상품명이 여러 몰에 있으면 하루에 여러 행이 생기므로
+    // history.js와 같은 규칙으로 날짜당 최저가 한 점만 남긴다.
+    const perTitle = new Map();
+    (data || []).forEach(r => {
+      if (!perTitle.has(r.title)) perTitle.set(r.title, new Map());
+      const byDate = perTitle.get(r.title);
+      const cur = byDate.get(r.recorded_date);
+      if (cur === undefined || r.price < cur) byDate.set(r.recorded_date, r.price);
+    });
+
     // 조회된 제목만 채우면 프론트가 map[t] === undefined로 건너뛰므로 전부 빈 배열로 초기화한다.
     const map = {};
     titles.forEach(t => { map[t] = []; });
-    (data || []).forEach(r => {
-      if (map[r.title]) map[r.title].push({ date: r.recorded_date, price: r.price });
+    perTitle.forEach((byDate, title) => {
+      if (!map[title]) return;
+      map[title] = [...byDate.entries()]
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+        .map(([date, price]) => ({ date, price }));
     });
 
     res.json(map);
