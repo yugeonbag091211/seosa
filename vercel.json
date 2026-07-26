@@ -1,5 +1,3 @@
-cd ~/seosa
-cat > vercel.json << 'EOF'
 {
   "version": 2,
   "builds": [
@@ -11,5 +9,3 @@ cat > vercel.json << 'EOF'
     { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }
-EOF
-git add . && git commit -m "fix vercel routes again" && git push
