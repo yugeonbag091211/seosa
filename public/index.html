@@ -3036,7 +3036,11 @@ var Chat = {
     // 최신 프로필 반영
     AppState.profile = normalizeProfile(Store.get(CONST.LS.PROFILE, AppState.profile));
 
-    Api.call('askAI', [val, AppState.context, AppState.chatHistory, AppState.profile],
+    // AppState.context는 JSON 문자열로 저장돼 있으므로 서버가 기대하는 배열로 되돌린다
+    var ctxArr = [];
+    try { ctxArr = AppState.context ? JSON.parse(AppState.context) : []; } catch(e) { ctxArr = []; }
+
+    Api.call('askAI', [val, ctxArr, AppState.chatHistory, AppState.profile],
       function(res) {
         clearTimeout(timer);
         Chat.setSending(false);

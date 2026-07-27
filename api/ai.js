@@ -13,8 +13,14 @@ module.exports = async function handler(req, res) {
   if (!question) return res.status(400).json({ error: '질문 없음', text: '' });
 
   try {
-    const products = (contextProducts || []).slice(0, 8)
-      .map(p => `- ${p.title} / ${p.lprice}원 / ${p.mall}`).join('\n');
+    // 프론트가 옛날 방식으로 JSON 문자열을 보낼 수도 있으니 방어적으로 파싱한다.
+    let ctx = contextProducts;
+    if (typeof ctx === 'string') {
+      try { ctx = JSON.parse(ctx); } catch (e) { ctx = []; }
+    }
+    if (!Array.isArray(ctx)) ctx = [];
+    const products = ctx.slice(0, 8)
+      .map(p => `- ${p.title} / ${p.lprice || p.price}원 / ${p.mall || ''}`).join('\n');
 
     let system = '너는 한국 쇼핑 도우미야. 사용자가 보고 있는 상품 목록을 바탕으로 '
       + '가격 비교와 구매 시점을 중심으로 3~5문장의 간결한 한국어 조언을 해.';
