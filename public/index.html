@@ -473,6 +473,16 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .rec-chip-btn{font-size:.78rem;color:var(--ink);border:1px solid var(--line);border-radius:30px;padding:7px 16px;cursor:pointer;background:transparent;transition:.2s}
 .rec-chip-btn:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
 .rec-chip-btn .h{opacity:.45;margin-right:4px}
+/* ── 기능 안내 배너 ── */
+.feature-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.feature-card{background:var(--card-bg);border:1px solid var(--line);border-radius:var(--r);
+  padding:24px;cursor:pointer;transition:border-color .2s,transform .2s}
+.feature-card:hover{border-color:var(--ink);transform:translateY(-2px)}
+.feature-card .fc-icon{font-size:1.4rem;margin-bottom:10px}
+.feature-card .fc-title{font-weight:700;font-size:.95rem;margin-bottom:6px;color:var(--ink)}
+.feature-card .fc-desc{font-size:.8rem;color:var(--soft);line-height:1.55}
+.feature-card .fc-cta{margin-top:14px;font-size:.74rem;font-weight:600;color:var(--ink)}
+@media(max-width:640px){.feature-cards{grid-template-columns:1fr}}
 @media(max-width:700px){.month-banner{padding:34px 26px;gap:26px}
   .mb-month{font-size:3.2rem}.mb-divider{display:none}.mb-title{font-size:1.4rem}}
 
@@ -870,22 +880,18 @@ footer p{font-size:.78rem;color:var(--faint)}
 
   <!-- 기능 안내 배너 -->
   <section class="block" style="margin-top:48px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <div style="background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:24px;cursor:pointer;transition:.2s" 
-           data-act="open-profile"
-           onmouseover="this.style.borderColor='var(--ink)'" onmouseout="this.style.borderColor='var(--line)'">
-        <div style="font-size:1.4rem;margin-bottom:10px">✦</div>
-        <div style="font-weight:700;font-size:.95rem;margin-bottom:6px">내 취향 설정</div>
-        <div style="font-size:.8rem;color:var(--soft)">관심 카테고리와 예산을 설정하면 맞춤 상품을 추천해드려요. AI 서사도 더 정확해져요.</div>
-        <div style="margin-top:14px;font-size:.74rem;font-weight:600;color:var(--ink)">취향 설정하기 →</div>
+    <div class="feature-cards">
+      <div class="feature-card" data-act="open-profile">
+        <div class="fc-icon">✦</div>
+        <div class="fc-title">내 취향 설정</div>
+        <div class="fc-desc">관심 카테고리와 예산을 설정하면 맞춤 상품을 추천해드려요. AI 서사도 더 정확해져요.</div>
+        <div class="fc-cta">취향 설정하기 →</div>
       </div>
-      <div style="background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:24px;cursor:pointer;transition:.2s"
-           data-act="open-myalerts"
-           onmouseover="this.style.borderColor='var(--ink)'" onmouseout="this.style.borderColor='var(--line)'">
-        <div style="font-size:1.4rem;margin-bottom:10px">📉</div>
-        <div style="font-weight:700;font-size:.95rem;margin-bottom:6px">가격 알림 신청</div>
-        <div style="font-size:.8rem;color:var(--soft)">원하는 상품의 목표 가격을 설정하면 가격이 내려갈 때 이메일로 알려드려요.</div>
-        <div style="margin-top:14px;font-size:.74rem;font-weight:600;color:var(--ink)">알림 신청하기 →</div>
+      <div class="feature-card" data-act="open-myalerts">
+        <div class="fc-icon">📉</div>
+        <div class="fc-title">가격 알림 신청</div>
+        <div class="fc-desc">원하는 상품의 목표 가격을 설정하면 가격이 내려갈 때 이메일로 알려드려요.</div>
+        <div class="fc-cta">알림 신청하기 →</div>
       </div>
     </div>
   </section>
