@@ -1368,8 +1368,10 @@ var Api = {
       queryUrl = url + '?email=' + encodeURIComponent(args[0] || '');
     } else if (fnName === 'loadUserProfile') {
       queryUrl = url + '?email=' + encodeURIComponent(args[0] || '');
-    } else if (fnName === 'getDailyRecommendations' || fnName === 'getMoreOfKeyword') {
+    } else if (fnName === 'getDailyRecommendations') {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '');
+    } else if (fnName === 'getMoreOfKeyword') {
+      queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '') + '&offset=' + (args[1] || 0);
     } else if (fnName === 'getProfileRecommendations') {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
     } else if (fnName === 'askAI') {
@@ -2122,8 +2124,10 @@ var Lazy = {
  * ========================================================== */
 var Rec = {
 
+  offset: 0,
+
   load: function() {
-    
+    Rec.offset = 0;
 
     Rec.pushHistory();
     setText('recKey', '새 키워드 찾는 중…');
@@ -2141,10 +2145,9 @@ var Rec = {
       toast('배포 후 사용할 수 있어요');
       return;
     }
-    Rec.pushHistory();
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
 
-    Api.call('getMoreOfKeyword', [AppState.recKey],
+    Api.call('getMoreOfKeyword', [AppState.recKey, Rec.offset],
       function(d) { sk.done(function() { Rec.show(d); }); },
       function()  { sk.done(function() { setHTML('recGrid', ''); }); }
     );
@@ -2175,6 +2178,7 @@ var Rec = {
     if (!data) return;
     AppState.recKey = data.keyword || '추천';
     setText('recKey', AppState.recKey);
+    Rec.offset = (data.products && data.products.length) ? Rec.offset + data.products.length : Rec.offset;
     Grid.render($('recGrid'), data.products);
 
     if (GS && data.products && data.products.length) {
