@@ -18,14 +18,18 @@ function coupangAuth(method, path, query, accessKey, secretKey) {
 }
 
 async function fetchNaver(keyword, display = 8) {
-  if (!process.env.NAVER_ID || !process.env.NAVER_SECRET) {
-    return { items: [], error: 'NAVER_ID / NAVER_SECRET 환경변수 없음' };
+  // Vercel은 NAVER_ID/NAVER_SECRET, GitHub Actions는 NAVER_CLIENT_ID/NAVER_CLIENT_SECRET로
+  // 세팅되어 있어서 어느 쪽 이름이든 받는다.
+  const naverId     = process.env.NAVER_CLIENT_ID     || process.env.NAVER_ID;
+  const naverSecret = process.env.NAVER_CLIENT_SECRET || process.env.NAVER_SECRET;
+  if (!naverId || !naverSecret) {
+    return { items: [], error: 'NAVER_CLIENT_ID / NAVER_CLIENT_SECRET (또는 NAVER_ID / NAVER_SECRET) 환경변수 없음' };
   }
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(keyword)}&display=${display}&sort=sim`;
   const r = await fetch(url, {
     headers: {
-      'X-Naver-Client-Id': process.env.NAVER_ID,
-      'X-Naver-Client-Secret': process.env.NAVER_SECRET
+      'X-Naver-Client-Id': naverId,
+      'X-Naver-Client-Secret': naverSecret
     }
   });
   if (!r.ok) {
