@@ -68,7 +68,7 @@ module.exports = async function handler(req, res) {
       .from('products')
       .select('*')
       .eq('keyword', recKeyword)
-      .limit(4);
+      .limit(8);
 
     res.json({
       popular: stats || [],
