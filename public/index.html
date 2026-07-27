@@ -893,14 +893,13 @@ footer p{font-size:.78rem;color:var(--faint)}
     <div class="sec-head">
       <div>
         <div class="sec-title">오늘의 셀렉션</div>
-        <div class="sec-sub">오늘의 큐레이션 키워드 · <b id="recKey">불러오는 중…</b></div>
+        <div class="sec-sub">현재 키워드 · <b id="recKey">불러오는 중…</b></div>
       </div>
       <div class="rec-tools">
-        <button class="tbtn" id="prevRec" data-act="rec-prev" disabled>← 이전</button>
-        <button class="tbtn" data-act="rec-load">다른 키워드</button>
         <button class="tbtn dark" data-act="rec-more">이 키워드 더보기</button>
       </div>
     </div>
+    <div class="mb-chips" id="recChips" style="margin-bottom:16px"></div>
     <div class="grid" id="recGrid"></div>
   </section>
 
@@ -2124,66 +2123,80 @@ var Lazy = {
  * ========================================================== */
 var Rec = {
 
-  offset: 0,
+  offset: 0,   // 현재 키워드에서 몇 번째 상품부터 보여줄지
+  keywords: [], // 전체 키워드 목록 (칩 렌더링용)
 
+  // 랜덤 키워드 로드 (페이지 최초 진입 시)
   load: function() {
     Rec.offset = 0;
-
-    Rec.pushHistory();
-    setText('recKey', '새 키워드 찾는 중…');
-
+    AppState.recKey = ''; // 빈 문자열 → API가 랜덤 선택
+    setText('recKey', '불러오는 중…');
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
-
-    Api.call('getDailyRecommendations', [AppState.recKey],
+    Api.call('getDailyRecommendations', [''],
       function(d) { sk.done(function() { Rec.show(d); }); },
       function()  { sk.done(function() { setText('recKey', '불러오기 실패'); setHTML('recGrid', ''); }); }
     );
   },
 
+  // 특정 키워드 클릭 시
+  loadKeyword: function(kw) {
+    if (!kw) return;
+    Rec.offset = 0;
+    AppState.recKey = kw;
+    Rec.renderChips(); // 활성 칩 표시 갱신
+    setText('recKey', kw);
+    var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
+    fetch('/api/rec?keyword=' + encodeURIComponent(kw) + '&offset=0')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { sk.done(function() { Rec.show(d); }); })
+      .catch(function() { sk.done(function() { setHTML('recGrid', ''); }); });
+  },
+
+  // 이 키워드 더보기 — 같은 키워드 다음 8개, 소진 시 처음으로 순환
   more: function() {
     if (!GS || !AppState.recKey || AppState.recKey === '미리보기') {
       toast('배포 후 사용할 수 있어요');
       return;
     }
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
-
-    Api.call('getMoreOfKeyword', [AppState.recKey, Rec.offset],
-      function(d) { sk.done(function() { Rec.show(d); }); },
-      function()  { sk.done(function() { setHTML('recGrid', ''); }); }
-    );
+    fetch('/api/rec?keyword=' + encodeURIComponent(AppState.recKey) + '&offset=' + Rec.offset)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var products = d.products || [];
+        if (!products.length) {
+          // 상품 소진 → 처음(1~8)으로 순환
+          Rec.offset = 0;
+          return fetch('/api/rec?keyword=' + encodeURIComponent(AppState.recKey) + '&offset=0')
+            .then(function(r2) { return r2.json(); });
+        }
+        return d;
+      })
+      .then(function(d) { sk.done(function() { Rec.show(d); }); })
+      .catch(function() { sk.done(function() { setHTML('recGrid', ''); }); });
   },
 
-  prev: function() {
-    if (!AppState.recHistory.length) return;
-
-    AppState.recHistory.pop();
-    var target = AppState.recHistory[AppState.recHistory.length - 1] || null;
-
-    var pr = $('prevRec');
-    if (pr) pr.disabled = AppState.recHistory.length === 0;
-
-    if (target) Api.call('getMoreOfKeyword', [target], Rec.show);
-    else Rec.load();
-  },
-
-  pushHistory: function() {
-    var k = AppState.recKey;
-    if (k && k !== '미리보기' && k !== '불러오는 중…') AppState.recHistory.push(k);
-
-    var pr = $('prevRec');
-    if (pr) pr.disabled = AppState.recHistory.length === 0;
+  // 칩 렌더링 (활성 키워드 강조)
+  renderChips: function() {
+    var box = $('recChips');
+    if (!box || !Rec.keywords.length) return;
+    setHTML('recChips', Rec.keywords.map(function(k) {
+      var active = k === AppState.recKey;
+      return '<button class="mb-chip" data-act="rec-chip" data-kw="' + Fmt.esc(k) + '"'
+        + (active ? ' style="background:var(--ink);color:#fff"' : '') + '>'
+        + '<span class="h">#</span>' + Fmt.esc(k) + '</button>';
+    }).join(''));
   },
 
   show: function(data) {
     if (!data) return;
     AppState.recKey = data.keyword || '추천';
     setText('recKey', AppState.recKey);
-    Rec.offset = (data.products && data.products.length) ? Rec.offset + data.products.length : Rec.offset;
+    // offset은 실제 받은 상품 수만큼만 증가
+    var count = (data.products && data.products.length) || 0;
+    Rec.offset += count;
+    Rec.renderChips();
     Grid.render($('recGrid'), data.products);
-
-    if (GS && data.products && data.products.length) {
-      Api.fire('saveRecommendedProducts', [data.products]);
-    }
+    if (GS && count) Api.fire('saveRecommendedProducts', [data.products]);
   }
 };
 
@@ -3747,8 +3760,7 @@ var Actions = {
   },
 
   // ── 추천 섹션 ──
-  'rec-prev':        function() { Rec.prev(); },
-  'rec-load':        function() { Rec.load(); },
+  'rec-chip':        function(el) { Rec.loadKeyword(el.dataset.kw); },
   'rec-more':        function() { Rec.more(); },
   'month-chip':      function(el) { Monthly.loadKeyword(el.dataset.kw); },
   'month-more':      function() { Monthly.more(); },
@@ -4004,8 +4016,10 @@ var Init = {
 
         Init.applyPopular(d.popular);
 
-        if (d.daily) Rec.show(d.daily);
-        else Rec.load();
+        if (d.daily) {
+          if (d.daily.keywords && d.daily.keywords.length) Rec.keywords = d.daily.keywords;
+          Rec.show(d.daily);
+        } else Rec.load();
 
         if (d.monthly) Monthly.show(d.monthly);
 

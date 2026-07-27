@@ -88,6 +88,7 @@ module.exports = async function handler(req, res) {
       })),
       daily: {
         keyword: recKeyword,
+        keywords: TODAY_PICKS,
         products: (recProducts || []).map(p => ({
           title: p.title,
           lprice: p.lprice,
