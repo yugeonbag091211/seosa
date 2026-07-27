@@ -2130,6 +2130,7 @@ var Rec = {
   load: function() {
     Rec.offset = 0;
     AppState.recKey = ''; // 빈 문자열 → API가 랜덤 선택
+    console.log('[Rec.load] 랜덤 키워드 요청, offset=0');
     setText('recKey', '불러오는 중…');
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
     Api.call('getDailyRecommendations', [''],
@@ -2143,6 +2144,7 @@ var Rec = {
     if (!kw) return;
     Rec.offset = 0;
     AppState.recKey = kw;
+    console.log('[Rec.loadKeyword] keyword=' + kw + ', offset=0 (리셋)');
     Rec.renderChips(); // 활성 칩 표시 갱신
     setText('recKey', kw);
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
@@ -2158,6 +2160,7 @@ var Rec = {
       toast('배포 후 사용할 수 있어요');
       return;
     }
+    console.log('[Rec.more] keyword=' + AppState.recKey + ', offset=' + Rec.offset);
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
     fetch('/api/rec?keyword=' + encodeURIComponent(AppState.recKey) + '&offset=' + Rec.offset)
       .then(function(r) { return r.json(); })
@@ -2191,9 +2194,9 @@ var Rec = {
     if (!data) return;
     AppState.recKey = data.keyword || '추천';
     setText('recKey', AppState.recKey);
-    // offset은 실제 받은 상품 수만큼만 증가
     var count = (data.products && data.products.length) || 0;
     Rec.offset += count;
+    console.log('[Rec.show] keyword=' + AppState.recKey + ', 받은상품=' + count + ', 다음offset=' + Rec.offset);
     Rec.renderChips();
     Grid.render($('recGrid'), data.products);
     if (GS && count) Api.fire('saveRecommendedProducts', [data.products]);
