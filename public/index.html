@@ -858,6 +858,10 @@ footer p{font-size:.78rem;color:var(--faint)}
         <div class="mb-chips" id="mbChips"></div>
       </div>
     </div>
+    <div class="rec-tools" id="monthTools" style="display:none;margin-top:16px">
+      <span id="monthActiveKey" style="font-size:.85rem;color:var(--soft)"></span>
+      <button class="tbtn dark" data-act="month-more">이 키워드 더보기</button>
+    </div>
     <div class="grid" id="monthGrid"></div>
   </section>
 
@@ -2185,8 +2189,51 @@ var Rec = {
  * ========================================================== */
 var Monthly = {
 
+  activeKeyword: '',
+  offset: 0,
+
   load: function() {
     Api.call('getMonthlyRecommendations', [], Monthly.show, function() {});
+  },
+
+  loadKeyword: function(keyword, append) {
+    if (!keyword) return;
+    Monthly.activeKeyword = keyword;
+    if (!append) Monthly.offset = 0;
+
+    // 활성 칩 표시
+    var chips = document.querySelectorAll('.mb-chip');
+    chips.forEach(function(c) {
+      c.style.background = c.dataset.kw === keyword ? 'var(--ink)' : '';
+      c.style.color = c.dataset.kw === keyword ? '#fff' : '';
+    });
+
+    setText('monthActiveKey', '#' + keyword);
+    show('monthTools', true);
+
+    var grid = $('monthGrid');
+    var sk = append ? null : Skeleton.start(grid, 8);
+
+    fetch('/api/rec?keyword=' + encodeURIComponent(keyword) + '&offset=' + Monthly.offset)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var products = d.products || [];
+        if (append) {
+          Grid.render(grid, products, true);
+        } else {
+          if (sk) sk.done(function() { Grid.render(grid, products); });
+          else Grid.render(grid, products);
+        }
+        Monthly.offset += products.length;
+      })
+      .catch(function() {
+        if (sk) sk.done(function() {});
+      });
+  },
+
+  more: function() {
+    if (!Monthly.activeKeyword) return;
+    Monthly.loadKeyword(Monthly.activeKeyword, true);
   },
 
   show: function(data) {
@@ -2197,7 +2244,7 @@ var Monthly = {
     setText('mbSub', data.subtitle || '');
 
     setHTML('mbChips', (data.keywords || []).map(function(k) {
-      return '<button class="mb-chip" data-act="chip" data-kw="' + Fmt.esc(k) + '">'
+      return '<button class="mb-chip" data-act="month-chip" data-kw="' + Fmt.esc(k) + '">'
         + '<span class="h">#</span>' + Fmt.esc(k) + '</button>';
     }).join(''));
 
@@ -3687,6 +3734,8 @@ var Actions = {
   'rec-prev':        function() { Rec.prev(); },
   'rec-load':        function() { Rec.load(); },
   'rec-more':        function() { Rec.more(); },
+  'month-chip':      function(el) { Monthly.loadKeyword(el.dataset.kw); },
+  'month-more':      function() { Monthly.more(); },
   'foryou-refresh':  function() { ForYou.load(true); },
   'clear-viewed':    function() { Recent.clearViewed(); },
 

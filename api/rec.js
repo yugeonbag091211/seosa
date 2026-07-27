@@ -17,11 +17,13 @@ module.exports = async function handler(req, res) {
 
     const keyword = q.keyword || pool[Math.floor(Math.random() * pool.length)];
 
+    const offset = parseInt(q.offset || '0', 10) || 0;
+
     const { data, error } = await supabase
       .from('products')
       .select('*')
       .eq('keyword', keyword)
-      .limit(8);
+      .range(offset, offset + 7);
     if (error) throw new Error(error.message);
 
     res.json({
