@@ -1070,8 +1070,8 @@ footer p{font-size:.78rem;color:var(--faint)}
   <div class="modal-body">
     <div class="range-tabs" id="rangeTabs">
       <button data-act="range" data-days="7">7일</button>
-      <button class="act" data-act="range" data-days="15">15일</button>
-      <button data-act="range" data-days="30">30일</button>
+      <button class="act" data-act="range" data-days="30">30일</button>
+      <button data-act="range" data-days="90">90일</button>
       <button data-act="range" data-days="9999">전체</button>
     </div>
     <div style="position:relative;height:280px"><canvas id="chart"></canvas></div>
@@ -3125,28 +3125,33 @@ var Modal = {
     var spread = st.min > 0 ? (st.range / st.min) : 0;
     var pos = st.range > 0 ? (cur - st.min) / st.range : 0;
 
+    var diffPct = st.avg > 0 ? Math.round(Math.abs(cur - st.avg) / st.avg * 1000) / 10 : 0;
+    var diffWon = Math.abs(cur - st.avg);
+
     if (spread < CONST.VERDICT.STABLE_SPREAD) {
       v.className = 'verdict';
-      v.innerHTML = '<span class="vi">⚖️</span><div class="vt"><b>가격이 안정적이에요</b></div>';
+      v.innerHTML = '<span class="vi">⚖️</span><div class="vt"><b>가격이 안정적이에요</b>'
+        + '<span>평균 ' + Fmt.won(st.avg) + '원 · 변동 ' + (st.range > 0 ? Fmt.won(st.range) + '원 이내' : '없음') + '</span></div>';
 
     } else if (cur > 0 && pos <= CONST.VERDICT.LOW) {
       v.className = 'verdict buy-v';
-      v.innerHTML = '<span class="vi">✦</span><div class="vt"><b>역대 최저가 수준 · 지금이 기회</b></div>';
+      v.innerHTML = '<span class="vi">✦</span><div class="vt"><b>역대 최저가 수준 · 지금이 기회</b>'
+        + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 저렴해요.</span></div>';
 
     } else if (cur > 0 && pos >= CONST.VERDICT.HIGH) {
       v.className = 'verdict wait';
       v.innerHTML = '<span class="vi">⏳</span><div class="vt"><b>지금은 비싼 편 · 조금 기다려보세요</b>'
-        + '<span>최저 ' + Fmt.won(st.min) + '원까지 내려간 적이 있어요.</span></div>';
+        + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 비싸요. 최저 ' + Fmt.won(st.min) + '원까지 내려간 적 있어요.</span></div>';
 
     } else if (cur > 0 && cur <= st.avg) {
       v.className = 'verdict buy-v';
-      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>평균 이하 · 사기 좋은 시점</b>'
-        + '<span>평균 ' + Fmt.won(st.avg) + '원보다 저렴해요.</span></div>';
+      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>평균보다 저렴 · 사기 좋은 시점</b>'
+        + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 저렴해요.</span></div>';
 
     } else {
       v.className = 'verdict wait';
       v.innerHTML = '<span class="vi">↗</span><div class="vt"><b>평균보다 다소 높아요</b>'
-        + '<span>최저 ' + Fmt.won(st.min) + '원까지 내려간 적이 있어요.</span></div>';
+        + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 비싸요. 최저 ' + Fmt.won(st.min) + '원까지 내려간 적 있어요.</span></div>';
     }
 
     setHTML('stats',
@@ -3264,12 +3269,19 @@ var Modal = {
     else if (pct < 0)       { trendLabel = Math.abs(pct).toFixed(1) + '% 하락 ↓'; trendClass = 'ts-down'; }
     else                    { trendLabel = pct.toFixed(1) + '% 상승 ↑'; trendClass = 'ts-up'; }
 
-    // 최근 7일 변동성
+    // 최근 7일 추세 (단순 등락 vs 방향성)
     var recent = prices.slice(-7), recentLabel = '';
     if (recent.length >= 2) {
       var rMin = Math.min.apply(null, recent), rMax = Math.max.apply(null, recent);
       var vol = rMin > 0 ? ((rMax - rMin) / rMin) * 100 : 0;
-      recentLabel = vol < 2 ? '최근 7일 안정세' : vol < 8 ? '최근 7일 소폭 변동' : '최근 7일 큰 변동';
+      // 연속 하락/상승 감지
+      var allDown = recent.every(function(v, i) { return i === 0 || v <= recent[i-1]; });
+      var allUp   = recent.every(function(v, i) { return i === 0 || v >= recent[i-1]; });
+      if (allDown && recent[recent.length-1] < recent[0])      recentLabel = '📉 최근 ' + recent.length + '일 연속 하락 중';
+      else if (allUp && recent[recent.length-1] > recent[0])   recentLabel = '📈 최근 ' + recent.length + '일 연속 상승 중';
+      else if (vol < 2)  recentLabel = '최근 7일 안정세';
+      else if (vol < 8)  recentLabel = '최근 7일 소폭 변동';
+      else               recentLabel = '최근 7일 큰 변동';
     }
 
     // 현재가 위치
