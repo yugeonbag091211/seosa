@@ -62,7 +62,7 @@ module.exports = async function handler(req, res) {
       monthly.products = [];
     }
 
-    const TODAY_PICKS = ['노트북','무선 이어폰','스마트워치','텀블러','향수','가방','키보드','스피커'];
+    const TODAY_PICKS = ['수영복','물놀이 용품','아이스크림','방수팩','차량용 햇빛 가리개','여행용 캐리어','서큘레이터','쿨토시'];
     const recKeyword = TODAY_PICKS[Math.floor(Math.random() * TODAY_PICKS.length)];
     const { data: recProducts } = await supabase
       .from('products')
