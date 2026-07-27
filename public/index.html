@@ -1390,7 +1390,16 @@ var Api = {
     }
     fetchOpts.method = method;
     fetch(queryUrl, fetchOpts)
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        // r.ok를 안 보면 500 응답의 에러 본문이 그대로 성공 콜백으로 넘어가
+        // 실패가 성공처럼 보인다 (동기화 저장이 조용히 실패하던 원인).
+        return r.json().catch(function() { return {}; }).then(function(body) {
+          if (!r.ok || (body && body.error)) {
+            throw new Error((body && body.error) || ('HTTP ' + r.status));
+          }
+          return body;
+        });
+      })
       .then(function(data) {
         if (fnName === 'getInitData') { if (onOk) onOk(data); }
         else if (fnName === 'getPopularKeywords') { if (onOk) onOk(data.popular || data || []); }
