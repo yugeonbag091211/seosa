@@ -470,6 +470,9 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
   background:transparent;transition:.2s}
 .mb-chip:hover{background:#fff;color:var(--ink);border-color:#fff}
 .mb-chip .h{opacity:.45;margin-right:4px}
+.rec-chip-btn{font-size:.78rem;color:var(--ink);border:1px solid var(--line);border-radius:30px;padding:7px 16px;cursor:pointer;background:transparent;transition:.2s}
+.rec-chip-btn:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
+.rec-chip-btn .h{opacity:.45;margin-right:4px}
 @media(max-width:700px){.month-banner{padding:34px 26px;gap:26px}
   .mb-month{font-size:3.2rem}.mb-divider{display:none}.mb-title{font-size:1.4rem}}
 
@@ -2184,8 +2187,8 @@ var Rec = {
     if (!box || !Rec.keywords.length) return;
     setHTML('recChips', Rec.keywords.map(function(k) {
       var active = k === AppState.recKey;
-      return '<button class="mb-chip" data-act="rec-chip" data-kw="' + Fmt.esc(k) + '"'
-        + (active ? ' style="background:var(--ink);color:#fff"' : '') + '>'
+      return '<button class="rec-chip-btn" data-act="rec-chip" data-kw="' + Fmt.esc(k) + '"'
+        + (active ? ' style="background:var(--ink);color:#fff;border-color:var(--ink)"' : '') + '>'
         + '<span class="h">#</span>' + Fmt.esc(k) + '</button>';
     }).join(''));
   },
