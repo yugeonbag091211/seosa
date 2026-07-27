@@ -3381,6 +3381,13 @@ var Compare = {
       .replace(/\([^)]*\)/g, ' ')
       .replace(/[^0-9a-zA-Z가-힣\s]/g, ' ')
       .split(/\s+/).filter(Boolean).slice(0, 3).join(' ');
+    },
+
+  /** 상품명 토큰 정규화 (짧은 접속사/조사 제외) */
+  tokensOf: function(title) {
+    return String(title || '').toLowerCase()
+      .replace(/[^0-9a-z가-힣\s]/g, ' ')
+      .split(/\s+/).filter(function(t) { return t.length >= 2; });
   },
 
   render: function(info, items) {
@@ -3389,9 +3396,31 @@ var Compare = {
       return;
     }
 
+    // 원본 상품과 토큰이 최소 2개 이상 겹치는 것만 남긴다.
+    // 3단어 키워드로 재검색하면 완전 다른 상품(예: "구스페리 이어팁")도
+    // 걸리기 때문에 최저가로 잘못 표시되는 문제 방지.
+    var origTokens = Compare.tokensOf(info.title);
+    var origSet = {};
+    origTokens.forEach(function(t) { origSet[t] = true; });
+    var MIN_OVERLAP = 2;
+
+    var filtered = items.filter(function(it) {
+      if (!it || !it.title) return false;
+      var toks = Compare.tokensOf(it.title);
+      var overlap = 0;
+      for (var i = 0; i < toks.length; i++) if (origSet[toks[i]]) overlap++;
+      return overlap >= MIN_OVERLAP;
+    });
+
+    // 필터링 후 하나도 안 남으면 정확한 비교 불가라고 안내
+    if (!filtered.length) {
+      setHTML('cmpBody', '<div class="cmp-empty">동일 상품을 다른 몰에서 찾지 못했어요.</div>');
+      return;
+    }
+
     // 몰별로 가장 싼 것만 남기기
     var best = {};
-    items.forEach(function(it) {
+    filtered.forEach(function(it) {
       var p = Fmt.int(it.lprice);
       if (!it.title || p <= 0) return;
       var m = Fmt.mall(it);
