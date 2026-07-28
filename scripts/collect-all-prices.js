@@ -22,11 +22,21 @@ const NAVER_DISPLAY = 100;  // 네이버 한 번 호출당 결과 수 (API 최�
 const NAVER_PAGES   = 3;    // 최대 페이지 수 → 최대 300건/키워드
 const COUPANG_LIMIT = 50;   // 쿠팡 한 번 호출당 결과 수
 
-// ─── 환경변수 ────────────────────────────────────────────────
-const NAVER_ID     = process.env.NAVER_CLIENT_ID  || process.env.NAVER_ID;
-const NAVER_SECRET = process.env.NAVER_CLIENT_SECRET || process.env.NAVER_SECRET;
+// ─── 환경변수 (NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 통일) ───
+const NAVER_ID     = process.env.NAVER_CLIENT_ID;
+const NAVER_SECRET = process.env.NAVER_CLIENT_SECRET;
 const COUP_ACCESS  = process.env.COUPANG_ACCESS_KEY;
 const COUP_SECRET  = process.env.COUPANG_SECRET_KEY;
+
+// 시작 진단 — 실제 키 값이 아닌 설정 여부만 출력
+console.log('[환경변수 진단]');
+console.log('  NAVER_CLIENT_ID    :', NAVER_ID     ? `설정됨 (${NAVER_ID.length}자)` : '❌ 없음');
+console.log('  NAVER_CLIENT_SECRET:', NAVER_SECRET ? `설정됨 (${NAVER_SECRET.length}자)` : '❌ 없음');
+console.log('  COUPANG_ACCESS_KEY :', COUP_ACCESS  ? `설정됨 (${COUP_ACCESS.length}자)` : '❌ 없음');
+console.log('  COUPANG_SECRET_KEY :', COUP_SECRET  ? `설정됨 (${COUP_SECRET.length}자)` : '❌ 없음');
+console.log('  SUPABASE_URL       :', process.env.SUPABASE_URL       ? '설정됨' : '❌ 없음');
+console.log('  SUPABASE_SECRET_KEY:', process.env.SUPABASE_SECRET_KEY ? '설정됨' : '❌ 없음');
+console.log('');
 
 // ─── 유틸 ────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
