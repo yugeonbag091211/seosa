@@ -135,6 +135,7 @@ async function fetchAllProducts() {
 
 // ─── 가격 행 저장 맵 ──────────────────────────────────────────
 const rowMap = new Map();
+const NOW_ISO = new Date().toISOString(); // 실행 시작 시각 (모든 행 공유)
 
 function addRow(target, price, link) {
   const p = parseInt(price, 10) || 0;
@@ -145,18 +146,22 @@ function addRow(target, price, link) {
     title: target.title,
     price: p,
     link: link || target.link || '',
+    recorded_at: NOW_ISO,   // NOT NULL 컬럼 — 누락 시 upsert 전체 실패
     recorded_date: TODAY,
   });
   return true;
 }
 
 // ─── upsert (재시도 포함) ──────────────────────────────────────
+let _firstUpsertError = null; // 첫 오류 원문 보존 (로그용)
+
 async function upsertChunk(chunk) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const { error } = await supabase
       .from('price_history')
       .upsert(chunk, { onConflict: 'product_id,mall,recorded_date', ignoreDuplicates: false });
     if (!error) return chunk.length;
+    if (!_firstUpsertError) _firstUpsertError = error.message;
     // 청크가 크면 절반으로 줄여 재시도 (upsert 충돌 격리)
     if (attempt < 2 && chunk.length > 1) {
       const half = Math.ceil(chunk.length / 2);
@@ -164,16 +169,24 @@ async function upsertChunk(chunk) {
       const b = await upsertChunk(chunk.slice(half));
       return a + b;
     }
-    console.error(`    저장 오류 (시도 ${attempt + 1}):`, error.message.slice(0, 120));
+    console.error(`    저장 오류 (청크${chunk.length}행, 시도${attempt + 1}):`, error.message.slice(0, 200));
   }
   return 0;
 }
 
 async function saveAll() {
   const rows = [...rowMap.values()];
+  if (rows.length === 0) {
+    console.warn('  경고: rowMap이 비어 있음 — API 응답에서 product_id 매칭 0건');
+    return { saved: 0, total: 0 };
+  }
+  console.log(`  샘플 행(첫 번째):`, JSON.stringify(rows[0]));
   let saved = 0;
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
     saved += await upsertChunk(rows.slice(i, i + UPSERT_CHUNK));
+  }
+  if (_firstUpsertError) {
+    console.error('\n  [DB 오류 원문]', _firstUpsertError);
   }
   return { saved, total: rows.length };
 }
