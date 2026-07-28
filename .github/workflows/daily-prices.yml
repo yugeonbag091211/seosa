@@ -28,7 +28,9 @@ jobs:
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
-        run: node scripts/collect-all-prices.js
+        run: |
+          node scripts/collect-all-prices.js 2>&1 | tee /tmp/collect.log
+          exit ${PIPESTATUS[0]}
 
       - name: Check price alerts and send notifications
         env:
@@ -38,8 +40,12 @@ jobs:
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
         run: node scripts/check-alerts.js
 
-      - name: Coverage badge (summary)
+      - name: Coverage summary
         if: always()
         run: |
-          echo "## Price Collection Summary" >> $GITHUB_STEP_SUMMARY
-          echo "Date: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "## Daily Price Collection Log" >> $GITHUB_STEP_SUMMARY
+          echo "Run date: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/collect.log 2>/dev/null || echo "(로그 없음 — 수집 단계 도달 전 실패)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
