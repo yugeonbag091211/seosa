@@ -17,4 +17,77 @@ function dbError(error, table) {
   return error.message;
 }
 
-module.exports = { readBody, dbError };
+/* ------------------------------------------------------------------ *
+ *  CORS
+ *  개인 데이터를 다루는 엔드포인트(sync / profile / alerts)에까지
+ *  Access-Control-Allow-Origin: * 를 붙이면 아무 사이트나 남의 데이터를
+ *  읽어갈 수 있다. 공개 데이터와 개인 데이터를 구분해서 적용한다.
+ * ------------------------------------------------------------------ */
+const DEFAULT_ORIGINS = [
+  'https://seosa.ai.kr',
+  'https://www.seosa.ai.kr',
+  'https://seosa-chi.vercel.app'
+];
+
+function allowedOrigins() {
+  const fromEnv = (process.env.ALLOWED_ORIGINS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  return fromEnv.length ? fromEnv : DEFAULT_ORIGINS;
+}
+
+/**
+ * @param {'public'|'private'} scope
+ *   public  — 누구나 읽어도 되는 상품/시세 데이터
+ *   private — 특정 사용자에게 귀속된 데이터. 허용된 오리진만.
+ * @returns {boolean} 계속 처리해도 되면 true (OPTIONS면 이미 응답을 끝냈으므로 false)
+ */
+function applyCors(req, res, scope) {
+  const origin = req.headers.origin;
+
+  if (scope === 'public') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (origin && allowedOrigins().indexOf(origin) > -1) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  // origin이 없으면(같은 출처 요청·서버 간 호출) 헤더 자체가 필요 없다.
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return false;
+  }
+  return true;
+}
+
+/* ------------------------------------------------------------------ *
+ *  입력 검증
+ * ------------------------------------------------------------------ */
+const MAX_EMAIL_LEN = 254;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * 이메일 형식이 아니면 null.
+ *
+ * 일부러 소문자로 바꾸지 않는다. 이미 저장된 행이 입력한 대소문자 그대로 들어가 있어서,
+ * 여기서 정규화하면 예전에 대문자로 신청한 알림/동기화 데이터를 못 찾게 된다.
+ * 정규화하려면 profiles / user_data / alerts를 함께 마이그레이션해야 한다.
+ */
+function readEmail(value) {
+  const email = String(value || '').trim();
+  if (!email || email.length > MAX_EMAIL_LEN || !EMAIL_RE.test(email)) return null;
+  return email;
+}
+
+/** jsonb 컬럼에 무제한으로 밀어 넣지 못하게 크기를 제한한다. */
+function tooLarge(obj, maxBytes) {
+  try {
+    return Buffer.byteLength(JSON.stringify(obj || {}), 'utf8') > maxBytes;
+  } catch (e) {
+    return true;   // 순환 참조 등 직렬화 불가 → 거부
+  }
+}
+
+module.exports = { readBody, dbError, applyCors, readEmail, tooLarge };

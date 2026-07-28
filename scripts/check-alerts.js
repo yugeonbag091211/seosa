@@ -35,6 +35,29 @@ function buildTiming(cur, avg30, min30, alerts) {
   return lines.join(' ') || '가격 알림 조건이 충족되었습니다.';
 }
 
+/**
+ * 발송 완료 표시. 이걸 못 남기면 내일도 같은 메일이 또 나가므로
+ * sent_at 컬럼이 아직 없는 DB에서는 sent만이라도 반드시 올린다.
+ */
+async function markSent(id, currentPrice) {
+  const base = { sent: true, current_price: currentPrice };
+
+  const { error } = await supabase
+    .from('alerts')
+    .update({ ...base, sent_at: new Date().toISOString() })
+    .eq('id', id);
+  if (!error) return;
+
+  if (/sent_at|column/i.test(error.message)) {
+    console.warn('⚠️ alerts.sent_at 컬럼이 없습니다. supabase/schema.sql을 실행하세요.');
+    const { error: retryErr } = await supabase.from('alerts').update(base).eq('id', id);
+    if (!retryErr) return;
+    console.error(`❌ sent 갱신 실패 (중복 발송 위험): ${retryErr.message}`);
+    return;
+  }
+  console.error(`❌ sent 갱신 실패 (중복 발송 위험): ${error.message}`);
+}
+
 async function run() {
   // 1. 오늘 수집된 가격
   const { data: todayPrices, error: e1 } = await supabase
@@ -52,8 +75,9 @@ async function run() {
   const prevMap = new Map((yesterdayPrices || []).map(r => [r.product_id + '|' + r.mall, r.price]));
 
   // 3. 알림 목록
+  // 테이블명은 alerts. /api/alerts 와 supabase/schema.sql 이 쓰는 이름과 반드시 같아야 한다.
   const { data: alertList, error: e3 } = await supabase
-    .from('price_alerts')
+    .from('alerts')
     .select('*')
     .eq('sent', false);
   if (e3) throw new Error('알림 목록 조회 실패: ' + e3.message);
@@ -128,8 +152,7 @@ async function run() {
     });
 
     if (result.ok) {
-      await supabase.from('price_alerts').update({ sent: true, sent_at: new Date().toISOString(), current_price: cur })
-        .eq('id', alert.id);
+      await markSent(alert.id, cur);
       console.log(`✅ ${alert.email} → ${alert.title.slice(0, 30)} (${condNames})`);
       sent++;
     } else {

@@ -4,10 +4,17 @@ const { TODAY_PICKS, searchAll, saveProducts } = require('./_shop');
 const CONCURRENCY = 3;
 
 module.exports = async function handler(req, res) {
-  // CRON_SECRET을 설정해두면 Vercel Cron이 Authorization 헤더를 붙여 보낸다.
-  // 설정하지 않았다면 검사를 건너뛴다.
+  // CRON_SECRET을 설정하면 Vercel Cron이 Authorization 헤더를 붙여 보낸다.
+  //
+  // 예전에는 secret이 없으면 검사를 건너뛰었는데, 그러면 이 주소를 아는 누구나
+  // 8개 키워드 × (네이버 + 쿠팡) 호출을 반복시켜 일일 쿼터를 태울 수 있었다.
+  // 이제는 열지 않고 막는다(fail closed).
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+  if (!secret) {
+    console.error('[cron] CRON_SECRET 미설정 — Vercel > Settings > Environment Variables에 추가하세요.');
+    return res.status(500).json({ error: 'CRON_SECRET 환경변수가 설정되지 않았습니다.' });
+  }
+  if (req.headers.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ error: '인증 실패' });
   }
 

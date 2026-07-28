@@ -1,5 +1,10 @@
 const supabase = require('./_supabase');
 
+const MAX_TITLES = 100;
+// 잘릴 경우 오래된 쪽이 버려지도록 최신순으로 가져온다 (history.js와 같은 이유).
+const MAX_ROWS = 10000;
+const MAX_DAYS = 365;
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -11,7 +16,7 @@ module.exports = async function handler(req, res) {
   }
   if (!Array.isArray(titles)) return res.status(400).json({ error: 'titles는 배열이어야 함' });
 
-  titles = titles.filter(t => typeof t === 'string' && t).slice(0, 100);
+  titles = titles.filter(t => typeof t === 'string' && t).slice(0, MAX_TITLES);
   if (!titles.length) return res.json({});
 
   try {
@@ -19,7 +24,8 @@ module.exports = async function handler(req, res) {
       .from('price_history')
       .select('title, recorded_date, price')
       .in('title', titles)
-      .order('recorded_date', { ascending: true });
+      .order('recorded_date', { ascending: false })
+      .limit(MAX_ROWS);
     if (error) throw new Error(error.message);
 
     // 같은 상품명이 여러 몰에 있으면 하루에 여러 행이 생기므로
@@ -36,10 +42,11 @@ module.exports = async function handler(req, res) {
     const map = {};
     titles.forEach(t => { map[t] = []; });
     perTitle.forEach((byDate, title) => {
-      if (!map[title]) return;
+      if (!(title in map)) return;
       map[title] = [...byDate.entries()]
         .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-        .map(([date, price]) => ({ date, price }));
+        .map(([date, price]) => ({ date, price }))
+        .slice(-MAX_DAYS);
     });
 
     res.json(map);

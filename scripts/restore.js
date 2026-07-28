@@ -28,8 +28,15 @@ const JULY_KEYWORDS = ['노트북', '무선 이어폰', '스마트워치', '텀�
   console.log(`   -> ${m[0].keywords.length}개\n`);
 
   console.log(`2) products 재수집 (${SITE}/api/cron)`);
-  const r = await fetch(`${SITE}/api/cron`);
+  // /api/cron은 CRON_SECRET 없이는 열리지 않는다 (쿼터 소진 방지).
+  if (!process.env.CRON_SECRET) {
+    throw new Error('CRON_SECRET 환경변수가 필요합니다. Vercel에 설정한 값과 같게 .env에 넣어주세요.');
+  }
+  const r = await fetch(`${SITE}/api/cron`, {
+    headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` }
+  });
   const cron = await r.json();
+  if (!r.ok) throw new Error(`/api/cron ${r.status}: ${cron.error || ''}`);
   console.log(`   -> ${cron.totalSaved}건 저장, ${cron.elapsedMs}ms`);
   (cron.results || []).filter(x => x.errors.length)
     .forEach(x => console.log(`   경고 ${x.keyword}: ${x.errors[0].slice(0, 70)}`));

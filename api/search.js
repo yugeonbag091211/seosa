@@ -1,8 +1,17 @@
 const { searchAll, saveProducts } = require('./_shop');
+const { applyCors } = require('./_http');
+const { guard } = require('./_ratelimit');
+
+const MAX_KEYWORD_LEN = 80;
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  const keyword = (req.query && req.query.keyword) || '';
+  if (!applyCors(req, res, 'public')) return;
+
+  // 이 엔드포인트는 호출 한 번당 네이버/쿠팡 API를 각각 호출하고 DB에도 쓴다.
+  // 무제한으로 열어두면 외부 API 일일 쿼터와 DB 비용이 그대로 소진된다.
+  if (!guard(req, res, { name: 'search', limit: 30, windowMs: 60 * 1000 })) return;
+
+  const keyword = ((req.query && req.query.keyword) || '').trim().slice(0, MAX_KEYWORD_LEN);
   if (!keyword) return res.status(400).json({ error: '키워드 없음' });
 
   try {

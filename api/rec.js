@@ -1,5 +1,7 @@
 const supabase = require('./_supabase');
-const { TODAY_PICKS } = require('./_shop');
+const { TODAY_PICKS, toClientProduct, roundRobin } = require('./_shop');
+
+const PAGE_SIZE = 8;
 
 // 카테고리는 그 자체로 products.keyword에 없기 때문에
 // 취향 기반 추천을 뽑을 때는 카테고리를 실제 상품 키워드 풀로 매핑한다.
@@ -45,60 +47,26 @@ module.exports = async function handler(req, res) {
         .limit(200);
       if (error) throw new Error(error.message);
 
-      // 키워드별로 라운드로빈해서 한 키워드가 결과를 독차지하지 않게 8개 뽑기
-      const buckets = new Map(keywords.map(k => [k, []]));
-      (data || []).forEach(p => {
-        const b = buckets.get(p.keyword);
-        if (b) b.push(p);
-      });
-
-      const picked = [];
-      for (let i = 0; picked.length < 8; i++) {
-        let added = false;
-        for (const k of keywords) {
-          const b = buckets.get(k);
-          if (b && b[i]) { picked.push(b[i]); added = true; }
-          if (picked.length >= 8) break;
-        }
-        if (!added) break;
-      }
-
       return res.json({
         keyword: cats.join(' · '),
-        products: picked.map(p => ({
-          title: p.title,
-          lprice: p.lprice,
-          link: p.link,
-          image: p.image,
-          mall: p.mall,
-          productId: p.product_id,
-          isCoupang: p.mall === '쿠팡'
-        }))
+        products: roundRobin(data, keywords, PAGE_SIZE).map(toClientProduct)
       });
     }
 
     // 그 외(오늘의 셀렉션 / 이 키워드 더보기)는 기존대로 단일 키워드 조회
     const keyword = q.keyword || TODAY_PICKS[Math.floor(Math.random() * TODAY_PICKS.length)];
-    const offset = parseInt(q.offset || '0', 10) || 0;
+    const offset = Math.max(0, parseInt(q.offset || '0', 10) || 0);
 
     const { data, error } = await supabase
       .from('products')
       .select('*')
       .eq('keyword', keyword)
-      .range(offset, offset + 7);
+      .range(offset, offset + PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
 
     res.json({
       keyword,
-      products: (data || []).map(p => ({
-        title: p.title,
-        lprice: p.lprice,
-        link: p.link,
-        image: p.image,
-        mall: p.mall,
-        productId: p.product_id,
-        isCoupang: p.mall === '쿠팡'
-      }))
+      products: (data || []).map(toClientProduct)
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

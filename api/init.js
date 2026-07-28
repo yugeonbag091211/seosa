@@ -1,4 +1,7 @@
 const supabase = require('./_supabase');
+const { TODAY_PICKS, toClientProduct, roundRobin } = require('./_shop');
+
+const SECTION_SIZE = 8;
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -14,12 +17,12 @@ module.exports = async function handler(req, res) {
       .from('monthly_curation')
       .select('*')
       .eq('month', month)
-      .single();
+      .maybeSingle();
 
     const { data: priceDrop } = await supabase
       .from('price_drop_top')
       .select('*')
-      .limit(8);
+      .limit(SECTION_SIZE);
 
     // 프론트의 Monthly.show는 monthly.products를 그리는데 monthly_curation 행에는
     // 그 컬럼이 없다. 이달의 키워드로 products를 조회해 붙여준다.
@@ -31,44 +34,17 @@ module.exports = async function handler(req, res) {
         .in('keyword', monthKeywords)
         .limit(200);
 
-      // 키워드 하나가 결과를 독차지하지 않도록 키워드별로 번갈아 8개를 고른다.
-      const buckets = new Map(monthKeywords.map(k => [k, []]));
-      (monthProducts || []).forEach(p => {
-        const b = buckets.get(p.keyword);
-        if (b) b.push(p);
-      });
-
-      const picked = [];
-      for (let i = 0; picked.length < 8; i++) {
-        let addedThisRound = false;
-        for (const k of monthKeywords) {
-          const b = buckets.get(k);
-          if (b && b[i]) { picked.push(b[i]); addedThisRound = true; }
-          if (picked.length >= 8) break;
-        }
-        if (!addedThisRound) break;
-      }
-
-      monthly.products = picked.map(p => ({
-        title: p.title,
-        lprice: p.lprice,
-        link: p.link,
-        image: p.image,
-        mall: p.mall,
-        productId: p.product_id,
-        isCoupang: p.mall === '쿠팡'
-      }));
+      monthly.products = roundRobin(monthProducts, monthKeywords, SECTION_SIZE).map(toClientProduct);
     } else if (monthly) {
       monthly.products = [];
     }
 
-    const TODAY_PICKS = ['수영복','물놀이 용품','아이스크림','방수팩','차량용 햇빛 가리개','여행용 캐리어','서큘레이터','쿨토시'];
     const recKeyword = TODAY_PICKS[Math.floor(Math.random() * TODAY_PICKS.length)];
     const { data: recProducts } = await supabase
       .from('products')
       .select('*')
       .eq('keyword', recKeyword)
-      .limit(8);
+      .limit(SECTION_SIZE);
 
     res.json({
       popular: stats || [],
@@ -89,15 +65,7 @@ module.exports = async function handler(req, res) {
       daily: {
         keyword: recKeyword,
         keywords: TODAY_PICKS,
-        products: (recProducts || []).map(p => ({
-          title: p.title,
-          lprice: p.lprice,
-          link: p.link,
-          image: p.image,
-          mall: p.mall,
-          productId: p.product_id,
-          isCoupang: p.mall === '쿠팡'
-        }))
+        products: (recProducts || []).map(toClientProduct)
       }
     });
   } catch(e) {

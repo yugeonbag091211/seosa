@@ -3,6 +3,12 @@ const supabase = require('./_supabase');
 
 const TODAY_PICKS = ['수영복', '물놀이 용품', '아이스크림', '방수팩', '차량용 햇빛 가리개', '여행용 캐리어', '서큘레이터', '쿨토시'];
 
+/** 정가(oprice) 대비 할인율(%). 정가 정보가 없거나 역전이면 0. */
+function discountPct(lprice, oprice) {
+  if (!(oprice > 0) || !(lprice > 0) || oprice <= lprice) return 0;
+  return Math.round((1 - lprice / oprice) * 100);
+}
+
 function coupangAuth(method, path, query, accessKey, secretKey) {
   const date = new Date();
   const ts = date.getUTCFullYear().toString().slice(-2)
@@ -35,17 +41,21 @@ async function fetchNaver(keyword, display = 8) {
   if (!r.ok) {
     return { items: [], error: `네이버 API ${r.status}: ${(await r.text()).slice(0, 200)}` };
   }
-  const items = ((await r.json()).items || []).map(it => ({
-    title: it.title.replace(/<[^>]*>/g, ''),
-    lprice: parseInt(it.lprice) || 0,
-    link: it.link || '',
-    image: it.image || '',
-    mall: it.mallName || '네이버쇼핑',
-    productId: String(it.productId || ''),
-    isCoupang: false,
-    oprice: parseInt(it.hprice) || 0,
-    savePct: 0
-  })).filter(i => i.lprice > 0);
+  const items = ((await r.json()).items || []).map(it => {
+    const lprice = parseInt(it.lprice) || 0;
+    const oprice = parseInt(it.hprice) || 0;   // 네이버는 최고가를 hprice로 준다
+    return {
+      title: it.title.replace(/<[^>]*>/g, ''),
+      lprice,
+      link: it.link || '',
+      image: it.image || '',
+      mall: it.mallName || '네이버쇼핑',
+      productId: String(it.productId || ''),
+      isCoupang: false,
+      oprice,
+      savePct: discountPct(lprice, oprice)
+    };
+  }).filter(i => i.lprice > 0);
   return { items, error: null };
 }
 
@@ -64,17 +74,21 @@ async function fetchCoupang(keyword, limit = 6) {
     return { items: [], error: `쿠팡 API ${r.status}: ${(await r.text()).slice(0, 200)}` };
   }
   const data = await r.json();
-  const items = ((data.data && data.data.productData) || []).map(it => ({
-    title: it.productName || '',
-    lprice: parseInt(it.discountPrice || it.productPrice) || 0,
-    link: it.productUrl || '',
-    image: it.productImage || '',
-    mall: '쿠팡',
-    productId: String(it.productId || ''),
-    isCoupang: true,
-    oprice: parseInt(it.productPrice) || 0,
-    savePct: 0
-  })).filter(i => i.lprice > 0);
+  const items = ((data.data && data.data.productData) || []).map(it => {
+    const lprice = parseInt(it.discountPrice || it.productPrice) || 0;
+    const oprice = parseInt(it.productPrice) || 0;   // 쿠팡은 할인 전 가격이 productPrice
+    return {
+      title: it.productName || '',
+      lprice,
+      link: it.productUrl || '',
+      image: it.productImage || '',
+      mall: '쿠팡',
+      productId: String(it.productId || ''),
+      isCoupang: true,
+      oprice,
+      savePct: discountPct(lprice, oprice)
+    };
+  }).filter(i => i.lprice > 0);
   return { items, error: null };
 }
 
@@ -126,7 +140,9 @@ async function saveProducts(keyword, items) {
       lprice: it.lprice,
       link: it.link || '',
       mall: it.mall,
-      image: it.image || ''
+      image: it.image || '',
+      oprice: it.oprice || 0,
+      save_pct: it.savePct || 0
     })),
     { onConflict: 'product_id,mall' }
   );
@@ -150,4 +166,50 @@ async function saveProducts(keyword, items) {
   return { saved: errors.length ? 0 : uniq.length, errors };
 }
 
-module.exports = { TODAY_PICKS, coupangAuth, fetchNaver, fetchCoupang, searchAll, saveProducts };
+/**
+ * products 테이블 행 → 프론트가 쓰는 상품 모양.
+ * rec.js / init.js가 각자 똑같이 풀어 쓰던 것을 한 곳으로 모은 것이라
+ * 컬럼이 늘어나도 한 군데만 고치면 된다.
+ */
+function toClientProduct(p) {
+  return {
+    title: p.title,
+    lprice: p.lprice,
+    link: p.link,
+    image: p.image,
+    mall: p.mall,
+    productId: p.product_id,
+    isCoupang: p.mall === '쿠팡',
+    oprice: p.oprice || 0,
+    savePct: p.save_pct || 0
+  };
+}
+
+/**
+ * 키워드별로 번갈아 뽑아 한 키워드가 결과를 독차지하지 않게 한다.
+ * (오늘의 셀렉션 / 이달의 추천 / 취향 추천이 모두 같은 규칙을 쓴다)
+ */
+function roundRobin(rows, keywords, take) {
+  const buckets = new Map(keywords.map(k => [k, []]));
+  (rows || []).forEach(p => {
+    const b = buckets.get(p.keyword);
+    if (b) b.push(p);
+  });
+
+  const picked = [];
+  for (let i = 0; picked.length < take; i++) {
+    let added = false;
+    for (const k of keywords) {
+      const b = buckets.get(k);
+      if (b && b[i]) { picked.push(b[i]); added = true; }
+      if (picked.length >= take) break;
+    }
+    if (!added) break;
+  }
+  return picked;
+}
+
+module.exports = {
+  TODAY_PICKS, coupangAuth, fetchNaver, fetchCoupang,
+  searchAll, saveProducts, toClientProduct, roundRobin
+};
