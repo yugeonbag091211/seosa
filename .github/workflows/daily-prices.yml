@@ -37,3 +37,9 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
         run: node scripts/check-alerts.js
+
+      - name: Coverage badge (summary)
+        if: always()
+        run: |
+          echo "## Price Collection Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Date: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
