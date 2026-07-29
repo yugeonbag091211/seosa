@@ -74,9 +74,12 @@ async function fetchCoupang(keyword, limit = 6) {
     return { items: [], error: `쿠팡 API ${r.status}: ${(await r.text()).slice(0, 200)}` };
   }
   const data = await r.json();
+  if (data.rCode && data.rCode !== '200' && data.rCode !== 200) {
+    return { items: [], error: `쿠팡 rCode=${data.rCode}: ${(data.rMessage || '').slice(0, 120)}` };
+  }
   const items = ((data.data && data.data.productData) || []).map(it => {
     const lprice = parseInt(it.discountPrice || it.productPrice) || 0;
-    const oprice = parseInt(it.productPrice) || 0;   // 쿠팡은 할인 전 가격이 productPrice
+    const oprice = parseInt(it.productPrice) || 0;
     return {
       title: it.productName || '',
       lprice,
