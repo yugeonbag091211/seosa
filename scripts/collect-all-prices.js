@@ -4,10 +4,9 @@
  * node scripts/collect-all-prices.js
  *
  * 수집 전략:
- *   1차) 키워드 검색 — Naver 최대 300건(100×3페이지), Coupang 50건
- *        쿠팡 상품도 네이버에서 fallback 매칭 (쿠팡 API 차단 시 대비)
- *   2차) 1차에서 빠진 상품 — 상품명 앞 6단어로 직접 검색 (개별 fallback)
- *   3차) 여전히 빠지면 — 상품명 전체 exact 검색
+ *   1차) 키워드 검색 — Naver 최대 300건, Coupang 50건
+ *        쿠팡 API 차단 시 네이버에서 상품명으로 title 매칭
+ *   2차) 1차에서 빠진 상품 — 상품명으로 직접 검색 (개별 fallback)
  *   마지막) 커버리지 리포트 출력
  */
 
@@ -55,9 +54,28 @@ function isCoupangRow(p) {
   return p.mall === '쿠팡' || (p.link && p.link.includes('coupang'));
 }
 
+/** 상품명에서 비교용 핵심 단어 추출 (소문자, 특수문자 제거) */
+function titleWords(title) {
+  return (title || '').toLowerCase()
+    .replace(/[^a-z0-9가-힣\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 0);
+}
+
+/** 두 상품명의 유사도 (0~1). 짧은 쪽 단어 기준 일치 비율 */
+function titleSimilarity(a, b) {
+  const wa = titleWords(a);
+  const wb = titleWords(b);
+  if (wa.length === 0 || wb.length === 0) return 0;
+  const setB = new Set(wb);
+  const matches = wa.filter(w => setB.has(w)).length;
+  return matches / Math.min(wa.length, wb.length);
+}
+
 // ─── 쿠팡 API 상태 추적 ─────────────────────────────────────
 let _coupangBlocked = false;
 let _coupangBlockMsg = '';
+let _titleMatchCount = 0;
 
 // ─── API 호출 ─────────────────────────────────────────────────
 async function naverPage(keyword, start, display) {
@@ -127,7 +145,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
       _coupangBlocked = true;
       _coupangBlockMsg = data.rMessage || `rCode=${data.rCode}`;
       console.error(`\n⚠️  쿠팡 API 차단 감지 (rCode=${data.rCode}): ${_coupangBlockMsg}`);
-      console.error('    → 쿠팡 상품은 네이버 API fallback으로 수집합니다.\n');
+      console.error('    → 쿠팡 상품은 네이버에서 상품명 매칭으로 수집합니다.\n');
     }
     return [];
   }
@@ -176,7 +194,7 @@ function addRow(target, price, link) {
   return true;
 }
 
-// ─── upsert (재시도 포함) ──────────────────────────────────────
+// ─── upsert ──────────────────────────────────────────────────
 let _firstUpsertError = null;
 
 async function upsertChunk(chunk) {
@@ -200,7 +218,7 @@ async function upsertChunk(chunk) {
 async function saveAll() {
   const rows = [...rowMap.values()];
   if (rows.length === 0) {
-    console.warn('  경고: rowMap이 비어 있음 — API 응답에서 product_id 매칭 0건');
+    console.warn('  경고: rowMap이 비어 있음 — API 응답에서 매칭 0건');
     return { saved: 0, total: 0 };
   }
   console.log(`  샘플 행(첫 번째):`, JSON.stringify(rows[0]));
@@ -221,9 +239,9 @@ async function run() {
 
   const uncovered = new Map();
   products.forEach(p => uncovered.set(`${p.product_id}|${p.mall}`, p));
-  const markCovered = (productId, mall) => uncovered.delete(`${productId}|${mall}`);
+  const markCovered = (pid, mall) => uncovered.delete(`${pid}|${mall}`);
 
-  // ── 1차: 키워드 검색 ──────────────────────────────────────
+  // ── 1차: 키워드별 검색 ──────────────────────────────────────
   console.log('── 1차: 키워드별 검색 ──');
   const byKeyword = new Map();
   const noKeyword = [];
@@ -241,21 +259,28 @@ async function run() {
     const batch = keywords.slice(i, i + CONCURRENCY);
     await Promise.all(batch.map(async keyword => {
       const targets = byKeyword.get(keyword);
-      const naverById   = new Map();
-      const coupangById = new Map();
+      const naverTargets   = [];
+      const coupangTargets = [];
       targets.forEach(p => {
-        (isCoupangRow(p) ? coupangById : naverById).set(p.product_id, p);
+        (isCoupangRow(p) ? coupangTargets : naverTargets).push(p);
       });
 
-      // 네이버는 항상 호출 (쿠팡 상품도 네이버에서 검색 가능)
+      const naverById = new Map();
+      naverTargets.forEach(p => naverById.set(p.product_id, p));
+      const coupangById = new Map();
+      coupangTargets.forEach(p => coupangById.set(p.product_id, p));
+
+      // 네이버는 항상 호출
       const naverItems = await retry(() => fetchNaverAll(keyword)).catch(() => []);
+
+      // 쿠팡은 차단 아닐 때만 호출
       const coupangItems = coupangById.size > 0
         ? await retry(() => fetchCoupangAll(keyword)).catch(() => [])
         : [];
 
       let hit = 0;
 
-      // 네이버 결과에서 네이버 상품 매칭
+      // (A) 네이버 결과 → 네이버 상품 매칭 (product_id)
       naverItems.forEach(item => {
         const target = naverById.get(item.productId);
         if (target && addRow(target, item.lprice, item.link)) {
@@ -264,7 +289,7 @@ async function run() {
         }
       });
 
-      // 쿠팡 결과에서 쿠팡 상품 매칭
+      // (B) 쿠팡 결과 → 쿠팡 상품 매칭 (product_id)
       coupangItems.forEach(item => {
         const target = coupangById.get(item.productId);
         if (target && addRow(target, item.lprice, item.link)) {
@@ -273,13 +298,34 @@ async function run() {
         }
       });
 
-      // 핵심: 아직 미수집인 쿠팡 상품을 네이버 결과에서도 찾기
-      // (쿠팡 API 차단 시, 또는 쿠팡 product_id가 실제로는 네이버 ID인 경우)
-      coupangById.forEach((target, pid) => {
-        if (!uncovered.has(`${pid}|${target.mall}`)) return;
-        const naverMatch = naverItems.find(it => it.productId === pid);
-        if (naverMatch && addRow(target, naverMatch.lprice, naverMatch.link)) {
-          markCovered(pid, target.mall);
+      // (C) 미수집 쿠팡 상품 → 네이버 결과에서 상품명 매칭
+      coupangTargets.forEach(target => {
+        const key = `${target.product_id}|${target.mall}`;
+        if (!uncovered.has(key)) return;
+
+        // product_id 직접 매칭 시도 (네이버에서 등록된 쿠팡 상품인 경우)
+        const idMatch = naverItems.find(it => it.productId === target.product_id);
+        if (idMatch) {
+          if (addRow(target, idMatch.lprice, idMatch.link)) {
+            markCovered(target.product_id, target.mall);
+            hit++;
+          }
+          return;
+        }
+
+        // 상품명 유사도 매칭 (쿠팡 고유 ID인 경우)
+        let bestMatch = null;
+        let bestScore = 0;
+        for (const item of naverItems) {
+          const score = titleSimilarity(target.title, item.title);
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = item;
+          }
+        }
+        if (bestMatch && bestScore >= 0.5 && addRow(target, bestMatch.lprice, bestMatch.link)) {
+          markCovered(target.product_id, target.mall);
+          _titleMatchCount++;
           hit++;
         }
       });
@@ -290,17 +336,32 @@ async function run() {
     }));
   }
 
-  // ── 2차: keyword 없는 상품 — 상품명 6단어 검색 ─────────────
+  // ── 2차: keyword 없는 상품 — 상품명 검색 ───────────────────
   if (noKeyword.length > 0) {
     console.log(`\n── 2차: keyword 없는 상품 ${noKeyword.length}개 개별 검색 ──`);
     for (let i = 0; i < noKeyword.length; i += CONCURRENCY) {
       const batch = noKeyword.slice(i, i + CONCURRENCY);
       await Promise.all(batch.map(async p => {
         const q = p.title.split(/\s+/).slice(0, 6).join(' ');
-        // 쿠팡 상품도 네이버에서 검색 (네이버가 쿠팡 상품을 포함하므로)
         const naverItems = await retry(() => fetchNaverAll(q, 1)).catch(() => []);
+
+        // product_id 매칭
         let match = naverItems.find(it => it.productId === p.product_id);
 
+        // 쿠팡 상품이면 상품명 매칭도 시도
+        if (!match && isCoupangRow(p)) {
+          let bestScore = 0;
+          for (const item of naverItems) {
+            const score = titleSimilarity(p.title, item.title);
+            if (score > bestScore) {
+              bestScore = score;
+              match = score >= 0.5 ? item : null;
+            }
+          }
+          if (match) _titleMatchCount++;
+        }
+
+        // 쿠팡 API도 시도 (차단 아닐 때)
         if (!match && isCoupangRow(p)) {
           const coupangItems = await retry(() => fetchCoupangAll(q, 20)).catch(() => []);
           match = coupangItems.find(it => it.productId === p.product_id);
@@ -310,27 +371,35 @@ async function run() {
           markCovered(p.product_id, p.mall);
         }
       }));
-      if ((i + CONCURRENCY) % 20 === 0) {
+      if ((i + CONCURRENCY) % 40 === 0) {
         console.log(`  진행: ${Math.min(i + CONCURRENCY, noKeyword.length)}/${noKeyword.length}`);
-        await sleep(500);
+        await sleep(300);
       }
     }
   }
 
-  // ── 3차: 여전히 누락된 상품 — 상품명 10단어 검색 ────────────
+  // ── 3차: 여전히 누락된 상품 — 더 긴 상품명으로 재시도 ────────
   const stillMissing = [...uncovered.values()];
   if (stillMissing.length > 0) {
-    console.log(`\n── 3차: 누락 ${stillMissing.length}개 exact 검색 ──`);
+    console.log(`\n── 3차: 누락 ${stillMissing.length}개 재시도 ──`);
     for (let i = 0; i < stillMissing.length; i += CONCURRENCY) {
       const batch = stillMissing.slice(i, i + CONCURRENCY);
       await Promise.all(batch.map(async p => {
         const q = p.title.split(/\s+/).slice(0, 10).join(' ');
         const naverItems = await retry(() => fetchNaverAll(q, 1)).catch(() => []);
+
         let match = naverItems.find(it => it.productId === p.product_id);
 
-        if (!match && isCoupangRow(p)) {
-          const coupangItems = await retry(() => fetchCoupangAll(q, 20)).catch(() => []);
-          match = coupangItems.find(it => it.productId === p.product_id);
+        if (!match) {
+          let bestScore = 0;
+          for (const item of naverItems) {
+            const score = titleSimilarity(p.title, item.title);
+            if (score > bestScore) {
+              bestScore = score;
+              match = score >= 0.4 ? item : null;
+            }
+          }
+          if (match) _titleMatchCount++;
         }
 
         if (match && addRow(p, match.lprice, match.link)) {
@@ -353,10 +422,12 @@ async function run() {
 
   console.log(`\n${'═'.repeat(50)}`);
   console.log(`커버리지: ${covered}/${products.length} (${coverage}%)`);
+  console.log(`  product_id 매칭: ${covered - _titleMatchCount}건`);
+  console.log(`  상품명 매칭: ${_titleMatchCount}건`);
 
   if (_coupangBlocked) {
-    console.log(`\n⚠️  쿠팡 API 상태: 차단됨`);
-    console.log(`    사유: ${_coupangBlockMsg}`);
+    console.log(`\n⚠️  쿠팡 API: 차단됨 (rCode 403)`);
+    console.log(`    ${_coupangBlockMsg.replace(/<[^>]*>/g, '').slice(0, 100)}`);
     console.log('    → 쿠팡 파트너스에 소명 필요 (https://partners.coupang.com)');
   }
 
