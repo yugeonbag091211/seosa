@@ -1,5 +1,8 @@
-const crypto = require('crypto');
+// 쿠팡 HMAC 서명은 api/_coupang.js 한 곳에만 있다.
+// 여기(또는 다른 파일)에 서명 함수를 다시 만들면 캐시·분당 상한·차단 감지를
+// 통째로 우회하게 된다. 쿠팡 호출은 반드시 searchCoupang()로.
 const supabase = require('./_supabase');
+const { searchCoupang } = require('./_coupang');
 
 const TODAY_PICKS = ['수영복', '물놀이 용품', '아이스크림', '방수팩', '차량용 햇빛 가리개', '여행용 캐리어', '서큘레이터', '쿨토시'];
 
@@ -7,20 +10,6 @@ const TODAY_PICKS = ['수영복', '물놀이 용품', '아이스크림', '방수
 function discountPct(lprice, oprice) {
   if (!(oprice > 0) || !(lprice > 0) || oprice <= lprice) return 0;
   return Math.round((1 - lprice / oprice) * 100);
-}
-
-function coupangAuth(method, path, query, accessKey, secretKey) {
-  const date = new Date();
-  const ts = date.getUTCFullYear().toString().slice(-2)
-    + String(date.getUTCMonth() + 1).padStart(2, '0')
-    + String(date.getUTCDate()).padStart(2, '0')
-    + 'T'
-    + String(date.getUTCHours()).padStart(2, '0')
-    + String(date.getUTCMinutes()).padStart(2, '0')
-    + String(date.getUTCSeconds()).padStart(2, '0')
-    + 'Z';
-  const sig = crypto.createHmac('sha256', secretKey).update(ts + method + path + query).digest('hex');
-  return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${ts}, signature=${sig}`;
 }
 
 async function fetchNaver(keyword, display = 8) {
@@ -59,47 +48,36 @@ async function fetchNaver(keyword, display = 8) {
   return { items, error: null };
 }
 
-async function fetchCoupang(keyword, limit = 6) {
-  if (!process.env.COUPANG_ACCESS_KEY || !process.env.COUPANG_SECRET_KEY) {
-    return { items: [], error: 'COUPANG_ACCESS_KEY / COUPANG_SECRET_KEY 환경변수 없음' };
-  }
-  const path = '/v2/providers/affiliate_open_api/apis/openapi/products/search';
-  const query = `keyword=${encodeURIComponent(keyword)}&limit=${limit}`;
-  const r = await fetch(`https://api-gateway.coupang.com${path}?${query}`, {
-    headers: {
-      Authorization: coupangAuth('GET', path, query, process.env.COUPANG_ACCESS_KEY, process.env.COUPANG_SECRET_KEY)
-    }
-  });
-  if (!r.ok) {
-    return { items: [], error: `쿠팡 API ${r.status}: ${(await r.text()).slice(0, 200)}` };
-  }
-  const data = await r.json();
-  if (data.rCode && data.rCode !== '200' && data.rCode !== 200) {
-    return { items: [], error: `쿠팡 rCode=${data.rCode}: ${(data.rMessage || '').slice(0, 120)}` };
-  }
-  const items = ((data.data && data.data.productData) || []).map(it => {
-    const lprice = parseInt(it.discountPrice || it.productPrice) || 0;
-    const oprice = parseInt(it.productPrice) || 0;
-    return {
-      title: it.productName || '',
-      lprice,
-      link: it.productUrl || '',
-      image: it.productImage || '',
-      mall: '쿠팡',
-      productId: String(it.productId || ''),
-      isCoupang: true,
-      oprice,
-      savePct: discountPct(lprice, oprice)
-    };
-  }).filter(i => i.lprice > 0);
-  return { items, error: null };
+/**
+ * 쿠팡 검색.
+ *
+ * 직접 fetch 하지 않고 _coupang.js를 거친다. 그쪽에 캐시 / 분당 상한 /
+ * 차단 감지가 들어 있어서, 여기서 따로 호출하면 전부 우회하게 된다.
+ * 실패해도 throw 하지 않고 빈 목록을 준다 (네이버 결과는 그대로 나가야 한다).
+ */
+async function fetchCoupang(keyword, limit = 6, opts = {}) {
+  const r = await searchCoupang(keyword, { limit, ...opts });
+  const items = r.items.map(it => ({
+    title: it.title,
+    lprice: it.lprice,
+    link: it.link,
+    image: it.image,
+    mall: '쿠팡',
+    productId: it.productId,
+    isCoupang: true,
+    oprice: it.oprice,
+    savePct: discountPct(it.lprice, it.oprice)
+  }));
+  // 캐시로 상품을 채웠으면 오류로 취급하지 않는다 (사용자에겐 정상 결과다).
+  const error = items.length && r.from !== 'api' ? null : r.error;
+  return { items, error, from: r.from };
 }
 
 /** 네이버 + 쿠팡을 동시에 조회해 번갈아 섞은 목록을 돌려준다. */
-async function searchAll(keyword, { naverDisplay = 8, coupangLimit = 6 } = {}) {
+async function searchAll(keyword, { naverDisplay = 8, coupangLimit = 6, coupangOpts = {} } = {}) {
   const [naver, coupang] = await Promise.all([
     fetchNaver(keyword, naverDisplay).catch(e => ({ items: [], error: `네이버 예외: ${e.message}` })),
-    fetchCoupang(keyword, coupangLimit).catch(e => ({ items: [], error: `쿠팡 예외: ${e.message}` }))
+    fetchCoupang(keyword, coupangLimit, coupangOpts).catch(e => ({ items: [], error: `쿠팡 예외: ${e.message}` }))
   ]);
 
   const errors = [naver.error, coupang.error].filter(Boolean);
@@ -213,6 +191,6 @@ function roundRobin(rows, keywords, take) {
 }
 
 module.exports = {
-  TODAY_PICKS, coupangAuth, fetchNaver, fetchCoupang,
+  TODAY_PICKS, fetchNaver, fetchCoupang,
   searchAll, saveProducts, toClientProduct, roundRobin
 };

@@ -6,13 +6,28 @@
  * 수집 전략:
  *   1차) 키워드 검색 — Naver 최대 300건, Coupang 50건
  *        쿠팡 API 차단 시 네이버에서 상품명으로 title 매칭
- *   2차) 1차에서 빠진 상품 — 상품명으로 직접 검색 (개별 fallback)
+ *   2차) 1차에서 빠진 상품 — 네이버에서 상품명으로 직접 검색 (개별 fallback)
  *   마지막) 커버리지 리포트 출력
+ *
+ * ── 쿠팡 호출 정책 ───────────────────────────────────────────
+ * 이 스크립트가 쿠팡 이용제한 경고의 주범이었다. 예전 동작:
+ *   - 2차 단계에서 keyword 없는 쿠팡 상품 1개당 쿠팡 API를 1회씩 호출 →
+ *     상품 수백 개면 분당 수백 회 (공식 한도 50회/분)
+ *   - retry(3회)가 쿠팡 호출을 감싸고 있어 실패 시 호출량이 3배
+ *   - HTTP 429/403은 차단으로 치지 않아서, 제한 응답을 받고도 남은
+ *     키워드 전부에 대해 계속 호출
+ *
+ * 지금은
+ *   - 모든 쿠팡 호출이 api/_coupang.js 한 곳을 지난다 (분당 상한·캐시·차단 감지)
+ *   - 쿠팡에는 retry를 걸지 않는다 (네이버는 그대로 유지)
+ *   - 1차 키워드 검색에서만 호출하고, 상품 단위 개별 호출은 없앴다
+ *   - 실행당 총 호출 상한(COUPANG_RUN_BUDGET)을 따로 둔다
+ * 쿠팡이 못 준 상품은 네이버 상품명 매칭으로 채운다(원래도 그렇게 하고 있었다).
  */
 
 require('dotenv').config({ quiet: true });
-const crypto   = require('crypto');
 const supabase = require('../api/_supabase');
+const { searchCoupang, isBlocked, localStats } = require('../api/_coupang');
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const CONCURRENCY   = 4;
@@ -21,6 +36,12 @@ const UPSERT_CHUNK  = 200;
 const NAVER_DISPLAY = 100;
 const NAVER_PAGES   = 3;
 const COUPANG_LIMIT = 50;
+
+// 배치 실행이라 사용자 대기 시간이 없다. 호출 간격을 넉넉히 벌려
+// 라이브 검색(/api/search)이 쓸 몫을 분당 절반 이상 남겨둔다.
+const COUPANG_MIN_GAP_MS  = 6000;    // → 이 스크립트만으로는 분당 최대 10회
+const COUPANG_MAX_WAIT_MS = 120000;
+const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 120;
 
 // ─── 환경변수 ────────────────────────────────────────────────
 const NAVER_ID     = process.env.NAVER_CLIENT_ID;
@@ -40,6 +61,12 @@ console.log('');
 // ─── 유틸 ────────────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/**
+ * 네이버 전용 재시도.
+ *
+ * 쿠팡에는 절대 쓰지 말 것. 제한 응답(429/403)을 재시도하면 경고만 더 쌓인다.
+ * 쿠팡 쪽 실패 처리는 api/_coupang.js의 서킷 브레이커가 담당한다.
+ */
 async function retry(fn, attempts = 3, delayMs = 1500) {
   for (let i = 0; i < attempts; i++) {
     try { return await fn(); }
@@ -75,6 +102,9 @@ function titleSimilarity(a, b) {
 // ─── 쿠팡 API 상태 추적 ─────────────────────────────────────
 let _coupangBlocked = false;
 let _coupangBlockMsg = '';
+let _coupangCalls = 0;      // 실제로 나간 호출 수 (캐시 적중은 제외)
+let _coupangSkipped = 0;    // 예산/상한/차단으로 건너뛴 횟수
+let _budgetWarned = false;
 let _titleMatchCount = 0;
 
 // ─── API 호출 ─────────────────────────────────────────────────
@@ -111,53 +141,52 @@ async function fetchNaverAll(keyword, maxPages = NAVER_PAGES) {
   return [...all.values()];
 }
 
-function coupangAuth(path, query) {
-  const date = new Date();
-  const ts = date.getUTCFullYear().toString().slice(-2)
-    + String(date.getUTCMonth() + 1).padStart(2, '0')
-    + String(date.getUTCDate()).padStart(2, '0')
-    + 'T'
-    + String(date.getUTCHours()).padStart(2, '0')
-    + String(date.getUTCMinutes()).padStart(2, '0')
-    + String(date.getUTCSeconds()).padStart(2, '0')
-    + 'Z';
-  const sig = crypto.createHmac('sha256', COUP_SECRET).update(ts + 'GET' + path + query).digest('hex');
-  return `CEA algorithm=HmacSHA256, access-key=${COUP_ACCESS}, signed-date=${ts}, signature=${sig}`;
-}
-
+/**
+ * 쿠팡 검색. api/_coupang.js를 통해서만 나간다.
+ *
+ * 여기서 직접 fetch/HMAC을 만들면 분당 상한도 차단 감지도 캐시도 전부 우회한다.
+ * 절대 retry로 감싸지 말 것.
+ */
 async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
   if (!COUP_ACCESS || !COUP_SECRET) return [];
-  if (_coupangBlocked) return [];
+  if (_coupangBlocked || isBlocked()) return [];
 
-  const path  = '/v2/providers/affiliate_open_api/apis/openapi/products/search';
-  const query = `keyword=${encodeURIComponent(keyword)}&limit=${limit}`;
-  const r = await fetch(`https://api-gateway.coupang.com${path}?${query}`, {
-    headers: { Authorization: coupangAuth(path, query) }
-  });
-  if (!r.ok) {
-    console.warn(`    쿠팡 API HTTP ${r.status}: ${(await r.text()).slice(0, 120)}`);
-    return [];
-  }
-  const data = await r.json();
-
-  if (data.rCode && data.rCode !== '200' && data.rCode !== 200) {
-    if (!_coupangBlocked) {
-      _coupangBlocked = true;
-      _coupangBlockMsg = data.rMessage || `rCode=${data.rCode}`;
-      console.error(`\n⚠️  쿠팡 API 차단 감지 (rCode=${data.rCode}): ${_coupangBlockMsg}`);
-      console.error('    → 쿠팡 상품은 네이버에서 상품명 매칭으로 수집합니다.\n');
+  if (_coupangCalls >= COUPANG_RUN_BUDGET) {
+    _coupangSkipped++;
+    if (!_budgetWarned) {
+      _budgetWarned = true;
+      console.warn(`\n⚠️  쿠팡 호출 예산 ${COUPANG_RUN_BUDGET}회 소진 — 남은 상품은 네이버 상품명 매칭으로 채웁니다.\n`);
     }
     return [];
   }
 
-  return ((data.data && data.data.productData) || []).map(it => ({
-    productId: String(it.productId || ''),
-    title: it.productName || '',
-    lprice: parseInt(it.discountPrice || it.productPrice) || 0,
-    link: it.productUrl || '',
-    image: it.productImage || '',
+  // forceRefresh를 쓰지 않는다. 최근 6시간 안에 받아둔 값이면 그것도 "오늘 가격"이라
+  // 하루 한 번 스냅샷을 남기는 이 스크립트에는 충분하고, 그만큼 호출이 줄어든다.
+  const r = await searchCoupang(keyword, {
+    limit,
+    source: 'collect',
+    minGapMs: COUPANG_MIN_GAP_MS,
+    maxWaitMs: COUPANG_MAX_WAIT_MS
+  });
+
+  if (r.from === 'api') _coupangCalls++;
+  else if (r.from === 'none') _coupangSkipped++;
+
+  if (r.blocked && !_coupangBlocked) {
+    _coupangBlocked = true;
+    _coupangBlockMsg = r.error || '차단';
+    console.error(`\n⚠️  쿠팡 API 차단 감지: ${_coupangBlockMsg}`);
+    console.error('    → 이번 실행에서는 쿠팡 호출을 멈추고, 네이버 상품명 매칭으로 수집합니다.\n');
+  }
+
+  return r.items.map(it => ({
+    productId: it.productId,
+    title: it.title,
+    lprice: it.lprice,
+    link: it.link,
+    image: it.image,
     mall: '쿠팡',
-  })).filter(i => i.lprice > 0 && i.productId);
+  }));
 }
 
 // ─── DB 조회 ──────────────────────────────────────────────────
@@ -270,12 +299,13 @@ async function run() {
       const coupangById = new Map();
       coupangTargets.forEach(p => coupangById.set(p.product_id, p));
 
-      // 네이버는 항상 호출
+      // 네이버는 항상 호출 (쿼터가 넉넉하고 재시도해도 안전하다)
       const naverItems = await retry(() => fetchNaverAll(keyword)).catch(() => []);
 
-      // 쿠팡은 차단 아닐 때만 호출
+      // 쿠팡은 이 키워드에 쿠팡 상품이 있을 때만, 키워드당 정확히 1회.
+      // retry로 감싸지 않는다 — 제한 응답을 재시도하면 경고가 쌓인다.
       const coupangItems = coupangById.size > 0
-        ? await retry(() => fetchCoupangAll(keyword)).catch(() => [])
+        ? await fetchCoupangAll(keyword).catch(() => [])
         : [];
 
       let hit = 0;
@@ -349,6 +379,12 @@ async function run() {
         let match = naverItems.find(it => it.productId === p.product_id);
 
         // 쿠팡 상품이면 상품명 매칭도 시도
+        //
+        // 예전에는 여기서 매칭에 실패하면 상품 1개당 쿠팡 API를 1회씩 더 호출했다.
+        // 상품 수백 개면 분당 수백 회가 되어 공식 한도(50회/분)를 크게 넘겼고,
+        // 그러면서도 실제로 얻는 건 productId가 정확히 일치하는 드문 경우뿐이었다.
+        // 비용 대비 효과가 없어서 개별 쿠팡 호출은 제거했다. 아래 상품명 매칭이
+        // 같은 역할을 API 호출 없이 해준다.
         if (!match && isCoupangRow(p)) {
           let bestScore = 0;
           for (const item of naverItems) {
@@ -359,12 +395,6 @@ async function run() {
             }
           }
           if (match) _titleMatchCount++;
-        }
-
-        // 쿠팡 API도 시도 (차단 아닐 때)
-        if (!match && isCoupangRow(p)) {
-          const coupangItems = await retry(() => fetchCoupangAll(q, 20)).catch(() => []);
-          match = coupangItems.find(it => it.productId === p.product_id);
         }
 
         if (match && addRow(p, match.lprice, match.link)) {
@@ -425,10 +455,16 @@ async function run() {
   console.log(`  product_id 매칭: ${covered - _titleMatchCount}건`);
   console.log(`  상품명 매칭: ${_titleMatchCount}건`);
 
-  if (_coupangBlocked) {
-    console.log(`\n⚠️  쿠팡 API: 차단됨 (rCode 403)`);
-    console.log(`    ${_coupangBlockMsg.replace(/<[^>]*>/g, '').slice(0, 100)}`);
+  const cs = localStats();
+  console.log(`\n쿠팡 API 호출: ${cs.calls}회 (예산 ${COUPANG_RUN_BUDGET}회)`);
+  console.log(`  캐시로 대체: ${cs.cacheHits}회 / 상한·차단으로 생략: ${cs.denied + _coupangSkipped}회`);
+  console.log(`  자체 상한: 분당 ${cs.maxPerMin}회, 호출 간격 ${COUPANG_MIN_GAP_MS}ms (공식 한도 분당 50회)`);
+
+  if (_coupangBlocked || cs.blocked) {
+    console.log(`\n⚠️  쿠팡 API: 차단 상태`);
+    console.log(`    ${String(_coupangBlockMsg || cs.blockReason).replace(/<[^>]*>/g, '').slice(0, 150)}`);
     console.log('    → 쿠팡 파트너스에 소명 필요 (https://partners.coupang.com)');
+    console.log('    → 소명 후 해제:  Supabase SQL Editor 에서  select coupang_unblock();');
   }
 
   if (finalMissing.length > 0) {
