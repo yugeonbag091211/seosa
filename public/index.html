@@ -6,6 +6,23 @@
 <meta name="google-site-verification" content="cvsPo0UmxiSR33BEuEzxYhk5vvG6UUus0jLENWBa63g" />
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SEOSA · 최저가도 고급스럽게</title>
+
+<!-- SEO / 공유 카드
+     검색 결과와 카카오톡·슬랙 공유 링크에 뜨는 설명이다.
+     description이 없으면 검색엔진이 본문에서 아무 문장이나 골라 쓰고,
+     og:* 가 없으면 공유했을 때 제목만 있는 빈 카드가 뜬다. -->
+<meta name="description" content="네이버·쿠팡 가격을 한 번에 비교하고 매일 기록합니다. 가격 추이 그래프로 지금이 살 때인지 확인하고, 목표가에 도달하면 알림을 받아보세요.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://seosa.ai.kr/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SEOSA">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="SEOSA · 최저가도 고급스럽게">
+<meta property="og:description" content="네이버·쿠팡 가격 비교와 가격 추이 그래프. 지금이 살 때인지 데이터로 확인하세요.">
+<meta property="og:url" content="https://seosa.ai.kr/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="SEOSA · 최저가도 고급스럽게">
+<meta name="twitter:description" content="네이버·쿠팡 가격 비교와 가격 추이 그래프. 지금이 살 때인지 데이터로 확인하세요.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Noto+Serif+KR:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1194,9 +1211,20 @@ var CONST = {
     HOME_CHIPS:      6,
     AUTOCOMPLETE:    6,
     CHAT_HISTORY:    10,
-    SPARK_POINTS:    14   // 스파크라인에 그릴 최근 데이터 수
+    SPARK_POINTS:    14,  // 스파크라인에 그릴 최근 데이터 수
+    AI_CTX_ITEMS:    8,   // AI에게 넘길 상품 최대 개수
+    AI_HIST_POINTS:  14,  // AI에게 넘길 상품별 가격 이력 점 최대 개수
+    HIST_CACHE:      300, // 세션 동안 들고 있을 가격 이력 캐시 항목 수
+    // /api/history-batch는 GET 쿼리스트링으로 목록을 보낸다. 너무 많이 넣으면
+    // URL 길이 한도를 넘어 414가 나면서 위시 최신가가 통째로 갱신되지 않는다.
+    HIST_BATCH:      40
   },
   CHAT_TIMEOUT_MS: 30000,
+  // AI 질문 직전에 빠진 가격 이력을 한 번만 더 받아온다. 이 시간을 넘기면
+  // 이력 없이 그냥 보낸다 (이력 조회 실패가 챗을 막으면 안 된다).
+  AI_HIST_WAIT_MS: 4000,
+  AI_AVG_DAYS:  30,   // "최근 30일 평균"의 기준 일수
+  AI_TREND_DAYS: 7,   // "최근 추세"를 볼 일수
   TOAST_MS: 2800,
   CARD_STAGGER_MS: 55,     // 카드가 순차적으로 나타나는 간격
   ALERT_DEFAULT_RATIO: 0.9,// 목표가 기본값 = 현재가의 90%
@@ -1255,7 +1283,6 @@ var AppState = {
   results: [],
   sort: 'default',
   mallFilter: 'all',   // ★ 몰 필터 (all / 네이버쇼핑 / 쿠팡 / 알리익스프레스)
-  context: '',
   popularKeywords: [],
 
   // 저장된 데이터
@@ -1278,6 +1305,7 @@ var AppState = {
   // 모달
   modalHist: [],
   modalPrice: 0,
+  modalItem: null,   // 지금 모달에 떠 있는 상품 (AI 컨텍스트 1순위)
   chart: null,
 
   // 알림
@@ -1307,16 +1335,195 @@ function isSearching() { var r = $('results'); return r ? r.style.display === 'b
  * 같은 상품명이 네이버와 쿠팡에 동시에 있는 일이 흔해서 title만 쓰면
  * 나중에 그려진 카드가 앞의 것을 덮어쓰고, 구매 버튼이 다른 몰 링크를 연다.
  */
-function productKey(title, mall) {
-  return String(title || '') + ' ' + String(mall || '');
+function productKey(title, mall, productId) {
+  // productId 는 몰 안에서 고유하다. 있으면 그걸로 키를 만든다.
+  //
+  // title+mall 로만 만들면 같은 몰에 같은 이름의 다른 상품이 있을 때
+  // (예: 쿠팡 '무선 이어폰' 5만원짜리와 7만원짜리) 키가 겹친다. 나중에 그려진 쪽이
+  // 앞의 것을 덮어써서 5만원 카드의 '최저가 구매'가 7만원 상품 페이지를 열었다.
+  // 검색결과·오늘의 셀렉션·추천이 이 맵 하나를 공유하기 때문에 섹션이 달라도 겹친다.
+  //
+  // productId 가 없는 값(옛 위시/조회기록)은 예전처럼 title+mall 로 폴백한다.
+  // 구분자는 NUL — 상품명·몰 이름에 절대 들어갈 수 없다.
+  // (예전엔 소스에 NUL 바이트를 직접 넣어 두어서 grep 이 이 파일을 바이너리로 취급했다)
+  var SEP = '\u0000';
+  if (productId) return 'id' + SEP + String(productId) + SEP + String(mall || '');
+  return String(title || '') + SEP + String(mall || '');
 }
 
-/** 같은 상품인지 비교. 예전에 저장된 위시/조회기록에는 mall이 없을 수 있다. */
+/**
+ * 같은 상품인지 비교.
+ *
+ * 양쪽 다 productId가 있으면 그것만으로 판단한다. 상품명·몰만 보면
+ * 같은 몰의 동명이물(쿠팡 "무선 이어폰" 5만원 / 7만원)이 같은 상품으로 묶여서
+ * 한쪽을 찜하면 다른 쪽 하트까지 켜지고, 삭제도 엉뚱한 항목이 지워진다.
+ *
+ * 예전에 저장된 위시/조회기록에는 productId도 mall도 없을 수 있어서 폴백을 남긴다.
+ */
 function sameProduct(a, b) {
-  if (!a || !b || a.title !== b.title) return false;
+  if (!a || !b) return false;
+  if (a.productId && b.productId) return String(a.productId) === String(b.productId);
+  if (a.title !== b.title) return false;
   if (!a.mall || !b.mall) return true;
   return a.mall === b.mall;
 }
+
+/**
+ * 가격 이력 조회 키 — "<productId>|<mall>".
+ *
+ * price_history는 (product_id, mall, recorded_date)로 저장되는데 예전에는 조회를
+ * 상품명으로만 했다. 상품명은 고유하지 않아서 같은 이름의 네이버 상품과 쿠팡 상품이
+ * 한 그래프에 섞이고, 아예 다른 상품이 같은 이름을 쓰면 남의 가격 이력이 들어왔다.
+ *
+ * productId가 없는 값(옛 위시/조회기록)은 빈 문자열을 돌려주고, 호출부가 상품명으로
+ * 폴백한다.
+ */
+function histKey(it) {
+  if (!it || !it.productId) return '';
+  return String(it.productId) + '|' + String(it.mall || '');
+}
+
+
+/* ============================================================
+ *  [4-b] HistCache — 이미 받아온 가격 이력 재사용
+ *
+ *  스파크라인(Grid.fillSparklines) · 위시 최신가(Wish.refreshPrices) ·
+ *  가격 모달(Modal.open)이 이미 /api/history* 를 호출해서 이력을 받아온다.
+ *  AI 컨텍스트를 만들 때 같은 이력을 또 받아오면 순수한 중복 호출이라
+ *  받아온 즉시 여기에 넣어두고 재사용한다.
+ *
+ *  값이 []인 것과 조회한 적 없는 것은 다르다.
+ *    []   → 조회했고 기록이 없다 (AI에게 "기록 없음"이라고 알려야 한다)
+ *    null → 아직 모른다 (필요하면 한 번 조회한다)
+ * ========================================================== */
+var HistCache = {
+  map: {},
+
+  put: function(key, points) {
+    if (!key || !Array.isArray(points)) return;
+    // 세션 내내 검색을 반복하면 무한히 쌓인다. 한도를 넘으면 통째로 비운다
+    // (LRU까지 갈 만큼 큰 데이터가 아니다).
+    if (Object.keys(HistCache.map).length >= CONST.LIMIT.HIST_CACHE) HistCache.map = {};
+    HistCache.map[key] = points;
+  },
+
+  /** /api/history-batch 응답({키: 포인트배열})을 통째로 넣는다 */
+  putAll: function(map) {
+    if (!map || typeof map !== 'object') return;
+    Object.keys(map).forEach(function(k) { HistCache.put(k, map[k]); });
+  },
+
+  /** @returns {Array|null} 포인트 배열(빈 배열 포함) 또는 모르면 null */
+  get: function(it) {
+    if (!it) return null;
+    var has = function(k) { return Object.prototype.hasOwnProperty.call(HistCache.map, k); };
+
+    // productId가 있는 상품은 상품 단위 키로만 찾는다.
+    // 여기서 상품명으로 폴백하면, 옛 위시 데이터가 상품명으로 캐시해 둔 남의 이력이
+    // 같은 이름의 다른 상품에 붙는다. AI가 그걸 "이 상품의 역대 최저가"라고 말하게 된다.
+    var k = histKey(it);
+    if (k) return has(k) ? HistCache.map[k] : null;
+
+    // productId가 없는 값(옛 위시/조회기록)만 상품명으로 찾는다.
+    if (it.title && has(it.title)) return HistCache.map[it.title];
+    return null;
+  }
+};
+
+
+/* ============================================================
+ *  [4-c] PriceStat — 가격 이력 → AI가 판단에 쓸 통계
+ *
+ *  화면에 쓰는 통계(Modal.stats)와 달리 "현재 가격이 어느 정도인지"를
+ *  설명하는 데 필요한 값만 만든다. 기록이 없으면 아무것도 만들어내지 않고
+ *  null을 돌려준다 — AI가 없는 최저가·평균을 지어내면 안 되기 때문이다.
+ * ========================================================== */
+var PriceStat = {
+  ymd: function(d) {
+    return d.getFullYear() + '-'
+      + ('0' + (d.getMonth() + 1)).slice(-2) + '-'
+      + ('0' + d.getDate()).slice(-2);
+  },
+
+  /** 'YYYY-MM-DD' 두 개 사이의 일수 (파싱 실패면 0) */
+  spanDays: function(a, b) {
+    var pa = String(a || '').split('-'), pb = String(b || '').split('-');
+    if (pa.length !== 3 || pb.length !== 3) return 0;
+    var ta = Date.UTC(+pa[0], +pa[1] - 1, +pa[2]);
+    var tb = Date.UTC(+pb[0], +pb[1] - 1, +pb[2]);
+    if (isNaN(ta) || isNaN(tb)) return 0;
+    return Math.round((tb - ta) / 86400000);
+  },
+
+  /**
+   * @param {Array} hist [{date, price}] 오름차순
+   * @returns {object|null}
+   */
+  from: function(hist) {
+    var pts = (hist || []).filter(function(h) {
+      return h && h.date && Fmt.int(h.price) > 0;
+    });
+    if (!pts.length) return null;
+
+    var prices = pts.map(function(h) { return Fmt.int(h.price); });
+
+    // 역대 최저가. 같은 값이 여러 번이면 가장 최근 날짜를 쓴다
+    // ("가장 최근에 그 가격이었던 때"가 사용자에게 더 쓸모 있다).
+    var low = Math.min.apply(null, prices);
+    var lowDate = '';
+    for (var i = pts.length - 1; i >= 0; i--) {
+      if (prices[i] === low) { lowDate = pts[i].date; break; }
+    }
+
+    // 최근 30일 평균. 슬라이스가 아니라 날짜로 자른다 — 수집이 끊긴 구간이 있으면
+    // "최근 30개 점"이 30일이 아니게 되어 평균 설명이 사실과 달라진다.
+    var d = new Date();
+    d.setDate(d.getDate() - (CONST.AI_AVG_DAYS - 1));
+    var cutoff = PriceStat.ymd(d);
+    var recent = pts.filter(function(h) { return String(h.date) >= cutoff; });
+    var avg30 = 0;
+    if (recent.length) {
+      avg30 = Math.round(recent.reduce(function(s, h) { return s + Fmt.int(h.price); }, 0) / recent.length);
+    }
+
+    // 최근 추세 — 최근 N일 구간의 처음 기록 대비 마지막 기록.
+    // 점 개수로 자르면(slice) 수집이 띄엄띄엄한 상품에서 "최근 7일"이 실제로는
+    // 두 달 구간이 되어버린다. 날짜로 자르고, 실제 걸린 일수를 같이 넘긴다.
+    var td = new Date();
+    td.setDate(td.getDate() - (CONST.AI_TREND_DAYS - 1));
+    var win = pts.filter(function(h) { return String(h.date) >= PriceStat.ymd(td); });
+    if (win.length < 2) win = pts.slice(-2);   // 최근 구간에 기록이 하나뿐이면 직전 기록과 비교
+
+    var trendPct = null, trendDays = 0, trendFrom = 0, trendFromDate = '';
+    if (win.length >= 2) {
+      var f = Fmt.int(win[0].price), l = Fmt.int(win[win.length - 1].price);
+      trendDays = PriceStat.spanDays(win[0].date, win[win.length - 1].date);
+      if (f > 0 && trendDays >= 1) {
+        trendPct = Math.round(((l - f) / f) * 1000) / 10;
+        trendFrom = f;
+        trendFromDate = win[0].date;
+      }
+    }
+
+    return {
+      count:     pts.length,
+      lastPrice: prices[prices.length - 1],
+      lastDate:  pts[pts.length - 1].date,
+      prevPrice: pts.length >= 2 ? prices[prices.length - 2] : 0,
+      low:       low,
+      lowDate:   lowDate,
+      avg30:     avg30,
+      avg30Days: recent.length,
+      trendPct:  trendPct,
+      trendDays: trendDays,
+      trendFrom: trendFrom,
+      trendFromDate: trendFromDate,
+      points: pts.slice(-CONST.LIMIT.AI_HIST_POINTS).map(function(h) {
+        return { d: h.date, p: Fmt.int(h.price) };
+      })
+    };
+  }
+};
 
 
 /* ============================================================
@@ -1403,9 +1610,22 @@ var Api = {
     if (fnName === 'searchAndSave') {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '');
     } else if (fnName === 'getPriceHistory') {
-      queryUrl = url + '?title=' + encodeURIComponent(args[0] || '');
+      // 문자열(옛 호출) 또는 {title, productId, mall} 둘 다 받는다.
+      var h = args[0];
+      if (typeof h === 'string') h = { title: h };
+      h = h || {};
+      queryUrl = url + '?title=' + encodeURIComponent(h.title || '');
+      if (h.productId) {
+        queryUrl += '&productId=' + encodeURIComponent(h.productId)
+                  + '&mall=' + encodeURIComponent(h.mall || '');
+      }
     } else if (fnName === 'getHistoryBatch') {
-      queryUrl = url + '?titles=' + encodeURIComponent(JSON.stringify(args[0] || []));
+      // 배열(옛 호출 = 상품명 목록) 또는 {titles, keys} 둘 다 받는다.
+      var b = args[0];
+      if (Array.isArray(b)) b = { titles: b };
+      b = b || {};
+      queryUrl = url + '?titles=' + encodeURIComponent(JSON.stringify(b.titles || []))
+                     + '&keys='   + encodeURIComponent(JSON.stringify(b.keys   || []));
     } else if (fnName === 'getMyAlerts') {
       queryUrl = url + '?email=' + encodeURIComponent(args[0] || '');
     } else if (fnName === 'loadUserData') {
@@ -1420,10 +1640,11 @@ var Api = {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
     } else if (fnName === 'askAI') {
       method = 'POST';
-      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3] });
+      // view: 지금 사용자가 보고 있는 화면(검색어·정렬·필터). 없으면 서버가 알아서 넘긴다.
+      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4] });
     } else if (fnName === 'saveAlert') {
       method = 'POST';
-      fetchOpts.body = JSON.stringify({ email: args[0], title: args[1], targetPrice: args[2], currentPrice: args[3], link: args[4], image: args[5], mall: args[6] });
+      fetchOpts.body = JSON.stringify({ email: args[0], title: args[1], targetPrice: args[2], currentPrice: args[3], link: args[4], image: args[5], mall: args[6], productId: args[7] });
     } else if (fnName === 'deleteAlert') {
       method = 'DELETE';
       fetchOpts.body = JSON.stringify({ email: args[0], title: args[1] });
@@ -1461,7 +1682,27 @@ var Api = {
       })
       .catch(function(e) { if (onErr) onErr(e); });
   },
-  fire: function(fnName, args) { Api.call(fnName, args); }
+  fire: function(fnName, args) { Api.call(fnName, args); },
+
+  /**
+   * /api/rec 직접 호출 (offset 페이지네이션용).
+   *
+   * 예전에는 fetch().then(r => r.json()) 만 하고 r.ok 를 보지 않았다.
+   * 서버가 500과 함께 {error:"..."} 를 줘도 성공 경로로 들어가서
+   * products 가 undefined 인 채 조용히 빈 그리드가 됐다 — 사용자는 이유를 모른다.
+   */
+  rec: function(keyword, offset) {
+    return fetch('/api/rec?keyword=' + encodeURIComponent(keyword || '')
+        + '&offset=' + (parseInt(offset, 10) || 0))
+      .then(function(r) {
+        return r.json().catch(function() { return {}; }).then(function(body) {
+          if (!r.ok || (body && body.error)) {
+            throw new Error((body && body.error) || ('HTTP ' + r.status));
+          }
+          return body;
+        });
+      });
+  }
 };
 
 
@@ -1531,11 +1772,19 @@ var Card = {
       + '</div>';
   },
 
-  priceHTML: function(price, oprice, savePct) {
+  /**
+   * @param {boolean} isCoupang 쿠팡이면 oprice가 실제 정가(productPrice)다.
+   *
+   * 네이버는 정가를 주지 않는다. _shop.fetchNaver가 oprice로 쓰는 hprice는
+   * "같은 상품을 파는 곳들 중 최고가"라서 정가가 아니다. 그걸 "정가 대비 절약"이라고
+   * 쓰면 실제로 존재하지 않는 할인을 표시하게 된다. 출처에 맞는 문구로 구분한다.
+   */
+  priceHTML: function(price, oprice, savePct, isCoupang) {
     var save = savePct > 0 ? '<span class="save">-' + savePct + '%</span>' : '';
+    var label = isCoupang ? '정가' : '최고가';
     var cmp = (oprice > price)
-      ? '<div class="cmp">정가 <del class="num">' + Fmt.won(oprice) + '원</del> 대비 '
-        + '<span class="num">' + Fmt.won(oprice - price) + '원</span> 절약</div>'
+      ? '<div class="cmp">' + label + ' <del class="num">' + Fmt.won(oprice) + '원</del> 대비 '
+        + '<span class="num">' + Fmt.won(oprice - price) + '원</span> 저렴</div>'
       : '';
     return '<div class="price-row">'
       + '<div class="price">' + Fmt.won(price) + '<span class="w">원</span></div>'
@@ -1566,14 +1815,19 @@ var Card = {
     var m = Fmt.mall(it);
     var glyph = Fmt.glyph(it.title);
 
-    return '<div class="card" data-glyph="' + glyph + '">'
+    // data-pid: Card.read 가 이 카드의 상품을 정확히 되찾기 위한 값.
+    // 없으면 같은 이름·같은 몰의 다른 상품과 캐시 키가 겹쳐 링크가 뒤바뀐다.
+    return '<div class="card" data-glyph="' + glyph + '"'
+      + ' data-pid="' + Fmt.esc(it.productId || '') + '">'
       + Card.thumbHTML(it, m, glyph)
       + '<div class="info">'
       + '<div class="mall-line">' + Fmt.esc(m.name) + '</div>'
       + '<div class="p-title">' + Fmt.esc(it.title) + '</div>'
-      + Card.priceHTML(Fmt.int(it.lprice), Fmt.int(it.oprice), Fmt.int(it.savePct))
+      + Card.priceHTML(Fmt.int(it.lprice), Fmt.int(it.oprice), Fmt.int(it.savePct), m.cls === 'b-coupang')
       + Card.changeHTML(it)
-      + '<div class="spark" data-title="' + Fmt.esc(it.title) + '"></div>'
+      // data-key가 있으면 상품 단위(productId+mall)로, 없으면 상품명으로 이력을 찾는다.
+      + '<div class="spark" data-title="' + Fmt.esc(it.title) + '"'
+      +   ' data-key="' + Fmt.esc(histKey(it)) + '"></div>'
       + Card.actionsHTML()
       + '</div></div>';
   },
@@ -1583,11 +1837,14 @@ var Card = {
     if (!card) return null;
     var title = Fmt.textOf(card.querySelector('.p-title'));
     var mall  = Fmt.textOf(card.querySelector('.mall-line'));
-    var stored = AppState.products[productKey(title, mall)] || {};
+    var pid   = card.dataset.pid || '';
+    var stored = AppState.products[productKey(title, mall, pid)] || {};
     return {
       title: title,
       lprice: Fmt.priceOf(card.querySelector('.price')),
       mall: mall,
+      // 가격 그래프·알림이 상품명이 아니라 상품 단위로 붙도록 같이 넘긴다.
+      productId: pid || stored.productId || '',
       link: stored.link || '',
       image: stored.image || '',
       glyph: card.dataset.glyph || '✦'
@@ -1627,8 +1884,8 @@ var Grid = {
 
     items.forEach(function(it, i) {
       if (!it || !it.title) return;
-      // 카드의 .mall-line에 찍히는 이름과 같은 키를 써야 Card.read가 다시 찾을 수 있다.
-      AppState.products[productKey(it.title, Fmt.mall(it).name)] = it;
+      // 카드의 .mall-line / data-pid 와 같은 키를 써야 Card.read가 다시 찾을 수 있다.
+      AppState.products[productKey(it.title, Fmt.mall(it).name, it.productId)] = it;
 
       var wrap = document.createElement('div');
       wrap.innerHTML = Card.html(it);
@@ -1639,23 +1896,37 @@ var Grid = {
       setTimeout(function() { card.classList.add('in'); }, CONST.CARD_STAGGER_MS * i);
     });
 
-    Grid.fillSparklines(el, items.map(function(i) { return i.title; }));
+    Grid.fillSparklines(el, items);
     Wish.markHearts();
   },
 
-  fillSparklines: function(scope, titles) {
-    if (!GS || !scope || !titles || !titles.length) return;
+  fillSparklines: function(scope, items) {
+    if (!GS || !scope || !items || !items.length) return;
 
-    Api.call('getHistoryBatch', [titles], function(map) {
+    // productId가 있는 상품은 상품 단위 키로, 없는 것만 상품명으로 조회한다.
+    var keys = [], titles = [];
+    items.forEach(function(it) {
+      if (!it || !it.title) return;
+      var k = histKey(it);
+      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
+      else if (titles.indexOf(it.title) === -1) titles.push(it.title);
+    });
+    if (!keys.length && !titles.length) return;
+
+    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }], function(map) {
       if (!map) return;
+      HistCache.putAll(map);   // AI 컨텍스트가 같은 이력을 다시 받지 않도록
       $$('.spark', scope).forEach(function(box) {
-        var t = box.dataset.title;
-        if (!t || map[t] === undefined) return;
-        var hist = map[t] || [];
+        // data-key로 먼저 찾고, 없으면 상품명으로 폴백한다.
+        var k = box.dataset.key;
+        var hist = (k && map[k] !== undefined) ? map[k]
+                 : (map[box.dataset.title] !== undefined ? map[box.dataset.title] : undefined);
+        if (hist === undefined) return;
+        hist = hist || [];
         box.innerHTML = Grid.sparkSVG(hist);
         Grid.markAllTimeLow(box, hist);   // ★ 역대 최저가 뱃지
       });
-    });
+    }, function() { /* 스파크라인 실패가 카드 렌더를 막지 않는다 */ });
   },
 
   /** 현재가가 기록상 최저가면 카드에 뱃지 표시 */
@@ -1940,21 +2211,28 @@ var Search = {
     }
 
     var prices = items.map(function(i) { return Fmt.int(i.lprice); }).filter(function(p) { return p > 0; });
-    var min = Math.min.apply(null, prices);
-    var avg = Math.round(prices.reduce(function(a, b) { return a + b; }, 0) / prices.length / 100) * 100;
-    var savedVs = avg > 0 ? Math.round((1 - min / avg) * 100) : 0;
 
-    setHTML('banner',
-      '<h3><em>"' + Fmt.esc(kw) + '"</em> 큐레이션 완료</h3>'
-      + '<div class="meta">'
-      + '<div><span>최저가</span><b>' + Fmt.won(min) + '원</b></div>'
-      + '<div><span>비교 상품</span><b>' + items.length + '개</b></div>'
-      + '<div><span>평균 대비</span><b>-' + savedVs + '%</b></div>'
-      + '</div>');
+    // 가격이 하나도 없으면 Math.min.apply(null, [])가 Infinity, 평균은 0/0=NaN이 되어
+    // 배너에 "Infinity원 / NaN%"이 찍힌다. 이 경우 통계 줄을 아예 빼고 목록만 보여준다.
+    if (!prices.length) {
+      setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 큐레이션 완료</h3>'
+        + '<div class="meta"><div><span>비교 상품</span><b>' + items.length + '개</b></div></div>');
+    } else {
+      var min = Math.min.apply(null, prices);
+      var avg = Math.round(prices.reduce(function(a, b) { return a + b; }, 0) / prices.length / 100) * 100;
+      var savedVs = avg > 0 ? Math.round((1 - min / avg) * 100) : 0;
 
-    AppState.context = JSON.stringify(items.slice(0, 5).map(function(p) {
-      return { title: p.title, price: p.lprice };
-    }));
+      setHTML('banner',
+        '<h3><em>"' + Fmt.esc(kw) + '"</em> 큐레이션 완료</h3>'
+        + '<div class="meta">'
+        + '<div><span>최저가</span><b>' + Fmt.won(min) + '원</b></div>'
+        + '<div><span>비교 상품</span><b>' + items.length + '개</b></div>'
+        + '<div><span>평균 대비</span><b>-' + savedVs + '%</b></div>'
+        + '</div>');
+    }
+
+    // (예전에는 여기서 상위 5개의 {title, price}만 AppState.context에 넣어 AI에게 보냈다.
+    //  지금은 Chat.contextItems()가 화면 상태를 보고 직접 만든다.)
     AppState.results = items.slice();
     AppState.sort = 'default';
     AppState.mallFilter = 'all';
@@ -1990,10 +2268,14 @@ var Search = {
     if (fb) fb.style.display = 'flex';
   },
 
-  /** 필터 → 정렬 순서로 적용해서 렌더 */
-  applyView: function() {
-    if (!AppState.results.length) return;
-
+  /**
+   * 현재 필터·정렬을 적용한 목록.
+   *
+   * 화면에 그리는 쪽(applyView)과 AI에게 넘기는 쪽(Chat)이 같은 함수를 쓴다.
+   * 각자 계산하면 "쿠팡만 필터해 놓고 물었는데 AI는 네이버 상품 얘기를 하는"
+   * 어긋남이 생긴다.
+   */
+  viewList: function() {
     // 1) 몰 필터
     var list = AppState.results.slice();
     var f = AppState.mallFilter;
@@ -2011,6 +2293,15 @@ var Search = {
     if (t === 'lowprice')       list.sort(function(a, b) { return Fmt.int(a.lprice) - Fmt.int(b.lprice); });
     else if (t === 'highprice') list.sort(function(a, b) { return Fmt.int(b.lprice) - Fmt.int(a.lprice); });
     else if (t === 'discount')  list.sort(function(a, b) { return Fmt.int(b.savePct) - Fmt.int(a.savePct); });
+
+    return list;
+  },
+
+  /** 필터 → 정렬 순서로 적용해서 렌더 */
+  applyView: function() {
+    if (!AppState.results.length) return;
+
+    var list = Search.viewList();
 
     if (!list.length) {
       var g = $('resGrid');
@@ -2156,10 +2447,13 @@ var Rec = {
     Rec.renderChips(); // 활성 칩 표시 갱신
     setText('recKey', kw);
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
-    fetch('/api/rec?keyword=' + encodeURIComponent(kw) + '&offset=0')
-      .then(function(r) { return r.json(); })
+    Api.rec(kw, 0)
       .then(function(d) { sk.done(function() { Rec.show(d); }); })
-      .catch(function() { sk.done(function() { setHTML('recGrid', ''); }); });
+      .catch(function() {
+        sk.done(function() {
+          setHTML('recGrid', '<div class="empty" style="grid-column:1/-1">상품을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</div>');
+        });
+      });
   },
 
   // 이 키워드 더보기 — 같은 키워드 다음 8개, 소진 시 처음으로 순환
@@ -2169,21 +2463,27 @@ var Rec = {
       return;
     }
 
+    var kw = AppState.recKey;
     var sk = Skeleton.start($('recGrid'), CONST.SKELETON.REC_COUNT);
-    fetch('/api/rec?keyword=' + encodeURIComponent(AppState.recKey) + '&offset=' + Rec.offset)
-      .then(function(r) { return r.json(); })
+    Api.rec(kw, Rec.offset)
       .then(function(d) {
-        var products = d.products || [];
+        var products = (d && d.products) || [];
         if (!products.length) {
           // 상품 소진 → 처음(1~8)으로 순환
           Rec.offset = 0;
-          return fetch('/api/rec?keyword=' + encodeURIComponent(AppState.recKey) + '&offset=0')
-            .then(function(r2) { return r2.json(); });
+          return Api.rec(kw, 0);
         }
         return d;
       })
       .then(function(d) { sk.done(function() { Rec.show(d); }); })
-      .catch(function() { sk.done(function() { setHTML('recGrid', ''); }); });
+      .catch(function() {
+        // 스켈레톤이 이미 떠 있을 수 있으므로 반드시 뭔가로 대체해야 한다.
+        // (그냥 두면 로딩 카드가 화면에 영영 남는다)
+        sk.done(function() {
+          setHTML('recGrid', '<div class="empty" style="grid-column:1/-1">상품을 더 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</div>');
+        });
+        toast('상품을 더 불러오지 못했어요');
+      });
   },
 
   // 칩 렌더링 (활성 키워드 강조)
@@ -2241,10 +2541,9 @@ var Monthly = {
     var grid = $('monthGrid');
     var sk = append ? null : Skeleton.start(grid, 8);
 
-    fetch('/api/rec?keyword=' + encodeURIComponent(keyword) + '&offset=' + Monthly.offset)
-      .then(function(r) { return r.json(); })
+    Api.rec(keyword, Monthly.offset)
       .then(function(d) {
-        var products = d.products || [];
+        var products = (d && d.products) || [];
         if (append) {
           Grid.render(grid, products, true);
         } else {
@@ -2254,7 +2553,14 @@ var Monthly = {
         Monthly.offset += products.length;
       })
       .catch(function() {
-        if (sk) sk.done(function() {});
+        // sk.done에 빈 함수를 주면 스켈레톤이 화면에 그대로 남는다. 오류 안내로 바꾼다.
+        var fail = function() {
+          if (grid && !append) {
+            grid.innerHTML = '<div class="empty" style="grid-column:1/-1">상품을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</div>';
+          }
+        };
+        if (sk) sk.done(fail); else fail();
+        if (append) toast('상품을 더 불러오지 못했어요');
       });
   },
 
@@ -2293,16 +2599,21 @@ var Monthly = {
 var Drop = {
 
   load: function() {
-    
     show('priceDrop', true);
-    Api.call('getPriceDropTop', [8], Drop.show, function() { show('dropLoading', false); });
+    Api.call('getPriceDropTop', [8], Drop.show, function() {
+      // 예전엔 로딩 표시만 끄고 섹션은 열어둬서, 조회에 실패하면
+      // "오늘의 가격 하락" 제목만 있고 내용이 텅 빈 칸이 남았다.
+      show('dropLoading', false);
+      show('priceDrop', false);
+      AppState.ready.drop = false;
+    });
   },
 
   rowHTML: function(it, i) {
     if (!it || !it.title) return '';
-    // Drop.read가 data-mall로 다시 찾으므로 저장 키와 표시 값을 같은 것으로 맞춘다.
+    // Drop.read가 data-mall / data-pid로 다시 찾으므로 저장 키와 표시 값을 맞춘다.
     var mall = Fmt.mall(it).name;
-    AppState.products[productKey(it.title, mall)] = it;
+    AppState.products[productKey(it.title, mall, it.productId)] = it;
 
     var price = Fmt.int(it.lprice);
     var prev  = Fmt.int(it.oprice);
@@ -2312,6 +2623,7 @@ var Drop = {
     return '<div class="lrow" data-act="ledger-open"'
       + ' data-title="' + Fmt.esc(it.title) + '"'
       + ' data-mall="' + Fmt.esc(mall) + '"'
+      + ' data-pid="' + Fmt.esc(it.productId || '') + '"'
       + ' data-price="' + price + '">'
       + '<div class="rank">' + String(i + 1).padStart(2, '0') + '</div>'
       + '<div class="lmain"><div class="lname">' + Fmt.esc(it.title) + '</div>'
@@ -2346,11 +2658,13 @@ var Drop = {
   read: function(row) {
     var title = row.dataset.title;
     var mall  = row.dataset.mall;
-    var stored = AppState.products[productKey(title, mall)] || {};
+    var pid   = row.dataset.pid || '';
+    var stored = AppState.products[productKey(title, mall, pid)] || {};
     return {
       title: title,
       lprice: Fmt.int(row.dataset.price),
       mall: mall,
+      productId: pid || stored.productId || '',
       link: stored.link || '',
       image: stored.image || ''
     };
@@ -2379,7 +2693,8 @@ var Wish = {
     $$('.card').forEach(function(card) {
       var ref = {
         title: Fmt.textOf(card.querySelector('.p-title')),
-        mall:  Fmt.textOf(card.querySelector('.mall-line'))
+        mall:  Fmt.textOf(card.querySelector('.mall-line')),
+        productId: card.dataset.pid || ''
       };
       if (!ref.title) return;
       var on = AppState.wish.some(function(w) { return sameProduct(w, ref); });
@@ -2405,6 +2720,8 @@ var Wish = {
       if (idx === -1) {
         AppState.wish.push({
           title: info.title, price: info.lprice, mall: info.mall,
+          // 최신가 갱신을 상품명이 아니라 상품 단위로 하기 위해 같이 저장한다.
+          productId: info.productId || '',
           link: info.link, image: info.image, glyph: info.glyph
         });
       }
@@ -2474,22 +2791,34 @@ var Wish = {
     Wish.refreshPrices();   // ★ 최신가 조회 후 다시 렌더
   },
 
-  /** 위시 상품들의 최신 가격을 시트3 이력에서 조회 */
+  /** 위시 상품들의 최신 가격을 가격 이력에서 조회 */
   refreshPrices: function() {
     if (!GS || !AppState.wish.length) return;
     if (Wish._refreshing) return;   // 중복 호출 방지
+
+    // GET 쿼리스트링으로 나가므로 전량을 그대로 넣으면 URL이 한도를 넘어 414가 난다.
+    // (위시가 수십 개만 돼도 상품명 길이 때문에 금방 수 KB가 된다)
+    var pool = AppState.wish.slice(0, CONST.LIMIT.HIST_BATCH);
+
+    var keys = [], titles = [];
+    pool.forEach(function(w) {
+      if (!w || !w.title) return;
+      var k = histKey(w);
+      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
+      else if (titles.indexOf(w.title) === -1) titles.push(w.title);
+    });
+    if (!keys.length && !titles.length) return;
+
     Wish._refreshing = true;
-
-    var titles = AppState.wish.map(function(w) { return w.title; }).filter(Boolean);
-    if (!titles.length) { Wish._refreshing = false; return; }
-
-    Api.call('getHistoryBatch', [titles], function(map) {
+    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }], function(map) {
       Wish._refreshing = false;
       if (!map) return;
+      HistCache.putAll(map);   // AI 컨텍스트가 같은 이력을 다시 받지 않도록
 
       var changed = false;
       AppState.wish.forEach(function(w) {
-        var hist = map[w.title];
+        var k = histKey(w);
+        var hist = (k && map[k]) ? map[k] : map[w.title];
         if (!hist || !hist.length) return;
         var latest = hist[hist.length - 1].price;
         if (latest > 0 && latest !== w.currentPrice) { w.currentPrice = latest; changed = true; }
@@ -2516,7 +2845,8 @@ var Wish = {
       $$('.card').forEach(function(card) {
         var ref = {
           title: Fmt.textOf(card.querySelector('.p-title')),
-          mall:  Fmt.textOf(card.querySelector('.mall-line'))
+          mall:  Fmt.textOf(card.querySelector('.mall-line')),
+          productId: card.dataset.pid || ''
         };
         if (!sameProduct(ref, removed)) return;
         var h = card.querySelector('.heart');
@@ -2550,13 +2880,14 @@ var Recent = {
     if (!info || !info.title) return;
 
     // 캐시에 있으면 더 완전한 정보(이미지/링크)를 쓰고, 없으면 넘어온 값으로 채운다.
-    var cached = AppState.products[productKey(info.title, info.mall)] || {};
+    var cached = AppState.products[productKey(info.title, info.mall, info.productId)] || {};
     var it = {
       title:  info.title,
       lprice: Fmt.int(info.lprice) || Fmt.int(cached.lprice),
       link:   info.link  || cached.link  || '',
       image:  info.image || cached.image || '',
-      mall:   info.mall  || cached.mall  || ''
+      mall:   info.mall  || cached.mall  || '',
+      productId: info.productId || cached.productId || ''
     };
 
     // ★ 이미 본 적 있으면 "처음 본 가격"을 유지 (변동 비교용)
@@ -2566,7 +2897,7 @@ var Recent = {
     AppState.viewed = AppState.viewed.filter(function(v) { return !sameProduct(v, it); });
     AppState.viewed.unshift({
       title: it.title, lprice: it.lprice, link: it.link, image: it.image, mall: it.mall,
-      savedPrice: firstPrice
+      productId: it.productId, savedPrice: firstPrice
     });
     AppState.viewed = AppState.viewed.slice(0, CONST.LIMIT.RECENT_VIEWED);
 
@@ -2841,16 +3172,24 @@ var HistRec = {
     }
 
     var pool = items.slice(0, 12);
-    var titles = pool.map(function(p) { return p.title; }).filter(Boolean);
-    if (!titles.length) { HistRec.show(kw, [], 0); return; }
 
-    Api.call('getHistoryBatch', [titles],
+    var keys = [], titles = [];
+    pool.forEach(function(p) {
+      if (!p || !p.title) return;
+      var k = histKey(p);
+      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
+      else if (titles.indexOf(p.title) === -1) titles.push(p.title);
+    });
+    if (!keys.length && !titles.length) { HistRec.show(kw, [], 0); return; }
+
+    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }],
       function(map) {
         map = map || {};
         var drops = [];
 
         pool.forEach(function(p) {
-          var hist = map[p.title];
+          var k = histKey(p);
+          var hist = (k && map[k]) ? map[k] : map[p.title];
           if (!hist || hist.length < 2) return;
 
           var prices = hist.map(function(h) { return h.price; });
@@ -3034,6 +3373,112 @@ var Chat = {
     if (b) { b.disabled = on; b.textContent = on ? '…' : '보내기'; }
   },
 
+  /**
+   * AI가 봐야 할 "지금 화면".
+   *
+   * 예전에는 마지막 검색 결과 상위 5개를 그대로 보냈다. 사용자가 쿠팡만
+   * 필터하거나 최저가순으로 정렬하거나 특정 상품의 가격 모달을 열어놔도
+   * AI는 그걸 모른 채 엉뚱한 상품 이야기를 했다.
+   *
+   * 우선순위: 가격 모달 > 검색 결과(필터·정렬 반영) > 찜 목록 > 없음
+   */
+  contextItems: function() {
+    var ov = $('overlay');
+    if (ov && ov.classList.contains('open') && AppState.modalItem) {
+      return { source: 'modal', items: [AppState.modalItem] };
+    }
+    if (isSearching() && AppState.results.length) {
+      return { source: 'search', items: Search.viewList().slice(0, CONST.LIMIT.AI_CTX_ITEMS) };
+    }
+    if (AppState.wish.length) {
+      return { source: 'wish', items: AppState.wish.slice(0, CONST.LIMIT.AI_CTX_ITEMS) };
+    }
+    return { source: 'none', items: [] };
+  },
+
+  /** 검색결과 / 위시 / 모달 상품이 제각각인 가격 필드를 하나로 */
+  priceOf: function(it) {
+    if (!it) return 0;
+    return Fmt.int(it.lprice) || Fmt.int(it.currentPrice) || Fmt.int(it.price);
+  },
+
+  /**
+   * 컨텍스트 상품 중 아직 가격 이력을 모르는 것만 한 번에 조회한다.
+   * 이미 스파크라인·위시·모달이 받아둔 것은 캐시에서 그냥 쓴다.
+   *
+   * 실패하거나 느리면 이력 없이 그냥 진행한다 — 이력 조회가 AI 채팅을
+   * 막아서는 안 된다.
+   */
+  ensureHistory: function(items, done) {
+    if (!GS || !items || !items.length) return done();
+
+    var keys = [], titles = [];
+    items.forEach(function(it) {
+      if (HistCache.get(it) !== null) return;   // 이미 안다 (기록 없음도 아는 것)
+      var k = histKey(it);
+      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
+      else if (it.title && titles.indexOf(it.title) === -1) titles.push(it.title);
+    });
+    if (!keys.length && !titles.length) return done();
+
+    var finished = false;
+    var t = setTimeout(function() {
+      if (finished) return;
+      finished = true;
+      done();          // 이력 없이 진행
+    }, CONST.AI_HIST_WAIT_MS);
+
+    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }], function(map) {
+      HistCache.putAll(map);   // 늦게 왔어도 캐시는 채워둔다 (다음 질문에서 쓴다)
+      if (finished) return;
+      finished = true;
+      clearTimeout(t);
+      done();
+    }, function() {
+      if (finished) return;
+      finished = true;
+      clearTimeout(t);
+      done();
+    });
+  },
+
+  /**
+   * 상품 → AI가 가격 판단에 쓸 수 있는 형태.
+   *
+   * 같은 상품명·같은 몰이라도 productId가 다르면 다른 상품이다. [P1] [P2]
+   * 레퍼런스를 붙여서 AI가 둘을 하나로 합치지 못하게 한다.
+   */
+  buildContext: function(items) {
+    return (items || []).map(function(it, i) {
+      var m = Fmt.mall(it);
+      var price = Chat.priceOf(it);
+
+      var o = {
+        ref: 'P' + (i + 1),
+        productId: String(it.productId || ''),
+        title: String(it.title || ''),
+        mall: m.name,
+        price: price,
+        lprice: price   // 하위호환: 옛 서버가 읽던 필드
+      };
+
+      var op = Fmt.int(it.oprice);
+      if (m.cls === 'b-coupang') {
+        // 쿠팡만 실제 정가(productPrice)를 준다 → 할인율도 여기서만 의미가 있다.
+        if (op > price) { o.listPrice = op; o.discountPct = Fmt.int(it.savePct); }
+      } else if (m.cls === 'b-naver') {
+        // 네이버 hprice는 "같은 상품을 파는 곳 중 최고가"다. 정가가 아니므로
+        // 할인율을 만들지 않고 참고값으로만 넘긴다.
+        if (op > price) o.refHighPrice = op;
+      }
+
+      var st = PriceStat.from(HistCache.get(it));
+      if (st) o.hist = st;   // 기록이 없으면 아예 넣지 않는다 (서버가 "기록 없음"으로 알린다)
+
+      return o;
+    });
+  },
+
   send: function(preset) {
     if (AppState.chatSending) return;
 
@@ -3054,7 +3499,13 @@ var Chat = {
     Chat.setSending(true);
     var typing = Chat.bubble('<div class="typing"><i></i><i></i><i></i></div>', 'ai');
 
+    // 타임아웃이 먼저 터진 뒤 늦게 응답이 오면 말풍선이 두 번 붙고
+    // 히스토리에도 중복으로 쌓였다. 먼저 끝난 쪽만 처리하도록 잠근다.
+    var settled = false;
+
     var timer = setTimeout(function() {
+      if (settled) return;
+      settled = true;
       Chat.setSending(false);
       if (typing && typing.parentNode) typing.remove();
       Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
@@ -3063,48 +3514,61 @@ var Chat = {
     // 최신 프로필 반영
     AppState.profile = normalizeProfile(Store.get(CONST.LS.PROFILE, AppState.profile));
 
-    // AppState.context는 JSON 문자열로 저장돼 있으므로 서버가 기대하는 배열로 되돌린다
-    var ctxArr = [];
-    try { ctxArr = AppState.context ? JSON.parse(AppState.context) : []; } catch(e) { ctxArr = []; }
+    var ctx = Chat.contextItems();
+    var view = {
+      source: ctx.source,
+      keyword: AppState.lastKeyword || '',
+      sort: AppState.sort,
+      mallFilter: AppState.mallFilter
+    };
 
-    Api.call('askAI', [val, ctxArr, AppState.chatHistory, AppState.profile],
-      function(res) {
-        clearTimeout(timer);
-        Chat.setSending(false);
-        if (typing && typing.parentNode) typing.remove();
+    // 빠진 가격 이력만 채운 뒤 질문한다 (실패해도 그냥 진행)
+    Chat.ensureHistory(ctx.items, function() {
+      if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
 
-        if (!res) { Chat.bubble('응답을 받지 못했어요. 다시 시도해 주세요.', 'ai'); return; }
+      Api.call('askAI', [val, Chat.buildContext(ctx.items), AppState.chatHistory, AppState.profile, view],
+        function(res) {
+          if (settled) return;   // 타임아웃이 이미 처리했다
+          settled = true;
+          clearTimeout(timer);
+          Chat.setSending(false);
+          if (typing && typing.parentNode) typing.remove();
 
-        var html = Fmt.esc(res.text || '').replace(/\n/g, '<br>');
-        if (res.items && res.items.length) {
-          html += '<div class="mini-grid">' + res.items.map(Chat.miniCard).join('') + '</div>';
+          if (!res) { Chat.bubble('응답을 받지 못했어요. 다시 시도해 주세요.', 'ai'); return; }
+
+          var html = Fmt.esc(res.text || '').replace(/\n/g, '<br>');
+          if (res.items && res.items.length) {
+            html += '<div class="mini-grid">' + res.items.map(Chat.miniCard).join('') + '</div>';
+          }
+          Chat.bubble(html, 'ai');
+
+          AppState.chatHistory.push({ role: 'assistant', text: res.text || '' });
+          if (AppState.chatHistory.length > CONST.LIMIT.CHAT_HISTORY) {
+            AppState.chatHistory = AppState.chatHistory.slice(-CONST.LIMIT.CHAT_HISTORY);
+          }
+          Chat.persist();   // ★ 대화 저장
+
+          // 대화 지우기 버튼 없으면 추가
+          var box = $('chatSuggest');
+          if (box && !$('chatClearBtn')) {
+            var cb = document.createElement('button');
+            cb.className = 'cs-chip';
+            cb.id = 'chatClearBtn';
+            cb.setAttribute('data-act', 'chat-clear');
+            cb.textContent = '🗑 대화 지우기';
+            box.appendChild(cb);
+          }
+        },
+        function(err) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          Chat.setSending(false);
+          if (typing && typing.parentNode) typing.remove();
+          Chat.bubble('연결 오류: ' + Fmt.esc((err && err.message) || '알 수 없는 오류'), 'ai');
         }
-        Chat.bubble(html, 'ai');
-
-        AppState.chatHistory.push({ role: 'assistant', text: res.text || '' });
-        if (AppState.chatHistory.length > CONST.LIMIT.CHAT_HISTORY) {
-          AppState.chatHistory = AppState.chatHistory.slice(-CONST.LIMIT.CHAT_HISTORY);
-        }
-        Chat.persist();   // ★ 대화 저장
-
-        // 대화 지우기 버튼 없으면 추가
-        var box = $('chatSuggest');
-        if (box && !$('chatClearBtn')) {
-          var cb = document.createElement('button');
-          cb.className = 'cs-chip';
-          cb.id = 'chatClearBtn';
-          cb.setAttribute('data-act', 'chat-clear');
-          cb.textContent = '🗑 대화 지우기';
-          box.appendChild(cb);
-        }
-      },
-      function(err) {
-        clearTimeout(timer);
-        Chat.setSending(false);
-        if (typing && typing.parentNode) typing.remove();
-        Chat.bubble('연결 오류: ' + Fmt.esc((err && err.message) || '알 수 없는 오류'), 'ai');
-      }
-    );
+      );
+    });
   }
 };
 
@@ -3131,6 +3595,8 @@ var Modal = {
 
     AppState.modalHist = [];
     AppState.modalPrice = Fmt.int(p.lprice);
+    // 모달이 열려 있으면 AI는 다른 무엇보다 이 상품 이야기를 하고 있어야 한다.
+    AppState.modalItem = p;
 
     setHTML('verdict', '<span class="vi">⏳</span><div class="vt"><b>불러오는 중…</b></div>');
     var v = $('verdict');
@@ -3139,12 +3605,17 @@ var Modal = {
     var ts = $('trendSummary');
     if (ts) ts.classList.remove('show');
 
-    Api.call('getPriceHistory', [p.title],
+    // productId가 있으면 상품 단위로 조회한다. 상품명으로만 조회하면
+    // 같은 이름의 다른 몰/다른 상품 가격이 한 그래프에 섞인다.
+    Api.call('getPriceHistory', [{ title: p.title, productId: p.productId || '', mall: p.mall || '' }],
       function(hist) {
         AppState.modalHist = hist || [];
         AppState.modalPrice = AppState.modalHist.length
           ? AppState.modalHist[AppState.modalHist.length - 1].price
           : Fmt.int(p.lprice);
+
+        // 이미 받아온 이력이니 AI 컨텍스트도 이걸 그대로 쓴다.
+        HistCache.put(histKey(p) || p.title, AppState.modalHist);
 
         Modal.renderVerdict(AppState.modalPrice);
         Modal.drawRange(DEFAULT_DAYS);
@@ -3155,7 +3626,11 @@ var Modal = {
     );
   },
 
-  close: function() { var ov = $('overlay'); if (ov) ov.classList.remove('open'); },
+  close: function() {
+    var ov = $('overlay');
+    if (ov) ov.classList.remove('open');
+    AppState.modalItem = null;
+  },
 
   /** 가격 통계 계산 (여러 곳에서 재사용) */
   stats: function(prices) {
@@ -3605,9 +4080,12 @@ var Alert = {
 
     Store.set(CONST.LS.EMAIL, email);
 
-    Api.call('saveAlert', [email, t.title, target, t.lprice || 0, t.link || '', '', t.mall || ''],
+    // 이미지도 같이 넘긴다 — 예전엔 빈 문자열이라 알림 메일에 상품 이미지가 없었다.
+    // productId는 서버가 가격을 상품명이 아닌 상품 단위로 찾는 데 쓴다.
+    Api.call('saveAlert',
+      [email, t.title, target, t.lprice || 0, t.link || '', t.image || '', t.mall || '', t.productId || ''],
       function(res) { Alert.close(); toast((res && res.msg) || '알림 신청 완료!'); },
-      function() { toast('오류가 발생했어요. 다시 시도해주세요'); }
+      function(err) { toast('알림 신청 실패: ' + ((err && err.message) || '다시 시도해주세요')); }
     );
   }
 };
@@ -3717,6 +4195,7 @@ var Sync = {
       currentPrice: Fmt.int(o.currentPrice),
       savedPrice:   Fmt.int(o.savedPrice),
       mall:         String(o.mall || '').slice(0, 100),
+      productId:    String(o.productId || '').slice(0, 100),
       link:         Fmt.safeUrl(o.link),
       image:        Fmt.safeUrl(o.image),
       glyph:        String(o.glyph || '').slice(0, 4)
