@@ -3,7 +3,7 @@ const { localStats, pruneLog } = require('./_coupang');
 
 // 한 번에 3개씩만 돌려서 함수 실행 시간(maxDuration 60초) 안에 끝나게 한다.
 // 쿠팡 호출은 _coupang.js가 최소 간격을 두고 직렬화하므로 이 숫자만큼
-// 동시에 쿠팡을 때리지는 않는다 (네이버만 3개씩 병렬로 나간다).
+// 동시에 쿠팡을 때리지는 않는다.
 const CONCURRENCY = 3;
 
 // 쿠팡 호출 옵션.
@@ -16,7 +16,7 @@ module.exports = async function handler(req, res) {
   // CRON_SECRET을 설정하면 Vercel Cron이 Authorization 헤더를 붙여 보낸다.
   //
   // 예전에는 secret이 없으면 검사를 건너뛰었는데, 그러면 이 주소를 아는 누구나
-  // 8개 키워드 × (네이버 + 쿠팡) 호출을 반복시켜 일일 쿼터를 태울 수 있었다.
+  // 8개 키워드 × 쿠팡 호출을 반복시켜 일일 쿼터를 태울 수 있었다.
   // 이제는 열지 않고 막는다(fail closed).
   const secret = process.env.CRON_SECRET;
   if (!secret) {

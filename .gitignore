@@ -1,2 +1,11 @@
 node_modules/
+
+# 환경변수 — 모든 .env 변형 파일 보호
 .env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+.vercel
+.env*

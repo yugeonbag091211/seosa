@@ -1772,13 +1772,7 @@ var Card = {
       + '</div>';
   },
 
-  /**
-   * @param {boolean} isCoupang 쿠팡이면 oprice가 실제 정가(productPrice)다.
-   *
-   * 네이버는 정가를 주지 않는다. _shop.fetchNaver가 oprice로 쓰는 hprice는
-   * "같은 상품을 파는 곳들 중 최고가"라서 정가가 아니다. 그걸 "정가 대비 절약"이라고
-   * 쓰면 실제로 존재하지 않는 할인을 표시하게 된다. 출처에 맞는 문구로 구분한다.
-   */
+  /** @param {boolean} isCoupang 쿠팡이면 oprice가 실제 정가(productPrice)다. */
   priceHTML: function(price, oprice, savePct, isCoupang) {
     var save = savePct > 0 ? '<span class="save">-' + savePct + '%</span>' : '';
     var label = isCoupang ? '정가' : '최고가';

@@ -12,48 +12,12 @@ function discountPct(lprice, oprice) {
   return Math.round((1 - lprice / oprice) * 100);
 }
 
-async function fetchNaver(keyword, display = 8) {
-  // 통일 기준: NAVER_CLIENT_ID / NAVER_CLIENT_SECRET (Vercel 환경변수도 이 이름으로 설정 필요)
-  // 세팅되어 있어서 어느 쪽 이름이든 받는다.
-  const naverId     = process.env.NAVER_CLIENT_ID;
-  const naverSecret = process.env.NAVER_CLIENT_SECRET;
-  if (!naverId || !naverSecret) {
-    return { items: [], error: 'NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경변수 없음' };
-  }
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(keyword)}&display=${display}&sort=sim`;
-  const r = await fetch(url, {
-    headers: {
-      'X-Naver-Client-Id': naverId,
-      'X-Naver-Client-Secret': naverSecret
-    }
-  });
-  if (!r.ok) {
-    return { items: [], error: `네이버 API ${r.status}: ${(await r.text()).slice(0, 200)}` };
-  }
-  const items = ((await r.json()).items || []).map(it => {
-    const lprice = parseInt(it.lprice) || 0;
-    const oprice = parseInt(it.hprice) || 0;   // 네이버는 최고가를 hprice로 준다
-    return {
-      title: it.title.replace(/<[^>]*>/g, ''),
-      lprice,
-      link: it.link || '',
-      image: it.image || '',
-      mall: it.mallName || '네이버쇼핑',
-      productId: String(it.productId || ''),
-      isCoupang: false,
-      oprice,
-      savePct: discountPct(lprice, oprice)
-    };
-  }).filter(i => i.lprice > 0);
-  return { items, error: null };
-}
-
 /**
  * 쿠팡 검색.
  *
  * 직접 fetch 하지 않고 _coupang.js를 거친다. 그쪽에 캐시 / 분당 상한 /
  * 차단 감지가 들어 있어서, 여기서 따로 호출하면 전부 우회하게 된다.
- * 실패해도 throw 하지 않고 빈 목록을 준다 (네이버 결과는 그대로 나가야 한다).
+ * 실패해도 throw 하지 않고 빈 목록을 준다.
  */
 async function fetchCoupang(keyword, limit = 6, opts = {}) {
   const r = await searchCoupang(keyword, { limit, ...opts });
@@ -73,23 +37,14 @@ async function fetchCoupang(keyword, limit = 6, opts = {}) {
   return { items, error, from: r.from };
 }
 
-/** 네이버 + 쿠팡을 동시에 조회해 번갈아 섞은 목록을 돌려준다. */
-async function searchAll(keyword, { naverDisplay = 8, coupangLimit = 6, coupangOpts = {} } = {}) {
-  const [naver, coupang] = await Promise.all([
-    fetchNaver(keyword, naverDisplay).catch(e => ({ items: [], error: `네이버 예외: ${e.message}` })),
-    fetchCoupang(keyword, coupangLimit, coupangOpts).catch(e => ({ items: [], error: `쿠팡 예외: ${e.message}` }))
-  ]);
+/** 쿠팡을 조회해 결과를 돌려준다. */
+async function searchAll(keyword, { coupangLimit = 6, coupangOpts = {} } = {}) {
+  const coupang = await fetchCoupang(keyword, coupangLimit, coupangOpts)
+    .catch(e => ({ items: [], error: `쿠팡 예외: ${e.message}` }));
 
-  const errors = [naver.error, coupang.error].filter(Boolean);
-  if (errors.length) console.error(`[search:${keyword}]`, errors.join(' | '));
+  if (coupang.error) console.error(`[search:${keyword}]`, coupang.error);
 
-  const items = [];
-  const mx = Math.max(naver.items.length, coupang.items.length);
-  for (let i = 0; i < mx; i++) {
-    if (naver.items[i]) items.push(naver.items[i]);
-    if (coupang.items[i]) items.push(coupang.items[i]);
-  }
-  return { items, errors };
+  return { items: coupang.items, errors: coupang.error ? [coupang.error] : [] };
 }
 
 /**
@@ -191,6 +146,6 @@ function roundRobin(rows, keywords, take) {
 }
 
 module.exports = {
-  TODAY_PICKS, fetchNaver, fetchCoupang,
+  TODAY_PICKS, fetchCoupang,
   searchAll, saveProducts, toClientProduct, roundRobin
 };
