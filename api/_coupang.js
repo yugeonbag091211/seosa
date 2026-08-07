@@ -351,6 +351,11 @@ async function searchCoupang(keyword, opts = {}) {
   const ok = rCode === undefined || rCode === null || String(rCode) === '200' || String(rCode) === '0';
   if (!ok) {
     const msg = String(data.rMessage || '').replace(/<[^>]*>/g, ' ').slice(0, 150);
+    if (String(rCode) === '400') {
+      console.warn(`[coupang] rCode=400 파라미터 오류 (서킷 브레이커 미작동): ${msg}`);
+      await dbFinish(gate.callId, 'param_error', r.status, rCode, 0);
+      return { items: [], error: `쿠팡 rCode=400: ${msg}`, from: 'none', blocked: false };
+    }
     await trip(COOLDOWN_MIN.rcode, `rCode=${rCode}: ${msg}`);
     await dbFinish(gate.callId, 'blocked', r.status, rCode, 0);
     return fallback(`쿠팡 rCode=${rCode}: ${msg}`, true);
