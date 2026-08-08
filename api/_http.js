@@ -63,6 +63,27 @@ function applyCors(req, res, scope) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  캐시 헤더
+ *
+ *  /api/init 은 방문자 한 명당 한 번씩 호출되고 그때마다 Supabase 쿼리가
+ *  네 번 나간다. 공개 데이터(상품·시세·인기검색어)는 개인화된 부분이 없으므로
+ *  Vercel Edge 에 잠깐 세워두면 방문자가 늘어도 DB 호출은 그대로다.
+ *
+ *  max-age=0 은 일부러다. 브라우저에 오래 물려두면 사용자가 새로고침해도
+ *  옛 가격이 남는다. 재검증은 브라우저가 하고, 실제 캐시는 CDN 이 맡는다.
+ * ------------------------------------------------------------------ */
+function cachePublic(res, seconds, swrSeconds) {
+  const swr = swrSeconds || seconds * 4;
+  res.setHeader('Cache-Control',
+    `public, max-age=0, s-maxage=${seconds}, stale-while-revalidate=${swr}`);
+}
+
+/** 개인 데이터. 중간 캐시에 절대 남지 않게 한다. */
+function noStore(res) {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+}
+
+/* ------------------------------------------------------------------ *
  *  입력 검증
  * ------------------------------------------------------------------ */
 const MAX_EMAIL_LEN = 254;
@@ -90,4 +111,18 @@ function tooLarge(obj, maxBytes) {
   }
 }
 
-module.exports = { readBody, dbError, applyCors, readEmail, tooLarge };
+/**
+ * '["a","b"]' 형태의 쿼리 파라미터 → 문자열 배열.
+ * 파싱 실패·배열 아님이면 null (호출부가 400 을 낼 수 있게 빈 배열과 구분한다).
+ */
+function readStringList(raw, max) {
+  let arr;
+  try { arr = JSON.parse(raw || '[]'); } catch (e) { return null; }
+  if (!Array.isArray(arr)) return null;
+  return arr.filter(v => typeof v === 'string' && v).slice(0, max);
+}
+
+module.exports = {
+  readBody, dbError, applyCors, readEmail, tooLarge,
+  cachePublic, noStore, readStringList
+};

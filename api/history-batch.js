@@ -1,54 +1,117 @@
 const supabase = require('./_supabase');
+const { applyCors, cachePublic, readStringList } = require('./_http');
+const { guard } = require('./_ratelimit');
 
 const MAX_TITLES = 100;
+const MAX_KEYS   = 100;
 // 잘릴 경우 오래된 쪽이 버려지도록 최신순으로 가져온다 (history.js와 같은 이유).
 const MAX_ROWS = 10000;
 const MAX_DAYS = 365;
 
+/**
+ * 프론트가 보내는 조회 키는 두 종류다. 둘 다 지원해야 한다.
+ *
+ *   keys   — "<product_id>|<mall>". 상품 단위. 프론트의 histKey()가 만든다.
+ *   titles — 상품명. productId가 없는 옛 위시/조회기록 전용 폴백.
+ *
+ * 예전에는 titles만 읽고 keys를 통째로 버렸다. 그런데 지금 프론트는
+ * productId가 있는 상품(=쿠팡 상품 전부)을 keys로만 보내기 때문에,
+ * 스파크라인 · 역대최저가 뱃지 · 위시 최신가 · "가격이 움직였어요" 섹션 ·
+ * AI 가격 이력이 전부 빈 응답({})을 받고 조용히 사라져 있었다.
+ */
+function splitKey(key) {
+  // 프론트는 productId + '|' + mall 로 만든다. 몰 이름에는 '|'가 들어가지 않지만
+  // 옛 행의 product_id 에는 상품명이 그대로 들어간 것이 있어서 뒤에서부터 자른다.
+  const s = String(key);
+  const i = s.lastIndexOf('|');
+  if (i < 0) return { productId: s, mall: '' };
+  return { productId: s.slice(0, i), mall: s.slice(i + 1) };
+}
+
+/** Map<날짜, 최저가> → [{date, price}] 오름차순, 최근 maxDays 일만 */
+function toPoints(byDate) {
+  return [...byDate.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([date, price]) => ({ date, price }))
+    .slice(-MAX_DAYS);
+}
+
+/** 같은 날짜에 여러 행이 있으면 최저가 한 점만 남긴다. */
+function keepLowest(byDate, date, price) {
+  const cur = byDate.get(date);
+  if (cur === undefined || price < cur) byDate.set(date, price);
+}
+
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (!applyCors(req, res, 'public')) return;
 
-  let titles;
+  // 최대 100개 키 × 10000행짜리 쿼리다. 인증이 없는 만큼 호출 빈도는 막아둔다.
+  if (!guard(req, res, { name: 'history-batch', limit: 60, windowMs: 60 * 1000 })) return;
+
+  const q = req.query || {};
+  const titles = readStringList(q.titles, MAX_TITLES);
+  const keys   = readStringList(q.keys,   MAX_KEYS);
+
+  if (titles === null) return res.status(400).json({ error: 'titles 파싱 실패' });
+  if (keys === null)   return res.status(400).json({ error: 'keys 파싱 실패' });
+
+  // 조회된 것만 채우면 프론트가 map[k] === undefined로 건너뛰므로 전부 빈 배열로 초기화한다.
+  // ("조회했는데 기록이 없다"와 "아직 모른다"를 프론트가 구분한다)
+  const map = {};
+  keys.forEach(k => { map[k] = []; });
+  titles.forEach(t => { map[t] = []; });
+
+  if (!keys.length && !titles.length) return res.json(map);
+
   try {
-    titles = JSON.parse((req.query && req.query.titles) || '[]');
-  } catch (e) {
-    return res.status(400).json({ error: 'titles 파싱 실패' });
-  }
-  if (!Array.isArray(titles)) return res.status(400).json({ error: 'titles는 배열이어야 함' });
+    // ── 1) 상품 단위(keys) ────────────────────────────────────────
+    if (keys.length) {
+      const wanted = new Set(keys);
+      const productIds = [...new Set(keys.map(k => splitKey(k).productId))].filter(Boolean);
 
-  titles = titles.filter(t => typeof t === 'string' && t).slice(0, MAX_TITLES);
-  if (!titles.length) return res.json({});
+      if (productIds.length) {
+        const { data, error } = await supabase
+          .from('price_history')
+          .select('product_id, mall, recorded_date, price')
+          .in('product_id', productIds)
+          .order('recorded_date', { ascending: false })
+          .limit(MAX_ROWS);
+        if (error) throw new Error(error.message);
 
-  try {
-    const { data, error } = await supabase
-      .from('price_history')
-      .select('title, recorded_date, price')
-      .in('title', titles)
-      .order('recorded_date', { ascending: false })
-      .limit(MAX_ROWS);
-    if (error) throw new Error(error.message);
+        const byKey = new Map();
+        (data || []).forEach(r => {
+          const k = `${r.product_id}|${r.mall}`;
+          if (!wanted.has(k)) return;   // 같은 product_id의 다른 몰 행은 섞지 않는다
+          if (!byKey.has(k)) byKey.set(k, new Map());
+          keepLowest(byKey.get(k), r.recorded_date, r.price);
+        });
+        byKey.forEach((byDate, k) => { map[k] = toPoints(byDate); });
+      }
+    }
 
-    // 같은 상품명이 여러 몰에 있으면 하루에 여러 행이 생기므로
-    // history.js와 같은 규칙으로 날짜당 최저가 한 점만 남긴다.
-    const perTitle = new Map();
-    (data || []).forEach(r => {
-      if (!perTitle.has(r.title)) perTitle.set(r.title, new Map());
-      const byDate = perTitle.get(r.title);
-      const cur = byDate.get(r.recorded_date);
-      if (cur === undefined || r.price < cur) byDate.set(r.recorded_date, r.price);
-    });
+    // ── 2) 상품명(titles) — productId가 없는 옛 데이터 폴백 ────────
+    if (titles.length) {
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('title, recorded_date, price')
+        .in('title', titles)
+        .order('recorded_date', { ascending: false })
+        .limit(MAX_ROWS);
+      if (error) throw new Error(error.message);
 
-    // 조회된 제목만 채우면 프론트가 map[t] === undefined로 건너뛰므로 전부 빈 배열로 초기화한다.
-    const map = {};
-    titles.forEach(t => { map[t] = []; });
-    perTitle.forEach((byDate, title) => {
-      if (!(title in map)) return;
-      map[title] = [...byDate.entries()]
-        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-        .map(([date, price]) => ({ date, price }))
-        .slice(-MAX_DAYS);
-    });
+      // 같은 상품명이 여러 몰에 있으면 하루에 여러 행이 생기므로
+      // history.js와 같은 규칙으로 날짜당 최저가 한 점만 남긴다.
+      const byTitle = new Map();
+      (data || []).forEach(r => {
+        if (!(r.title in map)) return;
+        if (!byTitle.has(r.title)) byTitle.set(r.title, new Map());
+        keepLowest(byTitle.get(r.title), r.recorded_date, r.price);
+      });
+      byTitle.forEach((byDate, title) => { map[title] = toPoints(byDate); });
+    }
 
+    // 가격 기록은 하루 한 번만 늘어난다. 짧게 캐시해도 사용자가 보는 값은 같다.
+    cachePublic(res, 300);
     res.json(map);
   } catch (e) {
     res.status(500).json({ error: e.message });

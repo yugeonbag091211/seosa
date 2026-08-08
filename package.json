@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node scripts/dev-server.js",
+    "test": "node scripts/test-auth.js && node scripts/test-coupang.js",
+    "test:e2e": "node scripts/test-e2e.js",
+    "verify:schema": "node scripts/verify-schema.js",
+    "verify:relevance": "node scripts/audit-relevance.js",
+    "probe:coupang": "node scripts/coupang-probe.js"
   },
   "keywords": [],
   "author": "",

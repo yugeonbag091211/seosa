@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  지금 SEOSA는 단일 페이지라 넣을 URL이 하나뿐이다.
+  검색 유입을 늘리려면 키워드별 정적 페이지(/k/무선-이어폰 같은)를 만들고
+  여기에 함께 등록해야 한다. 그 전까지는 색인 대상이 이 한 줄이 전부다.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://seosa.ai.kr/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

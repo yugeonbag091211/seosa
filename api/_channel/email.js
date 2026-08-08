@@ -14,6 +14,25 @@ function won(n) {
   return Number(n).toLocaleString('ko-KR');
 }
 
+/*
+ * 상품명·링크·이미지 주소는 판매자가 쓴 문자열이고, 알림 신청 시 사용자가 보낸
+ * 값이기도 하다. 그대로 HTML 에 끼워 넣으면 따옴표 하나로 style 속성을 닫고
+ * 메일 본문을 통째로 바꿔 쓸 수 있다 (상품명에 </td><td>... 를 넣는 식).
+ * 메일 클라이언트에서 스크립트는 안 돌지만, 레이아웃을 위조해 다른 링크를
+ * "지금 최저가 구매" 버튼처럼 보이게 만드는 것은 충분히 가능하다.
+ */
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/** href / src 에 넣어도 되는 주소만 통과시킨다 (프론트 Fmt.safeUrl 과 같은 규칙). */
+function safeUrl(u) {
+  const s = String(u == null ? '' : u).trim();
+  return /^https?:\/\//i.test(s) ? esc(s) : '';
+}
+
 function verdictColor(type) {
   if (type === 'target')  return '#0b7a4b';
   if (type === 'atl')     return '#0b7a4b';
@@ -65,12 +84,22 @@ function buildHtml(payload) {
   const timingBox = `
     <div style="background:#f8f8f7;border-left:3px solid ${color};padding:14px 18px;margin:24px 0;border-radius:0 8px 8px 0">
       <div style="font-size:11px;font-weight:700;color:#888;letter-spacing:.08em;margin-bottom:6px">SEOSA 구매 타이밍 분석</div>
-      <div style="font-size:14px;line-height:1.7;color:#222">${analysis.timing}</div>
+      <div style="font-size:14px;line-height:1.7;color:#222">${esc(analysis.timing)}</div>
     </div>`;
 
-  const imageBlock = product.image
-    ? `<img src="${product.image}" alt="" style="width:100%;max-width:240px;height:180px;object-fit:contain;display:block;margin:0 auto 20px">`
+  const imageSrc = safeUrl(product.image);
+  const imageBlock = imageSrc
+    ? `<img src="${imageSrc}" alt="" style="width:100%;max-width:240px;height:180px;object-fit:contain;display:block;margin:0 auto 20px">`
     : '';
+
+  // 링크가 없거나 http(s)가 아니면 버튼 대신 안내를 넣는다.
+  // href=""로 두면 메일 클라이언트에서 엉뚱한 곳으로 가거나 그냥 죽은 버튼이 된다.
+  const ctaBlock = safeUrl(product.link)
+    ? `<a href="${safeUrl(product.link)}" style="display:inline-block;background:#111;color:#fff;font-size:14px;font-weight:700;
+        padding:14px 36px;border-radius:8px;text-decoration:none;letter-spacing:.04em">
+        지금 최저가 구매 →
+      </a>`
+    : `<div style="font-size:13px;color:#888">구매 링크가 등록되어 있지 않아요. SEOSA에서 상품명으로 검색해 주세요.</div>`;
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -95,9 +124,9 @@ function buildHtml(payload) {
     <!-- 상품 -->
     <tr><td style="padding:8px 32px 24px">
       ${imageBlock}
-      <div style="font-size:16px;font-weight:700;line-height:1.5;color:#111;margin-bottom:16px">${product.title}</div>
+      <div style="font-size:16px;font-weight:700;line-height:1.5;color:#111;margin-bottom:16px">${esc(product.title)}</div>
       <div style="font-size:32px;font-weight:800;color:${color};letter-spacing:-.02em">${won(product.currentPrice)}<span style="font-size:16px;font-weight:400;color:#888"> 원</span></div>
-      <div style="font-size:12px;color:#888;margin-top:4px">${product.mall}</div>
+      <div style="font-size:12px;color:#888;margin-top:4px">${esc(product.mall)}</div>
     </td></tr>
 
     <!-- 통계 테이블 -->
@@ -114,11 +143,10 @@ function buildHtml(payload) {
 
     <!-- CTA -->
     <tr><td style="padding:8px 32px 32px;text-align:center">
-      <a href="${product.link}" style="display:inline-block;background:#111;color:#fff;font-size:14px;font-weight:700;
-        padding:14px 36px;border-radius:8px;text-decoration:none;letter-spacing:.04em">
-        지금 최저가 구매 →
-      </a>
-      <div style="margin-top:12px;font-size:11px;color:#aaa">알림은 조건이 충족될 때 다시 발송됩니다.</div>
+      ${ctaBlock}
+      <!-- alerts.sent 는 한 번 true 가 되면 자동으로 돌아오지 않는다.
+           "다시 발송됩니다"라고 쓰면 오지 않을 메일을 기다리게 된다. -->
+      <div style="margin-top:12px;font-size:11px;color:#aaa">이 알림은 한 번만 발송됩니다. 계속 받아보시려면 SEOSA에서 다시 신청해 주세요.</div>
     </td></tr>
 
     <!-- 푸터 -->
@@ -136,9 +164,13 @@ function buildHtml(payload) {
 async function send(payload) {
   if (!RESEND_KEY) return { ok: false, error: 'RESEND_API_KEY 없음' };
 
-  const html = buildHtml(payload);
-  const subject = payload.subject
-    || `[SEOSA] ${payload.product.title.slice(0, 30)} 가격 알림`;
+  // 가격 알림 서식이 기본이지만, 인증 코드처럼 본문을 이미 만든 경우
+  // (api/auth.js) 는 그대로 보낸다.
+  const html = payload.html || buildHtml(payload);
+  // 제목에는 헤더 인젝션을 막기 위해 개행을 남기지 않는다.
+  const subject = String(payload.subject
+    || `[SEOSA] ${(payload.product && payload.product.title || '').slice(0, 30)} 가격 알림`)
+    .replace(/[\r\n]+/g, ' ').slice(0, 200);
 
   try {
     const res = await fetch('https://api.resend.com/emails', {

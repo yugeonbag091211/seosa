@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# API는 색인 대상이 아니다. 크롤러가 /api/search를 긁으면
+# 쿠팡 파트너스 분당 호출 한도를 그대로 태운다.
+Disallow: /api/
+
+Sitemap: https://seosa.ai.kr/sitemap.xml

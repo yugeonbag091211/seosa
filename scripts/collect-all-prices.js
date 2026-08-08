@@ -19,7 +19,7 @@
  *   - 실행당 총 호출 상한(COUPANG_RUN_BUDGET)을 따로 둔다
  */
 
-require('dotenv').config({ quiet: true });
+require('./_env');
 const supabase = require('../api/_supabase');
 const { searchCoupang, isBlocked, localStats } = require('../api/_coupang');
 
@@ -89,6 +89,19 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
 
   if (r.from === 'api') _coupangCalls++;
   else if (r.from === 'none') _coupangSkipped++;
+
+  /*
+   * 오래된 캐시는 "오늘 가격"이 아니다.
+   *
+   * 쿠팡이 차단된 동안에도 stale-cache 로 상품이 돌아오기 때문에, 이걸 그대로
+   * 쓰면 며칠 전 가격이 매일 오늘 날짜로 price_history 에 쌓인다. 차트는
+   * 값이 안 변한 것처럼 평평해지고, 그 위에서 역대 최저가·30일 평균·알림
+   * 판정이 전부 잘못 굴러간다. 확인하지 못한 날은 기록을 남기지 않는 게 맞다.
+   */
+  if (r.from === 'stale-cache') {
+    _coupangSkipped++;
+    return [];
+  }
 
   if (r.blocked && !_coupangBlocked) {
     _coupangBlocked = true;
@@ -182,20 +195,39 @@ async function saveAll() {
 // ─── 메인 ─────────────────────────────────────────────────────
 async function run() {
   const products = await fetchAllProducts();
-  console.log(`\n총 ${products.length}개 상품 가격 수집 시작 (${TODAY})\n`);
+
+  /*
+   * 커버리지 분모를 products 전체로 잡으면 안 된다.
+   *
+   * 이 스크립트는 "쿠팡 상품을 그 상품의 keyword 로 재검색해서 찾는" 방식이다.
+   * 따라서 애초에 도달할 수 없는 행이 있다.
+   *   - 비쿠팡 행     : 네이버 연동을 제거해서 다시 조회할 수단이 없다
+   *   - keyword 없는 행: 검색을 시작할 단서가 없다 (옛 CSV 이관분)
+   *
+   * 이 둘을 분모에 넣으면 수집이 정상일 때도 5% 언저리가 나와서, 진짜로
+   * 망가졌을 때와 구분이 안 된다. 실제로 그 숫자 때문에 GitHub Actions 가
+   * 한 건도 못 모으고 있다는 걸 오래 눈치채지 못했다.
+   */
+  const collectible = products.filter(p => p.keyword && isCoupangRow(p));
+  const noKeyword   = products.filter(p => !p.keyword && isCoupangRow(p));
+  const notCoupang  = products.filter(p => !isCoupangRow(p));
+
+  console.log(`\n가격 수집 시작 (${TODAY})`);
+  console.log(`  products 전체        ${products.length}개`);
+  console.log(`  ├ 수집 대상          ${collectible.length}개  (쿠팡 + keyword 있음)`);
+  console.log(`  ├ keyword 없음       ${noKeyword.length}개  (검색 단서 없음 — 대상 제외)`);
+  console.log(`  └ 비쿠팡             ${notCoupang.length}개  (연동 없음 — 대상 제외)\n`);
 
   const uncovered = new Map();
-  products.forEach(p => uncovered.set(`${p.product_id}|${p.mall}`, p));
+  collectible.forEach(p => uncovered.set(`${p.product_id}|${p.mall}`, p));
   const markCovered = (pid, mall) => uncovered.delete(`${pid}|${mall}`);
 
   // ── 1차: 키워드별 쿠팡 검색 ─────────────────────────────────
   console.log('── 1차: 키워드별 쿠팡 검색 ──');
   const byKeyword = new Map();
-  products.forEach(p => {
-    if (p.keyword && isCoupangRow(p)) {
-      if (!byKeyword.has(p.keyword)) byKeyword.set(p.keyword, []);
-      byKeyword.get(p.keyword).push(p);
-    }
+  collectible.forEach(p => {
+    if (!byKeyword.has(p.keyword)) byKeyword.set(p.keyword, []);
+    byKeyword.get(p.keyword).push(p);
   });
 
   const keywords = [...byKeyword.keys()];
@@ -231,11 +263,12 @@ async function run() {
 
   // ── 커버리지 리포트 ────────────────────────────────────────
   const finalMissing = [...uncovered.values()];
-  const covered  = products.length - finalMissing.length;
-  const coverage = products.length > 0 ? Math.round(covered / products.length * 100) : 100;
+  const covered  = collectible.length - finalMissing.length;
+  const coverage = collectible.length > 0 ? Math.round(covered / collectible.length * 100) : 100;
 
   console.log(`\n${'═'.repeat(50)}`);
-  console.log(`커버리지: ${covered}/${products.length} (${coverage}%)`);
+  console.log(`커버리지: ${covered}/${collectible.length} (${coverage}%)   ← 수집 대상 기준`);
+  console.log(`          ${covered}/${products.length} (${Math.round(covered / products.length * 100)}%)   ← products 전체 기준(참고)`);
 
   const cs = localStats();
   console.log(`\n쿠팡 API 호출: ${cs.calls}회 (예산 ${COUPANG_RUN_BUDGET}회)`);
@@ -259,10 +292,33 @@ async function run() {
 
   console.log(`${'═'.repeat(50)}\n`);
 
-  if (coverage < 80) {
+  /*
+   * 실패는 반드시 빨갛게 끝내야 한다.
+   *
+   * 예전에는 무슨 일이 있어도 exit 0 이었다. 그래서 이 잡이 2026-07-30 이후로
+   * 단 한 행도 저장하지 못하고 있었는데 GitHub Actions 는 계속 초록불이었고,
+   * 아무도 몰랐다. (price_history 에 15:00 UTC 대 기록이 하루도 없다)
+   *
+   * 이제 아래 경우에는 exit 1 로 끝내서 Actions 가 실패 알림을 보내게 한다.
+   *   - 쿠팡 차단 감지
+   *   - 수집 대상이 있는데 한 행도 저장하지 못함
+   */
+  const blocked = _coupangBlocked || cs.blocked;
+  const collectedNothing = collectible.length > 0 && saved === 0;
+
+  if (blocked || collectedNothing) {
+    console.error('\n수집 실패로 처리합니다 (exit 1)');
+    if (blocked) console.error('  - 쿠팡 API 차단 상태');
+    if (collectedNothing) console.error(`  - 수집 대상 ${collectible.length}개 중 저장 0행`);
+    console.error('  → 원인 확인:  node scripts/coupang-probe.js');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (coverage < 50) {
+    console.warn(`경고: 커버리지 ${coverage}% — 대상 상품 상당수가 키워드 검색 결과 밖으로 밀려났습니다.`);
+  } else if (coverage < 80) {
     console.warn(`경고: 커버리지 ${coverage}% < 80%`);
-  } else if (coverage < 95) {
-    console.warn(`경고: 커버리지 ${coverage}% < 95%`);
   }
 }
 

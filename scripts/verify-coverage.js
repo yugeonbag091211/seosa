@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-require('dotenv').config();
+require('./_env');
 const supabase = require('../api/_supabase');
 
 async function verify() {

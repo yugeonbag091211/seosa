@@ -30,7 +30,11 @@ jobs:
           node scripts/collect-all-prices.js 2>&1 | tee /tmp/collect.log
           exit ${PIPESTATUS[0]}
 
+      # 수집이 실패해도 알림 확인은 돌린다.
+      # 오늘 수집분이 없으면 check-alerts.js 가 알아서 0건으로 끝나므로 해가 없고,
+      # 부분적으로만 수집된 날에 알림이 통째로 빠지는 것을 막는다.
       - name: Check price alerts and send notifications
+        if: always()
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

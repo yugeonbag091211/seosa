@@ -11,18 +11,22 @@
      검색 결과와 카카오톡·슬랙 공유 링크에 뜨는 설명이다.
      description이 없으면 검색엔진이 본문에서 아무 문장이나 골라 쓰고,
      og:* 가 없으면 공유했을 때 제목만 있는 빈 카드가 뜬다. -->
-<meta name="description" content="네이버·쿠팡 가격을 한 번에 비교하고 매일 기록합니다. 가격 추이 그래프로 지금이 살 때인지 확인하고, 목표가에 도달하면 알림을 받아보세요.">
+<!-- ※ 문구는 실제 연동과 일치해야 한다. 네이버 연동은 제거됐고(844a497)
+     알리는 연동된 적이 없다. "3사 비교"로 써두면 검색 결과에 뜬 설명과
+     들어와서 보는 화면이 달라진다. -->
+<meta name="description" content="쿠팡 최저가를 매일 기록하고 가격 추이 그래프로 보여드립니다. 지금이 살 때인지 데이터로 확인하고, 목표가에 도달하면 이메일로 알림을 받아보세요.">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://seosa.ai.kr/">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SEOSA">
 <meta property="og:locale" content="ko_KR">
 <meta property="og:title" content="SEOSA · 최저가도 고급스럽게">
-<meta property="og:description" content="네이버·쿠팡 가격 비교와 가격 추이 그래프. 지금이 살 때인지 데이터로 확인하세요.">
+<meta property="og:description" content="쿠팡 최저가를 매일 기록해 가격 추이로 보여드립니다. 지금이 살 때인지 데이터로 확인하세요.">
 <meta property="og:url" content="https://seosa.ai.kr/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="SEOSA · 최저가도 고급스럽게">
-<meta name="twitter:description" content="네이버·쿠팡 가격 비교와 가격 추이 그래프. 지금이 살 때인지 데이터로 확인하세요.">
+<meta name="twitter:description" content="쿠팡 최저가를 매일 기록해 가격 추이로 보여드립니다. 지금이 살 때인지 데이터로 확인하세요.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Noto+Serif+KR:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -274,6 +278,12 @@ section.block{margin-top:var(--sec-gap)}
 .price .w{font-family:'Noto Sans KR';font-size:.8rem;color:var(--soft);margin-left:2px;font-weight:500}
 .save{font-family:var(--mono);font-size:.72rem;color:var(--down);font-weight:600}
 .cmp{font-size:.72rem;color:var(--faint);margin-top:5px}.cmp del{opacity:.7}
+/* DB에서 읽어온(=실시간 검색이 아닌) 가격의 수집 기준일 */
+.as-of{font-size:.66rem;color:var(--faint);margin-top:4px;letter-spacing:.02em}
+/* 쇼핑몰을 못 불러와 캐시를 보여주는 중이라는 안내 */
+.stale-note{margin-top:14px;padding:10px 14px;border-radius:8px;font-size:.78rem;line-height:1.6;
+  color:var(--up);background:rgba(201,54,43,.07);border:1px solid rgba(201,54,43,.18)}
+html[data-theme="dark"] .stale-note{background:rgba(229,105,94,.10);border-color:rgba(229,105,94,.24)}
 .cmp .num{font-size:.72rem}
 /* ── 역대 최저가 뱃지 ── */
 .atl-badge{
@@ -720,6 +730,14 @@ footer p{font-size:.78rem;color:var(--faint)}
   z-index:800;display:flex;align-items:center;justify-content:center;padding:24px;
   opacity:0;pointer-events:none;transition:opacity .25s}
 .alert-overlay.open{opacity:1;pointer-events:auto}
+/*
+  인증 모달은 다른 모달 위에서 열린다 (예: "내 가격 알림"에서 조회 → 401 → 인증).
+  .alert-overlay 끼리 z-index가 같으면 DOM 순서가 뒤인 쪽이 위로 올라오는데,
+  myAlertsOverlay 가 authOverlay 보다 뒤에 있어서 인증창이 그 아래에 깔렸다.
+  화면에는 "불러오는 중…"만 남고 사용자는 아무것도 할 수 없었다.
+  순서에 기대지 않도록 인증창만 한 단계 위로 올린다.
+*/
+#authOverlay{z-index:850}
 .alert-box{background:var(--bg);width:400px;max-width:100%;max-height:92vh;overflow-y:auto;border-radius:16px;
   transform:translateY(10px);transition:transform .25s;box-shadow:var(--shadow-lg)}
 .alert-overlay.open .alert-box{transform:none}
@@ -811,9 +829,9 @@ footer p{font-size:.78rem;color:var(--faint)}
 
   <!-- 히어로 -->
   <section class="hero">
-    <div class="eyebrow">NAVER · COUPANG · ALIEXPRESS</div>
+    <div class="eyebrow">COUPANG · DAILY PRICE LEDGER</div>
     <h1><span>가격에도,</span><br><span> </span><span><em>서사</em>가 있습니다.</span></h1>
-    <p class="hero-sub">세 곳의 쇼핑몰을 한 번에 비교하고, 매일 쌓이는 가격 기록으로 '지금이 살 때'인지 알려드립니다.</p>
+    <p class="hero-sub">쿠팡 최저가를 매일 기록하고, 쌓인 가격 흐름으로 '지금이 살 때'인지 알려드립니다.</p>
     <div class="search-box">
       <div class="search-field">
         <input id="q" placeholder="찾으시는 상품을 입력하세요 · 예: 무선 이어폰" autocomplete="off">
@@ -825,7 +843,7 @@ footer p{font-size:.78rem;color:var(--faint)}
     </div>
 
     <div class="values">
-      <div class="val"><h4><span class="vnum">01</span>3대 쇼핑몰 실시간 비교</h4><p>네이버·쿠팡·알리, 같은 상품의 최저가를 한눈에 확인하세요.</p></div>
+      <div class="val"><h4><span class="vnum">01</span>쿠팡 최저가 실시간 조회</h4><p>검색하면 쿠팡 판매가를 그 자리에서 받아와 가격순으로 정리해 드려요.</p></div>
       <div class="val"><h4><span class="vnum">02</span>매일 기록되는 가격</h4><p>매일 새벽 자동으로 가격을 수집해 흐름을 그래프로 보여드려요.</p></div>
       <div class="val"><h4><span class="vnum">03</span>AI 큐레이터 '서사'</h4><p>예산과 취향을 말하면, 실제 검색 데이터로 골라드립니다.</p></div>
     </div>
@@ -967,7 +985,7 @@ footer p{font-size:.78rem;color:var(--faint)}
     <div class="filter-bar" id="filterBar" style="display:none">
       <span class="filter-label">Mall</span>
       <button class="filter-btn act" data-act="filter" data-mall="all">전체</button>
-      <button class="filter-btn" data-act="filter" data-mall="네이버쇼핑">네이버<span class="fcount" id="fcNaver"></span></button>
+      <button class="filter-btn" data-act="filter" data-mall="네이버쇼핑" id="fbNaver">네이버<span class="fcount" id="fcNaver"></span></button>
       <button class="filter-btn" data-act="filter" data-mall="쿠팡">쿠팡<span class="fcount" id="fcCoupang"></span></button>
       <button class="filter-btn" data-act="filter" data-mall="알리익스프레스" id="fbAli" style="display:none">알리<span class="fcount" id="fcAli"></span></button>
     </div>
@@ -1090,7 +1108,7 @@ footer p{font-size:.78rem;color:var(--faint)}
   <div class="panel-head"><div class="t">서사<small>SEOSA PRIVATE CURATOR</small></div>
     <button class="panel-close" data-act="close-ai">×</button></div>
   <div class="chat" id="chat">
-    <div class="bubble b-ai"><span class="nm">서사</span>반갑습니다. 프리미엄 쇼핑 큐레이터 <b>서사</b>입니다.<br>찾으시는 상품과 예산을 말씀해 주시면 세 곳의 몰을 비교해 최저가로 골라 드릴게요.<br><br>예) "10만원 이하 무선 이어폰", "데일리 향수 추천"</div>
+    <div class="bubble b-ai"><span class="nm">서사</span>반갑습니다. 프리미엄 쇼핑 큐레이터 <b>서사</b>입니다.<br>찾으시는 상품과 예산을 말씀해 주시면 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 알려 드릴게요.<br><br>예) "10만원 이하 무선 이어폰", "데일리 향수 추천"</div>
   </div>
   <div class="chat-suggest" id="chatSuggest"></div>
   <div class="chat-input">
@@ -1146,6 +1164,29 @@ footer p{font-size:.78rem;color:var(--faint)}
       <input class="alert-input" id="alertEmail" type="email" placeholder="알림 받을 이메일 주소">
       <button class="alert-submit" data-act="alert-submit">가격이 내려가면 알려주세요</button>
       <button class="alert-manage-link" data-act="open-myalerts-from-alert">내가 신청한 알림 보기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 이메일 인증 모달 -->
+<div class="alert-overlay" id="authOverlay">
+  <div class="alert-box">
+    <div class="alert-head">
+      <div class="at">이메일 인증<small>VERIFY EMAIL</small></div>
+      <button class="alert-head-close" data-act="close-auth">×</button>
+    </div>
+    <div class="alert-body">
+      <div class="alert-label" id="authMsg" style="line-height:1.6"></div>
+      <span class="alert-label">이메일 주소</span>
+      <input class="alert-input" id="authEmail" type="email" placeholder="이메일 주소" autocomplete="email">
+      <div id="authCodeWrap" style="display:none">
+        <span class="alert-label">메일로 받은 6자리 코드</span>
+        <input class="alert-input" id="authCode" type="text" inputmode="numeric" maxlength="6"
+               placeholder="000000" autocomplete="one-time-code"
+               style="letter-spacing:.4em;text-align:center;font-family:var(--mono)">
+      </div>
+      <button class="alert-submit" id="authSubmit" data-act="auth-submit">인증 코드 받기</button>
+      <button class="alert-manage-link" id="authRestart" data-act="auth-restart" style="display:none">다른 이메일로 다시 시도</button>
     </div>
   </div>
 </div>
@@ -1239,7 +1280,8 @@ var CONST = {
     EMAIL: 'seosa_email',
     PROFILE: 'seosa_profile',
     CHAT: 'seosa_chat',        // ★ 챗 대화 저장
-    THEME: 'seosa_theme'       // ★ 다크모드 설정
+    THEME: 'seosa_theme',      // ★ 다크모드 설정
+    TOKEN: 'seosa_token'       // 이메일 인증 토큰 { token, email, expiresAt }
   }
 };
 
@@ -1579,7 +1621,26 @@ var Fmt = {
     return { name: it.mall || '네이버쇼핑', tag: 'N-SHOP', cls: 'b-naver' };
   },
 
-  isEmail: function(e) { return !!e && e.indexOf('@') > 0 && e.indexOf('.') > 0; }
+  isEmail: function(e) { return !!e && e.indexOf('@') > 0 && e.indexOf('.') > 0; },
+
+  /**
+   * 수집 기준일 라벨.
+   *
+   * 홈 섹션(오늘의 셀렉션·이달의 추천·취향 추천)은 실시간 검색이 아니라 DB에
+   * 마지막으로 저장된 가격을 보여준다. 며칠 지난 값을 아무 표시 없이 현재가처럼
+   * 내보내면, 사용자가 '최저가 구매'를 눌러서 보는 쿠팡 가격과 달라진다.
+   *
+   * 오늘·어제 값에는 붙이지 않는다 — 매일 수집되는 정상 상태까지 어지럽힐 필요는 없다.
+   */
+  asOf: function(iso) {
+    if (!iso) return '';
+    var t = Date.parse(iso);
+    if (!t) return '';
+    var days = Math.floor((Date.now() - t) / 86400000);
+    if (days < 2) return '';
+    var d = new Date(t);
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' 수집 기준';
+  }
 };
 
 
@@ -1589,8 +1650,134 @@ var Fmt = {
  *     google.script.run.withSuccessHandler(...).withFailureHandler(...).fn(...)
  *     3단 체인을 Api.call('fn', [args], onOk, onErr) 하나로
  * ========================================================== */
+/* ============================================================
+ *  [5-b] Auth — 이메일 소유 확인
+ *
+ *  찜 목록 / 취향 프로필 / 가격 알림은 개인 데이터다. 예전에는 서버가
+ *  ?email= 하나만 보고 내줘서, 주소만 알면 남의 것을 읽고 덮어쓸 수 있었다.
+ *  이제 이메일로 6자리 코드를 받아 토큰을 발급받고, 그 토큰으로만 접근한다.
+ *
+ *  토큰이 필요한 요청이 401을 받으면 Api.call이 이 모듈의 인증 창을 띄우고,
+ *  인증이 끝나면 원래 요청을 자동으로 한 번 다시 보낸다. 그래서 개별
+ *  호출부(Sync / Profile / Alert / MyAlerts)는 손댈 필요가 없다.
+ * ========================================================== */
+var Auth = {
+  // 인증이 필요한 Api.call 이름 → 이메일은 전부 args[0]에 들어온다.
+  FNS: {
+    saveAlert: 1, getMyAlerts: 1, deleteAlert: 1,
+    saveUserData: 1, loadUserData: 1,
+    saveUserProfile: 1, loadUserProfile: 1
+  },
+
+  saved: function() { return Store.get(CONST.LS.TOKEN, null); },
+
+  /** 이 이메일에 쓸 수 있는 유효한 토큰. 없으면 빈 문자열. */
+  tokenFor: function(email) {
+    var t = Auth.saved();
+    if (!t || !t.token) return '';
+    if (t.expiresAt && Date.parse(t.expiresAt) < Date.now()) return '';
+    if (email && String(t.email || '').toLowerCase() !== String(email).toLowerCase()) return '';
+    return t.token;
+  },
+
+  clear: function() { Store.set(CONST.LS.TOKEN, null); },
+
+  // ── 인증 창 ──
+  pending: null,   // 인증 후 다시 실행할 작업
+  phase: 'email',  // email → code
+
+  open: function(email, onDone) {
+    Auth.pending = onDone || null;
+    Auth.phase = 'email';
+
+    var e = $('authEmail');
+    if (e) e.value = email || Store.get(CONST.LS.EMAIL, '') || '';
+    var c = $('authCode');
+    if (c) c.value = '';
+
+    show('authCodeWrap', false);
+    setText('authSubmit', '인증 코드 받기');
+    setText('authMsg', '찜·취향·가격 알림은 본인 이메일에서만 볼 수 있어요. 인증 코드를 보내드릴게요.');
+    var r = $('authRestart');
+    if (r) r.style.display = 'none';
+
+    var ov = $('authOverlay');
+    if (ov) ov.classList.add('open');
+  },
+
+  close: function() {
+    var ov = $('authOverlay');
+    if (ov) ov.classList.remove('open');
+    Auth.pending = null;
+  },
+
+  restart: function() {
+    Auth.open($('authEmail') ? $('authEmail').value : '', Auth.pending);
+  },
+
+  submit: function() {
+    var btn = $('authSubmit');
+    var emEl = $('authEmail');
+    var email = emEl ? emEl.value.trim() : '';
+    if (!Fmt.isEmail(email)) { toast('이메일 주소를 확인해주세요'); return; }
+
+    var body = { email: email };
+    if (Auth.phase === 'code') {
+      var code = ($('authCode') ? $('authCode').value : '').trim();
+      if (!/^\d{6}$/.test(code)) { toast('6자리 숫자 코드를 입력해주세요'); return; }
+      body.code = code;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = '처리 중…'; }
+
+    fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function(r) {
+        return r.json().catch(function() { return {}; }).then(function(d) {
+          if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+          return d;
+        });
+      })
+      .then(function(d) {
+        if (btn) btn.disabled = false;
+
+        if (d.sent) {
+          // 1단계 완료 — 코드 입력으로 넘어간다
+          Auth.phase = 'code';
+          Store.set(CONST.LS.EMAIL, email);
+          show('authCodeWrap', true);
+          setText('authSubmit', '인증하기');
+          setText('authMsg', email + ' 으로 6자리 코드를 보냈어요. 메일함을 확인해 주세요.');
+          var r2 = $('authRestart');
+          if (r2) r2.style.display = 'block';
+          var c = $('authCode');
+          if (c) c.focus();
+          return;
+        }
+
+        if (d.token) {
+          Store.set(CONST.LS.TOKEN, { token: d.token, email: d.email || email, expiresAt: d.expiresAt || '' });
+          Store.set(CONST.LS.EMAIL, d.email || email);
+          Auth.close();
+          toast('인증 완료 ✦');
+          var again = Auth.pending;
+          Auth.pending = null;
+          if (again) again();
+        }
+      })
+      .catch(function(err) {
+        if (btn) { btn.disabled = false; btn.textContent = Auth.phase === 'code' ? '인증하기' : '인증 코드 받기'; }
+        toast((err && err.message) || '인증에 실패했어요');
+      });
+  }
+};
+
+
 var Api = {
-  call: function(fnName, args, onOk, onErr) {
+  call: function(fnName, args, onOk, onErr, retried) {
     var urlMap = {
       'searchAndSave':'/api/search','getInitData':'/api/init',
       'getDailyRecommendations':'/api/rec','getMoreOfKeyword':'/api/rec',
@@ -1660,11 +1847,39 @@ var Api = {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '');
     }
     fetchOpts.method = method;
+
+    // 개인 데이터 엔드포인트에는 인증 토큰을 싣는다 (이메일은 전부 args[0]).
+    var authEmail = Auth.FNS[fnName] ? String((args && args[0]) || '') : '';
+    if (authEmail) {
+      var tk = Auth.tokenFor(authEmail);
+      if (tk) fetchOpts.headers.Authorization = 'Bearer ' + tk;
+    }
+
+    // 응답 헤더로 오는 부가 정보(가격 출처 등). onOk의 두 번째 인자로 넘긴다.
+    // 기존 콜백은 인자를 하나만 받으므로 그대로 두어도 아무 영향이 없다.
+    var meta = { source: '', blocked: false };
     fetch(queryUrl, fetchOpts)
       .then(function(r) {
+        try {
+          meta.source = r.headers.get('X-Seosa-Source') || '';
+          meta.blocked = r.headers.get('X-Seosa-Blocked') === '1';
+        } catch (e) { /* 헤더를 못 읽어도 결과 표시는 계속한다 */ }
+
         // r.ok를 안 보면 500 응답의 에러 본문이 그대로 성공 콜백으로 넘어가
         // 실패가 성공처럼 보인다 (동기화 저장이 조용히 실패하던 원인).
         return r.json().catch(function() { return {}; }).then(function(body) {
+          /*
+           * 인증이 필요하다는 응답이면 인증 창을 띄우고, 끝난 뒤 같은 요청을
+           * 한 번만 다시 보낸다. 여기서 처리하므로 호출부는 인증을 몰라도 된다.
+           * retried 플래그가 없으면 계속 401을 받을 때 무한히 반복하게 된다.
+           */
+          if (r.status === 401 && body && body.needsAuth && !retried) {
+            Auth.clear();
+            Auth.open(authEmail, function() {
+              Api.call(fnName, args, onOk, onErr, true);
+            });
+            return Promise.reject({ handled: true });
+          }
           if (!r.ok || (body && body.error)) {
             throw new Error((body && body.error) || ('HTTP ' + r.status));
           }
@@ -1678,9 +1893,10 @@ var Api = {
         else if (fnName === 'getPriceDropTop') { if (onOk) onOk(data.priceDrop || data || []); }
         else if (fnName === 'getDailyRecommendations' || fnName === 'getMoreOfKeyword') { if (onOk) onOk(data); }
         else if (fnName === 'loadUserData') { if (onOk) onOk({ success: data.success, data: JSON.stringify(data.data || {}) }); }
-        else { if (onOk) onOk(data); }
+        else { if (onOk) onOk(data, meta); }
       })
-      .catch(function(e) { if (onErr) onErr(e); });
+      // handled 는 인증 창으로 넘긴 경우다. 오류 토스트를 띄우면 안 된다.
+      .catch(function(e) { if (e && e.handled) return; if (onErr) onErr(e); });
   },
   fire: function(fnName, args) { Api.call(fnName, args); },
 
@@ -1785,6 +2001,12 @@ var Card = {
       + save + '</div>' + cmp;
   },
 
+  /** DB에서 읽어온 오래된 가격이면 기준일을 밝힌다 (실시간 검색 결과에는 안 붙는다) */
+  asOfHTML: function(it) {
+    var label = Fmt.asOf(it.collectedAt);
+    return label ? '<div class="as-of">' + Fmt.esc(label) + '</div>' : '';
+  },
+
   actionsHTML: function() {
     return '<div class="card-actions">'
       + '<button class="alert-btn" data-act="card-compare">몰별 가격 비교</button>'
@@ -1818,6 +2040,7 @@ var Card = {
       + '<div class="mall-line">' + Fmt.esc(m.name) + '</div>'
       + '<div class="p-title">' + Fmt.esc(it.title) + '</div>'
       + Card.priceHTML(Fmt.int(it.lprice), Fmt.int(it.oprice), Fmt.int(it.savePct), m.cls === 'b-coupang')
+      + Card.asOfHTML(it)
       + Card.changeHTML(it)
       // data-key가 있으면 상품 단위(productId+mall)로, 없으면 상품명으로 이력을 찾는다.
       + '<div class="spark" data-title="' + Fmt.esc(it.title) + '"'
@@ -2185,8 +2408,8 @@ var Search = {
     var sk = Skeleton.start($('resGrid'), CONST.SKELETON.RESULT_COUNT);
 
     Api.call('searchAndSave', [kw],
-      function(items) {
-        sk.done(function() { Search.showResults(kw, items); });
+      function(items, meta) {
+        sk.done(function() { Search.showResults(kw, items, meta); });
       },
       function(err) {
         sk.done(function() {
@@ -2197,12 +2420,34 @@ var Search = {
     );
   },
 
-  showResults: function(kw, items) {
+  /**
+   * @param {object} meta {source, blocked} — 이 가격이 어디서 왔는지 (/api/search 응답 헤더)
+   */
+  showResults: function(kw, items, meta) {
+    meta = meta || {};
+
     if (!items || !items.length) {
-      setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 결과가 없어요</h3>');
-      setHTML('resGrid', '<div class="empty">다른 키워드로 검색해 보세요.</div>');
+      /*
+       * 결과 0건에는 두 가지가 있다. 둘을 같은 문구로 처리하면 안 된다.
+       *   - 정말로 그런 상품이 없다      → 다른 키워드를 권한다
+       *   - 쿠팡을 못 불러왔다(차단·한도) → 우리 쪽 문제다. 그렇게 말한다
+       */
+      if (meta.blocked || meta.source === 'none') {
+        setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 가격을 불러오지 못했어요</h3>');
+        setHTML('resGrid', '<div class="empty">쇼핑몰 연결이 일시적으로 원활하지 않아요.'
+          + '<br>잠시 후 다시 시도해 주세요.</div>');
+      } else {
+        setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 결과가 없어요</h3>');
+        setHTML('resGrid', '<div class="empty">다른 키워드로 검색해 보세요.</div>');
+      }
       return;
     }
+
+    // 쿠팡을 못 불러와 오래된 캐시를 꺼내 쓴 경우. 현재가인 척하지 않는다.
+    var staleNote = (meta.source === 'stale-cache')
+      ? '<div class="stale-note">⚠ 지금은 쇼핑몰에서 최신 가격을 받아오지 못해, '
+        + '마지막으로 저장된 가격을 보여드리고 있어요. 실제 판매가와 다를 수 있습니다.</div>'
+      : '';
 
     var prices = items.map(function(i) { return Fmt.int(i.lprice); }).filter(function(p) { return p > 0; });
 
@@ -2210,7 +2455,8 @@ var Search = {
     // 배너에 "Infinity원 / NaN%"이 찍힌다. 이 경우 통계 줄을 아예 빼고 목록만 보여준다.
     if (!prices.length) {
       setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 큐레이션 완료</h3>'
-        + '<div class="meta"><div><span>비교 상품</span><b>' + items.length + '개</b></div></div>');
+        + '<div class="meta"><div><span>비교 상품</span><b>' + items.length + '개</b></div></div>'
+        + staleNote);
     } else {
       var min = Math.min.apply(null, prices);
       var avg = Math.round(prices.reduce(function(a, b) { return a + b; }, 0) / prices.length / 100) * 100;
@@ -2222,7 +2468,8 @@ var Search = {
         + '<div><span>최저가</span><b>' + Fmt.won(min) + '원</b></div>'
         + '<div><span>비교 상품</span><b>' + items.length + '개</b></div>'
         + '<div><span>평균 대비</span><b>-' + savedVs + '%</b></div>'
-        + '</div>');
+        + '</div>'
+        + staleNote);
     }
 
     // (예전에는 여기서 상위 5개의 {title, price}만 AppState.context에 넣어 AI에게 보냈다.
@@ -2255,11 +2502,26 @@ var Search = {
     setText('fcCoupang', counts['쿠팡'] ? counts['쿠팡'] : '');
     setText('fcAli',     counts['알리익스프레스'] ? counts['알리익스프레스'] : '');
 
-    var ali = $('fbAli');
-    if (ali) ali.style.display = counts['알리익스프레스'] > 0 ? 'inline-block' : 'none';
+    /*
+     * 결과가 0건인 몰 버튼은 숨긴다.
+     *
+     * 네이버 연동이 빠진 뒤로 검색 결과는 전부 쿠팡인데 네이버 버튼은 그대로
+     * 남아 있어서, 누르면 매번 "해당 쇼핑몰 결과가 없어요"만 떴다.
+     * 버튼을 지우는 게 아니라 결과가 있을 때만 보여주는 것이라
+     * 다른 몰이 다시 붙으면 알아서 되살아난다 (알리 버튼이 원래 쓰던 방식).
+     */
+    var toggle = function(id, n) {
+      var el = $(id);
+      if (el) el.style.display = n > 0 ? 'inline-block' : 'none';
+    };
+    toggle('fbNaver', counts['네이버쇼핑']);
+    toggle('fbAli',   counts['알리익스프레스']);
+
+    // 고를 몰이 하나뿐이면 필터 줄 자체가 의미 없다.
+    var mallsWithResults = Object.keys(counts).filter(function(k) { return counts[k] > 0; }).length;
 
     var fb = $('filterBar');
-    if (fb) fb.style.display = 'flex';
+    if (fb) fb.style.display = mallsWithResults > 1 ? 'flex' : 'none';
   },
 
   /**
@@ -3306,7 +3568,7 @@ var Chat = {
 
     first.innerHTML = '<span class="nm">서사</span>'
       + Fmt.esc(prof.nickname) + '님, 반갑습니다. 프리미엄 쇼핑 큐레이터 <b>서사</b>입니다.<br>'
-      + '찾으시는 상품과 예산을 말씀해 주시면 세 곳의 몰을 비교해 최저가로 골라 드릴게요.<br><br>'
+      + '찾으시는 상품과 예산을 말씀해 주시면 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 알려 드릴게요.<br><br>'
       + (prof.cats.length
           ? '관심 카테고리 <b>' + Fmt.esc(prof.cats.join(', ')) + '</b> 기반으로 추천드릴게요.'
           : '예) "10만원 이하 무선 이어폰", "데일리 향수 추천"');
@@ -4430,6 +4692,11 @@ var Actions = {
   'open-myalerts-from-alert': function() { Alert.close(); MyAlerts.open(); },
   'open-myalerts':  function() { MyAlerts.open(); },
   'close-myalerts': function() { MyAlerts.close(); },
+
+  // ── 이메일 인증 ──
+  'close-auth':   function() { Auth.close(); },
+  'auth-submit':  function() { Auth.submit(); },
+  'auth-restart': function() { Auth.restart(); },
   'myalerts-load':  function() { MyAlerts.load(); },
   'myalert-del':    function(el) { MyAlerts.remove(el); }
 };
@@ -4441,6 +4708,7 @@ document.addEventListener('click', function(e) {
   if (e.target.id === 'cmpOverlay')     { Compare.close(); return; }
   if (e.target.id === 'alertOverlay')   { Alert.close(); return; }
   if (e.target.id === 'myAlertsOverlay'){ MyAlerts.close(); return; }
+  if (e.target.id === 'authOverlay')    { Auth.close(); return; }
 
   var el = e.target.closest('[data-act]');
   if (!el) return;
@@ -4517,6 +4785,12 @@ function bindInputs() {
       if (e.key === 'Enter') MyAlerts.load();
     });
   }
+
+  // 인증 창 — 이메일/코드 어디서든 엔터로 진행
+  ['authEmail', 'authCode'].forEach(function(id) {
+    var el = $(id);
+    if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') Auth.submit(); });
+  });
 }
 
 
@@ -4549,6 +4823,7 @@ document.addEventListener('keydown', function(e) {
     Compare.close();
     Alert.close();
     MyAlerts.close();
+    Auth.close();
   }
 });
 
@@ -4561,13 +4836,13 @@ var HERO_COPIES = [
   ['최저가도,', '고급스럽게.'],
   ['살 때를 아는 것도,', '실력입니다.'],
   ['가격은 매일 변합니다.', '우리는 매일 기록합니다.'],
-  ['한 번의 검색으로,', '세 곳을 비교합니다.'],
+  ['한 번의 검색으로,', '어제 가격까지 봅니다.'],
   ['충동구매 말고,', '서사 있는 소비.'],
   ['싸게 사는 것보다,', '잘 사는 것.'],
   ['지금이 살 때인지,', '데이터가 말해줍니다.'],
   ['오늘의 최저가는,', '내일 바뀔 수 있습니다.'],
   ['가격을 기록하면,', '패턴이 보입니다.'],
-  ['검색 한 번에,', '네이버·쿠팡·알리 동시 비교.'],
+  ['검색 한 번에,', '오늘 가격과 지난 가격.'],
   ['후회 없는 소비의', '시작.'],
   ['내가 산 가격이,', '최저가였을까요?'],
   ['매일 새벽,', '가격을 수집합니다.'],

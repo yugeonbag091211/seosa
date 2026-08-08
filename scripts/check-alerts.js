@@ -9,7 +9,7 @@
  *   3. atl     — 역대 최저가 갱신
  */
 
-require('dotenv').config({ quiet: true });
+require('./_env');
 const supabase = require('../api/_supabase');
 const notify   = require('../api/_notify');
 
@@ -59,6 +59,14 @@ async function markSent(id, currentPrice) {
 }
 
 async function run() {
+  // 메일 발송 수단이 없으면 조건을 아무리 잘 판정해도 아무 일도 일어나지 않는다.
+  // 조용히 "0건 발송"으로 끝나면 설정 누락을 알 수 없으므로 먼저 밝힌다.
+  if (!process.env.RESEND_API_KEY) {
+    console.error('❌ RESEND_API_KEY 가 없습니다 — 알림 메일을 보낼 수 없습니다.');
+    console.error('   GitHub > Settings > Secrets and variables > Actions 에 추가하세요.');
+    process.exitCode = 1;
+  }
+
   // 1. 오늘 수집된 가격
   const { data: todayPrices, error: e1 } = await supabase
     .from('price_history')
@@ -87,8 +95,20 @@ async function run() {
   let sent = 0, skipped = 0;
 
   for (const alert of alertList) {
-    // 상품명으로 오늘 가격 찾기
-    const todayRow = todayPrices.find(p => p.title === alert.title && p.mall === alert.mall)
+    /*
+     * 오늘 가격 찾기 — product_id 가 있으면 그걸 먼저 쓴다.
+     *
+     * 상품명은 고유하지 않다. 쿠팡에는 같은 이름의 다른 상품이 흔해서, 이름만으로
+     * 찾으면 값이 싼 동명이물의 가격으로 "목표가 달성" 메일이 나갈 수 있다.
+     * (product_id 는 supabase/2026-08-hardening.sql 적용 이후 신청분부터 채워진다.
+     *  그 전에 신청된 행은 빈 문자열이라 예전처럼 상품명으로 찾는다.)
+     */
+    const todayRow =
+      (alert.product_id
+        ? todayPrices.find(p => p.product_id === alert.product_id && p.mall === alert.mall)
+          || todayPrices.find(p => p.product_id === alert.product_id)
+        : null)
+      || todayPrices.find(p => p.title === alert.title && p.mall === alert.mall)
       || todayPrices.find(p => p.title === alert.title);
     if (!todayRow) { skipped++; continue; }
 
@@ -102,11 +122,18 @@ async function run() {
     if (prev > 0 && (prev - cur) / prev >= DROP_THRESHOLD)
       triggeredAlerts.push({ type: 'drop', dropPct: ((prev - cur) / prev) * 100 });
 
+    // 이 알림의 가격 기록을 어떤 범위로 볼지. 오늘 가격을 찾은 그 상품과
+    // 같은 범위여야 한다 — 오늘 값은 A상품, 역대 최저가는 동명의 B상품에서
+    // 가져오면 "역대 최저가 갱신"이 사실이 아니게 된다.
+    const scoped = () => {
+      const q = supabase.from('price_history').select('price');
+      return todayRow.product_id
+        ? q.eq('product_id', todayRow.product_id).eq('mall', todayRow.mall)
+        : q.eq('title', alert.title);
+    };
+
     // 역대 최저가 확인
-    const { data: allHistory } = await supabase
-      .from('price_history')
-      .select('price')
-      .eq('title', alert.title)
+    const { data: allHistory } = await scoped()
       .order('price', { ascending: true })
       .limit(1);
     const allTimeMin = allHistory && allHistory[0] ? allHistory[0].price : null;
@@ -117,11 +144,7 @@ async function run() {
 
     // 30일 통계
     const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    const { data: hist30 } = await supabase
-      .from('price_history')
-      .select('price')
-      .eq('title', alert.title)
-      .gte('recorded_date', thirtyAgo);
+    const { data: hist30 } = await scoped().gte('recorded_date', thirtyAgo);
     const prices30 = (hist30 || []).map(r => r.price);
     const avg30 = prices30.length ? Math.round(prices30.reduce((a, b) => a + b, 0) / prices30.length) : 0;
     const min30 = prices30.length ? Math.min(...prices30) : 0;

@@ -1,4 +1,4 @@
-const { readBody, applyCors } = require('./_http');
+const { readBody, applyCors, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
 
 const MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-5';
@@ -257,6 +257,7 @@ module.exports = async function handler(req, res) {
   // 호출 1회당 실제 비용이 나가는 엔드포인트다. 공개 CORS(*)를 붙이면
   // 남의 사이트가 우리 키로 무료 AI API를 쓸 수 있다. 허용 오리진만.
   if (!applyCors(req, res, 'private')) return;
+  noStore(res);   // 개인 데이터 — 중간 캐시에 남으면 안 된다
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
 

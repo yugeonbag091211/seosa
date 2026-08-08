@@ -25,7 +25,8 @@
 const crypto = require('crypto');
 const supabase = require('./_supabase');
 
-const HOST = 'https://api-gateway.coupang.com';
+// 테스트에서만 다른 호스트를 물린다. 운영에서는 절대 설정하지 말 것.
+const HOST = process.env.COUPANG_API_HOST || 'https://api-gateway.coupang.com';
 const SEARCH_PATH = '/v2/providers/affiliate_open_api/apis/openapi/products/search';
 
 function envNum(name, fallback) {
@@ -40,6 +41,17 @@ const MIN_GAP_MS = envNum('COUPANG_MIN_GAP_MS', 1200);
 /** 캐시 수명. 상품 가격은 하루 단위로 봐도 충분하다. */
 const CACHE_TTL_MS = envNum('COUPANG_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
 
+/*
+ * 실제로 쿠팡에 요청할 상품 수.
+ *
+ * 호출자가 6개만 필요해도 이만큼 받아서 캐시에 넣는다. 한 번 호출하는 비용은
+ * 몇 개를 받든 똑같은데(분당 상한은 "호출 수" 기준이다), 6개짜리 응답으로
+ * 캐시를 덮어쓰면 50개가 필요한 배치 수집(collect-all-prices.js)이 캐시를
+ * 못 쓰고 같은 키워드를 다시 호출하게 된다. 사용자가 검색할수록 배치가
+ * 쿠팡을 더 때리는 구조였다.
+ */
+const FETCH_LIMIT = Math.min(envNum('COUPANG_FETCH_LIMIT', 50), 100);
+
 /** 응답 종류별 호출 중단 시간(분). */
 const COOLDOWN_MIN = {
   http429: 15,   // 명시적 레이트리밋 — 넉넉히 쉰다
@@ -47,8 +59,21 @@ const COOLDOWN_MIN = {
   http401: 60,   // 서명 실패. 재시도해도 똑같이 실패한다
   httpOther: 5,
   rcode: 60,     // rCode 차단 응답
+  htmlDenied: 30,// HTTP 200 인데 본문이 차단 안내 HTML
   network: 2
 };
+
+/**
+ * HTTP 200 으로 내려온 본문이 사실은 차단/점검 안내 페이지인가?
+ *
+ * 쿠팡은 거부를 status code 로만 알려주지 않는다. 실제로 받은 응답이
+ * "HTTP 200 + <html> Sorry! Access denied ..." 였다. 이걸 단순 JSON 파싱 실패로
+ * 넘기면 서킷 브레이커가 열리지 않아서, 사용자가 검색할 때마다 차단된 엔드포인트를
+ * 계속 두드리게 된다 — 경고가 쌓여 이용 제한으로 가는 정확히 그 경로다.
+ */
+function looksDenied(body) {
+  return /access denied|forbidden|not authorized|blocked|이용이 제한|접근이 거부|점검/i.test(body || '');
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -57,7 +82,18 @@ const state = {
   lastCallAt: 0,     // 마지막으로 "예약된" 호출 시각
   blockedUntil: 0,
   blockReason: '',
-  dbGate: true,      // 전역 카운터 사용 가능 여부(스키마 미적용이면 false)
+  /*
+   * 전역 카운터/차단 상태(Supabase) 사용 여부.
+   *
+   * 기본은 켜짐. 끄는 경우는 두 가지다.
+   *   - 스키마가 아직 안 올라간 환경 (자동으로 false 가 된다)
+   *   - 로컬 개발/테스트 (COUPANG_DISABLE_GLOBAL_GATE=1)
+   *
+   * 로컬 스위치가 필요한 이유: scripts/dev-server.js 는 운영 Supabase 를 그대로
+   * 본다. 로컬에서 차단 응답을 한 번 받으면 coupang_api_state 에 전역 차단이
+   * 기록돼서 운영 사이트의 검색까지 같이 멈춘다.
+   */
+  dbGate: process.env.COUPANG_DISABLE_GLOBAL_GATE !== '1',
   dbGateWarned: false,
   totalCalls: 0,
   totalCacheHits: 0,
@@ -317,13 +353,21 @@ async function searchCoupang(keyword, opts = {}) {
 
   // 4) 실제 호출 — 재시도 없음
   state.totalCalls++;
-  const reqLimit = Math.max(1, Math.min(100, limit));
+  // 호출자가 요구한 수와 상관없이 공용 캐시용으로 넉넉히 받는다 (FETCH_LIMIT 주석 참고).
+  const reqLimit = Math.max(1, Math.min(100, Math.max(limit, FETCH_LIMIT)));
   const query = `keyword=${encodeURIComponent(kw)}&limit=${reqLimit}`;
 
   let r, text;
   try {
     r = await fetch(`${HOST}${SEARCH_PATH}?${query}`, {
-      headers: { Authorization: sign('GET', SEARCH_PATH, query) }
+      headers: {
+        Authorization: sign('GET', SEARCH_PATH, query),
+        // Node 의 기본 User-Agent 는 "node" 다. 파트너 API 앞단 WAF 입장에서는
+        // 정체를 밝히지 않는 봇과 구분되지 않는다. 어떤 서비스가 부르는지 밝힌다.
+        // (2026-08 차단을 이 헤더로 재현·해소하지는 못했지만, 기본값으로 두는 것보다는 낫다)
+        'User-Agent': process.env.COUPANG_USER_AGENT || 'SEOSA/1.0 (+https://seosa.ai.kr)',
+        Accept: 'application/json'
+      }
     });
     text = await r.text();
   } catch (e) {
@@ -343,6 +387,22 @@ async function searchCoupang(keyword, opts = {}) {
   let data = null;
   try { data = JSON.parse(text); } catch (e) { data = null; }
   if (!data) {
+    /*
+     * HTTP 200 인데 JSON 이 아니다.
+     *
+     * 조용히 캐시로 넘어가면 안 된다 — 쿠팡이 차단 안내 페이지나 점검 페이지를
+     * 200 으로 내려주는 경우가 있고, 그러면 사이트는 며칠이고 옛 캐시만
+     * 보여주면서 로그에는 "파싱 실패" 한 줄만 남는다. 무엇을 받았는지 남긴다.
+     */
+    const peek = (text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    console.error(`[coupang] JSON 아님 (http=${r.status} len=${(text || '').length} limit=${reqLimit}): ${peek}`);
+
+    if (looksDenied(peek)) {
+      await trip(COOLDOWN_MIN.htmlDenied, `HTML 차단 응답(HTTP 200): ${peek.slice(0, 120)}`);
+      await dbFinish(gate.callId, 'blocked_html', r.status, '', 0);
+      return fallback(`쿠팡 접근 차단: ${peek.slice(0, 120)}`, true);
+    }
+
     await dbFinish(gate.callId, 'parse_error', r.status, '', 0);
     return fallback('쿠팡 응답 파싱 실패', false);
   }
@@ -416,5 +476,5 @@ async function pruneLog(keepDays = 7) {
 
 module.exports = {
   searchCoupang, isBlocked, localStats, globalUsage, pruneLog,
-  MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS
+  MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, FETCH_LIMIT
 };

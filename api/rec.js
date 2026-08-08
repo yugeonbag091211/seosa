@@ -1,7 +1,12 @@
 const supabase = require('./_supabase');
-const { TODAY_PICKS, toClientProduct, roundRobin } = require('./_shop');
+const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows } = require('./_shop');
+const { applyCors, cachePublic } = require('./_http');
+const { guard } = require('./_ratelimit');
 
 const PAGE_SIZE = 8;
+// 한 키워드의 상품 풀 상한. 정렬을 JS에서 하기 때문에 한 번에 받아둔다.
+// (키워드당 실제 상품 수는 수십 개 수준이라 이 값이면 전부 들어온다)
+const MAX_POOL = 200;
 
 // 카테고리는 그 자체로 products.keyword에 없기 때문에
 // 취향 기반 추천을 뽑을 때는 카테고리를 실제 상품 키워드 풀로 매핑한다.
@@ -25,7 +30,10 @@ function mapCatsToKeywords(cats) {
 }
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (!applyCors(req, res, 'public')) return;
+
+  if (!guard(req, res, { name: 'rec', limit: 60, windowMs: 60 * 1000 })) return;
+
   const q = req.query || {};
 
   try {
@@ -44,12 +52,13 @@ module.exports = async function handler(req, res) {
         .from('products')
         .select('*')
         .in('keyword', keywords)
-        .limit(200);
+        .limit(MAX_POOL);
       if (error) throw new Error(error.message);
 
+      cachePublic(res, 300);
       return res.json({
         keyword: cats.join(' · '),
-        products: roundRobin(data, keywords, PAGE_SIZE).map(toClientProduct)
+        products: roundRobin(preferLive(relevantRows(data)), keywords, PAGE_SIZE).map(toClientProduct)
       });
     }
 
@@ -57,16 +66,29 @@ module.exports = async function handler(req, res) {
     const keyword = q.keyword || TODAY_PICKS[Math.floor(Math.random() * TODAY_PICKS.length)];
     const offset = Math.max(0, parseInt(q.offset || '0', 10) || 0);
 
+    /*
+     * order 없이 range()로 페이지를 넘기면 안 된다.
+     *
+     * Postgres는 order by가 없으면 행 순서를 보장하지 않는다. "이 키워드 더보기"를
+     * 누를 때마다 1페이지에 있던 상품이 2페이지에 다시 나오거나 아예 건너뛰어졌다.
+     * product_id로 고정 순서를 잡아 한 번에 받아온 뒤, 노출 우선순위(쿠팡·최신순)를
+     * 적용하고 잘라낸다.
+     */
     const { data, error } = await supabase
       .from('products')
       .select('*')
       .eq('keyword', keyword)
-      .range(offset, offset + PAGE_SIZE - 1);
+      .order('product_id', { ascending: true })
+      .limit(MAX_POOL);
     if (error) throw new Error(error.message);
 
+    // keyword 와 무관하게 저장된 행은 노출하지 않는다 (_shop.relevantRows 주석 참고).
+    const pool = preferLive(relevantRows(data));
+
+    cachePublic(res, 300);
     res.json({
       keyword,
-      products: (data || []).map(toClientProduct)
+      products: pool.slice(offset, offset + PAGE_SIZE).map(toClientProduct)
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

@@ -9,3 +9,14 @@ node_modules/
 .env.production
 .vercel
 .env*
+
+# 에디터 / 도구 로컬 설정
+.claude/
+
+# 셸 사고로 생기는 파일.
+# 프롬프트가 섞인 명령을 붙여넣거나 리다이렉트를 잘못 쓰면 저장소 루트에
+# "git", "with <n> lines context" 같은 이름의 출력 덤프가 생긴다.
+# 2026-08 배포 직전에 세 개가 커밋 대기 상태로 발견돼서 아예 막아둔다.
+/git
+/with *
+/ersyugeo*
