@@ -7,12 +7,14 @@ const MAX_KEYWORD_LEN = 80;
 /*
  * 검색 결과로 돌려줄 상품 수.
  *
- * 6개였는데, 최저가 비교 서비스에서 6개는 정렬·몰 필터·"몰별 가격 비교"가
- * 전부 의미를 잃는 숫자다. 쿠팡에는 어차피 한 번에 50개를 요청해 캐시에
- * 넣어두므로(_coupang.js FETCH_LIMIT) 이 값을 올려도 API 호출은 늘지 않는다.
- * 프론트는 12개만 먼저 그리고 나머지는 스크롤에 맞춰 붙인다(CONST.LAZY).
+ * 24로 올렸다가 되돌렸다. 쿠팡이 limit>10 요청을 rCode=400("limit is out of range")으로 거부해서,
+ * 올리는 순간 검색이 0건이 된다 (_coupang.js FETCH_LIMIT 주석 참고).
+ * 실제로 그 상태가 배포돼 프로덕션 검색이 잠시 깨졌다.
+ *
+ * 쿠팡 검색 API 의 limit 상한은 10 이다. 더 올리려면 쿠팡이 상한을 바꾼 뒤에.
+ * 이 값만 올리면 소용없다 — 실제 요청 크기는 FETCH_LIMIT 이 정한다.
  */
-const RESULT_LIMIT = 24;
+const RESULT_LIMIT = 10;
 
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;

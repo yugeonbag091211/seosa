@@ -44,13 +44,28 @@ const CACHE_TTL_MS = envNum('COUPANG_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
 /*
  * 실제로 쿠팡에 요청할 상품 수.
  *
- * 호출자가 6개만 필요해도 이만큼 받아서 캐시에 넣는다. 한 번 호출하는 비용은
- * 몇 개를 받든 똑같은데(분당 상한은 "호출 수" 기준이다), 6개짜리 응답으로
- * 캐시를 덮어쓰면 50개가 필요한 배치 수집(collect-all-prices.js)이 캐시를
- * 못 쓰고 같은 키워드를 다시 호출하게 된다. 사용자가 검색할수록 배치가
- * 쿠팡을 더 때리는 구조였다.
+ * ★ 이 값을 함부로 올리지 말 것. 쿠팡이 rCode=400 으로 거부한다.
+ *
+ * 2026-08-08 에 실제로 값을 바꿔가며 확인한 결과:
+ *   limit=6  → OK       (호출 이력 68건 전부 성공)
+ *   limit=10 → OK       (상품 10건 반환)
+ *   limit=15 → rCode=400 "limit is out of range"
+ *   limit=20 → rCode=400 "limit is out of range"
+ *   limit=50 → rCode=400 (호출 이력 41건 전부 실패)
+ * → 쿠팡 검색 API 의 limit 상한은 10 이다.
+ *
+ * "GitHub Actions 가 7/30 이후 한 행도 못 모은다"는 증상의 진짜 원인이
+ * 이것이었다. IP 차단이 아니라 limit 을 쿠팡이 받아주지 않은 것이다
+ * (collect-all-prices.js 만 50 을 썼고, cron/search 는 6 이라 멀쩡했다).
+ *
+ * 한때 이 값을 50 으로 올려 캐시를 공유하려 했는데, 그러면 모든 호출이
+ * 50 으로 나가서 정상 동작하던 cron·search 까지 rCode=400 을 받는다.
+ * 실제로 그 상태가 배포돼 프로덕션 검색이 0건을 반환했다.
+ *
+ * 10 을 넘기지 말 것. 쿠팡이 상한을 올리면 그때 환경변수로 조정한다.
  */
-const FETCH_LIMIT = Math.min(envNum('COUPANG_FETCH_LIMIT', 50), 100);
+const COUPANG_MAX_LIMIT = 10;
+const FETCH_LIMIT = Math.min(envNum('COUPANG_FETCH_LIMIT', COUPANG_MAX_LIMIT), COUPANG_MAX_LIMIT);
 
 /** 응답 종류별 호출 중단 시간(분). */
 const COOLDOWN_MIN = {
@@ -354,7 +369,8 @@ async function searchCoupang(keyword, opts = {}) {
   // 4) 실제 호출 — 재시도 없음
   state.totalCalls++;
   // 호출자가 요구한 수와 상관없이 공용 캐시용으로 넉넉히 받는다 (FETCH_LIMIT 주석 참고).
-  const reqLimit = Math.max(1, Math.min(100, Math.max(limit, FETCH_LIMIT)));
+  // 상한은 100 이 아니라 COUPANG_MAX_LIMIT(10) 이다. 넘기면 rCode=400.
+  const reqLimit = Math.max(1, Math.min(COUPANG_MAX_LIMIT, Math.max(limit, FETCH_LIMIT)));
   const query = `keyword=${encodeURIComponent(kw)}&limit=${reqLimit}`;
 
   let r, text;

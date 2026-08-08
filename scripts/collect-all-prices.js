@@ -4,7 +4,7 @@
  * node scripts/collect-all-prices.js
  *
  * 수집 전략:
- *   1차) 키워드별 쿠팡 검색 — 키워드당 최대 50건
+ *   1차) 키워드별 쿠팡 검색 — 키워드당 최대 10건 (쿠팡 limit 상한)
  *   마지막) 커버리지 리포트 출력
  *
  * ── 쿠팡 호출 정책 ───────────────────────────────────────────
@@ -27,7 +27,18 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const CONCURRENCY   = 4;
 const PAGE          = 1000;
 const UPSERT_CHUNK  = 200;
-const COUPANG_LIMIT = 50;
+/*
+ * 키워드당 가져올 상품 수.
+ *
+ * 50 이었는데, 쿠팡이 이 값을 rCode=400 으로 거부한다. 그래서 이 스크립트는
+ * 2026-07-30 이후로 한 행도 저장하지 못하고 있었다 (41회 시도 전부 실패).
+ * 같은 시기 cron·search 는 limit=6 이라 멀쩡히 성공했다.
+ * 자세한 근거는 api/_coupang.js 의 FETCH_LIMIT 주석 참고.
+ *
+ * 쿠팡 검색 API 의 limit 상한이 10 이라 키워드당 상위 10개만 훑는다.
+ * 커버리지는 낮지만 0건보다는 훨씬 낫다.
+ */
+const COUPANG_LIMIT = Number(process.env.COUPANG_FETCH_LIMIT) || 10;
 
 // 배치 실행이라 사용자 대기 시간이 없다. 호출 간격을 넉넉히 벌려
 // 라이브 검색(/api/search)이 쓸 몫을 분당 절반 이상 남겨둔다.
