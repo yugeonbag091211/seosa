@@ -30,6 +30,24 @@ const TIME_BUDGET_MS = 45000;
 //                  44초 시점에 통과한 배치가 40초를 더 기다려 maxDuration을 넘긴다.
 const CRON_COUPANG = { source: 'cron', forceRefresh: true };
 
+/*
+ * 저장할 상품 수. searchAll 의 기본값 6 을 10 으로 올린다.
+ *
+ * ★ 이 값이 하는 일을 정확히 적어 둔다 — 가격 정확도가 아니라 커버리지다.
+ *
+ *   api/_coupang.js 의 순서는  normalize → collapseOptions → items.slice(limit) 다
+ *   (:576 → :581). 접기가 자르기보다 먼저이므로, limit 이 버리는 것은
+ *   "같은 상품의 더 싼 옵션"이 아니라 서로 다른 상품이다.
+ *   → 6 으로 두어도 가격이 틀려지지는 않는다. 저장되는 상품이 줄어들 뿐이다.
+ *   (이 순서는 scripts/test-coupang.js 의 'collapse 가 slice 보다 먼저'
+ *    케이스로 고정돼 있다. 순서가 뒤바뀌면 그 테스트가 깨진다)
+ *
+ *   쿠팡 호출은 어차피 FETCH_LIMIT(10)으로 나가므로 10 으로 올려도
+ *   호출 횟수는 그대로다. 이미 받아온 4건을 버릴 이유가 없다.
+ *   목적: 키워드당 저장 상품 수 6 → 10 (쿠팡 호출 증가 0회).
+ */
+const CRON_LIMIT = 10;
+
 /**
  * 오늘 수집할 키워드.
  *
@@ -89,7 +107,9 @@ module.exports = async function handler(req, res) {
     const batch = targets.slice(i, i + CONCURRENCY);
     const settled = await Promise.all(batch.map(async keyword => {
       try {
-        const { items, errors, from } = await searchAll(keyword, { coupangOpts: opts });
+        const { items, errors, from } = await searchAll(keyword, {
+          coupangLimit: CRON_LIMIT, coupangOpts: opts
+        });
         // 오래된 캐시로 응답한 경우에는 저장하지 않는다 (_shop.isRecordableSource 참고).
         const { saved, errors: saveErrors } = await saveProducts(keyword, items, { from });
         return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };

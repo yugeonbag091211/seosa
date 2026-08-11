@@ -1,24 +1,79 @@
 const supabase = require('./_supabase');
-const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows } = require('./_shop');
+const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, freshRows } = require('./_shop');
+/*
+ * 가격 하락 판정을 _price.js 로 옮겼다. 옮기기만 한 게 아니라 조건이 늘었다.
+ *
+ * 추가된 조건 — 재수집 가능한 몰인가 / product_id 가 숫자인가 / link 가 있는가.
+ * 2026-08-11 운영 DB price_drop_top 상위 48행 전수 대조:
+ *     구 조건 43/48  →  신 조건 29/48   (-14행)
+ *     탈락 14행 = 쿠팡 아님 6 + product_id 자리에 상품명 8(전부 link=NULL)
+ * SECTION_SIZE(8)의 3.6배가 남으므로 시세판이 비지는 않는다. 빠지는 것은
+ * 눌러도 갈 곳이 없거나(link=NULL) 더 이상 갱신되지 않는(네이버) 행이다.
+ * 케이스는 scripts/test-price.js 의 '시세판. plausibleDrop' 섹션에 고정해 두었다.
+ */
+const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT } = require('./_price');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
 
 const SECTION_SIZE = 8;
 
-/*
- * 하루 사이에 이만큼 넘게 내려갔으면 실제 인하가 아니라 매칭 오류로 본다.
- *
- * 쿠팡 검색 API는 같은 productId 에 대해 옵션·묶음 중 최저가를 돌려줄 때가 있다.
- * 그 값이 그대로 기록되면 733,950원짜리 로봇청소기가 18,500원으로 "97.5% 하락"한
- * 것처럼 남는다. 이걸 홈 최상단 시세판 1위로 올리면 사용자는 눌러서 전혀 다른
- * 가격을 보게 되고, 사이트를 한 번 더 쓸 이유가 사라진다.
- *
- * 행을 지우지는 않는다. 원본은 price_history 에 그대로 두고 노출만 막는다.
- */
-const MAX_PLAUSIBLE_DROP_PCT = 80;
-
 /** 시세판 후보를 넉넉히 받아 걸러야 8칸을 채울 수 있다. */
 const DROP_FETCH = SECTION_SIZE * 6;
+
+/** 키워드 하나당 훑을 상품 수. 아래 셀렉션 루프의 limit(100)과 같은 기준. */
+const KEYWORD_PROBE_ROWS = 100;
+
+/**
+ * 칩으로 내보낼 키워드 — 지금 보여줄 수 있는 상품이 실제로 있는 것만.
+ *
+ * 왜 필요한가.
+ *   freshRows 를 켜면 "저장된 상품은 있는데 전부 10일 넘게 확인 안 된" 키워드가
+ *   생긴다. 2026-08-11 운영 DB 기준 TODAY_PICKS 8종 중 '수영복' 이 그렇다
+ *   (44행 → 관련도 통과 7행 → 전부 dead-mall, 최신 관측 2026-07-27 = 15일 전).
+ *
+ *   아래 셀렉션 루프는 이미 그런 키워드를 건너뛰고 다른 것으로 대체한다.
+ *   그런데 칩 목록은 TODAY_PICKS 를 그대로 내보내고 있었다. 그래서 사용자가
+ *   '#수영복' 칩을 누르면 /api/rec 이 0건을 주고, 프론트의 Rec.loadKeyword 에는
+ *   빈 결과 분기가 없어서 추천 자리에 "검색 결과가 없습니다"가 뜬다.
+ *   (Rec.more 에는 재시도가 있지만 칩 클릭 경로에는 없다)
+ *
+ *   판단 기준을 하나로 맞추는 것뿐이다 — 셀렉션 루프가 쓸 수 없다고 본 키워드는
+ *   칩에도 올리지 않는다. 추천 로직 자체는 건드리지 않는다.
+ *
+ * 판단 근거를 못 얻으면(조회 실패·전멸) 기존대로 전부 내보낸다. 근거 없이
+ * 내비게이션을 지우지는 않는다.
+ */
+async function chipKeywords(keywords, activeKeyword) {
+  if (!keywords.length) return keywords;
+
+  // 상품 카드를 그리는 게 아니라 "살아 있는 키워드"만 세면 되므로 필요한 컬럼만 받는다.
+  // (relevantRows 는 keyword/title, productLifecycle 은 product_id/mall/lprice/collected_at)
+  const { data, error } = await supabase
+    .from('products')
+    .select('product_id, mall, keyword, title, lprice, collected_at')
+    .in('keyword', keywords)
+    .limit(keywords.length * KEYWORD_PROBE_ROWS);
+
+  if (error) {
+    console.warn(`[init] 칩 키워드 신선도 조회 실패(전체 노출): ${error.message}`);
+    return keywords;
+  }
+
+  const alive = new Set(freshRows(relevantRows(data)).map(r => r.keyword));
+  // 지금 화면에 그려지는 키워드는 항상 칩에 있어야 한다 (활성 칩이 목록에 없으면 안 된다).
+  if (activeKeyword) alive.add(activeKeyword);
+
+  const kept = keywords.filter(k => alive.has(k));
+  if (!kept.length) {
+    console.warn('[init] 노출 가능한 키워드가 하나도 없어 칩 목록을 그대로 내보냅니다.');
+    return keywords;
+  }
+  if (kept.length < keywords.length) {
+    console.log(`[init] 칩 키워드 ${keywords.length}→${kept.length}종 `
+      + `(제외: ${keywords.filter(k => !alive.has(k)).join(', ')})`);
+  }
+  return kept;
+}
 
 function toDropRow(p) {
   return {
@@ -34,16 +89,6 @@ function toDropRow(p) {
     isAllTimeLow: p.is_all_time_low,
     isCoupang: p.mall === '쿠팡'
   };
-}
-
-/** 값이 앞뒤가 맞는 하락만 남긴다. */
-function plausibleDrop(p) {
-  const cur = Number(p.current_price) || 0;
-  const prev = Number(p.prev_price) || 0;
-  const pct = Number(p.drop_pct) || 0;
-  if (cur <= 0 || prev <= 0) return false;
-  if (cur >= prev) return false;                       // 하락이 아닌 행
-  return pct > 0 && pct < MAX_PLAUSIBLE_DROP_PCT;
 }
 
 module.exports = async function handler(req, res) {
@@ -83,7 +128,7 @@ module.exports = async function handler(req, res) {
         .in('keyword', monthKeywords)
         .limit(200);
 
-      monthly.products = roundRobin(preferLive(relevantRows(monthProducts)), monthKeywords, SECTION_SIZE)
+      monthly.products = roundRobin(preferLive(freshRows(relevantRows(monthProducts))), monthKeywords, SECTION_SIZE)
         .map(toClientProduct);
     } else if (monthly) {
       monthly.products = [];
@@ -111,7 +156,7 @@ module.exports = async function handler(req, res) {
         .eq('keyword', recKeyword)
         .limit(100);
 
-      recProducts = preferLive(relevantRows(rows)).slice(0, SECTION_SIZE);
+      recProducts = preferLive(freshRows(relevantRows(rows))).slice(0, SECTION_SIZE);
       if (recProducts.length) break;
 
       const next = TODAY_PICKS.find(k => !tried.has(k));
@@ -127,6 +172,9 @@ module.exports = async function handler(req, res) {
     const dropped = (priceDrop || []).length - drops.length;
     if (dropped > 0) console.warn(`[init] 시세판 이상치 ${dropped}행 제외 (하락률 ${MAX_PLAUSIBLE_DROP_PCT}% 이상 또는 값 불일치)`);
 
+    // 칩 목록과 셀렉션 루프가 같은 기준(freshRows)을 쓰도록 맞춘다.
+    const dailyKeywords = await chipKeywords(TODAY_PICKS, recKeyword);
+
     // 방문자마다 같은 쿼리가 네 번 나간다. 개인화된 값이 없으므로 Edge 에 잠깐 세워둔다.
     cachePublic(res, 300);
     res.json({
@@ -135,7 +183,7 @@ module.exports = async function handler(req, res) {
       priceDrop: dropRows,
       daily: {
         keyword: recKeyword,
-        keywords: TODAY_PICKS,
+        keywords: dailyKeywords,
         products: recProducts.map(toClientProduct)
       }
     });

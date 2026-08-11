@@ -1,5 +1,5 @@
 const supabase = require('./_supabase');
-const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows } = require('./_shop');
+const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, freshRows } = require('./_shop');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
 
@@ -55,10 +55,12 @@ module.exports = async function handler(req, res) {
         .limit(MAX_POOL);
       if (error) throw new Error(error.message);
 
+      // freshRows: 더 이상 수집되지 않는 몰 / 오래 확인 못 한 행은 현재가가 아니다.
       cachePublic(res, 300);
       return res.json({
         keyword: cats.join(' · '),
-        products: roundRobin(preferLive(relevantRows(data)), keywords, PAGE_SIZE).map(toClientProduct)
+        products: roundRobin(preferLive(freshRows(relevantRows(data))), keywords, PAGE_SIZE)
+          .map(toClientProduct)
       });
     }
 
@@ -83,7 +85,8 @@ module.exports = async function handler(req, res) {
     if (error) throw new Error(error.message);
 
     // keyword 와 무관하게 저장된 행은 노출하지 않는다 (_shop.relevantRows 주석 참고).
-    const pool = preferLive(relevantRows(data));
+    // freshRows 는 "가격이 더 이상 갱신되지 않는 행"을 뺀다 (_shop.freshRows 참고).
+    const pool = preferLive(freshRows(relevantRows(data)));
 
     cachePublic(res, 300);
     res.json({
