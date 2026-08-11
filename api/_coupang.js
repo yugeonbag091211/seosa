@@ -24,6 +24,7 @@
 
 const crypto = require('crypto');
 const supabase = require('./_supabase');
+const { parsePrice, coupangItemIds } = require('./_price');
 
 // 테스트에서만 다른 호스트를 물린다. 운영에서는 절대 설정하지 말 것.
 const HOST = process.env.COUPANG_API_HOST || 'https://api-gateway.coupang.com';
@@ -40,6 +41,20 @@ const MAX_PER_MIN = Math.min(envNum('COUPANG_MAX_PER_MIN', 20), 40);
 const MIN_GAP_MS = envNum('COUPANG_MIN_GAP_MS', 1200);
 /** 캐시 수명. 상품 가격은 하루 단위로 봐도 충분하다. */
 const CACHE_TTL_MS = envNum('COUPANG_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
+
+/*
+ * 오래된 캐시(stale-cache)를 꺼내 쓸 수 있는 한계.
+ *
+ * 지금까지는 상한이 없었다. 쿠팡이 막히면 몇 주 전 가격이라도 그대로
+ * 사용자에게 나갔다. 실제로 2026-08-09 시점에 쿠팡이
+ * "HTTP 200 + Sorry! Access denied" HTML 을 돌려주고 있었고,
+ * coupang_search_cache 에는 3.4일 된 항목이 남아 있었다.
+ *
+ * 가격 비교 서비스에서 3일 전 가격은 현재가가 아니다. 잘못된 가격을
+ * 보여주는 것보다 "지금은 못 불러왔다"고 말하는 쪽이 낫다 —
+ * 프론트는 이미 그 경우를 구분해서 안내한다(showResults 의 meta.blocked).
+ */
+const STALE_MAX_MS = envNum('COUPANG_STALE_MAX_MS', 48 * 60 * 60 * 1000);
 
 /*
  * 실제로 쿠팡에 요청할 상품 수.
@@ -257,7 +272,17 @@ async function readCache(keyword) {
       .maybeSingle();
     if (error || !data) return null;
     return {
-      items: Array.isArray(data.items) ? data.items : [],
+      /*
+       * 읽을 때도 옵션을 접는다.
+       *
+       * 이미 저장돼 있는 캐시는 옛 규칙으로 만들어져서 같은 productId 가
+       * 여러 번 들어 있다. 2026-08-11 운영 DB 전수 확인:
+       *   coupang_search_cache 53개 항목 중 33개(62%)에 중복 productId 존재,
+       *   중복 행 합계 70건.
+       * 여기서 접지 않으면 캐시로 응답하는 동안에는 고치기 전과 똑같이
+       * 동작한다. TTL(6시간)이 지나 새로 받아올 때까지 기다릴 이유가 없다.
+       */
+      items: collapseOptions(Array.isArray(data.items) ? data.items : []),
       limit: data.req_limit || 0,
       ageMs: Date.now() - new Date(data.fetched_at).getTime()
     };
@@ -280,18 +305,103 @@ async function writeCache(keyword, items, limit) {
 /* ------------------------------------------------------------------ *
  *  본체
  * ------------------------------------------------------------------ */
+/**
+ * 쿠팡 응답 상품 → SEOSA 내부 모양.
+ *
+ * 가격 필드에 대한 판단 근거는 api/_price.js 위쪽 주석에 정리해 두었다.
+ * 요약하면 이 엔드포인트가 주는 가격은 productPrice 하나뿐이고, 그것이
+ * 지금 노출되는 판매가(즉시할인 반영 / 배송비·쿠폰·카드할인 제외)다.
+ *
+ * discountPrice 는 실제 응답에서 관측된 적이 없다. 예전 코드의
+ * `discountPrice || productPrice` 는 값이 들어오기만 하면 크든 작든
+ * 판매가로 삼았는데, 그건 안전한 폴백이 아니다. 판매가로 인정하는 조건을
+ * "유효한 값이고 productPrice 이하일 때"로 좁힌다.
+ *
+ * 가격을 못 읽은 항목은 0원으로 만들어 흘려보내지 않고 여기서 버린다.
+ *
+ * ★ 같은 productId 가 여러 번 오는 것을 반드시 접어야 한다.
+ *
+ *   쿠팡은 한 상품 페이지의 옵션(색상·수량·사이즈)을 각각 한 행으로 내려준다.
+ *   2026-08-08 "암막커튼" 응답 10건에 실제로 이런 게 들어 있었다.
+ *
+ *     8729454920  109,000
+ *     8729454920   75,000
+ *     8729454920   39,900     ← 쿠팡 상품 페이지가 보여주는 값
+ *     9673633371   16,900 / 20,900
+ *     9447380830   28,800 / 11,900
+ *
+ *   예전 코드는 이걸 그대로 흘려보냈고, 저장 단계에서 Map 에 넣으며
+ *   "마지막에 온 것"이 이겼다. 게다가 호출부가 limit=6 으로 잘라서
+ *   39,900 은 응답에서 아예 잘려 나갔다. 그 결과 products 에 75,000 이
+ *   저장됐고, 사용자가 클릭해서 본 쿠팡 페이지는 39,900 이었다.
+ *   — 이것이 "SEOSA 75,000원 / 쿠팡 3만원대" 신고의 정확한 기전이다.
+ *
+ *   최저가 비교 서비스에서 골라야 할 값은 그 상품 페이지에서 실제로 살 수
+ *   있는 가장 싼 옵션이다. 그래서 productId 별로 최저가 행만 남긴다.
+ *   링크·itemId 도 그 행의 것을 그대로 쓴다 — 값과 클릭 대상이 어긋나면
+ *   고쳐도 고친 게 아니다.
+ *
+ *   접는 일은 자르기(slice) 보다 먼저 일어나야 한다. 나중에 접으면
+ *   이번처럼 싼 옵션이 잘려 나간 뒤라 아무 소용이 없다.
+ */
 function normalize(raw) {
-  return (raw || []).map(it => {
-    const lprice = parseInt(it.discountPrice || it.productPrice) || 0;
-    return {
-      productId: String(it.productId || ''),
+  const out = [];
+  let dropped = 0;
+
+  (raw || []).forEach(it => {
+    const productId = String(it.productId || '');
+    if (!productId) { dropped++; return; }
+
+    const listPrice = parsePrice(it.productPrice);
+    const discounted = parsePrice(it.discountPrice);
+    // discountPrice 는 "판매가"일 때만 쓴다. 정가보다 비싸면 판매가가 아니다.
+    const lprice = (discounted && (!listPrice || discounted <= listPrice)) ? discounted : listPrice;
+    if (!lprice) { dropped++; return; }
+
+    const ids = coupangItemIds(it.productUrl);
+    out.push({
+      productId,
       title: it.productName || '',
       lprice,
-      oprice: parseInt(it.productPrice) || 0,
+      // 정가. discountPrice 가 실제로 내려오기 전까지는 lprice 와 같은 값이다
+      // (그래서 프론트의 "정가 대비" 줄은 뜨지 않는다 — 정상이다).
+      oprice: listPrice || lprice,
       link: it.productUrl || '',
-      image: it.productImage || ''
-    };
-  }).filter(i => i.lprice > 0 && i.productId);
+      image: it.productImage || '',
+      // 실제로 팔리는 단위. 같은 productId 안에서 옵션이 바뀐 것을
+      // 가격 변동과 구분하려면 이 값이 있어야 한다 (_price.classifyPrice).
+      itemId: ids.itemId,
+      vendorItemId: ids.vendorItemId
+    });
+  });
+
+  if (dropped) console.warn(`[coupang] 가격/식별자를 읽지 못한 상품 ${dropped}건 제외`);
+  return collapseOptions(out);
+}
+
+/**
+ * 같은 productId 의 옵션 행들을 최저가 한 건으로 접는다.
+ * 순서는 쿠팡이 준 순서(=관련도 순)를 유지한다.
+ */
+function collapseOptions(items) {
+  const best = new Map();
+  const order = [];
+
+  items.forEach(it => {
+    const cur = best.get(it.productId);
+    if (!cur) {
+      best.set(it.productId, it);
+      order.push(it.productId);
+      return;
+    }
+    if (it.lprice < cur.lprice) best.set(it.productId, it);
+  });
+
+  const folded = items.length - order.length;
+  if (folded) {
+    console.log(`[coupang] 같은 상품의 옵션 ${folded}건을 최저가로 접음 (${items.length}→${order.length}건)`);
+  }
+  return order.map(id => best.get(id));
 }
 
 /**
@@ -338,14 +448,22 @@ async function searchCoupang(keyword, opts = {}) {
     return { items: cached.items.slice(0, limit), error: null, from: 'cache', blocked: false };
   }
 
-  // 호출을 못 하게 됐을 때의 최선 — 오래된 캐시라도 있으면 그걸 쓴다.
+  // 호출을 못 하게 됐을 때의 최선 — 아직 쓸 만큼 최근인 캐시가 있으면 그걸 쓴다.
+  //
+  // "아직 쓸 만큼"에 상한이 없으면 몇 주 전 가격을 현재가 자리에 올리게 된다.
+  // 그건 결과가 없는 것보다 나쁘다. 사용자는 틀린 걸 모른 채 클릭한다.
   const fallback = (reason, blocked) => {
     state.totalDenied++;
-    if (cached) {
-      log(source, kw, 'STALE-CACHE', `이유=${reason}`);
+    if (cached && cached.ageMs <= STALE_MAX_MS) {
+      log(source, kw, 'STALE-CACHE', `이유=${reason} age=${Math.round(cached.ageMs / 3600000)}h`);
       return { items: cached.items.slice(0, limit), error: reason, from: 'stale-cache', blocked: !!blocked };
     }
-    log(source, kw, 'SKIP', `이유=${reason}`);
+    if (cached) {
+      log(source, kw, 'CACHE-EXPIRED',
+        `이유=${reason} age=${Math.round(cached.ageMs / 3600000)}h > 상한 ${Math.round(STALE_MAX_MS / 3600000)}h`);
+    } else {
+      log(source, kw, 'SKIP', `이유=${reason}`);
+    }
     return { items: [], error: reason, from: 'none', blocked: !!blocked };
   };
 
@@ -492,5 +610,5 @@ async function pruneLog(keepDays = 7) {
 
 module.exports = {
   searchCoupang, isBlocked, localStats, globalUsage, pruneLog,
-  MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, FETCH_LIMIT
+  MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };
