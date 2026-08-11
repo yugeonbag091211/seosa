@@ -56,6 +56,19 @@ async function hasFunction(name, args) {
     report(r.ok, `${t}.${c}`, r.ok ? '' : r.why);
   }
 
+  /*
+   * 이 두 컬럼은 없어도 저장이 실패하지 않는다 (api/_shop.js 가 빼고 재시도한다).
+   * 다만 없으면 같은 product_id 안에서 옵션이 바뀐 것을 가격 변동과 구분하지
+   * 못해서, 오염값이 현재가로 올라올 여지가 남는다. 실패가 아니라 경고로 낸다.
+   */
+  console.log('\n[2026-08-price-accuracy.sql — 없어도 동작하지만 있으면 정확도가 올라갑니다]');
+  for (const [t, c] of [['products', 'item_id'], ['products', 'vendor_item_id']]) {
+    const r = await hasColumn(t, c);
+    console.log(`  ${r.ok ? 'OK  ' : '경고'}  ${t}.${c}`
+      + (r.ok ? '' : ' — 옵션 교체 감지가 꺼진 상태입니다 (supabase/2026-08-price-accuracy.sql 실행)'));
+    if (r.ok) pass++;
+  }
+
   console.log('\n[환경변수]');
   report(!!process.env.SUPABASE_URL, 'SUPABASE_URL');
   report(!!process.env.SUPABASE_SECRET_KEY, 'SUPABASE_SECRET_KEY');

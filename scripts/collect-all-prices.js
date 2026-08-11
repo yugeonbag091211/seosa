@@ -22,6 +22,7 @@
 require('./_env');
 const supabase = require('../api/_supabase');
 const { searchCoupang, isBlocked, localStats } = require('../api/_coupang');
+const { recordPrices, searchPhraseFromTitle } = require('../api/_shop');
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const CONCURRENCY   = 4;
@@ -44,6 +45,21 @@ const COUPANG_LIMIT = Number(process.env.COUPANG_FETCH_LIMIT) || 10;
 // 라이브 검색(/api/search)이 쓸 몫을 분당 절반 이상 남겨둔다.
 const COUPANG_MIN_GAP_MS  = 6000;    // → 이 스크립트만으로는 분당 최대 10회
 const COUPANG_MAX_WAIT_MS = 120000;
+/*
+ * 실행당 쿠팡 호출 상한.
+ *
+ * ★ 한 번 실행으로 전체가 다 돌지 않는다. 그게 정상이다.
+ *   2026-08-11 운영 DB 실측:
+ *     products 1,432행 중 keyword 가 빈 행 809
+ *       ├ 네이버쇼핑 526 → 연동이 없어 수집 대상이 아니다
+ *       └ 쿠팡      283 → searchPhraseFromTitle 로 283/283 검색어 유도 성공,
+ *                          유도된 고유 검색어 264종
+ *     여기에 keyword 가 이미 있는 49종을 더하면 검색어 313종이다.
+ *   예산 120회로는 한 실행에 절반이 안 된다. 유도 그룹을 oldestFirst 로
+ *   정렬해 두었으므로(아래 plan) 며칠에 걸쳐 한 바퀴를 돈다.
+ *   → 첫 실행의 커버리지 경고는 고장이 아니다. 예산을 올리기 전에
+ *     쿠팡 분당 상한(_coupang.MAX_PER_MIN)부터 확인할 것.
+ */
 const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 120;
 
 // ─── 환경변수 ────────────────────────────────────────────────
@@ -125,9 +141,12 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
     productId: it.productId,
     title: it.title,
     lprice: it.lprice,
+    oprice: it.oprice,
     link: it.link,
     image: it.image,
     mall: '쿠팡',
+    itemId: it.itemId || '',
+    vendorItemId: it.vendorItemId || '',
   }));
 }
 
@@ -137,7 +156,7 @@ async function fetchAllProducts() {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('products')
-      .select('product_id, mall, title, keyword, link')
+      .select('product_id, mall, title, keyword, link, image')
       .order('product_id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error('products 조회 실패: ' + error.message);
@@ -146,61 +165,75 @@ async function fetchAllProducts() {
   }
 }
 
-// ─── 가격 행 저장 맵 ──────────────────────────────────────────
-const rowMap = new Map();
-const NOW_ISO = new Date().toISOString();
+/* ─── 관측값 모으기 ───────────────────────────────────────────
+ *
+ * ★ 이 스크립트가 products 를 갱신하지 않던 것이 "SEOSA 가격이 실제와 다르다"의
+ *   최우선 원인이었다 (2026-08-09 확인).
+ *
+ *   매일 도는 이 수집기는 price_history 에만 썼다. products.lprice —
+ *   홈의 오늘의 셀렉션 / 이달의 추천 / 취향 추천이 현재가로 그리는 바로 그
+ *   컬럼 — 은 /api/search 나 /api/cron 이 그 키워드를 건드릴 때만 바뀌었고,
+ *   cron 은 TODAY_PICKS + 이달의 큐레이션만 돈다. 나머지 키워드의 현재가는
+ *   누군가 마지막으로 검색한 시점에 얼어붙는다.
+ *
+ *   실측: 쿠팡 상품 200건 중 39건(19.5%)의 products.lprice 가 같은 날 받아온
+ *   쿠팡 가격과 달랐다. 최대 2.42배.
+ *     예) "1+1 HOMEY NEST 암막커튼"  products=75,000 / 같은 날 쿠팡=39,900
+ *
+ *   이제 api/_shop.js 의 recordPrices() 하나로 price_history 와 products 를
+ *   함께 갱신한다. 검증(0원·비정상 급변·옵션 교체)도 그쪽에 들어 있어서
+ *   /api/search, /api/cron, 이 스크립트가 전부 같은 규칙을 쓴다.
+ * ------------------------------------------------------------------ */
+const obsMap = new Map();
 
-function addRow(target, price, link) {
-  const p = parseInt(price, 10) || 0;
-  if (p <= 0) return false;
-  rowMap.set(`${target.product_id}|${target.mall}|${TODAY}`, {
-    product_id: target.product_id,
+function addRow(target, item, foundVia) {
+  const price = parseInt(item.lprice, 10) || 0;
+  if (price <= 0) return false;
+  obsMap.set(`${target.product_id}|${target.mall}`, {
+    productId: target.product_id,
     mall: target.mall,
+    // 제목은 DB 의 것을 유지한다. 이 스크립트는 "이미 아는 상품의 오늘 가격"을
+    // 채우는 일만 한다 — 카탈로그를 재작성하지 않는다.
     title: target.title,
-    price: p,
-    link: link || target.link || '',
-    recorded_at: NOW_ISO,
-    recorded_date: TODAY,
+    /*
+     * keyword 는 DB 값이 있으면 그대로 두고, 비어 있을 때만 이번에 실제로
+     * 이 상품을 찾아낸 검색어를 채운다.
+     *
+     * 기존 값을 덮어쓰지 않는다. 그리고 아무 문자열이나 넣는 게 아니라,
+     * 방금 그 검색어로 검색했을 때 이 productId 가 실제로 결과에 나왔다는
+     * 것이 확인된 값만 넣는다 — 다음 수집부터 이 행이 정상적으로 도달된다.
+     */
+    keyword: target.keyword || foundVia || '',
+    price,
+    oprice: item.oprice || 0,
+    link: item.link || target.link || '',
+    image: target.image || item.image || '',
+    itemId: item.itemId || '',
+    vendorItemId: item.vendorItemId || '',
   });
   return true;
 }
 
-// ─── upsert ──────────────────────────────────────────────────
-let _firstUpsertError = null;
-
-async function upsertChunk(chunk) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { error } = await supabase
-      .from('price_history')
-      .upsert(chunk, { onConflict: 'product_id,mall,recorded_date', ignoreDuplicates: false });
-    if (!error) return chunk.length;
-    if (!_firstUpsertError) _firstUpsertError = error.message;
-    if (attempt < 2 && chunk.length > 1) {
-      const half = Math.ceil(chunk.length / 2);
-      const a = await upsertChunk(chunk.slice(0, half));
-      const b = await upsertChunk(chunk.slice(half));
-      return a + b;
-    }
-    console.error(`    저장 오류 (청크${chunk.length}행, 시도${attempt + 1}):`, error.message.slice(0, 200));
-  }
-  return 0;
-}
-
 async function saveAll() {
-  const rows = [...rowMap.values()];
+  const rows = [...obsMap.values()];
   if (rows.length === 0) {
-    console.warn('  경고: rowMap이 비어 있음 — API 응답에서 매칭 0건');
-    return { saved: 0, total: 0 };
+    console.warn('  경고: 관측값이 비어 있음 — API 응답에서 매칭 0건');
+    return { saved: 0, recorded: 0, total: 0, rejected: 0, suspect: 0 };
   }
-  console.log(`  샘플 행(첫 번째):`, JSON.stringify(rows[0]));
-  let saved = 0;
+  console.log(`  샘플 관측(첫 번째):`, JSON.stringify(rows[0]).slice(0, 200));
+
+  let recorded = 0, saved = 0, rejected = 0, suspect = 0;
+  const errors = [];
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-    saved += await upsertChunk(rows.slice(i, i + UPSERT_CHUNK));
+    const r = await recordPrices(rows.slice(i, i + UPSERT_CHUNK), { label: 'collect' });
+    recorded += r.recorded;
+    saved += r.saved;
+    rejected += r.rejected;
+    suspect += r.suspect;
+    if (r.errors.length) errors.push(...r.errors);
   }
-  if (_firstUpsertError) {
-    console.error('\n  [DB 오류 원문]', _firstUpsertError);
-  }
-  return { saved, total: rows.length };
+  if (errors.length) console.error('\n  [DB 오류 원문]', errors.slice(0, 3).join(' | '));
+  return { saved, recorded, total: rows.length, rejected, suspect };
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────
@@ -208,69 +241,116 @@ async function run() {
   const products = await fetchAllProducts();
 
   /*
-   * 커버리지 분모를 products 전체로 잡으면 안 된다.
+   * 커버리지 분모.
    *
-   * 이 스크립트는 "쿠팡 상품을 그 상품의 keyword 로 재검색해서 찾는" 방식이다.
-   * 따라서 애초에 도달할 수 없는 행이 있다.
-   *   - 비쿠팡 행     : 네이버 연동을 제거해서 다시 조회할 수단이 없다
-   *   - keyword 없는 행: 검색을 시작할 단서가 없다 (옛 CSV 이관분)
+   * 이 스크립트는 "쿠팡 상품을 검색해서 productId 로 다시 찾는" 방식이다.
+   * 비쿠팡 행은 네이버 연동을 제거해서 조회할 수단 자체가 없으므로 분모에서 뺀다.
+   * (분모에 넣으면 수집이 정상일 때도 낮은 커버리지가 나와서, 진짜로 망가졌을
+   *  때와 구분이 안 된다. 실제로 그 숫자 때문에 GitHub Actions 가 한 건도 못
+   *  모으고 있다는 걸 오래 눈치채지 못했다)
    *
-   * 이 둘을 분모에 넣으면 수집이 정상일 때도 5% 언저리가 나와서, 진짜로
-   * 망가졌을 때와 구분이 안 된다. 실제로 그 숫자 때문에 GitHub Actions 가
-   * 한 건도 못 모으고 있다는 걸 오래 눈치채지 못했다.
+   * ★ keyword 없는 행도 이제 대상이다.
+   *   예전에는 "검색 단서 없음"으로 통째로 제외했는데, 그게 쿠팡 상품 654개 중
+   *   287개였다. 그 287개는 가격이 영원히 갱신되지 않는다는 뜻이다.
+   *   이제 상품명에서 검색어를 유도해서(_shop.searchPhraseFromTitle) 찾아본다.
+   *   찾으면 그 검색어를 keyword 에 채워 다음 수집부터는 정상 경로를 탄다.
    */
-  const collectible = products.filter(p => p.keyword && isCoupangRow(p));
-  const noKeyword   = products.filter(p => !p.keyword && isCoupangRow(p));
+  const coupangRows = products.filter(isCoupangRow);
+  const withKeyword = coupangRows.filter(p => p.keyword);
+  const noKeyword   = coupangRows.filter(p => !p.keyword);
   const notCoupang  = products.filter(p => !isCoupangRow(p));
+
+  // 유도 검색어별로 묶는다. 같은 브랜드 상품이 여러 개면 호출 1회로 같이 잡힌다.
+  const derivedGroups = new Map();
+  noKeyword.forEach(p => {
+    const phrase = searchPhraseFromTitle(p.title);
+    if (!phrase) return;
+    if (!derivedGroups.has(phrase)) derivedGroups.set(phrase, []);
+    derivedGroups.get(phrase).push(p);
+  });
+  const noPhrase = noKeyword.length - [...derivedGroups.values()].reduce((n, a) => n + a.length, 0);
+
+  const collectible = [...withKeyword, ...[...derivedGroups.values()].flat()];
 
   console.log(`\n가격 수집 시작 (${TODAY})`);
   console.log(`  products 전체        ${products.length}개`);
-  console.log(`  ├ 수집 대상          ${collectible.length}개  (쿠팡 + keyword 있음)`);
-  console.log(`  ├ keyword 없음       ${noKeyword.length}개  (검색 단서 없음 — 대상 제외)`);
-  console.log(`  └ 비쿠팡             ${notCoupang.length}개  (연동 없음 — 대상 제외)\n`);
+  console.log(`  ├ 쿠팡               ${coupangRows.length}개`);
+  console.log(`  │  ├ keyword 있음    ${withKeyword.length}개`);
+  console.log(`  │  ├ 제목에서 유도    ${collectible.length - withKeyword.length}개 (검색어 ${derivedGroups.size}종)`);
+  console.log(`  │  └ 검색어 유도 실패 ${noPhrase}개`);
+  console.log(`  └ 비쿠팡             ${notCoupang.length}개  (연동 없음 — 대상 제외)`);
+  console.log(`  수집 대상 합계       ${collectible.length}개\n`);
 
   const uncovered = new Map();
   collectible.forEach(p => uncovered.set(`${p.product_id}|${p.mall}`, p));
   const markCovered = (pid, mall) => uncovered.delete(`${pid}|${mall}`);
 
-  // ── 1차: 키워드별 쿠팡 검색 ─────────────────────────────────
-  console.log('── 1차: 키워드별 쿠팡 검색 ──');
+  /*
+   * 검색어 처리 순서.
+   *
+   *   1) DB 에 keyword 가 있는 그룹 — 살아있는 카탈로그다. 매일 갱신되어야 한다.
+   *   2) 제목에서 유도한 그룹 — 오래 확인 못 한 것부터.
+   *
+   * 실행당 호출 예산(COUPANG_RUN_BUDGET)이 있어서 한 번에 전부는 못 돈다.
+   * 2)를 오래된 순으로 정렬해 두면 매 실행마다 가장 묵은 것부터 처리되고,
+   * 며칠에 걸쳐 전체가 한 바퀴 돈다. 예산을 넘기면 fetchCoupangAll 이
+   * 알아서 건너뛰므로 쿠팡 상한을 넘길 위험은 없다.
+   */
+  const oldestFirst = rows => Math.min(...rows.map(r => Date.parse(r.collected_at) || 0));
+
   const byKeyword = new Map();
-  collectible.forEach(p => {
+  withKeyword.forEach(p => {
     if (!byKeyword.has(p.keyword)) byKeyword.set(p.keyword, []);
     byKeyword.get(p.keyword).push(p);
   });
 
-  const keywords = [...byKeyword.keys()];
-  for (let i = 0; i < keywords.length; i += CONCURRENCY) {
-    const batch = keywords.slice(i, i + CONCURRENCY);
-    await Promise.all(batch.map(async keyword => {
-      const targets = byKeyword.get(keyword);
+  const plan = [
+    ...[...byKeyword.entries()].map(([kw, rows]) => ({ kw, rows, derived: false })),
+    ...[...derivedGroups.entries()]
+      .map(([kw, rows]) => ({ kw, rows, derived: true }))
+      .sort((a, b) => oldestFirst(a.rows) - oldestFirst(b.rows))
+  ];
+
+  console.log(`── 쿠팡 검색 (검색어 ${plan.length}종, 실행당 예산 ${COUPANG_RUN_BUDGET}회) ──`);
+  let recovered = 0;
+
+  for (let i = 0; i < plan.length; i += CONCURRENCY) {
+    const batch = plan.slice(i, i + CONCURRENCY);
+    await Promise.all(batch.map(async ({ kw, rows, derived }) => {
       const coupangById = new Map();
-      targets.forEach(p => coupangById.set(p.product_id, p));
+      rows.forEach(p => coupangById.set(p.product_id, p));
 
       // retry로 감싸지 않는다 — 제한 응답을 재시도하면 경고가 쌓인다.
-      const coupangItems = await fetchCoupangAll(keyword).catch(() => []);
+      const coupangItems = await fetchCoupangAll(kw).catch(() => []);
+      if (!coupangItems.length) return;
 
       let hit = 0;
       coupangItems.forEach(item => {
         const target = coupangById.get(item.productId);
-        if (target && addRow(target, item.lprice, item.link)) {
+        // derived 인 경우에만 kw 를 keyword 로 채운다 (기존 값은 addRow 가 지킨다).
+        if (target && addRow(target, item, derived ? kw : '')) {
           markCovered(target.product_id, target.mall);
           hit++;
+          if (derived) recovered++;
         }
       });
 
-      const total = targets.length;
-      const pct = total > 0 ? Math.round(hit / total * 100) : 0;
-      console.log(`  [${keyword}] ${hit}/${total} (${pct}%) — 쿠팡 ${coupangItems.length}건`);
+      const pct = rows.length > 0 ? Math.round(hit / rows.length * 100) : 0;
+      console.log(`  ${derived ? '유도' : '기존'} [${kw}] ${hit}/${rows.length} (${pct}%) — 쿠팡 ${coupangItems.length}건`);
     }));
+  }
+
+  if (recovered) {
+    console.log(`\n  ✅ keyword 가 없던 상품 ${recovered}개를 찾아 검색어를 채웠습니다 (다음 수집부터 정상 경로).`);
   }
 
   // ── 저장 ──────────────────────────────────────────────────
   console.log(`\n── 저장 ──`);
-  const { saved, total: rowTotal } = await saveAll();
-  console.log(`price_history upsert: ${saved}/${rowTotal}행`);
+  const { saved, recorded, total: rowTotal, rejected, suspect } = await saveAll();
+  console.log(`price_history 기록: ${recorded}/${rowTotal}행`);
+  console.log(`products 현재가 갱신: ${saved}행`
+    + (suspect ? `  (급변 보류 ${suspect}행 — 다음 수집에서 같은 값이면 반영)` : '')
+    + (rejected ? `  (값 이상 거부 ${rejected}행)` : ''));
 
   // ── 커버리지 리포트 ────────────────────────────────────────
   const finalMissing = [...uncovered.values()];
@@ -315,7 +395,9 @@ async function run() {
    *   - 수집 대상이 있는데 한 행도 저장하지 못함
    */
   const blocked = _coupangBlocked || cs.blocked;
-  const collectedNothing = collectible.length > 0 && saved === 0;
+  // 실패 판정은 price_history 기준으로 본다. products 갱신 수(saved)는 급변
+  // 보류로 정상적으로 0 이 될 수 있어서, 그걸로 판정하면 멀쩡한 실행이 실패로 찍힌다.
+  const collectedNothing = collectible.length > 0 && recorded === 0;
 
   if (blocked || collectedNothing) {
     console.error('\n수집 실패로 처리합니다 (exit 1)');
