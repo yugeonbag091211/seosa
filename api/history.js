@@ -65,11 +65,25 @@ module.exports = async function handler(req, res) {
       if (data && data.length) rows = data;
     }
 
-    // 상품 단위로 못 찾으면(옛 기록·몰 이름 변경) 예전처럼 상품명으로 폴백한다.
-    if (!rows && title) {
-      const { data, error } = await baseQuery().eq('title', title);
-      if (error) throw new Error(error.message);
-      rows = data;
+    /*
+     * 상품명 폴백은 없앴다.
+     *
+     * 예전에는 productId 로 0건이면 상품명으로 다시 찾았고, 그 다음에는
+     * "productId 를 아예 안 보낸 경우"에만 폴백했다. 둘 다 지웠다.
+     *
+     * 이 응답의 마지막 점이 프론트 가격 모달의 헤드라인 가격이 되고
+     * (AppState.modalPrice) 그 위에서 '지금 사도 되는지' 판정이 돌아간다.
+     * 상품명으로 모은 이력은 이름이 같은 여러 상품·여러 몰의 기록을 날짜별
+     * 최저가로 합친 값이라 어느 상품의 것도 아니다. 그걸 현재가로 쓰면
+     * 사용자는 존재하지 않는 가격을 보고 구매를 결정한다.
+     *
+     * 식별자가 없으면 "기록 없음"이 정답이다. 이름으로 추측하지 않는다.
+     * (productId 가 없는 옛 위시/조회기록은 빈 배열을 받아 차트가 비고,
+     *  카드를 다시 열어 찜하면 productId 가 채워진 값으로 교체된다)
+     */
+    if (!productId) {
+      cachePublic(res, 300);
+      return res.json([]);
     }
 
     // 프론트는 오름차순 [{date, price}] 배열을 기대한다 (sparkSVG / 차트 라벨).

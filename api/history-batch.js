@@ -89,25 +89,21 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // ── 2) 상품명(titles) — productId가 없는 옛 데이터 폴백 ────────
+    /*
+     * ── 2) 상품명(titles) — 더 이상 조회하지 않는다 ────────────────
+     *
+     * 가격 이력은 상품 단위 식별자(product_id + mall)로만 연결한다.
+     * 상품명으로 모으면 이름이 같은 여러 상품·여러 몰의 기록이 날짜별
+     * 최저가로 합쳐져, 어느 상품의 것도 아닌 곡선이 나온다. 프론트는 그
+     * 마지막 점을 위시 현재가·'역대 최저가' 뱃지·AI 판단 근거로 썼다.
+     *
+     * 파라미터는 계속 받는다. 배포 직후에는 옛 index.html 을 캐시해 둔
+     * 브라우저가 여전히 titles 를 보내기 때문이다. 그 요청도 여기서
+     * 빈 배열을 받아 "기록 없음"으로 그려지고, 틀린 이력을 보지 않는다.
+     * (map 초기화에서 이미 titles 키가 빈 배열로 들어가 있다)
+     */
     if (titles.length) {
-      const { data, error } = await supabase
-        .from('price_history')
-        .select('title, recorded_date, price')
-        .in('title', titles)
-        .order('recorded_date', { ascending: false })
-        .limit(MAX_ROWS);
-      if (error) throw new Error(error.message);
-
-      // 같은 상품명이 여러 몰에 있으면 하루에 여러 행이 생기므로
-      // history.js와 같은 규칙으로 날짜당 최저가 한 점만 남긴다.
-      const byTitle = new Map();
-      (data || []).forEach(r => {
-        if (!(r.title in map)) return;
-        if (!byTitle.has(r.title)) byTitle.set(r.title, new Map());
-        keepLowest(byTitle.get(r.title), r.recorded_date, r.price);
-      });
-      byTitle.forEach((byDate, title) => { map[title] = toPoints(byDate); });
+      console.log(`[history-batch] 상품명 조회 ${titles.length}건 무시 — 상품 단위 식별자로만 이력을 연결합니다`);
     }
 
     // 가격 기록은 하루 한 번만 늘어난다. 짧게 캐시해도 사용자가 보는 값은 같다.

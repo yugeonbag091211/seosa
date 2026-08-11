@@ -3,6 +3,10 @@
 // 통째로 우회하게 된다. 쿠팡 호출은 반드시 searchCoupang()로.
 const supabase = require('./_supabase');
 const { searchCoupang } = require('./_coupang');
+const {
+  parsePrice, classifyPrice,
+  vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS
+} = require('./_price');
 
 const TODAY_PICKS = ['수영복', '물놀이 용품', '아이스크림', '방수팩', '차량용 햇빛 가리개', '여행용 캐리어', '서큘레이터', '쿨토시'];
 
@@ -62,6 +66,44 @@ function relevantItems(keyword, items) {
   return { kept, dropped: list.length - kept.length, allMismatch: false };
 }
 
+/*
+ * 옵션·수량 꼬리표. 상품명 뒤에 붙는 "12개", "60g", "2세트" 같은 토큰은
+ * 검색어로 쓰면 오히려 결과를 망친다.
+ */
+const UNIT_TOKEN = /^\d+(\.\d+)?(g|kg|ml|l|개|매|입|세트|팩|병|캔|장|가지|종|구|p|ea|cm|mm|인치|호|년|월|일)?$/i;
+/** 어느 상품에나 붙는 말. 브랜드·모델명 자리를 차지하면 안 된다. */
+const GENERIC_TOKEN = new Set([
+  '정품', '무료배송', '당일발송', '무료', '증정', '사은품', '최신형', '신상품', '한정',
+  '대용량', '초경량', '프리미엄', '국내산', '국내배송', '공식', '인증', '正品'
+]);
+
+/**
+ * 상품명 → 이 상품을 다시 찾아올 검색어.
+ *
+ * 왜 필요한가: products 의 쿠팡 행 654개 중 287개가 keyword 가 비어 있다
+ * (옛 CSV 이관분). scripts/collect-all-prices.js 는 keyword 로 검색해서
+ * 상품을 다시 찾는 구조라, 이 287개는 수집 대상에서 아예 빠져 있었다.
+ * 가격이 영원히 갱신되지 않는다는 뜻이다.
+ *
+ * 완벽한 검색어를 만들려는 게 아니다. 쿠팡 검색 상위 10개 안에 그 상품이
+ * 다시 나오기만 하면 되고, 안 나오면 호출 1회를 쓰고 0건으로 끝난다
+ * (productId 로 대조하므로 엉뚱한 상품이 섞일 위험은 없다).
+ *
+ *   "아이스팩토리 12가지 아이스크림 세트, 12개, 60g" → "아이스팩토리 아이스크림 세트"
+ *   "로보락 S10 MaxV Ultra 직배수 로봇청소기, 화이트" → "로보락 S10 MaxV"
+ */
+function searchPhraseFromTitle(title, maxTokens = 3) {
+  const tokens = String(title || '')
+    .replace(/\[[^\]]*\]/g, ' ')     // [브랜드인증] 같은 머리표
+    .replace(/\([^)]*\)/g, ' ')      // (한정판) 같은 꼬리표
+    .split(',')[0]                   // 쿠팡 상품명은 콤마 뒤가 옵션이다
+    .replace(/[^0-9a-zA-Z가-힣\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length >= 2 && !UNIT_TOKEN.test(t) && !GENERIC_TOKEN.has(t));
+
+  return tokens.slice(0, maxTokens).join(' ').trim();
+}
+
 /**
  * 쿠팡 검색.
  *
@@ -80,7 +122,10 @@ async function fetchCoupang(keyword, limit = 6, opts = {}) {
     productId: it.productId,
     isCoupang: true,
     oprice: it.oprice,
-    savePct: discountPct(it.lprice, it.oprice)
+    savePct: discountPct(it.lprice, it.oprice),
+    // 판매 단위 식별자. 저장 단계에서 옵션 교체를 가격 변동과 구분하는 데 쓴다.
+    itemId: it.itemId || '',
+    vendorItemId: it.vendorItemId || ''
   }));
   // 검색어와 무관한 상품은 여기서 끊는다. 통과시키면 그대로 products 에 저장되고
   // 홈 섹션에까지 올라간다 (로그에는 성공으로만 남는다).
@@ -145,6 +190,292 @@ function isRecordableSource(from) {
   return from === 'api' || from === 'cache';
 }
 
+/* ------------------------------------------------------------------ *
+ *  가격 저장
+ *
+ *  두 테이블은 역할이 다르다. 섞으면 안 된다.
+ *
+ *    price_history — "그날 쿠팡이 이 값을 줬다"는 관측 기록.
+ *                    값이 값의 꼴을 갖췄으면 이상해 보여도 남긴다.
+ *                    남겨야 다음 관측에서 확인(corroboration)이 가능하고,
+ *                    무슨 일이 있었는지 나중에 볼 수 있다.
+ *    products      — 사용자에게 "현재가"로 보여줄 값.
+ *                    앞뒤가 맞는 관측만 여기까지 올라온다.
+ *
+ *  이 구분이 없어서 34,500원짜리 노트북 필름의 현재가가 1,528,000원이 된
+ *  적이 있다(product_id=9579684471, 2026-07-30).
+ * ------------------------------------------------------------------ */
+
+/** 확인용 직전 관측을 찾을 때 몇 개 행까지 훑을지. pid 100개 × 여유. */
+const PREV_LOOKUP_ROWS = 2000;
+/** product_id in(...) 한 번에 넣을 개수. URL 길이 때문에 나눠 보낸다. */
+const PREV_CHUNK = 100;
+
+/*
+ * item_id / vendor_item_id 컬럼 존재 여부.
+ *
+ * supabase/2026-08-price-accuracy.sql 을 아직 안 돌린 환경에서도 저장이
+ * 통째로 실패하면 안 된다. 한 번 없다고 확인되면 그 뒤로는 빼고 보낸다.
+ * (check-alerts.js 의 alerts.sent_at 처리와 같은 방식)
+ */
+let itemIdColumns = true;
+
+function missingColumn(msg) {
+  return /column .* does not exist|could not find the .* column|schema cache/i.test(msg || '');
+}
+
+/**
+ * [{productId, mall}] → 직전 관측 Map<"pid|mall", {price, observedAt}>
+ *
+ * "직전"에서 오늘 행은 뺀다. /api/search 는 같은 상품을 하루에도 여러 번
+ * 저장하는데, 오늘 이미 들어간 행을 직전 값으로 삼으면 자기 자신과 비교하게
+ * 되어(ratio≈1) 검증이 무력해진다. 오늘 한 번 잘못 들어간 값이 그 뒤의
+ * 모든 저장을 통과시키는 통로가 된다.
+ */
+async function loadPrevObservations(keys, today) {
+  const pids = [...new Set(keys.map(k => k.productId))].filter(Boolean);
+  const prev = new Map();
+
+  for (let i = 0; i < pids.length; i += PREV_CHUNK) {
+    const chunk = pids.slice(i, i + PREV_CHUNK);
+    const { data, error } = await supabase
+      .from('price_history')
+      .select('product_id, mall, price, recorded_date, recorded_at')
+      .in('product_id', chunk)
+      .lt('recorded_date', today)
+      .order('recorded_date', { ascending: false })
+      .limit(PREV_LOOKUP_ROWS);
+    if (error) {
+      // 직전 값을 못 읽으면 검증 없이 저장한다. 저장 자체를 막는 것보다는 낫다.
+      console.warn(`[save] 직전 관측 조회 실패(검증 생략): ${error.message}`);
+      return prev;
+    }
+    (data || []).forEach(r => {
+      const k = `${r.product_id}|${r.mall}`;
+      const cur = prev.get(k);
+      if (!cur || String(r.recorded_date) > String(cur.recordedDate)) {
+        prev.set(k, {
+          price: r.price,
+          recordedDate: r.recorded_date,
+          observedAt: r.recorded_at || r.recorded_date
+        });
+      }
+    });
+  }
+  return prev;
+}
+
+/**
+ * products 에 이미 있는 행의 옵션 식별자.
+ *
+ * vendor_item_id 컬럼이 비어 있으면 같은 행의 link 에서 뽑아 쓴다
+ * (_price.vendorIdOf 주석 참고). 컬럼은 2026-08-09 에 막 생겨서 기존
+ * 654행이 전부 비어 있지만 link 에는 처음부터 값이 있었다. 이 폴백이
+ * 없으면 "다음 수집 때부터" 옵션 교체 감지가 켜지는데, 폴백을 두면
+ * 지금 당장 전 행에 적용된다. DB 에 쓰지 않는다.
+ *
+ * 컬럼 자체가 없는 환경(마이그레이션 미적용)에서는 link 만으로 동작한다.
+ */
+async function loadStoredVendorIds(keys) {
+  const out = new Map();
+  const pids = [...new Set(keys.map(k => k.productId))].filter(Boolean);
+  const cols = itemIdColumns
+    ? 'product_id, mall, link, vendor_item_id'
+    : 'product_id, mall, link';
+
+  for (let i = 0; i < pids.length; i += PREV_CHUNK) {
+    const chunk = pids.slice(i, i + PREV_CHUNK);
+    let { data, error } = await supabase.from('products').select(cols).in('product_id', chunk);
+
+    if (error && itemIdColumns && missingColumn(error.message)) {
+      itemIdColumns = false;
+      console.warn('[save] products.vendor_item_id 컬럼 없음 — link 에서 식별자를 뽑아 계속합니다 '
+        + '(supabase/2026-08-price-accuracy.sql 을 실행하면 컬럼에도 저장됩니다).');
+      ({ data, error } = await supabase.from('products').select('product_id, mall, link').in('product_id', chunk));
+    }
+    if (error) {
+      console.warn(`[save] 옵션 식별자 조회 실패(옵션 교체 감지 생략): ${error.message}`);
+      return out;
+    }
+
+    (data || []).forEach(r => out.set(`${r.product_id}|${r.mall}`, vendorIdOf(r)));
+  }
+  return out;
+}
+
+/** item_id/vendor_item_id 를 붙여 upsert 하고, 컬럼이 없으면 빼고 다시 시도한다. */
+async function upsertProducts(rows) {
+  if (itemIdColumns) {
+    const { error } = await supabase.from('products').upsert(rows, { onConflict: 'product_id,mall' });
+    if (!error) return null;
+    if (!missingColumn(error.message)) return error.message;
+    itemIdColumns = false;
+    console.warn('[save] products.item_id / vendor_item_id 컬럼 없음 — 해당 값 없이 저장합니다.');
+  }
+  const slim = rows.map(r => {
+    const { item_id, vendor_item_id, ...rest } = r;   // eslint-disable-line no-unused-vars
+    return rest;
+  });
+  const { error } = await supabase.from('products').upsert(slim, { onConflict: 'product_id,mall' });
+  return error ? error.message : null;
+}
+
+/**
+ * 관측한 가격들을 검증해서 저장한다.
+ *
+ * @param {Array} observations
+ *   productId, mall, title, keyword, price(원본 그대로), oprice, savePct,
+ *   link, image, itemId, vendorItemId
+ * @param {object} opts
+ *   label      로그에 붙일 이름 (보통 키워드)
+ *   updateCatalog  products 를 갱신할지. false 면 price_history 만 남긴다.
+ *
+ * @returns {{saved, recorded, rejected, suspect, errors}}
+ */
+async function recordPrices(observations, opts = {}) {
+  const label = opts.label || '';
+  const updateCatalog = opts.updateCatalog !== false;
+  const errors = [];
+
+  const nowDate = opts.now instanceof Date ? opts.now : new Date();
+  const now = nowDate.toISOString();
+  const today = now.split('T')[0];
+
+  // 같은 배치 안에서 키가 겹치면 upsert 가 통째로 실패한다. 먼저 접는다.
+  const byKey = new Map();
+  for (const it of observations || []) {
+    if (!it) continue;
+    /*
+     * product_id 에 상품명을 넣는 폴백은 없앴다.
+     *
+     * 예전에는 `it.productId || it.title` 이었다. 그러면 상품명이 그대로
+     * 기본키가 되어, 이름이 같은 다른 상품이 한 행으로 합쳐지고 가격이
+     * 서로를 덮어쓴다. 실제로 price_drop_top 에 product_id 가
+     * "미스터빈 크라프트 드립백 봉투" 인 행이 남아 있다.
+     * 식별자가 없으면 저장하지 않는 게 맞다.
+     */
+    if (!it.productId || !it.title || !it.mall) continue;
+
+    const key = `${it.productId}|${it.mall}`;
+    const seen = byKey.get(key);
+    /*
+     * 겹치면 싼 쪽을 남긴다. "마지막에 온 것이 이긴다"가 아니다.
+     *
+     * 쿠팡은 한 상품 페이지의 옵션을 각각 한 행으로 준다. api/_coupang.js 의
+     * collapseOptions() 가 이미 최저가로 접지만, 그 경로를 타지 않는 호출부가
+     * 생기면 다시 임의의 옵션 값이 현재가가 된다 — 실제로 그렇게 해서
+     * 39,900원짜리 커튼이 75,000원으로 저장됐다. 순서에 기대지 않는다.
+     */
+    if (seen) {
+      const a = parsePrice(seen.price);
+      const b = parsePrice(it.price);
+      if (!(b && (!a || b < a))) continue;
+    }
+    byKey.set(key, it);
+  }
+  const uniq = [...byKey.values()];
+  if (!uniq.length) return { saved: 0, recorded: 0, rejected: 0, suspect: 0, errors };
+
+  const keys = uniq.map(it => ({ productId: it.productId, mall: it.mall }));
+  const [prevMap, vendorMap] = await Promise.all([
+    loadPrevObservations(keys, today),
+    updateCatalog ? loadStoredVendorIds(keys) : Promise.resolve(new Map())
+  ]);
+
+  const historyRows = [];
+  const catalogRows = [];
+  let rejected = 0;
+  let suspect = 0;
+
+  for (const it of uniq) {
+    const k = `${it.productId}|${it.mall}`;
+    const prevObs = prevMap.get(k);
+    const prev = prevObs
+      ? { price: prevObs.price, observedAt: prevObs.observedAt, vendorItemId: vendorMap.get(k) || '' }
+      : null;
+
+    const verdict = classifyPrice(it.price, prev, { vendorItemId: it.vendorItemId || '' });
+
+    if (verdict.status === 'invalid') {
+      rejected++;
+      console.warn(`[save${label ? ':' + label : ''}] 저장 거부 — ${verdict.reason}`
+        + ` (${it.mall} ${it.productId} ${String(it.title).slice(0, 30)})`);
+      continue;
+    }
+
+    // 관측 사실은 남긴다. 이 값이 남아 있어야 다음 관측에서 확인이 된다.
+    historyRows.push({
+      product_id: it.productId,
+      mall: it.mall,
+      title: it.title,
+      price: verdict.price,
+      link: it.link || '',
+      recorded_at: now,
+      recorded_date: today
+    });
+
+    if (verdict.status === 'suspect') {
+      suspect++;
+      console.warn(`[save${label ? ':' + label : ''}] 현재가 보류 — ${verdict.reason}`
+        + ` (${it.mall} ${it.productId} ${String(it.title).slice(0, 30)})`
+        + ' — price_history 에는 기록했고, 다음 수집에서 같은 값이 다시 나오면 현재가로 반영됩니다.');
+      continue;
+    }
+
+    if (!updateCatalog) continue;
+
+    // 정가와 할인율은 넘어온 값을 그대로 믿지 않고 확정된 판매가에서 다시 만든다.
+    // (호출부마다 계산 시점이 달라 lprice 와 어긋난 savePct 가 저장될 수 있다)
+    const rawOprice = parsePrice(it.oprice) || 0;
+    const oprice = rawOprice > verdict.price ? rawOprice : verdict.price;
+    catalogRows.push({
+      product_id: it.productId,
+      mall: it.mall,
+      keyword: it.keyword || '',
+      title: it.title,
+      lprice: verdict.price,
+      link: it.link || '',
+      image: it.image || '',
+      oprice,
+      save_pct: discountPct(verdict.price, oprice),
+      /*
+       * 이 값을 언제 확인했는지.
+       *
+       * 예전 upsert 는 collected_at 을 보내지 않았다. on conflict do update 는
+       * 보낸 컬럼만 건드리므로, 이미 있는 행은 처음 등록된 날짜를 영원히
+       * 유지했다. 프론트가 카드에 찍는 "M/D 수집 기준"이 실제 확인 시점이
+       * 아니라 최초 등록일이었다는 뜻이다.
+       */
+      collected_at: now,
+      // 호출부가 안 넘겼으면 link 에서 뽑는다. 쿠팡 제휴 링크에는 항상 들어 있다.
+      item_id: itemIdOf(it),
+      vendor_item_id: vendorIdOf(it)
+    });
+  }
+
+  if (historyRows.length) {
+    const { error } = await supabase.from('price_history').upsert(
+      historyRows, { onConflict: 'product_id,mall,recorded_date' }
+    );
+    if (error) errors.push(`price_history: ${error.message}`);
+  }
+
+  if (catalogRows.length) {
+    const msg = await upsertProducts(catalogRows);
+    if (msg) errors.push(`products: ${msg}`);
+  }
+
+  if (errors.length) console.error(`[save${label ? ':' + label : ''}]`, errors.join(' | '));
+
+  return {
+    saved: errors.length ? 0 : catalogRows.length,
+    recorded: errors.length ? 0 : historyRows.length,
+    rejected,
+    suspect,
+    errors
+  };
+}
+
 /**
  * products / price_history 두 테이블에 저장한다.
  * 서버리스에서는 응답 후 함수가 동결되므로 반드시 await로 호출할 것.
@@ -163,52 +494,21 @@ async function saveProducts(keyword, items, opts = {}) {
 
   if (!items || !items.length) return { saved: 0, errors: [] };
 
-  const errors = [];
-  const today = new Date().toISOString().split('T')[0];
-  const now = new Date().toISOString();
+  const r = await recordPrices((items || []).map(it => ({
+    productId: it.productId,
+    mall: it.mall,
+    keyword,
+    title: it.title,
+    price: it.lprice,
+    oprice: it.oprice,
+    savePct: it.savePct,
+    link: it.link,
+    image: it.image,
+    itemId: it.itemId,
+    vendorItemId: it.vendorItemId
+  })), { label: keyword, now: opts.now });
 
-  // 같은 배치 안에서 키가 겹치면 upsert가 실패하므로 미리 중복을 제거한다.
-  const byKey = new Map();
-  for (const it of items) {
-    const pid = it.productId || it.title;
-    if (!pid || !it.title) continue;
-    byKey.set(`${pid}|${it.mall}`, { ...it, productId: pid });
-  }
-  const uniq = [...byKey.values()];
-  if (!uniq.length) return { saved: 0, errors: [] };
-
-  const { error: pErr } = await supabase.from('products').upsert(
-    uniq.map(it => ({
-      product_id: it.productId,
-      keyword,
-      title: it.title,
-      lprice: it.lprice,
-      link: it.link || '',
-      mall: it.mall,
-      image: it.image || '',
-      oprice: it.oprice || 0,
-      save_pct: it.savePct || 0
-    })),
-    { onConflict: 'product_id,mall' }
-  );
-  if (pErr) errors.push(`products: ${pErr.message}`);
-
-  const { error: hErr } = await supabase.from('price_history').upsert(
-    uniq.map(it => ({
-      product_id: it.productId,
-      mall: it.mall,
-      title: it.title,
-      price: it.lprice,
-      link: it.link || '',
-      recorded_at: now,
-      recorded_date: today
-    })),
-    { onConflict: 'product_id,mall,recorded_date' }
-  );
-  if (hErr) errors.push(`price_history: ${hErr.message}`);
-
-  if (errors.length) console.error(`[save:${keyword}]`, errors.join(' | '));
-  return { saved: errors.length ? 0 : uniq.length, errors };
+  return { saved: r.saved, errors: r.errors, rejected: r.rejected, suspect: r.suspect };
 }
 
 /**
@@ -232,6 +532,34 @@ function toClientProduct(p) {
     // 오래된 값이면 프론트가 "N월 N일 기준"이라고 밝힐 수 있어야 한다.
     collectedAt: p.collected_at || ''
   };
+}
+
+/**
+ * 현재가로 내보내도 되는 행만 남긴다 (= 라이프사이클이 live 인 행).
+ *
+ * 판정은 _price.productLifecycle 한 곳에 있다. 노출·수집·운영지표가 전부
+ * 같은 정의를 써야 "화면에는 있는데 지표에는 없는" 상태가 안 생긴다.
+ *
+ * 걸러낸 뒤 남는 게 없으면 호출부가 섹션을 비우거나 다른 키워드로 넘어간다.
+ * 틀린 가격을 채워 넣는 것보다 비는 편이 낫다.
+ */
+function freshRows(rows, opts = {}) {
+  const out = [];
+  const dropped = {};
+
+  (rows || []).forEach(r => {
+    if (!r) return;
+    const { state } = productLifecycle(r, opts);
+    if (state === LIFECYCLE.LIVE) { out.push(r); return; }
+    dropped[state] = (dropped[state] || 0) + 1;
+  });
+
+  const total = Object.values(dropped).reduce((a, b) => a + b, 0);
+  if (total) {
+    console.log(`[display] 현재가로 쓸 수 없는 ${total}행 제외 — `
+      + Object.entries(dropped).map(([k, v]) => `${k} ${v}`).join(', '));
+  }
+  return out;
 }
 
 /**
@@ -298,6 +626,7 @@ function roundRobin(rows, keywords, take) {
 
 module.exports = {
   TODAY_PICKS, fetchCoupang,
-  searchAll, saveProducts, toClientProduct, roundRobin, preferLive,
-  relevantItems, relevantRows, matchesKeyword, keywordTokens, isRecordableSource
+  searchAll, saveProducts, recordPrices, toClientProduct, roundRobin, preferLive,
+  relevantItems, relevantRows, freshRows, matchesKeyword, keywordTokens, isRecordableSource,
+  discountPct, searchPhraseFromTitle, MAX_DISPLAY_AGE_DAYS
 };
