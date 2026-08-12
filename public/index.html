@@ -1261,6 +1261,21 @@ var CONST = {
     HIST_BATCH:      40
   },
   CHAT_TIMEOUT_MS: 30000,
+  /*
+   * ── [대화 세션 만료] ────────────────────────────────────────
+   * 저장된 대화를 언제까지 "이어지는 대화"로 볼 것인가.
+   *
+   * 예전에는 만료가 없어서, 브라우저에 남은 대화가 몇 시간·며칠 뒤에도
+   * 그대로 복원돼 API 로 함께 나갔다. 사용자는 첫 질문이라고 생각하는데
+   * 서버는 지난 세션 6턴을 함께 받았고, 그래서 책 질문에 "아까도
+   * 여쭤봤는데" 가, 조건을 말하지 않은 추천 요청에 "10만원 이하 무선
+   * 마우스 조건은 확인했습니다" 가 나왔다. 모델이 지어낸 게 아니라
+   * 실제로 그 문자열이 입력에 들어 있었다.
+   *
+   * 30분: 자리를 비웠다 돌아와 이어 묻는 정도는 살리고, 탭을 새로 연
+   * 뒤의 대화는 새 대화로 본다.
+   */
+  CHAT_TTL_MS: 30 * 60 * 1000,
   // AI 질문 직전에 빠진 가격 이력을 한 번만 더 받아온다. 이 시간을 넘기면
   // 이력 없이 그냥 보낸다 (이력 조회 실패가 챗을 막으면 안 된다).
   AI_HIST_WAIT_MS: 4000,
@@ -1308,8 +1323,39 @@ var Store = {
   },
   set: function(k, v) {
     try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {}
+  },
+  del: function(k) {
+    try { localStorage.removeItem(k); } catch(e) {}
   }
 };
+
+/* ── [대화 세션 만료] 저장된 대화를 복원할지 정한다 ──────────────
+ *
+ * 저장 형태는 { savedAt: <ms>, turns: [...] } 다. 예전에는 배열만
+ * 저장했기 때문에, 배열이 그대로 들어 있으면 만료 시각을 알 수 없는
+ * 옛 데이터다 — 이어받을 근거가 없으므로 새 대화로 시작한다.
+ *
+ * 복원하지 않기로 한 경우에는 키도 지운다. 남겨두면 다음 로드에서
+ * 같은 판정을 반복하고, 쓰지도 않을 대화가 계속 브라우저에 남는다.
+ *
+ * 어떤 이유로든(파싱 실패·형식 이상) 판단이 서지 않으면 복원하지
+ * 않는 쪽으로 간다. 이어붙여서 틀린 문맥을 만드는 것보다 안전하다.
+ */
+function loadChatHistory() {
+  var raw = Store.get(CONST.LS.CHAT, null);
+  if (!raw) return [];
+
+  var savedAt = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw.savedAt : null;
+  var turns   = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw.turns   : null;
+
+  var fresh = typeof savedAt === 'number' && isFinite(savedAt)
+    && savedAt <= Date.now()                       // 미래 시각은 신뢰하지 않는다
+    && (Date.now() - savedAt) <= CONST.CHAT_TTL_MS;
+
+  if (!fresh || !Array.isArray(turns)) { Store.del(CONST.LS.CHAT); return []; }
+
+  return turns.filter(function(m) { return m && typeof m === 'object' && m.text; });
+}
 
 
 /* ============================================================
@@ -1341,7 +1387,8 @@ var AppState = {
   recHistory: [],
 
   // 챗 (★ localStorage에서 복원)
-  chatHistory: Store.get(CONST.LS.CHAT, []) || [],
+  // [대화 세션 만료] TTL 을 넘긴 지난 세션 대화는 복원하지 않는다 (loadChatHistory 주석 참고)
+  chatHistory: loadChatHistory(),
   chatSending: false,
 
   // 모달
@@ -3509,7 +3556,9 @@ var Chat = {
   persist: function() {
     // 최근 CHAT_HISTORY개만 저장 (용량 절약)
     var slice = AppState.chatHistory.slice(-CONST.LIMIT.CHAT_HISTORY);
-    Store.set(CONST.LS.CHAT, slice);
+    // [대화 세션 만료] 저장할 때마다 savedAt 을 갱신한다. 같은 탭에서 대화가
+    // 이어지는 동안에는 계속 새로 찍히므로 중간에 만료되지 않는다.
+    Store.set(CONST.LS.CHAT, { savedAt: Date.now(), turns: slice });
   },
 
   /** 저장된 대화를 화면에 다시 그리기 (최초 1회만) */
@@ -3541,7 +3590,8 @@ var Chat = {
   /** 대화 전체 삭제 */
   clear: function() {
     AppState.chatHistory = [];
-    Store.set(CONST.LS.CHAT, []);
+    // [대화 세션 만료] 빈 배열을 써 두면 옛 형식으로 남는다. 지우는 게 뜻에 맞다.
+    Store.del(CONST.LS.CHAT);
 
     var c = $('chat');
     if (c) {
