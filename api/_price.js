@@ -279,6 +279,71 @@ function plausibleDrop(p) {
 }
 
 /**
+ * "오늘의 가격 하락"에 올리려면 가격 기록이 이만큼 안에 있어야 한다.
+ *
+ * plausibleDrop 은 하락폭이 그럴듯한지만 본다. 언제 관측된 하락인지는 보지
+ * 않는다 — price_drop_top 뷰에 날짜 컬럼이 아예 없기 때문이다.
+ *
+ * 2026-08-12 운영 DB 실측: 시세판 상위 8행 중 4행의 최신 price_history 가
+ * 2026-07-30, 즉 13일 전이었다. 그런데 화면에는 "현재가 19,900원 · ★기록상
+ * 최저"로 떴다. 13일 전 값을 오늘 가격이라고 말한 셈이다. 최저가 비교
+ * 서비스에서 이건 단순한 낡은 데이터가 아니라 틀린 정보다.
+ *
+ * 7일인 이유. 수집기는 매일 돌지만 키워드를 3개씩 나눠 도는 탓에 상품
+ * 하나가 며칠 걸러 갱신되는 경우가 흔하다. 1~3일로 잡으면 정상적으로
+ * 수집되고 있는 상품까지 떨어져 나간다. MAX_DISPLAY_AGE_DAYS(10)보다는
+ * 짧게 잡는다 — "오늘의" 하락이라고 이름 붙인 자리이기 때문이다.
+ */
+const DROP_MAX_AGE_DAYS = 7;
+
+/**
+ * 가격 기록 점들 중 "현재 가격 기록"으로 인정할 수 있는 가장 최근 날짜.
+ *
+ * 미래 날짜는 건너뛴다. 수집기 시각이 어긋나거나 손으로 넣은 행이 내일
+ * 날짜로 들어오면, 그게 정렬상 맨 앞에 와서 아무리 묵은 상품도 "방금
+ * 확인됨"으로 보이게 된다. 오늘까지만 현재로 친다.
+ *
+ * @param {Array<{recorded_date:string}>} points  _trust.loadRecentHistory 가 준 배열
+ * @param {string} today  'YYYY-MM-DD'
+ * @returns {string} 'YYYY-MM-DD' — 쓸 수 있는 기록이 없으면 빈 문자열
+ */
+function latestObservedDate(points, today) {
+  let latest = '';
+  (points || []).forEach(pt => {
+    const d = String((pt && pt.recorded_date) || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (today && d > today) return;          // 미래 날짜는 현재 기록이 아니다
+    if (d > latest) latest = d;
+  });
+  return latest;
+}
+
+/**
+ * 이 상품의 가격 기록이 "오늘의 가격 하락"에 올릴 만큼 최근인가.
+ *
+ * 날짜는 전부 'YYYY-MM-DD' 문자열로만 비교한다. recorded_date 가 DATE
+ * 컬럼이라 사전순 비교가 곧 시간순 비교이고, Date 로 바꿔 빼는 것보다
+ * 시간대·서머타임 오차가 끼어들 여지가 없다.
+ *
+ * today 는 호출부가 넘긴다. 저장 쪽(_shop.saveProducts)과 수집기가
+ * new Date().toISOString().slice(0,10) 으로 recorded_date 를 쓰므로,
+ * 비교하는 today 도 같은 방식이어야 한다. 여기서만 KST 로 바꾸면 UTC
+ * 자정~09시 사이에 기록된 오늘치가 하루 묵은 것으로 계산된다.
+ *
+ * @param {Array} points  해당 상품의 가격 기록
+ * @param {string} today  'YYYY-MM-DD'
+ * @param {number} [maxAgeDays]  기본 DROP_MAX_AGE_DAYS
+ */
+function recentlyObserved(points, today, maxAgeDays) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(today || ''))) return false;
+  const latest = latestObservedDate(points, today);
+  if (!latest) return false;               // 기록이 아예 없으면 제외한다
+  const days = maxAgeDays == null ? DROP_MAX_AGE_DAYS : maxAgeDays;
+  const cutoff = new Date(Date.parse(today) - days * 86400000).toISOString().slice(0, 10);
+  return latest >= cutoff;
+}
+
+/**
  * 이 행의 판매 단위 식별자. 컬럼이 비어 있으면 link 에서 뽑는다.
  *
  * products.vendor_item_id 는 2026-08-09 마이그레이션으로 막 생긴 컬럼이라
@@ -365,7 +430,8 @@ function isDisplayable(row, opts) {
 
 module.exports = {
   MAX_PRICE, SUSPECT_RATIO, SUSPECT_WINDOW_DAYS, OPTION_SWITCH_RATIO, MAX_DISPLAY_AGE_DAYS,
-  MAX_PLAUSIBLE_DROP_PCT, LIFECYCLE,
+  MAX_PLAUSIBLE_DROP_PCT, LIFECYCLE, DROP_MAX_AGE_DAYS,
   parsePrice, isSanePrice, ageDays, classifyPrice, coupangItemIds, isRefreshableMall,
-  vendorIdOf, itemIdOf, productLifecycle, isDisplayable, plausibleDrop
+  vendorIdOf, itemIdOf, productLifecycle, isDisplayable, plausibleDrop,
+  latestObservedDate, recentlyObserved
 };

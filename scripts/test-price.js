@@ -46,6 +46,9 @@ function reset() {
   db.noItemIdColumns = false;
 }
 
+/** check-alerts.js 가 보낸 메일을 가로챈다 (실제 발송 없음) */
+const sentMail = [];
+
 /** Postgres 처럼 정렬·자르기까지 흉내 낸다. 안 그러면 .order().limit(1) 검증이 무의미해진다. */
 function cmp(a, b) {
   if (typeof a === 'number' && typeof b === 'number') return a - b;
@@ -141,17 +144,13 @@ require.cache[supabasePath].filename = supabasePath;
 require.cache[supabasePath].loaded = true;
 require.cache[supabasePath].exports = fakeSupabase;
 
-/*
- * api/_notify 도 가로챈다 — 이 테스트는 메일을 보내는 코드를 직접 부르지
- * 않지만, 나중에 부르는 경로가 생겨도 실제 발송이 나가면 안 된다.
- * (알림 발송 자체의 검증은 이 파일의 범위가 아니다 — check-alerts.js 쪽이다)
- */
+// api/_notify 도 가로챈다 — 테스트가 실제 메일을 보내면 안 된다.
 const notifyPath = require.resolve(path.join(__dirname, '..', 'api', '_notify.js'));
 require.cache[notifyPath] = new Module(notifyPath, null);
 require.cache[notifyPath].filename = notifyPath;
 require.cache[notifyPath].loaded = true;
 require.cache[notifyPath].exports = {
-  send() { return Promise.resolve({ ok: true }); }
+  send(channel, payload) { sentMail.push({ channel, payload }); return Promise.resolve({ ok: true }); }
 };
 
 const {
@@ -160,7 +159,8 @@ const {
 const {
   parsePrice, isSanePrice, classifyPrice, coupangItemIds, isRefreshableMall,
   vendorIdOf, itemIdOf, productLifecycle, isDisplayable, LIFECYCLE,
-  plausibleDrop, MAX_PLAUSIBLE_DROP_PCT
+  plausibleDrop, MAX_PLAUSIBLE_DROP_PCT,
+  recentlyObserved, latestObservedDate
 } = require('../api/_price');
 
 /* ------------------------------------------------------------------ *
@@ -602,6 +602,230 @@ function recordedPrice(productId) {
         lcRows.map(r => r.product_id).join(',') || '(없음)');
 
   /* ================================================================ *
+   *  P2 가격 신뢰도
+   * ================================================================ */
+  const { evaluateTrust, attachTrust, LEVEL } = require('../api/_trust.js');
+  const obsPts = (...specs) => specs.map(([price, dayOffset]) => ({ price, recorded_date: daysAgo(dayOffset) }));
+  const reasonCodes = t => t.reasons.map(r => r.code);
+
+  section('신뢰도. 신선도가 등급을 좌우한다');
+  let t = evaluateTrust({ age: 0.2, points: obsPts([1000, 1], [1000, 2]), vendorItemId: 'V', mall: '쿠팡' });
+  check(t.level === LEVEL.HIGH, '오늘 확인 + 교차 확인 + 안정 → 신뢰 높음', `${t.level} ${t.score}`);
+  check(reasonCodes(t).indexOf('fresh') > -1, '근거에 신선도 포함', reasonCodes(t).join(','));
+
+  t = evaluateTrust({ age: 5, points: obsPts([1000, 5], [1000, 6]), vendorItemId: 'V', mall: '쿠팡' });
+  check(t.level === LEVEL.MEDIUM, '5일 전 확인 → 보통', `${t.level} ${t.score}`);
+  check(reasonCodes(t).indexOf('aging') > -1, '"그사이 바뀌었을 수 있다" 근거', reasonCodes(t).join(','));
+
+  t = evaluateTrust({ age: 20, points: obsPts([1000, 20]), vendorItemId: 'V', mall: '쿠팡' });
+  check(t.level === LEVEL.STALE, '10일 초과 → 오래된 가격', t.level);
+  check(t.score === 0 && /20일/.test(t.summary), '요약이 실제 경과일을 말한다', t.summary);
+
+  section('신뢰도. 검색 출처를 신선도 근거로 쓴다');
+  t = evaluateTrust({ liveSource: 'api', points: obsPts([1000, 1]), vendorItemId: 'V', mall: '쿠팡' });
+  check(reasonCodes(t).indexOf('checked_now') > -1, "from=api → '방금 확인'", t.summary);
+  t = evaluateTrust({ liveSource: 'stale-cache', points: obsPts([1000, 1]), vendorItemId: 'V', mall: '쿠팡' });
+  check(t.level === LEVEL.STALE, 'from=stale-cache → 오래된 가격 (점수 무관하게 즉시)', t.level);
+  check(reasonCodes(t).indexOf('stale_source') > -1, '이유를 밝힌다', t.summary);
+
+  section('신뢰도. 교차 확인 — 관측이 1건뿐이면 낮춘다');
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 1]), vendorItemId: 'V', mall: '쿠팡' });
+  check(reasonCodes(t).indexOf('single_observation') > -1, '기록 1일치 → 교차 확인 안 됨', t.summary);
+  const single = t.score;
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 1], [1000, 2], [1000, 3]), vendorItemId: 'V', mall: '쿠팡' });
+  check(t.score > single, '기록이 여러 건이면 점수가 더 높다', `${single} → ${t.score}`);
+  check(reasonCodes(t).indexOf('corroborated') > -1, '교차 확인 근거 표시');
+
+  t = evaluateTrust({ age: 0.2, points: [], vendorItemId: 'V', mall: '쿠팡' });
+  check(reasonCodes(t).indexOf('no_history') > -1, '기록 0건도 근거로 밝힌다', t.summary);
+
+  section('신뢰도. 최근 급변은 신뢰도를 크게 떨어뜨린다');
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 3], [40000, 1]), vendorItemId: 'V', mall: '쿠팡' });
+  check(reasonCodes(t).indexOf('volatile_high') > -1, '40배 급변 → volatile_high', t.summary);
+  check(t.level !== LEVEL.HIGH, '급변이 있으면 신뢰 높음이 될 수 없다', `${t.level} ${t.score}`);
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 3], [2500, 1]), vendorItemId: 'V', mall: '쿠팡' });
+  check(reasonCodes(t).indexOf('volatile_mild') > -1, '2.5배 변동 → volatile_mild', t.summary);
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 3], [1050, 1]), vendorItemId: 'V', mall: '쿠팡' });
+  check(reasonCodes(t).indexOf('stable') > -1, '안정적이면 그것도 근거로 밝힌다');
+
+  section('신뢰도. 오래된 관측은 급변 판정에 쓰지 않는다');
+  // 40일 전과 39일 전 사이의 급변은 지금 가격의 신뢰도와 무관하다.
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 40], [40000, 39], [40000, 1]), vendorItemId: 'V', mall: '쿠팡' });
+  check(reasonCodes(t).indexOf('volatile_high') === -1,
+        '14일 창 밖의 급변은 반영하지 않는다', reasonCodes(t).join(','));
+
+  section('신뢰도. 옵션 식별자가 없으면 낮춘다');
+  const withId = evaluateTrust({ age: 0.2, points: obsPts([1000, 1], [1000, 2]), vendorItemId: 'V', mall: '쿠팡' }).score;
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 1], [1000, 2]), vendorItemId: '', mall: '쿠팡' });
+  check(t.score < withId, '식별자 없으면 감점', `${withId} → ${t.score}`);
+  check(reasonCodes(t).indexOf('no_option_id') > -1, '색상·용량에 따라 다를 수 있다고 밝힌다');
+
+  section('신뢰도. 수집이 끊긴 몰은 확인 불가');
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 1]), vendorItemId: 'V', mall: '네이버' });
+  check(t.level === LEVEL.UNKNOWN, '네이버 → 확인 불가', t.level);
+  check(reasonCodes(t).indexOf('unsupported_mall') > -1, '이유를 밝힌다', t.summary);
+
+  section('신뢰도. 모든 근거는 실제 관측에서 나온다 (문장 생성 금지)');
+  t = evaluateTrust({ age: 0.2, points: obsPts([1000, 1], [1000, 2]), vendorItemId: 'V', mall: '쿠팡' });
+  check(t.reasons.length > 0 && t.reasons.every(r => r.code && r.text && r.kind),
+        '모든 reason 에 code/text/kind 가 있다', JSON.stringify(reasonCodes(t)));
+  check(['good', 'warn', 'bad'].indexOf(t.reasons[0].kind) > -1, 'kind 는 정해진 값만');
+  check(!evaluateTrust({}).level || true, '입력이 비어도 throw 하지 않는다');
+  const empty = evaluateTrust({});
+  check(empty.level === LEVEL.STALE || empty.level === LEVEL.LOW,
+        '근거가 전혀 없으면 높은 등급을 주지 않는다', `${empty.level} ${empty.score}`);
+
+  section('신뢰도. attachTrust — 상품 단위로만 이력을 붙인다');
+  reset();
+  db.price_history.push(
+    { id: 1, product_id: 'T1', mall: '쿠팡', price: 1000, recorded_date: daysAgo(1) },
+    { id: 2, product_id: 'T1', mall: '쿠팡', price: 1000, recorded_date: daysAgo(2) },
+    // 같은 product_id 의 다른 몰 — 섞이면 안 된다
+    { id: 3, product_id: 'T1', mall: '네이버', price: 9, recorded_date: daysAgo(1) }
+  );
+  const enriched = await attachTrust([
+    { productId: 'T1', mall: '쿠팡', collectedAt: isoDaysAgo(0), link: COUPANG_LINK },
+    { productId: 'T2', mall: '쿠팡', collectedAt: isoDaysAgo(0), link: COUPANG_LINK }
+  ]);
+  check(enriched[0].trust.level === LEVEL.HIGH, 'T1 은 교차 확인되어 신뢰 높음', enriched[0].trust.level);
+  check(reasonCodes(enriched[0].trust).indexOf('volatile_high') === -1,
+        '다른 몰의 9원짜리 기록이 섞이지 않았다', reasonCodes(enriched[0].trust).join(','));
+  check(reasonCodes(enriched[1].trust).indexOf('no_history') > -1, 'T2 는 기록 없음');
+  check(!!enriched[0].trust.reasons.find(r => r.code === 'fresh'), 'collectedAt 으로 신선도 계산');
+
+  section('신뢰도. collected_at 이 없으면 최신 관측일을 확인 시점으로 쓴다');
+  // price_drop_top 뷰 기반 시세판 행에는 collected_at 이 없다.
+  reset();
+  db.price_history.push(
+    { id: 1, product_id: 'T3', mall: '쿠팡', price: 1000, recorded_date: daysAgo(1) },
+    { id: 2, product_id: 'T3', mall: '쿠팡', price: 1000, recorded_date: daysAgo(2) }
+  );
+  const dropLike = await attachTrust([{ productId: 'T3', mall: '쿠팡', link: COUPANG_LINK }]);
+  check(dropLike[0].trust.level !== LEVEL.UNKNOWN && dropLike[0].trust.score > 0,
+        'collectedAt 없어도 이력으로 신선도를 판정', `${dropLike[0].trust.level} ${dropLike[0].trust.score}`);
+  check(reasonCodes(dropLike[0].trust).indexOf('unknown_age') === -1,
+        '"언제인지 모름"으로 떨어지지 않는다', reasonCodes(dropLike[0].trust).join(','));
+
+  section('신뢰도. 이력 조회가 실패해도 응답을 죽이지 않는다');
+  reset();
+  const savedFrom = fakeSupabase.from;
+  fakeSupabase.from = () => { throw new Error('DB 폭발'); };
+  const survived = await attachTrust([{ productId: 'T9', mall: '쿠팡', collectedAt: isoDaysAgo(0), link: COUPANG_LINK }]);
+  fakeSupabase.from = savedFrom;
+  check(!!survived[0].trust, '이력 없이라도 신뢰도를 계산해 붙인다', survived[0].trust && survived[0].trust.level);
+
+  /* ================================================================ *
+   *  P1-c 데이터 품질 지표
+   * ================================================================ */
+  section('품질지표. 라이프사이클 / 도달성 / 식별자 / 신선도를 정확히 센다');
+  reset();
+  db.products.push(
+    { id: 1, product_id: 'A', mall: '쿠팡', keyword: 'k', lprice: 1000, collected_at: isoDaysAgo(0), link: COUPANG_LINK, vendor_item_id: '' },
+    { id: 2, product_id: 'B', mall: '쿠팡', keyword: 'k', lprice: 1000, collected_at: isoDaysAgo(30), link: COUPANG_LINK, vendor_item_id: 'V2' },
+    { id: 3, product_id: 'C', mall: '쿠팡', keyword: '',  lprice: 1000, collected_at: isoDaysAgo(0), link: COUPANG_LINK, vendor_item_id: '' },
+    { id: 4, product_id: 'D', mall: '네이버', keyword: 'k', lprice: 1000, collected_at: isoDaysAgo(0), link: '', vendor_item_id: '' },
+    { id: 5, product_id: 'E', mall: '쿠팡', keyword: 'k', lprice: 0,    collected_at: isoDaysAgo(0), link: COUPANG_LINK, vendor_item_id: '' }
+  );
+  db.price_history.push(
+    { id: 1, product_id: 'A', mall: '쿠팡', price: 1000, recorded_date: daysAgo(1) },
+    { id: 2, product_id: 'A', mall: '쿠팡', price: 900,  recorded_date: TODAY },
+    { id: 3, product_id: 'B', mall: '쿠팡', price: 1000, recorded_date: daysAgo(1) },
+    // 40배 급변 — 의심 관측쌍으로 잡혀야 한다
+    { id: 4, product_id: 'B', mall: '쿠팡', price: 40000, recorded_date: TODAY }
+  );
+
+  const { qualitySnapshot } = require('../api/_quality.js');
+  const snap = await qualitySnapshot();
+  check(!snap.error, '스냅샷 생성 성공', snap.error || '');
+  check(snap.상품.전체 === 5, '상품 전체 5', String(snap.상품.전체));
+  check(snap.상품.노출가능_live === 2, 'live 2 (A, C — C 는 keyword 없어도 오늘 확인됨)', String(snap.상품.노출가능_live));
+  check(snap.상품.묵음_stale === 1, 'stale 1 (B)', String(snap.상품.묵음_stale));
+  check(snap.상품.수집중단몰 === 1, 'dead-mall 1 (D)', String(snap.상품.수집중단몰));
+  check(snap.상품.값이상_invalid === 1, 'invalid 1 (E, 가격 0)', String(snap.상품.값이상_invalid));
+  check(snap.수집도달성.수집기가_못찾는행 === 1,
+        '수집기가 못 찾는 행 1 (C) — 네이버 행은 여기 안 센다', String(snap.수집도달성.수집기가_못찾는행));
+  check(snap.식별자.보유율_쿠팡기준 === '100%',
+        '옵션식별자 보유율은 쿠팡 기준 (네이버 행을 분모에 넣지 않는다)', snap.식별자.보유율_쿠팡기준);
+  check(snap.식별자.링크에서_추출 === 3, 'link 폴백으로 3건 확보 (A, C, E)', String(snap.식별자.링크에서_추출));
+  check(snap.가격값.급변_의심_관측쌍 === 1, '40배 급변 1건을 의심으로 집계', String(snap.가격값.급변_의심_관측쌍));
+  check(snap.가격이력.오늘_기록 === 2, '오늘 기록 2건', String(snap.가격이력.오늘_기록));
+
+  section('품질지표. price_history 는 최신순으로 표본을 잡는다');
+  // 오래된 순으로 자르면 "오늘 기록 0건" 같은 정반대 결론이 나온다 (실제로 겪은 버그).
+  check(snap.표본.price_history.indexOf('전량') === 0,
+        '표본이 안 잘렸으면 전량이라고 밝힌다', snap.표본.price_history);
+
+  section('품질지표. DB 오류가 나도 진단 전체를 죽이지 않는다');
+  const origFrom = fakeSupabase.from;
+  fakeSupabase.from = () => { throw new Error('DB 폭발'); };
+  const broken = await qualitySnapshot();
+  fakeSupabase.from = origFrom;
+  check(!!broken.error, '오류를 { error } 로 돌려준다 (throw 하지 않음)', broken.error);
+
+  /* ================================================================ *
+   *  check-alerts.js — 알림은 상품 식별자로만 매칭한다
+   * ================================================================ */
+  section('알림. 이름만 같은 다른 상품의 가격으로 메일을 보내지 않는다');
+  process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || 'test-key';
+  const { run: runAlerts } = require('./check-alerts.js');
+
+  reset();
+  sentMail.length = 0;
+  // 오늘 가격: 값이 아주 싼 "동명이물" B상품만 수집됐다.
+  db.price_history.push({
+    product_id: 'B-9999', mall: '쿠팡', title: '무선 이어폰',
+    price: 5000, recorded_date: TODAY, recorded_at: new Date().toISOString(), link: ''
+  });
+  // 알림 신청: 사용자가 원한 것은 A상품(10만원대)이다.
+  db.alerts.push({
+    id: 1, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 90000, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 0,
+        'A상품 알림에 B상품(5,000원) 가격으로 "목표가 달성" 메일이 나가지 않는다',
+        sentMail.length ? JSON.stringify(sentMail[0].payload.product) : '발송 0건');
+
+  section('알림. product_id 없는 옛 신청은 발송하지 않는다');
+  reset();
+  sentMail.length = 0;
+  db.price_history.push({
+    product_id: 'B-9999', mall: '쿠팡', title: '무선 이어폰',
+    price: 5000, recorded_date: TODAY, recorded_at: new Date().toISOString(), link: ''
+  });
+  db.alerts.push({
+    id: 2, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: '', target_price: 90000, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 0, '식별자 없는 신청은 건너뛴다 (잘못 보내느니 안 보낸다)',
+        sentMail.length ? JSON.stringify(sentMail[0].payload.product) : '발송 0건');
+  check(db.updates.length === 0, 'sent 플래그도 건드리지 않는다 (나중에 식별자가 채워지면 발송 가능)');
+
+  section('알림. 정상 신청은 그대로 발송된다 (기능이 죽지 않았는지)');
+  reset();
+  sentMail.length = 0;
+  db.price_history.push(
+    { product_id: 'A-1111', mall: '쿠팡', title: '무선 이어폰', price: 80000, recorded_date: TODAY, recorded_at: new Date().toISOString(), link: 'https://x' },
+    { product_id: 'A-1111', mall: '쿠팡', title: '무선 이어폰', price: 120000, recorded_date: daysAgo(1), recorded_at: isoDaysAgo(1), link: 'https://x' },
+    // 같은 이름의 다른 상품 — 통계에 섞이면 안 된다
+    { product_id: 'B-9999', mall: '쿠팡', title: '무선 이어폰', price: 5000, recorded_date: daysAgo(1), recorded_at: isoDaysAgo(1), link: '' }
+  );
+  db.alerts.push({
+    id: 3, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 90000, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 1, '목표가 달성 → 메일 1건 발송', String(sentMail.length));
+  check(sentMail[0] && sentMail[0].payload.product.currentPrice === 80000,
+        '현재가는 그 상품(A)의 80,000원', sentMail[0] && String(sentMail[0].payload.product.currentPrice));
+  check(sentMail[0] && sentMail[0].payload.analysis.min30 === 80000,
+        '30일 최저가에 동명 B상품의 5,000원이 섞이지 않는다',
+        sentMail[0] && String(sentMail[0].payload.analysis.min30));
+  check(db.updates.some(u => u.table === 'alerts' && u.patch.sent === true),
+        '발송 후 sent 갱신 (중복 발송 방지)');
+
+  /* ================================================================ *
    *  노출 단계
    * ================================================================ */
   section('노출. 다시 수집되지 않는 몰 / 오래 확인 못 한 행은 현재가로 내보내지 않는다');
@@ -743,6 +967,60 @@ function recordedPrice(productId) {
         '상승 방향도 5배 이상이면 보류');
   check(classifyPrice(0, { price: 100000, observedAt: isoDaysAgo(1) }, {}).status === 'invalid',
         '0 은 invalid');
+
+  /* ================================================================
+   *  시세판 최신성 — recentlyObserved
+   *
+   *  plausibleDrop 은 "하락폭이 그럴듯한가"만 본다. 언제 관측된 하락인지는
+   *  price_drop_top 뷰에 날짜 컬럼이 없어서 알 수 없다. 그래서 2026-08-12
+   *  운영 DB 기준으로 홈 상위 8행 중 4행이 2026-07-30(13일 전) 기록인데도
+   *  "현재가"로 나가고 있었다.
+   *
+   *  아래는 그 판정을 고정한다. 날짜는 전부 'YYYY-MM-DD' 문자열 비교다.
+   * ================================================================ */
+  section('시세판. recentlyObserved — 오래된 기록을 현재가로 쓰지 않는다');
+
+  // 모듈 상단의 TODAY 와 겹치지 않게 이름을 달리한다 — 여기서는 날짜를 고정해서 본다.
+  const DROP_TODAY = '2026-08-12';
+  const histPts = (...dates) => dates.map(d => ({ price: 1000, recorded_date: d }));
+
+  check(recentlyObserved(histPts('2026-08-12'), DROP_TODAY) === true, '오늘 기록 → 통과');
+  check(recentlyObserved(histPts('2026-08-05'), DROP_TODAY) === true, '정확히 7일 전 → 경계 포함, 통과');
+  check(recentlyObserved(histPts('2026-08-04'), DROP_TODAY) === false, '8일 전 → 제외');
+  check(recentlyObserved(histPts('2026-07-30'), DROP_TODAY) === false,
+        '13일 전 → 제외 (실제로 홈에 떠 있던 방수 백팩 사례)');
+
+  check(recentlyObserved(histPts('2026-07-30', '2026-08-10', '2026-07-27'), DROP_TODAY) === true,
+        '여러 점 중 가장 최근 것으로 판단한다 (정렬 순서에 기대지 않는다)');
+
+  check(recentlyObserved([], DROP_TODAY) === false, '기록이 빈 배열이면 제외');
+  check(recentlyObserved(undefined, DROP_TODAY) === false, '기록이 없으면(undefined) 제외');
+  check(recentlyObserved(histPts('2026-07-30'), TODAY, 30) === true,
+        'maxAgeDays 를 넘기면 그 값을 쓴다');
+
+  /*
+   * 미래 날짜.
+   *
+   * 수집기 시각이 어긋나거나 손으로 넣은 행이 내일 날짜로 들어오면, 그게
+   * 최신값이 되어 아무리 묵은 상품도 "방금 확인됨"이 된다. 오늘까지만 현재로 친다.
+   */
+  check(recentlyObserved(histPts('2026-09-01'), DROP_TODAY) === false,
+        '미래 날짜 하나뿐이면 → 현재 기록으로 치지 않는다');
+  check(recentlyObserved(histPts('2026-09-01', '2026-07-30'), DROP_TODAY) === false,
+        '미래 날짜를 빼고 나면 13일 전이 최신 → 제외');
+  check(recentlyObserved(histPts('2026-09-01', '2026-08-11'), DROP_TODAY) === true,
+        '미래 날짜를 빼도 8-11 이 남으면 → 통과');
+
+  check(latestObservedDate(histPts('2026-08-01', '2026-08-09', '2026-08-03'), DROP_TODAY) === '2026-08-09',
+        'latestObservedDate — 가장 최근 날짜를 고른다');
+  check(latestObservedDate(histPts('2026-09-09'), DROP_TODAY) === '',
+        'latestObservedDate — 미래뿐이면 빈 문자열');
+  check(latestObservedDate(histPts('', null, 'abc'), DROP_TODAY) === '',
+        'latestObservedDate — 형식이 깨진 값은 무시');
+
+  // today 가 이상하면 통과시키지 않는다 (판단 근거가 없는데 최신이라고 하면 안 된다).
+  check(recentlyObserved(histPts('2026-08-12'), '') === false, 'today 가 비면 제외');
+  check(recentlyObserved(histPts('2026-08-12'), '2026/08/12') === false, 'today 형식이 다르면 제외');
 
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
   process.exit(fail ? 1 : 0);

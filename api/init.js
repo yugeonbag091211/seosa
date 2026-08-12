@@ -11,7 +11,8 @@ const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, fres
  * 눌러도 갈 곳이 없거나(link=NULL) 더 이상 갱신되지 않는(네이버) 행이다.
  * 케이스는 scripts/test-price.js 의 '시세판. plausibleDrop' 섹션에 고정해 두었다.
  */
-const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT } = require('./_price');
+const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT, recentlyObserved, DROP_MAX_AGE_DAYS } = require('./_price');
+const { attachTrust, loadRecentHistory } = require('./_trust');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
 
@@ -71,6 +72,57 @@ async function chipKeywords(keywords, activeKeyword) {
   if (kept.length < keywords.length) {
     console.log(`[init] 칩 키워드 ${keywords.length}→${kept.length}종 `
       + `(제외: ${keywords.filter(k => !alive.has(k)).join(', ')})`);
+  }
+  return kept;
+}
+
+/**
+ * 인기 검색어 → 홈 칩으로 내보낼 것만.
+ *
+ * 홈 칩은 광고로 처음 들어온 사람이 가장 먼저 누르는 버튼이다. 그런데 목록을
+ * search_stats 상위 10개에서 그대로 뽑고 있어서, 사람이 오타로 친 말도
+ * 횟수만 쌓이면 그대로 홈 화면에 올라간다.
+ *
+ * 2026-08-12 운영 기준 5번째 칩이 "텀블르"(4회)였다. 바로 뒤 8위에 제대로 된
+ * "텀블러"(3회)가 있는데도 오타 쪽이 노출됐고, 누르면 /api/search 가 0건을
+ * 준다 — 첫 클릭이 빈 화면이다. (보정 사전에도 "텀블러" 가 없어서 "혹시
+ * 이거였나요" 제안조차 뜨지 않았다)
+ *
+ * 판단 기준은 하나다: 그 말로 검색했을 때 실제로 상품이 저장된 적이 있는가.
+ * 검색이 결과를 낸 키워드는 saveProducts 가 products 에 남긴다. 한 행도 없는
+ * 키워드는 "사람이 쳤지만 아무것도 안 나온 말"이고, 홈 칩에 올릴 이유가 없다.
+ *
+ * freshRows(수집 신선도)는 쓰지 않는다. 칩을 누르면 /api/rec 이 아니라 쿠팡
+ * 실시간 검색이 돌기 때문에, 최근에 수집되지 않았다는 사실은 결과가 안 나온다는
+ * 뜻이 아니다. 아래 chipKeywords(오늘의 셀렉션)와 기준이 다른 이유다.
+ *
+ * 판단 근거를 못 얻으면 원래대로 전부 내보낸다. 근거 없이 지우지 않는다.
+ */
+async function popularChips(stats) {
+  const rows = (stats || []).filter(s => s && s.keyword);
+  const keywords = [...new Set(rows.map(s => s.keyword))];
+  if (!keywords.length) return rows;
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('keyword, title')
+    .in('keyword', keywords)
+    .limit(keywords.length * KEYWORD_PROBE_ROWS);
+
+  if (error) {
+    console.warn(`[init] 인기 검색어 실적 조회 실패(전체 노출): ${error.message}`);
+    return rows;
+  }
+
+  const proven = new Set(relevantRows(data).map(r => r.keyword));
+  const kept = rows.filter(s => proven.has(s.keyword));
+  if (!kept.length) {
+    console.warn('[init] 실적이 있는 인기 검색어가 없어 목록을 그대로 내보냅니다.');
+    return rows;
+  }
+  if (kept.length < rows.length) {
+    console.log(`[init] 인기 검색어 ${rows.length}→${kept.length}종 `
+      + `(제외: ${rows.filter(s => !proven.has(s.keyword)).map(s => s.keyword).join(', ')})`);
   }
   return kept;
 }
@@ -166,25 +218,88 @@ module.exports = async function handler(req, res) {
     }
 
     const drops = (priceDrop || []).filter(plausibleDrop);
+
+    /*
+     * 언제 관측된 하락인지까지 본다.
+     *
+     * plausibleDrop 은 하락폭만 본다. price_drop_top 뷰에 날짜 컬럼이 없어서
+     * 며칠 전 값인지 알 방법이 거기에는 없다. 그래서 2026-08-12 기준 상위 8행
+     * 중 4행이 2026-07-30(13일 전) 기록인데도 "현재가"로 나가고 있었다.
+     *
+     * 판단 근거는 price_history 다. _trust.loadRecentHistory 가 이미 상품
+     * 단위(product_id+mall)로 최근 기록을 읽어오므로 그대로 쓴다 — 같은 일을
+     * 하는 조회를 새로 만들지 않는다.
+     *
+     * ★ 자르기(slice) 전에 거른다. 뒤에서 거르면 8칸 중 몇 칸이 빈 채로 나간다.
+     *
+     * 조회에 실패하면 거르지 않고 전부 통과시킨다. 근거를 못 얻었다고 해서
+     * 시세판을 통째로 비우는 것은 과한 대응이다 (기존 동작으로 되돌아갈 뿐이다).
+     */
+    let fresh = drops;
+    if (drops.length) {
+      try {
+        const hist = await loadRecentHistory(
+          drops.map(r => ({ productId: String(r.product_id), mall: r.mall || '' }))
+        );
+        // recorded_date 를 쓰는 쪽과 같은 방식으로 '오늘'을 정한다 (_price.recentlyObserved 주석 참고).
+        const today = new Date().toISOString().slice(0, 10);
+        fresh = drops.filter(r => recentlyObserved(hist.get(`${r.product_id}|${r.mall || ''}`), today));
+      } catch (e) {
+        console.warn(`[init] 시세판 최신성 확인 실패(기존대로 노출): ${e.message}`);
+        fresh = drops;
+      }
+    }
+
+    /*
+     * 여기서 8칸이 안 차도 오래된 행으로 채우지 않는다.
+     * 며칠 전 값을 오늘 가격이라고 말하는 것보다 적게 보여주는 편이 낫다.
+     */
     // 쿠팡 행을 먼저 채운다 (다른 몰은 더 이상 매일 수집되지 않아 값이 묵어 있다).
-    const dropRows = preferLive(drops).slice(0, SECTION_SIZE).map(toDropRow);
+    const dropRows = preferLive(fresh).slice(0, SECTION_SIZE).map(toDropRow);
 
     const dropped = (priceDrop || []).length - drops.length;
     if (dropped > 0) console.warn(`[init] 시세판 이상치 ${dropped}행 제외 (하락률 ${MAX_PLAUSIBLE_DROP_PCT}% 이상 또는 값 불일치)`);
 
+    const staleDropped = drops.length - fresh.length;
+    if (staleDropped > 0) {
+      console.warn(`[init] 시세판 오래된 기록 ${staleDropped}행 제외`
+        + ` (최신 가격 기록이 ${DROP_MAX_AGE_DAYS}일 초과 또는 기록 없음) — 후보 ${fresh.length}행`);
+    }
+    if (fresh.length < SECTION_SIZE) {
+      console.warn(`[init] 시세판 후보가 ${fresh.length}행뿐이라 ${SECTION_SIZE}칸을 다 채우지 못합니다`
+        + ' (오래된 기록으로 채우지 않습니다).');
+    }
+
     // 칩 목록과 셀렉션 루프가 같은 기준(freshRows)을 쓰도록 맞춘다.
     const dailyKeywords = await chipKeywords(TODAY_PICKS, recKeyword);
+
+    // 홈 상단 칩(= 인기 검색어)에서 결과가 나온 적 없는 말을 뺀다.
+    const popularRows = await popularChips(stats);
+
+    const dailyProducts = recProducts.map(toClientProduct);
+
+    /*
+     * 가격 신뢰도를 세 섹션에 한 번에 붙인다.
+     *
+     * 섹션별로 따로 부르면 price_history 조회가 세 번 나간다. 한 번에 모으면
+     * product_id in (...) 쿼리 한 번으로 끝난다 (한 응답에 최대 24개 상품).
+     */
+    await attachTrust([
+      ...dailyProducts,
+      ...((monthly && monthly.products) || []),
+      ...dropRows
+    ]);
 
     // 방문자마다 같은 쿼리가 네 번 나간다. 개인화된 값이 없으므로 Edge 에 잠깐 세워둔다.
     cachePublic(res, 300);
     res.json({
-      popular: stats || [],
+      popular: popularRows,
       monthly: monthly || null,
       priceDrop: dropRows,
       daily: {
         keyword: recKeyword,
         keywords: dailyKeywords,
-        products: recProducts.map(toClientProduct)
+        products: dailyProducts
       }
     });
   } catch(e) {
