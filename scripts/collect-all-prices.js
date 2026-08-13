@@ -48,19 +48,66 @@ const COUPANG_MAX_WAIT_MS = 120000;
 /*
  * 실행당 쿠팡 호출 상한.
  *
- * ★ 한 번 실행으로 전체가 다 돌지 않는다. 그게 정상이다.
- *   2026-08-11 운영 DB 실측:
- *     products 1,432행 중 keyword 가 빈 행 809
- *       ├ 네이버쇼핑 526 → 연동이 없어 수집 대상이 아니다
- *       └ 쿠팡      283 → searchPhraseFromTitle 로 283/283 검색어 유도 성공,
- *                          유도된 고유 검색어 264종
- *     여기에 keyword 가 이미 있는 49종을 더하면 검색어 313종이다.
- *   예산 120회로는 한 실행에 절반이 안 된다. 유도 그룹을 oldestFirst 로
- *   정렬해 두었으므로(아래 plan) 며칠에 걸쳐 한 바퀴를 돈다.
- *   → 첫 실행의 커버리지 경고는 고장이 아니다. 예산을 올리기 전에
- *     쿠팡 분당 상한(_coupang.MAX_PER_MIN)부터 확인할 것.
+ * 2026-08-13 운영 DB 실측:
+ *   products 1,479행
+ *     ├ 쿠팡    770 (keyword 있음 487 / 제목에서 유도 283, 유도 실패 0)
+ *     └ 비쿠팡  709 → 연동이 없어 수집 대상이 아니다
+ *   고유 검색어 316종 = 하루 한 바퀴에 필요한 호출 수
+ *
+ * ★ 예산을 120 → 400 으로 올렸다.
+ *   예전에는 이 값이 "한 실행이 얼마나 도는가"를 결정했다(며칠에 걸쳐 한 바퀴).
+ *   이제는 배치 루프가 1분 간격으로 페이스를 잡고 진행 위치를 DB 에 남기므로,
+ *   속도를 정하는 것은 이 예산이 아니라 BATCH_INTERVAL_MS 다. 예산은
+ *   "폭주 시 안전판" 역할만 한다. 316종을 하루에 한 바퀴 돌리려면 316 이상이어야 한다.
+ *
+ *   호출 속도는 이 값과 무관하게 세 겹으로 막혀 있다:
+ *     COUPANG_MIN_GAP_MS(6초)  → 이 스크립트만으로 분당 최대 10회
+ *     _coupang.MAX_PER_MIN(20) → 모든 인스턴스 합산 분당 20회
+ *     쿠팡 공식 한도            → 분당 50회
  */
-const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 120;
+const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 400;
+
+/* ── 배치 진행 설정 ────────────────────────────────────────────────
+ *
+ * 한 배치가 덮는 상품 수와 배치 간격.
+ *
+ * ★ "상품 20개 = 쿠팡 호출 20회" 가 아니다.
+ *   쿠팡 파트너스에는 상품 단건 조회 API 가 없다. 검색 API 하나뿐이라
+ *   (api/_coupang.js SEARCH_PATH) 검색어로 찾아서 productId 를 맞춰보는
+ *   방식이고, 검색 1회가 최대 10건을 돌려주므로 여러 상품이 한 번에 덮인다.
+ *
+ *   2026-08-13 운영 DB 실측(scripts 로 계산):
+ *     수집 대상 쿠팡 상품 770개 / 고유 검색어 316종  → 검색어당 평균 2.4개
+ *     · product_id 순으로 20개씩 자르면    검색어 평균 17.5종 필요
+ *     · 검색어 그룹째로 20개를 채우면      검색어 평균  8종 필요
+ *   그래서 아래 루프는 상품이 아니라 "검색어 그룹" 을 단위로 걷는다.
+ *   그룹을 배치 경계에서 쪼개지 않으므로 한 배치가 20개를 조금 넘길 수 있다.
+ */
+const BATCH_PRODUCTS    = Number(process.env.PRICE_BATCH_PRODUCTS) || 20;
+const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 60000;
+
+/*
+ * 이 실행이 쓸 수 있는 시간. GitHub Actions 의 timeout-minutes 보다 넉넉히 짧게.
+ * 예산을 넘기면 진행 상태를 저장하고 정상 종료한다 — 다음 실행이 이어받는다.
+ */
+const RUN_TIME_BUDGET_MS = Number(process.env.PRICE_RUN_BUDGET_MS) || 50 * 60 * 1000;
+
+/**
+ * 한국시간(Asia/Seoul) 기준 오늘 날짜 'YYYY-MM-DD'.
+ *
+ * ★ price_history.recorded_date 에는 절대 쓰지 않는다.
+ *   그쪽은 UTC(new Date().toISOString())로 고정돼 있고, 저장·조회·판정이
+ *   전부 같은 기준이어야 한다 (api/_price.js recentlyObserved 주석 참고).
+ *   여기서 KST 를 쓰는 곳은 "오늘 한 바퀴 돌았는가" 를 판정하는
+ *   price_job_state.job_date 하나뿐이다.
+ *
+ * KST 는 UTC+9 고정이고 서머타임이 없어서 9시간을 더해 자르면 정확하다.
+ */
+function kstToday(now = new Date()) {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ─── 환경변수 ────────────────────────────────────────────────
 const COUP_ACCESS  = process.env.COUPANG_ACCESS_KEY;
@@ -93,8 +140,16 @@ let _budgetWarned = false;
  * 절대 retry로 감싸지 말 것.
  */
 async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
-  if (!COUP_ACCESS || !COUP_SECRET) return [];
-  if (_coupangBlocked || isBlocked()) return [];
+  /*
+   * 반환값 { ok, items, reason }.
+   *
+   * ok=false 는 "호출이 나가지 못했다"는 뜻이고 재시도 대상이다.
+   * ok=true + items=[] 는 "호출은 성공했는데 결과가 비었다"는 뜻이라
+   * 재시도해도 같다. 호출부가 이 둘을 구분해야 차단 때문에 못 받은 상품을
+   * "원래 없는 상품"으로 오해해 영원히 누락시키지 않는다.
+   */
+  if (!COUP_ACCESS || !COUP_SECRET) return { ok: false, items: [], reason: '쿠팡 키 미설정' };
+  if (_coupangBlocked || isBlocked())  return { ok: false, items: [], reason: '쿠팡 차단 상태' };
 
   if (_coupangCalls >= COUPANG_RUN_BUDGET) {
     _coupangSkipped++;
@@ -102,7 +157,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
       _budgetWarned = true;
       console.warn(`\n⚠️  쿠팡 호출 예산 ${COUPANG_RUN_BUDGET}회 소진 — 남은 키워드는 건너뜁니다.\n`);
     }
-    return [];
+    return { ok: false, items: [], reason: `실행당 호출 예산 ${COUPANG_RUN_BUDGET}회 소진` };
   }
 
   // forceRefresh를 쓰지 않는다. 최근 6시간 안에 받아둔 값이면 그것도 "오늘 가격"이라
@@ -127,7 +182,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
    */
   if (r.from === 'stale-cache') {
     _coupangSkipped++;
-    return [];
+    return { ok: false, items: [], reason: '오래된 캐시 — 오늘 가격으로 쓸 수 없음' };
   }
 
   if (r.blocked && !_coupangBlocked) {
@@ -136,18 +191,28 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
     console.error(`\n⚠️  쿠팡 API 차단 감지: ${_coupangBlockMsg}`);
     console.error('    → 이번 실행에서는 쿠팡 호출을 멈춥니다.\n');
   }
+  if (r.blocked) return { ok: false, items: [], reason: `쿠팡 차단: ${String(r.error || '').slice(0, 60)}` };
 
-  return r.items.map(it => ({
-    productId: it.productId,
-    title: it.title,
-    lprice: it.lprice,
-    oprice: it.oprice,
-    link: it.link,
-    image: it.image,
-    mall: '쿠팡',
-    itemId: it.itemId || '',
-    vendorItemId: it.vendorItemId || '',
-  }));
+  // 호출이 아예 나가지 못한 경우(분당 상한 등)도 재시도 대상이다.
+  if (r.from === 'none') {
+    return { ok: false, items: [], reason: `호출 생략: ${String(r.error || '분당 상한/대기 초과').slice(0, 60)}` };
+  }
+
+  return {
+    ok: true,
+    reason: '',
+    items: r.items.map(it => ({
+      productId: it.productId,
+      title: it.title,
+      lprice: it.lprice,
+      oprice: it.oprice,
+      link: it.link,
+      image: it.image,
+      mall: '쿠팡',
+      itemId: it.itemId || '',
+      vendorItemId: it.vendorItemId || '',
+    }))
+  };
 }
 
 // ─── DB 조회 ──────────────────────────────────────────────────
@@ -163,6 +228,89 @@ async function fetchAllProducts() {
     all.push(...(data || []));
     if (!data || data.length < PAGE) return all;
   }
+}
+
+/* ─── 진행 상태 (price_job_state) ─────────────────────────────
+ *
+ * 프로세스가 끝나도 남아야 하는 값이라 DB 에 둔다. 전역변수에 두면
+ * GitHub Actions 러너가 종료되는 순간 사라져서 다음 실행이 늘 1번부터 돈다.
+ * 테이블 정의: supabase/2026-08-price-job-state.sql
+ * ------------------------------------------------------------------ */
+const STATE_MISSING_HINT =
+  'price_job_state 테이블이 없습니다. Supabase SQL Editor 에서 '
+  + 'supabase/2026-08-price-job-state.sql 을 한 번 실행하세요.';
+
+async function loadState() {
+  const { data, error } = await supabase
+    .from('price_job_state')
+    .select('job_date, cursor_key, processed, total, status, last_result')
+    .eq('id', 1)
+    .maybeSingle();
+
+  if (error) {
+    // 테이블 자체가 없으면 진행 상태를 이어갈 수 없다. 조용히 처음부터
+    // 도는 것이 최악이다(매 실행이 1번부터 → 앞쪽 상품만 반복 수집).
+    throw new Error(`${STATE_MISSING_HINT} (원인: ${error.message})`);
+  }
+  return data || null;
+}
+
+async function saveState(patch) {
+  const row = { id: 1, ...patch, updated_at: new Date().toISOString() };
+  const { error } = await supabase
+    .from('price_job_state')
+    .upsert(row, { onConflict: 'id' });
+  if (error) console.error(`  [상태 저장 실패] ${error.message}`);
+  return !error;
+}
+
+/* ─── 배치 계획 (순수 함수 — 쿠팡/DB 접근 없음) ────────────────
+ *
+ * 테스트가 이 세 함수만 가지고 배치·커서·완료 판정을 전부 검증한다.
+ * (scripts/test-price-batch.js)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 검색어 그룹 목록을 만든다. 검색어 문자열 오름차순 — 실행 사이에 순서가
+ * 절대 변하지 않아야 커서로 이어받을 수 있다.
+ *
+ * @param {Array} withKeyword  DB 에 keyword 가 있는 행
+ * @param {Map}   derivedGroups 제목에서 유도한 검색어 → 행 목록
+ */
+function buildPlan(withKeyword, derivedGroups) {
+  const groups = new Map();
+  const add = (kw, p) => {
+    if (!groups.has(kw)) groups.set(kw, []);
+    groups.get(kw).push(p);
+  };
+  withKeyword.forEach(p => add(p.keyword, p));
+  derivedGroups.forEach((rows, kw) => rows.forEach(p => add(kw, p)));
+
+  return [...groups.entries()]
+    .map(([kw, rows]) => ({ kw, rows }))
+    .sort((a, b) => (a.kw < b.kw ? -1 : a.kw > b.kw ? 1 : 0));
+}
+
+/** 커서보다 뒤에 있는 그룹만 남긴다. 목록이 변해도 위치가 밀리지 않는다. */
+function resumeFrom(plan, cursor) {
+  return cursor ? plan.filter(g => g.kw > cursor) : plan;
+}
+
+/**
+ * 그룹을 배치로 나눈다. 한 배치가 상품 size 개를 채우면 끊는다.
+ * 그룹은 경계에서 쪼개지 않는다 — 쪼개면 같은 검색어를 두 배치에서
+ * 각각 호출하게 되어 쿠팡 호출이 낭비된다. 그래서 배치가 size 를 조금 넘길 수 있다.
+ */
+function splitBatches(groups, size = BATCH_PRODUCTS) {
+  const batches = [];
+  let cur = [], n = 0;
+  for (const g of groups) {
+    cur.push(g);
+    n += g.rows.length;
+    if (n >= size) { batches.push(cur); cur = []; n = 0; }
+  }
+  if (cur.length) batches.push(cur);
+  return batches;
 }
 
 /* ─── 관측값 모으기 ───────────────────────────────────────────
@@ -238,6 +386,23 @@ async function saveAll() {
 
 // ─── 메인 ─────────────────────────────────────────────────────
 async function run() {
+  /*
+   * ★ 진행 상태를 가장 먼저 본다.
+   *
+   *   오늘 이미 완료된 날이면 products 1,400여 행을 읽을 이유도 없다.
+   *   (완료 판정을 products 조회 뒤에 두면, 아무 일도 안 하는 실행이
+   *    매번 테이블을 통째로 읽는다)
+   */
+  const today = kstToday();
+  let state = await loadState();
+
+  if (state && state.job_date === today && state.status === 'completed') {
+    console.log(`\n[진행] ${today} (KST) 작업은 이미 완료되었습니다`
+      + ` — ${state.processed}/${state.total}개 처리됨. 이번 실행은 아무 상품도 처리하지 않습니다.`);
+    console.log('       (다음 작업은 KST 자정 이후 실행부터 시작합니다)');
+    return;
+  }
+
   const products = await fetchAllProducts();
 
   /*
@@ -286,80 +451,286 @@ async function run() {
   const markCovered = (pid, mall) => uncovered.delete(`${pid}|${mall}`);
 
   /*
-   * 검색어 처리 순서.
+   * 검색어 처리 순서 — 검색어 문자열 오름차순으로 고정한다.
    *
-   *   1) DB 에 keyword 가 있는 그룹 — 살아있는 카탈로그다. 매일 갱신되어야 한다.
-   *   2) 제목에서 유도한 그룹 — 오래 확인 못 한 것부터.
+   * ★ 예전에는 유도 그룹을 collected_at 오름차순(oldestFirst)으로 정렬했다.
+   *   그 값은 수집에 성공하는 순간 now() 로 바뀐다. 즉 정렬 기준이 작업
+   *   도중에 변한다. 하루를 여러 번의 실행으로 나눠 이어가는 지금 구조에서
+   *   그러면 실행마다 순서가 뒤바뀌어, 커서 뒤쪽에 있던 그룹이 앞으로
+   *   올라오며 통째로 건너뛰어진다. 검색어 문자열은 변하지 않으므로
+   *   몇 번을 나눠 돌아도 순서가 같다.
    *
-   * 실행당 호출 예산(COUPANG_RUN_BUDGET)이 있어서 한 번에 전부는 못 돈다.
-   * 2)를 오래된 순으로 정렬해 두면 매 실행마다 가장 묵은 것부터 처리되고,
-   * 며칠에 걸쳐 전체가 한 바퀴 돈다. 예산을 넘기면 fetchCoupangAll 이
-   * 알아서 건너뛰므로 쿠팡 상한을 넘길 위험은 없다.
+   * 같은 검색어가 DB keyword 와 유도 검색어 양쪽에 있으면 한 그룹으로 합친다.
+   * (안 합치면 같은 검색어로 두 번 호출한다)
    */
-  const oldestFirst = rows => Math.min(...rows.map(r => Date.parse(r.collected_at) || 0));
+  const plan = buildPlan(withKeyword, derivedGroups);
+  const planTotal = plan.reduce((n, g) => n + g.rows.length, 0);
 
-  const byKeyword = new Map();
-  withKeyword.forEach(p => {
-    if (!byKeyword.has(p.keyword)) byKeyword.set(p.keyword, []);
-    byKeyword.get(p.keyword).push(p);
+  // ── 날짜 전환 판정 ─────────────────────────────────────────
+  // (오늘 completed 인 경우는 이 함수 맨 앞에서 이미 return 했다)
+  if (!state || state.job_date !== today) {
+    // 날짜가 바뀌었다(또는 첫 실행). 새 하루로 리셋하고 1번부터 시작한다.
+    console.log(`\n[진행] 새 작업일 ${today} (KST) — 처음부터 시작합니다.`
+      + (state ? `  (직전 작업일 ${state.job_date} / ${state.status})` : ''));
+    state = { job_date: today, cursor_key: '', processed: 0, total: planTotal, status: 'running' };
+    await saveState(state);
+  } else {
+    console.log(`\n[진행] ${today} (KST) 이어서 진행 — ${state.processed}/${state.total}개 완료,`
+      + ` 커서 "${state.cursor_key}" 다음부터`);
+  }
+
+  // 커서 뒤쪽만 남긴다. 문자열 비교라 목록에 행이 추가·삭제돼도 위치가 밀리지 않는다.
+  const remaining = resumeFrom(plan, state.cursor_key || '');
+
+  /*
+   * 재시도 대상 검색어. kw → 사유.
+   *
+   * Map 인 이유: 같은 날 뒤 실행에서 성공하면 지워야 하고(delete), 같은
+   * 검색어가 두 번 실패해도 한 번만 남아야 한다. 이 목록은 price_job_state
+   * .last_result.failedKeywords 로 저장되어 같은 날 보충 실행이 이어받는다.
+   * (하루가 바뀌면 상태가 통째로 리셋되므로 자연히 비워진다)
+   */
+  const failedKeywords = new Map(
+    ((state.last_result && state.last_result.failedKeywords) || []).map(kw => [kw, '직전 실행에서 실패'])
+  );
+
+  /*
+   * 커서를 지나온 구간 중 호출이 못 나갔던 검색어. 커서는 건드리지 않는다 —
+   * 이미 지나온 자리라 커서를 뒤로 돌리면 그 뒤 상품을 전부 다시 처리한다.
+   */
+  const retryGroups = failedKeywords.size
+    ? plan.filter(g => failedKeywords.has(g.kw) && !remaining.some(x => x.kw === g.kw))
+    : [];
+
+  /*
+   * ★ 남은 검색어도 없고 재시도할 것도 없을 때만 완료다.
+   *
+   *   실패한 검색어가 남아 있는데 completed 로 굳혀 버리면, 같은 날 보충
+   *   실행이 맨 앞의 completed 검사에 걸려 그냥 끝나므로 그 상품들은
+   *   그날 영영 가격을 못 받는다. 그래서 재시도가 남아 있으면 running 을
+   *   유지한다 — 커서는 끝에 있으므로 1번부터 다시 도는 일은 없다.
+   */
+  if (!remaining.length && !retryGroups.length) {
+    console.log('  남은 검색어가 없습니다 — 오늘 작업을 완료로 표시합니다.');
+    await saveState({ ...state, status: 'completed', total: planTotal, last_run_at: new Date().toISOString() });
+    return;
+  }
+
+  console.log(`── 쿠팡 검색 (남은 검색어 ${remaining.length}종 / 전체 ${plan.length}종,`
+    + ` 배치당 ${BATCH_PRODUCTS}개 상품, 간격 ${Math.round(BATCH_INTERVAL_MS / 1000)}초,`
+    + ` 실행당 호출 예산 ${COUPANG_RUN_BUDGET}회) ──`);
+
+  /*
+   * 배치 나누기 — 검색어 그룹을 경계에서 쪼개지 않는다.
+   * 그룹을 쪼개면 같은 검색어를 두 배치에서 각각 호출하게 되어 호출이 낭비된다.
+   */
+  const batches = splitBatches(remaining, BATCH_PRODUCTS);
+  console.log(`  → 배치 ${batches.length}개로 나눔\n`);
+
+  const started = Date.now();
+  let recovered = 0;
+  let totalRecorded = 0, totalSaved = 0, totalRejected = 0, totalSuspect = 0;
+
+  const notFoundKeywords = []; // 호출은 됐는데 결과에 우리 상품이 없던 검색어
+  let doneBatches = 0;
+  let stoppedEarly = false;
+
+  /** 검색어 그룹 하나를 처리한다. 실패해도 던지지 않는다 — 호출부가 계속 돈다. */
+  async function processGroup({ kw, rows }) {
+    const coupangById = new Map();
+    rows.forEach(p => coupangById.set(p.product_id, p));
+
+    /*
+     * ★ 한 검색어가 실패해도 배치 전체를 멈추지 않는다.
+     *   실패는 기록만 하고 다음 검색어로 넘어간다.
+     *   retry 로 감싸지 않는다 — 제한 응답을 즉시 재시도하면 경고가 쌓인다.
+     *   (재시도는 같은 날 뒤 실행에서, 간격을 두고 한다)
+     */
+    let r;
+    try {
+      r = await fetchCoupangAll(kw);
+    } catch (e) {
+      failedKeywords.set(kw, e.message);
+      console.log(`  [실패] [${kw}] ${e.message} — 나머지는 계속 진행합니다.`);
+      return;
+    }
+
+    /*
+     * 실패의 종류를 구분한다.
+     *   ok=false  → 호출이 못 나갔다(차단·예산·상한·stale). 재시도 대상이다.
+     *   ok=true 인데 매칭 0 → 호출은 성공했고 쿠팡 결과에 우리 상품이
+     *                        없었다. 재시도해도 같으므로 커버리지 문제다.
+     * 이 둘을 뭉뚱그리면 차단 때문에 못 받은 것을 "원래 없는 상품"으로
+     * 오해해서 영원히 누락시킨다.
+     */
+    if (!r.ok) {
+      failedKeywords.set(kw, r.reason);
+      console.log(`  [보류] [${kw}] ${r.reason} — 재시도 대상`);
+      return;
+    }
+
+    let hit = 0;
+    r.items.forEach(item => {
+      const target = coupangById.get(item.productId);
+      // addRow 가 기존 keyword 를 지킨다. 비어 있을 때만 kw 가 채워진다.
+      if (target && addRow(target, item, kw)) {
+        markCovered(target.product_id, target.mall);
+        hit++;
+        if (!target.keyword) recovered++;
+      }
+    });
+
+    // 호출이 성공했으면 재시도 목록에서 뺀다(직전 실행에서 실패했던 검색어).
+    failedKeywords.delete(kw);
+
+    if (hit === 0) notFoundKeywords.push(kw);
+    const pct = rows.length > 0 ? Math.round(hit / rows.length * 100) : 0;
+    console.log(`  [${kw}] ${hit}/${rows.length} (${pct}%) — 쿠팡 ${r.items.length}건`);
+  }
+
+  /** 배치 하나(그룹 여러 개)를 처리하고 저장한다. */
+  async function runBatch(batch) {
+    for (let i = 0; i < batch.length; i += CONCURRENCY) {
+      // 그룹 단위 병렬(CONCURRENCY). 쿠팡 호출 간격은 _coupang.js 가 지킨다.
+      await Promise.all(batch.slice(i, i + CONCURRENCY).map(processGroup));
+    }
+    const s = await saveAll();
+    obsMap.clear();   // 다음 배치가 이 배치 관측을 다시 저장하지 않도록 비운다
+    totalRecorded += s.recorded;
+    totalSaved    += s.saved;
+    totalRejected += s.rejected;
+    totalSuspect  += s.suspect;
+    return s;
+  }
+
+  const stateSnapshot = (status) => ({
+    job_date: state.job_date,
+    cursor_key: state.cursor_key,
+    processed: state.processed,
+    total: state.total,
+    status,
+    last_run_at: new Date().toISOString(),
+    last_result: {
+      batches: doneBatches,
+      recorded: totalRecorded,
+      saved: totalSaved,
+      notFound: notFoundKeywords.length,
+      // 같은 날 다음 실행이 이 목록부터 다시 시도한다.
+      failedKeywords: [...failedKeywords.keys()]
+    }
   });
 
-  const plan = [
-    ...[...byKeyword.entries()].map(([kw, rows]) => ({ kw, rows, derived: false })),
-    ...[...derivedGroups.entries()]
-      .map(([kw, rows]) => ({ kw, rows, derived: true }))
-      .sort((a, b) => oldestFirst(a.rows) - oldestFirst(b.rows))
-  ];
+  /* ── 0) 재시도 패스 ────────────────────────────────────────
+   *
+   * 직전 실행에서 호출이 못 나갔던 검색어를 먼저 다시 시도한다.
+   * (retryGroups 는 위에서 계산해 두었다 — 커서는 건드리지 않는다)
+   */
+  if (retryGroups.length) {
+    console.log(`── 재시도: 직전 실행에서 못 받은 검색어 ${retryGroups.length}종 ──`);
+    for (const rb of splitBatches(retryGroups, BATCH_PRODUCTS)) {
+      const bs = Date.now();
+      const s = await runBatch(rb);
+      console.log(`  └ 재시도 배치 완료 — 기록 ${s.recorded}행, 현재가 ${s.saved}행`
+        + `  (남은 재시도 ${failedKeywords.size}종)\n`);
+      await saveState(stateSnapshot('running'));
+      if (Date.now() - started >= RUN_TIME_BUDGET_MS) { stoppedEarly = true; break; }
+      const w = BATCH_INTERVAL_MS - (Date.now() - bs);
+      if (w > 0) await sleep(w);
+    }
+  }
 
-  console.log(`── 쿠팡 검색 (검색어 ${plan.length}종, 실행당 예산 ${COUPANG_RUN_BUDGET}회) ──`);
-  let recovered = 0;
+  // ── 1) 본 배치 루프 ───────────────────────────────────────
+  for (let b = 0; b < batches.length && !stoppedEarly; b++) {
+    const batch = batches[b];
+    const batchProducts = batch.reduce((n, g) => n + g.rows.length, 0);
+    const batchStart = Date.now();
 
-  for (let i = 0; i < plan.length; i += CONCURRENCY) {
-    const batch = plan.slice(i, i + CONCURRENCY);
-    await Promise.all(batch.map(async ({ kw, rows, derived }) => {
-      const coupangById = new Map();
-      rows.forEach(p => coupangById.set(p.product_id, p));
+    const s = await runBatch(batch);
 
-      // retry로 감싸지 않는다 — 제한 응답을 재시도하면 경고가 쌓인다.
-      const coupangItems = await fetchCoupangAll(kw).catch(() => []);
-      if (!coupangItems.length) return;
+    // ── 진행 위치 저장 ──────────────────────────────────────
+    // 커서는 이 배치의 마지막 검색어. 다음 실행은 이보다 큰 검색어부터 본다.
+    state.cursor_key = batch[batch.length - 1].kw;
+    state.processed += batchProducts;
+    state.total = planTotal;
+    doneBatches++;
 
-      let hit = 0;
-      coupangItems.forEach(item => {
-        const target = coupangById.get(item.productId);
-        // derived 인 경우에만 kw 를 keyword 로 채운다 (기존 값은 addRow 가 지킨다).
-        if (target && addRow(target, item, derived ? kw : '')) {
-          markCovered(target.product_id, target.mall);
-          hit++;
-          if (derived) recovered++;
-        }
-      });
+    const isLast = b === batches.length - 1;
+    /*
+     * 마지막 배치를 끝냈어도, 못 받은 검색어가 남아 있으면 completed 로
+     * 굳히지 않는다. 굳히면 같은 날 보충 실행이 맨 앞 검사에 걸려 그냥
+     * 끝나 버려서 그 상품들은 그날 가격을 못 받는다.
+     * (커서는 이미 끝에 있으므로 running 이어도 1번부터 다시 돌지 않는다)
+     */
+    await saveState(stateSnapshot(isLast && !failedKeywords.size ? 'completed' : 'running'));
 
-      const pct = rows.length > 0 ? Math.round(hit / rows.length * 100) : 0;
-      console.log(`  ${derived ? '유도' : '기존'} [${kw}] ${hit}/${rows.length} (${pct}%) — 쿠팡 ${coupangItems.length}건`);
-    }));
+    const elapsedS = Math.round((Date.now() - batchStart) / 1000);
+    console.log(`  └ 배치 ${b + 1}/${batches.length} 완료 — 상품 ${batchProducts}개,`
+      + ` 기록 ${s.recorded}행, 현재가 ${s.saved}행, ${elapsedS}초`
+      + `  [누적 ${state.processed}/${state.total}]\n`);
+
+    if (isLast) {
+      if (failedKeywords.size) {
+        console.log(`⚠️  ${today} (KST) 마지막 배치까지 돌았지만 못 받은 검색어 ${failedKeywords.size}종이 남았습니다.`
+          + ' 오늘 보충 실행이 이 목록만 다시 시도합니다(1번부터 다시 돌지 않습니다).');
+      } else {
+        console.log(`✅ ${today} (KST) 전체 ${state.processed}/${state.total}개 처리 완료 — 오늘 작업을 종료합니다.`);
+      }
+      break;
+    }
+
+    // ── 다음 배치까지 대기 (1분 간격) ────────────────────────
+    const usedMs = Date.now() - started;
+    if (usedMs >= RUN_TIME_BUDGET_MS) {
+      stoppedEarly = true;
+      console.log(`⏱  실행 시간 예산(${Math.round(RUN_TIME_BUDGET_MS / 60000)}분) 도달 —`
+        + ` 여기까지 저장하고 종료합니다. 다음 실행이 "${state.cursor_key}" 다음부터 이어갑니다.`);
+      break;
+    }
+    const waitMs = BATCH_INTERVAL_MS - (Date.now() - batchStart);
+    if (waitMs > 0) await sleep(waitMs);
   }
 
   if (recovered) {
     console.log(`\n  ✅ keyword 가 없던 상품 ${recovered}개를 찾아 검색어를 채웠습니다 (다음 수집부터 정상 경로).`);
   }
 
-  // ── 저장 ──────────────────────────────────────────────────
+  // ── 저장 요약 ─────────────────────────────────────────────
   console.log(`\n── 저장 ──`);
-  const { saved, recorded, total: rowTotal, rejected, suspect } = await saveAll();
-  console.log(`price_history 기록: ${recorded}/${rowTotal}행`);
+  const saved = totalSaved, recorded = totalRecorded;
+  const rejected = totalRejected, suspect = totalSuspect;
+  console.log(`price_history 기록: ${recorded}행`);
   console.log(`products 현재가 갱신: ${saved}행`
     + (suspect ? `  (급변 보류 ${suspect}행 — 다음 수집에서 같은 값이면 반영)` : '')
     + (rejected ? `  (값 이상 거부 ${rejected}행)` : ''));
 
-  // ── 커버리지 리포트 ────────────────────────────────────────
-  const finalMissing = [...uncovered.values()];
-  const covered  = collectible.length - finalMissing.length;
-  const coverage = collectible.length > 0 ? Math.round(covered / collectible.length * 100) : 100;
+  if (failedKeywords.size) {
+    console.log(`\n재시도 대상 검색어 ${failedKeywords.size}종 (호출이 못 나감):`);
+    [...failedKeywords.entries()].slice(0, 10).forEach(([kw, why]) => console.log(`  - [${kw}] ${why}`));
+    if (failedKeywords.size > 10) console.log(`  ... 외 ${failedKeywords.size - 10}종`);
+    console.log('  → 같은 날 다음 보충 실행(KST 03:00 / 06:00)이 이 목록부터 다시 시도합니다.');
+  }
+
+  /* ── 커버리지 리포트 ────────────────────────────────────────
+   *
+   * ★ 분모는 "이번 실행이 실제로 시도한 상품" 이다.
+   *   재개형이라 한 실행이 전체를 돌지 않는다. 전체(collectible)를 분모로
+   *   두면 정상적으로 절반만 돈 실행이 커버리지 50% 로 찍혀서, 진짜로
+   *   망가진 실행과 구분이 안 된다. 하루 전체 진행률은 price_job_state 의
+   *   processed/total 로 따로 본다.
+   */
+  const attempted = batches.slice(0, doneBatches).flatMap(bt => bt.flatMap(g => g.rows));
+  const attemptedKeys = new Set(attempted.map(p => `${p.product_id}|${p.mall}`));
+  const finalMissing = [...uncovered.values()].filter(p => attemptedKeys.has(`${p.product_id}|${p.mall}`));
+  const covered  = attempted.length - finalMissing.length;
+  const coverage = attempted.length > 0 ? Math.round(covered / attempted.length * 100) : 100;
 
   console.log(`\n${'═'.repeat(50)}`);
-  console.log(`커버리지: ${covered}/${collectible.length} (${coverage}%)   ← 수집 대상 기준`);
-  console.log(`          ${covered}/${products.length} (${Math.round(covered / products.length * 100)}%)   ← products 전체 기준(참고)`);
+  console.log(`이번 실행 커버리지: ${covered}/${attempted.length} (${coverage}%)   ← 이번 실행이 시도한 상품 기준`);
+  console.log(`오늘 진행률       : ${state.processed}/${state.total}`
+    + `  (${state.total ? Math.round(state.processed / state.total * 100) : 100}%)`
+    + `  상태 ${stoppedEarly ? 'running(다음 실행이 이어감)' : (doneBatches && batches.length === doneBatches ? 'completed' : 'running')}`);
+  console.log(`수집 대상 전체    : ${collectible.length}개 / products 전체 ${products.length}개`
+    + `  (비쿠팡 ${notCoupang.length}개는 연동 없음 — 대상 제외)`);
 
   const cs = localStats();
   console.log(`\n쿠팡 API 호출: ${cs.calls}회 (예산 ${COUPANG_RUN_BUDGET}회)`);
@@ -397,12 +768,15 @@ async function run() {
   const blocked = _coupangBlocked || cs.blocked;
   // 실패 판정은 price_history 기준으로 본다. products 갱신 수(saved)는 급변
   // 보류로 정상적으로 0 이 될 수 있어서, 그걸로 판정하면 멀쩡한 실행이 실패로 찍힌다.
-  const collectedNothing = collectible.length > 0 && recorded === 0;
+  //
+  // 분모는 이번 실행이 시도한 상품이다. "오늘 이미 completed 라 아무것도
+  // 안 한 실행"은 위에서 이미 return 했으므로 여기 오지 않는다.
+  const collectedNothing = attempted.length > 0 && recorded === 0;
 
   if (blocked || collectedNothing) {
     console.error('\n수집 실패로 처리합니다 (exit 1)');
     if (blocked) console.error('  - 쿠팡 API 차단 상태');
-    if (collectedNothing) console.error(`  - 수집 대상 ${collectible.length}개 중 저장 0행`);
+    if (collectedNothing) console.error(`  - 이번 실행 시도 ${attempted.length}개 중 저장 0행`);
     console.error('  → 원인 확인:  node scripts/coupang-probe.js');
     process.exitCode = 1;
     return;
@@ -415,7 +789,17 @@ async function run() {
   }
 }
 
-run().catch(e => {
-  console.error('치명적 오류:', e.message, e.stack);
-  process.exit(1);
-});
+/* ------------------------------------------------------------------ *
+ *  테스트용 노출.
+ *
+ *  scripts/test-price-batch.js 가 쿠팡 호출 없이 배치·커서·날짜 로직만
+ *  검증한다. require 해도 run() 이 돌지 않도록 아래에서 가드한다.
+ * ------------------------------------------------------------------ */
+module.exports = { kstToday, buildPlan, splitBatches, resumeFrom, BATCH_PRODUCTS };
+
+if (require.main === module) {
+  run().catch(e => {
+    console.error('치명적 오류:', e.message, e.stack);
+    process.exit(1);
+  });
+}
