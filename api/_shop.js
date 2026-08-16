@@ -404,6 +404,9 @@ async function recordPrices(observations, opts = {}) {
     }
 
     // 관측 사실은 남긴다. 이 값이 남아 있어야 다음 관측에서 확인이 된다.
+    // vendor_item_id / item_id 는 catalogRows 와 같은 방식으로 link 폴백까지
+    // 거쳐 채운다. 없으면 옵션별 이력 체인이 시작되지 않아 price_drop_top 뷰가
+    // "vid 별 파티션" 을 만들지 못한다.
     historyRows.push({
       product_id: it.productId,
       mall: it.mall,
@@ -411,7 +414,9 @@ async function recordPrices(observations, opts = {}) {
       price: verdict.price,
       link: it.link || '',
       recorded_at: now,
-      recorded_date: today
+      recorded_date: today,
+      item_id: itemIdOf(it),
+      vendor_item_id: vendorIdOf(it)
     });
 
     if (verdict.status === 'suspect') {
