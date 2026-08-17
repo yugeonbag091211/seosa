@@ -60,6 +60,32 @@ Vercel > Settings > Environment Variables
 - 테스트 키(`test_` 접두사)로 먼저 검증하고, PG 계약 완료 후 운영 키로 **값만
   교체**하면 코드 변경 없이 실결제로 전환됩니다.
 
+#### ★ 키 유형을 반드시 "API 개별 연동" 으로 (결제위젯 아님)
+
+토스 콘솔에는 결제 키가 두 종류입니다. **반드시 API 개별 연동 키를 쓰세요.**
+
+| 종류 | client key 접두사 | secret key 접두사 | 우리 코드 지원 |
+|---|---|---|---|
+| **API 개별 연동** | `test_ck_…` / `live_ck_…` | `test_sk_…` / `live_sk_…` | ✅ (이걸 쓰세요) |
+| 결제위젯 | `test_gck_…` / `live_gck_…` | `test_gsk_…` / `live_gsk_…` | ❌ 지원 안 함 |
+
+우리 프론트(`public/index.html Pay.start`)는 `tp.payment({customerKey})` API 를
+쓰는데, 여기에 결제위젯용 client key(`_gck_`)를 넣으면 SDK 가 초기화 단계에서
+동기 throw 합니다:
+
+> "API 개별 연동 키의 클라이언트 키로 SDK를 연동해주세요.
+> 결제위젯 연동 키는 지원하지 않습니다."
+
+서버가 `handlePrepare` 에서 미리 감지해 `PAYMENT_KEY_WRONG_TYPE` 로 거절하므로,
+사용자에게는 "결제 키 설정이 올바르지 않아요." 라는 안내만 뜨고 결제창은 열리지
+않습니다. Vercel 로그에는 어떤 키로 교체해야 하는지 문구가 남습니다.
+
+**바꾸는 방법:**
+1. 토스페이먼츠 콘솔 > 상점 관리 > **개발 정보 (API 개별 연동)** 섹션 열기
+2. "클라이언트 키"(`test_ck_…` 또는 `live_ck_…`) 를 Vercel `TOSS_CLIENT_KEY` 로
+3. "시크릿 키"(`test_sk_…` 또는 `live_sk_…`) 를 Vercel `TOSS_SECRET_KEY` 로
+4. 환경변수 저장 후 **Redeploy** (Preview + Production 모두)
+
 `RESEND_API_KEY` 는 GitHub Actions 시크릿에도 따로 있어야 합니다
 (가격 알림 발송은 Actions 에서 돌아갑니다). 두 곳은 별개입니다.
 

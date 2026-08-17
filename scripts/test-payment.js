@@ -406,6 +406,39 @@ const reqFor = (email, body, action) => ({
   check(res.code === 503, '키가 없으면 503 (우회로 없음)', String(res.code));
   process.env.TOSS_SECRET_KEY = savedSk;
 
+  section('9-b2. 결제위젯 키(_gck_)로 설정된 경우 prepare 가 명확한 오류를 준다');
+  // 프론트가 tp.payment() 를 부르는데 위젯 키(_gck_)를 넣으면 SDK 초기화에서
+  // 동기 throw 한다 ("API 개별 연동 키의 클라이언트 키로 SDK를 연동해주세요").
+  // 그 예외는 프론트 try/catch 에 잡혀 "결제창을 열지 못했어요." 로만 뜨므로
+  // 운영자가 원인을 알기 어렵다. 서버가 미리 잘라서 명확한 코드를 준다.
+  const savedCk = process.env.TOSS_CLIENT_KEY;
+  const savedSk2 = process.env.TOSS_SECRET_KEY;
+  process.env.TOSS_CLIENT_KEY = 'test_gck_widget_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_gsk_widget_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isWidgetClientKey() === true, '위젯 client key 감지 ★');
+  check(tossClient.isWidgetSecretKey() === true, '위젯 secret key 감지 (진단용)');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 503, '위젯 키 → 503', String(res.code));
+  check(res.payload && res.payload.error === 'PAYMENT_KEY_WRONG_TYPE',
+        '오류 코드가 PAYMENT_KEY_WRONG_TYPE ★', res.payload && res.payload.error);
+  check(!!(res.payload && res.payload.message && res.payload.message.length > 0),
+        '프론트가 토스트로 띄울 message 필드 포함', res.payload && res.payload.message);
+  check(!(res.payload && res.payload.clientKey),
+        '위젯 키는 절대 프론트로 내려가지 않는다 ★ (SDK 로 넘어가면 초기화 실패)');
+
+  // 정상(API 개별 연동) 키로 되돌리면 다시 통과
+  process.env.TOSS_CLIENT_KEY = 'test_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isWidgetClientKey() === false, 'API 개별 연동 키(_ck_) 는 통과');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 200 && res.payload && res.payload.clientKey === 'test_ck_FAKE_FOR_TESTS_ONLY',
+        '정상 키 → prepare 성공', String(res.code));
+
+  process.env.TOSS_CLIENT_KEY = savedCk;
+  process.env.TOSS_SECRET_KEY = savedSk2;
+
   section('9-c. 자동결제 승인만 60초 타임아웃 (공식 문서: "최소 60초로 설정하세요")');
   check(tossClient.CHARGE_TIMEOUT_MS >= 60000,
         'chargeBilling 타임아웃 ≥ 60,000ms ★', String(tossClient.CHARGE_TIMEOUT_MS));
