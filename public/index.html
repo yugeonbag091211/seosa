@@ -617,6 +617,22 @@ footer p{font-size:.78rem;color:var(--faint)}
   border-radius:30px;font-size:.68rem;color:var(--soft);background:transparent;
   cursor:pointer;font-family:inherit;transition:.2s}
 button.cu-cta:hover{border-color:var(--soft);color:var(--ink,#111)}
+/* ── 서사 PRO 진입 — AI 패널 상단의 상시 한 줄 ──
+ * 홈 화면에는 아무것도 더하지 않는다. PRO 가 게이팅하는 기능이 곧 이 AI 라서,
+ * 패널을 연 사람에게만 보이면 충분하다 (사용량 줄은 AI 가 답한 뒤에야 생기므로
+ * 그것만으로는 한 번도 안 써 본 사용자에게 진입점이 없다). */
+.pro-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 26px;background:var(--surface);border-bottom:1px solid var(--line)}
+.pro-bar[hidden]{display:none}
+.pro-t{font-family:var(--serif);font-size:.82rem;font-weight:700;color:var(--ink);letter-spacing:-.01em}
+.pro-s{font-size:.68rem;color:var(--soft);margin-top:3px;letter-spacing:-.01em}
+.pro-s b{font-family:var(--mono);font-weight:600;color:var(--ink)}
+.pro-cta{flex:none;padding:7px 14px;border:1px solid var(--ink);border-radius:30px;
+  font-size:.7rem;font-family:inherit;color:var(--bg);background:var(--ink);
+  cursor:pointer;transition:.2s;white-space:nowrap}
+button.pro-cta:hover{opacity:.82}
+.pro-cta.ghost{background:transparent;color:var(--soft);border-color:var(--line)}
+button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
 .cs-chip{font-size:.72rem;color:var(--soft);border:1px solid var(--line);background:#fff;
   border-radius:30px;padding:6px 13px;cursor:pointer;transition:.2s}
 .cs-chip:hover{border-color:var(--ink);color:var(--ink)}
@@ -1114,6 +1130,9 @@ button.cu-cta:hover{border-color:var(--soft);color:var(--ink,#111)}
 <div class="panel" id="panel">
   <div class="panel-head"><div class="t">서사<small>SEOSA PRIVATE CURATOR</small></div>
     <button class="panel-close" data-act="close-ai">×</button></div>
+  <!-- 서사 PRO 진입 — Pay.renderBar() 가 채운다. 기본은 숨김이라
+       결제가 준비되지 않은 환경에서는 아무것도 보이지 않는다. -->
+  <div class="pro-bar" id="proBar" hidden></div>
   <div class="chat" id="chat">
     <div class="bubble b-ai"><span class="nm">서사</span>반갑습니다. 프리미엄 쇼핑 큐레이터 <b>서사</b>입니다.<br>찾으시는 상품과 예산을 말씀해 주시면 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 알려 드릴게요.<br><br>예) "10만원 이하 무선 이어폰", "데일리 향수 추천"</div>
   </div>
@@ -1829,6 +1848,9 @@ var Auth = {
           Store.set(CONST.LS.EMAIL, d.email || email);
           Auth.close();
           toast('인증 완료 ✦');
+          // 로그인이 끝났으니 구독 상태를 다시 읽는다 — 이미 PRO 인 사용자가
+          // 로그인했을 때 진입점이 '시작하기'로 남아 있지 않게.
+          Pay.init();
           var again = Auth.pending;
           Auth.pending = null;
           if (again) again();
@@ -3607,19 +3629,68 @@ var Pay = {
   ready: false,          // 결제 설정이 된 환경인가 (서버가 알려준다)
   price: 4900,           // 표시용. 실제 청구 금액은 서버 상수가 정한다
   plan: 'free',
+  sub: null,             // 서버가 준 구독 요약 (billing_key 는 애초에 오지 않는다)
   sdkUrl: 'https://js.tosspayments.com/v2/standard',
   _sdk: null,
 
-  /** 앱 시작 시 구독 상태를 받아 온다. 비로그인이면 조용히 건너뛴다. */
+  /**
+   * 구독 상태를 받아 온다.
+   * 비로그인이면 조회만 건너뛰고 진입점은 그대로 그린다 — 그래야 처음 온
+   * 사용자에게도 PRO 가 보이고, 버튼을 누르면 Pay.start 가 로그인부터 연다.
+   */
   init: function() {
-    if (!Auth.tokenFor('')) return;
+    if (!Auth.tokenFor('')) { Pay.renderBar(); return; }
     Api.call('payStatus', [], function(r) {
       if (!r) return;
       Pay.ready = !!r.paymentReady;
       if (r.price) Pay.price = r.price;
+      Pay.sub = r.subscription || null;
       if (r.subscription) Pay.plan = r.subscription.plan || 'free';
       Pay.renderBadge(r.subscription);
+      Pay.renderBar();
     }, function() { /* 실패해도 화면을 막지 않는다 */ });
+  },
+
+  /*
+   * 서사 PRO 진입점 — AI 패널 상단의 상시 한 줄.
+   *
+   * ★ 이 표시는 안내일 뿐 권한이 아니다. 개발자도구로 이 DOM 을 고쳐도
+   *   서버는 subscriptions 를 보고 판정한다 (api/_plan.js).
+   */
+  renderBar: function() {
+    var el = $('proBar');
+    if (!el) return;
+
+    // 구독 중 — 남은 기간과 해지 경로를 보여 준다.
+    if (Pay.plan === 'pro') {
+      var sub = Pay.sub || {};
+      var until = sub.expiresAt ? new Date(sub.expiresAt) : null;
+      var when = (until && !isNaN(until.getTime()))
+        ? (until.getMonth() + 1) + '월 ' + until.getDate() + '일까지 이용'
+        : '이용 중';
+      el.innerHTML =
+        '<div><div class="pro-t">서사 PRO</div><div class="pro-s">'
+        + Fmt.esc(when + (sub.canceled ? ' · 갱신 안 함' : '')) + '</div></div>'
+        + (sub.canceled ? ''
+            : '<button type="button" class="pro-cta ghost" data-act="pay-cancel">구독 취소</button>');
+      el.hidden = false;
+      return;
+    }
+
+    /*
+     * FREE — 로그인 사용자에게는 서버가 알려준 준비 상태(Pay.ready)를 따른다.
+     * 비로그인은 아직 알 수 없으므로 버튼을 주고, 눌렀을 때 로그인 → prepare
+     * 순서로 진행하다 결제가 꺼져 있으면 그 단계에서 안내된다.
+     */
+    var known = !!Auth.tokenFor('');
+    el.innerHTML =
+      '<div><div class="pro-t">서사 PRO</div><div class="pro-s">'
+      + 'AI 큐레이터를 더 자유롭게 · 월 <b>' + Fmt.esc(Fmt.won(Pay.price)) + '원</b>'
+      + '</div></div>'
+      + ((!known || Pay.ready)
+          ? '<button type="button" class="pro-cta" data-act="pay-start">PRO 시작하기</button>'
+          : '<span class="pro-cta ghost">준비 중</span>');
+    el.hidden = false;
   },
 
   /** PRO 배지 — 구독 중이면 상태를, 아니면 아무것도 그리지 않는다. */
@@ -3706,9 +3777,12 @@ var Pay = {
     Api.call('payConfirm', [{ authKey: authKey, orderId: orderId }], function(r) {
       if (r && r.ok) {
         Pay.plan = 'pro';
+        Pay.sub = r.subscription || null;
         toast('PRO 구독이 시작됐어요. 이제 하루 50회까지 이용할 수 있어요.');
         Pay.renderBadge(r.subscription);
+        Pay.renderBar();
       } else {
+        // 서버가 ok 를 주지 않았으면 PRO 가 아니다. 화면도 올리지 않는다.
         toast('결제를 확인하지 못했어요.');
       }
     }, function(e) {
@@ -3734,6 +3808,7 @@ var Chat = {
   open: function() {
     var p = $('panel');
     if (p) p.classList.add('open');
+    Pay.renderBar();         // PRO 진입점은 패널을 열 때마다 최신 상태로
     Chat.renderSuggest();
     Chat.personalizeGreeting();
     Chat.restore();          // ★ 저장된 대화 복원
