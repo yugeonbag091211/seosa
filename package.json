@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "node scripts/dev-server.js",
-    "test": "node scripts/test-auth.js && node scripts/test-coupang.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-ai.js && node scripts/test-ai-monetization.js",
+    "test": "node scripts/test-auth.js && node scripts/test-coupang.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-ai.js && node scripts/test-ai-monetization.js && node scripts/test-payment.js && node scripts/test-sync.js",
     "test:intent": "node scripts/test-intent.js",
     "test:ai-e2e": "node scripts/test-ai-e2e.js",
     "test:e2e": "node scripts/test-e2e.js",

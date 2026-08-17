@@ -45,6 +45,20 @@ Vercel > Settings > Environment Variables
 | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | 설정됨 | — |
 | `COUPANG_ACCESS_KEY` / `COUPANG_SECRET_KEY` | 설정됨 | — |
 | `CRON_SECRET` | 설정됨 | — |
+| `TOSS_CLIENT_KEY` | **미설정** | PRO 결제 버튼이 "PRO 준비 중" 으로만 표시됨 (결제 불가) |
+| `TOSS_SECRET_KEY` | **미설정** | 〃 — 서버가 결제를 승인·검증할 수 없음 |
+| `FREE_DAILY_AI_LIMIT` | 선택 | 기본 3 |
+| `PRO_DAILY_AI_LIMIT` | 선택 | 기본 50 |
+
+### 토스페이먼츠 키에 대하여
+
+- `TOSS_CLIENT_KEY` 는 **공개 키**입니다. 프론트로 내려가며 노출되어도 됩니다.
+- `TOSS_SECRET_KEY` 는 **절대 프론트로 내려가면 안 됩니다.** `api/_toss.js` 에서만
+  읽고, 이 값 하나로 결제 승인·취소·조회가 전부 가능합니다.
+- 두 키가 없으면 결제 기능이 **닫힙니다**. 키가 없다고 PRO 를 그냥 주는
+  우회로는 코드에 없습니다 (의도된 동작 — `api/_toss.isConfigured()`).
+- 테스트 키(`test_` 접두사)로 먼저 검증하고, PG 계약 완료 후 운영 키로 **값만
+  교체**하면 코드 변경 없이 실결제로 전환됩니다.
 
 `RESEND_API_KEY` 는 GitHub Actions 시크릿에도 따로 있어야 합니다
 (가격 알림 발송은 Actions 에서 돌아갑니다). 두 곳은 별개입니다.

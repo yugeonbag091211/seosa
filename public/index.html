@@ -614,7 +614,9 @@ footer p{font-size:.78rem;color:var(--faint)}
 .chat-usage{font-size:.7rem;color:var(--soft);padding:10px 16px 0;background:var(--bg);letter-spacing:-.01em}
 .chat-usage.is-reached{color:var(--accent,#c2410c)}
 .cu-cta{display:inline-block;margin-left:6px;padding:2px 8px;border:1px solid var(--line);
-  border-radius:30px;font-size:.68rem;color:var(--soft)}
+  border-radius:30px;font-size:.68rem;color:var(--soft);background:transparent;
+  cursor:pointer;font-family:inherit;transition:.2s}
+button.cu-cta:hover{border-color:var(--soft);color:var(--ink,#111)}
 .cs-chip{font-size:.72rem;color:var(--soft);border:1px solid var(--line);background:#fff;
   border-radius:30px;padding:6px 13px;cursor:pointer;transition:.2s}
 .cs-chip:hover{border-color:var(--ink);color:var(--ink)}
@@ -1731,7 +1733,7 @@ var Auth = {
    * 이 목록이 없으면 authEmail 이 빈 문자열이라 Authorization 헤더가 아예
    * 붙지 않아서, 로그인한 사용자도 매번 401 을 받는다.
    */
-  TOKEN_FNS: { askAI: 1 },
+  TOKEN_FNS: { askAI: 1, payPrepare: 1, payConfirm: 1, payCancel: 1, payStatus: 1 },
 
   saved: function() { return Store.get(CONST.LS.TOKEN, null); },
 
@@ -1848,10 +1850,16 @@ var Api = {
       'getPriceHistory':'/api/history','getHistoryBatch':'/api/history-batch',
       'askAI':'/api/ai','saveAlert':'/api/alerts','getMyAlerts':'/api/alerts',
       'deleteAlert':'/api/alerts','saveUserData':'/api/sync','loadUserData':'/api/sync',
-      'saveUserProfile':'/api/profile','loadUserProfile':'/api/profile',
+      // profile 도 /api/sync 로 보낸다 (resource 파라미터로 구분).
+      // Vercel Hobby 함수 12개 상한에 맞추려고 profile.js 를 sync.js 에 흡수했다.
+      'saveUserProfile':'/api/sync','loadUserProfile':'/api/sync',
       'getPopularKeywords':'/api/init','getProfileRecommendations':'/api/rec',
       'getMonthlyRecommendations':'/api/init',
-      'getPriceDropTop':'/api/init','recordSearchStat_':'/api/stats'
+      'getPriceDropTop':'/api/init','recordSearchStat_':'/api/stats',
+      // PRO 구독 결제. 엔드포인트 하나에 action 으로 나뉜다
+      // (Vercel Hobby 함수 12개 상한 — api/payment.js 주석 참고).
+      'payPrepare':'/api/payment','payConfirm':'/api/payment',
+      'payCancel':'/api/payment','payStatus':'/api/payment'
     };
     var url = urlMap[fnName];
     if (!url) { if (onErr) onErr(new Error('unknown fn: ' + fnName)); return; }
@@ -1882,13 +1890,28 @@ var Api = {
     } else if (fnName === 'loadUserData') {
       queryUrl = url + '?email=' + encodeURIComponent(args[0] || '');
     } else if (fnName === 'loadUserProfile') {
-      queryUrl = url + '?email=' + encodeURIComponent(args[0] || '');
+      // resource=profile 로 sync 핸들러가 profiles 테이블 경로를 탄다.
+      queryUrl = url + '?resource=profile&email=' + encodeURIComponent(args[0] || '');
     } else if (fnName === 'getDailyRecommendations') {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '');
     } else if (fnName === 'getMoreOfKeyword') {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '') + '&offset=' + (args[1] || 0);
     } else if (fnName === 'getProfileRecommendations') {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
+    } else if (fnName === 'payPrepare' || fnName === 'payConfirm'
+               || fnName === 'payCancel' || fnName === 'payStatus') {
+      /*
+       * 결제 요청에는 금액·plan·email 을 싣지 않는다.
+       * 서버가 토큰에서 신원을, 상수에서 금액을 정한다. 여기서 보낸 값이
+       * 권한 판단에 쓰이면 그게 곧 취약점이다.
+       */
+      method = 'POST';
+      var payAct = { payPrepare: 'prepare', payConfirm: 'confirm',
+                     payCancel: 'cancel', payStatus: 'status' }[fnName];
+      queryUrl = url + '?action=' + payAct;
+      fetchOpts.body = JSON.stringify(fnName === 'payConfirm'
+        ? { authKey: (args[0] || {}).authKey, orderId: (args[0] || {}).orderId }
+        : {});
     } else if (fnName === 'askAI') {
       method = 'POST';
       // view: 지금 사용자가 보고 있는 화면(검색어·정렬·필터). 없으면 서버가 알아서 넘긴다.
@@ -1905,7 +1928,7 @@ var Api = {
       try { var d = JSON.parse(args[1]); fetchOpts.body = JSON.stringify(d); } catch(e) { fetchOpts.body = args[1]; }
     } else if (fnName === 'saveUserProfile') {
       method = 'POST';
-      queryUrl = url + '?email=' + encodeURIComponent(args[0] || '');
+      queryUrl = url + '?resource=profile&email=' + encodeURIComponent(args[0] || '');
       fetchOpts.body = JSON.stringify(args[1] || {});
     } else if (fnName === 'recordSearchStat_') {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '');
@@ -3570,6 +3593,142 @@ var HistRec = {
 /* ============================================================
  *  [20] Chat — AI 큐레이터 '서사'
  * ========================================================== */
+/* ============================================================
+ *  PRO 구독 결제 (토스페이먼츠)
+ *
+ *  ★ 이 모듈은 "결제창을 띄우는" 일만 한다.
+ *    권한(PRO 여부)은 절대 여기서 정하지 않는다. 카드 등록이 끝나면 서버가
+ *    토스 API 로 실제 결제를 승인·검증한 뒤에야 PRO 가 된다.
+ *    여기 값을 개발자도구로 고쳐도 서버 판정은 바뀌지 않는다.
+ *
+ *  시크릿 키는 이 파일에 없다. 서버가 내려주는 clientKey(공개 키)만 쓴다.
+ * ========================================================== */
+var Pay = {
+  ready: false,          // 결제 설정이 된 환경인가 (서버가 알려준다)
+  price: 4900,           // 표시용. 실제 청구 금액은 서버 상수가 정한다
+  plan: 'free',
+  sdkUrl: 'https://js.tosspayments.com/v2/standard',
+  _sdk: null,
+
+  /** 앱 시작 시 구독 상태를 받아 온다. 비로그인이면 조용히 건너뛴다. */
+  init: function() {
+    if (!Auth.tokenFor('')) return;
+    Api.call('payStatus', [], function(r) {
+      if (!r) return;
+      Pay.ready = !!r.paymentReady;
+      if (r.price) Pay.price = r.price;
+      if (r.subscription) Pay.plan = r.subscription.plan || 'free';
+      Pay.renderBadge(r.subscription);
+    }, function() { /* 실패해도 화면을 막지 않는다 */ });
+  },
+
+  /** PRO 배지 — 구독 중이면 상태를, 아니면 아무것도 그리지 않는다. */
+  renderBadge: function(sub) {
+    var el = $('chatUsage');
+    if (!el || !sub || sub.plan !== 'pro') return;
+    var until = sub.expiresAt ? new Date(sub.expiresAt) : null;
+    var when = until ? (until.getMonth() + 1) + '월 ' + until.getDate() + '일' : '';
+    el.innerHTML = Fmt.esc('PRO 이용 중' + (when ? ' · ' + when + '까지' : '')
+      + (sub.canceled ? ' (갱신 안 함)' : ''))
+      + (sub.canceled ? '' : ' <button type="button" class="cu-cta" data-act="pay-cancel">구독 취소</button>');
+  },
+
+  /** 토스 SDK 를 필요할 때만 불러온다. 첫 결제 시도 전까지는 로드하지 않는다. */
+  loadSdk: function(cb) {
+    if (Pay._sdk) return cb(null, Pay._sdk);
+    if (window.TossPayments) { Pay._sdk = window.TossPayments; return cb(null, Pay._sdk); }
+    var s = document.createElement('script');
+    s.src = Pay.sdkUrl;
+    s.onload = function() {
+      if (!window.TossPayments) return cb(new Error('결제 모듈을 불러오지 못했어요.'));
+      Pay._sdk = window.TossPayments;
+      cb(null, Pay._sdk);
+    };
+    s.onerror = function() { cb(new Error('결제 모듈을 불러오지 못했어요.')); };
+    document.head.appendChild(s);
+  },
+
+  /**
+   * 구독 시작.
+   *
+   * 1) 서버에서 orderId·customerKey·clientKey·금액을 받는다 (프론트가 만들지 않는다)
+   * 2) 토스 결제창에서 카드 등록 (카드번호는 토스로 직접 간다 — 우리 서버를 거치지 않는다)
+   * 3) 성공 리다이렉트로 돌아오면 authKey 를 서버에 넘긴다
+   * 4) 서버가 빌링키 발급 + 결제 승인 + 검증 후 PRO 활성화
+   */
+  start: function() {
+    if (!Auth.tokenFor('')) {
+      Auth.open('', function() { Pay.start(); });
+      return;
+    }
+    Api.call('payPrepare', [], function(p) {
+      if (!p || !p.clientKey) { toast('결제가 아직 준비 중이에요.'); return; }
+
+      Pay.loadSdk(function(err, TossPayments) {
+        if (err) { toast(err.message); return; }
+        try {
+          var tp = TossPayments(p.clientKey);
+          var payment = tp.payment({ customerKey: p.customerKey });
+          // 카드 등록(빌링키 발급) 흐름. 성공하면 successUrl 로 authKey 가 붙어 돌아온다.
+          payment.requestBillingAuth({
+            method: 'CARD',
+            successUrl: location.origin + '/?pay=success&orderId=' + encodeURIComponent(p.orderId),
+            failUrl: location.origin + '/?pay=fail',
+            customerKey: p.customerKey
+          });
+        } catch (e) {
+          toast('결제창을 열지 못했어요.');
+        }
+      });
+    }, function() { toast('결제를 시작하지 못했어요.'); });
+  },
+
+  /**
+   * 결제창에서 돌아왔을 때 처리.
+   * URL 의 authKey 는 "카드가 등록됐다"는 뜻일 뿐 결제 완료가 아니다.
+   * 서버가 승인·검증해야 PRO 가 된다.
+   */
+  handleReturn: function() {
+    var q = new URLSearchParams(location.search);
+    if (q.get('pay') === 'fail') {
+      toast('결제가 취소되었어요.');
+      history.replaceState(null, '', location.pathname);
+      return;
+    }
+    if (q.get('pay') !== 'success') return;
+
+    var authKey = q.get('authKey') || '';
+    var orderId = q.get('orderId') || '';
+    history.replaceState(null, '', location.pathname);
+    if (!authKey || !orderId) return;
+
+    toast('결제를 확인하고 있어요…');
+    Api.call('payConfirm', [{ authKey: authKey, orderId: orderId }], function(r) {
+      if (r && r.ok) {
+        Pay.plan = 'pro';
+        toast('PRO 구독이 시작됐어요. 이제 하루 50회까지 이용할 수 있어요.');
+        Pay.renderBadge(r.subscription);
+      } else {
+        toast('결제를 확인하지 못했어요.');
+      }
+    }, function(e) {
+      toast((e && e.body && e.body.message) || '결제를 확인하지 못했어요.');
+    });
+  },
+
+  /** 구독 취소 — 남은 기간은 계속 쓴다. */
+  cancel: function() {
+    if (!confirm('구독을 취소할까요?\n남은 기간까지는 PRO 를 계속 이용할 수 있어요.')) return;
+    Api.call('payCancel', [], function(r) {
+      toast((r && r.message) || '구독이 취소됐어요.');
+      Pay.init();
+    }, function(e) {
+      toast((e && e.body && e.body.error) || '구독을 취소하지 못했어요.');
+    });
+  }
+};
+
+
 var Chat = {
 
   open: function() {
@@ -3716,14 +3875,22 @@ var Chat = {
     var isPro = usage.plan === 'pro';
     var label = (isPro ? 'PRO · ' : '') + '오늘 ' + usage.used + '/' + usage.limit + '회 사용';
 
+    // FREE 사용자에게만 업그레이드 버튼을 보여준다.
+    // 결제가 아직 설정되지 않은 환경(Pay.ready=false)이면 버튼 대신 안내만 둔다.
+    var cta = '';
+    if (!isPro) {
+      cta = Pay.ready
+        ? ' <button type="button" class="cu-cta" data-act="pay-start">PRO 시작하기 · 월 '
+          + Fmt.won(Pay.price) + '원</button>'
+        : ' <span class="cu-cta">PRO 준비 중</span>';
+    }
+
     if (reached || usage.remaining <= 0) {
       el.className = 'chat-usage is-reached';
-      // 결제 연동 전이다. 결제처럼 보이는 버튼은 만들지 않는다.
-      el.innerHTML = Fmt.esc('오늘의 AI 사용량을 모두 사용했어요. (' + label + ')')
-        + (isPro ? '' : ' <span class="cu-cta">PRO 준비 중</span>');
+      el.innerHTML = Fmt.esc('오늘의 AI 사용량을 모두 사용했어요. (' + label + ')') + cta;
     } else {
       el.className = 'chat-usage';
-      el.textContent = label + ' · 남은 횟수 ' + usage.remaining + '회';
+      el.innerHTML = Fmt.esc(label + ' · 남은 횟수 ' + usage.remaining + '회') + cta;
     }
   },
 
@@ -4829,6 +4996,8 @@ var Actions = {
   'chat-send':    function() { Chat.send(); },
   'chat-suggest': function(el) { Chat.send(el.dataset.q); },
   'chat-clear':   function() { Chat.clear(); },
+  'pay-start':    function() { Pay.start(); },
+  'pay-cancel':   function() { Pay.cancel(); },
   'mini-go':      function(el) { openLink(el.dataset.link); },
 
   // ── 모달 ──
@@ -5060,6 +5229,13 @@ var Init = {
       previewNotice('recGrid');
       return;
     }
+
+    /*
+     * 결제창에서 돌아온 경우를 먼저 처리한다 (?pay=success&authKey=…).
+     * 그 다음 구독 상태를 받아 온다 — 비로그인이면 Pay.init 이 조용히 끝난다.
+     */
+    Pay.handleReturn();
+    Pay.init();
 
     // 서버 데이터 한 번에
     Api.call('getInitData', [],
