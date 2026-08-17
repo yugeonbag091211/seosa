@@ -109,6 +109,38 @@ function authorize(req, email) {
 }
 
 /**
+ * 요청에 실린 토큰 하나만으로 "누구인가"를 확정한다.
+ *
+ * authorize() 와의 차이 — authorize 는 호출부가 넘긴 email 과 토큰이 일치하는지
+ * 확인한다(소유권 확인). 그건 이미 "이 이메일의 데이터"를 다루는 것이 정해진
+ * 엔드포인트용이다.
+ *
+ * AI 사용량 차감은 다르다. 클라이언트가 보낸 이메일을 기준으로 삼으면 남의
+ * 이메일을 적어 보내는 것만으로 그 사람의 quota 를 태우거나, 아직 quota 가
+ * 남은 다른 계정으로 갈아타며 무한히 쓸 수 있다. 그래서 신원은 오직 서명이
+ * 검증된 토큰에서만 꺼낸다 — body 는 쳐다보지 않는다.
+ *
+ * @returns {{ok: true, email: string} | {ok: false, reason: string}}
+ */
+function identify(req) {
+  const raw = String(req.headers.authorization || '');
+  const m = raw.match(/^Bearer\s+(.+)$/i);
+  if (!m) return { ok: false, reason: '로그인이 필요합니다' };
+
+  let t;
+  try {
+    t = verifyToken(m[1].trim());
+  } catch (e) {
+    // authorize() 와 같은 이유로 여기서 던지지 않는다.
+    console.error('[auth] 토큰 검증 불가 —', e.message);
+    return { ok: false, reason: '서버 인증 설정에 문제가 있어요. 잠시 후 다시 시도해 주세요' };
+  }
+
+  if (!t) return { ok: false, reason: '인증이 만료되었거나 올바르지 않습니다' };
+  return { ok: true, email: t.email };
+}
+
+/**
  * 핸들러에서:  if (!requireAuth(req, res, email)) return;
  */
 function requireAuth(req, res, email) {
@@ -198,7 +230,7 @@ async function consumeCode(email, code) {
 }
 
 module.exports = {
-  issueToken, verifyToken, authorize, requireAuth,
+  issueToken, verifyToken, authorize, identify, requireAuth,
   createCode, consumeCode,
   TOKEN_TTL_MS, CODE_TTL_MS
 };
