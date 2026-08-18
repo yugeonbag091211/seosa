@@ -406,6 +406,81 @@ const reqFor = (email, body, action) => ({
   check(res.code === 503, '키가 없으면 503 (우회로 없음)', String(res.code));
   process.env.TOSS_SECRET_KEY = savedSk;
 
+  section('9-b2. 결제위젯 키(_gck_)로 설정된 경우 prepare 가 명확한 오류를 준다');
+  // 프론트가 tp.payment() 를 부르는데 위젯 키(_gck_)를 넣으면 SDK 초기화에서
+  // 동기 throw 한다 ("API 개별 연동 키의 클라이언트 키로 SDK를 연동해주세요").
+  // 그 예외는 프론트 try/catch 에 잡혀 "결제창을 열지 못했어요." 로만 뜨므로
+  // 운영자가 원인을 알기 어렵다. 서버가 미리 잘라서 명확한 코드를 준다.
+  const savedCk = process.env.TOSS_CLIENT_KEY;
+  const savedSk2 = process.env.TOSS_SECRET_KEY;
+  process.env.TOSS_CLIENT_KEY = 'test_gck_widget_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_gsk_widget_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isWidgetClientKey() === true, '위젯 client key 감지 ★');
+  check(tossClient.isWidgetSecretKey() === true, '위젯 secret key 감지 (진단용)');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 503, '위젯 키 → 503', String(res.code));
+  check(res.payload && res.payload.error === 'PAYMENT_KEY_WRONG_TYPE',
+        '오류 코드가 PAYMENT_KEY_WRONG_TYPE ★', res.payload && res.payload.error);
+  check(!!(res.payload && res.payload.message && res.payload.message.length > 0),
+        '프론트가 토스트로 띄울 message 필드 포함', res.payload && res.payload.message);
+  check(!(res.payload && res.payload.clientKey),
+        '위젯 키는 절대 프론트로 내려가지 않는다 ★ (SDK 로 넘어가면 초기화 실패)');
+
+  // 정상(API 개별 연동) 키로 되돌리면 다시 통과
+  process.env.TOSS_CLIENT_KEY = 'test_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isWidgetClientKey() === false, 'API 개별 연동 키(_ck_) 는 통과');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 200 && res.payload && res.payload.clientKey === 'test_ck_FAKE_FOR_TESTS_ONLY',
+        '정상 키 → prepare 성공', String(res.code));
+
+  section('9-b3. test / live 키 혼용은 결제를 시작조차 하지 않는다 ★');
+  // client=test / secret=live 가 가장 위험하다 — 결제창은 테스트처럼 보이는데
+  // 서버 승인은 운영으로 나가서 실제 카드에 청구된다.
+  process.env.TOSS_CLIENT_KEY = 'test_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'live_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === true, 'client=test / secret=live 감지 ★');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 503 && res.payload.error === 'PAYMENT_KEY_ENV_MISMATCH',
+        '혼용 → 503 PAYMENT_KEY_ENV_MISMATCH ★', `${res.code}/${res.payload.error}`);
+  check(!res.payload.clientKey, '혼용 상태에서 clientKey 가 내려가지 않는다');
+
+  // 반대 조합도 막는다 (결제한 줄 알았는데 정산이 없는 경우)
+  process.env.TOSS_CLIENT_KEY = 'live_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === true, 'client=live / secret=test 도 감지 ★');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 503, '반대 조합도 503', String(res.code));
+
+  // 같은 환경이면 통과
+  process.env.TOSS_CLIENT_KEY = 'test_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === false, 'test+test → 통과');
+  process.env.TOSS_CLIENT_KEY = 'live_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'live_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === false, 'live+live → 통과');
+
+  section('9-b4. 진단 요약에 키 값이 절대 들어가지 않는다 ★');
+  process.env.TOSS_CLIENT_KEY = 'live_ck_SUPERSECRETVALUE12345';
+  process.env.TOSS_SECRET_KEY = 'live_sk_SUPERSECRETVALUE67890';
+  const summary = tossClient.keySummary();
+  const summaryStr = JSON.stringify(summary);
+  check(summaryStr.indexOf('SUPERSECRET') === -1,
+        'keySummary 에 키 값 흔적 없음 ★', summaryStr);
+  check(summary.client.env === 'live' && summary.client.kind === 'api',
+        'client 환경/유형만 보고', `${summary.client.env}/${summary.client.kind}`);
+  check(summary.secret.env === 'live' && summary.secret.kind === 'api',
+        'secret 환경/유형만 보고', `${summary.secret.env}/${summary.secret.kind}`);
+  process.env.TOSS_CLIENT_KEY = 'test_gck_w';
+  check(tossClient.keySummary().client.kind === 'widget', '위젯 키 유형 표기');
+
+  process.env.TOSS_CLIENT_KEY = savedCk;
+  process.env.TOSS_SECRET_KEY = savedSk2;
+
   section('9-c. 자동결제 승인만 60초 타임아웃 (공식 문서: "최소 60초로 설정하세요")');
   check(tossClient.CHARGE_TIMEOUT_MS >= 60000,
         'chargeBilling 타임아웃 ≥ 60,000ms ★', String(tossClient.CHARGE_TIMEOUT_MS));

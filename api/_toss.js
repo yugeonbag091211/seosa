@@ -84,6 +84,83 @@ function isTestKey() {
   return /^test_/.test(secretKey());
 }
 
+/**
+ * 이 클라이언트 키가 "결제위젯" 유형인가.
+ *
+ * 토스 콘솔에는 결제 키가 두 종류다.
+ *   · API 개별 연동  →  client:  test_ck_… / live_ck_…    (프론트 tp.payment() 로 쓴다)
+ *   · 결제위젯        →  client:  test_gck_… / live_gck_…  (프론트 tp.widgets() 로 쓴다)
+ *
+ * 우리 프론트(public/index.html Pay.start)는 tp.payment({customerKey}) 를 부른다.
+ * 그런데 결제위젯용 client key 를 넣으면 SDK 가 초기화 단계에서 동기 throw 한다:
+ *   "API 개별 연동 키의 클라이언트 키로 SDK를 연동해주세요.
+ *    결제위젯 연동 키는 지원하지 않습니다."
+ *
+ * 그 예외는 프론트 try/catch 에서 잡혀 "결제창을 열지 못했어요." 라는 뭉뚱그린
+ * 안내로만 뜬다. 원인이 안 보이면 운영자가 뭘 고쳐야 할지 알 수 없다.
+ *
+ * 그래서 서버가 미리 감지해서 prepare 단계에서 명확한 코드/메시지로 거절한다.
+ * 프론트 SDK 는 아예 초기화되지 않으므로 뭉뚱그린 오류가 나타나지 않는다.
+ */
+function isWidgetClientKey() {
+  return /^(test|live)_gck_/i.test(clientKey());
+}
+
+/**
+ * 시크릿 키도 결제위젯 유형인가 (test_gsk_… / live_gsk_…).
+ * 로그 진단용. client 만 위젯이고 secret 은 API 개별 연동이면 서버 결제 승인
+ * 자체가 401 로 튈 수 있으니 함께 알려 준다.
+ */
+function isWidgetSecretKey() {
+  return /^(test|live)_gsk_/i.test(secretKey());
+}
+
+/**
+ * 키의 환경(test / live)을 읽는다. 판별할 수 없으면 빈 문자열.
+ */
+function keyEnv(key) {
+  const m = /^(test|live)_/i.exec(String(key || ''));
+  return m ? m[1].toLowerCase() : '';
+}
+
+/**
+ * ★ client 와 secret 이 서로 다른 환경인가 (test + live 혼용).
+ *
+ * 이게 왜 위험한가 — 키를 교체할 때 가장 흔한 실수이고, 결과가 최악이다.
+ *
+ *   client=test / secret=live
+ *     결제창은 테스트처럼 보이는데 서버 승인은 운영으로 나간다.
+ *     "테스트 중" 이라고 생각하는 사이 실제 카드에 4,900원이 청구된다.
+ *
+ *   client=live / secret=test
+ *     운영 결제창에서 카드를 등록했는데 서버 승인이 테스트로 나간다.
+ *     사용자는 결제한 줄 알지만 정산은 없다.
+ *
+ * 둘 다 되돌리기가 비싸다. 그래서 섞여 있으면 결제를 시작조차 하지 않는다
+ * (fail closed — _billing.js 원칙과 같은 방향).
+ */
+function isMixedKeyEnv() {
+  const c = keyEnv(clientKey());
+  const s = keyEnv(secretKey());
+  if (!c || !s) return false;   // 판별 불가한 형태는 여기서 판단하지 않는다
+  return c !== s;
+}
+
+/**
+ * 로그·진단용 키 요약. ★ 키 값 자체는 절대 담지 않는다 —
+ * 환경(test/live)과 유형(api/widget), 설정 여부만 담는다.
+ * Vercel 로그는 사람이 보는 곳이므로 여기에 시크릿이 섞이면 그대로 유출이다.
+ */
+function keySummary() {
+  const kind = k => (/^(test|live)_g(ck|sk)_/i.test(k) ? 'widget'
+                   : /^(test|live)_(ck|sk)_/i.test(k) ? 'api'
+                   : k ? 'unknown' : 'missing');
+  return {
+    client: { env: keyEnv(clientKey()) || 'unknown', kind: kind(clientKey()) },
+    secret: { env: keyEnv(secretKey()) || 'unknown', kind: kind(secretKey()) }
+  };
+}
+
 function authHeader() {
   // ★ 콜론을 반드시 붙인다 (공식 문서: "시크릿 키 뒤에 :을 추가하고 base64로 인코딩").
   return 'Basic ' + Buffer.from(secretKey() + ':', 'utf8').toString('base64');
@@ -204,7 +281,8 @@ function cancelPayment(paymentKey, cancelReason, idempotencyKey, cancelAmount) {
 
 module.exports = {
   API_BASE, STATUS_DONE, TIMEOUT_MS, CHARGE_TIMEOUT_MS,
-  clientKey, isConfigured, isTestKey, authHeader,
+  clientKey, isConfigured, isTestKey, isWidgetClientKey, isWidgetSecretKey,
+  keyEnv, isMixedKeyEnv, keySummary, authHeader,
   issueBillingKey, chargeBilling, getPayment, cancelPayment,
   _call: call
 };

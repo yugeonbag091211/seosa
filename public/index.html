@@ -3748,10 +3748,22 @@ var Pay = {
             customerKey: p.customerKey
           });
         } catch (e) {
-          toast('결제창을 열지 못했어요.');
+          /*
+           * Toss SDK 가 초기화 단계에서 동기 throw 한 경우. 가장 흔한 원인은
+           * TOSS_CLIENT_KEY 가 "결제위젯" 유형(test_gck_/live_gck_)이라 tp.payment()
+           * 가 거부하는 경우인데, 지금은 서버 handlePrepare 가 미리 걸러서
+           * PAYMENT_KEY_WRONG_TYPE 를 돌려주므로 여기까지 오는 일은 사실상 없다.
+           * 그래도 다른 SDK 오류가 났을 때 원인을 삼키지 않도록 message 를 함께 노출한다.
+           */
+          var msg = (e && e.message) || '';
+          try { console.error('[pay] SDK 오류:', msg); } catch (_) {}
+          toast(msg ? '결제창을 열지 못했어요. (' + msg + ')' : '결제창을 열지 못했어요.');
         }
       });
-    }, function() { toast('결제를 시작하지 못했어요.'); });
+    }, function(e) {
+      // 서버가 준 메시지(예: "결제 키 설정이 올바르지 않아요.")를 그대로 띄운다.
+      toast((e && e.body && e.body.message) || '결제를 시작하지 못했어요.');
+    });
   },
 
   /**

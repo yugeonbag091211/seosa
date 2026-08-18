@@ -42,6 +42,57 @@ async function handlePrepare(req, res, email) {
   }
 
   /*
+   * ★ 결제위젯 키(test_gck_ / live_gck_)가 설정되어 있으면 여기서 잘라 낸다.
+   *
+   * 우리 프론트는 tp.payment({customerKey}) 를 부르는데, 이 API 에 위젯용 client
+   * key 를 넣으면 SDK 가 동기 throw 한다 ("API 개별 연동 키의 클라이언트 키로
+   * SDK를 연동해주세요. 결제위젯 연동 키는 지원하지 않습니다."). 그 예외는 프론트
+   * try/catch 에서 잡혀 "결제창을 열지 못했어요." 라는 뭉뚱그린 안내로 나가서
+   * 운영자가 원인을 알아채기 어렵다.
+   *
+   * 서버가 미리 감지해 정확한 코드/메시지로 거절하면 SDK 는 초기화 자체가 안
+   * 되고, 프론트는 서버가 준 message 를 그대로 토스트로 띄운다.
+   *
+   * ※ 이 판정은 우회로가 아니다. 키가 잘못됐으니 결제를 시도조차 하지 않는다
+   *   ("확실할 때만 준다" — _billing.js 원칙과 같은 방향).
+   */
+  if (toss.isWidgetClientKey()) {
+    console.error(
+      '[payment] TOSS_CLIENT_KEY 가 "결제위젯" 유형입니다 (test_gck_/live_gck_). ' +
+      '우리 프론트는 "API 개별 연동" 방식(tp.payment)만 지원하므로, ' +
+      'Toss 콘솔에서 "결제 > API 개별 연동" 섹션의 test_ck_/live_ck_ 키로 교체해 주세요. ' +
+      (toss.isWidgetSecretKey()
+        ? '★ TOSS_SECRET_KEY 도 위젯용(gsk)입니다. 두 키를 함께 교체하세요.'
+        : '')
+    );
+    return res.status(503).json({
+      error: 'PAYMENT_KEY_WRONG_TYPE',
+      message: '결제 키 설정이 올바르지 않아요. 관리자에게 문의해 주세요.'
+    });
+  }
+
+  /*
+   * ★ test 키와 live 키가 섞여 있으면 결제를 시작조차 하지 않는다.
+   *
+   * client=test / secret=live 조합이 특히 위험하다 — 결제창은 테스트처럼
+   * 보이는데 서버 승인은 운영으로 나가서, "테스트 중" 이라고 생각하는 사이
+   * 실제 카드에 청구된다. 반대 조합은 사용자가 결제한 줄 아는데 정산이 없다.
+   * 둘 다 되돌리기가 비싸므로 확실할 때만 연다 (fail closed).
+   */
+  if (toss.isMixedKeyEnv()) {
+    const s = toss.keySummary();   // 키 값이 아니라 환경/유형만 담긴 요약
+    console.error(
+      `[payment] ★ TOSS 키 환경이 섞여 있습니다 — client=${s.client.env} / secret=${s.secret.env}. ` +
+      'TOSS_CLIENT_KEY 와 TOSS_SECRET_KEY 는 반드시 같은 환경(둘 다 test_ 또는 둘 다 live_)이어야 합니다. ' +
+      '섞이면 실제 청구가 테스트로 오인되거나 그 반대가 됩니다.'
+    );
+    return res.status(503).json({
+      error: 'PAYMENT_KEY_ENV_MISMATCH',
+      message: '결제 키 설정이 올바르지 않아요. 관리자에게 문의해 주세요.'
+    });
+  }
+
+  /*
    * orderId·customerKey·amount 를 전부 서버가 만든다.
    * 프론트는 이 값을 그대로 결제창에 넘기기만 한다. 프론트가 만든 값을 쓰면
    * 금액이나 주문번호를 마음대로 바꿀 수 있다.
