@@ -72,6 +72,27 @@ async function handlePrepare(req, res, email) {
   }
 
   /*
+   * ★ test 키와 live 키가 섞여 있으면 결제를 시작조차 하지 않는다.
+   *
+   * client=test / secret=live 조합이 특히 위험하다 — 결제창은 테스트처럼
+   * 보이는데 서버 승인은 운영으로 나가서, "테스트 중" 이라고 생각하는 사이
+   * 실제 카드에 청구된다. 반대 조합은 사용자가 결제한 줄 아는데 정산이 없다.
+   * 둘 다 되돌리기가 비싸므로 확실할 때만 연다 (fail closed).
+   */
+  if (toss.isMixedKeyEnv()) {
+    const s = toss.keySummary();   // 키 값이 아니라 환경/유형만 담긴 요약
+    console.error(
+      `[payment] ★ TOSS 키 환경이 섞여 있습니다 — client=${s.client.env} / secret=${s.secret.env}. ` +
+      'TOSS_CLIENT_KEY 와 TOSS_SECRET_KEY 는 반드시 같은 환경(둘 다 test_ 또는 둘 다 live_)이어야 합니다. ' +
+      '섞이면 실제 청구가 테스트로 오인되거나 그 반대가 됩니다.'
+    );
+    return res.status(503).json({
+      error: 'PAYMENT_KEY_ENV_MISMATCH',
+      message: '결제 키 설정이 올바르지 않아요. 관리자에게 문의해 주세요.'
+    });
+  }
+
+  /*
    * orderId·customerKey·amount 를 전부 서버가 만든다.
    * 프론트는 이 값을 그대로 결제창에 넘기기만 한다. 프론트가 만든 값을 쓰면
    * 금액이나 주문번호를 마음대로 바꿀 수 있다.

@@ -115,6 +115,52 @@ function isWidgetSecretKey() {
   return /^(test|live)_gsk_/i.test(secretKey());
 }
 
+/**
+ * 키의 환경(test / live)을 읽는다. 판별할 수 없으면 빈 문자열.
+ */
+function keyEnv(key) {
+  const m = /^(test|live)_/i.exec(String(key || ''));
+  return m ? m[1].toLowerCase() : '';
+}
+
+/**
+ * ★ client 와 secret 이 서로 다른 환경인가 (test + live 혼용).
+ *
+ * 이게 왜 위험한가 — 키를 교체할 때 가장 흔한 실수이고, 결과가 최악이다.
+ *
+ *   client=test / secret=live
+ *     결제창은 테스트처럼 보이는데 서버 승인은 운영으로 나간다.
+ *     "테스트 중" 이라고 생각하는 사이 실제 카드에 4,900원이 청구된다.
+ *
+ *   client=live / secret=test
+ *     운영 결제창에서 카드를 등록했는데 서버 승인이 테스트로 나간다.
+ *     사용자는 결제한 줄 알지만 정산은 없다.
+ *
+ * 둘 다 되돌리기가 비싸다. 그래서 섞여 있으면 결제를 시작조차 하지 않는다
+ * (fail closed — _billing.js 원칙과 같은 방향).
+ */
+function isMixedKeyEnv() {
+  const c = keyEnv(clientKey());
+  const s = keyEnv(secretKey());
+  if (!c || !s) return false;   // 판별 불가한 형태는 여기서 판단하지 않는다
+  return c !== s;
+}
+
+/**
+ * 로그·진단용 키 요약. ★ 키 값 자체는 절대 담지 않는다 —
+ * 환경(test/live)과 유형(api/widget), 설정 여부만 담는다.
+ * Vercel 로그는 사람이 보는 곳이므로 여기에 시크릿이 섞이면 그대로 유출이다.
+ */
+function keySummary() {
+  const kind = k => (/^(test|live)_g(ck|sk)_/i.test(k) ? 'widget'
+                   : /^(test|live)_(ck|sk)_/i.test(k) ? 'api'
+                   : k ? 'unknown' : 'missing');
+  return {
+    client: { env: keyEnv(clientKey()) || 'unknown', kind: kind(clientKey()) },
+    secret: { env: keyEnv(secretKey()) || 'unknown', kind: kind(secretKey()) }
+  };
+}
+
 function authHeader() {
   // ★ 콜론을 반드시 붙인다 (공식 문서: "시크릿 키 뒤에 :을 추가하고 base64로 인코딩").
   return 'Basic ' + Buffer.from(secretKey() + ':', 'utf8').toString('base64');
@@ -235,7 +281,8 @@ function cancelPayment(paymentKey, cancelReason, idempotencyKey, cancelAmount) {
 
 module.exports = {
   API_BASE, STATUS_DONE, TIMEOUT_MS, CHARGE_TIMEOUT_MS,
-  clientKey, isConfigured, isTestKey, isWidgetClientKey, isWidgetSecretKey, authHeader,
+  clientKey, isConfigured, isTestKey, isWidgetClientKey, isWidgetSecretKey,
+  keyEnv, isMixedKeyEnv, keySummary, authHeader,
   issueBillingKey, chargeBilling, getPayment, cancelPayment,
   _call: call
 };

@@ -436,6 +436,48 @@ const reqFor = (email, body, action) => ({
   check(res.code === 200 && res.payload && res.payload.clientKey === 'test_ck_FAKE_FOR_TESTS_ONLY',
         '정상 키 → prepare 성공', String(res.code));
 
+  section('9-b3. test / live 키 혼용은 결제를 시작조차 하지 않는다 ★');
+  // client=test / secret=live 가 가장 위험하다 — 결제창은 테스트처럼 보이는데
+  // 서버 승인은 운영으로 나가서 실제 카드에 청구된다.
+  process.env.TOSS_CLIENT_KEY = 'test_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'live_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === true, 'client=test / secret=live 감지 ★');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 503 && res.payload.error === 'PAYMENT_KEY_ENV_MISMATCH',
+        '혼용 → 503 PAYMENT_KEY_ENV_MISMATCH ★', `${res.code}/${res.payload.error}`);
+  check(!res.payload.clientKey, '혼용 상태에서 clientKey 가 내려가지 않는다');
+
+  // 반대 조합도 막는다 (결제한 줄 알았는데 정산이 없는 경우)
+  process.env.TOSS_CLIENT_KEY = 'live_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === true, 'client=live / secret=test 도 감지 ★');
+  res = mkRes();
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  check(res.code === 503, '반대 조합도 503', String(res.code));
+
+  // 같은 환경이면 통과
+  process.env.TOSS_CLIENT_KEY = 'test_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'test_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === false, 'test+test → 통과');
+  process.env.TOSS_CLIENT_KEY = 'live_ck_FAKE_FOR_TESTS_ONLY';
+  process.env.TOSS_SECRET_KEY = 'live_sk_FAKE_FOR_TESTS_ONLY';
+  check(tossClient.isMixedKeyEnv() === false, 'live+live → 통과');
+
+  section('9-b4. 진단 요약에 키 값이 절대 들어가지 않는다 ★');
+  process.env.TOSS_CLIENT_KEY = 'live_ck_SUPERSECRETVALUE12345';
+  process.env.TOSS_SECRET_KEY = 'live_sk_SUPERSECRETVALUE67890';
+  const summary = tossClient.keySummary();
+  const summaryStr = JSON.stringify(summary);
+  check(summaryStr.indexOf('SUPERSECRET') === -1,
+        'keySummary 에 키 값 흔적 없음 ★', summaryStr);
+  check(summary.client.env === 'live' && summary.client.kind === 'api',
+        'client 환경/유형만 보고', `${summary.client.env}/${summary.client.kind}`);
+  check(summary.secret.env === 'live' && summary.secret.kind === 'api',
+        'secret 환경/유형만 보고', `${summary.secret.env}/${summary.secret.kind}`);
+  process.env.TOSS_CLIENT_KEY = 'test_gck_w';
+  check(tossClient.keySummary().client.kind === 'widget', '위젯 키 유형 표기');
+
   process.env.TOSS_CLIENT_KEY = savedCk;
   process.env.TOSS_SECRET_KEY = savedSk2;
 
