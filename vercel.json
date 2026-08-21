@@ -1,6 +1,7 @@
 {
   "version": 2,
   "rewrites": [
+    { "source": "/api/history-batch", "destination": "/api/history?__route=batch" },
     { "source": "/api/profile", "destination": "/api/sync?resource=profile" },
     { "source": "/((?!api/).*)", "destination": "/public/$1" }
   ],
@@ -17,7 +18,8 @@
     }
   ],
   "functions": {
-    "api/cron.js": { "maxDuration": 60 }
+    "api/cron.js": { "maxDuration": 60 },
+    "api/payment.js": { "maxDuration": 60 }
   },
   "crons": [
     { "path": "/api/cron", "schedule": "0 18 * * *" }

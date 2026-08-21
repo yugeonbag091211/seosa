@@ -77,6 +77,18 @@ function parseReq(raw) {
   return raw;
 }
 
+// vercel.json의 rewrites를 이 로컬 서버는 모르므로 여기서도 흉내낸다.
+// (현재는 history-batch 통합 건 하나뿐)
+const REWRITES = {
+  '/api/history-batch': { path: '/api/history', query: { __route: 'batch' } }
+};
+function applyRewrites(req) {
+  const rw = REWRITES[req.path];
+  if (!rw) return;
+  req.path = rw.path;
+  Object.assign(req.query, rw.query);
+}
+
 function serveStatic(pathname, res) {
   const filePath = path.join(PUB_DIR, pathname === '/' ? 'index.html' : pathname);
   const safe = path.resolve(filePath);
@@ -131,6 +143,7 @@ const server = http.createServer(async (rawReq, rawRes) => {
   await readBody(req);
 
   if (req.path.startsWith('/api/')) {
+    applyRewrites(req);
     console.log(`${req.method} ${req.url}`);
     await handleApi(req.path, req, res);
   } else {

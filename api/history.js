@@ -1,11 +1,25 @@
 const supabase = require('./_supabase');
-const { applyCors, cachePublic } = require('./_http');
+const { applyCors, cachePublic, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
 
+/*
+ * ── history + history-batch 통합 ────────────────────────────────
+ *
+ * Vercel Hobby 플랜의 Serverless Function 12개 제한을 넘겨(13개) 배포가
+ * 실패해서, 원래 별도 파일이던 history-batch.js를 이 파일로 흡수했다.
+ * 로직은 옮기기만 했고 한 줄도 바꾸지 않았다.
+ *
+ * URL은 둘 다 그대로 유지된다 — vercel.json의 rewrite가
+ *   /api/history-batch  →  /api/history?__route=batch
+ * 로 보내고, 아래 handler가 __route로 두 로직을 나눠 부른다.
+ * (쿼리스트링 자체는 원래 요청 것이 그대로 전달되고, __route만 rewrite가 덧붙인다)
+ */
+
+// ── 단건 조회 (기존 history.js) ─────────────────────────────────
 // 하루에 여러 몰의 행이 쌓이므로 "행 수"와 "일 수"는 다르다.
 // 넉넉히 최신순으로 가져온 뒤 날짜 단위로 접고, 마지막에 일 수로 자른다.
-const MAX_ROWS = 3000;
-const MAX_DAYS = 365;
+const SINGLE_MAX_ROWS = 3000;
+const SINGLE_MAX_DAYS = 365;
 
 /** [{recorded_date, price}] → 날짜당 최저가 한 점, 오름차순 */
 function collapseToDaily(rows, maxDays) {
@@ -31,35 +45,27 @@ function baseQuery() {
     .from('price_history')
     .select('recorded_date, price')
     .order('recorded_date', { ascending: false })
-    .limit(MAX_ROWS);
+    .limit(SINGLE_MAX_ROWS);
 }
 
-module.exports = async function handler(req, res) {
-  if (!applyCors(req, res, 'public')) return;
-
+async function singleHandler(req, res) {
   if (!guard(req, res, { name: 'history', limit: 90, windowMs: 60 * 1000 })) return;
 
   const q = req.query || {};
-  const title     = String(q.title || '').trim();
-  const productId = String(q.productId || '').trim();
-  const mall      = String(q.mall || '').trim();
+  const title        = String(q.title || '').trim();
+  const productId    = String(q.productId || '').trim();
+  const mall         = String(q.mall || '').trim();
+  const vendorItemId = String(q.vendorItemId || '').trim();
 
   if (!title && !productId) return res.status(400).json({ error: '상품명 없음' });
 
   try {
     let rows = null;
 
-    /*
-     * 상품 단위(product_id + mall) 조회를 먼저 시도한다.
-     *
-     * 상품명으로만 찾으면 이름이 같은 다른 상품·다른 몰의 가격이 한 그래프에
-     * 섞인다. price_history는 (product_id, mall, recorded_date)로 저장되므로
-     * 프론트가 productId를 보낼 때는 그걸로 찾는 게 맞다.
-     * (프론트는 예전부터 productId를 보내고 있었는데 여기서 읽지 않고 있었다)
-     */
     if (productId) {
       let query = baseQuery().eq('product_id', productId);
       if (mall) query = query.eq('mall', mall);
+      if (vendorItemId) query = query.eq('vendor_item_id', vendorItemId);
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       if (data && data.length) rows = data;
@@ -88,8 +94,134 @@ module.exports = async function handler(req, res) {
 
     // 프론트는 오름차순 [{date, price}] 배열을 기대한다 (sparkSVG / 차트 라벨).
     cachePublic(res, 300);
-    res.json(collapseToDaily(rows, MAX_DAYS));
+    res.json(collapseToDaily(rows, SINGLE_MAX_DAYS));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+}
+
+// ── 배치 조회 (기존 history-batch.js) ───────────────────────────
+const MAX_TITLES = 100;
+const MAX_KEYS   = 100;
+// 잘릴 경우 오래된 쪽이 버려지도록 최신순으로 가져온다 (단건 조회와 같은 이유).
+const BATCH_MAX_ROWS = 10000;
+const BATCH_MAX_DAYS = 365;
+
+/**
+ * 프론트가 보내는 조회 키는 두 종류다. 둘 다 지원해야 한다.
+ *
+ *   keys   — "<product_id>|<mall>". 상품 단위. 프론트의 histKey()가 만든다.
+ *   titles — 상품명. productId가 없는 옛 위시/조회기록 전용 폴백.
+ *
+ * 예전에는 titles만 읽고 keys를 통째로 버렸다. 그런데 지금 프론트는
+ * productId가 있는 상품(=쿠팡 상품 전부)을 keys로만 보내기 때문에,
+ * 스파크라인 · 역대최저가 뱃지 · 위시 최신가 · "가격이 움직였어요" 섹션 ·
+ * AI 가격 이력이 전부 빈 응답({})을 받고 조용히 사라져 있었다.
+ */
+function splitKey(key) {
+  const s = String(key);
+  const parts = s.split('|');
+  if (parts.length >= 3) {
+    return { productId: parts[0], mall: parts[1], vendorItemId: parts.slice(2).join('|') };
+  }
+  const i = s.lastIndexOf('|');
+  if (i < 0) return { productId: s, mall: '', vendorItemId: '' };
+  return { productId: s.slice(0, i), mall: s.slice(i + 1), vendorItemId: '' };
+}
+
+/** Map<날짜, 최저가> → [{date, price}] 오름차순, 최근 maxDays 일만 */
+function toPoints(byDate) {
+  return [...byDate.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([date, price]) => ({ date, price }))
+    .slice(-BATCH_MAX_DAYS);
+}
+
+/** 같은 날짜에 여러 행이 있으면 최저가 한 점만 남긴다. */
+function keepLowest(byDate, date, price) {
+  const cur = byDate.get(date);
+  if (cur === undefined || price < cur) byDate.set(date, price);
+}
+
+async function batchHandler(req, res) {
+  // 최대 100개 키 × 10000행짜리 쿼리다. 인증이 없는 만큼 호출 빈도는 막아둔다.
+  if (!guard(req, res, { name: 'history-batch', limit: 60, windowMs: 60 * 1000 })) return;
+
+  const q = req.query || {};
+  const titles = readStringList(q.titles, MAX_TITLES);
+  const keys   = readStringList(q.keys,   MAX_KEYS);
+
+  if (titles === null) return res.status(400).json({ error: 'titles 파싱 실패' });
+  if (keys === null)   return res.status(400).json({ error: 'keys 파싱 실패' });
+
+  // 조회된 것만 채우면 프론트가 map[k] === undefined로 건너뛰므로 전부 빈 배열로 초기화한다.
+  // ("조회했는데 기록이 없다"와 "아직 모른다"를 프론트가 구분한다)
+  const map = {};
+  keys.forEach(k => { map[k] = []; });
+  titles.forEach(t => { map[t] = []; });
+
+  if (!keys.length && !titles.length) return res.json(map);
+
+  try {
+    // ── 1) 상품 단위(keys) ────────────────────────────────────────
+    if (keys.length) {
+      const parsed = new Map(keys.map(k => [k, splitKey(k)]));
+      const productIds = [...new Set([...parsed.values()].map(p => p.productId))].filter(Boolean);
+
+      if (productIds.length) {
+        const { data, error } = await supabase
+          .from('price_history')
+          .select('product_id, mall, vendor_item_id, recorded_date, price')
+          .in('product_id', productIds)
+          .order('recorded_date', { ascending: false })
+          .limit(BATCH_MAX_ROWS);
+        if (error) throw new Error(error.message);
+
+        const byKey = new Map();
+        (data || []).forEach(r => {
+          const vid = r.vendor_item_id || '';
+          for (const [origKey, p] of parsed) {
+            if (r.product_id !== p.productId) continue;
+            if (p.mall && r.mall !== p.mall) continue;
+            if (p.vendorItemId && vid !== p.vendorItemId) continue;
+            if (!byKey.has(origKey)) byKey.set(origKey, new Map());
+            keepLowest(byKey.get(origKey), r.recorded_date, r.price);
+          }
+        });
+        byKey.forEach((byDate, k) => { map[k] = toPoints(byDate); });
+      }
+    }
+
+    /*
+     * ── 2) 상품명(titles) — 더 이상 조회하지 않는다 ────────────────
+     *
+     * 가격 이력은 상품 단위 식별자(product_id + mall)로만 연결한다.
+     * 상품명으로 모으면 이름이 같은 여러 상품·여러 몰의 기록이 날짜별
+     * 최저가로 합쳐져, 어느 상품의 것도 아닌 곡선이 나온다. 프론트는 그
+     * 마지막 점을 위시 현재가·'역대 최저가' 뱃지·AI 판단 근거로 썼다.
+     *
+     * 파라미터는 계속 받는다. 배포 직후에는 옛 index.html 을 캐시해 둔
+     * 브라우저가 여전히 titles 를 보내기 때문이다. 그 요청도 여기서
+     * 빈 배열을 받아 "기록 없음"으로 그려지고, 틀린 이력을 보지 않는다.
+     * (map 초기화에서 이미 titles 키가 빈 배열로 들어가 있다)
+     */
+    if (titles.length) {
+      console.log(`[history-batch] 상품명 조회 ${titles.length}건 무시 — 상품 단위 식별자로만 이력을 연결합니다`);
+    }
+
+    // 가격 기록은 하루 한 번만 늘어난다. 짧게 캐시해도 사용자가 보는 값은 같다.
+    cachePublic(res, 300);
+    res.json(map);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
+
+// ── 라우팅 ───────────────────────────────────────────────────────
+module.exports = async function handler(req, res) {
+  if (!applyCors(req, res, 'public')) return;
+
+  const q = req.query || {};
+  if (q.__route === 'batch') return batchHandler(req, res);
+  return singleHandler(req, res);
 };
