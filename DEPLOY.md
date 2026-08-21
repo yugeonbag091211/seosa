@@ -45,6 +45,63 @@ Vercel > Settings > Environment Variables
 | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | 설정됨 | — |
 | `COUPANG_ACCESS_KEY` / `COUPANG_SECRET_KEY` | 설정됨 | — |
 | `CRON_SECRET` | 설정됨 | — |
+| `TOSS_CLIENT_KEY` | **미설정** | PRO 결제 버튼이 "PRO 준비 중" 으로만 표시됨 (결제 불가) |
+| `TOSS_SECRET_KEY` | **미설정** | 〃 — 서버가 결제를 승인·검증할 수 없음 |
+| `FREE_DAILY_AI_LIMIT` | 선택 | 기본 3 |
+| `PRO_DAILY_AI_LIMIT` | 선택 | 기본 50 |
+
+### 토스페이먼츠 키에 대하여
+
+- `TOSS_CLIENT_KEY` 는 **공개 키**입니다. 프론트로 내려가며 노출되어도 됩니다.
+- `TOSS_SECRET_KEY` 는 **절대 프론트로 내려가면 안 됩니다.** `api/_toss.js` 에서만
+  읽고, 이 값 하나로 결제 승인·취소·조회가 전부 가능합니다.
+- 두 키가 없으면 결제 기능이 **닫힙니다**. 키가 없다고 PRO 를 그냥 주는
+  우회로는 코드에 없습니다 (의도된 동작 — `api/_toss.isConfigured()`).
+- 테스트 키(`test_` 접두사)로 먼저 검증하고, PG 계약 완료 후 운영 키로 **값만
+  교체**하면 코드 변경 없이 실결제로 전환됩니다.
+
+#### ★ 키 유형을 반드시 "API 개별 연동" 으로 (결제위젯 아님)
+
+토스 콘솔에는 결제 키가 두 종류입니다. **반드시 API 개별 연동 키를 쓰세요.**
+
+| 종류 | client key 접두사 | secret key 접두사 | 우리 코드 지원 |
+|---|---|---|---|
+| **API 개별 연동** | `test_ck_…` / `live_ck_…` | `test_sk_…` / `live_sk_…` | ✅ (이걸 쓰세요) |
+| 결제위젯 | `test_gck_…` / `live_gck_…` | `test_gsk_…` / `live_gsk_…` | ❌ 지원 안 함 |
+
+우리 프론트(`public/index.html Pay.start`)는 `tp.payment({customerKey})` API 를
+쓰는데, 여기에 결제위젯용 client key(`_gck_`)를 넣으면 SDK 가 초기화 단계에서
+동기 throw 합니다:
+
+> "API 개별 연동 키의 클라이언트 키로 SDK를 연동해주세요.
+> 결제위젯 연동 키는 지원하지 않습니다."
+
+서버가 `handlePrepare` 에서 미리 감지해 `PAYMENT_KEY_WRONG_TYPE` 로 거절하므로,
+사용자에게는 "결제 키 설정이 올바르지 않아요." 라는 안내만 뜨고 결제창은 열리지
+않습니다. Vercel 로그에는 어떤 키로 교체해야 하는지 문구가 남습니다.
+
+**바꾸는 방법:**
+1. 토스페이먼츠 콘솔 > 상점 관리 > **개발 정보 (API 개별 연동)** 섹션 열기
+2. "클라이언트 키"(`test_ck_…` 또는 `live_ck_…`) 를 Vercel `TOSS_CLIENT_KEY` 로
+3. "시크릿 키"(`test_sk_…` 또는 `live_sk_…`) 를 Vercel `TOSS_SECRET_KEY` 로
+4. 환경변수 저장 후 **Redeploy** (Preview + Production 모두)
+
+#### ★★ 두 키의 환경(test/live)을 반드시 일치시킬 것
+
+`TOSS_CLIENT_KEY` 와 `TOSS_SECRET_KEY` 는 **둘 다 `test_` 이거나 둘 다 `live_`** 여야
+합니다. 섞이면 되돌리기 어려운 사고가 납니다:
+
+| 조합 | 무슨 일이 생기나 |
+|---|---|
+| client=`test_` + secret=`live_` | 결제창은 테스트처럼 보이는데 서버 승인은 운영으로 나간다 → **테스트하는 줄 알았는데 실제 카드에 4,900원이 청구됨** |
+| client=`live_` + secret=`test_` | 사용자는 결제한 줄 아는데 정산이 없다 |
+
+서버가 `handlePrepare` 에서 이 혼용을 감지해 `PAYMENT_KEY_ENV_MISMATCH` 로
+결제를 시작조차 하지 않습니다. Vercel 로그에는 어느 쪽이 test 이고 어느 쪽이
+live 인지만 남고 **키 값 자체는 절대 로그에 남지 않습니다**.
+
+권장 순서: **먼저 `test_` 쌍으로 전체 흐름을 검증**하고, 정상 동작을 확인한
+뒤에 `live_` 쌍으로 교체하세요.
 
 `RESEND_API_KEY` 는 GitHub Actions 시크릿에도 따로 있어야 합니다
 (가격 알림 발송은 Actions 에서 돌아갑니다). 두 곳은 별개입니다.

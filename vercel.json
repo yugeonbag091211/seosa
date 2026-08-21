@@ -2,6 +2,7 @@
   "version": 2,
   "rewrites": [
     { "source": "/api/history-batch", "destination": "/api/history?__route=batch" },
+    { "source": "/api/profile", "destination": "/api/sync?resource=profile" },
     { "source": "/((?!api/).*)", "destination": "/public/$1" }
   ],
   "headers": [

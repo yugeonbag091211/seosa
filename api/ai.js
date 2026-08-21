@@ -1,5 +1,7 @@
 const { readBody, applyCors, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
+const { identify } = require('./_auth');
+const plan = require('./_plan');
 
 const MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-5';
 
@@ -1072,16 +1074,82 @@ module.exports = async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
 
-  // 비용이 걸린 호출이라 검색(30회/분)보다 빡빡하게 잡는다.
+  /*
+   * 인메모리 레이트리미터는 그대로 둔다. 다만 역할이 다르다.
+   *
+   *   여기(in-memory)  — 짧은 순간의 폭주를 막는 보조 방어선.
+   *                      서버리스라 인스턴스마다 카운터가 따로 놀아서
+   *                      "하루 몇 회" 같은 판정에는 쓸 수 없다.
+   *   아래(DB quota)   — 하루 사용량의 진짜 기준. 원자적이라 우회되지 않는다.
+   *
+   * 둘을 섞지 말 것. 하나가 다른 하나를 대체하지 않는다.
+   */
   if (!guard(req, res, { name: 'ai', limit: 10, windowMs: 60 * 1000 })) return;
 
   if (!process.env.OPENROUTER_API_KEY) {
     return res.status(500).json({ error: 'OPENROUTER_API_KEY 환경변수 없음', text: '' });
   }
 
+  /* ── 1) 신원 확인 ────────────────────────────────────────────────
+   *
+   * 호출 1회당 실제 요금이 나가므로 익명 사용을 더는 허용하지 않는다.
+   * 신원은 서명 검증된 토큰에서만 꺼낸다 — body 의 email 은 보지 않는다.
+   * (남의 이메일을 적어 보내 그 사람 한도를 태우거나, 한도가 남은 계정으로
+   *  갈아타며 무한히 쓰는 것을 막는다)
+   */
+  const who = identify(req);
+  if (!who.ok) {
+    return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
+  }
+  const email = who.email;
+
   const { question, contextProducts, chatHistory, profile, view } = readBody(req);
   const q = clip(question, MAX_QUESTION_LEN).trim();
+  // 입력이 잘못된 요청은 사용량을 예약하기 전에 걸러낸다 — 사용자 잘못이 아닌
+  // 것으로 한도를 깎지 않기 위해서다.
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
+
+  /* ── 2) 요금제 판정 ─────────────────────────────────────────────
+   * plan 은 절대 요청 body 에서 읽지 않는다. 검증된 이메일로 DB 를 본다.
+   * 만료·해지된 PRO 는 여기서 자동으로 FREE 로 떨어진다.
+   */
+  const { plan: userPlan, limit: dailyLimit } = await plan.resolvePlan(email);
+
+  /* ── 3) 사용량 예약 (원자적) ────────────────────────────────────
+   *
+   * ★ 반드시 OpenRouter 호출보다 먼저다.
+   *   이 엔드포인트는 요청 1건에 분류 2회 + 본답변 1회까지 LLM 을 부른다.
+   *   한도를 넘긴 요청은 그중 단 한 번도 부르면 안 된다 — 그게 유료화의
+   *   목적 자체다.
+   */
+  const reservation = await plan.reserve(email, dailyLimit);
+  if (!reservation.allowed) {
+    const usage = plan.usagePayload(userPlan, reservation.used, dailyLimit);
+    return res.status(429).json({
+      error: reservation.degraded
+        ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+        : 'AI_DAILY_LIMIT_REACHED',
+      text: reservation.degraded
+        ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+        : '오늘 사용할 수 있는 AI 횟수를 모두 사용했어요.',
+      usage,
+      upgradeRequired: !reservation.degraded && userPlan !== plan.PLAN.PRO
+    });
+  }
+
+  // 응답에 실어 보낼 사용량. 예약이 성공했으므로 used 는 이번 호출까지 포함한다.
+  const usage = plan.usagePayload(userPlan, reservation.used, dailyLimit);
+
+  /*
+   * 업스트림 장애로 답을 못 준 경우에만 예약을 되돌린다.
+   * 정상 응답이나 사용자 입력 문제는 되돌리지 않는다.
+   */
+  let released = false;
+  const releaseOnce = async () => {
+    if (released) return;
+    released = true;
+    await plan.release(email);
+  };
 
   try {
     // 프론트가 옛날 방식으로 JSON 문자열을 보낼 수도 있으니 방어적으로 파싱한다.
@@ -1242,9 +1310,12 @@ module.exports = async function handler(req, res) {
       });
     } catch (e) {
       if (e.name === 'AbortError') {
+        // 업스트림 타임아웃 — 사용자 잘못이 아니므로 예약을 되돌린다.
+        await releaseOnce();
         return res.status(504).json({
           error: '응답 시간 초과',
-          text: '응답이 너무 오래 걸렸어요. 다시 시도해 주세요.'
+          text: '응답이 너무 오래 걸렸어요. 다시 시도해 주세요.',
+          usage: plan.usagePayload(userPlan, Math.max(0, reservation.used - 1), dailyLimit)
         });
       }
       throw e;
@@ -1267,7 +1338,7 @@ module.exports = async function handler(req, res) {
      * 사용자에게는 그 카드가 답의 알맹이다. 말만 채워서 함께 내보낸다.
      */
     if (!text) {
-      if (!cards.length) return res.json({ text: '답변을 만들지 못했어요. 다시 물어봐 주세요.' });
+      if (!cards.length) return res.json({ text: '답변을 만들지 못했어요. 다시 물어봐 주세요.', usage });
       text = '찾아온 상품이에요. 아래 카드를 확인해 보세요.';
     }
 
@@ -1279,7 +1350,7 @@ module.exports = async function handler(req, res) {
      * 채운다. 값은 전부 검색 결과에서 온 것이고 AI 가 만든 문자열은 섞지
      * 않는다 — 그래야 카드에 뜨는 이름·가격·링크가 실제와 어긋나지 않는다.
      */
-    res.json(cards.length ? { text, items: cards } : { text });
+    res.json(cards.length ? { text, items: cards, usage } : { text, usage });
   } catch (e) {
     /*
      * 업스트림 오류 원문을 그대로 내보내지 않는다.
@@ -1297,9 +1368,16 @@ module.exports = async function handler(req, res) {
      * 알 수 없다. 원인은 로그에 남기고 사용자에게는 사람 말로 알린다.
      */
     console.error('[ai]', e.message);
+    /*
+     * 여기 오는 것은 업스트림 실패(OpenRouter 5xx/402, 네트워크 오류 등)다.
+     * 사용자는 답을 받지 못했으므로 예약했던 1회를 돌려준다. 장애가 날수록
+     * 사용자가 손해를 보는 구조를 만들지 않는다.
+     */
+    await releaseOnce();
     res.status(500).json({
       error: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.',
-      text: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.'
+      text: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.',
+      usage: plan.usagePayload(userPlan, Math.max(0, reservation.used - 1), dailyLimit)
     });
   }
 };
