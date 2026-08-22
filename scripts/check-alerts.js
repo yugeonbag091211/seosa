@@ -12,9 +12,15 @@
 require('./_env');
 const supabase = require('../api/_supabase');
 const notify   = require('../api/_notify');
+const { kstToday } = require('../api/_price');
 
 const DROP_THRESHOLD = 0.05; // 5% 이상 하락 시 알림
-const TODAY = new Date().toISOString().slice(0, 10);
+/*
+ * "오늘" / "어제" / "30일 전" 을 price_history.recorded_date 기준(=KST 달력)에
+ * 맞춘다. UTC 를 쓰면 KST 01:xx 크론이 오늘 저장한 행을 이 스크립트가 "내일자"로
+ * 잘못 보고 통째로 건너뛴다.
+ */
+const TODAY = kstToday();
 
 function won(n) { return Number(n).toLocaleString('ko-KR'); }
 
@@ -74,8 +80,8 @@ async function run() {
     .eq('recorded_date', TODAY);
   if (e1) throw new Error('오늘 가격 조회 실패: ' + e1.message);
 
-  // 2. 어제 가격 (drop 조건용)
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  // 2. 어제 가격 (drop 조건용) — KST 달력의 "어제"
+  const yesterday = kstToday(new Date(Date.now() - 86400000));
   const { data: yesterdayPrices } = await supabase
     .from('price_history')
     .select('product_id, mall, price')
@@ -92,24 +98,30 @@ async function run() {
 
   console.log(`오늘 가격: ${todayPrices.length}개 / 알림 대상: ${alertList.length}개`);
 
-  let sent = 0, skipped = 0;
+  let sent = 0, skipped = 0, skippedLegacy = 0;
 
   for (const alert of alertList) {
     /*
-     * 오늘 가격 찾기 — product_id 가 있으면 그걸 먼저 쓴다.
+     * 오늘 가격은 상품 식별자(product_id [+ mall])로만 찾는다.
      *
-     * 상품명은 고유하지 않다. 쿠팡에는 같은 이름의 다른 상품이 흔해서, 이름만으로
-     * 찾으면 값이 싼 동명이물의 가격으로 "목표가 달성" 메일이 나갈 수 있다.
-     * (product_id 는 supabase/2026-08-hardening.sql 적용 이후 신청분부터 채워진다.
-     *  그 전에 신청된 행은 빈 문자열이라 예전처럼 상품명으로 찾는다.)
+     * 상품명 폴백은 없앴다. 상품명은 고유하지 않다 — 쿠팡에는 같은 이름의
+     * 다른 상품이 흔하고, 그중 싼 쪽 가격을 집으면 "목표가 달성" 메일이
+     * 사실이 아닌 채로 나간다. 화면 표시와 달리 메일은 되돌릴 수 없고,
+     * 사용자는 그걸 믿고 클릭해서 전혀 다른 가격을 보게 된다.
+     *
+     * product_id 는 supabase/2026-08-hardening.sql 적용 이후 신청분부터
+     * 채워진다. 그 전에 신청된 행은 빈 문자열이라 이제 발송 대상에서 빠진다.
+     * 잘못된 알림을 보내는 것보다 안 보내는 쪽이 낫다. 사용자가 그 상품을
+     * 다시 찜하거나 알림을 재신청하면 product_id 가 채워져 정상 동작한다.
      */
+    if (!alert.product_id) {
+      skippedLegacy++;
+      continue;
+    }
+
     const todayRow =
-      (alert.product_id
-        ? todayPrices.find(p => p.product_id === alert.product_id && p.mall === alert.mall)
-          || todayPrices.find(p => p.product_id === alert.product_id)
-        : null)
-      || todayPrices.find(p => p.title === alert.title && p.mall === alert.mall)
-      || todayPrices.find(p => p.title === alert.title);
+      todayPrices.find(p => p.product_id === alert.product_id && p.mall === alert.mall)
+      || todayPrices.find(p => p.product_id === alert.product_id);
     if (!todayRow) { skipped++; continue; }
 
     const cur = todayRow.price;
@@ -122,15 +134,17 @@ async function run() {
     if (prev > 0 && (prev - cur) / prev >= DROP_THRESHOLD)
       triggeredAlerts.push({ type: 'drop', dropPct: ((prev - cur) / prev) * 100 });
 
-    // 이 알림의 가격 기록을 어떤 범위로 볼지. 오늘 가격을 찾은 그 상품과
-    // 같은 범위여야 한다 — 오늘 값은 A상품, 역대 최저가는 동명의 B상품에서
-    // 가져오면 "역대 최저가 갱신"이 사실이 아니게 된다.
-    const scoped = () => {
-      const q = supabase.from('price_history').select('price');
-      return todayRow.product_id
-        ? q.eq('product_id', todayRow.product_id).eq('mall', todayRow.mall)
-        : q.eq('title', alert.title);
-    };
+    /*
+     * 역대 최저가 · 30일 통계를 볼 범위. 오늘 가격을 찾은 그 상품과 같아야 한다.
+     *
+     * 여기에도 상품명 폴백이 있었다. 오늘 값은 A상품에서, 역대 최저가는 동명의
+     * B상품에서 가져오면 "역대 최저가 갱신"도 "30일 평균보다 쌉니다"도 사실이
+     * 아니게 된다. 이제 상품 단위로만 본다.
+     */
+    const scoped = () => supabase
+      .from('price_history').select('price')
+      .eq('product_id', todayRow.product_id)
+      .eq('mall', todayRow.mall);
 
     // 역대 최저가 확인
     const { data: allHistory } = await scoped()
@@ -142,8 +156,8 @@ async function run() {
 
     if (!triggeredAlerts.length) { skipped++; continue; }
 
-    // 30일 통계
-    const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    // 30일 통계 — recorded_date 와 같은 KST 달력 기준
+    const thirtyAgo = kstToday(new Date(Date.now() - 30 * 86400000));
     const { data: hist30 } = await scoped().gte('recorded_date', thirtyAgo);
     const prices30 = (hist30 || []).map(r => r.price);
     const avg30 = prices30.length ? Math.round(prices30.reduce((a, b) => a + b, 0) / prices30.length) : 0;
@@ -183,7 +197,25 @@ async function run() {
     }
   }
 
-  console.log(`\n완료: ${sent}건 발송 / ${skipped}건 스킵`);
+  console.log(`\n완료: ${sent}건 발송 / ${skipped}건 스킵`
+    + (skippedLegacy ? ` / ${skippedLegacy}건 제외(product_id 없는 옛 신청)` : ''));
+
+  if (skippedLegacy) {
+    console.warn(
+      `⚠️  product_id 가 없는 알림 ${skippedLegacy}건은 발송하지 않았습니다.\n`
+      + '   상품명만으로 가격을 찾으면 동명의 다른 상품 가격으로 잘못된 알림이 나갈 수 있어\n'
+      + '   의도적으로 건너뜁니다. 사용자가 해당 상품에서 알림을 다시 신청하면 채워집니다.'
+    );
+  }
 }
 
-run().catch(e => { console.error('오류:', e.message); process.exit(1); });
+/*
+ * 직접 실행할 때만 돌린다 (GitHub Actions 의 `node scripts/check-alerts.js`).
+ * require 해도 자동 실행되지 않아야 테스트에서 가짜 Supabase / 가짜 발송기를
+ * 물려 놓고 run() 을 부를 수 있다. CLI 동작은 그대로다.
+ */
+if (require.main === module) {
+  run().catch(e => { console.error('오류:', e.message); process.exit(1); });
+}
+
+module.exports = { run };

@@ -120,34 +120,16 @@ const fakeSupabase = {
           });
         }
         db.upserts[table].push(...list);
-        /*
-         * upsert 시 실제로 매칭되는 UNIQUE 로 메모리 테이블에도 반영한다.
-         * price_history 는 vendor_item_id 를 포함한 4-컬럼 UNIQUE 이므로
-         * 옵션이 다르면 별도 행이 남아야 한다.
-         *
-         * onConflict 문자열도 함께 검증한다 — 값이 예상과 다르면 실 DB 에서
-         * 42P10 을 만나 모든 가격 쓰기가 실패하므로 여기서 조용히 지나가면 안 된다.
-         */
-        const expectedConflict = {
-          price_history: 'product_id,mall,vendor_item_id,recorded_date',
-          products: 'product_id,mall'
-        }[table];
-        if (opts && opts.onConflict && expectedConflict && opts.onConflict !== expectedConflict) {
-          return Promise.resolve({
-            data: null,
-            error: {
-              message: `there is no unique or exclusion constraint matching the ON CONFLICT specification (got '${opts.onConflict}', expected '${expectedConflict}')`
-            }
-          });
-        }
+        // 실제 upsert 와 같게 메모리 테이블에도 반영해 둔다.
         list.forEach(r => {
           const key = table === 'price_history'
-            ? ['product_id', 'mall', 'vendor_item_id', 'recorded_date']
+            ? ['product_id', 'mall', 'recorded_date']
             : ['product_id', 'mall'];
-          const idx = (db[table] || []).findIndex(x => key.every(k => String(x[k] || '') === String(r[k] || '')));
+          const idx = (db[table] || []).findIndex(x => key.every(k => String(x[k]) === String(r[k])));
           if (idx > -1) db[table][idx] = { ...db[table][idx], ...r };
           else db[table].push({ ...r });
         });
+        void opts;
         return Promise.resolve({ data: list, error: null });
       }
     });
@@ -178,8 +160,7 @@ const {
   parsePrice, isSanePrice, classifyPrice, coupangItemIds, isRefreshableMall,
   vendorIdOf, itemIdOf, productLifecycle, isDisplayable, LIFECYCLE,
   plausibleDrop, MAX_PLAUSIBLE_DROP_PCT,
-  recentlyObserved, latestObservedDate, observedKstDate, todayDropConfirmed,
-  kstToday
+  recentlyObserved, latestObservedDate
 } = require('../api/_price');
 
 /* ------------------------------------------------------------------ *
@@ -192,11 +173,8 @@ function check(ok, label, detail) {
 }
 function section(name) { console.log(`\n${name}`); }
 
-// recordPrices 가 이제 KST 를 쓰므로 테스트 기준도 같은 달력으로 맞춘다.
-// (예전에는 여기서만 UTC 를 쓰고 있어서, KST 로 이미 다음 날인 UTC 15~24시대에
-//  테스트를 돌리면 "최신 기록이 오늘 날짜" 같은 확인이 실패했다)
-const TODAY = kstToday();
-function daysAgo(n) { return kstToday(new Date(Date.now() - n * 86400000)); }
+const TODAY = new Date().toISOString().slice(0, 10);
+function daysAgo(n) { return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10); }
 function isoDaysAgo(n) { return new Date(Date.now() - n * 86400000).toISOString(); }
 
 /** price_history 에 과거 관측을 심는다. */
@@ -336,15 +314,15 @@ function recordedPrice(productId) {
   check(recordedPrice('9579684471') === 1528000,
         'price_history 에는 관측 사실을 남김 (다음 관측에서 확인 가능하도록)');
 
-  section('Test 5-b. 옵션이 바뀌면서 가격이 튀는 경우 (vendorItemId 변경)');
-  // 같은 product_id 인데 "블루 그레이-GY" → "펄 화이트-WT" 처럼 옵션이 바뀌면
-  // 2배만 벌어져도 같은 상품의 가격 변동으로 볼 수 없다.
+  section('Test 5-b. 다른 vendorItemId 는 다른 상품 — 직전 관측이 없어 통과');
+  // 새 모델에서는 pid|mall|vid 가 상품 키다. 다른 vendorItemId 로 오면
+  // 직전 관측이 없는 "첫 관측"으로 취급된다.
   reset();
   seedHistory('9536222150', '쿠팡', 100000, 1);
   db.products.push({ product_id: '9536222150', mall: '쿠팡', vendor_item_id: 'AAA' });
   r = await recordPrices([obs('9536222150', 40000, { vendorItemId: 'BBB' })], { label: 't5b' });
-  check(r.suspect === 1, '옵션 교체 + 2.5배 변동 → 보류', JSON.stringify(r));
-  check(currentPrice('9536222150') === null, 'products 현재가를 덮어쓰지 않음');
+  check(r.suspect === 0, '다른 vendorItemId = 첫 관측 → 통과', JSON.stringify(r));
+  check(currentPrice('9536222150') === 40000, 'products 현재가 = 40,000 (새 옵션으로 등록)');
 
   section('Test 5-c. 같은 옵션이면 2.5배 변동은 정상 할인으로 통과');
   reset();
@@ -379,35 +357,6 @@ function recordedPrice(productId) {
   reset();
   r = await recordPrices([obs('7002', 39900), obs('7002', 75000)], { label: 't5g' });
   check(currentPrice('7002') === 39900, '순서 무관하게 39,900', String(currentPrice('7002')));
-
-  section('Test 5-h. vendor_item_id 가 다르면 price_history 에 별도 행으로 남는다');
-  // 예전에는 배치 접기 키가 (pid, mall) 이라서 옵션이 다른 관측이 하나로 접혀
-  // 사라졌다. 실측에서 같은 (pid, mall, date) 에 vid 가 두 종 이상 남은 사례가
-  // 0건이었다 — 새 UNIQUE 를 도입한 취지가 실현되지 않았다는 뜻이었다.
-  reset();
-  r = await recordPrices([
-    obs('7100', 10000, { vendorItemId: 'V1', title: '옵션 A' }),
-    obs('7100', 20000, { vendorItemId: 'V2', title: '옵션 B' })
-  ], { label: 't5h' });
-  const ph7100 = db.upserts.price_history.filter(x => x.product_id === '7100');
-  check(ph7100.length === 2, 'price_history 에 두 옵션 모두 저장', String(ph7100.length));
-  const vids = ph7100.map(x => x.vendor_item_id).sort();
-  check(vids[0] === 'V1' && vids[1] === 'V2', '두 vendor_item_id 가 모두 남음', vids.join(','));
-  check(db.upserts.products.length === 1,
-        'products 는 (pid, mall) 로 한 행 (최저가 우선)', String(db.upserts.products.length));
-  check(currentPrice('7100') === 10000,
-        'products 현재가는 두 옵션 중 최저 10,000', String(currentPrice('7100')));
-
-  section('Test 5-i. 같은 vendor_item_id 안에서 여러 번 관측되면 최저가만 남는다');
-  reset();
-  r = await recordPrices([
-    obs('7101', 50000, { vendorItemId: 'V1' }),
-    obs('7101', 30000, { vendorItemId: 'V1' }),
-    obs('7101', 40000, { vendorItemId: 'V1' })
-  ], { label: 't5i' });
-  const ph7101 = db.upserts.price_history.filter(x => x.product_id === '7101');
-  check(ph7101.length === 1, '같은 vid 는 한 행으로 접힘', String(ph7101.length));
-  check(ph7101[0].price === 30000, '최저가 30,000', String(ph7101[0].price));
 
   section('Test 5-e. product_id 없는 항목은 상품명을 키로 저장하지 않는다');
   reset();
@@ -462,24 +411,6 @@ function recordedPrice(productId) {
         '오름차순 정렬 (마지막이 최신)', pts.map(p => p.date).join(','));
   check(pts[pts.length - 1].price === 30000, '가장 최근 가격 = 30,000', String(pts[pts.length - 1].price));
   check(pts[1].price === 39000, '같은 날 여러 행은 최저가 한 점');
-
-  section('Test 7-a. recorded_date 는 KST 달력 기준으로 남는다');
-  // UTC 로 남기던 시절, KST 01:xx 크론이 오늘 수집한 행이 UTC 로는 어제 자정 이후라
-  // 통째로 어제 날짜로 저장돼서 price_job_state.job_date 와 하루 어긋나 있었다.
-  // 이제 recordPrices({ now }) 가 KST 를 쓰는지 특정 시각으로 못박아 검증한다.
-  reset();
-  // UTC 2026-08-13T15:00Z == KST 2026-08-14T00:00
-  await recordPrices([obs('7200', 30000, { vendorItemId: 'VX' })],
-    { label: 't7a', now: new Date('2026-08-13T15:00:00Z') });
-  const ph7200 = db.upserts.price_history.find(x => x.product_id === '7200');
-  check(!!ph7200, '기록됨');
-  check(ph7200 && ph7200.recorded_date === '2026-08-14',
-        'recorded_date = KST 2026-08-14 (UTC 15:00Z 이지만)',
-        ph7200 && ph7200.recorded_date);
-  // recorded_at 은 UTC 인스턴트 그대로여야 한다 (달력 하루만 KST, 시각은 UTC)
-  check(ph7200 && ph7200.recorded_at === '2026-08-13T15:00:00.000Z',
-        'recorded_at 은 UTC 그대로 유지',
-        ph7200 && ph7200.recorded_at);
 
   section('Test 7-b. 저장 직후 price_history 의 최신 값이 products 현재가와 일치');
   reset();
@@ -546,15 +477,14 @@ function recordedPrice(productId) {
   db.price_history.push(
     { product_id: '8001', mall: '쿠팡', title: '무선 이어폰', price: 990000, recorded_date: daysAgo(1), recorded_at: isoDaysAgo(1) }
   );
-  // history-batch.js는 history.js로 흡수됐다 — vercel.json의 rewrite가 붙이는
-  // __route=batch 쿼리로 같은 핸들러를 부른다 (실제 배포 경로와 동일하게 테스트).
+  const batch = require('../api/history-batch.js');
   const bres = {
     code: 200, payload: null, setHeader() {}, status(c) { this.code = c; return this; },
     json(b) { this.payload = b; return this; }, end() { return this; }
   };
-  await history({
+  await batch({
     method: 'GET', headers: {},
-    query: { __route: 'batch', titles: JSON.stringify(['무선 이어폰']), keys: JSON.stringify([]) },
+    query: { titles: JSON.stringify(['무선 이어폰']), keys: JSON.stringify([]) },
     socket: { remoteAddress: '9.9.8.7' }
   }, bres);
   check(bres.code === 200, 'HTTP 200', String(bres.code));
@@ -576,14 +506,77 @@ function recordedPrice(productId) {
   check(vendorIdOf({ link: 'https://example.com/x' }) === '', '쿠팡 링크가 아니면 빈 문자열');
   check(vendorIdOf(null) === '', 'null 안전');
 
-  section('품질. 링크 폴백 덕분에 옵션 교체 감지가 기존 행에도 즉시 적용된다');
+  section('품질. 다른 vendorItemId 는 별도 상품으로 기록된다');
   reset();
   seedHistory('7100', '쿠팡', 100000, 1);
-  // 마이그레이션 직후처럼 컬럼은 비어 있고 link 에만 식별자가 있는 기존 행
   db.products.push({ product_id: '7100', mall: '쿠팡', vendor_item_id: '', link: COUPANG_LINK });
   r = await recordPrices([obs('7100', 40000, { vendorItemId: 'DIFFERENT' })], { label: 'p1a' });
-  check(r.suspect === 1, '컬럼이 비어 있어도 옵션 교체(2.5배)를 잡아낸다', JSON.stringify(r));
-  check(currentPrice('7100') === null, '현재가를 덮어쓰지 않음');
+  check(r.suspect === 0, '다른 vendorItemId = 첫 관측 → 통과 (별도 상품)', JSON.stringify(r));
+  check(currentPrice('7100') === 40000, '새 옵션이 별도 products 행으로 저장됨');
+
+  section('vid 식별. 같은 vendorItemId 관측은 하나의 history 체인이 된다');
+  reset();
+  // 어제·오늘 같은 옵션 vid='V1' 로 관측이 이어진다 (일반적인 상황).
+  seedHistory('7110', '쿠팡', 30000, 1);
+  db.price_history[db.price_history.length - 1].vendor_item_id = 'V1';
+  r = await recordPrices([obs('7110', 29000, { vendorItemId: 'V1' })], { label: 'vid-chain' });
+  check(r.suspect === 0, '같은 옵션의 소폭 하락은 정상', JSON.stringify(r));
+  const chain = db.price_history.filter(x => x.product_id === '7110' && x.vendor_item_id === 'V1');
+  check(chain.length === 2, '같은 vid 로 이어진 history 2행', String(chain.length));
+
+  section('vid 식별. 옵션이 바뀌면 새 vid 는 별도 이력으로 시작 (기존 vid 는 그대로)');
+  reset();
+  // 옵션 A(vid=V1) 에 5일치 history 가 있는 상태에서, 오늘 응답이 옵션 B(vid=V2) 로 온다.
+  for (let d = 5; d >= 1; d--) {
+    db.price_history.push({
+      product_id: '7120', mall: '쿠팡', vendor_item_id: 'V1', title: 't',
+      price: 30000, recorded_date: daysAgo(d), recorded_at: isoDaysAgo(d)
+    });
+  }
+  db.products.push({ product_id: '7120', mall: '쿠팡', vendor_item_id: 'V1', link: COUPANG_LINK });
+
+  r = await recordPrices([obs('7120', 15000, { vendorItemId: 'V2' })], { label: 'vid-switch' });
+  // 옵션 B 는 이 상품에게 처음 관측된 옵션이라 prev 가 없어 suspect 되지 않는다.
+  check(r.suspect === 0, '다른 vid = 첫 관측 → 하락률 판단 대상 아님', JSON.stringify(r));
+  // 새 옵션 (vid=V2) 의 history 는 오늘 한 행 뿐. 옛 vid=V1 의 5행은 그대로.
+  const v1Rows = db.price_history.filter(x => x.product_id === '7120' && x.vendor_item_id === 'V1');
+  const v2Rows = db.price_history.filter(x => x.product_id === '7120' && x.vendor_item_id === 'V2');
+  check(v1Rows.length === 5, '옛 옵션(V1) history 5행 그대로 보존', String(v1Rows.length));
+  check(v2Rows.length === 1, '새 옵션(V2) 은 오늘부터 시작 (기존 V1 이력과 합쳐지지 않음)', String(v2Rows.length));
+  check(v2Rows[0].price === 15000, '새 옵션의 오늘가는 15,000');
+
+  section('vid 식별. 하락률은 같은 vid 안에서만 계산된다 (옵션이 바뀌면 하락률 아님)');
+  reset();
+  // vid=V1 의 어제 관측 500,000
+  db.price_history.push({
+    product_id: '7130', mall: '쿠팡', vendor_item_id: 'V1', title: 't',
+    price: 500000, recorded_date: daysAgo(1), recorded_at: isoDaysAgo(1)
+  });
+  // 오늘 vid=V2 로 15,000 이 들어옴 (옵션 교체이지 하락이 아님)
+  r = await recordPrices([obs('7130', 15000, { vendorItemId: 'V2' })], { label: 'drop-guard' });
+  check(r.suspect === 0, 'V1 의 500,000 과 V2 의 15,000 을 비교해서 33배 하락으로 보류하지 않음', JSON.stringify(r));
+  check(currentPrice('7130') === 15000, '옵션 교체 결과가 현재가로 반영됨');
+
+  section('vid 식별. 한 배치에 같은 pid+다른 vid 가 여러 개여도 products 저장이 실패하지 않는다');
+  reset();
+  // collect-all-prices.js 가 서로 다른 검색어로 같은 productId 를 각각 다른 옵션으로
+  // 받아 한 배치에 넣는 경우. (pid,mall) UNIQUE 를 어기지 않아야 한다.
+  r = await recordPrices([
+    obs('7140', 80000, { vendorItemId: 'A' }),
+    obs('7140', 30000, { vendorItemId: 'B' }),   // 이 옵션이 최저가
+    obs('7140', 55000, { vendorItemId: 'C' })
+  ], { label: 'multi-vid-batch' });
+  check(r.errors.length === 0, 'products upsert 오류 없음', JSON.stringify(r.errors));
+  // history 는 vid 별로 3행 다 남는다
+  const histAll = db.upserts.price_history.filter(x => x.product_id === '7140');
+  check(histAll.length === 3, 'price_history 는 옵션 3개 다 기록 (옵션별 독립 이력)', String(histAll.length));
+  const vids = new Set(histAll.map(x => x.vendor_item_id));
+  check(vids.size === 3 && ['A','B','C'].every(v => vids.has(v)),
+        '3개 vid 가 모두 저장됨', [...vids].sort().join(','));
+  // products 는 (pid,mall) 당 1행 — 최저가 옵션이 현재가로 남는다
+  const catAll = db.upserts.products.filter(x => x.product_id === '7140');
+  check(catAll.length === 1, 'products 는 최저가 옵션 한 행으로 접힘', String(catAll.length));
+  check(currentPrice('7140') === 30000, '가장 싼 옵션(B, 30,000)이 현재가');
 
   section('품질. 저장 시 link 에서 item_id / vendor_item_id 를 채운다');
   reset();
@@ -674,7 +667,7 @@ function recordedPrice(productId) {
   /* ================================================================ *
    *  P2 가격 신뢰도
    * ================================================================ */
-  const { evaluateTrust, attachTrust, loadRecentHistory, LEVEL } = require('../api/_trust.js');
+  const { evaluateTrust, attachTrust, LEVEL } = require('../api/_trust.js');
   const obsPts = (...specs) => specs.map(([price, dayOffset]) => ({ price, recorded_date: daysAgo(dayOffset) }));
   const reasonCodes = t => t.reasons.map(r => r.code);
 
@@ -748,10 +741,9 @@ function recordedPrice(productId) {
   section('신뢰도. attachTrust — 상품 단위로만 이력을 붙인다');
   reset();
   db.price_history.push(
-    { id: 1, product_id: 'T1', mall: '쿠팡', price: 1000, recorded_date: daysAgo(1) },
-    { id: 2, product_id: 'T1', mall: '쿠팡', price: 1000, recorded_date: daysAgo(2) },
-    // 같은 product_id 의 다른 몰 — 섞이면 안 된다
-    { id: 3, product_id: 'T1', mall: '네이버', price: 9, recorded_date: daysAgo(1) }
+    { id: 1, product_id: 'T1', mall: '쿠팡', vendor_item_id: '95693783961', price: 1000, recorded_date: daysAgo(1) },
+    { id: 2, product_id: 'T1', mall: '쿠팡', vendor_item_id: '95693783961', price: 1000, recorded_date: daysAgo(2) },
+    { id: 3, product_id: 'T1', mall: '네이버', vendor_item_id: '', price: 9, recorded_date: daysAgo(1) }
   );
   const enriched = await attachTrust([
     { productId: 'T1', mall: '쿠팡', collectedAt: isoDaysAgo(0), link: COUPANG_LINK },
@@ -767,8 +759,8 @@ function recordedPrice(productId) {
   // price_drop_top 뷰 기반 시세판 행에는 collected_at 이 없다.
   reset();
   db.price_history.push(
-    { id: 1, product_id: 'T3', mall: '쿠팡', price: 1000, recorded_date: daysAgo(1) },
-    { id: 2, product_id: 'T3', mall: '쿠팡', price: 1000, recorded_date: daysAgo(2) }
+    { id: 1, product_id: 'T3', mall: '쿠팡', vendor_item_id: '95693783961', price: 1000, recorded_date: daysAgo(1) },
+    { id: 2, product_id: 'T3', mall: '쿠팡', vendor_item_id: '95693783961', price: 1000, recorded_date: daysAgo(2) }
   );
   const dropLike = await attachTrust([{ productId: 'T3', mall: '쿠팡', link: COUPANG_LINK }]);
   check(dropLike[0].trust.level !== LEVEL.UNKNOWN && dropLike[0].trust.score > 0,
@@ -783,30 +775,6 @@ function recordedPrice(productId) {
   const survived = await attachTrust([{ productId: 'T9', mall: '쿠팡', collectedAt: isoDaysAgo(0), link: COUPANG_LINK }]);
   fakeSupabase.from = savedFrom;
   check(!!survived[0].trust, '이력 없이라도 신뢰도를 계산해 붙인다', survived[0].trust && survived[0].trust.level);
-
-  section('신뢰도. loadRecentHistory 는 vid 를 모르는 호출부를 위해 상품 단위 키도 채운다');
-  /*
-   * 회귀 방지 — api/init.js 의 시세판은 price_drop_top 행에 vendor_item_id 가
-   * 없어서 `pid|mall` 2단 키로 조회한다. loadRecentHistory 가 `pid|mall|vid`
-   * 3단 키만 채우면 그 조회가 항상 undefined 가 되고, recentlyObserved 가
-   * 전부 false 를 돌려줘 홈 시세판이 통째로 빈다. 실제로 그 상태였다.
-   */
-  reset();
-  db.price_history.push(
-    // 옵션 식별자가 없는 과거 기록 (운영 12,280행 중 6,331행이 이 형태다)
-    { id: 1, product_id: 'D1', mall: '쿠팡', vendor_item_id: '',    price: 1000, recorded_date: daysAgo(1) },
-    // 옵션 식별자가 채워진 새 기록
-    { id: 2, product_id: 'D2', mall: '쿠팡', vendor_item_id: 'V9', price: 2000, recorded_date: daysAgo(1) }
-  );
-  const dropHist = await loadRecentHistory([
-    { productId: 'D1', mall: '쿠팡' },   // init.js 처럼 vendorItemId 를 넘기지 않는다
-    { productId: 'D2', mall: '쿠팡' }
-  ]);
-  check(!!dropHist.get('D1|쿠팡'), 'vid 없는 과거 기록도 상품 단위 키로 찾힌다');
-  check(!!dropHist.get('D2|쿠팡'), 'vid 있는 새 기록도 상품 단위 키로 찾힌다 (시세판이 비지 않는다)');
-  check(!!dropHist.get('D2|쿠팡|V9'), '옵션 단위 키도 그대로 유지된다');
-  check(recentlyObserved(dropHist.get('D2|쿠팡'), TODAY) === true,
-        'init.js 의 recentlyObserved 판정이 통과한다');
 
   /* ================================================================ *
    *  P1-c 데이터 품질 지표
@@ -1115,194 +1083,6 @@ function recordedPrice(productId) {
   // today 가 이상하면 통과시키지 않는다 (판단 근거가 없는데 최신이라고 하면 안 된다).
   check(recentlyObserved(histPts('2026-08-12'), '') === false, 'today 가 비면 제외');
   check(recentlyObserved(histPts('2026-08-12'), '2026/08/12') === false, 'today 형식이 다르면 제외');
-
-  /* ================================================================
-   *  오늘의 하락 — latestObservedDate === today 판정
-   *
-   *  기존 recentlyObserved 는 7일 이내면 통과시켰다. 그래서 8/17 하락이
-   *  8/21에도 "오늘의 하락"으로 노출됐다.
-   *  init.js 의 새 로직은 latestObservedDate(points, today) === today 로
-   *  오늘 수집분만 보여준다.
-   * ================================================================ */
-  section('오늘의 하락. latestObservedDate === today — 오늘 수집분만 노출');
-
-  // 오늘 수집된 상품만 통과
-  check(latestObservedDate(histPts(DROP_TODAY), DROP_TODAY) === DROP_TODAY,
-        '오늘 기록이 있으면 통과');
-
-  // 어제 수집 → 오늘 아님 → 탈락
-  check(latestObservedDate(histPts('2026-08-11'), DROP_TODAY) !== DROP_TODAY,
-        '어제 기록만 있으면 탈락 (기존 recentlyObserved 는 통과시켰던 케이스)');
-
-  // 7일 전 기록만 → 탈락 (기존에는 경계에서 통과)
-  check(latestObservedDate(histPts('2026-08-05'), DROP_TODAY) !== DROP_TODAY,
-        '7일 전 기록만 → 탈락 (기존 recentlyObserved 는 통과시켰던 케이스)');
-
-  // 유저 시나리오: 8/17 하락, 이후 수집 없음 → 8/21에 표시되면 안 됨
-  const DROP_AUG21 = '2026-08-21';
-  check(latestObservedDate(histPts('2026-08-17', '2026-08-16'), DROP_AUG21) !== DROP_AUG21,
-        '8/17 하락이 8/21에 표시되지 않는다 (유저 시나리오)');
-
-  // 오늘 수집 + 과거 기록 → 오늘이 최신이므로 통과
-  check(latestObservedDate(histPts('2026-08-05', DROP_TODAY, '2026-07-30'), DROP_TODAY) === DROP_TODAY,
-        '과거 기록이 섞여 있어도 오늘 것이 있으면 통과');
-
-  // 미래 날짜만 → 빈 문자열 → 탈락
-  check(latestObservedDate(histPts('2026-09-01'), DROP_TODAY) !== DROP_TODAY,
-        '미래 날짜만 → 탈락');
-
-  // 빈/undefined → 탈락
-  check(latestObservedDate([], DROP_TODAY) !== DROP_TODAY, '빈 배열 → 탈락');
-  check(latestObservedDate(undefined, DROP_TODAY) !== DROP_TODAY, 'undefined → 탈락');
-
-  /* ================================================================
-   *  관측일 판정 — observedKstDate
-   *
-   *  recorded_date 는 배포본이 UTC 로 잘라 온 라벨이라 KST 달력과 하루
-   *  어긋난 행이 운영 DB 의 42.9% 다 (2026-08-22 실측). recorded_at 이
-   *  있으면 그쪽을 KST 로 환산해 쓴다.
-   * ================================================================ */
-  section('관측일. observedKstDate — recorded_at(KST) 이 recorded_date 보다 우선');
-
-  // 운영 실측: KST 08-22 02:10 수집분이 recorded_date=2026-08-21 로 저장돼 있다.
-  check(observedKstDate({ recorded_date: '2026-08-21', recorded_at: '2026-08-21T17:10:22.742+00:00' }) === '2026-08-22',
-        'UTC 라벨이 하루 이르면 recorded_at 의 KST 달력일로 바로잡는다');
-
-  check(observedKstDate({ recorded_date: '2026-08-22', recorded_at: '2026-08-22T01:00:00.000+00:00' }) === '2026-08-22',
-        'KST 로 저장된 라벨과도 답이 같다 (수집기 수정 후에도 그대로 맞는다)');
-
-  check(observedKstDate({ recorded_date: '2026-08-20' }) === '2026-08-20',
-        'recorded_at 이 없으면 recorded_date 로 폴백한다 (기존 동작)');
-
-  check(observedKstDate({ recorded_date: '2026-08-20', recorded_at: 'not-a-date' }) === '2026-08-20',
-        '깨진 recorded_at 은 무시하고 recorded_date 를 쓴다');
-
-  check(observedKstDate(null) === '', 'null 은 빈 문자열');
-
-  // latestObservedDate 도 같은 기준을 쓴다 (init.js 시세판이 이 판정에 의존한다).
-  check(latestObservedDate([{ price: 1, recorded_date: '2026-08-21', recorded_at: '2026-08-21T17:10:22.742+00:00' }],
-                          '2026-08-22') === '2026-08-22',
-        'latestObservedDate 가 UTC 라벨 행을 오늘로 인정한다 (시세판이 통째로 비던 원인)');
-
-  /* ================================================================
-   *  오늘의 하락 확정 — todayDropConfirmed
-   *
-   *  price_drop_top 은 (pid, mall, vid) 안에서 최신 두 기록을 날짜와
-   *  무관하게 비교한다. 그래서 두 가지가 새어 나왔다.
-   *    (1) prev_price 가 어제가 아니라 며칠 전 값
-   *    (2) current_price 가 오늘 값이 아니라 다른 옵션의 묵은 값
-   *  원장(price_history)으로 다시 확인해서 둘 다 막는다.
-   * ================================================================ */
-  section('오늘의 하락. todayDropConfirmed — 오늘 실제로 내려간 것만');
-
-  const TD = '2026-08-22';
-  // KST day 의 hhmm 을 UTC 인스턴트로 환산해 recorded_at 을 만든다 (KST = UTC+9).
-  const pt = (price, day, hhmm) => ({
-    price,
-    recorded_date: day,
-    recorded_at: new Date(Date.parse(day + 'T' + hhmm + ':00Z') - 9 * 3600 * 1000).toISOString()
-  });
-
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:10'), pt(12900, '2026-08-21', '02:10')], TD) === true,
-        '오늘 9,900 / 어제 12,900 → 하락 확정');
-
-  // 운영 실측 위양성: pid=8085515094 — 옵션 식별자만 바뀌고 값은 그대로였다.
-  check(todayDropConfirmed({ current_price: 59800, prev_price: 64800 }, [pt(59800, TD, '02:00'), pt(59800, '2026-08-21', '02:00')], TD) === false,
-        '직전 관측과 값이 같으면 하락이 아니다 (뷰는 -7.7% 라고 했던 실제 사례)');
-
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, '2026-08-21', '02:00'), pt(12900, '2026-08-20', '02:00')], TD) === false,
-        '오늘 수집분이 없으면 탈락 (며칠 전 하락이 계속 뜨던 원인)');
-
-  check(todayDropConfirmed({ current_price: 50000, prev_price: 70000 }, [pt(60000, TD, '02:00'), pt(70000, '2026-08-21', '02:00')], TD) === false,
-        '뷰 현재가가 오늘 관측가와 다르면 탈락 (묵은 옵션 값을 현재가로 찍지 않는다)');
-
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:00')], TD) === false,
-        '비교할 직전 관측이 없으면 탈락');
-
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 8000 }, [pt(9900, TD, '02:00'), pt(8000, '2026-08-21', '02:00')], TD) === false,
-        '직전보다 올랐으면 탈락');
-
-  check(todayDropConfirmed({ current_price: 9500, prev_price: 12900 }, [pt(9900, TD, '02:00'), pt(9500, TD, '06:00'), pt(12900, '2026-08-21', '02:00')], TD) === true,
-        '같은 날 여러 기록이면 늦게 관측된 값을 오늘 가격으로 본다');
-
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:00'), pt(5000, '2026-08-23', '02:00'), pt(12900, '2026-08-21', '02:00')], TD) === true,
-        '미래 날짜 기록은 근거로 쓰지 않는다');
-
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [], TD) === false, '기록이 없으면 탈락');
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, undefined, TD) === false, 'undefined 면 탈락');
-  check(todayDropConfirmed({ current_price: 0, prev_price: 100 }, [pt(0, TD, '02:00')], TD) === false, '현재가가 0 이면 탈락');
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:00')], '') === false, 'today 가 비면 탈락');
-
-  /*
-   * 조건 D — 화면에 찍을 이전 기록가가 원장의 직전 관측과 같아야 한다.
-   *
-   * 뷰의 prev_price 는 같은 vid 의 직전 관측이라 날짜를 보지 않는다. 옵션이
-   * 바뀌면 며칠~몇 주 전 값이 이전 기록가 자리에 온다.
-   */
-  // 운영 실측: pid=9500290355 샤오미 패드 — 뷰 prev 219,800 은 같은 vid 의 7/31 값,
-  // 원장의 직전 관측(8/21)은 229,800 이었다. 카드는 -0.4%, 실제는 -4.7%.
-  check(todayDropConfirmed({ current_price: 219000, prev_price: 219800 },
-                           [pt(219000, TD, '02:00'), pt(229800, '2026-08-21', '02:00')], TD) === false,
-        '뷰 prev_price 가 원장의 직전 관측과 다르면 탈락 (샤오미 패드 실제 사례)');
-
-  // 운영 실측: pid=7014943794 크리넥스 — 뷰 prev 4,470 은 8/20 값, 직전 관측(8/21)은 5,580.
-  check(todayDropConfirmed({ current_price: 4460, prev_price: 4470 },
-                           [pt(4460, TD, '02:00'), pt(5580, '2026-08-21', '02:00'), pt(4470, '2026-08-20', '02:00')], TD) === false,
-        '직전 관측을 건너뛴 더 오래된 값이 prev_price 면 탈락 (크리넥스 실제 사례)');
-
-  // 같은 상황에서 뷰가 실제 직전 관측을 가리키면 통과한다 (근거가 맞으면 막지 않는다).
-  check(todayDropConfirmed({ current_price: 4460, prev_price: 5580 },
-                           [pt(4460, TD, '02:00'), pt(5580, '2026-08-21', '02:00'), pt(4470, '2026-08-20', '02:00')], TD) === true,
-        'prev_price 가 원장의 직전 관측과 일치하면 통과');
-
-  // 옵션이 바뀌었어도 값 근거만 맞으면 통과한다 (vid 변경 자체를 벌하지 않는다).
-  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 },
-                           [pt(9900, TD, '02:00'), pt(12900, '2026-08-21', '02:00')], TD) === true,
-        '옵션 교체 여부와 무관하게 근거가 맞으면 통과');
-
-  check(todayDropConfirmed({ current_price: 9900 }, [pt(9900, TD, '02:00'), pt(12900, '2026-08-21', '02:00')], TD) === false,
-        'prev_price 가 아예 없는 행은 탈락 (근거 없이 이전 기록가를 찍지 않는다)');
-
-  /* ================================================================
-   *  수집 리포트 HTML — buildReportHtml
-   * ================================================================ */
-  section('수집 리포트. buildReportHtml — 필수 항목 포함');
-
-  const { buildReportHtml } = require('./collect-all-prices');
-  const sampleReport = {
-    date: '2026-08-21',
-    productsTotal: 800,
-    coupangTotal: 770,
-    collectibleTotal: 750,
-    notCoupangTotal: 30,
-    attempted: 700,
-    recorded: 680,
-    saved: 660,
-    rejected: 5,
-    suspect: 10,
-    failedCount: 20,
-    failedKeywordsCount: 3,
-    uncollectedCount: 50,
-    successRate: 90.7,
-    productSuccessRate: 88.0,
-    coveredProducts: 660,
-    failCats: { blocked: 2, noMatch: 15, network: 3 }
-  };
-
-  const html = buildReportHtml(sampleReport);
-  check(typeof html === 'string' && html.length > 100, 'HTML 문자열을 반환한다');
-  check(html.includes('2026-08-21'), '기준 날짜(KST)가 포함된다');
-  check(html.includes('90.7%'), '수집 성공률이 포함된다');
-  check(html.includes('800'), 'products 전체 수가 포함된다');
-  check(html.includes('680'), 'price_history 신규 저장 수가 포함된다');
-  check(html.includes('blocked'), '실패 원인별 카테고리가 포함된다');
-  check(html.includes('noMatch'), 'noMatch 카테고리가 포함된다');
-  check(html.includes('SEOSA'), 'SEOSA 브랜딩이 포함된다');
-
-  // 실패 카테고리가 전부 0이면 '없음' 표시
-  const emptyReport = { ...sampleReport, failCats: {} };
-  const emptyHtml = buildReportHtml(emptyReport);
-  check(emptyHtml.includes('없음'), '실패 카테고리가 없으면 "없음" 표시');
 
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
   process.exit(fail ? 1 : 0);

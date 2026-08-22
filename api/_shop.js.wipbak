@@ -5,9 +5,12 @@ const supabase = require('./_supabase');
 const { searchCoupang } = require('./_coupang');
 const {
   parsePrice, classifyPrice,
-  vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS,
-  kstToday
+  vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS
 } = require('./_price');
+// 검색어 정규화·관련도 점수는 api/_search.js 한 곳에만 있다.
+// 저장 단계(fetchCoupang)와 노출 단계(relevantRows)가 같은 기준을 써야
+// "저장은 됐는데 화면에는 안 나오는" 상품이 안 생긴다.
+const { rankItems, analyzeQuery, isRelevant } = require('./_search');
 
 const TODAY_PICKS = ['수영복', '물놀이 용품', '아이스크림', '방수팩', '차량용 햇빛 가리개', '여행용 캐리어', '서큘레이터', '쿨토시'];
 
@@ -34,11 +37,16 @@ function keywordTokens(keyword) {
 }
 
 /**
- * 상품명이 검색어와 관련 있어 보이는가.
+ * 상품명이 검색어와 관련 있어 보이는가. (옛 서명 — 토큰 배열을 받는다)
  *
- * 한국어 상품명은 띄어쓰기가 제각각이라("무선 이어폰" vs "무선이어폰")
- * 공백을 지우고 부분 문자열로 본다. 토큰 하나만 걸려도 통과시킨다 —
- * "무선 이어폰" 검색에 "이어폰 케이스"가 나오는 건 정상이기 때문이다.
+ * ★ 새 코드는 api/_search.js 의 isRelevant(keyword, title) 를 쓸 것.
+ *   이 함수는 "토큰 하나만 걸려도 통과" 라서 실측 466건 중 104건이
+ *   엉뚱한 상품이었고("아이패드 11프로 케이스" → "레노버 탭 P11 프로"),
+ *   반대로 표기가 다른 정답 104건을 통째로 버렸다("전기포트" → "전기주전자").
+ *   판단 기준은 _search.scoreTitle 로 옮겼다.
+ *
+ *   남겨 둔 이유는 하나뿐이다: keywordTokens() 와 짝을 이루는 옛 호출부가
+ *   아직 있고, 그쪽 동작을 조용히 바꾸면 안 되기 때문이다.
  */
 function matchesKeyword(tokens, title) {
   if (!tokens.length) return true;   // 판단 근거가 없으면 통과
@@ -47,24 +55,28 @@ function matchesKeyword(tokens, title) {
 }
 
 /**
- * 검색어와 관련 있는 항목만 남긴다.
+ * 검색어와 관련 있는 항목만 남기고, 관련도 순서를 매기고, 중복을 없앤다.
  *
- * 규칙은 하나다: 하나라도 맞는 게 있으면 맞는 것만 남기고, 하나도 없으면 전부 버린다.
+ * 판단은 통과/탈락 이분법이 아니라 0~1 점수다(_search.scoreTitle).
+ *   - 기준선 미만만 버린다 → "수영복" 검색에 펩시·화장지가 섞이지 않는다
+ *   - 표기 차이는 부분 점수로 살린다 → "전기포트" 로 "전기주전자" 를 찾는다
+ *   - 남은 것에는 relevance(0~1) 가 붙는다 → 호출부가 그 순서로 세운다
  *
- *   - 일부만 맞는 경우 → 안 맞는 건 버린다. 정확도를 재현율보다 우선한다.
- *     최저가 비교 서비스에서 "수영복"에 연어가 섞이는 쪽이 몇 건 덜 보이는 것보다 나쁘다.
- *   - 하나도 안 맞는 경우 → 응답 자체가 이상한 것이다. 저장하지도, 보여주지도 않는다.
+ * 전부 기준선 아래면 응답 자체가 이상한 것이다. 저장하지도, 보여주지도 않는다.
  *
- * @returns {{kept: Array, dropped: number, allMismatch: boolean}}
+ * @returns {{kept: Array, dropped: number, deduped: number, allMismatch: boolean}}
  */
 function relevantItems(keyword, items) {
   const list = items || [];
-  const tokens = keywordTokens(keyword);
-  if (!tokens.length || !list.length) return { kept: list, dropped: 0, allMismatch: false };
+  if (!list.length) return { kept: list, dropped: 0, deduped: 0, allMismatch: false };
 
-  const kept = list.filter(it => matchesKeyword(tokens, it && it.title));
-  if (!kept.length) return { kept: [], dropped: list.length, allMismatch: true };
-  return { kept, dropped: list.length - kept.length, allMismatch: false };
+  const r = rankItems(keyword, list);
+  return {
+    kept: r.items,
+    dropped: r.dropped,
+    deduped: r.removed,
+    allMismatch: r.allBelow
+  };
 }
 
 /*
@@ -114,7 +126,7 @@ function searchPhraseFromTitle(title, maxTokens = 3) {
  */
 async function fetchCoupang(keyword, limit = 6, opts = {}) {
   const r = await searchCoupang(keyword, { limit, ...opts });
-  const items = r.items.map(it => ({
+  const mapItem = it => ({
     title: it.title,
     lprice: it.lprice,
     link: it.link,
@@ -124,30 +136,34 @@ async function fetchCoupang(keyword, limit = 6, opts = {}) {
     isCoupang: true,
     oprice: it.oprice,
     savePct: discountPct(it.lprice, it.oprice),
-    // 판매 단위 식별자. 저장 단계에서 옵션 교체를 가격 변동과 구분하는 데 쓴다.
     itemId: it.itemId || '',
-    vendorItemId: it.vendorItemId || ''
-  }));
-  // 검색어와 무관한 상품은 여기서 끊는다. 통과시키면 그대로 products 에 저장되고
-  // 홈 섹션에까지 올라간다 (로그에는 성공으로만 남는다).
+    vendorItemId: it.vendorItemId || '',
+    isRocket: typeof it.isRocket === 'boolean' ? it.isRocket : null,
+    isFreeShipping: typeof it.isFreeShipping === 'boolean' ? it.isFreeShipping : null
+  });
+  const items = r.items.map(mapItem);
+  const allItems = (r.allItems || r.items).map(mapItem);
   const rel = relevantItems(keyword, items);
   if (rel.allMismatch) {
     console.warn(
       `[search:${keyword}] 검색어와 일치하는 상품 0/${items.length}건 — 응답을 버립니다`
       + ` (예: ${String(items[0].title).slice(0, 40)})`
     );
-  } else if (rel.dropped) {
-    console.log(`[search:${keyword}] 무관한 상품 ${rel.dropped}건 제외 (${rel.kept.length}건 유지)`);
+  } else if (rel.dropped || rel.deduped) {
+    console.log(`[search:${keyword}] 무관 ${rel.dropped}건 제외 / 중복 ${rel.deduped}건 통합`
+      + ` (${rel.kept.length}건 유지)`);
   }
 
-  // 캐시로 상품을 채웠으면 오류로 취급하지 않는다 (사용자에겐 정상 결과다).
+  const keptPids = new Set(rel.kept.map(it => it.productId));
+  const keptAll = allItems.filter(it => keptPids.has(it.productId));
+
   const error = items.length && r.from !== 'api' ? null : r.error;
   return {
     items: rel.kept,
+    allItems: rel.allMismatch ? [] : keptAll,
     error,
     from: r.from,
     blocked: !!r.blocked,
-    // 상품은 받았는데 전부 검색어와 무관했다 — "결과 없음"과 구분해서 알려야 한다.
     mismatch: rel.allMismatch
   };
 }
@@ -162,12 +178,13 @@ async function fetchCoupang(keyword, limit = 6, opts = {}) {
  */
 async function searchAll(keyword, { coupangLimit = 6, coupangOpts = {} } = {}) {
   const coupang = await fetchCoupang(keyword, coupangLimit, coupangOpts)
-    .catch(e => ({ items: [], error: `쿠팡 예외: ${e.message}`, from: 'none', blocked: false }));
+    .catch(e => ({ items: [], allItems: [], error: `쿠팡 예외: ${e.message}`, from: 'none', blocked: false }));
 
   if (coupang.error) console.error(`[search:${keyword}]`, coupang.error);
 
   return {
     items: coupang.items,
+    allItems: coupang.allItems || coupang.items,
     errors: coupang.error ? [coupang.error] : [],
     from: coupang.from || 'none',
     blocked: !!coupang.blocked,
@@ -237,22 +254,36 @@ async function loadPrevObservations(keys, today) {
   const pids = [...new Set(keys.map(k => k.productId))].filter(Boolean);
   const prev = new Map();
 
+  const selectCols = itemIdColumns
+    ? 'product_id, mall, vendor_item_id, price, recorded_date, recorded_at'
+    : 'product_id, mall, price, recorded_date, recorded_at';
+
   for (let i = 0; i < pids.length; i += PREV_CHUNK) {
     const chunk = pids.slice(i, i + PREV_CHUNK);
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('price_history')
-      .select('product_id, mall, price, recorded_date, recorded_at')
+      .select(selectCols)
       .in('product_id', chunk)
       .lt('recorded_date', today)
       .order('recorded_date', { ascending: false })
       .limit(PREV_LOOKUP_ROWS);
+
+    if (error && itemIdColumns && missingColumn(error.message)) {
+      ({ data, error } = await supabase
+        .from('price_history')
+        .select('product_id, mall, price, recorded_date, recorded_at')
+        .in('product_id', chunk)
+        .lt('recorded_date', today)
+        .order('recorded_date', { ascending: false })
+        .limit(PREV_LOOKUP_ROWS));
+    }
     if (error) {
-      // 직전 값을 못 읽으면 검증 없이 저장한다. 저장 자체를 막는 것보다는 낫다.
       console.warn(`[save] 직전 관측 조회 실패(검증 생략): ${error.message}`);
       return prev;
     }
     (data || []).forEach(r => {
-      const k = `${r.product_id}|${r.mall}`;
+      const vid = r.vendor_item_id || '';
+      const k = `${r.product_id}|${r.mall}|${vid}`;
       const cur = prev.get(k);
       if (!cur || String(r.recorded_date) > String(cur.recordedDate)) {
         prev.set(k, {
@@ -304,21 +335,35 @@ async function loadStoredVendorIds(keys) {
   return out;
 }
 
-/** item_id/vendor_item_id 를 붙여 upsert 하고, 컬럼이 없으면 빼고 다시 시도한다. */
 async function upsertProducts(rows) {
-  if (itemIdColumns) {
-    const { error } = await supabase.from('products').upsert(rows, { onConflict: 'product_id,mall' });
-    if (!error) return null;
-    if (!missingColumn(error.message)) return error.message;
-    itemIdColumns = false;
-    console.warn('[save] products.item_id / vendor_item_id 컬럼 없음 — 해당 값 없이 저장합니다.');
-  }
+  /*
+   * onConflict 는 반드시 (product_id, mall) 이다.
+   *
+   * products 는 "쿠팡 상품 페이지 1개당 1행" 으로 설계돼 있다. vendor_item_id 는
+   * 그 페이지에서 이번에 골라온 옵션의 식별자일 뿐이라 시간에 따라 바뀐다
+   * (supabase/2026-08-products-unique-restore.sql 주석 참고).
+   *
+   * 여기에 (product_id, mall, vendor_item_id) 을 넣으면 옵션이 바뀔 때마다
+   * (pid,mall) UNIQUE 제약을 어긴다. INSERT 가 나가고 → 23505 로 배치가
+   * 통째로 실패한다. 실측(2026-08-16): 실제로 실패한다.
+   *   [products_pid_mall_key] duplicate key value violates unique constraint
+   */
+  const primary = itemIdColumns ? rows : rows.map(r => {
+    const { item_id, vendor_item_id, ...rest } = r;   // eslint-disable-line no-unused-vars
+    return rest;
+  });
+  const { error } = await supabase.from('products').upsert(primary, { onConflict: 'product_id,mall' });
+  if (!error) return null;
+  if (!itemIdColumns || !missingColumn(error.message)) return error.message;
+
+  itemIdColumns = false;
+  console.warn('[save] products.item_id / vendor_item_id 컬럼 없음 — 해당 값 없이 저장합니다.');
   const slim = rows.map(r => {
     const { item_id, vendor_item_id, ...rest } = r;   // eslint-disable-line no-unused-vars
     return rest;
   });
-  const { error } = await supabase.from('products').upsert(slim, { onConflict: 'product_id,mall' });
-  return error ? error.message : null;
+  const { error: e2 } = await supabase.from('products').upsert(slim, { onConflict: 'product_id,mall' });
+  return e2 ? e2.message : null;
 }
 
 /**
@@ -340,16 +385,7 @@ async function recordPrices(observations, opts = {}) {
 
   const nowDate = opts.now instanceof Date ? opts.now : new Date();
   const now = nowDate.toISOString();
-  /*
-   * recorded_date 는 KST 기준으로 남긴다. now (=recorded_at) 는 UTC 인스턴트
-   * 그대로 두고, 달력 하루의 경계만 KST 로 잡는다.
-   *
-   * 왜: KST 01:xx 크론이 UTC 로는 어제 자정 이후라, UTC 를 쓰면 그날 수집분이
-   * 통째로 어제 날짜로 저장됐다. price_job_state.job_date 는 KST 였으므로
-   * 두 값이 서로 다른 달력을 가리켰다. 이제 저장·조회·job_state 가 모두
-   * 같은 KST 기준을 쓴다 (_price.kstToday 주석 참고).
-   */
-  const today = kstToday(nowDate);
+  const today = now.split('T')[0];
 
   // 같은 배치 안에서 키가 겹치면 upsert 가 통째로 실패한다. 먼저 접는다.
   const byKey = new Map();
@@ -366,32 +402,9 @@ async function recordPrices(observations, opts = {}) {
      */
     if (!it.productId || !it.title || !it.mall) continue;
 
-    /*
-     * 배치 안 중복 접기 — vendor_item_id 도 키에 포함한다.
-     *
-     * price_history 의 UNIQUE 가 (pid, mall, vid, recorded_date) 라서, 같은
-     * 상품 페이지의 옵션이 여러 개 오면 옵션별로 독립된 행이 남아야 한다.
-     * 여기서 (pid, mall) 로만 접으면 옵션 하나만 살아남아 DB 에 나가고
-     * 나머지는 관측 사실이 사라진다.
-     *
-     * 값이 비면 빈 문자열로 둔다 (DB 컬럼도 NOT NULL DEFAULT '' 이라 동일).
-     */
-    /*
-     * ★ 저장할 때와 똑같은 방법으로 vid 를 구해야 한다.
-     *   historyRows 는 vendorIdOf(it) 로 저장하는데(컬럼이 비면 link 에서 뽑는다),
-     *   여기서 it.vendorItemId 만 보면 "호출부가 필드를 안 채웠지만 link 에는
-     *   서로 다른 vid 가 들어 있는" 두 옵션이 같은 키로 접혀 한 건이 사라진다.
-     *   접기 키와 저장 키는 반드시 같은 함수로 구해야 한다.
-     */
-    const vid = vendorIdOf(it);
+    const vid = it.vendorItemId || '';
     const key = `${it.productId}|${it.mall}|${vid}`;
     const seen = byKey.get(key);
-    /*
-     * 겹치면 싼 쪽을 남긴다. "마지막에 온 것이 이긴다"가 아니다.
-     *
-     * 같은 vid 안에서 같은 상품이 두 번 들어오는 경우다. 순서에 기대지 않는다 —
-     * 예전에 이 규칙이 없어서 39,900원짜리 커튼이 75,000원으로 저장된 적이 있다.
-     */
     if (seen) {
       const a = parsePrice(seen.price);
       const b = parsePrice(it.price);
@@ -403,10 +416,7 @@ async function recordPrices(observations, opts = {}) {
   if (!uniq.length) return { saved: 0, recorded: 0, rejected: 0, suspect: 0, errors };
 
   const keys = uniq.map(it => ({ productId: it.productId, mall: it.mall }));
-  const [prevMap, vendorMap] = await Promise.all([
-    loadPrevObservations(keys, today),
-    updateCatalog ? loadStoredVendorIds(keys) : Promise.resolve(new Map())
-  ]);
+  const prevMap = await loadPrevObservations(keys, today);
 
   const historyRows = [];
   const catalogRows = [];
@@ -414,13 +424,14 @@ async function recordPrices(observations, opts = {}) {
   let suspect = 0;
 
   for (const it of uniq) {
-    const k = `${it.productId}|${it.mall}`;
+    const vid = it.vendorItemId || '';
+    const k = `${it.productId}|${it.mall}|${vid}`;
     const prevObs = prevMap.get(k);
     const prev = prevObs
-      ? { price: prevObs.price, observedAt: prevObs.observedAt, vendorItemId: vendorMap.get(k) || '' }
+      ? { price: prevObs.price, observedAt: prevObs.observedAt, vendorItemId: vid }
       : null;
 
-    const verdict = classifyPrice(it.price, prev, { vendorItemId: it.vendorItemId || '' });
+    const verdict = classifyPrice(it.price, prev, { vendorItemId: vid });
 
     if (verdict.status === 'invalid') {
       rejected++;
@@ -429,10 +440,6 @@ async function recordPrices(observations, opts = {}) {
       continue;
     }
 
-    // 관측 사실은 남긴다. 이 값이 남아 있어야 다음 관측에서 확인이 된다.
-    // vendor_item_id / item_id 는 catalogRows 와 같은 방식으로 link 폴백까지
-    // 거쳐 채운다. 없으면 옵션별 이력 체인이 시작되지 않아 price_drop_top 뷰가
-    // "vid 별 파티션" 을 만들지 못한다.
     historyRows.push({
       product_id: it.productId,
       mall: it.mall,
@@ -441,8 +448,8 @@ async function recordPrices(observations, opts = {}) {
       link: it.link || '',
       recorded_at: now,
       recorded_date: today,
-      item_id: itemIdOf(it),
-      vendor_item_id: vendorIdOf(it)
+      vendor_item_id: vendorIdOf(it),
+      item_id: itemIdOf(it)
     });
 
     if (verdict.status === 'suspect') {
@@ -485,45 +492,67 @@ async function recordPrices(observations, opts = {}) {
   }
 
   if (historyRows.length) {
+    let hErr;
+    if (itemIdColumns) {
+      const { error } = await supabase.from('price_history').upsert(
+        historyRows, { onConflict: 'product_id,mall,vendor_item_id,recorded_date' }
+      );
+      if (error && missingColumn(error.message)) {
+        const slim = historyRows.map(r => {
+          const { vendor_item_id, item_id, ...rest } = r;
+          return rest;
+        });
+        const { error: e2 } = await supabase.from('price_history').upsert(
+          slim, { onConflict: 'product_id,mall,recorded_date' }
+        );
+        hErr = e2;
+      } else {
+        hErr = error;
+      }
+    } else {
+      const slim = historyRows.map(r => {
+        const { vendor_item_id, item_id, ...rest } = r;
+        return rest;
+      });
+      const { error } = await supabase.from('price_history').upsert(
+        slim, { onConflict: 'product_id,mall,recorded_date' }
+      );
+      hErr = error;
+    }
+    if (hErr) errors.push(`price_history: ${hErr.message}`);
+  }
+
+  if (catalogRows.length) {
     /*
-     * onConflict 는 실제 활성 UNIQUE 와 반드시 일치해야 한다.
-     * 매칭되는 UNIQUE 가 없으면 Postgres 가 42P10 으로 거부하고, 그러면
-     * search / cron / GH Actions 수집기의 모든 가격 쓰기가 통째로 실패한다.
-     * (2026-08-14 에 정확히 이 상황이 났었다 — 그 사고 이후에
-     *  price_history_pid_mall_vid_date_key (pid, mall, vid, recorded_date)
-     *  를 도입해 지금 활성 상태이므로 그 키를 대상으로 삼는다)
+     * products 는 (pid, mall) 당 1행이다. 같은 배치에 같은 (pid,mall) 이 여러
+     * vid 로 들어오면 배치 안에서 최저가 하나만 남긴다. 그렇게 안 접으면
+     * 같은 배치의 두 번째 행이 (pid,mall) UNIQUE 를 어겨 배치 전체가 실패한다.
+     *
+     * 이런 상황이 생기는 경로:
+     *   - collect-all-prices.js 가 서로 다른 keyword 로 같은 productId 를
+     *     각기 다른 옵션으로 받아 한 청크에 넣는 경우
+     *   - 옵션 교체 직후 옛 vid 캐시와 새 vid 응답이 한 배치에 섞이는 경우
+     * price_history 는 vid 별 독립 추적이라 위쪽에서 이미 최저가로 접히지 않았다.
      */
-    const { error } = await supabase.from('price_history').upsert(
-      historyRows, { onConflict: 'product_id,mall,vendor_item_id,recorded_date' }
-    );
-    if (error) errors.push(`price_history: ${error.message}`);
-  }
-
-  /*
-   * products 는 (pid, mall) 로 한 행이다 (supabase/2026-08-products-unique-restore.sql).
-   * 배치 단계에서는 vid 별로 관측을 나눠 두었으므로 catalogRows 에 같은
-   * (pid, mall) 이 여러 번 있을 수 있다. 이 상태로 upsert 를 보내면
-   * "ON CONFLICT DO UPDATE command cannot affect row a second time" 로 배치가
-   * 통째로 실패한다. 여기서 최저가만 남기고 접는다 (앞서 price_history 처럼
-   * 순서에 의존하지 않는 접기).
-   */
-  const catalogByPidMall = new Map();
-  for (const row of catalogRows) {
-    const k = `${row.product_id}|${row.mall}`;
-    const cur = catalogByPidMall.get(k);
-    if (!cur || row.lprice < cur.lprice) catalogByPidMall.set(k, row);
-  }
-  const catalogUpsertRows = [...catalogByPidMall.values()];
-
-  if (catalogUpsertRows.length) {
-    const msg = await upsertProducts(catalogUpsertRows);
+    const byPidMall = new Map();
+    for (const row of catalogRows) {
+      const key = `${row.product_id}|${row.mall}`;
+      const cur = byPidMall.get(key);
+      if (!cur || row.lprice < cur.lprice) byPidMall.set(key, row);
+    }
+    const foldedRows = [...byPidMall.values()];
+    if (foldedRows.length !== catalogRows.length) {
+      console.log(`[save${label ? ':' + label : ''}] 같은 상품의 옵션 ${catalogRows.length - foldedRows.length}건을 최저가로 접음`
+        + ` (products ${catalogRows.length}→${foldedRows.length}행)`);
+    }
+    const msg = await upsertProducts(foldedRows);
     if (msg) errors.push(`products: ${msg}`);
   }
 
   if (errors.length) console.error(`[save${label ? ':' + label : ''}]`, errors.join(' | '));
 
   return {
-    saved: errors.length ? 0 : catalogUpsertRows.length,
+    saved: errors.length ? 0 : catalogRows.length,
     recorded: errors.length ? 0 : historyRows.length,
     rejected,
     suspect,
@@ -637,9 +666,18 @@ function freshRows(rows, opts = {}) {
 function relevantRows(rows) {
   const out = [];
   let dropped = 0;
+  // 같은 keyword 를 여러 행이 공유한다. 분석은 키워드당 한 번만 한다.
+  const analysisCache = new Map();
+
   (rows || []).forEach(r => {
     if (!r) return;
-    if (matchesKeyword(keywordTokens(r.keyword), r.title)) out.push(r);
+    const kw = r.keyword || '';
+    if (!analysisCache.has(kw)) analysisCache.set(kw, analyzeQuery(kw));
+    /*
+     * 여기에는 "이번 응답 목록" 이 없다. 브랜드 판정을 할 수 없으므로
+     * 브랜드 불일치 감점도 걸리지 않는다 — 저장된 행을 근거 없이 버리지 않는다.
+     */
+    if (isRelevant(kw, r.title, { analysis: analysisCache.get(kw) })) out.push(r);
     else dropped++;
   });
   if (dropped) console.log(`[rec] keyword 와 무관한 저장분 ${dropped}행 노출 제외`);

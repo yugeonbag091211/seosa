@@ -271,18 +271,10 @@ async function readCache(keyword) {
       .eq('keyword', keyword)
       .maybeSingle();
     if (error || !data) return null;
+    const allItems = Array.isArray(data.items) ? data.items : [];
     return {
-      /*
-       * 읽을 때도 옵션을 접는다.
-       *
-       * 이미 저장돼 있는 캐시는 옛 규칙으로 만들어져서 같은 productId 가
-       * 여러 번 들어 있다. 2026-08-11 운영 DB 전수 확인:
-       *   coupang_search_cache 53개 항목 중 33개(62%)에 중복 productId 존재,
-       *   중복 행 합계 70건.
-       * 여기서 접지 않으면 캐시로 응답하는 동안에는 고치기 전과 똑같이
-       * 동작한다. TTL(6시간)이 지나 새로 받아올 때까지 기다릴 이유가 없다.
-       */
-      items: collapseOptions(Array.isArray(data.items) ? data.items : []),
+      items: collapseOptions(allItems),
+      allItems,
       limit: data.req_limit || 0,
       ageMs: Date.now() - new Date(data.fetched_at).getTime()
     };
@@ -363,6 +355,25 @@ function normalize(raw) {
       productId,
       title: it.productName || '',
       lprice,
+      /*
+       * 배송 정보. 쿠팡 응답에 원래 들어 있는데 여태 버리고 있었다.
+       *
+       * 2026-08-10 원본 응답 확인:
+       *   "노트북"  → isRocket 0/5,  isFreeShipping 5/5
+       *   "물티슈"  → isRocket 8/10, isFreeShipping 2/10
+       * 값이 실제로 갈린다(= 필터로서 의미가 있다).
+       *
+       * 그대로 흘려보내기만 한다. products 테이블에는 저장하지 않는다 —
+       * 컬럼이 없고, 컬럼을 만들려면 마이그레이션이 필요하기 때문이다.
+       * 그래서 이 값은 "방금 받아온 검색 결과"에만 존재한다. 캐시(jsonb)에는
+       * 같이 들어가므로 캐시 응답에도 남는다. 이미 저장돼 있던 옛 캐시에는
+       * 없으므로 프론트는 값이 있는 결과에서만 배송 필터를 노출한다.
+       *
+       * undefined 를 그대로 두지 않고 boolean 으로 못 박는다 — "값이 없다"와
+       * "false 다"를 프론트가 구분할 수 있어야 필터 노출 여부를 정할 수 있다.
+       */
+      isRocket: typeof it.isRocket === 'boolean' ? it.isRocket : null,
+      isFreeShipping: typeof it.isFreeShipping === 'boolean' ? it.isFreeShipping : null,
       // 정가. discountPrice 가 실제로 내려오기 전까지는 lprice 와 같은 값이다
       // (그래서 프론트의 "정가 대비" 줄은 뜨지 않는다 — 정상이다).
       oprice: listPrice || lprice,
@@ -376,7 +387,7 @@ function normalize(raw) {
   });
 
   if (dropped) console.warn(`[coupang] 가격/식별자를 읽지 못한 상품 ${dropped}건 제외`);
-  return collapseOptions(out);
+  return out;
 }
 
 /**
@@ -445,7 +456,7 @@ async function searchCoupang(keyword, opts = {}) {
   if (cached && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
     state.totalCacheHits++;
     log(source, kw, 'CACHE', `age=${Math.round(cached.ageMs / 1000)}s items=${cached.items.length}`);
-    return { items: cached.items.slice(0, limit), error: null, from: 'cache', blocked: false };
+    return { items: cached.items.slice(0, limit), allItems: (cached.allItems || cached.items).slice(0, limit), error: null, from: 'cache', blocked: false };
   }
 
   // 호출을 못 하게 됐을 때의 최선 — 아직 쓸 만큼 최근인 캐시가 있으면 그걸 쓴다.
@@ -456,7 +467,8 @@ async function searchCoupang(keyword, opts = {}) {
     state.totalDenied++;
     if (cached && cached.ageMs <= STALE_MAX_MS) {
       log(source, kw, 'STALE-CACHE', `이유=${reason} age=${Math.round(cached.ageMs / 3600000)}h`);
-      return { items: cached.items.slice(0, limit), error: reason, from: 'stale-cache', blocked: !!blocked };
+      const staleAll = (cached.allItems || cached.items).slice(0, limit);
+      return { items: cached.items.slice(0, limit), allItems: staleAll, error: reason, from: 'stale-cache', blocked: !!blocked };
     }
     if (cached) {
       log(source, kw, 'CACHE-EXPIRED',
@@ -464,7 +476,7 @@ async function searchCoupang(keyword, opts = {}) {
     } else {
       log(source, kw, 'SKIP', `이유=${reason}`);
     }
-    return { items: [], error: reason, from: 'none', blocked: !!blocked };
+    return { items: [], allItems: [], error: reason, from: 'none', blocked: !!blocked };
   };
 
   // 2) 인스턴스 리미터 + 서킷 브레이커
@@ -555,12 +567,13 @@ async function searchCoupang(keyword, opts = {}) {
     return fallback(`쿠팡 rCode=${rCode}: ${msg}`, true);
   }
 
-  const items = normalize((data.data && data.data.productData) || []);
-  await dbFinish(gate.callId, 'ok', r.status, rCode, items.length);
-  if (useCache) await writeCache(kw, items, reqLimit);
+  const allItems = normalize((data.data && data.data.productData) || []);
+  const items = collapseOptions(allItems);
+  await dbFinish(gate.callId, 'ok', r.status, items.length);
+  if (useCache) await writeCache(kw, allItems, reqLimit);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);
-  return { items: items.slice(0, limit), error: null, from: 'api', blocked: false };
+  return { items: items.slice(0, limit), allItems: allItems.slice(0, limit), error: null, from: 'api', blocked: false };
 }
 
 /** 지금 호출이 가능한 상태인지 (네트워크는 건드리지 않는다). */
@@ -609,6 +622,6 @@ async function pruneLog(keepDays = 7) {
 }
 
 module.exports = {
-  searchCoupang, isBlocked, localStats, globalUsage, pruneLog,
+  searchCoupang, collapseOptions, isBlocked, localStats, globalUsage, pruneLog,
   MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };

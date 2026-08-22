@@ -280,6 +280,40 @@ section.block{margin-top:var(--sec-gap)}
 .cmp{font-size:.72rem;color:var(--faint);margin-top:5px}.cmp del{opacity:.7}
 /* DB에서 읽어온(=실시간 검색이 아닌) 가격의 수집 기준일 */
 .as-of{font-size:.66rem;color:var(--faint);margin-top:4px;letter-spacing:.02em}
+
+/* ── 가격 신뢰도 ──────────────────────────────────────────────
+   "이 가격을 믿고 사도 되는가"를 카드에서 바로 알 수 있게 한다.
+   점수(87점)는 사용자에게 의미가 없으므로 등급 + 이유 한 줄만 보여주고,
+   나머지 근거는 title 속성(데스크톱 툴팁)과 가격 모달에서 볼 수 있다. */
+.trust{display:flex;align-items:center;gap:6px;margin-top:7px;cursor:default}
+.trust-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.trust-label{font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;font-weight:600}
+.trust-why{font-size:.66rem;color:var(--faint);line-height:1.35;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.t-high .trust-dot{background:var(--down)}      .t-high .trust-label{color:var(--down)}
+.t-medium .trust-dot{background:#B08900}        .t-medium .trust-label{color:#B08900}
+.t-low .trust-dot{background:#C2701C}           .t-low .trust-label{color:#C2701C}
+.t-stale .trust-dot{background:var(--up)}       .t-stale .trust-label{color:var(--up)}
+.t-unknown .trust-dot{background:var(--faint)}  .t-unknown .trust-label{color:var(--soft)}
+html[data-theme="dark"] .t-medium .trust-dot{background:#D9AC26}
+html[data-theme="dark"] .t-medium .trust-label{color:#D9AC26}
+html[data-theme="dark"] .t-low .trust-dot{background:#E08B3E}
+html[data-theme="dark"] .t-low .trust-label{color:#E08B3E}
+/* 좁은 화면에서는 이유 문구를 접고 등급만 남긴다 (카드가 세로로 늘어나지 않게) */
+@media(max-width:420px){.trust-why{display:none}}
+
+/* 가격 모달의 신뢰도 근거 목록 */
+.trust-panel{margin:16px 0 4px;padding:13px 15px;border-radius:10px;
+  background:var(--surface);border:1px solid var(--line)}
+.trust-panel .tp-head{display:flex;align-items:center;gap:7px;margin-bottom:9px}
+.trust-panel .tp-sum{font-size:.78rem;color:var(--soft);line-height:1.5;margin-bottom:9px}
+.trust-panel ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+.trust-panel li{font-size:.74rem;line-height:1.5;color:var(--soft);
+  display:flex;gap:7px;align-items:flex-start}
+.trust-panel li .ti{flex:none;font-family:var(--mono);font-weight:600;font-size:.7rem;line-height:1.6}
+.trust-panel li.g .ti{color:var(--down)}
+.trust-panel li.w .ti{color:#B08900}
+.trust-panel li.b .ti{color:var(--up)}
 /* 쇼핑몰을 못 불러와 캐시를 보여주는 중이라는 안내 */
 .stale-note{margin-top:14px;padding:10px 14px;border-radius:8px;font-size:.78rem;line-height:1.6;
   color:var(--up);background:rgba(201,54,43,.07);border:1px solid rgba(201,54,43,.18)}
@@ -388,6 +422,8 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .ac-rank{font-family:var(--mono);font-size:.66rem;font-weight:600;color:var(--faint);
   width:16px;flex-shrink:0}
 .ac-rank.top{color:var(--up)}
+/* 내 최근 검색은 순위 숫자가 없다. 인기 검색어와 섞이므로 출처를 밝힌다. */
+.ac-rank.recent{width:auto;font-size:.56rem;letter-spacing:.05em;color:var(--faint)}
 .autocomplete-item .ai-trend{font-family:var(--mono);font-size:.58rem;margin-left:6px;color:var(--down)}
 .ac-head{padding:8px 22px 6px;font-family:var(--mono);font-size:.56rem;letter-spacing:.2em;
   color:var(--faint);text-transform:uppercase;border-bottom:1px solid var(--line);margin-bottom:4px}
@@ -407,6 +443,45 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .filter-btn:hover{border-color:var(--ink);color:var(--ink)}
 .filter-btn.act{background:var(--ink);color:#fff;border-color:var(--ink)}
 .filter-btn .fcount{font-family:var(--mono);font-size:.66rem;opacity:.6;margin-left:5px}
+
+/* ── 상세 필터 (가격 범위 / 신뢰도 / 가격 하락 / 배송) ──
+   모바일에서 손가락으로 누를 수 있어야 한다: 최소 높이 40px, 줄바꿈 허용,
+   가로 스크롤이 생기지 않도록 flex-wrap. */
+.facet-bar{display:none;flex-direction:column;gap:10px;margin:0 0 18px;
+  padding:14px 16px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.facet-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.facet-label{font-family:var(--mono);font-size:.56rem;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--faint);min-width:52px;flex-shrink:0}
+.facet-chips{display:flex;gap:7px;flex-wrap:wrap;flex:1}
+.facet-btn{min-height:40px;font-size:.76rem;font-family:inherit;border:1px solid var(--line);
+  background:var(--bg);color:var(--soft);border-radius:30px;padding:8px 14px;cursor:pointer;
+  transition:border-color .15s,background .15s,color .15s}
+.facet-btn:hover{border-color:var(--ink);color:var(--ink)}
+.facet-btn.act{background:var(--ink);color:#fff;border-color:var(--ink)}
+.facet-btn.apply{padding:8px 16px;font-weight:600}
+.facet-btn .fcount{font-family:var(--mono);font-size:.64rem;opacity:.6;margin-left:5px}
+/* 결과가 0건이 될 필터는 눌러도 소용없다. 숨기지 않고 흐리게 두어 "왜 없는지" 보이게 한다. */
+.facet-btn.void{opacity:.35;cursor:not-allowed}
+.facet-btn.void:hover{border-color:var(--line);color:var(--soft)}
+
+.price-input-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1}
+.price-input{width:96px;min-height:40px;padding:8px 10px;font-size:.82rem;font-family:var(--mono);
+  border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);text-align:right}
+.price-input:focus{outline:none;border-color:var(--ink)}
+.price-tilde,.price-unit{font-size:.78rem;color:var(--faint)}
+
+.facet-summary{font-size:.78rem;color:var(--soft);display:flex;align-items:center;
+  gap:10px;flex-wrap:wrap;min-height:20px}
+.facet-summary b{color:var(--ink);font-weight:600}
+.facet-reset{background:none;border:none;font-family:inherit;font-size:.76rem;color:var(--faint);
+  text-decoration:underline;cursor:pointer;padding:4px}
+.facet-reset:hover{color:var(--ink)}
+
+@media (max-width:520px){
+  .facet-bar{padding:12px 13px;margin:0 0 14px}
+  .facet-label{min-width:auto;width:100%}
+  .price-input{width:calc(50% - 46px);min-width:80px}
+}
 
 /* ── 위시/최근본 가격 변동 표시 ── */
 .pchg{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);
@@ -437,15 +512,19 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 
 /* ── 가격 하락 시세판 ── */
 .ledger{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.ledger-head{display:grid;grid-template-columns:44px 1fr 150px 150px 96px;gap:16px;align-items:center;
+.ledger-head{display:grid;grid-template-columns:44px 56px 1fr 150px 150px 96px;gap:16px;align-items:center;
   padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface)}
 .ledger-head span{font-family:var(--mono);font-size:.58rem;letter-spacing:.18em;color:var(--faint);text-transform:uppercase}
 .ledger-head .ta-r{text-align:right}
-.lrow{display:grid;grid-template-columns:44px 1fr 150px 150px 96px;gap:16px;align-items:center;
+.lrow{display:grid;grid-template-columns:44px 56px 1fr 150px 150px 96px;gap:16px;align-items:center;
   padding:18px 24px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .2s;position:relative}
 .lrow:last-child{border-bottom:0}
 .lrow:hover{background:var(--surface)}
 .lrow .rank{font-family:var(--mono);font-size:.82rem;color:var(--faint);font-weight:500}
+.lrow .lthumb{width:56px;height:56px;border-radius:8px;background:var(--surface);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
+.lrow .lthumb img{width:100%;height:100%;object-fit:contain}
+.lrow .lthumb .glyph{font-size:1.4rem;opacity:.4}
 .lrow .lmain{min-width:0}
 .lrow .lname{font-size:.88rem;line-height:1.45;overflow:hidden;text-overflow:ellipsis;
   display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
@@ -466,12 +545,14 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .lact.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
 @media(max-width:760px){
   .ledger-head{display:none}
-  .lrow{grid-template-columns:32px 1fr auto;grid-template-rows:auto auto;padding:16px}
+  .lrow{grid-template-columns:32px 44px 1fr auto;grid-template-rows:auto auto;padding:16px}
+  .lrow .lthumb{width:44px;height:44px;border-radius:6px}
   .lrow .lprev{display:none}
-  .lrow .lnow{grid-column:3;grid-row:1}
-  .lrow .lchg{grid-column:3;grid-row:2;font-size:.72rem}
+  .lrow .lnow{grid-column:4;grid-row:1}
+  .lrow .lchg{grid-column:4;grid-row:2;font-size:.72rem}
   .lrow .lmain{grid-row:1/3}
   .lrow .rank{grid-row:1/3}
+  .lrow .lthumb{grid-row:1/3}
   .lrow .lacts{display:none!important}
 }
 .drop-loading{text-align:center;padding:48px 0;color:var(--faint);font-size:.82rem}
@@ -546,6 +627,17 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
   border-radius:50%;margin:0 auto 16px;animation:spin .7s linear infinite}
 .loader p{font-family:var(--mono);font-size:.66rem;letter-spacing:.3em;color:var(--faint);text-transform:uppercase}
 .empty{grid-column:1/-1;text-align:center;padding:56px 0;color:var(--faint);font-size:.9rem}
+/* ── 결과 0건 안내 — 보정 검색어 / 대체 검색어 ──
+   모바일에서 손가락으로 누를 수 있어야 한다. 최소 높이 40px, 줄바꿈 허용. */
+.empty-correct{margin-bottom:26px;color:var(--soft);line-height:1.9}
+.empty-alts{font-family:var(--mono);font-size:.58rem;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:12px}
+.empty-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:0 16px}
+.empty-chip{min-height:40px;padding:9px 16px;border:1px solid var(--line);border-radius:30px;
+  background:var(--surface);color:var(--ink);font-size:.84rem;font-family:inherit;cursor:pointer;
+  transition:border-color .15s,background .15s}
+.empty-chip:hover{border-color:var(--ink)}
+.empty-chip.strong{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600;margin-top:8px}
 .notice{background:#fff;border:1px solid var(--line);border-radius:var(--r);
   padding:28px 30px;text-align:center;margin:10px 0}
 .notice b{font-size:1.05rem;display:block;margin-bottom:10px;font-weight:700}
@@ -585,6 +677,20 @@ footer p{font-size:.78rem;color:var(--faint)}
   color:var(--faint);text-transform:uppercase;margin-top:4px}
 .panel-close{background:none;border:none;color:var(--faint);font-size:1.4rem;cursor:pointer;
   line-height:1;transition:.2s}.panel-close:hover{color:var(--ink);transform:rotate(90deg)}
+.quota-badge{font-size:.65rem;padding:3px 8px;border-radius:20px;background:var(--surface);
+  color:var(--faint);cursor:pointer;margin-left:auto;margin-right:8px;white-space:nowrap}
+.quota-badge.pro{background:var(--ink);color:var(--bg)}
+/* AI 패널을 처음 여는 사용자도 즉시 보는 상시 PRO 진입점 (quota-badge는 AI 응답 후에야 채워짐) */
+.pro-entry{font-size:.65rem;padding:3px 10px;border-radius:20px;background:var(--ink);
+  color:var(--bg);border:none;cursor:pointer;font-family:var(--mono);letter-spacing:.04em;
+  white-space:nowrap;transition:.2s}
+.pro-entry:hover{opacity:.85}
+.pro-banner{text-align:center;padding:20px 0 16px}
+.pro-price{font-size:1.3rem;margin-bottom:8px}
+.pro-desc{color:var(--faint);font-size:.85rem;margin-bottom:14px}
+.pro-features{list-style:none;padding:0;margin:0 0 12px;text-align:left}
+.pro-features li{padding:4px 0;font-size:.85rem;color:var(--ink)}
+.pro-features li::before{content:'✓ ';color:var(--brand, #4a90d9)}
 .chat{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:14px;background:var(--surface)}
 .chat::-webkit-scrollbar{width:5px}.chat::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
 .bubble{max-width:88%;padding:13px 16px;border-radius:14px;font-size:.86rem;line-height:1.6;animation:rise .3s both}
@@ -825,6 +931,286 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
   .eyebrow,.hero h1 span,.hero-sub,.search-box,.chips,.recent-search,.card{
     opacity:1!important;transform:none!important}
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   모바일 최적화 (≤480px)
+   PC 레이아웃은 건드리지 않는다. 이 블록 안의 규칙은 모바일에서만 적용된다.
+   ═══════════════════════════════════════════════════════════════════ */
+@media(max-width:480px){
+  :root{--sec-gap:52px;--r:10px}
+  .wrap{padding:0 16px}
+
+  /* ── 헤더 ── */
+  .bar{height:50px}
+  .logo{font-size:1.15rem;letter-spacing:.1em}
+  .logo small{font-size:.4rem;letter-spacing:.28em;margin-top:2px}
+  .nav-right{gap:10px}
+  .wish-btn{font-size:.74rem;gap:5px}
+  .wish-count{min-width:17px;height:17px;font-size:.56rem;padding:0 5px}
+  .theme-btn{width:30px;height:30px;font-size:.78rem}
+
+  /* ── 히어로 ── */
+  .hero{padding-top:40px}
+  .eyebrow{font-size:.56rem;letter-spacing:.24em;margin-bottom:16px}
+  .hero h1{font-size:1.65rem;margin-bottom:14px;letter-spacing:-.025em}
+  .hero-sub{font-size:.84rem;margin-bottom:28px;line-height:1.6}
+  .search-field{padding:5px 5px 5px 14px;border-radius:12px}
+  .search-field input{padding:10px 0}
+  .search-go{padding:10px 18px;font-size:.72rem;border-radius:9px}
+  .chips{gap:6px;margin-top:16px}
+  .chip{font-size:.7rem;padding:6px 12px}
+  .recent-search{margin-top:10px;gap:6px}
+  .rs-chip{font-size:.68rem;padding:5px 10px}
+
+  /* ── 가치 3줄 ── */
+  .values{margin-top:40px;padding-top:24px;gap:16px}
+  .val h4{font-size:.82rem}.val h4 .vnum{font-size:.58rem;margin-right:7px}
+  .val p{font-size:.76rem;line-height:1.55}
+
+  /* ── 섹션 공통 ── */
+  .sec-eyebrow{font-size:.54rem;letter-spacing:.22em;margin-bottom:8px}
+  .sec-head{margin-bottom:20px;gap:10px}
+  .sec-title{font-size:1.15rem}
+  .sec-sub{font-size:.76rem;margin-top:5px}
+  .rec-tools{gap:6px}
+  .tbtn{font-size:.68rem;padding:7px 13px}
+
+  /* ── 그리드: 420px 이하에서도 2열 유지 ── */
+  .grid{gap:10px}
+  .grid,.grid[id]{grid-template-columns:repeat(2,1fr)!important}
+  #resGrid{grid-template-columns:repeat(2,1fr)!important}
+
+  /* ── 카드 ── */
+  .card .info{padding:8px 8px 10px}
+  .mall-line{font-size:.5rem;margin-bottom:3px}
+  .p-title{font-size:.7rem;line-height:1.45;min-height:2rem;margin-bottom:6px}
+  .price{font-size:.95rem}
+  .price .w{font-size:.62rem}
+  .save{font-size:.58rem}
+  .cmp{font-size:.6rem;margin-top:3px}
+  .as-of{font-size:.56rem;margin-top:3px}
+  .trust{gap:3px;margin-top:4px}
+  .trust-dot{width:5px;height:5px}
+  .trust-label{font-size:.5rem}
+  .badge{top:6px;left:6px;font-size:.46rem;padding:3px 6px;border-radius:5px}
+  .heart{width:26px;height:26px;top:5px;right:5px;font-size:.78rem}
+  .share-btn{width:26px;height:26px;top:5px;right:34px}
+  .share-btn svg{width:11px;height:11px}
+  .hist-btn{padding:7px 0;font-size:.58rem}
+  .atl-badge{top:28px;left:6px;font-size:.5rem;padding:3px 7px 3px 6px;border-radius:6px}
+  .card-actions{margin-top:6px!important}
+  .card:hover .card-actions{margin-top:6px}
+  .alert-btn{padding:6px 0;font-size:.62rem;border-radius:6px}
+  .buy{padding:7px 0;font-size:.64rem;margin-top:5px;border-radius:6px}
+  .spark{margin-top:6px;gap:4px;min-height:18px}
+  .spark .lbl{font-size:.5rem}
+  .spark svg{width:48px;height:16px}
+  .card .pchg{font-size:.54rem;margin-top:3px;padding:1px 5px}
+  .pchg{font-size:.56rem;padding:2px 6px}
+
+  /* ── 가격 하락 시세판 ── */
+  .lrow{padding:10px 12px;gap:8px}
+  .lrow .rank{font-size:.7rem}
+  .lrow .lthumb{width:36px;height:36px;border-radius:5px}
+  .lrow .lname{font-size:.76rem}
+  .lrow .lmall{font-size:.5rem}
+  .lrow .lnow{font-size:.86rem}
+  .lrow .lchg{font-size:.62rem}
+
+  /* ── 이달의 추천 배너 ── */
+  .month-banner{padding:22px 18px;gap:16px;border-radius:12px}
+  .mb-eyebrow{font-size:.48rem;margin-bottom:6px}
+  .mb-month{font-size:2.4rem}
+  .mb-month small{font-size:.85rem;margin-top:6px}
+  .mb-title{font-size:1.1rem;margin-bottom:8px}
+  .mb-sub{font-size:.78rem;margin-bottom:12px}
+  .mb-chips{gap:6px}
+  .mb-chip{font-size:.68rem;padding:5px 11px}
+
+  /* ── 검색 결과 ── */
+  #results{margin-top:48px}
+  .result-banner{padding:16px 16px;gap:12px;border-radius:10px}
+  .result-banner h3{font-size:1rem}
+  .result-banner .meta{gap:18px}
+  .result-banner .meta div span{font-size:.52rem;margin-bottom:4px}
+  .result-banner .meta div b{font-size:1rem}
+
+  /* ── 필터/정렬 ── */
+  .sort-bar{gap:5px;margin-bottom:14px}
+  .sort-btn{font-size:.66rem;padding:5px 10px}
+  .filter-bar{gap:5px;margin-bottom:14px}
+  .filter-btn{font-size:.66rem;padding:5px 10px}
+  .facet-bar{padding:10px 11px;gap:8px;border-radius:var(--r)}
+  .facet-label{font-size:.5rem;letter-spacing:.16em}
+  .facet-btn{min-height:34px;font-size:.68rem;padding:6px 10px}
+  .price-input{width:72px;min-height:34px;padding:6px 8px;font-size:.74rem;border-radius:8px}
+  .price-tilde,.price-unit{font-size:.7rem}
+  .facet-summary{font-size:.72rem}
+  .empty-chip{min-height:36px;padding:7px 13px;font-size:.78rem}
+
+  /* ── 기능 안내 배너 ── */
+  .feature-card{padding:16px;border-radius:var(--r)}
+  .feature-card .fc-icon{font-size:1.1rem;margin-bottom:6px}
+  .feature-card .fc-title{font-size:.84rem;margin-bottom:4px}
+  .feature-card .fc-desc{font-size:.72rem}
+  .feature-card .fc-cta{margin-top:8px;font-size:.66rem}
+
+  /* ── FAB · 맨 위로 ── */
+  .fab{width:46px;height:46px;bottom:18px;right:16px;font-size:.66rem;
+    box-shadow:0 6px 20px -5px rgba(0,0,0,.3)}
+  .fab small{font-size:.34rem;letter-spacing:.12em}
+  .top-btn{width:36px;height:36px;bottom:74px;right:18px;font-size:.82rem}
+
+  /* ── AI 패널 ── */
+  .panel{width:100vw;max-width:100vw}
+  .panel-head{padding:16px 18px}
+  .panel-head .t{font-size:1rem}
+  .panel-head .t small{font-size:.44rem}
+  .chat{padding:14px;gap:10px}
+  .bubble{max-width:92%;padding:10px 13px;font-size:.8rem;border-radius:12px;line-height:1.55}
+  .mini-grid{gap:5px;margin-top:10px}
+  .mini .mt{aspect-ratio:1.3/1}
+  .mini .mb{padding:5px 6px}
+  .mini .mname{font-size:.56rem;height:1.46rem}
+  .mini .mprice{font-size:.74rem;margin-top:2px}
+  .mini .mbadge{font-size:.42rem;padding:2px 4px;top:3px;left:3px}
+  .chat-suggest{padding:8px 12px 0;gap:5px}
+  .cs-chip{font-size:.64rem;padding:5px 10px}
+  .chat-input{padding:10px 12px;gap:7px}
+  .chat-input input{padding:9px 12px;font-size:.82rem;border-radius:8px}
+  .chat-input button{padding:0 14px;font-size:.68rem;border-radius:8px}
+
+  /* ── 위시 패널 ── */
+  .wish-panel{width:100vw;max-width:100vw}
+  .wish-panel .panel-head{padding:16px 18px}
+  .wish-list{padding:12px;gap:8px}
+  .wish-item{padding:9px;gap:9px;border-radius:var(--r)}
+  .wish-item .wi-img{width:42px;height:42px;border-radius:5px}
+  .wish-item .wi-mall{font-size:.5rem}
+  .wish-item .wi-name{font-size:.72rem;margin-bottom:3px}
+  .wish-item .wi-price{font-size:.86rem}
+  .wish-item .wi-buy{font-size:.56rem;padding:4px 9px}
+  .sync-box{padding:12px 14px}
+  .sync-title{font-size:.82rem}
+  .sync-desc{font-size:.66rem;margin-bottom:8px}
+  .sync-input{padding:9px 11px;font-size:.78rem;border-radius:6px}
+  .sync-btns{gap:7px}
+  .sync-btn{padding:9px 0;font-size:.68rem;border-radius:6px}
+  .wish-total{padding:10px 14px}
+  .wish-total span{font-size:.72rem}
+  .wish-total b{font-size:.92rem}
+  .wish-clear{font-size:.62rem;padding:5px 10px}
+
+  /* ── 취향 프로필 패널 ── */
+  #profilePanel{width:100vw;max-width:100vw}
+  .profile-body{padding:18px;gap:18px}
+  .profile-section-label{font-size:.54rem}
+  .profile-desc{font-size:.7rem}
+  .profile-tag-group{gap:6px}
+  .profile-input{padding:9px 12px;font-size:.8rem;border-radius:6px}
+  .profile-footer{padding:12px 18px}
+  .profile-save-btn{padding:11px;font-size:.74rem;border-radius:6px}
+  .profile-reset-btn{padding:9px;font-size:.7rem;border-radius:6px}
+
+  /* ── 모달 ── */
+  .overlay{padding:12px}
+  .modal{border-radius:14px}
+  .modal-head{padding:16px 18px}
+  .modal-head .mt{font-size:1rem}
+  .modal-head .ms{font-size:.74rem}
+  .modal-body{padding:16px 18px 20px}
+  .verdict{margin:16px 18px 0;padding:12px 14px;gap:10px;border-radius:var(--r)}
+  .verdict .vi{font-size:1.2rem}
+  .verdict .vt b{font-size:.84rem}
+  .verdict .vt span{font-size:.72rem}
+  .range-tabs button{font-size:.64rem;padding:6px 12px}
+  .stat-row{gap:8px}
+  .stat{padding:11px 8px;border-radius:var(--r)}
+  .stat span{font-size:.5rem;margin-bottom:4px}
+  .stat b{font-size:.92rem}
+  .trend-summary{padding:11px 14px}
+  .trend-summary .ts-head{font-size:.52rem}
+  .trend-summary .ts-line{font-size:.78rem}
+
+  /* ── 가격 비교 모달 ── */
+  .cmp-modal{border-radius:14px}
+  .cmp-summary{padding:12px 14px;margin:0 14px 14px;gap:14px;border-radius:var(--r)}
+  .cmp-summary div span{font-size:.5rem;margin-bottom:3px}
+  .cmp-summary div b{font-size:.95rem}
+
+  /* ── 알림 모달 ── */
+  .alert-box{border-radius:14px}
+  .alert-head{padding:14px 16px}
+  .alert-head .at{font-size:.92rem}
+  .alert-head .at small{font-size:.44rem}
+  .alert-body{padding:14px 16px}
+  .alert-product-box{padding:10px 12px;font-size:.76rem;border-radius:6px}
+  .alert-price-row{gap:8px;margin-bottom:12px}
+  .alert-price-cell{padding:9px 10px;border-radius:6px}
+  .alert-price-cell span{font-size:.48rem;margin-bottom:3px}
+  .alert-price-cell b{font-size:.92rem}
+  .alert-label{font-size:.7rem;margin-bottom:5px}
+  .alert-input{padding:9px 12px;font-size:.82rem;margin-bottom:10px;border-radius:6px}
+  .alert-submit{padding:11px;font-size:.74rem;border-radius:6px}
+  .alert-manage-link{font-size:.66rem;margin-top:10px}
+  .myalert-row{gap:8px;margin-bottom:12px}
+  .myalert-row input{padding:9px 12px;font-size:.82rem;border-radius:6px}
+  .myalert-row button{padding:0 14px;font-size:.68rem;border-radius:6px}
+  .myalert-item{padding:10px 0;gap:10px}
+  .myalert-item .ma-name{font-size:.74rem}
+  .myalert-item .ma-meta{font-size:.58rem}
+  .myalert-item .ma-del{font-size:.62rem;padding:5px 10px}
+
+  /* ── 토스트 ── */
+  .toast{font-size:.76rem;padding:10px 18px;border-radius:24px;bottom:20px}
+
+  /* ── 자동완성 ── */
+  .autocomplete{border-radius:10px;max-height:240px}
+  .autocomplete-item{padding:9px 16px;font-size:.82rem;gap:8px}
+  .ac-head{padding:6px 16px 5px;font-size:.5rem}
+  .autocomplete-item .ai-count{font-size:.58rem}
+
+  /* ── 푸터 ── */
+  footer{margin-top:var(--sec-gap);padding:32px 0 28px}
+  footer .logo{font-size:1.1rem;margin-bottom:6px}
+  footer p{font-size:.72rem}
+
+  /* ── 공지/빈 상태 ── */
+  .notice{padding:18px 16px;border-radius:var(--r)}
+  .notice b{font-size:.92rem;margin-bottom:6px}
+  .notice p{font-size:.78rem}
+  .empty{padding:36px 0;font-size:.82rem}
+  .wish-empty{padding:40px 16px}
+  .wish-empty .ic{font-size:1.8rem;margin-bottom:10px}
+  .wish-empty p{font-size:.78rem}
+
+  .rec-chip-btn{font-size:.7rem;padding:6px 12px}
+  .hr-note{font-size:.7rem;padding:5px 10px}
+}
+
+/* ── 극소형 화면 (≤360px) ── */
+@media(max-width:360px){
+  .wrap{padding:0 12px}
+  .hero h1{font-size:1.45rem}
+  .hero-sub{font-size:.78rem}
+  .search-field{padding:4px 4px 4px 12px}
+  .search-go{padding:9px 14px;font-size:.68rem}
+  .sec-title{font-size:1.05rem}
+  .month-banner{padding:18px 14px}
+  .mb-month{font-size:2rem}
+  .mb-title{font-size:1rem}
+  .result-banner{padding:14px 12px}
+  .result-banner h3{font-size:.92rem}
+  .p-title{font-size:.65rem}
+  .price{font-size:.86rem}
+  .card .info{padding:6px 6px 8px}
+  .fab{width:42px;height:42px;font-size:.6rem;bottom:14px;right:12px}
+  .fab small{font-size:.32rem}
+  .top-btn{width:34px;height:34px;bottom:64px;right:14px;font-size:.76rem}
+  .bar{height:46px}
+  .logo{font-size:1.05rem}
+  .wish-btn{font-size:.68rem}
+}
 </style>
 </head>
 <body>
@@ -917,7 +1303,7 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
       <div class="drop-loading" id="dropLoading"><div class="ring"></div>가격 변동 데이터를 불러오는 중…</div>
       <div class="ledger" id="dropLedger" style="display:none">
         <div class="ledger-head">
-          <span>#</span><span>상품</span><span class="ta-r">이전 기록가</span><span class="ta-r">현재가</span><span class="ta-r">변동</span>
+          <span>#</span><span></span><span>상품</span><span class="ta-r">이전 기록가</span><span class="ta-r">현재가</span><span class="ta-r">변동</span>
         </div>
         <div id="dropRows"></div>
       </div>
@@ -1000,10 +1386,18 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
     <div class="result-banner" id="banner"></div>
     <div class="sort-bar" id="sortBar" style="display:none">
       <span class="sort-label">Sort</span>
-      <button class="sort-btn act" data-act="sort" data-sort="default">기본</button>
+      <!--
+        "할인율순" 을 뺐다. 근거인 save_pct 가 products 1404행 전부 0 이라
+        (oprice > lprice 인 행이 0개) 눌러도 순서가 바뀌지 않는 죽은 버튼이었다.
+        쿠팡 검색 API 가 정가(discountPrice)를 내려주지 않기 때문이다
+        (api/_price.js 상단 주석 참고). 대신 실제 관측 기록으로 판정하는
+        "가격하락순" 을 넣는다.
+      -->
+      <button class="sort-btn act" data-act="sort" data-sort="default">관련도순</button>
       <button class="sort-btn" data-act="sort" data-sort="lowprice">최저가순</button>
       <button class="sort-btn" data-act="sort" data-sort="highprice">최고가순</button>
-      <button class="sort-btn" data-act="sort" data-sort="discount">할인율순</button>
+      <button class="sort-btn" data-act="sort" data-sort="trust">신뢰도순</button>
+      <button class="sort-btn" data-act="sort" data-sort="drop" id="sbDrop">가격하락순</button>
     </div>
     <div class="filter-bar" id="filterBar" style="display:none">
       <span class="filter-label">Mall</span>
@@ -1011,6 +1405,59 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
       <button class="filter-btn" data-act="filter" data-mall="네이버쇼핑" id="fbNaver">네이버<span class="fcount" id="fcNaver"></span></button>
       <button class="filter-btn" data-act="filter" data-mall="쿠팡">쿠팡<span class="fcount" id="fcCoupang"></span></button>
       <button class="filter-btn" data-act="filter" data-mall="알리익스프레스" id="fbAli" style="display:none">알리<span class="fcount" id="fcAli"></span></button>
+    </div>
+
+    <!--
+      상세 필터. 검색 결과가 있을 때만 보인다.
+      각 줄은 "그 정보를 실제로 가진 상품이 있을 때만" 노출된다 (Filters.render).
+    -->
+    <div class="facet-bar" id="facetBar" style="display:none">
+
+      <div class="facet-row">
+        <span class="facet-label">가격</span>
+        <div class="price-input-group">
+          <input class="price-input" id="fMin" type="text" inputmode="numeric"
+                 placeholder="최소" autocomplete="off" aria-label="최소 가격">
+          <span class="price-tilde">~</span>
+          <input class="price-input" id="fMax" type="text" inputmode="numeric"
+                 placeholder="최대" autocomplete="off" aria-label="최대 가격">
+          <span class="price-unit">원</span>
+          <button class="facet-btn apply" data-act="price-apply">적용</button>
+        </div>
+      </div>
+
+      <div class="facet-row" id="frPriceQuick">
+        <span class="facet-label"></span>
+        <div class="facet-chips" id="priceQuick"></div>
+      </div>
+
+      <div class="facet-row" id="frTrust">
+        <span class="facet-label">신뢰도</span>
+        <div class="facet-chips">
+          <button class="facet-btn act" data-act="trust" data-trust="all">전체</button>
+          <button class="facet-btn" data-act="trust" data-trust="high">신뢰 높음<span class="fcount" id="fcTrustHigh"></span></button>
+          <button class="facet-btn" data-act="trust" data-trust="medium">보통 이상<span class="fcount" id="fcTrustMed"></span></button>
+          <button class="facet-btn" data-act="trust" data-trust="notlow">확인 필요 제외<span class="fcount" id="fcTrustNotLow"></span></button>
+          <button class="facet-btn" data-act="trust" data-trust="fresh">오래된 가격 제외<span class="fcount" id="fcTrustFresh"></span></button>
+        </div>
+      </div>
+
+      <div class="facet-row" id="frDrop" style="display:none">
+        <span class="facet-label">가격</span>
+        <div class="facet-chips">
+          <button class="facet-btn" data-act="drop">최근 가격 하락<span class="fcount" id="fcDrop"></span></button>
+        </div>
+      </div>
+
+      <div class="facet-row" id="frShip" style="display:none">
+        <span class="facet-label">배송</span>
+        <div class="facet-chips">
+          <button class="facet-btn" data-act="ship" data-ship="rocket" id="fbRocket">로켓배송<span class="fcount" id="fcRocket"></span></button>
+          <button class="facet-btn" data-act="ship" data-ship="free" id="fbFree">무료배송<span class="fcount" id="fcFree"></span></button>
+        </div>
+      </div>
+
+      <div class="facet-summary" id="facetSummary"></div>
     </div>
     <!--
       알리익스프레스 검색 버튼은 제거된 상태입니다.
@@ -1129,6 +1576,8 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
 <!-- AI 큐레이터 패널 -->
 <div class="panel" id="panel">
   <div class="panel-head"><div class="t">서사<small>SEOSA PRIVATE CURATOR</small></div>
+    <span class="quota-badge" id="quotaBadge"></span>
+    <button class="pro-entry" data-act="open-pro">PRO</button>
     <button class="panel-close" data-act="close-ai">×</button></div>
   <!-- 서사 PRO 진입 — Pay.renderBar() 가 채운다. 기본은 숨김이라
        결제가 준비되지 않은 환경에서는 아무것도 보이지 않는다. -->
@@ -1149,6 +1598,8 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
     <button class="modal-close" data-act="close-modal">×</button></div>
   <div class="verdict" id="verdict"></div>
   <div class="modal-body">
+    <!-- 가격 신뢰도 근거 (api/_trust.js 가 계산한 값을 그대로 표시) -->
+    <div id="trustPanel"></div>
     <div class="range-tabs" id="rangeTabs">
       <button data-act="range" data-days="7">7일</button>
       <button class="act" data-act="range" data-days="30">30일</button>
@@ -1213,6 +1664,30 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
       </div>
       <button class="alert-submit" id="authSubmit" data-act="auth-submit">인증 코드 받기</button>
       <button class="alert-manage-link" id="authRestart" data-act="auth-restart" style="display:none">다른 이메일로 다시 시도</button>
+    </div>
+  </div>
+</div>
+
+<!-- PRO 업그레이드 모달 -->
+<div class="alert-overlay" id="proOverlay">
+  <div class="alert-box">
+    <div class="alert-head">
+      <div class="at">PRO 업그레이드<small>UPGRADE PLAN</small></div>
+      <button class="alert-head-close" data-act="close-pro">×</button>
+    </div>
+    <div class="alert-body">
+      <div class="pro-banner">
+        <div class="pro-price"><b>월 4,900원</b></div>
+        <div class="pro-desc">AI 큐레이터 서사를 하루 50회까지 사용할 수 있어요.</div>
+        <ul class="pro-features">
+          <li>첫 3회 무료 체험</li>
+          <li>PRO: 하루 최대 50회 AI 질문</li>
+          <li>프리미엄 쇼핑 큐레이션</li>
+        </ul>
+      </div>
+      <div id="proStatusMsg" class="alert-label" style="line-height:1.6;margin-bottom:12px"></div>
+      <button class="alert-submit" id="proUpgradeBtn" data-act="pro-pay">PRO 결제하기</button>
+      <button class="alert-manage-link" id="proCancelBtn" data-act="pro-cancel" style="display:none">구독 취소</button>
     </div>
   </div>
 </div>
@@ -1396,7 +1871,16 @@ var AppState = {
   lastKeyword: '',
   results: [],
   sort: 'default',
-  mallFilter: 'all',   // ★ 몰 필터 (all / 네이버쇼핑 / 쿠팡 / 알리익스프레스)
+  /*
+   * 화면 필터. 여기가 유일한 출처다.
+   *
+   * 예전에는 몰 필터만 AppState.mallFilter 로 따로 또 있었고, 바뀌는 자리마다
+   * 두 값을 손으로 맞춰야 했다(4곳). 한쪽만 고치면 화면과 주소가 어긋난다.
+   * mall 도 여기로 합쳤다 — 상태가 하나면 어긋날 수가 없다.
+   *
+   * minPrice / maxPrice 는 "없음"을 null 로 둔다 — 0원 필터와 구분해야 한다.
+   */
+  facets: { mall: 'all', minPrice: null, maxPrice: null, trust: 'all', drop: false, ship: 'all' },
   popularKeywords: [],
 
   // 저장된 데이터
@@ -1495,7 +1979,9 @@ function sameProduct(a, b) {
  */
 function histKey(it) {
   if (!it || !it.productId) return '';
-  return String(it.productId) + '|' + String(it.mall || '');
+  var base = String(it.productId) + '|' + String(it.mall || '');
+  var vid = it.vendorItemId || '';
+  return vid ? base + '|' + vid : base;
 }
 
 
@@ -1531,17 +2017,21 @@ var HistCache = {
   /** @returns {Array|null} 포인트 배열(빈 배열 포함) 또는 모르면 null */
   get: function(it) {
     if (!it) return null;
-    var has = function(k) { return Object.prototype.hasOwnProperty.call(HistCache.map, k); };
 
-    // productId가 있는 상품은 상품 단위 키로만 찾는다.
-    // 여기서 상품명으로 폴백하면, 옛 위시 데이터가 상품명으로 캐시해 둔 남의 이력이
-    // 같은 이름의 다른 상품에 붙는다. AI가 그걸 "이 상품의 역대 최저가"라고 말하게 된다.
+    /*
+     * 상품 단위 키(productId+mall)로만 찾는다. 상품명 폴백은 없다.
+     *
+     * 상품명은 고유하지 않다. 쿠팡에는 같은 이름의 다른 상품이 흔하고,
+     * 이름으로 모은 이력은 여러 상품·여러 몰의 기록을 날짜별 최저가로 합친
+     * 값이라 어느 상품의 것도 아니다. 그걸 돌려주면 AI 가 "역대 최저가입니다",
+     * "30일 평균보다 쌉니다" 를 남의 가격으로 말하게 된다.
+     *
+     * 식별자가 없는 옛 항목은 이력을 모른다고 답한다(null). 모른다고 답하면
+     * 호출부는 이력 없이 진행한다 — 틀린 이력을 주는 것보다 낫다.
+     */
     var k = histKey(it);
-    if (k) return has(k) ? HistCache.map[k] : null;
-
-    // productId가 없는 값(옛 위시/조회기록)만 상품명으로 찾는다.
-    if (it.title && has(it.title)) return HistCache.map[it.title];
-    return null;
+    if (!k) return null;
+    return Object.prototype.hasOwnProperty.call(HistCache.map, k) ? HistCache.map[k] : null;
   }
 };
 
@@ -1864,6 +2354,208 @@ var Auth = {
 };
 
 
+/* ============================================================
+ *  PRO 구독 / 결제
+ * ========================================================== */
+var Pro = {
+  PRICE: 4900,
+  tossReady: false,
+  tossWidgets: null,
+
+  open: function() {
+    var ov = $('proOverlay');
+    if (ov) ov.classList.add('open');
+    Pro.refreshStatus();
+  },
+
+  close: function() {
+    var ov = $('proOverlay');
+    if (ov) ov.classList.remove('open');
+  },
+
+  refreshStatus: function() {
+    var saved = Auth.saved();
+    var btn = $('proUpgradeBtn');
+    var msg = $('proStatusMsg');
+    var cancel = $('proCancelBtn');
+
+    if (!saved || !saved.token) {
+      if (msg) msg.textContent = '로그인 후 이용할 수 있어요.';
+      if (btn) { btn.textContent = '로그인하기'; btn.disabled = false; }
+      if (cancel) cancel.style.display = 'none';
+      return;
+    }
+
+    fetch('/api/payment', {
+      headers: { 'Authorization': 'Bearer ' + saved.token }
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var sub = d && d.subscription;
+        if (sub && sub.plan === 'pro' && sub.status === 'active') {
+          var exp = sub.expires_at ? new Date(sub.expires_at).toLocaleDateString('ko-KR') : '';
+          if (msg) msg.textContent = 'PRO 구독 중' + (exp ? ' · ' + exp + '까지' : '');
+          if (btn) { btn.textContent = '구독 중'; btn.disabled = true; }
+          if (cancel) cancel.style.display = 'block';
+        } else {
+          if (msg) msg.textContent = '';
+          if (btn) { btn.textContent = 'PRO 결제하기 (월 4,900원)'; btn.disabled = false; }
+          if (cancel) cancel.style.display = 'none';
+        }
+      })
+      .catch(function() {
+        if (msg) msg.textContent = '';
+        if (btn) { btn.textContent = 'PRO 결제하기 (월 4,900원)'; btn.disabled = false; }
+      });
+  },
+
+  generateOrderId: function() {
+    var ts = Date.now().toString(36);
+    var rand = Math.random().toString(36).slice(2, 8);
+    return 'seosa_' + ts + '_' + rand;
+  },
+
+  pay: function() {
+    var saved = Auth.saved();
+    if (!saved || !saved.token) {
+      Pro.close();
+      Auth.open('', function() { Pro.open(); });
+      return;
+    }
+
+    if (!window.TossPayments) {
+      Pro.loadSDK(function() { Pro.pay(); });
+      return;
+    }
+
+    var clientKey = window.__TOSS_CLIENT_KEY__;
+    if (!clientKey) {
+      toast('결제 시스템이 준비되지 않았어요');
+      return;
+    }
+
+    var orderId = Pro.generateOrderId();
+    var email = (saved.email || '').replace(/[^a-zA-Z0-9@._-]/g, '');
+    var customerKey = 'seosa_' + btoa(email).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
+
+    var toss = TossPayments(clientKey);
+    toss.requestPayment('카드', {
+      amount: Pro.PRICE,
+      orderId: orderId,
+      orderName: 'SEOSA PRO 월간 구독',
+      customerName: email,
+      customerEmail: email,
+      successUrl: location.origin + location.pathname + '?toss=success',
+      failUrl: location.origin + location.pathname + '?toss=fail'
+    }).catch(function(e) {
+      if (e.code === 'USER_CANCEL') return;
+      toast('결제를 시작할 수 없어요: ' + (e.message || ''));
+    });
+  },
+
+  loadSDK: function(cb) {
+    if (Pro.tossReady) { if (cb) cb(); return; }
+    var s = document.createElement('script');
+    s.src = 'https://js.tosspayments.com/v1/payment';
+    s.onload = function() { Pro.tossReady = true; if (cb) cb(); };
+    s.onerror = function() { toast('결제 SDK 로드에 실패했어요'); };
+    document.head.appendChild(s);
+  },
+
+  confirmFromUrl: function() {
+    var params = new URLSearchParams(location.search);
+    if (params.get('toss') !== 'success') return;
+
+    var orderId = params.get('orderId');
+    var paymentKey = params.get('paymentKey');
+    var amount = Number(params.get('amount'));
+
+    history.replaceState(null, '', location.pathname);
+
+    if (!orderId || !paymentKey || !amount) {
+      toast('결제 정보가 올바르지 않아요');
+      return;
+    }
+
+    var saved = Auth.saved();
+    if (!saved || !saved.token) {
+      toast('결제를 완료하려면 다시 로그인해 주세요');
+      return;
+    }
+
+    toast('결제를 확인하고 있어요…');
+
+    fetch('/api/payment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + saved.token
+      },
+      body: JSON.stringify({ action: 'confirm', orderId: orderId, paymentKey: paymentKey, amount: amount })
+    })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(res) {
+        if (res.ok && res.data.success) {
+          toast('PRO 구독이 활성화되었어요!');
+          Pro.updateQuotaBadge({ plan: 'pro', limit: 50, used: 0 });
+        } else {
+          toast('결제 확인 실패: ' + (res.data.error || '알 수 없는 오류'));
+        }
+      })
+      .catch(function() { toast('결제 확인 중 오류가 발생했어요'); });
+  },
+
+  handleFail: function() {
+    var params = new URLSearchParams(location.search);
+    if (params.get('toss') !== 'fail') return;
+    var msg = params.get('message') || '결제가 취소되었어요';
+    history.replaceState(null, '', location.pathname);
+    toast(msg);
+  },
+
+  cancel: function() {
+    if (!confirm('PRO 구독을 취소하시겠어요? 남은 기간까지는 계속 사용할 수 있어요.')) return;
+
+    var saved = Auth.saved();
+    if (!saved || !saved.token) return;
+
+    fetch('/api/payment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + saved.token
+      },
+      body: JSON.stringify({ action: 'cancel' })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.success) {
+          toast('구독이 취소되었어요. 남은 기간까지는 PRO를 이용할 수 있어요.');
+          Pro.refreshStatus();
+        } else {
+          toast('구독 취소 실패: ' + (d.error || ''));
+        }
+      })
+      .catch(function() { toast('구독 취소 중 오류가 발생했어요'); });
+  },
+
+  updateQuotaBadge: function(q) {
+    var badge = $('quotaBadge');
+    if (!badge) return;
+    if (!q) { badge.textContent = ''; badge.className = 'quota-badge'; return; }
+    if (q.plan === 'pro') {
+      badge.textContent = 'PRO · ' + (q.limit - (q.used || 0)) + '회 남음';
+      badge.className = 'quota-badge pro';
+    } else {
+      var rem = Math.max(0, q.limit - (q.used || 0));
+      badge.textContent = '무료 ' + rem + '/' + q.limit;
+      badge.className = 'quota-badge';
+    }
+    badge.onclick = function() { Pro.open(); };
+  }
+};
+
+
 var Api = {
   call: function(fnName, args, onOk, onErr, retried) {
     var urlMap = {
@@ -1899,6 +2591,7 @@ var Api = {
       if (h.productId) {
         queryUrl += '&productId=' + encodeURIComponent(h.productId)
                   + '&mall=' + encodeURIComponent(h.mall || '');
+        if (h.vendorItemId) queryUrl += '&vendorItemId=' + encodeURIComponent(h.vendorItemId);
       }
     } else if (fnName === 'getHistoryBatch') {
       // 배열(옛 호출 = 상품명 목록) 또는 {titles, keys} 둘 다 받는다.
@@ -1957,7 +2650,6 @@ var Api = {
     }
     fetchOpts.method = method;
 
-    // 개인 데이터 엔드포인트에는 인증 토큰을 싣는다 (이메일은 전부 args[0]).
     var authEmail = Auth.FNS[fnName] ? String((args && args[0]) || '') : '';
     if (authEmail) {
       var tk = Auth.tokenFor(authEmail);
@@ -1970,12 +2662,26 @@ var Api = {
 
     // 응답 헤더로 오는 부가 정보(가격 출처 등). onOk의 두 번째 인자로 넘긴다.
     // 기존 콜백은 인자를 하나만 받으므로 그대로 두어도 아무 영향이 없다.
-    var meta = { source: '', blocked: false };
+    var meta = { source: '', blocked: false, correct: '', correctKind: '', suggest: [] };
     fetch(queryUrl, fetchOpts)
       .then(function(r) {
         try {
           meta.source = r.headers.get('X-Seosa-Source') || '';
           meta.blocked = r.headers.get('X-Seosa-Blocked') === '1';
+
+          /*
+           * 검색어 보정 / 대체 검색어.
+           * 한글은 헤더에 그대로 실을 수 없어 서버가 encodeURIComponent 해서 보낸다.
+           * 결과가 0건일 때만 채워진다 (api/search.js 참고).
+           */
+          var c = r.headers.get('X-Seosa-Correct');
+          if (c) { meta.correct = decodeURIComponent(c); meta.correctKind = r.headers.get('X-Seosa-Correct-Kind') || ''; }
+          var s = r.headers.get('X-Seosa-Suggest');
+          if (s) {
+            meta.suggest = s.split('|').map(function(x) {
+              try { return decodeURIComponent(x); } catch (e2) { return ''; }
+            }).filter(Boolean);
+          }
         } catch (e) { /* 헤더를 못 읽어도 결과 표시는 계속한다 */ }
 
         // r.ok를 안 보면 500 응답의 에러 본문이 그대로 성공 콜백으로 넘어가
@@ -1988,7 +2694,8 @@ var Api = {
            */
           if (r.status === 401 && body && body.needsAuth && !retried) {
             Auth.clear();
-            Auth.open(authEmail, function() {
+            var retryEmail = authEmail || Store.get(CONST.LS.EMAIL, '') || '';
+            Auth.open(retryEmail, function() {
               Api.call(fnName, args, onOk, onErr, true);
             });
             return Promise.reject({ handled: true });
@@ -2129,6 +2836,30 @@ var Card = {
     return label ? '<div class="as-of">' + Fmt.esc(label) + '</div>' : '';
   },
 
+  /*
+   * 가격 신뢰도 배지.
+   *
+   * 서버(api/_trust.js)가 계산한 값을 그대로 그린다. 프론트에서 점수를 다시
+   * 계산하지 않는다 — 계산이 두 곳에 있으면 화면과 AI 가 서로 다른 신뢰도를
+   * 말하게 된다.
+   *
+   * trust 가 없으면(옛 응답 캐시 등) 아무것도 그리지 않는다. 근거 없이
+   * "보통" 같은 기본값을 만들어내지 않는다.
+   */
+  trustHTML: function(it) {
+    var t = it && it.trust;
+    if (!t || !t.level) return '';
+
+    // 전체 근거는 데스크톱 툴팁으로. 모바일에서는 모달에서 본다.
+    var full = (t.reasons || []).map(function(r) { return '· ' + r.text; }).join('\n');
+
+    return '<div class="trust t-' + Fmt.esc(t.level) + '" title="' + Fmt.esc(full) + '">'
+      + '<span class="trust-dot"></span>'
+      + '<span class="trust-label">' + Fmt.esc(t.label || '') + '</span>'
+      + '<span class="trust-why">' + Fmt.esc(t.summary || '') + '</span>'
+      + '</div>';
+  },
+
   actionsHTML: function() {
     return '<div class="card-actions">'
       + '<button class="alert-btn" data-act="card-compare">몰별 가격 비교</button>'
@@ -2162,6 +2893,7 @@ var Card = {
       + '<div class="mall-line">' + Fmt.esc(m.name) + '</div>'
       + '<div class="p-title">' + Fmt.esc(it.title) + '</div>'
       + Card.priceHTML(Fmt.int(it.lprice), Fmt.int(it.oprice), Fmt.int(it.savePct), m.cls === 'b-coupang')
+      + Card.trustHTML(it)
       + Card.asOfHTML(it)
       + Card.changeHTML(it)
       // data-key가 있으면 상품 단위(productId+mall)로, 없으면 상품명으로 이력을 찾는다.
@@ -2186,6 +2918,8 @@ var Card = {
       productId: pid || stored.productId || '',
       link: stored.link || '',
       image: stored.image || '',
+      // 서버가 계산한 신뢰도. 가격 모달이 근거를 그대로 다시 보여준다.
+      trust: stored.trust || null,
       glyph: card.dataset.glyph || '✦'
     };
   }
@@ -2197,12 +2931,19 @@ document.addEventListener('error', function(e) {
   if (!img || img.tagName !== 'IMG') return;
 
   var card = img.closest('.card');
+  var lthumb = img.closest('.lthumb');
   img.style.display = 'none';
   if (card && !card.querySelector('.glyph')) {
     var g = document.createElement('span');
     g.className = 'glyph';
     g.textContent = card.dataset.glyph || '✦';
     if (img.parentNode) img.parentNode.appendChild(g);
+  }
+  if (lthumb && !lthumb.querySelector('.glyph')) {
+    var g2 = document.createElement('span');
+    g2.className = 'glyph';
+    g2.textContent = '✦';
+    lthumb.appendChild(g2);
   }
 }, true);
 
@@ -2242,24 +2983,29 @@ var Grid = {
   fillSparklines: function(scope, items) {
     if (!GS || !scope || !items || !items.length) return;
 
-    // productId가 있는 상품은 상품 단위 키로, 없는 것만 상품명으로 조회한다.
-    var keys = [], titles = [];
+    /*
+     * 상품 단위 키가 있는 것만 조회한다. 상품명 폴백은 없앴다.
+     *
+     * 스파크라인 자체는 그림이지만 여기서 붙는 '역대 최저가' 뱃지
+     * (markAllTimeLow)는 이 카드의 가격에 대한 주장이다. 상품명으로 찾은
+     * 남의 이력으로 뱃지를 달면, 사용자는 이 상품이 역대 최저가라고 믿고
+     * 클릭한다. 식별자가 없으면 그래프도 뱃지도 그리지 않는 게 맞다.
+     */
+    var keys = [];
     items.forEach(function(it) {
       if (!it || !it.title) return;
       var k = histKey(it);
-      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
-      else if (titles.indexOf(it.title) === -1) titles.push(it.title);
+      if (k && keys.indexOf(k) === -1) keys.push(k);
     });
-    if (!keys.length && !titles.length) return;
+    if (!keys.length) return;
 
-    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }], function(map) {
+    Api.call('getHistoryBatch', [{ keys: keys }], function(map) {
       if (!map) return;
       HistCache.putAll(map);   // AI 컨텍스트가 같은 이력을 다시 받지 않도록
       $$('.spark', scope).forEach(function(box) {
-        // data-key로 먼저 찾고, 없으면 상품명으로 폴백한다.
         var k = box.dataset.key;
-        var hist = (k && map[k] !== undefined) ? map[k]
-                 : (map[box.dataset.title] !== undefined ? map[box.dataset.title] : undefined);
+        // "아직 모른다"(undefined)와 "조회했는데 기록이 없다"(빈 배열)를 구분한다.
+        var hist = (k && map[k] !== undefined) ? map[k] : undefined;
         if (hist === undefined) return;
         hist = hist || [];
         box.innerHTML = Grid.sparkSVG(hist);
@@ -2497,17 +3243,535 @@ var Share = {
  * ========================================================== */
 var HOME_SECTIONS = ['today', 'monthly', 'recent', 'priceDrop', 'forYou', 'histRec'];
 
+/* ============================================================
+ *  [10-0] Url — 주소 ↔ 화면 상태
+ *
+ *  이 모듈은 순수 함수만 갖는다. location / history 를 건드리지 않는다.
+ *  그래야 scripts/test-url.js 가 브라우저 없이 그대로 평가할 수 있다.
+ *
+ *  왜 따로 뺐나 — 2026-08-10 감사에서 나온 문제들
+ *   · 같은 상태인데 URL 이 두 가지였다 ("?q=x&min=0&max=3만" 과 "?q=x&max=3만")
+ *   · 파싱과 직렬화가 서로 다른 곳에 흩어져 있어 규칙이 갈라질 수 있었다
+ *   · 잘못된 값 처리 규칙을 한눈에 볼 수 없었다
+ *
+ *  원칙
+ *   1. 기본값은 주소에 넣지 않는다.
+ *   2. 모르는 값은 무시하고 기본값으로 둔다 (오류를 내지 않는다).
+ *   3. 같은 상태는 항상 같은 URL 이 된다 (파라미터 순서 고정 · 0 정규화).
+ *   4. 기존 링크를 깨지 않는다 (옛 값도 계속 읽힌다).
+ * ========================================================== */
+var Url = {
+
+  /** 허용되는 정렬 값. 여기 없는 값은 전부 기본(관련도순)이다. */
+  SORTS: ['lowprice', 'highprice', 'trust', 'drop'],
+
+  /*
+   * 옛/외부 표기를 현재 값으로 옮겨 준다.
+   * 링크를 손으로 만들거나 다른 문서에서 복사해 온 경우를 위한 것이다.
+   * 새로 만드는 URL 에는 항상 표준 값만 쓴다 (build 참고).
+   */
+  SORT_ALIAS: {
+    price: 'lowprice', lowest: 'lowprice',
+    highest: 'highprice',
+    relevance: 'default', rel: 'default', best: 'default'
+  },
+
+  TRUSTS: ['high', 'medium', 'notlow', 'fresh'],
+  SHIPS: ['rocket', 'free'],
+  MALLS: ['쿠팡', '네이버쇼핑', '알리익스프레스'],
+
+  /** api/_price.js 의 MAX_PRICE 와 같은 상한. */
+  MAX_PRICE: 100000000,
+
+  /** 검색어 최대 길이. api/search.js 의 MAX_KEYWORD_LEN 과 같은 값. */
+  MAX_Q: 80,
+
+  /** 아무것도 안 건드린 상태. build() 는 이 값과 같은 항목을 주소에 넣지 않는다. */
+  defaults: function() {
+    return {
+      q: '', sort: 'default',
+      mall: 'all', minPrice: null, maxPrice: null, trust: 'all', drop: false, ship: 'all'
+    };
+  },
+
+  /** 쿼리스트링에서 파라미터 하나. 없으면 ''. 깨진 인코딩도 던지지 않는다. */
+  param: function(search, name) {
+    try {
+      var m = new RegExp('[?&]' + name + '=([^&]*)').exec(String(search || ''));
+      if (!m) return '';
+      return decodeURIComponent(m[1].replace(/\+/g, ' '));
+    } catch (e) {
+      // "%E0%A4" 같은 깨진 시퀀스. 값이 없는 것으로 본다.
+      return '';
+    }
+  },
+
+  /**
+   * 가격 파라미터 → 숫자 또는 null.
+   *
+   * 0 은 null 로 접는다. "하한 0원"과 "하한 없음"은 결과가 같은데
+   * URL 만 두 가지가 되기 때문이다 (?min=0&max=30000 / ?max=30000).
+   * 음수 · 1억 초과 · 숫자가 아닌 값은 전부 null.
+   */
+  price: function(v) {
+    var s = String(v == null ? '' : v).replace(/[,\s원]/g, '');
+    if (!s || !/^\d+$/.test(s)) return null;
+    var n = parseInt(s, 10);
+    if (!isFinite(n) || n <= 0 || n > Url.MAX_PRICE) return null;
+    return n;
+  },
+
+  /**
+   * 쿼리스트링 → 화면 상태.
+   * 어떤 입력이 와도 예외를 던지지 않는다. 모르는 값은 기본값이다.
+   */
+  parse: function(search) {
+    var s = Url.defaults();
+
+    s.q = String(Url.param(search, 'q') || '').trim().slice(0, Url.MAX_Q);
+
+    var sort = String(Url.param(search, 'sort') || '').toLowerCase();
+    if (Url.SORT_ALIAS[sort]) sort = Url.SORT_ALIAS[sort];
+    if (Url.SORTS.indexOf(sort) > -1) s.sort = sort;
+
+    s.minPrice = Url.price(Url.param(search, 'min'));
+    s.maxPrice = Url.price(Url.param(search, 'max'));
+    // 뒤집힌 범위는 바로잡는다 (min=100만 max=1만 같은 링크)
+    if (s.minPrice != null && s.maxPrice != null && s.minPrice > s.maxPrice) {
+      var t = s.minPrice; s.minPrice = s.maxPrice; s.maxPrice = t;
+    }
+
+    var tr = Url.param(search, 'trust');
+    if (Url.TRUSTS.indexOf(tr) > -1) s.trust = tr;
+
+    // boolean 은 명시된 값만 참으로 본다. "true"/"yes"/"0" 은 전부 거짓이다.
+    s.drop = Url.param(search, 'drop') === '1';
+
+    var sh = Url.param(search, 'ship');
+    if (Url.SHIPS.indexOf(sh) > -1) s.ship = sh;
+
+    var mall = Url.param(search, 'mall');
+    if (Url.MALLS.indexOf(mall) > -1) s.mall = mall;
+
+    return s;
+  },
+
+  /**
+   * 화면 상태 → 쿼리스트링. 검색어가 없으면 빈 문자열(=홈).
+   *
+   * 파라미터 순서는 고정이다. 같은 상태가 항상 같은 문자열이 되어야
+   * "주소가 이미 그 값이면 히스토리를 건드리지 않는다"는 판단이 성립한다.
+   */
+  build: function(state) {
+    var d = Url.defaults();
+    var s = state || d;
+    var kw = String(s.q == null ? '' : s.q).trim().slice(0, Url.MAX_Q);
+    if (!kw) return '';
+
+    var parts = ['q=' + encodeURIComponent(kw)];
+    if (s.sort && s.sort !== d.sort && Url.SORTS.indexOf(s.sort) > -1) parts.push('sort=' + s.sort);
+
+    var min = Url.price(s.minPrice);
+    var max = Url.price(s.maxPrice);
+    if (min != null) parts.push('min=' + min);
+    if (max != null) parts.push('max=' + max);
+
+    if (s.trust && Url.TRUSTS.indexOf(s.trust) > -1) parts.push('trust=' + s.trust);
+    if (s.drop) parts.push('drop=1');
+    if (s.ship && Url.SHIPS.indexOf(s.ship) > -1) parts.push('ship=' + s.ship);
+    if (s.mall && Url.MALLS.indexOf(s.mall) > -1) parts.push('mall=' + encodeURIComponent(s.mall));
+
+    return '?' + parts.join('&');
+  },
+
+  /** AppState → build() 가 먹는 모양. */
+  fromApp: function(appState) {
+    var f = appState.facets || {};
+    return {
+      q: appState.lastKeyword, sort: appState.sort,
+      mall: f.mall, minPrice: f.minPrice, maxPrice: f.maxPrice,
+      trust: f.trust, drop: f.drop, ship: f.ship
+    };
+  }
+};
+
+
+/* ============================================================
+ *  [10-1] Filters — 검색 결과 상세 필터 (가격 / 신뢰도 / 하락 / 배송)
+ *
+ *  설계 원칙
+ *   1. 없는 정보로 거르지 않는다.
+ *      배송 필터는 isRocket / isFreeShipping 값이 실제로 있는 결과에서만 뜬다.
+ *      (쿠팡 응답에는 있지만 예전 캐시에는 없다 — api/_coupang.js 주석 참고)
+ *   2. 신뢰도 기준을 새로 만들지 않는다.
+ *      서버가 붙여준 trust.level 을 그대로 쓴다 (high/medium/low/stale/unknown).
+ *   3. "가격 하락" 은 지금 싸다는 뜻이 아니다.
+ *      서버가 price_drop_top + _price.plausibleDrop 으로 판정해 붙여준
+ *      priceChange 가 있을 때만 하락으로 본다.
+ *   4. 비정상 가격은 가격 범위 계산에서 뺀다 (api/_price.parsePrice 와 같은 규칙).
+ * ========================================================== */
+var Filters = {
+
+  /** api/_price.js 의 MAX_PRICE 와 같은 값. 이걸 넘으면 가격이 아니라 파싱 사고다. */
+  MAX_PRICE: 100000000,
+
+  /** 빠른 선택 구간. 실제 products 가격 분포(중앙값 34,090원)를 보고 정했다. */
+  QUICK: [
+    { label: '3만원 이하',    min: 0,      max: 30000 },
+    { label: '3~10만원',      min: 30000,  max: 100000 },
+    { label: '10~50만원',     min: 100000, max: 500000 },
+    { label: '50만원 이상',   min: 500000, max: null }
+  ],
+
+  /**
+   * 이 상품의 "필터 계산에 쓸 수 있는" 가격. 못 쓰면 null.
+   * api/_price.parsePrice 와 같은 판정이다 — 0 이하, 1억 초과, 숫자가 아닌 값은 뺀다.
+   */
+  price: function(it) {
+    var n = parseInt(it && it.lprice, 10);
+    if (!isFinite(n) || n <= 0 || n > Filters.MAX_PRICE) return null;
+    return n;
+  },
+
+  /** 서버가 붙여준 신뢰도 등급. 없으면 'unknown'. */
+  level: function(it) {
+    return (it && it.trust && it.trust.level) || 'unknown';
+  },
+
+  /** 서버가 판정한 "실제 하락" 여부. 현재가가 싸다는 것과는 다르다. */
+  dropped: function(it) {
+    return !!(it && it.priceChange && it.priceChange.dropPct > 0);
+  },
+
+  /* ── 개별 조건 ── */
+
+  okMall: function(it, f) {
+    if (!f.mall || f.mall === 'all') return true;
+    var m = Fmt.mall(it);
+    if (f.mall === '쿠팡')           return m.cls === 'b-coupang';
+    if (f.mall === '알리익스프레스') return m.cls === 'b-ali';
+    return m.cls === 'b-naver';
+  },
+
+  okPrice: function(it, f) {
+    if (f.minPrice == null && f.maxPrice == null) return true;
+    var p = Filters.price(it);
+    // 가격을 못 읽는 상품은 범위 안에 있다고 말할 근거가 없다. 범위를 걸면 뺀다.
+    if (p == null) return false;
+    if (f.minPrice != null && p < f.minPrice) return false;
+    if (f.maxPrice != null && p > f.maxPrice) return false;
+    return true;
+  },
+
+  /**
+   * 신뢰도. 서버 등급을 그대로 해석만 한다.
+   *   high    신뢰 높음만
+   *   medium  보통 이상 (high + medium)
+   *   notlow  확인 필요(low) / 확인 불가(unknown) 제외
+   *   fresh   오래된 가격(stale) 제외
+   */
+  okTrust: function(it, f) {
+    if (!f.trust || f.trust === 'all') return true;
+    var lv = Filters.level(it);
+    if (f.trust === 'high')   return lv === 'high';
+    if (f.trust === 'medium') return lv === 'high' || lv === 'medium';
+    if (f.trust === 'notlow') return lv !== 'low' && lv !== 'unknown';
+    if (f.trust === 'fresh')  return lv !== 'stale';
+    return true;
+  },
+
+  okDrop: function(it, f) {
+    return !f.drop || Filters.dropped(it);
+  },
+
+  okShip: function(it, f) {
+    if (!f.ship || f.ship === 'all') return true;
+    // 값이 없는(null) 상품은 "로켓배송이 아니다" 가 아니라 "모른다" 다. 추측하지 않고 뺀다.
+    if (f.ship === 'rocket') return it.isRocket === true;
+    if (f.ship === 'free')   return it.isFreeShipping === true;
+    return true;
+  },
+
+  /**
+   * 전체 조건 적용. except 로 지정한 조건 하나는 건너뛴다
+   * (그 버튼을 눌렀을 때 몇 개가 남는지 세는 데 쓴다 — 눌러도 0건인 버튼을 알려주기 위해).
+   */
+  matches: function(it, f, except) {
+    if (!it) return false;
+    if (except !== 'mall'  && !Filters.okMall(it, f))  return false;
+    if (except !== 'price' && !Filters.okPrice(it, f)) return false;
+    if (except !== 'trust' && !Filters.okTrust(it, f)) return false;
+    if (except !== 'drop'  && !Filters.okDrop(it, f))  return false;
+    if (except !== 'ship'  && !Filters.okShip(it, f))  return false;
+    return true;
+  },
+
+  /** 어떤 조건 하나만 바꿔서 세어 본다. */
+  countWith: function(group, patch) {
+    var f = {};
+    for (var k in AppState.facets) f[k] = AppState.facets[k];
+    for (var k2 in patch) f[k2] = patch[k2];
+    return AppState.results.filter(function(it) { return Filters.matches(it, f); }).length;
+  },
+
+  /** 이 결과 목록이 배송 정보를 가지고 있는가 (하나라도 boolean 이면 있다). */
+  hasShipData: function() {
+    return AppState.results.some(function(it) {
+      return it && (typeof it.isRocket === 'boolean' || typeof it.isFreeShipping === 'boolean');
+    });
+  },
+
+  hasDropData: function() {
+    return AppState.results.some(Filters.dropped);
+  },
+
+  reset: function() {
+    AppState.facets = { mall: 'all', minPrice: null, maxPrice: null, trust: 'all', drop: false, ship: 'all' };
+  },
+
+  /** 입력창의 "50,000" / "5만" 같은 값을 숫자로. 못 읽으면 null. */
+  parseInput: function(v) {
+    var s = String(v == null ? '' : v).replace(/[,\s원]/g, '');
+    if (!s) return null;
+    var man = /^(\d+(?:\.\d+)?)만$/.exec(s);
+    if (man) s = String(Math.round(parseFloat(man[1]) * 10000));
+    if (!/^\d+$/.test(s)) return null;
+    var n = parseInt(s, 10);
+    if (!isFinite(n) || n < 0 || n > Filters.MAX_PRICE) return null;
+    return n;
+  },
+
+  /**
+   * 필터 한 줄을 켜고 끈다.
+   *
+   * 공용 show() 는 display:block 을 넣는데, .facet-row 는 flex 라야 라벨과
+   * 칩이 한 줄에 선다. block 으로 덮이면 모바일에서 줄이 무너진다.
+   */
+  showRow: function(id, on) {
+    var el = $(id);
+    if (el) el.style.display = on ? 'flex' : 'none';
+  },
+
+  /** 화면 갱신 — 버튼 활성 상태, 개수, 줄 노출 여부, 요약. */
+  render: function() {
+    var f = AppState.facets;
+    var total = AppState.results.length;
+    var shown = Search.viewList().length;
+
+    // 가격 빠른 선택
+    var pq = $('priceQuick');
+    if (pq) {
+      pq.innerHTML = Filters.QUICK.map(function(q, i) {
+        var on = f.minPrice === q.min && f.maxPrice === q.max;
+        var n = Filters.countWith('price', { minPrice: q.min, maxPrice: q.max });
+        return '<button class="facet-btn' + (on ? ' act' : '') + (n === 0 && !on ? ' void' : '')
+          + '" data-act="price-quick" data-idx="' + i + '">' + Fmt.esc(q.label)
+          + '<span class="fcount">' + n + '</span></button>';
+      }).join('');
+    }
+
+    // 신뢰도
+    var trustCounts = {
+      high:   Filters.countWith('trust', { trust: 'high' }),
+      medium: Filters.countWith('trust', { trust: 'medium' }),
+      notlow: Filters.countWith('trust', { trust: 'notlow' }),
+      fresh:  Filters.countWith('trust', { trust: 'fresh' })
+    };
+    setText('fcTrustHigh',   trustCounts.high);
+    setText('fcTrustMed',    trustCounts.medium);
+    setText('fcTrustNotLow', trustCounts.notlow);
+    setText('fcTrustFresh',  trustCounts.fresh);
+    $$('[data-act="trust"]').forEach(function(b) {
+      var t = b.dataset.trust;
+      b.classList.toggle('act', f.trust === t);
+      b.classList.toggle('void', t !== 'all' && trustCounts[t] === 0 && f.trust !== t);
+    });
+
+    // 가격 하락 — 하락 정보를 가진 상품이 하나도 없으면 줄 자체를 숨긴다
+    var dropN = Filters.countWith('drop', { drop: true });
+    setText('fcDrop', dropN);
+    var dropBtn = document.querySelector('[data-act="drop"]');
+    if (dropBtn) dropBtn.classList.toggle('act', !!f.drop);
+    Filters.showRow('frDrop', Filters.hasDropData());
+    var sbDrop = $('sbDrop');
+    if (sbDrop) sbDrop.style.display = Filters.hasDropData() ? '' : 'none';
+
+    // 배송 — 값이 없는 결과에서는 줄 자체를 숨긴다 (없는 정보로 거르지 않는다)
+    var hasShip = Filters.hasShipData();
+    Filters.showRow('frShip', hasShip);
+    if (hasShip) {
+      var rocketN = Filters.countWith('ship', { ship: 'rocket' });
+      var freeN   = Filters.countWith('ship', { ship: 'free' });
+      setText('fcRocket', rocketN);
+      setText('fcFree', freeN);
+      $$('[data-act="ship"]').forEach(function(b) {
+        var s = b.dataset.ship;
+        var n = s === 'rocket' ? rocketN : freeN;
+        b.classList.toggle('act', f.ship === s);
+        b.classList.toggle('void', n === 0 && f.ship !== s);
+      });
+    }
+
+    // 가격 입력창 (사용자가 타이핑 중일 때는 덮어쓰지 않는다)
+    var mi = $('fMin'), ma = $('fMax');
+    if (mi && document.activeElement !== mi) mi.value = f.minPrice == null ? '' : Fmt.won(f.minPrice);
+    if (ma && document.activeElement !== ma) ma.value = f.maxPrice == null ? '' : Fmt.won(f.maxPrice);
+
+    // 요약
+    var active = Filters.activeLabels();
+    setHTML('facetSummary',
+      '<span><b>' + shown + '</b>개 표시' + (shown !== total ? ' · 전체 ' + total + '개' : '') + '</span>'
+      + (active.length ? '<span>' + Fmt.esc(active.join(' · ')) + '</span>'
+          + '<button class="facet-reset" data-act="facet-reset">필터 초기화</button>' : ''));
+
+    Filters.showRow('facetBar', total > 0);
+  },
+
+  activeLabels: function() {
+    var f = AppState.facets;
+    var out = [];
+    if (f.minPrice != null || f.maxPrice != null) {
+      out.push((f.minPrice != null ? Fmt.won(f.minPrice) : '0') + '~'
+        + (f.maxPrice != null ? Fmt.won(f.maxPrice) + '원' : '제한없음'));
+    }
+    if (f.trust && f.trust !== 'all') {
+      out.push({ high: '신뢰 높음', medium: '보통 이상', notlow: '확인 필요 제외', fresh: '오래된 가격 제외' }[f.trust]);
+    }
+    if (f.drop) out.push('최근 가격 하락');
+    if (f.ship === 'rocket') out.push('로켓배송');
+    if (f.ship === 'free') out.push('무료배송');
+    if (f.mall && f.mall !== 'all') out.push(f.mall);
+    return out;
+  }
+};
+
+
 var Search = {
 
-  run: function(kw) {
+  /*
+   * 검색어 ↔ 주소.
+   *
+   * 지금까지 검색은 주소에 아무 흔적을 남기지 않았다. 그래서
+   *   - 검색 결과를 링크로 보낼 수 없고
+   *   - 새로고침하면 홈으로 돌아가고
+   *   - 모바일에서 뒤로 가기를 누르면 사이트를 떠난다
+   * 세 가지가 전부 안 됐다. ?q= 하나만 쓴다. 정렬·필터는 넣지 않는다 —
+   * 그건 화면 상태지 공유할 대상이 아니고, 주소를 늘리면 되돌리기 어렵다.
+   */
+  /**
+   * 현재 화면 상태를 주소에 반영한다.
+   *
+   * @param {object} opts
+   *   replace — pushState 대신 replaceState. 히스토리 항목을 새로 만들지 않는다.
+   *
+   * 히스토리 정책
+   *   새 검색      → push  (뒤로 가면 이전 검색으로 돌아가야 한다)
+   *   필터·정렬    → push  (뒤로 가면 필터를 걸기 전으로 돌아가야 한다)
+   *   주소로 복원  → 아무것도 하지 않는다 (호출부가 pushUrl 을 부르지 않는다)
+   *
+   * 예전에는 같은 검색어 안에서의 필터 변경을 replaceState 로 처리했다.
+   * 히스토리가 덜 쌓여서 좋아 보였는데, 실제로 눌러 보면
+   * "?q=노트북 → 50만원 이하 → 신뢰 높음" 상태에서 뒤로 가기를 누르면
+   * 필터 두 단계를 통째로 건너뛰고 그 앞의 다른 검색어로 튀었다.
+   * 사용자가 방금 한 조작이 되돌려지지 않는 쪽이 더 나쁘다.
+   */
+  pushUrl: function(kw, opts) {
+    if (!window.history || !window.history.pushState) return;
+
+    var state = Url.fromApp(AppState);
+    state.q = kw || '';
+    var url = location.pathname + Url.build(state);
+
+    // 주소가 이미 그 값이면 히스토리를 건드리지 않는다 (같은 항목이 겹쳐 쌓이는 것을 막는다).
+    if (location.pathname + location.search === url) return;
+
+    try {
+      if (opts && opts.replace) history.replaceState({ q: state.q }, '', url);
+      else history.pushState({ q: state.q }, '', url);
+    } catch (e) { /* file:// 등 history 를 못 쓰는 환경 */ }
+  },
+
+  /** 지금 주소가 나타내는 상태. 잘못된 값은 Url.parse 가 기본값으로 접는다. */
+  urlState: function() {
+    return Url.parse(location.search || '');
+  },
+
+  /**
+   * 주소에 담긴 필터·정렬을 상태로 되돌린다.
+   * 값이 이상하면 조용히 기본값으로 둔다 — 링크 하나 때문에 화면이 깨지면 안 된다.
+   */
+  readFacetsFromUrl: function() {
+    var s = Search.urlState();
+    Filters.reset();
+    AppState.sort = s.sort;
+    AppState.facets.minPrice = s.minPrice;
+    AppState.facets.maxPrice = s.maxPrice;
+    AppState.facets.trust = s.trust;
+    AppState.facets.drop = s.drop;
+    AppState.facets.ship = s.ship;
+    AppState.facets.mall = s.mall;
+  },
+
+  /** 주소에 들어 있는 검색어. 없으면 빈 문자열. */
+  urlKeyword: function() {
+    return Search.urlState().q;
+  },
+
+  /**
+   * 이 세션에서 이미 받아온 검색 결과.
+   *
+   * 뒤로/앞으로 갈 때마다 /api/search 를 다시 부르지 않기 위한 것이다.
+   * 그 호출은 공짜가 아니다 — 서버가 products / price_history 에 다시 쓰고,
+   * 쿠팡 캐시가 만료돼 있으면 쿠팡 API 까지 한 번 더 나간다.
+   * 실측(2026-08-10): A→B→C 검색 후 뒤로 2번 + 앞으로 1번에
+   * /api/search 3회, /api/stats 3회가 추가로 나갔다.
+   */
+  cache: {},
+  CACHE_MAX_AGE_MS: 10 * 60 * 1000,
+
+  cacheKey: function(kw) { return String(kw || '').trim().toLowerCase(); },
+
+  cached: function(kw) {
+    var c = Search.cache[Search.cacheKey(kw)];
+    if (!c) return null;
+    if (Date.now() - c.at > Search.CACHE_MAX_AGE_MS) return null;
+    return c;
+  },
+
+  /**
+   * @param {object} opts
+   *   fromUrl — 주소 변경(최초 진입 / 새로고침 / 뒤로가기)으로 실행된 검색.
+   *             히스토리를 쌓지 않고, 집계도 올리지 않고, 캐시가 있으면 재사용한다.
+   */
+  run: function(kw, opts) {
     var qEl = $('q');
+    var fromUrl = !!(opts && opts.fromUrl);
     kw = kw || (qEl ? qEl.value.trim() : '');
     if (!kw) return;
 
+    /*
+     * 필터·정렬 상태.
+     *   새 검색      → 초기화한다. 앞 검색의 "50만원 이하"가 남아 있으면
+     *                  사용자는 결과가 왜 비었는지 알 수 없다.
+     *   주소로 진입  → 주소에 담긴 값을 복원한다 (공유 링크 · 새로고침 · 뒤로가기).
+     */
+    if (fromUrl) Search.readFacetsFromUrl();
+    else { Filters.reset(); AppState.sort = 'default'; Search.pushUrl(kw); }
+
     if (qEl) qEl.value = kw;
     AppState.lastKeyword = kw;
-    Recent.addSearch(kw);
     HistRec.idx = 0;   // 최신 검색어 기준으로 추천 갱신되도록
+
+    /*
+     * 최근 검색 기록과 인기 검색어 집계는 "사용자가 방금 검색한 것"만 센다.
+     * 뒤로가기로 되돌아온 것은 새 검색이 아니다. 예전에는 이것도 셌기 때문에
+     * 뒤로 가기를 누르는 것만으로 인기 검색어 순위가 올라갔다
+     * (실측: 뒤로/앞으로 3번에 '마우스' 2회, '노트북' 2회가 더 집계됐다).
+     */
+    if (!fromUrl) {
+      Recent.addSearch(kw);
+      Api.fire('recordSearchStat_', [kw]);
+    }
 
     var ac = $('autocomplete');
     if (ac) ac.classList.remove('open');
@@ -2518,19 +3782,32 @@ var Search = {
     if (values) values.style.display = 'none';
 
     show('results', true);
-    setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 큐레이션 중…</h3>');
     show('sortBar', false);
     show('filterBar', false);
+    show('facetBar', false);
+
+    /*
+     * 뒤로/앞으로: 이미 받아둔 결과가 있으면 네트워크를 타지 않는다.
+     * 스켈레톤도 띄우지 않는다 — 이미 본 화면이 다시 로딩되는 것처럼 보이면
+     * 사용자는 뒤로 가기가 느리다고 느낀다.
+     */
+    var hit = fromUrl ? Search.cached(kw) : null;
+    if (hit) {
+      Search.showResults(kw, hit.items, hit.meta);
+      var resEl = $('results');
+      if (resEl) resEl.scrollIntoView({ behavior: 'auto' });
+      return;
+    }
+
+    setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 큐레이션 중…</h3>');
     var res = $('results');
     if (res) res.scrollIntoView({ behavior: 'smooth' });
-
-    // 인기 검색어 / 자동완성이 이 집계를 먹고 산다. 실패해도 검색은 계속 진행한다.
-    Api.fire('recordSearchStat_', [kw]);
 
     var sk = Skeleton.start($('resGrid'), CONST.SKELETON.RESULT_COUNT);
 
     Api.call('searchAndSave', [kw],
       function(items, meta) {
+        Search.cache[Search.cacheKey(kw)] = { items: items || [], meta: meta || {}, at: Date.now() };
         sk.done(function() { Search.showResults(kw, items, meta); });
       },
       function(err) {
@@ -2543,7 +3820,52 @@ var Search = {
   },
 
   /**
-   * @param {object} meta {source, blocked} — 이 가격이 어디서 왔는지 (/api/search 응답 헤더)
+   * 결과가 0건일 때 보여줄 안내.
+   *
+   * "다른 키워드로 검색해 보세요" 한 줄은 아무 도움이 안 된다. 무엇으로
+   * 바꿔야 하는지를 같이 준다. 후보는 서버가 우리가 실제로 가진 검색어
+   * (search_stats / products.keyword) 에서 골라 보낸 것이고, 없으면
+   * 화면에 이미 있는 인기 검색어로 대신한다. 없는 말을 지어내지 않는다.
+   */
+  emptyHelp: function(kw, meta) {
+    var html = '';
+
+    // 오타/표기 보정 — 검색을 대신 바꾸지 않고 제안만 한다
+    if (meta.correct && meta.correct !== kw) {
+      var why = meta.correctKind === 'spacing' ? '띄어쓰기가 다른 검색어가 있어요'
+              : meta.correctKind === 'layout'  ? '한글로 바꿔서 찾아볼까요'
+              : '혹시 이걸 찾으셨나요';
+      html += '<div class="empty-correct">' + why + '<br>'
+            + '<button class="empty-chip strong" data-act="chip" data-kw="' + Fmt.esc(meta.correct) + '">'
+            + Fmt.esc(meta.correct) + '</button></div>';
+    }
+
+    var alts = (meta.suggest && meta.suggest.length)
+      ? meta.suggest
+      : (AppState.popularKeywords || []).map(function(p) { return p.keyword; });
+
+    // __schema_check__ 같은 내부 점검용 키워드가 search_stats 에 들어 있다.
+    // 서버 제안(api/search.js)에서는 이미 빼지만, 인기 검색어로 대신 채울 때는
+    // 그대로 올라온다 — 실제로 검증 중에 화면에 노출됐다.
+    // 보정 제안으로 이미 크게 보여준 말을 아래 목록에 또 넣지 않는다.
+    alts = alts.filter(function(a) {
+      return a && a !== kw && a !== meta.correct && a.indexOf('__') !== 0;
+    }).slice(0, 6);
+
+    if (alts.length) {
+      html += '<div class="empty-alts">이런 검색어는 어떠세요</div><div class="empty-chips">'
+        + alts.map(function(a) {
+            return '<button class="empty-chip" data-act="chip" data-kw="' + Fmt.esc(a) + '">'
+                 + Fmt.esc(a) + '</button>';
+          }).join('')
+        + '</div>';
+    }
+
+    return html || '다른 키워드로 검색해 보세요.';
+  },
+
+  /**
+   * @param {object} meta {source, blocked, correct, suggest} — /api/search 응답 헤더
    */
   showResults: function(kw, items, meta) {
     meta = meta || {};
@@ -2560,7 +3882,7 @@ var Search = {
           + '<br>잠시 후 다시 시도해 주세요.</div>');
       } else {
         setHTML('banner', '<h3><em>"' + Fmt.esc(kw) + '"</em> 결과가 없어요</h3>');
-        setHTML('resGrid', '<div class="empty">다른 키워드로 검색해 보세요.</div>');
+        setHTML('resGrid', '<div class="empty">' + Search.emptyHelp(kw, meta) + '</div>');
       }
       return;
     }
@@ -2597,17 +3919,21 @@ var Search = {
     // (예전에는 여기서 상위 5개의 {title, price}만 AppState.context에 넣어 AI에게 보냈다.
     //  지금은 Chat.contextItems()가 화면 상태를 보고 직접 만든다.)
     AppState.results = items.slice();
-    AppState.sort = 'default';
-    AppState.mallFilter = 'all';
 
-    $$('.sort-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.sort === 'default'); });
-    $$('.filter-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.mall === 'all'); });
+    /*
+     * 여기서 상태를 초기화하지 않는다.
+     * run() 이 이미 정했다 — 새 검색이면 초기화, 주소로 들어온 것이면 주소값 복원.
+     * 이 자리에서 다시 'default'/'all' 로 되돌리면 공유 링크의 필터가 전부 사라진다.
+     */
+    $$('.sort-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.sort === AppState.sort); });
+    $$('.filter-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.mall === AppState.facets.mall); });
 
     var sb = $('sortBar');
     if (sb) sb.style.display = 'flex';
 
     Search.updateFilterCounts();
-    Search.applyView();
+    // 주소로 들어온 경우 여기서 pushUrl 을 또 하지 않는다 (히스토리 중복).
+    Search.applyView({ fromUrl: true });
   },
 
   /** 몰별 개수 표시 + 알리 버튼 노출 여부 */
@@ -2654,39 +3980,87 @@ var Search = {
    * 어긋남이 생긴다.
    */
   viewList: function() {
-    // 1) 몰 필터
-    var list = AppState.results.slice();
-    var f = AppState.mallFilter;
-    if (f && f !== 'all') {
-      list = list.filter(function(it) {
-        var m = Fmt.mall(it);
-        if (f === '쿠팡')            return m.cls === 'b-coupang';
-        if (f === '알리익스프레스')  return m.cls === 'b-ali';
-        return m.cls === 'b-naver';
-      });
-    }
+    // 1) 필터 (몰 + 가격범위 + 신뢰도 + 가격하락 + 배송)
+    var f = AppState.facets;
+    var list = AppState.results.filter(function(it) { return Filters.matches(it, f); });
 
-    // 2) 정렬
+    /*
+     * 2) 정렬
+     *
+     * ★ 기본은 '관련도순' 이고, 그때는 서버가 준 순서를 그대로 쓴다.
+     *   서버는 관련도 → 가격 신뢰도 → 가격 순으로 이미 세워 보냈다
+     *   (api/_search.sortByRelevance). 여기서 다시 세우면 그 순서가 깨진다.
+     *
+     * ★ 사용자가 명시적으로 다른 기준을 고르면 그 기준이 1순위다.
+     *   "최저가순" 을 눌렀는데 가격순이 아니면 그게 더 이상하다.
+     *   다만 동점일 때는 항상 관련도가 순서를 정한다 — 값이 같은 상품 중에서는
+     *   검색어에 더 잘 맞는 것이 위로 온다.
+     *
+     * ★ 어떤 정렬을 골라도 관련도 기준선(api/_search.MIN_SCORE) 미만 상품은
+     *   애초에 목록에 없다. 서버가 이미 걸러서 보내기 때문이다. 그래서
+     *   "싸다는 이유만으로 무관한 상품이 1위가 되는" 일은 생기지 않는다.
+     */
+    var rel = function(x) { return typeof x.relevance === 'number' ? x.relevance : 0; };
+    var price = function(x) { var p = Filters.price(x); return p == null ? null : p; };
+    var trust = function(x) { return (x.trust && Number(x.trust.score)) || 0; };
+    var drop = function(x) { return (x.priceChange && Number(x.priceChange.dropPct)) || 0; };
+
+    // 가격을 못 읽는 상품은 가격 정렬에서 맨 뒤로 보낸다 (0원으로 취급하면 1위가 된다).
+    var byPrice = function(dir) {
+      return function(a, b) {
+        var pa = price(a), pb = price(b);
+        if (pa == null && pb == null) return rel(b) - rel(a);
+        if (pa == null) return 1;
+        if (pb == null) return -1;
+        if (pa !== pb) return dir * (pa - pb);
+        return rel(b) - rel(a);
+      };
+    };
+
     var t = AppState.sort;
-    if (t === 'lowprice')       list.sort(function(a, b) { return Fmt.int(a.lprice) - Fmt.int(b.lprice); });
-    else if (t === 'highprice') list.sort(function(a, b) { return Fmt.int(b.lprice) - Fmt.int(a.lprice); });
-    else if (t === 'discount')  list.sort(function(a, b) { return Fmt.int(b.savePct) - Fmt.int(a.savePct); });
+    if (t === 'lowprice')       list.sort(byPrice(1));
+    else if (t === 'highprice') list.sort(byPrice(-1));
+    else if (t === 'trust')     list.sort(function(a, b) {
+      if (trust(a) !== trust(b)) return trust(b) - trust(a);
+      if (rel(a) !== rel(b)) return rel(b) - rel(a);
+      var pa = price(a), pb = price(b);
+      return (pa == null ? Infinity : pa) - (pb == null ? Infinity : pb);
+    });
+    else if (t === 'drop')      list.sort(function(a, b) {
+      // 하락 정보가 없는 상품은 "하락 0%" 이 아니라 "모름" 이다. 뒤로 보낸다.
+      if (drop(a) !== drop(b)) return drop(b) - drop(a);
+      return rel(b) - rel(a);
+    });
 
     return list;
   },
 
   /** 필터 → 정렬 순서로 적용해서 렌더 */
-  applyView: function() {
+  applyView: function(opts) {
     if (!AppState.results.length) return;
 
     var list = Search.viewList();
 
     if (!list.length) {
-      var g = $('resGrid');
-      if (g) g.innerHTML = '<div class="empty">해당 쇼핑몰 결과가 없어요.</div>';
-      return;
+      /*
+       * 필터를 걸어서 0건이 된 것과 검색 결과 자체가 없는 것은 다르다.
+       * 전자는 무엇을 풀면 되는지 알려줘야 사용자가 빠져나올 수 있다.
+       */
+      var labels = Filters.activeLabels();
+      setHTML('resGrid', '<div class="empty">'
+        + (labels.length
+            ? '조건에 맞는 상품이 없어요.<br><span style="font-size:.82rem">'
+              + Fmt.esc(labels.join(' · ')) + '</span>'
+              + '<div class="empty-chips" style="margin-top:18px">'
+              + '<button class="empty-chip strong" data-act="facet-reset">필터 초기화</button></div>'
+            : '해당 쇼핑몰 결과가 없어요.')
+        + '</div>');
+    } else {
+      Lazy.render(list);
     }
-    Lazy.render(list);
+
+    Filters.render();
+    if (!(opts && opts.fromUrl)) Search.pushUrl(AppState.lastKeyword);
   },
 
   changeSort: function(btn, type) {
@@ -2699,18 +4073,51 @@ var Search = {
   changeFilter: function(btn, mall) {
     $$('.filter-btn').forEach(function(b) { b.classList.remove('act'); });
     if (btn) btn.classList.add('act');
-    AppState.mallFilter = mall || 'all';
+    AppState.facets.mall = mall || 'all';
     Search.applyView();
   },
 
-  goHome: function() {
+  /** 상세 필터 하나를 바꾸고 다시 그린다. */
+  setFacet: function(patch) {
+    for (var k in patch) AppState.facets[k] = patch[k];
+    // 몰 필터는 옛 상태값과 항상 같이 움직여야 한다.
+    if (patch.mall !== undefined) {
+      $$('.filter-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.mall === patch.mall); });
+    }
+    Search.applyView();
+  },
+
+  resetFacets: function() {
+    Filters.reset();
+    $$('.filter-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.mall === 'all'); });
+    Search.applyView();
+  },
+
+  /**
+   * 가격 입력창의 값을 읽어 필터에 반영한다.
+   *
+   * "50000", "50,000", "5만", "5만원" 을 전부 받는다 — 모바일 숫자 키패드로
+   * 치다 보면 쉼표가 섞이고, 한국에서는 "만" 단위로 말한다.
+   * 최소가 최대보다 크면 뒤집어 준다. 오타를 오류 화면으로 되갚지 않는다.
+   */
+  applyPriceInputs: function() {
+    var min = Filters.parseInput(($('fMin') || {}).value);
+    var max = Filters.parseInput(($('fMax') || {}).value);
+    if (min != null && max != null && min > max) { var t = min; min = max; max = t; }
+    Search.setFacet({ minPrice: min, maxPrice: max });
+  },
+
+  goHome: function(opts) {
+    if (!(opts && opts.fromUrl)) Search.pushUrl('');
     var qEl = $('q');
     if (qEl) qEl.value = '';
     AppState.lastKeyword = '';
-    AppState.mallFilter = 'all';
+    // 홈으로 나가면 필터도 접는다. 남겨두면 다음 검색이 조용히 걸러진 채 시작된다.
+    Filters.reset();
 
     show('results', false);
     show('filterBar', false);
+    show('facetBar', false);
     show('today', true);
 
     var values = document.querySelector('.values');
@@ -2997,6 +4404,10 @@ var Drop = {
     var prev  = Fmt.int(it.oprice);
     var pct   = parseFloat(it.savePct) || 0;
     var atl   = it.isAllTimeLow ? '<span class="atl">★ 기록상 최저</span>' : '';
+    var imgSrc = Fmt.safeUrl(it.image);
+    var thumbInner = imgSrc
+      ? '<img src="' + Fmt.esc(imgSrc) + '" loading="lazy" referrerpolicy="no-referrer" alt="">'
+      : '<span class="glyph">' + Fmt.esc(Fmt.glyph(it.title)) + '</span>';
 
     return '<div class="lrow" data-act="ledger-open"'
       + ' data-title="' + Fmt.esc(it.title) + '"'
@@ -3004,6 +4415,7 @@ var Drop = {
       + ' data-pid="' + Fmt.esc(it.productId || '') + '"'
       + ' data-price="' + price + '">'
       + '<div class="rank">' + String(i + 1).padStart(2, '0') + '</div>'
+      + '<div class="lthumb">' + thumbInner + '</div>'
       + '<div class="lmain"><div class="lname">' + Fmt.esc(it.title) + '</div>'
       + '<div class="lmall">' + Fmt.esc(mall) + atl + '</div></div>'
       + '<div class="lprev">' + Fmt.won(prev) + '</div>'
@@ -3044,7 +4456,9 @@ var Drop = {
       mall: mall,
       productId: pid || stored.productId || '',
       link: stored.link || '',
-      image: stored.image || ''
+      image: stored.image || '',
+      // 시세판에서 연 모달도 카드와 같은 신뢰도 근거를 보여준다.
+      trust: stored.trust || null
     };
   }
 };
@@ -3178,17 +4592,30 @@ var Wish = {
     // (위시가 수십 개만 돼도 상품명 길이 때문에 금방 수 KB가 된다)
     var pool = AppState.wish.slice(0, CONST.LIMIT.HIST_BATCH);
 
-    var keys = [], titles = [];
+    /*
+     * 상품 단위 키(productId+mall)가 있는 항목만 조회한다.
+     *
+     * 예전에는 productId 가 없는 옛 항목을 상품명으로 조회하고, 그 결과로
+     * w.currentPrice 를 덮어썼다. 상품명은 고유하지 않다 — 쿠팡에는 같은
+     * 이름의 다른 상품이 흔하고, /api/history-batch 는 상품명 조회 시 여러
+     * 몰·여러 상품의 기록을 날짜별 최저가로 합쳐서 준다. 즉 남의 상품
+     * 가격이 내 위시 항목의 "현재가"가 되고, 위시 합계와 가격 알림 신청
+     * 기본값까지 그 값으로 계산됐다.
+     *
+     * 식별자가 없는 옛 항목은 갱신하지 않고 저장된 가격을 그대로 둔다.
+     * 갱신이 안 되는 것보다 남의 가격을 현재가로 보여주는 쪽이 나쁘다.
+     * (그 항목도 카드를 다시 열면 productId 가 채워진 값으로 교체된다)
+     */
+    var keys = [];
     pool.forEach(function(w) {
       if (!w || !w.title) return;
       var k = histKey(w);
-      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
-      else if (titles.indexOf(w.title) === -1) titles.push(w.title);
+      if (k && keys.indexOf(k) === -1) keys.push(k);
     });
-    if (!keys.length && !titles.length) return;
+    if (!keys.length) return;
 
     Wish._refreshing = true;
-    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }], function(map) {
+    Api.call('getHistoryBatch', [{ keys: keys }], function(map) {
       Wish._refreshing = false;
       if (!map) return;
       HistCache.putAll(map);   // AI 컨텍스트가 같은 이력을 다시 받지 않도록
@@ -3196,7 +4623,8 @@ var Wish = {
       var changed = false;
       AppState.wish.forEach(function(w) {
         var k = histKey(w);
-        var hist = (k && map[k]) ? map[k] : map[w.title];
+        if (!k) return;                  // 식별자 없는 옛 항목은 건드리지 않는다
+        var hist = map[k];
         if (!hist || !hist.length) return;
         var latest = hist[hist.length - 1].price;
         if (latest > 0 && latest !== w.currentPrice) { w.currentPrice = latest; changed = true; }
@@ -3551,23 +4979,32 @@ var HistRec = {
 
     var pool = items.slice(0, 12);
 
-    var keys = [], titles = [];
+    // 아래에서 상품 단위 키로만 이력을 쓴다. 상품명은 보내봐야 버려진다.
+    var keys = [];
     pool.forEach(function(p) {
       if (!p || !p.title) return;
       var k = histKey(p);
-      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
-      else if (titles.indexOf(p.title) === -1) titles.push(p.title);
+      if (k && keys.indexOf(k) === -1) keys.push(k);
     });
-    if (!keys.length && !titles.length) { HistRec.show(kw, [], 0); return; }
+    if (!keys.length) { HistRec.show(kw, [], 0); return; }
 
-    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }],
+    Api.call('getHistoryBatch', [{ keys: keys }],
       function(map) {
         map = map || {};
         var drops = [];
 
         pool.forEach(function(p) {
           var k = histKey(p);
-          var hist = (k && map[k]) ? map[k] : map[p.title];
+          /*
+           * 상품 단위 키로 찾은 이력만 쓴다.
+           *
+           * 예전에는 productId 로 못 찾으면 상품명(map[p.title])으로 폴백했다.
+           * 상품명은 고유하지 않아서 — 쿠팡에는 같은 이름의 다른 상품이 흔하다 —
+           * 남의 가격 이력을 가져와 아래에서 p.lprice 를 통째로 덮어썼다.
+           * 즉 카드에 다른 상품의 가격이 찍힐 수 있는 경로였다.
+           * 이력을 못 찾으면 그냥 이 섹션에서 빼는 편이 맞다.
+           */
+          var hist = k ? map[k] : null;
           if (!hist || hist.length < 2) return;
 
           var prices = hist.map(function(h) { return h.price; });
@@ -4041,14 +5478,22 @@ var Chat = {
   ensureHistory: function(items, done) {
     if (!GS || !items || !items.length) return done();
 
-    var keys = [], titles = [];
+    /*
+     * AI 에게 줄 이력도 상품 단위 키로만 받는다.
+     *
+     * 상품명으로 받은 이력은 같은 이름의 다른 상품·다른 몰 기록이 날짜별
+     * 최저가로 합쳐진 값이다. 그걸 넘기면 AI 가 "역대 최저가입니다",
+     * "30일 평균보다 쌉니다" 같은 판단을 남의 가격으로 하게 된다.
+     * 화면에 찍히는 숫자는 아니지만 사용자가 구매를 결정하는 근거다.
+     * 식별자가 없는 옛 항목은 이력 없이 진행한다 (AI 는 현재가만 본다).
+     */
+    var keys = [];
     items.forEach(function(it) {
       if (HistCache.get(it) !== null) return;   // 이미 안다 (기록 없음도 아는 것)
       var k = histKey(it);
-      if (k) { if (keys.indexOf(k) === -1) keys.push(k); }
-      else if (it.title && titles.indexOf(it.title) === -1) titles.push(it.title);
+      if (k && keys.indexOf(k) === -1) keys.push(k);
     });
-    if (!keys.length && !titles.length) return done();
+    if (!keys.length) return done();
 
     var finished = false;
     var t = setTimeout(function() {
@@ -4057,7 +5502,7 @@ var Chat = {
       done();          // 이력 없이 진행
     }, CONST.AI_HIST_WAIT_MS);
 
-    Api.call('getHistoryBatch', [{ keys: keys, titles: titles }], function(map) {
+    Api.call('getHistoryBatch', [{ keys: keys }], function(map) {
       HistCache.putAll(map);   // 늦게 왔어도 캐시는 채워둔다 (다음 질문에서 쓴다)
       if (finished) return;
       finished = true;
@@ -4103,6 +5548,22 @@ var Chat = {
 
       var st = PriceStat.from(HistCache.get(it));
       if (st) o.hist = st;   // 기록이 없으면 아예 넣지 않는다 (서버가 "기록 없음"으로 알린다)
+
+      /*
+       * 가격 신뢰도.
+       *
+       * 서버(api/_trust.js)가 계산해서 내려준 값을 그대로 넘긴다. 프론트가
+       * 다시 계산하거나 요약하지 않는다 — 화면에 보이는 근거와 AI 가 말하는
+       * 근거가 한 글자도 달라지면 안 된다.
+       * 없으면 넣지 않는다 (서버 프롬프트가 "신뢰도 정보 없음"으로 처리한다).
+       */
+      if (it.trust && it.trust.level) {
+        o.trust = {
+          level: String(it.trust.level),
+          label: String(it.trust.label || ''),
+          reasons: (it.trust.reasons || []).slice(0, 5).map(function(r) { return String(r.text || ''); })
+        };
+      }
 
       return o;
     });
@@ -4165,7 +5626,7 @@ var Chat = {
       source: ctx.source,
       keyword: AppState.lastKeyword || '',
       sort: AppState.sort,
-      mallFilter: AppState.mallFilter
+      mallFilter: AppState.facets.mall
     };
 
     // 빠진 가격 이력만 채운 뒤 질문한다 (실패해도 그냥 진행)
@@ -4181,6 +5642,8 @@ var Chat = {
           if (typing && typing.parentNode) typing.remove();
 
           if (!res) { Chat.bubble('응답을 받지 못했어요. 다시 시도해 주세요.', 'ai'); return; }
+
+          if (res.quota) Pro.updateQuotaBadge(res.quota);
 
           var html = Fmt.esc(res.text || '').replace(/\n/g, '<br>');
           if (res.items && res.items.length) {
@@ -4260,6 +5723,9 @@ var Modal = {
     // 모달이 열려 있으면 AI는 다른 무엇보다 이 상품 이야기를 하고 있어야 한다.
     AppState.modalItem = p;
 
+    // 신뢰도 근거는 이력 조회를 기다릴 필요가 없다 (서버가 이미 계산해 보냈다).
+    Modal.renderTrust(p.trust);
+
     setHTML('verdict', '<span class="vi">⏳</span><div class="vt"><b>불러오는 중…</b></div>');
     var v = $('verdict');
     if (v) v.className = 'verdict';
@@ -4269,7 +5735,7 @@ var Modal = {
 
     // productId가 있으면 상품 단위로 조회한다. 상품명으로만 조회하면
     // 같은 이름의 다른 몰/다른 상품 가격이 한 그래프에 섞인다.
-    Api.call('getPriceHistory', [{ title: p.title, productId: p.productId || '', mall: p.mall || '' }],
+    Api.call('getPriceHistory', [{ title: p.title, productId: p.productId || '', mall: p.mall || '', vendorItemId: p.vendorItemId || '' }],
       function(hist) {
         AppState.modalHist = hist || [];
         AppState.modalPrice = AppState.modalHist.length
@@ -4277,10 +5743,15 @@ var Modal = {
           : Fmt.int(p.lprice);
 
         // 이미 받아온 이력이니 AI 컨텍스트도 이걸 그대로 쓴다.
-        HistCache.put(histKey(p) || p.title, AppState.modalHist);
+        // 상품 단위 키가 있을 때만 캐시한다. 상품명으로 넣어봐야 HistCache.get 이
+        // 상품명으로는 찾지 않으므로 읽히지 않고, 읽힌다면 그게 오염 경로다.
+        var hk = histKey(p);
+        if (hk) HistCache.put(hk, AppState.modalHist);
 
         Modal.renderVerdict(AppState.modalPrice);
-        Modal.drawRange(DEFAULT_DAYS);
+        // 기록이 덮는 기간에 맞춰 탭을 정리하고, 실제로 볼 수 있는 구간을 그린다.
+        // (5일치 기록을 "30일" 탭으로 보여주면 30일 추이인 것처럼 읽힌다)
+        Modal.drawRange(Modal.syncRangeTabs());
       },
       function() {
         setHTML('verdict', '<span class="vi">⚠️</span><div class="vt"><b>가격 데이터를 불러오지 못했어요</b></div>');
@@ -4300,6 +5771,77 @@ var Modal = {
     var max = Math.max.apply(null, prices);
     var avg = Math.round(prices.reduce(function(a, b) { return a + b; }, 0) / prices.length);
     return { min: min, max: max, avg: avg, range: max - min };
+  },
+
+  /*
+   * 가격 신뢰도 근거.
+   *
+   * 서버가 계산한 reasons 를 그대로 나열한다. 프론트에서 문장을 만들어내지
+   * 않는다 — 모든 줄이 실제로 관측된 사실이어야 하기 때문이다.
+   * trust 가 없으면 패널 자체를 그리지 않는다 (기본값을 지어내지 않는다).
+   */
+  renderTrust: function(t) {
+    var box = $('trustPanel');
+    if (!box) return;
+    if (!t || !t.level) { box.innerHTML = ''; return; }
+
+    var KIND = { good: 'g', warn: 'w', bad: 'b' };
+    var MARK = { good: '✓', warn: '!', bad: '×' };
+
+    var items = (t.reasons || []).map(function(r) {
+      var k = KIND[r.kind] || 'w';
+      return '<li class="' + k + '"><span class="ti">' + (MARK[r.kind] || '·') + '</span>'
+        + '<span>' + Fmt.esc(r.text) + '</span></li>';
+    }).join('');
+
+    box.innerHTML = '<div class="trust-panel">'
+      + '<div class="tp-head trust t-' + Fmt.esc(t.level) + '">'
+      +   '<span class="trust-dot"></span>'
+      +   '<span class="trust-label">가격 신뢰도 · ' + Fmt.esc(t.label || '') + '</span>'
+      + '</div>'
+      + (items ? '<ul>' + items + '</ul>' : '')
+      + '</div>';
+  },
+
+  /** 가격 기록이 실제로 덮는 기간(일). 점이 1개 이하면 0. */
+  spanDays: function() {
+    var h = AppState.modalHist;
+    if (!h || h.length < 2) return 0;
+    var a = Date.parse(h[0].date), b = Date.parse(h[h.length - 1].date);
+    if (!a || !b) return 0;
+    return Math.max(0, Math.round((b - a) / 86400000));
+  },
+
+  /*
+   * 기록이 덮지 못하는 구간 탭은 비활성화한다.
+   *
+   * 5일치 기록으로 "90일" 탭을 누르면 같은 5개 점이 90일 그래프인 것처럼
+   * 보인다. 실제로 있는 기간만 고를 수 있게 하고, 없으면 왜 없는지 알린다.
+   */
+  syncRangeTabs: function() {
+    var span = Modal.spanDays();
+    var tabs = $$('#rangeTabs button');
+    var firstEnabled = null;
+
+    tabs.forEach(function(b) {
+      var d = Fmt.int(b.dataset.days);
+      // '전체'(9999)는 항상 열어둔다 — 기록이 얼마든 그게 전체다.
+      var ok = d >= 9999 || span >= d;
+      b.disabled = !ok;
+      b.style.opacity = ok ? '' : '.35';
+      b.style.cursor = ok ? '' : 'not-allowed';
+      b.title = ok ? '' : '가격 기록이 ' + span + '일치라 이 구간은 아직 볼 수 없어요';
+      if (ok && !firstEnabled) firstEnabled = b;
+    });
+
+    // 활성 탭이 비활성화됐으면 실제로 볼 수 있는 가장 짧은 구간으로 옮긴다.
+    var act = document.querySelector('#rangeTabs button.act');
+    if ((!act || act.disabled) && firstEnabled) {
+      tabs.forEach(function(b) { b.classList.remove('act'); });
+      firstEnabled.classList.add('act');
+      return Fmt.int(firstEnabled.dataset.days);
+    }
+    return act ? Fmt.int(act.dataset.days) : 9999;
   },
 
   renderVerdict: function(cur) {
@@ -4945,46 +6487,103 @@ var Auto = {
 
   box: function() { return $('autocomplete'); },
 
+  /**
+   * 비교용 정규화. 서버의 api/_search.js normalizeText/canonicalKey 와 같은 규칙이다.
+   * 대소문자·전각·특수문자·띄어쓰기 차이를 없앤다.
+   */
+  key: function(s) {
+    var t = String(s == null ? '' : s);
+    // String.prototype.normalize 가 없는 아주 오래된 브라우저에서도 죽지 않게 한다.
+    if (t.normalize) t = t.normalize('NFKC');
+    return t.toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+  },
+
+  /**
+   * 자동완성 후보.
+   *
+   * 예전에는 인기 검색어(search_stats) 하나만 봤고, 비교도 원문 부분 문자열이라
+   * "무선이어폰"을 치면 "무선 이어폰"이 안 나왔다. 실제로 두 표기가 각각
+   * 따로 집계돼 있다(search_stats: "무선 이어폰" 6회 / "무선이어폰" 1회).
+   *
+   * 재료는 늘리되 만들어내지는 않는다 — 우리가 실제로 가진 두 가지만 쓴다.
+   *   1) 인기 검색어  : 서버 집계 (search_stats)
+   *   2) 내 최근 검색 : 이 브라우저에 저장된 것 (Recent.addSearch)
+   * 없는 조합어를 지어내거나 상품명을 잘라 붙이지 않는다.
+   */
+  candidates: function() {
+    var out = [];
+    var seen = {};
+
+    (AppState.popularKeywords || []).forEach(function(p, i) {
+      if (!p || !p.keyword) return;
+      var k = Auto.key(p.keyword);
+      if (!k || seen[k]) return;
+      seen[k] = 1;
+      out.push({ keyword: p.keyword, count: p.count || 0, rank: i + 1, kind: 'pop', key: k });
+    });
+
+    (AppState.searches || []).forEach(function(s) {
+      var k = Auto.key(s);
+      // 이미 인기 검색어에 있으면 그쪽을 남긴다(집계 수치를 같이 보여줄 수 있다).
+      if (!k || seen[k]) return;
+      seen[k] = 1;
+      out.push({ keyword: s, count: 0, rank: 0, kind: 'recent', key: k });
+    });
+
+    return out;
+  },
+
+  row: function(m) {
+    var badge = m.kind === 'recent'
+      ? '<span class="ac-rank recent">최근</span>'
+      : '<span class="ac-rank' + (m.rank && m.rank <= 3 ? ' top' : '') + '">' + (m.rank || '·') + '</span>';
+    var tail = m.kind === 'recent' ? '' : '<span class="ai-count">' + m.count + '회</span>';
+    return '<div class="autocomplete-item" data-kw="' + Fmt.esc(m.keyword) + '">'
+      + badge + '<span>' + Fmt.esc(m.keyword) + '</span>' + tail + '</div>';
+  },
+
   render: function(v) {
     var box = Auto.box();
     if (!box) return;
 
-    var pop = AppState.popularKeywords || [];
+    var all = Auto.candidates();
 
     // 검색어 없으면 → 인기 검색어 TOP 노출
     if (!v) {
-      if (!pop.length) { Auto.close(); return; }
-      var top = pop.slice(0, CONST.LIMIT.AUTOCOMPLETE);
-      box.innerHTML = '<div class="ac-head">실시간 인기 검색어</div>'
-        + top.map(function(m, i) {
-            return '<div class="autocomplete-item" data-kw="' + Fmt.esc(m.keyword) + '">'
-              + '<span class="ac-rank' + (i < 3 ? ' top' : '') + '">' + (i + 1) + '</span>'
-              + '<span>' + Fmt.esc(m.keyword) + '</span>'
-              + '<span class="ai-count">' + (m.count || 0) + '회</span></div>';
-          }).join('');
+      var top = all.filter(function(m) { return m.kind === 'pop'; }).slice(0, CONST.LIMIT.AUTOCOMPLETE);
+      if (!top.length) { Auto.close(); return; }
+      box.innerHTML = '<div class="ac-head">실시간 인기 검색어</div>' + top.map(Auto.row).join('');
       box.classList.add('open');
       AppState.acIndex = -1;
       return;
     }
 
-    // 입력값이 있으면 → 매칭 결과 (원래 순위 유지)
+    /*
+     * 매칭. 띄어쓰기·대소문자 차이를 무시하고,
+     *   앞에서부터 일치 → 가운데 일치 순으로 세운다.
+     * 앞에서 일치하는 쪽이 사용자가 치고 있던 말일 가능성이 높다.
+     */
+    var vk = Auto.key(v);
     var matches = [];
-    pop.forEach(function(p, i) {
-      if (p.keyword && p.keyword.toLowerCase().indexOf(v) > -1) {
-        matches.push({ keyword: p.keyword, count: p.count, rank: i + 1 });
-      }
+    all.forEach(function(m) {
+      var at = vk ? m.key.indexOf(vk) : -1;
+      if (at < 0) return;
+      matches.push({ m: m, order: (at === 0 ? 0 : 1) });
     });
+
+    matches.sort(function(a, b) {
+      if (a.order !== b.order) return a.order - b.order;
+      // 인기 검색어를 최근 검색보다 먼저, 그다음은 집계 순
+      if (a.m.kind !== b.m.kind) return a.m.kind === 'pop' ? -1 : 1;
+      return (b.m.count || 0) - (a.m.count || 0);
+    });
+
     matches = matches.slice(0, CONST.LIMIT.AUTOCOMPLETE);
 
     if (!matches.length) {
       box.innerHTML = '<div class="autocomplete-empty">"' + Fmt.esc(v) + '"(으)로 바로 검색해 보세요</div>';
     } else {
-      box.innerHTML = matches.map(function(m) {
-        return '<div class="autocomplete-item" data-kw="' + Fmt.esc(m.keyword) + '">'
-          + '<span class="ac-rank' + (m.rank <= 3 ? ' top' : '') + '">' + m.rank + '</span>'
-          + '<span>' + Fmt.esc(m.keyword) + '</span>'
-          + '<span class="ai-count">' + (m.count || 0) + '회</span></div>';
-      }).join('');
+      box.innerHTML = matches.map(function(x) { return Auto.row(x.m); }).join('');
     }
     box.classList.add('open');
     AppState.acIndex = -1;
@@ -5029,6 +6628,26 @@ var Actions = {
   'rs-remove':function(el, e) { e.stopPropagation(); Recent.removeSearch(el.dataset.kw); },
   'sort':     function(el) { Search.changeSort(el, el.dataset.sort); },
   'filter':   function(el) { Search.changeFilter(el, el.dataset.mall); },
+
+  // ── 상세 필터 ──
+  // 같은 버튼을 다시 누르면 해제된다 (토글). 필터를 푸는 방법이 명확해야 한다.
+  'trust': function(el) {
+    var v = el.dataset.trust;
+    Search.setFacet({ trust: (AppState.facets.trust === v && v !== 'all') ? 'all' : v });
+  },
+  'drop': function() { Search.setFacet({ drop: !AppState.facets.drop }); },
+  'ship': function(el) {
+    var v = el.dataset.ship;
+    Search.setFacet({ ship: AppState.facets.ship === v ? 'all' : v });
+  },
+  'price-quick': function(el) {
+    var q = Filters.QUICK[parseInt(el.dataset.idx, 10)];
+    if (!q) return;
+    var on = AppState.facets.minPrice === q.min && AppState.facets.maxPrice === q.max;
+    Search.setFacet(on ? { minPrice: null, maxPrice: null } : { minPrice: q.min, maxPrice: q.max });
+  },
+  'price-apply':  function() { Search.applyPriceInputs(); },
+  'facet-reset':  function() { Search.resetFacets(); },
 
   // ── 카드 ──
   'heart':        function(el, e) { e.stopPropagation(); Wish.toggle(el); },
@@ -5105,6 +6724,10 @@ var Actions = {
   'close-auth':   function() { Auth.close(); },
   'auth-submit':  function() { Auth.submit(); },
   'auth-restart': function() { Auth.restart(); },
+  'open-pro':     function() { Pro.open(); },
+  'close-pro':    function() { Pro.close(); },
+  'pro-pay':      function() { Pro.pay(); },
+  'pro-cancel':   function() { Pro.cancel(); },
   'myalerts-load':  function() { MyAlerts.load(); },
   'myalert-del':    function(el) { MyAlerts.remove(el); }
 };
@@ -5117,6 +6740,7 @@ document.addEventListener('click', function(e) {
   if (e.target.id === 'alertOverlay')   { Alert.close(); return; }
   if (e.target.id === 'myAlertsOverlay'){ MyAlerts.close(); return; }
   if (e.target.id === 'authOverlay')    { Auth.close(); return; }
+  if (e.target.id === 'proOverlay')     { Pro.close(); return; }
 
   var el = e.target.closest('[data-act]');
   if (!el) return;
@@ -5173,6 +6797,21 @@ function bindInputs() {
 
     q.addEventListener('blur', function() { setTimeout(Auto.close, 200); });
   }
+
+  /*
+   * 가격 입력창.
+   * Enter 로도 적용된다 — 모바일에서는 "적용" 버튼까지 손가락을 옮기는 것보다
+   * 키패드의 확인을 누르는 쪽이 자연스럽다.
+   */
+  ['fMin', 'fMax'].forEach(function(id) {
+    var el = $(id);
+    if (!el) return;
+    el.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); Search.applyPriceInputs(); }
+    });
+    // 포커스를 잃으면 자동 적용. 버튼을 못 찾아 헤매지 않게 한다.
+    el.addEventListener('blur', function() { setTimeout(Search.applyPriceInputs, 120); });
+  });
 
   // 챗 입력
   var chatInput = $('chatInput');
@@ -5255,6 +6894,7 @@ var HERO_COPIES = [
   ['내가 산 가격이,', '최저가였을까요?'],
   ['매일 새벽,', '가격을 수집합니다.'],
   ['현명한 소비자의', '첫 번째 검색.']
+  ['서사는', '구매를 강요하지 않습니다.']
 ];
 
 (function() {
@@ -5278,9 +6918,18 @@ var Init = {
   },
 
   applyPopular: function(pop) {
-    AppState.popularKeywords = pop || [];
-    var list = (pop && pop.length)
-      ? pop.slice(0, CONST.LIMIT.HOME_CHIPS).map(function(p) { return p.keyword; })
+    /*
+     * 내부 점검용 키워드는 사용자에게 보여줄 말이 아니다.
+     * search_stats 에 "__schema_check__" 가 9회로 1위에 올라 있어서
+     * 홈 칩과 자동완성 맨 앞에 그대로 노출되고 있었다. DB 는 건드리지 않고
+     * 노출만 막는다 (지우는 것은 별개 판단이다).
+     */
+    AppState.popularKeywords = (pop || []).filter(function(p) {
+      return p && p.keyword && p.keyword.indexOf('__') !== 0;
+    });
+
+    var list = AppState.popularKeywords.length
+      ? AppState.popularKeywords.slice(0, CONST.LIMIT.HOME_CHIPS).map(function(p) { return p.keyword; })
       : CONST.DEFAULT_CHIPS;
     Init.renderChips(list);
   },
@@ -5345,16 +6994,56 @@ var Init = {
           show('dropLoading', false);
           show('priceDrop', false);
         }
+
+        if (d.tossClientKey) window.__TOSS_CLIENT_KEY__ = d.tossClientKey;
       },
       function() { Init.loadIndividually(); }
     );
 
     ForYou.load();
     HistRec.load();    // ★ 최근 검색 기반 추천
+
+    Init.bindHistory();
+  },
+
+  /**
+   * 주소의 ?q= 를 검색 상태와 연결한다.
+   *
+   * 최초 진입: 주소에 검색어가 있으면 그대로 검색한다(공유 링크·새로고침).
+   * 뒤로/앞으로: 주소를 따라 결과 화면과 홈을 오간다. 여기서 다시
+   *              pushState 를 하면 히스토리가 무한히 쌓이므로 fromUrl 을 넘긴다.
+   */
+  bindHistory: function() {
+    var initial = Search.urlKeyword();
+    if (initial) Search.run(initial, { fromUrl: true });
+
+    window.addEventListener('popstate', function() {
+      var kw = Search.urlKeyword();
+
+      if (!kw) { Search.goHome({ fromUrl: true }); return; }
+
+      /*
+       * 검색어는 그대로고 필터·정렬만 달라진 경우 (필터를 걸었다가 뒤로 간 경우).
+       * 다시 검색할 이유가 없다 — 이미 손에 있는 결과를 다시 거르기만 하면 된다.
+       * Search.run 을 부르면 화면이 스켈레톤으로 한 번 비워졌다가 돌아와서,
+       * 뒤로 가기가 새 페이지 로딩처럼 느껴진다.
+       */
+      if (kw === AppState.lastKeyword && AppState.results.length) {
+        Search.readFacetsFromUrl();
+        $$('.sort-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.sort === AppState.sort); });
+        $$('.filter-btn').forEach(function(b) { b.classList.toggle('act', b.dataset.mall === AppState.facets.mall); });
+        Search.applyView({ fromUrl: true });
+        return;
+      }
+
+      Search.run(kw, { fromUrl: true });
+    });
   }
 };
 
 Init.run();
+Pro.confirmFromUrl();
+Pro.handleFail();
 </script>
 
 <!-- Google Analytics -->

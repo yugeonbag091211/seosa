@@ -213,7 +213,15 @@ async function readInput(src) {
       price,
       link,
       recorded_at: new Date(`${date}T00:00:00Z`).toISOString(),
-      recorded_date: date
+      recorded_date: date,
+      /*
+       * vendor_item_id 는 CSV 에 없으므로 빈 문자열로 채운다. 컬럼이 NOT NULL
+       * DEFAULT '' 라 값을 안 보내도 되지만, 아래 upsert 의 onConflict 대상이
+       * (pid, mall, vid, recorded_date) 로 바뀌었기 때문에 벤더가 없을 때도
+       * 명시적으로 '' 를 넣어 두어야 매칭 대상이 확실해진다.
+       */
+      vendor_item_id: '',
+      item_id: ''
     });
   });
 
@@ -243,9 +251,12 @@ async function readInput(src) {
   let done = 0;
   for (let i = 0; i < out.length; i += CHUNK) {
     const chunk = out.slice(i, i + CHUNK);
+    // onConflict 는 api/_shop.js 의 recordPrices 와 같은 UNIQUE 를 대상으로 삼아야 한다.
+    // 2026-08-17 마이그레이션(supabase/2026-08-17-price-history-vid-cutover.sql)이
+    // 옛 idx_ph_unique 를 지웠기 때문에 (pid, mall, vid, recorded_date) 만 남았다.
     const { error } = await supabase
       .from('price_history')
-      .upsert(chunk, { onConflict: 'product_id,mall,recorded_date' });
+      .upsert(chunk, { onConflict: 'product_id,mall,vendor_item_id,recorded_date' });
     if (error) throw new Error(`${i}~${i + chunk.length}행 저장 실패: ${error.message}`);
     done += chunk.length;
     console.log(`  ${done}/${out.length}`);

@@ -11,15 +11,31 @@ const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, fres
  * 눌러도 갈 곳이 없거나(link=NULL) 더 이상 갱신되지 않는(네이버) 행이다.
  * 케이스는 scripts/test-price.js 의 '시세판. plausibleDrop' 섹션에 고정해 두었다.
  */
-const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT, recentlyObserved, DROP_MAX_AGE_DAYS } = require('./_price');
+const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT, todayDropConfirmed, kstToday } = require('./_price');
 const { attachTrust, loadRecentHistory } = require('./_trust');
+const { isValidSuggestion } = require('./_search');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
 
 const SECTION_SIZE = 8;
 
-/** 시세판 후보를 넉넉히 받아 걸러야 8칸을 채울 수 있다. */
-const DROP_FETCH = SECTION_SIZE * 6;
+/*
+ * 시세판 후보를 넉넉히 받아 걸러야 8칸을 채울 수 있다.
+ *
+ * 6배(48행)로는 모자란다. price_drop_top 은 drop_pct 내림차순인데 상위가
+ * 더 이상 수집되지 않는 옛 몰·상품명이 product_id 자리에 들어간 이관분으로
+ * 채워져 있어서, 정작 오늘 내려간 상품은 하락률이 한 자릿수라 뒤로 밀린다.
+ *
+ * 2026-08-22 운영 DB 실측 (뷰 2,202행 / SECTION_SIZE 8칸 기준):
+ *    48행 → plausibleDrop 13 → 오늘 확정  5 → 5칸   (3칸이 빈다)
+ *    96행 → plausibleDrop 29 → 오늘 확정 15 → 8칸
+ *   200행 → plausibleDrop 33 → 오늘 확정 18 → 8칸   ← 채택
+ *   400행 → plausibleDrop 33 → 오늘 확정 18 → 8칸   (200 이상은 더 늘지 않는다)
+ *
+ * 비용은 뷰 조회 한 번의 행 수뿐이다. 뒤이어 도는 이력 조회(loadRecentHistory)
+ * 는 plausibleDrop 을 통과한 행(실측 33건)만 대상으로 하므로 늘지 않는다.
+ */
+const DROP_FETCH = 200;
 
 /** 키워드 하나당 훑을 상품 수. 아래 셀렉션 루프의 limit(100)과 같은 기준. */
 const KEYWORD_PROBE_ROWS = 100;
@@ -99,7 +115,22 @@ async function chipKeywords(keywords, activeKeyword) {
  * 판단 근거를 못 얻으면 원래대로 전부 내보낸다. 근거 없이 지우지 않는다.
  */
 async function popularChips(stats) {
-  const rows = (stats || []).filter(s => s && s.keyword);
+  /*
+   * 형태부터 거른다 — 아래 "실적" 검사보다 먼저.
+   *
+   * 이 목록은 홈 칩으로만 쓰이는 게 아니다. 프론트는 검색 결과가 0건이고
+   * 서버 제안(X-Seosa-Suggest)도 비었을 때 이 목록을 그대로
+   * "이런 검색어는 어떠세요" 자리에 그린다 (public/index.html Search.emptyHtml).
+   * 그래서 소음이 여기 남아 있으면 그 자리로 새어 나간다.
+   *
+   * 아래 실적 검사(products 에 저장된 적이 있는가)만으로도 대부분 걸리지만,
+   * 그 검사는 조회 실패·전멸 시 rows 를 그대로 돌려주는 폴백이 두 군데 있다.
+   * 형태 검사를 앞에 두면 어느 경로로 나가든 소음은 빠진다.
+   *
+   * 판정은 _search.isValidSuggestion 한 곳에 있다 — 프론트에 같은 규칙을
+   * 복제하지 않는다 (규칙이 갈라지면 한쪽만 고쳐지고 다른 쪽이 남는다).
+   */
+  const rows = (stats || []).filter(s => s && s.keyword && isValidSuggestion(s.keyword));
   const keywords = [...new Set(rows.map(s => s.keyword))];
   if (!keywords.length) return rows;
 
@@ -220,15 +251,13 @@ module.exports = async function handler(req, res) {
     const drops = (priceDrop || []).filter(plausibleDrop);
 
     /*
-     * 언제 관측된 하락인지까지 본다.
+     * "오늘의 가격 하락"에는 오늘(KST) 실제로 내려간 상품만 올린다.
      *
-     * plausibleDrop 은 하락폭만 본다. price_drop_top 뷰에 날짜 컬럼이 없어서
-     * 며칠 전 값인지 알 방법이 거기에는 없다. 그래서 2026-08-12 기준 상위 8행
-     * 중 4행이 2026-07-30(13일 전) 기록인데도 "현재가"로 나가고 있었다.
-     *
-     * 판단 근거는 price_history 다. _trust.loadRecentHistory 가 이미 상품
-     * 단위(product_id+mall)로 최근 기록을 읽어오므로 그대로 쓴다 — 같은 일을
-     * 하는 조회를 새로 만들지 않는다.
+     * price_drop_top 뷰는 최신 두 기록을 비교할 뿐 날짜를 보지 않는다.
+     * 그래서 8/17에 하락한 상품이 수집이 끊긴 채로 8/21에도 계속 표시됐다.
+     * 판정은 _price.todayDropConfirmed 한 곳에 모아 두었다 — 오늘 수집분이
+     * 있는지, 화면에 찍을 현재가가 그 오늘 값인지, 직전 관측보다 실제로
+     * 내려갔는지를 price_history 원장으로 다시 확인한다 (그 주석 참고).
      *
      * ★ 자르기(slice) 전에 거른다. 뒤에서 거르면 8칸 중 몇 칸이 빈 채로 나간다.
      *
@@ -236,14 +265,14 @@ module.exports = async function handler(req, res) {
      * 시세판을 통째로 비우는 것은 과한 대응이다 (기존 동작으로 되돌아갈 뿐이다).
      */
     let fresh = drops;
+    const today = kstToday();
     if (drops.length) {
       try {
         const hist = await loadRecentHistory(
           drops.map(r => ({ productId: String(r.product_id), mall: r.mall || '' }))
         );
-        // recorded_date 를 쓰는 쪽과 같은 방식으로 '오늘'을 정한다 (_price.recentlyObserved 주석 참고).
-        const today = new Date().toISOString().slice(0, 10);
-        fresh = drops.filter(r => recentlyObserved(hist.get(`${r.product_id}|${r.mall || ''}`), today));
+        fresh = drops.filter(r =>
+          todayDropConfirmed(r, hist.get(`${r.product_id}|${r.mall || ''}`), today));
       } catch (e) {
         console.warn(`[init] 시세판 최신성 확인 실패(기존대로 노출): ${e.message}`);
         fresh = drops;
@@ -262,8 +291,9 @@ module.exports = async function handler(req, res) {
 
     const staleDropped = drops.length - fresh.length;
     if (staleDropped > 0) {
-      console.warn(`[init] 시세판 오래된 기록 ${staleDropped}행 제외`
-        + ` (최신 가격 기록이 ${DROP_MAX_AGE_DAYS}일 초과 또는 기록 없음) — 후보 ${fresh.length}행`);
+      console.warn(`[init] 시세판 ${staleDropped}행 제외`
+        + ` (오늘(${today}) 수집분이 아니거나 직전 관측보다 내려가지 않음)`
+        + ` — 후보 ${fresh.length}행`);
     }
     if (fresh.length < SECTION_SIZE) {
       console.warn(`[init] 시세판 후보가 ${fresh.length}행뿐이라 ${SECTION_SIZE}칸을 다 채우지 못합니다`
@@ -292,7 +322,7 @@ module.exports = async function handler(req, res) {
 
     // 방문자마다 같은 쿼리가 네 번 나간다. 개인화된 값이 없으므로 Edge 에 잠깐 세워둔다.
     cachePublic(res, 300);
-    res.json({
+    const resp = {
       popular: popularRows,
       monthly: monthly || null,
       priceDrop: dropRows,
@@ -301,7 +331,9 @@ module.exports = async function handler(req, res) {
         keywords: dailyKeywords,
         products: dailyProducts
       }
-    });
+    };
+    if (process.env.TOSS_CLIENT_KEY) resp.tossClientKey = process.env.TOSS_CLIENT_KEY;
+    res.json(resp);
   } catch(e) {
     res.status(500).json({ error: e.message });
   }

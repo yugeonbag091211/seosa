@@ -53,7 +53,7 @@ function applyCors(req, res, scope) {
   // origin이 없으면(같은 출처 요청·서버 간 호출) 헤더 자체가 필요 없다.
 
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();

@@ -15,7 +15,8 @@
 
 require('./_env');
 const supabase = require('../api/_supabase');
-const { matchesKeyword, keywordTokens } = require('../api/_shop');
+// 노출 단계(api/_shop.relevantRows)와 같은 기준을 써야 이 보고서가 화면과 일치한다.
+const { isRelevant, analyzeQuery } = require('../api/_search');
 
 const PAGE = 1000;
 const APPLY = process.argv.includes('--apply');
@@ -40,12 +41,15 @@ async function fetchAll() {
 
   const byKeyword = new Map();
   const bad = [];
+  const analysisCache = new Map();   // 같은 keyword 를 여러 행이 공유한다
 
   rows.forEach(r => {
-    const k = r.keyword || '(없음)';
+    const kw = r.keyword || '';
+    const k = kw || '(없음)';
     if (!byKeyword.has(k)) byKeyword.set(k, { total: 0, bad: 0 });
     byKeyword.get(k).total++;
-    if (!matchesKeyword(keywordTokens(r.keyword), r.title)) {
+    if (!analysisCache.has(kw)) analysisCache.set(kw, analyzeQuery(kw));
+    if (!isRelevant(kw, r.title, { analysis: analysisCache.get(kw) })) {
       byKeyword.get(k).bad++;
       bad.push(r);
     }

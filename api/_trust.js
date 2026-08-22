@@ -31,7 +31,7 @@
  */
 
 const supabase = require('./_supabase');
-const { ageDays, vendorIdOf, isRefreshableMall, parsePrice } = require('./_price');
+const { ageDays, vendorIdOf, isRefreshableMall, parsePrice, kstToday } = require('./_price');
 
 /* ── 임계값 ─────────────────────────────────────────────────────── */
 
@@ -216,23 +216,25 @@ function evaluateTrust(input = {}) {
 /**
  * 최근 가격 기록을 상품 단위로 읽어온다.
  *
- * ★ product_id + mall 로만 묶는다. 상품명은 쓰지 않는다 — 이름이 같은 다른
- *   상품의 기록이 섞이면 신뢰도 자체가 거짓말이 된다.
+ * ★ product_id + mall + vendor_item_id 로 묶는다. 같은 상품 페이지의 다른
+ *   옵션(vendorItemId) 기록이 섞이면 교차 옵션 가격차가 변동폭으로 잡힌다.
  *
- * @returns {Map<"pid|mall", Array<{price, recorded_date}>>}
+ * @returns {Map<"pid|mall|vid", Array<{price, recorded_date, recorded_at}>>}
  */
 async function loadRecentHistory(keys) {
   const map = new Map();
   const ids = [...new Set(keys.map(k => k.productId).filter(Boolean))];
   if (!ids.length) return map;
 
-  const cutoff = new Date(Date.now() - HISTORY_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+  // recorded_date 가 KST 달력이므로 컷오프도 같은 기준이어야 30일 창이 정확히 맞는다.
+  const cutoff = kstToday(new Date(Date.now() - HISTORY_WINDOW_DAYS * 86400000));
+  // 원하는 목록은 상품 단위(pid|mall)로 잡는다. 옵션(vid)은 아래에서 계열을 나눌 때 쓴다.
   const wanted = new Set(keys.map(k => `${k.productId}|${k.mall}`));
 
   for (let i = 0; i < ids.length; i += CHUNK) {
     const { data, error } = await supabase
       .from('price_history')
-      .select('product_id, mall, price, recorded_date')
+      .select('product_id, mall, vendor_item_id, price, recorded_date, recorded_at')
       .in('product_id', ids.slice(i, i + CHUNK))
       .gte('recorded_date', cutoff)
       .order('recorded_date', { ascending: false })
@@ -243,10 +245,27 @@ async function loadRecentHistory(keys) {
       return map;
     }
     (data || []).forEach(r => {
-      const k = `${r.product_id}|${r.mall}`;
-      if (!wanted.has(k)) return;   // 같은 product_id 의 다른 몰 행은 섞지 않는다
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push({ price: r.price, recorded_date: r.recorded_date });
+      const base = `${r.product_id}|${r.mall}`;
+      if (!wanted.has(base)) return;   // 같은 product_id 의 다른 몰 행은 섞지 않는다
+      /*
+       * recorded_at 을 함께 실어 보낸다.
+       *
+       * "오늘 수집분인가" 를 판정하는 _price.observedKstDate 가 이 값을
+       * 먼저 본다. recorded_date 는 배포본이 UTC 로 잘라 온 라벨이라 KST
+       * 달력과 하루 어긋난 행이 운영 DB 의 42.9% 다 (그 함수 주석 참고).
+       * 신뢰도 계산(evaluateTrust)은 지금까지처럼 recorded_date 만 쓴다 —
+       * 필드가 하나 늘 뿐이라 기존 계산은 그대로다.
+       */
+      const pt = { price: r.price, recorded_date: r.recorded_date, recorded_at: r.recorded_at };
+      // 옵션별 계열 — 같은 옵션끼리만 비교해야 교차 옵션 가격차가 변동폭으로 잡히지 않는다.
+      const vidKey = `${base}|${r.vendor_item_id || ''}`;
+      if (!map.has(vidKey)) map.set(vidKey, []);
+      map.get(vidKey).push(pt);
+      // 상품 단위 집계 — 옵션 계열이 비어 있을 때의 폴백이자, vid 를 모르는
+      // 호출부(api/init.js 시세판)가 쓰는 키다. 이 키가 없으면 그쪽 조회가
+      // 전부 undefined 가 되어 시세판이 통째로 비어 버린다.
+      if (!map.has(base)) map.set(base, []);
+      map.get(base).push(pt);
     });
   }
   return map;
@@ -268,7 +287,7 @@ async function attachTrust(items, opts = {}) {
 
   const keys = list
     .filter(it => it && it.productId)
-    .map(it => ({ productId: String(it.productId), mall: it.mall || '' }));
+    .map(it => ({ productId: String(it.productId), mall: it.mall || '', vendorItemId: vendorIdOf(it) }));
 
   let history = new Map();
   try {
@@ -279,12 +298,23 @@ async function attachTrust(items, opts = {}) {
 
   list.forEach(it => {
     if (!it) return;
-    const key = `${it.productId}|${it.mall || ''}`;
+    const vid = vendorIdOf(it);
+    const base = `${it.productId}|${it.mall || ''}`;
+    /*
+     * 같은 옵션의 기록이 있으면 그것만 쓴다 (교차 옵션 가격차가 변동폭으로
+     * 잡히지 않게). 없으면 상품 단위 집계로 폴백한다.
+     *
+     * 폴백이 필요한 이유 — price_history 12,280행 중 6,331행이 vendor_item_id
+     * 가 '' 또는 '__LEGACY__' 인 과거 기록이다. 옵션 키로만 찾으면 이 상품들의
+     * 30일 이력이 통째로 안 보이게 되어, 멀쩡한 상품이 "기록 없음"으로 떨어진다.
+     * 폴백 동작은 vendor_item_id 도입 이전과 같으므로 회귀가 아니다.
+     */
+    const points = history.get(`${base}|${vid}`) || history.get(base) || [];
     it.trust = evaluateTrust({
       age: it.collectedAt ? ageDays(it.collectedAt) : (opts.source ? 0 : Infinity),
       liveSource: opts.source || null,
-      points: history.get(key) || [],
-      vendorItemId: vendorIdOf(it),
+      points,
+      vendorItemId: vid,
       mall: it.mall
     });
   });
