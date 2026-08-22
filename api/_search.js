@@ -730,6 +730,146 @@ function assembleJamo(jamo) {
   return out;
 }
 
+/* ------------------------------------------------------------------ *
+ *  6-b. 추천 후보 품질
+ *
+ *  "이런 검색어는 어떠세요" 에 올라가는 말은 사용자가 친 말이 아니라
+ *  우리가 고른 말이다. 그러니 우리가 책임져야 한다.
+ *
+ *  ── 무엇이 문제였나 ────────────────────────────────────────────
+ *  사전(dictionary)은 api/search.js 의 loadKeywordDictionary 가
+ *  search_stats + products.keyword + TODAY_PICKS 를 합쳐 만든다.
+ *  이 중 search_stats 는 "사람이 친 말" 이지 "쓸 만한 검색어" 가 아니다.
+ *
+ *  2026-08-22 운영 실측: search_stats 48종 중 11종이 products 에 대응
+ *  상품이 하나도 없다 —
+ *    "텀블르" "액정태블릿" "액정테블릿"  (오타)
+ *    "__schema_check__" "테스트"          (내부·시험)
+ *    "dkdlvhs" "dldjvhs"                  (영문 자판 오타)
+ *    "양희훈" "컵 실린더" "물통" "앙 기모찌"
+ *  그런데 사전에는 전부 들어갔고, "dkdlvhs" 를 검색하면 자판 보정으로
+ *  "아이폰" 을 찾은 뒤 그 주변어를 고르는 과정에서 "앙 기모찌" 가
+ *  대체 검색어로 나갔다. 실제로 사용자 화면에 노출됐다.
+ *
+ *  ── 어떻게 막는가 (겹겹으로) ──────────────────────────────────
+ *   1) 구조 규칙   — 아래 isValidSuggestion. 형태만 보고 거른다.
+ *   2) 관련성 하한 — nearest() 의 MIN_SUGGEST_SIMILARITY.
+ *                    "앙 기모찌" 는 "아이폰" 과 자모 유사도 0.556 이라
+ *                    0.5 문턱을 아슬아슬하게 넘고 있었다.
+ *   3) 표현 목록   — 욕설·성적 표현. 마지막 layer 다. 여기에만 기대지
+ *                    않는다 (목록은 늘 뒤처진다).
+ *
+ *  ── 규칙을 고를 때 지킨 것 ────────────────────────────────────
+ *  운영 products.keyword 262종 전수로 오탐 0 을 확인하고 넣은 규칙만
+ *  남겼다. 한국어 종결어미로 문장을 판별하는 규칙은 넣지 않았다 —
+ *  실제 상품 키워드에 "온더바디 코튼풋 발을씻자"(자로 끝남),
+ *  "아픔이 길이 되려면"(문장), "안녕"(인사말) 이 멀쩡히 들어 있어서
+ *  그런 규칙은 진짜 상품을 지운다.
+ * ------------------------------------------------------------------ */
+
+/** 상품 검색어 길이 상한. 운영 262종의 최댓값이 25자다. */
+const SUGGEST_MAX_LEN = 40;
+/** 한 글자짜리는 무엇에나 걸린다. 운영 최소 길이도 2자다. */
+const SUGGEST_MIN_LEN = 2;
+
+const URL_RE        = /(https?:\/\/|www\.|\.(com|net|org|io|shop|kr)(\/|$))/i;
+const EMAIL_RE      = /[^\s@]+@[^\s@]+\.[^\s@]+/;
+const PHONE_RE      = /^[\d\s\-+().]{7,}$/;
+const DIGITS_ONLY_RE= /^[\d\s.,+\-]+$/;
+/** ㅋㅋㅋㅋ · ㅇㅇ · ㄱㄱ — 자모만으로는 상품을 가리키지 못한다. */
+const JAMO_ONLY_RE  = /^[\u3131-\u318E\s]+$/;
+/** zzz · !!!! · ㅋㅋㅋ — 같은 글자 3연속. 운영 262종에 0건이다. */
+const REPEAT_CHAR_RE= /(.)\1{2,}/;
+/** testtesttest · abcabcabc — 짧은 토막의 3회 이상 반복. */
+const REPEAT_UNIT_RE= /^(.{1,4})\1{2,}$/;
+/** 글자도 숫자도 없는 문자열. */
+const NO_WORD_RE    = /^[^0-9a-zA-Z\uAC00-\uD7A3]+$/;
+/** 집계용 내부 키워드(__schema_check__). */
+const INTERNAL_RE   = /^__/;
+/**
+ * 존댓말 종결어미로 끝나는 말 — 상품명이 아니라 문장이다.
+ * ("안녕하세요" "감사합니다" "반갑습니다")
+ *
+ * 여기까지만 넣는다. 종결어미 전반으로 넓히면 진짜 상품이 지워진다 —
+ * 운영 262종 실측 오탐:
+ *   /자$/  8건  "HOMEY NEST 사무용의자" "드립백 손잡이 투명상자" "…안마의자"
+ *   /면$/  4건  "농심 안성탕면 봉지라면" "신라면" "바운티풀 코마사 사틴면"
+ *   /지$/  2건  "고스트 불빛 반지"
+ *   위 존댓말 어미  0건  ← 그래서 이것만 쓴다
+ *
+ * 나머지 대화체("뭐 먹지" "살려줘" 같은 말)는 문법으로 잡지 않는다.
+ * 검색어와의 관련성 하한(MIN_SUGGEST_SIMILARITY)이 이미 막는다 —
+ * "아이폰" 과 "안녕하세요" 의 자모 유사도는 0.25 다.
+ */
+const POLITE_ENDING_RE = /(하세요|합니다|습니다|십시오|해요|이에요|예요|였어요|겠어요|입니다|할게요|드려요)$/;
+
+/** 시험 삼아 친 말. 운영 search_stats 에 "테스트" 가 실제로 있다. */
+const TEST_WORD_RE  = /^(테스트|테스트용|샘플|test|testing|sample|dummy|asdf|qwer)$/i;
+
+/**
+ * 자판을 한 줄로 훑은 문자열인가 (asdfgh, qwer, 123456).
+ * 문자열 전체가 한 행의 연속 구간이면 사람이 고른 말이 아니다.
+ */
+const KEYBOARD_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm', '1234567890'];
+function isKeyboardRun(s) {
+  const t = String(s || '').toLowerCase().replace(/\s+/g, '');
+  if (t.length < 4) return false;
+  const rev = t.split('').reverse().join('');
+  return KEYBOARD_ROWS.some(row => row.indexOf(t) > -1 || row.indexOf(rev) > -1);
+}
+
+/*
+ * 욕설 · 성적 표현 — 마지막 layer.
+ *
+ * 사용자가 직접 친 검색어를 막는 목록이 아니다. 그건 그대로 검색해 준다.
+ * 여기서 막는 것은 오직 "우리가 골라서 권하는 말" 이다.
+ *
+ * 목록에 기대지 않는 것이 원칙이라 짧게 유지한다. 실제로 이번에 문제가 된
+ * "앙 기모찌" 는 이 목록이 없어도 관련성 하한(2번 layer)에서 걸린다 —
+ * 목록은 보조일 뿐이다.
+ */
+const BLOCKED_TERMS = [
+  '씨발', '시발', '좆', '존나', '병신', '지랄', '개새', '미친놈', '미친년',
+  '섹스', '야동', '포르노', '자위', '기모찌', '야애니', '19금',
+  'fuck', 'shit', 'porn', 'sex', 'xxx'
+];
+
+/**
+ * 이 말을 "이런 검색어는 어떠세요" 에 올려도 되는가.
+ *
+ * ★ 사용자가 친 검색어를 검사하는 함수가 아니다. 사용자가 무엇을 치든
+ *   그대로 검색해 주고 그대로 보여준다. 이 함수는 우리가 자동으로 권하는
+ *   후보에만 쓴다.
+ *
+ * @param {string} keyword 후보 검색어
+ * @returns {boolean} 추천해도 되면 true
+ */
+function isValidSuggestion(keyword) {
+  const raw = String(keyword == null ? '' : keyword).trim();
+  if (!raw) return false;
+  if (raw.length < SUGGEST_MIN_LEN || raw.length > SUGGEST_MAX_LEN) return false;
+
+  if (INTERNAL_RE.test(raw)) return false;
+  if (URL_RE.test(raw) || EMAIL_RE.test(raw)) return false;
+  if (PHONE_RE.test(raw) || DIGITS_ONLY_RE.test(raw)) return false;
+  if (NO_WORD_RE.test(raw) || JAMO_ONLY_RE.test(raw)) return false;
+  if (REPEAT_CHAR_RE.test(raw) || REPEAT_UNIT_RE.test(raw)) return false;
+  if (TEST_WORD_RE.test(raw) || isKeyboardRun(raw)) return false;
+  if (POLITE_ENDING_RE.test(raw)) return false;
+
+  /*
+   * 영문 자판으로 친 한글 (dkdlvhs → 아이폰).
+   * 이건 오타의 흔적이지 검색어가 아니다. 보정 결과는 corrected 로 따로
+   * 나가므로 여기서 후보로 또 권할 이유가 없다.
+   */
+  if (/^[a-zA-Z\s]+$/.test(raw) && fromKeyboardLayout(raw)) return false;
+
+  const low = raw.toLowerCase();
+  if (BLOCKED_TERMS.some(t => low.indexOf(t) > -1)) return false;
+
+  return true;
+}
+
 /** 자모 길이에 맞춘 허용 오차. 짧은 말일수록 엄격해야 엉뚱한 제안이 안 나간다. */
 function allowedDistance(jamoLen) {
   if (jamoLen <= 6) return 1;    // "이어폰"(9자모)보다 짧은 말
@@ -778,19 +918,31 @@ function suggestKeywords(keyword, dictionary, opts = {}) {
     entries.push({ text, key, norm: normalizeText(text), jamo: toJamo(canonicalKey(text)) });
   });
 
+  /*
+   * 후보 품질 필터.
+   *
+   * entries 는 그대로 둔다 — "이 말이 사전에 있는가"(=보정할 필요가 없는가)
+   * 를 판단하려면 오염된 것까지 포함한 원래 사전이 필요하기 때문이다.
+   * 우리가 골라서 내보내는 자리(corrected · alternatives)에만 pickable 을 쓴다.
+   * (_search.js 6-b 절 주석 참고)
+   */
+  const pickable = entries.filter(e => isValidSuggestion(e.text));
+  const clean = list => list.filter(isValidSuggestion);
+
   /* 1) 자판 오타 — "dkdlvhs" 처럼 아예 영문으로 친 경우 */
   const layout = fromKeyboardLayout(keyword);
   if (layout) {
-    const hit = entries.find(e => e.key === canonicalKey(layout));
+    const hit = pickable.find(e => e.key === canonicalKey(layout));
+    const suggestion = hit ? hit.text : layout;
     return {
-      corrected: hit ? hit.text : layout,
+      corrected: isValidSuggestion(suggestion) ? suggestion : null,
       reason: 'layout',
-      alternatives: nearest(entries, canonicalKey(layout), limit).map(e => e.text)
+      alternatives: clean(nearest(pickable, canonicalKey(layout), limit).map(e => e.text))
     };
   }
 
   /* 2) 띄어쓰기만 다른 경우 — 오타가 아니라 표기 차이다 */
-  const spacing = entries.find(e => e.key === qKey && e.norm !== q);
+  const spacing = pickable.find(e => e.key === qKey && e.norm !== q);
   if (spacing) {
     return { corrected: spacing.text, reason: 'spacing', alternatives: [] };
   }
@@ -801,13 +953,13 @@ function suggestKeywords(keyword, dictionary, opts = {}) {
    *    "그 말이 사전에 있다"는 사실만으로 사용자를 빈손으로 보낼 이유가 없다.
    */
   if (entries.some(e => e.key === qKey)) {
-    return { corrected: null, reason: '', alternatives: nearest(entries, qKey, limit).map(e => e.text) };
+    return { corrected: null, reason: '', alternatives: clean(nearest(pickable, qKey, limit).map(e => e.text)) };
   }
 
   /* 4) 자모 편집거리 */
   const qJamo = toJamo(qKey);
   let best = null;
-  entries.forEach(e => {
+  pickable.forEach(e => {
     // 길이가 크게 다르면 오타가 아니라 다른 말이다
     if (Math.abs(e.jamo.length - qJamo.length) > 3) return;
     const d = editDistance(qJamo, e.jamo);
@@ -818,7 +970,7 @@ function suggestKeywords(keyword, dictionary, opts = {}) {
   return {
     corrected: best ? best.e.text : null,
     reason: best ? 'typo' : '',
-    alternatives: nearest(entries, qKey, limit).map(e => e.text)
+    alternatives: clean(nearest(pickable, qKey, limit).map(e => e.text))
   };
 }
 
@@ -828,6 +980,22 @@ function suggestKeywords(keyword, dictionary, opts = {}) {
  * 도움이 아니라 소음이다. 겹치는 게 없으면 빈 배열을 돌려주고, 호출부가
  * 인기 검색어로 대신 채운다.
  */
+/*
+ * 포함 관계가 아닌데 "닮았다" 고 인정할 자모 유사도 하한.
+ *
+ * 0.5 였다. 그 문턱은 너무 낮아서 관계없는 말이 통과했다 —
+ * 2026-08-22 운영 실측:
+ *   "아이폰" vs "텀블러"     0.000  (당연히 탈락)
+ *   "아이폰" vs "안녕하세요"  0.250  (탈락)
+ *   "아이폰" vs "앙 기모찌"   0.556  ← 0.5 를 넘어 통과했다
+ *   "텀블르" vs "텀블러"     0.875  ← 반드시 살려야 하는 진짜 오타
+ *
+ * 0.7 은 그 사이를 넉넉히 가른다. 진짜 오타(0.875)와 남남(0.556) 사이에
+ * 양쪽으로 여유가 있다. 부분 포함("무선 이어폰 케이스" → "무선 이어폰")은
+ * 이 경로를 타지 않으므로 영향을 받지 않는다.
+ */
+const MIN_SUGGEST_SIMILARITY = 0.7;
+
 function nearest(entries, qKey, limit) {
   const qJamo = toJamo(qKey);
   const scored = [];
@@ -841,7 +1009,7 @@ function nearest(entries, qKey, limit) {
       const d = editDistance(qJamo, e.jamo);
       const max = Math.max(qJamo.length, e.jamo.length) || 1;
       const sim = 1 - d / max;
-      if (sim >= 0.5) s = Math.round(sim * 50);
+      if (sim >= MIN_SUGGEST_SIMILARITY) s = Math.round(sim * 50);
     }
     if (s > 0) scored.push({ e, s });
   });
@@ -852,6 +1020,6 @@ function nearest(entries, qKey, limit) {
 module.exports = {
   normalizeText, canonicalKey, splitTokens, analyzeQuery, analyzeTitle,
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
-  toJamo, editDistance, fromKeyboardLayout, suggestKeywords,
-  MIN_SCORE, KIND, COMMON_WORDS
+  toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
+  MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY
 };

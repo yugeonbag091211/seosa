@@ -328,6 +328,28 @@ function splitBatches(groups, size = BATCH_PRODUCTS) {
  * ------------------------------------------------------------------ */
 const obsMap = new Map();
 
+const failureCategories = {
+  blocked: 0,
+  budget: 0,
+  staleCache: 0,
+  network: 0,
+  noMatch: 0,
+  noKeys: 0,
+  rateLimit: 0,
+  other: 0
+};
+
+function categorizeFailure(reason) {
+  const r = String(reason || '').toLowerCase();
+  if (r.includes('차단')) return 'blocked';
+  if (r.includes('예산') || r.includes('budget')) return 'budget';
+  if (r.includes('캐시') || r.includes('cache')) return 'staleCache';
+  if (r.includes('네트워크') || r.includes('network')) return 'network';
+  if (r.includes('키 미설정') || r.includes('환경변수')) return 'noKeys';
+  if (r.includes('상한') || r.includes('간격') || r.includes('대기')) return 'rateLimit';
+  return 'other';
+}
+
 function addRow(target, item, foundVia) {
   const price = parseInt(item.lprice, 10) || 0;
   if (price <= 0) return false;
@@ -559,6 +581,7 @@ async function run() {
      */
     if (!r.ok) {
       failedKeywords.set(kw, r.reason);
+      failureCategories[categorizeFailure(r.reason)]++;
       console.log(`  [보류] [${kw}] ${r.reason} — 재시도 대상`);
       return;
     }
@@ -577,7 +600,10 @@ async function run() {
     // 호출이 성공했으면 재시도 목록에서 뺀다(직전 실행에서 실패했던 검색어).
     failedKeywords.delete(kw);
 
-    if (hit === 0) notFoundKeywords.push(kw);
+    if (hit === 0) {
+      notFoundKeywords.push(kw);
+      failureCategories.noMatch += rows.length;
+    }
     const pct = rows.length > 0 ? Math.round(hit / rows.length * 100) : 0;
     console.log(`  [${kw}] ${hit}/${rows.length} (${pct}%) — 쿠팡 ${r.items.length}건`);
   }
@@ -608,9 +634,17 @@ async function run() {
       batches: doneBatches,
       recorded: totalRecorded,
       saved: totalSaved,
+      rejected: totalRejected,
+      suspect: totalSuspect,
       notFound: notFoundKeywords.length,
-      // 같은 날 다음 실행이 이 목록부터 다시 시도한다.
-      failedKeywords: [...failedKeywords.keys()]
+      failedKeywords: [...failedKeywords.keys()],
+      failureCategories: { ...failureCategories },
+      productsTotal: products.length,
+      coupangTotal: coupangRows.length,
+      collectibleTotal: collectible.length,
+      notCoupangTotal: notCoupang.length,
+      noPhraseTotal: noPhrase,
+      coveredCount: collectible.length - uncovered.size
     }
   });
 
@@ -748,6 +782,31 @@ async function run() {
 
   console.log(`${'═'.repeat(50)}\n`);
 
+  // ── 수집 결과 이메일 발송 (실패해도 수집 결과에 영향 없음) ────────
+  {
+    const coveredProducts = collectible.length - uncovered.size;
+    const report = {
+      date: today,
+      productsTotal: products.length,
+      coupangTotal: coupangRows.length,
+      collectibleTotal: collectible.length,
+      notCoupangTotal: notCoupang.length,
+      attempted: attempted.length,
+      recorded,
+      saved,
+      rejected,
+      suspect,
+      failedCount: failedKeywords.size,
+      failedKeywordsCount: failedKeywords.size,
+      uncollectedCount: uncovered.size,
+      successRate: collectible.length > 0 ? (coveredProducts / collectible.length * 100) : 100,
+      productSuccessRate: collectible.length > 0 ? (coveredProducts / collectible.length * 100) : 100,
+      coveredProducts,
+      failCats: { ...failureCategories }
+    };
+    await sendReport(report);
+  }
+
   /*
    * 실패는 반드시 빨갛게 끝내야 한다.
    *
@@ -783,13 +842,116 @@ async function run() {
   }
 }
 
+// ─── 수집 결과 이메일 ────────────────────────────────────────────
+const REPORT_EMAIL = process.env.PRICE_REPORT_EMAIL || 'yugeonbag091211@gmail.com';
+
+function buildReportHtml(report) {
+  const { date, productsTotal, coupangTotal, collectibleTotal, notCoupangTotal,
+    attempted, recorded, saved, rejected, suspect,
+    failedCount, failedKeywordsCount, uncollectedCount,
+    successRate, productSuccessRate, coveredProducts, failCats } = report;
+
+  function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function pct(n) { return n != null ? n.toFixed(1) + '%' : '-'; }
+
+  const catRows = Object.entries(failCats || {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `<tr><td style="padding:4px 12px;color:#555">${esc(k)}</td><td style="padding:4px 12px;text-align:right;font-weight:600">${v}</td></tr>`)
+    .join('') || '<tr><td style="padding:4px 12px;color:#888" colspan="2">없음</td></tr>';
+
+  const statusColor = (successRate || 0) >= 80 ? '#0b7a4b' : (successRate || 0) >= 50 ? '#b5850b' : '#c9362b';
+
+  return `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SEOSA 가격 수집 리포트</title></head>
+<body style="margin:0;padding:0;background:#f5f5f4;font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f4;padding:32px 0">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:560px;width:100%">
+  <tr><td style="background:#111;padding:24px 32px">
+    <div style="font-size:20px;font-weight:800;letter-spacing:.12em;color:#fff">SEOSA</div>
+    <div style="font-size:10px;color:#888;letter-spacing:.15em;margin-top:2px">DAILY PRICE COLLECTION REPORT</div>
+  </td></tr>
+  <tr><td style="padding:24px 32px">
+    <div style="font-size:14px;color:#888;margin-bottom:8px">기준 날짜 (KST)</div>
+    <div style="font-size:28px;font-weight:800;color:#111;letter-spacing:-.02em">${esc(date)}</div>
+  </td></tr>
+  <tr><td style="padding:0 32px">
+    <div style="display:inline-block;background:${statusColor};color:#fff;font-size:13px;font-weight:700;padding:5px 16px;border-radius:20px">
+      수집 성공률 ${pct(successRate)}
+    </div>
+    <div style="font-size:12px;color:#888;margin-top:8px">상품 기준 성공률: ${pct(productSuccessRate)} (${coveredProducts}/${collectibleTotal})</div>
+  </td></tr>
+  <tr><td style="padding:16px 32px 0">
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">
+      <tr><td style="padding:8px 0;color:#888;font-size:13px">products 전체</td>
+          <td style="padding:8px 0;text-align:right;font-weight:600">${productsTotal}</td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">  └ 쿠팡 (수집 대상)</td>
+          <td style="padding:4px 0;text-align:right">${collectibleTotal} / ${coupangTotal}</td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">  └ 비쿠팡 (연동 없음)</td>
+          <td style="padding:4px 0;text-align:right">${notCoupangTotal}</td></tr>
+      <tr><td colspan="2" style="border-top:1px solid #eee;padding:0;height:8px"></td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">가격 수집 시도</td>
+          <td style="padding:4px 0;text-align:right;font-weight:600">${attempted}</td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">price_history 신규 저장</td>
+          <td style="padding:4px 0;text-align:right;font-weight:600;color:#0b7a4b">${recorded}</td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">products 현재가 갱신</td>
+          <td style="padding:4px 0;text-align:right">${saved}</td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">급변 보류 (suspect)</td>
+          <td style="padding:4px 0;text-align:right">${suspect}</td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">값 이상 거부 (rejected)</td>
+          <td style="padding:4px 0;text-align:right">${rejected}</td></tr>
+      <tr><td colspan="2" style="border-top:1px solid #eee;padding:0;height:8px"></td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">실패 (검색어)</td>
+          <td style="padding:4px 0;text-align:right;color:#c9362b;font-weight:600">${failedKeywordsCount}</td></tr>
+      <tr><td style="padding:4px 0;color:#888;font-size:13px">아직 미수집 상품</td>
+          <td style="padding:4px 0;text-align:right;font-weight:600">${uncollectedCount}</td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:16px 32px 0">
+    <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin-bottom:8px">실패 원인별 개수</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;border:1px solid #eee;border-radius:6px">
+      ${catRows}
+    </table>
+  </td></tr>
+  <tr><td style="background:#f8f8f7;padding:16px 32px;text-align:center;margin-top:24px">
+    <div style="font-size:11px;color:#aaa">SEOSA Daily Price Collection Report</div>
+    <div style="font-size:11px;color:#ccc;margin-top:4px">이 메일은 매일 자동 발송됩니다.</div>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+async function sendReport(report) {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[리포트] RESEND_API_KEY 없음 — 수집 결과 이메일을 보내지 않습니다.');
+    return;
+  }
+  try {
+    const email = require('../api/_channel/email');
+    const result = await email.send({
+      to: REPORT_EMAIL,
+      subject: `[SEOSA] ${report.date} 가격 수집 리포트 — 성공률 ${(report.successRate || 0).toFixed(1)}%`,
+      html: buildReportHtml(report)
+    });
+    if (result.ok) {
+      console.log(`[리포트] 수집 결과 이메일 발송 완료 → ${REPORT_EMAIL}`);
+    } else {
+      console.error(`[리포트] 이메일 발송 실패: ${result.error}`);
+    }
+  } catch (e) {
+    console.error(`[리포트] 이메일 발송 중 오류 (수집 결과에는 영향 없음): ${e.message}`);
+  }
+}
+
 /* ------------------------------------------------------------------ *
  *  테스트용 노출.
  *
  *  scripts/test-price-batch.js 가 쿠팡 호출 없이 배치·커서·날짜 로직만
  *  검증한다. require 해도 run() 이 돌지 않도록 아래에서 가드한다.
  * ------------------------------------------------------------------ */
-module.exports = { kstToday, buildPlan, splitBatches, resumeFrom, BATCH_PRODUCTS };
+module.exports = { kstToday, buildPlan, splitBatches, resumeFrom, BATCH_PRODUCTS, buildReportHtml };
 
 if (require.main === module) {
   run().catch(e => {

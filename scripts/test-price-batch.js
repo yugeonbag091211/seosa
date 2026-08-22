@@ -317,6 +317,298 @@ console.log('\n[6] 실패 상품이 배치를 멈추지 않음');
     }
     results.splice(0).forEach(r => console.log(r));
 
+    /* ── 9. 전체 커버리지 시뮬레이션 (운영 실측 기준) ────────────── */
+    console.log('\n[9] 전체 커버리지 시뮬레이션 — 770개 / 316종, 실패 포함');
+    {
+      /*
+       * 운영 DB 실측(770 쿠팡 상품 / 316 고유 검색어)을 재현한다.
+       * 일부 검색어가 실패해도 보충 실행으로 결국 전부 처리되는지 확인한다.
+       *
+       * 시뮬레이션 규칙:
+       *   - 예산: 실행당 400회
+       *   - 시간: 실행당 배치 50개까지(50분 근사)
+       *   - 10% 검색어가 첫 시도에서 실패(차단/rate limit)
+       *   - 보충 실행에서 재시도하면 전부 성공
+       *   - 하루 최대 3회 실행(KST 01:00, 03:00, 06:00)
+       */
+      const BUDGET = 400;
+      const MAX_BATCHES_PER_RUN = 50;
+      const BATCH_SIZE = 20;
+
+      const { withKeyword, derived } = makeFixture(770, 2);
+      const plan = buildPlan(withKeyword, derived);
+      const totalKeywords = plan.length;
+      const totalProducts = plan.reduce((n, g) => n + g.rows.length, 0);
+
+      const failSet = new Set(plan.filter((_, i) => i % 10 === 3).map(g => g.kw));
+      const failCount = failSet.size;
+
+      let state = null;
+      const D1 = '2026-08-21';
+      let runCount = 0;
+      const runLog = [];
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (state && state.job_date === D1 && state.status === 'completed') break;
+        runCount++;
+
+        if (!state || state.job_date !== D1) {
+          state = { job_date: D1, cursor_key: '', processed: 0, total: totalProducts, status: 'running',
+                    last_result: {} };
+        }
+
+        const remaining = resumeFrom(plan, state.cursor_key || '');
+        const failedKws = new Map(
+          ((state.last_result && state.last_result.failedKeywords) || []).map(kw => [kw, true])
+        );
+        const retryGroups = failedKws.size
+          ? plan.filter(g => failedKws.has(g.kw) && !remaining.some(x => x.kw === g.kw))
+          : [];
+
+        if (!remaining.length && !retryGroups.length) {
+          state.status = 'completed';
+          break;
+        }
+
+        let apiCalls = 0;
+        let processed = 0;
+        let succeeded = 0;
+        let failed2 = 0;
+        let batchCount = 0;
+
+        const processGroups = (groups, isRetry) => {
+          for (const g of groups) {
+            if (apiCalls >= BUDGET) {
+              failedKws.set(g.kw, true);
+              failed2++;
+              continue;
+            }
+            if (!isRetry && failSet.has(g.kw)) {
+              failedKws.set(g.kw, true);
+              failed2++;
+              apiCalls++;
+              continue;
+            }
+            failedKws.delete(g.kw);
+            succeeded++;
+            processed += g.rows.length;
+            apiCalls++;
+          }
+        };
+
+        if (retryGroups.length) {
+          const retryBatches = splitBatches(retryGroups, BATCH_SIZE);
+          for (const b of retryBatches) {
+            if (batchCount >= MAX_BATCHES_PER_RUN) break;
+            processGroups(b, true);
+            batchCount++;
+          }
+        }
+
+        const batches = splitBatches(remaining, BATCH_SIZE);
+        for (const b of batches) {
+          if (batchCount >= MAX_BATCHES_PER_RUN) break;
+          processGroups(b, false);
+          state.cursor_key = b[b.length - 1].kw;
+          state.processed += b.reduce((n, g) => n + g.rows.length, 0);
+          batchCount++;
+        }
+
+        const isLast = batchCount >= batches.length || batchCount >= MAX_BATCHES_PER_RUN;
+        state.status = (isLast && !failedKws.size) ? 'completed' : 'running';
+        state.last_result = { failedKeywords: [...failedKws.keys()] };
+
+        runLog.push({
+          run: runCount,
+          apiCalls,
+          succeeded,
+          failed: failed2,
+          batches: batchCount,
+          retried: retryGroups.length,
+          remaining: remaining.length
+        });
+      }
+
+      console.log('  ┌──────────────────────────────────────────────');
+      console.log(`  │ products 전체 (쿠팡)     ${totalProducts}개`);
+      console.log(`  │ 고유 검색어              ${totalKeywords}종`);
+      console.log(`  │ 의도적 실패 검색어       ${failCount}종 (10%)`);
+      console.log(`  │ 실행당 API 예산          ${BUDGET}회`);
+      runLog.forEach(r => {
+        console.log(`  │ 실행 ${r.run}: API ${r.apiCalls}회, 성공 ${r.succeeded}종,`
+          + ` 실패 ${r.failed}종, 재시도 ${r.retried}종, 배치 ${r.batches}개`);
+      });
+      console.log(`  │ 최종 상태: ${state.status}`);
+      console.log(`  │ 남은 실패: ${(state.last_result.failedKeywords || []).length}종`);
+      console.log('  └──────────────────────────────────────────────');
+
+      eq('전체 상품 수 = 770', totalProducts, 770);
+      eq('최종 상태 = completed', state.status, 'completed');
+      eq('남은 실패 검색어 = 0', (state.last_result.failedKeywords || []).length, 0);
+      check('2회 이내 실행으로 완료', runCount <= 2, `실행 ${runCount}회 소요`);
+      check('API 예산(400) 이내로 1차 완료', runLog[0].apiCalls <= BUDGET);
+    }
+    results.splice(0).forEach(r => console.log(r));
+
+    /* ── 10. 예산 부족 시나리오 (상품 1500개) ────────────────────── */
+    console.log('\n[10] 예산 부족 시나리오 — 1500개 / 750종, 3회 실행으로 전량 처리');
+    {
+      const BUDGET = 400;
+      const MAX_BATCHES_PER_RUN = 50;
+      const BATCH_SIZE = 20;
+
+      const { withKeyword, derived } = makeFixture(1500, 2);
+      const plan = buildPlan(withKeyword, derived);
+      const totalKeywords = plan.length;
+      const totalProducts = plan.reduce((n, g) => n + g.rows.length, 0);
+
+      let state = null;
+      const D1 = '2026-08-21';
+      let runCount = 0;
+      const runLog = [];
+
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (state && state.job_date === D1 && state.status === 'completed') break;
+        runCount++;
+
+        if (!state || state.job_date !== D1) {
+          state = { job_date: D1, cursor_key: '', processed: 0, total: totalProducts, status: 'running',
+                    last_result: {} };
+        }
+
+        const remaining = resumeFrom(plan, state.cursor_key || '');
+        const failedKws = new Map(
+          ((state.last_result && state.last_result.failedKeywords) || []).map(kw => [kw, true])
+        );
+        const retryGroups = failedKws.size
+          ? plan.filter(g => failedKws.has(g.kw) && !remaining.some(x => x.kw === g.kw))
+          : [];
+
+        if (!remaining.length && !retryGroups.length) {
+          state.status = 'completed';
+          break;
+        }
+
+        let apiCalls = 0;
+        let succeeded = 0;
+        let failed2 = 0;
+        let batchCount = 0;
+
+        const processGroups = (groups) => {
+          for (const g of groups) {
+            if (apiCalls >= BUDGET) {
+              failedKws.set(g.kw, true);
+              failed2++;
+              continue;
+            }
+            failedKws.delete(g.kw);
+            succeeded++;
+            apiCalls++;
+          }
+        };
+
+        if (retryGroups.length) {
+          for (const b of splitBatches(retryGroups, BATCH_SIZE)) {
+            if (batchCount >= MAX_BATCHES_PER_RUN) break;
+            processGroups(b);
+            batchCount++;
+          }
+        }
+
+        const batches = splitBatches(remaining, BATCH_SIZE);
+        for (const b of batches) {
+          if (batchCount >= MAX_BATCHES_PER_RUN) break;
+          processGroups(b);
+          state.cursor_key = b[b.length - 1].kw;
+          state.processed += b.reduce((n, g) => n + g.rows.length, 0);
+          batchCount++;
+        }
+
+        const isLast = batchCount >= batches.length;
+        state.status = (isLast && !failedKws.size) ? 'completed' : 'running';
+        state.last_result = { failedKeywords: [...failedKws.keys()] };
+
+        runLog.push({
+          run: runCount,
+          apiCalls,
+          succeeded,
+          failed: failed2,
+          retried: retryGroups.length,
+          batches: batchCount
+        });
+      }
+
+      console.log('  ┌──────────────────────────────────────────────');
+      console.log(`  │ products 전체 (쿠팡)     ${totalProducts}개`);
+      console.log(`  │ 고유 검색어              ${totalKeywords}종`);
+      console.log(`  │ 실행당 API 예산          ${BUDGET}회`);
+      runLog.forEach(r => {
+        console.log(`  │ 실행 ${r.run}: API ${r.apiCalls}회, 성공 ${r.succeeded}종,`
+          + ` 실패(예산) ${r.failed}종, 재시도 ${r.retried}종, 배치 ${r.batches}개`);
+      });
+      console.log(`  │ 최종 상태: ${state.status}`);
+      console.log(`  │ 남은 실패: ${(state.last_result.failedKeywords || []).length}종`);
+      console.log('  └──────────────────────────────────────────────');
+
+      eq('전체 상품 수 = 1500', totalProducts, 1500);
+      eq('최종 상태 = completed', state.status, 'completed');
+      eq('남은 실패 검색어 = 0', (state.last_result.failedKeywords || []).length, 0);
+      check('3회 이내 실행으로 완료(GitHub Actions 일일 3회)', runCount <= 3,
+        `실행 ${runCount}회 소요 — ★ 3회 안에 못 끝나면 하루 전량 수집 불가`);
+      check('예산(400) × 2 = 800 ≥ 검색어 750종 → 2회면 충분',
+        totalKeywords <= BUDGET * 2);
+    }
+    results.splice(0).forEach(r => console.log(r));
+
+    /* ── 11. 하루 전량 처리 보장 계산 ─────────────────────────────── */
+    console.log('\n[11] 용량 계산 — 현재 설정으로 하루 전량 처리 가능한 상한');
+    {
+      const BUDGET = 400;
+      const RUNS_PER_DAY = 3;
+      const BATCH_SZ = 20;
+      const maxKeywords = BUDGET * RUNS_PER_DAY;
+      const AVG_PRODUCTS_PER_KW = 2.4;
+      const maxProducts = Math.floor(maxKeywords * AVG_PRODUCTS_PER_KW);
+
+      const MIN_GAP_S = 6;
+      const BATCH_INTERVAL_S = 60;
+      const RUN_BUDGET_S = 50 * 60;
+      const batchesPerRun = Math.floor(RUN_BUDGET_S / BATCH_INTERVAL_S);
+      const kwPerBatch = Math.round(BATCH_SZ / AVG_PRODUCTS_PER_KW);
+      const kwPerRun = batchesPerRun * kwPerBatch;
+      const kwPerRunApi = Math.floor(RUN_BUDGET_S / MIN_GAP_S);
+
+      console.log('  ┌──────────────────────────────────────────────');
+      console.log(`  │ 설정값`);
+      console.log(`  │   API 예산/실행         ${BUDGET}회`);
+      console.log(`  │   일일 실행 횟수        ${RUNS_PER_DAY}회`);
+      console.log(`  │   호출 간격             ${MIN_GAP_S}초`);
+      console.log(`  │   배치 간격             ${BATCH_INTERVAL_S}초`);
+      console.log(`  │   실행 시간 예산        ${RUN_BUDGET_S / 60}분`);
+      console.log(`  │`);
+      console.log(`  │ 예산 기준 용량`);
+      console.log(`  │   하루 최대 검색어      ${maxKeywords}종 (${BUDGET} × ${RUNS_PER_DAY})`);
+      console.log(`  │   하루 최대 상품        ~${maxProducts}개 (× ${AVG_PRODUCTS_PER_KW})`);
+      console.log(`  │`);
+      console.log(`  │ 시간 기준 용량`);
+      console.log(`  │   실행당 배치           ~${batchesPerRun}개 (${RUN_BUDGET_S / 60}분 / ${BATCH_INTERVAL_S}초)`);
+      console.log(`  │   실행당 검색어(배치)   ~${kwPerRun}종 (${batchesPerRun} × ${kwPerBatch})`);
+      console.log(`  │   실행당 검색어(API)    ~${kwPerRunApi}종 (${RUN_BUDGET_S / 60}분 / ${MIN_GAP_S}초)`);
+      console.log(`  │   → 병목은 예산(${BUDGET}) < API시간(${kwPerRunApi})`);
+      console.log(`  │`);
+      console.log(`  │ 현재 운영 (770개 / 316종)`);
+      console.log(`  │   단일 실행 완료 가능   ${316 <= BUDGET ? '✓' : '✗'} (316 ${316 <= BUDGET ? '≤' : '>'} ${BUDGET})`);
+      console.log(`  │   여유율               ${((BUDGET - 316) / 316 * 100).toFixed(0)}%`);
+      console.log('  └──────────────────────────────────────────────');
+
+      check('현재 316종 < 예산 400 → 단일 실행으로 완료 가능', 316 <= BUDGET);
+      check('상품 2배 성장(1540개/~640종)해도 2회 실행이면 충분',
+        640 <= BUDGET * 2);
+      check('하루 전체 용량(1200종)까지는 3회 실행으로 커버',
+        maxKeywords >= 1200);
+    }
+    results.splice(0).forEach(r => console.log(r));
+
     console.log(`\n=== 결과: ${pass}/${pass + fail} PASS ===`);
     process.exit(fail ? 1 : 0);
   })();

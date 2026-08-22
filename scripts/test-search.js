@@ -310,6 +310,226 @@ check(S.suggestKeywords('텀블르', polluted, { excludeSelf: true }).corrected 
       S.suggestKeywords('텀블르', polluted, { excludeSelf: true }));
 
 /* ================================================================ *
+ *  8-b. 추천 후보 품질  (isValidSuggestion)
+ *
+ *  "이런 검색어는 어떠세요" 에 올라가는 말은 사용자가 친 말이 아니라
+ *  우리가 고른 말이다. 상품과 무관한 소음이 그 자리에 올라가면 안 된다.
+ *
+ *  실제 사고: 사용자가 'dkdlvhs' 를 검색 → 자판 보정으로 '아이폰' 을
+ *  찾은 뒤 주변어를 고르는 과정에서 '앙 기모찌' 가 대체 검색어로 나갔다.
+ *  사전은 search_stats 를 그대로 받아 오는데, 그 표에는 사람이 친 말이
+ *  전부 들어 있기 때문이다 (운영 48종 중 11종은 대응 상품이 0개다).
+ * ================================================================ */
+section('8-b. 추천 후보 품질');
+
+/* ── 형태만 보고 거를 수 있는 것 ── */
+const NOISE = ['', '   ', 'ㅋㅋㅋㅋ', 'ㅎㅎㅎㅎ', 'ㅇㅇ', 'ㄱㄱ', 'zzz없는말zzz',
+               'asdfgh', 'qwer', '123456', '!!!!!!!!', 'https://example.com',
+               'someone@example.com', '010-1234-5678', 'testtesttest', 'test',
+               '테스트', '__schema_check__', 'dkdlvhs', 'dldjvhs', '안녕하세요',
+               '앙 기모찌'];
+NOISE.forEach(function(n) {
+  check(S.isValidSuggestion(n) === false, 'isValidSuggestion 차단: ' + JSON.stringify(n));
+});
+
+/* ── 진짜 상품 검색어는 통과해야 한다 (운영 키워드에서 뽑은 표본) ── */
+const REAL = ['노트북', '무선 이어폰', '아이폰 17 프로', '텀블러', '수영복', '얼후', '만두',
+              'LG전자 LG그램 14ZD95U', '에이수스 2025 비보북 16 코어Ultra5',
+              '온더바디 코튼풋 발을씻자', '아픔이 길이 되려면', '안녕', '신라면',
+              'HOMEY NEST 사무용의자', '고스트 불빛 반지', '보스대디 씻발 발등까지',
+              '유한락스1리터 x12개', '912 니치향수 승무원', 'lg 16'];
+REAL.forEach(function(k) {
+  check(S.isValidSuggestion(k) === true, 'isValidSuggestion 통과: ' + JSON.stringify(k));
+});
+
+/* ================================================================ *
+ *  Test 1 — 이상한 추천어 차단
+ * ================================================================ */
+section('8-b Test 1. 오염된 사전에서 이상한 추천어를 걸러낸다');
+
+const pollutedDict = [
+  '아이폰',
+  '아이폰 17',
+  '아이폰 17 프로',
+  '앙 기모찌',
+  'ㅋㅋㅋㅋ',
+  'zzz없는말zzz',
+  '안녕하세요'
+];
+
+const result = S.suggestKeywords('dkdlvhs', pollutedDict);
+
+check(
+  result.alternatives.indexOf('앙 기모찌') === -1,
+  '비상품/밈 검색어는 추천하지 않는다',
+  result.alternatives
+);
+
+check(
+  result.alternatives.indexOf('ㅋㅋㅋㅋ') === -1,
+  '반복 문자는 추천하지 않는다',
+  result.alternatives
+);
+
+check(
+  result.alternatives.indexOf('zzz없는말zzz') === -1,
+  '의미 없는 문자열은 추천하지 않는다',
+  result.alternatives
+);
+
+check(
+  result.alternatives.indexOf('안녕하세요') === -1,
+  '대화체 문장은 추천하지 않는다',
+  result.alternatives
+);
+
+/* ================================================================ *
+ *  Test 2 — 정상 상품 검색어는 유지
+ * ================================================================ */
+section('8-b Test 2. 관련 상품 검색어 추천은 그대로 유지');
+
+check(
+  result.alternatives.indexOf('아이폰 17 프로') > -1 ||
+  result.corrected === '아이폰',
+  '관련 상품 검색어 추천은 유지한다',
+  result
+);
+
+check(
+  result.corrected === '아이폰' && result.reason === 'layout',
+  '자판 보정 자체는 그대로 동작한다',
+  result
+);
+
+check(
+  result.alternatives.indexOf('아이폰 17') > -1 && result.alternatives.indexOf('아이폰 17 프로') > -1,
+  '같은 계열 상품 검색어는 두 개 다 남는다',
+  result.alternatives
+);
+
+/* ================================================================ *
+ *  Test 3 — search_stats 오염 회귀
+ *
+ *  프론트는 검색할 때마다 /api/stats 로 그 말을 집계한다. 그래서 오타도
+ *  밈도 전부 search_stats 에 남고, 그대로 사전이 된다. "표에 있다" 는
+ *  "쓸 만한 검색어다" 와 다르다.
+ * ================================================================ */
+section('8-b Test 3. 오염된 search_stats 를 사전으로 써도 안전하다');
+
+const pollutedStats = [
+  '텀블러',
+  '텀블르',
+  '앙 기모찌',
+  'ㅋㅋㅋㅋ',
+  '노트북'
+];
+
+const typoResult = S.suggestKeywords(
+  '텀블르',
+  pollutedStats,
+  { excludeSelf: true }
+);
+
+check(
+  typoResult.corrected === '텀블러',
+  '오염된 search_stats 가 오타 보정을 막지 않는다',
+  typoResult
+);
+
+check(
+  typoResult.alternatives.indexOf('앙 기모찌') === -1,
+  '오염된 search_stats 의 비정상 검색어를 추천하지 않는다',
+  typoResult.alternatives
+);
+
+check(
+  typoResult.alternatives.indexOf('ㅋㅋㅋㅋ') === -1,
+  '오염된 search_stats 의 반복 문자를 추천하지 않는다',
+  typoResult.alternatives
+);
+
+check(
+  typoResult.alternatives.indexOf('텀블르') === -1,
+  'excludeSelf 로 뺀 자기 자신은 대체안에도 올라오지 않는다',
+  typoResult.alternatives
+);
+
+/* ================================================================ *
+ *  Test 4 — 관련 없는 정상 단어도 차단
+ *
+ *  멀쩡한 상품 검색어라도 지금 찾는 것과 관계없으면 소음이다.
+ * ================================================================ */
+section('8-b Test 4. 관련 없는 정상 상품어도 추천하지 않는다');
+
+const unrelated = S.suggestKeywords(
+  '아이폰',
+  [
+    '아이폰',
+    '아이폰 17',
+    '아이폰 17 프로',
+    '수영복',
+    '선풍기',
+    '노트북'
+  ]
+);
+
+check(
+  unrelated.alternatives.indexOf('수영복') === -1,
+  '관련 없는 상품은 추천하지 않는다 (수영복)',
+  unrelated.alternatives
+);
+
+check(
+  unrelated.alternatives.indexOf('선풍기') === -1,
+  '관련 없는 상품은 추천하지 않는다 (선풍기)',
+  unrelated.alternatives
+);
+
+check(
+  unrelated.alternatives.indexOf('노트북') === -1,
+  '관련 없는 상품은 추천하지 않는다 (노트북)',
+  unrelated.alternatives
+);
+
+check(
+  unrelated.alternatives.indexOf('아이폰 17') > -1,
+  '같은 계열은 남긴다 (거르기만 하는 게 목적이 아니다)',
+  unrelated.alternatives
+);
+
+/* ── 관련성 하한 — 사고의 직접 원인 ── */
+section('8-b. 관련성 하한 (MIN_SUGGEST_SIMILARITY)');
+
+/*
+ * '앙 기모찌' 는 '아이폰' 과 자모 유사도 0.556 이었다. 옛 문턱 0.5 를
+ * 아슬아슬하게 넘어서 대체 검색어로 나갔다. 진짜 오타는 훨씬 더 닮았다
+ * ('텀블르' vs '텀블러' = 0.875).
+ */
+const jsim = function(a, b) {
+  const A = S.toJamo(S.canonicalKey(a)), B = S.toJamo(S.canonicalKey(b));
+  return 1 - S.editDistance(A, B) / (Math.max(A.length, B.length) || 1);
+};
+check(S.MIN_SUGGEST_SIMILARITY >= 0.7,
+      '관련성 하한이 0.7 이상이다', S.MIN_SUGGEST_SIMILARITY);
+check(jsim('텀블르', '텀블러') >= S.MIN_SUGGEST_SIMILARITY,
+      '진짜 오타는 하한을 넘는다', jsim('텀블르', '텀블러').toFixed(3));
+check(jsim('아이폰', '앙 기모찌') < S.MIN_SUGGEST_SIMILARITY,
+      '남남인 말은 하한을 넘지 못한다', jsim('아이폰', '앙 기모찌').toFixed(3));
+
+/* ── 사용자가 친 말 자체는 막지 않는다 ── */
+section('8-b. 차단 대상은 추천 후보뿐 — 사용자 입력은 그대로 검색한다');
+
+/*
+ * isValidSuggestion 은 "우리가 권하는 말" 에만 쓴다. 사용자가 무엇을 치든
+ * 검색은 그대로 하고 결과도 그대로 보여준다. 검색어 정규화·토큰화 경로가
+ * 이 필터를 타지 않는다는 사실을 고정해 둔다.
+ */
+check(S.normalizeText('앙 기모찌') === '앙 기모찌',
+      '사용자가 친 말은 정규화 단계에서 지워지지 않는다', S.normalizeText('앙 기모찌'));
+check(S.splitTokens(S.normalizeText('앙 기모찌')).length > 0,
+      '사용자가 친 말은 토큰화도 정상 동작한다');
+
+/* ================================================================ *
  *  9. 가격 시스템을 건드리지 않았는지
  * ================================================================ */
 section('9. 가격 시스템 불변 조건');

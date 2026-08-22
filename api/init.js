@@ -13,6 +13,7 @@ const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, fres
  */
 const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT, todayDropConfirmed, kstToday } = require('./_price');
 const { attachTrust, loadRecentHistory } = require('./_trust');
+const { isValidSuggestion } = require('./_search');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
 
@@ -114,7 +115,22 @@ async function chipKeywords(keywords, activeKeyword) {
  * 판단 근거를 못 얻으면 원래대로 전부 내보낸다. 근거 없이 지우지 않는다.
  */
 async function popularChips(stats) {
-  const rows = (stats || []).filter(s => s && s.keyword);
+  /*
+   * 형태부터 거른다 — 아래 "실적" 검사보다 먼저.
+   *
+   * 이 목록은 홈 칩으로만 쓰이는 게 아니다. 프론트는 검색 결과가 0건이고
+   * 서버 제안(X-Seosa-Suggest)도 비었을 때 이 목록을 그대로
+   * "이런 검색어는 어떠세요" 자리에 그린다 (public/index.html Search.emptyHtml).
+   * 그래서 소음이 여기 남아 있으면 그 자리로 새어 나간다.
+   *
+   * 아래 실적 검사(products 에 저장된 적이 있는가)만으로도 대부분 걸리지만,
+   * 그 검사는 조회 실패·전멸 시 rows 를 그대로 돌려주는 폴백이 두 군데 있다.
+   * 형태 검사를 앞에 두면 어느 경로로 나가든 소음은 빠진다.
+   *
+   * 판정은 _search.isValidSuggestion 한 곳에 있다 — 프론트에 같은 규칙을
+   * 복제하지 않는다 (규칙이 갈라지면 한쪽만 고쳐지고 다른 쪽이 남는다).
+   */
+  const rows = (stats || []).filter(s => s && s.keyword && isValidSuggestion(s.keyword));
   const keywords = [...new Set(rows.map(s => s.keyword))];
   if (!keywords.length) return rows;
 
