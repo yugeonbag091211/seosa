@@ -23,8 +23,10 @@ require('./_env');
 const supabase = require('../api/_supabase');
 const { searchCoupang, isBlocked, localStats } = require('../api/_coupang');
 const { recordPrices, searchPhraseFromTitle } = require('../api/_shop');
+const { kstToday } = require('../api/_price');
 
-const TODAY = new Date().toISOString().slice(0, 10);
+// 헤더 로그용. price_history.recorded_date / price_job_state.job_date 와 같은 KST 기준.
+const TODAY = kstToday();
 const CONCURRENCY   = 4;
 const PAGE          = 1000;
 const UPSERT_CHUNK  = 200;
@@ -92,20 +94,12 @@ const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 60000;
  */
 const RUN_TIME_BUDGET_MS = Number(process.env.PRICE_RUN_BUDGET_MS) || 50 * 60 * 1000;
 
-/**
- * 한국시간(Asia/Seoul) 기준 오늘 날짜 'YYYY-MM-DD'.
- *
- * ★ price_history.recorded_date 에는 절대 쓰지 않는다.
- *   그쪽은 UTC(new Date().toISOString())로 고정돼 있고, 저장·조회·판정이
- *   전부 같은 기준이어야 한다 (api/_price.js recentlyObserved 주석 참고).
- *   여기서 KST 를 쓰는 곳은 "오늘 한 바퀴 돌았는가" 를 판정하는
- *   price_job_state.job_date 하나뿐이다.
- *
- * KST 는 UTC+9 고정이고 서머타임이 없어서 9시간을 더해 자르면 정확하다.
+/*
+ * 한국시간(Asia/Seoul) 기준 오늘 날짜는 api/_price.kstToday 하나만 쓴다.
+ * price_history.recorded_date 도, price_job_state.job_date 도, 여기서 하루
+ * 경계를 판정하는 자리도 모두 같은 함수를 거친다 — 예전에는 저장은 UTC 로
+ * 하고 판정은 KST 로 해서 하루가 어긋났다.
  */
-function kstToday(now = new Date()) {
-  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -337,7 +331,7 @@ const obsMap = new Map();
 function addRow(target, item, foundVia) {
   const price = parseInt(item.lprice, 10) || 0;
   if (price <= 0) return false;
-  obsMap.set(`${target.product_id}|${target.mall}`, {
+  obsMap.set(`${target.product_id}|${target.mall}|${item.vendorItemId || ''}`, {
     productId: target.product_id,
     mall: target.mall,
     // 제목은 DB 의 것을 유지한다. 이 스크립트는 "이미 아는 상품의 오늘 가격"을

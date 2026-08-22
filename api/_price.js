@@ -134,6 +134,23 @@ function ageDays(iso, now) {
 }
 
 /**
+ * 한국시간(Asia/Seoul) 기준 오늘 날짜 'YYYY-MM-DD'.
+ *
+ * ★ price_history.recorded_date 의 유일한 기준이다.
+ *   예전에는 write 쪽에서 new Date().toISOString().slice(0,10) 즉 UTC 를 썼는데,
+ *   KST 01:00 크론이 UTC 로는 어제 자정 이후라 그날 수집분이 통째로 어제 날짜로
+ *   저장됐다. price_job_state.job_date 는 KST 였으므로 두 값이 서로 다른
+ *   달력을 가리켰다. 이제 저장·조회·job_state 가 모두 KST 로 한 기준을 쓴다.
+ *
+ * KST 는 UTC+9 고정이고 서머타임이 없어서 9시간을 더해 자르면 정확하다.
+ */
+function kstToday(now = new Date()) {
+  const t = now instanceof Date ? now.getTime() : Number(now);
+  const src = Number.isFinite(t) ? t : Date.now();
+  return new Date(src + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
  * 새로 관측한 가격을 어떻게 다룰지 판정한다.
  *
  * @param {*} rawNext  이번에 받아온 가격 (문자열이어도 된다)
@@ -174,6 +191,26 @@ function classifyPrice(rawNext, prev, next) {
     return { status: 'ok', price, ratio, reason: '' };
   }
 
+  /*
+   * 옵션 교체 감지.
+   *
+   * ★ price_history 의 저장 단위와 혼동하지 말 것.
+   *
+   *   저장 identity   product_id + mall + vendor_item_id + recorded_date
+   *                   → 옵션별로 독립된 이력 계열을 남긴다.
+   *   검증 identity   product_id + mall  (vid 는 "바뀌었는가" 를 보는 값)
+   *                   → 직전 관측을 vid 없이 찾아야 옵션이 바뀐 것을 알 수 있다.
+   *                     (_shop.loadPrevObservations 가 pid|mall 로 키를 잡는 이유)
+   *
+   *   즉 vid 는 저장에서는 "키" 지만 검증에서는 "비교 대상 속성" 이다.
+   *   검증까지 vid 를 키에 넣으면 옵션이 바뀐 순간 직전 값을 못 찾아
+   *   비교 자체가 사라지고, 아래 방어가 통째로 무력해진다.
+   *
+   * 쿠팡은 같은 productId 아래 색상·용량 옵션을 묶어 두고 검색 API 는 그중
+   * 한 옵션의 가격을 돌려준다. 어떤 옵션이 올지 우리가 고를 수 없다. 옵션이
+   * 바뀐 게 확인되면(vendorItemId 변경) 2배만 벌어져도 같은 상품의 가격
+   * 변동이라고 단정할 수 없으므로 더 엄격한 기준을 쓴다.
+   */
   const prevVendor = prev && prev.vendorItemId ? String(prev.vendorItemId) : '';
   const nextVendor = next && next.vendorItemId ? String(next.vendorItemId) : '';
   const optionSwitched = !!(prevVendor && nextVendor && prevVendor !== nextVendor);
@@ -303,19 +340,144 @@ const DROP_MAX_AGE_DAYS = 7;
  * 날짜로 들어오면, 그게 정렬상 맨 앞에 와서 아무리 묵은 상품도 "방금
  * 확인됨"으로 보이게 된다. 오늘까지만 현재로 친다.
  *
- * @param {Array<{recorded_date:string}>} points  _trust.loadRecentHistory 가 준 배열
- * @param {string} today  'YYYY-MM-DD'
+ * @param {Array<{recorded_date:string, recorded_at?:string}>} points
+ *        _trust.loadRecentHistory 가 준 배열
+ * @param {string} today  'YYYY-MM-DD' (KST 달력)
  * @returns {string} 'YYYY-MM-DD' — 쓸 수 있는 기록이 없으면 빈 문자열
  */
+/**
+ * 가격 기록 한 점이 KST 달력으로 며칠에 관측된 것인가.
+ *
+ * ★ recorded_at 을 먼저 본다. recorded_date 를 그대로 믿지 않는다.
+ *
+ *   recorded_date 는 관측 시각에서 뽑아 둔 라벨일 뿐이고, 그 라벨을 어느
+ *   시간대로 잘랐는지는 그 값을 쓴 코드에 달려 있다. 배포본은 오래 UTC 로
+ *   잘라 왔다 (new Date().toISOString().slice(0,10)). 수집 크론이 KST
+ *   01·03·06시(= UTC 16·18·21시)에 도는 탓에, KST 달력으로 오늘 받아온
+ *   가격이 전부 '어제' 라벨을 달고 저장된다.
+ *
+ *   2026-08-22 운영 DB 실측: price_history 14,579행 중 6,258행(42.9%)에서
+ *   recorded_date 가 recorded_at 의 KST 달력일보다 하루 이르다. 그날 수집분
+ *   498행은 recorded_at 이 KST 08-22 01:35~03:33 인데 recorded_date 는 전부
+ *   2026-08-21 이었고, recorded_date = KST 오늘 인 행은 0건이었다. 라벨만
+ *   보면 "오늘 수집된 상품이 하나도 없다"가 되어 시세판이 통째로 빈다.
+ *
+ *   recorded_at 은 시간대가 섞일 여지가 없는 절대 시각이라, 여기서 KST 로
+ *   환산하면 어느 쪽 코드가 라벨을 썼든 같은 답이 나온다. 운영 14,579행
+ *   전부에 recorded_at 이 있다 (결측 0건).
+ *
+ *   recorded_at 이 없는 점(단위 테스트의 고정값 등)은 recorded_date 로
+ *   폴백한다 — 기존 동작 그대로다.
+ *
+ * @param {{recorded_date?:string, recorded_at?:string}} pt
+ * @returns {string} 'YYYY-MM-DD' — 판정할 수 없으면 빈 문자열
+ */
+function observedKstDate(pt) {
+  const at = pt && pt.recorded_at;
+  if (at) {
+    const t = Date.parse(at);
+    if (Number.isFinite(t)) return kstToday(t);
+  }
+  return String((pt && pt.recorded_date) || '').slice(0, 10);
+}
+
 function latestObservedDate(points, today) {
   let latest = '';
   (points || []).forEach(pt => {
-    const d = String((pt && pt.recorded_date) || '').slice(0, 10);
+    const d = observedKstDate(pt);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
     if (today && d > today) return;          // 미래 날짜는 현재 기록이 아니다
     if (d > latest) latest = d;
   });
   return latest;
+}
+
+/**
+ * 이 시세판 행이 "오늘(KST) 실제로 내려간 가격" 인가 — price_history 원장으로
+ * 다시 확인한다.
+ *
+ * ── 왜 뷰만으로는 부족한가 ──────────────────────────────────────
+ *
+ * price_drop_top 은 (product_id, mall, vendor_item_id) 안에서 최신 두 기록을
+ * 비교할 뿐 날짜를 보지 않는다. 그래서 두 가지가 새어 나온다.
+ *
+ *  ① prev_price 가 "어제" 가 아닐 수 있다. 같은 옵션의 직전 관측이 며칠 전
+ *     이면 그 값이 prev_price 로 온다. 그 사이 같은 상품이 다른 옵션으로
+ *     이미 그 가격에 팔리고 있었어도 뷰는 모른다.
+ *  ② current_price 가 오늘 값이 아닐 수 있다. 오늘은 다른 옵션만 수집됐고
+ *     이 옵션은 며칠째 안 잡혔다면, 그 옵션의 마지막 값이 current_price 로
+ *     온다. 상품 단위로는 "오늘 수집됨" 이라 최신성 검사를 통과해 버린다.
+ *
+ * 2026-08-22 운영 DB 실측 (①의 사례):
+ *   pid=8085515094 "날개없는 선풍기" — 뷰는 64,800 → 59,800 (-7.7%) 라고
+ *   했지만 원장의 직전 관측(2026-08-21)은 이미 59,800 이었다. 옵션 식별자만
+ *   95023374766 → 90052570350 으로 바뀌었을 뿐 값은 그대로다. 즉 "오늘
+ *   7.7% 하락" 은 사실이 아니었다.
+ *
+ * ── 무엇을 확인하는가 ──────────────────────────────────────────
+ *
+ *   ① 화면에 현재가로 찍을 값(current_price)이 오늘 실제로 관측된 값인가
+ *   ② 오늘 이전의 가장 최근 관측이 그보다 비쌌는가  (= 오늘 가격 < 직전 가격)
+ *   ③ 화면에 이전 기록가로 찍을 값(prev_price)이 바로 그 직전 관측인가
+ *
+ * 둘 다 이미 받아 둔 points 로 판정한다 — 조회를 새로 만들지 않는다.
+ * 판정 근거가 없으면(기록이 없거나 오늘 기록이 없으면) 통과시키지 않는다.
+ * "오늘의 가격 하락" 은 근거가 있을 때만 하는 주장이다.
+ *
+ * @param {object} row     price_drop_top 행
+ * @param {Array}  points  _trust.loadRecentHistory 가 준 해당 상품의 기록
+ * @param {string} today   'YYYY-MM-DD' (KST)
+ */
+function todayDropConfirmed(row, points, today) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(today || ''))) return false;
+  const cur = Number(row && row.current_price) || 0;
+  if (cur <= 0) return false;
+
+  // 같은 날 여러 기록이 있으면 늦게 관측된 쪽이 그날의 값이다.
+  let todayPrice = null, todayKey = '';
+  let prevPrice = null, prevKey = '';
+  (points || []).forEach(pt => {
+    const d = observedKstDate(pt);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    if (d > today) return;                    // 미래 기록은 근거가 아니다
+    const price = Number(pt && pt.price) || 0;
+    if (price <= 0) return;
+    const key = d + ' ' + String((pt && pt.recorded_at) || '');
+    if (d === today) {
+      if (todayPrice === null || key > todayKey) { todayPrice = price; todayKey = key; }
+    } else if (prevPrice === null || key > prevKey) {
+      prevPrice = price; prevKey = key;
+    }
+  });
+
+  if (todayPrice === null) return false;      // 오늘 수집분이 없다
+  if (todayPrice !== cur) return false;       // 현재가로 찍을 값이 오늘 관측값이 아니다
+  if (prevPrice === null) return false;       // 비교할 직전 관측이 없다
+  if (prevPrice <= todayPrice) return false;  // 오늘 가격 < 직전 가격
+
+  /*
+   * 화면에 '이전 기록가'로 찍을 값(row.prev_price)도 원장의 직전 관측이어야 한다.
+   *
+   * 뷰의 prev_price 는 '같은 vid 의 직전 관측' 이라 날짜를 보지 않는다. 옵션이
+   * 바뀐 상품에서는 그 값이 며칠~몇 주 전 가격일 수 있고, 그러면 카드가 어제
+   * 가격이 아닌 값을 '이전 기록가' 라고 말하게 된다. 하락 자체는 사실이지만
+   * 숫자가 틀린다 — 그리고 상품을 눌러 보는 가격 이력 차트는 상품 단위라
+   * 카드와 차트가 서로 다른 어제를 가리킨다.
+   *
+   * 2026-08-22 운영 DB 실측 (오늘 확정 21건 중 3건):
+   *   9500290355 샤오미 패드  카드 219,800→219,000(-0.4%)
+   *                          원장 229,800(8/21)→219,000(-4.7%)
+   *                          ← 219,800 은 같은 vid 의 7/31 값, 22일 전이다
+   *   7014943794 크리넥스     카드 4,470→4,460(-0.2%)
+   *                          원장 5,580(8/21)→4,460(-20.1%)
+   *   8717120207 삼성노트북    카드 206,000→201,990(-1.9%)
+   *                          원장 205,000(8/21)→201,990(-1.5%)
+   *
+   * 표시값을 여기서 고쳐 쓰지는 않는다. drop_amount·drop_pct·is_all_time_low
+   * 가 전부 같은 뷰 행에서 나오므로 하나만 갈아끼우면 카드 안에서 숫자가
+   * 서로 어긋난다. 근거가 맞는 행만 내보내는 쪽이 안전하다.
+   */
+  return Number(row.prev_price) === prevPrice;
 }
 
 /**
@@ -325,10 +487,11 @@ function latestObservedDate(points, today) {
  * 컬럼이라 사전순 비교가 곧 시간순 비교이고, Date 로 바꿔 빼는 것보다
  * 시간대·서머타임 오차가 끼어들 여지가 없다.
  *
- * today 는 호출부가 넘긴다. 저장 쪽(_shop.saveProducts)과 수집기가
- * new Date().toISOString().slice(0,10) 으로 recorded_date 를 쓰므로,
- * 비교하는 today 도 같은 방식이어야 한다. 여기서만 KST 로 바꾸면 UTC
- * 자정~09시 사이에 기록된 오늘치가 하루 묵은 것으로 계산된다.
+ * today 는 호출부가 넘긴다. 저장 쪽(_shop.recordPrices)이 kstToday() 로
+ * recorded_date 를 쓰므로, 비교하는 today 도 같은 방식(kstToday())이어야 한다.
+ * 예전에는 UTC 로 저장하고 여기서만 KST 로 비교해서, UTC 자정~09시(KST 09~18시)
+ * 사이에 기록된 오늘치가 하루 묵은 것으로 계산된 적이 있었다 — 이제는
+ * 두 쪽 모두 KST 라 그런 어긋남이 생기지 않는다.
  *
  * @param {Array} points  해당 상품의 가격 기록
  * @param {string} today  'YYYY-MM-DD'
@@ -431,7 +594,7 @@ function isDisplayable(row, opts) {
 module.exports = {
   MAX_PRICE, SUSPECT_RATIO, SUSPECT_WINDOW_DAYS, OPTION_SWITCH_RATIO, MAX_DISPLAY_AGE_DAYS,
   MAX_PLAUSIBLE_DROP_PCT, LIFECYCLE, DROP_MAX_AGE_DAYS,
-  parsePrice, isSanePrice, ageDays, classifyPrice, coupangItemIds, isRefreshableMall,
+  parsePrice, isSanePrice, ageDays, kstToday, classifyPrice, coupangItemIds, isRefreshableMall,
   vendorIdOf, itemIdOf, productLifecycle, isDisplayable, plausibleDrop,
-  latestObservedDate, recentlyObserved
+  latestObservedDate, recentlyObserved, observedKstDate, todayDropConfirmed
 };

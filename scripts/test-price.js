@@ -178,7 +178,7 @@ const {
   parsePrice, isSanePrice, classifyPrice, coupangItemIds, isRefreshableMall,
   vendorIdOf, itemIdOf, productLifecycle, isDisplayable, LIFECYCLE,
   plausibleDrop, MAX_PLAUSIBLE_DROP_PCT,
-  recentlyObserved, latestObservedDate,
+  recentlyObserved, latestObservedDate, observedKstDate, todayDropConfirmed,
   kstToday
 } = require('../api/_price');
 
@@ -1115,6 +1115,194 @@ function recordedPrice(productId) {
   // today 가 이상하면 통과시키지 않는다 (판단 근거가 없는데 최신이라고 하면 안 된다).
   check(recentlyObserved(histPts('2026-08-12'), '') === false, 'today 가 비면 제외');
   check(recentlyObserved(histPts('2026-08-12'), '2026/08/12') === false, 'today 형식이 다르면 제외');
+
+  /* ================================================================
+   *  오늘의 하락 — latestObservedDate === today 판정
+   *
+   *  기존 recentlyObserved 는 7일 이내면 통과시켰다. 그래서 8/17 하락이
+   *  8/21에도 "오늘의 하락"으로 노출됐다.
+   *  init.js 의 새 로직은 latestObservedDate(points, today) === today 로
+   *  오늘 수집분만 보여준다.
+   * ================================================================ */
+  section('오늘의 하락. latestObservedDate === today — 오늘 수집분만 노출');
+
+  // 오늘 수집된 상품만 통과
+  check(latestObservedDate(histPts(DROP_TODAY), DROP_TODAY) === DROP_TODAY,
+        '오늘 기록이 있으면 통과');
+
+  // 어제 수집 → 오늘 아님 → 탈락
+  check(latestObservedDate(histPts('2026-08-11'), DROP_TODAY) !== DROP_TODAY,
+        '어제 기록만 있으면 탈락 (기존 recentlyObserved 는 통과시켰던 케이스)');
+
+  // 7일 전 기록만 → 탈락 (기존에는 경계에서 통과)
+  check(latestObservedDate(histPts('2026-08-05'), DROP_TODAY) !== DROP_TODAY,
+        '7일 전 기록만 → 탈락 (기존 recentlyObserved 는 통과시켰던 케이스)');
+
+  // 유저 시나리오: 8/17 하락, 이후 수집 없음 → 8/21에 표시되면 안 됨
+  const DROP_AUG21 = '2026-08-21';
+  check(latestObservedDate(histPts('2026-08-17', '2026-08-16'), DROP_AUG21) !== DROP_AUG21,
+        '8/17 하락이 8/21에 표시되지 않는다 (유저 시나리오)');
+
+  // 오늘 수집 + 과거 기록 → 오늘이 최신이므로 통과
+  check(latestObservedDate(histPts('2026-08-05', DROP_TODAY, '2026-07-30'), DROP_TODAY) === DROP_TODAY,
+        '과거 기록이 섞여 있어도 오늘 것이 있으면 통과');
+
+  // 미래 날짜만 → 빈 문자열 → 탈락
+  check(latestObservedDate(histPts('2026-09-01'), DROP_TODAY) !== DROP_TODAY,
+        '미래 날짜만 → 탈락');
+
+  // 빈/undefined → 탈락
+  check(latestObservedDate([], DROP_TODAY) !== DROP_TODAY, '빈 배열 → 탈락');
+  check(latestObservedDate(undefined, DROP_TODAY) !== DROP_TODAY, 'undefined → 탈락');
+
+  /* ================================================================
+   *  관측일 판정 — observedKstDate
+   *
+   *  recorded_date 는 배포본이 UTC 로 잘라 온 라벨이라 KST 달력과 하루
+   *  어긋난 행이 운영 DB 의 42.9% 다 (2026-08-22 실측). recorded_at 이
+   *  있으면 그쪽을 KST 로 환산해 쓴다.
+   * ================================================================ */
+  section('관측일. observedKstDate — recorded_at(KST) 이 recorded_date 보다 우선');
+
+  // 운영 실측: KST 08-22 02:10 수집분이 recorded_date=2026-08-21 로 저장돼 있다.
+  check(observedKstDate({ recorded_date: '2026-08-21', recorded_at: '2026-08-21T17:10:22.742+00:00' }) === '2026-08-22',
+        'UTC 라벨이 하루 이르면 recorded_at 의 KST 달력일로 바로잡는다');
+
+  check(observedKstDate({ recorded_date: '2026-08-22', recorded_at: '2026-08-22T01:00:00.000+00:00' }) === '2026-08-22',
+        'KST 로 저장된 라벨과도 답이 같다 (수집기 수정 후에도 그대로 맞는다)');
+
+  check(observedKstDate({ recorded_date: '2026-08-20' }) === '2026-08-20',
+        'recorded_at 이 없으면 recorded_date 로 폴백한다 (기존 동작)');
+
+  check(observedKstDate({ recorded_date: '2026-08-20', recorded_at: 'not-a-date' }) === '2026-08-20',
+        '깨진 recorded_at 은 무시하고 recorded_date 를 쓴다');
+
+  check(observedKstDate(null) === '', 'null 은 빈 문자열');
+
+  // latestObservedDate 도 같은 기준을 쓴다 (init.js 시세판이 이 판정에 의존한다).
+  check(latestObservedDate([{ price: 1, recorded_date: '2026-08-21', recorded_at: '2026-08-21T17:10:22.742+00:00' }],
+                          '2026-08-22') === '2026-08-22',
+        'latestObservedDate 가 UTC 라벨 행을 오늘로 인정한다 (시세판이 통째로 비던 원인)');
+
+  /* ================================================================
+   *  오늘의 하락 확정 — todayDropConfirmed
+   *
+   *  price_drop_top 은 (pid, mall, vid) 안에서 최신 두 기록을 날짜와
+   *  무관하게 비교한다. 그래서 두 가지가 새어 나왔다.
+   *    (1) prev_price 가 어제가 아니라 며칠 전 값
+   *    (2) current_price 가 오늘 값이 아니라 다른 옵션의 묵은 값
+   *  원장(price_history)으로 다시 확인해서 둘 다 막는다.
+   * ================================================================ */
+  section('오늘의 하락. todayDropConfirmed — 오늘 실제로 내려간 것만');
+
+  const TD = '2026-08-22';
+  // KST day 의 hhmm 을 UTC 인스턴트로 환산해 recorded_at 을 만든다 (KST = UTC+9).
+  const pt = (price, day, hhmm) => ({
+    price,
+    recorded_date: day,
+    recorded_at: new Date(Date.parse(day + 'T' + hhmm + ':00Z') - 9 * 3600 * 1000).toISOString()
+  });
+
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:10'), pt(12900, '2026-08-21', '02:10')], TD) === true,
+        '오늘 9,900 / 어제 12,900 → 하락 확정');
+
+  // 운영 실측 위양성: pid=8085515094 — 옵션 식별자만 바뀌고 값은 그대로였다.
+  check(todayDropConfirmed({ current_price: 59800, prev_price: 64800 }, [pt(59800, TD, '02:00'), pt(59800, '2026-08-21', '02:00')], TD) === false,
+        '직전 관측과 값이 같으면 하락이 아니다 (뷰는 -7.7% 라고 했던 실제 사례)');
+
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, '2026-08-21', '02:00'), pt(12900, '2026-08-20', '02:00')], TD) === false,
+        '오늘 수집분이 없으면 탈락 (며칠 전 하락이 계속 뜨던 원인)');
+
+  check(todayDropConfirmed({ current_price: 50000, prev_price: 70000 }, [pt(60000, TD, '02:00'), pt(70000, '2026-08-21', '02:00')], TD) === false,
+        '뷰 현재가가 오늘 관측가와 다르면 탈락 (묵은 옵션 값을 현재가로 찍지 않는다)');
+
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:00')], TD) === false,
+        '비교할 직전 관측이 없으면 탈락');
+
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 8000 }, [pt(9900, TD, '02:00'), pt(8000, '2026-08-21', '02:00')], TD) === false,
+        '직전보다 올랐으면 탈락');
+
+  check(todayDropConfirmed({ current_price: 9500, prev_price: 12900 }, [pt(9900, TD, '02:00'), pt(9500, TD, '06:00'), pt(12900, '2026-08-21', '02:00')], TD) === true,
+        '같은 날 여러 기록이면 늦게 관측된 값을 오늘 가격으로 본다');
+
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:00'), pt(5000, '2026-08-23', '02:00'), pt(12900, '2026-08-21', '02:00')], TD) === true,
+        '미래 날짜 기록은 근거로 쓰지 않는다');
+
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [], TD) === false, '기록이 없으면 탈락');
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, undefined, TD) === false, 'undefined 면 탈락');
+  check(todayDropConfirmed({ current_price: 0, prev_price: 100 }, [pt(0, TD, '02:00')], TD) === false, '현재가가 0 이면 탈락');
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 }, [pt(9900, TD, '02:00')], '') === false, 'today 가 비면 탈락');
+
+  /*
+   * 조건 D — 화면에 찍을 이전 기록가가 원장의 직전 관측과 같아야 한다.
+   *
+   * 뷰의 prev_price 는 같은 vid 의 직전 관측이라 날짜를 보지 않는다. 옵션이
+   * 바뀌면 며칠~몇 주 전 값이 이전 기록가 자리에 온다.
+   */
+  // 운영 실측: pid=9500290355 샤오미 패드 — 뷰 prev 219,800 은 같은 vid 의 7/31 값,
+  // 원장의 직전 관측(8/21)은 229,800 이었다. 카드는 -0.4%, 실제는 -4.7%.
+  check(todayDropConfirmed({ current_price: 219000, prev_price: 219800 },
+                           [pt(219000, TD, '02:00'), pt(229800, '2026-08-21', '02:00')], TD) === false,
+        '뷰 prev_price 가 원장의 직전 관측과 다르면 탈락 (샤오미 패드 실제 사례)');
+
+  // 운영 실측: pid=7014943794 크리넥스 — 뷰 prev 4,470 은 8/20 값, 직전 관측(8/21)은 5,580.
+  check(todayDropConfirmed({ current_price: 4460, prev_price: 4470 },
+                           [pt(4460, TD, '02:00'), pt(5580, '2026-08-21', '02:00'), pt(4470, '2026-08-20', '02:00')], TD) === false,
+        '직전 관측을 건너뛴 더 오래된 값이 prev_price 면 탈락 (크리넥스 실제 사례)');
+
+  // 같은 상황에서 뷰가 실제 직전 관측을 가리키면 통과한다 (근거가 맞으면 막지 않는다).
+  check(todayDropConfirmed({ current_price: 4460, prev_price: 5580 },
+                           [pt(4460, TD, '02:00'), pt(5580, '2026-08-21', '02:00'), pt(4470, '2026-08-20', '02:00')], TD) === true,
+        'prev_price 가 원장의 직전 관측과 일치하면 통과');
+
+  // 옵션이 바뀌었어도 값 근거만 맞으면 통과한다 (vid 변경 자체를 벌하지 않는다).
+  check(todayDropConfirmed({ current_price: 9900, prev_price: 12900 },
+                           [pt(9900, TD, '02:00'), pt(12900, '2026-08-21', '02:00')], TD) === true,
+        '옵션 교체 여부와 무관하게 근거가 맞으면 통과');
+
+  check(todayDropConfirmed({ current_price: 9900 }, [pt(9900, TD, '02:00'), pt(12900, '2026-08-21', '02:00')], TD) === false,
+        'prev_price 가 아예 없는 행은 탈락 (근거 없이 이전 기록가를 찍지 않는다)');
+
+  /* ================================================================
+   *  수집 리포트 HTML — buildReportHtml
+   * ================================================================ */
+  section('수집 리포트. buildReportHtml — 필수 항목 포함');
+
+  const { buildReportHtml } = require('./collect-all-prices');
+  const sampleReport = {
+    date: '2026-08-21',
+    productsTotal: 800,
+    coupangTotal: 770,
+    collectibleTotal: 750,
+    notCoupangTotal: 30,
+    attempted: 700,
+    recorded: 680,
+    saved: 660,
+    rejected: 5,
+    suspect: 10,
+    failedCount: 20,
+    failedKeywordsCount: 3,
+    uncollectedCount: 50,
+    successRate: 90.7,
+    productSuccessRate: 88.0,
+    coveredProducts: 660,
+    failCats: { blocked: 2, noMatch: 15, network: 3 }
+  };
+
+  const html = buildReportHtml(sampleReport);
+  check(typeof html === 'string' && html.length > 100, 'HTML 문자열을 반환한다');
+  check(html.includes('2026-08-21'), '기준 날짜(KST)가 포함된다');
+  check(html.includes('90.7%'), '수집 성공률이 포함된다');
+  check(html.includes('800'), 'products 전체 수가 포함된다');
+  check(html.includes('680'), 'price_history 신규 저장 수가 포함된다');
+  check(html.includes('blocked'), '실패 원인별 카테고리가 포함된다');
+  check(html.includes('noMatch'), 'noMatch 카테고리가 포함된다');
+  check(html.includes('SEOSA'), 'SEOSA 브랜딩이 포함된다');
+
+  // 실패 카테고리가 전부 0이면 '없음' 표시
+  const emptyReport = { ...sampleReport, failCats: {} };
+  const emptyHtml = buildReportHtml(emptyReport);
+  check(emptyHtml.includes('없음'), '실패 카테고리가 없으면 "없음" 표시');
 
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
   process.exit(fail ? 1 : 0);

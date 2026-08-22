@@ -5,7 +5,8 @@ const supabase = require('./_supabase');
 const { searchCoupang } = require('./_coupang');
 const {
   parsePrice, classifyPrice,
-  vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS
+  vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS,
+  kstToday
 } = require('./_price');
 
 const TODAY_PICKS = ['수영복', '물놀이 용품', '아이스크림', '방수팩', '차량용 햇빛 가리개', '여행용 캐리어', '서큘레이터', '쿨토시'];
@@ -339,7 +340,16 @@ async function recordPrices(observations, opts = {}) {
 
   const nowDate = opts.now instanceof Date ? opts.now : new Date();
   const now = nowDate.toISOString();
-  const today = now.split('T')[0];
+  /*
+   * recorded_date 는 KST 기준으로 남긴다. now (=recorded_at) 는 UTC 인스턴트
+   * 그대로 두고, 달력 하루의 경계만 KST 로 잡는다.
+   *
+   * 왜: KST 01:xx 크론이 UTC 로는 어제 자정 이후라, UTC 를 쓰면 그날 수집분이
+   * 통째로 어제 날짜로 저장됐다. price_job_state.job_date 는 KST 였으므로
+   * 두 값이 서로 다른 달력을 가리켰다. 이제 저장·조회·job_state 가 모두
+   * 같은 KST 기준을 쓴다 (_price.kstToday 주석 참고).
+   */
+  const today = kstToday(nowDate);
 
   // 같은 배치 안에서 키가 겹치면 upsert 가 통째로 실패한다. 먼저 접는다.
   const byKey = new Map();
@@ -356,15 +366,31 @@ async function recordPrices(observations, opts = {}) {
      */
     if (!it.productId || !it.title || !it.mall) continue;
 
-    const key = `${it.productId}|${it.mall}`;
+    /*
+     * 배치 안 중복 접기 — vendor_item_id 도 키에 포함한다.
+     *
+     * price_history 의 UNIQUE 가 (pid, mall, vid, recorded_date) 라서, 같은
+     * 상품 페이지의 옵션이 여러 개 오면 옵션별로 독립된 행이 남아야 한다.
+     * 여기서 (pid, mall) 로만 접으면 옵션 하나만 살아남아 DB 에 나가고
+     * 나머지는 관측 사실이 사라진다.
+     *
+     * 값이 비면 빈 문자열로 둔다 (DB 컬럼도 NOT NULL DEFAULT '' 이라 동일).
+     */
+    /*
+     * ★ 저장할 때와 똑같은 방법으로 vid 를 구해야 한다.
+     *   historyRows 는 vendorIdOf(it) 로 저장하는데(컬럼이 비면 link 에서 뽑는다),
+     *   여기서 it.vendorItemId 만 보면 "호출부가 필드를 안 채웠지만 link 에는
+     *   서로 다른 vid 가 들어 있는" 두 옵션이 같은 키로 접혀 한 건이 사라진다.
+     *   접기 키와 저장 키는 반드시 같은 함수로 구해야 한다.
+     */
+    const vid = vendorIdOf(it);
+    const key = `${it.productId}|${it.mall}|${vid}`;
     const seen = byKey.get(key);
     /*
      * 겹치면 싼 쪽을 남긴다. "마지막에 온 것이 이긴다"가 아니다.
      *
-     * 쿠팡은 한 상품 페이지의 옵션을 각각 한 행으로 준다. api/_coupang.js 의
-     * collapseOptions() 가 이미 최저가로 접지만, 그 경로를 타지 않는 호출부가
-     * 생기면 다시 임의의 옵션 값이 현재가가 된다 — 실제로 그렇게 해서
-     * 39,900원짜리 커튼이 75,000원으로 저장됐다. 순서에 기대지 않는다.
+     * 같은 vid 안에서 같은 상품이 두 번 들어오는 경우다. 순서에 기대지 않는다 —
+     * 예전에 이 규칙이 없어서 39,900원짜리 커튼이 75,000원으로 저장된 적이 있다.
      */
     if (seen) {
       const a = parsePrice(seen.price);
@@ -459,21 +485,45 @@ async function recordPrices(observations, opts = {}) {
   }
 
   if (historyRows.length) {
+    /*
+     * onConflict 는 실제 활성 UNIQUE 와 반드시 일치해야 한다.
+     * 매칭되는 UNIQUE 가 없으면 Postgres 가 42P10 으로 거부하고, 그러면
+     * search / cron / GH Actions 수집기의 모든 가격 쓰기가 통째로 실패한다.
+     * (2026-08-14 에 정확히 이 상황이 났었다 — 그 사고 이후에
+     *  price_history_pid_mall_vid_date_key (pid, mall, vid, recorded_date)
+     *  를 도입해 지금 활성 상태이므로 그 키를 대상으로 삼는다)
+     */
     const { error } = await supabase.from('price_history').upsert(
-      historyRows, { onConflict: 'product_id,mall,recorded_date' }
+      historyRows, { onConflict: 'product_id,mall,vendor_item_id,recorded_date' }
     );
     if (error) errors.push(`price_history: ${error.message}`);
   }
 
-  if (catalogRows.length) {
-    const msg = await upsertProducts(catalogRows);
+  /*
+   * products 는 (pid, mall) 로 한 행이다 (supabase/2026-08-products-unique-restore.sql).
+   * 배치 단계에서는 vid 별로 관측을 나눠 두었으므로 catalogRows 에 같은
+   * (pid, mall) 이 여러 번 있을 수 있다. 이 상태로 upsert 를 보내면
+   * "ON CONFLICT DO UPDATE command cannot affect row a second time" 로 배치가
+   * 통째로 실패한다. 여기서 최저가만 남기고 접는다 (앞서 price_history 처럼
+   * 순서에 의존하지 않는 접기).
+   */
+  const catalogByPidMall = new Map();
+  for (const row of catalogRows) {
+    const k = `${row.product_id}|${row.mall}`;
+    const cur = catalogByPidMall.get(k);
+    if (!cur || row.lprice < cur.lprice) catalogByPidMall.set(k, row);
+  }
+  const catalogUpsertRows = [...catalogByPidMall.values()];
+
+  if (catalogUpsertRows.length) {
+    const msg = await upsertProducts(catalogUpsertRows);
     if (msg) errors.push(`products: ${msg}`);
   }
 
   if (errors.length) console.error(`[save${label ? ':' + label : ''}]`, errors.join(' | '));
 
   return {
-    saved: errors.length ? 0 : catalogRows.length,
+    saved: errors.length ? 0 : catalogUpsertRows.length,
     recorded: errors.length ? 0 : historyRows.length,
     rejected,
     suspect,

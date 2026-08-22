@@ -14,6 +14,7 @@
 const supabase = require('./_supabase');
 const { TODAY_PICKS, searchAll, saveProducts } = require('./_shop');
 const { searchCoupang, localStats, globalUsage, pruneLog } = require('./_coupang');
+const { qualitySnapshot } = require('./_quality');
 
 // 한 번에 3개씩만 돌려서 함수 실행 시간(maxDuration 60초) 안에 끝나게 한다.
 // 쿠팡 호출은 _coupang.js가 최소 간격을 두고 직렬화하므로 이 숫자만큼
@@ -107,11 +108,10 @@ module.exports = async function handler(req, res) {
     const batch = targets.slice(i, i + CONCURRENCY);
     const settled = await Promise.all(batch.map(async keyword => {
       try {
-        const { items, errors, from } = await searchAll(keyword, {
+        const { items, allItems, errors, from } = await searchAll(keyword, {
           coupangLimit: CRON_LIMIT, coupangOpts: opts
         });
-        // 오래된 캐시로 응답한 경우에는 저장하지 않는다 (_shop.isRecordableSource 참고).
-        const { saved, errors: saveErrors } = await saveProducts(keyword, items, { from });
+        const { saved, errors: saveErrors } = await saveProducts(keyword, allItems || items, { from });
         return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };
       } catch (e) {
         return { keyword, found: 0, saved: 0, errors: [e.message] };
@@ -171,6 +171,19 @@ async function diagnose(req, res) {
       자체_상한: `1분당 ${localStats().maxPerMin}회`
     }
   };
+
+  /*
+   * 데이터 품질 지표.
+   *
+   * 기본으로 포함한다 — 진단을 볼 때 가장 알고 싶은 것이 "지금 데이터가
+   * 멀쩡한가"이기 때문이다. DB 를 몇 천 행 읽으므로 필요 없으면 &quality=0.
+   *
+   * 이 엔드포인트 전체가 CRON_SECRET 뒤에 있다. 여기 있는 수치(상품 수·
+   * 수집 실패·API 성공률)는 운영 정보라 공개 엔드포인트로 나가면 안 된다.
+   */
+  if (req.query.quality !== '0') {
+    out.데이터품질 = await qualitySnapshot();
+  }
 
   if (req.query.live === '1') {
     const keyword = String(req.query.keyword || '마우스').slice(0, 80);

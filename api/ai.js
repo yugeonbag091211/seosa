@@ -15,12 +15,12 @@ const MODEL = process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-5';
  * 입력 토큰은 막지 못한다. 그래서 입력 쪽에도 전부 상한을 둔다.
  */
 const MAX_QUESTION_LEN = 500;
-const MAX_HISTORY_MSGS = 6;
-const MAX_HISTORY_LEN  = 800;    // 히스토리 메시지 1건당
+const MAX_HISTORY_MSGS = 4;      // 4턴(2 pair)이면 연속 대화 문맥을 유지하기 충분하다
+const MAX_HISTORY_LEN  = 450;    // 히스토리 메시지 1건당 — 상품명·가격·추천 근거를 담기에 충분
 const MAX_CTX_ITEMS    = 8;
 const MAX_TITLE_LEN    = 120;
 const MAX_PROFILE_LEN  = 300;    // 직렬화된 프로필
-const MAX_HIST_POINTS  = 12;     // 프롬프트에 실제로 찍는 가격 이력 점 개수
+const MAX_HIST_POINTS  = 6;      // 추세 요약 라인이 있으므로 포인트는 6개면 충분
 const DETAIL_MAX_ITEMS = 3;      // 상품이 이보다 많으면 점 나열은 생략(토큰 절약)
 const TIMEOUT_MS       = 25000;  // 프론트 대기(30초)보다 짧게 — 함수가 매달리지 않게
 
@@ -179,8 +179,7 @@ function describe(it, withPoints) {
   }
 
   lines.push(`  가격 기록 ${h.count}일치`
-    + (h.lastPrice ? ` | 최근 기록가 ${won(h.lastPrice)}원${h.lastDate ? `(${h.lastDate})` : ''}` : '')
-    + (h.prevPrice ? ` | 직전 기록가 ${won(h.prevPrice)}원` : ''));
+    + (h.lastPrice ? ` | 최근 기록가 ${won(h.lastPrice)}원${h.lastDate ? `(${h.lastDate})` : ''}` : ''));
 
   // 차이는 서버에서 다시 계산한다. 프론트가 보낸 값을 그대로 찍으면
   // 프론트 버전이 어긋났을 때 프롬프트 안에서 숫자끼리 모순이 난다.
@@ -659,12 +658,11 @@ async function searchProducts(query) {
   }
 
   try {
-    const { items, from, blocked } = await searchAll(query, {
+    const { items, allItems, from, blocked } = await searchAll(query, {
       coupangLimit: AI_SEARCH_LIMIT,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS }
     });
 
-    // 확인하지 못한 값(stale-cache)은 "지금 가격"이 아니다. 차단도 마찬가지다.
     if (blocked || from === 'none') return { ok: false, items: [], reason: 'blocked' };
 
     const list = Array.isArray(items) ? items : [];
@@ -687,7 +685,7 @@ async function searchProducts(query) {
      * 저장이 실패해도 사용자에게 답은 해야 하므로 삼킨다.
      */
     try {
-      await saveProducts(query, list, { from });
+      await saveProducts(query, allItems || list, { from });
     } catch (e) {
       console.warn(`[ai] 검색 결과 저장 실패(답변은 계속): ${e.message}`);
     }
@@ -815,9 +813,6 @@ P.searchedFound = [
   '- 아래 <상품데이터>는 사용자의 이번 요청으로 SEOSA가 방금 쇼핑몰에서 받아온 실제 상품이다.',
   '- 이 상품들은 사용자 화면에 카드로 함께 표시된다. 그러니 상품을 소개하는 말을 하면 된다.',
   '- ★ 링크·URL 주소를 글로 적지 마라. 카드가 이미 링크다. "아래 카드를 눌러 보세요" 정도로 안내한다.',
-  '- ★ [P1] [P2] 같은 표시를 답변에 쓰지 마라. 그것은 데이터를 구분하려고 붙인',
-  '  꼬리표이고 사용자 화면의 카드에는 없다. 상품은 이름으로 부른다.',
-  '- "검색해 보세요"라고 안내하지 마라. 검색은 이미 끝났고 결과가 아래에 있다.',
   '- 전부 나열하지 말고 조건에 맞는 것 위주로 골라 짚어라. 왜 그것을 골랐는지 한 줄로 밝힌다.',
   '- 사용자가 말한 조건(예산 등)에 맞지 않는 것이 섞여 있으면 억지로 맞다고 하지 마라.',
   '  맞는 것이 없으면 검색 결과가 조건과 얼마나 차이 나는지 사실대로 말한다.'
@@ -1278,9 +1273,17 @@ module.exports = async function handler(req, res) {
        */
       if (searchState !== 'found') system += `\n\n${viewLine(view)}`;
 
-      system += items.length
-        ? `\n\n<상품데이터>\n${items.map(it => describe(it, withPoints)).join('\n')}\n</상품데이터>`
-        : '\n\n<상품데이터>\n(비어 있음 — 지금 화면에 상품 목록이 없다는 사실만 뜻한다.)\n</상품데이터>';
+      /*
+       * 검색을 했는데 못 찾았거나 실패한 경우(empty/failed), P.searchedEmpty /
+       * P.searchedFailed 가 이미 그 사실을 설명한다. 빈 <상품데이터> 태그까지
+       * 추가하면 "화면에 상품 목록이 없다"는 무관한 설명이 덧붙어 혼란스럽다.
+       * searchState='none'(검색 시도 없이 items도 없는 상태)에서만 빈 태그를 쓴다.
+       */
+      if (items.length) {
+        system += `\n\n<상품데이터>\n${items.map(it => describe(it, withPoints)).join('\n')}\n</상품데이터>`;
+      } else if (searchState === 'none') {
+        system += '\n\n<상품데이터>\n(비어 있음 — 지금 화면에 상품 목록이 없다는 사실만 뜻한다.)\n</상품데이터>';
+      }
     }
 
     const messages = [{ role: 'system', content: system }];
@@ -1323,7 +1326,10 @@ module.exports = async function handler(req, res) {
       clearTimeout(timer);
     }
 
-    if (!r.ok) throw new Error(`OpenRouter ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    if (!r.ok) {
+      // release는 아래 catch(e) 블록이 담당한다 (여기서 또 부르면 두 번 되돌려진다).
+      throw new Error(`OpenRouter ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    }
 
     const data = await r.json();
     const raw = (((data.choices || [])[0] || {}).message || {}).content || '';

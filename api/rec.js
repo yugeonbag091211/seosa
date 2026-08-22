@@ -1,5 +1,6 @@
 const supabase = require('./_supabase');
 const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, freshRows } = require('./_shop');
+const { attachTrust } = require('./_trust');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
 
@@ -56,12 +57,12 @@ module.exports = async function handler(req, res) {
       if (error) throw new Error(error.message);
 
       // freshRows: 더 이상 수집되지 않는 몰 / 오래 확인 못 한 행은 현재가가 아니다.
+      const catProducts = roundRobin(preferLive(freshRows(relevantRows(data))), keywords, PAGE_SIZE)
+        .map(toClientProduct);
+      await attachTrust(catProducts);
+
       cachePublic(res, 300);
-      return res.json({
-        keyword: cats.join(' · '),
-        products: roundRobin(preferLive(freshRows(relevantRows(data))), keywords, PAGE_SIZE)
-          .map(toClientProduct)
-      });
+      return res.json({ keyword: cats.join(' · '), products: catProducts });
     }
 
     // 그 외(오늘의 셀렉션 / 이 키워드 더보기)는 기존대로 단일 키워드 조회
@@ -88,11 +89,11 @@ module.exports = async function handler(req, res) {
     // freshRows 는 "가격이 더 이상 갱신되지 않는 행"을 뺀다 (_shop.freshRows 참고).
     const pool = preferLive(freshRows(relevantRows(data)));
 
+    const products = pool.slice(offset, offset + PAGE_SIZE).map(toClientProduct);
+    await attachTrust(products);
+
     cachePublic(res, 300);
-    res.json({
-      keyword,
-      products: pool.slice(offset, offset + PAGE_SIZE).map(toClientProduct)
-    });
+    res.json({ keyword, products });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
