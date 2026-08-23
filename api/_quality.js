@@ -14,7 +14,7 @@
  */
 
 const supabase = require('./_supabase');
-const { productLifecycle, LIFECYCLE, vendorIdOf, parsePrice, classifyPrice, ageDays, kstToday } = require('./_price');
+const { productLifecycle, LIFECYCLE, vendorIdOf, parsePrice, classifyPrice, ageDays, kstToday, observedKstDate } = require('./_price');
 
 const PAGE = 1000;
 /** 이보다 많으면 표본만 본다. 진단 한 번에 DB 를 통째로 긁지 않기 위한 상한. */
@@ -54,7 +54,7 @@ async function qualitySnapshot() {
     const p = await fetchAll('products',
       'product_id, mall, keyword, title, lprice, collected_at, link, item_id, vendor_item_id', false);
     // 최신순 — 잘리더라도 최근 기록이 남아야 신선도 지표가 사실이 된다.
-    const h = await fetchAll('price_history', 'product_id, mall, price, recorded_date', true);
+    const h = await fetchAll('price_history', 'product_id, mall, price, recorded_date, recorded_at', true);
     const products = p.rows;
     const history = h.rows;
 
@@ -109,11 +109,21 @@ async function qualitySnapshot() {
       }
     });
 
-    const dates = [...new Set(history.map(r => r.recorded_date))].sort();
-    // recorded_date 와 같은 KST 달력 기준으로 세야 오늘/어제 행수가 사실이 된다.
+    /*
+     * 관측일은 KST 달력으로 센다 — recorded_date 라벨이 아니라
+     * observedKstDate(recorded_at → KST) 로.
+     *
+     * 라벨은 운영 DB 가 recorded_at 의 UTC 날짜로 덮어쓰기 때문에
+     * (api/_price.js kstToday 주석 참고), 수집 크론이 KST 01·03·06시에 도는
+     * 이 서비스에서는 "오늘 라벨" 인 행이 UTC 자정 전까지 0건이다.
+     * 라벨로 세면 매일 새벽 이 진단이 "오늘 수집 0건" 이라고 보고한다 —
+     * 수집이 정상일 때와 진짜로 멈췄을 때를 구분할 수 없게 된다.
+     */
+    const observedOn = history.map(observedKstDate).filter(Boolean);
+    const dates = [...new Set(observedOn)].sort();
     const today = kstToday();
     const yesterday = kstToday(new Date(Date.now() - 86400000));
-    const rowsOn = d => history.filter(r => r.recorded_date === d).length;
+    const rowsOn = d => observedOn.filter(x => x === d).length;
 
     /* ── 5. 쿠팡 API 성공률 (최근 24시간) ─────────────────── */
     let api = null;

@@ -136,11 +136,23 @@ function ageDays(iso, now) {
 /**
  * 한국시간(Asia/Seoul) 기준 오늘 날짜 'YYYY-MM-DD'.
  *
- * ★ price_history.recorded_date 의 유일한 기준이다.
- *   예전에는 write 쪽에서 new Date().toISOString().slice(0,10) 즉 UTC 를 썼는데,
- *   KST 01:00 크론이 UTC 로는 어제 자정 이후라 그날 수집분이 통째로 어제 날짜로
- *   저장됐다. price_job_state.job_date 는 KST 였으므로 두 값이 서로 다른
- *   달력을 가리켰다. 이제 저장·조회·job_state 가 모두 KST 로 한 기준을 쓴다.
+ * ★ 이 값을 price_history.recorded_date 와 직접 비교하지 말 것.
+ *
+ *   recorded_date 는 우리가 정하는 값이 아니다. 운영 DB 가 recorded_at 을
+ *   UTC 로 잘라 덮어쓴다 (생성 컬럼이거나 트리거). 2026-08-23 실측:
+ *     · recorded_at=2026-08-22T18:11Z 인 행에 recorded_date='2026-08-23' 을
+ *       보냈지만 저장된 값은 '2026-08-22' 였다 — 보낸 값이 무시된다.
+ *     · price_history 15,155행 전부가 recorded_date === UTC(recorded_at). 예외 0건.
+ *
+ *   수집 크론은 KST 01·03·06시(= UTC 16·18·21시)에 돈다. 그래서 KST 달력으로
+ *   오늘 받아온 가격이 전부 '어제' 라벨을 달고 저장된다. 라벨을 KST 로 착각하면:
+ *     recorded_date === kstToday()  → 항상 0건 (그 라벨은 아직 존재하지 않는다)
+ *     recorded_date <  kstToday()   → 오늘 새벽에 쓴 행까지 '직전 관측' 으로 딸려온다
+ *   둘 다 실제로 났던 사고다 (알림 메일 전면 중단 / 직전 관측을 자기 자신과 비교).
+ *
+ *   그래서 "KST 로 어느 날인가" 는 라벨이 아니라 절대 시각 recorded_at 으로
+ *   판정한다 — 읽어온 값은 observedKstDate(), 질의 경계는 kstDayStartUtc().
+ *   그러면 DB 가 라벨을 어느 시간대로 자르든 결과가 달라지지 않는다.
  *
  * KST 는 UTC+9 고정이고 서머타임이 없어서 9시간을 더해 자르면 정확하다.
  */
@@ -148,6 +160,27 @@ function kstToday(now = new Date()) {
   const t = now instanceof Date ? now.getTime() : Number(now);
   const src = Number.isFinite(t) ? t : Date.now();
   return new Date(src + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * KST 달력 하루가 시작하는 절대 시각(ISO, UTC).
+ *
+ * "KST 로 오늘 이후인가 / 이전인가" 를 DB 에 물을 때 쓰는 경계값이다.
+ * recorded_date 라벨은 UTC 로 잘려 있어 경계로 쓸 수 없고(kstToday 주석 참고),
+ * recorded_at 은 시간대가 섞일 여지가 없는 절대 시각이라 정확하다.
+ *
+ *   kstDayStartUtc('2026-08-23') → '2026-08-22T15:00:00.000Z'
+ *   (KST 2026-08-23 00:00 == UTC 2026-08-22 15:00)
+ *
+ * @param {string} kstDate 'YYYY-MM-DD' (KST 달력)
+ * @returns {string} ISO 시각. 날짜 형식이 아니면 빈 문자열
+ */
+function kstDayStartUtc(kstDate) {
+  const s = String(kstDate || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  const t = Date.parse(s + 'T00:00:00Z');
+  if (!Number.isFinite(t)) return '';
+  return new Date(t - 9 * 60 * 60 * 1000).toISOString();
 }
 
 /**
@@ -594,7 +627,7 @@ function isDisplayable(row, opts) {
 module.exports = {
   MAX_PRICE, SUSPECT_RATIO, SUSPECT_WINDOW_DAYS, OPTION_SWITCH_RATIO, MAX_DISPLAY_AGE_DAYS,
   MAX_PLAUSIBLE_DROP_PCT, LIFECYCLE, DROP_MAX_AGE_DAYS,
-  parsePrice, isSanePrice, ageDays, kstToday, classifyPrice, coupangItemIds, isRefreshableMall,
+  parsePrice, isSanePrice, ageDays, kstToday, kstDayStartUtc, classifyPrice, coupangItemIds, isRefreshableMall,
   vendorIdOf, itemIdOf, productLifecycle, isDisplayable, plausibleDrop,
   latestObservedDate, recentlyObserved, observedKstDate, todayDropConfirmed
 };

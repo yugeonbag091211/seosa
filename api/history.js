@@ -1,6 +1,23 @@
 const supabase = require('./_supabase');
 const { applyCors, cachePublic, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
+const { observedKstDate } = require('./_price');
+
+/*
+ * 차트의 가로축 날짜는 KST 달력으로 찍는다.
+ *
+ * recorded_date 라벨을 그대로 쓰면 안 된다 — 운영 DB 가 그 값을 recorded_at 의
+ * UTC 날짜로 덮어쓰기 때문이다(api/_price.js kstToday 주석의 실측 참고).
+ * 수집 크론이 KST 01·03·06시에 도는 탓에 그날 수집분이 통째로 '어제' 라벨을
+ * 달고, 차트의 가장 최근 점이 하루 이른 날짜로 찍힌다.
+ *
+ * 그러면 홈의 "오늘의 가격 하락" 카드(= KST 기준으로 판정한다)와 그 상품을
+ * 눌러서 여는 가격 이력 차트가 서로 다른 날을 가리킨다. 같은 화면 안에서
+ * 두 숫자가 어긋나면 어느 쪽도 믿을 수 없게 된다.
+ *
+ * observedKstDate 는 절대 시각 recorded_at 을 KST 로 환산하고, 그 값이 없을
+ * 때만 라벨로 폴백한다 — 라벨을 어느 시간대로 자르든 답이 같다.
+ */
 
 /*
  * ── history + history-batch 통합 ────────────────────────────────
@@ -21,12 +38,14 @@ const { guard } = require('./_ratelimit');
 const SINGLE_MAX_ROWS = 3000;
 const SINGLE_MAX_DAYS = 365;
 
-/** [{recorded_date, price}] → 날짜당 최저가 한 점, 오름차순 */
+/** [{recorded_date, recorded_at, price}] → KST 날짜당 최저가 한 점, 오름차순 */
 function collapseToDaily(rows, maxDays) {
   const byDate = new Map();
   (rows || []).forEach(r => {
-    const cur = byDate.get(r.recorded_date);
-    if (cur === undefined || r.price < cur) byDate.set(r.recorded_date, r.price);
+    const date = observedKstDate(r);
+    if (!date) return;
+    const cur = byDate.get(date);
+    if (cur === undefined || r.price < cur) byDate.set(date, r.price);
   });
 
   const points = [...byDate.entries()]
@@ -43,7 +62,8 @@ function collapseToDaily(rows, maxDays) {
 function baseQuery() {
   return supabase
     .from('price_history')
-    .select('recorded_date, price')
+    // recorded_at 도 받는다 — 날짜는 이 값을 KST 로 환산해 찍는다(위 주석).
+    .select('recorded_date, recorded_at, price')
     .order('recorded_date', { ascending: false })
     .limit(SINGLE_MAX_ROWS);
 }
@@ -171,7 +191,7 @@ async function batchHandler(req, res) {
       if (productIds.length) {
         const { data, error } = await supabase
           .from('price_history')
-          .select('product_id, mall, vendor_item_id, recorded_date, price')
+          .select('product_id, mall, vendor_item_id, recorded_date, recorded_at, price')
           .in('product_id', productIds)
           .order('recorded_date', { ascending: false })
           .limit(BATCH_MAX_ROWS);
@@ -185,7 +205,10 @@ async function batchHandler(req, res) {
             if (p.mall && r.mall !== p.mall) continue;
             if (p.vendorItemId && vid !== p.vendorItemId) continue;
             if (!byKey.has(origKey)) byKey.set(origKey, new Map());
-            keepLowest(byKey.get(origKey), r.recorded_date, r.price);
+            // 단건 조회(collapseToDaily)와 같은 기준으로 KST 날짜에 접는다.
+            const date = observedKstDate(r);
+            if (!date) continue;
+            keepLowest(byKey.get(origKey), date, r.price);
           }
         });
         byKey.forEach((byDate, k) => { map[k] = toPoints(byDate); });
