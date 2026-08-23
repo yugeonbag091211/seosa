@@ -178,7 +178,7 @@ const {
   parsePrice, isSanePrice, classifyPrice, coupangItemIds, isRefreshableMall,
   vendorIdOf, itemIdOf, productLifecycle, isDisplayable, LIFECYCLE,
   plausibleDrop, MAX_PLAUSIBLE_DROP_PCT,
-  recentlyObserved, latestObservedDate, observedKstDate, todayDropConfirmed,
+  recentlyObserved, latestObservedDate, observedKstDate, todayDropConfirmed, kstDayStartUtc,
   kstToday
 } = require('../api/_price');
 
@@ -920,6 +920,99 @@ function recordedPrice(productId) {
         '발송 후 sent 갱신 (중복 발송 방지)');
 
   /* ================================================================ *
+   *  KST 하루 경계 — recorded_date 라벨을 믿지 않는다
+   *
+   *  운영 DB 는 recorded_date 를 recorded_at 의 UTC 날짜로 덮어쓴다
+   *  (2026-08-23 실측, price_history 15,155행 전부). 수집 크론이 KST
+   *  01·03·06시에 도는 탓에 "KST 로 오늘 관측된 행" 의 라벨은 어제다.
+   *
+   *  아래 세 섹션은 그 실제 데이터 모양을 그대로 만들어 두고, 라벨을 KST 로
+   *  착각하던 코드가 되살아나면 바로 깨지도록 고정한다. 예전 테스트는
+   *  recorded_date === KST 날짜인 데이터만 써서 이 사고를 못 잡았다.
+   * ================================================================ */
+  section('KST 경계. kstDayStartUtc — KST 하루의 시작을 절대 시각으로');
+  check(kstDayStartUtc('2026-08-23') === '2026-08-22T15:00:00.000Z',
+        'KST 08-23 00:00 == UTC 08-22 15:00', kstDayStartUtc('2026-08-23'));
+  check(kstDayStartUtc('2026-01-01') === '2025-12-31T15:00:00.000Z',
+        '해가 바뀌어도 동일 (서머타임 없음)', kstDayStartUtc('2026-01-01'));
+  check(kstDayStartUtc('') === '' && kstDayStartUtc('2026/08/23') === ''
+        && kstDayStartUtc(null) === '', '형식이 아니면 빈 문자열 (경계를 지어내지 않는다)');
+  // 경계 자신은 그날에 포함되고, 1ms 앞은 전날이다.
+  check(kstToday(new Date(Date.parse(kstDayStartUtc('2026-08-23')))) === '2026-08-23',
+        '경계 시각은 그날의 첫 순간');
+  check(kstToday(new Date(Date.parse(kstDayStartUtc('2026-08-23')) - 1)) === '2026-08-22',
+        '경계 1ms 전은 전날');
+
+  /*
+   * 회귀: 같은 KST 하루 안에서 자기 자신을 "직전 관측" 으로 삼으면 안 된다.
+   *
+   * 사고 경로 — KST 01시 수집에서 오염값(30배)이 들어와 suspect 로 보류된다.
+   * price_history 에는 남으므로, KST 03시 수집이 그 행을 직전 값으로 집으면
+   * ratio≈1 이 되어 오염값이 스스로를 승인하고 products 현재가로 올라간다.
+   *
+   * _shop.loadPrevObservations 가 .lt('recorded_date', kstToday()) 로 자르던
+   * 시절에는 그 행의 라벨이 UTC 기준 '어제' 라서 그대로 딸려 들어왔다.
+   * 이제는 .lt('recorded_at', kstDayStartUtc(today)) 로 잘라 확실히 빠진다.
+   */
+  section('KST 경계. 오늘 새벽에 쓴 행(라벨은 어제)을 직전 관측으로 쓰지 않는다');
+  reset();
+  const kstNow      = kstToday();
+  const kstStartMs  = Date.parse(kstDayStartUtc(kstNow));
+  const at0311      = new Date(kstStartMs + (3 * 60 + 11) * 60000);   // KST 03:11
+  const at0600      = new Date(kstStartMs + 6 * 60 * 60000);          // KST 06:00
+  // 이 행이 문제의 모양이다 — KST 로는 오늘인데 라벨(UTC)은 어제다.
+  const utcLabelOf  = d => d.toISOString().slice(0, 10);
+  check(utcLabelOf(at0311) !== kstNow,
+        '전제 확인: KST 03:11 관측의 UTC 라벨은 오늘이 아니다',
+        `${utcLabelOf(at0311)} vs KST ${kstNow}`);
+
+  // 이틀 전의 정상 관측 + 오늘 새벽에 보류된 오염값(30배)
+  seedHistory('7300', '쿠팡', 30000, 2);
+  db.price_history.push({
+    product_id: '7300', mall: '쿠팡', title: 't', price: 900000,
+    recorded_date: utcLabelOf(at0311), recorded_at: at0311.toISOString()
+  });
+
+  const dayBoundary = await recordPrices([obs('7300', 900000)],
+    { label: 'kst-boundary', now: at0600 });
+  check(dayBoundary.suspect === 1,
+        '같은 KST 하루의 오염값은 여전히 보류된다 (자기 자신과 비교하지 않는다)',
+        JSON.stringify(dayBoundary));
+  check(currentPrice('7300') === null,
+        '오염값이 products 현재가로 승격되지 않는다',
+        String(currentPrice('7300')));
+
+  /*
+   * 회귀: 알림 스크립트가 "오늘 가격" 을 찾지 못하던 문제.
+   *
+   * .eq('recorded_date', kstToday()) 는 GitHub Actions 실행 시각(KST 01·03·06시)
+   * 에 아직 존재할 수 없는 라벨을 찾는 질의라 항상 0건이었고, 모든 알림이
+   * "오늘 가격 없음" 으로 조용히 건너뛰어졌다.
+   */
+  section('KST 경계. 알림은 라벨이 어제인 오늘 관측분도 찾는다');
+  reset();
+  sentMail.length = 0;
+  db.price_history.push(
+    // 오늘(KST) 새벽 03:11 관측 — 라벨은 UTC 기준 어제다
+    { product_id: 'A-1111', mall: '쿠팡', title: '무선 이어폰', price: 80000,
+      recorded_date: utcLabelOf(at0311), recorded_at: at0311.toISOString(), link: 'https://x' },
+    // 어제(KST) 관측
+    { product_id: 'A-1111', mall: '쿠팡', title: '무선 이어폰', price: 120000,
+      recorded_date: daysAgo(1), recorded_at: isoDaysAgo(1), link: 'https://x' }
+  );
+  db.alerts.push({
+    id: 4, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 90000, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 1,
+        '라벨이 어제여도 오늘(KST) 관측분으로 판정해 메일이 나간다',
+        `발송 ${sentMail.length}건`);
+  check(sentMail[0] && sentMail[0].payload.product.currentPrice === 80000,
+        '현재가는 오늘 새벽에 관측한 80,000원',
+        sentMail[0] && String(sentMail[0].payload.product.currentPrice));
+
+  /* ================================================================ *
    *  노출 단계
    * ================================================================ */
   section('노출. 다시 수집되지 않는 몰 / 오래 확인 못 한 행은 현재가로 내보내지 않는다');
@@ -1320,7 +1413,12 @@ function loadHistoryCollapse() {
   const src = fs.readFileSync(path.join(__dirname, '..', 'api', 'history.js'), 'utf8');
   const m = src.match(/function collapseToDaily[\s\S]*?\n}/);
   if (!m) throw new Error('history.js 에서 collapseToDaily 를 찾지 못했습니다');
+  /*
+   * collapseToDaily 는 이제 _price.observedKstDate 를 쓴다 (KST 관측일 기준).
+   * 잘라낸 조각만 평가하므로 그 의존성을 인자로 넣어 준다 — 실제 함수를
+   * 그대로 주입하기 때문에 판정 규칙이 갈라질 여지는 없다.
+   */
   // eslint-disable-next-line no-new-func
-  const fn = new Function(`${m[0]}; return collapseToDaily;`)();
+  const fn = new Function('observedKstDate', `${m[0]}; return collapseToDaily;`)(observedKstDate);
   return { collapse: fn };
 }

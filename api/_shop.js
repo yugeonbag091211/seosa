@@ -6,7 +6,7 @@ const { searchCoupang } = require('./_coupang');
 const {
   parsePrice, classifyPrice,
   vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS,
-  kstToday
+  kstToday, kstDayStartUtc
 } = require('./_price');
 
 const TODAY_PICKS = ['수영복', '물놀이 용품', '아이스크림', '방수팩', '차량용 햇빛 가리개', '여행용 캐리어', '서큘레이터', '쿨토시'];
@@ -232,10 +232,30 @@ function missingColumn(msg) {
  * 저장하는데, 오늘 이미 들어간 행을 직전 값으로 삼으면 자기 자신과 비교하게
  * 되어(ratio≈1) 검증이 무력해진다. 오늘 한 번 잘못 들어간 값이 그 뒤의
  * 모든 저장을 통과시키는 통로가 된다.
+ *
+ * ★ 그 "오늘 이전" 경계를 recorded_date 라벨로 자르면 안 된다.
+ *
+ *   라벨은 운영 DB 가 recorded_at 을 UTC 로 잘라 넣는 값이다
+ *   (api/_price.js kstToday 주석의 실측 참고). 수집 크론이 도는
+ *   KST 00~09시는 UTC 로 아직 어제라, 그 시각에 today(KST) 로 라벨을 자르면
+ *       recorded_date < '2026-08-23'
+ *   이 오늘 새벽에 방금 쓴 행(라벨 '2026-08-22')까지 포함한다. 바로 위
+ *   주석이 막으려던 자기 자신과의 비교가 그대로 일어나고, 하필 그 시간대가
+ *   일일 수집(KST 01·03·06시) 전체다 — 즉 방어가 상시 무력화돼 있었다.
+ *
+ *   절대 시각(recorded_at)으로 자르면 라벨이 어느 시간대로 잘리든 정확하다.
+ *   운영 price_history 15,155행 전부에 recorded_at 이 있다(결측 0건).
  */
 async function loadPrevObservations(keys, today) {
   const pids = [...new Set(keys.map(k => k.productId))].filter(Boolean);
   const prev = new Map();
+
+  const todayStart = kstDayStartUtc(today);
+  if (!todayStart) {
+    // 경계를 못 만들면 검증 없이 저장한다 (조회 실패와 같은 취급).
+    console.warn(`[save] 기준 날짜가 이상해 직전 관측을 찾지 못했습니다(검증 생략): ${today}`);
+    return prev;
+  }
 
   for (let i = 0; i < pids.length; i += PREV_CHUNK) {
     const chunk = pids.slice(i, i + PREV_CHUNK);
@@ -243,8 +263,8 @@ async function loadPrevObservations(keys, today) {
       .from('price_history')
       .select('product_id, mall, price, recorded_date, recorded_at')
       .in('product_id', chunk)
-      .lt('recorded_date', today)
-      .order('recorded_date', { ascending: false })
+      .lt('recorded_at', todayStart)
+      .order('recorded_at', { ascending: false })
       .limit(PREV_LOOKUP_ROWS);
     if (error) {
       // 직전 값을 못 읽으면 검증 없이 저장한다. 저장 자체를 막는 것보다는 낫다.
@@ -254,7 +274,9 @@ async function loadPrevObservations(keys, today) {
     (data || []).forEach(r => {
       const k = `${r.product_id}|${r.mall}`;
       const cur = prev.get(k);
-      if (!cur || String(r.recorded_date) > String(cur.recordedDate)) {
+      // 정렬도 비교도 절대 시각으로 한다 (라벨은 하루 어긋날 수 있다).
+      const at = String(r.recorded_at || r.recorded_date || '');
+      if (!cur || at > String(cur.observedAt)) {
         prev.set(k, {
           price: r.price,
           recordedDate: r.recorded_date,
@@ -341,13 +363,22 @@ async function recordPrices(observations, opts = {}) {
   const nowDate = opts.now instanceof Date ? opts.now : new Date();
   const now = nowDate.toISOString();
   /*
-   * recorded_date 는 KST 기준으로 남긴다. now (=recorded_at) 는 UTC 인스턴트
-   * 그대로 두고, 달력 하루의 경계만 KST 로 잡는다.
+   * 이 today 는 "KST 로 오늘" 이고, 아래 두 곳에 쓰인다.
    *
-   * 왜: KST 01:xx 크론이 UTC 로는 어제 자정 이후라, UTC 를 쓰면 그날 수집분이
-   * 통째로 어제 날짜로 저장됐다. price_job_state.job_date 는 KST 였으므로
-   * 두 값이 서로 다른 달력을 가리켰다. 이제 저장·조회·job_state 가 모두
-   * 같은 KST 기준을 쓴다 (_price.kstToday 주석 참고).
+   *   ① loadPrevObservations(keys, today)  — 직전 관측 경계. 실제로 효력이 있다.
+   *   ② historyRows.recorded_date          — 보내기는 하지만 DB 가 무시한다.
+   *
+   * ★ ②를 믿지 말 것. 운영 DB 는 recorded_date 를 recorded_at 의 UTC 날짜로
+   *   덮어쓴다 (생성 컬럼이거나 트리거). 2026-08-23 실측으로 확인했고,
+   *   price_history 15,155행 전부가 recorded_date === UTC(recorded_at) 다.
+   *   자세한 근거와 함정은 _price.kstToday 주석에 있다.
+   *
+   *   그래서 "KST 로 며칠 관측분인가" 를 판정하는 코드는 라벨이 아니라
+   *   recorded_at 을 본다(_price.observedKstDate / kstDayStartUtc). 여기서
+   *   KST 값을 계속 보내는 이유는, 나중에 DB 쪽 덮어쓰기를 걷어내면 그때
+   *   라벨까지 KST 로 맞춰지기 때문이다 — 읽는 쪽은 어느 경우든 영향받지 않는다.
+   *
+   * recorded_at 은 UTC 인스턴트 그대로 둔다. 달력 하루의 경계만 KST 로 잡는다.
    */
   const today = kstToday(nowDate);
 

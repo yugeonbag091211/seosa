@@ -29,10 +29,15 @@ create table if not exists price_job_state (
 
   -- 작업 날짜. ★ 한국시간(Asia/Seoul) 기준이다.
   --
-  -- price_history.recorded_date 는 UTC 기준(new Date().toISOString())이고
-  -- 그대로 두어야 한다 — api/_price.js 의 recentlyObserved() 주석 참고.
-  -- 여기 job_date 는 "오늘 한 바퀴 돌았는가"만 판정하는 값이라 UTC 와
-  -- 달라도 무방하고, 운영자가 보는 날짜와 맞는 KST 가 옳다.
+  -- price_history.recorded_date 와 같은 달력이라고 생각하면 안 된다.
+  -- recorded_date 는 이 DB 가 recorded_at 의 UTC 날짜로 덮어쓰는 라벨이라
+  -- (2026-08-23 실측: 보낸 값이 무시되고 15,155행 전부가 UTC 날짜),
+  -- KST 새벽에 도는 수집분은 하루 이른 라벨을 단다.
+  --
+  -- 여기 job_date 는 "오늘 한 바퀴 돌았는가"만 판정하는 값이고, 운영자가
+  -- 보는 날짜와 맞아야 하므로 KST 가 옳다. 두 값을 직접 비교하지 말 것 —
+  -- 코드에서 "KST 로 며칠 관측분인가" 는 recorded_at 으로만 판정한다
+  -- (api/_price.js 의 observedKstDate / kstDayStartUtc).
   job_date    date not null,
 
   -- 마지막으로 처리를 끝낸 검색어 그룹. 다음 실행은 이 값보다 큰

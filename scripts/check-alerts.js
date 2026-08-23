@@ -12,13 +12,26 @@
 require('./_env');
 const supabase = require('../api/_supabase');
 const notify   = require('../api/_notify');
-const { kstToday } = require('../api/_price');
+const { kstToday, kstDayStartUtc } = require('../api/_price');
 
 const DROP_THRESHOLD = 0.05; // 5% 이상 하락 시 알림
 /*
- * "오늘" / "어제" / "30일 전" 을 price_history.recorded_date 기준(=KST 달력)에
- * 맞춘다. UTC 를 쓰면 KST 01:xx 크론이 오늘 저장한 행을 이 스크립트가 "내일자"로
- * 잘못 보고 통째로 건너뛴다.
+ * "오늘" / "어제" / "30일 전" 은 KST 달력 기준이다.
+ *
+ * ★ 그런데 recorded_date 라벨과 직접 비교하면 안 된다 — 이 스크립트가 정확히
+ *   그렇게 해서 알림이 한 통도 나가지 않고 있었다.
+ *
+ *   recorded_date 는 운영 DB 가 recorded_at 을 UTC 로 잘라 넣는 값이라
+ *   우리가 KST 로 보내도 무시된다 (api/_price.js kstToday 주석의 실측 참고).
+ *   이 스크립트는 GitHub Actions 에서 KST 01·03·06시(= UTC 16·18·21시)에
+ *   도는데, 그 시각의 kstToday() 는 "UTC 로는 내일" 이다. 즉
+ *       .eq('recorded_date', kstToday())
+ *   는 아직 존재할 수 없는 라벨을 찾는 질의라 항상 0건이었고, 모든 알림이
+ *   "오늘 가격 없음"으로 건너뛰어졌다. (2026-08-23 확인: UTC 16/18/21시 세
+ *   시점 모두 0건)
+ *
+ *   그래서 날짜 경계는 절대 시각(recorded_at)으로 잡는다 — kstDayStartUtc().
+ *   라벨이 어느 시간대로 잘리든 결과가 달라지지 않는다.
  */
 const TODAY = kstToday();
 
@@ -73,20 +86,41 @@ async function run() {
     process.exitCode = 1;
   }
 
-  // 1. 오늘 수집된 가격
-  const { data: todayPrices, error: e1 } = await supabase
-    .from('price_history')
-    .select('product_id, mall, title, price, link')
-    .eq('recorded_date', TODAY);
-  if (e1) throw new Error('오늘 가격 조회 실패: ' + e1.message);
+  // KST 달력 하루의 경계 (절대 시각). 위 TODAY 주석 참고.
+  const yesterday  = kstToday(new Date(Date.now() - 86400000));
+  const todayStart = kstDayStartUtc(TODAY);
+  const yestStart  = kstDayStartUtc(yesterday);
 
-  // 2. 어제 가격 (drop 조건용) — KST 달력의 "어제"
-  const yesterday = kstToday(new Date(Date.now() - 86400000));
-  const { data: yesterdayPrices } = await supabase
+  /*
+   * 한 상품이 하루에 여러 번 관측될 수 있다 (옵션별 행 + 크론이 여러 번 돎).
+   * 그날의 값은 가장 늦게 관측된 것이다 — 오름차순으로 받아 뒤에 온 것이
+   * 앞의 것을 덮게 한다. 예전 .eq(recorded_date) 질의는 라벨 UNIQUE 덕에
+   * 상품당 한 행이었으므로, 접지 않으면 임의의 옵션 값이 잡힌다.
+   */
+  const latestByProduct = rows => {
+    const m = new Map();
+    (rows || []).forEach(r => m.set(r.product_id + '|' + r.mall, r));
+    return m;
+  };
+
+  // 1. 오늘(KST) 수집된 가격
+  const { data: todayRows, error: e1 } = await supabase
     .from('price_history')
-    .select('product_id, mall, price')
-    .eq('recorded_date', yesterday);
-  const prevMap = new Map((yesterdayPrices || []).map(r => [r.product_id + '|' + r.mall, r.price]));
+    .select('product_id, mall, title, price, link, recorded_at')
+    .gte('recorded_at', todayStart)
+    .order('recorded_at', { ascending: true });
+  if (e1) throw new Error('오늘 가격 조회 실패: ' + e1.message);
+  const todayPrices = [...latestByProduct(todayRows).values()];
+
+  // 2. 어제(KST) 가격 (drop 조건용)
+  const { data: yesterdayRows } = await supabase
+    .from('price_history')
+    .select('product_id, mall, price, recorded_at')
+    .gte('recorded_at', yestStart)
+    .lt('recorded_at', todayStart)
+    .order('recorded_at', { ascending: true });
+  const prevMap = new Map(
+    [...latestByProduct(yesterdayRows).entries()].map(([k, r]) => [k, r.price]));
 
   // 3. 알림 목록
   // 테이블명은 alerts. /api/alerts 와 supabase/schema.sql 이 쓰는 이름과 반드시 같아야 한다.
@@ -97,6 +131,16 @@ async function run() {
   if (e3) throw new Error('알림 목록 조회 실패: ' + e3.message);
 
   console.log(`오늘 가격: ${todayPrices.length}개 / 알림 대상: ${alertList.length}개`);
+  /*
+   * 알림 신청은 있는데 오늘 가격이 한 건도 없으면 조건 판정 자체가 불가능하다.
+   * 조용히 "0건 발송"으로 끝나면 날짜 경계가 어긋났을 때 아무도 눈치채지 못한다
+   * — 실제로 그렇게 한동안 알림이 멈춰 있었다.
+   */
+  if (alertList.length && !todayPrices.length) {
+    console.error(`❌ 오늘(KST ${TODAY}, ${todayStart} 이후) 수집된 가격이 0건입니다.`
+      + ' 수집이 실패했거나 날짜 경계가 어긋났습니다 — 알림을 판정할 수 없습니다.');
+    process.exitCode = 1;
+  }
 
   let sent = 0, skipped = 0, skippedLegacy = 0;
 
@@ -156,9 +200,9 @@ async function run() {
 
     if (!triggeredAlerts.length) { skipped++; continue; }
 
-    // 30일 통계 — recorded_date 와 같은 KST 달력 기준
+    // 30일 통계 — 여기도 라벨이 아니라 절대 시각으로 자른다 (위 TODAY 주석 참고)
     const thirtyAgo = kstToday(new Date(Date.now() - 30 * 86400000));
-    const { data: hist30 } = await scoped().gte('recorded_date', thirtyAgo);
+    const { data: hist30 } = await scoped().gte('recorded_at', kstDayStartUtc(thirtyAgo));
     const prices30 = (hist30 || []).map(r => r.price);
     const avg30 = prices30.length ? Math.round(prices30.reduce((a, b) => a + b, 0) / prices30.length) : 0;
     const min30 = prices30.length ? Math.min(...prices30) : 0;

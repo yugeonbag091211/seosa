@@ -31,7 +31,7 @@
  */
 
 const supabase = require('./_supabase');
-const { ageDays, vendorIdOf, isRefreshableMall, parsePrice, kstToday } = require('./_price');
+const { ageDays, vendorIdOf, isRefreshableMall, parsePrice, kstToday, observedKstDate } = require('./_price');
 
 /* ── 임계값 ─────────────────────────────────────────────────────── */
 
@@ -113,9 +113,26 @@ function evaluateTrust(input = {}) {
 
   let score = 100;
 
-  /* ── 관측 기록 정리 (신선도 폴백에도 쓴다) ──────────────────── */
+  /*
+   * ── 관측 기록 정리 (신선도 폴백에도 쓴다) ────────────────────
+   *
+   * 날짜는 recorded_date 라벨이 아니라 observedKstDate 로 정한다. 라벨은
+   * 운영 DB 가 recorded_at 의 UTC 날짜로 덮어써서, KST 새벽에 도는 수집분이
+   * 통째로 하루 이른 날짜를 달고 있다(api/_price.js kstToday 주석 참고).
+   *
+   * 그대로 두면 "오늘의 가격 하락" 카드가 오늘 받아온 가격을 두고
+   * "1일 전 확인됨" 이라고 말한다 — 2026-08-23 시세판 8칸 전부가 그랬다.
+   * 섹션 제목과 배지가 같은 카드 안에서 서로 다른 날을 가리킨 셈이다.
+   *
+   * at 은 그 관측의 절대 시각이다. 나이(age)는 날짜 라벨의 자정이 아니라
+   * 이 값으로 재야 실제로 몇 시간 전인지가 맞는다.
+   */
   const points = (input.points || [])
-    .map(p => ({ price: parsePrice(p.price), date: String(p.recorded_date || '') }))
+    .map(p => ({
+      price: parsePrice(p.price),
+      date: observedKstDate(p),
+      at: (p && p.recorded_at) || ''
+    }))
     .filter(p => p.price && p.date)
     .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -129,7 +146,9 @@ function evaluateTrust(input = {}) {
    * price_history 에 실제로 남아 있는 날짜를 쓴다.
    */
   if (!Number.isFinite(age) && points.length) {
-    age = ageDays(`${points[points.length - 1].date}T00:00:00Z`);
+    const last = points[points.length - 1];
+    // 관측 시각이 있으면 그걸로 잰다. 없을 때만 날짜의 자정으로 폴백한다.
+    age = ageDays(last.at || `${last.date}T00:00:00Z`);
   }
 
   if (src === 'api') {
@@ -171,7 +190,7 @@ function evaluateTrust(input = {}) {
   }
 
   // 최근 변동폭 — 연속 관측 사이 최대 배율
-  const recent = points.filter(p => ageDays(`${p.date}T00:00:00Z`) <= VOLATILITY_WINDOW_DAYS);
+  const recent = points.filter(p => ageDays(p.at || `${p.date}T00:00:00Z`) <= VOLATILITY_WINDOW_DAYS);
   let maxRatio = 1;
   for (let i = 1; i < recent.length; i++) {
     const a = recent[i - 1].price;
