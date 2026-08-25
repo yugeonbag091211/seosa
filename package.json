@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "node scripts/dev-server.js",
-    "test": "node scripts/test-auth.js && node scripts/test-coupang.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-ai.js && node scripts/test-ai-monetization.js && node scripts/test-payment.js && node scripts/test-sync.js",
+    "test": "node scripts/test-auth.js && node scripts/test-coupang.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-ai.js && node scripts/test-ai-monetization.js && node scripts/test-payment.js && node scripts/test-sync.js && node scripts/test-analytics.js",
     "test:regression": "node scripts/test-regression.js",
     "test:release": "node scripts/test-release.js",
     "test:all": "npm test && npm run test:regression && npm run test:release",

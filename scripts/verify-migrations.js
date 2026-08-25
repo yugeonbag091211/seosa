@@ -80,7 +80,8 @@ function deleteTargets(sql) {
 /** 이번 릴리스에서 새로 추가한 마이그레이션. 여기 있는 것만 강하게 검사한다. */
 const NEW_MIGRATIONS = [
   '2026-08-24-payment-pending-and-auth-attempts.sql',
-  '2026-08-24-price-drop-top-orphan-policy.sql'
+  '2026-08-24-price-drop-top-orphan-policy.sql',
+  '2026-08-25-analytics.sql'
 ];
 
 function checkStatic() {
@@ -170,7 +171,7 @@ async function checkLive() {
     return !error;
   };
 
-  const applied = { payment: true, view: true };
+  const applied = { payment: true, view: true, analytics: true };
 
   for (const [t, c] of [['subscriptions', 'last_renew_at'], ['subscriptions', 'renew_failures']]) {
     const has = await hasColumn(t, c);
@@ -196,16 +197,51 @@ async function checkLive() {
     else ok('price_drop_top: 고아 행 없음 (뷰 적용됨)');
   }
 
+  /* ── 계측 (2026-08-25-analytics.sql) ──────────────────────────── */
+  for (const t of ['visitors', 'daily_metrics']) {
+    /*
+     * ★ head:true 로 존재를 확인하면 안 된다.
+     *
+     *   PostgREST 는 head 요청에 본문을 주지 않으므로, 테이블이 없어도
+     *   supabase-js 가 error 를 만들지 못하고 204 로 조용히 성공한다.
+     *   실측(2026-08-25): 존재하지 않는 이름으로도 error=null 이 왔다.
+     *   즉 "없는 테이블이 OK 로 보고되는" 거짓 통과가 된다 — 검증 스크립트에서
+     *   가장 나쁜 실패 방식이다.
+     *
+     *   본문을 받는 select 로 물으면 스키마 캐시에 없다는 오류가 정확히 온다.
+     *   limit(1) 이라 테이블이 아무리 커도 비용은 같다.
+     */
+    const { error } = await supabase.from(t).select('*').limit(1);
+    if (error) { bad(`${t} 테이블 없음`, '사용자 계측이 기록되지 않는다'); applied.analytics = false; }
+    else ok(`${t} 테이블`);
+  }
+  {
+    /*
+     * 실제로 한 행을 만들지 않도록 일부러 형식에 맞지 않는 날짜를 넘긴다.
+     * 함수가 있으면 날짜 캐스팅에서 실패하고(=존재는 확인됨), 없으면
+     * "could not find" 가 온다. 둘을 메시지로 구분한다.
+     */
+    const { error } = await supabase.rpc('bump_metric', {
+      p_metric: '__probe__', p_date: 'not-a-date'
+    });
+    const missing = error && /could not find|does not exist|schema cache/i.test(error.message);
+    if (missing) { bad('bump_metric() RPC 없음', '검색·클릭 횟수가 집계되지 않는다'); applied.analytics = false; }
+    else ok('bump_metric() RPC');
+  }
+
   // 이력은 절대 줄면 안 된다. 적용 전후 대조용 수치를 남긴다.
   const { count: ph } = await supabase.from('price_history').select('*', { count: 'exact', head: true });
   const { count: pdt } = await supabase.from('price_drop_top').select('*', { count: 'exact', head: true });
   console.log(`        price_history ${ph}행 / price_drop_top ${pdt}행`);
   console.log('        ※ 뷰를 적용해도 price_history 행 수는 변하지 않아야 한다.');
 
-  if (!applied.payment || !applied.view) {
+  if (!applied.payment || !applied.view || !applied.analytics) {
     console.log('\n  적용하려면 Supabase 대시보드 > SQL Editor 에서 아래를 순서대로 실행하세요:');
-    if (!applied.payment) console.log(`    1) supabase/${NEW_MIGRATIONS[0]}`);
-    if (!applied.view) console.log(`    2) supabase/${NEW_MIGRATIONS[1]}`);
+    let n = 0;
+    if (!applied.payment)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[0]}`);
+    if (!applied.view)      console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[1]}`);
+    if (!applied.analytics) console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[2]}`);
+    console.log('    ※ 서로 의존하지 않으므로 순서가 바뀌어도 되지만, 위 순서를 권한다.');
   }
 }
 

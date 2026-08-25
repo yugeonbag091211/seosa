@@ -22,6 +22,7 @@
 | PRO 결제 (최초) | 동작 | `api/payment.js` — 실결제 미검증, 아래 I 참고 |
 | PRO 자동 갱신 | **신규, 미검증** | `_billing.renewDueSubscriptions` ← `api/cron.js`, 마이그레이션 필요 |
 | 모바일 UI | 동작 | 반응형 단일 HTML |
+| **사용자 계측** | **신규, 마이그레이션 필요** | `api/_analytics.js` ← `/api/stats`, 방문/재방문/검색/클릭/AI |
 
 ---
 
@@ -141,6 +142,39 @@ job_date 2026-08-25  status completed  processed 1101/1101
 
 ---
 
+## E-2. 사용자 계측 구조 (2026-08-25 신규)
+
+```
+[브라우저]  seosa_vid = 난수 (localStorage)
+   진입      → GET /api/stats?event=visit&vid=…   → track_visit  RPC
+   상품 클릭 → GET /api/stats?event=click          → bump_metric  RPC
+   검색      → 기존 /api/stats?keyword=… 요청 안에서 함께 센다 (요청 추가 없음)
+
+[관리자]  GET /api/stats?report=1   Authorization: Bearer $CRON_SECRET
+```
+
+| 지표 | 출처 |
+|---|---|
+| 총 방문자 | `count(visitors)` |
+| 오늘 방문자 | `visitors.last_date = 오늘(KST)` |
+| **재방문자** | `visitors.visit_days > 1` — **같은 날 새로고침은 세지 않는다** |
+| 상품 검색 횟수 | `daily_metrics['search']` |
+| 상품 클릭 횟수 | `daily_metrics['click']` |
+| AI 사용 횟수 | **`ai_usage` 에서 읽는다 — 새로 쌓지 않는다** |
+
+### 설계상 지킨 것
+
+- **새 함수 없음** — `/api/stats`(이미 인증 없이 쓰기를 받는 유일한 엔드포인트)에 얹었다. 11/12 유지.
+- **개인정보 없음** — IP·User-Agent·이메일 어느 것도 저장하지 않는다. `vid` 는 브라우저가 만든 난수이고 계정과 잇지 않는다.
+- **원본 이벤트 미적재** — 처음부터 날짜별 카운터로 접는다. 하루에 2행만 는다.
+- **서비스를 막지 않는다** — 모든 계측 함수가 절대 throw 하지 않는다(값 변환까지 `try` 안). 프론트는 `keepalive` fire-and-forget.
+- **지표는 관리자만** — `CRON_SECRET`, 미설정 시 fail closed.
+- **화이트리스트** — `search`/`click` 외의 metric 은 세지 않는다(인증 없는 엔드포인트라 아무 문자열이나 쌓이면 안 된다).
+
+> ℹ️ 프론트에 Google Analytics(`G-3YZDQ1X888`)가 이미 붙어 있다. 그쪽은 페이지뷰만 보고, 위 계측은 **상품 클릭·AI 사용·재방문**처럼 GA 가 모르는 제품 지표를 본다. 둘은 겹치지 않는다.
+
+---
+
 ## E. AI 구조
 
 ```
@@ -176,6 +210,8 @@ POST /api/ai   (토큰 필수 — 익명 호출로 요금이 나가지 않는다
 | `user_data` | 찜·조회·검색 기록 | |
 | `alerts` | 가격 알림 | |
 | `coupang_api_calls` / `coupang_api_state` / `coupang_search_cache` | 쿠팡 쿼터·캐시 | 7일 후 정리 |
+| `visitors` *(신규)* | 익명 방문자 | PK `visitor_id`, `visit_days` = **방문한 날 수** |
+| `daily_metrics` *(신규)* | 날짜별 카운터 | PK `(metric_date, metric)` |
 | **뷰** `price_drop_top` | 하락 후보 | 최근 30일, `products` INNER JOIN |
 
 `payments.status` 에는 **CHECK 제약이 없다** — `pending`/`charging` 을 추가해도 DDL 변경이 필요 없다 (확인 완료).
@@ -203,14 +239,18 @@ POST /api/ai   (토큰 필수 — 익명 호출로 요금이 나가지 않는다
 ### 테스트 결과 (2026-08-25 실행)
 
 ```
-npm test                      690 PASS / 0 FAIL   (8개 스크립트, exit 0)
+npm test                      743 PASS / 0 FAIL   (9개 스크립트, exit 0)
   test-auth              12 · test-coupang        22 · test-price       276
   test-price-batch       71 · test-ai             74 · test-ai-money     62
-  test-payment          153 · test-sync           20
+  test-payment          153 · test-sync           20 · test-analytics     53
 npm run test:regression        52 PASS / 0 FAIL
 npm run test:release          102 PASS / 0 FAIL
 ──────────────────────────────────────────────────
-npm run test:all              844 PASS / 0 FAIL   (exit 0)
+npm run test:all              897 PASS / 0 FAIL   (exit 0)
+
+node scripts/verify-migrations.js   16 OK / 7 FAIL
+  → 정적 검사 16건 전부 통과. FAIL 7건은 전부 "마이그레이션 미적용" 이다.
+    3개 파일을 모두 적용하면 23 OK / 0 FAIL 이 된다.
 ```
 
 **테스트 안전성이 테스트로 고정돼 있다** (`test-release.js` SAFE 6케이스):
@@ -244,6 +284,9 @@ Supabase 대시보드 → SQL Editor → New query → 파일 내용을 붙여�
 
 - [ ] `supabase/2026-08-24-payment-pending-and-auth-attempts.sql`
 - [ ] `supabase/2026-08-24-price-drop-top-orphan-policy.sql`
+- [ ] `supabase/2026-08-25-analytics.sql`  *(사용자 계측 — 신규)*
+
+세 파일은 **서로 의존하지 않는다.** 순서가 바뀌어도 되고, 한 번에 하나씩 실행해도 된다.
 
 두 파일 모두 **재실행 안전**하고 `DROP`/`TRUNCATE` 가 없다. `price_history` 를 한 행도 지우지 않는다.
 각 스크립트 끝에 **자체 검증 SELECT** 가 있어 결과 그리드에서 바로 확인된다
@@ -255,7 +298,11 @@ Supabase 대시보드 → SQL Editor → New query → 파일 내용을 붙여�
 node scripts/verify-migrations.js
 ```
 
-`12 OK / 4 FAIL` → **`16 OK / 0 FAIL`** 이 되어야 한다.
+`16 OK / 7 FAIL` → **`23 OK / 0 FAIL`** 이 되어야 한다.
+
+> 이전 판에는 목표가 `16 OK / 0 FAIL` 이라고 적혀 있었다. 검사 항목이 늘어서 숫자가 바뀐 것이다 —
+> ① 계측 마이그레이션 검사 6건 추가, ② 테이블 존재 확인이 `head:true` 로는 **없는 테이블도 통과**시키던
+> 거짓 통과를 고쳐 실제로 판정하게 됐다.
 
 ### 2. OpenRouter 크레딧 충전
 
@@ -303,7 +350,7 @@ curl -s https://seosa.ai.kr/api/init | grep -o 'test_[a-z]*'
 1. **상품별 가격 조회 경로** — 커버리지 46.8% 의 근본 해결. 키워드 검색에 의존하는 한 계속 벌어진다.
 2. **결제 실패·만료 사용자 안내** — 현재는 조용히 FREE 로 떨어진다. 갱신 실패 시 메일 발송(Resend 는 이미 붙어 있다).
 3. **PRO 전용 가치의 실체화** — 아래 「사업 검증」 참고. 지금 PRO 는 사실상 "AI 3회 → 50회" 뿐이다.
-4. **사용량 계측** — 재방문율·AI 사용 분포·찜 전환율. 지금은 아무 데이터도 안 쌓인다.
+4. **계측 2단계** — 1단계(방문·재방문·검색·클릭·AI)는 2026-08-25 에 넣었다. 다음은 찜 전환율과 결제 화면 이탈 지점.
 5. **함수 통합** — 11/12. `stats`/`rec` 을 `init` 에 얹으면 2자리가 난다.
 
 ---
@@ -323,7 +370,7 @@ curl -s https://seosa.ai.kr/api/init | grep -o 'test_[a-z]*'
 
 | 질문 | 현재 상태 |
 |---|---|
-| **실제 사용자가 있는가?** | **모른다.** 방문자·가입자·재방문 지표를 아무것도 수집하지 않는다. |
+| **실제 사용자가 있는가?** | **아직 모르지만, 이제 셀 준비는 됐다.** 계측 코드가 들어갔다(2026-08-25). `supabase/2026-08-25-analytics.sql` 적용 + 배포 후부터 방문자·재방문·검색·클릭·AI 사용이 쌓인다. **소급되지 않으므로 빨리 켤수록 좋다.** |
 | **왜 다시 오는가?** | 재방문 유인이 "오늘의 가격 하락" 뿐인데, 그게 **매일 8칸을 채우는지조차 확인 안 됐다.** |
 | **왜 PRO 를 결제하는가?** | **가장 약한 고리.** FREE 3회 → PRO 50회는 "더 많이" 이지 "다른 것" 이 아니다. 월 4,900원을 정당화하지 못한다. |
 | **1개월 안에 검증할 것** | 아래 3가지. |

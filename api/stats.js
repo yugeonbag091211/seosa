@@ -1,6 +1,15 @@
 const supabase = require('./_supabase');
 const { applyCors, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
+/*
+ * 최소 사용자 계측이 이 엔드포인트에 얹혀 있다.
+ *
+ * ★ 왜 여기인가 — Vercel Hobby 는 서버리스 함수 12개가 상한이고 현재 11개다.
+ *   계측은 인증 없이 받아야 하는데(비로그인 방문자가 대부분이다), 그 성질을
+ *   가진 엔드포인트는 이미 여기 하나뿐이다. 레이트리미터·CORS·no-store 가
+ *   전부 갖춰져 있어 새로 만들 것이 없다.
+ */
+const analytics = require('./_analytics');
 
 const MAX_KEYWORD_LEN = 80;
 
@@ -54,6 +63,45 @@ module.exports = async function handler(req, res) {
   // 인기 검색어를 원하는 문구로 도배할 수 있다. 사람이 검색하는 속도로 제한한다.
   if (!guard(req, res, { name: 'stats', limit: 30, windowMs: 60 * 1000 })) return;
 
+  /*
+   * ── 지표 조회 (관리자) ────────────────────────────────────────
+   *
+   * CRON_SECRET 뒤에 둔다. 방문자·매출 지표는 공개할 값이 아니고, 이미
+   * /api/cron 이 같은 비밀로 보호되고 있어 관리자용 관문이 하나로 유지된다.
+   *
+   * secret 이 없으면 열지 않고 막는다(fail closed) — api/cron.js 와 같은 규칙.
+   */
+  if (req.query && req.query.report === '1') {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+      console.error('[stats] CRON_SECRET 미설정 — 지표 조회를 열지 않습니다.');
+      return res.status(500).json({ error: 'CRON_SECRET 환경변수가 설정되지 않았습니다.' });
+    }
+    if (req.headers.authorization !== `Bearer ${secret}`) {
+      return res.status(401).json({ error: '인증 실패' });
+    }
+    return res.json(await analytics.report());
+  }
+
+  /*
+   * ── 계측 기록 ─────────────────────────────────────────────────
+   *
+   * 검색어 집계와 별개의 경로다. 프론트는 페이지 진입 시 event=visit,
+   * 상품 카드를 누를 때 event=click 을 보낸다.
+   *
+   * 실패해도 200 으로 답한다. 계측이 안 됐다고 사용자 화면에 오류를 띄울
+   * 이유가 없다 — 응답의 counted 로만 알린다.
+   */
+  const event = String((req.query && req.query.event) || '').trim().toLowerCase();
+  if (event) {
+    if (event === 'visit') {
+      const r = await analytics.trackVisit((req.query && req.query.vid) || '');
+      return res.json({ ok: true, counted: r.ok });
+    }
+    const r = await analytics.bump(event);
+    return res.json({ ok: true, counted: r.ok });
+  }
+
   const keyword = ((req.query && req.query.keyword) || '').trim().slice(0, MAX_KEYWORD_LEN);
   if (!keyword) return res.status(400).json({ error: '키워드 없음' });
 
@@ -69,6 +117,15 @@ module.exports = async function handler(req, res) {
       }
       await incrementFallback(keyword);
     }
+
+    /*
+     * 검색 횟수는 여기서 센다 — 프론트가 요청을 하나 더 보내지 않게.
+     *
+     * search_stats 는 "어떤 검색어가 인기인가" 를 키워드별로 누적할 뿐,
+     * "오늘 검색이 몇 번 있었나" 를 답하지 못한다 (날짜가 없다). 그래서
+     * 날짜별 카운터를 따로 올린다. 실패해도 검색 흐름은 건드리지 않는다.
+     */
+    await analytics.bump('search');
 
     res.json({ ok: true });
   } catch (e) {
