@@ -37,6 +37,55 @@ const TODAY = kstToday();
 
 function won(n) { return Number(n).toLocaleString('ko-KR'); }
 
+/* ------------------------------------------------------------------ *
+ *  PostgREST 1,000행 상한
+ *
+ *  ★ .limit() 을 걸지 않아도 무제한으로 오지 않는다.
+ *
+ *  Supabase 의 db-max-rows 기본값이 1,000 이라, 그 값이 그대로 상한이 된다.
+ *  이 스크립트의 조회는 전부 그 위에 있었고, 하필 정렬이
+ *      .order('recorded_at', { ascending: true })
+ *  이라 잘려 나가는 쪽이 "그날 나중에 수집된 행" 이었다. 그런데 latestByProduct
+ *  는 "뒤에 온 것이 이긴다" 로 그날 최종값을 잡는 설계다 — 잘리면 설계가 통째로
+ *  뒤집혀서, 새벽 첫 관측을 그날 가격으로 쓰게 된다.
+ *
+ *  실측(2026-08-24): 수집 대상 1,064개 / 오늘 price_history 544행. 아직 상한
+ *  아래지만 보충 실행이 하루 2회 더 있어 곧 넘는다. 넘는 순간 조용히 틀린다.
+ *
+ *  ── 왜 limit 을 크게 잡는 것으로 끝내지 않는가 ──────────────────────
+ *  db-max-rows 는 서버 설정이라 클라이언트가 .limit(5000) 을 보내도 1,000 에서
+ *  잘린다. 오프셋을 옮겨 가며 여러 번 받아오는 수밖에 없다.
+ *  (scripts/collect-all-prices.js fetchAllProducts 와 같은 방식)
+ *
+ *  ── 페이지네이션에는 전순서가 필요하다 ──────────────────────────────
+ *  recordPrices 는 한 배치의 recorded_at 을 전부 같은 값으로 넣는다. 그래서
+ *  recorded_at 만으로 정렬하면 동점이 대량으로 생기고, 페이지 경계에서 어떤
+ *  행은 두 번 오고 어떤 행은 영영 안 온다. 반드시 id 를 2차 정렬키로 둔다.
+ * ------------------------------------------------------------------ */
+const PAGE = 1000;
+
+/**
+ * 오프셋을 옮겨 가며 전부 받아온다.
+ * @param {string} label   오류 메시지에 쓸 이름
+ * @param {function} build 매번 새 쿼리 빌더를 만들어 주는 함수 (재사용 불가하므로)
+ */
+async function fetchAllRows(label, build) {
+  const out = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error) throw new Error(`${label} 조회 실패: ${error.message}`);
+    out.push(...(data || []));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
+/**
+ * 30일 통계용 상한.
+ * 상품 1개 × 30일 × 옵션 몇 개면 수십 행이다. 페이지네이션까지 갈 일이 없고,
+ * 명시적 limit 하나로 "상한이 있다" 는 사실을 코드에 남긴다.
+ */
+const HIST30_MAX_ROWS = 500;
+
 function buildTiming(cur, avg30, min30, alerts) {
   const lines = [];
   if (alerts.some(a => a.type === 'target')) lines.push('설정하신 목표 가격에 도달했습니다.');
@@ -104,31 +153,44 @@ async function run() {
   };
 
   // 1. 오늘(KST) 수집된 가격
-  const { data: todayRows, error: e1 } = await supabase
+  const todayRows = await fetchAllRows('오늘 가격', () => supabase
     .from('price_history')
     .select('product_id, mall, title, price, link, recorded_at')
     .gte('recorded_at', todayStart)
-    .order('recorded_at', { ascending: true });
-  if (e1) throw new Error('오늘 가격 조회 실패: ' + e1.message);
+    .order('recorded_at', { ascending: true })
+    .order('id', { ascending: true }));
   const todayPrices = [...latestByProduct(todayRows).values()];
 
-  // 2. 어제(KST) 가격 (drop 조건용)
-  const { data: yesterdayRows } = await supabase
-    .from('price_history')
-    .select('product_id, mall, price, recorded_at')
-    .gte('recorded_at', yestStart)
-    .lt('recorded_at', todayStart)
-    .order('recorded_at', { ascending: true });
-  const prevMap = new Map(
-    [...latestByProduct(yesterdayRows).entries()].map(([k, r]) => [k, r.price]));
+  /*
+   * 2. 어제(KST) 가격 (drop 조건용)
+   *
+   * 여기서 실패해도 스크립트를 죽이지 않는다. 어제 값이 없으면 '전날 대비 하락'
+   * 조건만 판정할 수 없을 뿐, 목표가·역대 최저가 알림은 그대로 나가야 한다.
+   * (예전에도 이 조회의 오류를 무시하고 있었다 — 그 동작을 유지한다)
+   */
+  let prevMap = new Map();
+  try {
+    const yesterdayRows = await fetchAllRows('어제 가격', () => supabase
+      .from('price_history')
+      .select('product_id, mall, price, recorded_at')
+      .gte('recorded_at', yestStart)
+      .lt('recorded_at', todayStart)
+      .order('recorded_at', { ascending: true })
+      .order('id', { ascending: true }));
+    prevMap = new Map(
+      [...latestByProduct(yesterdayRows).entries()].map(([k, r]) => [k, r.price]));
+  } catch (e) {
+    console.warn(`⚠️ 어제 가격을 읽지 못했습니다(하락 조건만 생략): ${e.message}`);
+  }
 
   // 3. 알림 목록
   // 테이블명은 alerts. /api/alerts 와 supabase/schema.sql 이 쓰는 이름과 반드시 같아야 한다.
-  const { data: alertList, error: e3 } = await supabase
+  // id 오름차순 — 페이지 경계에서 행이 새거나 겹치지 않게 전순서를 준다.
+  const alertList = await fetchAllRows('알림 목록', () => supabase
     .from('alerts')
     .select('*')
-    .eq('sent', false);
-  if (e3) throw new Error('알림 목록 조회 실패: ' + e3.message);
+    .eq('sent', false)
+    .order('id', { ascending: true }));
 
   console.log(`오늘 가격: ${todayPrices.length}개 / 알림 대상: ${alertList.length}개`);
   /*
@@ -202,7 +264,12 @@ async function run() {
 
     // 30일 통계 — 여기도 라벨이 아니라 절대 시각으로 자른다 (위 TODAY 주석 참고)
     const thirtyAgo = kstToday(new Date(Date.now() - 30 * 86400000));
-    const { data: hist30 } = await scoped().gte('recorded_at', kstDayStartUtc(thirtyAgo));
+    // 상품 1개로 좁혀진 쿼리라 페이지네이션까지 갈 일이 없다. 다만 상한은
+    // 명시한다 — 안 적으면 db-max-rows(1,000)에 조용히 걸린다.
+    const { data: hist30 } = await scoped()
+      .gte('recorded_at', kstDayStartUtc(thirtyAgo))
+      .order('recorded_at', { ascending: false })
+      .limit(HIST30_MAX_ROWS);
     const prices30 = (hist30 || []).map(r => r.price);
     const avg30 = prices30.length ? Math.round(prices30.reduce((a, b) => a + b, 0) / prices30.length) : 0;
     const min30 = prices30.length ? Math.min(...prices30) : 0;

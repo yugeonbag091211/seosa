@@ -57,6 +57,29 @@ const CACHE_TTL_MS = envNum('COUPANG_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
 const STALE_MAX_MS = envNum('COUPANG_STALE_MAX_MS', 48 * 60 * 60 * 1000);
 
 /*
+ * 한 번의 쿠팡 호출이 매달릴 수 있는 최대 시간.
+ *
+ * ★ 이 값이 없으면 함수가 끝나지 않는다.
+ *
+ *   fetch 는 기본 타임아웃이 없다. 쿠팡이 TCP 연결을 열어 둔 채 응답을 주지
+ *   않으면 아래 호출은 영원히 resolve 되지 않고, 그 위에 올라탄 것들이 전부
+ *   같이 멈춘다 — /api/search(공개 엔드포인트), /api/ai, /api/cron,
+ *   GitHub Actions 수집기. 서버리스에서는 함수 최대 실행시간까지 동시 실행
+ *   슬롯을 물고 있게 되어 사이트 전체가 느려진다.
+ *
+ *   연결 거부(ECONNREFUSED)는 이 문제가 아니다 — 그건 fetch 가 즉시 reject 한다.
+ *   위험한 것은 "연결은 되는데 응답이 없는" 경우뿐이다.
+ *
+ *   8초인 이유: /api/search 는 사용자가 기다리는 요청이고, reserveSlot 의
+ *   간격 대기(maxWaitMs, 검색 1.5초)가 이 값 앞에 따로 붙는다. 정상 응답은
+ *   1초 안팎이라 8초면 느린 응답까지 넉넉히 덮으면서도 함수 상한 안에 끝난다.
+ *
+ *   api/_toss.js 와 api/ai.js 는 처음부터 AbortController 를 쓰고 있었다.
+ *   여기만 빠져 있었다.
+ */
+const TIMEOUT_MS = envNum('COUPANG_TIMEOUT_MS', 8000);
+
+/*
  * 실제로 쿠팡에 요청할 상품 수.
  *
  * ★ 이 값을 함부로 올리지 말 것. 쿠팡이 rCode=400 으로 거부한다.
@@ -504,8 +527,16 @@ async function searchCoupang(keyword, opts = {}) {
   const query = `keyword=${encodeURIComponent(kw)}&limit=${reqLimit}`;
 
   let r, text;
+  /*
+   * 타임아웃은 응답 헤더가 아니라 "본문을 다 읽을 때까지" 를 덮어야 한다.
+   * 같은 signal 을 fetch 에 넘기면 r.text() 로 본문을 읽는 동안에도 abort 가
+   * 스트림에 전달된다. 헤더만 주고 바디를 흘려보내지 않는 서버에서도 끊긴다.
+   */
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   try {
     r = await fetch(`${HOST}${SEARCH_PATH}?${query}`, {
+      signal: ac.signal,
       headers: {
         Authorization: sign('GET', SEARCH_PATH, query),
         // Node 의 기본 User-Agent 는 "node" 다. 파트너 API 앞단 WAF 입장에서는
@@ -517,9 +548,26 @@ async function searchCoupang(keyword, opts = {}) {
     });
     text = await r.text();
   } catch (e) {
-    await trip(COOLDOWN_MIN.network, `네트워크 오류: ${e.message}`);
-    await dbFinish(gate.callId, 'network_error', 0, '', 0);
-    return fallback(`쿠팡 네트워크 오류: ${e.message}`, false);
+    /*
+     * 타임아웃도 네트워크 실패의 한 종류로 다룬다.
+     *
+     * · 차단(blocked)이 아니다 — 쿠팡이 거부한 게 아니라 답이 없었을 뿐이다.
+     *   여기서 blocked=true 를 주면 프론트가 "쿠팡이 막았다" 고 안내한다.
+     * · 재시도하지 않는다. 응답이 없는 상대를 즉시 다시 부르면 경고만 쌓인다.
+     *   대신 COOLDOWN_MIN.network(2분) 동안 호출을 멈춘다 — 기존 서킷 브레이커
+     *   그대로다.
+     * · 메시지에 '네트워크' 를 남긴다. scripts/collect-all-prices.js 의
+     *   categorizeFailure 가 이 낱말로 실패 원인을 분류한다.
+     */
+    const timedOut = e.name === 'AbortError';
+    const why = timedOut
+      ? `네트워크 응답 시간 초과 (${TIMEOUT_MS}ms)`
+      : `네트워크 오류: ${e.message}`;
+    await trip(COOLDOWN_MIN.network, why);
+    await dbFinish(gate.callId, timedOut ? 'timeout' : 'network_error', 0, '', 0);
+    return fallback(`쿠팡 ${why}`, false);
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!r.ok) {
@@ -569,7 +617,15 @@ async function searchCoupang(keyword, opts = {}) {
 
   const allItems = normalize((data.data && data.data.productData) || []);
   const items = collapseOptions(allItems);
-  await dbFinish(gate.callId, 'ok', r.status, items.length);
+  /*
+   * 인자 순서: (callId, outcome, httpStatus, rCode, items)
+   *
+   * 예전에는 여기서만 rCode 를 빼고 4개를 넘겼다. 그래서 성공 기록의
+   * r_code 자리에 상품 수가 들어가고 items 는 0 으로 남았다 — 실패 경로들은
+   * 전부 5개를 정확히 넘기고 있어서 눈에 띄지 않았다.
+   * 성공 응답의 rCode 는 위에서 검사한 그 값이다 (보통 '0').
+   */
+  await dbFinish(gate.callId, 'ok', r.status, rCode, items.length);
   if (useCache) await writeCache(kw, allItems, reqLimit);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);

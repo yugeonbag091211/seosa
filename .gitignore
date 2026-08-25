@@ -8,6 +8,9 @@ node_modules/
 .env.test
 .env.production
 .vercel
+
+# Supabase CLI 가 npx 실행 중에 만드는 캐시
+supabase/.temp/
 .env*
 
 # 에디터 / 도구 로컬 설정

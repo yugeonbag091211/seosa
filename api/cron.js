@@ -15,6 +15,11 @@ const supabase = require('./_supabase');
 const { TODAY_PICKS, searchAll, saveProducts } = require('./_shop');
 const { searchCoupang, localStats, globalUsage, pruneLog } = require('./_coupang');
 const { qualitySnapshot } = require('./_quality');
+// 달력 월은 KST 기준이다. 이 크론은 KST 03:00 에 도는데, 그 시각의 UTC 는
+// 매월 1일이면 아직 전달이다 (_kst.kstMonth 주석 참고).
+const { kstMonth } = require('./_kst');
+// PRO 자동결제 갱신. 새 엔드포인트를 만들 자리가 없어(Hobby 12개 상한) 여기 얹는다.
+const billing = require('./_billing');
 
 // 한 번에 3개씩만 돌려서 함수 실행 시간(maxDuration 60초) 안에 끝나게 한다.
 // 쿠팡 호출은 _coupang.js가 최소 간격을 두고 직렬화하므로 이 숫자만큼
@@ -58,7 +63,7 @@ const CRON_LIMIT = 10;
  * (홈에 "이달의 키워드 상품을 준비 중이에요"만 뜬다)
  */
 async function collectTargets() {
-  const month = new Date().getMonth() + 1;
+  const month = kstMonth();
   let monthly = [];
   try {
     const { data } = await supabase
@@ -128,6 +133,35 @@ module.exports = async function handler(req, res) {
   // 호출 로그가 무한히 쌓이지 않게 하루 한 번 정리한다.
   const pruned = await pruneLog(7);
 
+  /*
+   * PRO 자동결제 갱신.
+   *
+   * ★ 왜 여기 있는가 — Vercel Hobby 는 서버리스 함수 12개가 상한이고 이미
+   *   11개다. 갱신은 하루 한 번이면 충분하므로, CRON_SECRET 뒤에서 매일 도는
+   *   이 함수에 얹는다. 새 엔드포인트를 만들면 배포가 상한에 걸린다.
+   *
+   * 수집이 실패해도 갱신은 돌아야 한다 — 서로 무관한 일이다. 반대로 갱신이
+   * 실패해도 수집 결과를 뒤집지 않는다.
+   */
+  let renewal = { attempted: 0, renewed: 0, failed: 0, gaveUp: 0 };
+  try {
+    renewal = await billing.renewDueSubscriptions();
+  } catch (e) {
+    console.error(`[cron] 구독 갱신 중 오류(수집 결과에는 영향 없음): ${e.message}`);
+    renewal = { attempted: 0, renewed: 0, failed: 0, gaveUp: 0, error: e.message };
+  }
+  if (renewal.error) {
+    /*
+     * 조용히 넘기지 않는다. 마이그레이션(2026-08-24-...) 전이면 여기서
+     * subscriptions.renew_failures 컬럼이 없어 매일 실패한다 — 로그가 없으면
+     * 자동결제가 한 번도 안 돌고 있다는 것을 아무도 모른다.
+     */
+    console.error(`[cron] 구독 갱신을 돌리지 못했습니다: ${renewal.error}`);
+  } else if (renewal.attempted) {
+    console.log(`[cron] 구독 갱신 ${renewal.renewed}/${renewal.attempted}건 성공`
+      + ` (실패 ${renewal.failed}, 포기 ${renewal.gaveUp})`);
+  }
+
   console.log(
     `[cron] 키워드 ${results.length}개(미처리 ${skipped}) / 저장 ${totalSaved}건`
     + ` / 실패 키워드 ${failed.length}개 / ${elapsedMs}ms`
@@ -143,6 +177,7 @@ module.exports = async function handler(req, res) {
     skipped,
     elapsedMs,
     coupang,
+    renewal,
     results
   });
 };

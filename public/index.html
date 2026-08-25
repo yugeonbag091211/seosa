@@ -1797,8 +1797,53 @@ var CONST = {
     PROFILE: 'seosa_profile',
     CHAT: 'seosa_chat',        // ★ 챗 대화 저장
     THEME: 'seosa_theme',      // ★ 다크모드 설정
-    TOKEN: 'seosa_token'       // 이메일 인증 토큰 { token, email, expiresAt }
+    TOKEN: 'seosa_token',      // 이메일 인증 토큰 { token, email, expiresAt }
+    // 확인이 끝나지 않은 결제 주문 { orderId, authKey, at }.
+    // 같은 orderId 로 다시 물어보기 위한 값이다 — 새 주문을 만들면 이중 청구가 된다.
+    PENDING_ORDER: 'seosa_pending_order',
+    // 익명 방문자 식별자. 이 브라우저가 만든 난수일 뿐 계정과 잇지 않는다.
+    VID: 'seosa_vid'
   }
+};
+
+
+/* ============================================================
+ *  Track — 최소 사용자 계측
+ *
+ *  총/오늘/재방문자 · 검색 · 클릭만 센다. 분석 SDK 를 붙이지 않는다.
+ *
+ *  ★ 계측이 화면을 막지 않는다
+ *    전부 fire-and-forget 이다. 실패해도 삼키고, 응답을 기다리지 않는다.
+ *    집계 한 줄 때문에 상품 링크가 늦게 열리면 그건 계측이 아니라 장애다.
+ *
+ *  ★ 개인정보를 만들지 않는다
+ *    vid 는 이 브라우저가 만든 난수다. 서버는 그게 누구인지 모르고,
+ *    이메일·계정과 연결하지 않는다. 저장소를 비우면 새 방문자가 된다.
+ *    (supabase/2026-08-25-analytics.sql 머리말 참고)
+ * ========================================================== */
+var Track = {
+  /** 이 브라우저의 난수 id. 없으면 만들어 저장한다. */
+  vid: function() {
+    var v = '';
+    try { v = localStorage.getItem(CONST.LS.VID) || ''; } catch (e) {}
+    if (!/^[a-z0-9]{8,64}$/i.test(v)) {
+      v = 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+      try { localStorage.setItem(CONST.LS.VID, v); } catch (e) {}
+    }
+    return v;
+  },
+
+  /**
+   * keepalive 를 쓰는 이유 — 상품 클릭은 새 탭을 열면서 나간다. 일반 fetch 는
+   * 그 과정에서 취소될 수 있어 클릭이 실제보다 적게 잡힌다.
+   */
+  ping: function(qs) {
+    try { fetch('/api/stats?' + qs, { method: 'GET', keepalive: true }).catch(function() {}); }
+    catch (e) {}
+  },
+
+  visit: function() { Track.ping('event=visit&vid=' + encodeURIComponent(Track.vid())); },
+  click: function() { Track.ping('event=click'); }
 };
 
 var GS = true;
@@ -2409,49 +2454,34 @@ var Pro = {
       });
   },
 
-  generateOrderId: function() {
-    var ts = Date.now().toString(36);
-    var rand = Math.random().toString(36).slice(2, 8);
-    return 'seosa_' + ts + '_' + rand;
-  },
-
+  /*
+   * ★ 결제는 Pay.start 하나만 쓴다.
+   *
+   * 여기 있던 Pro.pay 는 두 번째 결제 경로였고, 서버와 규약이 전혀 맞지 않았다.
+   *   · orderId 를 프론트에서 만들었다
+   *     → 서버는 prepare 가 만든 주문만 인정한다. 404 로 거절된다.
+   *   · customerKey 를 btoa(email) 로 만들었다
+   *     → 값을 고치면 남의 결제 식별자를 쓸 수 있다. 서버는 토큰의 이메일에서
+   *       파생한 값만 쓴다.
+   *   · amount 를 프론트가 보냈다
+   *     → 금액은 서버 상수다. 보낸 값은 쳐다보지도 않는다.
+   *   · requestPayment(단건 결제) + { paymentKey, amount } 를 confirm 에 보냈다
+   *     → 서버 confirm 은 requestBillingAuth 가 주는 authKey 를 받는다.
+   *       authKey 가 없으니 400 "결제 정보가 부족해요" 로 끝난다.
+   *
+   * 즉 이 버튼은 사용자에게 카드 입력창을 열어 놓고 마지막에 반드시 실패했다.
+   * 두 경로를 남겨 둘 이유가 없다 — 동작하는 쪽으로 넘긴다.
+   */
   pay: function() {
-    var saved = Auth.saved();
-    if (!saved || !saved.token) {
-      Pro.close();
-      Auth.open('', function() { Pro.open(); });
-      return;
-    }
-
-    if (!window.TossPayments) {
-      Pro.loadSDK(function() { Pro.pay(); });
-      return;
-    }
-
-    var clientKey = window.__TOSS_CLIENT_KEY__;
-    if (!clientKey) {
-      toast('결제 시스템이 준비되지 않았어요');
-      return;
-    }
-
-    var orderId = Pro.generateOrderId();
-    var email = (saved.email || '').replace(/[^a-zA-Z0-9@._-]/g, '');
-    var customerKey = 'seosa_' + btoa(email).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
-
-    var toss = TossPayments(clientKey);
-    toss.requestPayment('카드', {
-      amount: Pro.PRICE,
-      orderId: orderId,
-      orderName: 'SEOSA PRO 월간 구독',
-      customerName: email,
-      customerEmail: email,
-      successUrl: location.origin + location.pathname + '?toss=success',
-      failUrl: location.origin + location.pathname + '?toss=fail'
-    }).catch(function(e) {
-      if (e.code === 'USER_CANCEL') return;
-      toast('결제를 시작할 수 없어요: ' + (e.message || ''));
-    });
+    Pro.close();
+    Pay.start();
   },
+
+  /*
+   * (삭제됨) 옛 단건결제 경로 — Pro.pay 주석 참고.
+   * requestPayment / generateOrderId / confirmFromUrl / handleFail 이 여기 있었다.
+   * 코드를 남겨 두면 언젠가 다시 배선된다. 히스토리는 git 에 있다.
+   */
 
   loadSDK: function(cb) {
     if (Pro.tossReady) { if (cb) cb(); return; }
@@ -2462,56 +2492,7 @@ var Pro = {
     document.head.appendChild(s);
   },
 
-  confirmFromUrl: function() {
-    var params = new URLSearchParams(location.search);
-    if (params.get('toss') !== 'success') return;
 
-    var orderId = params.get('orderId');
-    var paymentKey = params.get('paymentKey');
-    var amount = Number(params.get('amount'));
-
-    history.replaceState(null, '', location.pathname);
-
-    if (!orderId || !paymentKey || !amount) {
-      toast('결제 정보가 올바르지 않아요');
-      return;
-    }
-
-    var saved = Auth.saved();
-    if (!saved || !saved.token) {
-      toast('결제를 완료하려면 다시 로그인해 주세요');
-      return;
-    }
-
-    toast('결제를 확인하고 있어요…');
-
-    fetch('/api/payment', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + saved.token
-      },
-      body: JSON.stringify({ action: 'confirm', orderId: orderId, paymentKey: paymentKey, amount: amount })
-    })
-      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-      .then(function(res) {
-        if (res.ok && res.data.success) {
-          toast('PRO 구독이 활성화되었어요!');
-          Pro.updateQuotaBadge({ plan: 'pro', limit: 50, used: 0 });
-        } else {
-          toast('결제 확인 실패: ' + (res.data.error || '알 수 없는 오류'));
-        }
-      })
-      .catch(function() { toast('결제 확인 중 오류가 발생했어요'); });
-  },
-
-  handleFail: function() {
-    var params = new URLSearchParams(location.search);
-    if (params.get('toss') !== 'fail') return;
-    var msg = params.get('message') || '결제가 취소되었어요';
-    history.replaceState(null, '', location.pathname);
-    toast(msg);
-  },
 
   cancel: function() {
     if (!confirm('PRO 구독을 취소하시겠어요? 남은 기간까지는 계속 사용할 수 있어요.')) return;
@@ -3093,7 +3074,12 @@ function previewNotice(targetId) {
 
 function openLink(link) {
   var url = Fmt.safeUrl(link);
-  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  if (url) {
+    // 상품 클릭은 여기 하나로 모인다 — 카드·시세판·모달이 전부 이 함수를 부른다.
+    // 링크가 실제로 열리는 경우만 센다 (링크 없는 상품은 클릭이 아니다).
+    Track.click();
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
   else toast('구매 링크가 없는 상품이에요');
 }
 
@@ -5222,12 +5208,31 @@ var Pay = {
     history.replaceState(null, '', location.pathname);
     if (!authKey || !orderId) return;
 
+    /*
+     * ★ 확인이 끝날 때까지 주문을 손에 쥐고 있는다.
+     *
+     * 예전에는 URL 을 지우고 나면 orderId 가 사라졌다. 그래서 confirm 이
+     * 네트워크 오류나 함수 타임아웃으로 실패하면 사용자가 할 수 있는 일이
+     * "처음부터 다시 결제" 뿐이었고, 그건 새 orderId 라 이중 청구가 된다.
+     *
+     * 서버는 같은 orderId 로 다시 물어보면 토스에 실제 상태를 조회해서
+     * 재승인 없이 확정한다. 그러려면 프론트가 그 orderId 를 알고 있어야 한다.
+     */
+    Store.set(CONST.LS.PENDING_ORDER, { orderId: orderId, authKey: authKey, at: Date.now() });
+    Pay.confirm(orderId, authKey);
+  },
+
+  /** 결제 확인. 실패해도 주문을 버리지 않는다 — 같은 orderId 로 다시 물어본다. */
+  confirm: function(orderId, authKey) {
     toast('결제를 확인하고 있어요…');
     Api.call('payConfirm', [{ authKey: authKey, orderId: orderId }], function(r) {
       if (r && r.ok) {
+        Store.set(CONST.LS.PENDING_ORDER, null);
         Pay.plan = 'pro';
         Pay.sub = r.subscription || null;
-        toast('PRO 구독이 시작됐어요. 이제 하루 50회까지 이용할 수 있어요.');
+        toast(r.alreadyProcessed
+          ? '이미 결제가 완료된 주문이에요.'
+          : 'PRO 구독이 시작됐어요. 이제 하루 50회까지 이용할 수 있어요.');
         Pay.renderBadge(r.subscription);
         Pay.renderBar();
       } else {
@@ -5235,8 +5240,37 @@ var Pay = {
         toast('결제를 확인하지 못했어요.');
       }
     }, function(e) {
-      toast((e && e.body && e.body.message) || '결제를 확인하지 못했어요.');
+      var body = (e && e.body) || {};
+      /*
+       * 결과를 아직 모르는 상태(승인 요청은 갔는데 답을 못 받음)면 주문을
+       * 그대로 둔다. 다음 방문 때 resume 이 같은 orderId 로 다시 물어본다.
+       * 반대로 끝난 주문(종료·소유자 불일치 등)은 붙들고 있을 이유가 없다.
+       */
+      var unresolved = body.error === 'PAYMENT_RESULT_UNKNOWN'
+        || body.error === 'ORDER_LOOKUP_FAILED'
+        || body.error === 'ORDER_IN_PROGRESS';
+      if (!unresolved) Store.set(CONST.LS.PENDING_ORDER, null);
+      toast(body.message || '결제를 확인하지 못했어요.');
     });
+  },
+
+  /**
+   * 확인이 끝나지 않은 주문이 남아 있으면 다시 물어본다.
+   *
+   * 결제창에서 돌아온 뒤 confirm 이 타임아웃으로 끊긴 경우가 여기 해당한다.
+   * 새 주문을 만들지 않고 같은 orderId 로 물어보는 것이 핵심이다 —
+   * 서버가 토스에 조회해서 이미 승인됐으면 재승인 없이 확정해 준다.
+   */
+  resumePending: function() {
+    var p = Store.get(CONST.LS.PENDING_ORDER, null);
+    if (!p || !p.orderId) return;
+    // 하루가 지난 주문은 붙들지 않는다 (토스 멱등키도 15일이지만 UX 상 하루면 충분).
+    if (!p.at || Date.now() - p.at > 24 * 60 * 60 * 1000) {
+      Store.set(CONST.LS.PENDING_ORDER, null);
+      return;
+    }
+    if (!Auth.tokenFor('')) return;
+    Pay.confirm(p.orderId, p.authKey || '');
   },
 
   /** 구독 취소 — 남은 기간은 계속 쓴다. */
@@ -6946,6 +6980,13 @@ var Init = {
     Theme.init();      // ★ 다크모드 먼저 적용 (깜빡임 방지)
     bindInputs();
 
+    /*
+     * 방문 기록. 응답을 기다리지 않으므로 첫 화면을 늦추지 않는다.
+     * 같은 날 몇 번을 새로고침해도 재방문으로 세지 않는다 (서버 RPC 가 판단).
+     * 미리보기 모드(!GS)에서도 방문은 방문이므로 아래 return 보다 위에 둔다.
+     */
+    Track.visit();
+
     // 로컬 데이터 먼저 그리기
     Wish.updateCount();
     Profile.updateDot();
@@ -6971,6 +7012,8 @@ var Init = {
      * 그 다음 구독 상태를 받아 온다 — 비로그인이면 Pay.init 이 조용히 끝난다.
      */
     Pay.handleReturn();
+    // 지난번에 확인을 못 끝낸 주문이 있으면 같은 orderId 로 다시 물어본다.
+    Pay.resumePending();
     Pay.init();
 
     // 서버 데이터 한 번에
@@ -7042,8 +7085,14 @@ var Init = {
 };
 
 Init.run();
-Pro.confirmFromUrl();
-Pro.handleFail();
+/*
+ * Pro.confirmFromUrl() / Pro.handleFail() 은 부르지 않는다.
+ *
+ * 둘 다 ?toss=success|fail 로 돌아오는 옛 단건결제 경로용이다. 그 경로는
+ * Pro.pay 가 Pay.start 로 넘어가면서 더 이상 쓰이지 않고, 서버 confirm 도
+ * 그 형식(paymentKey + amount)을 받지 않는다. 결제 복귀 처리는 Pay.handleReturn
+ * 하나가 담당한다 (Init.run 안에서 부른다).
+ */
 </script>
 
 <!-- Google Analytics -->

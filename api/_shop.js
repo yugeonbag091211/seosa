@@ -221,12 +221,34 @@ const PREV_CHUNK = 100;
  */
 let itemIdColumns = true;
 
+/*
+ * price_history.vendor_item_id 존재 여부. products 쪽(itemIdColumns)과 별개다 —
+ * 두 마이그레이션이 다른 파일이라 한쪽만 적용된 환경이 있을 수 있다.
+ */
+let historyVidColumn = true;
+
 function missingColumn(msg) {
   return /column .* does not exist|could not find the .* column|schema cache/i.test(msg || '');
 }
 
 /**
- * [{productId, mall}] → 직전 관측 Map<"pid|mall", {price, observedAt}>
+ * [{productId, mall}] → 직전 관측 Map<"pid|mall", {price, observedAt, vendorItemId}>
+ *
+ * ★ 가격과 옵션 식별자를 반드시 같은 행에서 가져온다.
+ *
+ *   예전에는 여기서 price 만 읽고, 비교에 쓸 vendorItemId 는 loadStoredVendorIds()
+ *   로 products 에서 따로 가져왔다. 그런데 products 는 오늘 이미 갱신됐을 수
+ *   있으므로 "가격은 어제 것, 옵션은 오늘 것" 을 비교하게 된다. 그러면 판정이
+ *   양쪽으로 다 틀린다.
+ *
+ *     어제 vid=111 @60,000 / 오늘 1회차 vid=222 @55,000 저장 (products→222)
+ *       · 오늘 2회차 vid=222 @20,000  → 실제로는 111→222 교체인데 222=222 로 보여
+ *                                       교체 감지가 꺼지고 오염값이 현재가가 된다
+ *       · 오늘 2회차 vid=111 @20,000  → 실제로는 같은 옵션인데 222≠111 로 보여
+ *                                       정상 인하가 보류된다
+ *
+ *   비교 대상 두 값(가격·옵션)은 같은 관측 행에서 나와야 한다. products 는
+ *   "지금 카탈로그가 대표로 들고 있는 옵션" 일 뿐 과거 관측의 대체물이 아니다.
  *
  * "직전"에서 오늘 행은 뺀다. /api/search 는 같은 상품을 하루에도 여러 번
  * 저장하는데, 오늘 이미 들어간 행을 직전 값으로 삼으면 자기 자신과 비교하게
@@ -257,15 +279,40 @@ async function loadPrevObservations(keys, today) {
     return prev;
   }
 
+  /*
+   * link 도 받는다. price_history 의 옛 행은 vendor_item_id 가 비어 있거나
+   * '__LEGACY__' 인데, 같은 행의 link 에는 처음부터 식별자가 들어 있다.
+   * 읽을 때 뽑아 쓰면 백필을 기다리지 않고 옵션 교체 감지가 옛 행에도 적용된다
+   * (_price.vendorIdOf 와 같은 규칙 — 컬럼 우선, 없으면 link).
+   */
+  const BASE_COLS = 'product_id, mall, price, recorded_date, recorded_at, link';
+
   for (let i = 0; i < pids.length; i += PREV_CHUNK) {
     const chunk = pids.slice(i, i + PREV_CHUNK);
-    const { data, error } = await supabase
+    const ask = cols => supabase
       .from('price_history')
-      .select('product_id, mall, price, recorded_date, recorded_at')
+      .select(cols)
       .in('product_id', chunk)
       .lt('recorded_at', todayStart)
       .order('recorded_at', { ascending: false })
       .limit(PREV_LOOKUP_ROWS);
+
+    let { data, error } = await ask(
+      historyVidColumn ? `${BASE_COLS}, vendor_item_id` : BASE_COLS);
+
+    /*
+     * price_history.vendor_item_id 는 2026-08-vendor-identity.sql 에서 생긴다.
+     * 아직 안 돌린 환경에서 이 컬럼 때문에 조회가 통째로 실패하면, 위 catch 가
+     * 빈 Map 을 돌려주어 가격 검증이 조용히 전부 꺼진다 — 컬럼 하나 때문에
+     * 0원·급변 방어까지 잃는 것은 과하다. 한 번 없다고 확인되면 빼고 간다.
+     * (options 교체 감지만 못 하고 나머지 검증은 그대로 돈다)
+     */
+    if (error && historyVidColumn && missingColumn(error.message)) {
+      historyVidColumn = false;
+      console.warn('[save] price_history.vendor_item_id 컬럼 없음 — 옵션 교체 감지 없이 계속합니다 '
+        + '(supabase/2026-08-vendor-identity.sql 을 실행하면 켜집니다).');
+      ({ data, error } = await ask(BASE_COLS));
+    }
     if (error) {
       // 직전 값을 못 읽으면 검증 없이 저장한다. 저장 자체를 막는 것보다는 낫다.
       console.warn(`[save] 직전 관측 조회 실패(검증 생략): ${error.message}`);
@@ -280,7 +327,18 @@ async function loadPrevObservations(keys, today) {
         prev.set(k, {
           price: r.price,
           recordedDate: r.recorded_date,
-          observedAt: r.recorded_at || r.recorded_date
+          observedAt: r.recorded_at || r.recorded_date,
+          /*
+           * 이 가격이 어느 옵션의 값이었는지. 비교는 반드시 이 값으로 한다.
+           *
+           * '__LEGACY__' 는 마이그레이션이 "link 에서도 식별자를 못 뽑았다" 고
+           * 표시해 둔 값이라 옵션 비교의 근거가 될 수 없다. 빈 값으로 눕히고
+           * link 폴백에 맡긴다 (그쪽도 결국 빈 문자열이 나온다).
+           */
+          vendorItemId: vendorIdOf({
+            vendor_item_id: r.vendor_item_id === '__LEGACY__' ? '' : r.vendor_item_id,
+            link: r.link
+          })
         });
       }
     });
@@ -288,43 +346,18 @@ async function loadPrevObservations(keys, today) {
   return prev;
 }
 
-/**
- * products 에 이미 있는 행의 옵션 식별자.
+/*
+ * loadStoredVendorIds() 는 지웠다.
  *
- * vendor_item_id 컬럼이 비어 있으면 같은 행의 link 에서 뽑아 쓴다
- * (_price.vendorIdOf 주석 참고). 컬럼은 2026-08-09 에 막 생겨서 기존
- * 654행이 전부 비어 있지만 link 에는 처음부터 값이 있었다. 이 폴백이
- * 없으면 "다음 수집 때부터" 옵션 교체 감지가 켜지는데, 폴백을 두면
- * 지금 당장 전 행에 적용된다. DB 에 쓰지 않는다.
+ * products 에서 "지금 카탈로그의 대표 옵션" 을 읽어 와 가격 검증의 직전 옵션으로
+ * 쓰던 함수다. 그 값은 오늘 이미 갱신됐을 수 있어서, 어제 가격과 오늘 옵션을
+ * 비교하게 만들었다 (loadPrevObservations 주석의 실측 시나리오 참고).
+ * 이제 직전 관측은 price_history 한 행에서 가격과 옵션을 함께 가져온다.
  *
- * 컬럼 자체가 없는 환경(마이그레이션 미적용)에서는 link 만으로 동작한다.
+ * products upsert 는 이 값을 쓰지 않는다 — catalogRows 가 vendorIdOf(it) 로
+ * 이번 관측에서 직접 뽑는다. 컬럼이 없는 환경 처리도 upsertProducts 가
+ * 자체적으로 한다. 그래서 남길 자리가 없다.
  */
-async function loadStoredVendorIds(keys) {
-  const out = new Map();
-  const pids = [...new Set(keys.map(k => k.productId))].filter(Boolean);
-  const cols = itemIdColumns
-    ? 'product_id, mall, link, vendor_item_id'
-    : 'product_id, mall, link';
-
-  for (let i = 0; i < pids.length; i += PREV_CHUNK) {
-    const chunk = pids.slice(i, i + PREV_CHUNK);
-    let { data, error } = await supabase.from('products').select(cols).in('product_id', chunk);
-
-    if (error && itemIdColumns && missingColumn(error.message)) {
-      itemIdColumns = false;
-      console.warn('[save] products.vendor_item_id 컬럼 없음 — link 에서 식별자를 뽑아 계속합니다 '
-        + '(supabase/2026-08-price-accuracy.sql 을 실행하면 컬럼에도 저장됩니다).');
-      ({ data, error } = await supabase.from('products').select('product_id, mall, link').in('product_id', chunk));
-    }
-    if (error) {
-      console.warn(`[save] 옵션 식별자 조회 실패(옵션 교체 감지 생략): ${error.message}`);
-      return out;
-    }
-
-    (data || []).forEach(r => out.set(`${r.product_id}|${r.mall}`, vendorIdOf(r)));
-  }
-  return out;
-}
 
 /** item_id/vendor_item_id 를 붙여 upsert 하고, 컬럼이 없으면 빼고 다시 시도한다. */
 async function upsertProducts(rows) {
@@ -434,10 +467,7 @@ async function recordPrices(observations, opts = {}) {
   if (!uniq.length) return { saved: 0, recorded: 0, rejected: 0, suspect: 0, errors };
 
   const keys = uniq.map(it => ({ productId: it.productId, mall: it.mall }));
-  const [prevMap, vendorMap] = await Promise.all([
-    loadPrevObservations(keys, today),
-    updateCatalog ? loadStoredVendorIds(keys) : Promise.resolve(new Map())
-  ]);
+  const prevMap = await loadPrevObservations(keys, today);
 
   const historyRows = [];
   const catalogRows = [];
@@ -447,11 +477,23 @@ async function recordPrices(observations, opts = {}) {
   for (const it of uniq) {
     const k = `${it.productId}|${it.mall}`;
     const prevObs = prevMap.get(k);
+    /*
+     * 직전 관측은 price_history 한 행에서 통째로 가져온다 — 가격도, 옵션도.
+     * vendorMap(products) 을 여기 섞지 않는다. 그건 "지금 카탈로그의 대표 옵션"
+     * 이라 시점이 다르고, 섞으면 옵션 교체 판정이 양방향으로 틀린다
+     * (loadPrevObservations 주석의 실측 시나리오 참고).
+     */
     const prev = prevObs
-      ? { price: prevObs.price, observedAt: prevObs.observedAt, vendorItemId: vendorMap.get(k) || '' }
+      ? { price: prevObs.price, observedAt: prevObs.observedAt, vendorItemId: prevObs.vendorItemId || '' }
       : null;
 
-    const verdict = classifyPrice(it.price, prev, { vendorItemId: it.vendorItemId || '' });
+    /*
+     * 이번 관측의 옵션도 저장할 때와 같은 방법으로 구한다.
+     * historyRows / catalogRows 는 vendorIdOf(it) 로 저장하므로(컬럼이 비면
+     * link 에서 뽑는다), 판정만 it.vendorItemId 를 보면 호출부가 필드를 안
+     * 채운 경우에 교체 감지가 조용히 꺼진다.
+     */
+    const verdict = classifyPrice(it.price, prev, { vendorItemId: vendorIdOf(it) });
 
     if (verdict.status === 'invalid') {
       rejected++;

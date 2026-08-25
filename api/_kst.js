@@ -25,4 +25,26 @@ function kstToday(now = new Date()) {
   return new Date(src + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-module.exports = { kstToday };
+/**
+ * 한국시간(Asia/Seoul) 기준 월 (1~12).
+ *
+ * ── 왜 new Date().getMonth() 를 쓰면 안 되는가 ──────────────────────
+ * getMonth() 는 "런타임의 로컬 시간대" 기준이다. Vercel 함수는 TZ=UTC 로 돈다.
+ * 그래서 KST 로 매월 1일 00:00~08:59 사이에는 UTC 가 아직 전달이고,
+ *   api/init.js  "이달의 추천"        → 지난달 큐레이션 키워드를 조회
+ *   api/cron.js  이달의 큐레이션 수집 → 지난달 키워드를 수집 (KST 03:00 실행)
+ * 이 된다. 12월→1월 경계에서는 월이 12 로 나와 연도까지 어긋난다.
+ *
+ * 개발 머신은 대개 TZ=Asia/Seoul 이라 로컬에서는 정상으로 보인다.
+ * 그래서 재현이 안 되고, 매월 1일에만 9시간 동안 조용히 틀린다.
+ *
+ * kstToday() 가 이미 시간대에 의존하지 않는 문자열을 만들므로 거기서 잘라 쓴다.
+ *
+ * @param {Date|number} [now]
+ * @returns {number} 1~12
+ */
+function kstMonth(now = new Date()) {
+  return Number(kstToday(now).slice(5, 7));
+}
+
+module.exports = { kstToday, kstMonth };
