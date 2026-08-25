@@ -1486,6 +1486,289 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
   </section>
 </main>
 
+<!-- 정책 모달들 -->
+<!-- 개인정보처리방침 -->
+<div class="overlay" id="privacyOverlay" style="display:none">
+  <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
+    <div class="modal-head">
+      <div><div class="mt">개인정보처리방침</div></div>
+      <button class="modal-close" data-act="close-privacy">×</button>
+    </div>
+    <div class="modal-body" style="padding:32px">
+      <h3>1. 수집하는 개인정보</h3>
+      <p>SEOSA는 다음과 같은 개인정보를 수집합니다:</p>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li><strong>이메일 주소</strong> — 로그인, 가격 알림 발송, 인증 코드 수신</li>
+        <li><strong>닉네임</strong> — 프로필 표시 (최대 10자)</li>
+        <li><strong>관심 카테고리</strong> — "당신을 위한 추천" 상품 선정, AI 큐레이션 개인화 (복수 선택)</li>
+        <li><strong>예산 범위</strong> — AI 큐레이션 참고 정보로 활용 (4가지 선택지)</li>
+        <li><strong>성별</strong> — AI 큐레이션 참고 정보로 활용 (선택 사항)</li>
+        <li><strong>위시리스트</strong> — 사용자가 저장한 상품 목록</li>
+        <li><strong>최근 본 상품</strong> — 브라우징 이력 (로컬 저장)</li>
+        <li><strong>가격 알림 설정</strong> — 목표 가격, 상품 정보</li>
+        <li><strong>결제 정보</strong> — PRO 구독 시 결제키, 금액, 상태 (토스페이먼츠 연동)</li>
+        <li><strong>AI 사용 횟수</strong> — 이메일과 날짜별 사용 횟수만 서버에 기록되며, 질문·답변 내용 자체는 서버 DB에 저장되지 않습니다 (기기 내 브라우저 저장소에만 보관)</li>
+      </ul>
+      <p style="color:var(--faint);font-size:.9rem">그 밖에 서비스 이용 통계(검색·클릭 횟수, 방문자 수)를 집계하지만, 브라우저가 임의로 생성한 익명 식별자만 사용하며 이메일 등 개인을 특정할 수 있는 정보와 연결하지 않습니다.</p>
+
+      <h3>2. 수집 목적</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>로그인 인증 및 계정 관리</li>
+        <li>가격 알림 메일 발송</li>
+        <li>상품 추천 개인화</li>
+        <li>PRO 구독 및 정기결제 관리</li>
+        <li>AI Concierge 서비스 제공 및 응답 생성</li>
+        <li>서비스 개선 및 통계 분석</li>
+        <li>이용 현황 모니터링 및 부정 사용 방지</li>
+      </ul>
+
+      <h3>3. 보유 및 이용 기간</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li><strong>이메일, 닉네임, 프로필:</strong> 계정 유지 중 보유, 삭제 요청 시 삭제</li>
+        <li><strong>위시리스트, 최근 본 상품:</strong> 사용자가 직접, 또는 삭제 요청 시 언제든 삭제 가능</li>
+        <li><strong>가격 알림:</strong> 사용자가 삭제 요청 시까지 보유</li>
+        <li><strong>결제 정보:</strong> 거래 기록으로서 보유합니다. 구체적인 보유 기간은 관련 법령(전자상거래법 등)에 따라 사업자가 최종 확인합니다</li>
+        <li><strong>AI 사용 횟수:</strong> 계정 유지 중 보유 (일별 한도 산정 목적)</li>
+      </ul>
+
+      <h3>4. 데이터 삭제 방법</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>위시리스트: 앱 내에서 각 상품의 하트 버튼(개별) 또는 위시리스트의 "비우기" 버튼(전체)으로 삭제</li>
+        <li>최근 본 상품: "최근 본 상품" 섹션의 "기록 지우기" 버튼으로 삭제</li>
+        <li>가격 알림: 알림 목록에서 X 버튼으로 삭제</li>
+        <li>그 밖의 계정 정보(이메일, 프로필, 결제 이력 등) 전체 삭제: 현재 앱 내 자동 삭제 기능은 없으며, 아래 문의처로 요청하시면 처리해 드립니다</li>
+      </ul>
+      <p style="color:var(--faint);font-size:.9rem">※ 계정 전체 삭제(탈퇴) 기능은 사업자가 추가로 구현하거나 절차를 정해야 하는 사항입니다.</p>
+
+      <h3>5. 외부 서비스 / 처리 위탁</h3>
+      <p>다음 외부 서비스와 데이터를 공유합니다:</p>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li><strong>토스페이먼츠:</strong> PRO 결제 및 정기결제 처리 (결제키, 금액)</li>
+        <li><strong>OpenRouter:</strong> AI 큐레이션 서비스 제공 (사용자 질문 → 응답 생성)</li>
+        <li><strong>Supabase / PostgreSQL:</strong> 데이터 저장소 (암호화됨)</li>
+        <li><strong>쿠팡 검색 API:</strong> 상품 가격 및 정보 수집 (사용자 정보 공유 안 함)</li>
+      </ul>
+      <p style="color:var(--faint);font-size:.9rem"><strong>※ 사업자가 최종 확인해야 할 사항:</strong> 외부 서비스의 개인정보보호 약관과 계약 상 위탁 범위 재확인</p>
+
+      <h3>6. 이용자의 권리</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>본인 정보의 열람, 수정을 요청할 수 있습니다 (지원 이메일)</li>
+        <li>가격 알림 등 마케팅 수신을 거부할 수 있습니다</li>
+        <li>저장된 개인정보 전체의 삭제(계정 정보 포함)를 요청할 수 있습니다</li>
+      </ul>
+
+      <h3>7. 개인정보 보호 문의</h3>
+      <p>개인정보 처리와 관련하여 문의사항이 있으신 경우 아래로 연락주세요:</p>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>이메일: yugeonbag091211@gmail.com</li>
+        <li>Instagram: @seosakorea</li>
+      </ul>
+
+      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
+    </div>
+  </div>
+</div>
+
+<!-- 이용약관 -->
+<div class="overlay" id="termsOverlay" style="display:none">
+  <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
+    <div class="modal-head">
+      <div><div class="mt">이용약관</div></div>
+      <button class="modal-close" data-act="close-terms">×</button>
+    </div>
+    <div class="modal-body" style="padding:32px">
+      <h3>1. 서비스 목적</h3>
+      <p>SEOSA는 쿠팡에서 실시간으로 상품 가격을 수집하여 가격 추이를 그래프로 보여주고, AI 큐레이션을 통해 "지금이 살 때"인지를 판단하는 데 도움을 주는 서비스입니다.</p>
+
+      <h3>2. 회원 / 비회원 이용</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li><strong>비회원:</strong> 상품 검색, 가격 조회, 가격 그래프 열람 가능</li>
+        <li><strong>회원:</strong> 위시리스트 저장, 가격 알림 신청, AI Concierge (하루 3회 무료)</li>
+        <li><strong>PRO 회원:</strong> AI Concierge (하루 50회), 프리미엄 추천 기능</li>
+      </ul>
+
+      <h3>3. 상품 검색 및 가격 정보</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>모든 상품 정보는 쿠팡 검색 API에서 실시간으로 수집합니다</li>
+        <li>가격은 변동할 수 있으며, 사이트에 표시된 가격과 쿠팡의 실제 가격이 일치하지 않을 수 있습니다</li>
+        <li>쿠팡의 기술적 제한으로 일부 상품의 정가(원래 가격)를 수집하지 못할 수 있습니다</li>
+        <li>쿠팡 링크를 클릭하면 쿠팡의 정책에 따릅니다</li>
+      </ul>
+
+      <h3>4. 가격 정보의 한계</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>SEOSA는 참고 목적으로만 사용하시기 바랍니다. 실제 구매 전에 쿠팡에서 최신 가격과 상품 상태를 재확인하세요</li>
+        <li>가격 알림이 늦을 수 있으며, 알림 도착 후 실제 가격이 달라질 수 있습니다</li>
+        <li>사이트 오류 또는 수집 실패로 가격이 빠질 수 있습니다</li>
+        <li>수집 빈도 제한으로 인해 극히 짧은 시간의 가격 변동은 포착하지 못할 수 있습니다</li>
+      </ul>
+
+      <h3>5. AI 큐레이션의 성격</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>AI Concierge는 통계와 사용자의 질문을 바탕으로 참고 의견을 제공할 뿐입니다</li>
+        <li>AI의 추천이 절대적이지 않으며, 구매 결정은 사용자의 책임입니다</li>
+        <li>AI 응답의 정확성을 보장하지 않습니다</li>
+      </ul>
+
+      <h3>6. 외부 쇼핑몰 이동</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>SEOSA의 링크를 통해 외부 쇼핑몰(쿠팡 등)로 이동한 후의 거래는 각 쇼핑몰의 정책을 따릅니다</li>
+        <li>SEOSA는 외부 사이트의 내용, 서비스, 결과에 대해 책임지지 않습니다</li>
+      </ul>
+
+      <h3>7. 서비스 변경 / 중단</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>SEOSA는 사전 공지 없이 서비스를 변경하거나 중단할 수 있습니다</li>
+        <li>외부 API(쿠팡, OpenRouter 등) 중단 시 서비스가 제한될 수 있습니다</li>
+      </ul>
+
+      <h3>8. 이용자 책임</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>사용자는 자신의 계정 정보 보호에 책임을 갖습니다</li>
+        <li>위시리스트, 가격 알림 등 개인 데이터를 정기적으로 확인하시기 바랍니다</li>
+      </ul>
+
+      <h3>9. 금지 행위</h3>
+      <p>다음 행위는 금지됩니다:</p>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>SEOSA API 또는 데이터를 무단으로 수집, 복제, 배포</li>
+        <li>서비스를 이용하여 상업적 경쟁 이득을 취하는 행위</li>
+        <li>서비스 중단, 오류 유발 행위</li>
+        <li>다른 이용자의 계정 도용</li>
+      </ul>
+
+      <h3>10. 면책</h3>
+      <p>SEOSA는 다음에 대해 책임을 지지 않습니다:</p>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>가격 정보의 오류로 인한 손해</li>
+        <li>AI 큐레이션의 부정확성으로 인한 손실</li>
+        <li>외부 서비스(쿠팡, 토스페이먼츠 등) 중단</li>
+        <li>사용자의 불가항력적 사유(해킹, 프로그램 오류 등)로 인한 데이터 손실</li>
+      </ul>
+
+      <h3>11. 약관 변경</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>이 약관은 서비스 개선을 위해 변경될 수 있습니다</li>
+        <li>중요한 변경 시 사전 공지합니다</li>
+      </ul>
+
+      <h3>12. 문의</h3>
+      <p>서비스 이용 중 문제가 있거나 의견이 있으시면 연락주세요:</p>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>이메일: yugeonbag091211@gmail.com</li>
+        <li>Instagram: @seosakorea</li>
+      </ul>
+
+      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
+    </div>
+  </div>
+</div>
+
+<!-- PRO 구독 안내 -->
+<div class="overlay" id="proInfoOverlay" style="display:none">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-head">
+      <div><div class="mt">PRO 구독 안내</div></div>
+      <button class="modal-close" data-act="close-pro-info">×</button>
+    </div>
+    <div class="modal-body" style="padding:32px">
+      <h3>PRO 구독이란?</h3>
+      <p>SEOSA PRO는 AI Concierge 이용 횟수를 크게 확대하고, 프리미엄 쇼핑 큐레이션 기능을 제공하는 유료 구독 서비스입니다.</p>
+
+      <h3>🎯 PRO 제공 사항</h3>
+      <div style="background:var(--subtle);padding:16px;border-radius:8px;margin:20px 0">
+        <ul style="margin-left:20px;margin-bottom:0">
+          <li><strong>AI Concierge:</strong> 하루 최대 50회 (무료: 3회)</li>
+          <li><strong>프리미엄 추천:</strong> 오늘의 가격 하락 / 이달의 큐레이션 우선 열람</li>
+          <li><strong>무제한 위시리스트:</strong> 관심 상품 저장 및 가격 추적</li>
+          <li><strong>우선 가격 알림:</strong> 목표 가격 도달 시 먼저 알림</li>
+        </ul>
+      </div>
+
+      <h3>💰 요금</h3>
+      <p><strong>월 4,900원</strong> (정기결제)</p>
+      <ul style="margin-left:20px;margin-bottom:20px;font-size:.95rem">
+        <li>매월 자동으로 결제되어 구독이 갱신됩니다</li>
+        <li>결제 실패 시 최대 3회까지 재시도됩니다 (아래 "결제 실패" 참고)</li>
+      </ul>
+
+      <h3>📝 결제 안내</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li><strong>결제 방식:</strong> 토스페이먼츠 (카드, 계좌이체 등)</li>
+        <li><strong>결제 주기:</strong> 매월 자동 갱신</li>
+        <li><strong>다음 결제:</strong> 서사 AI 패널의 "PRO" 버튼을 누르면 만료일(=다음 결제일)을 확인할 수 있습니다</li>
+      </ul>
+
+      <h3>🔄 해지 안내</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li><strong>해지 방법:</strong> 서사 AI 패널의 "PRO" 버튼 > "구독 취소"</li>
+        <li><strong>해지 시점:</strong> 즉시 취소되지만, 남은 구독 기간(다음 결제까지)은 PRO 이용 가능</li>
+        <li><strong>재가입:</strong> 취소 후 언제든지 다시 구독할 수 있습니다</li>
+        <li><strong>유의사항:</strong> 취소 시 위시리스트와 가격 알림은 유지됩니다</li>
+      </ul>
+
+      <h3>💳 환불 안내</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>서비스 내에 자동 환불 기능은 없으며, 환불은 문의를 통한 개별 검토로 처리됩니다</li>
+        <li><strong>결제 오류 시:</strong> 중복 결제 등 오류가 발생했다면 즉시 연락주세요</li>
+        <li><strong>환불 요청:</strong> 아래 문의처로 요청하시면 확인 후 안내드립니다</li>
+      </ul>
+      <p style="color:var(--faint);font-size:.85rem">※ 구독 기간 중 이용 후 환불 가능 여부는 사업자가 최종 정책으로 확정해야 하는 사항입니다.</p>
+
+      <h3>⚠️ 결제 실패</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>카드 한도 부족, 유효기간 만료 등으로 결제가 실패할 수 있습니다</li>
+        <li>자동 재시도: 최소 20시간 간격으로 최대 3회까지 자동 재시도됩니다</li>
+        <li><strong>결제가 실패해도 만료일까지는 PRO 이용이 계속 유지됩니다</strong></li>
+        <li>재시도가 모두 실패하면 다음 자동결제가 중단되며, 만료일이 지나면 무료 요금제로 전환됩니다</li>
+        <li>이후 계속 이용하시려면 PRO 결제를 다시 진행해 주세요</li>
+      </ul>
+
+      <h3>ℹ️ 기타</h3>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li><strong>구독 상태 확인:</strong> PRO 메뉴에서 현재 구독 여부와 만료일을 확인할 수 있습니다</li>
+        <li><strong>영수증·세금 계산서:</strong> 필요 시 아래 문의처로 요청해 주세요</li>
+      </ul>
+
+      <h3>📧 문의</h3>
+      <p>결제 관련 문제가 있으면 아래로 연락주세요:</p>
+      <ul style="margin-left:20px;margin-bottom:20px">
+        <li>이메일: yugeonbag091211@gmail.com</li>
+        <li>Instagram: @seosakorea</li>
+      </ul>
+
+      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
+    </div>
+  </div>
+</div>
+
+<!-- 사업자 정보 -->
+<div class="overlay" id="businessOverlay" style="display:none">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-head">
+      <div><div class="mt">사업자 정보</div></div>
+      <button class="modal-close" data-act="close-business">×</button>
+    </div>
+    <div class="modal-body" style="padding:32px">
+      <div style="background:var(--subtle);padding:20px;border-radius:8px;font-size:.95rem;line-height:1.8">
+        <div><strong>상호:</strong> 서사</div>
+        <div><strong>사업자등록번호:</strong> 285-34-01658</div>
+        <div><strong>대표자:</strong> 박유건</div>
+        <div style="margin-top:16px"><strong>사업장 주소:</strong> 경기도 김포시 하성면 마근포로 106번길</div>
+        <div style="margin-top:16px"><strong>연락처:</strong> 010-2320-6857</div>
+        <div style="margin-top:16px"><strong>이메일:</strong> yugeonbag091211@gmail.com</div>
+      </div>
+
+      <div style="margin-top:32px;padding:20px;background:var(--bg-subtle);border-left:4px solid var(--ink);border-radius:4px">
+        <p style="font-size:.9rem;color:var(--faint)">
+          ※ 본 사이트는 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받을 수 있습니다.<br>
+          단, 상품 추천 및 검색 결과는 최저가 기준으로만 제공되며 파트너스 여부와 무관합니다.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <footer><div class="logo">SEOSA<small>PREMIUM CURATION</small></div>
   <p>최저가도 고급스럽게 · 가격에도 서사가 있다</p>
   <p style="margin-top:12px">
@@ -1501,6 +1784,12 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
   <p style="margin-top:16px;font-size:.72rem;color:var(--faint);line-height:1.7;max-width:480px;margin-left:auto;margin-right:auto">
     본 사이트는 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받을 수 있습니다.<br>
     단, 상품 추천 및 검색 결과는 최저가 기준으로만 제공되며 파트너스 여부와 무관합니다.
+  </p>
+  <p style="margin-top:16px;font-size:.7rem;color:var(--faint);text-align:center">
+    <a href="#" onclick="Policy.openPrivacy();return false" style="color:var(--faint);text-decoration:underline">개인정보처리방침</a> &nbsp;·&nbsp;
+    <a href="#" onclick="Policy.openTerms();return false" style="color:var(--faint);text-decoration:underline">이용약관</a> &nbsp;·&nbsp;
+    <a href="#" onclick="Policy.openProInfo();return false" style="color:var(--faint);text-decoration:underline">PRO 안내</a> &nbsp;·&nbsp;
+    <a href="#" onclick="Policy.openBusiness();return false" style="color:var(--faint);text-decoration:underline">사업자 정보</a>
   </p>
 </footer>
 
@@ -1696,10 +1985,14 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
         <div class="pro-price"><b>월 4,900원</b></div>
         <div class="pro-desc">AI 큐레이터 서사를 하루 50회까지 사용할 수 있어요.</div>
         <ul class="pro-features">
-          <li>첫 3회 무료 체험</li>
+          <li>무료 이용자는 하루 3회까지 이용할 수 있습니다</li>
           <li>PRO: 하루 최대 50회 AI 질문</li>
           <li>프리미엄 쇼핑 큐레이션</li>
         </ul>
+        <div style="font-size:.75rem;color:var(--faint);margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+          <a href="#" onclick="Policy.openProInfo();return false" style="color:var(--faint);text-decoration:underline;cursor:pointer">결제/환불/해지 안내</a> ·
+          <a href="#" onclick="Policy.openTerms();return false" style="color:var(--faint);text-decoration:underline;cursor:pointer">이용약관</a>
+        </div>
       </div>
       <div id="proStatusMsg" class="alert-label" style="line-height:1.6;margin-bottom:12px"></div>
       <button class="alert-submit" id="proUpgradeBtn" data-act="pro-pay">PRO 결제하기</button>
@@ -7098,6 +7391,57 @@ var Init = {
     });
   }
 };
+
+/**
+ * 정책/안내 모달 관리
+ */
+var Policy = {
+  openPrivacy: function() {
+    var o = $('privacyOverlay');
+    if (o) o.style.display = 'flex';
+  },
+  closePrivacy: function() {
+    var o = $('privacyOverlay');
+    if (o) o.style.display = 'none';
+  },
+  openTerms: function() {
+    var o = $('termsOverlay');
+    if (o) o.style.display = 'flex';
+  },
+  closeTerms: function() {
+    var o = $('termsOverlay');
+    if (o) o.style.display = 'none';
+  },
+  openProInfo: function() {
+    var o = $('proInfoOverlay');
+    if (o) o.style.display = 'flex';
+  },
+  closeProInfo: function() {
+    var o = $('proInfoOverlay');
+    if (o) o.style.display = 'none';
+  },
+  openBusiness: function() {
+    var o = $('businessOverlay');
+    if (o) o.style.display = 'flex';
+  },
+  closeBusiness: function() {
+    var o = $('businessOverlay');
+    if (o) o.style.display = 'none';
+  }
+};
+
+// 정책 모달 닫기 버튼 바인딩
+document.addEventListener('click', function(e) {
+  if (e.target.dataset.act === 'close-privacy') Policy.closePrivacy();
+  if (e.target.dataset.act === 'close-terms') Policy.closeTerms();
+  if (e.target.dataset.act === 'close-pro-info') Policy.closeProInfo();
+  if (e.target.dataset.act === 'close-business') Policy.closeBusiness();
+  // 오버레이 클릭으로 닫기
+  if (e.target.id === 'privacyOverlay') Policy.closePrivacy();
+  if (e.target.id === 'termsOverlay') Policy.closeTerms();
+  if (e.target.id === 'proInfoOverlay') Policy.closeProInfo();
+  if (e.target.id === 'businessOverlay') Policy.closeBusiness();
+}, true);
 
 Init.run();
 /*
