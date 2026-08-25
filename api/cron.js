@@ -20,6 +20,8 @@ const { qualitySnapshot } = require('./_quality');
 const { kstMonth } = require('./_kst');
 // PRO 자동결제 갱신. 새 엔드포인트를 만들 자리가 없어(Hobby 12개 상한) 여기 얹는다.
 const billing = require('./_billing');
+// 진단용. 키 값은 절대 읽지 않고 keySummary()(환경/유형만) 로만 쓴다.
+const toss = require('./_toss');
 
 // 한 번에 3개씩만 돌려서 함수 실행 시간(maxDuration 60초) 안에 끝나게 한다.
 // 쿠팡 호출은 _coupang.js가 최소 간격을 두고 직렬화하므로 이 숫자만큼
@@ -192,10 +194,39 @@ module.exports = async function handler(req, res) {
 async function diagnose(req, res) {
   const out = {
     env: {
+      // 길이만 적는다 — 값의 일부라도 로그/응답에 남기지 않는다.
       COUPANG_ACCESS_KEY: process.env.COUPANG_ACCESS_KEY ? `설정됨(${process.env.COUPANG_ACCESS_KEY.length}자)` : '없음',
       COUPANG_SECRET_KEY: process.env.COUPANG_SECRET_KEY ? `설정됨(${process.env.COUPANG_SECRET_KEY.length}자)` : '없음',
-      RESEND_API_KEY:     process.env.RESEND_API_KEY     ? '설정됨' : '없음 (인증코드 메일 발송 불가)'
+      /*
+       * ★ 없으면 로그인 자체가 안 된다 — 인증코드 메일이 나가지 않으므로
+       *   AI·위시리스트·결제까지 전부 막힌다. 출시 전 필수.
+       */
+      RESEND_API_KEY:     process.env.RESEND_API_KEY     ? '설정됨' : '★없음 (인증코드 메일 발송 불가 → 로그인 불가)',
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? '설정됨' : '★없음 (AI Concierge 불가)',
+      SUPABASE_URL:       process.env.SUPABASE_URL       ? '설정됨' : '★없음',
+      SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY ? '설정됨' : '★없음',
+      CRON_SECRET:        process.env.CRON_SECRET        ? '설정됨' : '없음',
+      // 없으면 _auth 가 SUPABASE_SECRET_KEY 에서 파생한다 (동작은 한다).
+      AUTH_SECRET:        process.env.AUTH_SECRET        ? '설정됨' : '없음 (SUPABASE_SECRET_KEY 에서 파생)'
     },
+    /*
+     * 결제 키 진단 — 값이 아니라 "환경(test/live)"과 "유형(api/widget)"만.
+     *
+     * 과거 사고 두 건이 여기서 잡힌다.
+     *   kind=widget  → 프론트 tp.payment() 가 거부한다 (PRO 결제가 시작조차 안 됨).
+     *                  Toss 콘솔 "결제 > API 개별 연동" 의 ck/sk 키로 바꿔야 한다.
+     *   env 불일치   → test/live 혼용. 실청구가 테스트로 오인되거나 그 반대.
+     */
+    toss: (() => {
+      const s = toss.keySummary();
+      const problems = [];
+      if (!toss.isConfigured()) problems.push('★ 키 미설정 — PRO 결제가 열리지 않습니다');
+      if (toss.isWidgetClientKey()) problems.push('★ TOSS_CLIENT_KEY 가 결제위젯 유형(gck) — API 개별 연동 키(ck)로 교체하세요');
+      if (toss.isWidgetSecretKey()) problems.push('★ TOSS_SECRET_KEY 가 결제위젯 유형(gsk) — API 개별 연동 키(sk)로 교체하세요');
+      if (toss.isMixedKeyEnv()) problems.push('★ client/secret 환경 불일치 (test+live 혼용)');
+      if (toss.isConfigured() && toss.isTestKey()) problems.push('테스트 키입니다 — 실제 정산이 되지 않습니다');
+      return { client: s.client, secret: s.secret, 문제: problems.length ? problems : ['없음'] };
+    })(),
     // 이 인스턴스 기준
     instance: localStats(),
     // 모든 인스턴스 + GitHub Actions 합계 (coupang_api_calls 테이블)

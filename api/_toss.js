@@ -56,6 +56,34 @@ const CHARGE_TIMEOUT_MS = 60000;
 /** 결제 승인이 끝난 상태. 이 값이 아니면 PRO 를 주지 않는다. */
 const STATUS_DONE = 'DONE';
 
+/**
+ * 이 실패가 "거절" 이 아니라 "모름" 인가.
+ *
+ * ★ 둘을 섞으면 이중 청구가 난다.
+ *
+ *   거절(카드사 거절 등)      — 토스가 답을 줬다. 청구는 확실히 없다.
+ *                              → failed 로 굳히고 새 주문을 만들어도 안전하다.
+ *   모름(타임아웃·연결 실패)  — 토스가 답을 주지 않았다. 청구가 됐을 수도 있다.
+ *                              → failed 로 굳히면 안 된다. 굳히는 순간 그 주문이
+ *                                종착역이 되고, 다음 시도가 새 orderId 로 나가서
+ *                                같은 기간에 두 번 청구된다.
+ *
+ * 판정은 두 가지를 함께 본다.
+ *   status === 0  call() 이 응답 자체를 받지 못했다는 뜻이다. 토스가 HTTP 로
+ *                 답을 준 경우(402·409 등)는 여기서 걸러진다 — 그건 확정된
+ *                 실패다. 문자열만 보면 토스 오류 메시지에 "시간 초과" 같은
+ *                 말이 섞였을 때 확정 실패를 "모름" 으로 오판할 수 있다.
+ *   메시지        status 0 에는 키 미설정("… 미설정")도 포함된다. 그건
+ *                 네트워크 문제가 아니라 확정된 실패이므로 제외한다.
+ *
+ * @param {{ok:boolean, status:number, error:string}} res  call() 의 반환값
+ */
+function isUnknownResult(res) {
+  if (!res || res.ok) return false;
+  if (res.status !== 0) return false;
+  return /시간 초과|연결 실패/.test(String(res.error || ''));
+}
+
 function secretKey() {
   return process.env.TOSS_SECRET_KEY || '';
 }
@@ -302,7 +330,7 @@ function cancelPayment(paymentKey, cancelReason, idempotencyKey, cancelAmount) {
 }
 
 module.exports = {
-  API_BASE, STATUS_DONE, TIMEOUT_MS, CHARGE_TIMEOUT_MS,
+  API_BASE, STATUS_DONE, TIMEOUT_MS, CHARGE_TIMEOUT_MS, isUnknownResult,
   clientKey, isConfigured, isTestKey, isWidgetClientKey, isWidgetSecretKey,
   keyEnv, isMixedKeyEnv, keySummary, authHeader,
   issueBillingKey, chargeBilling, getPayment, getPaymentByOrderId, cancelPayment,

@@ -192,12 +192,17 @@ const ext = {
   charges: [],
   tossPayments: {},
   failCharge: false,
+  /*
+   * 승인 요청은 토스에 도달했는데 우리가 응답을 못 받은 상태.
+   * = 카드에는 청구됐을 수 있는데 우리 서버는 모른다. 이중 청구가 나는 자리다.
+   */
+  timeoutCharge: false,
   /** 'ok' | '402' | '429' | '500' | 'timeout' | 'malformed' */
   aiMode: 'ok',
   aiCalls: 0
 };
 function resetExt() {
-  ext.charges = []; ext.tossPayments = {}; ext.failCharge = false;
+  ext.charges = []; ext.tossPayments = {}; ext.failCharge = false; ext.timeoutCharge = false;
   ext.aiMode = 'ok'; ext.aiCalls = 0;
 }
 
@@ -236,6 +241,13 @@ global.fetch = async function (url, opts = {}) {
   }
   if (/\/v1\/billing\/[^/]+$/.test(u)) {
     if (ext.failCharge) return json(402, { code: 'REJECT_CARD_COMPANY', message: 'declined' });
+    if (ext.timeoutCharge) {
+      // 토스는 받아서 승인까지 했다. 우리만 응답을 못 받았다.
+      const tk = 'pk_' + body.orderId;
+      ext.tossPayments[tk] = { paymentKey: tk, orderId: body.orderId, totalAmount: body.amount, status: 'DONE' };
+      ext.charges.push(body);
+      const e = new Error('The operation was aborted'); e.name = 'AbortError'; throw e;
+    }
     const pk = 'pk_' + body.orderId;
     const p = { paymentKey: pk, orderId: body.orderId, totalAmount: body.amount, status: 'DONE' };
     ext.tossPayments[pk] = p;
@@ -485,6 +497,74 @@ async function runO4() {
     check(!r.ok && /금액/.test(r.reason), '금액 불일치는 거부 ★', r.reason);
     check(subOf(USER).expires_at === before, '기간을 늘리지 않는다');
     check(db.payments[0].status === 'failed', '원장은 failed', db.payments[0].status);
+  }
+
+  /* O4-18. 갱신 승인 타임아웃 — failed 로 굳히지 않는다 (이중 청구 방지) ★ */
+  resetDb(); resetExt(); ext.timeoutCharge = true;
+  db.subscriptions.push(subRow({ expires_at: daysFromNow(1) }));
+  {
+    const before = subOf(USER).expires_at;
+    const r = await billing.renewDueSubscriptions({}, new Date());
+    check(r.renewed === 0 && r.failed === 1, '타임아웃은 성공으로 치지 않는다', JSON.stringify({ renewed: r.renewed, failed: r.failed }));
+    check(subOf(USER).expires_at === before, '결과를 모르는 채로 기간을 늘리지 않는다');
+    check(db.payments.length === 1 && db.payments[0].status === 'charging',
+      '원장은 charging 으로 남는다 ★ (failed 로 굳히면 다음 실행이 새 주문으로 또 긁는다)',
+      db.payments[0] && db.payments[0].status);
+  }
+
+  /* O4-19. 다음 실행 — 토스에 재조회해서 재승인 없이 확정한다 ★ */
+  {
+    ext.timeoutCharge = false;
+    const chargesAfterTimeout = ext.charges.length;
+    const before = subOf(USER).expires_at;
+    // 하루 뒤 (last_renew_at 간격 통과)
+    const nextDay = new Date(Date.now() + 86400000);
+    const r = await billing.renewDueSubscriptions({}, nextDay);
+    check(ext.charges.length === chargesAfterTimeout,
+      '★ 두 번째 청구가 나가지 않는다 (이중 청구 없음)',
+      `청구 ${ext.charges.length}회`);
+    check(r.renewed === 1, '이미 승인돼 있던 결제로 갱신을 확정한다', JSON.stringify({ renewed: r.renewed, failed: r.failed }));
+    check(db.payments.length === 1 && db.payments[0].status === 'paid',
+      '원장이 paid 로 확정된다', db.payments[0] && db.payments[0].status);
+    check(subOf(USER).expires_at > before, '그제서야 기간이 연장된다');
+    check(subOf(USER).renew_failures === 0, '실패 카운터가 정리된다', String(subOf(USER).renew_failures));
+  }
+
+  /* O4-20. 타임아웃이었지만 토스에 결제가 없던 경우 — 정상적으로 새로 긁는다 */
+  resetDb(); resetExt();
+  db.subscriptions.push(subRow({ expires_at: daysFromNow(1) }));
+  {
+    // 청구가 토스에 닿지 않은 채 끊긴 상황을 원장으로 재현한다.
+    db.payments.push({
+      email: USER, order_id: 'seosa_lost_order', payment_key: 'pending_seosa_lost_order',
+      amount: billing.PRO_PRICE, currency: 'KRW', status: 'charging', provider: 'toss',
+      raw_status: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+    });
+    const r = await billing.renewDueSubscriptions({}, new Date());
+    const lost = db.payments.find(p => p.order_id === 'seosa_lost_order');
+    check(lost && lost.status === 'failed', '토스에 없는 주문(404)은 failed 로 정리한다', lost && lost.status);
+    check(r.renewed === 1, '그 뒤 정상적으로 새로 긁어 갱신한다', JSON.stringify({ renewed: r.renewed }));
+    check(ext.charges.length === 1, '청구는 정확히 1회', String(ext.charges.length));
+  }
+
+  /* O4-21. 조회 자체가 실패하면 긁지 않는다 (fail closed) ★ */
+  resetDb(); resetExt();
+  db.subscriptions.push(subRow({ expires_at: daysFromNow(1) }));
+  {
+    db.payments.push({
+      email: USER, order_id: 'seosa_unknown_order', payment_key: 'pending_seosa_unknown_order',
+      amount: billing.PRO_PRICE, currency: 'KRW', status: 'charging', provider: 'toss',
+      raw_status: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+    });
+    const flakyToss = {
+      getPaymentByOrderId: async () => ({ ok: false, status: 500, data: {}, error: 'TOSS_DOWN: 일시 오류' }),
+      chargeBilling: async () => { throw new Error('여기까지 오면 안 된다'); }
+    };
+    const r = await billing.renewOne(subOf(USER), { toss: flakyToss }, new Date());
+    check(!r.ok && /확인 실패/.test(r.reason), '미결 주문을 확인 못 하면 새로 긁지 않는다 ★', r.reason);
+    check(ext.charges.length === 0, '청구 0회', String(ext.charges.length));
+    const still = db.payments.find(p => p.order_id === 'seosa_unknown_order');
+    check(still && still.status === 'charging', 'charging 그대로 둔다 (다음 실행이 다시 물어본다)', still && still.status);
   }
 }
 

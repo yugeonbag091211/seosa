@@ -246,7 +246,7 @@ async function handleConfirm(req, res, email, body) {
      *   다시 결제하는 순간 이중 청구가 된다. charging 으로 두면 다음 요청이
      *   위 복구 경로를 타고 토스에 실제 상태를 물어본다.
      */
-    if (/시간 초과|연결 실패/.test(String(charged.error))) {
+    if (toss.isUnknownResult(charged)) {
       console.error(`[payment] ★ 승인 결과 불명(charging 유지) orderId=${orderId} — 재시도 시 토스에 재조회한다`);
       return res.status(504).json({
         error: 'PAYMENT_RESULT_UNKNOWN',

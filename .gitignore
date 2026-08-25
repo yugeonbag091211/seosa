@@ -23,3 +23,7 @@ supabase/.temp/
 /git
 /with *
 /ersyugeo*
+
+# 편집 중 백업본. 2026-08 감사에서 api/_shop.js.wipbak / scripts/test-price.js.wipbak
+# 두 개가 커밋된 채 발견됐다. 아무도 참조하지 않는데 배포본에 같이 올라간다.
+*.wipbak

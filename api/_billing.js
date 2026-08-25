@@ -285,6 +285,27 @@ async function alreadyProcessed(paymentKey) {
   return { known: !!data, row: data || null, error: '' };
 }
 
+/**
+ * 이 사용자에게 결과가 확정되지 않은(charging) 주문이 남아 있는가.
+ *
+ * charging 은 "토스에 승인을 요청했지만 답을 못 받았다" 는 뜻이다. 청구가
+ * 실제로 됐는지 우리는 모른다. 그 행을 둔 채 새 orderId 로 다시 긁으면
+ * 같은 기간에 두 번 청구될 수 있으므로, 자동갱신은 반드시 이것부터 정리한다.
+ *
+ * 가장 최근 한 건만 본다 — 갱신은 사용자당 한 번에 한 건씩만 진행된다.
+ */
+async function findChargingPayment(email) {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('email, order_id, payment_key, amount, status, created_at')
+    .eq('email', email)
+    .eq('status', PAYMENT_STATUS.CHARGING)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) return { row: null, error: error.message };
+  return { row: (data && data[0]) || null, error: '' };
+}
+
 /*
  * orderIdUsed() 는 지웠다.
  *
@@ -437,6 +458,75 @@ async function recordRenewAttempt(email, ok, now = new Date()) {
 }
 
 /**
+ * 결과가 확정되지 않은 지난 갱신 주문을 토스에 물어 정리한다.
+ *
+ * ★ 여기서 절대 재승인하지 않는다 — 조회만 한다. 조회 결과가 곧 사실이다.
+ *   최초 결제의 복구 경로(api/payment.settleCharging)와 같은 규칙이다.
+ *
+ * @returns {{proceed:boolean, result?:object}}
+ *   proceed=true   미결 주문이 없거나, 청구되지 않았음이 확인됐다.
+ *                  → 호출부가 새로 긁어도 안전하다.
+ *   proceed=false  이번 실행에서는 긁으면 안 된다. result 를 그대로 반환한다.
+ */
+async function settleOutstandingCharge(email, tossApi, now) {
+  const found = await findChargingPayment(email);
+  if (found.error) {
+    // 원장을 못 읽었다. 모르는 채로 긁지 않는다 (fail closed).
+    return { proceed: false, result: { ok: false, orderId: '', reason: `미결 주문 조회 실패: ${found.error}`, expiresAt: '' } };
+  }
+  const open = found.row;
+  if (!open) return { proceed: true };
+
+  const orderId = open.order_id;
+  const looked = await tossApi.getPaymentByOrderId(orderId);
+
+  if (!looked.ok) {
+    // 404 = 그런 결제가 없다 = 청구되지 않았다. 정리하고 새로 긁어도 된다.
+    if (looked.status === 404) {
+      await markFailed(orderId, 'not charged (toss 404)', now);
+      return { proceed: true };
+    }
+    // 그 밖의 오류는 여전히 "모름" 이다. 이번엔 긁지 않고 다음 실행에 맡긴다.
+    return { proceed: false, result: { ok: false, orderId, reason: `미결 주문 확인 실패: ${looked.error}`, expiresAt: '' } };
+  }
+
+  const payment = looked.data;
+  if (String(payment.status) !== toss.STATUS_DONE) {
+    // 승인되지 않은 채 끝난 주문이다. 정리하고 새로 긁는다.
+    await markFailed(orderId, `toss status=${payment.status}`, now);
+    return { proceed: true };
+  }
+
+  /*
+   * 실제로 청구돼 있었다. 다시 긁지 않고 이 결제로 기간을 연장한다.
+   * 금액·주문번호는 최초 결제와 같은 규칙으로 다시 검증한다.
+   */
+  const verdict = verifyPayment(payment, { orderId, amount: PRO_PRICE });
+  if (!verdict.ok) {
+    await markFailed(orderId, verdict.reason, now);
+    return { proceed: false, result: { ok: false, orderId, reason: `미결 주문 검증 실패: ${verdict.reason}`, expiresAt: '' } };
+  }
+
+  const paid = await markPaid(orderId, {
+    paymentKey: payment.paymentKey, amount: payment.totalAmount, rawStatus: payment.status, now
+  });
+  if (paid.error) {
+    return { proceed: false, result: { ok: false, orderId, reason: `미결 주문 기록 실패: ${paid.error}`, expiresAt: '' } };
+  }
+  if (!paid.updated) {
+    // 다른 경로(웹훅 등)가 이미 확정했다. 기간을 또 늘리지 않는다.
+    return { proceed: false, result: { ok: false, orderId, reason: '이미 처리된 갱신', expiresAt: '' } };
+  }
+
+  const act = await activatePro(email, { customerKey: customerKeyFor(email), now });
+  if (!act.ok) {
+    return { proceed: false, result: { ok: false, orderId, reason: `구독 연장 실패: ${act.error}`, expiresAt: '' } };
+  }
+  console.log(`[billing] 미결 갱신 주문 복구 — orderId=${orderId} 는 이미 승인되어 있었다 (재승인 안 함)`);
+  return { proceed: false, result: { ok: true, orderId, reason: '', expiresAt: act.expiresAt } };
+}
+
+/**
  * 구독 하나를 갱신한다.
  *
  * 최초 결제와 정확히 같은 규칙을 쓴다 — 금액은 서버 상수, 주문은 pending 으로
@@ -453,6 +543,19 @@ async function renewOne(sub, deps = {}, now = new Date()) {
   if (!email) return { ok: false, orderId: '', reason: '이메일 없음', expiresAt: '' };
   if (!sub.billing_key) return { ok: false, orderId: '', reason: '빌링키 없음(해지됨)', expiresAt: '' };
 
+  /*
+   * ★ 새로 긁기 전에, 결과를 모르는 지난 주문(charging)부터 정리한다.
+   *
+   * 이 단계가 없으면 이렇게 된다.
+   *   1일차  승인 요청 → 토스 응답 전에 타임아웃 (카드에는 청구됐을 수 있다)
+   *   2일차  새 orderId 로 다시 승인 → 같은 기간에 두 번 청구
+   *
+   * 최초 결제가 쓰는 규칙과 같다 — 재승인하지 않고 orderId 로 조회만 해서
+   * 토스가 말하는 사실대로 확정한다.
+   */
+  const outstanding = await settleOutstandingCharge(email, tossApi, now);
+  if (!outstanding.proceed) return outstanding.result;
+
   const orderId = createOrderId();
   const customerKey = sub.customer_key || customerKeyFor(email);
 
@@ -467,6 +570,21 @@ async function renewOne(sub, deps = {}, now = new Date()) {
   }, orderId);
 
   if (!charged.ok) {
+    /*
+     * ★ "모름"(타임아웃·연결 실패)은 failed 로 굳히지 않는다.
+     *
+     * 굳히면 그 주문이 종착역이 되고, 다음 실행이 새 orderId 로 다시 긁어서
+     * 이중 청구가 된다. charging 으로 남겨 두면 다음 실행이 위
+     * settleOutstandingCharge 를 타고 토스에 실제 상태를 물어본다.
+     * (최초 결제 api/payment.handleConfirm 과 같은 규칙)
+     *
+     * 판정은 순수 함수라 주입 대상이 아니다 — 실제 모듈의 것을 그대로 쓴다.
+     */
+    if (toss.isUnknownResult(charged)) {
+      console.error(`[billing] ★ 갱신 승인 결과 불명(charging 유지) orderId=${orderId}`
+        + ' — 다음 실행이 토스에 재조회한다');
+      return { ok: false, orderId, reason: `결과 불명: ${charged.error}`, expiresAt: '' };
+    }
     await markFailed(orderId, charged.error, now);
     return { ok: false, orderId, reason: charged.error, expiresAt: '' };
   }
@@ -552,6 +670,6 @@ module.exports = {
   customerKeyFor, createOrderId, verifyPayment,
   recordPayment, alreadyProcessed,
   createPendingPayment, findPaymentByOrderId, claimForCharge, markPaid, markFailed,
-  dueForRenewal, recordRenewAttempt, renewOne, renewDueSubscriptions,
+  dueForRenewal, findChargingPayment, settleOutstandingCharge, recordRenewAttempt, renewOne, renewDueSubscriptions,
   activatePro, cancelSubscription, deactivate, publicSubscription
 };

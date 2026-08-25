@@ -18,15 +18,31 @@
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://seosa.ai.kr/">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/og.png">
+<!-- 모바일 브라우저 주소창 색. 다크/라이트 각각 배경색과 맞춘다. -->
+<meta name="theme-color" content="#FCFCFB" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SEOSA">
 <meta property="og:locale" content="ko_KR">
 <meta property="og:title" content="SEOSA · 최저가도 고급스럽게">
 <meta property="og:description" content="쿠팡 최저가를 매일 기록해 가격 추이로 보여드립니다. 지금이 살 때인지 데이터로 확인하세요.">
 <meta property="og:url" content="https://seosa.ai.kr/">
+<!-- 공유 미리보기 이미지.
+     og:image 가 없으면 카카오톡·슬랙·X 에 링크를 붙였을 때 제목과 설명만 있는
+     밋밋한 카드가 뜬다. 광고로 들어오는 첫 인상이 그 카드라 비워 둘 자리가 아니다.
+     ★ 절대 URL 이어야 한다 — 크롤러는 상대 경로를 해석하지 않는다.
+     정사각(1080x1080) 로고라 twitter:card 는 summary 를 그대로 쓴다
+     (summary_large_image 는 1.91:1 가로형을 기대해서 로고가 잘린다). -->
+<meta property="og:image" content="https://seosa.ai.kr/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1080">
+<meta property="og:image:height" content="1080">
+<meta property="og:image:alt" content="SEOSA — 프리미엄 쇼핑 큐레이션">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="SEOSA · 최저가도 고급스럽게">
 <meta name="twitter:description" content="쿠팡 최저가를 매일 기록해 가격 추이로 보여드립니다. 지금이 살 때인지 데이터로 확인하세요.">
+<meta name="twitter:image" content="https://seosa.ai.kr/og.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Noto+Serif+KR:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -2782,7 +2798,7 @@ var Card = {
   thumbHTML: function(it, m, glyph) {
     var src = Fmt.safeUrl(it.image);
     var img = src
-      ? '<img src="' + Fmt.esc(src) + '" loading="lazy" referrerpolicy="no-referrer" data-act="img-fail-hook">'
+      ? '<img src="' + Fmt.esc(src) + '" loading="lazy" referrerpolicy="no-referrer" alt="" data-act="img-fail-hook">'
       : '<span class="glyph">' + Fmt.esc(glyph) + '</span>';
 
     return '<div class="thumb">'
@@ -4515,7 +4531,7 @@ var Wish = {
     // w는 localStorage 또는 /api/sync에서 온 값이라 신뢰할 수 없다. 전부 이스케이프한다.
     var src = Fmt.safeUrl(w.image);
     var img = src
-      ? '<img src="' + Fmt.esc(src) + '" referrerpolicy="no-referrer">'
+      ? '<img src="' + Fmt.esc(src) + '" referrerpolicy="no-referrer" alt="">'
       : Fmt.esc(w.glyph || '✦');
 
     // ★ 담은 시점 가격 vs 최신가 비교
@@ -5457,7 +5473,7 @@ var Chat = {
     var m = Fmt.mall(it);
     var src = Fmt.safeUrl(it.image);
     var img = src
-      ? '<img src="' + Fmt.esc(src) + '" referrerpolicy="no-referrer">'
+      ? '<img src="' + Fmt.esc(src) + '" referrerpolicy="no-referrer" alt="">'
       : Fmt.esc(Fmt.glyph(it.title));
 
     return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.safeUrl(it.link)) + '">'
@@ -7038,7 +7054,6 @@ var Init = {
           show('priceDrop', false);
         }
 
-        if (d.tossClientKey) window.__TOSS_CLIENT_KEY__ = d.tossClientKey;
       },
       function() { Init.loadIndividually(); }
     );

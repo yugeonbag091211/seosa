@@ -356,7 +356,6 @@ module.exports = async function handler(req, res) {
         products: dailyProducts
       }
     };
-    if (process.env.TOSS_CLIENT_KEY) resp.tossClientKey = process.env.TOSS_CLIENT_KEY;
     res.json(resp);
   } catch(e) {
     res.status(500).json({ error: e.message });
