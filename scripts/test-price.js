@@ -200,11 +200,15 @@ function daysAgo(n) { return kstToday(new Date(Date.now() - n * 86400000)); }
 function isoDaysAgo(n) { return new Date(Date.now() - n * 86400000).toISOString(); }
 
 /** price_history 에 과거 관측을 심는다. */
-function seedHistory(productId, mall, price, dayOffset) {
-  db.price_history.push({
+/**
+ * @param {object} [extra]  vendor_item_id / link 등 그 관측 행의 부가 정보.
+ *   옵션 교체 감지는 이 행의 vendor_item_id(없으면 link)를 직전 옵션으로 쓴다.
+ */
+function seedHistory(productId, mall, price, dayOffset, extra) {
+  db.price_history.push(Object.assign({
     product_id: productId, mall, title: 't', price,
     recorded_date: daysAgo(dayOffset), recorded_at: isoDaysAgo(dayOffset)
-  });
+  }, extra || {}));
 }
 
 function obs(productId, price, extra) {
@@ -340,11 +344,26 @@ function recordedPrice(productId) {
   // 같은 product_id 인데 "블루 그레이-GY" → "펄 화이트-WT" 처럼 옵션이 바뀌면
   // 2배만 벌어져도 같은 상품의 가격 변동으로 볼 수 없다.
   reset();
-  seedHistory('9536222150', '쿠팡', 100000, 1);
+  /*
+   * 직전 옵션은 price_history 의 그 관측 행에 있다 — products 가 아니다.
+   * (products 는 오늘 이미 갱신됐을 수 있어서 어제 가격과 시점이 어긋난다.
+   *  api/_shop.js loadPrevObservations 주석 참고)
+   */
+  seedHistory('9536222150', '쿠팡', 100000, 1, { vendor_item_id: 'AAA' });
   db.products.push({ product_id: '9536222150', mall: '쿠팡', vendor_item_id: 'AAA' });
   r = await recordPrices([obs('9536222150', 40000, { vendorItemId: 'BBB' })], { label: 't5b' });
   check(r.suspect === 1, '옵션 교체 + 2.5배 변동 → 보류', JSON.stringify(r));
   check(currentPrice('9536222150') === null, 'products 현재가를 덮어쓰지 않음');
+
+  section('Test 5-b2. 직전 옵션은 원장에서 읽는다 — products 의 현재 옵션에 좌우되지 않는다');
+  reset();
+  // 원장의 직전 관측은 AAA. products 는 이미 다른 옵션(ZZZ)으로 갱신된 상태.
+  seedHistory('9536222150', '쿠팡', 100000, 1, { vendor_item_id: 'AAA' });
+  db.products.push({ product_id: '9536222150', mall: '쿠팡', vendor_item_id: 'ZZZ' });
+  r = await recordPrices([obs('9536222150', 40000, { vendorItemId: 'AAA' })], { label: 't5b2' });
+  check(r.suspect === 0 && r.saved === 1,
+        '원장 직전 관측과 같은 옵션이면 2.5배 인하는 정상 통과', JSON.stringify(r));
+  check(currentPrice('9536222150') === 40000, '현재가가 갱신된다');
 
   section('Test 5-c. 같은 옵션이면 2.5배 변동은 정상 할인으로 통과');
   reset();
@@ -578,12 +597,20 @@ function recordedPrice(productId) {
 
   section('품질. 링크 폴백 덕분에 옵션 교체 감지가 기존 행에도 즉시 적용된다');
   reset();
-  seedHistory('7100', '쿠팡', 100000, 1);
-  // 마이그레이션 직후처럼 컬럼은 비어 있고 link 에만 식별자가 있는 기존 행
+  // 마이그레이션 직후처럼 컬럼은 비어 있고 link 에만 식별자가 있는 기존 관측 행
+  seedHistory('7100', '쿠팡', 100000, 1, { vendor_item_id: '', link: COUPANG_LINK });
   db.products.push({ product_id: '7100', mall: '쿠팡', vendor_item_id: '', link: COUPANG_LINK });
   r = await recordPrices([obs('7100', 40000, { vendorItemId: 'DIFFERENT' })], { label: 'p1a' });
   check(r.suspect === 1, '컬럼이 비어 있어도 옵션 교체(2.5배)를 잡아낸다', JSON.stringify(r));
   check(currentPrice('7100') === null, '현재가를 덮어쓰지 않음');
+
+  section("품질. '__LEGACY__' 관측은 옵션 비교의 근거로 쓰지 않는다");
+  reset();
+  // 마이그레이션이 "link 에서도 식별자를 못 뽑았다" 고 표시해 둔 행
+  seedHistory('7150', '쿠팡', 100000, 1, { vendor_item_id: '__LEGACY__', link: '' });
+  r = await recordPrices([obs('7150', 40000, { vendorItemId: 'NEW' })], { label: 'p1b' });
+  check(r.suspect === 0 && r.saved === 1,
+        "'__LEGACY__' 를 옵션으로 오인해 교체로 판정하지 않는다", JSON.stringify(r));
 
   section('품질. 저장 시 link 에서 item_id / vendor_item_id 를 채운다');
   reset();

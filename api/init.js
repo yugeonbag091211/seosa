@@ -16,6 +16,9 @@ const { attachTrust, loadRecentHistory } = require('./_trust');
 const { isValidSuggestion } = require('./_search');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
+// 달력 월은 KST 기준이다. new Date().getMonth() 는 런타임 TZ(Vercel=UTC)를 따라가서
+// KST 매월 1일 00:00~08:59 동안 지난달 큐레이션을 보게 된다 (_kst.kstMonth 주석 참고).
+const { kstMonth } = require('./_kst');
 
 const SECTION_SIZE = 8;
 
@@ -186,7 +189,7 @@ module.exports = async function handler(req, res) {
       .order('count', { ascending: false })
       .limit(10);
 
-    const month = new Date().getMonth() + 1;
+    const month = kstMonth();
     const { data: monthly } = await supabase
       .from('monthly_curation')
       .select('*')
@@ -283,8 +286,29 @@ module.exports = async function handler(req, res) {
      * 여기서 8칸이 안 차도 오래된 행으로 채우지 않는다.
      * 며칠 전 값을 오늘 가격이라고 말하는 것보다 적게 보여주는 편이 낫다.
      */
+    /*
+     * 상품당 카드 한 장으로 접는다.
+     *
+     * 뷰는 (product_id, mall, vendor_item_id) 단위라 같은 상품의 옵션이 둘 이상
+     * 살아남을 수 있다. 두 옵션이 오늘 같은 값으로 관측되면 원장 검증도 둘 다
+     * 통과해서(숫자는 전부 맞다) 같은 상품이 카드 두 장으로 뜬다.
+     * 8칸짜리 섹션에서 그건 자리 낭비이고, 사용자에게는 그냥 중복으로 보인다.
+     *
+     * 남기는 기준은 하락폭이 큰 쪽이다 — 섹션의 정렬 기준과 같다.
+     */
+    const byProduct = new Map();
+    preferLive(fresh).forEach(r => {
+      const k = `${r.product_id}|${r.mall}`;
+      const cur = byProduct.get(k);
+      if (!cur || (Number(r.drop_pct) || 0) > (Number(cur.drop_pct) || 0)) byProduct.set(k, r);
+    });
+    const deduped = [...byProduct.values()];
+    if (deduped.length < fresh.length) {
+      console.log(`[init] 시세판 중복 옵션 ${fresh.length - deduped.length}행 접음 (상품당 1장)`);
+    }
+
     // 쿠팡 행을 먼저 채운다 (다른 몰은 더 이상 매일 수집되지 않아 값이 묵어 있다).
-    const dropRows = preferLive(fresh).slice(0, SECTION_SIZE).map(toDropRow);
+    const dropRows = deduped.slice(0, SECTION_SIZE).map(toDropRow);
 
     const dropped = (priceDrop || []).length - drops.length;
     if (dropped > 0) console.warn(`[init] 시세판 이상치 ${dropped}행 제외 (하락률 ${MAX_PLAUSIBLE_DROP_PCT}% 이상 또는 값 불일치)`);

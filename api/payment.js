@@ -97,10 +97,34 @@ async function handlePrepare(req, res, email) {
    * 프론트는 이 값을 그대로 결제창에 넘기기만 한다. 프론트가 만든 값을 쓰면
    * 금액이나 주문번호를 마음대로 바꿀 수 있다.
    */
+  const orderId = billing.createOrderId();
+
+  /*
+   * ★ 결제창을 열기 전에 주문을 먼저 원장에 남긴다.
+   *
+   *   예전에는 승인이 끝난 뒤에야 payments 에 행이 생겼다. 그런데 confirm 은
+   *   최악 75초(빌링키 15 + 승인 60)인데 함수 상한은 60초다. 상한에서 잘리면
+   *   카드에는 청구됐는데 우리 DB 에는 아무 흔적이 없고, 사용자가 다시
+   *   시도하면 새 orderId 로 두 번째 청구가 나간다.
+   *
+   *   여기서 pending 한 행을 남겨 두면 어디서 죽든 orderId 로 되짚을 수 있다.
+   *   금액도 이 시점에 확정해 두므로, confirm 이 다른 금액을 볼 수 없다.
+   */
+  const pending = await billing.createPendingPayment({
+    email, orderId, amount: billing.PRO_PRICE
+  });
+  if (!pending.ok) {
+    console.error(`[payment] 주문 기록 실패 orderId=${orderId}: ${pending.error}`);
+    return res.status(503).json({
+      error: 'ORDER_CREATE_FAILED',
+      message: '결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.'
+    });
+  }
+
   return res.json({
     clientKey: toss.clientKey(),          // 공개 키 — 노출되어도 되는 값
     customerKey: billing.customerKeyFor(email),
-    orderId: billing.createOrderId(),
+    orderId,
     orderName: billing.ORDER_NAME,
     amount: billing.PRO_PRICE,
     testMode: toss.isTestKey()
@@ -126,22 +150,83 @@ async function handleConfirm(req, res, email, body) {
    */
   const customerKey = billing.customerKeyFor(email);
 
-  // 주문번호 재사용 방어 — 이미 결제에 쓰인 orderId 면 거절한다.
-  const used = await billing.orderIdUsed(orderId);
-  if (used.error) {
-    console.error('[payment] orderId 확인 실패:', used.error);
-    return res.status(503).json({ error: '결제 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.' });
+  /*
+   * 0) 주문 확인 — prepare 가 만든 pending 행이 반드시 있어야 한다.
+   *
+   * 이걸 확인하지 않으면 아무 문자열이나 orderId 로 보내 결제를 시작시킬 수
+   * 있고, 금액도 이 시점에 처음 정해져 검증할 기준이 없어진다.
+   */
+  const found = await billing.findPaymentByOrderId(orderId);
+  if (found.error) {
+    console.error(`[payment] 주문 조회 실패 orderId=${orderId}: ${found.error}`);
+    return res.status(503).json({ error: 'ORDER_LOOKUP_FAILED', message: '결제 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.' });
   }
-  if (used.used) return res.status(409).json({ error: 'ORDER_ALREADY_USED', message: '이미 처리된 주문이에요.' });
+  const order = found.row;
+  if (!order) {
+    return res.status(404).json({ error: 'ORDER_NOT_FOUND', message: '주문 정보를 찾을 수 없어요. 처음부터 다시 시도해 주세요.' });
+  }
+  /*
+   * 주문의 주인과 토큰의 주인이 같아야 한다.
+   * 남의 orderId 를 주워 보내 그 사람의 결제를 자기 구독으로 붙이지 못하게 한다.
+   */
+  if (String(order.email).toLowerCase() !== String(email).toLowerCase()) {
+    console.warn(`[payment] 주문 소유자 불일치 orderId=${orderId}`);
+    return res.status(403).json({ error: 'ORDER_OWNER_MISMATCH', message: '이 주문으로는 결제할 수 없어요.' });
+  }
+  // 금액은 주문을 만들 때 서버가 박아 둔 값이어야 한다.
+  if (Number(order.amount) !== Number(billing.PRO_PRICE)) {
+    console.error(`[payment] 주문 금액 불일치 orderId=${orderId} (원장 ${order.amount} / 상수 ${billing.PRO_PRICE})`);
+    await billing.markFailed(orderId, 'amount mismatch');
+    return res.status(409).json({ error: 'ORDER_AMOUNT_MISMATCH', message: '결제 금액을 확인하지 못했어요.' });
+  }
+
+  // 이미 끝난 주문 — 다시 긁지 않는다.
+  if (order.status === billing.PAYMENT_STATUS.PAID) {
+    const { data: sub } = await supabase
+      .from('subscriptions').select('plan, status, expires_at, billing_key').eq('email', email).maybeSingle();
+    return res.status(200).json({
+      ok: true, alreadyProcessed: true,
+      subscription: billing.publicSubscription(sub)
+    });
+  }
+  if (order.status === billing.PAYMENT_STATUS.FAILED || order.status === billing.PAYMENT_STATUS.CANCELED) {
+    return res.status(409).json({ error: 'ORDER_NOT_PAYABLE', message: '이미 종료된 주문이에요. 처음부터 다시 시도해 주세요.' });
+  }
+
+  /*
+   * 0-b) charging 이면 복구 경로다.
+   *
+   * 직전 시도가 토스에 승인을 요청한 뒤 응답을 받기 전에 끊겼다는 뜻이다.
+   * 카드에 청구가 됐는지 우리는 모른다 — 그러니 다시 긁기 전에 토스에
+   * orderId 로 물어본다. 이걸 건너뛰고 재승인하면 이중 청구가 된다.
+   */
+  if (order.status === billing.PAYMENT_STATUS.CHARGING) {
+    return await settleCharging(res, email, orderId, customerKey);
+  }
+
+  // 0-c) pending → charging 선점. 동시에 들어온 요청 중 하나만 통과한다.
+  const claim = await billing.claimForCharge(orderId);
+  if (claim.error) {
+    console.error(`[payment] 주문 선점 실패 orderId=${orderId}: ${claim.error}`);
+    return res.status(503).json({ error: 'ORDER_CLAIM_FAILED', message: '결제 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.' });
+  }
+  if (!claim.claimed) {
+    // 다른 요청이 방금 선점했다. 그쪽 결과를 기다리게 한다.
+    return res.status(409).json({ error: 'ORDER_IN_PROGRESS', message: '결제를 처리하고 있어요. 잠시 후 다시 확인해 주세요.' });
+  }
 
   // 1) authKey → billingKey
   const issued = await toss.issueBillingKey(authKey, customerKey);
   if (!issued.ok) {
     console.error('[payment] 빌링키 발급 실패:', issued.error);
+    await billing.markFailed(orderId, issued.error);
     return res.status(402).json({ error: 'BILLING_KEY_FAILED', message: '카드 등록에 실패했어요.' });
   }
   const billingKey = issued.data.billingKey;
-  if (!billingKey) return res.status(502).json({ error: 'BILLING_KEY_MISSING', message: '카드 등록에 실패했어요.' });
+  if (!billingKey) {
+    await billing.markFailed(orderId, 'billingKey missing');
+    return res.status(502).json({ error: 'BILLING_KEY_MISSING', message: '카드 등록에 실패했어요.' });
+  }
 
   // 2) 실제 결제 — 금액은 서버 상수. 멱등키로 중복 승인을 막는다.
   const charged = await toss.chargeBilling(billingKey, {
@@ -153,38 +238,93 @@ async function handleConfirm(req, res, email, body) {
 
   if (!charged.ok) {
     console.error('[payment] 결제 승인 실패:', charged.error);
-    await billing.recordPayment({
-      email, orderId, paymentKey: 'failed_' + orderId,
-      amount: billing.PRO_PRICE, status: billing.PAYMENT_STATUS.FAILED,
-      rawStatus: charged.error.slice(0, 100)
-    });
+    /*
+     * ★ 타임아웃은 실패로 확정하지 않는다.
+     *
+     *   "결제사 응답 시간 초과" 는 거절이 아니라 "모름" 이다. 청구가 됐을 수도
+     *   있다. failed 로 굳히면 그 주문은 종착역이 되어, 사용자가 새 orderId 로
+     *   다시 결제하는 순간 이중 청구가 된다. charging 으로 두면 다음 요청이
+     *   위 복구 경로를 타고 토스에 실제 상태를 물어본다.
+     */
+    if (/시간 초과|연결 실패/.test(String(charged.error))) {
+      console.error(`[payment] ★ 승인 결과 불명(charging 유지) orderId=${orderId} — 재시도 시 토스에 재조회한다`);
+      return res.status(504).json({
+        error: 'PAYMENT_RESULT_UNKNOWN',
+        message: '결제 결과를 확인하는 중이에요. 잠시 후 다시 확인해 주세요.'
+      });
+    }
+    await billing.markFailed(orderId, charged.error);
     return res.status(402).json({ error: 'PAYMENT_FAILED', message: '결제에 실패했어요. 카드사 정보를 확인해 주세요.' });
   }
 
+  return await finalize(res, email, orderId, charged.data, { billingKey, customerKey });
+}
+
+/**
+ * 승인 결과가 불명확한 주문(charging)을 토스에 다시 물어 확정한다.
+ *
+ * 여기서 절대 재승인하지 않는다 — 조회만 한다. 조회 결과가 곧 사실이다.
+ */
+async function settleCharging(res, email, orderId, customerKey) {
+  const looked = await toss.getPaymentByOrderId(orderId);
+
+  if (!looked.ok) {
+    // 404 = 그런 결제가 없다 = 청구되지 않았다. 실패로 확정하고 새 주문을 유도한다.
+    if (looked.status === 404) {
+      await billing.markFailed(orderId, 'not charged (toss 404)');
+      return res.status(409).json({ error: 'ORDER_NOT_PAYABLE', message: '결제가 완료되지 않았어요. 처음부터 다시 시도해 주세요.' });
+    }
+    // 그 밖의 오류는 "모름" 이다. charging 그대로 두고 다시 물어보게 한다.
+    console.error(`[payment] 복구 조회 실패 orderId=${orderId}: ${looked.error}`);
+    return res.status(503).json({ error: 'ORDER_LOOKUP_FAILED', message: '결제 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.' });
+  }
+
+  const payment = looked.data;
+  if (String(payment.status) !== toss.STATUS_DONE) {
+    await billing.markFailed(orderId, `toss status=${payment.status}`);
+    return res.status(409).json({ error: 'ORDER_NOT_PAYABLE', message: '결제가 완료되지 않았어요. 처음부터 다시 시도해 주세요.' });
+  }
+
+  console.log(`[payment] 미결 주문 복구 — orderId=${orderId} 는 이미 승인되어 있었다 (재승인 안 함)`);
+  return await finalize(res, email, orderId, payment, { customerKey });
+}
+
+/**
+ * 승인된 결제를 검증 → 원장 확정 → PRO 활성화.
+ * 정상 승인 경로와 복구 경로가 같은 함수를 쓴다 (규칙이 갈라지지 않게).
+ */
+async function finalize(res, email, orderId, payment, { billingKey, customerKey } = {}) {
   // 3) 검증 — 여기를 통과해야만 PRO 가 된다.
-  const payment = charged.data;
   const verdict = billing.verifyPayment(payment, { orderId, amount: billing.PRO_PRICE });
   if (!verdict.ok) {
     console.error('[payment] 결제 검증 실패:', verdict.reason);
+    await billing.markFailed(orderId, verdict.reason);
     return res.status(402).json({ error: 'PAYMENT_VERIFICATION_FAILED', message: '결제를 확인하지 못했어요.' });
   }
 
-  // 4) 기록 (멱등) → 5) PRO 활성화
-  const rec = await billing.recordPayment({
-    email, orderId, paymentKey: payment.paymentKey,
-    amount: payment.totalAmount, status: billing.PAYMENT_STATUS.PAID,
+  // 4) 원장 확정 (charging → paid). 동시에 두 경로가 와도 한 번만 반영된다.
+  const paid = await billing.markPaid(orderId, {
+    paymentKey: payment.paymentKey,
+    amount: payment.totalAmount,
     rawStatus: payment.status
   });
-  if (!rec.ok) {
-    // DB 에 못 남겼으면 권한도 주지 않는다. 결제는 됐는데 기록이 없으면
-    // 나중에 환불·정산 대조가 불가능해진다. 로그로 크게 남긴다.
-    console.error(`[payment] ★ 결제는 승인됐으나 기록 실패 — 수동 확인 필요 orderId=${orderId} paymentKey=${payment.paymentKey}: ${rec.error}`);
+  if (paid.error) {
+    /*
+     * 결제는 됐는데 기록을 못 남겼다. 권한을 주지 않는다 — 기록 없는 권한은
+     * 나중에 환불·정산 대조가 불가능하다. charging 으로 남으므로 다음 요청이
+     * 복구 경로를 타서 다시 확정을 시도한다 (이중 청구는 없다).
+     */
+    console.error(`[payment] ★ 결제는 승인됐으나 기록 실패 — 수동 확인 필요 orderId=${orderId}: ${paid.error}`);
     return res.status(500).json({ error: 'PAYMENT_RECORD_FAILED', message: '결제는 되었지만 처리 중 문제가 생겼어요. 고객센터로 문의해 주세요.' });
   }
-  if (rec.duplicate) {
-    return res.status(409).json({ error: 'ALREADY_PROCESSED', message: '이미 처리된 결제예요.' });
+  if (!paid.updated) {
+    // 다른 경로(웹훅 등)가 이미 확정했다. 기간을 또 늘리지 않는다.
+    const { data: sub } = await supabase
+      .from('subscriptions').select('plan, status, expires_at, billing_key').eq('email', email).maybeSingle();
+    return res.status(200).json({ ok: true, alreadyProcessed: true, subscription: billing.publicSubscription(sub) });
   }
 
+  // 5) PRO 활성화
   const act = await billing.activatePro(email, { billingKey, customerKey });
   if (!act.ok) {
     console.error(`[payment] ★ PRO 활성화 실패 — 수동 확인 필요 orderId=${orderId}: ${act.error}`);

@@ -270,6 +270,28 @@ function getPayment(paymentKey) {
   return call('GET', `/v1/payments/${encodeURIComponent(paymentKey)}`);
 }
 
+/**
+ * 주문번호로 결제 조회.
+ *
+ * ★ 서버가 승인 도중 죽었을 때 복구의 유일한 단서다.
+ *
+ *   paymentKey 는 토스가 승인 응답에서 처음 알려 준다. 그 응답을 받기 전에
+ *   함수가 잘리면 우리는 paymentKey 를 영영 모른다 — 그런데 카드에는 이미
+ *   청구가 됐을 수 있다. orderId 는 우리가 만든 값이라 그 상황에서도 안다.
+ *
+ *   그래서 재시도가 들어오면 "정말 청구가 됐는가" 를 이 API 로 먼저 묻는다.
+ *   DONE 이면 다시 긁지 않고 그 결제를 그대로 확정한다 (이중 청구 방지).
+ *
+ *   결제가 없으면 토스가 404(NOT_FOUND_PAYMENT)를 준다. 그건 "청구되지
+ *   않았다" 는 뜻이므로 오류가 아니라 정상적인 답이다 — 호출부가
+ *   status 404 를 구분할 수 있게 그대로 돌려준다.
+ *
+ *   https://docs.tosspayments.com/reference#주문번호로-결제-조회
+ */
+function getPaymentByOrderId(orderId) {
+  return call('GET', `/v1/payments/orders/${encodeURIComponent(orderId)}`);
+}
+
 /** 결제 취소(환불). 프론트가 "취소됐다"고 말하는 것으로는 절대 취소하지 않는다. */
 function cancelPayment(paymentKey, cancelReason, idempotencyKey, cancelAmount) {
   const body = { cancelReason: String(cancelReason || '고객 요청').slice(0, 200) };
@@ -283,6 +305,6 @@ module.exports = {
   API_BASE, STATUS_DONE, TIMEOUT_MS, CHARGE_TIMEOUT_MS,
   clientKey, isConfigured, isTestKey, isWidgetClientKey, isWidgetSecretKey,
   keyEnv, isMixedKeyEnv, keySummary, authHeader,
-  issueBillingKey, chargeBilling, getPayment, cancelPayment,
+  issueBillingKey, chargeBilling, getPayment, getPaymentByOrderId, cancelPayment,
   _call: call
 };

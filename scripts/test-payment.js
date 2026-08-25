@@ -20,41 +20,92 @@ const path = require('path');
 const Module = require('module');
 
 /* ------------------------------------------------------------------ *
- *  가짜 Supabase — UNIQUE 제약까지 흉내 낸다 (멱등성 테스트의 근거)
+ *  가짜 Supabase — UNIQUE 제약과 조건부 UPDATE 까지 흉내 낸다.
+ *
+ *  두 가지가 멱등성/원자성 테스트의 근거다.
+ *    · insert 시 (order_id) / (payment_key) UNIQUE 위반을 23505 로 돌려준다
+ *    · update ... eq(status,'pending') 이 "조건에 맞는 행만" 바꾸고
+ *      바뀐 행을 select 로 돌려준다 → 선점(claim)이 한 번만 성공하는지 볼 수 있다
  * ------------------------------------------------------------------ */
-const db = { subscriptions: [], payments: [], failInsert: false, failSubRead: false };
+const db = { subscriptions: [], payments: [], failInsert: false, failSubRead: false, failUpdate: false, failUpdateStatus: '' };
 
 function reset() {
   db.subscriptions = []; db.payments = [];
-  db.failInsert = false; db.failSubRead = false;
+  db.failInsert = false; db.failSubRead = false; db.failUpdate = false; db.failUpdateStatus = '';
 }
 const subOf = e => db.subscriptions.find(r => r.email === e);
+const payOf = o => db.payments.find(r => r.order_id === o);
+
+function cmpVal(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+}
 
 const fakeSupabase = {
   from(table) {
     const eqs = [];
+    const ins = [];        // .in(col, values)
+    const nots = [];       // .not(col, 'is', null)
+    const ltes = [];       // .lte(col, value)
+    let sort = null, cap = null;
     let patch = null, mode = '';
+
+    const rows = () => (db[table] || []).filter(r =>
+      eqs.every(([c, v]) => String(r[c]) === String(v))
+      && ins.every(([c, vs]) => vs.map(String).indexOf(String(r[c])) > -1)
+      && nots.every(([c]) => r[c] !== null && r[c] !== undefined)
+      && ltes.every(([c, v]) => cmpVal(r[c], v) <= 0));
+
+    function readResult() {
+      if (table === 'subscriptions' && db.failSubRead) {
+        return { data: null, error: { message: 'db down' } };
+      }
+      let out = rows();
+      if (sort) out = out.slice().sort((a, b) => (sort.asc ? 1 : -1) * cmpVal(a[sort.col], b[sort.col]));
+      if (cap !== null) out = out.slice(0, cap);
+      return { data: out, error: null };
+    }
+
+    function applyUpdate() {
+      if (db.failUpdate) return { data: null, error: { message: 'db down' } };
+      // 특정 전이만 골라 실패시킨다 (예: charging→paid 확정만 막기)
+      if (db.failUpdateStatus && patch && patch.status === db.failUpdateStatus) {
+        return { data: null, error: { message: 'db down' } };
+      }
+      const hit = rows();
+      hit.forEach(r => Object.assign(r, patch));
+      return { data: hit.map(r => Object.assign({}, r)), error: null };
+    }
+
     const q = {
       select() { return q; },
-      eq(c, v) { eqs.push([c, v]); if (mode === 'update') apply(); return q; },
+      eq(c, v) { eqs.push([c, v]); return q; },
+      in(c, vs) { ins.push([c, vs]); return q; },
+      not(c) { nots.push([c]); return q; },
+      lte(c, v) { ltes.push([c, v]); return q; },
+      order(c, o) { sort = { col: c, asc: !o || o.ascending !== false }; return q; },
+      limit(n) { cap = n; return q; },
+      update(p) { mode = 'update'; patch = p; return q; },
+
       maybeSingle() {
-        if (table === 'subscriptions' && db.failSubRead) {
-          return Promise.resolve({ data: null, error: { message: 'db down' } });
-        }
-        const rows = (db[table] || []).filter(r => eqs.every(([c, v]) => String(r[c]) === String(v)));
-        return Promise.resolve({ data: rows[0] || null, error: null });
+        const r = readResult();
+        if (r.error) return Promise.resolve(r);
+        return Promise.resolve({ data: r.data[0] || null, error: null });
       },
+
       insert(row) {
         if (db.failInsert) return Promise.resolve({ error: { code: 'XX000', message: 'db down' } });
         // UNIQUE (order_id) / UNIQUE (payment_key)
         const dup = (db[table] || []).some(r =>
-          r.order_id === row.order_id || r.payment_key === row.payment_key);
+          (row.order_id !== undefined && r.order_id === row.order_id)
+          || (row.payment_key !== undefined && r.payment_key === row.payment_key));
         if (dup) {
           return Promise.resolve({ error: { code: '23505', message: 'duplicate key value violates unique constraint' } });
         }
         db[table].push(Object.assign({}, row));
         return Promise.resolve({ error: null });
       },
+
       upsert(row, opts) {
         const key = (opts && opts.onConflict) || 'email';
         const i = (db[table] || []).findIndex(r => String(r[key]) === String(row[key]));
@@ -62,13 +113,13 @@ const fakeSupabase = {
         else db[table].push(Object.assign({}, row));
         return Promise.resolve({ error: null });
       },
-      update(p) { mode = 'update'; patch = p; return q; }
+
+      // await 가능한 종단. update 면 패치를 적용하고 바뀐 행을 돌려준다.
+      then(resolve, reject) {
+        const r = mode === 'update' ? applyUpdate() : readResult();
+        return Promise.resolve(r).then(resolve, reject);
+      }
     };
-    function apply() {
-      (db[table] || []).forEach(r => {
-        if (eqs.every(([c, v]) => String(r[c]) === String(v))) Object.assign(r, patch);
-      });
-    }
     return q;
   },
   rpc() { return Promise.resolve({ data: null, error: null }); }
@@ -117,6 +168,18 @@ global.fetch = async function(url, opts = {}) {
     toss.charges.push({ body, headers: opts.headers });
     return json(200, payment);
   }
+  /*
+   * 주문번호로 결제 조회 — 승인 도중 죽은 주문을 복구할 때 쓴다.
+   * paymentKey 조회보다 먼저 검사해야 한다 (경로가 한 칸 더 깊다).
+   */
+  const byOrder = u.match(/\/v1\/payments\/orders\/([^/]+)$/);
+  if (byOrder) {
+    if (toss.failLookup) return json(500, { code: 'ERR', message: 'toss down' });
+    const oid = decodeURIComponent(byOrder[1]);
+    const p = Object.values(toss.payments).find(x => x.orderId === oid);
+    if (!p) return json(404, { code: 'NOT_FOUND_PAYMENT', message: 'no such payment' });
+    return json(200, p);
+  }
   const look = u.match(/\/v1\/payments\/([^/]+)$/);
   if (look) {
     if (toss.failLookup) return json(500, { code: 'ERR', message: 'toss down' });
@@ -163,6 +226,20 @@ const reqFor = (email, body, action) => ({
   socket: { remoteAddress: '10.0.0.' + Math.floor(Math.random() * 250) }
 });
 
+/*
+ * 실제 주문을 만든다.
+ *
+ * confirm 은 이제 prepare 가 남긴 pending 행이 있어야만 진행한다 —
+ * 아무 문자열이나 orderId 로 보내 결제를 시작시킬 수 없다.
+ * 그래서 테스트도 실제 흐름(prepare → confirm)을 그대로 따라간다.
+ */
+async function prepared(email) {
+  const r = mkRes();
+  await payment.handlePrepare(reqFor(email, {}, 'prepare'), r, email);
+  if (!r.payload || !r.payload.orderId) throw new Error('prepare 실패: ' + JSON.stringify(r.payload));
+  return r.payload.orderId;
+}
+
 (async () => {
 
   /* ================================================================ *
@@ -171,7 +248,7 @@ const reqFor = (email, body, action) => ({
   section('1. FREE → PRO 결제 성공');
   reset(); resetToss();
   let res = mkRes();
-  const orderId = billing.createOrderId();
+  const orderId = await prepared(USER);
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak_ok', orderId });
   check(res.code === 200 && res.payload.ok === true, '결제 확정 성공', `${res.code}`);
   check(subOf(USER) && subOf(USER).plan === 'pro', 'subscriptions.plan = pro', subOf(USER) && subOf(USER).plan);
@@ -199,7 +276,7 @@ const reqFor = (email, body, action) => ({
   reset(); resetToss();
   res = mkRes();
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER,
-    { authKey: 'ak', orderId: billing.createOrderId(), amount: 100, price: 100 });
+    { authKey: 'ak', orderId: await prepared(USER), amount: 100, price: 100 });
   check(toss.charges[0].body.amount === 4900,
         'body 에 amount=100 을 보내도 4,900원으로 결제된다 ★', String(toss.charges[0].body.amount));
 
@@ -219,7 +296,7 @@ const reqFor = (email, body, action) => ({
   res = mkRes();
   // 공격자가 자기 토큰으로 남의 이메일·pro 를 body 에 실어 보낸다.
   await payment.handleConfirm(reqFor(OTHER, {}, 'confirm'), res, OTHER,
-    { authKey: 'ak', orderId: billing.createOrderId(), email: USER, plan: 'pro' });
+    { authKey: 'ak', orderId: await prepared(OTHER), email: USER, plan: 'pro' });
   check(!subOf(USER), 'body 의 email 로 남의 구독이 만들어지지 않는다 ★');
   check(subOf(OTHER) && subOf(OTHER).plan === 'pro', '토큰 주인에게만 적용된다');
 
@@ -247,7 +324,7 @@ const reqFor = (email, body, action) => ({
   reset(); resetToss(); toss.failCharge = true;
   res = mkRes();
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER,
-    { authKey: 'ak', orderId: billing.createOrderId() });
+    { authKey: 'ak', orderId: await prepared(USER) });
   check(res.code === 402, '402 반환', String(res.code));
   check(!subOf(USER), 'PRO 부여 안 됨 ★');
   check(db.payments.length === 1 && db.payments[0].status === 'failed', '실패도 기록에 남는다');
@@ -256,7 +333,7 @@ const reqFor = (email, body, action) => ({
   reset(); resetToss(); toss.failIssue = true;
   res = mkRes();
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER,
-    { authKey: 'bad', orderId: billing.createOrderId() });
+    { authKey: 'bad', orderId: await prepared(USER) });
   check(res.code === 402 && !subOf(USER), '빌링키 실패 → PRO 없음');
 
   section('4-c. 결제사 장애 (fail closed)');
@@ -265,33 +342,68 @@ const reqFor = (email, body, action) => ({
   global.fetch = async () => { throw Object.assign(new Error('network'), { name: 'TypeError' }); };
   res = mkRes();
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER,
-    { authKey: 'ak', orderId: billing.createOrderId() });
+    { authKey: 'ak', orderId: await prepared(USER) });
   global.fetch = origFetch;
   check(!subOf(USER), '결제사 연결 실패 → PRO 없음 ★');
 
   section('4-d. DB 장애 (fail closed)');
+  /*
+   * 승인은 됐는데 원장을 확정하지 못한 경우.
+   *
+   * 예전에는 payments 에 INSERT 하던 자리라 failInsert 로 흉내 냈다. 이제는
+   * prepare 가 만들어 둔 pending 행을 UPDATE 하는 구조라 failUpdate 로 막는다.
+   * 확인하려는 성질은 그대로다 — 기록을 못 남기면 권한도 주지 않는다.
+   */
+  reset(); resetToss();
+  {
+    const oidDb = await prepared(USER);
+    db.failUpdateStatus = 'paid';
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oidDb });
+    db.failUpdateStatus = '';
+    check(res.code === 500, '기록 실패 → 500', String(res.code));
+    check(!subOf(USER), '기록을 못 남기면 PRO 도 주지 않는다 ★');
+  }
+
+  section('4-e. 주문 기록 자체가 실패하면 결제창을 열지 않는다');
   reset(); resetToss(); db.failInsert = true;
   res = mkRes();
-  await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER,
-    { authKey: 'ak', orderId: billing.createOrderId() });
-  check(res.code === 500, '기록 실패 → 500', String(res.code));
-  check(!subOf(USER), '기록을 못 남기면 PRO 도 주지 않는다 ★');
+  await payment.handlePrepare(reqFor(USER, {}, 'prepare'), res, USER);
+  db.failInsert = false;
+  check(res.code === 503, 'prepare 실패 → 503', String(res.code));
+  check(!(res.payload && res.payload.orderId), 'orderId 를 내주지 않는다 ★');
 
   /* ================================================================ *
    *  5. 멱등성
    * ================================================================ */
-  section('5. orderId 재사용 거절');
+  section('5. 이미 결제된 orderId 재요청 — 멱등');
+  /*
+   * 예전에는 409 로 거절했다. 지금은 200 + alreadyProcessed 다.
+   *
+   * 무엇이 달라졌나 — 거절해야 하는 것은 "두 번째 청구" 지 "두 번째 문의" 가
+   * 아니다. 결제창에서 돌아온 프론트가 네트워크 문제로 confirm 을 두 번 보내는
+   * 것은 정상적인 일이고, 그때 409 를 주면 사용자는 결제가 실패한 줄 안다
+   * (실제로는 성공했는데). 중요한 것은 아래 세 가지다.
+   *   · 토스에 승인이 한 번만 나간다
+   *   · payments 행이 하나뿐이다
+   *   · PRO 기간이 두 번 늘어나지 않는다
+   */
   reset(); resetToss();
-  const oid = billing.createOrderId();
+  const oid = await prepared(USER);
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), mkRes(), USER, { authKey: 'ak', orderId: oid });
+  const expAfterFirst = subOf(USER).expires_at;
   res = mkRes();
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
-  check(res.code === 409, '같은 orderId 두 번째 → 409 ★', String(res.code));
+  check(res.code === 200 && res.payload && res.payload.alreadyProcessed === true,
+        '같은 orderId 두 번째 → 200 + alreadyProcessed ★', String(res.code));
   check(db.payments.length === 1, '결제 기록은 1건뿐', String(db.payments.length));
+  check(toss.charges.length === 1, '토스 승인 요청은 1회뿐 ★', String(toss.charges.length));
+  check(subOf(USER).expires_at === expAfterFirst,
+        'PRO 기간이 두 번 늘어나지 않는다 ★');
 
   section('5-b. 동시 결제 요청');
   reset(); resetToss();
-  const sameOrder = billing.createOrderId();
+  const sameOrder = await prepared(USER);
   const rs = await Promise.all([1, 2, 3].map(() => {
     const r = mkRes();
     return payment.handleConfirm(reqFor(USER, {}, 'confirm'), r, USER,
@@ -299,6 +411,7 @@ const reqFor = (email, body, action) => ({
   }));
   const okCount = rs.filter(r => r.payload && r.payload.ok).length;
   check(db.payments.length === 1, '동시 3건이어도 결제 기록 1건 ★', String(db.payments.length));
+  check(toss.charges.length === 1, '동시 3건이어도 토스 승인은 1회 ★', String(toss.charges.length));
   check(okCount <= 1, '성공 응답은 최대 1건', String(okCount));
 
   /* ================================================================ *
@@ -317,7 +430,7 @@ const reqFor = (email, body, action) => ({
 
   section('6-b. 웹훅 재전송 멱등성');
   reset(); resetToss();
-  const oid2 = billing.createOrderId();
+  const oid2 = await prepared(USER);
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), mkRes(), USER, { authKey: 'ak', orderId: oid2 });
   const pk2 = 'pk_' + oid2;
   const before = db.payments.length;
@@ -328,7 +441,7 @@ const reqFor = (email, body, action) => ({
 
   section('6-c. 취소 웹훅 → 구독 해제');
   reset(); resetToss();
-  const oid3 = billing.createOrderId();
+  const oid3 = await prepared(USER);
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), mkRes(), USER, { authKey: 'ak', orderId: oid3 });
   check(subOf(USER).plan === 'pro', '(전제) PRO 상태');
   const pk3 = 'pk_' + oid3;
@@ -349,7 +462,7 @@ const reqFor = (email, body, action) => ({
   section('7. 구독 취소 — 남은 기간은 유지');
   reset(); resetToss();
   await payment.handleConfirm(reqFor(USER, {}, 'confirm'), mkRes(), USER,
-    { authKey: 'ak', orderId: billing.createOrderId() });
+    { authKey: 'ak', orderId: await prepared(USER) });
   res = mkRes();
   await payment.handleCancel(reqFor(USER, {}, 'cancel'), res, USER);
   check(res.code === 200 && res.payload.ok, '취소 성공');
@@ -521,6 +634,242 @@ const reqFor = (email, body, action) => ({
   check(toss.charges.length === 1 && toss.charges[0].headers['Idempotency-Key'] === oid_id,
         'orderId 를 Idempotency-Key 로 재사용 ★ (60초 초과로 재요청해도 이중 청구 없음)',
         toss.charges[0].headers['Idempotency-Key']);
+
+
+  /* ================================================================ *
+   *  R1. pending 원장 + orderId 기반 복구
+   *
+   *  ── 무엇을 막는 테스트인가 ────────────────────────────────────
+   *  confirm 은 issueBillingKey(≤15s) + chargeBilling(≤60s) 이라 최악 75초인데
+   *  Vercel 함수 상한은 60초다. 상한에서 잘리면 카드에는 청구됐는데 우리 DB 에는
+   *  흔적이 없고, 사용자가 다시 시도하면 새 orderId 로 두 번째 청구가 나간다.
+   *
+   *  주문을 만들 때 pending 행을 먼저 남기고, 재시도 때 토스에 orderId 로
+   *  실제 상태를 물어보면 그 경로가 막힌다. 아래가 그 계약이다.
+   * ================================================================ */
+  section('R1-1. prepare 가 pending 주문을 남긴다');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    const row = payOf(oid);
+    check(!!row, '주문 행이 생긴다');
+    check(row.status === 'pending', 'status = pending', row && row.status);
+    check(row.email === USER, '주문의 주인이 기록된다');
+    check(row.amount === billing.PRO_PRICE, '금액이 서버 상수로 박힌다', String(row && row.amount));
+    check(!!row.created_at && !!row.updated_at, '생성/수정 시각이 남는다');
+    check(row.payment_key === billing.placeholderPaymentKey(oid),
+          'payment_key 는 확정 전까지 자리표시자', row && row.payment_key);
+    check(toss.charges.length === 0, 'prepare 단계에서는 아무것도 청구하지 않는다 ★');
+  }
+
+  section('R1-2. 정상 결제 — pending → paid');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.payload && res.payload.ok === true, '결제 확정', String(res.code));
+    check(payOf(oid).status === 'paid', 'status = paid', payOf(oid).status);
+    check(payOf(oid).payment_key === 'pk_' + oid, '진짜 paymentKey 로 갈아끼운다');
+    check(subOf(USER) && subOf(USER).plan === 'pro', 'PRO 활성화');
+  }
+
+  section('R1-3. 승인 실패 — pending → failed, PRO 없음');
+  reset(); resetToss(); toss.failCharge = true;
+  {
+    const oid = await prepared(USER);
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.code === 402, '402 반환', String(res.code));
+    check(payOf(oid).status === 'failed', 'status = failed', payOf(oid).status);
+    check(!subOf(USER), 'PRO 부여 안 됨 ★');
+  }
+
+  section('R1-4. 승인 timeout — failed 로 굳히지 않는다 (이중 청구 방지) ★');
+  /*
+   * 타임아웃은 거절이 아니라 "모름" 이다. 청구가 됐을 수도 있다.
+   * failed 로 굳히면 그 주문은 종착역이 되고, 사용자가 새 주문으로 다시
+   * 결제하는 순간 이중 청구가 된다. charging 으로 두어야 다음 요청이
+   * 토스에 실제 상태를 물어볼 수 있다.
+   */
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    const orig = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (/\/v1\/billing\/[^/]+$/.test(String(url))) {
+        const e = new Error('The operation was aborted'); e.name = 'AbortError'; throw e;
+      }
+      return orig(url, opts);
+    };
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    global.fetch = orig;
+    check(res.code === 504, 'timeout → 504', String(res.code));
+    check(payOf(oid).status === 'charging', 'status 는 charging 으로 남는다 ★', payOf(oid).status);
+    check(!subOf(USER), 'PRO 부여 안 됨');
+  }
+
+  section('R1-5. 승인 직후 DB 확정 실패 — 권한 없음, charging 유지');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    db.failUpdateStatus = 'paid';
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    db.failUpdateStatus = '';
+    check(res.code === 500, '기록 실패 → 500', String(res.code));
+    check(!subOf(USER), '기록 못 남기면 PRO 없음 ★');
+    check(payOf(oid).status === 'charging', '복구할 수 있게 charging 으로 남는다', payOf(oid).status);
+  }
+
+  section('R1-6. pending 결제 복구 — 재승인 없이 확정 ★');
+  /*
+   * R1-4 가 만든 상태(charging + 토스에는 승인 완료)를 그대로 재현하고,
+   * 사용자가 다시 confirm 을 보냈을 때 어떻게 되는지 본다.
+   * 반드시 "다시 긁지 않고" 확정되어야 한다.
+   */
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    // 토스 쪽에는 승인이 끝나 있다. 우리 쪽은 결과를 못 받아 charging 이다.
+    toss.payments['pk_' + oid] = {
+      paymentKey: 'pk_' + oid, orderId: oid, totalAmount: billing.PRO_PRICE, status: 'DONE'
+    };
+    await billing.claimForCharge(oid);
+    check(payOf(oid).status === 'charging', '전제: charging 상태');
+
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.payload && res.payload.ok === true, '복구되어 결제 확정', String(res.code));
+    check(toss.charges.length === 0, '재승인 요청이 나가지 않았다 ★ (이중 청구 없음)',
+          String(toss.charges.length));
+    check(payOf(oid).status === 'paid', 'status = paid', payOf(oid).status);
+    check(subOf(USER) && subOf(USER).plan === 'pro', 'PRO 활성화');
+  }
+
+  section('R1-7. charging 인데 토스에 결제가 없으면 — 실패로 확정');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await billing.claimForCharge(oid);   // 토스에는 아무것도 없다
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.code === 409, '409 반환', String(res.code));
+    check(payOf(oid).status === 'failed', '청구되지 않았으므로 failed', payOf(oid).status);
+    check(!subOf(USER), 'PRO 없음');
+  }
+
+  section('R1-8. charging 인데 토스 조회가 실패하면 — 상태를 굳히지 않는다');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await billing.claimForCharge(oid);
+    toss.failLookup = true;
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    toss.failLookup = false;
+    check(res.code === 503, '503 — 나중에 다시 확인', String(res.code));
+    check(payOf(oid).status === 'charging', 'charging 유지 ★ (모르는 것을 실패로 굳히지 않는다)',
+          payOf(oid).status);
+  }
+
+  section('R1-9. 존재하지 않는 orderId');
+  reset(); resetToss();
+  {
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER,
+      { authKey: 'ak', orderId: 'seosa_does_not_exist_0000' });
+    check(res.code === 404, '404 ORDER_NOT_FOUND ★', String(res.code));
+    check(toss.charges.length === 0, '토스를 부르지 않는다 ★');
+    check(!subOf(USER), 'PRO 없음');
+  }
+
+  section('R1-10. 사용자 불일치 — 남의 주문으로 결제할 수 없다 ★');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);          // USER 가 만든 주문
+    res = mkRes();
+    await payment.handleConfirm(reqFor(OTHER, {}, 'confirm'), res, OTHER, { authKey: 'ak', orderId: oid });
+    check(res.code === 403, '403 ORDER_OWNER_MISMATCH', String(res.code));
+    check(toss.charges.length === 0, '토스를 부르지 않는다');
+    check(!subOf(OTHER), '남의 주문으로 PRO 를 받지 못한다 ★');
+    check(payOf(oid).status === 'pending', '원래 주문은 그대로', payOf(oid).status);
+  }
+
+  section('R1-11. 금액 불일치 — 원장 금액이 서버 상수와 다르면 거절');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    payOf(oid).amount = 100;                   // 원장이 오염된 상황을 흉내 낸다
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.code === 409, '409 ORDER_AMOUNT_MISMATCH', String(res.code));
+    check(toss.charges.length === 0, '토스를 부르지 않는다 ★');
+    check(!subOf(USER), 'PRO 없음');
+  }
+
+  section('R1-12. 잘못된 상태 전이는 거부한다');
+  check(billing.canTransition('pending', 'charging'), 'pending → charging 허용');
+  check(billing.canTransition('charging', 'paid'), 'charging → paid 허용');
+  check(billing.canTransition('charging', 'failed'), 'charging → failed 허용');
+  check(billing.canTransition('paid', 'canceled'), 'paid → canceled 허용');
+  check(!billing.canTransition('paid', 'pending'), 'paid → pending 금지 ★');
+  check(!billing.canTransition('paid', 'charging'), 'paid → charging 금지 ★');
+  check(!billing.canTransition('failed', 'paid'), 'failed → paid 금지 ★');
+  check(!billing.canTransition('canceled', 'paid'), 'canceled → paid 금지 ★');
+  check(!billing.canTransition('pending', 'paid'), 'pending → paid 직행 금지 (charging 을 거쳐야 한다)');
+
+  section('R1-13. 이미 paid 인 주문은 다시 긁지 않는다');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), mkRes(), USER, { authKey: 'ak', orderId: oid });
+    const chargesAfterFirst = toss.charges.length;
+    const expAfterFirst = subOf(USER).expires_at;
+
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.code === 200 && res.payload.alreadyProcessed === true, '200 + alreadyProcessed');
+    check(toss.charges.length === chargesAfterFirst, '추가 승인 없음 ★');
+    check(subOf(USER).expires_at === expAfterFirst, 'PRO 기간이 두 번 늘지 않는다 ★');
+  }
+
+  section('R1-14. 실패로 끝난 주문은 되살릴 수 없다');
+  reset(); resetToss(); toss.failCharge = true;
+  {
+    const oid = await prepared(USER);
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), mkRes(), USER, { authKey: 'ak', orderId: oid });
+    toss.failCharge = false;                   // 이제 카드가 살아났다고 해도
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.code === 409, '409 ORDER_NOT_PAYABLE ★', String(res.code));
+    check(toss.charges.length === 0, '토스를 부르지 않는다');
+    check(!subOf(USER), 'PRO 없음');
+  }
+
+  section('R1-15. 같은 paymentKey 가 이미 다른 행에 있으면 (웹훅 선행)');
+  /*
+   * 웹훅이 confirm 보다 먼저 도착해 결제를 확정한 경우. 우리 쪽 confirm 은
+   * 기간을 또 늘리지 않고 "이미 처리됨" 으로 끝나야 한다.
+   */
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await billing.claimForCharge(oid);
+    toss.payments['pk_' + oid] = {
+      paymentKey: 'pk_' + oid, orderId: oid, totalAmount: billing.PRO_PRICE, status: 'DONE'
+    };
+    // 웹훅이 먼저 확정했다고 치고 원장을 paid 로 만들어 둔다.
+    await billing.markPaid(oid, { paymentKey: 'pk_' + oid, amount: billing.PRO_PRICE, rawStatus: 'DONE' });
+    await billing.activatePro(USER, { customerKey: billing.customerKeyFor(USER) });
+    const expAfterWebhook = subOf(USER).expires_at;
+
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.code === 200 && res.payload.alreadyProcessed === true, '200 + alreadyProcessed', String(res.code));
+    check(subOf(USER).expires_at === expAfterWebhook, 'PRO 기간이 두 번 늘지 않는다 ★');
+  }
 
   /* ================================================================ *
    *  10. 정적 보안 검사

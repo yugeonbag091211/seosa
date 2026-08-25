@@ -194,13 +194,72 @@ async function createCode(email) {
   return { ok: true, code };
 }
 
+/*
+ * 마이그레이션(2026-08-24-payment-pending-and-auth-attempts.sql)이 아직
+ * 적용되지 않은 환경 대비. 한 번 없다고 확인되면 그 뒤로는 예전 방식으로 간다.
+ * (api/_shop.js 의 컬럼 폴백과 같은 방식)
+ */
+let attemptRpc = true;
+
+function missingRpc(msg) {
+  return /could not find|does not exist|schema cache|function .* not/i.test(msg || '');
+}
+
 /**
  * 코드 검증. 성공하면 그 코드는 즉시 폐기한다(재사용 방지).
+ *
+ * ── 왜 RPC 인가 ─────────────────────────────────────────────────────
+ * 예전에는 이렇게 돼 있었다.
+ *
+ *   select attempts        // 읽고
+ *   if (attempts >= 5)     // 비교하고
+ *   update attempts + 1    // 쓴다
+ *
+ * 요청 100개가 거의 동시에 들어오면 100개 전부 attempts=0 을 읽고 전부 통과한
+ * 뒤 전부 1 을 쓴다. MAX_ATTEMPTS 가 사실상 없는 것과 같고, 6자리 코드를
+ * 병렬로 긁으면 뚫린다. 그 토큰은 찜·취향·알림에 더해 PRO 권한까지 준다.
+ *
+ * api/_plan.js 의 ai_quota_reserve 가 같은 함정을 한 문장으로 풀었다.
+ * 여기서도 "증가 + 한도 검사 + 코드 대조" 를 한 문장에 맡긴다 —
+ * UPDATE ... WHERE attempts < max 가 행 잠금을 잡으므로 동시 요청은
+ * 직렬화되고, 한도를 넘는 순간부터 아무 행도 반환되지 않는다.
+ *
+ * 대조를 밖에서 하면 "증가" 와 "판정" 이 다시 갈라져 같은 문제가 생긴다.
+ * 그래서 해시까지 함수 안에서 비교한다.
+ *
  * @returns {{ok: boolean, error?: string}}
  */
 async function consumeCode(email, code) {
   const key = String(email).toLowerCase();
+  const hash = hashCode(key, String(code || '').trim());
 
+  if (attemptRpc) {
+    const { data, error } = await supabase.rpc('auth_code_attempt', {
+      p_email: key, p_hash: hash, p_max: MAX_ATTEMPTS
+    });
+
+    if (error && missingRpc(error.message)) {
+      attemptRpc = false;
+      console.warn('[auth] auth_code_attempt RPC 없음 — 예전 방식으로 계속합니다 '
+        + '(supabase/2026-08-24-payment-pending-and-auth-attempts.sql 을 실행하세요). '
+        + '이 상태에서는 동시 요청으로 시도 횟수 제한을 우회할 수 있습니다.');
+    } else if (error) {
+      /*
+       * 판정할 수 없으면 통과시키지 않는다. 인증은 확실할 때만 연다.
+       */
+      console.error(`[auth] 코드 검증 실패(거절): ${error.message}`);
+      return { ok: false, error: '인증을 처리하지 못했어요. 잠시 후 다시 시도해 주세요' };
+    } else {
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return { ok: false, error: '인증을 처리하지 못했어요. 잠시 후 다시 시도해 주세요' };
+      if (row.expired) return { ok: false, error: '코드가 만료되었습니다. 다시 요청해 주세요' };
+      if (!row.allowed) return { ok: false, error: '시도 횟수를 초과했습니다. 코드를 다시 요청해 주세요' };
+      if (!row.matched) return { ok: false, error: '코드가 일치하지 않습니다' };
+      return { ok: true };
+    }
+  }
+
+  /* ── 폴백: 마이그레이션 전 환경 ─────────────────────────────────── */
   const { data, error } = await supabase
     .from('auth_codes').select('code_hash, expires_at, attempts').eq('email', key).maybeSingle();
   if (error) return { ok: false, error: error.message };
@@ -215,7 +274,7 @@ async function consumeCode(email, code) {
     return { ok: false, error: '시도 횟수를 초과했습니다. 코드를 다시 요청해 주세요' };
   }
 
-  const given = Buffer.from(hashCode(key, String(code || '').trim()), 'utf8');
+  const given = Buffer.from(hash, 'utf8');
   const want  = Buffer.from(String(data.code_hash || ''), 'utf8');
   const match = given.length === want.length && crypto.timingSafeEqual(given, want);
 
@@ -232,5 +291,5 @@ async function consumeCode(email, code) {
 module.exports = {
   issueToken, verifyToken, authorize, identify, requireAuth,
   createCode, consumeCode,
-  TOKEN_TTL_MS, CODE_TTL_MS
+  TOKEN_TTL_MS, CODE_TTL_MS, MAX_ATTEMPTS
 };
