@@ -167,6 +167,32 @@ async function writeCache(keyword, items, limit) {
 /* ------------------------------------------------------------------ *
  *  본체
  * ------------------------------------------------------------------ */
+
+/**
+ * cp_name(ADPICK이 알려주는 실제 제휴몰 이름) → 화면에 보여줄 짧은 이름.
+ *
+ * 2026-08-26 다건 실측(여러 키워드, cp_code 9종)으로 실제 확인된 cp_name:
+ *   알리익스프레스, 예스이십사, 보리보리, 오늘의집, 더블유컨셉코리아,
+ *   SSG, GS SHOP, Hmall, 롯데홈쇼핑
+ *
+ * 그중 사용자가 지정한 축약 규칙이 있는 것만 짧게 바꾸고(지금까지 실측된
+ * 값 중에는 '알리익스프레스'만 해당), 나머지(11번가/G마켓/쿠팡)는 아직
+ * 실제 응답에서 관측되지 않았지만 요청받은 규칙이라 패턴은 남겨 둔다.
+ *
+ * ★ 패턴에 안 걸리면 cp_name 원본을 그대로 보여준다. 확인되지 않은 몰
+ *   이름을 지어내거나 임의로 줄이지 않는다 — 'SSG'는 'SSG'로, 'GS SHOP'은
+ *   'GS SHOP'으로 그대로 나간다.
+ */
+function mallLabelFromCpName(cpName) {
+  const s = String(cpName || '').trim();
+  if (!s) return '';
+  if (/알리익스프레스|aliexpress/i.test(s)) return '알리';
+  if (/11번가/.test(s)) return '11번가';
+  if (/g\s*마켓|지마켓/i.test(s)) return 'G마켓';
+  if (/^쿠팡$/.test(s)) return '쿠팡';
+  return s;
+}
+
 /**
  * ADPICK 응답 상품 → 내부 모양.
  *
@@ -183,12 +209,15 @@ function normalize(raw) {
     const price = parsePrice(it && it.price);
     if (!commissionlink || !price) { dropped++; return; }
 
+    const cpName = (it && it.cp_name) || '';
     out.push({
       title: (it && it.title) || '',
       price,
       photo: (it && it.photo) || '',
       cpCode: String((it && it.cp_code) || '').trim(),
-      cpName: (it && it.cp_name) || '',
+      cpName,
+      // 화면 표시용. mall(백엔드 식별자 'ADPICK')과는 별개다.
+      mallLabel: mallLabelFromCpName(cpName),
       commissionlink
     });
   });
@@ -329,4 +358,7 @@ function localStats() {
   };
 }
 
-module.exports = { searchAdpick, isBlocked, localStats, hasKey, MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT };
+module.exports = {
+  searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName,
+  MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
+};

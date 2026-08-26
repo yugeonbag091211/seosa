@@ -2537,11 +2537,26 @@ var Fmt = {
   mall: function(it) {
     if (it.isCoupang || it.mall === '쿠팡') return { name: it.mall || '쿠팡', tag: 'COUPANG', cls: 'b-coupang' };
     if (it.mall === '알리익스프레스') return { name: '알리익스프레스', tag: 'ALIEXPRESS', cls: 'b-ali' };
-    // ADPICK 제휴 상품. mall 은 서버가 상수 'ADPICK'으로 준다(api/_shop.js ADPICK_MALL).
-    // ★ name은 반드시 mall과 똑같은 문자열이어야 한다 — Card.read/Drop.read/Wish/Share가
-    // 화면에 찍힌 이 이름을 그대로 상품 식별자로 되읽어 가격 이력을 다시 조회한다.
-    // 이름과 저장값이 다르면(예전엔 'ADPICK 제휴몰'이었다) 그 조회가 항상 빗나간다.
-    if (it.mall === 'ADPICK') return { name: 'ADPICK', tag: 'ADPICK', cls: 'b-adpick' };
+    /*
+     * ADPICK 제휴 상품. mall(백엔드 식별자)은 서버가 항상 상수 'ADPICK'으로 준다
+     * (api/_shop.js ADPICK_MALL) — 절대 여기서 바뀌면 안 된다(가격 이력 조회 키).
+     *
+     * name(화면 표시)은 mall과 다르다 — 실제 제휴몰 이름(cp_name, 예: '알리')을
+     * 보여준다(api/_adpick.js mallLabelFromCpName). 2026-08-26에는 name이
+     * mall과 같은 문자열이어야 한다고 여기 적었었는데, 그건 "표시 이름 = 식별자"라는
+     * 잘못된 전제였다(가격 그래프가 항상 비는 버그의 원인). 지금은 Card.html/Card.read,
+     * Drop.rowHTML/Drop.read가 raw mall(data-mall)과 표시 이름(mallLabel)을
+     * 따로 들고 다니므로 이름이 달라도 식별자 조회는 어긋나지 않는다.
+     *
+     * cls는 여전히 'b-adpick' 하나로 고정한다 — 표시 이름이 '쿠팡'/'알리'와 같아
+     * 보여도 실제 쿠팡·알리익스프레스 직접 연동과는 다른 소스이므로 필터/배지
+     * 색상에서 섞이면 안 된다(사용자 요청: 기존 표시 로직과 충돌 금지).
+     */
+    if (it.mall === 'ADPICK') {
+      var adpickLabel = it.mallLabel || 'ADPICK';
+      // 썸네일 배지(tag)와 .mall-line(name) 모두 같은 실제 판매처 이름을 보여준다.
+      return { name: adpickLabel, tag: adpickLabel, cls: 'b-adpick' };
+    }
     return { name: it.mall || '네이버쇼핑', tag: 'N-SHOP', cls: 'b-naver' };
   },
 
@@ -3183,8 +3198,16 @@ var Card = {
 
     // data-pid: Card.read 가 이 카드의 상품을 정확히 되찾기 위한 값.
     // 없으면 같은 이름·같은 몰의 다른 상품과 캐시 키가 겹쳐 링크가 뒤바뀐다.
+    //
+    // data-mall: 화면에 찍히는 .mall-line 텍스트(m.name)는 ADPICK 상품이면
+    // cp_name 기반 표시 이름(예: '알리', 'SSG')일 수 있어 몰마다 문자열이 다르다.
+    // 반면 상품 식별(AppState.products 조회, /api/history 재조회)에는 항상
+    // 저장된 raw mall('ADPICK' 등)이 필요하다. 표시 이름과 raw mall이 같은
+    // 값이라는 전제가 깨지므로(2026-08-26), 이 둘을 분리해 raw 값을 attribute로
+    // 따로 심어 둔다 — Card.read가 이 값으로 되찾는다.
     return '<div class="card" data-glyph="' + glyph + '"'
-      + ' data-pid="' + Fmt.esc(it.productId || '') + '">'
+      + ' data-pid="' + Fmt.esc(it.productId || '') + '"'
+      + ' data-mall="' + Fmt.esc(it.mall || '') + '">'
       + Card.thumbHTML(it, m, glyph)
       + '<div class="info">'
       + '<div class="mall-line">' + Fmt.esc(m.name) + '</div>'
@@ -3204,13 +3227,19 @@ var Card = {
   read: function(card) {
     if (!card) return null;
     var title = Fmt.textOf(card.querySelector('.p-title'));
-    var mall  = Fmt.textOf(card.querySelector('.mall-line'));
+    // 식별자는 반드시 raw mall(data-mall)을 쓴다. .mall-line 텍스트는 표시용
+    // 이름(ADPICK은 cp_name 기반)이라 그걸로 조회하면 어긋난다(위 Card.html 주석 참고).
+    // data-mall이 없는 옛 카드(캐시된 페이지 등)에는 텍스트로 폴백한다.
+    var mall  = card.dataset.mall || Fmt.textOf(card.querySelector('.mall-line'));
     var pid   = card.dataset.pid || '';
     var stored = AppState.products[productKey(title, mall, pid)] || {};
     return {
       title: title,
       lprice: Fmt.priceOf(card.querySelector('.price')),
       mall: mall,
+      // 화면에 보여줄 몰 이름. ADPICK은 cp_name 기반(예: '알리') — 위시/공유가
+      // raw mall('ADPICK')을 그대로 보여주지 않도록 별도로 들고 다닌다.
+      mallLabel: stored.mallLabel || mall,
       // 가격 그래프·알림이 상품명이 아니라 상품 단위로 붙도록 같이 넘긴다.
       productId: pid || stored.productId || '',
       link: stored.link || '',
@@ -3261,8 +3290,10 @@ var Grid = {
 
     items.forEach(function(it, i) {
       if (!it || !it.title) return;
-      // 카드의 .mall-line / data-pid 와 같은 키를 써야 Card.read가 다시 찾을 수 있다.
-      AppState.products[productKey(it.title, Fmt.mall(it).name, it.productId)] = it;
+      // 카드의 data-mall(raw) / data-pid 와 같은 키를 써야 Card.read가 다시 찾을 수 있다.
+      // 표시 이름(Fmt.mall(it).name)이 아니라 raw mall로 키를 잡아야 한다 — ADPICK은
+      // cp_name에 따라 표시 이름이 상품마다 달라 키가 흩어진다(Card.html 주석 참고).
+      AppState.products[productKey(it.title, it.mall, it.productId)] = it;
 
       var wrap = document.createElement('div');
       wrap.innerHTML = Card.html(it);
@@ -3473,8 +3504,9 @@ var Share = {
 
   /** 공유용 텍스트 생성 */
   buildText: function(info) {
+    var mallText = info.mallLabel || info.mall;
     var t = '[SEOSA] ' + info.title + '\n'
-      + (info.mall ? info.mall + ' · ' : '') + Fmt.won(info.lprice) + '원\n';
+      + (mallText ? mallText + ' · ' : '') + Fmt.won(info.lprice) + '원\n';
     if (info.link) t += '\n' + info.link + '\n';
     t += '\n최저가 비교 · seosa.ai.kr';
     return t;
@@ -4702,9 +4734,14 @@ var Drop = {
 
   rowHTML: function(it, i) {
     if (!it || !it.title) return '';
-    // Drop.read가 data-mall / data-pid로 다시 찾으므로 저장 키와 표시 값을 맞춘다.
-    var mall = Fmt.mall(it).name;
-    AppState.products[productKey(it.title, mall, it.productId)] = it;
+    /*
+     * Drop.read가 data-mall(raw)로 다시 찾으므로 저장 키는 raw mall을 쓴다.
+     * 화면에 보여줄 이름(m.name, ADPICK이면 cp_name 기반)은 raw mall과 다를 수
+     * 있어서 별도로 data-mall-label에 심어 둔다(Fmt.mall 주석 참고 — 표시
+     * 이름과 저장값이 같아야 한다는 예전 전제가 가격 그래프 버그의 원인이었다).
+     */
+    var m = Fmt.mall(it);
+    AppState.products[productKey(it.title, it.mall, it.productId)] = it;
 
     var price = Fmt.int(it.lprice);
     var prev  = Fmt.int(it.oprice);
@@ -4717,13 +4754,14 @@ var Drop = {
 
     return '<div class="lrow" data-act="ledger-open"'
       + ' data-title="' + Fmt.esc(it.title) + '"'
-      + ' data-mall="' + Fmt.esc(mall) + '"'
+      + ' data-mall="' + Fmt.esc(it.mall || '') + '"'
+      + ' data-mall-label="' + Fmt.esc(m.name) + '"'
       + ' data-pid="' + Fmt.esc(it.productId || '') + '"'
       + ' data-price="' + price + '">'
       + '<div class="rank">' + String(i + 1).padStart(2, '0') + '</div>'
       + '<div class="lthumb">' + thumbInner + '</div>'
       + '<div class="lmain"><div class="lname">' + Fmt.esc(it.title) + '</div>'
-      + '<div class="lmall">' + Fmt.esc(mall) + atl + '</div></div>'
+      + '<div class="lmall">' + Fmt.esc(m.name) + atl + '</div></div>'
       + '<div class="lprev">' + Fmt.won(prev) + '</div>'
       + '<div class="lnow">' + Fmt.won(price)
       + '<span style="font-family:\'Noto Sans KR\';font-size:.7rem;color:var(--soft)"> 원</span></div>'
@@ -4760,6 +4798,8 @@ var Drop = {
       title: title,
       lprice: Fmt.int(row.dataset.price),
       mall: mall,
+      // 화면 표시용 몰 이름(ADPICK은 cp_name 기반). Card.read와 같은 이유로 분리한다.
+      mallLabel: row.dataset.mallLabel || stored.mallLabel || mall,
       productId: pid || stored.productId || '',
       link: stored.link || '',
       image: stored.image || '',
@@ -4818,6 +4858,9 @@ var Wish = {
       if (idx === -1) {
         AppState.wish.push({
           title: info.title, price: info.lprice, mall: info.mall,
+          // 위시 목록 화면에 보여줄 이름(ADPICK은 cp_name 기반). mall(raw)을
+          // 그대로 보여주면 'ADPICK' 이라고만 뜬다 — 실제 판매처 이름을 남긴다.
+          mallLabel: info.mallLabel || info.mall,
           // 최신가 갱신을 상품명이 아니라 상품 단위로 하기 위해 같이 저장한다.
           productId: info.productId || '',
           link: info.link, image: info.image, glyph: info.glyph
@@ -4854,7 +4897,7 @@ var Wish = {
     return '<div class="wish-item">'
       + '<div class="wi-img">' + img + '</div>'
       + '<div class="wi-info">'
-      + '<div class="wi-mall">' + Fmt.esc(w.mall || '') + '</div>'
+      + '<div class="wi-mall">' + Fmt.esc(w.mallLabel || w.mall || '') + '</div>'
       + '<div class="wi-name">' + Fmt.esc(w.title || '') + '</div>'
       + '<div class="wi-price">' + Fmt.won(showPrice) + '원' + chg + '</div></div>'
       + (Fmt.safeUrl(w.link)
@@ -4999,6 +5042,8 @@ var Recent = {
       link:   info.link  || cached.link  || '',
       image:  info.image || cached.image || '',
       mall:   info.mall  || cached.mall  || '',
+      // 화면 표시용 몰 이름(ADPICK은 cp_name 기반) — 최근 본 상품 카드도 이걸로 그린다.
+      mallLabel: info.mallLabel || cached.mallLabel || info.mall || cached.mall || '',
       productId: info.productId || cached.productId || ''
     };
 
@@ -5009,7 +5054,7 @@ var Recent = {
     AppState.viewed = AppState.viewed.filter(function(v) { return !sameProduct(v, it); });
     AppState.viewed.unshift({
       title: it.title, lprice: it.lprice, link: it.link, image: it.image, mall: it.mall,
-      productId: it.productId, savedPrice: firstPrice
+      mallLabel: it.mallLabel, productId: it.productId, savedPrice: firstPrice
     });
     AppState.viewed = AppState.viewed.slice(0, CONST.LIMIT.RECENT_VIEWED);
 

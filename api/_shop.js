@@ -198,6 +198,9 @@ async function fetchAdpick(keyword, limit = 10, opts = {}) {
     link: it.commissionlink,
     image: it.photo,
     mall: ADPICK_MALL,
+    // 화면 표시용 몰 이름(cp_name 기반, 예: '알리'). mall(백엔드 식별자)과는
+    // 별개다 — public/index.html Fmt.mall()이 이 값을 배지/필터/비교표에 쓴다.
+    mallLabel: it.mallLabel || '',
     productId: adpickProductId(it.commissionlink),
     isCoupang: false,
     /*
@@ -462,21 +465,46 @@ async function loadPrevObservations(keys, today) {
  * 자체적으로 한다. 그래서 남길 자리가 없다.
  */
 
-/** item_id/vendor_item_id 를 붙여 upsert 하고, 컬럼이 없으면 빼고 다시 시도한다. */
+/**
+ * products.mall_label 존재 여부 (supabase/2026-08-mall-label.sql).
+ * ADPICK 상품의 cp_name 기반 표시 이름을 담는 컬럼이다. 마이그레이션 전
+ * 환경에서도 저장 자체는 실패하면 안 되므로, item_id/vendor_item_id와 같은
+ * 방식으로 컬럼이 없다고 확인되면 그 뒤로는 빼고 보낸다.
+ */
+let mallLabelColumn = true;
+
+/** item_id/vendor_item_id/mall_label 을 붙여 upsert 하고, 컬럼이 없으면 하나씩 빼며 재시도한다. */
 async function upsertProducts(rows) {
+  let candidate = rows;
+  if (!mallLabelColumn) {
+    candidate = candidate.map(r => {
+      const { mall_label, ...rest } = r;   // eslint-disable-line no-unused-vars
+      return rest;
+    });
+  }
+  if (!itemIdColumns) {
+    candidate = candidate.map(r => {
+      const { item_id, vendor_item_id, ...rest } = r;   // eslint-disable-line no-unused-vars
+      return rest;
+    });
+  }
+
+  const { error } = await supabase.from('products').upsert(candidate, { onConflict: 'product_id,mall' });
+  if (!error) return null;
+  if (!missingColumn(error.message)) return error.message;
+
+  if (mallLabelColumn) {
+    mallLabelColumn = false;
+    console.warn('[save] products.mall_label 컬럼 없음 — 해당 값 없이 저장합니다 '
+      + '(supabase/2026-08-mall-label.sql 을 실행하면 켜집니다).');
+    return upsertProducts(rows);
+  }
   if (itemIdColumns) {
-    const { error } = await supabase.from('products').upsert(rows, { onConflict: 'product_id,mall' });
-    if (!error) return null;
-    if (!missingColumn(error.message)) return error.message;
     itemIdColumns = false;
     console.warn('[save] products.item_id / vendor_item_id 컬럼 없음 — 해당 값 없이 저장합니다.');
+    return upsertProducts(rows);
   }
-  const slim = rows.map(r => {
-    const { item_id, vendor_item_id, ...rest } = r;   // eslint-disable-line no-unused-vars
-    return rest;
-  });
-  const { error } = await supabase.from('products').upsert(slim, { onConflict: 'product_id,mall' });
-  return error ? error.message : null;
+  return error.message;
 }
 
 /**
@@ -656,7 +684,10 @@ async function recordPrices(observations, opts = {}) {
       collected_at: now,
       // 호출부가 안 넘겼으면 link 에서 뽑는다. 쿠팡 제휴 링크에는 항상 들어 있다.
       item_id: itemIdOf(it),
-      vendor_item_id: vendorIdOf(it)
+      vendor_item_id: vendorIdOf(it),
+      // ADPICK cp_name 기반 표시 이름. 쿠팡 등 다른 몰은 빈 문자열이고,
+      // toClientProduct가 빈 값이면 mall(raw)로 폴백한다.
+      mall_label: it.mallLabel || ''
     });
   }
 
@@ -754,7 +785,8 @@ async function saveProducts(keyword, items, opts = {}) {
     link: it.link,
     image: it.image,
     itemId: it.itemId,
-    vendorItemId: it.vendorItemId
+    vendorItemId: it.vendorItemId,
+    mallLabel: it.mallLabel
   })), { label: keyword, now: opts.now });
 
   return { saved: r.saved, errors: r.errors, rejected: r.rejected, suspect: r.suspect };
@@ -772,6 +804,9 @@ function toClientProduct(p) {
     link: p.link,
     image: p.image,
     mall: p.mall,
+    // 화면 표시용 몰 이름(ADPICK은 cp_name 기반). 없으면 raw mall로 대체 —
+    // mall_label 마이그레이션 전 저장된 옛 행이나 쿠팡/알리 행은 빈 값이다.
+    mallLabel: p.mall_label || p.mall,
     productId: p.product_id,
     isCoupang: p.mall === '쿠팡',
     oprice: p.oprice || 0,

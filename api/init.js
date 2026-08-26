@@ -165,6 +165,9 @@ function toDropRow(p) {
   return {
     title: p.title,
     mall: p.mall,
+    // 화면 표시용 몰 이름(ADPICK은 cp_name 기반, 예: '알리'). price_drop_top 뷰가
+    // products.mall_label을 그대로 실어 준다(supabase/2026-08-mall-label.sql).
+    mallLabel: p.mall_label || '',
     productId: p.product_id,
     link: p.link || '',
     image: p.image || '',
