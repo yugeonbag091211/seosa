@@ -293,9 +293,15 @@ function coupangItemIds(url) {
  *   mall=네이버, link=search.shopping.naver.com/catalog/...,
  *   lprice=75,000, collected_at=2026-07-27 이후 갱신 없음.
  *   같은 상품의 실제 판매가는 3만원대다.
+ *
+ * ADPICK(2026-08-26 연동)은 api/_adpick.js 로 지금도 다시 받아올 수 있으므로
+ * 쿠팡과 같은 자격이다. mall 값은 상수 'ADPICK' 으로 저장된다
+ * (api/_shop.js ADPICK_MALL 참고 — public/index.html의 배지 표시 이름과
+ * 반드시 같아야 하는 이유가 그 주석에 있다).
  */
 function isRefreshableMall(mall) {
-  return String(mall || '') === '쿠팡';
+  const m = String(mall || '');
+  return m === '쿠팡' || m === 'ADPICK';
 }
 
 /* ------------------------------------------------------------------ *

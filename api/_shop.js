@@ -1,8 +1,11 @@
 // 쿠팡 HMAC 서명은 api/_coupang.js 한 곳에만 있다.
 // 여기(또는 다른 파일)에 서명 함수를 다시 만들면 캐시·분당 상한·차단 감지를
 // 통째로 우회하게 된다. 쿠팡 호출은 반드시 searchCoupang()로.
+// ADPICK 호출은 같은 이유로 반드시 searchAdpick()로.
+const crypto = require('crypto');
 const supabase = require('./_supabase');
 const { searchCoupang } = require('./_coupang');
+const { searchAdpick } = require('./_adpick');
 const {
   parsePrice, classifyPrice,
   vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS,
@@ -126,7 +129,10 @@ async function fetchCoupang(keyword, limit = 6, opts = {}) {
     savePct: discountPct(it.lprice, it.oprice),
     // 판매 단위 식별자. 저장 단계에서 옵션 교체를 가격 변동과 구분하는 데 쓴다.
     itemId: it.itemId || '',
-    vendorItemId: it.vendorItemId || ''
+    vendorItemId: it.vendorItemId || '',
+    // 이 항목이 어디서 왔는지(api/cache/stale-cache). saveProducts가 항목별로
+    // 저장 가능 여부를 판정하는 데 쓴다 (searchAll 주석 참고).
+    _source: r.from
   }));
   // 검색어와 무관한 상품은 여기서 끊는다. 통과시키면 그대로 products 에 저장되고
   // 홈 섹션에까지 올라간다 (로그에는 성공으로만 남는다).
@@ -153,25 +159,122 @@ async function fetchCoupang(keyword, limit = 6, opts = {}) {
 }
 
 /**
- * 쿠팡을 조회해 결과를 돌려준다.
+ * commissionlink → products.product_id.
+ *
+ * ADPICK 응답에는 쿠팡의 productId 같은 상품 고유 식별자가 없다. 대신
+ * commissionlink(제휴 추적 링크)는 같은 상품이면 재수집 때도 같은 값으로
+ * 돌아온다고 볼 수 있는 유일한 안정적인 값이라, 이 링크를 해시해 식별자로
+ * 쓴다. sha256 전체(64자 hex)를 그대로 쓴다 — 잘라서 충돌 위험을 만들 이유가 없다.
+ *
+ * cp_code(제휴 파트너사 코드)는 mall에 넣지 않는다. product_id가 이미
+ * commissionlink 전체를 해시한 값이라 cp_code가 다르면(=commissionlink가 다르면)
+ * product_id 자체가 달라진다 — (product_id, mall) 유일성에 cp_code를 더할
+ * 필요가 없다. mall은 '쿠팡'처럼 상수 'ADPICK' 하나로 둔다.
+ *
+ * ★ 이 상수는 public/index.html의 Fmt.mall()이 배지로 보여주는 이름과
+ *   반드시 똑같아야 한다. 그 파일의 Card.read/Drop.read/Wish/Share는 화면에
+ *   찍힌 몰 이름을 그대로 "상품 식별자"로 되읽어 가격 이력(/api/history)을
+ *   다시 조회한다 — 표시 이름과 저장된 mall 값이 다르면 그 조회가 어긋난 몰
+ *   이름으로 나가 이력이 항상 "기록 없음"으로 보인다(2026-08-26 실측으로 확인).
+ */
+const ADPICK_MALL = 'ADPICK';
+
+function adpickProductId(commissionlink) {
+  return crypto.createHash('sha256').update(String(commissionlink || '')).digest('hex');
+}
+
+/**
+ * ADPICK 검색.
+ *
+ * 직접 fetch 하지 않고 _adpick.js를 거친다 — 캐시 / 분당 상한 / 서킷 브레이커가
+ * 거기 있다. 실패해도 throw 하지 않고 빈 목록을 준다. 구조는 fetchCoupang과
+ * 최대한 맞춘다 (relevantItems 재사용 등).
+ */
+async function fetchAdpick(keyword, limit = 10, opts = {}) {
+  const r = await searchAdpick(keyword, { limit, ...opts });
+  const items = r.items.map(it => ({
+    title: it.title,
+    lprice: it.price,
+    link: it.commissionlink,
+    image: it.photo,
+    mall: ADPICK_MALL,
+    productId: adpickProductId(it.commissionlink),
+    isCoupang: false,
+    /*
+     * ADPICK 응답에는 정가/할인 정보가 없다 (title/price/photo/cp_code/cp_name/
+     * commissionlink 뿐). oprice를 판매가와 같게 두면 discountPct가 0이 되어
+     * "정가 대비 할인" 배지가 뜨지 않는다 — 근거 없는 할인율을 만들지 않는다
+     * (api/_coupang.js normalize의 oprice 주석과 같은 판단).
+     */
+    oprice: it.price,
+    savePct: 0,
+    // ADPICK에는 쿠팡 같은 옵션(vendorItemId) 개념이 없다. 빈 값으로 두면
+    // classifyPrice의 옵션 교체 감지가 그냥 꺼질 뿐 나머지 검증(SUSPECT_RATIO 등)은
+    // 그대로 동작한다 (api/_price.js classifyPrice 참고).
+    itemId: '',
+    vendorItemId: '',
+    _source: r.from
+  }));
+
+  const rel = relevantItems(keyword, items);
+  if (rel.allMismatch) {
+    console.warn(
+      `[search:${keyword}] ADPICK 검색어와 일치하는 상품 0/${items.length}건 — 응답을 버립니다`
+      + (items.length ? ` (예: ${String(items[0].title).slice(0, 40)})` : '')
+    );
+  } else if (rel.dropped) {
+    console.log(`[search:${keyword}] ADPICK 무관한 상품 ${rel.dropped}건 제외 (${rel.kept.length}건 유지)`);
+  }
+
+  const error = items.length && r.from !== 'api' ? null : r.error;
+  return {
+    items: rel.kept,
+    error,
+    from: r.from,
+    blocked: !!r.blocked,
+    mismatch: rel.allMismatch
+  };
+}
+
+/**
+ * 쿠팡 + ADPICK을 함께 조회해 결과를 돌려준다.
  *
  * from / blocked 를 같이 돌려주는 이유: 호출부(=/api/search)가 이 값을 응답 헤더로
  * 내보내야 프론트가 "지금 보는 가격이 방금 받아온 값인지, 캐시인지"를 구분해서
  * 사용자에게 알릴 수 있다. 차단 중에 옛 가격을 아무 말 없이 현재가처럼 보여주면
  * 사용자는 클릭해서야 다른 가격을 보게 된다.
+ *
+ * ★ from/blocked는 지금도 쿠팡 기준 하나만 돌려준다(기존 계약을 그대로 유지).
+ *   ADPICK은 쿠팡과 완전히 독립된 소스라 "쿠팡은 막혔는데 ADPICK은 방금
+ *   받아왔다" 같은 상황이 생길 수 있는데, 그걸 하나의 문자열로 뭉개면 항목별
+ *   실제 출처와 어긋난다. 그래서 각 항목에 _source를 따로 붙여 두고
+ *   (fetchCoupang/fetchAdpick), saveProducts가 항목별로 저장 가능 여부를
+ *   판정한다 — X-Seosa-Source 헤더처럼 "화면에 보여줄 대표 상태"만 쿠팡
+ *   기준으로 남긴다.
  */
-async function searchAll(keyword, { coupangLimit = 6, coupangOpts = {} } = {}) {
-  const coupang = await fetchCoupang(keyword, coupangLimit, coupangOpts)
-    .catch(e => ({ items: [], error: `쿠팡 예외: ${e.message}`, from: 'none', blocked: false }));
+async function searchAll(keyword, {
+  coupangLimit = 6, coupangOpts = {},
+  adpickLimit = 10, adpickOpts = {}
+} = {}) {
+  const [coupang, adpick] = await Promise.all([
+    fetchCoupang(keyword, coupangLimit, coupangOpts)
+      .catch(e => ({ items: [], error: `쿠팡 예외: ${e.message}`, from: 'none', blocked: false, mismatch: false })),
+    fetchAdpick(keyword, adpickLimit, adpickOpts)
+      .catch(e => ({ items: [], error: `ADPICK 예외: ${e.message}`, from: 'none', blocked: false, mismatch: false }))
+  ]);
 
-  if (coupang.error) console.error(`[search:${keyword}]`, coupang.error);
+  if (coupang.error) console.error(`[search:${keyword}] 쿠팡`, coupang.error);
+  if (adpick.error) console.error(`[search:${keyword}] ADPICK`, adpick.error);
+
+  const items = [...coupang.items, ...adpick.items];
+  const errors = [coupang.error, adpick.error].filter(Boolean);
 
   return {
-    items: coupang.items,
-    errors: coupang.error ? [coupang.error] : [],
+    items,
+    errors,
     from: coupang.from || 'none',
     blocked: !!coupang.blocked,
-    mismatch: !!coupang.mismatch
+    mismatch: !items.length && !!(coupang.mismatch || adpick.mismatch)
   };
 }
 
@@ -612,17 +715,35 @@ async function recordPrices(observations, opts = {}) {
  *   from — 이 상품들이 어디서 왔는지. stale-cache/none 이면 저장하지 않는다.
  *          (예전에는 출처를 몰라서, 쿠팡이 차단된 동안 옛 캐시 값이 매일
  *           "오늘 가격"으로 쌓이고 있었다)
+ *
+ * ★ items 각각에 _source(예: fetchCoupang/fetchAdpick이 붙인 값)가 있으면
+ *   그 항목은 opts.from이 아니라 자기 _source로 판정한다.
+ *
+ *   searchAll이 쿠팡 + ADPICK을 한 배열로 합쳐서 넘기는데, 두 소스는 서로
+ *   독립적으로 성공/차단될 수 있다("쿠팡은 캐시가 오래됐는데 ADPICK은 방금
+ *   받아왔다" 같은 경우). opts.from 하나로 배치 전체를 판정하면, 한쪽이
+ *   막혔다는 이유로 방금 받아온 다른 쪽 데이터까지 버리거나, 반대로 오래된
+ *   데이터를 오늘 관측한 것처럼 저장하게 된다.
+ *
+ *   _source가 없는 항목(옛 호출부·테스트가 만든 항목)은 지금까지처럼
+ *   opts.from으로 판정한다 — 기존 동작 그대로다.
  */
 async function saveProducts(keyword, items, opts = {}) {
-  const from = opts.from || 'api';   // 출처를 안 넘기는 옛 호출부는 기존대로 동작
-  if (!isRecordableSource(from)) {
-    console.warn(`[save:${keyword}] 출처가 '${from}' 이라 저장하지 않습니다 (오늘 관측한 가격이 아님)`);
-    return { saved: 0, errors: [], skipped: true };
-  }
-
   if (!items || !items.length) return { saved: 0, errors: [] };
 
-  const r = await recordPrices((items || []).map(it => ({
+  const batchFrom = opts.from || 'api';
+  const recordable = items.filter(it => isRecordableSource(it._source || batchFrom));
+  const skipped = items.length - recordable.length;
+
+  if (!recordable.length) {
+    console.warn(`[save:${keyword}] 저장 가능한 출처가 없어 ${items.length}건 전부 제외합니다`);
+    return { saved: 0, errors: [], skipped: true };
+  }
+  if (skipped) {
+    console.log(`[save:${keyword}] 출처가 오래돼 ${skipped}건 제외, ${recordable.length}건 저장 시도`);
+  }
+
+  const r = await recordPrices(recordable.map(it => ({
     productId: it.productId,
     mall: it.mall,
     keyword,
@@ -753,7 +874,7 @@ function roundRobin(rows, keywords, take) {
 }
 
 module.exports = {
-  TODAY_PICKS, fetchCoupang,
+  TODAY_PICKS, fetchCoupang, fetchAdpick, adpickProductId,
   searchAll, saveProducts, recordPrices, toClientProduct, roundRobin, preferLive,
   relevantItems, relevantRows, freshRows, matchesKeyword, keywordTokens, isRecordableSource,
   discountPct, searchPhraseFromTitle, MAX_DISPLAY_AGE_DAYS

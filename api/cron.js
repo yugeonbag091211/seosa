@@ -37,6 +37,9 @@ const TIME_BUDGET_MS = 45000;
 //   maxWaitMs    — 호출부에서 "남은 예산"으로 채운다. 고정값으로 두면
 //                  44초 시점에 통과한 배치가 40초를 더 기다려 maxDuration을 넘긴다.
 const CRON_COUPANG = { source: 'cron', forceRefresh: true };
+// ADPICK도 같은 이유로 캐시 TTL을 무시하고 매일 새로 받아온다 — 그래야
+// isRefreshableMall('ADPICK')이 라이브로 인정하는 최신성을 유지한다.
+const CRON_ADPICK = { source: 'cron', forceRefresh: true };
 
 /*
  * 저장할 상품 수. searchAll 의 기본값 6 을 10 으로 올린다.
@@ -112,11 +115,13 @@ module.exports = async function handler(req, res) {
       break;
     }
     const opts = { ...CRON_COUPANG, maxWaitMs: leftMs };
+    const adpickOpts = { ...CRON_ADPICK, maxWaitMs: leftMs };
     const batch = targets.slice(i, i + CONCURRENCY);
     const settled = await Promise.all(batch.map(async keyword => {
       try {
         const { items, allItems, errors, from } = await searchAll(keyword, {
-          coupangLimit: CRON_LIMIT, coupangOpts: opts
+          coupangLimit: CRON_LIMIT, coupangOpts: opts,
+          adpickLimit: CRON_LIMIT, adpickOpts
         });
         const { saved, errors: saveErrors } = await saveProducts(keyword, allItems || items, { from });
         return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };
