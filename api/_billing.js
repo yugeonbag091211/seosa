@@ -651,6 +651,184 @@ async function renewDueSubscriptions(deps = {}, now = new Date()) {
   return { attempted: rows.length, renewed, failed, gaveUp, details, error: '' };
 }
 
+/* ── 미결 주문(pending/charging) 자동 정리 — 신규 가입 결제용 ─────────
+ *
+ * ★ 왜 필요한가
+ *   confirm 은 issueBillingKey(≤15s) + chargeBilling(≤60s) 이라 최악 75초인데
+ *   Vercel 함수 상한(maxDuration)은 60초다. 상한에서 잘리면 payments 행이
+ *   charging 에 멈춘다. 지금까지는 "같은 사용자가 페이지를 다시 열어 confirm 을
+ *   다시 부를 때"(api/payment.settleCharging)에만 정리됐다 — 사용자가 다시
+ *   돌아오지 않으면(창을 닫음·기기 변경·로컬스토리지 삭제) 그 행은 영원히
+ *   charging 으로 남는다. 카드에는 청구됐는데 PRO 는 못 받는 상태가 방치될
+ *   수 있고, 웹훅이 안 오거나(설정 누락) 실패하면 그 유일한 안전망도 없다.
+ *
+ *   자동갱신(renewOne)에는 이미 같은 문제의 해법(settleOutstandingCharge)이
+ *   있지만, 그건 "이 사용자가 갱신 대상이 됐을 때"만 동작한다. 최초 가입
+ *   결제는 갱신 스케줄과 무관해 그 경로를 타지 않는다.
+ *
+ *   그래서 payments 테이블을 직접 훑어 오래된 charging/pending 행을 찾아
+ *   정리하는 배치를 따로 둔다. 새 인프라 없이 하루 한 번 도는 /api/cron 에
+ *   renewDueSubscriptions 와 같은 자리로 얹는다(Vercel Hobby 함수 12개 상한).
+ *
+ * ★ 왜 renewOne/settleOutstandingCharge 와 충돌하지 않는가
+ *   두 경로 모두 markPaid/markFailed 를 쓰는데, 각각 WHERE status='charging'
+ *   조건이 걸려 있다(canTransition 규칙과 동일). 어느 쪽이 먼저 도착해도
+ *   한 번만 반영되고, 나중 쪽은 updated=false(이미 처리됨)로 조용히 끝난다.
+ *   같은 orderId 를 두 배치가 같은 실행에서 봐도(예: 정체된 갱신 주문) 안전하다.
+ *   실제로 /api/cron 은 renewDueSubscriptions 를 먼저 돌리므로, 그 경로가
+ *   먼저 정리한 행은 이 배치가 볼 때 이미 charging 이 아니다.
+ *
+ * ★ 재승인은 절대 하지 않는다 — 토스 재조회 결과가 곧 사실이다. 이 규칙은
+ *   payment.settleCharging / renewOne.settleOutstandingCharge 와 동일하다.
+ * ------------------------------------------------------------------ */
+
+/** 이만큼 지나도 charging 이면 confirm 이 죽었다고 본다. 정상 승인은 초 단위로 끝난다. */
+const STALE_CHARGING_MS = 5 * 60 * 1000;
+/**
+ * 이만큼 지나도 pending 이면 사용자가 결제를 끝내지 않았다고 본다.
+ * claimForCharge(pending→charging) 전까지는 토스에 아무 요청도 나가지 않으므로,
+ * 이 상태로 오래 남은 행은 카드에 청구되지 않은 게 확실하다 — 토스에 물어볼
+ * 필요 없이 바로 failed 로 닫아도 안전하다. 프론트가 미결 주문을 붙들고
+ * 재확인하는 창(index.html Pay.resumePending)과 같은 24시간을 쓴다.
+ */
+const STALE_PENDING_MS = 24 * 60 * 60 * 1000;
+/** 한 번에 정리할 최대 건수. 함수 실행시간 안에 끝나게 한다. */
+const STALE_SWEEP_BATCH = 20;
+
+/** 오래 charging 으로 남은 결제 목록(오래된 순). */
+async function findStaleCharging(now = new Date(), limit = STALE_SWEEP_BATCH) {
+  const cutoff = new Date(now.getTime() - STALE_CHARGING_MS).toISOString();
+  const { data, error } = await supabase
+    .from('payments')
+    .select('email, order_id, created_at, updated_at')
+    .eq('status', PAYMENT_STATUS.CHARGING)
+    .lt('updated_at', cutoff)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) return { rows: [], error: error.message };
+  return { rows: data || [], error: '' };
+}
+
+/** 오래 pending 으로 남은(카드 등록조차 끝나지 않은) 주문 목록. */
+async function findStalePending(now = new Date(), limit = STALE_SWEEP_BATCH) {
+  const cutoff = new Date(now.getTime() - STALE_PENDING_MS).toISOString();
+  const { data, error } = await supabase
+    .from('payments')
+    .select('order_id, created_at')
+    .eq('status', PAYMENT_STATUS.PENDING)
+    .lt('created_at', cutoff)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) return { rows: [], error: error.message };
+  return { rows: data || [], error: '' };
+}
+
+/**
+ * charging 행 하나를 토스에 재조회해 확정한다. 재승인은 하지 않는다 — 조회
+ * 결과가 곧 사실이다(payment.settleCharging / renewOne.settleOutstandingCharge
+ * 와 같은 규칙).
+ *
+ * @returns {{orderId:string, outcome:'paid'|'failed'|'unresolved', reason:string}}
+ */
+async function resolveStaleCharging(row, tossApi, now = new Date()) {
+  const orderId = row.order_id;
+  const looked = await tossApi.getPaymentByOrderId(orderId);
+
+  if (!looked.ok) {
+    // 404 = 그런 결제가 없다 = 청구되지 않았다. 실패로 확정해도 안전하다.
+    if (looked.status === 404) {
+      await markFailed(orderId, 'stale charging - not charged (toss 404)', now);
+      return { orderId, outcome: 'failed', reason: 'not charged' };
+    }
+    // 그 밖의 오류는 여전히 "모름" 이다. 이번엔 건드리지 않고 다음 실행에 맡긴다.
+    return { orderId, outcome: 'unresolved', reason: looked.error };
+  }
+
+  const payment = looked.data;
+  if (String(payment.status) !== toss.STATUS_DONE) {
+    await markFailed(orderId, `stale charging - toss status=${payment.status}`, now);
+    return { orderId, outcome: 'failed', reason: `toss status=${payment.status}` };
+  }
+
+  // 실제로 청구돼 있었다. 최초 결제와 같은 규칙으로 다시 검증한다.
+  const verdict = verifyPayment(payment, { orderId, amount: PRO_PRICE });
+  if (!verdict.ok) {
+    await markFailed(orderId, `stale charging - ${verdict.reason}`, now);
+    return { orderId, outcome: 'failed', reason: verdict.reason };
+  }
+
+  const paid = await markPaid(orderId, {
+    paymentKey: payment.paymentKey, amount: payment.totalAmount, rawStatus: payment.status, now
+  });
+  if (paid.error) {
+    // 기록을 못 남겼다. 권한을 주지 않는다 — charging 으로 남아 다음 실행이 다시 시도한다.
+    return { orderId, outcome: 'unresolved', reason: `기록 실패: ${paid.error}` };
+  }
+  if (!paid.updated) {
+    // 다른 경로(사용자 재방문 confirm, 웹훅)가 이미 확정했다. 기간을 또 늘리지 않는다.
+    return { orderId, outcome: 'failed', reason: '이미 처리됨' };
+  }
+
+  const act = await activatePro(row.email, { customerKey: customerKeyFor(row.email), now });
+  if (!act.ok) {
+    console.error(`[billing] ★ 미결 주문 복구 중 PRO 활성화 실패 — 수동 확인 필요 orderId=${orderId}: ${act.error}`);
+    return { orderId, outcome: 'unresolved', reason: `활성화 실패: ${act.error}` };
+  }
+  console.log(`[billing] 미결 주문(charging) 자동 복구 — orderId=${orderId} 는 이미 승인되어 있었다 (재승인 안 함)`);
+  return { orderId, outcome: 'paid', reason: '' };
+}
+
+/**
+ * payments 테이블을 훑어 오래 미결로 남은 신규 가입 주문을 정리한다.
+ * /api/cron 이 하루 한 번 부른다(renewDueSubscriptions 와 같은 자리).
+ *
+ * 한 건이 실패해도 나머지를 계속 처리한다.
+ */
+async function sweepStalePayments(deps = {}, now = new Date()) {
+  const tossApi = deps.toss || toss;
+
+  const chargingFound = await findStaleCharging(now);
+  const pendingFound = await findStalePending(now);
+
+  let paid = 0, failed = 0, unresolved = 0, expiredPending = 0;
+  const details = [];
+
+  if (chargingFound.error) {
+    console.error(`[billing] 미결 charging 주문 조회 실패: ${chargingFound.error}`);
+  } else {
+    for (const row of chargingFound.rows) {
+      let r;
+      try {
+        r = await resolveStaleCharging(row, tossApi, now);
+      } catch (e) {
+        r = { orderId: row.order_id, outcome: 'unresolved', reason: e.message };
+      }
+      if (r.outcome === 'paid') paid++;
+      else if (r.outcome === 'failed') failed++;
+      else unresolved++;
+      details.push(r);
+    }
+  }
+
+  if (pendingFound.error) {
+    console.error(`[billing] 미결 pending 주문 조회 실패: ${pendingFound.error}`);
+  } else {
+    for (const row of pendingFound.rows) {
+      // pending 은 claimForCharge 전까지 토스에 아무 요청도 나가지 않았다 —
+      // 조회할 필요 없이 바로 failed 로 닫아도 안전하다.
+      const r = await markFailed(row.order_id, 'stale pending - abandoned checkout', now);
+      if (r.updated) expiredPending++;
+    }
+  }
+
+  return {
+    checkedCharging: chargingFound.rows.length,
+    checkedPending: pendingFound.rows.length,
+    paid, failed, unresolved, expiredPending,
+    details, error: ''
+  };
+}
+
 /** 서버 전용 값(billing_key 등)을 걷어낸 구독 요약. 프론트로 나가는 모양. */
 function publicSubscription(row) {
   if (!row) return { plan: 'free', status: 'active', expiresAt: null, canceled: false };
@@ -671,5 +849,7 @@ module.exports = {
   recordPayment, alreadyProcessed,
   createPendingPayment, findPaymentByOrderId, claimForCharge, markPaid, markFailed,
   dueForRenewal, findChargingPayment, settleOutstandingCharge, recordRenewAttempt, renewOne, renewDueSubscriptions,
+  STALE_CHARGING_MS, STALE_PENDING_MS, STALE_SWEEP_BATCH,
+  findStaleCharging, findStalePending, resolveStaleCharging, sweepStalePayments,
   activatePro, cancelSubscription, deactivate, publicSubscription
 };

@@ -47,6 +47,7 @@ const fakeSupabase = {
     const ins = [];        // .in(col, values)
     const nots = [];       // .not(col, 'is', null)
     const ltes = [];       // .lte(col, value)
+    const lts = [];        // .lt(col, value)
     let sort = null, cap = null;
     let patch = null, mode = '';
 
@@ -54,7 +55,8 @@ const fakeSupabase = {
       eqs.every(([c, v]) => String(r[c]) === String(v))
       && ins.every(([c, vs]) => vs.map(String).indexOf(String(r[c])) > -1)
       && nots.every(([c]) => r[c] !== null && r[c] !== undefined)
-      && ltes.every(([c, v]) => cmpVal(r[c], v) <= 0));
+      && ltes.every(([c, v]) => cmpVal(r[c], v) <= 0)
+      && lts.every(([c, v]) => cmpVal(r[c], v) < 0));
 
     function readResult() {
       if (table === 'subscriptions' && db.failSubRead) {
@@ -83,6 +85,7 @@ const fakeSupabase = {
       in(c, vs) { ins.push([c, vs]); return q; },
       not(c) { nots.push([c]); return q; },
       lte(c, v) { ltes.push([c, v]); return q; },
+      lt(c, v) { lts.push([c, v]); return q; },
       order(c, o) { sort = { col: c, asc: !o || o.ascending !== false }; return q; },
       limit(n) { cap = n; return q; },
       update(p) { mode = 'update'; patch = p; return q; },
@@ -869,6 +872,157 @@ async function prepared(email) {
     await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
     check(res.code === 200 && res.payload.alreadyProcessed === true, '200 + alreadyProcessed', String(res.code));
     check(subOf(USER).expires_at === expAfterWebhook, 'PRO 기간이 두 번 늘지 않는다 ★');
+  }
+
+  /* ================================================================ *
+   *  R2. 미결 주문 자동 정리 (sweepStalePayments) — 신규 가입 결제용
+   *
+   *  ── 무엇을 막는 테스트인가 ────────────────────────────────────
+   *  R1-4 는 "사용자가 다시 confirm 을 보내면" 복구되는 것을 확인했다.
+   *  R2 는 "사용자가 다시 안 와도" 서버가 스스로 정리하는지를 확인한다 —
+   *  charging 이 오래 남았는데 아무도 다시 확인하지 않으면 카드는 청구됐는데
+   *  PRO 는 영원히 못 받는 상태가 방치될 수 있다.
+   * ================================================================ */
+  function age(orderId, msAgo) {
+    const t = new Date(Date.now() - msAgo).toISOString();
+    const row = payOf(orderId);
+    row.created_at = t;
+    row.updated_at = t;
+  }
+
+  section('R2-1. 갓 생긴 charging 은 건드리지 않는다 (아직 정상 처리 중일 수 있다)');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await billing.claimForCharge(oid);   // 방금 선점 — 아직 정상 흐름일 수 있다
+    const r = await billing.sweepStalePayments();
+    check(r.checkedCharging === 0, '오래되지 않은 charging 은 조회 대상에서 빠진다', String(r.checkedCharging));
+    check(payOf(oid).status === 'charging', '상태 그대로', payOf(oid).status);
+    check(toss.charges.length === 0, '토스를 부르지 않는다');
+  }
+
+  section('R2-2. 오래된 charging + 토스에는 이미 승인됨 → 재승인 없이 복구 ★');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    toss.payments['pk_' + oid] = {
+      paymentKey: 'pk_' + oid, orderId: oid, totalAmount: billing.PRO_PRICE, status: 'DONE'
+    };
+    await billing.claimForCharge(oid);
+    age(oid, billing.STALE_CHARGING_MS + 1000);   // confirm 이 60초 컷에 잘리고 사용자가 다시 안 온 상황
+
+    const r = await billing.sweepStalePayments();
+    check(r.checkedCharging === 1, '오래된 charging 1건을 찾는다', String(r.checkedCharging));
+    check(r.paid === 1 && r.failed === 0 && r.unresolved === 0, '복구(paid) 1건', JSON.stringify(r));
+    check(toss.charges.length === 0, '재승인 요청이 나가지 않았다 ★ (이중 청구 없음)', String(toss.charges.length));
+    check(payOf(oid).status === 'paid', 'status = paid', payOf(oid).status);
+    check(subOf(USER) && subOf(USER).plan === 'pro', 'PRO 활성화 — 사용자가 재방문하지 않아도 ★');
+  }
+
+  section('R2-3. 오래된 charging + 토스에는 결제가 없음(404) → 실패로 확정, PRO 없음');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await billing.claimForCharge(oid);   // 토스에는 아무것도 만들지 않는다
+    age(oid, billing.STALE_CHARGING_MS + 1000);
+
+    const r = await billing.sweepStalePayments();
+    check(r.failed === 1, '실패로 확정 1건', JSON.stringify(r));
+    check(payOf(oid).status === 'failed', 'status = failed', payOf(oid).status);
+    check(!subOf(USER), 'PRO 없음 ★');
+  }
+
+  section('R2-4. 오래된 charging + 토스 조회 자체가 실패 → 여전히 "모름", failed 로 굳히지 않는다 ★');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await billing.claimForCharge(oid);
+    age(oid, billing.STALE_CHARGING_MS + 1000);
+    toss.failLookup = true;
+
+    const r = await billing.sweepStalePayments();
+    toss.failLookup = false;
+    check(r.unresolved === 1, '보류(unresolved) 1건 — 다음 실행에 다시 확인', JSON.stringify(r));
+    check(payOf(oid).status === 'charging', 'charging 유지 ★ (모르는 것을 실패로 굳히지 않는다)',
+          payOf(oid).status);
+    check(!subOf(USER), 'PRO 없음');
+  }
+
+  section('R2-5. 이미 다른 경로(사용자 재확인/웹훅)가 먼저 확정했으면 중복 반영 없음 ★');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    toss.payments['pk_' + oid] = {
+      paymentKey: 'pk_' + oid, orderId: oid, totalAmount: billing.PRO_PRICE, status: 'DONE'
+    };
+    await billing.claimForCharge(oid);
+    // 스윕이 토스를 조회하는 사이에 다른 경로가 이미 paid 로 확정했다고 가정한다.
+    await billing.markPaid(oid, { paymentKey: 'pk_' + oid, amount: billing.PRO_PRICE, rawStatus: 'DONE' });
+    await billing.activatePro(USER, { customerKey: billing.customerKeyFor(USER) });
+    const expBefore = subOf(USER).expires_at;
+
+    const row = payOf(oid);
+    const outcome = await billing.resolveStaleCharging(row, tossClient);
+    check(outcome.outcome === 'failed' && outcome.reason === '이미 처리됨',
+          'markPaid 가 0행 갱신 → "이미 처리됨"으로 조용히 끝난다', JSON.stringify(outcome));
+    check(subOf(USER).expires_at === expBefore, 'PRO 기간이 두 번 늘지 않는다 ★');
+  }
+
+  section('R2-6. 방치된 pending(카드 등록조차 안 함) — 토스를 부르지 않고 바로 만료 ★');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);   // claimForCharge 를 부르지 않는다 — 실제로 아무 청구도 없었다
+    age(oid, billing.STALE_PENDING_MS + 1000);
+
+    const r = await billing.sweepStalePayments();
+    check(r.expiredPending === 1, '방치된 pending 1건 만료', JSON.stringify(r));
+    check(payOf(oid).status === 'failed', 'status = failed', payOf(oid).status);
+    check(toss.charges.length === 0 && toss.lastHeaders === null, '토스에 아무 요청도 보내지 않는다 ★');
+    check(!subOf(USER), 'PRO 없음');
+  }
+
+  section('R2-7. 24시간이 안 지난 pending 은 그대로 둔다 (아직 결제 중일 수 있다)');
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    age(oid, billing.STALE_PENDING_MS - 60000);   // 1분 부족
+
+    const r = await billing.sweepStalePayments();
+    check(r.expiredPending === 0, '아직 만료 대상이 아니다', String(r.expiredPending));
+    check(payOf(oid).status === 'pending', '상태 그대로', payOf(oid).status);
+  }
+
+  section('R2-8. 자동갱신 배치(renewOne)와 같은 실행에서 만나도 충돌 없음 ★');
+  /*
+   * 갱신 주문이 confirm 과 같은 이유로 charging 에 멈춘 경우를 흉내 낸다.
+   * /api/cron 은 renewDueSubscriptions 를 먼저 돌리고 sweepStalePayments 를
+   * 그 다음에 돌린다 — settleOutstandingCharge 가 먼저 정리했다면 이 배치가
+   * 볼 때는 이미 charging 이 아니어야 한다.
+   */
+  reset(); resetToss();
+  {
+    // 갱신 대상 구독을 하나 만든다.
+    const soon = new Date(Date.now() + 86400000).toISOString();  // 내일 만료 → 갱신창 안
+    db.subscriptions.push({
+      email: USER, plan: 'pro', status: 'active', expires_at: soon,
+      billing_key: 'bk_existing', customer_key: billing.customerKeyFor(USER), renew_failures: 0
+    });
+    const renewOid = billing.createOrderId();
+    await billing.createPendingPayment({ email: USER, orderId: renewOid, amount: billing.PRO_PRICE });
+    await billing.claimForCharge(renewOid);
+    toss.payments['pk_' + renewOid] = {
+      paymentKey: 'pk_' + renewOid, orderId: renewOid, totalAmount: billing.PRO_PRICE, status: 'DONE'
+    };
+    age(renewOid, billing.STALE_CHARGING_MS + 1000);
+
+    // 1) 갱신 배치가 먼저 정리한다 (renewOne 내부의 settleOutstandingCharge).
+    const renewal = await billing.renewDueSubscriptions();
+    check(payOf(renewOid).status === 'paid', '갱신 배치가 먼저 charging 을 정리한다', payOf(renewOid).status);
+
+    // 2) 그 다음 스윕이 같은 orderId 를 봐도 이미 charging 이 아니라 건드리지 않는다.
+    const sweepAfter = await billing.sweepStalePayments();
+    check(sweepAfter.checkedCharging === 0, '스윕이 이중으로 처리하지 않는다 ★', String(sweepAfter.checkedCharging));
+    check(toss.charges.length === 0, '어느 쪽도 재승인하지 않았다 ★', String(toss.charges.length));
   }
 
   /* ================================================================ *

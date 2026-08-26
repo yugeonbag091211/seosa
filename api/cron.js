@@ -164,6 +164,27 @@ module.exports = async function handler(req, res) {
       + ` (실패 ${renewal.failed}, 포기 ${renewal.gaveUp})`);
   }
 
+  /*
+   * 신규 가입 결제 중 confirm 이 maxDuration(60초)에 잘려 charging 으로 멈춘
+   * 주문을 정리한다. renewOne 과 달리 갱신 스케줄과 무관하게 발생할 수 있어
+   * (billing.sweepStalePayments 주석 참고) 별도로 돌린다. 갱신과 마찬가지로
+   * 수집 결과에는 영향을 주지 않는다.
+   */
+  let staleSweep = { checkedCharging: 0, checkedPending: 0, paid: 0, failed: 0, unresolved: 0, expiredPending: 0 };
+  try {
+    staleSweep = await billing.sweepStalePayments();
+  } catch (e) {
+    console.error(`[cron] 미결 결제 정리 중 오류(수집 결과에는 영향 없음): ${e.message}`);
+    staleSweep = { ...staleSweep, error: e.message };
+  }
+  if (staleSweep.error) {
+    console.error(`[cron] 미결 결제 정리를 돌리지 못했습니다: ${staleSweep.error}`);
+  } else if (staleSweep.checkedCharging || staleSweep.checkedPending) {
+    console.log(`[cron] 미결 결제 정리 — charging ${staleSweep.checkedCharging}건 확인`
+      + ` (복구 ${staleSweep.paid}, 실패확정 ${staleSweep.failed}, 보류 ${staleSweep.unresolved})`
+      + ` / 방치된 pending ${staleSweep.expiredPending}건 만료`);
+  }
+
   console.log(
     `[cron] 키워드 ${results.length}개(미처리 ${skipped}) / 저장 ${totalSaved}건`
     + ` / 실패 키워드 ${failed.length}개 / ${elapsedMs}ms`
@@ -180,6 +201,7 @@ module.exports = async function handler(req, res) {
     elapsedMs,
     coupang,
     renewal,
+    staleSweep,
     results
   });
 };
