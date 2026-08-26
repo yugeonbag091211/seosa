@@ -5472,12 +5472,18 @@ var Pay = {
         try {
           var tp = TossPayments(p.clientKey);
           var payment = tp.payment({ customerKey: p.customerKey });
-          // 카드 등록(빌링키 발급) 흐름. 성공하면 successUrl 로 authKey 가 붙어 돌아온다.
+          /*
+           * 카드 등록(빌링키 발급) 흐름. 성공하면 successUrl 로 authKey 가 붙어 돌아온다.
+           *
+           * customerKey 는 위 tp.payment() 호출 한 곳에만 넘긴다. v2 SDK 는 결제
+           * 인스턴스 생성 시 customerKey 를 바인딩하고, requestBillingAuth() 는
+           * method/successUrl/failUrl 등만 받는다 — 여기 다시 넣으면 SDK 가
+           * "customerKey는 정의되지 않은 파라미터입니다" 로 동기 throw 한다.
+           */
           payment.requestBillingAuth({
             method: 'CARD',
             successUrl: location.origin + '/?pay=success&orderId=' + encodeURIComponent(p.orderId),
-            failUrl: location.origin + '/?pay=fail',
-            customerKey: p.customerKey
+            failUrl: location.origin + '/?pay=fail'
           });
         } catch (e) {
           /*
