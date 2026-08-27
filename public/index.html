@@ -277,10 +277,20 @@ section.block{margin-top:var(--sec-gap)}
  * 배지를 밀어내지 않도록 최대 너비 + 말줄임표를 둔다.
  */
 .badge{position:absolute;top:12px;left:12px;max-width:calc(100% - 24px);
+  display:inline-flex;align-items:center;gap:5px;
   font-size:.64rem;letter-spacing:.02em;font-weight:700;color:var(--soft);
   background:rgba(255,255,255,.94);padding:4px 10px;border-radius:6px;z-index:3;
   border:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.badge.b-naver{color:var(--naver)}.badge.b-coupang{color:var(--coupang)}.badge.b-ali{color:var(--ali)}.badge.b-adpick{color:var(--adpick)}
+.badge.b-naver{color:var(--naver)}.badge.b-coupang{color:var(--coupang)}.badge.b-ali{color:var(--ali)}
+/* b-adpick(ADPICK 공통 클래스)는 예전엔 전부 같은 파란색이었다. 지금은 MallBrand가
+   몰마다 확인된 색만 점으로 얹으므로, 색이 확인 안 된 몰은 이 무채색 기본값을 쓴다 —
+   근거 없이 파란 텍스트로 뭉뚱그리지 않는다. */
+/*
+ * MallBrand.render()의 'pill' 출력(썸네일 코너 배지, 비교표) 공통 점 스타일.
+ * .badge든 .cmp-mall이든 이 클래스가 붙으면 브랜드색 점이 생긴다.
+ */
+.has-accent::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;
+  flex:0 0 auto;background:var(--brand-color);box-shadow:0 0 0 1px rgba(16,16,16,.12)}
 .heart{position:absolute;top:10px;right:10px;z-index:6;width:32px;height:32px;border-radius:50%;
   background:rgba(255,255,255,.94);border:1px solid var(--line);
   display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.95rem;
@@ -307,7 +317,9 @@ section.block{margin-top:var(--sec-gap)}
 .mall-brand::before{content:'';width:7px;height:7px;border-radius:50%;
   background:var(--faint);flex:0 0 auto}
 .mall-brand.has-color{color:var(--ink)}
-.mall-brand.has-color::before{background:var(--brand-color, var(--faint))}
+/* 밝은 브랜드색(예: 보리보리 노랑)이 흰 배경에 묻히지 않도록 얇은 링을 준다. */
+.mall-brand.has-color::before{background:var(--brand-color, var(--faint));
+  box-shadow:0 0 0 1px rgba(16,16,16,.12)}
 .p-title{font-size:.85rem;line-height:1.5;display:-webkit-box;
   -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.55rem;margin-bottom:12px}
 .price-row{display:flex;align-items:baseline;gap:8px;margin-top:auto}
@@ -434,7 +446,7 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .cmp-mall.m-naver{color:var(--naver)}
 .cmp-mall.m-coupang{color:var(--coupang)}
 .cmp-mall.m-ali{color:var(--ali)}
-.cmp-mall.m-adpick{color:var(--adpick)}
+/* m-adpick(색 미확인 ADPICK 몰)은 무채색 기본값을 쓴다 — .badge.b-adpick과 같은 이유. */
 .cmp-name{font-size:.82rem;line-height:1.45;display:-webkit-box;
   -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:280px}
 .cmp-price{font-family:var(--mono);font-weight:600;font-size:1.05rem;text-align:right;
@@ -3141,24 +3153,41 @@ var Skeleton = {
 var MallBrand = {
   /*
    * 실제로 확인된 브랜드 컬러만 넣는다 — 확인 안 된 몰의 색을 지어내지 않는다.
+   * 전부 "실제 헤더에 쓰이는 로고 파일"을 직접 받아 픽셀/SVG fill을 확인했다
+   * (소셜 공유용 배너 이미지는 캠페인마다 달라질 수 있어 배제).
    *
    *   쿠팡 / 알리(익스프레스) — 이 파일에 이미 있던 기존 배지 색(--coupang/--ali).
-   *   오늘의집               — 2026-08-27 공식 OG 이미지(asset.ohousecdn.com)를
-   *                           픽셀 단위로 실측. 샘플링한 색상 중 #00a1ff 하나가
-   *                           99% 이상을 차지해 확신할 수 있었다.
+   *   오늘의집   — 2026-08-27, 헤더 로고 SVG(ohou.se, asset.ohousecdn.com)의
+   *              fill="#00a1ff"를 원본에서 직접 확인. 소셜 배너 픽셀 실측과도 일치.
+   *   예스이십사 — 헤더 로고 이미지(image.yes24.com/.../logoN4.png) 픽셀 실측,
+   *              단일 색이 94% 이상.
+   *   GS SHOP    — 헤더 로고 이미지(static.m-gs.kr/.../logo_pc.png) 픽셀 실측,
+   *              단일 색이 90%.
+   *   롯데홈쇼핑 — 헤더 로고 이미지(image.lotteimall.com/.../h_homeshopping.png)
+   *              픽셀 실측, 단일 색이 89%.
+   *   보리보리   — 공식 앱 아이콘(apple-touch-icon) 픽셀 실측, 단일 색이 96%.
    *
-   * SSG/GS SHOP/롯데홈쇼핑/Hmall/예스이십사/보리보리/더블유컨셉코리아 등은
-   * 시도했지만(공식 사이트 OG 이미지·파비콘 픽셀 실측) 접근이 막히거나
-   * (SSG.com 정책상 차단) 같은 몰인데 자산마다 다른 색이 나오는 등
-   * (Hmall: 배너 이미지=주황, 파비콘=청록) 신뢰할 수 있는 단일 값을 얻지
-   * 못했다. 그런 몰은 여기 넣지 않고 아래 render()의 중립 스타일로 남긴다 —
-   * 나중에 공식 브랜드 가이드 문서로 확인되면 이 표에 추가하면 된다.
+   * 확인했지만 못 넣은 몰:
+   *   더블유컨셉코리아 — 헤더 로고 SVG를 직접 열어 봤고 fill="#000" 하나뿐이다.
+   *                     즉 브랜드 색이 없는(흑백) 워드마크라는 게 확인된 사실이라,
+   *                     "색이 없다"는 결론 자체가 실측 결과다 — 중립으로 둔다.
+   *   Hmall            헤더 로고 SVG를 열어 보니 fill이 4가지(#008982 청록,
+   *                     #222222 회색, #E2A807 금색, #FF5340 주황)라 한 가지로
+   *                     단정할 근거가 없다 — 어느 게 "그" 브랜드색인지 추측하지 않는다.
+   *   SSG              공식 사이트가 접근 정책상 막혀 있고, 소셜 배너에는 서로
+   *                     다른 색 3가지가 비슷한 비중으로 섞여 있어 판단 근거가 없다.
+   *
+   * 위 두 곳은 나중에 공식 브랜드 가이드 문서로 확인되면 추가하면 된다.
    */
   COLORS: {
     '쿠팡': 'var(--coupang)',
     '알리익스프레스': 'var(--ali)',
     '알리': 'var(--ali)',
-    '오늘의집': '#00a1ff'
+    '오늘의집': '#00a1ff',
+    '예스이십사': '#0080ff',
+    'GS SHOP': '#0088ff',
+    '롯데홈쇼핑': '#cd3129',
+    '보리보리': '#fdd137'
   },
 
   /** 확인된 브랜드 컬러가 있으면 그 값을(CSS 색상 문자열), 없으면 null을 돌려준다. */
@@ -3189,10 +3218,19 @@ var MallBrand = {
     // 색이 확인되면 인라인 style로 얹는다 — 기존 클래스 색을 항상 덮어써야
     // 하므로(예: ADPICK 공통색보다 우선), specificity 싸움 없이 인라인이 낫다.
     if (variant === 'pill') {
+      /*
+       * 예전엔 확인된 색을 텍스트 전체에 칠했다(예: 쿠팡 배지 전체가 빨강,
+       * 오늘의집 배지 전체가 파랑). 카드가 여러 장 늘어서면 그 강한 원색이
+       * 반복돼 화면이 단조롭고 촌스러워 보인다는 피드백을 받았다(2026-08-27).
+       * 이제는 점 하나에만 브랜드색을 쓰고 글자는 무채색(ink)으로 둔다 —
+       * chip 변형(.mall-brand)과 같은 절제된 방식이다. color:var(--ink)를
+       * 인라인으로 못박아 기존 .badge.b-coupang 같은 클래스 색을 확실히 덮는다.
+       */
       var baseCls = (opts && opts.baseCls) || 'badge';
       var pillCls = (opts && opts.cls) || '';
-      var pillStyle = color ? ' style="color:' + color + '"' : '';
-      return '<span class="' + baseCls + ' ' + Fmt.esc(pillCls) + '"' + pillStyle + '>' + Fmt.esc(label) + '</span>';
+      var cls = baseCls + ' ' + Fmt.esc(pillCls) + (color ? ' has-accent' : '');
+      var pillStyle = color ? ' style="--brand-color:' + color + ';color:var(--ink)"' : '';
+      return '<span class="' + cls + '"' + pillStyle + '>' + Fmt.esc(label) + '</span>';
     }
     var chipCls = 'mall-brand' + (color ? ' has-color' : '');
     var dotStyle = color ? ' style="--brand-color:' + color + '"' : '';
