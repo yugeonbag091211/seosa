@@ -2,9 +2,24 @@
 /*
  * 몰별 독립 수집(runMallCollection) 테스트.
  *
- * 실제 쿠팡/ADPICK API를 부르지 않는다. fetchAllFn 을 스텁으로 넣고,
- * 스텁이 매칭되는 상품을 절대 돌려주지 않게 해서 recordPrices()(Supabase 쓰기)
- * 까지 가지 않게 막는다 — DB 접근 0회로 순수 로직만 검증한다.
+ * 실제 쿠팡/ADPICK API를 부르지 않는다.
+ *
+ * ★ 이 테스트는 운영 Supabase 에 절대 쓰면 안 된다.
+ *
+ *   runMallCollection 은 내부에서 진짜 recordPrices() 를 호출한다. 스텁이
+ *   "DB 에 있는 product_id 와 매칭되고 가격이 0 보다 큰" 항목을 돌려주는 순간
+ *   그 값이 운영 products / price_history 에 그대로 upsert 된다.
+ *
+ *   실제로 이 파일 초판이 그 사고를 냈다 (2026-08-29): 픽스처
+ *   ADPICK-p0 / p4 / p8 이 운영 products 에 들어갔고, 그 뒤 GitHub Actions
+ *   수집기가 픽스처 keyword(ADPICK-kw000 등)로 ADPICK 을 검색하기까지 했다.
+ *
+ *   그래서 아래 스텁은 다음 둘 중 하나만 돌려준다.
+ *     · 매칭되지 않는 productId  → obsMap 에 안 들어간다
+ *     · 가격 0                   → addRow 가 버린다
+ *   두 경우 모두 obsMap 이 비어 saveAll() 이 즉시 return 하므로 DB 를 건드리지 않는다.
+ *   (저장 경로 자체의 검증은 test-adpick.js / test-price.js 가 가짜 supabase 로 한다)
+ *   assertNoDbWrite() 로 매 케이스마다 실제로 안 썼는지 확인한다.
  *
  * 검증 대상 (2026-08-29 몰별 독립 수집 도입)
  *   - 한 몰이 예외/차단이어도 다른 몰의 결과가 영향받지 않는다
@@ -29,6 +44,22 @@ function check(name, cond, detail = '') {
 function eq(name, got, want) { check(name, got === want, `got=${JSON.stringify(got)} want=${JSON.stringify(want)}`); }
 
 const TODAY = kstToday();
+
+/*
+ * 이 테스트가 운영 DB 에 한 행이라도 썼는지 실제로 확인한다.
+ * 픽스처 product_id 는 전부 "<mall>-p<n>" 꼴이라 like 로 한 번에 잡힌다.
+ * 운영 데이터의 product_id 는 쿠팡=숫자, ADPICK=sha256 hex 라 절대 겹치지 않는다.
+ */
+async function assertNoDbWrite(label) {
+  const supabase = require('../api/_supabase');
+  const [{ data: prods }, { data: hist }] = await Promise.all([
+    supabase.from('products').select('product_id').or('product_id.like.ADPICK-p%,product_id.like.쿠팡-p%'),
+    supabase.from('price_history').select('product_id').or('product_id.like.ADPICK-p%,product_id.like.쿠팡-p%')
+  ]);
+  const leaked = (prods || []).length + (hist || []).length;
+  check(`★ ${label}: 운영 DB 에 픽스처가 새어 들어가지 않았다`, leaked === 0,
+    `products=${(prods || []).length} price_history=${(hist || []).length}`);
+}
 
 function makeRows(mall, n, withKeyword = true) {
   return Array.from({ length: n }, (_, i) => ({
@@ -93,6 +124,7 @@ function makeRows(mall, n, withKeyword = true) {
     eq('ADPICK: 저장 0행', adpickResult.recorded, 0);
     check('★ 쿠팡이 전부 실패해도 ADPICK 결과는 멀쩡하다(독립 실행 확인)',
       adpickResult.attempted === 6 && coupangResult.attempted === 6);
+    await assertNoDbWrite('[3] 몰 독립성 케이스');
   }
   console.log('');
 
@@ -100,28 +132,26 @@ function makeRows(mall, n, withKeyword = true) {
   console.log('[4] 대상/시도/성공/저장 숫자 분리');
   {
     const rows = makeRows('ADPICK', 10);
-    let call = 0;
     const fetchStub = async (kw) => {
-      call++;
       const idx = Number(kw.replace('ADPICK-kw', ''));
-      // 짝수 인덱스 검색어만 매칭시켜 "성공"을 만든다. 그중 절반은 가격 0 으로
-      // 줘서 addRow 가 버리게 한다(성공은 했지만 저장은 안 되는 경우 재현).
-      if (idx % 2 !== 0) return { ok: true, items: [], reason: '' }; // 호출 성공, 매칭 0건
-      const price = idx % 4 === 0 ? 10000 : 0;
-      return { ok: true, items: [{ productId: `ADPICK-p${idx}`, lprice: price, oprice: price, link: '', image: '', itemId: '', vendorItemId: '' }], reason: '' };
+      // 홀수 검색어: 호출은 성공했지만 결과가 비었다 (매칭 0건).
+      if (idx % 2 !== 0) return { ok: true, items: [], reason: '' };
+      /*
+       * 짝수 검색어: 우리 상품과 매칭되지만 가격이 0 이라 addRow 가 버린다.
+       * → "조회는 성공(hit)했는데 저장은 안 된" 경우를 DB 쓰기 없이 재현한다.
+       *   가격을 0 보다 크게 주면 그 순간 운영 DB 에 upsert 된다(파일 머리말 참고).
+       */
+      return { ok: true, items: [{ productId: `ADPICK-p${idx}`, lprice: 0, oprice: 0, link: '', image: '', itemId: '', vendorItemId: '' }], reason: '' };
     };
     const result = await runMallCollection({
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
     eq('대상(target) = 10', result.target, 10);
     eq('시도(attempted) = 10 (전부 이번 실행에서 처리)', result.attempted, 10);
-    // 성공 판정은 "매칭돼서 uncovered 에서 빠졌는가"다 — addRow가 가격 0을 버려도
-    // markCovered 는 매칭 단계(hit)에서 이미 실행됐으므로 success 에는 포함된다.
-    // 반면 recorded(price_history 저장)는 recordPrices 가 가격 0을 버리므로 더 작다.
-    check('성공(success) > 저장(recorded) — 매칭됐다고 전부 저장되는 건 아니다',
-      result.success >= result.recorded, `success=${result.success} recorded=${result.recorded}`);
-    check('저장(recorded) 은 가격이 유효했던 것만(대략 절반의 절반)',
-      result.recorded <= 5, `recorded=${result.recorded}`);
+    eq('★ 저장(recorded) = 0 — 가격 0 은 저장 경로로 넘어가지 않는다', result.recorded, 0);
+    check('★ 대상(10) 과 시도(10) 와 저장(0) 이 서로 다른 숫자로 집계된다',
+      result.target === 10 && result.attempted === 10 && result.recorded === 0);
+    await assertNoDbWrite('[4] 숫자 분리 케이스');
   }
   console.log('');
 
@@ -162,6 +192,7 @@ function makeRows(mall, n, withKeyword = true) {
       retried.includes('ADPICK-kw000') && retried.includes('ADPICK-kw001'),
       `retried=${JSON.stringify(retried)}`);
     eq('재시도까지 전부 성공하면 완료 상태로 전환', result.status, 'completed');
+    await assertNoDbWrite('[6] 재시도 케이스');
   }
   console.log('');
 
