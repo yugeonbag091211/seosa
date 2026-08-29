@@ -77,6 +77,31 @@ const VID_RE = /^[a-z0-9]{8,64}$/i;
 let enabled = true;
 let warned = false;
 
+/*
+ * 로컬 개발 차단 스위치 (ANALYTICS_DISABLED=1).
+ *
+ * ★ 왜 필요한가 — 2026-08-29 실제 사고
+ *   .env.local 에는 운영 Supabase 자격증명이 들어 있다. 그래서 localhost 로
+ *   띄운 개발 서버가 /api/stats 를 부르면 그 카운터가 운영 daily_metrics 에
+ *   그대로 쌓인다. UX 계측을 검증하다가 실제로 운영 지표에 16종 30건을
+ *   남겼고(사후 삭제), visitors 에도 개발용 브라우저가 방문자 한 명으로
+ *   들어갔다. 지표는 "틀려도 조용한" 데이터라 시간이 지나면 실제 사용자
+ *   행동과 검증 흔적을 구분할 방법이 없어진다.
+ *
+ * 켜는 곳은 .env.local 하나뿐이다. Vercel(운영·프리뷰) 환경변수에는 절대
+ * 넣지 않는다 — 넣는 순간 운영 집계가 통째로 멈추고, 그것도 조용히 멈춘다.
+ *
+ * migration 미적용 자동 차단(enabled)과 별도의 변수로 둔다. 두 이유를 한
+ * 플래그에 섞으면 "스키마가 없어서 꺼진 것"과 "개발자가 끈 것"을 진단에서
+ * 구분할 수 없다 (reason 문자열도 각각 다르게 돌려준다).
+ *
+ * 값을 캐시하지 않고 매번 읽는다. 테스트가 켜고 끄며 양쪽 경로를 모두
+ * 확인할 수 있어야 하고, 비용은 문자열 비교 한 번이라 무시할 만하다.
+ */
+function localDisabled() {
+  return String(process.env.ANALYTICS_DISABLED || '').trim() === '1';
+}
+
 function missingObject(msg) {
   return /could not find|does not exist|schema cache|relation .* does not exist/i.test(msg || '');
 }
@@ -92,7 +117,7 @@ function disable(what, msg) {
 }
 
 /** @returns {boolean} 계측이 켜져 있는가 (테스트·진단용) */
-function isEnabled() { return enabled; }
+function isEnabled() { return enabled && !localDisabled(); }
 
 /** 테스트에서 모듈 상태를 되돌리기 위한 것. 운영 코드는 부르지 않는다. */
 function _reset() { enabled = true; warned = false; }
@@ -107,6 +132,9 @@ function _reset() { enabled = true; warned = false; }
  * @returns {Promise<{ok: boolean, reason: string}>}  절대 throw 하지 않는다
  */
 async function trackVisit(visitorId, today = kstToday()) {
+  // 로컬에서는 방문도 남기지 않는다 — visitors 에 개발용 브라우저가 섞이면
+  // '오늘 방문자'·'재방문자' 수가 그만큼 부풀고 되돌릴 수 없다.
+  if (localDisabled()) return { ok: false, reason: 'local-disabled' };
   if (!enabled) return { ok: false, reason: 'disabled' };
 
   /*
@@ -138,6 +166,7 @@ async function trackVisit(visitorId, today = kstToday()) {
  * @returns {Promise<{ok: boolean, reason: string}>}  절대 throw 하지 않는다
  */
 async function bump(metric, today = kstToday()) {
+  if (localDisabled()) return { ok: false, reason: 'local-disabled' };
   if (!enabled) return { ok: false, reason: 'disabled' };
 
   // 변환·검증을 전부 try 안에서 한다 (이유는 trackVisit 주석 참고).
@@ -171,7 +200,10 @@ async function bump(metric, today = kstToday()) {
 async function report(today = kstToday()) {
   const out = {
     date: today,
-    enabled,
+    // 진단에서 "왜 안 세지는가"를 바로 알 수 있게 두 이유를 나눠 보여준다.
+    // 조회 자체는 막지 않는다 — 읽기는 운영 데이터를 오염시키지 않는다.
+    enabled: isEnabled(),
+    localDisabled: localDisabled(),
     visitorsTotal: null,
     visitorsToday: null,
     visitorsReturning: null,

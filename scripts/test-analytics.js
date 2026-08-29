@@ -26,6 +26,13 @@ const ROOT = path.resolve(__dirname, '..');
 process.env.CRON_SECRET = 'test-cron-secret';
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SECRET_KEY;
+/*
+ * 개발자의 .env.local 에 ANALYTICS_DISABLED=1 이 있어도 이 테스트는
+ * "계측이 켜진 경로"를 검증해야 한다. 환경에 따라 결과가 달라지면
+ * 테스트가 아니다. (이 파일은 _env 를 로드하지 않지만, 셸에서 값을
+ * 내보낸 상태로 실행될 수 있으므로 명시적으로 지운다)
+ */
+delete process.env.ANALYTICS_DISABLED;
 
 /* ------------------------------------------------------------------ *
  *  가짜 Supabase
