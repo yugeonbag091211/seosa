@@ -35,7 +35,35 @@ const { kstToday } = require('./_kst');
  *   그대로 받으면 아무 문자열이나 daily_metrics 에 쌓을 수 있다. 테이블이
  *   쓰레기로 차면 지표를 읽을 수 없게 된다 — 세지 않는 편이 낫다.
  */
-const METRICS = ['search', 'click'];
+/*
+ * 셀 수 있는 지표 이름.
+ *
+ * ★ 이 목록에 없는 이름은 bump() 가 'unknown metric' 으로 조용히 버린다.
+ *   프론트에 이벤트를 추가했는데 여기 이름을 안 넣으면 아무 오류 없이
+ *   집계만 안 된다 — 반드시 양쪽을 같이 고칠 것.
+ *
+ * ★ 스키마는 건드리지 않았다. daily_metrics.metric 이 text 컬럼이라
+ *   (supabase/2026-08-25-analytics.sql) 이름을 늘리는 데 마이그레이션이 필요 없다.
+ *
+ * ★ 이 테이블은 (날짜, 지표명, 횟수) 카운터다. product_id·검색어 같은 차원을
+ *   담을 자리가 없고, 그래서 개인을 식별할 수 있는 값은 애초에 들어오지 않는다.
+ *   차원이 필요해지면 그때 별도 테이블을 논의한다.
+ *
+ * 2026-08-29 UX 개편에서 추가한 것들:
+ *   탐색  search_open / search_submit / search_result_click / product_view
+ *   AI    ai_discovered / ai_open / ai_first_prompt / ai_followup
+ *         ai_entry_* 는 진입 위치별 분해값(home·search·product·compare·fab)
+ *   전환  price_history_open / comparison_open / wishlist_add /
+ *         price_alert_add / external_shop_click
+ */
+const METRICS = [
+  'search', 'click',
+  'search_open', 'search_submit', 'search_result_click', 'product_view',
+  'ai_discovered', 'ai_open', 'ai_first_prompt', 'ai_followup',
+  'ai_entry_home', 'ai_entry_search', 'ai_entry_product', 'ai_entry_compare', 'ai_entry_fab',
+  'price_history_open', 'comparison_open',
+  'wishlist_add', 'price_alert_add', 'external_shop_click'
+];
 
 /** visitorId 로 받아들일 모양. 브라우저가 만든 난수만 통과시킨다. */
 const VID_RE = /^[a-z0-9]{8,64}$/i;
@@ -180,6 +208,15 @@ async function report(today = kstToday()) {
     (data || []).forEach(r => { byMetric[r.metric] = Number(r.count) || 0; });
     out.searchToday = byMetric.search || 0;
     out.clickToday  = byMetric.click  || 0;
+    /*
+     * UX 지표는 통째로 함께 내보낸다. 필드를 하나씩 늘리면 지표를 추가할
+     * 때마다 이 함수도 같이 고쳐야 하고, 빠뜨리면 쌓이기만 하고 아무도
+     * 못 보는 값이 된다. 0 으로 채워 두어 "아직 한 번도 안 일어남"과
+     * "집계가 안 됨"을 구분할 수 있게 한다.
+     */
+    out.ux = {};
+    METRICS.filter(m => m !== 'search' && m !== 'click')
+      .forEach(m => { out.ux[m] = byMetric[m] || 0; });
   } catch (e) {
     out.errors.push(`daily_metrics: ${e.message}`);
   }

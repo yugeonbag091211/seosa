@@ -154,7 +154,8 @@ header{position:sticky;top:0;z-index:200;background:rgba(252,252,251,.82);
   backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   border-bottom:1px solid transparent;transition:border-color .3s}
 header.solid{border-bottom:1px solid var(--line)}
-.bar{display:flex;align-items:center;justify-content:space-between;height:68px}
+/* position:relative — .nav-menu(오버플로 메뉴)가 이 박스를 기준으로 내려온다. */
+.bar{display:flex;align-items:center;justify-content:space-between;height:68px;position:relative}
 .logo{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.14em;
   cursor:pointer;line-height:1;transition:opacity .2s}
 .logo:hover{opacity:.55}
@@ -193,9 +194,58 @@ header.solid{border-bottom:1px solid var(--line)}
 .search-field input{flex:1;border:0;background:transparent;outline:0;min-width:0;
   font-family:inherit;font-size:1rem;padding:14px 0;color:var(--ink)}
 .search-field input::placeholder{color:var(--faint)}
-.search-go{border:0;background:var(--ink);color:#fff;border-radius:11px;padding:14px 28px;
-  font-size:.8rem;letter-spacing:.08em;cursor:pointer;font-weight:600;transition:opacity .2s}
+/*
+ * 검색 버튼의 시각적 면적을 줄인다 (padding 28px → 18px, font .8 → .76rem).
+ *
+ * ★ 채움(검정 배경)은 유지한다. 아웃라인으로 바꾸면 잉크는 더 줄지만 1차 액션의
+ *   affordance 가 같이 떨어진다. 검색은 SEOSA 의 핵심 기능이라 발견성·시작률을
+ *   깎는 변경은 하지 않는다. 줄인 잉크만큼의 시각적 예산은 바로 아래
+ *   .hero-ai(텍스트 링크)가 가져가서, 검색 > AI 의 우선순위는 그대로 유지된다.
+ *   높이(패딩 14px + 폰트)는 그대로라 터치 타겟은 줄지 않는다.
+ */
+.search-go{border:0;background:var(--ink);color:#fff;border-radius:11px;padding:14px 18px;
+  font-size:.76rem;letter-spacing:.06em;cursor:pointer;font-weight:600;transition:opacity .2s}
 .search-go:hover{opacity:.82}
+
+/* AI 보조 진입점 — 검색보다 항상 약해야 한다. 테두리도 배경도 없는 텍스트 링크. */
+.hero-ai{display:inline-block;margin-top:16px;background:none;border:0;cursor:pointer;
+  font-family:inherit;font-size:.84rem;color:var(--soft);padding:10px 8px;
+  transition:color .2s;text-align:center}
+.hero-ai:hover{color:var(--ink)}
+
+/*
+ * 맥락 AI 진입점 (검색 결과 / 상품 상세 / 몰별 비교).
+ * 고스트 버튼 — 검정 대형 CTA 를 추가하지 않는다. 무시해도 되는 보조 행동이다.
+ * 높이 44px 이상을 유지해 모바일 터치 타겟을 지킨다.
+ */
+.ctx-ai{display:block;width:100%;margin:20px 0 4px;background:none;
+  border:1px solid var(--line);border-radius:var(--r,12px);cursor:pointer;
+  font-family:inherit;font-size:.86rem;color:var(--soft);padding:14px 18px;
+  min-height:46px;text-align:center;transition:border-color .2s,color .2s}
+.ctx-ai:hover{border-color:var(--ink);color:var(--ink)}
+#cmpBody + .ctx-ai{margin:18px 28px 24px;width:auto}
+@media(max-width:640px){#cmpBody + .ctx-ai{margin:16px 18px 20px}}
+
+/* ── 헤더 오버플로 메뉴 (모바일 전용) ────────────────────────── */
+.menu-btn{display:none;background:none;border:0;cursor:pointer;color:var(--ink);
+  font-size:1.25rem;line-height:1;width:44px;height:44px;border-radius:50%;
+  align-items:center;justify-content:center;transition:background .2s}
+.menu-btn:hover{background:var(--surface)}
+.nav-menu{display:none;position:absolute;right:20px;top:100%;z-index:500;
+  background:var(--card-bg,#fff);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow-lg);padding:6px;min-width:200px}
+.nav-menu.open{display:block}
+.nav-menu-item{display:block;width:100%;background:none;border:0;cursor:pointer;
+  font-family:inherit;font-size:.9rem;color:var(--ink);text-align:left;
+  padding:13px 16px;border-radius:9px;min-height:44px;transition:background .15s}
+.nav-menu-item:hover{background:var(--surface)}
+html[data-theme="dark"] .nav-menu{background:var(--bg)}
+
+/* 데스크톱에서는 nav-link 가 전부 보이므로 메뉴가 필요 없다. */
+@media(max-width:640px){
+  .menu-btn{display:flex}
+  .hero-ai{font-size:.88rem;padding:12px 8px}
+}
 .chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:26px;
   opacity:0;animation:rise .8s .62s forwards}
 .chip{font-size:.8rem;color:var(--soft);border:1px solid var(--line);background:#fff;
@@ -543,6 +593,10 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .pchg.up{color:var(--up);background:rgba(201,54,43,.08)}
 .card .pchg{margin-left:0;margin-top:6px;display:inline-flex}
 
+/* 추천 근거 한 줄 (Grid.markWhy). 가격 사실만 담는다 — 조용한 보조 정보라 작고 흐리게. */
+.why-line{margin-top:5px;font-size:.72rem;color:var(--soft);letter-spacing:-.01em}
+@media(max-width:760px){.why-line{font-size:.66rem;margin-top:4px}}
+
 .spark{margin-top:11px;display:flex;align-items:center;gap:8px;min-height:22px}
 .spark .lbl{font-family:var(--mono);font-size:.6rem}
 .spark .lbl.down{color:var(--down)}.spark .lbl.up{color:var(--up)}.spark .lbl.flat,.spark .lbl.none{color:var(--faint)}
@@ -764,6 +818,31 @@ footer p{font-size:.78rem;color:var(--faint)}
 .mini .mname{font-size:.66rem;color:var(--ink);line-height:1.3;height:1.7rem;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .mini .mprice{font-family:var(--mono);font-weight:600;font-size:.9rem;margin-top:3px}
+/*
+ * 가격 근거 한 줄 — 서버가 가격 기록에서 계산한 사실만 들어간다(AI 문장이 아니다).
+ *
+ * 색을 테마별로 나누지 않는다. 이 카드(.mini)는 다크에서도 흰 배경으로
+ * 그려지는 경우가 있어서, 다크 전용 밝은 금색(#c9a86a)을 쓰면 흰 배경 위에서
+ * 대비가 2.26:1까지 떨어진다. #8a6d3b 는 흰 배경 4.85:1 · 어두운 배경 3.76:1 로
+ * 양쪽 모두 읽히므로 하나로 둔다.
+ */
+.mini .mnote{font-size:.58rem;color:#8a6d3b;margin-top:3px;line-height:1.25;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/*
+ * 추천 변경 알림 — 서버가 1위가 실제로 바뀌었다고 판정했을 때만 그려진다.
+ * 조용한 한 줄로 둔다. 눈에 띄는 배지로 만들면 매번 뭔가 일어난 것처럼 보인다.
+ *
+ * ★ 색은 .mnote 와 다르다. 이 줄은 AI 말풍선(.b-ai) 위에 얹히는데 그 배경은
+ *   라이트에서도 다크에서도 어둡다(#101010 / #232327). 카드용 금색(#8a6d3b)을
+ *   쓰면 대비가 3.2:1까지 떨어져 11px 글자가 읽히지 않는다.
+ *   #c9a86a 는 두 배경에서 8.4:1 · 6.9:1 로 넉넉하다.
+ */
+.bubble .rec-change{font-size:.68rem;color:#c9a86a;border-left:2px solid #c9a86a;
+  padding-left:8px;margin:0 0 8px;line-height:1.4}
+.bubble .rec-change span{color:var(--soft);font-size:.64rem}
+/* AI 답변 안의 목록 항목 — 문단과 눈으로 구분되게 */
+.bubble .ai-li{display:block;padding-left:.8em;text-indent:-.6em}
+.bubble .ai-li::before{content:"· ";opacity:.55}
 .mini .mbadge{position:absolute;top:5px;left:5px;font-family:var(--mono);font-size:.5rem;padding:2px 6px;border-radius:5px;
   color:var(--soft);background:rgba(255,255,255,.94);font-weight:600;z-index:2;border:1px solid var(--line)}
 /* ── 챗 추천 질문 칩 ── */
@@ -938,6 +1017,14 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
 .alert-input{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 14px;
   font-family:inherit;font-size:.86rem;outline:0;transition:border-color .2s;margin-bottom:12px;background:#fff;color:var(--ink)}
 .alert-input:focus{border-color:var(--ink)}
+/* AI 추천 알림 체크박스. 목표가 없이도 신청할 수 있는 길이라 눈에 띄되
+   입력란보다 앞서 보이지는 않게 한다. */
+.alert-check{display:flex;gap:10px;align-items:flex-start;margin:2px 0 14px;cursor:pointer;
+  padding:11px 13px;border:1px solid var(--line);border-radius:8px;transition:border-color .2s}
+.alert-check:hover{border-color:var(--ink)}
+.alert-check input{margin-top:2px;flex:0 0 auto;accent-color:var(--ink);width:15px;height:15px}
+.alert-check span{font-size:.8rem;line-height:1.5;color:var(--ink)}
+.alert-check small{display:block;font-size:.7rem;color:var(--soft);margin-top:3px;line-height:1.45}
 .alert-submit{width:100%;background:var(--ink);color:#fff;border:0;padding:13px;
   font-size:.78rem;cursor:pointer;border-radius:8px;transition:opacity .2s;font-weight:600}
 .alert-submit:hover{opacity:.85}
@@ -1126,6 +1213,7 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
   .mini .mb{padding:5px 6px}
   .mini .mname{font-size:.56rem;height:1.46rem}
   .mini .mprice{font-size:.74rem;margin-top:2px}
+  .mini .mnote{font-size:.5rem;margin-top:2px}
   .mini .mbadge{font-size:.42rem;padding:2px 4px;top:3px;left:3px}
   .chat-suggest{padding:8px 12px 0;gap:5px}
   .cs-chip{font-size:.64rem;padding:5px 10px}
@@ -1283,6 +1371,23 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
     <span class="wish-btn" data-act="open-wish">
       <span>♡ 위시리스트</span><span class="wish-count num" id="wishCount">0</span></span>
     <button class="theme-btn" id="themeBtn" data-act="toggle-theme" title="다크모드 전환" aria-label="다크모드 전환">☾</button>
+    <!--
+      모바일 전용 오버플로 메뉴.
+
+      위 .nav-link.hide-m 4개(셀렉션·가격 알림·서사 AI·내 취향 설정)는
+      640px 이하에서 display:none 으로 사라지는데, 지금까지 대체 경로가 전혀
+      없어서 모바일 사용자는 그 4개 기능에 도달할 방법이 없었다(서사 AI 는
+      우하단 FAB 하나뿐). 하단 탭바를 새로 만드는 대신, 영구 요소 1개만
+      추가해 사라진 목적지를 전부 되돌린다.
+    -->
+    <button class="menu-btn" id="menuBtn" data-act="toggle-menu"
+            aria-label="메뉴 열기" aria-expanded="false" aria-controls="navMenu">⋯</button>
+  </div>
+  <div class="nav-menu" id="navMenu" role="menu" aria-hidden="true">
+    <button class="nav-menu-item" role="menuitem" data-act="scroll-today">오늘의 셀렉션 보기</button>
+    <button class="nav-menu-item" role="menuitem" data-act="ai-entry" data-ctx="home">서사 AI에게 물어보기</button>
+    <button class="nav-menu-item" role="menuitem" data-act="open-myalerts">가격 알림 관리</button>
+    <button class="nav-menu-item" role="menuitem" data-act="open-profile">내 취향 설정</button>
   </div>
 </div></header>
 
@@ -1290,24 +1395,84 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
 
   <!-- 히어로 -->
   <section class="hero">
-    <div class="eyebrow">COUPANG · DAILY PRICE LEDGER</div>
+    <!--
+      eyebrow / hero-sub 는 실제 수집 범위와 반드시 일치해야 한다.
+      예전 문구는 "COUPANG · DAILY PRICE LEDGER" / "쿠팡 최저가를…" 이라 쿠팡 전용
+      서비스라고 선언했는데, 화면 아래 필터 바에는 쿠팡 외 몰 버튼이 있고
+      일일 수집기도 쿠팡 + 제휴몰(ADPICK)을 함께 수집한다. 선언과 실제가 다르면
+      사용자의 mental model 이 첫 화면에서부터 어긋난다.
+      과장하지 않는다 — "모든 쇼핑몰" 같은 표현은 사실이 아니므로 쓰지 않는다.
+    -->
+    <div class="eyebrow">DAILY PRICE LEDGER</div>
     <h1><span>가격에도,</span><br><span> </span><span><em>서사</em>가 있습니다.</span></h1>
-    <p class="hero-sub">쿠팡 최저가를 매일 기록하고, 쌓인 가격 흐름으로 '지금이 살 때'인지 알려드립니다.</p>
+    <p class="hero-sub">쿠팡과 제휴몰의 가격을 매일 기록합니다. 지금이 살 때인지 판단하고, 몰별로 비교해 보세요.</p>
     <div class="search-box">
       <div class="search-field">
-        <input id="q" placeholder="찾으시는 상품을 입력하세요 · 예: 무선 이어폰" autocomplete="off">
+        <input id="q" placeholder="상품명을 검색해 보세요 · 예: 무선 이어폰" autocomplete="off">
         <button class="search-go" data-act="search">검색</button>
       </div>
       <div class="autocomplete" id="autocomplete"></div>
+      <!--
+        AI 보조 진입점. 검은 대형 CTA 를 하나 더 만들지 않는다 — 텍스트 링크라
+        검색보다 항상 약하고, 무시해도 아무 일도 일어나지 않는다(AI 강요 금지).
+        라벨은 "서사"(브랜드명, 무엇을 얻는지 알 수 없음)가 아니라 행동으로 쓴다.
+      -->
+      <button class="hero-ai" data-act="ai-entry" data-ctx="home">조건으로 찾고 싶다면 · 서사 AI에게 물어보기 →</button>
       <div class="chips" id="chips"></div>
       <div class="recent-search" id="recentSearch"></div>
     </div>
+  </section>
 
-    <div class="values">
-      <div class="val"><h4><span class="vnum">01</span>쿠팡 최저가 실시간 조회</h4><p>검색하면 쿠팡 판매가를 그 자리에서 받아와 가격순으로 정리해 드려요.</p></div>
-      <div class="val"><h4><span class="vnum">02</span>매일 기록되는 가격</h4><p>매일 새벽 자동으로 가격을 수집해 흐름을 그래프로 보여드려요.</p></div>
-      <div class="val"><h4><span class="vnum">03</span>AI 큐레이터 '서사'</h4><p>예산과 취향을 말하면, 실제 검색 데이터로 골라드립니다.</p></div>
+  <!--
+    ★ 섹션 순서 (2026-08-29 UX 개편)
+
+    예전 순서는  forYou → histRec → priceDrop → monthly → 기능카드 → today  였다.
+    그런데 forYou / priceDrop / recent 는 전부 display:none 으로 시작하고,
+    histRec 도 검색 이력이 없으면 빈 상태다. 즉 첫 방문자는 히어로를 지나
+    빈 영역 몇 개를 스크롤한 뒤에야 실제 상품(today)을 만났다.
+
+    지금은 "누구에게나 데이터가 있는" 두 섹션(priceDrop · today)을 위로 올리고,
+    개인화 섹션(forYou · histRec)은 그 뒤에 둔다. 개인화 섹션은 데이터가 있을
+    때만 보이므로, 첫 방문자에게는 자연히 상품이 먼저 온다.
+
+    ※ 섹션은 전부 id 로 show/hide 된다(HOME_SECTIONS). DOM 순서는 표시 로직과
+      무관하므로 이 재배치는 기능에 영향을 주지 않는다.
+  -->
+
+  <!-- 최근 가격이 내려간 상품 -->
+  <section id="priceDrop" class="block" style="display:none">
+    <div class="sec-eyebrow">PRICE LEDGER</div>
+    <div class="sec-head">
+      <div>
+        <div class="sec-title">최근 가격이 내려간 상품</div>
+        <div class="sec-sub">매일 새벽 수집한 실제 가격 기록에서, 오늘 값이 직전 기록가보다 내려간 상품만 골랐어요.</div>
+      </div>
     </div>
+    <div id="dropWrap">
+      <div class="drop-loading" id="dropLoading"><div class="ring"></div>가격 변동 데이터를 불러오는 중…</div>
+      <div class="ledger" id="dropLedger" style="display:none">
+        <div class="ledger-head">
+          <span>#</span><span></span><span>상품</span><span class="ta-r">이전 기록가</span><span class="ta-r">현재가</span><span class="ta-r">변동</span>
+        </div>
+        <div id="dropRows"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 오늘의 셀렉션 -->
+  <section id="today" class="block">
+    <div class="sec-eyebrow">TODAY'S SELECTION</div>
+    <div class="sec-head">
+      <div>
+        <div class="sec-title">오늘의 셀렉션</div>
+        <div class="sec-sub">현재 키워드 · <b id="recKey">불러오는 중…</b></div>
+      </div>
+      <div class="rec-tools">
+        <button class="tbtn dark" data-act="rec-more">이 키워드 더보기</button>
+      </div>
+    </div>
+    <div class="mb-chips" id="recChips" style="margin-bottom:16px"></div>
+    <div class="grid" id="recGrid"></div>
   </section>
 
   <!-- 당신을 위한 추천 -->
@@ -1315,7 +1480,8 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
     <div class="sec-eyebrow">FOR YOU</div>
     <div class="sec-head">
       <div>
-        <div class="sec-title">당신을 위한 추천</div>
+        <!-- "당신을 위한 추천"은 무엇을 얻는지 알려주지 않는다. 기준을 제목에 드러낸다. -->
+        <div class="sec-title">관심 카테고리에서 고른 상품</div>
         <div class="sec-sub">관심 카테고리 <b id="forYouCats">—</b> 기반으로 골랐어요.</div>
       </div>
       <div class="rec-tools">
@@ -1342,26 +1508,6 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
     <div class="grid" id="histRecGrid"></div>
   </section>
 
-  <!-- 오늘의 가격 하락 -->
-  <section id="priceDrop" class="block" style="display:none">
-    <div class="sec-eyebrow">PRICE LEDGER</div>
-    <div class="sec-head">
-      <div>
-        <div class="sec-title">오늘의 가격 하락</div>
-        <div class="sec-sub">매일 새벽 수집한 실제 가격 기록에서, 전날보다 내려간 상품만 골랐어요.</div>
-      </div>
-    </div>
-    <div id="dropWrap">
-      <div class="drop-loading" id="dropLoading"><div class="ring"></div>가격 변동 데이터를 불러오는 중…</div>
-      <div class="ledger" id="dropLedger" style="display:none">
-        <div class="ledger-head">
-          <span>#</span><span></span><span>상품</span><span class="ta-r">이전 기록가</span><span class="ta-r">현재가</span><span class="ta-r">변동</span>
-        </div>
-        <div id="dropRows"></div>
-      </div>
-    </div>
-  </section>
-
   <!-- 이달의 추천 -->
   <section id="monthly" class="block">
     <div class="sec-eyebrow">MONTHLY CURATION</div>
@@ -1384,9 +1530,25 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
     <div class="grid" id="monthGrid"></div>
   </section>
 
-  <!-- 기능 안내 배너 -->
+  <!--
+    서비스 소개 + 기능 안내.
+
+    .values 는 원래 히어로 안(검색창 바로 아래)에 있었다. 그런데 이 3블록이
+    설명하는 내용은 바로 아래 섹션들이 실물 상품으로 이미 증명하는 것이라
+    중복이었고, 모바일에서는 1열로 쌓여(@media max-width:700px) 상품에
+    도달하기까지의 스크롤만 크게 늘렸다. 첫 화면의 가장 비싼 자리를 설명문이
+    차지하고 있던 셈이라 아래로 내린다.
+
+    ※ .values 클래스명은 그대로 둔다 — 검색 시 이 블록을 숨기는 코드가
+      document.querySelector('.values') 로 찾는다.
+  -->
   <section class="block" style="margin-top:48px">
-    <div class="feature-cards">
+    <div class="values">
+      <div class="val"><h4><span class="vnum">01</span>매일 기록되는 가격</h4><p>매일 새벽 자동으로 가격을 수집해 흐름을 그래프로 보여드려요.</p></div>
+      <div class="val"><h4><span class="vnum">02</span>몰별 가격 비교</h4><p>같은 상품을 파는 몰의 가격을 한 표에 모아 어디가 싼지 보여드려요.</p></div>
+      <div class="val"><h4><span class="vnum">03</span>AI 큐레이터 '서사'</h4><p>예산과 취향을 말하면, 실제 검색 데이터로 골라드립니다.</p></div>
+    </div>
+    <div class="feature-cards" style="margin-top:48px">
       <div class="feature-card" data-act="open-profile">
         <div class="fc-icon">✦</div>
         <div class="fc-title">내 취향 설정</div>
@@ -1400,22 +1562,6 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
         <div class="fc-cta">알림 신청하기 →</div>
       </div>
     </div>
-  </section>
-
-  <!-- 오늘의 셀렉션 -->
-  <section id="today" class="block">
-    <div class="sec-eyebrow">TODAY'S SELECTION</div>
-    <div class="sec-head">
-      <div>
-        <div class="sec-title">오늘의 셀렉션</div>
-        <div class="sec-sub">현재 키워드 · <b id="recKey">불러오는 중…</b></div>
-      </div>
-      <div class="rec-tools">
-        <button class="tbtn dark" data-act="rec-more">이 키워드 더보기</button>
-      </div>
-    </div>
-    <div class="mb-chips" id="recChips" style="margin-bottom:16px"></div>
-    <div class="grid" id="recGrid"></div>
   </section>
 
   <!-- 최근 본 상품 -->
@@ -1436,6 +1582,11 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
   <!-- 검색 결과 -->
   <section id="results">
     <div class="result-banner" id="banner"></div>
+    <!--
+      검색 결과 맥락 AI 진입점. 결과를 본 뒤 "이걸로는 못 고르겠다" 싶은
+      지점에 놓는다. 결과가 실제로 있을 때만 보인다(Search 가 토글).
+    -->
+    <button class="ctx-ai" id="resultsAi" data-act="ai-entry" data-ctx="search" style="display:none">이 결과를 더 좁혀볼까요? 서사 AI에게 묻기 →</button>
     <div class="sort-bar" id="sortBar" style="display:none">
       <span class="sort-label">Sort</span>
       <!--
@@ -1831,7 +1982,12 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
 </footer>
 
 <button class="top-btn" id="topBtn" data-act="scroll-top" title="맨 위로">↑</button>
-<button class="fab" data-act="open-ai">서사<small>Curator</small></button>
+<!--
+  라벨을 "서사 / Curator" 에서 행동형으로 바꿨다. "서사"는 브랜드명이라
+  눌렀을 때 무엇을 얻는지 알려주지 않는다(information scent 0).
+  아이콘만 남기지 않고 짧은 동사구를 유지한다.
+-->
+<button class="fab" data-act="ai-entry" data-ctx="fab" aria-label="서사 AI에게 물어보기">묻기<small>서사 AI</small></button>
 
 <!-- 취향 프로필 패널 -->
 <div class="panel" id="profilePanel">
@@ -1951,6 +2107,8 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
     <div style="position:relative;height:280px"><canvas id="chart"></canvas></div>
     <div class="trend-summary" id="trendSummary"></div>
     <div class="stat-row" id="stats"></div>
+    <!-- 상품 맥락 AI 진입점. 이미 본 가격 이력 다음에 놓아, 더 알고 싶을 때만 눈에 들어온다. -->
+    <button class="ctx-ai" data-act="ai-entry" data-ctx="product">이 상품, 지금 살 만한가요? 서사 AI에게 묻기 →</button>
   </div>
 </div></div>
 
@@ -1962,6 +2120,7 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
   </div>
   <div class="cmp-summary" id="cmpSummary" style="display:none"></div>
   <div id="cmpBody"></div>
+  <button class="ctx-ai" data-act="ai-entry" data-ctx="compare">어디서 사는 게 나은지 물어보기 →</button>
 </div></div>
 
 <!-- 가격 알림 신청 모달 -->
@@ -1979,6 +2138,16 @@ button.pro-cta.ghost:hover{border-color:var(--soft);color:var(--ink);opacity:1}
       </div>
       <span class="alert-label">목표 가격 (이 가격 이하가 되면 메일로 알려드려요)</span>
       <input class="alert-input" id="alertTargetPrice" type="number" placeholder="예: 150000">
+      <!--
+        목표가를 정하려면 적정가를 미리 알아야 한다. 모르니까 알림을 신청하는
+        것이므로, 금액 없이도 신청할 수 있는 길을 둔다. 판정은 서버 Deal Engine
+        (api/_deal.js)이 하고 여기서는 켜고 끄기만 한다.
+      -->
+      <label class="alert-check">
+        <input type="checkbox" id="alertOnDeal">
+        <span>AI가 <b>지금 사도 좋다</b>고 판단하면 알려주세요
+          <small>가격 기록·추세·데이터 최신성을 함께 보고 판정합니다. 목표가를 몰라도 됩니다.</small></span>
+      </label>
       <span class="alert-label">이메일 주소</span>
       <input class="alert-input" id="alertEmail" type="email" placeholder="알림 받을 이메일 주소">
       <button class="alert-submit" data-act="alert-submit">가격이 내려가면 알려주세요</button>
@@ -2189,7 +2358,34 @@ var Track = {
   },
 
   visit: function() { Track.ping('event=visit&vid=' + encodeURIComponent(Track.vid())); },
-  click: function() { Track.ping('event=click'); }
+  click: function() { Track.ping('event=click'); },
+
+  /*
+   * UX 이벤트 계측 (2026-08-29 추가).
+   *
+   * 기존 구조를 그대로 쓴다 — /api/stats?event=<이름> 하나뿐이고, 서버는
+   * api/_analytics.js 의 METRICS 허용목록에 있는 이름만 센다. 새 analytics
+   * 시스템을 만들지 않았고, Supabase 스키마도 건드리지 않았다
+   * (daily_metrics.metric 이 text 컬럼이라 이름만 추가하면 된다).
+   *
+   * ★ 한계를 분명히 적어 둔다: bump_metric 은 (날짜, 지표명) 카운터다.
+   *   product_id · query · position 같은 차원을 붙일 자리가 없다. 차원을
+   *   남기려면 테이블을 바꿔야 하는데 이번 작업 범위 밖이라, 여기서는
+   *   "몇 번 일어났는가" 만 센다. 개인 식별 정보는 보내지 않는다.
+   *
+   * ai_discovered 는 세션당 한 번만 보낸다 — AI 진입점이 화면에 처음
+   *   드러난 순간을 세는 값이라 매번 보내면 노출 수가 아니라 렌더 수가 된다.
+   */
+  _once: {},
+  ev: function(name) {
+    if (!name) return;
+    Track.ping('event=' + encodeURIComponent(name));
+  },
+  evOnce: function(name) {
+    if (!name || Track._once[name]) return;
+    Track._once[name] = true;
+    Track.ev(name);
+  }
 };
 
 var GS = true;
@@ -2291,9 +2487,20 @@ var AppState = {
   // [대화 세션 만료] TTL 을 넘긴 지난 세션 대화는 복원하지 않는다 (loadChatHistory 주석 참고)
   chatHistory: loadChatHistory(),
   chatSending: false,
+  /*
+   * 직전 응답에서 AI 가 1위로 고른 상품 id.
+   *
+   * 다음 요청에 prevTop 으로 되돌려 보내면 서버가 "추천이 바뀌었는지"를
+   * 판정할 수 있다(api/ai.js). 저장하지 않는다 — 새로고침하면 사라지고,
+   * 그때는 변경 감지만 못 할 뿐 나머지는 그대로 동작한다.
+   */
+  lastTopProductId: '',
 
   // 모달
   modalHist: [],
+  // 서버가 계산한 구매 시점 판정. 상품을 열 때마다 비운다 —
+  // 남아 있으면 조회가 실패했을 때 이전 상품의 판정이 보인다.
+  modalDeal: null,
   modalPrice: 0,
   modalItem: null,   // 지금 모달에 떠 있는 상품 (AI 컨텍스트 1순위)
   chart: null,
@@ -2940,6 +3147,9 @@ var Api = {
                   + '&mall=' + encodeURIComponent(h.mall || '');
         if (h.vendorItemId) queryUrl += '&vendorItemId=' + encodeURIComponent(h.vendorItemId);
       }
+      // deal=1 을 붙이면 서버가 구매 시점 판정을 함께 준다. 안 붙이면 예전처럼
+      // 배열만 온다 — 스파크라인 같은 다른 호출부는 판정이 필요 없다.
+      if (h.deal) queryUrl += '&deal=1';
     } else if (fnName === 'getHistoryBatch') {
       // 배열(옛 호출 = 상품명 목록) 또는 {titles, keys} 둘 다 받는다.
       var b = args[0];
@@ -2977,10 +3187,10 @@ var Api = {
     } else if (fnName === 'askAI') {
       method = 'POST';
       // view: 지금 사용자가 보고 있는 화면(검색어·정렬·필터). 없으면 서버가 알아서 넘긴다.
-      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4] });
+      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4], prevTop: args[5] || '' });
     } else if (fnName === 'saveAlert') {
       method = 'POST';
-      fetchOpts.body = JSON.stringify({ email: args[0], title: args[1], targetPrice: args[2], currentPrice: args[3], link: args[4], image: args[5], mall: args[6], productId: args[7] });
+      fetchOpts.body = JSON.stringify({ email: args[0], title: args[1], targetPrice: args[2], currentPrice: args[3], link: args[4], image: args[5], mall: args[6], productId: args[7], onDeal: !!args[8] });
     } else if (fnName === 'deleteAlert') {
       method = 'DELETE';
       fetchOpts.body = JSON.stringify({ email: args[0], title: args[1] });
@@ -3473,8 +3683,55 @@ var Grid = {
         hist = hist || [];
         box.innerHTML = Grid.sparkSVG(hist);
         Grid.markAllTimeLow(box, hist);   // ★ 역대 최저가 뱃지
+        Grid.markWhy(box, hist);          // ★ 추천 근거 한 줄
       });
     }, function() { /* 스파크라인 실패가 카드 렌더를 막지 않는다 */ });
+  },
+
+  /**
+   * 추천 근거 한 줄.
+   *
+   * ★ 새 API 를 만들지 않는다. 여기서 쓰는 이력은 fillSparklines 가 이미
+   *   받아온 것이고(HistCache), 계산도 기존 PriceStat.from 을 그대로 쓴다.
+   *   즉 추가 네트워크 호출 0회다.
+   *
+   * ★ 사용자의 행동을 문장에 넣지 않는다.
+   *   "최근에 무선 이어폰을 검색해서 추천했어요" 같은 문구는 쓰지 않는다 —
+   *   맞는 말이어도 감시받는 느낌을 준다. 여기 나오는 것은 전부 이 상품의
+   *   가격 사실뿐이고, 개인화 근거는 섹션 헤더에서 한 번만 밝힌다.
+   *
+   * ★ 근거가 없으면 아무것도 그리지 않는다. "추천 상품" 같은 빈 말을 채우지 않는다.
+   *   역대 최저가는 이미 썸네일 뱃지(markAllTimeLow)가 말하므로 중복해서 쓰지 않는다.
+   */
+  markWhy: function(sparkBox, hist) {
+    var card = sparkBox.closest('.card');
+    if (!card || card.querySelector('.why-line')) return;
+    if (!hist || hist.length < 3) return;          // 근거로 쓸 만큼 기록이 없다
+
+    var st = PriceStat.from(hist);
+    if (!st || !st.lastPrice) return;
+
+    var text = '';
+
+    // 1순위 — 30일 평균 대비. 사용자가 "지금이 싼가"를 판단하는 가장 직접적인 근거.
+    if (st.avg30 > 0) {
+      var pct = Math.round((st.avg30 - st.lastPrice) / st.avg30 * 100);
+      if (pct >= 5)       text = '30일 평균보다 ' + pct + '% 낮아요';
+      else if (pct <= -5) text = '30일 평균보다 ' + Math.abs(pct) + '% 높아요';
+    }
+
+    // 2순위 — 직전 기록가 대비 하락. 평균 대비로 할 말이 없을 때만.
+    if (!text && st.prevPrice > 0 && st.lastPrice < st.prevPrice) {
+      var d = Math.round((st.prevPrice - st.lastPrice) / st.prevPrice * 100);
+      if (d >= 3) text = '직전 기록가보다 ' + d + '% 내렸어요';
+    }
+
+    if (!text) return;
+
+    var div = document.createElement('div');
+    div.className = 'why-line';
+    div.textContent = text;
+    sparkBox.parentNode.insertBefore(div, sparkBox.nextSibling);
   },
 
   /** 현재가가 기록상 최저가면 카드에 뱃지 표시 */
@@ -3711,6 +3968,64 @@ var Share = {
  *  [11] Search — 검색
  * ========================================================== */
 var HOME_SECTIONS = ['today', 'monthly', 'recent', 'priceDrop', 'forYou', 'histRec'];
+
+
+/* ============================================================
+ *  [10-00] Nav — 헤더 오버플로 메뉴 + 맥락 AI 질문 문구
+ *
+ *  모바일(≤640px)에서 .nav-link.hide-m 4개가 사라지는데 대체 경로가 없었다.
+ *  하단 탭바를 새로 만들지 않고 헤더에 메뉴 하나만 얹어 목적지를 되돌린다.
+ * ========================================================== */
+var Nav = {
+
+  /**
+   * 맥락별 AI 질문 문구.
+   *
+   * 화면에 이미 있는 정보(상품명·검색어)만 쓴다. 사용자의 과거 행동이나
+   * 프로필을 문장에 끌어오지 않는다 — 감시받는 느낌을 주지 않기 위해서다.
+   */
+  aiPrompt: function(ctx) {
+    if (ctx === 'product') {
+      var t = Fmt.textOf($('modalProd'));
+      // "상품명 · 몰" 형태라 몰 부분은 떼고 상품명만 쓴다.
+      t = String(t || '').split('  ·  ')[0].trim();
+      return t ? t + ' 지금 사도 괜찮은 가격인가요?' : '이 상품 지금 사도 괜찮은 가격인가요?';
+    }
+    if (ctx === 'compare') {
+      var c = Fmt.textOf($('cmpProd'));
+      return c ? c + ' 어느 몰에서 사는 게 나을까요?' : '어느 몰에서 사는 게 나을까요?';
+    }
+    if (ctx === 'search') {
+      var q = AppState.lastKeyword || '';
+      return q ? q + ' 중에서 어떤 걸 고르면 좋을까요?' : '검색 결과 중에서 어떤 걸 고르면 좋을까요?';
+    }
+    return '';   // home / fab — 빈 채로 열어 사용자가 자유롭게 쓰게 둔다
+  },
+
+  menu: function() { return $('navMenu'); },
+
+  toggleMenu: function() {
+    var m = Nav.menu();
+    if (!m) return;
+    m.classList.contains('open') ? Nav.closeMenu() : Nav.openMenu();
+  },
+
+  openMenu: function() {
+    var m = Nav.menu(), b = $('menuBtn');
+    if (!m) return;
+    m.classList.add('open');
+    m.setAttribute('aria-hidden', 'false');
+    if (b) b.setAttribute('aria-expanded', 'true');
+  },
+
+  closeMenu: function() {
+    var m = Nav.menu(), b = $('menuBtn');
+    if (!m || !m.classList.contains('open')) return;
+    m.classList.remove('open');
+    m.setAttribute('aria-hidden', 'true');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+};
 
 /* ============================================================
  *  [10-0] Url — 주소 ↔ 화면 상태
@@ -4232,6 +4547,9 @@ var Search = {
     AppState.lastKeyword = kw;
     HistRec.idx = 0;   // 최신 검색어 기준으로 추천 갱신되도록
 
+    // 뒤로가기·주소 진입은 새 검색이 아니므로 세지 않는다 (아래 최근검색 집계와 같은 기준).
+    if (!fromUrl) Track.ev('search_submit');
+
     /*
      * 최근 검색 기록과 인기 검색어 집계는 "사용자가 방금 검색한 것"만 센다.
      * 뒤로가기로 되돌아온 것은 새 검색이 아니다. 예전에는 이것도 셌기 때문에
@@ -4531,6 +4849,14 @@ var Search = {
     } else {
       Lazy.render(list);
     }
+
+    /*
+     * 검색 결과 맥락 AI 진입점은 결과가 실제로 있을 때만 보여준다.
+     * 0건 화면에서는 "결과를 좁혀볼까요?" 가 말이 되지 않는다 —
+     * 그 화면에는 이미 '필터 초기화' 라는 더 정확한 다음 행동이 있다.
+     */
+    show('resultsAi', list.length > 0);
+    if (list.length) Track.evOnce('ai_discovered');
 
     Filters.render();
     if (!(opts && opts.fromUrl)) Search.pushUrl(AppState.lastKeyword);
@@ -4991,6 +5317,7 @@ var Wish = {
       btn.classList.add('on');
       btn.textContent = '♥';
       if (idx === -1) {
+        Track.ev('wishlist_add');
         AppState.wish.push({
           title: info.title, price: info.lprice, mall: info.mall,
           // 위시 목록 화면에 보여줄 이름(ADPICK은 cp_name 기반). mall(raw)을
@@ -5803,6 +6130,21 @@ var Chat = {
     Chat.restore();          // ★ 저장된 대화 복원
   },
 
+  /**
+   * 맥락 진입점이 만든 질문을 입력창에 채워만 둔다. 전송하지 않는다.
+   *
+   * 자동 전송하지 않는 이유는 핸들러('ai-entry')의 주석에 적어 두었다 —
+   * 요약하면 미로그인 사용자에게 갑작스러운 인증 모달을 띄우지 않기 위해서다.
+   * 이미 사용자가 입력 중인 내용이 있으면 덮어쓰지 않는다.
+   */
+  prefill: function(text) {
+    if (!text) return;
+    var inp = $('chatInput');
+    if (!inp || inp.value.trim()) return;
+    inp.value = text;
+    try { inp.focus(); inp.setSelectionRange(text.length, text.length); } catch (e) {}
+  },
+
   close: function() { var p = $('panel'); if (p) p.classList.remove('open'); },
 
   /** localStorage에 대화 저장 */
@@ -5824,7 +6166,7 @@ var Chat = {
 
     hist.forEach(function(m) {
       if (!m || !m.text) return;
-      var html = Fmt.esc(m.text).replace(/\n/g, '<br>');
+      var html = Chat.fmtText(m.text);
       Chat.bubble(html, m.role === 'assistant' ? 'ai' : 'user');
     });
 
@@ -5958,6 +6300,32 @@ var Chat = {
     }
   },
 
+  /**
+   * AI 답변 텍스트 → 읽을 수 있는 HTML.
+   *
+   * ★ 반드시 Fmt.esc 를 먼저 통과시킨다. 그 뒤에 우리가 아는 표시만 되살린다.
+   *   모델이 태그를 뱉어도 이미 문자로 바뀐 뒤라 실행되지 않는다.
+   *
+   * 왜 필요한가 — 모델은 강조에 **별표**를 쓰고 목록에 "- "를 쓴다. 그런데
+   * 화면에는 그 기호가 그대로 찍혔다. "**A를 추천해요**" 처럼 보이니 읽기
+   * 어렵고, 무엇보다 "이 AI 는 마감이 덜 됐구나" 라는 인상을 준다.
+   * 프리미엄 컨시어지라고 말하면서 별표를 흘리고 있으면 안 된다.
+   */
+  fmtText: function(s) {
+    var html = Fmt.esc(String(s == null ? '' : s));
+
+    // **강조** → <b>. 별표 두 개가 짝을 이룰 때만. 줄을 넘지 않는다.
+    html = html.replace(/\*\*([^*\n]{1,120})\*\*/g, '<b>$1</b>');
+
+    // 줄 앞의 "- " / "* " / "• " → 들여쓴 항목. 목록이 문단과 구분되게.
+    html = html.split('\n').map(function(line) {
+      var m = line.match(/^\s*[-*•]\s+(.*)$/);
+      return m ? '<span class="ai-li">' + m[1] + '</span>' : line;
+    }).join('\n');
+
+    return html.replace(/\n/g, '<br>');
+  },
+
   miniCard: function(it) {
     if (!it) return '';
     var m = Fmt.mall(it);
@@ -5966,10 +6334,22 @@ var Chat = {
       ? '<img src="' + Fmt.esc(src) + '" referrerpolicy="no-referrer" alt="">'
       : Fmt.esc(Fmt.glyph(it.title));
 
+    /*
+     * 가격 근거 한 줄.
+     *
+     * ★ AI 가 쓴 문장이 아니다. 서버가 가격 기록에서 계산해 내려준 값이다
+     *   (api/ai.js toCard). 그래서 답변 문장이 무엇을 말하든 이 줄은 데이터와
+     *   어긋나지 않는다. 없으면 아무것도 그리지 않는다.
+     */
+    var note = it.note
+      ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
+      : '';
+
     return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.safeUrl(it.link)) + '">'
-      + '<div class="mt"><span class="mbadge ' + m.cls + '">' + m.tag + '</span>' + img + '</div>'
+      + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>' + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
-      + '<div class="mprice">' + Fmt.won(it.lprice) + '원</div></div>'
+      + '<div class="mprice">' + Fmt.won(it.lprice) + '원</div>'
+      + note + '</div>'
       + '</div>';
   },
 
@@ -6133,6 +6513,13 @@ var Chat = {
       return;
     }
 
+    /*
+     * 첫 질문과 후속 질문을 나눠 센다. 이 시점에는 아직 이번 질문이
+     * chatHistory 에 들어가기 전이라, 비어 있으면 이번이 첫 질문이다.
+     * (대화를 복원한 세션은 이미 기록이 있으므로 후속으로 잡힌다 — 맞는 판정이다)
+     */
+    Track.ev(AppState.chatHistory.length ? 'ai_followup' : 'ai_first_prompt');
+
     Chat.bubble(Fmt.esc(val), 'user');
     if (inp) inp.value = '';
     AppState.chatHistory.push({ role: 'user', text: val });
@@ -6173,7 +6560,7 @@ var Chat = {
     Chat.ensureHistory(ctx.items, function() {
       if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
 
-      Api.call('askAI', [val, Chat.buildContext(ctx.items), AppState.chatHistory, AppState.profile, view],
+      Api.call('askAI', [val, Chat.buildContext(ctx.items), AppState.chatHistory, AppState.profile, view, AppState.lastTopProductId || ''],
         function(res) {
           if (settled) return;   // 타임아웃이 이미 처리했다
           settled = true;
@@ -6185,11 +6572,35 @@ var Chat = {
 
           if (res.quota) Pro.updateQuotaBadge(res.quota);
 
-          var html = Fmt.esc(res.text || '').replace(/\n/g, '<br>');
+          /*
+           * 추천이 바뀌었으면 그 사실을 먼저 알린다.
+           *
+           * ★ 서버가 실제로 1위가 바뀌었다고 판정했을 때만 온다
+           *   (api/ai.js recommendationChange). 매번 띄우면 배지가 늘 떠
+           *   있어서 아무 뜻도 없어진다.
+           */
+          var html = '';
+          if (res.recommendationChange && res.recommendationChange.changed) {
+            html += '<div class="rec-change">추천이 바뀌었어요'
+              + (res.recommendationChange.cause
+                  ? ' <span>' + Fmt.esc(res.recommendationChange.cause) + '</span>'
+                  : '')
+              + '</div>';
+          }
+          html += Chat.fmtText(res.text || '');
           if (res.items && res.items.length) {
             html += '<div class="mini-grid">' + res.items.map(Chat.miniCard).join('') + '</div>';
           }
           Chat.bubble(html, 'ai');
+
+          /*
+           * 이번 1위를 기억해 다음 요청에 되돌려 보낸다.
+           *
+           * 서버는 추천 이력을 저장하지 않는다(개인 쇼핑 기록을 쌓지 않기
+           * 위해서). "추천이 왜 바뀌었어?"에 답할 수 있는 유일한 연결고리가
+           * 이 값이다. 탭을 닫으면 함께 사라진다 — 그거면 충분하다.
+           */
+          if (res.topProductId) AppState.lastTopProductId = String(res.topProductId);
 
           Chat.showUsage(res.usage);
 
@@ -6246,6 +6657,7 @@ var Modal = {
   open: function(p) {
     if (!p || !p.title) return;
 
+    Track.ev('product_view');
     try { Recent.addViewed(p); } catch(e) {}
 
     setText('modalProd', p.title + '  ·  ' + (p.mall || ''));
@@ -6259,6 +6671,7 @@ var Modal = {
     });
 
     AppState.modalHist = [];
+    AppState.modalDeal = null;
     AppState.modalPrice = Fmt.int(p.lprice);
     // 모달이 열려 있으면 AI는 다른 무엇보다 이 상품 이야기를 하고 있어야 한다.
     AppState.modalItem = p;
@@ -6275,9 +6688,23 @@ var Modal = {
 
     // productId가 있으면 상품 단위로 조회한다. 상품명으로만 조회하면
     // 같은 이름의 다른 몰/다른 상품 가격이 한 그래프에 섞인다.
-    Api.call('getPriceHistory', [{ title: p.title, productId: p.productId || '', mall: p.mall || '', vendorItemId: p.vendorItemId || '' }],
-      function(hist) {
-        AppState.modalHist = hist || [];
+    Api.call('getPriceHistory', [{ title: p.title, productId: p.productId || '', mall: p.mall || '', vendorItemId: p.vendorItemId || '', deal: 1 }],
+      function(resp) {
+        /*
+         * 응답이 두 가지다.
+         *   배열              — deal=1 이 없을 때, 또는 배포 직후 옛 서버
+         *   {points, deal}    — 서버가 구매 시점 판정을 함께 준 것
+         * 둘 다 받아야 배포 중간에도 모달이 비지 않는다.
+         */
+        var hist, deal = null;
+        if (resp && !Array.isArray(resp) && Array.isArray(resp.points)) {
+          hist = resp.points;
+          deal = resp.deal || null;
+        } else {
+          hist = resp || [];
+        }
+        AppState.modalHist = hist;
+        AppState.modalDeal = deal;
         AppState.modalPrice = AppState.modalHist.length
           ? AppState.modalHist[AppState.modalHist.length - 1].price
           : Fmt.int(p.lprice);
@@ -6384,6 +6811,29 @@ var Modal = {
     return act ? Fmt.int(act.dataset.days) : 9999;
   },
 
+  /*
+   * 서버 판정(Deal Engine)을 화면 문구로 옮긴다.
+   *
+   * ── 왜 서버가 정하는가 ──────────────────────────────────────────
+   * 이 모달은 원래 자기가 직접 판정을 만들었다(아래 renderVerdictLocal).
+   * 그런데 서버에는 _pricestat.assess() 와 _deal.js 가 있고 AI 답변은
+   * 그쪽을 쓴다. 같은 상품을 두고 모달은 "역대 최저가 수준 · 지금이 기회",
+   * AI 는 "평범한 가격" 이라고 말하는 일이 실제로 가능했다. 사용자에게는
+   * 둘 다 SEOSA 가 한 말이다.
+   *
+   * ★ 여기서는 계산하지 않는다. 서버가 만든 문장을 그대로 보여준다.
+   *   숫자를 다시 만들거나 말을 바꾸면 그 순간 두 판정이 또 갈린다.
+   */
+  DEAL_STYLE: {
+    BUY:      { cls: 'buy-v', icon: '✦', head: '지금 구매' },
+    GOOD_BUY: { cls: 'buy-v', icon: '↘', head: '지금 사도 괜찮아요' },
+    NORMAL:   { cls: '',      icon: '⚖️', head: '평범한 가격이에요' },
+    WATCH:    { cls: '',      icon: '👀', head: '지켜볼 만해요' },
+    WAIT:     { cls: 'wait',  icon: '⏳', head: '조금 기다려보세요' },
+    DONT_BUY: { cls: 'wait',  icon: '↗', head: '지금은 비싼 편이에요' },
+    UNKNOWN:  { cls: '',      icon: '❓', head: '아직 판단하기 어려워요' }
+  },
+
   renderVerdict: function(cur) {
     var v = $('verdict');
     if (!v) return;
@@ -6397,6 +6847,44 @@ var Modal = {
       setHTML('stats', '');
       return;
     }
+
+    var d = AppState.modalDeal;
+    if (d && d.verdict) {
+      var s = Modal.DEAL_STYLE[d.verdict] || Modal.DEAL_STYLE.UNKNOWN;
+      v.className = 'verdict' + (s.cls ? ' ' + s.cls : '');
+
+      // 근거 한 줄 + 주의 한 줄. 서버가 만든 문장을 그대로 쓴다.
+      var lines = [];
+      if (d.reasons && d.reasons.length) lines.push(d.reasons[0]);
+      if (d.cautions && d.cautions.length) lines.push(d.cautions[0]);
+      if (d.anomalies && d.anomalies.length) lines.push(d.anomalies[0]);
+      if (!lines.length) lines.push(d.label || '');
+
+      v.innerHTML = '<span class="vi">' + s.icon + '</span>'
+        + '<div class="vt"><b>' + Fmt.esc(s.head) + '</b>'
+        + '<span>' + Fmt.esc(lines.join(' · ')) + '</span></div>';
+
+      Modal.renderStats();
+      return;
+    }
+
+    // 서버 판정을 못 받았을 때만 예전 계산으로 그린다 (배포 중간·조회 실패).
+    Modal.renderVerdictLocal(cur);
+  },
+
+  /** 최저/평균/최고. 판정과 달리 단순 집계라 화면에서 계산해도 어긋날 일이 없다. */
+  renderStats: function() {
+    var st = Modal.stats(AppState.modalHist.map(function(h) { return h.price; }));
+    setHTML('stats',
+      '<div class="stat lo"><span>최저</span><b>' + Fmt.won(st.min) + '</b></div>'
+      + '<div class="stat"><span>평균</span><b>' + Fmt.won(st.avg) + '</b></div>'
+      + '<div class="stat hi"><span>최고</span><b>' + Fmt.won(st.max) + '</b></div>');
+  },
+
+  /** 서버 판정을 못 받았을 때의 폴백. 예전 동작 그대로 둔다. */
+  renderVerdictLocal: function(cur) {
+    var v = $('verdict');
+    if (!v) return;
 
     var st = Modal.stats(AppState.modalHist.map(function(h) { return h.price; }));
     var spread = st.min > 0 ? (st.range / st.min) : 0;
@@ -6561,10 +7049,26 @@ var Modal = {
       else               recentLabel = '최근 7일 큰 변동';
     }
 
-    // 현재가 위치
+    /*
+     * 현재가 위치.
+     *
+     * 위의 "N일간 X% 하락"·"최근 7일…" 은 지금 그려진 구간을 그대로 서술하는
+     * 말이라 화면에서 계산해도 어긋날 일이 없다. 그런데 이 줄은 다르다 —
+     * "역대 최저 수준" 은 판정이고, 서버 Deal Engine 도 같은 것을 판정한다.
+     * 둘이 각자 계산하면 같은 상품을 두고 다른 말을 하게 된다.
+     *
+     * 그래서 판정만 서버 값을 쓴다. 서버 판정이 없을 때만 예전 계산으로 돌아간다.
+     */
     var posLabel = '';
     var cur = AppState.modalPrice;
-    if (cur > 0) {
+    var d = AppState.modalDeal;
+
+    if (d && d.verdict && d.verdict !== 'UNKNOWN') {
+      var ds = Modal.DEAL_STYLE[d.verdict] || Modal.DEAL_STYLE.UNKNOWN;
+      posLabel = ds.icon + ' ' + (d.label || ds.head);
+    } else if (d && d.verdict === 'UNKNOWN') {
+      posLabel = '❓ 가격 데이터가 충분하지 않아 추세를 정확하게 판단하기 어렵습니다';
+    } else if (cur > 0) {
       var spread = st.min > 0 ? (st.range / st.min) : 0;
       var pos = st.range > 0 ? (cur - st.min) / st.range : 0;
 
@@ -6800,6 +7304,10 @@ var Alert = {
     var em = $('alertEmail');
     if (em) em.value = Store.get(CONST.LS.EMAIL, '') || '';
 
+    // 상품마다 새로 정하는 조건이다. 앞 상품에서 켠 값이 남으면 안 된다.
+    var od = $('alertOnDeal');
+    if (od) od.checked = false;
+
     var ov = $('alertOverlay');
     if (ov) ov.classList.add('open');
   },
@@ -6818,9 +7326,12 @@ var Alert = {
     var tpEl = $('alertTargetPrice');
     var email = emEl ? emEl.value.trim() : '';
     var target = tpEl ? Fmt.int(tpEl.value) : 0;
+    var odEl = $('alertOnDeal');
+    var onDeal = !!(odEl && odEl.checked);
 
     if (!Fmt.isEmail(email)) { toast('이메일 주소를 확인해주세요'); return; }
-    if (target <= 0) { toast('목표 가격을 입력해주세요'); return; }
+    // 조건이 하나도 없으면 아무 때도 발송되지 않는 알림이 된다.
+    if (target <= 0 && !onDeal) { toast('목표 가격을 넣거나 AI 추천 알림을 켜주세요'); return; }
     if (!GS) { toast('배포된 웹앱에서 사용할 수 있어요'); return; }
 
     Store.set(CONST.LS.EMAIL, email);
@@ -6828,8 +7339,8 @@ var Alert = {
     // 이미지도 같이 넘긴다 — 예전엔 빈 문자열이라 알림 메일에 상품 이미지가 없었다.
     // productId는 서버가 가격을 상품명이 아닌 상품 단위로 찾는 데 쓴다.
     Api.call('saveAlert',
-      [email, t.title, target, t.lprice || 0, t.link || '', t.image || '', t.mall || '', t.productId || ''],
-      function(res) { Alert.close(); toast((res && res.msg) || '알림 신청 완료!'); },
+      [email, t.title, target, t.lprice || 0, t.link || '', t.image || '', t.mall || '', t.productId || '', onDeal],
+      function(res) { Track.ev('price_alert_add'); Alert.close(); toast((res && res.msg) || '알림 신청 완료!'); },
       function(err) { toast('알림 신청 실패: ' + ((err && err.message) || '다시 시도해주세요')); }
     );
   }
@@ -7192,22 +7703,31 @@ var Actions = {
 
   // ── 카드 ──
   'heart':        function(el, e) { e.stopPropagation(); Wish.toggle(el); },
-  'card-history': function(el) { Modal.open(Card.read(el.closest('.card'))); },
+  'card-history': function(el) {
+    // 검색 결과 안에서 눌렀는지 구분한다 — 홈 섹션 카드 클릭과 섞이면
+    // "검색이 실제로 상품 클릭으로 이어졌는가"를 볼 수 없다.
+    if (el.closest('#resGrid')) Track.ev('search_result_click');
+    Track.ev('price_history_open');
+    Modal.open(Card.read(el.closest('.card')));
+  },
   'card-share':   function(el, e) { e.stopPropagation(); Share.fromCard(el); },
-  'card-compare': function(el) { Compare.open(Card.read(el.closest('.card'))); },
+  'card-compare': function(el) { Track.ev('comparison_open'); Compare.open(Card.read(el.closest('.card'))); },
   'card-alert':   function(el) { Alert.open(Card.read(el.closest('.card'))); },
   'card-buy':     function(el) {
     var info = Card.read(el.closest('.card'));
+    if (el.closest('#resGrid')) Track.ev('search_result_click');
+    Track.ev('external_shop_click');
     Recent.addViewed(info);
     openLink(info && info.link);
   },
 
   // ── 시세판 ──
-  'ledger-open':  function(el) { Modal.open(Drop.read(el)); },
+  'ledger-open':  function(el) { Track.ev('price_history_open'); Modal.open(Drop.read(el)); },
   'ledger-alert': function(el, e) { e.stopPropagation(); Alert.open(Drop.read(el.closest('.lrow'))); },
   'ledger-buy':   function(el, e) {
     e.stopPropagation();
     var info = Drop.read(el.closest('.lrow'));
+    Track.ev('external_shop_click');
     Recent.addViewed(info);
     openLink(info.link);
   },
@@ -7238,7 +7758,28 @@ var Actions = {
   'profile-reset':  function() { Profile.reset(); },
 
   // ── 챗 ──
-  'open-ai':      function() { Chat.open(); },
+  'open-ai':      function() { Nav.closeMenu(); Track.ev('ai_open'); Chat.open(); },
+
+  /*
+   * 맥락 AI 진입점 — 홈 / 검색 결과 / 상품 상세 / 몰별 비교.
+   *
+   * ★ Chat.send() 를 자동으로 부르지 않는다.
+   *   Chat.send 는 미로그인 사용자에게 즉시 로그인 창을 띄운다(Chat.send 주석
+   *   참고). 버튼 한 번에 갑자기 인증 모달이 뜨면 사용자는 자기가 무엇을
+   *   물어보려 했는지도 모른 채 벽을 만난다. 그래서 질문을 입력창에 채워만
+   *   두고 전송은 사용자가 직접 하게 한다 — 무엇을 물어볼지 눈으로 확인하고,
+   *   그만두고 싶으면 지우면 된다(AI 사용 강요 금지).
+   */
+  'ai-entry': function(el) {
+    var ctx = (el && el.dataset.ctx) || 'home';
+    Nav.closeMenu();
+    Track.ev('ai_open');
+    Track.ev('ai_entry_' + (ctx === 'fab' ? 'fab' : ctx));
+    Chat.open();
+    Chat.prefill(Nav.aiPrompt(ctx));
+  },
+
+  'toggle-menu':  function() { Nav.toggleMenu(); },
   'close-ai':     function() { Chat.close(); },
   'chat-send':    function() { Chat.send(); },
   'chat-suggest': function(el) { Chat.send(el.dataset.q); },
@@ -7284,6 +7825,13 @@ document.addEventListener('click', function(e) {
   if (e.target.id === 'proOverlay')     { Pro.close(); return; }
 
   var el = e.target.closest('[data-act]');
+
+  /*
+   * 헤더 오버플로 메뉴는 바깥을 누르면 닫는다. 메뉴 안이나 토글 버튼을
+   * 누른 경우는 각 핸들러가 알아서 처리하므로 여기서 건드리지 않는다.
+   */
+  if (!e.target.closest('#navMenu') && !e.target.closest('#menuBtn')) Nav.closeMenu();
+
   if (!el) return;
 
   var fn = Actions[el.dataset.act];
@@ -7312,6 +7860,8 @@ function bindInputs() {
 
     // 포커스하면 인기 검색어 먼저 보여주기
     q.addEventListener('focus', function() {
+      // 검색을 "시작"한 순간. 세션당 한 번만 센다 — 포커스는 오갈 때마다 발생한다.
+      Track.evOnce('search_open');
       var v = this.value.trim().toLowerCase();
       Auto.render(v);
     });
@@ -7493,6 +8043,13 @@ var Init = {
      * 미리보기 모드(!GS)에서도 방문은 방문이므로 아래 return 보다 위에 둔다.
      */
     Track.visit();
+
+    /*
+     * AI 진입점 노출. 히어로의 .hero-ai 는 검색창 바로 아래(첫 화면 안)에
+     * 항상 그려지므로 홈에 들어온 시점이 곧 "AI 진입점을 볼 수 있게 된" 시점이다.
+     * 세션당 한 번만 센다 — 노출 수를 재는 값이지 렌더 수를 재는 값이 아니다.
+     */
+    Track.evOnce('ai_discovered');
 
     // 로컬 데이터 먼저 그리기
     Wish.updateCount();
