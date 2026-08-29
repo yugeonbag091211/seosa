@@ -947,6 +947,140 @@ function recordedPrice(productId) {
         '발송 후 sent 갱신 (중복 발송 방지)');
 
   /* ================================================================ *
+   *  알림 조건 4 — "AI 가 사도 좋다고 하면 알려줘" (alerts.on_deal)
+   *
+   *  목표가·전일 하락·역대 최저가는 전부 "가격이 얼마인가" 만 본다.
+   *  목표가를 정하려면 사용자가 적정가를 미리 알아야 하는데, 모르니까
+   *  알림을 신청하는 것이다. 이 조건은 api/_deal.js 판정을 그대로 쓴다.
+   *
+   *  ★ 판정을 여기서 다시 만들지 않는다 — 화면·AI 답변·알림 메일이 같은
+   *    상품을 두고 다른 말을 하면 안 된다.
+   * ================================================================ */
+
+  /** 하루 한 점씩 days 일치 기록을 넣는다. price(i) 는 i 일 전 가격. */
+  const pushDaily = (pid, days, price) => {
+    for (let i = days - 1; i >= 0; i--) {
+      db.price_history.push({
+        product_id: pid, mall: '쿠팡', title: '무선 이어폰', price: price(i),
+        recorded_date: daysAgo(i), recorded_at: isoDaysAgo(i), link: 'https://x'
+      });
+    }
+  };
+
+  section('알림. AI 판정 조건 — 싼 시점이면 목표가 없이도 발송한다');
+  reset();
+  sentMail.length = 0;
+  // 30일 동안 100,000~140,000 을 오가다 오늘 98,000 — 기록 대비 확실히 싸다.
+  pushDaily('A-1111', 30, i => (i === 0 ? 98000 : 100000 + (i % 7) * 6000));
+  db.alerts.push({
+    id: 10, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 0, on_deal: true, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 1, '★★ 목표가 0 이어도 AI 판정으로 발송된다', String(sentMail.length));
+  check(sentMail[0] && /구매 시점 판정이 "(BUY|GOOD_BUY)"/.test(sentMail[0].payload.analysis.timing),
+        '★ 메일에 판정 글자가 그대로 실린다',
+        sentMail[0] && sentMail[0].payload.analysis.timing);
+  check(sentMail[0] && sentMail[0].payload.product.currentPrice === 98000,
+        '현재가는 오늘 관측값', sentMail[0] && String(sentMail[0].payload.product.currentPrice));
+
+  /*
+   * ★ 아래 fixture 들은 "deal 조건만" 검사한다.
+   *
+   *   오늘 가격을 기록상 최저로 만들면 기존 atl(역대 최저가) 조건이 먼저
+   *   발동해서 메일이 나가 버린다. 그러면 이 테스트는 deal 조건이 죽어 있어도
+   *   통과한다 — 실제로 처음 작성했을 때 그렇게 통과했다.
+   *   그래서 오늘 값은 항상 기록 최저보다 위에 두고, 전일 대비 하락폭도
+   *   DROP_THRESHOLD(5%) 아래로 둔다.
+   */
+  section('알림. AI 판정 조건 — 평범한 가격이면 보내지 않는다');
+  reset();
+  sentMail.length = 0;
+  // 99,000~101,000 을 오가는 상품. 오늘 100,000 — 최저도 아니고 급락도 아니다.
+  pushDaily('A-1111', 30, i => (i === 0 ? 100000 : 99000 + (i % 3) * 1000));
+  db.alerts.push({
+    id: 11, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 0, on_deal: true, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 0, '★★ NORMAL 에는 메일을 보내지 않는다 — 알림이 소음이 되면 안 된다',
+        sentMail.length ? sentMail[0].payload.analysis.timing : '발송 0건');
+
+  section('알림. AI 판정 조건 — 기록이 부족하면 보내지 않는다');
+  reset();
+  sentMail.length = 0;
+  // 2일치뿐. 오늘이 최저도 아니고 급락도 아니라 다른 조건은 발동하지 않는다.
+  pushDaily('A-1111', 2, i => (i === 0 ? 51000 : 50000));
+  db.alerts.push({
+    id: 12, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 0, on_deal: true, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 0,
+        '★★ 근거가 없으면(UNKNOWN) 판정으로 메일을 만들지 않는다',
+        sentMail.length ? sentMail[0].payload.analysis.timing : '발송 0건');
+
+  section('알림. on_deal 을 안 켰으면 예전과 똑같이 동작한다');
+  reset();
+  sentMail.length = 0;
+  // 위 "발송된다" 케이스와 같은 데이터인데 on_deal 만 없다.
+  // 오늘이 최저가 되지 않도록 기록 안에 더 싼 날을 하나 둔다.
+  pushDaily('A-1111', 30, i => (i === 0 ? 98000 : i === 1 ? 99000 : (i === 15 ? 90000 : 118000)));
+  db.alerts.push({
+    id: 13, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 0, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 0,
+        '★ on_deal 없는 기존 알림은 목표가 0 이면 그대로 발송되지 않는다',
+        sentMail.length ? sentMail[0].payload.analysis.timing : '발송 0건');
+
+  section('알림. 같은 데이터에서 on_deal 을 켜면 발송된다 (조건이 실제로 일한다)');
+  reset();
+  sentMail.length = 0;
+  pushDaily('A-1111', 30, i => (i === 0 ? 98000 : i === 1 ? 99000 : (i === 15 ? 90000 : 118000)));
+  db.alerts.push({
+    id: 16, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 0, on_deal: true, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 1,
+        '★★ on_deal 만 켜면 같은 데이터가 발송된다 — 다른 조건이 대신 발동한 게 아니다',
+        sentMail.length ? sentMail[0].payload.analysis.timing : '발송 0건');
+  check(sentMail[0] && /구매 시점 판정/.test(sentMail[0].payload.analysis.timing),
+        '★ 발송 사유가 AI 판정이다', sentMail[0] && sentMail[0].payload.analysis.timing);
+
+  section('알림. 목표가와 AI 조건을 같이 켤 수 있다');
+  reset();
+  sentMail.length = 0;
+  pushDaily('A-1111', 30, i => (i === 0 ? 98000 : 100000 + (i % 7) * 6000));
+  db.alerts.push({
+    id: 14, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 99000, on_deal: true, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 1, '두 조건이 동시에 맞아도 메일은 한 통', String(sentMail.length));
+  {
+    const t = sentMail[0] ? sentMail[0].payload.analysis.timing : '';
+    check(/목표 가격에 도달/.test(t) && /구매 시점 판정/.test(t),
+          '★ 두 조건을 한 메일에 모아 적는다', t);
+  }
+
+  section('알림. 판정에 쓰는 기록도 그 상품 것이어야 한다');
+  reset();
+  sentMail.length = 0;
+  pushDaily('A-1111', 30, i => (i === 10 ? 99000 : 100000));  // A는 거의 안 움직이고 오늘이 최저도 아니다
+  pushDaily('B-9999', 30, i => 300000 - i * 5000);  // 동명이물 B는 크게 떨어졌다
+  db.alerts.push({
+    id: 15, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+    product_id: 'A-1111', target_price: 0, on_deal: true, sent: false, link: '', image: ''
+  });
+  await runAlerts();
+  check(sentMail.length === 0,
+        '★★ 이름만 같은 B상품의 하락으로 A상품 알림이 나가지 않는다',
+        sentMail.length ? sentMail[0].payload.analysis.timing : '발송 0건');
+
+  /* ================================================================ *
    *  KST 하루 경계 — recorded_date 라벨을 믿지 않는다
    *
    *  운영 DB 는 recorded_date 를 recorded_at 의 UTC 날짜로 덮어쓴다
@@ -1390,31 +1524,32 @@ function recordedPrice(productId) {
 
   const { buildReportHtml } = require('./collect-all-prices');
   const sampleReport = {
+    execAt: '2026-08-21 01:15 KST',
     date: '2026-08-21',
     productsTotal: 800,
-    coupangTotal: 770,
-    collectibleTotal: 750,
-    notCoupangTotal: 30,
-    attempted: 700,
+    otherTotal: 30,
+    otherByMall: { '네이버': 30 },
+    malls: [
+      { mallName: '쿠팡', target: 750, attempted: 700, success: 634, recorded: 620, status: 'completed' },
+      { mallName: 'ADPICK', target: 200, attempted: 200, success: 190, recorded: 60, status: 'completed' }
+    ],
+    failCats: { blocked: 2, noMatch: 15, network: 3 },
+    target: 950,
+    attempted: 900,
+    success: 824,
     recorded: 680,
-    saved: 660,
-    rejected: 5,
-    suspect: 10,
-    failedCount: 20,
-    failedKeywordsCount: 3,
-    uncollectedCount: 50,
-    successRate: 90.7,
-    productSuccessRate: 88.0,
-    coveredProducts: 660,
-    failCats: { blocked: 2, noMatch: 15, network: 3 }
+    uncollected: 76
   };
 
   const html = buildReportHtml(sampleReport);
   check(typeof html === 'string' && html.length > 100, 'HTML 문자열을 반환한다');
   check(html.includes('2026-08-21'), '기준 날짜(KST)가 포함된다');
-  check(html.includes('90.7%'), '수집 성공률이 포함된다');
+  check(html.includes('01:15 KST'), '실행 시각(KST)이 포함된다');
+  check(html.includes('91.6%'), '이번 실행 커버리지(824/900)가 포함된다');
   check(html.includes('800'), 'products 전체 수가 포함된다');
-  check(html.includes('680'), 'price_history 신규 저장 수가 포함된다');
+  check(html.includes('680'), '전체 저장 수가 포함된다');
+  check(html.includes('쿠팡') && html.includes('ADPICK'), '몰별 결과에 쿠팡·ADPICK 이 각각 표시된다');
+  check(html.includes('620') && html.includes('60'), '몰별 저장 수가 각각 표시된다');
   check(html.includes('blocked'), '실패 원인별 카테고리가 포함된다');
   check(html.includes('noMatch'), 'noMatch 카테고리가 포함된다');
   check(html.includes('SEOSA'), 'SEOSA 브랜딩이 포함된다');
