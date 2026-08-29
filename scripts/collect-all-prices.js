@@ -826,16 +826,21 @@ async function run() {
     mergedFailureCategories[k] = (coupangResult.failureCategories[k] || 0) + (adpickResult.failureCategories[k] || 0);
   });
 
-  const overallStatus = coupangResult.status === 'completed' && adpickResult.status === 'completed'
-    ? 'completed' : 'running';
-
   await saveState({
-    // 하위호환: top-level 은 계속 "쿠팡" 진행 상태를 담는다.
+    /*
+     * 하위호환: top-level 은 "쿠팡" 진행 상태를 그대로 담는다 — 두 몰 모두 완료된
+     * 경우의 종합 상태를 넣으면 안 된다. runMallCollection('쿠팡', ...) 이 다음 실행에서
+     * savedState.status === 'completed' 를 보고 즉시 스킵하는 판정이 바로 이 필드를
+     * 읽는데, 여기 overallStatus 를 넣으면 ADPICK 이 안 끝난 날은 쿠팡이 이미 다
+     * 끝났어도 매번 다시 "완료됐다" 를 처음부터 재계산해야 한다(결과는 같지만
+     * 헛되이 plan 을 다시 만든다). "이미 완료" 여부의 전체 판정은 run() 위쪽의
+     * coupangDoneToday && adpickDoneToday 가 이미 두 몰을 각각 본다.
+     */
     job_date: TODAY,
     cursor_key: coupangResult.cursorKey,
     processed: coupangResult.processed,
     total: coupangResult.total,
-    status: overallStatus,
+    status: coupangResult.status,
     last_run_at: new Date().toISOString(),
     last_result: {
       recorded: coupangResult.recorded + adpickResult.recorded,
