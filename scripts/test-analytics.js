@@ -361,6 +361,38 @@ group('A — 방문자 집계');
   ok(!/Track[\s\S]{0,400}(navigator\.userAgent|localStorage\.getItem\(CONST\.LS\.EMAIL)/.test(html),
     '★ 계측이 UA·이메일을 읽지 않는다');
 
+  /* ══════════════════════════════════════════════════════════ *
+   *  H — data-ctx 와 화이트리스트가 어긋나지 않는가
+   *
+   *  AI 진입점은 `Track.ev('ai_entry_' + ctx)` 로 이름을 **조립**한다.
+   *  그래서 화면에 data-ctx 를 새로 하나 붙이면 지표 이름도 새로 생기는데,
+   *  api/_analytics.js 의 METRICS 화이트리스트에 없으면 서버가 조용히
+   *  버린다 — 화면에도 로그에도 아무 일이 일어나지 않는다.
+   *
+   *  실제로 2026-08-30 에 0건 화면용 data-ctx="noresult" 를 추가하면서
+   *  이 구멍을 밟을 뻔했다. 앞으로는 여기서 잡는다.
+   * ══════════════════════════════════════════════════════════ */
+  group('H — AI 진입 지표 이름이 화이트리스트와 맞는가');
+
+  const analyticsSrc = fs.readFileSync(path.join(ROOT, 'api/_analytics.js'), 'utf8');
+  const ctxs = [...new Set(
+    [...html.matchAll(/data-act="ai-entry"[^>]*data-ctx="([a-z]+)"/g)].map(m => m[1])
+      .concat([...html.matchAll(/data-ctx="([a-z]+)"[^>]*data-act="ai-entry"/g)].map(m => m[1]))
+  )];
+
+  ok(ctxs.length >= 5, `화면에서 AI 진입 맥락을 찾았다 (${ctxs.length}개: ${ctxs.join(', ')})`);
+
+  ctxs.forEach(function (c) {
+    // 핸들러가 'fab' 만 그대로 쓰고 나머지는 ctx 를 그대로 붙인다.
+    const metric = 'ai_entry_' + c;
+    ok(analyticsSrc.indexOf("'" + metric + "'") > -1,
+      `★ ${metric} 이 METRICS 화이트리스트에 있다 (없으면 서버가 조용히 버린다)`);
+  });
+
+  // 기본값(ctx 미지정 → 'home')도 반드시 있어야 한다.
+  ok(analyticsSrc.indexOf("'ai_entry_home'") > -1,
+    "★ 기본 맥락 ai_entry_home 이 화이트리스트에 있다");
+
   /* ══════════════════════════════════════════════════════════ */
   console.log(`\n${'='.repeat(66)}\n계측 테스트 요약\n${'='.repeat(66)}`);
   groups.forEach(g => {

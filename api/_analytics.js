@@ -59,8 +59,28 @@ const { kstToday } = require('./_kst');
 const METRICS = [
   'search', 'click',
   'search_open', 'search_submit', 'search_result_click', 'product_view',
+  /*
+   * related_product_click (2026-08-30 추가)
+   *
+   * 추천 섹션(오늘의 셀렉션 · 관심 카테고리 · 찾으시던 상품 · 이달의
+   * 큐레이션 · 최근 본 상품)에서 일어난 상품 클릭. 검색 결과 클릭
+   * (search_result_click)과 나눠 센다 — 뭉치면 "검색 퍼널이 도는가"와
+   * "우리 큐레이션이 눌리는가"를 구분할 수 없다.
+   *
+   * 이 값이 없어서 홈에서 일어난 상품 클릭이 지표에 통째로 빠져 있었다.
+   */
+  'related_product_click',
   'ai_discovered', 'ai_open', 'ai_first_prompt', 'ai_followup',
   'ai_entry_home', 'ai_entry_search', 'ai_entry_product', 'ai_entry_compare', 'ai_entry_fab',
+  /*
+   * ai_entry_noresult (2026-08-30 추가)
+   *
+   * 검색 결과 0건 화면에서 누른 AI 진입. ai_entry_search 와 나눠 센다 —
+   * 결과가 있는데 좁히려고 부르는 것과, 아무것도 못 찾아서 부르는 것은
+   * 성격이 정반대다. 뭉치면 "검색이 실패한 뒤 AI 가 건졌는가" 를
+   * 볼 수 없다.
+   */
+  'ai_entry_noresult',
   'price_history_open', 'comparison_open',
   'wishlist_add', 'price_alert_add', 'external_shop_click'
 ];
