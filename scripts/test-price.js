@@ -1343,7 +1343,18 @@ function recordedPrice(productId) {
 
   check(recentlyObserved([], DROP_TODAY) === false, '기록이 빈 배열이면 제외');
   check(recentlyObserved(undefined, DROP_TODAY) === false, '기록이 없으면(undefined) 제외');
-  check(recentlyObserved(histPts('2026-07-30'), TODAY, 30) === true,
+  /*
+   * maxAgeDays 를 넘기면 기본값(7일) 대신 그 값을 쓴다.
+   *
+   * ★ 기준 날짜는 DROP_TODAY(고정)여야 한다. 예전에는 실행 시각의 TODAY 를
+   *   썼는데, 고정된 과거 날짜 '2026-07-30' 과 견주는 구조라 시간이 지나면
+   *   반드시 깨진다. 실제로 2026-08-30 에 31일 차이가 되면서 FAIL 이 났고,
+   *   npm test 체인이 여기서 멈춰 뒤의 17개 스크립트가 통째로 돌지 않았다.
+   *   같은 날짜로 위(1338줄)에서 기본값 7일이면 탈락하는 것을 이미 확인하므로,
+   *   이 줄은 "30 을 주면 통과한다" 를 그대로 검사한다 — 검사 내용은 같고
+   *   실행 날짜에만 의존하지 않게 됐다.
+   */
+  check(recentlyObserved(histPts('2026-07-30'), DROP_TODAY, 30) === true,
         'maxAgeDays 를 넘기면 그 값을 쓴다');
 
   /*
@@ -1520,9 +1531,119 @@ function recordedPrice(productId) {
   /* ================================================================
    *  수집 리포트 HTML — buildReportHtml
    * ================================================================ */
+  /* ================================================================
+   *  price_history.source — 기록 경로 추적
+   *
+   *  Daily Collection Report 의 수집 성공률은 collector 가 확보한 상품만
+   *  세어야 한다. 그 전제로, 모든 쓰기 경로가 자기 출처를 남기는지 고정한다.
+   *  (supabase/2026-09-01-price-history-source.sql)
+   * ================================================================ */
+  section('price_history.source — 경로별 출처 기록');
+
+  /** 마지막으로 price_history 에 기록된 행의 source. */
+  function recordedSource(productId) {
+    const row = db.upserts.price_history.filter(r => String(r.product_id) === String(productId)).pop();
+    return row ? row.source : undefined;
+  }
+
+  reset();
+  await recordPrices([obs('9001', 30000)], { label: 'collect:쿠팡', source: 'collect' });
+  check(recordedSource('9001') === 'collect', "★ collector 가 쓴 행은 source='collect'", recordedSource('9001'));
+
+  reset();
+  await saveProducts('수영복', [{ productId: '9002', mall: '쿠팡', title: '수영복 상품', lprice: 30000 }], { from: 'api', source: 'search' });
+  check(recordedSource('9002') === 'search', "★ 사용자 검색이 쓴 행은 source='search'", recordedSource('9002'));
+
+  reset();
+  await saveProducts('추천', [{ productId: '9003', mall: '쿠팡', title: '추천 상품', lprice: 30000 }], { from: 'api', source: 'ai' });
+  check(recordedSource('9003') === 'ai', "★ AI 가 쓴 행은 source='ai'", recordedSource('9003'));
+
+  reset();
+  await saveProducts('키워드', [{ productId: '9004', mall: '쿠팡', title: '키워드 상품', lprice: 30000 }], { from: 'api', source: 'cron' });
+  check(recordedSource('9004') === 'cron', "★ Vercel cron 이 쓴 행은 source='cron'", recordedSource('9004'));
+
+  reset();
+  await recordPrices([obs('9005', 30000)], { label: 'import', source: 'import' });
+  check(recordedSource('9005') === 'import', "★ 수동 임포트가 쓴 행은 source='import'", recordedSource('9005'));
+
+  reset();
+  await recordPrices([obs('9006', 30000)], { label: '출처 미지정' });
+  check(recordedSource('9006') === '', '출처를 안 넘기면 빈 문자열 (임의로 collect 로 채우지 않는다)',
+        JSON.stringify(recordedSource('9006')));
+
+  /*
+   * ★ Test 7 — 같은 상품·같은 날에 두 경로가 쓰면 source 는 마지막 것만 남는다.
+   *
+   *   활성 UNIQUE (pid, mall, vid, recorded_date) 때문에 뒤 쓰기가 앞 행을
+   *   덮기 때문이다. 이건 버그가 아니라 이 컬럼의 한계이고, 그래서 수집기
+   *   성공률의 근거로 쓰지 않는다(근거는 price_job_state.collectorCovered).
+   *   이 테스트는 그 한계를 문서가 아니라 코드로 고정해 둔다.
+   */
+  reset();
+  await recordPrices([obs('9007', 30000)], { label: 'collect:쿠팡', source: 'collect' });
+  await recordPrices([obs('9007', 29000)], { label: '수영복', source: 'search' });
+  check(recordedSource('9007') === 'search',
+        '★ 같은 날 뒤에 쓴 경로가 source 를 덮는다 — source 는 "마지막 기록자"다');
+  check(db.upserts.price_history.filter(r => String(r.product_id) === '9007').length === 2,
+        '  (두 번의 쓰기가 같은 행을 대상으로 나갔다)');
+
+  /* ================================================================
+   *  recordPrices.recordedKeys — "가격을 확보했다" 의 판정 근거
+   *
+   *  수집기의 collectorCovered 가 이 값만 보고 채워진다. 그래서 여기서
+   *  suspect / rejected / 저장 실패의 처리 기준을 못 박는다.
+   * ================================================================ */
+  section('recordedKeys — 원장에 실제로 남은 상품만 "확보"로 센다');
+
+  reset();
+  r = await recordPrices([obs('8001', 30000)], { label: 'collect:쿠팡', source: 'collect' });
+  check(Array.isArray(r.recordedKeys) && r.recordedKeys.includes('8001|쿠팡'),
+        '★ 정상 저장된 상품은 recordedKeys 에 들어간다', JSON.stringify(r.recordedKeys));
+
+  /*
+   * ★ Test 14-a — rejected 는 "확보 실패" 다.
+   *   값이 거부되면 price_history 에 행이 남지 않는다. 응답에 상품이
+   *   나왔다는 이유로 성공률에 세면 "확보했다" 가 거짓이 된다.
+   */
+  reset();
+  seedHistory('8002', '쿠팡', 30000, 1);
+  r = await recordPrices([obs('8002', 0)], { label: 'collect:쿠팡', source: 'collect' });
+  check(r.rejected === 1 && r.recordedKeys.length === 0,
+        '★★ rejected 는 recordedKeys 에 들어가지 않는다 (= 확보 실패)', JSON.stringify(r));
+
+  /*
+   * ★ Test 14-b — suspect 는 "확보 성공" 이다.
+   *   급변이라 products 현재가 반영만 보류할 뿐, price_history 에는
+   *   관측이 정상적으로 기록된다. 원장에 오늘 가격이 있으므로 확보가 맞다.
+   */
+  reset();
+  seedHistory('8003', '쿠팡', 34500, 1);
+  db.products.push({ product_id: '8003', mall: '쿠팡', vendor_item_id: '111' });
+  r = await recordPrices([obs('8003', 1528000)], { label: 'collect:쿠팡', source: 'collect' });
+  check(r.suspect === 1 && r.recordedKeys.includes('8003|쿠팡'),
+        '★★ suspect 는 recordedKeys 에 들어간다 (원장에 기록되므로 확보 성공)', JSON.stringify(r));
+  check(currentPrice('8003') === null,
+        '  (products 현재가는 여전히 보류 — 두 개념을 섞지 않는다)');
+
+  reset();
+  r = await recordPrices([obs('8004', 30000), obs('8004', 30000)], { label: 'collect:쿠팡', source: 'collect' });
+  check(r.recordedKeys.length === 1,
+        '★ 같은 상품이 여러 번 들어와도 recordedKeys 는 1개 (중복 제거)', JSON.stringify(r.recordedKeys));
+
+  /* ================================================================ */
   section('수집 리포트. buildReportHtml — 필수 항목 포함');
 
-  const { buildReportHtml } = require('./collect-all-prices');
+  const { buildReportHtml, reportInvariantErrors, productSuccessRate } = require('./collect-all-prices');
+
+  /*
+   * ★ 픽스처는 반드시 불변조건을 만족하는 값이어야 한다 (2026-09-01).
+   *   예전 픽스처는 실패 원인 합계(20)와 실패 수가 아예 무관한 값이었고,
+   *   그래서 운영 메일의 "실패 26 / 원인 합계 151" 모순을 테스트가 못 잡았다.
+   *
+   *   상품:    성공 824 + 미수집 126 = 대상 950
+   *   attempt: 성공 280 + 실패 20 = 300,  실패 20 = 2+15+3
+   *   행:      저장 680 ≥ 갱신 674
+   */
   const sampleReport = {
     execAt: '2026-08-21 01:15 KST',
     date: '2026-08-21',
@@ -1530,22 +1651,75 @@ function recordedPrice(productId) {
     otherTotal: 30,
     otherByMall: { '네이버': 30 },
     malls: [
-      { mallName: '쿠팡', target: 750, attempted: 700, success: 634, recorded: 620, status: 'completed' },
-      { mallName: 'ADPICK', target: 200, attempted: 200, success: 190, recorded: 60, status: 'completed' }
+      { mallName: '쿠팡', targetProducts: 750, collectorSuccessProducts: 630, todayPriceProducts: 650, uncoveredProducts: 100,
+        attemptCalls: 230, attemptSuccess: 215, attemptFailed: 15, recorded: 620, status: 'completed' },
+      { mallName: 'ADPICK', targetProducts: 200, collectorSuccessProducts: 170, todayPriceProducts: 174, uncoveredProducts: 26,
+        attemptCalls: 70, attemptSuccess: 65, attemptFailed: 5, recorded: 60, status: 'completed' }
     ],
     failCats: { blocked: 2, noMatch: 15, network: 3 },
-    target: 950,
-    attempted: 900,
-    success: 824,
+    targetProducts: 950,
+    collectorSuccessProducts: 800,
+    collectorMissingProducts: 150,
+    todayPriceProducts: 824,
+    uncoveredProducts: 126,
+    attemptCalls: 300,
+    attemptSuccess: 280,
+    attemptFailed: 20,
     recorded: 680,
-    uncollected: 76
+    saved: 674,
+    suspect: 6,
+    rejected: 0,
+    processedProducts: 900
   };
+
+  check(reportInvariantErrors(sampleReport).length === 0,
+        '★ 샘플 리포트가 불변조건을 전부 만족한다',
+        JSON.stringify(reportInvariantErrors(sampleReport)));
 
   const html = buildReportHtml(sampleReport);
   check(typeof html === 'string' && html.length > 100, 'HTML 문자열을 반환한다');
   check(html.includes('2026-08-21'), '기준 날짜(KST)가 포함된다');
   check(html.includes('01:15 KST'), '실행 시각(KST)이 포함된다');
-  check(html.includes('91.6%'), '이번 실행 커버리지(824/900)가 포함된다');
+  check(html.includes('84.2% (800/950)'),
+        '★ 헤드라인은 collector 전용 수집 성공률(800/950)이다');
+  check(html.includes('86.7% (824/950)'),
+        '★ 오늘 가격 보유율(824/950)은 별도 지표로 함께 표시된다');
+  check(html.includes('상품 기준 수집 성공률') && html.includes('오늘 가격 보유율'),
+        '★ 두 지표를 서로 다른 이름으로 표시한다 (같은 이름 금지)');
+  check(html.includes('사용자 검색 · Vercel cron · AI 가 남긴 가격은 포함하지 않는다'),
+        '★ 수집 성공률이 무엇을 제외하는지 메일에 명시한다');
+  check(html.includes('단위: 상품') && html.includes('단위: attempt'),
+        '★ 상품 단위 / attempt 단위 섹션이 각각 단위를 밝힌다');
+  check(html.includes('수집 attempt (실제 API 호출)') && !html.includes('가격 수집 시도'),
+        '★ 시도 항목의 이름이 attempt 단위임을 드러낸다 (옛 명칭 "가격 수집 시도" 는 쓰지 않는다)');
+  check(html.includes('처리 상품 수') && html.includes('>900<'),
+        '★ 상품 처리량은 "처리 상품 수" 로 따로 표기된다 (호출 수와 섞지 않는다)');
+  check(html.includes('price_history upsert 행 (신규+갱신)') && !html.includes('price_history 신규 저장'),
+        '★ 저장 행은 upsert 대상 행임을 밝힌다 (DB 신규 row 수와 다를 수 있다)');
+  check(html.includes('UNIQUE 제약'),
+        '같은 날 재수집이 기존 행을 덮을 수 있다는 주석이 메일에 있다');
+  check(html.includes('성공 attempt 280 + 실패 attempt 20 = 수집 attempt 300'),
+        '★ 성공/실패 attempt 합이 전체 attempt 와 같음을 메일에 직접 적는다');
+
+  /* ── 집계 검증 블록 — 세 항등식이 전부 OK 로 찍힌다 ────────────── */
+  check(html.includes('집계 검증'), '집계 검증 블록이 있다');
+  check(html.includes('수집 성공 상품 + 수집 미확보 상품 = 대상 상품')
+     && html.includes('오늘 가격 보유 + 미보유 = 대상 상품')
+     && html.includes('수집 성공 상품 ≤ 오늘 가격 보유 상품')
+     && html.includes('성공 attempt + 실패 attempt = 전체 attempt')
+     && html.includes('모든 failure reason 합계 = 실패 attempt'),
+        '★ 다섯 불변조건이 메일에 각각 표시된다');
+  check((html.match(/>OK</g) || []).length === 5 && !html.includes('>NG<'),
+        '★ 정상 리포트에서는 다섯 검증이 모두 OK 로 찍힌다');
+  check(html.includes('총 실패 attempt'), '실패 항목이 attempt 단위로 표기된다');
+  check(html.includes('실패 원인 합계 20 = 총 실패 attempt 20'),
+        '★ 실패 원인 합계와 총 실패 attempt 가 같음을 메일에 직접 적는다');
+  check(html.includes('수집 성공 800 + 수집 미확보 150 = 대상 950'),
+        '★ collector 축 합이 대상과 같음을 메일에 직접 적는다');
+  check(html.includes('가격 보유 824 + 미보유 126 = 대상 950'),
+        '★ 모든 경로 축 합이 대상과 같음을 메일에 직접 적는다');
+  check(html.includes('두 축의 차이 24개는 이 수집기가 아닌 경로'),
+        '★ 두 축의 차이가 어디서 왔는지 메일이 설명한다');
   check(html.includes('800'), 'products 전체 수가 포함된다');
   check(html.includes('680'), '전체 저장 수가 포함된다');
   check(html.includes('쿠팡') && html.includes('ADPICK'), '몰별 결과에 쿠팡·ADPICK 이 각각 표시된다');
@@ -1554,10 +1728,45 @@ function recordedPrice(productId) {
   check(html.includes('noMatch'), 'noMatch 카테고리가 포함된다');
   check(html.includes('SEOSA'), 'SEOSA 브랜딩이 포함된다');
 
-  // 실패 카테고리가 전부 0이면 '없음' 표시
-  const emptyReport = { ...sampleReport, failCats: {} };
-  const emptyHtml = buildReportHtml(emptyReport);
-  check(emptyHtml.includes('없음'), '실패 카테고리가 없으면 "없음" 표시');
+  // 실패 attempt 가 하나도 없는 실행
+  const cleanReport = { ...sampleReport, failCats: {}, attemptFailed: 0, attemptSuccess: 300 };
+  const cleanHtml = buildReportHtml(cleanReport);
+  check(cleanHtml.includes('실패 attempt 없음'), '실패 원인이 없으면 "실패 attempt 없음" 표시');
+  check(reportInvariantErrors(cleanReport).length === 0, '실패 0인 리포트도 불변조건을 만족한다');
+
+  /* ── 불변조건 위반은 반드시 검출되고 메일에 경고가 붙는다 ────────── */
+  section('수집 리포트. 불변조건 위반 검출 — 2026-09-01 실제 사고 재현');
+
+  /*
+   * 2026-09-01 21:19Z 실행이 실제로 보낸 메일의 형태:
+   *   실패(검색어) 26  ↔  실패 원인 blocked 23 / staleCache 3 / noMatch 125
+   * 실패 수는 검색어 단위, noMatch 는 상품 단위였다. 이제 이런 리포트는
+   * 검사에서 걸리고, 메일 맨 위에 경고 배너가 붙는다.
+   */
+  const mixedUnits = {
+    ...sampleReport,
+    attemptFailed: 26,
+    attemptSuccess: 310,
+    attemptCalls: 336,
+    failCats: { blocked: 23, staleCache: 3, noMatch: 125 }
+  };
+  const mixedErrors = reportInvariantErrors(mixedUnits);
+  check(mixedErrors.length > 0, '★ 실패 26 ↔ 원인 합계 151 인 리포트를 위반으로 잡는다');
+  check(mixedErrors.some(e => e.includes('151')), '위반 메시지가 실제 합계(151)를 알려준다', mixedErrors.join(' | '));
+  const mixedHtml = buildReportHtml({ ...mixedUnits, invariantErrors: mixedErrors });
+  check(mixedHtml.includes('집계 불변조건 위반'),
+        '★ 위반이 있으면 메일 맨 위에 경고 배너가 붙는다');
+  check(mixedHtml.includes('>NG<'),
+        '★ 집계 검증 블록이 해당 항목을 NG 로 찍는다');
+
+  const brokenProducts = { ...sampleReport, collectorSuccessProducts: 824, collectorMissingProducts: 873, targetProducts: 1455 };
+  check(reportInvariantErrors(brokenProducts).some(e => e.includes('상품 단위(collector)')),
+        '★ 수집 성공 + 미확보 ≠ 대상 이면 위반으로 잡는다');
+
+  check(Math.abs(productSuccessRate({ targetProducts: 1455, collectorSuccessProducts: 582 }) - 40.0) < 0.05,
+        '★ 성공률 계산식은 그대로다 — 582/1455 = 40.0%');
+  check(productSuccessRate({ targetProducts: 0, collectorSuccessProducts: 0 }) === 100,
+        '대상이 0이면 100% (0으로 나누지 않는다)');
 
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
   process.exit(fail ? 1 : 0);

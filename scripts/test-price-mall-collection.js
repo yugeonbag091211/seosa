@@ -19,7 +19,8 @@
  *     · 가격 0                   → addRow 가 버린다
  *   두 경우 모두 obsMap 이 비어 saveAll() 이 즉시 return 하므로 DB 를 건드리지 않는다.
  *   (저장 경로 자체의 검증은 test-adpick.js / test-price.js 가 가짜 supabase 로 한다)
- *   assertNoDbWrite() 로 매 케이스마다 실제로 안 썼는지 확인한다.
+ *   assertNoWrite() 로 매 케이스마다 저장 경로에 들어가지 않았는지 확인한다.
+ *   (운영 DB 를 실제로 훑는 확인: node scripts/verify-collection-no-write.js)
  *
  * 검증 대상 (2026-08-29 몰별 독립 수집 도입)
  *   - 한 몰이 예외/차단이어도 다른 몰의 결과가 영향받지 않는다
@@ -46,19 +47,27 @@ function eq(name, got, want) { check(name, got === want, `got=${JSON.stringify(g
 const TODAY = kstToday();
 
 /*
- * 이 테스트가 운영 DB 에 한 행이라도 썼는지 실제로 확인한다.
- * 픽스처 product_id 는 전부 "<mall>-p<n>" 꼴이라 like 로 한 번에 잡힌다.
- * 운영 데이터의 product_id 는 쿠팡=숫자, ADPICK=sha256 hex 라 절대 겹치지 않는다.
+ * 이 케이스가 DB 쓰기 경로에 한 번도 들어가지 않았는지 확인한다.
+ *
+ * ── 왜 운영 DB 를 조회하지 않는가 (2026-08-30 변경) ───────────
+ *
+ * 초판은 여기서 실제로 운영 Supabase 를 읽어 픽스처가 남았는지 봤다. 확인
+ * 자체는 옳았지만, 그러면 `npm test` 체인에서 운영 DB 로 네트워크 호출이
+ * 나간다 — test-release.js 의 SAFE 검사("체인 안에 운영 Supabase 를 그대로
+ * 쓰는 테스트가 없다")가 실제로 FAIL 이었다. 테스트가 운영을 건드리지
+ * 않는다는 약속이 테스트 자신 때문에 깨져 있었다.
+ *
+ * recorded 는 저장 경로를 실제로 통과한 행 수다. 0 이면 saveAll() 이
+ * 즉시 return 했다는 뜻이고, 그때는 upsert 가 한 번도 일어나지 않는다.
+ * 오프라인에서 같은 것을 판정할 수 있다.
+ *
+ * 운영 DB 를 실제로 훑는 확인은 체인 밖으로 옮겼다:
+ *   node scripts/verify-collection-no-write.js
  */
-async function assertNoDbWrite(label) {
-  const supabase = require('../api/_supabase');
-  const [{ data: prods }, { data: hist }] = await Promise.all([
-    supabase.from('products').select('product_id').or('product_id.like.ADPICK-p%,product_id.like.쿠팡-p%'),
-    supabase.from('price_history').select('product_id').or('product_id.like.ADPICK-p%,product_id.like.쿠팡-p%')
-  ]);
-  const leaked = (prods || []).length + (hist || []).length;
-  check(`★ ${label}: 운영 DB 에 픽스처가 새어 들어가지 않았다`, leaked === 0,
-    `products=${(prods || []).length} price_history=${(hist || []).length}`);
+function assertNoWrite(label, ...results) {
+  const total = results.reduce((s, r) => s + (Number(r && r.recorded) || 0), 0);
+  check(`★ ${label}: 저장 경로에 들어가지 않았다 (운영 DB 쓰기 0)`, total === 0,
+    `recorded 합계=${total}`);
 }
 
 function makeRows(mall, n, withKeyword = true) {
@@ -112,19 +121,19 @@ function makeRows(mall, n, withKeyword = true) {
       mallName: 'ADPICK', rows: adpickRows, fetchAllFn: adpickFetch, savedState: null, deadlineTs: deadline
     });
 
-    eq('쿠팡: 대상 6개', coupangResult.target, 6);
-    eq('쿠팡: 시도 6개 전부 실패', coupangResult.attempted, 6);
-    eq('쿠팡: 성공 0개', coupangResult.success, 0);
+    eq('쿠팡: 대상 6개', coupangResult.targetProducts, 6);
+    eq('쿠팡: 처리 상품 6개 전부 실패', coupangResult.processedProducts, 6);
+    eq('쿠팡: 수집 성공 상품 0개', coupangResult.collectorSuccessProducts, 0);
     eq('쿠팡: 저장 0행(DB 접근 없음)', coupangResult.recorded, 0);
     check('쿠팡: 실패 사유가 예외 메시지로 기록됨', coupangResult.failedKeywords.length > 0);
 
-    eq('ADPICK: 대상 6개', adpickResult.target, 6);
-    eq('ADPICK: 시도 6개(호출은 성공)', adpickResult.attempted, 6);
-    eq('ADPICK: 성공 0개(매칭 없음 — no-match 는 성공이 아니다)', adpickResult.success, 0);
+    eq('ADPICK: 대상 6개', adpickResult.targetProducts, 6);
+    eq('ADPICK: 처리 상품 6개(호출은 성공)', adpickResult.processedProducts, 6);
+    eq('ADPICK: 수집 성공 상품 0개(매칭 없음 — no-match 는 성공이 아니다)', adpickResult.collectorSuccessProducts, 0);
     eq('ADPICK: 저장 0행', adpickResult.recorded, 0);
     check('★ 쿠팡이 전부 실패해도 ADPICK 결과는 멀쩡하다(독립 실행 확인)',
-      adpickResult.attempted === 6 && coupangResult.attempted === 6);
-    await assertNoDbWrite('[3] 몰 독립성 케이스');
+      adpickResult.processedProducts === 6 && coupangResult.processedProducts === 6);
+    assertNoWrite('[3] 몰 독립성 케이스', coupangResult, adpickResult);
   }
   console.log('');
 
@@ -146,12 +155,12 @@ function makeRows(mall, n, withKeyword = true) {
     const result = await runMallCollection({
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
-    eq('대상(target) = 10', result.target, 10);
-    eq('시도(attempted) = 10 (전부 이번 실행에서 처리)', result.attempted, 10);
+    eq('대상 상품(targetProducts) = 10', result.targetProducts, 10);
+    eq('처리 상품 수(processedProducts) = 10 (전부 이번 실행에서 처리)', result.processedProducts, 10);
     eq('★ 저장(recorded) = 0 — 가격 0 은 저장 경로로 넘어가지 않는다', result.recorded, 0);
     check('★ 대상(10) 과 시도(10) 와 저장(0) 이 서로 다른 숫자로 집계된다',
-      result.target === 10 && result.attempted === 10 && result.recorded === 0);
-    await assertNoDbWrite('[4] 숫자 분리 케이스');
+      result.targetProducts === 10 && result.processedProducts === 10 && result.recorded === 0);
+    assertNoWrite('[4] 숫자 분리 케이스', result);
   }
   console.log('');
 
@@ -170,7 +179,7 @@ function makeRows(mall, n, withKeyword = true) {
     check('★ deadline(200ms) 근처에서 멈춘다 — 배치 간격(60초) 만큼 기다리지 않는다',
       elapsed < 10000, `elapsed=${elapsed}ms`);
     check('전부 처리하지 못했다(상태 running 또는 남은 상품 있음)',
-      result.status === 'running' || result.attempted < result.target);
+      result.status === 'running' || result.processedProducts < result.targetProducts);
   }
   console.log('');
 
@@ -192,7 +201,205 @@ function makeRows(mall, n, withKeyword = true) {
       retried.includes('ADPICK-kw000') && retried.includes('ADPICK-kw001'),
       `retried=${JSON.stringify(retried)}`);
     eq('재시도까지 전부 성공하면 완료 상태로 전환', result.status, 'completed');
-    await assertNoDbWrite('[6] 재시도 케이스');
+    assertNoWrite('[6] 재시도 케이스', result);
+  }
+  console.log('');
+
+  /* ── 7. 집계 단위 분리 — 상품 / attempt / 행 ──────────────────
+   *
+   * 2026-09-01 리포트 사고의 회귀 테스트다.
+   *
+   *   실제 메일:  실패(검색어) 26  ↔  blocked 23 / staleCache 3 / noMatch 125
+   *   원인:       실패 개수는 검색어(=attempt) 단위인데 noMatch 만
+   *               `+= groupRows.length` 로 상품 수를 더하고 있었다.
+   *
+   * 그래서 여기서는 **한 검색어가 여러 상품을 덮는** 배치를 일부러 만든다.
+   * noMatch 가 상품 수를 세면 아래 항등식이 즉시 깨진다.
+   */
+  console.log('[7] 집계 단위 분리 — 상품 / attempt / 행을 섞지 않는다');
+  {
+    /*
+     * 상품 12개를 검색어 3종에 4개씩 몰아 준다(한 attempt = 상품 4개).
+     *   kw0 → 호출 성공, 매칭 0건        → 실패 attempt 1 (noMatch)
+     *   kw1 → 호출 자체가 실패(차단)     → 실패 attempt 1 (blocked)
+     *   kw2 → 호출 성공, 매칭 0건        → 실패 attempt 1 (noMatch)
+     * 상품 단위로 세면 noMatch 는 8이 된다 — 그 값이 나오면 회귀다.
+     */
+    const rows = Array.from({ length: 12 }, (_, i) => ({
+      product_id: `ADPICK-g${i}`, mall: 'ADPICK',
+      title: `묶음 상품 ${i}`, keyword: `ADPICK-grp${i % 3}`, link: '', image: ''
+    }));
+    const fetchStub = async (kw) => {
+      if (kw === 'ADPICK-grp1') return { ok: false, items: [], reason: 'ADPICK 차단: HTTP 429' };
+      return { ok: true, items: [], reason: '' };     // 호출은 성공, 매칭 0건
+    };
+    const r = await runMallCollection({
+      mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
+    });
+
+    const catSum = Object.values(r.failureCategories).reduce((s, v) => s + v, 0);
+    const firstPass = r.attemptCalls - r.attemptCallsRecovery;
+
+    eq('1차 attempt 3회 (검색어 3종 = 호출 3회, 상품 12개가 아니다)', firstPass, 3);
+    check('회수 패스 호출도 attempt 에 들어간다 (실제로 나간 호출이므로)',
+      r.attemptCallsRecovery > 0 && r.attemptCalls === firstPass + r.attemptCallsRecovery,
+      `total=${r.attemptCalls} 1차=${firstPass} 회수=${r.attemptCallsRecovery}`);
+    eq('성공 attempt 0회', r.attemptSuccess, 0);
+    eq('실패 attempt = 총 attempt (하나도 못 잡았다)', r.attemptFailed, r.attemptCalls);
+    eq('★ 1차 noMatch 는 attempt 단위 2 (상품 단위 8이 아니다)',
+      r.failureCategories.noMatch - r.attemptCallsRecovery, 2);
+    check('★ noMatch 가 상품 수(8)로 세어지지 않는다', r.failureCategories.noMatch !== 8 + r.attemptCallsRecovery,
+      `noMatch=${r.failureCategories.noMatch} 회수=${r.attemptCallsRecovery}`);
+    eq('blocked 는 attempt 단위 1', r.failureCategories.blocked, 1);
+
+    check('★ 불변조건 2: 실패 attempt = 모든 실패 원인의 합',
+      r.attemptFailed === catSum, `실패=${r.attemptFailed} 원인합=${catSum}`);
+    check('★ 불변조건 3: 성공 attempt + 실패 attempt = 총 attempt',
+      r.attemptSuccess + r.attemptFailed === r.attemptCalls,
+      `${r.attemptSuccess}+${r.attemptFailed} vs ${r.attemptCalls}`);
+    check('★ 불변조건 1: 수집 성공 + 수집 미확보 = 대상 상품',
+      r.collectorSuccessProducts + r.collectorMissingProducts === r.targetProducts,
+      `${r.collectorSuccessProducts}+${r.collectorMissingProducts} vs ${r.targetProducts}`);
+    eq('아무것도 못 잡았으므로 수집 성공 상품 0', r.collectorSuccessProducts, 0);
+    eq('오늘 가격 미보유 상품은 대상 전부(12)', r.uncoveredProducts, 12);
+    check('★ 상품 단위(12)와 attempt 단위(1차 3회)가 서로 다른 숫자로 남는다',
+      r.targetProducts === 12 && firstPass === 3);
+    assertNoWrite('[7] 단위 분리 케이스', r);
+  }
+  console.log('');
+
+  /* ── 8. 예외로 끝난 호출도 실패 원인에 잡힌다 ────────────────── */
+  console.log('[8] 예외 attempt 도 실패 원인 합계에 들어간다');
+  {
+    const rows = makeRows('쿠팡', 5);
+    const fetchStub = async () => { throw new Error('쿠팡 네트워크 오류(시뮬레이션)'); };
+    const r = await runMallCollection({
+      mallName: '쿠팡', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
+    });
+    const catSum = Object.values(r.failureCategories).reduce((s, v) => s + v, 0);
+    eq('attempt 5회 전부 예외', r.attemptCalls, 5);
+    eq('실패 attempt 5회', r.attemptFailed, 5);
+    check('★ 예외 5회가 실패 원인 합계에도 그대로 잡힌다 (예전에는 0이었다)',
+      catSum === 5, `원인합=${catSum} 상세=${JSON.stringify(r.failureCategories)}`);
+    eq('network 로 분류된다', r.failureCategories.network, 5);
+    assertNoWrite('[8] 예외 attempt 케이스', r);
+  }
+  console.log('');
+
+  /* ── 9. 이어받기 실행의 성공 상품은 하루 누적이다 ─────────────
+   *
+   * 2026-09-01 두 번째 실행이 13.7% (199/1455) 를 보낸 사고의 회귀 테스트다.
+   *
+   *   그날 첫 실행이 582개를 확보했는데, 이어받기 실행이 자기가 새로 잡은
+   *   상품만 세어 성공률을 다시 계산했다. 하루 누적으로는 이미 절반 가까이
+   *   수집된 날인데 메일은 "13.7%" 라고 말했다.
+   *
+   * 이제 성공 상품은 price_history 가 오늘 갖고 있는 상품(=collectedTodayFn)
+   * 에서 출발한다. 여기서는 그 조회를 스텁으로 주입해 운영 DB 없이 재현한다.
+   *
+   * ★ 이 파일은 가격 0 만 돌려줄 수 있어(머리말 참고) 이번 실행이 새로
+   *   잡는 몫은 만들 수 없다. 그래서 여기서는 "앞 실행 몫이 0 으로
+   *   되돌아가지 않는다" 만 고정하고, 앞 실행 + 이번 실행 합산은 가짜
+   *   Supabase 를 쓰는 test-second-pass.js §9 가 검증한다.
+   */
+  console.log('[9] 이어받기(resume) — 앞 실행이 확보한 상품을 되돌리지 않는다');
+  {
+    const rows = makeRows('ADPICK', 10);
+    // 앞선 실행이 오늘 이미 확보한 상품 6개 (= 실제 사고의 582 자리).
+    const alreadyToday = new Set(rows.slice(0, 6).map(p => `${p.product_id}|${p.mall}`));
+    const collectedTodayFn = async () => alreadyToday;
+
+    // 이번 실행은 아무것도 새로 잡지 못한다 (매칭 0건).
+    const fetchStub = async () => ({ ok: true, items: [], reason: '' });
+    const savedState = {
+      job_date: TODAY, cursor_key: '', processed: 6, total: 10, status: 'running',
+      last_result: { failedKeywords: [], secondPassDone: [] }
+    };
+    const r = await runMallCollection({
+      mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState,
+      deadlineTs: Date.now() + 5000, collectedTodayFn
+    });
+
+    eq('★ 이번 실행이 0개를 잡아도 오늘 가격 보유는 앞 실행 몫 6 (0 으로 되돌리지 않는다)',
+      r.todayPriceProducts, 6);
+    eq('오늘 가격 미보유 상품 4', r.uncoveredProducts, 4);
+    check('★ 불변조건: 가격 보유 + 미보유 = 대상',
+      r.todayPriceProducts + r.uncoveredProducts === r.targetProducts,
+      `${r.todayPriceProducts}+${r.uncoveredProducts} vs ${r.targetProducts}`);
+    eq('★ 가격 보유율 60% — 이번 실행 몫만 센 0% 가 아니다',
+      r.todayPriceProducts / r.targetProducts * 100, 60);
+    /*
+     * ★ 이 케이스의 6개는 collectedTodayFn 이 준 것 = 출처를 모른다.
+     *   수집기가 잡았다는 기록(collectorCovered)이 없으므로 수집 성공은 0 이다.
+     *   "오늘 가격이 있다" 와 "수집기가 확보했다" 를 섞지 않는다.
+     */
+    eq('★★ 수집 성공 상품은 0 — 출처 불명 6개를 수집기 성과로 세지 않는다',
+      r.collectorSuccessProducts, 0);
+    assertNoWrite('[9] 이어받기 케이스', r);
+  }
+  console.log('');
+
+  /* ── 10. 호출부 배선 — 각 경로가 자기 source 를 넘기는가 (정적 확인) ──
+   *
+   * api/search.js · api/ai.js · api/cron.js 는 서버리스 핸들러라 여기서
+   * 실행하지 않는다. 대신 소스에서 배선을 직접 확인한다 — 배선이 빠지면
+   * price_history.source 가 비어 리포트의 전제가 무너지기 때문이다.
+   * (source 값 자체가 저장되는지는 test-price.js 가 가짜 DB 로 검증한다)
+   */
+  console.log('[10] 호출부가 자기 source 를 넘기는가 (소스 확인)');
+  {
+    const fs = require('fs'), path = require('path');
+    const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+    const wiring = [
+      ['scripts/collect-all-prices.js', "source: 'collect'", '일일 수집기'],
+      ['api/cron.js', "source: 'cron'", 'Vercel cron'],
+      ['api/search.js', "source: 'search'", '사용자 검색'],
+      ['api/ai.js', "source: 'ai'", 'AI 추천'],
+      ['scripts/import-history.js', "source: 'import'", '수동 임포트']
+    ];
+    wiring.forEach(([rel, needle, name]) => {
+      check(`★ ${name} (${rel}) 가 ${needle} 를 넘긴다`, read(rel).includes(needle));
+    });
+    // 저장 깔때기가 source 를 실제로 행에 싣는가
+    const shop = read('api/_shop.js');
+    check('★ recordPrices 가 source 를 price_history 행에 싣는다',
+      shop.slice(shop.indexOf('historyRows.push({'), shop.indexOf('historyRows.push({') + 500).includes('source'));
+    check('★ source 컬럼이 없는 환경에서도 저장이 죽지 않는다 (폴백 존재)',
+      shop.includes('historySourceColumn') && shop.includes('upsertHistory'));
+  }
+  console.log('');
+
+  /* ── 11. 날짜 경계 — 오늘 기록 조회는 recorded_date 라벨을 믿지 않는다 ──
+   *
+   * 운영 트리거가 recorded_date 를 UTC 로 덮어쓰는데, 이 잡은 UTC 16·18·21시
+   * (=KST 01·03·06시)에 돈다. 그래서 .eq('recorded_date', kstToday()) 는
+   * 자기가 방금 쓴 행을 절대 못 찾는다 (2026-09-01 실측: 747행 중 7행만 조회).
+   * 경계는 반드시 절대 시각(recorded_at)으로 잡아야 한다.
+   */
+  console.log('[11] 날짜 경계 — collectedTodayKeys 는 recorded_at 범위로 조회한다');
+  {
+    const fs = require('fs'), path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, 'collect-all-prices.js'), 'utf8');
+    const fn = src.slice(src.indexOf('async function collectedTodayKeys'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+
+    check("★★ recorded_date 동등 비교를 쓰지 않는다", !body.includes("eq('recorded_date'"),
+      'recorded_date 라벨은 UTC 로 잘려 있어 KST 하루 경계로 쓸 수 없다');
+    check("★★ recorded_at 범위(gte/lt)로 조회한다",
+      body.includes("gte('recorded_at'") && body.includes("lt('recorded_at'"));
+    check('kstDayStartUtc 로 KST 하루 시작을 잡는다', body.includes('kstDayStartUtc('));
+    check('kstDayStartUtc 가 import 되어 있다', src.includes('kstDayStartUtc } = require'));
+
+    // 경계 산술 자체를 고정한다 (KST 는 서머타임이 없어 정확히 24시간)
+    const { kstDayStartUtc } = require('../api/_price');
+    const start = kstDayStartUtc('2026-09-01');
+    const end = new Date(Date.parse(start) + 24 * 60 * 60 * 1000).toISOString();
+    eq('★ KST 2026-09-01 시작 = UTC 2026-08-31T15:00Z', start, '2026-08-31T15:00:00.000Z');
+    eq('★ KST 2026-09-01 종료 = UTC 2026-09-01T15:00Z', end, '2026-09-01T15:00:00.000Z');
+    // 실제 사고 시각(수집기가 쓴 행)이 이 범위 안에 들어오는지
+    const collectorWrite = Date.parse('2026-08-31T21:40:19.473Z');   // 실측 행 8579465515
+    check('★★ KST 새벽 수집분(UTC 전날 21:40)이 오늘 범위에 포함된다',
+      collectorWrite >= Date.parse(start) && collectorWrite < Date.parse(end));
   }
   console.log('');
 

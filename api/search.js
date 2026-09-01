@@ -4,7 +4,7 @@ const { attachTrust } = require('./_trust');
 const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { normalizeText, splitTokens, sortByRelevance, suggestKeywords } = require('./_search');
+const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
 
 const MAX_KEYWORD_LEN = 80;
 
@@ -105,7 +105,7 @@ module.exports = async function handler(req, res) {
       coupangOpts: { source: 'search', maxWaitMs: 1500 }
     });
 
-    await saveProducts(keyword, allItems || items, { from });
+    await saveProducts(keyword, allItems || items, { from, source: 'search' });
 
     /*
      * 가격 신뢰도.
@@ -126,14 +126,41 @@ module.exports = async function handler(req, res) {
     await attachPriceChange(items);
 
     /*
+     * 관련도 점수.
+     *
+     * ── 이 줄이 없어서 생긴 일 ──────────────────────────────────────
+     *
+     * 이 주석은 원래 "관련도(_search.rankItems 가 붙인 relevance) → 신뢰도 →
+     * 가격 순" 이라고 적혀 있었는데, 정작 rankItems 를 부르는 곳이 없었다.
+     * relevance 가 아무 상품에도 붙지 않으니 sortByRelevance 의 첫 비교는
+     * 언제나 0 !== 0 (거짓) 이었고, 실제 순서는 신뢰도 → 가격 이었다.
+     *
+     * 즉 _search.js 가 막으려고 만들어진 문제가 그대로 살아 있었다.
+     * 실측(2026-08-29, "LG전자 LG그램 14ZD95U"):
+     *     4위  8,000원  파인피아 … 14ZD95U 보호필름
+     *     5위  9,730원  LG 그램 충전기 아답터
+     *     6위 42,500원  LG LP65WGC20P-EK  (아예 다른 제품)
+     * "LG전자" 나 "그램" 토큰 하나만 걸려도 통과하는 _shop.matchesKeyword 를
+     * 지나온 것들이다.
+     *
+     * ── 왜 버리지 않고 점수만 매기는가 ──────────────────────────────
+     *
+     * minScore: 0 이라 한 건도 떨어지지 않는다. 지금까지 보이던 상품이 갑자기
+     * 사라지는 쪽이 섞여 보이는 쪽보다 나쁘고, 이 변경의 목적은 "무엇을 지울까"
+     * 가 아니라 "무엇을 먼저 볼까" 이기 때문이다. 관련도가 낮은 것은 아래로
+     * 내려갈 뿐 목록에는 남는다.
+     */
+    rankItems(keyword, items, { minScore: 0 });
+
+    /*
      * 순서.
      *
-     * 관련도(_search.rankItems 가 붙인 relevance) → 가격 신뢰도 → 가격 순이다.
+     * 관련도 → 가격 신뢰도 → (몰 우선순위를 반영한) 가격 순이다.
      * 신뢰도가 붙은 다음에 세워야 한다 — 그 전에 세우면 신뢰도는 아직 없다.
      *
-     * 관련도는 0.1 단위 계단으로 본다. 계단이 다르면 가격은 아예 보지 않는다.
-     * "싸지만 내가 찾던 게 아닌 상품"이 1위인 것은 최저가 비교 서비스에서
-     * 가장 하기 쉬운 실수다 (_search.sortByRelevance 주석 참고).
+     * 관련도가 다르면 가격은 아예 보지 않는다. "싸지만 내가 찾던 게 아닌
+     * 상품"이 1위인 것은 최저가 비교 서비스에서 가장 하기 쉬운 실수다
+     * (_search.sortByRelevance 주석 참고).
      */
     const ranked = sortByRelevance(items);
 

@@ -102,43 +102,24 @@ module.exports = async function handler(req, res) {
   if (req.query && req.query.diag === '1') return diagnose(req, res);
 
   const started = Date.now();
-  const results = [];
-  const targets = await collectTargets();
-  let skipped = 0;
 
-  for (let i = 0; i < targets.length; i += CONCURRENCY) {
-    // 남은 시간이 곧 이번 배치가 간격 대기에 쓸 수 있는 최대치다.
-    const leftMs = TIME_BUDGET_MS - (Date.now() - started);
-    if (leftMs <= 0) {
-      skipped = targets.length - i;
-      console.warn(`[cron] 시간 예산 초과 — 남은 키워드 ${skipped}개는 다음 실행으로 넘긴다.`);
-      break;
-    }
-    const opts = { ...CRON_COUPANG, maxWaitMs: leftMs };
-    const adpickOpts = { ...CRON_ADPICK, maxWaitMs: leftMs };
-    const batch = targets.slice(i, i + CONCURRENCY);
-    const settled = await Promise.all(batch.map(async keyword => {
-      try {
-        const { items, allItems, errors, from } = await searchAll(keyword, {
-          coupangLimit: CRON_LIMIT, coupangOpts: opts,
-          adpickLimit: CRON_LIMIT, adpickOpts
-        });
-        const { saved, errors: saveErrors } = await saveProducts(keyword, allItems || items, { from });
-        return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };
-      } catch (e) {
-        return { keyword, found: 0, saved: 0, errors: [e.message] };
-      }
-    }));
-    results.push(...settled);
-  }
-
-  const totalSaved = results.reduce((n, r) => n + r.saved, 0);
-  const failed = results.filter(r => r.errors.length);
-  const elapsedMs = Date.now() - started;
-  const coupang = localStats();
-
-  // 호출 로그가 무한히 쌓이지 않게 하루 한 번 정리한다.
-  const pruned = await pruneLog(7);
+  /*
+   * ★ 결제부터 처리한다 — 상품 수집보다 먼저.
+   *
+   * 예전에는 수집 루프가 먼저였다. 그런데 그 루프는 TIME_BUDGET_MS(45초)를
+   * 다 쓸 때까지 도는데 함수 상한(vercel.json maxDuration)은 60초다. 즉
+   * 갱신·미결정리에 남는 시간이 최악 15초뿐이고, chargeBilling 은 혼자
+   * 최대 60초(_toss.CHARGE_TIMEOUT_MS)까지 걸릴 수 있다. 그러면 갱신
+   * 대상이 몇 건만 있어도 뒤쪽이 통째로 잘려 그날 청구가 나가지 않는다.
+   *
+   * 우선순위를 뒤집는 것이 맞다.
+   *   · 수집이 밀리면 — 다음 실행(KST 03시·06시)과 GitHub Actions 수집기가
+   *     같은 일을 다시 한다. 루프에 이미 skipped 처리가 있다.
+   *   · 청구가 밀리면 — 돈이 걸린다. 되돌리기가 비싸다.
+   *
+   * started 를 위에 두었으므로 수집 루프의 leftMs 는 "결제가 쓰고 남은 시간"
+   * 으로 자동 계산된다. 예산이 바닥나면 루프가 알아서 다음 실행으로 넘긴다.
+   */
 
   /*
    * PRO 자동결제 갱신.
@@ -147,8 +128,7 @@ module.exports = async function handler(req, res) {
    *   11개다. 갱신은 하루 한 번이면 충분하므로, CRON_SECRET 뒤에서 매일 도는
    *   이 함수에 얹는다. 새 엔드포인트를 만들면 배포가 상한에 걸린다.
    *
-   * 수집이 실패해도 갱신은 돌아야 한다 — 서로 무관한 일이다. 반대로 갱신이
-   * 실패해도 수집 결과를 뒤집지 않는다.
+   * 갱신이 실패해도 수집을 막지 않는다 — 서로 무관한 일이다.
    */
   let renewal = { attempted: 0, renewed: 0, failed: 0, gaveUp: 0 };
   try {
@@ -189,6 +169,44 @@ module.exports = async function handler(req, res) {
       + ` (복구 ${staleSweep.paid}, 실패확정 ${staleSweep.failed}, 보류 ${staleSweep.unresolved})`
       + ` / 방치된 pending ${staleSweep.expiredPending}건 만료`);
   }
+
+  const results = [];
+  const targets = await collectTargets();
+  let skipped = 0;
+
+  for (let i = 0; i < targets.length; i += CONCURRENCY) {
+    // 남은 시간이 곧 이번 배치가 간격 대기에 쓸 수 있는 최대치다.
+    const leftMs = TIME_BUDGET_MS - (Date.now() - started);
+    if (leftMs <= 0) {
+      skipped = targets.length - i;
+      console.warn(`[cron] 시간 예산 초과 — 남은 키워드 ${skipped}개는 다음 실행으로 넘긴다.`);
+      break;
+    }
+    const opts = { ...CRON_COUPANG, maxWaitMs: leftMs };
+    const adpickOpts = { ...CRON_ADPICK, maxWaitMs: leftMs };
+    const batch = targets.slice(i, i + CONCURRENCY);
+    const settled = await Promise.all(batch.map(async keyword => {
+      try {
+        const { items, allItems, errors, from } = await searchAll(keyword, {
+          coupangLimit: CRON_LIMIT, coupangOpts: opts,
+          adpickLimit: CRON_LIMIT, adpickOpts
+        });
+        const { saved, errors: saveErrors } = await saveProducts(keyword, allItems || items, { from, source: 'cron' });
+        return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };
+      } catch (e) {
+        return { keyword, found: 0, saved: 0, errors: [e.message] };
+      }
+    }));
+    results.push(...settled);
+  }
+
+  const totalSaved = results.reduce((n, r) => n + r.saved, 0);
+  const failed = results.filter(r => r.errors.length);
+  const elapsedMs = Date.now() - started;
+  const coupang = localStats();
+
+  // 호출 로그가 무한히 쌓이지 않게 하루 한 번 정리한다.
+  const pruned = await pruneLog(7);
 
   console.log(
     `[cron] 키워드 ${results.length}개(미처리 ${skipped}) / 저장 ${totalSaved}건`

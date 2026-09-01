@@ -1,0 +1,359 @@
+'use strict';
+/*
+ * 수집용 검색어 후보 생성.
+ *
+ * ── 왜 별도 파일인가 ────────────────────────────────────────────
+ * 검색어 생성은 수집률을 좌우하는 규칙인데, 수집 스크립트 안에 있으면
+ * 쿠팡 호출 없이 검증할 수가 없다. 여기에 순수 함수로 두면 테스트가
+ * 상품 제목만 가지고 규칙 전체를 고정할 수 있다
+ * (scripts/test-query.js 가 그렇게 한다).
+ *
+ * ── 무엇에 근거한 규칙인가 ──────────────────────────────────────
+ * 2026-08-31 에 운영 DB 의 미수집 상품으로 실제 쿠팡 API 를 두 번 측정했다.
+ *
+ *   실험 E2 (n=24, 미수집군)          단독 적중률
+ *     제목 48자 절삭                    79.2%
+ *     제목 앞 5토큰 (당시 방식)          66.7%
+ *     브랜드 + IDF 희귀토큰              58.3%   ← 오히려 나빴다
+ *
+ *   실험 C (n=14, 8가지 전부 시도)      단독 적중률 / 순차 누적
+ *     제목 48자                         78.6%
+ *     브랜드 + 마지막 명사               78.6%   → 두 개 합치면 85.7%
+ *     브랜드 + 명사 2·3번째              50.0%   → 세 개 합치면 92.9%
+ *     (8가지를 다 던져도 92.9% 가 상한이었다)
+ *
+ * 위 8가지 안에서는 세 개면 상한(92.9%)에 닿았고 네 번째부터는 오르지
+ * 않았다. 이는 검색 예산 문헌의 관측
+ * ("accuracy improves reliably up to about three searches, after which
+ *  returns plateau", arXiv 2603.08877 §4.3)과도 방향이 같다.
+ *
+ * ── 그런데 왜 후보를 다섯 개로 늘렸나 (2026-08-31 PHASE 10) ──────
+ * 위 실험의 8가지에는 **없던 검색어 두 종류**가 있다.
+ *   T4 제목 압축        판매 문구를 걷어낸 앞 4토큰
+ *   T7 특수문자 정규화   "T13-APP" → "T13 APP"
+ * 상한 실험에서 유일하게 실패한 상품이 `… 화이트, T13-APP` 였는데,
+ * 하이픈을 띄운 표기는 그 8가지에 들어 있지 않았다. 즉 92.9% 는
+ * "이 8가지의 상한"이지 "검색으로 도달 가능한 상한"이 아니다.
+ *
+ * ★ T4·T7 의 효과는 아직 실제 API 로 측정하지 않았다. 이 파일의 변경으로
+ *   회수율이 얼마나 오르는지는 **미확정**이다. 측정 전에 개선폭을
+ *   숫자로 주장하지 말 것.
+ *
+ * 다섯 개인 이유는 예산이다 — MAX_CANDIDATES 주석 참고.
+ *
+ * ── 하지 않는 것 ────────────────────────────────────────────────
+ * 제목에 없는 브랜드·모델명을 만들어내지 않는다. 여기서 하는 일은
+ * **있는 토큰을 고르고 자르는 것**뿐이다. 사전도 외부 API 도 쓰지 않는다.
+ */
+
+/*
+ * 쿠팡 검색어 길이 상한.
+ *
+ * 실측: 60자 검색어를 보내면 `rCode=400 keyword maximum length is 50` 이
+ * 돌아온다(2026-08-31, 운영 키). 경계에서 잘리지 않도록 48자로 둔다.
+ * ※ 쿠팡이 세는 단위가 문자인지 바이트인지는 확인하지 못했다. 한글이
+ *   섞이면 바이트가 훨씬 커지므로, 안전하게 **문자 수**로 자른 뒤
+ *   호출부가 그대로 쓴다 — 바이트 기준이었다면 더 짧아질 뿐 넘치지 않는다.
+ */
+const MAX_QUERY_LEN = 48;
+
+/** 상품을 구분해 주지 않는 판매 문구. 검색어에 들어가면 결과만 흐려진다. */
+const NOISE = new Set([
+  '정품', '무료배송', '당일발송', '무료', '배송', '증정', '사은품', '최신형',
+  '인기', '추천', '베스트', '신상', '할인', '특가', '한정', '공식', '정식',
+  '국내', '당일', '로켓프레시', '로켓배송', '브랜드인증', '단독', '세트',
+  '초특가', '기획', '행사', '오늘출발', '빠른배송', '무배',
+  // 2026-08-31: 상품을 구분하지 않는 수식어. 제목 앞자리를 차지해서
+  // 압축 후보를 망친다(실측: "2026 최신 인기 초경량 프리미엄 여행용
+  // 캐리어 28인치" → 앞 4토큰이 "2026 최신 초경량 프리미엄" 이 됐다).
+  '최신', '프리미엄', '초경량', '고급', '신형', '럭셔리', '가성비',
+  '초특급', '강력', '초슬림', '슈퍼', '울트라', '메가', '풀세트'
+]);
+
+/** 연도 토큰(2024·2026 …). 상품을 구분하지 않으면서 앞자리를 먹는다. */
+const YEAR_RE = /^(19|20)\d{2}$/;
+
+/** 규격·수량. 상품을 구분하기는 하지만 검색어로는 너무 흔하다. */
+const UNIT_RE = /^\d+(\.\d+)?(ml|l|g|kg|gb|tb|mm|cm|m|인치|w|k|p|매|개|팩|입|구|병|장|호|년|주|박스|캔|세트|매입)$/i;
+
+/** 영문+숫자가 섞인 4자 이상 = 모델코드 후보. 단위는 위에서 걸러진다. */
+const MODEL_RE = /^(?=.*[a-z])(?=.*\d)[a-z0-9-]{4,}$/i;
+
+/**
+ * 제목을 검색에 쓸 만한 토큰으로 자른다.
+ *
+ * 대괄호·괄호 안은 통째로 버린다 — "[로켓프레시]", "(냉동)" 같은 머리표는
+ * 상품을 구분하지 않으면서 앞자리를 차지한다.
+ */
+function tokenize(title) {
+  return String(title || '')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^0-9a-zA-Z가-힣\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !NOISE.has(w) && !YEAR_RE.test(w));
+}
+
+/** 검색어 정규화 — 공백 정리 후 길이 상한까지 자른다. */
+function normalizeQuery(q) {
+  const s = String(q == null ? '' : q).replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  return s.slice(0, MAX_QUERY_LEN).trim();
+}
+
+/**
+ * 제목의 첫 토큰을 브랜드 후보로 본다.
+ *
+ * "추출"이 아니라 "관례"다 — 한국 쇼핑몰 상품명은 브랜드로 시작하는 일이
+ * 압도적으로 많다(운영 1,401건 중 첫 토큰이 존재하는 비율 99.7%).
+ * 브랜드 사전을 만들지 않는 이유는, 사전에 없는 브랜드를 틀리게 잘라내는
+ * 쪽이 그냥 첫 토큰을 쓰는 것보다 나쁘기 때문이다.
+ */
+function brandOf(title) {
+  return tokenize(title)[0] || '';
+}
+
+/** 모델코드 후보 (단위 제외). 운영 기준 보유율 26.8%. */
+function modelsOf(title) {
+  return tokenize(title).filter(w => MODEL_RE.test(w) && !UNIT_RE.test(w));
+}
+
+/** 모델코드·단위가 아닌 일반 명사류. */
+function nounsOf(title) {
+  return tokenize(title).filter(w => !MODEL_RE.test(w) && !UNIT_RE.test(w));
+}
+
+/**
+ * 규격 토큰 — 숫자에 단위가 붙어 상품을 실제로 구분하는 것.
+ *
+ * UNIT_RE 와 다르다. UNIT_RE 는 "4개입" 같은 포장 수량까지 잡아 검색어로
+ * 쓰기엔 너무 흔한 것들이고, 여기서는 "28인치" "2TB" "165Hz" "100W" 처럼
+ * 그 자체로 상품을 좁히는 값만 본다.
+ * 운영 미수집 401개 중 32.9%가 이런 토큰을 갖고 있다.
+ */
+const SPEC_RE = /^\d+(\.\d+)?(인치|tb|gb|mb|hz|w|v|mah|형|k)$/i;
+function specsOf(title) {
+  return tokenize(title).filter(w => SPEC_RE.test(w));
+}
+
+/**
+ * T4 — 제목 압축.
+ *
+ * 판매 문구·수식어·연도를 걷어낸 뒤 **뒤쪽** 토큰을 취한다.
+ *
+ *   "[무료배송] 2026 최신 인기 초경량 프리미엄 여행용 캐리어 28인치"
+ *     → "여행용 캐리어 28인치"
+ *
+ * ── 왜 앞이 아니라 뒤인가 ──────────────────────────────────────
+ * 처음엔 앞에서 4토큰을 잘랐는데 결과가 정반대였다. 실측:
+ *   앞 4토큰 → "2026 최신 초경량 프리미엄"   ← 광고 문구만 남았다
+ * 한국 쇼핑몰 제목은 보통 [머리표] + 수식어 + 핵심 상품명 + 규격 순이라
+ * 식별력이 뒤에 몰려 있다. 실측에서도 "브랜드 + 마지막 명사"가 78.6% 로
+ * 최상위였는데 같은 이유다.
+ *
+ * 수식어 제거만으로는 부족하다 — 사전에 없는 수식어가 늘 있기 때문에,
+ * 사전(NOISE)과 자리(뒤쪽)를 함께 쓴다.
+ */
+function compressTitle(title, maxTokens) {
+  const n = maxTokens == null ? 4 : maxTokens;
+  const t = tokenize(title);
+  return (t.length <= n ? t : t.slice(-n)).join(' ');
+}
+
+/**
+ * T7 — 특수문자 정규화.
+ *
+ *   "무선 이어폰 … 화이트, T13-APP"  →  "무선 이어폰 … 화이트 T13 APP"
+ *   "LG 16-Z90"                      →  "LG 16 Z90"
+ *
+ * ── 왜 필요한가 ────────────────────────────────────────────────
+ * 2026-08-31 상한 실험에서 8가지 검색어를 전부 던져도 못 잡은 유일한 상품이
+ * `… 화이트, T13-APP` 였다. 모델코드 `T13-APP` 를 그대로 검색하면 items=10
+ * 인데 우리 상품이 없었다. 하이픈을 띄운 표기는 **한 번도 시도한 적이 없다.**
+ * 쿠팡 색인이 어느 쪽으로 돼 있는지 우리는 모르므로, 양쪽을 다 시도한다.
+ *
+ * ★ 효과는 아직 실측하지 않았다. 실제 API 측정 전이다.
+ *
+ * 정규화 결과가 원문과 같으면 빈 문자열을 준다 — 같은 검색을 두 번 하지 않는다.
+ */
+/**
+ * 모델코드 안의 하이픈/밑줄을 띄운 표기.
+ *
+ *   "T13-APP"  → "T13 APP"
+ *   "16-Z90"   → "16 Z90"
+ *
+ * 상한 실험에서 유일하게 실패한 상품이 하이픈 모델코드를 가졌는데,
+ * 띄어 쓴 표기를 한 번도 시도하지 않았다. 쿠팡 색인이 어느 쪽인지
+ * 모르므로 둘 다 던진다. 하이픈이 없으면 빈 문자열(중복 방지).
+ */
+function splitModelCode(code) {
+  const c = String(code || '');
+  if (!/[-_]/.test(c)) return '';
+  return c.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSpecial(title) {
+  const src = String(title || '');
+  const hit = src.replace(/[\-_/.()\[\]+&,]/g, ' ').replace(/\s+/g, ' ').trim();
+  const plain = src.replace(/\s+/g, ' ').trim();
+  return hit && hit !== plain ? hit : '';
+}
+
+/**
+ * 상품 하나에 쓸 수 있는 검색어 후보 수의 상한.
+ *
+ * 5인 이유는 예산이다. 미수집 401개에 8후보를 다 만들면 고유 검색어가
+ * 1,838종이 되는데, 하루 호출 예산은 1,200회(400×3)뿐이다. 상한을 두지
+ * 않으면 예산이 앞쪽 상품에서 소진되고 뒤쪽 상품은 한 번도 시도되지 않는다.
+ *
+ * ★ "최대 5회"이지 "무조건 5회"가 아니다. 적중하면 그 상품은 다음 라운드
+ *   대상에서 빠지므로, 1번 후보에서 잡히면 나머지 4개는 호출되지 않는다.
+ */
+const MAX_CANDIDATES = 5;
+
+/**
+ * 2차 이후에 쓸 검색어 후보를 **회수 가능성이 높은 순서로** 만든다.
+ *
+ * 반환은 최대 MAX_CANDIDATES 개. 중복·빈 문자열은 제거되고 전부 길이 상한 안이다.
+ * 제목에 실제로 있는 토큰만 쓴다 — 없는 브랜드·모델명을 지어내지 않는다.
+ *
+ * ── 순서와 근거 ────────────────────────────────────────────────
+ *
+ *   1) 브랜드 + 모델코드        실측 75%(n=4), 만재 0%   ← 가장 강한 식별자
+ *   2) 브랜드 + 모델코드(띄어씀)  ★ 미측정 (T7 핵심)
+ *   3) 제목 48자               실측 78.6~79.2%          ← 단독 최고
+ *   4) 브랜드 + 마지막 명사      실측 78.6%
+ *   5) 제목 압축                ★ 미측정 (T4)
+ *   6) 브랜드 + 명사 2·3        실측 50%, 1·3·4·6 까지가 92.9% 를 만든 조합
+ *   7) 제목 특수문자 정규화       ★ 미측정 (T7 일반형)
+ *   8) 브랜드 + 규격            ★ 미측정
+ *   9) 모델코드 단독            실측 50%(n=4)
+ *
+ * 상한 5개라 상품마다 실제로 쓰이는 사다리가 다르다.
+ *   하이픈 모델코드 있음 → [브+모델, 브+모델띄움, 제목48, 브+꼬리, 압축]
+ *   모델코드만 있음      → [브+모델, 제목48, 브+꼬리, 압축, 브+명사2·3]
+ *   모델코드 없음        → [제목48, 브+꼬리, 압축, 브+명사2·3, 제목정규화]
+ * 어느 경우에도 실측 상위 후보(제목48·브랜드+꼬리)가 사다리 안에 있다.
+ *
+ * ── 왜 "모델코드 단독"이 1번이 아닌가 ───────────────────────────
+ * 강한 식별자라는 원칙대로면 앞에 와야 하지만, 실측에서 50%(2/4)였고
+ * 1번(브랜드+모델코드)과 신호가 거의 같다. 둘을 붙여 놓으면 1번이 실패한
+ * 상품은 2번도 실패할 가능성이 높아 호출만 버린다. 검색어 다양화 관점에서
+ * 서로 다른 축의 후보를 앞에 두고, 상관 높은 것은 뒤로 보낸다.
+ *
+ * ── 상관 낮은 순으로 섞는 이유 ──────────────────────────────────
+ * 서로 다른 재구성이 서로 다른 결과를 건진다는 것이 검색 문헌의 관측이고
+ * (arXiv 1809.10658), 우리 실측에서도 제목48 단독 78.6% → 브랜드+꼬리를
+ * 더하면 85.7% 로 올랐다. 같은 축을 반복하면 이 이득이 없다.
+ *
+ * @param {{title:string, keyword?:string}} product
+ * @param {{exclude?:string[], max?:number}} [opts] exclude = 이미 부른 검색어
+ * @returns {string[]}
+ */
+function generateSecondPassQueries(product, opts) {
+  const title = (product && product.title) || '';
+  if (!title.trim()) return [];
+
+  const exclude = new Set(((opts && opts.exclude) || []).map(normalizeQuery));
+  // 1차에서 이미 쓴 검색어를 2차에서 또 부르지 않는다.
+  const kw = normalizeQuery((product && product.keyword) || '');
+  if (kw) exclude.add(kw);
+
+  const b = brandOf(title);
+  const ns = nounsOf(title);
+  const ms = modelsOf(title);
+  const sp = specsOf(title);
+  const cap = Math.max(0, (opts && opts.max) != null ? opts.max : MAX_CANDIDATES);
+
+  const mSplit = ms.length ? splitModelCode(ms[0]) : '';
+
+  const raw = [
+    (b && ms.length && ms[0] !== b) ? `${b} ${ms[0]}` : '',     // 1) 브랜드 + 모델코드
+    (b && mSplit) ? `${b} ${mSplit}` : '',                      // 2) 브랜드 + 모델코드(띄어쓴 표기)
+    title,                                                      // 3) 제목 48자
+    (b && ns.length >= 2 && ns[ns.length - 1] !== b)             // 4) 브랜드 + 마지막 명사
+      ? `${b} ${ns[ns.length - 1]}` : '',
+    compressTitle(title, 4),                                     // 5) 제목 압축 (T4)
+    (b && ns.length >= 3) ? `${b} ${ns[1]} ${ns[2]}` : '',       // 6) 브랜드 + 명사 2·3
+    normalizeSpecial(title),                                     // 7) 제목 특수문자 정규화 (T7)
+    (b && sp.length && sp[0] !== b) ? `${b} ${sp[0]}` : '',      // 8) 브랜드 + 규격
+    ms.length ? ms[0] : ''                                      // 9) 모델코드 단독
+  ];
+
+  const out = [];
+  for (const r of raw) {
+    if (out.length >= cap) break;          // 상품당 상한 (호출 예산 보호)
+    const q = normalizeQuery(r);
+    if (!q) continue;                      // 신호가 없어 만들지 못한 후보
+    if (exclude.has(q)) continue;          // 이미 부른 검색어
+    if (out.indexOf(q) > -1) continue;     // 정규화 후 같아진 후보
+    out.push(q);
+  }
+  return out;
+}
+
+/**
+ * 큰 keyword 그룹을 쪼갤 facet 토큰을 고른다 (greedy set cover).
+ *
+ * ── 왜 필요한가 ────────────────────────────────────────────────
+ * 쿠팡 검색은 한 번에 10개만 주고 offset 이 없다. "여행용 캐리어" 처럼
+ * 43개가 묶인 검색어는 33개가 매일 구조적으로 탈락한다.
+ *
+ * 실측(2026-08-31, "여행용 캐리어" 43개):
+ *   facet 분할  8호출 → 23개 회수 = 호출당 2.88개
+ *   상품별 검색 6호출 →  4개 회수 = 호출당 0.67개   → 4.3배 차이
+ *   한계효용 +9, +6, +3, +3, +1, +1, +0, +0 → 6회에서 포화
+ *
+ * ── 고르는 방법 ────────────────────────────────────────────────
+ * 아직 안 잡힌 상품을 가장 많이 덮는 토큰부터. 검색어에 이미 들어 있는
+ * 말은 제외한다(같은 검색을 반복하게 된다).
+ *
+ * @param {string} keyword     그룹 검색어
+ * @param {Array}  rows        그룹의 상품들
+ * @param {Set}    coveredIds  이미 잡힌 product_id
+ * @param {number} max         만들 facet 수
+ * @returns {{token:string, query:string, expect:number}[]}
+ */
+function buildFacetQueries(keyword, rows, coveredIds, max) {
+  const kw = normalizeQuery(keyword);
+  if (!kw || !Array.isArray(rows) || !rows.length) return [];
+  const covered = coveredIds || new Set();
+  const limit = Math.max(0, max == null ? 6 : max);
+
+  // 토큰 → 그 토큰을 제목에 가진 상품 id 들
+  const idx = new Map();
+  rows.forEach(p => {
+    const id = String(p.product_id);
+    new Set(tokenize(p.title)).forEach(w => {
+      if (kw.indexOf(w) > -1) return;            // 검색어에 이미 있는 말은 쪼개 주지 못한다
+      if (!idx.has(w)) idx.set(w, new Set());
+      idx.get(w).add(id);
+    });
+  });
+
+  const out = [];
+  const taken = new Set(covered);
+  while (out.length < limit) {
+    let best = '', bestN = 0;
+    idx.forEach((ids, w) => {
+      let n = 0;
+      ids.forEach(id => { if (!taken.has(id)) n++; });
+      if (n > bestN) { bestN = n; best = w; }
+    });
+    if (!best || bestN === 0) break;             // 더 쪼개도 새로 덮이는 상품이 없다
+    const q = normalizeQuery(`${kw} ${best}`);
+    if (q && q !== kw && !out.some(x => x.query === q)) {
+      out.push({ token: best, query: q, expect: bestN });
+    }
+    idx.get(best).forEach(id => taken.add(id));   // 이 토큰이 덮는 상품은 덮인 것으로 친다
+    idx.delete(best);
+  }
+  return out;
+}
+
+module.exports = {
+  MAX_QUERY_LEN, MAX_CANDIDATES,
+  tokenize, normalizeQuery, brandOf, modelsOf, nounsOf, specsOf,
+  compressTitle, normalizeSpecial, splitModelCode,
+  generateSecondPassQueries, buildFacetQueries
+};

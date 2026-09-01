@@ -82,6 +82,31 @@ function hasKey() {
   return !!process.env.ADPICK_API_KEY;
 }
 
+/**
+ * 로그·오류 문자열에서 API 키를 지운다.
+ *
+ * ★ ADPICK 은 키가 URL 경로에 들어간다 (`/api/{apikey}/search`). 쿠팡처럼
+ *   HMAC 헤더가 아니라서, 업스트림이 오류 페이지에 요청 경로를 되비추면
+ *   (nginx 404, "Invalid API key: …" 류) 그 본문이 아래 두 곳을 통해 그대로
+ *   Vercel 로그에 남는다.
+ *     · !r.ok        → trip(reason) / fallback(reason) 의 body
+ *     · JSON 아님    → console.error 의 peek
+ *
+ *   fetch 자체의 네트워크 오류에는 URL 이 실리지 않는 것을 확인했다
+ *   (undici 는 message='fetch failed', cause 는 'getaddrinfo …' 뿐).
+ *   위험한 것은 업스트림이 돌려주는 본문 쪽이다.
+ *
+ *   ADPICK 키는 값 하나가 곧 인증이고 회전 절차가 따로 없다. 로그는 사람이
+ *   보는 곳이므로 섞이면 그대로 유출이다 (api/_toss.js keySummary 와 같은 원칙).
+ *   본문을 버리지 않고 키만 지운다 — 진단 정보는 남아야 한다.
+ */
+function redact(text) {
+  const s = String(text == null ? '' : text);
+  const key = process.env.ADPICK_API_KEY || '';
+  if (!key) return s;
+  return s.split(key).join('***');
+}
+
 function log(source, keyword, decision, extra) {
   console.log(
     `[adpick] source=${source} kw="${String(keyword).slice(0, 30)}" ${decision}`
@@ -311,7 +336,7 @@ async function searchAdpick(keyword, opts = {}) {
 
   if (!r.ok) {
     const mins = COOLDOWN_MIN['http' + r.status] || COOLDOWN_MIN.httpOther;
-    const body = (text || '').replace(/<[^>]*>/g, ' ').slice(0, 150);
+    const body = redact((text || '').replace(/<[^>]*>/g, ' ')).slice(0, 150);
     trip(mins, `HTTP ${r.status}: ${body}`);
     return fallback(`ADPICK API ${r.status}: ${body}`, [401, 403, 429].indexOf(r.status) > -1);
   }
@@ -319,14 +344,14 @@ async function searchAdpick(keyword, opts = {}) {
   let data = null;
   try { data = JSON.parse(text); } catch (e) { data = null; }
   if (!data) {
-    const peek = (text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const peek = redact((text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 200);
     console.error(`[adpick] JSON 아님 (http=${r.status} len=${(text || '').length}): ${peek}`);
     return fallback('ADPICK 응답 파싱 실패', false);
   }
 
   // success 필드 판정만 한다. 그 이상의 에러 코드 체계는 실측되지 않았으므로 만들지 않는다.
   if (data.success !== true) {
-    const msg = String(data.message || '').slice(0, 150);
+    const msg = redact(String(data.message || '')).slice(0, 150);
     trip(COOLDOWN_MIN.apiError, `success=false: ${msg}`);
     return fallback(`ADPICK 오류: ${msg}`, false);
   }
@@ -359,6 +384,6 @@ function localStats() {
 }
 
 module.exports = {
-  searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName,
+  searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName, redact,
   MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };
