@@ -7,12 +7,17 @@
  *   1. target  — 오늘 가격 ≤ 사용자 목표가
  *   2. drop    — 전날 대비 5% 이상 하락
  *   3. atl     — 역대 최저가 갱신
+ *   4. deal    — api/_deal.js 판정이 BUY/GOOD_BUY (alerts.on_deal 을 켠 알림만)
+ *
+ * 1~3 은 전부 "가격이 얼마인가" 만 본다. 목표가를 정하려면 사용자가 적정가를
+ * 미리 알아야 하는데, 모르니까 알림을 신청한다. 4 는 그 부담을 없앤다 —
+ * 판정은 Deal Engine 이 하고 여기서는 결과만 읽는다.
  */
 
 require('./_env');
 const supabase = require('../api/_supabase');
 const notify   = require('../api/_notify');
-const { kstToday, kstDayStartUtc } = require('../api/_price');
+const { kstToday, kstDayStartUtc, observedKstDate } = require('../api/_price');
 
 const DROP_THRESHOLD = 0.05; // 5% 이상 하락 시 알림
 /*
@@ -93,6 +98,16 @@ function buildTiming(cur, avg30, min30, alerts) {
   if (alerts.some(a => a.type === 'drop')) {
     const drop = alerts.find(a => a.type === 'drop');
     lines.push(`전날보다 ${drop.dropPct.toFixed(1)}% 하락했습니다.`);
+  }
+  /*
+   * Deal 판정으로 발동한 경우. 판정이 만든 근거 문장을 그대로 싣는다 —
+   * 메일에서 다시 쓰면 화면·AI 답변과 다른 말이 된다.
+   */
+  const deal = alerts.find(a => a.type === 'deal');
+  if (deal) {
+    lines.push(deal.reason
+      ? `구매 시점 판정이 "${deal.verdict}" 입니다. ${deal.reason}.`
+      : `구매 시점 판정이 "${deal.verdict}" 입니다.`);
   }
   if (avg30 > 0) {
     const pct = ((cur - avg30) / avg30) * 100;
@@ -241,6 +256,53 @@ async function run() {
       triggeredAlerts.push({ type: 'drop', dropPct: ((prev - cur) / prev) * 100 });
 
     /*
+     * "AI 가 사도 좋다고 하면 알려줘" (alerts.on_deal).
+     *
+     * 위 세 조건은 전부 "가격이 얼마인가" 만 본다. 목표가를 정하려면 사용자가
+     * 적정가를 미리 알아야 하는데, 모르니까 알림을 신청하는 것이다.
+     *
+     * 이 조건은 api/_deal.js 판정을 그대로 쓴다. 여기서 다시 계산하지 않는다 —
+     * 화면·AI 답변·알림 메일이 같은 상품을 두고 다른 말을 하면 안 된다.
+     * BUY / GOOD_BUY 일 때만 보낸다. NORMAL 에 메일을 보내면 알림이 소음이 된다.
+     *
+     * on_deal 컬럼이 없는 DB에서는 undefined 라 그냥 건너뛴다.
+     */
+    if (alert.on_deal) {
+      try {
+        const { statsFrom } = require('../api/_pricestat');
+        const { dealOf, DEAL_ORDER } = require('../api/_deal');
+
+        // 판정에 쓸 기록은 오늘 가격을 찾은 그 상품 것이어야 한다 (scoped 와 같은 기준).
+        const { data: histRows } = await supabase
+          .from('price_history')
+          .select('recorded_date, recorded_at, price')
+          .eq('product_id', todayRow.product_id)
+          .eq('mall', todayRow.mall)
+          .order('recorded_at', { ascending: false })
+          .limit(HIST30_MAX_ROWS);
+
+        const byDate = new Map();
+        (histRows || []).forEach(r => {
+          const d = observedKstDate(r);
+          if (!d) return;
+          const got = byDate.get(d);
+          if (got === undefined || r.price < got) byDate.set(d, r.price);
+        });
+        const points = [...byDate.entries()]
+          .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+          .map(([date, price]) => ({ date, price }));
+
+        const deal = dealOf(statsFrom(points), cur, TODAY);
+        if (DEAL_ORDER[deal.verdict] >= DEAL_ORDER.GOOD_BUY) {
+          triggeredAlerts.push({ type: 'deal', verdict: deal.verdict, reason: deal.reasons[0] || '' });
+        }
+      } catch (e) {
+        // 판정에 실패했다고 다른 조건까지 막지 않는다.
+        console.warn(`⚠️ 구매 시점 판정 실패(${alert.title}): ${e.message}`);
+      }
+    }
+
+    /*
      * 역대 최저가 · 30일 통계를 볼 범위. 오늘 가격을 찾은 그 상품과 같아야 한다.
      *
      * 여기에도 상품명 폴백이 있었다. 오늘 값은 A상품에서, 역대 최저가는 동명의
@@ -288,9 +350,15 @@ async function run() {
       timing: buildTiming(cur, avg30, min30, triggeredAlerts)
     };
 
-    const condNames = triggeredAlerts.map(a =>
-      a.type === 'target' ? '목표가 달성' : a.type === 'atl' ? '역대 최저가' : '가격 급락'
-    ).join(' · ');
+    /*
+     * 조건 이름. 삼항 사슬의 끝이 '가격 급락' 이라, 새 조건을 추가하면 그것도
+     * 조용히 '가격 급락' 으로 찍힌다 — deal 조건을 넣자마자 로그에 "가격 급락"
+     * 이 두 번 나왔다. 표로 바꿔서 모르는 종류는 종류 이름 그대로 남긴다.
+     */
+    const COND_NAME = {
+      target: '목표가 달성', atl: '역대 최저가', drop: '가격 급락', deal: 'AI 구매 추천'
+    };
+    const condNames = triggeredAlerts.map(a => COND_NAME[a.type] || a.type).join(' · ');
 
     const result = await notify.send('email', {
       to: alert.email,

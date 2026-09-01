@@ -55,6 +55,52 @@ function collapseToDaily(rows, maxDays) {
   return maxDays ? points.slice(-maxDays) : points;
 }
 
+/** 구매 시점 판정을 함께 달라고 했는가 (?deal=1). */
+function wantDeal(q) {
+  return String((q && q.deal) || '') === '1';
+}
+
+/**
+ * 판정 결과에서 화면이 쓸 것만 골라 내보낸다.
+ *
+ * evidence 를 통째로 보내지 않는 이유는 두 가지다. 하나는 화면이 안 쓰는
+ * 값을 실어 보낼 이유가 없다는 것이고, 다른 하나는 여기서 나가는 값이
+ * 그대로 사용자에게 보이는 문장이 되기 때문에 무엇이 나가는지 한눈에
+ * 보이는 편이 안전하다는 것이다.
+ *
+ * ★ 판정·근거·주의는 전부 서버에서 만든 문자열 그대로다. 화면이 다시
+ *   계산하거나 말을 바꾸지 않는다.
+ */
+function publicDeal(d) {
+  if (!d) return null;
+  const e = d.evidence || {};
+  return {
+    verdict: d.verdict,
+    label: d.label,
+    score: d.score,
+    percentile: d.percentile,
+    freshness: {
+      level: d.freshness.level,
+      days: d.freshness.days,
+      label: d.freshness.label,
+      trusted: d.freshness.trusted
+    },
+    reasons: d.reasons.slice(0, 4),
+    cautions: d.cautions.slice(0, 3),
+    anomalies: d.anomalies.map(a => a.note).slice(0, 3),
+    // 화면이 문장을 만들 때 쓰는 수치. 없는 값은 0/null 그대로 나간다.
+    stats: {
+      low: e.low || 0, high: e.high || 0,
+      avg7: e.avg7 || 0, avg30: e.avg30 || 0,
+      trendPct: e.trendPct == null ? null : e.trendPct,
+      trendDays: e.trendDays || 0,
+      volatility: e.volatility == null ? null : e.volatility,
+      historyDays: e.historyDays || 0,
+      count: e.count || 0
+    }
+  };
+}
+
 /**
  * 오름차순 + limit으로 가져오면 가장 "오래된" 행만 남아서
  * 기록이 limit을 넘는 순간 최신 가격이 차트에서 사라진다. 반드시 최신순으로 자른다.
@@ -109,12 +155,46 @@ async function singleHandler(req, res) {
      */
     if (!productId) {
       cachePublic(res, 300);
-      return res.json([]);
+      return res.json(wantDeal(q) ? { points: [], deal: null } : []);
     }
 
     // 프론트는 오름차순 [{date, price}] 배열을 기대한다 (sparkSVG / 차트 라벨).
+    const points = collapseToDaily(rows, SINGLE_MAX_DAYS);
     cachePublic(res, 300);
-    res.json(collapseToDaily(rows, SINGLE_MAX_DAYS));
+
+    if (!wantDeal(q)) return res.json(points);
+
+    /*
+     * 구매 시점 판정을 서버에서 계산해 함께 보낸다.
+     *
+     * ── 왜 서버가 계산하는가 ────────────────────────────────────────
+     *
+     * 가격 모달은 지금까지 자기가 직접 판정을 만들어 왔다(Modal.renderVerdict —
+     * 최저/평균/최고 위치로 "역대 최저가 수준"·"지금은 비싼 편"). 그런데 서버에는
+     * _pricestat.assess() 와 _deal.js 가 이미 있고, AI 답변은 그 판정을 쓴다.
+     *
+     * 그래서 같은 상품을 두고 화면과 AI 가 다른 말을 할 수 있었다. 모달은
+     * "역대 최저가 수준 · 지금이 기회" 라고 띄우는데 AI 는 "NORMAL" 이라고
+     * 말하는 식이다. 사용자 입장에서는 둘 다 SEOSA 가 한 말이다.
+     *
+     * 판정하는 곳을 한 군데로 모은다. 계산은 여기서 하고, 화면은 받아서 그린다.
+     *
+     * ★ 기존 응답 모양(배열)은 그대로 둔다. deal=1 을 붙였을 때만 객체로 돌려준다 —
+     *   배포 직후 캐시된 옛 프론트가 계속 배열을 기대하고 있기 때문이다.
+     */
+    let deal = null;
+    try {
+      const { statsFrom } = require('./_pricestat');
+      const { dealOf } = require('./_deal');
+      const { kstToday } = require('./_price');
+      const stat = statsFrom(points);
+      const price = points.length ? points[points.length - 1].price : 0;
+      deal = publicDeal(dealOf(stat, price, kstToday()));
+    } catch (e) {
+      // 판정에 실패해도 가격 이력은 보내야 한다 — 차트가 비면 안 된다.
+      console.warn(`[history] 구매 시점 판정 실패(이력만 보냄): ${e.message}`);
+    }
+    res.json({ points, deal });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
