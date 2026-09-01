@@ -344,14 +344,23 @@ function setSub(email, patch) {
   const handler = aiSrc.slice(handlerAt);
 
   const reserveAt = handler.indexOf('plan.reserve(');
-  // 핸들러가 LLM 으로 들어가는 입구 — 직접 fetch 와 분류기 호출 둘 다.
-  const llmEntries = ['classifyIntent(', 'https://openrouter.ai/api/v1/chat/completions']
+  /*
+   * 핸들러가 LLM 으로 들어가는 입구 — 분류기 호출과 본답변 호출 둘 다.
+   *
+   * 2026-08-30 이후 OpenRouter 로 나가는 fetch 는 전부 api/_llm.js 안에 있고,
+   * 이 파일은 llm.chat() 만 부른다. 그래서 여기서 찾는 것도 그 진입점이다.
+   * (아래에서 이 파일에 날 fetch 가 남아 있지 않은지도 함께 확인한다 —
+   *  라우터를 우회하는 호출이 생기면 사슬·타임아웃·예산이 전부 무력해진다)
+   */
+  const llmEntries = ['classifyIntent(', 'llm.chat(']
     .map(s => handler.indexOf(s))
     .filter(i => i > -1);
   const firstLlmAt = Math.min.apply(null, llmEntries);
 
   check(reserveAt > -1, 'ai.js 가 plan.reserve 를 호출한다');
   check(llmEntries.length >= 2, '핸들러의 LLM 진입점을 모두 찾았다', String(llmEntries.length));
+  check(aiSrc.indexOf('openrouter.ai/api/') === -1,
+    '★ ai.js 는 OpenRouter 를 직접 부르지 않는다 (전부 api/_llm.js 사슬을 지난다)');
   check(reserveAt < firstLlmAt, 'plan.reserve 가 핸들러의 첫 LLM 호출보다 앞에 있다 ★',
         `reserve@${reserveAt} < firstLLM@${firstLlmAt}`);
 

@@ -56,6 +56,17 @@ const classifyForce  = extractPrompt('CLASSIFY_FORCE');
 // production 과 같은 정제 규칙을 쓴다.
 const { cleanQuery } = require('../api/ai.js')._internal;
 
+/*
+ * 402/429 는 분류기의 잘못이 아니다 — 크레딧·레이트리밋 문제다.
+ * 재시도로 살려 보고, 끝내 안 되면 "판정 불가"로 따로 센다.
+ *
+ * 2026-08-28 실측: 크레딧이 실행 중에 바닥나면서 402 가 섞였고, 러너가
+ * 그것을 품질 실패(FAIL)로 합산해 "25/75" 라는 숫자가 나왔다. 분류 품질이
+ * 33% 라는 뜻이 아니었다 — 측정 도구가 장애를 실패로 위장한 것이다.
+ */
+const RETRY_STATUS = new Set([402, 429, 500, 502, 503]);
+const RETRY_DELAY_MS = 2000;
+
 async function callClassifier(question, historyMsgs, force) {
   const msgs = [{ role: 'system', content: classifyPrompt + (force ? classifyForce : '') }];
   (historyMsgs || []).forEach(h => {
@@ -63,12 +74,21 @@ async function callClassifier(question, historyMsgs, force) {
   });
   msgs.push({ role: 'user', content: question });
 
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: CLASSIFY_MODEL, messages: msgs, max_tokens: 32, temperature: 0 })
-  });
-  if (!r.ok) throw new Error(`${r.status}`);
+  let r;
+  for (let attempt = 0; ; attempt++) {
+    r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: CLASSIFY_MODEL, messages: msgs, max_tokens: 32, temperature: 0 })
+    });
+    if (r.ok) break;
+    if (attempt >= 2 || !RETRY_STATUS.has(r.status)) {
+      const e = new Error(`${r.status}`);
+      e.infra = RETRY_STATUS.has(r.status);   // 인프라 문제 = 품질 판정에서 제외
+      throw e;
+    }
+    await new Promise(res => setTimeout(res, RETRY_DELAY_MS * (attempt + 1)));
+  }
   const data = await r.json();
   const raw = String((((data.choices || [])[0] || {}).message || {}).content || '').trim();
 
@@ -354,16 +374,22 @@ async function runTests() {
         failures.push({ q: label, expected, got, query, expectQuery, cat, intentOk, qOk });
       }
     } catch (e) {
-      console.log(`  [ERR]  "${q.slice(0, 42)}" → ${e.message}`);
-      results.fail++; results.byCategory[cat].fail++;
-      failures.push({ q, expected, got: 'ERR', cat });
+      /*
+       * 호출 실패(402 크레딧·429 리밋 등)는 품질 실패와 절대 섞지 않는다.
+       * 섞으면 크레딧이 바닥난 날의 실행이 "분류 정확도 33%" 로 읽힌다.
+       */
+      console.log(`  [판정불가] "${q.slice(0, 42)}" → ${e.message}${e.infra ? ' (인프라 — 품질 집계 제외)' : ''}`);
+      if (e.infra) { results.skipped = (results.skipped || 0) + 1; }
+      else { results.fail++; results.byCategory[cat].fail++; failures.push({ q, expected, got: 'ERR', cat }); }
     }
     await new Promise(r => setTimeout(r, 400));
   }
 
   console.log('\n=== 결과 ===');
-  const total = results.pass + results.fail;
-  console.log(`전체: ${results.pass}/${total} PASS (${Math.round(results.pass / total * 100)}%)`);
+  const graded = results.pass + results.fail;
+  const pct = graded ? Math.round(results.pass / graded * 100) : 0;
+  console.log(`품질 판정: ${results.pass}/${graded} PASS (${pct}%)`
+    + (results.skipped ? `  |  판정 불가 ${results.skipped}건 (호출 실패 — 크레딧/리밋을 확인하세요)` : ''));
   for (const [cat, r] of Object.entries(results.byCategory)) {
     console.log(`  ${cat}: ${r.pass}/${r.pass + r.fail}`);
   }
@@ -375,7 +401,11 @@ async function runTests() {
       console.log(`  "${f.q}" — ${why} [${f.cat}]`);
     });
   }
-  process.exit(failures.length ? 1 : 0);
+  // 품질 실패만 exit 1. 전부 판정 불가면 exit 2 — CI 가 "품질 저하"와
+  // "측정 불능"을 다른 신호로 받게 한다.
+  if (failures.length) process.exit(1);
+  if (results.skipped && !graded) process.exit(2);
+  process.exit(0);
 }
 
 runTests().catch(e => { console.error(e); process.exit(1); });
