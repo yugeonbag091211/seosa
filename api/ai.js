@@ -2418,6 +2418,12 @@ module.exports = async function handler(req, res) {
 
   /** 실제로 답을 만든 모델. 관측 로그에만 쓴다(응답에는 싣지 않는다). */
   let answerModel = '';
+  /*
+   * AI 호출 계측 (2026-09-01). 응답 동작에는 관여하지 않는다.
+   * 값은 전부 api/_llm.js 가 provider 응답에서 실제로 받은 것만 담는다 —
+   * 토큰이 안 오면 null 이고 추정해서 채우지 않는다.
+   */
+  let llmMetrics = null;
 
   try {
     // 프론트가 옛날 방식으로 JSON 문자열을 보낼 수도 있으니 방어적으로 파싱한다.
@@ -3077,6 +3083,13 @@ module.exports = async function handler(req, res) {
       }
     });
     answerModel = llmRes.model || '';
+    llmMetrics = {
+      cached: !!llmRes.cached,
+      inTok:  llmRes.usage ? llmRes.usage.inputTokens : null,
+      outTok: llmRes.usage ? llmRes.usage.outputTokens : null,
+      costUsd: llmRes.costUsd === undefined ? null : llmRes.costUsd,
+      llmMs: llmRes.latencyMs === undefined ? null : llmRes.latencyMs
+    };
 
     if (!llmRes.ok) {
       /*
@@ -3258,6 +3271,15 @@ module.exports = async function handler(req, res) {
        * 판번호별 품질을 견줄 때 모델을 섞어 보지 않게 된다.
        */
       model:   answerModel || 'none',
+      /*
+       * 토큰·비용·캐시 적중 (api/_llm.js). null 이면 provider 가 주지 않았거나
+       * 단가 미등록이라는 뜻이다 — 0 과 구분해서 봐야 한다.
+       */
+      cached:  llmMetrics ? llmMetrics.cached : null,
+      inTok:   llmMetrics ? llmMetrics.inTok : null,
+      outTok:  llmMetrics ? llmMetrics.outTok : null,
+      costUsd: llmMetrics ? llmMetrics.costUsd : null,
+      llmMs:   llmMetrics ? llmMetrics.llmMs : null,
       follow:  followups.length,
       ms: Date.now() - startedAt
     }));

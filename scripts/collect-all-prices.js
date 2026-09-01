@@ -466,7 +466,7 @@ const STATE_MISSING_HINT =
 async function loadState() {
   const { data, error } = await supabase
     .from('price_job_state')
-    .select('job_date, cursor_key, processed, total, status, last_result')
+    .select('job_date, cursor_key, processed, total, status, last_result, last_run_at')
     .eq('id', 1)
     .maybeSingle();
 
@@ -485,6 +485,86 @@ async function saveState(patch) {
     .upsert(row, { onConflict: 'id' });
   if (error) console.error(`  [상태 저장 실패] ${error.message}`);
   return !error;
+}
+
+/* ─── 실행 잠금 (동시 실행 방지) ────────────────────────────────
+ *
+ * ★ 왜 필요한가 — 실측으로 겹쳤다 (2026-09-01).
+ *
+ *   GitHub Actions 는 cron 시각을 보장하지 않고 밀린다. 그날
+ *     실행 A  2026-08-31T21:19:35Z ~ 22:09:44Z
+ *     실행 B  2026-08-31T22:08:19Z ~ 22:21:59Z
+ *   두 실행이 85초 겹쳤다. 겹치는 동안 두 프로세스가 같은
+ *   price_job_state 를 읽고 쓰므로
+ *     · 커서를 서로 되돌려 같은 구간을 두 번 수집하고
+ *     · collectorCovered / failedKeywords 가 서로를 덮어쓰며
+ *     · 쿠팡 호출 예산을 두 배로 태운다.
+ *
+ * ★ 마이그레이션 없이 한다 — last_run_at 하나로 compare-and-swap.
+ *
+ *   PostgREST 의 update ... eq(last_run_at, 읽은값) 은 값이 그대로일 때만
+ *   행을 잡는다. 먼저 도착한 쪽이 값을 바꾸면 뒤쪽은 0행을 받는다.
+ *   select() 로 실제 갱신된 행 수를 확인해 승패를 가린다.
+ *   (컬럼을 새로 만들지 않으므로 배포 순서를 맞출 필요가 없다)
+ *
+ * ★ 잠금이 영구히 남지 않는다.
+ *   프로세스가 죽어 해제를 못 해도 LOCK_TTL_MS 가 지나면 만료로 본다.
+ *   TTL 은 한 실행의 최대 시간(RUN_TIME_BUDGET_MS=50분)보다 넉넉히 크고,
+ *   cron 최소 간격(UTC 16→18시 = 120분)보다는 작아야 한다. 80분으로 둔다.
+ */
+const LOCK_TTL_MS = Number(process.env.PRICE_LOCK_TTL_MS) || 80 * 60 * 1000;
+
+/**
+ * 잠금을 잡는다.
+ * @returns {{ok:true, token:string} | {ok:false, reason:string}}
+ */
+async function acquireLock(state) {
+  const prev = (state && state.last_run_at) || null;
+  const lock = (state && state.last_result && state.last_result.lock) || null;
+
+  if (lock && lock.until && Date.parse(lock.until) > Date.now()) {
+    const left = Math.round((Date.parse(lock.until) - Date.now()) / 60000);
+    return { ok: false, reason: `다른 실행이 진행 중입니다 (${lock.runId || '?'}, 만료까지 ${left}분)` };
+  }
+  if (lock && lock.until) {
+    console.warn(`[잠금] 만료된 잠금을 회수합니다 (이전 실행 ${lock.runId || '?'} 가 정상 종료하지 못했습니다).`);
+  }
+
+  const now = new Date();
+  const token = `${process.env.GITHUB_RUN_ID || 'local'}-${now.getTime()}`;
+  const nextLast = now.toISOString();
+  const q = supabase.from('price_job_state').update({
+    last_run_at: nextLast,
+    last_result: { ...((state && state.last_result) || {}),
+      lock: { runId: token, at: nextLast, until: new Date(now.getTime() + LOCK_TTL_MS).toISOString() } }
+  }).eq('id', 1);
+
+  // ★ CAS — 우리가 읽은 last_run_at 이 그대로일 때만 잡는다.
+  const { data, error } = await (prev === null ? q.is('last_run_at', null) : q.eq('last_run_at', prev)).select('id');
+  if (error) return { ok: false, reason: `잠금 획득 실패: ${error.message}` };
+  if (!data || data.length === 0) {
+    return { ok: false, reason: '다른 실행이 같은 순간에 잠금을 가져갔습니다 (CAS 실패)' };
+  }
+  return { ok: true, token };
+}
+
+/** 잠금을 푼다. 실패해도 TTL 이 만료시키므로 던지지 않는다. */
+async function releaseLock(token) {
+  if (!token) return;
+  try {
+    const { data } = await supabase.from('price_job_state')
+      .select('last_result').eq('id', 1).maybeSingle();
+    const lr = (data && data.last_result) || {};
+    if (lr.lock && lr.lock.runId !== token) {
+      // 우리 잠금이 아니다(만료 후 남이 가져감). 남의 잠금을 풀지 않는다.
+      console.warn('[잠금] 우리 잠금이 아니어서 해제하지 않습니다.');
+      return;
+    }
+    const { lock, ...rest } = lr;   // eslint-disable-line no-unused-vars
+    await supabase.from('price_job_state').update({ last_result: rest }).eq('id', 1);
+  } catch (e) {
+    console.warn(`[잠금] 해제 실패(무시 — TTL 이 만료시킵니다): ${e.message}`);
+  }
 }
 
 /* ─── 배치 계획 (순수 함수 — 쿠팡/DB 접근 없음) ────────────────
@@ -1387,6 +1467,28 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 // ─── 메인 ─────────────────────────────────────────────────────
 async function run() {
   const state = await loadState();
+
+  /*
+   * ★ 잠금을 먼저 잡는다 (acquireLock 주석의 실측 겹침 참고).
+   *   못 잡으면 아무것도 하지 않고 정상 종료한다 — 실패가 아니라
+   *   "다른 실행이 하고 있다" 이므로 exit 0 이어야 Actions 가 빨간불이 되지 않는다.
+   */
+  const lock = await acquireLock(state);
+  if (!lock.ok) {
+    console.log(`[잠금] 이번 실행은 건너뜁니다 — ${lock.reason}`);
+    return;
+  }
+  console.log(`[잠금] 획득 (${lock.token}) — TTL ${Math.round(LOCK_TTL_MS / 60000)}분`);
+  try {
+    await runLocked(state, lock.token);
+  } finally {
+    await releaseLock(lock.token);
+    console.log('[잠금] 해제');
+  }
+}
+
+/** 잠금을 쥔 상태에서 도는 본체. 예외는 호출부(run)가 finally 로 받는다. */
+async function runLocked(state, lockToken) {
   const savedMalls = (state && state.last_result && state.last_result.malls) || {};
   const coupangSaved = state
     ? { job_date: state.job_date, cursor_key: state.cursor_key, processed: state.processed, total: state.total,
@@ -1510,6 +1612,13 @@ async function run() {
     status: coupangResult.status,
     last_run_at: new Date().toISOString(),
     last_result: {
+      /*
+       * ★ 잠금을 여기서 되살려 넣는다. 이 saveState 는 last_result 를 통째로
+       *   교체하므로, 넣지 않으면 실행 도중에 잠금이 사라져 뒤따라온 실행이
+       *   그대로 들어온다 (동시 실행 방지가 무력화된다).
+       */
+      lock: { runId: lockToken, at: new Date().toISOString(),
+              until: new Date(Date.now() + LOCK_TTL_MS).toISOString() },
       recorded: coupangResult.recorded + adpickResult.recorded,
       saved: coupangResult.saved + adpickResult.saved,
       rejected: coupangResult.rejected + adpickResult.rejected,
@@ -2030,12 +2139,25 @@ module.exports = {
   kstToday, buildPlan, splitBatches, resumeFrom, BATCH_PRODUCTS, buildReportHtml,
   runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow,
   // 리포트 집계의 계약 — 테스트가 이 둘로 불변조건을 고정한다.
-  reportInvariantErrors, productSuccessRate, todayPriceRate
+  reportInvariantErrors, productSuccessRate, todayPriceRate,
+  // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
+  acquireLock, releaseLock, LOCK_TTL_MS
 };
 
 if (require.main === module) {
   run().catch(async e => {
     console.error('치명적 오류:', e.message, e.stack);
+    /*
+     * 메일과 별개로 오류 추적에도 보낸다. 메일은 사람이 읽어야 알고,
+     * 여기는 스택까지 남아 원인을 바로 짚을 수 있다.
+     * SENTRY_DSN 이 없으면 조용히 no-op 이라 로컬/CI 에 영향이 없다.
+     */
+    try {
+      await require('../api/_errors').captureException(e, {
+        where: 'collector', route: 'scripts/collect-all-prices.js',
+        extra: { jobDate: TODAY, runId: process.env.GITHUB_RUN_ID || 'local' }
+      });
+    } catch (_) { /* 보고 실패가 종료를 막지 않는다 */ }
     await sendFailureNotice(e);
     process.exit(1);
   });

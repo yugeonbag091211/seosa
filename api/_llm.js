@@ -84,6 +84,39 @@ const FREE_CLASSIFY_CHAIN = [
  */
 const MAX_CHAIN = 4;
 
+/* ─── 모델 단가 (USD / 1M 토큰) ────────────────────────────────────
+ *
+ * ★ 여기 없는 모델은 비용을 null 로 둔다 — 지어내지 않는다.
+ * ★ 값은 사람이 관리한다. provider 가 단가를 바꾸면 이 표만 고치면 된다.
+ *   토큰 수는 provider 응답(usage)에서 온 실측값이고, 비용만 이 표로
+ *   곱해서 얻는 추정치다. 그래서 필드 이름도 costUsd(추정)로 둔다.
+ *
+ * :free 접미사 모델은 OpenRouter 무료 티어라 0 이다(호출 자체는 무료이며,
+ * 분당/일일 상한이 대신 걸린다).
+ */
+const MODEL_PRICES_USD_PER_1M = {
+  'anthropic/claude-sonnet-5':   { in: 3.00, out: 15.00 },
+  'anthropic/claude-haiku-4.5':  { in: 1.00, out: 5.00 }
+};
+
+/** 무료 티어 모델인가 (OpenRouter 는 :free 접미사로 표시한다). */
+function isFreeModel(model) { return /:free$/.test(String(model || '')); }
+
+/**
+ * 예상 비용(USD). 단가를 모르는 모델이면 null 을 준다.
+ *
+ * @param {string} model
+ * @param {{inputTokens:number,outputTokens:number}|null} usage provider 실측 토큰
+ * @returns {number|null}
+ */
+function estimateCostUsd(model, usage) {
+  if (isFreeModel(model)) return 0;
+  if (!usage) return null;                       // 토큰을 모르면 비용도 모른다
+  const p = MODEL_PRICES_USD_PER_1M[model];
+  if (!p) return null;                           // 단가 미등록 — 추정하지 않는다
+  return (usage.inputTokens / 1e6) * p.in + (usage.outputTokens / 1e6) * p.out;
+}
+
 /** 이만큼도 안 남았으면 새 모델을 시도하지 않는다 (부르자마자 끊길 시간) */
 const MIN_ATTEMPT_MS = 2500;
 
@@ -314,7 +347,20 @@ async function attempt(model, opts, timeoutMs) {
    */
   if (!text.trim()) return { ok: false, reason: 'empty', advance: true };
 
-  return { ok: true, text, finish: String(choice.finish_reason || '') };
+  /*
+   * ★ usage 는 provider 가 준 값을 그대로만 싣는다 (2026-09-01).
+   *   OpenRouter 는 OpenAI 호환 형식으로 prompt_tokens / completion_tokens /
+   *   total_tokens 를 준다. 없으면 null 이다 — 추정해서 채우지 않는다.
+   *   답변 동작에는 관여하지 않는다(계측 전용).
+   */
+  const u = (data && data.usage) || null;
+  const usage = u ? {
+    inputTokens:  Number(u.prompt_tokens) || 0,
+    outputTokens: Number(u.completion_tokens) || 0,
+    totalTokens:  Number(u.total_tokens) || ((Number(u.prompt_tokens) || 0) + (Number(u.completion_tokens) || 0))
+  } : null;
+
+  return { ok: true, text, finish: String(choice.finish_reason || ''), usage };
 }
 
 /**
@@ -355,7 +401,9 @@ async function chat(opts) {
   const now0 = Date.now();
   const hit = cacheGet(key, ttl, now0);
   if (hit) {
-    return { ok: true, text: hit.text, finish: hit.finish, model: hit.model, reason: 'cache', tried };
+    return { ok: true, text: hit.text, finish: hit.finish, model: hit.model, reason: 'cache', tried,
+      // 캐시 히트는 토큰을 쓰지 않는다. usage 는 null 이고 cached 로 구분한다.
+      cached: true, usage: null, costUsd: 0, latencyMs: Date.now() - now0 };
   }
 
   const deadline = now0 + budgetMs;
@@ -379,7 +427,9 @@ async function chat(opts) {
       if (!isFree(model)) state.paidBlockedUntil = 0;
       tried.push({ model, reason: 'ok' });
       cacheSet(key, ttl, { at: Date.now(), text: r.text, finish: r.finish, model });
-      return { ok: true, text: r.text, finish: r.finish, model, reason: 'ok', tried };
+      return { ok: true, text: r.text, finish: r.finish, model, reason: 'ok', tried,
+        cached: false, usage: r.usage || null,
+        costUsd: estimateCostUsd(model, r.usage), latencyMs: Date.now() - now0 };
     }
 
     tried.push({ model, reason: r.reason });
@@ -401,6 +451,7 @@ module.exports = {
   chat, chainFor, isFree,
   DEFAULT_ANSWER_MODEL, DEFAULT_CLASSIFY_MODEL,
   FREE_ANSWER_CHAIN, FREE_CLASSIFY_CHAIN,
+  MODEL_PRICES_USD_PER_1M, estimateCostUsd, isFreeModel,
   MAX_CHAIN, MIN_ATTEMPT_MS, PAID_BLOCK_MS, DEAD_MODEL_MS,
   _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset }
 };
