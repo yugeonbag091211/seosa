@@ -974,6 +974,8 @@ section.block{margin-top:var(--gap-sec);padding-top:0;border-top:0}
 .card .info > .p-title{order:1;margin-bottom:6px}
 .card .info > .price-row{order:2;margin:0}
 .card .info > .mall-line{order:3;margin-top:6px}
+/* 액션 줄은 항상 맨 아래. order 를 안 주면 기본값 0 이라 제목보다 위로 올라간다. */
+.card .info > .card-actions{order:4}
 .card .info > .pmove,
 .card .info > .trust,
 .card .info > .spark,
@@ -1512,6 +1514,20 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
   display:flex;align-items:center;gap:6px;min-width:0}
 .dmall .atl{color:var(--soft);font-weight:600;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
+/*
+ * 가격 하락 카드의 액션 줄.
+ * 카드 폭이 좁으므로 알약이나 채운 면을 쓰지 않는다 — 「구매」만 진하게,
+ * 「알림」은 흐리게 둔다. 상품 카드(.card-actions)와 같은 언어다.
+ */
+.dacts{margin-top:8px;display:flex;align-items:center;gap:2px;margin-left:-7px}
+.dacts .lact{padding:5px 7px;font-size:.72rem}
+.dacts .lact.dark{margin-left:auto;margin-right:-7px;position:relative}
+/* 「구매」에는 밑줄을 둬서 누를 수 있다는 것을 정지 상태에서도 알린다. */
+.dacts .lact.dark::after{content:'';position:absolute;left:7px;right:7px;bottom:3px;
+  height:1px;background:currentColor}
+.dacts .lact.dark:hover{color:var(--down);text-decoration:none}
+.dacts .lact.is-off{margin-left:auto;margin-right:-7px;color:var(--faint);
+  font-weight:600;cursor:default}
 @media(max-width:1180px){.drop-cards{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.drop-cards{grid-template-columns:repeat(2,1fr);gap:10px}}
 @media(max-width:430px){.drop-cards{grid-template-columns:1fr}}
@@ -5114,18 +5130,33 @@ var Card = {
      *   상태로 두고 왜 못 누르는지 이름으로 알린다.
      */
     /*
-     * ★ 카드에서 액션 줄을 뺐다 (목업 기준).
+     * ★ 액션 줄을 되돌렸다 (2026-09-02).
      *
-     *   목업의 상품 카드는 사진 · 이름 · 가격 · 판매처 넉 줄뿐이다. 카드마다
-     *   버튼 네 개가 붙어 있으면 그리드에서 가장 눈에 띄는 것이 버튼이 된다.
+     *   목업을 따라 이 줄을 통째로 빼고 "가격 모달에 다 있으니 기능 손실은
+     *   없다"고 판단했었다. 틀린 판단이었다. 구매는 이 서비스에서 가장 자주
+     *   쓰는 행동인데, 그걸 «모달을 한 번 열어야» 닿는 자리로 옮긴 것은
+     *   기능을 옮긴 게 아니라 **한 단계 멀리 치운 것**이다. 목록에서 바로
+     *   살 수 있어야 한다.
      *
-     *   ★ 기능은 하나도 없애지 않았다. 카드(사진·이름)를 누르면 열리는
-     *     가격 모달의 마지막 줄로 넷 다 옮겼다 —
-     *       가격 기록  = 그 모달 자체
-     *       몰별 비교 · 알림 · 구매하러 가기 = .modal-foot
-     *     상품 하나에 대한 행동은 그 상품의 상세 화면에 모여 있는 편이 맞다.
+     *   모달 하단의 같은 액션들은 그대로 둔다 — 상세를 보다가 사는 경로도
+     *   여전히 필요하다. 두 자리 모두에 있는 것이 맞다.
      */
-    return '';
+    var hasLink = !!(it && Fmt.safeUrl(it.link));
+    /*
+     * 판매처 링크가 없으면 누를 수 있게 생긴 버튼을 두지 않는다.
+     * 예전에는 버튼이 그대로 있고 누르면 토스트만 떴다 — 누를 수 있게
+     * 생겼는데 아무 데도 못 가는 버튼은 사용자를 한 번 속이는 것이다.
+     */
+    var buy = hasLink
+      ? '<button class="buy" data-act="card-buy">구매하기</button>'
+      : '<span class="buy is-off" aria-disabled="true" title="이 상품은 판매처 링크가 확인되지 않았어요">링크 없음</span>';
+
+    return '<div class="card-actions">'
+      + '<button class="alert-btn" data-act="card-history">가격 기록</button>'
+      + '<button class="alert-btn" data-act="card-compare">몰별 비교</button>'
+      + '<button class="alert-btn" data-act="card-alert">알림</button>'
+      + buy
+      + '</div>';
   },
 
   /** 저장 시점 가격 대비 변동 표시 (위시/최근본 전용) */
@@ -7279,6 +7310,19 @@ var Drop = {
       +   '<div class="dprice">' + Fmt.won(price) + '<span class="w">원</span>'
       +     '<span class="dchg">↓' + pct + '%</span></div>'
       +   '<div class="dmall">' + Fmt.esc(m.name) + atl + '</div>'
+      /*
+       * 액션 줄. 카드 전체가 「가격 추이 열기」라서 두 버튼은 각자
+       * e.stopPropagation() 으로 모달이 같이 열리는 것을 막는다
+       * (ledger-alert / ledger-buy 핸들러에 이미 들어 있다).
+       * 링크를 모르는 상품은 상품 카드와 같은 규칙으로 눌리지 않게 둔다.
+       */
+      +   '<div class="dacts">'
+      +     '<button class="lact" data-act="ledger-alert">알림</button>'
+      +     (Fmt.safeUrl(it.link)
+            ? '<button class="lact dark" data-act="ledger-buy">구매</button>'
+            : '<span class="lact is-off" aria-disabled="true"'
+              + ' title="이 상품은 판매처 링크가 확인되지 않았어요">링크 없음</span>')
+      +   '</div>'
       + '</div></div>';
   },
 
