@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "node scripts/dev-server.js",
-    "test": "node scripts/test-auth.js && node scripts/test-alerts.js && node scripts/test-coupang.js && node scripts/test-search.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-query.js && node scripts/test-second-pass.js && node scripts/test-round-index.js && node scripts/test-price-mall-collection.js && node scripts/test-collector-lock.js && node scripts/test-adpick.js && node scripts/test-filters.js && node scripts/test-matching.js && node scripts/test-llm-router.js && node scripts/test-concierge.js && node scripts/test-ai.js && node scripts/test-ai-pipeline.js && node scripts/eval-shopping.js && node scripts/eval-decision-brain.js && node scripts/eval-adversarial.js && node scripts/eval-multiobjective.js && node scripts/eval-information.js && node scripts/eval-feedback.js && node scripts/eval-deal.js && node scripts/eval-confidence-v2.js && node scripts/test-ai-monetization.js && node scripts/test-payment.js && node scripts/test-sync.js && node scripts/test-analytics.js",
+    "test": "node scripts/test-auth.js && node scripts/test-alerts.js && node scripts/test-coupang.js && node scripts/test-search.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-query.js && node scripts/test-second-pass.js && node scripts/test-round-index.js && node scripts/test-price-mall-collection.js && node scripts/test-collector-lock.js && node scripts/test-adpick.js && node scripts/test-filters.js && node scripts/test-matching.js && node scripts/test-llm-router.js && node scripts/test-concierge.js && node scripts/test-ai.js && node scripts/test-ai-pipeline.js && node scripts/test-guest.js && node scripts/test-product-page.js && node scripts/eval-shopping.js && node scripts/eval-decision-brain.js && node scripts/eval-adversarial.js && node scripts/eval-multiobjective.js && node scripts/eval-information.js && node scripts/eval-feedback.js && node scripts/eval-deal.js && node scripts/eval-confidence-v2.js && node scripts/test-ai-monetization.js && node scripts/test-payment.js && node scripts/test-sync.js && node scripts/test-analytics.js",
     "test:adpick": "node scripts/test-adpick.js",
     "test:search": "node scripts/test-search.js",
     "test:alerts": "node scripts/test-alerts.js",
@@ -22,6 +22,8 @@
     "test:intent": "node scripts/test-intent.js",
     "test:concierge": "node scripts/test-ai-concierge.js",
     "test:pipeline": "node scripts/test-ai-pipeline.js",
+    "test:guest": "node scripts/test-guest.js",
+    "test:product-page": "node scripts/test-product-page.js",
     "eval:shopping": "node scripts/eval-shopping.js",
     "eval:decision": "node scripts/eval-decision-brain.js",
     "eval:adversarial": "node scripts/eval-adversarial.js",

@@ -67,6 +67,41 @@ const CRON_LIMIT = 10;
  * 큐레이션 키워드 8개는 products 에 0건이라 섹션이 통째로 비어 있었다.
  * (홈에 "이달의 키워드 상품을 준비 중이에요"만 뜬다)
  */
+/*
+ * 수요 키워드 시딩 (2026-09-02 감사).
+ *
+ * 카탈로그는 큐레이션 키워드(여름 생활용품)로 채워졌는데 사용자가 실제로
+ * 치는 검색어는 전자기기(무선 이어폰·노트북·마우스·키보드·아이폰)다.
+ * 그 키워드의 상품은 사용자가 검색하는 순간에만 저장되고, 그 뒤로는 일일
+ * 수집기가 "이미 저장된 상품"만 되찾으므로 가격 기록이 얕게 남는다.
+ *
+ * 상위 검색어 몇 개를 매일 한 번씩 새로 받아 두면 홈 셀렉션·가격 기록이
+ * 수요 쪽으로 자란다. 호출은 키워드당 쿠팡 1회 + ADPICK 1회 — 하루 최대
+ * DEMAND_SEED_MAX(6)종이라 비용 증가는 무시할 수준이다.
+ *
+ * search_stats 는 사람이 친 말이라 소음이 섞인다(오타·내부 점검용 문자열).
+ * api/_search.isValidSuggestion 으로 거른다 — 홈 칩과 같은 기준이다.
+ */
+const DEMAND_SEED_MAX = Number(process.env.CRON_DEMAND_SEED_MAX) || 6;
+
+async function demandKeywords() {
+  try {
+    const { isValidSuggestion } = require('./_search');
+    const { data } = await supabase
+      .from('search_stats')
+      .select('keyword, count')
+      .order('count', { ascending: false })
+      .limit(30);
+    return (data || [])
+      .map(r => r && r.keyword)
+      .filter(k => k && isValidSuggestion(k))
+      .slice(0, DEMAND_SEED_MAX);
+  } catch (e) {
+    console.warn(`[cron] 수요 키워드 조회 실패(큐레이션만 수집): ${e.message}`);
+    return [];
+  }
+}
+
 async function collectTargets() {
   const month = kstMonth();
   let monthly = [];
@@ -80,10 +115,12 @@ async function collectTargets() {
   } catch (e) {
     console.warn(`[cron] 이달의 큐레이션 키워드 조회 실패(오늘의 셀렉션만 수집): ${e.message}`);
   }
-  return [...new Set([...TODAY_PICKS, ...monthly])];
+  const demand = await demandKeywords();
+  // 순서가 곧 우선순위다 — 시간 예산이 모자라면 뒤쪽(수요 시딩)이 다음 실행으로 밀린다.
+  return [...new Set([...monthly, ...TODAY_PICKS, ...demand])];
 }
 
-module.exports = async function handler(req, res) {
+module.exports = Object.assign(async function handler(req, res) {
   // CRON_SECRET을 설정하면 Vercel Cron이 Authorization 헤더를 붙여 보낸다.
   //
   // 예전에는 secret이 없으면 검사를 건너뛰었는데, 그러면 이 주소를 아는 누구나
@@ -227,7 +264,7 @@ module.exports = async function handler(req, res) {
     staleSweep,
     results
   });
-};
+}, { collectTargets, demandKeywords });
 
 /* ------------------------------------------------------------------ *
  *  쿠팡 진단 (구 /api/coupang-diag)

@@ -3,6 +3,8 @@
   "rewrites": [
     { "source": "/api/history-batch", "destination": "/api/history?__route=batch" },
     { "source": "/api/profile", "destination": "/api/sync?resource=profile" },
+    { "source": "/p/:pid", "destination": "/api/history?__route=page&pid=:pid" },
+    { "source": "/sitemap-products.xml", "destination": "/api/history?__route=sitemap" },
     { "source": "/((?!api/).*)", "destination": "/public/$1" }
   ],
   "headers": [

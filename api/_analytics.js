@@ -81,6 +81,15 @@ const METRICS = [
    * 볼 수 없다.
    */
   'ai_entry_noresult',
+  /*
+   * ai_guest_answer / ai_login_from_guest (2026-09-02 추가)
+   *
+   * 비로그인 게스트가 조립본 답변을 받은 횟수와, 그 자리에서 로그인으로
+   * 넘어간 횟수. 두 값의 비율이 "가치를 먼저 보여주면 로그인하는가" 라는
+   * 가설의 유일한 근거다. ai_first_prompt 는 게스트도 같이 센다(질문을
+   * 보낸 사실은 같다) — 로그인 여부는 이 두 값으로 가른다.
+   */
+  'ai_guest_answer', 'ai_login_from_guest',
   'price_history_open', 'comparison_open',
   'wishlist_add', 'price_alert_add', 'external_shop_click'
 ];

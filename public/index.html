@@ -1730,6 +1730,7 @@ footer p{font-size:.75rem;color:var(--faint)}
 /* 오늘 AI 사용량 — 조용한 한 줄. 배너나 팝업으로 키우지 않는다. */
 .chat-usage{font-size:.7rem;color:var(--soft);padding:10px 16px 0;background:var(--bg);letter-spacing:-.01em}
 .chat-usage.is-reached{color:var(--accent,#c2410c)}
+.chat-usage.is-guest{line-height:1.7}
 .cu-cta{display:inline-block;margin-left:6px;padding:2px 8px;border:1px solid var(--line);
   border-radius:30px;font-size:.68rem;color:var(--soft);background:transparent;
   cursor:pointer;font-family:inherit;transition:.2s}
@@ -5481,11 +5482,28 @@ var Theme = {
  * ========================================================== */
 var Share = {
 
+  /*
+   * SEOSA 상품 페이지 주소 (2026-09-02).
+   *
+   * 예전에는 제휴 링크만 공유됐다 — 받는 사람은 SEOSA 를 거치지 않고 판매처로
+   * 바로 갔고, 가격 기록도 판정도 보지 못했다. 이제 /p/{productId} 를 함께 준다.
+   * 식별자가 없는 옛 항목은 빈 문자열 (없는 주소를 만들지 않는다).
+   */
+  pageUrl: function(info) {
+    var pid = String((info && info.productId) || '').trim();
+    if (!pid || !/^[0-9a-f]{1,64}$/i.test(pid)) return '';
+    var origin = (location.protocol === 'http:' || location.protocol === 'https:')
+      ? location.origin : 'https://seosa.ai.kr';
+    return origin + '/p/' + encodeURIComponent(pid);
+  },
+
   /** 공유용 텍스트 생성 */
   buildText: function(info) {
     var mallText = info.mallLabel || info.mall;
     var t = '[SEOSA] ' + info.title + '\n'
       + (mallText ? mallText + ' · ' : '') + Fmt.won(info.lprice) + '원\n';
+    var page = Share.pageUrl(info);
+    if (page) t += '\n가격 기록 · ' + page + '\n';
     if (info.link) t += '\n' + info.link + '\n';
     t += '\n최저가 비교 · seosa.ai.kr';
     return t;
@@ -5540,7 +5558,8 @@ var Share = {
         navigator.share({
           title: 'SEOSA · ' + info.title,
           text: info.title + ' · ' + Fmt.won(info.lprice) + '원',
-          url: info.link || 'https://seosa.ai.kr'
+          // 상품 페이지가 있으면 그것을 공유한다 — 받는 사람도 가격 기록을 본다.
+          url: Share.pageUrl(info) || info.link || 'https://seosa.ai.kr'
         }).catch(function() { Share.copy(text); });
         return;
       }
@@ -8169,6 +8188,42 @@ var Chat = {
     }
   },
 
+  /** 마지막으로 보낸 질문. 게스트가 로그인한 뒤 같은 질문을 AI 설명과 함께 다시 받는 데 쓴다. */
+  lastQuestion: '',
+
+  /*
+   * 게스트 안내 한 줄 (사용량 줄 자리를 같이 쓴다).
+   *
+   * 강요하지 않는다 — 답은 이미 위에 나갔다. 로그인은 "이유와 대안 설명"을
+   * 더 받는 선택이지 답을 보기 위한 조건이 아니다.
+   */
+  guestCta: function() {
+    var c = $('chat');
+    if (!c) return;
+    var el = $('chatUsage');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'chatUsage';
+      var host = $('chatSuggest');
+      if (host && host.parentNode) host.parentNode.insertBefore(el, host);
+      else c.parentNode.appendChild(el);
+    }
+    el.className = 'chat-usage is-guest';
+    el.innerHTML = Fmt.esc('위 판정은 SEOSA 가격 기록으로 계산한 결과예요. 로그인하면 서사 AI가 이유와 대안까지 설명해 드려요.')
+      + ' <button type="button" class="cu-cta" data-act="ai-login">로그인하고 AI 설명 받기</button>';
+  },
+
+  /** 게스트 → 로그인. 끝나면 같은 질문을 AI 설명과 함께 다시 보낸다. */
+  loginFromGuest: function() {
+    Track.ev('ai_login_from_guest');
+    var again = Chat.lastQuestion;
+    Auth.open('', function() {
+      var el = $('chatUsage');
+      if (el) el.remove();
+      if (again) Chat.send(again);
+    });
+  },
+
   /**
    * AI 답변 텍스트 → 읽을 수 있는 HTML.
    *
@@ -8385,12 +8440,17 @@ var Chat = {
      *
      * (이건 안내일 뿐이다. 실제 차단은 서버가 한다 — api/_auth.identify)
      */
-    if (!Auth.tokenFor('')) {
-      Chat.bubble('AI Concierge를 사용하려면 로그인해 주세요. 이메일 인증만 하면 바로 쓸 수 있어요.', 'ai');
-      if (inp) inp.value = '';
-      Auth.open('', function() { Chat.send(val); });
-      return;
-    }
+    /*
+     * ★ 로그인 벽을 없앴다 (2026-09-02).
+     *
+     *   예전에는 토큰이 없으면 여기서 인증 창을 띄웠다. 14일 실측으로
+     *   ai_open 13 → ai_first_prompt 3 — 질문을 치기도 전에 77% 가 떠났다.
+     *   이제 토큰 없이도 보낸다. 서버는 LLM 을 부르지 않고 SEOSA 가 계산한
+     *   판정을 조립본으로 준다(api/ai.js 게스트 모드, 비용 0원). 로그인은
+     *   답변 아래 한 줄로 안내한다 — 같은 질문을 AI 설명과 함께 다시 받는다.
+     *   만료된 토큰은 서버가 401 을 주고 Api.call 이 재인증 후 재시도한다.
+     */
+    Chat.lastQuestion = val;
 
     /*
      * 첫 질문과 후속 질문을 나눠 센다. 이 시점에는 아직 이번 질문이
@@ -8481,7 +8541,16 @@ var Chat = {
            */
           if (res.topProductId) AppState.lastTopProductId = String(res.topProductId);
 
-          Chat.showUsage(res.usage);
+          /*
+           * 게스트 응답이면 사용량 줄 대신 로그인 안내 한 줄을 둔다.
+           * 서버가 guest:true 를 줄 때만 — 로그인 사용자 화면은 그대로다.
+           */
+          if (res.guest) {
+            Track.ev('ai_guest_answer');
+            Chat.guestCta();
+          } else if (res.usage) {
+            Chat.showUsage(res.usage);
+          }
 
           AppState.chatHistory.push({ role: 'assistant', text: res.text || '' });
           if (AppState.chatHistory.length > CONST.LIMIT.CHAT_HISTORY) {
@@ -10033,6 +10102,7 @@ var Actions = {
   'chat-send':    function() { Chat.send(); },
   'chat-suggest': function(el) { Chat.send(el.dataset.q); },
   'chat-clear':   function() { Chat.clear(); },
+  'ai-login':     function() { Chat.loginFromGuest(); },
   'pay-start':    function() { Pay.start(); },
   'pay-cancel':   function() { Pay.cancel(); },
   'mini-go':      function(el) { openLink(el.dataset.link); },
@@ -10412,6 +10482,28 @@ var Init = {
     HistRec.load();    // ★ 최근 검색 기반 추천
 
     Init.bindHistory();
+    Init.openDeepLink();
+  },
+
+  /*
+   * 상품 딥링크 ?p={productId} (2026-09-02).
+   *
+   * 서버 렌더 상품 페이지(/p/{id})의 "SEOSA에서 가격 추이 보기" 와 공유 링크가
+   * 여기로 온다. 상품 하나를 받아 가격 모달을 연다. 실패하면 조용히 홈이다 —
+   * 링크 하나 때문에 첫 화면이 깨지면 안 된다.
+   */
+  openDeepLink: function() {
+    var pid = Url.param(location.search || '', 'p');
+    if (!pid || !/^[0-9a-f]{1,64}$/i.test(pid)) return;
+    fetch('/api/history?__route=product&pid=' + encodeURIComponent(pid))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        var p = d && d.product;
+        if (!p || !p.title) return;
+        AppState.products[productKey(p.title, p.mall, p.productId)] = p;
+        Modal.open(p);
+      })
+      .catch(function() {});
   },
 
   /**

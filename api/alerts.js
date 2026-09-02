@@ -120,8 +120,22 @@ module.exports = async function handler(req, res) {
         .from('alerts')
         .upsert({ ...row, product_id: productId, on_deal: onDeal }, { onConflict: 'email,title' });
 
+      /*
+       * on_deal 을 저장하지 못한 채 성공으로 끝나면 사용자는 "AI 추천 알림"을
+       * 켰다고 믿는데 실제로는 아무 때도 발송되지 않는다 (2026-09-02 감사:
+       * 운영 DB 에 이 컬럼이 아직 없다). 폴백은 유지하되 그 사실을 응답에 싣고,
+       * 목표가도 없이 on_deal 만 켠 신청은 "조건 없는 알림"이 되므로 거절한다.
+       */
+      let onDealSaved = onDeal;
       if (error && /on_deal|column/i.test(error.message)) {
         console.warn('[alerts] on_deal 컬럼 없음 — supabase/2026-08-28-alert-on-deal.sql을 실행하세요.');
+        onDealSaved = false;
+        if (onDeal && targetPrice <= 0) {
+          return res.status(503).json({
+            error: 'AI 추천 알림은 아직 준비 중이에요. 목표 가격을 넣어 신청해 주세요.',
+            onDealUnavailable: true
+          });
+        }
         ({ error } = await supabase
           .from('alerts')
           .upsert({ ...row, product_id: productId }, { onConflict: 'email,title' }));
@@ -135,7 +149,12 @@ module.exports = async function handler(req, res) {
       const msg = dbError(error, 'alerts');
       if (msg) throw new Error(msg);
 
-      return res.json({ success: true, msg: '알림 신청 완료!' });
+      const dropped = onDeal && !onDealSaved;
+      return res.json({
+        success: true,
+        msg: dropped ? '목표가 알림만 신청됐어요. AI 추천 알림은 아직 준비 중이에요.' : '알림 신청 완료!',
+        onDeal: onDealSaved
+      });
     }
 
     if (req.method === 'DELETE') {

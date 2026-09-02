@@ -5,6 +5,35 @@
 
 ---
 
+## 0. 2026-09-02 기준 미적용 마이그레이션 · 새 라우트
+
+읽기 전용 확인(`scripts/verify-migrations.js` 23 OK) 결과 아래 두 파일이 아직 운영에 없다.
+둘 다 `ADD COLUMN IF NOT EXISTS` 뿐이라 몇 번 실행해도 안전하고, 코드는 없어도 폴백으로 동작한다.
+
+| 파일 | 없으면 |
+|---|---|
+| `supabase/2026-08-28-alert-on-deal.sql` | "AI 추천 알림" 체크박스가 저장되지 않는다. 지금은 API 가 `onDeal:false` 와 "준비 중" 안내를 돌려주고, 목표가 없는 단독 신청은 503 으로 거절한다 |
+| `supabase/2026-09-01-price-history-source.sql` | `price_history.source` 가 기록되지 않는다 (리포트는 `price_job_state` 를 근거로 쓰므로 정확도 영향 없음) |
+
+새 라우트 (`vercel.json` rewrite, 새 서버리스 함수 없음 — 11/12 유지):
+
+- `/p/{product_id}` → 상품 가격 기록 페이지 (HTML, Edge 1시간 캐시). 기록 7일 미만·stale·링크 없음은 `noindex`
+- `/sitemap-products.xml` → 색인 가능한 상품만 (12시간 캐시). `robots.txt` 에 등록됨
+- `/?p={product_id}` → 앱에서 그 상품의 가격 모달을 연다
+- `/api/ai` 토큰 없음 → 200 게스트 조립본 (LLM 0회, 쿼터 0). 틀린 토큰은 401
+
+선택 환경변수: `SITE_ORIGIN` (기본 `https://seosa.ai.kr`, 상품 페이지 canonical·사이트맵 절대 URL), `CRON_DEMAND_SEED_MAX` (기본 6, 크론이 매일 수집하는 인기 검색어 수).
+
+배포 후 확인:
+
+```bash
+curl -sI https://seosa.ai.kr/p/6899919825 | grep -iE "^(HTTP|cache-control)"
+curl -s https://seosa.ai.kr/sitemap-products.xml | grep -c "<loc>"
+curl -s -X POST https://seosa.ai.kr/api/ai -H "Content-Type: application/json" -d '{"question":"노트북 추천해줘"}' | head -c 300
+```
+
+---
+
 ## 1. [필수] Supabase 마이그레이션
 
 DDL 은 PostgREST API 로 실행할 수 없어서 스크립트가 대신 적용해 줄 수 없습니다.

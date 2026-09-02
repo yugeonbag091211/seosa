@@ -321,10 +321,31 @@ async function batchHandler(req, res) {
 }
 
 // ── 라우팅 ───────────────────────────────────────────────────────
+/*
+ * 상품 페이지 라우트 (2026-09-02).
+ *
+ *   /p/{pid}                → __route=page     HTML (vercel.json rewrite)
+ *   /sitemap-products.xml   → __route=sitemap  XML
+ *   ?__route=product&pid=   → JSON (프론트 딥링크 ?p= 가 쓴다)
+ *
+ * 새 서버리스 함수를 만들지 않고 이 함수에 얹었다 (Hobby 12개 상한, 11개 사용 중).
+ * 구현은 api/_product-page.js 에 있다 — 이 파일은 갈래만 나눈다.
+ */
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
 
   const q = req.query || {};
   if (q.__route === 'batch') return batchHandler(req, res);
+  if (q.__route === 'page' || q.__route === 'sitemap' || q.__route === 'product') {
+    try {
+      const page = require('./_product-page');
+      if (q.__route === 'page') return await page.pageHandler(req, res);
+      if (q.__route === 'sitemap') return await page.sitemapHandler(req, res);
+      return await page.productHandler(req, res);
+    } catch (e) {
+      const { fail } = require('./_http');
+      return fail(res, e, { where: 'product-page', route: `/api/history?__route=${q.__route}`, message: '상품 페이지를 불러오지 못했어요.' });
+    }
+  }
   return singleHandler(req, res);
 };

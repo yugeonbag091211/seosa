@@ -770,13 +770,29 @@ async function runAI() {
     check(res.payload.upgradeRequired === true, 'FREE 사용자에게 업그레이드를 안내한다');
   }
 
-  /* AI-8. 비로그인 — 401, 업스트림 호출 없음 */
+  /*
+   * AI-8. 비로그인 — 게스트 조립본(200), 업스트림 호출 없음 (2026-09-02 계약 변경)
+   *
+   * 예전 계약은 "토큰 없음 → 401" 이었다. 이제 토큰이 아예 없으면 LLM 을
+   * 부르지 않는 결정론 답변을 200 으로 준다(api/ai.js 게스트 모드). 지켜야
+   * 할 성질은 그대로다 — 익명 호출로 요금이 한 푼도 나가지 않는다.
+   * 토큰이 "있는데 틀린" 경우는 여전히 401 이다 (재인증 안내).
+   */
   {
     resetDb(); resetExt();
     const res = mkRes();
     await aiHandler({ method: 'POST', headers: {}, query: {}, body: { question: '안녕' }, socket: { remoteAddress: '10.9.1.1' } }, res);
-    check(res.code === 401, '비로그인 → 401', String(res.code));
+    check(res.code === 200, '토큰 없음 → 200 게스트 응답', String(res.code));
+    check(res.payload && res.payload.guest === true, '응답에 guest:true 가 실린다');
     check(ext.aiCalls === 0, '익명 호출로 요금이 나가지 않는다 ★');
+    check(usedNow() === 0, '게스트는 쿼터를 쓰지 않는다 ★', String(usedNow()));
+  }
+  {
+    resetDb(); resetExt();
+    const res = mkRes();
+    await aiHandler({ method: 'POST', headers: { authorization: 'Bearer v1.bad.token' }, query: {}, body: { question: '안녕' }, socket: { remoteAddress: '10.9.1.2' } }, res);
+    check(res.code === 401, '틀린 토큰 → 401 (게스트로 떨어뜨리지 않는다) ★', String(res.code));
+    check(ext.aiCalls === 0, '틀린 토큰으로도 요금이 나가지 않는다');
   }
 
   /* AI-9. 빈 질문 — 쿼터를 깎지 않는다 */

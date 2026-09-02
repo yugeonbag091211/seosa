@@ -849,6 +849,31 @@ async function resolveQuery(q, hist, budget) {
   }
 }
 
+/** Authorization: Bearer … 가 실려 있는가 (값의 유효성은 identify 가 본다). */
+function hasAuthHeader(req) {
+  return /^Bearer\s+\S/i.test(String((req && req.headers && req.headers.authorization) || ''));
+}
+
+/**
+ * 정규식 의도 분류 — 게스트 경로 전용 (api/_intent.js).
+ *
+ * LLM 분류기와 같은 모양({intent, query})을 돌려준다. 가격 모달을 열어 둔
+ * 상태("이거 지금 사도 돼?")에서는 화면의 그 상품이 주제이므로 검색어를
+ * 비운다 — shouldSearch 가 모달 맥락에서는 검색어가 있으면 검색하기 때문이다.
+ */
+function heuristicIntent(q, hist, view) {
+  try {
+    const { classify } = require('./_intent');
+    const r = classify(q, hist);
+    const v = (view && typeof view === 'object') ? view : {};
+    if (v.source === 'modal' && r.intent !== 'A' && r.intent !== 'B') r.query = '';
+    return r;
+  } catch (e) {
+    console.warn(`[ai] 정규식 분류 실패(추천으로 간주): ${e.message}`);
+    return { intent: 'C', query: '', source: 'heuristic' };
+  }
+}
+
 async function classifyIntent(q, hist, budget) {
   try {
     const solo = await callClassifier(q, [], false, budget);
@@ -2288,10 +2313,6 @@ module.exports = async function handler(req, res) {
    */
   if (!guard(req, res, { name: 'ai', limit: 10, windowMs: 60 * 1000 })) return;
 
-  if (!process.env.OPENROUTER_API_KEY) {
-    return res.status(500).json({ error: 'OPENROUTER_API_KEY 환경변수 없음', text: '' });
-  }
-
   /* ── 1) 신원 확인 ────────────────────────────────────────────────
    *
    * 호출 1회당 실제 요금이 나가므로 익명 사용을 더는 허용하지 않는다.
@@ -2300,10 +2321,33 @@ module.exports = async function handler(req, res) {
    *  갈아타며 무한히 쓰는 것을 막는다)
    */
   const who = identify(req);
-  if (!who.ok) {
+  /*
+   * ── 게스트 모드 (2026-09-02) ────────────────────────────────────
+   *
+   * 토큰이 아예 없으면 LLM 을 부르지 않는 "조립본 답변"으로 응답한다.
+   * 판정(_deal · _decision)은 원래 코드가 하므로 모델 없이도 결론·근거·
+   * 구매 시점·다른 후보를 그대로 줄 수 있다(api/_concierge.js compose).
+   *
+   *   · 비용 0원 — OpenRouter 를 한 번도 부르지 않고, 쿼터도 예약하지 않는다.
+   *   · 검색은 /api/search 와 같은 경로·같은 캐시·같은 분당 상한을 쓴다.
+   *   · 의도 분류는 정규식(api/_intent.js)이다. LLM 분류기가 아니다.
+   *
+   * 왜 — 14일 실측 ai_open 13 → ai_first_prompt 3. 로그인 벽에서 77% 가
+   * 꺾였다. 가치를 먼저 보여주고, 설명(LLM)은 로그인 뒤에 연다.
+   *
+   * ★ 토큰이 "있는데 틀린" 요청은 그대로 401 이다. 만료된 토큰을 든 사용자는
+   *   재인증으로 안내해야지 조용히 게스트로 떨어뜨리면 안 된다.
+   */
+  const guest = !who.ok && !hasAuthHeader(req);
+  if (!who.ok && !guest) {
     return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
   }
-  const email = who.email;
+  const email = guest ? '' : who.email;
+
+  // 모델을 부르는 경로에만 키가 필요하다. 게스트(조립본)는 키 없이도 답한다.
+  if (!guest && !process.env.OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: 'OPENROUTER_API_KEY 환경변수 없음', text: '' });
+  }
 
   const { question, contextProducts, chatHistory, profile, view, prevTop: prevTopRaw } = readBody(req);
 
@@ -2331,32 +2375,38 @@ module.exports = async function handler(req, res) {
    * plan 은 절대 요청 body 에서 읽지 않는다. 검증된 이메일로 DB 를 본다.
    * 만료·해지된 PRO 는 여기서 자동으로 FREE 로 떨어진다.
    */
-  const { plan: userPlan, limit: dailyLimit } = await plan.resolvePlan(email);
+  // 게스트는 요금제도 예약도 없다 — LLM 을 부르지 않으므로 청구서가 생기지 않는다.
+  let userPlan = 'guest', dailyLimit = 0;
+  let reservation = { allowed: true, used: 0, degraded: false };
+  if (!guest) {
+    ({ plan: userPlan, limit: dailyLimit } = await plan.resolvePlan(email));
 
-  /* ── 3) 사용량 예약 (원자적) ────────────────────────────────────
-   *
-   * ★ 반드시 OpenRouter 호출보다 먼저다.
-   *   이 엔드포인트는 요청 1건에 분류 2회 + 본답변 1회까지 LLM 을 부른다.
-   *   한도를 넘긴 요청은 그중 단 한 번도 부르면 안 된다 — 그게 유료화의
-   *   목적 자체다.
-   */
-  const reservation = await plan.reserve(email, dailyLimit);
-  if (!reservation.allowed) {
-    const usage = plan.usagePayload(userPlan, reservation.used, dailyLimit);
-    return res.status(429).json({
-      error: reservation.degraded
-        ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-        : 'AI_DAILY_LIMIT_REACHED',
-      text: reservation.degraded
-        ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-        : '오늘 사용할 수 있는 AI 횟수를 모두 사용했어요.',
-      usage,
-      upgradeRequired: !reservation.degraded && userPlan !== plan.PLAN.PRO
-    });
+    /* ── 3) 사용량 예약 (원자적) ──────────────────────────────────
+     *
+     * ★ 반드시 OpenRouter 호출보다 먼저다.
+     *   이 엔드포인트는 요청 1건에 분류 2회 + 본답변 1회까지 LLM 을 부른다.
+     *   한도를 넘긴 요청은 그중 단 한 번도 부르면 안 된다 — 그게 유료화의
+     *   목적 자체다.
+     */
+    reservation = await plan.reserve(email, dailyLimit);
+    if (!reservation.allowed) {
+      const usage = plan.usagePayload(userPlan, reservation.used, dailyLimit);
+      return res.status(429).json({
+        error: reservation.degraded
+          ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+          : 'AI_DAILY_LIMIT_REACHED',
+        text: reservation.degraded
+          ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
+          : '오늘 사용할 수 있는 AI 횟수를 모두 사용했어요.',
+        usage,
+        upgradeRequired: !reservation.degraded && userPlan !== plan.PLAN.PRO
+      });
+    }
   }
 
   // 응답에 실어 보낼 사용량. 예약이 성공했으므로 used 는 이번 호출까지 포함한다.
-  const usage = plan.usagePayload(userPlan, reservation.used, dailyLimit);
+  // 게스트는 null — 사용량이라는 개념 자체가 없다.
+  const usage = guest ? null : plan.usagePayload(userPlan, reservation.used, dailyLimit);
 
   /*
    * 업스트림 장애로 답을 못 준 경우에만 예약을 되돌린다.
@@ -2364,7 +2414,7 @@ module.exports = async function handler(req, res) {
    */
   let released = false;
   const releaseOnce = async () => {
-    if (released) return;
+    if (released || guest) return;
     released = true;
     await plan.release(email);
   };
@@ -2469,7 +2519,8 @@ module.exports = async function handler(req, res) {
     /*
      * 1단계 — 의도 분류. 상품 데이터도 화면 상태도 보지 않고 말만 본다.
      */
-    const cls = await classifyIntent(q, hist, budget);
+    // 게스트는 LLM 분류기를 쓰지 않는다 — 정규식 분류(api/_intent.js)로 간다.
+    const cls = guest ? heuristicIntent(q, hist, view) : await classifyIntent(q, hist, budget);
     const intent = cls ? cls.intent : null;
 
     /*
@@ -2814,6 +2865,50 @@ module.exports = async function handler(req, res) {
       } catch (e) {
         console.warn(`[ai] 다목적 분석 실패(결정만으로 진행): ${e.message}`);
       }
+    }
+
+    /*
+     * ── 게스트 응답 — 여기서 끝낸다 ──────────────────────────────
+     *
+     * 판정·결정·완화 분석은 위에서 전부 끝났다. 프롬프트를 조립하지도,
+     * 모델을 부르지도 않는다. api/_concierge.compose 가 같은 데이터로
+     * 사람이 읽는 글을 만든다 — 모델 사슬이 전부 죽었을 때 쓰는 바로 그 경로다.
+     * 새 사실을 만들지 않으므로 firewall 도 필요 없다.
+     */
+    if (guest) {
+      const CG = require('./_concierge');
+      let text;
+      if (intent === 'A') {
+        text = '안녕하세요. 찾으시는 상품과 예산을 말씀해 주시면, 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 바로 알려 드릴게요.';
+      } else if (intent === 'B') {
+        text = '일반 질문은 로그인 후 AI 서사가 답해 드려요. 상품 이름이나 조건("10만원 이하 무선 이어폰")을 말씀해 주시면 지금 바로 가격 기록으로 판단해 드릴게요.';
+      } else if (searchState === 'failed') {
+        text = '지금 쇼핑몰 조회에 실패했어요. 잠시 후 다시 시도해 주세요.';
+      } else if (searchState === 'empty') {
+        text = `「${safeText(query, 40)}」로는 상품을 찾지 못했어요. 다른 이름으로 불러 보시겠어요?`;
+      } else if (!items.length) {
+        text = '어떤 상품을 찾으시는지 알려 주세요. 예) "10만원 이하 무선 이어폰", "LG 그램 지금 사도 돼?"';
+      } else {
+        text = CG.compose({ items, cards, decision, deal, constraints, noResult, degraded: false }).text;
+      }
+
+      const guestFollowups = items.length
+        ? CG.followups({ items, decision, deal, constraints, noResult })
+        : [];
+
+      console.log('[ai:obs] ' + JSON.stringify({
+        v: PROMPT_VERSION, guest: true, intent: intent || 'none', search: searchState,
+        items: items.length, cards: cards.length,
+        deal: deal ? deal.verdict : 'none',
+        conf: decision ? decision.confidence.confidence : 'none',
+        model: 'none', costUsd: 0, ms: Date.now() - startedAt
+      }));
+
+      const guestPayload = { text, guest: true, needsAuthForFull: true };
+      if (cards.length) guestPayload.items = cards;
+      if (guestFollowups.length) guestPayload.followups = guestFollowups;
+      if (decision && decision.top && decision.top.productId) guestPayload.topProductId = decision.top.productId;
+      return res.json(guestPayload);
     }
 
     // 상품이 많을 때까지 날짜별 가격을 다 찍으면 입력 토큰이 몇 배로 뛴다.
@@ -3414,5 +3509,6 @@ module.exports._internal = {
   trimToSentence, collectKnownWon, unverifiedWon, unverifiedSpecs, unsupportedSuperlatives,
   unsupportedComparisons, mentionsAnyCard, attachSpecs, collectWantedFeatures,
   CLASSIFY_SYSTEM, CLASSIFY_FORCE, fallbackAnswer,
+  heuristicIntent, hasAuthHeader,
   PROMPT_VERSION
 };

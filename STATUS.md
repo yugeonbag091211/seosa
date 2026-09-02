@@ -509,3 +509,93 @@ curl -s https://seosa.ai.kr/api/init | grep -o 'test_[a-z]*'
 
 > **투자자·멘토 앞에서 지금 가장 위험한 답변은 "사용자 수를 모른다" 이다.**
 > 코드 품질(844 테스트 통과)은 강점이지만, 그건 아무도 묻지 않는 질문에 대한 답이다.
+
+---
+
+## K. 2026-09-02 전체 감사 + P0 구현 (AI Shopping Decision Platform 기준)
+
+목표를 "가격비교 사이트"에서 **"무엇을 살지 고민하는 순간 가장 먼저 찾는 AI 쇼핑 의사결정 플랫폼"** 으로 두고
+전체(코드·DB·수집·AI·UX·SEO·보안·계측)를 다시 감사했다. 운영 DB 는 읽기 전용으로만 봤다.
+
+### K-1. 운영 실측 (2026-09-02 KST)
+
+| 항목 | 값 |
+|---|---|
+| products | 2,144 (쿠팡 1,502 / ADPICK 642) · live 1,813 / stale 331 · keyword 340종(1개짜리 183종) |
+| price_history | 21,721행 · 최근 30일 12,625행 · 네이버 고아 4,553행(보존) |
+| **가격 판정 가능 상품** | **613 / 2,144 (28.6%)** — 최근 30일 기록 7일 이상. 1일치뿐인 상품 682개 |
+| 어제 커버리지 | 쿠팡 750/1,502 (50%) · ADPICK 221/642 (34%) · 7일 커버리지 74% / 100% |
+| 방문자 | 총 88 · 재방문 5 · 오늘 2 |
+| AI 퍼널 (14일) | ai_discovered 41 → ai_open 13 → **ai_first_prompt 3** → followup 4 |
+| AI 사용자 | 2명 · 13회. 알림 0건. 구독 0. 결제 7건 전부 failed(테스트 키) |
+| 검색 수요 | 무선 이어폰 27 · 노트북 22 · 마우스 15 · 키보드 12 · 아이폰 11 (전자기기) |
+| 홈 셀렉션 | `TODAY_PICKS` = 7월 큐레이션 하드코딩 → 9월에 수영복·쿨토시·아이스크림 노출 |
+| 미적용 마이그레이션 | `alerts.on_deal`, `price_history.source` (코드는 폴백으로 동작) |
+| Toss 키 | `test_ck_/test_sk_` (정상 유형, 문서의 gck 문제 해결됨). 실결제는 여전히 불가 |
+| 도메인 | seosa.ai.kr 200 (문서의 GitHub Pages 문제 해결됨) |
+
+### K-2. 심각한 문제 → 이번에 고친 것
+
+| # | 문제 | 조치 | 검증 |
+|---|---|---|---|
+| S1 | AI 로그인 벽에서 퍼널 77% 이탈 | **게스트 모드** — 토큰 없으면 LLM 0회, `_concierge.compose` 조립본(판정·근거·대안·후속질문) + 카드. 정규식 의도 분류기 `api/_intent.js` 신설. 틀린 토큰은 여전히 401 | `test-guest.js` 74 · 브라우저 실측 |
+| S2 | 9월 홈에 여름 키워드 | `api/_picks.js` — 검증된 인기 검색어 우선, 큐레이션 보충. 운영 실측 칩: 무선 이어폰·노트북·마우스·키보드… | 브라우저 실측 |
+| S6 | 수요 키워드가 수집되지 않음 | `api/cron.js` — 상위 검색어 6종을 매일 수집 대상에 추가 (쿠팡 6회/일) | — |
+| S4 | 상품 URL 없음, sitemap 1줄 | `/p/{product_id}` 서버 렌더(`api/_product-page.js`, `history` 함수에 얹음 — 함수 11/12 유지) + `/sitemap-products.xml`(기록 7일↑·live·링크 있는 601개만) + `?p=` 딥링크 + 공유에 SEOSA 주소 | `test-product-page.js` 52 · 브라우저 실측 |
+| S5 | `on_deal` 미적용인데 "신청 완료" | 응답이 `onDeal:false` 와 안내 문구를 싣고, 목표가 없는 on_deal 단독 신청은 503 | `test-alerts.js` +5 |
+| — | 500 본문에 Supabase 오류 원문 | `search/init/rec/history` → `_http.fail` (로그·Sentry 로만) | 기존 테스트 |
+| — | 조립본에 `(P2)` 꼬리표 노출 | `_concierge.derefs` — 상품명으로 치환 | `test-guest.js` |
+
+**계약 변경**: `/api/ai` 는 토큰이 없으면 401 이 아니라 `{guest:true, needsAuthForFull:true, text, items?, followups?}` 200 을 준다.
+익명 호출로 요금이 나가지 않는 성질은 그대로다(`test-release.js` AI-8 갱신). 계측 `ai_guest_answer` / `ai_login_from_guest` 추가.
+
+### K-3. 하지 않은 것 (돌이키기 어렵거나 사람의 판단이 필요)
+
+- 마이그레이션 실행 2건 (`2026-08-28-alert-on-deal.sql`, `2026-09-01-price-history-source.sql`) — 안전하나 사람이 SQL Editor 에서 실행
+- Product/Offer JSON-LD — SEOSA 는 판매자가 아니라 넣지 않았다 (BreadcrumbList + WebPage 만)
+- 리뷰 인텔리전스 — 쿠팡·ADPICK API 어느 쪽도 리뷰를 주지 않는다. **데이터 소스 없이는 정직하게 만들 수 없다**
+- 로그인 사용자의 LLM 분류 실패 시 정규식 폴백 — 게스트 경로에만 적용(기존 테스트 계약 유지). 다음 단계
+- `scripts/collect-all-prices.js` 의 미커밋 변경(PRICE_SEED_ONLY 시드 모드)은 작업자 WIP 라 건드리지 않았다
+
+### K-4. 남은 우선순위
+
+- **P1** 로그인 사용자 LLM 분류 실패 → `_intent` 폴백 · 네이버쇼핑 필터 버튼/`Url.MALLS` 잔재 정리 · ADPICK `mall_label` 백필(217건 빈 값) · AI 분류 2회→1회
+- **P2** 계측에 차원(검색어·위치·세션) — 새 테이블 · 프로필(관심 카테고리·예산)을 랭킹에 연결 · 카테고리 페이지 `/c/{keyword}` · 브랜드 컬럼 · `[ai:obs]` 일별 집계 · 커버리지 2차 검색 예산을 7일 미관측 상품에 우선
+- **P3** 프론트 분할/빌드 · 리뷰 데이터 소스 확보 · 에이전틱 커머스
+- **코드로 대체 불가**: 실사용자 테스트 5명 (`docs/ux-user-test-plan.md`)
+
+### K-5. SEOSA WORLD-CLASS SCORE (2026-09-02, 억지로 올리지 않음)
+
+| 항목 | 점수 | 근거 |
+|---|---|---|
+| Product Strategy | 6 | 정직한 판정이라는 논지는 분명. 사용자 검증 0, 데이터 moat 얇음 |
+| UX | 6 | 접근성·위계 정리됨. 게스트 AI·상품 페이지 추가. 몰별 비교는 대부분 "비교 불가" |
+| AI | 6 | 판정=코드·설명=모델·방화벽 구조는 상위권. 근거 축이 가격·기록·제목뿐 |
+| Decision Engine | 7 | 격차·확신도·후회·반사실·뒤집는 조건 전부 결정론. 판정 가능 상품 28.6% |
+| Recommendation | 4 | 세션 성향만. 클릭·저장 신호 미사용. 저장 프로필이 랭킹에 안 붙음 |
+| Product Data | 3 | 2,144 SKU. 브랜드·카테고리·GTIN·배송비·리뷰 없음 |
+| Price Intelligence | 6 | 정확성 방어는 두터움. 일일 커버리지 50%, 깊이 29% |
+| Review Intelligence | 0 | 데이터 소스 없음 |
+| Search | 6 | 관련도·보정 우수. 결과 상한 10+20 |
+| SEO/GEO | 4 | 상품 페이지·사이트맵 생김(배포·색인 전). 카테고리 페이지 없음 |
+| Retention | 3 | 재방문 5명. 알림 사용 0 |
+| Growth | 3 | 카운터만. 퍼널 차원 없음 |
+| Performance | 7 | 첫 화면 캐시·CLS 0. AI 최악 27초 |
+| Security | 8 | fail-closed 일관. 남은 것은 인스턴스 로컬 레이트리밋 |
+| Scalability | 4 | 함수 11/12 · 단일 10.5K줄 HTML · 키워드 검색 의존 수집 |
+| Competitive Moat | 3 | 판정 로직의 정직성 뿐. 데이터로는 아직 아님 |
+| **합계** | **76 / 160** | |
+
+**상대 평가** — 한국의 일반 가격비교 사이트 대비: 가격 정확성·판정의 정직성·설명 가능성은 앞선다.
+데이터 폭·깊이·리뷰·배송비·SEO 유입은 다나와·네이버에 수백 배 뒤진다. 쿠팡·네이버 대비 약한 곳은 상품 데이터와
+발견 경로, AI 쇼핑 서비스 대비 약한 곳은 리뷰·스펙 근거의 부재다. 강한 곳은 "지금 이 가격이 괜찮은가"에
+근거 있게, 틀리면 틀렸다고 답하는 것 — 그 하나를 데이터 깊이로 뒷받침하는 것이 다음 6개월의 일이다.
+
+### K-6. 테스트 (2026-09-02 실행)
+
+```
+npm test                 32개 스크립트 전부 PASS (exit 0) — 신규 test-guest 74 · test-product-page 52 포함
+npm run test:regression   85 PASS / 0 FAIL
+npm run test:release     120 PASS / 0 FAIL  (AI-8 계약 갱신: 토큰 없음→200 게스트, 틀린 토큰→401)
+node scripts/verify-migrations.js   23 OK / 0 FAIL
+```

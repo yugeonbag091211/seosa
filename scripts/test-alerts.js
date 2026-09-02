@@ -227,6 +227,24 @@ const BASE = { email: USER, title: '무선 이어폰', productId: 'A-1111', mall
       String(res.code));
     check(db.alerts.length === 1, '목표가 알림으로 저장된다', String(db.alerts.length));
     check(!('on_deal' in db.alerts[0]), 'on_deal 없이 저장된다');
+    /*
+     * ★ 조용히 버리지 않는다 (2026-09-02). 사용자가 켠 조건을 저장하지 못했으면
+     *   응답이 그 사실을 말해야 한다 — 운영 DB 에 이 컬럼이 실제로 없다.
+     */
+    check(res.payload && res.payload.onDeal === false, '★ 응답이 onDeal:false 로 사실을 밝힌다',
+      res.payload && String(res.payload.onDeal));
+    check(res.payload && /준비 중/.test(res.payload.msg || ''), '★ 안내 문구가 "준비 중" 을 말한다',
+      res.payload && res.payload.msg);
+  }
+  {
+    // 목표가 없이 on_deal 만 켰는데 컬럼이 없으면 "조건 없는 알림" 이 된다 — 거절한다.
+    reset();
+    missingColumns = ['on_deal'];
+    const res = mkRes();
+    await alerts(reqFor(USER, 'POST', { ...BASE, onDeal: true }), res);
+    check(res.code === 503, '★ 컬럼 없음 + 목표가 없음 → 503 (아무 때도 안 울릴 알림을 만들지 않는다)', String(res.code));
+    check(db.alerts.length === 0, '저장하지 않는다', String(db.alerts.length));
+    check(res.payload && res.payload.onDealUnavailable === true, '프론트가 구분할 수 있는 플래그');
   }
 
   section('7. 목록 조회');

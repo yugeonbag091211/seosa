@@ -2,7 +2,7 @@ const supabase = require('./_supabase');
 const { searchAll, saveProducts, TODAY_PICKS } = require('./_shop');
 const { attachTrust } = require('./_trust');
 const { attachPriceChange } = require('./_facets');
-const { applyCors, cachePublic } = require('./_http');
+const { applyCors, cachePublic, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
 
@@ -207,6 +207,7 @@ module.exports = async function handler(req, res) {
     if (ranked.length && from !== 'stale-cache') cachePublic(res, 300);
     res.json(ranked);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    // 내부 오류 문구(Supabase·쿠팡 메시지)는 로그에만 남긴다.
+    fail(res, e, { where: 'search', route: '/api/search', message: '검색 중 오류가 났어요. 잠시 후 다시 시도해 주세요.' });
   }
 };

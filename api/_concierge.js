@@ -195,6 +195,18 @@ function cautions(deal, decision) {
   return out.slice(0, 3);
 }
 
+/**
+ * "다른 후보(P2)" → "다른 후보 「상품명…」". 꼬리표를 못 찾으면 꼬리표만 지운다.
+ * 상품명 안의 "P11 프로" 같은 글자는 건드리지 않는다 — 괄호에 갇힌 꼬리표만 본다.
+ */
+function derefs(text, items) {
+  const list = Array.isArray(items) ? items : [];
+  return String(text == null ? '' : text).replace(/\((P[1-8])\)/g, (m, ref) => {
+    const it = list.find(x => x && x.ref === ref);
+    return it && it.title ? ` 「${shortTitle(it.title, 24)}」` : '';
+  }).replace(/\s{2,}/g, ' ');
+}
+
 /** 나머지 후보. 2·3위만 — 그 아래는 사용자가 카드로 본다. */
 function others(items) {
   const list = (items || []).slice(1, 3).filter(Boolean);
@@ -319,7 +331,15 @@ function compose(ctx) {
     rest.forEach(x => L.push(x));
   }
 
-  const warn = cautions(c.deal, c.decision);
+  /*
+   * 내부 꼬리표(P2·P3)를 상품명으로 바꾼다.
+   *
+   * _decision 의 tradeoffs 는 프롬프트용이라 "다른 후보(P2)가 나은 점" 처럼
+   * 꼬리표로 후보를 가리킨다. 모델은 그것을 상품명으로 옮기지만, 이 조립본은
+   * 사용자에게 그대로 나간다 — 게스트 응답 실측(2026-09-02)에서 "(P2)" 가
+   * 화면에 찍혔다. 사용자 화면에 P2 는 없다. 여기서 이름으로 되돌린다.
+   */
+  const warn = cautions(c.deal, c.decision).map(x => derefs(x, items));
   if (warn.length) {
     L.push('');
     L.push('주의:');
@@ -401,6 +421,6 @@ module.exports = {
   compose, followups, looksLikeBlockDump, blockLabelCount,
   BLOCK_LABELS, BLOCK_DUMP_MIN,
   // 테스트·다른 모듈이 같은 문구를 쓰도록 노출한다 (문구가 두 벌이 되면 어긋난다)
-  conclusion, reasons, timing, cautions, others, hedgeFor, shortTitle, won,
+  conclusion, reasons, timing, cautions, others, hedgeFor, shortTitle, won, derefs,
   STANCE, MAX_FOLLOWUPS, DEGRADED_HEAD, DEGRADED_FOOT
 };
