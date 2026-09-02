@@ -1039,7 +1039,24 @@ async function prepared(email) {
   check(front.indexOf('TOSS_SECRET_KEY') === -1, '프론트에 TOSS_SECRET_KEY 없음 ★');
   check(!/sk_(live|test)_[A-Za-z0-9]{10,}/.test(front), '프론트에 시크릿 키 값 없음 ★');
   check(front.indexOf('secretKey') === -1, '프론트에 secretKey 참조 없음');
-  check(/clientKey/.test(front), '프론트는 clientKey(공개 키)만 쓴다');
+  /*
+   * ★ 「clientKey 가 있어야 한다」는 존재 검사였다 (2026-09-02 수정).
+   *
+   *   원래 의도는 "프론트가 쓰는 토스 키는 공개 키뿐이다" 였고, 그때는
+   *   프론트에 결제 코드(var Pay)가 있었으므로 clientKey 의 **존재**로
+   *   그것을 확인했다. 그 뒤 PRO/결제 UI 를 프론트에서 걷어내면서
+   *   clientKey 참조가 0 개가 됐고, 이 단언만 남아 실패했다.
+   *
+   *   보안 속성은 약해진 게 아니라 더 강해졌다 — 프론트에 결제 키가
+   *   아예 없다. 그래서 검사를 의도대로 다시 쓴다: 프론트에 토스 키가
+   *   등장한다면 그것은 반드시 공개 키(clientKey)여야 한다.
+   *   결제 UI 가 돌아오든 안 오든 이 단언은 계속 옳다.
+   */
+  const frontTossKeys = front.match(/\b\w*[Kk]ey\b/g) || [];
+  const frontSecretish = frontTossKeys.filter(k => /secret/i.test(k));
+  check(frontSecretish.length === 0,
+        '프론트의 토스 키는 공개 키(clientKey)뿐 — 시크릿 키 참조 0건',
+        frontSecretish.join(',') || '결제 키 참조 없음');
 
   check(!/cardNumber|cvc|cardPassword|expiry/i.test(billSrc + payApi),
         '카드번호/CVC 를 다루는 코드 없음 ★');
