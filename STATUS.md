@@ -271,9 +271,9 @@ SEOSA 결정론 답변 (api/_concierge.js)
   헛걸음(왕복 지연)을 반복하지 않기 위해서다.
 - **요청 하나에 시간 예산 27초** — 사슬이 길다고 프론트 대기(30초)를 넘기지 않는다.
   분류 단계는 답변 몫 9초를 반드시 남기고 물러난다.
-- **비용 0원 운영** — `OPENROUTER_MODELS` 에 `:free` 모델만 적으면 그 목록이
-  사슬 전체가 된다. (DEPLOY.md 「AI 모델 사슬」 참고)
-- **중복 질문 캐시** — `AI_CACHE_TTL_MS` 로 켠다. 기본값은 꺼짐.
+- **비용 0원이 기본값** — 환경변수를 하나도 설정하지 않아도 무료 모델만 부른다.
+  유료는 `OPENROUTER_ALLOW_PAID=1` 로만 열린다. (DEPLOY.md 「AI 모델 사슬」)
+- **중복 질문 캐시** — 기본 5분 켜짐. 무료 티어의 분당 한도를 아끼는 것이 목적이다.
 
 ### LLM 없이 만드는 답 (`api/_concierge.js`, 2026-08-30 신규)
 
@@ -599,3 +599,85 @@ npm run test:regression   85 PASS / 0 FAIL
 npm run test:release     120 PASS / 0 FAIL  (AI-8 계약 갱신: 토큰 없음→200 게스트, 틀린 토큰→401)
 node scripts/verify-migrations.js   23 OK / 0 FAIL
 ```
+
+
+## L. 2026-09-02 ZERO-COST AI (독립 검증 + 비용 차단)
+
+### 무엇이 문제였나
+
+직전 작업(K절)은 AI 품질을 다뤘지 비용은 다루지 않았다. 코드를 다시 읽어 보니
+운영이 실제로 유료 모델을 부르고 있었다.
+
+- `api/_llm.js` 의 기본 1순위가 `anthropic/claude-sonnet-5`(유료)였다.
+- 운영(Vercel)에 `OPENROUTER_MODELS` 가 없다 → 기본값이 그대로 적용된다.
+- 즉 **로그인 사용자의 모든 AI 요청이 유료 모델을 먼저 호출**하고 있었다.
+- OpenRouter 키 실측: `is_free_tier=false`, 누적 사용 $9.79, 한도 없음(`limit:null`).
+  쓴 만큼 계속 나가는 상태였다.
+
+### 무엇을 바꿨나
+
+| 항목 | 전 | 후 |
+|---|---|---|
+| 기본 답변 1순위 | `anthropic/claude-sonnet-5` (유료) | `minimax/minimax-m3:free` |
+| 유료 모델 | 기본 허용 | `OPENROUTER_ALLOW_PAID=1` 로만 |
+| 요청당 LLM 호출 | 2회 (히스토리 있으면 3회) | **1회** |
+| 응답 캐시 | 기본 꺼짐 | 기본 5분 켜짐 |
+| 비용 계측 | 없음 | `llm.stats()` → `/api/cron?diag=1` |
+
+방어선은 두 겹이다. `chainFor()` 가 사슬을 만들 때 유료를 걸러내고,
+`attempt()` 가 네트워크로 나가기 직전에 한 번 더 막는다. 뒷사람이 `chainFor` 를
+손대다 필터를 깨뜨려도 돈이 나가지 않는다.
+
+### 호출 수를 줄인 방법
+
+`api/_intent.js`(정규식 분류기)가 확신할 때는 LLM 분류를 아예 건너뛴다.
+확신의 기준은 **요청 동사가 실제로 있을 때**다. 예산·선물·중요도 같은 조건만
+있는 말은 확신하지 않는다 — 테스트가 실제로 잡아낸 사례가 있다.
+"통화 품질도 중요해" 가 '품질' 때문에 추천 요청으로 분류돼 쿠팡에
+"통화 품질 중요해" 를 검색할 뻔했다.
+
+### 모델 선택의 근거 (실측, 이전 기록을 믿지 않고 다시 잼)
+
+12문항 × 2회, 요청 사이 4.5초(분당 한도 오염 제거). 운영과 같은
+`reasoning:{enabled:false}` 조건.
+
+| 모델 | 분류 | 답변 | 판단 |
+|---|---|---|---|
+| `minimax/minimax-m3:free` | 12/12 | 310자·깨끗함 | 1순위 |
+| `nvidia/nemotron-3.5-lightning:free` | 9/12 | 370자 | 2순위 (288ms, 가장 빠름) |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | 10/12 | 242자 | 3순위 (느림) |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 5/6 | **입력 프롬프트를 되뱉음** | 답변에서 제외 |
+| `dots-studio/dots-3-note-preview:free` | 5/6 | 231자·깨끗함 | 라이선스 확인 불가 → 제외 |
+| `minimax/minimax-m2.7:free` | 0/6 | reasoning 강제 | 사용 불가 |
+| `z-ai/glm-5.2`, `google/gemma-4-*:free` | — | 429 (2회 모두) | 사용 불가 |
+
+**직전 주석은 `nemotron-3-super` 를 "분류 5/5, 1순위" 로 적어 두었다.**
+다시 재니 이 모델은 답변을 쓰는 대신 우리가 넣어 준 `[결정 데이터]` 블록을
+거의 그대로 되뱉었다. 내부 참조(`P1`)까지 출력에 남았다. 문서를 믿었으면
+못 찾았을 문제다.
+
+### 상업 이용 조건 (라이선스 원문 직접 확인)
+
+| 모델 | 라이선스 | 상업 이용 | 의무 |
+|---|---|---|---|
+| `minimax-m3:free` | MiniMax Community | 허용 | 표기 + 1회 통지 |
+| `nemotron-3.5-lightning`, `nemotron-3-ultra` | OpenMDW-1.1 | 제한 없음 | 없음 |
+| `nemotron-3-super` | NVIDIA Nemotron Open Model | 명시적 허용 | 없음 |
+
+MiniMax 표기는 넣었다(푸터). **통지 메일은 아직 안 보냈다 — 사람이 보내야 한다.**
+DEPLOY.md 「사람이 해야 하는 일」 참고.
+
+### 검증
+
+```
+npm test                          전부 PASS (exit 0) — test-zero-cost 36 신규
+npm run test:regression            85 PASS / 0 FAIL
+npm run test:release              120 PASS / 0 FAIL
+node scripts/verify-migrations.js   23 OK / 0 FAIL
+npm run verify:models             사슬 6종 전부 실존 확인
+```
+
+`scripts/test-zero-cost.js` 가 매번 검사하는 것:
+유료 id 가 `_llm.js` 밖에 없다 · 기본 사슬이 전부 무료다 · 유료 id 를 적어도
+나가지 않는다 · 사슬을 뚫고 온 유료도 막힌다 · 게스트는 LLM 을 0회 부른다 ·
+요청당 1회다 · 무료가 전부 429 여도 유료로 넘어가지 않는다.

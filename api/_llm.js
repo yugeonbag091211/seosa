@@ -30,9 +30,42 @@ const crypto = require('crypto');
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
+/* ═══════════════════════════════════════════════════════════════════
+ *  ZERO-COST 정책 (2026-09-02 감사)
+ *
+ *  ── 무엇이 문제였나 ────────────────────────────────────────────
+ *
+ *  chainFor() 는 OPENROUTER_MODELS 가 없으면 사슬 1순위를 유료 모델
+ *  (anthropic/claude-sonnet-5)로 두었다. 그런데 운영(Vercel)에는 그 환경변수가
+ *  없다 — .env.local(= vercel env pull) 전수 확인. 즉 **로그인 사용자의 모든
+ *  AI 요청이 유료 모델을 먼저 호출하고 있었다.**
+ *
+ *  2026-09-02 실측 (OpenRouter /api/v1/key, 읽기 전용):
+ *      is_free_tier: false · usage(누적) $9.79 · usage_weekly $0.0147 · limit: null
+ *  잔액 상한이 없어 호출한 만큼 계속 과금된다.
+ *
+ *  ── 이제 어떻게 하는가 ─────────────────────────────────────────
+ *
+ *  기본값이 무료 전용이다. 환경변수를 하나도 설정하지 않아도 유료 모델은
+ *  호출되지 않는다. 유료를 쓰려면 OPENROUTER_ALLOW_PAID=1 을 **명시적으로**
+ *  켜야 한다 — 실수로 켜지는 방향이 아니라 실수로 꺼지는 방향으로 설계한다.
+ *
+ *  방어는 두 겹이다. 하나가 뚫려도 다른 하나가 막는다.
+ *    1) chainFor()  — 사슬을 만들 때 유료 모델을 걸러낸다
+ *    2) attempt()   — 네트워크로 나가기 직전에 한 번 더 막는다
+ *  2)가 있어야 OPENROUTER_MODELS 에 유료 id 를 잘못 적어도 과금되지 않는다.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/** 유료 모델 호출을 허용하는가. 기본은 거부다 (명시적 opt-in). */
+function allowPaid() {
+  return String(process.env.OPENROUTER_ALLOW_PAID || '').trim() === '1';
+}
+
 /*
- * 1순위. 크레딧이 있으면 여기서 끝나고, 아래 무료 사슬은 돌지 않는다.
- * 기존 api/ai.js 의 기본값을 그대로 옮겼다 — 품질 기본값을 낮추지 않는다.
+ * 유료 1순위. OPENROUTER_ALLOW_PAID=1 일 때만 사슬에 들어간다.
+ * 값을 지우지 않는 이유 — 나중에 크레딧을 채우고 품질을 올리기로 하면
+ * 환경변수 하나로 되돌아갈 수 있어야 한다. 기능을 없애는 것이 아니라
+ * 기본값을 안전한 쪽으로 옮기는 것이다.
  */
 const DEFAULT_ANSWER_MODEL   = 'anthropic/claude-sonnet-5';
 const DEFAULT_CLASSIFY_MODEL = 'anthropic/claude-haiku-4.5';
@@ -52,26 +85,63 @@ const DEFAULT_CLASSIFY_MODEL = 'anthropic/claude-haiku-4.5';
  * 그 상태로 배포했으면 매 요청이 404 세 번을 거쳐 결정론 답변으로만 떨어졌을
  * 것이다. 그래서 실제 목록(무료 18종)을 받아 후보를 직접 돌려 보고 골랐다.
  *
- *   모델                                    분류 정확도  답변 지연   지어낸 금액
- *   nvidia/nemotron-3-super-120b-a12b:free    5/5        1,327ms      없음   ← 1순위
- *   minimax/minimax-m3:free                   5/5        2,749ms      없음
- *   nvidia/nemotron-3.5-lightning:free        4/5          909ms      없음
- *   nvidia/nemotron-3-ultra-550b-a55b:free    4/5       11,291ms      없음   ← 너무 느려 제외
- *   minimax/minimax-m2.7:free                  —            —          —     ← reasoning 강제(400)
- *   z-ai/glm-5.2, google/gemma-4-*:free        —            —          —     ← 429 (공급자 혼잡)
+ *   ── 2026-09-02 재측정 (이전 기록을 그대로 믿지 않고 다시 돌렸다) ──
  *
- * (분류 정확도 = CLASSIFY_SYSTEM 으로 A~E 5문항. 답변은 결정 데이터를 준
- *  프롬프트로 3문장 요약을 시켜 금액을 지어내는지 함께 봤다.)
+ * 이전 주석은 nemotron-3-super 를 "분류 5/5, 1순위" 로 적어 두었다. 12문항
+ * × 2회, 요청 사이 4.5초를 띄워(분당 한도 오염 제거) 다시 재니 결과가 달랐다.
+ * 운영은 두 경로 모두 reasoning:{enabled:false} 를 보내므로 그 조건만 본다.
  *
- * 분류용은 짧은 출력이 빠른 순서로 둔다 — 분류는 답변 앞에 서므로 여기서
- * 끄는 시간이 그대로 사용자 대기 시간이다.
+ *   모델                                    분류    답변                 지연
+ *   minimax/minimax-m3:free                 6/6    310자 · 깨끗함       1,082ms  ← 1순위
+ *   dots-studio/dots-3-note-preview:free    5/6    231자 · 깨끗함       1,065ms
+ *   nvidia/nemotron-3.5-lightning:free      9/12   370자                  288ms
+ *   nvidia/nemotron-3-super-120b-a12b:free  5/6    ★ 답변이 망가진다      379ms
+ *   minimax/minimax-m2.7:free               0/6    reasoning 강제 → 무용지물
+ *   inclusionai/ling-3.0-flash-fin:free     0/6    빈 응답
+ *   z-ai/glm-5.2, google/gemma-4-*:free       —    429 (공급자 혼잡, 2회 모두)
+ *   thinkingmachines/inkling-*:free           —    403 (계정에 권한 없음)
+ *
+ * ★ nemotron-3-super 를 답변 사슬에서 뺀 이유가 핵심이다. 이 모델은 답을
+ *   쓰는 대신 우리가 넣어 준 [결정 데이터] 블록을 거의 그대로 되뱉었다.
+ *   출력에 P1·P2 참조까지 남았다. 사용자에게는 내부 프롬프트가 새는 것으로
+ *   보인다. 분류(A~E 한 글자)는 5/6 으로 멀쩡해서 분류 사슬에는 남긴다.
+ *
+ * 지어낸 금액은 위 네 모델 모두 0건이었다 — 프롬프트가 데이터를 주는 형태라
+ * 그렇다. 그래도 Hallucination Firewall 은 그대로 둔다(모델을 믿지 않는다).
+ *
+ * ── 상업적 이용 조건 (2026-09-02 실제 라이선스 원문 확인) ────────
+ *
+ * SEOSA 는 제휴 수익이 있는 상업 서비스다. "무료 모델" 은 요금이 0원이라는
+ * 뜻이지 아무 조건 없이 써도 된다는 뜻이 아니다. 그래서 각 모델의 라이선스
+ * 원문을 직접 받아 확인했다.
+ *
+ *   minimax/minimax-m3:free
+ *     MiniMax Community License — 상업 이용 허용, 단 조건 2개.
+ *       (1) "Built with MiniMax M3" 를 제품에 눈에 띄게 표기 → public/index.html
+ *       (2) api@minimax.io 로 1회 통지 (연매출 2천만 달러 미만인 경우)
+ *           ★ 아직 보내지 않았다. 사람이 보내야 한다. DEPLOY.md 참고.
+ *   nvidia/nemotron-3.5-lightning:free, nemotron-3-ultra-550b:free
+ *     OpenMDW-1.1 — "deal in the Model Materials without restriction".
+ *     사용 제한 없음. 재배포할 때만 고지 의무가 붙는데 우리는 재배포하지 않는다.
+ *   nvidia/nemotron-3-super-120b-a12b:free
+ *     NVIDIA Nemotron Open Model License — "Works are commercially usable" 명시.
+ *
+ *   dots-studio/dots-3-note-preview:free
+ *     답변 품질은 2위였지만(231자·깨끗함) 뺐다. OpenRouter 에 모델 저장소가
+ *     연결돼 있지 않아 라이선스 원문을 확인할 수 없다. 확인 못 한 것은 쓰지
+ *     않는다 — 조건을 모르는 채로 상업 서비스에 넣는 것이 더 큰 위험이다.
+ *
+ * 분류용은 정확도 우선이다. 결정론 분류기(api/_intent.js)가 확신할 때는
+ * LLM 을 아예 부르지 않으므로, 여기까지 오는 말은 원래 애매한 말이다.
+ * 애매한 말일수록 맞히는 게 중요하지 빨리 틀리는 건 쓸모가 없다.
  */
 const FREE_ANSWER_CHAIN = [
-  'nvidia/nemotron-3-super-120b-a12b:free',
   'minimax/minimax-m3:free',
-  'nvidia/nemotron-3.5-lightning:free'
+  'nvidia/nemotron-3.5-lightning:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free'
 ];
 const FREE_CLASSIFY_CHAIN = [
+  'minimax/minimax-m3:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
   'nvidia/nemotron-3.5-lightning:free'
 ];
@@ -144,7 +214,26 @@ const MAX_MODEL_LEN = 80;
 const state = {
   paidBlockedUntil: 0,
   dead: new Map(),      // model → 언제까지 죽은 것으로 볼지
-  cache: new Map()      // key → { at, text, finish, model }
+  cache: new Map(),     // key → { at, text, finish, model }
+  /*
+   * ── AI Cost Guard 계수기 (2026-09-02) ─────────────────────────
+   *
+   * "유료 비용 = $0" 을 주장하려면 측정할 수 있어야 한다. 프로세스 안에서만
+   * 사는 값이라 서버리스 인스턴스마다 따로 놀지만, 그래도 두 가지를 답한다.
+   *   · paidBlocked 가 0 이 아니면 어딘가에서 유료 호출을 시도했다는 뜻이다
+   *   · paidCalls 가 0 이 아니면 실제로 유료 호출이 나갔다는 뜻이다 (경보)
+   * /api/cron?diag=1 (CRON_SECRET) 에서 읽는다.
+   */
+  calls: 0,          // 실제로 네트워크로 나간 호출
+  freeCalls: 0,
+  paidCalls: 0,      // ★ 0 이 아니면 zero-cost 정책이 깨진 것이다
+  paidBlocked: 0,    // 가드가 막은 유료 호출 시도
+  failures: 0,
+  cacheHits: 0,
+  totalMs: 0,
+  inTok: 0,
+  outTok: 0,
+  costUsd: 0
 };
 
 /** `:free` 로 끝나면 잔액이 없어도 부를 수 있는 모델이다. */
@@ -176,15 +265,27 @@ function envList(name) {
 function chainFor(role) {
   const classify = role === 'classify';
   const override = envList(classify ? 'OPENROUTER_CLASSIFY_MODELS' : 'OPENROUTER_MODELS');
+  const paidOk = allowPaid();
+  const freeChain = classify ? FREE_CLASSIFY_CHAIN : FREE_ANSWER_CHAIN;
 
   let list;
   if (override.length) {
     list = override;
-  } else {
+  } else if (paidOk) {
     const head = sanitizeModel(
       process.env[classify ? 'OPENROUTER_CLASSIFY_MODEL' : 'OPENROUTER_MODEL']
     ) || (classify ? DEFAULT_CLASSIFY_MODEL : DEFAULT_ANSWER_MODEL);
-    list = [head].concat(classify ? FREE_CLASSIFY_CHAIN : FREE_ANSWER_CHAIN);
+    list = [head].concat(freeChain);
+  } else {
+    /*
+     * ★ 기본 경로 — 무료 전용.
+     *   OPENROUTER_MODEL(단수)이 설정돼 있어도 무료 모델일 때만 앞에 세운다.
+     *   유료 id 가 들어 있으면 조용히 무시한다(로그는 attempt 가 남긴다).
+     */
+    const head = sanitizeModel(
+      process.env[classify ? 'OPENROUTER_CLASSIFY_MODEL' : 'OPENROUTER_MODEL']
+    );
+    list = (head && isFree(head) ? [head] : []).concat(freeChain);
   }
 
   const seen = Object.create(null);
@@ -194,7 +295,16 @@ function chainFor(role) {
     seen[m] = true;
     out.push(m);
   });
-  return out.slice(0, MAX_CHAIN);
+
+  /*
+   * ── 방어 1 — 유료 모델을 사슬에서 걷어낸다 ──────────────────
+   *
+   * 전부 걸러져 비면 무료 사슬로 되돌린다. "아무것도 시도하지 않는 것"이
+   * 가장 나쁜 결과이고, 그때도 비용은 0원이어야 하므로 무료로 채운다.
+   */
+  const filtered = paidOk ? out : out.filter(isFree);
+  const finalList = filtered.length ? filtered : freeChain.slice();
+  return finalList.slice(0, MAX_CHAIN);
 }
 
 /**
@@ -252,8 +362,26 @@ function redact(s) {
  */
 const CACHE_MAX = 200;
 
+/*
+ * ★ 기본값을 켬으로 바꿨다 (2026-09-02).
+ *
+ * 예전 기본값은 0(꺼짐)이었다. 유료 모델을 쓸 때는 "같은 질문에 늘 한 글자도
+ * 같은 답" 이 어색하다는 이유였는데, 무료 전용으로 가면 사정이 달라진다.
+ * 이제 아끼는 것은 돈이 아니라 **분당 호출 한도**다 — OpenRouter 무료 모델은
+ * free-models-per-min 상한을 공유하고, 실측에서 실제로 429 를 받았다.
+ * 그 한도를 캐시로 아끼면 동시 사용자가 늘어도 AI 가 조용히 죽지 않는다.
+ *
+ * 5분인 이유: 프롬프트에 그 시점의 가격이 박혀 있어 가격이 바뀌면 키가 바뀐다.
+ * 즉 이 TTL 은 "가격이 안 바뀐 동안 같은 질문" 에만 걸린다. 그래도 오래 두면
+ * 재고·판매 상태가 달라질 수 있으므로 짧게 잡는다.
+ */
+const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+
 function cacheTtl() {
-  const n = Number(process.env.AI_CACHE_TTL_MS);
+  const raw = process.env.AI_CACHE_TTL_MS;
+  if (raw === undefined || raw === '') return DEFAULT_CACHE_TTL_MS;
+  const n = Number(raw);
+  // 명시적으로 0 을 주면 끈다 (테스트가 그렇게 쓴다).
   return Number.isFinite(n) && n > 0 ? Math.min(n, 30 * 60 * 1000) : 0;
 }
 
@@ -287,6 +415,20 @@ function cacheSet(key, ttl, value) {
  * @returns {{ok:boolean, text?:string, finish?:string, reason?:string, advance?:boolean}}
  */
 async function attempt(model, opts, timeoutMs) {
+  /*
+   * ── 방어 2 — 네트워크로 나가기 직전 최종 관문 ─────────────────
+   *
+   * chainFor 가 이미 걸렀지만, 여기서 한 번 더 본다. 이 한 줄이 있어야
+   * "환경변수에 유료 id 를 잘못 적었다" 같은 사고로 과금되지 않는다.
+   * 던지지 않고 다음 모델로 넘긴다 — 사용자 요청을 죽일 이유는 없다.
+   */
+  if (!isFree(model) && !allowPaid()) {
+    state.paidBlocked++;
+    console.warn(`[llm] ZERO-COST: 유료 모델 호출 차단 — ${model} `
+      + '(허용하려면 OPENROUTER_ALLOW_PAID=1)');
+    return { ok: false, reason: 'paid-blocked', advance: true };
+  }
+
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
 
@@ -298,6 +440,11 @@ async function attempt(model, opts, timeoutMs) {
   };
   // reasoning:{enabled:false} 같은 공급자 옵션. 지원하지 않는 모델은 그냥 무시한다.
   if (opts.extra) Object.keys(opts.extra).forEach(k => { body[k] = opts.extra[k]; });
+
+  // Cost Guard — 네트워크로 나가는 순간에만 센다 (가드가 막은 것은 위에서 이미 셌다).
+  const startedAt = Date.now();
+  state.calls++;
+  if (isFree(model)) state.freeCalls++; else state.paidCalls++;
 
   let r;
   try {
@@ -311,6 +458,8 @@ async function attempt(model, opts, timeoutMs) {
       body: JSON.stringify(body)
     });
   } catch (e) {
+    state.failures++;
+    state.totalMs += Date.now() - startedAt;
     if (e && e.name === 'AbortError') return { ok: false, reason: 'timeout', advance: true };
     console.warn(`[llm] ${model} 연결 실패: ${redact(e && e.message)}`);
     return { ok: false, reason: 'network', advance: true };
@@ -318,7 +467,10 @@ async function attempt(model, opts, timeoutMs) {
     clearTimeout(timer);
   }
 
+  state.totalMs += Date.now() - startedAt;
+
   if (!r || !r.ok) {
+    state.failures++;
     const status = (r && r.status) || 0;
     const cls = classifyStatus(status);
     let detail = '';
@@ -332,6 +484,7 @@ async function attempt(model, opts, timeoutMs) {
   let data;
   try { data = await r.json(); }
   catch (e) {
+    state.failures++;
     console.warn(`[llm] ${model} 응답 파싱 실패`);
     return { ok: false, reason: 'parse', advance: true };
   }
@@ -345,7 +498,7 @@ async function attempt(model, opts, timeoutMs) {
    * 성공으로 다루면 호출부가 "답변을 만들지 못했어요" 로 끝내 버린다.
    * 다음 모델에 물어보면 대개 답이 나온다.
    */
-  if (!text.trim()) return { ok: false, reason: 'empty', advance: true };
+  if (!text.trim()) { state.failures++; return { ok: false, reason: 'empty', advance: true }; }
 
   /*
    * ★ usage 는 provider 가 준 값을 그대로만 싣는다 (2026-09-01).
@@ -359,6 +512,10 @@ async function attempt(model, opts, timeoutMs) {
     outputTokens: Number(u.completion_tokens) || 0,
     totalTokens:  Number(u.total_tokens) || ((Number(u.prompt_tokens) || 0) + (Number(u.completion_tokens) || 0))
   } : null;
+
+  if (usage) { state.inTok += usage.inputTokens; state.outTok += usage.outputTokens; }
+  const cost = estimateCostUsd(model, usage);
+  if (cost) state.costUsd += cost;
 
   return { ok: true, text, finish: String(choice.finish_reason || ''), usage };
 }
@@ -401,6 +558,7 @@ async function chat(opts) {
   const now0 = Date.now();
   const hit = cacheGet(key, ttl, now0);
   if (hit) {
+    state.cacheHits++;
     return { ok: true, text: hit.text, finish: hit.finish, model: hit.model, reason: 'cache', tried,
       // 캐시 히트는 토큰을 쓰지 않는다. usage 는 null 이고 cached 로 구분한다.
       cached: true, usage: null, costUsd: 0, latencyMs: Date.now() - now0 };
@@ -445,13 +603,42 @@ function _reset() {
   state.paidBlockedUntil = 0;
   state.dead.clear();
   state.cache.clear();
+  state.calls = 0; state.freeCalls = 0; state.paidCalls = 0; state.paidBlocked = 0;
+  state.failures = 0; state.cacheHits = 0; state.totalMs = 0;
+  state.inTok = 0; state.outTok = 0; state.costUsd = 0;
+}
+
+/**
+ * AI Cost Guard — 이 인스턴스가 지금까지 무엇을 했는가.
+ *
+ * ★ zeroCost 가 false 면 유료 호출이 실제로 나갔다는 뜻이다. 그 자체가 경보다.
+ * ★ 서버리스라 인스턴스마다 따로 센다. 절대량이 아니라 "유료가 0인가" 를 본다.
+ */
+function stats() {
+  return {
+    zeroCost: state.paidCalls === 0,
+    allowPaid: allowPaid(),
+    calls: state.calls,
+    freeCalls: state.freeCalls,
+    paidCalls: state.paidCalls,
+    paidBlocked: state.paidBlocked,
+    failures: state.failures,
+    cacheHits: state.cacheHits,
+    avgLatencyMs: state.calls ? Math.round(state.totalMs / state.calls) : 0,
+    inputTokens: state.inTok,
+    outputTokens: state.outTok,
+    // 무료 모델은 단가가 0이라 이 값은 정의상 0이어야 한다.
+    estimatedCostUsd: Math.round(state.costUsd * 1e6) / 1e6,
+    answerChain: chainFor('answer'),
+    classifyChain: chainFor('classify')
+  };
 }
 
 module.exports = {
-  chat, chainFor, isFree,
+  chat, chainFor, isFree, allowPaid, stats,
   DEFAULT_ANSWER_MODEL, DEFAULT_CLASSIFY_MODEL,
   FREE_ANSWER_CHAIN, FREE_CLASSIFY_CHAIN,
   MODEL_PRICES_USD_PER_1M, estimateCostUsd, isFreeModel,
   MAX_CHAIN, MIN_ATTEMPT_MS, PAID_BLOCK_MS, DEAD_MODEL_MS,
-  _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset }
+  _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset, attempt }
 };

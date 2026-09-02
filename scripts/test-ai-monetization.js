@@ -352,7 +352,8 @@ function setSub(email, patch) {
    * (아래에서 이 파일에 날 fetch 가 남아 있지 않은지도 함께 확인한다 —
    *  라우터를 우회하는 호출이 생기면 사슬·타임아웃·예산이 전부 무력해진다)
    */
-  const llmEntries = ['classifyIntent(', 'llm.chat(']
+  // resolveIntent 는 2026-09-02 부터 분류의 진입점이다 (deterministic-first 게이트).
+  const llmEntries = ['resolveIntent(', 'classifyIntent(', 'llm.chat(']
     .map(s => handler.indexOf(s))
     .filter(i => i > -1);
   const firstLlmAt = Math.min.apply(null, llmEntries);

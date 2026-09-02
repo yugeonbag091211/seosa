@@ -81,32 +81,61 @@ Vercel > Settings > Environment Variables
 | `OPENROUTER_API_KEY` | 필수 | AI Concierge 가 500 으로 거절 |
 | `OPENROUTER_MODELS` | 선택 | 아래 「AI 모델 사슬」 참고 |
 | `OPENROUTER_CLASSIFY_MODELS` | 선택 | 〃 |
-| `AI_CACHE_TTL_MS` | 선택 | 기본 0(꺼짐). 켜면 같은 프롬프트를 그 시간 동안 재사용 |
+| `AI_CACHE_TTL_MS` | 선택 | 기본 5분(켜짐). `0` 이면 끈다 |
+| `OPENROUTER_ALLOW_PAID` | **설정하지 마라** | `1` 이면 유료 모델이 열린다. 비워 두면 비용 0원 |
 
-### AI 모델 사슬 (`api/_llm.js`)
+### AI 모델 사슬 (`api/_llm.js`) — 2026-09-02 ZERO-COST 정책
 
 AI 답변은 **모델 하나에 매달리지 않는다.** 실패하면 다음 모델로 넘어가고,
 사슬이 전부 실패해도 SEOSA 가 계산한 판정·근거는 그대로 나간다
 (`api/_concierge.js`).
 
 ```
-1순위 (유료·품질)  →  무료 모델들  →  SEOSA 결정론 답변
+무료 모델 1 → 무료 모델 2 → 무료 모델 3 → SEOSA 결정론 답변
 ```
 
-- **아무것도 설정하지 않으면**: `anthropic/claude-sonnet-5` 로 시작해서
-  실패하면 `:free` 모델로 내려간다. **크레딧 잔액이 0이어도 AI 가 답한다.**
-  잔액을 채우면 최대 10분 안에 스스로 1순위로 되돌아간다 — 재배포 불필요.
-- **비용을 0원으로 고정하고 싶으면**: `OPENROUTER_MODELS` 에 `:free` 모델만
-  쉼표로 적는다. 그 목록이 사슬 전체가 된다.
+**기본값이 무료 전용이다. 아무 환경변수도 설정하지 않으면 AI 비용은 0원이다.**
+
+이전 판에서는 기본 1순위가 `anthropic/claude-sonnet-5`(유료)였다. 그런데
+운영에는 `OPENROUTER_MODELS` 가 없었으므로, 그 기본값은 곧 *로그인 사용자의
+모든 AI 요청이 유료 모델을 먼저 호출한다* 는 뜻이었다. 무료로 배포하는
+서비스에서 그건 사고다. 그래서 기본을 뒤집었다.
+
+- 유료 모델은 `OPENROUTER_ALLOW_PAID=1` 을 **직접 켜야만** 열린다.
+- `OPENROUTER_MODELS` 에 유료 id 를 적어도 걸러진다 (오타로 과금되지 않는다).
+- 무료가 전부 실패해도 유료로 넘어가지 않는다. 결정론 답변으로 떨어진다.
+- `node scripts/test-zero-cost.js` 가 이 성질들을 매번 검사한다 (`npm test` 포함).
+
+현재 사슬:
 
 ```
-OPENROUTER_MODELS=deepseek/deepseek-chat-v3-0324:free,meta-llama/llama-3.3-70b-instruct:free
+answer   : minimax/minimax-m3:free → nvidia/nemotron-3.5-lightning:free
+           → nvidia/nemotron-3-ultra-550b-a55b:free
+classify : minimax/minimax-m3:free → nvidia/nemotron-3-super-120b-a12b:free
+           → nvidia/nemotron-3.5-lightning:free
 ```
+
+순서는 추측이 아니라 실측이다. `npm run bench:models` 로 다시 잴 수 있다
+(네트워크를 쓰므로 `npm test` 에는 들어 있지 않다). 사슬을 바꾸기 전에
+이걸 돌리고 결과를 `api/_llm.js` 주석에 옮겨 적는다.
 
 > ⚠️ 무료 모델 id 는 OpenRouter 사정으로 사라지기도 한다. 없는 id 는 404 로
 > 돌아오고 라우터가 30분간 건너뛴 뒤 다음 모델로 넘어가므로 서비스는 멈추지
-> 않는다. 그래도 사슬이 전부 죽으면 결정론 답변만 나가므로, 배포 후
-> 로그에서 `[ai:obs] … "model":"…"` 를 한 번 확인하는 편이 좋다.
+> 않는다. `npm run verify:models` 로 사슬의 id 가 살아 있는지 확인할 수 있다.
+
+### ⚠️ 사람이 해야 하는 일 — MiniMax 라이선스 통지
+
+답변 1순위인 `minimax/minimax-m3:free` 는 MiniMax Community License 다.
+상업 서비스에서 쓰는 것은 허용되지만 조건이 둘 붙는다.
+
+1. **"Built with MiniMax M3" 표기** — 이미 넣었다 (`public/index.html` 푸터).
+2. **api@minimax.io 로 1회 통지** — 제목 `M3 licensing — notice`.
+   연매출 2천만 달러 미만이면 통지만 하면 되고 승인은 필요 없다.
+   **아직 보내지 않았다. 사람이 보내야 한다.**
+
+통지를 보내고 싶지 않다면 `api/_llm.js` 의 `FREE_ANSWER_CHAIN` 1순위를
+`nvidia/nemotron-3.5-lightning:free` 로 바꾸면 된다 (OpenMDW-1.1, 조건 없음).
+답변 품질은 떨어진다 — 분류 정확도 12/12 대 9/12.
 
 ### 토스페이먼츠 키에 대하여
 

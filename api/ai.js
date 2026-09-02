@@ -870,8 +870,62 @@ function heuristicIntent(q, hist, view) {
     return r;
   } catch (e) {
     console.warn(`[ai] 정규식 분류 실패(추천으로 간주): ${e.message}`);
-    return { intent: 'C', query: '', source: 'heuristic' };
+    return { intent: 'C', query: '', source: 'heuristic', confidence: 'low' };
   }
+}
+
+/*
+ * ══════════════════════════════════════════════════════════════════
+ *  의도 판정 — deterministic-first (2026-09-02 zero-cost 감사)
+ *
+ *  ── 무엇이 문제였나 ──────────────────────────────────────────
+ *
+ *  요청 하나에 LLM 을 2~3번 불렀다 (오프라인 실측):
+ *      히스토리 없음  분류(32t) + 답변(900t)            = 2회
+ *      히스토리 있음  분류(32t) + 검색어해석(120t) + 답변 = 3회
+ *
+ *  그런데 "20만원 이하 무선 이어폰 추천해줘" 같은 말은 정규식으로 충분히
+ *  가려낸다. 분명한 질문에 LLM 을 부르는 것은 지연과 실패 확률만 늘린다
+ *  (무료 모델은 429·빈 응답이 드물지 않다).
+ *
+ *  ── 이제 ─────────────────────────────────────────────────────
+ *
+ *      1) 정규식 분류 (api/_intent.js) — 비용 0, 지연 0
+ *      2) 확신이 높으면 그대로 쓴다      → 요청당 LLM 1회 (답변만)
+ *      3) 확신이 낮을 때만 LLM 분류      → 기존 경로 그대로
+ *
+ *  ★ 문맥 오염 방지가 유지된다. 정규식 분류는 **이번 메시지만** 본다 —
+ *    기존 1차 분류기가 히스토리 없이 도는 것과 같은 성질이다. 앞 대화가
+ *    필요한 말은 확신이 낮게 나와 LLM 으로 넘어간다.
+ *
+ *  ★ LLM 분류를 없애지 않는다. 애매한 말·되물음·화제 전환은 여전히 LLM 이
+ *    낫다. 여기서 줄이는 것은 "분명한 말에 굳이 묻는" 호출뿐이다.
+ * ══════════════════════════════════════════════════════════════════
+ */
+async function resolveIntent(q, hist, view, budget, guest) {
+  const det = heuristicIntent(q, hist, view);
+
+  // 게스트는 LLM 을 쓰지 않는다 — 확신과 무관하게 정규식 결과로 답한다.
+  if (guest) return det;
+
+  if (det.confidence === 'high') {
+    console.log(`[ai] 정규식 분류로 확정 — LLM 분류 생략 (intent=${det.intent})`);
+    return det;
+  }
+
+  const viaLlm = await classifyIntent(q, hist, budget);
+  /*
+   * LLM 분류가 실패하면(null) 정규식 결과로 이어 간다.
+   *
+   * 예전에는 null 이 곧 "전체 맥락 프롬프트로 답한다(검색 없음)" 였다. 그런데
+   * 확신이 낮아도 정규식은 대개 갈래는 맞힌다 — 검색을 아예 포기하는 것보다
+   * 낫다. 다만 정규식이 '?' 수준으로도 확신이 없으면(B 로 떨어진 경우 등)
+   * 기존처럼 null 을 그대로 돌려준다.
+   */
+  if (viaLlm) return viaLlm;
+  if (det.intent === 'A' || det.intent === 'B') return null;
+  console.log('[ai] LLM 분류 실패 — 정규식 결과로 진행');
+  return det;
 }
 
 async function classifyIntent(q, hist, budget) {
@@ -1250,6 +1304,39 @@ async function attachHistory(items) {
  *   - 상품명에 든 P숫자("레노버 탭 P11 프로")는 뒤에 공백이 아니라 숫자가
  *     이어지므로 걸리지 않는다. 실제 상품명을 훼손하지 않는 것이 우선이다.
  */
+/*
+ * 조사가 붙은 꼬리표: "P1은 상품명만으로…" · "P2를 권합니다".
+ *
+ * ── 왜 지우지 않고 이름으로 바꾸는가 (2026-09-02 무료 모델 실측) ──
+ *
+ * 아래 REF_IN_TEXT 는 "꼬리표 + 공백 + 이름" 꼴만 지운다. 조사가 바로 붙은
+ * 것은 일부러 건드리지 않았는데(지우면 "은" 만 남아 한국어가 깨진다),
+ * 무료 모델 벤치마크에서 실제로 이렇게 나왔다.
+ *
+ *   "다만 **P1은 상품명만으로 모든 사양을 확인하지 못해**…"  (minimax-m3:free)
+ *
+ * 사용자 화면에 P1 이라는 표시는 없다. 지울 수도 없고 둘 수도 없으므로,
+ * 가리키는 상품의 이름으로 되돌린다 — api/_concierge.derefs 와 같은 처리다.
+ *
+ * ★ 상품명에 든 P숫자("레노버 탭 P11 프로")는 걸리지 않는다. P1 뒤에 조사가
+ *   오고 그 뒤가 공백·문장부호여야 하므로 "P11" 은 매칭되지 않는다.
+ */
+const REF_WITH_JOSA = /\[?(P[1-8])\]?(은|는|이|가|을|를|와|과|의|도|만|에서|에|보다)(?=[\s,.!?)\]"'」』]|$)/g;
+
+/**
+ * 꼬리표를 상품명으로 되돌린다. 가리키는 상품을 못 찾으면 그대로 둔다
+ * (지우면 조사만 남아 문장이 깨진다 — 뜻 모를 기호보다 나쁘다).
+ */
+function derefRefs(text, items) {
+  const list = Array.isArray(items) ? items : [];
+  return String(text == null ? '' : text).replace(REF_WITH_JOSA, (m, ref, josa) => {
+    const it = list.find(x => x && x.ref === ref);
+    const title = it && String(it.title || '').replace(/\s+/g, ' ').trim();
+    if (!title) return m;
+    return (title.length > 24 ? `「${title.slice(0, 24)}…」` : `「${title}」`) + josa;
+  });
+}
+
 const REF_IN_TEXT = /(^|[\s*_(])\[?P[1-8]\]?\s+(?=\S)/g;
 
 /*
@@ -2519,8 +2606,8 @@ module.exports = async function handler(req, res) {
     /*
      * 1단계 — 의도 분류. 상품 데이터도 화면 상태도 보지 않고 말만 본다.
      */
-    // 게스트는 LLM 분류기를 쓰지 않는다 — 정규식 분류(api/_intent.js)로 간다.
-    const cls = guest ? heuristicIntent(q, hist, view) : await classifyIntent(q, hist, budget);
+    // deterministic-first. 확신이 높으면 LLM 분류를 건너뛴다 (resolveIntent 주석).
+    const cls = await resolveIntent(q, hist, view, budget, guest);
     const intent = cls ? cls.intent : null;
 
     /*
@@ -3227,7 +3314,8 @@ module.exports = async function handler(req, res) {
     }
     // 사용자에게 보일 글에서 내부 꼬리표와 지어낸 URL 을 걷어낸다
     // (stripRefs / stripUrls 주석 참고).
-    let text = stripUrls(stripRefs(truncated ? trimToSentence(raw) : raw));
+    // derefRefs 가 먼저다 — 조사 붙은 꼬리표를 이름으로 바꾼 뒤 남은 것을 stripRefs 가 지운다.
+    let text = stripUrls(stripRefs(derefRefs(truncated ? trimToSentence(raw) : raw, items)));
 
     /*
      * 빈 응답.
@@ -3504,7 +3592,7 @@ module.exports = async function handler(req, res) {
  * OpenRouter 를 한 번도 부르지 않고 돌 수 있다.
  */
 module.exports._internal = {
-  cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls,
+  cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls, derefRefs,
   needsShopContext, safeText, num, won, safeDate, normItem, describe,
   trimToSentence, collectKnownWon, unverifiedWon, unverifiedSpecs, unsupportedSuperlatives,
   unsupportedComparisons, mentionsAnyCard, attachSpecs, collectWantedFeatures,

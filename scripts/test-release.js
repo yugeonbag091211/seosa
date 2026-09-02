@@ -204,6 +204,14 @@ const ext = {
 function resetExt() {
   ext.charges = []; ext.tossPayments = {}; ext.failCharge = false; ext.timeoutCharge = false;
   ext.aiMode = 'ok'; ext.aiCalls = 0;
+  /*
+   * LLM 응답 캐시를 비운다 (2026-09-02 캐시 기본값 ON 이후 필수).
+   *
+   * 아래 시나리오들은 업스트림을 일부러 402·429·500·timeout 으로 만들고
+   * 사용자에게 오류가 제대로 전달되는지 본다. 캐시가 남아 있으면 앞 시나리오의
+   * 성공 응답이 그대로 나와서, 실패를 검사하는 시나리오가 통째로 무력해진다.
+   */
+  try { require('../api/_llm')._internal._reset(); } catch (e) { /* 없으면 그만 */ }
 }
 
 global.fetch = async function (url, opts = {}) {

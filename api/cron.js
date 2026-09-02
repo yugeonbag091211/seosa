@@ -309,6 +309,20 @@ async function diagnose(req, res) {
       if (toss.isConfigured() && toss.isTestKey()) problems.push('테스트 키입니다 — 실제 정산이 되지 않습니다');
       return { client: s.client, secret: s.secret, 문제: problems.length ? problems : ['없음'] };
     })(),
+    /*
+     * AI Cost Guard (2026-09-02). "유료 비용 0원" 을 주장하려면 볼 수 있어야 한다.
+     * zeroCost:false 이면 이 인스턴스에서 유료 호출이 실제로 나간 것이다.
+     */
+    ai: (() => {
+      try {
+        const s = require('./_llm').stats();
+        return Object.assign({}, s, {
+          문제: s.zeroCost
+            ? (s.allowPaid ? ['OPENROUTER_ALLOW_PAID=1 — 유료 호출이 허용된 상태입니다'] : ['없음'])
+            : [`★ 유료 모델 호출 ${s.paidCalls}회 — zero-cost 정책이 깨졌습니다`]
+        });
+      } catch (e) { return { error: e.message }; }
+    })(),
     // 이 인스턴스 기준
     instance: localStats(),
     // 모든 인스턴스 + GitHub Actions 합계 (coupang_api_calls 테이블)

@@ -63,6 +63,8 @@ const STRIP_WORDS = [
   '살까', '사도', '사고', '싶어', '싶은데', '싶다', '사려고', '구매', '살', '사는', '사면',
   '괜찮아', '괜찮은', '괜찮을까', '어때', '어떤', '어떤게', '뭐가', '뭐', '뭘', '좋아', '좋을까',
   '좋은', '제일', '가장', '최고', '괜찮', '되나', '될까', '돼', '지금', '요즘', '중에', '중에서',
+  // 조건을 덧붙이는 말. 남으면 "통화 품질 중요해" 같은 문장이 검색어가 된다.
+  '중요해', '중요한', '중요하고', '중요', '필요하고', '위주로', '위주',
   '하나', '하나만', '것', '거', '걸', '게', '좀', '제발', '빨리', '진짜', '정말', '그냥',
   // 조건 (금액은 정규식으로 따로 지운다)
   '이하', '이하로', '이하의', '이내', '미만', '까지', '이상', '넘는', '정도', '쯤', '안팎', '내외',
@@ -97,6 +99,40 @@ const JOSA_RE = /(으로|로는|로|은|는|이|가|을|를|도|만|의|에|에�
 
 const MAX_QUERY_LEN = 40;
 const MAX_QUERY_TOKENS = 5;
+
+/*
+ * 용도 — "무엇에 쓰려는가".
+ *
+ * ── 왜 정규식으로 뽑는가 (2026-09-02) ───────────────────────────
+ *
+ * 예전에는 용도·브랜드·기피 조건을 LLM 이 뽑았다(api/ai.js resolveQuery).
+ * 그런데 그 호출은 요청당 LLM 한 번을 통째로 더 쓴다. 용도는 표현이 몇 가지로
+ * 수렴하는 편이라(러닝·게임·인강·출퇴근…) 흔한 것은 정규식으로 충분하다.
+ *
+ * ★ 여기서 못 잡는 표현은 여전히 LLM 이 잡는다 — 확신이 낮으면 호출부가
+ *   기존 LLM 경로로 넘긴다. 이 표는 "흔한 것을 공짜로 처리하는" 목록이지
+ *   "이것이 전부"라는 목록이 아니다.
+ */
+const USECASE_RE = [
+  ['러닝',      /러닝|달리기|조깅|마라톤|뛸\s*때|뛰면서/],
+  ['운동',      /운동|헬스|짐에서|피트니스|웨이트|등산|자전거\s*탈/],
+  ['게임',      /게임|게이밍|겜용|겜할|롤\s*할|배그|피시방/],
+  ['영상 편집', /영상\s*편집|편집용|프리미어|다빈치|렌더링|포토샵/],
+  ['인강·공부', /인강|강의|공부|학습|과제|논문|필기|수업/],
+  ['출퇴근',    /출퇴근|통근|지하철|버스에서|등하교/],
+  ['여행',      /여행|캠핑|백패킹|비행기|출장/],
+  ['업무',      /업무|사무|회사에서|재택|미팅|화상\s*회의/],
+  ['수면',      /잘\s*때|수면|잠잘|잠들/]
+];
+
+/** 발화에서 용도 한 가지. 없으면 빈 문자열. */
+function extractUseCase(text) {
+  const s = String(text == null ? '' : text);
+  for (const [label, re] of USECASE_RE) {
+    if (re.test(s)) return label;
+  }
+  return '';
+}
 
 /**
  * 문장에서 상품을 가리키는 말만 남긴다.
@@ -140,32 +176,66 @@ function extractQuery(text) {
   return out.slice(0, MAX_QUERY_TOKENS).join(' ').slice(0, MAX_QUERY_LEN).trim();
 }
 
+/*
+ * 앞 대화를 봐야만 뜻이 통하는 말.
+ *
+ * "그거 얼마야" · "무게는?" · "더 싼 거" 는 이 메시지만으로는 대상을 알 수 없다.
+ * 이런 말에는 확신을 높음으로 주지 않는다 — 검색어를 문맥에서 풀어야 하고,
+ * 그 일은 LLM 이 우리보다 낫다 (api/ai.js resolveQuery).
+ */
+const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|그중|그 중|아까|방금|위에|말한|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|상품))/;
+
 /**
  * 의도 판정.
  *
  * @param {string} text 사용자 발화
  * @param {Array}  [hist] 앞 대화 [{role, text}] — 검색어가 비면 앞 사용자 발화에서 이어받는다
- * @returns {{intent:'A'|'B'|'C'|'D'|'E', query:string, source:'heuristic'}}
+ * @returns {{intent:'A'|'B'|'C'|'D'|'E', query:string, source:'heuristic', confidence:'high'|'low'}}
+ *
+ * ── confidence 의 뜻 (2026-09-02) ────────────────────────────────
+ *
+ *   high — 이 메시지 하나만으로 무엇을 요구하는지가 분명하다. 호출부는 LLM
+ *          분류기를 건너뛴다 (요청당 LLM 호출이 그만큼 줄어든다).
+ *   low  — 애매하거나 문맥이 필요하다. 호출부가 LLM 분류로 넘긴다.
+ *
+ * ★ 애매하면 반드시 low 다. 확신을 후하게 주면 잘못된 의도로 답하게 되고,
+ *   그건 LLM 호출 한 번 아끼는 것보다 훨씬 비싸다.
  */
 function classify(text, hist) {
   const s = String(text == null ? '' : text).trim();
-  if (!s) return { intent: 'A', query: '', source: 'heuristic' };
+  if (!s) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
 
-  if (GREETING_RE.test(s)) return { intent: 'A', query: '', source: 'heuristic' };
+  if (GREETING_RE.test(s)) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
 
   const cons = parseConstraints(s);
   const hasBudget = !!(cons.budgetMax || cons.budgetMin);
   let query = extractQuery(s);
 
   let intent;
-  if (TIMING_RE.test(s)) intent = 'E';
-  else if (PRICE_RE.test(s)) intent = 'D';
+  /*
+   * explicit — 문장에 "무엇을 해 달라"는 요구 표현이 실제로 있었는가.
+   *
+   * ★ 조건만 있는 말(예산·취향·선물)은 explicit 이 아니다.
+   *
+   *   실측으로 잡은 사고: "통화 품질도 중요해" 는 PRIORITY_RE 의 '품질' 에
+   *   걸려 C 가 되고, extractQuery 가 "통화 품질 중요해" 를 검색어로 만들었다.
+   *   이건 후속 조건이지 새 품목이 아니다. 그대로 확신 높음으로 처리하면
+   *   쿠팡에 "통화 품질 중요해" 를 검색하게 된다.
+   *
+   *   조건만 던지는 말은 거의 언제나 앞 대화를 이어받는 발화다. 그 해석은
+   *   앞뒤를 읽는 LLM 쪽이 낫다 — 확신을 낮춰 그쪽으로 넘긴다.
+   */
+  let explicit = false;
+  if (TIMING_RE.test(s)) { intent = 'E'; explicit = true; }
+  else if (PRICE_RE.test(s)) { intent = 'D'; explicit = true; }
   // "어떻게 골라야 해" 는 고르는 방법을 묻는 지식 질문이다 — 추천 요청보다 먼저 본다
   // (api/ai.js CLASSIFY_SYSTEM: "어떻게 고르나"는 B, "골라 줘"는 C).
-  else if (HOWTO_RE.test(s)) intent = 'B';
-  else if (RECOMMEND_RE.test(s) || hasBudget || cons.gift || cons.priority) intent = 'C';
-  else if (KNOWLEDGE_RE.test(s)) intent = 'B';
-  else if (query && s.length <= 30) intent = 'C';   // "무선 이어폰" 처럼 품목만 던진 짧은 말
+  else if (HOWTO_RE.test(s)) { intent = 'B'; explicit = true; }
+  else if (RECOMMEND_RE.test(s)) { intent = 'C'; explicit = true; }
+  // 조건만 있는 말 — 갈래는 C 로 보되 확신은 주지 않는다 (위 주석).
+  else if (hasBudget || cons.gift || cons.priority) intent = 'C';
+  else if (KNOWLEDGE_RE.test(s)) { intent = 'B'; explicit = true; }
+  else if (query && s.length <= 30) intent = 'C';   // 품목만 던진 짧은 말
   else intent = 'B';
 
   /*
@@ -173,6 +243,7 @@ function classify(text, hist) {
    *   "무선 이어폰 추천해줘" → "10만원 이하로" ← 여기서 물건 이름이 없다.
    * 이어받을 것이 없으면 빈 검색어로 둔다(호출부가 품목을 되묻는다).
    */
+  const ownQuery = !!query;   // 이 메시지 자체에서 뽑은 검색어인가
   if (!query && intent !== 'A' && intent !== 'B' && Array.isArray(hist)) {
     for (let i = hist.length - 1; i >= 0; i--) {
       const h = hist[i];
@@ -183,7 +254,34 @@ function classify(text, hist) {
   }
 
   if (intent === 'A' || intent === 'B') query = '';
-  return { intent, query, source: 'heuristic' };
+
+  /*
+   * 확신도.
+   *
+   *   높음 = 요구 표현이 분명하고(explicit), 문맥 의존어가 없고,
+   *          상품이 필요한 의도라면 이 메시지 자체에서 검색어가 나왔다.
+   *
+   * 검색어를 앞 대화에서 이어받은 경우는 낮음이다. 이어받기 규칙이 맞을
+   * 때도 많지만, 화제가 바뀐 대화에서는 엉뚱한 물건을 검색하게 된다
+   * (실측 사고: 이어폰 대화 중 "용도는 러닝" → 러닝화). 그 판단은
+   * 앞뒤를 읽는 LLM 쪽이 낫다.
+   */
+  let confidence = 'low';
+  if (explicit && !CONTEXT_DEPENDENT_RE.test(s)) {
+    if (intent === 'A') confidence = 'high';
+    else if (intent === 'B') confidence = 'high';
+    else if (ownQuery) confidence = 'high';
+  }
+
+  return {
+    intent, query, source: 'heuristic', confidence,
+    /*
+     * LLM 이 뽑던 조건 중 정규식으로 확실한 것만 채운다 (extractUseCase 주석).
+     * brand·avoid 는 표현이 너무 열려 있어 만들지 않는다 — 지어내느니 비운다.
+     * 형태는 api/ai.js 가 mergeConstraints 에 그대로 넘길 수 있게 맞춘다.
+     */
+    extra: { useCase: extractUseCase(s), brand: '', avoid: '' }
+  };
 }
 
-module.exports = { classify, extractQuery, MAX_QUERY_TOKENS, MAX_QUERY_LEN };
+module.exports = { classify, extractQuery, extractUseCase, MAX_QUERY_TOKENS, MAX_QUERY_LEN };
