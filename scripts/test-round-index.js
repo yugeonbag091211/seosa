@@ -70,6 +70,10 @@ inject('api/_notify.js', { send: () => Promise.resolve({ ok: true }) });
 const { runMallCollection } = require('./collect-all-prices');
 const { generateSecondPassQueries } = require('../api/_query');
 
+/* 운영 DB 에 절대 쓰지 않는 저장 훅 — test-price-mall-collection.js 의 같은 주석 참고. */
+const NO_WRITE = async (obs) => ({ saved: obs.length, recorded: obs.length,
+  recordedKeys: [...new Set(obs.map(o => o.productId + "|" + o.mall))], rejected: 0, suspect: 0, errors: [] });
+
 let pass = 0, fail = 0;
 function check(ok, label, detail) {
   if (ok) { pass++; console.log(`  PASS  ${label}`); }
@@ -89,7 +93,7 @@ async function runAndCollectQueries(rows, opts) {
   const o = opts || {};
   const firstKw = new Set(rows.map(p => p.keyword).filter(Boolean));
   const seen = [];
-  await runMallCollection({
+  await runMallCollection({ recordPricesFn: NO_WRITE,
     mallName: '쿠팡', rows,
     savedState: o.savedState || null,
     deadlineTs: FAR(),

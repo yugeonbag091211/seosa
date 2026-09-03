@@ -892,9 +892,20 @@ function categorizeFailure(reason) {
  *              오늘 이미 가격을 확보한 상품 키. 기본값은 price_history 를 읽는
  *              collectedTodayKeys 다. 테스트가 운영 DB 없이 이어받기 실행을
  *              재현할 수 있도록 주입 가능하게 열어 둔다(수집 동작은 바뀌지 않는다).
+ *   recordPricesFn  (observations, opts) => Promise<{saved, recorded, recordedKeys, ...}>
+ *              저장 경로. 기본값은 api/_shop.js 의 recordPrices 다.
+ *
+ *              ★ 왜 주입 가능해야 하는가 (2026-09-03).
+ *                이 함수를 테스트가 직접 부를 때, 픽스처 상품이 fetchAllFn 응답에
+ *                섞이면 그대로 **운영 price_history / products 에 기록된다.**
+ *                실제로 그 사고가 났다 — 픽스처 product_id P1·P2·P3·X1 4행이
+ *                운영에 들어갔고(2026-09-03), 발견 즉시 지웠다.
+ *                테스트는 반드시 이 인자로 저장을 가로채야 한다.
+ *                (scripts/verify-collection-no-write.js 가 잔여 픽스처를 검사한다)
  */
 async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadlineTs,
-                                   collectedTodayFn = collectedTodayKeys }) {
+                                   collectedTodayFn = collectedTodayKeys,
+                                   recordPricesFn = recordPrices }) {
   const withKeyword = rows.filter(p => p.keyword);
   const noKeyword   = rows.filter(p => !p.keyword);
 
@@ -957,7 +968,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       collectorAttempted: collectorAttemptedIds,
       todayPriceProducts, uncoveredProducts: collectible.length - todayPriceProducts,
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
-      passStats: [],
+      passStats: [], crossRecovered: 0,
       facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
       notFoundCount: 0,
       secondPassCalls: 0, secondPassRecovered: 0, secondPassGroups: 0, secondPassRemaining: 0,
@@ -1118,6 +1129,60 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    */
   const markCovered = (pid, mall) => uncovered.delete(`${pid}|${mall}`);
 
+  /* ── 응답 전체 대조 (교차 매칭, 2026-09-03) ────────────────────
+   *
+   * ★ 무엇이 잘못돼 있었나.
+   *
+   *   검색 응답을 **그 검색어를 만든 상품하고만** 대조하고 있었다.
+   *     1차 processGroup  → byId 는 그 검색어 그룹의 상품만
+   *     회수 callAndMatch → byId 는 그 문구를 공유한 상품만
+   *   그런데 쿠팡 응답 한 건에는 우리 카탈로그의 **다른** 미수집 상품이 함께
+   *   들어오는 일이 흔하다. 같은 브랜드·같은 카테고리를 훑는 검색이니 당연하다.
+   *   그것들을 통째로 버리고 있었다.
+   *
+   *   실측(2026-09-03, 운영 캐시 2,228종을 미수집 151개와 대조):
+   *     13개가 "다른 상품의 검색어" 응답 안에 들어 있었다 (총 31회 등장).
+   *   캐시는 검색어당 마지막 응답만 남기므로 이건 하한이다 — 실제 실행에서
+   *   흘러간 응답은 그보다 훨씬 많다.
+   *
+   * ★ 정밀도는 1도 낮아지지 않는다.
+   *
+   *   채택 기준은 여전히 product_id 완전 일치 하나뿐이다. 제목 유사도도,
+   *   가격 근사도, 1위 상품 채택도 쓰지 않는다. 대조 대상 집합만 넓어진다 —
+   *   "이 응답에 우리 상품이 들어 있는가" 를 우리 상품 전체에 대해 묻는 것이다.
+   *   vendor_item_id 는 addRow 가 응답 항목에서 그대로 가져오므로 옵션 정체성도 그대로다.
+   */
+  const collectibleById = new Map();
+  collectible.forEach(p => collectibleById.set(String(p.product_id), p));
+
+  /** 이 실행에서 교차 매칭으로 건진 상품 수 (리포트용). */
+  let crossRecovered = 0;
+
+  /**
+   * 응답 항목을 전체 미수집 집합과 대조해서 새로 잡히는 것을 흡수한다.
+   * @param {Array} items      검색 응답 항목
+   * @param {string} foundVia  이 응답을 만든 검색어 (기록용)
+   * @param {Set} handled      1차 대조에서 이미 처리한 product_id (중복 계산 방지)
+   * @returns {number} 새로 확보한 상품 수
+   */
+  function absorbCrossMatches(items, foundVia, handled) {
+    let n = 0;
+    (items || []).forEach(item => {
+      const pid = String(item.productId);
+      if (handled && handled.has(pid)) return;         // 그 검색어의 자기 몫은 이미 셌다
+      const p = collectibleById.get(pid);
+      if (!p) return;                                   // 우리 상품이 아니다
+      const key = `${p.product_id}|${p.mall}`;
+      if (!uncovered.has(key)) return;                  // 이미 확보했다
+      if (!addRow(p, item, foundVia)) return;           // 가격이 없으면 채택하지 않는다
+      markCovered(p.product_id, p.mall);
+      collectorAttempted.add(key);                      // 호출이 나가 이 상품을 찾아냈다
+      n++;
+    });
+    crossRecovered += n;
+    return n;
+  }
+
   /*
    * ★ 오늘 이미 기록된 상품은 처음부터 '수집됨'으로 둔다 (2026-08-31).
    *
@@ -1215,7 +1280,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     let recorded = 0, saved = 0, rejected = 0, suspect = 0;
     const errors = [];
     for (let i = 0; i < savedRows.length; i += UPSERT_CHUNK) {
-      const r = await recordPrices(savedRows.slice(i, i + UPSERT_CHUNK), { label: `collect:${mallName}`, source: 'collect' });
+      const r = await recordPricesFn(savedRows.slice(i, i + UPSERT_CHUNK), { label: `collect:${mallName}`, source: 'collect' });
       recorded += r.recorded; saved += r.saved; rejected += r.rejected; suspect += r.suspect;
       /*
        * ★ 여기가 "가격을 확보했다" 의 유일한 판정 지점이다.
@@ -1277,14 +1342,20 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     });
 
     let hit = 0;
+    // 1차 대조에서 **실제로 채택한** 것만 담는다. 응답에 있었다는 이유로 담으면
+    // 교차 매칭이 그 상품을 건너뛴다(자기 그룹 밖 상품이 통째로 버려진다).
+    const handled = new Set();
     r.items.forEach(item => {
       const target = byId.get(item.productId);
       if (target && addRow(target, item, kw)) {
+        handled.add(String(item.productId));
         markCovered(target.product_id, target.mall);
         hit++;
         if (!target.keyword) recovered++;
       }
     });
+    // 이 응답에 우리 카탈로그의 다른 미수집 상품이 들어 있으면 함께 가져간다.
+    hit += absorbCrossMatches(r.items, kw, handled);
 
     failedKeywords.delete(kw);
 
@@ -1469,13 +1540,18 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         collectorAttempted.add(`${p.product_id}|${p.mall}`);
       });
       let hit = 0;
+      // 1차 대조에서 실제로 채택한 것만 (위 processGroup 의 같은 주석 참고).
+      const handled = new Set();
       (r.items || []).forEach(item => {
         const target = byId.get(item.productId);        // ← 완전 일치 게이트 (불변)
         if (target && addRow(target, item, query)) {
+          handled.add(String(item.productId));
           markCovered(target.product_id, target.mall);
           hit++;
         }
       });
+      // 같은 응답 안의 다른 미수집 상품도 가져간다 (absorbCrossMatches 주석 참고).
+      hit += absorbCrossMatches(r.items || [], query, handled);
       notePass(pass, { ok: true, hit });
       if (hit > 0) attemptSuccess++; else noteAttemptNoMatch();
       secondPassTried.push(query);
@@ -1789,6 +1865,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 순서는 실제 실행 순서(pass1 → facet → r1..r9)로 고정한다.
      */
     passStats: [...passStats.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass)),
+    /* 교차 매칭으로 건진 상품 수 — 응답 전체 대조가 실제로 얼마를 벌었는지. */
+    crossRecovered,
     // 오늘 facet 이 마른 그룹. 다음 실행이 헛되이 두드리지 않게 이어 간다.
     facetDryGroups: facetDryOut,
     // 오늘 누적 시도 목록. 무한히 커지지 않도록 상한을 둔다.

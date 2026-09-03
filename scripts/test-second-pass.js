@@ -87,6 +87,10 @@ inject('api/_notify.js', { send: () => Promise.resolve({ ok: true }) });
 
 const { runMallCollection } = require('./collect-all-prices');
 
+/* 운영 DB 에 절대 쓰지 않는 저장 훅 — test-price-mall-collection.js 의 같은 주석 참고. */
+const NO_WRITE = async (obs) => ({ saved: obs.length, recorded: obs.length,
+  recordedKeys: [...new Set(obs.map(o => o.productId + "|" + o.mall))], rejected: 0, suspect: 0, errors: [] });
+
 let pass = 0, fail = 0;
 function check(ok, label, detail) {
   if (ok) { pass++; console.log(`  PASS  ${label}`); }
@@ -119,11 +123,14 @@ function probeChild(envLines) {
       rpc:()=>Promise.resolve({data:null,error:null})});
     inject('api/_notify.js',{send:()=>Promise.resolve({ok:true})});
     const {runMallCollection}=require(path.join(DIR,'collect-all-prices.js'));
+    /* 자식 프로세스도 저장 경로를 가로챈다 (부모의 NO_WRITE 와 같은 이유). */
+    const NO_WRITE=async(obs)=>({saved:obs.length,recorded:obs.length,
+      recordedKeys:[...new Set(obs.map(o=>o.productId+'|'+o.mall))],rejected:0,suspect:0,errors:[]});
     const rows=[];
     for(let i=0;i<5;i++)rows.push({product_id:'Q'+i,mall:'쿠팡',
       title:'브랜드'+i+' 아주 구체적인 상품 이름 표기',keyword:'공통'});
     let narrow=0;
-    runMallCollection({mallName:'쿠팡',rows,savedState:null,deadlineTs:Date.now()+600000,
+    runMallCollection({ recordPricesFn: NO_WRITE,mallName:'쿠팡',rows,savedState:null,deadlineTs:Date.now()+600000,
       fetchAllFn:async(kw)=>{ if(kw!=='공통') narrow++; return {ok:true,reason:'',items:[]}; }})
       .then(r=>console.log('__R__'+JSON.stringify({secondCalls:r.secondPassCalls,narrow})));
   `;
@@ -158,7 +165,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -185,7 +192,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -209,7 +216,7 @@ function probeChild(envLines) {
     const fetchAllFn = async () => ({ ok: true, reason: '', items: [] });
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -241,7 +248,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -263,7 +270,7 @@ function probeChild(envLines) {
       : { ok: false, reason: '쿠팡 차단: blocked', items: [] };
 
     saved.price_history = [];
-    const r1 = await runMallCollection({
+    const r1 = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: blockedFetch, savedState: null, deadlineTs: FAR()
     });
     check(r1.uncoveredProducts === 1, '★ 2차가 차단되면 미수집으로 남는다 (강행하지 않는다)', r1.uncoveredProducts);
@@ -276,7 +283,7 @@ function probeChild(envLines) {
       if (kw !== '검색어') narrowCalls++;
       return { ok: true, reason: '', items: [] };
     };
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: countingFetch, savedState: null,
       deadlineTs: Date.now() - 1000
     });
@@ -297,7 +304,7 @@ function probeChild(envLines) {
       if (kw !== '검색어') narrowAfterBlock++;
       return { ok: false, reason: '쿠팡 차단: blocked', items: [] };
     };
-    const rBlocked = await runMallCollection({
+    const rBlocked = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: allBlocked, savedState: null, deadlineTs: FAR()
     });
     check(narrowAfterBlock === 0,
@@ -313,7 +320,7 @@ function probeChild(envLines) {
       if (kw !== '검색어') { narrowAfterOk++; return { ok: true, reason: '', items: [] }; }
       return { ok: true, reason: '', items: [] };
     };
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: okButEmpty, savedState: null, deadlineTs: FAR()
     });
     /*
@@ -504,7 +511,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [item('M1', 1000), item('M2', 2000)] };
     };
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
     check(r.uncoveredProducts === 0, '1차에서 다 잡히면 미수집 0');
@@ -542,7 +549,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };   // 1차 성공 · 결과 없음
     };
     saved.price_history = [];
-    const run1 = await mod1.runMallCollection({
+    const run1 = await mod1.runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: fetch1, savedState: null, deadlineTs: FAR()
     });
 
@@ -570,7 +577,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };
     };
     saved.price_history = [];
-    const run2 = await mod1.runMallCollection({
+    const run2 = await mod1.runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: fetch2, savedState, deadlineTs: FAR()
     });
 
@@ -604,7 +611,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };   // 계속 실패시켜 3라운드를 다 돌린다
     };
     saved.price_history = [];
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -668,7 +675,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -684,7 +691,7 @@ function probeChild(envLines) {
     const small = [];
     for (let i = 0; i < 5; i++) small.push(prod('G' + i, `브랜드${i} 작은그룹 상품 이름`, '작은그룹'));
     const seen2 = [];
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows: small, savedState: null, deadlineTs: FAR(),
       fetchAllFn: async (kw) => {
         seen2.push(kw);
@@ -722,7 +729,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, deadlineTs: FAR(),
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: '',
                     processed: 6, total: 10, status: 'running',
@@ -773,7 +780,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, deadlineTs: FAR(),
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: '',
                     processed: 6, total: 10, status: 'running',
@@ -817,7 +824,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };
     };
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
     const covered = new Set(r.collectorCovered);
@@ -836,7 +843,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: rows.slice(10).map(p => item(p.product_id, 6000)) };
     };
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
     const covered = new Set(r.collectorCovered);
@@ -850,7 +857,7 @@ function probeChild(envLines) {
     const rows = [prod('D1', '중복 확인용 상품 이름', 'kwA')];
     const fetchAllFn = async () => ({ ok: true, reason: '', items: [item('D1', 7000)] });
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn,
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: '',
                     processed: 0, total: 1, status: 'running',
@@ -869,7 +876,7 @@ function probeChild(envLines) {
     for (let i = 0; i < 10; i++) rows.push(prod('I' + i, '유휴 확인 상품 ' + i, 'ikw' + i));
     const priorCovered = rows.slice(0, 7).map(p => p.product_id + '|쿠팡');
     let called = 0;
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows,
       fetchAllFn: async () => { called++; return { ok: true, reason: '', items: [] }; },
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: 'ikw009',

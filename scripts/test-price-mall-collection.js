@@ -37,6 +37,20 @@ const {
   runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow, kstToday
 } = require('./collect-all-prices');
 
+/*
+ * ★ 운영 DB 에 절대 쓰지 않는 저장 훅.
+ *
+ *   runMallCollection 은 기본값으로 api/_shop.js 의 recordPrices 를 부른다.
+ *   테스트 픽스처가 fetchAllFn 응답에 섞이면 그대로 운영 price_history /
+ *   products 에 들어간다 — 2026-09-03 에 실제로 P1·P2·P3·X1 4행이 들어갔고
+ *   발견 즉시 지웠다. 그 뒤로 이 파일의 모든 호출은 이 훅을 넘긴다.
+ */
+const NO_WRITE = async (obs) => ({
+  saved: obs.length, recorded: obs.length,
+  recordedKeys: [...new Set(obs.map(o => o.productId + "|" + o.mall))],
+  rejected: 0, suspect: 0, errors: []
+});
+
 let pass = 0, fail = 0;
 function check(name, cond, detail = '') {
   if (cond) { pass++; console.log(`  [PASS] ${name}`); }
@@ -114,10 +128,10 @@ function makeRows(mall, n, withKeyword = true) {
     const adpickFetch = async () => ({ ok: true, items: [{ productId: 'NO-MATCH', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' }], reason: '' });
 
     const deadline = Date.now() + 5000;
-    const coupangResult = await runMallCollection({
+    const coupangResult = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows: coupangRows, fetchAllFn: coupangFetch, savedState: null, deadlineTs: deadline
     });
-    const adpickResult = await runMallCollection({
+    const adpickResult = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: 'ADPICK', rows: adpickRows, fetchAllFn: adpickFetch, savedState: null, deadlineTs: deadline
     });
 
@@ -152,7 +166,7 @@ function makeRows(mall, n, withKeyword = true) {
        */
       return { ok: true, items: [{ productId: `ADPICK-p${idx}`, lprice: 0, oprice: 0, link: '', image: '', itemId: '', vendorItemId: '' }], reason: '' };
     };
-    const result = await runMallCollection({
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
     eq('대상 상품(targetProducts) = 10', result.targetProducts, 10);
@@ -172,7 +186,7 @@ function makeRows(mall, n, withKeyword = true) {
     const rows = makeRows('쿠팡', 200);
     const fetchStub = async () => { await new Promise(r => setTimeout(r, 5)); return { ok: true, items: [], reason: '' }; };
     const started = Date.now();
-    const result = await runMallCollection({
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: started + 200
     });
     const elapsed = Date.now() - started;
@@ -194,7 +208,7 @@ function makeRows(mall, n, withKeyword = true) {
     };
     let retried = [];
     const fetchStub = async (kw) => { retried.push(kw); return { ok: true, items: [], reason: '' }; };
-    const result = await runMallCollection({
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState, deadlineTs: Date.now() + 5000
     });
     check('★ 커서 이후 남은 그룹이 없어도 재시도 목록만으로 다시 시도한다',
@@ -233,7 +247,7 @@ function makeRows(mall, n, withKeyword = true) {
       if (kw === 'ADPICK-grp1') return { ok: false, items: [], reason: 'ADPICK 차단: HTTP 429' };
       return { ok: true, items: [], reason: '' };     // 호출은 성공, 매칭 0건
     };
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
 
@@ -273,7 +287,7 @@ function makeRows(mall, n, withKeyword = true) {
   {
     const rows = makeRows('쿠팡', 5);
     const fetchStub = async () => { throw new Error('쿠팡 네트워크 오류(시뮬레이션)'); };
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
     const catSum = Object.values(r.failureCategories).reduce((s, v) => s + v, 0);
@@ -315,7 +329,7 @@ function makeRows(mall, n, withKeyword = true) {
       job_date: TODAY, cursor_key: '', processed: 6, total: 10, status: 'running',
       last_result: { failedKeywords: [], secondPassDone: [] }
     };
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState,
       deadlineTs: Date.now() + 5000, collectedTodayFn
     });
@@ -427,10 +441,11 @@ function makeRows(mall, n, withKeyword = true) {
       if (q.indexOf('공통검색어 ') === 0) return { ok: true, reason: '', items: [item('P3')] };
       return { ok: true, reason: '', items: [] };
     };
-    const result = await runMallCollection({
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null,
       deadlineTs: Date.now() + 8000,
-      collectedTodayFn: async () => new Set()
+      collectedTodayFn: async () => new Set(),
+        recordPricesFn: NO_WRITE
     });
     const ps = result.passStats || [];
     const get = (n) => ps.find(s => s.pass === n) || { calls: 0, ok: 0, success: 0, recovered: 0 };
@@ -468,7 +483,7 @@ function makeRows(mall, n, withKeyword = true) {
 
     const run = async (priorDone) => {
       const asked = [];
-      await runMallCollection({
+      await runMallCollection({ recordPricesFn: NO_WRITE,
         mallName: '쿠팡', rows,
         fetchAllFn: async (q) => { asked.push(q); return { ok: true, reason: '', items: [item('NO-MATCH')] }; },
         savedState: {
@@ -476,7 +491,8 @@ function makeRows(mall, n, withKeyword = true) {
           last_result: { failedKeywords: [], collectorCovered: [], collectorAttempted: [], secondPassDone: priorDone }
         },
         deadlineTs: Date.now() + 8000,
-        collectedTodayFn: async () => new Set()
+        collectedTodayFn: async () => new Set(),
+        recordPricesFn: NO_WRITE
       });
       return asked.filter(q => q.indexOf('kw ') === 0);
     };
@@ -500,7 +516,7 @@ function makeRows(mall, n, withKeyword = true) {
     // 어떤 검색으로도 우리 상품이 안 나온다 → facet 은 곧바로 마른다.
     const run = async (prior) => {
       const asked = [];
-      const res = await runMallCollection({
+      const res = await runMallCollection({ recordPricesFn: NO_WRITE,
         mallName: '쿠팡', rows,
         fetchAllFn: async (q) => {
           asked.push(q);
@@ -515,7 +531,8 @@ function makeRows(mall, n, withKeyword = true) {
           }
         },
         deadlineTs: Date.now() + 8000,
-        collectedTodayFn: async () => new Set()
+        collectedTodayFn: async () => new Set(),
+        recordPricesFn: NO_WRITE
       });
       return { res, facets: asked.filter(q => q.indexOf('kw ') === 0) };
     };
@@ -529,6 +546,66 @@ function makeRows(mall, n, withKeyword = true) {
     eq('★★ 2회차는 그 그룹에 facet 호출을 하지 않는다', b.facets.length, 0);
     check('★ 마른 표시는 다음 실행으로도 이어진다',
       (b.res.facetDryGroups || []).indexOf('kw') > -1, JSON.stringify(b.res.facetDryGroups));
+  }
+  console.log('');
+
+  /* ── 12. 교차 매칭 — 응답을 전체 미수집 집합과 대조한다 (2026-09-03) ──
+   *
+   * 검색 응답에는 그 검색어를 만든 상품 말고도 우리 카탈로그의 다른 상품이
+   * 함께 들어온다. 예전에는 그것을 통째로 버렸다.
+   * 채택 기준(product_id 완전 일치)은 그대로여야 한다.
+   */
+  console.log('[12] 교차 매칭 — 다른 검색어의 응답에 들어온 우리 상품도 가져간다');
+  {
+    const rows = [
+      { product_id: 'X1', mall: '쿠팡', title: '알파 제품 하나', keyword: 'kwA', link: '', image: '' },
+      { product_id: 'X2', mall: '쿠팡', title: '베타 제품 둘', keyword: 'kwB', link: '', image: '' }
+    ];
+    const item = (id, price) => ({ productId: id, title: 't' + id, lprice: price, oprice: price, link: '', image: '', itemId: '', vendorItemId: 'V' + id });
+    const asked = [];
+    // kwA 검색이 X1 과 X2 를 함께 돌려준다. kwB 검색은 아무것도 못 준다.
+    const fetchAllFn = async (q) => {
+      asked.push(q);
+      if (q === 'kwA') return { ok: true, reason: '', items: [item('X1', 1000), item('X2', 2000)] };
+      return { ok: true, reason: '', items: [] };
+    };
+    const saved = [];
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE,
+      mallName: '쿠팡', rows, fetchAllFn, savedState: null,
+      deadlineTs: Date.now() + 6000,
+      collectedTodayFn: async () => new Set(),
+      recordPricesFn: async (obs) => {
+        saved.push(...obs);
+        return { saved: obs.length, recorded: obs.length, recordedKeys: [...new Set(obs.map(o => o.productId + '|' + o.mall))], rejected: 0, suspect: 0, errors: [] };
+      }
+    });
+    eq('★★ 두 상품 모두 확보 (X2 는 kwA 응답에서 건졌다)', result.collectorSuccessProducts, 2);
+    eq('★ 교차 매칭 회수 수가 보고된다', result.crossRecovered, 1);
+    const x2 = saved.find(o => o.productId === 'X2');
+    check('★★ 교차로 잡은 상품도 자기 가격을 쓴다 (다른 상품 가격을 붙이지 않는다)',
+      x2 && x2.price === 2000, JSON.stringify(x2));
+    check('★★ 교차로 잡은 상품도 자기 vendorItemId 를 유지한다',
+      x2 && x2.vendorItemId === 'VX2', JSON.stringify(x2 && x2.vendorItemId));
+  }
+  console.log('');
+
+  /* ── 13. 교차 매칭이 남의 상품을 끌어오지 않는다 ─────────────── */
+  console.log('[13] 교차 매칭 — 카탈로그에 없는 product_id 는 절대 채택하지 않는다');
+  {
+    const rows = [{ product_id: 'Y1', mall: '쿠팡', title: '감마 제품', keyword: 'kwY', link: '', image: '' }];
+    const saved = [];
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE,
+      mallName: '쿠팡', rows,
+      fetchAllFn: async () => ({ ok: true, reason: '', items: [
+        { productId: 'STRANGER', title: '남의 상품', lprice: 9999, oprice: 9999, link: '', image: '', itemId: '', vendorItemId: 'VZ' }
+      ] }),
+      savedState: null, deadlineTs: Date.now() + 6000,
+      collectedTodayFn: async () => new Set(),
+      recordPricesFn: async (obs) => { saved.push(...obs); return { saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0, errors: [] }; }
+    });
+    eq('★★ 카탈로그 밖 상품은 저장하지 않는다', saved.length, 0);
+    eq('★ 확보 상품 0', result.collectorSuccessProducts, 0);
+    eq('★ 교차 회수 0', result.crossRecovered, 0);
   }
   console.log('');
 
