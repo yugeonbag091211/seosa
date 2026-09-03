@@ -403,6 +403,93 @@ function makeRows(mall, n, withKeyword = true) {
   }
   console.log('');
 
+  /* ── 9. 패스별 계측 (2026-09-03) ─────────────────────────────
+   *
+   * 어느 검색 전략이 몇 번의 호출로 몇 개를 건졌는지 나눠 세는지 고정한다.
+   * 이 값이 없으면 "회수 패스가 듣는다" 를 숫자로 증명할 수 없다.
+   */
+  console.log('[9] 패스별 계측 — pass1 / facet / rN 이 각각 집계된다');
+  {
+    /*
+     * 그룹 하나에 상품 12개(응답창 10 초과). 1차 검색은 앞 2개만 돌려주고,
+     * facet 검색(검색어에 공백이 더 붙은 것)은 3번째를 돌려준다.
+     * 나머지는 어떤 검색으로도 나오지 않는다 — 라운드가 헛돌아도 계측만 남는다.
+     */
+    const rows = [];
+    for (let i = 1; i <= 12; i++) {
+      rows.push({ product_id: `P${i}`, mall: '쿠팡', title: `브랜드${i} 모델 MD${i}00X 제품`, keyword: '공통검색어', link: '', image: '' });
+    }
+    const item = (id) => ({ productId: id, title: 't', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' });
+    const seen = [];
+    const fetchAllFn = async (q) => {
+      seen.push(q);
+      if (q === '공통검색어') return { ok: true, reason: '', items: [item('P1'), item('P2')] };
+      if (q.indexOf('공통검색어 ') === 0) return { ok: true, reason: '', items: [item('P3')] };
+      return { ok: true, reason: '', items: [] };
+    };
+    const result = await runMallCollection({
+      mallName: '쿠팡', rows, fetchAllFn, savedState: null,
+      deadlineTs: Date.now() + 8000,
+      collectedTodayFn: async () => new Set()
+    });
+    const ps = result.passStats || [];
+    const get = (n) => ps.find(s => s.pass === n) || { calls: 0, ok: 0, success: 0, recovered: 0 };
+
+    check('★ passStats 가 반환된다', ps.length > 0, JSON.stringify(ps));
+    eq('★ pass1 호출 1회', get('pass1').calls, 1);
+    eq('★ pass1 이 상품 2개를 회수', get('pass1').recovered, 2);
+    check('★ facet 패스가 실제로 호출됐다', get('facet').calls > 0, JSON.stringify(get('facet')));
+    eq('★ facet 이 상품 1개를 회수', get('facet').recovered, 1);
+    check('★ 패스 순서는 pass1 → facet → rN', ps[0].pass === 'pass1' && ps[1].pass === 'facet',
+      ps.map(s => s.pass).join(','));
+    check('★ 라운드 패스 이름이 rN 꼴이다',
+      ps.slice(2).every(s => /^r[0-9]+$/.test(s.pass)), ps.map(s => s.pass).join(','));
+    const totalRecovered = ps.reduce((n, s) => n + s.recovered, 0);
+    eq('★ 패스별 회수 합계 = 이번 실행이 잡은 상품 수', totalRecovered, 3);
+    check('★ 패스별 호출 합계 = attemptCalls',
+      ps.reduce((n, s) => n + s.calls, 0) === result.attemptCalls,
+      `${ps.reduce((n, s) => n + s.calls, 0)} vs ${result.attemptCalls}`);
+  }
+  console.log('');
+
+  /* ── 10. facet 깊이 이어파기 (2026-09-03 버그) ────────────────
+   *
+   * 예전에는 facet 을 상한만큼만 만든 뒤 "오늘 이미 부른 것" 을 걸렀다.
+   * 생성이 결정론적이라 두 번째 실행부터는 남는 facet 이 0개가 됐다.
+   * 이제는 깊은 풀에서 안 부른 것을 골라야 한다.
+   */
+  console.log('[10] facet — 앞선 실행이 쓴 facet 을 건너뛰고 다음 토큰으로 이어판다');
+  {
+    const rows = [];
+    for (let i = 1; i <= 14; i++) {
+      rows.push({ product_id: `Q${i}`, mall: '쿠팡', title: `브랜드${i} 제품${i}`, keyword: 'kw', link: '', image: '' });
+    }
+    const item = (id) => ({ productId: id, title: 't', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' });
+
+    const run = async (priorDone) => {
+      const asked = [];
+      await runMallCollection({
+        mallName: '쿠팡', rows,
+        fetchAllFn: async (q) => { asked.push(q); return { ok: true, reason: '', items: [item('NO-MATCH')] }; },
+        savedState: {
+          job_date: TODAY, cursor_key: '', processed: 0, total: 14, status: 'running',
+          last_result: { failedKeywords: [], collectorCovered: [], collectorAttempted: [], secondPassDone: priorDone }
+        },
+        deadlineTs: Date.now() + 8000,
+        collectedTodayFn: async () => new Set()
+      });
+      return asked.filter(q => q.indexOf('kw ') === 0);
+    };
+
+    const first = await run([]);
+    check('★ 1회차에 facet 을 만든다', first.length > 0, JSON.stringify(first));
+    const second = await run(first);          // 1회차가 부른 facet 을 전부 "이미 부름" 으로
+    check('★★ 2회차는 1회차와 다른 facet 을 판다 (예전에는 0개였다)',
+      second.length > 0 && second.every(q => first.indexOf(q) < 0),
+      `1회차 ${JSON.stringify(first)} / 2회차 ${JSON.stringify(second)}`);
+  }
+  console.log('');
+
   console.log(`=== 결과: ${pass}/${pass + fail} PASS ===`);
   process.exit(fail ? 1 : 0);
 })().catch(e => {

@@ -261,8 +261,9 @@ const SECOND_PASS_TOKENS    = Number(process.env.PRICE_SECOND_PASS_TOKENS) || 5;
 /*
  * 상품별 회수 라운드 수 = 상품당 최대 호출 수.
  *
- * api/_query.js 의 MAX_CANDIDATES(5) 와 같은 값이어야 한다. 라운드가 더
+ * api/_query.js 의 MAX_CANDIDATES(9) 와 같은 값이어야 한다. 라운드가 더
  * 적으면 만들어 둔 후보를 못 쓰고, 더 많으면 빈 라운드를 돈다.
+ * (scripts/test-round-index.js 가 두 값이 같은지 소스에서 확인한다)
  *
  * ── 3 → 5 로 올린 근거 (2026-08-31 PHASE 10) ──────────────────
  * 실측(n=14, 8검색어 전수): 1라운드 78.6% → 2 85.7% → 3 92.9% → 이후 제자리.
@@ -277,19 +278,22 @@ const SECOND_PASS_TOKENS    = Number(process.env.PRICE_SECOND_PASS_TOKENS) || 5;
  * ★ "최대 5회"이지 "무조건 5회"가 아니다. 적중한 상품은 uncovered 에서
  *   빠져 다음 라운드 대상에서 제외된다.
  */
-const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 5;
+const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 9;
 
 /*
  * facet 패스 — 큰 그룹을 "검색어 + 구분 토큰"으로 쪼갠다.
  *
  *   FACET_MIN_GROUP    이 수를 넘는 그룹만 대상. 쿠팡 limit 이 10이므로
  *                      10 이하 그룹은 1차 한 번으로 이미 다 덮인다.
- *   FACET_MAX_PER_GROUP 한 그룹에 쓸 facet 수. 실측 한계효용이 6회에서
- *                      0으로 떨어졌다.
+ *   FACET_MAX_PER_GROUP  한 실행에서 한 그룹에 쓸 facet 수.
+ *   FACET_POOL_PER_GROUP 만들어 둘 후보 수. 여기서 "오늘 이미 부른 것"을 뺀 뒤
+ *                      앞에서 MAX 개를 쓴다. 풀이 상한보다 커야 다음 실행이
+ *                      다음 토큰으로 이어서 판다 (facet 패스 안의 2026-09-03 주석).
  *   FACET_DRY_STOP     신규 회수 0이 연속 몇 번이면 그 그룹을 끝낼지.
  */
 const FACET_MIN_GROUP     = Number(process.env.PRICE_FACET_MIN_GROUP) || 10;
-const FACET_MAX_PER_GROUP = Number(process.env.PRICE_FACET_MAX_PER_GROUP) || 6;
+const FACET_MAX_PER_GROUP  = Number(process.env.PRICE_FACET_MAX_PER_GROUP) || 6;
+const FACET_POOL_PER_GROUP = Number(process.env.PRICE_FACET_POOL_PER_GROUP) || 24;
 const FACET_DRY_STOP      = Number(process.env.PRICE_FACET_DRY_STOP) || 2;
 
 /*
@@ -774,6 +778,28 @@ function splitBatches(groups, size = BATCH_PRODUCTS) {
   return batches;
 }
 
+/**
+ * 몰별 패스 성적을 합친다. 두 몰이 같은 패스 이름을 쓰므로 이름으로 더한다.
+ * (몰별 값은 report.malls[] 안에 그대로 남아 있다)
+ */
+function mergePassStats(results) {
+  const by = new Map();
+  (results || []).forEach(r => (r.passStats || []).forEach(s => {
+    const got = by.get(s.pass) || { pass: s.pass, calls: 0, ok: 0, success: 0, recovered: 0 };
+    got.calls += s.calls; got.ok += s.ok; got.success += s.success; got.recovered += s.recovered;
+    by.set(s.pass, got);
+  }));
+  return [...by.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass));
+}
+
+/** 패스 이름의 실행 순서. 리포트·로그가 항상 같은 순서로 나오게 한다. */
+function passOrder(name) {
+  if (name === 'pass1') return 0;
+  if (name === 'facet') return 1;
+  const m = /^r(d+)$/.exec(String(name));
+  return m ? 1 + Number(m[1]) : 99;
+}
+
 const failureCategoriesTemplate = () => ({
   blocked: 0, budget: 0, staleCache: 0, network: 0,
   noMatch: 0, noKeys: 0, rateLimit: 0, other: 0
@@ -931,6 +957,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       collectorAttempted: collectorAttemptedIds,
       todayPriceProducts, uncoveredProducts: collectible.length - todayPriceProducts,
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
+      passStats: [],
       notFoundCount: 0,
       secondPassCalls: 0, secondPassRecovered: 0, secondPassGroups: 0, secondPassRemaining: 0,
       secondPassDone: [],
@@ -1130,6 +1157,30 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    */
   let attemptCalls = 0;
   let attemptSuccess = 0;
+
+  /* ── 패스별 계측 (2026-09-03) ────────────────────────────────────
+   *
+   * ★ 왜 필요한가 — "회수 패스가 듣는다" 는 말은 전체 합계로는 증명되지 않는다.
+   *   어떤 검색 전략이 몇 번의 호출로 몇 개를 건졌는지 패스별로 나눠야
+   *   다음에 무엇을 늘리고 무엇을 접을지 정할 수 있다.
+   *
+   *   pass          이름. 'pass1' | 'facet' | 'r1'..'r9'
+   *   calls         그 패스가 실제로 시도한 호출 수 (나가지 못한 것 포함)
+   *   ok            응답을 받은 호출 수
+   *   success       상품을 하나라도 새로 잡은 호출 수
+   *   recovered     그 패스가 새로 확보한 상품 수
+   *
+   * 호출당 회수 = recovered / calls 가 전략 사이의 유일한 공정한 비교다
+   * (한 호출이 여러 상품을 덮으므로 상품 수만으로는 비교가 안 된다).
+   */
+  const passStats = new Map();
+  const notePass = (pass, { ok = false, hit = 0 }) => {
+    let s = passStats.get(pass);
+    if (!s) { s = { pass, calls: 0, ok: 0, success: 0, recovered: 0 }; passStats.set(pass, s); }
+    s.calls++;
+    if (ok) s.ok++;
+    if (hit > 0) { s.success++; s.recovered += hit; }
+  };
   const noteAttemptFailure = (reason) => { failureCategories[categorizeFailure(reason)]++; };
   const noteAttemptNoMatch = () => { failureCategories.noMatch++; };
 
@@ -1181,6 +1232,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     try {
       r = await fetchAllFn(kw);
     } catch (e) {
+      notePass('pass1', { ok: false, hit: 0 });
       failedKeywords.set(kw, e.message);
       /*
        * ★ 예외로 끝난 호출도 실패 원인에 넣는다.
@@ -1193,6 +1245,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     }
 
     if (!r.ok) {
+      notePass('pass1', { ok: false, hit: 0 });
       failedKeywords.set(kw, r.reason);
       noteAttemptFailure(r.reason);
       console.log(`  [${mallName}] [보류] [${kw}] ${r.reason} — 재시도 대상`);
@@ -1235,6 +1288,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   덮고 있었는지(groupRows.length)는 상품 단위 지표(collectorSuccessProducts /
      *   uncoveredProducts)가 따로 센다 — 두 단위를 절대 한 칸에 합치지 않는다.
      */
+    notePass('pass1', { ok: true, hit });
     if (hit === 0) {
       notFoundKeywords.push(kw);
       noteAttemptNoMatch();
@@ -1386,7 +1440,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   바꾸든 응답에 우리 product_id 가 없으면 아무것도 저장하지 않는다.
      *   제목 유사도도, 가격 근사도, 1위 상품 채택도 하지 않는다.
      */
-    async function callAndMatch(query, rows) {
+    async function callAndMatch(query, rows, pass) {
       let r;
       /*
        * ★ 회수 패스 호출도 attempt 다 (2026-09-01).
@@ -1396,8 +1450,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
        */
       attemptCalls++;
       try { r = await fetchAllFn(query); }
-      catch (e) { noteAttemptFailure(e.message); return { ok: false, items: -1, hit: 0 }; }
-      if (!r.ok) { noteAttemptFailure(r.reason); return { ok: false, items: -1, hit: 0 }; }
+      catch (e) { notePass(pass, { ok: false, hit: 0 }); noteAttemptFailure(e.message); return { ok: false, items: -1, hit: 0 }; }
+      if (!r.ok) { notePass(pass, { ok: false, hit: 0 }); noteAttemptFailure(r.reason); return { ok: false, items: -1, hit: 0 }; }
 
       const byId = new Map();
       rows.forEach(p => {
@@ -1413,6 +1467,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
           hit++;
         }
       });
+      notePass(pass, { ok: true, hit });
       if (hit > 0) attemptSuccess++; else noteAttemptNoMatch();
       secondPassTried.push(query);
       alreadyTried.add(query);
@@ -1440,15 +1495,35 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         const coveredIds = new Set(
           g.rows.filter(p => !uncovered.has(`${p.product_id}|${p.mall}`)).map(p => String(p.product_id))
         );
-        const facets = buildFacetQueries(g.kw, g.rows, coveredIds, FACET_MAX_PER_GROUP)
-          .filter(f => !alreadyTried.has(f.query));
+        /*
+         * ★ 상한을 먼저 걸고 거른 것이 버그였다 (2026-09-03).
+         *
+         *   예전 코드는 facet 을 FACET_MAX_PER_GROUP(6)개만 만든 뒤 "오늘 이미
+         *   부른 것"을 걸러냈다. buildFacetQueries 는 결정론적이라 같은 그룹에
+         *   대해 늘 같은 상위 토큰을 돌려준다. 그래서 하루의 두 번째 실행부터는
+         *   만들어진 6개가 전부 alreadyTried 에 들어 있어 **facet 이 0개**가 됐다.
+         *
+         *   즉 응답창을 넘쳐 매일 탈락하는 상품(실측 295개)에 대해 facet 패스는
+         *   하루에 딱 한 번 6칸만 파고 그 뒤로는 아무 일도 하지 않았다.
+         *   운영 실측(2026-09-03): "여행용 캐리어" 는 6회에서 멈췄고 그 그룹에는
+         *   아직 21개가 미확보로 남아 있었다. 재측정을 시도했을 때 같은 검색어가
+         *   다시 생성돼 +0 이 나온 것도 이 때문이다.
+         *
+         *   이제는 **깊은 후보 풀을 먼저 만들고, 안 부른 것 중 앞에서 N개**를 쓴다.
+         *   다음 실행은 7·8·9번째 토큰으로 이어서 판다. 낭비는 늘지 않는다 —
+         *   FACET_DRY_STOP(연속 무수확 2회)이 그대로 그룹을 끊고 canCall() 이
+         *   시간·예산을 지킨다.
+         */
+        const facets = buildFacetQueries(g.kw, g.rows, coveredIds, FACET_POOL_PER_GROUP)
+          .filter(f => !alreadyTried.has(f.query))
+          .slice(0, FACET_MAX_PER_GROUP);
         let dry = 0;
         for (const f of facets) {
           if (!canCall()) break;
           const targets = g.rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`));
           if (!targets.length) break;
           facetCalls++;
-          const res = await callAndMatch(f.query, targets);
+          const res = await callAndMatch(f.query, targets, 'facet');
           if (!res.ok) continue;
           facetRecovered += res.hit;
           dry = res.hit ? 0 : dry + 1;
@@ -1541,7 +1616,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         const targets = rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`));
         if (!targets.length) continue;          // 앞선 호출이 이미 잡았다
         secondPassCalls++; secondPassGroups++; roundCalls++;
-        const res = await callAndMatch(q, targets);
+        const res = await callAndMatch(q, targets, `r${round + 1}`);
         if (!res.ok) continue;
         secondPassRecovered += res.hit; roundHit += res.hit;
       }
@@ -1677,6 +1752,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     notFoundCount: notFoundKeywords.length,
     // 2차 패스 성과 — 리포트에서 1차/2차 회수율을 나눠 볼 수 있게 남긴다.
     secondPassCalls, secondPassRecovered, secondPassGroups, secondPassRemaining,
+    /*
+     * 패스별 계측. 하루 누적이 아니라 **이번 실행** 값이다 — 전략 비교는
+     * 한 실행 안에서 같은 조건으로 이뤄져야 공정하기 때문이다.
+     * 순서는 실제 실행 순서(pass1 → facet → r1..r9)로 고정한다.
+     */
+    passStats: [...passStats.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass)),
     // 오늘 누적 시도 목록. 무한히 커지지 않도록 상한을 둔다.
     secondPassDone: [...priorSecondDone, ...secondPassTried].slice(-3000)
   };
@@ -1722,8 +1803,28 @@ async function runLocked(state, lockToken) {
           collectorAttempted: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorAttempted) || []
         } }
     : null;
+  /*
+   * ★ ADPICK 도 하루 누적 목록을 이어받아야 한다 (2026-09-03 실측 버그).
+   *
+   *   여기서 last_result 를 새로 만들면서 failedKeywords 만 담고 있었다.
+   *   그래서 runMallCollection 이 priorCollectorCovered 를 빈 배열로 시작했고,
+   *   ADPICK 성공 상품 수가 매 실행 그 실행 몫으로 축소됐다.
+   *
+   *   실측: 2026-09-03 한 실행이 231개를 확보해 저장했는데, 곧이은 다음 실행이
+   *   7개만 확보하자 상태의 collectorCovered 가 231 → 7 로 덮였다.
+   *   쿠팡 경로(coupangSaved)는 이미 세 키를 다 넘기고 있었다 — 같은 모양으로 맞춘다.
+   *   (원장 자체는 멀쩡하다. 잘못되는 것은 성공률 보고다.)
+   */
   const adpickSaved = savedMalls['ADPICK']
-    ? { job_date: state.job_date, ...savedMalls['ADPICK'], last_result: { failedKeywords: savedMalls['ADPICK'].failedKeywords || [] } }
+    ? {
+        job_date: state.job_date, ...savedMalls['ADPICK'],
+        last_result: {
+          failedKeywords: savedMalls['ADPICK'].failedKeywords || [],
+          collectorCovered: savedMalls['ADPICK'].collectorCovered || [],
+          collectorAttempted: savedMalls['ADPICK'].collectorAttempted || [],
+          secondPassDone: (savedMalls['ADPICK'].last_result || {}).secondPassDone || []
+        }
+      }
     : null;
 
   /*
@@ -1817,6 +1918,20 @@ async function runLocked(state, lockToken) {
     console.log(`  저장   price_history ${r.recorded}행 / products ${r.saved}행`
       + ` / 급변 보류 ${r.suspect} / 값 이상 거부 ${r.rejected}`);
     console.log(`  진행   오늘 ${r.processed}/${r.total} (검색 그룹에 담긴 상품 ${r.processedProducts}개)`);
+    /*
+     * 패스별 성적. "호출당 회수" 가 전략 사이의 유일한 공정한 비교값이다
+     * (한 호출이 여러 상품을 덮으므로 상품 수만으로는 비교가 안 된다).
+     */
+    const ps = r.passStats || [];
+    if (ps.length) {
+      console.log('  패스   pass      호출  응답  적중  회수  호출당회수');
+      ps.forEach(s => {
+        const per = s.calls > 0 ? (s.recovered / s.calls).toFixed(2) : '-';
+        console.log(`         ${String(s.pass).padEnd(8)} ${String(s.calls).padStart(5)}`
+          + `${String(s.ok).padStart(6)}${String(s.success).padStart(6)}${String(s.recovered).padStart(6)}`
+          + `${String(per).padStart(11)}`);
+      });
+    }
   });
   if (otherRows.length) {
     console.log(`기타(연동 없음) — 상품 대상 ${otherRows.length} / attempt 0 (재조회 API 없음)`);
@@ -1888,6 +2003,10 @@ async function runLocked(state, lockToken) {
           // 상품 단위 — collectorCovered 가 내일 성공률의 근거다(하루 누적, 합집합)
           collectorCovered: coupangResult.collectorCovered || [],
           collectorAttempted: coupangResult.collectorAttempted || [],
+          attemptedProducts: coupangResult.attemptedProducts,
+          skippedProducts: coupangResult.skippedProducts,
+          noMatchProducts: coupangResult.noMatchProducts,
+          passStats: coupangResult.passStats || [],
           targetProducts: coupangResult.targetProducts,
           collectorSuccessProducts: coupangResult.collectorSuccessProducts,
           todayPriceProducts: coupangResult.todayPriceProducts,
@@ -1907,6 +2026,10 @@ async function runLocked(state, lockToken) {
           secondPassRemaining: adpickResult.secondPassRemaining,
           collectorCovered: adpickResult.collectorCovered || [],
           collectorAttempted: adpickResult.collectorAttempted || [],
+          attemptedProducts: adpickResult.attemptedProducts,
+          skippedProducts: adpickResult.skippedProducts,
+          noMatchProducts: adpickResult.noMatchProducts,
+          passStats: adpickResult.passStats || [],
           targetProducts: adpickResult.targetProducts,
           collectorSuccessProducts: adpickResult.collectorSuccessProducts,
           todayPriceProducts: adpickResult.todayPriceProducts,
@@ -1963,7 +2086,18 @@ async function runLocked(state, lockToken) {
     rejected: sum('rejected'),
 
     /* ── 참고(실행 단위 상품 수) ── */
-    processedProducts: sum('processedProducts')
+    processedProducts: sum('processedProducts'),
+
+    /*
+     * 남은 회수 큐 — 오늘 아직 부르지 않은 회수 검색어 수.
+     * "미수집" 과 다르다: 미수집은 상품 수이고, 이것은 아직 남은 **시도 수단**이다.
+     * 0 이면 오늘 쓸 수 있는 검색 전략을 다 쓴 것이고, 그래도 남은 미확보 상품은
+     * 검색으로는 더 손댈 수 없다는 뜻이다.
+     */
+    recoveryQueueRemaining: sum('secondPassRemaining'),
+
+    /* ── 패스별 성적 (전략 비교의 근거) ── */
+    passStats: mergePassStats([coupangResult, adpickResult])
   };
 
   /*
@@ -2142,7 +2276,8 @@ function buildReportHtml(report) {
     attemptedProducts, skippedProducts, noMatchProducts,
     todayPriceProducts, uncoveredProducts,
     attemptCalls, attemptSuccess, attemptFailed, attemptCallsRecovery,
-    recorded, saved, suspect, rejected, processedProducts
+    recorded, saved, suspect, rejected, processedProducts,
+    passStats, recoveryQueueRemaining
   } = report;
 
   function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -2181,6 +2316,20 @@ function buildReportHtml(report) {
    * 실패 원인은 값이 0이어도 전부 적는다. 0인 줄을 지우면 "이번엔 왜 안 보이지"
    * 를 매번 다시 따져야 하고, 합계가 맞는지도 눈으로 확인할 수 없다.
    */
+  const passRows = (passStats || []).length
+    ? passStats.map(s => {
+        const per = s.calls > 0 ? (s.recovered / s.calls).toFixed(2) : '-';
+        return `<tr>
+          <td style="padding:6px 12px;border-top:1px solid #eee;font-weight:600">${esc(s.pass)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${num(s.calls)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${num(s.ok)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${num(s.success)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee;color:#0b7a4b;font-weight:600">${num(s.recovered)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${esc(per)}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="6" style="padding:6px 12px;color:#888;border-top:1px solid #eee">이번 실행은 수집 호출이 없었습니다</td></tr>';
+
   const catEntries = Object.entries(failCats || {});
   const catSum = catEntries.reduce((s, [, v]) => s + num(v), 0);
   const catRows = catEntries.length
@@ -2311,6 +2460,26 @@ function buildReportHtml(report) {
       ※ 처리 상품 수는 호출 횟수가 아니다 — 한 attempt(검색어 1회 호출)가 여러 상품을 덮는다.<br>
       ※ price_history 값은 upsert 로 보낸 행 수다. 같은 날 같은 (상품·몰·vendor)을 다시
       수집하면 UNIQUE 제약으로 기존 행을 덮으므로, DB 에 새로 생긴 행 수는 이보다 적을 수 있다.
+    </div>
+  </td></tr>
+
+  <tr><td style="padding:20px 32px 0">
+    <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin-bottom:4px">패스별 성적 <span style="color:#bbb;font-weight:400">(어느 검색 전략이 얼마에 얼마를 건졌나)</span></div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;border:1px solid #eee;border-radius:6px">
+      <tr style="background:#f8f8f7">
+        <td style="padding:6px 12px;color:#888;font-size:11px">패스</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">호출</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">응답</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">적중 호출</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">회수 상품</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">호출당 회수</td>
+      </tr>
+      ${passRows}
+    </table>
+    <div style="font-size:11px;color:#bbb;margin-top:4px">
+      pass1 = 1차 키워드 검색 · facet = 큰 그룹 분할 · r1~r9 = 상품별 검색어 사다리(라운드).<br>
+      ※ 비교 기준은 "호출당 회수" 다 — 한 호출이 여러 상품을 덮으므로 회수 상품 수만으로는 전략을 비교할 수 없다.<br>
+      남은 회수 큐(오늘 아직 안 부른 검색어): <b>${num(recoveryQueueRemaining)}</b>종
     </div>
   </td></tr>
 

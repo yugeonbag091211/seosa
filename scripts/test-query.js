@@ -82,7 +82,7 @@ section('2. 후보 개수·순서');
    * T7(특수문자 정규화)가 없었다. 두 후보를 더한 사다리라 상한도 5다.
    */
   const { MAX_CANDIDATES: MC } = require('../api/_query');
-  check(qs.length <= MC, '★★ 후보는 상한(5개)을 넘지 않는다', qs);
+  check(qs.length <= MC, `★★ 후보는 상한(${MC}개)을 넘지 않는다`, qs);
   check(qs.length >= 1, '후보를 만든다', qs);
   check(qs[0].indexOf('루이벤') === 0,
     '★★ 첫 후보는 제목 기반이다 (실측 단독 1위 78.6~79.2%)', qs[0]);
@@ -215,15 +215,16 @@ section('7. 실제 운영 상품 제목');
     ['잔온 레일형 차량 햇빛가리개 암막커튼, 2개, 블랙', '차량용 햇빛 가리개'],
     ['무선 블루투스 이어폰 노이즈캔슬링 장시간 배터리 고음질, 화이트, T13-APP', '']
   ];
+  const { MAX_CANDIDATES: CAP7 } = require('../api/_query');
   let allOk = true;
   real.forEach(([t, k]) => {
     const qs = generateSecondPassQueries(P(t, k));
-    const ok = qs.length >= 1 && qs.length <= 5
+    const ok = qs.length >= 1 && qs.length <= CAP7
       && qs.every(q => q.length <= MAX_QUERY_LEN && q.trim())
       && new Set(qs).size === qs.length;
     if (!ok) { allOk = false; console.log(`       ↳ 문제: "${t}" → ${JSON.stringify(qs)}`); }
   });
-  check(allOk, '★★ 운영 제목 5종 모두 1~5개의 유효한 후보를 만든다');
+  check(allOk, `★★ 운영 제목 5종 모두 1~${CAP7}개의 유효한 후보를 만든다`);
 
   // 대괄호로 시작하는 제목도 제목 후보가 살아 있어야 한다
   const brq = generateSecondPassQueries(P('[브랜드인증] 존바바토스 아티산 블루 오 드 뚜왈렛', '향수'));
@@ -285,7 +286,18 @@ section('9. T7 특수문자 정규화');
 section('10. 상품당 후보 상한 (호출 예산 보호)');
 {
   const { MAX_CANDIDATES } = require('../api/_query');
-  check(MAX_CANDIDATES === 5, '★ 상한이 5다', MAX_CANDIDATES);
+  /*
+   * ★ 5 → 9 (2026-09-03). 숫자 자체보다 지켜야 할 것은 아래 세 성질이다.
+   *
+   *   · 상한이 라운드 수와 같다      → 만들어 둔 후보를 다 쓰고, 빈 라운드를 안 돈다
+   *     (scripts/test-round-index.js 가 소스에서 두 값을 직접 비교한다)
+   *   · 후보 배열은 raw 후보 수를 넘지 않는다
+   *   · 중복·빈 문자열·길이 초과가 없다
+   *
+   * 상한을 늘려도 호출이 상품 수만큼 늘지 않는 이유는 _query.js 주석 참고
+   * (적중하면 다음 라운드에서 빠지고, 같은 문구는 한 번만 부른다).
+   */
+  check(MAX_CANDIDATES === 9, '★ 상한이 9다', MAX_CANDIDATES);
 
   const rich = P('아이리스 수퍼 서큘레이터 PCF-HM23 화이트 28인치 대용량 무선', '서큘레이터');
   const qs = generateSecondPassQueries(rich);
