@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "node scripts/dev-server.js",
-    "test": "node scripts/test-auth.js && node scripts/test-coupang.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-query.js && node scripts/test-second-pass.js && node scripts/test-round-index.js && node scripts/test-price-mall-collection.js && node scripts/test-collector-lock.js && node scripts/test-ai.js && node scripts/test-ai-monetization.js && node scripts/test-payment.js && node scripts/test-sync.js && node scripts/test-analytics.js",
+    "test": "node scripts/test-auth.js && node scripts/test-coupang.js && node scripts/test-price.js && node scripts/test-price-batch.js && node scripts/test-query.js && node scripts/test-identity.js && node scripts/test-second-pass.js && node scripts/test-round-index.js && node scripts/test-price-mall-collection.js && node scripts/test-collector-lock.js && node scripts/test-ai.js && node scripts/test-ai-monetization.js && node scripts/test-payment.js && node scripts/test-sync.js && node scripts/test-analytics.js",
     "test:regression": "node scripts/test-regression.js",
     "test:release": "node scripts/test-release.js",
     "test:all": "npm test && npm run test:regression && npm run test:release",
@@ -15,7 +15,8 @@
     "verify:schema": "node scripts/verify-schema.js",
     "verify:relevance": "node scripts/audit-relevance.js",
     "probe:coupang": "node scripts/coupang-probe.js",
-    "verify:no-write": "node scripts/verify-collection-no-write.js"
+    "verify:no-write": "node scripts/verify-collection-no-write.js",
+    "audit:catalog": "node scripts/audit-catalog-identity.js"
   },
   "keywords": [],
   "author": "",

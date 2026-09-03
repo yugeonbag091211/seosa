@@ -92,6 +92,35 @@ const TIMEOUT_MS = envNum('COUPANG_TIMEOUT_MS', 8000);
  *   limit=50 → rCode=400 (호출 이력 41건 전부 실패)
  * → 쿠팡 검색 API 의 limit 상한은 10 이다.
  *
+ * ── 2026-09-03 재측정 (운영 키로 직접) ────────────────────────────
+ *
+ * 공개 문서 요약에는 limit 이 1~100 이라고 나온다. 그래서 다시 쟀다.
+ *   limit=10  → rCode=0   items=10
+ *   limit=15  → rCode=400 "limit is out of range"
+ *   limit=20  → rCode=400 "limit is out of range"
+ *   limit=30  → rCode=400 "limit is out of range"
+ *   limit=50  → rCode=400 "limit is out of range"
+ *   limit=100 → rCode=400 "limit is out of range"
+ * 상한 10 이 맞다. 문서 요약은 이 제휴 엔드포인트에 적용되지 않는다.
+ *
+ * ★ 페이지네이션은 **없다** — 같은 날 함께 쟀다.
+ *     page=2     → 기준과 완전히 같은 10건 (새 id 0)
+ *     pageNum=2  → 기준과 완전히 같은 10건
+ *     offset=10  → 기준과 완전히 같은 10건
+ *     offset=50  → 기준과 완전히 같은 10건
+ *     subId=...  → 기준과 완전히 같은 10건 (수익 귀속용이라 결과에 영향 없음)
+ *   대조로 같은 검색어를 두 번 불렀을 때의 자연 변동도 0건이었다.
+ *   즉 이 엔드포인트가 받는 파라미터는 keyword 와 limit 둘뿐이고,
+ *   **상위 10건 밖의 상품은 어떤 방법으로도 꺼낼 수 없다.**
+ *
+ * ★ product_id 로 상품을 조회하는 방법도 없다.
+ *   단건 조회 엔드포인트가 없고(이 파일의 SEARCH_PATH 하나뿐),
+ *   product_id 를 검색어로 넣으면 쿠팡이 명시적으로 거부한다:
+ *     "내부 정책 등으로 인해 검색결과 제공이 불가능한 키워드입니다"
+ *   오늘 정상 수집된 상품(대조군)으로도 같은 결과였다. 즉 상품 id 는
+ *   검색에 색인되지 않는다. 판매자가 상품을 새 id 로 다시 올리면 옛 id 는
+ *   되살릴 방법이 없다 — scripts/audit-catalog-identity.js 가 그 경우를 다룬다.
+ *
  * "GitHub Actions 가 7/30 이후 한 행도 못 모은다"는 증상의 진짜 원인이
  * 이것이었다. IP 차단이 아니라 limit 을 쿠팡이 받아주지 않은 것이다
  * (collect-all-prices.js 만 50 을 썼고, cron/search 는 6 이라 멀쩡했다).
