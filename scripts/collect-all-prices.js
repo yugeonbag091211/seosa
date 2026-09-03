@@ -53,7 +53,7 @@ const { recordPrices, searchPhraseFromTitle, adpickProductId } = require('../api
  */
 const { generateSecondPassQueries, buildFacetQueries } = require('../api/_query');
 // kstDayStartUtc: KST 하루의 시작을 절대 시각으로 잡는다 (collectedTodayKeys 주석 참고).
-const { kstToday, kstDayStartUtc } = require('../api/_price');
+const { kstToday, kstDayStartUtc, vendorIdOf } = require('../api/_price');
 
 // 헤더 로그용. price_history.recorded_date / price_job_state.job_date 와 같은 KST 기준.
 const TODAY = kstToday();
@@ -382,6 +382,80 @@ function isAdpickRow(p) {
   return p.mall === 'ADPICK';
 }
 
+/* ── 판매 단위(옵션) 게이트 ─────────────────────────────────────────
+ *
+ * ★ 무엇이 잘못돼 있었나 (2026-09-03, 운영 데이터로 확인)
+ *
+ *   쿠팡의 productId 는 "노출 상품" 이고, 실제로 팔리는 단위는 그 아래의
+ *   vendorItemId(옵션)다. 한 productId 아래 옵션이 여럿인 경우가 흔하다 —
+ *   운영 캐시에 응답이 남아 있는 쿠팡 상품 1,418개 중 632개가 다옵션이었다.
+ *
+ *   검색 응답은 그때그때 다른 옵션을 대표로 싣는다. 게다가 collapseOptions
+ *   가 같은 productId 를 최저가 한 건으로 접는다. 그런데 매칭은
+ *   `byId.get(item.productId)` 하나뿐이었다 — 응답 항목의 vendorItemId 를
+ *   우리 상품의 vendor_item_id 와 대조하는 곳이 어디에도 없었다.
+ *
+ *   그래서 우리가 추적하지 않는 옵션의 가격이 그 상품의 오늘 가격이 됐다.
+ *
+ *   실제 피해(운영 price_history 실측):
+ *     vid 이력이 있는 쿠팡 상품 1,876개 중 605개가 두 개 이상의 vid 로
+ *     가격이 기록돼 있다. 그중 200개는 최저·최고 격차 50% 이상,
+ *     113개는 2배 이상이다. 최악은 productId 6181159723 으로 네 개 옵션에
+ *     걸쳐 1,300~30,860원이 한 상품의 이력에 섞여 있다.
+ *     같은 상품의 이력인데 날짜 간 비교가 성립하지 않는다.
+ *
+ * ★ 판정 기준
+ *
+ *   1순위  응답 vendorItemId === 타겟 vendorItemId  → 같은 판매 단위. 채택.
+ *   2순위  vendorItemId 개념이 없는 몰은 product_id 자체가 판매 단위다.
+ *          ADPICK 은 commissionlink 해시가 product_id 이므로 여기 해당한다
+ *          (운영 737행 전부 vid 없음 — 게이트를 걸면 전멸한다).
+ *   3순위  그 외에는 채택하지 않는다. productId 가 같다는 것은 근거가 아니다.
+ *
+ *   ★ itemId 는 게이트에 넣지 않는다. 근거:
+ *     · UNIQUE 가 (product_id, mall, vendor_item_id[, recorded_date]) 다
+ *       (supabase/2026-08-vendor-identity.sql:110,151). itemId 는 키가 아니다.
+ *     · 캐시 21,762 항목 실측에서 vid→itemId 는 사실상 1:1(예외 11건),
+ *       itemId→vid 는 1:다(151건)였다. vid 가 itemId 보다 세밀하다.
+ *     · 그 예외 11건은 쿠팡이 **같은 옵션에 itemId 를 새로 발급한** 경우다.
+ *       itemId 를 필수로 걸면 이 11건을 근거 없이 거부하게 된다.
+ *     itemId 는 계속 기록하되(이력 추적용) 채택 조건으로는 쓰지 않는다.
+ *
+ * ★ 게이트 비용은 미리 쟀다. 운영 캐시 기준 통과율 98.45%(1,396/1,418).
+ *   거부되는 22건은 "우리 옵션이 응답에 아예 없는" 경우이고, 그때 우리는
+ *   그 옵션의 오늘 가격을 실제로 모른다. 다른 옵션 값을 대신 쓰는 것은
+ *   수집이 아니라 날조다. 캐시는 검색어당 마지막 응답 1건만 남으므로
+ *   이 통과율은 하한이다 — 실제 실행은 상품당 여러 검색어를 시도한다.
+ *
+ * @param {object} target  products 행 (product_id, mall, link, vendor_item_id …)
+ * @param {Array}  items   검색 응답 항목 — **반드시 접히지 않은 allItems** 를 넘긴다
+ * @returns {{item: object|null, reason: string, options: number, want?: string, got?: string[]}}
+ */
+function pickOption(target, items) {
+  const pid = String((target && target.product_id) != null ? target.product_id : '');
+  if (!pid) return { item: null, reason: 'NO_TARGET_ID', options: 0 };
+
+  const cands = (items || []).filter(it => String(it.productId) === pid);
+  if (!cands.length) return { item: null, reason: 'NO_PRODUCT_MATCH', options: 0 };
+
+  // vendorItemId 개념이 없는 몰 — product_id 가 곧 판매 단위다.
+  if (!isCoupangRow(target)) {
+    return { item: cands[0], reason: 'MALL_ID_IS_UNIT', options: cands.length };
+  }
+
+  const want = vendorIdOf(target);
+  if (!want) return { item: null, reason: 'TARGET_VID_UNKNOWN', options: cands.length };
+
+  const exact = cands.find(it => String(it.vendorItemId || '') === want);
+  if (exact) return { item: exact, reason: 'VID_EXACT', options: cands.length, want };
+
+  const got = [...new Set(cands.map(it => String(it.vendorItemId || '')).filter(Boolean))];
+  if (!got.length) {
+    return { item: null, reason: 'RESPONSE_VID_MISSING', options: cands.length, want, got };
+  }
+  return { item: null, reason: 'OPTION_MISMATCH', options: cands.length, want, got };
+}
+
 // ─── 몰별 API 호출 상태 (쿠팡) ─────────────────────────────
 let _coupangBlocked = false;
 let _coupangBlockMsg = '';
@@ -488,20 +562,41 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
     return { ok: false, items: [], reason: `호출 생략: ${String(r.error || '분당 상한/대기 초과').slice(0, 60)}` };
   }
 
+  /*
+   * ★ items 와 allItems 를 둘 다 넘긴다 (2026-09-03).
+   *
+   *   api/_coupang.js 의 collapseOptions 는 같은 productId 의 옵션 행을
+   *   **최저가 한 건으로 접는다.** 그건 검색 화면에는 옳다 — 사용자에게
+   *   같은 상품을 옵션 수만큼 늘어놓을 이유가 없다.
+   *
+   *   그런데 수집기에는 치명적이다. 우리가 추적하는 옵션이 최저가가
+   *   아니면, 매칭이 시작되기도 전에 그 옵션이 사라진다. 그러면 남은
+   *   대표 항목(다른 옵션)의 가격이 우리 상품의 오늘 가격으로 들어간다.
+   *
+   *   그래서 역할을 분리한다.
+   *     items     화면·집계용 대표 항목 (collapseOptions 결과, 기존 그대로)
+   *     allItems  옵션이 살아 있는 원본 — 매칭은 반드시 이걸 쓴다
+   *
+   *   searchCoupang 은 원래부터 둘 다 돌려주고 있었다(api/_coupang.js:661).
+   *   여기서 allItems 를 버리고 있었을 뿐이다.
+   */
+  const shape = it => ({
+    productId: it.productId,
+    title: it.title,
+    lprice: it.lprice,
+    oprice: it.oprice,
+    link: it.link,
+    image: it.image,
+    mall: '쿠팡',
+    itemId: it.itemId || '',
+    vendorItemId: it.vendorItemId || '',
+  });
+
   return {
     ok: true,
     reason: '',
-    items: r.items.map(it => ({
-      productId: it.productId,
-      title: it.title,
-      lprice: it.lprice,
-      oprice: it.oprice,
-      link: it.link,
-      image: it.image,
-      mall: '쿠팡',
-      itemId: it.itemId || '',
-      vendorItemId: it.vendorItemId || '',
-    }))
+    items: r.items.map(shape),
+    allItems: (r.allItems && r.allItems.length ? r.allItems : r.items).map(shape)
   };
 }
 
@@ -585,7 +680,17 @@ async function fetchAllProducts() {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('products')
-      .select('product_id, mall, title, keyword, link, image')
+      /*
+       * vendor_item_id / item_id 를 반드시 같이 읽는다 (2026-09-03).
+       *
+       * 이 두 컬럼이 없으면 수집기는 "우리가 어떤 옵션을 추적하고 있는지"를
+       * 모른 채 응답을 채택하게 된다. 실제로 그랬고, 그래서 다른 옵션의
+       * 가격이 기록됐다 (pickOption 주석의 실측 참고).
+       *
+       * 값이 비어 있어도 _price.vendorIdOf 가 link 에서 뽑아내므로 폴백이
+       * 있다 — 운영 쿠팡 상품 1,554개 전부에서 vid 확보를 확인했다.
+       */
+      .select('product_id, mall, title, keyword, link, image, vendor_item_id, item_id')
       .order('product_id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error('products 조회 실패: ' + error.message);
@@ -1037,7 +1142,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       collectorAttempted: collectorAttemptedIds,
       todayPriceProducts, uncoveredProducts: collectible.length - todayPriceProducts,
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
-      passStats: [], crossRecovered: 0,
+      passStats: [], crossRecovered: 0, optionRejects: {},
       facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
       notFoundCount: 0,
       secondPassCalls: 0, secondPassRecovered: 0, secondPassGroups: 0, secondPassRemaining: 0,
@@ -1236,14 +1341,22 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    */
   function absorbCrossMatches(items, foundVia, handled) {
     let n = 0;
-    (items || []).forEach(item => {
-      const pid = String(item.productId);
-      if (handled && handled.has(pid)) return;         // 그 검색어의 자기 몫은 이미 셌다
+    /*
+     * 항목 단위가 아니라 **productId 단위**로 돈다 (2026-09-03).
+     *
+     * 다옵션 상품은 같은 productId 항목이 응답에 여러 개 들어온다. 예전처럼
+     * 항목마다 addRow 를 부르면 마지막(또는 최저가) 옵션이 이겨서, 우리가
+     * 추적하는 옵션과 무관한 가격이 남았다. 이제 productId 마다 한 번만
+     * 판정하고, 그 판정은 pickOption 이 vendorItemId 로 한다.
+     */
+    const pids = new Set((items || []).map(it => String(it.productId)));
+    pids.forEach(pid => {
+      if (handled && handled.has(pid)) return;         // 그 검색어의 자기 몫은 이미 봤다
       const p = collectibleById.get(pid);
       if (!p) return;                                   // 우리 상품이 아니다
       const key = `${p.product_id}|${p.mall}`;
       if (!uncovered.has(key)) return;                  // 이미 확보했다
-      if (!addRow(p, item, foundVia)) return;           // 가격이 없으면 채택하지 않는다
+      if (!adoptOne(p, items, foundVia)) return;        // 옵션이 다르거나 가격이 없다
       markCovered(p.product_id, p.mall);
       collectorAttempted.add(key);                      // 호출이 나가 이 상품을 찾아냈다
       n++;
@@ -1339,8 +1452,52 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       image: target.image || item.image || '',
       itemId: item.itemId || '',
       vendorItemId: item.vendorItemId || '',
+      /*
+       * ★ 저장 직전 방어막의 재료 (2026-09-03).
+       *
+       *   "우리가 추적하기로 한 옵션" 을 관측치에 같이 실어 보낸다.
+       *   api/_shop.js 의 recordPrices 가 이 값과 실제 vendorItemId 를
+       *   다시 대조해서 다르면 저장하지 않는다(OPTION_MISMATCH).
+       *
+       *   pickOption 이 이미 걸렀는데 왜 또 보는가 — 위쪽 매칭에 나중에
+       *   버그가 생겨도 운영 이력이 오염되지 않게 하기 위해서다. 방어막은
+       *   가장 안쪽, 쓰기 직전에 하나 더 있어야 한다.
+       *
+       *   vid 개념이 없는 몰은 빈 문자열이고, 그때 방어막은 작동하지 않는다.
+       */
+      targetVendorItemId: vendorIdOf(target),
     });
     return true;
+  }
+
+  /* ── 옵션 게이트 통계 (리포트/진단용) ────────────────────────────
+   * 채택을 거부한 이유별 건수. 거부는 실패가 아니라 "오늘 그 옵션의 가격을
+   * 확인하지 못했다" 는 사실의 기록이다 — 다른 옵션 값으로 메우지 않는다.
+   */
+  const optionRejects = new Map();
+  let optionRejectLogged = 0;
+  const OPTION_REJECT_LOG_MAX = 20;
+
+  /**
+   * 응답에서 이 타겟의 옵션을 골라 채택한다. 옵션이 다르면 채택하지 않는다.
+   * @param {object} target
+   * @param {Array}  items    접히지 않은 응답 항목(allItems)
+   * @param {string} foundVia 이 응답을 만든 검색어
+   * @returns {boolean} 채택 여부
+   */
+  function adoptOne(target, items, foundVia) {
+    const pick = pickOption(target, items);
+    if (!pick.item) {
+      optionRejects.set(pick.reason, (optionRejects.get(pick.reason) || 0) + 1);
+      if (pick.reason === 'OPTION_MISMATCH' && optionRejectLogged < OPTION_REJECT_LOG_MAX) {
+        optionRejectLogged++;
+        console.warn(`  [${mallName}] OPTION_MISMATCH productId=${target.product_id}`
+          + ` targetVendorItemId=${pick.want} responseVendorItemId=[${(pick.got || []).join(', ')}]`
+          + ` 검색어="${String(foundVia).slice(0, 40)}" — 다른 옵션이라 채택하지 않습니다.`);
+      }
+      return false;
+    }
+    return addRow(target, pick.item, foundVia);
   }
 
   async function saveAll() {
@@ -1366,7 +1523,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   /** 검색어 그룹 하나를 처리한다. 실패해도 던지지 않는다 — 호출부가 계속 돈다. */
   async function processGroup({ kw, rows: groupRows }) {
     const byId = new Map();
-    groupRows.forEach(p => byId.set(p.product_id, p));
+    // 키는 반드시 문자열로 맞춘다 — 응답의 productId 는 normalize 가 String() 한 값이다.
+    groupRows.forEach(p => byId.set(String(p.product_id), p));
 
     let r;
     attemptCalls++;
@@ -1411,20 +1569,31 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     });
 
     let hit = 0;
-    // 1차 대조에서 **실제로 채택한** 것만 담는다. 응답에 있었다는 이유로 담으면
-    // 교차 매칭이 그 상품을 건너뛴다(자기 그룹 밖 상품이 통째로 버려진다).
+    /*
+     * handled 에는 **이 그룹이 판정을 끝낸** productId 를 담는다.
+     *
+     * 예전에는 채택에 성공한 것만 담았다. 그 이유는 "응답에 있었다는 이유로
+     * 담으면 교차 매칭이 그 상품을 건너뛴다" 였는데, 그건 **이 그룹 밖의**
+     * 상품 이야기다. byId 에 있는 상품은 이 그룹의 몫이고, 여기서 거부됐으면
+     * 교차 매칭이 같은 타겟을 다시 판정해도 같은 결과가 나온다(같은 응답,
+     * 같은 pickOption). 두 번 세고 두 번 로그를 남길 뿐이다.
+     * byId 에 없는 productId 는 여전히 handled 에 안 들어가고 교차 매칭으로 간다.
+     */
     const handled = new Set();
-    r.items.forEach(item => {
-      const target = byId.get(item.productId);
-      if (target && addRow(target, item, kw)) {
-        handled.add(String(item.productId));
-        markCovered(target.product_id, target.mall);
-        hit++;
-        if (!target.keyword) recovered++;
-      }
+    // ★ 매칭은 접히지 않은 allItems 로 한다 — collapseOptions 가 우리 옵션을
+    //   버렸을 수 있다(fetchCoupangAll 의 items/allItems 주석 참고).
+    const respItems = (r.allItems && r.allItems.length) ? r.allItems : (r.items || []);
+    new Set(respItems.map(it => String(it.productId))).forEach(pid => {
+      const target = byId.get(pid);
+      if (!target) return;                              // 이 그룹 밖 → 교차 매칭이 본다
+      handled.add(pid);
+      if (!adoptOne(target, respItems, kw)) return;     // 옵션이 다르면 채택하지 않는다
+      markCovered(target.product_id, target.mall);
+      hit++;
+      if (!target.keyword) recovered++;
     });
     // 이 응답에 우리 카탈로그의 다른 미수집 상품이 들어 있으면 함께 가져간다.
-    hit += absorbCrossMatches(r.items, kw, handled);
+    hit += absorbCrossMatches(respItems, kw, handled);
 
     failedKeywords.delete(kw);
 
@@ -1604,23 +1773,26 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
       const byId = new Map();
       rows.forEach(p => {
-        byId.set(p.product_id, p);
+        byId.set(String(p.product_id), p);
         // 회수 호출도 나갔으면 시도다 — 1차와 같은 기준(1차 패스 표시부 참고).
         collectorAttempted.add(`${p.product_id}|${p.mall}`);
       });
       let hit = 0;
-      // 1차 대조에서 실제로 채택한 것만 (위 processGroup 의 같은 주석 참고).
+      // 판정을 끝낸 productId (위 processGroup 의 handled 주석 참고).
       const handled = new Set();
-      (r.items || []).forEach(item => {
-        const target = byId.get(item.productId);        // ← 완전 일치 게이트 (불변)
-        if (target && addRow(target, item, query)) {
-          handled.add(String(item.productId));
-          markCovered(target.product_id, target.mall);
-          hit++;
-        }
+      // ★ 접히지 않은 allItems 로 매칭한다 (processGroup 의 같은 주석 참고).
+      const respItems = (r.allItems && r.allItems.length) ? r.allItems : (r.items || []);
+      new Set(respItems.map(it => String(it.productId))).forEach(pid => {
+        const target = byId.get(pid);                   // ← product_id 완전 일치 (불변)
+        if (!target) return;
+        handled.add(pid);
+        // ← 옵션 게이트: vendorItemId 까지 같아야 채택한다 (pickOption 주석 참고)
+        if (!adoptOne(target, respItems, query)) return;
+        markCovered(target.product_id, target.mall);
+        hit++;
       });
       // 같은 응답 안의 다른 미수집 상품도 가져간다 (absorbCrossMatches 주석 참고).
-      hit += absorbCrossMatches(r.items || [], query, handled);
+      hit += absorbCrossMatches(respItems, query, handled);
       notePass(pass, { ok: true, hit });
       if (hit > 0) attemptSuccess++; else noteAttemptNoMatch();
       secondPassTried.push(query);
@@ -1973,6 +2145,15 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     passStats: [...passStats.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass)),
     /* 교차 매칭으로 건진 상품 수 — 응답 전체 대조가 실제로 얼마를 벌었는지. */
     crossRecovered,
+    /*
+     * 옵션 게이트가 채택을 거부한 이유별 건수 (pickOption 주석 참고).
+     *
+     * ★ 이 숫자는 실패가 아니라 **정직함의 비용**이다. OPTION_MISMATCH 는
+     *   "그 상품 페이지는 찾았는데 우리가 추적하는 옵션이 응답에 없었다"
+     *   는 뜻이고, 그때 오늘 그 옵션의 가격은 우리가 모르는 값이다.
+     *   예전에는 이 자리에서 다른 옵션 가격을 대신 기록했다.
+     */
+    optionRejects: Object.fromEntries(optionRejects),
     // 오늘 facet 이 마른 그룹. 다음 실행이 헛되이 두드리지 않게 이어 간다.
     facetDryGroups: facetDryOut,
     // 오늘 누적 시도 목록. 무한히 커지지 않도록 상한을 둔다.
@@ -2831,6 +3012,16 @@ async function sendFailureNotice(err) {
 module.exports = {
   kstToday, buildPlan, splitBatches, resumeFrom, BATCH_PRODUCTS, buildReportHtml,
   runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow,
+  // 판매 단위(옵션) 게이트 — test-option-identity 가 이 계약을 고정한다.
+  pickOption,
+  /*
+   * 몰별 검색 경로. 운영 실행(run)이 쓰는 것과 **같은 함수**다.
+   *
+   * 소량 스모크 테스트가 대상 상품만 골라 돌릴 때 이걸 그대로 넘긴다 —
+   * 검증용으로 비슷한 경로를 새로 만들면 정작 운영에서 도는 코드를
+   * 검증하지 못한다. 노출만 하고 동작은 손대지 않는다.
+   */
+  fetchCoupangAll, fetchAdpickAll,
   // 리포트 집계의 계약 — 테스트가 이 둘로 불변조건을 고정한다.
   reportInvariantErrors, productSuccessRate, todayPriceRate,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.

@@ -316,10 +316,19 @@ async function runAndCollectQueries(rows, opts) {
     check(/if \(alreadyTried\.has\(q\)\) return;/.test(code),
       '★★ alreadyTried 는 건너뛰기로만 처리한다');
 
-    // product_id 게이트 유지
-    check((code.match(/byId\.get\(item\.productId\)/g) || []).length === 2,
+    /*
+     * product_id 게이트 유지.
+     *
+     * 2026-09-03 에 판정이 두 겹이 됐다 — product_id 완전 일치(여기)에 더해
+     * vendorItemId(판매 단위) 일치를 pickOption 이 본다. 쿠팡 productId 아래
+     * 옵션이 여럿이라 productId 만으로는 다른 옵션 가격이 붙기 때문이다.
+     * 게이트가 있는 자리(1차 processGroup / 2차 callAndMatch)는 그대로다.
+     */
+    check((code.match(/byId\.get\(pid\)/g) || []).length === 2,
       '★★ product_id 완전 일치 게이트가 1차·2차 두 곳에 그대로 있다',
-      (code.match(/byId\.get\(item\.productId\)/g) || []).length);
+      (code.match(/byId\.get\(pid\)/g) || []).length);
+    check(/pickOption\(target, items\)/.test(code),
+      '★★ 채택은 판매 단위(vendorItemId)까지 확인한 뒤에만 이뤄진다');
 
     // rate limit 불변
     check(/const COUPANG_MIN_GAP_MS\s*=\s*6000;/.test(src),

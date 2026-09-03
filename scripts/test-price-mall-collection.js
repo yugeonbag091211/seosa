@@ -404,7 +404,8 @@ function makeRows(mall, n, withKeyword = true) {
     check("★★ recorded_at 범위(gte/lt)로 조회한다",
       body.includes("gte('recorded_at'") && body.includes("lt('recorded_at'"));
     check('kstDayStartUtc 로 KST 하루 시작을 잡는다', body.includes('kstDayStartUtc('));
-    check('kstDayStartUtc 가 import 되어 있다', src.includes('kstDayStartUtc } = require'));
+    check('kstDayStartUtc 가 import 되어 있다',
+      /kstDayStartUtc[^}]*} = require\('\.\.\/api\/_price'\)/.test(src));
 
     // 경계 산술 자체를 고정한다 (KST 는 서머타임이 없어 정확히 24시간)
     const { kstDayStartUtc } = require('../api/_price');
@@ -433,9 +434,12 @@ function makeRows(mall, n, withKeyword = true) {
      */
     const rows = [];
     for (let i = 1; i <= 12; i++) {
-      rows.push({ product_id: `P${i}`, mall: '쿠팡', title: `브랜드${i} 모델 MD${i}00X 제품`, keyword: '공통검색어', link: '', image: '' });
+      // 판매 단위(옵션) 식별자를 함께 준다 — 수집기는 vendorItemId 까지 맞아야
+      // 채택한다(collect-all-prices.js pickOption). 이 테스트가 보는 것은 패스별
+      // 계측이므로 타겟과 응답이 같은 옵션을 쓰게 해 게이트를 항상 통과시킨다.
+      rows.push({ product_id: `P${i}`, mall: '쿠팡', title: `브랜드${i} 모델 MD${i}00X 제품`, keyword: '공통검색어', link: '', image: '', item_id: `I${i}`, vendor_item_id: `VP${i}` });
     }
-    const item = (id) => ({ productId: id, title: 't', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' });
+    const item = (id) => ({ productId: id, title: 't', lprice: 1000, oprice: 1000, link: '', image: '', itemId: `I${String(id).slice(1)}`, vendorItemId: `V${id}` });
     const seen = [];
     const fetchAllFn = async (q) => {
       seen.push(q);
@@ -560,8 +564,9 @@ function makeRows(mall, n, withKeyword = true) {
   console.log('[12] 교차 매칭 — 다른 검색어의 응답에 들어온 우리 상품도 가져간다');
   {
     const rows = [
-      { product_id: 'X1', mall: '쿠팡', title: '알파 제품 하나', keyword: 'kwA', link: '', image: '' },
-      { product_id: 'X2', mall: '쿠팡', title: '베타 제품 둘', keyword: 'kwB', link: '', image: '' }
+      // 아래 item() 이 vendorItemId: 'V'+id 를 주므로 타겟도 같은 옵션을 가리킨다.
+      { product_id: 'X1', mall: '쿠팡', title: '알파 제품 하나', keyword: 'kwA', link: '', image: '', item_id: 'I1', vendor_item_id: 'VX1' },
+      { product_id: 'X2', mall: '쿠팡', title: '베타 제품 둘', keyword: 'kwB', link: '', image: '', item_id: 'I2', vendor_item_id: 'VX2' }
     ];
     const item = (id, price) => ({ productId: id, title: 't' + id, lprice: price, oprice: price, link: '', image: '', itemId: '', vendorItemId: 'V' + id });
     const asked = [];

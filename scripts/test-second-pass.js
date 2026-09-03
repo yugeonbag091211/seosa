@@ -100,11 +100,29 @@ function check(ok, label, detail) {
 }
 function section(n) { console.log(`\n${n}`); }
 
+/*
+ * ★ 픽스처에도 판매 단위(옵션) 식별자를 넣는다 (2026-09-03).
+ *
+ *   수집기는 응답 항목의 vendorItemId 가 우리 상품의 vendor_item_id 와
+ *   같을 때만 가격을 채택한다 (collect-all-prices.js pickOption). 쿠팡의
+ *   productId 는 "노출 상품" 이고 실제로 팔리는 단위는 그 아래 옵션이라,
+ *   productId 만 맞춰 채택하면 다른 옵션의 가격이 기록되기 때문이다.
+ *
+ *   이 파일이 검증하는 것은 회수 패스·커서·facet 동작이지 옵션 판정이
+ *   아니다. 그래서 상품마다 옵션 하나를 정해 두고 타겟과 응답이 같은 값을
+ *   쓰게 한다 — 그러면 게이트는 항상 통과하고, 각 테스트의 원래 주장이
+ *   그대로 유지된다. (옵션 판정 자체는 test-option-identity.js 가 고정한다.)
+ *
+ *   운영에서는 쿠팡 상품 1,554개 전부가 컬럼 또는 link 로 vid 를 갖는다.
+ *   식별자가 없는 이 픽스처 모양이 오히려 현실에 없는 상태였다.
+ */
 const prod = (id, title, keyword) =>
-  ({ product_id: id, mall: '쿠팡', title, keyword: keyword || '', link: '', image: '' });
+  ({ product_id: id, mall: '쿠팡', title, keyword: keyword || '', link: '', image: '',
+     item_id: 'I' + id, vendor_item_id: 'V' + id });
 const item = (id, price) =>
   ({ productId: id, title: 't' + id, lprice: price, oprice: price,
-     link: 'https://x/' + id, image: '', mall: '쿠팡', itemId: '', vendorItemId: '' });
+     link: 'https://x/' + id, image: '', mall: '쿠팡',
+     itemId: 'I' + id, vendorItemId: 'V' + id });
 const FAR = () => Date.now() + 10 * 60 * 1000;
 
 /** 자식 프로세스에서 env 를 바꿔 2차 패스를 돌리고 결과 JSON 을 받는다. */
@@ -494,9 +512,30 @@ function probeChild(envLines) {
     const codeOnly = src.split('\n')
       .filter(l => !/^\s*(\*|\/\/|\/\*)/.test(l))
       .join('\n');
-    const gates = (codeOnly.match(/byId\.get\(item\.productId\)/g) || []).length;
+    const gates = (codeOnly.match(/byId\.get\(pid\)/g) || []).length;
     check(gates === 2,
       '★★ product_id 완전 일치 게이트가 1차·2차 두 곳 모두에 있다 (그리고 그 둘뿐이다)', gates);
+
+    /*
+     * ★ 옵션(vendorItemId) 게이트도 우회로가 없어야 한다 (2026-09-03).
+     *
+     *   product_id 완전 일치만으로는 부족하다는 것이 운영 데이터로 드러났다.
+     *   쿠팡 productId 아래에는 옵션이 여럿이고, 응답은 그때그때 다른 옵션을
+     *   대표로 싣는다. 그래서 채택 경로가 **반드시** pickOption 을 지나도록
+     *   구조를 고정한다 — addRow(실제 채택)를 부르는 곳이 adoptOne 하나뿐이고,
+     *   adoptOne 은 pickOption 없이는 아무것도 채택하지 않는다.
+     *
+     *   여기가 깨지면 "productId 만 맞으면 저장" 경로가 다시 열린 것이다.
+     */
+    check(!/byId\.get\(item\.productId\)/.test(codeOnly),
+      '★★ productId 만으로 응답 항목을 채택하던 옛 경로가 남아 있지 않다');
+    const addRowUses = (codeOnly.match(/addRow\(/g) || []).length;
+    check(addRowUses === 2,
+      '★★ addRow 는 정의 1곳 + 호출 1곳뿐 — 채택은 전부 adoptOne 을 지난다', addRowUses);
+    check(/function adoptOne\([\s\S]{0,400}?pickOption\(/.test(codeOnly),
+      '★★ adoptOne 은 pickOption 의 판정으로만 채택한다');
+    check(/targetVendorItemId:\s*vendorIdOf\(target\)/.test(codeOnly),
+      '★★ 저장 직전 방어막용 타겟 옵션이 관측치에 실린다 (api/_shop.js OPTION_MISMATCH)');
   }
 
   /* ==============================================================

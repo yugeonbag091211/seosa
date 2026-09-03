@@ -560,7 +560,7 @@ async function upsertProducts(rows) {
  *                수집기 성과의 근거는 price_job_state 쪽이다 — 마이그레이션
  *                파일의 "이 컬럼만으로는 완전하지 않다" 절에 근거를 적어 두었다.
  *
- * @returns {{saved, recorded, rejected, suspect, errors}}
+ * @returns {{saved, recorded, rejected, suspect, optionMismatch, errors}}
  */
 async function recordPrices(observations, opts = {}) {
   const label = opts.label || '';
@@ -646,7 +646,7 @@ async function recordPrices(observations, opts = {}) {
     byKey.set(key, it);
   }
   const uniq = [...byKey.values()];
-  if (!uniq.length) return { saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0, errors };
+  if (!uniq.length) return { saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0, optionMismatch: 0, errors };
 
   const keys = uniq.map(it => ({ productId: it.productId, mall: it.mall }));
   const prevMap = await loadPrevObservations(keys, today);
@@ -657,8 +657,41 @@ async function recordPrices(observations, opts = {}) {
   let historyFailed = false;
   let rejected = 0;
   let suspect = 0;
+  /* 옵션이 달라 저장하지 않은 관측 수 (아래 방어막). 실패가 아니라 거부다. */
+  let optionMismatch = 0;
 
   for (const it of uniq) {
+    /* ── ★ 저장 직전 옵션 방어막 (2026-09-03) ──────────────────────
+     *
+     * 호출부가 "우리가 추적하기로 한 옵션"(targetVendorItemId)을 실어 보내면,
+     * 실제로 저장될 vendorItemId 와 대조해서 다르면 **쓰지 않는다.**
+     *
+     * ★ 왜 여기에도 두는가 — 수집기의 pickOption 이 이미 같은 판정을 한다.
+     *   그런데 방어막이 매칭 쪽에만 있으면, 나중에 그 경로에 버그가 하나
+     *   생기는 순간 운영 이력이 다시 오염된다. 실제로 그런 일이 있었다:
+     *   productId 만 맞춰 채택하는 코드가 오래 돌면서 쿠팡 상품 605개의
+     *   이력에 두 개 이상의 옵션 가격이 섞였고, 그중 113개는 최저·최고
+     *   차이가 2배를 넘는다. 되돌릴 수 없는 쓰기 바로 앞에 하나 더 둔다.
+     *
+     * 필드를 안 넘기는 호출부(검색 API 등)에서는 아무 일도 하지 않는다 —
+     * targetVendorItemId 가 없으면 대조할 기준이 없기 때문이다. ADPICK 처럼
+     * vendorItemId 개념이 없는 몰도 빈 문자열이라 그대로 통과한다.
+     */
+    const wantVid = String(it.targetVendorItemId || '');
+    if (wantVid) {
+      const gotVid = vendorIdOf(it);
+      if (gotVid !== wantVid) {
+        optionMismatch++;
+        console.warn(`[save${label ? ':' + label : ''}] OPTION_MISMATCH`
+          + ` productId=${it.productId}`
+          + ` targetVendorItemId=${wantVid}`
+          + ` responseVendorItemId=${gotVid || '(없음)'}`
+          + ` price=${it.price} mall=${it.mall} (${String(it.title).slice(0, 30)})`
+          + ' — 다른 판매 단위의 가격이라 저장하지 않습니다.');
+        continue;
+      }
+    }
+
     const k = `${it.productId}|${it.mall}`;
     const prevObs = prevMap.get(k);
     /*
@@ -847,6 +880,8 @@ async function recordPrices(observations, opts = {}) {
     recordedKeys: historyFailed ? [] : [...new Set(historyRows.map(r => `${r.product_id}|${r.mall}`))],
     rejected,
     suspect,
+    // 옵션이 달라 저장하지 않은 관측 수 (OPTION_MISMATCH 방어막).
+    optionMismatch,
     errors
   };
 }
