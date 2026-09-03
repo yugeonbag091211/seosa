@@ -958,6 +958,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       todayPriceProducts, uncoveredProducts: collectible.length - todayPriceProducts,
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
       passStats: [],
+      facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
       notFoundCount: 0,
       secondPassCalls: 0, secondPassRecovered: 0, secondPassGroups: 0, secondPassRemaining: 0,
       secondPassDone: [],
@@ -982,6 +983,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    */
   let priorSecondDone = [];
   /*
+   * 오늘 facet 을 캐다가 연속 무수확으로 끊은 그룹. 다음 실행이 같은 그룹을
+   * 다시 두드리지 않게 이어 간다 (facet 패스 안의 2026-09-03 실측 참고).
+   */
+  let priorFacetDry = [];
+  /*
    * 오늘 앞선 실행이 이미 확보한 상품. 이어받기 실행이 자기 몫만 세어
    * 성공률을 축소하지 않도록 합집합으로 이어 간다 (markCovered 주석 참고).
    */
@@ -997,6 +1003,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     cursorKey = savedState.cursor_key || '';
     processed = savedState.processed || 0;
     priorSecondDone = (savedState.last_result && savedState.last_result.secondPassDone) || [];
+    priorFacetDry = (savedState.last_result && savedState.last_result.facetDryGroups) || [];
     priorCollectorCovered = (savedState.last_result && savedState.last_result.collectorCovered) || [];
     priorCollectorAttempted = (savedState.last_result && savedState.last_result.collectorAttempted) || [];
     priorFailedKeywords = (savedState.last_result && savedState.last_result.failedKeywords) || [];
@@ -1410,6 +1417,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   secondPassRemaining  오늘 아직 안 부른 검색어 수 (>0 이면 status='running')
    *   secondPassTried      이번 실행에서 부른 검색어 (다음 실행이 건너뛰도록 저장)
    */
+  /* 회수 블록 밖에서도 읽어야 해서 여기서 선언한다 (2차 패스가 꺼져 있으면 그대로 이어받는다). */
+  let facetDryOut = [...priorFacetDry];
   let secondPassCalls = 0, secondPassRecovered = 0, secondPassGroups = 0;
   let secondPassRemaining = 0;
   const secondPassTried = [];
@@ -1484,8 +1493,24 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 신규 회수 0인 호출이 2회 연속이면 그 그룹은 더 캐도 안 나온다
      * (실측 한계효용 +9,+6,+3,+3,+1,+1,+0,+0 → 6회에서 포화).
      */
+    /*
+     * ★ 오늘 이미 마른 그룹은 다시 두드리지 않는다 (2026-09-03 실측).
+     *
+     *   facet 은 그룹에 처음 닿을 때 효율이 가장 높고, 한 번 훑고 나면 급격히
+     *   마른다. 운영 실측(같은 날 연속 실행):
+     *     1회차(이전 세션)  호출 102 → 회수 74  (0.73/호출)
+     *     2회차             호출  64 → 회수  4  (0.06/호출)
+     *     3회차             호출  28 → 회수 10  (0.36/호출)
+     *   같은 시간에 상품별 사다리 r1 은 0.71/호출이었다. 즉 마른 그룹을 계속
+     *   두드리는 것은 사다리에서 그만큼의 회수를 빼앗는 것과 같다.
+     *
+     *   DRY_STOP 은 한 실행 안에서만 작동해서, 다음 실행이 또 처음부터 두 번씩
+     *   두드렸다(30그룹 × 2회 = 실행당 60호출). 이제 마른 그룹을 하루 단위로
+     *   기억해 건너뛴다. 하루가 바뀌면 isNewDay 가 리셋한다.
+     */
+    const facetDry = new Set(priorFacetDry);
     const bigGroups = plan
-      .filter(g => g.rows.length > FACET_MIN_GROUP && g.rows.some(eligible))
+      .filter(g => g.rows.length > FACET_MIN_GROUP && !facetDry.has(g.kw) && g.rows.some(eligible))
       .sort((x, y) => y.rows.length - x.rows.length);
 
     if (bigGroups.length && canCall()) {
@@ -1530,8 +1555,13 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
           if (res.hit) {
             console.log(`  [${mallName}] [facet] "${f.query}" +${res.hit} (items=${res.items})`);
           }
-          if (dry >= FACET_DRY_STOP) break;      // 연속 무수확 → 이 그룹은 끝
+          if (dry >= FACET_DRY_STOP) {           // 연속 무수확 → 이 그룹은 오늘 끝
+            facetDry.add(g.kw);
+            break;
+          }
         }
+        // 후보를 다 썼는데도 남은 상품이 있으면, 이 그룹은 facet 으로 더 캘 것이 없다.
+        if (!facetDry.has(g.kw) && facets.length === 0) facetDry.add(g.kw);
       }
       console.log(`  [${mallName}] facet 패스 완료 — 호출 ${facetCalls}회, 회수 ${facetRecovered}개`);
     }
@@ -1639,6 +1669,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     }
     secondPassRecovered += facetRecovered;
     secondPassCalls += facetCalls;
+    facetDryOut = [...facetDry];
   }
 
   if (recovered) {
@@ -1758,6 +1789,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 순서는 실제 실행 순서(pass1 → facet → r1..r9)로 고정한다.
      */
     passStats: [...passStats.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass)),
+    // 오늘 facet 이 마른 그룹. 다음 실행이 헛되이 두드리지 않게 이어 간다.
+    facetDryGroups: facetDryOut,
     // 오늘 누적 시도 목록. 무한히 커지지 않도록 상한을 둔다.
     secondPassDone: [...priorSecondDone, ...secondPassTried].slice(-3000)
   };
@@ -1800,7 +1833,9 @@ async function runLocked(state, lockToken) {
            * 2026-09-01 에 실제로 났던 사고(13.7%)와 같은 형태다.
            */
           collectorCovered: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorCovered) || [],
-          collectorAttempted: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorAttempted) || []
+          collectorAttempted: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorAttempted) || [],
+          facetDryGroups: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
+            && savedMalls['쿠팡'].last_result.facetDryGroups) || []
         } }
     : null;
   /*
@@ -1822,7 +1857,8 @@ async function runLocked(state, lockToken) {
           failedKeywords: savedMalls['ADPICK'].failedKeywords || [],
           collectorCovered: savedMalls['ADPICK'].collectorCovered || [],
           collectorAttempted: savedMalls['ADPICK'].collectorAttempted || [],
-          secondPassDone: (savedMalls['ADPICK'].last_result || {}).secondPassDone || []
+          secondPassDone: (savedMalls['ADPICK'].last_result || {}).secondPassDone || [],
+          facetDryGroups: (savedMalls['ADPICK'].last_result || {}).facetDryGroups || []
         }
       }
     : null;
@@ -1997,7 +2033,10 @@ async function runLocked(state, lockToken) {
           cursor_key: coupangResult.cursorKey, processed: coupangResult.processed, total: coupangResult.total,
           status: coupangResult.status, failedKeywords: coupangResult.failedKeywords,
           // 2차 패스 진행 — 같은 날 후속 실행이 이어받는다(status 판정 주석 참고)
-          last_result: { secondPassDone: coupangResult.secondPassDone || [] },
+          last_result: {
+            secondPassDone: coupangResult.secondPassDone || [],
+            facetDryGroups: coupangResult.facetDryGroups || []
+          },
           secondPassRecovered: coupangResult.secondPassRecovered,
           secondPassRemaining: coupangResult.secondPassRemaining,
           // 상품 단위 — collectorCovered 가 내일 성공률의 근거다(하루 누적, 합집합)
@@ -2021,7 +2060,10 @@ async function runLocked(state, lockToken) {
         'ADPICK': {
           cursor_key: adpickResult.cursorKey, processed: adpickResult.processed, total: adpickResult.total,
           status: adpickResult.status, failedKeywords: adpickResult.failedKeywords,
-          last_result: { secondPassDone: adpickResult.secondPassDone || [] },
+          last_result: {
+            secondPassDone: adpickResult.secondPassDone || [],
+            facetDryGroups: adpickResult.facetDryGroups || []
+          },
           secondPassRecovered: adpickResult.secondPassRecovered,
           secondPassRemaining: adpickResult.secondPassRemaining,
           collectorCovered: adpickResult.collectorCovered || [],

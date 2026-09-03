@@ -490,6 +490,48 @@ function makeRows(mall, n, withKeyword = true) {
   }
   console.log('');
 
+  /* ── 11. facet 이 마른 그룹은 다음 실행에서 건너뛴다 (2026-09-03 실측) ── */
+  console.log('[11] facet — 오늘 마른 그룹은 다음 실행에서 두드리지 않는다');
+  {
+    const rows = [];
+    for (let i = 1; i <= 14; i++) {
+      rows.push({ product_id: `D${i}`, mall: '쿠팡', title: `브랜드${i} 제품${i}`, keyword: 'kw', link: '', image: '' });
+    }
+    // 어떤 검색으로도 우리 상품이 안 나온다 → facet 은 곧바로 마른다.
+    const run = async (prior) => {
+      const asked = [];
+      const res = await runMallCollection({
+        mallName: '쿠팡', rows,
+        fetchAllFn: async (q) => {
+          asked.push(q);
+          return { ok: true, reason: '', items: [{ productId: 'NO-MATCH', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' }] };
+        },
+        savedState: {
+          job_date: TODAY, cursor_key: '', processed: 0, total: 14, status: 'running',
+          last_result: {
+            failedKeywords: [], collectorCovered: [], collectorAttempted: [],
+            secondPassDone: (prior && prior.secondPassDone) || [],
+            facetDryGroups: (prior && prior.facetDryGroups) || []
+          }
+        },
+        deadlineTs: Date.now() + 8000,
+        collectedTodayFn: async () => new Set()
+      });
+      return { res, facets: asked.filter(q => q.indexOf('kw ') === 0) };
+    };
+
+    const a = await run(null);
+    check('★ 1회차는 facet 을 두드린다', a.facets.length > 0, JSON.stringify(a.facets));
+    check('★ 마른 그룹이 상태에 기록된다',
+      (a.res.facetDryGroups || []).indexOf('kw') > -1, JSON.stringify(a.res.facetDryGroups));
+
+    const b = await run({ secondPassDone: a.res.secondPassDone, facetDryGroups: a.res.facetDryGroups });
+    eq('★★ 2회차는 그 그룹에 facet 호출을 하지 않는다', b.facets.length, 0);
+    check('★ 마른 표시는 다음 실행으로도 이어진다',
+      (b.res.facetDryGroups || []).indexOf('kw') > -1, JSON.stringify(b.res.facetDryGroups));
+  }
+  console.log('');
+
   console.log(`=== 결과: ${pass}/${pass + fail} PASS ===`);
   process.exit(fail ? 1 : 0);
 })().catch(e => {
