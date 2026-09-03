@@ -135,6 +135,22 @@ section('4. 제목에 없는 것을 만들지 않는다');
     q.toLowerCase().split(/\s+/).every(w => src.indexOf(w) > -1));
   check(allFromTitle, '★★ 모든 후보의 모든 토큰이 제목 안에 실제로 있다', qs);
 
+  /*
+   * ★ 제목이 곧 1차 검색어인 상품도 후보를 하나는 받아야 한다 (2026-09-03).
+   *
+   *   "파워에이드 마운틴블라스트" 는 제목 == keyword 라 제목·압축·브랜드+꼬리가
+   *   전부 keyword 와 같아져 중복으로 걸러졌다. 후보가 0개가 되면 그 상품은
+   *   회수 사다리에서 영원히 한 번도 시도되지 않는다 — 실측으로 운영에
+   *   그런 상품이 있었다(미수집 142개 중 1개).
+   *   꼬리 명사 단독("마운틴블라스트")이 마지막 안전망이다.
+   */
+  const same = generateSecondPassQueries(P('파워에이드 마운틴블라스트', '파워에이드 마운틴블라스트'));
+  check(same.length >= 1, '★★ 제목 == 검색어 여도 후보가 0개가 되지 않는다', same);
+  check(same.indexOf('마운틴블라스트') > -1,
+    '★ 꼬리 명사 단독이 마지막 안전망으로 들어간다', same);
+  check(generateSecondPassQueries(P('마우스', '마우스')).length === 0,
+    '★ 짧고 흔한 한 단어(3자)는 단독 후보를 만들지 않는다 (호출 낭비 방지)');
+
   check(generateSecondPassQueries(P('')).length === 0, '★ 빈 제목 → 후보 0개');
   check(generateSecondPassQueries(P(null)).length === 0, '★ null 제목 안전');
   check(generateSecondPassQueries(null).length === 0, '★ 상품 자체가 null 이어도 안전');
