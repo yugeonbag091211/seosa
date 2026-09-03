@@ -71,6 +71,8 @@ const { runMallCollection } = require('./collect-all-prices');
 const { generateSecondPassQueries } = require('../api/_query');
 
 /* 운영 DB 에 절대 쓰지 않는 저장 훅 — test-price-mall-collection.js 의 같은 주석 참고. */
+/* 캐시 힌트 조회는 운영 테이블 전체 스캔이라 테스트에서는 막는다. */
+const NO_HINT = async () => new Map();
 const NO_WRITE = async (obs) => ({ saved: obs.length, recorded: obs.length,
   recordedKeys: [...new Set(obs.map(o => o.productId + "|" + o.mall))], rejected: 0, suspect: 0, errors: [] });
 
@@ -93,7 +95,7 @@ async function runAndCollectQueries(rows, opts) {
   const o = opts || {};
   const firstKw = new Set(rows.map(p => p.keyword).filter(Boolean));
   const seen = [];
-  await runMallCollection({ recordPricesFn: NO_WRITE,
+  await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
     mallName: '쿠팡', rows,
     savedState: o.savedState || null,
     deadlineTs: FAR(),

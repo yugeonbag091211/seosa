@@ -124,6 +124,41 @@ function nounsOf(title) {
 }
 
 /**
+ * 꼬리 명사로 쓰면 안 되는 말 — 포장·수량·판매 형태.
+ *
+ * ── 왜 필요한가 (2026-09-03 실측) ──────────────────────────────
+ * "브랜드 + 마지막 명사" 후보는 제목이 상품명으로 끝날 때만 쓸모가 있다.
+ * 그런데 한국 쇼핑몰 제목은 뒤에 포장·수량이 붙는 일이 훨씬 많아서,
+ * 마지막 명사를 그냥 집으면 상품을 구분하지 못하는 말이 나온다.
+ *
+ *   "환타 파인애플 500ml 업소용, 355ml, 48개"      → "환타 업소용"
+ *   "25년 햅쌀 대왕님표 여주쌀 … 10kg, 1개, 상등급" → "25년 상등급"
+ *   "쿠쿠 정품 CRP-DHAS069FWM 전용 밥솥 컨트롤 패킹 [신형] (비닐포장) (HJ솔B 포함)"
+ *                                                  → "쿠쿠 패킹" (모델코드가 빠졌다)
+ *
+ * 그래서 뒤에서부터 훑되 이 목록에 있는 말은 건너뛴다.
+ */
+const TAIL_NOISE = new Set([
+  '개', '개입', '세트', '팩', '박스', '매', '장', '병', '캔', '봉', '포', '입', '구', '호',
+  '포함', '사용', '전용', '벌크', '새상품', '상등급', '랜덤발송', '단일상품', '택1',
+  '비닐포장', '비닐포장형', '단품', '벌크형', '리필', '증정품', '본품'
+]);
+
+/**
+ * 상품을 실제로 구분하는 "꼬리 명사".
+ *
+ * 뒤에서부터 첫 번째로 TAIL_NOISE 가 아닌 명사를 고른다. 전부 노이즈면
+ * 그냥 마지막 명사를 준다(예전 동작과 같아진다).
+ */
+function tailNounOf(title) {
+  const ns = nounsOf(title);
+  for (let i = ns.length - 1; i >= 0; i--) {
+    if (!TAIL_NOISE.has(ns[i])) return ns[i];
+  }
+  return ns.length ? ns[ns.length - 1] : '';
+}
+
+/**
  * 규격 토큰 — 숫자에 단위가 붙어 상품을 실제로 구분하는 것.
  *
  * UNIT_RE 와 다르다. UNIT_RE 는 "4개입" 같은 포장 수량까지 잡아 검색어로
@@ -225,7 +260,7 @@ function normalizeSpecial(title) {
  *   다음 라운드에서 빠지고, 같은 문구를 여러 상품이 공유하면 한 번만 부른다.
  *   실제 호출 수를 정하는 것은 시간 예산과 SECOND_PASS_MAX_CALLS 다.
  */
-const MAX_CANDIDATES = 9;
+const MAX_CANDIDATES = 10;
 
 /**
  * 2차 이후에 쓸 검색어 후보를 **회수 가능성이 높은 순서로** 만든다.
@@ -283,17 +318,40 @@ function generateSecondPassQueries(product, opts) {
 
   const mSplit = ms.length ? splitModelCode(ms[0]) : '';
 
+  /*
+   * 꼬리 명사 — 포장·수량을 건너뛴 "상품을 구분하는 마지막 말" (tailNounOf 주석 참고).
+   * ns[ns.length-1] 과 다를 수 있고, 다르면 둘 다 후보로 낸다.
+   */
+  const tail = tailNounOf(title);
+  const lastNoun = ns.length ? ns[ns.length - 1] : '';
+
   const raw = [
     (b && ms.length && ms[0] !== b) ? `${b} ${ms[0]}` : '',     // 1) 브랜드 + 모델코드
-    (b && mSplit) ? `${b} ${mSplit}` : '',                      // 2) 브랜드 + 모델코드(띄어쓴 표기)
-    title,                                                      // 3) 제목 48자
-    (b && ns.length >= 2 && ns[ns.length - 1] !== b)             // 4) 브랜드 + 마지막 명사
-      ? `${b} ${ns[ns.length - 1]}` : '',
-    compressTitle(title, 4),                                     // 5) 제목 압축 (T4)
-    (b && ns.length >= 3) ? `${b} ${ns[1]} ${ns[2]}` : '',       // 6) 브랜드 + 명사 2·3
-    normalizeSpecial(title),                                     // 7) 제목 특수문자 정규화 (T7)
-    (b && sp.length && sp[0] !== b) ? `${b} ${sp[0]}` : '',      // 8) 브랜드 + 규격
-    ms.length ? ms[0] : ''                                      // 9) 모델코드 단독
+    /*
+     * 2) 브랜드 + 모델코드 + 꼬리 명사 (2026-09-03 신설)
+     *
+     *    ★ 왜 필요한가 — 모델코드만으로는 부품·액세서리를 못 가른다.
+     *      실측: 쿠쿠 CRP-DHAS069FWM 로 등록된 우리 상품이 3개인데
+     *        · 컨트롤 패킹  · 고무패킹  · 열림 버튼
+     *      "쿠쿠 CRP-DHAS069FWM" 한 문구로는 셋 다 상위 10건 밖으로 밀렸다.
+     *      그 모델의 부품을 파는 판매자가 열 곳이 넘기 때문이다.
+     *      기존 사다리에는 모델코드와 구분 명사를 **함께** 넣는 후보가 없었다
+     *      ("쿠쿠 패킹" 은 모델코드가 빠지고, 제목 48자는 노이즈가 낀다).
+     */
+    (b && ms.length && tail && tail !== b && tail !== ms[0])
+      ? `${b} ${ms[0]} ${tail}` : '',
+    (b && mSplit) ? `${b} ${mSplit}` : '',                      // 3) 브랜드 + 모델코드(띄어쓴 표기)
+    title,                                                      // 4) 제목 48자
+    (b && tail && tail !== b) ? `${b} ${tail}` : '',            // 5) 브랜드 + 꼬리 명사
+    compressTitle(title, 4),                                     // 6) 제목 압축 (T4)
+    /* 7) 모델코드 + 꼬리 명사 — 브랜드 표기가 제각각인 상품용 (2026-09-03 신설) */
+    (ms.length && tail && tail !== ms[0]) ? `${ms[0]} ${tail}` : '',
+    (b && ns.length >= 3) ? `${b} ${ns[1]} ${ns[2]}` : '',       // 8) 브랜드 + 명사 2·3
+    normalizeSpecial(title),                                     // 9) 제목 특수문자 정규화 (T7)
+    ms.length ? ms[0] : '',                                     // 10) 모델코드 단독
+    /* 11) 예전 4번 — 꼬리 명사가 노이즈를 건너뛰었을 때만 다른 값이 된다 */
+    (b && lastNoun && lastNoun !== b && lastNoun !== tail) ? `${b} ${lastNoun}` : '',
+    (b && sp.length && sp[0] !== b) ? `${b} ${sp[0]}` : ''      // 12) 브랜드 + 규격
   ];
 
   const out = [];

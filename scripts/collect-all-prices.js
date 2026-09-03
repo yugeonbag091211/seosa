@@ -278,7 +278,7 @@ const SECOND_PASS_TOKENS    = Number(process.env.PRICE_SECOND_PASS_TOKENS) || 5;
  * ★ "최대 5회"이지 "무조건 5회"가 아니다. 적중한 상품은 uncovered 에서
  *   빠져 다음 라운드 대상에서 제외된다.
  */
-const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 9;
+const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 10;
 
 /*
  * facet 패스 — 큰 그룹을 "검색어 + 구분 토큰"으로 쪼갠다.
@@ -291,6 +291,14 @@ const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 9;
  *                      다음 토큰으로 이어서 판다 (facet 패스 안의 2026-09-03 주석).
  *   FACET_DRY_STOP     신규 회수 0이 연속 몇 번이면 그 그룹을 끝낼지.
  */
+/*
+ * 캐시 힌트 패스 — cacheHintQueries 주석 참고.
+ *   상품당 최대 몇 개의 옛 검색어를 다시 부를지. 3개면 실측 사례를 전부 덮는다.
+ *   끄고 싶으면 PRICE_CACHE_HINT=0.
+ */
+const CACHE_HINT_ENABLED = process.env.PRICE_CACHE_HINT !== '0';
+const CACHE_HINT_MAX_PER_PRODUCT = Number(process.env.PRICE_CACHE_HINT_MAX) || 3;
+
 const FACET_MIN_GROUP     = Number(process.env.PRICE_FACET_MIN_GROUP) || 10;
 const FACET_MAX_PER_GROUP  = Number(process.env.PRICE_FACET_MAX_PER_GROUP) || 6;
 const FACET_POOL_PER_GROUP = Number(process.env.PRICE_FACET_POOL_PER_GROUP) || 24;
@@ -795,9 +803,10 @@ function mergePassStats(results) {
 /** 패스 이름의 실행 순서. 리포트·로그가 항상 같은 순서로 나오게 한다. */
 function passOrder(name) {
   if (name === 'pass1') return 0;
-  if (name === 'facet') return 1;
+  if (name === 'hint') return 1;
+  if (name === 'facet') return 2;
   const m = /^r(d+)$/.exec(String(name));
-  return m ? 1 + Number(m[1]) : 99;
+  return m ? 2 + Number(m[1]) : 99;
 }
 
 const failureCategoriesTemplate = () => ({
@@ -864,6 +873,61 @@ async function collectedTodayKeys(mallName, collectible) {
   return found;
 }
 
+/**
+ * 검색 캐시에서 "이 상품을 실제로 돌려줬던 검색어" 를 뽑는다.
+ *
+ * ── 왜 이게 가장 강한 단서인가 (2026-09-03) ─────────────────────
+ *
+ *   미수집 상품의 검색어를 새로 지어내는 것보다, **예전에 그 상품을 돌려준
+ *   적이 있는 검색어를 다시 부르는 것**이 훨씬 확실하다. 우리가 만든 후보가
+ *   아니라 쿠팡 색인이 실제로 답한 기록이기 때문이다.
+ *
+ *   실측: 미수집 151개 중 13개가 "다른 상품의 검색어" 응답 안에 남아 있었다.
+ *     pid 9574923427 (ASUS TUF F16)  ← "에이수스 비보북 코어Ultra5 인텔 14세대"
+ *     pid 9483527655 (LG 그램 Pro 16) ← "LG 그램 화이트 WIN11 Pro"
+ *     pid 9709957210 (존바바토스)     ← "존바바토스 뚜왈렛 아티산"
+ *   어느 것도 그 상품의 후보 사다리에서는 나올 수 없는 문구다.
+ *
+ * ★ 캐시에 있는 **가격을 쓰지 않는다.** 검색어만 가져온다.
+ *   캐시 항목은 며칠 전 것일 수 있고, 오래된 가격을 오늘 가격으로 기록하는 것은
+ *   이 스크립트가 곳곳에서 막고 있는 바로 그 일이다(fetchCoupangAll 의
+ *   stale-cache 처리 참고). 여기서 얻는 것은 "무엇으로 물어보면 되는가" 뿐이고,
+ *   가격은 그 검색어를 지금 다시 불러서 받는다.
+ *
+ * 읽기 전용이고, 실패하면 빈 Map 을 준다(수집을 막을 이유가 없다).
+ *
+ * @param {Set<string>} wantIds 찾고 싶은 product_id 문자열 집합
+ * @returns {Map<string, string[]>} product_id → 그 상품을 돌려준 적 있는 검색어들
+ */
+async function cacheHintQueries(wantIds) {
+  const out = new Map();
+  if (!wantIds || wantIds.size === 0) return out;
+  try {
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('coupang_search_cache')
+        .select('keyword, items')
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(error.message);
+      (data || []).forEach(row => {
+        const items = Array.isArray(row.items) ? row.items : [];
+        items.forEach(it => {
+          const pid = String(it && it.productId);
+          if (!wantIds.has(pid)) return;
+          if (!out.has(pid)) out.set(pid, []);
+          const list = out.get(pid);
+          if (list.indexOf(row.keyword) < 0) list.push(row.keyword);
+        });
+      });
+      if (!data || data.length < PAGE) break;
+    }
+  } catch (e) {
+    console.warn(`  [캐시 힌트] 조회 실패(무시하고 진행): ${e.message}`);
+    return new Map();
+  }
+  return out;
+}
+
 function categorizeFailure(reason) {
   const r = String(reason || '').toLowerCase();
   if (r.includes('차단') || r.includes('중단')) return 'blocked';
@@ -892,6 +956,10 @@ function categorizeFailure(reason) {
  *              오늘 이미 가격을 확보한 상품 키. 기본값은 price_history 를 읽는
  *              collectedTodayKeys 다. 테스트가 운영 DB 없이 이어받기 실행을
  *              재현할 수 있도록 주입 가능하게 열어 둔다(수집 동작은 바뀌지 않는다).
+ *   cacheHintFn  (Set<product_id>) => Promise<Map<product_id, string[]>>
+ *              그 상품을 돌려준 적 있는 검색어. 기본값은 coupang_search_cache 를
+ *              통째로 읽는 cacheHintQueries 다. 전체 스캔이라 수 초가 걸릴 수 있어,
+ *              테스트는 스텁을 넘겨 시간 예산을 잡아먹지 않게 한다.
  *   recordPricesFn  (observations, opts) => Promise<{saved, recorded, recordedKeys, ...}>
  *              저장 경로. 기본값은 api/_shop.js 의 recordPrices 다.
  *
@@ -905,7 +973,8 @@ function categorizeFailure(reason) {
  */
 async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadlineTs,
                                    collectedTodayFn = collectedTodayKeys,
-                                   recordPricesFn = recordPrices }) {
+                                   recordPricesFn = recordPrices,
+                                   cacheHintFn = cacheHintQueries }) {
   const withKeyword = rows.filter(p => p.keyword);
   const noKeyword   = rows.filter(p => !p.keyword);
 
@@ -1557,6 +1626,43 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       secondPassTried.push(query);
       alreadyTried.add(query);
       return { ok: true, items: (r.items || []).length, hit };
+    }
+
+    /* ── 1.5) 캐시 힌트 패스 — 예전에 그 상품을 돌려준 검색어를 다시 부른다 ──
+     *
+     * 가장 확실한 단서부터 쓴다 (cacheHintQueries 주석 참고). 상품당 최대
+     * CACHE_HINT_MAX_PER_PRODUCT 개, 오늘 이미 부른 문구는 건너뛴다.
+     * 같은 문구를 여러 상품이 공유하면 한 번만 부른다 — 교차 매칭이 나머지를 흡수한다.
+     */
+    if (CACHE_HINT_ENABLED && canCall() && uncovered.size) {
+      const want = new Set([...uncovered.values()].filter(eligible).map(p => String(p.product_id)));
+      const hints = await cacheHintFn(want);
+      const byQuery = new Map();
+      hints.forEach((queries, pid) => {
+        queries.slice(0, CACHE_HINT_MAX_PER_PRODUCT).forEach(q => {
+          const nq = String(q || '').trim();
+          if (!nq || alreadyTried.has(nq)) return;
+          if (!byQuery.has(nq)) byQuery.set(nq, []);
+          byQuery.get(nq).push(pid);
+        });
+      });
+      if (byQuery.size) {
+        console.log(`── [${mallName}] 캐시 힌트 패스: 상품 ${hints.size}개 / 검색어 ${byQuery.size}종 ──`);
+        let hintCalls = 0, hintHit = 0;
+        for (const [q, pids] of byQuery) {
+          if (!canCall()) break;
+          const targets = [...uncovered.values()].filter(p => pids.indexOf(String(p.product_id)) > -1);
+          if (!targets.length) continue;        // 앞선 호출이 이미 잡았다
+          hintCalls++;
+          const res = await callAndMatch(q, targets, 'hint');
+          if (!res.ok) continue;
+          hintHit += res.hit;
+          if (res.hit) console.log(`  [${mallName}] [hint] "${q}" +${res.hit}`);
+        }
+        console.log(`  [${mallName}] 캐시 힌트 완료 — 호출 ${hintCalls}회, 회수 ${hintHit}개`);
+        secondPassCalls += hintCalls;
+        secondPassRecovered += hintHit;
+      }
     }
 
     /* ── 2) facet 패스 — 큰 그룹부터 (호출당 회수가 가장 높다) ──────

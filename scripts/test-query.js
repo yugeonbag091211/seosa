@@ -297,7 +297,7 @@ section('10. 상품당 후보 상한 (호출 예산 보호)');
    * 상한을 늘려도 호출이 상품 수만큼 늘지 않는 이유는 _query.js 주석 참고
    * (적중하면 다음 라운드에서 빠지고, 같은 문구는 한 번만 부른다).
    */
-  check(MAX_CANDIDATES === 9, '★ 상한이 9다', MAX_CANDIDATES);
+  check(MAX_CANDIDATES === 10, '★ 상한이 10이다', MAX_CANDIDATES);
 
   const rich = P('아이리스 수퍼 서큘레이터 PCF-HM23 화이트 28인치 대용량 무선', '서큘레이터');
   const qs = generateSecondPassQueries(rich);
@@ -321,8 +321,27 @@ section('11. 랭킹 순서 (실측 근거대로)');
   const withModel = generateSecondPassQueries(P('아이리스 수퍼 서큘레이터 PCF-HM23 화이트', '서큘레이터'));
   check(withModel[0] === '아이리스 PCF-HM23',
     '★★ 모델코드가 있으면 브랜드+모델코드가 1순위 (가장 강한 식별자)', withModel[0]);
-  check(withModel[1] === '아이리스 PCF HM23',
-    '★★ 그 다음이 띄어 쓴 표기 (같은 신호의 다른 색인 형태)', withModel[1]);
+  /*
+   * ★ 2순위가 "브랜드 + 모델코드 + 꼬리 명사" 로 바뀌었다 (2026-09-03).
+   *
+   *   모델코드만으로는 부품·액세서리를 가르지 못한다. 실측: 쿠쿠
+   *   CRP-DHAS069FWM 로 등록된 우리 상품 3개(컨트롤 패킹·고무패킹·열림 버튼)가
+   *   "쿠쿠 CRP-DHAS069FWM" 한 문구로는 셋 다 상위 10건 밖으로 밀렸다.
+   *   같은 모델의 부품을 파는 판매자가 열 곳이 넘기 때문이다.
+   *   띄어 쓴 표기는 같은 신호의 변형이라 3순위로 내린다.
+   */
+  check(withModel[1] === '아이리스 PCF-HM23 화이트',
+    '★★ 그 다음이 브랜드+모델코드+꼬리 명사 (같은 모델의 부품을 가른다)', withModel[1]);
+  check(withModel[2] === '아이리스 PCF HM23',
+    '★★ 띄어 쓴 표기는 그 다음 (같은 신호의 다른 색인 형태)', withModel[2]);
+
+  /* 꼬리 명사는 포장·수량을 건너뛴다 (tailNounOf) */
+  const packed = generateSecondPassQueries(P('환타 파인애플 500ml 업소용, 355ml, 48개', '환타'));
+  check(packed.indexOf('환타 상등급') < 0 && packed.some(q => q.indexOf('파인애플') > -1),
+    '★★ 꼬리 명사가 수량("48개")이 아니라 상품을 구분하는 말이다', packed);
+  const rice = generateSecondPassQueries(P('25년 햅쌀 대왕님표 여주쌀 진상미 10kg, 1개, 상등급', '햅쌀'));
+  check(rice.indexOf('25년 상등급') !== 0,
+    '★ "상등급" 같은 등급 표기가 첫 꼬리 명사로 뽑히지 않는다', rice);
 
   // 모델코드가 없으면 제목이 첫 후보 (실측 단독 최고)
   const noModel = generateSecondPassQueries(P('루이벤 암막 정전기 강력흡수 차량용 햇빛가리개', '차량용 햇빛 가리개'));
