@@ -14,7 +14,8 @@ const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, fres
 const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT, todayDropConfirmed, kstToday } = require('./_price');
 const { attachTrust, loadRecentHistory } = require('./_trust');
 const { isValidSuggestion } = require('./_search');
-const { applyCors, cachePublic } = require('./_http');
+const { demandPicks } = require('./_picks');
+const { applyCors, cachePublic, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 // 달력 월은 KST 기준이다. new Date().getMonth() 는 런타임 TZ(Vercel=UTC)를 따라가서
 // KST 매월 1일 00:00~08:59 동안 지난달 큐레이션을 보게 된다 (_kst.kstMonth 주석 참고).
@@ -233,11 +234,21 @@ module.exports = async function handler(req, res) {
      * (예: '수영복' 은 저장된 쿠팡 상품이 전부 식료품이라 통째로 빠진다).
      * 그때 빈 섹션을 내보내지 않도록 다른 키워드로 몇 번 더 시도한다.
      */
-    let recKeyword = TODAY_PICKS[Math.floor(Math.random() * TODAY_PICKS.length)];
+    /*
+     * ★ 셀렉션 키워드는 수요(검증된 인기 검색어)가 먼저다 (2026-09-02).
+     *   TODAY_PICKS 는 7월 큐레이션과 같은 하드코딩이라 9월에도 수영복·쿨토시를
+     *   냈다. 인기 검색어(무선 이어폰·노트북·마우스 …)로 채우고 모자라면
+     *   큐레이션으로 보충한다 (api/_picks.js). popularChips 가 형태·실적을
+     *   이미 걸렀으므로 여기 오는 키워드는 전부 상품이 있는 말이다.
+     */
+    const popularRows = await popularChips(stats);
+    const picks = demandPicks(popularRows, TODAY_PICKS);
+
+    let recKeyword = picks[Math.floor(Math.random() * picks.length)];
     let recProducts = [];
     const tried = new Set();
 
-    for (let attempt = 0; attempt < TODAY_PICKS.length && !recProducts.length; attempt++) {
+    for (let attempt = 0; attempt < picks.length && !recProducts.length; attempt++) {
       tried.add(recKeyword);
       const { data: rows } = await supabase
         .from('products')
@@ -248,7 +259,7 @@ module.exports = async function handler(req, res) {
       recProducts = preferLive(freshRows(relevantRows(rows))).slice(0, SECTION_SIZE);
       if (recProducts.length) break;
 
-      const next = TODAY_PICKS.find(k => !tried.has(k));
+      const next = picks.find(k => !tried.has(k));
       if (!next) break;
       console.warn(`[init] '${recKeyword}' 는 노출 가능한 상품이 없어 '${next}' 로 대체`);
       recKeyword = next;
@@ -328,10 +339,7 @@ module.exports = async function handler(req, res) {
     }
 
     // 칩 목록과 셀렉션 루프가 같은 기준(freshRows)을 쓰도록 맞춘다.
-    const dailyKeywords = await chipKeywords(TODAY_PICKS, recKeyword);
-
-    // 홈 상단 칩(= 인기 검색어)에서 결과가 나온 적 없는 말을 뺀다.
-    const popularRows = await popularChips(stats);
+    const dailyKeywords = await chipKeywords(picks, recKeyword);
 
     const dailyProducts = recProducts.map(toClientProduct);
 
@@ -361,6 +369,6 @@ module.exports = async function handler(req, res) {
     };
     res.json(resp);
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e, { where: 'init', route: '/api/init', message: '홈 데이터를 불러오지 못했어요.' });
   }
 };

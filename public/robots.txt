@@ -6,3 +6,5 @@ Allow: /
 Disallow: /api/
 
 Sitemap: https://seosa.ai.kr/sitemap.xml
+# 상품 페이지(/p/{id}) — 가격 기록이 7일 이상 쌓인 상품만 올라간다 (api/_product-page.js).
+Sitemap: https://seosa.ai.kr/sitemap-products.xml

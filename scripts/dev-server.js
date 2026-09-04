@@ -80,13 +80,26 @@ function parseReq(raw) {
 // vercel.json의 rewrites를 이 로컬 서버는 모르므로 여기서도 흉내낸다.
 // (현재는 history-batch 통합 건 하나뿐)
 const REWRITES = {
-  '/api/history-batch': { path: '/api/history', query: { __route: 'batch' } }
+  '/api/history-batch': { path: '/api/history', query: { __route: 'batch' } },
+  '/api/profile':       { path: '/api/sync',    query: { resource: 'profile' } },
+  '/sitemap-products.xml': { path: '/api/history', query: { __route: 'sitemap' } }
 };
+// vercel.json 의 "/p/:pid" 와 같은 규칙. 상품 페이지는 api/history.js 가 그린다.
+const PRODUCT_PAGE_RE = /^\/p\/([^/?#]+)\/?$/;
 function applyRewrites(req) {
   const rw = REWRITES[req.path];
-  if (!rw) return;
-  req.path = rw.path;
-  Object.assign(req.query, rw.query);
+  if (rw) {
+    req.path = rw.path;
+    Object.assign(req.query, rw.query);
+    return;
+  }
+  const m = PRODUCT_PAGE_RE.exec(req.path || '');
+  if (m) {
+    req.path = '/api/history';
+    let pid = m[1];
+    try { pid = decodeURIComponent(pid); } catch (e) { /* 깨진 인코딩은 그대로 둔다 */ }
+    Object.assign(req.query, { __route: 'page', pid });
+  }
 }
 
 function serveStatic(pathname, res) {
@@ -142,8 +155,10 @@ const server = http.createServer(async (rawReq, rawRes) => {
   const res = wrapRes(rawRes);
   await readBody(req);
 
+  // 리라이트는 정적 판정보다 먼저다 — /p/{id} 와 /sitemap-products.xml 은
+  // 정적 파일이 아니라 api/history.js 가 그린다 (vercel.json 과 같은 순서).
+  applyRewrites(req);
   if (req.path.startsWith('/api/')) {
-    applyRewrites(req);
     console.log(`${req.method} ${req.url}`);
     await handleApi(req.path, req, res);
   } else {

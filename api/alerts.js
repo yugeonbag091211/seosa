@@ -20,12 +20,29 @@ module.exports = async function handler(req, res) {
       // 남의 이메일로 조회하면 그 사람이 무엇을 사려는지가 그대로 보인다.
       if (!requireAuth(req, res, email)) return;
 
-      const { data, error } = await supabase
+      /*
+       * on_deal 컬럼은 supabase/2026-08-28-alert-on-deal.sql 에서 추가된다.
+       * 아직 실행하지 않은 DB에서도 목록 조회는 되어야 하므로, 컬럼이 없다는
+       * 오류면 빼고 한 번 더 시도한다 (product_id 와 같은 방식).
+       */
+      const COLS = 'title, target_price, current_price, link, image, mall, sent';
+      let { data, error } = await supabase
         .from('alerts')
-        .select('title, target_price, current_price, link, image, mall, sent')
+        .select(`${COLS}, on_deal`)
         .eq('email', email)
         .order('created_at', { ascending: false })
         .limit(MAX_ALERTS_PER_EMAIL);
+
+      if (error && /on_deal|column/i.test(error.message)) {
+        console.warn('[alerts] on_deal 컬럼 없음 — supabase/2026-08-28-alert-on-deal.sql을 실행하세요.');
+        ({ data, error } = await supabase
+          .from('alerts')
+          .select(COLS)
+          .eq('email', email)
+          .order('created_at', { ascending: false })
+          .limit(MAX_ALERTS_PER_EMAIL));
+      }
+
       const msg = dbError(error, 'alerts');
       if (msg) throw new Error(msg);
 
@@ -36,7 +53,8 @@ module.exports = async function handler(req, res) {
         link: a.link || '',
         image: a.image || '',
         mall: a.mall || '',
-        sent: a.sent ? 'Y' : 'N'
+        sent: a.sent ? 'Y' : 'N',
+        onDeal: !!a.on_deal
       })));
     }
 
@@ -51,7 +69,20 @@ module.exports = async function handler(req, res) {
       if (!requireAuth(req, res, email)) return;
 
       const targetPrice = parseInt(body.targetPrice, 10) || 0;
-      if (targetPrice <= 0) return res.status(400).json({ error: '목표 가격이 올바르지 않습니다' });
+
+      /*
+       * 조건이 하나라도 있어야 한다.
+       *
+       * 예전에는 목표가만 조건이라 목표가가 없으면 신청 자체가 무의미했다.
+       * 이제 "AI 가 사도 좋다고 하면 알려줘"(on_deal)도 조건이므로, 목표가를
+       * 몰라도 신청할 수 있다. 다만 둘 다 없으면 아무 때도 발송되지 않는
+       * 알림이 되므로 그것만 막는다.
+       */
+      const onDeal = body.onDeal === true || body.onDeal === 'true' || body.onDeal === 1 || body.onDeal === '1';
+      if (targetPrice <= 0 && !onDeal) {
+        return res.status(400).json({ error: '목표 가격을 넣거나 AI 추천 알림을 켜 주세요' });
+      }
+      if (targetPrice < 0) return res.status(400).json({ error: '목표 가격이 올바르지 않습니다' });
 
       const row = {
         email,
@@ -78,9 +109,37 @@ module.exports = async function handler(req, res) {
        */
       const productId = String(body.productId || '').slice(0, 100);
 
+      /*
+       * 컬럼이 없는 DB 로 점점 물러난다.
+       *   1) product_id + on_deal   (마이그레이션 전부 실행됨)
+       *   2) product_id 만          (on_deal 미실행)
+       *   3) 둘 다 없이             (hardening 도 미실행)
+       * 알림 신청 자체는 어느 단계에서도 되어야 한다.
+       */
       let { error } = await supabase
         .from('alerts')
-        .upsert({ ...row, product_id: productId }, { onConflict: 'email,title' });
+        .upsert({ ...row, product_id: productId, on_deal: onDeal }, { onConflict: 'email,title' });
+
+      /*
+       * on_deal 을 저장하지 못한 채 성공으로 끝나면 사용자는 "AI 추천 알림"을
+       * 켰다고 믿는데 실제로는 아무 때도 발송되지 않는다 (2026-09-02 감사:
+       * 운영 DB 에 이 컬럼이 아직 없다). 폴백은 유지하되 그 사실을 응답에 싣고,
+       * 목표가도 없이 on_deal 만 켠 신청은 "조건 없는 알림"이 되므로 거절한다.
+       */
+      let onDealSaved = onDeal;
+      if (error && /on_deal|column/i.test(error.message)) {
+        console.warn('[alerts] on_deal 컬럼 없음 — supabase/2026-08-28-alert-on-deal.sql을 실행하세요.');
+        onDealSaved = false;
+        if (onDeal && targetPrice <= 0) {
+          return res.status(503).json({
+            error: 'AI 추천 알림은 아직 준비 중이에요. 목표 가격을 넣어 신청해 주세요.',
+            onDealUnavailable: true
+          });
+        }
+        ({ error } = await supabase
+          .from('alerts')
+          .upsert({ ...row, product_id: productId }, { onConflict: 'email,title' }));
+      }
 
       if (error && /product_id|column/i.test(error.message)) {
         console.warn('[alerts] product_id 컬럼 없음 — supabase/2026-08-hardening.sql을 실행하세요.');
@@ -90,7 +149,12 @@ module.exports = async function handler(req, res) {
       const msg = dbError(error, 'alerts');
       if (msg) throw new Error(msg);
 
-      return res.json({ success: true, msg: '알림 신청 완료!' });
+      const dropped = onDeal && !onDealSaved;
+      return res.json({
+        success: true,
+        msg: dropped ? '목표가 알림만 신청됐어요. AI 추천 알림은 아직 준비 중이에요.' : '알림 신청 완료!',
+        onDeal: onDealSaved
+      });
     }
 
     if (req.method === 'DELETE') {

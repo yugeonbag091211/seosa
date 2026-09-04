@@ -122,7 +122,35 @@ function readStringList(raw, max) {
   return arr.filter(v => typeof v === 'string' && v).slice(0, max);
 }
 
+/**
+ * 500 을 내려보내면서 오류 추적에도 남긴다.
+ *
+ * 핸들러마다 흩어져 있던 `catch (e) { res.status(500)... }` 를 한 줄로 바꾸기
+ * 위한 헬퍼다. 사용자에게 가는 메시지는 그대로 두고(문구를 바꾸지 않는다)
+ * 스택만 Sentry 로 보낸다. SENTRY_DSN 이 없으면 아무 일도 일어나지 않는다.
+ *
+ * ★ 보고를 기다리느라 응답이 늦어지면 안 되므로 await 하지 않는다.
+ *   서버리스는 응답 뒤 함수가 동결될 수 있어 전송이 잘릴 수 있지만,
+ *   잘리는 쪽이 사용자를 기다리게 하는 쪽보다 낫다. 수집기처럼 반드시
+ *   보내야 하는 경로는 호출부가 직접 await 한다.
+ *
+ * @param {object} res
+ * @param {Error} err
+ * @param {{where:string, route?:string, status?:number, message?:string, extra?:object}} ctx
+ */
+function fail(res, err, ctx = {}) {
+  const status = ctx.status || 500;
+  console.error(`[${ctx.where || 'api'}] ${err && err.message}`);
+  try {
+    require('./_errors').captureException(err, {
+      where: ctx.where || 'api', route: ctx.route || '',
+      extra: { status, ...(ctx.extra || {}) }
+    }).catch(() => {});
+  } catch (_) { /* 보고 실패가 응답을 막지 않는다 */ }
+  return res.status(status).json({ error: ctx.message || '서버 오류' });
+}
+
 module.exports = {
   readBody, dbError, applyCors, readEmail, tooLarge,
-  cachePublic, noStore, readStringList
+  cachePublic, noStore, readStringList, fail
 };

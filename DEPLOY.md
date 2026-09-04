@@ -5,6 +5,35 @@
 
 ---
 
+## 0. 2026-09-02 기준 미적용 마이그레이션 · 새 라우트
+
+읽기 전용 확인(`scripts/verify-migrations.js` 23 OK) 결과 아래 두 파일이 아직 운영에 없다.
+둘 다 `ADD COLUMN IF NOT EXISTS` 뿐이라 몇 번 실행해도 안전하고, 코드는 없어도 폴백으로 동작한다.
+
+| 파일 | 없으면 |
+|---|---|
+| `supabase/2026-08-28-alert-on-deal.sql` | "AI 추천 알림" 체크박스가 저장되지 않는다. 지금은 API 가 `onDeal:false` 와 "준비 중" 안내를 돌려주고, 목표가 없는 단독 신청은 503 으로 거절한다 |
+| `supabase/2026-09-01-price-history-source.sql` | `price_history.source` 가 기록되지 않는다 (리포트는 `price_job_state` 를 근거로 쓰므로 정확도 영향 없음) |
+
+새 라우트 (`vercel.json` rewrite, 새 서버리스 함수 없음 — 11/12 유지):
+
+- `/p/{product_id}` → 상품 가격 기록 페이지 (HTML, Edge 1시간 캐시). 기록 7일 미만·stale·링크 없음은 `noindex`
+- `/sitemap-products.xml` → 색인 가능한 상품만 (12시간 캐시). `robots.txt` 에 등록됨
+- `/?p={product_id}` → 앱에서 그 상품의 가격 모달을 연다
+- `/api/ai` 토큰 없음 → 200 게스트 조립본 (LLM 0회, 쿼터 0). 틀린 토큰은 401
+
+선택 환경변수: `SITE_ORIGIN` (기본 `https://seosa.ai.kr`, 상품 페이지 canonical·사이트맵 절대 URL), `CRON_DEMAND_SEED_MAX` (기본 6, 크론이 매일 수집하는 인기 검색어 수).
+
+배포 후 확인:
+
+```bash
+curl -sI https://seosa.ai.kr/p/6899919825 | grep -iE "^(HTTP|cache-control)"
+curl -s https://seosa.ai.kr/sitemap-products.xml | grep -c "<loc>"
+curl -s -X POST https://seosa.ai.kr/api/ai -H "Content-Type: application/json" -d '{"question":"노트북 추천해줘"}' | head -c 300
+```
+
+---
+
 ## 1. [필수] Supabase 마이그레이션
 
 DDL 은 PostgREST API 로 실행할 수 없어서 스크립트가 대신 적용해 줄 수 없습니다.
@@ -49,6 +78,64 @@ Vercel > Settings > Environment Variables
 | `TOSS_SECRET_KEY` | **미설정** | 〃 — 서버가 결제를 승인·검증할 수 없음 |
 | `FREE_DAILY_AI_LIMIT` | 선택 | 기본 3 |
 | `PRO_DAILY_AI_LIMIT` | 선택 | 기본 50 |
+| `OPENROUTER_API_KEY` | 필수 | AI Concierge 가 500 으로 거절 |
+| `OPENROUTER_MODELS` | 선택 | 아래 「AI 모델 사슬」 참고 |
+| `OPENROUTER_CLASSIFY_MODELS` | 선택 | 〃 |
+| `AI_CACHE_TTL_MS` | 선택 | 기본 5분(켜짐). `0` 이면 끈다 |
+| `OPENROUTER_ALLOW_PAID` | **설정하지 마라** | `1` 이면 유료 모델이 열린다. 비워 두면 비용 0원 |
+
+### AI 모델 사슬 (`api/_llm.js`) — 2026-09-02 ZERO-COST 정책
+
+AI 답변은 **모델 하나에 매달리지 않는다.** 실패하면 다음 모델로 넘어가고,
+사슬이 전부 실패해도 SEOSA 가 계산한 판정·근거는 그대로 나간다
+(`api/_concierge.js`).
+
+```
+무료 모델 1 → 무료 모델 2 → 무료 모델 3 → SEOSA 결정론 답변
+```
+
+**기본값이 무료 전용이다. 아무 환경변수도 설정하지 않으면 AI 비용은 0원이다.**
+
+이전 판에서는 기본 1순위가 `anthropic/claude-sonnet-5`(유료)였다. 그런데
+운영에는 `OPENROUTER_MODELS` 가 없었으므로, 그 기본값은 곧 *로그인 사용자의
+모든 AI 요청이 유료 모델을 먼저 호출한다* 는 뜻이었다. 무료로 배포하는
+서비스에서 그건 사고다. 그래서 기본을 뒤집었다.
+
+- 유료 모델은 `OPENROUTER_ALLOW_PAID=1` 을 **직접 켜야만** 열린다.
+- `OPENROUTER_MODELS` 에 유료 id 를 적어도 걸러진다 (오타로 과금되지 않는다).
+- 무료가 전부 실패해도 유료로 넘어가지 않는다. 결정론 답변으로 떨어진다.
+- `node scripts/test-zero-cost.js` 가 이 성질들을 매번 검사한다 (`npm test` 포함).
+
+현재 사슬:
+
+```
+answer   : minimax/minimax-m3:free → nvidia/nemotron-3.5-lightning:free
+           → nvidia/nemotron-3-ultra-550b-a55b:free
+classify : minimax/minimax-m3:free → nvidia/nemotron-3-super-120b-a12b:free
+           → nvidia/nemotron-3.5-lightning:free
+```
+
+순서는 추측이 아니라 실측이다. `npm run bench:models` 로 다시 잴 수 있다
+(네트워크를 쓰므로 `npm test` 에는 들어 있지 않다). 사슬을 바꾸기 전에
+이걸 돌리고 결과를 `api/_llm.js` 주석에 옮겨 적는다.
+
+> ⚠️ 무료 모델 id 는 OpenRouter 사정으로 사라지기도 한다. 없는 id 는 404 로
+> 돌아오고 라우터가 30분간 건너뛴 뒤 다음 모델로 넘어가므로 서비스는 멈추지
+> 않는다. `npm run verify:models` 로 사슬의 id 가 살아 있는지 확인할 수 있다.
+
+### ⚠️ 사람이 해야 하는 일 — MiniMax 라이선스 통지
+
+답변 1순위인 `minimax/minimax-m3:free` 는 MiniMax Community License 다.
+상업 서비스에서 쓰는 것은 허용되지만 조건이 둘 붙는다.
+
+1. **"Built with MiniMax M3" 표기** — 이미 넣었다 (`public/index.html` 푸터).
+2. **api@minimax.io 로 1회 통지** — 제목 `M3 licensing — notice`.
+   연매출 2천만 달러 미만이면 통지만 하면 되고 승인은 필요 없다.
+   **아직 보내지 않았다. 사람이 보내야 한다.**
+
+통지를 보내고 싶지 않다면 `api/_llm.js` 의 `FREE_ANSWER_CHAIN` 1순위를
+`nvidia/nemotron-3.5-lightning:free` 로 바꾸면 된다 (OpenMDW-1.1, 조건 없음).
+답변 품질은 떨어진다 — 분류 정확도 12/12 대 9/12.
 
 ### 토스페이먼츠 키에 대하여
 

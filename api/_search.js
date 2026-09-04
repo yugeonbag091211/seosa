@@ -522,6 +522,91 @@ function dedupeItems(items) {
  * 신뢰도와 가격이 순서를 정한다. 실제로 같은 점수가 나오는 경우는 흔해서
  * (표기가 같은 방식으로 맞으면 점수도 같다) 싼 것부터 보여주는 성질은 유지된다.
  */
+/* ── 쇼핑몰 우선순위 ────────────────────────────────────────────────
+ *
+ * 같은 상품이 여러 몰에 있을 때 사용자가 더 익숙한 곳을 먼저 보는 편이
+ * 낫다. 다만 이것이 "몰 순서대로 줄 세우기"가 되면 안 된다 —
+ * 쿠팡 129,000원이 G마켓 89,000원 위에 서는 순간 최저가 서비스가 아니다.
+ *
+ * 그래서 우선순위를 순서가 아니라 "가격 몇 % 어치"로 환산한다. 상한이
+ * 3% 라서 값이 조금이라도 크게 벌어지면 언제나 싼 쪽이 이긴다. 몰 순서는
+ * 값이 사실상 같을 때만 눈에 보인다.
+ *
+ * ★ 실제로 관측된 몰만 앞자리에 둔다. 지금 데이터가 들어오는 곳은 쿠팡
+ *   (직접 API)과 ADPICK 제휴몰(알리·SSG·GS SHOP·Hmall·롯데홈쇼핑·
+ *   오늘의집·예스이십사·보리보리·더블유컨셉, 2026-08-26 실측)이다.
+ *   네이버쇼핑·G마켓은 아직 응답에서 관측된 적이 없지만, 붙었을 때
+ *   순서가 정해져 있도록 표에는 남겨 둔다 — 없는 몰의 상품을 만들어내는
+ *   것과 표에 자리를 비워 두는 것은 다른 일이다.
+ */
+const MALL_ORDER = ['쿠팡', '알리', '네이버쇼핑', 'G마켓'];
+
+/** 우선순위로 깎아 줄 수 있는 최대치. 가격 3% 어치. */
+const MALL_BONUS_MAX = 0.03;
+
+/**
+ * 이 상품이 사용자에게 어느 몰로 보이는가.
+ * mallLabel(ADPICK cp_name 기반 표시 이름)이 있으면 그것이 사용자가 보는 이름이다.
+ */
+function mallNameOf(it) {
+  if (!it) return '';
+  return String(it.mallLabel || it.mall || '').trim();
+}
+
+/**
+ * 우선순위 순번. 표에 없으면 null (보너스 없음).
+ * @returns {number|null} 0 이 가장 앞
+ */
+function mallRank(it) {
+  const name = mallNameOf(it);
+  if (!name) return null;
+  const i = MALL_ORDER.indexOf(name);
+  return i < 0 ? null : i;
+}
+
+/**
+ * 우선순위를 반영한 비교용 가격.
+ *
+ * ★ 화면에 보여주는 가격은 절대 바꾸지 않는다. 정렬 키로만 쓴다.
+ *   보여주는 값과 비교하는 값이 다르면 사용자가 속는다 — 그래서 이 값은
+ *   반환하지도, 상품에 붙이지도 않는다.
+ */
+function mallAdjustedPrice(it) {
+  const p = Number(it && it.lprice) || 0;
+  if (!(p > 0)) return Infinity;   // 가격을 못 읽으면 맨 뒤
+  const r = mallRank(it);
+  if (r == null) return p;
+  // 1순위가 3%, 마지막이 0% 에 가깝게. 표가 하나뿐이어도 나눗셈이 터지지 않는다.
+  const span = Math.max(1, MALL_ORDER.length);
+  const bonus = MALL_BONUS_MAX * (1 - r / span);
+  return p * (1 - bonus);
+}
+
+/**
+ * 관련도 → 가격 신뢰도 → (몰 우선순위를 반영한) 가격 순으로 세운다.
+ *
+ * ★ 가격만으로 앞으로 올라오는 일은 없다. 관련도가 다르면 가격은 보지 않는다.
+ *   최저가 비교 서비스에서 "싸지만 내가 찾던 게 아닌 상품"이 1위인 것은
+ *   틀린 가격을 보여주는 것 다음으로 나쁘다.
+ *
+ * 처음에는 관련도를 0.1 단위 계단으로 묶었다 — "0.82 와 0.80 의 차이는 표기
+ * 우연이니 그 안에서는 싼 쪽을 올리자"는 생각이었다. 실제로 돌려 보니 정확히
+ * 그 생각 때문에 사고가 났다.
+ *
+ *   "LG전자 LG그램 14ZD95U" 검색 결과
+ *     0.88  LG그램2026 14ZD95U-GX56K …            1,799,000원   ← 본품
+ *     0.80  LG전자 … 14ZD95U-GX5WK 키보드키커버 키스킨    7,980원   ← 액세서리
+ *   0.88 과 0.80 이 같은 계단(8)에 들어가는 바람에 7,980원짜리 키스킨이
+ *   노트북 본품보다 위에 섰다. 계단 경계는 이렇게 아무 데나 그어진다.
+ *
+ * 그래서 계단을 없앴다. 관련도는 있는 그대로 비교하고, 값이 정확히 같을 때만
+ * 신뢰도와 가격이 순서를 정한다. 실제로 같은 점수가 나오는 경우는 흔해서
+ * (표기가 같은 방식으로 맞으면 점수도 같다) 싼 것부터 보여주는 성질은 유지된다.
+ *
+ * 몰 우선순위는 마지막 단계에서만, 그것도 가격 3% 안에서만 작동한다
+ * (mallAdjustedPrice 주석 참고). 값이 같으면 실제 가격으로 한 번 더 갈라서
+ * 정렬이 흔들리지 않게 한다.
+ */
 function sortByRelevance(items) {
   return (items || []).slice().sort((a, b) => {
     const ra = (a && a.relevance) || 0;
@@ -532,9 +617,18 @@ function sortByRelevance(items) {
     const tb = (b && b.trust && Number(b.trust.score)) || 0;
     if (ta !== tb) return tb - ta;
 
+    const ma = mallAdjustedPrice(a);
+    const mb = mallAdjustedPrice(b);
+    if (ma !== mb) return ma - mb;
+
+    // 보정값까지 같으면 실제 가격 → 결정론을 위해 마지막에 상품 식별자.
     const pa = Number(a && a.lprice) || Infinity;
     const pb = Number(b && b.lprice) || Infinity;
-    return pa - pb;
+    if (pa !== pb) return pa - pb;
+
+    const ia = String((a && a.productId) || '');
+    const ib = String((b && b.productId) || '');
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
   });
 }
 
@@ -1021,5 +1115,6 @@ module.exports = {
   normalizeText, canonicalKey, splitTokens, analyzeQuery, analyzeTitle,
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
+  mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY
 };

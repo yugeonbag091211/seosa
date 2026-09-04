@@ -250,13 +250,22 @@ async function readInput(src) {
   console.log(`\n${out.length}행 저장 시작...`);
   let done = 0;
   for (let i = 0; i < out.length; i += CHUNK) {
-    const chunk = out.slice(i, i + CHUNK);
+    /*
+     * 출처를 남긴다 (supabase/2026-09-01-price-history-source.sql).
+     * 이 경로로 들어온 행이 Daily Collection Report 의 수집 성과로 세어지면 안 된다.
+     * 컬럼이 아직 없는 환경이면 아래에서 source 를 빼고 재시도한다.
+     */
+    const chunk = out.slice(i, i + CHUNK).map(r => ({ ...r, source: 'import' }));
     // onConflict 는 api/_shop.js 의 recordPrices 와 같은 UNIQUE 를 대상으로 삼아야 한다.
     // 2026-08-17 마이그레이션(supabase/2026-08-17-price-history-vid-cutover.sql)이
     // 옛 idx_ph_unique 를 지웠기 때문에 (pid, mall, vid, recorded_date) 만 남았다.
-    const { error } = await supabase
-      .from('price_history')
-      .upsert(chunk, { onConflict: 'product_id,mall,vendor_item_id,recorded_date' });
+    const conflict = { onConflict: 'product_id,mall,vendor_item_id,recorded_date' };
+    let { error } = await supabase.from('price_history').upsert(chunk, conflict);
+    if (error && /column .* does not exist|schema cache/i.test(error.message)) {
+      console.warn('  price_history.source 컬럼 없음 — 출처 없이 저장합니다.');
+      const bare = chunk.map(r => { const { source, ...rest } = r; return rest; });   // eslint-disable-line no-unused-vars
+      ({ error } = await supabase.from('price_history').upsert(bare, conflict));
+    }
     if (error) throw new Error(`${i}~${i + chunk.length}행 저장 실패: ${error.message}`);
     done += chunk.length;
     console.log(`  ${done}/${out.length}`);

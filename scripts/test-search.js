@@ -574,5 +574,81 @@ check(S.rankItems('텀블러', [
   { productId: 'x', mall: '쿠팡', title: '스탠리 텀블러', lprice: 30000, itemId: 'i1', vendorItemId: 'v1' }
 ]).items[0].vendorItemId === 'v1', 'itemId / vendorItemId 는 손대지 않는다');
 
+/* ================================================================ *
+ *  8. 쇼핑몰 우선순위
+ *
+ *  "쇼핑몰 우선순위" 와 "상품 추천 순위" 는 다른 것이다. 몰 순서가
+ *  가격을 이기기 시작하면 최저가 서비스가 아니게 된다. 그래서 우선순위를
+ *  가격 3% 어치로 환산해서, 값이 조금이라도 벌어지면 언제나 싼 쪽이
+ *  이기도록 만들었다. 아래 검사가 그 경계를 잠근다.
+ * ================================================================ */
+section('8. 쇼핑몰 우선순위');
+
+const mk = (id, mall, label, price, rel, trust) => ({
+  productId: id, title: id, mall, mallLabel: label,
+  lprice: price, relevance: rel == null ? 0.9 : rel,
+  trust: { score: trust == null ? 80 : trust }
+});
+const names = list => list.map(x => x.mallLabel || x.mall);
+
+const same = S.sortByRelevance([
+  mk('a', 'ADPICK', 'SSG', 100000),
+  mk('b', '쿠팡', '', 100000),
+  mk('c', 'ADPICK', '알리', 100000)
+]);
+check(names(same)[0] === '쿠팡', '값이 같으면 쿠팡이 먼저', names(same));
+check(names(same)[1] === '알리', '그 다음이 알리', names(same));
+check(names(same)[2] === 'SSG', '표에 없는 몰은 보너스 없이 뒤', names(same));
+
+const cheaper = S.sortByRelevance([
+  mk('a', '쿠팡', '', 129000),
+  mk('b', 'ADPICK', 'G마켓', 89000)
+]);
+check(names(cheaper)[0] === 'G마켓',
+  '★★ 쿠팡 129,000 vs G마켓 89,000 → 싼 쪽이 1위. 몰 순서가 가격을 이기지 않는다',
+  names(cheaper).map((n, i) => n + ' ' + cheaper[i].lprice));
+
+// 경계: 우선순위로 깎아 줄 수 있는 최대치는 가격 3% 다.
+const within = S.sortByRelevance([mk('a', '쿠팡', '', 102000), mk('b', 'ADPICK', 'SSG', 100000)]);
+check(names(within)[0] === '쿠팡', '2% 비싸도 1순위 몰이 위 (3% 안)', names(within));
+const beyond = S.sortByRelevance([mk('a', '쿠팡', '', 106000), mk('b', 'ADPICK', 'SSG', 100000)]);
+check(names(beyond)[0] === 'SSG', '★ 6% 비싸면 몰 순서로도 못 뒤집는다', names(beyond));
+
+const relWins = S.sortByRelevance([
+  mk('a', '쿠팡', '', 100000, 0.5),
+  mk('b', 'ADPICK', 'SSG', 100000, 0.9)
+]);
+check(names(relWins)[0] === 'SSG',
+  '★ 관련도가 다르면 몰 순서는 보지도 않는다', names(relWins));
+
+const trustWins = S.sortByRelevance([
+  mk('a', '쿠팡', '', 100000, 0.9, 10),
+  mk('b', 'ADPICK', 'SSG', 100000, 0.9, 80)
+]);
+check(names(trustWins)[0] === 'SSG',
+  '★ 신뢰도가 다르면 몰 순서보다 신뢰도가 먼저', names(trustWins));
+
+// 결정론 — 같은 입력이면 언제나 같은 순서. 입력 순서가 달라져도 결과는 같다.
+const base = [mk('a', '쿠팡', '', 50000), mk('b', 'ADPICK', '알리', 50000), mk('c', 'ADPICK', 'SSG', 50000)];
+const s1 = names(S.sortByRelevance(base));
+const s2 = names(S.sortByRelevance(base.slice().reverse()));
+check(JSON.stringify(s1) === JSON.stringify(s2),
+  '★ 입력 순서가 달라도 결과가 같다 (결정론)', [s1, s2]);
+
+// 완전히 같은 값이면 상품 식별자로 갈라서 흔들리지 않게 한다.
+const twin = [mk('z', '쿠팡', '', 50000), mk('a', '쿠팡', '', 50000)];
+check(S.sortByRelevance(twin)[0].productId === 'a', '모든 값이 같으면 식별자 순 (안정 정렬)');
+
+check(S.mallRank({ mall: '쿠팡' }) === 0, 'mallRank: 쿠팡이 0');
+check(S.mallRank({ mall: 'ADPICK', mallLabel: '알리' }) === 1, 'mallRank: 알리는 mallLabel 로 본다');
+check(S.mallRank({ mall: 'ADPICK', mallLabel: 'SSG' }) === null, 'mallRank: 표에 없으면 null');
+check(S.mallRank(null) === null, 'mallRank: null 안전');
+check(S.mallNameOf({ mall: 'ADPICK', mallLabel: '알리' }) === '알리',
+  '★ 사용자에게 보이는 이름(mallLabel)으로 판단한다 — raw mall 이 아니다');
+
+// 가격을 못 읽는 상품이 몰 보너스로 앞에 오면 안 된다.
+const noPrice = S.sortByRelevance([mk('a', '쿠팡', '', 0), mk('b', 'ADPICK', 'SSG', 90000)]);
+check(names(noPrice)[0] === 'SSG', '★ 가격을 못 읽는 상품은 1순위 몰이어도 뒤로', names(noPrice));
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);

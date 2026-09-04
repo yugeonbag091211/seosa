@@ -329,9 +329,31 @@ async function attachTrust(items, opts = {}) {
      * 폴백 동작은 vendor_item_id 도입 이전과 같으므로 회귀가 아니다.
      */
     const points = history.get(`${base}|${vid}`) || history.get(base) || [];
+
+    /*
+     * ★ 출처는 항목별로 본다. 배치 하나로 뭉뚱그리면 안 된다.
+     *
+     *   searchAll 은 쿠팡 + ADPICK 을 한 배열로 합쳐서 주는데, opts.source 에는
+     *   쿠팡의 from 만 들어온다(_shop.searchAll 의 `from: coupang.from`). 두 소스는
+     *   서로 독립적으로 성공·차단되므로 그 값이 ADPICK 항목의 실제 출처와 어긋난다.
+     *
+     *   어긋나면 사용자에게 사실이 아닌 말을 한다 — 이 모듈이 막으려는 바로 그것이다.
+     *     쿠팡 api + ADPICK stale-cache → ADPICK 카드가 age=0 으로 강제되어
+     *                                    "방금 쇼핑몰에서 확인한 가격입니다" 라고 말한다.
+     *                                    실제로는 최대 48시간(_adpick.STALE_MAX_MS) 전 값이다.
+     *     쿠팡 stale-cache + ADPICK api → 방금 받아온 ADPICK 가격을 STALE 로 깎아
+     *                                    "응답을 받지 못해 마지막 저장값" 이라고 말한다.
+     *
+     *   저장 경로(_shop.saveProducts)는 이미 항목별 _source 로 판정한다. 표시 경로도
+     *   같은 기준을 써야 저장과 화면이 갈라지지 않는다. _source 가 없는 항목
+     *   (init.js 시세판·rec.js 등 DB 에서 읽는 경로)은 지금까지처럼 opts.source 를 쓴다 —
+     *   기존 동작 그대로다.
+     */
+    const src = it._source || opts.source || null;
+
     it.trust = evaluateTrust({
-      age: it.collectedAt ? ageDays(it.collectedAt) : (opts.source ? 0 : Infinity),
-      liveSource: opts.source || null,
+      age: it.collectedAt ? ageDays(it.collectedAt) : (src ? 0 : Infinity),
+      liveSource: src,
       points,
       vendorItemId: vid,
       mall: it.mall

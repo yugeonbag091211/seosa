@@ -1,7 +1,7 @@
 const supabase = require('./_supabase');
 const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, freshRows } = require('./_shop');
 const { attachTrust } = require('./_trust');
-const { applyCors, cachePublic } = require('./_http');
+const { applyCors, cachePublic, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 
 const PAGE_SIZE = 8;
@@ -95,6 +95,6 @@ module.exports = async function handler(req, res) {
     cachePublic(res, 300);
     res.json({ keyword, products });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    fail(res, e, { where: 'rec', route: '/api/rec', message: '추천 상품을 불러오지 못했어요.' });
   }
 };

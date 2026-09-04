@@ -1065,6 +1065,153 @@ function freshCoupang(env) {
  *    남는 문제는 "뷰의 97% 가 영구 쓰레기" 라는 위생 문제이고, 그것이
  *    DROP_FETCH(200) 창을 언젠가 밀어낼 수 있다는 미래 위험이다.
  * ================================================================== */
+/* ==================================================================
+ *  K1 — price_history.recorded_date 가 KST 여야 한다
+ *
+ *  2026-08-27 실측으로 확인한 결함.
+ *
+ *    trg_recorded_date (BEFORE INSERT OR UPDATE) 가 부르는
+ *    set_recorded_date() 의 본문이 `NEW.recorded_at::DATE` 였다.
+ *    recorded_at 은 timestamptz 라 ::date 가 세션 TimeZone(=UTC)을 따른다.
+ *    → KST 새벽 수집분이 통째로 어제 라벨을 달았다 (운영 9,040/17,557행).
+ *
+ *    UNIQUE 에 recorded_date 가 들어가므로 결과가 두 가지였다.
+ *      ① 같은 KST 하루가 두 행으로 갈린다 (실측 73건)
+ *      ② 앞선 KST 하루가 덮어써진다 (노출 계열 246건)
+ *
+ *  이 스위트가 지키는 것
+ *    · 마이그레이션 파일이 KST 표현식을 쓰고 UTC 로 되돌아가지 않았는가 (정적)
+ *    · 앱이 보내는 라벨(kstToday)이 경계에서 정확한가
+ *    · 라벨이 고쳐진 뒤에도 오늘의 하락 판정이 여전히 옳은가
+ *
+ *  ★ 트리거 자체는 DB 안에 있어 여기서 실행할 수 없다. SQL 쪽 경계 검증은
+ *    supabase/2026-08-27-price-history-integrity-final.sql 과 함께 쓰는
+ *    검증 SQL 로 분리해 두었다
+ *    (transaction 안에서 4행을 넣고 rollback 한다 — 운영 데이터 무영향).
+ * ================================================================== */
+function runK1() {
+  suite('K1', 'recorded_date — KST 달력으로 저장되어야 한다');
+
+  /* -- K1-1. 마이그레이션 파일이 KST 표현식을 쓰는가 (정적) -- */
+  {
+    const p = path.join(ROOT, 'supabase', '2026-08-27-price-history-integrity-final.sql');
+    const exists = fs.existsSync(p);
+    check(exists, '마이그레이션 파일이 있다', '2026-08-27-price-history-integrity-final.sql');
+    if (exists) {
+      const sql = fs.readFileSync(p, 'utf8');
+      // 실행되는 본문만 본다. 주석에는 옛 표현식이 설명용으로 남아 있다.
+      const body = /create or replace function set_recorded_date[\s\S]*?\$\$;/i.exec(sql);
+      check(!!body, '함수 정의 블록을 찾았다');
+      const src = body ? body[0] : '';
+      check(/AT TIME ZONE\s+'Asia\/Seoul'/i.test(src),
+        "★ Asia/Seoul 로 환산한다 (세션 TimeZone 에 의존하지 않는다)");
+      check(!/NEW\.recorded_at::DATE/i.test(src),
+        '★ 옛 UTC 표현식(NEW.recorded_at::DATE)이 본문에 남아 있지 않다');
+      check(/create or replace function/i.test(src),
+        '함수만 교체한다 (트리거를 DROP/CREATE 하지 않는다 — 소유권·중복 사고 방지)');
+      check(!/drop\s+trigger/i.test(sql), '트리거를 지우지 않는다');
+      check(!/\b(update|delete|truncate)\s+price_history/i.test(sql.replace(/--[^\n]*/g, '')),
+        '★ 기존 price_history 행을 쓰거나 지우지 않는다');
+      check(/rollback/i.test(sql), 'rollback SQL 을 함께 담고 있다');
+    }
+  }
+
+  /* -- K1-2. 앱이 보내는 라벨의 경계값 (마이그레이션 후 트리거와 같은 답이어야 한다) -- */
+  {
+    /*
+     * SQL 쪽 (recorded_at AT TIME ZONE 'Asia/Seoul')::date 와
+     * JS 쪽 kstToday(recorded_at) 는 같은 답을 내야 한다. 두 값이 갈리면
+     * 앱이 보내는 값과 트리거가 넣는 값이 달라져 어느 쪽이 이겼는지에 따라
+     * 라벨이 흔들린다.
+     */
+    const cases = [
+      ['A  KST 08-27 01:00 (크론 시각)', '2026-08-27T01:00:00+09:00', '2026-08-27'],
+      ['B  KST 08-26 23:59 (자정 직전)', '2026-08-26T23:59:00+09:00', '2026-08-26'],
+      ['C  KST 08-27 00:01 (자정 직후)', '2026-08-27T00:01:00+09:00', '2026-08-27'],
+      ['D  KST 08-27 15:00 (평시 오후)', '2026-08-27T15:00:00+09:00', '2026-08-27'],
+      ['E  KST 08-27 00:00 (경계 정각)', '2026-08-27T00:00:00+09:00', '2026-08-27'],
+      ['F  연말 경계 KST 01-01 00:30', '2027-01-01T00:30:00+09:00', '2027-01-01']
+    ];
+    cases.forEach(([label, iso, want]) => {
+      const got = kstToday(new Date(iso));
+      check(got === want, `${label} → ${want}`, got);
+    });
+
+    // 같은 순간을 UTC 표기로 줘도 같은 답이어야 한다 (표기 방식에 의존하지 않는다)
+    check(kstToday(new Date('2026-08-26T16:00:00Z')) === '2026-08-27',
+      '★ 같은 순간을 UTC 로 표기해도 KST 날짜는 같다 (UTC 16:00Z = KST 01:00)');
+    check(observedKstDate({ recorded_at: '2026-08-26T16:00:00Z', recorded_date: '2026-08-26' }) === '2026-08-27',
+      '읽기 경로는 옛 UTC 라벨이 남아 있어도 KST 관측일을 정확히 낸다');
+  }
+
+  /* -- K1-3. 라벨이 KST 로 고쳐진 뒤의 오늘의 하락 판정 -- */
+  {
+    /*
+     * 마이그레이션 후에는 KST 하루가 한 행으로 모인다. 그 상태에서
+     *   · 실제 하락은 노출되어야 하고 (지금은 억제되는 false negative)
+     *   · 같은 날 안의 변동은 여전히 하락이 아니어야 한다 (false positive 0)
+     */
+    const TD = '2026-08-27';
+    const pt = (price, date, atZ) => ({ price, recorded_date: date, recorded_at: atZ });
+
+    // 마이그레이션 후: KST 08-26 한 행, KST 08-27 한 행
+    const afterFix = [
+      pt(20000, '2026-08-26', '2026-08-26T03:00:00Z'),   // KST 08-26 12:00
+      pt(15000, '2026-08-27', '2026-08-26T16:00:00Z')    // KST 08-27 01:00 (크론)
+    ];
+    check(todayDropConfirmed({ current_price: 15000, prev_price: 20000 }, afterFix, TD) === true,
+      '★ 마이그레이션 후 실제 하락이 노출된다 (지금은 억제되던 case)');
+
+    // 같은 KST 날 안에서만 값이 움직인 경우 — 여전히 하락이 아니다
+    const intraday = [
+      pt(20000, '2026-08-27', '2026-08-26T16:00:00Z'),   // KST 08-27 01:00
+      pt(15000, '2026-08-27', '2026-08-27T03:00:00Z')    // KST 08-27 12:00
+    ];
+    check(todayDropConfirmed({ current_price: 15000, prev_price: 20000 }, intraday, TD) === false,
+      '★ 같은 KST 날 안의 변동은 오늘의 하락이 아니다 (false positive 0)');
+
+    // 오래된 하락이 오늘로 올라오지 않는다
+    const old = [
+      pt(20000, '2026-08-20', '2026-08-20T03:00:00Z'),
+      pt(15000, '2026-08-21', '2026-08-21T03:00:00Z')
+    ];
+    check(todayDropConfirmed({ current_price: 15000, prev_price: 20000 }, old, TD) === false,
+      '며칠 전 하락은 오늘의 하락이 아니다');
+
+    // 오늘 관측이 있지만 오른 경우
+    const up = [
+      pt(15000, '2026-08-26', '2026-08-26T03:00:00Z'),
+      pt(20000, '2026-08-27', '2026-08-26T16:00:00Z')
+    ];
+    check(todayDropConfirmed({ current_price: 20000, prev_price: 15000 }, up, TD) === false,
+      '가격이 오른 날은 하락으로 치지 않는다');
+  }
+
+  /* -- K1-4. 옛 UNIQUE 가 vid 컷오버를 막고 있다 (정적 확인) -- */
+  {
+    /*
+     * 2026-08-27 실측: 같은 (pid, mall, recorded_date) 에 vid 만 다른 두 행을
+     * 넣으면 23505 duplicate key ... "idx_ph_unique" 로 거부된다. 즉 옵션이
+     * 둘인 쿠팡 상품을 같은 날 저장하면 price_history upsert 가 통째로 실패한다.
+     * 그 컷오버 파일은 이미 저장소에 있고 아직 실행되지 않았다.
+     */
+    const p = path.join(ROOT, 'supabase', '2026-08-17-price-history-vid-cutover.sql');
+    check(fs.existsSync(p), 'vid 컷오버 마이그레이션 파일이 저장소에 있다',
+      '2026-08-17-price-history-vid-cutover.sql');
+    if (fs.existsSync(p)) {
+      const sql = fs.readFileSync(p, 'utf8');
+      check(/drop\s+index\s+if\s+exists/i.test(sql) && /idx_ph_unique/i.test(sql),
+        '★ 옛 UNIQUE(idx_ph_unique)를 지운다 — 옵션별 이력이 분리되는 조건');
+      check(!/\b(delete|truncate|update)\s+/i.test(sql.replace(/--[^\n]*/g, '')),
+        '데이터 행은 건드리지 않는다 (인덱스만 지운다)');
+    }
+    // 코드 쪽 선행 조건: onConflict 가 이미 vid 기반이어야 컷오버가 안전하다
+    const shop = fs.readFileSync(path.join(ROOT, 'api/_shop.js'), 'utf8');
+    check(/onConflict:\s*'product_id,mall,vendor_item_id,recorded_date'/.test(shop),
+      '★ 코드의 onConflict 가 이미 vid 기반이다 (컷오버 선행 조건 충족)');
+  }
+}
+
 function runO1b() {
   suite('O1', 'price_drop_top — 고아 이력이 뷰를 채운다 (NULL 의 주된 원인)');
 
@@ -1090,6 +1237,66 @@ function runO1b() {
   note('실측: 뷰 2,272행 중 plausibleDrop 통과는 28행뿐. 상위 200행 창으로 좁혀도 28행 —');
   note('즉 현재는 DROP_FETCH=200 이 놓치는 후보가 0건이다. 손실이 아니라 미래 위험이다.');
 }
+/* ==================================================================
+ *  S1 — /api/search 가 관련도를 실제로 쓰는가
+ *
+ *  api/_search.js 는 466건 실측 감사를 근거로 만들어진 관련도 채점기다.
+ *  그런데 그 rankItems 를 부르는 엔드포인트가 하나도 없었다. relevance 가
+ *  아무 상품에도 붙지 않으니 sortByRelevance 의 첫 비교는 언제나
+ *  0 !== 0 (거짓) 이었고, 실제 순서는 신뢰도 → 가격 이었다.
+ *
+ *  실측(2026-08-29, "LG전자 LG그램 14ZD95U" 로컬 검색):
+ *      4위  8,000원  파인피아 … 14ZD95U 보호필름
+ *      5위  9,730원  LG 그램 충전기 아답터
+ *      6위 42,500원  LG LP65WGC20P-EK   (아예 다른 제품)
+ *  _search.js 머리말이 "이걸 막으려고 만들었다"고 적은 바로 그 현상이다.
+ *
+ *  네트워크를 쓰지 않는다. 소스에 호출이 남아 있는지와, 채점기가 실제로
+ *  액세서리를 본품 아래로 내리는지를 본다.
+ * ================================================================== */
+function runS1() {
+  suite('S1', '/api/search — 관련도 채점기를 실제로 부르는가');
+
+  const src = fs.readFileSync(path.join(ROOT, 'api/search.js'), 'utf-8');
+  check(/rankItems\s*\(/.test(src),
+    '★★ search.js 가 rankItems 를 호출한다 — 주석만 있고 호출이 없으면 순서는 신뢰도·가격뿐이다');
+  check(/require\('\.\/_search'\)[\s\S]{0,200}/.test(src) && /rankItems/.test(src.split('\n')[6] || src),
+    'rankItems 를 _search 에서 가져온다');
+  check(/minScore:\s*0/.test(src),
+    '★ 점수만 매기고 버리지 않는다 — 보이던 상품이 갑자기 사라지면 안 된다');
+
+  const S = require(path.join(ROOT, 'api/_search.js'));
+
+  // 실측에서 섞여 들어왔던 그 조합.
+  const items = [
+    { productId: '1', mall: '쿠팡', title: 'LG그램2026 14ZD95U-GX56K AMD 라이젠 AI 5 16GB 256GB', lprice: 1569000 },
+    { productId: '2', mall: '쿠팡', title: '파인피아 LG전자 2026 그램14 14Z90U 14Z95U 14ZD95U 보호필름', lprice: 8000 },
+    { productId: '3', mall: '쿠팡', title: 'LG 그램 충전기 아답터 전원 케이블 ADS-40MSG-19', lprice: 9730 },
+    { productId: '4', mall: '쿠팡', title: 'LG전자 (센터정품) LG LP65WGC20P-EK B EAY65910811', lprice: 42500 }
+  ];
+  const out = S.rankItems('LG전자 LG그램 14ZD95U', items, { minScore: 0 });
+  check(out.items.length === items.length, '한 건도 버리지 않는다', `${out.items.length}/${items.length}`);
+  check(items.every(it => typeof it.relevance === 'number'), '모든 상품에 relevance 가 붙는다');
+
+  const byId = id => items.find(it => it.productId === id);
+  check(byId('1').relevance > byId('2').relevance,
+    '★★ 본품이 보호필름보다 관련도가 높다',
+    `본품 ${byId('1').relevance} vs 필름 ${byId('2').relevance}`);
+  check(byId('1').relevance > byId('3').relevance,
+    '★ 본품이 충전기보다 관련도가 높다',
+    `본품 ${byId('1').relevance} vs 충전기 ${byId('3').relevance}`);
+  check(byId('1').relevance > byId('4').relevance,
+    '★ 본품이 무관한 부품보다 관련도가 높다',
+    `본품 ${byId('1').relevance} vs 부품 ${byId('4').relevance}`);
+
+  // 신뢰도·가격이 같을 때 관련도가 순서를 정하는지.
+  items.forEach(it => { it.trust = { score: 80 }; });
+  const sorted = S.sortByRelevance(items);
+  check(sorted[0].productId === '1',
+    '★★ 8,000원 필름이 1,569,000원 본품보다 위에 서지 않는다',
+    sorted.map(x => x.lprice).join(' → '));
+}
+
 (async () => {
   runO1b();
   await runO2();
@@ -1097,8 +1304,10 @@ function runO1b() {
   runY1();
   await runY2();
   await runR2();
+  runK1();   // 정의는 이 파일 끝의 runK1 참고
+  runS1();
 
-  const order = ['O1', 'O2', 'O3', 'Y1', 'Y2', 'R2'];
+  const order = ['O1', 'O2', 'O3', 'Y1', 'Y2', 'R2', 'K1', 'S1'];
   let pass = 0, fail = 0;
   console.log('\n' + '='.repeat(66));
   console.log('회귀 테스트 요약');

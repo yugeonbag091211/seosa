@@ -67,6 +67,41 @@ const CRON_LIMIT = 10;
  * 큐레이션 키워드 8개는 products 에 0건이라 섹션이 통째로 비어 있었다.
  * (홈에 "이달의 키워드 상품을 준비 중이에요"만 뜬다)
  */
+/*
+ * 수요 키워드 시딩 (2026-09-02 감사).
+ *
+ * 카탈로그는 큐레이션 키워드(여름 생활용품)로 채워졌는데 사용자가 실제로
+ * 치는 검색어는 전자기기(무선 이어폰·노트북·마우스·키보드·아이폰)다.
+ * 그 키워드의 상품은 사용자가 검색하는 순간에만 저장되고, 그 뒤로는 일일
+ * 수집기가 "이미 저장된 상품"만 되찾으므로 가격 기록이 얕게 남는다.
+ *
+ * 상위 검색어 몇 개를 매일 한 번씩 새로 받아 두면 홈 셀렉션·가격 기록이
+ * 수요 쪽으로 자란다. 호출은 키워드당 쿠팡 1회 + ADPICK 1회 — 하루 최대
+ * DEMAND_SEED_MAX(6)종이라 비용 증가는 무시할 수준이다.
+ *
+ * search_stats 는 사람이 친 말이라 소음이 섞인다(오타·내부 점검용 문자열).
+ * api/_search.isValidSuggestion 으로 거른다 — 홈 칩과 같은 기준이다.
+ */
+const DEMAND_SEED_MAX = Number(process.env.CRON_DEMAND_SEED_MAX) || 6;
+
+async function demandKeywords() {
+  try {
+    const { isValidSuggestion } = require('./_search');
+    const { data } = await supabase
+      .from('search_stats')
+      .select('keyword, count')
+      .order('count', { ascending: false })
+      .limit(30);
+    return (data || [])
+      .map(r => r && r.keyword)
+      .filter(k => k && isValidSuggestion(k))
+      .slice(0, DEMAND_SEED_MAX);
+  } catch (e) {
+    console.warn(`[cron] 수요 키워드 조회 실패(큐레이션만 수집): ${e.message}`);
+    return [];
+  }
+}
+
 async function collectTargets() {
   const month = kstMonth();
   let monthly = [];
@@ -80,10 +115,12 @@ async function collectTargets() {
   } catch (e) {
     console.warn(`[cron] 이달의 큐레이션 키워드 조회 실패(오늘의 셀렉션만 수집): ${e.message}`);
   }
-  return [...new Set([...TODAY_PICKS, ...monthly])];
+  const demand = await demandKeywords();
+  // 순서가 곧 우선순위다 — 시간 예산이 모자라면 뒤쪽(수요 시딩)이 다음 실행으로 밀린다.
+  return [...new Set([...monthly, ...TODAY_PICKS, ...demand])];
 }
 
-module.exports = async function handler(req, res) {
+module.exports = Object.assign(async function handler(req, res) {
   // CRON_SECRET을 설정하면 Vercel Cron이 Authorization 헤더를 붙여 보낸다.
   //
   // 예전에는 secret이 없으면 검사를 건너뛰었는데, 그러면 이 주소를 아는 누구나
@@ -102,43 +139,24 @@ module.exports = async function handler(req, res) {
   if (req.query && req.query.diag === '1') return diagnose(req, res);
 
   const started = Date.now();
-  const results = [];
-  const targets = await collectTargets();
-  let skipped = 0;
 
-  for (let i = 0; i < targets.length; i += CONCURRENCY) {
-    // 남은 시간이 곧 이번 배치가 간격 대기에 쓸 수 있는 최대치다.
-    const leftMs = TIME_BUDGET_MS - (Date.now() - started);
-    if (leftMs <= 0) {
-      skipped = targets.length - i;
-      console.warn(`[cron] 시간 예산 초과 — 남은 키워드 ${skipped}개는 다음 실행으로 넘긴다.`);
-      break;
-    }
-    const opts = { ...CRON_COUPANG, maxWaitMs: leftMs };
-    const adpickOpts = { ...CRON_ADPICK, maxWaitMs: leftMs };
-    const batch = targets.slice(i, i + CONCURRENCY);
-    const settled = await Promise.all(batch.map(async keyword => {
-      try {
-        const { items, allItems, errors, from } = await searchAll(keyword, {
-          coupangLimit: CRON_LIMIT, coupangOpts: opts,
-          adpickLimit: CRON_LIMIT, adpickOpts
-        });
-        const { saved, errors: saveErrors } = await saveProducts(keyword, allItems || items, { from });
-        return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };
-      } catch (e) {
-        return { keyword, found: 0, saved: 0, errors: [e.message] };
-      }
-    }));
-    results.push(...settled);
-  }
-
-  const totalSaved = results.reduce((n, r) => n + r.saved, 0);
-  const failed = results.filter(r => r.errors.length);
-  const elapsedMs = Date.now() - started;
-  const coupang = localStats();
-
-  // 호출 로그가 무한히 쌓이지 않게 하루 한 번 정리한다.
-  const pruned = await pruneLog(7);
+  /*
+   * ★ 결제부터 처리한다 — 상품 수집보다 먼저.
+   *
+   * 예전에는 수집 루프가 먼저였다. 그런데 그 루프는 TIME_BUDGET_MS(45초)를
+   * 다 쓸 때까지 도는데 함수 상한(vercel.json maxDuration)은 60초다. 즉
+   * 갱신·미결정리에 남는 시간이 최악 15초뿐이고, chargeBilling 은 혼자
+   * 최대 60초(_toss.CHARGE_TIMEOUT_MS)까지 걸릴 수 있다. 그러면 갱신
+   * 대상이 몇 건만 있어도 뒤쪽이 통째로 잘려 그날 청구가 나가지 않는다.
+   *
+   * 우선순위를 뒤집는 것이 맞다.
+   *   · 수집이 밀리면 — 다음 실행(KST 03시·06시)과 GitHub Actions 수집기가
+   *     같은 일을 다시 한다. 루프에 이미 skipped 처리가 있다.
+   *   · 청구가 밀리면 — 돈이 걸린다. 되돌리기가 비싸다.
+   *
+   * started 를 위에 두었으므로 수집 루프의 leftMs 는 "결제가 쓰고 남은 시간"
+   * 으로 자동 계산된다. 예산이 바닥나면 루프가 알아서 다음 실행으로 넘긴다.
+   */
 
   /*
    * PRO 자동결제 갱신.
@@ -147,8 +165,7 @@ module.exports = async function handler(req, res) {
    *   11개다. 갱신은 하루 한 번이면 충분하므로, CRON_SECRET 뒤에서 매일 도는
    *   이 함수에 얹는다. 새 엔드포인트를 만들면 배포가 상한에 걸린다.
    *
-   * 수집이 실패해도 갱신은 돌아야 한다 — 서로 무관한 일이다. 반대로 갱신이
-   * 실패해도 수집 결과를 뒤집지 않는다.
+   * 갱신이 실패해도 수집을 막지 않는다 — 서로 무관한 일이다.
    */
   let renewal = { attempted: 0, renewed: 0, failed: 0, gaveUp: 0 };
   try {
@@ -190,6 +207,44 @@ module.exports = async function handler(req, res) {
       + ` / 방치된 pending ${staleSweep.expiredPending}건 만료`);
   }
 
+  const results = [];
+  const targets = await collectTargets();
+  let skipped = 0;
+
+  for (let i = 0; i < targets.length; i += CONCURRENCY) {
+    // 남은 시간이 곧 이번 배치가 간격 대기에 쓸 수 있는 최대치다.
+    const leftMs = TIME_BUDGET_MS - (Date.now() - started);
+    if (leftMs <= 0) {
+      skipped = targets.length - i;
+      console.warn(`[cron] 시간 예산 초과 — 남은 키워드 ${skipped}개는 다음 실행으로 넘긴다.`);
+      break;
+    }
+    const opts = { ...CRON_COUPANG, maxWaitMs: leftMs };
+    const adpickOpts = { ...CRON_ADPICK, maxWaitMs: leftMs };
+    const batch = targets.slice(i, i + CONCURRENCY);
+    const settled = await Promise.all(batch.map(async keyword => {
+      try {
+        const { items, allItems, errors, from } = await searchAll(keyword, {
+          coupangLimit: CRON_LIMIT, coupangOpts: opts,
+          adpickLimit: CRON_LIMIT, adpickOpts
+        });
+        const { saved, errors: saveErrors } = await saveProducts(keyword, allItems || items, { from, source: 'cron' });
+        return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };
+      } catch (e) {
+        return { keyword, found: 0, saved: 0, errors: [e.message] };
+      }
+    }));
+    results.push(...settled);
+  }
+
+  const totalSaved = results.reduce((n, r) => n + r.saved, 0);
+  const failed = results.filter(r => r.errors.length);
+  const elapsedMs = Date.now() - started;
+  const coupang = localStats();
+
+  // 호출 로그가 무한히 쌓이지 않게 하루 한 번 정리한다.
+  const pruned = await pruneLog(7);
+
   console.log(
     `[cron] 키워드 ${results.length}개(미처리 ${skipped}) / 저장 ${totalSaved}건`
     + ` / 실패 키워드 ${failed.length}개 / ${elapsedMs}ms`
@@ -209,7 +264,7 @@ module.exports = async function handler(req, res) {
     staleSweep,
     results
   });
-};
+}, { collectTargets, demandKeywords });
 
 /* ------------------------------------------------------------------ *
  *  쿠팡 진단 (구 /api/coupang-diag)
@@ -253,6 +308,20 @@ async function diagnose(req, res) {
       if (toss.isMixedKeyEnv()) problems.push('★ client/secret 환경 불일치 (test+live 혼용)');
       if (toss.isConfigured() && toss.isTestKey()) problems.push('테스트 키입니다 — 실제 정산이 되지 않습니다');
       return { client: s.client, secret: s.secret, 문제: problems.length ? problems : ['없음'] };
+    })(),
+    /*
+     * AI Cost Guard (2026-09-02). "유료 비용 0원" 을 주장하려면 볼 수 있어야 한다.
+     * zeroCost:false 이면 이 인스턴스에서 유료 호출이 실제로 나간 것이다.
+     */
+    ai: (() => {
+      try {
+        const s = require('./_llm').stats();
+        return Object.assign({}, s, {
+          문제: s.zeroCost
+            ? (s.allowPaid ? ['OPENROUTER_ALLOW_PAID=1 — 유료 호출이 허용된 상태입니다'] : ['없음'])
+            : [`★ 유료 모델 호출 ${s.paidCalls}회 — zero-cost 정책이 깨졌습니다`]
+        });
+      } catch (e) { return { error: e.message }; }
     })(),
     // 이 인스턴스 기준
     instance: localStats(),

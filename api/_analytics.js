@@ -35,7 +35,64 @@ const { kstToday } = require('./_kst');
  *   그대로 받으면 아무 문자열이나 daily_metrics 에 쌓을 수 있다. 테이블이
  *   쓰레기로 차면 지표를 읽을 수 없게 된다 — 세지 않는 편이 낫다.
  */
-const METRICS = ['search', 'click'];
+/*
+ * 셀 수 있는 지표 이름.
+ *
+ * ★ 이 목록에 없는 이름은 bump() 가 'unknown metric' 으로 조용히 버린다.
+ *   프론트에 이벤트를 추가했는데 여기 이름을 안 넣으면 아무 오류 없이
+ *   집계만 안 된다 — 반드시 양쪽을 같이 고칠 것.
+ *
+ * ★ 스키마는 건드리지 않았다. daily_metrics.metric 이 text 컬럼이라
+ *   (supabase/2026-08-25-analytics.sql) 이름을 늘리는 데 마이그레이션이 필요 없다.
+ *
+ * ★ 이 테이블은 (날짜, 지표명, 횟수) 카운터다. product_id·검색어 같은 차원을
+ *   담을 자리가 없고, 그래서 개인을 식별할 수 있는 값은 애초에 들어오지 않는다.
+ *   차원이 필요해지면 그때 별도 테이블을 논의한다.
+ *
+ * 2026-08-29 UX 개편에서 추가한 것들:
+ *   탐색  search_open / search_submit / search_result_click / product_view
+ *   AI    ai_discovered / ai_open / ai_first_prompt / ai_followup
+ *         ai_entry_* 는 진입 위치별 분해값(home·search·product·compare·fab)
+ *   전환  price_history_open / comparison_open / wishlist_add /
+ *         price_alert_add / external_shop_click
+ */
+const METRICS = [
+  'search', 'click',
+  'search_open', 'search_submit', 'search_result_click', 'product_view',
+  /*
+   * related_product_click (2026-08-30 추가)
+   *
+   * 추천 섹션(오늘의 셀렉션 · 관심 카테고리 · 찾으시던 상품 · 이달의
+   * 큐레이션 · 최근 본 상품)에서 일어난 상품 클릭. 검색 결과 클릭
+   * (search_result_click)과 나눠 센다 — 뭉치면 "검색 퍼널이 도는가"와
+   * "우리 큐레이션이 눌리는가"를 구분할 수 없다.
+   *
+   * 이 값이 없어서 홈에서 일어난 상품 클릭이 지표에 통째로 빠져 있었다.
+   */
+  'related_product_click',
+  'ai_discovered', 'ai_open', 'ai_first_prompt', 'ai_followup',
+  'ai_entry_home', 'ai_entry_search', 'ai_entry_product', 'ai_entry_compare', 'ai_entry_fab',
+  /*
+   * ai_entry_noresult (2026-08-30 추가)
+   *
+   * 검색 결과 0건 화면에서 누른 AI 진입. ai_entry_search 와 나눠 센다 —
+   * 결과가 있는데 좁히려고 부르는 것과, 아무것도 못 찾아서 부르는 것은
+   * 성격이 정반대다. 뭉치면 "검색이 실패한 뒤 AI 가 건졌는가" 를
+   * 볼 수 없다.
+   */
+  'ai_entry_noresult',
+  /*
+   * ai_guest_answer / ai_login_from_guest (2026-09-02 추가)
+   *
+   * 비로그인 게스트가 조립본 답변을 받은 횟수와, 그 자리에서 로그인으로
+   * 넘어간 횟수. 두 값의 비율이 "가치를 먼저 보여주면 로그인하는가" 라는
+   * 가설의 유일한 근거다. ai_first_prompt 는 게스트도 같이 센다(질문을
+   * 보낸 사실은 같다) — 로그인 여부는 이 두 값으로 가른다.
+   */
+  'ai_guest_answer', 'ai_login_from_guest',
+  'price_history_open', 'comparison_open',
+  'wishlist_add', 'price_alert_add', 'external_shop_click'
+];
 
 /** visitorId 로 받아들일 모양. 브라우저가 만든 난수만 통과시킨다. */
 const VID_RE = /^[a-z0-9]{8,64}$/i;
@@ -48,6 +105,31 @@ const VID_RE = /^[a-z0-9]{8,64}$/i;
  */
 let enabled = true;
 let warned = false;
+
+/*
+ * 로컬 개발 차단 스위치 (ANALYTICS_DISABLED=1).
+ *
+ * ★ 왜 필요한가 — 2026-08-29 실제 사고
+ *   .env.local 에는 운영 Supabase 자격증명이 들어 있다. 그래서 localhost 로
+ *   띄운 개발 서버가 /api/stats 를 부르면 그 카운터가 운영 daily_metrics 에
+ *   그대로 쌓인다. UX 계측을 검증하다가 실제로 운영 지표에 16종 30건을
+ *   남겼고(사후 삭제), visitors 에도 개발용 브라우저가 방문자 한 명으로
+ *   들어갔다. 지표는 "틀려도 조용한" 데이터라 시간이 지나면 실제 사용자
+ *   행동과 검증 흔적을 구분할 방법이 없어진다.
+ *
+ * 켜는 곳은 .env.local 하나뿐이다. Vercel(운영·프리뷰) 환경변수에는 절대
+ * 넣지 않는다 — 넣는 순간 운영 집계가 통째로 멈추고, 그것도 조용히 멈춘다.
+ *
+ * migration 미적용 자동 차단(enabled)과 별도의 변수로 둔다. 두 이유를 한
+ * 플래그에 섞으면 "스키마가 없어서 꺼진 것"과 "개발자가 끈 것"을 진단에서
+ * 구분할 수 없다 (reason 문자열도 각각 다르게 돌려준다).
+ *
+ * 값을 캐시하지 않고 매번 읽는다. 테스트가 켜고 끄며 양쪽 경로를 모두
+ * 확인할 수 있어야 하고, 비용은 문자열 비교 한 번이라 무시할 만하다.
+ */
+function localDisabled() {
+  return String(process.env.ANALYTICS_DISABLED || '').trim() === '1';
+}
 
 function missingObject(msg) {
   return /could not find|does not exist|schema cache|relation .* does not exist/i.test(msg || '');
@@ -64,7 +146,7 @@ function disable(what, msg) {
 }
 
 /** @returns {boolean} 계측이 켜져 있는가 (테스트·진단용) */
-function isEnabled() { return enabled; }
+function isEnabled() { return enabled && !localDisabled(); }
 
 /** 테스트에서 모듈 상태를 되돌리기 위한 것. 운영 코드는 부르지 않는다. */
 function _reset() { enabled = true; warned = false; }
@@ -79,6 +161,9 @@ function _reset() { enabled = true; warned = false; }
  * @returns {Promise<{ok: boolean, reason: string}>}  절대 throw 하지 않는다
  */
 async function trackVisit(visitorId, today = kstToday()) {
+  // 로컬에서는 방문도 남기지 않는다 — visitors 에 개발용 브라우저가 섞이면
+  // '오늘 방문자'·'재방문자' 수가 그만큼 부풀고 되돌릴 수 없다.
+  if (localDisabled()) return { ok: false, reason: 'local-disabled' };
   if (!enabled) return { ok: false, reason: 'disabled' };
 
   /*
@@ -110,6 +195,7 @@ async function trackVisit(visitorId, today = kstToday()) {
  * @returns {Promise<{ok: boolean, reason: string}>}  절대 throw 하지 않는다
  */
 async function bump(metric, today = kstToday()) {
+  if (localDisabled()) return { ok: false, reason: 'local-disabled' };
   if (!enabled) return { ok: false, reason: 'disabled' };
 
   // 변환·검증을 전부 try 안에서 한다 (이유는 trackVisit 주석 참고).
@@ -143,7 +229,10 @@ async function bump(metric, today = kstToday()) {
 async function report(today = kstToday()) {
   const out = {
     date: today,
-    enabled,
+    // 진단에서 "왜 안 세지는가"를 바로 알 수 있게 두 이유를 나눠 보여준다.
+    // 조회 자체는 막지 않는다 — 읽기는 운영 데이터를 오염시키지 않는다.
+    enabled: isEnabled(),
+    localDisabled: localDisabled(),
     visitorsTotal: null,
     visitorsToday: null,
     visitorsReturning: null,
@@ -180,6 +269,15 @@ async function report(today = kstToday()) {
     (data || []).forEach(r => { byMetric[r.metric] = Number(r.count) || 0; });
     out.searchToday = byMetric.search || 0;
     out.clickToday  = byMetric.click  || 0;
+    /*
+     * UX 지표는 통째로 함께 내보낸다. 필드를 하나씩 늘리면 지표를 추가할
+     * 때마다 이 함수도 같이 고쳐야 하고, 빠뜨리면 쌓이기만 하고 아무도
+     * 못 보는 값이 된다. 0 으로 채워 두어 "아직 한 번도 안 일어남"과
+     * "집계가 안 됨"을 구분할 수 있게 한다.
+     */
+    out.ux = {};
+    METRICS.filter(m => m !== 'search' && m !== 'click')
+      .forEach(m => { out.ux[m] = byMetric[m] || 0; });
   } catch (e) {
     out.errors.push(`daily_metrics: ${e.message}`);
   }
