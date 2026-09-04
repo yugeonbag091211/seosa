@@ -947,6 +947,21 @@ function toClientProduct(p) {
     // mall_label 마이그레이션 전 저장된 옛 행이나 쿠팡/알리 행은 빈 값이다.
     mallLabel: p.mall_label || p.mall,
     productId: p.product_id,
+    /*
+     * 판매 단위(옵션) 식별자.
+     *
+     * 쿠팡에서 실제로 팔리는 단위는 product_id(상품 페이지)가 아니라
+     * vendor_item_id 다. 이 값이 항목에 없으면 가격 이력을 옵션으로 좁힐 수
+     * 없어서, 한 페이지에 묶인 다른 상품의 가격이 한 곡선으로 합쳐진다
+     * (_price.sameVendorRows 주석의 8082654809 사례).
+     *
+     * 실시간 검색 결과(_coupang.normalize)에는 처음부터 있었는데 DB 에서
+     * 읽은 항목에만 빠져 있었다. 그래서 같은 상품을 검색으로 보면 옵션별
+     * 곡선이, 저장된 목록에서 보면 섞인 곡선이 나왔다.
+     *
+     * 프론트 histKey 와 api/_pricestat.loadStats 가 이 값을 그대로 쓴다.
+     */
+    vendorItemId: p.vendor_item_id || '',
     isCoupang: p.mall === '쿠팡',
     oprice: p.oprice || 0,
     savePct: p.save_pct || 0,

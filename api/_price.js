@@ -33,16 +33,40 @@
  *   2) 따라서 basePrice / salePrice / originalPrice 같은 별도 정가 필드를
  *      이 엔드포인트에서 얻을 수 없다. 정가 대비 할인율은 계산 근거가 없다.
  *
- * ── 확인하지 못한 것 (단정하지 말 것) ─────────────────────────────
- *   productPrice 가 상품 페이지(PDP)의 실판매가와 "항상" 같은지는 확인되지
- *   않았다. 확인하려면 같은 시점의 PDP 가격과 대조해야 하는데, 그건 이
- *   엔드포인트로 할 수 없는 일이고 대량 호출도 하지 않기로 했다.
- *   알려진 위험 요인만 적어 둔다 — 검색 API 는 색인 시점 값을 줄 수 있고,
- *   쿠폰적용가 · 회원가 · 카드할인가는 애초에 응답에 없다.
+ * ── 반증된 것 (2026-09-04 감사) ★ ────────────────────────────────
+ *   productPrice 는 상품 페이지(PDP)의 실구매가와 다를 수 있다. 추측이 아니라
+ *   실측이다. 같은 시각에 API 를 직접 호출해 대조했다.
+ *
+ *     productId 7912306911 / vendorItemId 88764198511
+ *     itemId    21714832331   (셋 다 API 가 준 productUrl 의 값과 같다)
+ *       API productPrice   22,320원
+ *       상품 페이지        26,900원   (와우 회원 쿠폰가 23,610원)
+ *
+ *   응답 원본 키는 이게 전부다 (같은 호출의 10건 전수 확인):
+ *     productId / productName / productPrice / productImage / productUrl /
+ *     categoryName / keyword / rank / isRocket / isFreeShipping
+ *
+ *   그래서 이 값의 "종류" 를 우리는 모른다. 정가인지, 즉시할인가인지,
+ *   어떤 할인이 이미 반영된 값인지 응답에 표시가 없다. 색인 시점 값일
+ *   가능성도 배제할 수 없다.
+ *
+ *   ★ 여기서 "쿠폰·카드할인 제외" 라고 단정하면 안 된다. 위 사례에서는
+ *     API 값이 오히려 PDP 정가보다 **낮았다** — 무언가가 이미 빠진 값이거나,
+ *     지금 살 수 없는 값이다. 어느 쪽인지 모른다.
+ *
+ *   왜 대조를 더 못 했나: PDP 를 대량으로 긁지 않기로 했다. 위 한 건은
+ *   사용자가 화면에서 직접 확인해 알려 준 값이다.
  *
  * ── 그래서 코드가 하는 일 ─────────────────────────────────────────
- *   productPrice   우리가 가진 유일한 가격이므로 이것을 판매가로 쓴다.
+ *   productPrice   우리가 가진 유일한 가격이므로 이것을 관측값으로 쓴다.
  *                  "가장 정확한 값"이어서가 아니라 "유일하게 확인된 값"이라서다.
+ *                  ★ 화면에서는 "판매가" 가 아니라 "우리가 관측한 값" 이라고
+ *                    부른다. 가격 종류를 모르면 종류를 붙이지 않는다.
+ *                    (api/_product-page.PRICE_SOURCE_NOTE)
+ *   ★ 한 번만 본 값으로 "역대 최저" 를 단정하지 않는다. 위 22,320원이 정확히
+ *     그런 값이었다 — 26일 기록 중 그날 하루만 관측됐는데 코드가 곧바로
+ *     "가장 낮은 가격이다 · 지금 사도 좋다" 로 확정했다. 확인 규칙은
+ *     _pricestat.statsFrom(lowConfirmed) 과 _deal.js(unconfirmedLow) 에 있다.
  *   discountPrice  관측된 적이 없다. 쿠팡이 나중에 추가할 수 있으므로
  *                  "있고, 유효하고, productPrice 이하일 때만" 판매가로 인정한다.
  *                  (예전 코드는 `discountPrice || productPrice` 라서 그 값이
@@ -562,6 +586,53 @@ function vendorIdOf(row) {
   return coupangItemIds(row.link).vendorItemId;
 }
 
+/**
+ * 이 옵션(vendor_item_id)의 관측만 남긴다 — 가격 곡선 하나에 옵션 하나.
+ *
+ * ── 왜 필요한가 (2026-09-04 감사) ────────────────────────────────
+ *
+ * 쿠팡은 같은 product_id(= 상품 페이지) 아래 색상·용량·수량 옵션을 묶고,
+ * 실제로 팔리는 단위는 vendor_item_id 다. 이 값으로 좁히지 않고 읽으면 한
+ * 페이지에 묶인 서로 다른 상품의 가격이 한 곡선이 된다.
+ *
+ * 운영 DB 실측 (price_history 24,014행)
+ *   (product_id, mall) 조합 3,220개 중 실제 vid 가 2종 이상인 것 714개.
+ *   그중 301개는 "역대 최저" 가 지금 파는 옵션의 값이 아니었다.
+ *   예) 8082654809|쿠팡
+ *         vid 95768196637 : 15,900원 (28회)  ← 지금 파는 옵션
+ *         vid 91193685703 : 222,390~242,100원 (2회)
+ *
+ * ── 폴백 규칙 ──────────────────────────────────────────────────
+ *
+ * 무조건 좁히면 옛 기록이 통째로 사라진다 — vendor_item_id 컬럼은 나중에
+ * 생겼고, 운영 24,014행 중 8,024행이 아직 '' 또는 '__LEGACY__' 다.
+ * 그래서 세 갈래로 나눈다.
+ *
+ *   ① 우리 옵션의 행이 있다        → 그것만 쓴다 (남의 옵션은 버린다)
+ *   ② 우리 옵션 행이 없는데 다른   → 빈 계열을 돌려준다. 남의 옵션 가격을
+ *      옵션의 행은 있다               우리 것처럼 말하느니 "기록 없음" 이 맞다
+ *   ③ 어느 행에도 옵션 표시가 없다 → 전부 쓴다 (vid 도입 이전과 같은 동작)
+ *
+ * 좁힐 근거가 없을 때(vid 를 모를 때) 임의로 0건을 만들지 않는다.
+ *
+ * @param {Array<{vendor_item_id?:string, vendorItemId?:string}>} rows
+ * @param {string} vendorItemId
+ * @returns {Array} rows 의 부분집합
+ */
+function sameVendorRows(rows, vendorItemId) {
+  const list = Array.isArray(rows) ? rows : [];
+  const vid = String(vendorItemId || '').trim();
+  if (!vid || !list.length) return list;
+
+  const of = r => String((r && (r.vendor_item_id || r.vendorItemId)) || '').trim();
+  const mine = list.filter(r => of(r) === vid);
+  if (mine.length) return mine;
+
+  // '' 와 '__LEGACY__' 는 "옵션을 모른다" 는 뜻이지 다른 옵션이라는 뜻이 아니다.
+  const attributed = list.some(r => { const v = of(r); return v && v !== '__LEGACY__'; });
+  return attributed ? [] : list;
+}
+
 /** itemId 도 같은 규칙. */
 function itemIdOf(row) {
   if (!row) return '';
@@ -634,6 +705,6 @@ module.exports = {
   MAX_PRICE, SUSPECT_RATIO, SUSPECT_WINDOW_DAYS, OPTION_SWITCH_RATIO, MAX_DISPLAY_AGE_DAYS,
   MAX_PLAUSIBLE_DROP_PCT, LIFECYCLE, DROP_MAX_AGE_DAYS,
   parsePrice, isSanePrice, ageDays, kstToday, kstDayStartUtc, classifyPrice, coupangItemIds, isRefreshableMall,
-  vendorIdOf, itemIdOf, productLifecycle, isDisplayable, plausibleDrop,
+  vendorIdOf, itemIdOf, sameVendorRows, productLifecycle, isDisplayable, plausibleDrop,
   latestObservedDate, recentlyObserved, observedKstDate, todayDropConfirmed
 };

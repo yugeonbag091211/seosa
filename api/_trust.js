@@ -275,7 +275,22 @@ async function loadRecentHistory(keys) {
        * 신뢰도 계산(evaluateTrust)은 지금까지처럼 recorded_date 만 쓴다 —
        * 필드가 하나 늘 뿐이라 기존 계산은 그대로다.
        */
-      const pt = { price: r.price, recorded_date: r.recorded_date, recorded_at: r.recorded_at };
+      /*
+       * vendor_item_id 도 점에 실어 보낸다.
+       *
+       * 아래에서 옵션별 키(vidKey)로도 나눠 담지만, 호출부가 상품 단위 키를
+       * 받아 간 뒤 _price.sameVendorRows 로 직접 거를 수 있어야 한다.
+       * api/init.js 시세판 검증이 그렇게 쓴다 — 옵션 계열이 비었을 때
+       * "전부 미상이면 상품 단위로 본다" 같은 판정은 점 하나만 봐서는 못 하고
+       * 계열 전체를 봐야 하기 때문이다.
+       *
+       * 신뢰도 계산(evaluateTrust)은 price / recorded_date / recorded_at 만
+       * 읽으므로 필드가 하나 늘어도 기존 계산은 그대로다.
+       */
+      const pt = {
+        price: r.price, recorded_date: r.recorded_date, recorded_at: r.recorded_at,
+        vendor_item_id: r.vendor_item_id || ''
+      };
       // 옵션별 계열 — 같은 옵션끼리만 비교해야 교차 옵션 가격차가 변동폭으로 잡히지 않는다.
       const vidKey = `${base}|${r.vendor_item_id || ''}`;
       if (!map.has(vidKey)) map.set(vidKey, []);

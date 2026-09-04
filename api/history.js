@@ -1,7 +1,7 @@
 const supabase = require('./_supabase');
 const { applyCors, cachePublic, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { observedKstDate } = require('./_price');
+const { observedKstDate, sameVendorRows } = require('./_price');
 
 /*
  * 차트의 가로축 날짜는 KST 달력으로 찍는다.
@@ -109,7 +109,8 @@ function baseQuery() {
   return supabase
     .from('price_history')
     // recorded_at 도 받는다 — 날짜는 이 값을 KST 로 환산해 찍는다(위 주석).
-    .select('recorded_date, recorded_at, price')
+    // vendor_item_id 는 옵션 계열을 가르는 데 쓴다(_price.sameVendorRows).
+    .select('recorded_date, recorded_at, price, vendor_item_id')
     .order('recorded_date', { ascending: false })
     .limit(SINGLE_MAX_ROWS);
 }
@@ -131,10 +132,20 @@ async function singleHandler(req, res) {
     if (productId) {
       let query = baseQuery().eq('product_id', productId);
       if (mall) query = query.eq('mall', mall);
-      if (vendorItemId) query = query.eq('vendor_item_id', vendorItemId);
       const { data, error } = await query;
       if (error) throw new Error(error.message);
-      if (data && data.length) rows = data;
+      /*
+       * 옵션(vendor_item_id) 을 가르는 일은 SQL 이 아니라 _price.sameVendorRows
+       * 가 한다 — 상품 페이지(_product-page.loadPoints)·AI 근거(_pricestat.
+       * loadStats)와 같은 함수를 써야 같은 상품에 대해 같은 곡선이 나온다.
+       *
+       * 예전에는 여기서만 .eq('vendor_item_id', …) 로 걸렀다. 그러면 옵션
+       * 표시가 없던 옛 기록(운영 24,014행 중 8,024행)만 가진 상품이 모달에서
+       * 통째로 "기록 없음" 이 되는데, 같은 상품의 /p/ 페이지는 그 기록을
+       * 그대로 그렸다. 두 화면이 다른 말을 하고 있었다.
+       */
+      const picked = sameVendorRows(data || [], vendorItemId);
+      if (picked.length) rows = picked;
     }
 
     /*
@@ -277,19 +288,35 @@ async function batchHandler(req, res) {
           .limit(BATCH_MAX_ROWS);
         if (error) throw new Error(error.message);
 
-        const byKey = new Map();
+        /*
+         * 키별로 행을 먼저 모은다.
+         *
+         * 옵션(vendor_item_id) 을 가르는 _price.sameVendorRows 는 "옵션 표시가
+         * 하나도 없는 옛 기록이면 상품 단위로 본다" 는 폴백을 갖고 있어서,
+         * 그 판정을 내리려면 한 키의 행이 전부 모여 있어야 한다. 행 하나씩
+         * 즉석에서 거르면 그 폴백을 만들 수 없다.
+         */
+        const rowsByKey = new Map();
         (data || []).forEach(r => {
-          const vid = r.vendor_item_id || '';
           for (const [origKey, p] of parsed) {
             if (r.product_id !== p.productId) continue;
             if (p.mall && r.mall !== p.mall) continue;
-            if (p.vendorItemId && vid !== p.vendorItemId) continue;
-            if (!byKey.has(origKey)) byKey.set(origKey, new Map());
-            // 단건 조회(collapseToDaily)와 같은 기준으로 KST 날짜에 접는다.
-            const date = observedKstDate(r);
-            if (!date) continue;
-            keepLowest(byKey.get(origKey), date, r.price);
+            if (!rowsByKey.has(origKey)) rowsByKey.set(origKey, []);
+            rowsByKey.get(origKey).push(r);
           }
+        });
+
+        const byKey = new Map();
+        rowsByKey.forEach((rows, origKey) => {
+          const p = parsed.get(origKey);
+          const byDate = new Map();
+          // 단건 조회(collapseToDaily)와 같은 기준으로 KST 날짜에 접는다.
+          sameVendorRows(rows, p && p.vendorItemId).forEach(r => {
+            const date = observedKstDate(r);
+            if (!date) return;
+            keepLowest(byDate, date, r.price);
+          });
+          byKey.set(origKey, byDate);
         });
         byKey.forEach((byDate, k) => { map[k] = toPoints(byDate); });
       }

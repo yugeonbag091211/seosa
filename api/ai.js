@@ -1269,7 +1269,13 @@ function collectWantedFeatures(q, hist) {
 async function attachHistory(items) {
   const keys = (items || [])
     .filter(it => it && it.productId)
-    .map(it => ({ productId: String(it.productId), mall: String(it.mall || '') }));
+    // vendorItemId 까지 넘긴다 — 같은 상품 페이지의 다른 옵션 기록으로
+    // "역대 최저가입니다" 를 말하지 않기 위해서다 (_pricestat.loadStats 주석).
+    .map(it => ({
+      productId: String(it.productId),
+      mall: String(it.mall || ''),
+      vendorItemId: String(it.vendorItemId || '')
+    }));
   if (!keys.length) return new Map();
 
   try {

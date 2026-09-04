@@ -1174,6 +1174,14 @@ html[data-theme="dark"] .stale-note{background:rgba(229,105,94,.10);border-color
   color:var(--down);white-space:nowrap;background:none;border:0;padding:0;
 }
 .atl-badge .atl-ic{display:none}   /* ✨ 아이콘 제거 */
+/*
+ * 아직 확인되지 않은 신저가 — 초록(=가격이 내렸다는 뜻)을 쓰지 않는다.
+ *
+ * 이 카드에서 초록은 뜻이 하나다. 하루만 관측돼 확정되지 않은 값에 그 색을
+ * 주면, 색이 문구보다 먼저 읽혀서 "확인 중" 이라는 말이 지워진다.
+ * 사실은 그대로 보여 주되 확신의 신호만 뺀다 (Grid.markAllTimeLow 주석).
+ */
+.atl-badge.unconfirmed{color:var(--soft);font-weight:500}
 @media(max-width:760px){.atl-badge{font-size:.72rem}}
 
 /* ── 공유 버튼 ── */
@@ -3968,6 +3976,12 @@ var CONST = {
   AI_HIST_WAIT_MS: 4000,
   AI_AVG_DAYS:  30,   // "최근 30일 평균"의 기준 일수
   AI_TREND_DAYS: 7,   // "최근 추세"를 볼 일수
+  /*
+   * 최저가를 "확인됐다"고 부르기 위해 필요한 관측 일수.
+   * 서버 api/_pricestat.LOW_CONFIRM_DAYS 와 같은 값이어야 한다 —
+   * 갈리면 카드 배지와 모달·AI 답변이 서로 다른 말을 한다.
+   */
+  LOW_CONFIRM_DAYS: 2,
   TOAST_MS: 2800,
   CARD_STAGGER_MS: 55,     // 카드가 순차적으로 나타나는 간격
   ALERT_DEFAULT_RATIO: 0.9,// 목표가 기본값 = 현재가의 90%
@@ -5517,18 +5531,46 @@ var Grid = {
      * "역대 최저가"는 아니다. 며칠치인지는 사용자가 배지에서 바로 읽는다.
      */
     var days = hist.length;
-    var label = days + '일 기록 중 최저';
+
+    /*
+     * ★ 하루만 관측된 신저가는 "최저"로 확정하지 않는다 (2026-09-04 감사).
+     *
+     *   우리가 가진 가격은 쿠팡 파트너스 검색 API 의 productPrice 하나뿐이고,
+     *   그 값이 상품 페이지의 실제 구매가와 항상 같지는 않다는 것이 실측으로
+     *   확인됐다 (7912306911: API 22,320원 ↔ 페이지 26,900원).
+     *
+     *   그런 값이라도 오늘 처음 보면 이 배지가 그대로 "26일 기록 중 최저"를
+     *   달았다. 운영 전체로는 쿠팡 상품 1,515개 중 1,024개가 "최신 관측 =
+     *   역대 최저" 였고, 그중 159개는 그 값을 하루만 봤다.
+     *
+     *   같은 값을 다른 날 다시 보면 그때 확정한다. 그 전까지는 "확인 중"
+     *   이라고 적는다 — 배지를 지우지는 않는다. 값이 최저인 것은 사실이고,
+     *   확정되지 않았다는 것도 사실이다. 둘 다 말한다.
+     *
+     *   서버(api/_pricestat.statsFrom 의 lowConfirmed)와 같은 기준이다.
+     *   한쪽만 고치면 카드와 모달이 다른 말을 한다.
+     */
+    var lowSeen = 0;
+    for (var i = 0; i < prices.length; i++) if (prices[i] === min) lowSeen++;
+    var confirmed = lowSeen >= CONST.LOW_CONFIRM_DAYS;
+
+    var label = confirmed
+      ? days + '일 기록 중 최저'
+      : days + '일 기록 중 최저 · 확인 중';
     if (max > min) {
       var pct = Math.round((1 - min / max) * 100);
       if (pct >= 5) label += ' · ' + pct + '%↓';
     }
 
     var badge = document.createElement('span');
-    badge.className = 'atl-badge';
+    badge.className = 'atl-badge' + (confirmed ? '' : ' unconfirmed');
     // ✦ 아이콘은 제거했다 — 장식이 사실에 무게를 더해 주지 않는다.
     badge.textContent = label;
-    badge.title = days + '일치 가격 기록 안에서 지금 값이 가장 낮습니다. '
-      + '수집 시작 이전의 가격은 알 수 없습니다.';
+    badge.title = confirmed
+      ? days + '일치 가격 기록 안에서 지금 값이 가장 낮습니다. '
+        + '수집 시작 이전의 가격은 알 수 없습니다.'
+      : '이 값은 하루만 관측됐습니다. 다음 수집에서 같은 값이 다시 나오면 '
+        + '최저가로 확정됩니다. 수집 시작 이전의 가격은 알 수 없습니다.';
     slot.appendChild(badge);
   },
 
@@ -7346,6 +7388,12 @@ var Drop = {
       + ' data-mall="' + Fmt.esc(it.mall || '') + '"'
       + ' data-mall-label="' + Fmt.esc(m.name) + '"'
       + ' data-pid="' + Fmt.esc(it.productId || '') + '"'
+      /*
+       * 옵션 식별자 — 모달이 이 옵션의 이력만 그리게 한다.
+       * 없으면 Drop.read 가 vendorItemId 를 못 채우고, histKey 가 `pid|mall`
+       * 로 떨어져 /api/history 가 옵션을 좁히지 못한다(옵션 혼합 곡선).
+       */
+      + ' data-vid="' + Fmt.esc(it.vendorItemId || '') + '"'
       + ' data-price="' + price + '">'
       + '<div class="dthumb">' + thumbInner + '</div>'
       + '<div class="dmain">'
@@ -7406,6 +7454,14 @@ var Drop = {
       // 화면 표시용 몰 이름(ADPICK은 cp_name 기반). Card.read와 같은 이유로 분리한다.
       mallLabel: row.dataset.mallLabel || stored.mallLabel || mall,
       productId: pid || stored.productId || '',
+      /*
+       * 옵션 식별자를 잃지 않는다.
+       *
+       * Modal.open → getPriceHistory 가 이 값을 그대로 넘기고, 없으면
+       * /api/history 가 옵션을 좁히지 못해 같은 상품 페이지의 다른 옵션
+       * 가격이 한 곡선으로 합쳐진다. 카드(Card.read)와 같은 기준이다.
+       */
+      vendorItemId: row.dataset.vid || stored.vendorItemId || '',
       link: stored.link || '',
       image: stored.image || '',
       // 시세판에서 연 모달도 카드와 같은 신뢰도 근거를 보여준다.
@@ -9527,18 +9583,25 @@ var Compare = {
      */
     if (rows.length > 1) {
       /*
-       * ★ 배송비를 밝힌다 (지시 7항).
-       *   여기 가격은 전부 상품가다. 배송비 금액은 어느 API 도 주지 않아
-       *   (감사 결과: 쿠팡은 무료배송 여부만, ADPICK 은 그것도 없음)
-       *   총비용을 계산할 수 없다. 계산할 수 없으면 "최종 가격"이라고
-       *   부르지 않고, 무엇이 빠졌는지 말한다.
+       * ★ 이 가격이 무엇인지 밝힌다 (지시 7항).
+       *
+       *   배송비 금액은 어느 API 도 주지 않아(쿠팡은 무료배송 여부만,
+       *   ADPICK 은 그것도 없음) 총비용을 계산할 수 없다.
+       *
+       *   2026-09-04 감사에서 하나 더 확인됐다 — 우리는 이 값이 "상품가"
+       *   인지도 모른다. 쿠팡 파트너스 검색 API 응답에는 가격 종류를 말해
+       *   주는 필드가 없고(productPrice 하나뿐), 실측으로 그 값이 상품
+       *   페이지 가격과 달랐다 (7912306911: API 22,320원 ↔ 페이지 26,900원).
+       *   그래서 "상품가 기준" 이라는 단정을 지운다.
+       *
+       *   계산할 수 없으면 "최종 가격"이라고 부르지 않고, 무엇을 모르는지 말한다.
        */
       html += verified
         ? '<p class="cmp-caveat"><b>모델명이 일치하는</b> 상품만 모았어요. '
-          + '가격은 <b>상품가 기준</b>이라 배송비는 포함되지 않았어요.</p>'
+          + '가격은 SEOSA 가 <b>관측한 값</b>이라 배송비와 판매처의 추가 할인은 반영돼 있지 않을 수 있어요.</p>'
         : '<p class="cmp-caveat">상품명이 충분히 일치하는 상품만 모았지만 '
           + '<b>모델명까지 확인하지는 못했어요.</b> 옵션·수량을 상품 페이지에서 확인해 주세요. '
-          + '가격은 상품가 기준이라 배송비는 빠져 있어요.</p>';
+          + '가격은 SEOSA 가 관측한 값이라 배송비와 판매처의 추가 할인은 반영돼 있지 않을 수 있어요.</p>';
     }
     // 이상치를 뺐다는 사실을 밝힌다 — 조용히 빼면 표의 숫자를 설명할 수 없다.
     if (suspectCount > 0) {
