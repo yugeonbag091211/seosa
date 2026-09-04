@@ -2884,7 +2884,7 @@ select:focus-visible,textarea:focus-visible,
       <!--
         정물. 지금은 SVG 로 그려 둔다.
 
-        목업의 도자기 «사진»을 쓰려면 public/hero.jpg 를 두고 아래 한 줄을
+        실제로 촬영한 «사진»을 쓰려면 public/hero.jpg 를 두고 아래 한 줄을
         이 자리에 살리면 된다 — .hero-art img + .hero-still 규칙이 SVG 를
         자동으로 감춘다.
             <img src="/hero.jpg" alt="" onerror="this.remove()">
@@ -2894,137 +2894,143 @@ select:focus-visible,textarea:focus-visible,
           요청하지는 않는다.
       -->
       <!--
-        정물 — 도자기 화병 + 조약돌.
+        정물 — 책등 여덟 권.
 
         사진처럼 보이게 하는 것은 형태가 아니라 «빛»이다. 광원은 왼쪽 위 하나로
         고정하고 다음을 쌓는다.
-          · 바닥 그림자 3겹 — 넓고 흐린 것 / 좁고 진한 것 / 물체가 바닥에
+          · 바닥 그림자 3겹 — 넓고 흐린 것 / 좁고 진한 것 / 책이 바닥에
             닿는 자리의 아주 진한 접지 그림자
-          · 몸통 라디얼 그라디언트 (왼쪽 위 밝음 → 오른쪽 아래 어두움)
-          · 오른쪽 아래 반사광 — 바닥에서 튀어 오르는 빛. 이게 없으면
-            물체가 종이처럼 납작해진다
-          · 구멍은 mask 로 «뚫는다». 배경이 그대로 비치므로 라이트/다크에서
-            색을 따로 맞출 필요가 없다. 뚫린 자리에는 도자기 «두께»가 보이도록
-            안쪽 벽을 그린다 — 위쪽은 그늘, 아래쪽은 밝게
-          · 조약돌은 화병 앞에 겹쳐 둔다. 겹쳐야 앞뒤가 생기고 «놓여 있다»고
-            읽힌다
+          · 책등 곡률 — 원통이라 가운데가 밝고 양 끝이 죽는다. 광원이 왼쪽에
+            있으므로 밝은 띠는 가운데보다 왼쪽에 선다
+          · 세로 광량 — 위가 밝고 아래로 죽다가 바닥 직전에 한 번 반등한다.
+            선반에서 되튄 빛이다. 이게 없으면 밑동이 검게 죽어 납작해진다
+          · 곡률·광량은 글자 «위»를 덮는다. 잉크도 표지와 같은 빛을 받으므로,
+            글자만 조명 밖에 있으면 그 순간 UI 텍스트처럼 보인다
+
+        높이와 두께는 각 책의 실제 판형·책등 두께(mm)를 같은 배율로 환산한
+        값이라 서로의 비율이 실물과 맞는다. 제목·저자·출판사도 실제 책 그대로다.
       -->
       <svg class="hero-still" viewBox="0 0 460 340" aria-hidden="true" focusable="false">
         <defs>
-          <radialGradient id="hsBody" cx="33%" cy="24%" r="84%">
-            <stop offset="0%"   stop-color="#FEFDFB"/>
-            <stop offset="38%"  stop-color="#F4EFE7"/>
-            <stop offset="72%"  stop-color="#E3DCD0"/>
-            <stop offset="100%" stop-color="#C9C0B0"/>
-          </radialGradient>
-          <radialGradient id="hsBounce" cx="72%" cy="88%" r="46%">
-            <stop offset="0%"   stop-color="#FFFEFB" stop-opacity=".6"/>
-            <stop offset="100%" stop-color="#FFFEFB" stop-opacity="0"/>
-          </radialGradient>
-          <radialGradient id="hsRim" cx="18%" cy="14%" r="70%">
-            <stop offset="0%"   stop-color="#FFFFFF" stop-opacity=".85"/>
-            <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
-          </radialGradient>
-          <!-- 구멍 안쪽 벽: 왼쪽 위 그늘 → 오른쪽 아래 밝음 -->
-          <linearGradient id="hsHole" x1="24%" y1="4%" x2="76%" y2="96%">
-            <stop offset="0%"   stop-color="#9A9082"/>
-            <stop offset="38%"  stop-color="#C3BAAB"/>
-            <stop offset="72%"  stop-color="#EDE7DD"/>
-            <stop offset="100%" stop-color="#FBF8F3"/>
+          <!--
+            책등 곡률. 원통이라 가운데가 밝고 양 끝이 죽는다.
+            objectBoundingBox 라서 책마다 «자기 폭»에 맞춰 늘어난다 —
+            두꺼운 책일수록 같은 계조가 넓게 퍼져 저절로 더 둥글어 보인다.
+            광원이 왼쪽 위라 밝은 띠는 가운데보다 왼쪽에 선다.
+          -->
+          <linearGradient id="bsCurve" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%"    stop-color="#000" stop-opacity=".34"/>
+            <stop offset="4%"    stop-color="#000" stop-opacity=".14"/>
+            <stop offset="13%"   stop-color="#000" stop-opacity=".04"/>
+            <stop offset="27%"   stop-color="#fff" stop-opacity=".15"/>
+            <stop offset="40%"   stop-color="#fff" stop-opacity=".08"/>
+            <stop offset="52%"   stop-color="#fff" stop-opacity=".02"/>
+            <stop offset="68%"   stop-color="#000" stop-opacity=".05"/>
+            <stop offset="86%"   stop-color="#000" stop-opacity=".13"/>
+            <stop offset="97.5%" stop-color="#fff" stop-opacity=".07"/>
+            <stop offset="100%"  stop-color="#000" stop-opacity=".28"/>
           </linearGradient>
-          <!-- 중성 회색. 초록빛이 돌면 «돌»이 아니라 «비누»처럼 보인다. -->
-          <radialGradient id="hsStone" cx="31%" cy="20%" r="90%">
-            <stop offset="0%"   stop-color="#D6D4D0"/>
-            <stop offset="38%"  stop-color="#B4B2AD"/>
-            <stop offset="74%"  stop-color="#95938E"/>
-            <stop offset="100%" stop-color="#74726D"/>
-          </radialGradient>
-          <linearGradient id="hsNeck" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stop-color="#FAF7F1"/>
-            <stop offset="50%"  stop-color="#EBE4D9"/>
-            <stop offset="100%" stop-color="#CBC2B2"/>
+          <!--
+            세로 광량. 위가 밝고 아래로 죽다가, 바닥 직전에 한 번 «반등»한다 —
+            선반에서 되튄 빛이다. 이게 없으면 밑동이 그냥 검게 죽어
+            물체가 아니라 그라디언트로 보인다.
+          -->
+          <linearGradient id="bsVert" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#fff" stop-opacity=".09"/>
+            <stop offset="12%"  stop-color="#fff" stop-opacity=".03"/>
+            <stop offset="46%"  stop-color="#000" stop-opacity="0"/>
+            <stop offset="82%"  stop-color="#000" stop-opacity=".06"/>
+            <stop offset="91%"  stop-color="#fff" stop-opacity=".03"/>
+            <stop offset="100%" stop-color="#000" stop-opacity=".26"/>
           </linearGradient>
-          <filter id="hsSoft"  x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="13"/></filter>
-          <filter id="hsMid"   x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="7"/></filter>
-          <filter id="hsTight" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="3.2"/></filter>
-          <mask id="hsMask">
-            <rect x="0" y="0" width="460" height="340" fill="#fff"/>
-            <circle cx="298" cy="174" r="46" fill="#000"/>
-          </mask>
+          <filter id="bsSoft"  x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="12"/></filter>
+          <filter id="bsMid"   x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="6"/></filter>
+          <filter id="bsTight" x="-45%" y="-45%" width="190%" height="190%"><feGaussianBlur stdDeviation="2.4"/></filter>
         </defs>
 
         <!-- ── 바닥 그림자 ── -->
-        <ellipse cx="288" cy="292" rx="140" ry="21" fill="#8A8375" opacity=".2"  filter="url(#hsSoft)"/>
-        <ellipse cx="282" cy="296" rx="92"  ry="11" fill="#6B6558" opacity=".26" filter="url(#hsMid)"/>
-        <ellipse cx="288" cy="293" rx="52"  ry="6"  fill="#544F44" opacity=".3"  filter="url(#hsTight)"/>
+        <ellipse cx="230" cy="300" rx="160" ry="19" fill="#8A8375" opacity=".2"  filter="url(#bsSoft)"/>
+        <ellipse cx="224" cy="302" rx="109" ry="10" fill="#6B6558" opacity=".26" filter="url(#bsMid)"/>
+        <rect x="98" y="294" width="265" height="7" fill="#544F44" opacity=".34" filter="url(#bsTight)"/>
 
-        <!-- ── 화병 ── -->
-        <g mask="url(#hsMask)">
-          <!-- 목 — 짧고 굵게, 몸통에 자연스럽게 붙는다 -->
-          <path d="M247 84c-3-20 0-33 6-40 5-6 16-6 21 0 6 7 9 20 7 40z" fill="url(#hsNeck)"/>
-          <ellipse cx="264" cy="45" rx="15" ry="5.6" fill="#C0B7A7"/>
-          <ellipse cx="264" cy="46.4" rx="10.5" ry="3.6" fill="#8B8374"/>
-          <!-- 몸통 -->
-          <path d="M288 292c-67 0-121-49-121-114 0-65 52-114 120-114 69 0 121 49 121 114 0 65-53 114-120 114z"
-                fill="url(#hsBody)"/>
-          <path d="M288 292c-67 0-121-49-121-114 0-65 52-114 120-114 69 0 121 49 121 114 0 65-53 114-120 114z"
-                fill="url(#hsBounce)"/>
-          <path d="M288 292c-67 0-121-49-121-114 0-65 52-114 120-114 69 0 121 49 121 114 0 65-53 114-120 114z"
-                fill="url(#hsRim)"/>
-          <!-- 왼쪽 아래 그늘 -->
-          <path d="M172 214c16 47 58 78 112 78 13 0 26-2 38-6-75 14-134-23-150-72z"
-                fill="#AFA595" opacity=".55" filter="url(#hsMid)"/>
-          <!-- 아래쪽 접지 그늘 -->
-          <ellipse cx="286" cy="278" rx="86" ry="22" fill="#A79D8C" opacity=".3" filter="url(#hsMid)"/>
-          <!--
-            표면 하이라이트.
-            ★ 무광 도자기다 — 좁고 밝은 점을 찍으면 유리나 풍선처럼 보인다.
-              넓게 퍼지는 약한 빛 하나만 둔다.
-          -->
-          <ellipse cx="238" cy="122" rx="62" ry="42" transform="rotate(-30 238 122)"
-                   fill="#FFFFFF" opacity=".3" filter="url(#hsSoft)"/>
-          <!-- 유약의 미세한 얼룩 -->
-          <ellipse cx="340" cy="214" rx="36" ry="24" fill="#C4BAAA" opacity=".15" filter="url(#hsMid)"/>
-          <ellipse cx="212" cy="236" rx="28" ry="17" fill="#CDC4B6" opacity=".13" filter="url(#hsMid)"/>
+        <!--
+          책 여덟 권. 높이·두께는 각 책의 실제 판형과 책등 두께(mm)를
+          같은 배율로 환산한 값이라 서로의 비율이 실물과 맞는다.
+          끝쪽 책이 조금씩 기운다 — 빽빽한 줄에서 가운데는 양옆이 잡아 주고,
+          기우는 것은 줄 끝이다. 밑동을 축으로 돌려 바닥에서 뜨지 않는다.
+        -->
+        <g>
+          <rect x="100.7" y="22.2" width="52.6" height="273.8" rx="1.2" fill="#0A0A0E"/>
+          <text font-size="15.0" font-weight="700" fill="#EDEAE3" text-anchor="middle"><tspan x="127.0" y="53.0">코</tspan><tspan x="127.0" y="68.9">스</tspan><tspan x="127.0" y="84.8">모</tspan><tspan x="127.0" y="100.7">스</tspan></text>
+          <text transform="translate(126.3 122.6) rotate(90)" font-size="5.2" font-weight="500" fill="#C8A951" letter-spacing="1.1">COSMOS</text>
+          <text font-size="5.4" font-weight="500" fill="#EDEAE3" opacity=".9" text-anchor="middle"><tspan x="127.0" y="213.9">칼</tspan><tspan x="127.0" y="222.0">세</tspan><tspan x="127.0" y="227.7">이</tspan><tspan x="127.0" y="233.4">건</tspan></text>
+          <text font-size="4.6" font-weight="400" fill="#EDEAE3" opacity=".68" text-anchor="middle"><tspan x="127.0" y="285.5">사</tspan><tspan x="127.0" y="290.3">이</tspan><tspan x="127.0" y="295.2">언</tspan><tspan x="127.0" y="300.1">스</tspan><tspan x="127.0" y="305.0">북</tspan><tspan x="127.0" y="309.9">스</tspan></text>
+          <rect x="100.7" y="22.2" width="52.6" height="273.8" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="100.7" y="22.2" width="52.6" height="273.8" rx="1.2" fill="url(#bsVert)"/>
         </g>
-
-        <!-- 구멍 둘레: 도자기 두께 + 안쪽 벽 명암 -->
-        <circle cx="298" cy="174" r="46" fill="none" stroke="url(#hsHole)" stroke-width="9"/>
-        <path d="M258 158a46 46 0 0 1 30-25" fill="none" stroke="#8E8476" stroke-width="7"
-              stroke-linecap="round" opacity=".7" filter="url(#hsTight)"/>
-        <path d="M270 205a46 46 0 0 0 66 8" fill="none" stroke="#FFFFFF" stroke-width="6"
-              stroke-linecap="round" opacity=".65" filter="url(#hsTight)"/>
-        <!-- 구멍이 몸통에 만드는 옅은 그림자 -->
-        <circle cx="298" cy="174" r="50" fill="none" stroke="#B3A997" stroke-width="7"
-                opacity=".22" filter="url(#hsMid)"/>
-
-        <!-- ── 조약돌 (화병 앞에 겹친다) ── -->
-        <ellipse cx="158" cy="286" rx="74" ry="15" fill="#7D776A" opacity=".26" filter="url(#hsMid)"/>
-        <ellipse cx="156" cy="288" rx="46" ry="7"  fill="#575248" opacity=".34" filter="url(#hsTight)"/>
-        <g transform="rotate(-9 148 254)">
-          <!--
-            윤곽을 타원이 아니라 path 로 그린다. 완전한 타원은 «계란»으로
-            읽힌다 — 실제 조약돌은 좌우가 조금씩 다르게 닳아 있다.
-          -->
-          <path d="M148 212c34 0 62 12 68 26 7 15-6 34-30 43-22 8-52 9-74 2
-                   -21-7-32-20-28-33 5-16 30-38 64-38z"
-                fill="url(#hsStone)"/>
-          <!-- 위쪽 넓은 하이라이트 (무광이므로 넓고 약하게) -->
-          <ellipse cx="130" cy="232" rx="44" ry="19" transform="rotate(-16 130 232)"
-                   fill="#F0EFEC" opacity=".34" filter="url(#hsMid)"/>
-          <!-- 아래쪽 그늘 -->
-          <path d="M84 258c14 24 50 36 90 30-34 15-82 6-98-16z" fill="#565550" opacity=".34"
-                filter="url(#hsTight)"/>
-          <!-- 바닥에서 튀어 오르는 반사광 -->
-          <ellipse cx="172" cy="268" rx="32" ry="12" transform="rotate(-8 172 268)"
-                   fill="#DAD8D4" opacity=".28" filter="url(#hsMid)"/>
-          <!-- 표면 반점 -->
-          <circle cx="170" cy="238" r="2.9" fill="#6A6965" opacity=".24"/>
-          <circle cx="184" cy="256" r="2"   fill="#6A6965" opacity=".2"/>
-          <circle cx="138" cy="266" r="2.4" fill="#6A6965" opacity=".18"/>
-          <circle cx="108" cy="252" r="1.8" fill="#6A6965" opacity=".2"/>
-          <circle cx="158" cy="221" r="1.7" fill="#88867F" opacity=".26"/>
-          <circle cx="122" cy="268" r="1.5" fill="#6A6965" opacity=".16"/>
+        <g transform="rotate(-0.2 168.0 296)">
+          <rect x="153.4" y="32.8" width="44.5" height="263.3" rx="1.2" fill="#0B0B0B"/>
+          <rect x="182.7" y="32.8" width="2.8" height="263.3" fill="#E2342B"/>
+          <rect x="185.2" y="32.8" width="2.8" height="263.3" fill="#F08A1D"/>
+          <rect x="187.7" y="32.8" width="2.8" height="263.3" fill="#F5C518"/>
+          <rect x="190.3" y="32.8" width="2.8" height="263.3" fill="#2E9E52"/>
+          <rect x="192.8" y="32.8" width="2.8" height="263.3" fill="#2C6FBF"/>
+          <rect x="195.3" y="32.8" width="2.8" height="263.3" fill="#7A4B9E"/>
+          <text font-size="12.3" font-weight="700" fill="#F2F0EB" text-anchor="middle"><tspan x="168.0" y="58.4">이</tspan><tspan x="168.0" y="71.5">기</tspan><tspan x="168.0" y="84.5">적</tspan><tspan x="168.0" y="103.1">유</tspan><tspan x="168.0" y="116.2">전</tspan><tspan x="168.0" y="129.2">자</tspan></text>
+          <text transform="translate(167.4 148.3) rotate(90)" font-size="5.2" font-weight="500" fill="#F2F0EB" opacity=".72" letter-spacing="1.1">THE SELFISH GENE</text>
+          <text font-size="5.0" font-weight="500" fill="#F2F0EB" opacity=".9" text-anchor="middle"><tspan x="168.0" y="217.0">리</tspan><tspan x="168.0" y="222.3">처</tspan><tspan x="168.0" y="227.6">드</tspan><tspan x="168.0" y="235.2">도</tspan><tspan x="168.0" y="240.5">킨</tspan><tspan x="168.0" y="245.8">스</tspan></text>
+          <text font-size="4.6" font-weight="400" fill="#F2F0EB" opacity=".68" text-anchor="middle"><tspan x="168.0" y="285.5">을</tspan><tspan x="168.0" y="290.3">유</tspan><tspan x="168.0" y="295.2">문</tspan><tspan x="168.0" y="300.1">화</tspan><tspan x="168.0" y="305.0">사</tspan></text>
+          <rect x="153.4" y="32.8" width="44.5" height="263.3" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="153.4" y="32.8" width="44.5" height="263.3" rx="1.2" fill="url(#bsVert)"/>
+        </g>
+        <g>
+          <rect x="197.8" y="32.8" width="31.6" height="263.3" rx="1.2" fill="#14543F"/>
+          <text font-size="13.3" font-weight="700" fill="#F1EFE7" text-anchor="middle"><tspan x="213.6" y="55.5">돈</tspan><tspan x="213.6" y="69.6">의</tspan><tspan x="213.6" y="89.5">속</tspan><tspan x="213.6" y="103.6">성</tspan></text>
+          <text font-size="5.0" font-weight="500" fill="#F1EFE7" opacity=".9" text-anchor="middle"><tspan x="213.6" y="217.0">김</tspan><tspan x="213.6" y="222.3">승</tspan><tspan x="213.6" y="227.6">호</tspan></text>
+          <text font-size="4.6" font-weight="400" fill="#F1EFE7" opacity=".68" text-anchor="middle"><tspan x="213.6" y="285.5">스</tspan><tspan x="213.6" y="290.3">노</tspan><tspan x="213.6" y="295.2">우</tspan><tspan x="213.6" y="300.1">폭</tspan><tspan x="213.6" y="305.0">스</tspan><tspan x="213.6" y="309.9">북</tspan><tspan x="213.6" y="314.7">스</tspan></text>
+          <rect x="197.8" y="32.8" width="31.6" height="263.3" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="197.8" y="32.8" width="31.6" height="263.3" rx="1.2" fill="url(#bsVert)"/>
+        </g>
+        <g transform="rotate(0.25 244.6 296)">
+          <rect x="229.4" y="50.3" width="30.4" height="245.7" rx="1.2" fill="#1E3A52"/>
+          <rect x="229.4" y="270.3" width="30.4" height="25.7" rx="1.2" fill="#F2ECC0"/>
+          <text font-size="12.8" font-weight="700" fill="#EDEBE3" text-anchor="middle"><tspan x="244.6" y="72.2">내</tspan><tspan x="244.6" y="85.7">면</tspan><tspan x="244.6" y="105.0">근</tspan><tspan x="244.6" y="118.5">력</tspan></text>
+          <text transform="translate(244.0 138.1) rotate(90)" font-size="5.2" font-weight="500" fill="#EDEBE3" opacity=".72" letter-spacing="1.1">INNER EXCELLENCE</text>
+          <text font-size="5.0" font-weight="500" fill="#EDEBE3" opacity=".9" text-anchor="middle"><tspan x="244.6" y="222.3">짐</tspan><tspan x="244.6" y="229.8">머</tspan><tspan x="244.6" y="235.1">피</tspan></text>
+          <text font-size="4.6" font-weight="400" fill="#EDEBE3" opacity=".68" text-anchor="middle"><tspan x="244.6" y="260.9">윌</tspan><tspan x="244.6" y="265.8">북</tspan></text>
+          <rect x="229.4" y="50.3" width="30.4" height="245.7" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="229.4" y="50.3" width="30.4" height="245.7" rx="1.2" fill="url(#bsVert)"/>
+        </g>
+        <g>
+          <rect x="259.8" y="32.8" width="29.3" height="263.3" rx="1.2" fill="#EDEAE4"/>
+          <text font-size="12.3" font-weight="700" fill="#2B2926" text-anchor="middle"><tspan x="274.5" y="53.8">아</tspan><tspan x="274.5" y="66.8">주</tspan><tspan x="274.5" y="85.3">작</tspan><tspan x="274.5" y="98.3">은</tspan><tspan x="274.5" y="116.8">습</tspan><tspan x="274.5" y="129.9">관</tspan><tspan x="274.5" y="142.9">의</tspan><tspan x="274.5" y="161.4">힘</tspan></text>
+          <text transform="translate(273.8 180.4) rotate(90)" font-size="5.2" font-weight="500" fill="#B08A4C" letter-spacing="1.1">Atomic Habits</text>
+          <text font-size="5.0" font-weight="500" fill="#2B2926" opacity=".9" text-anchor="middle"><tspan x="274.5" y="217.0">제</tspan><tspan x="274.5" y="222.3">임</tspan><tspan x="274.5" y="227.6">스</tspan><tspan x="274.5" y="235.2">클</tspan><tspan x="274.5" y="240.5">리</tspan><tspan x="274.5" y="245.8">어</tspan></text>
+          <text font-size="4.6" font-weight="400" fill="#2B2926" opacity=".68" text-anchor="middle"><tspan x="274.5" y="285.5">비</tspan><tspan x="274.5" y="290.3">즈</tspan><tspan x="274.5" y="295.2">니</tspan><tspan x="274.5" y="300.1">스</tspan><tspan x="274.5" y="305.0">북</tspan><tspan x="274.5" y="309.9">스</tspan></text>
+          <rect x="259.8" y="32.8" width="29.3" height="263.3" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="259.8" y="32.8" width="29.3" height="263.3" rx="1.2" fill="url(#bsVert)"/>
+        </g>
+        <g transform="rotate(-0.6 302.0 296)">
+          <rect x="289.1" y="73.7" width="25.7" height="222.3" rx="1.2" fill="#F2EFE9"/>
+          <text font-size="10.8" font-weight="700" fill="#1C2733" text-anchor="middle"><tspan x="302.0" y="92.2">수</tspan><tspan x="302.0" y="103.7">족</tspan><tspan x="302.0" y="115.2">관</tspan></text>
+          <text font-size="5.0" font-weight="500" fill="#1C2733" opacity=".9" text-anchor="middle"><tspan x="302.0" y="229.3">유</tspan><tspan x="302.0" y="234.6">래</tspan><tspan x="302.0" y="239.9">혁</tspan><tspan x="302.0" y="247.4">장</tspan><tspan x="302.0" y="252.7">편</tspan><tspan x="302.0" y="258.0">소</tspan><tspan x="302.0" y="263.3">설</tspan></text>
+          <rect x="289.1" y="73.7" width="25.7" height="222.3" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="289.1" y="73.7" width="25.7" height="222.3" rx="1.2" fill="url(#bsVert)"/>
+        </g>
+        <g transform="rotate(-0.4 326.5 296)">
+          <rect x="314.8" y="76.0" width="23.4" height="220.0" rx="1.2" fill="#BFE0F0"/>
+          <rect x="314.8" y="265.6" width="23.4" height="30.4" rx="1.2" fill="#4E8FBF"/>
+          <text font-size="9.8" font-weight="700" fill="#123A5C" text-anchor="middle"><tspan x="326.5" y="92.9">시</tspan><tspan x="326.5" y="103.3">한</tspan><tspan x="326.5" y="113.7">부</tspan></text>
+          <text font-size="5.0" font-weight="500" fill="#123A5C" opacity=".9" text-anchor="middle"><tspan x="326.5" y="230.0">백</tspan><tspan x="326.5" y="235.3">은</tspan><tspan x="326.5" y="240.6">별</tspan><tspan x="326.5" y="248.1">장</tspan><tspan x="326.5" y="253.4">편</tspan><tspan x="326.5" y="258.7">소</tspan><tspan x="326.5" y="264.0">설</tspan></text>
+          <rect x="314.8" y="76.0" width="23.4" height="220.0" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="314.8" y="76.0" width="23.4" height="220.0" rx="1.2" fill="url(#bsVert)"/>
+        </g>
+        <g transform="rotate(-0.8 348.8 296)">
+          <rect x="338.2" y="76.0" width="21.1" height="220.0" rx="1.2" fill="#8E1B2E"/>
+          <text font-size="8.8" font-weight="700" fill="#F3EAE7" text-anchor="middle"><tspan x="348.8" y="91.2">나</tspan><tspan x="348.8" y="100.6">의</tspan><tspan x="348.8" y="113.9">사</tspan><tspan x="348.8" y="123.3">탄</tspan></text>
+          <text font-size="4.6" font-weight="400" fill="#F3EAE7" opacity=".68" text-anchor="middle"><tspan x="348.8" y="285.5">w</tspan><tspan x="348.8" y="290.3">e</tspan><tspan x="348.8" y="295.2">f</tspan><tspan x="348.8" y="300.1">i</tspan><tspan x="348.8" y="305.0">c</tspan></text>
+          <rect x="338.2" y="76.0" width="21.1" height="220.0" rx="1.2" fill="url(#bsCurve)"/>
+          <rect x="338.2" y="76.0" width="21.1" height="220.0" rx="1.2" fill="url(#bsVert)"/>
         </g>
       </svg>
     </div>
