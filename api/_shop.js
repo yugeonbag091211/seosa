@@ -473,6 +473,40 @@ async function loadPrevObservations(keys, today) {
  */
 let mallLabelColumn = true;
 
+/**
+ * price_history.source 존재 여부 (supabase/2026-09-01-price-history-source.sql).
+ *
+ * ★ 마이그레이션 적용 전에 코드가 먼저 배포돼도 가격 저장이 죽으면 안 된다.
+ *   products 쪽 mall_label / item_id 와 같은 방식으로, 컬럼이 없다고 확인되면
+ *   그 뒤로는 빼고 보낸다. 그래서 SQL 과 코드의 배포 순서를 맞출 필요가 없다.
+ */
+let historySourceColumn = true;
+
+/**
+ * price_history upsert. source 컬럼이 없는 환경이면 빼고 재시도한다.
+ *
+ * onConflict 는 실제 활성 UNIQUE 와 반드시 일치해야 한다 — 아래 호출부 주석
+ * (2026-08-14 사고) 참고. 여기서 키를 바꾸지 않는다.
+ *
+ * @returns {string|null} 오류 메시지. 성공이면 null.
+ */
+async function upsertHistory(rows) {
+  const candidate = historySourceColumn
+    ? rows
+    : rows.map(r => { const { source, ...rest } = r; return rest; });   // eslint-disable-line no-unused-vars
+
+  const { error } = await supabase.from('price_history').upsert(
+    candidate, { onConflict: 'product_id,mall,vendor_item_id,recorded_date' }
+  );
+  if (!error) return null;
+  if (!missingColumn(error.message) || !historySourceColumn) return error.message;
+
+  historySourceColumn = false;
+  console.warn('[save] price_history.source 컬럼 없음 — 해당 값 없이 저장합니다 '
+    + '(supabase/2026-09-01-price-history-source.sql 을 실행하면 켜집니다).');
+  return upsertHistory(rows);
+}
+
 /** item_id/vendor_item_id/mall_label 을 붙여 upsert 하고, 컬럼이 없으면 하나씩 빼며 재시도한다. */
 async function upsertProducts(rows) {
   let candidate = rows;
@@ -516,11 +550,21 @@ async function upsertProducts(rows) {
  * @param {object} opts
  *   label      로그에 붙일 이름 (보통 키워드)
  *   updateCatalog  products 를 갱신할지. false 면 price_history 만 남긴다.
+ *   source     이 관측을 만든 경로. price_history.source 에 그대로 들어간다.
+ *              'collect' | 'cron' | 'search' | 'ai' | 'import'
+ *              (supabase/2026-09-01-price-history-source.sql 참고)
  *
- * @returns {{saved, recorded, rejected, suspect, errors}}
+ *              ★ 이 값은 "이 행을 마지막으로 쓴 경로" 이지 "이 상품을 누가
+ *                확보했는가" 가 아니다. 같은 상품이 같은 날 두 경로에서
+ *                기록되면 UNIQUE 로 뒤 쓰기가 앞 행을 덮기 때문이다.
+ *                수집기 성과의 근거는 price_job_state 쪽이다 — 마이그레이션
+ *                파일의 "이 컬럼만으로는 완전하지 않다" 절에 근거를 적어 두었다.
+ *
+ * @returns {{saved, recorded, rejected, suspect, optionMismatch, errors}}
  */
 async function recordPrices(observations, opts = {}) {
   const label = opts.label || '';
+  const source = opts.source || '';
   const updateCatalog = opts.updateCatalog !== false;
   const errors = [];
 
@@ -530,17 +574,24 @@ async function recordPrices(observations, opts = {}) {
    * 이 today 는 "KST 로 오늘" 이고, 아래 두 곳에 쓰인다.
    *
    *   ① loadPrevObservations(keys, today)  — 직전 관측 경계. 실제로 효력이 있다.
-   *   ② historyRows.recorded_date          — 보내기는 하지만 DB 가 무시한다.
+   *   ② historyRows.recorded_date          — DB 트리거가 같은 값을 다시 계산한다.
    *
-   * ★ ②를 믿지 말 것. 운영 DB 는 recorded_date 를 recorded_at 의 UTC 날짜로
-   *   덮어쓴다 (생성 컬럼이거나 트리거). 2026-08-23 실측으로 확인했고,
-   *   price_history 15,155행 전부가 recorded_date === UTC(recorded_at) 다.
-   *   자세한 근거와 함정은 _price.kstToday 주석에 있다.
+   * ★ ②의 최종 값을 정하는 것은 DB 다. price_history 에는 트리거
+   *   trg_recorded_date (BEFORE INSERT OR UPDATE) 가 걸려 있고, 함수
+   *   set_recorded_date() 가 recorded_at 에서 날짜를 다시 뽑아 덮어쓴다.
    *
-   *   그래서 "KST 로 며칠 관측분인가" 를 판정하는 코드는 라벨이 아니라
-   *   recorded_at 을 본다(_price.observedKstDate / kstDayStartUtc). 여기서
-   *   KST 값을 계속 보내는 이유는, 나중에 DB 쪽 덮어쓰기를 걷어내면 그때
-   *   라벨까지 KST 로 맞춰지기 때문이다 — 읽는 쪽은 어느 경우든 영향받지 않는다.
+   *   2026-08-27 이전에는 그 함수가 `NEW.recorded_at::DATE` 였다. recorded_at
+   *   은 timestamptz 라 ::date 가 세션 TimeZone(Supabase 기본 UTC)을 따르고,
+   *   그래서 KST 새벽 수집분이 통째로 어제 라벨을 달았다 (운영 17,557행 중
+   *   9,040행). supabase/2026-08-27-recorded-date-kst.sql 이 그 표현식을
+   *   (recorded_at AT TIME ZONE 'Asia/Seoul')::date 로 바꾼다 — 그 뒤로는
+   *   트리거가 계산하는 값과 여기서 보내는 kstToday() 값이 같아진다.
+   *
+   *   ★ 그래도 라벨을 판정 근거로 쓰지 말 것. 마이그레이션 이전에 쌓인
+   *   9,040행은 UTC 라벨을 그대로 달고 있고 보정하지 않는다(그 파일의
+   *   "기존 데이터" 절 참고). 그래서 "KST 로 며칠 관측분인가" 는 라벨이 아니라
+   *   recorded_at 을 본다(_price.observedKstDate / kstDayStartUtc). 그 경로는
+   *   마이그레이션 전후 어느 쪽 데이터에도 똑같이 맞는다.
    *
    * recorded_at 은 UTC 인스턴트 그대로 둔다. 달력 하루의 경계만 KST 로 잡는다.
    */
@@ -595,17 +646,52 @@ async function recordPrices(observations, opts = {}) {
     byKey.set(key, it);
   }
   const uniq = [...byKey.values()];
-  if (!uniq.length) return { saved: 0, recorded: 0, rejected: 0, suspect: 0, errors };
+  if (!uniq.length) return { saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0, optionMismatch: 0, errors };
 
   const keys = uniq.map(it => ({ productId: it.productId, mall: it.mall }));
   const prevMap = await loadPrevObservations(keys, today);
 
   const historyRows = [];
   const catalogRows = [];
+  // 원장(price_history) 쓰기가 실패했는가. 아래 카탈로그 upsert 의 전제조건이다.
+  let historyFailed = false;
   let rejected = 0;
   let suspect = 0;
+  /* 옵션이 달라 저장하지 않은 관측 수 (아래 방어막). 실패가 아니라 거부다. */
+  let optionMismatch = 0;
 
   for (const it of uniq) {
+    /* ── ★ 저장 직전 옵션 방어막 (2026-09-03) ──────────────────────
+     *
+     * 호출부가 "우리가 추적하기로 한 옵션"(targetVendorItemId)을 실어 보내면,
+     * 실제로 저장될 vendorItemId 와 대조해서 다르면 **쓰지 않는다.**
+     *
+     * ★ 왜 여기에도 두는가 — 수집기의 pickOption 이 이미 같은 판정을 한다.
+     *   그런데 방어막이 매칭 쪽에만 있으면, 나중에 그 경로에 버그가 하나
+     *   생기는 순간 운영 이력이 다시 오염된다. 실제로 그런 일이 있었다:
+     *   productId 만 맞춰 채택하는 코드가 오래 돌면서 쿠팡 상품 605개의
+     *   이력에 두 개 이상의 옵션 가격이 섞였고, 그중 113개는 최저·최고
+     *   차이가 2배를 넘는다. 되돌릴 수 없는 쓰기 바로 앞에 하나 더 둔다.
+     *
+     * 필드를 안 넘기는 호출부(검색 API 등)에서는 아무 일도 하지 않는다 —
+     * targetVendorItemId 가 없으면 대조할 기준이 없기 때문이다. ADPICK 처럼
+     * vendorItemId 개념이 없는 몰도 빈 문자열이라 그대로 통과한다.
+     */
+    const wantVid = String(it.targetVendorItemId || '');
+    if (wantVid) {
+      const gotVid = vendorIdOf(it);
+      if (gotVid !== wantVid) {
+        optionMismatch++;
+        console.warn(`[save${label ? ':' + label : ''}] OPTION_MISMATCH`
+          + ` productId=${it.productId}`
+          + ` targetVendorItemId=${wantVid}`
+          + ` responseVendorItemId=${gotVid || '(없음)'}`
+          + ` price=${it.price} mall=${it.mall} (${String(it.title).slice(0, 30)})`
+          + ' — 다른 판매 단위의 가격이라 저장하지 않습니다.');
+        continue;
+      }
+    }
+
     const k = `${it.productId}|${it.mall}`;
     const prevObs = prevMap.get(k);
     /*
@@ -646,7 +732,9 @@ async function recordPrices(observations, opts = {}) {
       recorded_at: now,
       recorded_date: today,
       item_id: itemIdOf(it),
-      vendor_item_id: vendorIdOf(it)
+      vendor_item_id: vendorIdOf(it),
+      // 호출부가 안 넘기면 빈 문자열. 컬럼이 없는 환경은 upsertHistory 가 뺀다.
+      source
     });
 
     if (verdict.status === 'suspect') {
@@ -700,10 +788,11 @@ async function recordPrices(observations, opts = {}) {
      *  price_history_pid_mall_vid_date_key (pid, mall, vid, recorded_date)
      *  를 도입해 지금 활성 상태이므로 그 키를 대상으로 삼는다)
      */
-    const { error } = await supabase.from('price_history').upsert(
-      historyRows, { onConflict: 'product_id,mall,vendor_item_id,recorded_date' }
-    );
-    if (error) errors.push(`price_history: ${error.message}`);
+    const msg = await upsertHistory(historyRows);
+    if (msg) {
+      errors.push(`price_history: ${msg}`);
+      historyFailed = true;
+    }
   }
 
   /*
@@ -722,7 +811,39 @@ async function recordPrices(observations, opts = {}) {
   }
   const catalogUpsertRows = [...catalogByPidMall.values()];
 
-  if (catalogUpsertRows.length) {
+  /*
+   * ★ 원장(price_history) 쓰기가 실패했으면 카탈로그도 쓰지 않는다.
+   *
+   *   두 upsert 는 한 트랜잭션이 아니다. 예전에는 앞쪽이 실패해도 그대로
+   *   products 를 썼다. 그러면 lprice 와 collected_at 은 "방금 확인했다"고
+   *   말하는데 그 가격을 받치는 관측 기록은 없는 행이 남는다.
+   *
+   *   2026-08-27 운영 DB 실측: ADPICK 179행 중 10행이 정확히 그 상태였다 —
+   *   검색어 "여행용 캐리어", recorded_at 2026-08-26T18:11:46.721Z 배치 하나에서
+   *   products 는 10행이 다 들어갔고 price_history 는 0행이다. 나머지 22개
+   *   배치는 전부 1:1 로 맞는다(동시 검색이 겹친 순간의 일시 오류로 보인다).
+   *
+   *   그 행은 isDisplayable 을 live 로 통과해 화면에 현재가로 찍히지만,
+   *     · 가격 이력 차트가 비고
+   *     · todayDropConfirmed 가 근거를 찾지 못해 시세판에 오르지 못하고
+   *     · 다음 수집의 classifyPrice 가 비교할 prev 를 못 찾아
+   *       옵션 교체 · SUSPECT_RATIO 감지가 그 상품에서만 조용히 꺼진다.
+   *
+   *   원장에 없는 가격을 현재가로 내보내지 않는다 — 이 파일이 곳곳에서 지키는
+   *   "근거가 있을 때만 통과시킨다" 와 같은 방향이다. 새 상품이면 이번 회차에
+   *   저장되지 않을 뿐이고(검색 응답은 API 결과를 그대로 보여 준다), 기존
+   *   상품이면 마지막으로 원장에 남은 가격을 유지한다. 둘 다 다음 수집이 복구한다.
+   *
+   *   반대 순서(원장은 성공, 카탈로그만 실패)는 그대로 둔다. 그건 가격을
+   *   과장하지 않고, price_drop_top 이 products 를 inner join 하므로 화면에도
+   *   새지 않는다.
+   */
+  if (catalogUpsertRows.length && historyFailed) {
+    console.error(
+      `[save${label ? ':' + label : ''}] ★ price_history 쓰기가 실패해 products ${catalogUpsertRows.length}행도 건너뜁니다`
+      + ' — 원장 없는 현재가를 남기지 않기 위해서입니다. 다음 수집에서 다시 시도됩니다.'
+    );
+  } else if (catalogUpsertRows.length) {
     const msg = await upsertProducts(catalogUpsertRows);
     if (msg) errors.push(`products: ${msg}`);
   }
@@ -732,8 +853,35 @@ async function recordPrices(observations, opts = {}) {
   return {
     saved: errors.length ? 0 : catalogUpsertRows.length,
     recorded: errors.length ? 0 : historyRows.length,
+    /*
+     * 실제로 price_history 에 남은 상품 키 ("product_id|mall", 중복 제거).
+     *
+     * ★ 왜 필요한가 (2026-09-01)
+     *   수집기가 "오늘 이 상품의 가격을 확보했다" 를 판정하는 유일한 근거다.
+     *   호출 응답에 상품이 나왔다는 것만으로는 부족하다 — 그 뒤에
+     *     · classifyPrice 가 값을 거부하거나(rejected)
+     *     · price_history upsert 자체가 실패할 수 있다
+     *   이 둘은 원장에 가격이 남지 않으므로 확보가 아니다.
+     *
+     *   suspect 는 여기에 포함된다. 값이 급변해 products 현재가 반영만
+     *   보류했을 뿐 price_history 에는 정상적으로 기록되기 때문이다.
+     *
+     *   ★ 판정 기준은 errors 전체가 아니라 historyFailed 다 (2026-09-01 감사).
+     *
+     *     errors 에는 price_history 오류와 products 오류가 함께 담긴다.
+     *     errors.length 로 판정하면 "원장은 성공했는데 카탈로그만 실패" 한
+     *     경우까지 확보 실패로 처리해, 실제로 오늘 가격이 남은 상품이
+     *     수집 성공에서 통째로 빠졌다(오프라인 재현 확인).
+     *
+     *     recorded / saved 는 기존 의미를 그대로 둔다 — 그 둘은 "이번 저장이
+     *     온전히 끝났는가" 를 보수적으로 말하는 값이고, 바꾸면 메일의 행 단위
+     *     숫자 의미가 달라진다. 여기만 원장 성공 여부로 판정한다.
+     */
+    recordedKeys: historyFailed ? [] : [...new Set(historyRows.map(r => `${r.product_id}|${r.mall}`))],
     rejected,
     suspect,
+    // 옵션이 달라 저장하지 않은 관측 수 (OPTION_MISMATCH 방어막).
+    optionMismatch,
     errors
   };
 }
@@ -744,6 +892,8 @@ async function recordPrices(observations, opts = {}) {
  *
  * @param {object} opts
  *   from — 이 상품들이 어디서 왔는지. stale-cache/none 이면 저장하지 않는다.
+ *   source — 이 호출이 어느 경로인지. price_history.source 로 그대로 내려간다
+ *            ('cron' | 'search' | 'ai'). recordPrices 의 source 주석 참고.
  *          (예전에는 출처를 몰라서, 쿠팡이 차단된 동안 옛 캐시 값이 매일
  *           "오늘 가격"으로 쌓이고 있었다)
  *
@@ -787,7 +937,7 @@ async function saveProducts(keyword, items, opts = {}) {
     itemId: it.itemId,
     vendorItemId: it.vendorItemId,
     mallLabel: it.mallLabel
-  })), { label: keyword, now: opts.now });
+  })), { label: keyword, now: opts.now, source: opts.source || '' });
 
   return { saved: r.saved, errors: r.errors, rejected: r.rejected, suspect: r.suspect };
 }
