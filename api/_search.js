@@ -325,6 +325,209 @@ const ACCESSORY_WORDS = [
   '보호', '액정보호', '강화유리', '충전기', '어댑터', '케이블', '받침대'
 ];
 
+/* ------------------------------------------------------------------ *
+ *  3-b. 핵심 명사 정렬 (단일 토큰 포화 해소)
+ *
+ *  ── 무엇이 잘못돼 있었나 ─────────────────────────────────────────
+ *
+ *  scoreTitle 은 «질의 커버리지» 만 잰다 — "검색어의 몇 %가 제목에 있는가".
+ *  제목에 그 밖에 «무엇이 더 붙어 있는지» 는 보지 않는다. 그래서 검색어가
+ *  한 단어면 그 단어를 품은 제목이 전부 1.0 으로 포화되고, 정렬의 첫 비교가
+ *  무력화돼 사실상 «가격 오름차순» 이 된다. 실측(2026-09-04):
+ *
+ *      [향수]  0.75  조말론 런던 오드코롱 100ml    ← 진짜 향수(동의어라 감점)
+ *              1.00  향수 공병 리필 용기 10ml      ← 빈 병이 1위
+ *      [텀블러] 1.00  스탠리 진공 텀블러 = 텀블러 세척솔 = 텀블러 뚜껑 패킹
+ *
+ *  ── 무엇으로 가르는가 ────────────────────────────────────────────
+ *
+ *  제목 «길이» 로 가르면 안 된다. "아이폰 17 프로 맥스 256GB 자급제" 는 길지만
+ *  좋은 결과이고 "아이폰 17 프로 케이스" 는 짧아도 액세서리다.
+ *
+ *  한국어는 핵심 명사가 «뒤» 에 온다. 그래서 처음에는 "검색어가 닿은 자리
+ *  뒤에 토큰이 몇 개 더 있는가" 로만 깎아 봤다. 실패했다:
+ *
+ *      Apple 2025 에어팟 프로 3 USB-C 블루투스 [이어폰]   ← 진짜 본품
+ *      [텀블러] 뚜껑 실리콘 패킹                          ← 부속
+ *
+ *  둘 다 검색어 뒤에 토큰이 여럿 남는다. 한국어 상품명은 끝에 «일반 종류명»
+ *  (이어폰·노트북·자급제)이 오는 게 정상이기 때문이다. 꼬리의 «개수» 로는
+ *  종류명과 부속명을 못 가른다. 실제로 그렇게 했다가 "갤럭시 S26 울트라"
+ *  에서 진짜 휴대폰이 밀리고 가죽케이스가 1위가 되는 회귀가 났다.
+ *
+ *  가르는 것은 꼬리의 «정체» 다. 그래서 규칙을 이렇게 좁혔다:
+ *
+ *      검색어가 닿은 자리 «뒤» 에 부속 낱말이 오면, 이 상품은 그 부속이다.
+ *
+ *      [향수] 공병 리필 용기      뒤에 공병 → 부속
+ *      [텀블러] 뚜껑 실리콘 패킹   뒤에 패킹 → 부속
+ *      스탠리 진공 [텀블러]       뒤가 비었다 → 본품
+ *      에어팟 [프로] 3 블루투스 이어폰  뒤는 종류명뿐 → 본품
+ *      [케이스] 포함 에어팟 프로   부속 낱말이 «앞» 이다 → 본품
+ *
+ *  어순(무엇이 무엇을 수식하는가)과 낱말 목록을 함께 쓴다. 낱말은 특정 상품·
+ *  브랜드가 아니라 어느 카테고리에나 걸치는 부속 일반명이고, 각 낱말의 세기는
+ *  운영 상품명 2,306건에서 그 낱말이 핵심 자리에 오는 비율로 정했다.
+ * ------------------------------------------------------------------ */
+
+/*
+ * 꼬리에 붙는 옵션 표기. 핵심 명사를 찾을 때 뒤에서부터 떼어낸다.
+ * 색상·설치·증정처럼 «어떤 상품에나 붙는» 말만 넣는다. 특정 상품·브랜드는 없다.
+ */
+const TAIL_NOISE = new Set([
+  '블랙', '화이트', '그레이', '그레이지', '실버', '네이비', '베이지', '아이보리',
+  '핑크', '레드', '블루', '그린', '브라운', '골드', '민트', '퍼플', '오렌지',
+  'black', 'white', 'gray', 'grey', 'silver', 'navy', 'pink', 'red', 'blue',
+  'green', 'gold', 'beige', 'ivory',
+  '단품', '본품', '옵션', '선택', '랜덤', '혼합', '추가', '포함', '미포함',
+  '방문설치', '무료설치', '설치', '배송', '당일발송', '할인쿠폰', '쿠폰',
+  '국내발송', '해외배송', '해외', '정품', '벌크', '박스', '리퍼'
+]);
+
+/**
+ * 제목의 내용 토큰. 뒤에 붙은 수량·규격·색상 같은 옵션 표기를 떼어낸다.
+ *
+ * 쉼표로 자르지는 «않는다». 쉼표가 옵션 구분자인 제목이 많지만
+ * ("…서큘레이터, PCF-HD15(블랙)"), 모델 변형을 나열하는 제목도 있어서
+ * ("갤럭시S26,S26플러스,S26울트라 가죽케이스") 일률적으로 자르면 그런
+ * 제목의 «진짜 핵심 명사»(가죽케이스)를 통째로 못 보게 된다. 실제로
+ * 그렇게 잘랐다가 갤럭시 검색에서 케이스가 1위로 올라오는 회귀가 났다.
+ */
+function coreTokens(rawTitle) {
+  const toks = splitTokens(normalizeText(rawTitle));
+  while (toks.length > 1) {
+    const last = toks[toks.length - 1];
+    const k = classify(last);
+    const droppable = k === KIND.UNIT || k === KIND.NUMBER || k === KIND.YEAR
+      || k === KIND.COMMON || TAIL_NOISE.has(last);
+    if (!droppable) break;
+    toks.pop();
+  }
+  return toks;
+}
+
+/**
+ * 질의 토큰이 제목 토큰 목록에서 «처음» 닿는 자리. 없으면 -1.
+ *
+ * 가장 뒤가 아니라 가장 앞을 쓴다. 뒤를 쓰면 부속 이름 안에 검색어가 다시
+ * 들어 있을 때 기준점이 부속 «뒤» 로 밀려 감점이 안 걸린다. 실제 사례:
+ *     "에어팟 프로 이어팁 [에어팟폼팁] 데코니"
+ *      ↑첫 일치        ↑부속    ↑여기가 마지막 일치가 돼 버린다
+ * 한국어는 왼쪽이 오른쪽을 꾸미므로, 검색어가 처음 닿은 뒤에 오는 말들이
+ * "그래서 이게 무엇인가" 를 정한다.
+ */
+function matchIndex(token, toks) {
+  for (let i = 0; i < toks.length; i++) {
+    const tt = toks[i];
+    if (tt === token.text) return i;
+    if (token.text.length >= 2 && tt.indexOf(token.text) > -1) return i;
+    if (token.stem && tt.indexOf(token.stem) > -1) return i;
+    const syn = SYNONYMS.get(token.text);
+    if (syn) {
+      for (const sy of syn) if (sy.length >= 2 && tt.indexOf(sy) > -1) return i;
+    }
+  }
+  return -1;
+}
+
+/*
+ * 부속 낱말과 그 «세기».
+ *
+ * 세기는 지어낸 것이 아니라 운영 상품명 2,306건에서 그 낱말이 핵심 명사
+ * 자리에 얼마나 오는지로 갈랐다. 핵심으로 거의 안 오는 말일수록 강하다.
+ *
+ *   strong  그 자체로 팔리는 일이 드물다        (케이스·이어팁·교체용·패킹)
+ *   medium  상품일 수도, 부속일 수도 있다        (충전기·필터·뚜껑·배터리)
+ *   weak    수식어에 가깝다                     (보호·수납·호환·충전)
+ *
+ * '링'·'망'·'줄' 은 등장이 잦은데(각 130·47·7건) 상품명 안에서 다른 뜻으로
+ * 쓰이는 경우가 많아 넣지 않았다. 잘못 내리는 쪽이 안 내리는 쪽보다 나쁘다.
+ */
+const ACCESSORY_TIER = [
+  // strong
+  ['액정보호', 0.72], ['강화유리', 0.72], ['보호필름', 0.72], ['키스킨', 0.72],
+  ['케이스', 0.72], ['커버', 0.72], ['필름', 0.72], ['파우치', 0.72],
+  ['거치대', 0.72], ['받침대', 0.72], ['스트랩', 0.72], ['어댑터', 0.72],
+  ['케이블', 0.72], ['이어팁', 0.72], ['공병', 0.72], ['리필', 0.72],
+  ['세척솔', 0.72], ['스쿱', 0.72], ['포장용기', 0.72], ['패킹', 0.72],
+  ['교체용', 0.72], ['소모품', 0.72], ['부품', 0.72], ['리무버', 0.72],
+  ['카트리지', 0.72], ['심지', 0.72],
+  // medium
+  ['충전기', 0.85], ['뚜껑', 0.85], ['필터', 0.85], ['홀더', 0.85],
+  ['스탠드', 0.85], ['마개', 0.85], ['브러시', 0.85], ['클리너', 0.85],
+  ['보관함', 0.85], ['정리함', 0.85], ['용기', 0.85], ['봉투', 0.85],
+  ['배터리', 0.85], ['스티커', 0.85]
+];
+
+/*
+ * ── 넣었다가 뺀 낱말과 그 이유 ──
+ *
+ * 이 목록은 «부분 문자열» 로 맞춘다(indexOf). 그래서 짧거나 뜻이 겹치는 말은
+ * 멀쩡한 본품을 때린다. 실사용 검색에서 잡은 오탐과, 뺀 근거:
+ *
+ *   충전  "에어팟 4 블루투스 이어폰 유선충전" ← 기능 설명인데 부속으로 봤다
+ *   보호  액정보호·보호필름은 위에 따로 있다. 남기면 "눈 보호" 같은 말까지 맞는다
+ *   호환  "OO 호환 배터리" 처럼 수식어로 더 자주 쓰인다
+ *   수납·교체·세정  각각 수납장·교체형·세정제 같은 «본품» 을 때린다
+ *   스킨  화장품 스킨이 본품이다 (부속인 '키스킨' 은 통째로 남겼다)
+ *   토너·잉크  프린터 소모품이자 화장품/프린터 본품 이름이다
+ *   캡    캡슐·캡모자·스냅백까지 맞는다
+ *
+ * 감점이 약해서 순위가 안 바뀌더라도, 근거 없이 깎은 값이 남는 쪽보다
+ * 아예 안 거는 쪽이 낫다.
+ */
+
+/** 검색어 자체가 부속을 가리키는가 (그렇다면 부속 감점을 걸면 안 된다). */
+function queryWantsAccessory(analysis) {
+  const n = analysis.normalized || '';
+  return ACCESSORY_TIER.some(([w]) => n.indexOf(w) > -1);
+}
+
+/**
+ * 핵심 명사 정렬 계수 (0~1). rankItems 가 relevance 에 곱한다.
+ *
+ * ★ scoreTitle 은 건드리지 않는다. 그쪽은 "질의가 제목에 얼마나 반영됐나"
+ *   라는 별개의 물음이고, 그 계약에 기대는 검사들이 이미 있다.
+ *   여기서 답하는 물음은 "그래서 이게 사용자가 찾던 «그 물건»인가" 다.
+ *
+ * @param {object} analysis analyzeQuery 결과
+ * @param {string} rawTitle 원본 상품명
+ * @returns {{factor:number, at:number, accessory:string, reason:string}}
+ */
+function productFocus(analysis, rawTitle) {
+  const none = { factor: 1, at: -1, accessory: '', reason: '' };
+  if (!analysis || !analysis.tokens || !analysis.tokens.length) return none;
+  // 검색어가 부속을 찾고 있으면(이어팁·충전기 검색) 부속을 내리면 안 된다.
+  if (queryWantsAccessory(analysis)) return none;
+
+  const core = coreTokens(rawTitle);
+  if (core.length < 2) return none;
+
+  // 검색어가 제목에 «처음» 닿는 자리. 여러 토큰이면 그중 가장 앞.
+  let at = -1;
+  analysis.tokens.forEach(tok => {
+    const i = matchIndex(tok, core);
+    if (i > -1 && (at < 0 || i < at)) at = i;
+  });
+  // 못 찾았으면 판단 근거가 없다 — 건드리지 않는다.
+  if (at < 0) return none;
+
+  /*
+   * 닿은 자리 «뒤» 에서만 부속 낱말을 찾는다. 앞이나 같은 자리는 보지 않는다.
+   * 여러 개면 가장 강한(계수가 낮은) 것을 쓴다 — "뚜껑 실리콘 패킹" 처럼
+   * 약한 말과 강한 말이 같이 오면 강한 쪽이 이 상품의 정체에 가깝다.
+   */
+  let factor = 1, hit = '';
+  for (let i = at + 1; i < core.length; i++) {
+    for (const [w, weight] of ACCESSORY_TIER) {
+      if (core[i].indexOf(w) > -1 && weight < factor) { factor = weight; hit = w; }
+    }
+  }
+  if (!hit) return none;
+
+  return { factor, at, accessory: hit, reason: `tail-acc:${hit}` };
+}
+
 /** 상품명을 한 번만 분석해 두고 여러 검색어에 재사용한다. */
 function analyzeTitle(title) {
   const normalized = normalizeText(title);
@@ -652,8 +855,24 @@ function rankItems(keyword, items, opts = {}) {
 
   const scored = uniq.map(it => {
     const r = scoreTitle(analysis, it && it.title);
-    if (it) { it.relevance = r.score; }
-    return { it, r };
+    /*
+     * 질의 커버리지(r.score) 에 «핵심 명사 정렬»(productFocus) 을 곱한다.
+     *
+     * 커버리지만으로는 단일 토큰 검색이 전부 1.0 으로 포화된다(productFocus
+     * 머리 주석의 실측 참고). 곱하는 값은 어순에서 나오므로 특정 상품·브랜드·
+     * 검색어에 대한 예외가 없다.
+     *
+     * scoreTitle 의 반환값 자체는 바꾸지 않는다 — 그 계약(정확히 맞으면 1.0)에
+     * 기대는 검사가 이미 있고, "질의가 얼마나 반영됐나" 와 "이게 그 물건인가" 는
+     * 서로 다른 물음이라 한 숫자에 섞지 않는 편이 낫다.
+     */
+    const f = productFocus(analysis, it && it.title);
+    if (it) {
+      it.relevance = Math.round(r.score * f.factor * 1000) / 1000;
+      // 왜 내려갔는지 남긴다. 진단용이고 응답 형태를 바꾸지 않는다(undefined 면 직렬화에서 빠진다).
+      it.relevanceWhy = [r.reason, f.reason].filter(Boolean).join(',') || undefined;
+    }
+    return { it, r, f };
   });
 
   const kept = scored.filter(s => s.r.score >= minScore);
@@ -1114,6 +1333,8 @@ function nearest(entries, qKey, limit) {
 module.exports = {
   normalizeText, canonicalKey, splitTokens, analyzeQuery, analyzeTitle,
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
+  // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
+  productFocus, coreTokens, ACCESSORY_TIER,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY
