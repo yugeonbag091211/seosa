@@ -766,6 +766,317 @@ function stripRefs(text) {
 }
 
 /* ==================================================================
+ *  1.6단계 — 예산 제약 (결정론적)
+ *
+ *  ★ 왜 코드가 판정하는가.
+ *
+ *    예전에는 "100만원 이하" 라는 조건이 프롬프트 문장으로만 모델에 갔다
+ *    (P.roleShop 의 "조건에 맞지 않는 것이 섞여 있으면 억지로 맞다고 하지 마라").
+ *    그러면 같은 데이터로도 답이 흔들린다 — 130만원짜리를 "예산에 가깝다"며
+ *    끼워 넣기도 하고, 반대로 95만원짜리를 빼기도 한다. 무엇보다 사용자가
+ *    그 판단을 검증할 방법이 없다. "왜 이건 안 보여줬지?" 에 답할 근거가
+ *    어디에도 남지 않기 때문이다.
+ *
+ *    가격과 상한을 비교하는 것은 코드가 틀릴 수 없는 일이다. 코드가 판정해서
+ *    사실로 만들고, 모델은 그 사실을 사람 말로 옮기기만 한다.
+ *
+ *  ★ 지켜야 할 선
+ *    - LLM 호출을 새로 만들지 않는다. 정규식으로만 뽑는다(비용 0, 결정론적).
+ *    - 애매하면 뽑지 않는다(null). 잘못 뽑아 멀쩡한 상품을 빼는 쪽이,
+ *      조건을 못 알아듣는 쪽보다 나쁘다.
+ *    - 가격을 모르는 상품은 빼지 않는다. "확인 못 했다" 를 "초과" 로
+ *      바꿔 읽지 않는다 (searchState 의 empty/failed 구분과 같은 원칙).
+ * ================================================================== */
+
+/** 금액 단위. */
+const MONEY_UNIT = { '억': 100000000, '만': 10000, '천': 1000 };
+
+/** 이보다 큰 값은 예산이 아니라 오인식으로 본다(전화번호·모델명·연도 등). */
+const BUDGET_CEILING = 1000000000;   // 10억
+
+/*
+ * 금액 한 덩어리: 숫자 + (단위) + (원)
+ *   "100만원"  "100만 원"  "1,000,000원"  "1.5만원"  "30만"
+ *
+ * 단위도 '원' 도 없으면 금액으로 인정하지 않는다. "100 이하" 는 예산 표현이
+ * 아니고, 그렇게까지 받아 주면 "2026 이하" 같은 것도 예산이 된다.
+ */
+const MONEY_SRC = String.raw`(\d[\d,]*(?:\.\d+)?)\s*(억|만|천)?\s*(원)?`;
+
+/*
+ * 상한/하한 표현.
+ *
+ * '안' 은 넣지 않는다 — "100만원 안팎" 의 '안' 에 걸린다. 안팎은 "그 언저리"
+ * 라서 상한이 아니다(위로도 넘을 수 있다). '안으로/안쪽' 만 받는다.
+ */
+const MAX_INCLUSIVE_SRC = '이하|이내|까지|아래|밑|안으로|안쪽';
+const MAX_EXCLUSIVE_SRC = '미만';
+const MIN_INCLUSIVE_SRC = '이상';
+const MIN_EXCLUSIVE_SRC = '초과|넘는|넘게';
+
+/** 금액 세 조각(숫자·단위·원) → 원 단위 정수. 읽어낼 수 없으면 null. */
+function moneyValue(numText, unit, wonMark) {
+  if (!unit && !wonMark) return null;
+  const raw = String(numText == null ? '' : numText).replace(/,/g, '');
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  /*
+   * 곱한 뒤 반올림한다. 1.5만 → 15000 처럼 소수가 섞인 표기에서
+   * 부동소수점 잔여( 14999.999… )가 그대로 상한이 되지 않게 한다.
+   */
+  const v = Math.round(n * (unit ? MONEY_UNIT[unit] : 1));
+  return v > 0 && v <= BUDGET_CEILING ? v : null;
+}
+
+/**
+ * "N만원대" 의 범위.
+ *
+ * 폭은 N 의 끝자리 0 개수로 정한다 — 한국어 관용이 그렇다.
+ *    5만원대 →    50,000 ~    59,999   (끝자리 0이 0개 → 폭 1만)
+ *   10만원대 →   100,000 ~   199,999   (끝자리 0이 1개 → 폭 10만)
+ *   15만원대 →   150,000 ~   159,999   (끝자리 0이 0개 → 폭 1만)
+ *  100만원대 → 1,000,000 ~ 1,999,999   (끝자리 0이 2개 → 폭 100만)
+ */
+function bandRange(numText, unit) {
+  const raw = String(numText == null ? '' : numText).replace(/,/g, '');
+  if (!/^\d+$/.test(raw)) return null;          // 소수는 '대' 표현으로 보지 않는다
+  const mul = MONEY_UNIT[unit];
+  if (!mul) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const zeros = (raw.match(/0+$/) || [''])[0].length;
+  const min = Math.round(n * mul);
+  const max = min + Math.round(Math.pow(10, zeros) * mul) - 1;
+  if (min <= 0 || max > BUDGET_CEILING) return null;
+  return { min, max };
+}
+
+/** 사람이 읽을 예산 표기. 프롬프트에 그대로 실린다. */
+function budgetLabel(b) {
+  if (b.min != null && b.max != null) {
+    return b.band
+      ? `${won(b.min)}원대 (${won(b.min)}~${won(b.max)}원)`
+      : `${won(b.min)}원 ~ ${won(b.max)}원`;
+  }
+  if (b.max != null) return `${won(b.max)}원 ${b.maxExclusive ? '미만' : '이하'}`;
+  return `${won(b.min)}원 ${b.minExclusive ? '초과' : '이상'}`;
+}
+
+/**
+ * 문장 하나에서 예산을 뽑는다.
+ *
+ * 순서가 있다: 범위 → 대 → 상한/하한. 범위를 먼저 보지 않으면
+ * "30만원에서 50만원" 의 앞 숫자만 잡는다.
+ *
+ * @returns {{min, max, maxExclusive, minExclusive, band, label}|null}
+ */
+function budgetFromText(text) {
+  const s = String(text == null ? '' : text);
+  if (!s) return null;
+
+  /* 1) 범위 — "30만원에서 50만원", "30~50만원", "3-5만원" */
+  const range = s.match(new RegExp(
+    MONEY_SRC + String.raw`\s*(?:~|∼|-|–|—|에서|부터)\s*` + MONEY_SRC));
+  if (range) {
+    let lo = moneyValue(range[1], range[2], range[3]);
+    let hi = moneyValue(range[4], range[5], range[6]);
+    // 한쪽에만 단위를 붙이는 표기("30~50만원")는 있는 쪽 단위를 빌려 쓴다.
+    if (lo === null && hi !== null && range[5]) lo = moneyValue(range[1], range[5], range[6]);
+    if (hi === null && lo !== null && range[2]) hi = moneyValue(range[4], range[2], range[3]);
+    if (lo !== null && hi !== null && hi >= lo) {
+      const b = { min: lo, max: hi, maxExclusive: false, minExclusive: false, band: false };
+      b.label = budgetLabel(b);
+      return b;
+    }
+    /*
+     * 범위처럼 생겼는데 읽어내지 못했다 → 여기서 끝내지 않고 아래 규칙으로 넘어간다.
+     * "2026-09-03 에 산 노트북, 100만원 이하로" 같은 문장에서 날짜가 범위처럼
+     * 잡히는데, 그걸 이유로 진짜 예산까지 버리면 안 된다.
+     */
+  }
+
+  /* 2) 대 — "10만원대", "5천원대" */
+  const band = s.match(new RegExp(
+    String.raw`(\d[\d,]*)\s*(억|만|천)\s*원?\s*대(?=$|[\s,.?!]|로|에|의|를|은|는|이|가|까지|면|짜리)`));
+  if (band) {
+    const r = bandRange(band[1], band[2]);
+    if (r) {
+      const b = { min: r.min, max: r.max, maxExclusive: false, minExclusive: false, band: true };
+      b.label = budgetLabel(b);
+      return b;
+    }
+  }
+
+  /* 3) 상한 / 하한 */
+  let max = null, maxExclusive = false, min = null, minExclusive = false;
+
+  let m = s.match(new RegExp(MONEY_SRC + String.raw`\s*(?:${MAX_EXCLUSIVE_SRC})`));
+  if (m) {
+    const v = moneyValue(m[1], m[2], m[3]);
+    if (v !== null) { max = v; maxExclusive = true; }
+  }
+  if (max === null) {
+    m = s.match(new RegExp(MONEY_SRC + String.raw`\s*(?:${MAX_INCLUSIVE_SRC})`));
+    if (m) {
+      const v = moneyValue(m[1], m[2], m[3]);
+      if (v !== null) max = v;
+    }
+  }
+
+  m = s.match(new RegExp(MONEY_SRC + String.raw`\s*(?:${MIN_EXCLUSIVE_SRC})`));
+  if (m) {
+    const v = moneyValue(m[1], m[2], m[3]);
+    if (v !== null) { min = v; minExclusive = true; }
+  }
+  if (min === null) {
+    m = s.match(new RegExp(MONEY_SRC + String.raw`\s*(?:${MIN_INCLUSIVE_SRC})`));
+    if (m) {
+      const v = moneyValue(m[1], m[2], m[3]);
+      if (v !== null) min = v;
+    }
+  }
+
+  if (max === null && min === null) return null;
+  // 앞뒤가 맞지 않는 조건은 쓰지 않는다 ("50만원 이상 30만원 이하").
+  if (max !== null && min !== null && min > max) return null;
+
+  const b = { min, max, maxExclusive, minExclusive, band: false };
+  b.label = budgetLabel(b);
+  return b;
+}
+
+/**
+ * 이번 대화에서 사용자가 말한 예산.
+ *
+ * ★ 앞 대화는 **직전 사용자 발화 한 건까지만** 본다.
+ *
+ *   이어받아야 하는 경우가 실제로 있다 (classifyIntent 의 검색어 재해석 주석과
+ *   같은 상황이다):
+ *     "무선 이어폰 찾아줘" → "10만원 이하로" → "이제 상품 보여줘"
+ *   마지막 메시지에는 금액이 없지만 조건은 살아 있다.
+ *
+ *   그렇다고 4턴을 다 훑으면 반대 사고가 난다. 품목이 바뀌었는데도 옛 예산이
+ *   따라붙어("10만원 이하 이어폰" → 두 턴 뒤 "노트북 추천해줘") 노트북을
+ *   전부 제외해 버린다. 한 턴만 이어받아 그 위험을 사용자가 방금 말한
+ *   범위로 묶는다.
+ *
+ *   조수(assistant) 발화는 보지 않는다. 모델이 요약하면서 만든 숫자가
+ *   하드 필터의 근거가 되면 안 된다 — 근거는 사용자가 직접 말한 것뿐이다.
+ *
+ * @param {string} q     이번 질문
+ * @param {Array}  hist  앞 대화 (핸들러가 이미 꼬리 중복을 걷어낸 것)
+ */
+function extractBudget(q, hist) {
+  const here = budgetFromText(q);
+  if (here) return here;
+
+  const list = Array.isArray(hist) ? hist : [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    const h = list[i];
+    if (!h || h.role === 'assistant') continue;
+    return budgetFromText(clip(h.text || h.content, MAX_HISTORY_LEN));
+  }
+  return null;
+}
+
+/**
+ * 예산 상한을 넘는 상품을 후보에서 뺀다.
+ *
+ * ★ 상한만 뺀다. 하한("30만원 이상")은 뽑아서 프롬프트에 사실로 싣기만 하고
+ *   제외 근거로는 쓰지 않는다 — 예산보다 싼 상품을 지우는 것은 사용자가
+ *   원한 적 없는 손해이고, 그 판단은 사람이 보고 하는 편이 낫다.
+ *
+ * reason 은 api/_trust.js 의 {code, text, kind} 모양을 그대로 따른다.
+ * 다만 kind 의 뜻이 다르다 — 신뢰도에서는 good/warn/bad(심각도)이고,
+ * 여기서는 hard/soft(조건의 강제성)다. 같은 자리에 다른 어휘가 오므로
+ * 두 배열을 한 곳에 섞지 않는다.
+ *
+ * @param {Array} items   normItem / fromSearchResult 가 만든 항목 (.price 를 가진다)
+ * @param {object|null} budget  extractBudget 결과
+ * @returns {{kept: Array, excluded: Array<{item, reason:{code,text,kind}}>}}
+ */
+function applyBudgetFilter(items, budget) {
+  const list = Array.isArray(items) ? items : [];
+  if (!budget || budget.max == null) return { kept: list, excluded: [] };
+
+  const limit = budget.max;
+  const bound = budget.maxExclusive
+    ? `${won(limit)}원 미만 조건 위반`
+    : `${won(limit)}원 초과`;
+  const kept = [];
+  const excluded = [];
+
+  list.forEach(it => {
+    const price = num(it && it.price);
+    // 가격을 모르는 상품은 빼지 않는다 (이 절의 머리 주석 참고).
+    if (!(price > 0)) { kept.push(it); return; }
+
+    const over = budget.maxExclusive ? price >= limit : price > limit;
+    if (!over) { kept.push(it); return; }
+
+    excluded.push({
+      item: it,
+      reason: {
+        code: 'over_budget',
+        text: `예산 상한 ${bound} (상품가 ${won(price)}원)`,
+        kind: 'hard'
+      }
+    });
+  });
+
+  return { kept, excluded };
+}
+
+/**
+ * 예산 판정 결과를 프롬프트 블록으로.
+ *
+ * 모델에게 "예산을 넘는지 봐라" 라고 시키지 않는다. 이미 끝난 판정을
+ * 사실로 적어 주고, 그 사실을 말로 옮기게 한다.
+ *
+ * @param {object|null} budget
+ * @param {Array} excluded   applyBudgetFilter 의 excluded
+ * @param {number} keptCount 남은 후보 수
+ */
+function budgetBlock(budget, excluded, keptCount) {
+  if (!budget) return '';
+  const dropped = Array.isArray(excluded) ? excluded : [];
+
+  const lines = [
+    '[예산 조건 — 코드가 이미 판정했다]',
+    `- 사용자가 말한 예산: ${budget.label}`,
+    '- 이 판정은 SEOSA 코드가 상품 가격과 직접 비교해 끝냈다.',
+    '  네가 다시 계산하거나 뒤집지 마라. 예산 초과 여부를 새로 판단하지도 마라.'
+  ];
+
+  if (!dropped.length) {
+    lines.push('- 예산을 넘어 제외된 상품은 없다.');
+    return lines.join('\n');
+  }
+
+  lines.push(`- 아래 ${dropped.length}건은 예산을 넘어 후보에서 뺐다.`);
+  lines.push('');
+  lines.push('[예산 초과로 제외한 상품]');
+  dropped.forEach(e => {
+    const it = (e && e.item) || {};
+    lines.push(`- 상품명: ${safeText(it.title, MAX_TITLE_LEN) || '(상품명 없음)'}`
+      + ` | 가격: ${won(it.price)}원`
+      + ` | 제외 이유: ${(e && e.reason && e.reason.text) || '예산 초과'}`);
+  });
+  lines.push('');
+  lines.push('- 제외한 상품은 추천하지 마라.');
+  lines.push('- 사용자가 그 상품을 묻거나 "왜 이것뿐이냐"고 하면 위 사실(가격과 예산 상한)을');
+  lines.push('  그대로 알려 준다. 우리가 빼 놓고 없는 척하지 않는다.');
+
+  if (!keptCount) {
+    lines.push('- ★ 예산 안에 드는 상품이 하나도 남지 않았다. 검색 결과가 없었던 것이 아니라');
+    lines.push('  전부 예산을 넘은 것이다. 그 사실을 사실대로 말하고, 가장 가까운 상품이');
+    lines.push('  얼마나 넘는지를 알려 준다. 예산을 올리라고 강요하지는 마라.');
+  }
+
+  return lines.join('\n');
+}
+
+/* ==================================================================
  *  2단계 — 의도별 프롬프트 조립
  *
  *  블록을 의도에 따라 골라 붙인다. 안 고른 블록은 프롬프트에 없다.
@@ -1220,6 +1531,37 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    /*
+     * 1.6단계 — 예산 제약 (결정론적). ref 를 붙이기 **전**에 거른다.
+     *
+     * normItem 주석 참고: ref 는 걸러내기가 끝난 뒤에 붙여야 [P1] 다음이
+     * [P3] 이 되는 구멍이 생기지 않는다.
+     *
+     * ★ 의도 C(쇼핑 추천)에서만 건다.
+     *   D·E 는 사용자가 특정 상품을 지목하고 그 가격·이력을 묻는 자리다.
+     *   "이거 130만원인데 100만원 이하로는 없나?" 에서 예산으로 그 상품을
+     *   빼 버리면 정작 질문의 대상이 사라진다. 분류 실패(null)도 걸지 않는다 —
+     *   무엇을 묻는지 모르는 상태에서 후보를 지우지 않는다.
+     */
+    const budget = intent === 'C' ? extractBudget(q, hist) : null;
+    let budgetExcluded = [];
+    if (budget) {
+      const verdict = applyBudgetFilter(items, budget);
+      if (verdict.excluded.length) {
+        /*
+         * cards 와 items 는 같은 원본(found.items.slice)에서 같은 순서로 만든
+         * 짝이다. 한쪽만 걸러내면 화면 카드와 답변 내용이 어긋난다 —
+         * "예산 초과라 뺐다" 고 말하면서 그 카드를 그려 주게 된다.
+         * 객체 동일성으로 짝을 맞춰 함께 걸러낸다.
+         * (검색을 하지 않은 경로에서는 cards 가 빈 배열이라 그대로 통과한다)
+         */
+        const droppedItems = new Set(verdict.excluded.map(e => e.item));
+        cards = cards.filter((_, i) => !droppedItems.has(items[i]));
+        items = verdict.kept;
+        budgetExcluded = verdict.excluded;
+      }
+    }
+
     items.forEach((p, i) => { p.ref = 'P' + (i + 1); });
 
     // 상품이 많을 때까지 날짜별 가격을 다 찍으면 입력 토큰이 몇 배로 뛴다.
@@ -1272,6 +1614,13 @@ module.exports = async function handler(req, res) {
        * <상품데이터>는 화면이 아니라 방금 검색한 결과라서 서로 어긋난다.
        */
       if (searchState !== 'found') system += `\n\n${viewLine(view)}`;
+
+      /*
+       * 예산 판정을 <상품데이터> 앞에 싣는다. 상품을 읽기 전에 "무엇이 왜
+       * 빠졌는지" 를 먼저 알아야, 남은 목록이 전부인 줄 알고 말하지 않는다.
+       */
+      const bBlock = budgetBlock(budget, budgetExcluded, items.length);
+      if (bBlock) system += `\n\n${bBlock}`;
 
       /*
        * 검색을 했는데 못 찾았거나 실패한 경우(empty/failed), P.searchedEmpty /
@@ -1398,5 +1747,7 @@ module.exports = async function handler(req, res) {
  */
 module.exports._internal = {
   cleanQuery, shouldSearch, fromSearchResult, toCard, stripRefs,
-  needsShopContext, safeText, num, won, safeDate, normItem
+  needsShopContext, safeText, num, won, safeDate, normItem,
+  // 예산 제약 — 전부 순수 함수다 (LLM·DB 호출 없음).
+  extractBudget, budgetFromText, applyBudgetFilter, budgetBlock, moneyValue, bandRange
 };
