@@ -955,25 +955,80 @@ const failureCategoriesTemplate = () => ({
  *     잘리든 결과가 달라지지 않도록 절대 시각으로 자른다.
  *     트리거는 여기서 건드리지 않는다(운영 write 경로 전체가 걸려 있다).
  */
+/*
+ * ★ 배치 크기를 «개수» 가 아니라 «id 글자 수» 로 정한다 (2026-09-05 실측 버그).
+ *
+ *   예전에는 400개 고정이었다. 쿠팡 product_id 는 10자라 400개 = 약 4,400자로
+ *   멀쩡했지만, ADPICK 은 sha256 hex 라 «64자» 다. 400개면 URI 가 약 26,000자가
+ *   되어 PostgREST 가 400 Bad Request 로 거절한다.
+ *
+ *   그런데 아래 호출은 `const { data } = ...` 로 **error 를 버리고 있었다.**
+ *   그래서 요청이 통째로 실패해도 data=null → 조용히 "0건" 이 됐다.
+ *
+ *   운영 실측 (2026-09-05, 읽기 전용 재현):
+ *     배치 400 → 찾은 행   0 · 오류 배치 2/2 (Bad Request)
+ *     배치 200 → 찾은 행  72
+ *     배치 100 → 찾은 행  72
+ *     정답(.in 없이 카운트) 72
+ *     대조군 쿠팡 400개(10자) → 356행 정상
+ *
+ *   피해는 조용했지만 작지 않다.
+ *     · ADPICK 은 매 실행 "오늘 기록된 상품 0개" 로 판단해, 이미 확보한 72개를
+ *       포함해 80개 검색어를 «전부 다시» 불렀다. 403 이 난 공급자에게 필요 없는
+ *       요청을 매 실행 반복한 것이다.
+ *     · 리포트 불변조건(수집성공 ≤ 오늘가격보유)이 매번 깨졌다.
+ *       이번 실행에서 실제로 잡혔다: 1046 > 1022.
+ *
+ *   URI 예산으로 자르면 id 길이가 어떻든 안전하다. 12,000자는 PostgREST/프록시의
+ *   흔한 상한(보통 16KB 안팎)보다 넉넉히 아래다.
+ */
+const ID_BATCH_CHARS = 12000;
+
+function chunkIdsByLength(ids, budget = ID_BATCH_CHARS) {
+  const out = [];
+  let cur = [], len = 0;
+  for (const id of ids) {
+    const cost = String(id).length + 3;      // 값 + 구분자·따옴표 여유
+    if (cur.length && len + cost > budget) { out.push(cur); cur = []; len = 0; }
+    cur.push(id); len += cost;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
 async function collectedTodayKeys(mallName, collectible) {
   const found = new Set();
   // KST 는 서머타임이 없어 하루가 정확히 24시간이다.
   const dayStart = kstDayStartUtc(TODAY);
   const dayEnd = new Date(Date.parse(dayStart) + 24 * 60 * 60 * 1000).toISOString();
+  let failed = 0;
   try {
     const ids = collectible.map(p => p.product_id);
-    for (let i = 0; i < ids.length; i += 400) {
-      const { data } = await supabase
+    for (const chunk of chunkIdsByLength(ids)) {
+      const { data, error } = await supabase
         .from('price_history')
         .select('product_id, mall')
         .gte('recorded_at', dayStart)
         .lt('recorded_at', dayEnd)
         .eq('mall', mallName)
-        .in('product_id', ids.slice(i, i + 400));
+        .in('product_id', chunk);
+      /*
+       * error 를 버리지 않는다. 여기서 조용히 실패하면 "오늘 아무것도 없다" 가
+       * 되어, 이미 확보한 상품까지 다시 부르는 낭비가 매 실행 반복된다.
+       */
+      if (error) {
+        failed++;
+        console.warn(`  [${mallName}] 오늘 기록 조회 배치 실패 (${chunk.length}개): ${error.message}`);
+        continue;
+      }
       (data || []).forEach(r => found.add(`${r.product_id}|${r.mall}`));
     }
   } catch (e) {
     console.warn(`  [${mallName}] 오늘 기록 조회 실패(무시하고 진행): ${e.message}`);
+  }
+  if (failed) {
+    console.warn(`  [${mallName}] ★ 배치 ${failed}개가 실패해 "오늘 이미 기록됨" 판단이 불완전합니다`
+      + ' — 이미 확보한 상품을 다시 부를 수 있습니다.');
   }
   return found;
 }
@@ -3061,7 +3116,9 @@ module.exports = {
   // 리포트 집계의 계약 — 테스트가 이 둘로 불변조건을 고정한다.
   reportInvariantErrors, productSuccessRate, todayPriceRate,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
-  acquireLock, releaseLock, LOCK_TTL_MS
+  acquireLock, releaseLock, LOCK_TTL_MS,
+  // .in() URI 상한 회귀 — test-price-mall-collection 이 이 계약을 고정한다.
+  chunkIdsByLength, ID_BATCH_CHARS
 };
 
 if (require.main === module) {

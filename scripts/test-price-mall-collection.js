@@ -34,7 +34,8 @@
 'use strict';
 
 const {
-  runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow, kstToday
+  runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow, kstToday,
+  chunkIdsByLength, ID_BATCH_CHARS
 } = require('./collect-all-prices');
 
 /*
@@ -613,6 +614,70 @@ function makeRows(mall, n, withKeyword = true) {
     eq('★★ 카탈로그 밖 상품은 저장하지 않는다', saved.length, 0);
     eq('★ 확보 상품 0', result.collectorSuccessProducts, 0);
     eq('★ 교차 회수 0', result.crossRecovered, 0);
+  }
+  console.log('');
+
+  /* ==============================================================
+   *  Z. "오늘 이미 기록됨" 조회의 .in() URI 상한  (2026-09-05 실측 버그)
+   *
+   *  collectedTodayKeys 가 400개 «고정» 으로 잘랐다. 쿠팡 product_id 는 10자라
+   *  괜찮았지만 ADPICK 은 sha256 hex(64자)여서 400개면 URI 가 26,000자가 되고
+   *  PostgREST 가 400 Bad Request 로 거절한다. 게다가 호출부가 error 를 버려서
+   *  (`const { data } = ...`) 실패가 조용히 "0건" 이 됐다.
+   *
+   *  운영 읽기 전용 재현: 배치 400 → 0행(오류 2/2) · 배치 200/100 → 72행 · 정답 72행.
+   *
+   *  결과: ADPICK 은 매 실행 "오늘 기록 0개" 로 보고 이미 확보한 상품까지
+   *  전부 다시 불렀다. 403 이 난 공급자에게 불필요한 요청을 반복한 것이다.
+   *  리포트 불변조건(수집성공 ≤ 오늘가격보유)도 매번 깨졌다.
+   * ============================================================== */
+  console.log('Z. 오늘 기록 조회 배치 — id 길이로 자른다');
+  {
+    const adpickIds = Array.from({ length: 756 }, (_, i) => String(i).padStart(64, 'a'));
+    const coupangIds = Array.from({ length: 1610 }, (_, i) => String(1000000000 + i));
+
+    const aChunks = chunkIdsByLength(adpickIds);
+    const cChunks = chunkIdsByLength(coupangIds);
+    const cost = ids => ids.reduce((n, s) => n + s.length + 3, 0);
+
+    check('★★ 모든 배치가 URI 예산 안에 들어간다 (ADPICK 64자 id)',
+      aChunks.every(c => cost(c) <= ID_BATCH_CHARS),
+      `최대 ${Math.max(...aChunks.map(cost))} > ${ID_BATCH_CHARS}`);
+    check('★★ 모든 배치가 URI 예산 안에 들어간다 (쿠팡 10자 id)',
+      cChunks.every(c => cost(c) <= ID_BATCH_CHARS),
+      `최대 ${Math.max(...cChunks.map(cost))} > ${ID_BATCH_CHARS}`);
+
+    // 이 단언이 이 테스트의 이빨이다 — 400개 «고정» 으로 되돌리면 여기서 깨진다.
+    check('★★ 64자 id 는 400개 고정 배치보다 잘게 쪼갠다 (Bad Request 회귀 방지)',
+      Math.max(...aChunks.map(c => c.length)) < 400,
+      `최대 배치 ${Math.max(...aChunks.map(c => c.length))}개`);
+    check('★ 짧은 id 는 불필요하게 잘게 쪼개지 않는다',
+      Math.max(...cChunks.map(c => c.length)) > 400,
+      `최대 배치 ${Math.max(...cChunks.map(c => c.length))}개`);
+
+    const flatA = aChunks.flat(), flatC = cChunks.flat();
+    check('★★ 한 개도 잃지 않는다 (ADPICK)',
+      flatA.length === adpickIds.length && new Set(flatA).size === adpickIds.length,
+      `${flatA.length} vs ${adpickIds.length}`);
+    check('★★ 한 개도 잃지 않는다 (쿠팡)',
+      flatC.length === coupangIds.length && new Set(flatC).size === coupangIds.length,
+      `${flatC.length} vs ${coupangIds.length}`);
+    check('★ 순서를 보존한다',
+      JSON.stringify(flatA) === JSON.stringify(adpickIds));
+    check('★ 빈 입력은 빈 배열', chunkIdsByLength([]).length === 0);
+    check('★ 예산보다 긴 id 하나도 버리지 않는다',
+      chunkIdsByLength(['x'.repeat(ID_BATCH_CHARS + 500)]).flat().length === 1);
+
+    /*
+     * 조용한 실패로 되돌아가지 않도록 소스도 고정한다. error 를 버리면
+     * 배치가 통째로 실패해도 "0건" 이 되어 아무도 모른다.
+     */
+    const src = require('fs').readFileSync(require.resolve('./collect-all-prices'), 'utf8');
+    const fn = src.slice(src.indexOf('async function collectedTodayKeys'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    check('★★ 오늘 기록 조회가 PostgREST error 를 버리지 않는다',
+      /const \{ data, error \}/.test(body) && /if \(error\)/.test(body),
+      body.slice(0, 200));
   }
   console.log('');
 
