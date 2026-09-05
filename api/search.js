@@ -102,7 +102,17 @@ module.exports = async function handler(req, res) {
     // 캐시 결과로 응답한다. 사용자를 무한정 세워두지 않는다.
     const { items, allItems, from, blocked } = await searchAll(keyword, {
       coupangLimit: RESULT_LIMIT,
-      coupangOpts: { source: 'search', maxWaitMs: 1500 }
+      coupangOpts: { source: 'search', maxWaitMs: 1500 },
+      /*
+       * ADPICK 쪽에도 호출 주체를 붙인다 — 이름표뿐이고 동작은 그대로다.
+       *
+       * source 는 로그와 adpick_api_calls.source 에만 쓰인다. maxWaitMs 를
+       * 함께 넣지 않는 것이 중요하다: 넣으면 대기 정책이 바뀐다. 여기서는
+       * 기본값(0)을 그대로 두므로 이 줄 이전과 호출 동작이 한 자리도 다르지
+       * 않다. 이걸 안 붙이면 사이트 실시간 검색이 쓴 ADPICK 쿼터가 전부
+       * source='unknown' 으로 뭉쳐서, "어느 경로가 쿼터를 썼나" 를 못 가른다.
+       */
+      adpickOpts: { source: 'search' }
     });
 
     await saveProducts(keyword, allItems || items, { from, source: 'search' });
