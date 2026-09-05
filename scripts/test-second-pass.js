@@ -733,6 +733,61 @@ function probeChild(envLines) {
   }
 
   /* ==============================================================
+   *  8-c. 하루 호출 예산 (COUPANG_DAY_BUDGET)
+   *
+   *  cron 칸을 3개 → 8개로 늘리면서 «실행당» 예산만으로는 하루 총량이
+   *  묶이지 않게 됐다 (최악 8 × 500 = 4,000회). 그래서 하루 천장 2,200회를
+   *  두었는데(scripts/collect-all-prices.js COUPANG_DAY_BUDGET), 그 천장에
+   *  «닿았을 때 무슨 일이 일어나는지» 를 고정하는 테스트가 없었다.
+   *
+   *  천장에 닿는 것 자체는 정상이다. 위험한 것은 그 뒤다 —
+   *  예산 소진을 «평범한 실패» 로 처리하면 남은 후보가 없다고 판단해
+   *  그날을 completed 로 닫아 버리고, 다음 cron 이 이어받지 못한다.
+   *  그러면 하루 천장이 곧 «영구 미수집» 이 된다.
+   *
+   *  고정하는 성질 세 가지:
+   *    ① 예산 소진 사유는 'budget' 으로 분류된다
+   *    ② 그날을 completed 로 닫지 않는다 (running + remaining > 0)
+   *    ③ 소진을 감지하면 남은 회수 호출을 더 쏘지 않는다 (천장을 넘지 않는다)
+   * ============================================================== */
+  section('8-c. 하루 호출 예산 소진');
+  {
+    const mod0 = require('./collect-all-prices');
+    check(mod0.categorizeFailure(`하루 호출 예산 2200회 소진`) === 'budget',
+      '★★ 하루 예산 소진 사유가 budget 으로 분류된다',
+      mod0.categorizeFailure('하루 호출 예산 2200회 소진'));
+
+    process.env.PRICE_SECOND_PASS_MAX_CALLS = '10';
+    process.env.PRICE_CACHE_HINT = '0';
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const mod = require('./collect-all-prices');
+    const rows = [prod('DB1', '삼성 갤럭시북 NT960XGL 16인치 노트북', '노트북')];
+    let calls = 0;
+    const r = await mod.runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows, savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async (kw) => {
+        calls++;
+        // 1차는 통과시키고, 회수 첫 호출에서 하루 천장에 닿은 상황을 만든다.
+        return kw === '노트북'
+          ? { ok: true, reason: '', items: [] }
+          : { ok: false, reason: '하루 호출 예산 2200회 소진', items: [] };
+      }
+    });
+    check(r.status === 'running',
+      '★★ 하루 예산이 끝나도 그날을 completed 로 닫지 않는다', r.status);
+    check(r.secondPassRemaining > 0,
+      '★★ 남은 후보를 다음 실행 몫으로 남긴다', r.secondPassRemaining);
+    check((r.secondPassDone || []).length === 0,
+      '★★ 예산으로 못 부른 검색어를 «부른 것» 으로 세지 않는다', r.secondPassDone);
+    check(calls === 2,
+      '★★ 예산 소진을 감지한 뒤 회수 호출을 더 쏘지 않는다 (천장을 넘지 않는다)', calls);
+
+    delete process.env.PRICE_SECOND_PASS_MAX_CALLS;
+    delete process.env.PRICE_CACHE_HINT;
+    delete require.cache[require.resolve('./collect-all-prices')];
+  }
+
+  /* ==============================================================
    *  9. 라운드마다 후보가 밀리지 않는다 (실제로 났던 버그)
    *
    *  구현 도중 이런 버그가 있었다.
