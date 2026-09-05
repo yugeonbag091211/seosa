@@ -82,7 +82,7 @@ section('2. 후보 개수·순서');
    * T7(특수문자 정규화)가 없었다. 두 후보를 더한 사다리라 상한도 5다.
    */
   const { MAX_CANDIDATES: MC } = require('../api/_query');
-  check(qs.length <= MC, '★★ 후보는 상한(5개)을 넘지 않는다', qs);
+  check(qs.length <= MC, `★★ 후보는 상한(${MC}개)을 넘지 않는다`, qs);
   check(qs.length >= 1, '후보를 만든다', qs);
   check(qs[0].indexOf('루이벤') === 0,
     '★★ 첫 후보는 제목 기반이다 (실측 단독 1위 78.6~79.2%)', qs[0]);
@@ -134,6 +134,22 @@ section('4. 제목에 없는 것을 만들지 않는다');
   const allFromTitle = qs.every(q =>
     q.toLowerCase().split(/\s+/).every(w => src.indexOf(w) > -1));
   check(allFromTitle, '★★ 모든 후보의 모든 토큰이 제목 안에 실제로 있다', qs);
+
+  /*
+   * ★ 제목이 곧 1차 검색어인 상품도 후보를 하나는 받아야 한다 (2026-09-03).
+   *
+   *   "파워에이드 마운틴블라스트" 는 제목 == keyword 라 제목·압축·브랜드+꼬리가
+   *   전부 keyword 와 같아져 중복으로 걸러졌다. 후보가 0개가 되면 그 상품은
+   *   회수 사다리에서 영원히 한 번도 시도되지 않는다 — 실측으로 운영에
+   *   그런 상품이 있었다(미수집 142개 중 1개).
+   *   꼬리 명사 단독("마운틴블라스트")이 마지막 안전망이다.
+   */
+  const same = generateSecondPassQueries(P('파워에이드 마운틴블라스트', '파워에이드 마운틴블라스트'));
+  check(same.length >= 1, '★★ 제목 == 검색어 여도 후보가 0개가 되지 않는다', same);
+  check(same.indexOf('마운틴블라스트') > -1,
+    '★ 꼬리 명사 단독이 마지막 안전망으로 들어간다', same);
+  check(generateSecondPassQueries(P('마우스', '마우스')).length === 0,
+    '★ 짧고 흔한 한 단어(3자)는 단독 후보를 만들지 않는다 (호출 낭비 방지)');
 
   check(generateSecondPassQueries(P('')).length === 0, '★ 빈 제목 → 후보 0개');
   check(generateSecondPassQueries(P(null)).length === 0, '★ null 제목 안전');
@@ -215,15 +231,16 @@ section('7. 실제 운영 상품 제목');
     ['잔온 레일형 차량 햇빛가리개 암막커튼, 2개, 블랙', '차량용 햇빛 가리개'],
     ['무선 블루투스 이어폰 노이즈캔슬링 장시간 배터리 고음질, 화이트, T13-APP', '']
   ];
+  const { MAX_CANDIDATES: CAP7 } = require('../api/_query');
   let allOk = true;
   real.forEach(([t, k]) => {
     const qs = generateSecondPassQueries(P(t, k));
-    const ok = qs.length >= 1 && qs.length <= 5
+    const ok = qs.length >= 1 && qs.length <= CAP7
       && qs.every(q => q.length <= MAX_QUERY_LEN && q.trim())
       && new Set(qs).size === qs.length;
     if (!ok) { allOk = false; console.log(`       ↳ 문제: "${t}" → ${JSON.stringify(qs)}`); }
   });
-  check(allOk, '★★ 운영 제목 5종 모두 1~5개의 유효한 후보를 만든다');
+  check(allOk, `★★ 운영 제목 5종 모두 1~${CAP7}개의 유효한 후보를 만든다`);
 
   // 대괄호로 시작하는 제목도 제목 후보가 살아 있어야 한다
   const brq = generateSecondPassQueries(P('[브랜드인증] 존바바토스 아티산 블루 오 드 뚜왈렛', '향수'));
@@ -285,7 +302,18 @@ section('9. T7 특수문자 정규화');
 section('10. 상품당 후보 상한 (호출 예산 보호)');
 {
   const { MAX_CANDIDATES } = require('../api/_query');
-  check(MAX_CANDIDATES === 5, '★ 상한이 5다', MAX_CANDIDATES);
+  /*
+   * ★ 5 → 9 (2026-09-03). 숫자 자체보다 지켜야 할 것은 아래 세 성질이다.
+   *
+   *   · 상한이 라운드 수와 같다      → 만들어 둔 후보를 다 쓰고, 빈 라운드를 안 돈다
+   *     (scripts/test-round-index.js 가 소스에서 두 값을 직접 비교한다)
+   *   · 후보 배열은 raw 후보 수를 넘지 않는다
+   *   · 중복·빈 문자열·길이 초과가 없다
+   *
+   * 상한을 늘려도 호출이 상품 수만큼 늘지 않는 이유는 _query.js 주석 참고
+   * (적중하면 다음 라운드에서 빠지고, 같은 문구는 한 번만 부른다).
+   */
+  check(MAX_CANDIDATES === 10, '★ 상한이 10이다', MAX_CANDIDATES);
 
   const rich = P('아이리스 수퍼 서큘레이터 PCF-HM23 화이트 28인치 대용량 무선', '서큘레이터');
   const qs = generateSecondPassQueries(rich);
@@ -309,8 +337,27 @@ section('11. 랭킹 순서 (실측 근거대로)');
   const withModel = generateSecondPassQueries(P('아이리스 수퍼 서큘레이터 PCF-HM23 화이트', '서큘레이터'));
   check(withModel[0] === '아이리스 PCF-HM23',
     '★★ 모델코드가 있으면 브랜드+모델코드가 1순위 (가장 강한 식별자)', withModel[0]);
-  check(withModel[1] === '아이리스 PCF HM23',
-    '★★ 그 다음이 띄어 쓴 표기 (같은 신호의 다른 색인 형태)', withModel[1]);
+  /*
+   * ★ 2순위가 "브랜드 + 모델코드 + 꼬리 명사" 로 바뀌었다 (2026-09-03).
+   *
+   *   모델코드만으로는 부품·액세서리를 가르지 못한다. 실측: 쿠쿠
+   *   CRP-DHAS069FWM 로 등록된 우리 상품 3개(컨트롤 패킹·고무패킹·열림 버튼)가
+   *   "쿠쿠 CRP-DHAS069FWM" 한 문구로는 셋 다 상위 10건 밖으로 밀렸다.
+   *   같은 모델의 부품을 파는 판매자가 열 곳이 넘기 때문이다.
+   *   띄어 쓴 표기는 같은 신호의 변형이라 3순위로 내린다.
+   */
+  check(withModel[1] === '아이리스 PCF-HM23 화이트',
+    '★★ 그 다음이 브랜드+모델코드+꼬리 명사 (같은 모델의 부품을 가른다)', withModel[1]);
+  check(withModel[2] === '아이리스 PCF HM23',
+    '★★ 띄어 쓴 표기는 그 다음 (같은 신호의 다른 색인 형태)', withModel[2]);
+
+  /* 꼬리 명사는 포장·수량을 건너뛴다 (tailNounOf) */
+  const packed = generateSecondPassQueries(P('환타 파인애플 500ml 업소용, 355ml, 48개', '환타'));
+  check(packed.indexOf('환타 상등급') < 0 && packed.some(q => q.indexOf('파인애플') > -1),
+    '★★ 꼬리 명사가 수량("48개")이 아니라 상품을 구분하는 말이다', packed);
+  const rice = generateSecondPassQueries(P('25년 햅쌀 대왕님표 여주쌀 진상미 10kg, 1개, 상등급', '햅쌀'));
+  check(rice.indexOf('25년 상등급') !== 0,
+    '★ "상등급" 같은 등급 표기가 첫 꼬리 명사로 뽑히지 않는다', rice);
 
   // 모델코드가 없으면 제목이 첫 후보 (실측 단독 최고)
   const noModel = generateSecondPassQueries(P('루이벤 암막 정전기 강력흡수 차량용 햇빛가리개', '차량용 햇빛 가리개'));

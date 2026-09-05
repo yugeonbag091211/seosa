@@ -1652,14 +1652,19 @@ function recordedPrice(productId) {
     otherByMall: { '네이버': 30 },
     malls: [
       { mallName: '쿠팡', targetProducts: 750, collectorSuccessProducts: 630, todayPriceProducts: 650, uncoveredProducts: 100,
+        attemptedProducts: 710, skippedProducts: 40, noMatchProducts: 80,
         attemptCalls: 230, attemptSuccess: 215, attemptFailed: 15, recorded: 620, status: 'completed' },
       { mallName: 'ADPICK', targetProducts: 200, collectorSuccessProducts: 170, todayPriceProducts: 174, uncoveredProducts: 26,
+        attemptedProducts: 190, skippedProducts: 10, noMatchProducts: 20,
         attemptCalls: 70, attemptSuccess: 65, attemptFailed: 5, recorded: 60, status: 'completed' }
     ],
     failCats: { blocked: 2, noMatch: 15, network: 3 },
     targetProducts: 950,
     collectorSuccessProducts: 800,
     collectorMissingProducts: 150,
+    attemptedProducts: 900,
+    skippedProducts: 50,
+    noMatchProducts: 100,
     todayPriceProducts: 824,
     uncoveredProducts: 126,
     attemptCalls: 300,
@@ -1704,13 +1709,26 @@ function recordedPrice(productId) {
   /* ── 집계 검증 블록 — 세 항등식이 전부 OK 로 찍힌다 ────────────── */
   check(html.includes('집계 검증'), '집계 검증 블록이 있다');
   check(html.includes('수집 성공 상품 + 수집 미확보 상품 = 대상 상품')
+     && html.includes('시도 상품 + 미시도 상품 = 대상 상품')
+     && html.includes('수집 성공 상품 + 무매칭 상품 = 시도 상품')
      && html.includes('오늘 가격 보유 + 미보유 = 대상 상품')
      && html.includes('수집 성공 상품 ≤ 오늘 가격 보유 상품')
      && html.includes('성공 attempt + 실패 attempt = 전체 attempt')
      && html.includes('모든 failure reason 합계 = 실패 attempt'),
-        '★ 다섯 불변조건이 메일에 각각 표시된다');
-  check((html.match(/>OK</g) || []).length === 5 && !html.includes('>NG<'),
-        '★ 정상 리포트에서는 다섯 검증이 모두 OK 로 찍힌다');
+        '★ 일곱 불변조건이 메일에 각각 표시된다');
+  check((html.match(/>OK</g) || []).length === 7 && !html.includes('>NG<'),
+        '★ 정상 리포트에서는 일곱 검증이 모두 OK 로 찍힌다');
+  check(html.includes('병목 분해'), '★ 병목 분해 블록이 메일에 있다');
+  check(html.includes('시도 900 + 미시도 50 = 대상 950'),
+        '★ 시도 + 미시도 = 대상 항등식을 메일에 직접 적는다');
+  check(html.includes('수집 성공 800 + 무매칭 100 = 시도 900'),
+        '★ 수집 성공 + 무매칭 = 시도 항등식을 메일에 직접 적는다');
+  check(html.includes('94.7%') && html.includes('88.9%'),
+        '★ 시도율과 시도 대비 성공률을 따로 표시한다');
+  check(reportInvariantErrors({ ...sampleReport, attemptedProducts: 800 }).length > 0,
+        '★ 시도 + 미시도 불일치를 검출한다');
+  check(reportInvariantErrors({ ...sampleReport, noMatchProducts: 0 }).length > 0,
+        '★ 수집 성공 + 무매칭 불일치를 검출한다');
   check(html.includes('총 실패 attempt'), '실패 항목이 attempt 단위로 표기된다');
   check(html.includes('실패 원인 합계 20 = 총 실패 attempt 20'),
         '★ 실패 원인 합계와 총 실패 attempt 가 같음을 메일에 직접 적는다');

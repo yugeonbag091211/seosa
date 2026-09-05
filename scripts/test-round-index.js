@@ -70,6 +70,12 @@ inject('api/_notify.js', { send: () => Promise.resolve({ ok: true }) });
 const { runMallCollection } = require('./collect-all-prices');
 const { generateSecondPassQueries } = require('../api/_query');
 
+/* 운영 DB 에 절대 쓰지 않는 저장 훅 — test-price-mall-collection.js 의 같은 주석 참고. */
+/* 캐시 힌트 조회는 운영 테이블 전체 스캔이라 테스트에서는 막는다. */
+const NO_HINT = async () => new Map();
+const NO_WRITE = async (obs) => ({ saved: obs.length, recorded: obs.length,
+  recordedKeys: [...new Set(obs.map(o => o.productId + "|" + o.mall))], rejected: 0, suspect: 0, errors: [] });
+
 let pass = 0, fail = 0;
 function check(ok, label, detail) {
   if (ok) { pass++; console.log(`  PASS  ${label}`); }
@@ -89,7 +95,7 @@ async function runAndCollectQueries(rows, opts) {
   const o = opts || {};
   const firstKw = new Set(rows.map(p => p.keyword).filter(Boolean));
   const seen = [];
-  await runMallCollection({
+  await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
     mallName: '쿠팡', rows,
     savedState: o.savedState || null,
     deadlineTs: FAR(),
@@ -283,7 +289,34 @@ async function runAndCollectQueries(rows, opts) {
      *   .filter( 를 금지했더니 이 두 줄이 걸렸는데, 그건 테스트가 너무
      *   넓게 잡은 것이지 코드 문제가 아니었다. 검사 대상을 좁힌다.
      */
-    const loopBody = code.slice(loop, code.indexOf('secondPassRemaining +=', loop));
+    /*
+     * ★ 루프의 끝은 «중괄호를 세어» 찾는다. 특정 문장을 종료 표식으로 쓰지 않는다.
+     *
+     *   예전에는 `code.indexOf('secondPassRemaining +=', loop)` 이 끝이었다.
+     *   2026-09-05 에 그 문장이 루프 밖으로 나가면서(`+=` → `=`) indexOf 가
+     *   -1 을 돌려주었고, slice(loop, -1) 이 되어 검사 범위가 «루프» 가 아니라
+     *   «파일 끝까지» 로 조용히 번졌다. 그 상태에서 루프 밖의 정상적인 읽기 한 줄이
+     *   위반으로 잡혔다 — 코드가 아니라 테스트가 틀린 경우다.
+     *
+     *   표식을 다른 문장으로 바꾸면 같은 일이 다시 난다. 범위를 구문으로 정한다.
+     */
+    const loopBody = (() => {
+      const open = code.indexOf('{', loop);
+      let depth = 0;
+      for (let i = open; i < code.length; i++) {
+        if (code[i] === '{') depth++;
+        else if (code[i] === '}' && --depth === 0) return code.slice(loop, i + 1);
+      }
+      return '';
+    })();
+
+    /*
+     * 범위가 무너지면 위 검사들이 «조용히» 무의미해진다. 그래서 범위 자체를 먼저 검사한다.
+     * 루프 본문은 반드시 존재하고, 파일 전체보다 뚜렷하게 작아야 한다.
+     */
+    check(loopBody.length > 0 && loopBody.length < code.length * 0.5,
+      '★★ 라운드 루프 본문 범위가 정상적으로 잡힌다 (검사 범위가 파일 전체로 번지지 않는다)',
+      { loopBody: loopBody.length, file: code.length });
 
     /*
      * qs 에 대한 대입은 "계획에서 꺼내 읽는" 한 줄만 허용된다.
@@ -310,10 +343,19 @@ async function runAndCollectQueries(rows, opts) {
     check(/if \(alreadyTried\.has\(q\)\) return;/.test(code),
       '★★ alreadyTried 는 건너뛰기로만 처리한다');
 
-    // product_id 게이트 유지
-    check((code.match(/byId\.get\(item\.productId\)/g) || []).length === 2,
+    /*
+     * product_id 게이트 유지.
+     *
+     * 2026-09-03 에 판정이 두 겹이 됐다 — product_id 완전 일치(여기)에 더해
+     * vendorItemId(판매 단위) 일치를 pickOption 이 본다. 쿠팡 productId 아래
+     * 옵션이 여럿이라 productId 만으로는 다른 옵션 가격이 붙기 때문이다.
+     * 게이트가 있는 자리(1차 processGroup / 2차 callAndMatch)는 그대로다.
+     */
+    check((code.match(/byId\.get\(pid\)/g) || []).length === 2,
       '★★ product_id 완전 일치 게이트가 1차·2차 두 곳에 그대로 있다',
-      (code.match(/byId\.get\(item\.productId\)/g) || []).length);
+      (code.match(/byId\.get\(pid\)/g) || []).length);
+    check(/pickOption\(target, items\)/.test(code),
+      '★★ 채택은 판매 단위(vendorItemId)까지 확인한 뒤에만 이뤄진다');
 
     // rate limit 불변
     check(/const COUPANG_MIN_GAP_MS\s*=\s*6000;/.test(src),

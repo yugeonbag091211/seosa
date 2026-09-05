@@ -53,12 +53,27 @@ const { recordPrices, searchPhraseFromTitle, adpickProductId } = require('../api
  */
 const { generateSecondPassQueries, buildFacetQueries } = require('../api/_query');
 // kstDayStartUtc: KST 하루의 시작을 절대 시각으로 잡는다 (collectedTodayKeys 주석 참고).
-const { kstToday, kstDayStartUtc } = require('../api/_price');
+const { kstToday, kstDayStartUtc, vendorIdOf } = require('../api/_price');
 
 // 헤더 로그용. price_history.recorded_date / price_job_state.job_date 와 같은 KST 기준.
 const TODAY = kstToday();
 const CONCURRENCY   = 4;
 const PAGE          = 1000;
+
+/*
+ * ★ 1회성 시드 모드 (2026-09-01).
+ *
+ *   목표는 하나뿐이다 — price_history 에 단 한 번도 기록이 없는 상품을
+ *   최초 수집 시도 대상으로 삼는다. 이 플래그가 꺼져 있으면(기본값) 정기
+ *   수집 동작은 이 커밋 이전과 한 줄도 다르지 않다.
+ *
+ *   PRICE_SEED_ONLY=1 일 때만 coupangRows/adpickRows 를 "전체 기간 이력이
+ *   0건인 상품"으로 좁힌다. 좁힌 뒤에는 기존 runMallCollection 에 그대로
+ *   넘긴다 — 회수 패스·CAS 잠금·price_job_state·UPSERT·매칭 규칙은 이
+ *   필터의 존재를 전혀 모른다. 21개를 억지로 맞추는 별도 로직은 없다:
+ *   검색 결과에 없으면 여느 상품과 똑같이 미수집으로 남는다.
+ */
+const SEED_ONLY = process.env.PRICE_SEED_ONLY === '1';
 const UPSERT_CHUNK  = 200;
 /*
  * 키워드당 가져올 상품 수.
@@ -102,10 +117,53 @@ const ADPICK_MAX_WAIT_MS  = 60000;
  *     COUPANG_MIN_GAP_MS(6초)  → 이 스크립트만으로 분당 최대 10회
  *     _coupang.MAX_PER_MIN(20) → 모든 인스턴스 합산 분당 20회
  *     쿠팡 공식 한도            → 분당 50회
+ *
+ *   ★ 400 → 500 (2026-09-03). 시간이 먼저 멈추게 하기 위해서다.
+ *
+ *     쿠팡 몫이 42분(COUPANG_BUDGET_MS)이 되면서 한 실행이 쓸 수 있는 호출이
+ *     42분 ÷ 6초 = 420회가 됐다. 400 을 그대로 두면 시간이 남았는데도 예산이
+ *     먼저 걸려 20회를 버린다. 이 값은 "폭주 시 안전판" 이지 페이스 조절
+ *     장치가 아니므로, 정상 실행에서 닿지 않는 자리(500)로 올린다.
+ *
+ *     ★ 분당 속도는 한 자리도 바뀌지 않는다. 위 세 겹은 그대로다.
+ *       달라지는 것은 하루 총량이고, 그 값은 아래와 같다:
+ *         현재(1차 패스만)    실측 ~380회/일
+ *         목표(1차+회수 패스) 계산 ~1,300회/일
+ *       쿠팡 공식 문서의 한도는 분당(검색 50회/분)이고 일일 상한은 공표된 바
+ *       없다. 우리 최고 속도는 그 한도의 20%(10회/분)로 변함이 없다.
  */
-const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 400;
-/** ADPICK 도 같은 안전판. ADPICK 상품 수(282, 2026-08-29 실측)가 쿠팡보다 훨씬
- *  적어 이 값을 넘길 일이 당분간 없지만, 폭주 방지용으로 똑같이 둔다. */
+const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 500;
+/*
+ * ── 하루 총량 상한 (2026-09-03 신설) ─────────────────────────────
+ *
+ * ★ 왜 실행당 예산만으로는 부족한가.
+ *
+ *   같은 감사에서 cron 칸을 3개 → 8개로 늘렸다(.github/workflows/daily-prices.yml).
+ *   실행 횟수가 늘면 "실행당 500회" 는 하루 총량을 더 이상 묶어 주지 못한다.
+ *   최악의 경우 8 × 500 = 4,000회가 되는데, 그 값을 아무도 의도한 적이 없다.
+ *
+ * ★ 2,200 인 근거 (실측 기반 계산).
+ *
+ *     1차 패스        399회   (고유 검색어 399종)
+ *     회수 패스   ~1,330회   (미수집 792개 × 회수 1개당 2.17회 ÷ 회수율 77.8%
+ *                            — 미수집 실상품 45개 표본의 실측값)
+ *     합계        ~1,730회   ← 90% 도달에 필요한 양
+ *     여유          +470회   ← 재시도·부분 실패분
+ *
+ *   즉 "필요한 만큼 + 여유" 이지 "쓸 수 있는 만큼" 이 아니다.
+ *
+ * ★ 분당 속도와는 무관하다. 속도는 COUPANG_MIN_GAP_MS(6초, 분당 10회)와
+ *   _coupang.MAX_PER_MIN(20), 쿠팡 공식 한도(검색 50회/분)가 정하고 그대로다.
+ *   이 값은 하루 총량의 천장일 뿐이다.
+ *
+ * 오늘 이미 쓴 양은 coupang_api_calls 에서 실행 시작 때 한 번 읽는다
+ * (loadCoupangDayUsage). 조회에 실패하면 0 으로 두고 진행한다 — 이 상한
+ * 때문에 수집이 멈추는 것이 실패보다 나쁘기 때문이다.
+ */
+const COUPANG_DAY_BUDGET = Number(process.env.COUPANG_DAY_BUDGET) || 2200;
+
+/** ADPICK 도 같은 안전판. ADPICK 수집 대상 712개 / 검색어 75종(2026-09-03 실측)이라
+ *  이 값을 넘길 일이 당분간 없지만, 폭주 방지용으로 똑같이 둔다. */
 const ADPICK_RUN_BUDGET   = Number(process.env.ADPICK_RUN_BUDGET) || 400;
 
 /* ── 배치 진행 설정 ────────────────────────────────────────────────
@@ -161,23 +219,35 @@ const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 15000;
  *       모든 쿠팡 호출이 fetchCoupangAll 을 지나면서 그 검사를 받는다
  *       (1차 processGroup · facet · 회수 라운드 전부 fetchAllFn 경유).
  *
- *     ★ 그런데 실제로 먼저 걸리는 것은 호출 예산이 아니라 **시간**이다.
- *       몰당 시간 예산 25분(MALL_BUDGET_MS) ÷ 호출 간격 6초
- *         = 실행당 실제 API 호출 250회
- *       즉 RUN_BUDGET 400 은 한 실행에서 도달할 수 없다.
+ *     ★ 먼저 걸려야 하는 것은 이 하위 상한이 아니라 **시간**이다.
+ *       쿠팡 몫 42분(COUPANG_BUDGET_MS) ÷ 호출 간격 6초
+ *         = 실행당 실제 API 호출 420회
+ *       canCall() 이 deadlineTs 를 매 호출마다 검사하므로, 시간이 다하면
+ *       이 값과 무관하게 회수 패스는 그 자리에서 멈춘다.
  *       (캐시 적중은 간격을 먹지 않으므로 이 계산에서 빠진다)
  *
- *       120 → 240 (2026-08-31). 오프라인 시뮬레이션(미수집 401개,
- *       실측 적중률 적용, T4·T7 은 0% 로 가정한 하한):
+ *     ── 240 → 420 (2026-09-03) ────────────────────────────────
  *
- *         상한   하루 호출   회수     미시도
- *          120       559      69      316   ← 130회/실행을 버린다
- *          200       700     186      172
- *          240       740     218      132   ← 채택
- *          300       750     226      122   ← 240 과 8개 차이뿐
+ *       240 은 "몰당 25분 = 250회" 를 전제로 고른 값이었다. 그 전제가
+ *       바뀌었다 — ADPICK_RESERVE_MS 주석 참고. 쿠팡 몫이 42분으로 늘어
+ *       한 실행이 시간 안에 낼 수 있는 호출이 42분 ÷ 6초 = 420회가 됐다.
  *
- *       240 과 300 이 거의 같은 이유는 위의 시간 상한(250) 때문이다.
- *       300 을 넣어도 시간이 먼저 멈춘다. 더 낮은 값을 고른다.
+ *       그리고 하루의 **두 번째 이후 실행은 1차 패스가 이미 끝나 있다**
+ *       (커서가 끝에 있어 1차는 호출 0회로 지나간다). 즉 그 실행의 시간은
+ *       거의 전부 회수 패스 몫인데, 240 이 그 절반을 잘라내고 있었다.
+ *
+ *         하루 회수 호출 = 실행1(420 - 399 1차) + 이후 실행들
+ *           상한 240 →  21 + 240 + 240 + …
+ *           상한 420 →  21 + 420 + 420 + …   ← 시간이 상한이 된다
+ *
+ *       ★ 420 을 넘기지 않는다. 시간이 허용하는 것보다 큰 상한은 안전판
+ *         노릇을 못 한다 — 값을 올려도 실제 호출은 늘지 않으면서, 시간
+ *         계산이 틀렸을 때 막아 줄 벽만 사라진다.
+ *         scripts/test-second-pass.js 가 이 관계(상한 ≤ 시간이 허용하는 호출 수,
+ *         상한 < COUPANG_RUN_BUDGET)를 소스에서 직접 계산해 고정한다.
+ *
+ *       분당 속도는 한 자리도 바뀌지 않는다 — COUPANG_MIN_GAP_MS(6초)와
+ *       전역 분당 상한이 그대로 정한다.
  *
  *   SECOND_PASS_TOKENS     (구) 제목에서 뽑을 토큰 수. 검색어 생성이
  *                          api/_query.js 로 옮겨간 뒤로는 쓰이지 않는다.
@@ -185,14 +255,15 @@ const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 15000;
  *                          있을 수 있어서다 — 읽되 동작에 영향은 없다.
  */
 const SECOND_PASS_ENABLED   = process.env.PRICE_SECOND_PASS !== '0';
-const SECOND_PASS_MAX_CALLS = Number(process.env.PRICE_SECOND_PASS_MAX_CALLS) || 240;
+const SECOND_PASS_MAX_CALLS = Number(process.env.PRICE_SECOND_PASS_MAX_CALLS) || 420;
 const SECOND_PASS_TOKENS    = Number(process.env.PRICE_SECOND_PASS_TOKENS) || 5;
 
 /*
  * 상품별 회수 라운드 수 = 상품당 최대 호출 수.
  *
- * api/_query.js 의 MAX_CANDIDATES(5) 와 같은 값이어야 한다. 라운드가 더
+ * api/_query.js 의 MAX_CANDIDATES(9) 와 같은 값이어야 한다. 라운드가 더
  * 적으면 만들어 둔 후보를 못 쓰고, 더 많으면 빈 라운드를 돈다.
+ * (scripts/test-round-index.js 가 두 값이 같은지 소스에서 확인한다)
  *
  * ── 3 → 5 로 올린 근거 (2026-08-31 PHASE 10) ──────────────────
  * 실측(n=14, 8검색어 전수): 1라운드 78.6% → 2 85.7% → 3 92.9% → 이후 제자리.
@@ -207,33 +278,73 @@ const SECOND_PASS_TOKENS    = Number(process.env.PRICE_SECOND_PASS_TOKENS) || 5;
  * ★ "최대 5회"이지 "무조건 5회"가 아니다. 적중한 상품은 uncovered 에서
  *   빠져 다음 라운드 대상에서 제외된다.
  */
-const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 5;
+const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 10;
 
 /*
  * facet 패스 — 큰 그룹을 "검색어 + 구분 토큰"으로 쪼갠다.
  *
  *   FACET_MIN_GROUP    이 수를 넘는 그룹만 대상. 쿠팡 limit 이 10이므로
  *                      10 이하 그룹은 1차 한 번으로 이미 다 덮인다.
- *   FACET_MAX_PER_GROUP 한 그룹에 쓸 facet 수. 실측 한계효용이 6회에서
- *                      0으로 떨어졌다.
+ *   FACET_MAX_PER_GROUP  한 실행에서 한 그룹에 쓸 facet 수.
+ *   FACET_POOL_PER_GROUP 만들어 둘 후보 수. 여기서 "오늘 이미 부른 것"을 뺀 뒤
+ *                      앞에서 MAX 개를 쓴다. 풀이 상한보다 커야 다음 실행이
+ *                      다음 토큰으로 이어서 판다 (facet 패스 안의 2026-09-03 주석).
  *   FACET_DRY_STOP     신규 회수 0이 연속 몇 번이면 그 그룹을 끝낼지.
  */
+/*
+ * 캐시 힌트 패스 — cacheHintQueries 주석 참고.
+ *   상품당 최대 몇 개의 옛 검색어를 다시 부를지. 3개면 실측 사례를 전부 덮는다.
+ *   끄고 싶으면 PRICE_CACHE_HINT=0.
+ */
+const CACHE_HINT_ENABLED = process.env.PRICE_CACHE_HINT !== '0';
+const CACHE_HINT_MAX_PER_PRODUCT = Number(process.env.PRICE_CACHE_HINT_MAX) || 3;
+
 const FACET_MIN_GROUP     = Number(process.env.PRICE_FACET_MIN_GROUP) || 10;
-const FACET_MAX_PER_GROUP = Number(process.env.PRICE_FACET_MAX_PER_GROUP) || 6;
+const FACET_MAX_PER_GROUP  = Number(process.env.PRICE_FACET_MAX_PER_GROUP) || 6;
+const FACET_POOL_PER_GROUP = Number(process.env.PRICE_FACET_POOL_PER_GROUP) || 24;
 const FACET_DRY_STOP      = Number(process.env.PRICE_FACET_DRY_STOP) || 2;
 
 /*
  * 이 실행이 쓸 수 있는 시간. GitHub Actions 의 timeout-minutes 보다 넉넉히 짧게.
  * 예산을 넘기면 진행 상태를 저장하고 정상 종료한다 — 다음 실행이 이어받는다.
- *
- * ★ 몰별로 절반씩 나눠 쓴다 (runMallCollection 의 deadlineTs).
- *   쿠팡을 먼저 돌리고 남는 시간을 ADPICK에 넘기는 구조라, 쿠팡이 정상이면
- *   ADPICK 은 최소 절반(기본 25분)을 보장받는다. 쿠팡이 차단되거나 예산을
- *   금방 소진해 일찍 끝나면 ADPICK 은 그만큼 더 받는다 — 반대로 쿠팡이
- *   시간을 다 채워도 ADPICK 몫(절반)은 침범하지 않는다.
  */
 const RUN_TIME_BUDGET_MS = Number(process.env.PRICE_RUN_BUDGET_MS) || 50 * 60 * 1000;
-const MALL_BUDGET_MS     = Math.floor(RUN_TIME_BUDGET_MS / 2);
+
+/*
+ * ── 몰별 시간 배분 (2026-09-03 감사에서 "절반씩"을 버렸다) ──────────
+ *
+ * ★ 절반씩 나누는 것이 왜 틀렸나 — 두 몰의 일이 같은 크기가 아니다.
+ *
+ *   실측 (2026-09-03 운영 DB):
+ *     쿠팡    수집 대상 1,548개 / 고유 검색어 399종
+ *             호출 간격 6초  → 1차 패스만으로 399 × 6s = 39.9분
+ *     ADPICK  수집 대상   712개 / 고유 검색어  75종
+ *             호출 간격 1.5초 → 1차 패스 전체가 75 × 1.5s = 1.9분
+ *
+ *   그런데 예전 배분은 RUN_TIME_BUDGET_MS(50분)의 절반인 25분을 ADPICK 몫으로
+ *   묶어 두고 쿠팡에 25분만 줬다. 쿠팡은 **1차 패스조차** 25분 안에 끝낼 수
+ *   없고(39.9분 필요), ADPICK 은 2분이면 끝날 일에 25분을 배정받았다.
+ *   즉 매 실행마다 23분이 아무 일도 하지 않는 쪽에 묶여 있었다.
+ *
+ *   (운영 로그도 같은 결론이다 — 2026-09-02T19:14Z 실행은 쿠팡 전용으로
+ *    50분을 다 쓰고도 61배치 중 50배치, 1,262/1,548 에서 시간이 끊겼다.)
+ *
+ * ★ 그래서 "ADPICK 이 실제로 필요한 만큼만" 떼어 두고 나머지를 쿠팡에 준다.
+ *
+ *   ADPICK_RESERVE_MS 8분 = 1.5초 간격으로 320회. 1차 패스(75회)의 네 배가
+ *   넘으므로 회수 패스까지 충분하다. 쿠팡이 이 시각에 멈추므로 ADPICK 은
+ *   최소 8분을 보장받고, 쿠팡이 일찍 끝나면 그만큼 더 받는다(예전과 같다).
+ *
+ * ★ 호출 속도는 이 배분과 무관하다. 간격(COUPANG_MIN_GAP_MS 6초 /
+ *   ADPICK_MIN_GAP_MS 1.5초)·전역 분당 상한·서킷 브레이커는 그대로다.
+ *   달라지는 것은 "쓰지도 않을 시간을 붙잡고 있는가" 뿐이다.
+ */
+const ADPICK_RESERVE_MS = Number(process.env.PRICE_ADPICK_RESERVE_MS) || 8 * 60 * 1000;
+/** 쿠팡 몫 — 전체에서 ADPICK 예약분을 뺀 나머지. 최소한 절반은 보장한다. */
+const COUPANG_BUDGET_MS = Math.max(
+  RUN_TIME_BUDGET_MS - ADPICK_RESERVE_MS,
+  Math.floor(RUN_TIME_BUDGET_MS / 2)
+);
 
 /*
  * 한국시간(Asia/Seoul) 기준 오늘 날짜는 api/_price.kstToday 하나만 쓴다.
@@ -271,12 +382,110 @@ function isAdpickRow(p) {
   return p.mall === 'ADPICK';
 }
 
+/* ── 판매 단위(옵션) 게이트 ─────────────────────────────────────────
+ *
+ * ★ 무엇이 잘못돼 있었나 (2026-09-03, 운영 데이터로 확인)
+ *
+ *   쿠팡의 productId 는 "노출 상품" 이고, 실제로 팔리는 단위는 그 아래의
+ *   vendorItemId(옵션)다. 한 productId 아래 옵션이 여럿인 경우가 흔하다 —
+ *   운영 캐시에 응답이 남아 있는 쿠팡 상품 1,418개 중 632개가 다옵션이었다.
+ *
+ *   검색 응답은 그때그때 다른 옵션을 대표로 싣는다. 게다가 collapseOptions
+ *   가 같은 productId 를 최저가 한 건으로 접는다. 그런데 매칭은
+ *   `byId.get(item.productId)` 하나뿐이었다 — 응답 항목의 vendorItemId 를
+ *   우리 상품의 vendor_item_id 와 대조하는 곳이 어디에도 없었다.
+ *
+ *   그래서 우리가 추적하지 않는 옵션의 가격이 그 상품의 오늘 가격이 됐다.
+ *
+ *   실제 피해(운영 price_history 실측):
+ *     vid 이력이 있는 쿠팡 상품 1,876개 중 605개가 두 개 이상의 vid 로
+ *     가격이 기록돼 있다. 그중 200개는 최저·최고 격차 50% 이상,
+ *     113개는 2배 이상이다. 최악은 productId 6181159723 으로 네 개 옵션에
+ *     걸쳐 1,300~30,860원이 한 상품의 이력에 섞여 있다.
+ *     같은 상품의 이력인데 날짜 간 비교가 성립하지 않는다.
+ *
+ * ★ 판정 기준
+ *
+ *   1순위  응답 vendorItemId === 타겟 vendorItemId  → 같은 판매 단위. 채택.
+ *   2순위  vendorItemId 개념이 없는 몰은 product_id 자체가 판매 단위다.
+ *          ADPICK 은 commissionlink 해시가 product_id 이므로 여기 해당한다
+ *          (운영 737행 전부 vid 없음 — 게이트를 걸면 전멸한다).
+ *   3순위  그 외에는 채택하지 않는다. productId 가 같다는 것은 근거가 아니다.
+ *
+ *   ★ itemId 는 게이트에 넣지 않는다. 근거:
+ *     · UNIQUE 가 (product_id, mall, vendor_item_id[, recorded_date]) 다
+ *       (supabase/2026-08-vendor-identity.sql:110,151). itemId 는 키가 아니다.
+ *     · 캐시 21,762 항목 실측에서 vid→itemId 는 사실상 1:1(예외 11건),
+ *       itemId→vid 는 1:다(151건)였다. vid 가 itemId 보다 세밀하다.
+ *     · 그 예외 11건은 쿠팡이 **같은 옵션에 itemId 를 새로 발급한** 경우다.
+ *       itemId 를 필수로 걸면 이 11건을 근거 없이 거부하게 된다.
+ *     itemId 는 계속 기록하되(이력 추적용) 채택 조건으로는 쓰지 않는다.
+ *
+ * ★ 게이트 비용은 미리 쟀다. 운영 캐시 기준 통과율 98.45%(1,396/1,418).
+ *   거부되는 22건은 "우리 옵션이 응답에 아예 없는" 경우이고, 그때 우리는
+ *   그 옵션의 오늘 가격을 실제로 모른다. 다른 옵션 값을 대신 쓰는 것은
+ *   수집이 아니라 날조다. 캐시는 검색어당 마지막 응답 1건만 남으므로
+ *   이 통과율은 하한이다 — 실제 실행은 상품당 여러 검색어를 시도한다.
+ *
+ * @param {object} target  products 행 (product_id, mall, link, vendor_item_id …)
+ * @param {Array}  items   검색 응답 항목 — **반드시 접히지 않은 allItems** 를 넘긴다
+ * @returns {{item: object|null, reason: string, options: number, want?: string, got?: string[]}}
+ */
+function pickOption(target, items) {
+  const pid = String((target && target.product_id) != null ? target.product_id : '');
+  if (!pid) return { item: null, reason: 'NO_TARGET_ID', options: 0 };
+
+  const cands = (items || []).filter(it => String(it.productId) === pid);
+  if (!cands.length) return { item: null, reason: 'NO_PRODUCT_MATCH', options: 0 };
+
+  // vendorItemId 개념이 없는 몰 — product_id 가 곧 판매 단위다.
+  if (!isCoupangRow(target)) {
+    return { item: cands[0], reason: 'MALL_ID_IS_UNIT', options: cands.length };
+  }
+
+  const want = vendorIdOf(target);
+  if (!want) return { item: null, reason: 'TARGET_VID_UNKNOWN', options: cands.length };
+
+  const exact = cands.find(it => String(it.vendorItemId || '') === want);
+  if (exact) return { item: exact, reason: 'VID_EXACT', options: cands.length, want };
+
+  const got = [...new Set(cands.map(it => String(it.vendorItemId || '')).filter(Boolean))];
+  if (!got.length) {
+    return { item: null, reason: 'RESPONSE_VID_MISSING', options: cands.length, want, got };
+  }
+  return { item: null, reason: 'OPTION_MISMATCH', options: cands.length, want, got };
+}
+
 // ─── 몰별 API 호출 상태 (쿠팡) ─────────────────────────────
 let _coupangBlocked = false;
 let _coupangBlockMsg = '';
 let _coupangCalls = 0;      // 실제로 나간 호출 수 (캐시 적중은 제외)
 let _coupangSkipped = 0;    // 예산/상한/차단으로 건너뛴 횟수
 let _coupangBudgetWarned = false;
+let _coupangDayUsed = 0;        // 오늘(KST) 이 수집기가 이미 쓴 호출 수
+let _coupangDayWarned = false;
+
+/**
+ * 오늘(KST) collect 소스로 나간 쿠팡 호출 수를 읽는다. 읽기 전용, 실행당 1회.
+ * 실패하면 0 을 준다 — 상한 때문에 수집이 멈추는 것보다 낫다.
+ */
+async function loadCoupangDayUsage() {
+  try {
+    const dayStart = kstDayStartUtc(TODAY);
+    const dayEnd = new Date(Date.parse(dayStart) + 24 * 60 * 60 * 1000).toISOString();
+    const { count, error } = await supabase
+      .from('coupang_api_calls')
+      .select('*', { count: 'exact', head: true })
+      .gte('called_at', dayStart).lt('called_at', dayEnd)
+      .eq('source', 'collect');
+    if (error) throw new Error(error.message);
+    _coupangDayUsed = Number(count) || 0;
+  } catch (e) {
+    _coupangDayUsed = 0;
+    console.warn(`[쿠팡] 오늘 호출량 조회 실패(0 으로 두고 진행): ${e.message}`);
+  }
+  return _coupangDayUsed;
+}
 
 /**
  * 쿠팡 검색. api/_coupang.js를 통해서만 나간다.
@@ -301,6 +510,18 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
       console.warn(`\n⚠️  쿠팡 호출 예산 ${COUPANG_RUN_BUDGET}회 소진 — 남은 검색어는 건너뜁니다.\n`);
     }
     return { ok: false, items: [], reason: `실행당 호출 예산 ${COUPANG_RUN_BUDGET}회 소진` };
+  }
+
+  // 하루 총량 상한 (COUPANG_DAY_BUDGET 주석 참고). 실행당 상한과 별개의 천장이다.
+  if (_coupangDayUsed + _coupangCalls >= COUPANG_DAY_BUDGET) {
+    _coupangSkipped++;
+    if (!_coupangDayWarned) {
+      _coupangDayWarned = true;
+      console.warn(`⚠️  쿠팡 하루 호출 예산 ${COUPANG_DAY_BUDGET}회 소진`
+        + ` (오늘 앞선 실행 ${_coupangDayUsed}회 + 이번 실행 ${_coupangCalls}회)`
+        + ` — 남은 검색어는 내일 이어갑니다.`);
+    }
+    return { ok: false, items: [], reason: `하루 호출 예산 ${COUPANG_DAY_BUDGET}회 소진` };
   }
 
   // forceRefresh를 쓰지 않는다. 최근 6시간 안에 받아둔 값이면 그것도 "오늘 가격"이라
@@ -341,20 +562,41 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
     return { ok: false, items: [], reason: `호출 생략: ${String(r.error || '분당 상한/대기 초과').slice(0, 60)}` };
   }
 
+  /*
+   * ★ items 와 allItems 를 둘 다 넘긴다 (2026-09-03).
+   *
+   *   api/_coupang.js 의 collapseOptions 는 같은 productId 의 옵션 행을
+   *   **최저가 한 건으로 접는다.** 그건 검색 화면에는 옳다 — 사용자에게
+   *   같은 상품을 옵션 수만큼 늘어놓을 이유가 없다.
+   *
+   *   그런데 수집기에는 치명적이다. 우리가 추적하는 옵션이 최저가가
+   *   아니면, 매칭이 시작되기도 전에 그 옵션이 사라진다. 그러면 남은
+   *   대표 항목(다른 옵션)의 가격이 우리 상품의 오늘 가격으로 들어간다.
+   *
+   *   그래서 역할을 분리한다.
+   *     items     화면·집계용 대표 항목 (collapseOptions 결과, 기존 그대로)
+   *     allItems  옵션이 살아 있는 원본 — 매칭은 반드시 이걸 쓴다
+   *
+   *   searchCoupang 은 원래부터 둘 다 돌려주고 있었다(api/_coupang.js:661).
+   *   여기서 allItems 를 버리고 있었을 뿐이다.
+   */
+  const shape = it => ({
+    productId: it.productId,
+    title: it.title,
+    lprice: it.lprice,
+    oprice: it.oprice,
+    link: it.link,
+    image: it.image,
+    mall: '쿠팡',
+    itemId: it.itemId || '',
+    vendorItemId: it.vendorItemId || '',
+  });
+
   return {
     ok: true,
     reason: '',
-    items: r.items.map(it => ({
-      productId: it.productId,
-      title: it.title,
-      lprice: it.lprice,
-      oprice: it.oprice,
-      link: it.link,
-      image: it.image,
-      mall: '쿠팡',
-      itemId: it.itemId || '',
-      vendorItemId: it.vendorItemId || '',
-    }))
+    items: r.items.map(shape),
+    allItems: (r.allItems && r.allItems.length ? r.allItems : r.items).map(shape)
   };
 }
 
@@ -438,12 +680,44 @@ async function fetchAllProducts() {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('products')
-      .select('product_id, mall, title, keyword, link, image')
+      /*
+       * vendor_item_id / item_id 를 반드시 같이 읽는다 (2026-09-03).
+       *
+       * 이 두 컬럼이 없으면 수집기는 "우리가 어떤 옵션을 추적하고 있는지"를
+       * 모른 채 응답을 채택하게 된다. 실제로 그랬고, 그래서 다른 옵션의
+       * 가격이 기록됐다 (pickOption 주석의 실측 참고).
+       *
+       * 값이 비어 있어도 _price.vendorIdOf 가 link 에서 뽑아내므로 폴백이
+       * 있다 — 운영 쿠팡 상품 1,554개 전부에서 vid 확보를 확인했다.
+       */
+      .select('product_id, mall, title, keyword, link, image, vendor_item_id, item_id')
       .order('product_id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error('products 조회 실패: ' + error.message);
     all.push(...(data || []));
     if (!data || data.length < PAGE) return all;
+  }
+}
+
+/**
+ * PRICE_SEED_ONLY 전용 — price_history 에 한 번도 기록되지 않은 (product_id, mall) 을 가려낸다.
+ *
+ * "이력이 있다"의 판정 기준은 오늘 날짜도 recorded_date 라벨도 아니다. 전체
+ * 기간을 통틀어 행이 한 줄이라도 있으면 이력이 있는 것이다 — 그래서
+ * collectedTodayKeys 와 달리 KST/UTC 날짜 경계를 고려할 필요가 없다.
+ * 페이지네이션은 fetchAllProducts 와 같은 방식(PAGE 단위 range)을 쓴다.
+ * 읽기 전용이며, 이 함수의 결과는 시드 모드의 필터에만 쓰인다.
+ */
+async function fetchEverCollectedKeys() {
+  const seen = new Set();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('price_history')
+      .select('product_id, mall')
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error('price_history 조회 실패(시드 모드): ' + error.message);
+    (data || []).forEach(r => seen.add(`${r.product_id}|${r.mall}`));
+    if (!data || data.length < PAGE) return seen;
   }
 }
 
@@ -617,6 +891,29 @@ function splitBatches(groups, size = BATCH_PRODUCTS) {
   return batches;
 }
 
+/**
+ * 몰별 패스 성적을 합친다. 두 몰이 같은 패스 이름을 쓰므로 이름으로 더한다.
+ * (몰별 값은 report.malls[] 안에 그대로 남아 있다)
+ */
+function mergePassStats(results) {
+  const by = new Map();
+  (results || []).forEach(r => (r.passStats || []).forEach(s => {
+    const got = by.get(s.pass) || { pass: s.pass, calls: 0, ok: 0, success: 0, recovered: 0 };
+    got.calls += s.calls; got.ok += s.ok; got.success += s.success; got.recovered += s.recovered;
+    by.set(s.pass, got);
+  }));
+  return [...by.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass));
+}
+
+/** 패스 이름의 실행 순서. 리포트·로그가 항상 같은 순서로 나오게 한다. */
+function passOrder(name) {
+  if (name === 'pass1') return 0;
+  if (name === 'hint') return 1;
+  if (name === 'facet') return 2;
+  const m = /^r(d+)$/.exec(String(name));
+  return m ? 2 + Number(m[1]) : 99;
+}
+
 const failureCategoriesTemplate = () => ({
   blocked: 0, budget: 0, staleCache: 0, network: 0,
   noMatch: 0, noKeys: 0, rateLimit: 0, other: 0
@@ -681,6 +978,61 @@ async function collectedTodayKeys(mallName, collectible) {
   return found;
 }
 
+/**
+ * 검색 캐시에서 "이 상품을 실제로 돌려줬던 검색어" 를 뽑는다.
+ *
+ * ── 왜 이게 가장 강한 단서인가 (2026-09-03) ─────────────────────
+ *
+ *   미수집 상품의 검색어를 새로 지어내는 것보다, **예전에 그 상품을 돌려준
+ *   적이 있는 검색어를 다시 부르는 것**이 훨씬 확실하다. 우리가 만든 후보가
+ *   아니라 쿠팡 색인이 실제로 답한 기록이기 때문이다.
+ *
+ *   실측: 미수집 151개 중 13개가 "다른 상품의 검색어" 응답 안에 남아 있었다.
+ *     pid 9574923427 (ASUS TUF F16)  ← "에이수스 비보북 코어Ultra5 인텔 14세대"
+ *     pid 9483527655 (LG 그램 Pro 16) ← "LG 그램 화이트 WIN11 Pro"
+ *     pid 9709957210 (존바바토스)     ← "존바바토스 뚜왈렛 아티산"
+ *   어느 것도 그 상품의 후보 사다리에서는 나올 수 없는 문구다.
+ *
+ * ★ 캐시에 있는 **가격을 쓰지 않는다.** 검색어만 가져온다.
+ *   캐시 항목은 며칠 전 것일 수 있고, 오래된 가격을 오늘 가격으로 기록하는 것은
+ *   이 스크립트가 곳곳에서 막고 있는 바로 그 일이다(fetchCoupangAll 의
+ *   stale-cache 처리 참고). 여기서 얻는 것은 "무엇으로 물어보면 되는가" 뿐이고,
+ *   가격은 그 검색어를 지금 다시 불러서 받는다.
+ *
+ * 읽기 전용이고, 실패하면 빈 Map 을 준다(수집을 막을 이유가 없다).
+ *
+ * @param {Set<string>} wantIds 찾고 싶은 product_id 문자열 집합
+ * @returns {Map<string, string[]>} product_id → 그 상품을 돌려준 적 있는 검색어들
+ */
+async function cacheHintQueries(wantIds) {
+  const out = new Map();
+  if (!wantIds || wantIds.size === 0) return out;
+  try {
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('coupang_search_cache')
+        .select('keyword, items')
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(error.message);
+      (data || []).forEach(row => {
+        const items = Array.isArray(row.items) ? row.items : [];
+        items.forEach(it => {
+          const pid = String(it && it.productId);
+          if (!wantIds.has(pid)) return;
+          if (!out.has(pid)) out.set(pid, []);
+          const list = out.get(pid);
+          if (list.indexOf(row.keyword) < 0) list.push(row.keyword);
+        });
+      });
+      if (!data || data.length < PAGE) break;
+    }
+  } catch (e) {
+    console.warn(`  [캐시 힌트] 조회 실패(무시하고 진행): ${e.message}`);
+    return new Map();
+  }
+  return out;
+}
+
 function categorizeFailure(reason) {
   const r = String(reason || '').toLowerCase();
   if (r.includes('차단') || r.includes('중단')) return 'blocked';
@@ -709,9 +1061,25 @@ function categorizeFailure(reason) {
  *              오늘 이미 가격을 확보한 상품 키. 기본값은 price_history 를 읽는
  *              collectedTodayKeys 다. 테스트가 운영 DB 없이 이어받기 실행을
  *              재현할 수 있도록 주입 가능하게 열어 둔다(수집 동작은 바뀌지 않는다).
+ *   cacheHintFn  (Set<product_id>) => Promise<Map<product_id, string[]>>
+ *              그 상품을 돌려준 적 있는 검색어. 기본값은 coupang_search_cache 를
+ *              통째로 읽는 cacheHintQueries 다. 전체 스캔이라 수 초가 걸릴 수 있어,
+ *              테스트는 스텁을 넘겨 시간 예산을 잡아먹지 않게 한다.
+ *   recordPricesFn  (observations, opts) => Promise<{saved, recorded, recordedKeys, ...}>
+ *              저장 경로. 기본값은 api/_shop.js 의 recordPrices 다.
+ *
+ *              ★ 왜 주입 가능해야 하는가 (2026-09-03).
+ *                이 함수를 테스트가 직접 부를 때, 픽스처 상품이 fetchAllFn 응답에
+ *                섞이면 그대로 **운영 price_history / products 에 기록된다.**
+ *                실제로 그 사고가 났다 — 픽스처 product_id P1·P2·P3·X1 4행이
+ *                운영에 들어갔고(2026-09-03), 발견 즉시 지웠다.
+ *                테스트는 반드시 이 인자로 저장을 가로채야 한다.
+ *                (scripts/verify-collection-no-write.js 가 잔여 픽스처를 검사한다)
  */
 async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadlineTs,
-                                   collectedTodayFn = collectedTodayKeys }) {
+                                   collectedTodayFn = collectedTodayKeys,
+                                   recordPricesFn = recordPrices,
+                                   cacheHintFn = cacheHintQueries }) {
   const withKeyword = rows.filter(p => p.keyword);
   const noKeyword   = rows.filter(p => !p.keyword);
 
@@ -753,8 +1121,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 그대로 살아 있어야 한다 (저장된 상태에서 이어받는다).
      */
     const carried = (savedState && savedState.last_result && savedState.last_result.collectorCovered) || [];
+    const carriedAttempt = (savedState && savedState.last_result && savedState.last_result.collectorAttempted) || [];
     const collectibleKeys = new Set(collectible.map(p => `${p.product_id}|${p.mall}`));
     const collectorCoveredIds = carried.filter(k => collectibleKeys.has(k));
+    // 확보 ⊆ 시도 (위 collectorAttempted 주석과 같은 이유)
+    const collectorAttemptedIds = [...new Set([...carriedAttempt, ...carried])]
+      .filter(k => collectibleKeys.has(k));
     return {
       ...base,
       skipped: false, status: 'completed',
@@ -764,8 +1136,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       collectorSuccessProducts: collectorCoveredIds.length,
       collectorMissingProducts: collectible.length - collectorCoveredIds.length,
       collectorCovered: collectorCoveredIds,
+      attemptedProducts: collectorAttemptedIds.length,
+      skippedProducts: collectible.length - collectorAttemptedIds.length,
+      noMatchProducts: Math.max(0, collectorAttemptedIds.length - collectorCoveredIds.length),
+      collectorAttempted: collectorAttemptedIds,
       todayPriceProducts, uncoveredProducts: collectible.length - todayPriceProducts,
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
+      passStats: [], crossRecovered: 0, optionRejects: {},
+      facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
       notFoundCount: 0,
       secondPassCalls: 0, secondPassRecovered: 0, secondPassGroups: 0, secondPassRemaining: 0,
       secondPassDone: [],
@@ -790,17 +1168,29 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    */
   let priorSecondDone = [];
   /*
+   * 오늘 facet 을 캐다가 연속 무수확으로 끊은 그룹. 다음 실행이 같은 그룹을
+   * 다시 두드리지 않게 이어 간다 (facet 패스 안의 2026-09-03 실측 참고).
+   */
+  let priorFacetDry = [];
+  /*
    * 오늘 앞선 실행이 이미 확보한 상품. 이어받기 실행이 자기 몫만 세어
    * 성공률을 축소하지 않도록 합집합으로 이어 간다 (markCovered 주석 참고).
    */
   let priorCollectorCovered = [];
+  /*
+   * 오늘 앞선 실행이 "실제로 찾아본" 상품. collectorCovered 와 같은 방식으로
+   * 하루 누적 합집합을 이어 간다 (collectorAttempted 주석 참고).
+   */
+  let priorCollectorAttempted = [];
   let cursorKey = '', processed = 0, priorFailedKeywords = [];
   const isNewDay = !savedState || savedState.job_date !== TODAY;
   if (!isNewDay) {
     cursorKey = savedState.cursor_key || '';
     processed = savedState.processed || 0;
     priorSecondDone = (savedState.last_result && savedState.last_result.secondPassDone) || [];
+    priorFacetDry = (savedState.last_result && savedState.last_result.facetDryGroups) || [];
     priorCollectorCovered = (savedState.last_result && savedState.last_result.collectorCovered) || [];
+    priorCollectorAttempted = (savedState.last_result && savedState.last_result.collectorAttempted) || [];
     priorFailedKeywords = (savedState.last_result && savedState.last_result.failedKeywords) || [];
     console.log(`[${mallName}] ${TODAY} (KST) 이어서 진행 — ${processed}/${savedState.total || planTotal}개 완료,`
       + ` 커서 "${cursorKey}" 다음부터`);
@@ -868,6 +1258,34 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   const collectorCovered = new Set(priorCollectorCovered);
 
   /*
+   * ── 수집기가 오늘 실제로 "찾아본" 상품 (시도율의 유일한 근거) ──────
+   *
+   * ★ 왜 필요한가 — 39.6% 가 시도율 문제인지 매칭률 문제인지 리포트만 보고는
+   *   알 수 없었다 (2026-09-03 감사).
+   *
+   *   예전 리포트의 "가격 수집 시도" 는 processedProducts, 즉 **이번 실행이
+   *   배치에 담아 돌린 상품 수**였다. 하루에 세 번 이어 도는 잡에서 그 값을
+   *   하루치 분모(1,548)와 나란히 놓으면 "1,548 중 1,262 만 시도했다" 로
+   *   읽힌다. 실제로는 앞 실행이 나머지 286 을 이미 돌았다.
+   *   (실측: 2026-09-02T19:14Z 실행 1,262 + 20:13Z 실행 286 = 1,548, 하루 시도율 100%)
+   *
+   * ★ 무엇을 "시도" 로 세는가 — **호출이 실제로 나가 결과를 받은 것만.**
+   *   차단·예산 소진·분당 상한으로 호출이 나가지도 못한 상품은 시도가 아니다
+   *   (그건 skipped 이고, 다음 실행의 재시도 대상이다). 이 구분이 있어야
+   *   "찾아봤는데 없었다(noMatch)" 와 "아예 못 찾아봤다(skipped)" 가 갈린다.
+   *
+   * collectorCovered 와 똑같이 하루 누적 합집합이고, 같은 JSONB 키 옆에
+   * 저장된다 — 마이그레이션이 없다.
+   */
+  const collectorAttempted = new Set(priorCollectorAttempted);
+  /*
+   * 확보한 상품은 정의상 시도한 상품이다. 이어받은 목록에서도 그 포함관계를
+   * 강제해 둔다 — collectorAttempted 키가 없던 시절의 상태를 이어받아도
+   * "성공 > 시도" 같은 모순이 리포트에 나가지 않는다.
+   */
+  priorCollectorCovered.forEach(k => collectorAttempted.add(k));
+
+  /*
    * ★ markCovered 와 collectorCovered 는 시점이 다르다 — 섞으면 안 된다.
    *
    *   markCovered(uncovered 에서 제거)  = "이번 실행에서 이 상품을 찾았다"
@@ -884,6 +1302,68 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   (suspect 는 원장에 기록되므로 확보가 맞다 — recordPrices 주석 참고)
    */
   const markCovered = (pid, mall) => uncovered.delete(`${pid}|${mall}`);
+
+  /* ── 응답 전체 대조 (교차 매칭, 2026-09-03) ────────────────────
+   *
+   * ★ 무엇이 잘못돼 있었나.
+   *
+   *   검색 응답을 **그 검색어를 만든 상품하고만** 대조하고 있었다.
+   *     1차 processGroup  → byId 는 그 검색어 그룹의 상품만
+   *     회수 callAndMatch → byId 는 그 문구를 공유한 상품만
+   *   그런데 쿠팡 응답 한 건에는 우리 카탈로그의 **다른** 미수집 상품이 함께
+   *   들어오는 일이 흔하다. 같은 브랜드·같은 카테고리를 훑는 검색이니 당연하다.
+   *   그것들을 통째로 버리고 있었다.
+   *
+   *   실측(2026-09-03, 운영 캐시 2,228종을 미수집 151개와 대조):
+   *     13개가 "다른 상품의 검색어" 응답 안에 들어 있었다 (총 31회 등장).
+   *   캐시는 검색어당 마지막 응답만 남기므로 이건 하한이다 — 실제 실행에서
+   *   흘러간 응답은 그보다 훨씬 많다.
+   *
+   * ★ 정밀도는 1도 낮아지지 않는다.
+   *
+   *   채택 기준은 여전히 product_id 완전 일치 하나뿐이다. 제목 유사도도,
+   *   가격 근사도, 1위 상품 채택도 쓰지 않는다. 대조 대상 집합만 넓어진다 —
+   *   "이 응답에 우리 상품이 들어 있는가" 를 우리 상품 전체에 대해 묻는 것이다.
+   *   vendor_item_id 는 addRow 가 응답 항목에서 그대로 가져오므로 옵션 정체성도 그대로다.
+   */
+  const collectibleById = new Map();
+  collectible.forEach(p => collectibleById.set(String(p.product_id), p));
+
+  /** 이 실행에서 교차 매칭으로 건진 상품 수 (리포트용). */
+  let crossRecovered = 0;
+
+  /**
+   * 응답 항목을 전체 미수집 집합과 대조해서 새로 잡히는 것을 흡수한다.
+   * @param {Array} items      검색 응답 항목
+   * @param {string} foundVia  이 응답을 만든 검색어 (기록용)
+   * @param {Set} handled      1차 대조에서 이미 처리한 product_id (중복 계산 방지)
+   * @returns {number} 새로 확보한 상품 수
+   */
+  function absorbCrossMatches(items, foundVia, handled) {
+    let n = 0;
+    /*
+     * 항목 단위가 아니라 **productId 단위**로 돈다 (2026-09-03).
+     *
+     * 다옵션 상품은 같은 productId 항목이 응답에 여러 개 들어온다. 예전처럼
+     * 항목마다 addRow 를 부르면 마지막(또는 최저가) 옵션이 이겨서, 우리가
+     * 추적하는 옵션과 무관한 가격이 남았다. 이제 productId 마다 한 번만
+     * 판정하고, 그 판정은 pickOption 이 vendorItemId 로 한다.
+     */
+    const pids = new Set((items || []).map(it => String(it.productId)));
+    pids.forEach(pid => {
+      if (handled && handled.has(pid)) return;         // 그 검색어의 자기 몫은 이미 봤다
+      const p = collectibleById.get(pid);
+      if (!p) return;                                   // 우리 상품이 아니다
+      const key = `${p.product_id}|${p.mall}`;
+      if (!uncovered.has(key)) return;                  // 이미 확보했다
+      if (!adoptOne(p, items, foundVia)) return;        // 옵션이 다르거나 가격이 없다
+      markCovered(p.product_id, p.mall);
+      collectorAttempted.add(key);                      // 호출이 나가 이 상품을 찾아냈다
+      n++;
+    });
+    crossRecovered += n;
+    return n;
+  }
 
   /*
    * ★ 오늘 이미 기록된 상품은 처음부터 '수집됨'으로 둔다 (2026-08-31).
@@ -931,6 +1411,30 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    */
   let attemptCalls = 0;
   let attemptSuccess = 0;
+
+  /* ── 패스별 계측 (2026-09-03) ────────────────────────────────────
+   *
+   * ★ 왜 필요한가 — "회수 패스가 듣는다" 는 말은 전체 합계로는 증명되지 않는다.
+   *   어떤 검색 전략이 몇 번의 호출로 몇 개를 건졌는지 패스별로 나눠야
+   *   다음에 무엇을 늘리고 무엇을 접을지 정할 수 있다.
+   *
+   *   pass          이름. 'pass1' | 'facet' | 'r1'..'r9'
+   *   calls         그 패스가 실제로 시도한 호출 수 (나가지 못한 것 포함)
+   *   ok            응답을 받은 호출 수
+   *   success       상품을 하나라도 새로 잡은 호출 수
+   *   recovered     그 패스가 새로 확보한 상품 수
+   *
+   * 호출당 회수 = recovered / calls 가 전략 사이의 유일한 공정한 비교다
+   * (한 호출이 여러 상품을 덮으므로 상품 수만으로는 비교가 안 된다).
+   */
+  const passStats = new Map();
+  const notePass = (pass, { ok = false, hit = 0 }) => {
+    let s = passStats.get(pass);
+    if (!s) { s = { pass, calls: 0, ok: 0, success: 0, recovered: 0 }; passStats.set(pass, s); }
+    s.calls++;
+    if (ok) s.ok++;
+    if (hit > 0) { s.success++; s.recovered += hit; }
+  };
   const noteAttemptFailure = (reason) => { failureCategories[categorizeFailure(reason)]++; };
   const noteAttemptNoMatch = () => { failureCategories.noMatch++; };
 
@@ -948,8 +1452,52 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       image: target.image || item.image || '',
       itemId: item.itemId || '',
       vendorItemId: item.vendorItemId || '',
+      /*
+       * ★ 저장 직전 방어막의 재료 (2026-09-03).
+       *
+       *   "우리가 추적하기로 한 옵션" 을 관측치에 같이 실어 보낸다.
+       *   api/_shop.js 의 recordPrices 가 이 값과 실제 vendorItemId 를
+       *   다시 대조해서 다르면 저장하지 않는다(OPTION_MISMATCH).
+       *
+       *   pickOption 이 이미 걸렀는데 왜 또 보는가 — 위쪽 매칭에 나중에
+       *   버그가 생겨도 운영 이력이 오염되지 않게 하기 위해서다. 방어막은
+       *   가장 안쪽, 쓰기 직전에 하나 더 있어야 한다.
+       *
+       *   vid 개념이 없는 몰은 빈 문자열이고, 그때 방어막은 작동하지 않는다.
+       */
+      targetVendorItemId: vendorIdOf(target),
     });
     return true;
+  }
+
+  /* ── 옵션 게이트 통계 (리포트/진단용) ────────────────────────────
+   * 채택을 거부한 이유별 건수. 거부는 실패가 아니라 "오늘 그 옵션의 가격을
+   * 확인하지 못했다" 는 사실의 기록이다 — 다른 옵션 값으로 메우지 않는다.
+   */
+  const optionRejects = new Map();
+  let optionRejectLogged = 0;
+  const OPTION_REJECT_LOG_MAX = 20;
+
+  /**
+   * 응답에서 이 타겟의 옵션을 골라 채택한다. 옵션이 다르면 채택하지 않는다.
+   * @param {object} target
+   * @param {Array}  items    접히지 않은 응답 항목(allItems)
+   * @param {string} foundVia 이 응답을 만든 검색어
+   * @returns {boolean} 채택 여부
+   */
+  function adoptOne(target, items, foundVia) {
+    const pick = pickOption(target, items);
+    if (!pick.item) {
+      optionRejects.set(pick.reason, (optionRejects.get(pick.reason) || 0) + 1);
+      if (pick.reason === 'OPTION_MISMATCH' && optionRejectLogged < OPTION_REJECT_LOG_MAX) {
+        optionRejectLogged++;
+        console.warn(`  [${mallName}] OPTION_MISMATCH productId=${target.product_id}`
+          + ` targetVendorItemId=${pick.want} responseVendorItemId=[${(pick.got || []).join(', ')}]`
+          + ` 검색어="${String(foundVia).slice(0, 40)}" — 다른 옵션이라 채택하지 않습니다.`);
+      }
+      return false;
+    }
+    return addRow(target, pick.item, foundVia);
   }
 
   async function saveAll() {
@@ -958,7 +1506,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     let recorded = 0, saved = 0, rejected = 0, suspect = 0;
     const errors = [];
     for (let i = 0; i < savedRows.length; i += UPSERT_CHUNK) {
-      const r = await recordPrices(savedRows.slice(i, i + UPSERT_CHUNK), { label: `collect:${mallName}`, source: 'collect' });
+      const r = await recordPricesFn(savedRows.slice(i, i + UPSERT_CHUNK), { label: `collect:${mallName}`, source: 'collect' });
       recorded += r.recorded; saved += r.saved; rejected += r.rejected; suspect += r.suspect;
       /*
        * ★ 여기가 "가격을 확보했다" 의 유일한 판정 지점이다.
@@ -975,13 +1523,15 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   /** 검색어 그룹 하나를 처리한다. 실패해도 던지지 않는다 — 호출부가 계속 돈다. */
   async function processGroup({ kw, rows: groupRows }) {
     const byId = new Map();
-    groupRows.forEach(p => byId.set(p.product_id, p));
+    // 키는 반드시 문자열로 맞춘다 — 응답의 productId 는 normalize 가 String() 한 값이다.
+    groupRows.forEach(p => byId.set(String(p.product_id), p));
 
     let r;
     attemptCalls++;
     try {
       r = await fetchAllFn(kw);
     } catch (e) {
+      notePass('pass1', { ok: false, hit: 0 });
       failedKeywords.set(kw, e.message);
       /*
        * ★ 예외로 끝난 호출도 실패 원인에 넣는다.
@@ -994,6 +1544,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     }
 
     if (!r.ok) {
+      notePass('pass1', { ok: false, hit: 0 });
       failedKeywords.set(kw, r.reason);
       noteAttemptFailure(r.reason);
       console.log(`  [${mallName}] [보류] [${kw}] ${r.reason} — 재시도 대상`);
@@ -1011,17 +1562,38 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   상태에서 2차가 120회를 더 태웠고 회수는 0이었다. 그 호출이 ADPICK
      *   일일 쿼터를 갉아먹어 HTTP 429 까지 갔다. 낭비일 뿐 아니라 유해하다.
      */
-    groupRows.forEach(p => pass1Succeeded.add(`${p.product_id}|${p.mall}`));
+    groupRows.forEach(p => {
+      const k = `${p.product_id}|${p.mall}`;
+      pass1Succeeded.add(k);
+      collectorAttempted.add(k);          // 호출이 나가 결과를 받았다 = 시도
+    });
 
     let hit = 0;
-    r.items.forEach(item => {
-      const target = byId.get(item.productId);
-      if (target && addRow(target, item, kw)) {
-        markCovered(target.product_id, target.mall);
-        hit++;
-        if (!target.keyword) recovered++;
-      }
+    /*
+     * handled 에는 **이 그룹이 판정을 끝낸** productId 를 담는다.
+     *
+     * 예전에는 채택에 성공한 것만 담았다. 그 이유는 "응답에 있었다는 이유로
+     * 담으면 교차 매칭이 그 상품을 건너뛴다" 였는데, 그건 **이 그룹 밖의**
+     * 상품 이야기다. byId 에 있는 상품은 이 그룹의 몫이고, 여기서 거부됐으면
+     * 교차 매칭이 같은 타겟을 다시 판정해도 같은 결과가 나온다(같은 응답,
+     * 같은 pickOption). 두 번 세고 두 번 로그를 남길 뿐이다.
+     * byId 에 없는 productId 는 여전히 handled 에 안 들어가고 교차 매칭으로 간다.
+     */
+    const handled = new Set();
+    // ★ 매칭은 접히지 않은 allItems 로 한다 — collapseOptions 가 우리 옵션을
+    //   버렸을 수 있다(fetchCoupangAll 의 items/allItems 주석 참고).
+    const respItems = (r.allItems && r.allItems.length) ? r.allItems : (r.items || []);
+    new Set(respItems.map(it => String(it.productId))).forEach(pid => {
+      const target = byId.get(pid);
+      if (!target) return;                              // 이 그룹 밖 → 교차 매칭이 본다
+      handled.add(pid);
+      if (!adoptOne(target, respItems, kw)) return;     // 옵션이 다르면 채택하지 않는다
+      markCovered(target.product_id, target.mall);
+      hit++;
+      if (!target.keyword) recovered++;
     });
+    // 이 응답에 우리 카탈로그의 다른 미수집 상품이 들어 있으면 함께 가져간다.
+    hit += absorbCrossMatches(respItems, kw, handled);
 
     failedKeywords.delete(kw);
 
@@ -1032,6 +1604,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   덮고 있었는지(groupRows.length)는 상품 단위 지표(collectorSuccessProducts /
      *   uncoveredProducts)가 따로 센다 — 두 단위를 절대 한 칸에 합치지 않는다.
      */
+    notePass('pass1', { ok: true, hit });
     if (hit === 0) {
       notFoundKeywords.push(kw);
       noteAttemptNoMatch();
@@ -1153,8 +1726,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   secondPassRemaining  오늘 아직 안 부른 검색어 수 (>0 이면 status='running')
    *   secondPassTried      이번 실행에서 부른 검색어 (다음 실행이 건너뛰도록 저장)
    */
+  /* 회수 블록 밖에서도 읽어야 해서 여기서 선언한다 (2차 패스가 꺼져 있으면 그대로 이어받는다). */
+  let facetDryOut = [...priorFacetDry];
   let secondPassCalls = 0, secondPassRecovered = 0, secondPassGroups = 0;
   let secondPassRemaining = 0;
+  let recoveryFailed = false;
+  let recoveryHalted = false;
   const secondPassTried = [];
   let facetCalls = 0, facetRecovered = 0;
 
@@ -1173,8 +1750,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     };
 
     /** 예산·시간이 남았는가. rate limit 은 fetchAllFn 이 지킨다. */
-    const canCall = () =>
-      secondPassCalls + facetCalls < SECOND_PASS_MAX_CALLS && Date.now() < deadlineTs;
+    const canCall = () => !recoveryHalted
+      && secondPassCalls + facetCalls < SECOND_PASS_MAX_CALLS && Date.now() < deadlineTs;
 
     /**
      * 검색어 하나를 부르고 product_id 완전 일치만 채택한다.
@@ -1183,7 +1760,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   바꾸든 응답에 우리 product_id 가 없으면 아무것도 저장하지 않는다.
      *   제목 유사도도, 가격 근사도, 1위 상품 채택도 하지 않는다.
      */
-    async function callAndMatch(query, rows) {
+    async function callAndMatch(query, rows, pass) {
       let r;
       /*
        * ★ 회수 패스 호출도 attempt 다 (2026-09-01).
@@ -1193,23 +1770,83 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
        */
       attemptCalls++;
       try { r = await fetchAllFn(query); }
-      catch (e) { noteAttemptFailure(e.message); return { ok: false, items: -1, hit: 0 }; }
-      if (!r.ok) { noteAttemptFailure(r.reason); return { ok: false, items: -1, hit: 0 }; }
+      catch (e) {
+        recoveryFailed = true;
+        notePass(pass, { ok: false, hit: 0 }); noteAttemptFailure(e.message);
+        return { ok: false, items: -1, hit: 0 };
+      }
+      if (!r.ok) {
+        recoveryFailed = true;
+        const category = categorizeFailure(r.reason);
+        if (['blocked', 'budget', 'noKeys', 'rateLimit'].includes(category)) recoveryHalted = true;
+        notePass(pass, { ok: false, hit: 0 }); noteAttemptFailure(r.reason);
+        return { ok: false, items: -1, hit: 0 };
+      }
 
       const byId = new Map();
-      rows.forEach(p => byId.set(p.product_id, p));
-      let hit = 0;
-      (r.items || []).forEach(item => {
-        const target = byId.get(item.productId);        // ← 완전 일치 게이트 (불변)
-        if (target && addRow(target, item, query)) {
-          markCovered(target.product_id, target.mall);
-          hit++;
-        }
+      rows.forEach(p => {
+        byId.set(String(p.product_id), p);
+        // 회수 호출도 나갔으면 시도다 — 1차와 같은 기준(1차 패스 표시부 참고).
+        collectorAttempted.add(`${p.product_id}|${p.mall}`);
       });
+      let hit = 0;
+      // 판정을 끝낸 productId (위 processGroup 의 handled 주석 참고).
+      const handled = new Set();
+      // ★ 접히지 않은 allItems 로 매칭한다 (processGroup 의 같은 주석 참고).
+      const respItems = (r.allItems && r.allItems.length) ? r.allItems : (r.items || []);
+      new Set(respItems.map(it => String(it.productId))).forEach(pid => {
+        const target = byId.get(pid);                   // ← product_id 완전 일치 (불변)
+        if (!target) return;
+        handled.add(pid);
+        // ← 옵션 게이트: vendorItemId 까지 같아야 채택한다 (pickOption 주석 참고)
+        if (!adoptOne(target, respItems, query)) return;
+        markCovered(target.product_id, target.mall);
+        hit++;
+      });
+      // 같은 응답 안의 다른 미수집 상품도 가져간다 (absorbCrossMatches 주석 참고).
+      hit += absorbCrossMatches(respItems, query, handled);
+      notePass(pass, { ok: true, hit });
       if (hit > 0) attemptSuccess++; else noteAttemptNoMatch();
       secondPassTried.push(query);
       alreadyTried.add(query);
       return { ok: true, items: (r.items || []).length, hit };
+    }
+
+    /* ── 1.5) 캐시 힌트 패스 — 예전에 그 상품을 돌려준 검색어를 다시 부른다 ──
+     *
+     * 가장 확실한 단서부터 쓴다 (cacheHintQueries 주석 참고). 상품당 최대
+     * CACHE_HINT_MAX_PER_PRODUCT 개, 오늘 이미 부른 문구는 건너뛴다.
+     * 같은 문구를 여러 상품이 공유하면 한 번만 부른다 — 교차 매칭이 나머지를 흡수한다.
+     */
+    if (CACHE_HINT_ENABLED && canCall() && uncovered.size) {
+      const want = new Set([...uncovered.values()].filter(eligible).map(p => String(p.product_id)));
+      const hints = await cacheHintFn(want);
+      const byQuery = new Map();
+      hints.forEach((queries, pid) => {
+        queries.slice(0, CACHE_HINT_MAX_PER_PRODUCT).forEach(q => {
+          const nq = String(q || '').trim();
+          if (!nq || alreadyTried.has(nq)) return;
+          if (!byQuery.has(nq)) byQuery.set(nq, []);
+          byQuery.get(nq).push(pid);
+        });
+      });
+      if (byQuery.size) {
+        console.log(`── [${mallName}] 캐시 힌트 패스: 상품 ${hints.size}개 / 검색어 ${byQuery.size}종 ──`);
+        let hintCalls = 0, hintHit = 0;
+        for (const [q, pids] of byQuery) {
+          if (!canCall()) break;
+          const targets = [...uncovered.values()].filter(p => pids.indexOf(String(p.product_id)) > -1);
+          if (!targets.length) continue;        // 앞선 호출이 이미 잡았다
+          hintCalls++;
+          const res = await callAndMatch(q, targets, 'hint');
+          if (!res.ok) continue;
+          hintHit += res.hit;
+          if (res.hit) console.log(`  [${mallName}] [hint] "${q}" +${res.hit}`);
+        }
+        console.log(`  [${mallName}] 캐시 힌트 완료 — 호출 ${hintCalls}회, 회수 ${hintHit}개`);
+        secondPassCalls += hintCalls;
+        secondPassRecovered += hintHit;
+      }
     }
 
     /* ── 2) facet 패스 — 큰 그룹부터 (호출당 회수가 가장 높다) ──────
@@ -1222,8 +1859,24 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 신규 회수 0인 호출이 2회 연속이면 그 그룹은 더 캐도 안 나온다
      * (실측 한계효용 +9,+6,+3,+3,+1,+1,+0,+0 → 6회에서 포화).
      */
+    /*
+     * ★ 오늘 이미 마른 그룹은 다시 두드리지 않는다 (2026-09-03 실측).
+     *
+     *   facet 은 그룹에 처음 닿을 때 효율이 가장 높고, 한 번 훑고 나면 급격히
+     *   마른다. 운영 실측(같은 날 연속 실행):
+     *     1회차(이전 세션)  호출 102 → 회수 74  (0.73/호출)
+     *     2회차             호출  64 → 회수  4  (0.06/호출)
+     *     3회차             호출  28 → 회수 10  (0.36/호출)
+     *   같은 시간에 상품별 사다리 r1 은 0.71/호출이었다. 즉 마른 그룹을 계속
+     *   두드리는 것은 사다리에서 그만큼의 회수를 빼앗는 것과 같다.
+     *
+     *   DRY_STOP 은 한 실행 안에서만 작동해서, 다음 실행이 또 처음부터 두 번씩
+     *   두드렸다(30그룹 × 2회 = 실행당 60호출). 이제 마른 그룹을 하루 단위로
+     *   기억해 건너뛴다. 하루가 바뀌면 isNewDay 가 리셋한다.
+     */
+    const facetDry = new Set(priorFacetDry);
     const bigGroups = plan
-      .filter(g => g.rows.length > FACET_MIN_GROUP && g.rows.some(eligible))
+      .filter(g => g.rows.length > FACET_MIN_GROUP && !facetDry.has(g.kw) && g.rows.some(eligible))
       .sort((x, y) => y.rows.length - x.rows.length);
 
     if (bigGroups.length && canCall()) {
@@ -1233,23 +1886,48 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         const coveredIds = new Set(
           g.rows.filter(p => !uncovered.has(`${p.product_id}|${p.mall}`)).map(p => String(p.product_id))
         );
-        const facets = buildFacetQueries(g.kw, g.rows, coveredIds, FACET_MAX_PER_GROUP)
-          .filter(f => !alreadyTried.has(f.query));
+        /*
+         * ★ 상한을 먼저 걸고 거른 것이 버그였다 (2026-09-03).
+         *
+         *   예전 코드는 facet 을 FACET_MAX_PER_GROUP(6)개만 만든 뒤 "오늘 이미
+         *   부른 것"을 걸러냈다. buildFacetQueries 는 결정론적이라 같은 그룹에
+         *   대해 늘 같은 상위 토큰을 돌려준다. 그래서 하루의 두 번째 실행부터는
+         *   만들어진 6개가 전부 alreadyTried 에 들어 있어 **facet 이 0개**가 됐다.
+         *
+         *   즉 응답창을 넘쳐 매일 탈락하는 상품(실측 295개)에 대해 facet 패스는
+         *   하루에 딱 한 번 6칸만 파고 그 뒤로는 아무 일도 하지 않았다.
+         *   운영 실측(2026-09-03): "여행용 캐리어" 는 6회에서 멈췄고 그 그룹에는
+         *   아직 21개가 미확보로 남아 있었다. 재측정을 시도했을 때 같은 검색어가
+         *   다시 생성돼 +0 이 나온 것도 이 때문이다.
+         *
+         *   이제는 **깊은 후보 풀을 먼저 만들고, 안 부른 것 중 앞에서 N개**를 쓴다.
+         *   다음 실행은 7·8·9번째 토큰으로 이어서 판다. 낭비는 늘지 않는다 —
+         *   FACET_DRY_STOP(연속 무수확 2회)이 그대로 그룹을 끊고 canCall() 이
+         *   시간·예산을 지킨다.
+         */
+        const facets = buildFacetQueries(g.kw, g.rows, coveredIds, FACET_POOL_PER_GROUP)
+          .filter(f => !alreadyTried.has(f.query))
+          .slice(0, FACET_MAX_PER_GROUP);
         let dry = 0;
         for (const f of facets) {
           if (!canCall()) break;
           const targets = g.rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`));
           if (!targets.length) break;
           facetCalls++;
-          const res = await callAndMatch(f.query, targets);
+          const res = await callAndMatch(f.query, targets, 'facet');
           if (!res.ok) continue;
           facetRecovered += res.hit;
           dry = res.hit ? 0 : dry + 1;
           if (res.hit) {
             console.log(`  [${mallName}] [facet] "${f.query}" +${res.hit} (items=${res.items})`);
           }
-          if (dry >= FACET_DRY_STOP) break;      // 연속 무수확 → 이 그룹은 끝
+          if (dry >= FACET_DRY_STOP) {           // 연속 무수확 → 이 그룹은 오늘 끝
+            facetDry.add(g.kw);
+            break;
+          }
         }
+        // 후보를 다 썼는데도 남은 상품이 있으면, 이 그룹은 facet 으로 더 캘 것이 없다.
+        if (!facetDry.has(g.kw) && facets.length === 0) facetDry.add(g.kw);
       }
       console.log(`  [${mallName}] facet 패스 완료 — 호출 ${facetCalls}회, 회수 ${facetRecovered}개`);
     }
@@ -1334,15 +2012,36 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         const targets = rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`));
         if (!targets.length) continue;          // 앞선 호출이 이미 잡았다
         secondPassCalls++; secondPassGroups++; roundCalls++;
-        const res = await callAndMatch(q, targets);
+        const res = await callAndMatch(q, targets, `r${round + 1}`);
         if (!res.ok) continue;
         secondPassRecovered += res.hit; roundHit += res.hit;
       }
       console.log(`  [${mallName}] 회수 R${round + 1} — 검색어 ${byQuery.size}종 중 ${roundCalls}회 호출, +${roundHit}개`);
 
-      // 이 라운드를 다 돌지 못했으면 남은 만큼을 다음 실행으로 넘긴다.
-      secondPassRemaining += Math.max(0, byQuery.size - roundCalls);
+      // 남은 수는 모든 라운드가 끝난 뒤 현재 uncovered 기준으로 다시 계산한다.
+      // 여기서 현재 라운드만 세면 라운드 경계에서 예산이 끝날 때 뒤 라운드가
+      // 0개로 사라져 completed 오판이 난다.
     }
+
+    /*
+     * 아직 부르지 못한 회수 검색어를 전체 라운드 + facet 후보에서 다시 센다.
+     * 실패한 호출은 alreadyTried에 들어가지 않으므로 다음 cron에서 재시도된다.
+     * 이 계산이 0이어도 이번 실행에 transport 실패가 있었으면 status는 running이다.
+     */
+    const pendingRecovery = new Set();
+    [...uncovered.values()].filter(eligible).forEach(p => {
+      const qs = queryPlan.get(`${p.product_id}|${p.mall}`) || [];
+      qs.forEach(q => { if (q && !alreadyTried.has(q)) pendingRecovery.add(q); });
+    });
+    plan.filter(g => g.rows.length > FACET_MIN_GROUP && !facetDry.has(g.kw) && g.rows.some(eligible))
+      .forEach(g => {
+        const coveredIds = new Set(
+          g.rows.filter(p => !uncovered.has(`${p.product_id}|${p.mall}`)).map(p => String(p.product_id))
+        );
+        buildFacetQueries(g.kw, g.rows, coveredIds, FACET_POOL_PER_GROUP)
+          .forEach(f => { if (f.query && !alreadyTried.has(f.query)) pendingRecovery.add(f.query); });
+      });
+    secondPassRemaining = pendingRecovery.size;
 
     if (obsMap.size) {
       const s = await saveAll();
@@ -1357,6 +2056,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     }
     secondPassRecovered += facetRecovered;
     secondPassCalls += facetCalls;
+    facetDryOut = [...facetDry];
   }
 
   if (recovered) {
@@ -1382,7 +2082,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   isNewDay 가 전부 리셋한다.
    */
   const isFullyDone = !stoppedEarly && batches.length === doneBatches;
-  const status = isFullyDone && !failedKeywords.size && secondPassRemaining === 0
+  const status = isFullyDone && !failedKeywords.size && secondPassRemaining === 0 && !recoveryFailed
     ? 'completed' : 'running';
 
   if (status === 'completed') {
@@ -1423,6 +2123,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   const collectibleKeys = new Set(collectible.map(p => `${p.product_id}|${p.mall}`));
   const collectorCoveredIds = [...collectorCovered].filter(k => collectibleKeys.has(k));
   const collectorSuccessProducts = collectorCoveredIds.length;
+  const collectorAttemptedIds = [...collectorAttempted].filter(k => collectibleKeys.has(k));
 
   return {
     ...base,
@@ -1433,6 +2134,16 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     collectorSuccessProducts,
     collectorMissingProducts: collectible.length - collectorSuccessProducts,
     collectorCovered: collectorCoveredIds,
+    /*
+     * ── 시도 단위(상품) — 하루 누적 ──
+     *   attemptedProducts  실제로 호출이 나가 결과를 받아 본 상품
+     *   skippedProducts    대상이지만 오늘 한 번도 못 찾아본 상품
+     *   noMatchProducts    찾아봤지만 응답에 우리 product_id 가 없던 상품
+     */
+    attemptedProducts: collectorAttemptedIds.length,
+    skippedProducts: collectible.length - collectorAttemptedIds.length,
+    noMatchProducts: Math.max(0, collectorAttemptedIds.length - collectorSuccessProducts),
+    collectorAttempted: collectorAttemptedIds,
     // ── 상품 단위 · 모든 기록 경로 (데이터 신선도 참고) ──
     todayPriceProducts,
     uncoveredProducts: uncovered.size,
@@ -1459,6 +2170,25 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     notFoundCount: notFoundKeywords.length,
     // 2차 패스 성과 — 리포트에서 1차/2차 회수율을 나눠 볼 수 있게 남긴다.
     secondPassCalls, secondPassRecovered, secondPassGroups, secondPassRemaining,
+    /*
+     * 패스별 계측. 하루 누적이 아니라 **이번 실행** 값이다 — 전략 비교는
+     * 한 실행 안에서 같은 조건으로 이뤄져야 공정하기 때문이다.
+     * 순서는 실제 실행 순서(pass1 → facet → r1..r9)로 고정한다.
+     */
+    passStats: [...passStats.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass)),
+    /* 교차 매칭으로 건진 상품 수 — 응답 전체 대조가 실제로 얼마를 벌었는지. */
+    crossRecovered,
+    /*
+     * 옵션 게이트가 채택을 거부한 이유별 건수 (pickOption 주석 참고).
+     *
+     * ★ 이 숫자는 실패가 아니라 **정직함의 비용**이다. OPTION_MISMATCH 는
+     *   "그 상품 페이지는 찾았는데 우리가 추적하는 옵션이 응답에 없었다"
+     *   는 뜻이고, 그때 오늘 그 옵션의 가격은 우리가 모르는 값이다.
+     *   예전에는 이 자리에서 다른 옵션 가격을 대신 기록했다.
+     */
+    optionRejects: Object.fromEntries(optionRejects),
+    // 오늘 facet 이 마른 그룹. 다음 실행이 헛되이 두드리지 않게 이어 간다.
+    facetDryGroups: facetDryOut,
     // 오늘 누적 시도 목록. 무한히 커지지 않도록 상한을 둔다.
     secondPassDone: [...priorSecondDone, ...secondPassTried].slice(-3000)
   };
@@ -1500,11 +2230,38 @@ async function runLocked(state, lockToken) {
            * 빈 집합에서 시작해 성공률이 자기 몫으로 축소된다 —
            * 2026-09-01 에 실제로 났던 사고(13.7%)와 같은 형태다.
            */
-          collectorCovered: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorCovered) || []
+          collectorCovered: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorCovered) || [],
+          collectorAttempted: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorAttempted) || [],
+          secondPassDone: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
+            && savedMalls['쿠팡'].last_result.secondPassDone)
+            || (state.last_result && state.last_result.secondPassDone) || [],
+          facetDryGroups: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
+            && savedMalls['쿠팡'].last_result.facetDryGroups) || []
         } }
     : null;
+  /*
+   * ★ ADPICK 도 하루 누적 목록을 이어받아야 한다 (2026-09-03 실측 버그).
+   *
+   *   여기서 last_result 를 새로 만들면서 failedKeywords 만 담고 있었다.
+   *   그래서 runMallCollection 이 priorCollectorCovered 를 빈 배열로 시작했고,
+   *   ADPICK 성공 상품 수가 매 실행 그 실행 몫으로 축소됐다.
+   *
+   *   실측: 2026-09-03 한 실행이 231개를 확보해 저장했는데, 곧이은 다음 실행이
+   *   7개만 확보하자 상태의 collectorCovered 가 231 → 7 로 덮였다.
+   *   쿠팡 경로(coupangSaved)는 이미 세 키를 다 넘기고 있었다 — 같은 모양으로 맞춘다.
+   *   (원장 자체는 멀쩡하다. 잘못되는 것은 성공률 보고다.)
+   */
   const adpickSaved = savedMalls['ADPICK']
-    ? { job_date: state.job_date, ...savedMalls['ADPICK'], last_result: { failedKeywords: savedMalls['ADPICK'].failedKeywords || [] } }
+    ? {
+        job_date: state.job_date, ...savedMalls['ADPICK'],
+        last_result: {
+          failedKeywords: savedMalls['ADPICK'].failedKeywords || [],
+          collectorCovered: savedMalls['ADPICK'].collectorCovered || [],
+          collectorAttempted: savedMalls['ADPICK'].collectorAttempted || [],
+          secondPassDone: (savedMalls['ADPICK'].last_result || {}).secondPassDone || [],
+          facetDryGroups: (savedMalls['ADPICK'].last_result || {}).facetDryGroups || []
+        }
+      }
     : null;
 
   /*
@@ -1526,26 +2283,48 @@ async function runLocked(state, lockToken) {
   }
 
   const products = await fetchAllProducts();
-  const coupangRows = products.filter(isCoupangRow);
-  const adpickRows  = products.filter(isAdpickRow);
+  let coupangRows = products.filter(isCoupangRow);
+  let adpickRows  = products.filter(isAdpickRow);
   const otherRows   = products.filter(p => !isCoupangRow(p) && !isAdpickRow(p));
 
   const otherByMall = new Map();
   otherRows.forEach(p => otherByMall.set(p.mall, (otherByMall.get(p.mall) || 0) + 1));
 
+  /*
+   * ★ 시드 모드 필터 — SEED_ONLY 주석 참고.
+   *   여기서 좁힌 rows 를 그대로 runMallCollection 에 넘길 뿐이라, 이 블록을
+   *   지우면(또는 PRICE_SEED_ONLY 를 켜지 않으면) 위 두 줄과 완전히 동일하게 동작한다.
+   */
+  if (SEED_ONLY) {
+    const everCollected = await fetchEverCollectedKeys();
+    const beforeC = coupangRows.length, beforeA = adpickRows.length;
+    coupangRows = coupangRows.filter(p => !everCollected.has(`${p.product_id}|${p.mall}`));
+    adpickRows  = adpickRows.filter(p => !everCollected.has(`${p.product_id}|${p.mall}`));
+    console.log(`\n[시드 모드] PRICE_SEED_ONLY=1 — 전체 기간 이력이 0건인 상품만 대상으로 좁힙니다.`);
+    console.log(`  쿠팡   ${beforeC}개 → ${coupangRows.length}개`);
+    console.log(`  ADPICK ${beforeA}개 → ${adpickRows.length}개`);
+  }
+
   console.log(`\n가격 수집 시작 (${TODAY}, ${kstNowStamp()})`);
-  console.log(`  products 전체        ${products.length}개`);
+  console.log(`  products 전체        ${products.length}개${SEED_ONLY ? ' (시드 모드 — 실제 대상은 위 필터 참고)' : ''}`);
   console.log(`  ├ 쿠팡               ${coupangRows.length}개`);
   console.log(`  ├ ADPICK             ${adpickRows.length}개`);
   console.log(`  └ 기타(연동 없음)     ${otherRows.length}개`
     + (otherByMall.size ? `  (${[...otherByMall.entries()].map(([m, n]) => `${m} ${n}`).join(', ')})` : ''));
+
+  /** "n/d (x.x%)" — 분모 0 이면 비율을 지어내지 않는다. */
+  const rateStr = (n, d) => (Number(d) > 0 ? `${(Number(n) / Number(d) * 100).toFixed(1)}%` : '-');
+
+  await loadCoupangDayUsage();
+  console.log(`쿠팡 오늘 호출량: ${_coupangDayUsed}회 / 하루 상한 ${COUPANG_DAY_BUDGET}회`
+    + ` (이번 실행 상한 ${COUPANG_RUN_BUDGET}회)`);
 
   const started = Date.now();
 
   // ── 쿠팡 먼저 — 자기 몫(절반)이 다 되면 남은 시간을 ADPICK 에게 넘긴다.
   const coupangResult = await runMallCollection({
     mallName: '쿠팡', rows: coupangRows, fetchAllFn: fetchCoupangAll,
-    savedState: coupangSaved, deadlineTs: started + MALL_BUDGET_MS
+    savedState: coupangSaved, deadlineTs: started + COUPANG_BUDGET_MS
   });
 
   // ── ADPICK — 쿠팡이 일찍 끝났으면 남은 시간을 전부 받는다(최소 절반 보장).
@@ -1568,10 +2347,28 @@ async function runLocked(state, lockToken) {
     console.log(`${r.mallName}  [${r.status}]`);
     console.log(`  상품   대상 ${r.targetProducts} / 수집성공 ${r.collectorSuccessProducts}`
       + ` / 수집미확보 ${r.collectorMissingProducts} / 오늘가격보유(모든경로) ${r.todayPriceProducts}`);
+    console.log(`  분해   시도 ${r.attemptedProducts} / 미시도 ${r.skippedProducts}`
+      + ` / 시도했으나 무매칭 ${r.noMatchProducts}`
+      + `   (시도율 ${rateStr(r.attemptedProducts, r.targetProducts)},`
+      + ` 시도대비 성공률 ${rateStr(r.collectorSuccessProducts, r.attemptedProducts)})`);
     console.log(`  attempt 총 ${r.attemptCalls} / 성공 ${r.attemptSuccess} / 실패 ${r.attemptFailed}  (${cats})`);
     console.log(`  저장   price_history ${r.recorded}행 / products ${r.saved}행`
       + ` / 급변 보류 ${r.suspect} / 값 이상 거부 ${r.rejected}`);
     console.log(`  진행   오늘 ${r.processed}/${r.total} (검색 그룹에 담긴 상품 ${r.processedProducts}개)`);
+    /*
+     * 패스별 성적. "호출당 회수" 가 전략 사이의 유일한 공정한 비교값이다
+     * (한 호출이 여러 상품을 덮으므로 상품 수만으로는 비교가 안 된다).
+     */
+    const ps = r.passStats || [];
+    if (ps.length) {
+      console.log('  패스   pass      호출  응답  적중  회수  호출당회수');
+      ps.forEach(s => {
+        const per = s.calls > 0 ? (s.recovered / s.calls).toFixed(2) : '-';
+        console.log(`         ${String(s.pass).padEnd(8)} ${String(s.calls).padStart(5)}`
+          + `${String(s.ok).padStart(6)}${String(s.success).padStart(6)}${String(s.recovered).padStart(6)}`
+          + `${String(per).padStart(11)}`);
+      });
+    }
   });
   if (otherRows.length) {
     console.log(`기타(연동 없음) — 상품 대상 ${otherRows.length} / attempt 0 (재조회 API 없음)`);
@@ -1580,7 +2377,8 @@ async function runLocked(state, lockToken) {
 
   const cs = coupangLocalStats();
   const as = adpickLocalStats();
-  console.log(`쿠팡 API 호출: ${cs.calls}회 (예산 ${COUPANG_RUN_BUDGET}회) / 캐시 ${cs.cacheHits} / 생략 ${cs.denied + _coupangSkipped}`);
+  console.log(`쿠팡 API 호출: ${cs.calls}회 (실행 예산 ${COUPANG_RUN_BUDGET}회) / 캐시 ${cs.cacheHits} / 생략 ${cs.denied + _coupangSkipped}`);
+  console.log(`  └ 오늘 누적: ${_coupangDayUsed + _coupangCalls}회 / 하루 상한 ${COUPANG_DAY_BUDGET}회`);
   console.log(`ADPICK API 호출: ${as.calls}회 (예산 ${ADPICK_RUN_BUDGET}회) / 캐시 ${as.cacheHits} / 생략 ${as.denied + _adpickSkipped}`);
   if (_coupangBlocked || cs.blocked) {
     console.log(`⚠️  쿠팡 API: 차단 상태 — ${String(_coupangBlockMsg || cs.blockReason).replace(/<[^>]*>/g, '').slice(0, 150)}`);
@@ -1636,11 +2434,19 @@ async function runLocked(state, lockToken) {
           cursor_key: coupangResult.cursorKey, processed: coupangResult.processed, total: coupangResult.total,
           status: coupangResult.status, failedKeywords: coupangResult.failedKeywords,
           // 2차 패스 진행 — 같은 날 후속 실행이 이어받는다(status 판정 주석 참고)
-          last_result: { secondPassDone: coupangResult.secondPassDone || [] },
+          last_result: {
+            secondPassDone: coupangResult.secondPassDone || [],
+            facetDryGroups: coupangResult.facetDryGroups || []
+          },
           secondPassRecovered: coupangResult.secondPassRecovered,
           secondPassRemaining: coupangResult.secondPassRemaining,
           // 상품 단위 — collectorCovered 가 내일 성공률의 근거다(하루 누적, 합집합)
           collectorCovered: coupangResult.collectorCovered || [],
+          collectorAttempted: coupangResult.collectorAttempted || [],
+          attemptedProducts: coupangResult.attemptedProducts,
+          skippedProducts: coupangResult.skippedProducts,
+          noMatchProducts: coupangResult.noMatchProducts,
+          passStats: coupangResult.passStats || [],
           targetProducts: coupangResult.targetProducts,
           collectorSuccessProducts: coupangResult.collectorSuccessProducts,
           todayPriceProducts: coupangResult.todayPriceProducts,
@@ -1655,10 +2461,18 @@ async function runLocked(state, lockToken) {
         'ADPICK': {
           cursor_key: adpickResult.cursorKey, processed: adpickResult.processed, total: adpickResult.total,
           status: adpickResult.status, failedKeywords: adpickResult.failedKeywords,
-          last_result: { secondPassDone: adpickResult.secondPassDone || [] },
+          last_result: {
+            secondPassDone: adpickResult.secondPassDone || [],
+            facetDryGroups: adpickResult.facetDryGroups || []
+          },
           secondPassRecovered: adpickResult.secondPassRecovered,
           secondPassRemaining: adpickResult.secondPassRemaining,
           collectorCovered: adpickResult.collectorCovered || [],
+          collectorAttempted: adpickResult.collectorAttempted || [],
+          attemptedProducts: adpickResult.attemptedProducts,
+          skippedProducts: adpickResult.skippedProducts,
+          noMatchProducts: adpickResult.noMatchProducts,
+          passStats: adpickResult.passStats || [],
           targetProducts: adpickResult.targetProducts,
           collectorSuccessProducts: adpickResult.collectorSuccessProducts,
           todayPriceProducts: adpickResult.todayPriceProducts,
@@ -1687,6 +2501,16 @@ async function runLocked(state, lockToken) {
     collectorSuccessProducts: sum('collectorSuccessProducts'),
     collectorMissingProducts: sum('collectorMissingProducts'),
 
+    /* ── 상품 단위 · 시도/매칭 분해 (하루 누적) ──
+     *   39.6% 같은 낮은 값이 "못 찾아봐서" 인지 "찾아봤는데 없어서" 인지를
+     *   이 세 줄이 갈라 준다 (collectorAttempted 주석 참고).
+     *     attemptedProducts + skippedProducts        = targetProducts
+     *     collectorSuccessProducts + noMatchProducts = attemptedProducts
+     */
+    attemptedProducts: sum('attemptedProducts'),
+    skippedProducts: sum('skippedProducts'),
+    noMatchProducts: sum('noMatchProducts'),
+
     /* ── 상품 단위 · 모든 기록 경로 (데이터 신선도) ── */
     todayPriceProducts: sum('todayPriceProducts'),
     uncoveredProducts: sum('uncoveredProducts'),
@@ -1705,7 +2529,18 @@ async function runLocked(state, lockToken) {
     rejected: sum('rejected'),
 
     /* ── 참고(실행 단위 상품 수) ── */
-    processedProducts: sum('processedProducts')
+    processedProducts: sum('processedProducts'),
+
+    /*
+     * 남은 회수 큐 — 오늘 아직 부르지 않은 회수 검색어 수.
+     * "미수집" 과 다르다: 미수집은 상품 수이고, 이것은 아직 남은 **시도 수단**이다.
+     * 0 이면 오늘 쓸 수 있는 검색 전략을 다 쓴 것이고, 그래도 남은 미확보 상품은
+     * 검색으로는 더 손댈 수 없다는 뜻이다.
+     */
+    recoveryQueueRemaining: sum('secondPassRemaining'),
+
+    /* ── 패스별 성적 (전략 비교의 근거) ── */
+    passStats: mergePassStats([coupangResult, adpickResult])
   };
 
   /*
@@ -1716,6 +2551,8 @@ async function runLocked(state, lockToken) {
   const catTotal = Object.values(mergedFailureCategories).reduce((s, v) => s + v, 0);
   console.log('\n── 집계 검증 ──');
   console.log(`  수집성공 + 수집미확보 = 대상            ${report.collectorSuccessProducts} + ${report.collectorMissingProducts} = ${report.targetProducts}`);
+  console.log(`  시도 + 미시도 = 대상                    ${report.attemptedProducts} + ${report.skippedProducts} = ${report.targetProducts}`);
+  console.log(`  수집성공 + 무매칭 = 시도                ${report.collectorSuccessProducts} + ${report.noMatchProducts} = ${report.attemptedProducts}`);
   console.log(`  가격보유 + 미보유 = 대상 (모든 경로)     ${report.todayPriceProducts} + ${report.uncoveredProducts} = ${report.targetProducts}`);
   console.log(`  수집성공 ≤ 가격보유                      ${report.collectorSuccessProducts} ≤ ${report.todayPriceProducts}`);
   console.log(`  성공 attempt + 실패 attempt = 전체     ${report.attemptSuccess} + ${report.attemptFailed} = ${report.attemptCalls}`);
@@ -1783,6 +2620,8 @@ const REPORT_EMAIL = process.env.PRICE_REPORT_EMAIL || 'yugeonbag091211@gmail.co
  * 모순되는 숫자를 담고 있다는 뜻이고, 원인은 언제나 집계 코드다.
  *
  *   1) 수집 성공 상품 + 수집 미확보 상품 = 대상 상품   (상품 단위 · collector)
+ *   1-b) 시도 상품 + 미시도 상품 = 대상 상품           (상품 단위 · 시도 분해)
+ *   1-c) 수집 성공 상품 + 무매칭 상품 = 시도 상품      (상품 단위 · 시도 분해)
  *   2) 오늘 가격 보유 + 미보유 = 대상 상품             (상품 단위 · 모든 경로)
  *   3) 실패 attempt = 모든 실패 원인의 합              (attempt 단위)
  *   4) 성공 attempt + 실패 attempt = 총 attempt        (attempt 단위)
@@ -1799,6 +2638,19 @@ function reportInvariantErrors(report) {
   const cOk = n(report.collectorSuccessProducts), cMiss = n(report.collectorMissingProducts);
   if (cOk + cMiss !== target) {
     out.push(`상품 단위(collector): 성공 ${cOk} + 미확보 ${cMiss} = ${cOk + cMiss} ≠ 대상 ${target}`);
+  }
+  /*
+   *   1-b) 시도 + 미시도 = 대상            (상품 단위 · 시도 분해)
+   *   1-c) 수집 성공 + 무매칭 = 시도       (상품 단위 · 시도 분해)
+   * 이 둘이 깨지면 "시도율이 문제냐 매칭률이 문제냐" 라는 질문 자체가
+   * 성립하지 않는다 — 두 축이 같은 모집단을 나누고 있지 않다는 뜻이다.
+   */
+  const att = n(report.attemptedProducts), skp = n(report.skippedProducts), nm = n(report.noMatchProducts);
+  if (att + skp !== target) {
+    out.push(`상품 단위(시도): 시도 ${att} + 미시도 ${skp} = ${att + skp} ≠ 대상 ${target}`);
+  }
+  if (cOk + nm !== att) {
+    out.push(`상품 단위(시도): 수집 성공 ${cOk} + 무매칭 ${nm} = ${cOk + nm} ≠ 시도 ${att}`);
   }
   const ok = n(report.todayPriceProducts), unc = n(report.uncoveredProducts);
   if (ok + unc !== target) {
@@ -1864,13 +2716,17 @@ function buildReportHtml(report) {
   const {
     execAt, date, productsTotal, otherTotal, otherByMall, malls, failCats,
     targetProducts, collectorSuccessProducts, collectorMissingProducts,
+    attemptedProducts, skippedProducts, noMatchProducts,
     todayPriceProducts, uncoveredProducts,
     attemptCalls, attemptSuccess, attemptFailed, attemptCallsRecovery,
-    recorded, saved, suspect, rejected, processedProducts
+    recorded, saved, suspect, rejected, processedProducts,
+    passStats, recoveryQueueRemaining
   } = report;
 
   function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function pct(v) { return v != null ? v.toFixed(1) + '%' : '-'; }
+  /** 분모가 0 이면 비율을 지어내지 않고 '-' 로 남긴다. */
+  function rateOf(n0, d0) { const d = Number(d0) || 0; return d > 0 ? (Number(n0) || 0) / d * 100 : null; }
   const num = (v) => Number(v) || 0;
 
   const rate = productSuccessRate(report);
@@ -1903,6 +2759,20 @@ function buildReportHtml(report) {
    * 실패 원인은 값이 0이어도 전부 적는다. 0인 줄을 지우면 "이번엔 왜 안 보이지"
    * 를 매번 다시 따져야 하고, 합계가 맞는지도 눈으로 확인할 수 없다.
    */
+  const passRows = (passStats || []).length
+    ? passStats.map(s => {
+        const per = s.calls > 0 ? (s.recovered / s.calls).toFixed(2) : '-';
+        return `<tr>
+          <td style="padding:6px 12px;border-top:1px solid #eee;font-weight:600">${esc(s.pass)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${num(s.calls)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${num(s.ok)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${num(s.success)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee;color:#0b7a4b;font-weight:600">${num(s.recovered)}</td>
+          <td style="padding:6px 12px;text-align:right;border-top:1px solid #eee">${esc(per)}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="6" style="padding:6px 12px;color:#888;border-top:1px solid #eee">이번 실행은 수집 호출이 없었습니다</td></tr>';
+
   const catEntries = Object.entries(failCats || {});
   const catSum = catEntries.reduce((s, [, v]) => s + num(v), 0);
   const catRows = catEntries.length
@@ -1918,6 +2788,12 @@ function buildReportHtml(report) {
     ['수집 성공 상품 + 수집 미확보 상품 = 대상 상품',
       `${num(collectorSuccessProducts)} + ${num(collectorMissingProducts)} = ${num(targetProducts)}`,
       num(collectorSuccessProducts) + num(collectorMissingProducts) === num(targetProducts)],
+    ['시도 상품 + 미시도 상품 = 대상 상품',
+      `${num(attemptedProducts)} + ${num(skippedProducts)} = ${num(targetProducts)}`,
+      num(attemptedProducts) + num(skippedProducts) === num(targetProducts)],
+    ['수집 성공 상품 + 무매칭 상품 = 시도 상품',
+      `${num(collectorSuccessProducts)} + ${num(noMatchProducts)} = ${num(attemptedProducts)}`,
+      num(collectorSuccessProducts) + num(noMatchProducts) === num(attemptedProducts)],
     ['오늘 가격 보유 + 미보유 = 대상 상품',
       `${num(todayPriceProducts)} + ${num(uncoveredProducts)} = ${num(targetProducts)}`,
       num(todayPriceProducts) + num(uncoveredProducts) === num(targetProducts)],
@@ -1987,6 +2863,20 @@ function buildReportHtml(report) {
       ${row('오늘 가격 보유 상품 <span style="color:#bbb">(모든 경로)</span>', num(todayPriceProducts))}
       ${row('오늘 가격 미보유 상품 <span style="color:#bbb">(모든 경로)</span>', num(uncoveredProducts))}
     </table>
+    <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin:14px 0 4px">병목 분해 <span style="color:#bbb;font-weight:400">(단위: 상품 · 하루 누적)</span></div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">
+      ${row('시도한 상품 <span style="color:#bbb">(호출이 실제로 나감)</span>', num(attemptedProducts))}
+      ${row('미시도 상품 <span style="color:#bbb">(차단·예산·상한으로 못 부름)</span>', num(skippedProducts))}
+      ${row('시도했으나 무매칭 <span style="color:#bbb">(응답에 우리 product_id 없음)</span>', num(noMatchProducts))}
+      ${row('시도율 <span style="color:#bbb">attempted ÷ eligible</span>', pct(rateOf(attemptedProducts, targetProducts)), { bold: true })}
+      ${row('시도 대비 성공률 <span style="color:#bbb">success ÷ attempted</span>', pct(rateOf(collectorSuccessProducts, attemptedProducts)), { bold: true })}
+      ${row('전체 수집 성공률 <span style="color:#bbb">success ÷ eligible</span>', pct(rateOf(collectorSuccessProducts, targetProducts)), { bold: true })}
+    </table>
+    <div style="font-size:11px;color:#bbb;margin-top:4px">
+      시도 ${num(attemptedProducts)} + 미시도 ${num(skippedProducts)} = 대상 ${num(targetProducts)}<br>
+      수집 성공 ${num(collectorSuccessProducts)} + 무매칭 ${num(noMatchProducts)} = 시도 ${num(attemptedProducts)}<br>
+      ※ 시도율이 낮으면 시간·호출 예산 문제이고, 시도 대비 성공률이 낮으면 검색어·매칭 문제다.
+    </div>
     <div style="font-size:11px;color:#bbb;margin-top:4px">
       수집 성공 ${num(collectorSuccessProducts)} + 수집 미확보 ${num(collectorMissingProducts)} = 대상 ${num(targetProducts)}<br>
       가격 보유 ${num(todayPriceProducts)} + 미보유 ${num(uncoveredProducts)} = 대상 ${num(targetProducts)}<br>
@@ -2013,6 +2903,26 @@ function buildReportHtml(report) {
       ※ 처리 상품 수는 호출 횟수가 아니다 — 한 attempt(검색어 1회 호출)가 여러 상품을 덮는다.<br>
       ※ price_history 값은 upsert 로 보낸 행 수다. 같은 날 같은 (상품·몰·vendor)을 다시
       수집하면 UNIQUE 제약으로 기존 행을 덮으므로, DB 에 새로 생긴 행 수는 이보다 적을 수 있다.
+    </div>
+  </td></tr>
+
+  <tr><td style="padding:20px 32px 0">
+    <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin-bottom:4px">패스별 성적 <span style="color:#bbb;font-weight:400">(어느 검색 전략이 얼마에 얼마를 건졌나)</span></div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;border:1px solid #eee;border-radius:6px">
+      <tr style="background:#f8f8f7">
+        <td style="padding:6px 12px;color:#888;font-size:11px">패스</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">호출</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">응답</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">적중 호출</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">회수 상품</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">호출당 회수</td>
+      </tr>
+      ${passRows}
+    </table>
+    <div style="font-size:11px;color:#bbb;margin-top:4px">
+      pass1 = 1차 키워드 검색 · facet = 큰 그룹 분할 · r1~r9 = 상품별 검색어 사다리(라운드).<br>
+      ※ 비교 기준은 "호출당 회수" 다 — 한 호출이 여러 상품을 덮으므로 회수 상품 수만으로는 전략을 비교할 수 없다.<br>
+      남은 회수 큐(오늘 아직 안 부른 검색어): <b>${num(recoveryQueueRemaining)}</b>종
     </div>
   </td></tr>
 
@@ -2138,6 +3048,16 @@ async function sendFailureNotice(err) {
 module.exports = {
   kstToday, buildPlan, splitBatches, resumeFrom, BATCH_PRODUCTS, buildReportHtml,
   runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow,
+  // 판매 단위(옵션) 게이트 — test-option-identity 가 이 계약을 고정한다.
+  pickOption,
+  /*
+   * 몰별 검색 경로. 운영 실행(run)이 쓰는 것과 **같은 함수**다.
+   *
+   * 소량 스모크 테스트가 대상 상품만 골라 돌릴 때 이걸 그대로 넘긴다 —
+   * 검증용으로 비슷한 경로를 새로 만들면 정작 운영에서 도는 코드를
+   * 검증하지 못한다. 노출만 하고 동작은 손대지 않는다.
+   */
+  fetchCoupangAll, fetchAdpickAll,
   // 리포트 집계의 계약 — 테스트가 이 둘로 불변조건을 고정한다.
   reportInvariantErrors, productSuccessRate, todayPriceRate,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
