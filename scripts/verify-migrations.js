@@ -67,7 +67,10 @@ const PROTECTED_TABLES = [
   'payments', 'subscriptions', 'profiles', 'user_data', 'alerts'
 ];
 /** 지워도 되는 테이블 — 일회성/파생 데이터. */
-const EPHEMERAL_TABLES = ['auth_codes', 'coupang_api_calls', 'coupang_search_cache'];
+const EPHEMERAL_TABLES = [
+  'auth_codes', 'coupang_api_calls', 'coupang_search_cache',
+  'adpick_api_calls', 'adpick_search_cache'
+];
 
 function deleteTargets(sql) {
   const out = [];
@@ -81,7 +84,8 @@ function deleteTargets(sql) {
 const NEW_MIGRATIONS = [
   '2026-08-24-payment-pending-and-auth-attempts.sql',
   '2026-08-24-price-drop-top-orphan-policy.sql',
-  '2026-08-25-analytics.sql'
+  '2026-08-25-analytics.sql',
+  '2026-09-05-adpick-api-calls.sql'
 ];
 
 function checkStatic() {
@@ -171,7 +175,7 @@ async function checkLive() {
     return !error;
   };
 
-  const applied = { payment: true, view: true, analytics: true };
+  const applied = { payment: true, view: true, analytics: true, adpick: true };
 
   for (const [t, c] of [['subscriptions', 'last_renew_at'], ['subscriptions', 'renew_failures']]) {
     const has = await hasColumn(t, c);
@@ -229,18 +233,34 @@ async function checkLive() {
     else ok('bump_metric() RPC');
   }
 
+  /* ── ADPICK 호출 계측 (2026-09-05-adpick-api-calls.sql) ────────── */
+  {
+    /*
+     * head:true 를 쓰지 않는 이유는 바로 위 visitors 검사 주석과 같다.
+     * 이 테이블이 없어도 서비스와 수집은 그대로 돈다 — api/_adpick.js 가
+     * 계측만 조용히 끈다. 그래서 실패가 아니라 경고로 보고한다.
+     */
+    const { error } = await supabase.from('adpick_api_calls').select('*').limit(1);
+    if (error) {
+      wrn('adpick_api_calls 테이블 없음',
+        'ADPICK 외부 호출이 기록되지 않는다 (수집·서비스 동작에는 영향 없음)');
+      applied.adpick = false;
+    } else ok('adpick_api_calls 테이블');
+  }
+
   // 이력은 절대 줄면 안 된다. 적용 전후 대조용 수치를 남긴다.
   const { count: ph } = await supabase.from('price_history').select('*', { count: 'exact', head: true });
   const { count: pdt } = await supabase.from('price_drop_top').select('*', { count: 'exact', head: true });
   console.log(`        price_history ${ph}행 / price_drop_top ${pdt}행`);
   console.log('        ※ 뷰를 적용해도 price_history 행 수는 변하지 않아야 한다.');
 
-  if (!applied.payment || !applied.view || !applied.analytics) {
+  if (!applied.payment || !applied.view || !applied.analytics || !applied.adpick) {
     console.log('\n  적용하려면 Supabase 대시보드 > SQL Editor 에서 아래를 순서대로 실행하세요:');
     let n = 0;
     if (!applied.payment)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[0]}`);
     if (!applied.view)      console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[1]}`);
     if (!applied.analytics) console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[2]}`);
+    if (!applied.adpick)    console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[3]}`);
     console.log('    ※ 서로 의존하지 않으므로 순서가 바뀌어도 되지만, 위 순서를 권한다.');
   }
 }

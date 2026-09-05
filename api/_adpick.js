@@ -210,6 +210,76 @@ async function readCache(keyword) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ *  외부 호출 계측 (adpick_api_calls)
+ *
+ *  ★ 1행 = 실제 외부 ADPICK 요청 1회. 이것이 이 계측의 전부다.
+ *
+ *  2026-09-05 ADPICK 이 HTTP 429 "사용 횟수를 초과하였습니다" 를 돌려줬을 때,
+ *  우리는 "그날 실제로 몇 번 불렀는가" 를 댈 수 없었다. 쿠팡은 매 호출을
+ *  coupang_api_calls 에 남기지만 ADPICK 에는 그런 기록이 없어서, GitHub
+ *  Actions 로그를 사람이 긁어 35회라는 하한값만 세웠다 (Vercel 크론과 사이트
+ *  실시간 검색분은 아예 세지 못했다).
+ *
+ *  그래서 기록하는 자리는 fetch() 시도 지점 단 한 곳뿐이다. 그 앞에서 끝난
+ *  경로는 행을 만들지 않는다 — 캐시 적중, 서킷 브레이커 사전 차단, 분당
+ *  상한·간격 초과, 키 없음. 그런 것까지 세면 공급자에게 대는 숫자가 거짓이
+ *  된다. (supabase/2026-09-05-adpick-api-calls.sql 의 같은 주석 참고)
+ *
+ *  ★ 이 함수는 호출 전략을 한 자리도 바꾸지 않는다. 간격·재시도·캐시 수명·
+ *    서킷 브레이커는 전부 그대로다. 기록은 fetch 가 끝난 뒤에만 일어나므로
+ *    reserveSlot 이 정한 다음 호출 시각을 앞당길 수 없다 — 느려질 수는
+ *    있어도 빨라지지는 않는다.
+ * ------------------------------------------------------------------ */
+
+/** 테이블이 없으면(마이그레이션 미적용) 계측만 끄고 수집은 그대로 간다. */
+let recorderOn = true;
+let recorderWarned = false;
+
+/** api/_price.kstToday 와 같은 기준 — KST 로 자른 날짜. */
+function kstDateString(ms) {
+  return new Date(ms + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * 외부 호출 1건을 기록한다. 실패해도 절대 throw 하지 않는다 —
+ * 계측이 수집을 멈추는 것은 계측이 없는 것보다 나쁘다.
+ */
+async function recordExternalCall(row) {
+  if (!recorderOn) return;
+  try {
+    const { error } = await supabase.from('adpick_api_calls').insert({
+      called_at: new Date(row.at).toISOString(),
+      kst_date: kstDateString(row.at),
+      operation: row.operation || 'search',
+      source: String(row.source || '').slice(0, 40),
+      // 검색어는 비밀값이 아니다. URL 은 통째로 저장하지 않는다 —
+      // ADPICK 은 API 키가 경로에 들어가기 때문이다 (redact 주석 참고).
+      query: String(row.query || '').slice(0, 120),
+      req_limit: row.reqLimit || 0,
+      http_status: row.httpStatus || 0,
+      outcome: row.outcome,
+      items: row.items || 0,
+      latency_ms: row.latencyMs || 0,
+      external_call: true,
+      detail: redact(String(row.detail || '')).slice(0, 300)
+    });
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    const permanent = /schema cache|does not exist|could not find/i.test(e.message || '');
+    if (permanent) {
+      recorderOn = false;
+      if (!recorderWarned) {
+        recorderWarned = true;
+        console.warn('[adpick] 호출 계측 없음 — supabase/2026-09-05-adpick-api-calls.sql 을'
+          + ` Supabase SQL Editor 에서 실행하세요. (${e.message})`);
+      }
+    } else {
+      console.warn(`[adpick] 호출 계측 기록 실패(수집은 계속): ${e.message}`);
+    }
+  }
+}
+
 async function writeCache(keyword, items, limit) {
   try {
     await supabase.from('adpick_search_cache').upsert({
@@ -343,6 +413,26 @@ async function searchAdpick(keyword, opts = {}) {
   const url = `${HOST}/api/${encodeURIComponent(process.env.ADPICK_API_KEY)}/search`
     + `?q=${encodeURIComponent(kw)}&limit=${reqLimit}`;
 
+  /*
+   * 여기부터가 "외부 요청 1회" 다. state.totalCalls++ 와 같은 자리에서 시작해
+   * 아래 다섯 갈래(ok / HTTP 오류 / timeout·network / JSON 아님 / success=false)
+   * 중 정확히 하나가 행 하나를 남긴다.
+   *
+   * recorded 플래그로 이중 기록을 막는다 — 한 요청이 두 행이 되면 공급자에게
+   * 대는 총량이 부풀고, 그건 계측이 없는 것보다 나쁘다.
+   */
+  const startedAt = Date.now();
+  let recorded = false;
+  const finish = async (outcome, httpStatus, itemCount, detail) => {
+    if (recorded) return;
+    recorded = true;
+    await recordExternalCall({
+      at: startedAt, source, query: kw, operation: 'search', reqLimit,
+      httpStatus, outcome, items: itemCount,
+      latencyMs: Date.now() - startedAt, detail
+    });
+  };
+
   let r, text;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
@@ -360,6 +450,8 @@ async function searchAdpick(keyword, opts = {}) {
     const why = timedOut
       ? `네트워크 응답 시간 초과 (${TIMEOUT_MS}ms)`
       : `네트워크 오류: ${e.message}`;
+    // 응답이 아예 오지 않았다 — http_status 는 0 으로 둔다.
+    await finish(timedOut ? 'timeout' : 'network_error', 0, 0, why);
     const blocked = noteTransientFailure(COOLDOWN_MIN.network, why);
     return fallback(`ADPICK ${why}`, blocked);
   } finally {
@@ -370,6 +462,9 @@ async function searchAdpick(keyword, opts = {}) {
     const mins = COOLDOWN_MIN['http' + r.status] || COOLDOWN_MIN.httpOther;
     const body = redact((text || '').replace(/<[^>]*>/g, ' ')).slice(0, 150);
     const hard = [401, 403, 429].indexOf(r.status) > -1;
+    // 429·403 은 이름을 붙여 세고, 나머지는 other + http_status 로 구분한다.
+    const named = { 403: '403', 429: '429' }[r.status];
+    await finish(named || 'other', r.status, 0, `HTTP ${r.status}: ${body}`);
     let blocked = hard;
     if (hard) trip(mins, `HTTP ${r.status}: ${body}`);
     else if (r.status >= 500) blocked = noteTransientFailure(mins, `HTTP ${r.status}: ${body}`);
@@ -382,6 +477,7 @@ async function searchAdpick(keyword, opts = {}) {
   if (!data) {
     const peek = redact((text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 200);
     console.error(`[adpick] JSON 아님 (http=${r.status} len=${(text || '').length}): ${peek}`);
+    await finish('invalid_response', r.status, 0, `JSON 아님(len=${(text || '').length}): ${peek}`);
     const blocked = noteTransientFailure(COOLDOWN_MIN.apiError, 'ADPICK 응답 파싱 실패');
     return fallback('ADPICK 응답 파싱 실패', blocked);
   }
@@ -390,6 +486,9 @@ async function searchAdpick(keyword, opts = {}) {
   if (data.success !== true) {
     const msg = redact(String(data.message || '')).slice(0, 150);
     const terminal = isTerminalApiError(msg);
+    // HTTP 는 정상(200)인데 애플리케이션이 거절한 경우다. 'ok' 로 세면 안 된다.
+    // http_status 200 + outcome='other' 조합으로 HTTP 오류와 구분된다.
+    await finish('other', r.status, 0, `success=false: ${msg}`);
     if (terminal) trip(COOLDOWN_MIN.apiError, `success=false: ${msg}`);
     else clearTransientFailures(); // 서버는 정상 응답했다. 이 검색어만 실패다.
     return fallback(`ADPICK 오류: ${msg}`, terminal);
@@ -397,6 +496,7 @@ async function searchAdpick(keyword, opts = {}) {
 
   clearTransientFailures();
   const items = normalize(data.data);
+  await finish('ok', r.status, items.length, '');
   if (useCache) await writeCache(kw, items, reqLimit);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);
