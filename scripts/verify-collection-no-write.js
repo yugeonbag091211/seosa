@@ -35,7 +35,8 @@ const LIKE = 'product_id.like.ADPICK-p%,product_id.like.쿠팡-p%';
 
   if (e1 || e2) {
     console.error('조회 실패:', (e1 || e2).message);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const p = (prods || []).length;
@@ -45,10 +46,11 @@ const LIKE = 'product_id.like.ADPICK-p%,product_id.like.쿠팡-p%';
 
   if (p + h === 0) {
     console.log('\n[PASS] 운영 DB 에 테스트 픽스처가 없다.');
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
   console.log('\n[FAIL] 운영 DB 에 테스트 픽스처가 남아 있다. 아래 id 를 지워야 한다.');
   (prods || []).forEach(r => console.log('  products      ', r.product_id));
   (hist || []).forEach(r => console.log('  price_history ', r.product_id));
-  process.exit(1);
-})().catch(e => { console.error(e.message); process.exit(1); });
+  process.exitCode = 1;
+})().catch(e => { console.error(e.message); process.exitCode = 1; });

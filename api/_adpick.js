@@ -50,7 +50,7 @@ const CACHE_TTL_MS = envNum('ADPICK_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
 const STALE_MAX_MS = envNum('ADPICK_STALE_MAX_MS', 48 * 60 * 60 * 1000);
 /** 한 번의 호출이 매달릴 수 있는 최대 시간. 없으면 서버리스 함수가 멈춘다
  *  (api/_coupang.js TIMEOUT_MS 주석과 같은 이유). */
-const TIMEOUT_MS = envNum('ADPICK_TIMEOUT_MS', 8000);
+const TIMEOUT_MS = envNum('ADPICK_TIMEOUT_MS', 15000);
 
 /** API 문서 확인값: limit 최대 20. */
 const ADPICK_MAX_LIMIT = 20;
@@ -66,6 +66,25 @@ const COOLDOWN_MIN = {
   network: 2
 };
 
+/**
+ * success=false 응답이 "이 검색어만 실패"인지 "공급자 전체를 멈춰야 함"인지
+ * 구분한다.
+ *
+ * ADPICK은 HTTP 200 안에서도 success=false를 돌려준다. 예전에는 메시지와
+ * 무관하게 매번 10분 서킷 브레이커를 열었다. 검색 결과 없음/잘못된 검색어
+ * 하나만 있어도 다음 호출부터 전 상품이 blocked가 되어, 2026-09-05 실행에서
+ * ADPICK 741개 중 29개만 수집되는 주된 증폭 요인이 됐다.
+ *
+ * 명시적인 인증·호출한도·서비스 차단 신호만 공급자 전체 장애로 본다.
+ * 알 수 없는 success=false는 해당 검색어만 실패시키고 다음 검색어를 계속한다.
+ * 속도 제한은 reserveSlot이 그대로 지키므로 이 분리가 호출 폭주를 만들지 않는다.
+ */
+function isTerminalApiError(message) {
+  const s = String(message || '').toLowerCase();
+  return /api\s*key|apikey|unauthori[sz]ed|forbidden|too\s*many|rate\s*limit|quota|maintenance/.test(s)
+    || /인증|권한|접근\s*거부|호출\s*(한도|제한)|사용\s*제한|차단|점검/.test(s);
+}
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const state = {
@@ -75,8 +94,21 @@ const state = {
   blockReason: '',
   totalCalls: 0,
   totalCacheHits: 0,
-  totalDenied: 0
+  totalDenied: 0,
+  consecutiveTransient: 0
 };
+
+/** 한 번의 느린 응답으로 700여 상품 전체를 막지 않는다. 연속 3회일 때만 연다. */
+function noteTransientFailure(minutes, reason) {
+  state.consecutiveTransient++;
+  if (state.consecutiveTransient < 3) return false;
+  trip(minutes, `연속 ${state.consecutiveTransient}회 실패: ${reason}`);
+  return true;
+}
+
+function clearTransientFailures() {
+  state.consecutiveTransient = 0;
+}
 
 function hasKey() {
   return !!process.env.ADPICK_API_KEY;
@@ -328,8 +360,8 @@ async function searchAdpick(keyword, opts = {}) {
     const why = timedOut
       ? `네트워크 응답 시간 초과 (${TIMEOUT_MS}ms)`
       : `네트워크 오류: ${e.message}`;
-    trip(COOLDOWN_MIN.network, why);
-    return fallback(`ADPICK ${why}`, false);
+    const blocked = noteTransientFailure(COOLDOWN_MIN.network, why);
+    return fallback(`ADPICK ${why}`, blocked);
   } finally {
     clearTimeout(timer);
   }
@@ -337,8 +369,12 @@ async function searchAdpick(keyword, opts = {}) {
   if (!r.ok) {
     const mins = COOLDOWN_MIN['http' + r.status] || COOLDOWN_MIN.httpOther;
     const body = redact((text || '').replace(/<[^>]*>/g, ' ')).slice(0, 150);
-    trip(mins, `HTTP ${r.status}: ${body}`);
-    return fallback(`ADPICK API ${r.status}: ${body}`, [401, 403, 429].indexOf(r.status) > -1);
+    const hard = [401, 403, 429].indexOf(r.status) > -1;
+    let blocked = hard;
+    if (hard) trip(mins, `HTTP ${r.status}: ${body}`);
+    else if (r.status >= 500) blocked = noteTransientFailure(mins, `HTTP ${r.status}: ${body}`);
+    else clearTransientFailures(); // 요청 하나의 4xx는 공급자 전체 장애가 아니다.
+    return fallback(`ADPICK API ${r.status}: ${body}`, blocked);
   }
 
   let data = null;
@@ -346,16 +382,20 @@ async function searchAdpick(keyword, opts = {}) {
   if (!data) {
     const peek = redact((text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 200);
     console.error(`[adpick] JSON 아님 (http=${r.status} len=${(text || '').length}): ${peek}`);
-    return fallback('ADPICK 응답 파싱 실패', false);
+    const blocked = noteTransientFailure(COOLDOWN_MIN.apiError, 'ADPICK 응답 파싱 실패');
+    return fallback('ADPICK 응답 파싱 실패', blocked);
   }
 
   // success 필드 판정만 한다. 그 이상의 에러 코드 체계는 실측되지 않았으므로 만들지 않는다.
   if (data.success !== true) {
     const msg = redact(String(data.message || '')).slice(0, 150);
-    trip(COOLDOWN_MIN.apiError, `success=false: ${msg}`);
-    return fallback(`ADPICK 오류: ${msg}`, false);
+    const terminal = isTerminalApiError(msg);
+    if (terminal) trip(COOLDOWN_MIN.apiError, `success=false: ${msg}`);
+    else clearTransientFailures(); // 서버는 정상 응답했다. 이 검색어만 실패다.
+    return fallback(`ADPICK 오류: ${msg}`, terminal);
   }
 
+  clearTransientFailures();
   const items = normalize(data.data);
   if (useCache) await writeCache(kw, items, reqLimit);
 
@@ -385,5 +425,6 @@ function localStats() {
 
 module.exports = {
   searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName, redact,
+  isTerminalApiError,
   MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };

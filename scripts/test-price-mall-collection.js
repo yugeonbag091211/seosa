@@ -34,8 +34,25 @@
 'use strict';
 
 const {
-  runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow, kstToday
+  runMallCollection, categorizeFailure, isCoupangRow, isAdpickRow, kstToday,
+  chunkIdsByLength, ID_BATCH_CHARS
 } = require('./collect-all-prices');
+
+/*
+ * ★ 운영 DB 에 절대 쓰지 않는 저장 훅.
+ *
+ *   runMallCollection 은 기본값으로 api/_shop.js 의 recordPrices 를 부른다.
+ *   테스트 픽스처가 fetchAllFn 응답에 섞이면 그대로 운영 price_history /
+ *   products 에 들어간다 — 2026-09-03 에 실제로 P1·P2·P3·X1 4행이 들어갔고
+ *   발견 즉시 지웠다. 그 뒤로 이 파일의 모든 호출은 이 훅을 넘긴다.
+ */
+/* 캐시 힌트 조회는 운영 테이블 전체 스캔이라 테스트에서는 막는다. */
+const NO_HINT = async () => new Map();
+const NO_WRITE = async (obs) => ({
+  saved: obs.length, recorded: obs.length,
+  recordedKeys: [...new Set(obs.map(o => o.productId + "|" + o.mall))],
+  rejected: 0, suspect: 0, errors: []
+});
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = '') {
@@ -114,10 +131,10 @@ function makeRows(mall, n, withKeyword = true) {
     const adpickFetch = async () => ({ ok: true, items: [{ productId: 'NO-MATCH', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' }], reason: '' });
 
     const deadline = Date.now() + 5000;
-    const coupangResult = await runMallCollection({
+    const coupangResult = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows: coupangRows, fetchAllFn: coupangFetch, savedState: null, deadlineTs: deadline
     });
-    const adpickResult = await runMallCollection({
+    const adpickResult = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: 'ADPICK', rows: adpickRows, fetchAllFn: adpickFetch, savedState: null, deadlineTs: deadline
     });
 
@@ -152,7 +169,7 @@ function makeRows(mall, n, withKeyword = true) {
        */
       return { ok: true, items: [{ productId: `ADPICK-p${idx}`, lprice: 0, oprice: 0, link: '', image: '', itemId: '', vendorItemId: '' }], reason: '' };
     };
-    const result = await runMallCollection({
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
     eq('대상 상품(targetProducts) = 10', result.targetProducts, 10);
@@ -172,7 +189,7 @@ function makeRows(mall, n, withKeyword = true) {
     const rows = makeRows('쿠팡', 200);
     const fetchStub = async () => { await new Promise(r => setTimeout(r, 5)); return { ok: true, items: [], reason: '' }; };
     const started = Date.now();
-    const result = await runMallCollection({
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: started + 200
     });
     const elapsed = Date.now() - started;
@@ -194,7 +211,7 @@ function makeRows(mall, n, withKeyword = true) {
     };
     let retried = [];
     const fetchStub = async (kw) => { retried.push(kw); return { ok: true, items: [], reason: '' }; };
-    const result = await runMallCollection({
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState, deadlineTs: Date.now() + 5000
     });
     check('★ 커서 이후 남은 그룹이 없어도 재시도 목록만으로 다시 시도한다',
@@ -233,7 +250,7 @@ function makeRows(mall, n, withKeyword = true) {
       if (kw === 'ADPICK-grp1') return { ok: false, items: [], reason: 'ADPICK 차단: HTTP 429' };
       return { ok: true, items: [], reason: '' };     // 호출은 성공, 매칭 0건
     };
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
 
@@ -273,7 +290,7 @@ function makeRows(mall, n, withKeyword = true) {
   {
     const rows = makeRows('쿠팡', 5);
     const fetchStub = async () => { throw new Error('쿠팡 네트워크 오류(시뮬레이션)'); };
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: fetchStub, savedState: null, deadlineTs: Date.now() + 5000
     });
     const catSum = Object.values(r.failureCategories).reduce((s, v) => s + v, 0);
@@ -315,7 +332,7 @@ function makeRows(mall, n, withKeyword = true) {
       job_date: TODAY, cursor_key: '', processed: 6, total: 10, status: 'running',
       last_result: { failedKeywords: [], secondPassDone: [] }
     };
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: 'ADPICK', rows, fetchAllFn: fetchStub, savedState,
       deadlineTs: Date.now() + 5000, collectedTodayFn
     });
@@ -388,7 +405,8 @@ function makeRows(mall, n, withKeyword = true) {
     check("★★ recorded_at 범위(gte/lt)로 조회한다",
       body.includes("gte('recorded_at'") && body.includes("lt('recorded_at'"));
     check('kstDayStartUtc 로 KST 하루 시작을 잡는다', body.includes('kstDayStartUtc('));
-    check('kstDayStartUtc 가 import 되어 있다', src.includes('kstDayStartUtc } = require'));
+    check('kstDayStartUtc 가 import 되어 있다',
+      /kstDayStartUtc[^}]*} = require\('\.\.\/api\/_price'\)/.test(src));
 
     // 경계 산술 자체를 고정한다 (KST 는 서머타임이 없어 정확히 24시간)
     const { kstDayStartUtc } = require('../api/_price');
@@ -403,9 +421,271 @@ function makeRows(mall, n, withKeyword = true) {
   }
   console.log('');
 
+  /* ── 9. 패스별 계측 (2026-09-03) ─────────────────────────────
+   *
+   * 어느 검색 전략이 몇 번의 호출로 몇 개를 건졌는지 나눠 세는지 고정한다.
+   * 이 값이 없으면 "회수 패스가 듣는다" 를 숫자로 증명할 수 없다.
+   */
+  console.log('[9] 패스별 계측 — pass1 / facet / rN 이 각각 집계된다');
+  {
+    /*
+     * 그룹 하나에 상품 12개(응답창 10 초과). 1차 검색은 앞 2개만 돌려주고,
+     * facet 검색(검색어에 공백이 더 붙은 것)은 3번째를 돌려준다.
+     * 나머지는 어떤 검색으로도 나오지 않는다 — 라운드가 헛돌아도 계측만 남는다.
+     */
+    const rows = [];
+    for (let i = 1; i <= 12; i++) {
+      // 판매 단위(옵션) 식별자를 함께 준다 — 수집기는 vendorItemId 까지 맞아야
+      // 채택한다(collect-all-prices.js pickOption). 이 테스트가 보는 것은 패스별
+      // 계측이므로 타겟과 응답이 같은 옵션을 쓰게 해 게이트를 항상 통과시킨다.
+      rows.push({ product_id: `P${i}`, mall: '쿠팡', title: `브랜드${i} 모델 MD${i}00X 제품`, keyword: '공통검색어', link: '', image: '', item_id: `I${i}`, vendor_item_id: `VP${i}` });
+    }
+    const item = (id) => ({ productId: id, title: 't', lprice: 1000, oprice: 1000, link: '', image: '', itemId: `I${String(id).slice(1)}`, vendorItemId: `V${id}` });
+    const seen = [];
+    const fetchAllFn = async (q) => {
+      seen.push(q);
+      if (q === '공통검색어') return { ok: true, reason: '', items: [item('P1'), item('P2')] };
+      if (q.indexOf('공통검색어 ') === 0) return { ok: true, reason: '', items: [item('P3')] };
+      return { ok: true, reason: '', items: [] };
+    };
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows, fetchAllFn, savedState: null,
+      deadlineTs: Date.now() + 8000,
+      collectedTodayFn: async () => new Set(),
+        recordPricesFn: NO_WRITE
+    });
+    const ps = result.passStats || [];
+    const get = (n) => ps.find(s => s.pass === n) || { calls: 0, ok: 0, success: 0, recovered: 0 };
+
+    check('★ passStats 가 반환된다', ps.length > 0, JSON.stringify(ps));
+    eq('★ pass1 호출 1회', get('pass1').calls, 1);
+    eq('★ pass1 이 상품 2개를 회수', get('pass1').recovered, 2);
+    check('★ facet 패스가 실제로 호출됐다', get('facet').calls > 0, JSON.stringify(get('facet')));
+    eq('★ facet 이 상품 1개를 회수', get('facet').recovered, 1);
+    check('★ 패스 순서는 pass1 → facet → rN', ps[0].pass === 'pass1' && ps[1].pass === 'facet',
+      ps.map(s => s.pass).join(','));
+    check('★ 라운드 패스 이름이 rN 꼴이다',
+      ps.slice(2).every(s => /^r[0-9]+$/.test(s.pass)), ps.map(s => s.pass).join(','));
+    const totalRecovered = ps.reduce((n, s) => n + s.recovered, 0);
+    eq('★ 패스별 회수 합계 = 이번 실행이 잡은 상품 수', totalRecovered, 3);
+    check('★ 패스별 호출 합계 = attemptCalls',
+      ps.reduce((n, s) => n + s.calls, 0) === result.attemptCalls,
+      `${ps.reduce((n, s) => n + s.calls, 0)} vs ${result.attemptCalls}`);
+  }
+  console.log('');
+
+  /* ── 10. facet 깊이 이어파기 (2026-09-03 버그) ────────────────
+   *
+   * 예전에는 facet 을 상한만큼만 만든 뒤 "오늘 이미 부른 것" 을 걸렀다.
+   * 생성이 결정론적이라 두 번째 실행부터는 남는 facet 이 0개가 됐다.
+   * 이제는 깊은 풀에서 안 부른 것을 골라야 한다.
+   */
+  console.log('[10] facet — 앞선 실행이 쓴 facet 을 건너뛰고 다음 토큰으로 이어판다');
+  {
+    const rows = [];
+    for (let i = 1; i <= 14; i++) {
+      rows.push({ product_id: `Q${i}`, mall: '쿠팡', title: `브랜드${i} 제품${i}`, keyword: 'kw', link: '', image: '' });
+    }
+    const item = (id) => ({ productId: id, title: 't', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' });
+
+    const run = async (priorDone) => {
+      const asked = [];
+      await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+        mallName: '쿠팡', rows,
+        fetchAllFn: async (q) => { asked.push(q); return { ok: true, reason: '', items: [item('NO-MATCH')] }; },
+        savedState: {
+          job_date: TODAY, cursor_key: '', processed: 0, total: 14, status: 'running',
+          last_result: { failedKeywords: [], collectorCovered: [], collectorAttempted: [], secondPassDone: priorDone }
+        },
+        deadlineTs: Date.now() + 8000,
+        collectedTodayFn: async () => new Set(),
+        recordPricesFn: NO_WRITE
+      });
+      return asked.filter(q => q.indexOf('kw ') === 0);
+    };
+
+    const first = await run([]);
+    check('★ 1회차에 facet 을 만든다', first.length > 0, JSON.stringify(first));
+    const second = await run(first);          // 1회차가 부른 facet 을 전부 "이미 부름" 으로
+    check('★★ 2회차는 1회차와 다른 facet 을 판다 (예전에는 0개였다)',
+      second.length > 0 && second.every(q => first.indexOf(q) < 0),
+      `1회차 ${JSON.stringify(first)} / 2회차 ${JSON.stringify(second)}`);
+  }
+  console.log('');
+
+  /* ── 11. facet 이 마른 그룹은 다음 실행에서 건너뛴다 (2026-09-03 실측) ── */
+  console.log('[11] facet — 오늘 마른 그룹은 다음 실행에서 두드리지 않는다');
+  {
+    const rows = [];
+    for (let i = 1; i <= 14; i++) {
+      rows.push({ product_id: `D${i}`, mall: '쿠팡', title: `브랜드${i} 제품${i}`, keyword: 'kw', link: '', image: '' });
+    }
+    // 어떤 검색으로도 우리 상품이 안 나온다 → facet 은 곧바로 마른다.
+    const run = async (prior) => {
+      const asked = [];
+      const res = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+        mallName: '쿠팡', rows,
+        fetchAllFn: async (q) => {
+          asked.push(q);
+          return { ok: true, reason: '', items: [{ productId: 'NO-MATCH', lprice: 1000, oprice: 1000, link: '', image: '', itemId: '', vendorItemId: '' }] };
+        },
+        savedState: {
+          job_date: TODAY, cursor_key: '', processed: 0, total: 14, status: 'running',
+          last_result: {
+            failedKeywords: [], collectorCovered: [], collectorAttempted: [],
+            secondPassDone: (prior && prior.secondPassDone) || [],
+            facetDryGroups: (prior && prior.facetDryGroups) || []
+          }
+        },
+        deadlineTs: Date.now() + 8000,
+        collectedTodayFn: async () => new Set(),
+        recordPricesFn: NO_WRITE
+      });
+      return { res, facets: asked.filter(q => q.indexOf('kw ') === 0) };
+    };
+
+    const a = await run(null);
+    check('★ 1회차는 facet 을 두드린다', a.facets.length > 0, JSON.stringify(a.facets));
+    check('★ 마른 그룹이 상태에 기록된다',
+      (a.res.facetDryGroups || []).indexOf('kw') > -1, JSON.stringify(a.res.facetDryGroups));
+
+    const b = await run({ secondPassDone: a.res.secondPassDone, facetDryGroups: a.res.facetDryGroups });
+    eq('★★ 2회차는 그 그룹에 facet 호출을 하지 않는다', b.facets.length, 0);
+    check('★ 마른 표시는 다음 실행으로도 이어진다',
+      (b.res.facetDryGroups || []).indexOf('kw') > -1, JSON.stringify(b.res.facetDryGroups));
+  }
+  console.log('');
+
+  /* ── 12. 교차 매칭 — 응답을 전체 미수집 집합과 대조한다 (2026-09-03) ──
+   *
+   * 검색 응답에는 그 검색어를 만든 상품 말고도 우리 카탈로그의 다른 상품이
+   * 함께 들어온다. 예전에는 그것을 통째로 버렸다.
+   * 채택 기준(product_id 완전 일치)은 그대로여야 한다.
+   */
+  console.log('[12] 교차 매칭 — 다른 검색어의 응답에 들어온 우리 상품도 가져간다');
+  {
+    const rows = [
+      // 아래 item() 이 vendorItemId: 'V'+id 를 주므로 타겟도 같은 옵션을 가리킨다.
+      { product_id: 'X1', mall: '쿠팡', title: '알파 제품 하나', keyword: 'kwA', link: '', image: '', item_id: 'I1', vendor_item_id: 'VX1' },
+      { product_id: 'X2', mall: '쿠팡', title: '베타 제품 둘', keyword: 'kwB', link: '', image: '', item_id: 'I2', vendor_item_id: 'VX2' }
+    ];
+    const item = (id, price) => ({ productId: id, title: 't' + id, lprice: price, oprice: price, link: '', image: '', itemId: '', vendorItemId: 'V' + id });
+    const asked = [];
+    // kwA 검색이 X1 과 X2 를 함께 돌려준다. kwB 검색은 아무것도 못 준다.
+    const fetchAllFn = async (q) => {
+      asked.push(q);
+      if (q === 'kwA') return { ok: true, reason: '', items: [item('X1', 1000), item('X2', 2000)] };
+      return { ok: true, reason: '', items: [] };
+    };
+    const saved = [];
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows, fetchAllFn, savedState: null,
+      deadlineTs: Date.now() + 6000,
+      collectedTodayFn: async () => new Set(),
+      recordPricesFn: async (obs) => {
+        saved.push(...obs);
+        return { saved: obs.length, recorded: obs.length, recordedKeys: [...new Set(obs.map(o => o.productId + '|' + o.mall))], rejected: 0, suspect: 0, errors: [] };
+      }
+    });
+    eq('★★ 두 상품 모두 확보 (X2 는 kwA 응답에서 건졌다)', result.collectorSuccessProducts, 2);
+    eq('★ 교차 매칭 회수 수가 보고된다', result.crossRecovered, 1);
+    const x2 = saved.find(o => o.productId === 'X2');
+    check('★★ 교차로 잡은 상품도 자기 가격을 쓴다 (다른 상품 가격을 붙이지 않는다)',
+      x2 && x2.price === 2000, JSON.stringify(x2));
+    check('★★ 교차로 잡은 상품도 자기 vendorItemId 를 유지한다',
+      x2 && x2.vendorItemId === 'VX2', JSON.stringify(x2 && x2.vendorItemId));
+  }
+  console.log('');
+
+  /* ── 13. 교차 매칭이 남의 상품을 끌어오지 않는다 ─────────────── */
+  console.log('[13] 교차 매칭 — 카탈로그에 없는 product_id 는 절대 채택하지 않는다');
+  {
+    const rows = [{ product_id: 'Y1', mall: '쿠팡', title: '감마 제품', keyword: 'kwY', link: '', image: '' }];
+    const saved = [];
+    const result = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows,
+      fetchAllFn: async () => ({ ok: true, reason: '', items: [
+        { productId: 'STRANGER', title: '남의 상품', lprice: 9999, oprice: 9999, link: '', image: '', itemId: '', vendorItemId: 'VZ' }
+      ] }),
+      savedState: null, deadlineTs: Date.now() + 6000,
+      collectedTodayFn: async () => new Set(),
+      recordPricesFn: async (obs) => { saved.push(...obs); return { saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0, errors: [] }; }
+    });
+    eq('★★ 카탈로그 밖 상품은 저장하지 않는다', saved.length, 0);
+    eq('★ 확보 상품 0', result.collectorSuccessProducts, 0);
+    eq('★ 교차 회수 0', result.crossRecovered, 0);
+  }
+  console.log('');
+
+  /* ==============================================================
+   *  Z. "오늘 이미 기록됨" 조회의 .in() URI 상한  (2026-09-05 실측 버그)
+   *
+   *  collectedTodayKeys 가 400개 «고정» 으로 잘랐다. 쿠팡 product_id 는 10자라
+   *  괜찮았지만 ADPICK 은 sha256 hex(64자)여서 400개면 URI 가 26,000자가 되고
+   *  PostgREST 가 400 Bad Request 로 거절한다. 게다가 호출부가 error 를 버려서
+   *  (`const { data } = ...`) 실패가 조용히 "0건" 이 됐다.
+   *
+   *  운영 읽기 전용 재현: 배치 400 → 0행(오류 2/2) · 배치 200/100 → 72행 · 정답 72행.
+   *
+   *  결과: ADPICK 은 매 실행 "오늘 기록 0개" 로 보고 이미 확보한 상품까지
+   *  전부 다시 불렀다. 403 이 난 공급자에게 불필요한 요청을 반복한 것이다.
+   *  리포트 불변조건(수집성공 ≤ 오늘가격보유)도 매번 깨졌다.
+   * ============================================================== */
+  console.log('Z. 오늘 기록 조회 배치 — id 길이로 자른다');
+  {
+    const adpickIds = Array.from({ length: 756 }, (_, i) => String(i).padStart(64, 'a'));
+    const coupangIds = Array.from({ length: 1610 }, (_, i) => String(1000000000 + i));
+
+    const aChunks = chunkIdsByLength(adpickIds);
+    const cChunks = chunkIdsByLength(coupangIds);
+    const cost = ids => ids.reduce((n, s) => n + s.length + 3, 0);
+
+    check('★★ 모든 배치가 URI 예산 안에 들어간다 (ADPICK 64자 id)',
+      aChunks.every(c => cost(c) <= ID_BATCH_CHARS),
+      `최대 ${Math.max(...aChunks.map(cost))} > ${ID_BATCH_CHARS}`);
+    check('★★ 모든 배치가 URI 예산 안에 들어간다 (쿠팡 10자 id)',
+      cChunks.every(c => cost(c) <= ID_BATCH_CHARS),
+      `최대 ${Math.max(...cChunks.map(cost))} > ${ID_BATCH_CHARS}`);
+
+    // 이 단언이 이 테스트의 이빨이다 — 400개 «고정» 으로 되돌리면 여기서 깨진다.
+    check('★★ 64자 id 는 400개 고정 배치보다 잘게 쪼갠다 (Bad Request 회귀 방지)',
+      Math.max(...aChunks.map(c => c.length)) < 400,
+      `최대 배치 ${Math.max(...aChunks.map(c => c.length))}개`);
+    check('★ 짧은 id 는 불필요하게 잘게 쪼개지 않는다',
+      Math.max(...cChunks.map(c => c.length)) > 400,
+      `최대 배치 ${Math.max(...cChunks.map(c => c.length))}개`);
+
+    const flatA = aChunks.flat(), flatC = cChunks.flat();
+    check('★★ 한 개도 잃지 않는다 (ADPICK)',
+      flatA.length === adpickIds.length && new Set(flatA).size === adpickIds.length,
+      `${flatA.length} vs ${adpickIds.length}`);
+    check('★★ 한 개도 잃지 않는다 (쿠팡)',
+      flatC.length === coupangIds.length && new Set(flatC).size === coupangIds.length,
+      `${flatC.length} vs ${coupangIds.length}`);
+    check('★ 순서를 보존한다',
+      JSON.stringify(flatA) === JSON.stringify(adpickIds));
+    check('★ 빈 입력은 빈 배열', chunkIdsByLength([]).length === 0);
+    check('★ 예산보다 긴 id 하나도 버리지 않는다',
+      chunkIdsByLength(['x'.repeat(ID_BATCH_CHARS + 500)]).flat().length === 1);
+
+    /*
+     * 조용한 실패로 되돌아가지 않도록 소스도 고정한다. error 를 버리면
+     * 배치가 통째로 실패해도 "0건" 이 되어 아무도 모른다.
+     */
+    const src = require('fs').readFileSync(require.resolve('./collect-all-prices'), 'utf8');
+    const fn = src.slice(src.indexOf('async function collectedTodayKeys'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    check('★★ 오늘 기록 조회가 PostgREST error 를 버리지 않는다',
+      /const \{ data, error \}/.test(body) && /if \(error\)/.test(body),
+      body.slice(0, 200));
+  }
+  console.log('');
+
   console.log(`=== 결과: ${pass}/${pass + fail} PASS ===`);
-  process.exit(fail ? 1 : 0);
+  // 강제 종료는 Supabase/undici가 정리 중인 Windows 비동기 핸들을 다시 닫아
+  // UV_HANDLE_CLOSING assertion을 일으킬 수 있다. exitCode만 지정해 자연 종료한다.
+  process.exitCode = fail ? 1 : 0;
 })().catch(e => {
   console.error('테스트 실행 오류:', e.message, e.stack);
-  process.exit(1);
+  process.exitCode = 1;
 });

@@ -584,7 +584,7 @@ async function upsertProducts(rows) {
  *                수집기 성과의 근거는 price_job_state 쪽이다 — 마이그레이션
  *                파일의 "이 컬럼만으로는 완전하지 않다" 절에 근거를 적어 두었다.
  *
- * @returns {{saved, recorded, rejected, suspect, errors}}
+ * @returns {{saved, recorded, rejected, suspect, optionMismatch, errors}}
  */
 async function recordPrices(observations, opts = {}) {
   const label = opts.label || '';
@@ -670,7 +670,10 @@ async function recordPrices(observations, opts = {}) {
     byKey.set(key, it);
   }
   const uniq = [...byKey.values()];
-  if (!uniq.length) return { saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0, errors };
+  if (!uniq.length) return {
+    saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0,
+    optionMismatch: 0, errors
+  };
 
   const keys = uniq.map(it => ({ productId: it.productId, mall: it.mall }));
   const prevMap = await loadPrevObservations(keys, today);
@@ -681,8 +684,30 @@ async function recordPrices(observations, opts = {}) {
   let historyFailed = false;
   let rejected = 0;
   let suspect = 0;
+  let optionMismatch = 0;
 
   for (const it of uniq) {
+    /*
+     * 수집기가 추적 대상 옵션을 알고 있으면 저장 직전에 다시 검증한다.
+     * 상품 페이지(productId)가 같아도 판매 옵션(vendorItemId)이 다르면 가격
+     * 곡선이 오염되므로, 다른 옵션의 관측은 history/products 모두에 쓰지 않는다.
+     * targetVendorItemId를 보내지 않는 기존 검색·AI 경로에는 영향이 없다.
+     */
+    const wantVid = String(it.targetVendorItemId || '');
+    if (wantVid) {
+      const gotVid = vendorIdOf(it);
+      if (gotVid !== wantVid) {
+        optionMismatch++;
+        console.warn(`[save${label ? ':' + label : ''}] OPTION_MISMATCH`
+          + ` productId=${it.productId}`
+          + ` targetVendorItemId=${wantVid}`
+          + ` responseVendorItemId=${gotVid || '(없음)'}`
+          + ` price=${it.price} mall=${it.mall}`
+          + ' — 다른 판매 단위의 가격이라 저장하지 않습니다.');
+        continue;
+      }
+    }
+
     const k = `${it.productId}|${it.mall}`;
     const prevObs = prevMap.get(k);
     /*
@@ -871,6 +896,7 @@ async function recordPrices(observations, opts = {}) {
     recordedKeys: historyFailed ? [] : [...new Set(historyRows.map(r => `${r.product_id}|${r.mall}`))],
     rejected,
     suspect,
+    optionMismatch,
     errors
   };
 }
@@ -947,6 +973,21 @@ function toClientProduct(p) {
     // mall_label 마이그레이션 전 저장된 옛 행이나 쿠팡/알리 행은 빈 값이다.
     mallLabel: p.mall_label || p.mall,
     productId: p.product_id,
+    /*
+     * 판매 단위(옵션) 식별자.
+     *
+     * 쿠팡에서 실제로 팔리는 단위는 product_id(상품 페이지)가 아니라
+     * vendor_item_id 다. 이 값이 항목에 없으면 가격 이력을 옵션으로 좁힐 수
+     * 없어서, 한 페이지에 묶인 다른 상품의 가격이 한 곡선으로 합쳐진다
+     * (_price.sameVendorRows 주석의 8082654809 사례).
+     *
+     * 실시간 검색 결과(_coupang.normalize)에는 처음부터 있었는데 DB 에서
+     * 읽은 항목에만 빠져 있었다. 그래서 같은 상품을 검색으로 보면 옵션별
+     * 곡선이, 저장된 목록에서 보면 섞인 곡선이 나왔다.
+     *
+     * 프론트 histKey 와 api/_pricestat.loadStats 가 이 값을 그대로 쓴다.
+     */
+    vendorItemId: p.vendor_item_id || '',
     isCoupang: p.mall === '쿠팡',
     oprice: p.oprice || 0,
     savePct: p.save_pct || 0,

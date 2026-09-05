@@ -650,5 +650,143 @@ check(S.mallNameOf({ mall: 'ADPICK', mallLabel: '알리' }) === '알리',
 const noPrice = S.sortByRelevance([mk('a', '쿠팡', '', 0), mk('b', 'ADPICK', 'SSG', 90000)]);
 check(names(noPrice)[0] === 'SSG', '★ 가격을 못 읽는 상품은 1순위 몰이어도 뒤로', names(noPrice));
 
+/* ================================================================ *
+ *  N. 핵심 명사 정렬 — 단일 토큰 검색에서 본품이 부속을 이긴다
+ *
+ *  왜 필요했나: scoreTitle 은 «질의 커버리지» 만 잰다. 검색어가 한 단어면
+ *  그 말을 품은 제목이 전부 1.0 으로 포화돼 정렬의 첫 비교가 무력해진다.
+ *  그래서 "검색어가 닿은 자리 «뒤» 에 부속 낱말이 오면 그 상품은 부속이다"
+ *  라는 어순 규칙을 relevance 에만 곱한다. scoreTitle 은 건드리지 않는다.
+ * ================================================================ */
+section('N. 핵심 명사 정렬 (단일 토큰 부속 밀어내기)');
+
+/** 실제 정렬에 쓰이는 값 = 커버리지 × 핵심명사 계수 */
+function focusRel(keyword, title, titles) {
+  const a = S.analyzeQuery(keyword, { titles: titles || [title] });
+  return Math.round(S.scoreTitle(a, title).score * S.productFocus(a, title).factor * 1000) / 1000;
+}
+
+/* ── ① 단일 토큰: 본품 > 부속 ── */
+const SINGLE_CASES = [
+  ['향수', '조말론 런던 우드세이지 앤 씨솔트 코롱 100ml', '향수 공병 리필 용기 10ml 5개입'],
+  ['텀블러', '스탠리 진공 텀블러 590ml', '텀블러 세척솔 롱 브러시'],
+  ['텀블러', '스탠리 진공 텀블러 590ml', '텀블러 뚜껑 실리콘 패킹 교체용'],
+  ['에어팟', 'Apple 에어팟 프로 2세대 USB-C', '에어팟 프로 실리콘 이어팁 교체용 3쌍'],
+  ['아이폰', 'Apple 아이폰 17 Pro 자급제 256GB', '아이폰 17 프로 투명 젤리 케이스'],
+  ['아이폰', 'Apple 아이폰 17 Pro 자급제 256GB', '아이폰 강화유리 액정보호필름 2매'],
+  ['아이스크림', '롯데 월드콘 아이스크림 160ml', '아이스크림 스쿱 국자 스테인리스'],
+  ['아이스크림', '롯데 월드콘 아이스크림 160ml', '아이스크림 포장용기 100개'],
+  ['노트북', 'LG전자 2026 그램 프로 17 노트북', '노트북 충전기 아답터 19V 65W']
+];
+SINGLE_CASES.forEach(([q, core, acc]) => {
+  const titles = [core, acc];
+  const c = focusRel(q, core, titles), a = focusRel(q, acc, titles);
+  check(c > a, `★ [${q}] 본품 > 부속`, { 본품: c, 부속: a, core, acc });
+});
+
+/* 이 규칙이 실제로 문제를 풀었는지 — 감점이 없으면 둘 다 1.0 으로 «동점» 이었다. */
+const beforeTie = S.scoreTitle(S.analyzeQuery('텀블러', { titles: ['스탠리 진공 텀블러 590ml', '텀블러 세척솔 롱 브러시'] }), '텀블러 세척솔 롱 브러시').score;
+check(beforeTie === 1 && focusRel('텀블러', '텀블러 세척솔 롱 브러시', ['스탠리 진공 텀블러 590ml', '텀블러 세척솔 롱 브러시']) < 1,
+  '★ 커버리지로는 1.0(동점)이던 부속이 정렬에서는 내려간다', beforeTie);
+
+/* ── ② 부작용: 검색어가 부속을 찾을 때는 감점하지 않는다 ── */
+const ACC_QUERIES = [
+  ['에어팟 이어팁', '에어팟 프로 실리콘 이어팁 교체용 3쌍', 'Apple 에어팟 프로 2세대 USB-C'],
+  ['아이폰 케이스', '아이폰 17 프로 투명 젤리 케이스', 'Apple 아이폰 17 Pro 자급제 256GB'],
+  ['노트북 충전기', '노트북 충전기 아답터 19V 65W', 'LG전자 2026 그램 프로 17 노트북'],
+  ['향수 공병', '향수 공병 리필 용기 10ml 5개입', '조말론 런던 우드세이지 앤 씨솔트 코롱 100ml'],
+  ['텀블러 뚜껑', '텀블러 뚜껑 실리콘 패킹 교체용', '스탠리 진공 텀블러 590ml']
+];
+ACC_QUERIES.forEach(([q, want, other]) => {
+  const titles = [want, other];
+  check(focusRel(q, want, titles) > focusRel(q, other, titles),
+    `★ [${q}] 부속을 찾으면 부속이 1위 (감점 안 걸림)`, { want: focusRel(q, want, titles), other: focusRel(q, other, titles) });
+});
+check(S.productFocus(S.analyzeQuery('아이폰 케이스'), '아이폰 17 프로 투명 젤리 케이스').factor === 1,
+  '검색어에 부속 낱말이 있으면 계수는 1 (판정 자체를 건너뛴다)');
+
+/* ── ③ 부작용: 부속 낱말이 검색어보다 «앞» 에 오면 본품이다 ── */
+check(S.productFocus(S.analyzeQuery('에어팟'), '케이스 포함 Apple 에어팟 프로 2세대').factor === 1,
+  '★ "케이스 포함 에어팟" 은 핵심이 에어팟이므로 감점 없음');
+check(S.productFocus(S.analyzeQuery('노트북'), '충전기 증정 LG 그램 노트북').factor === 1,
+  '★ 사은품이 앞에 붙은 본품은 감점 없음');
+
+/* ── ④ 한국어 제목 끝의 «일반 종류명» 은 부속이 아니다 ──
+   꼬리 토큰 «개수» 로 깎으면 이런 정상 상품이 밀린다. 실제로 그렇게 했다가
+   갤럭시 검색에서 가죽케이스가 1위가 되는 회귀가 났고, 그래서 규칙을 바꿨다. */
+const CATEGORY_TAILS = [
+  ['에어팟 프로', 'Apple 2025 에어팟 프로 3 USB-C 블루투스 이어폰'],
+  ['갤럭시 S26 울트라', '[결제가 160만] 삼성 갤럭시 S26울트라 256GB 자급제'],
+  ['아이폰 17 프로', 'Apple 아이폰 17 Pro Max 자급제 256GB'],
+  ['LG 그램 14ZD95U', 'LG전자 2026 그램 14ZD95U-GX56K 노트북']
+];
+CATEGORY_TAILS.forEach(([q, t]) => {
+  check(S.productFocus(S.analyzeQuery(q, { titles: [t] }), t).factor === 1,
+    `★ [${q}] 뒤에 종류명이 붙은 본품은 감점 없음`, t);
+});
+
+/* ── ⑤ 다중 토큰 회귀 검사: 본품이 부속을 계속 이긴다 ── */
+const MULTI_CASES = [
+  ['아이폰 17 프로', 'Apple 아이폰 17 Pro Max 자급제 256GB', '아이폰 17 프로 케이스 맥세이프'],
+  ['에어팟 프로', 'Apple 2025 에어팟 프로 3 USB-C 블루투스 이어폰', '[해외] 에어팟 프로 2 케이스 자동 팝업'],
+  ['LG 그램 14ZD95U', 'LG전자 2026 그램 14ZD95U-GX56K 노트북', 'LG 그램 14ZD95U 키보드 키스킨 커버'],
+  // 쉼표로 자르면 "갤럭시S26" 까지만 보게 돼 가죽케이스가 1.0 이 된다 (실제로 났던 회귀)
+  ['갤럭시 S26 울트라', '[결제가 160만] 삼성 갤럭시 S26울트라 256GB 자급제', '[MOTIMO] 갤럭시S26,S26플러스,S26울트라 가죽케이스']
+];
+MULTI_CASES.forEach(([q, core, acc]) => {
+  const titles = [core, acc];
+  check(focusRel(q, core, titles) > focusRel(q, acc, titles),
+    `★ [${q}] 다중 토큰에서도 본품 > 부속 (회귀 없음)`, { 본품: focusRel(q, core, titles), 부속: focusRel(q, acc, titles) });
+});
+check(S.coreTokens('[MOTIMO] 갤럭시S26,S26플러스,S26울트라 가죽케이스').indexOf('가죽케이스') > -1,
+  '★ 쉼표로 잘라내지 않는다 — 쉼표 뒤에 핵심 명사가 오는 제목이 있다');
+
+/* ── ⑤-b 부속 이름 안에 검색어가 또 들어 있어도 감점이 걸린다 ──
+   "에어팟 프로 이어팁 에어팟폼팁" 처럼 부속 이름(에어팟폼팁)이 검색어를 품으면,
+   기준점을 «마지막 일치» 로 잡던 때는 그 자리가 이어팁보다 뒤로 밀려 감점이
+   통째로 빠졌다. 실사용 검색에서 이 한 건만 1.0 으로 살아남아 1위였다. */
+const foamTip = "에어팟 프로 이어팁 에어팟폼팁 데코니 APP 3쌍, 블랙, 2개";
+check(S.productFocus(S.analyzeQuery("에어팟", { titles: [foamTip] }), foamTip).factor < 1,
+  "★ 부속 이름이 검색어를 품고 있어도 부속으로 본다 (기준점은 첫 일치)",
+  S.productFocus(S.analyzeQuery("에어팟", { titles: [foamTip] }), foamTip));
+check(focusRel("에어팟", "Apple 2025 에어팟 프로 3 USB-C 블루투스 이어폰", [foamTip]) >
+      focusRel("에어팟", foamTip, [foamTip]),
+  "★ [에어팟] 본품 > 에어팟폼팁");
+
+/* ── ⑥ 계약: scoreTitle 은 손대지 않았다 ── */
+check(score('LG 그램 프로 16', GRAM_TITLES[0], GRAM_TITLES) === 1,
+  '★ scoreTitle 계약 유지 — 정확히 맞는 상품은 여전히 1.0');
+check(S.productFocus(S.analyzeQuery('LG 그램 프로 16', { titles: GRAM_TITLES }), GRAM_TITLES[0]).factor === 1,
+  '정확히 맞는 상품은 핵심명사 계수도 1');
+
+/* ── ⑦ 판단 근거가 없으면 건드리지 않는다 ── */
+check(S.productFocus(S.analyzeQuery('수영복'), '전혀 상관없는 상품명').factor === 1,
+  '검색어가 제목에 없으면 계수 1 (근거 없이 깎지 않는다)');
+check(S.productFocus(S.analyzeQuery(''), '아무거나').factor === 1, '빈 검색어는 계수 1');
+check(S.productFocus(S.analyzeQuery('텀블러'), '').factor === 1, '빈 제목은 계수 1');
+check(S.productFocus(null, '텀블러 뚜껑').factor === 1, 'analysis 가 null 이어도 안전');
+
+/* ── ⑧ coreTokens: 꼬리 규격·색상만 떼고 종류명은 남긴다 ── */
+const ct = S.coreTokens('스탠리 진공 텀블러 590ml 블랙');
+check(ct[ct.length - 1] === '텀블러', 'coreTokens: 용량·색상을 떼면 텀블러가 남는다', ct);
+const ct2 = S.coreTokens('Apple 2025 에어팟 프로 3 USB-C 블루투스 이어폰');
+check(ct2[ct2.length - 1] === '이어폰', 'coreTokens: 종류명은 떼지 않는다', ct2);
+
+/* ── ⑨ rankItems 배선: relevance 에는 반영, 걸러내기에는 원점수 ── */
+const focusRanked = [
+  { productId: 'a', mall: '쿠팡', title: '텀블러 세척솔 롱 브러시', lprice: 3000 },
+  { productId: 'b', mall: '쿠팡', title: '스탠리 진공 텀블러 590ml', lprice: 40000 }
+];
+S.rankItems('텀블러', focusRanked, { minScore: 0 });
+check(focusRanked[1].relevance > focusRanked[0].relevance,
+  '★ rankItems 가 계수를 relevance 에 반영한다',
+  focusRanked.map(x => [x.title, x.relevance]));
+const kept = S.rankItems('텀블러', [
+  { productId: 'a', mall: '쿠팡', title: '텀블러 세척솔 롱 브러시', lprice: 3000 }
+], { minScore: 0.9 });
+check(kept.items.length === 1 && kept.dropped === 0,
+  '★ 걸러내기는 원점수로 한다 — 감점 때문에 상품이 사라지면 안 된다', kept);
+
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);

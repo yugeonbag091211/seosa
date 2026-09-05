@@ -30,7 +30,7 @@
 const supabase = require('./_supabase');
 const { toClientProduct, freshRows, relevantRows, preferLive } = require('./_shop');
 const { attachTrust } = require('./_trust');
-const { observedKstDate, kstToday, productLifecycle, LIFECYCLE } = require('./_price');
+const { observedKstDate, kstToday, productLifecycle, sameVendorRows, LIFECYCLE } = require('./_price');
 const { statsFrom } = require('./_pricestat');
 const { dealOf } = require('./_deal');
 const { cachePublic } = require('./_http');
@@ -51,6 +51,35 @@ const SPARK_POINTS = 30;
 
 const PAGE_CACHE_S = 60 * 60;         // 1시간 — 가격은 하루 한 번 바뀐다
 const SITEMAP_CACHE_S = 12 * 60 * 60; // 12시간
+
+/*
+ * 이 숫자가 무엇인지 밝히는 한 줄.
+ *
+ * ── 왜 문구를 바꿨나 (2026-09-04 감사) ──────────────────────────
+ *
+ * 예전 문구는 "배송비·쿠폰·카드 할인은 포함되지 않았어요" 였다. 확인되지
+ * 않은 단정이다. 우리가 가진 가격은 쿠팡 파트너스 검색 API 의 productPrice
+ * 하나뿐이고, 그 응답에는 가격의 종류를 말해 주는 필드가 없다.
+ *
+ *   실제 응답 키 (2026-09-04 원본 확인, 10건 전수):
+ *     productId / productName / productPrice / productImage / productUrl
+ *     categoryName / keyword / rank / isRocket / isFreeShipping
+ *   basePrice · salePrice · discountPrice · 회원가 · 쿠폰가 — 전부 없다.
+ *
+ * 그리고 그 값이 상품 페이지 가격과 다른 사례를 실측했다.
+ *   productId 7912306911 / vendorItemId 88764198511
+ *     API productPrice   22,320원
+ *     상품 페이지        26,900원 (와우 회원 쿠폰가 23,610원)
+ *
+ * 즉 이 값이 "쿠폰이 빠진 가격" 이라고 말할 근거가 없다 — 오히려 어떤
+ * 할인이 이미 반영된 값일 수도 있다. 어느 쪽인지 우리는 모른다.
+ *
+ * 그래서 아는 것만 적는다: 어디서 받은 값인지, 그리고 실제 결제 금액은
+ * 판매처에서 확인해야 한다는 것. 모르는 것을 아는 척하지 않는다.
+ */
+const PRICE_SOURCE_NOTE = 'SEOSA 가 쿠팡 파트너스 검색 API 로 매일 받아 기록한 값이에요. '
+  + '이 값에 어떤 할인이 반영돼 있는지는 API 가 알려주지 않아서, 판매처에서 보이는 '
+  + '금액과 다를 수 있어요. 실제 결제 금액은 판매처에서 확인해 주세요.';
 
 /* ── 안전한 문자열 ──────────────────────────────────────────────── */
 function esc(v) {
@@ -86,17 +115,41 @@ async function loadProduct(pid, mall) {
   return rows.find(r => r.mall === '쿠팡') || rows[0];
 }
 
-/** KST 날짜당 최저가 한 점, 오름차순 (api/history.js collapseToDaily 와 같은 규칙). */
-async function loadPoints(pid, mall) {
+/**
+ * KST 날짜당 최저가 한 점, 오름차순 (api/history.js collapseToDaily 와 같은 규칙).
+ *
+ * ── vendorItemId 로 좁히는 이유 (2026-09-04) ─────────────────────
+ *
+ * 쿠팡은 같은 product_id(= 상품 페이지) 아래 색상·용량·수량 옵션을 묶어 두고,
+ * 실제로 팔리는 단위는 vendor_item_id 다. 그 값을 빼고 조회하면 한 페이지에
+ * 묶인 서로 다른 상품의 가격이 한 곡선으로 합쳐진다.
+ *
+ * 운영 DB 실측 (2026-09-04, price_history 24,014행)
+ *   (product_id, mall) 조합 3,220개 중 실제 vid 가 2종 이상인 것 714개.
+ *   그중 301개는 "역대 최저" 가 지금 파는 옵션의 값이 아니었다.
+ *   예) 8082654809|쿠팡
+ *         vid 95768196637 : 15,900원 (28회)  ← 지금 파는 옵션
+ *         vid 91193685703 : 222,390~242,100원 (2회)
+ *       두 값이 한 곡선에 들어가 최고가·평균·변동성이 통째로 망가졌다.
+ *
+ * api/history.js 의 단건·배치 조회와 api/_trust.js 는 이미 vid 로 좁히고
+ * 있었다. 이 경로(/p/{pid} 서버 렌더 · ?p= 딥링크 JSON)만 빠져 있어서 같은
+ * 상품인데 화면 모달과 상품 페이지가 다른 숫자를 말했다.
+ *
+ * 좁히는 판정은 _price.sameVendorRows 한 곳에 있다 (폴백 규칙까지 거기 적혀
+ * 있다). 이 경로만 다른 규칙을 쓰면 모달과 상품 페이지가 또 갈린다.
+ */
+async function loadPoints(pid, mall, vendorItemId) {
   const { data, error } = await supabase
     .from('price_history')
-    .select('recorded_date, recorded_at, price')
+    // vendor_item_id 도 받는다 — 옵션 계열을 가르는 데 쓴다.
+    .select('recorded_date, recorded_at, price, vendor_item_id')
     .eq('product_id', pid).eq('mall', mall)
     .order('recorded_date', { ascending: false })
     .limit(MAX_ROWS);
   if (error) throw new Error(error.message);
   const byDate = new Map();
-  (data || []).forEach(r => {
+  sameVendorRows(data || [], vendorItemId).forEach(r => {
     const d = observedKstDate(r);
     if (!d) return;
     const cur = byDate.get(d);
@@ -131,9 +184,10 @@ async function buildView(pid, mall) {
   const row = await loadProduct(pid, mall);
   if (!row) return null;
 
-  const points = await loadPoints(row.product_id, row.mall);
+  // 옵션(vendor_item_id)까지 좁힌다 — loadPoints 주석의 근거 참고.
+  const points = await loadPoints(row.product_id, row.mall, row.vendor_item_id);
+  // vendorItemId 는 toClientProduct 가 이미 싣는다.
   const product = toClientProduct(row);
-  product.vendorItemId = row.vendor_item_id || '';
   try { await attachTrust([product]); } catch (e) { /* 신뢰도 없이 그린다 */ }
 
   const today = kstToday();
@@ -323,7 +377,7 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
   </section>
 
   ${statsHtml}
-  ${spark ? `<div class="spark">${spark}</div><div class="note">최근 ${Math.min(points.length, SPARK_POINTS)}일, SEOSA 가 매일 수집한 값. 배송비·쿠폰·카드 할인은 포함되지 않았어요.</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요.</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
+  ${spark ? `<div class="spark">${spark}</div><div class="note">${PRICE_SOURCE_NOTE}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${PRICE_SOURCE_NOTE}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
 
   <div class="cta">
     ${link ? `<a class="btn primary" href="${esc(link)}" target="_blank" rel="nofollow sponsored noopener">${esc(mall)}에서 보기 →</a>` : '<span class="btn off">판매처 링크 없음</span>'}
@@ -333,7 +387,8 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
   ${sibHtml}
 </main>
 <footer class="wrap">
-  SEOSA 는 상품을 직접 팔지 않아요. 위 가격은 SEOSA 가 수집한 시점의 판매가이며, 판매처로 이동하면 제휴 수수료를 받을 수 있어요.
+  SEOSA 는 상품을 직접 팔지 않아요. 위 가격은 SEOSA 가 그 시점에 <b>관측한 값</b>이고 판매처의 실제 결제 금액과 다를 수 있어요.
+  판매처로 이동하면 제휴 수수료를 받을 수 있어요.
   판정은 SEOSA 가 수집한 기록만을 근거로 계산한 것이고 미래 가격을 예측하지 않아요.
 </footer>
 </body>

@@ -87,6 +87,12 @@ inject('api/_notify.js', { send: () => Promise.resolve({ ok: true }) });
 
 const { runMallCollection } = require('./collect-all-prices');
 
+/* 운영 DB 에 절대 쓰지 않는 저장 훅 — test-price-mall-collection.js 의 같은 주석 참고. */
+/* 캐시 힌트 조회는 운영 테이블 전체 스캔이라 테스트에서는 막는다. */
+const NO_HINT = async () => new Map();
+const NO_WRITE = async (obs) => ({ saved: obs.length, recorded: obs.length,
+  recordedKeys: [...new Set(obs.map(o => o.productId + "|" + o.mall))], rejected: 0, suspect: 0, errors: [] });
+
 let pass = 0, fail = 0;
 function check(ok, label, detail) {
   if (ok) { pass++; console.log(`  PASS  ${label}`); }
@@ -94,11 +100,29 @@ function check(ok, label, detail) {
 }
 function section(n) { console.log(`\n${n}`); }
 
+/*
+ * ★ 픽스처에도 판매 단위(옵션) 식별자를 넣는다 (2026-09-03).
+ *
+ *   수집기는 응답 항목의 vendorItemId 가 우리 상품의 vendor_item_id 와
+ *   같을 때만 가격을 채택한다 (collect-all-prices.js pickOption). 쿠팡의
+ *   productId 는 "노출 상품" 이고 실제로 팔리는 단위는 그 아래 옵션이라,
+ *   productId 만 맞춰 채택하면 다른 옵션의 가격이 기록되기 때문이다.
+ *
+ *   이 파일이 검증하는 것은 회수 패스·커서·facet 동작이지 옵션 판정이
+ *   아니다. 그래서 상품마다 옵션 하나를 정해 두고 타겟과 응답이 같은 값을
+ *   쓰게 한다 — 그러면 게이트는 항상 통과하고, 각 테스트의 원래 주장이
+ *   그대로 유지된다. (옵션 판정 자체는 test-option-identity.js 가 고정한다.)
+ *
+ *   운영에서는 쿠팡 상품 1,554개 전부가 컬럼 또는 link 로 vid 를 갖는다.
+ *   식별자가 없는 이 픽스처 모양이 오히려 현실에 없는 상태였다.
+ */
 const prod = (id, title, keyword) =>
-  ({ product_id: id, mall: '쿠팡', title, keyword: keyword || '', link: '', image: '' });
+  ({ product_id: id, mall: '쿠팡', title, keyword: keyword || '', link: '', image: '',
+     item_id: 'I' + id, vendor_item_id: 'V' + id });
 const item = (id, price) =>
   ({ productId: id, title: 't' + id, lprice: price, oprice: price,
-     link: 'https://x/' + id, image: '', mall: '쿠팡', itemId: '', vendorItemId: '' });
+     link: 'https://x/' + id, image: '', mall: '쿠팡',
+     itemId: 'I' + id, vendorItemId: 'V' + id });
 const FAR = () => Date.now() + 10 * 60 * 1000;
 
 /** 자식 프로세스에서 env 를 바꿔 2차 패스를 돌리고 결과 JSON 을 받는다. */
@@ -119,11 +143,15 @@ function probeChild(envLines) {
       rpc:()=>Promise.resolve({data:null,error:null})});
     inject('api/_notify.js',{send:()=>Promise.resolve({ok:true})});
     const {runMallCollection}=require(path.join(DIR,'collect-all-prices.js'));
+    /* 자식 프로세스도 저장 경로를 가로챈다 (부모의 NO_WRITE 와 같은 이유). */
+    const NO_HINT=async()=>new Map();
+    const NO_WRITE=async(obs)=>({saved:obs.length,recorded:obs.length,
+      recordedKeys:[...new Set(obs.map(o=>o.productId+'|'+o.mall))],rejected:0,suspect:0,errors:[]});
     const rows=[];
     for(let i=0;i<5;i++)rows.push({product_id:'Q'+i,mall:'쿠팡',
       title:'브랜드'+i+' 아주 구체적인 상품 이름 표기',keyword:'공통'});
     let narrow=0;
-    runMallCollection({mallName:'쿠팡',rows,savedState:null,deadlineTs:Date.now()+600000,
+    runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,mallName:'쿠팡',rows,savedState:null,deadlineTs:Date.now()+600000,
       fetchAllFn:async(kw)=>{ if(kw!=='공통') narrow++; return {ok:true,reason:'',items:[]}; }})
       .then(r=>console.log('__R__'+JSON.stringify({secondCalls:r.secondPassCalls,narrow})));
   `;
@@ -158,7 +186,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -185,7 +213,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -209,7 +237,7 @@ function probeChild(envLines) {
     const fetchAllFn = async () => ({ ok: true, reason: '', items: [] });
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -241,7 +269,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -263,7 +291,7 @@ function probeChild(envLines) {
       : { ok: false, reason: '쿠팡 차단: blocked', items: [] };
 
     saved.price_history = [];
-    const r1 = await runMallCollection({
+    const r1 = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: blockedFetch, savedState: null, deadlineTs: FAR()
     });
     check(r1.uncoveredProducts === 1, '★ 2차가 차단되면 미수집으로 남는다 (강행하지 않는다)', r1.uncoveredProducts);
@@ -276,7 +304,7 @@ function probeChild(envLines) {
       if (kw !== '검색어') narrowCalls++;
       return { ok: true, reason: '', items: [] };
     };
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: countingFetch, savedState: null,
       deadlineTs: Date.now() - 1000
     });
@@ -297,7 +325,7 @@ function probeChild(envLines) {
       if (kw !== '검색어') narrowAfterBlock++;
       return { ok: false, reason: '쿠팡 차단: blocked', items: [] };
     };
-    const rBlocked = await runMallCollection({
+    const rBlocked = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: allBlocked, savedState: null, deadlineTs: FAR()
     });
     check(narrowAfterBlock === 0,
@@ -313,7 +341,7 @@ function probeChild(envLines) {
       if (kw !== '검색어') { narrowAfterOk++; return { ok: true, reason: '', items: [] }; }
       return { ok: true, reason: '', items: [] };
     };
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: okButEmpty, savedState: null, deadlineTs: FAR()
     });
     /*
@@ -379,8 +407,42 @@ function probeChild(envLines) {
 
     check(/if \(_coupangCalls >= COUPANG_RUN_BUDGET\)/.test(runCode),
       '★★ fetchCoupangAll 에 실행 예산 hard stop 이 있다');
-    check(/const COUPANG_RUN_BUDGET\s*=\s*Number\(process\.env\.COUPANG_RUN_BUDGET\) \|\| 400;/.test(src),
-      '★★ COUPANG_RUN_BUDGET 기본값 400 유지 (예산을 늘리지 않았다)');
+    /*
+     * ── 왜 숫자 고정이 아니라 관계 검사인가 (2026-09-03) ──────────────
+     *
+     * 예전에는 "COUPANG_RUN_BUDGET 이 정확히 400" 을 고정했다. 그런데 이 값은
+     * 페이스 조절 장치가 아니라 폭주 안전판이고, 실제 속도를 정하는 것은
+     * COUPANG_MIN_GAP_MS(호출 간격)와 전역 분당 상한이다. 숫자 하나를 못 박으면
+     * 시간 배분이 바뀔 때마다 "테스트가 막으니까" 라는 이유로 예산만 그대로
+     * 두게 되고, 그러면 시간이 남는데 예산이 먼저 끊는 상태가 된다.
+     *
+     * 그래서 지켜야 할 **관계**를 고정한다:
+     *   1) 호출 간격 6초는 그대로다             ← 실제 rate limit 방어선
+     *   2) 실행 예산은 절대 상한(600) 이하       ← 예산 폭주 방지
+     *   3) 회수 상한 ≤ 시간이 허용하는 호출 수   ← 안전판이 벽 노릇을 한다
+     *   4) 회수 상한 < 실행 예산                ← 1차·facet 몫이 남는다
+     *   5) 실행 예산 ≥ 시간이 허용하는 호출 수   ← 시간이 먼저 멈춘다
+     */
+    /*
+     * 상수 파서 — 소스에서 숫자만 읽어 온다.
+     * 정규식 이스케이프에 기대지 않고 줄을 잘라 숫자를 뽑는다(가장 앞 숫자).
+     */
+    const constNum = (name) => {
+      const i = src.indexOf('const ' + name);
+      if (i < 0) return -1;
+      const eol = src.indexOf(String.fromCharCode(10), i);
+      const line = src.slice(i, eol < 0 ? src.length : eol);
+      const code = line.split('//')[0];
+      const m = code.match(/[0-9]+/g);
+      return m ? Number(m[0]) : -1;
+    };
+    const gapMs = constNum('COUPANG_MIN_GAP_MS');
+    check(gapMs === 6000,
+      '★★ 쿠팡 호출 간격 6초 유지 — 분당 호출 속도를 올리지 않았다', gapMs);
+
+    const runBudget = constNum('COUPANG_RUN_BUDGET');
+    check(runBudget > 0 && runBudget <= 600,
+      '★★ COUPANG_RUN_BUDGET 이 절대 상한(600) 안에 있다', runBudget);
     check((runCode.match(/await fetchAllFn\(/g) || []).length === 2,
       '★★ 쿠팡 호출 경로가 두 곳뿐이다 (1차 · 회수) — 예산을 우회하는 샛길 없음',
       (runCode.match(/await fetchAllFn\(/g) || []).length);
@@ -402,18 +464,30 @@ function probeChild(envLines) {
       { budgetIdx, callIdx });
 
     /*
-     * 회수 패스 하위 상한. 240 인 근거는 오프라인 시뮬레이션이다
-     * (collect-all-prices.js 의 SECOND_PASS_MAX_CALLS 주석 참고).
-     * 시간 예산(몰당 25분 ÷ 6초 = 250회)이 먼저 걸리므로 이보다 크게 잡아도
-     * 의미가 없다 — 그 관계를 여기서 고정한다.
+     * 회수 패스 하위 상한.
+     *
+     * "시간이 먼저 걸린다" 는 관계를 소스에서 직접 계산해 고정한다. 시간
+     * 배분(ADPICK_RESERVE_MS)이 바뀌면 timeCap 도 같이 움직이므로, 상수만
+     * 손대고 이 관계를 깨뜨리면 여기서 잡힌다.
+     *
+     *   쿠팡 몫 = RUN_TIME_BUDGET_MS - ADPICK_RESERVE_MS  (최소 절반 보장)
+     *   timeCap = 쿠팡 몫 ÷ COUPANG_MIN_GAP_MS
      */
-    const capM = /SECOND_PASS_MAX_CALLS = Number\(process\.env\.PRICE_SECOND_PASS_MAX_CALLS\) \|\| (\d+);/.exec(src);
-    const cap = capM ? Number(capM[1]) : -1;
-    const timeCap = Math.floor(25 * 60 / 6);   // MALL_BUDGET_MS ÷ COUPANG_MIN_GAP_MS
+    const cap    = constNum('SECOND_PASS_MAX_CALLS');
+    const runMin = constNum('RUN_TIME_BUDGET_MS');   // 분 단위 (… || 50 * 60 * 1000)
+    const adpMin = constNum('ADPICK_RESERVE_MS');    // 분 단위 (… ||  8 * 60 * 1000)
+    check(runMin > 0 && adpMin > 0 && adpMin < runMin / 2,
+      '★★ 시간 배분 상수를 소스에서 읽을 수 있고 ADPICK 몫이 절반 미만이다',
+      { runMin, adpMin });
+    const coupangMin = Math.max(runMin - adpMin, Math.floor(runMin / 2));
+    const timeCap = Math.floor(coupangMin * 60 / (gapMs / 1000));
     check(cap > 0 && cap <= timeCap,
-      '★★ 회수 상한이 시간이 허용하는 실행당 호출 수(250)를 넘지 않는다', { cap, timeCap });
-    check(cap < 400,
-      '★★ 회수 상한이 실행 예산(400)보다 작다 — 1차·facet 몫을 남긴다', cap);
+      '★★ 회수 상한이 시간이 허용하는 실행당 호출 수를 넘지 않는다', { cap, timeCap });
+    check(cap < runBudget,
+      '★★ 회수 상한이 실행 예산보다 작다 — 1차·facet 몫을 남긴다', { cap, runBudget });
+    check(runBudget >= timeCap,
+      '★★ 실행 예산이 시간이 허용하는 호출 수 이상이다 — 시간이 먼저 멈춘다',
+      { runBudget, timeCap });
     check(/재시도 없음/.test(cou), '★ 쿠팡 클라이언트에 retry 를 추가하지 않았다');
 
     check(!/forceRefresh:\s*true/.test(src),
@@ -438,9 +512,42 @@ function probeChild(envLines) {
     const codeOnly = src.split('\n')
       .filter(l => !/^\s*(\*|\/\/|\/\*)/.test(l))
       .join('\n');
-    const gates = (codeOnly.match(/byId\.get\(item\.productId\)/g) || []).length;
+    const gates = (codeOnly.match(/byId\.get\(pid\)/g) || []).length;
     check(gates === 2,
       '★★ product_id 완전 일치 게이트가 1차·2차 두 곳 모두에 있다 (그리고 그 둘뿐이다)', gates);
+
+    /*
+     * ★ 옵션(vendorItemId) 게이트도 우회로가 없어야 한다 (2026-09-03).
+     *
+     *   product_id 완전 일치만으로는 부족하다는 것이 운영 데이터로 드러났다.
+     *   쿠팡 productId 아래에는 옵션이 여럿이고, 응답은 그때그때 다른 옵션을
+     *   대표로 싣는다. 그래서 채택 경로가 **반드시** pickOption 을 지나도록
+     *   구조를 고정한다 — addRow(실제 채택)를 부르는 곳이 adoptOne 하나뿐이고,
+     *   adoptOne 은 pickOption 없이는 아무것도 채택하지 않는다.
+     *
+     *   여기가 깨지면 "productId 만 맞으면 저장" 경로가 다시 열린 것이다.
+     */
+    check(!/byId\.get\(item\.productId\)/.test(codeOnly),
+      '★★ productId 만으로 응답 항목을 채택하던 옛 경로가 남아 있지 않다');
+    const addRowUses = (codeOnly.match(/addRow\(/g) || []).length;
+    check(addRowUses === 2,
+      '★★ addRow 는 정의 1곳 + 호출 1곳뿐 — 채택은 전부 adoptOne 을 지난다', addRowUses);
+    check(/function adoptOne\([\s\S]{0,400}?pickOption\(/.test(codeOnly),
+      '★★ adoptOne 은 pickOption 의 판정으로만 채택한다');
+    check(/targetVendorItemId:\s*vendorIdOf\(target\)/.test(codeOnly),
+      '★★ 저장 직전 방어막용 타겟 옵션이 관측치에 실린다 (api/_shop.js OPTION_MISMATCH)');
+
+    /*
+     * 쿠팡은 top-level 상태를 몰 상태로 조립해 넘긴다. 이 때
+     * secondPassDone을 빼면 다음 cron이 같은 검색어를 처음부터
+     * 다시 불러 호출 예산을 소진한다.
+     */
+    const coupangSavedBlock = src.slice(
+      src.indexOf('const coupangSaved'),
+      src.indexOf('const adpickSaved')
+    );
+    check(/secondPassDone:\s*[\s\S]*?secondPassDone/.test(coupangSavedBlock),
+      '★★ 쿠팡 이어받기 상태에 secondPassDone을 복원한다');
   }
 
   /* ==============================================================
@@ -458,7 +565,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [item('M1', 1000), item('M2', 2000)] };
     };
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
     check(r.uncoveredProducts === 0, '1차에서 다 잡히면 미수집 0');
@@ -496,7 +603,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };   // 1차 성공 · 결과 없음
     };
     saved.price_history = [];
-    const run1 = await mod1.runMallCollection({
+    const run1 = await mod1.runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: fetch1, savedState: null, deadlineTs: FAR()
     });
 
@@ -524,7 +631,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };
     };
     saved.price_history = [];
-    const run2 = await mod1.runMallCollection({
+    const run2 = await mod1.runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn: fetch2, savedState, deadlineTs: FAR()
     });
 
@@ -535,6 +642,148 @@ function probeChild(envLines) {
       '★★ 1회차에서 이미 부른 검색어를 다시 부르지 않는다 (예산 낭비 방지)', overlap);
 
     delete process.env.PRICE_SECOND_PASS_MAX_CALLS;
+    delete require.cache[require.resolve('./collect-all-prices')];
+  }
+
+  /* ==============================================================
+   *  8-b. 회수 패스 완료 판정 경계
+   *
+   *  2026-09-05 독립 리뷰에서 실제로 재현된 세 경로다.
+   *    · 예산이 라운드 경계에서 끝나면 뒤 후보가 0개로 사라짐
+   *    · 차단된 호출을 완료한 검색어로 세어 completed 오판
+   *    · 한 실행의 facet 상한 뒤에 있는 깊은 후보가 사라짐
+   *
+   *  전부 running + remaining>0이어야 다음 cron이 이어받는다.
+   * ============================================================== */
+  section('8-b. 회수 패스 완료 판정 경계');
+  {
+    process.env.PRICE_SECOND_PASS_MAX_CALLS = '1';
+    process.env.PRICE_CACHE_HINT = '0';
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const mod = require('./collect-all-prices');
+    const rows = [prod('E1', '삼성 갤럭시북 NT960XGL 16인치 노트북', '노트북')];
+    const r = await mod.runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows, savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async () => ({ ok: true, reason: '', items: [] })
+    });
+    check(r.status === 'running',
+      '★★ 라운드 경계에서 예산이 끝나도 남은 후보가 있으면 running', r);
+    check(r.secondPassRemaining > 0,
+      '★★ 예산 뒤의 전체 라운드 후보를 remaining에 남긴다', r.secondPassRemaining);
+
+    delete process.env.PRICE_SECOND_PASS_MAX_CALLS;
+    delete process.env.PRICE_CACHE_HINT;
+    delete require.cache[require.resolve('./collect-all-prices')];
+  }
+  {
+    process.env.PRICE_SECOND_PASS_MAX_CALLS = '10';
+    process.env.PRICE_CACHE_HINT = '0';
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const mod = require('./collect-all-prices');
+    const rows = [prod('E2', '삼성 갤럭시북 NT960XGL 16인치 노트북', '노트북')];
+    let calls = 0;
+    const r = await mod.runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows, savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async (kw) => {
+        calls++;
+        return kw === '노트북'
+          ? { ok: true, reason: '', items: [] }
+          : { ok: false, reason: '쿠팡 API 차단', items: [] };
+      }
+    });
+    check(r.status === 'running',
+      '★★ 회수 호출이 차단되면 completed로 닫지 않는다', r);
+    check(r.secondPassRemaining > 0 && (r.secondPassDone || []).length === 0,
+      '★★ 실패한 검색어는 done이 아니며 다음 cron에 남는다',
+      { remaining: r.secondPassRemaining, done: r.secondPassDone });
+    check(calls === 2,
+      '★ 차단 감지 후 나머지 회수 호출을 즉시 중단한다', calls);
+
+    delete process.env.PRICE_SECOND_PASS_MAX_CALLS;
+    delete process.env.PRICE_CACHE_HINT;
+    delete require.cache[require.resolve('./collect-all-prices')];
+  }
+  {
+    process.env.PRICE_SECOND_PASS_MAX_CALLS = '2';
+    process.env.PRICE_FACET_MAX_PER_GROUP = '2';
+    process.env.PRICE_CACHE_HINT = '0';
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const mod = require('./collect-all-prices');
+    const rows = [];
+    for (let i = 0; i < 12; i++) rows.push(prod('EF' + i, '상품이름' + i, '큰그룹'));
+    let calls = 0;
+    const r = await mod.runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows, savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async () => {
+        calls++;
+        return { ok: true, reason: '', items: calls === 1 ? [] : [item(rows[calls - 2].product_id, 1000)] };
+      }
+    });
+    check(r.collectorSuccessProducts === 2 && r.status === 'running',
+      '★★ facet 상한까지 2개만 회수했으면 남은 상품 때문에 running',
+      { covered: r.collectorSuccessProducts, status: r.status });
+    check(r.secondPassRemaining > 0 && (r.facetDryGroups || []).length === 0,
+      '★★ 아직 마르지 않은 깊은 facet 후보를 remaining에 남긴다',
+      { remaining: r.secondPassRemaining, dry: r.facetDryGroups });
+
+    delete process.env.PRICE_SECOND_PASS_MAX_CALLS;
+    delete process.env.PRICE_FACET_MAX_PER_GROUP;
+    delete process.env.PRICE_CACHE_HINT;
+    delete require.cache[require.resolve('./collect-all-prices')];
+  }
+
+  /* ==============================================================
+   *  8-c. 하루 호출 예산 (COUPANG_DAY_BUDGET)
+   *
+   *  cron 칸을 3개 → 8개로 늘리면서 «실행당» 예산만으로는 하루 총량이
+   *  묶이지 않게 됐다 (최악 8 × 500 = 4,000회). 그래서 하루 천장 2,200회를
+   *  두었는데(scripts/collect-all-prices.js COUPANG_DAY_BUDGET), 그 천장에
+   *  «닿았을 때 무슨 일이 일어나는지» 를 고정하는 테스트가 없었다.
+   *
+   *  천장에 닿는 것 자체는 정상이다. 위험한 것은 그 뒤다 —
+   *  예산 소진을 «평범한 실패» 로 처리하면 남은 후보가 없다고 판단해
+   *  그날을 completed 로 닫아 버리고, 다음 cron 이 이어받지 못한다.
+   *  그러면 하루 천장이 곧 «영구 미수집» 이 된다.
+   *
+   *  고정하는 성질 세 가지:
+   *    ① 예산 소진 사유는 'budget' 으로 분류된다
+   *    ② 그날을 completed 로 닫지 않는다 (running + remaining > 0)
+   *    ③ 소진을 감지하면 남은 회수 호출을 더 쏘지 않는다 (천장을 넘지 않는다)
+   * ============================================================== */
+  section('8-c. 하루 호출 예산 소진');
+  {
+    const mod0 = require('./collect-all-prices');
+    check(mod0.categorizeFailure(`하루 호출 예산 2200회 소진`) === 'budget',
+      '★★ 하루 예산 소진 사유가 budget 으로 분류된다',
+      mod0.categorizeFailure('하루 호출 예산 2200회 소진'));
+
+    process.env.PRICE_SECOND_PASS_MAX_CALLS = '10';
+    process.env.PRICE_CACHE_HINT = '0';
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const mod = require('./collect-all-prices');
+    const rows = [prod('DB1', '삼성 갤럭시북 NT960XGL 16인치 노트북', '노트북')];
+    let calls = 0;
+    const r = await mod.runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows, savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async (kw) => {
+        calls++;
+        // 1차는 통과시키고, 회수 첫 호출에서 하루 천장에 닿은 상황을 만든다.
+        return kw === '노트북'
+          ? { ok: true, reason: '', items: [] }
+          : { ok: false, reason: '하루 호출 예산 2200회 소진', items: [] };
+      }
+    });
+    check(r.status === 'running',
+      '★★ 하루 예산이 끝나도 그날을 completed 로 닫지 않는다', r.status);
+    check(r.secondPassRemaining > 0,
+      '★★ 남은 후보를 다음 실행 몫으로 남긴다', r.secondPassRemaining);
+    check((r.secondPassDone || []).length === 0,
+      '★★ 예산으로 못 부른 검색어를 «부른 것» 으로 세지 않는다', r.secondPassDone);
+    check(calls === 2,
+      '★★ 예산 소진을 감지한 뒤 회수 호출을 더 쏘지 않는다 (천장을 넘지 않는다)', calls);
+
+    delete process.env.PRICE_SECOND_PASS_MAX_CALLS;
+    delete process.env.PRICE_CACHE_HINT;
     delete require.cache[require.resolve('./collect-all-prices')];
   }
 
@@ -558,7 +807,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };   // 계속 실패시켜 3라운드를 다 돌린다
     };
     saved.price_history = [];
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -622,7 +871,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
 
@@ -638,7 +887,7 @@ function probeChild(envLines) {
     const small = [];
     for (let i = 0; i < 5; i++) small.push(prod('G' + i, `브랜드${i} 작은그룹 상품 이름`, '작은그룹'));
     const seen2 = [];
-    await runMallCollection({
+    await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows: small, savedState: null, deadlineTs: FAR(),
       fetchAllFn: async (kw) => {
         seen2.push(kw);
@@ -676,7 +925,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, deadlineTs: FAR(),
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: '',
                     processed: 6, total: 10, status: 'running',
@@ -727,7 +976,7 @@ function probeChild(envLines) {
     };
 
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, deadlineTs: FAR(),
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: '',
                     processed: 6, total: 10, status: 'running',
@@ -771,7 +1020,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: [] };
     };
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
     const covered = new Set(r.collectorCovered);
@@ -790,7 +1039,7 @@ function probeChild(envLines) {
       return { ok: true, reason: '', items: rows.slice(10).map(p => item(p.product_id, 6000)) };
     };
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
     });
     const covered = new Set(r.collectorCovered);
@@ -804,7 +1053,7 @@ function probeChild(envLines) {
     const rows = [prod('D1', '중복 확인용 상품 이름', 'kwA')];
     const fetchAllFn = async () => ({ ok: true, reason: '', items: [item('D1', 7000)] });
     saved.price_history = [];
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows, fetchAllFn,
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: '',
                     processed: 0, total: 1, status: 'running',
@@ -823,7 +1072,7 @@ function probeChild(envLines) {
     for (let i = 0; i < 10; i++) rows.push(prod('I' + i, '유휴 확인 상품 ' + i, 'ikw' + i));
     const priorCovered = rows.slice(0, 7).map(p => p.product_id + '|쿠팡');
     let called = 0;
-    const r = await runMallCollection({
+    const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
       mallName: '쿠팡', rows,
       fetchAllFn: async () => { called++; return { ok: true, reason: '', items: [] }; },
       savedState: { job_date: require('./collect-all-prices').kstToday(), cursor_key: 'ikw009',

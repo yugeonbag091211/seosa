@@ -306,6 +306,32 @@ function dealOf(stat, price, today) {
   const spread = (stat.low > 0 && stat.high > 0) ? (stat.high - stat.low) / stat.low : 0;
   const pctlUsable = percentile != null && spread >= PCTL_MIN_SPREAD && !outlier;
 
+  /*
+   * 아직 확인되지 않은 신저가인가.
+   *
+   * ── 왜 가르는가 (2026-09-04 감사) ─────────────────────────────
+   *
+   * 우리가 가진 가격은 쿠팡 파트너스 검색 API 의 productPrice 하나뿐이고,
+   * 그 값이 상품 페이지의 실제 구매가와 항상 같지는 않다는 것이 실측으로
+   * 확인됐다 (7912306911: API 22,320원 ↔ 페이지 26,900원).
+   *
+   * 그런 값이 하루만 관측돼도 코드는 곧바로 "관측한 26일 기록에서 가장 낮은
+   * 가격이다 · 지금 사도 좋다" 로 단정했다. 운영 전체로 쿠팡 상품 1,515개 중
+   * 1,024개가 "최신 관측 = 역대 최저" 였고 그중 159개는 하루만 본 값이다.
+   *
+   * 한 번 본 값은 가설이다. 다음 관측에서 같은 값이 다시 나오면 그때
+   * 확정한다 — 그 사이에는 "확인 중" 이라고 말한다. 값을 숨기지도, 없는
+   * 확신을 붙이지도 않는다.
+   *
+   * stat.lowConfirmed 가 undefined 인 옛/스텁 통계는 예전대로 둔다
+   * (=== false 로만 걸린다). 모르는 것을 "확인 안 됨" 으로 바꾸지 않는다.
+   */
+  const unconfirmedLow = stat.lowConfirmed === false && !!stat.lowIsLatest && p <= stat.low;
+  if (unconfirmedLow) {
+    cautions.push('이 가격은 ' + stat.lowDate + ' 하루만 관측됐다. '
+      + '다음 수집에서 같은 값이 다시 나와야 최저가로 확정된다');
+  }
+
   if (percentile != null && !pctlUsable && !outlier) {
     reasons.push('이 상품은 가격이 거의 움직이지 않는다(' +
       Math.round(spread * 1000) / 10 + '% 폭). 기다려서 아낄 수 있는 금액이 크지 않다');
@@ -319,8 +345,15 @@ function dealOf(stat, price, today) {
      * 읽는 사람에게 아무 뜻이 아니다. 끝값은 끝값이라고 말한다.
      */
     if (percentile <= 0) {
-      score += 22;
-      reasons.push('관측한 ' + stat.historyDays + '일 기록에서 가장 낮은 가격이다');
+      // 확인되지 않은 신저가는 "가장 낮다" 고 단정하지 않는다 (unconfirmedLow 주석).
+      if (unconfirmedLow) {
+        score += 10;
+        reasons.push('관측한 ' + stat.historyDays + '일 기록에서 가장 낮은 값이지만, '
+          + '하루만 관측돼 아직 확인 중이다');
+      } else {
+        score += 22;
+        reasons.push('관측한 ' + stat.historyDays + '일 기록에서 가장 낮은 가격이다');
+      }
     } else if (percentile <= P_VERY_LOW) {
       score += 22;
       reasons.push('관측한 ' + stat.historyDays + '일 기록에서 하위 ' + percentile + '% 가격이다');
@@ -394,8 +427,16 @@ function dealOf(stat, price, today) {
       cautions.push('역대 최저가는 아니다(' + stat.lowDate + ' ' + won(stat.low) + '원, ' + pct(over) + '% 위)');
     }
   } else if (stat.low > 0 && p < stat.low) {
-    // 관측한 어떤 값보다도 낮다 — 백분위로는 표현되지 않는 사실이다.
-    reasons.push('우리가 관측한 어떤 날의 가격보다도 낮다(기록상 최저 ' + won(stat.low) + '원)');
+    /*
+     * 관측한 어떤 값보다도 낮다 — 백분위로는 표현되지 않는 사실이다.
+     *
+     * 다만 이건 방금 받아온 값 하나다. 기록으로 확인된 바닥이 아니라는 것을
+     * 같은 문장 안에서 밝힌다. "역대 최저" 라고 부르지 않는다.
+     */
+    reasons.push('우리가 관측한 어떤 날의 가격보다도 낮다(기록상 최저 ' + won(stat.low) + '원). '
+      + '다만 이번 한 번만 본 값이라 확인 중이다');
+    cautions.push('기록에 없던 값이라 아직 확인되지 않았다. '
+      + '판매처에서 실제 결제 금액을 확인해 달라');
   }
 
   if (stat.volatility != null && stat.volatility >= VOLATILE_PCT) {
@@ -430,6 +471,16 @@ function dealOf(stat, price, today) {
     if (!solid) {
       verdict = 'GOOD_BUY';
       cautions.push('근거가 확실하다고 말하기에는 기록이 짧거나 오래되어 한 단계 낮춰 판단했다');
+    } else if (unconfirmedLow) {
+      /*
+       * 확인되지 않은 신저가 위에서는 최고 등급을 주지 않는다.
+       *
+       * BUY 는 "지금 사도 좋다" 다. 그 말의 근거가 하루만 본 값 하나라면
+       * 근거가 틀렸을 때 사용자가 돈을 쓴 뒤다. 한 단계 낮춰서, 값은 그대로
+       * 보여 주되 확신만 뺀다.
+       */
+      verdict = 'GOOD_BUY';
+      cautions.push('가장 낮은 값이지만 하루치 관측뿐이라 한 단계 낮춰 판단했다');
     }
   }
 

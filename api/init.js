@@ -11,7 +11,11 @@ const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, fres
  * 눌러도 갈 곳이 없거나(link=NULL) 더 이상 갱신되지 않는(네이버) 행이다.
  * 케이스는 scripts/test-price.js 의 '시세판. plausibleDrop' 섹션에 고정해 두었다.
  */
-const { plausibleDrop, MAX_PLAUSIBLE_DROP_PCT, todayDropConfirmed, kstToday } = require('./_price');
+const {
+  plausibleDrop, MAX_PLAUSIBLE_DROP_PCT, todayDropConfirmed, kstToday,
+  // 시세판 행의 옵션 식별자 — 뷰에 컬럼이 없어 link 에서 뽑는다(공식 helper).
+  vendorIdOf, sameVendorRows
+} = require('./_price');
 const { attachTrust, loadRecentHistory } = require('./_trust');
 const { isValidSuggestion } = require('./_search');
 const { demandPicks } = require('./_picks');
@@ -170,6 +174,19 @@ function toDropRow(p) {
     // products.mall_label을 그대로 실어 준다(supabase/2026-08-mall-label.sql).
     mallLabel: p.mall_label || '',
     productId: p.product_id,
+    /*
+     * 옵션 식별자 — 카드를 눌렀을 때 열리는 모달이 이 옵션의 이력만 그리게 한다.
+     *
+     * 예전에는 이 필드가 없어서 프론트 histKey 가 `pid|mall` 로 떨어졌고,
+     * /api/history 가 옵션을 좁히지 못해 시세판 모달만 옵션 혼합 곡선을
+     * 그렸다. 같은 상품을 검색 카드에서 열면 옵션 곡선이 나왔다 — 한 상품이
+     * 어디서 열렸느냐에 따라 다른 숫자를 말했다.
+     *
+     * 뷰에는 vendor_item_id 컬럼이 없다. 값은 link 에서 뽑는다 — link 는
+     * products 에서 온 것이라 "이 카드를 누르면 실제로 가게 되는 옵션" 을
+     * 가리키고, 모달이 보여줘야 할 것도 바로 그 옵션이다.
+     */
+    vendorItemId: vendorIdOf(p),
     link: p.link || '',
     image: p.image || '',
     lprice: p.current_price,
@@ -281,15 +298,45 @@ module.exports = async function handler(req, res) {
      * 조회에 실패하면 거르지 않고 전부 통과시킨다. 근거를 못 얻었다고 해서
      * 시세판을 통째로 비우는 것은 과한 대응이다 (기존 동작으로 되돌아갈 뿐이다).
      */
+    /*
+     * ★ 원장 검증을 옵션(vendor_item_id) 계열로 좁힌다 (2026-09-05).
+     *
+     * ── 왜 필요한가 ────────────────────────────────────────────
+     *
+     * price_drop_top 은 (product_id, mall, vendor_item_id) 단위로 계산되는데
+     * 결과 컬럼에 vendor_item_id 가 없다. 그래서 여기까지 오면 이 행이 어느
+     * 옵션의 것인지 알 수 없고, 예전에는 상품 단위(모든 옵션 합산) 이력으로
+     * 검증했다. 그러면 다른 옵션의 관측이 "직전 가격" 이 되어 없던 하락을
+     * 만들거나, 반대로 진짜 하락을 지워 버린다.
+     *
+     * ── 무엇을 기준으로 좁히는가 ───────────────────────────────
+     *
+     * 뷰의 link 는 products 에서 온 것이라 그 상품이 지금 알고 있는 옵션
+     * 하나를 가리킨다 (2026-09-05 실측: 뷰 쿠팡 1,923행 전부에서 추출 성공).
+     * 그 옵션이 바로 카드를 눌렀을 때 사용자가 실제로 가게 되는 곳이다.
+     * 그러므로 "이 카드가 말하는 하락" 은 그 옵션의 하락이어야 한다.
+     *
+     * 링크의 옵션과 다른 옵션의 행이라면 아래 검증에서 값이 맞지 않아
+     * 자연스럽게 탈락한다 — 같은 상품에 뷰 행이 여럿일 때(운영 451건)
+     * 어느 행이 이 옵션의 것인지 고르는 일까지 원장이 대신 해 준다.
+     *
+     * 옵션 판정 자체는 _price.sameVendorRows 한 곳에 있다. 옵션 표시가 없는
+     * 옛 기록만 있는 상품은 예전처럼 상품 단위로 본다(회귀 아님).
+     */
     let fresh = drops;
     const today = kstToday();
     if (drops.length) {
       try {
-        const hist = await loadRecentHistory(
-          drops.map(r => ({ productId: String(r.product_id), mall: r.mall || '' }))
-        );
-        fresh = drops.filter(r =>
-          todayDropConfirmed(r, hist.get(`${r.product_id}|${r.mall || ''}`), today));
+        const hist = await loadRecentHistory(drops.map(r => ({
+          productId: String(r.product_id),
+          mall: r.mall || '',
+          // 새 파싱을 만들지 않는다 — 컬럼이 없으면 link 에서 뽑는 공식 helper.
+          vendorItemId: vendorIdOf(r)
+        })));
+        fresh = drops.filter(r => {
+          const points = hist.get(`${r.product_id}|${r.mall || ''}`) || [];
+          return todayDropConfirmed(r, sameVendorRows(points, vendorIdOf(r)), today);
+        });
       } catch (e) {
         console.warn(`[init] 시세판 최신성 확인 실패(기존대로 노출): ${e.message}`);
         fresh = drops;

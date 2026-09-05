@@ -119,7 +119,7 @@ require.cache[supabasePath].exports = fakeSupabase;
 const { recordPrices, adpickProductId } = require('../api/_shop');
 const { attachTrust } = require('../api/_trust');
 const { kstToday, observedKstDate, todayDropConfirmed, vendorIdOf } = require('../api/_price');
-const { redact, mallLabelFromCpName } = require('../api/_adpick');
+const { searchAdpick, redact, mallLabelFromCpName, isTerminalApiError } = require('../api/_adpick');
 
 /* ------------------------------------------------------------------ *
  *  유틸
@@ -473,6 +473,49 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'),
 check(!/ADPICK_API_KEY/.test(html), '★ 프론트 번들에 ADPICK_API_KEY 문자열이 없다');
 check(!/biz\.adpick\.co\.kr\/api\//.test(html),
   '★ 프론트가 ADPICK API 를 직접 호출하지 않는다 (키는 서버에만 있다)');
+
+/* ================================================================== *
+ *  J — success=false가 검색어 하나를 전체 장애로 증폭하지 않는가
+ * ================================================================== */
+section('J — ADPICK API 오류 분류');
+
+check(!isTerminalApiError('검색 결과가 없습니다'),
+  '★ 무검색은 해당 검색어만 실패 — 전체 수집을 10분 차단하지 않는다');
+check(!isTerminalApiError('잘못된 검색어입니다'),
+  '일반 입력 오류는 다음 검색어 수집을 계속한다');
+check(isTerminalApiError('Invalid API key'),
+  'API 키 오류는 전체 호출을 중단한다');
+check(isTerminalApiError('호출 한도를 초과했습니다'),
+  '공급자 호출 한도는 전체 호출을 중단한다');
+check(isTerminalApiError('서비스 점검 중입니다'),
+  '서비스 점검은 전체 호출을 중단한다');
+
+const savedFetch = global.fetch;
+const savedProbeKey = process.env.ADPICK_API_KEY;
+process.env.ADPICK_API_KEY = 'TEST_ONLY_KEY';
+let fetchCalls = 0;
+global.fetch = async () => {
+  fetchCalls++;
+  return { ok: true, status: 200, text: async () => JSON.stringify({ success: false, message: '검색 결과가 없습니다' }) };
+};
+const noResult1 = await searchAdpick('없는검색어-a', { useCache: false, minGapMs: 1, maxWaitMs: 100 });
+const noResult2 = await searchAdpick('없는검색어-b', { useCache: false, minGapMs: 1, maxWaitMs: 100 });
+check(!noResult1.blocked && !noResult2.blocked && fetchCalls === 2,
+  '★ success=false 무검색 뒤에도 다음 실제 호출이 진행된다', `fetch=${fetchCalls}`);
+
+global.fetch = async () => { fetchCalls++; throw new Error('temporary timeout'); };
+const transient1 = await searchAdpick('일시실패-a', { useCache: false, minGapMs: 1, maxWaitMs: 100 });
+const transient2 = await searchAdpick('일시실패-b', { useCache: false, minGapMs: 1, maxWaitMs: 100 });
+const transient3 = await searchAdpick('일시실패-c', { useCache: false, minGapMs: 1, maxWaitMs: 100 });
+const beforeShortCircuit = fetchCalls;
+const transient4 = await searchAdpick('일시실패-d', { useCache: false, minGapMs: 1, maxWaitMs: 100 });
+check(!transient1.blocked && !transient2.blocked && transient3.blocked,
+  '네트워크 오류 한 번이 아니라 연속 3회일 때만 서킷을 연다');
+check(transient4.blocked && fetchCalls === beforeShortCircuit,
+  '서킷이 열린 뒤에는 외부 호출 없이 즉시 중단한다');
+global.fetch = savedFetch;
+if (savedProbeKey === undefined) delete process.env.ADPICK_API_KEY;
+else process.env.ADPICK_API_KEY = savedProbeKey;
 
 // 서버 코드에서도 URL 을 통째로 로그에 찍지 않는다
 const adpickSrc = fs.readFileSync(path.join(__dirname, '..', 'api', '_adpick.js'), 'utf8');

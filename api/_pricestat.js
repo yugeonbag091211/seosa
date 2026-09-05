@@ -23,7 +23,7 @@
  *   으로 프롬프트에 적는다. 빈 통계를 0 으로 채워 넣지 않는다.
  */
 const supabase = require('./_supabase');
-const { observedKstDate, kstToday } = require('./_price');
+const { observedKstDate, kstToday, sameVendorRows } = require('./_price');
 
 /** 조회 창. 역대 최저가를 말하려면 30일(_trust)보다는 길어야 한다. */
 const WINDOW_DAYS = 180;
@@ -40,6 +40,14 @@ const TREND_DAYS = 7;
 const SHORT_AVG_DAYS = 7;
 /** 프롬프트에 실을 최근 기록 점 개수. */
 const MAX_POINTS = 6;
+/**
+ * 최저가를 "확인됐다" 고 부르기 위해 필요한 관측 일수.
+ *
+ * 2 다. 하루만 본 값은 가설이고, 다른 날 같은 값이 다시 나오면 사실이다.
+ * 이 문턱을 3 이상으로 올리면 하루 한 번 수집하는 상품이 사흘 동안 아무
+ * 말도 못 하게 된다 — 확인을 요구하는 것과 침묵하는 것은 다르다.
+ */
+const LOW_CONFIRM_DAYS = 2;
 
 function int(v) {
   const n = Math.round(Number(v));
@@ -91,6 +99,30 @@ function statsFrom(points) {
   for (let i = pts.length - 1; i >= 0; i--) {
     if (prices[i] === low) { lowDate = pts[i].date; break; }
   }
+
+  /*
+   * 그 최저가를 며칠 봤는가 — "확인된 값" 과 "오늘 처음 본 값" 을 가른다.
+   *
+   * ── 왜 필요한가 (2026-09-04 감사) ──────────────────────────────
+   *
+   * 우리가 가진 가격은 쿠팡 파트너스 검색 API 의 productPrice 하나뿐이고,
+   * 그 값이 상품 페이지의 실제 구매가와 항상 같지는 않다는 것이 확인됐다.
+   *   실측: productId 7912306911 / vendorItemId 88764198511
+   *         API productPrice 22,320원  ↔  상품 페이지 26,900원 (와우 23,610원)
+   * 그런데 그 22,320원은 26일 기록 중 그날 딱 한 번 관측된 값이었고,
+   * 코드는 그것을 곧바로 "관측한 26일 기록에서 가장 낮은 가격이다" 로 단정한
+   * 뒤 "지금 사도 좋다" 판정을 내렸다.
+   *
+   * 운영 전체로는 쿠팡 상품(3점 이상) 1,515개 중 1,024개(67.6%)가 "최신
+   * 관측 = 역대 최저" 였다. 실제 가격 계열에서 나올 수 없는 비율이다.
+   * 그중 159개는 그 최저가를 단 하루만 봤다.
+   *
+   * 한 번 본 값은 아직 사실이 아니라 가설이다. 같은 값이 다시 관측되면
+   * 그때 확정한다. 이 필드는 그 구분을 호출부(api/_deal.js)에 넘긴다.
+   */
+  const lowCount = prices.filter(v => v === low).length;
+  const lowIsLatest = prices[prices.length - 1] === low;
+  const lowConfirmed = lowCount >= LOW_CONFIRM_DAYS;
 
   // 30일 평균은 슬라이스가 아니라 날짜로 자른다 — 수집이 끊긴 구간이 있으면
   // "최근 30개 점"이 30일이 아니게 되어 평균 설명이 사실과 달라진다.
@@ -179,6 +211,9 @@ function statsFrom(points) {
     prevPrice: pts.length >= 2 ? prices[prices.length - 2] : 0,
     low,
     lowDate,
+    lowCount,        // low 를 관측한 날 수
+    lowIsLatest,     // 그 low 가 가장 최근 관측인가 (= 방금 생긴 신저가인가)
+    lowConfirmed,    // 다른 날에도 같은 값을 봤는가 (LOW_CONFIRM_DAYS 이상)
     avg30,
     avg30Days: recent.length,
     trendPct,
@@ -214,8 +249,11 @@ function statsFrom(points) {
  * ★ 실패해도 throw 하지 않는다. 기록을 못 읽는 것은 답변을 막을 이유가
  *   아니다 — 통계 없이 현재가만으로 답하면 된다(예전과 같은 동작).
  *
- * @param {Array<{productId:string, mall:string}>} keys
- * @returns {Promise<Map<string, object>>} key → statsFrom 결과
+ * vendorItemId 를 함께 주면 그 옵션의 기록만 쓴다. 주지 않으면 예전처럼
+ * pid+mall 전체를 본다 (좁힐 근거가 없을 때 0건을 만들지 않는다).
+ *
+ * @param {Array<{productId:string, mall:string, vendorItemId?:string}>} keys
+ * @returns {Promise<Map<string, object>>} key(`${productId}|${mall}`) → statsFrom 결과
  */
 async function loadStats(keys) {
   const out = new Map();
@@ -224,17 +262,35 @@ async function loadStats(keys) {
 
   const ids = [...new Set(list.map(k => String(k.productId)))];
   const wanted = new Set(list.map(k => `${k.productId}|${k.mall || ''}`));
+  /*
+   * key → 이 상품의 옵션 식별자(vendor_item_id).
+   *
+   * 키 자체에는 vid 를 넣지 않는다. 호출부(api/ai.js attachHistory 등)가
+   * `${productId}|${mall}` 로 결과를 찾고 있어서, 키 모양을 바꾸면 조회가
+   * 통째로 빗나간다. 좁히는 일은 행을 거를 때 한다.
+   */
+  const vidOf = new Map(list.map(k => [`${k.productId}|${k.mall || ''}`,
+    String(k.vendorItemId || '').trim()]));
   const cutoff = kstToday(new Date(Date.now() - WINDOW_DAYS * 86400000));
 
-  // key → Map<날짜, 그날의 최저가>
-  const byKey = new Map();
+  /*
+   * key → 이 상품의 원본 행들.
+   *
+   * 날짜별 최저가로 바로 접지 않고 행을 모아 둔다. 옵션 계열을 가르는
+   * _price.sameVendorRows 는 "우리 옵션 행이 하나도 없고 다른 옵션 행도
+   * 없으면 전부 쓴다" 는 폴백을 갖고 있어서, 그 판정을 내리려면 한 상품의
+   * 행이 전부 모여 있어야 한다. 청크마다 따로 접으면 폴백이 청크 단위로
+   * 갈려서 같은 상품이 청크 경계에 따라 다른 답을 낸다.
+   */
+  const rowsByKey = new Map();
 
   for (let i = 0; i < ids.length; i += CHUNK) {
     let data;
     try {
       const r = await supabase
         .from('price_history')
-        .select('product_id, mall, price, recorded_date, recorded_at')
+        // vendor_item_id 도 받는다 — 같은 상품 페이지의 다른 옵션을 걸러내야 한다.
+        .select('product_id, mall, vendor_item_id, price, recorded_date, recorded_at')
         .in('product_id', ids.slice(i, i + CHUNK))
         .gte('recorded_date', cutoff)
         // 잘릴 때 오래된 쪽이 버려지도록 최신순으로 가져온다.
@@ -250,19 +306,34 @@ async function loadStats(keys) {
     (data || []).forEach(r => {
       const key = `${r.product_id}|${r.mall || ''}`;
       if (!wanted.has(key)) return;   // 같은 product_id 의 다른 몰 행은 섞지 않는다
+      if (!rowsByKey.has(key)) rowsByKey.set(key, []);
+      rowsByKey.get(key).push(r);
+    });
+  }
+
+  rowsByKey.forEach((rows, key) => {
+    /*
+     * 같은 product_id 의 다른 옵션 행은 섞지 않는다.
+     *
+     * 쿠팡의 판매 단위는 vendor_item_id 다. 이 필터가 없으면 한 상품 페이지에
+     * 묶인 서로 다른 상품이 한 곡선이 된다 — 운영 실측(2026-09-04)으로
+     * 8082654809 가 15,900원(28회)과 222,390~242,100원(2회)을 함께 갖고 있었고,
+     * 그 위에서 AI 가 "역대 최저가입니다" 를 말했다.
+     *
+     * 폴백 규칙(옵션 표시가 하나도 없는 옛 기록은 예전처럼 상품 단위로 본다)은
+     * _price.sameVendorRows 에 있다. 상품 페이지·모달과 같은 함수를 쓴다.
+     */
+    const byDate = new Map();
+    sameVendorRows(rows, vidOf.get(key)).forEach(r => {
       const date = observedKstDate(r);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
       const price = int(r.price);
       if (price <= 0) return;
-      if (!byKey.has(key)) byKey.set(key, new Map());
-      const m = byKey.get(key);
-      const cur = m.get(date);
+      const cur = byDate.get(date);
       // 같은 날 여러 행이면 최저가 한 점만 (history-batch keepLowest 와 같은 기준)
-      if (cur === undefined || price < cur) m.set(date, price);
+      if (cur === undefined || price < cur) byDate.set(date, price);
     });
-  }
 
-  byKey.forEach((byDate, key) => {
     const points = [...byDate.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([date, price]) => ({ date, price }));
@@ -326,7 +397,13 @@ function assess(stat, price, today) {
 
   if (stat.low > 0) {
     const dLow = (p - stat.low) / stat.low;    // 0 = 역대 최저가와 같음
-    if (p <= stat.low) score += 25;
+    /*
+     * 확인되지 않은 신저가(하루만 본 값)에는 최저가 가점을 절반만 준다.
+     * api/_deal.js 의 unconfirmedLow 와 같은 기준이어야 한다 — 두 엔진이
+     * 다른 결론을 내면 dealOf 의 assess 대조가 서로를 뒤집는다.
+     */
+    const unconfirmedLow = stat.lowConfirmed === false && !!stat.lowIsLatest && p <= stat.low;
+    if (p <= stat.low) score += unconfirmedLow ? 12 : 25;
     else if (dLow <= 0.03) score += 18;
     else if (dLow >= 0.25) score -= 15;
     else if (dLow >= 0.12) score -= 6;
@@ -364,5 +441,5 @@ function assess(stat, price, today) {
 module.exports = {
   statsFrom, loadStats, spanDays, assess,
   WINDOW_DAYS, AVG_DAYS, TREND_DAYS, SHORT_AVG_DAYS,
-  ASSESS_MIN_DAYS, ASSESS_MAX_STALE, STALE_WARN_DAYS, VERDICT_LABEL
+  ASSESS_MIN_DAYS, ASSESS_MAX_STALE, STALE_WARN_DAYS, VERDICT_LABEL, LOW_CONFIRM_DAYS
 };
