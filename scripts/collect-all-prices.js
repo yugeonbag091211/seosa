@@ -299,6 +299,39 @@ const SECOND_PASS_ROUNDS = Number(process.env.PRICE_SECOND_PASS_ROUNDS) || 10;
 const CACHE_HINT_ENABLED = process.env.PRICE_CACHE_HINT !== '0';
 const CACHE_HINT_MAX_PER_PRODUCT = Number(process.env.PRICE_CACHE_HINT_MAX) || 3;
 
+/*
+ * ── 옵션 게이트 "확정" 임계값 (P1, 2026-09-06) ──────────────────
+ *
+ * 우리 옵션이 없는 응답을 **몇 번 연속으로** 봐야 "오늘은 이 상품의 옵션을
+ * 검색으로 만날 수 없다" 고 확정할 것인가. terminalOption 주석 참고.
+ *
+ * ★ 1 이면 안 된다. 처음에 그렇게 설계했고, 운영 데이터가 그것을 반박했다.
+ *
+ *   전제는 "OPTION_MISMATCH 는 결정론적이다 — 검색어를 바꿔도 같은 옵션이
+ *   온다" 였다. 틀렸다. 쿠팡 검색은 **검색어마다 다른 옵션을 대표로 싣는다.**
+ *
+ *   실측 (2026-09-06 KST 운영 데이터 재현, 오늘 응답에 등장한 쿠팡 상품 1,401개):
+ *     연속 불일치   상품수   그런데 결국 우리 옵션이 나온 비율(=오판율)
+ *          1회        97        69.1%   ← 첫 불일치로 끊으면 3분의 2가 오판
+ *          2회        43        41.9%
+ *          3회        35        34.3%
+ *          4회        17        23.5%
+ *          5회        16        12.5%
+ *         6회+        32        15.6%
+ *
+ *   즉 1회로 끊으면 오늘 하루에만 회수 53개를 잃는다(호출 494회 절약).
+ *   3회로 끊으면 잃는 회수 13개 / 절약 181회다.
+ *
+ * ★ 3 을 고른 근거. 오판율이 69% → 42% → 34% 로 급히 떨어진 뒤 평평해진다.
+ *   그 무릎이 3이다. 더 올리면 잃는 회수는 줄지만(4회 7개, 5회 5개) 절약도
+ *   같이 줄어(101회, 60회) 패스를 둘 이유가 사라진다.
+ *
+ * ★ 이 값은 "몇 번 확인하고 접을 것인가" 일 뿐, 채택 기준이 아니다.
+ *   pickOption 은 여전히 vendorItemId 완전 일치만 채택한다. 이 값을 아무리
+ *   낮춰도 다른 옵션의 가격이 기록되는 일은 없다 — 줄어드는 것은 호출뿐이다.
+ */
+const OPTION_TERMINAL_MISSES = Number(process.env.PRICE_OPTION_TERMINAL_MISSES) || 3;
+
 const FACET_MIN_GROUP     = Number(process.env.PRICE_FACET_MIN_GROUP) || 10;
 const FACET_MAX_PER_GROUP  = Number(process.env.PRICE_FACET_MAX_PER_GROUP) || 6;
 const FACET_POOL_PER_GROUP = Number(process.env.PRICE_FACET_POOL_PER_GROUP) || 24;
@@ -1199,6 +1232,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
       passStats: [], crossRecovered: 0, optionRejects: {},
       facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
+      /* 아무 일도 하지 않은 실행이 오늘의 terminal 목록을 지우면 안 된다 (P1). */
+      terminalOptionFailures:
+        (savedState && savedState.last_result && savedState.last_result.terminalOptionFailures) || [],
+      optionMissStreaks:
+        (savedState && savedState.last_result && savedState.last_result.optionMissStreaks) || {},
+      terminalOptionNew: 0,
       notFoundCount: 0,
       secondPassCalls: 0, secondPassRecovered: 0, secondPassGroups: 0, secondPassRemaining: 0,
       secondPassDone: [],
@@ -1237,12 +1276,24 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    * 하루 누적 합집합을 이어 간다 (collectorAttempted 주석 참고).
    */
   let priorCollectorAttempted = [];
+  /*
+   * 오늘 옵션 게이트가 "이 상품은 검색어를 바꿔도 소용없다" 고 확정한 상품
+   * (P1, 2026-09-06). terminalOption 주석 참고. 하루 단위로만 이어 간다.
+   */
+  let priorTerminalOption = [];
+  /*
+   * 상품별 연속 불일치 카운터도 같이 이어 간다. 이어받기 실행이 0 에서
+   * 다시 세면 임계값(OPTION_TERMINAL_MISSES)에 영영 닿지 못한다.
+   */
+  let priorOptionMissStreaks = {};
   let cursorKey = '', processed = 0, priorFailedKeywords = [];
   const isNewDay = !savedState || savedState.job_date !== TODAY;
   if (!isNewDay) {
     cursorKey = savedState.cursor_key || '';
     processed = savedState.processed || 0;
     priorSecondDone = (savedState.last_result && savedState.last_result.secondPassDone) || [];
+    priorTerminalOption = (savedState.last_result && savedState.last_result.terminalOptionFailures) || [];
+    priorOptionMissStreaks = (savedState.last_result && savedState.last_result.optionMissStreaks) || {};
     priorFacetDry = (savedState.last_result && savedState.last_result.facetDryGroups) || [];
     priorCollectorCovered = (savedState.last_result && savedState.last_result.collectorCovered) || [];
     priorCollectorAttempted = (savedState.last_result && savedState.last_result.collectorAttempted) || [];
@@ -1411,7 +1462,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       if (!p) return;                                   // 우리 상품이 아니다
       const key = `${p.product_id}|${p.mall}`;
       if (!uncovered.has(key)) return;                  // 이미 확보했다
-      if (!adoptOne(p, items, foundVia)) return;        // 옵션이 다르거나 가격이 없다
+      /*
+       * ★ terminal 상품도 여기서는 그대로 판정한다 (P1).
+       *   이 응답은 다른 상품을 위해 이미 나간 것이라 추가 호출이 0이다.
+       *   공짜로 얻을 수 있는 회수를 terminal 표시 때문에 버리지 않는다.
+       */
+      if (adoptOne(p, items, foundVia) !== 'MATCH') return;  // 옵션이 다르거나 가격이 없다
       markCovered(p.product_id, p.mall);
       collectorAttempted.add(key);                      // 호출이 나가 이 상품을 찾아냈다
       n++;
@@ -1533,14 +1589,74 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   let optionRejectLogged = 0;
   const OPTION_REJECT_LOG_MAX = 20;
 
+  /* ── 옵션 게이트의 "확정 실패" (P1, 2026-09-06) ──────────────────
+   *
+   * ★ 무엇이 잘못돼 있었나.
+   *
+   *   pickOption 은 실패 사유를 이미 정확히 구분해 낸다. 그런데 adoptOne 이
+   *   그것을 boolean 하나로 눌러 버려서, 호출부는 아래 둘을 구분하지 못했다.
+   *
+   *     NO_PRODUCT_MATCH      응답에 우리 상품이 아예 없었다
+   *                           → 다른 검색어로 찾으면 나올 수 있다
+   *     OPTION_MISMATCH       상품 페이지는 응답에 있었다. 그런데 우리가
+   *     RESPONSE_VID_MISSING  추적하는 vendorItemId 가 그 응답의 옵션 목록에
+   *                           없었다 → **검색어를 바꿔도 결과가 같다**
+   *
+   *   그래서 회수 사다리가 뒤의 두 경우에도 r1..r10 을 끝까지 돌았다.
+   *
+   *   운영 실측 (2026-09-06 KST, 읽기 전용):
+   *     오늘 쿠팡 collect 호출 2,200회 중, 옵션 게이트가 거부한 상품들의
+   *     사다리 검색어로 나간 호출이 상당 부분을 차지했다(재현 기준 최대 494회).
+   *
+   * ★ 단, 한 번의 불일치는 확정이 아니다 — OPTION_TERMINAL_MISSES 주석의
+   *   실측 참고. 쿠팡은 검색어마다 다른 옵션을 대표로 싣기 때문에, 첫
+   *   불일치로 끊으면 69%가 오판이다. 그래서 **연속 불일치가 임계값에
+   *   도달했을 때만** 확정한다. 중간에 우리 옵션이 한 번이라도 나오면
+   *   카운터는 0 으로 돌아간다.
+   *
+   * ★ 이것은 매칭을 느슨하게 하는 변경이 아니다 — 호출을 덜 하는 변경이다.
+   *   채택 기준(pickOption)은 한 줄도 바뀌지 않는다. 다른 옵션의 가격을
+   *   대신 기록하는 일은 여전히 없고, 그 상품은 그냥 미수집으로 남는다.
+   *
+   * ★ 영구 차단이 아니다. 쿠팡이 그 옵션을 다시 노출하거나 재색인할 수
+   *   있으므로 하루(KST) 단위로만 유지한다. isNewDay 가 리셋하고,
+   *   price_job_state.last_result 안의 JSONB 키 하나로만 이어진다
+   *   (새 테이블도, 스키마 변경도 없다).
+   *
+   * ★ 교차 매칭은 막지 않는다. 이 집합은 "이 상품 때문에 새 호출을 내지
+   *   말라" 는 뜻이지 "이 상품을 더 보지 말라" 가 아니다. 다른 상품을 위해
+   *   이미 나간 응답에 우리 옵션이 들어 있으면 그대로 채택하고, 그때
+   *   terminal 표시를 지운다 (adoptOne 의 MATCH 경로).
+   */
+  const TERMINAL_OPTION_REASONS = ['OPTION_MISMATCH', 'RESPONSE_VID_MISSING'];
+  const collectibleKeySet = new Set(collectible.map(p => `${p.product_id}|${p.mall}`));
+  const terminalOption = new Set(priorTerminalOption.filter(k => collectibleKeySet.has(k)));
+  const terminalOptionNew = new Set();
+  /*
+   * 상품별 "연속으로 우리 옵션이 없었던 응답" 수. 하루 단위로 이어 간다 —
+   * 이어받기 실행이 0 에서 다시 시작하면 임계값에 영원히 닿지 못한다.
+   */
+  const optionMissStreak = new Map(
+    Object.entries(priorOptionMissStreaks).filter(([k]) => collectibleKeySet.has(k))
+  );
+  /** 오늘 이 상품에 대해 회수 검색어를 더 내도 소용없는가. */
+  const isTerminalOption = (p) => terminalOption.has(`${p.product_id}|${p.mall}`);
+
   /**
    * 응답에서 이 타겟의 옵션을 골라 채택한다. 옵션이 다르면 채택하지 않는다.
+   *
+   * ★ 반환이 boolean 이 아니라 상태다 (P1). 호출부가 "옵션이 달라서 실패" 와
+   *   "응답에 없어서 실패" 를 구분할 수 있어야 하기 때문이다. 채택 여부는
+   *   `=== 'MATCH'` 하나로 판정한다.
+   *
    * @param {object} target
    * @param {Array}  items    접히지 않은 응답 항목(allItems)
    * @param {string} foundVia 이 응답을 만든 검색어
-   * @returns {boolean} 채택 여부
+   * @returns {'MATCH'|'NO_PRICE'|'OPTION_MISMATCH'|'RESPONSE_VID_MISSING'
+   *          |'NO_PRODUCT_MATCH'|'TARGET_VID_UNKNOWN'|'NO_TARGET_ID'} 판정 결과
    */
   function adoptOne(target, items, foundVia) {
+    const key = `${target.product_id}|${target.mall}`;
     const pick = pickOption(target, items);
     if (!pick.item) {
       optionRejects.set(pick.reason, (optionRejects.get(pick.reason) || 0) + 1);
@@ -1550,9 +1666,34 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
           + ` targetVendorItemId=${pick.want} responseVendorItemId=[${(pick.got || []).join(', ')}]`
           + ` 검색어="${String(foundVia).slice(0, 40)}" — 다른 옵션이라 채택하지 않습니다.`);
       }
-      return false;
+      /*
+       * ★ 여기가 P1 의 전부다. 사유가 확정 실패 후보면 연속 카운터를 올리고,
+       *   임계값(OPTION_TERMINAL_MISSES)에 닿았을 때만 terminal 로 적는다.
+       *
+       *   NO_PRODUCT_MATCH 는 여기 오지 않는다 — 호출부가 응답에 그 productId
+       *   가 있을 때만 이 함수를 부르기 때문이다. 혹시 오더라도 아래 목록에
+       *   없으므로 카운터조차 올라가지 않는다.
+       */
+      if (TERMINAL_OPTION_REASONS.indexOf(pick.reason) > -1) {
+        const n = (optionMissStreak.get(key) || 0) + 1;
+        optionMissStreak.set(key, n);
+        if (n >= OPTION_TERMINAL_MISSES && !terminalOption.has(key)) {
+          terminalOption.add(key);
+          terminalOptionNew.add(key);
+        }
+      }
+      return pick.reason;
     }
-    return addRow(target, pick.item, foundVia);
+    if (!addRow(target, pick.item, foundVia)) return 'NO_PRICE';
+    /*
+     * 옵션이 실제로 돌아왔다 — 앞선 응답들의 판단은 더 이상 유효하지 않다.
+     * (검색어마다 다른 옵션이 오므로 이런 일이 실제로 흔하다 —
+     *  OPTION_TERMINAL_MISSES 주석의 실측 참고)
+     */
+    optionMissStreak.delete(key);
+    terminalOption.delete(key);
+    terminalOptionNew.delete(key);
+    return 'MATCH';
   }
 
   async function saveAll() {
@@ -1642,7 +1783,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       const target = byId.get(pid);
       if (!target) return;                              // 이 그룹 밖 → 교차 매칭이 본다
       handled.add(pid);
-      if (!adoptOne(target, respItems, kw)) return;     // 옵션이 다르면 채택하지 않는다
+      if (adoptOne(target, respItems, kw) !== 'MATCH') return;  // 옵션이 다르면 채택하지 않는다
       markCovered(target.product_id, target.mall);
       hit++;
       if (!target.keyword) recovered++;
@@ -1798,6 +1939,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     /** 이 상품이 회수 패스 대상인가 — 1차가 "성공적으로" 지나간 것만. */
     const eligible = (p) => {
       const k = `${p.product_id}|${p.mall}`;
+      /*
+       * ★ 옵션 게이트가 확정 실패를 낸 상품은 오늘 회수 대상이 아니다 (P1).
+       *   상품 페이지는 이미 응답에 있었고 우리 옵션만 없었다 — 검색어를
+       *   바꿔도 같은 응답이 온다. 여기서 걸러 두면 캐시 힌트·facet 그룹
+       *   선정·사다리·secondPassRemaining 계산이 한꺼번에 이 상품을 뺀다.
+       *   (terminalOption 주석 참고. 하루가 바뀌면 리셋된다)
+       */
+      if (terminalOption.has(k)) return false;
       if (pass1Succeeded.has(k)) return true;                  // 이번 실행에서 1차 성공
       const kw = p.keyword || searchPhraseFromTitle(p.title);  // 오늘 앞선 실행이 1차를 돈 것
       if (!kw || !cursorKey || kw > cursorKey) return false;
@@ -1854,7 +2003,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         if (!target) return;
         handled.add(pid);
         // ← 옵션 게이트: vendorItemId 까지 같아야 채택한다 (pickOption 주석 참고)
-        if (!adoptOne(target, respItems, query)) return;
+        if (adoptOne(target, respItems, query) !== 'MATCH') return;
         markCovered(target.product_id, target.mall);
         hit++;
       });
@@ -1890,8 +2039,10 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         let hintCalls = 0, hintHit = 0;
         for (const [q, pids] of byQuery) {
           if (!canCall()) break;
-          const targets = [...uncovered.values()].filter(p => pids.indexOf(String(p.product_id)) > -1);
-          if (!targets.length) continue;        // 앞선 호출이 이미 잡았다
+          // 앞선 호출이 이미 잡았거나, 옵션 게이트가 확정 실패를 낸 상품은 뺀다 (P1).
+          const targets = [...uncovered.values()]
+            .filter(p => pids.indexOf(String(p.product_id)) > -1 && !isTerminalOption(p));
+          if (!targets.length) continue;
           hintCalls++;
           const res = await callAndMatch(q, targets, 'hint');
           if (!res.ok) continue;
@@ -1966,7 +2117,13 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         let dry = 0;
         for (const f of facets) {
           if (!canCall()) break;
-          const targets = g.rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`));
+          /*
+           * ★ terminal 상품은 타겟에서 뺀다 (P1). 라운드 도중에 terminal 이
+           *   된 상품이 남은 facet 을 계속 살려 두는 것을 막는다 — 그 상품
+           *   때문에 나가는 추가 호출을 0으로 만드는 것이 이 패스의 목적이다.
+           */
+          const targets = g.rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`)
+            && !isTerminalOption(p));
           if (!targets.length) break;
           facetCalls++;
           const res = await callAndMatch(f.query, targets, 'facet');
@@ -2064,8 +2221,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       let roundCalls = 0, roundHit = 0;
       for (const { q, rows } of queue) {
         if (!canCall()) break;
-        const targets = rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`));
-        if (!targets.length) continue;          // 앞선 호출이 이미 잡았다
+        /*
+         * 앞선 호출이 이미 잡았거나(uncovered 에서 빠짐), 이 라운드 도중에
+         * 옵션 게이트가 확정 실패를 냈으면(terminal) 타겟에서 뺀다 (P1).
+         * 남는 타겟이 없으면 이 검색어는 호출하지 않는다.
+         */
+        const targets = rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`)
+          && !isTerminalOption(p));
+        if (!targets.length) continue;
         secondPassCalls++; secondPassGroups++; roundCalls++;
         const res = await callAndMatch(q, targets, `r${round + 1}`);
         if (!res.ok) continue;
@@ -2244,6 +2407,23 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     optionRejects: Object.fromEntries(optionRejects),
     // 오늘 facet 이 마른 그룹. 다음 실행이 헛되이 두드리지 않게 이어 간다.
     facetDryGroups: facetDryOut,
+    /*
+     * 오늘 옵션 게이트가 확정 실패를 낸 상품 (P1, terminalOption 주석 참고).
+     * 같은 날 후속 실행이 이 상품들에 회수 검색어를 다시 내지 않게 이어 간다.
+     * 하루가 바뀌면 isNewDay 가 읽지 않으므로 자동으로 리셋된다.
+     * 상한은 secondPassDone 과 같은 이유로 둔다.
+     */
+    terminalOptionFailures: [...terminalOption].slice(-3000),
+    /*
+     * 아직 임계값에 닿지 않은 상품의 연속 불일치 카운터. 이어받기 실행이
+     * 이어서 세야 확정이 성립한다 (OPTION_TERMINAL_MISSES 주석 참고).
+     * 확정된 상품은 terminalOptionFailures 로 옮겨졌으므로 여기서 뺀다.
+     */
+    optionMissStreaks: Object.fromEntries(
+      [...optionMissStreak.entries()].filter(([k]) => !terminalOption.has(k)).slice(-3000)
+    ),
+    /* 이번 실행에서 새로 확정된 수 — 리포트/시뮬레이션이 효과를 볼 수 있게. */
+    terminalOptionNew: terminalOptionNew.size,
     // 오늘 누적 시도 목록. 무한히 커지지 않도록 상한을 둔다.
     secondPassDone: [...priorSecondDone, ...secondPassTried].slice(-3000)
   };
@@ -2291,7 +2471,12 @@ async function runLocked(state, lockToken) {
             && savedMalls['쿠팡'].last_result.secondPassDone)
             || (state.last_result && state.last_result.secondPassDone) || [],
           facetDryGroups: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
-            && savedMalls['쿠팡'].last_result.facetDryGroups) || []
+            && savedMalls['쿠팡'].last_result.facetDryGroups) || [],
+          /* 오늘 확정된 옵션 실패 목록 (P1) — 이어받기 실행이 같은 상품을 다시 파지 않게. */
+          terminalOptionFailures: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
+            && savedMalls['쿠팡'].last_result.terminalOptionFailures) || [],
+          optionMissStreaks: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
+            && savedMalls['쿠팡'].last_result.optionMissStreaks) || {}
         } }
     : null;
   /*
@@ -2314,7 +2499,10 @@ async function runLocked(state, lockToken) {
           collectorCovered: savedMalls['ADPICK'].collectorCovered || [],
           collectorAttempted: savedMalls['ADPICK'].collectorAttempted || [],
           secondPassDone: (savedMalls['ADPICK'].last_result || {}).secondPassDone || [],
-          facetDryGroups: (savedMalls['ADPICK'].last_result || {}).facetDryGroups || []
+          facetDryGroups: (savedMalls['ADPICK'].last_result || {}).facetDryGroups || [],
+          /* 오늘 확정된 옵션 실패 목록 (P1) — 쿠팡 경로와 같은 모양으로 맞춘다. */
+          terminalOptionFailures: (savedMalls['ADPICK'].last_result || {}).terminalOptionFailures || [],
+          optionMissStreaks: (savedMalls['ADPICK'].last_result || {}).optionMissStreaks || {}
         }
       }
     : null;
@@ -2491,7 +2679,10 @@ async function runLocked(state, lockToken) {
           // 2차 패스 진행 — 같은 날 후속 실행이 이어받는다(status 판정 주석 참고)
           last_result: {
             secondPassDone: coupangResult.secondPassDone || [],
-            facetDryGroups: coupangResult.facetDryGroups || []
+            facetDryGroups: coupangResult.facetDryGroups || [],
+            // 오늘 확정된 옵션 실패 (P1) — 같은 날 후속 실행이 이어받는다.
+            terminalOptionFailures: coupangResult.terminalOptionFailures || [],
+            optionMissStreaks: coupangResult.optionMissStreaks || {}
           },
           secondPassRecovered: coupangResult.secondPassRecovered,
           secondPassRemaining: coupangResult.secondPassRemaining,
@@ -2518,7 +2709,10 @@ async function runLocked(state, lockToken) {
           status: adpickResult.status, failedKeywords: adpickResult.failedKeywords,
           last_result: {
             secondPassDone: adpickResult.secondPassDone || [],
-            facetDryGroups: adpickResult.facetDryGroups || []
+            facetDryGroups: adpickResult.facetDryGroups || [],
+            // 오늘 확정된 옵션 실패 (P1) — 같은 날 후속 실행이 이어받는다.
+            terminalOptionFailures: adpickResult.terminalOptionFailures || [],
+            optionMissStreaks: adpickResult.optionMissStreaks || {}
           },
           secondPassRecovered: adpickResult.secondPassRecovered,
           secondPassRemaining: adpickResult.secondPassRemaining,
