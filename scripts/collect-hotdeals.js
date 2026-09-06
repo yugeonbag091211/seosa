@@ -345,10 +345,18 @@ function lifecycleFor(prev, verdict) {
 
 async function loadExisting() {
   const map = new Map();
+  /*
+   * 모든 현재 v1 source의 기존 딜을 읽는다.
+   *
+   * 이전에는 internal-history만 조회해서 ADPICK 딜은 DB에 이미 있어도
+   * prev=null로 취급됐다. 그 결과 같은 외부 딜을 다음 회차에 다시 만나도
+   * lifecycleFor()가 계속 NEW를 반환했다. source를 가리지 않고 기존 row를
+   * 읽어 동일한 (source, external_id, mall) 키로 생애주기를 이어 간다.
+   */
   const { data, error } = await supabase
     .from('hotdeals')
     .select('id, source, source_external_id, mall, hot_score, lifecycle, detected_at')
-    .eq('source', HS.INTERNAL_HISTORY.id)
+    .in('source', [HS.INTERNAL_HISTORY.id, HS.ADPICK_HOTDEAL.id])
     .limit(5000);
   if (error) { log('existing_read_failed', { error: error.message }); return map; }
   (data || []).forEach(r => map.set(`${r.source}|${r.source_external_id}|${r.mall}`, r));
