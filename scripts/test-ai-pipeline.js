@@ -193,6 +193,8 @@ function reset() {
   r = await call({ question: '무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   ok(r.body.degraded === true, '★ 지어낸 가격은 deterministic 답변으로 교체한다');
   ok(!r.body.text.includes('79,000원') && !r.body.text.includes('320,000원'), '★ 지어낸 금액 원문을 사용자에게 내보내지 않는다');
+  ok(!/AI 응답이 실패|AI 설명을 만들지 못/.test(r.body.text) && /확인된 상품·가격 데이터/.test(r.body.text),
+    '★ safety 교체를 provider 실패처럼 안내하지 않는다');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');

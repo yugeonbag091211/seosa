@@ -1323,7 +1323,8 @@ async function attachHistory(items) {
  * ★ 상품명에 든 P숫자("레노버 탭 P11 프로")는 걸리지 않는다. P1 뒤에 조사가
  *   오고 그 뒤가 공백·문장부호여야 하므로 "P11" 은 매칭되지 않는다.
  */
-const REF_WITH_JOSA = /\[?(P[1-8])\]?(은|는|이|가|을|를|와|과|의|도|만|에서|에|보다)(?=[\s,.!?)\]"'」』]|$)/g;
+const REF_WITH_JOSA = /\[?(P[1-8])\]?\s*(은|는|이|가|을|를|와|과|의|도|만|에서|에|보다)(?=[\s,.!?)\]"'」』]|$)/g;
+const REF_BEFORE_PAREN = /\[?(P[1-8])\]?(?=\s*\()/g;
 
 /**
  * 꼬리표를 상품명으로 되돌린다. 가리키는 상품을 못 찾으면 그대로 둔다
@@ -1331,12 +1332,35 @@ const REF_WITH_JOSA = /\[?(P[1-8])\]?(은|는|이|가|을|를|와|과|의|도|�
  */
 function derefRefs(text, items) {
   const list = Array.isArray(items) ? items : [];
-  return String(text == null ? '' : text).replace(REF_WITH_JOSA, (m, ref, josa) => {
+  const itemFor = ref => {
     const it = list.find(x => x && x.ref === ref);
     const title = it && String(it.title || '').replace(/\s+/g, ' ').trim();
-    if (!title) return m;
-    return (title.length > 24 ? `「${title.slice(0, 24)}…」` : `「${title}」`) + josa;
-  });
+    if (!title) return null;
+    return {
+      title,
+      display: title.length > 24 ? `「${title.slice(0, 24)}…」` : `「${title}」`
+    };
+  };
+  const naturalJosa = (title, josa) => {
+    const chars = Array.from(title).filter(ch => /[가-힣]/.test(ch));
+    const last = chars[chars.length - 1];
+    if (!last) return josa;
+    const hasFinal = (last.charCodeAt(0) - 0xac00) % 28 !== 0;
+    const pair = {
+      은: ['는', '은'], 는: ['는', '은'], 이: ['가', '이'], 가: ['가', '이'],
+      을: ['를', '을'], 를: ['를', '을'], 와: ['와', '과'], 과: ['와', '과']
+    }[josa];
+    return pair ? pair[hasFinal ? 1 : 0] : josa;
+  };
+  return String(text == null ? '' : text)
+    .replace(REF_WITH_JOSA, (m, ref, josa) => {
+      const item = itemFor(ref);
+      return item ? item.display + naturalJosa(item.title, josa) : m;
+    })
+    .replace(REF_BEFORE_PAREN, (m, ref) => {
+      const item = itemFor(ref);
+      return item ? item.display : m;
+    });
 }
 
 const REF_IN_TEXT = /(^|[\s*_(])\[?P[1-8]\]?\s+(?=\S)/g;
@@ -1367,6 +1391,12 @@ const REF_PAREN = /\s*[([]P[1-8][)\]]/g;
  */
 function stripRefs(text) {
   return String(text || '')
+    .replace(/\[?P[1-8]\]?\s*(은|는|이|가|을|를|와|과)(?=[\s,.!?)]|$)/g, (_m, josa) => {
+      const natural = { 은: '은', 는: '은', 이: '이', 가: '이', 을: '을', 를: '을', 와: '과', 과: '과' }[josa];
+      return `해당 상품${natural}`;
+    })
+    .replace(/\[?P[1-8]\]?\s*\($/g, '해당 상품')
+    .replace(/\[?P[1-8]\]?(?=\s*\()/g, '해당 상품')
     .replace(REF_IN_TEXT, '$1')
     .replace(REF_PAREN, '');
 }
@@ -3291,7 +3321,7 @@ module.exports = async function handler(req, res) {
         }));
         try {
           text = require('./_concierge').compose({
-            items, cards, decision, deal, constraints, noResult, degraded: true
+            items, cards, decision, deal, constraints, noResult, degraded: true, safety: true
           }).text;
           degradedByGrounding = true;
         } catch (e) {

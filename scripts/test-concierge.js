@@ -193,6 +193,10 @@ function wonsIn(t) { return (t.match(/[0-9][0-9,]*(?=\s*원)/g) || []).map(s => 
       deal: deal('BUY') }).text;
     check('★ 왜 짧은지 밝힌다 — AI 가 정상인 척하지 않는다', /AI 응답이 실패했기 때문/.test(d));
     check('정상 경로에는 그 말을 붙이지 않는다', !/AI 응답이 실패했기 때문/.test(n));
+    const safe = CG.compose({ items: items(), cards: [1], decision: decision(),
+      deal: deal('BUY'), degraded: true, safety: true }).text;
+    check('★ safety 교체는 provider 실패라고 말하지 않는다', !/AI 응답이 실패|AI 설명을 만들지 못/.test(safe));
+    check('safety 교체는 확인된 데이터임을 자연스럽게 알린다', /확인된 상품·가격 데이터/.test(safe));
     check('★ 판정·근거는 두 경로가 똑같다',
       /구매 시점: 지금 사도 좋다/.test(d) && /구매 시점: 지금 사도 좋다/.test(n));
   }
