@@ -31,7 +31,7 @@ on:
 
 concurrency:
   # 앞 실행이 아직 돌고 있으면 새 실행을 시작하지 않는다.
-  # 스크립트 안에도 잠금이 있지만(price_job_state), 여기서 막는 편이 싸다.
+  # 스크립트 안에도 전용 hotdeal_job_state 잠금이 있어 이중으로 막는다.
   group: seosa-hot
   cancel-in-progress: false
 
@@ -50,12 +50,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --omit=dev || npm install --omit=dev
 
-      # 외부 쇼핑 API 키를 넣지 않는다. 이 작업은 Supabase 만 읽고 쓴다 —
-      # 키가 없으면 실수로도 외부를 부를 수 없다.
+      # ADPICK_AFFILIATE_ID는 공식 쇼핑메이트 핫딜 SDK용 회원 식별자다.
+      # GitHub Secret이 없으면 빈 문자열이 전달되고 ADPICK source만 자동 비활성화된다.
+      # 값 자체는 코드/로그에 남기지 않는다.
       - name: Collect verified hot deals
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADPICK_AFFILIATE_ID: ${{ secrets.ADPICK_AFFILIATE_ID }}
         run: |
           node scripts/collect-hotdeals.js \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
