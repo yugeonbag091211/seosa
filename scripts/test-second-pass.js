@@ -1091,6 +1091,313 @@ function probeChild(envLines) {
   }
   console.log('');
 
+  /* ================================================================
+   * §12  P1 — 옵션 게이트의 "확정 실패" 를 회수 패스가 존중한다
+   *
+   * ★ 무엇을 고정하는가.
+   *
+   *   pickOption 은 실패 사유를 이미 구분한다. 그런데 adoptOne 이 그것을
+   *   boolean 으로 눌러 버려서 회수 사다리가 아래 둘을 똑같이 취급했다.
+   *
+   *     NO_PRODUCT_MATCH      응답에 우리 상품이 없었다
+   *                           → 다른 검색어로 찾으면 나올 수 있다 (재시도 O)
+   *     OPTION_MISMATCH       상품 페이지는 응답에 있었는데
+   *     RESPONSE_VID_MISSING  우리 vendorItemId 가 응답 옵션에 없었다
+   *                           → 검색어를 바꿔도 같은 답이 온다 (재시도 X)
+   *
+   *   운영 실측(2026-09-06 KST, 읽기 전용): 쿠팡 collect 호출 2,200회 중
+   *   뒤 두 경우의 상품들이 만든 사다리 검색어가 521회(23.7%)를 차지했다.
+   *
+   * ★ 이 절은 "호출을 덜 하는가" 만 검사하지 않는다. 그 대가로 매칭이
+   *   느슨해지지 않았는지도 같이 고정한다 — 다른 옵션 가격을 기록하면
+   *   호출을 아낀 것이 아니라 데이터를 망친 것이다.
+   * ================================================================ */
+  section('§12  P1 — terminal option failure 를 회수 패스에서 제외한다');
+  {
+    const { generateSecondPassQueries } = require('../api/_query');
+    const prodV = (id, title, vid, keyword) =>
+      ({ product_id: id, mall: '쿠팡', title, keyword: keyword || '', link: '', image: '',
+         item_id: 'I' + id, vendor_item_id: vid });
+    const itemV = (id, price, vid) =>
+      ({ productId: id, title: 't' + id, lprice: price, oprice: price,
+         link: 'https://x/' + id, image: '', mall: '쿠팡', itemId: 'I' + id, vendorItemId: vid });
+
+    /* 한 검색어 그룹에 네 가지 실패/성공 유형을 모아 둔다.
+       제목을 서로 겹치지 않게 해서 사다리 후보가 섞이지 않게 한다. */
+    const KW = 'kwP1';
+    const MM = prodV('P1MM', '옵션불일치 브랜드 무선 스탠드 청소기 프리미엄', 'VP1MM', KW);
+    const VM = prodV('P1VM', '응답옵션누락 회사 전기 주전자 티타늄 대용량', 'VP1VM', KW);
+    const NP = prodV('P1NP', '검색미노출 상사 공기청정기 헤파 필터 거실용', 'VP1NP', KW);
+    const OK = prodV('P1OK', '정상매칭 공업 커피 그라인더 수동 세라믹 버', 'VP1OK', KW);
+    const rows = [MM, VM, NP, OK];
+
+    const qsOf = p => generateSecondPassQueries(p, {}).filter(Boolean);
+    const only = (mine, others) => {
+      const other = new Set(others.flatMap(qsOf));
+      return qsOf(mine).filter(q => !other.has(q));
+    };
+    const mmOnly = only(MM, [VM, NP, OK]);
+    const vmOnly = only(VM, [MM, NP, OK]);
+    const npOnly = only(NP, [MM, VM, OK]);
+    check(mmOnly.length > 0 && vmOnly.length > 0 && npOnly.length > 0,
+      '픽스처 점검: 세 상품의 사다리 후보가 서로 구분된다',
+      { mmOnly: mmOnly.length, vmOnly: vmOnly.length, npOnly: npOnly.length });
+
+    /* 응답: MM 은 늘 다른 옵션으로, VM 은 늘 옵션 없이, OK 는 우리 옵션으로.
+       NP 는 어떤 응답에도 넣지 않는다(= NO_PRODUCT_MATCH).
+       ★ 사다리 응답에도 MM/VM 을 계속 실어 준다 — 실제 쿠팡이 그렇게 답하고,
+         그래야 연속 불일치 카운터가 임계값까지 올라가는 경로가 재현된다. */
+    const MISS = () => [
+      itemV('P1MM', 11000, 'VOTHER'),     // 우리 vid(VP1MM) 가 아니다 → OPTION_MISMATCH
+      itemV('P1VM', 12000, '')            // 응답에 vid 자체가 없다   → RESPONSE_VID_MISSING
+    ];
+    const fired = [];
+    const fetchAllFn = async (q) => {
+      fired.push(q);
+      if (q === KW) return { ok: true, reason: '', items: [...MISS(), itemV('P1OK', 13000, 'VP1OK')] };
+      return { ok: true, reason: '', items: MISS() };
+    };
+
+    saved.price_history = [];
+    const wrote = [];
+    const r = await runMallCollection({
+      cacheHintFn: NO_HINT,
+      recordPricesFn: async (obs) => {
+        wrote.push(...obs);
+        return { saved: obs.length, recorded: obs.length, rejected: 0, suspect: 0, errors: [],
+          recordedKeys: [...new Set(obs.map(o => o.productId + '|' + o.mall))] };
+      },
+      mallName: '쿠팡', rows, fetchAllFn, savedState: null, deadlineTs: FAR()
+    });
+
+    const ladder = fired.filter(q => q !== KW);
+    const hit = list => list.filter(q => ladder.indexOf(q) > -1);
+
+    check(hit(mmOnly).length > 0 && hit(mmOnly).length < mmOnly.length,
+      '★★ [1] OPTION_MISMATCH 상품은 확정 후 ladder 대상에서 제외된다 (사다리를 끝까지 돌지 않는다)',
+      { 나간호출: hit(mmOnly).length, 후보전체: mmOnly.length });
+    check(hit(vmOnly).length > 0 && hit(vmOnly).length < vmOnly.length,
+      '★★ [2] RESPONSE_VID_MISSING 상품도 확정 후 ladder 대상에서 제외된다',
+      { 나간호출: hit(vmOnly).length, 후보전체: vmOnly.length });
+    check(hit(npOnly).length === npOnly.length,
+      '★★ [3] NO_PRODUCT_MATCH 상품은 회수 대상에 그대로 남는다 (후보를 전부 돈다)',
+      { 나간호출: hit(npOnly).length, 후보전체: npOnly.length });
+
+    const covered = new Set(r.collectorCovered);
+    check(covered.has('P1OK|쿠팡') && covered.size === 1,
+      '★★ [4] 정상 MATCH 상품은 기존과 동일하게 기록된다',
+      [...covered]);
+    check(wrote.length === 1 && wrote[0].productId === 'P1OK' && wrote[0].vendorItemId === 'VP1OK',
+      '★★ [5] 같은 응답 안의 A(옵션불일치)가 B(정상)의 수집을 막지 않는다',
+      wrote.map(w => w.productId + '/' + w.vendorItemId));
+    check(!wrote.some(w => w.vendorItemId === 'VOTHER' || w.productId === 'P1MM'),
+      '★★ [6] 다른 vendorItemId 의 가격은 절대 기록되지 않는다',
+      wrote.map(w => w.productId + '/' + w.vendorItemId));
+    check(!wrote.some(w => w.productId === 'P1VM'),
+      '  RESPONSE_VID_MISSING 상품도 가격을 지어내지 않는다');
+
+    const term = new Set(r.terminalOptionFailures || []);
+    check(term.has('P1MM|쿠팡') && term.has('P1VM|쿠팡')
+      && !term.has('P1NP|쿠팡') && !term.has('P1OK|쿠팡'),
+      '  terminal 목록에 확정 실패 2개만 들어간다 (상품 단위)',
+      [...term]);
+    check(r.uncoveredProducts === 3,
+      '  미수집은 여전히 3개 — terminal 은 "수집됨" 이 아니다', r.uncoveredProducts);
+  }
+
+  {
+    /* 12-b) 호출 수 회귀 — 같은 상품이 NO_PRODUCT_MATCH 일 때와
+     *       OPTION_MISMATCH 일 때 실제 호출 수를 비교한다. */
+    const prodV = (id, title, vid) =>
+      ({ product_id: id, mall: '쿠팡', title, keyword: 'kwCNT', link: '', image: '',
+         item_id: 'I' + id, vendor_item_id: vid });
+    const one = [prodV('CNT1', '호출수 비교용 브랜드 스테인리스 보온병 대용량', 'VCNT1')];
+
+    const WRONG = [{ productId: 'CNT1', title: 't', lprice: 9000, oprice: 9000, link: '', image: '',
+      mall: '쿠팡', itemId: 'ICNT1', vendorItemId: 'VSOMETHINGELSE' }];
+    const RIGHT = [{ productId: 'CNT1', title: 't', lprice: 9000, oprice: 9000, link: '', image: '',
+      mall: '쿠팡', itemId: 'ICNT1', vendorItemId: 'VCNT1' }];
+
+    /** everyItems: 모든 호출이 돌려줄 응답 (사다리 포함) */
+    async function runWith(everyItems) {
+      const fired = [];
+      const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+        mallName: '쿠팡', rows: one, savedState: null, deadlineTs: FAR(),
+        fetchAllFn: async (q) => { fired.push(q); return { ok: true, reason: '', items: everyItems(q) }; }
+      });
+      return { calls: fired.length, ladder: fired.length - 1, r };
+    }
+
+    // 대조군: 응답에 상품이 아예 없다 → 다른 검색어로 찾아볼 여지가 있다
+    const control = await runWith(() => []);
+    // 실험군: 상품은 늘 있는데 언제나 다른 옵션이다 → 임계값에서 접는다
+    const treat = await runWith(() => WRONG);
+
+    /* 임계값은 소스에서 읽어 테스트가 값을 따라가게 한다 (하드코딩 금지). */
+    const THRESH = Number(/PRICE_OPTION_TERMINAL_MISSES\) \|\| (\d+)/
+      .exec(require('fs').readFileSync(require('path').join(__dirname, 'collect-all-prices.js'), 'utf8'))[1]);
+    check(THRESH >= 2,
+      `  확정 임계값 OPTION_TERMINAL_MISSES = ${THRESH} (1 이면 실측 오판율 69%)`, THRESH);
+    check(control.ladder > THRESH,
+      '★★ [7] 대조군(NO_PRODUCT_MATCH): 사다리가 후보를 끝까지 돈다', control.ladder);
+    check(treat.ladder === THRESH - 1,
+      `★★ [8] 실험군(OPTION_MISMATCH): 1차 포함 ${THRESH}번 확인하고 멈춘다 — 이후 ladder 호출 0회`,
+      { ladder: treat.ladder, expected: THRESH - 1 });
+    check(treat.calls < control.calls,
+      `  총 호출 ${control.calls} → ${treat.calls} 회로 줄어든다`,
+      { control: control.calls, treat: treat.calls });
+    check(treat.r.collectorSuccessProducts === 0 && control.r.collectorSuccessProducts === 0,
+      '  어느 쪽도 가격을 지어내지 않는다 (둘 다 미수집)');
+
+    /* ★ 회귀 방지 — 한 번의 불일치로 끊으면 안 된다.
+       실측(2026-09-06): 연속 1회 불일치 상품의 69.1% 가 나중에 우리 옵션으로
+       돌아왔다. 쿠팡이 검색어마다 다른 옵션을 대표로 싣기 때문이다. */
+    let nth = 0;
+    const flip = await runWith(() => (++nth === 1 ? WRONG : RIGHT));
+    check(flip.r.collectorSuccessProducts === 1,
+      '★★ [8b] 1차에서 옵션이 달랐어도, 다음 검색어가 우리 옵션을 주면 회수한다',
+      { covered: flip.r.collectorCovered, ladder: flip.ladder });
+    check(!(flip.r.terminalOptionFailures || []).length,
+      '  MATCH 가 나오면 연속 불일치 카운터가 리셋된다', flip.r.terminalOptionFailures);
+  }
+
+  {
+    /* 12-c) 날짜 경계 — 같은 날에는 이어받고, 날이 바뀌면 다시 시도한다.
+     *       영구 차단이 아니라는 것이 이 절의 요점이다. */
+    const TODAY_KST = require('./collect-all-prices').kstToday();
+    const YESTERDAY = new Date(Date.parse(TODAY_KST + 'T00:00:00Z') - 864e5)
+      .toISOString().slice(0, 10);
+    const rowsD = [{ product_id: 'DAY1', mall: '쿠팡', keyword: 'kwDAY',
+      title: '날짜경계 확인용 브랜드 접이식 캠핑 의자 경량', link: '', image: '',
+      item_id: 'IDAY1', vendor_item_id: 'VDAY1' }];
+
+    async function runDay(jobDate) {
+      const fired = [];
+      const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+        mallName: '쿠팡', rows: rowsD, deadlineTs: FAR(),
+        collectedTodayFn: async () => new Set(),
+        savedState: { job_date: jobDate, cursor_key: '', processed: 0, total: 1, status: 'running',
+          last_result: { failedKeywords: [], secondPassDone: [], collectorCovered: [],
+                         terminalOptionFailures: ['DAY1|쿠팡'] } },
+        fetchAllFn: async (q) => { fired.push(q); return { ok: true, reason: '', items: [] }; }
+      });
+      return { ladder: fired.length - 1, r };
+    }
+
+    const sameDay = await runDay(TODAY_KST);
+    const newDay  = await runDay(YESTERDAY);
+    check(sameDay.ladder === 0,
+      '★★ [9] 같은 KST 수집일 안에서는 이어받아 재호출하지 않는다', sameDay.ladder);
+    check(newDay.ladder > 0,
+      '★★ [10] 다음 수집일에는 다시 정상적으로 시도한다 (영구 차단 아님)', newDay.ladder);
+    check(!(newDay.r.terminalOptionFailures || []).length,
+      '  새 작업일에는 terminal 목록이 리셋된다', newDay.r.terminalOptionFailures);
+  }
+
+  {
+    /* 12-d) 교차 매칭 안전성 — 다른 상품을 위해 나간 응답에 우리 옵션이
+     *       들어 있으면, terminal 표시가 있어도 그대로 회수한다.
+     *       terminal 은 "새 호출을 내지 말라" 이지 "더 보지 말라" 가 아니다. */
+    const rowsX = [
+      { product_id: 'X1', mall: '쿠팡', keyword: 'kwX1',
+        title: '교차회수 대상 브랜드 무선 이어폰 노이즈캔슬링', link: '', image: '',
+        item_id: 'IX1', vendor_item_id: 'VX1' },
+      { product_id: 'X2', mall: '쿠팡', keyword: 'kwX2',
+        title: '다른그룹 상품 브랜드 블루투스 스피커 방수형', link: '', image: '',
+        item_id: 'IX2', vendor_item_id: 'VX2' }
+    ];
+    const wrote = [];
+    const r = await runMallCollection({
+      cacheHintFn: NO_HINT,
+      recordPricesFn: async (obs) => {
+        wrote.push(...obs);
+        return { saved: obs.length, recorded: obs.length, rejected: 0, suspect: 0, errors: [],
+          recordedKeys: [...new Set(obs.map(o => o.productId + '|' + o.mall))] };
+      },
+      mallName: '쿠팡', rows: rowsX, savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async (q) => {
+        // kwX1 응답: X1 이 다른 옵션으로 온다 → X1 terminal 확정
+        if (q === 'kwX1') return { ok: true, reason: '', items: [
+          { productId: 'X1', title: 't', lprice: 5000, oprice: 5000, link: '', image: '',
+            mall: '쿠팡', itemId: 'IX1', vendorItemId: 'VWRONG' } ] };
+        // kwX2 응답: X2 와 함께 X1 이 이번엔 **우리 옵션으로** 들어 있다
+        if (q === 'kwX2') return { ok: true, reason: '', items: [
+          { productId: 'X2', title: 't', lprice: 6000, oprice: 6000, link: '', image: '',
+            mall: '쿠팡', itemId: 'IX2', vendorItemId: 'VX2' },
+          { productId: 'X1', title: 't', lprice: 5500, oprice: 5500, link: '', image: '',
+            mall: '쿠팡', itemId: 'IX1', vendorItemId: 'VX1' } ] };
+        return { ok: true, reason: '', items: [] };
+      }
+    });
+    const covered = new Set(r.collectorCovered);
+    check(covered.has('X2|쿠팡'),
+      '★★ [11] terminal 상품이 있어도 같은 응답의 다른 상품은 그대로 수집된다');
+    check(covered.has('X1|쿠팡'),
+      '★★ [12] 이미 나간 응답에 우리 옵션이 있으면 terminal 이어도 회수한다 (추가 호출 0회)');
+    check(!(r.terminalOptionFailures || []).includes('X1|쿠팡'),
+      '  회수되면 terminal 표시가 해제된다', r.terminalOptionFailures);
+    check(wrote.every(w => w.vendorItemId === 'V' + w.productId),
+      '  기록된 가격은 전부 우리가 추적하는 옵션의 것이다',
+      wrote.map(w => w.productId + '/' + w.vendorItemId));
+    check(!wrote.some(w => w.vendorItemId === 'VWRONG'),
+      '  잘못된 옵션(VWRONG) 가격은 기록되지 않는다');
+  }
+
+  {
+    /* 12-e) 연속 불일치 카운터가 같은 날 실행 사이를 넘어간다.
+     *       넘어가지 않으면 이어받기 실행이 매번 0 에서 다시 세느라
+     *       임계값에 영영 닿지 못하고, P1 이 아무 일도 하지 않는다. */
+    const rowsS = [{ product_id: 'ST1', mall: '쿠팡', keyword: 'kwST',
+      title: '카운터 이어받기 브랜드 유선 다리미 스팀 세라믹', link: '', image: '',
+      item_id: 'IST1', vendor_item_id: 'VST1' }];
+    const WRONG = [{ productId: 'ST1', title: 't', lprice: 1000, oprice: 1000, link: '', image: '',
+      mall: '쿠팡', itemId: 'IST1', vendorItemId: 'VNOPE' }];
+    const TODAY_KST = require('./collect-all-prices').kstToday();
+
+    /* deadline 을 이미 지난 시각으로 주면 1차 패스만 돌고 회수 패스는
+       canCall() 에서 멈춘다 → 실행당 관측 정확히 1회. 하루에 여러 번 도는
+       cron 을 그대로 흉내 낸 것이다. */
+    async function oneObservationRun(carried, deadline) {
+      let fired = 0;
+      const r = await runMallCollection({ recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+        mallName: '쿠팡', rows: rowsS, deadlineTs: deadline,
+        collectedTodayFn: async () => new Set(),
+        savedState: { job_date: TODAY_KST, cursor_key: '', processed: 0, total: 1, status: 'running',
+          last_result: { failedKeywords: [], secondPassDone: [], collectorCovered: [],
+            terminalOptionFailures: carried.terminalOptionFailures,
+            optionMissStreaks: carried.optionMissStreaks } },
+        fetchAllFn: async () => { fired++; return { ok: true, reason: '', items: WRONG }; }
+      });
+      return { fired, r,
+        carried: { terminalOptionFailures: r.terminalOptionFailures || [],
+                   optionMissStreaks: r.optionMissStreaks || {} } };
+    }
+
+    let carried = { terminalOptionFailures: [], optionMissStreaks: {} };
+    const perRun = [];
+    for (let i = 0; i < 3; i++) {
+      const out = await oneObservationRun(carried, Date.now());   // 1차만 도는 실행
+      carried = out.carried;
+      perRun.push({ fired: out.fired, streak: carried.optionMissStreaks['ST1|쿠팡'] || 0,
+                    terminal: carried.terminalOptionFailures.length });
+    }
+    check(perRun.every(x => x.fired === 1), '  실행당 관측 1회로 통제됐다', perRun.map(x => x.fired));
+    check(perRun[0].terminal === 0 && perRun[0].streak === 1,
+      '★★ [13] 한 번의 불일치로는 확정하지 않는다 (카운터만 1)', perRun[0]);
+    check(perRun[perRun.length - 1].terminal === 1,
+      '★★ [14] 실행 경계를 넘어 카운터가 누적돼 확정에 이른다',
+      perRun.map(x => `streak=${x.streak}/terminal=${x.terminal}`));
+
+    // 확정된 상태로 정상 deadline 실행 → 사다리 호출 0회
+    const after = await oneObservationRun(carried, FAR());
+    // 대조군: 카운터를 이어받지 않으면 같은 실행이 사다리를 돈다
+    const fresh = await oneObservationRun({ terminalOptionFailures: [], optionMissStreaks: {} }, FAR());
+    check(after.fired === 1 && fresh.fired > 1,
+      '  확정된 뒤에는 1차만 돌고 사다리 호출이 0회가 된다',
+      { 확정후: after.fired, 대조군: fresh.fired });
+  }
+  console.log('');
+
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('테스트 실행 오류:', e); process.exit(1); });
