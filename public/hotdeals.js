@@ -7,22 +7,93 @@
   $('themeToggle').onclick = function () { var mode = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = mode; try { localStorage.setItem('seosa_theme', mode); } catch (_) {} themeLabel(); };
   themeLabel();
   function fact(label, value) { return '<div><dt>' + V.esc(label) + '</dt><dd>' + V.esc(value) + '</dd></div>'; }
+
+  /*
+   * 같은 상품을 파는 다른 곳.
+   *
+   * ★ 카드에는 판매처를 도배하지 않는다. 목록에서는 "다른 판매처 N곳"까지만
+   *   말하고, 값을 나란히 놓고 비교하는 일은 여기(상세)에서 한다.
+   * ★ otherOffers 는 서버가 «자기 자신을 뺀» 목록으로 준다(api/hotdeals.js).
+   *   비어 있으면 표 자체를 그리지 않는다 — 한 줄짜리 비교표는 비교가 아니다.
+   * ★ 딜이 아닌 오퍼(NORMAL)도 들어온다. 그게 더 쌀 수 있고, 숨기면
+   *   사용자를 더 비싼 곳으로 보내게 된다. 다만 «검증» 이라고 부르지는 않는다.
+   */
+  function offerTable(d) {
+    var list = Array.isArray(d.otherOffers) ? d.otherOffers.filter(function (o) {
+      return o && V.num(o.price) != null && o.price > 0;
+    }) : [];
+    if (!list.length) return '';
+
+    var mine = { mall: d.mall, price: d.price, url: d.url, self: true };
+    var rows = list.concat([mine]).sort(function (a, b) { return a.price - b.price; });
+    var best = rows[0].price;
+
+    return '<h2>판매처 가격 비교</h2>'
+      + '<table class="hd-offers"><caption class="hd-note">SEOSA가 같은 상품으로 확인한 판매처예요. 배송비·옵션은 포함하지 않은 값입니다.</caption>'
+      + '<thead><tr><th scope="col">판매처</th><th scope="col">가격</th><th scope="col">이동</th></tr></thead><tbody>'
+      + rows.map(function (o) {
+        var link = V.url(o.url);
+        return '<tr' + (o.self ? ' class="is-self"' : '') + '>'
+          + '<th scope="row">' + V.esc(o.mall || '판매처') + (o.self ? ' <span class="hd-note">지금 보는 곳</span>' : '')
+          + (o.price === best ? ' <span class="hot-low">최저가</span>' : '') + '</th>'
+          + '<td>' + V.price(o.price) + '</td>'
+          + '<td>' + (link
+            ? '<a href="' + V.esc(link) + '" target="_blank" rel="sponsored nofollow noopener">확인 ↗</a>'
+            : '<span class="hd-note">링크 없음</span>') + '</td></tr>';
+      }).join('')
+      + '</tbody></table>';
+  }
+
   function detail(d) {
     document.title = d.title + ' · 핫딜 · SEOSA';
     var image = V.url(d.image), link = V.url(d.url), facts = '';
-    if (Number.isInteger(d.observations) && d.observations > 0) facts += fact('가격 기록', d.observations + '회');
-    if (typeof d.spanDays === 'number' && d.spanDays > 0) facts += fact('관측 기간', d.spanDays + '일');
-    if (typeof d.median30 === 'number' && d.median30 > 0) facts += fact('최근 30일 중앙값', V.price(d.median30));
-    if (typeof d.observedLow === 'number' && d.observedLow > 0) facts += fact('관측 최저가', V.price(d.observedLow));
+    var s = d.signals || {};
+
+    /*
+     * 근거를 값으로 늘어놓는다. 전부 «모르면 빼는» 규칙이다 —
+     * V.num 이 null 을 돌려주면 그 줄은 아예 만들어지지 않는다.
+     */
+    var dropAmount = V.num(s.priceDropAmount), dropPercent = V.num(s.priceDropPercent);
+    var refPrice = V.num(s.referencePrice), refLabel = V.refLabels[s.referenceKind] || '';
+    if (dropAmount != null && dropAmount > 0) {
+      facts += fact('내린 금액', V.won(dropAmount) + (dropPercent != null && dropPercent > 0 ? ' (' + V.pct(dropPercent) + ')' : ''));
+    }
+    if (refPrice != null && refPrice > 0 && refLabel) facts += fact(refLabel, V.price(refPrice));
+    var prev = V.num(s.previousPrice);
+    if (prev != null && prev > 0) facts += fact('직전 확인 가격', V.price(prev));
+
+    /* observations/spanDays 와 signals 는 같은 baseline 에서 나온 값이다.
+     * 둘 다 있으면 signals 를 쓴다 — 그쪽이 최신 계약이다. */
+    var count = V.num(s.historyCount), days = V.num(s.historyDays);
+    if (count != null && count > 0) facts += fact('가격 기록', count + '회');
+    else if (Number.isInteger(d.observations) && d.observations > 0) facts += fact('가격 기록', d.observations + '회');
+    if (days != null && days > 0) facts += fact('관측 기간', days + '일');
+    else if (typeof d.spanDays === 'number' && d.spanDays > 0) facts += fact('관측 기간', d.spanDays + '일');
+
+    if (typeof d.median30 === 'number' && d.median30 > 0 && s.referenceKind !== 'median30') facts += fact('최근 30일 중앙값', V.price(d.median30));
+    var low = V.num(s.observedLow);
+    if (low != null && low > 0) facts += fact('관측 최저가', V.price(low) + (s.nearHistoricalLow === true ? ' · 지금 그 수준' : ''));
+    else if (typeof d.observedLow === 'number' && d.observedLow > 0) facts += fact('관측 최저가', V.price(d.observedLow));
     var reasons = Array.isArray(d.reasons) ? d.reasons.filter(function (r) { return r && typeof r.text === 'string' && r.text.trim(); }) : [];
     if (!reasons.length && d.reason) reasons = [{ text: d.reason }];
     $('detail').innerHTML = '<a class="hd-back" href="/hotdeals.html">← 핫딜 목록</a><div class="hd-detail"><div class="hot-media">'
       + (image ? '<img class="hot-thumb" src="' + V.esc(image) + '" alt="' + V.esc(d.title) + '" width="480" height="480">' : '<span>이미지 준비 중</span>')
       + '</div><div><p class="hot-badge">' + V.esc(V.labels[d.status] || '추가 확인 중') + '</p><h1>' + V.esc(d.title) + '</h1><p class="hot-price">' + V.price(d.price) + '</p>'
+      + V.drop(s)
+      /*
+       * ★ 더 싼 곳이 있으면 구매 버튼보다 «위» 에서 말한다.
+       *   아래쪽 각주로 밀면 사용자는 그대로 이 판매처에서 산다.
+       */
+      + (d.isLowest === false
+        ? '<p class="hd-cheaper">' + V.esc((d.lowestMall || '다른 판매처')
+            + (V.num(d.lowestPrice) != null ? ' ' + V.won(d.lowestPrice) : '') + '에서 더 저렴해요.') + '</p>'
+        : '')
       + '<div class="hot-meta">' + (d.mall ? '<span>' + V.esc(d.mall) + '</span>' : '') + V.time(d.checkedAt) + '</div>'
+      + V.evidence(s)
       + (reasons.length ? '<h2>이 가격을 눈여겨볼 이유</h2><ul>' + reasons.map(function (r) { return '<li>' + V.esc(r.text) + '</li>'; }).join('') + '</ul>' : '<p class="hd-note">가격을 판단할 근거를 더 확인하고 있어요.</p>')
       + (d.status === 'POTENTIAL_DEAL' ? '<p class="hd-note">아직 검증이 끝나지 않은 상품이에요. 가격 기록과 판매 조건을 확인해 주세요.</p>' : '')
       + (facts ? '<dl class="hd-facts">' + facts + '</dl>' : '')
+      + offerTable(d)
       + '<div class="hd-actions">' + (d.productId ? '<a href="/p/' + encodeURIComponent(d.productId) + '?mall=' + encodeURIComponent(d.mall || '') + '">가격 그래프·상품 상세 보기</a>' : '')
       + (link ? '<a class="primary" href="' + V.esc(link) + '" target="_blank" rel="sponsored nofollow noopener">' + V.esc(d.mall || '판매처') + '에서 확인 ↗<span class="hd-note" style="color:inherit"> (새 창)</span></a>' : '') + '</div>'
       + '<p class="hd-note">판매처에서 옵션·배송비·쿠폰 적용 조건과 최종 가격을 확인해 주세요. 제휴 링크로 구매하면 SEOSA가 수수료를 받을 수 있어요.</p></div></div>';

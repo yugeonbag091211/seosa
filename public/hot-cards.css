@@ -4,3 +4,23 @@
 @media(prefers-reduced-motion:reduce){.hot-card{transition:none}.drop-loading .ring{animation:none}}
 
 .hot-card:focus-visible,.hot-entry:focus-visible{outline:2px solid var(--ink);outline-offset:4px}
+
+/* ── 가격 근거 (2026-09-07 통합: /api/hotdeals signals·offers 연결) ──
+   값이 없으면 이 요소들은 아예 만들어지지 않는다(hot-view.js num()).
+   그래서 «빈 상태» 스타일은 두지 않는다 — 그릴 일이 없다. */
+.hot-drop{margin:0;font-size:13px;font-weight:600;color:var(--down);line-height:1.45;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.hot-ref{font-weight:400;color:var(--soft);font-size:12px}
+.hot-tags{display:flex;flex-wrap:wrap;gap:4px 6px}
+.hot-tag{font-size:11px;color:var(--soft);background:var(--surface);padding:2px 6px;border-radius:3px;overflow-wrap:anywhere}
+.hot-tag.is-warn{background:none;border:1px dashed var(--soft)}
+.hot-low{color:var(--down);font-weight:600}
+.hot-alt{color:var(--soft)}
+.hd-cheaper{margin:4px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:4px;background:var(--surface);font-size:14px;overflow-wrap:anywhere}
+.hd-offers{width:100%;border-collapse:collapse;margin:12px 0 4px;font-size:14px}
+.hd-offers caption{text-align:left;padding-bottom:8px}
+.hd-offers th,.hd-offers td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+.hd-offers thead th{font-size:12px;color:var(--soft);font-weight:500}
+.hd-offers td{font-variant-numeric:tabular-nums}
+.hd-offers tr.is-self{background:var(--surface)}
+.hd-offers a{display:inline-flex;align-items:center;min-height:44px}
+@media(max-width:640px){.hd-offers{font-size:13px}.hd-offers th,.hd-offers td{padding:8px 6px}}

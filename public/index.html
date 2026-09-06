@@ -7410,6 +7410,21 @@ var Hot = {
   }
 };
 
+/*
+ * 핫딜 카드 클릭 계측.
+ *
+ * HotView.card 가 만드는 카드는 <a href="/hotdeals.html?id=..."> 라 브라우저가
+ * 직접 이동한다 — data-act 를 타지 않으므로 Actions 디스패처도, Hot.open 도
+ * 불리지 않는다. 그래서 hotdeal_open 이 조용히 끊겼다.
+ *
+ * 앵커를 가로채지 않는다(가로채면 새 탭·가운데 클릭·키보드 이동이 다 깨진다).
+ * 이동은 그대로 두고 계측만 얹는다.
+ */
+document.addEventListener('click', function(e) {
+  var a = e.target && e.target.closest && e.target.closest('#hotGrid a.hot-card');
+  if (a) Track.ev('hotdeal_open');
+});
+
 var Drop = {
 
   load: function() {
