@@ -88,8 +88,80 @@ comment on column hotdeals.source_reference_price is
 comment on column hotdeals.deal_status is
   'REJECTED 는 되짚기 위해 저장만 하고 사용자에게 노출하지 않는다.';
 
+-- ============================================================================
+--  핫딜 수집기 잠금 — hotdeal_job_state
+--
+--  ── 왜 price_job_state 를 쓰지 않는가 ──────────────────────────────────
+--
+--  price_job_state 는 `id int primary key default 1` 인 singleton 이고
+--  job_date 는 `date` 타입이다. 핫딜 수집기가 job_date 에
+--  'hotdeal-2026-09-06' 같은 문자열을 넣으려 했는데 그건 date 로 캐스팅되지
+--  않아 insert 자체가 실패한다. 게다가 그 표는 가격 수집 한 바퀴의 커서·재시도
+--  목록을 들고 있어서, 남의 작업 상태를 같은 행에 끼워 넣으면 안 된다.
+--
+--  그래서 아주 작은 전용 singleton 을 따로 둔다. 구조는 기존 CAS 잠금
+--  (scripts/collect-all-prices.js acquireLock)과 같은 생각이되, 토큰과 만료를
+--  별도 컬럼으로 꺼내 소유권 검사를 명시적으로 만든다.
+-- ============================================================================
+
+create table if not exists hotdeal_job_state (
+  id           int         primary key default 1,
+  status       text        not null default 'idle',      -- idle | running | done | failed
+  lock_token   text        not null default '',          -- 지금 잠금을 쥔 실행의 토큰
+  lock_until   timestamptz,                              -- 이 시각이 지나면 회수 가능
+  last_run_at  timestamptz,
+  last_result  jsonb       not null default '{}'::jsonb,
+  updated_at   timestamptz not null default now(),
+  constraint hotdeal_job_state_singleton check (id = 1)
+);
+
+insert into hotdeal_job_state (id, status) values (1, 'idle')
+on conflict (id) do nothing;
+
+comment on table hotdeal_job_state is
+  '핫딜 수집기 전용 singleton 잠금. price_job_state(가격 수집)와 섞지 않는다.';
+comment on column hotdeal_job_state.lock_token is
+  '잠금 소유자. release 는 자기 토큰일 때만 성공해야 한다(남의 잠금 해제 금지).';
+
+-- ============================================================================
+--  RLS — server-only 표
+--
+--  SEOSA 의 모든 표는 RLS 를 켜고 정책을 만들지 않는다. 정책이 없으면
+--  anon / authenticated 는 어떤 행도 읽거나 쓸 수 없고, 서버가 쓰는
+--  service_role 만 RLS 를 우회한다. 이 두 표는 전부 서버가 만들고 서버가
+--  읽는 값이라 클라이언트가 직접 만질 이유가 없다.
+--  (기존 관례: price_job_state · adpick_search_cache · payments · alerts …)
+--
+--  ★ 적용 전/후 접근 계약 — 리뷰어가 직접 확인할 것
+--
+--    적용 전 : 표가 없다. /api/hotdeals 는 pending:true 로 빈 목록을 준다
+--              (api/hotdeals.js 의 relation-does-not-exist 처리).
+--
+--    적용 후 : anon key 로 아래를 실행하면 «행 0개» 여야 한다. 오류가 아니라
+--              0행이 정상이다 — RLS 가 정책 없는 표를 그렇게 다룬다.
+--
+--                select * from hotdeals limit 1;            -- anon → 0행
+--                insert into hotdeals (source, source_external_id, mall,
+--                  current_price, deal_status) values ('x','y','z',1,'NORMAL');
+--                                                           -- anon → 거부
+--                select * from hotdeal_job_state;           -- anon → 0행
+--
+--              service_role 로는 위 셋 다 정상 동작해야 한다.
+--    (scripts/test-hotdeal.js 가 이 마이그레이션에 RLS 구문이 있는지 자체를
+--     고정한다 — SQL 을 실행하지 않고 파일로 검증한다)
+-- ============================================================================
+
+alter table hotdeals          enable row level security;
+alter table hotdeal_job_state enable row level security;
+
+-- PostgREST 가 새 표를 바로 알아보게 한다 (기존 마이그레이션과 같은 마무리).
+notify pgrst, 'reload schema';
+
 -- ── 확인 ────────────────────────────────────────────────────────────────
 -- select count(*) as rows, count(distinct source) as sources from hotdeals;
+-- select relname, relrowsecurity from pg_class
+--   where relname in ('hotdeals','hotdeal_job_state');   -- 둘 다 true 여야 한다
 
 -- ── 롤백 ────────────────────────────────────────────────────────────────
 -- drop table if exists hotdeals;
+-- drop table if exists hotdeal_job_state;

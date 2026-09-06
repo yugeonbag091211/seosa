@@ -68,48 +68,119 @@ function log(msg, extra) {
   console.log(JSON.stringify(line));
 }
 
-/* ── 잠금 ────────────────────────────────────────────────────────────
+/* ── 잠금 (hotdeal_job_state singleton) ───────────────────────────────
  *
- * price_job_state 를 재사용한다. 새 표를 만들지 않는다 — 이 작업은 하루 몇
- * 번 도는 가벼운 일이라 전용 잠금 인프라를 새로 세울 값어치가 없다.
- * job_date 를 'hotdeal-<날짜>' 로 두어 가격 수집 잠금과 섞이지 않게 한다.
+ * ── 왜 전용 표인가 ──────────────────────────────────────────────────
+ *
+ * 처음에는 price_job_state 를 재사용하고 job_date 에 'hotdeal-<날짜>' 를
+ * 넣었다. 그 표의 job_date 는 `date` 타입이라 그 문자열은 insert 자체가
+ * 실패한다. 게다가 그 표는 `id=1` singleton 이고 가격 수집 한 바퀴의 커서와
+ * 재시도 목록을 들고 있어서, 남의 작업 상태를 같은 행에 끼워 넣으면 안 된다.
+ *
+ * ── 왜 실패 시 그냥 진행하지 않는가 ────────────────────────────────
+ *
+ * 예전 코드는 잠금 읽기·쓰기가 실패하면 skipLock=true 로 «잠금 없이» 계속
+ * 돌았다. 그러면 잠금이 있다고 말할 수 없다 — 정확히 잠금이 필요한 상황
+ * (DB 이상·동시 실행)에서 보호가 사라진다. 이제는 조용히 지나가지 않는다.
+ *   · 표가 아직 없다        → SKIP (마이그레이션 전이므로 정상)
+ *   · 다른 실행이 쥐고 있다  → SKIP
+ *   · 그 밖의 오류          → FAIL (exit 1)
+ * GitHub Actions 의 concurrency 는 그대로 두어 방어를 두 겹으로 만든다.
  */
-async function acquireLock(jobDate) {
-  const key = `hotdeal-${jobDate}`;
-  // --dry-run 은 아무것도 쓰지 않는다. 잠금도 쓰기이므로 건너뛴다.
-  if (DRY) return { ok: true, key, skipLock: true };
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('price_job_state')
-    .select('job_date, status, updated_at')
-    .eq('job_date', key)
-    .maybeSingle();
-  if (error && !/does not exist|schema cache/i.test(error.message)) {
-    log('lock_read_failed', { error: error.message });
-    return { ok: true, key, skipLock: true };     // 잠금을 못 읽어도 일은 한다
-  }
-  if (error) return { ok: true, key, skipLock: true };
 
-  if (data && data.status === 'running') {
-    const age = Date.now() - Date.parse(data.updated_at || 0);
-    if (age < 15 * 60 * 1000) return { ok: false, key };   // 다른 회차가 돌고 있다
-  }
-  const up = await supabase.from('price_job_state')
-    .upsert({ job_date: key, status: 'running', updated_at: now }, { onConflict: 'job_date' });
-  if (up.error) return { ok: true, key, skipLock: true };
-  return { ok: true, key, skipLock: false };
+/** 잠금 유효 시간. 실행이 죽어도 이 시간 뒤에는 회수된다. */
+const LOCK_TTL_MS = 15 * 60 * 1000;
+
+const LOCK = { ACQUIRED: 'acquired', SKIP: 'skip', FAIL: 'fail' };
+
+function newToken() {
+  return `${process.env.GITHUB_RUN_ID || 'local'}-${process.pid}-${Date.now()}`;
 }
 
-async function releaseLock(lock, summary) {
-  if (!lock || lock.skipLock) return;
-  await supabase.from('price_job_state').upsert({
-    job_date: lock.key,
-    status: 'done',
-    updated_at: new Date().toISOString(),
-    last_result: summary
-  }, { onConflict: 'job_date' }).then(r => {
-    if (r.error) log('lock_release_failed', { error: r.error.message });
-  });
+async function acquireLock(db) {
+  const sb = db || supabase;
+  // --dry-run 은 아무것도 쓰지 않는다. 잠금도 쓰기이므로 잡지 않는다.
+  if (DRY) return { result: LOCK.ACQUIRED, token: '', dry: true };
+
+  const read = await sb
+    .from('hotdeal_job_state')
+    .select('id, status, lock_token, lock_until')
+    .eq('id', 1)
+    .maybeSingle();
+
+  if (read.error) {
+    if (/does not exist|schema cache/i.test(read.error.message)) {
+      log('lock_table_missing', { hint: 'supabase/2026-09-06-hotdeals.sql 을 실행하세요' });
+      return { result: LOCK.SKIP, reason: 'table_missing' };
+    }
+    log('lock_read_failed', { error: read.error.message });
+    return { result: LOCK.FAIL, reason: 'read_failed' };
+  }
+  if (!read.data) {
+    // 마이그레이션의 seed insert 가 빠진 상태. 잠금 근거가 없으므로 돌지 않는다.
+    log('lock_row_missing');
+    return { result: LOCK.SKIP, reason: 'row_missing' };
+  }
+
+  const row = read.data;
+  const heldUntil = row.lock_until ? Date.parse(row.lock_until) : 0;
+  if (row.status === 'running' && heldUntil > Date.now()) {
+    log('lock_held', { untilMs: heldUntil - Date.now() });
+    return { result: LOCK.SKIP, reason: 'held' };
+  }
+  if (row.status === 'running' && heldUntil) {
+    log('lock_expired_reclaim', { previousToken: '(redacted)' });
+  }
+
+  /*
+   * CAS — 우리가 읽은 lock_token 이 그대로일 때만 잡는다.
+   * 두 실행이 같은 순간에 여기 오면 한쪽만 행을 돌려받는다.
+   */
+  const token = newToken();
+  const now = new Date();
+  const upd = await sb
+    .from('hotdeal_job_state')
+    .update({
+      status: 'running',
+      lock_token: token,
+      lock_until: new Date(now.getTime() + LOCK_TTL_MS).toISOString(),
+      last_run_at: now.toISOString(),
+      updated_at: now.toISOString()
+    })
+    .eq('id', 1)
+    .eq('lock_token', row.lock_token || '')
+    .select('id');
+
+  if (upd.error) {
+    log('lock_acquire_failed', { error: upd.error.message });
+    return { result: LOCK.FAIL, reason: 'acquire_failed' };
+  }
+  if (!upd.data || upd.data.length === 0) {
+    log('lock_cas_lost');
+    return { result: LOCK.SKIP, reason: 'cas_lost' };
+  }
+  return { result: LOCK.ACQUIRED, token };
+}
+
+/**
+ * 잠금 반납. ★ 자기 토큰일 때만 성공한다 — 남의 잠금을 풀지 않는다.
+ * 만료된 뒤 다른 실행이 이미 회수해 갔다면 여기서 아무것도 하지 않는 것이 옳다.
+ */
+async function releaseLock(lock, status, summary, db) {
+  const sb = db || supabase;
+  if (!lock || lock.dry || lock.result !== LOCK.ACQUIRED || !lock.token) return;
+  const now = new Date().toISOString();
+  const r = await sb
+    .from('hotdeal_job_state')
+    .update({
+      status, lock_token: '', lock_until: null,
+      last_result: summary || {}, updated_at: now
+    })
+    .eq('id', 1)
+    .eq('lock_token', lock.token)      // 소유권 검사
+    .select('id');
+  if (r.error) { log('lock_release_failed', { error: r.error.message }); return; }
+  if (!r.data || r.data.length === 0) log('lock_release_not_owner');
 }
 
 /* ── 1) 후보 상품 ──────────────────────────────────────────────────── */
@@ -143,13 +214,31 @@ async function loadHistory(products) {
 
   for (let i = 0; i < ids.length; i += CHUNK) {
     if (overBudget()) { log('history_budget_stop', { at: i, of: ids.length }); break; }
+    /*
+     * ★ 정렬을 명시하고, 잘렸는지 확인한다.
+     *
+     * 예전에는 .limit(20000) 만 걸고 정렬이 없었다. 상한에 걸리면 «어느 행이
+     * 돌아오는지»가 보장되지 않아, 같은 입력으로 돌려도 회차마다 다른 이력을
+     * 받았다(실측: history_loaded 3,484 ↔ 3,371). 이력이 달라지면 중앙값도
+     * 판정도 달라진다 — 핫딜 엔진이 결정론이어야 하는데 입력이 흔들린 것이다.
+     *
+     * 정렬을 주면 잘리더라도 «항상 같은 쪽»이 잘리고, 잘린 사실 자체를
+     * 로그로 남겨 CHUNK 를 줄일 근거를 만든다.
+     */
+    const LIMIT = 20000;
     const { data, error } = await supabase
       .from('price_history')
       .select('product_id, mall, vendor_item_id, price, recorded_date')
       .in('product_id', ids.slice(i, i + CHUNK))
       .gte('recorded_date', cut)
-      .limit(20000);
+      .order('product_id', { ascending: true })
+      .order('recorded_date', { ascending: true })
+      .limit(LIMIT);
     if (error) { log('history_chunk_failed', { error: error.message }); continue; }
+    if (data && data.length >= LIMIT) {
+      // 잘렸다. 조용히 넘어가면 그 청크의 상품들이 잘못된 기준선으로 판정된다.
+      log('history_chunk_truncated', { at: i, rows: data.length, hint: 'CHUNK 를 줄이세요' });
+    }
     (data || []).forEach(r => {
       const key = `${r.product_id}|${r.mall || ''}|${r.vendor_item_id || ''}`;
       if (!byKey.has(key)) byKey.set(key, []);
@@ -195,6 +284,30 @@ function rowFor(product, cand, verdict, today) {
     last_checked_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + hours * 3600000).toISOString()
   };
+}
+
+/*
+ * 외부 후보 ↔ 우리 카탈로그 상품 잇기.
+ *
+ * 문자열 유사도로 «판정» 하지 않는다. 여기서 하는 일은 후보군을 좁히는 것뿐이고,
+ * 같은 상품인지의 판정은 _hotdeal.identityOf(= _identity.judgeSameProduct)가
+ * 한다. 그래서 여기서 통과시켜도 세대·용량·리퍼·부속은 게이트에서 걸린다.
+ */
+function matchProduct(cand, products) {
+  const tokens = String(cand.title || '')
+    .toLowerCase().replace(/[^0-9a-z가-힣\s]/g, ' ')
+    .split(/\s+/).filter(t => t.length >= 2).slice(0, 6);
+  if (!tokens.length) return null;
+
+  let best = null, bestHits = 0;
+  for (const p of products) {
+    const t = String(p.title || '').toLowerCase();
+    let hits = 0;
+    for (const tok of tokens) if (t.indexOf(tok) > -1) hits++;
+    if (hits > bestHits) { bestHits = hits; best = p; }
+  }
+  // 절반 이상 겹칠 때만 후보로 올린다. 그 뒤 판정은 identity gate 가 한다.
+  return bestHits >= Math.ceil(tokens.length / 2) ? best : null;
 }
 
 async function upsertDeals(rows) {
@@ -258,10 +371,17 @@ async function main() {
   const today = kstToday();
   log('start', { today, dryRun: DRY, sources: HS.activeSources().map(s => s.id) });
 
-  const lock = await acquireLock(today);
-  if (!lock.ok) { log('skip_locked'); return; }
+  const lock = await acquireLock();
+  if (lock.result === LOCK.SKIP) { log('skipped', { reason: lock.reason }); return; }
+  if (lock.result === LOCK.FAIL) {
+    // 잠금을 확보했는지 «모르는» 상태로는 돌지 않는다. 조용히 지나가지 않는다.
+    log('aborted_no_lock', { reason: lock.reason });
+    process.exitCode = 1;
+    return;
+  }
 
   const summary = { scanned: 0, evaluated: 0, kept: 0, rejected: 0, byStatus: {} };
+  let outcome = 'done';
   try {
     const products = await loadProducts();
     summary.scanned = products.length;
@@ -314,6 +434,65 @@ async function main() {
       summary.kept++;
     }
 
+    /*
+     * ── 외부 source: ADPICK 핫딜 ────────────────────────────────────
+     *
+     * ★ 실패를 격리한다. 여기서 무슨 일이 나도 위에서 만든 internal-history
+     *   결과(rows)는 그대로 저장된다. 그래서 try 를 따로 두고 throw 하지 않는다.
+     *
+     * 외부 후보는 우리 카탈로그의 어느 상품인지부터 찾아야 한다. 제목으로
+     * products 를 뒤지지 않는다 — 그건 동일상품 판정을 문자열 검색으로
+     * 대신하는 것이고, 그러면 identity gate 를 우회하게 된다. 대신 후보마다
+     * 이름이 닮은 상품을 후보군으로 좁힌 뒤 _hotdeal.identityOf 가 판정한다.
+     */
+    try {
+      const AH = require('../api/_adpickhot');
+      if (!AH.hasCredential()) {
+        log('adpick_skipped', { reason: 'no-credential' });
+      } else if (overBudget()) {
+        log('adpick_skipped', { reason: 'budget' });
+      } else {
+        const res = await AH.fetchHotdeals();
+        if (!res.ok) {
+          log('adpick_failed', { reason: res.reason, status: res.status });
+        } else {
+          const ext = HS.dedupeCandidates(
+            res.items.map(x => HS.normalizeCandidate(x, HS.ADPICK_HOTDEAL.id)).filter(Boolean));
+          log('adpick_candidates', { received: res.items.length, usable: ext.length });
+
+          let matched = 0;
+          for (const cand of ext) {
+            if (overBudget()) break;
+            const p = matchProduct(cand, products);
+            if (!p) continue;
+            const key = `${p.product_id}|${p.mall || ''}|${p.vendor_item_id || ''}`;
+            const verdict = HD.evaluate({
+              candidate: cand, storedTitle: p.title,
+              points: history.get(key) || [], today,
+              sourceFlagged: !!HS.ADPICK_HOTDEAL.sourceFlagged
+            });
+            summary.byStatus[verdict.status] = (summary.byStatus[verdict.status] || 0) + 1;
+            if (verdict.status === HD.STATUS.REJECTED || verdict.status === HD.STATUS.NORMAL) continue;
+
+            const row = rowFor(p, cand, verdict, today);
+            row.source = HS.ADPICK_HOTDEAL.id;
+            row.source_external_id = cand.externalId;
+            row.mall = cand.mall || row.mall;
+            row.affiliate_url = cand.affiliateUrl;
+            const prev = existing.get(`${row.source}|${row.source_external_id}|${row.mall}`);
+            row.lifecycle = lifecycleFor(prev, verdict);
+            if (!prev) row.detected_at = new Date().toISOString();
+            rows.push(row);
+            matched++;
+          }
+          log('adpick_matched', { matched, unmatched: ext.length - matched });
+        }
+      }
+    } catch (e) {
+      // 외부 source 하나가 터져도 internal-history 결과는 살린다.
+      log('adpick_isolated_failure', { error: require('../api/_adpickhot').redact(e && e.message) });
+    }
+
     log('evaluated', summary);
 
     if (DRY) {
@@ -330,11 +509,18 @@ async function main() {
     }
   } catch (e) {
     log('failed', { error: e.message });
+    outcome = 'failed';
     process.exitCode = 1;
   } finally {
-    await releaseLock(lock, summary);
-    log('done', { ms: Date.now() - startedAt });
+    await releaseLock(lock, outcome, summary);
+    log('done', { ms: Date.now() - startedAt, outcome });
   }
 }
 
-main();
+/*
+ * 직접 실행일 때만 돈다. require 하면 잠금·매칭 함수를 테스트할 수 있다
+ * (scripts/test-hotdeal.js 가 스텁 db 를 넣어 CAS·소유권을 검증한다).
+ */
+if (require.main === module) main();
+
+module.exports = { acquireLock, releaseLock, matchProduct, lifecycleFor, LOCK };

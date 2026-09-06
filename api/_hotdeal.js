@@ -97,9 +97,24 @@ const GOOD_DEAL_MIN = 35;
 
 /**
  * 가격 문자열 → 정수 KRW. "1,590,000원" · " 159000 " · 숫자 전부 처리한다.
- * 0·음수·파싱 불가는 null 이다 (api/_price.parsePrice 규칙 그대로 재사용).
+ * 0·음수·파싱 불가는 null.
+ *
+ * ── 왜 parsePrice 를 그대로 쓰지 않고 앞에 관문을 두는가 ────────────
+ *
+ * _price.parsePrice 는 문자열에서 숫자가 아닌 글자를 전부 지운다. 그래서
+ * "-500" 이 500 이 되고, "-1,000원" 이 1000 이 된다. 그 동작은 수집 경로에서
+ * "89,000원" 같은 표기를 읽으려고 만든 것이라 그쪽에서는 문제가 없었다.
+ *
+ * 핫딜에서는 다르다. 음수 가격은 source 응답이 깨졌다는 신호이고, 그것을
+ * 양수로 되살려서 판정에 넣으면 없는 딜을 만들어 낸다. 여기서 먼저 막는다.
+ *
+ * ★ _price.parsePrice 자체는 건드리지 않는다. 그 함수는 가격 수집 전체가
+ *   쓰는 공용 파서라, 핫딜 요구사항 때문에 바꾸면 수집 경로에 회귀가 난다.
  */
-function toKRW(v) { return parsePrice(v); }
+function toKRW(v) {
+  if (typeof v === 'string' && /^\s*[-−–]/.test(v)) return null;   // "-500", "−1,000원"
+  return parsePrice(v);
+}
 
 /** 앞뒤 공백·제어문자·연속 공백을 정리한 상품명. */
 function cleanTitle(v, max) {
@@ -243,7 +258,7 @@ function baselineFrom(points, currentPrice, today) {
     count: pts.length, prices: [], firstDate: '', lastDate: '', span: 0, maxGap: 0,
     staleDays: 0, low: 0, lowCount: 0, lowConfirmed: false, high: 0,
     median: 0, median30: 0, median90: 0, mean30: 0, n30: 0, n90: 0,
-    prevObserved: 0, prevObservedDate: '', currentObserved: false,
+    prevObserved: 0, prevObservedDate: '', currentObserved: false, latestPrice: 0,
     pctRank: null, volatility: null, current: cur
   };
   if (!pts.length) return base;
@@ -289,8 +304,29 @@ function baselineFrom(points, currentPrice, today) {
     base.prevObservedDate = before[before.length - 1].date;
   }
 
-  // 현재가가 실제로 관측된 값인가. 아니면 "기록상 최저"라고 말할 수 없다.
-  base.currentObserved = prices.indexOf(cur) > -1;
+  /*
+   * ★ "우리가 이 가격을 확인했는가" — VERIFIED 의 의미가 여기 걸려 있다.
+   *
+   * 예전에는 prices.indexOf(cur) > -1 이었다. 120일 안에 같은 값이 한 번이라도
+   * 있으면 참이 된다. 그러면 이런 일이 생긴다.
+   *
+   *     08-01 관측  80,000
+   *     09-05 관측 100,000   ← 우리가 마지막으로 확인한 값
+   *     외부 source 현재 주장 80,000
+   *
+   * 우리는 오늘 80,000 을 본 적이 없는데 08-01 기록 때문에 "확인됨"이 된다.
+   * 그건 확인이 아니라 우연한 값 일치다.
+   *
+   * 그래서 두 가지를 함께 요구한다.
+   *   1) 가장 최신 관측의 값이 현재가와 같을 것 (옛 값과의 일치는 인정 안 함)
+   *   2) 그 최신 관측이 오래되지 않았을 것 (오래된 확인은 지금 값의 근거가 아니다)
+   *
+   * 외부 source 가 새 가격을 들고 오면 첫 발견에서는 이 조건을 만족할 수 없다.
+   * 그때는 GOOD/POTENTIAL 까지만 가고, 다음 수집이 같은 값을 관측하면
+   * 그때 VERIFIED 로 올라간다. lifecycle 의 NEW → ACTIVE 가 그 뜻이다.
+   */
+  base.latestPrice = prices[prices.length - 1];
+  base.currentObserved = base.latestPrice === cur && base.staleDays <= CONFIRM_MAX_STALE_DAYS;
 
   /*
    * 진짜 백분위(순위 기반). (p-low)/(high-low) 같은 min-max 위치를 쓰면
@@ -326,6 +362,12 @@ const MIN_SPAN_DAYS = 3;
 const MAX_GAP_DAYS = 14;
 /** 현재가와 마지막 관측이 이보다 벌어지면 지금 값을 보증할 수 없다. */
 const MAX_STALE_DAYS = 7;
+/**
+ * 최신 관측이 이보다 오래됐으면 «현재가를 확인했다» 고 말하지 않는다.
+ * MAX_STALE_DAYS(노출 자체를 막는 선)보다 좁다 — 노출은 해도 되지만
+ * VERIFIED 라고 부르려면 확인이 최근이어야 하기 때문이다.
+ */
+const CONFIRM_MAX_STALE_DAYS = 3;
 
 function confidenceOf(b) {
   if (!b || b.count < MIN_OBS || b.span < 1) return CONFIDENCE.INSUFFICIENT;
@@ -617,7 +659,7 @@ function evaluate(input) {
 module.exports = {
   IDENTITY, STATUS, CONFIDENCE, SCORE_CEILING,
   VERIFIED_HOT_MIN, GOOD_DEAL_MIN,
-  MIN_OBS, SCORE_OBS, MIN_SPAN_DAYS, MAX_GAP_DAYS, MAX_STALE_DAYS,
+  MIN_OBS, SCORE_OBS, MIN_SPAN_DAYS, MAX_GAP_DAYS, MAX_STALE_DAYS, CONFIRM_MAX_STALE_DAYS,
   toKRW, cleanTitle, safeUrl,
   isAccessoryTitle, identityOf,
   baselineFrom, confidenceOf, runGates, hotScore, statusOf, reasonsFor,

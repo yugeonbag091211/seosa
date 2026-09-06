@@ -18,15 +18,12 @@
  *   internal-history   ✅ 사용 중. SEOSA 가 직접 수집한 products + price_history.
  *                      외부 호출 0회. 가장 신뢰도가 높다 — 우리가 관측한 값이다.
  *
- *   adpick-hotdeal     ❌ NOT VERIFIED. 코드는 준비했으나 기본 비활성.
- *                      저장소 어디에도 ADPICK 핫딜 엔드포인트 문서가 없고,
- *                      read-only probe 결과 `/api/{key}/hotdeal` 은 404 였다
- *                      ({status, code, error} 형태). api/_adpick.js 머리말이
- *                      실측 검증했다고 적어 둔 function 은 `search` 하나뿐이다.
- *                      추측으로 엔드포인트를 만들지 않는다 — 잘못된 주소로
- *                      키를 계속 던지면 계정이 막힌다.
- *                      ADPICK_HOTDEAL_FUNCTION 환경변수에 공식 function 이름을
- *                      넣으면 그때 켜진다. 응답 필드 이름도 환경변수로 맞춘다.
+ *   adpick-hotdeal     ⚙️ 구현 완료, 자격증명 대기.
+ *                      공식 계약(sdk_shopping_hotdeal.php?affid=..)에 맞춰
+ *                      api/_adpickhot.js 가 호출·파싱·1분 제한·redaction 을
+ *                      담당한다. ADPICK_AFFILIATE_ID 가 설정되면 켜진다.
+ *                      현재 환경에는 그 값이 없어 실호출 검증을 하지 못했고,
+ *                      응답 파싱은 공식 필드 fixture 로 검증했다.
  *
  *   coupang-goldbox    ❌ NOT VERIFIED. 저장소·계정 문서에서 공식 Gold Box
  *                      엔드포인트를 확인할 수 없었다. 제3자 SDK 만 근거로
@@ -126,14 +123,27 @@ const INTERNAL_HISTORY = {
   external: false
 };
 
-/** ADPICK 핫딜 — 공식 function 이름이 확인되면 환경변수로 켠다. */
+/*
+ * ADPICK 쇼핑메이트 핫딜 상품 리스트 API.
+ *
+ *   GET https://adpick.co.kr/apis/sdk_shopping_hotdeal.php?affid=<회원아이디>
+ *
+ * 자격증명은 ADPICK_AFFILIATE_ID (서버 전용) 하나다. 이 값이 있으면 켜진다.
+ * 호출·파싱·redaction·1분 제한은 api/_adpickhot.js 가 맡는다.
+ *
+ * ★ ADPICK_API_KEY 와는 다른 값이다. 그쪽은 biz.adpick.co.kr 검색 API 의
+ *   인증이고 이쪽은 회원아이디다. 하나로 묶지 않는다.
+ */
 const ADPICK_HOTDEAL = {
   id: 'adpick-hotdeal',
   label: 'ADPICK 핫딜',
   external: true,
-  enabled: () => !!(process.env.ADPICK_API_KEY && process.env.ADPICK_HOTDEAL_FUNCTION),
-  /** 켜졌을 때 쓸 function 이름. 절대 기본값을 추측해서 넣지 않는다. */
-  functionName: () => String(process.env.ADPICK_HOTDEAL_FUNCTION || '').trim()
+  /** 외부 source 가 스스로 "핫딜"이라고 표시해서 주는 목록이다. */
+  sourceFlagged: true,
+  enabled: () => {
+    try { return require('./_adpickhot').hasCredential(); }
+    catch (e) { return false; }
+  }
 };
 
 /** 쿠팡 Gold Box — 공식 엔드포인트 미확인. v1 제외. */
