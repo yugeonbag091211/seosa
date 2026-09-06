@@ -610,6 +610,105 @@ function reasonsFor(b, status) {
 }
 
 /* ==================================================================
+ *  8-b) 설명 가능한 신호 — TASK 2 / 9
+ *
+ *  점수 하나만 내보내면 화면은 "왜"를 말할 수 없다. 여기서 «되짚을 수 있는»
+ *  값만 골라 하나의 객체로 만든다.
+ *
+ *  ★ 모르는 값은 만들지 않는다. 근거가 없으면 숫자가 아니라 null 이다.
+ *    프론트는 null 을 "표시하지 않음"으로 다루면 되고, 0 과 헷갈리지 않는다.
+ *  ★ 여기서 새로 계산하는 것은 없다. baselineFrom 이 이미 만든 값을 고르고
+ *    이름을 붙일 뿐이다 — 두 곳에서 계산하면 언젠가 갈린다.
+ * ================================================================== */
+
+/** 신선도 갈래. 숫자(staleDays)도 같이 주므로 화면이 원하는 쪽을 쓰면 된다. */
+const FRESHNESS = { FRESH: 'fresh', RECENT: 'recent', AGING: 'aging', STALE: 'stale' };
+
+function freshnessOf(staleDays) {
+  const d = Math.max(0, Math.round(Number(staleDays) || 0));
+  if (d <= 1) return FRESHNESS.FRESH;
+  if (d <= CONFIRM_MAX_STALE_DAYS) return FRESHNESS.RECENT;
+  if (d <= MAX_STALE_DAYS) return FRESHNESS.AGING;
+  return FRESHNESS.STALE;
+}
+
+/**
+ * 할인율의 «기준 가격» 을 고른다.
+ *
+ * 쇼핑몰이 적어 놓은 정가는 쓰지 않는다(그 값은 판매자가 정한다). 우리가
+ * 관측한 값만 쓰되, 표본이 그 기준을 말할 만큼 있을 때만 쓴다.
+ *
+ *   최근 30일 중앙값   관측 3회 이상   ← 가장 뜻이 분명하다
+ *   전체 중앙값        관측 3회 이상
+ *   직전 관측          있으면
+ *   없음               null
+ */
+function referenceOf(b) {
+  if (b.n30 >= 3 && b.median30 > 0) return { kind: 'median30', price: b.median30, label: '최근 30일 중앙값' };
+  if (b.count >= 3 && b.median > 0) return { kind: 'median', price: b.median, label: '관측 중앙값' };
+  if (b.prevObserved > 0) return { kind: 'previous', price: b.prevObserved, label: '직전 확인 가격' };
+  return { kind: null, price: 0, label: '' };
+}
+
+/**
+ * 화면이 그대로 쓸 수 있는 신호 묶음.
+ *
+ * @param {object} baseline baselineFrom() 결과
+ * @returns {object}
+ */
+function signalsOf(baseline) {
+  const b = baseline || {};
+  const cur = Math.round(Number(b.current) || 0);
+  const ref = referenceOf(b);
+
+  const drop = (ref.price > 0 && cur > 0 && cur < ref.price) ? ref.price - cur : 0;
+  const dropPct = (ref.price > 0 && cur > 0)
+    ? Math.round((ref.price - cur) / ref.price * 1000) / 10
+    : null;
+
+  /* 점수 쪽 lowProximity 와 «같은 조건» 을 쓴다. 문장·점수·신호가 갈리면 안 된다. */
+  const movedSeries = b.high > b.low && b.low > 0;
+  const nearLow = !!(b.lowConfirmed && movedSeries && cur > 0
+    && cur >= Math.round(b.low * 0.98) && cur <= Math.round(b.low * 1.02));
+
+  return {
+    /* 값 */
+    currentPrice: cur || null,
+    referencePrice: ref.price || null,
+    referenceKind: ref.kind,
+    referenceLabel: ref.label || null,
+    priceDropAmount: drop || null,
+    priceDropPercent: dropPct,
+
+    /* 직전 관측 */
+    previousPrice: b.prevObserved > 0 ? b.prevObserved : null,
+    previousDate: b.prevObservedDate || null,
+    previousDropAmount: (b.prevObserved > 0 && cur > 0 && cur < b.prevObserved) ? b.prevObserved - cur : null,
+
+    /* 가격 위치 */
+    observedLow: b.low > 0 ? b.low : null,
+    observedHigh: b.high > 0 ? b.high : null,
+    nearHistoricalLow: nearLow,
+    /* 순위는 값이 실제로 움직인 계열에서만 뜻이 있다. 고정가에서 "1위"는 착시다. */
+    pricePercentile: (movedSeries && b.count >= 3 && b.pctRank != null) ? b.pctRank : null,
+    volatilityPercent: b.volatility,
+
+    /* 근거의 두께 */
+    historyCount: b.count || 0,
+    historyDays: b.span || 0,
+    historyCount30d: b.n30 || 0,
+    maxGapDays: b.maxGap || 0,
+
+    /* 신선도 */
+    lastObservedDate: b.lastDate || null,
+    staleDays: b.staleDays || 0,
+    freshness: freshnessOf(b.staleDays),
+    /* 이 값을 우리가 실제로 관측했는가. false 면 아직 «주장» 이다. */
+    currentObserved: !!b.currentObserved
+  };
+}
+
+/* ==================================================================
  *  9) 종합
  * ================================================================== */
 
@@ -652,16 +751,19 @@ function evaluate(input) {
     identityReason: idr.reason,
     gates: gateResult.gates,
     baseline,
+    /* 화면이 "왜 핫딜인가"를 스스로 설명할 수 있게 하는 재료. */
+    signals: signalsOf(baseline),
     reasons: status === STATUS.REJECTED ? [] : reasonsFor(baseline, status)
   };
 }
 
 module.exports = {
-  IDENTITY, STATUS, CONFIDENCE, SCORE_CEILING,
+  IDENTITY, STATUS, CONFIDENCE, SCORE_CEILING, FRESHNESS,
   VERIFIED_HOT_MIN, GOOD_DEAL_MIN,
   MIN_OBS, SCORE_OBS, MIN_SPAN_DAYS, MAX_GAP_DAYS, MAX_STALE_DAYS, CONFIRM_MAX_STALE_DAYS,
   toKRW, cleanTitle, safeUrl,
   isAccessoryTitle, identityOf,
   baselineFrom, confidenceOf, runGates, hotScore, statusOf, reasonsFor,
+  freshnessOf, referenceOf, signalsOf,
   evaluate
 };
