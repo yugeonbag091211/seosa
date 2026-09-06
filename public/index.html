@@ -7398,7 +7398,9 @@ var Hot = {
      */
     var score = (typeof d.score === 'number') ? '<span class="hot-score">HOT ' + d.score + '</span>' : '';
     return '<article class="hot-card" data-act="hot-open" data-id="' + Fmt.esc(String(d.id)) + '"'
-      + ' data-pid="' + Fmt.esc(d.productId || '') + '">'
+      + ' data-pid="' + Fmt.esc(d.productId || '') + '"'
+      /* 상품 상세가 없을 때의 유일한 대안 경로. Hot.open 주석 참고. */
+      + ' data-url="' + Fmt.esc(Fmt.safeUrl(d.url)) + '">'
       + '<div class="hot-top">'
       +   '<span class="hot-badge ' + lab.cls + '">' + Fmt.esc(lab.text) + '</span>'
       +   score
@@ -7455,10 +7457,22 @@ var Hot = {
    */
   open: function(el) {
     var pid = el && el.getAttribute('data-pid');
-    var id = el && el.getAttribute('data-id');
     Track.ev('hotdeal_open');
     if (pid) { location.href = '/p/' + encodeURIComponent(pid); return; }
-    if (id) location.href = '/api/hotdeals?id=' + encodeURIComponent(id);
+
+    /*
+     * ★ 상품 상세가 없으면 판매처로 보낸다. 절대 /api/ 로 보내지 않는다.
+     *
+     * 예전에는 productId 가 없을 때 '/api/hotdeals?id=' 로 이동했다. 그건
+     * JSON 엔드포인트라, 카드를 누른 사용자에게 날것의 JSON 문서가 그대로
+     * 떴다. (마이그레이션 전 실제 응답: {"items":[],...,"pending":true})
+     *
+     * product_id 는 스키마상 비어 있을 수 있다 — 우리 카탈로그에 아직 없는
+     * 외부 source 상품이 그렇다. 그때 보여 줄 수 있는 것은 구매 경로뿐이다.
+     * 그것마저 없으면 아무 데도 보내지 않는다. 깨진 화면보다 낫다.
+     */
+    var url = el && el.getAttribute('data-url');
+    if (url && /^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener');
   }
 };
 
