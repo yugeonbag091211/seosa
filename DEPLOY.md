@@ -20,7 +20,7 @@
 - `/p/{product_id}` → 상품 가격 기록 페이지 (HTML, Edge 1시간 캐시). 기록 7일 미만·stale·링크 없음은 `noindex`
 - `/sitemap-products.xml` → 색인 가능한 상품만 (12시간 캐시). `robots.txt` 에 등록됨
 - `/?p={product_id}` → 앱에서 그 상품의 가격 모달을 연다
-- `/api/ai` 토큰 없음 → 200 게스트 조립본 (LLM 0회, 쿼터 0). 틀린 토큰은 401
+- `/api/ai` 토큰 없음 → 200 게스트 무료 LLM (`:free` 전용, 제품 일일 쿼터 없음). 틀린 토큰은 401
 
 선택 환경변수: `SITE_ORIGIN` (기본 `https://seosa.ai.kr`, 상품 페이지 canonical·사이트맵 절대 URL), `CRON_DEMAND_SEED_MAX` (기본 6, 크론이 매일 수집하는 인기 검색어 수).
 

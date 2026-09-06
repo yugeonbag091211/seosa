@@ -904,9 +904,6 @@ function heuristicIntent(q, hist, view) {
 async function resolveIntent(q, hist, view, budget, guest) {
   const det = heuristicIntent(q, hist, view);
 
-  // 게스트는 LLM 을 쓰지 않는다 — 확신과 무관하게 정규식 결과로 답한다.
-  if (guest) return det;
-
   if (det.confidence === 'high') {
     console.log(`[ai] 정규식 분류로 확정 — LLM 분류 생략 (intent=${det.intent})`);
     return det;
@@ -2415,16 +2412,16 @@ module.exports = async function handler(req, res) {
   /*
    * ── 게스트 모드 (2026-09-02) ────────────────────────────────────
    *
-   * 토큰이 아예 없으면 LLM 을 부르지 않는 "조립본 답변"으로 응답한다.
-   * 판정(_deal · _decision)은 원래 코드가 하므로 모델 없이도 결론·근거·
-   * 구매 시점·다른 후보를 그대로 줄 수 있다(api/_concierge.js compose).
+   * 토큰이 아예 없으면 기본 컨텍스트로 무료 LLM 체인을 사용한다.
+   * 판정(_deal · _decision)과 무료 모델 전체 실패 시 결정론 fallback은
+   * 로그인 사용자와 동일하게 유지한다.
    *
-   *   · 비용 0원 — OpenRouter 를 한 번도 부르지 않고, 쿼터도 예약하지 않는다.
+   *   · 비용 0원 — `:free` 모델만 허용하며 제품 일일 쿼터는 없다.
    *   · 검색은 /api/search 와 같은 경로·같은 캐시·같은 분당 상한을 쓴다.
-   *   · 의도 분류는 정규식(api/_intent.js)이다. LLM 분류기가 아니다.
+   *   · 의도 분류는 정규식 우선이며 애매할 때만 무료 LLM을 쓴다.
    *
    * 왜 — 14일 실측 ai_open 13 → ai_first_prompt 3. 로그인 벽에서 77% 가
-   * 꺾였다. 가치를 먼저 보여주고, 설명(LLM)은 로그인 뒤에 연다.
+   * 꺾였다. 로그인 없이도 AI 답변을 제공하고 로그인은 개인화에만 쓴다.
    *
    * ★ 토큰이 "있는데 틀린" 요청은 그대로 401 이다. 만료된 토큰을 든 사용자는
    *   재인증으로 안내해야지 조용히 게스트로 떨어뜨리면 안 된다.
@@ -2433,8 +2430,8 @@ module.exports = async function handler(req, res) {
   if (!who.ok && !guest) {
     return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
   }
-  // 모델을 부르는 경로에만 키가 필요하다. 게스트(조립본)는 키 없이도 답한다.
-  if (!guest && !process.env.OPENROUTER_API_KEY) {
+  // 로그인 여부와 무관하게 키는 서버 환경에서만 읽는다.
+  if (!process.env.OPENROUTER_API_KEY) {
     return res.status(500).json({ error: 'OPENROUTER_API_KEY 환경변수 없음', text: '' });
   }
 
@@ -2650,7 +2647,7 @@ module.exports = async function handler(req, res) {
      * ★ 세션 밖으로 나가지 않는다. 서버에 성향을 쌓아 두지 않는다.
      */
     let profileWeights = null;
-    if (!intent || needsShopContext(intent)) {
+    if (!guest && (!intent || needsShopContext(intent))) {
       try {
         const PF = require('./_profile');
         const built = PF.buildProfile(q, hist, clip);
@@ -2906,50 +2903,6 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    /*
-     * ── 게스트 응답 — 여기서 끝낸다 ──────────────────────────────
-     *
-     * 판정·결정·완화 분석은 위에서 전부 끝났다. 프롬프트를 조립하지도,
-     * 모델을 부르지도 않는다. api/_concierge.compose 가 같은 데이터로
-     * 사람이 읽는 글을 만든다 — 모델 사슬이 전부 죽었을 때 쓰는 바로 그 경로다.
-     * 새 사실을 만들지 않으므로 firewall 도 필요 없다.
-     */
-    if (guest) {
-      const CG = require('./_concierge');
-      let text;
-      if (intent === 'A') {
-        text = '안녕하세요. 찾으시는 상품과 예산을 말씀해 주시면, 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 바로 알려 드릴게요.';
-      } else if (intent === 'B') {
-        text = '일반 질문은 로그인 후 AI 서사가 답해 드려요. 상품 이름이나 조건("10만원 이하 무선 이어폰")을 말씀해 주시면 지금 바로 가격 기록으로 판단해 드릴게요.';
-      } else if (searchState === 'failed') {
-        text = '지금 쇼핑몰 조회에 실패했어요. 잠시 후 다시 시도해 주세요.';
-      } else if (searchState === 'empty') {
-        text = `「${safeText(query, 40)}」로는 상품을 찾지 못했어요. 다른 이름으로 불러 보시겠어요?`;
-      } else if (!items.length) {
-        text = '어떤 상품을 찾으시는지 알려 주세요. 예) "10만원 이하 무선 이어폰", "LG 그램 지금 사도 돼?"';
-      } else {
-        text = CG.compose({ items, cards, decision, deal, constraints, noResult, degraded: false }).text;
-      }
-
-      const guestFollowups = items.length
-        ? CG.followups({ items, decision, deal, constraints, noResult })
-        : [];
-
-      console.log('[ai:obs] ' + JSON.stringify({
-        v: PROMPT_VERSION, guest: true, intent: intent || 'none', search: searchState,
-        items: items.length, cards: cards.length,
-        deal: deal ? deal.verdict : 'none',
-        conf: decision ? decision.confidence.confidence : 'none',
-        model: 'none', costUsd: 0, ms: Date.now() - startedAt
-      }));
-
-      const guestPayload = { text, guest: true, needsAuthForFull: true };
-      if (cards.length) guestPayload.items = cards;
-      if (guestFollowups.length) guestPayload.followups = guestFollowups;
-      if (decision && decision.top && decision.top.productId) guestPayload.topProductId = decision.top.productId;
-      return res.json(guestPayload);
-    }
-
     // 상품이 많을 때까지 날짜별 가격을 다 찍으면 입력 토큰이 몇 배로 뛴다.
     // 통계(최저/평균/추세)는 어차피 위에 요약돼 있으므로 상세는 소수일 때만.
     const withPoints = items.length <= DETAIL_MAX_ITEMS;
@@ -3127,7 +3080,7 @@ module.exports = async function handler(req, res) {
     if (searchState === 'failed') system += `\n\n${P.searchFailed}`;
 
     // 취향 프로필은 무엇을 살지 고를 때만 쓸모가 있다. 잡담·지식 질문에는 넣지 않는다.
-    if (profile && (!intent || needsShopContext(intent))) {
+    if (!guest && profile && (!intent || needsShopContext(intent))) {
       system += `\n\n사용자 프로필: ${clip(JSON.stringify(profile), MAX_PROFILE_LEN)}`;
     }
 
@@ -3440,6 +3393,7 @@ module.exports = async function handler(req, res) {
     }
 
     const payload = cards.length ? { text, items: cards } : { text };
+    if (guest) payload.guest = true;
     if (followups.length) payload.followups = followups;
     if (decision && decision.top && decision.top.productId) {
       payload.topProductId = decision.top.productId;
@@ -3508,6 +3462,7 @@ module.exports = async function handler(req, res) {
         items: cards,
         degraded: true
       };
+      if (guest) body.guest = true;
       if (fbFollowups.length) body.followups = fbFollowups;
       return res.json(body);
     }

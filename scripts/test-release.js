@@ -778,11 +778,9 @@ async function runAI() {
   }
 
   /*
-   * AI-8. 비로그인 — 게스트 조립본(200), 업스트림 호출 없음 (2026-09-02 계약 변경)
+   * AI-8. 비로그인 — 게스트도 무료 LLM(200), 제품 quota 없음
    *
-   * 예전 계약은 "토큰 없음 → 401" 이었다. 이제 토큰이 아예 없으면 LLM 을
-   * 부르지 않는 결정론 답변을 200 으로 준다(api/ai.js 게스트 모드). 지켜야
-   * 할 성질은 그대로다 — 익명 호출로 요금이 한 푼도 나가지 않는다.
+   * 토큰이 아예 없으면 기본 컨텍스트로 :free 모델 체인을 사용한다.
    * 토큰이 "있는데 틀린" 경우는 여전히 401 이다 (재인증 안내).
    */
   {
@@ -791,7 +789,7 @@ async function runAI() {
     await aiHandler({ method: 'POST', headers: {}, query: {}, body: { question: '안녕' }, socket: { remoteAddress: '10.9.1.1' } }, res);
     check(res.code === 200, '토큰 없음 → 200 게스트 응답', String(res.code));
     check(res.payload && res.payload.guest === true, '응답에 guest:true 가 실린다');
-    check(ext.aiCalls === 0, '익명 호출로 요금이 나가지 않는다 ★');
+    check(ext.aiCalls >= 1, '게스트도 무료 LLM을 호출한다 ★', `${ext.aiCalls}회`);
     check(usedNow() === 0, '게스트는 쿼터를 쓰지 않는다 ★', String(usedNow()));
   }
   {

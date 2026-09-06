@@ -229,8 +229,9 @@ function callAi(body, headers) {
     called.length = 0; violation = null;
     const r = await callAi({ question: '20만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [] });
     ok(r.status === 200 && r.body.guest === true, '게스트 요청 200', String(r.status));
-    ok(called.length === 0, '★★ 게스트는 LLM 을 한 번도 부르지 않는다', String(called.length));
-    ok(llm.stats().calls === 0, 'stats().calls = 0');
+    ok(called.length > 0, '★★ 게스트도 무료 LLM 을 호출한다', String(called.length));
+    ok(called.every(x => x.free), '★★ 게스트 호출은 전부 :free 모델이다', called.map(x => x.model).join(','));
+    ok(llm.stats().paidCalls === 0, '게스트 paidCalls = 0');
   }
 
   /* ══════════════════════════════════════════════════════════

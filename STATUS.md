@@ -538,7 +538,7 @@ curl -s https://seosa.ai.kr/api/init | grep -o 'test_[a-z]*'
 
 | # | 문제 | 조치 | 검증 |
 |---|---|---|---|
-| S1 | AI 로그인 벽에서 퍼널 77% 이탈 | **게스트 모드** — 토큰 없으면 LLM 0회, `_concierge.compose` 조립본(판정·근거·대안·후속질문) + 카드. 정규식 의도 분류기 `api/_intent.js` 신설. 틀린 토큰은 여전히 401 | `test-guest.js` 74 · 브라우저 실측 |
+| S1 | AI 로그인 벽에서 퍼널 77% 이탈 | **게스트 모드** — 토큰 없이도 `:free` LLM + 기본 컨텍스트. 로그인 사용자는 프로필·대화 개인화 유지. 무료 체인 전체 실패 시 `_concierge.compose` fallback. 틀린 토큰은 여전히 401 | `test-guest.js` · `test-zero-cost.js` |
 | S2 | 9월 홈에 여름 키워드 | `api/_picks.js` — 검증된 인기 검색어 우선, 큐레이션 보충. 운영 실측 칩: 무선 이어폰·노트북·마우스·키보드… | 브라우저 실측 |
 | S6 | 수요 키워드가 수집되지 않음 | `api/cron.js` — 상위 검색어 6종을 매일 수집 대상에 추가 (쿠팡 6회/일) | — |
 | S4 | 상품 URL 없음, sitemap 1줄 | `/p/{product_id}` 서버 렌더(`api/_product-page.js`, `history` 함수에 얹음 — 함수 11/12 유지) + `/sitemap-products.xml`(기록 7일↑·live·링크 있는 601개만) + `?p=` 딥링크 + 공유에 SEOSA 주소 | `test-product-page.js` 52 · 브라우저 실측 |
@@ -546,8 +546,8 @@ curl -s https://seosa.ai.kr/api/init | grep -o 'test_[a-z]*'
 | — | 500 본문에 Supabase 오류 원문 | `search/init/rec/history` → `_http.fail` (로그·Sentry 로만) | 기존 테스트 |
 | — | 조립본에 `(P2)` 꼬리표 노출 | `_concierge.derefs` — 상품명으로 치환 | `test-guest.js` |
 
-**계약 변경**: `/api/ai` 는 토큰이 없으면 401 이 아니라 `{guest:true, needsAuthForFull:true, text, items?, followups?}` 200 을 준다.
-익명 호출로 요금이 나가지 않는 성질은 그대로다(`test-release.js` AI-8 갱신). 계측 `ai_guest_answer` / `ai_login_from_guest` 추가.
+**계약 변경**: `/api/ai` 는 토큰이 없으면 401 이 아니라 `{guest:true, text, items?, followups?}` 200 을 주며 `:free` 모델 체인을 사용한다.
+로그인 여부와 무관하게 제품 일일 질문 쿼터는 없고, 30회/분 IP 폭주 방어만 적용한다. 계측 `ai_guest_answer` / `ai_login_from_guest`는 유지한다.
 
 ### K-3. 하지 않은 것 (돌이키기 어렵거나 사람의 판단이 필요)
 

@@ -8240,14 +8240,14 @@ var Chat = {
     return d;
   },
 
-  /** 마지막으로 보낸 질문. 게스트가 로그인한 뒤 같은 질문을 AI 설명과 함께 다시 받는 데 쓴다. */
+  /** 마지막으로 보낸 질문. 게스트가 로그인한 뒤 개인화된 답변을 다시 받는 데 쓴다. */
   lastQuestion: '',
 
   /*
    * 게스트 안내 한 줄 (사용량 줄 자리를 같이 쓴다).
    *
-   * 강요하지 않는다 — 답은 이미 위에 나갔다. 로그인은 "이유와 대안 설명"을
-   * 더 받는 선택이지 답을 보기 위한 조건이 아니다.
+   * 강요하지 않는다 — 무료 AI 답은 이미 위에 나갔다. 로그인은 저장한 취향과
+   * 대화 맥락을 반영하기 위한 선택이지 답을 보기 위한 조건이 아니다.
    */
   guestCta: function() {
     var c = $('chat');
@@ -8261,11 +8261,11 @@ var Chat = {
       else c.parentNode.appendChild(el);
     }
     el.className = 'chat-usage is-guest';
-    el.innerHTML = Fmt.esc('위 판정은 SEOSA 가격 기록으로 계산한 결과예요. 로그인하면 서사 AI가 이유와 대안까지 설명해 드려요.')
-      + ' <button type="button" class="cu-cta" data-act="ai-login">로그인하고 AI 설명 받기</button>';
+    el.innerHTML = Fmt.esc('무료 AI 답변이에요. 로그인하면 저장한 취향과 대화 맥락도 반영할 수 있어요.')
+      + ' <button type="button" class="cu-cta" data-act="ai-login">로그인하고 취향 반영</button>';
   },
 
-  /** 게스트 → 로그인. 끝나면 같은 질문을 AI 설명과 함께 다시 보낸다. */
+  /** 게스트 → 로그인. 끝나면 같은 질문을 개인화해 다시 보낸다. */
   loginFromGuest: function() {
     Track.ev('ai_login_from_guest');
     var again = Chat.lastQuestion;
