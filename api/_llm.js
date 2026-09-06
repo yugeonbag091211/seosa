@@ -28,6 +28,15 @@
 const crypto = require('crypto');
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+
+/* 정확히 검토한 free-tier 대상만 허용한다. 임의 환경변수는 호출 권한이 아니다. */
+const GEMINI_FREE_MODELS = Object.freeze(['gemini-2.5-flash-lite', 'gemini-2.5-flash']);
+const GROQ_FREE_MODELS = Object.freeze(['llama-3.1-8b-instant', 'llama-3.3-70b-versatile']);
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant';
+const PROVIDER_COOLDOWN_MS = 60 * 1000;
 
 /* ═══════════════════════════════════════════════════════════════════
  *  ZERO-COST 정책 (2026-09-02 감사)
@@ -192,6 +201,7 @@ const MAX_MODEL_LEN = 80;
  */
 const state = {
   dead: new Map(),      // model → 언제까지 죽은 것으로 볼지
+  providerDead: new Map(), // provider:model → 짧은 cooldown
   cache: new Map(),     // key → { at, text, finish, model }
   /*
    * ── AI Cost Guard 계수기 (2026-09-02) ─────────────────────────
@@ -213,6 +223,17 @@ const state = {
   outTok: 0,
   costUsd: 0
 };
+
+function allowedModel(raw, allowlist, fallback) {
+  const model = String(raw || fallback || '').trim();
+  return allowlist.indexOf(model) >= 0 ? model : '';
+}
+
+function providerModel(provider) {
+  if (provider === 'gemini') return allowedModel(process.env.GEMINI_MODEL, GEMINI_FREE_MODELS, DEFAULT_GEMINI_MODEL);
+  if (provider === 'groq') return allowedModel(process.env.GROQ_MODEL, GROQ_FREE_MODELS, DEFAULT_GROQ_MODEL);
+  return '';
+}
 
 /** `:free` 로 끝나면 잔액이 없어도 부를 수 있는 모델이다. */
 function isFree(model) {
@@ -319,7 +340,15 @@ function classifyStatus(status) {
  * 되돌릴 수 없다. 값싼 보험이다.
  */
 function redact(s) {
-  return String(s == null ? '' : s).replace(/sk-or-[A-Za-z0-9_-]+/g, 'sk-or-***');
+  let out = String(s == null ? '' : s)
+    .replace(/sk-or-[A-Za-z0-9_-]+/g, 'sk-or-***')
+    .replace(/AIza[A-Za-z0-9_-]+/g, 'AIza***')
+    .replace(/gsk_[A-Za-z0-9_-]+/g, 'gsk_***');
+  ['GEMINI_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY'].forEach(name => {
+    const key = String(process.env[name] || '');
+    if (key) out = out.split(key).join(`${name.replace('_API_KEY', '')}_***`);
+  });
+  return out;
 }
 
 /* ── 캐시 ─────────────────────────────────────────────────────────
@@ -379,6 +408,115 @@ function cacheSet(key, ttl, value) {
     if (!oldest.done) state.cache.delete(oldest.value);
   }
   state.cache.set(key, value);
+}
+
+function providerReady(provider, model, now) {
+  const k = `${provider}:${model}`;
+  const until = state.providerDead.get(k) || 0;
+  if (until > now) return false;
+  if (until) state.providerDead.delete(k);
+  return true;
+}
+
+function coolProvider(provider, model, reason) {
+  if (['rate', 'server', 'timeout', 'parse', 'empty'].indexOf(reason) >= 0) {
+    state.providerDead.set(`${provider}:${model}`, Date.now() + PROVIDER_COOLDOWN_MS);
+  }
+}
+
+async function providerFetch(provider, model, request, timeoutMs, parse) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const startedAt = Date.now();
+  state.calls++; state.freeCalls++;
+  let r;
+  try {
+    r = await fetch(request.url, {
+      method: 'POST', signal: ac.signal, headers: request.headers,
+      body: JSON.stringify(request.body)
+    });
+  } catch (e) {
+    state.failures++; state.totalMs += Date.now() - startedAt;
+    const reason = e && e.name === 'AbortError' ? 'timeout' : 'network';
+    coolProvider(provider, model, reason);
+    console.warn(`[llm] ${provider}/${model} ${reason}`);
+    return { ok: false, reason, advance: true };
+  } finally { clearTimeout(timer); }
+
+  state.totalMs += Date.now() - startedAt;
+  if (!r || !r.ok) {
+    state.failures++;
+    const cls = classifyStatus((r && r.status) || 0);
+    let detail = '';
+    try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
+    coolProvider(provider, model, cls.reason);
+    console.warn(`[llm] ${provider}/${model} ${(r && r.status) || 0} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
+    return { ok: false, reason: cls.reason, advance: true };
+  }
+
+  let data;
+  try { data = await r.json(); }
+  catch (e) {
+    state.failures++; coolProvider(provider, model, 'parse');
+    return { ok: false, reason: 'parse', advance: true };
+  }
+  let out;
+  try { out = parse(data); }
+  catch (e) {
+    state.failures++; coolProvider(provider, model, 'parse');
+    return { ok: false, reason: 'parse', advance: true };
+  }
+  if (!out || !String(out.text || '').trim()) {
+    state.failures++; coolProvider(provider, model, 'empty');
+    return { ok: false, reason: 'empty', advance: true };
+  }
+  if (out.usage) { state.inTok += out.usage.inputTokens; state.outTok += out.usage.outputTokens; }
+  return Object.assign({ ok: true }, out);
+}
+
+function openAiUsage(data) {
+  const u = data && data.usage;
+  if (!u) return null;
+  return {
+    inputTokens: Number(u.prompt_tokens) || 0,
+    outputTokens: Number(u.completion_tokens) || 0,
+    totalTokens: Number(u.total_tokens) || 0
+  };
+}
+
+async function attemptGemini(model, opts, timeoutMs) {
+  if (GEMINI_FREE_MODELS.indexOf(model) < 0) return { ok: false, reason: 'paid-blocked', advance: true };
+  const system = opts.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+  const contents = opts.messages.filter(m => m.role !== 'system').map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content || '') }]
+  }));
+  return providerFetch('gemini', model, {
+    url: `${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
+    headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY, 'Content-Type': 'application/json' },
+    body: Object.assign({ contents, generationConfig: { maxOutputTokens: opts.maxTokens, temperature: opts.temperature } },
+      system ? { systemInstruction: { parts: [{ text: system }] } } : {})
+  }, timeoutMs, data => {
+    const c = ((data && data.candidates) || [])[0] || {};
+    const text = (((c.content || {}).parts) || []).map(p => p.text || '').join('');
+    const u = data && data.usageMetadata;
+    return { text, finish: String(c.finishReason || ''), usage: u ? {
+      inputTokens: Number(u.promptTokenCount) || 0,
+      outputTokens: Number(u.candidatesTokenCount) || 0,
+      totalTokens: Number(u.totalTokenCount) || 0
+    } : null };
+  });
+}
+
+async function attemptGroq(model, opts, timeoutMs) {
+  if (GROQ_FREE_MODELS.indexOf(model) < 0) return { ok: false, reason: 'paid-blocked', advance: true };
+  return providerFetch('groq', model, {
+    url: GROQ_ENDPOINT,
+    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+    body: { model, messages: opts.messages, max_tokens: opts.maxTokens, temperature: opts.temperature }
+  }, timeoutMs, data => {
+    const c = ((data && data.choices) || [])[0] || {};
+    return { text: String(((c.message || {}).content) || ''), finish: String(c.finish_reason || ''), usage: openAiUsage(data) };
+  });
 }
 
 /**
@@ -516,7 +654,7 @@ async function chat(opts) {
   const budgetMs = Math.max(1000, Number(o.budgetMs) || perCallMs);
 
   const tried = [];
-  if (!process.env.OPENROUTER_API_KEY) {
+  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
     return { ok: false, text: '', finish: '', model: '', reason: 'nokey', tried };
   }
   if (!messages.length) {
@@ -529,15 +667,44 @@ async function chat(opts) {
   const hit = cacheGet(key, ttl, now0);
   if (hit) {
     state.cacheHits++;
-    return { ok: true, text: hit.text, finish: hit.finish, model: hit.model, reason: 'cache', tried,
+    return { ok: true, text: hit.text, finish: hit.finish, model: hit.model, provider: hit.provider, reason: 'cache', tried,
       // 캐시 히트는 토큰을 쓰지 않는다. usage 는 null 이고 cached 로 구분한다.
       cached: true, usage: null, costUsd: 0, latencyMs: Date.now() - now0 };
   }
 
   const deadline = now0 + budgetMs;
-  const chain = usableChain(chainFor(role), now0);
+  const providerOpts = { messages, maxTokens, temperature, extra: o.extra };
+  const providers = [];
+  if (process.env.GEMINI_API_KEY) providers.push(['gemini', providerModel('gemini'), attemptGemini]);
+  if (process.env.GROQ_API_KEY) providers.push(['groq', providerModel('groq'), attemptGroq]);
 
   let last = 'none';
+  for (const [provider, model, fn] of providers) {
+    if (!model) {
+      state.paidBlocked++;
+      tried.push({ provider, model: '', reason: 'model-blocked' });
+      continue;
+    }
+    if (!providerReady(provider, model, Date.now())) {
+      tried.push({ provider, model, reason: 'cooldown' });
+      continue;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining < MIN_ATTEMPT_MS) { last = 'budget'; break; }
+    const r = await fn(model, providerOpts, Math.min(4000, perCallMs, remaining));
+    tried.push({ provider, model, reason: r.reason || (r.ok ? 'ok' : 'provider') });
+    if (r.ok) {
+      cacheSet(key, ttl, { at: Date.now(), text: r.text, finish: r.finish, model, provider });
+      return { ok: true, text: r.text, finish: r.finish, model, provider, reason: 'ok', tried,
+        cached: false, usage: r.usage || null, costUsd: 0, latencyMs: Date.now() - now0 };
+    }
+    last = r.reason || 'provider';
+  }
+
+  const chain = usableChain(chainFor(role), now0);
+  if (!process.env.OPENROUTER_API_KEY) {
+    return { ok: false, text: '', finish: '', model: '', reason: last === 'none' ? 'nokey' : last, tried };
+  }
   for (let i = 0; i < chain.length; i++) {
     const model = chain[i];
     const remaining = deadline - Date.now();
@@ -548,12 +715,12 @@ async function chat(opts) {
     }
 
     const r = await attempt(model, { messages, maxTokens, temperature, extra: o.extra },
-      Math.min(perCallMs, remaining));
+      Math.min(4000, perCallMs, remaining));
 
     if (r.ok) {
       tried.push({ model, reason: 'ok' });
-      cacheSet(key, ttl, { at: Date.now(), text: r.text, finish: r.finish, model });
-      return { ok: true, text: r.text, finish: r.finish, model, reason: 'ok', tried,
+      cacheSet(key, ttl, { at: Date.now(), text: r.text, finish: r.finish, model, provider: 'openrouter' });
+      return { ok: true, text: r.text, finish: r.finish, model, provider: 'openrouter', reason: 'ok', tried,
         cached: false, usage: r.usage || null,
         costUsd: estimateCostUsd(model, r.usage), latencyMs: Date.now() - now0 };
     }
@@ -569,6 +736,7 @@ async function chat(opts) {
 /** 테스트가 프로세스 기억을 지우기 위해 부른다. */
 function _reset() {
   state.dead.clear();
+  state.providerDead.clear();
   state.cache.clear();
   state.calls = 0; state.freeCalls = 0; state.paidCalls = 0; state.paidBlocked = 0;
   state.failures = 0; state.cacheHits = 0; state.totalMs = 0;
@@ -604,7 +772,9 @@ function stats() {
 module.exports = {
   chat, chainFor, isFree, allowPaid, stats,
   FREE_ANSWER_CHAIN, FREE_CLASSIFY_CHAIN,
+  GEMINI_FREE_MODELS, GROQ_FREE_MODELS, DEFAULT_GEMINI_MODEL, DEFAULT_GROQ_MODEL,
   MODEL_PRICES_USD_PER_1M, estimateCostUsd, isFreeModel,
   MAX_CHAIN, MIN_ATTEMPT_MS, DEAD_MODEL_MS,
-  _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset, attempt }
+  _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset, attempt,
+    providerModel, attemptGemini, attemptGroq }
 };

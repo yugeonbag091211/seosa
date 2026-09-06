@@ -76,8 +76,18 @@ Vercel > Settings > Environment Variables
 | `CRON_SECRET` | 설정됨 | — |
 | `TOSS_CLIENT_KEY` | **미설정** | PRO 결제 버튼이 "PRO 준비 중" 으로만 표시됨 (결제 불가) |
 | `TOSS_SECRET_KEY` | **미설정** | 〃 — 서버가 결제를 승인·검증할 수 없음 |
-| `OPENROUTER_API_KEY` | 필수 | AI Concierge 가 500 으로 거절 |
+| `GEMINI_API_KEY` | 권장(1순위) | Gemini를 건너뛰고 Groq/OpenRouter로 진행 |
+| `GEMINI_MODEL` | 선택 | 기본 `gemini-2.5-flash-lite`; allowlist 밖 값은 호출하지 않음 |
+| `GROQ_API_KEY` | 권장(2순위) | Groq를 건너뛰고 OpenRouter로 진행 |
+| `GROQ_MODEL` | 선택 | 기본 `llama-3.1-8b-instant`; allowlist 밖 값은 호출하지 않음 |
+| `OPENROUTER_API_KEY` | 권장(3순위) | OpenRouter를 건너뜀. 세 provider key가 모두 없으면 AI가 500으로 거절 |
 | `OPENROUTER_MODELS` | 선택 | 아래 「AI 모델 사슬」 참고 |
+
+AI provider 순서는 `Gemini → Groq → OpenRouter :free → deterministic`이다.
+`GEMINI_MODEL`과 `GROQ_MODEL`은 코드 allowlist 밖 값을 적으면 해당 provider를
+호출하지 않는다. 단, Gemini/Groq의 무료·유료 여부는 모델 ID가 아니라 API key가
+속한 계정 플랜에도 좌우되므로 **billing이 연결되지 않은 free-tier 프로젝트 키**만
+설정하고 각 provider 대시보드의 지출 상한을 0으로 확인해야 한다.
 | `OPENROUTER_CLASSIFY_MODELS` | 선택 | 〃 |
 | `AI_CACHE_TTL_MS` | 선택 | 기본 5분(켜짐). `0` 이면 끈다 |
 | `OPENROUTER_ALLOW_PAID` | 무시됨 | 값이 `1`이어도 Production AI는 `:free` 모델만 호출 |

@@ -81,6 +81,10 @@ function reset(env) {
    * 그 케이스들이 재는 것은 비용 정책이 아니라 라우팅 기계다.
    */
   delete process.env.OPENROUTER_ALLOW_PAID;
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GROQ_API_KEY;
+  delete process.env.GEMINI_MODEL;
+  delete process.env.GROQ_MODEL;
   process.env.OPENROUTER_API_KEY = 'sk-or-v1-TESTKEY';
   Object.keys(env || {}).forEach(k => { process.env[k] = env[k]; });
 }

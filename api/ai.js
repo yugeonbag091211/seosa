@@ -1826,8 +1826,9 @@ function unsupportedPriceDecision(text, items, deal) {
   const hasHistory = list.some(it => it.hist && Number(it.hist.count) > 0);
   const historyClaim = /(역대|사상|기록상)\s*최저|(?:30일\s*)?평균가?|가격\s*(?:추이|흐름|변동)|평소보다/.test(t);
   const timingClaim = /\b(?:BUY|WAIT|WATCH|DONT_BUY|GOOD_BUY)\b|지금\s*(?:사도|사는|구매)|(?:기다리|지켜보|서두르지|구매를?\s*(?:추천|미루))/.test(t);
-  const trustedDeal = !!(deal && deal.verdict && deal.verdict !== 'UNKNOWN');
-  return (historyClaim && !hasHistory) || (timingClaim && !trustedDeal);
+  // 구매 시점 문장은 서버 판정이 있어도 LLM 원문을 쓰지 않는다. 같은 결론처럼
+  // 보여도 강도나 부정어가 달라질 수 있으므로 deterministic 문장만 신뢰한다.
+  return (historyClaim && !hasHistory) || timingClaim;
 }
 
 /* ==================================================================
@@ -2442,8 +2443,8 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
   }
   // 로그인 여부와 무관하게 키는 서버 환경에서만 읽는다.
-  if (!process.env.OPENROUTER_API_KEY) {
-    return res.status(500).json({ error: 'OPENROUTER_API_KEY 환경변수 없음', text: '' });
+  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: '무료 AI provider 환경변수 없음', text: '' });
   }
 
   const { question, contextProducts, chatHistory, profile, view, prevTop: prevTopRaw } = readBody(req);

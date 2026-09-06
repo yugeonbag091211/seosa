@@ -36,6 +36,10 @@ delete process.env.OPENROUTER_CLASSIFY_MODELS;
 delete process.env.OPENROUTER_MODEL;
 delete process.env.OPENROUTER_CLASSIFY_MODEL;
 delete process.env.OPENROUTER_ALLOW_PAID;
+delete process.env.GEMINI_API_KEY;
+delete process.env.GROQ_API_KEY;
+delete process.env.GEMINI_MODEL;
+delete process.env.GROQ_MODEL;
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SECRET_KEY;
 

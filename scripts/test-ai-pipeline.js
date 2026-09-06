@@ -24,6 +24,8 @@
 
 require('./_env.js');
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-or-v1-OFFLINE-TEST';
+delete process.env.GEMINI_API_KEY;
+delete process.env.GROQ_API_KEY;
 
 /* ── 대역 (ai.js require 이전에) ──────────────────────────────── */
 const auth = require('../api/_auth');
@@ -921,6 +923,13 @@ function reset() {
   ok(r.body.degraded === true && !/감마 울트라/.test(r.body.text),
     '★★ 카탈로그에 없는 상품 추천 폐기');
   ok(!/\bP\d+\b|P\d+\(/.test(r.body.text), '★★ fallback에도 내부 P 참조 코드가 없다');
+
+  reset();
+  stub.llm.classify = 'E|무선 이어폰';
+  stub.llm.answer = '베타 무선 이어폰은 지금 WAIT 하세요.';
+  r = await call({ question: '무선 이어폰 지금 사도 돼?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && /구매 시점: 지금 사도 좋다/.test(r.body.text) && !/\bWAIT\b/.test(r.body.text),
+    '★★ LLM WAIT와 서버 BUY 충돌 시 서버 BUY만 유지');
 
   /* ── 결과 ── */
   console.log(`\n=== 결과: ${pass}/${pass + fail} PASS ===`);

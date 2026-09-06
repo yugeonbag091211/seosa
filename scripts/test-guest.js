@@ -22,6 +22,8 @@ const Module = require('module');
 
 process.env.AUTH_SECRET = 'test-secret-guest';
 process.env.OPENROUTER_API_KEY = 'test-openrouter-secret-never-expose';
+delete process.env.GEMINI_API_KEY;
+delete process.env.GROQ_API_KEY;
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SECRET_KEY;
 
