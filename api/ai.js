@@ -1,7 +1,6 @@
 const { readBody, applyCors, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { identify } = require('./_auth');
-const plan = require('./_plan');
 /*
  * 조건 해석·랭킹은 순수 계산이라 최상단에서 불러도 안전하다
  * (그 안에서 _shop 을 쓸 때만 지연 require 한다 — _shopintent.js 주석 참고).
@@ -2400,11 +2399,10 @@ module.exports = async function handler(req, res) {
    *   여기(in-memory)  — 짧은 순간의 폭주를 막는 보조 방어선.
    *                      서버리스라 인스턴스마다 카운터가 따로 놀아서
    *                      "하루 몇 회" 같은 판정에는 쓸 수 없다.
-   *   아래(DB quota)   — 하루 사용량의 진짜 기준. 원자적이라 우회되지 않는다.
-   *
-   * 둘을 섞지 말 것. 하나가 다른 하나를 대체하지 않는다.
+   * 제품 정책상의 일일 질문 횟수 제한은 없다. 이 방어선은 자동화 봇과 prompt
+   * flood만 막으며 정상 사용자의 연속 대화를 차단하지 않도록 넉넉하게 둔다.
    */
-  if (!guard(req, res, { name: 'ai', limit: 10, windowMs: 60 * 1000 })) return;
+  if (!guard(req, res, { name: 'ai', limit: 30, windowMs: 60 * 1000 })) return;
 
   /* ── 1) 신원 확인 ────────────────────────────────────────────────
    *
@@ -2435,8 +2433,6 @@ module.exports = async function handler(req, res) {
   if (!who.ok && !guest) {
     return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
   }
-  const email = guest ? '' : who.email;
-
   // 모델을 부르는 경로에만 키가 필요하다. 게스트(조립본)는 키 없이도 답한다.
   if (!guest && !process.env.OPENROUTER_API_KEY) {
     return res.status(500).json({ error: 'OPENROUTER_API_KEY 환경변수 없음', text: '' });
@@ -2460,57 +2456,7 @@ module.exports = async function handler(req, res) {
    */
   const prevTop = safeText(prevTopRaw, 60);
   const q = clip(question, MAX_QUESTION_LEN).trim();
-  // 입력이 잘못된 요청은 사용량을 예약하기 전에 걸러낸다 — 사용자 잘못이 아닌
-  // 것으로 한도를 깎지 않기 위해서다.
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
-
-  /* ── 2) 요금제 판정 ─────────────────────────────────────────────
-   * plan 은 절대 요청 body 에서 읽지 않는다. 검증된 이메일로 DB 를 본다.
-   * 만료·해지된 PRO 는 여기서 자동으로 FREE 로 떨어진다.
-   */
-  // 게스트는 요금제도 예약도 없다 — LLM 을 부르지 않으므로 청구서가 생기지 않는다.
-  let userPlan = 'guest', dailyLimit = 0;
-  let reservation = { allowed: true, used: 0, degraded: false };
-  if (!guest) {
-    ({ plan: userPlan, limit: dailyLimit } = await plan.resolvePlan(email));
-
-    /* ── 3) 사용량 예약 (원자적) ──────────────────────────────────
-     *
-     * ★ 반드시 OpenRouter 호출보다 먼저다.
-     *   이 엔드포인트는 요청 1건에 분류 2회 + 본답변 1회까지 LLM 을 부른다.
-     *   한도를 넘긴 요청은 그중 단 한 번도 부르면 안 된다 — 그게 유료화의
-     *   목적 자체다.
-     */
-    reservation = await plan.reserve(email, dailyLimit);
-    if (!reservation.allowed) {
-      const usage = plan.usagePayload(userPlan, reservation.used, dailyLimit);
-      return res.status(429).json({
-        error: reservation.degraded
-          ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-          : 'AI_DAILY_LIMIT_REACHED',
-        text: reservation.degraded
-          ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-          : '오늘 사용할 수 있는 AI 횟수를 모두 사용했어요.',
-        usage,
-        upgradeRequired: !reservation.degraded && userPlan !== plan.PLAN.PRO
-      });
-    }
-  }
-
-  // 응답에 실어 보낼 사용량. 예약이 성공했으므로 used 는 이번 호출까지 포함한다.
-  // 게스트는 null — 사용량이라는 개념 자체가 없다.
-  const usage = guest ? null : plan.usagePayload(userPlan, reservation.used, dailyLimit);
-
-  /*
-   * 업스트림 장애로 답을 못 준 경우에만 예약을 되돌린다.
-   * 정상 응답이나 사용자 입력 문제는 되돌리지 않는다.
-   */
-  let released = false;
-  const releaseOnce = async () => {
-    if (released || guest) return;
-    released = true;
-    await plan.release(email);
-  };
 
   /*
    * 찾아낸 상품 카드.
@@ -3281,22 +3227,10 @@ module.exports = async function handler(req, res) {
 
     if (!llmRes.ok) {
       /*
-       * 사슬 전체가 실패했다.
-       *
-       * 타임아웃만 따로 가른다 — 사용자에게 "오래 걸렸다" 와 "실패했다" 는
-       * 다른 안내이고, 다시 시도해 볼 값어치도 다르다. 그 밖의 이유
-       * (402·429·5xx·파싱 불가)는 아래 catch 가 받아 결정론 답변으로 잇는다.
-       * ★ 업스트림 원문은 여기에도 담지 않는다. reason 은 우리가 만든 코드다.
+       * 사슬 전체가 실패했다. 429·404·5xx·timeout·빈 응답·파싱 불가를 모두
+       * 아래 결정론 fallback으로 잇는다. 이미 계산한 쇼핑 판정과 카드를
+       * provider 장애 때문에 버리지 않는다.
        */
-      if (llmRes.reason === 'timeout' || llmRes.reason === 'budget') {
-        await releaseOnce();
-        return res.status(504).json({
-          error: '응답 시간 초과',
-          text: '응답이 너무 오래 걸렸어요. 다시 시도해 주세요.',
-          usage: plan.usagePayload(userPlan, Math.max(0, reservation.used - 1), dailyLimit)
-        });
-      }
-      // release는 아래 catch(e) 블록이 담당한다 (여기서 또 부르면 두 번 되돌려진다).
       throw new Error(`llm ${llmRes.reason}`);
     }
 
@@ -3331,7 +3265,7 @@ module.exports = async function handler(req, res) {
      * 사용자에게는 그 카드가 답의 알맹이다. 말만 채워서 함께 내보낸다.
      */
     if (!text) {
-      if (!cards.length) return res.json({ text: '답변을 만들지 못했어요. 다시 물어봐 주세요.', usage });
+      if (!cards.length) return res.json({ text: '답변을 만들지 못했어요. 다시 물어봐 주세요.' });
       text = '찾아온 상품이에요. 아래 카드를 확인해 보세요.';
     }
 
@@ -3505,7 +3439,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const payload = cards.length ? { text, items: cards, usage } : { text, usage };
+    const payload = cards.length ? { text, items: cards } : { text };
     if (followups.length) payload.followups = followups;
     if (decision && decision.top && decision.top.productId) {
       payload.topProductId = decision.top.productId;
@@ -3539,8 +3473,6 @@ module.exports = async function handler(req, res) {
      * 사용자는 답을 받지 못했으므로 예약했던 1회를 돌려준다. 장애가 날수록
      * 사용자가 손해를 보는 구조를 만들지 않는다.
      */
-    await releaseOnce();
-    const usageBack = plan.usagePayload(userPlan, Math.max(0, reservation.used - 1), dailyLimit);
 
     /*
      * 상품은 이미 찾아 놓았다 — 그것까지 버리지 않는다.
@@ -3574,7 +3506,6 @@ module.exports = async function handler(req, res) {
           items: fallbackItems, decision: fallbackDecision, noResult: fallbackNoResult
         }),
         items: cards,
-        usage: usageBack,
         degraded: true
       };
       if (fbFollowups.length) body.followups = fbFollowups;
@@ -3583,8 +3514,7 @@ module.exports = async function handler(req, res) {
 
     res.status(500).json({
       error: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.',
-      text: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.',
-      usage: usageBack
+      text: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.'
     });
   }
 };

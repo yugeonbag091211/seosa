@@ -142,7 +142,8 @@ function callAi(body, headers) {
 
     const llmSrc = fs.readFileSync(path.join(ROOT, 'api', '_llm.js'), 'utf-8');
     ok(/function allowPaid\(\)/.test(llmSrc), 'allowPaid() 가드가 존재한다');
-    ok(/OPENROUTER_ALLOW_PAID/.test(llmSrc), '유료는 명시적 환경변수로만 열린다');
+    ok(/function allowPaid\(\)\s*\{\s*return false;\s*\}/.test(llmSrc),
+      '유료 허용 함수는 설정과 무관하게 항상 false다');
     ok(/paid-blocked/.test(llmSrc), 'attempt() 에 호출 직전 차단 경로가 있다');
 
     // ai.js 는 OpenRouter 를 직접 부르지 않는다 (부르면 가드를 우회한다).
@@ -171,15 +172,17 @@ function callAi(body, headers) {
   section('3. 설정 사고 — 유료 id 를 적어도 나가지 않는다');
   {
     llm._internal._reset();
+    process.env.OPENROUTER_ALLOW_PAID = '1';
     process.env.OPENROUTER_MODELS = 'anthropic/claude-sonnet-5';
     const before = called.length;
     const r = await llm.chat({ role: 'answer', messages: [{ role: 'user', content: '안녕' }],
       maxTokens: 900, temperature: 0.2 });
     const fired = called.slice(before);
-    ok(fired.every(x => x.free), '★★ 유료 id 만 적어도 유료 호출이 나가지 않는다',
+    ok(fired.every(x => x.free), '★★ ALLOW_PAID=1 + 유료 id여도 유료 호출이 나가지 않는다',
       fired.map(x => x.model).join(',') || '(호출 없음)');
     ok(r.ok === true, '그래도 답은 나온다 (무료 사슬로 되돌아간다)', r.model);
     delete process.env.OPENROUTER_MODELS;
+    delete process.env.OPENROUTER_ALLOW_PAID;
   }
   {
     /*

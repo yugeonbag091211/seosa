@@ -10,11 +10,10 @@
  *
  * 여기서 모델을 사슬로 만든다.
  *
- *   1순위(유료·품질)  →  무료 모델들  →  (호출부의) SEOSA 결정론 답변
+ *   무료 모델 A  →  무료 모델 B  →  무료 모델 C  →  SEOSA 결정론 답변
  *
- * 무료 모델은 크레딧 잔액이 0이어도 호출된다. 그래서 잔액이 떨어져도
- * AI 가 침묵하지 않는다. 잔액을 채우면 자동으로 1순위로 되돌아간다 —
- * 배포도 환경변수 변경도 필요 없다.
+ * 무료 모델 하나가 막히면 다음 무료 모델로 넘어가고, 모두 실패하면 호출부의
+ * 결정론 답변으로 이어진다.
  *
  * ── 지키는 선 ──────────────────────────────────────────────────
  *
@@ -35,10 +34,7 @@ const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
  *
  *  ── 무엇이 문제였나 ────────────────────────────────────────────
  *
- *  chainFor() 는 OPENROUTER_MODELS 가 없으면 사슬 1순위를 유료 모델
- *  (anthropic/claude-sonnet-5)로 두었다. 그런데 운영(Vercel)에는 그 환경변수가
- *  없다 — .env.local(= vercel env pull) 전수 확인. 즉 **로그인 사용자의 모든
- *  AI 요청이 유료 모델을 먼저 호출하고 있었다.**
+ *  과거 chainFor()는 설정에 따라 :free가 아닌 모델을 사슬에 넣을 수 있었다.
  *
  *  2026-09-02 실측 (OpenRouter /api/v1/key, 읽기 전용):
  *      is_free_tier: false · usage(누적) $9.79 · usage_weekly $0.0147 · limit: null
@@ -46,9 +42,7 @@ const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
  *
  *  ── 이제 어떻게 하는가 ─────────────────────────────────────────
  *
- *  기본값이 무료 전용이다. 환경변수를 하나도 설정하지 않아도 유료 모델은
- *  호출되지 않는다. 유료를 쓰려면 OPENROUTER_ALLOW_PAID=1 을 **명시적으로**
- *  켜야 한다 — 실수로 켜지는 방향이 아니라 실수로 꺼지는 방향으로 설계한다.
+ *  환경변수와 무관하게 :free 접미사가 없는 모델은 호출하지 않는다.
  *
  *  방어는 두 겹이다. 하나가 뚫려도 다른 하나가 막는다.
  *    1) chainFor()  — 사슬을 만들 때 유료 모델을 걸러낸다
@@ -56,19 +50,16 @@ const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
  *  2)가 있어야 OPENROUTER_MODELS 에 유료 id 를 잘못 적어도 과금되지 않는다.
  * ═══════════════════════════════════════════════════════════════════ */
 
-/** 유료 모델 호출을 허용하는가. 기본은 거부다 (명시적 opt-in). */
-function allowPaid() {
-  return String(process.env.OPENROUTER_ALLOW_PAID || '').trim() === '1';
-}
-
-/*
- * 유료 1순위. OPENROUTER_ALLOW_PAID=1 일 때만 사슬에 들어간다.
- * 값을 지우지 않는 이유 — 나중에 크레딧을 채우고 품질을 올리기로 하면
- * 환경변수 하나로 되돌아갈 수 있어야 한다. 기능을 없애는 것이 아니라
- * 기본값을 안전한 쪽으로 옮기는 것이다.
+/**
+ * Production AI는 항상 무료 전용이다.
+ *
+ * 이전에는 OPENROUTER_ALLOW_PAID=1이 이 값을 뒤집었다. 운영 환경변수 한 칸이
+ * 곧 과금 권한이 되는 구조는 zero-cost 보장이 아니다. 하위 호환 진단을 위해
+ * 함수는 남기되 어떤 설정에서도 false만 돌려준다.
  */
-const DEFAULT_ANSWER_MODEL   = 'anthropic/claude-sonnet-5';
-const DEFAULT_CLASSIFY_MODEL = 'anthropic/claude-haiku-4.5';
+function allowPaid() {
+  return false;
+}
 
 /*
  * 무료 사슬.
@@ -164,13 +155,10 @@ const MAX_CHAIN = 4;
  * :free 접미사 모델은 OpenRouter 무료 티어라 0 이다(호출 자체는 무료이며,
  * 분당/일일 상한이 대신 걸린다).
  */
-const MODEL_PRICES_USD_PER_1M = {
-  'anthropic/claude-sonnet-5':   { in: 3.00, out: 15.00 },
-  'anthropic/claude-haiku-4.5':  { in: 1.00, out: 5.00 }
-};
+const MODEL_PRICES_USD_PER_1M = Object.freeze({});
 
 /** 무료 티어 모델인가 (OpenRouter 는 :free 접미사로 표시한다). */
-function isFreeModel(model) { return /:free$/.test(String(model || '')); }
+function isFreeModel(model) { return String(model || '').endsWith(':free'); }
 
 /**
  * 예상 비용(USD). 단가를 모르는 모델이면 null 을 준다.
@@ -190,15 +178,6 @@ function estimateCostUsd(model, usage) {
 /** 이만큼도 안 남았으면 새 모델을 시도하지 않는다 (부르자마자 끊길 시간) */
 const MIN_ATTEMPT_MS = 2500;
 
-/*
- * 402 를 한 번 보면 그 뒤 이 시간 동안은 유료 모델을 건너뛴다.
- *
- * 잔액이 0인 계정은 다음 요청도, 그다음 요청도 402 다. 매번 확인하면
- * 사용자마다 한 번씩 헛걸음(왕복 + 지연)을 한다. 잔액을 채우면 최대
- * 이 시간 뒤에 자동으로 1순위로 돌아온다.
- */
-const PAID_BLOCK_MS = 10 * 60 * 1000;
-
 /** 없는 모델 id 를 기억해 두는 시간. */
 const DEAD_MODEL_MS = 30 * 60 * 1000;
 
@@ -212,7 +191,6 @@ const MAX_MODEL_LEN = 80;
  * 판정 자체를 여기에 기대지는 않는다(어디까지나 최적화).
  */
 const state = {
-  paidBlockedUntil: 0,
   dead: new Map(),      // model → 언제까지 죽은 것으로 볼지
   cache: new Map(),     // key → { at, text, finish, model }
   /*
@@ -238,7 +216,7 @@ const state = {
 
 /** `:free` 로 끝나면 잔액이 없어도 부를 수 있는 모델이다. */
 function isFree(model) {
-  return /:free$/i.test(String(model || ''));
+  return String(model || '').endsWith(':free');
 }
 
 function sanitizeModel(raw) {
@@ -265,17 +243,11 @@ function envList(name) {
 function chainFor(role) {
   const classify = role === 'classify';
   const override = envList(classify ? 'OPENROUTER_CLASSIFY_MODELS' : 'OPENROUTER_MODELS');
-  const paidOk = allowPaid();
   const freeChain = classify ? FREE_CLASSIFY_CHAIN : FREE_ANSWER_CHAIN;
 
   let list;
   if (override.length) {
     list = override;
-  } else if (paidOk) {
-    const head = sanitizeModel(
-      process.env[classify ? 'OPENROUTER_CLASSIFY_MODEL' : 'OPENROUTER_MODEL']
-    ) || (classify ? DEFAULT_CLASSIFY_MODEL : DEFAULT_ANSWER_MODEL);
-    list = [head].concat(freeChain);
   } else {
     /*
      * ★ 기본 경로 — 무료 전용.
@@ -302,7 +274,7 @@ function chainFor(role) {
    * 전부 걸러져 비면 무료 사슬로 되돌린다. "아무것도 시도하지 않는 것"이
    * 가장 나쁜 결과이고, 그때도 비용은 0원이어야 하므로 무료로 채운다.
    */
-  const filtered = paidOk ? out : out.filter(isFree);
+  const filtered = out.filter(isFree);
   const finalList = filtered.length ? filtered : freeChain.slice();
   return finalList.slice(0, MAX_CHAIN);
 }
@@ -319,7 +291,7 @@ function usableChain(chain, now) {
     const until = state.dead.get(m) || 0;
     if (until > now) return false;
     if (until) state.dead.delete(m);
-    if (!isFree(m) && state.paidBlockedUntil > now) return false;
+    if (!isFree(m)) return false;
     return true;
   });
   return live.length ? live : chain.slice();
@@ -422,10 +394,9 @@ async function attempt(model, opts, timeoutMs) {
    * "환경변수에 유료 id 를 잘못 적었다" 같은 사고로 과금되지 않는다.
    * 던지지 않고 다음 모델로 넘긴다 — 사용자 요청을 죽일 이유는 없다.
    */
-  if (!isFree(model) && !allowPaid()) {
+  if (!isFree(model)) {
     state.paidBlocked++;
-    console.warn(`[llm] ZERO-COST: 유료 모델 호출 차단 — ${model} `
-      + '(허용하려면 OPENROUTER_ALLOW_PAID=1)');
+    console.warn(`[llm] ZERO-COST: :free 아닌 모델 호출 차단 — ${model}`);
     return { ok: false, reason: 'paid-blocked', advance: true };
   }
 
@@ -476,7 +447,6 @@ async function attempt(model, opts, timeoutMs) {
     let detail = '';
     try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
     console.warn(`[llm] ${model} ${status} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
-    if (cls.reason === 'quota') state.paidBlockedUntil = Date.now() + PAID_BLOCK_MS;
     if (cls.reason === 'model') state.dead.set(model, Date.now() + DEAD_MODEL_MS);
     return { ok: false, reason: cls.reason, advance: cls.advance };
   }
@@ -581,8 +551,6 @@ async function chat(opts) {
       Math.min(perCallMs, remaining));
 
     if (r.ok) {
-      // 유료 모델이 성공했다 = 잔액이 돌아왔다. 건너뛰기를 즉시 푼다.
-      if (!isFree(model)) state.paidBlockedUntil = 0;
       tried.push({ model, reason: 'ok' });
       cacheSet(key, ttl, { at: Date.now(), text: r.text, finish: r.finish, model });
       return { ok: true, text: r.text, finish: r.finish, model, reason: 'ok', tried,
@@ -600,7 +568,6 @@ async function chat(opts) {
 
 /** 테스트가 프로세스 기억을 지우기 위해 부른다. */
 function _reset() {
-  state.paidBlockedUntil = 0;
   state.dead.clear();
   state.cache.clear();
   state.calls = 0; state.freeCalls = 0; state.paidCalls = 0; state.paidBlocked = 0;
@@ -636,9 +603,8 @@ function stats() {
 
 module.exports = {
   chat, chainFor, isFree, allowPaid, stats,
-  DEFAULT_ANSWER_MODEL, DEFAULT_CLASSIFY_MODEL,
   FREE_ANSWER_CHAIN, FREE_CLASSIFY_CHAIN,
   MODEL_PRICES_USD_PER_1M, estimateCostUsd, isFreeModel,
-  MAX_CHAIN, MIN_ATTEMPT_MS, PAID_BLOCK_MS, DEAD_MODEL_MS,
+  MAX_CHAIN, MIN_ATTEMPT_MS, DEAD_MODEL_MS,
   _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset, attempt }
 };

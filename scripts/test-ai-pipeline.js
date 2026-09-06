@@ -23,6 +23,7 @@
 'use strict';
 
 require('./_env.js');
+process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-or-v1-OFFLINE-TEST';
 
 /* ── 대역 (ai.js require 이전에) ──────────────────────────────── */
 const auth = require('../api/_auth');
@@ -32,12 +33,6 @@ http.applyCors = () => true;
 http.noStore = () => {};
 const rl = require('../api/_ratelimit');
 rl.guard = () => true;
-const plan = require('../api/_plan');
-plan.resolvePlan = async () => ({ plan: 'pro', limit: 9999 });
-plan.reserve = async () => ({ allowed: true, used: 1, degraded: false });
-let releasedCount = 0;
-plan.release = async () => { releasedCount++; };
-plan.usagePayload = (p, used, limit) => ({ plan: p, used, limit, remaining: limit - used });
 
 /*
  * 검색·신뢰도·가격기록 스텁.
@@ -149,7 +144,6 @@ function reset() {
   stub.stats = fixtureStats();
   stub.llm = {};
   stub.captured = {};
-  releasedCount = 0;
   /*
    * ★ 시나리오마다 LLM 캐시를 비운다 (2026-09-02).
    *
@@ -242,7 +236,8 @@ function reset() {
   ok(r.status === 200 && (r.body.items || []).length === 3,
     '★ 답변 생성이 죽어도 카드는 나간다', `status=${r.status} items=${(r.body.items || []).length}`);
   ok(r.body.degraded === true, 'degraded 표시');
-  ok(releasedCount === 1, '★ 사용량 1회를 돌려준다 (장애 요금 전가 금지)', String(releasedCount));
+  ok(!Object.prototype.hasOwnProperty.call(r.body, 'usage'),
+    '★ 장애 응답에도 제품 질문 quota가 없다');
 
   /* 7 ─ 대화 조건 이어받기: 예산이 다음 턴에도 프롬프트에 남는다 */
   console.log('\n[7] 조건 이어받기');

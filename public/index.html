@@ -3513,7 +3513,7 @@ select:focus-visible,textarea:focus-visible,
       <h3>2. 회원 / 비회원 이용</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
         <li><strong>비회원:</strong> 상품 검색, 가격 조회, 가격 그래프 열람 가능</li>
-        <li><strong>회원:</strong> 위시리스트 저장, 가격 알림 신청, AI Concierge (하루 3회 무료)</li>
+        <li><strong>회원:</strong> 위시리스트 저장, 가격 알림 신청, 횟수 제한 없는 AI Concierge</li>
       </ul>
 
       <h3>3. 상품 검색 및 가격 정보</h3>
@@ -4821,9 +4821,8 @@ var Api = {
           if (!r.ok || (body && body.error)) {
             /*
              * 상태코드와 본문을 오류 객체에 실어 보낸다.
-             * 호출부가 "그냥 실패" 와 "한도 초과(429 + usage)" 를 구분해야
-             * 사용자에게 맞는 말을 할 수 있다. 기존 호출부는 err.message 만
-             * 쓰므로 그대로 동작한다.
+             * 호출부가 상태코드와 안전하게 정리된 본문을 함께 볼 수 있게 한다.
+             * 기존 호출부는 err.message 만 쓰므로 그대로 동작한다.
              */
             var err = new Error((body && body.error) || ('HTTP ' + r.status));
             err.status = r.status;
@@ -8241,43 +8240,6 @@ var Chat = {
     return d;
   },
 
-  /*
-   * 오늘 AI 사용량 표시.
-   *
-   * ★ 이 표시는 안내일 뿐 보안 장치가 아니다. 실제 차단은 서버가 DB 에서
-   *   원자적으로 판정한다(api/_plan.js). 여기 숫자를 개발자도구로 고쳐도
-   *   서버 한도는 그대로다.
-   *
-   * @param usage   {plan, used, limit, remaining}
-   * @param reached 한도를 다 쓴 상태로 강조할지
-   */
-  showUsage: function(usage, reached) {
-    if (!usage) return;
-    var c = $('chat');
-    if (!c) return;
-
-    var el = $('chatUsage');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'chatUsage';
-      el.className = 'chat-usage';
-      var host = $('chatSuggest');
-      if (host && host.parentNode) host.parentNode.insertBefore(el, host);
-      else c.parentNode.appendChild(el);
-    }
-
-    var label = '오늘 ' + usage.used + '/' + usage.limit + '회 사용';
-
-
-    if (reached || usage.remaining <= 0) {
-      el.className = 'chat-usage is-reached';
-      el.innerHTML = Fmt.esc('오늘의 AI 사용량을 모두 사용했어요. (' + label + ')');
-    } else {
-      el.className = 'chat-usage';
-      el.innerHTML = Fmt.esc(label + ' · 남은 횟수 ' + usage.remaining + '회');
-    }
-  },
-
   /** 마지막으로 보낸 질문. 게스트가 로그인한 뒤 같은 질문을 AI 설명과 함께 다시 받는 데 쓴다. */
   lastQuestion: '',
 
@@ -8638,8 +8600,6 @@ var Chat = {
           if (res.guest) {
             Track.ev('ai_guest_answer');
             Chat.guestCta();
-          } else if (res.usage) {
-            Chat.showUsage(res.usage);
           }
 
           AppState.chatHistory.push({ role: 'assistant', text: res.text || '' });
@@ -8672,20 +8632,7 @@ var Chat = {
           Chat.setSending(false);
           if (typing && typing.parentNode) typing.remove();
 
-          /*
-           * 하루 한도 초과는 "오류"가 아니라 정상적인 상태다.
-           * "연결 오류: AI_DAILY_LIMIT_REACHED" 같은 내부 코드를 그대로
-           * 보여주면 사용자는 무슨 일인지 알 수 없다.
-           */
-          var body = (err && err.body) || {};
-          if (err && err.status === 429 && body.error === 'AI_DAILY_LIMIT_REACHED') {
-            Chat.bubble(Fmt.esc(body.text || '오늘 사용할 수 있는 AI 횟수를 모두 사용했어요.'), 'ai');
-            Chat.showUsage(body.usage, true);
-            return;
-          }
-
           Chat.bubble('연결 오류: ' + Fmt.esc((err && err.message) || '알 수 없는 오류'), 'ai');
-          if (body.usage) Chat.showUsage(body.usage);
         }
       );
     });

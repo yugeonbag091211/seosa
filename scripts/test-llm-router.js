@@ -123,13 +123,20 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
     // 무료가 하나도 안 남으면 기본 무료 사슬로 되돌린다 (아무것도 안 하는 것이 최악).
     reset({ OPENROUTER_MODELS: 'anthropic/claude-sonnet-5, openai/gpt-4o' });
     const c = llm.chainFor('answer');
-    check('★ 전부 유료면 기본 무료 사슬로 되돌아간다', c.length > 0 && c.every(llm.isFree), c.join(' → '));
+      check('★ 전부 유료면 기본 무료 사슬로 되돌아간다', c.length > 0 && c.every(llm.isFree), c.join(' → '));
+  }
+  {
+    reset({ OPENROUTER_MODELS: 'fake/model:FREE' });
+    const c = llm.chainFor('answer');
+    check('`:free` 접미사는 정확히 일치해야 한다',
+      c.indexOf('fake/model:FREE') < 0 && c.every(llm.isFree), c.join(' → '));
   }
   {
     reset({ OPENROUTER_ALLOW_PAID: '1' });
     const c = llm.chainFor('answer');
-    check('opt-in 하면 유료 1순위가 되돌아온다', c[0] === llm.DEFAULT_ANSWER_MODEL, c[0]);
-    check('그 뒤에 무료 모델이 이어진다', c.length > 1 && c.slice(1).every(llm.isFree), c.join(' → '));
+    check('★★ OPENROUTER_ALLOW_PAID=1 이어도 사슬은 무료 전용이다',
+      c.length > 0 && c.every(llm.isFree), c.join(' → '));
+    check('allowPaid()는 환경변수와 무관하게 false다', llm.allowPaid() === false);
   }
   {
     reset({ OPENROUTER_MODELS: 'a/b:free, 쓰레기!!, c/d:free, a/b:free' });
@@ -147,39 +154,38 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
   }
 
   /* ── 2. 402 — 이 모듈이 존재하는 이유 ────────────────────────── */
-  console.log('\n[2] 402 크레딧 부족');
-  reset({ OPENROUTER_MODELS: 'paid/one, free/two:free', OPENROUTER_ALLOW_PAID: '1', AI_CACHE_TTL_MS: '0' });
-  ext.byModel['paid/one'] = 402;
+  console.log('\n[2] 무료 모델 quota 부족');
+  reset({ OPENROUTER_MODELS: 'free/one:free, free/two:free', OPENROUTER_ALLOW_PAID: '1', AI_CACHE_TTL_MS: '0' });
+  ext.byModel['free/one:free'] = 402;
   {
     const r = await ask();
-    check('★★ 유료가 402 여도 무료 모델로 넘어가 답을 만든다', r.ok === true, r.reason);
+    check('★★ 첫 무료 모델이 402 여도 다음 무료 모델로 넘어간다', r.ok === true, r.reason);
     check('답을 만든 모델을 알려준다', r.model === 'free/two:free', r.model);
-    check('두 모델을 순서대로 불렀다', ext.calls.join(',') === 'paid/one,free/two:free', ext.calls.join(','));
+    check('두 무료 모델을 순서대로 불렀다', ext.calls.join(',') === 'free/one:free,free/two:free', ext.calls.join(','));
     const blob = JSON.stringify(r);
     check('★ 업스트림 원문이 호출부로 새지 않는다', blob.indexOf('Insufficient credits') < 0);
     check('★ API 키 모양이 응답에 새지 않는다', blob.indexOf('sk-or-') < 0);
   }
   {
-    // 같은 인스턴스의 다음 요청 — 402 를 기억해 유료를 건너뛴다.
+    // 같은 인스턴스의 다음 요청도 무료 전용이다.
     ext.calls = [];
     const r = await ask();
-    check('★ 402 를 본 뒤에는 유료 모델을 건너뛴다 (헛걸음 제거)',
-      ext.calls.length === 1 && ext.calls[0] === 'free/two:free', ext.calls.join(','));
+    check('★ 이후 요청에도 :free 아닌 모델 호출은 없다',
+      ext.calls.every(llm.isFree), ext.calls.join(','));
     check('그래도 답은 나온다', r.ok === true);
   }
   {
-    // 잔액이 돌아오면 다시 1순위로. (기억을 지우고 유료가 성공하는 상황)
+    // 설정에 유료 모델을 섞어도 네트워크에는 도달하지 않는다.
     reset({ OPENROUTER_MODELS: 'paid/one, free/two:free', OPENROUTER_ALLOW_PAID: '1' });
     const r = await ask();
-    check('★ 잔액이 돌아오면 1순위로 되돌아간다 (배포 없이)',
-      r.ok && r.model === 'paid/one', r.model);
-    check('유료가 성공하면 건너뛰기 기억이 풀린다',
-      llm._internal.state.paidBlockedUntil === 0);
+    check('★ 유료 설정을 무시하고 무료 모델로 답한다',
+      r.ok && r.model === 'free/two:free', r.model);
+    check('실제 호출은 모두 무료다', ext.calls.every(llm.isFree), ext.calls.join(','));
   }
 
   /* ── 3. 넘어가면 안 되는 실패 ───────────────────────────────── */
   console.log('\n[3] 넘어가지 않는 실패 (401)');
-  reset({ OPENROUTER_MODELS: 'a/one, b/two:free, c/three:free', OPENROUTER_ALLOW_PAID: '1' });
+  reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free, c/three:free', OPENROUTER_ALLOW_PAID: '1' });
   ext.fallback = 401;
   {
     const r = await ask();
@@ -192,15 +198,15 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
   console.log('\n[4] 넘어가는 실패');
   for (const [mode, label] of [[429, '분당 한도'], [500, '업스트림 장애'],
                                ['empty', '빈 응답'], ['badjson', '파싱 불가']]) {
-    reset({ OPENROUTER_MODELS: 'a/one, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
-    ext.byModel['a/one'] = mode;
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
+    ext.byModel['a/one:free'] = mode;
     const r = await ask();
     check(`${label}(${mode}) → 다음 모델로 넘어간다`, r.ok === true && r.model === 'b/two:free',
       `${ext.calls.join(',')} / ${r.reason}`);
   }
   {
     // 빈 응답을 성공으로 다루면 "답변을 만들지 못했어요" 가 그대로 나간다.
-    reset({ OPENROUTER_MODELS: 'a/one, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
     ext.fallback = 'empty';
     const r = await ask();
     check('★ 전부 빈 응답이면 성공이 아니다', r.ok === false && r.reason === 'empty', r.reason);
@@ -220,7 +226,7 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
 
   /* ── 6. 시간 예산 ───────────────────────────────────────────── */
   console.log('\n[6] 시간 예산');
-  reset({ OPENROUTER_MODELS: 'a/one, b/two:free, c/three:free', OPENROUTER_ALLOW_PAID: '1' });
+  reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free, c/three:free', OPENROUTER_ALLOW_PAID: '1' });
   ext.fallback = 'timeout';
   {
     const r = await ask({ perCallMs: 1000, budgetMs: 30000 });
@@ -229,7 +235,7 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
       r.reason === 'timeout', r.reason);
   }
   {
-    reset({ OPENROUTER_MODELS: 'a/one, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
     const r = await ask({ budgetMs: 100 });
     check('★ 남은 시간이 없으면 아예 부르지 않는다 (함수가 매달리지 않게)',
       ext.calls.length === 0 && r.reason === 'budget', `${ext.calls.length}회 / ${r.reason}`);
@@ -255,19 +261,19 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
      * 어색하다는 이유). 무료 전용으로 가면 아끼는 대상이 돈이 아니라
      * free-models-per-min 한도로 바뀐다 — 실측에서 실제로 429 를 받았다.
      */
-    reset({ OPENROUTER_MODELS: 'a/one', OPENROUTER_ALLOW_PAID: '1' });
+    reset({ OPENROUTER_MODELS: 'a/one:free', OPENROUTER_ALLOW_PAID: '1' });
     await ask(); await ask();
     check('★★ 기본값은 켜짐 — 같은 프롬프트는 호출 한 번으로 끝난다 (분당 한도 보호)',
       ext.calls.length === 1, String(ext.calls.length));
   }
   {
     // 명시적으로 0 을 주면 끈다 (실패 경로를 재는 테스트가 그렇게 쓴다).
-    reset({ OPENROUTER_MODELS: 'a/one', AI_CACHE_TTL_MS: '0', OPENROUTER_ALLOW_PAID: '1' });
+    reset({ OPENROUTER_MODELS: 'a/one:free', AI_CACHE_TTL_MS: '0', OPENROUTER_ALLOW_PAID: '1' });
     await ask(); await ask();
     check('AI_CACHE_TTL_MS=0 이면 매번 새로 묻는다', ext.calls.length === 2, String(ext.calls.length));
   }
   {
-    reset({ OPENROUTER_MODELS: 'a/one', AI_CACHE_TTL_MS: '60000', OPENROUTER_ALLOW_PAID: '1' });
+    reset({ OPENROUTER_MODELS: 'a/one:free', AI_CACHE_TTL_MS: '60000', OPENROUTER_ALLOW_PAID: '1' });
     const r1 = await ask();
     const r2 = await ask();
     check('★ 켜면 같은 프롬프트는 호출 없이 답한다', ext.calls.length === 1, String(ext.calls.length));
@@ -286,7 +292,7 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
     check('★ 로그에 남기기 전 키 모양을 지운다', red.indexOf('abcdef123456') < 0, red);
   }
   {
-    reset({ OPENROUTER_MODELS: 'a/one, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', OPENROUTER_ALLOW_PAID: '1' });
     ext.fallback = 402;
     const seen = [];
     const realWarn = console.warn;
@@ -296,7 +302,7 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
     check('★ 실패 로그에도 키가 남지 않는다', seen.join('\n').indexOf('SECRETKEY123') >= 0
       ? seen.join('\n').indexOf('sk-or-v1-SECRETKEY123') < 0 : true, seen.length + '줄');
     check('어떤 모델이 왜 실패했는지는 남는다',
-      seen.some(l => l.indexOf('a/one') >= 0 && l.indexOf('quota') >= 0), seen[0]);
+      seen.some(l => l.indexOf('a/one:free') >= 0 && l.indexOf('quota') >= 0), seen[0]);
   }
 
   /* ── 10. 재시도 정책 — 같은 모델을 두 번 부르지 않는다 ────────
