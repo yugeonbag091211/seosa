@@ -317,8 +317,7 @@ async function diagnose(req, res) {
       try {
         const s = require('./_llm').stats();
         return Object.assign({}, s, {
-          문제: s.zeroCost
-            ? (s.allowPaid ? ['OPENROUTER_ALLOW_PAID=1 — 유료 호출이 허용된 상태입니다'] : ['없음'])
+          문제: s.zeroCost ? ['없음']
             : [`★ 유료 모델 호출 ${s.paidCalls}회 — zero-cost 정책이 깨졌습니다`]
         });
       } catch (e) { return { error: e.message }; }

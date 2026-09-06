@@ -244,7 +244,7 @@ job_date 2026-08-25  status completed  processed 1101/1101
 ```
 POST /api/ai   (토큰 필수 — 익명 호출로 요금이 나가지 않는다)
    → _plan.resolvePlan          FREE / PRO 판정 (expires_at 기준)
-   → _plan.reserve              ai_quota_reserve RPC 한 문장으로 예약   ★
+   → IP abuse rate limit        30회/분 폭주 방어 (제품 일일 quota 없음) ★
    → 의도 분류  (_llm 사슬, 8초, 직전 4턴)
    → 상품 질문이면 검색·가격기록·랭킹·Deal·Decision 계산
    → 그 결론을 프롬프트에 싣고 본 모델 호출 (_llm 사슬)
@@ -256,7 +256,7 @@ POST /api/ai   (토큰 필수 — 익명 호출로 요금이 나가지 않는다
 ### 모델 사슬 (`api/_llm.js`, 2026-08-30 신규)
 
 ```
-1순위 (기본 anthropic/claude-sonnet-5)
+1순위 (minimax/minimax-m3:free)
    ↓ 402 · 429 · 5xx · 404 · 빈 응답 · 타임아웃
 무료 모델 (`:free` — 잔액 0에서도 호출된다)
    ↓ 전부 실패
@@ -272,7 +272,7 @@ SEOSA 결정론 답변 (api/_concierge.js)
 - **요청 하나에 시간 예산 27초** — 사슬이 길다고 프론트 대기(30초)를 넘기지 않는다.
   분류 단계는 답변 몫 9초를 반드시 남기고 물러난다.
 - **비용 0원이 기본값** — 환경변수를 하나도 설정하지 않아도 무료 모델만 부른다.
-  유료는 `OPENROUTER_ALLOW_PAID=1` 로만 열린다. (DEPLOY.md 「AI 모델 사슬」)
+  `OPENROUTER_ALLOW_PAID=1`이어도 `:free` 아닌 모델은 네트워크 전에 차단된다.
 - **중복 질문 캐시** — 기본 5분 켜짐. 무료 티어의 분당 한도를 아끼는 것이 목적이다.
 
 ### LLM 없이 만드는 답 (`api/_concierge.js`, 2026-08-30 신규)
@@ -305,8 +305,8 @@ SEOSA 결정론 답변 (api/_concierge.js)
 > 크레딧이 있으면 1순위 모델이 처리하므로 나타나지 않는다.
 
 - **제공자** OpenRouter (`OPENROUTER_API_KEY`)
-- **한도** FREE 3회/일, PRO 50회/일 (`FREE_DAILY_AI_LIMIT` / `PRO_DAILY_AI_LIMIT` 로 조정)
-- **쿼터 원자성** `ai_quota_reserve` RPC — `UPDATE ... WHERE used < limit` 이라 동시 요청이 한도를 넘지 못한다
+- **제품 질문 한도** 없음 — FREE/PRO 모두 정상 사용 횟수 제한 없음
+- **abuse 방어** `/api/ai` IP당 30회/분. 자동화·prompt flood만 제한
 - **오류 처리** 업스트림이 401/402/429/타임아웃/파싱불가 중 무엇으로 실패하든 사용자에게 사람 말로 안내하고 **쿼터를 되돌린다**. 벌거벗은 500 은 나가지 않는다 (`test-release.js` AI 28케이스가 고정)
 
 ---
@@ -322,7 +322,7 @@ SEOSA 결정론 답변 (api/_concierge.js)
 | `price_job_state` | 재개 가능 수집 커서 | `job_date` (KST) |
 | `payments` | 결제 원장 | UNIQUE `order_id`, UNIQUE `payment_key`, RLS on |
 | `subscriptions` | 구독 상태 | `plan` / `status` / `expires_at` / `billing_key` |
-| `ai_usage` | 일일 AI 사용량 | `ai_quota_reserve` RPC 로만 증가 |
+| `ai_usage` | 과거 일일 AI 사용량 | 데이터 보존만 하며 Production AI는 읽거나 증가시키지 않음 |
 | `auth_codes` | 로그인 코드 | `auth_code_attempt` RPC (미적용) |
 | `profiles` | 닉네임·예산·취향 | |
 | `user_data` | 찜·조회·검색 기록 | |
@@ -538,7 +538,7 @@ curl -s https://seosa.ai.kr/api/init | grep -o 'test_[a-z]*'
 
 | # | 문제 | 조치 | 검증 |
 |---|---|---|---|
-| S1 | AI 로그인 벽에서 퍼널 77% 이탈 | **게스트 모드** — 토큰 없으면 LLM 0회, `_concierge.compose` 조립본(판정·근거·대안·후속질문) + 카드. 정규식 의도 분류기 `api/_intent.js` 신설. 틀린 토큰은 여전히 401 | `test-guest.js` 74 · 브라우저 실측 |
+| S1 | AI 로그인 벽에서 퍼널 77% 이탈 | **게스트 모드** — 토큰 없이도 `:free` LLM + 기본 컨텍스트. 로그인 사용자는 프로필·대화 개인화 유지. 무료 체인 전체 실패 시 `_concierge.compose` fallback. 틀린 토큰은 여전히 401 | `test-guest.js` · `test-zero-cost.js` |
 | S2 | 9월 홈에 여름 키워드 | `api/_picks.js` — 검증된 인기 검색어 우선, 큐레이션 보충. 운영 실측 칩: 무선 이어폰·노트북·마우스·키보드… | 브라우저 실측 |
 | S6 | 수요 키워드가 수집되지 않음 | `api/cron.js` — 상위 검색어 6종을 매일 수집 대상에 추가 (쿠팡 6회/일) | — |
 | S4 | 상품 URL 없음, sitemap 1줄 | `/p/{product_id}` 서버 렌더(`api/_product-page.js`, `history` 함수에 얹음 — 함수 11/12 유지) + `/sitemap-products.xml`(기록 7일↑·live·링크 있는 601개만) + `?p=` 딥링크 + 공유에 SEOSA 주소 | `test-product-page.js` 52 · 브라우저 실측 |
@@ -546,8 +546,8 @@ curl -s https://seosa.ai.kr/api/init | grep -o 'test_[a-z]*'
 | — | 500 본문에 Supabase 오류 원문 | `search/init/rec/history` → `_http.fail` (로그·Sentry 로만) | 기존 테스트 |
 | — | 조립본에 `(P2)` 꼬리표 노출 | `_concierge.derefs` — 상품명으로 치환 | `test-guest.js` |
 
-**계약 변경**: `/api/ai` 는 토큰이 없으면 401 이 아니라 `{guest:true, needsAuthForFull:true, text, items?, followups?}` 200 을 준다.
-익명 호출로 요금이 나가지 않는 성질은 그대로다(`test-release.js` AI-8 갱신). 계측 `ai_guest_answer` / `ai_login_from_guest` 추가.
+**계약 변경**: `/api/ai` 는 토큰이 없으면 401 이 아니라 `{guest:true, text, items?, followups?}` 200 을 주며 `:free` 모델 체인을 사용한다.
+로그인 여부와 무관하게 제품 일일 질문 쿼터는 없고, 30회/분 IP 폭주 방어만 적용한다. 계측 `ai_guest_answer` / `ai_login_from_guest`는 유지한다.
 
 ### K-3. 하지 않은 것 (돌이키기 어렵거나 사람의 판단이 필요)
 
@@ -619,7 +619,7 @@ node scripts/verify-migrations.js   23 OK / 0 FAIL
 | 항목 | 전 | 후 |
 |---|---|---|
 | 기본 답변 1순위 | `anthropic/claude-sonnet-5` (유료) | `minimax/minimax-m3:free` |
-| 유료 모델 | 기본 허용 | `OPENROUTER_ALLOW_PAID=1` 로만 |
+| 유료 모델 | 기본 허용 | 설정과 무관하게 구조적으로 차단 |
 | 요청당 LLM 호출 | 2회 (히스토리 있으면 3회) | **1회** |
 | 응답 캐시 | 기본 꺼짐 | 기본 5분 켜짐 |
 | 비용 계측 | 없음 | `llm.stats()` → `/api/cron?diag=1` |

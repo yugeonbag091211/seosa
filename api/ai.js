@@ -1,7 +1,6 @@
 const { readBody, applyCors, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { identify } = require('./_auth');
-const plan = require('./_plan');
 /*
  * 조건 해석·랭킹은 순수 계산이라 최상단에서 불러도 안전하다
  * (그 안에서 _shop 을 쓸 때만 지연 require 한다 — _shopintent.js 주석 참고).
@@ -905,9 +904,6 @@ function heuristicIntent(q, hist, view) {
 async function resolveIntent(q, hist, view, budget, guest) {
   const det = heuristicIntent(q, hist, view);
 
-  // 게스트는 LLM 을 쓰지 않는다 — 확신과 무관하게 정규식 결과로 답한다.
-  if (guest) return det;
-
   if (det.confidence === 'high') {
     console.log(`[ai] 정규식 분류로 확정 — LLM 분류 생략 (intent=${det.intent})`);
     return det;
@@ -1327,7 +1323,8 @@ async function attachHistory(items) {
  * ★ 상품명에 든 P숫자("레노버 탭 P11 프로")는 걸리지 않는다. P1 뒤에 조사가
  *   오고 그 뒤가 공백·문장부호여야 하므로 "P11" 은 매칭되지 않는다.
  */
-const REF_WITH_JOSA = /\[?(P[1-8])\]?(은|는|이|가|을|를|와|과|의|도|만|에서|에|보다)(?=[\s,.!?)\]"'」』]|$)/g;
+const REF_WITH_JOSA = /\[?(P[1-8])\]?\s*(은|는|이|가|을|를|와|과|의|도|만|에서|에|보다)(?=[\s,.!?)\]"'」』]|$)/g;
+const REF_BEFORE_PAREN = /\[?(P[1-8])\]?(?=\s*\()/g;
 
 /**
  * 꼬리표를 상품명으로 되돌린다. 가리키는 상품을 못 찾으면 그대로 둔다
@@ -1335,12 +1332,35 @@ const REF_WITH_JOSA = /\[?(P[1-8])\]?(은|는|이|가|을|를|와|과|의|도|�
  */
 function derefRefs(text, items) {
   const list = Array.isArray(items) ? items : [];
-  return String(text == null ? '' : text).replace(REF_WITH_JOSA, (m, ref, josa) => {
+  const itemFor = ref => {
     const it = list.find(x => x && x.ref === ref);
     const title = it && String(it.title || '').replace(/\s+/g, ' ').trim();
-    if (!title) return m;
-    return (title.length > 24 ? `「${title.slice(0, 24)}…」` : `「${title}」`) + josa;
-  });
+    if (!title) return null;
+    return {
+      title,
+      display: title.length > 24 ? `「${title.slice(0, 24)}…」` : `「${title}」`
+    };
+  };
+  const naturalJosa = (title, josa) => {
+    const chars = Array.from(title).filter(ch => /[가-힣]/.test(ch));
+    const last = chars[chars.length - 1];
+    if (!last) return josa;
+    const hasFinal = (last.charCodeAt(0) - 0xac00) % 28 !== 0;
+    const pair = {
+      은: ['는', '은'], 는: ['는', '은'], 이: ['가', '이'], 가: ['가', '이'],
+      을: ['를', '을'], 를: ['를', '을'], 와: ['와', '과'], 과: ['와', '과']
+    }[josa];
+    return pair ? pair[hasFinal ? 1 : 0] : josa;
+  };
+  return String(text == null ? '' : text)
+    .replace(REF_WITH_JOSA, (m, ref, josa) => {
+      const item = itemFor(ref);
+      return item ? item.display + naturalJosa(item.title, josa) : m;
+    })
+    .replace(REF_BEFORE_PAREN, (m, ref) => {
+      const item = itemFor(ref);
+      return item ? item.display : m;
+    });
 }
 
 const REF_IN_TEXT = /(^|[\s*_(])\[?P[1-8]\]?\s+(?=\S)/g;
@@ -1371,6 +1391,12 @@ const REF_PAREN = /\s*[([]P[1-8][)\]]/g;
  */
 function stripRefs(text) {
   return String(text || '')
+    .replace(/\[?P[1-8]\]?\s*(은|는|이|가|을|를|와|과)(?=[\s,.!?)]|$)/g, (_m, josa) => {
+      const natural = { 은: '은', 는: '은', 이: '이', 가: '이', 을: '을', 를: '을', 와: '과', 과: '과' }[josa];
+      return `해당 상품${natural}`;
+    })
+    .replace(/\[?P[1-8]\]?\s*\($/g, '해당 상품')
+    .replace(/\[?P[1-8]\]?(?=\s*\()/g, '해당 상품')
     .replace(REF_IN_TEXT, '$1')
     .replace(REF_PAREN, '');
 }
@@ -1821,6 +1847,18 @@ function mentionsAnyCard(text, cards) {
       .filter(w => w.length >= 2 && !/^\d+$/.test(w));
     return words.some(w => t.includes(w));
   });
+}
+
+/** 가격 이력이나 서버 구매 판정 없이는 내보낼 수 없는 주장인가. */
+function unsupportedPriceDecision(text, items, deal) {
+  const t = String(text || '');
+  const list = (items || []).filter(Boolean);
+  const hasHistory = list.some(it => it.hist && Number(it.hist.count) > 0);
+  const historyClaim = /(역대|사상|기록상)\s*최저|(?:30일\s*)?평균가?|가격\s*(?:추이|흐름|변동)|평소보다/.test(t);
+  const timingClaim = /\b(?:BUY|WAIT|WATCH|DONT_BUY|GOOD_BUY)\b|지금\s*(?:사도|사는|구매)|(?:기다리|지켜보|서두르지|구매를?\s*(?:추천|미루))/.test(t);
+  // 구매 시점 문장은 서버 판정이 있어도 LLM 원문을 쓰지 않는다. 같은 결론처럼
+  // 보여도 강도나 부정어가 달라질 수 있으므로 deterministic 문장만 신뢰한다.
+  return (historyClaim && !hasHistory) || timingClaim;
 }
 
 /* ==================================================================
@@ -2400,11 +2438,10 @@ module.exports = async function handler(req, res) {
    *   여기(in-memory)  — 짧은 순간의 폭주를 막는 보조 방어선.
    *                      서버리스라 인스턴스마다 카운터가 따로 놀아서
    *                      "하루 몇 회" 같은 판정에는 쓸 수 없다.
-   *   아래(DB quota)   — 하루 사용량의 진짜 기준. 원자적이라 우회되지 않는다.
-   *
-   * 둘을 섞지 말 것. 하나가 다른 하나를 대체하지 않는다.
+   * 제품 정책상의 일일 질문 횟수 제한은 없다. 이 방어선은 자동화 봇과 prompt
+   * flood만 막으며 정상 사용자의 연속 대화를 차단하지 않도록 넉넉하게 둔다.
    */
-  if (!guard(req, res, { name: 'ai', limit: 10, windowMs: 60 * 1000 })) return;
+  if (!guard(req, res, { name: 'ai', limit: 30, windowMs: 60 * 1000 })) return;
 
   /* ── 1) 신원 확인 ────────────────────────────────────────────────
    *
@@ -2417,16 +2454,16 @@ module.exports = async function handler(req, res) {
   /*
    * ── 게스트 모드 (2026-09-02) ────────────────────────────────────
    *
-   * 토큰이 아예 없으면 LLM 을 부르지 않는 "조립본 답변"으로 응답한다.
-   * 판정(_deal · _decision)은 원래 코드가 하므로 모델 없이도 결론·근거·
-   * 구매 시점·다른 후보를 그대로 줄 수 있다(api/_concierge.js compose).
+   * 토큰이 아예 없으면 기본 컨텍스트로 무료 LLM 체인을 사용한다.
+   * 판정(_deal · _decision)과 무료 모델 전체 실패 시 결정론 fallback은
+   * 로그인 사용자와 동일하게 유지한다.
    *
-   *   · 비용 0원 — OpenRouter 를 한 번도 부르지 않고, 쿼터도 예약하지 않는다.
+   *   · 비용 0원 — `:free` 모델만 허용하며 제품 일일 쿼터는 없다.
    *   · 검색은 /api/search 와 같은 경로·같은 캐시·같은 분당 상한을 쓴다.
-   *   · 의도 분류는 정규식(api/_intent.js)이다. LLM 분류기가 아니다.
+   *   · 의도 분류는 정규식 우선이며 애매할 때만 무료 LLM을 쓴다.
    *
    * 왜 — 14일 실측 ai_open 13 → ai_first_prompt 3. 로그인 벽에서 77% 가
-   * 꺾였다. 가치를 먼저 보여주고, 설명(LLM)은 로그인 뒤에 연다.
+   * 꺾였다. 로그인 없이도 AI 답변을 제공하고 로그인은 개인화에만 쓴다.
    *
    * ★ 토큰이 "있는데 틀린" 요청은 그대로 401 이다. 만료된 토큰을 든 사용자는
    *   재인증으로 안내해야지 조용히 게스트로 떨어뜨리면 안 된다.
@@ -2435,11 +2472,9 @@ module.exports = async function handler(req, res) {
   if (!who.ok && !guest) {
     return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
   }
-  const email = guest ? '' : who.email;
-
-  // 모델을 부르는 경로에만 키가 필요하다. 게스트(조립본)는 키 없이도 답한다.
-  if (!guest && !process.env.OPENROUTER_API_KEY) {
-    return res.status(500).json({ error: 'OPENROUTER_API_KEY 환경변수 없음', text: '' });
+  // 로그인 여부와 무관하게 키는 서버 환경에서만 읽는다.
+  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: '무료 AI provider 환경변수 없음', text: '' });
   }
 
   const { question, contextProducts, chatHistory, profile, view, prevTop: prevTopRaw } = readBody(req);
@@ -2460,57 +2495,7 @@ module.exports = async function handler(req, res) {
    */
   const prevTop = safeText(prevTopRaw, 60);
   const q = clip(question, MAX_QUESTION_LEN).trim();
-  // 입력이 잘못된 요청은 사용량을 예약하기 전에 걸러낸다 — 사용자 잘못이 아닌
-  // 것으로 한도를 깎지 않기 위해서다.
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
-
-  /* ── 2) 요금제 판정 ─────────────────────────────────────────────
-   * plan 은 절대 요청 body 에서 읽지 않는다. 검증된 이메일로 DB 를 본다.
-   * 만료·해지된 PRO 는 여기서 자동으로 FREE 로 떨어진다.
-   */
-  // 게스트는 요금제도 예약도 없다 — LLM 을 부르지 않으므로 청구서가 생기지 않는다.
-  let userPlan = 'guest', dailyLimit = 0;
-  let reservation = { allowed: true, used: 0, degraded: false };
-  if (!guest) {
-    ({ plan: userPlan, limit: dailyLimit } = await plan.resolvePlan(email));
-
-    /* ── 3) 사용량 예약 (원자적) ──────────────────────────────────
-     *
-     * ★ 반드시 OpenRouter 호출보다 먼저다.
-     *   이 엔드포인트는 요청 1건에 분류 2회 + 본답변 1회까지 LLM 을 부른다.
-     *   한도를 넘긴 요청은 그중 단 한 번도 부르면 안 된다 — 그게 유료화의
-     *   목적 자체다.
-     */
-    reservation = await plan.reserve(email, dailyLimit);
-    if (!reservation.allowed) {
-      const usage = plan.usagePayload(userPlan, reservation.used, dailyLimit);
-      return res.status(429).json({
-        error: reservation.degraded
-          ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-          : 'AI_DAILY_LIMIT_REACHED',
-        text: reservation.degraded
-          ? '사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'
-          : '오늘 사용할 수 있는 AI 횟수를 모두 사용했어요.',
-        usage,
-        upgradeRequired: !reservation.degraded && userPlan !== plan.PLAN.PRO
-      });
-    }
-  }
-
-  // 응답에 실어 보낼 사용량. 예약이 성공했으므로 used 는 이번 호출까지 포함한다.
-  // 게스트는 null — 사용량이라는 개념 자체가 없다.
-  const usage = guest ? null : plan.usagePayload(userPlan, reservation.used, dailyLimit);
-
-  /*
-   * 업스트림 장애로 답을 못 준 경우에만 예약을 되돌린다.
-   * 정상 응답이나 사용자 입력 문제는 되돌리지 않는다.
-   */
-  let released = false;
-  const releaseOnce = async () => {
-    if (released || guest) return;
-    released = true;
-    await plan.release(email);
-  };
 
   /*
    * 찾아낸 상품 카드.
@@ -2521,6 +2506,7 @@ module.exports = async function handler(req, res) {
    *   못했어요" 한 줄만 남는다 — 사용자 입장에서는 아무 일도 안 한 것과 같다.
    */
   let cards = [];
+  let degradedByGrounding = false;
 
   /*
    * 결정 데이터도 try 밖에 둔다.
@@ -2704,7 +2690,7 @@ module.exports = async function handler(req, res) {
      * ★ 세션 밖으로 나가지 않는다. 서버에 성향을 쌓아 두지 않는다.
      */
     let profileWeights = null;
-    if (!intent || needsShopContext(intent)) {
+    if (!guest && (!intent || needsShopContext(intent))) {
       try {
         const PF = require('./_profile');
         const built = PF.buildProfile(q, hist, clip);
@@ -2960,50 +2946,6 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    /*
-     * ── 게스트 응답 — 여기서 끝낸다 ──────────────────────────────
-     *
-     * 판정·결정·완화 분석은 위에서 전부 끝났다. 프롬프트를 조립하지도,
-     * 모델을 부르지도 않는다. api/_concierge.compose 가 같은 데이터로
-     * 사람이 읽는 글을 만든다 — 모델 사슬이 전부 죽었을 때 쓰는 바로 그 경로다.
-     * 새 사실을 만들지 않으므로 firewall 도 필요 없다.
-     */
-    if (guest) {
-      const CG = require('./_concierge');
-      let text;
-      if (intent === 'A') {
-        text = '안녕하세요. 찾으시는 상품과 예산을 말씀해 주시면, 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 바로 알려 드릴게요.';
-      } else if (intent === 'B') {
-        text = '일반 질문은 로그인 후 AI 서사가 답해 드려요. 상품 이름이나 조건("10만원 이하 무선 이어폰")을 말씀해 주시면 지금 바로 가격 기록으로 판단해 드릴게요.';
-      } else if (searchState === 'failed') {
-        text = '지금 쇼핑몰 조회에 실패했어요. 잠시 후 다시 시도해 주세요.';
-      } else if (searchState === 'empty') {
-        text = `「${safeText(query, 40)}」로는 상품을 찾지 못했어요. 다른 이름으로 불러 보시겠어요?`;
-      } else if (!items.length) {
-        text = '어떤 상품을 찾으시는지 알려 주세요. 예) "10만원 이하 무선 이어폰", "LG 그램 지금 사도 돼?"';
-      } else {
-        text = CG.compose({ items, cards, decision, deal, constraints, noResult, degraded: false }).text;
-      }
-
-      const guestFollowups = items.length
-        ? CG.followups({ items, decision, deal, constraints, noResult })
-        : [];
-
-      console.log('[ai:obs] ' + JSON.stringify({
-        v: PROMPT_VERSION, guest: true, intent: intent || 'none', search: searchState,
-        items: items.length, cards: cards.length,
-        deal: deal ? deal.verdict : 'none',
-        conf: decision ? decision.confidence.confidence : 'none',
-        model: 'none', costUsd: 0, ms: Date.now() - startedAt
-      }));
-
-      const guestPayload = { text, guest: true, needsAuthForFull: true };
-      if (cards.length) guestPayload.items = cards;
-      if (guestFollowups.length) guestPayload.followups = guestFollowups;
-      if (decision && decision.top && decision.top.productId) guestPayload.topProductId = decision.top.productId;
-      return res.json(guestPayload);
-    }
-
     // 상품이 많을 때까지 날짜별 가격을 다 찍으면 입력 토큰이 몇 배로 뛴다.
     // 통계(최저/평균/추세)는 어차피 위에 요약돼 있으므로 상세는 소수일 때만.
     const withPoints = items.length <= DETAIL_MAX_ITEMS;
@@ -3181,7 +3123,7 @@ module.exports = async function handler(req, res) {
     if (searchState === 'failed') system += `\n\n${P.searchFailed}`;
 
     // 취향 프로필은 무엇을 살지 고를 때만 쓸모가 있다. 잡담·지식 질문에는 넣지 않는다.
-    if (profile && (!intent || needsShopContext(intent))) {
+    if (!guest && profile && (!intent || needsShopContext(intent))) {
       system += `\n\n사용자 프로필: ${clip(JSON.stringify(profile), MAX_PROFILE_LEN)}`;
     }
 
@@ -3281,22 +3223,10 @@ module.exports = async function handler(req, res) {
 
     if (!llmRes.ok) {
       /*
-       * 사슬 전체가 실패했다.
-       *
-       * 타임아웃만 따로 가른다 — 사용자에게 "오래 걸렸다" 와 "실패했다" 는
-       * 다른 안내이고, 다시 시도해 볼 값어치도 다르다. 그 밖의 이유
-       * (402·429·5xx·파싱 불가)는 아래 catch 가 받아 결정론 답변으로 잇는다.
-       * ★ 업스트림 원문은 여기에도 담지 않는다. reason 은 우리가 만든 코드다.
+       * 사슬 전체가 실패했다. 429·404·5xx·timeout·빈 응답·파싱 불가를 모두
+       * 아래 결정론 fallback으로 잇는다. 이미 계산한 쇼핑 판정과 카드를
+       * provider 장애 때문에 버리지 않는다.
        */
-      if (llmRes.reason === 'timeout' || llmRes.reason === 'budget') {
-        await releaseOnce();
-        return res.status(504).json({
-          error: '응답 시간 초과',
-          text: '응답이 너무 오래 걸렸어요. 다시 시도해 주세요.',
-          usage: plan.usagePayload(userPlan, Math.max(0, reservation.used - 1), dailyLimit)
-        });
-      }
-      // release는 아래 catch(e) 블록이 담당한다 (여기서 또 부르면 두 번 되돌려진다).
       throw new Error(`llm ${llmRes.reason}`);
     }
 
@@ -3331,7 +3261,7 @@ module.exports = async function handler(req, res) {
      * 사용자에게는 그 카드가 답의 알맹이다. 말만 채워서 함께 내보낸다.
      */
     if (!text) {
-      if (!cards.length) return res.json({ text: '답변을 만들지 못했어요. 다시 물어봐 주세요.', usage });
+      if (!cards.length) return res.json({ text: '답변을 만들지 못했어요. 다시 물어봐 주세요.' });
       text = '찾아온 상품이에요. 아래 카드를 확인해 보세요.';
     }
 
@@ -3373,38 +3303,31 @@ module.exports = async function handler(req, res) {
       const badCmp   = unsupportedComparisons(text, items);
       const badSuper = unsupportedSuperlatives(text, items);
 
-      /*
-       * 경고는 한 줄만 붙인다.
-       *
-       * 종류별로 문장을 쌓으면 답변 끝이 주의문으로 뒤덮여, 정작 좋은 답변도
-       * 못 믿을 것처럼 보인다. 가장 위험한 것 하나만 말한다.
-       * 순서: 가격(돈이 걸린다) > 사양(구매 이유가 걸린다) > 최상급(표현 문제).
-       */
-      let warn = '';
-      if (badWon.length) {
-        console.warn(`[ai] 근거 없는 금액 ${badWon.length}건: ${badWon.slice(0, 5).join(', ')}`);
-        warn = cards.length
-          ? '※ 위 금액 중 일부는 SEOSA 데이터에서 확인되지 않았어요. 정확한 가격은 아래 상품 카드를 확인해 주세요.'
-          : '※ 위 금액 중 일부는 SEOSA에서 확인된 데이터가 아니에요. 실제 가격은 상품 페이지에서 확인해 주세요.';
-      } else if (badSpec.length) {
-        console.warn(`[ai] 근거 없는 사양 ${badSpec.length}건: ${badSpec.slice(0, 5).join(', ')}`);
-        warn = `※ 위 사양(${badSpec.slice(0, 3).join(', ')})은 상품명에서 확인되지 않았어요. 상품 페이지에서 확인해 주세요.`;
-      } else if (badCmp.length) {
-        console.warn(`[ai] 근거 없는 비교 주장: ${badCmp.join(', ')}`);
-        warn = `※ ${badCmp.join('·')} 비교는 확인된 데이터가 아니에요. 상품 페이지에서 확인해 주세요.`;
-      } else if (badSuper.length) {
-        console.warn(`[ai] 근거 없는 최상급 표현: ${badSuper.join(', ')}`);
-        warn = '※ "최저가" 여부는 지금 데이터로 확인되지 않았어요.';
-      }
-      if (warn) text += `\n\n${warn}`;
+      const badDecision = unsupportedPriceDecision(text, items, deal);
+      const badIdentity = cards.length > 0 && !mentionsAnyCard(text, cards);
+      const noCatalog = items.length === 0;
 
       /*
-       * 추천한 상품과 카드가 어긋나는지 (지시 36항).
-       * 사용자에게 경고를 띄우지는 않는다 — 어긋남은 우리 쪽 문제이지
-       * 사용자가 조심할 일이 아니다. 로그로만 남겨 원인을 추적한다.
+       * Grounding gate — 경고를 붙인 뒤 환각 문장을 그대로 두지 않는다.
+       * 서버 데이터로 되짚을 수 없는 가격·사양·상품·구매 판정이 하나라도
+       * 있으면 전체 LLM 답변을 폐기하고 동일한 서버 계산값으로 다시 조립한다.
        */
-      if (cards.length && !mentionsAnyCard(text, cards)) {
-        console.warn('[ai] 답변이 카드의 어떤 상품도 가리키지 않음 — identity 어긋남 가능');
+      if (badWon.length || badSpec.length || badCmp.length || badSuper.length ||
+          badDecision || badIdentity || noCatalog) {
+        console.warn('[ai] grounding 실패 — deterministic 답변으로 대체 ' + JSON.stringify({
+          won: badWon.length, spec: badSpec.length, compare: badCmp.length,
+          superlative: badSuper.length, decision: badDecision,
+          identity: badIdentity, catalog: items.length
+        }));
+        try {
+          text = require('./_concierge').compose({
+            items, cards, decision, deal, constraints, noResult, degraded: true, safety: true
+          }).text;
+          degradedByGrounding = true;
+        } catch (e) {
+          text = '지금은 확인된 상품·가격 근거가 부족해 구매 시점을 판단할 수 없어요.';
+          degradedByGrounding = true;
+        }
       }
     }
 
@@ -3505,7 +3428,9 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const payload = cards.length ? { text, items: cards, usage } : { text, usage };
+    const payload = cards.length ? { text, items: cards } : { text };
+    if (guest) payload.guest = true;
+    if (degradedByGrounding) payload.degraded = true;
     if (followups.length) payload.followups = followups;
     if (decision && decision.top && decision.top.productId) {
       payload.topProductId = decision.top.productId;
@@ -3539,8 +3464,6 @@ module.exports = async function handler(req, res) {
      * 사용자는 답을 받지 못했으므로 예약했던 1회를 돌려준다. 장애가 날수록
      * 사용자가 손해를 보는 구조를 만들지 않는다.
      */
-    await releaseOnce();
-    const usageBack = plan.usagePayload(userPlan, Math.max(0, reservation.used - 1), dailyLimit);
 
     /*
      * 상품은 이미 찾아 놓았다 — 그것까지 버리지 않는다.
@@ -3574,17 +3497,16 @@ module.exports = async function handler(req, res) {
           items: fallbackItems, decision: fallbackDecision, noResult: fallbackNoResult
         }),
         items: cards,
-        usage: usageBack,
         degraded: true
       };
+      if (guest) body.guest = true;
       if (fbFollowups.length) body.followups = fbFollowups;
       return res.json(body);
     }
 
     res.status(500).json({
       error: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.',
-      text: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.',
-      usage: usageBack
+      text: '답변을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.'
     });
   }
 };

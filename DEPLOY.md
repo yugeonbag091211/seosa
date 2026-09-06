@@ -20,7 +20,7 @@
 - `/p/{product_id}` → 상품 가격 기록 페이지 (HTML, Edge 1시간 캐시). 기록 7일 미만·stale·링크 없음은 `noindex`
 - `/sitemap-products.xml` → 색인 가능한 상품만 (12시간 캐시). `robots.txt` 에 등록됨
 - `/?p={product_id}` → 앱에서 그 상품의 가격 모달을 연다
-- `/api/ai` 토큰 없음 → 200 게스트 조립본 (LLM 0회, 쿼터 0). 틀린 토큰은 401
+- `/api/ai` 토큰 없음 → 200 게스트 무료 LLM (`:free` 전용, 제품 일일 쿼터 없음). 틀린 토큰은 401
 
 선택 환경변수: `SITE_ORIGIN` (기본 `https://seosa.ai.kr`, 상품 페이지 canonical·사이트맵 절대 URL), `CRON_DEMAND_SEED_MAX` (기본 6, 크론이 매일 수집하는 인기 검색어 수).
 
@@ -76,13 +76,21 @@ Vercel > Settings > Environment Variables
 | `CRON_SECRET` | 설정됨 | — |
 | `TOSS_CLIENT_KEY` | **미설정** | PRO 결제 버튼이 "PRO 준비 중" 으로만 표시됨 (결제 불가) |
 | `TOSS_SECRET_KEY` | **미설정** | 〃 — 서버가 결제를 승인·검증할 수 없음 |
-| `FREE_DAILY_AI_LIMIT` | 선택 | 기본 3 |
-| `PRO_DAILY_AI_LIMIT` | 선택 | 기본 50 |
-| `OPENROUTER_API_KEY` | 필수 | AI Concierge 가 500 으로 거절 |
+| `GEMINI_API_KEY` | 권장(1순위) | Gemini를 건너뛰고 Groq/OpenRouter로 진행 |
+| `GEMINI_MODEL` | 선택 | 기본 `gemini-2.5-flash-lite`; allowlist 밖 값은 호출하지 않음 |
+| `GROQ_API_KEY` | 권장(2순위) | Groq를 건너뛰고 OpenRouter로 진행 |
+| `GROQ_MODEL` | 선택 | 기본 `llama-3.1-8b-instant`; allowlist 밖 값은 호출하지 않음 |
+| `OPENROUTER_API_KEY` | 권장(3순위) | OpenRouter를 건너뜀. 세 provider key가 모두 없으면 AI가 500으로 거절 |
 | `OPENROUTER_MODELS` | 선택 | 아래 「AI 모델 사슬」 참고 |
+
+AI provider 순서는 `Gemini → Groq → OpenRouter :free → deterministic`이다.
+`GEMINI_MODEL`과 `GROQ_MODEL`은 코드 allowlist 밖 값을 적으면 해당 provider를
+호출하지 않는다. 단, Gemini/Groq의 무료·유료 여부는 모델 ID가 아니라 API key가
+속한 계정 플랜에도 좌우되므로 **billing이 연결되지 않은 free-tier 프로젝트 키**만
+설정하고 각 provider 대시보드의 지출 상한을 0으로 확인해야 한다.
 | `OPENROUTER_CLASSIFY_MODELS` | 선택 | 〃 |
 | `AI_CACHE_TTL_MS` | 선택 | 기본 5분(켜짐). `0` 이면 끈다 |
-| `OPENROUTER_ALLOW_PAID` | **설정하지 마라** | `1` 이면 유료 모델이 열린다. 비워 두면 비용 0원 |
+| `OPENROUTER_ALLOW_PAID` | 무시됨 | 값이 `1`이어도 Production AI는 `:free` 모델만 호출 |
 
 ### AI 모델 사슬 (`api/_llm.js`) — 2026-09-02 ZERO-COST 정책
 
@@ -94,15 +102,16 @@ AI 답변은 **모델 하나에 매달리지 않는다.** 실패하면 다음 �
 무료 모델 1 → 무료 모델 2 → 무료 모델 3 → SEOSA 결정론 답변
 ```
 
-**기본값이 무료 전용이다. 아무 환경변수도 설정하지 않으면 AI 비용은 0원이다.**
+**Production 경로는 설정과 무관하게 무료 전용이다. `:free`가 아니면 네트워크
+요청 전에 거부된다.**
 
 이전 판에서는 기본 1순위가 `anthropic/claude-sonnet-5`(유료)였다. 그런데
 운영에는 `OPENROUTER_MODELS` 가 없었으므로, 그 기본값은 곧 *로그인 사용자의
 모든 AI 요청이 유료 모델을 먼저 호출한다* 는 뜻이었다. 무료로 배포하는
 서비스에서 그건 사고다. 그래서 기본을 뒤집었다.
 
-- 유료 모델은 `OPENROUTER_ALLOW_PAID=1` 을 **직접 켜야만** 열린다.
-- `OPENROUTER_MODELS` 에 유료 id 를 적어도 걸러진다 (오타로 과금되지 않는다).
+- `OPENROUTER_ALLOW_PAID=1`도 유료 호출을 열지 못한다.
+- `OPENROUTER_MODELS` 에 유료 id 를 적어도 걸러진다.
 - 무료가 전부 실패해도 유료로 넘어가지 않는다. 결정론 답변으로 떨어진다.
 - `node scripts/test-zero-cost.js` 가 이 성질들을 매번 검사한다 (`npm test` 포함).
 

@@ -477,10 +477,12 @@ async function prepared(email) {
   const plan = require('../api/_plan');
   const expired = plan.resolvePlanFromRow(
     { plan: 'pro', status: 'active', expires_at: '2020-01-01T00:00:00Z' }, new Date());
-  check(expired.plan === 'free' && expired.limit === 3, '만료 → FREE 3회', `${expired.plan}/${expired.limit}`);
+  check(expired.plan === 'free' && !Object.prototype.hasOwnProperty.call(expired, 'limit'),
+    '만료 → FREE (AI 질문 제한 없음)', expired.plan);
   const live = plan.resolvePlanFromRow(
     { plan: 'pro', status: 'active', expires_at: '2099-01-01T00:00:00Z' }, new Date());
-  check(live.plan === 'pro' && live.limit === 50, '유효 → PRO 50회', `${live.plan}/${live.limit}`);
+  check(live.plan === 'pro' && !Object.prototype.hasOwnProperty.call(live, 'limit'),
+    '유효 → PRO (AI 질문 제한 없음)', live.plan);
 
   section('7-c. 기간 연장은 누적된다');
   reset(); resetToss();

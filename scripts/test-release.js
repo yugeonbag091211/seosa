@@ -421,7 +421,7 @@ async function runO4() {
     check(expired.plan === 'pro', '표시상 plan 은 pro 지만');
     const resolved = plan.resolvePlanFromRow({ plan: 'pro', status: 'active', expires_at: daysFromNow(-1) });
     check(resolved.plan === 'free', '권한 판정은 FREE 로 떨어진다 ★', resolved.reason);
-    check(resolved.limit === plan.FREE_DAILY_AI_LIMIT, '한도도 FREE', String(resolved.limit));
+    check(!Object.prototype.hasOwnProperty.call(resolved, 'limit'), 'AI 질문 한도 필드가 없다');
   }
 
   /* O4-11. 해지 — 남은 기간은 유지, 다음 결제만 중단 */
@@ -683,10 +683,10 @@ async function runO7() {
 }
 
 /* ================================================================== *
- *  OpenRouter — 실패 처리와 쿼터 복구 (실제 호출 0회)
+ *  OpenRouter — 실패 처리와 무제한 정책 (실제 호출 0회)
  * ================================================================== */
 async function runAI() {
-  suite('AI', 'OpenRouter 실패 처리 — 장애가 사용자 쿼터를 태우지 않는다');
+  suite('AI', 'OpenRouter 실패 처리 — 제품 질문 quota 없음');
 
   const EMAIL = 'ai@example.com';
   const token = auth.issueToken(EMAIL);
@@ -714,34 +714,33 @@ async function runAI() {
     return res;
   }
 
-  /* AI-1. 정상 응답 — 쿼터 1회 소비 */
+  /* AI-1. 정상 응답 — 제품 질문 quota 없음 */
   {
     const res = await callAi('ok');
     check(res.payload && typeof res.payload.text === 'string' && res.payload.text.length > 0,
       '정상 응답에 본문이 있다', String(res.code));
-    check(usedNow() === 1, '쿼터 1회 소비', String(usedNow()));
-    check(res.payload.usage && res.payload.usage.plan === 'free', '사용량이 응답에 실린다');
+    check(usedNow() === 0, '제품 질문 quota를 기록하지 않는다', String(usedNow()));
+    check(!Object.prototype.hasOwnProperty.call(res.payload, 'usage'), '사용량 payload가 없다');
   }
 
-  /* AI-2. ★ 402 크레딧 부족 — 쿼터를 되돌린다 */
+  /* AI-2. ★ 402 크레딧 부족 */
   {
     const res = await callAi('402');
     check(res.code === 500, '사용자에게는 500 (업스트림 상태를 그대로 노출하지 않는다)', String(res.code));
-    check(usedNow() === 0, '차감했던 쿼터를 복구한다 ★', String(usedNow()));
+    check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     const blob = JSON.stringify(res.payload);
     check(blob.indexOf('Insufficient credits') === -1, '"Insufficient credits" 가 새지 않는다 ★');
     check(blob.indexOf('OpenRouter') === -1, '공급자 이름이 새지 않는다 ★');
     check(blob.indexOf('402') === -1, '업스트림 상태코드가 새지 않는다');
     check(/다시 시도/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
-    check(res.payload.usage && res.payload.usage.used === 0, 'usage 도 복구된 값으로 나간다',
-      String(res.payload.usage && res.payload.usage.used));
+    check(!Object.prototype.hasOwnProperty.call(res.payload, 'usage'), 'usage payload를 내보내지 않는다');
   }
 
-  /* AI-3. 429 — 쿼터 복구 */
+  /* AI-3. provider 429 */
   {
     const res = await callAi('429');
     check(res.code === 500, '429 도 사용자에게는 일반 오류', String(res.code));
-    check(usedNow() === 0, '쿼터 복구 ★', String(usedNow()));
+    check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(JSON.stringify(res.payload).indexOf('Rate limit') === -1, '업스트림 문구가 새지 않는다');
   }
 
@@ -749,14 +748,14 @@ async function runAI() {
   {
     const res = await callAi('500');
     check(res.code === 500, '업스트림 500', String(res.code));
-    check(usedNow() === 0, '쿼터 복구 ★', String(usedNow()));
+    check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
-  /* AI-5. timeout — 504 + 쿼터 복구 */
+  /* AI-5. timeout — 안전한 일반 오류 (쇼핑 데이터가 있으면 결정론 fallback) */
   {
     const res = await callAi('timeout');
-    check(res.code === 504, 'timeout → 504', String(res.code));
-    check(usedNow() === 0, '쿼터 복구 ★', String(usedNow()));
+    check(res.code === 500, '데이터 없는 timeout → 안전한 일반 오류', String(res.code));
+    check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(/시간|다시/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
   }
 
@@ -764,26 +763,24 @@ async function runAI() {
   {
     const res = await callAi('malformed');
     check(res.code === 500, '파싱 불가 응답도 처리한다', String(res.code));
-    check(usedNow() === 0, '쿼터 복구 ★', String(usedNow()));
+    check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
-  /* AI-7. 한도 초과 — 업스트림을 아예 부르지 않는다 */
+  /* AI-7. 과거 사용량 행이 있어도 제품 한도로 차단하지 않는다 */
   {
     resetDb(); resetExt();
-    db.ai_usage.push({ email: EMAIL, usage_date: today, used: plan.FREE_DAILY_AI_LIMIT });
+    db.ai_usage.push({ email: EMAIL, usage_date: today, used: 999999 });
     const res = mkRes();
     await aiHandler(aiReq('안녕'), res);
-    check(res.code === 429, '한도 초과 → 429', String(res.code));
-    check(ext.aiCalls === 0, '한도를 넘으면 OpenRouter 를 한 번도 부르지 않는다 ★', `${ext.aiCalls}회`);
-    check(res.payload.upgradeRequired === true, 'FREE 사용자에게 업그레이드를 안내한다');
+    check(res.code === 200, '과거 ai_usage 값과 무관하게 정상 응답', String(res.code));
+    check(ext.aiCalls === 1, '정상 요청은 무료 LLM을 호출한다 ★', `${ext.aiCalls}회`);
+    check(!res.payload.upgradeRequired, 'AI 횟수 때문에 PRO 업그레이드를 요구하지 않는다');
   }
 
   /*
-   * AI-8. 비로그인 — 게스트 조립본(200), 업스트림 호출 없음 (2026-09-02 계약 변경)
+   * AI-8. 비로그인 — 게스트도 무료 LLM(200), 제품 quota 없음
    *
-   * 예전 계약은 "토큰 없음 → 401" 이었다. 이제 토큰이 아예 없으면 LLM 을
-   * 부르지 않는 결정론 답변을 200 으로 준다(api/ai.js 게스트 모드). 지켜야
-   * 할 성질은 그대로다 — 익명 호출로 요금이 한 푼도 나가지 않는다.
+   * 토큰이 아예 없으면 기본 컨텍스트로 :free 모델 체인을 사용한다.
    * 토큰이 "있는데 틀린" 경우는 여전히 401 이다 (재인증 안내).
    */
   {
@@ -792,7 +789,7 @@ async function runAI() {
     await aiHandler({ method: 'POST', headers: {}, query: {}, body: { question: '안녕' }, socket: { remoteAddress: '10.9.1.1' } }, res);
     check(res.code === 200, '토큰 없음 → 200 게스트 응답', String(res.code));
     check(res.payload && res.payload.guest === true, '응답에 guest:true 가 실린다');
-    check(ext.aiCalls === 0, '익명 호출로 요금이 나가지 않는다 ★');
+    check(ext.aiCalls >= 1, '게스트도 무료 LLM을 호출한다 ★', `${ext.aiCalls}회`);
     check(usedNow() === 0, '게스트는 쿼터를 쓰지 않는다 ★', String(usedNow()));
   }
   {

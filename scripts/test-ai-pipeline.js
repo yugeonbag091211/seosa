@@ -23,6 +23,9 @@
 'use strict';
 
 require('./_env.js');
+process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-or-v1-OFFLINE-TEST';
+delete process.env.GEMINI_API_KEY;
+delete process.env.GROQ_API_KEY;
 
 /* ── 대역 (ai.js require 이전에) ──────────────────────────────── */
 const auth = require('../api/_auth');
@@ -32,12 +35,6 @@ http.applyCors = () => true;
 http.noStore = () => {};
 const rl = require('../api/_ratelimit');
 rl.guard = () => true;
-const plan = require('../api/_plan');
-plan.resolvePlan = async () => ({ plan: 'pro', limit: 9999 });
-plan.reserve = async () => ({ allowed: true, used: 1, degraded: false });
-let releasedCount = 0;
-plan.release = async () => { releasedCount++; };
-plan.usagePayload = (p, used, limit) => ({ plan: p, used, limit, remaining: limit - used });
 
 /*
  * 검색·신뢰도·가격기록 스텁.
@@ -149,7 +146,6 @@ function reset() {
   stub.stats = fixtureStats();
   stub.llm = {};
   stub.captured = {};
-  releasedCount = 0;
   /*
    * ★ 시나리오마다 LLM 캐시를 비운다 (2026-09-02).
    *
@@ -186,6 +182,8 @@ function reset() {
   ok(!!r.body.items[0].note && /평균|최저가/.test(r.body.items[0].note),
     '★ 카드에 데이터 근거 한 줄이 붙는다', r.body.items[0].note);
   ok(!/확인되지 않았어요/.test(r.body.text), '정상 답변에는 firewall 경고가 붙지 않는다');
+  ok(r.body.degraded !== true && /베타 무선 이어폰/.test(r.body.text),
+    '★ 정상 상품·가격 근거가 있는 좋은 AI 답변은 유지한다');
 
   /* 2 ─ Hallucination Firewall: 지어낸 가격 탐지 */
   console.log('\n[2] Hallucination Firewall');
@@ -193,8 +191,10 @@ function reset() {
   stub.llm.classify = 'C|무선 이어폰';
   stub.llm.answer = '알파 이어폰이 현재 79,000원까지 내려왔고 정가는 320,000원입니다.';
   r = await call({ question: '무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
-  ok(/확인되지 않았어요/.test(r.body.text), '★ 지어낸 가격(79,000·320,000)에 경고가 붙는다');
-  ok(r.body.text.includes('79,000원'), '원문은 훼손하지 않는다 (몰래 고치지 않는다)');
+  ok(r.body.degraded === true, '★ 지어낸 가격은 deterministic 답변으로 교체한다');
+  ok(!r.body.text.includes('79,000원') && !r.body.text.includes('320,000원'), '★ 지어낸 금액 원문을 사용자에게 내보내지 않는다');
+  ok(!/AI 응답이 실패|AI 설명을 만들지 못/.test(r.body.text) && /확인된 상품·가격 데이터/.test(r.body.text),
+    '★ safety 교체를 provider 실패처럼 안내하지 않는다');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
@@ -242,7 +242,8 @@ function reset() {
   ok(r.status === 200 && (r.body.items || []).length === 3,
     '★ 답변 생성이 죽어도 카드는 나간다', `status=${r.status} items=${(r.body.items || []).length}`);
   ok(r.body.degraded === true, 'degraded 표시');
-  ok(releasedCount === 1, '★ 사용량 1회를 돌려준다 (장애 요금 전가 금지)', String(releasedCount));
+  ok(!Object.prototype.hasOwnProperty.call(r.body, 'usage'),
+    '★ 장애 응답에도 제품 질문 quota가 없다');
 
   /* 7 ─ 대화 조건 이어받기: 예산이 다음 턴에도 프롬프트에 남는다 */
   console.log('\n[7] 조건 이어받기');
@@ -334,8 +335,8 @@ function reset() {
   stub.llm.classify = 'C|무선 이어폰';
   stub.llm.answer = '베타 무선 이어폰은 배터리가 30시간 가고 램은 16GB입니다.';
   r = await call({ question: '무선 이어폰 추천', contextProducts: [], chatHistory: [], view: { source: 'none' } });
-  ok(/상품명에서 확인되지 않았어요/.test(r.body.text),
-    '★ 지어낸 사양(30시간·16GB)에 경고가 붙는다', r.body.text.slice(-70));
+  ok(r.body.degraded === true && !/30시간|16GB/.test(r.body.text),
+    '★ 지어낸 사양은 답변 전체를 교체한다', r.body.text.slice(-70));
 
   /* 12 ─ Firewall 2.0: 근거 없는 최상급 */
   console.log('\n[12] Firewall 2.0 — 최상급 표현');
@@ -347,8 +348,8 @@ function reset() {
   stub.llm.classify = 'C|이어폰';
   stub.llm.answer = '베타 이어폰이 역대 최저가입니다.';
   r = await call({ question: '이어폰 추천', contextProducts: [], chatHistory: [], view: { source: 'none' } });
-  ok(/최저가" ?여부는 지금 데이터로 확인되지 않았어요|확인되지 않았어요/.test(r.body.text),
-    '★ 가격 기록 없이 "역대 최저가" 라고 하면 경고', r.body.text.slice(-60));
+  ok(r.body.degraded === true && !/역대 최저가입니다/.test(r.body.text),
+    '★ 가격 기록 없이 "역대 최저가" 주장을 내보내지 않는다', r.body.text.slice(-60));
 
   /* 13 ─ 예산 완화가 프롬프트까지 전달되는가 (hard → soft) */
   console.log('\n[13] 예산 완화 (constraint evolution)');
@@ -487,8 +488,8 @@ function reset() {
   stub.llm.classify = 'C|이어폰';
   stub.llm.answer = '알파가 베타보다 더 가볍고 배터리도 더 오래 갑니다.';
   r = await call({ question: '이어폰 추천', contextProducts: [], chatHistory: [], view: { source: 'none' } });
-  ok(/비교는 확인된 데이터가 아니에요/.test(r.body.text),
-    '★ 무게·배터리 데이터 없이 비교하면 경고', r.body.text.slice(-60));
+  ok(r.body.degraded === true && !/더 가볍|더 오래/.test(r.body.text),
+    '★ 근거 없는 비교를 사용자에게 내보내지 않는다', r.body.text.slice(-60));
 
   reset();
   stub.stats = new Map();
@@ -891,6 +892,46 @@ function reset() {
   r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   ok(r.status === 500 || (r.body.items || []).length === 0,
     '보여줄 것이 없으면 있는 척하지 않는다', String(r.status));
+
+  /* 41 ─ Grounding gate: 데이터 없는 가격·판정·상품명은 원문 폐기 */
+  console.log('\n[41] Grounding gate — 근거 없는 가격·구매시점·상품');
+  reset();
+  stub.searchMode = 'empty';
+  stub.llm.classify = 'E|가상 노트북';
+  stub.llm.answer = '가상 노트북은 현재 777,777원이고 평균가는 999,999원입니다. 지금 BUY 하세요.';
+  r = await call({ question: '가상 노트북 지금 사도 돼?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && !/777,777|999,999|\bBUY\b/.test(r.body.text),
+    '★★ 데이터 0건이면 조작 가격·BUY를 전부 폐기', r.body.text.slice(0, 80));
+
+  reset();
+  stub.searchItems = [
+    { title: '베타 이어폰', lprice: 89000, link: 'https://l.c/b', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 89000, savePct: 0 }
+  ];
+  stub.stats = new Map();
+  stub.llm.classify = 'E|이어폰';
+  stub.llm.answer = '베타 이어폰은 역대 최저가이며 평균가보다 쌉니다. 지금 사도 좋습니다.';
+  r = await call({ question: '베타 이어폰 지금 사도 돼?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && !/역대 최저가|평균가보다|지금 사도 좋/.test(r.body.text),
+    '★★ hist·verdict 없으면 최저가·평균가·구매 단정 폐기');
+
+  reset();
+  stub.searchItems = [
+    { title: '베타 이어폰', lprice: 89000, link: 'https://l.c/b', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 89000, savePct: 0 }
+  ];
+  stub.stats = new Map();
+  stub.llm.classify = 'C|이어폰';
+  stub.llm.answer = '카탈로그에 없는 감마 울트라를 추천합니다.';
+  r = await call({ question: '이어폰 추천', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && !/감마 울트라/.test(r.body.text),
+    '★★ 카탈로그에 없는 상품 추천 폐기');
+  ok(!/\bP\d+\b|P\d+\(/.test(r.body.text), '★★ fallback에도 내부 P 참조 코드가 없다');
+
+  reset();
+  stub.llm.classify = 'E|무선 이어폰';
+  stub.llm.answer = '베타 무선 이어폰은 지금 WAIT 하세요.';
+  r = await call({ question: '무선 이어폰 지금 사도 돼?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && /구매 시점: 지금 사도 좋다/.test(r.body.text) && !/\bWAIT\b/.test(r.body.text),
+    '★★ LLM WAIT와 서버 BUY 충돌 시 서버 BUY만 유지');
 
   /* ── 결과 ── */
   console.log(`\n=== 결과: ${pass}/${pass + fail} PASS ===`);

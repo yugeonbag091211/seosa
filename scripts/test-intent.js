@@ -2,8 +2,8 @@
 /**
  * AI Concierge 의도 분류 + 검색어 추출 QA.
  *
- * ★ 이 스크립트는 OpenRouter 를 실제로 호출한다(비용 발생). 그래서 npm test
- *   에는 넣지 않는다. 프롬프트를 고친 뒤 수동으로 돌린다.
+ * ★ 이 스크립트는 api/_llm.js 의 무료 분류 사슬만 호출한다. 그래서 수동
+ *   실행에서도 `:free` 아닌 모델은 네트워크 직전 이중 가드에 막힌다.
  *   외부 호출 없이 도는 로직 검증은 scripts/test-ai.js 에 있다.
  *
  * 검증 대상은 두 가지다.
@@ -31,7 +31,6 @@ for (const f of ['.env.local', '.env']) {
   }
 }
 
-const CLASSIFY_MODEL = process.env.OPENROUTER_CLASSIFY_MODEL || 'anthropic/claude-haiku-4.5';
 const API_KEY = process.env.OPENROUTER_API_KEY;
 if (!API_KEY) { console.error('OPENROUTER_API_KEY 없음'); process.exit(1); }
 
@@ -64,8 +63,8 @@ const { cleanQuery } = require('../api/ai.js')._internal;
  * 그것을 품질 실패(FAIL)로 합산해 "25/75" 라는 숫자가 나왔다. 분류 품질이
  * 33% 라는 뜻이 아니었다 — 측정 도구가 장애를 실패로 위장한 것이다.
  */
-const RETRY_STATUS = new Set([402, 429, 500, 502, 503]);
 const RETRY_DELAY_MS = 2000;
+const llm = require('../api/_llm');
 
 async function callClassifier(question, historyMsgs, force) {
   const msgs = [{ role: 'system', content: classifyPrompt + (force ? classifyForce : '') }];
@@ -76,21 +75,19 @@ async function callClassifier(question, historyMsgs, force) {
 
   let r;
   for (let attempt = 0; ; attempt++) {
-    r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: CLASSIFY_MODEL, messages: msgs, max_tokens: 32, temperature: 0 })
+    r = await llm.chat({
+      role: 'classify', messages: msgs, maxTokens: 32, temperature: 0,
+      cacheTtlMs: 0, extra: { reasoning: { enabled: false } }
     });
     if (r.ok) break;
-    if (attempt >= 2 || !RETRY_STATUS.has(r.status)) {
-      const e = new Error(`${r.status}`);
-      e.infra = RETRY_STATUS.has(r.status);   // 인프라 문제 = 품질 판정에서 제외
+    if (attempt >= 2) {
+      const e = new Error(r.reason || 'provider');
+      e.infra = true;
       throw e;
     }
     await new Promise(res => setTimeout(res, RETRY_DELAY_MS * (attempt + 1)));
   }
-  const data = await r.json();
-  const raw = String((((data.choices || [])[0] || {}).message || {}).content || '').trim();
+  const raw = String(r.text || '').trim();
 
   const head = raw.split('|')[0].trim().toUpperCase();
   if (head.includes('?')) return { intent: '?', query: '' };

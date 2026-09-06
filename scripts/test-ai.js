@@ -12,7 +12,7 @@
 'use strict';
 
 const {
-  cleanQuery, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls,
+  cleanQuery, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls, derefRefs,
   needsShopContext, safeText, normItem, describe,
   collectKnownWon, unverifiedWon
 } = require('../api/ai.js')._internal;
@@ -233,6 +233,15 @@ eq(stripRefs('가격은 P1'), '가격은 P1', '뒤에 이름이 없으면 지우
 eq(stripRefs(''), '', '빈 문자열 안전');
 eq(stripRefs(null), '', 'null 안전');
 eq(stripRefs('P4 드라이비아'), '드라이비아', '문장 맨 앞의 꼬리표도 제거');
+eq(stripRefs('P2(69,000원)은 더 비쌉니다'), '해당 상품(69,000원)은 더 비쌉니다',
+  '가격 괄호 앞 ref는 주어를 보존해 정리');
+eq(stripRefs('P1('), '해당 상품', '끝나지 않은 ref 괄호를 자연스럽게 정리');
+eq(stripRefs('P2 는 더 비쌉니다'), '해당 상품은 더 비쌉니다',
+  '띄어 쓴 조사에서 주어가 사라지지 않는다');
+eq(derefRefs('P2(69,000원)은 더 비쌉니다', [{ ref: 'P2', title: '베타 이어폰' }]),
+  '「베타 이어폰」(69,000원)은 더 비쌉니다', '가격 괄호 앞 ref를 실제 상품명으로 치환');
+eq(derefRefs('P2 는 더 비쌉니다', [{ ref: 'P2', title: '베타 이어폰' }]),
+  '「베타 이어폰」은 더 비쌉니다', '띄어 쓴 조사 ref를 상품명과 자연스러운 조사로 치환');
 
 /* ─────────────────────────────────────────────────────────────
    [9] 괄호에 갇힌 꼬리표 — 2026-08-28 E2E 실측에서 새던 형태

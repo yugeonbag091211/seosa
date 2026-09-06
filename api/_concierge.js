@@ -277,6 +277,7 @@ function followups(ctx) {
 
 const DEGRADED_HEAD = '지금은 AI 설명을 만들지 못했어요. 대신 서버가 계산한 결과를 그대로 알려 드릴게요.';
 const DEGRADED_FOOT = '설명이 짧은 것은 AI 응답이 실패했기 때문이고, 위 숫자와 판정은 평소와 같은 계산입니다.';
+const SAFETY_HEAD = '확인된 상품·가격 데이터만 기준으로 정리했어요.';
 
 /**
  * SEOSA 데이터만으로 답변 본문을 만든다.
@@ -298,7 +299,8 @@ function compose(ctx) {
   const top = items[0] || null;
   const L = [];
 
-  if (c.degraded) { L.push(DEGRADED_HEAD); L.push(''); }
+  if (c.safety) { L.push(SAFETY_HEAD); L.push(''); }
+  else if (c.degraded) { L.push(DEGRADED_HEAD); L.push(''); }
 
   if (!top) {
     /*
@@ -308,7 +310,7 @@ function compose(ctx) {
     L.push(cards.length
       ? '찾아온 상품만 아래에 보여 드립니다.'
       : '지금 조건에 맞는 상품을 찾지 못했어요.');
-    if (c.degraded) { L.push(''); L.push(DEGRADED_FOOT); }
+    if (c.degraded && !c.safety) { L.push(''); L.push(DEGRADED_FOOT); }
     return { text: L.join('\n'), followups: followups(c) };
   }
 
@@ -355,7 +357,7 @@ function compose(ctx) {
     L.push(`말씀하신 예산 ${won(c.constraints.budgetMax)}원은 그대로 반영했습니다.`);
   }
 
-  if (c.degraded) { L.push(''); L.push(DEGRADED_FOOT); }
+  if (c.degraded && !c.safety) { L.push(''); L.push(DEGRADED_FOOT); }
 
   return { text: L.join('\n'), followups: followups(c) };
 }
@@ -422,5 +424,5 @@ module.exports = {
   BLOCK_LABELS, BLOCK_DUMP_MIN,
   // 테스트·다른 모듈이 같은 문구를 쓰도록 노출한다 (문구가 두 벌이 되면 어긋난다)
   conclusion, reasons, timing, cautions, others, hedgeFor, shortTitle, won, derefs,
-  STANCE, MAX_FOLLOWUPS, DEGRADED_HEAD, DEGRADED_FOOT
+  STANCE, MAX_FOLLOWUPS, DEGRADED_HEAD, DEGRADED_FOOT, SAFETY_HEAD
 };

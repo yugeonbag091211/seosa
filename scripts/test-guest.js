@@ -1,25 +1,29 @@
 #!/usr/bin/env node
 /**
- * 게스트 AI · 정규식 의도 분류 · 수요 기반 셀렉션 — 완전 오프라인 (외부 호출 0회).
+ * 게스트 AI · 무료 LLM · 정규식 의도 분류 — 완전 오프라인(가짜 provider).
  *
  *   node scripts/test-guest.js
  *
  * ── 무엇을 지키는가 ────────────────────────────────────────────
  *   ① api/_intent.classify — 사용자 문장을 LLM 없이 A~E 로 가르고 검색어를 뽑는다
- *   ② api/ai.js 게스트 경로 — 토큰이 없으면 200 + 조립본 + 카드, LLM 호출 0회
+ *   ② api/ai.js 게스트 경로 — 토큰이 없어도 200 + 무료 LLM + 카드
  *   ③ 토큰이 "있는데 틀린" 요청은 그대로 401 (게스트로 떨어뜨리지 않는다)
  *   ④ 게스트는 쿼터를 예약하지 않는다
  *   ⑤ api/_picks.demandPicks — 수요 키워드 우선, 큐레이션으로 보충, 중복 없음
  *
  * ── 안전성 ───────────────────────────────────────────────────────
- * OpenRouter 0회 / 쿠팡 0회 / 운영 Supabase 0회. fetch 는 부르는 순간 던진다.
+ * 실제 OpenRouter 0회 / 쿠팡 0회 / 운영 Supabase 0회. fetch 는 전부 가짜다.
  */
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const Module = require('module');
 
 process.env.AUTH_SECRET = 'test-secret-guest';
+process.env.OPENROUTER_API_KEY = 'test-openrouter-secret-never-expose';
+delete process.env.GEMINI_API_KEY;
+delete process.env.GROQ_API_KEY;
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SECRET_KEY;
 
@@ -39,9 +43,23 @@ Module._load = function(request, parent, isMain) {
   return realLoad.apply(this, arguments);
 };
 
-/* ── 외부 호출 차단 ─────────────────────────────────────────── */
-let fetchCalls = 0;
-global.fetch = async (url) => { fetchCalls++; throw new Error(`오프라인 테스트에서 외부 호출: ${url}`); };
+/* ── OpenRouter 가짜 응답 ───────────────────────────────────── */
+let fetchCalls = 0, failModels = false;
+const calledModels = [];
+global.fetch = async (_url, opts) => {
+  fetchCalls++;
+  const body = JSON.parse(opts.body);
+  calledModels.push(body.model);
+  if (failModels) return { ok: false, status: 429, text: async () => '{"error":"rate limited"}' };
+  const prompt = (body.messages || []).map(m => m.content || '').join('\n');
+  const content = prompt.includes('QCY T13')
+    ? 'QCY T13 무선 이어폰을 추천합니다.'
+    : '무료 AI 테스트 답변입니다.';
+  return {
+    ok: true,
+    json: async () => ({ choices: [{ message: { content } }] })
+  };
+};
 
 /* ── 검색·신뢰도·가격기록 스텁 ──────────────────────────────── */
 const http = require('../api/_http');
@@ -119,7 +137,7 @@ function fixtureStats() {
 }
 
 (async () => {
-  console.log('=== 게스트 AI · 정규식 의도 · 수요 셀렉션 (외부 호출 0회) ===');
+  console.log('=== 게스트 AI · 무료 LLM · 정규식 의도 (실제 외부 호출 0회) ===');
 
   /* ══════════════════════════════════════════════════════════
      ① 정규식 의도 분류
@@ -182,19 +200,19 @@ function fixtureStats() {
   /* ══════════════════════════════════════════════════════════
      ② 게스트 핸들러
      ══════════════════════════════════════════════════════════ */
-  section('4. 게스트 — 토큰 없음 → 조립본 + 카드, LLM 0회');
+  section('4. 게스트 — 토큰 없음 → 무료 LLM + 카드');
   {
     stub.searchItems = fixtureItems(); stub.searchMode = 'ok'; stub.stats = fixtureStats(); stub.searchCalls = 0; fetchCalls = 0; reserveCalls = 0;
     const r = await call({ question: '10만원 이하 통화 되는 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
     ok(r.status === 200, '200', String(r.status));
     ok(r.body.guest === true, 'guest:true');
-    ok(r.body.needsAuthForFull === true, 'needsAuthForFull:true');
-    ok(fetchCalls === 0, '★ 외부 호출(OpenRouter) 0회', String(fetchCalls));
+    ok(!r.body.needsAuthForFull, '로그인을 강제하지 않는다');
+    ok(fetchCalls > 0, '★ 게스트도 OpenRouter 무료 LLM 호출', String(fetchCalls));
+    ok(calledModels.every(m => /:free$/.test(String(m))), '★ 게스트 요청은 :free 모델만 호출', calledModels.join(','));
     ok(reserveCalls === 0, '★ 쿼터 예약 0회', String(reserveCalls));
     ok(stub.searchCalls === 1, '검색은 1회 돈다', String(stub.searchCalls));
     ok(Array.isArray(r.body.items) && r.body.items.length === 3, '카드 3장', String(r.body.items && r.body.items.length));
-    ok(/추천:/.test(r.body.text), '조립본 결론("추천:")이 있다', r.body.text.slice(0, 60));
-    ok(/예산 100,000원/.test(r.body.text), '예산이 반영됐다고 밝힌다');
+    ok(/QCY T13/.test(r.body.text) && !r.body.degraded, '근거 있는 LLM 답변을 반환한다', r.body.text.slice(0, 60));
     ok(r.body.items[0].productId === '1001' || r.body.items[0].productId === '1003', '예산 안 상품이 1위 카드', r.body.items[0].productId);
     ok(Array.isArray(r.body.followups) && r.body.followups.length > 0, '후속 질문이 있다', String(r.body.followups && r.body.followups.length));
     ok(!('usage' in r.body) || r.body.usage == null, '게스트에는 사용량이 없다');
@@ -202,31 +220,31 @@ function fixtureStats() {
     ok(r.body.text.indexOf('<') === -1, 'HTML 이 섞이지 않는다');
   }
 
-  section('5. 게스트 — 잡담·지식·빈 검색');
+  section('5. 게스트 — 잡담·지식도 무료 LLM');
   {
     stub.searchCalls = 0; fetchCalls = 0;
     const a = await call({ question: '안녕', contextProducts: [], chatHistory: [] });
     ok(a.status === 200 && a.body.guest === true, '인사 → 200 게스트');
     ok(stub.searchCalls === 0, '인사에는 검색하지 않는다');
-    ok(/찾으시는 상품/.test(a.body.text), '안내 문구', a.body.text.slice(0, 40));
+    ok(/무료 AI 테스트/.test(a.body.text), '인사도 LLM 답변', a.body.text.slice(0, 40));
 
     const b = await call({ question: '무선 이어폰이랑 헤드폰 차이가 뭐야', contextProducts: [], chatHistory: [] });
-    ok(b.status === 200 && /로그인/.test(b.body.text), '지식 질문 → 로그인 안내', b.body.text.slice(0, 40));
+    ok(b.status === 200 && /무료 AI 테스트/.test(b.body.text), '지식 질문 → 무료 LLM', b.body.text.slice(0, 40));
     ok(stub.searchCalls === 0, '지식 질문에는 검색하지 않는다');
 
     const c = await call({ question: '추천해줘', contextProducts: [], chatHistory: [] });
-    ok(c.status === 200 && /어떤 상품/.test(c.body.text), '품목 없는 추천 요청 → 되묻는다', c.body.text.slice(0, 40));
-    ok(fetchCalls === 0, '외부 호출 0회 유지');
+    ok(c.status === 200 && c.body.guest === true, '품목 없는 추천 요청도 정상 응답');
+    ok(fetchCalls >= 3, '게스트 질문마다 무료 LLM 사용', String(fetchCalls));
   }
 
   section('6. 게스트 — 검색 실패·0건을 구분한다');
   {
     stub.searchMode = 'blocked';
     const f = await call({ question: '노트북 추천해줘', contextProducts: [], chatHistory: [] });
-    ok(f.status === 200 && /실패/.test(f.body.text), '차단 → "조회 실패" (없다고 단정하지 않는다)', f.body.text.slice(0, 40));
+    ok(f.status === 200 && f.body.guest === true, '검색 차단이어도 무료 LLM 답변', f.body.text.slice(0, 40));
     stub.searchMode = 'empty';
     const e = await call({ question: '노트북 추천해줘', contextProducts: [], chatHistory: [] });
-    ok(e.status === 200 && /찾지 못했어요/.test(e.body.text) && /노트북/.test(e.body.text), '0건 → 검색어와 함께 못 찾았다고 말한다', e.body.text.slice(0, 50));
+    ok(e.status === 200 && e.body.guest === true, '검색 0건도 무료 LLM 답변', e.body.text.slice(0, 50));
     stub.searchMode = 'ok';
   }
 
@@ -238,8 +256,25 @@ function fixtureStats() {
     const r = await call({ question: '이거 지금 사도 괜찮은 가격인가요?', contextProducts: ctx, chatHistory: [], view: { source: 'modal' } });
     ok(r.status === 200 && r.body.guest === true, '200 게스트');
     ok(stub.searchCalls === 0, '★ 모달 맥락에서는 검색하지 않는다', String(stub.searchCalls));
-    ok(/구매 시점:/.test(r.body.text), '구매 시점 판정이 문장에 있다', r.body.text.slice(0, 80));
+    ok(/무료 AI 테스트/.test(r.body.text), '모달 맥락도 LLM 답변', r.body.text.slice(0, 80));
     ok(!r.body.items, '새로 찾은 카드가 없다(화면의 상품이 주제)');
+  }
+
+  section('7-1. 무료 모델 전체 실패 → 게스트 deterministic fallback');
+  {
+    failModels = true; calledModels.length = 0;
+    stub.searchItems = fixtureItems(); stub.searchMode = 'ok'; stub.stats = fixtureStats();
+    const r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [] });
+    failModels = false;
+    ok(r.status === 200 && r.body.guest === true && r.body.degraded === true, '게스트 fallback 정상 응답');
+    ok(calledModels.length > 0 && calledModels.every(m => /:free$/.test(String(m))), '실패 체인도 :free 만 시도');
+    ok(Array.isArray(r.body.items) && r.body.items.length > 0, 'fallback 상품 카드 유지');
+    const serialized = JSON.stringify(r.body);
+    ok(!serialized.includes(process.env.OPENROUTER_API_KEY), '응답에 OpenRouter key 비노출');
+    const frontend = fs.readFileSync(path.resolve(__dirname, '..', 'public', 'index.html'), 'utf8');
+    const aiSource = fs.readFileSync(path.resolve(__dirname, '..', 'api', 'ai.js'), 'utf8');
+    ok(!frontend.includes('OPENROUTER_API_KEY') && !frontend.includes(process.env.OPENROUTER_API_KEY), '프론트에 OpenRouter key 비노출');
+    ok(!/console\.(?:log|warn|error)\([^\n]*OPENROUTER_API_KEY/.test(aiSource), '로그에 OpenRouter key를 기록하는 경로 없음');
   }
 
   /* ══════════════════════════════════════════════════════════
