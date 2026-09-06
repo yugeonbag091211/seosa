@@ -1819,6 +1819,17 @@ function mentionsAnyCard(text, cards) {
   });
 }
 
+/** 가격 이력이나 서버 구매 판정 없이는 내보낼 수 없는 주장인가. */
+function unsupportedPriceDecision(text, items, deal) {
+  const t = String(text || '');
+  const list = (items || []).filter(Boolean);
+  const hasHistory = list.some(it => it.hist && Number(it.hist.count) > 0);
+  const historyClaim = /(역대|사상|기록상)\s*최저|(?:30일\s*)?평균가?|가격\s*(?:추이|흐름|변동)|평소보다/.test(t);
+  const timingClaim = /\b(?:BUY|WAIT|WATCH|DONT_BUY|GOOD_BUY)\b|지금\s*(?:사도|사는|구매)|(?:기다리|지켜보|서두르지|구매를?\s*(?:추천|미루))/.test(t);
+  const trustedDeal = !!(deal && deal.verdict && deal.verdict !== 'UNKNOWN');
+  return (historyClaim && !hasHistory) || (timingClaim && !trustedDeal);
+}
+
 /* ==================================================================
  *  2단계 — 의도별 프롬프트 조립
  *
@@ -2464,6 +2475,7 @@ module.exports = async function handler(req, res) {
    *   못했어요" 한 줄만 남는다 — 사용자 입장에서는 아무 일도 안 한 것과 같다.
    */
   let cards = [];
+  let degradedByGrounding = false;
 
   /*
    * 결정 데이터도 try 밖에 둔다.
@@ -3260,38 +3272,31 @@ module.exports = async function handler(req, res) {
       const badCmp   = unsupportedComparisons(text, items);
       const badSuper = unsupportedSuperlatives(text, items);
 
-      /*
-       * 경고는 한 줄만 붙인다.
-       *
-       * 종류별로 문장을 쌓으면 답변 끝이 주의문으로 뒤덮여, 정작 좋은 답변도
-       * 못 믿을 것처럼 보인다. 가장 위험한 것 하나만 말한다.
-       * 순서: 가격(돈이 걸린다) > 사양(구매 이유가 걸린다) > 최상급(표현 문제).
-       */
-      let warn = '';
-      if (badWon.length) {
-        console.warn(`[ai] 근거 없는 금액 ${badWon.length}건: ${badWon.slice(0, 5).join(', ')}`);
-        warn = cards.length
-          ? '※ 위 금액 중 일부는 SEOSA 데이터에서 확인되지 않았어요. 정확한 가격은 아래 상품 카드를 확인해 주세요.'
-          : '※ 위 금액 중 일부는 SEOSA에서 확인된 데이터가 아니에요. 실제 가격은 상품 페이지에서 확인해 주세요.';
-      } else if (badSpec.length) {
-        console.warn(`[ai] 근거 없는 사양 ${badSpec.length}건: ${badSpec.slice(0, 5).join(', ')}`);
-        warn = `※ 위 사양(${badSpec.slice(0, 3).join(', ')})은 상품명에서 확인되지 않았어요. 상품 페이지에서 확인해 주세요.`;
-      } else if (badCmp.length) {
-        console.warn(`[ai] 근거 없는 비교 주장: ${badCmp.join(', ')}`);
-        warn = `※ ${badCmp.join('·')} 비교는 확인된 데이터가 아니에요. 상품 페이지에서 확인해 주세요.`;
-      } else if (badSuper.length) {
-        console.warn(`[ai] 근거 없는 최상급 표현: ${badSuper.join(', ')}`);
-        warn = '※ "최저가" 여부는 지금 데이터로 확인되지 않았어요.';
-      }
-      if (warn) text += `\n\n${warn}`;
+      const badDecision = unsupportedPriceDecision(text, items, deal);
+      const badIdentity = cards.length > 0 && !mentionsAnyCard(text, cards);
+      const noCatalog = items.length === 0;
 
       /*
-       * 추천한 상품과 카드가 어긋나는지 (지시 36항).
-       * 사용자에게 경고를 띄우지는 않는다 — 어긋남은 우리 쪽 문제이지
-       * 사용자가 조심할 일이 아니다. 로그로만 남겨 원인을 추적한다.
+       * Grounding gate — 경고를 붙인 뒤 환각 문장을 그대로 두지 않는다.
+       * 서버 데이터로 되짚을 수 없는 가격·사양·상품·구매 판정이 하나라도
+       * 있으면 전체 LLM 답변을 폐기하고 동일한 서버 계산값으로 다시 조립한다.
        */
-      if (cards.length && !mentionsAnyCard(text, cards)) {
-        console.warn('[ai] 답변이 카드의 어떤 상품도 가리키지 않음 — identity 어긋남 가능');
+      if (badWon.length || badSpec.length || badCmp.length || badSuper.length ||
+          badDecision || badIdentity || noCatalog) {
+        console.warn('[ai] grounding 실패 — deterministic 답변으로 대체 ' + JSON.stringify({
+          won: badWon.length, spec: badSpec.length, compare: badCmp.length,
+          superlative: badSuper.length, decision: badDecision,
+          identity: badIdentity, catalog: items.length
+        }));
+        try {
+          text = require('./_concierge').compose({
+            items, cards, decision, deal, constraints, noResult, degraded: true
+          }).text;
+          degradedByGrounding = true;
+        } catch (e) {
+          text = '지금은 확인된 상품·가격 근거가 부족해 구매 시점을 판단할 수 없어요.';
+          degradedByGrounding = true;
+        }
       }
     }
 
@@ -3394,6 +3399,7 @@ module.exports = async function handler(req, res) {
 
     const payload = cards.length ? { text, items: cards } : { text };
     if (guest) payload.guest = true;
+    if (degradedByGrounding) payload.degraded = true;
     if (followups.length) payload.followups = followups;
     if (decision && decision.top && decision.top.productId) {
       payload.topProductId = decision.top.productId;

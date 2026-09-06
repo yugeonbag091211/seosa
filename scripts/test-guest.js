@@ -49,9 +49,13 @@ global.fetch = async (_url, opts) => {
   const body = JSON.parse(opts.body);
   calledModels.push(body.model);
   if (failModels) return { ok: false, status: 429, text: async () => '{"error":"rate limited"}' };
+  const prompt = (body.messages || []).map(m => m.content || '').join('\n');
+  const content = prompt.includes('QCY T13')
+    ? 'QCY T13 무선 이어폰을 추천합니다.'
+    : '무료 AI 테스트 답변입니다.';
   return {
     ok: true,
-    json: async () => ({ choices: [{ message: { content: '무료 AI 테스트 답변입니다.' } }] })
+    json: async () => ({ choices: [{ message: { content } }] })
   };
 };
 
@@ -206,7 +210,7 @@ function fixtureStats() {
     ok(reserveCalls === 0, '★ 쿼터 예약 0회', String(reserveCalls));
     ok(stub.searchCalls === 1, '검색은 1회 돈다', String(stub.searchCalls));
     ok(Array.isArray(r.body.items) && r.body.items.length === 3, '카드 3장', String(r.body.items && r.body.items.length));
-    ok(/무료 AI 테스트/.test(r.body.text), 'LLM 답변을 반환한다', r.body.text.slice(0, 60));
+    ok(/QCY T13/.test(r.body.text) && !r.body.degraded, '근거 있는 LLM 답변을 반환한다', r.body.text.slice(0, 60));
     ok(r.body.items[0].productId === '1001' || r.body.items[0].productId === '1003', '예산 안 상품이 1위 카드', r.body.items[0].productId);
     ok(Array.isArray(r.body.followups) && r.body.followups.length > 0, '후속 질문이 있다', String(r.body.followups && r.body.followups.length));
     ok(!('usage' in r.body) || r.body.usage == null, '게스트에는 사용량이 없다');

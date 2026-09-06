@@ -150,6 +150,25 @@ function callAi(body, headers) {
     const aiSrc = fs.readFileSync(path.join(ROOT, 'api', 'ai.js'), 'utf-8');
     ok(aiSrc.indexOf('openrouter.ai/api/') === -1,
       '★ ai.js 는 OpenRouter 를 직접 호출하지 않는다 (전부 _llm 사슬을 지난다)');
+
+    const intentSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'test-intent.js'), 'utf-8');
+    ok(intentSrc.indexOf('openrouter.ai/api/v1/chat/completions') === -1 &&
+       intentSrc.indexOf('claude-haiku-4.5') === -1 && /llm\.chat\(/.test(intentSrc),
+      '★★ test-intent도 _llm 무료 분류 사슬만 사용한다');
+
+    const completionOwners = [];
+    for (const dir of ['api', 'scripts']) {
+      fs.readdirSync(path.join(ROOT, dir)).filter(f => f.endsWith('.js')).forEach(f => {
+        const src = fs.readFileSync(path.join(ROOT, dir, f), 'utf-8');
+        if (src.includes('openrouter.ai/api/v1/chat/completions')) completionOwners.push(`${dir}/${f}`);
+      });
+    }
+    const allowedOwners = ['api/_llm.js', 'scripts/bench-free-models.js', 'scripts/test-zero-cost.js'];
+    ok(completionOwners.every(f => allowedOwners.includes(f)),
+      '★★ repository의 생성 endpoint 직접 소유자는 중앙 가드와 free-only 벤치뿐', completionOwners.join(', '));
+    const benchSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'bench-free-models.js'), 'utf-8');
+    ok(/function guard\(model\)/.test(benchSrc) && /guard\(model\);[\s\S]{0,160}fetch\(ENDPOINT/.test(benchSrc),
+      'free-only 벤치는 fetch 직전 :free 가드를 통과한다');
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -203,6 +222,15 @@ function callAi(body, headers) {
     ok(r.advance === true, '차단해도 다음 모델로 넘어간다 (기능은 살아 있다)');
     ok(llm.stats().paidBlocked === 1, '차단 계수기가 올라간다', String(llm.stats().paidBlocked));
     ok(llm.stats().paidCalls === 0, '★ 유료 호출 0회', String(llm.stats().paidCalls));
+  }
+  {
+    llm._internal._reset();
+    const before = called.length;
+    const r = await llm._internal.attempt('anthropic/claude-haiku-4.5',
+      { messages: [{ role: 'user', content: '안녕' }], maxTokens: 32, temperature: 0 }, 5000);
+    ok(called.length === before && r.reason === 'paid-blocked',
+      '★★ claude-haiku-4.5도 실제 network attempt 0');
+    ok(llm.stats().paidCalls === 0, 'haiku 차단 뒤 paidCalls = 0');
   }
 
   /* ══════════════════════════════════════════════════════════
