@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+'use strict';
+const assert = require('node:assert/strict');
+const store = new Map();
+global.localStorage = { getItem: k => store.get(k) || null, setItem: (k, v) => store.set(k, v) };
+const R = require('../public/radar-store');
+const p = { title: 'AirPods Pro', productId: '123', mall: '쿠팡', price: 229000, link: 'https://example.com' };
+assert.equal(R.read().length, 0);
+assert.equal(R.toggle(p).saved, true);
+assert.equal(R.find(p).savedPrice, 229000);
+assert.equal(R.classify(R.find(p)), 'watch');
+let items = R.read(); items[0].currentPrice = 199000; R.write(items);
+assert.equal(R.classify(R.find(p)), 'drop');
+assert.equal(R.target(p, 200000), true);
+assert.equal(R.classify(R.find(p)), 'target');
+assert.equal(R.target(p, null), true);
+assert.equal(R.find(p).targetPrice, null);
+assert.equal(R.toggle(p).saved, false);
+assert.equal(R.read().length, 0);
+store.set(R.KEY, '{broken'); assert.deepEqual(R.read(), []);
+console.log('PASS radar UI: save, unsave, persistence, price drop, target set/update/delete, corrupt storage fallback');
