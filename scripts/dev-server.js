@@ -82,6 +82,14 @@ function parseReq(raw) {
 const REWRITES = {
   '/api/history-batch': { path: '/api/history', query: { __route: 'batch' } },
   '/api/profile':       { path: '/api/sync',    query: { resource: 'profile' } },
+  /*
+   * 레이더·대체상품도 새 함수가 아니라 history.js 의 __route 분기다
+   * (Vercel Hobby 함수 12개 상한). vercel.json 에 같은 rewrite 가 있는데
+   * 이 로컬 서버는 그 파일을 읽지 않으므로 여기에도 적어야 한다 —
+   * 없으면 로컬에서만 404 가 나서 «배포하면 되는» 버그로 오해하게 된다.
+   */
+  '/api/radar':         { path: '/api/history', query: { __route: 'radar' } },
+  '/api/alternatives':  { path: '/api/history', query: { __route: 'alternatives' } },
   '/sitemap-products.xml': { path: '/api/history', query: { __route: 'sitemap' } }
 };
 // vercel.json 의 "/p/:pid" 와 같은 규칙. 상품 페이지는 api/history.js 가 그린다.

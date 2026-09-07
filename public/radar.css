@@ -1,0 +1,22 @@
+:root{--bg:#fff;--ink:#15171b;--soft:#585e68;--line:#e2e5e9;--surface:#f4f5f7;--down:#0a7a46;--up:#a63a32;--sans:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}html[data-theme=dark]{color-scheme:dark;--bg:#16181c;--ink:#eaedf1;--soft:#98a0ab;--line:#292e35;--surface:#1e2127;--down:#3ecf8e;--up:#f0685b}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6}.wrap{max-width:980px;margin:auto;padding-left:24px;padding-right:24px}header{border-bottom:1px solid var(--line)}nav{height:68px;display:flex;align-items:center;gap:24px}nav a{text-decoration:none;color:inherit;font-size:14px}.logo{font:700 24px Georgia}button,.button,input{font:inherit}button,.button{min-height:44px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink);padding:9px 13px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}nav button{margin-left:auto;border:0}.skip{position:absolute;top:-100px}.skip:focus{top:8px;background:var(--bg);padding:10px;z-index:2}:focus-visible{outline:2px solid var(--ink);outline-offset:3px}.eyebrow{margin:52px 0 8px;color:var(--soft);font-size:12px;letter-spacing:.08em}h1{font-size:clamp(32px,5vw,48px);letter-spacing:-.04em;margin:0}.intro,#summary,footer{color:var(--soft)}#summary{min-height:26px}.radar-section{margin:42px 0}.radar-section>h2{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:12px}.radar-item{display:grid;grid-template-columns:76px 1fr auto;gap:16px;padding:18px 0;border-bottom:1px solid var(--line);align-items:center}.radar-item img,.placeholder{width:76px;height:76px;object-fit:contain;background:#fff}.placeholder{display:grid;place-items:center;color:var(--soft);font-size:11px}.item-name{font-weight:600;overflow-wrap:anywhere}.item-price{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}.change{font-size:13px;color:var(--down)}.target-reached{color:var(--down);font-weight:600}.verdict{font-size:13px;color:var(--soft);margin-top:5px}.target-form{display:flex;gap:8px;margin-top:10px;align-items:center}.target-form label{font-size:12px;color:var(--soft)}.target-form input{width:130px;min-height:44px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:4px;padding:8px}.actions{display:flex;flex-direction:column;gap:8px}.primary{background:var(--ink);color:var(--bg)}.quiet{border:0;color:var(--soft)}#empty{margin:44px 0;padding:32px;background:var(--surface)}footer{margin-top:70px;padding-top:24px;padding-bottom:36px;border-top:1px solid var(--line);font-size:12px}@media(max-width:600px){.wrap{padding-left:18px;padding-right:18px}nav{gap:14px}.radar-item{grid-template-columns:64px 1fr}.radar-item img,.placeholder{width:64px;height:64px}.actions{grid-column:1/-1;flex-direction:row}.actions>*{flex:1}.target-form{align-items:flex-end;flex-wrap:wrap}.target-form label{display:flex;flex-direction:column}.target-form input{width:160px}.target-form button{flex:1}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+
+/* ── 백엔드 계약 연결 (2026-09-07 통합) ─────────────────────────────
+   값이 없으면 이 요소들은 만들어지지 않는다(radar.js num()). 그래서
+   «빈 상태» 스타일을 두지 않는다 — 그릴 일이 없다. */
+.radar-item .body{min-width:0}
+.events{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.ev{font-size:13px;line-height:1.5;color:var(--soft);overflow-wrap:anywhere}
+.ev.is-good{color:var(--down)}
+.ev b{color:inherit}
+.decision{margin-top:8px;font-size:14px;overflow-wrap:anywhere}
+.decision.is-buy b{color:var(--down)}
+.decision.is-wait b{color:var(--up)}
+.decision .soft,.why.soft,.goodbuy .soft,.unit{color:var(--soft);font-weight:400}
+.why{margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--soft);overflow-wrap:anywhere}
+.goodbuy{margin-top:10px;padding:10px 12px;background:var(--surface);border-radius:4px;font-size:13px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.goodbuy b{font-size:14px}
+.goodbuy .soft{flex-basis:100%;font-size:12px}
+.goodbuy button{padding:6px 12px;font-size:12px;background:none}  /* min-height 를 낮추지 않는다 — 전역 44px(터치 목표 크기)를 그대로 상속한다 */
+.unit{margin-left:8px;font-size:12px;font-weight:400}
+.cheaper{margin-top:8px;font-size:13px;color:var(--soft);overflow-wrap:anywhere}
+.load-error{padding:14px 0;color:var(--soft);font-size:14px}

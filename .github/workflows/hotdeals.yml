@@ -69,6 +69,6 @@ jobs:
         run: |
           echo "## SEOSA HOT" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
-          grep -E '"msg":"(evaluated|upserted|dry_run_no_write|failed)"' /tmp/hotdeals.log \
-            | tail -5 >> $GITHUB_STEP_SUMMARY || echo '{"msg":"no log"}' >> $GITHUB_STEP_SUMMARY
+          grep -E '"msg":"(grouped|evaluated|expired_ended|upserted|dry_run_no_write|failed)"' /tmp/hotdeals.log \
+            | tail -8 >> $GITHUB_STEP_SUMMARY || echo '{"msg":"no log"}' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
