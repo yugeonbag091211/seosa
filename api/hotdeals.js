@@ -1,21 +1,30 @@
 'use strict';
 /*
  * GET /api/hotdeals        검증된 핫딜 목록
- * GET /api/hotdeals?id=..  핫딜 하나 + 판정 근거
+ * GET /api/hotdeals?id=..  핫딜 하나 + 판정 근거 + 다른 판매처
  *
  * ── 지키는 선 ──────────────────────────────────────────────────────
  *
  *   · 목록은 가볍게. 가격 이력 전체를 목록에 싣지 않는다 — 상세에서
  *     기존 /api/history 를 그대로 쓴다(그래프 코드가 이미 그것을 읽는다).
  *   · REJECTED 와 NORMAL 은 노출하지 않는다. 사용자가 볼 이유가 없다.
+ *   · 같은 상품은 한 카드다. 군집 대표(is_primary)만 목록에 오른다.
  *   · 상품명·이미지·링크는 판매자 문자열이다. 여기서는 값만 넘기고 escape 는
  *     프론트가 한다(Fmt.esc / Fmt.safeUrl) — 기존 카드와 같은 규칙이다.
  *   · 읽기 전용. 이 엔드포인트는 아무것도 쓰지 않는다.
+ *   · **없는 값을 만들지 않는다.** 모르는 신호는 0 이 아니라 null 로 나간다.
+ *
+ * ── 계약 안정성 (프론트와의 약속) ──────────────────────────────────
+ *
+ * 기존 필드는 이름도 뜻도 바꾸지 않는다. 새 정보는 전부 «추가» 다.
+ * 마이그레이션(2026-09-07-hotdeal-groups.sql) 전에도 죽지 않아야 하므로,
+ * 새 컬럼이 없으면 조용히 기본값으로 떨어진다 — 아래 GROUP_COLS 참고.
  */
 
 const supabase = require('./_supabase');
 const { applyCors, cachePublic, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
+const HG = require('./_hotgroup');
 
 /** 사용자에게 보여줄 상태. NORMAL·REJECTED 는 목록에 오르지 않는다. */
 const VISIBLE = ['VERIFIED_HOT', 'GOOD_DEAL', 'POTENTIAL_DEAL'];
@@ -24,11 +33,43 @@ const VISIBLE_LIFECYCLE = ['NEW', 'ACTIVE', 'COOLING'];
 
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 60;
+/** 같은 계열이 목록에서 연달아 나올 수 있는 최대 개수. */
+const MAX_FAMILY_RUN = 2;
+
+/** 2026-09-06 판에도 있던 컬럼. 이것만으로 목록이 성립해야 한다. */
+const BASE_COLS = 'id, deal_status, hot_score, confidence, title, image, mall, current_price,'
+  + ' source_reference_price, reason_json, product_id, affiliate_url, last_checked_at';
+/** 2026-09-07 마이그레이션이 추가하는 컬럼. 없으면 BASE_COLS 로 물러난다. */
+const GROUP_COLS = ', group_key, is_primary, group_size, group_lowest_price, group_lowest_mall,'
+  + ' group_offers, signal_json, price_drop_percent, confidence_rank';
+
+/**
+ * 정렬.
+ *
+ * ── 왜 hot_score 하나로는 부족한가 ─────────────────────────────────
+ *
+ * 점수는 confidence 천장에 눌려 뭉친다(SCORE_CEILING: LOW 는 69 가 끝이다).
+ * 그래서 동점이 흔하고, 동점에서 순서를 정하지 않으면 «근거가 얇은 쪽» 이
+ * 위로 올 수 있다. 그리고 정렬이 결정론이 아니면 새로고침마다 목록이
+ * 흔들려서 사용자가 방금 본 카드를 다시 찾지 못한다.
+ *
+ *   1) hot_score        얼마나 싼가
+ *   2) confidence_rank  근거가 얼마나 두꺼운가
+ *   3) last_checked_at  얼마나 최근에 확인했는가
+ *   4) price_drop_percent 실제 하락폭
+ *   5) id               마지막 동점 해소 — 이것이 결정론을 보장한다
+ */
+const TIE_BREAK = [
+  ['confidence_rank', false],
+  ['last_checked_at', false],
+  ['price_drop_percent', false]
+];
 
 const SORTS = {
-  score: { col: 'hot_score', asc: false },
-  recent: { col: 'detected_at', asc: false },
-  price: { col: 'current_price', asc: true }
+  score: { col: 'hot_score', asc: false, tie: TIE_BREAK },
+  recent: { col: 'last_checked_at', asc: false, tie: [['hot_score', false], ['confidence_rank', false]] },
+  price: { col: 'current_price', asc: true, tie: [['hot_score', false], ['confidence_rank', false]] },
+  drop: { col: 'price_drop_percent', asc: false, tie: [['hot_score', false], ['confidence_rank', false]] }
 };
 
 function intParam(v, fallback, min, max) {
@@ -37,9 +78,63 @@ function intParam(v, fallback, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
+/**
+ * ?id= 는 «양의 정수 그대로» 여야 한다.
+ *
+ * 예전에는 intParam(q.id, 0, 1, MAX) 였다. 그래서 ?id=0 과 ?id=-5 가 1 로
+ * 접혀 «1번 핫딜» 이 조용히 돌아왔다. 사용자가 요청하지 않은 딜을 요청한
+ * 것처럼 보여 주는 것이라, 잘못된 입력은 잘못됐다고 답한다.
+ */
+function dealId(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!/^\d+$/.test(s)) return 0;
+  const n = parseInt(s, 10);
+  return (Number.isSafeInteger(n) && n > 0) ? n : 0;
+}
+
+function isMissingColumn(msg) {
+  return /column .* does not exist|could not find the .* column|schema cache/i.test(String(msg || ''));
+}
+
+/** jsonb 는 null 로 올 수 있다. 배열이 아니면 빈 배열로 본다. */
+function arr(v) { return Array.isArray(v) ? v : []; }
+function obj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
+
+/**
+ * 다른 판매처 목록.
+ *
+ * ★ 자기 자신은 뺀다 — "다른 곳 2군데"라고 하면서 자기를 세면 안 된다.
+ *   상세는 select('*') 라 자기 키를 직접 만들 수 있고, 목록은 is_primary
+ *   행만 오므로 group_key 가 곧 자기 키다. 그래도 키가 비어 있는 옛 행이
+ *   있을 수 있으니 구매 링크로도 한 번 더 거른다.
+ * ★ 값이 없는 오퍼도 뺀다 — 가격을 모르면 비교의 뜻이 없다.
+ */
+function otherOffers(row) {
+  const ownKey = (row.source && row.source_external_id != null)
+    ? `${row.source}|${row.source_external_id}|${row.mall || ''}`
+    : (row.is_primary !== false ? String(row.group_key || '') : '');
+  const mine = String(row.affiliate_url || '');
+  const isSelf = o => (ownKey && String(o.key || '') === ownKey)
+    || (mine && String(o.url || '') === mine);
+
+  return arr(row.group_offers)
+    .filter(o => o && Number(o.price) > 0 && !isSelf(o))
+    .map(o => ({
+      mall: String(o.mall || ''),
+      price: Number(o.price) || 0,
+      url: String(o.url || ''),
+      status: String(o.status || ''),
+      productId: String(o.productId || '')
+    }));
+}
+
 /** 목록용 최소 형태. 근거는 한 줄만 — 나머지는 상세에서 준다. */
 function toListItem(r) {
-  const reasons = Array.isArray(r.reason_json) ? r.reason_json : [];
+  const reasons = arr(r.reason_json);
+  const s = obj(r.signal_json);
+  const others = otherOffers(r);
+  const groupSize = Number(r.group_size) > 0 ? Number(r.group_size) : 1;
+
   return {
     id: r.id,
     status: r.deal_status,
@@ -55,8 +150,66 @@ function toListItem(r) {
     reason: reasons.length ? String(reasons[0].text || '') : '',
     productId: r.product_id || '',
     url: r.affiliate_url || '',
-    checkedAt: r.last_checked_at
+    checkedAt: r.last_checked_at,
+
+    /* ── 아래부터 2026-09-07 추가. 전부 additive 다. ── */
+
+    /*
+     * 왜 핫딜인지 화면이 스스로 설명할 수 있는 값들.
+     * 모르는 값은 null 이다 — 0 과 구분해서 다뤄야 한다.
+     */
+    signals: {
+      priceDropPercent: s.priceDropPercent == null ? null : Number(s.priceDropPercent),
+      priceDropAmount: s.priceDropAmount == null ? null : Number(s.priceDropAmount),
+      referencePrice: s.referencePrice == null ? null : Number(s.referencePrice),
+      referenceKind: s.referenceKind || null,
+      previousPrice: s.previousPrice == null ? null : Number(s.previousPrice),
+      nearHistoricalLow: !!s.nearHistoricalLow,
+      observedLow: s.observedLow == null ? null : Number(s.observedLow),
+      historyCount: Number(s.historyCount) || 0,
+      historyDays: Number(s.historyDays) || 0,
+      freshness: s.freshness || null,
+      staleDays: Number(s.staleDays) || 0,
+      currentObserved: !!s.currentObserved
+    },
+
+    /*
+     * 같은 상품의 다른 판매처. 군집이 혼자면 offerCount 1 · others [] 다.
+     * lowestMall 은 «우리가 값을 믿는 오퍼 중» 가장 싼 곳이다.
+     */
+    offerCount: groupSize,
+    otherOfferCount: others.length,
+    lowestPrice: Number(r.group_lowest_price) > 0 ? Number(r.group_lowest_price) : (r.current_price || 0),
+    lowestMall: r.group_lowest_mall || r.mall || '',
+    isLowest: !(Number(r.group_lowest_price) > 0) || Number(r.group_lowest_price) >= Number(r.current_price)
   };
+}
+
+/**
+ * 목록 한 페이지 안에서 «같은 계열» 이 연달아 붙지 않게 자리를 바꾼다.
+ *
+ * ★ 항목을 버리지 않는다. 페이지에서 빼면 커서가 어긋나 다음 페이지에서
+ *   그 항목이 통째로 사라진다. 순서만 바꾸면 그럴 일이 없다.
+ * ★ 계열은 «같은 상품» 이 아니다. 같은 브랜드·모델의 변형(색상·용량)이
+ *   나란히 다섯 개 뜨는 것을 막을 뿐, 합치지는 않는다 — 합치는 일은
+ *   수집기에서 훨씬 엄격한 규칙으로만 한다.
+ */
+function spread(rows) {
+  const fam = new Map();
+  rows.forEach(r => fam.set(r.id, HG.familyKeyOf(r.title)));
+  return HG.diversify(rows, r => fam.get(r.id), MAX_FAMILY_RUN);
+}
+
+/** 같은 군집이 두 장 새어 들어오는 것을 마지막으로 막는다. */
+function dropDuplicateGroups(rows) {
+  const seen = new Set();
+  return rows.filter(r => {
+    const k = String(r.group_key || '');
+    if (!k) return true;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 module.exports = async function handler(req, res) {
@@ -69,7 +222,7 @@ module.exports = async function handler(req, res) {
   try {
     /* ── 상세 ── */
     if (q.id) {
-      const id = intParam(q.id, 0, 1, Number.MAX_SAFE_INTEGER);
+      const id = dealId(q.id);
       if (!id) return res.status(400).json({ error: '잘못된 id' });
 
       const { data, error } = await supabase
@@ -86,7 +239,7 @@ module.exports = async function handler(req, res) {
       cachePublic(res, 60);
       return res.json({
         deal: Object.assign(toListItem(data), {
-          reasons: Array.isArray(data.reason_json) ? data.reason_json : [],
+          reasons: arr(data.reason_json),
           confidence: data.confidence,
           identityConfidence: data.identity_confidence,
           lifecycle: data.lifecycle,
@@ -96,7 +249,9 @@ module.exports = async function handler(req, res) {
           spanDays: data.observation_span_days,
           median30: data.median_30d,
           observedLow: data.observed_low,
-          vendorItemId: data.vendor_item_id || ''
+          vendorItemId: data.vendor_item_id || '',
+          // 같은 상품을 파는 다른 곳. 대표 자신은 빠져 있다.
+          otherOffers: otherOffers(data)
         })
       });
     }
@@ -113,31 +268,57 @@ module.exports = async function handler(req, res) {
       if (want.length) statuses = want;
     }
 
-    let query = supabase
-      .from('hotdeals')
-      .select('id, deal_status, hot_score, confidence, title, image, mall, current_price,'
-        + ' source_reference_price, reason_json, product_id, affiliate_url, last_checked_at')
-      .in('deal_status', statuses)
-      .in('lifecycle', VISIBLE_LIFECYCLE);
+    /*
+     * 마이그레이션 전에는 새 컬럼이 없다. 그때는 예전 모양으로 한 번 더
+     * 물어본다 — 배포 순서(코드 먼저 / SQL 나중)에 목록이 죽지 않아야 한다.
+     */
+    const run = async (withGroups) => {
+      let query = supabase
+        .from('hotdeals')
+        .select(withGroups ? BASE_COLS + GROUP_COLS : BASE_COLS)
+        .in('deal_status', statuses)
+        .in('lifecycle', VISIBLE_LIFECYCLE);
 
-    if (q.mall) query = query.eq('mall', String(q.mall).slice(0, 40));
+      if (withGroups) query = query.eq('is_primary', true);
+      if (q.mall) query = query.eq('mall', String(q.mall).slice(0, 40));
 
-    const { data, error } = await query
-      .order(sort.col, { ascending: sort.asc })
-      .order('id', { ascending: true })
-      .range(offset, offset + limit - 1);
+      query = query.order(sort.col, { ascending: sort.asc });
+      if (withGroups) {
+        (sort.tie || []).forEach(([col, asc]) => { query = query.order(col, { ascending: asc }); });
+      }
+      // 마지막 동점 해소. 이것이 있어야 같은 입력에 같은 순서가 나온다.
+      query = query.order('id', { ascending: true });
+
+      return query.range(offset, offset + limit - 1);
+    };
+
+    let grouped = true;
+    let { data, error } = await run(true);
+    if (error && isMissingColumn(error.message)) {
+      grouped = false;
+      ({ data, error } = await run(false));
+    }
     if (error) throw new Error(error.message);
 
-    const items = (data || []).map(toListItem);
+    const rows = data || [];
+    /*
+     * ★ 커서는 «DB 에서 읽은 행 수» 로 넘긴다. 중복 제거로 항목이 줄어도
+     *   다음 페이지가 건너뛰지 않는다. 페이지가 가끔 limit 보다 짧아지는
+     *   것은 괜찮지만, 항목이 사라지는 것은 괜찮지 않다.
+     */
+    const nextCursor = rows.length === limit ? offset + rows.length : null;
+    const items = spread(dropDuplicateGroups(rows)).map(toListItem);
 
     // 목록은 자주 바뀌지 않는다 — 수집기가 도는 주기가 시간 단위다.
     cachePublic(res, 120);
     return res.json({
       items,
-      nextCursor: items.length === limit ? offset + limit : null,
+      nextCursor,
       // 화면이 "아직 검증된 핫딜이 없습니다"와 "가능성 있는 딜만 있습니다"를
-      // 구분해서 말할 수 있게 갈래별 개수를 준다.
-      counts: items.reduce((acc, it) => { acc[it.status] = (acc[it.status] || 0) + 1; return acc; }, {})
+      // 구분해서 말할 수 있게 갈래별 개수를 준다. (이 페이지 기준)
+      counts: items.reduce((acc, it) => { acc[it.status] = (acc[it.status] || 0) + 1; return acc; }, {}),
+      // 군집·신호가 실린 응답인지. false 면 마이그레이션 전이라는 뜻이다.
+      grouped
     });
   } catch (e) {
     // 표가 아직 없으면(마이그레이션 전) 빈 목록으로 답한다 — 화면이 죽지 않는다.
@@ -148,4 +329,9 @@ module.exports = async function handler(req, res) {
     }
     return fail(res, e, { where: 'hotdeals', route: '/api/hotdeals', message: '핫딜을 불러오지 못했어요' });
   }
+};
+
+module.exports._internal = {
+  VISIBLE, VISIBLE_LIFECYCLE, SORTS, MAX_FAMILY_RUN,
+  toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId
 };

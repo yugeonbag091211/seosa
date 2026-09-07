@@ -1,29 +1,74 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/api/history-batch", "destination": "/api/history?__route=batch" },
-    { "source": "/api/profile", "destination": "/api/sync?resource=profile" },
-    { "source": "/p/:pid", "destination": "/api/history?__route=page&pid=:pid" },
-    { "source": "/sitemap-products.xml", "destination": "/api/history?__route=sitemap" },
-    { "source": "/((?!api/).*)", "destination": "/public/$1" }
+    {
+      "source": "/api/history-batch",
+      "destination": "/api/history?__route=batch"
+    },
+    {
+      "source": "/api/alternatives",
+      "destination": "/api/history?__route=alternatives"
+    },
+    {
+      "source": "/api/radar",
+      "destination": "/api/history?__route=radar"
+    },
+    {
+      "source": "/api/profile",
+      "destination": "/api/sync?resource=profile"
+    },
+    {
+      "source": "/p/:pid",
+      "destination": "/api/history?__route=page&pid=:pid"
+    },
+    {
+      "source": "/sitemap-products.xml",
+      "destination": "/api/history?__route=sitemap"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/public/$1"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy", "value": "geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()" },
-        { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000; includeSubDomains"
+        }
       ]
     }
   ],
   "functions": {
-    "api/cron.js": { "maxDuration": 60 },
-    "api/payment.js": { "maxDuration": 60 }
+    "api/cron.js": {
+      "maxDuration": 60
+    },
+    "api/payment.js": {
+      "maxDuration": 60
+    }
   },
   "crons": [
-    { "path": "/api/cron", "schedule": "0 18 * * *" }
+    {
+      "path": "/api/cron",
+      "schedule": "0 18 * * *"
+    }
   ]
 }

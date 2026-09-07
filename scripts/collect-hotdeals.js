@@ -44,6 +44,7 @@ for (const f of ['.env.local', '.env']) {
 const supabase = require('../api/_supabase');
 const HD = require('../api/_hotdeal');
 const HS = require('../api/_hotsource');
+const HG = require('../api/_hotgroup');
 const { kstToday } = require('../api/_kst');
 
 const DRY = process.argv.indexOf('--dry-run') > -1;
@@ -250,6 +251,14 @@ async function loadHistory(products) {
 
 /* ── 3~4) 판정 · 저장 ──────────────────────────────────────────────── */
 
+/** hotdeals 유일키와 같은 모양. 군집·기존행 대조에 모두 이 키를 쓴다. */
+function offerKeyOf(source, externalId, mall) {
+  return `${source}|${externalId}|${mall}`;
+}
+
+/** confidence → 정렬 가능한 숫자. SQL 쪽 confidence_rank 와 뜻이 같아야 한다. */
+const CONFIDENCE_RANK = { HIGH: 3, MEDIUM: 2, LOW: 1, INSUFFICIENT: 0 };
+
 function rowFor(product, cand, verdict, today) {
   const b = verdict.baseline;
   /*
@@ -281,9 +290,50 @@ function rowFor(product, cand, verdict, today) {
     observed_low: b.low,
     reason_json: verdict.reasons,
     gate_json: verdict.gates.filter(g => !g.ok),
+
+    /*
+     * 설명 가능한 신호. 화면이 "왜 핫딜인가"를 스스로 말할 수 있게 하는
+     * 재료이며, 전부 baseline 에서 나온 값이라 price_history 로 되짚을 수 있다.
+     * 모르는 값은 0 이 아니라 null 로 들어간다 — 0 은 "0원"으로 읽힌다.
+     */
+    signal_json: verdict.signals,
+    price_drop_percent: Number(verdict.signals.priceDropPercent) > 0
+      ? Number(verdict.signals.priceDropPercent) : 0,
+    confidence_rank: CONFIDENCE_RANK[verdict.confidence] || 0,
+
     last_checked_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + hours * 3600000).toISOString()
   };
+}
+
+/**
+ * 군집 결과를 저장할 행에 붙인다.
+ *
+ * ★ 군집이 없는(혼자인) 상품도 같은 모양을 갖는다. 그래야 화면이 "군집이
+ *   있을 때만 다른 코드"를 타지 않는다.
+ */
+function applyGroup(row, info) {
+  const key = offerKeyOf(row.source, row.source_external_id, row.mall);
+  if (!info) {
+    row.group_key = key;
+    row.is_primary = true;
+    row.group_size = 1;
+    row.group_lowest_price = row.current_price;
+    row.group_lowest_mall = row.mall;
+    row.group_offers = [];
+    return row;
+  }
+  row.group_key = info.groupKey;
+  row.is_primary = info.primaryKey === key;
+  row.group_size = info.size;
+  row.group_lowest_price = info.lowestPrice || row.current_price;
+  row.group_lowest_mall = info.lowestMall || row.mall;
+  /*
+   * 군집이 혼자면 오퍼 목록을 싣지 않는다 — 자기 자신만 든 배열은 화면에서
+   * "다른 판매처 1곳"으로 오해될 여지가 있고, 매 행에 쓸모없는 바이트가 붙는다.
+   */
+  row.group_offers = info.size > 1 ? info.offers.slice(0, 8) : [];
+  return row;
 }
 
 /*
@@ -346,17 +396,30 @@ function lifecycleFor(prev, verdict) {
 async function loadExisting() {
   const map = new Map();
   /*
-   * 모든 현재 v1 source의 기존 딜을 읽는다.
+   * 이미 저장된 딜을 «source 를 가리지 않고» 읽는다.
    *
-   * 이전에는 internal-history만 조회해서 ADPICK 딜은 DB에 이미 있어도
-   * prev=null로 취급됐다. 그 결과 같은 외부 딜을 다음 회차에 다시 만나도
-   * lifecycleFor()가 계속 NEW를 반환했다. source를 가리지 않고 기존 row를
-   * 읽어 동일한 (source, external_id, mall) 키로 생애주기를 이어 간다.
+   * ── 두 갈래가 같은 버그를 잡았다 (통합 시 병합) ────────────────────
+   *
+   * 예전에는 .eq('source', 'internal-history') 였다. 그래서 ADPICK 딜은 DB 에
+   * 이미 있어도 prev=null 로 취급됐고, 같은 외부 딜을 다음 회차에 다시 만나도
+   * lifecycleFor() 가 계속 NEW 를 돌려줬다 — "언제 처음 발견했나"가 영원히
+   * «방금» 이 된다. detected_at 도 매번 다시 찍혔다.
+   *
+   * 통합하면서 .in([internal, adpick]) 대신 필터를 **아예 뺐다.** 이 표에는
+   * 핫딜 행만 있으므로 좁힐 이유가 없고, 목록을 손으로 관리하면 source 를
+   * 하나 더 켤 때(_hotsource 에 COUPANG_GOLDBOX 자리가 이미 있다) 똑같은
+   * 버그가 조용히 되살아난다.
+   *
+   * ── 정렬을 주는 이유 ───────────────────────────────────────────────
+   *
+   * 상한(5000)에 걸렸을 때 «어느 5000행이 오는지» 가 정해지지 않으면 회차마다
+   * 다른 행이 prev 로 잡혀 lifecycle 과 detected_at 이 흔들린다. 최근에 확인한
+   * 것부터 읽는다 — 그쪽이 이번에 다시 만날 가능성이 크다.
    */
   const { data, error } = await supabase
     .from('hotdeals')
     .select('id, source, source_external_id, mall, hot_score, lifecycle, detected_at')
-    .in('source', [HS.INTERNAL_HISTORY.id, HS.ADPICK_HOTDEAL.id])
+    .order('last_checked_at', { ascending: false })
     .limit(5000);
   if (error) { log('existing_read_failed', { error: error.message }); return map; }
   (data || []).forEach(r => map.set(`${r.source}|${r.source_external_id}|${r.mall}`, r));
@@ -371,6 +434,34 @@ async function sweepStale() {
     .lt('last_checked_at', cut)
     .in('lifecycle', ['NEW', 'ACTIVE', 'COOLING']);
   if (error) log('sweep_failed', { error: error.message });
+}
+
+/**
+ * 이번에 «봤는데 더 이상 딜이 아닌» 행을 그 자리에서 만료시킨다.
+ *
+ * ── 왜 sweepStale 로 충분하지 않은가 ────────────────────────────────
+ *
+ * sweepStale 은 3일 동안 확인되지 않은 행을 지운다. 그런데 값이 올라서 딜이
+ * 끝난 상품은 «이번 회차에 확인은 했지만 upsert 대상이 아닌» 상태라
+ * last_checked_at 이 갱신되지 않는다. 그래서 3일 동안 옛 가격을 단 카드가
+ * 목록에 남는다 — 정확히 사용자가 헛걸음하는 경우다.
+ *
+ * 방금 판정한 것은 우리가 안다. 미루지 않고 그때 끝낸다.
+ */
+async function expireEnded(ids) {
+  if (!ids.length) return 0;
+  let n = 0;
+  const now = new Date().toISOString();
+  for (let i = 0; i < ids.length; i += 200) {
+    const slice = ids.slice(i, i + 200);
+    const { error } = await supabase.from('hotdeals')
+      .update({ lifecycle: 'EXPIRED', last_checked_at: now })
+      .in('id', slice)
+      .in('lifecycle', ['NEW', 'ACTIVE', 'COOLING']);
+    if (error) { log('expire_failed', { error: error.message, n: slice.length }); continue; }
+    n += slice.length;
+  }
+  return n;
 }
 
 /* ── main ──────────────────────────────────────────────────────────── */
@@ -402,6 +493,23 @@ async function main() {
     const existing = await loadExisting();
     const rows = [];
 
+    /*
+     * ── 군집 재료 ────────────────────────────────────────────────────
+     *
+     * REJECTED 만 빼고 «판정한 모든 오퍼» 를 모은다. NORMAL 까지 담는 이유는
+     * 현재 최저가 때문이다. 딜인 것만 모으면 이런 일이 생긴다.
+     *
+     *     쿠팡  22,000원  NORMAL       ← 평소 값이라 딜은 아니지만 제일 싸다
+     *     ADPICK 24,900원  GOOD_DEAL   ← 이쪽만 담으면 이게 "최저가"가 된다
+     *
+     * 그러면 우리가 사용자를 더 비싼 곳으로 보낸다. 값을 못 믿는 것(REJECTED)이
+     * 아니라 «딜이 아닌 것» 은 최저가 후보로 남겨야 맞다.
+     */
+    const offers = [];
+    /** 이번 회차에 실제로 판정한 오퍼 키 — 끝난 딜을 그 자리에서 만료시키는 데 쓴다. */
+    const seenKeys = new Set();
+    const nowIso = new Date().toISOString();
+
     for (const p of products) {
       if (overBudget()) { log('eval_budget_stop', { evaluated: summary.evaluated }); break; }
 
@@ -429,6 +537,19 @@ async function main() {
        */
       const verdict = HD.evaluate({ candidate: cand, storedTitle: p.title, points, today });
       summary.byStatus[verdict.status] = (summary.byStatus[verdict.status] || 0) + 1;
+
+      const mall = HS.normalizeMall(p.mall_label || p.mall);
+      const offerKey = offerKeyOf(HS.INTERNAL_HISTORY.id, cand.externalId, mall);
+      if (verdict.status !== HD.STATUS.REJECTED) {
+        seenKeys.add(offerKey);
+        offers.push({
+          key: offerKey, title: cand.title, price: cand.salePrice, mall,
+          url: cand.affiliateUrl, productId: p.product_id,
+          vendorItemId: p.vendor_item_id || '',
+          status: verdict.status, hotScore: verdict.hotScore,
+          deal: verdict.status !== HD.STATUS.NORMAL, checkedAt: nowIso
+        });
+      }
 
       if (verdict.status === HD.STATUS.REJECTED || verdict.status === HD.STATUS.NORMAL) {
         summary.rejected++;
@@ -480,12 +601,32 @@ async function main() {
               sourceFlagged: !!HS.ADPICK_HOTDEAL.sourceFlagged
             });
             summary.byStatus[verdict.status] = (summary.byStatus[verdict.status] || 0) + 1;
+
+            const extMall = cand.mall || HS.normalizeMall(p.mall_label || p.mall);
+            const extKey = offerKeyOf(HS.ADPICK_HOTDEAL.id, cand.externalId, extMall);
+            if (verdict.status !== HD.STATUS.REJECTED) {
+              seenKeys.add(extKey);
+              /*
+               * ★ vendorItemId 는 «우리가 아는» 값만 넣는다.
+               *   ADPICK 은 옵션 식별자를 주지 않는다. 우리가 이어붙인 쿠팡
+               *   상품의 vendorItemId 를 여기에 실으면, 군집 규칙이 그 값을
+               *   «이 오퍼의 옵션» 으로 믿고 다른 옵션과 붙여 버린다.
+               *   모르는 것은 빈 값으로 둔다.
+               */
+              offers.push({
+                key: extKey, title: cand.title, price: cand.salePrice, mall: extMall,
+                url: cand.affiliateUrl, productId: p.product_id,
+                vendorItemId: cand.vendorItemId || '',
+                status: verdict.status, hotScore: verdict.hotScore,
+                deal: verdict.status !== HD.STATUS.NORMAL, checkedAt: nowIso
+              });
+            }
             if (verdict.status === HD.STATUS.REJECTED || verdict.status === HD.STATUS.NORMAL) continue;
 
             const row = rowFor(p, cand, verdict, today);
             row.source = HS.ADPICK_HOTDEAL.id;
             row.source_external_id = cand.externalId;
-            row.mall = cand.mall || row.mall;
+            row.mall = extMall;
             row.affiliate_url = cand.affiliateUrl;
             const prev = existing.get(`${row.source}|${row.source_external_id}|${row.mall}`);
             row.lifecycle = lifecycleFor(prev, verdict);
@@ -501,16 +642,61 @@ async function main() {
       log('adpick_isolated_failure', { error: require('../api/_adpickhot').redact(e && e.message) });
     }
 
+    /*
+     * ── 같은 상품 묶기 · 현재 최저가 ────────────────────────────────
+     *
+     * 여기서 «한 번에» 한다. 저장 뒤에 SQL 로 묶으려 하면 같은 상품 판정을
+     * 제목 LIKE 로 흉내 내게 되고, 그건 우리가 하지 않기로 한 일이다
+     * (api/_hotgroup.js 첫 주석).
+     *
+     * 판정 결과 자체는 오퍼마다 그대로 남는다 — 군집은 «어느 카드로 보여
+     * 줄지» 만 정한다. 다른 상품의 이력이 섞이는 경로는 만들지 않는다.
+     */
+    const grouped = HG.groupOffers(offers);
+    rows.forEach(row => {
+      applyGroup(row, grouped.byKey.get(offerKeyOf(row.source, row.source_external_id, row.mall)));
+    });
+    const multi = grouped.groups.filter(g => g.size > 1);
+    summary.groups = grouped.groups.length;
+    summary.merged = multi.reduce((s, g) => s + g.size - 1, 0);
+    summary.cards = rows.filter(r => r.is_primary).length;
+    log('grouped', {
+      offers: offers.length, groups: grouped.groups.length,
+      multiOffer: multi.length, merged: summary.merged,
+      crossMall: multi.filter(g => g.mallCount > 1).length
+    });
+
+    /*
+     * 이번에 판정했는데 더 이상 딜이 아닌 행. 3일을 기다리지 않고 지금 끝낸다.
+     * (군집에서 밀려나 is_primary 가 false 가 된 행은 여기 들어오지 않는다 —
+     *  그 행은 여전히 딜이고, 상세의 "다른 판매처"로 쓰인다)
+     */
+    const keptKeys = new Set(rows.map(r => offerKeyOf(r.source, r.source_external_id, r.mall)));
+    const endedIds = [];
+    existing.forEach((prev, key) => {
+      if (!seenKeys.has(key) || keptKeys.has(key)) return;
+      if (['NEW', 'ACTIVE', 'COOLING'].indexOf(prev.lifecycle) < 0) return;
+      endedIds.push(prev.id);
+    });
+
     log('evaluated', summary);
 
     if (DRY) {
-      log('dry_run_no_write', { wouldUpsert: rows.length });
+      log('dry_run_no_write', { wouldUpsert: rows.length, wouldExpire: endedIds.length });
       rows.slice(0, 10).forEach(r => log('sample', {
         status: r.deal_status, score: r.hot_score, price: r.current_price,
-        obs: r.observation_count, title: String(r.title).slice(0, 40),
+        obs: r.observation_count, drop: r.price_drop_percent,
+        group: r.group_size, primary: r.is_primary,
+        title: String(r.title).slice(0, 40),
         reason: (r.reason_json[0] || {}).text || ''
       }));
+      multi.slice(0, 5).forEach(g => log('group_sample', {
+        size: g.size, malls: g.malls, lowest: g.lowestPrice,
+        lowestMall: g.lowestMall, why: g.mergeReasons[0] || ''
+      }));
     } else {
+      const expired = await expireEnded(endedIds);
+      if (expired) log('expired_ended', { n: expired });
       const w = await upsertDeals(rows);
       log('upserted', w);
       await sweepStale();
@@ -531,4 +717,7 @@ async function main() {
  */
 if (require.main === module) main();
 
-module.exports = { acquireLock, releaseLock, matchProduct, lifecycleFor, LOCK };
+module.exports = {
+  acquireLock, releaseLock, matchProduct, lifecycleFor, LOCK,
+  offerKeyOf, applyGroup, CONFIDENCE_RANK
+};

@@ -196,6 +196,20 @@ function statsFrom(points) {
     ? sortedPrices[mid]
     : Math.round((sortedPrices[mid - 1] + sortedPrices[mid]) / 2);
 
+  /*
+   * 하위 25% 지점 — "이 값 이하로 본 날이 넷 중 하나".
+   *
+   * api/_radar.goodBuyPrice 가 «얼마면 사도 좋은가» 를 말할 때 쓴다. 그 값은
+   * 사용자에게 한 문장으로 설명돼야 하는데, 최저가는 거의 도달하지 않아
+   * 쓸모가 없고 평균은 절반이 «좋은 가격» 이 되어 뜻이 없다. 사분위가 그 사이다.
+   *
+   * ★ points 로는 이 값을 낼 수 없다 — 그 배열은 MAX_POINTS(6) 로 잘린
+   *   스파크라인 표본이라 분포가 아니다. 전체 관측이 여기 있을 때만 계산된다.
+   * ★ 기존 필드를 하나도 바꾸지 않는다. Deal Engine 블록을 덧붙였을 때와
+   *   같은 방식으로, 서버 판정에만 쓰는 값을 새로 더한다.
+   */
+  const p25 = sortedPrices[Math.floor((sortedPrices.length - 1) * 0.25)];
+
   // 기록이 실제로 덮는 기간과, 가장 크게 끊겼던 구간.
   const historyDays = spanDays(pts[0].date, pts[pts.length - 1].date);
   let maxGapDays = 0;
@@ -234,6 +248,7 @@ function statsFrom(points) {
     historyDays,      // 기록이 실제로 덮는 일수
     maxGapDays,       // 기록이 가장 오래 끊겼던 구간(일)
     median,           // 이상치에 흔들리지 않는 대표값
+    p25,              // 하위 25% 지점 (api/_radar.goodBuyPrice)
     firstDate: pts[0].date
   };
 }

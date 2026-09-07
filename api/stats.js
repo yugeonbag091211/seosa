@@ -10,6 +10,7 @@ const { guard } = require('./_ratelimit');
  *   전부 갖춰져 있어 새로 만들 것이 없다.
  */
 const analytics = require('./_analytics');
+const funnel = require('./_funnel');
 
 const MAX_KEYWORD_LEN = 80;
 
@@ -80,7 +81,19 @@ module.exports = async function handler(req, res) {
     if (req.headers.authorization !== `Bearer ${secret}`) {
       return res.status(401).json({ error: '인증 실패' });
     }
-    return res.json(await analytics.report());
+    /*
+     * 퍼널·전환을 함께 낸다.
+     *
+     * ★ gmv 는 conversions 표에서만 나온다. 전환 데이터 출처가 아직 없어서
+     *   보통은 conversionsPending:true 로 답한다 — 그때 gmv 는 0 이 아니라
+     *   null 이다. 0 은 "안 팔렸다" 이고 null 은 "아직 알 수 없다" 이며,
+     *   지금 사실인 쪽은 후자다. (supabase/2026-09-07-funnel.sql 참고)
+     */
+    const [base, fn] = await Promise.all([
+      analytics.report(),
+      funnel.report(req.query.days)
+    ]);
+    return res.json(Object.assign({}, base, { funnel: fn }));
   }
 
   /*
@@ -99,7 +112,34 @@ module.exports = async function handler(req, res) {
       return res.json({ ok: true, counted: r.ok });
     }
     const r = await analytics.bump(event);
-    return res.json({ ok: true, counted: r.ok });
+
+    /*
+     * ── 상품 단위 퍼널 (2026-09-07) ───────────────────────────────
+     *
+     * 날짜 카운터(daily_metrics)만으로는 "어제 제휴 링크가 40번 눌렸다"
+     * 까지만 알 수 있고 "무엇이 얼마에 눌렸는가" 는 알 수 없다. SEOSA 의
+     * 목표가 «거쳐 간 구매 금액» 이라면 그 질문에 답할 수 있어야 한다.
+     *
+     * ★ 구매에 닿는 소수 이벤트만 행으로 남긴다. 검색·조회는 그대로
+     *   카운터에 둔다 (2026-08-25 마이그레이션의 판단을 유지한다).
+     * ★ 여기서 남기는 것은 «클릭» 이지 «구매» 가 아니다. 확정 전환은
+     *   conversions 표에만 들어가고, 이 경로는 그 표에 닿지 않는다.
+     * ★ 실패해도 200 이다. 계측 때문에 화면이 깨지지 않는다.
+     */
+    let logged = false;
+    if (funnel.FUNNEL_EVENTS.indexOf(event) > -1) {
+      const q = req.query || {};
+      const f = await funnel.track({
+        event,
+        productId: q.pid || q.productId,
+        mall: q.mall,
+        price: q.price,
+        source: q.src || q.source,
+        visitorId: q.vid
+      });
+      logged = f.ok;
+    }
+    return res.json({ ok: true, counted: r.ok, logged });
   }
 
   const keyword = ((req.query && req.query.keyword) || '').trim().slice(0, MAX_KEYWORD_LEN);

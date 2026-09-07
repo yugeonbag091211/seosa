@@ -91,7 +91,62 @@ const METRICS = [
    */
   'ai_guest_answer', 'ai_login_from_guest',
   'price_history_open', 'comparison_open',
-  'wishlist_add', 'price_alert_add', 'external_shop_click'
+  'wishlist_add', 'price_alert_add', 'external_shop_click',
+
+  /*
+   * 핫딜 퍼널 (2026-09-07 — 화이트리스트 누락 수정)
+   *
+   * ★ 이 두 값은 프론트가 2026-09-06 부터 이미 보내고 있었다. 그런데 이
+   *   목록에 없어서 bump() 가 'unknown metric' 으로 조용히 버렸다. 즉
+   *   Hot Deal v1 을 통째로 만들어 놓고 그것이 눌리는지 아닌지를 한 번도
+   *   세지 않고 있었다. 계측이 없으면 그 기능이 GMV 에 기여하는지 알 수 없다.
+   *
+   *   impression 은 «목록이 그려졌다», open 은 «카드를 눌렀다» 이다.
+   *   둘을 나눠야 "핫딜을 보여 줬는데 안 눌린다" 와 "애초에 안 보여 준다" 가
+   *   구분된다.
+   */
+  'hotdeal_impression', 'hotdeal_list_view', 'hotdeal_open',
+
+  /*
+   * 결정·저장 퍼널 (2026-09-07)
+   *
+   * 발견 → 판단 → 저장 → 재방문 → 구매 의 각 단계다. 이 값들이 없으면
+   * 어느 단계에서 사람이 빠지는지 볼 수 없고, 그러면 무엇을 고쳐야 할지도
+   * 알 수 없다.
+   */
+  'radar_save', 'radar_remove', 'radar_view', 'radar_return',
+  'target_price_set', 'target_price_reached',
+  'buy_wait_watch_view', 'compare_open',
+
+  /*
+   * ★ affiliate_click 은 external_shop_click 과 «같은 사실» 이 아니다.
+   *   external_shop_click 은 예전부터 있던 날짜 카운터이고, 이쪽은
+   *   funnel_events 에 상품 단위로 남기는 쪽의 짝이다. 둘 다 세되 뜻을
+   *   섞지 않는다. 그리고 어느 쪽도 «구매» 가 아니다 (api/_funnel.js 참고).
+   */
+  'affiliate_click',
+
+  /*
+   * ── 이름이 갈렸던 것들 (2026-09-07 통합) ──────────────────────────
+   *
+   * 백엔드와 UX 가 같은 행동에 서로 다른 이름을 붙여 왔다.
+   *
+   *   radar_save        ↔ product_save
+   *   radar_remove      ↔ product_unsave
+   *   buy_wait_watch_view ↔ decision_view
+   *   compare_open      ↔ alternative_open
+   *
+   * 화면에서 부르는 이름은 api/_funnel.js 의 FUNNEL_EVENTS 쪽(앞 이름)으로
+   * 통일했다. 그쪽 이름이어야 상품 단위 행(funnel_events)까지 남는다 —
+   * 뒤 이름으로 부르면 날짜 카운터만 오르고 «무엇이 저장됐는지» 는 사라진다.
+   *
+   * 그래도 뒤 이름을 목록에서 지우지 않는다. 배포 순간 캐시된 옛 페이지를
+   * 열어 둔 사용자가 그 이름으로 보내는데, 목록에 없으면 그 며칠치가
+   * 통째로 조용히 버려진다. 세되 뜻은 같은 것으로 읽는다.
+   */
+  'product_save', 'product_unsave', 'decision_view', 'alternative_open',
+  /* 목표가 «삭제» 는 백엔드에 짝이 없는 별개 행동이라 그대로 둔다. */
+  'target_price_delete'
 ];
 
 /** visitorId 로 받아들일 모양. 브라우저가 만든 난수만 통과시킨다. */

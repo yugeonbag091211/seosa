@@ -1,0 +1,148 @@
+(function () {
+  'use strict';
+  var V = window.HotView, $ = function (id) { return document.getElementById(id); };
+  var id = new URLSearchParams(location.search).get('id'), cursor = null, items = [], generation = 0;
+  var sort = $('sort'), status = $('status'), grid = $('deals'), more = $('more'), retry = $('retry');
+  function themeLabel() { var dark = document.documentElement.dataset.theme === 'dark'; $('themeToggle').textContent = dark ? '라이트모드' : '다크모드'; $('themeToggle').setAttribute('aria-label', dark ? '라이트모드 전환' : '다크모드 전환'); }
+  $('themeToggle').onclick = function () { var mode = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = mode; try { localStorage.setItem('seosa_theme', mode); } catch (_) {} themeLabel(); };
+  themeLabel();
+  function fact(label, value) { return '<div><dt>' + V.esc(label) + '</dt><dd>' + V.esc(value) + '</dd></div>'; }
+  function track(name) { try { fetch('/api/stats?event=' + encodeURIComponent(name), { keepalive: true }).catch(function() {}); } catch (_) {} }
+
+  /*
+   * 같은 상품을 파는 다른 곳.
+   *
+   * ★ 카드에는 판매처를 도배하지 않는다. 목록에서는 "다른 판매처 N곳"까지만
+   *   말하고, 값을 나란히 놓고 비교하는 일은 여기(상세)에서 한다.
+   * ★ otherOffers 는 서버가 «자기 자신을 뺀» 목록으로 준다(api/hotdeals.js).
+   *   비어 있으면 표 자체를 그리지 않는다 — 한 줄짜리 비교표는 비교가 아니다.
+   * ★ 딜이 아닌 오퍼(NORMAL)도 들어온다. 그게 더 쌀 수 있고, 숨기면
+   *   사용자를 더 비싼 곳으로 보내게 된다. 다만 «검증» 이라고 부르지는 않는다.
+   */
+  function offerTable(d) {
+    var list = Array.isArray(d.otherOffers) ? d.otherOffers.filter(function (o) {
+      return o && V.num(o.price) != null && o.price > 0;
+    }) : [];
+    if (!list.length) return '';
+
+    var mine = { mall: d.mall, price: d.price, url: d.url, self: true };
+    var rows = list.concat([mine]).sort(function (a, b) { return a.price - b.price; });
+    var best = rows[0].price;
+
+    return '<h2>판매처 가격 비교</h2>'
+      + '<table class="hd-offers"><caption class="hd-note">SEOSA가 같은 상품으로 확인한 판매처예요. 배송비·옵션은 포함하지 않은 값입니다.</caption>'
+      + '<thead><tr><th scope="col">판매처</th><th scope="col">가격</th><th scope="col">이동</th></tr></thead><tbody>'
+      + rows.map(function (o) {
+        var link = V.url(o.url);
+        return '<tr' + (o.self ? ' class="is-self"' : '') + '>'
+          + '<th scope="row">' + V.esc(o.mall || '판매처') + (o.self ? ' <span class="hd-note">지금 보는 곳</span>' : '')
+          + (o.price === best ? ' <span class="hot-low">최저가</span>' : '') + '</th>'
+          + '<td>' + V.price(o.price) + '</td>'
+          + '<td>' + (link
+            ? '<a href="' + V.esc(link) + '" target="_blank" rel="sponsored nofollow noopener">확인 ↗</a>'
+            : '<span class="hd-note">링크 없음</span>') + '</td></tr>';
+      }).join('')
+      + '</tbody></table>';
+  }
+
+  function detail(d) {
+    document.title = d.title + ' · 핫딜 · SEOSA';
+    var image = V.url(d.image), link = V.url(d.url), facts = '';
+    var s = d.signals || {};
+
+    /*
+     * 근거를 값으로 늘어놓는다. 전부 «모르면 빼는» 규칙이다 —
+     * V.num 이 null 을 돌려주면 그 줄은 아예 만들어지지 않는다.
+     */
+    var dropAmount = V.num(s.priceDropAmount), dropPercent = V.num(s.priceDropPercent);
+    var refPrice = V.num(s.referencePrice), refLabel = V.refLabels[s.referenceKind] || '';
+    if (dropAmount != null && dropAmount > 0) {
+      facts += fact('내린 금액', V.won(dropAmount) + (dropPercent != null && dropPercent > 0 ? ' (' + V.pct(dropPercent) + ')' : ''));
+    }
+    if (refPrice != null && refPrice > 0 && refLabel) facts += fact(refLabel, V.price(refPrice));
+    var prev = V.num(s.previousPrice);
+    if (prev != null && prev > 0) facts += fact('직전 확인 가격', V.price(prev));
+
+    /* observations/spanDays 와 signals 는 같은 baseline 에서 나온 값이다.
+     * 둘 다 있으면 signals 를 쓴다 — 그쪽이 최신 계약이다. */
+    var count = V.num(s.historyCount), days = V.num(s.historyDays);
+    if (count != null && count > 0) facts += fact('가격 기록', count + '회');
+    else if (Number.isInteger(d.observations) && d.observations > 0) facts += fact('가격 기록', d.observations + '회');
+    if (days != null && days > 0) facts += fact('관측 기간', days + '일');
+    else if (typeof d.spanDays === 'number' && d.spanDays > 0) facts += fact('관측 기간', d.spanDays + '일');
+
+    if (typeof d.median30 === 'number' && d.median30 > 0 && s.referenceKind !== 'median30') facts += fact('최근 30일 중앙값', V.price(d.median30));
+    var low = V.num(s.observedLow);
+    if (low != null && low > 0) facts += fact('관측 최저가', V.price(low) + (s.nearHistoricalLow === true ? ' · 지금 그 수준' : ''));
+    else if (typeof d.observedLow === 'number' && d.observedLow > 0) facts += fact('관측 최저가', V.price(d.observedLow));
+    var reasons = Array.isArray(d.reasons) ? d.reasons.filter(function (r) { return r && typeof r.text === 'string' && r.text.trim(); }) : [];
+    if (!reasons.length && d.reason) reasons = [{ text: d.reason }];
+    $('detail').innerHTML = '<a class="hd-back" href="/hotdeals.html">← 핫딜 목록</a><div class="hd-detail"><div class="hot-media">'
+      + (image ? '<img class="hot-thumb" src="' + V.esc(image) + '" alt="' + V.esc(d.title) + '" width="480" height="480">' : '<span>이미지 준비 중</span>')
+      + '</div><div><p class="hot-badge">' + V.esc(V.labels[d.status] || '추가 확인 중') + '</p><h1>' + V.esc(d.title) + '</h1><p class="hot-price">' + V.price(d.price) + '</p>'
+      + V.drop(s)
+      /*
+       * ★ 더 싼 곳이 있으면 구매 버튼보다 «위» 에서 말한다.
+       *   아래쪽 각주로 밀면 사용자는 그대로 이 판매처에서 산다.
+       */
+      + (d.isLowest === false
+        ? '<p class="hd-cheaper">' + V.esc((d.lowestMall || '다른 판매처')
+            + (V.num(d.lowestPrice) != null ? ' ' + V.won(d.lowestPrice) : '') + '에서 더 저렴해요.') + '</p>'
+        : '')
+      + '<div class="hot-meta">' + (d.mall ? '<span>' + V.esc(d.mall) + '</span>' : '') + V.time(d.checkedAt) + '</div>'
+      + V.evidence(s)
+      + (reasons.length ? '<h2>이 가격을 눈여겨볼 이유</h2><ul>' + reasons.map(function (r) { return '<li>' + V.esc(r.text) + '</li>'; }).join('') + '</ul>' : '<p class="hd-note">가격을 판단할 근거를 더 확인하고 있어요.</p>')
+      + (d.status === 'POTENTIAL_DEAL' ? '<p class="hd-note">아직 검증이 끝나지 않은 상품이에요. 가격 기록과 판매 조건을 확인해 주세요.</p>' : '')
+      + (facts ? '<dl class="hd-facts">' + facts + '</dl>' : '')
+      + offerTable(d)
+      + '<div class="hd-actions"><button id="saveDeal" type="button">저장</button>' + (d.productId ? '<a href="/p/' + encodeURIComponent(d.productId) + '?mall=' + encodeURIComponent(d.mall || '') + '">가격 그래프·상품 상세 보기</a>' : '')
+      + (link ? '<a class="primary" data-affiliate href="' + V.esc(link) + '" target="_blank" rel="sponsored nofollow noopener">' + V.esc(d.mall || '판매처') + '에서 확인 ↗<span class="hd-note" style="color:inherit"> (새 창)</span></a>' : '') + '</div>'
+      + '<p class="hd-note">판매처에서 옵션·배송비·쿠폰 적용 조건과 최종 가격을 확인해 주세요. 제휴 링크로 구매하면 SEOSA가 수수료를 받을 수 있어요.</p></div></div>';
+    $('detail').hidden = false;
+    var product = { title: d.title, productId: d.productId, mall: d.mall, price: d.price, link: d.url, image: d.image };
+    var save = $('saveDeal');
+    function syncSave() { var on = !!RadarStore.find(product); save.textContent = on ? '저장됨' : '저장'; save.setAttribute('aria-pressed', String(on)); }
+    save.onclick = function() { var result = RadarStore.toggle(product); track(result.saved ? 'product_save' : 'product_unsave'); syncSave(); };
+    syncSave();
+    Array.prototype.forEach.call(document.querySelectorAll('[data-affiliate]'), function(a) { a.addEventListener('click', function() { track('affiliate_click'); }, { once: true }); });
+    track('decision_view');
+  }
+  async function load(append) {
+    var run = ++generation, previousLength = items.length;
+    retry.hidden = true; more.disabled = true; grid.setAttribute('aria-busy', 'true');
+    status.hidden = false; status.textContent = '가격을 확인하고 있어요.';
+    if (!append) { items = []; grid.innerHTML = ''; $('resultCount').textContent = ''; more.hidden = true; }
+    var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 15000);
+    try {
+      var params = id ? 'id=' + encodeURIComponent(id) : 'limit=24&sort=' + encodeURIComponent(sort.value) + (append && cursor != null ? '&cursor=' + encodeURIComponent(cursor) : '');
+      var response = await fetch('/api/hotdeals?' + params, { signal: controller.signal });
+      if (!response.ok) { var error = new Error('request'); error.missing = response.status === 404; throw error; }
+      var data = await response.json();
+      if (run !== generation) return;
+      if (id) {
+        if (!data.deal || !data.deal.title) { var missing = new Error('missing'); missing.missing = true; throw missing; }
+        detail(data.deal); status.hidden = true;
+      } else {
+        if (!Array.isArray(data.items)) throw new Error('shape');
+        var fresh = data.items.filter(function (d) { return d && d.title && d.id != null && !items.some(function (x) { return x.id === d.id; }); });
+        items = items.concat(fresh);
+        if (append) grid.insertAdjacentHTML('beforeend', fresh.map(V.card).join('')); else grid.innerHTML = items.map(V.card).join('');
+        cursor = data.nextCursor;
+        more.hidden = !Number.isInteger(cursor) || cursor < 0 || !fresh.length;
+        $('resultCount').textContent = items.length ? items.length + '개 표시 중' : '';
+        status.hidden = items.length > 0;
+        status.textContent = data.pending ? '가격 기록을 모으고 있어요. 확인이 끝난 상품부터 소개할게요.' : '지금 기준에 맞는 핫딜을 찾고 있어요. 새로운 가격이 확인되면 이곳에 모아 드릴게요.';
+        if (append && grid.children[previousLength]) grid.children[previousLength].focus();
+      }
+    } catch (e) {
+      if (run !== generation) return;
+      status.textContent = e.missing ? '지금은 확인할 수 없는 핫딜이에요. 판매가 끝났거나 정보가 변경되었을 수 있어요.' : '가격 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
+      retry.hidden = false; retry.onclick = function () { load(append); };
+      if (id && !$('detail').innerHTML) { $('detail').hidden = false; $('detail').innerHTML = '<a class="hd-back" href="/hotdeals.html">← 핫딜 목록</a>'; }
+    } finally {
+      clearTimeout(timer);
+      if (run === generation) { grid.setAttribute('aria-busy', 'false'); more.disabled = false; }
+    }
+  }
+  $('listHeading').hidden = !!id; more.onclick = function () { load(true); }; sort.onchange = function () { load(false); }; load(false);
+})();

@@ -2805,6 +2805,8 @@ select:focus-visible,textarea:focus-visible,
   #profileGender .tbtn{min-width:44px}
 }
 </style>
+<link rel="stylesheet" href="/hot-cards.css">
+<script src="/hot-view.js"></script>
 </head>
 <body>
 
@@ -2859,9 +2861,9 @@ select:focus-visible,textarea:focus-visible,
 
   <div class="nav-right">
     <span class="nav-link hide-m" data-act="scroll-today">카테고리</span>
-    <span class="nav-link hide-m" data-act="scroll-hot">핫딜</span>
+    <a class="nav-link hide-m" href="/hotdeals.html">핫딜</a>
     <span class="nav-link hide-m" data-act="scroll-drop">가격 변동</span>
-    <span class="wish-btn" data-act="open-wish" title="위시리스트" aria-label="위시리스트">
+    <span class="wish-btn" data-act="open-wish" title="내 레이더" aria-label="내 레이더">
       <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.3 4.6 13a4.6 4.6 0 0 1 6.5-6.5l.9.9.9-.9A4.6 4.6 0 0 1 19.4 13z"/></svg>
       <span class="wish-count num" id="wishCount">0</span></span>
     <button class="icon-btn" data-act="open-profile" id="profileNavBtn" title="내 취향" aria-label="내 취향 설정">
@@ -2887,6 +2889,8 @@ select:focus-visible,textarea:focus-visible,
     상시로 둘 만큼 자주 쓰지는 않는 항목의 집이다.
   -->
   <div class="nav-menu" id="navMenu" role="menu" aria-hidden="true">
+    <a class="nav-menu-item" role="menuitem" href="/hotdeals.html">오늘의 핫딜 보기</a>
+    <a class="nav-menu-item" role="menuitem" href="/radar.html">내 레이더 보기</a>
     <button class="nav-menu-item" role="menuitem" data-act="scroll-today">오늘의 셀렉션 보기</button>
     <button class="nav-menu-item" role="menuitem" data-act="ai-entry" data-ctx="home">서사 AI에게 물어보기</button>
     <button class="nav-menu-item" role="menuitem" data-act="open-myalerts">가격 알림 관리</button>
@@ -2917,6 +2921,7 @@ select:focus-visible,textarea:focus-visible,
     #recordStat 은 계속 여기 있다. Record.render 가 이 id 를 채우고,
     수집일이 없으면 아무것도 그리지 않는다.
   -->
+  <div class="wrap"><a class="hot-entry" href="/hotdeals.html"><strong>오늘의 핫딜</strong><span>지금 눈여겨볼 가격 →</span></a></div>
   <div class="hero-band"><div class="hero-inner">
     <div class="hero-copy">
       <h1 class="hero-title">최저가도,<br>고급지게.</h1>
@@ -3210,18 +3215,19 @@ select:focus-visible,textarea:focus-visible,
     검증되지 않은 것(POTENTIAL)은 검증된 것과 시각적으로 확실히 구분한다.
     섞어 놓으면 "SEOSA가 핫딜이라고 하면 진짜 싸다"가 성립하지 않는다.
   -->
-  <section id="hotDeals" class="block" style="display:none">
-    <div class="sec-eyebrow">VERIFIED BY PRICE HISTORY</div>
+  <section id="hotDeals" class="block" aria-label="오늘의 핫딜">
+    <div class="sec-eyebrow">SEOSA · PRICE HISTORY</div>
     <div class="sec-head">
       <div>
-        <div class="sec-title">검증된 핫딜<span class="sec-count" id="hotCount"></span></div>
-        <div class="sec-sub">쇼핑몰이 적어 둔 할인율이 아니라, SEOSA가 매일 기록한 실제 가격과 비교했어요.</div>
+        <div class="sec-title">오늘의 핫딜<span class="sec-count" id="hotCount"></span></div>
+        <div class="sec-sub">지금 눈여겨볼 가격을 모았어요. 가격 기록과 확인 근거를 살펴보세요.</div>
       </div>
     </div>
+    <a class="hot-entry" href="/hotdeals.html">핫딜 전체 보기 <span>가격과 근거 살펴보기 →</span></a>
     <div id="hotWrap">
-      <div class="drop-loading" id="hotLoading"><div class="ring"></div>핫딜을 확인하는 중…</div>
+      <div class="drop-loading" id="hotLoading" role="status"><div class="ring"></div>핫딜을 확인하는 중…</div>
       <div class="hot-grid" id="hotGrid"></div>
-      <div class="hot-empty" id="hotEmpty" style="display:none"></div>
+      <div class="hot-empty" id="hotEmpty" role="status" style="display:none"></div>
     </div>
   </section>
 
@@ -3806,10 +3812,11 @@ select:focus-visible,textarea:focus-visible,
 <!-- 위시리스트 패널 -->
 <div class="wish-panel" id="wishPanel">
   <div class="panel-head">
-    <div class="t">위시리스트<small>MY CURATION LIST</small></div>
+    <div class="t">내 레이더<small>SAVED PRICE WATCH</small></div>
     <button class="panel-close" data-act="close-wish">×</button>
   </div>
   <div class="wish-list" id="wishList"></div>
+  <div style="padding:0 26px 18px"><a class="sync-btn save" href="/radar.html" style="display:flex;min-height:44px;align-items:center;justify-content:center;text-decoration:none">가격 변화와 목표가격 보기</a></div>
   <div class="sync-box">
     <div class="sync-title">☁️ 다른 기기와 동기화</div>
     <div class="sync-desc">이메일을 입력하면 찜·최근 본 상품을 저장하고, 다른 기기에서 같은 이메일로 불러올 수 있어요.</div>
@@ -7373,94 +7380,52 @@ var Record = {
  *  언젠가 갈린다.
  * ========================================================== */
 var Hot = {
-  LABEL: {
-    VERIFIED_HOT:  { text: 'VERIFIED', cls: 'is-verified' },
-    GOOD_DEAL:     { text: 'GOOD DEAL', cls: 'is-good' },
-    POTENTIAL_DEAL:{ text: '검증 중',   cls: 'is-potential' }
-  },
-
   load: function() {
+    show('hotDeals', true); show('hotLoading', true); show('hotEmpty', false);
     Api.call('getHotDeals', [{ limit: 12, sort: 'score' }], Hot.show, function() {
-      // 실패하면 섹션을 통째로 닫는다. 제목만 남은 빈 칸을 두지 않는다.
       show('hotLoading', false);
-      show('hotDeals', false);
+      $('hotEmpty').innerHTML = '<b>가격 정보를 불러오지 못했어요.</b>잠시 후 다시 확인해 주세요. <button class="sec-more" data-act="hot-retry">다시 시도</button>';
+      show('hotEmpty', true);
     });
   },
-
-  cardHTML: function(d) {
-    if (!d || !d.title) return '';
-    var lab = Hot.LABEL[d.status] || Hot.LABEL.POTENTIAL_DEAL;
-    var m = Fmt.mall({ mall: d.mall, mallLabel: d.mall });
-    var img = Fmt.safeUrl(d.image);
-    /*
-     * 점수는 서버가 "믿을 만하다"고 판단했을 때만 내려온다(null 이면 숨긴다).
-     * 근거가 약한 값을 숫자로 보여주면 사용자는 그 숫자를 믿는다.
-     */
-    var score = (typeof d.score === 'number') ? '<span class="hot-score">HOT ' + d.score + '</span>' : '';
-    return '<article class="hot-card" data-act="hot-open" data-id="' + Fmt.esc(String(d.id)) + '"'
-      + ' data-pid="' + Fmt.esc(d.productId || '') + '">'
-      + '<div class="hot-top">'
-      +   '<span class="hot-badge ' + lab.cls + '">' + Fmt.esc(lab.text) + '</span>'
-      +   score
-      + '</div>'
-      + (img ? '<img class="hot-thumb" src="' + Fmt.esc(img) + '" alt="" loading="lazy">' : '')
-      + '<div class="hot-price">' + Fmt.won(d.price) + '원</div>'
-      + (d.reason ? '<div class="hot-why' + (d.status === 'POTENTIAL_DEAL' ? ' is-soft' : '') + '">'
-          + Fmt.esc(d.reason) + '</div>' : '')
-      + '<div class="hot-name">' + Fmt.esc(d.title) + '</div>'
-      + '<div class="hot-meta">' + Fmt.esc(m.name || d.mall || '') + '</div>'
-      + '</article>';
-  },
-
+  cardHTML: function(d) { return HotView.card(d); },
   show: function(res) {
-    var data = res || {};
-    var items = data.items || [];
-    show('hotLoading', false);
-
-    var grid = $('hotGrid');
-    var empty = $('hotEmpty');
-    var count = $('hotCount');
-    if (!grid) return;
-
-    if (!items.length) {
-      /*
-       * ★ 없으면 없다고 말한다. 가짜 데이터를 만들지 않는다.
-       *   아직 표가 없는 상태(pending)와 "오늘은 없음"을 구분해 말한다.
-       */
-      grid.innerHTML = '';
-      if (empty) {
-        empty.innerHTML = data.pending
-          ? '<b>핫딜을 준비하고 있어요.</b>가격 기록이 쌓이는 대로 검증된 핫딜만 보여 드릴게요.'
-          : '<b>아직 검증된 핫딜이 없습니다.</b>가격을 계속 확인하고 있어요. 평소보다 확실히 싼 게 나오면 여기에 올려 드릴게요.';
-        show('hotEmpty', true);
-      }
-      if (count) count.textContent = '';
-      show('hotDeals', true);
-      return;
-    }
-
-    show('hotEmpty', false);
-    grid.innerHTML = items.map(Hot.cardHTML).join('');
-    if (count) {
-      var verified = items.filter(function(x) { return x.status === 'VERIFIED_HOT'; }).length;
-      count.textContent = verified ? verified + '건 검증' : items.length + '건';
-    }
-    show('hotDeals', true);
-    Track.ev('hotdeal_list_view');
+    var items = res && Array.isArray(res.items) ? res.items.filter(function(d) { return d && d.title && d.id != null; }) : [];
+    show('hotLoading', false); show('hotDeals', true);
+    $('hotGrid').innerHTML = items.map(Hot.cardHTML).join('');
+    $('hotCount').textContent = items.length ? items.length + '개 표시' : '';
+    $('hotEmpty').innerHTML = '<b>지금 기준에 맞는 핫딜을 찾고 있어요.</b>새로운 가격이 확인되면 이곳에 모아 드릴게요.';
+    show('hotEmpty', !items.length);
+    if (items.length) Track.ev('hotdeal_list_view');
   },
-
   /*
-   * 상세는 새 화면을 만들지 않고 기존 가격 그래프 모달을 연다.
-   * 핫딜의 근거가 곧 가격 이력이므로, 사용자가 이어서 볼 것도 그 그래프다.
+   * ★ 이전에 있던 «productId 가 없으면 /api/hotdeals?id= 로 이동» 은 사라졌다.
+   *   그 주소는 JSON 엔드포인트라 사용자에게 날것의 JSON 이 그대로 떴다.
+   *   이제는 어느 경우든 /hotdeals.html 로 간다 — 상품 상세가 없는 딜도
+   *   근거와 구매 링크를 그 페이지에서 볼 수 있다.
    */
   open: function(el) {
-    var pid = el && el.getAttribute('data-pid');
     var id = el && el.getAttribute('data-id');
+    if (!id) return;
     Track.ev('hotdeal_open');
-    if (pid) { location.href = '/p/' + encodeURIComponent(pid); return; }
-    if (id) location.href = '/api/hotdeals?id=' + encodeURIComponent(id);
+    location.href = '/hotdeals.html?id=' + encodeURIComponent(id);
   }
 };
+
+/*
+ * 핫딜 카드 클릭 계측.
+ *
+ * HotView.card 가 만드는 카드는 <a href="/hotdeals.html?id=..."> 라 브라우저가
+ * 직접 이동한다 — data-act 를 타지 않으므로 Actions 디스패처도, Hot.open 도
+ * 불리지 않는다. 그래서 hotdeal_open 이 조용히 끊겼다.
+ *
+ * 앵커를 가로채지 않는다(가로채면 새 탭·가운데 클릭·키보드 이동이 다 깨진다).
+ * 이동은 그대로 두고 계측만 얹는다.
+ */
+document.addEventListener('click', function(e) {
+  var a = e.target && e.target.closest && e.target.closest('#hotGrid a.hot-card');
+  if (a) Track.ev('hotdeal_open');
+});
 
 var Drop = {
 
@@ -7683,6 +7648,7 @@ var Wish = {
     var idx = AppState.wish.findIndex(function(w) { return sameProduct(w, info); });
 
     if (btn.classList.contains('on')) {
+      Track.ev('radar_remove');
       btn.classList.remove('on');
       btn.textContent = '♡';
       if (idx > -1) AppState.wish.splice(idx, 1);
@@ -7691,6 +7657,7 @@ var Wish = {
       btn.textContent = '♥';
       if (idx === -1) {
         Track.ev('wishlist_add');
+        Track.ev('radar_save');
         AppState.wish.push({
           title: info.title, price: info.lprice, mall: info.mall,
           // 위시 목록 화면에 보여줄 이름(ADPICK은 cp_name 기반). mall(raw)을
@@ -7698,7 +7665,8 @@ var Wish = {
           mallLabel: info.mallLabel || info.mall,
           // 최신가 갱신을 상품명이 아니라 상품 단위로 하기 위해 같이 저장한다.
           productId: info.productId || '',
-          link: info.link, image: info.image, glyph: info.glyph
+          link: info.link, image: info.image, glyph: info.glyph,
+          savedPrice: info.lprice, savedAt: Date.now(), targetPrice: null
         });
       }
     }
@@ -7748,7 +7716,7 @@ var Wish = {
 
     if (!AppState.wish.length) {
       list.innerHTML = '<div class="wish-empty"><div class="ic">♡</div>'
-        + '<p>아직 담은 상품이 없어요.<br>마음에 드는 상품의 ♡를 눌러보세요.</p></div>';
+        + '<p>아직 지켜보는 상품이 없어요.<br>관심 상품을 저장하면 가격이 바뀔 때 여기서 확인할 수 있어요.</p></div>';
       show('wishTotal', false);
       return;
     }
@@ -7830,6 +7798,7 @@ var Wish = {
 
   remove: function(idx) {
     var removed = AppState.wish.splice(idx, 1)[0];
+    if (removed) Track.ev('radar_remove');
 
     if (removed) {
       $$('.card').forEach(function(card) {
@@ -7850,6 +7819,7 @@ var Wish = {
 
   clear: function() {
     if (!AppState.wish.length) return;
+    Track.ev('radar_remove');
     AppState.wish = [];
     Wish.save();
     Wish.updateCount();
@@ -10208,6 +10178,7 @@ var Actions = {
   'scroll-drop': function() { var t = $('priceDrop'); if (t) t.scrollIntoView({ behavior: 'smooth' }); },
   'scroll-hot': function() { var t = $('hotDeals'); if (t) t.scrollIntoView({ behavior: 'smooth' }); },
   'hot-open': function(el) { Hot.open(el); },
+  'hot-retry': function() { Hot.load(); },
   'scroll-top':  function() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
 
   // ── 검색 ──

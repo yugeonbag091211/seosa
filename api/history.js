@@ -363,6 +363,24 @@ module.exports = async function handler(req, res) {
 
   const q = req.query || {};
   if (q.__route === 'batch') return batchHandler(req, res);
+  /*
+   * 레이더 — 저장한 상품의 지금 상태.
+   *
+   * 새 서버리스 함수를 만들지 않는다. Vercel Hobby 상한이 12개이고 이미
+   * 12개다(api/sync.js 주석). 이 라우트가 쓰는 _pricestat·_deal 은 이
+   * 파일이 이미 들고 있어서 얹는 비용도 거의 없다.
+   */
+  if (q.__route === 'radar' || q.__route === 'alternatives') {
+    try {
+      const radar = require('./_radarapi');
+      if (q.__route === 'alternatives') return await radar.alternativesHandler(req, res);
+      return await radar.radarHandler(req, res);
+    } catch (e) {
+      const { fail } = require('./_http');
+      return fail(res, e, { where: 'radar', route: `/api/history?__route=${q.__route}`,
+        message: '저장한 상품을 불러오지 못했어요.' });
+    }
+  }
   if (q.__route === 'page' || q.__route === 'sitemap' || q.__route === 'product') {
     try {
       const page = require('./_product-page');
