@@ -7648,7 +7648,7 @@ var Wish = {
     var idx = AppState.wish.findIndex(function(w) { return sameProduct(w, info); });
 
     if (btn.classList.contains('on')) {
-      Track.ev('product_unsave');
+      Track.ev('radar_remove');
       btn.classList.remove('on');
       btn.textContent = '♡';
       if (idx > -1) AppState.wish.splice(idx, 1);
@@ -7657,7 +7657,7 @@ var Wish = {
       btn.textContent = '♥';
       if (idx === -1) {
         Track.ev('wishlist_add');
-        Track.ev('product_save');
+        Track.ev('radar_save');
         AppState.wish.push({
           title: info.title, price: info.lprice, mall: info.mall,
           // 위시 목록 화면에 보여줄 이름(ADPICK은 cp_name 기반). mall(raw)을
@@ -7798,7 +7798,7 @@ var Wish = {
 
   remove: function(idx) {
     var removed = AppState.wish.splice(idx, 1)[0];
-    if (removed) Track.ev('product_unsave');
+    if (removed) Track.ev('radar_remove');
 
     if (removed) {
       $$('.card').forEach(function(card) {
@@ -7819,7 +7819,7 @@ var Wish = {
 
   clear: function() {
     if (!AppState.wish.length) return;
-    Track.ev('product_unsave');
+    Track.ev('radar_remove');
     AppState.wish = [];
     Wish.save();
     Wish.updateCount();

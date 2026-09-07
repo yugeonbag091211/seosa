@@ -290,6 +290,25 @@ function seed() {
     eq(R.unitPriceOf('커피 원두 1kg', 25000).unitPrice, 2500, 'kg → 100g당');
     // ★ 애매하면 말하지 않는다
     eq(R.unitPriceOf('생수 2L 6개입', 9000), null, '단위가 둘이면 null');
+
+    /*
+     * 아래는 전부 2026-09-07 운영 데이터 실측에서 «틀린 값이 나왔던» 제목이다.
+     * 지어낸 예가 아니라 실제로 화면에 나갈 뻔한 값들이다.
+     */
+    eq(R.unitPriceOf('BMW X4 G02 F98 2018-2026 자동차 햇빛 가리개', 21850), null,
+      '★ 모델코드의 «4 G» 를 4그램으로 읽지 않는다');
+    eq(R.unitPriceOf('롯데칠성 펩시 제로슈거 355ml 48캔 업소용', 19900), null,
+      '★ 수량이 둘(355ml·48캔)이면 무엇을 나눌지 모른다');
+    eq(R.unitPriceOf('리벤스 아기 물티슈 캡형, 75g, 70매, 10개', 4800), null,
+      '★ 수량이 셋이면 null');
+    eq(R.unitPriceOf('도트 미니 아이스박스 9L', 20995), null,
+      '★ 용기의 «크기» 를 내용물의 «양» 으로 읽지 않는다');
+    eq(R.unitPriceOf('캠핑 낚시 차량용 아이스박스 25리터', 35400), null, '★ 아이스박스 25리터도 null');
+    eq(R.unitPriceOf('올리빙 도트 가정용 재활용 분리수거함 40L 3P', 26880), null, '★ 분리수거함 40L');
+    // 반대로, 진짜 내용물이면 말한다
+    eq(R.unitPriceOf('신라면 120g', 4150).unitPrice, 3458, '라면 120g 은 내용물이다');
+    eq(R.unitPriceOf('끌로에 우먼 EDP 75ml', 102210).unitPrice, 136280, '향수 75ml');
+    eq(R.unitPriceOf('빙그레 붕어싸만코 저당 아이스크림 24개', 26450).unitPrice, 1102, '아이스크림 24개');
     eq(R.unitPriceOf('그냥 상품명', 10000), null, '단위가 없으면 null');
     eq(R.unitPriceOf('세트 1개', 10000), null, '1개짜리에 «개당» 은 정보가 없다');
     eq(R.unitPriceOf('샴푸 500ml', 0), null, '가격이 없으면 null');

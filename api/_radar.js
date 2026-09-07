@@ -213,13 +213,44 @@ function goodBuyPrice(stat) {
  * 규칙: 잡히는 단위 «종류» 가 정확히 하나여야 하고, 그 값도 하나여야 한다.
  * 둘 이상 잡히면 무엇을 나눠야 할지 우리가 모른다는 뜻이므로 포기한다.
  */
+/*
+ * ★ 단위는 숫자에 «붙어» 있어야 한다. 사이에 공백을 허용하지 않는다.
+ *
+ * 실측(2026-09-07, 운영 products 1,000건)에서 공백을 허용했더니 이런 값이 나왔다.
+ *
+ *   "BMW X4 G02 F98 … 햇빛 가리개"  →  "4 G" 를 4그램으로 읽어 100g당 546,250원
+ *
+ * 모델코드·연식 사이의 한 글자가 단위로 잡힌 것이다. 단위 뒤 lookahead 도
+ * 숫자를 막는다([0-9a-z가-힣]) — 그래야 "G02" 의 G 가 걸리지 않는다.
+ */
 const UNIT_PATTERNS = [
-  { unit: '개', per: 1, re: /(\d+(?:\.\d+)?)\s*(?:개입|개|정|캡슐|매|포|팩|병|캔|입)(?![a-z가-힣])/gi },
-  { unit: '100ml', per: 100, re: /(\d+(?:\.\d+)?)\s*(ml|밀리리터)(?![a-z가-힣])/gi },
-  { unit: '100ml', per: 100, re: /(\d+(?:\.\d+)?)\s*(l|리터)(?![a-z가-힣])/gi, scale: 1000 },
-  { unit: '100g', per: 100, re: /(\d+(?:\.\d+)?)\s*(g|그램)(?![a-z가-힣])/gi },
-  { unit: '100g', per: 100, re: /(\d+(?:\.\d+)?)\s*(kg|킬로그램)(?![a-z가-힣])/gi, scale: 1000 }
+  { unit: '개', per: 1, re: /(\d+(?:\.\d+)?)(개입|개|정|캡슐|매|포|팩|병|캔|입)(?![0-9a-z가-힣])/gi },
+  { unit: '100ml', per: 100, re: /(\d+(?:\.\d+)?)(ml|밀리리터)(?![0-9a-z가-힣])/gi },
+  { unit: '100ml', per: 100, re: /(\d+(?:\.\d+)?)(l|리터)(?![0-9a-z가-힣])/gi, scale: 1000 },
+  { unit: '100g', per: 100, re: /(\d+(?:\.\d+)?)(g|그램)(?![0-9a-z가-힣])/gi },
+  { unit: '100g', per: 100, re: /(\d+(?:\.\d+)?)(kg|킬로그램)(?![0-9a-z가-힣])/gi, scale: 1000 }
 ];
+
+/*
+ * 용량·무게를 «내용물의 양» 으로 읽으면 안 되는 상품들.
+ *
+ * 실측에서 나온 것: "도트 미니 아이스박스 9L", "아이스박스 25리터".
+ * 그 9L 는 담을 수 있는 크기이지 파는 물건의 양이 아니다. 100ml당 233원은
+ * 숫자로는 맞고 뜻으로는 완전히 틀렸다 — 이런 값이 비교에 끼면 "이게 더
+ * 싸다" 가 뒤집힌다.
+ *
+ * 제목만으로 «용기» 와 «내용물» 을 일반적으로 가를 방법은 없다. 그래서
+ * 가를 수 없는 자리에서는 말하지 않는다. 목록에 없는 새 유형이 나오면
+ * 그때 실측으로 더한다 — 추측으로 늘리지 않는다.
+ */
+const CONTAINER_WORDS = ['아이스박스', '쿨러', '물통', '텀블러', '보온병', 'water bottle',
+  '냉장고', '김치통', '보관함', '수납', '가방', '백팩', '캐리어', '통', '용기', '박스',
+  '탱크', '어항', '수조', '화분', 'humidifier', '가습기', '제습기', '정수기', '커피포트',
+  '전기포트', '주전자', '냄비', '压력솥', '압력솥', '에어프라이어', '오븐', '세탁기', '건조기'];
+function isContainer(title) {
+  const t = String(title || '');
+  return CONTAINER_WORDS.some(w => t.indexOf(w) > -1);
+}
 
 /**
  * @returns {{unitPrice:number, unit:string, amount:number}|null} 확실하지 않으면 null
@@ -228,6 +259,23 @@ function unitPriceOf(title, price) {
   const p = Math.round(Number(price) || 0);
   const t = String(title || '');
   if (p <= 0 || !t) return null;
+
+  /*
+   * ★ 수량 표현이 «하나» 일 때만 계산한다.
+   *
+   * 실측(2026-09-07, 운영 1,000건)에서 틀린 값이 전부 여기서 나왔다.
+   *
+   *   "펩시 … 355ml48캔"            355ml 만 읽고 48캔을 놓쳐 100ml당 5,606원
+   *   "물티슈 … 75g, 70매, 10개"     75g 만 읽어 100g당 6,400원
+   *   "닭가슴살 100gX30팩"          30을 곱하지 않음
+   *   "분리수거함 40L 3P"            40L 를 내용물로 읽음
+   *
+   * 어느 것을 곱하고 어느 것을 나눠야 하는지는 제목만으로 알 수 없다.
+   * 모르면 말하지 않는다 — 틀린 단위가는 "이게 더 싸다" 를 통째로 뒤집는다.
+   */
+  const QTY_RE = /(\d+(?:\.\d+)?)\s*(개입|개|정|캡슐|매|포|팩|병|캔|입|장|구|줄|ea|p|pcs|set|세트|ml|밀리리터|l|리터|g|그램|kg|킬로그램)(?![0-9a-z가-힣])/gi;
+  const qty = String(t).match(QTY_RE) || [];
+  if (qty.length !== 1) return null;
 
   const hits = [];
   UNIT_PATTERNS.forEach(pat => {
@@ -251,6 +299,8 @@ function unitPriceOf(title, price) {
   if (!(h.amount > 0)) return null;
   // 1개짜리에 "개당"을 붙이면 아무 정보가 없다.
   if (h.unit === '개' && h.amount < 2) return null;
+  // 용기의 «크기» 를 내용물의 «양» 으로 읽지 않는다 (위 CONTAINER_WORDS 주석).
+  if (h.unit !== '개' && isContainer(t)) return null;
 
   const unitPrice = Math.round(p / (h.amount / h.per));
   if (!Number.isFinite(unitPrice) || unitPrice <= 0) return null;

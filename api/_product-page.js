@@ -158,7 +158,20 @@ async function loadPoints(pid, mall, vendorItemId) {
   return [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, price]) => ({ date, price }));
 }
 
-/** 같은 검색어의 다른 상품 — 내부 링크. 현재가로 쓸 수 있는 행만. */
+/**
+ * 비슷한 가격의 다른 선택 — 내부 링크. 현재가로 쓸 수 있는 행만.
+ *
+ * ── 왜 «같은 검색어» 로 끝내지 않는가 ──────────────────────────────
+ *
+ * 제목이 "비슷한 가격의 다른 선택" 인데 같은 검색어에서 아무거나 3개를
+ * 집어 오면 그 제목이 거짓이 된다. 실제로 같은 검색어 안에는 본체 옆에
+ * 케이스·필름 같은 부속이 섞여 있고 가격대도 10배까지 벌어진다.
+ *
+ * 순위는 api/_radar.alternativesFor 가 정한다. 그 함수가 부속 제외
+ * (_search.ACCESSORY_TIER)·가격대 제한·현재가 존재를 결정론으로 거른다.
+ * /api/alternatives 와 «같은 규칙» 을 쓰게 되므로, 페이지와 API 가 서로
+ * 다른 후보를 내놓는 일도 없어진다.
+ */
 async function loadSiblings(row, limit) {
   if (!row || !row.keyword) return [];
   try {
@@ -168,9 +181,25 @@ async function loadSiblings(row, limit) {
       .eq('keyword', row.keyword)
       .neq('product_id', row.product_id)
       .limit(40);
-    return preferLive(freshRows(relevantRows(data || [])))
-      .filter(r => r.link)
-      .slice(0, limit == null ? SIBLINGS : limit);
+    const usable = preferLive(freshRows(relevantRows(data || []))).filter(r => r.link);
+
+    const R = require('./_radar');
+    const ranked = R.alternativesFor(
+      { productId: row.product_id, title: row.title, price: Math.round(Number(row.lprice) || 0) },
+      usable.map(r => ({
+        productId: r.product_id, title: r.title, price: Math.round(Number(r.lprice) || 0),
+        mall: r.mall, image: r.image, url: r.link
+      })),
+      limit == null ? SIBLINGS : limit
+    );
+    /* 원래 행 모양(product_id·lprice·title)을 그대로 돌려준다 — 렌더러가 그것을 읽는다. */
+    const byId = new Map(usable.map(r => [String(r.product_id), r]));
+    const out = ranked.map(a => byId.get(String(a.productId))).filter(Boolean);
+    /*
+     * 걸러 낸 뒤 하나도 안 남을 수 있다(가격대가 전부 벗어난 경우 등).
+     * 그때는 섹션을 통째로 비운다 — 제목이 약속한 것을 못 주면 안 주는 편이 낫다.
+     */
+    return out;
   } catch (e) {
     return [];
   }
@@ -246,6 +275,8 @@ const CSS = [
   '.btn{display:inline-block;padding:12px 18px;border-radius:6px;text-decoration:none;font-size:.9rem;font-weight:700;border:1px solid var(--ink)}',
   '.btn.primary{background:var(--ink);color:#fff}.btn.off{opacity:.45;pointer-events:none}',
   'button.btn{font-family:inherit;background:var(--bg);color:var(--ink);cursor:pointer}.btn[aria-pressed=true]{background:#f3f4f6}.journey{margin:18px 0;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.journey ol{list-style:none;padding:0;margin:12px 0 0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.journey span{display:block;font-size:.72rem;color:var(--soft)}.journey b{font-variant-numeric:tabular-nums}',
+  '.unitprice{color:var(--soft);font-size:.82rem;margin:-6px 0 10px}',
+  '.goodbuy{margin:14px 0;padding:12px 14px;background:var(--surface,#f4f5f7);border-radius:6px;font-size:.86rem}.goodbuy b{display:block;font-size:.95rem}.goodbuy span{display:block;color:var(--soft);font-size:.78rem;margin-top:3px}',
   'h2{font-size:1rem;margin:34px 0 10px}.sib{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}',
   '@media(max-width:560px){.sib{grid-template-columns:repeat(2,1fr)}}',
   '.sib li a{display:block;text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:.8rem;min-height:100%}',
@@ -319,6 +350,28 @@ function renderPage(v, siblings) {
       <div class="stat"><span>수집 이후 최고</span><b>${won(stat.high)}원</b></div>
     </div>` : '';
 
+  /*
+   * ── 얼마면 좋은 가격인가 · 단위 가격 (2026-09-07 통합) ─────────────
+   *
+   * 둘 다 api/_radar.js 가 정한다. 이 페이지에서 다시 계산하지 않는다 —
+   * /api/radar 와 이 페이지가 서로 다른 숫자를 말하면 안 된다.
+   *
+   * ★ 근거가 얇으면 두 함수 모두 null 을 돌려준다. 그때는 영역 자체를
+   *   그리지 않는다. 없는 값을 0 으로 채우거나 «미정» 으로 적지 않는다.
+   */
+  const RADAR = require('./_radar');
+  const goodBuy = RADAR.goodBuyPrice(stat);
+  const goodBuyHtml = goodBuy ? `
+    <div class="goodbuy">
+      <b>${won(goodBuy.price)}원 이하라면 좋은 가격</b>
+      <span>${esc(goodBuy.explain)}</span>
+    </div>` : '';
+
+  const unit = RADAR.unitPriceOf(title, price);
+  const unitHtml = unit
+    ? `<div class="unitprice">${esc(unit.unit)}당 ${won(unit.unitPrice)}원</div>`
+    : '';
+
   const spark = sparkSvg(points);
   const trust = product.trust && product.trust.label
     ? `<div class="trust">가격 신뢰도 · ${esc(product.trust.label)}${product.trust.summary ? ` — ${esc(product.trust.summary)}` : ''}</div>`
@@ -373,11 +426,13 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
     <div class="thumb">${img ? `<img src="${esc(img)}" alt="" referrerpolicy="no-referrer">` : '<span style="color:var(--soft)">이미지 없음</span>'}</div>
     <div>
       <div class="price">${price > 0 ? `${won(price)}<small> 원</small>` : '가격 미확인'}</div>
+      ${unitHtml}
       <div class="verdict">
         <b>${esc(deal.label)}</b>
         ${reasons.length ? `<ul>${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
         ${cautions.length ? `<ul>${cautions.map(c => `<li class="warn">${esc(c)}</li>`).join('')}</ul>` : ''}
       </div>
+      ${goodBuyHtml}
       ${trust}
       <div class="cta"><button class="btn" id="saveProduct" type="button">저장</button><a class="btn" href="/radar.html">내 레이더</a></div>
     </div>
@@ -399,7 +454,24 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
   판매처로 이동하면 제휴 수수료를 받을 수 있어요.
   판정은 SEOSA 가 수집한 기록만을 근거로 계산한 것이고 미래 가격을 예측하지 않아요.
 </footer>
-<script>(function(){var product=${radarProduct},button=document.getElementById('saveProduct');function track(name){try{fetch('/api/stats?event='+encodeURIComponent(name),{keepalive:true}).catch(function(){})}catch(_){}}function sync(){var on=!!RadarStore.find(product);button.textContent=on?'저장됨':'저장';button.setAttribute('aria-pressed',String(on))}button.addEventListener('click',function(){var result=RadarStore.toggle(product);track(result.saved?'product_save':'product_unsave');sync()});var affiliate=document.getElementById('affiliateLink');if(affiliate)affiliate.addEventListener('click',function(){track('affiliate_click')},{once:true});Array.prototype.forEach.call(document.querySelectorAll('.sib a'),function(a){a.addEventListener('click',function(){track('alternative_open')})});track('decision_view');sync()})();</script>
+<script>(function(){
+/* 계측 — api/_funnel.js FUNNEL_EVENTS 와 «같은 이름» 을 쓴다. 그래야 상품 단위
+   행(funnel_events)까지 남는다. 다른 이름으로 부르면 날짜 카운터만 오르고
+   «무엇이 저장·클릭됐는지» 는 사라진다.
+   ★ 링크를 가로채지 않는다. preventDefault 도 새 탭 강제도 없다 —
+     가운데 클릭·새 탭·키보드 이동을 막으면 안 된다. 계측만 얹는다. */
+var product=${radarProduct},button=document.getElementById('saveProduct');
+function track(name){try{var q='/api/stats?event='+encodeURIComponent(name)
++(product.productId?'&pid='+encodeURIComponent(product.productId):'')
++(product.mallLabel?'&mall='+encodeURIComponent(product.mallLabel):'')
++(product.price>0?'&price='+encodeURIComponent(String(product.price)):'')
++'&src=product';fetch(q,{keepalive:true}).catch(function(){})}catch(_){}}
+function sync(){var on=!!RadarStore.find(product);button.textContent=on?'저장됨':'저장';button.setAttribute('aria-pressed',String(on))}
+button.addEventListener('click',function(){var result=RadarStore.toggle(product);track(result.saved?'radar_save':'radar_remove');sync()});
+var affiliate=document.getElementById('affiliateLink');
+if(affiliate)affiliate.addEventListener('click',function(){track('affiliate_click')},{once:true});
+Array.prototype.forEach.call(document.querySelectorAll('.sib a'),function(a){a.addEventListener('click',function(){track('compare_open')},{once:true})});
+track('buy_wait_watch_view');sync()})();</script>
 </body>
 </html>`;
 }
