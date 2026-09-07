@@ -430,6 +430,32 @@ function seed() {
     ok(typeof analytics.bump === 'function', 'bump 존재');
   }
 
+  section('13-b) 로컬 개발이 운영 퍼널을 오염시키지 않는다');
+  {
+    /*
+     * ★ 2026-09-07 활성화 검증에서 발견한 구멍.
+     *
+     * _analytics.js 는 2026-08-29 사고(개발 브라우저가 운영 지표에 30건을
+     * 남김) 뒤 ANALYTICS_DISABLED 가드를 얻었는데, 나중에 만든 _funnel.js 에는
+     * 빠져 있었다. .env.local 이 운영 자격증명을 들고 있으므로 로컬 개발 서버가
+     * /api/stats 를 부르면 운영 funnel_events 에 행이 그대로 쌓인다.
+     *
+     * daily_metrics 보다 나쁘다 — 그쪽은 카운터라 되돌리기라도 하지만 이쪽은
+     * product_id·price 를 단 행이라 «실제 사용자가 그 상품을 눌렀다» 로 남는다.
+     */
+    funnel._internal._reset();
+    const before = db.funnel_events.length;
+    process.env.ANALYTICS_DISABLED = '1';
+    const r = await call(statsHandler, { event: 'affiliate_click', pid: 'A1', price: '1000' });
+    eq(r.status, 200, '로컬에서도 200 (화면을 막지 않는다)');
+    eq(r.body.logged, false, '★ 로컬에서는 기록하지 않는다');
+    eq(db.funnel_events.length, before, '★ 행이 늘지 않는다');
+    delete process.env.ANALYTICS_DISABLED;
+    await call(statsHandler, { event: 'affiliate_click', pid: 'A1', price: '1000' });
+    eq(db.funnel_events.length, before + 1, '스위치를 끄면 정상 기록된다');
+    eq(db.conversions.length, 0, '★ 어느 쪽이든 conversions 는 만들어지지 않는다');
+  }
+
   section('14) funnel_events 표가 없어도 서비스는 돈다');
   {
     funnel._internal._reset();

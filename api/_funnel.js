@@ -58,6 +58,29 @@ const VID_RE = /^[a-z0-9]{8,64}$/i;
 let enabled = true;
 let warned = false;
 
+/*
+ * 로컬 개발 차단 스위치 (ANALYTICS_DISABLED=1) — _analytics.js 와 «같은» 스위치다.
+ *
+ * ★ 왜 여기에도 필요한가 (2026-09-07 활성화 검증에서 발견)
+ *
+ *   .env.local 에는 운영 Supabase 자격증명이 들어 있다. 그래서 localhost 로
+ *   띄운 개발 서버가 /api/stats 를 부르면 그 행이 운영 funnel_events 에
+ *   그대로 쌓인다. _analytics.js 는 2026-08-29 실제 사고(개발 브라우저가
+ *   운영 지표에 16종 30건을 남김) 뒤에 이 가드를 얻었는데, 나중에 만든
+ *   이쪽에는 빠져 있었다.
+ *
+ *   이 표는 그때보다 더 나쁘다. daily_metrics 는 (날짜, 지표) 카운터라
+ *   되돌리기라도 하지만, funnel_events 는 product_id·mall·price 를 단 행이라
+ *   개발 중 누른 클릭이 «실제 사용자가 그 상품을 눌렀다» 로 남는다.
+ *   그 값으로 무엇이 돈이 되는지 판단하게 되므로 오염을 그냥 둘 수 없다.
+ *
+ *   켜는 곳은 .env.local 하나뿐이다. Vercel 환경변수에는 절대 넣지 않는다 —
+ *   넣는 순간 운영 퍼널 계측이 통째로, 그것도 조용히 멈춘다.
+ */
+function localDisabled() {
+  return String(process.env.ANALYTICS_DISABLED || '').trim() === '1';
+}
+
 function disable(what, why) {
   if (!warned) {
     warned = true;
@@ -82,6 +105,7 @@ function clean(v, max) { return String(v == null ? '' : v).trim().slice(0, max);
  * @returns {Promise<{ok:boolean, reason:string}>}
  */
 async function track(e) {
+  if (localDisabled()) return { ok: false, reason: 'local-disabled' };
   if (!enabled) return { ok: false, reason: 'disabled' };
   try {
     const event = clean(e && e.event, 40).toLowerCase();
