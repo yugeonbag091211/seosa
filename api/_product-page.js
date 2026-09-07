@@ -45,7 +45,7 @@ const SITEMAP_MAX = 5000;
 /** 가격 기록 조회 상한 (api/history.js SINGLE_MAX_ROWS 와 같다). */
 const MAX_ROWS = 3000;
 /** 같은 검색어의 다른 상품(내부 링크) 수. */
-const SIBLINGS = 6;
+const SIBLINGS = 3;
 /** 그래프에 그릴 최근 점. */
 const SPARK_POINTS = 30;
 
@@ -245,6 +245,7 @@ const CSS = [
   '.cta{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0}',
   '.btn{display:inline-block;padding:12px 18px;border-radius:6px;text-decoration:none;font-size:.9rem;font-weight:700;border:1px solid var(--ink)}',
   '.btn.primary{background:var(--ink);color:#fff}.btn.off{opacity:.45;pointer-events:none}',
+  'button.btn{font-family:inherit;background:var(--bg);color:var(--ink);cursor:pointer}.btn[aria-pressed=true]{background:#f3f4f6}.journey{margin:18px 0;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.journey ol{list-style:none;padding:0;margin:12px 0 0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.journey span{display:block;font-size:.72rem;color:var(--soft)}.journey b{font-variant-numeric:tabular-nums}',
   'h2{font-size:1rem;margin:34px 0 10px}.sib{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}',
   '@media(max-width:560px){.sib{grid-template-columns:repeat(2,1fr)}}',
   '.sib li a{display:block;text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:.8rem;min-height:100%}',
@@ -324,13 +325,17 @@ function renderPage(v, siblings) {
     : '';
 
   const sibHtml = siblings.length ? `
-    <h2>「${esc(row.keyword)}」의 다른 상품</h2>
+    <h2>비슷한 가격의 다른 선택</h2>
     <ul class="sib">${siblings.map(s => `
       <li><a href="/p/${encodeURIComponent(s.product_id)}">
         <div class="t">${esc(s.title)}</div>
         <div class="p">${won(s.lprice)}원</div>
       </a></li>`).join('')}
     </ul>` : '';
+
+  const storyPoints = points.length >= 3 ? [points[0], points[Math.floor((points.length - 1) / 2)], points[points.length - 1]] : [];
+  const storyHtml = storyPoints.length ? `<section class="journey" aria-labelledby="price-story"><h2 id="price-story">가격에도 서사가 있습니다.</h2><ol>${storyPoints.map((p, i) => `<li><span>${i === 2 ? '오늘' : esc(p.date)}</span><b>${won(p.price)}원</b></li>`).join('')}</ol></section>` : '';
+  const radarProduct = JSON.stringify({ title, productId: product.productId, mall: product.mall, mallLabel: mall, price, link, image: img, verdict: deal.verdict, verdictLabel: deal.label, verdictReason: reasons[0] || '' }).replace(/</g, '\\u003c');
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -342,6 +347,7 @@ function renderPage(v, siblings) {
 <meta name="robots" content="${indexable ? 'index,follow' : 'noindex,follow'}">
 <link rel="canonical" href="${esc(url)}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<script src="/radar-store.js"></script>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SEOSA">
 <meta property="og:locale" content="ko_KR">
@@ -373,14 +379,16 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
         ${cautions.length ? `<ul>${cautions.map(c => `<li class="warn">${esc(c)}</li>`).join('')}</ul>` : ''}
       </div>
       ${trust}
+      <div class="cta"><button class="btn" id="saveProduct" type="button">저장</button><a class="btn" href="/radar.html">내 레이더</a></div>
     </div>
   </section>
 
   ${statsHtml}
   ${spark ? `<div class="spark">${spark}</div><div class="note">${PRICE_SOURCE_NOTE}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${PRICE_SOURCE_NOTE}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
+  ${storyHtml}
 
   <div class="cta">
-    ${link ? `<a class="btn primary" href="${esc(link)}" target="_blank" rel="nofollow sponsored noopener">${esc(mall)}에서 보기 →</a>` : '<span class="btn off">판매처 링크 없음</span>'}
+    ${link ? `<a class="btn primary" id="affiliateLink" href="${esc(link)}" target="_blank" rel="nofollow sponsored noopener">${esc(mall)}에서 보기 →</a>` : '<span class="btn off">판매처 링크 없음</span>'}
     <a class="btn" href="/?p=${encodeURIComponent(product.productId)}">SEOSA에서 가격 추이 보기</a>
   </div>
 
@@ -391,6 +399,7 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
   판매처로 이동하면 제휴 수수료를 받을 수 있어요.
   판정은 SEOSA 가 수집한 기록만을 근거로 계산한 것이고 미래 가격을 예측하지 않아요.
 </footer>
+<script>(function(){var product=${radarProduct},button=document.getElementById('saveProduct');function track(name){try{fetch('/api/stats?event='+encodeURIComponent(name),{keepalive:true}).catch(function(){})}catch(_){}}function sync(){var on=!!RadarStore.find(product);button.textContent=on?'저장됨':'저장';button.setAttribute('aria-pressed',String(on))}button.addEventListener('click',function(){var result=RadarStore.toggle(product);track(result.saved?'product_save':'product_unsave');sync()});var affiliate=document.getElementById('affiliateLink');if(affiliate)affiliate.addEventListener('click',function(){track('affiliate_click')},{once:true});Array.prototype.forEach.call(document.querySelectorAll('.sib a'),function(a){a.addEventListener('click',function(){track('alternative_open')})});track('decision_view');sync()})();</script>
 </body>
 </html>`;
 }

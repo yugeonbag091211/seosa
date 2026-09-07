@@ -7,6 +7,7 @@
   $('themeToggle').onclick = function () { var mode = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = mode; try { localStorage.setItem('seosa_theme', mode); } catch (_) {} themeLabel(); };
   themeLabel();
   function fact(label, value) { return '<div><dt>' + V.esc(label) + '</dt><dd>' + V.esc(value) + '</dd></div>'; }
+  function track(name) { try { fetch('/api/stats?event=' + encodeURIComponent(name), { keepalive: true }).catch(function() {}); } catch (_) {} }
 
   /*
    * 같은 상품을 파는 다른 곳.
@@ -94,10 +95,17 @@
       + (d.status === 'POTENTIAL_DEAL' ? '<p class="hd-note">아직 검증이 끝나지 않은 상품이에요. 가격 기록과 판매 조건을 확인해 주세요.</p>' : '')
       + (facts ? '<dl class="hd-facts">' + facts + '</dl>' : '')
       + offerTable(d)
-      + '<div class="hd-actions">' + (d.productId ? '<a href="/p/' + encodeURIComponent(d.productId) + '?mall=' + encodeURIComponent(d.mall || '') + '">가격 그래프·상품 상세 보기</a>' : '')
-      + (link ? '<a class="primary" href="' + V.esc(link) + '" target="_blank" rel="sponsored nofollow noopener">' + V.esc(d.mall || '판매처') + '에서 확인 ↗<span class="hd-note" style="color:inherit"> (새 창)</span></a>' : '') + '</div>'
+      + '<div class="hd-actions"><button id="saveDeal" type="button">저장</button>' + (d.productId ? '<a href="/p/' + encodeURIComponent(d.productId) + '?mall=' + encodeURIComponent(d.mall || '') + '">가격 그래프·상품 상세 보기</a>' : '')
+      + (link ? '<a class="primary" data-affiliate href="' + V.esc(link) + '" target="_blank" rel="sponsored nofollow noopener">' + V.esc(d.mall || '판매처') + '에서 확인 ↗<span class="hd-note" style="color:inherit"> (새 창)</span></a>' : '') + '</div>'
       + '<p class="hd-note">판매처에서 옵션·배송비·쿠폰 적용 조건과 최종 가격을 확인해 주세요. 제휴 링크로 구매하면 SEOSA가 수수료를 받을 수 있어요.</p></div></div>';
     $('detail').hidden = false;
+    var product = { title: d.title, productId: d.productId, mall: d.mall, price: d.price, link: d.url, image: d.image };
+    var save = $('saveDeal');
+    function syncSave() { var on = !!RadarStore.find(product); save.textContent = on ? '저장됨' : '저장'; save.setAttribute('aria-pressed', String(on)); }
+    save.onclick = function() { var result = RadarStore.toggle(product); track(result.saved ? 'product_save' : 'product_unsave'); syncSave(); };
+    syncSave();
+    Array.prototype.forEach.call(document.querySelectorAll('[data-affiliate]'), function(a) { a.addEventListener('click', function() { track('affiliate_click'); }, { once: true }); });
+    track('decision_view');
   }
   async function load(append) {
     var run = ++generation, previousLength = items.length;

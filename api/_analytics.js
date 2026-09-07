@@ -91,7 +91,9 @@ const METRICS = [
    */
   'ai_guest_answer', 'ai_login_from_guest',
   'price_history_open', 'comparison_open',
-  'wishlist_add', 'price_alert_add', 'external_shop_click'
+  'wishlist_add', 'price_alert_add', 'external_shop_click',
+  'product_save', 'product_unsave', 'target_price_set', 'target_price_delete',
+  'decision_view', 'alternative_open', 'affiliate_click'
 ];
 
 /** visitorId 로 받아들일 모양. 브라우저가 만든 난수만 통과시킨다. */

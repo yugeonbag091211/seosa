@@ -50,7 +50,8 @@
     "test:hotgroup": "node scripts/test-hotgroup.js",
     "test:hotdeal-api": "node scripts/test-hotdeal-api.js",
     "collect:hotdeals": "node scripts/collect-hotdeals.js",
-    "test:hotdeal-ui": "node scripts/test-hotdeal-ui.js"
+    "test:hotdeal-ui": "node scripts/test-hotdeal-ui.js",
+    "test:radar-ui": "node scripts/test-radar-ui.js"
   },
   "keywords": [],
   "author": "",
