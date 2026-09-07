@@ -1,0 +1,82 @@
+name: SEOSA Conversions (manual only)
+
+# ── 왜 schedule 이 없는가 ────────────────────────────────────────────
+#
+# 자동으로 돌리려면 아래가 «전부» 충족돼야 한다. 하나라도 빠진 채 켜면
+# 매 회차 실패하고, 반복되는 실패는 아무도 보지 않게 된다.
+#
+#   [ ] provider contract verified
+#         ADPICK  공식 계약 + 2026-09-07 엔드포인트 probe 로 확인 ✅
+#         쿠팡    orders 필드 shape 미확인 · cancel 경로 404 → NOT VERIFIED ❌
+#   [ ] credentials available            ADPICK_API_KEY ✅
+#   [ ] IP whitelist / static egress     ❌ AUTOMATION_BLOCKED_BY_STATIC_EGRESS
+#         성과추적 API 는 IP whitelist 가 필수인데 GitHub Actions 의 출구 IP 는
+#         고정되지 않는다. 비용이 드는 static proxy/VPN 을 임의로 들이지 않는다.
+#   [ ] dry-run PASS                     ✅ (403 을 정확히 알아보고 멈춘다)
+#   [ ] duplicate PASS                   ✅ scripts/test-conversions.js
+#   [ ] cancellation PASS                ✅ scripts/test-conversions.js
+#
+# 그래서 지금은 workflow_dispatch 만 둔다. 자동 schedule 은 whitelist 가
+# 열린 뒤 activation 단계에서 «별도로» 켠다 — 여기에 cron 을 미리 적어 두고
+# 주석 처리하지도 않는다. 주석은 언젠가 지워지고, 그때 조건은 다시 확인되지 않는다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: '전환을 가져올 제휴사'
+        type: choice
+        options: [adpick, coupang]
+        default: adpick
+      days:
+        description: '조회 기간(일). 공식 상한 365'
+        default: '7'
+      write:
+        description: 'DB 에 실제로 쓴다 (체크하지 않으면 dry-run)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: seosa-conversions
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      # ADPICK_API_KEY 는 URL 경로에 들어가는 값이라 로그에 절대 남으면 안 된다.
+      # api/_adpickconv.js 의 redact() 가 키 문자열과 /api/*/ 경로를 모두 지운다.
+      - name: Import conversions
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          # whitelist 가 실제로 열린 뒤에만 '1' 로 둔다. 이 값이 커버리지
+          # 판정(api/_funnel.conversionCoverage)에 그대로 쓰인다.
+          ADPICK_CONVERSION_WHITELISTED: ${{ secrets.ADPICK_CONVERSION_WHITELISTED }}
+        run: |
+          node scripts/import-conversions.js \
+            --provider=${{ github.event.inputs.provider }} \
+            --days=${{ github.event.inputs.days }} \
+            ${{ github.event.inputs.write == 'true' && '--write' || '--dry-run' }} \
+            2>&1 | tee /tmp/conversions.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## SEOSA Conversions" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          grep -E '"msg":"(start|fetched|normalized|upserted|dry_run_no_write|provider_not_verified|AUTOMATION_BLOCKED_BY_STATIC_EGRESS|failed)"' \
+            /tmp/conversions.log | tail -10 >> $GITHUB_STEP_SUMMARY || echo '{"msg":"no log"}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

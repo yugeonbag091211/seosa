@@ -196,31 +196,122 @@ async function collect(out, since) {
   try {
     conv = await supabase
       .from('conversions')
-      .select('gmv, commission')
+      /*
+       * ★ status 를 반드시 함께 읽는다.
+       *
+       * 예전에는 gmv/commission 만 읽어 전부 더했다. 그 상태로 전환 리포트를
+       * 붙이면 «아직 확정되지 않은 주문» 과 «취소된 주문» 이 확정 매출과 한
+       * 덩어리가 된다. 그건 GMV 가 아니라 희망이다.
+       */
+      .select('gmv, commission, status')
       .gte('order_date', since)
       .limit(20000);
   } catch (e) {
     conv = { error: { message: e && e.message } };
   }
 
-  if (conv && !conv.error && Array.isArray(conv.data) && conv.data.length) {
-    out.conversions = conv.data.length;
-    out.gmv = conv.data.reduce((s, c) => s + (Number(c.gmv) || 0), 0);
-    out.commission = conv.data.reduce((s, c) => s + (Number(c.commission) || 0), 0);
+  /*
+   * status 컬럼이 아직 없는 DB(2026-09-08 마이그레이션 전)에서는 한 번 더
+   * 물러난다. 그때는 상태를 모르므로 «확정» 이라고 말할 수 없다 —
+   * 아래에서 confirmedGmv 를 내지 않고 statusUnavailable 로 알린다.
+   */
+  let statusUnavailable = false;
+  if (conv && conv.error && /status|column|schema cache/i.test(String(conv.error.message || ''))) {
+    statusUnavailable = true;
+    try {
+      conv = await supabase.from('conversions').select('gmv, commission')
+        .gte('order_date', since).limit(20000);
+    } catch (e) { conv = { error: { message: e && e.message } }; }
+  }
+
+  const rows = (conv && !conv.error && Array.isArray(conv.data)) ? conv.data : null;
+
+  if (rows && rows.length) {
+    const C = require('./_conversion');
+    const s = C.summarize(rows);
+    out.conversions = s.total;
+    out.conversionStatus = s.byStatus;
+    /*
+     * ── 절대 섞지 않는다 ──────────────────────────────────────────
+     *   orderedGmv        주문됐다 (확정 아님) — 참고값이지 매출이 아니다
+     *   confirmedGmv      확정된 실제 결제 금액 — ★ 이것만 매출이다
+     *   cancelledGmv      취소된 금액
+     *   commissionRevenue 확정 건의 실제 수수료만
+     */
+    out.orderedGmv = s.orderedGmv;
+    out.confirmedGmv = statusUnavailable ? null : s.confirmedGmv;
+    out.cancelledGmv = s.cancelledGmv;
+    out.commissionRevenue = statusUnavailable ? null : s.commissionRevenue;
+    if (statusUnavailable) out.statusUnavailable = true;
   } else {
     /*
-     * ★ gmv 를 0 으로 두지 않는다.
+     * ★ 0 으로 두지 않는다.
      *
-     * 0 은 "팔린 것이 없다" 이고 null 은 "아직 알 수 없다" 다. 2026-09-07
-     * 현재 파트너스 정산 리포트가 연결돼 있지 않아 전환 행이 만들어질 경로
-     * 자체가 없으므로, 사실인 쪽은 null 이다. 0 으로 적으면 «측정 실패» 가
-     * «성과 0» 으로 잘못 읽히고, 그 숫자를 근거로 기능을 접게 된다.
-     *
-     * 리포트가 한 건이라도 적재되면 위 분기로 넘어가 자동으로 실수치가 된다.
+     * 0 은 "팔린 게 없다" 이고 null 은 "아직 알 수 없다" 다. 전환 행이
+     * 만들어질 경로가 아직 없으므로 사실인 쪽은 null 이다. 0 으로 적으면
+     * «측정 실패» 가 «성과 0» 으로 잘못 읽히고, 그 숫자를 근거로 기능을 접는다.
      */
     out.conversionsPending = true;
+    out.confirmedGmv = null;
+    out.commissionRevenue = null;
   }
+
+  /*
+   * ── 부분 커버리지 ─────────────────────────────────────────────────
+   *
+   * ADPICK 만 연결됐는데 그 매출만 합쳐 놓고 "SEOSA GMV = 50만원" 이라고
+   * 하면 거짓이다. 쿠팡이 우리 트래픽의 대부분인데 그쪽 전환을 못 세고
+   * 있으므로, 그 합계는 «전체 GMV» 가 아니라 «측정된 일부» 다.
+   *
+   *   measuredConfirmedGmv  지금 셀 수 있는 만큼의 확정 매출
+   *   gmv                   모든 활성 provider 가 연결됐을 때만 숫자
+   *
+   * 이것이 이 파일에서 가장 중요한 회계적 방어선이다. 한쪽만 연결된 상태의
+   * 숫자를 전체 매출로 부르는 순간, 그 숫자로 내린 판단이 전부 틀어진다.
+   */
+  const coverage = conversionCoverage();
+  out.conversionCoverage = coverage.byProvider;
+  out.coverageComplete = coverage.complete;
+  out.measuredConfirmedGmv = out.confirmedGmv;
+  out.gmv = coverage.complete ? out.confirmedGmv : null;
   return out;
 }
 
-module.exports = { track, report, FUNNEL_EVENTS, SOURCES, _internal: { _reset, missingObject } };
+/**
+ * 지금 «전환을 셀 수 있는» affiliate source 가 어디까지인가.
+ *
+ * connected      전환 리포트가 실제로 연결돼 적재 중
+ * not_verified   계약/응답을 확인하지 못해 importer 를 켜지 않았다
+ * blocked        계약은 확인됐지만 실행 조건(IP whitelist 등)을 못 갖췄다
+ * inactive       그 source 로 나가는 트래픽이 없다 (자격증명 없음)
+ */
+function conversionCoverage() {
+  const byProvider = {};
+
+  /*
+   * ADPICK — 공식 계약 확인 + 엔드포인트 probe 로 존재 확인(2026-09-07).
+   * 다만 성과추적 API 는 IP whitelist 가 필수이고 현재 실행 환경은 출구 IP 가
+   * 고정되지 않는다. 그래서 «연결됨» 이 아니라 blocked 다.
+   */
+  byProvider.adpick = process.env.ADPICK_API_KEY
+    ? (process.env.ADPICK_CONVERSION_WHITELISTED === '1' ? 'connected' : 'blocked')
+    : 'inactive';
+
+  /*
+   * 쿠팡 — 2026-09-07 read-only probe 에서 orders 는 200/rCode 0 이지만 0건이라
+   * 행의 모양을 못 봤고 cancel 경로는 404 였다. 주문 금액·취소를 확인하지
+   * 못했으므로 전환을 셀 수 없다.
+   */
+  byProvider.coupang = (process.env.COUPANG_ACCESS_KEY && process.env.COUPANG_SECRET_KEY)
+    ? 'not_verified' : 'inactive';
+
+  /* 활성(트래픽이 나가는) provider 가 전부 connected 여야 전체 GMV 를 말한다. */
+  const active = Object.keys(byProvider).filter(k => byProvider[k] !== 'inactive');
+  const complete = active.length > 0 && active.every(k => byProvider[k] === 'connected');
+  return { byProvider: byProvider, complete: complete, active: active };
+}
+
+module.exports = {
+  track, report, conversionCoverage, FUNNEL_EVENTS, SOURCES,
+  _internal: { _reset, missingObject }
+};
