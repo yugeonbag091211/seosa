@@ -160,7 +160,33 @@ const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 500;
  * (loadCoupangDayUsage). 조회에 실패하면 0 으로 두고 진행한다 — 이 상한
  * 때문에 수집이 멈추는 것이 실패보다 나쁘기 때문이다.
  */
-const COUPANG_DAY_BUDGET = Number(process.env.COUPANG_DAY_BUDGET) || 2200;
+/*
+ * ★ 2,200 → 2,800 (2026-09-08 감사). 근거는 «한계수익이 아직 안 꺾였다» 는 실측이다.
+ *
+ *   일별 실측 (coupang_api_calls × price_history, 읽기 전용 조회):
+ *     KST 09-03   호출 2,128 → 쿠팡 1,369/1,648 (83.1%)
+ *     KST 09-06   호출 2,200 ← 상한 소진 → 1,379 (83.7%)
+ *     KST 09-07   호출 2,200 ← 상한 소진 → 1,346 (81.7%)
+ *   즉 좋은 날의 천장을 만든 것은 시간도 검색 품질도 아니고 이 상수였다.
+ *
+ *   그리고 호출을 더 해도 수익이 떨어지지 않는다. 같은 날 회수 패스의
+ *   100호출 구간별 회수량(2026-09-08 실행 로그 34161068885·34164621465 에서 계산):
+ *     1-100  0.40/호출   151-250  0.64   301-400  0.62   401-500  0.64
+ *   887회까지 평평하다. 포화 곡선이 아니라 직선이라, 상한을 올린 만큼
+ *   그대로 회수로 돌아온다 (실측 기울기 0.6개/호출).
+ *
+ *   2,800 인 근거: 남은 미수집 중 «도달 가능이 증명된» 상품(최근 14일 안에
+ *   최소 한 번 수집된 적 있는 상품)을 0.6개/호출로 덮는 데 필요한 양이
+ *   +600회다. 그 위로는 구조적 불가 87개(14일간 전무 = 색인 이탈/판매 종료)
+ *   뿐이라 호출을 더 줘도 살 것이 없다. "쓸 수 있는 만큼" 이 아니라
+ *   "살 것이 남아 있는 만큼" 이다.
+ *
+ * ★ 분당 호출 속도는 한 자리도 바뀌지 않는다. 세 겹 그대로다 —
+ *   COUPANG_MIN_GAP_MS(6초, 분당 10회) / _coupang.MAX_PER_MIN(전역 분당 20회)
+ *   / 쿠팡 공식 한도(검색 50회/분). 이 값은 하루 총량의 천장일 뿐이고,
+ *   scripts/test-second-pass.js 가 간격 6000ms 를 소스에서 그대로 고정한다.
+ */
+const COUPANG_DAY_BUDGET = Number(process.env.COUPANG_DAY_BUDGET) || 2800;
 
 /** ADPICK 도 같은 안전판. ADPICK 수집 대상 712개 / 검색어 75종(2026-09-03 실측)이라
  *  이 값을 넘길 일이 당분간 없지만, 폭주 방지용으로 똑같이 둔다. */
@@ -300,6 +326,29 @@ const CACHE_HINT_ENABLED = process.env.PRICE_CACHE_HINT !== '0';
 const CACHE_HINT_MAX_PER_PRODUCT = Number(process.env.PRICE_CACHE_HINT_MAX) || 3;
 
 /*
+ * ── 일시적 차단을 기다리는 규칙 (2026-09-08) ─────────────────────────
+ *
+ * runMallCollection 의 waitOutTemporaryBlock 주석에 근거가 있다. 여기서는
+ * 두 숫자의 뜻만 적는다.
+ *
+ *   RECOVERY_BLOCK_WAIT_MS    한 번에 쉬는 시간.
+ *     30초인 이유: 가장 흔한 차단이 api/_adpick.js 의 네트워크 서킷 2분이다.
+ *     30초씩 끊어 자면 최대 4회 만에 풀리고, 그동안 deadline 검사도 30초마다
+ *     한 번씩 지나간다. 더 길게 자면 «이미 풀렸는데 자고 있는» 시간이 늘고,
+ *     더 짧게 자면 풀리지도 않은 차단을 헛되이 두드린다(호출은 안 나가지만
+ *     연속 카운터만 빨리 찬다).
+ *
+ *   RECOVERY_BLOCK_MAX_WAITS  연속 몇 번까지 기다릴지. 6회 = 최대 3분.
+ *     2분짜리 네트워크 차단은 넉넉히 덮고, 15분(HTTP 429)·60분(403·401)짜리
+ *     진짜 차단은 3분 만에 포기해 예전과 같이 실행을 끝낸다. 즉 이 값은
+ *     "짧은 딸꾹질과 진짜 차단을 가르는 선" 이다.
+ *
+ * ★ 이 값들은 호출 속도와 무관하다. 기다리는 동안 호출은 0회다.
+ */
+const RECOVERY_BLOCK_WAIT_MS   = Number(process.env.PRICE_RECOVERY_BLOCK_WAIT_MS) || 30 * 1000;
+const RECOVERY_BLOCK_MAX_WAITS = Number(process.env.PRICE_RECOVERY_BLOCK_MAX_WAITS) || 6;
+
+/*
  * ── 옵션 게이트 "확정" 임계값 (P1, 2026-09-06) ──────────────────
  *
  * 우리 옵션이 없는 응답을 **몇 번 연속으로** 봐야 "오늘은 이 상품의 옵션을
@@ -373,11 +422,55 @@ const RUN_TIME_BUDGET_MS = Number(process.env.PRICE_RUN_BUDGET_MS) || 50 * 60 * 
  *   달라지는 것은 "쓰지도 않을 시간을 붙잡고 있는가" 뿐이다.
  */
 const ADPICK_RESERVE_MS = Number(process.env.PRICE_ADPICK_RESERVE_MS) || 8 * 60 * 1000;
+
+/*
+ * ── 1차가 끝난 «이후» 실행의 배분 (2026-09-08 감사) ──────────────────
+ *
+ * ★ 위 8분은 «1차 패스가 아직 남은 실행» 에 맞춘 값이고, 그 자리에서는 옳다.
+ *   쿠팡 1차는 검색어 411종 = 411호출이 필요하고 42분(420회)에 겨우 들어간다.
+ *   여기를 줄이면 1차가 다음 실행으로 밀린다 — 1차는 호출당 1.65개를 내는
+ *   가장 좋은 패스라 미룰 이유가 없다.
+ *
+ * ★ 그런데 하루의 두 번째 이후 실행은 사정이 정반대다. 그때 쿠팡은 회수
+ *   패스만 도는데, 그 «꼬리» 의 생산성이 ADPICK 보다 한참 낮다.
+ *
+ *   실측 (KST 2026-09-08, gh run 34169333695 — 그날 네 번째 실행):
+ *     쿠팡    42분 / 418호출 → 회수  25개  =  0.60 개/분
+ *     ADPICK   8분 /  47호출 → 회수  30개  =  3.75 개/분
+ *   같은 1분을 ADPICK 에 주는 것이 6.3배 낫다. 같은 실행에서 ADPICK 은
+ *   8분을 다 쓰고도 회수 검색어 1,356종과 미수집 242개를 남긴 채 끝났다.
+ *
+ *   왜 이렇게 갈리는가: 쿠팡의 좋은 후보(캐시 힌트)는 하루 안에 마른다
+ *     힌트 후보  run2 1,211종 → run3 494종 → run4 12종
+ *   마르고 나면 남는 것은 facet(0.05/호출)과 사다리(0.02~0.08/호출)뿐이다.
+ *   반면 ADPICK 은 후보가 남아돌고 응답 하나가 최대 20건을 실어 온다.
+ *
+ * ★ 그래서 «1차가 끝난 실행» 에서만 ADPICK 몫을 20분으로 늘린다.
+ *   쿠팡은 30분(=300호출)을 받는다. 잃는 것은 꼬리 120호출 ≈ 7개,
+ *   얻는 것은 ADPICK 12분 ≈ 45개다.
+ *
+ * ★ 이 변경은 외부 호출을 «늘리지 않는다». 오히려 쿠팡 호출이 실행당
+ *   420 → 300 으로 줄어든다. 호출 간격(쿠팡 6초 / ADPICK 1.5초)도, 전역
+ *   분당 상한도, 하루 상한도 한 자리 그대로다. 바뀌는 것은 같은 50분을
+ *   어느 쪽에 쓰는가 하나뿐이다.
+ */
+/* 한 줄로 둔다 — test-second-pass 의 상수 파서가 줄 단위로 숫자를 읽는다. */
+const ADPICK_RESERVE_LATE_MS = Number(process.env.PRICE_ADPICK_RESERVE_LATE_MS) || 20 * 60 * 1000;
+
+/**
+ * 이 실행의 ADPICK 몫을 정한다.
+ * @param {boolean} coupangPass1Done 쿠팡 1차 패스가 오늘 이미 끝났는가
+ */
+function adpickReserveMs(coupangPass1Done) {
+  return coupangPass1Done ? ADPICK_RESERVE_LATE_MS : ADPICK_RESERVE_MS;
+}
+
 /** 쿠팡 몫 — 전체에서 ADPICK 예약분을 뺀 나머지. 최소한 절반은 보장한다. */
-const COUPANG_BUDGET_MS = Math.max(
-  RUN_TIME_BUDGET_MS - ADPICK_RESERVE_MS,
-  Math.floor(RUN_TIME_BUDGET_MS / 2)
-);
+function coupangBudgetMs(reserveMs) {
+  return Math.max(RUN_TIME_BUDGET_MS - reserveMs, Math.floor(RUN_TIME_BUDGET_MS / 2));
+}
+/** 1차가 남은 실행의 쿠팡 몫 (기존 상수 — 테스트가 소스에서 이 관계를 읽는다). */
+const COUPANG_BUDGET_MS = coupangBudgetMs(ADPICK_RESERVE_MS);
 
 /*
  * 한국시간(Asia/Seoul) 기준 오늘 날짜는 api/_price.kstToday 하나만 쓴다.
@@ -634,7 +727,41 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
 }
 
 // ─── 몰별 API 호출 상태 (ADPICK) ───────────────────────────
-let _adpickBlocked = false;
+/*
+ * ── ADPICK 차단 표시 (2026-09-08 감사에서 «영구 래치» 를 버렸다) ──────
+ *
+ * ★ 무엇이 잘못돼 있었나 — 2분짜리 차단이 8분짜리 예산을 통째로 죽였다.
+ *
+ *   ADPICK 은 간헐적으로 15초 타임아웃을 낸다(만성적이다 — 09-06·09-07·09-08
+ *   실행 로그에 모두 있다). 3연속이면 api/_adpick.js 의 서킷 브레이커가
+ *   «2분» 열린다 (noteTransientFailure → COOLDOWN_MIN.network = 2).
+ *
+ *   그런데 여기서는 그 한 번을 _adpickBlocked = true 로 받아 **이번 실행이
+ *   끝날 때까지 영원히** ADPICK 호출을 막았다. 모듈이 2분 뒤 스스로 풀어도
+ *   이 플래그가 남아 있어 아무도 다시 부르지 않았다.
+ *
+ *   실측 (gh run 34164621465, 2026-09-07T21:51Z 실행):
+ *     ADPICK 몫 8분(ADPICK_RESERVE_MS) 중 실제로 쓴 시간 **70초**.
+ *     22:33:39 시작 → facet 4회(그중 3회 타임아웃) → 22:34:49 종료.
+ *     사다리 r1..r10 은 0회. 6.8분과 회수 검색어 1,564종을 통째로 버렸다.
+ *     그날 ADPICK 미수집 242개 중 223개가 그 회수 패스를 기다리는 상품이었다.
+ *
+ * ★ 그래서 «지금 차단인가» 의 판정은 api/_adpick.js 의 시각 기반 상태
+ *   (isAdpickBlockedGlobal) 하나에만 맡긴다. 그쪽이 사유별로 정확한 시간을
+ *   안다 — 네트워크 2분 / HTTP 429 15분 / 403·401 60분 (COOLDOWN_MIN).
+ *   즉 «진짜 심각한 차단» 은 여전히 실행 전체를 덮고(60분 > 실행 50분),
+ *   짧은 네트워크 딸꾹질만 2분 만에 회복된다.
+ *
+ * ★ 아래 두 값은 이제 «부를까 말까» 의 판정에 쓰지 않는다. 로그를 한 번만
+ *   찍기 위한 표시이자 리포트용 기록이다 — "이번 실행에서 차단을 본 적이
+ *   있는가" 는 콘솔 요약과 메일이 계속 알아야 한다.
+ *
+ * ★ 분당 호출 속도는 한 자리도 바뀌지 않는다. 늘어나는 것은 «차단이 풀린
+ *   뒤에도 부르지 않고 놀던 시간» 뿐이고, 그 시간에도 간격(ADPICK_MIN_GAP_MS
+ *   1.5초)·전역 분당 상한(20)·실행당 예산(ADPICK_RUN_BUDGET 400)이 그대로
+ *   적용된다. 우회하는 경로를 새로 만들지 않았다.
+ */
+let _adpickBlocked = false;   // 이번 실행에서 차단을 본 적이 있는가 (리포트 전용)
 let _adpickBlockMsg = '';
 let _adpickCalls = 0;
 let _adpickSkipped = 0;
@@ -649,7 +776,13 @@ let _adpickBudgetWarned = false;
  */
 async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
   if (!adpickHasKey()) return { ok: false, items: [], reason: 'ADPICK 키 미설정' };
-  if (_adpickBlocked || isAdpickBlockedGlobal()) return { ok: false, items: [], reason: 'ADPICK 차단 상태' };
+  /*
+   * ★ 판정은 시각 기반 상태 하나로만 한다 (위 _adpickBlocked 주석 참고).
+   *   차단이 풀리면 같은 실행 안에서도 다시 부른다. _adpickBlocked 를 이
+   *   조건에서 빼는 것이 이 수정의 전부다 — 간격도, 분당 상한도, 실행당
+   *   예산도, 서킷 브레이커 자체도 한 줄 그대로다.
+   */
+  if (isAdpickBlockedGlobal()) return { ok: false, items: [], reason: 'ADPICK 차단 상태' };
 
   if (_adpickCalls >= ADPICK_RUN_BUDGET) {
     _adpickSkipped++;
@@ -670,17 +803,27 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
   if (r.from === 'api') _adpickCalls++;
   else if (r.from === 'none') _adpickSkipped++;
 
-  // 쿠팡과 같은 이유 — 오래된 캐시를 "오늘 가격"으로 기록하지 않는다.
-  if (r.from === 'stale-cache') {
-    _adpickSkipped++;
-    return { ok: false, items: [], reason: '오래된 캐시 — 오늘 가격으로 쓸 수 없음' };
-  }
-
+  /*
+   * ★ 차단 기록을 stale-cache 판정 «앞» 으로 옮겼다 (2026-09-08 감사).
+   *
+   *   예전에는 stale-cache 가 먼저 return 해서, 차단 응답에 오래된 캐시가
+   *   딸려 오면 차단을 기록조차 하지 않았다. 실측(gh run 34156285636)에서
+   *   실제로 이 경로를 탔다 — 서킷이 열리던 순간의 응답이 전부 STALE-CACHE
+   *   였고, 리포트에는 아무 일도 없었던 것처럼 남았다. 지금은 사유가
+   *   무엇이든 «차단을 봤다» 는 사실이 먼저 기록된다.
+   */
   if (r.blocked && !_adpickBlocked) {
     _adpickBlocked = true;
     _adpickBlockMsg = r.error || '차단';
     console.error(`\n⚠️  ADPICK API 차단/오류 감지: ${_adpickBlockMsg}`);
-    console.error('    → 이번 실행에서는 ADPICK 호출을 멈춥니다. (쿠팡 수집은 계속됩니다)\n');
+    console.error('    → 차단이 풀릴 때까지만 멈춥니다 (사유별 시간은 api/_adpick.js COOLDOWN_MIN).'
+      + ' 쿠팡 수집은 영향받지 않습니다.\n');
+  }
+
+  // 쿠팡과 같은 이유 — 오래된 캐시를 "오늘 가격"으로 기록하지 않는다.
+  if (r.from === 'stale-cache') {
+    _adpickSkipped++;
+    return { ok: false, items: [], reason: '오래된 캐시 — 오늘 가격으로 쓸 수 없음' };
   }
   if (r.blocked) return { ok: false, items: [], reason: `ADPICK 차단: ${String(r.error || '').slice(0, 60)}` };
 
@@ -1156,6 +1299,21 @@ function categorizeFailure(reason) {
  *   recordPricesFn  (observations, opts) => Promise<{saved, recorded, recordedKeys, ...}>
  *              저장 경로. 기본값은 api/_shop.js 의 recordPrices 다.
  *
+ *   isBlockedFn  () => boolean — 공급자가 «지금 차단 중인가» 를 시각 기준으로
+ *              답하는 함수. 넘기면 회수 패스가 차단을 만나 멈춘 뒤, 차단이
+ *              풀리는 것을 보고 남은 시간을 이어서 쓴다(resumeWhenUnblocked).
+ *
+ *              ★ 기본값이 null 인 것이 중요하다. 이 값이 없으면 «풀렸는지
+ *                알 수 없다» 는 뜻이고, 그때는 예전과 똑같이 영구 중단으로
+ *                남는다. 모르면서 재개하는 것이 가장 위험하다 —
+ *                2026-08-31 의 ADPICK 429 사고가 정확히 그 모양이었다.
+ *                그래서 fetchAllFn 만 스텁으로 주는 테스트는 동작이 그대로다.
+ *
+ *              ★ 지금은 ADPICK 에만 넘긴다. 쿠팡의 차단 신호(403 Access
+ *                denied 등)는 성질이 훨씬 무겁고, 이 스크립트가 과거에 쿠팡
+ *                이용제한 경고의 주범이었다(파일 머리 주석). 근거 없이
+ *                재개를 열지 않는다.
+ *
  *              ★ 왜 주입 가능해야 하는가 (2026-09-03).
  *                이 함수를 테스트가 직접 부를 때, 픽스처 상품이 fetchAllFn 응답에
  *                섞이면 그대로 **운영 price_history / products 에 기록된다.**
@@ -1167,7 +1325,8 @@ function categorizeFailure(reason) {
 async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadlineTs,
                                    collectedTodayFn = collectedTodayKeys,
                                    recordPricesFn = recordPrices,
-                                   cacheHintFn = cacheHintQueries }) {
+                                   cacheHintFn = cacheHintQueries,
+                                   isBlockedFn = null }) {
   const withKeyword = rows.filter(p => p.keyword);
   const noKeyword   = rows.filter(p => !p.keyword);
 
@@ -1930,6 +2089,13 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   let recoveryHalted = false;
   const secondPassTried = [];
   let facetCalls = 0, facetRecovered = 0;
+  /*
+   * 캐시 힌트 패스의 호출 수. 블록 밖에서 선언하는 이유는 회수 합계 로그와
+   * secondPassCalls 합산이 이 값을 읽어야 하기 때문이다.
+   * 회수 하위 상한(SECOND_PASS_MAX_CALLS)에 이 값을 넣지 «않는» 근거는
+   * canCall() 주석에 실측과 함께 적어 두었다.
+   */
+  let hintCalls = 0;
 
   if (SECOND_PASS_ENABLED && !stoppedEarly) {
     const attemptedNow = [...retryGroups, ...attemptedGroups].flatMap(g => g.rows);
@@ -1953,9 +2119,114 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       return !failedKeywords.has(kw);
     };
 
-    /** 예산·시간이 남았는가. rate limit 은 fetchAllFn 이 지킨다. */
+    /*
+     * 예산·시간이 남았는가. rate limit 은 fetchAllFn 이 지킨다.
+     *
+     * ★ hintCalls 는 «일부러» 이 상한에서 뺀다 (2026-09-08 감사).
+     *
+     *   처음엔 이걸 회계 버그로 보고 상한 안에 넣었다. 측정이 그 판단을
+     *   뒤집었다. SECOND_PASS_MAX_CALLS 의 목적은 "1차·facet·사다리 몫을
+     *   남긴다" 인데, 그 몫을 남겨서 돌아오는 것이 거의 없다.
+     *
+     *   같은 날 패스별 실측 회수율 (KST 2026-09-08, 실행 4회):
+     *     hint    0.58~0.61 개/호출   ← 캐시가 실제로 그 상품을 돌려줬던 문구
+     *     facet   0.05      개/호출   (43회 → 2개)
+     *     사다리 r1 0.08     개/호출   (228회 → 19개)
+     *     사다리 r2 0.02     개/호출   (136회 → 3개)
+     *   자릿수가 다르다. hint 를 420 에서 끊고 그 뒤를 사다리에 넘기면
+     *   호출당 회수가 10분의 1로 떨어진다 — 실측으로 44회를 옮길 때 약 26개를
+     *   잃는다.
+     *
+     *   그리고 hint 는 «스스로 마른다». 후보 수가 실행마다
+     *     run2 1,211종 → run3 494종 → run4 12종
+     *   으로 줄어, 마르는 순간 남은 예산이 자동으로 facet·사다리로 간다
+     *   (run4 가 정확히 그렇게 돌았다). 즉 이 상한이 하던 일을 후보 고갈이
+     *   이미 하고 있고, 상한은 «잘 듣는 패스를 일찍 끊는» 역할만 한다.
+     *
+     * ★ 그래서 hint 는 이 하위 상한 대신 «진짜 벽» 세 개로만 묶는다. 셋 다
+     *   우회 불가능한 자리에 있다.
+     *     · deadlineTs            — 바로 아래 줄
+     *     · COUPANG_RUN_BUDGET    — fetchCoupangAll 안, 캐시 적중을 뺀 실호출만 센다
+     *     · COUPANG_DAY_BUDGET    — 같은 함수, 하루 총량
+     *   실측으로 이 셋이 먼저 걸린다: hint 반복 423회일 때 실제 API 는 418회로
+     *   시간 상한(420) 아래였다.
+     *   (scripts/test-second-pass.js §13-A 가 이 관계를 고정한다)
+     */
     const canCall = () => !recoveryHalted
-      && secondPassCalls + facetCalls < SECOND_PASS_MAX_CALLS && Date.now() < deadlineTs;
+      && secondPassCalls + facetCalls < SECOND_PASS_MAX_CALLS
+      && Date.now() < deadlineTs;
+
+    /*
+     * ── 차단이 «풀린 뒤» 를 되찾는다 (2026-09-08) ────────────────────────
+     *
+     * ★ 먼저, 바꾸지 «않는» 것부터.
+     *
+     *   차단을 만나면 즉시 회수 호출을 멈추는 것(recoveryHalted)은 그대로다.
+     *   그건 2026-08-31 에 실제로 난 사고를 막는 장치다 — ADPICK 1차가 서킷
+     *   브레이커로 전부 막힌 상태에서 2차가 120회를 더 태웠고, 회수는 0이었고,
+     *   그 호출이 일일 쿼터를 갉아먹어 HTTP 429 까지 갔다. 막힌 API 를 계속
+     *   두드리는 것은 낭비일 뿐 아니라 유해하다.
+     *   (scripts/test-second-pass.js §5·§8 이 이 성질을 고정한다)
+     *
+     * ★ 그런데 «멈춘 뒤 영원히 안 돌아오는 것» 은 그 사고와 아무 상관이 없다.
+     *
+     *   ADPICK 의 흔한 차단은 15초 타임아웃 3연속으로 열리는 **2분**짜리다
+     *   (api/_adpick.js COOLDOWN_MIN.network). 모듈은 2분 뒤 스스로 푼다.
+     *   그런데 이 함수의 recoveryHalted 는 실행이 끝날 때까지 남았다.
+     *
+     *   실측 (gh run 34164621465, 2026-09-07T21:51Z):
+     *     ADPICK 몫 8분 중 실제로 쓴 시간 70초. 남은 6.8분과 회수 검색어
+     *     1,564종을 2분짜리 차단 하나 때문에 통째로 버렸다.
+     *
+     * ★ 그래서 «공급자가 풀렸다고 말할 때만» 재개한다.
+     *
+     *   판단 근거는 추측이 아니라 공급자 모듈의 시각 기반 상태(isBlockedFn)다.
+     *   그 함수를 넘겨받지 못하면(=풀렸는지 알 길이 없으면) 예전과 똑같이
+     *   영구 중단으로 남는다. 모르면 보수적으로 — 이게 기본값이다.
+     *   그래서 fetchAllFn 만 스텁으로 넣는 테스트의 동작은 한 줄도 안 바뀐다.
+     *
+     * ★ 기다리는 동안 호출은 0회다. 무한 재시도가 아니고 네 겹으로 막혀 있다.
+     *     · 공급자가 «아직 차단» 이라고 말하는 동안에만 잔다
+     *     · 총 대기가 RECOVERY_BLOCK_MAX_WAITS × WAIT_MS(=3분)를 넘으면
+     *       영구 중단으로 승격한다 — 15분(429)·60분(403) 짜리 진짜 차단은
+     *       여기서 걸려 예전과 똑같이 실행의 회수 패스를 끝낸다
+     *     · 대기는 deadlineTs 를 넘지 않는다
+     *     · 호출 상한(SECOND_PASS_MAX_CALLS)·예산 검사는 그대로다
+     *
+     * ★ 분당 호출 속도는 한 자리도 바뀌지 않는다. 재개한 뒤에도 간격·전역
+     *   분당 상한·서킷 브레이커가 그대로 정한다. 이 블록이 되찾는 것은
+     *   «불러도 되는데 부르지 않고 놀던 시간» 하나뿐이다.
+     */
+    const HALT_PERMANENT = ['budget', 'noKeys'];
+    const HALT_TEMPORARY = ['blocked', 'rateLimit'];
+    let blockWaitedMs = 0;
+
+    /**
+     * 차단이 풀릴 때까지만 기다렸다가 회수 패스를 재개한다.
+     * 공급자 상태를 알 수 없으면(isBlockedFn 미주입) 아무것도 하지 않는다 —
+     * 그 경우 recoveryHalted 가 그대로 남아 예전처럼 실행이 끝난다.
+     */
+    async function resumeWhenUnblocked() {
+      if (typeof isBlockedFn !== 'function') return;
+      const maxWaitMs = RECOVERY_BLOCK_MAX_WAITS * RECOVERY_BLOCK_WAIT_MS;
+      while (isBlockedFn()) {
+        if (blockWaitedMs >= maxWaitMs) {
+          console.warn(`  [${mallName}] 차단이 ${Math.round(maxWaitMs / 1000)}초를 넘겨 계속됩니다`
+            + ' — 짧은 딸꾹질이 아니라고 보고 이번 실행의 회수 패스를 마칩니다.');
+          return;                       // recoveryHalted 를 그대로 둔 채 끝낸다
+        }
+        const room = deadlineTs - Date.now();
+        if (room <= 0) return;
+        const nap = Math.min(RECOVERY_BLOCK_WAIT_MS, room);
+        await sleep(nap);
+        blockWaitedMs += nap;
+      }
+      // 공급자가 «풀렸다» 고 말했다 — 남은 시간과 예산이 있으면 이어서 부른다.
+      if (Date.now() >= deadlineTs) return;
+      recoveryHalted = false;
+      console.log(`  [${mallName}] 차단이 풀렸습니다 (누적 대기 ${Math.round(blockWaitedMs / 1000)}초)`
+        + ' — 회수 패스를 이어갑니다.');
+    }
 
     /**
      * 검색어 하나를 부르고 product_id 완전 일치만 채택한다.
@@ -1982,8 +2253,17 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       if (!r.ok) {
         recoveryFailed = true;
         const category = categorizeFailure(r.reason);
-        if (['blocked', 'budget', 'noKeys', 'rateLimit'].includes(category)) recoveryHalted = true;
         notePass(pass, { ok: false, hit: 0 }); noteAttemptFailure(r.reason);
+        /*
+         * ★ 중단 자체는 예전과 똑같다 — 사유가 무엇이든 여기서 즉시 멈춘다.
+         *   달라지는 것은 그다음뿐이다: 시간이 지나면 풀리는 사유에 한해,
+         *   공급자가 «풀렸다» 고 말하면 남은 시간을 이어서 쓴다
+         *   (resumeWhenUnblocked 주석 참고).
+         */
+        if (HALT_PERMANENT.indexOf(category) > -1 || HALT_TEMPORARY.indexOf(category) > -1) {
+          recoveryHalted = true;
+        }
+        if (HALT_TEMPORARY.indexOf(category) > -1) await resumeWhenUnblocked();
         return { ok: false, items: -1, hit: 0 };
       }
 
@@ -2036,7 +2316,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       });
       if (byQuery.size) {
         console.log(`── [${mallName}] 캐시 힌트 패스: 상품 ${hints.size}개 / 검색어 ${byQuery.size}종 ──`);
-        let hintCalls = 0, hintHit = 0;
+        // ★ hintCalls 는 바깥 변수다 (선언부 주석 참고) — canCall() 이 매
+        //   반복마다 이 값을 보고 회수 상한을 지킨다.
+        let hintHit = 0;
         for (const [q, pids] of byQuery) {
           if (!canCall()) break;
           // 앞선 호출이 이미 잡았거나, 옵션 게이트가 확정 실패를 낸 상품은 뺀다 (P1).
@@ -2050,7 +2332,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
           if (res.hit) console.log(`  [${mallName}] [hint] "${q}" +${res.hit}`);
         }
         console.log(`  [${mallName}] 캐시 힌트 완료 — 호출 ${hintCalls}회, 회수 ${hintHit}개`);
-        secondPassCalls += hintCalls;
+        /*
+         * ★ 여기서 secondPassCalls 에 더하지 않는다. 더하면 canCall() 이
+         *   hintCalls 를 두 번 세게 되어(바깥 변수 + 합산분) 회수 상한이
+         *   실제의 절반으로 줄어든다. 합산은 facet 과 똑같이 패스가 전부
+         *   끝난 뒤 한 번만 한다 (아래 secondPassCalls += facetCalls + hintCalls).
+         */
         secondPassRecovered += hintHit;
       }
     }
@@ -2267,13 +2554,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       totalRecorded += s.recorded; totalSaved += s.saved;
       totalRejected += s.rejected; totalSuspect += s.suspect;
     }
-    if (secondPassCalls || facetCalls) {
-      console.log(`  [${mallName}] 회수 패스 합계 — 호출 ${secondPassCalls + facetCalls}회`
-        + ` (facet ${facetCalls}), 회수 ${secondPassRecovered + facetRecovered}개,`
+    if (secondPassCalls || facetCalls || hintCalls) {
+      console.log(`  [${mallName}] 회수 패스 합계 — 호출 ${secondPassCalls + facetCalls + hintCalls}회`
+        + ` (hint ${hintCalls} / facet ${facetCalls}), 회수 ${secondPassRecovered + facetRecovered}개,`
         + ` 남은 검색어 ${secondPassRemaining}종`);
     }
     secondPassRecovered += facetRecovered;
-    secondPassCalls += facetCalls;
+    // 합산은 여기 한 번뿐이다 (캐시 힌트 블록의 주석 참고).
+    secondPassCalls += facetCalls + hintCalls;
     facetDryOut = [...facetDry];
   }
 
@@ -2564,16 +2852,39 @@ async function runLocked(state, lockToken) {
 
   const started = Date.now();
 
-  // ── 쿠팡 먼저 — 자기 몫(절반)이 다 되면 남은 시간을 ADPICK 에게 넘긴다.
+  /*
+   * ★ 쿠팡 1차가 오늘 이미 끝났는가 — 시간 배분의 유일한 판단 근거다
+   *   (adpickReserveMs 주석의 실측 참고). 저장된 진행 상태만 보고 정하므로
+   *   추가 조회도, API 호출도 없다.
+   *
+   *   커서가 계획 끝에 닿으면 processed 가 total 에 이른다. total 이 0 이면
+   *   («아직 아무것도 안 돌았다») 1차가 끝났다고 볼 수 없으므로 제외한다.
+   */
+  const coupangPass1Done = !!(coupangSaved && coupangSaved.job_date === TODAY
+    && Number(coupangSaved.total) > 0
+    && Number(coupangSaved.processed) >= Number(coupangSaved.total));
+  const adpickReserve = adpickReserveMs(coupangPass1Done);
+  const coupangShare = coupangBudgetMs(adpickReserve);
+  console.log(`시간 배분: 쿠팡 ${Math.round(coupangShare / 60000)}분`
+    + ` / ADPICK ${Math.round(adpickReserve / 60000)}분`
+    + `  (쿠팡 1차 ${coupangPass1Done ? '완료 — ADPICK 에 더 준다' : '진행 중 — 쿠팡 몫을 지킨다'})`);
+
+  // ── 쿠팡 먼저 — 자기 몫이 다 되면 남은 시간을 ADPICK 에게 넘긴다.
   const coupangResult = await runMallCollection({
     mallName: '쿠팡', rows: coupangRows, fetchAllFn: fetchCoupangAll,
-    savedState: coupangSaved, deadlineTs: started + COUPANG_BUDGET_MS
+    savedState: coupangSaved, deadlineTs: started + coupangShare
   });
 
   // ── ADPICK — 쿠팡이 일찍 끝났으면 남은 시간을 전부 받는다(최소 절반 보장).
   const adpickResult = await runMallCollection({
     mallName: 'ADPICK', rows: adpickRows, fetchAllFn: fetchAdpickAll,
-    savedState: adpickSaved, deadlineTs: started + RUN_TIME_BUDGET_MS
+    savedState: adpickSaved, deadlineTs: started + RUN_TIME_BUDGET_MS,
+    /*
+     * ★ ADPICK 에만 넘긴다 (isBlockedFn 문서 참고). 흔한 차단이 15초 타임아웃
+     *   3연속으로 열리는 2분짜리라, 그것 하나로 8분 예산을 통째로 버리는 일이
+     *   매 실행 벌어지고 있었다. 쿠팡에는 넘기지 않는다.
+     */
+    isBlockedFn: isAdpickBlockedGlobal
   });
 
   // ── 콘솔 리포트 (몰별 트리) ──────────────────────────────

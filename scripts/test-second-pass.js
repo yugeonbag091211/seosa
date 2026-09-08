@@ -1398,6 +1398,238 @@ function probeChild(envLines) {
   }
   console.log('');
 
+  /* ==============================================================
+   *  §13  2026-09-08 감사 — 회수 예산 회계와 «차단이 풀린 뒤»
+   *
+   *  두 가지를 고정한다.
+   *
+   *   (A) 캐시 힌트 패스는 회수 하위 상한(SECOND_PASS_MAX_CALLS)이 아니라
+   *       «진짜 벽»(deadline · 실행 예산)으로만 묶인다 — 그리고 그것이 옳다.
+   *
+   *       처음엔 이걸 회계 버그로 보고 상한 안에 넣었다가, 측정이 판단을
+   *       뒤집었다. 같은 날(KST 2026-09-08) 패스별 실측 회수율:
+   *         hint 0.58~0.61 / facet 0.05 / 사다리 r1 0.08 / r2 0.02 (개/호출)
+   *       상한으로 hint 를 끊고 그 뒤를 사다리에 넘기면 호출당 회수가
+   *       10분의 1로 떨어진다. 게다가 hint 후보는 스스로 마른다
+   *       (run2 1,211종 → run3 494종 → run4 12종) — 상한이 하려던 일을
+   *       후보 고갈이 이미 하고 있다.
+   *       여기서 고정하는 것은 «그럼에도 무한하지는 않다» 는 것이다.
+   *
+   *   (B) 차단을 만나면 «즉시 멈추는 것» 은 그대로 두고, 공급자가 풀렸다고
+   *       말할 때만 남은 시간을 이어 쓴다.
+   *       ★ isBlockedFn 을 넘기지 않으면 예전 그대로 영구 중단이어야 한다.
+   *         모르면서 재개하는 것이 2026-08-31 ADPICK 429 사고의 모양이다.
+   * ============================================================== */
+  section('§13  회수 예산 회계 · 차단 해제 후 재개 (2026-09-08)');
+  {
+    /* (A) 힌트 호출이 상한에 포함된다 ------------------------------- */
+    process.env.PRICE_SECOND_PASS_MAX_CALLS = '3';
+    delete process.env.PRICE_CACHE_HINT;               // 힌트 패스를 켠다
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const modA = require('./collect-all-prices');
+
+    const rowsA = ['H1', 'H2', 'H3', 'H4', 'H5'].map(id => prod(id, '힌트 대상 ' + id, 'grpA'));
+    // 상품마다 서로 다른 옛 검색어를 하나씩 → 힌트 검색어 5종
+    const HINTS = async (want) => {
+      const m = new Map();
+      [...want].forEach(pid => m.set(pid, ['옛검색어-' + pid]));
+      return m;
+    };
+    let hintCallCount = 0, otherRecoveryCalls = 0;
+    const countingFetchA = async (kw) => {
+      if (kw === 'grpA') return { ok: true, reason: '', items: [], allItems: [] };   // 1차는 빈손
+      if (String(kw).startsWith('옛검색어-')) hintCallCount++; else otherRecoveryCalls++;
+      return { ok: true, reason: '', items: [], allItems: [] };
+    };
+
+    const rA = await modA.runMallCollection({
+      recordPricesFn: NO_WRITE, mallName: '쿠팡', rows: rowsA, savedState: null,
+      deadlineTs: FAR(), cacheHintFn: HINTS, fetchAllFn: countingFetchA
+    });
+    check(hintCallCount === 5,
+      '★★ [A] 힌트는 회수 하위 상한(=3)에 묶이지 않는다 — 후보 5종을 다 쓴다'
+      + ' (측정상 hint 가 사다리보다 호출당 10배 회수한다)', hintCallCount);
+    check(rA.secondPassCalls === hintCallCount + otherRecoveryCalls,
+      '★★ [A] 그래도 secondPassCalls 에는 정확히 한 번만 합산된다 (이중 계산 없음)',
+      { secondPassCalls: rA.secondPassCalls, hintCallCount, otherRecoveryCalls });
+
+    /* deadline 은 hint 도 그대로 막는다 — «묶이지 않는다» 가 «무한» 은 아니다 */
+    hintCallCount = 0; otherRecoveryCalls = 0;
+    await modA.runMallCollection({
+      recordPricesFn: NO_WRITE, mallName: '쿠팡', rows: rowsA, savedState: null,
+      deadlineTs: Date.now() - 1000, cacheHintFn: HINTS, fetchAllFn: countingFetchA
+    });
+    check(hintCallCount === 0,
+      '★★ [A] 시간 예산이 끝났으면 힌트 호출도 나가지 않는다 (진짜 벽은 deadline)',
+      hintCallCount);
+
+    /* (B-1) isBlockedFn 이 없으면 예전 그대로 영구 중단 --------------- */
+    process.env.PRICE_SECOND_PASS_MAX_CALLS = '50';
+    process.env.PRICE_CACHE_HINT = '0';
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const modB = require('./collect-all-prices');
+
+    const rowsB = ['B1', 'B2', 'B3', 'B4'].map(id => prod(id, '차단 대상 ' + id + ' 노트북 가방', 'grpB'));
+    let callsNoFn = 0;
+    await modB.runMallCollection({
+      recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: '쿠팡', rows: rowsB, savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async (kw) => {
+        callsNoFn++;
+        return kw === 'grpB'
+          ? { ok: true, reason: '', items: [], allItems: [] }
+          : { ok: false, reason: '쿠팡 차단: blocked', items: [] };
+      }
+      // isBlockedFn 을 일부러 넘기지 않는다
+    });
+    check(callsNoFn === 2,
+      '★★ [B-1] isBlockedFn 이 없으면 차단 뒤 회수 호출을 더 쏘지 않는다 (예전 동작 그대로)',
+      callsNoFn);
+
+    /* (B-2) 공급자가 «풀렸다» 고 하면 남은 시간을 이어 쓴다 ------------ */
+    process.env.PRICE_RECOVERY_BLOCK_WAIT_MS = '5';   // 테스트가 자지 않게
+    process.env.PRICE_RECOVERY_BLOCK_MAX_WAITS = '6';
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const modC = require('./collect-all-prices');
+
+    let blocked = true;
+    let callsWithFn = 0, blockedResponses = 0;
+    await modC.runMallCollection({
+      recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: 'ADPICK', rows: rowsB.map(p => ({ ...p, mall: 'ADPICK', vendor_item_id: '' })),
+      savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async (kw) => {
+        callsWithFn++;
+        if (kw === 'grpB') return { ok: true, reason: '', items: [], allItems: [] };
+        if (blocked) { blockedResponses++; return { ok: false, reason: 'ADPICK 차단 상태', items: [] }; }
+        return { ok: true, reason: '', items: [], allItems: [] };
+      },
+      // 첫 조회에서 '아직 차단', 그다음부터 '풀렸다' 고 답한다
+      isBlockedFn: () => { if (!blocked) return false; blocked = false; return true; }
+    });
+    check(callsWithFn > 2,
+      '★★ [B-2] 차단이 풀리면 같은 실행 안에서 회수 호출을 이어간다',
+      { calls: callsWithFn, blockedResponses });
+
+    /* (B-3) 계속 막혀 있으면 대기 예산 안에서 포기한다 ----------------- */
+    let callsAlways = 0, blockChecks = 0;
+    const t0 = Date.now();
+    await modC.runMallCollection({
+      recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+      mallName: 'ADPICK', rows: rowsB.map(p => ({ ...p, mall: 'ADPICK', vendor_item_id: '' })),
+      savedState: null, deadlineTs: FAR(),
+      fetchAllFn: async (kw) => {
+        callsAlways++;
+        return kw === 'grpB'
+          ? { ok: true, reason: '', items: [], allItems: [] }
+          : { ok: false, reason: 'ADPICK 차단 상태', items: [] };
+      },
+      isBlockedFn: () => { blockChecks++; return true; }   // 영원히 차단
+    });
+    const elapsed = Date.now() - t0;
+    check(callsAlways === 2,
+      '★★ [B-3] 계속 차단이면 회수 호출을 더 쏘지 않는다 (429 쿼터 소모 방지)', callsAlways);
+    check(elapsed < 10000,
+      '★★ [B-3] 대기가 무한하지 않다 — 대기 예산 안에서 끝난다', { elapsedMs: elapsed, blockChecks });
+
+    delete process.env.PRICE_RECOVERY_BLOCK_WAIT_MS;
+    delete process.env.PRICE_RECOVERY_BLOCK_MAX_WAITS;
+    delete process.env.PRICE_SECOND_PASS_MAX_CALLS;
+    delete process.env.PRICE_CACHE_HINT;
+    delete require.cache[require.resolve('./collect-all-prices')];
+
+    /* (C) 하루 상한이 실행당 상한보다 크고, 소스에서 읽힌다 ------------ */
+    const srcNow = require('fs').readFileSync(
+      path.join(__dirname, 'collect-all-prices.js'), 'utf8');
+    const num = (name) => {
+      const i = srcNow.indexOf('const ' + name);
+      const eol = srcNow.indexOf(String.fromCharCode(10), i);
+      const m = srcNow.slice(i, eol).split('//')[0].match(/[0-9]+/g);
+      return m ? Number(m[0]) : -1;
+    };
+    /* (C-2) 몰별 시간 배분 — 1차가 끝난 실행에서만 ADPICK 몫을 늘린다 ---- */
+    const runMin = num('RUN_TIME_BUDGET_MS');
+    const adpEarly = num('ADPICK_RESERVE_MS');
+    const adpLate = num('ADPICK_RESERVE_LATE_MS');
+    check(adpLate > adpEarly,
+      '★★ [C-2] 1차가 끝난 실행의 ADPICK 몫이 더 크다 (실측 6.3배 생산성 차이)',
+      { adpEarly, adpLate });
+    check(adpEarly < runMin / 2 && adpLate < runMin / 2,
+      '★★ [C-2] 어느 배분에서도 ADPICK 몫이 실행 시간의 절반을 넘지 않는다',
+      { adpEarly, adpLate, runMin });
+    /*
+     * ★ 1차가 남은 실행의 쿠팡 몫은 1차 검색어를 다 부를 수 있어야 한다.
+     *   운영 실측 411종이고, 그보다 여유가 있어야 1차가 다음 실행으로
+     *   밀리지 않는다. 1차는 호출당 1.65개로 가장 잘 듣는 패스다.
+     */
+    const coupEarlyCalls = Math.floor((runMin - adpEarly) * 60 / (num('COUPANG_MIN_GAP_MS') / 1000));
+    check(coupEarlyCalls >= 411,
+      '★★ [C-2] 1차가 남은 실행은 쿠팡 검색어 411종을 한 번에 다 부를 수 있다',
+      { coupEarlyCalls });
+    check(/coupangPass1Done \? ADPICK_RESERVE_LATE_MS : ADPICK_RESERVE_MS/.test(srcNow),
+      '★★ [C-2] 배분 판단이 «1차 완료 여부» 하나로만 갈린다 (추가 조회·호출 없음)');
+
+    const dayB = num('COUPANG_DAY_BUDGET'), runB = num('COUPANG_RUN_BUDGET');
+    check(dayB > runB,
+      '★★ [C] 하루 상한이 실행당 상한보다 크다 (실행 여러 번을 전제한다)', { dayB, runB });
+    check(num('COUPANG_MIN_GAP_MS') === 6000,
+      '★★ [C] 하루 상한을 올려도 호출 간격 6초는 그대로다 (분당 속도 불변)',
+      num('COUPANG_MIN_GAP_MS'));
+
+    /* (D) fetchAdpickAll — 차단 래치가 시각 기반이고, stale-cache 가 그것을
+     *     가리지 않는다.
+     *
+     *     실측 근거는 collect-all-prices.js 의 _adpickBlocked 주석에 있다.
+     *     여기서는 api/_adpick.js 를 통째로 가짜로 바꿔, 「차단 → 해제」가
+     *     같은 실행 안에서 실제로 회복되는지를 함수 단위로 확인한다.
+     */
+    /*
+     * gateBlocked      api/_adpick.js 의 시각 기반 상태 (isBlocked)
+     * responseBlocked  그 호출의 응답이 차단을 실어 오는가
+     * 서킷이 «열리는 순간» 은 gate 가 아직 안 닫혔는데 응답만 차단인 상태다.
+     */
+    let gateBlocked = false, responseBlocked = true;
+    let adpickHits = 0;
+    inject('api/_adpick.js', {
+      hasKey: () => true,
+      isBlocked: () => gateBlocked,
+      localStats: () => ({ calls: 0, cacheHits: 0, denied: 0, blocked: gateBlocked, blockReason: '' }),
+      searchAdpick: async () => {
+        adpickHits++;
+        // 차단 응답에 오래된 캐시가 딸려 오는 모양 — 예전에 기록을 가리던 경로
+        return responseBlocked
+          ? { items: [], error: '네트워크 응답 시간 초과', from: 'stale-cache', blocked: true }
+          : { items: [], error: null, from: 'api', blocked: false };
+      }
+    });
+    delete require.cache[require.resolve('./collect-all-prices')];
+    const modD = require('./collect-all-prices');
+
+    // ① 서킷이 열리는 순간 — 호출은 나가고, stale-cache 는 채택되지 않는다
+    const before = adpickHits;
+    const r1 = await modD.fetchAdpickAll('아무거나');
+    check(r1.ok === false && adpickHits === before + 1 && /캐시/.test(r1.reason),
+      '★★ [D] 차단+stale-cache 응답은 채택하지 않는다 (오래된 가격을 오늘 값으로 쓰지 않는다)',
+      { ok: r1.ok, reason: r1.reason, delta: adpickHits - before });
+
+    // ② 서킷이 닫힌 동안에는 호출 자체가 나가지 않는다 (429 쿼터 보호)
+    gateBlocked = true;
+    const during = adpickHits;
+    const r2 = await modD.fetchAdpickAll('아무거나2');
+    check(r2.ok === false && adpickHits === during,
+      '★★ [D] 차단 중에는 외부 호출이 나가지 않는다 (쿼터 보호는 그대로)',
+      { ok: r2.ok, delta: adpickHits - during });
+
+    // ③ 공급자가 풀리면 «같은 실행 안에서» 다시 나간다 — 이번 수정의 전부다
+    gateBlocked = false; responseBlocked = false;
+    const after = adpickHits;
+    const r3 = await modD.fetchAdpickAll('아무거나3');
+    check(r3.ok === true && adpickHits === after + 1,
+      '★★ [D] 차단이 풀리면 같은 실행 안에서 ADPICK 호출이 재개된다 (영구 래치 없음)',
+      { ok: r3.ok, delta: adpickHits - after });
+  }
+  console.log('');
+
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('테스트 실행 오류:', e); process.exit(1); });
