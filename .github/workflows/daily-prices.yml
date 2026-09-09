@@ -118,6 +118,12 @@ jobs:
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
           ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          # ADPICK은 공식 호출 한도가 공개적으로 확인되지 않았고 2026-09-10
+          # 운영에서 약 11회 호출 뒤 HTTP 429가 실측됐다. 수집기는 라이브 검색과
+          # 같은 키를 공유하므로 배치만으로 분당 최대 5회를 넘지 않게 한다.
+          # 12초 간격 + 모듈 자체 5회/분 상한의 이중 방어다.
+          ADPICK_COLLECT_MIN_GAP_MS: '12000'
+          ADPICK_MAX_PER_MIN: '5'
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
         run: |
