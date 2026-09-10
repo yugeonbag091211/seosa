@@ -60,6 +60,21 @@ function wantDeal(q) {
   return String((q && q.deal) || '') === '1';
 }
 
+/*
+ * 구매 적정가를 함께 받을지.
+ *
+ * ★ deal=1 과 «따로» 받는다. 위치(fairness)와 행동(dealOf)은 다른 축이라,
+ *   차트만 그리는 화면이 판정 문구까지 받아 갈 이유가 없다. 둘 중 하나라도
+ *   요청하면 봉투({points, deal, fair})로 나가고, 아무것도 요청하지 않으면
+ *   예전 그대로 점 배열만 나간다 — 배포된 프론트가 그 모양을 읽고 있다.
+ */
+function wantFair(q) {
+  return String((q && q.fair) || '') === '1';
+}
+function wantEnvelope(q) {
+  return wantDeal(q) || wantFair(q);
+}
+
 /**
  * 판정 결과에서 화면이 쓸 것만 골라 내보낸다.
  *
@@ -166,14 +181,14 @@ async function singleHandler(req, res) {
      */
     if (!productId) {
       cachePublic(res, 300);
-      return res.json(wantDeal(q) ? { points: [], deal: null } : []);
+      return res.json(wantEnvelope(q) ? { points: [], deal: null, fair: null } : []);
     }
 
     // 프론트는 오름차순 [{date, price}] 배열을 기대한다 (sparkSVG / 차트 라벨).
     const points = collapseToDaily(rows, SINGLE_MAX_DAYS);
     cachePublic(res, 300);
 
-    if (!wantDeal(q)) return res.json(points);
+    if (!wantEnvelope(q)) return res.json(points);
 
     /*
      * 구매 시점 판정을 서버에서 계산해 함께 보낸다.
@@ -194,18 +209,22 @@ async function singleHandler(req, res) {
      *   배포 직후 캐시된 옛 프론트가 계속 배열을 기대하고 있기 때문이다.
      */
     let deal = null;
+    let fair = null;
     try {
-      const { statsFrom } = require('./_pricestat');
+      const { statsFrom, fairness } = require('./_pricestat');
       const { dealOf } = require('./_deal');
       const { kstToday } = require('./_price');
       const stat = statsFrom(points);
       const price = points.length ? points[points.length - 1].price : 0;
-      deal = publicDeal(dealOf(stat, price, kstToday()));
+      const today = kstToday();
+      if (wantDeal(q)) deal = publicDeal(dealOf(stat, price, today));
+      // 구매 적정가 — 판정이 아니라 «90일 분포에서의 위치» 다 (_pricestat.fairness 주석).
+      if (wantFair(q)) fair = fairness(points, price, today);
     } catch (e) {
       // 판정에 실패해도 가격 이력은 보내야 한다 — 차트가 비면 안 된다.
       console.warn(`[history] 구매 시점 판정 실패(이력만 보냄): ${e.message}`);
     }
-    res.json({ points, deal });
+    res.json({ points, deal, fair });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -259,6 +278,18 @@ async function batchHandler(req, res) {
   if (!guard(req, res, { name: 'history-batch', limit: 60, windowMs: 60 * 1000 })) return;
 
   const q = req.query || {};
+  /*
+   * 구매 적정가를 함께 받을지 (stats=1).
+   *
+   * ★ 기본값은 «주지 않는다» 다. 이 응답의 모양(키 → 점 배열)은 배포된
+   *   프론트가 그대로 읽고 있어서, 아무 조건 없이 봉투를 씌우면 캐시된
+   *   옛 index.html 이 통째로 빈 이력을 그린다. 옵트인이라야 회귀가 0 이다.
+   *     stats 없음 → 예전과 «한 바이트도» 같은 { key: points[] }
+   *     stats=1    → { points: { key: points[] }, fair: { key: 위치 } }
+   * ★ 쿼리는 한 줄도 늘지 않는다. 이미 읽어 온 점을 그 자리에서 계산할 뿐이라
+   *   상품 20개든 100개든 DB 왕복은 예전 그대로 1회다.
+   */
+  const wantStats = String(q.stats || '') === '1';
   const titles = readStringList(q.titles, MAX_TITLES);
   const keys   = readStringList(q.keys,   MAX_KEYS);
 
@@ -271,7 +302,7 @@ async function batchHandler(req, res) {
   keys.forEach(k => { map[k] = []; });
   titles.forEach(t => { map[t] = []; });
 
-  if (!keys.length && !titles.length) return res.json(map);
+  if (!keys.length && !titles.length) return res.json(wantStats ? { points: map, fair: {} } : map);
 
   try {
     // ── 1) 상품 단위(keys) ────────────────────────────────────────
@@ -341,7 +372,23 @@ async function batchHandler(req, res) {
 
     // 가격 기록은 하루 한 번만 늘어난다. 짧게 캐시해도 사용자가 보는 값은 같다.
     cachePublic(res, 300);
-    res.json(map);
+    if (!wantStats) return res.json(map);
+
+    /*
+     * 구매 적정가는 «지금 화면 가격» 이 아니라 «가장 최근 관측가» 기준이다.
+     * 배치 요청에는 상품별 현재가가 실려 오지 않기 때문이다. 프론트가 더
+     * 최신 가격을 들고 있으면 그 값으로 다시 계산해야 한다 — 그래서 위치를
+     * 낸 기준 자체(current)를 응답에 실어 보낸다.
+     */
+    const { fairness } = require('./_pricestat');
+    const { kstToday: kstTodayFn } = require('./_price');
+    const today = kstTodayFn();
+    const fair = {};
+    Object.keys(map).forEach(k => {
+      const pts = map[k] || [];
+      fair[k] = pts.length ? fairness(pts, pts[pts.length - 1].price, today) : null;
+    });
+    res.json({ points: map, fair });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
