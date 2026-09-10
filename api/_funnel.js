@@ -49,8 +49,19 @@ const FUNNEL_EVENTS = [
   'buy_wait_watch_view'
 ];
 
-/** 어디서 일어났는가. 모르면 빈 문자열. */
-const SOURCES = ['hotdeal', 'search', 'product', 'radar', 'ai', 'compare', 'home'];
+/*
+ * 어디서 일어났는가. 모르면 빈 문자열.
+ *
+ * ★ 이 목록이 관문이다 — 여기 없는 이름은 조용히 ''(모름) 으로 기록된다.
+ *   funnel_events.source 는 제약 없는 text 컬럼이라 이름을 늘리는 데
+ *   마이그레이션이 필요하지 않다.
+ *
+ * hero_book 은 홈 히어로의 책등(2026-09-10). 'home' 과 굳이 나눈 이유는
+ * 같은 홈이라도 «책 한 권을 집어서» 나가는 것과 검색 결과 카드를 눌러
+ * 나가는 것이 서로 다른 행동이기 때문이다. 섞으면 책등이 실제로 돈을
+ * 벌어 오는지 아닌지를 따로 볼 수 없다.
+ */
+const SOURCES = ['hotdeal', 'search', 'product', 'radar', 'ai', 'compare', 'home', 'hero_book'];
 
 /** visitorId 로 받아들일 모양. _analytics.VID_RE 와 같은 규칙. */
 const VID_RE = /^[a-z0-9]{8,64}$/i;
