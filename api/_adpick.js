@@ -163,18 +163,54 @@ function reserveSlot(minGapMs, maxWaitMs) {
       const left = Math.ceil((state.blockedUntil - now) / 1000);
       return { ok: false, blocked: true, reason: `호출 중단 중 (${left}초 남음): ${state.blockReason}` };
     }
-    if (state.window.length >= MAX_PER_MIN) {
-      return { ok: false, blocked: false, reason: `인스턴스 분당 한도 ${state.window.length}/${MAX_PER_MIN}` };
-    }
-
+    /*
+     * 분당 창이 찼을 때 «거절» 이 아니라 «대기» 로 처리한다 (2026-09-10 감사).
+     *
+     * ★ 무엇이 잘못돼 있었나 — 창이 차면 즉시 거절했다. 그런데 이 모듈의
+     *   거절은 호출부에서 «그 검색어를 이번 실행에서 포기한다» 와 같은 뜻이다
+     *   (scripts/collect-all-prices.js fetchAdpickAll → from='none' →
+     *    processGroup 이 failedKeywords 로 넘기고 다음 검색어로 간다).
+     *   거절에는 대기가 없으므로, 창이 비는 순간까지 수집기가 남은 검색어를
+     *   «최고 속도로» 태워 없앤다.
+     *
+     *   오프라인 재현 (가짜 ADPICK 서버 + 가짜 Supabase, 외부 호출 0회):
+     *     ADPICK_MAX_PER_MIN=5 · minGap 12,000ms · 동시성 4 · 75초
+     *       시도 2,783,804건 → 실제 호출 7건 / 거절 2,783,797건
+     *     이 설정 «이전» 값(MAX_PER_MIN=20 · minGap 1,500ms)에서도 같은 일이
+     *     일어난다 — 20회로 창이 차는 28.5초부터 60초까지 전부 거절이다.
+     *     즉 새 설정이 만든 버그가 아니라, 새 설정이 드러낸 버그다.
+     *
+     * ★ 고치는 방법은 «호출을 늘리는 것» 이 아니라 «기다리는 것» 이다.
+     *   창에서 가장 오래된 호출이 빠지는 시각까지 슬롯을 미룬다. 그 대기가
+     *   호출부가 허락한 maxWaitMs 를 넘으면 예전 그대로 거절한다.
+     *
+     * ★ 분당 호출 속도는 한 자리도 늘지 않는다.
+     *     · 새 슬롯은 여전히 앞 호출로부터 minGapMs 뒤다
+     *     · 새 슬롯 기준 최근 60초 안의 호출 수는 여전히 MAX_PER_MIN 미만이다
+     *     · 사용자 요청 경로(maxWaitMs=0 — api/search.js, api/_shop.js)는
+     *       대기가 0보다 크므로 예전과 똑같이 즉시 거절된다
+     *   달라지는 것은 «기다리면 부를 수 있었던 호출을 버렸는가» 하나뿐이다.
+     */
     const at = Math.max(now, state.lastCallAt + minGapMs);
-    const waitMs = at - now;
+    /*
+     * 창이 찼다면, 새 슬롯이 설 수 있는 가장 이른 시각.
+     * window 는 예약 순(오름차순)이라, 뒤에서 MAX_PER_MIN 번째 호출이 60초를
+     * 넘겨 빠져야 한 자리가 난다.
+     */
+    const windowFreeAt = state.window.length >= MAX_PER_MIN
+      ? state.window[state.window.length - MAX_PER_MIN] + 60000
+      : 0;
+    const slotAt = Math.max(at, windowFreeAt);
+    const waitMs = slotAt - now;
     if (waitMs > maxWaitMs) {
-      return { ok: false, blocked: false, reason: `간격 제한 — ${waitMs}ms 대기 필요` };
+      const why = windowFreeAt > at
+        ? `인스턴스 분당 한도 ${state.window.length}/${MAX_PER_MIN} — ${waitMs}ms 대기 필요`
+        : `간격 제한 — ${waitMs}ms 대기 필요`;
+      return { ok: false, blocked: false, reason: why };
     }
 
-    state.lastCallAt = at;
-    state.window.push(at);
+    state.lastCallAt = slotAt;
+    state.window.push(slotAt);
     return { ok: true, waitMs };
   });
 

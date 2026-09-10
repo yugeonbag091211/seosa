@@ -305,6 +305,52 @@ const rows = () => db.adpick_api_calls;
     check(rows().length === 0, '한 번 끈 계측은 그 프로세스에서 다시 켜지 않는다', `${rows().length}행`);
   }
 
+  /* ============================================================== */
+  section('[8] 분당 창이 찼을 때 — 거절이 아니라 대기한다 (2026-09-10 회귀)');
+
+  /*
+   * ★ 이 모듈의 «거절» 은 수집기에서 «그 검색어를 이번 실행에서 포기한다» 다
+   *   (collect-all-prices.js fetchAdpickAll → from='none' → failedKeywords).
+   *   거절에는 대기가 없으므로, 창이 비기를 기다리는 대신 남은 검색어를
+   *   최고 속도로 태워 없앤다. 2026-09-10 오프라인 재현(가짜 서버, 동시성 4,
+   *   MAX_PER_MIN=5 · minGap 12초)에서 75초 동안 실제 호출 7건에
+   *   거절 2,783,797건이 나왔다.
+   *
+   * ★ 그렇다고 사용자 요청 경로까지 기다리게 하면 검색 화면이 멈춘다.
+   *   그래서 기준은 하나뿐이다 — 호출부가 maxWaitMs 로 허락한 만큼만 기다린다.
+   *   이 절이 그 두 갈래를 함께 고정한다.
+   *
+   * ★ 이 절은 반드시 마지막이어야 한다. 일부러 «기다리는 중인» 호출 하나를
+   *   남긴 채 끝내기 때문이다 (그 대기 자체가 이 테스트의 관측 대상이다).
+   */
+  {
+    resetAll();
+    mode = 'ok';
+    process.env.ADPICK_MAX_PER_MIN = '2';
+    const { searchAdpick } = freshAdpick();
+    const batchOpt = { limit: 5, source: 'collect', minGapMs: 1, maxWaitMs: 60000 };
+
+    await searchAdpick('A', batchOpt);
+    await searchAdpick('B', batchOpt);   // 여기서 창이 찼다 (2/2)
+    check(rows().length === 2, '창을 채우는 호출 2건이 기록됐다', `${rows().length}행`);
+
+    // 배치 경로 — 기다릴 수 있다고 했으면 기다려야 한다.
+    let settled = null;
+    searchAdpick('C', batchOpt).then(r => { settled = r; });
+    await new Promise(r => setTimeout(r, 300));
+    check(settled === null, '★ 창이 차면 즉시 거절하지 않고 기다린다',
+      settled ? `300ms 안에 from=${settled.from} 으로 끝났다` : '대기 중');
+    check(rows().length === 2, '기다리는 동안 외부 호출은 늘지 않는다', `${rows().length}행`);
+
+    // 사용자 요청 경로 — 기다리지 않겠다고 했으면 예전 그대로 즉시 거절한다.
+    const d = await searchAdpick('D', { limit: 5, source: 'search', minGapMs: 1, maxWaitMs: 0 });
+    check(d.from === 'none', '★ maxWaitMs=0 은 예전처럼 즉시 거절', `from=${d.from}`);
+    check(/한도/.test(String(d.error)), '거절 사유가 분당 한도임을 밝힌다', String(d.error));
+    check(rows().length === 2, '거절은 외부 호출 행을 만들지 않는다', `${rows().length}행`);
+
+    delete process.env.ADPICK_MAX_PER_MIN;
+  }
+
   server.close();
   console.log(`\n결과: PASS ${pass} / FAIL ${fail}`);
   process.exit(fail ? 1 : 0);
