@@ -453,8 +453,231 @@ function assess(stat, price, today) {
   };
 }
 
+/* ==================================================================
+ *  구매 적정가 (Price Fairness) — "지금 사도 되는 가격인가"
+ *
+ *  ── 왜 assess()·dealOf() 로 부족한가 ────────────────────────────
+ *
+ *  assess 는 «최저가·30일 평균·추세» 3축 점수이고, dealOf 는 그 위에
+ *  BUY/WAIT 같은 «행동» 을 얹는다. 둘 다 사용자에게 무엇을 하라고 말한다.
+ *
+ *  여기서 답하려는 것은 그 앞의 질문이다 — «이 값은 이 상품의 90일 가격
+ *  분포에서 어디쯤인가». 행동이 아니라 위치다. 그래서 판정을 새로 만들지
+ *  않고 위치만 낸다. dealOf 의 결론과 다툴 일이 구조적으로 없다.
+ *
+ *  ── 왜 순위 백분위인가 (min-max 를 쓰지 않는 이유) ───────────────
+ *
+ *  api/_deal.pricePercentile 은 (p-low)/(high-low) 로 «폭 안의 위치» 를 낸다.
+ *  그 값은 그 파일의 판정에 쓰이고 있으므로 한 줄도 건드리지 않는다.
+ *  다만 분포 위치로는 쓸 수 없다 — api/_hotdeal.js 가 같은 이유를 이미
+ *  적어 두었다:
+ *
+ *    값이 [100,100,100,100,200] 이고 현재가가 125 일 때 min-max 는 25% 를
+ *    주지만 실제로는 관측의 80% 보다 비싸다.
+ *
+ *  그리고 이 파일 median 주석의 실측 — 27일 중 25일이 15,900원인데 이틀만
+ *  222,390~242,100원이었다. min-max 로는 15,900원이 백분위 0% 라 매일이
+ *  «역대 최저» 가 된다. 순위 백분위는 그 이틀을 «관측 2개» 로만 세므로
+ *  outlier 를 따로 잘라내는 규칙을 발명할 필요가 없다. 이것이 요구된
+ *  «outlier 를 그대로 평균에 반영하지 않는다» 에 대한 답이다.
+ *
+ *  ── 같은 값이 여러 번일 때: 중간 순위(midrank) ────────────────────
+ *
+ *  below/n 을 쓰면 25일 내내 15,900원인 상품의 오늘 가격이 백분위 0% =
+ *  «매우 저렴함» 이 된다. 한 번도 움직인 적 없는 가격을 특가라고 부르는
+ *  것이다. (below + equal/2)/n 은 같은 상황에서 50% = «보통» 을 준다.
+ *  api/_hotdeal.pctRank 는 below/n 이지만 그쪽은 이미 «움직인 상품»
+ *  (movedSeries) 에만 값을 실어서 이 함정을 피한다 — 여기는 모든 상품에
+ *  붙으므로 midrank 여야 한다. 두 값을 일부러 다르게 두고, 서로의 필드를
+ *  덮어쓰지 않는다.
+ *
+ *  ── 문턱은 실측으로 정했다 (2026-09-10, 운영 price_history 읽기 전용) ──
+ *
+ *    최근 90일 35,472행 / (product_id|mall) 3,389키
+ *    관측 일수      p10 4일 · p25 6일 · p50 9일 · p75 13일 · p90 22일
+ *                   1일 이하 3.1% · 4일 이하 13.8% · 7일 이하 40.1%
+ *    가격 폭        p50 0.0% · p75 4.7% · p90 37.0%
+ *                   폭 5% 미만(사실상 고정가) 75.4%
+ *    같은 날짜 중복행 12,446회 · 0원 이하 2행 · vid 2종 이상 538키(15.9%)
+ *
+ *  여기서 두 가지가 정해졌다.
+ *
+ *  1) «하위 10%» 를 말하려면 관측이 10개는 있어야 한다.
+ *     n개 관측의 백분위 해상도는 1/n 이다. n=5 면 눈금이 20%p 라
+ *     «하위 10%» 라는 문장 자체가 만들어질 수 없다. 그래서 관측 수에 따라
+ *     말할 수 있는 것을 나눈다 — 5구간은 n>=10 에서만 쓴다.
+ *     (실측상 n>=10 은 29.6%. 나머지에 5구간을 붙이면 그게 곧 과장이다)
+ *
+ *  2) 폭이 좁으면 순위는 뜻이 없다.
+ *     75.4% 가 폭 5% 미만이다. 이 상품들에 «비쌈» 을 붙이면 1,000원 차이로
+ *     기다리라고 말하게 된다 — api/_deal.PCTL_MIN_SPREAD 주석의 실측 사고
+ *     (38,520~39,800원 상품에 WAIT)와 정확히 같은 함정이다. 그래서 같은
+ *     문턱(5%)을 쓰되, 여기서는 «판정 실패» 가 아니라 flat 이라는 답으로
+ *     낸다. "언제 사도 같은 값" 은 «지금 사도 되나» 에 대한 좋은 답이다.
+ * ================================================================== */
+
+/** 분포를 볼 창. dealOf 가 쓰는 WINDOW_DAYS(180)와 «일부러» 다르다 —
+ *  "요즘 이 상품의 값" 을 묻는 질문이라 반년은 너무 길다. */
+const FAIR_WINDOW_DAYS = 90;
+/** 이보다 적으면 위치를 말하지 않는다 (요구: 1~2개뿐이면 판단 데이터 부족). */
+const FAIR_MIN_OBS = 5;
+/** 5구간(매우 저렴/매우 비쌈 포함)을 쓰려면 필요한 관측 수. 해상도 1/n. */
+const FAIR_FULL_OBS = 10;
+/** 가격 폭이 이보다 좁으면 순위 대신 flat. api/_deal.PCTL_MIN_SPREAD 와 같은 값. */
+const FAIR_MIN_SPREAD = 0.05;
+/** 기록이 이보다 오래 멈췄으면 단정하지 않는다. _deal.FRESHNESS 의 weak 경계. */
+const FAIR_MAX_STALE = 14;
+
+/** 백분위 상한 → 등급. 위에서부터 처음 걸리는 것을 쓴다. */
+const FAIR_BANDS_FULL = [
+  [10,  'very_cheap'],
+  [30,  'cheap'],
+  [70,  'normal'],
+  [90,  'expensive'],
+  [100, 'very_expensive']
+];
+/** 관측이 5~9개일 때. 극단 두 칸을 쓰지 않는다 — 해상도가 없다. */
+const FAIR_BANDS_COARSE = [
+  [30,  'cheap'],
+  [70,  'normal'],
+  [100, 'expensive']
+];
+
+const FAIR_LABEL = {
+  very_cheap:     '매우 저렴함',
+  cheap:          '저렴함',
+  normal:         '보통',
+  expensive:      '비쌈',
+  very_expensive: '매우 비쌈',
+  flat:           '가격 변동 거의 없음',
+  insufficient:   '판단 데이터 부족',
+  stale:          '판단 보류'
+};
+
+function bandOf(pctRank, obs) {
+  const table = obs >= FAIR_FULL_OBS ? FAIR_BANDS_FULL : FAIR_BANDS_COARSE;
+  for (let i = 0; i < table.length; i++) {
+    if (pctRank <= table[i][0]) return table[i][1];
+  }
+  return table[table.length - 1][1];
+}
+
+/**
+ * 현재가가 최근 FAIR_WINDOW_DAYS 일 분포에서 어디인가.
+ *
+ * ★ 절대 throw 하지 않는다. 판단할 수 없으면 level='insufficient' 를 돌려주지
+ *   빈 값을 0 으로 채우지 않는다 (이 파일 맨 위 «지어내지 않는다» 와 같은 규칙).
+ * ★ 옵션 분리·같은 날짜 접기는 호출부가 이미 한 상태로 넘어온다고 가정하지
+ *   않는다. 여기서 한 번 더 접는다 — 멱등이고, 이 함수만 떼어 써도 안전하다.
+ *
+ * @param {Array<{date:string, price:number}>} points  날짜 오름차순 관측
+ * @param {number} currentPrice  지금 화면에 보이는 값. 없으면 마지막 관측가
+ * @param {string} today         KST 'YYYY-MM-DD'
+ * @returns {object} level·label·pctRank·obs·low·high·median·mean·current 등
+ */
+function fairness(points, currentPrice, today) {
+  const td = today || kstToday();
+
+  // 같은 날짜는 최저가 한 점 (loadStats·history-batch keepLowest 와 같은 기준).
+  const byDate = new Map();
+  (points || []).forEach(h => {
+    const date = String((h && h.date) || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const price = int(h && h.price);
+    if (price <= 0) return;                     // 0원·null·음수 제외
+    if (date > td) return;                      // 미래 라벨은 관측이 아니다
+    const cur = byDate.get(date);
+    if (cur === undefined || price < cur) byDate.set(date, price);
+  });
+
+  const cutoff = ymd(new Date(Date.now() - (FAIR_WINDOW_DAYS - 1) * 86400000));
+  const pts = [...byDate.entries()]
+    .filter(e => e[0] >= cutoff)
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(e => ({ date: e[0], price: e[1] }));
+
+  const prices = pts.map(p => p.price);
+  const lastPrice = prices.length ? prices[prices.length - 1] : 0;
+  const cur = int(currentPrice) > 0 ? int(currentPrice) : lastPrice;
+  const lastDate = pts.length ? pts[pts.length - 1].date : '';
+  const staleDays = lastDate ? Math.max(0, spanDays(lastDate, td)) : 0;
+
+  const base = {
+    level: 'insufficient',
+    label: FAIR_LABEL.insufficient,
+    pctRank: null,
+    obs: prices.length,
+    windowDays: FAIR_WINDOW_DAYS,
+    minObs: FAIR_MIN_OBS,
+    fullObs: FAIR_FULL_OBS,
+    current: cur,
+    low: 0, high: 0, median: 0, mean: 0,
+    spreadPct: null,
+    lastDate,
+    staleDays,
+    confident: false,
+    reason: '관측이 ' + prices.length + '일치뿐이라 위치를 말할 수 없다 (최소 ' + FAIR_MIN_OBS + '일)'
+  };
+
+  if (cur <= 0) {
+    base.reason = '현재가를 알 수 없다';
+    return base;
+  }
+  if (prices.length < FAIR_MIN_OBS) return base;
+
+  const sorted = prices.slice().sort((a, b) => a - b);
+  const low = sorted[0];
+  const high = sorted[sorted.length - 1];
+  const midIdx = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2
+    ? sorted[midIdx]
+    : Math.round((sorted[midIdx - 1] + sorted[midIdx]) / 2);
+  const mean = Math.round(prices.reduce((s, v) => s + v, 0) / prices.length);
+  const spread = low > 0 ? (high - low) / low : 0;
+
+  base.low = low;
+  base.high = high;
+  base.median = median;
+  base.mean = mean;
+  base.spreadPct = Math.round(spread * 1000) / 10;
+
+  // 기록이 오래 멈췄으면 «지금» 의 위치라고 말할 수 없다.
+  if (staleDays > FAIR_MAX_STALE) {
+    base.level = 'stale';
+    base.label = FAIR_LABEL.stale;
+    base.reason = '가격 기록이 ' + staleDays + '일 전에서 멈춰 있다';
+    return base;
+  }
+
+  if (spread < FAIR_MIN_SPREAD) {
+    base.level = 'flat';
+    base.label = FAIR_LABEL.flat;
+    base.reason = '최근 ' + FAIR_WINDOW_DAYS + '일 가격 폭이 '
+      + base.spreadPct + '% 라 싸고 비쌈을 가를 수 없다';
+    return base;
+  }
+
+  /*
+   * 중간 순위(midrank). 같은 값이 여러 번이면 그 무리의 «가운데» 를 준다.
+   *   below  나보다 싼 관측 수
+   *   equal  나와 같은 값의 관측 수 (현재가가 관측에 없으면 0)
+   */
+  const below = prices.filter(v => v < cur).length;
+  const equal = prices.filter(v => v === cur).length;
+  const pctRank = Math.round((below + equal / 2) / prices.length * 100);
+
+  base.pctRank = pctRank;
+  base.level = bandOf(pctRank, prices.length);
+  base.label = FAIR_LABEL[base.level];
+  base.confident = prices.length >= FAIR_FULL_OBS;
+  base.reason = '최근 ' + FAIR_WINDOW_DAYS + '일 관측 ' + prices.length + '일 중 하위 ' + pctRank + '%'
+    + (base.confident ? '' : ' (관측 ' + FAIR_FULL_OBS + '일 미만이라 극단 판정은 하지 않는다)');
+  return base;
+}
+
 module.exports = {
-  statsFrom, loadStats, spanDays, assess,
+  statsFrom, loadStats, spanDays, assess, fairness,
   WINDOW_DAYS, AVG_DAYS, TREND_DAYS, SHORT_AVG_DAYS,
-  ASSESS_MIN_DAYS, ASSESS_MAX_STALE, STALE_WARN_DAYS, VERDICT_LABEL, LOW_CONFIRM_DAYS
+  ASSESS_MIN_DAYS, ASSESS_MAX_STALE, STALE_WARN_DAYS, VERDICT_LABEL, LOW_CONFIRM_DAYS,
+  FAIR_WINDOW_DAYS, FAIR_MIN_OBS, FAIR_FULL_OBS, FAIR_MIN_SPREAD, FAIR_MAX_STALE, FAIR_LABEL
 };
