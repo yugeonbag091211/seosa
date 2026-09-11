@@ -439,6 +439,52 @@ const GDELT_ENDPOINT = 'https://api.gdeltproject.org/api/v2/doc/doc';
 const GDELT_GAP_MS = Number(process.env.NEWS_GDELT_GAP_MS) || 5500;
 const GDELT_TIMEOUT_MS = Number(process.env.NEWS_GDELT_TIMEOUT_MS) || 20000;
 
+/*
+ * GDELT 전용 in-process backoff / single-flight.
+ *
+ * ── 왜 별도로 두는가 (2026-09-11 실측) ─────────────────────────────
+ *
+ *   _news-research 는 GDELT 를 요청 1회당 딱 한 번(maxQueries:1)만 부른다.
+ *   그런데 production 에서 concierge 요청이 순차로 들어오면 매 요청마다
+ *   같은 endpoint 를 다시 두드리게 되고, GDELT 의 "5초에 한 번" 제한을
+ *   가볍게 넘어 429 가 재발한다. SOURCE_BACKOFF 는 RSS/공식 피드용이라
+ *   GDELT endpoint 에는 걸리지 않았다.
+ *
+ *   여기서는 두 가지만 한다.
+ *     1) 같은 endpoint 에 대한 in-flight 요청을 병합한다 (single-flight).
+ *        같은 프로세스 안에서 두 번째 사용자가 오면 첫 번째 결과를 기다린다.
+ *     2) 429/timeout 뒤에는 짧은 쿨다운을 걸어 조용히 빈 배열을 돌려준다.
+ *        RSS 는 여전히 살아 있으므로 사용자 응답은 죽지 않는다.
+ */
+const GDELT_COOLDOWN_MS = Number(process.env.NEWS_GDELT_COOLDOWN_MS) || 5 * 60 * 1000;
+const GDELT_TRANSIENT_COOLDOWN_MS = Number(process.env.NEWS_GDELT_TRANSIENT_COOLDOWN_MS) || 60 * 1000;
+let GDELT_BACKOFF_UNTIL = 0;      // 이 시각 전까지는 요청을 보내지 않는다
+let GDELT_LAST_CALL_AT = 0;       // 마지막 요청 시각 — 프로세스 내 gap 강제용
+const GDELT_INFLIGHT = new Map(); // url → Promise<get result>
+
+function gdeltBackoffState(nowMs) {
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  if (GDELT_BACKOFF_UNTIL <= now) return null;
+  return { until: GDELT_BACKOFF_UNTIL, remainingMs: GDELT_BACKOFF_UNTIL - now };
+}
+
+function noteGdeltFailure(result, nowMs) {
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const status = Number(result && result.status) || 0;
+  let cooldown = 0;
+  if (status === 429) cooldown = GDELT_COOLDOWN_MS;
+  else if (status === 403) cooldown = GDELT_COOLDOWN_MS;
+  else if (!status && result && result.error === 'timeout') cooldown = GDELT_TRANSIENT_COOLDOWN_MS;
+  else if (!status || status >= 500) cooldown = GDELT_TRANSIENT_COOLDOWN_MS;
+  if (cooldown) GDELT_BACKOFF_UNTIL = Math.max(GDELT_BACKOFF_UNTIL, now + cooldown);
+}
+
+function clearGdeltBackoff() {
+  GDELT_BACKOFF_UNTIL = 0;
+  GDELT_LAST_CALL_AT = 0;
+  GDELT_INFLIGHT.clear();
+}
+
 /**
  * @param queries 검색어 배열 — 호출 수를 줄이려 짧게 유지한다
  */
@@ -447,11 +493,24 @@ async function fetchGdelt(queries, opts) {
   const now = o.now || new Date();
   const span = o.timespanDays || 14;
   const items = [];
-  const stats = { attempted: 0, ok: 0, failed: 0, rawItems: 0, accepted: 0, rejected: 0, errors: [] };
+  const stats = { attempted: 0, ok: 0, failed: 0, rawItems: 0, accepted: 0, rejected: 0, errors: [], skippedBackoff: 0, backoffUntil: null, cooldown: false };
   const list = (queries || []).slice(0, o.maxQueries || 6);
+
+  const skipBackoff = o.skipBackoffCheck === true;
+  const getFn = o.getFn || get;
+  const sleepFn = o.sleepFn || sleep;
 
   for (let qi = 0; qi < list.length; qi++) {
     const q = list[qi];
+    // 같은 프로세스 안에서 최근 실패했다면 조용히 건너뛴다.
+    const backoff = skipBackoff ? null : gdeltBackoffState(Date.now());
+    if (backoff) {
+      stats.skippedBackoff++;
+      stats.cooldown = true;
+      stats.backoffUntil = new Date(backoff.until).toISOString();
+      stats.errors.push({ query: q, error: 'cooldown', retryAt: stats.backoffUntil });
+      continue;
+    }
     stats.attempted++;
     const url = GDELT_ENDPOINT
       + '?query=' + encodeURIComponent(q)
@@ -459,8 +518,35 @@ async function fetchGdelt(queries, opts) {
       + '&maxrecords=' + (o.maxRecords || 20)
       + '&timespan=' + span + 'd';
 
-    const r = await get(url, 'application/json', GDELT_TIMEOUT_MS);
-    if (!r.ok) { stats.failed++; stats.errors.push({ query: q, status: r.status, error: r.error || '' }); continue; }
+    /*
+     * 프로세스 내 gap 강제. GDELT 는 5초에 한 번을 명시적으로 요구한다.
+     * 두 사용자 요청이 겹쳐 들어오면 두 번째는 여기서 기다린다 (아니면 429).
+     */
+    if (!skipBackoff) {
+      const sinceLast = Date.now() - GDELT_LAST_CALL_AT;
+      if (GDELT_LAST_CALL_AT && sinceLast < GDELT_GAP_MS) {
+        await sleepFn(GDELT_GAP_MS - sinceLast);
+      }
+    }
+
+    let r;
+    if (GDELT_INFLIGHT.has(url)) {
+      // 동일 URL 이 이미 날아가 있다 — 결과를 공유한다.
+      r = await GDELT_INFLIGHT.get(url);
+    } else {
+      const p = getFn(url, 'application/json', GDELT_TIMEOUT_MS);
+      GDELT_INFLIGHT.set(url, p);
+      try { r = await p; } finally { GDELT_INFLIGHT.delete(url); }
+      GDELT_LAST_CALL_AT = Date.now();
+    }
+    if (!r.ok) {
+      stats.failed++;
+      stats.errors.push({ query: q, status: r.status, error: r.error || '' });
+      noteGdeltFailure(r, Date.now());
+      const bo = gdeltBackoffState(Date.now());
+      if (bo) { stats.cooldown = true; stats.backoffUntil = new Date(bo.until).toISOString(); }
+      continue;
+    }
     stats.ok++;
 
     let json = null;
@@ -483,7 +569,7 @@ async function fetchGdelt(queries, opts) {
       items.push(it);
     }
     // ★ GDELT 는 5초에 한 번이다. 마지막 요청 뒤에는 다음 호출이 없으므로 기다리지 않는다.
-    if (qi < list.length - 1) await sleep(GDELT_GAP_MS);
+    if (qi < list.length - 1) await sleepFn(GDELT_GAP_MS);
   }
   return { items, stats };
 }
@@ -547,5 +633,6 @@ module.exports = {
   GDELT_ENDPOINT, TIMEOUT_MS, PER_FEED_MAX, GAP_MS, GDELT_GAP_MS, GDELT_TIMEOUT_MS, BACKOFF,
   get, parseFeed, stripTags, decodeEntities, gdeltDate,
   fetchFeeds, fetchGdelt, collect, paidNewsEnabled,
-  sourceBackoff, noteSourceAttempt, noteSourceResult, sourceHealthSnapshot, clearSourceBackoff, sourceIdOf
+  sourceBackoff, noteSourceAttempt, noteSourceResult, sourceHealthSnapshot, clearSourceBackoff, sourceIdOf,
+  gdeltBackoffState, clearGdeltBackoff, GDELT_COOLDOWN_MS, GDELT_TRANSIENT_COOLDOWN_MS
 };
