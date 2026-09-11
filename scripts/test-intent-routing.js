@@ -17,6 +17,9 @@ rate.guard = () => true;
 
 let productSearchCalls = 0;
 let generationCalls = 0;
+let dealEngineCalls = 0;
+const FIXTURE_PUBLISHED_AT = new Date().toISOString();
+const FIXTURE_DATE = FIXTURE_PUBLISHED_AT.slice(0, 10);
 const fakeShop = {
   searchAll: async () => {
     productSearchCalls++;
@@ -35,6 +38,9 @@ Module._load = function(request, parent, isMain) {
   if (request === './_shop' && parent && /[\\/]api[\\/]ai\.js$/.test(parent.filename)) return fakeShop;
   if (request === './_llm' && parent && /[\\/]api[\\/]ai\.js$/.test(parent.filename)) return fakeLlm;
   if (request === './_auth' && parent && /[\\/]api[\\/]ai\.js$/.test(parent.filename)) return fakeAuth;
+  if (/^\.\/(?:_deal|_decision|_pricestat)$/.test(request) && parent && /[\\/]api[\\/]ai\.js$/.test(parent.filename)) {
+    dealEngineCalls++;
+  }
   return realLoad.apply(this, arguments);
 };
 
@@ -50,7 +56,7 @@ newsFetch.fetchGdelt = async queries => {
       {
         title: 'OpenAI launches agent shopping API',
         url: 'https://example.com/openai-agent-shopping',
-        publishedAt: '2026-09-11T01:00:00.000Z',
+        publishedAt: FIXTURE_PUBLISHED_AT,
         shortSummary: 'Agents can retrieve product information with cited sources.',
         source: 'GDELT · example.com'
       }
@@ -94,6 +100,14 @@ async function test(name, fn) {
     ['오늘 AI 뉴스', 'NEWS_RESEARCH'],
     ['오늘의집 소파 추천', 'PRODUCT_SEARCH'],
     ['오늘 에어팟 사도 돼?', 'PRODUCT_DECISION'],
+    ['이 가격 괜찮아?', 'PRODUCT_DECISION'],
+    ['좀 기다릴까?', 'PRODUCT_DECISION'],
+    ['오늘 나온 에어팟 뉴스 알려줘', 'NEWS_RESEARCH'],
+    ['아이폰 가격 뉴스 알려줘', 'NEWS_RESEARCH'],
+    ['구글 뉴스에서 에어팟 가격 관련 기사 찾아줘', 'NEWS_RESEARCH'],
+    ['최근 가격 떨어진 무선 이어폰 추천', 'PRODUCT_SEARCH'],
+    ['요즘 AI 이어폰 뭐가 좋아?', 'PRODUCT_SEARCH'],
+    ['Perplexity 쇼핑 기능처럼 추천해줘', 'PRODUCT_SEARCH'],
     ['OpenAI API 가격 알려줘', 'GENERAL_QA'],
     ['최근 OpenAI 쇼핑 기능이 SEOSA에 어떤 영향?', 'SEOSA_ANALYSIS']
   ];
@@ -106,21 +120,34 @@ async function test(name, fn) {
   const problem = '오늘 나온 AI 뉴스 중 SEOSA 같은 AI 쇼핑 서비스에 직접 영향 줄 만한 것만 골라줘. OpenAI, Anthropic, Google, Perplexity, 쇼핑 AI, 에이전트, 검색 API 중심으로 보고 출처랑 날짜도 붙여줘.';
   await test('실제 문제 입력 → SEOSA_ANALYSIS, 상품 검색 0회', async () => {
     productSearchCalls = 0;
+    dealEngineCalls = 0;
     const r = await call(problem);
     assert.strictEqual(r.status, 200);
     assert.strictEqual(r.body.intent, 'SEOSA_ANALYSIS');
     assert.strictEqual(productSearchCalls, 0);
+    assert.strictEqual(dealEngineCalls, 0);
     assert.strictEqual(r.body.newsSources.length, 1);
+  });
+
+  await test('상품 관련 명시적 뉴스 요청도 상품/Deal Engine 호출 0회', async () => {
+    productSearchCalls = 0;
+    dealEngineCalls = 0;
+    const r = await call('오늘 나온 에어팟 뉴스 알려줘');
+    assert.strictEqual(r.body.intent, 'NEWS_RESEARCH');
+    assert.strictEqual(productSearchCalls, 0);
+    assert.strictEqual(dealEngineCalls, 0);
   });
 
   await test('뉴스 AI generation 실패 → 출처/날짜 결정론 요약, 상품 fallback 금지', async () => {
     productSearchCalls = 0;
+    dealEngineCalls = 0;
     generationCalls = 0;
     const r = await call('오늘 AI 뉴스 알려줘');
     assert.strictEqual(r.body.intent, 'NEWS_RESEARCH');
     assert.ok(generationCalls > 0, 'generation 실패 경로가 실행돼야 함');
     assert.strictEqual(productSearchCalls, 0);
-    assert.match(r.body.text, /2026-09-11/);
+    assert.strictEqual(dealEngineCalls, 0);
+    assert.match(r.body.text, new RegExp(FIXTURE_DATE));
     assert.match(r.body.text, /GDELT · example\.com/);
     assert.match(r.body.text, /https:\/\/example\.com\/openai-agent-shopping/);
     assert.doesNotMatch(r.body.text, /AI 설명을 만들지 못했어요|오늘담은|상품.*추천/);

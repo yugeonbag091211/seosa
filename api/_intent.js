@@ -37,7 +37,7 @@ const { parseConstraints } = require('./_shopintent');
 const GREETING_RE = /^(안녕|안녕하세요|하이|헬로|반가워|고마워|감사|땡큐|잘가|바이|ㅎㅇ|ㅋㅋ|ㅎㅎ|ok|okay|응|넵|네|아니|좋아|굿)[!~.?ㅋㅎ\s]*$/i;
 
 /** 가격 시점·이력 — "지금 사도 돼?" "기다릴까?" "추이" */
-const TIMING_RE = /(지금\s*사도|지금\s*살|살까|사도\s*(돼|될|괜찮|되나)|기다릴|기다려|더\s*떨어|떨어질|내려갈|오를까|추이|흐름|변동|최저가였|얼마였|역대\s*최저|기록상|평소보다|살\s*때|살\s*만한\s*때|타이밍)/;
+const TIMING_RE = /(지금\s*사도|지금\s*살|살까|사도\s*(돼|될|괜찮|되나)|가격\s*(?:괜찮|좋은\s*편|비싼\s*편|싼\s*편)|기다릴|기다려|더\s*떨어|떨어질|내려갈|오를까|추이|흐름|변동|최저가였|얼마였|역대\s*최저|기록상|평소보다|살\s*때|살\s*만한\s*때|타이밍)/;
 
 /** 특정 상품의 가격·판매처 — "얼마야" "최저가 찾아줘" "어디서 사" */
 const PRICE_RE = /(얼마|최저가|가격\s*(알려|찾아|비교|어때|좀)|어디서\s*(사|살|사는|구매)|판매처|링크\s*(줘|주세요|알려)|살\s*수\s*있|파는\s*곳|얼마나\s*해)/;
@@ -64,12 +64,14 @@ const KNOWLEDGE_RE = /(뭐야|무엇|뜻|의미|차이(가|는|점)|어떻게\s*
  * 판정한 요청에는 상품 검색어를 절대 만들지 않는다.
  */
 const INFO_SUBJECT_RE = /\b(?:AI|OpenAI|Anthropic|Google|Gemini|Perplexity|LLM|API|agent(?:ic)?|agents?)\b|인공지능|에이전트|검색\s*API|쇼핑\s*AI/i;
-const FRESH_CONTEXT_RE = /(?:^|[\s,])(오늘|최신|최근|새로|이번\s*(?:주|달))(?=$|[\s,?.!])|뉴스|소식|발표|업데이트|출시|공개|릴리스|release|announce|update/i;
+const FRESH_CONTEXT_RE = /(?:^|[\s,])(오늘|최신|최근|새로|이번\s*(?:주|달))(?=$|[\s,?.!])|뉴스|기사|소식|발표|업데이트|출시|공개|릴리스|release|announce|update/i;
 const RESEARCH_ACTION_RE = /알려|정리|요약|찾아|검색|조사|골라|뽑아|보고|있어|있나|무슨|어떤|붙여|확인|브리핑/i;
 const SEOSA_IMPACT_RE = /SEOSA|서사/i;
 const ANALYSIS_ACTION_RE = /영향|적용|도움|활용|기능|아이디어|기회|위협|바꿀|개선|도입|직접\s*영향/i;
 const API_PRICING_FACT_RE = /\b(?:OpenAI|Anthropic|Google|Gemini|Perplexity)\b[\s\S]{0,40}\bAPI\b[\s\S]{0,24}(?:가격|요금|비용|pricing)/i;
-const EXPLICIT_NEWS_RE = /뉴스|소식|발표|업데이트|릴리스|release|announce|update/i;
+const EXPLICIT_NEWS_RE = /뉴스|기사|소식|발표|업데이트|릴리스|release|announce|update/i;
+/* AI 고유명사가 없어도 “상품 관련 기사”를 명시적으로 찾는 문장은 뉴스 목적이다. */
+const EXPLICIT_NEWS_REQUEST_RE = /(?:뉴스|기사)\s*(?:알려|정리|요약|찾아|검색|조사|골라|뽑아|보여|확인|있어|있나)/i;
 const PHYSICAL_PURCHASE_RE = /(?:\d[\d,]*\s*(?:만|천)?\s*원|사도\s*(?:돼|될)|살까|구매|최저가|판매처|추천|골라)/i;
 
 /**
@@ -77,7 +79,10 @@ const PHYSICAL_PURCHASE_RE = /(?:\d[\d,]*\s*(?:만|천)?\s*원|사도\s*(?:돼|�
  */
 function classifyInformationIntent(text) {
   const s = String(text == null ? '' : text).trim();
-  if (!s || !INFO_SUBJECT_RE.test(s)) return '';
+  if (!s) return '';
+  const hasInformationSubject = INFO_SUBJECT_RE.test(s);
+  const explicitNewsRequest = EXPLICIT_NEWS_REQUEST_RE.test(s);
+  if (!hasInformationSubject && !explicitNewsRequest) return '';
 
   /* "오늘 Google TV 골라줘"처럼 실제 구매 행위가 분명하면 최신성 단어보다 구매 목적이 우선이다. */
   if (!EXPLICIT_NEWS_RE.test(s) && PHYSICAL_PURCHASE_RE.test(s)) return '';
