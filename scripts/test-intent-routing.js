@@ -108,6 +108,10 @@ async function test(name, fn) {
     ['최근 가격 떨어진 무선 이어폰 추천', 'PRODUCT_SEARCH'],
     ['요즘 AI 이어폰 뭐가 좋아?', 'PRODUCT_SEARCH'],
     ['Perplexity 쇼핑 기능처럼 추천해줘', 'PRODUCT_SEARCH'],
+    ['Perplexity처럼 쇼핑 추천해줘', 'PRODUCT_SEARCH'],
+    ['Anthropic 최근 발표 알려줘', 'NEWS_RESEARCH'],
+    ['Perplexity 쇼핑 기능 업데이트 있어?', 'NEWS_RESEARCH'],
+    ['최근 Anthropic 발표가 SEOSA에 어떤 영향이야?', 'SEOSA_ANALYSIS'],
     ['OpenAI API 가격 알려줘', 'GENERAL_QA'],
     ['최근 OpenAI 쇼핑 기능이 SEOSA에 어떤 영향?', 'SEOSA_ANALYSIS']
   ];
