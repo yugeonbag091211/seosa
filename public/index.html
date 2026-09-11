@@ -1728,40 +1728,6 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 }
 .drop-loading{padding:32px 0;color:var(--faint);font-size:.8rem;display:flex;align-items:center;gap:10px}
 
-/* ── SEOSA HOT ──────────────────────────────────────────────────────
- *
- * 의미색은 이 화면에 이미 둘뿐이다 — 하락(초록)·상승(빨강). 핫딜에 세 번째
- * 채도 높은 색(빨강/주황)을 뿌리면 그 두 신호가 묻힌다. 그래서 배지는
- * 무채색 + 브랜드 황동(--brand, 「기록」 정체성 자리)만 쓴다.
- * 검증된 것과 검증 중인 것의 차이는 색이 아니라 «형태»로 낸다 —
- * 검증됨은 채워진 면, 검증 중은 점선 테두리.
- */
-.hot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1px;
-  background:var(--line);border:1px solid var(--line)}
-.hot-card{background:var(--card-bg);padding:16px;display:flex;flex-direction:column;gap:10px;
-  cursor:pointer;transition:background .12s}
-.hot-card:hover{background:var(--surface)}
-.hot-top{display:flex;align-items:center;gap:8px}
-.hot-badge{font-family:var(--mono);font-size:.66rem;letter-spacing:.04em;padding:3px 7px;
-  border-radius:2px;white-space:nowrap}
-.hot-badge.is-verified{background:var(--brand-bg);color:var(--brand);border:1px solid var(--brand)}
-.hot-badge.is-good{background:var(--surface-2);color:var(--soft)}
-.hot-badge.is-potential{background:none;color:var(--faint);border:1px dashed var(--line-2)}
-.hot-score{font-family:var(--mono);font-size:.72rem;color:var(--soft);margin-left:auto}
-.hot-thumb{width:100%;aspect-ratio:1/1;object-fit:contain;background:#fff;border:1px solid var(--line)}
-.hot-name{font-size:.84rem;line-height:1.4;color:var(--ink);display:-webkit-box;
-  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.hot-price{font-family:var(--mono);font-size:1.02rem;font-weight:700;color:var(--ink)}
-/* 근거가 가격 바로 아래 온다 — 정보 우선순위: 현재가 → 왜 싼지 → 상품 → 점수 */
-.hot-why{font-size:.76rem;color:var(--down);line-height:1.45}
-.hot-why.is-soft{color:var(--faint)}
-.hot-meta{font-size:.72rem;color:var(--faint);display:flex;gap:8px;align-items:center}
-.hot-empty{padding:40px 4px;color:var(--soft);font-size:.86rem;line-height:1.7}
-.hot-empty b{display:block;color:var(--ink);font-size:.95rem;margin-bottom:6px;font-weight:600}
-@media(max-width:640px){
-  .hot-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
-  .hot-card{padding:12px;gap:8px}
-}
 .drop-loading .ring{width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--ink);
   border-radius:50%;margin:0;animation:spin .7s linear infinite;flex:0 0 auto}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -2877,8 +2843,6 @@ select:focus-visible,textarea:focus-visible,
   #profileGender .tbtn{min-width:44px}
 }
 </style>
-<link rel="stylesheet" href="/hot-cards.css">
-<script src="/hot-view.js"></script>
 </head>
 <body>
 
@@ -2933,8 +2897,7 @@ select:focus-visible,textarea:focus-visible,
 
   <div class="nav-right">
     <span class="nav-link hide-m" data-act="scroll-today">카테고리</span>
-    <a class="nav-link hide-m" href="/hotdeals.html">핫딜</a>
-    <span class="nav-link hide-m" data-act="scroll-drop">가격 변동</span>
+    <a class="nav-link hide-m" href="#priceDrop" data-act="scroll-drop">핫딜</a>
     <span class="wish-btn" data-act="open-wish" title="내 레이더" aria-label="내 레이더">
       <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.3 4.6 13a4.6 4.6 0 0 1 6.5-6.5l.9.9.9-.9A4.6 4.6 0 0 1 19.4 13z"/></svg>
       <span class="wish-count num" id="wishCount">0</span></span>
@@ -2961,7 +2924,7 @@ select:focus-visible,textarea:focus-visible,
     상시로 둘 만큼 자주 쓰지는 않는 항목의 집이다.
   -->
   <div class="nav-menu" id="navMenu" role="menu" aria-hidden="true">
-    <a class="nav-menu-item" role="menuitem" href="/hotdeals.html">오늘의 핫딜 보기</a>
+    <button class="nav-menu-item" role="menuitem" data-act="scroll-drop">핫딜 보기</button>
     <a class="nav-menu-item" role="menuitem" href="/radar.html">내 레이더 보기</a>
     <button class="nav-menu-item" role="menuitem" data-act="scroll-today">오늘의 셀렉션 보기</button>
     <button class="nav-menu-item" role="menuitem" data-act="ai-entry" data-ctx="home">서사 AI에게 물어보기</button>
@@ -2993,7 +2956,6 @@ select:focus-visible,textarea:focus-visible,
     #recordStat 은 계속 여기 있다. Record.render 가 이 id 를 채우고,
     수집일이 없으면 아무것도 그리지 않는다.
   -->
-  <div class="wrap"><a class="hot-entry" href="/hotdeals.html"><strong>오늘의 핫딜</strong><span>지금 눈여겨볼 가격 →</span></a></div>
   <div class="hero-band"><div class="hero-inner">
     <div class="hero-copy">
       <h1 class="hero-title">최저가도,<br>고급지게.</h1>
@@ -3282,35 +3244,15 @@ select:focus-visible,textarea:focus-visible,
       무관하므로 이 재배치는 기능에 영향을 주지 않는다.
   -->
 
-  <!-- 최근 가격이 내려간 상품 -->
   <!--
-    ★ SEOSA HOT — 검증된 핫딜
-
-    쇼핑몰 광고 UI(정가 취소선 + 70% OFF + 불꽃)를 쓰지 않는다. 그 표시는
-    판매자가 정하는 값이고, 이 섹션이 존재하는 이유는 바로 그것을 믿지 않기
-    때문이다. 카드가 말하는 것은 «현재가»와 «우리 관측 대비 왜 싼가» 둘이다.
-
-    검증되지 않은 것(POTENTIAL)은 검증된 것과 시각적으로 확실히 구분한다.
-    섞어 놓으면 "SEOSA가 핫딜이라고 하면 진짜 싸다"가 성립하지 않는다.
+    ★ 핫딜 (2026-09-11) — 예전 이름은 «최근 가격이 내려간 상품»(오늘의 하락).
+    데이터와 판정은 그대로다: /api/init 의 price_drop_top → plausibleDrop →
+    todayDropConfirmed. 이름만 핫딜로 바꿨다. 별도 Hot Deal 엔진(/api/hotdeals)을
+    그리던 홈 섹션과 /hotdeals.html 은 같은 날 지웠다 — 한 이름이 두 가지를
+    가리키지 않게.
   -->
-  <section id="hotDeals" class="block" aria-label="오늘의 핫딜">
-    <div class="sec-eyebrow">SEOSA · PRICE HISTORY</div>
-    <div class="sec-head">
-      <div>
-        <div class="sec-title">오늘의 핫딜<span class="sec-count" id="hotCount"></span></div>
-        <div class="sec-sub">지금 눈여겨볼 가격을 모았어요. 가격 기록과 확인 근거를 살펴보세요.</div>
-      </div>
-    </div>
-    <a class="hot-entry" href="/hotdeals.html">핫딜 전체 보기 <span>가격과 근거 살펴보기 →</span></a>
-    <div id="hotWrap">
-      <div class="drop-loading" id="hotLoading" role="status"><div class="ring"></div>핫딜을 확인하는 중…</div>
-      <div class="hot-grid" id="hotGrid"></div>
-      <div class="hot-empty" id="hotEmpty" role="status" style="display:none"></div>
-    </div>
-  </section>
-
-  <section id="priceDrop" class="block" style="display:none">
-    <div class="sec-eyebrow">PRICE LEDGER</div>
+  <section id="priceDrop" class="block" aria-label="핫딜" style="display:none">
+    <div class="sec-eyebrow">HOT DEALS</div>
     <div class="sec-head">
       <div>
         <!--
@@ -3319,7 +3261,8 @@ select:focus-visible,textarea:focus-visible,
           "최근 가격이 내려간 상품"이라고 해서 같은 말이 두 번 나왔다.
           개수는 이 목록의 사실이므로 이 목록의 머리에 있는 것이 맞다.
         -->
-        <div class="sec-title">최근 가격이 내려간 상품<span class="sec-count" id="dropCount"></span></div>
+        <div class="sec-title">핫딜<span class="sec-count" id="dropCount"></span></div>
+        <div class="sec-sub">오늘 확인한 가격이 직전 기록보다 내려간 상품이에요.</div>
       </div>
       <button class="sec-more" data-act="scroll-today">모두 보기 <span aria-hidden="true">›</span></button>
     </div>
@@ -4833,7 +4776,6 @@ var Api = {
       'getPopularKeywords':'/api/init','getProfileRecommendations':'/api/rec',
       'getMonthlyRecommendations':'/api/init',
       'getPriceDropTop':'/api/init','recordSearchStat_':'/api/stats',
-      'getHotDeals':'/api/hotdeals',
       // (Vercel Hobby 함수 12개 상한 — api/payment.js 주석 참고).
       'payCancel':'/api/payment','payStatus':'/api/payment'
     };
@@ -4844,14 +4786,6 @@ var Api = {
     var queryUrl = url;
     if (fnName === 'searchAndSave') {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '');
-    } else if (fnName === 'getHotDeals') {
-      // args[0] = { limit, status, sort }
-      var hq = args[0] || {};
-      var hp = [];
-      if (hq.limit) hp.push('limit=' + encodeURIComponent(hq.limit));
-      if (hq.status) hp.push('status=' + encodeURIComponent(hq.status));
-      if (hq.sort) hp.push('sort=' + encodeURIComponent(hq.sort));
-      queryUrl = url + (hp.length ? '?' + hp.join('&') : '');
     } else if (fnName === 'getPriceHistory') {
       // 문자열(옛 호출) 또는 {title, productId, mall} 둘 다 받는다.
       var h = args[0];
@@ -4992,7 +4926,6 @@ var Api = {
         else if (fnName === 'getPopularKeywords') { if (onOk) onOk(data.popular || data || []); }
         else if (fnName === 'getMonthlyRecommendations') { if (onOk) onOk(data.monthly || data); }
         else if (fnName === 'getPriceDropTop') { if (onOk) onOk(data.priceDrop || data || []); }
-        else if (fnName === 'getHotDeals') { if (onOk) onOk(data || { items: [] }); }
         else if (fnName === 'getDailyRecommendations' || fnName === 'getMoreOfKeyword') { if (onOk) onOk(data); }
         else if (fnName === 'loadUserData') { if (onOk) onOk({ success: data.success, data: JSON.stringify(data.data || {}) }); }
         else { if (onOk) onOk(data, meta); }
@@ -7448,63 +7381,8 @@ var Record = {
 
 
 /* ============================================================
- *  [15] Drop — 오늘의 가격 하락 시세판
+ *  [15] Drop — 핫딜 (구 «오늘의 가격 하락» 시세판 · price_drop_top)
  * ========================================================== */
-/* ============================================================
- *  [15-b] Hot — SEOSA HOT (검증된 핫딜)
- *
- *  판정은 서버(api/_hotdeal.js)가 한다. 여기서는 그린다.
- *  점수·상태·근거를 프론트에서 다시 계산하지 않는다 — 두 곳에서 계산하면
- *  언젠가 갈린다.
- * ========================================================== */
-var Hot = {
-  load: function() {
-    show('hotDeals', true); show('hotLoading', true); show('hotEmpty', false);
-    Api.call('getHotDeals', [{ limit: 12, sort: 'score' }], Hot.show, function() {
-      show('hotLoading', false);
-      $('hotEmpty').innerHTML = '<b>가격 정보를 불러오지 못했어요.</b>잠시 후 다시 확인해 주세요. <button class="sec-more" data-act="hot-retry">다시 시도</button>';
-      show('hotEmpty', true);
-    });
-  },
-  cardHTML: function(d) { return HotView.card(d); },
-  show: function(res) {
-    var items = res && Array.isArray(res.items) ? res.items.filter(function(d) { return d && d.title && d.id != null; }) : [];
-    show('hotLoading', false); show('hotDeals', true);
-    $('hotGrid').innerHTML = items.map(Hot.cardHTML).join('');
-    $('hotCount').textContent = items.length ? items.length + '개 표시' : '';
-    $('hotEmpty').innerHTML = '<b>지금 기준에 맞는 핫딜을 찾고 있어요.</b>새로운 가격이 확인되면 이곳에 모아 드릴게요.';
-    show('hotEmpty', !items.length);
-    if (items.length) Track.ev('hotdeal_list_view');
-  },
-  /*
-   * ★ 이전에 있던 «productId 가 없으면 /api/hotdeals?id= 로 이동» 은 사라졌다.
-   *   그 주소는 JSON 엔드포인트라 사용자에게 날것의 JSON 이 그대로 떴다.
-   *   이제는 어느 경우든 /hotdeals.html 로 간다 — 상품 상세가 없는 딜도
-   *   근거와 구매 링크를 그 페이지에서 볼 수 있다.
-   */
-  open: function(el) {
-    var id = el && el.getAttribute('data-id');
-    if (!id) return;
-    Track.ev('hotdeal_open');
-    location.href = '/hotdeals.html?id=' + encodeURIComponent(id);
-  }
-};
-
-/*
- * 핫딜 카드 클릭 계측.
- *
- * HotView.card 가 만드는 카드는 <a href="/hotdeals.html?id=..."> 라 브라우저가
- * 직접 이동한다 — data-act 를 타지 않으므로 Actions 디스패처도, Hot.open 도
- * 불리지 않는다. 그래서 hotdeal_open 이 조용히 끊겼다.
- *
- * 앵커를 가로채지 않는다(가로채면 새 탭·가운데 클릭·키보드 이동이 다 깨진다).
- * 이동은 그대로 두고 계측만 얹는다.
- */
-document.addEventListener('click', function(e) {
-  var a = e.target && e.target.closest && e.target.closest('#hotGrid a.hot-card');
-  if (a) Track.ev('hotdeal_open');
-});
-
 var Drop = {
 
   load: function() {
@@ -7642,6 +7520,13 @@ var Drop = {
 
     AppState.ready.drop = true;
     show('priceDrop', !isSearching());
+
+    // 다른 화면의 «핫딜» 링크(/#priceDrop)로 들어온 경우. 섹션은 데이터가 온 뒤에야
+    // 보이므로 브라우저 기본 앵커 이동이 닿지 않는다 — 여기서 한 번만 옮긴다.
+    if (location.hash === '#priceDrop' && !isSearching() && !Drop.jumped) {
+      Drop.jumped = true;
+      $('priceDrop').scrollIntoView();
+    }
   },
 
   renderRecordBar: function(items) {
@@ -10253,10 +10138,18 @@ var Actions = {
   // ── 네비 / 홈 ──
   'home':        function() { Search.goHome(); },
   'scroll-today':function() { var t = $('today'); if (t) t.scrollIntoView({ behavior: 'smooth' }); },
-  'scroll-drop': function() { var t = $('priceDrop'); if (t) t.scrollIntoView({ behavior: 'smooth' }); },
-  'scroll-hot': function() { var t = $('hotDeals'); if (t) t.scrollIntoView({ behavior: 'smooth' }); },
-  'hot-open': function(el) { Hot.open(el); },
-  'hot-retry': function() { Hot.load(); },
+  /*
+   * 헤더·메뉴의 «핫딜». 예전 «핫딜»은 /hotdeals.html 로 가는 링크라 언제 눌러도
+   * 어딘가로 갔다. 섹션 스크롤로 바뀌면서 두 경우에 헛클릭이 된다 — 검색 중
+   * (섹션이 접혀 있다)과 오늘 데이터가 없을 때. 앞은 홈으로 돌아가고, 뒤는 말한다.
+   */
+  'scroll-drop': function(el, e) {
+    if (e && e.preventDefault) e.preventDefault();   // <a href="#priceDrop"> 기본 점프 대신 부드럽게
+    Nav.closeMenu();
+    if (isSearching()) Search.goHome();
+    if (!AppState.ready.drop) { toast('오늘 가격이 내려간 상품을 아직 확인하지 못했어요.'); return; }
+    var t = $('priceDrop'); if (t) t.scrollIntoView({ behavior: 'smooth' });
+  },
   'scroll-top':  function() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
 
   // ── 검색 ──
@@ -10852,7 +10745,6 @@ var Init = {
     Rec.load();
     Monthly.load();
     Drop.load();
-    Hot.load();
   },
 
   run: function() {
@@ -10918,10 +10810,6 @@ var Init = {
           show('dropLoading', false);
           show('priceDrop', false);
         }
-
-        // 핫딜은 /api/init 과 별개 엔드포인트다. 실패해도 홈 나머지는 그대로 뜬다.
-        Hot.load();
-
       },
       function() { Init.loadIndividually(); }
     );

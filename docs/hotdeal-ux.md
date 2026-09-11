@@ -1,5 +1,9 @@
 # SEOSA 핫딜 UX 작업 보고서
 
+> **2026-09-11 — 이 문서의 UI는 제거됐다.** 홈의 «오늘의 핫딜» 섹션과 `/hotdeals.html`(`hotdeals.js` · `hotdeals.css` · `hot-cards.css` · `hot-view.js`)을 지웠다.
+> 사용자에게 «핫딜»은 이제 홈의 가격 하락 섹션(`#priceDrop`, 구 «최근 가격이 내려간 상품»)이다 — 데이터는 그대로 `/api/init` → `price_drop_top` → `todayDropConfirmed`.
+> 엔진·군집·수집기(`_hotdeal` · `_hotgroup` · `_hotsource` · `_adpickhot` · `collect-hotdeals`)와 `hotdeals` 표는 레이더 HOT_DEAL 신호가 읽으므로 남긴다. `/api/hotdeals`는 화면 소비자가 없지만 삭제하지 않았다.
+
 ## 1. UX 감사 결과
 
 기준: `feat/seosa-hot-v1`, `37d41622f5cb74083bad6babacb34e44e31332d7`. 원본 작업 트리는 깨끗했다. Claude와 동시 작업 충돌을 피하기 위해 별도 로컬 복제본의 `feat/hotdeal-ux`에서 작업했다. 저장소 내 AGENTS.md는 발견되지 않았다.
