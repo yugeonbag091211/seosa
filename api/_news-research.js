@@ -223,12 +223,8 @@ async function research(question, opts) {
 
   const seenUrl = new Set();
   const seenTokens = [];
-  /*
-   * 미래 시각을 넉넉히 몇 시간 봐 주는 이유는 서버 시계 오차/타임존 오해석
-   * (예: naive local 시각을 UTC 로 라벨링) 때문이다. 하지만 며칠 뒤의 날짜는
-   * 반드시 잘못된 것이고 «오늘 뉴스» 요청의 신뢰를 깬다.
-   */
-  const futureCutoff = now.getTime() + 6 * 3600 * 1000;
+  /* Date가 정상 파싱된 뒤의 미래 시각은 잘못된 근거이므로 허용하지 않는다. */
+  const futureCutoff = o.now instanceof Date ? now.getTime() : Date.now();
   const articles = [].concat(gdelt && gdelt.items || [], official && official.items || [])
     .map(normalizeArticle)
     .filter(Boolean)
@@ -247,12 +243,19 @@ async function research(question, opts) {
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
     .slice(0, NEWS_LIMIT);
   /*
-   * partial 은 «둘 중 하나만 실패» 를 뜻한다. articles 가 나왔더라도 이
-   * 신호는 관측 용도로 남긴다 — degraded 판정과 별개다.
+   * partial 은 GDELT/RSS 중 한 경로나 RSS 개별 source 일부가 실패했지만
+   * 다른 source는 성공했다는 뜻이다. 응답이 살아 있어도 관측 신호는 남긴다.
    */
-  const gdeltFailed = !gdelt || !gdelt.stats || (gdelt.stats.attempted && !gdelt.stats.ok);
-  const officialFailed = !official || !official.stats || (official.stats.attempted && !official.stats.ok);
-  const partialSources = (gdeltFailed && !officialFailed) || (!gdeltFailed && officialFailed);
+  const sourceHadFailure = result => {
+    if (!result || !result.stats) return true;
+    const stats = result.stats;
+    if (stats.cooldown) return true;
+    if (Number(stats.failed) > 0) return true;
+    return Number(stats.attempted) > 0 && Number(stats.ok) === 0;
+  };
+  const sourceHadSuccess = result => !!(result && result.stats && Number(result.stats.ok) > 0);
+  const partialSources = (sourceHadFailure(gdelt) || sourceHadFailure(official))
+    && (sourceHadSuccess(gdelt) || sourceHadSuccess(official));
   const gdeltCooldown = !!(gdelt && gdelt.stats && gdelt.stats.cooldown);
   return {
     ok: articles.length > 0,
@@ -290,6 +293,7 @@ const DEGRADED_REASONS = Object.freeze({
   NEWS_LLM_TIMEOUT: 'NEWS_LLM_TIMEOUT',           // per-call 시간 초과
   NEWS_LLM_BUDGET: 'NEWS_LLM_BUDGET',             // 요청 예산 소진
   NEWS_LLM_NOKEY: 'NEWS_LLM_NOKEY',               // 서버 키 미설정
+  NEWS_LLM_PARSE: 'NEWS_LLM_PARSE',               // 공급자 응답 parsing 실패
   NEWS_LLM_ERROR: 'NEWS_LLM_ERROR',               // 그 외 실패
   NEWS_LLM_EMPTY: 'NEWS_LLM_EMPTY',               // ok=true 인데 텍스트 비었음
   NEWS_PARSE_FAIL: 'NEWS_PARSE_FAIL',             // 근거 검증 실패
@@ -304,11 +308,11 @@ function reasonFromLlm(reason) {
     case 'timeout':   return DEGRADED_REASONS.NEWS_LLM_TIMEOUT;
     case 'budget':    return DEGRADED_REASONS.NEWS_LLM_BUDGET;
     case 'nokey':     return DEGRADED_REASONS.NEWS_LLM_NOKEY;
-    case 'nomessages':return DEGRADED_REASONS.NEWS_LLM_ERROR;
-    case 'network':
-    case 'server':
-    case 'parse':
+    case 'parse':     return DEGRADED_REASONS.NEWS_LLM_PARSE;
     case 'provider':
+    case 'network':
+    case 'server':    return DEGRADED_REASONS.NEWS_LLM_UNAVAILABLE;
+    case 'nomessages':return DEGRADED_REASONS.NEWS_LLM_ERROR;
     default:          return DEGRADED_REASONS.NEWS_LLM_ERROR;
   }
 }

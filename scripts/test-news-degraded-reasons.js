@@ -105,6 +105,18 @@ function articleResult(n) {
     ok('NEWS_EXCEPTION', a.degraded && a.reason === 'NEWS_EXCEPTION', a);
   }
 
+  // 8-b) 공급자 응답 parsing 실패와 공급자 unavailable을 구분한다
+  {
+    const parsed = await NR.answer('오늘 AI 뉴스', 'NEWS_RESEARCH', articleResult(1), {
+      llm: fakeLlm(() => ({ ok: false, reason: 'parse', text: '' }))
+    });
+    const unavailable = await NR.answer('오늘 AI 뉴스', 'NEWS_RESEARCH', articleResult(1), {
+      llm: fakeLlm(() => ({ ok: false, reason: 'provider', text: '' }))
+    });
+    ok('LLM parsing 실패 → NEWS_LLM_PARSE', parsed.degraded && parsed.reason === 'NEWS_LLM_PARSE', parsed);
+    ok('provider unavailable → NEWS_LLM_UNAVAILABLE', unavailable.degraded && unavailable.reason === 'NEWS_LLM_UNAVAILABLE', unavailable);
+  }
+
   // 9) LLM 성공, but 근거 검증 실패 (URL 하나 빠뜨림)
   {
     const R = articleResult(2);
@@ -192,10 +204,98 @@ function articleResult(n) {
     NF.clearGdeltBackoff();
   }
 
+  // 15) 쿨다운 만료 뒤에는 별도 reset 없이 정상 복구한다
+  {
+    NF.clearGdeltBackoff();
+    const realNow = Date.now;
+    let clock = new Date('2026-09-11T00:00:00Z').getTime();
+    let calls = 0;
+    Date.now = () => clock;
+    try {
+      const first = await NF.fetchGdelt(['recover'], {
+        getFn: async () => {
+          calls++;
+          return calls === 1
+            ? { ok: false, status: 429, text: '', error: 'rate-limited' }
+            : { ok: true, status: 200, text: JSON.stringify({ articles: [] }) };
+        },
+        sleepFn: () => Promise.resolve()
+      });
+      clock += NF.GDELT_COOLDOWN_MS + 1;
+      const recovered = await NF.fetchGdelt(['recover'], {
+        getFn: async () => {
+          calls++;
+          return { ok: true, status: 200, text: JSON.stringify({ articles: [] }) };
+        },
+        sleepFn: () => Promise.resolve()
+      });
+      ok('429 쿨다운 만료 후 정상 요청 가능', first.stats.failed === 1 && recovered.stats.ok === 1 && calls === 2,
+        { first: first.stats, recovered: recovered.stats, calls });
+    } finally {
+      Date.now = realNow;
+      NF.clearGdeltBackoff();
+    }
+  }
+
+  // 16) 동일 URL 동시 요청은 실제 fetch 한 번을 공유한다
+  {
+    NF.clearGdeltBackoff();
+    let calls = 0;
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    async function slowGet() {
+      calls++;
+      await pending;
+      return { ok: true, status: 200, text: JSON.stringify({ articles: [] }) };
+    }
+    const p1 = NF.fetchGdelt(['same'], { getFn: slowGet, sleepFn: () => Promise.resolve() });
+    const p2 = NF.fetchGdelt(['same'], { getFn: slowGet, sleepFn: () => Promise.resolve() });
+    await Promise.resolve();
+    release();
+    const [r1, r2] = await Promise.all([p1, p2]);
+    ok('동일 요청 concurrent single-flight', calls === 1 && r1.stats.ok === 1 && r2.stats.ok === 1,
+      { calls, r1: r1.stats, r2: r2.stats });
+    NF.clearGdeltBackoff();
+  }
+
+  // 17) 쿨다운 동안 반복 호출은 GDELT를 재시도하지 않고 RSS 결과를 살린다
+  {
+    NF.clearGdeltBackoff();
+    let gdeltCalls = 0;
+    const rateLimitedGet = async () => {
+      gdeltCalls++;
+      return { ok: false, status: 429, text: '', error: 'rate-limited' };
+    };
+    await NF.fetchGdelt(['storm'], { getFn: rateLimitedGet, sleepFn: () => Promise.resolve() });
+    for (let i = 0; i < 4; i++) {
+      await NF.fetchGdelt(['storm'], { getFn: rateLimitedGet, sleepFn: () => Promise.resolve() });
+    }
+    const now = new Date();
+    const R = await NR.research('최근 OpenAI API 업데이트', {
+      now,
+      fetcher: {
+        fetchGdelt: queries => NF.fetchGdelt(queries, { getFn: rateLimitedGet, sleepFn: () => Promise.resolve() }),
+        fetchFeeds: async () => ({
+          items: [{
+            title: 'OpenAI API update',
+            url: 'https://openai.com/news/api-update',
+            publishedAt: new Date(now.getTime() - 60000).toISOString(),
+            shortSummary: 'OpenAI released an API update.',
+            source: 'OpenAI'
+          }],
+          stats: { attempted: 2, ok: 1, failed: 1 }
+        })
+      }
+    });
+    ok('쿨다운 중 retry storm 없음', gdeltCalls === 1, { gdeltCalls });
+    ok('GDELT 429 중에도 RSS 기사 사용', R.articles.length === 1 && R.gdeltCooldown && R.partialSources, R);
+    NF.clearGdeltBackoff();
+  }
+
   console.log('');
   console.log('NEWS RESEARCH — 미래 timestamp / 제목 중복');
 
-  // 15) 미래 날짜 기사 배제
+  // 18) 미래 날짜 기사 배제
   {
     const now = new Date('2026-09-11T00:00:00Z');
     const future = new Date(now.getTime() + 3 * 86400000).toISOString();
@@ -203,7 +303,8 @@ function articleResult(n) {
       return {
         items: [
           { title: 'OpenAI 발표 — 오늘', url: 'https://openai.com/news/today', publishedAt: new Date(now.getTime() - 3600000).toISOString(), source: 'OpenAI', sourceKey: 'openai.com' },
-          { title: 'OpenAI 발표 — 3일 뒤 (잘못된 날짜)', url: 'https://openai.com/news/future', publishedAt: future, source: 'OpenAI', sourceKey: 'openai.com' }
+          { title: 'OpenAI 발표 — 3일 뒤 (잘못된 날짜)', url: 'https://openai.com/news/future', publishedAt: future, source: 'OpenAI', sourceKey: 'openai.com' },
+          { title: 'OpenAI 발표 — 1시간 뒤 (잘못된 날짜)', url: 'https://openai.com/news/future-hour', publishedAt: new Date(now.getTime() + 3600000).toISOString(), source: 'OpenAI', sourceKey: 'openai.com' }
         ],
         stats: { attempted: 1, ok: 1, failed: 0 }
       };
@@ -216,7 +317,7 @@ function articleResult(n) {
     ok('미래 시각 기사는 제외', R.articles.length === 1 && !R.articles.some(a => a.url.endsWith('/future')), R.articles.map(a => a.url));
   }
 
-  // 16) URL 이 다르지만 제목이 사실상 같으면 하나만 남긴다
+  // 19) URL 이 다르지만 제목이 사실상 같으면 하나만 남긴다
   {
     const now = new Date('2026-09-11T00:00:00Z');
     async function fakeFetchFeeds() {
@@ -240,6 +341,28 @@ function articleResult(n) {
       fetcher: { fetchFeeds: fakeFetchFeeds, fetchGdelt: fakeFetchGdelt }
     });
     ok('제목이 사실상 같은 재게시본은 병합', R.articles.length === 1, R.articles.map(a => a.url));
+  }
+
+  // 20) RSS 일부 실패도 partial source로 관측하되 살아 있는 결과를 사용한다
+  {
+    const now = new Date('2026-09-11T00:00:00Z');
+    const R = await NR.research('최근 OpenAI API 업데이트', {
+      now,
+      fetcher: {
+        fetchGdelt: async () => ({ items: [], stats: { attempted: 1, ok: 1, failed: 0 } }),
+        fetchFeeds: async () => ({
+          items: [{
+            title: 'OpenAI API reliability update',
+            url: 'https://openai.com/news/reliability',
+            publishedAt: new Date(now.getTime() - 60000).toISOString(),
+            shortSummary: 'OpenAI announced an API reliability update.',
+            source: 'OpenAI'
+          }],
+          stats: { attempted: 2, ok: 1, failed: 1 }
+        })
+      }
+    });
+    ok('RSS 한 곳 실패 시 다른 source 사용 + partial 관측', R.articles.length === 1 && R.partialSources, R);
   }
 
   console.log('');
