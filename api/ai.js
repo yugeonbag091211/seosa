@@ -1019,6 +1019,34 @@ const AI_SEARCH_LIMIT = 6;
  */
 const AI_SEARCH_MAX_WAIT_MS = 1200;
 
+/*
+ * 검색·DB enrichment도 요청 전체 예산 안에서 끝내야 한다.
+ * 공급자별 timeout만으로는 search → trust → save → history가 순차 누적되어
+ * 프론트의 30초 대기를 넘을 수 있다. 검색 자체와 선택적 enrichment에 각각
+ * 상한을 두고, 늦은 부가 작업은 현재 검색 결과만으로 계속 답한다.
+ */
+function positiveDuration(name, fallback) {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+const AI_SEARCH_TIMEOUT_MS = positiveDuration('AI_SEARCH_TIMEOUT_MS', 17000);
+const AI_ENRICH_TIMEOUT_MS = positiveDuration('AI_ENRICH_TIMEOUT_MS', 1200);
+
+async function settleWithin(promise, timeoutMs) {
+  const ms = Math.max(1, Math.floor(Number(timeoutMs) || 0));
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise).then(value => ({ timedOut: false, value })),
+      new Promise(resolve => {
+        timer = setTimeout(() => resolve({ timedOut: true, value: undefined }), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * 이번 질문에 답하려고 지금 검색을 해야 하는가.
  *
@@ -1046,7 +1074,7 @@ function shouldSearch(query, view, items) {
  *   ok=true 에 items=[] 는 "찾아봤는데 없었다"이다. 둘을 뭉뚱그리면
  *   AI 가 "그런 상품은 없습니다"라고 단정하게 된다 — 확인하지 못한 것뿐인데.
  */
-async function searchProducts(query) {
+async function searchProducts(query, budgetMs) {
   /*
    * 지연 require.
    *
@@ -1065,24 +1093,46 @@ async function searchProducts(query) {
   }
 
   try {
-    const { items, allItems, from, blocked } = await searchAll(query, {
+    const deadline = Date.now() + Math.max(1, Number(budgetMs) || AI_SEARCH_TIMEOUT_MS);
+    const searchCap = Math.min(AI_SEARCH_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
+    const searched = await settleWithin(searchAll(query, {
       coupangLimit: AI_SEARCH_LIMIT,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS }
-    });
+    }), searchCap);
+    if (searched.timedOut) {
+      console.warn(`[ai] 상품 검색 시간 초과(${searchCap}ms) — 빠른 fallback으로 전환`);
+      return { ok: false, items: [], reason: 'timeout' };
+    }
+    const { items, allItems, from, blocked } = searched.value || {};
 
     if (blocked || from === 'none') return { ok: false, items: [], reason: 'blocked' };
 
     const list = Array.isArray(items) ? items : [];
 
+    const runOptional = async (label, task) => {
+      const cap = Math.min(AI_ENRICH_TIMEOUT_MS, Math.max(0, deadline - Date.now()));
+      if (cap < 1) {
+        console.warn(`[ai] ${label} 생략 — 검색 예산 소진`);
+        return false;
+      }
+      try {
+        const settled = await settleWithin(Promise.resolve().then(task), cap);
+        if (settled.timedOut) {
+          console.warn(`[ai] ${label} 시간 초과(${cap}ms) — 답변은 계속`);
+          return false;
+        }
+        return true;
+      } catch (e) {
+        console.warn(`[ai] ${label} 실패(답변은 계속): ${e.message}`);
+        return false;
+      }
+    };
+
     /*
      * 신뢰도를 붙인다. /api/search 와 같은 순서·같은 함수다 — 화면에서 보는
      * 배지와 AI 가 말하는 근거가 달라지면 안 된다. 실패해도 검색은 살린다.
      */
-    try {
-      await attachTrust(list, { source: from });
-    } catch (e) {
-      console.warn(`[ai] 신뢰도 계산 실패(신뢰도 없이 진행): ${e.message}`);
-    }
+    await runOptional('신뢰도 계산', () => attachTrust(list, { source: from }));
 
     /*
      * 관측 저장.
@@ -1091,11 +1141,7 @@ async function searchProducts(query) {
      * 거치므로 stale-cache 판정·중복 방지·급변 보류가 그대로 적용된다.
      * 저장이 실패해도 사용자에게 답은 해야 하므로 삼킨다.
      */
-    try {
-      await saveProducts(query, allItems || list, { from, source: 'ai' });
-    } catch (e) {
-      console.warn(`[ai] 검색 결과 저장 실패(답변은 계속): ${e.message}`);
-    }
+    await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
 
     return { ok: true, items: list, reason: from };
   } catch (e) {
@@ -2521,6 +2567,7 @@ module.exports = async function handler(req, res) {
    */
   let cards = [];
   let degradedByGrounding = false;
+  let searchState = 'none';   // none | found | empty | failed
 
   /*
    * 결정 데이터도 try 밖에 둔다.
@@ -2692,7 +2739,7 @@ module.exports = async function handler(req, res) {
      *   3) 화면에 이미 그 결과가 떠 있지 않은가
      * 하나라도 아니면 호출하지 않는다. 잡담에 쿠팡 API 를 쓰지 않는다.
      */
-    let searchState = 'none';   // none | found | empty | failed
+    searchState = 'none';
     const query = (cls && cls.query) || '';
 
     /*
@@ -2809,7 +2856,7 @@ module.exports = async function handler(req, res) {
     };
 
     if (intent && needsShopContext(intent) && shouldSearch(query, view, items)) {
-      const found = await searchProducts(query);
+      const found = await searchProducts(query, Math.max(1, budget.remaining() - ANSWER_RESERVE_MS));
       if (!found.ok) {
         searchState = 'failed';
       } else if (!found.items.length) {
@@ -2823,7 +2870,19 @@ module.exports = async function handler(req, res) {
          * 현재가만 읽는 수준에 머문다. (attachHistory 주석 참고)
          */
         const raw = found.items.slice(0, MAX_CTX_ITEMS);
-        const stats = await attachHistory(raw);
+        const historyCap = Math.min(AI_ENRICH_TIMEOUT_MS,
+          Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
+        let stats = new Map();
+        if (historyCap > 0) {
+          const history = await settleWithin(attachHistory(raw), historyCap);
+          if (history.timedOut) {
+            console.warn(`[ai] 가격 기록 조회 시간 초과(${historyCap}ms) — 현재가로 진행`);
+          } else {
+            stats = history.value;
+          }
+        } else {
+          console.warn('[ai] 가격 기록 조회 생략 — 답변 예산 보존');
+        }
 
         // 검색해서 찾은 것이 이번 질문의 주제다. 화면에 남아 있던 목록보다 우선한다.
         // normItem 을 한 번 더 통과시킨다 — 상품명은 판매자가 쓴 문자열이라
@@ -3592,6 +3651,21 @@ module.exports = async function handler(req, res) {
       };
       if (guest) body.guest = true;
       if (fbFollowups.length) body.followups = fbFollowups;
+      return res.json(body);
+    }
+
+    /*
+     * 상품 검색 자체가 timeout/차단으로 끝났으면 LLM 장애를 500으로 겹치지
+     * 않는다. 확인한 상품이 없다는 사실을 명시하고 빠르게 종료한다.
+     */
+    if (searchState === 'failed'
+        && (resolvedCanonicalIntent === 'PRODUCT_SEARCH' || resolvedCanonicalIntent === 'PRODUCT_DECISION')) {
+      const body = {
+        text: '현재 상품 검색이 지연되어 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        intent: resolvedCanonicalIntent,
+        degraded: true
+      };
+      if (guest) body.guest = true;
       return res.json(body);
     }
 

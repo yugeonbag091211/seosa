@@ -26,6 +26,8 @@ require('./_env.js');
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-or-v1-OFFLINE-TEST';
 delete process.env.GEMINI_API_KEY;
 delete process.env.GROQ_API_KEY;
+process.env.AI_SEARCH_TIMEOUT_MS = '80';
+process.env.AI_ENRICH_TIMEOUT_MS = '20';
 
 /* ── 대역 (ai.js require 이전에) ──────────────────────────────── */
 const auth = require('../api/_auth');
@@ -50,23 +52,31 @@ const stub = {
   searchMode: 'ok',       // ok | empty | blocked | throw
   stats: new Map(),       // loadStats 결과
   llm: {},                // { classify, resolve, answer, answerStatus }
+  delays: {},             // { search, trust, save, history } ms
   captured: {}            // { classify, resolve, main } 요청 본문
 };
 
+const delay = ms => ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
+
 shop.searchAll = async () => {
+  await delay(stub.delays.search);
   if (stub.searchMode === 'throw') throw new Error('쿠팡 연결 실패(스텁)');
   if (stub.searchMode === 'blocked') return { items: [], allItems: [], from: 'none', blocked: true };
   if (stub.searchMode === 'empty') return { items: [], allItems: [], from: 'api', blocked: false };
   return { items: stub.searchItems, allItems: stub.searchItems, from: 'api', blocked: false };
 };
-shop.saveProducts = async () => {};
+shop.saveProducts = async () => { await delay(stub.delays.save); };
 trust.attachTrust = async (list) => {
+  await delay(stub.delays.trust);
   (list || []).forEach(it => {
     if (it) it.trust = { level: 'high', label: '방금 확인된 가격', reasons: [{ text: '방금 쇼핑몰에서 받아온 값' }] };
   });
   return list;
 };
-pricestat.loadStats = async () => stub.stats;
+pricestat.loadStats = async () => {
+  await delay(stub.delays.history);
+  return stub.stats;
+};
 
 /* OpenRouter 만 가로챈다. max_tokens 로 어느 호출인지 가른다(production 상수). */
 const realFetch = global.fetch;
@@ -145,6 +155,7 @@ function reset() {
   stub.searchMode = 'ok';
   stub.stats = fixtureStats();
   stub.llm = {};
+  stub.delays = {};
   stub.captured = {};
   /*
    * ★ 시나리오마다 LLM 캐시를 비운다 (2026-09-02).
@@ -184,6 +195,28 @@ function reset() {
   ok(!/확인되지 않았어요/.test(r.body.text), '정상 답변에는 firewall 경고가 붙지 않는다');
   ok(r.body.degraded !== true && /베타 무선 이어폰/.test(r.body.text),
     '★ 정상 상품·가격 근거가 있는 좋은 AI 답변은 유지한다');
+
+  /* 1-b ─ 느린 부가 조회가 전체 AI 요청을 붙잡지 않는다 */
+  console.log('\n[1-b] 검색·enrichment 요청 예산');
+  reset();
+  stub.delays = { trust: 500, save: 500, history: 500 };
+  const enrichStarted = Date.now();
+  r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const enrichMs = Date.now() - enrichStarted;
+  ok(r.status === 200 && (r.body.items || []).length === 3,
+    '느린 trust/save/history여도 검색 상품으로 응답', `${enrichMs}ms`);
+  ok(enrichMs < 800, '부가 조회 timeout이 전체 요청 지연을 차단', `${enrichMs}ms`);
+
+  reset();
+  stub.delays = { search: 500 };
+  const searchStarted = Date.now();
+  r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const searchMs = Date.now() - searchStarted;
+  ok(r.status === 200 && (r.body.items || []).length === 0,
+    '검색 timeout은 빠른 deterministic fallback', `${searchMs}ms ${JSON.stringify(r.body)}`);
+  ok(r.body.intent === 'PRODUCT_SEARCH' && r.body.degraded === true && /검색이 지연/.test(r.body.text),
+    '검색 timeout 원인을 숨기지 않는 안전 응답');
+  ok(searchMs < 800, '검색 timeout이 전체 요청 지연을 차단', `${searchMs}ms`);
 
   /* 2 ─ Hallucination Firewall: 지어낸 가격 탐지 */
   console.log('\n[2] Hallucination Firewall');
