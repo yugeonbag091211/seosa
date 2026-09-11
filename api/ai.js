@@ -2629,7 +2629,12 @@ module.exports = async function handler(req, res) {
      */
     if (intent === 'N' || intent === 'S') {
       let newsResult = { ok: false, articles: [], reason: 'news-search-failed' };
-      let newsAnswer = { text: '현재 최신 뉴스 검색에 실패했습니다.', generated: false, degraded: true };
+      /*
+       * 초기값 reason 은 «호출까지 못 가고 예외가 났다» 를 뜻한다. try 진입 뒤
+       * 정상 answer 가 세팅되면 아래에서 덮어씌워지고, 예외로 여기 남으면 사용자
+       * 응답의 degradedReason 도 NEWS_EXCEPTION 이 된다.
+       */
+      let newsAnswer = { text: '현재 최신 뉴스 검색에 실패했습니다.', generated: false, degraded: true, reason: 'NEWS_EXCEPTION' };
       try {
         const NR = require('./_news-research');
         newsResult = await NR.research(q);
@@ -2655,6 +2660,10 @@ module.exports = async function handler(req, res) {
         newsSources: newsSources.length,
         productSearchCalls: 0,
         generated: !!newsAnswer.generated,
+        degraded: !!newsAnswer.degraded,
+        degradedReason: newsAnswer.reason || '',
+        partialSources: !!(newsResult && newsResult.partialSources),
+        gdeltCooldown: !!(newsResult && newsResult.gdeltCooldown),
         ms: Date.now() - startedAt
       }));
 
@@ -2664,7 +2673,13 @@ module.exports = async function handler(req, res) {
         newsSources
       };
       if (guest) payload.guest = true;
-      if (newsAnswer.degraded) payload.degraded = true;
+      if (newsAnswer.degraded) {
+        payload.degraded = true;
+        if (newsAnswer.reason) payload.degradedReason = newsAnswer.reason;
+      } else if (newsAnswer.partial && newsAnswer.reason) {
+        // 답변은 정상, 하지만 소스 하나가 죽었다 — 관측용으로만 남긴다.
+        payload.degradedReason = newsAnswer.reason;
+      }
       return res.json(payload);
     }
 
@@ -3531,7 +3546,8 @@ module.exports = async function handler(req, res) {
         text: '현재 최신 뉴스 검색에 실패했습니다.',
         intent: resolvedCanonicalIntent,
         newsSources: [],
-        degraded: true
+        degraded: true,
+        degradedReason: 'NEWS_EXCEPTION'
       });
     }
     /*

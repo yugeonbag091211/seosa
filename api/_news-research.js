@@ -150,6 +150,48 @@ function completeEvidence(text, articles) {
     t.includes(a.publishedAt.slice(0, 10)) && t.includes(a.sourceIdentifier));
 }
 
+/*
+ * 제목을 «재게시본과 원본을 같다고 부르기 위한» 열쇠로 눌러 준다.
+ *
+ * URL 만으로 중복 제거하면 같은 발표를 여러 도메인이 전한 것이 그대로 남는다.
+ * (실측: GDELT 가 OpenAI 발표를 3개 매체가 전한 3건으로 물어 오고, 우리는
+ *  이미 openai.com 원문을 RSS 에서 갖고 있는 상황.) 이 함수는 낱말 순서·매체
+ *  꼬리·말머리를 털어 낸 뒤 «의미 있는 낱말의 집합» 만 남긴다.
+ *
+ * ★ 정확 일치는 신뢰가 낮다 — 매체명이 dash 뒤에 붙는 것만으로 키가 달라진다.
+ *   그래서 Jaccard 유사도로 넘긴 뒤 임계값을 넘으면 같다고 본다(아래).
+ */
+function titleTokens(title) {
+  return String(title == null ? '' : title)
+    .toLowerCase()
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
+    .replace(/[-—–|·:,."'“”‘’!?%]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(w => w.length > 1);
+}
+
+function titleDedupKey(title) {
+  return titleTokens(title).slice().sort().join(' ');
+}
+
+const TITLE_SIMILARITY_THRESHOLD = 0.6;
+
+function isTitleDuplicate(title, seenTokensArr) {
+  const tokens = new Set(titleTokens(title));
+  if (!tokens.size) return false;
+  for (const prev of seenTokensArr) {
+    if (!prev.size) continue;
+    let inter = 0;
+    tokens.forEach(w => { if (prev.has(w)) inter++; });
+    const uni = tokens.size + prev.size - inter;
+    if (!uni) continue;
+    if (inter / uni >= TITLE_SIMILARITY_THRESHOLD) return true;
+  }
+  return false;
+}
+
 async function research(question, opts) {
   const o = opts || {};
   const fetcher = o.fetcher || require('./_news-fetch');
@@ -179,36 +221,110 @@ async function research(question, opts) {
     return { ok: false, query, articles: [], reason: 'news-search-failed' };
   }
 
-  const seen = new Set();
+  const seenUrl = new Set();
+  const seenTokens = [];
+  /*
+   * 미래 시각을 넉넉히 몇 시간 봐 주는 이유는 서버 시계 오차/타임존 오해석
+   * (예: naive local 시각을 UTC 로 라벨링) 때문이다. 하지만 며칠 뒤의 날짜는
+   * 반드시 잘못된 것이고 «오늘 뉴스» 요청의 신뢰를 깬다.
+   */
+  const futureCutoff = now.getTime() + 6 * 3600 * 1000;
   const articles = [].concat(gdelt && gdelt.items || [], official && official.items || [])
     .map(normalizeArticle)
     .filter(Boolean)
-    .filter(a => new Date(a.publishedAt).getTime() >= cutoff)
+    .filter(a => {
+      const t = new Date(a.publishedAt).getTime();
+      return t >= cutoff && t <= futureCutoff;
+    })
     .filter(a => relevantToQuestion(a, question))
     .filter(a => {
-      if (seen.has(a.url)) return false;
-      seen.add(a.url);
+      if (seenUrl.has(a.url)) return false;
+      seenUrl.add(a.url);
+      if (isTitleDuplicate(a.title, seenTokens)) return false;
+      seenTokens.push(new Set(titleTokens(a.title)));
       return true;
     })
     .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
     .slice(0, NEWS_LIMIT);
+  /*
+   * partial 은 «둘 중 하나만 실패» 를 뜻한다. articles 가 나왔더라도 이
+   * 신호는 관측 용도로 남긴다 — degraded 판정과 별개다.
+   */
+  const gdeltFailed = !gdelt || !gdelt.stats || (gdelt.stats.attempted && !gdelt.stats.ok);
+  const officialFailed = !official || !official.stats || (official.stats.attempted && !official.stats.ok);
+  const partialSources = (gdeltFailed && !officialFailed) || (!gdeltFailed && officialFailed);
+  const gdeltCooldown = !!(gdelt && gdelt.stats && gdelt.stats.cooldown);
   return {
     ok: articles.length > 0,
     query,
     articles,
     reason: articles.length ? '' : 'no-current-news',
+    partialSources,
+    gdeltCooldown,
     stats: { gdelt: gdelt && gdelt.stats || null, official: official && official.stats || null }
   };
+}
+
+/*
+ * degraded 원인 코드.
+ *
+ * ── 왜 코드가 필요한가 (2026-09-11 감사) ────────────────────────────
+ *
+ *   예전에는 { degraded: true } 하나로 아래 다섯 가지를 뭉갰다.
+ *     · 뉴스 검색 자체가 0건       (근본 원인이 검색 인프라)
+ *     · LLM 을 주지 않았다         (호출부 실수)
+ *     · LLM 이 실패했다 (rate/quota/timeout/network/nokey/budget/…)
+ *     · LLM 이 빈 응답을 돌려줬다
+ *     · LLM 은 성공했으나 근거 검증(completeEvidence)이 걸렀다
+ *
+ *   운영에서 «GDELT 는 죽고 RSS 는 살아 있는데 왜 degraded 인가» 를
+ *   판단하려면 원인을 코드로 남겨 두어야 한다. 사용자에게 보여줄 문구는
+ *   그대로지만, 관측 로그와 payload.degradedReason 에는 아래 코드 중
+ *   하나가 남는다. API key 나 업스트림 원문은 절대 담지 않는다.
+ */
+const DEGRADED_REASONS = Object.freeze({
+  NEWS_NO_ARTICLES: 'NEWS_NO_ARTICLES',           // 검색 자체가 0건
+  NEWS_LLM_UNAVAILABLE: 'NEWS_LLM_UNAVAILABLE',   // llm 인자 없음/구조 이상
+  NEWS_LLM_RATE_LIMIT: 'NEWS_LLM_RATE_LIMIT',     // 공급자 429
+  NEWS_LLM_QUOTA: 'NEWS_LLM_QUOTA',               // 공급자 402/크레딧 소진
+  NEWS_LLM_TIMEOUT: 'NEWS_LLM_TIMEOUT',           // per-call 시간 초과
+  NEWS_LLM_BUDGET: 'NEWS_LLM_BUDGET',             // 요청 예산 소진
+  NEWS_LLM_NOKEY: 'NEWS_LLM_NOKEY',               // 서버 키 미설정
+  NEWS_LLM_ERROR: 'NEWS_LLM_ERROR',               // 그 외 실패
+  NEWS_LLM_EMPTY: 'NEWS_LLM_EMPTY',               // ok=true 인데 텍스트 비었음
+  NEWS_PARSE_FAIL: 'NEWS_PARSE_FAIL',             // 근거 검증 실패
+  NEWS_EXCEPTION: 'NEWS_EXCEPTION',               // 예외 catch
+  NEWS_PARTIAL_SOURCES: 'NEWS_PARTIAL_SOURCES'    // 소스 일부 실패 (관측용)
+});
+
+function reasonFromLlm(reason) {
+  switch (reason) {
+    case 'rate':      return DEGRADED_REASONS.NEWS_LLM_RATE_LIMIT;
+    case 'quota':     return DEGRADED_REASONS.NEWS_LLM_QUOTA;
+    case 'timeout':   return DEGRADED_REASONS.NEWS_LLM_TIMEOUT;
+    case 'budget':    return DEGRADED_REASONS.NEWS_LLM_BUDGET;
+    case 'nokey':     return DEGRADED_REASONS.NEWS_LLM_NOKEY;
+    case 'nomessages':return DEGRADED_REASONS.NEWS_LLM_ERROR;
+    case 'network':
+    case 'server':
+    case 'parse':
+    case 'provider':
+    default:          return DEGRADED_REASONS.NEWS_LLM_ERROR;
+  }
 }
 
 async function answer(question, intent, result, opts) {
   const fallback = deterministicSummary(result, intent);
   const articles = (result && result.articles) || [];
-  if (!articles.length) return { text: fallback, generated: false, degraded: true };
+  if (!articles.length) {
+    return { text: fallback, generated: false, degraded: true, reason: DEGRADED_REASONS.NEWS_NO_ARTICLES };
+  }
 
   const o = opts || {};
   const llm = o.llm;
-  if (!llm || typeof llm.chat !== 'function') return { text: fallback, generated: false, degraded: true };
+  if (!llm || typeof llm.chat !== 'function') {
+    return { text: fallback, generated: false, degraded: true, reason: DEGRADED_REASONS.NEWS_LLM_UNAVAILABLE };
+  }
 
   const evidence = articles.map((a, i) => [
     `[N${i + 1}] 제목: ${a.title}`,
@@ -226,8 +342,10 @@ async function answer(question, intent, result, opts) {
     evidence
   ].join('\n');
 
+  let r = null;
+  let thrown = null;
   try {
-    const r = await llm.chat({
+    r = await llm.chat({
       role: 'answer',
       messages: [{ role: 'system', content: system }, { role: 'user', content: safe(question, 500) }],
       maxTokens: 1200,
@@ -236,14 +354,32 @@ async function answer(question, intent, result, opts) {
       budgetMs: o.budgetMs,
       extra: { reasoning: { enabled: false } }
     });
-    const text = r && r.ok ? String(r.text || '').trim() : '';
-    if (completeEvidence(text, articles)) return { text, generated: true, degraded: false, model: r.model || '' };
-  } catch (e) { /* 아래 결정론 요약으로 끝낸다. */ }
-  return { text: fallback, generated: false, degraded: true };
+  } catch (e) { thrown = e; }
+  if (thrown) {
+    return { text: fallback, generated: false, degraded: true, reason: DEGRADED_REASONS.NEWS_EXCEPTION };
+  }
+  if (!r || !r.ok) {
+    return { text: fallback, generated: false, degraded: true, reason: reasonFromLlm(r && r.reason) };
+  }
+  const text = String(r.text || '').trim();
+  if (!text) {
+    return { text: fallback, generated: false, degraded: true, reason: DEGRADED_REASONS.NEWS_LLM_EMPTY, model: r.model || '' };
+  }
+  if (completeEvidence(text, articles)) {
+    /*
+     * partialSources 는 «답변은 정상이지만 소스는 절반만 살았다» 상태.
+     * degraded 로 올리지는 않되 (사용자 응답은 완전하다) 관측용 reason 은 남긴다.
+     */
+    if (result && result.partialSources) {
+      return { text, generated: true, degraded: false, partial: true, reason: DEGRADED_REASONS.NEWS_PARTIAL_SOURCES, model: r.model || '' };
+    }
+    return { text, generated: true, degraded: false, model: r.model || '' };
+  }
+  return { text: fallback, generated: false, degraded: true, reason: DEGRADED_REASONS.NEWS_PARSE_FAIL, model: r.model || '' };
 }
 
 module.exports = {
   NEWS_LIMIT, DEFAULT_DAYS, OFFICIAL_AI_FEEDS, timeWindow, buildResearchQuery, normalizeArticle, relevantToQuestion,
-  impactFor, ideaFor, deterministicSummary, completeEvidence,
-  research, answer
+  impactFor, ideaFor, deterministicSummary, completeEvidence, titleDedupKey,
+  research, answer, DEGRADED_REASONS
 };
