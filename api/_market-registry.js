@@ -284,6 +284,8 @@ const SOURCES = {
   'openai.com':              { name: 'OpenAI',               tier: 'A', trust: 26, group: 'openai' },
   'blog.google':             { name: 'Google',               tier: 'A', trust: 24, group: 'google' },
   'cloud.google.com':        { name: 'Google Cloud',         tier: 'A', trust: 22, group: 'google' },
+  'platform.claude.com':     { name: 'Anthropic',            tier: 'A', trust: 26, group: 'anthropic' },
+  'docs.perplexity.ai':      { name: 'Perplexity',           tier: 'A', trust: 24, group: 'perplexity' },
 
   /* ── B. 정부 / 공공 / 산업기관 ── */
   'motie.go.kr':         { name: '산업통상자원부',        tier: 'B', trust: 30, group: 'motie' },

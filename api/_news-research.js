@@ -11,8 +11,14 @@
 const NEWS_LIMIT = 6;
 const DEFAULT_DAYS = 14;
 const OFFICIAL_AI_FEEDS = Object.freeze([
-  { url: 'https://openai.com/news/rss.xml', host: 'openai.com' },
-  { url: 'https://blog.google/rss/', host: 'blog.google' }
+  { id: 'OPENAI_OFFICIAL', name: 'OpenAI', officialDomain: 'openai.com', url: 'https://openai.com/news/rss.xml', host: 'openai.com', parserType: 'rss', timeoutMs: 8000, enabled: true },
+  { id: 'GOOGLE_OFFICIAL', name: 'Google', officialDomain: 'blog.google', url: 'https://blog.google/rss/', host: 'blog.google', parserType: 'rss', timeoutMs: 8000, enabled: true },
+  { id: 'ANTHROPIC_OFFICIAL', name: 'Anthropic', officialDomain: 'platform.claude.com', url: 'https://platform.claude.com/docs/en/release-notes/feed.xml', host: 'platform.claude.com', parserType: 'rss', timeoutMs: 8000, enabled: true },
+  {
+    id: 'PERPLEXITY_OFFICIAL', name: 'Perplexity', officialDomain: 'docs.perplexity.ai',
+    url: 'https://docs.perplexity.ai/docs/resources/changelog/rss.xml', host: 'docs.perplexity.ai',
+    parserType: 'rss', contentStrongTitle: true, contentSummary: true, timeoutMs: 8000, enabled: true
+  }
 ]);
 
 const ENTITIES = Object.freeze([
@@ -192,6 +198,22 @@ function isTitleDuplicate(title, seenTokensArr) {
   return false;
 }
 
+function mergeFeedResults(results) {
+  const stats = { attempted: 0, ok: 0, failed: 0, skippedBackoff: 0, rawItems: 0, accepted: 0, rejected: 0, errors: [], sources: [] };
+  const items = [];
+  for (const result of results) {
+    if (result && Array.isArray(result.items)) items.push(...result.items);
+    const s = result && result.stats;
+    if (!s) { stats.failed++; continue; }
+    for (const key of ['attempted', 'ok', 'failed', 'skippedBackoff', 'rawItems', 'accepted', 'rejected']) {
+      stats[key] += Number(s[key]) || 0;
+    }
+    if (Array.isArray(s.errors)) stats.errors.push(...s.errors);
+    if (Array.isArray(s.sources)) stats.sources.push(...s.sources);
+  }
+  return { items, stats };
+}
+
 async function research(question, opts) {
   const o = opts || {};
   const fetcher = o.fetcher || require('./_news-fetch');
@@ -212,11 +234,16 @@ async function research(question, opts) {
         now
       })];
     if (typeof fetcher.fetchFeeds === 'function') {
-      jobs.push(fetcher.fetchFeeds({ feeds: OFFICIAL_AI_FEEDS, gapMs: 0, now }));
+      /* source별로 병렬 격리한다. 한 feed의 8초 timeout이 네 번 누적되지 않는다. */
+      for (const feed of OFFICIAL_AI_FEEDS.filter(f => f.enabled !== false)) {
+        jobs.push(fetcher.fetchFeeds({ feeds: [feed], gapMs: 0, now }));
+      }
     }
     const settled = await Promise.allSettled(jobs);
     gdelt = settled[0] && settled[0].status === 'fulfilled' ? settled[0].value : { items: [], stats: { failed: 1 } };
-    official = settled[1] && settled[1].status === 'fulfilled' ? settled[1].value : { items: [], stats: null };
+    official = mergeFeedResults(settled.slice(1).map(x => x.status === 'fulfilled'
+      ? x.value
+      : { items: [], stats: { attempted: 1, failed: 1 } }));
   } catch (e) {
     return { ok: false, query, articles: [], reason: 'news-search-failed' };
   }
@@ -233,6 +260,8 @@ async function research(question, opts) {
       return t >= cutoff && t <= futureCutoff;
     })
     .filter(a => relevantToQuestion(a, question))
+    /* 같은 canonical URL이면 feed 순서가 아니라 최신 항목을 남긴다. */
+    .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
     .filter(a => {
       if (seenUrl.has(a.url)) return false;
       seenUrl.add(a.url);
@@ -385,5 +414,5 @@ async function answer(question, intent, result, opts) {
 module.exports = {
   NEWS_LIMIT, DEFAULT_DAYS, OFFICIAL_AI_FEEDS, timeWindow, buildResearchQuery, normalizeArticle, relevantToQuestion,
   impactFor, ideaFor, deterministicSummary, completeEvidence, titleDedupKey,
-  research, answer, DEGRADED_REASONS
+  mergeFeedResults, research, answer, DEGRADED_REASONS
 };

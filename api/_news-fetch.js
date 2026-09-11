@@ -332,21 +332,26 @@ function linkOf(block) {
 /**
  * @returns {Array} 원시 항목 {title, url, publishedAt, summary}
  */
-function parseFeed(xml) {
+function parseFeed(xml, opts) {
+  const o = opts || {};
   const text = String(xml || '');
   if (!text) return [];
   const blocks = text.match(/<(item|entry)(?:\s[^>]*)?>[\s\S]*?<\/\1>/gi) || [];
   const out = [];
 
   for (const b of blocks.slice(0, PER_FEED_MAX)) {
-    const title = stripTags(tag(b, ['title']));
+    const encoded = tag(b, ['content:encoded']);
+    const strong = encoded.match(/<strong(?:\s[^>]*)?>([\s\S]*?)<\/strong>/i);
+    const title = stripTags(o.contentStrongTitle && strong ? strong[1] : tag(b, ['title']));
     const url = linkOf(b);
     const date = stripTags(tag(b, ['pubDate', 'published', 'updated', 'dc:date']));
     /*
-     * 요약은 피드가 준 «짧은 설명» 만 쓴다. content:encoded(본문 전체)는
-     * 일부러 읽지 않는다 — 원문을 들고 다니지 않기 위해서다.
+     * 기본은 피드가 준 짧은 설명만 쓴다. 설명이 없는 공식 changelog RSS는
+     * feed 설정이 명시한 경우에만 content:encoded를 읽고 즉시 길이 상한으로
+     * 자른다. 정규화 이후에는 원문 전체가 남지 않는다.
      */
-    const summary = stripTags(tag(b, ['description', 'summary'])).slice(0, NI.SUMMARY_MAX);
+    const summarySource = tag(b, ['description', 'summary']) || (o.contentSummary ? encoded : '');
+    const summary = stripTags(summarySource).slice(0, NI.SUMMARY_MAX);
     if (!title || !url || !date) continue;
     out.push({ title, url, publishedAt: date, summary });
   }
@@ -380,7 +385,7 @@ async function fetchFeeds(opts) {
     stats.attempted++;
     noteSourceAttempt(f.host, now.getTime());
     let r;
-    try { r = await getFn(f.url); }
+    try { r = await getFn(f.url, undefined, f.timeoutMs); }
     catch (e) { r = { ok: false, status: 0, text: '', error: String(e && e.message || e) }; }
     if (!r.ok) {
       stats.failed++;
@@ -390,7 +395,7 @@ async function fetchFeeds(opts) {
     } else {
       noteSourceResult(f.host, r, now.getTime());
       let raws = [];
-      try { raws = parseFeed(r.text); }
+      try { raws = parseFeed(r.text, f); }
       catch (e) { /* parse 아래에서 실패 처리 */ }
       if (!raws.length) {
         stats.failed++;
