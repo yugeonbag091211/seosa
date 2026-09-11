@@ -281,6 +281,7 @@ const SOURCES = {
   /* 아마존 뉴스룸이 옮겨 간 곳. 옛 도메인도 남겨 둔다 — 옛 링크가 여전히 돈다. */
   'aboutamazon.com':         { name: 'AWS/Amazon',           tier: 'A', trust: 24, group: 'amazon' },
   'news.microsoft.com':      { name: 'Microsoft',            tier: 'A', trust: 24, group: 'microsoft' },
+  'openai.com':              { name: 'OpenAI',               tier: 'A', trust: 26, group: 'openai' },
   'blog.google':             { name: 'Google',               tier: 'A', trust: 24, group: 'google' },
   'cloud.google.com':        { name: 'Google Cloud',         tier: 'A', trust: 22, group: 'google' },
 

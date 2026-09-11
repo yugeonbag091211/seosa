@@ -21,7 +21,8 @@
  * ── 지키는 선 ────────────────────────────────────────────────────
  *
  *   · 출력 형식은 api/ai.js 의 parseClassification 과 같다: {intent, query}.
- *     intent 는 A(잡담)·B(지식)·C(추천)·D(가격/상품)·E(가격 이력/시점).
+ *     intent 는 A(잡담)·B(지식)·C(추천)·D(가격/상품)·E(가격 이력/시점)
+ *     ·N(최신 뉴스 조사)·S(SEOSA 영향 분석).
  *   · 검색어는 사용자가 쓴 낱말만으로 만든다. 없는 상품명을 지어내지 않는다.
  *   · 애매하면 넓은 쪽(C)을 고른다. 게스트에게는 "검색해서 보여주는 것"이
  *     "모른다고 하는 것"보다 언제나 낫다 — 결과가 없으면 없다고 나간다.
@@ -51,6 +52,50 @@ const HOWTO_RE = /(어떻게\s*(골라|고르|고를|선택|사야|사는|보고
 const KNOWLEDGE_RE = /(뭐야|무엇|뜻|의미|차이(가|는|점)|어떻게\s*(쓰|사용)|장단점|설명|알려줘$|원리|왜\s)/;
 
 /*
+ * 최신 정보 intent 안전장치.
+ *
+ * 단어 하나로 가르지 않는다. 아래 판정은 최소한
+ *   (조사 대상) + (최신성/발표 맥락) + (정보를 얻으려는 행위)
+ * 의 결합을 요구한다. 그래서 "오늘의집 소파 추천"의 `오늘`이나
+ * "에어팟 지금 사도 돼?"의 `지금`만으로 뉴스가 되지 않는다.
+ *
+ * LLM 분류기가 의미를 판정하는 것이 주 경로이고, 이 규칙은 모델 장애 때도
+ * 정보 질문이 상품 API로 새지 않게 하는 결정론적 경계다. 특히 S/N으로 한 번
+ * 판정한 요청에는 상품 검색어를 절대 만들지 않는다.
+ */
+const INFO_SUBJECT_RE = /\b(?:AI|OpenAI|Anthropic|Google|Gemini|Perplexity|LLM|API|agent(?:ic)?|agents?)\b|인공지능|에이전트|검색\s*API|쇼핑\s*AI/i;
+const FRESH_CONTEXT_RE = /(?:^|[\s,])(오늘|최신|최근|새로|이번\s*(?:주|달))(?=$|[\s,?.!])|뉴스|소식|발표|업데이트|출시|공개|릴리스|release|announce|update/i;
+const RESEARCH_ACTION_RE = /알려|정리|요약|찾아|검색|조사|골라|뽑아|보고|있어|있나|무슨|어떤|붙여|확인|브리핑/i;
+const SEOSA_IMPACT_RE = /SEOSA|서사/i;
+const ANALYSIS_ACTION_RE = /영향|적용|도움|활용|기능|아이디어|기회|위협|바꿀|개선|도입|직접\s*영향/i;
+const API_PRICING_FACT_RE = /\b(?:OpenAI|Anthropic|Google|Gemini|Perplexity)\b[\s\S]{0,40}\bAPI\b[\s\S]{0,24}(?:가격|요금|비용|pricing)/i;
+const EXPLICIT_NEWS_RE = /뉴스|소식|발표|업데이트|릴리스|release|announce|update/i;
+const PHYSICAL_PURCHASE_RE = /(?:\d[\d,]*\s*(?:만|천)?\s*원|사도\s*(?:돼|될)|살까|구매|최저가|판매처|추천|골라)/i;
+
+/**
+ * @returns {'N'|'S'|'B'|''} 뉴스/분석/일반 기술정보 또는 비해당.
+ */
+function classifyInformationIntent(text) {
+  const s = String(text == null ? '' : text).trim();
+  if (!s || !INFO_SUBJECT_RE.test(s)) return '';
+
+  /* "오늘 Google TV 골라줘"처럼 실제 구매 행위가 분명하면 최신성 단어보다 구매 목적이 우선이다. */
+  if (!EXPLICIT_NEWS_RE.test(s) && PHYSICAL_PURCHASE_RE.test(s)) return '';
+
+  /* "OpenAI API 가격"은 최신 기사 조사가 아니라 제품 문서성 사실 질문이다. */
+  if (API_PRICING_FACT_RE.test(s) && !/(뉴스|최신|최근|오늘|발표|업데이트)/i.test(s)) return 'B';
+
+  const fresh = FRESH_CONTEXT_RE.test(s);
+  /* "오늘 AI 뉴스" 같은 명사형 요청도 subject+fresh 맥락이 함께 있을 때만 조사로 본다. */
+  const asksResearch = RESEARCH_ACTION_RE.test(s) || /[?？]$/.test(s) || /뉴스\s*[.!]?$/i.test(s);
+  const asksSeosaAnalysis = SEOSA_IMPACT_RE.test(s) && ANALYSIS_ACTION_RE.test(s);
+
+  if (asksSeosaAnalysis && (fresh || /\bAPI\b|에이전트|쇼핑\s*AI/i.test(s))) return 'S';
+  if (fresh && asksResearch) return 'N';
+  return '';
+}
+
+/*
  * 검색어에서 걷어낼 말.
  *
  * 조건(금액·취향)과 요청 동사는 검색어에 섞이면 결과가 0건이 된다
@@ -62,7 +107,7 @@ const STRIP_WORDS = [
   '알려줘', '알려', '주세요', '줘', '줄래', '해줘', '해주세요', '있어', '있나', '있을까', '없어',
   '살까', '사도', '사고', '싶어', '싶은데', '싶다', '사려고', '구매', '살', '사는', '사면',
   '괜찮아', '괜찮은', '괜찮을까', '어때', '어떤', '어떤게', '뭐가', '뭐', '뭘', '좋아', '좋을까',
-  '좋은', '제일', '가장', '최고', '괜찮', '되나', '될까', '돼', '지금', '요즘', '중에', '중에서',
+  '좋은', '제일', '가장', '최고', '괜찮', '되나', '될까', '돼', '지금', '오늘', '요즘', '중에', '중에서',
   // 조건을 덧붙이는 말. 남으면 "통화 품질 중요해" 같은 문장이 검색어가 된다.
   '중요해', '중요한', '중요하고', '중요', '필요하고', '위주로', '위주',
   '하나', '하나만', '것', '거', '걸', '게', '좀', '제발', '빨리', '진짜', '정말', '그냥',
@@ -190,7 +235,7 @@ const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|
  *
  * @param {string} text 사용자 발화
  * @param {Array}  [hist] 앞 대화 [{role, text}] — 검색어가 비면 앞 사용자 발화에서 이어받는다
- * @returns {{intent:'A'|'B'|'C'|'D'|'E', query:string, source:'heuristic', confidence:'high'|'low'}}
+ * @returns {{intent:'A'|'B'|'C'|'D'|'E'|'N'|'S', query:string, source:'heuristic', confidence:'high'|'low'}}
  *
  * ── confidence 의 뜻 (2026-09-02) ────────────────────────────────
  *
@@ -206,6 +251,18 @@ function classify(text, hist) {
   if (!s) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
 
   if (GREETING_RE.test(s)) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
+
+  /* 상품 조건 파싱보다 먼저 정보 목적을 본다. "골라줘"가 뉴스 선별에도 쓰이기 때문이다. */
+  const informationIntent = classifyInformationIntent(s);
+  if (informationIntent) {
+    return {
+      intent: informationIntent,
+      query: '',
+      source: 'semantic-guard',
+      confidence: 'high',
+      extra: { useCase: '', brand: '', avoid: '' }
+    };
+  }
 
   const cons = parseConstraints(s);
   const hasBudget = !!(cons.budgetMax || cons.budgetMin);
@@ -284,4 +341,7 @@ function classify(text, hist) {
   };
 }
 
-module.exports = { classify, extractQuery, extractUseCase, MAX_QUERY_TOKENS, MAX_QUERY_LEN };
+module.exports = {
+  classify, classifyInformationIntent, extractQuery, extractUseCase,
+  MAX_QUERY_TOKENS, MAX_QUERY_LEN
+};

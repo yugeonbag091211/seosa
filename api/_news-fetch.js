@@ -187,6 +187,7 @@ const FEEDS = [
   /* 2026-09-10 교정: press.aboutamazon.com 은 어떤 경로도 404. 뉴스룸이 이쪽으로 옮겼다. */
   { url: 'https://www.aboutamazon.com/news/rss',                          host: 'www.aboutamazon.com' },
   { url: 'https://news.microsoft.com/feed/',                              host: 'news.microsoft.com' },
+  { url: 'https://openai.com/news/rss.xml',                               host: 'openai.com' },
   { url: 'https://blog.google/rss/',                                      host: 'blog.google' },
 
   /* B. 공식 정부/공공 RSS — 기관의 RSS 안내 페이지에서 확인된 주소만 쓴다. */
@@ -447,8 +448,10 @@ async function fetchGdelt(queries, opts) {
   const span = o.timespanDays || 14;
   const items = [];
   const stats = { attempted: 0, ok: 0, failed: 0, rawItems: 0, accepted: 0, rejected: 0, errors: [] };
+  const list = (queries || []).slice(0, o.maxQueries || 6);
 
-  for (const q of (queries || []).slice(0, o.maxQueries || 6)) {
+  for (let qi = 0; qi < list.length; qi++) {
+    const q = list[qi];
     stats.attempted++;
     const url = GDELT_ENDPOINT
       + '?query=' + encodeURIComponent(q)
@@ -479,8 +482,8 @@ async function fetchGdelt(queries, opts) {
       stats.accepted++;
       items.push(it);
     }
-    // ★ GDELT 는 5초에 한 번이다. 공식 피드보다 훨씬 느리게 부른다.
-    await sleep(GDELT_GAP_MS);
+    // ★ GDELT 는 5초에 한 번이다. 마지막 요청 뒤에는 다음 호출이 없으므로 기다리지 않는다.
+    if (qi < list.length - 1) await sleep(GDELT_GAP_MS);
   }
   return { items, stats };
 }
