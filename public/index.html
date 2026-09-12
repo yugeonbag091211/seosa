@@ -1732,6 +1732,27 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
   border-radius:50%;margin:0;animation:spin .7s linear infinite;flex:0 0 auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* External Hotdeal Radar — the evidence stays quieter than the product and price. */
+.radar-deals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.radar-deal{min-width:0;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.radar-deal-top{display:flex;align-items:flex-start;gap:12px}
+.radar-deal-thumb{width:58px;height:58px;flex:0 0 auto;border-radius:9px;background:var(--bg);overflow:hidden;
+  display:flex;align-items:center;justify-content:center}
+.radar-deal-thumb img{width:100%;height:100%;object-fit:contain}
+.radar-deal-copy{min-width:0;flex:1}
+.radar-deal-name{font-size:.78rem;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.radar-deal-price{margin-top:6px;font-size:1.02rem;font-weight:750;font-variant-numeric:tabular-nums}
+.radar-deal-proof{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);font-size:.72rem;color:var(--soft);line-height:1.55}
+.radar-deal-proof strong{display:block;color:var(--down);font-size:.78rem}
+.radar-deal-badges{margin-top:9px;display:flex;gap:5px;flex-wrap:wrap}
+.radar-badge{font-size:.64rem;color:var(--soft);background:var(--bg);border-radius:999px;padding:4px 7px}
+.radar-deal-source{margin-top:8px;font-size:.68rem;color:var(--faint)}
+.radar-deal-actions{margin-top:11px;display:flex;gap:12px;align-items:center}
+.radar-deal-actions a{font-size:.72rem;color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+@media(max-width:1000px){.radar-deals{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.radar-deals{grid-template-columns:1fr}.radar-deal{padding:14px}}
+
 /* ── 이달의 큐레이션 ──────────────────────────────────────────
  *
  * 예전에는 52px 패딩의 검정 라운드 배너에 4.4rem 짜리 월 숫자가 있었다.
@@ -3279,6 +3300,19 @@ select:focus-visible,textarea:focus-visible,
     </div>
   </section>
 
+  <!-- External Hotdeal Radar: community discovery, verified against SEOSA history. -->
+  <section id="externalHot" class="block" aria-label="실시간 핫딜" style="display:none">
+    <div class="sec-eyebrow">EXTERNAL HOTDEAL RADAR</div>
+    <div class="sec-head">
+      <div>
+        <div class="sec-title">실시간 핫딜<span class="sec-count" id="externalHotCount"></span></div>
+        <div class="sec-sub">외부에서 발견한 가격을 SEOSA 가격 이력으로 다시 검증했어요.</div>
+      </div>
+    </div>
+    <div class="drop-loading" id="externalHotLoading"><div class="ring"></div>외부 핫딜을 검증하는 중…</div>
+    <div class="radar-deals" id="externalHotRows"></div>
+  </section>
+
   <!-- 오늘의 셀렉션 -->
   <section id="today" class="block">
     <div class="sec-eyebrow">TODAY'S SELECTION</div>
@@ -4251,7 +4285,7 @@ var AppState = {
   profile:  normalizeProfile(Store.get(CONST.LS.PROFILE, null)),
 
   // 섹션 준비 여부 (홈 복귀 시 다시 보여줄지 판단)
-  ready: { monthly: false, recent: false, drop: false, forYou: false, histRec: false },
+  ready: { monthly: false, recent: false, drop: false, externalHot: false, forYou: false, histRec: false },
 
   // 추천
   recKey: '',
@@ -4775,7 +4809,7 @@ var Api = {
       'saveUserProfile':'/api/sync','loadUserProfile':'/api/sync',
       'getPopularKeywords':'/api/init','getProfileRecommendations':'/api/rec',
       'getMonthlyRecommendations':'/api/init',
-      'getPriceDropTop':'/api/init','recordSearchStat_':'/api/stats',
+      'getPriceDropTop':'/api/init','getExternalHotdeals':'/api/hotdeals','recordSearchStat_':'/api/stats',
       // (Vercel Hobby 함수 12개 상한 — api/payment.js 주석 참고).
       'payCancel':'/api/payment','payStatus':'/api/payment'
     };
@@ -4820,6 +4854,8 @@ var Api = {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '') + '&offset=' + (args[1] || 0);
     } else if (fnName === 'getProfileRecommendations') {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
+    } else if (fnName === 'getExternalHotdeals') {
+      queryUrl = url + '?limit=12&minScore=60';
     } else if (fnName === 'payPrepare' || fnName === 'payConfirm'
                || fnName === 'payCancel' || fnName === 'payStatus') {
       /*
@@ -4926,6 +4962,7 @@ var Api = {
         else if (fnName === 'getPopularKeywords') { if (onOk) onOk(data.popular || data || []); }
         else if (fnName === 'getMonthlyRecommendations') { if (onOk) onOk(data.monthly || data); }
         else if (fnName === 'getPriceDropTop') { if (onOk) onOk(data.priceDrop || data || []); }
+        else if (fnName === 'getExternalHotdeals') { if (onOk) onOk(data.items || []); }
         else if (fnName === 'getDailyRecommendations' || fnName === 'getMoreOfKeyword') { if (onOk) onOk(data); }
         else if (fnName === 'loadUserData') { if (onOk) onOk({ success: data.success, data: JSON.stringify(data.data || {}) }); }
         else { if (onOk) onOk(data, meta); }
@@ -5973,7 +6010,7 @@ var Share = {
 /* ============================================================
  *  [11] Search — 검색
  * ========================================================== */
-var HOME_SECTIONS = ['today', 'monthly', 'recent', 'priceDrop', 'forYou', 'histRec'];
+var HOME_SECTIONS = ['today', 'monthly', 'recent', 'priceDrop', 'externalHot', 'forYou', 'histRec'];
 
 
 /* ============================================================
@@ -7044,10 +7081,82 @@ var Search = {
     show('monthly',   AppState.ready.monthly);
     show('recent',    AppState.ready.recent);
     show('priceDrop', AppState.ready.drop);
+    show('externalHot', AppState.ready.externalHot);
     show('forYou',    AppState.ready.forYou);
     show('histRec',   AppState.ready.histRec);
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+/* ============================================================
+ *  ExternalHot — community discovery verified by SEOSA history
+ * ========================================================== */
+var ExternalHot = {
+  sourceLabel: function(source) {
+    var labels = { 'fmkorea':'FM코리아', 'ppomppu':'뽐뿌', 'quasarzone':'퀘이사존',
+      'arca-live':'아카라이브', 'mock-hotdeal':'테스트 피드' };
+    return labels[source] || source || '외부 피드';
+  },
+
+  grade: function(score) {
+    score = Number(score) || 0;
+    if (score >= 90) return '매우 강한 핫딜';
+    if (score >= 75) return '좋은 핫딜';
+    return '관심 가격';
+  },
+
+  cardHTML: function(it) {
+    if (!it || !it.title || !it.sourceUrl) return '';
+    var image = Fmt.safeUrl(it.image);
+    var productUrl = Fmt.safeUrl(it.productUrl || it.url);
+    var sourceUrl = Fmt.safeUrl(it.sourceUrl);
+    var pct = Number(it.priceVs30dAvg);
+    var proof = Number.isFinite(pct) && pct > 0
+      ? '최근 30일 평균 대비 <strong>↓ ' + Fmt.esc(String(pct)) + '%</strong>'
+      : '<strong>' + Fmt.esc(it.reason || '가격 이력으로 검증') + '</strong>';
+    var sourceText = it.sourceCount > 1
+      ? '출처 ' + Fmt.int(it.sourceCount) + '곳에서 발견'
+      : '커뮤니티 발견 · ' + ExternalHot.sourceLabel(it.source);
+    var history = it.productId
+      ? '<a href="/?p=' + encodeURIComponent(it.productId) + '">가격 이력 보기</a>' : '';
+    return '<article class="radar-deal">'
+      + '<div class="radar-deal-top"><div class="radar-deal-thumb">'
+      + (image ? '<img src="' + Fmt.esc(image) + '" loading="lazy" referrerpolicy="no-referrer" alt="">' : '⌁')
+      + '</div><div class="radar-deal-copy"><div class="radar-deal-name">' + Fmt.esc(it.title) + '</div>'
+      + '<div class="radar-deal-price">' + Fmt.won(it.price) + '원</div></div></div>'
+      + '<div class="radar-deal-proof">' + proof + '<span>SEOSA 판단 · ' + ExternalHot.grade(it.dealScore) + '</span></div>'
+      + '<div class="radar-deal-badges"><span class="radar-badge">커뮤니티 발견</span>'
+      + '<span class="radar-badge">SEOSA 검증</span></div>'
+      + '<div class="radar-deal-source">' + Fmt.esc(sourceText) + '</div>'
+      + '<div class="radar-deal-actions">' + history
+      + (sourceUrl ? '<a href="' + Fmt.esc(sourceUrl) + '" target="_blank" rel="noopener noreferrer">원문 보기</a>' : '')
+      + (productUrl ? '<a href="' + Fmt.esc(productUrl) + '" target="_blank" rel="noopener noreferrer">상품 보기</a>' : '')
+      + '</div></article>';
+  },
+
+  load: function() {
+    Api.call('getExternalHotdeals', [], ExternalHot.show, function() {
+      show('externalHotLoading', false);
+      show('externalHot', false);
+      AppState.ready.externalHot = false;
+    });
+  },
+
+  show: function(items) {
+    var external = (items || []).filter(function(it) {
+      return it && it.source && it.source !== 'internal-history' && it.sourceUrl && Number(it.dealScore) >= 60;
+    });
+    show('externalHotLoading', false);
+    if (!external.length) {
+      AppState.ready.externalHot = false;
+      show('externalHot', false);
+      return;
+    }
+    setText('externalHotCount', external.length + '개');
+    setHTML('externalHotRows', external.map(ExternalHot.cardHTML).join(''));
+    AppState.ready.externalHot = true;
+    show('externalHot', !isSearching());
   }
 };
 
@@ -10745,6 +10854,7 @@ var Init = {
     Rec.load();
     Monthly.load();
     Drop.load();
+    ExternalHot.load();
   },
 
   run: function() {
@@ -10816,6 +10926,7 @@ var Init = {
 
     ForYou.load();
     HistRec.load();    // ★ 최근 검색 기반 추천
+    ExternalHot.load();
 
     Init.bindHistory();
     Init.openDeepLink();

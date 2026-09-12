@@ -37,7 +37,7 @@ const MAX_LIMIT = 60;
 const MAX_FAMILY_RUN = 2;
 
 /** 2026-09-06 판에도 있던 컬럼. 이것만으로 목록이 성립해야 한다. */
-const BASE_COLS = 'id, deal_status, hot_score, confidence, title, image, mall, current_price,'
+const BASE_COLS = 'id, source, source_external_id, deal_status, hot_score, confidence, identity_confidence, title, image, mall, current_price,'
   + ' source_reference_price, reason_json, product_id, affiliate_url, last_checked_at';
 /** 2026-09-07 마이그레이션이 추가하는 컬럼. 없으면 BASE_COLS 로 물러난다. */
 const GROUP_COLS = ', group_key, is_primary, group_size, group_lowest_price, group_lowest_mall,'
@@ -151,6 +151,13 @@ function toListItem(r) {
     productId: r.product_id || '',
     url: r.affiliate_url || '',
     checkedAt: r.last_checked_at,
+    source: r.source || 'internal-history',
+    sourceUrl: r.source && r.source !== 'internal-history' ? (r.affiliate_url || '') : '',
+    productUrl: r.affiliate_url || '',
+    dealScore: (r.confidence === 'HIGH' || r.confidence === 'MEDIUM') ? r.hot_score : null,
+    matchConfidence: r.identity_confidence === 'EXACT' ? 1
+      : r.identity_confidence === 'STRONG' ? 0.85 : null,
+    verificationStatus: r.deal_status,
 
     /* ── 아래부터 2026-09-07 추가. 전부 additive 다. ── */
 
@@ -183,6 +190,99 @@ function toListItem(r) {
     lowestMall: r.group_lowest_mall || r.mall || '',
     isLowest: !(Number(r.group_lowest_price) > 0) || Number(r.group_lowest_price) >= Number(r.current_price)
   };
+}
+
+const EXTERNAL_VISIBLE = ['STRONG_DEAL', 'GOOD_DEAL', 'INTEREST'];
+const EXTERNAL_COLS = 'id, source, source_post_id, source_url, title, price, original_price, mall,'
+  + ' product_url, image_url, posted_at, matched_product_id, match_confidence, deal_score,'
+  + ' verification_status, price_vs_30d_avg, price_vs_90d_low, average_30d, low_90d,'
+  + ' previous_price, history_observation_count, history_last_observed_at, source_count, sources,'
+  + ' metadata, last_verified_at';
+
+function externalStatus(status) {
+  return status === 'STRONG_DEAL' ? 'VERIFIED_HOT'
+    : status === 'GOOD_DEAL' ? 'GOOD_DEAL' : 'POTENTIAL_DEAL';
+}
+
+function externalReason(row) {
+  const pct = Number(row.price_vs_30d_avg);
+  if (Number.isFinite(pct) && pct > 0) return `최근 30일 평균보다 ${pct}% 저렴`;
+  const delta = Number(row.price_vs_90d_low);
+  if (Number.isFinite(delta) && delta <= 2) return '최근 90일 최저가에 가까운 가격';
+  return 'SEOSA 가격 이력으로 검증한 외부 핫딜';
+}
+
+function toExternalListItem(r) {
+  const meta = obj(r.metadata);
+  return {
+    id: `external:${r.id}`,
+    status: externalStatus(r.verification_status),
+    score: Number(r.deal_score),
+    title: r.title,
+    image: r.image_url || '',
+    mall: r.mall || '',
+    price: Number(r.price) || 0,
+    listPrice: Number(r.original_price) || 0,
+    reason: externalReason(r),
+    productId: r.matched_product_id || '',
+    url: r.product_url || r.source_url || '',
+    checkedAt: r.last_verified_at,
+    source: r.source,
+    sourceUrl: r.source_url || '',
+    productUrl: r.product_url || '',
+    dealScore: Number(r.deal_score),
+    matchConfidence: Number(r.match_confidence),
+    verificationStatus: r.verification_status,
+    priceVs30dAvg: r.price_vs_30d_avg == null ? null : Number(r.price_vs_30d_avg),
+    priceVs90dLow: r.price_vs_90d_low == null ? null : Number(r.price_vs_90d_low),
+    sourceCount: Math.max(1, Number(r.source_count) || 1),
+    sources: arr(r.sources),
+    badges: ['커뮤니티 발견', 'SEOSA 검증'],
+    signals: {
+      priceDropPercent: r.price_vs_30d_avg == null ? null : Number(r.price_vs_30d_avg),
+      priceDropAmount: r.average_30d ? Math.max(0, Number(r.average_30d) - Number(r.price)) : null,
+      referencePrice: r.average_30d == null ? null : Number(r.average_30d),
+      referenceKind: r.average_30d == null ? null : 'average30',
+      previousPrice: r.previous_price == null ? null : Number(r.previous_price),
+      nearHistoricalLow: r.price_vs_90d_low != null && Number(r.price_vs_90d_low) <= 2,
+      observedLow: r.low_90d == null ? null : Number(r.low_90d),
+      historyCount: Number(r.history_observation_count) || 0,
+      historyDays: 0,
+      freshness: null,
+      staleDays: 0,
+      currentObserved: false
+    },
+    offerCount: Math.max(1, Number(r.source_count) || 1),
+    otherOfferCount: Math.max(0, (Number(r.source_count) || 1) - 1),
+    lowestPrice: Number(r.price) || 0,
+    lowestMall: r.mall || '',
+    isLowest: true,
+    matchReason: meta.matchReason || ''
+  };
+}
+
+function isMissingExternalTable(message) {
+  return /relation .*external_hotdeals.* does not exist|could not find the table.*external_hotdeals|schema cache/i
+    .test(String(message || ''));
+}
+
+async function loadExternal(queryParams, minScore, limit) {
+  let query = supabase.from('external_hotdeals')
+    .select(EXTERNAL_COLS)
+    .in('verification_status', EXTERNAL_VISIBLE)
+    .eq('is_primary', true)
+    .gte('deal_score', Math.max(60, minScore))
+    .order('deal_score', { ascending: false })
+    .order('posted_at', { ascending: false })
+    .limit(limit);
+  if (queryParams.source) query = query.eq('source', String(queryParams.source).slice(0, 60));
+  if (queryParams.mall) query = query.eq('mall', String(queryParams.mall).slice(0, 40));
+  const { data, error } = await query;
+  if (error && (isMissingExternalTable(error.message) || isMissingColumn(error.message))) {
+    return { items: [], pending: true };
+  }
+  if (error) throw new Error(error.message);
+  return { items: (data || []).map(toExternalListItem), pending: false };
 }
 
 /**
@@ -258,6 +358,7 @@ module.exports = async function handler(req, res) {
 
     /* ── 목록 ── */
     const limit = intParam(q.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
+    const minScore = intParam(q.minScore, 0, 0, 100);
     const offset = intParam(q.cursor, 0, 0, 10000);
     const sort = SORTS[String(q.sort || 'score')] || SORTS.score;
 
@@ -281,6 +382,8 @@ module.exports = async function handler(req, res) {
 
       if (withGroups) query = query.eq('is_primary', true);
       if (q.mall) query = query.eq('mall', String(q.mall).slice(0, 40));
+      if (q.source) query = query.eq('source', String(q.source).slice(0, 60));
+      if (minScore > 0) query = query.gte('hot_score', minScore);
 
       query = query.order(sort.col, { ascending: sort.asc });
       if (withGroups) {
@@ -307,7 +410,23 @@ module.exports = async function handler(req, res) {
      *   것은 괜찮지만, 항목이 사라지는 것은 괜찮지 않다.
      */
     const nextCursor = rows.length === limit ? offset + rows.length : null;
-    const items = spread(dropDuplicateGroups(rows)).map(toListItem);
+    const internalItems = spread(dropDuplicateGroups(rows)).map(toListItem);
+    // External cards are folded into the first page. Repeating them on every
+    // legacy cursor page would be worse than keeping later pages internal-only.
+    const external = offset === 0
+      ? await loadExternal(q, minScore, limit)
+      : { items: [], pending: false };
+    let items = internalItems;
+    if (external.items.length) {
+      const compare = q.sort === 'price'
+        ? (a, b) => Number(a.price) - Number(b.price)
+        : q.sort === 'recent'
+          ? (a, b) => String(b.checkedAt || '').localeCompare(String(a.checkedAt || ''))
+          : q.sort === 'drop'
+            ? (a, b) => Number((b.signals || {}).priceDropPercent || 0) - Number((a.signals || {}).priceDropPercent || 0)
+            : (a, b) => Number(b.dealScore || 0) - Number(a.dealScore || 0);
+      items = spread(internalItems.concat(external.items).sort(compare)).slice(0, limit);
+    }
 
     // 목록은 자주 바뀌지 않는다 — 수집기가 도는 주기가 시간 단위다.
     cachePublic(res, 120);
@@ -318,7 +437,8 @@ module.exports = async function handler(req, res) {
       // 구분해서 말할 수 있게 갈래별 개수를 준다. (이 페이지 기준)
       counts: items.reduce((acc, it) => { acc[it.status] = (acc[it.status] || 0) + 1; return acc; }, {}),
       // 군집·신호가 실린 응답인지. false 면 마이그레이션 전이라는 뜻이다.
-      grouped
+      grouped,
+      externalPending: external.pending
     });
   } catch (e) {
     // 표가 아직 없으면(마이그레이션 전) 빈 목록으로 답한다 — 화면이 죽지 않는다.
@@ -333,5 +453,6 @@ module.exports = async function handler(req, res) {
 
 module.exports._internal = {
   VISIBLE, VISIBLE_LIFECYCLE, SORTS, MAX_FAMILY_RUN,
-  toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId
+  toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId,
+  toExternalListItem, externalStatus, loadExternal, isMissingExternalTable
 };

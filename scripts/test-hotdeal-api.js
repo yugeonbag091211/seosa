@@ -25,7 +25,7 @@ delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SECRET_KEY;
 
 /* ── 가짜 Supabase ─────────────────────────────────────────────── */
-const db = { hotdeals: [] };
+const db = { hotdeals: [], external_hotdeals: [] };
 /** 이 이름들이 «아직 없는» 컬럼이라고 가정한다 (마이그레이션 전 재현). */
 let missingColumns = [];
 
@@ -46,6 +46,7 @@ const fakeSupabase = {
       select(c) { cols = c || '*'; String(cols).split(',').forEach(x => touch(x.trim())); return q; },
       eq(c, v) { touch(c); filters.push(r => String(r[c]) === String(v)); return q; },
       in(c, vs) { touch(c); filters.push(r => vs.map(String).indexOf(String(r[c])) > -1); return q; },
+      gte(c, v) { touch(c); filters.push(r => Number(r[c]) >= Number(v)); return q; },
       order(c, o) { touch(c); orders.push({ c, asc: !o || o.ascending !== false }); return q; },
       limit(n) { limitN = n; return q; },
       range(a, b) { rangeFrom = a; rangeTo = b; return q; },
@@ -171,7 +172,7 @@ function deal(over) {
   }, over || {});
 }
 
-function reset(rows) { db.hotdeals = rows || []; missingColumns = []; nextId = 1; }
+function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals = external || []; missingColumns = []; nextId = 1; }
 
 (async () => {
   console.log('=== /api/hotdeals 계약 회귀 (외부 호출 0회) ===');
@@ -395,6 +396,34 @@ function reset(rows) { db.hotdeals = rows || []; missingColumns = []; nextId = 1
       handler({ method: 'POST', headers: {}, query: {}, socket: { remoteAddress: '10.0.0.8' } }, res);
     });
     eq(r.status, 405, 'GET 이외는 405');
+  }
+
+  section('14) External Radar 응답과 source/minScore 필터');
+  reset([deal({ source: 'internal-history', hot_score: 95 })], [{
+    id: 81, source: 'fmkorea', source_post_id: 'post-81', source_url: 'https://community.example/81',
+    title: '외부 검증 상품', price: 29900, original_price: 39900, mall: '쿠팡',
+    product_url: 'https://shop.example/81', image_url: 'https://img.example/81.jpg',
+    posted_at: iso(1), matched_product_id: 'p81', match_confidence: 0.97, deal_score: 91,
+    verification_status: 'STRONG_DEAL', price_vs_30d_avg: 23, price_vs_90d_low: -2,
+    average_30d: 38800, low_90d: 30500, previous_price: 39000,
+    history_observation_count: 18, history_last_observed_at: '2026-09-12', source_count: 2,
+    sources: ['fmkorea', 'ppomppu'], metadata: { matchReason: '모델번호 일치' },
+    last_verified_at: iso(0), is_primary: true
+  }]);
+  {
+    const r = await call({ source: 'fmkorea', minScore: '90' });
+    eq(r.body.items.length, 1, '외부 source + minScore 필터');
+    const it = r.body.items[0];
+    eq(it.source, 'fmkorea', 'source');
+    eq(it.sourceUrl, 'https://community.example/81', '원문 URL');
+    eq(it.productUrl, 'https://shop.example/81', '상품 URL');
+    eq(it.dealScore, 91, 'deal score');
+    eq(it.matchConfidence, 0.97, 'match confidence');
+    eq(it.priceVs30dAvg, 23, '30일 평균 대비');
+    eq(it.priceVs90dLow, -2, '90일 최저가 비교');
+    eq(it.productId, 'p81', 'SEOSA matched product id');
+    eq(it.sourceCount, 2, '중복 source 수');
+    eq((await call({ source: 'fmkorea', minScore: '99' })).body.items.length, 0, 'minScore 미달 제외');
   }
 
   console.log('\n====================================================');
