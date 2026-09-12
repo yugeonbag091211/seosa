@@ -273,6 +273,44 @@ function keepLowest(byDate, date, price) {
   if (cur === undefined || price < cur) byDate.set(date, price);
 }
 
+/*
+ * 배치 응답에 실을 «작은» 구매 적정가.
+ *
+ * ── 왜 통째로 보내지 않는가 (2026-09-10 실측) ────────────────────
+ *
+ * fairness() 결과는 17필드 284바이트다. 한 화면이 키 100개를 요청하므로
+ * 28.4KB 가 되고, 기존 points 응답(23.8KB) 대비 +120% 다. 검색 결과를
+ * 기다리는 사용자의 모바일 네트워크에 그대로 얹히는 무게다.
+ *
+ * 카드가 실제로 쓰는 것은 «등급 · 순위 · 기준가» 셋뿐이고, flat 을 설명하는
+ * 데 uniquePrices/heldDays/spreadPct 가, 상세로 넘기기 전 미리보기에
+ * low/median/obs 가 쓰인다. 나머지는 상세 조회(/api/history?fair=1)가
+ * 통째로 돌려주므로 여기서 중복해 보낼 이유가 없다.
+ *
+ * ★ 빼는 것은 전부 «다시 만들 수 있거나 안 쓰는» 값이다 —
+ *     label      level 로 화면이 만든다 (서버 문구를 카드가 쓰지 않는다)
+ *     reason     상세 전용 문장
+ *     minObs/fullObs/windowDays  상수다
+ *     mean/high  카드가 쓰지 않는다 (상세에서 온다)
+ *     confident  서버가 이미 등급에 반영했다 (5구간/3구간)
+ *     lastDate/staleDays  숨김 판정은 서버가 끝냈다
+ *   판정 자체는 한 자리도 바뀌지 않는다. 줄어드는 것은 전송량뿐이다.
+ */
+function compactFair(f) {
+  if (!f) return null;
+  return {
+    level: f.level,
+    pctRank: f.pctRank,
+    obs: f.obs,
+    current: f.current,
+    low: f.low,
+    median: f.median,
+    spreadPct: f.spreadPct,
+    uniquePrices: f.uniquePrices,
+    heldDays: f.heldDays
+  };
+}
+
 async function batchHandler(req, res) {
   // 최대 100개 키 × 10000행짜리 쿼리다. 인증이 없는 만큼 호출 빈도는 막아둔다.
   if (!guard(req, res, { name: 'history-batch', limit: 60, windowMs: 60 * 1000 })) return;
@@ -386,7 +424,7 @@ async function batchHandler(req, res) {
     const fair = {};
     Object.keys(map).forEach(k => {
       const pts = map[k] || [];
-      fair[k] = pts.length ? fairness(pts, pts[pts.length - 1].price, today) : null;
+      fair[k] = pts.length ? compactFair(fairness(pts, pts[pts.length - 1].price, today)) : null;
     });
     res.json({ points: map, fair });
   } catch (e) {
