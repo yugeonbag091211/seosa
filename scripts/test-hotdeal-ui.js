@@ -28,8 +28,8 @@ const html=read('public/index.html'), live=code(html), radar=code(read('public/r
 /* ── 1) 옛 Hot Deal UI 는 없다 ─────────────────────────────────────── */
 for(const f of ['hotdeals.html','hotdeals.js','hotdeals.css','hot-view.js','hot-cards.css'])
   assert(!fs.existsSync(path.join(root,'public',f)),`public/${f} 는 지웠다`);
-for(const gone of ['id="hotDeals"','hotGrid','hotCount','hot-entry','hot-card','HotView','Hot.load','getHotDeals',
-  '/api/hotdeals','hotdeals.html','오늘의 핫딜','핫딜 전체 보기','가격과 근거 살펴보기','지금 눈여겨볼 가격',
+for(const gone of ['id="hotDeals"','hotGrid','hotCount','hot-entry','hot-card','HotView','var Hot =','getHotDeals',
+  'hotdeals.html','오늘의 핫딜','핫딜 전체 보기','가격과 근거 살펴보기','지금 눈여겨볼 가격',
   "'scroll-hot'","'hot-open'","'hot-retry'","hotdeal_list_view","hotdeal_open"])
   assert(!live.includes(gone),`index.html 에 옛 핫딜 UI 흔적: ${gone}`);
 assert(!radar.includes('hotdeals.html'),'레이더도 옛 핫딜 페이지로 보내지 않는다');
@@ -87,4 +87,13 @@ assert(!!require('../api/_hotdeal.js').evaluate,'Hot Deal 엔진');
 assert(!!require('../api/_hotgroup.js').groupOffers,'핫딜 군집');
 assert(read('api/_radarapi.js').includes(".from('hotdeals')"),'레이더 HOT_DEAL 은 hotdeals 표를 직접 읽는다');
 
-console.log('PASS hotdeal UI: old Hot Deal UI removed, 오늘의 하락 → 핫딜 label, price-drop data path unchanged, entry points (search/empty/hash), radar link, redirect');
+/* ── 4) 새 External Hotdeal Radar는 기존 핫딜을 복제하지 않는다 ─── */
+assert(/<section id="externalHot"[^>]*aria-label="실시간 핫딜"/.test(live),'외부 검증 섹션');
+assert(live.includes("'getExternalHotdeals':'/api/hotdeals'"),'기존 읽기 API를 재사용');
+assert(live.includes('커뮤니티 발견')&&live.includes('SEOSA 검증'),'발견/검증 badge');
+assert(live.includes('가격 이력 보기')&&live.includes('원문 보기'),'가격 이력/원문 행동');
+assert(live.includes('Number(it.dealScore) >= 60'),'60점 미만 기본 노출 제외');
+assert(live.includes("it.source !== 'internal-history'"),'내부 price-drop과 중복 렌더하지 않는다');
+assert(live.includes('@media(max-width:560px){.radar-deals{grid-template-columns:1fr}'),'모바일 1열');
+
+console.log('PASS hotdeal UI: legacy page removed, internal price-drop preserved, external verified radar added, mobile/actions/badges');
