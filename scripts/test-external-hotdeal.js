@@ -4,7 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const Normalize = require('../api/hotdeal-sources/normalize');
+const Normalize = require('../api/_hotdeal-sources/normalize');
 const Radar = require('../api/_external-hotdeal');
 
 global.fetch = async url => { throw new Error(`offline test made a network request: ${url}`); };
@@ -110,7 +110,11 @@ const migration = fs.readFileSync(path.join(__dirname, '..', 'supabase', '2026-0
 assert(migration.includes('create table if not exists external_hotdeals'));
 assert(!/\b(drop|truncate)\s+(table\s+)?(products|price_history)\b/i.test(migration.replace(/^\s*--.*$/gm, '')));
 assert(migration.includes('enable row level security'));
-const registry = require('../api/hotdeal-sources/registry');
+const registry = require('../api/_hotdeal-sources/registry');
 assert.equal(registry.active().length, 0, 'no live source is enabled by default');
+assert(fs.existsSync(path.join(__dirname, '..', 'api', '_hotdeal-sources', 'registry.js')),
+  'source helpers use the underscore directory and do not consume a Vercel function slot');
+assert(!fs.existsSync(path.join(__dirname, '..', 'api', 'hotdeal-sources')),
+  'there is no deployable-looking helper directory under api');
 
 console.log('PASS external hotdeal: normalize, URL/source dedupe, model matching, variant guards, score, confidence, grouping, migration safety');

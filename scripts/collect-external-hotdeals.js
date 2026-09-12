@@ -16,7 +16,7 @@ for (const name of ['.env.local', '.env']) {
 }
 
 const supabase = require('../api/_supabase');
-const registry = require('../api/hotdeal-sources/registry');
+const registry = require('../api/_hotdeal-sources/registry');
 const Radar = require('../api/_external-hotdeal');
 const { kstToday } = require('../api/_kst');
 
