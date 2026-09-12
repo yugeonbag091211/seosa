@@ -64,6 +64,14 @@ jobs:
             2>&1 | tee /tmp/hotdeals.log
           exit ${PIPESTATUS[0]}
 
+      # External adapters only use verified official APIs/RSS/feeds. With no
+      # configured live adapter this exits successfully without DB writes.
+      - name: Collect external verified hot deals
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: node scripts/collect-external-hotdeals.js
+
       - name: Summary
         if: always()
         run: |

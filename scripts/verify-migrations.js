@@ -64,7 +64,8 @@ const DESTRUCTIVE = [
  */
 const PROTECTED_TABLES = [
   'products', 'price_history', 'search_stats', 'monthly_curation',
-  'payments', 'subscriptions', 'profiles', 'user_data', 'alerts'
+  'payments', 'subscriptions', 'profiles', 'user_data', 'alerts',
+  'hotdeals', 'external_hotdeals'
 ];
 /** 지워도 되는 테이블 — 일회성/파생 데이터. */
 const EPHEMERAL_TABLES = [
@@ -85,7 +86,8 @@ const NEW_MIGRATIONS = [
   '2026-08-24-payment-pending-and-auth-attempts.sql',
   '2026-08-24-price-drop-top-orphan-policy.sql',
   '2026-08-25-analytics.sql',
-  '2026-09-05-adpick-api-calls.sql'
+  '2026-09-05-adpick-api-calls.sql',
+  '2026-09-12-external-hotdeals.sql'
 ];
 
 function checkStatic() {
