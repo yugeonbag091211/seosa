@@ -1,7 +1,7 @@
 'use strict';
 
 const Identity = require('./_identity');
-const { canonicalUrl, normalizedTitle, stableKey } = require('./hotdeal-sources/normalize');
+const { canonicalUrl, normalizedTitle, stableKey } = require('./_hotdeal-sources/normalize');
 
 const MATCH_THRESHOLD = 0.75;
 const EXPOSURE_SCORE = 60;
