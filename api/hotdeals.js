@@ -38,7 +38,7 @@ const MAX_LIMIT = 60;
 const MAX_FAMILY_RUN = 2;
 
 /** 2026-09-06 판에도 있던 컬럼. 이것만으로 목록이 성립해야 한다. */
-const BASE_COLS = 'id, deal_status, hot_score, confidence, title, image, mall, current_price,'
+const BASE_COLS = 'id, source, source_external_id, deal_status, hot_score, confidence, identity_confidence, title, image, mall, current_price,'
   + ' source_reference_price, reason_json, product_id, affiliate_url, last_checked_at';
 /** 2026-09-07 마이그레이션이 추가하는 컬럼. 없으면 BASE_COLS 로 물러난다. */
 const GROUP_COLS = ', group_key, is_primary, group_size, group_lowest_price, group_lowest_mall,'
@@ -152,6 +152,13 @@ function toListItem(r) {
     productId: r.product_id || '',
     url: r.affiliate_url || '',
     checkedAt: r.last_checked_at,
+    source: r.source || 'internal-history',
+    sourceUrl: r.source && r.source !== 'internal-history' ? (r.affiliate_url || '') : '',
+    productUrl: r.affiliate_url || '',
+    dealScore: (r.confidence === 'HIGH' || r.confidence === 'MEDIUM') ? r.hot_score : null,
+    matchConfidence: r.identity_confidence === 'EXACT' ? 1
+      : r.identity_confidence === 'STRONG' ? 0.85 : null,
+    verificationStatus: r.deal_status,
 
     /* ── 아래부터 2026-09-07 추가. 전부 additive 다. ── */
 
@@ -184,6 +191,116 @@ function toListItem(r) {
     lowestMall: r.group_lowest_mall || r.mall || '',
     isLowest: !(Number(r.group_lowest_price) > 0) || Number(r.group_lowest_price) >= Number(r.current_price)
   };
+}
+
+const EXTERNAL_VISIBLE = ['STRONG_DEAL', 'GOOD_DEAL', 'INTEREST'];
+const EXTERNAL_COLS = 'id, source, source_post_id, source_url, title, price, original_price, mall,'
+  + ' product_url, image_url, posted_at, matched_product_id, match_confidence, deal_score,'
+  + ' verification_status, price_vs_30d_avg, price_vs_90d_low, average_30d, low_90d,'
+  + ' previous_price, history_observation_count, history_last_observed_at, source_count, sources,'
+  + ' metadata, verification_reasons, last_verified_at';
+/** Community-sourced cards stay dark until this is set on the deployment (collector is_exposed is the other switch). */
+const EXTERNAL_MAX_AGE_HOURS = 72;
+
+function externalPublicEnabled() { return process.env.EXTERNAL_HOTDEAL_PUBLIC === '1'; }
+
+function externalStatus(status) {
+  return status === 'STRONG_DEAL' ? 'VERIFIED_HOT'
+    : status === 'GOOD_DEAL' ? 'GOOD_DEAL' : 'POTENTIAL_DEAL';
+}
+
+function externalReason(row) {
+  const pct = Number(row.price_vs_30d_avg);
+  if (Number.isFinite(pct) && pct > 0) return `최근 30일 평균보다 ${pct}% 저렴`;
+  const delta = Number(row.price_vs_90d_low);
+  if (Number.isFinite(delta) && delta <= 2) return '최근 90일 최저가에 가까운 가격';
+  return 'SEOSA 가격 이력으로 검증한 외부 핫딜';
+}
+
+function toExternalListItem(r) {
+  const meta = obj(r.metadata);
+  return {
+    id: `external:${r.id}`,
+    status: externalStatus(r.verification_status),
+    score: Number(r.deal_score),
+    title: r.title,
+    image: r.image_url || '',
+    mall: r.mall || '',
+    price: Number(r.price) || 0,
+    listPrice: Number(r.original_price) || 0,
+    reason: externalReason(r),
+    productId: r.matched_product_id || '',
+    url: r.product_url || r.source_url || '',
+    checkedAt: r.last_verified_at,
+    source: r.source,
+    sourceUrl: r.source_url || '',
+    productUrl: r.product_url || '',
+    dealScore: Number(r.deal_score),
+    matchConfidence: Number(r.match_confidence),
+    verificationStatus: r.verification_status,
+    // Internal verdict codes for API/debug consumers. The home card does not render them.
+    verificationReasons: arr(r.verification_reasons),
+    postedAt: r.posted_at,
+    priceVs30dAvg: r.price_vs_30d_avg == null ? null : Number(r.price_vs_30d_avg),
+    priceVs90dLow: r.price_vs_90d_low == null ? null : Number(r.price_vs_90d_low),
+    sourceCount: Math.max(1, Number(r.source_count) || 1),
+    sources: arr(r.sources),
+    badges: ['커뮤니티 발견', 'SEOSA 검증'],
+    signals: {
+      priceDropPercent: r.price_vs_30d_avg == null ? null : Number(r.price_vs_30d_avg),
+      priceDropAmount: r.average_30d ? Math.max(0, Number(r.average_30d) - Number(r.price)) : null,
+      referencePrice: r.average_30d == null ? null : Number(r.average_30d),
+      referenceKind: r.average_30d == null ? null : 'average30',
+      previousPrice: r.previous_price == null ? null : Number(r.previous_price),
+      nearHistoricalLow: r.price_vs_90d_low != null && Number(r.price_vs_90d_low) <= 2,
+      observedLow: r.low_90d == null ? null : Number(r.low_90d),
+      historyCount: Number(r.history_observation_count) || 0,
+      historyDays: 0,
+      freshness: null,
+      staleDays: 0,
+      currentObserved: false
+    },
+    offerCount: Math.max(1, Number(r.source_count) || 1),
+    otherOfferCount: Math.max(0, (Number(r.source_count) || 1) - 1),
+    lowestPrice: Number(r.price) || 0,
+    lowestMall: r.mall || '',
+    isLowest: true,
+    matchReason: meta.matchReason || ''
+  };
+}
+
+/*
+ * ★ 표가 «없을» 때만 참이다 — 전수 감사(PR #32)와 같은 규칙 (api/_dberror.js).
+ *   "schema cache" 낱말만 보면 DB 일시 장애(PGRST002)도 마이그레이션 전으로 읽혀
+ *   외부 view 가 장애를 200 pending 으로 숨긴다.
+ */
+function isMissingExternalTable(message) {
+  return DbError.isMissingTable(String(message || ''));
+}
+
+async function loadExternal(queryParams, minScore, limit) {
+  if (!externalPublicEnabled()) return { items: [], pending: false, enabled: false };
+  const maxAgeHours = Math.max(1, Math.min(168,
+    Number(process.env.EXTERNAL_HOTDEAL_MAX_AGE_HOURS) || EXTERNAL_MAX_AGE_HOURS));
+  let query = supabase.from('external_hotdeals')
+    .select(EXTERNAL_COLS)
+    .eq('is_exposed', true)
+    .in('verification_status', EXTERNAL_VISIBLE)
+    .eq('is_primary', true)
+    .gte('deal_score', Math.max(60, minScore))
+    // A community post is a moment, not a listing. Old posts are usually sold out.
+    .gte('posted_at', new Date(Date.now() - maxAgeHours * 3600000).toISOString())
+    .order('deal_score', { ascending: false })
+    .order('posted_at', { ascending: false })
+    .limit(limit);
+  if (queryParams.source) query = query.eq('source', String(queryParams.source).slice(0, 60));
+  if (queryParams.mall) query = query.eq('mall', String(queryParams.mall).slice(0, 40));
+  const { data, error } = await query;
+  if (error && (isMissingExternalTable(error.message) || isMissingColumn(error.message))) {
+    return { items: [], pending: true, enabled: true };
+  }
+  if (error) throw new Error(error.message);
+  return { items: (data || []).map(toExternalListItem), pending: false, enabled: true };
 }
 
 /**
@@ -259,8 +376,28 @@ module.exports = async function handler(req, res) {
 
     /* ── 목록 ── */
     const limit = intParam(q.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
+    const minScore = intParam(q.minScore, 0, 0, 100);
     const offset = intParam(q.cursor, 0, 0, 10000);
     const sort = SORTS[String(q.sort || 'score')] || SORTS.score;
+
+    /*
+     * External Radar is its own view. Folding it into this list and slicing to
+     * `limit` pushed internal rows out of the page while the cursor still
+     * advanced past them (they never appeared on any page), and pushed external
+     * cards out whenever 12 internal rows scored higher.
+     */
+    if (String(q.view || '') === 'external') {
+      const external = await loadExternal(q, minScore, limit);
+      cachePublic(res, 120);
+      return res.json({
+        items: external.items,
+        nextCursor: null,
+        counts: external.items.reduce((acc, it) => { acc[it.status] = (acc[it.status] || 0) + 1; return acc; }, {}),
+        external: true,
+        externalEnabled: external.enabled,
+        externalPending: external.pending
+      });
+    }
 
     let statuses = VISIBLE;
     if (q.status) {
@@ -282,6 +419,8 @@ module.exports = async function handler(req, res) {
 
       if (withGroups) query = query.eq('is_primary', true);
       if (q.mall) query = query.eq('mall', String(q.mall).slice(0, 40));
+      if (q.source) query = query.eq('source', String(q.source).slice(0, 60));
+      if (minScore > 0) query = query.gte('hot_score', minScore);
 
       query = query.order(sort.col, { ascending: sort.asc });
       if (withGroups) {
@@ -338,5 +477,6 @@ module.exports = async function handler(req, res) {
 
 module.exports._internal = {
   VISIBLE, VISIBLE_LIFECYCLE, SORTS, MAX_FAMILY_RUN,
-  toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId
+  toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId,
+  toExternalListItem, externalStatus, loadExternal, isMissingExternalTable
 };
