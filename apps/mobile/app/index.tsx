@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import { ScrollView, View } from 'react-native';
-import { BrandMark, ErrorState, LoadingState, ProductCard, Screen, SearchEntry, SectionHeader, Text } from '../components/ui';
+import { BrandMark, ErrorState, LoadingState, ProductCard, Screen, SearchEntry, SectionHeader, Text, VerdictBadge } from '../components/ui';
 import { api, type HomeDeal, type Product, userMessage } from '../lib/api';
 import { useTheme } from '../lib/theme';
 
@@ -12,6 +12,13 @@ const dealLabel: Record<string, string> = {
   GOOD_DEAL: '좋은 가격',
   POTENTIAL_DEAL: '관심 가격',
 };
+
+/** The verdict codes the detail screen actually shows (server Deal Engine), grouped the way the badges color them. */
+const signals: [string, string][] = [
+  ['BUY', '지금 사도 좋은 가격'],
+  ['NORMAL', '평범한 가격'],
+  ['WAIT', '기다리는 편이 나은 가격'],
+];
 
 export default function Home() {
   const theme = useTheme();
@@ -42,14 +49,14 @@ export default function Home() {
 
   return <Screen>
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 4, paddingBottom: 26 }}>
-        <BrandMark size={29} />
+      <View accessible accessibilityRole="header" accessibilityLabel="SEOSA" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 4, paddingBottom: 26 }}>
+        <BrandMark size={29} decorative />
         <Text style={{ fontSize: 17, fontWeight: '700', letterSpacing: 2.4 }}>SEOSA</Text>
       </View>
 
       <View style={{ backgroundColor: theme.surface, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 24, borderRadius: 10, gap: 20 }}>
         <View style={{ gap: 10 }}>
-          <Text style={{ fontSize: 34, lineHeight: 43, fontWeight: '800', letterSpacing: -1.3 }}>최저가도,{"\n"}고급지게.</Text>
+          <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 34, lineHeight: 43, fontWeight: '800', letterSpacing: -1.3 }}>최저가도,{"\n"}고급지게.</Text>
           <Text muted>가격 기록을 보고, 지금의 선택을 더 선명하게.</Text>
         </View>
         <SearchEntry onPress={() => router.push('/search')} />
@@ -67,16 +74,14 @@ export default function Home() {
         }) : null}
       </View>
 
-      <View style={{ marginTop: 34, paddingTop: 22, borderTopWidth: 1, borderTopColor: theme.border, gap: 10 }}>
-        <SectionHeader title="오늘의 셀렉션" subtitle="추천 상품 자리" />
-        <Text muted>추천 상품을 준비하고 있어요. 지금은 확인된 가격 기록을 둘러보세요.</Text>
-      </View>
-
-      <View style={{ marginTop: 36, paddingTop: 22, borderTopWidth: 1, borderTopColor: theme.border, gap: 12 }}>
-        <SectionHeader title="SEOSA의 가격 신호" subtitle="상품의 가격 기록이 충분할 때 표시합니다" />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-          {[['BUY', '지금 살 만한 가격'], ['WAIT', '기다리는 편이 나은 가격'], ['WATCH', '조금 더 지켜볼 가격']].map(([label, detail]) =>
-            <View key={label} style={{ minWidth: 96, flex: 1, gap: 4 }}><Text style={{ fontWeight: '700', fontSize: 13 }}>{label}</Text><Text muted style={{ fontSize: 12, lineHeight: 17 }}>{detail}</Text></View>
+      <View style={{ marginTop: 36, paddingTop: 22, borderTopWidth: 1, borderTopColor: theme.border, gap: 14 }}>
+        <SectionHeader title="SEOSA의 가격 신호" subtitle="상품 상세에서 가격 기록이 충분할 때 표시합니다" />
+        <View style={{ gap: 12 }}>
+          {signals.map(([code, detail]) =>
+            <View key={code} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ minWidth: 72 }}><VerdictBadge verdict={code} /></View>
+              <Text muted style={{ flex: 1, fontSize: 13, lineHeight: 19 }}>{detail}</Text>
+            </View>
           )}
         </View>
       </View>

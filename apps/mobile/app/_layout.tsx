@@ -6,7 +6,8 @@ import { useTheme } from '../lib/theme';
 export default function RootLayout() {
   const theme = useTheme();
   return <>
-    <StatusBar style={theme.background === '#FFFFFF' ? 'dark' : 'light'} />
+    {/* "auto" follows the system color scheme — the same source useTheme() reads. */}
+    <StatusBar style="auto" />
     <SafeAreaProvider><Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }} /></SafeAreaProvider>
   </>;
 }
