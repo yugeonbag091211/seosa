@@ -526,45 +526,85 @@ async function pageHandler(req, res) {
  * 색인할 만한 상품만 고른다 — live 이고 링크가 있고 최근 30일 기록이 INDEX_MIN_DAYS 이상.
  * price_history 30일치를 훑어 상품별 관측 일수를 센다 (PostgREST 1,000행 페이지).
  */
+/** 사이트맵 조회에서 동시에 보내는 페이지 요청 수. */
+const SITEMAP_CONCURRENCY = 6;
+
+/*
+ * ★ 페이지를 동시에 읽는다 (2026-09-13 감사 후속 P2).
+ *
+ *   예전에는 30일 이력 3만여 행을 1,000행씩 순차로 34번 읽어 캐시 미스 한 번에
+ *   12~15초가 걸렸다(운영 실측 14.7초, 로컬 DB 대기 11.85초). 첫 페이지에서 전체
+ *   행 수를 받고, 나머지 페이지를 SITEMAP_CONCURRENCY 개씩 동시에 받는다.
+ *   페이지 상한(maxPages)과 정렬은 예전과 같아 읽는 행과 결과가 같다.
+ *   행 수를 모르면(count 없음) 예전처럼 순차로 읽는다.
+ */
+async function readPages(build, page, maxPages) {
+  const first = await build({ count: 'exact' }).range(0, page - 1);
+  if (first.error) throw new Error(first.error.message);
+  const firstRows = first.data || [];
+  if (firstRows.length < page) return firstRows;
+
+  const total = Number(first.count);
+  if (!Number.isFinite(total)) {
+    const rows = firstRows.slice();
+    for (let from = page, pages = 1; pages < maxPages; from += page, pages++) {
+      const { data, error } = await build().range(from, from + page - 1);
+      if (error) throw new Error(error.message);
+      rows.push(...(data || []));
+      if (!data || data.length < page) break;
+    }
+    return rows;
+  }
+
+  const offsets = [];
+  for (let from = page, pages = 1; from < total && pages < maxPages; from += page, pages++) offsets.push(from);
+  const results = new Array(offsets.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < offsets.length) {
+      const i = next++;
+      const { data, error } = await build().range(offsets[i], offsets[i] + page - 1);
+      if (error) throw new Error(error.message);
+      results[i] = data || [];
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(SITEMAP_CONCURRENCY, offsets.length) }, worker));
+  return firstRows.concat(...results);
+}
+
 async function indexableProducts() {
   const PAGE = 1000;
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
-  const days = new Map();
-  for (let from = 0, pages = 0; pages < 40; from += PAGE, pages++) {
-    const { data, error } = await supabase
+
+  const [history, products] = await Promise.all([
+    readPages(opts => supabase
       .from('price_history')
-      .select('product_id, mall, recorded_date, recorded_at')
+      .select('product_id, mall, recorded_date, recorded_at', opts)
       .gte('recorded_at', since)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    (data || []).forEach(r => {
-      const k = `${r.product_id}|${r.mall}`;
-      if (!days.has(k)) days.set(k, new Set());
-      days.get(k).add(observedKstDate(r));
-    });
-    if (!data || data.length < PAGE) break;
-  }
+      .order('id', { ascending: true }), PAGE, 40),
+    readPages(opts => supabase
+      .from('products')
+      .select('product_id, mall, keyword, title, lprice, link, collected_at', opts)
+      .order('collected_at', { ascending: false }), PAGE, 10)
+  ]);
+
+  const days = new Map();
+  history.forEach(r => {
+    const k = `${r.product_id}|${r.mall}`;
+    if (!days.has(k)) days.set(k, new Set());
+    days.get(k).add(observedKstDate(r));
+  });
 
   const out = [];
-  for (let from = 0, pages = 0; pages < 10; from += PAGE, pages++) {
-    const { data, error } = await supabase
-      .from('products')
-      .select('product_id, mall, keyword, title, lprice, link, collected_at')
-      .order('collected_at', { ascending: false })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    (data || []).forEach(p => {
-      if (productLifecycle(p).state !== LIFECYCLE.LIVE) return;
-      if (!safeUrl(p.link) || !cleanPid(p.product_id)) return;
-      const d = days.get(`${p.product_id}|${p.mall}`);
-      if (!d || d.size < INDEX_MIN_DAYS) return;
-      out.push({ pid: p.product_id, lastmod: String(p.collected_at || '').slice(0, 10) });
-    });
-    if (!data || data.length < PAGE) break;
+  for (const p of products) {
+    if (productLifecycle(p).state !== LIFECYCLE.LIVE) continue;
+    if (!safeUrl(p.link) || !cleanPid(p.product_id)) continue;
+    const d = days.get(`${p.product_id}|${p.mall}`);
+    if (!d || d.size < INDEX_MIN_DAYS) continue;
+    out.push({ pid: p.product_id, lastmod: String(p.collected_at || '').slice(0, 10) });
     if (out.length >= SITEMAP_MAX) break;
   }
-  return out.slice(0, SITEMAP_MAX);
+  return out;
 }
 
 /** XML — /sitemap-products.xml */

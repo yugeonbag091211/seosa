@@ -296,12 +296,24 @@ async function searchAll(keyword, {
   const items = [...coupang.items, ...adpick.items];
   const errors = [coupang.error, adpick.error].filter(Boolean);
 
+  /*
+   * ★ 어느 공급원도 응답하지 못했는가 (2026-09-13 감사 후속 P2).
+   *
+   *   api·cache·stale-cache 는 «물어봤고 답을 받았다» 는 뜻이다(0건이어도).
+   *   둘 다 'none' 이고 오류가 있으면 결과가 없는 게 아니라 확인하지 못한 것이다.
+   *   예전에는 이 둘을 구분하지 않아 /api/search 가 전면 장애를 200 [] 로 답했고,
+   *   화면은 «검색 결과가 없어요» 를 띄웠다.
+   */
+  const answered = r => r.from === 'api' || r.from === 'cache' || r.from === 'stale-cache';
+  const failed = !items.length && errors.length > 0 && !answered(coupang) && !answered(adpick);
+
   return {
     items,
     errors,
     from: coupang.from || 'none',
     blocked: !!coupang.blocked,
-    mismatch: !items.length && !!(coupang.mismatch || adpick.mismatch)
+    mismatch: !items.length && !!(coupang.mismatch || adpick.mismatch),
+    failed
   };
 }
 
