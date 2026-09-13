@@ -25,6 +25,7 @@ const supabase = require('./_supabase');
 const { applyCors, cachePublic, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const HG = require('./_hotgroup');
+const DbError = require('./_dberror');
 
 /** 사용자에게 보여줄 상태. NORMAL·REJECTED 는 목록에 오르지 않는다. */
 const VISIBLE = ['VERIFIED_HOT', 'GOOD_DEAL', 'POTENTIAL_DEAL'];
@@ -93,7 +94,7 @@ function dealId(v) {
 }
 
 function isMissingColumn(msg) {
-  return /column .* does not exist|could not find the .* column|schema cache/i.test(String(msg || ''));
+  return DbError.isMissingColumn(String(msg || ''));
 }
 
 /** jsonb 는 null 로 올 수 있다. 배열이 아니면 빈 배열로 본다. */
@@ -322,7 +323,11 @@ module.exports = async function handler(req, res) {
     });
   } catch (e) {
     // 표가 아직 없으면(마이그레이션 전) 빈 목록으로 답한다 — 화면이 죽지 않는다.
-    if (/relation .*hotdeals.* does not exist|schema cache/i.test(e.message || '')) {
+    /*
+     * ★ 표가 «없을» 때만 빈 목록이다 (2026-09-13 감사). DB 일시 장애를 200 빈 목록으로
+     *   답하면 장애가 «핫딜 없음» 으로 보이고, 그 응답이 30초 동안 캐시된다.
+     */
+    if (DbError.isMissingTable(e.message || '')) {
       console.warn('[hotdeals] hotdeals 표 없음 — supabase/2026-09-06-hotdeals.sql 을 실행하세요.');
       cachePublic(res, 30);
       return res.json({ items: [], nextCursor: null, counts: {}, pending: true });

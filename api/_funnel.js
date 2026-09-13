@@ -100,8 +100,9 @@ function disable(what, why) {
   enabled = false;
 }
 
+// 표가 «없을» 때만 참이다. DB 일시 장애를 마이그레이션 전으로 읽지 않는다 (api/_dberror.js).
 function missingObject(msg) {
-  return /does not exist|schema cache|could not find/i.test(String(msg || ''));
+  return require('./_dberror').isMissingObject(String(msg || ''));
 }
 
 /** 테스트가 상태를 되돌릴 때 쓴다. */

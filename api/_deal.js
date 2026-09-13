@@ -92,14 +92,32 @@ function freshness(staleDays) {
  *
  * @returns {number|null} 최저·최고가 같거나 기록이 없으면 null
  */
+/** 현재가가 전체 기록 중앙값에서 이 비율 안이면 «평소 가격» 이다 (pricePercentile 주석). */
+const TYPICAL_BAND = 0.02;
+
 function pricePercentile(stat, price) {
   const p = Math.round(Number(price) || 0);
   if (!stat || p <= 0) return null;
   const lo = Math.round(Number(stat.low) || 0);
   const hi = Math.round(Number(stat.high) || 0);
   if (!(lo > 0) || !(hi > 0) || hi === lo) return null;
-  const v = (p - lo) / (hi - lo) * 100;
-  return Math.max(0, Math.min(100, Math.round(v)));
+  const v = Math.max(0, Math.min(100, Math.round((p - lo) / (hi - lo) * 100)));
+
+  /*
+   * ★ 평소 가격을 범위의 끝값으로 말하지 않는다 (2026-09-13 감사).
+   *
+   *   최저·최고 사이의 위치는 드문 값 하나에 휘둘린다. 37일 동안 100,000원이다가
+   *   사흘 200,000원으로 튄 상품에서, 평소 가격 100,000원은 범위의 «0» 이 되어
+   *   "관측한 기록에서 가장 낮은 가격" · BUY 가 나왔다. 반대로 드문 급락이 섞이면
+   *   평소 가격이 «가장 비싼 가격» 이 된다.
+   *
+   *   현재가가 전체 기록의 중앙값 ±TYPICAL_BAND 안이면 관측의 가운데에 있는 값이므로
+   *   50 으로 둔다. 신저가·꾸준한 하락처럼 중앙값에서 벗어난 값은 예전 계산 그대로다.
+   *   (stat.points 는 최근 몇 점뿐이라 순위 계산에 쓸 수 없다 — _pricestat MAX_POINTS.)
+   */
+  const med = Math.round(Number(stat.median) || 0);
+  if (med > 0 && Math.abs(p - med) <= med * TYPICAL_BAND) return 50;
+  return v;
 }
 
 /* ── 가격 이상 탐지 ─────────────────────────────────────────────────
@@ -128,16 +146,25 @@ function anomalies(stat, price, today) {
   if (!stat || p <= 0) return out;
 
   const last = Math.round(Number(stat.lastPrice) || 0);
-  if (last > 0) {
-    if (p <= last * ANOMALY_DROP) {
+  /*
+   * ★ 현재가가 곧 마지막 기록이면 그 앞 기록과 견준다 (2026-09-13 감사).
+   *
+   *   /api/history 와 상품 모달은 이력의 마지막 값을 현재가로 넘긴다. 그러면 늘
+   *   p === last 라 이 검사가 한 번도 걸리지 않았고, 하루 만에 60% 떨어진 값이
+   *   "판정 보류" 대신 GOOD_BUY 가 됐다.
+   */
+  const prev = Math.round(Number(stat.prevPrice) || 0);
+  const ref = (p === last && prev > 0) ? prev : last;
+  if (ref > 0) {
+    if (p <= ref * ANOMALY_DROP) {
       out.push({
         kind: 'price_drop',
-        note: '직전 기록(' + won(last) + '원)의 절반 이하다. 옵션이나 구성이 바뀌었을 수 있어 같은 상품인지 확인이 필요하다'
+        note: '직전 기록(' + won(ref) + '원)의 절반 이하다. 옵션이나 구성이 바뀌었을 수 있어 같은 상품인지 확인이 필요하다'
       });
-    } else if (p >= last * ANOMALY_JUMP) {
+    } else if (p >= ref * ANOMALY_JUMP) {
       out.push({
         kind: 'price_jump',
-        note: '직전 기록(' + won(last) + '원)의 두 배 이상이다. 같은 상품이 맞는지 확인이 필요하다'
+        note: '직전 기록(' + won(ref) + '원)의 두 배 이상이다. 같은 상품이 맞는지 확인이 필요하다'
       });
     }
   }
@@ -391,13 +418,23 @@ function dealOf(stat, price, today) {
       reasons.push('평소 가격 ' + won(med) + '원과 비슷하다');
     }
   } else if (stat.avg30 > 0) {
-    const d = (stat.avg30 - p) / stat.avg30;
+    /*
+     * ★ 평균이 중앙값보다 5% 넘게 높으면 짧은 급등이 평균을 끌어올린 것이다 (2026-09-13 감사).
+     *   3배 이상치 기준(outlier)에는 안 걸리는 2배 급등 사흘로도 "30일 평균보다 9% 낮다"
+     *   가 나와 평소 가격이 할인처럼 읽혔다. 그때는 중앙값과 견준다.
+     */
+    const skewed = med > 0 && stat.avg30 > med * 1.05;
+    const refPrice = skewed ? med : stat.avg30;
+    const refLabel = skewed ? '평소 가격 ' : '30일 평균 ';
+    const d = (refPrice - p) / refPrice;
     if (d >= AVG_CHEAP) {
       score += 18;
-      reasons.push('30일 평균 ' + won(stat.avg30) + '원보다 ' + pct(d) + '% 낮다');
+      reasons.push(refLabel + won(refPrice) + '원보다 ' + pct(d) + '% 낮다');
     } else if (d <= -AVG_DEAR) {
       score -= 18;
-      reasons.push('30일 평균 ' + won(stat.avg30) + '원보다 ' + pct(-d) + '% 높다');
+      reasons.push(refLabel + won(refPrice) + '원보다 ' + pct(-d) + '% 높다');
+    } else if (skewed) {
+      reasons.push('평소 가격 ' + won(med) + '원과 비슷하다');
     }
   }
 

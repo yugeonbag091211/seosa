@@ -132,7 +132,8 @@ async function loadHotDeals(items) {
       .in('deal_status', ['VERIFIED_HOT', 'GOOD_DEAL'])
       .in('lifecycle', ['NEW', 'ACTIVE', 'COOLING']);
     if (error) {
-      if (/does not exist|schema cache|column/i.test(error.message)) return map;
+      // 표·컬럼이 없을 때만 조용히 빠진다. 일시 장애는 경고 후 다음 묶음을 시도한다.
+      if (require('./_dberror').isMissingObject(error.message)) return map;
       console.warn(`[radar] hotdeals 조회 실패: ${error.message}`);
       continue;
     }

@@ -55,6 +55,10 @@ const VOLATILE_MILD = 2;
 const HISTORY_WINDOW_DAYS = 30;
 /** product_id in(...) 한 번에 넣을 개수. */
 const CHUNK = 100;
+/** PostgREST db-max-rows. 클라이언트 limit 이 더 커도 한 응답은 여기서 잘린다. */
+const PAGE = 1000;
+/** 한 묶음에서 읽을 최대 행 수 (30일 × 100상품 × 옵션 여유). */
+const MAX_HISTORY_ROWS = 20000;
 
 const LEVEL = {
   HIGH: 'high',
@@ -251,13 +255,29 @@ async function loadRecentHistory(keys) {
   const wanted = new Set(keys.map(k => `${k.productId}|${k.mall}`));
 
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await supabase
-      .from('price_history')
-      .select('product_id, mall, vendor_item_id, price, recorded_date, recorded_at')
-      .in('product_id', ids.slice(i, i + CHUNK))
-      .gte('recorded_date', cutoff)
-      .order('recorded_date', { ascending: false })
-      .limit(3000);
+    /*
+     * ★ 페이지를 넘겨 가며 받는다 (2026-09-13 감사).
+     *   예전 limit(3000) 은 서버 상한 1,000 에서 잘렸다. 운영 30일 이력은 상품 100개에
+     *   약 1,160행이라, 최신순 정렬 뒤쪽 — 각 상품의 오래된 날 — 이 조용히 빠졌다.
+     *   전순서(날짜·상품·몰·옵션 = UNIQUE 키)를 줘야 페이지 경계에서 행이 겹치거나 사라지지 않는다.
+     */
+    let data = [];
+    let error = null;
+    for (let from = 0; from < MAX_HISTORY_ROWS; from += PAGE) {
+      const page = await supabase
+        .from('price_history')
+        .select('product_id, mall, vendor_item_id, price, recorded_date, recorded_at')
+        .in('product_id', ids.slice(i, i + CHUNK))
+        .gte('recorded_date', cutoff)
+        .order('recorded_date', { ascending: false })
+        .order('product_id', { ascending: true })
+        .order('mall', { ascending: true })
+        .order('vendor_item_id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (page.error) { error = page.error; break; }
+      data = data.concat(page.data || []);
+      if (!page.data || page.data.length < PAGE) break;
+    }
     if (error) {
       // 이력을 못 읽으면 신뢰도를 낮게 잡는 게 아니라, 이력 근거 없이 계산한다.
       console.warn(`[trust] 가격 기록 조회 실패(이력 근거 없이 계산): ${error.message}`);

@@ -201,8 +201,14 @@ async function createCode(email) {
  */
 let attemptRpc = true;
 
+/*
+ * ★ 함수가 «없을» 때만 예전 방식으로 내려간다 (2026-09-13 감사).
+ *   DB 일시 장애("Could not query the database for the schema cache")까지 없음으로
+ *   읽으면 attemptRpc 가 영구히 꺼져, 동시 요청으로 시도 횟수 제한을 우회할 수 있는
+ *   예전 경로가 이 인스턴스가 끝날 때까지 열린다. 일시 장애는 아래에서 거절된다.
+ */
 function missingRpc(msg) {
-  return /could not find|does not exist|schema cache|function .* not/i.test(msg || '');
+  return require('./_dberror').isMissingFunction(msg);
 }
 
 /**

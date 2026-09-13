@@ -2,6 +2,8 @@ const { readBody, applyCors, readEmail, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { createCode, consumeCode, issueToken, TOKEN_TTL_MS, CODE_TTL_MS } = require('./_auth');
 const notify = require('./_notify');
+// 표가 «없을» 때만 마이그레이션 안내를 한다. DB 일시 장애에 "테이블이 없습니다" 를 말하지 않는다.
+const { isMissingObject } = require('./_dberror');
 
 /*
  * 이메일 인증 코드 발급 / 확인.
@@ -70,7 +72,7 @@ module.exports = async function handler(req, res) {
       const r = await consumeCode(email, code);
       if (!r.ok) {
         // 테이블이 없으면 원인을 알 수 있게 안내한다.
-        if (/schema cache|does not exist|could not find/i.test(r.error || '')) {
+        if (isMissingObject(r.error || '')) {
           return res.status(500).json({
             error: 'auth_codes 테이블이 없습니다. supabase/2026-08-hardening.sql을 Supabase SQL Editor에서 실행하세요.'
           });
@@ -95,7 +97,7 @@ module.exports = async function handler(req, res) {
 
     const made = await createCode(email);
     if (!made.ok) {
-      if (/schema cache|does not exist|could not find/i.test(made.error || '')) {
+      if (isMissingObject(made.error || '')) {
         return res.status(500).json({
           error: 'auth_codes 테이블이 없습니다. supabase/2026-08-hardening.sql을 Supabase SQL Editor에서 실행하세요.'
         });

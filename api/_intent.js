@@ -71,7 +71,8 @@ const ANALYSIS_ACTION_RE = /영향|적용|도움|활용|기능|아이디어|기�
 const API_PRICING_FACT_RE = /\b(?:OpenAI|Anthropic|Google|Gemini|Perplexity)\b[\s\S]{0,40}\bAPI\b[\s\S]{0,24}(?:가격|요금|비용|pricing)/i;
 const EXPLICIT_NEWS_RE = /뉴스|기사|소식|발표|업데이트|릴리스|release|announce|update/i;
 /* AI 고유명사가 없어도 “상품 관련 기사”를 명시적으로 찾는 문장은 뉴스 목적이다. */
-const EXPLICIT_NEWS_REQUEST_RE = /(?:뉴스|기사)\s*(?:알려|정리|요약|찾아|검색|조사|골라|뽑아|보여|확인|있어|있나)/i;
+/* "엔비디아 뉴스" · "애플 신제품 발표 소식"처럼 뉴스·기사·소식으로 끝나는 명사형 요청도 같다 (2026-09-13 감사). */
+const EXPLICIT_NEWS_REQUEST_RE = /(?:뉴스|기사)\s*(?:알려|정리|요약|찾아|검색|조사|골라|뽑아|보여|확인|있어|있나)|(?:뉴스|기사|소식)\s*[?？.!]*$/i;
 const PHYSICAL_PURCHASE_RE = /(?:\d[\d,]*\s*(?:만|천)?\s*원|사도\s*(?:돼|될)|살까|구매|최저가|판매처|추천|골라)/i;
 
 /**
@@ -92,7 +93,7 @@ function classifyInformationIntent(text) {
 
   const fresh = FRESH_CONTEXT_RE.test(s);
   /* "오늘 AI 뉴스" 같은 명사형 요청도 subject+fresh 맥락이 함께 있을 때만 조사로 본다. */
-  const asksResearch = RESEARCH_ACTION_RE.test(s) || /[?？]$/.test(s) || /뉴스\s*[.!]?$/i.test(s);
+  const asksResearch = RESEARCH_ACTION_RE.test(s) || /[?？]$/.test(s) || /(?:뉴스|기사|소식)\s*[.!?？]*$/i.test(s);
   const asksSeosaAnalysis = SEOSA_IMPACT_RE.test(s) && ANALYSIS_ACTION_RE.test(s);
 
   if (asksSeosaAnalysis && (fresh || /\bAPI\b|에이전트|쇼핑\s*AI/i.test(s))) return 'S';
@@ -110,7 +111,7 @@ const STRIP_WORDS = [
   // 요청·서술
   '추천해줘', '추천해', '추천', '골라줘', '골라', '찾아줘', '찾아봐', '찾아', '보여줘', '보여',
   '알려줘', '알려', '주세요', '줘', '줄래', '해줘', '해주세요', '있어', '있나', '있을까', '없어',
-  '살까', '사도', '사고', '싶어', '싶은데', '싶다', '사려고', '구매', '살', '사는', '사면',
+  '살까', '말까', '사도', '사고', '싶어', '싶은데', '싶다', '사려고', '구매', '살', '사는', '사면',
   '괜찮아', '괜찮은', '괜찮을까', '어때', '어떤', '어떤게', '뭐가', '뭐', '뭘', '좋아', '좋을까',
   '좋은', '제일', '가장', '최고', '괜찮', '되나', '될까', '돼', '지금', '오늘', '요즘', '중에', '중에서',
   // 조건을 덧붙이는 말. 남으면 "통화 품질 중요해" 같은 문장이 검색어가 된다.
@@ -146,6 +147,20 @@ const MONEY_ALL_RE = /(\d[\d,]*(?:\.\d+)?\s*(?:[~\-–]|에서)\s*)?\d[\d,]*(?:\
 
 /** 조사. 낱말 끝에 붙은 것만 뗀다. */
 const JOSA_RE = /(으로|로는|로|은|는|이|가|을|를|도|만|의|에|에서|이랑|랑|과|와|께|한테|에게)$/;
+
+/*
+ * ★ 한 글자 조사는 상품명의 끝 글자이기도 하다 (2026-09-13 감사).
+ *
+ *   "맥북 프로" → "맥북" · "에어팟 프로" → "에어팟" · "사과 5kg" → "5kg"
+ *   "고양이 사료" → "고양 사료" · "와이파이 공유기" → "와이파 공유기"
+ *
+ *   맥북 프로를 물었는데 맥북을 검색하면 다른 상품 줄을 보여 준다. 그래서 한 글자
+ *   조사는 떼고 남는 말이 세 글자 이상일 때만 떼고("노트북이" → "노트북"),
+ *   그런 끝을 가진 알려진 낱말은 통째로 둔다. 두 글자 이상 조사(은·는·을·를·에서·
+ *   으로 …)는 예전처럼 뗀다.
+ */
+const AMBIGUOUS_JOSA = new Set(['로', '이', '가', '도', '과', '와', '의', '에', '만', '께', '랑']);
+const KEEP_WHOLE_RE = /(파이|타이|카도|크로|트로|에어로)$/;
 
 const MAX_QUERY_LEN = 40;
 const MAX_QUERY_TOKENS = 5;
@@ -214,8 +229,12 @@ function extractQuery(text) {
     const stripped = t.length > 1 ? t.replace(JOSA_RE, '') : t;
     if (stripped && stripped !== t) {
       if (STRIP_SET.has(stripped)) return;
+      const josa = t.slice(stripped.length);
+      const safeToStrip = AMBIGUOUS_JOSA.has(josa)
+        ? stripped.length >= 3 && !KEEP_WHOLE_RE.test(t)
+        : stripped.length >= 2;
       // 영문·숫자 토큰은 조사를 떼지 않는다 ("14ZD95U" 의 U 를 조사로 볼 위험).
-      if (/^[가-힣]+$/.test(t)) t = stripped;
+      if (/^[가-힣]+$/.test(t) && safeToStrip) t = stripped;
     }
     if (!t || t.length < 1) return;
     if (/^[가-힣]$/.test(t)) return;          // 한 글자 한글은 아무 데나 걸린다
