@@ -186,8 +186,9 @@ function localDisabled() {
   return String(process.env.ANALYTICS_DISABLED || '').trim() === '1';
 }
 
+// 표·함수가 «없을» 때만 계측을 끈다. DB 일시 장애는 그 요청만 실패로 둔다 (api/_dberror.js).
 function missingObject(msg) {
-  return /could not find|does not exist|schema cache|relation .* does not exist/i.test(msg || '');
+  return require('./_dberror').isMissingObject(msg);
 }
 
 function disable(what, msg) {
@@ -348,10 +349,19 @@ async function report(today = kstToday()) {
    * 조용히 축소된 값을 보게 되므로, 페이지를 넘겨 가며 전부 받는다.
    */
   try {
-    const { data, error } = await supabase
-      .from('ai_usage').select('used').eq('usage_date', today).limit(1000);
-    if (error) throw new Error(error.message);
-    out.aiToday = (data || []).reduce((s, r) => s + (Number(r.used) || 0), 0);
+    // 오늘 행도 사용자 수만큼 는다. 1,000명을 넘는 날 합계가 조용히 잘리지 않게 넘겨 가며 받는다.
+    const PAGE = 1000;
+    let today_sum = 0;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('ai_usage').select('used').eq('usage_date', today)
+        .order('email', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(error.message);
+      today_sum += (data || []).reduce((s, r) => s + (Number(r.used) || 0), 0);
+      if (!data || data.length < PAGE) break;
+    }
+    out.aiToday = today_sum;
   } catch (e) {
     out.errors.push(`ai_usage(today): ${e.message}`);
   }

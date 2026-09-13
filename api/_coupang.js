@@ -226,8 +226,17 @@ function reserveSlot(minGapMs, maxWaitMs) {
  * 다시 시도해도 소용없는 실패인가?
  * (스키마 미적용 / Supabase 환경변수 누락 → 매 호출마다 경고를 찍을 이유가 없다)
  */
+const { classifyDbError, KIND: DB_KIND } = require('./_dberror');
+
+/*
+ * ★ "schema cache" 낱말만으로 판정하지 않는다 (2026-09-13 감사).
+ *   PostgREST 는 DB 에 잠깐 못 붙을 때도 "Could not query the database for the schema
+ *   cache" 라고 답한다. 그걸 영구 실패로 읽으면 전역 호출 카운터가 이 프로세스가 끝날
+ *   때까지 꺼지고, 쿠팡 분당 한도를 인스턴스마다 따로 세게 된다.
+ */
 function permanentGateFailure(msg) {
-  return /schema cache|does not exist|could not find|환경변수 누락/i.test(msg || '');
+  const info = classifyDbError(msg);
+  return info.missing || info.kind === DB_KIND.CONFIG_MISSING;
 }
 
 async function dbAcquire(source, keyword) {
@@ -681,5 +690,7 @@ async function pruneLog(keepDays = 7) {
 
 module.exports = {
   searchCoupang, collapseOptions, isBlocked, localStats, globalUsage, pruneLog,
+  // 전역 카운터 영구 실패 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
+  permanentGateFailure,
   MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };

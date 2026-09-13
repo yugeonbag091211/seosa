@@ -152,7 +152,7 @@ module.exports = async function handler(req, res) {
     const { error: rpcErr } = await supabase.rpc('increment_search_stat', { kw: keyword });
     if (rpcErr) {
       // 함수가 아직 없는 환경(스키마 미적용)만 폴백한다. 그 외 오류는 그대로 올린다.
-      if (!/function|schema cache|does not exist/i.test(rpcErr.message)) {
+      if (!require('./_dberror').isMissingFunction(rpcErr.message)) {
         throw new Error(rpcErr.message);
       }
       await incrementFallback(keyword);

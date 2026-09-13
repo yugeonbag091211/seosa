@@ -913,17 +913,48 @@ const STATE_MISSING_HINT =
   'price_job_state 테이블이 없습니다. Supabase SQL Editor 에서 '
   + 'supabase/2026-08-price-job-state.sql 을 한 번 실행하세요.';
 
-async function loadState() {
-  const { data, error } = await supabase
+const DbError = require('../api/_dberror');
+
+/*
+ * ★ 오류를 종류별로 가른다 (2026-09-13 감사).
+ *
+ *   예전에는 어떤 오류든 "price_job_state 테이블이 없습니다" 로 멈췄다. 그런데
+ *   Supabase 게이트웨이 타임아웃(504)·DB 재시작(PGRST002) 같은 일시 장애도 여기로
+ *   들어온다. 그러면 멀쩡한 테이블에 마이그레이션 안내가 붙고, 몇 초 뒤면 됐을
+ *   수집이 통째로 건너뛰어진다.
+ *
+ *     TABLE_MISSING           → 마이그레이션 안내 (예전 문구 그대로)
+ *     DB_TIMEOUT/DB_UNAVAILABLE → 몇 번 기다렸다 다시 읽고, 끝내 안 되면 원인을 그대로 말한다
+ *     그 밖                   → 원인을 그대로 말한다 (테이블 탓으로 돌리지 않는다)
+ *
+ *   어느 경우든 조용히 처음부터 돌지는 않는다 — 매 실행이 1번부터 돌면 앞쪽 상품만
+ *   반복 수집된다.
+ */
+async function loadState(opts) {
+  const o = opts || {};
+  const db = o.db || supabase;
+  const { data, error } = await DbError.withDbRetry(() => db
     .from('price_job_state')
     .select('job_date, cursor_key, processed, total, status, last_result, last_run_at')
     .eq('id', 1)
-    .maybeSingle();
+    .maybeSingle(), {
+    attempts: o.attempts || 4,
+    baseDelayMs: o.baseDelayMs == null ? 2000 : o.baseDelayMs,
+    sleep: o.sleep,
+    onRetry: (info, attempt) => console.warn(
+      `[상태] price_job_state 읽기 일시 실패(${info.kind}) — ${attempt}회째, 잠시 뒤 다시 읽습니다: ${info.message}`)
+  });
 
   if (error) {
-    // 테이블 자체가 없으면 진행 상태를 이어갈 수 없다. 조용히 처음부터
-    // 도는 것이 최악이다(매 실행이 1번부터 → 앞쪽 상품만 반복 수집).
-    throw new Error(`${STATE_MISSING_HINT} (원인: ${error.message})`);
+    const info = DbError.classifyDbError(error);
+    if (info.kind === DbError.KIND.TABLE_MISSING) {
+      throw new Error(`${STATE_MISSING_HINT} (원인: ${error.message})`);
+    }
+    const failure = new Error(`price_job_state 를 읽지 못했습니다 [${info.kind}]`
+      + `${info.transient ? ' — 테이블 문제가 아니라 DB 응답 문제입니다. 다음 실행에서 이어갑니다' : ''}`
+      + ` (원인: ${error.message})`);
+    failure.dbErrorKind = info.kind;
+    throw failure;
   }
   return data || null;
 }
@@ -3622,6 +3653,8 @@ module.exports = {
   reportInvariantErrors, productSuccessRate, todayPriceRate,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
   acquireLock, releaseLock, LOCK_TTL_MS,
+  // 상태 읽기의 오류 분류 — test-audit-regressions 가 일시 장애 재시도/표 없음 안내를 고정한다.
+  loadState, STATE_MISSING_HINT,
   // .in() URI 상한 회귀 — test-price-mall-collection 이 이 계약을 고정한다.
   chunkIdsByLength, ID_BATCH_CHARS
 };

@@ -150,6 +150,54 @@ function firstToken(t) {
 const setsDisjoint = (a, b) => a.size > 0 && b.size > 0 && ![...a].some(x => b.has(x));
 const setsDiffer = (a, b) => [...a].some(x => !b.has(x)) || [...b].some(x => !a.has(x));
 
+/*
+ * ★ 수량 · 변형 · 번들 표기 (2026-09-13 전수 감사).
+ *
+ *   B 등급(브랜드 일치 + 짧은 제목 기준 겹침 90%)은 한쪽 제목이 다른 쪽의 부분집합이면
+ *   통과한다. 그래서 "닭가슴살 500g" ↔ "닭가슴살 500g 4개", "RTX 5070" ↔ "RTX 5070 Ti",
+ *   "스위치 2" ↔ "스위치 2 번들" 이 «동일 유력» 이었고, _hotdeal.identityOf 는 STRONG 을
+ *   IDENTITY 관문 통과로 본다 — 다른 구성의 가격 이력으로 핫딜을 검증하게 된다.
+ *   External Hotdeal Radar 매칭 감사(실카탈로그 2,647 제목 변형)에서 확인한 규칙과 같다.
+ */
+const COUNT_UNIT_ALIAS = { '개입': '개', '입': '개' };
+const TOTAL_COUNT_RE = /총\s*\d+(?:\.\d+)?\s*(?:ml|l|g|kg|캔|병|개입|개|입|팩|박스|봉|포|정|롤|매|장|권)/gi;
+
+function countsIn(s) {
+  const out = [];
+  const re = /(\d+(?:\.\d+)?)\s*(캔|병|개입|개|입|팩|박스|봉|포|정|롤|매|장|권)(?![가-힣])/gi;
+  let m;
+  while ((m = re.exec(s)) !== null) out.push(`${Number(m[1])}${COUNT_UNIT_ALIAS[m[2]] || m[2]}`);
+  // "200ml x2" 같은 맨 배수도 수량이다. "340x3408x870" 같은 치수는 앞 글자가 숫자라 제외된다.
+  const mult = /(?<=[a-z가-힣)\s])[x×*]\s*(\d{1,2})(?![\d가-힣a-z.])/gi;
+  while ((m = mult.exec(s)) !== null) out.push(`${Number(m[1])}개`);
+  return out;
+}
+
+/** 수량 표기(정렬). "(총 4개)" 는 다른 수량과 함께 적혔을 때만 합계로 보고 뺀다. */
+function counts(t) {
+  const s = String(t == null ? '' : t);
+  const parts = countsIn(s.replace(TOTAL_COUNT_RE, ' '));
+  return (parts.length ? parts : countsIn(s)).sort();
+}
+
+/** grades 가 다루지 않는 변형 표기 — 한쪽에만 있으면 다른 상품이다. */
+const VARIANT_RULES = [
+  ['ti', /(^|[^a-z])ti([^a-z]|$)/i],
+  ['super', /(^|[^a-z])super([^a-z]|$)/i],
+  ['xt', /(^|[^a-z])xtx?([^a-z]|$)/i],
+  ['se', /(^|[^a-z])se([^a-z]|$)/i],
+  ['fe', /(^|[^a-z])fe([^a-z]|$)/i],
+  ['oled', /oled/i],
+  ['fold', /(^|[^a-z])fold\d*([^a-z]|$)|폴드/i],
+  ['flip', /(^|[^a-z])flip\d*([^a-z]|$)|플립/i]
+];
+function variants(t) {
+  const s = String(t == null ? '' : t);
+  return new Set(VARIANT_RULES.filter(([, re]) => re.test(s)).map(([k]) => k));
+}
+
+const BUNDLE_WORD_RE = /번들|패키지|(^|[^a-z])(bundle|package)([^a-z]|$)/i;
+
 /**
  * 우리 상품과 후보가 같은 상품인지 등급을 매긴다.
  *
@@ -187,6 +235,21 @@ function judgeSameProduct(ours, cand) {
   if (isBundle(ours) !== isBundle(cand)) {
     return { tier: 'D', reasons: [isBundle(cand) ? '상대가 묶음/세트' : '우리가 묶음인데 상대는 단품'] };
   }
+  const qo = counts(ours), qc = counts(cand);
+  if (qo.length && qc.length && qo.join('|') !== qc.join('|')) {
+    return { tier: 'D', reasons: [`수량 충돌 [${qo.join(',')}] ≠ [${qc.join(',')}]`] };
+  }
+  const multi = list => list.some(v => parseFloat(v) > 1);
+  if (!qo.length !== !qc.length && (multi(qo) || multi(qc))) {
+    return { tier: 'D', reasons: [`수량 표기가 한쪽에만 있다 [${qo.join(',')}] ≠ [${qc.join(',')}]`] };
+  }
+  const vo = variants(ours), vc = variants(cand);
+  if (setsDiffer(vo, vc)) {
+    return { tier: 'D', reasons: [`변형 충돌 [${[...vo].join(',')}] ≠ [${[...vc].join(',')}]`] };
+  }
+  if (BUNDLE_WORD_RE.test(ours) !== BUNDLE_WORD_RE.test(cand)) {
+    return { tier: 'D', reasons: ['번들/패키지 구성이 한쪽에만 있다'] };
+  }
 
   /* ── 옵션 단위가 다르면 같은 상품이라도 자동 연결 금지 ── */
   const lo = colors(ours), lc = colors(cand);
@@ -220,6 +283,7 @@ function judgeSameProduct(ours, cand) {
 module.exports = {
   judgeSameProduct,
   idTokens, normTitle, overlap,
-  modelCodes, years, grades, capacities, formats, colors, isBundle
+  modelCodes, years, grades, capacities, formats, colors, isBundle,
+  counts, variants
 };
 

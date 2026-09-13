@@ -128,12 +128,25 @@ async function qualitySnapshot() {
     /* ── 5. 쿠팡 API 성공률 (최근 24시간) ─────────────────── */
     let api = null;
     try {
-      const { data } = await supabase
-        .from('coupang_api_calls')
-        .select('source, outcome, called_at')
-        .gte('called_at', new Date(Date.now() - 86400000).toISOString())
-        .limit(2000);
-      const calls = data || [];
+      /*
+       * ★ 페이지를 넘겨 가며 받는다 (2026-09-13 감사).
+       *   운영 24시간 호출은 2,800건쯤인데 limit(2000) 은 서버 상한 1,000 에서 잘려,
+       *   "최근24시간_호출" 과 성공률이 정렬 없는 임의의 1,000건으로 계산됐다.
+       */
+      const since = new Date(Date.now() - 86400000).toISOString();
+      const calls = [];
+      for (let from = 0; from < 20 * PAGE; from += PAGE) {
+        const { data } = await supabase
+          .from('coupang_api_calls')
+          .select('source, outcome, called_at')
+          .gte('called_at', since)
+          .order('called_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1);
+        const page = data || [];
+        calls.push(...page);
+        if (page.length < PAGE) break;
+      }
       const ok = calls.filter(c => c.outcome === 'ok').length;
       const bySource = {};
       calls.forEach(c => {

@@ -302,7 +302,8 @@ async function recordExternalCall(row) {
     });
     if (error) throw new Error(error.message);
   } catch (e) {
-    const permanent = /schema cache|does not exist|could not find/i.test(e.message || '');
+    // 표가 «없을» 때만 계측을 끈다. DB 일시 장애로 끄면 그 실행의 나머지 호출이 기록되지 않는다.
+    const permanent = require('./_dberror').isMissingObject(e.message || '');
     if (permanent) {
       recorderOn = false;
       if (!recorderWarned) {

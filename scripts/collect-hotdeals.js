@@ -110,7 +110,8 @@ async function acquireLock(db) {
     .maybeSingle();
 
   if (read.error) {
-    if (/does not exist|schema cache/i.test(read.error.message)) {
+    // 표가 «없을» 때만 SKIP 이다. DB 일시 장애는 FAIL — 조용히 건너뛰지 않고 실패로 드러낸다.
+    if (require('../api/_dberror').isMissingTable(read.error)) {
       log('lock_table_missing', { hint: 'supabase/2026-09-06-hotdeals.sql 을 실행하세요' });
       return { result: LOCK.SKIP, reason: 'table_missing' };
     }
@@ -373,6 +374,30 @@ async function upsertDeals(rows) {
   return { ok, failed };
 }
 
+/*
+ * ★ detected_at 은 모든 행에 싣는다 (2026-09-13 감사).
+ *
+ *   예전에는 새 딜에만 detected_at 을 넣었다. PostgREST 는 여러 행을 한 번에 upsert 할 때
+ *   행마다 키가 다르면 없는 키를 기본값이 아니라 NULL 로 채운다. 그래서 새 딜과 이미 있던
+ *   딜이 한 묶음에 섞인 순간부터 "null value in column detected_at" 으로 묶음 전체가
+ *   거부됐다 — 2026-09-11 이후 매 실행 35건 전부 실패, hotdeals 45행 전부 EXPIRED.
+ *
+ *   이미 있던 딜은 처음 발견한 시각을 그대로 둔다. 새 딜은 지금이다.
+ */
+function withDetectedAt(row, prev, nowIso) {
+  row.detected_at = (prev && prev.detected_at) || nowIso || new Date().toISOString();
+  return row;
+}
+
+/*
+ * ★ 저장이 한 건이라도 실패하면 실행을 실패로 끝낸다 (2026-09-13 감사).
+ *   예전에는 upsert 가 전부 실패해도 outcome 'done' · exit 0 이라 워크플로가 이틀 동안
+ *   초록불이었고, 아무도 핫딜 표가 멈춘 줄 몰랐다.
+ */
+function writeOutcome(w) {
+  return w && w.failed > 0 ? 'failed' : 'done';
+}
+
 /* ── 5) 생애주기 — PHASE 11 ─────────────────────────────────────────
  *
  * 상태 전환은 «현재 가격 재검증» 이 먼저다. 단순 타이머로 만료시키지 않는다.
@@ -558,7 +583,7 @@ async function main() {
       const row = rowFor(p, cand, verdict, today);
       const prev = existing.get(`${row.source}|${row.source_external_id}|${row.mall}`);
       row.lifecycle = lifecycleFor(prev, verdict);
-      if (!prev) row.detected_at = new Date().toISOString();
+      withDetectedAt(row, prev, nowIso);
       rows.push(row);
       summary.kept++;
     }
@@ -630,7 +655,7 @@ async function main() {
             row.affiliate_url = cand.affiliateUrl;
             const prev = existing.get(`${row.source}|${row.source_external_id}|${row.mall}`);
             row.lifecycle = lifecycleFor(prev, verdict);
-            if (!prev) row.detected_at = new Date().toISOString();
+            withDetectedAt(row, prev, nowIso);
             rows.push(row);
             matched++;
           }
@@ -699,6 +724,10 @@ async function main() {
       if (expired) log('expired_ended', { n: expired });
       const w = await upsertDeals(rows);
       log('upserted', w);
+      if (writeOutcome(w) === 'failed') {
+        outcome = 'failed';
+        process.exitCode = 1;
+      }
       await sweepStale();
     }
   } catch (e) {
@@ -719,5 +748,7 @@ if (require.main === module) main();
 
 module.exports = {
   acquireLock, releaseLock, matchProduct, lifecycleFor, LOCK,
-  offerKeyOf, applyGroup, CONFIDENCE_RANK
+  offerKeyOf, applyGroup, CONFIDENCE_RANK,
+  // 저장 묶음의 NOT NULL 계약과 실패 종료 — test-audit-regressions 가 고정한다.
+  withDetectedAt, writeOutcome
 };

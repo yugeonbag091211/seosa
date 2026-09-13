@@ -357,8 +357,15 @@ let itemIdColumns = true;
  */
 let historyVidColumn = true;
 
+/*
+ * ★ 컬럼이 «없을» 때만 참이다 (2026-09-13 감사).
+ *   예전 정규식은 "schema cache" 만 봐도 참이라, DB 일시 장애 한 번에 itemIdColumns ·
+ *   historyVidColumn · historySourceColumn 이 프로세스 끝까지 꺼졌다. 수집기는 한 프로세스로
+ *   최대 50분을 돌므로, 그 뒤 모든 products 저장에서 item_id/vendor_item_id 가 빠지고
+ *   옵션 교체 감지가 멈췄다.
+ */
 function missingColumn(msg) {
-  return /column .* does not exist|could not find the .* column|schema cache/i.test(msg || '');
+  return require('./_dberror').isMissingColumn(msg);
 }
 
 /**
@@ -1092,5 +1099,7 @@ module.exports = {
   TODAY_PICKS, fetchCoupang, fetchAdpick, adpickProductId,
   searchAll, saveProducts, recordPrices, toClientProduct, roundRobin, preferLive,
   relevantItems, relevantRows, freshRows, matchesKeyword, keywordTokens, isRecordableSource,
-  discountPct, searchPhraseFromTitle, MAX_DISPLAY_AGE_DAYS
+  discountPct, searchPhraseFromTitle, MAX_DISPLAY_AGE_DAYS,
+  // 컬럼 폴백 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
+  missingColumn
 };

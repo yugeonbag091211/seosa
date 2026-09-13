@@ -223,7 +223,7 @@ console.log('\n[E] 기록 내 위치');
    */
   {
     const narrow = stat({ low: 38520, high: 39800, avg30: 38900, avg7: 39000,
-                          lastPrice: 39800, volatility: 0.8, historyDays: 29, trendPct: 0 });
+                          lastPrice: 39800, prevPrice: 39800, volatility: 0.8, historyDays: 29, trendPct: 0 });
     const d = D.dealOf(narrow, 39800, TODAY);
     score('Percentile', d.percentile >= 90,
       '기준점: 좁은 폭에서도 백분위 자체는 높게 나온다', String(d.percentile));
@@ -260,7 +260,7 @@ console.log('\n[E] 기록 내 위치');
   {
     const dirty = stat({
       low: 15900, high: 242100, avg30: 32656, avg7: 15900, avg7Days: 7,
-      median: 15900, lastPrice: 15900, volatility: 181, historyDays: 27, count: 27, trendPct: 0
+      median: 15900, lastPrice: 15900, prevPrice: 15900, volatility: 181, historyDays: 27, count: 27, trendPct: 0
     });
     const d = D.dealOf(dirty, 15900, TODAY);
     score('Outlier', d.cautions.some(c => /옵션이 바뀌었거나 다른 상품이 섞였을 수 있다/.test(c)),
@@ -277,7 +277,7 @@ console.log('\n[E] 기록 내 위치');
     // 최저가 쪽 이상치도 잡는다 (0원 근처 오수집).
     const lowOut = stat({
       low: 900, high: 42000, avg30: 38000, avg7: 39000, median: 39000,
-      lastPrice: 39000, volatility: 30, historyDays: 27, count: 27, trendPct: 0
+      lastPrice: 39000, prevPrice: 39000, volatility: 30, historyDays: 27, count: 27, trendPct: 0
     });
     score('Outlier', D.dealOf(lowOut, 39000, TODAY).cautions.some(c => /섞였을 수 있다/.test(c)),
       '★ 비정상적으로 싼 값이 섞인 경우도 잡는다');
