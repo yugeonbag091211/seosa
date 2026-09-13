@@ -198,7 +198,11 @@ const EXTERNAL_COLS = 'id, source, source_post_id, source_url, title, price, ori
   + ' product_url, image_url, posted_at, matched_product_id, match_confidence, deal_score,'
   + ' verification_status, price_vs_30d_avg, price_vs_90d_low, average_30d, low_90d,'
   + ' previous_price, history_observation_count, history_last_observed_at, source_count, sources,'
-  + ' metadata, last_verified_at';
+  + ' metadata, verification_reasons, last_verified_at';
+/** Community-sourced cards stay dark until this is set on the deployment (collector is_exposed is the other switch). */
+const EXTERNAL_MAX_AGE_HOURS = 72;
+
+function externalPublicEnabled() { return process.env.EXTERNAL_HOTDEAL_PUBLIC === '1'; }
 
 function externalStatus(status) {
   return status === 'STRONG_DEAL' ? 'VERIFIED_HOT'
@@ -234,6 +238,9 @@ function toExternalListItem(r) {
     dealScore: Number(r.deal_score),
     matchConfidence: Number(r.match_confidence),
     verificationStatus: r.verification_status,
+    // Internal verdict codes for API/debug consumers. The home card does not render them.
+    verificationReasons: arr(r.verification_reasons),
+    postedAt: r.posted_at,
     priceVs30dAvg: r.price_vs_30d_avg == null ? null : Number(r.price_vs_30d_avg),
     priceVs90dLow: r.price_vs_90d_low == null ? null : Number(r.price_vs_90d_low),
     sourceCount: Math.max(1, Number(r.source_count) || 1),
@@ -268,11 +275,17 @@ function isMissingExternalTable(message) {
 }
 
 async function loadExternal(queryParams, minScore, limit) {
+  if (!externalPublicEnabled()) return { items: [], pending: false, enabled: false };
+  const maxAgeHours = Math.max(1, Math.min(168,
+    Number(process.env.EXTERNAL_HOTDEAL_MAX_AGE_HOURS) || EXTERNAL_MAX_AGE_HOURS));
   let query = supabase.from('external_hotdeals')
     .select(EXTERNAL_COLS)
+    .eq('is_exposed', true)
     .in('verification_status', EXTERNAL_VISIBLE)
     .eq('is_primary', true)
     .gte('deal_score', Math.max(60, minScore))
+    // A community post is a moment, not a listing. Old posts are usually sold out.
+    .gte('posted_at', new Date(Date.now() - maxAgeHours * 3600000).toISOString())
     .order('deal_score', { ascending: false })
     .order('posted_at', { ascending: false })
     .limit(limit);
@@ -280,10 +293,10 @@ async function loadExternal(queryParams, minScore, limit) {
   if (queryParams.mall) query = query.eq('mall', String(queryParams.mall).slice(0, 40));
   const { data, error } = await query;
   if (error && (isMissingExternalTable(error.message) || isMissingColumn(error.message))) {
-    return { items: [], pending: true };
+    return { items: [], pending: true, enabled: true };
   }
   if (error) throw new Error(error.message);
-  return { items: (data || []).map(toExternalListItem), pending: false };
+  return { items: (data || []).map(toExternalListItem), pending: false, enabled: true };
 }
 
 /**
@@ -363,6 +376,25 @@ module.exports = async function handler(req, res) {
     const offset = intParam(q.cursor, 0, 0, 10000);
     const sort = SORTS[String(q.sort || 'score')] || SORTS.score;
 
+    /*
+     * External Radar is its own view. Folding it into this list and slicing to
+     * `limit` pushed internal rows out of the page while the cursor still
+     * advanced past them (they never appeared on any page), and pushed external
+     * cards out whenever 12 internal rows scored higher.
+     */
+    if (String(q.view || '') === 'external') {
+      const external = await loadExternal(q, minScore, limit);
+      cachePublic(res, 120);
+      return res.json({
+        items: external.items,
+        nextCursor: null,
+        counts: external.items.reduce((acc, it) => { acc[it.status] = (acc[it.status] || 0) + 1; return acc; }, {}),
+        external: true,
+        externalEnabled: external.enabled,
+        externalPending: external.pending
+      });
+    }
+
     let statuses = VISIBLE;
     if (q.status) {
       const want = String(q.status).split(',').map(s => s.trim().toUpperCase())
@@ -411,23 +443,7 @@ module.exports = async function handler(req, res) {
      *   것은 괜찮지만, 항목이 사라지는 것은 괜찮지 않다.
      */
     const nextCursor = rows.length === limit ? offset + rows.length : null;
-    const internalItems = spread(dropDuplicateGroups(rows)).map(toListItem);
-    // External cards are folded into the first page. Repeating them on every
-    // legacy cursor page would be worse than keeping later pages internal-only.
-    const external = offset === 0
-      ? await loadExternal(q, minScore, limit)
-      : { items: [], pending: false };
-    let items = internalItems;
-    if (external.items.length) {
-      const compare = q.sort === 'price'
-        ? (a, b) => Number(a.price) - Number(b.price)
-        : q.sort === 'recent'
-          ? (a, b) => String(b.checkedAt || '').localeCompare(String(a.checkedAt || ''))
-          : q.sort === 'drop'
-            ? (a, b) => Number((b.signals || {}).priceDropPercent || 0) - Number((a.signals || {}).priceDropPercent || 0)
-            : (a, b) => Number(b.dealScore || 0) - Number(a.dealScore || 0);
-      items = spread(internalItems.concat(external.items).sort(compare)).slice(0, limit);
-    }
+    const items = spread(dropDuplicateGroups(rows)).map(toListItem);
 
     // 목록은 자주 바뀌지 않는다 — 수집기가 도는 주기가 시간 단위다.
     cachePublic(res, 120);
@@ -438,8 +454,7 @@ module.exports = async function handler(req, res) {
       // 구분해서 말할 수 있게 갈래별 개수를 준다. (이 페이지 기준)
       counts: items.reduce((acc, it) => { acc[it.status] = (acc[it.status] || 0) + 1; return acc; }, {}),
       // 군집·신호가 실린 응답인지. false 면 마이그레이션 전이라는 뜻이다.
-      grouped,
-      externalPending: external.pending
+      grouped
     });
   } catch (e) {
     // 표가 아직 없으면(마이그레이션 전) 빈 목록으로 답한다 — 화면이 죽지 않는다.

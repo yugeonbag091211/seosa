@@ -96,4 +96,7 @@ assert(live.includes('Number(it.dealScore) >= 60'),'60점 미만 기본 노출 �
 assert(live.includes("it.source !== 'internal-history'"),'내부 price-drop과 중복 렌더하지 않는다');
 assert(live.includes('@media(max-width:560px){.radar-deals{grid-template-columns:1fr}'),'모바일 1열');
 
+assert(live.includes("'?view=external&limit=12&minScore=60'"),'외부 카드는 전용 view 로만 읽는다(내부 목록과 섞지 않는다)');
+assert.equal((live.match(/ExternalHot.load()/g)||[]).length,1,'ExternalHot.load 는 한 번만 호출된다(init 폴백에서 중복 호출 금지)');
+
 console.log('PASS hotdeal UI: legacy page removed, internal price-drop preserved, external verified radar added, mobile/actions/badges');

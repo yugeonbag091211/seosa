@@ -5,6 +5,11 @@
  *
  * Adapters must use an official API, RSS feed, or another explicitly permitted
  * public feed. This layer intentionally contains no generic HTML scraper.
+ *
+ * fetch() returns either
+ *   - an array of raw rows (legacy/mock), or
+ *   - { items, skipped: { reason: count }, meta: { httpStatus, attempts, rawCount } }
+ * so the registry can report why provider rows never reached matching.
  */
 class HotdealSourceAdapter {
   constructor(options) {
@@ -23,6 +28,19 @@ class HotdealSourceAdapter {
   async fetch() { return []; }
 }
 
+/**
+ * Provider failure, classified so a degraded source can say why.
+ *   timeout | network | http_429 | http_4xx | http_5xx | parse | too_large | local_rate_limit
+ */
+class SourceError extends Error {
+  constructor(kind, message, extra) {
+    super(message || kind);
+    this.name = 'SourceError';
+    this.kind = String(kind || 'unknown');
+    Object.assign(this, extra || {});
+  }
+}
+
 function assertAdapter(adapter) {
   if (!adapter || !adapter.id || typeof adapter.fetch !== 'function'
     || typeof adapter.enabled !== 'function') {
@@ -31,4 +49,4 @@ function assertAdapter(adapter) {
   return adapter;
 }
 
-module.exports = { HotdealSourceAdapter, assertAdapter };
+module.exports = { HotdealSourceAdapter, SourceError, assertAdapter };

@@ -46,7 +46,7 @@ const fakeSupabase = {
       select(c) { cols = c || '*'; String(cols).split(',').forEach(x => touch(x.trim())); return q; },
       eq(c, v) { touch(c); filters.push(r => String(r[c]) === String(v)); return q; },
       in(c, vs) { touch(c); filters.push(r => vs.map(String).indexOf(String(r[c])) > -1); return q; },
-      gte(c, v) { touch(c); filters.push(r => Number(r[c]) >= Number(v)); return q; },
+      gte(c, v) { touch(c); filters.push(r => cmp(r[c], v) >= 0); return q; },
       order(c, o) { touch(c); orders.push({ c, asc: !o || o.ascending !== false }); return q; },
       limit(n) { limitN = n; return q; },
       range(a, b) { rangeFrom = a; rangeTo = b; return q; },
@@ -398,8 +398,8 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     eq(r.status, 405, 'GET 이외는 405');
   }
 
-  section('14) External Radar 응답과 source/minScore 필터');
-  reset([deal({ source: 'internal-history', hot_score: 95 })], [{
+  section('14) External Radar — 별도 view · 공개 스위치 · shadow 행 차단 · 내부 목록 불변');
+  const externalRow = over => Object.assign({
     id: 81, source: 'fmkorea', source_post_id: 'post-81', source_url: 'https://community.example/81',
     title: '외부 검증 상품', price: 29900, original_price: 39900, mall: '쿠팡',
     product_url: 'https://shop.example/81', image_url: 'https://img.example/81.jpg',
@@ -408,10 +408,25 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     average_30d: 38800, low_90d: 30500, previous_price: 39000,
     history_observation_count: 18, history_last_observed_at: '2026-09-12', source_count: 2,
     sources: ['fmkorea', 'ppomppu'], metadata: { matchReason: '모델번호 일치' },
-    last_verified_at: iso(0), is_primary: true
-  }]);
+    verification_reasons: ['HIGH_MATCH_CONFIDENCE', 'BELOW_30D_AVG'],
+    last_verified_at: iso(0), is_primary: true, is_exposed: true
+  }, over || {});
+  const savedPublic = process.env.EXTERNAL_HOTDEAL_PUBLIC;
+  delete process.env.EXTERNAL_HOTDEAL_PUBLIC;
+  reset([deal({ source: 'internal-history', hot_score: 95 })], [externalRow()]);
   {
-    const r = await call({ source: 'fmkorea', minScore: '90' });
+    const off = await call({ view: 'external' });
+    eq(off.body.items.length, 0, '공개 스위치 OFF(기본) — 외부 카드 0');
+    eq(off.body.externalEnabled, false, 'externalEnabled=false');
+  }
+  process.env.EXTERNAL_HOTDEAL_PUBLIC = '1';
+  {
+    const base = await call({});
+    ok(base.body.items.every(it => it.source === 'internal-history'), '기본 목록에는 외부 카드를 섞지 않는다');
+    eq(base.body.externalPending, undefined, '기본 목록 응답 모양은 main 과 같다');
+  }
+  {
+    const r = await call({ view: 'external', source: 'fmkorea', minScore: '90' });
     eq(r.body.items.length, 1, '외부 source + minScore 필터');
     const it = r.body.items[0];
     eq(it.source, 'fmkorea', 'source');
@@ -423,8 +438,23 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     eq(it.priceVs90dLow, -2, '90일 최저가 비교');
     eq(it.productId, 'p81', 'SEOSA matched product id');
     eq(it.sourceCount, 2, '중복 source 수');
-    eq((await call({ source: 'fmkorea', minScore: '99' })).body.items.length, 0, 'minScore 미달 제외');
+    ok(it.verificationReasons.indexOf('BELOW_30D_AVG') > -1, 'verification reasons 는 API 에 남는다');
+    eq((await call({ view: 'external', source: 'fmkorea', minScore: '99' })).body.items.length, 0, 'minScore 미달 제외');
   }
+  {
+    reset([], [externalRow({ id: 82, source_post_id: 'post-82', is_exposed: false }),
+      externalRow({ id: 83, source_post_id: 'post-83', posted_at: iso(100) })]);
+    eq((await call({ view: 'external' })).body.items.length, 0, 'shadow 행(is_exposed=false)·72시간 지난 글은 공개 view 에도 없다');
+  }
+  {
+    // 회귀: 예전 병합은 limit 로 잘라 내부 항목을 커서 밖으로 흘렸다.
+    reset([1, 2, 3, 4, 5].map(n => deal({ hot_score: 80 + n, title: `내부 상품 ${n}`, group_key: `g${n}` })), [externalRow()]);
+    const page = await call({ limit: '5' });
+    eq(page.body.items.length, 5, '내부 5건이 외부 카드에 밀려 잘리지 않는다');
+    eq(page.body.nextCursor, 5, '커서는 DB 에서 읽은 행 수 그대로');
+  }
+  if (savedPublic === undefined) delete process.env.EXTERNAL_HOTDEAL_PUBLIC;
+  else process.env.EXTERNAL_HOTDEAL_PUBLIC = savedPublic;
 
   console.log('\n====================================================');
   console.log(`PASS ${pass}  /  FAIL ${fail}`);

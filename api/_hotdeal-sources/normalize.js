@@ -78,20 +78,27 @@ function normalizeExternalHotdeal(raw, source) {
   };
 }
 
+/**
+ * Same-source duplicate removal. A post is the same post when either its
+ * provider id or its canonical post URL repeats. The first provider id seen
+ * is kept so the (source, source_post_id) upsert key never shifts between runs,
+ * and a batch never carries two rows for one conflict key (Postgres rejects that).
+ */
 function dedupeByCanonicalUrl(rows) {
   const slots = new Map();
   const out = [];
   for (const row of (rows || []).filter(Boolean)) {
-    const key = row.canonicalPostUrl
-      ? `${row.source}|url:${row.canonicalPostUrl}`
-      : `${row.source}|id:${row.externalId}`;
-    if (!slots.has(key)) {
-      slots.set(key, out.length);
+    const keys = [`${row.source}|id:${row.externalId}`];
+    if (row.canonicalPostUrl) keys.push(`${row.source}|url:${row.canonicalPostUrl}`);
+    const hit = keys.find(key => slots.has(key));
+    if (hit === undefined) {
+      keys.forEach(key => slots.set(key, out.length));
       out.push(row);
       continue;
     }
-    const idx = slots.get(key);
-    if (row.price < out[idx].price) out[idx] = row;
+    const idx = slots.get(hit);
+    keys.forEach(key => { if (!slots.has(key)) slots.set(key, idx); });
+    if (row.price < out[idx].price) out[idx] = { ...row, externalId: out[idx].externalId };
   }
   return out;
 }

@@ -4855,7 +4855,7 @@ var Api = {
     } else if (fnName === 'getProfileRecommendations') {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
     } else if (fnName === 'getExternalHotdeals') {
-      queryUrl = url + '?limit=12&minScore=60';
+      queryUrl = url + '?view=external&limit=12&minScore=60';
     } else if (fnName === 'payPrepare' || fnName === 'payConfirm'
                || fnName === 'payCancel' || fnName === 'payStatus') {
       /*
@@ -10854,7 +10854,6 @@ var Init = {
     Rec.load();
     Monthly.load();
     Drop.load();
-    ExternalHot.load();
   },
 
   run: function() {

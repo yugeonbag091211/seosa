@@ -64,13 +64,22 @@ jobs:
             2>&1 | tee /tmp/hotdeals.log
           exit ${PIPESTATUS[0]}
 
-      # External adapters only use verified official APIs/RSS/feeds. With no
-      # configured live adapter this exits successfully without DB writes.
+      # External adapters only use verified official APIs/RSS/feeds.
+      # Defaults: every live source OFF, shadow ON. Turn on with repository variables:
+      #   EXTERNAL_HOTDEAL_PPOMPPU_ENABLED=1        뽐뿌 RSS (one GET per run)
+      #   EXTERNAL_HOTDEAL_SHADOW=0 + EXTERNAL_HOTDEAL_PUBLIC_SOURCES=ppomppu   save as exposure candidates
+      # A failure here must not fail the internal hot-deal job above.
       - name: Collect external verified hot deals
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: node scripts/collect-external-hotdeals.js
+          EXTERNAL_HOTDEAL_PPOMPPU_ENABLED: ${{ vars.EXTERNAL_HOTDEAL_PPOMPPU_ENABLED }}
+          EXTERNAL_HOTDEAL_SHADOW: ${{ vars.EXTERNAL_HOTDEAL_SHADOW }}
+          EXTERNAL_HOTDEAL_PUBLIC_SOURCES: ${{ vars.EXTERNAL_HOTDEAL_PUBLIC_SOURCES }}
+        run: |
+          node scripts/collect-external-hotdeals.js \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
 
       - name: Summary
         if: always()
