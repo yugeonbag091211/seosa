@@ -613,6 +613,25 @@ function fairness(points, currentPrice, today) {
     current: cur,
     low: 0, high: 0, median: 0, mean: 0,
     spreadPct: null,
+    /*
+     * ── 아래 둘은 순위를 못 낼 때 «대신 할 수 있는 말» 을 위한 값이다
+     *    (2026-09-10 PRICE INTELLIGENCE V2 감사) ──────────────────
+     *
+     * 운영 실측: 관측 5일 이상인 상품 2,045개 중 1,560개(76.3%)가 flat 이다.
+     * 그런데 그 flat 의 82.7%는 «폭이 좁은» 것이 아니라 관측 내내 값이
+     * «단 하나» 였고, 92.8%는 최고-최저 차이가 1,000원 미만이었다.
+     * 그런 상품에 순위를 매기는 것은 뜻이 없다 — 그건 지금도 옳다.
+     *
+     * 하지만 «아무 말도 못 한다» 는 결론은 틀렸다. "관측한 8일 동안(12일에
+     * 걸쳐) 같은 값이었다" 는 검증 가능한 사실이고, «지금 사도 되나» 에
+     * 대한 좋은 답이다 — 기다려도 내려가지 않는다는 뜻이기 때문이다.
+     * 그 문장을 만들려면 호출부에 이 두 값이 있어야 한다.
+     *
+     * ★ 판정을 바꾸지 않는다. level 은 여전히 flat 이고, flat 이 cheap 이
+     *   되는 길은 어디에도 없다. 늘어나는 것은 «설명할 재료» 뿐이다.
+     */
+    uniquePrices: 0,   // 창 안에서 관측된 서로 다른 가격의 수
+    heldDays: 0,       // 첫 관측일 ~ 마지막 관측일 (며칠에 걸친 관측인가)
     lastDate,
     staleDays,
     confident: false,
@@ -623,7 +642,24 @@ function fairness(points, currentPrice, today) {
     base.reason = '현재가를 알 수 없다';
     return base;
   }
-  if (prices.length < FAIR_MIN_OBS) return base;
+
+  /*
+   * ★ 기술통계는 «순위를 낼 수 있는가» 와 무관하게 낸다 (2026-09-10).
+   *
+   *   예전에는 관측이 FAIR_MIN_OBS 미만이면 low/high/median/mean 을 전부
+   *   0 인 채로 돌려줬다. 그런데 못 하는 것은 «순위» 지 «최저가가 얼마였나»
+   *   가 아니다. 관측 3일짜리 상품에도 "3일 동안 19,900~21,000원" 은
+   *   그대로 사실이고, 그 숫자를 0 으로 지워 보내면 호출부는 있는 데이터를
+   *   두고도 아무 말을 못 한다. 운영 실측으로 467개(18.5%)가 이 상태였다.
+   *
+   *   판정은 한 자리도 바뀌지 않는다 — level 은 아래 게이트가 그대로 정한다.
+   *
+   * ★ 단, 관측이 «0건» 이면 여기서도 낼 것이 없다. 게이트를 뒤로 옮기면서
+   *   이 가드가 빠져 low 가 undefined, median/mean 이 NaN 이 됐었다
+   *   (JSON 으로는 키가 사라지거나 null 이 된다 — 호출부 계약 위반).
+   *   빈 배열은 통계 계산 자체를 건너뛰고 0 인 채로 돌려준다.
+   */
+  if (!prices.length) return base;
 
   const sorted = prices.slice().sort((a, b) => a - b);
   const low = sorted[0];
@@ -640,6 +676,11 @@ function fairness(points, currentPrice, today) {
   base.median = median;
   base.mean = mean;
   base.spreadPct = Math.round(spread * 1000) / 10;
+  base.uniquePrices = new Set(prices).size;
+  base.heldDays = pts.length ? spanDays(pts[0].date, pts[pts.length - 1].date) : 0;
+
+  // 여기서부터가 «순위를 낼 수 있는가» 다. 위 기술통계는 이미 채워져 있다.
+  if (prices.length < FAIR_MIN_OBS) return base;
 
   // 기록이 오래 멈췄으면 «지금» 의 위치라고 말할 수 없다.
   if (staleDays > FAIR_MAX_STALE) {
@@ -652,8 +693,16 @@ function fairness(points, currentPrice, today) {
   if (spread < FAIR_MIN_SPREAD) {
     base.level = 'flat';
     base.label = FAIR_LABEL.flat;
-    base.reason = '최근 ' + FAIR_WINDOW_DAYS + '일 가격 폭이 '
-      + base.spreadPct + '% 라 싸고 비쌈을 가를 수 없다';
+    /*
+     * ★ 같은 flat 이라도 «값이 하나» 와 «폭이 좁다» 는 다른 사실이다.
+     *   운영 flat 의 82.7%가 전자이고, 그건 훨씬 강한 말이다 —
+     *   "관측한 동안 한 번도 안 움직였다" 는 검증 가능한 문장이고
+     *   "기다려도 안 내려간다" 로 바로 읽힌다.
+     */
+    base.reason = base.uniquePrices === 1
+      ? '관측 ' + base.obs + '일(' + base.heldDays + '일에 걸쳐) 내내 같은 가격이었다'
+      : '최근 ' + FAIR_WINDOW_DAYS + '일 가격 폭이 ' + base.spreadPct
+        + '% (' + (base.high - base.low).toLocaleString('ko-KR') + '원) 라 싸고 비쌈을 가를 수 없다';
     return base;
   }
 
