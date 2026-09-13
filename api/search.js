@@ -2,7 +2,7 @@ const supabase = require('./_supabase');
 const { searchAll, saveProducts, TODAY_PICKS } = require('./_shop');
 const { attachTrust } = require('./_trust');
 const { attachPriceChange } = require('./_facets');
-const { applyCors, cachePublic, fail } = require('./_http');
+const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
 
@@ -100,7 +100,7 @@ module.exports = async function handler(req, res) {
     // 두 번 들어오기만 해도 뒤쪽은 쿠팡 결과를 통째로 잃는다. 한 칸(약 1.2초)은
     // 기다리고, 그보다 더 밀리면(=앞에 여러 건이 쌓였으면) 기다리지 않고
     // 캐시 결과로 응답한다. 사용자를 무한정 세워두지 않는다.
-    const { items, allItems, from, blocked } = await searchAll(keyword, {
+    const { items, allItems, from, blocked, failed, errors } = await searchAll(keyword, {
       coupangLimit: RESULT_LIMIT,
       coupangOpts: { source: 'search', maxWaitMs: 1500 },
       /*
@@ -114,6 +114,24 @@ module.exports = async function handler(req, res) {
        */
       adpickOpts: { source: 'search' }
     });
+
+    /*
+     * ★ 공급원이 전부 응답하지 못했으면 장애로 답한다 (2026-09-13 감사 후속 P2).
+     *
+     *   예전에는 쿠팡·ADPICK·캐시가 모두 실패해도 200 [] 이었다. 프론트는 그걸
+     *   «검색 결과가 없어요» + 대체 검색어로 그렸고, 사용자는 상품이 없는 줄 알았다.
+     *   503 이면 프론트 Api.call 이 오류 경로(«검색 중 오류가 났어요 · 다시 시도»)로 간다.
+     *   캐시하지 않는다 — 복구된 뒤에도 장애 응답이 남으면 안 된다.
+     */
+    if (failed) {
+      noStore(res);
+      res.setHeader('Retry-After', '30');
+      res.setHeader('X-Seosa-Source', 'none');
+      return fail(res, new Error(`검색 공급원 전면 실패: ${(errors || []).join(' | ')}`), {
+        where: 'search', route: '/api/search', status: 503,
+        message: '지금은 상품 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
+      });
+    }
 
     await saveProducts(keyword, allItems || items, { from, source: 'search' });
 

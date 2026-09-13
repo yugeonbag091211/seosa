@@ -999,7 +999,11 @@ const LOCK_TTL_MS = Number(process.env.PRICE_LOCK_TTL_MS) || 80 * 60 * 1000;
  * 잠금을 잡는다.
  * @returns {{ok:true, token:string} | {ok:false, reason:string}}
  */
-async function acquireLock(state) {
+async function acquireLock(state, opts) {
+  const o = opts || {};
+  const db = o.db || supabase;
+  const sleep = o.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+  const attempts = Math.max(1, o.attempts || 3);
   const prev = (state && state.last_run_at) || null;
   const lock = (state && state.last_result && state.last_result.lock) || null;
 
@@ -1014,19 +1018,50 @@ async function acquireLock(state) {
   const now = new Date();
   const token = `${process.env.GITHUB_RUN_ID || 'local'}-${now.getTime()}`;
   const nextLast = now.toISOString();
-  const q = supabase.from('price_job_state').update({
+  const payload = {
     last_run_at: nextLast,
     last_result: { ...((state && state.last_result) || {}),
       lock: { runId: token, at: nextLast, until: new Date(now.getTime() + LOCK_TTL_MS).toISOString() } }
-  }).eq('id', 1);
+  };
+  const casLost = { ok: false, reason: '다른 실행이 같은 순간에 잠금을 가져갔습니다 (CAS 실패)' };
 
-  // ★ CAS — 우리가 읽은 last_run_at 이 그대로일 때만 잡는다.
-  const { data, error } = await (prev === null ? q.is('last_run_at', null) : q.eq('last_run_at', prev)).select('id');
-  if (error) return { ok: false, reason: `잠금 획득 실패: ${error.message}` };
-  if (!data || data.length === 0) {
-    return { ok: false, reason: '다른 실행이 같은 순간에 잠금을 가져갔습니다 (CAS 실패)' };
+  /*
+   * ★ DB 일시 장애를 «건너뛰기» 로 끝내지 않는다 (2026-09-13 감사 후속 P2).
+   *
+   *   예전에는 CAS 갱신이 504/PGRST002 로 끝나면 "잠금 획득 실패" 로 실행 전체를
+   *   건너뛰었고 exit 0 이라 아무도 몰랐다. 그런데 일시 장애는 두 가지다.
+   *     · 갱신이 들어가지 않았다  → 행이 그대로다. CAS 를 다시 시도해도 안전하다.
+   *     · 갱신은 들어갔는데 응답만 잃었다 → 행에 우리 토큰이 있다. 이미 우리 잠금이다.
+   *   그래서 행을 다시 읽어 둘을 가른다. 다른 실행의 흔적이 보이면 예전처럼 CAS 실패다.
+   *   끝내 일시 장애면 transient 로 알려 호출부(run)가 실패로 끝내게 한다.
+   */
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const q = db.from('price_job_state').update(payload).eq('id', 1);
+    // ★ CAS — 우리가 읽은 last_run_at 이 그대로일 때만 잡는다.
+    const { data, error } = await (prev === null ? q.is('last_run_at', null) : q.eq('last_run_at', prev)).select('id');
+    if (!error) return data && data.length ? { ok: true, token } : casLost;
+
+    const info = DbError.classifyDbError(error);
+    if (!info.transient) return { ok: false, reason: `잠금 획득 실패: ${error.message}` };
+
+    const read = await db.from('price_job_state').select('last_run_at, last_result').eq('id', 1).maybeSingle();
+    if (!read.error && read.data) {
+      const held = read.data.last_result && read.data.last_result.lock;
+      if (held && held.runId === token) {
+        console.warn(`[잠금] 갱신 응답을 잃었지만(${info.kind}) 잠금은 우리 것으로 들어갔습니다 — 이어갑니다.`);
+        return { ok: true, token };
+      }
+      if ((read.data.last_run_at || null) !== prev) return casLost;
+    }
+
+    if (attempt === attempts) {
+      return { ok: false, transient: true,
+        reason: `잠금 획득 중 DB 일시 장애가 계속됐습니다 [${info.kind}] (원인: ${error.message})` };
+    }
+    console.warn(`[잠금] DB 일시 장애(${info.kind}) — ${attempt}회째, 잠시 뒤 다시 잡습니다: ${error.message}`);
+    await sleep(2000 * Math.pow(3, attempt - 1));
   }
-  return { ok: true, token };
+  return casLost;
 }
 
 /** 잠금을 푼다. 실패해도 TTL 이 만료시키므로 던지지 않는다. */
@@ -2759,6 +2794,12 @@ async function run() {
    */
   const lock = await acquireLock(state);
   if (!lock.ok) {
+    if (lock.transient) {
+      // 다른 실행이 도는 게 아니라 DB 가 답하지 못했다. 초록불로 숨기지 않는다.
+      console.error(`[잠금] 이번 실행을 시작하지 못했습니다 — ${lock.reason}`);
+      process.exitCode = 1;
+      return;
+    }
     console.log(`[잠금] 이번 실행은 건너뜁니다 — ${lock.reason}`);
     return;
   }
