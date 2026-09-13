@@ -163,3 +163,22 @@ test('session: an empty keyword is ignored without a request', async () => {
   assert.deepEqual(await session.run('   '), { status: 'ignored' });
   assert.equal(calls.length, 0);
 });
+
+/* ── web parity: chart axis, display rules, home feed ─────────────── */
+
+test('chart: y-axis gutter keeps every point right of the labels, ticks span min..max', () => {
+  const model = buildChartModel([{ date: day(1), price: 15000 }, { date: day(2), price: 16800 }, { date: day(3), price: 15900 }], 360, { left: 50, top: 10, bottom: 196 });
+  assert(model.coords.every(c => c.x >= 50 && c.x <= 360 && c.y >= 10 && c.y <= 196));
+  assert.equal(model.ticks.length, 5);
+  assert.equal(model.ticks[0].value, 16800);
+  assert.equal(model.ticks[4].value, 15000);
+  assert.match(model.fillPath, /Z$/);
+});
+
+test('chart: flat history has a single tick and a single-point chart has no fill', () => {
+  const flat = buildChartModel([1, 2].map(n => ({ date: day(n), price: 15900 })), 300, { left: 40 });
+  assert.equal(flat.ticks.length, 1);
+  const single = buildChartModel([{ date: day(1), price: 1000 }], 300, { left: 40 });
+  assert.equal(single.fillPath, '');
+  assert.equal(single.coords[0].x, 170);
+});

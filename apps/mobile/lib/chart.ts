@@ -1,9 +1,10 @@
 import type { PricePoint } from './api';
 
-/** Geometry of the price sparkline. Pure, so tests can check every edge case without a renderer. */
+/** Geometry of the price chart. Pure, so tests can check every edge case without a renderer. */
 export const CHART = { height: 132, top: 12, bottom: 120, side: 6, maxPoints: 30 } as const;
 
 export type ChartCoord = { x: number; y: number };
+export type ChartTick = { value: number; y: number };
 
 export type ChartModel = {
   points: PricePoint[];
@@ -13,11 +14,17 @@ export type ChartModel = {
   flat: boolean;
   coords: ChartCoord[];
   path: string;
+  /** The line path closed down to the bottom rule, for the web's soft fill under the line. */
+  fillPath: string;
+  /** Horizontal grid lines with price labels (web: Chart.js y axis). */
+  ticks: ChartTick[];
   last: ChartCoord;
   firstDate: string;
   lastDate: string;
   accessibilityLabel: string;
 };
+
+export type ChartOptions = { height?: number; top?: number; bottom?: number; left?: number; tickCount?: number };
 
 export function formatWon(price: number): string {
   return `${Math.round(price).toLocaleString('ko-KR')}원`;
@@ -42,24 +49,44 @@ export function normalizePoints(points: readonly PricePoint[], maxPoints: number
     .map(([date, price]) => ({ date, price }));
 }
 
-export function buildChartModel(input: readonly PricePoint[], width: number): ChartModel | null {
+/**
+ * @param width   full drawing width
+ * @param options `left` reserves a gutter for y-axis labels; `top`/`bottom` set the plot band.
+ */
+export function buildChartModel(input: readonly PricePoint[], width: number, options: ChartOptions = {}): ChartModel | null {
   const points = normalizePoints(input);
   if (points.length === 0) return null;
+
+  const top = options.top ?? CHART.top;
+  const bottom = options.bottom ?? CHART.bottom;
+  const left = Math.max(0, options.left ?? 0);
+  const tickCount = Math.max(2, options.tickCount ?? 5);
 
   const prices = points.map(point => point.price);
   const min = Math.min(...prices);
   const max = Math.max(...prices);
   const span = max - min;
   const w = Math.max(0, width);
-  const usable = Math.max(0, w - CHART.side * 2);
+  const x0 = Math.min(w, left + CHART.side);
+  const usable = Math.max(0, w - CHART.side - x0);
+  const yOf = (price: number) => (span === 0 ? (top + bottom) / 2 : bottom - ((price - min) / span) * (bottom - top));
 
   const coords = points.map((point, index) => ({
-    x: points.length === 1 ? w / 2 : CHART.side + (index / (points.length - 1)) * usable,
-    y: span === 0 ? (CHART.top + CHART.bottom) / 2 : CHART.bottom - ((point.price - min) / span) * (CHART.bottom - CHART.top),
+    x: points.length === 1 ? left + (w - left) / 2 : x0 + (index / (points.length - 1)) * usable,
+    y: yOf(point.price),
   }));
   const path = coords.length > 1
     ? coords.map((c, index) => `${index === 0 ? 'M' : 'L'}${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ')
     : '';
+  const fillPath = path
+    ? `${path} L${coords[coords.length - 1].x.toFixed(1)} ${bottom.toFixed(1)} L${coords[0].x.toFixed(1)} ${bottom.toFixed(1)} Z`
+    : '';
+  const ticks: ChartTick[] = span === 0
+    ? [{ value: min, y: yOf(min) }]
+    : Array.from({ length: tickCount }, (_, i) => {
+      const value = max - (span * i) / (tickCount - 1);
+      return { value: Math.round(value), y: yOf(value) };
+    });
 
   const first = points[0];
   const lastPoint = points[points.length - 1];
@@ -74,7 +101,7 @@ export function buildChartModel(input: readonly PricePoint[], width: number): Ch
   }
 
   return {
-    points, min, max, latest: lastPoint.price, flat: span === 0, coords, path,
+    points, min, max, latest: lastPoint.price, flat: span === 0, coords, path, fillPath, ticks,
     last: coords[coords.length - 1], firstDate: first.date, lastDate: lastPoint.date, accessibilityLabel,
   };
 }

@@ -1,3 +1,6 @@
+export type TrustReason = { kind: string; text: string };
+export type Trust = { level: string; label: string; summary: string; reasons: TrustReason[] };
+
 export type Product = {
   title: string;
   lprice: number;
@@ -6,6 +9,22 @@ export type Product = {
   image?: string;
   productId?: string;
   vendorItemId?: string;
+  // Optional fields the web cards also read. Absent values are simply not shown.
+  link?: string;
+  oprice?: number;
+  savePct?: number;
+  isAllTimeLow?: boolean;
+  isRocket?: boolean | null;
+  collectedAt?: string;
+  trust?: Trust | null;
+};
+
+/** GET /api/init — the same read-only, edge-cached payload the web home renders. */
+export type HomeFeed = {
+  keywords: string[];
+  drops: Product[];
+  daily: { keyword: string; products: Product[] } | null;
+  monthly: { month: number | null; title: string; subtitle: string; products: Product[] } | null;
 };
 
 export type PricePoint = { date: string; price: number };
@@ -47,6 +66,39 @@ function isHomeDeal(value: unknown): value is HomeDeal {
   if (!value || typeof value !== 'object') return false;
   const item = value as Partial<HomeDeal>;
   return typeof item.title === 'string' && Number.isFinite(item.price) && typeof item.mall === 'string' && typeof item.status === 'string';
+}
+
+/** Trust is optional context; anything malformed becomes null instead of failing the response. */
+function cleanTrust(value: unknown): Trust | null {
+  if (!value || typeof value !== 'object') return null;
+  const trust = value as Partial<Trust>;
+  if (typeof trust.level !== 'string' || typeof trust.label !== 'string') return null;
+  const reasons = Array.isArray(trust.reasons)
+    ? trust.reasons.filter((r): r is TrustReason => !!r && typeof r === 'object' && typeof (r as TrustReason).text === 'string')
+      .map(r => ({ kind: typeof r.kind === 'string' ? r.kind : '', text: r.text }))
+    : [];
+  return { level: trust.level, label: trust.label, summary: typeof trust.summary === 'string' ? trust.summary : '', reasons };
+}
+
+/** Keeps the required fields as validated and drops optional fields of the wrong type. */
+function cleanProduct(item: Product): Product {
+  const out: Product = { title: item.title, lprice: item.lprice, mall: item.mall };
+  const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  out.mallLabel = str(item.mallLabel);
+  out.image = str(item.image);
+  out.productId = str(item.productId);
+  out.vendorItemId = str(item.vendorItemId);
+  out.link = str(item.link);
+  out.oprice = num(item.oprice);
+  out.savePct = num(item.savePct);
+  out.collectedAt = str(item.collectedAt);
+  if (typeof item.isAllTimeLow === 'boolean') out.isAllTimeLow = item.isAllTimeLow;
+  if (typeof item.isRocket === 'boolean') out.isRocket = item.isRocket;
+  const trust = cleanTrust(item.trust);
+  if (trust) out.trust = trust;
+  for (const key of Object.keys(out) as (keyof Product)[]) if (out[key] === undefined) delete out[key];
+  return out;
 }
 
 /** Deal text is rendered directly; a non-string entry would crash a <Text> child, so only strings survive. */
@@ -156,18 +208,53 @@ export function createApiClient(fetcher: typeof fetch = fetch, timeoutOverrides:
     async search(keyword: string, signal?: AbortSignal): Promise<Product[]> {
       const data = await get('/api/search', { keyword: keyword.trim() }, timeouts.searchMs, signal);
       if (!Array.isArray(data)) throw new ApiError('invalid_response', 'Search response is not an array');
-      return usableItems(data, isProduct, 'Invalid search product');
+      return usableItems(data, isProduct, 'Invalid search product').map(cleanProduct);
     },
     async product(id: string, mall?: string, signal?: AbortSignal): Promise<ProductDetail> {
       const data = await get('/api/history', { __route: 'product', pid: id, ...(mall ? { mall } : {}) }, timeouts.detailMs, signal) as Partial<ProductDetail>;
       if (!data || !isProduct(data.product) || data.product.productId !== id || !isPoints(data.points) || !isDeal(data.deal)) throw new ApiError('invalid_response', 'Invalid product response');
-      return { product: data.product, points: data.points, deal: cleanDeal(data.deal) };
+      return { product: cleanProduct(data.product), points: data.points, deal: cleanDeal(data.deal) };
     },
     async history(product: Product, signal?: AbortSignal): Promise<PriceHistory> {
       if (!product.productId) throw new ApiError('request', '상품 식별자가 없어요.');
       const data = await get('/api/history', { productId: product.productId, mall: product.mall, vendorItemId: product.vendorItemId || '', deal: '1' }, timeouts.detailMs, signal) as Partial<PriceHistory>;
       if (!data || !isPoints(data.points) || !isDeal(data.deal)) throw new ApiError('invalid_response', 'Invalid history response');
       return { points: data.points, deal: cleanDeal(data.deal) };
+    },
+    /**
+     * Web home data (핫딜 · 오늘의 셀렉션 · 이달의 추천 · 인기 검색어).
+     * Read-only on the server and cached at the edge for 5 minutes. Each section is filtered on its own;
+     * the whole response is only rejected when nothing usable remains in a non-empty payload.
+     */
+    async home(signal?: AbortSignal): Promise<HomeFeed> {
+      const data = await get('/api/init', {}, timeouts.homeMs, signal) as Record<string, unknown> | null;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new ApiError('invalid_response', 'Invalid home response');
+      const list = (value: unknown) => (Array.isArray(value) ? value : []);
+      const products = (value: unknown) => list(value).filter(isProduct).map(cleanProduct);
+
+      const rawDrops = list(data.priceDrop);
+      const daily = data.daily && typeof data.daily === 'object' ? data.daily as Record<string, unknown> : null;
+      const monthly = data.monthly && typeof data.monthly === 'object' ? data.monthly as Record<string, unknown> : null;
+      const rawDaily = daily ? list(daily.products) : [];
+      const rawMonthly = monthly ? list(monthly.products) : [];
+
+      const feed: HomeFeed = {
+        keywords: list(data.popular)
+          .map(row => (row && typeof row === 'object' ? (row as { keyword?: unknown }).keyword : row))
+          .filter((k): k is string => typeof k === 'string' && k.trim() !== ''),
+        drops: products(rawDrops),
+        daily: daily && typeof daily.keyword === 'string' ? { keyword: daily.keyword, products: products(rawDaily) } : null,
+        monthly: monthly && typeof monthly.title === 'string' ? {
+          month: typeof monthly.month === 'number' ? monthly.month : null,
+          title: monthly.title,
+          subtitle: typeof monthly.subtitle === 'string' ? monthly.subtitle : '',
+          products: products(rawMonthly),
+        } : null,
+      };
+      const offered = rawDrops.length + rawDaily.length + rawMonthly.length;
+      const usable = feed.drops.length + (feed.daily?.products.length || 0) + (feed.monthly?.products.length || 0);
+      if (offered > 0 && usable === 0) throw new ApiError('invalid_response', 'Invalid home response');
+      return feed;
     },
     async homeDeals(signal?: AbortSignal): Promise<HomeDeal[]> {
       const data = await get('/api/hotdeals', { source: 'internal-history', limit: '4', sort: 'score' }, timeouts.homeMs, signal) as { items?: unknown };

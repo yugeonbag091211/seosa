@@ -1,15 +1,27 @@
-import { useEffect, useState } from 'react';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
-import { BrandMark, ErrorState, formatPrice, LoadingState, ProductImage, Screen, Text, VerdictBadge } from '../../components/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { PriceChart } from '../../components/PriceChart';
+import {
+  AppHeader, BackButton, ErrorState, formatPrice, LedgerRow, LoadingState, MallLine, ProductImage, Screen, SectionHead, StatRow, Text,
+  TrendBox, TrustPanel, VerdictBox,
+} from '../../components/ui';
 import { api, ApiError, type ProductDetail, userMessage } from '../../lib/api';
-import { useTheme } from '../../lib/theme';
+import { normalizePoints } from '../../lib/chart';
+import { priceStats, trendSummary, verdictView } from '../../lib/format';
+import { typography, useTheme } from '../../lib/theme';
 
 function firstParam(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value || '').trim();
 }
 
+const SIDE = 18; // .modal-body side padding on mobile
+
+/**
+ * The web opens a product as the «가격의 서사» modal: verdict → trust → chart → PRICE TREND → 최저/평균/최고.
+ * The app shows the same blocks in that order, preceded by the product itself (image, name, price, mall —
+ * as on the web /p/ page) and followed by the recent observations and the full server reasons.
+ */
 export default function ProductPage() {
   const params = useLocalSearchParams<{ id: string; mall?: string }>();
   const id = firstParam(params.id);
@@ -32,48 +44,67 @@ export default function ProductPage() {
 
   const detail = loadedDetail?.product.productId === id ? loadedDetail : null;
   const visibleFailure = !id ? { message: '상품 식별자가 없어요.', retryable: false } : failure;
-  const observations = detail?.points.slice(-5).reverse() || [];
+  const derived = useMemo(() => {
+    if (!detail) return null;
+    const recent = normalizePoints(detail.points);
+    return {
+      verdict: verdictView(detail.points.length, detail.deal),
+      stats: priceStats(detail.points),
+      trend: trendSummary(recent, detail.deal),
+      observations: recent.slice(-5).reverse(),
+    };
+  }, [detail]);
   const deal = detail?.deal || null;
-  const hasVerdict = !!detail && detail.points.length > 0 && !!deal && deal.verdict !== 'UNKNOWN';
-  return <Screen>
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: theme.border }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="뒤로 가기" hitSlop={8} onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={{ minWidth: 44, minHeight: 44, justifyContent: 'center' }}><Text style={{ fontSize: 26 }} maxFontSizeMultiplier={1}>‹</Text></Pressable>
-      <Text accessibilityRole="header" style={{ fontSize: 15, fontWeight: '700' }}>상품 상세</Text>
-      <View style={{ minWidth: 44, alignItems: 'flex-end' }}><BrandMark size={24} decorative /></View>
-    </View>
-    {visibleFailure ? <ErrorState message={visibleFailure.message} onRetry={visibleFailure.retryable ? () => { setFailure(null); setDetail(null); setAttempt(x => x + 1); } : undefined} /> : null}
-    {!visibleFailure && !detail ? <LoadingState label="상품 정보를 불러오는 중…" /> : null}
-    {detail ? <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 28, paddingTop: 20, paddingBottom: 44 }}>
-      <View style={{ height: Math.max(180, Math.min(width - 48, 310)), backgroundColor: theme.surface, borderRadius: 8, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-        <ProductImage uri={detail.product.image} fallbackSize={54} style={{ width: '92%', height: '92%' }} />
+  const product = detail?.product;
+
+  return <Screen padded={false}>
+    <AppHeader>
+      <BackButton />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text accessibilityRole="header" maxFontSizeMultiplier={1.2} style={[typography.modalTitle, { color: theme.text }]}>가격의 서사</Text>
+        {product ? <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[typography.modalSub, { color: theme.faint }]}>
+          {product.title} · {product.mallLabel || product.mall}
+        </Text> : null}
       </View>
-      <View style={{ gap: 8 }}>
-        <Text muted style={{ fontSize: 13 }}>{detail.product.mallLabel || detail.product.mall}</Text>
-        <Text accessibilityRole="header" style={{ fontSize: 24, lineHeight: 33, fontWeight: '700', letterSpacing: -0.5 }}>{detail.product.title}</Text>
-        <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 28, lineHeight: 36, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{formatPrice(detail.product.lprice)}원</Text>
-        <Text muted style={{ fontSize: 12 }}>현재 표시 가격 · 구매처 가격은 달라질 수 있어요.</Text>
+    </AppHeader>
+    {visibleFailure ? <View style={{ paddingHorizontal: SIDE }}>
+      <ErrorState message={visibleFailure.message} onRetry={visibleFailure.retryable ? () => { setFailure(null); setDetail(null); setAttempt(x => x + 1); } : undefined} />
+    </View> : null}
+    {!visibleFailure && !detail ? <LoadingState label="가격 기록을 불러오는 중…" /> : null}
+    {detail && product && derived ? <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: SIDE, paddingTop: 16, paddingBottom: 48 }}>
+      <View style={{ height: Math.max(180, Math.min(width - SIDE * 2, 300)), borderRadius: 8, backgroundColor: theme.surface, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <ProductImage uri={product.image} fallbackSize={54} style={{ width: '82%', height: '82%' }} />
       </View>
-      <View style={{ gap: 14, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 22 }}>
-        <Text accessibilityRole="header" style={{ fontSize: 18, fontWeight: '700' }}>SEOSA 가격 판단</Text>
-        {hasVerdict && deal ? <View style={{ gap: 10 }}>
-          <VerdictBadge verdict={deal.verdict} />
-          <Text style={{ fontSize: 20, fontWeight: '700' }}>{deal.label}</Text>
-          {deal.reasons.slice(0, 3).map((reason, i) => <Text key={`reason-${i}`} muted>• {reason}</Text>)}
-          {deal.cautions.slice(0, 3).map((caution, i) => <Text key={`caution-${i}`} style={{ color: theme.warning }}>• {caution}</Text>)}
-        </View> : <View style={{ gap: 8 }}>
-          <Text muted>판단을 위해 더 많은 가격 기록이 필요해요.</Text>
-          {/* The server still explains why it held back (e.g. too few observations); show that instead of hiding it. */}
-          {deal?.reasons.slice(0, 2).map((reason, i) => <Text key={`hold-${i}`} muted style={{ fontSize: 13 }}>• {reason}</Text>)}
-        </View>}
+
+      <View style={{ marginTop: 18, gap: 6 }}>
+        <Text accessibilityRole="header" style={{ fontSize: 20, lineHeight: 28, fontWeight: '700', letterSpacing: -0.2, color: theme.text }}>{product.title}</Text>
+        <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 32, lineHeight: 40, fontWeight: '800', letterSpacing: -0.64, color: theme.text, fontVariant: ['tabular-nums'] }}>
+          {formatPrice(product.lprice)}<Text style={{ fontSize: 16, fontWeight: '400', color: theme.muted }}> 원</Text>
+        </Text>
+        <MallLine product={product} large />
       </View>
-      <View style={{ gap: 16, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 22 }}>
-        <View style={{ gap: 4 }}><Text accessibilityRole="header" style={{ fontSize: 18, fontWeight: '700' }}>최근 가격 추이</Text><Text muted style={{ fontSize: 12 }}>최근 최대 30개 관측일 · 가격 기록 기준</Text></View>
-        <PriceChart points={detail.points} />
+
+      {derived.verdict ? <View style={{ marginTop: 18 }}><VerdictBox view={derived.verdict} /></View> : null}
+      {product.trust ? <View style={{ marginTop: 16 }}><TrustPanel trust={product.trust} /></View> : null}
+
+      <View style={{ marginTop: 20 }}><PriceChart points={detail.points} average={derived.stats?.avg} initialWidth={width - SIDE * 2} /></View>
+      {derived.trend ? <View style={{ marginTop: 14 }}><TrendBox trend={derived.trend} /></View> : null}
+      {derived.stats && detail.points.length >= 2 ? <View style={{ marginTop: 16 }}><StatRow stats={derived.stats} /></View> : null}
+
+      <View style={{ marginTop: 36 }}>
+        <SectionHead title="최근 관측" sub="가격 기록 기준 · 최근 5일" />
+        {derived.observations.length === 0
+          ? <Text muted style={{ fontSize: 13 }}>아직 가격 기록이 없어요. 내일부터 쌓입니다.</Text>
+          : derived.observations.map(point => <LedgerRow key={point.date} date={point.date} price={point.price} />)}
       </View>
-      <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 22 }}>
-        <Text accessibilityRole="header" style={{ fontSize: 18, fontWeight: '700', paddingBottom: 4 }}>최근 관측 데이터</Text>
-        {observations.length === 0 ? <Text muted>아직 기록이 없어요.</Text> : observations.map((point, i) => <View key={`${point.date}-${i}`} accessible accessibilityLabel={`${point.date} ${formatPrice(point.price)}원`} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.border }}><Text muted style={{ fontSize: 13 }}>{point.date}</Text><Text style={{ fontWeight: '600', fontVariant: ['tabular-nums'] }}>{formatPrice(point.price)}원</Text></View>)}
-      </View>
+
+      {deal && (deal.reasons.length > 0 || deal.cautions.length > 0) ? <View style={{ marginTop: 36 }}>
+        <SectionHead title="판단 근거" sub="가격·구매 시점 판정은 SEOSA 서버가 수집한 기록으로 계산합니다." />
+        <View style={{ gap: 6 }}>
+          {deal.reasons.map((reason, i) => <Text key={`r-${i}`} style={{ fontSize: 12.5, lineHeight: 19, color: theme.muted }}>· {reason}</Text>)}
+          {deal.cautions.map((caution, i) => <Text key={`c-${i}`} style={{ fontSize: 12.5, lineHeight: 19, color: theme.warning }}>· {caution}</Text>)}
+        </View>
+      </View> : null}
     </ScrollView> : null}
   </Screen>;
 }
