@@ -269,9 +269,13 @@ function toExternalListItem(r) {
   };
 }
 
+/*
+ * ★ 표가 «없을» 때만 참이다 — 전수 감사(PR #32)와 같은 규칙 (api/_dberror.js).
+ *   "schema cache" 낱말만 보면 DB 일시 장애(PGRST002)도 마이그레이션 전으로 읽혀
+ *   외부 view 가 장애를 200 pending 으로 숨긴다.
+ */
 function isMissingExternalTable(message) {
-  return /relation .*external_hotdeals.* does not exist|could not find the table.*external_hotdeals|schema cache/i
-    .test(String(message || ''));
+  return DbError.isMissingTable(String(message || ''));
 }
 
 async function loadExternal(queryParams, minScore, limit) {

@@ -534,6 +534,10 @@ async function captureFailure(promise) {
               resolve({ data: null, error: { message: `relation "public.${table}" does not exist` } });
               return;
             }
+            if (opts.transient && opts.transient.includes(table)) {
+              resolve({ data: null, error: { code: 'PGRST002', message: 'Could not query the database for the schema cache. Retrying.' } });
+              return;
+            }
             resolve({ data: (tables[table] || []).filter(r => filters.every(f => f(r))).slice(from, to + 1), error: null });
           }
         };
@@ -644,6 +648,12 @@ async function captureFailure(promise) {
     assert.equal(summary.matched, 1);
     await assert.rejects(Collector.main({ db: fakeDb(baseTables(), { missing: ['external_hotdeals'] }),
       registry: fakeRegistry([colaDeal]), env: {}, now: NOW, today: TODAY, quiet: true }), /external_hotdeals/);
+  });
+
+  await check('a transient DB error on external_hotdeals is not reported as a missing table (even in dry-run)', async () => {
+    await assert.rejects(Collector.main({ db: fakeDb(baseTables(), { transient: ['external_hotdeals'] }),
+      registry: fakeRegistry([colaDeal]), env: {}, now: NOW, today: TODAY, dryRun: true, quiet: true }),
+    /external_hotdeals\(read\)/);
   });
 
   await check('a degraded source ends the run cleanly without touching the database', async () => {

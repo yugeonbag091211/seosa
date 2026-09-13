@@ -165,8 +165,9 @@ function rowFor(deal, match, verification, nowMs) {
   };
 }
 
+// 표가 «없을» 때만 참이다. DB 일시 장애를 마이그레이션 전으로 읽지 않는다 (api/_dberror.js).
 function isMissingTable(message) {
-  return /external_hotdeals.*(does not exist|could not find)|could not find the table|schema cache/i.test(String(message || ''));
+  return require('../api/_dberror').isMissingTable(String(message || ''));
 }
 
 async function loadRecentGroupRows(db, rows, nowMs, dryRun) {

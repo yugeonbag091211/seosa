@@ -28,6 +28,8 @@ delete process.env.SUPABASE_SECRET_KEY;
 const db = { hotdeals: [], external_hotdeals: [] };
 /** 이 이름들이 «아직 없는» 컬럼이라고 가정한다 (마이그레이션 전 재현). */
 let missingColumns = [];
+/** 표 이름 → 이 표 조회가 돌려줄 오류 (DB 일시 장애 · 표 없음 재현). */
+let tableErrors = {};
 
 function cmp(a, b) {
   if (typeof a === 'number' && typeof b === 'number') return a - b;
@@ -52,6 +54,7 @@ const fakeSupabase = {
       range(a, b) { rangeFrom = a; rangeTo = b; return q; },
       maybeSingle() { single = true; return q; },
       then(resolve) {
+        if (tableErrors[table]) return resolve({ data: null, error: tableErrors[table] });
         if (missing) {
           return resolve({ data: null, error: { message: `column hotdeals.${missing} does not exist` } });
         }
@@ -172,7 +175,7 @@ function deal(over) {
   }, over || {});
 }
 
-function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals = external || []; missingColumns = []; nextId = 1; }
+function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals = external || []; missingColumns = []; tableErrors = {}; nextId = 1; }
 
 (async () => {
   console.log('=== /api/hotdeals 계약 회귀 (외부 호출 0회) ===');
@@ -452,6 +455,18 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     const page = await call({ limit: '5' });
     eq(page.body.items.length, 5, '내부 5건이 외부 카드에 밀려 잘리지 않는다');
     eq(page.body.nextCursor, 5, '커서는 DB 에서 읽은 행 수 그대로');
+  }
+  {
+    // 전수 감사(PR #32) 규칙: DB 일시 장애는 «마이그레이션 전» 이 아니다.
+    reset([], [externalRow()]);
+    tableErrors.external_hotdeals = { code: 'PGRST002', message: 'Could not query the database for the schema cache. Retrying.' };
+    const down = await call({ view: 'external' });
+    eq(down.status, 500, '외부 view: DB 일시 장애는 5xx — 200 pending 으로 숨기지 않는다');
+    tableErrors.external_hotdeals = { code: 'PGRST205', message: "Could not find the table 'public.external_hotdeals' in the schema cache" };
+    const missing = await call({ view: 'external' });
+    eq(missing.status, 200, '외부 view: 표가 정말 없으면 200');
+    eq(missing.body.externalPending, true, '외부 view: 표 없음은 externalPending=true');
+    tableErrors = {};
   }
   if (savedPublic === undefined) delete process.env.EXTERNAL_HOTDEAL_PUBLIC;
   else process.env.EXTERNAL_HOTDEAL_PUBLIC = savedPublic;
