@@ -1,3 +1,5 @@
 allowBuilds:
   unrs-resolver: false
 verifyDepsBeforeRun: warn
+overrides:
+  react-dom: 19.2.3

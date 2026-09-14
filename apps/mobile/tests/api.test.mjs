@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { API_TIMEOUTS, ApiError, apiBaseUrl, createApiClient, userMessage } from '../lib/api.ts';
+import { API_TIMEOUTS, ApiError, apiBaseUrl, createApiClient, productFromParam, userMessage } from '../lib/api.ts';
 
 const product = { title: '테스트 상품', lprice: 1000, mall: '쿠팡', productId: '123' };
 
@@ -53,6 +53,39 @@ test('malformed detail does not reach the screen', async () => {
   await assert.rejects(client.product('123'), error => error.kind === 'invalid_response');
   const wrongId = createApiClient(async () => new Response(JSON.stringify({ product: { ...product, productId: '999' }, points: [], deal: null })));
   await assert.rejects(wrongId.product('123'), error => error.kind === 'invalid_response');
+});
+
+test('productFromParam recovers the exact option a card was showing, vendorItemId included', () => {
+  const optionA = { title: '노트북 15인치 · 실버', lprice: 1_200_000, mall: '쿠팡', productId: '123', vendorItemId: 'vendor-a' };
+  assert.deepEqual(productFromParam(JSON.stringify(optionA)), optionA);
+  assert.equal(productFromParam(undefined), null);
+  assert.equal(productFromParam(''), null);
+  assert.equal(productFromParam('not json'), null);
+  assert.equal(productFromParam(JSON.stringify({ title: 'broken' })), null);
+});
+
+test('two cards sharing a productId+mall but different vendorItemId each open their own option', async () => {
+  // Coupang packs option variants (e.g. 15인치 vs 17인치) under the same productId+mall; only
+  // vendorItemId tells them apart. Each card's own data must reach the detail screen unmixed.
+  const optionA = { title: '노트북 15인치', lprice: 1_200_000, mall: '쿠팡', productId: '123', vendorItemId: 'vendor-a' };
+  const optionB = { title: '노트북 17인치', lprice: 1_600_000, mall: '쿠팡', productId: '123', vendorItemId: 'vendor-b' };
+
+  // What index.tsx/search.tsx do: serialize the tapped card into the route param.
+  const recoveredA = productFromParam(JSON.stringify(optionA));
+  const recoveredB = productFromParam(JSON.stringify(optionB));
+  assert.deepEqual(recoveredA, optionA);
+  assert.deepEqual(recoveredB, optionB);
+  assert.notEqual(recoveredA.vendorItemId, recoveredB.vendorItemId);
+
+  // What product/[id].tsx does next: fetch history scoped to that exact option's vendorItemId.
+  const requestedVendorIds = [];
+  const client = createApiClient(async url => {
+    requestedVendorIds.push(new URL(url).searchParams.get('vendorItemId'));
+    return new Response(JSON.stringify({ points: [], deal: null }));
+  });
+  await client.history(recoveredA);
+  await client.history(recoveredB);
+  assert.deepEqual(requestedVendorIds, ['vendor-a', 'vendor-b']);
 });
 
 test('price history requests the same option and server deal verdict', async () => {

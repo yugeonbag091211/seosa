@@ -6,9 +6,8 @@ import {
   AppHeader, BackButton, ErrorState, formatPrice, LedgerRow, LoadingState, MallLine, ProductImage, Screen, SectionHead, StatRow, Text,
   TrendBox, TrustPanel, VerdictBox,
 } from '../../components/ui';
-import { api, ApiError, type ProductDetail, userMessage } from '../../lib/api';
-import { normalizePoints } from '../../lib/chart';
-import { priceStats, trendSummary, verdictView } from '../../lib/format';
+import { api, ApiError, productFromParam, type ProductDetail, userMessage } from '../../lib/api';
+import { productDetailView } from '../../lib/format';
 import { typography, useTheme } from '../../lib/theme';
 
 function firstParam(value: string | string[] | undefined): string {
@@ -23,9 +22,15 @@ const SIDE = 18; // .modal-body side padding on mobile
  * as on the web /p/ page) and followed by the recent observations and the full server reasons.
  */
 export default function ProductPage() {
-  const params = useLocalSearchParams<{ id: string; mall?: string }>();
+  const params = useLocalSearchParams<{ id: string; mall?: string; product?: string }>();
   const id = firstParam(params.id);
   const mall = firstParam(params.mall) || undefined;
+  // The card that was tapped already carries the exact option (vendorItemId included); re-resolving
+  // by productId+mall alone can land on a different option sharing that id, so it is used as-is.
+  const passedProduct = useMemo(() => {
+    const parsed = productFromParam(firstParam(params.product) || undefined);
+    return parsed && parsed.productId === id ? parsed : null;
+  }, [params.product, id]);
   const [loadedDetail, setDetail] = useState<ProductDetail | null>(null);
   const [failure, setFailure] = useState<{ message: string; retryable: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -34,26 +39,24 @@ export default function ProductPage() {
   useEffect(() => {
     const controller = new AbortController();
     if (!id) return () => controller.abort();
-    api.product(id, mall, controller.signal).then(setDetail).catch(err => {
+    const onError = (err: unknown) => {
       if (controller.signal.aborted) return;
       // A missing product will not appear by retrying; everything else (timeout, outage, network) might.
       setFailure({ message: userMessage(err), retryable: !(err instanceof ApiError && err.kind === 'not_found') });
-    });
+    };
+    if (passedProduct) {
+      api.history(passedProduct, controller.signal).then(result => {
+        setDetail({ product: passedProduct, points: result.points, deal: result.deal });
+      }).catch(onError);
+    } else {
+      api.product(id, mall, controller.signal).then(setDetail).catch(onError);
+    }
     return () => controller.abort();
-  }, [id, mall, attempt]);
+  }, [id, mall, attempt, passedProduct]);
 
   const detail = loadedDetail?.product.productId === id ? loadedDetail : null;
   const visibleFailure = !id ? { message: '상품 식별자가 없어요.', retryable: false } : failure;
-  const derived = useMemo(() => {
-    if (!detail) return null;
-    const recent = normalizePoints(detail.points);
-    return {
-      verdict: verdictView(detail.points.length, detail.deal),
-      stats: priceStats(detail.points),
-      trend: trendSummary(recent, detail.deal),
-      observations: recent.slice(-5).reverse(),
-    };
-  }, [detail]);
+  const derived = useMemo(() => (detail ? productDetailView(detail.points, detail.deal) : null), [detail]);
   const deal = detail?.deal || null;
   const product = detail?.product;
 
@@ -89,7 +92,7 @@ export default function ProductPage() {
 
       <View style={{ marginTop: 20 }}><PriceChart points={detail.points} average={derived.stats?.avg} initialWidth={width - SIDE * 2} /></View>
       {derived.trend ? <View style={{ marginTop: 14 }}><TrendBox trend={derived.trend} /></View> : null}
-      {derived.stats && detail.points.length >= 2 ? <View style={{ marginTop: 16 }}><StatRow stats={derived.stats} /></View> : null}
+      {derived.stats && derived.count >= 2 ? <View style={{ marginTop: 16 }}><StatRow stats={derived.stats} /></View> : null}
 
       <View style={{ marginTop: 36 }}>
         <SectionHead title="최근 관측" sub="가격 기록 기준 · 최근 5일" />

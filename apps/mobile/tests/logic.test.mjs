@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ApiError } from '../lib/api.ts';
 import { CHART, buildChartModel, formatWon, normalizePoints } from '../lib/chart.ts';
+import { productDetailView } from '../lib/format.ts';
 import { SLOW_NOTICE_MS, createSearchSession } from '../lib/searchSession.ts';
 
 const day = n => `2026-08-${String(n).padStart(2, '0')}`;
@@ -181,4 +182,34 @@ test('chart: flat history has a single tick and a single-point chart has no fill
   const single = buildChartModel([{ date: day(1), price: 1000 }], 300, { left: 40 });
   assert.equal(single.fillPath, '');
   assert.equal(single.coords[0].x, 170);
+});
+
+/* ── product detail: one normalized series feeds every metric ───────── */
+
+const deal = { verdict: 'BUY', label: '지금 구매', reasons: ['최근 최저가'], cautions: [] };
+
+test('detail: duplicate observations for the same day do not count as extra days toward verdict eligibility', () => {
+  // Two raw rows, but both dated day(1): only one real observation day exists.
+  const view = productDetailView([{ date: day(1), price: 1000 }, { date: day(1), price: 1200 }], deal);
+  assert.equal(view.count, 1);
+  assert.equal(view.verdict.head, '가격 추이를 수집하고 있어요', 'fewer than 2 real days must still read as "collecting", not a real verdict');
+});
+
+test('detail: a duplicate date resolves to its last-seen price everywhere (chart, trend, stats agree)', () => {
+  // Same shape normalizePoints uses: repeated day(2) keeps the later value (1500), not the earlier (900).
+  const points = [{ date: day(1), price: 1000 }, { date: day(2), price: 900 }, { date: day(2), price: 1500 }];
+  const view = productDetailView(points, deal);
+  assert.equal(view.count, 2);
+  assert.equal(view.stats.min, 1000);
+  assert.equal(view.stats.max, 1500);
+  assert.deepEqual(view.observations.map(p => p.price), [1500, 1000]);
+  assert.equal(view.trend.label.includes('상승'), true, 'trend must read the deduped 1000 -> 1500 rise, not the raw last-write 900 -> 1500');
+});
+
+test('detail: out-of-order input is sorted before every derived metric, not just the chart', () => {
+  const points = [{ date: day(3), price: 3000 }, { date: day(1), price: 1000 }, { date: day(2), price: 2000 }];
+  const view = productDetailView(points, deal);
+  assert.equal(view.count, 3);
+  assert.deepEqual(view.observations.map(p => p.date), [day(3), day(2), day(1)], 'recent observations are newest-first after sorting');
+  assert.equal(view.trend.label.includes('상승'), true, 'trend compares first vs. last by date order (1000 -> 3000), not raw array order');
 });

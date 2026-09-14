@@ -1,4 +1,5 @@
-import type { PricePoint } from './api';
+import type { Deal, PricePoint } from './api';
+import { CHART, normalizePoints } from './chart.ts';
 
 /*
  * Display rules ported from the web (public/index.html) so the app says exactly what the site says.
@@ -9,17 +10,30 @@ export function formatPrice(price: number): string {
   return Number.isFinite(price) ? Math.round(price).toLocaleString('ko-KR') : '-';
 }
 
-/** Web Fmt.asOf — when this stored price was collected. Empty when unknown. */
+// SEOSA is a KST-only service (collection runs on a KST cron); "오늘"/"어제" are calendar
+// days in KST regardless of the device or CI runner's own timezone.
+const KST_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' });
+
+/** Midnight (KST) of the calendar day a timestamp falls on, as a UTC-anchored instant so days can be diffed. */
+function startOfKstDay(ms: number): number {
+  return Date.parse(`${KST_DAY.format(new Date(ms))}T00:00:00Z`);
+}
+
+/**
+ * Web Fmt.asOf — when this stored price was collected. Empty when unknown.
+ * Unlike the web (which buckets by elapsed 24h), this compares KST calendar dates: a price from
+ * 23:50 yesterday is "어제" even minutes later, and one from 25 hours ago crossing two
+ * midnights is dated rather than called "어제".
+ */
 export function asOfLabel(iso: string | undefined, now: number = Date.now()): string {
   if (!iso) return '';
   const t = Date.parse(iso);
-  if (!t) return '';
-  const days = Math.floor((now - t) / 86_400_000);
+  if (!Number.isFinite(t)) return '';
+  const days = Math.round((startOfKstDay(now) - startOfKstDay(t)) / 86_400_000);
   if (days <= 0) return '오늘 기준';
   if (days === 1) return '어제 기준';
-  const d = new Date(t);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getMonth() + 1)}.${pad(d.getDate())} 기준`;
+  const [, month, day] = KST_DAY.format(new Date(t)).split('-');
+  return `${month}.${day} 기준`;
 }
 
 export type MallColor = { token: 'coupang' | 'ali' } | { hex: string } | null;
@@ -121,6 +135,37 @@ export function trendSummary(points: readonly PricePoint[], deal: { verdict: str
   }
 
   return { days: prices.length, label, tone, recent, position };
+}
+
+export type ProductDetailView = {
+  count: number;
+  verdict: VerdictView | null;
+  stats: PriceStats | null;
+  trend: TrendSummary | null;
+  observations: PricePoint[];
+};
+
+/**
+ * Every metric on the product detail screen (verdict count, chart, trend, min/avg/max, recent
+ * observations) is deduped over the same one-point-per-day series, so duplicate or out-of-order
+ * dates from the server can never make them disagree with each other.
+ *
+ * min/avg/max is deduped over the full series the server sent (not the chart's 30-day drawing
+ * window) — the "최저/평균/최고" labels don't say "30일", so an older all-time low must not
+ * silently drop out. Trend, however, describes what the chart is currently drawing ("N% 하락"),
+ * so it is computed over that same 30-point window — otherwise a longer history can call a trend
+ * "하락" while the visible chart is climbing.
+ */
+export function productDetailView(points: readonly PricePoint[], deal: Deal | null): ProductDetailView {
+  const recent = normalizePoints(points, points.length);
+  const windowed = recent.slice(-CHART.maxPoints);
+  return {
+    count: recent.length,
+    verdict: verdictView(recent.length, deal),
+    stats: priceStats(recent),
+    trend: trendSummary(windowed, deal),
+    observations: recent.slice(-5).reverse(),
+  };
 }
 
 /** "마우스" 결과 요약 (web result-banner): lowest price, count, and price range. */

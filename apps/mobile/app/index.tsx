@@ -13,7 +13,8 @@ type LoadState = 'loading' | 'success' | 'error';
 function openProduct(product: Product): (() => void) | undefined {
   if (!product.productId) return undefined;
   const id = product.productId;
-  return () => router.push({ pathname: '/product/[id]', params: { id, mall: product.mall } });
+  // Carries the exact card data (including vendorItemId) forward — see lib/api.ts productFromParam.
+  return () => router.push({ pathname: '/product/[id]', params: { id, mall: product.mall, product: JSON.stringify(product) } });
 }
 
 /**

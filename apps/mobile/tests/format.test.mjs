@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ApiError, createApiClient } from '../lib/api.ts';
-import { asOfLabel, mallColor, priceStats, resultSummary, trendSummary, verdictView } from '../lib/format.ts';
+import { asOfLabel, mallColor, priceStats, productDetailView, resultSummary, trendSummary, verdictView } from '../lib/format.ts';
 
 const NOW = Date.parse('2026-09-13T12:00:00+09:00');
 const pts = prices => prices.map((price, i) => ({ date: `2026-09-${String(i + 1).padStart(2, '0')}`, price }));
@@ -12,6 +12,24 @@ test('as-of label follows the web wording', () => {
   assert.match(asOfLabel('2026-09-01T01:00:00+09:00', NOW), /^\d\d\.\d\d 기준$/);
   assert.equal(asOfLabel('', NOW), '');
   assert.equal(asOfLabel('not a date', NOW), '');
+});
+
+test('as-of label compares KST calendar dates, not elapsed 24h buckets', () => {
+  // Collected 23:50 KST yesterday, "now" is 00:10 KST today: 20 minutes elapsed but the
+  // calendar day already changed, so it must read "어제", not "오늘".
+  const justAfterMidnight = Date.parse('2026-09-13T00:10:00+09:00');
+  assert.equal(asOfLabel('2026-09-12T23:50:00+09:00', justAfterMidnight), '어제 기준');
+
+  // Collected 23:00 KST two calendar days back; only 26 hours elapsed but two midnights were
+  // crossed, so it must be dated, not read as "어제".
+  const twoDaysLater = Date.parse('2026-09-13T01:00:00+09:00');
+  assert.equal(asOfLabel('2026-09-11T23:00:00+09:00', twoDaysLater), '09.11 기준');
+
+  // A clock-skewed future timestamp has no "day" label of its own; treat it as today's.
+  assert.equal(asOfLabel('2026-09-14T09:00:00+09:00', NOW), '오늘 기준');
+
+  // Malformed but non-empty strings never throw or produce a label.
+  assert.equal(asOfLabel('2026-13-99', NOW), '');
 });
 
 test('mall dot colors only for brands the web verified', () => {
@@ -53,6 +71,64 @@ test('price stats and result summary ignore invalid prices', () => {
   assert.equal(priceStats([]), null);
   assert.deepEqual(resultSummary([9900, 139000, Number.NaN, 20000]), { min: 9900, max: 139000, count: 3 });
   assert.equal(resultSummary([]), null);
+});
+
+test('product detail view derives verdict count, trend, and stats from the same normalized points', () => {
+  // The server sent a duplicate date (last write wins) and an unsorted, invalid-price entry.
+  // Every metric must agree on the same 3-day series, not a mix of raw and normalized points.
+  const raw = [
+    { date: '2026-09-01', price: 20000 },
+    { date: '2026-09-03', price: 16000 },
+    { date: '2026-09-02', price: 18000 },
+    { date: '2026-09-01', price: 21000 }, // duplicate date: overwrites the first 2026-09-01 point
+    { date: '2026-09-04', price: 0 },     // invalid price: dropped entirely
+  ];
+  const deal = { verdict: 'GOOD_BUY', label: '싼 편이다', reasons: ['30일 평균보다 낮다'], cautions: [] };
+  const view = productDetailView(raw, deal);
+
+  assert.equal(view.count, 3, 'one point per calendar day, invalid price dropped');
+  assert.deepEqual(view.observations.map(p => p.date), ['2026-09-03', '2026-09-02', '2026-09-01']);
+  assert.equal(view.observations[2].price, 21000, 'duplicate date keeps the later write');
+  assert.deepEqual(view.stats, { min: 16000, avg: 18333, max: 21000 });
+  assert.equal(view.trend.days, 3);
+  assert.equal(view.verdict.tone, 'buy');
+
+  // Fewer than 2 usable points (after dropping duplicates/invalids) means no trend or stats,
+  // and the verdict falls back to "still collecting" even though raw had more entries.
+  const thin = productDetailView([{ date: '2026-09-01', price: 100 }, { date: '2026-09-01', price: 200 }, { date: '2026-09-02', price: 0 }], deal);
+  assert.equal(thin.count, 1);
+  assert.equal(thin.trend, null);
+  assert.equal(thin.stats.avg, 200, 'stats still compute from the single valid point');
+  assert.equal(thin.verdict.head, '가격 추이를 수집하고 있어요');
+});
+
+test('product detail stats cover the full server history, not just the chart\'s 30-day window', () => {
+  // 45 daily points: the all-time low (day 1) falls outside the chart's most-recent-30 window.
+  const raw = pts(Array.from({ length: 45 }, (_, i) => (i === 0 ? 5000 : 20000 + i)));
+  const deal = { verdict: 'NORMAL', label: '평범한 가격', reasons: [], cautions: [] };
+  const view = productDetailView(raw, deal);
+
+  assert.equal(view.count, 45, 'every observation day counts, not only the last 30');
+  assert.equal(view.stats.min, 5000, 'an all-time low older than 30 days must still surface');
+  // Trend describes what the chart is actually drawing (its most-recent-30 window), not the
+  // full 45-day history stats cover.
+  assert.equal(view.trend.days, 30);
+});
+
+test('product detail trend matches the chart\'s 30-day window even when it disagrees with the full history', () => {
+  // 45 daily points where the full history is a net rise (day 1 low, day 45 high) but the last
+  // 30 days — exactly what PriceChart draws — are a steady decline. Trend must describe the
+  // chart, not the full history, or the text and the picture would tell opposite stories.
+  const first15 = [10000, ...Array(14).fill(30000)];
+  const last30 = Array.from({ length: 30 }, (_, i) => 30000 - i * 350); // day16..day45: 30000 → 19850
+  const raw = pts([...first15, ...last30]);
+  const deal = { verdict: 'NORMAL', label: '평범한 가격', reasons: [], cautions: [] };
+  const view = productDetailView(raw, deal);
+
+  assert.equal(view.count, 45);
+  // Full-history direction (day 1 → day 45) would be "up"; the visible chart window is "down".
+  assert.equal(view.trend.tone, 'down');
+  assert.equal(view.trend.days, 30);
 });
 
 const initPayload = {

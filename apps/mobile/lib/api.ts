@@ -101,6 +101,23 @@ function cleanProduct(item: Product): Product {
   return out;
 }
 
+/**
+ * Recovers the exact Product a list card was showing from a router param (the caller JSON-encodes
+ * it before navigating). Coupang packs unrelated options under one productId+mall, distinguished
+ * only by vendorItemId — refetching by productId+mall alone can land on the wrong option's title,
+ * price, and history, so the product detail screen carries the tapped card's data forward instead
+ * of re-resolving it from scratch. Malformed or missing input is not an error here, just "unknown".
+ */
+export function productFromParam(value: string | undefined): Product | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isProduct(parsed) ? cleanProduct(parsed) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Deal text is rendered directly; a non-string entry would crash a <Text> child, so only strings survive. */
 function cleanDeal(deal: Deal | null | undefined): Deal | null {
   if (!deal) return null;

@@ -114,7 +114,8 @@ export default function Search() {
       columnWrapperStyle={{ gap: space.grid }}
       ListHeaderComponent={<ResultBanner keyword={resultKeyword} summary={resultSummary(items.map(item => item.lprice))} />}
       renderItem={({ item }) => <GridCard product={item} width={cardWidth}
-        onPress={item.productId ? () => router.push({ pathname: '/product/[id]', params: { id: item.productId!, mall: item.mall } }) : undefined} />}
+        // Carries the exact card data (including vendorItemId) forward — see lib/api.ts productFromParam.
+        onPress={item.productId ? () => router.push({ pathname: '/product/[id]', params: { id: item.productId!, mall: item.mall, product: JSON.stringify(item) } }) : undefined} />}
       keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
       contentContainerStyle={{ paddingHorizontal: space.page, paddingBottom: 28 }} /> : null}
   </Screen>;
