@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text as NativeText, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import type { ImageStyle, StyleProp, TextProps, TextStyle } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import type { Product, Trust } from '../lib/api';
 import { asOfLabel, formatPrice, mallColor, type PriceStats, type TrendSummary, type VerdictView } from '../lib/format';
-import { fonts, radius, space, typography, useTheme, type Theme } from '../lib/theme';
+import { radius, space, typography, useTheme, type Theme } from '../lib/theme';
+import { AppText as NativeText, useTypeface } from './AppText';
 
 /*
  * Shared building blocks, each modeled on a specific element of seosa.ai.kr at a 390px viewport
@@ -14,10 +15,10 @@ import { fonts, radius, space, typography, useTheme, type Theme } from '../lib/t
  */
 
 /**
- * Dynamic Type stays on, but capped: past these multipliers the fixed-height rows (header, search field,
- * grid cards) clip text instead of growing.
+ * Dynamic Type / Android font size caps. Rows grow with their text (min heights only, no fixed heights),
+ * so these only keep the largest accessibility sizes from turning a 2-column card into one word per line.
  */
-export const FONT_SCALE = { body: 1.6, title: 1.3, control: 1.4 } as const;
+export const FONT_SCALE = { body: 2, title: 1.6, control: 1.8 } as const;
 const TABULAR: TextStyle['fontVariant'] = ['tabular-nums'];
 
 export { formatPrice };
@@ -40,16 +41,22 @@ export function Text({ children, muted, title, style, ...rest }: TextProps & { m
   }, style]}>{children}</NativeText>;
 }
 
-/** .logo-mark — the web's S: Georgia bold 34 in a 64 viewBox. */
+/** brand-mark.png's S is 59% of the image tall; the web's Georgia bold 34 S is about 38% of its 64 box. */
+const S_MARK_SCALE = 0.645;
+
+/**
+ * .logo-mark — the web's S (Georgia bold). Drawn from the rasterized glyph in assets/brand-mark.png, tinted to
+ * the ink color, instead of asking each platform for a Georgia it may not have (Android has none).
+ */
 export function SMark({ size = 34, decorative = false }: { size?: number; decorative?: boolean }) {
   const theme = useTheme();
-  return <View style={{ width: size, height: size }}
+  const glyph = Math.round(size * S_MARK_SCALE);
+  return <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
     {...(decorative
       ? { accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' as const }
       : { accessible: true, accessibilityRole: 'image' as const, accessibilityLabel: 'SEOSA' })}>
-    <Svg width={size} height={size} viewBox="0 0 64 64">
-      <SvgText x={32} y={43} fontFamily={fonts.serif} fontSize={34} fontWeight="700" fill={theme.text} textAnchor="middle" letterSpacing={1}>S</SvgText>
-    </Svg>
+    <Image source={require('../assets/brand-mark.png')} accessible={false} resizeMode="contain"
+      style={{ width: glyph, height: glyph, tintColor: theme.text }} />
   </View>;
 }
 
@@ -104,6 +111,7 @@ export function SearchField({ value, onChangeText, onSubmit, autoFocus = false }
   value: string; onChangeText: (text: string) => void; onSubmit: (text: string) => void; autoFocus?: boolean;
 }) {
   const theme = useTheme();
+  const typeface = useTypeface();
   const [focused, setFocused] = useState(false);
   return <View style={[styles.field, { backgroundColor: theme.fieldBg, borderColor: focused ? theme.text : 'transparent' }]}>
     <TextInput accessibilityLabel="상품 검색어" autoCapitalize="none" autoCorrect={false} maxLength={80}
@@ -111,7 +119,7 @@ export function SearchField({ value, onChangeText, onSubmit, autoFocus = false }
       placeholder="상품을 검색하세요" placeholderTextColor={theme.faint} maxFontSizeMultiplier={FONT_SCALE.control}
       value={value} onChangeText={onChangeText} onSubmitEditing={event => onSubmit(event.nativeEvent.text)}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-      style={[styles.fieldText, styles.fieldInput, { color: theme.text }]} />
+      style={[styles.fieldText, styles.fieldInput, { color: theme.text, fontFamily: typeface.body('400') }]} />
     <Pressable accessibilityRole="button" accessibilityLabel="검색" hitSlop={7} onPress={() => onSubmit(value)} style={styles.fieldIcon}>
       <SearchGlyph color={theme.muted} />
     </Pressable>
@@ -190,15 +198,17 @@ export function MallLine({ product, large = false }: { product: Product; large?:
   const label = product.mallLabel || product.mall;
   const dot = mallDotColor(theme, label);
   const asOf = asOfLabel(product.collectedAt);
+  const { mono } = useTypeface();
   const scale = large ? 1.2 : 1;
-  return <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 }}>
+  // Wraps the stamp under the mall name at large text sizes instead of pushing it out of a narrow card.
+  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6, minWidth: 0 }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 }}>
       <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: dot || theme.faint }} />
       <NativeText numberOfLines={1} maxFontSizeMultiplier={FONT_SCALE.control}
         style={[typography.mall, { fontSize: typography.mall.fontSize * scale, color: dot ? theme.text : theme.muted, flexShrink: 1 }]}>{label}</NativeText>
     </View>
     {asOf ? <NativeText maxFontSizeMultiplier={FONT_SCALE.control}
-      style={[typography.stamp, { fontSize: typography.stamp.fontSize * scale, fontFamily: fonts.mono, color: theme.faint, marginLeft: 'auto' }]}>{asOf}</NativeText> : null}
+      style={[typography.stamp, { fontSize: typography.stamp.fontSize * scale, fontFamily: mono, color: theme.faint, marginLeft: 'auto' }]}>{asOf}</NativeText> : null}
   </View>;
 }
 
@@ -216,6 +226,9 @@ function spoken(product: Product, extra: (string | null | undefined)[] = []): st
 /** .card — square surface thumbnail, title (2 lines), price, mall line. Flat: no border, no shadow. */
 export function GridCard({ product, width, onPress }: { product: Product; width: number; onPress?: () => void }) {
   const theme = useTheme();
+  // Reserve two title lines at the current text size so cards in a row keep their prices aligned.
+  const { fontScale } = useWindowDimensions();
+  const titleMinHeight = Math.ceil(typography.cardTitle.lineHeight * 2 * Math.min(Math.max(fontScale, 1), FONT_SCALE.control));
   return <Pressable accessibilityRole="button" accessibilityLabel={spoken(product, [product.isRocket ? '로켓배송' : null, onPress ? null : '상세 정보 준비 중'])}
     accessibilityHint={onPress ? '가격 기록을 엽니다' : undefined} accessibilityState={{ disabled: !onPress }} disabled={!onPress} onPress={onPress}
     style={({ pressed }) => [{ width, marginBottom: 26, opacity: pressed ? 0.72 : 1 }]}>
@@ -227,7 +240,7 @@ export function GridCard({ product, width, onPress }: { product: Product; width:
         <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: theme.coupang }} />
         <NativeText maxFontSizeMultiplier={FONT_SCALE.control} style={{ fontSize: 11.52, fontWeight: '600', color: theme.coupang }}>로켓배송</NativeText>
       </View> : null}
-      <NativeText numberOfLines={2} maxFontSizeMultiplier={FONT_SCALE.control} style={[typography.cardTitle, { color: theme.text, minHeight: 32, marginBottom: 6 }]}>{product.title}</NativeText>
+      <NativeText numberOfLines={2} maxFontSizeMultiplier={FONT_SCALE.control} style={[typography.cardTitle, { color: theme.text, minHeight: titleMinHeight, marginBottom: 6 }]}>{product.title}</NativeText>
       <Price value={product.lprice} size={typography.cardPrice} wonSize={typography.won.fontSize} />
       <View style={{ marginTop: 6 }}><MallLine product={product} /></View>
       {!onPress ? <NativeText maxFontSizeMultiplier={FONT_SCALE.control} style={[typography.stamp, { color: theme.faint, marginTop: 4 }]}>상세 정보 준비 중</NativeText> : null}
@@ -317,6 +330,7 @@ export function VerdictBox({ view }: { view: VerdictView }) {
 /** .trust-panel — server trust level and its reasons (✓ / ! / ×). */
 export function TrustPanel({ trust }: { trust: Trust }) {
   const theme = useTheme();
+  const { mono } = useTypeface();
   const dot = { high: theme.positive, medium: theme.trustMedium, low: theme.trustLow, stale: theme.warning }[trust.level] || theme.faint;
   const labelColor = trust.level === 'low' ? theme.trustLowLabel : trust.level === 'stale' ? theme.warning : theme.muted;
   const mark = (kind: string) => (kind === 'good' ? { t: '✓', c: theme.positive } : kind === 'bad' ? { t: '×', c: theme.warning } : { t: '!', c: theme.trustMedium });
@@ -330,7 +344,7 @@ export function TrustPanel({ trust }: { trust: Trust }) {
       {trust.reasons.map((reason, index) => {
         const m = mark(reason.kind);
         return <View key={`${index}-${reason.text}`} style={{ flexDirection: 'row', gap: 6 }}>
-          <NativeText style={{ fontFamily: fonts.mono, fontSize: 11.2, fontWeight: '600', color: m.c, lineHeight: 18 }}>{m.t}</NativeText>
+          <NativeText maxFontSizeMultiplier={FONT_SCALE.body} style={{ fontFamily: mono, fontSize: 11.2, fontWeight: '600', color: m.c, lineHeight: 18 }}>{m.t}</NativeText>
           <NativeText maxFontSizeMultiplier={FONT_SCALE.body} style={{ flex: 1, fontSize: 11.84, lineHeight: 18, color: theme.muted }}>{reason.text}</NativeText>
         </View>;
       })}
@@ -372,8 +386,9 @@ export function StatRow({ stats }: { stats: PriceStats }) {
 /** Observation ledger row: mono date stamp, tabular price, hairline rule. */
 export function LedgerRow({ date, price }: { date: string; price: number }) {
   const theme = useTheme();
+  const { mono } = useTypeface();
   return <View accessible accessibilityLabel={`${date} ${formatPrice(price)}원`} style={[styles.ledger, { borderBottomColor: theme.border }]}>
-    <NativeText maxFontSizeMultiplier={FONT_SCALE.control} style={{ fontFamily: fonts.mono, fontSize: 11, letterSpacing: 0.4, color: theme.faint }}>{date}</NativeText>
+    <NativeText maxFontSizeMultiplier={FONT_SCALE.control} style={{ fontFamily: mono, fontSize: 11, letterSpacing: 0.4, color: theme.faint }}>{date}</NativeText>
     <Price value={price} size={{ fontSize: 13.5, fontWeight: '600' }} wonSize={11} />
   </View>;
 }
@@ -397,11 +412,13 @@ export function SiteFooter() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  header: { height: space.header + 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: space.page, borderBottomWidth: 1 },
+  // Minimum heights only: at the default text size these are exactly the web's 50+1 header and 44 field,
+  // and at larger accessibility sizes they grow with the text instead of clipping it.
+  header: { minHeight: space.header + 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: space.page, paddingVertical: 3, borderBottomWidth: 1 },
   back: { width: 36, height: 44, marginLeft: -6, alignItems: 'center', justifyContent: 'center' },
-  field: { flex: 1, height: 44, borderRadius: radius.field, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 10, paddingRight: 4 },
-  fieldText: { flex: 1, fontSize: 14, paddingLeft: 11 },
-  fieldInput: { height: '100%', paddingVertical: 0, paddingRight: 0 },
+  field: { flex: 1, minHeight: 44, borderRadius: radius.field, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 10, paddingRight: 4 },
+  fieldText: { flex: 1, fontSize: 14, paddingLeft: 11, paddingVertical: 8 },
+  fieldInput: { alignSelf: 'stretch', paddingRight: 0 },
   fieldIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   pill: { minHeight: 49, borderRadius: 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 26 },
   link: { minHeight: 44, alignSelf: 'center', justifyContent: 'center', paddingHorizontal: 4 },

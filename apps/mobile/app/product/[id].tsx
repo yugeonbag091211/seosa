@@ -3,7 +3,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { PriceChart } from '../../components/PriceChart';
 import {
-  AppHeader, BackButton, ErrorState, formatPrice, LedgerRow, LoadingState, MallLine, ProductImage, Screen, SectionHead, StatRow, Text,
+  AppHeader, BackButton, ErrorState, FONT_SCALE, formatPrice, LedgerRow, LoadingState, MallLine, ProductImage, Screen, SectionHead, StatRow, Text,
   TrendBox, TrustPanel, VerdictBox,
 } from '../../components/ui';
 import { api, ApiError, productFromParam, type ProductDetail, userMessage } from '../../lib/api';
@@ -64,8 +64,8 @@ export default function ProductPage() {
     <AppHeader>
       <BackButton />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text accessibilityRole="header" maxFontSizeMultiplier={1.2} style={[typography.modalTitle, { color: theme.text }]}>가격의 서사</Text>
-        {product ? <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[typography.modalSub, { color: theme.faint }]}>
+        <Text accessibilityRole="header" maxFontSizeMultiplier={FONT_SCALE.title} style={[typography.modalTitle, { color: theme.text }]}>가격의 서사</Text>
+        {product ? <Text numberOfLines={1} maxFontSizeMultiplier={FONT_SCALE.title} style={[typography.modalSub, { color: theme.faint }]}>
           {product.title} · {product.mallLabel || product.mall}
         </Text> : null}
       </View>
@@ -81,7 +81,7 @@ export default function ProductPage() {
 
       <View style={{ marginTop: 18, gap: 6 }}>
         <Text accessibilityRole="header" style={{ fontSize: 20, lineHeight: 28, fontWeight: '700', letterSpacing: -0.2, color: theme.text }}>{product.title}</Text>
-        <Text maxFontSizeMultiplier={1.3} style={{ fontSize: 32, lineHeight: 40, fontWeight: '800', letterSpacing: -0.64, color: theme.text, fontVariant: ['tabular-nums'] }}>
+        <Text maxFontSizeMultiplier={FONT_SCALE.title} style={{ fontSize: 32, lineHeight: 40, fontWeight: '800', letterSpacing: -0.64, color: theme.text, fontVariant: ['tabular-nums'] }}>
           {formatPrice(product.lprice)}<Text style={{ fontSize: 16, fontWeight: '400', color: theme.muted }}> 원</Text>
         </Text>
         <MallLine product={product} large />

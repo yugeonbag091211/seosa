@@ -1,4 +1,4 @@
-import { Platform, useColorScheme } from 'react-native';
+import { useColorScheme } from 'react-native';
 import { palette, type Theme } from './palette';
 
 export { palette };
@@ -36,12 +36,6 @@ export const typography = {
   modalSub: { fontSize: 11.84, lineHeight: 17.8 },
   verdictHead: { fontSize: 13.44, lineHeight: 19, fontWeight: '700' },
   verdictLine: { fontSize: 11.52, lineHeight: 17.9 },
-} as const;
-
-/** Web: the S mark is Georgia bold; stamps use IBM Plex Mono (platform monospace here). */
-export const fonts = {
-  serif: Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia, serif' }),
-  mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, monospace' }),
 } as const;
 
 export function useTheme(): Theme {

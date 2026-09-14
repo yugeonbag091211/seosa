@@ -17,6 +17,28 @@ pnpm start
 
 실기기 또는 에뮬레이터에서 Expo Go로 실행할 수 있습니다.
 
+## 설치형 베타 빌드 (EAS internal distribution)
+
+| 항목 | 값 |
+| --- | --- |
+| iOS bundle identifier / Android package | `kr.ai.seosa` (스토어에 올린 뒤에는 바꿀 수 없습니다) |
+| 버전 | `app.json`의 `version`(사용자에게 보이는 버전), `ios.buildNumber`, `android.versionCode` — `eas.json`의 `appVersionSource: "local"`이라 저장소 값이 그대로 들어갑니다 |
+| 런타임 | `runtimeVersion.policy: "appVersion"` — 네이티브가 호환되는 단위는 `version` |
+| 업데이트 | `updates.enabled: false`, `expo-updates` 미설치. 베타에는 OTA가 없고, JS를 바꾸면 새 빌드를 배포합니다 |
+| 빌드 재현성 | `requireCommit: true`(커밋된 트리만 빌드), Node `22.23.2`·pnpm `11.27.0` 고정, `EXPO_PUBLIC_API_BASE_URL`은 `eas.json`에서 주입(로컬 `.env`는 업로드되지 않음) |
+
+```sh
+cd apps/mobile
+npx eas-cli login
+npx eas-cli init                                   # 최초 1회: app.json에 extra.eas.projectId 기록 후 커밋
+npx eas-cli device:create                          # iOS 기기 등록 (ad hoc)
+npx eas-cli build --profile beta --platform android   # 설치용 APK 링크
+npx eas-cli build --profile beta --platform ios       # 등록된 기기용 IPA 링크
+npx eas-cli build --profile beta-simulator --platform ios  # 기기 등록 없이 시뮬레이터용
+```
+
+새 베타를 올릴 때마다 `ios.buildNumber`와 `android.versionCode`를 1씩 올려 커밋합니다. 스토어 제출용 프로필은 아직 두지 않았습니다.
+
 ## 환경 변수
 
 | 이름 | 기본값 | 설명 |
@@ -36,7 +58,10 @@ pnpm test        # node --test tests/*.test.mjs
 UI 렌더링 테스트 인프라는 두지 않았습니다. 화면이 쓰는 판단 로직을 순수 모듈로 분리해 node 테스트로 검증합니다.
 
 - `lib/api.ts` — 요청·타임아웃·오류 분류·응답 검증 (`/api/init`, `/api/search`, `/api/history`)
-- `lib/chart.ts` — 가격 그래프 좌표, y축 눈금, 채움 영역, 접근성 문구
+- `lib/chart.ts` — 가격 그래프 좌표(날짜 비례 x축), y축 눈금·여백(큰 금액은 만/억), 최저·평균·최고 글자 라벨 배치, 채움 영역, 접근성 문구
+- `lib/text.ts` — 상품명 HTML 엔티티 해제(한 단계만)
+- `lib/typeface.ts` — 글꼴 굵기 → 번들 글꼴 파일 매핑
+- `tests/beta.test.mjs` — 위 항목과 `app.json`/`eas.json` 베타 설정(식별자·버전·스플래시·글꼴 파일)
 - `lib/format.ts` — 웹과 같은 표시 규칙(관측일 스탬프, 몰 색, 판정 문구, PRICE TREND, 최저/평균/최고)
 - `lib/searchSession.ts` — 검색 중복 방지, 다른 검색어로 교체, 취소, 지연 안내
 
@@ -45,13 +70,15 @@ UI 렌더링 테스트 인프라는 두지 않았습니다. 화면이 쓰는 판
 - 토큰은 `lib/theme.ts`에 있고 값마다 웹 CSS 변수 이름을 적어 두었습니다(`--bg`, `--ink`, `--soft`, `--faint`, `--line`, `--surface`, `--down`, `--up`, `--coupang` …). 라이트/다크 모두 웹과 같은 값입니다.
 - 여백: 페이지 좌우 14, 히어로 좌우 28, 섹션 간격 56, 섹션 머리 아래 14, 그리드 간격 10, 헤더 50+1px 선.
 - 반경: 데이터 박스 4, 썸네일 8, 신뢰도 패널 10, 핫딜 카드 14, 검색창 26. 그림자·그라데이션 없음.
-- S 로고는 웹과 같은 Georgia bold "S" SVG, 히어로 책장 그림은 웹의 `hero-still` SVG를 그대로 옮겼습니다(블러 그림자만 단색으로 대체).
+- 글꼴: 본문 Pretendard(400·500·600·700·800), 관측일·그래프 축 IBM Plex Mono — 웹과 같은 글꼴을 `assets/fonts`에 번들합니다(SIL OFL 1.1, 라이선스 파일 동봉). 릴리스 빌드는 `expo-font` 플러그인으로 네이티브에 넣고, Expo Go에서는 실행 시 등록합니다. 파일 이름이 PostScript 이름과 같아 iOS·Android·Expo Go 모두 같은 이름으로 찾습니다. 굵기마다 파일을 따로 지정하고 `fontWeight`를 함께 주지 않아 Android의 가짜 굵게가 생기지 않습니다. 글꼴 로드가 실패하거나 2.5초를 넘기면 시스템 글꼴로 그대로 표시합니다.
+- 스플래시: 라이트 흰 배경 + 검은 S 타일, 다크 `#16181C` 배경 + 밝은 S 타일(`splash-icon-dark.png`). 글꼴이 준비될 때까지 유지합니다.
+- S 로고는 웹의 Georgia bold "S"를 래스터로 담은 `brand-mark.png`를 글자색으로 칠해 씁니다(Android에는 Georgia가 없음). 히어로 책장 그림은 웹의 `hero-still` SVG를 그대로 옮겼습니다(블러 그림자만 단색으로 대체).
 
 ## 화면
 
 - **홈** (웹 홈과 같은 순서): 헤더(S + 검색창) → 회색 히어로 “최저가도, 고급지게.” + 책장 → 인기 검색어 줄 → **핫딜**(오늘 직전 기록보다 내려간 상품, ↓% · 수집 이후 최저) → **오늘의 셀렉션**(현재 키워드) → **이달의 추천**(9月 …) → 푸터(쿠팡 파트너스 고지). 데이터는 웹 홈과 같은 `GET /api/init`(서버 읽기 전용, 엣지 캐시 5분)입니다. 검색어를 누르면 그 검색어로 검색 화면이 열립니다.
 - **검색**: 웹 헤더와 같은 검색창, `"키워드" 큐레이션 완료` 결과 요약(결과 중 최저 · 비교 상품 · 가격대), 2열 플랫 카드(사진 → 로켓배송 → 상품명 → 가격 → 몰·관측일). `GET /api/search?keyword=...`.
-- **상세** (웹 «가격의 서사» 모달 순서): 상품 사진 → 상품명 → 가격 → 몰 → 판정 박스 → 가격 신뢰도 → 가격 그래프(y축 가격, 최저·평균·최고 점선) → PRICE TREND → 최저/평균/최고 → 최근 관측 → 판단 근거. `GET /api/history?__route=product&pid=...&mall=...`.
+- **상세** (웹 «가격의 서사» 모달 순서): 상품 사진 → 상품명 → 가격 → 몰 → 판정 박스 → 가격 신뢰도 → 가격 그래프(y축 가격, 날짜 비례 x축, “최고/평균/최저 금액” 글자 라벨이 붙은 점선) → PRICE TREND → 최저/평균/최고 → 최근 관측 → 판단 근거. `GET /api/history?__route=product&pid=...&mall=...`.
 
 웹에만 있는 기능(AI Concierge, 찜·레이더, 가격 알림, 구매 링크, 정렬·몰 필터, 기간 탭, 몰별 비교)은 앱에 넣지 않았습니다.
 
@@ -72,12 +99,12 @@ UI 렌더링 테스트 인프라는 두지 않았습니다. 화면이 쓰는 판
 
 ## 알려진 제한
 
-- 웹 본문 글꼴 Pretendard는 번들하지 않았습니다(시스템 한글 글꼴 사용). 관측일 스탬프는 IBM Plex Mono 대신 플랫폼 고정폭 글꼴입니다.
 - 책장 그림의 바닥 그림자는 블러 없이 단색으로 그립니다(react-native-svg 필터 미지원).
-- 일부 상품명은 서버가 HTML 엔티티(`&amp;` 등)를 그대로 보내며, 웹과 똑같이 그대로 표시됩니다.
-- 로그인, 관심상품, 푸시, 오프라인 캐시, 앱스토어 배포 설정(스플래시·빌드 프로필)은 없습니다.
-- 가격 그래프 x축은 관측일 순번 기준이며 빈 날을 간격으로 반영하지 않습니다.
-- 글자 크기(Dynamic Type)는 따르되 최대 배율을 제한합니다(본문 1.6배, 제목·컨트롤 1.3~1.4배).
+- 상품명·몰 표시 이름의 HTML 엔티티(`&amp;`, `&quot;`, `&#39;` …)는 API 응답을 받을 때 한 번 풀어 표시합니다. 서버로 다시 보내는 `mall`·`productId`·검색어는 바꾸지 않습니다.
+- 로그인, 관심상품, 푸시, 오프라인 캐시, OTA 업데이트, 스토어 제출 프로필은 없습니다.
+- 가격 그래프 x축은 날짜에 비례합니다(수집이 빠진 날은 간격으로 보임). 날짜를 읽을 수 없는 기록만 순번 간격으로 그립니다. 그래프 안의 금액 글자(축·최저/평균/최고 라벨)는 그림의 일부라 글자 크기 설정을 따르지 않으며, 같은 내용이 그래프 접근성 문구와 아래 최저/평균/최고 칸에 있습니다.
+- 글자 크기(Dynamic Type)는 따르고 헤더·검색창·카드는 글자에 맞춰 늘어납니다. 최대 배율만 제한합니다(본문 2배, 컨트롤 1.8배, 제목 1.6배, 히어로 제목 1.25배).
+- 글꼴 5종 번들로 앱 크기가 약 8MB 늘어납니다.
 
 ## 실기기 체크리스트 (Expo Go)
 

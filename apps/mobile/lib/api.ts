@@ -1,3 +1,5 @@
+import { decodeHtmlEntities } from './text.ts';
+
 export type TrustReason = { kind: string; text: string };
 export type Trust = { level: string; label: string; summary: string; reasons: TrustReason[] };
 
@@ -80,12 +82,19 @@ function cleanTrust(value: unknown): Trust | null {
   return { level: trust.level, label: trust.label, summary: typeof trust.summary === 'string' ? trust.summary : '', reasons };
 }
 
-/** Keeps the required fields as validated and drops optional fields of the wrong type. */
-function cleanProduct(item: Product): Product {
-  const out: Product = { title: item.title, lprice: item.lprice, mall: item.mall };
+/**
+ * Keeps the required fields as validated and drops optional fields of the wrong type.
+ * Server text is decoded from HTML entities once, here (`decode`); data that already went through this
+ * (a card carried in a route param) is not decoded again. Identifiers such as `mall` are never rewritten —
+ * they go back to the server as request parameters.
+ */
+function cleanProduct(item: Product, decode = true): Product {
+  const text = (v: string) => (decode ? decodeHtmlEntities(v) : v);
+  const out: Product = { title: text(item.title), lprice: item.lprice, mall: item.mall };
   const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
-  out.mallLabel = str(item.mallLabel);
+  const label = str(item.mallLabel);
+  out.mallLabel = label === undefined ? undefined : text(label);
   out.image = str(item.image);
   out.productId = str(item.productId);
   out.vendorItemId = str(item.vendorItemId);
@@ -112,7 +121,7 @@ export function productFromParam(value: string | undefined): Product | null {
   if (!value) return null;
   try {
     const parsed: unknown = JSON.parse(value);
-    return isProduct(parsed) ? cleanProduct(parsed) : null;
+    return isProduct(parsed) ? cleanProduct(parsed, false) : null;
   } catch {
     return null;
   }
@@ -225,7 +234,7 @@ export function createApiClient(fetcher: typeof fetch = fetch, timeoutOverrides:
     async search(keyword: string, signal?: AbortSignal): Promise<Product[]> {
       const data = await get('/api/search', { keyword: keyword.trim() }, timeouts.searchMs, signal);
       if (!Array.isArray(data)) throw new ApiError('invalid_response', 'Search response is not an array');
-      return usableItems(data, isProduct, 'Invalid search product').map(cleanProduct);
+      return usableItems(data, isProduct, 'Invalid search product').map(item => cleanProduct(item));
     },
     async product(id: string, mall?: string, signal?: AbortSignal): Promise<ProductDetail> {
       const data = await get('/api/history', { __route: 'product', pid: id, ...(mall ? { mall } : {}) }, timeouts.detailMs, signal) as Partial<ProductDetail>;
@@ -247,7 +256,7 @@ export function createApiClient(fetcher: typeof fetch = fetch, timeoutOverrides:
       const data = await get('/api/init', {}, timeouts.homeMs, signal) as Record<string, unknown> | null;
       if (!data || typeof data !== 'object' || Array.isArray(data)) throw new ApiError('invalid_response', 'Invalid home response');
       const list = (value: unknown) => (Array.isArray(value) ? value : []);
-      const products = (value: unknown) => list(value).filter(isProduct).map(cleanProduct);
+      const products = (value: unknown) => list(value).filter(isProduct).map(item => cleanProduct(item));
 
       const rawDrops = list(data.priceDrop);
       const daily = data.daily && typeof data.daily === 'object' ? data.daily as Record<string, unknown> : null;
