@@ -770,6 +770,29 @@ html[data-theme="dark"] .hc-scene::before{opacity:.65}
 .hc-shopping .hc-ans{background:var(--bg);margin-top:8px;position:absolute;bottom:25px;left:0;width:91%;padding:17px 13px;transform:rotate(-2deg);border:1px solid var(--line-2);box-shadow:inset 0 1px 0 #ffffff60,0 2px 3px #24272112,6px 13px 22px #24272116,12px 27px 36px #2427210d}
 @media(max-width:860px){.hc-shopping .hc-ask{top:8px;width:49%;font-size:.7rem}.hc-shopping .hc-ans{width:96%;bottom:17px;padding:14px 10px}.hc-shopping .hc-demo-tag{bottom:90px}}
 
+/* 2번 — 헤드폰 상품 버튼. 클릭하면 SEOSA 검색으로 이어진다. */
+.hc-hp-btn{all:unset;display:block;position:absolute;width:190px;height:193px;right:37px;top:23px;transform:rotate(9deg);cursor:pointer;transition:transform .18s var(--ease),filter .18s var(--ease);z-index:3}
+.hc-hp-btn:hover{transform:rotate(9deg) translateY(-3px)}
+.hc-hp-btn:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:6px}
+.hc-hp-btn .hc-headphones{position:static;width:100%;height:100%;right:auto;top:auto;transform:none}
+.hc-hp-label{position:absolute;left:50%;bottom:-32px;transform:translateX(-50%) rotate(-9deg);
+  background:rgba(255,255,255,.76);-webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4);
+  border:1px solid var(--line);border-radius:9px;padding:5px 10px;white-space:nowrap;text-align:left;
+  opacity:0;visibility:hidden;transform:translateX(-50%) rotate(-9deg) translateY(3px);
+  transition:opacity .18s var(--ease),transform .18s var(--ease),visibility 0s linear .18s;pointer-events:none}
+.hc-hp-btn:hover .hc-hp-label,.hc-hp-btn:focus-visible .hc-hp-label{opacity:1;visibility:visible;transform:translateX(-50%) rotate(-9deg) translateY(0);transition:opacity .18s var(--ease),transform .18s var(--ease),visibility 0s}
+.hc-hp-label-t{font-size:.76rem;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.hc-hp-label-c{display:block;font-size:.66rem;font-weight:600;color:var(--faint);margin-top:2px}
+html[data-theme="dark"] .hc-hp-label{background:rgba(30,32,36,.76);box-shadow:0 6px 18px rgba(0,0,0,.44)}
+@media(max-width:860px){
+  .hc-hp-btn{width:170px;height:183px;top:10px;right:21px}
+  .hc-hp-label{opacity:1;visibility:visible;transform:rotate(-9deg) translateY(0);transition:none;bottom:auto;top:-6px;left:auto;right:-10px;font-size:.68rem}
+}
+@media(hover:none),(pointer:coarse){
+  .hc-hp-label{opacity:1;visibility:visible;transform:translateX(-50%) rotate(-9deg) translateY(0);transition:none}
+}
+@media(prefers-reduced-motion:reduce){.hc-hp-btn{transition:none}.hc-hp-btn:hover{transform:rotate(9deg)}}
+
 /* 4번 — 석재 기념판에 걸린 직물 리본과 브론즈 메달. */
 .hc-memorial{width:100%;max-width:320px;height:auto;display:block}
 /*
@@ -3431,7 +3454,7 @@ select:focus-visible,textarea:focus-visible,
          <button class="hero-cta" data-act="ai-entry" data-ctx="home">AI에게 물어보기 <span aria-hidden="true">→</span></button>
        </div>
        <div class="hero-art">
-        <div class="hc-visual hc-scene hc-shopping"><div class="hc-stone" aria-hidden="true"></div><div class="hc-headphones" aria-hidden="true"><div class="hc-headband"></div><div class="hc-cup hc-cup-left"></div><div class="hc-cup hc-cup-right"></div></div>
+        <div class="hc-visual hc-scene hc-shopping"><div class="hc-stone" aria-hidden="true"></div><button type="button" class="hc-hp-btn" data-act="hp-search" aria-label="Sony WH-1000XM6 상품 보기"><div class="hc-headphones" aria-hidden="true"><div class="hc-headband"></div><div class="hc-cup hc-cup-left"></div><div class="hc-cup hc-cup-right"></div></div><span class="hc-hp-label" aria-hidden="true"><span class="hc-hp-label-t">Sony WH-1000XM6</span><span class="hc-hp-label-c">상품 보기 →</span></span></button>
          <!--
            ★ 예시 카드다. 서버·검색 결과와 연결돼 있지 않은 정적 그림이고,
              여기 적힌 상품·금액·충족 개수는 어떤 실제 상품의 값도 아니다.
@@ -10741,6 +10764,7 @@ var Actions = {
   'facet-toggle': function() { Filters.toggleFacets(); },
   // 검색 실패 시 같은 검색어로 다시 시도 (사용자가 주소창을 만지지 않게)
   'search-retry':  function(el) { Search.run(el.dataset.kw || ''); },
+  'hp-search':     function() { Search.run('Sony WH-1000XM6'); },
 
   // ── 카드 ──
   'heart':        function(el, e) { e.stopPropagation(); Wish.toggle(el); },
