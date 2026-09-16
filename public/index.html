@@ -648,6 +648,20 @@ header.solid{box-shadow:0 1px 0 var(--line),0 6px 16px -14px rgba(21,23,27,.35)}
 .hc-arrow:active{transform:translateY(-50%) scale(.94)}
 .hc-prev{left:clamp(8px,calc(50% - 668px),56px)}
 .hc-next{right:clamp(8px,calc(50% - 668px),56px)}
+/*
+ * ── 화살표는 콘텐츠 열 «밖» 에 세운다 ─────────────────────────────
+ *
+ * 실측(1024px): prev 화살표가 CTA 왼쪽 끝을 덮어 그 자리를 누르면 버튼이 아니라
+ * 캐러셀이 넘어갔다(elementFromPoint = hcPrev). 보기에만 겹친 게 아니라 클릭을
+ * 가로챈 것이라 고친다.
+ *
+ * 콘텐츠 1240px + 양쪽 화살표 자리(48px)가 들어가려면 1336px 이 필요하다.
+ * 그보다 좁으면 콘텐츠를 화살표 폭만큼 안으로 들인다. 1336px 이상에서는 아래
+ * 섹션(.wrap)과 같은 28px 여백을 그대로 써서 가로 정렬을 지킨다.
+ */
+@media(min-width:861px) and (max-width:1336px){
+  .hero-carousel .hero-inner{padding-left:60px;padding-right:60px}
+}
 
 .hc-dots{position:absolute;left:0;right:0;bottom:16px;z-index:3;
   display:flex;justify-content:center;align-items:center;gap:9px;pointer-events:none}
@@ -718,7 +732,45 @@ header.solid{box-shadow:0 1px 0 var(--line),0 6px 16px -14px rgba(21,23,27,.35)}
   color:var(--down);background:var(--down-bg);border-radius:6px;padding:4px 8px}
 .hc-verdict-t{font-size:.72rem;color:var(--soft);letter-spacing:-.01em}
 
-/* 4번 — 기념 그림. 장식이라 색을 얹지 않고 선으로만 그린다. */
+/* Editorial objects: fixed bounds and upper-left light, no animated filters. */
+.hc-scene{position:relative;isolation:isolate;height:300px}
+.hc-scene::before{content:'';position:absolute;left:12%;right:4%;bottom:16px;height:28px;background:radial-gradient(ellipse,rgba(49,43,35,.17),transparent 69%);z-index:-1}
+.hc-stone{position:absolute;right:27px;top:76px;width:164px;height:162px;border-radius:3px;background:linear-gradient(115deg,#eeeae0,#d2cec3);border:1px solid #dfdacf;box-shadow:inset 2px 2px 1px #fff9,inset -8px -2px 0 #b6b2a54d,3px 4px 4px #39332912,12px 19px 26px #39332916}
+.hc-stone::after{content:'';position:absolute;inset:0;opacity:.16;background-image:radial-gradient(#7a7363 .55px,transparent .8px);background-size:7px 9px}
+.hc-headphones{position:absolute;width:190px;height:193px;right:37px;top:23px;transform:rotate(9deg)}
+.hc-headband{position:absolute;inset:0 16px 23px;border:13px solid #343638;border-bottom:0;border-radius:90px 90px 35px 35px;box-shadow:inset 2px 3px 2px #101215,inset -3px 1px 2px #8c8b84,2px -2px 1px #737675}
+.hc-headband::before{content:'';position:absolute;inset:2px 1px 30px;border:6px solid #555753;border-bottom:0;border-radius:80px 80px 0 0}
+.hc-cup{position:absolute;top:99px;width:53px;height:84px;border-radius:24px;background:linear-gradient(115deg,#686b68 0%,#414542 35%,#292c2d 83%);border:1px solid #656863;box-shadow:inset 3px 1px 2px #ffffff27,inset -5px -1px 4px #0b10104d,3px 4px 3px #161a192e,9px 12px 15px #161a1933}
+.hc-cup::before{content:'';position:absolute;top:8px;bottom:7px;width:14px;border-radius:50%;background:repeating-linear-gradient(0deg,#252928 0 1px,#303432 1px 3px);box-shadow:inset 2px 0 3px #0a0c0b}
+.hc-cup::after{content:'';position:absolute;top:-22px;left:19px;width:12px;height:27px;border-radius:5px;background:linear-gradient(90deg,#777b76,#c3c5bd 30%,#555d59 66%,#404844);box-shadow:1px 1px 2px #151b1844}
+.hc-cup-left{left:3px;transform:rotate(-9deg)}.hc-cup-left::before{right:-7px}
+.hc-cup-right{right:2px;transform:rotate(5deg)}.hc-cup-right::before{left:-7px}
+.hc-price .hc-stone{top:auto;bottom:27px;right:38px;width:266px;height:36px;transform:rotate(-1deg)}
+.hc-price .hc-demo{position:absolute;left:8%;top:30px;width:84%;transform:rotate(-2deg);border-radius:12px;border-bottom:4px solid var(--line-2);background:linear-gradient(125deg,var(--bg),var(--card-bg,var(--bg)));box-shadow:inset 1px 1px 0 #ffffff70,1px 3px 3px #24272114,8px 15px 24px #24272120,14px 30px 38px #2427210c}
+.hc-price .hc-chart{margin:8px 0 13px}
+.hc-price .hc-badge{color:#46624d;background:#e2e8dd;border:1px solid #b7c5b4;box-shadow:inset 0 1px 1px #ffffffb3,inset 0 -1px 2px #61715820,0 2px 2px #303e2d12}
+.hc-sphere{position:absolute;z-index:2;right:8px;bottom:25px;width:64px;height:64px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#faf7ed 0,#e9e3d6 35%,#b4ad9f 79%,#969284 100%);box-shadow:inset -2px -3px 4px #7c766f30,3px 3px 3px #3b37282b,10px 12px 14px #3b37282b}
+.hc-memorial-scene .hc-memorial{max-width:370px;width:100%;height:300px;overflow:visible}
+html[data-theme="dark"] .hc-stone{background:linear-gradient(115deg,#bdb8ab,#918c7f);border-color:#b2aa9a}
+html[data-theme="dark"] .hc-price .hc-badge{color:#c2d2bd;background:#344539;border-color:#667761}
+html[data-theme="dark"] .hc-scene::before{opacity:.65}
+@media(max-width:860px){
+  .hc-scene{height:270px}
+  .hc-headphones{width:170px;height:183px;top:10px;right:21px}
+  .hc-stone{top:56px;height:160px;right:13px}
+  .hc-price .hc-demo{top:20px;left:3%;width:90%}
+  .hc-price .hc-stone{width:230px;right:24px}
+  .hc-memorial-scene .hc-memorial{height:270px;max-width:330px}
+}
+@media(max-width:430px){.hc-stone::after{display:none}.hc-ans{gap:8px;padding:10px 8px}}
+
+.hc-shopping .hc-demo{position:absolute;z-index:2;inset:0;width:100%;height:100%;padding:0;border:0;background:none;box-shadow:none;transform:none}
+.hc-shopping .hc-demo-tag{position:absolute;left:4px;bottom:101px;background:var(--bg);margin:0}
+.hc-shopping .hc-ask{position:absolute;top:23px;left:0;width:51%;margin:0;padding:12px;border:1px solid var(--line-2);background:var(--bg);transform:rotate(-2deg);box-shadow:inset 0 1px 0 #ffffff60,0 2px 3px #24272112,4px 10px 20px #24272116}
+.hc-shopping .hc-ans{background:var(--bg);margin-top:8px;position:absolute;bottom:25px;left:0;width:91%;padding:17px 13px;transform:rotate(-2deg);border:1px solid var(--line-2);box-shadow:inset 0 1px 0 #ffffff60,0 2px 3px #24272112,6px 13px 22px #24272116,12px 27px 36px #2427210d}
+@media(max-width:860px){.hc-shopping .hc-ask{top:8px;width:49%;font-size:.7rem}.hc-shopping .hc-ans{width:96%;bottom:17px;padding:14px 10px}.hc-shopping .hc-demo-tag{bottom:90px}}
+
+/* 4번 — 석재 기념판에 걸린 직물 리본과 브론즈 메달. */
 .hc-memorial{width:100%;max-width:320px;height:auto;display:block}
 /*
  * 「검토 중」 라벨. 확정된 사업처럼 읽히면 안 되는 문장이라
@@ -730,9 +782,11 @@ header.solid{box-shadow:0 1px 0 var(--line),0 6px 16px -14px rgba(21,23,27,.35)}
 .hc-note{font-size:.68rem;color:var(--faint);margin:14px 0 0;letter-spacing:-.01em}
 
 @media(max-width:860px){
-  .hero-carousel .hero-inner{padding-bottom:40px}
-  /* 좁은 화면에서는 화살표가 그림을 덮지 않게 작게 줄이고 가장자리에 붙인다. */
+  /* 좁은 화면에서도 화살표는 카피 밖(좌우 여백 안)에 선다 — 위 주석 참고. */
+  .hero-carousel .hero-inner{padding-bottom:40px;padding-left:38px;padding-right:38px}
   .hc-arrow{width:32px;height:32px;font-size:.84rem;opacity:.78}
+  .hc-prev{left:2px}
+  .hc-next{right:2px}
   .hc-visual{max-width:340px;margin:0 auto}
   .hc-memorial{max-width:250px}
   .hc-dots{bottom:13px}
@@ -3377,7 +3431,7 @@ select:focus-visible,textarea:focus-visible,
          <button class="hero-cta" data-act="ai-entry" data-ctx="home">AI에게 물어보기 <span aria-hidden="true">→</span></button>
        </div>
        <div class="hero-art">
-        <div class="hc-visual">
+        <div class="hc-visual hc-scene hc-shopping"><div class="hc-stone" aria-hidden="true"></div><div class="hc-headphones" aria-hidden="true"><div class="hc-headband"></div><div class="hc-cup hc-cup-left"></div><div class="hc-cup hc-cup-right"></div></div>
          <!--
            ★ 예시 카드다. 서버·검색 결과와 연결돼 있지 않은 정적 그림이고,
              여기 적힌 상품·금액·충족 개수는 어떤 실제 상품의 값도 아니다.
@@ -3412,7 +3466,7 @@ select:focus-visible,textarea:focus-visible,
          <button class="hero-cta" data-act="scroll-drop">구매 타이밍 확인 <span aria-hidden="true">→</span></button>
        </div>
        <div class="hero-art">
-        <div class="hc-visual">
+        <div class="hc-visual hc-scene hc-price"><div class="hc-stone" aria-hidden="true"></div><div class="hc-sphere" aria-hidden="true"></div>
          <!--
            ★ 예시 그래프다. 특정 상품의 가격도, 그 상품에 대한 구매 판정도 아니다.
              실제 판정은 상품 카드의 가격 추이 모달에서 서버가 계산한 값으로만 나온다.
@@ -3423,7 +3477,7 @@ select:focus-visible,textarea:focus-visible,
                aria-label="가격이 내려간 뒤 안정된 모양을 보여 주는 예시 그래프">
             <!-- 기준선 — 눈금이 아니라 «바닥» 하나만 둔다. -->
             <line x1="0" y1="88" x2="280" y2="88" stroke="var(--line)" stroke-width="1"/>
-            <path d="M4 26 L44 30 L84 24 L124 52 L164 62 L204 58 L244 60 L276 59"
+            <path d="M4 26 L14 28 L24 25 L34 30 L44 29 L54 32 L64 27 L74 28 L84 24 L94 29 L104 39 L114 36 L124 52 L134 50 L144 57 L154 55 L164 62 L174 60 L184 63 L194 58 L204 58 L214 60 L224 57 L234 59 L244 60 L254 58 L264 60 L276 59"
                   fill="none" stroke="var(--ink)" stroke-width="2"
                   stroke-linecap="round" stroke-linejoin="round"/>
             <!-- 지금 위치 -->
@@ -3456,50 +3510,62 @@ select:focus-visible,textarea:focus-visible,
          <p class="hc-note">아직 확정되거나 시행된 계획이 아닙니다.</p>
        </div>
        <div class="hero-art">
-        <div class="hc-visual">
+        <div class="hc-visual hc-scene hc-memorial-scene">
          <!--
-           절제한 기념 그림 — 월계관과 기념 메달 하나. 색을 얹지 않고 선으로만 그린다.
+           절제한 기념 정물 — 석재 기념판, 직물 리본, 브론즈 메달과 월계관.
            전쟁 장면·무기·국기 도배는 쓰지 않는다. 장식이라 aria-hidden 이다.
          -->
-         <svg class="hc-memorial" viewBox="0 0 240 200" aria-hidden="true" focusable="false">
-           <g fill="none" stroke="var(--line-2)" stroke-width="1.6" stroke-linecap="round">
-             <!-- 월계관 (왼쪽) -->
-             <path d="M84 148 C54 132 44 104 50 74"/>
-             <path d="M52 84 C40 78 36 68 38 60 C48 60 56 68 58 78"/>
-             <path d="M56 104 C44 99 39 89 41 81 C51 81 59 89 61 99"/>
-             <path d="M63 123 C51 118 46 108 48 100 C58 100 66 108 68 118"/>
-             <path d="M73 139 C62 135 57 125 59 117 C69 117 77 125 79 135"/>
-             <!-- 월계관 (오른쪽) -->
-             <path d="M156 148 C186 132 196 104 190 74"/>
-             <path d="M188 84 C200 78 204 68 202 60 C192 60 184 68 182 78"/>
-             <path d="M184 104 C196 99 201 89 199 81 C189 81 181 89 179 99"/>
-             <path d="M177 123 C189 118 194 108 192 100 C182 100 174 108 172 118"/>
-             <path d="M167 139 C178 135 183 125 181 117 C171 117 163 125 161 135"/>
-           </g>
-           <!--
-             리본 — 걸이 막대 하나와 메달로 모이는 띠 두 줄.
-             처음에는 «위가 넓은 사다리꼴 + 긴 세로선 둘» 로 그렸는데 실측 화면에서
-             플라스크(실험용 삼각플라스크)처럼 읽혔다. 띠는 아래로 «모여야» 리본이 된다.
-           -->
-           <rect x="96" y="34" width="48" height="10" rx="3" fill="none"
-                 stroke="var(--line-2)" stroke-width="1.6"/>
-           <path d="M103 44 L114 79 M137 44 L126 79" stroke="var(--line-2)"
-                 stroke-width="1.6" stroke-linecap="round"/>
-           <!-- 메달 -->
-           <circle cx="120" cy="104" r="28" fill="none" stroke="var(--ink)" stroke-width="1.8"/>
-           <circle cx="120" cy="104" r="20" fill="none" stroke="var(--line-2)" stroke-width="1.2"/>
-           <!-- 가운데: 무궁화를 다섯 장 꽃잎으로 단순화한 형태 -->
-           <g fill="var(--brand)" opacity=".92">
-             <circle cx="120" cy="94.5" r="4.4"/>
-             <circle cx="129" cy="101" r="4.4"/>
-             <circle cx="125.6" cy="111.5" r="4.4"/>
-             <circle cx="114.4" cy="111.5" r="4.4"/>
-             <circle cx="111" cy="101" r="4.4"/>
-           </g>
-           <circle cx="120" cy="104" r="3" fill="var(--bg)"/>
-           <!-- 기념판 바닥선 -->
-           <path d="M74 166 L166 166" stroke="var(--line)" stroke-width="1.6" stroke-linecap="round"/>
-         </svg>
+         <svg class="hc-memorial" viewBox="0 0 370 300" aria-hidden="true" focusable="false">
+ <defs>
+  <linearGradient id="hcBronze" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d6c7a6"/><stop offset=".35" stop-color="#b09b70"/><stop offset=".72" stop-color="#8b7754"/><stop offset="1" stop-color="#65553c"/></linearGradient>
+  <linearGradient id="hcStone" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#efebe1"/><stop offset="1" stop-color="#b8b2a5"/></linearGradient>
+  <linearGradient id="hcFabric" x1="0" y1="0" x2="1" y2=".4"><stop stop-color="#ffffff" stop-opacity=".19"/><stop offset=".4" stop-color="#ffffff" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".3"/></linearGradient>
+  <pattern id="hcWeave" width="3" height="3" patternUnits="userSpaceOnUse"><path d="M0 0H3M0 0V3" fill="none" stroke="#efe7d6" stroke-opacity=".17" stroke-width=".5"/></pattern>
+  <pattern id="hcGrain" width="17" height="13" patternUnits="userSpaceOnUse"><circle cx="3" cy="7" r=".6" fill="#797061" opacity=".19"/><circle cx="12" cy="2" r=".4" fill="#fff" opacity=".4"/></pattern>
+  <path id="hcLeaf" d="M0 0C-11-3-15-13-12-22C-2-20 4-10 0 0Z"/>
+ </defs>
+ <ellipse cx="202" cy="266" rx="124" ry="12" fill="#312b22" opacity=".07"/>
+ <ellipse cx="199" cy="263" rx="102" ry="5" fill="#312b22" opacity=".12"/>
+ <g transform="rotate(-2 185 150)">
+  <path d="M81 62L279 62L287 70V255L279 263H81Z" fill="#9d9789"/>
+  <rect x="77" y="58" width="202" height="201" rx="4" fill="url(#hcStone)" stroke="#e2dccf"/>
+  <rect x="78" y="59" width="200" height="199" rx="4" fill="url(#hcGrain)"/>
+  <path d="M81 60H275M79 63V254" fill="none" stroke="#fff" opacity=".6"/>
+  <!-- Solid folded textile with woven, stitched edges and natural downward weight. -->
+  <path d="M155 72H205L200 119L181 140L161 120Z" fill="#514942" opacity=".18" transform="translate(3 4)"/>
+  <path d="M152 69H202L197 116L177 137L158 116Z" fill="#d4cbbb" stroke="#b3a793"/>
+  <path d="M154 70H166L171 123L159 115Z" fill="#884f4c"/>
+  <path d="M187 70H200L196 115L183 129Z" fill="#44576c"/>
+  <path d="M152 69H202L197 116L177 137L158 116Z" fill="url(#hcFabric)"/>
+  <path d="M152 69H202L197 116L177 137L158 116Z" fill="url(#hcWeave)"/>
+  <path d="M155 72L161 115L177 132L194 114L199 72" fill="none" stroke="#e4d9c2" stroke-opacity=".55" stroke-dasharray="1 2"/>
+  <path d="M159 116L177 123L196 115L177 137Z" fill="#35312e" opacity=".15"/>
+  <rect x="150" y="66" width="54" height="6" rx="2" fill="url(#hcBronze)" stroke="#998563"/>
+  <ellipse cx="178" cy="138" rx="6" ry="9" fill="none" stroke="#7d6949" stroke-width="3"/>
+  <ellipse cx="177" cy="137" rx="5" ry="8" fill="none" stroke="#c2ae83" stroke-width="2"/>
+  <!-- Offset silhouettes provide contact shadows without expensive SVG filters. -->
+  <circle cx="181" cy="181" r="39" fill="#514633" opacity=".15"/>
+  <circle cx="179" cy="177" r="38" fill="#736045"/>
+  <circle cx="176" cy="174" r="38" fill="url(#hcBronze)" stroke="#cbbb98" stroke-width="1.4"/>
+  <circle cx="176" cy="174" r="32" fill="none" stroke="#746343" stroke-width="1"/>
+  <circle cx="175.5" cy="173.5" r="30.5" fill="none" stroke="#e0d1af" stroke-opacity=".5"/>
+  <circle cx="176" cy="174" r="28" fill="url(#hcGrain)"/>
+  <path d="M176 158C165 150 160 163 169 170C155 172 160 183 171 180C168 193 181 194 184 181C197 184 199 170 185 168C193 157 182 151 176 158Z" fill="#796746" stroke="#caba92" stroke-width=".7"/>
+  <circle cx="177" cy="173" r="4" fill="#bba67b" stroke="#746243"/>
+  <g fill="url(#hcBronze)" stroke="#857553" stroke-width=".5">
+   <path d="M153 221C115 207 100 179 106 146M200 221C235 207 248 178 243 150" fill="none" stroke-width="2"/>
+   <use href="#hcLeaf" transform="translate(110 168) rotate(-25)"/>
+   <use href="#hcLeaf" transform="translate(115 184) rotate(-41)"/>
+   <use href="#hcLeaf" transform="translate(125 201) rotate(-55)"/>
+   <use href="#hcLeaf" transform="translate(140 214) rotate(-68)"/>
+   <use href="#hcLeaf" transform="translate(239 170) scale(-1 1) rotate(-20)"/>
+   <use href="#hcLeaf" transform="translate(234 188) scale(-1 1) rotate(-38)"/>
+   <use href="#hcLeaf" transform="translate(223 203) scale(-1 1) rotate(-57)"/>
+   <use href="#hcLeaf" transform="translate(210 214) scale(-1 1) rotate(-64)"/>
+  </g>
+  <path d="M137 239H218" stroke="#a39a86"/><path d="M137 240H218" stroke="#fff" opacity=".45"/>
+ </g>
+</svg>
         </div>
        </div>
       </div>
