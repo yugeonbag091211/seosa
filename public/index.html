@@ -600,6 +600,162 @@ header.solid{box-shadow:0 1px 0 var(--line),0 6px 16px -14px rgba(21,23,27,.35)}
 .hero-art img + .hero-still{display:none}
 
 /*
+ * ── 히어로 캐러셀 (2026-09-16) ─────────────────────────────────────
+ *
+ * 밴드 하나였던 자리를 4장으로 늘린다. 밴드의 «껍데기»(전폭 회색 면 +
+ * 1240px .hero-inner 그리드)는 그대로 쓰고, 슬라이드는 그 안에서만 바뀐다.
+ * 그래서 4장이 같은 폭·같은 여백·같은 헤드라인 스케일·같은 CTA 를 공유하고,
+ * 슬라이드마다 다른 것은 오른쪽 그림 하나뿐이다.
+ *
+ * ★ 왜 track(가로로 이어 붙인 띠)이 아니라 «겹쳐 쌓기»(grid-area:1/1) 인가.
+ *   1) 높이가 가장 큰 슬라이드에 맞춰 컨테이너가 한 번 정해진다 —
+ *      전환할 때마다 밴드 높이가 변하지 않으므로 CLS 가 0 이다.
+ *   2) 무한 loop 에 복제본이 필요 없다. track 방식은 마지막→첫 장을 이으려고
+ *      1번 슬라이드를 복제하는데, 1번 안에는 id="bsTip" 과 책등 SVG 가 있어
+ *      복제하는 순간 id 가 둘이 되고 Shelf 가 엉뚱한 노드를 잡는다.
+ *   3) 들어오는 쪽/나가는 쪽을 각각 어느 방향으로 밀지 JS 가 정하므로
+ *      마지막→첫 장도 «오른쪽에서 들어오는» 자연스러운 방향이 된다.
+ */
+.hero-carousel{position:relative}
+/*
+ * touch-action:pan-y — 세로 스크롤은 브라우저에 맡기고 가로 제스처만 우리가 받는다.
+ * 이게 없으면 슬라이드를 쓸어 넘기려다 페이지가 같이 움직인다.
+ */
+.hc-viewport{display:grid;overflow:hidden;touch-action:pan-y}
+.hc-slide{grid-area:1/1;min-width:0;
+  transform:translateX(100%);opacity:0;visibility:hidden;pointer-events:none;
+  transition:transform var(--hc-dur) var(--hc-ease),
+             opacity var(--hc-dur) var(--hc-ease),
+             visibility 0s linear var(--hc-dur)}
+.hc-slide.on{transform:translateX(0);opacity:1;visibility:visible;pointer-events:auto;
+  transition:transform var(--hc-dur) var(--hc-ease),
+             opacity var(--hc-dur) var(--hc-ease),
+             visibility 0s}
+:root{--hc-dur:.55s;--hc-ease:cubic-bezier(.22,.61,.36,1)}
+/* 점 내비게이션이 앉을 자리. 껍데기가 공유하는 값이라 .hero-inner 에 준다. */
+.hero-carousel .hero-inner{padding-bottom:44px}
+
+/* 화살표 — 밴드 가장자리에 둔다. 콘텐츠 열(1240px)을 덮지 않는 위치다. */
+.hc-arrow{position:absolute;top:50%;z-index:3;transform:translateY(-50%);
+  width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--bg);color:var(--ink);border:1px solid var(--line);
+  cursor:pointer;font-family:inherit;font-size:1rem;line-height:1;padding:0;
+  box-shadow:var(--shadow);opacity:.9;
+  transition:opacity .2s var(--ease),border-color .2s var(--ease),transform .2s var(--ease)}
+/* JS 가 배선하기 전에는 눌러도 아무 일이 없다 — 그때까지 보이지 않게 둔다. */
+.hero-carousel:not(.ready) .hc-arrow{display:none}
+.hc-arrow:hover{opacity:1;border-color:var(--line-2)}
+.hc-arrow:active{transform:translateY(-50%) scale(.94)}
+.hc-prev{left:clamp(8px,calc(50% - 668px),56px)}
+.hc-next{right:clamp(8px,calc(50% - 668px),56px)}
+
+.hc-dots{position:absolute;left:0;right:0;bottom:16px;z-index:3;
+  display:flex;justify-content:center;align-items:center;gap:9px;pointer-events:none}
+/*
+ * 꺼진 점의 색은 --line-2 였다 → 밝은 배경에서 1.48:1. "슬라이드가 넷" 이라는
+ * 사실 자체가 보이지 않았다(실측). 상태를 말하는 컨트롤이므로 --faint 로 올린다
+ * (밝은 면 5.05:1 · 어두운 면 4.69:1). 어느 것이 «현재» 인지는 색이 아니라
+ * 모양이 말한다 — 7px 원 vs 20px 알약.
+ */
+.hc-dot{pointer-events:auto;width:7px;height:7px;padding:0;border:0;border-radius:50%;
+  background:var(--faint);cursor:pointer;
+  transition:background .2s var(--ease),width .3s var(--ease)}
+.hc-dot:hover{background:var(--ink)}
+.hc-dot[aria-current="true"]{background:var(--ink);width:20px;border-radius:4px}
+/* 점은 7px 이라 그대로는 누르기 어렵다 — 보이는 크기는 두고 탭 영역만 44px 로 넓힌다. */
+.hc-dot::before{content:'';position:absolute;width:44px;height:44px;
+  transform:translate(-50%,-50%);left:50%;top:50%}
+.hc-dot{position:relative}
+
+/* 스크린리더 전용. 현재 몇 번째 슬라이드인지 말해 주는 한 줄. */
+.hc-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+
+/*
+ * 오른쪽 그림 — 슬라이드마다 다른 유일한 부분.
+ * 1번(책등 정물)은 기존 .hero-art 규칙을 그대로 쓰고, 2~4번만 여기에서 정한다.
+ */
+.hc-visual{width:100%;max-width:420px;display:flex;align-items:center;justify-content:center}
+/*
+ * ★ 예시 카드임을 «구조로» 드러낸다.
+ *
+ * 이 화면의 숫자는 서버에서 온 값이 아니라 기능을 보여 주려고 그린 그림이다.
+ * 실제 상품 가격·실제 구매 판정으로 오인되면 이 서비스가 하는 말 전체의
+ * 신뢰가 깎인다. 그래서 감추지 않고 카드 머리에 «예시» 를 박아 둔다.
+ */
+/*
+ * 카드 면은 흰색(--card-bg)이고 밴드는 회색(--surface)이다 → 대비 1.03:1.
+ * 실측 스크린샷에서 카드가 배경에 묻혀 형체가 보이지 않았다. 색을 칠하지 않고
+ * «떠 있게» 만들어 푼다 — 테두리를 한 단계 진한 선으로, 그림자를 큰 쪽으로.
+ */
+.hc-demo{position:relative;width:100%;background:var(--card-bg,var(--bg));
+  border:1px solid var(--line-2);border-radius:var(--r-lg,14px);
+  padding:16px 16px 14px;box-shadow:var(--shadow-lg)}
+.hc-demo-tag{display:inline-flex;align-items:center;gap:5px;
+  font-size:.62rem;font-weight:700;letter-spacing:.02em;color:var(--faint);
+  border:1px solid var(--line);border-radius:20px;padding:3px 8px;margin-bottom:12px}
+.hc-demo-tag::before{content:'';width:4px;height:4px;border-radius:50%;background:var(--line-2)}
+
+/* 2번 — AI 대화 예시 */
+.hc-ask{font-size:.76rem;line-height:1.5;color:var(--ink);background:var(--surface);
+  border-radius:12px 12px 12px 4px;padding:10px 12px;letter-spacing:-.01em}
+.hc-ans{display:flex;gap:11px;align-items:center;margin-top:12px;
+  border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+.hc-rank{flex:0 0 auto;font-size:.6rem;font-weight:700;letter-spacing:-.01em;
+  color:var(--bg);background:var(--ink);border-radius:5px;padding:3px 6px}
+.hc-ans-b{min-width:0;flex:1 1 auto}
+.hc-ans-t{font-size:.76rem;font-weight:600;letter-spacing:-.02em;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hc-ans-m{display:flex;align-items:baseline;gap:8px;margin-top:4px}
+.hc-ans-p{font-size:.9rem;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.hc-ans-f{font-size:.66rem;font-weight:600;color:var(--down)}
+
+/* 3번 — 가격 추이 예시 */
+.hc-chart{width:100%;height:auto;display:block;margin-top:2px}
+.hc-verdict{display:flex;align-items:center;gap:9px;margin-top:12px;
+  border-top:1px solid var(--line);padding-top:11px}
+.hc-badge{flex:0 0 auto;font-size:.64rem;font-weight:800;letter-spacing:.01em;
+  color:var(--down);background:var(--down-bg);border-radius:6px;padding:4px 8px}
+.hc-verdict-t{font-size:.72rem;color:var(--soft);letter-spacing:-.01em}
+
+/* 4번 — 기념 그림. 장식이라 색을 얹지 않고 선으로만 그린다. */
+.hc-memorial{width:100%;max-width:320px;height:auto;display:block}
+/*
+ * 「검토 중」 라벨. 확정된 사업처럼 읽히면 안 되는 문장이라
+ * 헤드라인보다 먼저 눈에 들어오는 자리에 둔다.
+ */
+.hc-label{display:inline-flex;align-items:center;gap:6px;
+  font-size:.66rem;font-weight:700;letter-spacing:.01em;color:var(--soft);
+  border:1px solid var(--line-2);border-radius:20px;padding:4px 10px;margin-bottom:14px}
+.hc-note{font-size:.68rem;color:var(--faint);margin:14px 0 0;letter-spacing:-.01em}
+
+@media(max-width:860px){
+  .hero-carousel .hero-inner{padding-bottom:40px}
+  /* 좁은 화면에서는 화살표가 그림을 덮지 않게 작게 줄이고 가장자리에 붙인다. */
+  .hc-arrow{width:32px;height:32px;font-size:.84rem;opacity:.78}
+  .hc-visual{max-width:340px;margin:0 auto}
+  .hc-memorial{max-width:250px}
+  .hc-dots{bottom:13px}
+}
+@media(max-width:430px){
+  .hc-arrow{width:28px;height:28px;font-size:.76rem}
+  .hc-prev{left:4px}
+  .hc-next{right:4px}
+  .hc-demo{padding:13px 13px 12px}
+}
+
+/*
+ * 애니메이션을 줄여 달라고 한 사용자에게는 큰 가로 이동을 하지 않는다.
+ * 자동 넘김도 JS 에서 끈다(HeroCarousel.reduced). 캐러셀이 «꺼지는» 것은
+ * 아니다 — 화살표·점·키보드로는 여전히 전부 볼 수 있다.
+ */
+@media(prefers-reduced-motion:reduce){
+  .hc-slide{transform:none;transition:opacity .12s linear,visibility 0s linear .12s}
+  .hc-slide.on{transform:none;transition:opacity .12s linear,visibility 0s}
+  .hc-dot{transition:none}
+}
+
+/*
  * ── 책등 상호작용 (2026-09-10) ─────────────────────────────────────
  *
  * 정물은 한 획도 고치지 않는다. 여기서 얹는 것은 «집는 동작» 하나뿐이다.
@@ -2977,7 +3133,35 @@ select:focus-visible,textarea:focus-visible,
     #recordStat 은 계속 여기 있다. Record.render 가 이 id 를 채우고,
     수집일이 없으면 아무것도 그리지 않는다.
   -->
-  <div class="hero-band"><div class="hero-inner">
+  <!--
+    ★ 히어로 캐러셀 — 슬라이드 «내용» 은 전부 이 HTML 안에 있다.
+
+    JS(HeroCarousel)는 문구를 하나도 들고 있지 않다. .hc-slide 를 순서대로 읽어
+    넘길 뿐이라, 배너를 하나 더 붙이려면 아래 블록 하나를 복사해 넣으면 되고
+    JS 는 건드릴 필요가 없다. 반대로 문구만 고칠 때도 JS 를 열 일이 없다.
+
+    내용을 JS 배열로 옮기지 않은 이유는 두 가지다.
+      · 1번 슬라이드에는 책등 SVG(160줄)와 #bsTip 이 들어 있다. Shelf 가 이
+        노드를 직접 잡는다 — 문자열로 다시 만들면 그 배선이 끊긴다.
+      · 첫 슬라이드가 HTML 에 그대로 있어야 JS 실행 전에도 즉시 그려진다
+        (초기 표시 지연·레이아웃 이동 없음).
+
+    슬라이드마다 다른 것은 오른쪽 그림 하나뿐이고, 껍데기(.hero-inner 그리드 ·
+    .hero-title · .hero-sub · .hero-cta)는 4장이 공유한다.
+  -->
+  <div class="hero-band">
+   <section class="hero-carousel" id="heroCarousel" data-interval="5500"
+            aria-roledescription="carousel" aria-label="SEOSA 주요 안내">
+    <div class="hc-viewport" id="hcViewport">
+
+     <!--
+       ── 1 · 브랜드 (기존 배너를 그대로 옮겼다) ─────────────────────
+       ★ class 에 on 이 붙어 있다. .hc-slide 의 기본값은 «숨김» 이라, JS 가 돌기
+         전에도 첫 장이 보이려면 마크업에서 켜 둬야 한다. 이게 없으면 스크립트가
+         실행되기까지 밴드가 비어 있다가 갑자기 채워진다(초기 표시 지연·레이아웃 이동).
+     -->
+     <div class="hc-slide on" role="group" aria-roledescription="슬라이드" data-label="브랜드 소개">
+      <div class="hero-inner">
     <div class="hero-copy">
       <h1 class="hero-title">최저가도,<br>고급지게.</h1>
       <p class="hero-sub">AI가 찾아주는 최적의 쇼핑 경험</p>
@@ -3181,7 +3365,168 @@ select:focus-visible,textarea:focus-visible,
       -->
       <div class="bs-tip" id="bsTip" aria-hidden="true"></div>
     </div>
-  </div></div>
+      </div>
+     </div>
+
+     <!-- ── 2 · AI 쇼핑 ──────────────────────────────────────────── -->
+     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="AI 쇼핑">
+      <div class="hero-inner">
+       <div class="hero-copy">
+         <h1 class="hero-title">찾지 말고,<br>그냥 말하세요.</h1>
+         <p class="hero-sub">예산과 용도를 말하면 SEOSA AI가 조건에 맞는 상품을 비교하고 좁혀드립니다.</p>
+         <button class="hero-cta" data-act="ai-entry" data-ctx="home">AI에게 물어보기 <span aria-hidden="true">→</span></button>
+       </div>
+       <div class="hero-art">
+        <div class="hc-visual">
+         <!--
+           ★ 예시 카드다. 서버·검색 결과와 연결돼 있지 않은 정적 그림이고,
+             여기 적힌 상품·금액·충족 개수는 어떤 실제 상품의 값도 아니다.
+             그래서 카드 머리에 «예시» 를 붙여 구조로 드러낸다. 실제 데이터를
+             쓰고 싶어지면 이 블록이 아니라 검색·AI 경로를 쓴다.
+         -->
+         <div class="hc-demo">
+          <span class="hc-demo-tag">예시 화면</span>
+          <p class="hc-ask">30만원 이하, 운동할 때 쓸<br>노이즈 캔슬링 헤드폰 찾아줘</p>
+          <div class="hc-ans">
+            <span class="hc-rank">추천 1위</span>
+            <div class="hc-ans-b">
+              <div class="hc-ans-t">노이즈 캔슬링 무선 헤드폰</div>
+              <div class="hc-ans-m">
+                <span class="hc-ans-p">248,000원</span>
+                <span class="hc-ans-f">조건 5/5 충족</span>
+              </div>
+            </div>
+          </div>
+         </div>
+        </div>
+       </div>
+      </div>
+     </div>
+
+     <!-- ── 3 · 가격 인텔리전스 ──────────────────────────────────── -->
+     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="구매 시점 판단">
+      <div class="hero-inner">
+       <div class="hero-copy">
+         <h1 class="hero-title">지금 살까,<br>조금 더 기다릴까.</h1>
+         <p class="hero-sub">가격 이력과 AI 분석으로 지금이 살 때인지 판단해드립니다.</p>
+         <button class="hero-cta" data-act="scroll-drop">구매 타이밍 확인 <span aria-hidden="true">→</span></button>
+       </div>
+       <div class="hero-art">
+        <div class="hc-visual">
+         <!--
+           ★ 예시 그래프다. 특정 상품의 가격도, 그 상품에 대한 구매 판정도 아니다.
+             실제 판정은 상품 카드의 가격 추이 모달에서 서버가 계산한 값으로만 나온다.
+         -->
+         <div class="hc-demo">
+          <span class="hc-demo-tag">예시 화면</span>
+          <svg class="hc-chart" viewBox="0 0 280 96" role="img"
+               aria-label="가격이 내려간 뒤 안정된 모양을 보여 주는 예시 그래프">
+            <!-- 기준선 — 눈금이 아니라 «바닥» 하나만 둔다. -->
+            <line x1="0" y1="88" x2="280" y2="88" stroke="var(--line)" stroke-width="1"/>
+            <path d="M4 26 L44 30 L84 24 L124 52 L164 62 L204 58 L244 60 L276 59"
+                  fill="none" stroke="var(--ink)" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- 지금 위치 -->
+            <circle cx="276" cy="59" r="7" fill="var(--down-bg)"/>
+            <circle cx="276" cy="59" r="3.4" fill="var(--down)"/>
+          </svg>
+          <div class="hc-verdict">
+            <span class="hc-badge">BUY</span>
+            <span class="hc-verdict-t">지금 사도 좋아요</span>
+          </div>
+         </div>
+        </div>
+       </div>
+      </div>
+     </div>
+
+     <!-- ── 4 · 참전용사 지원 (검토 중) ──────────────────────────── -->
+     <!--
+       ★ 확정된 사업이 아니다. "후원합니다"·"기부합니다" 처럼 이미 하고 있는 일로
+         읽히는 표현을 쓰지 않는다. 라벨(검토 중인 프로젝트)을 헤드라인 «위» 에 두어
+         문장을 읽기 전에 상태가 먼저 보이게 한다.
+     -->
+     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="참전용사 지원 검토">
+      <div class="hero-inner">
+       <div class="hero-copy">
+         <span class="hc-label">검토 중인 프로젝트</span>
+         <h1 class="hero-title">가격을 아끼는 일에서,<br>기억을 지키는 일까지.</h1>
+         <p class="hero-sub">SEOSA는 제휴 수익의 34%를 6·25 참전용사 지원에 사용하는 방안을 검토하고 있습니다.</p>
+         <button class="hero-cta" data-act="open-veteran">취지 보기 <span aria-hidden="true">→</span></button>
+         <p class="hc-note">아직 확정되거나 시행된 계획이 아닙니다.</p>
+       </div>
+       <div class="hero-art">
+        <div class="hc-visual">
+         <!--
+           절제한 기념 그림 — 월계관과 기념 메달 하나. 색을 얹지 않고 선으로만 그린다.
+           전쟁 장면·무기·국기 도배는 쓰지 않는다. 장식이라 aria-hidden 이다.
+         -->
+         <svg class="hc-memorial" viewBox="0 0 240 200" aria-hidden="true" focusable="false">
+           <g fill="none" stroke="var(--line-2)" stroke-width="1.6" stroke-linecap="round">
+             <!-- 월계관 (왼쪽) -->
+             <path d="M84 148 C54 132 44 104 50 74"/>
+             <path d="M52 84 C40 78 36 68 38 60 C48 60 56 68 58 78"/>
+             <path d="M56 104 C44 99 39 89 41 81 C51 81 59 89 61 99"/>
+             <path d="M63 123 C51 118 46 108 48 100 C58 100 66 108 68 118"/>
+             <path d="M73 139 C62 135 57 125 59 117 C69 117 77 125 79 135"/>
+             <!-- 월계관 (오른쪽) -->
+             <path d="M156 148 C186 132 196 104 190 74"/>
+             <path d="M188 84 C200 78 204 68 202 60 C192 60 184 68 182 78"/>
+             <path d="M184 104 C196 99 201 89 199 81 C189 81 181 89 179 99"/>
+             <path d="M177 123 C189 118 194 108 192 100 C182 100 174 108 172 118"/>
+             <path d="M167 139 C178 135 183 125 181 117 C171 117 163 125 161 135"/>
+           </g>
+           <!--
+             리본 — 걸이 막대 하나와 메달로 모이는 띠 두 줄.
+             처음에는 «위가 넓은 사다리꼴 + 긴 세로선 둘» 로 그렸는데 실측 화면에서
+             플라스크(실험용 삼각플라스크)처럼 읽혔다. 띠는 아래로 «모여야» 리본이 된다.
+           -->
+           <rect x="96" y="34" width="48" height="10" rx="3" fill="none"
+                 stroke="var(--line-2)" stroke-width="1.6"/>
+           <path d="M103 44 L114 79 M137 44 L126 79" stroke="var(--line-2)"
+                 stroke-width="1.6" stroke-linecap="round"/>
+           <!-- 메달 -->
+           <circle cx="120" cy="104" r="28" fill="none" stroke="var(--ink)" stroke-width="1.8"/>
+           <circle cx="120" cy="104" r="20" fill="none" stroke="var(--line-2)" stroke-width="1.2"/>
+           <!-- 가운데: 무궁화를 다섯 장 꽃잎으로 단순화한 형태 -->
+           <g fill="var(--brand)" opacity=".92">
+             <circle cx="120" cy="94.5" r="4.4"/>
+             <circle cx="129" cy="101" r="4.4"/>
+             <circle cx="125.6" cy="111.5" r="4.4"/>
+             <circle cx="114.4" cy="111.5" r="4.4"/>
+             <circle cx="111" cy="101" r="4.4"/>
+           </g>
+           <circle cx="120" cy="104" r="3" fill="var(--bg)"/>
+           <!-- 기념판 바닥선 -->
+           <path d="M74 166 L166 166" stroke="var(--line)" stroke-width="1.6" stroke-linecap="round"/>
+         </svg>
+        </div>
+       </div>
+      </div>
+     </div>
+
+    </div><!-- /.hc-viewport -->
+
+    <button class="hc-arrow hc-prev" id="hcPrev" type="button" aria-label="이전 배너">
+      <span aria-hidden="true">‹</span>
+    </button>
+    <button class="hc-arrow hc-next" id="hcNext" type="button" aria-label="다음 배너">
+      <span aria-hidden="true">›</span>
+    </button>
+
+    <!--
+      점 내비게이션. role="tablist" 를 쓰지 않는다 — 탭 패턴은 화살표 키로
+      «점 사이» 를 옮기는 동작을 요구하는데, 여기서 화살표 키는 «슬라이드» 를
+      넘긴다. 역할을 거짓으로 붙이면 스크린리더 사용자의 기대가 어긋난다.
+      그냥 버튼 넷이고, 어느 것이 현재인지는 aria-selected 가 아니라
+      aria-current 로 말한다.
+    -->
+    <div class="hc-dots" id="hcDots"></div>
+
+    <!-- 슬라이드가 바뀐 사실만 한 줄로 알린다(내용 전체를 다시 읽지 않는다). -->
+    <p class="hc-sr" id="hcLive" aria-live="polite" aria-atomic="true"></p>
+   </section>
+  </div>
 
 <main class="wrap">
 
@@ -3544,6 +3889,46 @@ select:focus-visible,textarea:focus-visible,
 
 <!-- 정책 모달들 -->
 <!-- 개인정보처리방침 -->
+<!--
+  ★ 「취지 보기」 — 히어로 4번 슬라이드의 CTA 목적지.
+
+  확정된 사업이 아니므로 이 화면에서도 «검토 중» 이라는 사실이 가장 먼저 읽혀야 한다.
+  금액·시행 시기·수혜 대상 수처럼 아직 정해지지 않은 숫자는 적지 않는다.
+-->
+<div class="overlay" id="veteranOverlay" style="display:none" role="dialog" aria-modal="true"
+     aria-labelledby="vetTitle">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <div>
+        <div class="mt" id="vetTitle">참전용사 지원 — 검토 중인 프로젝트</div>
+        <div class="ms">아직 확정되거나 시행된 계획이 아닙니다.</div>
+      </div>
+      <button class="modal-close" data-act="close-veteran" aria-label="닫기">×</button>
+    </div>
+    <div class="modal-body" style="padding:22px 24px 26px">
+      <p style="font-size:.86rem;line-height:1.72;color:var(--soft);margin:0 0 14px">
+        SEOSA는 가격을 기록하고 비교해 조금이라도 덜 쓰게 하는 일을 합니다.
+        그렇게 아낀 돈의 일부를, 지금의 일상을 가능하게 한 분들께 돌려드릴 수 있는지
+        검토하고 있습니다.
+      </p>
+      <p style="font-size:.86rem;line-height:1.72;color:var(--soft);margin:0 0 14px">
+        검토 중인 안은 <strong style="color:var(--ink)">제휴 수익의 34%를 6·25 참전용사 지원에
+        사용하는 것</strong>입니다. 34%라는 숫자는 6·25 정전 기념일(7월 27일)이 아니라,
+        이 일을 시작할 때 스스로에게 건 최소선으로 정한 값입니다.
+      </p>
+      <p style="font-size:.86rem;line-height:1.72;color:var(--soft);margin:0 0 18px">
+        아직 정하지 못한 것이 많습니다 — 어느 단체와 함께할지, 어떤 주기로 전달할지,
+        집행 내역을 어떻게 공개할지입니다. 이 셋이 정해지기 전에는 시행하지 않습니다.
+      </p>
+      <p style="font-size:.78rem;line-height:1.7;color:var(--faint);margin:0;
+                border-top:1px solid var(--line);padding-top:14px">
+        확정되면 이 자리에 시행 시기와 집행 내역 공개 방법을 함께 적겠습니다.
+        그때까지 이 문구는 «검토 중» 으로 남습니다.
+      </p>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="privacyOverlay" style="display:none">
   <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
     <div class="modal-head">
@@ -10371,6 +10756,10 @@ var Actions = {
     Chat.prefill(Nav.aiPrompt(ctx));
   },
 
+  // ── 히어로 4번 슬라이드: 참전용사 지원(검토 중) 설명 ──
+  'open-veteran':  function() { Policy.openVeteran(); },
+  'close-veteran': function() { Policy.closeVeteran(); },
+
   'toggle-menu':  function() { Nav.toggleMenu(); },
   'close-ai':     function() { Chat.close(); },
   'chat-send':    function() { Chat.send(); },
@@ -10860,6 +11249,7 @@ var Init = {
     Theme.init();      // ★ 다크모드 먼저 적용 (깜빡임 방지)
     bindInputs();
     Shelf.init();      // 히어로 책등 — 링크가 있는 책만 <a> 로 감싼다
+    HeroCarousel.init();  // 히어로 배너 4장. Shelf 뒤에 둔다 — 1번 슬라이드가 책등이다.
 
     /*
      * 방문 기록. 응답을 기다리지 않으므로 첫 화면을 늦추지 않는다.
@@ -10990,6 +11380,228 @@ var Init = {
 /**
  * 정책/안내 모달 관리
  */
+/* ==================================================================
+ *  히어로 캐러셀 (2026-09-16)
+ *
+ *  문구는 하나도 여기 없다. DOM 의 .hc-slide 를 순서대로 읽어 넘길 뿐이라
+ *  배너를 추가·수정할 때 이 파일의 JS 는 건드리지 않는다(HTML 주석 참고).
+ *
+ *  ── 겹쳐 쌓기 전환 ────────────────────────────────────────────────
+ *  네 장이 같은 grid 칸(1/1)에 겹쳐 있다. 넘길 때 나가는 장은 진행 방향의
+ *  반대쪽으로, 들어오는 장은 진행 방향 쪽에서 들어온다. 들어오는 장을 먼저
+ *  «애니메이션 없이» 바깥에 세워 두고(reflow 한 번) 그다음에 0 으로 민다 —
+ *  이 두 단계를 나누지 않으면 브라우저가 시작 위치를 보지 못해 그냥 나타난다.
+ *
+ *  마지막 → 첫 장도 이 규칙을 그대로 타므로 복제 노드 없이 무한히 돈다.
+ *
+ *  ── 자동 넘김을 멈추는 경우 ──────────────────────────────────────
+ *    · 마우스가 배너 위에 있을 때          (hover)
+ *    · 키보드 포커스가 배너 안에 있을 때   (focusin)
+ *    · 탭이 백그라운드일 때                (visibilitychange)
+ *    · 배너가 화면 밖으로 나갔을 때        (IntersectionObserver)
+ *    · 손가락이 배너에 닿아 있는 동안      (pointerdown)
+ *    · 애니메이션 최소화를 요청한 사용자   (prefers-reduced-motion)
+ *  사용자가 직접 넘기면 타이머를 리셋한다 — 방금 본 장이 곧바로 사라지지 않게.
+ * ================================================================== */
+var HeroCarousel = {
+  root: null, slides: [], dots: [], live: null,
+  cur: 0, timer: 0, interval: 5500,
+  paused: { hover: false, focus: false, hidden: false, out: false, touch: false },
+  reduced: false,
+
+  init: function() {
+    var root = $('heroCarousel');
+    if (!root) return;
+    var view = $('hcViewport');
+    this.root = root;
+    this.slides = view ? [].slice.call(view.querySelectorAll('.hc-slide')) : [];
+    if (this.slides.length < 2) {
+      // 슬라이드가 하나뿐이면 캐러셀이 아니다 — 컨트롤을 숨기고 그대로 둔다.
+      if (this.slides[0]) this.slides[0].classList.add('on');
+      ['hcPrev', 'hcNext', 'hcDots'].forEach(function(id) {
+        var el = $(id); if (el) el.style.display = 'none';
+      });
+      return;
+    }
+    this.live = $('hcLive');
+    this.interval = Math.max(2500, parseInt(root.dataset.interval, 10) || 5500);
+    try {
+      this.reduced = window.matchMedia
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) { this.reduced = false; }
+
+    this.buildDots();
+    // 첫 장은 애니메이션 없이 제자리에 둔다(초기 표시 지연 없음).
+    var self = this;
+    this.slides.forEach(function(s, i) { self.place(s, i === 0 ? 0 : 1, false); });
+    this.cur = 0;
+    this.sync();
+    this.bind();
+    root.classList.add('ready');   // 화살표는 배선이 끝난 뒤에 보인다
+    this.play();
+  },
+
+  buildDots: function() {
+    var box = $('hcDots');
+    if (!box) return;
+    var self = this;
+    this.dots = this.slides.map(function(s, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'hc-dot';
+      var label = s.dataset.label || (i + 1) + '번';
+      b.setAttribute('aria-label', (i + 1) + '번 배너 · ' + label);
+      b.addEventListener('click', function() { self.user(i); });
+      box.appendChild(b);
+      return b;
+    });
+  },
+
+  /* pos: -1 왼쪽 밖 · 0 제자리 · 1 오른쪽 밖 */
+  place: function(el, pos, animate) {
+    if (!animate) el.style.transition = 'none';
+    el.style.transform = 'translateX(' + (pos * 100) + '%)';
+    el.style.opacity = pos === 0 ? '1' : '0';
+    el.classList.toggle('on', pos === 0);
+    /*
+     * 보이지 않는 장은 스크린리더에서도 없는 것으로 친다. 이게 없으면
+     * 네 장이 한꺼번에 읽혀 어디를 듣고 있는지 알 수 없다.
+     * (visibility:hidden 이라 탭 순서에서는 CSS 가 이미 빼 준다)
+     */
+    el.setAttribute('aria-hidden', pos === 0 ? 'false' : 'true');
+    if (!animate) {
+      void el.offsetWidth;          // 시작 위치를 브라우저에 확정시킨다
+      el.style.transition = '';
+    }
+  },
+
+  go: function(next, dir) {
+    var n = this.slides.length;
+    if (!n) return;
+    next = ((next % n) + n) % n;    // 무한 loop — 음수도 감싼다
+    if (next === this.cur) return;
+    var from = this.slides[this.cur], to = this.slides[next];
+    this.place(to, dir > 0 ? 1 : -1, false);   // 들어올 쪽에 세워 두고
+    this.place(from, dir > 0 ? -1 : 1, true);  // 나가는 장을 민다
+    this.place(to, 0, true);                   // 들어오는 장을 제자리로
+    this.cur = next;
+    this.sync();
+  },
+
+  sync: function() {
+    var self = this;
+    this.dots.forEach(function(d, i) {
+      if (i === self.cur) d.setAttribute('aria-current', 'true');
+      else d.removeAttribute('aria-current');
+    });
+    if (this.live) {
+      var s = this.slides[this.cur];
+      this.live.textContent = '배너 ' + (this.cur + 1) + ' / ' + this.slides.length
+        + (s && s.dataset.label ? ' · ' + s.dataset.label : '');
+    }
+  },
+
+  next: function() { this.go(this.cur + 1, 1); },
+  prev: function() { this.go(this.cur - 1, -1); },
+
+  /** 사용자가 직접 넘긴 경우 — 타이머를 처음부터 다시 센다. */
+  user: function(i) {
+    var dir = i === this.cur ? 1 : (i > this.cur ? 1 : -1);
+    // 끝에서 끝으로 건너뛸 때도 «가까운 쪽» 방향으로 움직이게 한다.
+    if (Math.abs(i - this.cur) > this.slides.length / 2) dir = -dir;
+    this.go(i, dir);
+    this.play();
+  },
+
+  play: function() {
+    clearInterval(this.timer);
+    this.timer = 0;
+    if (this.reduced) return;       // 애니메이션 최소화 요청 — 자동 넘김 없음
+    var p = this.paused;
+    if (p.hover || p.focus || p.hidden || p.out || p.touch) return;
+    var self = this;
+    this.timer = setInterval(function() { self.next(); }, this.interval);
+  },
+
+  pause: function(key, on) {
+    if (this.paused[key] === on) return;
+    this.paused[key] = on;
+    this.play();
+  },
+
+  bind: function() {
+    var self = this, root = this.root;
+    var prev = $('hcPrev'), next = $('hcNext');
+    if (prev) prev.addEventListener('click', function() { self.prev(); self.play(); });
+    if (next) next.addEventListener('click', function() { self.next(); self.play(); });
+
+    root.addEventListener('mouseenter', function() { self.pause('hover', true); });
+    root.addEventListener('mouseleave', function() { self.pause('hover', false); });
+    root.addEventListener('focusin',  function() { self.pause('focus', true); });
+    root.addEventListener('focusout', function(e) {
+      if (!root.contains(e.relatedTarget)) self.pause('focus', false);
+    });
+
+    document.addEventListener('visibilitychange', function() {
+      self.pause('hidden', document.hidden);
+    });
+
+    // 화면 밖으로 나간 배너를 계속 넘기는 것은 그냥 낭비다.
+    if (window.IntersectionObserver) {
+      new IntersectionObserver(function(entries) {
+        entries.forEach(function(en) { self.pause('out', !en.isIntersecting); });
+      }, { threshold: 0.2 }).observe(root);
+    }
+
+    /*
+     * 키보드 — 좌우 화살표로 넘긴다. 입력 중인 칸에서는 가로채지 않는다.
+     * 버튼(화살표·점)의 Enter/Space 는 <button> 이라 브라우저가 처리한다.
+     */
+    root.addEventListener('keydown', function(e) {
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.key === 'ArrowRight') { e.preventDefault(); self.next(); self.play(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); self.prev(); self.play(); }
+    });
+
+    this.bindSwipe();
+  },
+
+  /*
+   * 모바일 스와이프.
+   *
+   * CSS 의 touch-action:pan-y 가 세로 스크롤을 브라우저에 맡기므로 여기서는
+   * 가로 제스처만 본다. preventDefault 를 부르지 않는다 — 페이지 좌우 스크롤이
+   * 생기지 않게 하는 것은 .hc-viewport 의 overflow:hidden 과 touch-action 이다.
+   */
+  bindSwipe: function() {
+    var self = this, view = $('hcViewport');
+    if (!view || !window.PointerEvent) return;
+    var x0 = 0, y0 = 0, id = null, live = false;
+    view.addEventListener('pointerdown', function(e) {
+      if (e.pointerType === 'mouse') return;   // 마우스 드래그는 스와이프가 아니다
+      id = e.pointerId; x0 = e.clientX; y0 = e.clientY; live = true;
+      self.pause('touch', true);
+    });
+    var end = function(e) {
+      if (!live || e.pointerId !== id) return;
+      live = false;
+      var dx = e.clientX - x0, dy = e.clientY - y0;
+      // 가로 이동이 세로보다 확실히 클 때만 넘긴다(세로 스크롤 오인 방지).
+      if (Math.abs(dx) > 44 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+        if (dx < 0) self.next(); else self.prev();
+      }
+      self.pause('touch', false);
+      self.play();
+    };
+    view.addEventListener('pointerup', end);
+    view.addEventListener('pointercancel', function(e) {
+      if (!live || e.pointerId !== id) return;
+      live = false; self.pause('touch', false); self.play();
+    });
+  }
+};
+
 var Policy = {
   openPrivacy: function() {
     var o = $('privacyOverlay');
@@ -11015,6 +11627,29 @@ var Policy = {
   closeBusiness: function() {
     var o = $('businessOverlay');
     if (o) o.style.display = 'none';
+  },
+
+  /*
+   * 참전용사 지원 — 히어로 4번 슬라이드의 「취지 보기」.
+   *
+   * ★ display 만 바꾸지 않고 .open 도 함께 준다. .overlay 는 기본값이
+   *   opacity:0 · visibility:hidden 이고 보이게 하는 것은 .open 이다.
+   *   display:flex 한 줄만으로는 화면에 아무것도 나타나지 않는다.
+   */
+  openVeteran: function() {
+    var o = $('veteranOverlay');
+    if (!o) return;
+    o.style.display = 'flex';
+    void o.offsetWidth;            // 전환이 보이도록 한 프레임 확정
+    o.classList.add('open');
+    var c = o.querySelector('.modal-close');
+    if (c) c.focus();
+  },
+  closeVeteran: function() {
+    var o = $('veteranOverlay');
+    if (!o) return;
+    o.classList.remove('open');
+    setTimeout(function() { if (!o.classList.contains('open')) o.style.display = 'none'; }, 300);
   }
 };
 
