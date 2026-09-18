@@ -3703,11 +3703,10 @@ select:focus-visible,textarea:focus-visible,
   -->
 
   <!--
-    ★ 핫딜 (2026-09-11) — 예전 이름은 «최근 가격이 내려간 상품»(오늘의 하락).
-    데이터와 판정은 그대로다: /api/init 의 price_drop_top → plausibleDrop →
-    todayDropConfirmed. 이름만 핫딜로 바꿨다. 별도 Hot Deal 엔진(/api/hotdeals)을
-    그리던 홈 섹션과 /hotdeals.html 은 같은 날 지웠다 — 한 이름이 두 가지를
-    가리키지 않게.
+    ★ 핫딜 — 실제 Hot Deal 엔진(/api/hotdeals)의 검증 결과를 표시한다.
+    예전에는 이름만 «핫딜»로 바꾼 price_drop_top 을 보여 줘 실제 VERIFIED_HOT /
+    GOOD_DEAL 데이터와 홈 화면이 분리돼 있었다. 카드 UI는 유지하고 데이터 소스만
+    Hot Deal 엔진으로 통일한다.
   -->
   <section id="priceDrop" class="block" aria-label="핫딜" style="display:none">
     <div class="sec-eyebrow">HOT DEALS</div>
@@ -3720,7 +3719,7 @@ select:focus-visible,textarea:focus-visible,
           개수는 이 목록의 사실이므로 이 목록의 머리에 있는 것이 맞다.
         -->
         <div class="sec-title">핫딜<span class="sec-count" id="dropCount"></span></div>
-        <div class="sec-sub">오늘 확인한 가격이 직전 기록보다 내려간 상품이에요.</div>
+        <div class="sec-sub">SEOSA 가격 이력으로 검증한 지금 주목할 만한 가격이에요.</div>
       </div>
       <button class="sec-more" data-act="scroll-today">모두 보기 <span aria-hidden="true">›</span></button>
     </div>
@@ -5286,7 +5285,7 @@ var Api = {
       'saveUserProfile':'/api/sync','loadUserProfile':'/api/sync',
       'getPopularKeywords':'/api/init','getProfileRecommendations':'/api/rec',
       'getMonthlyRecommendations':'/api/init',
-      'getPriceDropTop':'/api/init','getExternalHotdeals':'/api/hotdeals','recordSearchStat_':'/api/stats',
+      'getPriceDropTop':'/api/init','getHotdeals':'/api/hotdeals','getExternalHotdeals':'/api/hotdeals','recordSearchStat_':'/api/stats',
       // (Vercel Hobby 함수 12개 상한 — api/payment.js 주석 참고).
       'payCancel':'/api/payment','payStatus':'/api/payment'
     };
@@ -5331,6 +5330,8 @@ var Api = {
       queryUrl = url + '?keyword=' + encodeURIComponent(args[0] || '') + '&offset=' + (args[1] || 0);
     } else if (fnName === 'getProfileRecommendations') {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
+    } else if (fnName === 'getHotdeals') {
+      queryUrl = url + '?limit=8&sort=score';
     } else if (fnName === 'getExternalHotdeals') {
       queryUrl = url + '?view=external&limit=12&minScore=60';
     } else if (fnName === 'payPrepare' || fnName === 'payConfirm'
@@ -5439,6 +5440,7 @@ var Api = {
         else if (fnName === 'getPopularKeywords') { if (onOk) onOk(data.popular || data || []); }
         else if (fnName === 'getMonthlyRecommendations') { if (onOk) onOk(data.monthly || data); }
         else if (fnName === 'getPriceDropTop') { if (onOk) onOk(data.priceDrop || data || []); }
+        else if (fnName === 'getHotdeals') { if (onOk) onOk(data.items || []); }
         else if (fnName === 'getExternalHotdeals') { if (onOk) onOk(data.items || []); }
         else if (fnName === 'getDailyRecommendations' || fnName === 'getMoreOfKeyword') { if (onOk) onOk(data); }
         else if (fnName === 'loadUserData') { if (onOk) onOk({ success: data.success, data: JSON.stringify(data.data || {}) }); }
@@ -7967,13 +7969,35 @@ var Record = {
 
 
 /* ============================================================
- *  [15] Drop — 핫딜 (구 «오늘의 가격 하락» 시세판 · price_drop_top)
+ *  [15] Drop — 핫딜 (실제 /api/hotdeals 엔진, 기존 카드 UI 재사용)
  * ========================================================== */
 var Drop = {
 
+  fromHotdeal: function(it) {
+    it = it || {};
+    var s = it.signals || {};
+    var cur = Fmt.int(it.price);
+    var ref = Fmt.int(s.referencePrice || it.listPrice || cur);
+    var pct = Number(s.priceDropPercent);
+    if (!Number.isFinite(pct) || pct <= 0) {
+      pct = ref > cur && ref > 0 ? Math.round((ref - cur) / ref * 1000) / 10 : 0;
+    }
+    return {
+      title: it.title || '', image: it.image || '', mall: it.mall || '',
+      productId: it.productId || '', vendorItemId: it.vendorItemId || '',
+      lprice: cur, oprice: ref, savePct: Math.max(0, pct),
+      isAllTimeLow: !!s.nearHistoricalLow,
+      link: it.productUrl || it.url || '',
+      hotdealStatus: it.status || '', hotScore: it.dealScore,
+      reason: it.reason || ''
+    };
+  },
+
   load: function() {
     show('priceDrop', true);
-    Api.call('getPriceDropTop', [8], Drop.show, function() {
+    Api.call('getHotdeals', [], function(items) {
+      Drop.show((items || []).map(Drop.fromHotdeal));
+    }, function() {
       // 예전엔 로딩 표시만 끄고 섹션은 열어둬서, 조회에 실패하면
       // "오늘의 가격 하락" 제목만 있고 내용이 텅 빈 칸이 남았다.
       show('dropLoading', false);

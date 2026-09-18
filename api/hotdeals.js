@@ -39,7 +39,7 @@ const MAX_FAMILY_RUN = 2;
 
 /** 2026-09-06 판에도 있던 컬럼. 이것만으로 목록이 성립해야 한다. */
 const BASE_COLS = 'id, source, source_external_id, deal_status, hot_score, confidence, identity_confidence, title, image, mall, current_price,'
-  + ' source_reference_price, reason_json, product_id, affiliate_url, last_checked_at';
+  + ' source_reference_price, reason_json, product_id, vendor_item_id, affiliate_url, last_checked_at';
 /** 2026-09-07 마이그레이션이 추가하는 컬럼. 없으면 BASE_COLS 로 물러난다. */
 const GROUP_COLS = ', group_key, is_primary, group_size, group_lowest_price, group_lowest_mall,'
   + ' group_offers, signal_json, price_drop_percent, confidence_rank';
@@ -150,6 +150,7 @@ function toListItem(r) {
     listPrice: r.source_reference_price || 0,
     reason: reasons.length ? String(reasons[0].text || '') : '',
     productId: r.product_id || '',
+    vendorItemId: r.vendor_item_id || '',
     url: r.affiliate_url || '',
     checkedAt: r.last_checked_at,
     source: r.source || 'internal-history',
