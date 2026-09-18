@@ -10757,7 +10757,7 @@ var Actions = {
     if (e && e.preventDefault) e.preventDefault();   // <a href="#priceDrop"> 기본 점프 대신 부드럽게
     Nav.closeMenu();
     if (isSearching()) Search.goHome();
-    if (!AppState.ready.drop) { toast('오늘 가격이 내려간 상품을 아직 확인하지 못했어요.'); return; }
+    if (!AppState.ready.drop) { toast('핫딜을 아직 불러오는 중이에요.'); return; }
     var t = $('priceDrop'); if (t) t.scrollIntoView({ behavior: 'smooth' });
   },
   'scroll-top':  function() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
@@ -11425,13 +11425,9 @@ var Init = {
 
         if (d.monthly) Monthly.show(d.monthly);
 
-        if (d.priceDrop && d.priceDrop.length) {
-          show('priceDrop', true);
-          Drop.show(d.priceDrop);
-        } else {
-          show('dropLoading', false);
-          show('priceDrop', false);
-        }
+        // 홈 핫딜은 /api/init 의 legacy priceDrop 이 아니라 실제 Hot Deal 엔진을 쓴다.
+        // 정상 init 경로에서도 반드시 별도 로드해야 한다.
+        Drop.load();
       },
       function() { Init.loadIndividually(); }
     );
