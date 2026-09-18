@@ -723,6 +723,8 @@ header.solid{box-shadow:0 1px 0 var(--line),0 6px 16px -14px rgba(21,23,27,.35)}
 .hc-ans-m{display:flex;align-items:baseline;gap:8px;margin-top:4px}
 .hc-ans-p{font-size:.9rem;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
 .hc-ans-f{font-size:.66rem;font-weight:600;color:var(--down)}
+a.hc-ans{text-decoration:none;color:inherit}
+.hc-view-cta{font-size:.66rem;font-weight:600;color:var(--accent);display:block;margin-top:5px}
 
 /* 3번 — 가격 추이 예시 */
 .hc-chart{width:100%;height:auto;display:block;margin-top:2px}
@@ -3464,7 +3466,7 @@ select:focus-visible,textarea:focus-visible,
          <div class="hc-demo">
           <span class="hc-demo-tag">예시 화면</span>
           <p class="hc-ask">30만원 이하, 운동할 때 쓸<br>노이즈 캔슬링 헤드폰 찾아줘</p>
-          <div class="hc-ans">
+          <a class="hc-ans" href="https://www.coupang.com/np/search?component=&q=Sony+WH-1000XM6" target="_blank" rel="noopener noreferrer">
             <span class="hc-rank">추천 1위</span>
             <div class="hc-ans-b">
               <div class="hc-ans-t">노이즈 캔슬링 무선 헤드폰</div>
@@ -3472,8 +3474,9 @@ select:focus-visible,textarea:focus-visible,
                 <span class="hc-ans-p">248,000원</span>
                 <span class="hc-ans-f">조건 5/5 충족</span>
               </div>
+              <span class="hc-view-cta">상품 보기 →</span>
             </div>
-          </div>
+          </a>
          </div>
         </div>
        </div>
