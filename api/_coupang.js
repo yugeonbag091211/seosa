@@ -50,11 +50,11 @@ const CACHE_TTL_MS = envNum('COUPANG_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
  * "HTTP 200 + Sorry! Access denied" HTML 을 돌려주고 있었고,
  * coupang_search_cache 에는 3.4일 된 항목이 남아 있었다.
  *
- * 가격 비교 서비스에서 3일 전 가격은 현재가가 아니다. 잘못된 가격을
+ * 가격 비교 서비스에서 하루 넘은 가격은 현재가로 보기 어렵다. 잘못된 가격을
  * 보여주는 것보다 "지금은 못 불러왔다"고 말하는 쪽이 낫다 —
  * 프론트는 이미 그 경우를 구분해서 안내한다(showResults 의 meta.blocked).
  */
-const STALE_MAX_MS = envNum('COUPANG_STALE_MAX_MS', 48 * 60 * 60 * 1000);
+const STALE_MAX_MS = envNum('COUPANG_STALE_MAX_MS', 24 * 60 * 60 * 1000);
 
 /*
  * 한 번의 쿠팡 호출이 매달릴 수 있는 최대 시간.
