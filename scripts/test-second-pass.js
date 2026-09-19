@@ -1701,6 +1701,29 @@ function probeChild(envLines) {
   }
   console.log('');
 
+  /* ==============================================================
+   *  §15  캐시 보존 — 24시간 상한 + 자동 prune
+   * ============================================================== */
+  section('§15  검색 캐시 보존 — 24시간 상한');
+  {
+    const fs=require('fs');
+    const collector=fs.readFileSync(path.join(__dirname,'collect-all-prices.js'),'utf8');
+    const coup=fs.readFileSync(path.join(__dirname,'..','api','_coupang.js'),'utf8');
+    const adp=fs.readFileSync(path.join(__dirname,'..','api','_adpick.js'),'utf8');
+
+    check(/COUPANG_STALE_MAX_MS', 24 \* 60 \* 60 \* 1000/.test(coup),
+      '★★ 쿠팡 stale fallback 기본 상한이 24시간이다');
+    check(/ADPICK_STALE_MAX_MS', 24 \* 60 \* 60 \* 1000/.test(adp),
+      '★★ ADPICK stale fallback 기본 상한이 24시간이다');
+    check(/coupang_search_cache/.test(collector) && /adpick_search_cache/.test(collector)
+      && /\.delete\(\{ count: 'exact' \}\)/.test(collector)
+      && /\.lt\('fetched_at', cutoff\)/.test(collector),
+      '★★ collector가 보존 상한을 넘긴 검색 캐시를 자동 삭제한다');
+    check(/CACHE_RETENTION_DEFAULT_MS = 24 \* 60 \* 60 \* 1000/.test(collector),
+      '★ collector 기본 캐시 보존도 24시간으로 공급자 기준과 일치한다');
+  }
+  console.log('');
+
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('테스트 실행 오류:', e); process.exit(1); });

@@ -47,7 +47,7 @@ const MIN_GAP_MS = envNum('ADPICK_MIN_GAP_MS', 1000);
 /** 캐시 수명. */
 const CACHE_TTL_MS = envNum('ADPICK_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
 /** 호출을 못 하게 됐을 때 그래도 쓸 수 있는 캐시의 최대 나이. */
-const STALE_MAX_MS = envNum('ADPICK_STALE_MAX_MS', 48 * 60 * 60 * 1000);
+const STALE_MAX_MS = envNum('ADPICK_STALE_MAX_MS', 24 * 60 * 60 * 1000);
 /** 한 번의 호출이 매달릴 수 있는 최대 시간. 없으면 서버리스 함수가 멈춘다
  *  (api/_coupang.js TIMEOUT_MS 주석과 같은 이유). */
 const TIMEOUT_MS = envNum('ADPICK_TIMEOUT_MS', 15000);
