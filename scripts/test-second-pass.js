@@ -405,8 +405,8 @@ function probeChild(envLines) {
     const runCode = src.split('\n')
       .filter(l => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
 
-    check(/if \(_coupangCalls >= COUPANG_RUN_BUDGET\)/.test(runCode),
-      '★★ fetchCoupangAll 에 실행 예산 hard stop 이 있다');
+    check(/if \(_coupangCalls \+ _coupangInFlight >= COUPANG_RUN_BUDGET\)/.test(runCode),
+      '★★ fetchCoupangAll 에 in-flight 포함 실행 예산 hard stop 이 있다');
     /*
      * ── 왜 숫자 고정이 아니라 관계 검사인가 (2026-09-03) ──────────────
      *
@@ -454,7 +454,7 @@ function probeChild(envLines) {
      * 실패했는데, 그건 잘못된 기대였다 — 어딘가에서는 불러야 하고,
      * 중요한 것은 **예산 게이트를 지난 뒤에** 부르는가다.
      */
-    const budgetIdx = runCode.indexOf('_coupangCalls >= COUPANG_RUN_BUDGET');
+    const budgetIdx = runCode.indexOf('_coupangCalls + _coupangInFlight >= COUPANG_RUN_BUDGET');
     const callIdx = runCode.indexOf('await searchCoupang(');
     check((runCode.match(/await searchCoupang\(/g) || []).length === 1,
       '★★ searchCoupang 호출 지점이 정확히 하나다',
