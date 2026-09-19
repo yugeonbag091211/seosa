@@ -497,12 +497,13 @@ async function searchCoupang(keyword, opts = {}) {
   //
   // "아직 쓸 만큼"에 상한이 없으면 몇 주 전 가격을 현재가 자리에 올리게 된다.
   // 그건 결과가 없는 것보다 나쁘다. 사용자는 틀린 걸 모른 채 클릭한다.
+  let apiCalled = false;
   const fallback = (reason, blocked) => {
     state.totalDenied++;
     if (cached && cached.ageMs <= STALE_MAX_MS) {
       log(source, kw, 'STALE-CACHE', `이유=${reason} age=${Math.round(cached.ageMs / 3600000)}h`);
       const staleAll = (cached.allItems || cached.items).slice(0, limit);
-      return { items: cached.items.slice(0, limit), allItems: staleAll, error: reason, from: 'stale-cache', blocked: !!blocked };
+      return { items: cached.items.slice(0, limit), allItems: staleAll, error: reason, from: 'stale-cache', blocked: !!blocked, apiCalled };
     }
     if (cached) {
       log(source, kw, 'CACHE-EXPIRED',
@@ -510,7 +511,7 @@ async function searchCoupang(keyword, opts = {}) {
     } else {
       log(source, kw, 'SKIP', `이유=${reason}`);
     }
-    return { items: [], allItems: [], error: reason, from: 'none', blocked: !!blocked };
+    return { items: [], allItems: [], error: reason, from: 'none', blocked: !!blocked, apiCalled };
   };
 
   // 2) 인스턴스 리미터 + 서킷 브레이커
@@ -531,6 +532,7 @@ async function searchCoupang(keyword, opts = {}) {
   if (!gate.allowed) return fallback(`전역 제한: ${gate.reason}`, /중단|blocked/.test(gate.reason));
 
   // 4) 실제 호출 — 재시도 없음
+  apiCalled = true;
   state.totalCalls++;
   // 호출자가 요구한 수와 상관없이 공용 캐시용으로 넉넉히 받는다 (FETCH_LIMIT 주석 참고).
   // 상한은 100 이 아니라 COUPANG_MAX_LIMIT(10) 이다. 넘기면 rCode=400.
@@ -640,7 +642,7 @@ async function searchCoupang(keyword, opts = {}) {
   if (useCache) await writeCache(kw, allItems, reqLimit);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);
-  return { items: items.slice(0, limit), allItems: allItems.slice(0, limit), error: null, from: 'api', blocked: false };
+  return { items: items.slice(0, limit), allItems: allItems.slice(0, limit), error: null, from: 'api', blocked: false, apiCalled: true };
 }
 
 /** 지금 호출이 가능한 상태인지 (네트워크는 건드리지 않는다). */
