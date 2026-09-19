@@ -1,5 +1,5 @@
 const supabase = require('./_supabase');
-const { applyCors, noStore } = require('./_http');
+const { applyCors, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 /*
  * 최소 사용자 계측이 이 엔드포인트에 얹혀 있다.
@@ -169,6 +169,6 @@ module.exports = async function handler(req, res) {
 
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'stats', route: '/api/stats', message: '요청을 처리하지 못했어요.' });
   }
 };
