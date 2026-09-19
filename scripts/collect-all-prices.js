@@ -681,7 +681,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
       maxWaitMs: COUPANG_MAX_WAIT_MS
     });
 
-    if (r.from === 'api') _coupangCalls++;
+    if (r.apiCalled === true || (r.apiCalled == null && r.from === 'api')) _coupangCalls++;
     else if (r.from === 'none') _coupangSkipped++;
   } finally {
     _coupangInFlight = Math.max(0, _coupangInFlight - 1);
@@ -829,7 +829,7 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
       maxWaitMs: ADPICK_MAX_WAIT_MS
     });
 
-    if (r.from === 'api') _adpickCalls++;
+    if (r.apiCalled === true || (r.apiCalled == null && r.from === 'api')) _adpickCalls++;
     else if (r.from === 'none') _adpickSkipped++;
   } finally {
     _adpickInFlight = Math.max(0, _adpickInFlight - 1);
