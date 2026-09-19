@@ -1,4 +1,4 @@
-const { readBody, applyCors, readEmail, noStore } = require('./_http');
+const { readBody, applyCors, readEmail, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { createCode, consumeCode, issueToken, TOKEN_TTL_MS, CODE_TTL_MS } = require('./_auth');
 const notify = require('./_notify');
@@ -119,7 +119,6 @@ module.exports = async function handler(req, res) {
     // 코드 자체는 절대 응답에 담지 않는다.
     return res.json({ sent: true, expiresInSec: Math.round(CODE_TTL_MS / 1000) });
   } catch (e) {
-    console.error('[auth]', e.message);
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'auth', route: '/api/auth', message: '인증 처리 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' });
   }
 };
