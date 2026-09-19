@@ -421,11 +421,12 @@ async function searchAdpick(keyword, opts = {}) {
     return { items: cached.items.slice(0, limit), error: null, from: 'cache', blocked: false };
   }
 
+  let apiCalled = false;
   const fallback = (reason, blocked) => {
     state.totalDenied++;
     if (cached && cached.ageMs <= STALE_MAX_MS) {
       log(source, kw, 'STALE-CACHE', `이유=${reason} age=${Math.round(cached.ageMs / 3600000)}h`);
-      return { items: cached.items.slice(0, limit), error: reason, from: 'stale-cache', blocked: !!blocked };
+      return { items: cached.items.slice(0, limit), error: reason, from: 'stale-cache', blocked: !!blocked, apiCalled };
     }
     if (cached) {
       log(source, kw, 'CACHE-EXPIRED',
@@ -433,7 +434,7 @@ async function searchAdpick(keyword, opts = {}) {
     } else {
       log(source, kw, 'SKIP', `이유=${reason}`);
     }
-    return { items: [], error: reason, from: 'none', blocked: !!blocked };
+    return { items: [], error: reason, from: 'none', blocked: !!blocked, apiCalled };
   };
 
   const slot = await reserveSlot(minGapMs, maxWaitMs);
@@ -445,6 +446,7 @@ async function searchAdpick(keyword, opts = {}) {
     }
   }
 
+  apiCalled = true;
   state.totalCalls++;
   const reqLimit = Math.max(1, Math.min(ADPICK_MAX_LIMIT, Math.max(limit, FETCH_LIMIT)));
   const url = `${HOST}/api/${encodeURIComponent(process.env.ADPICK_API_KEY)}/search`
@@ -537,7 +539,7 @@ async function searchAdpick(keyword, opts = {}) {
   if (useCache) await writeCache(kw, items, reqLimit);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);
-  return { items: items.slice(0, limit), error: null, from: 'api', blocked: false };
+  return { items: items.slice(0, limit), error: null, from: 'api', blocked: false, apiCalled: true };
 }
 
 function isBlocked() {
