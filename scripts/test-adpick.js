@@ -435,7 +435,7 @@ await saveProducts('여행용 캐리어', [
   { ...ad(900, 9900), lprice: 9900, _source: 'stale-cache' }
 ], { from: 'stale-cache' });
 check(db.price_history.length === 0 && db.products.length === 0,
-  '★ 최대 48시간 전 캐시를 "오늘 관측" 으로 기록하지 않는다');
+  '★ 최대 24시간 전 stale-cache 도 "오늘 관측" 으로 기록하지 않는다');
 
 reset();
 await saveProducts('여행용 캐리어', [
