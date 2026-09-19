@@ -1,5 +1,5 @@
 const supabase = require('./_supabase');
-const { readBody, dbError, applyCors, readEmail, tooLarge, noStore } = require('./_http');
+const { readBody, dbError, applyCors, readEmail, tooLarge, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { requireAuth } = require('./_auth');
 
@@ -148,7 +148,7 @@ module.exports = async function handler(req, res) {
 
     res.status(405).json({ error: 'GET / POST만 지원' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'sync', route: '/api/sync', message: '데이터를 동기화하지 못했어요. 잠시 후 다시 시도해 주세요.' });
   }
 };
 
