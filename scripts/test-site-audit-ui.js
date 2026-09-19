@@ -38,4 +38,11 @@ assert(!live.includes('역대 최저가 수준 · 지금이 기회'),'local fall
 assert(!live.includes('평균보다 저렴 · 사기 좋은 시점'),'local fallback does not make a buy recommendation without server verdict');
 assert(live.includes('수집 가격대 하단 · 현재는 낮은 편이에요'),'local fallback uses descriptive price language');
 
-console.log('PASS site UI audit: headings, dialogs, demo honesty, price-claim semantics');
+assert(live.includes('<strong>Google Gemini, Groq, OpenRouter:</strong>'),'privacy policy names the live AI provider chain');
+assert(live.includes('<strong>Resend:</strong>'),'privacy policy discloses the email processor');
+assert(live.includes('<strong>Google Analytics:</strong>'),'privacy policy discloses analytics processing');
+assert(!live.includes('AI 사용 횟수</strong> — 이메일과 날짜별 사용 횟수만 서버에 기록'),'obsolete daily-AI-quota collection claim is removed');
+assert(!live.includes('상품 추천 및 검색 결과는 최저가 기준으로만 제공되며'),'affiliate disclosure does not make an untrue ranking claim');
+assert(live.includes("'payPrepare':'/api/payment','payConfirm':'/api/payment'"),'payment prepare/confirm routes are not dead in the API map');
+
+console.log('PASS site UI audit: headings, dialogs, disclosures, demo honesty, price-claim semantics');
