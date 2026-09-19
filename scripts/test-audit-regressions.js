@@ -55,7 +55,8 @@ function scripted(responses, log) {
   return {
     from(table) {
       const q = {};
-      ['select', 'eq', 'in', 'gte', 'lt', 'order', 'limit', 'range', 'is', 'update', 'upsert', 'maybeSingle', 'insert']
+      // 'or' 는 2026-09-20 에 추가됐다 — /api/hotdeals 가 만료된 딜을 걸러낼 때 쓴다.
+      ['select', 'eq', 'in', 'or', 'gte', 'lt', 'order', 'limit', 'range', 'is', 'update', 'upsert', 'maybeSingle', 'insert']
         .forEach(m => { q[m] = () => q; });
       q.then = (resolve, reject) => { log.push(table); return Promise.resolve(next()).then(resolve, reject); };
       return q;
