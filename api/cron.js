@@ -134,6 +134,7 @@ module.exports = Object.assign(async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ error: '인증 실패' });
   }
+  if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 지원' });
 
   // 진단 모드 — 수집을 돌리지 않는다.
   if (req.query && req.query.diag === '1') return diagnose(req, res);

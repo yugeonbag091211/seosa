@@ -32,6 +32,7 @@ function mapCatsToKeywords(cats) {
 
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
+  if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 지원' });
 
   if (!guard(req, res, { name: 'rec', limit: 60, windowMs: 60 * 1000 })) return;
 

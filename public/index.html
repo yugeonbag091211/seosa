@@ -3239,7 +3239,7 @@ select:focus-visible,textarea:focus-visible,
          전에도 첫 장이 보이려면 마크업에서 켜 둬야 한다. 이게 없으면 스크립트가
          실행되기까지 밴드가 비어 있다가 갑자기 채워진다(초기 표시 지연·레이아웃 이동).
      -->
-     <div class="hc-slide on" role="group" aria-roledescription="슬라이드" data-label="브랜드 소개">
+     <div class="hc-slide on" role="group" aria-roledescription="슬라이드" aria-label="브랜드 소개" data-label="브랜드 소개">
       <div class="hero-inner">
     <div class="hero-copy">
       <h1 class="hero-title">최저가도,<br>고급지게.</h1>
@@ -3448,10 +3448,10 @@ select:focus-visible,textarea:focus-visible,
      </div>
 
      <!-- ── 2 · AI 쇼핑 ──────────────────────────────────────────── -->
-     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="AI 쇼핑">
+     <div class="hc-slide" role="group" aria-roledescription="슬라이드" aria-label="AI 쇼핑" data-label="AI 쇼핑">
       <div class="hero-inner">
        <div class="hero-copy">
-         <h1 class="hero-title">찾지 말고,<br>그냥 말하세요.</h1>
+         <h2 class="hero-title">찾지 말고,<br>그냥 말하세요.</h2>
          <p class="hero-sub">예산과 용도를 말하면 SEOSA AI가 조건에 맞는 상품을 비교하고 좁혀드립니다.</p>
          <button class="hero-cta" data-act="ai-entry" data-ctx="home">AI에게 물어보기 <span aria-hidden="true">→</span></button>
        </div>
@@ -3467,12 +3467,12 @@ select:focus-visible,textarea:focus-visible,
           <span class="hc-demo-tag">예시 화면</span>
           <p class="hc-ask">30만원 이하, 운동할 때 쓸<br>노이즈 캔슬링 헤드폰 찾아줘</p>
           <a class="hc-ans" href="https://biz.adpick.co.kr/r4544668" target="_blank" rel="noopener noreferrer sponsored nofollow">
-            <span class="hc-rank">추천 1위</span>
+            <span class="hc-rank">상품 예시</span>
             <div class="hc-ans-b">
               <div class="hc-ans-t">노이즈 캔슬링 무선 헤드폰</div>
               <div class="hc-ans-m">
-                <span class="hc-ans-p">248,000원</span>
-                <span class="hc-ans-f">조건 5/5 충족</span>
+                <span class="hc-ans-p">실시간 가격 확인</span>
+                <span class="hc-ans-f">AI 추천 예시</span>
               </div>
               <span class="hc-view-cta">상품 보기 →</span>
             </div>
@@ -3484,10 +3484,10 @@ select:focus-visible,textarea:focus-visible,
      </div>
 
      <!-- ── 3 · 가격 인텔리전스 ──────────────────────────────────── -->
-     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="구매 시점 판단">
+     <div class="hc-slide" role="group" aria-roledescription="슬라이드" aria-label="구매 시점 판단" data-label="구매 시점 판단">
       <div class="hero-inner">
        <div class="hero-copy">
-         <h1 class="hero-title">지금 살까,<br>조금 더 기다릴까.</h1>
+         <h2 class="hero-title">지금 살까,<br>조금 더 기다릴까.</h2>
          <p class="hero-sub">가격 이력과 AI 분석으로 지금이 살 때인지 판단해드립니다.</p>
          <button class="hero-cta" data-act="scroll-drop">구매 타이밍 확인 <span aria-hidden="true">→</span></button>
        </div>
@@ -3526,11 +3526,11 @@ select:focus-visible,textarea:focus-visible,
          읽히는 표현을 쓰지 않는다. 라벨(검토 중인 프로젝트)을 헤드라인 «위» 에 두어
          문장을 읽기 전에 상태가 먼저 보이게 한다.
      -->
-     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="참전용사 지원 검토">
+     <div class="hc-slide" role="group" aria-roledescription="슬라이드" aria-label="참전용사 지원 검토" data-label="참전용사 지원 검토">
       <div class="hero-inner">
        <div class="hero-copy">
          <span class="hc-label">검토 중인 프로젝트</span>
-         <h1 class="hero-title">가격을 아끼는 일에서,<br>기억을 지키는 일까지.</h1>
+         <h2 class="hero-title">가격을 아끼는 일에서,<br>기억을 지키는 일까지.</h2>
          <p class="hero-sub">SEOSA는 제휴 수익의 34%를 6·25 참전용사 지원에 사용하는 방안을 검토하고 있습니다.</p>
          <button class="hero-cta" data-act="open-veteran">취지 보기 <span aria-hidden="true">→</span></button>
          <p class="hc-note">아직 확정되거나 시행된 계획이 아닙니다.</p>
@@ -4020,11 +4020,11 @@ select:focus-visible,textarea:focus-visible,
   </div>
 </div>
 
-<div class="overlay" id="privacyOverlay" style="display:none">
+<div class="overlay" id="privacyOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="privacyTitle">
   <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
     <div class="modal-head">
-      <div><div class="mt">개인정보처리방침</div></div>
-      <button class="modal-close" data-act="close-privacy">×</button>
+      <div><div class="mt" id="privacyTitle">개인정보처리방침</div></div>
+      <button class="modal-close" data-act="close-privacy" aria-label="닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <h3>1. 수집하는 개인정보</h3>
@@ -4035,12 +4035,12 @@ select:focus-visible,textarea:focus-visible,
         <li><strong>관심 카테고리</strong> — "당신을 위한 추천" 상품 선정, AI 큐레이션 개인화 (복수 선택)</li>
         <li><strong>예산 범위</strong> — AI 큐레이션 참고 정보로 활용 (4가지 선택지)</li>
         <li><strong>성별</strong> — AI 큐레이션 참고 정보로 활용 (선택 사항)</li>
-        <li><strong>위시리스트</strong> — 사용자가 저장한 상품 목록</li>
-        <li><strong>최근 본 상품</strong> — 브라우징 이력 (로컬 저장)</li>
-        <li><strong>가격 알림 설정</strong> — 목표 가격, 상품 정보</li>
-        <li><strong>AI 사용 횟수</strong> — 이메일과 날짜별 사용 횟수만 서버에 기록되며, 질문·답변 내용 자체는 서버 DB에 저장되지 않습니다 (기기 내 브라우저 저장소에만 보관)</li>
+        <li><strong>위시리스트·최근 본 상품·최근 검색어</strong> — 기본적으로 브라우저에 저장되며, 사용자가 이메일 동기화를 실행하면 해당 이메일과 함께 서버에도 저장됩니다</li>
+        <li><strong>가격 알림 설정</strong> — 목표 가격, 상품 정보, 알림 수신 이메일</li>
+        <li><strong>AI 대화 정보</strong> — 질문, 최근 대화 문맥, 선택적으로 설정한 프로필 정보가 답변 생성을 위해 AI 제공자에게 전송될 수 있습니다. 질문·답변 원문은 SEOSA 서버 DB에 영구 저장하지 않으며 브라우저 대화 기록은 마지막 저장 후 30분이 지나면 복원하지 않습니다</li>
+        <li><strong>과거 AI 사용 횟수 기록</strong> — 이전 일일 한도 기능에서 생성된 이메일·날짜별 횟수 기록이 남아 있을 수 있으나, 현재 AI 일일 한도 판정에는 사용하지 않습니다</li>
       </ul>
-      <p style="color:var(--faint);font-size:.9rem">그 밖에 서비스 이용 통계(검색·클릭 횟수, 방문자 수)를 집계하지만, 브라우저가 임의로 생성한 익명 식별자만 사용하며 이메일 등 개인을 특정할 수 있는 정보와 연결하지 않습니다.</p>
+      <p style="color:var(--faint);font-size:.9rem">서비스 운영 과정에서 검색·클릭·방문 이벤트와 브라우저에서 생성한 식별자가 통계 목적으로 처리될 수 있습니다. Google Analytics 사용 시 브라우저·기기 정보 등은 Google의 정책에 따라 처리될 수 있습니다.</p>
 
       <h3>2. 수집 목적</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
@@ -4055,28 +4055,34 @@ select:focus-visible,textarea:focus-visible,
       <h3>3. 보유 및 이용 기간</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
         <li><strong>이메일, 닉네임, 프로필:</strong> 계정 유지 중 보유, 삭제 요청 시 삭제</li>
-        <li><strong>위시리스트, 최근 본 상품:</strong> 사용자가 직접, 또는 삭제 요청 시 언제든 삭제 가능</li>
+        <li><strong>위시리스트, 최근 본 상품, 최근 검색어:</strong> 브라우저 저장분은 사용자가 직접 삭제할 수 있으며, 클라우드 동기화분은 삭제 요청 시 삭제할 수 있습니다</li>
         <li><strong>가격 알림:</strong> 사용자가 삭제 요청 시까지 보유</li>
-        <li><strong>AI 사용 횟수:</strong> 계정 유지 중 보유 (일별 한도 산정 목적)</li>
+        <li><strong>AI 대화 원문:</strong> SEOSA 서버 DB에 영구 저장하지 않습니다. 브라우저 대화 기록은 마지막 저장 후 30분이 지나면 복원하지 않습니다</li>
+        <li><strong>과거 AI 사용 횟수:</strong> 현재 새 사용량을 일일 한도 판정용으로 수집하지 않으며, 기존 기록은 삭제 요청 대상에 포함됩니다</li>
       </ul>
 
       <h3>4. 데이터 삭제 방법</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
         <li>위시리스트: 앱 내에서 각 상품의 하트 버튼(개별) 또는 위시리스트의 "비우기" 버튼(전체)으로 삭제</li>
-        <li>최근 본 상품: "최근 본 상품" 섹션의 "기록 지우기" 버튼으로 삭제</li>
+        <li>최근 본 상품: "최근 본 상품" 섹션의 "기록 지우기" 버튼으로 브라우저 저장분 삭제</li>
+        <li>최근 검색어: 각 검색어의 X 버튼으로 브라우저 저장분 삭제</li>
         <li>가격 알림: 알림 목록에서 X 버튼으로 삭제</li>
         <li>그 밖의 계정 정보(이메일, 프로필 등) 전체 삭제: 현재 앱 내 자동 삭제 기능은 없으며, 아래 문의처로 요청하시면 처리해 드립니다</li>
       </ul>
       <p style="color:var(--faint);font-size:.9rem">※ 계정 전체 삭제(탈퇴) 기능은 사업자가 추가로 구현하거나 절차를 정해야 하는 사항입니다.</p>
 
-      <h3>5. 외부 서비스 / 처리 위탁</h3>
-      <p>다음 외부 서비스와 데이터를 공유합니다:</p>
+      <h3>5. 외부 서비스 / 처리</h3>
+      <p>서비스 제공 과정에서 다음 외부 서비스가 사용될 수 있습니다:</p>
       <ul style="margin-left:20px;margin-bottom:20px">
-        <li><strong>OpenRouter:</strong> AI 큐레이션 서비스 제공 (사용자 질문 → 응답 생성)</li>
-        <li><strong>Supabase / PostgreSQL:</strong> 데이터 저장소 (암호화됨)</li>
-        <li><strong>쿠팡 검색 API:</strong> 상품 가격 및 정보 수집 (사용자 정보 공유 안 함)</li>
+        <li><strong>Google Gemini, Groq, OpenRouter:</strong> AI 답변 생성. 질문과 답변에 필요한 최근 대화 문맥·상품 정보·선택적 프로필 정보가 전송될 수 있습니다</li>
+        <li><strong>Supabase / PostgreSQL:</strong> 로그인·프로필·동기화·가격 알림·서비스 운영 데이터 저장</li>
+        <li><strong>Resend:</strong> 이메일 인증 코드와 가격 알림 발송을 위해 이메일 주소 및 발송 내용을 처리</li>
+        <li><strong>Toss Payments:</strong> 결제 기능 이용 시 결제 인증·승인·구독 처리</li>
+        <li><strong>Google Analytics:</strong> 방문 및 서비스 이용 통계 측정</li>
+        <li><strong>Vercel:</strong> 웹사이트·API 호스팅 및 요청 처리</li>
+        <li><strong>쿠팡·ADPICK 연동:</strong> 상품 검색어를 이용해 가격·상품 정보를 조회하며, SEOSA 계정 이메일이나 프로필은 전송하지 않습니다</li>
       </ul>
-      <p style="color:var(--faint);font-size:.9rem"><strong>※ 사업자가 최종 확인해야 할 사항:</strong> 외부 서비스의 개인정보보호 약관과 계약 상 위탁 범위 재확인</p>
+      <p style="color:var(--faint);font-size:.9rem">각 외부 서비스에는 해당 제공자의 개인정보 처리방침과 이용 조건이 적용될 수 있습니다.</p>
 
       <h3>6. 이용자의 권리</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
@@ -4092,17 +4098,17 @@ select:focus-visible,textarea:focus-visible,
         <li>Instagram: @seosakorea</li>
       </ul>
 
-      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
+      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 9월 19일</p>
     </div>
   </div>
 </div>
 
 <!-- 이용약관 -->
-<div class="overlay" id="termsOverlay" style="display:none">
+<div class="overlay" id="termsOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="termsTitle">
   <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
     <div class="modal-head">
-      <div><div class="mt">이용약관</div></div>
-      <button class="modal-close" data-act="close-terms">×</button>
+      <div><div class="mt" id="termsTitle">이용약관</div></div>
+      <button class="modal-close" data-act="close-terms" aria-label="닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <h3>1. 서비스 목적</h3>
@@ -4110,16 +4116,18 @@ select:focus-visible,textarea:focus-visible,
 
       <h3>2. 회원 / 비회원 이용</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
-        <li><strong>비회원:</strong> 상품 검색, 가격 조회, 가격 그래프 열람 가능</li>
-        <li><strong>회원:</strong> 위시리스트 저장, 가격 알림 신청, 횟수 제한 없는 AI Concierge</li>
+        <li><strong>비회원:</strong> 상품 검색, 가격 조회, 가격 그래프 열람, 기본 AI Concierge 이용 가능</li>
+        <li><strong>인증 사용자:</strong> 가격 알림, 기기 간 데이터 동기화, 저장된 취향을 이용한 개인화 기능을 이용할 수 있습니다</li>
+        <li><strong>AI 이용:</strong> 현재 제품 정책상 일일 질문 횟수 제한은 없지만, 자동화·과도한 호출 방지를 위한 짧은 시간 단위 제한이나 외부 AI 제공자의 한도로 일시 제한될 수 있습니다</li>
       </ul>
 
       <h3>3. 상품 검색 및 가격 정보</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
-        <li>모든 상품 정보는 쿠팡 검색 API에서 실시간으로 수집합니다</li>
-        <li>가격은 변동할 수 있으며, 사이트에 표시된 가격과 쿠팡의 실제 가격이 일치하지 않을 수 있습니다</li>
-        <li>쿠팡의 기술적 제한으로 일부 상품의 정가(원래 가격)를 수집하지 못할 수 있습니다</li>
-        <li>쿠팡 링크를 클릭하면 쿠팡의 정책에 따릅니다</li>
+        <li>상품 정보는 쿠팡 및 ADPICK을 통해 연결된 제휴몰의 API·검색 결과와 SEOSA가 저장한 가격 기록을 이용합니다</li>
+        <li>일부 검색 결과는 외부 API 호출 제한이나 장애 시 허용된 유효기간 안의 캐시를 사용할 수 있습니다</li>
+        <li>가격은 변동할 수 있으며, 사이트 표시 가격과 외부 쇼핑몰의 실제 결제 시점 가격이 일치하지 않을 수 있습니다</li>
+        <li>판매처에 따라 정가·배송·재고 등 일부 정보를 제공받지 못할 수 있습니다</li>
+        <li>외부 쇼핑몰 링크를 클릭한 이후에는 해당 쇼핑몰의 정책이 적용됩니다</li>
       </ul>
 
       <h3>4. 가격 정보의 한계</h3>
@@ -4146,7 +4154,7 @@ select:focus-visible,textarea:focus-visible,
       <h3>7. 서비스 변경 / 중단</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
         <li>SEOSA는 사전 공지 없이 서비스를 변경하거나 중단할 수 있습니다</li>
-        <li>외부 API(쿠팡, OpenRouter 등) 중단 시 서비스가 제한될 수 있습니다</li>
+        <li>외부 API(쿠팡, ADPICK, AI 제공자, 이메일·결제 제공자 등) 중단 시 서비스가 제한될 수 있습니다</li>
       </ul>
 
       <h3>8. 이용자 책임</h3>
@@ -4186,17 +4194,17 @@ select:focus-visible,textarea:focus-visible,
         <li>Instagram: @seosakorea</li>
       </ul>
 
-      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
+      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 9월 19일</p>
     </div>
   </div>
 </div>
 
 
-<div class="overlay" id="businessOverlay" style="display:none">
+<div class="overlay" id="businessOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="businessTitle">
   <div class="modal" style="max-width:600px">
     <div class="modal-head">
-      <div><div class="mt">사업자 정보</div></div>
-      <button class="modal-close" data-act="close-business">×</button>
+      <div><div class="mt" id="businessTitle">사업자 정보</div></div>
+      <button class="modal-close" data-act="close-business" aria-label="닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <div style="background:var(--subtle);padding:20px;border-radius:8px;font-size:.95rem;line-height:1.8">
@@ -4211,7 +4219,7 @@ select:focus-visible,textarea:focus-visible,
       <div style="margin-top:32px;padding:20px;background:var(--bg-subtle);border-left:4px solid var(--ink);border-radius:4px">
         <p style="font-size:.9rem;color:var(--faint)">
           ※ 본 사이트는 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받을 수 있습니다.<br>
-          단, 상품 추천 및 검색 결과는 최저가 기준으로만 제공되며 파트너스 여부와 무관합니다.
+          일부 외부 쇼핑몰 링크에는 제휴 추적 링크가 포함될 수 있습니다.
         </p>
       </div>
     </div>
@@ -4246,7 +4254,7 @@ select:focus-visible,textarea:focus-visible,
  <div class="wrap" style="display:block;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
   <p style="font-size:.7rem;color:var(--faint);line-height:1.6;max-width:620px">
     본 사이트는 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받을 수 있습니다.
-    단, 상품 추천 및 검색 결과는 최저가 기준으로만 제공되며 파트너스 여부와 무관합니다.
+    일부 외부 쇼핑몰 링크에는 제휴 추적 링크가 포함될 수 있습니다.
   </p>
   <!--
     AI 모델 고지 — 라이선스 의무다. 장식이 아니다.
@@ -4258,9 +4266,9 @@ select:focus-visible,textarea:focus-visible,
     없지만, 무엇이 답을 썼는지 밝히는 편이 사용자에게 정직하므로 함께 적는다.
   -->
   <p style="margin-top:10px;font-size:.7rem;color:var(--faint);line-height:1.6">
-    AI 설명은 <strong style="font-weight:600">Built with MiniMax M3</strong> ·
-    NVIDIA Nemotron 오픈 모델로 생성됩니다.
-    가격·최저가·구매 시점 판정은 모델이 아니라 SEOSA 서버가 수집한 기록으로 계산합니다.
+    AI 설명은 Google Gemini, Groq 또는 OpenRouter를 통해 제공되는 무료 모델을 사용할 수 있습니다.
+    OpenRouter 경로에는 <strong style="font-weight:600">Built with MiniMax M3</strong> · NVIDIA Nemotron 모델이 포함됩니다.
+    가격·최저가·구매 시점 판정은 AI가 임의로 만들지 않고 SEOSA 서버가 수집한 기록과 판정 로직으로 계산합니다.
   </p>
   <p style="margin-top:10px;font-size:.7rem;color:var(--faint)">
     <a href="#" onclick="Policy.openPrivacy();return false" style="color:var(--faint);text-decoration:underline">개인정보처리방침</a> &nbsp;·&nbsp;
@@ -5287,6 +5295,7 @@ var Api = {
       'getMonthlyRecommendations':'/api/init',
       'getPriceDropTop':'/api/init','getHotdeals':'/api/hotdeals','getExternalHotdeals':'/api/hotdeals','recordSearchStat_':'/api/stats',
       // (Vercel Hobby 함수 12개 상한 — api/payment.js 주석 참고).
+      'payPrepare':'/api/payment','payConfirm':'/api/payment',
       'payCancel':'/api/payment','payStatus':'/api/payment'
     };
     var url = urlMap[fnName];
@@ -7986,7 +7995,7 @@ var Drop = {
       title: it.title || '', image: it.image || '', mall: it.mall || '',
       productId: it.productId || '', vendorItemId: it.vendorItemId || '',
       lprice: cur, oprice: ref, savePct: Math.max(0, pct),
-      isAllTimeLow: !!s.nearHistoricalLow,
+      nearHistoricalLow: !!s.nearHistoricalLow,
       link: it.productUrl || it.url || '',
       hotdealStatus: it.status || '', hotScore: it.dealScore,
       reason: it.reason || ''
@@ -8051,9 +8060,9 @@ var Drop = {
      *   그 전까지는 「기간을 말하지 않는 대신 기준점을 밝히는」 쪽이
      *   데이터가 보증하는 최대치다.
      */
-    var atl   = it.isAllTimeLow
-      ? '<span class="atl" title="SEOSA가 이 상품 가격을 기록하기 시작한 이후로는 지금 값이 가장 낮습니다. '
-        + '기록 이전의 가격과 다른 판매처의 가격은 알 수 없습니다.">수집 이후 최저</span>'
+    var atl   = it.nearHistoricalLow
+      ? '<span class="atl" title="현재 가격이 SEOSA가 확인한 최저가의 약 2% 범위 안에 있습니다. '
+        + '기록 이전의 가격과 다른 판매처의 가격은 알 수 없습니다.">수집 최저가 근처</span>'
       : '';
     var imgSrc = Fmt.safeUrl(it.image);
     var thumbInner = imgSrc
@@ -8076,8 +8085,8 @@ var Drop = {
      * 준다. 대신 title 속성으로 남겨 마우스를 올리면 확인할 수 있게 한다.
      * 「수집 이후 최저」(atl)도 같은 이유로 title 안으로 옮긴다.
      */
-    var tip = '이전 기록가 ' + Fmt.won(prev) + '원'
-      + (it.isAllTimeLow ? ' · SEOSA 수집 이후 최저' : '');
+    var tip = '기준 가격 ' + Fmt.won(prev) + '원'
+      + (it.nearHistoricalLow ? ' · SEOSA 수집 최저가 근처' : '');
 
     return '<div class="dcard" data-act="ledger-open" role="button" tabindex="0"'
       + ' aria-label="' + Fmt.esc(it.title) + ' 가격 추이 보기"'
@@ -9612,17 +9621,17 @@ var Modal = {
 
     } else if (cur > 0 && pos <= CONST.VERDICT.LOW) {
       v.className = 'verdict buy-v';
-      v.innerHTML = '<span class="vi">✦</span><div class="vt"><b>역대 최저가 수준 · 지금이 기회</b>'
+      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>수집 가격대 하단 · 현재는 낮은 편이에요</b>'
         + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 저렴해요.</span></div>';
 
     } else if (cur > 0 && pos >= CONST.VERDICT.HIGH) {
       v.className = 'verdict wait';
-      v.innerHTML = '<span class="vi">⏳</span><div class="vt"><b>지금은 비싼 편 · 조금 기다려보세요</b>'
+      v.innerHTML = '<span class="vi">↗</span><div class="vt"><b>수집 평균보다 높은 가격이에요</b>'
         + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 비싸요. 최저 ' + Fmt.won(st.min) + '원까지 내려간 적 있어요.</span></div>';
 
     } else if (cur > 0 && cur <= st.avg) {
       v.className = 'verdict buy-v';
-      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>평균보다 저렴 · 사기 좋은 시점</b>'
+      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>수집 평균보다 낮은 가격이에요</b>'
         + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 저렴해요.</span></div>';
 
     } else {
@@ -11722,54 +11731,38 @@ var HeroCarousel = {
 };
 
 var Policy = {
-  openPrivacy: function() {
-    var o = $('privacyOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closePrivacy: function() {
-    var o = $('privacyOverlay');
-    if (o) o.style.display = 'none';
-  },
-  openTerms: function() {
-    var o = $('termsOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closeTerms: function() {
-    var o = $('termsOverlay');
-    if (o) o.style.display = 'none';
-  },
-
-  openBusiness: function() {
-    var o = $('businessOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closeBusiness: function() {
-    var o = $('businessOverlay');
-    if (o) o.style.display = 'none';
-  },
-
   /*
-   * 참전용사 지원 — 히어로 4번 슬라이드의 「취지 보기」.
-   *
-   * ★ display 만 바꾸지 않고 .open 도 함께 준다. .overlay 는 기본값이
-   *   opacity:0 · visibility:hidden 이고 보이게 하는 것은 .open 이다.
-   *   display:flex 한 줄만으로는 화면에 아무것도 나타나지 않는다.
+   * 정책/사업자/취지 모달은 모두 같은 overlay 계약을 쓴다.
+   * display:flex 만으로는 .overlay의 opacity:0 / pointer-events:none이 남아
+   * 실제로 보이지 않는다. 열 때 .open까지 붙이고, 닫을 때 전환 뒤 숨긴다.
+   * Focus.enter/leave로 키보드 사용자의 위치도 복원한다.
    */
-  openVeteran: function() {
-    var o = $('veteranOverlay');
-    if (!o) return;
+  _open: function(id) {
+    var o = $(id);
+    if (!o || o.classList.contains('open')) return;
     o.style.display = 'flex';
-    void o.offsetWidth;            // 전환이 보이도록 한 프레임 확정
+    void o.offsetWidth;
     o.classList.add('open');
-    var c = o.querySelector('.modal-close');
-    if (c) c.focus();
+    Focus.enter(id);
   },
-  closeVeteran: function() {
-    var o = $('veteranOverlay');
-    if (!o) return;
+  _close: function(id) {
+    var o = $(id);
+    if (!o || !o.classList.contains('open')) return;
     o.classList.remove('open');
-    setTimeout(function() { if (!o.classList.contains('open')) o.style.display = 'none'; }, 300);
-  }
+    Focus.leave();
+    setTimeout(function() {
+      if (!o.classList.contains('open')) o.style.display = 'none';
+    }, 300);
+  },
+
+  openPrivacy: function() { Policy._open('privacyOverlay'); },
+  closePrivacy: function() { Policy._close('privacyOverlay'); },
+  openTerms: function() { Policy._open('termsOverlay'); },
+  closeTerms: function() { Policy._close('termsOverlay'); },
+  openBusiness: function() { Policy._open('businessOverlay'); },
+  closeBusiness: function() { Policy._close('businessOverlay'); },
+  openVeteran: function() { Policy._open('veteranOverlay'); },
+  closeVeteran: function() { Policy._close('veteranOverlay'); }
 };
 
 // 정책 모달 닫기 버튼 바인딩

@@ -1,5 +1,5 @@
 const supabase = require('./_supabase');
-const { readBody, dbError, applyCors, readEmail, noStore } = require('./_http');
+const { readBody, dbError, applyCors, readEmail, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { requireAuth } = require('./_auth');
 
@@ -175,6 +175,6 @@ module.exports = async function handler(req, res) {
 
     res.status(405).json({ error: 'GET / POST / DELETE만 지원' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'alerts', route: '/api/alerts', message: '알림을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.' });
   }
 };
