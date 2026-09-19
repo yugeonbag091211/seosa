@@ -407,6 +407,7 @@ async function batchHandler(req, res) {
  */
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
+  if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 지원' });
 
   const q = req.query || {};
   if (q.__route === 'batch') return batchHandler(req, res);
