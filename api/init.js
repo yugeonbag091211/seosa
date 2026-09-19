@@ -200,6 +200,7 @@ function toDropRow(p) {
 
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
+  if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 지원' });
 
   if (!guard(req, res, { name: 'init', limit: 60, windowMs: 60 * 1000 })) return;
 

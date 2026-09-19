@@ -1,5 +1,5 @@
 const { readBody, applyCors, noStore } = require('./_http');
-const { guard } = require('./_ratelimit');
+const { guardGlobal } = require('./_ratelimit');
 const { identify } = require('./_auth');
 /*
  * 조건 해석·랭킹은 순수 계산이라 최상단에서 불러도 안전하다
@@ -2501,7 +2501,7 @@ module.exports = async function handler(req, res) {
    * 제품 정책상의 일일 질문 횟수 제한은 없다. 이 방어선은 자동화 봇과 prompt
    * flood만 막으며 정상 사용자의 연속 대화를 차단하지 않도록 넉넉하게 둔다.
    */
-  if (!guard(req, res, { name: 'ai', limit: 30, windowMs: 60 * 1000 })) return;
+  if (!(await guardGlobal(req, res, { name: 'ai', limit: 30, windowMs: 60 * 1000 }))) return;
 
   /* ── 1) 신원 확인 ────────────────────────────────────────────────
    *

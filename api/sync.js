@@ -1,6 +1,6 @@
 const supabase = require('./_supabase');
-const { readBody, dbError, applyCors, readEmail, tooLarge, noStore } = require('./_http');
-const { guard } = require('./_ratelimit');
+const { readBody, dbError, applyCors, readEmail, tooLarge, noStore, fail } = require('./_http');
+const { guardGlobal } = require('./_ratelimit');
 const { requireAuth } = require('./_auth');
 
 /*
@@ -34,12 +34,99 @@ const { requireAuth } = require('./_auth');
  * 마이그레이션 없이 실제 스키마에 맞춰 읽고 쓴다.
  */
 const SYNC_FIELDS = ['wish', 'viewed', 'searches'];
+const MAX_WISH = 200;
+const MAX_VIEWED = 8;
+const MAX_SEARCHES = 10;
 
-/** 배열만 통과. 프론트가 뭘 보내든 컬럼 타입(jsonb 배열)에 맞는 값만 저장한다. */
-function pickSyncable(body) {
-  const out = {};
-  SYNC_FIELDS.forEach(f => { out[f] = Array.isArray(body && body[f]) ? body[f] : []; });
+function text(v, max) {
+  return String(v == null ? '' : v).trim().slice(0, max);
+}
+function safeUrl(v) {
+  const u = text(v, 2000);
+  return /^https?:\/\//i.test(u) ? u : '';
+}
+function int(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 0 && n <= 2147483647 ? n : 0;
+}
+function optionalInt(v) {
+  if (v === null || v === undefined || v === '') return null;
+  return int(v);
+}
+
+/**
+ * 클라우드 데이터는 브라우저가 만든 JSON이라도 신뢰하지 않는다.
+ * 알려진 상품 필드만, 실제 UI가 다룰 수 있는 길이/개수만 저장한다.
+ *
+ * vendorItemId · targetPrice · savedAt · mallLabel은 특히 중요하다.
+ * 예전 동기화는 이 값을 버려 다른 기기에서 옵션 동일성이 사라지고,
+ * Radar 목표가/저장 시점/실제 판매처 이름도 함께 유실됐다.
+ */
+function cleanItem(o) {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  const title = text(o.title, 300);
+  if (!title) return null;
+  const savedAt = Math.round(Number(o.savedAt));
+  return {
+    title,
+    price: int(o.price),
+    lprice: int(o.lprice),
+    currentPrice: int(o.currentPrice),
+    savedPrice: int(o.savedPrice),
+    targetPrice: optionalInt(o.targetPrice),
+    savedAt: Number.isFinite(savedAt) && savedAt > 0 ? savedAt : 0,
+    mall: text(o.mall, 100),
+    mallLabel: text(o.mallLabel, 100),
+    productId: text(o.productId, 120),
+    vendorItemId: text(o.vendorItemId, 120),
+    link: safeUrl(o.link),
+    image: safeUrl(o.image),
+    glyph: text(o.glyph, 4)
+  };
+}
+function cleanList(v, max) {
+  if (!Array.isArray(v)) return [];
+  return v.slice(0, max).map(cleanItem).filter(Boolean);
+}
+function cleanSearches(v) {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of v) {
+    if (typeof raw !== 'string') continue;
+    const q = text(raw, 80);
+    if (!q || seen.has(q)) continue;
+    seen.add(q);
+    out.push(q);
+    if (out.length >= MAX_SEARCHES) break;
+  }
   return out;
+}
+function cleanProfile(body) {
+  const p = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const catSet = new Set(['테크','패션','홈리빙','뷰티','아웃도어','식품']);
+  const budgetSet = new Set(['','3만원 이하','10만원 이하','30만원 이하','30만원 이상']);
+  const genderSet = new Set(['','남성','여성']);
+  const cats = Array.isArray(p.cats)
+    ? [...new Set(p.cats.map(v => text(v, 20)).filter(v => catSet.has(v)))].slice(0, 6)
+    : [];
+  const budget = text(p.budget, 30);
+  const gender = text(p.gender, 10);
+  return {
+    nickname: text(p.nickname, 10),
+    cats,
+    budget: budgetSet.has(budget) ? budget : '',
+    gender: genderSet.has(gender) ? gender : ''
+  };
+}
+
+/** DB 왕복 양쪽 모두 같은 정규화를 적용한다. */
+function pickSyncable(body) {
+  return {
+    wish: cleanList(body && body.wish, MAX_WISH),
+    viewed: cleanList(body && body.viewed, MAX_VIEWED),
+    searches: cleanSearches(body && body.searches)
+  };
 }
 
 /**
@@ -74,11 +161,11 @@ const RESOURCE = {
     readShape: async (email) => {
       const { data, error } = await supabase
         .from('profiles').select('data').eq('email', email).maybeSingle();
-      return { data: (data && data.data) || {}, error };
+      return { data: cleanProfile((data && data.data) || {}), error };
     },
     writeShape: async (email, body) => {
       const { error } = await supabase.from('profiles').upsert({
-        email, data: body, updated_at: new Date().toISOString()
+        email, data: cleanProfile(body), updated_at: new Date().toISOString()
       }, { onConflict: 'email' });
       return { error };
     }
@@ -118,7 +205,7 @@ module.exports = async function handler(req, res) {
 
   // 레이트리미터 버킷은 리소스별로 나눈다. profile 요청이 sync 쿼터를 태우지 않도록.
   // (이메일 주소를 바꿔가며 훑는 것을 늦추기 위해서다)
-  if (!guard(req, res, { name: resource, limit: 40, windowMs: 60 * 1000 })) return;
+  if (!(await guardGlobal(req, res, { name: resource, limit: 40, windowMs: 60 * 1000 }))) return;
 
   const email = readEmail(req.query && req.query.email);
   if (!email) return res.status(400).json({ error: '이메일 형식이 올바르지 않습니다' });
@@ -148,10 +235,13 @@ module.exports = async function handler(req, res) {
 
     res.status(405).json({ error: 'GET / POST만 지원' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'sync', route: '/api/sync', message: '데이터를 동기화하지 못했어요. 잠시 후 다시 시도해 주세요.' });
   }
 };
 
 // 테스트에서 개별 부품을 직접 검증할 수 있게 노출한다.
 module.exports.resourceOf = resourceOf;
 module.exports.RESOURCE = RESOURCE;
+module.exports.cleanItem = cleanItem;
+module.exports.pickSyncable = pickSyncable;
+module.exports.cleanProfile = cleanProfile;

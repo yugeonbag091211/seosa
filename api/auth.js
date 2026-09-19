@@ -1,5 +1,5 @@
-const { readBody, applyCors, readEmail, noStore } = require('./_http');
-const { guard } = require('./_ratelimit');
+const { readBody, applyCors, readEmail, noStore, fail } = require('./_http');
+const { guardGlobal } = require('./_ratelimit');
 const { createCode, consumeCode, issueToken, TOKEN_TTL_MS, CODE_TTL_MS } = require('./_auth');
 const notify = require('./_notify');
 // 표가 «없을» 때만 마이그레이션 안내를 한다. DB 일시 장애에 "테이블이 없습니다" 를 말하지 않는다.
@@ -58,7 +58,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
 
   // 메일 발송 비용과 스팸을 막는다. 코드 확인은 조금 더 넉넉히 잡는다.
-  if (!guard(req, res, { name: 'auth', limit: 12, windowMs: 10 * 60 * 1000 })) return;
+  if (!(await guardGlobal(req, res, { name: 'auth', limit: 12, windowMs: 10 * 60 * 1000 }))) return;
 
   const body = readBody(req);
   const email = readEmail(body.email);
@@ -119,7 +119,6 @@ module.exports = async function handler(req, res) {
     // 코드 자체는 절대 응답에 담지 않는다.
     return res.json({ sent: true, expiresInSec: Math.round(CODE_TTL_MS / 1000) });
   } catch (e) {
-    console.error('[auth]', e.message);
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'auth', route: '/api/auth', message: '인증 처리 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.' });
   }
 };
