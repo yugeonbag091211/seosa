@@ -87,7 +87,14 @@ const NEW_MIGRATIONS = [
   '2026-08-24-price-drop-top-orphan-policy.sql',
   '2026-08-25-analytics.sql',
   '2026-09-05-adpick-api-calls.sql',
-  '2026-09-12-external-hotdeals.sql'
+  '2026-09-12-external-hotdeals.sql',
+  /*
+   * 2026-09-19: 함수는 이미 운영에 있고 파일만 뒤늦게 들어왔다 (2026-09-20 감사).
+   * 여기 등록해야 «파일은 있는데 운영에는 없다» 를 새 환경에서 잡아낸다.
+   */
+  '2026-09-19-collector-eligible-catalog.sql',
+  // 2026-09-20: price_drop_top 타임아웃 대응 인덱스 (데이터 변경 없음).
+  '2026-09-20-price-drop-top-index.sql'
 ];
 
 function checkStatic() {

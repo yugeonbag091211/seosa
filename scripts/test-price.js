@@ -1695,8 +1695,22 @@ function recordedPrice(productId) {
         '★ 수집 성공률이 무엇을 제외하는지 메일에 명시한다');
   check(html.includes('단위: 상품') && html.includes('단위: attempt'),
         '★ 상품 단위 / attempt 단위 섹션이 각각 단위를 밝힌다');
-  check(html.includes('수집 attempt (실제 API 호출)') && !html.includes('가격 수집 시도'),
+  /*
+   * 2026-09-20: 기대 문구를 지금 리포트에 맞춘다.
+   *
+   * PR #39(47a2ab2)가 «검색 attempt» 와 «실제 외부 API 호출» 을 두 줄로 분리하면서
+   * 항목 이름이 '수집 attempt (실제 API 호출)' → '검색 attempt (collector 검색 시도)'
+   * 로 바뀌었는데, 이 단언이 따라가지 않아 2026-09-19 이후 계속 실패하고 있었다.
+   * (이 파일은 CI 에 없어서 아무도 몰랐다)
+   *
+   * 지키려는 뜻은 그대로다 — ① 이름이 attempt 단위임을 드러낼 것
+   * ② 옛 명칭 «가격 수집 시도» 를 쓰지 않을 것. 거기에 PR #39 의 의도인
+   * ③ 검색 시도와 실제 호출이 «다른 줄» 일 것 을 더한다.
+   */
+  check(html.includes('검색 attempt (collector 검색 시도)') && !html.includes('가격 수집 시도'),
         '★ 시도 항목의 이름이 attempt 단위임을 드러낸다 (옛 명칭 "가격 수집 시도" 는 쓰지 않는다)');
+  check(html.includes('실제 외부 API 호출'),
+        '★ 검색 attempt 와 실제 외부 API 호출을 서로 다른 줄로 보여 준다 (PR #39)');
   check(html.includes('처리 상품 수') && html.includes('>900<'),
         '★ 상품 처리량은 "처리 상품 수" 로 따로 표기된다 (호출 수와 섞지 않는다)');
   check(html.includes('price_history upsert 행 (신규+갱신)') && !html.includes('price_history 신규 저장'),
