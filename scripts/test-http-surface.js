@@ -19,6 +19,12 @@ assert(cron.includes("if (req.method !== 'GET') return res.status(405)"), 'cron 
 assert(cron.indexOf("req.headers.authorization") < cron.indexOf("req.method !== 'GET'"),
   'cron authenticates before method detail is exposed');
 
+
+for (const p of ['api/alerts.js','api/auth.js','api/history.js','api/stats.js','api/sync.js']) {
+  const s=read(p);
+  assert(!s.includes("res.status(500).json({ error: e.message })"), p+' does not expose internal exception text');
+}
+
 const hot=read('api/hotdeals.js');
 assert(hot.includes("if (req.method !== 'GET') return res.status(405)"), 'hotdeals remains GET-only');
 
