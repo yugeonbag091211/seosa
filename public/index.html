@@ -7986,7 +7986,7 @@ var Drop = {
       title: it.title || '', image: it.image || '', mall: it.mall || '',
       productId: it.productId || '', vendorItemId: it.vendorItemId || '',
       lprice: cur, oprice: ref, savePct: Math.max(0, pct),
-      isAllTimeLow: !!s.nearHistoricalLow,
+      nearHistoricalLow: !!s.nearHistoricalLow,
       link: it.productUrl || it.url || '',
       hotdealStatus: it.status || '', hotScore: it.dealScore,
       reason: it.reason || ''
@@ -8051,9 +8051,9 @@ var Drop = {
      *   그 전까지는 「기간을 말하지 않는 대신 기준점을 밝히는」 쪽이
      *   데이터가 보증하는 최대치다.
      */
-    var atl   = it.isAllTimeLow
-      ? '<span class="atl" title="SEOSA가 이 상품 가격을 기록하기 시작한 이후로는 지금 값이 가장 낮습니다. '
-        + '기록 이전의 가격과 다른 판매처의 가격은 알 수 없습니다.">수집 이후 최저</span>'
+    var atl   = it.nearHistoricalLow
+      ? '<span class="atl" title="현재 가격이 SEOSA가 확인한 최저가의 약 2% 범위 안에 있습니다. '
+        + '기록 이전의 가격과 다른 판매처의 가격은 알 수 없습니다.">수집 최저가 근처</span>'
       : '';
     var imgSrc = Fmt.safeUrl(it.image);
     var thumbInner = imgSrc
@@ -8076,8 +8076,8 @@ var Drop = {
      * 준다. 대신 title 속성으로 남겨 마우스를 올리면 확인할 수 있게 한다.
      * 「수집 이후 최저」(atl)도 같은 이유로 title 안으로 옮긴다.
      */
-    var tip = '이전 기록가 ' + Fmt.won(prev) + '원'
-      + (it.isAllTimeLow ? ' · SEOSA 수집 이후 최저' : '');
+    var tip = '기준 가격 ' + Fmt.won(prev) + '원'
+      + (it.nearHistoricalLow ? ' · SEOSA 수집 최저가 근처' : '');
 
     return '<div class="dcard" data-act="ledger-open" role="button" tabindex="0"'
       + ' aria-label="' + Fmt.esc(it.title) + ' 가격 추이 보기"'
