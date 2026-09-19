@@ -49,8 +49,9 @@ assert(hotApi.includes(".from('hotdeals')"),'Hot Deal API는 검증 결과 원�
 /* ── 3) 진입점 ─────────────────────────────────────────────────────── */
 assert(live.includes('<a class="nav-link hide-m" href="#priceDrop" data-act="scroll-drop">핫딜</a>'),'헤더 «핫딜» = 이 섹션');
 assert(!live.includes('가격 변동</span>'),'같은 섹션을 가리키던 «가격 변동» 은 «핫딜» 로 합쳤다');
-assert.equal((live.match(/data-act="scroll-drop"/g)||[]).length,2,'헤더 1 + 메뉴 1');
+assert.equal((live.match(/data-act="scroll-drop"/g)||[]).length,3,'헤더 1 + 메뉴 1 + 히어로 구매 타이밍 CTA 1');
 assert(live.includes('data-act="scroll-drop">핫딜 보기</button>'),'모바일 메뉴 «핫딜 보기»');
+assert(live.includes('class="hero-cta" data-act="scroll-drop">구매 타이밍 확인'),'히어로 구매 타이밍 CTA도 같은 핫딜 섹션으로 간다');
 assert(radar.includes('<a href="/#priceDrop">핫딜</a>'),'레이더 «핫딜» → 홈 섹션');
 assert(/location\.hash === '#priceDrop'/.test(live),'/#priceDrop 로 들어오면 데이터가 온 뒤 섹션으로 옮긴다');
 const vercel=JSON.parse(read('vercel.json'));
