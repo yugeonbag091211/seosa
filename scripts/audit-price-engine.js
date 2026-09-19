@@ -137,9 +137,17 @@ function reconcile(products, elig, historyByKey) {
   return { buckets: B, byMall };
 }
 
+/*
+ * 테스트가 분류 규칙만 따로 검사할 수 있게 내보낸다. require 로 불러도
+ * 감사가 돌지 않도록 main 은 아래에서 require.main 일 때만 실행한다.
+ */
+module.exports = { reconcile };
+
 /* ══════════════════════════════════════════════════════════════════
  *  main
  * ════════════════════════════════════════════════════════════════ */
+if (require.main !== module) return;
+
 (async () => {
   const today = P.kstToday();
   const out = { today, generatedAt: new Date().toISOString() };
