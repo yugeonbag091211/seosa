@@ -897,6 +897,39 @@ async function fetchEverCollectedKeys() {
   }
 }
 
+/**
+ * 2026-09-18 대량 seed 로 들어온 카탈로그를 일일 collector 분모에서 분리한다.
+ *
+ * 운영 DB 실측:
+ *   - 2026-09-18 하루 신규 history: ADPICK 45,672 / 쿠팡 21,068
+ *   - 대부분 source='seed'
+ *   - 기존 수천 개 규모 collector 가 6만+ 상품을 매일 갱신하려 하면서
+ *     일일 예산과 수집률 지표가 동시에 무너졌다.
+ *
+ * DB 함수 collector_eligible_products() 는
+ *   1) seed 폭증 이전부터 존재했거나
+ *   2) 이후라도 search / ai / cron / import 로 실제 관측된 상품
+ * 만 돌려준다. collect 자체는 seed-only 상품을 승격시키지 않는다.
+ *
+ * PRICE_INCLUDE_BULK_SEED=1 은 비상 우회용이다.
+ */
+async function fetchCollectorEligibleKeys() {
+  if (process.env.PRICE_INCLUDE_BULK_SEED === '1') return null;
+
+  const seen = new Set();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .rpc('collector_eligible_products')
+      .range(from, from + PAGE - 1);
+    if (error) {
+      throw new Error('collector_eligible_products 조회 실패: ' + error.message
+        + ' — Supabase migration collector_eligible_catalog_after_bulk_seed 적용 여부를 확인하세요.');
+    }
+    (data || []).forEach(r => seen.add(`${r.product_id}|${r.mall}`));
+    if (!data || data.length < PAGE) return seen;
+  }
+}
+
 /* ─── 진행 상태 (price_job_state) ─────────────────────────────
  *
  * 프로세스가 끝나도 남아야 하는 값이라 DB 에 둔다. 전역변수에 두면
@@ -2892,6 +2925,27 @@ async function runLocked(state, lockToken) {
 
   const otherByMall = new Map();
   otherRows.forEach(p => otherByMall.set(p.mall, (otherByMall.get(p.mall) || 0) + 1));
+
+  /*
+   * ★ 일일 collector 대상과 대량 seed 카탈로그를 분리한다.
+   *
+   * products 전체는 검색/히스토리 용도로 그대로 보존한다. 여기서는 매일 가격을
+   * 재수집할 대상만 좁힌다. 이렇게 해야 2026-09-18 seed 6만+ 건이 collector
+   * 분모와 호출 예산을 잡아먹지 않는다.
+   */
+  if (!SEED_ONLY) {
+    const eligible = await fetchCollectorEligibleKeys();
+    if (eligible) {
+      const beforeC = coupangRows.length, beforeA = adpickRows.length;
+      coupangRows = coupangRows.filter(p => eligible.has(`${p.product_id}|${p.mall}`));
+      adpickRows  = adpickRows.filter(p => eligible.has(`${p.product_id}|${p.mall}`));
+      console.log(`\n[collector 대상 필터] bulk seed 제외 — 실제 관측 카탈로그만 일일 갱신합니다.`);
+      console.log(`  쿠팡   ${beforeC}개 → ${coupangRows.length}개`);
+      console.log(`  ADPICK ${beforeA}개 → ${adpickRows.length}개`);
+    } else {
+      console.warn('\n[collector 대상 필터] PRICE_INCLUDE_BULK_SEED=1 — 전체 products 를 수집 대상으로 사용합니다.');
+    }
+  }
 
   /*
    * ★ 시드 모드 필터 — SEED_ONLY 주석 참고.
