@@ -2849,6 +2849,47 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────
+const CACHE_RETENTION_DEFAULT_MS = 24 * 60 * 60 * 1000;
+
+function cacheRetentionMs(envName) {
+  const raw = Number(process.env[envName]);
+  return Number.isFinite(raw) && raw > 0 ? raw : CACHE_RETENTION_DEFAULT_MS;
+}
+
+/**
+ * 검색 캐시는 재생성 가능한 파생 데이터다.
+ *
+ * active TTL은 6시간이고 공급자 장애 시 stale fallback만 잠깐 쓴다.
+ * fallback 상한을 넘긴 row를 계속 들고 있으면 JSONB TOAST가 DB 용량을
+ * 크게 잡아먹는다(2026-09-19 실측: Coupang 86MB + ADPICK 12MB).
+ *
+ * 실패해도 collector 본체는 계속 돈다. 캐시 정리 실패가 가격 수집 실패보다
+ * 중요한 일은 아니다.
+ */
+async function pruneSearchCaches() {
+  const specs = [
+    ['coupang_search_cache', cacheRetentionMs('COUPANG_STALE_MAX_MS')],
+    ['adpick_search_cache', cacheRetentionMs('ADPICK_STALE_MAX_MS')]
+  ];
+  const result = {};
+  for (const [table, keepMs] of specs) {
+    const cutoff = new Date(Date.now() - keepMs).toISOString();
+    try {
+      const { count, error } = await supabase
+        .from(table)
+        .delete({ count: 'exact' })
+        .lt('fetched_at', cutoff);
+      if (error) throw new Error(error.message);
+      result[table] = Number(count) || 0;
+      console.log(`[cache prune] ${table}: ${result[table]}행 삭제 (보존 ${Math.round(keepMs / 3600000)}시간)`);
+    } catch (e) {
+      result[table] = null;
+      console.warn(`[cache prune] ${table} 정리 실패 — 수집은 계속: ${e.message}`);
+    }
+  }
+  return result;
+}
+
 async function run() {
   const state = await loadState();
 
@@ -2870,6 +2911,9 @@ async function run() {
   }
   console.log(`[잠금] 획득 (${lock.token}) — TTL ${Math.round(LOCK_TTL_MS / 60000)}분`);
   try {
+    if (!state || state.job_date !== TODAY || state.status !== 'completed') {
+      await pruneSearchCaches();
+    }
     await runLocked(state, lock.token);
   } finally {
     await releaseLock(lock.token);
@@ -3794,7 +3838,9 @@ module.exports = {
   // 상태 읽기의 오류 분류 — test-audit-regressions 가 일시 장애 재시도/표 없음 안내를 고정한다.
   loadState, STATE_MISSING_HINT,
   // .in() URI 상한 회귀 — test-price-mall-collection 이 이 계약을 고정한다.
-  chunkIdsByLength, ID_BATCH_CHARS
+  chunkIdsByLength, ID_BATCH_CHARS,
+  // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
+  pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS
 };
 
 if (require.main === module) {
