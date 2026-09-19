@@ -3467,12 +3467,12 @@ select:focus-visible,textarea:focus-visible,
           <span class="hc-demo-tag">예시 화면</span>
           <p class="hc-ask">30만원 이하, 운동할 때 쓸<br>노이즈 캔슬링 헤드폰 찾아줘</p>
           <a class="hc-ans" href="https://biz.adpick.co.kr/r4544668" target="_blank" rel="noopener noreferrer sponsored nofollow">
-            <span class="hc-rank">추천 1위</span>
+            <span class="hc-rank">상품 예시</span>
             <div class="hc-ans-b">
               <div class="hc-ans-t">노이즈 캔슬링 무선 헤드폰</div>
               <div class="hc-ans-m">
                 <span class="hc-ans-p">실시간 가격 확인</span>
-                <span class="hc-ans-f">추천 예시</span>
+                <span class="hc-ans-f">AI 추천 예시</span>
               </div>
               <span class="hc-view-cta">상품 보기 →</span>
             </div>
@@ -4020,11 +4020,11 @@ select:focus-visible,textarea:focus-visible,
   </div>
 </div>
 
-<div class="overlay" id="privacyOverlay" style="display:none">
+<div class="overlay" id="privacyOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="privacyTitle">
   <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
     <div class="modal-head">
-      <div><div class="mt">개인정보처리방침</div></div>
-      <button class="modal-close" data-act="close-privacy">×</button>
+      <div><div class="mt" id="privacyTitle">개인정보처리방침</div></div>
+      <button class="modal-close" data-act="close-privacy" aria-label="닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <h3>1. 수집하는 개인정보</h3>
@@ -4098,11 +4098,11 @@ select:focus-visible,textarea:focus-visible,
 </div>
 
 <!-- 이용약관 -->
-<div class="overlay" id="termsOverlay" style="display:none">
+<div class="overlay" id="termsOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="termsTitle">
   <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
     <div class="modal-head">
-      <div><div class="mt">이용약관</div></div>
-      <button class="modal-close" data-act="close-terms">×</button>
+      <div><div class="mt" id="termsTitle">이용약관</div></div>
+      <button class="modal-close" data-act="close-terms" aria-label="닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <h3>1. 서비스 목적</h3>
@@ -4192,11 +4192,11 @@ select:focus-visible,textarea:focus-visible,
 </div>
 
 
-<div class="overlay" id="businessOverlay" style="display:none">
+<div class="overlay" id="businessOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="businessTitle">
   <div class="modal" style="max-width:600px">
     <div class="modal-head">
-      <div><div class="mt">사업자 정보</div></div>
-      <button class="modal-close" data-act="close-business">×</button>
+      <div><div class="mt" id="businessTitle">사업자 정보</div></div>
+      <button class="modal-close" data-act="close-business" aria-label="닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <div style="background:var(--subtle);padding:20px;border-radius:8px;font-size:.95rem;line-height:1.8">
@@ -9612,17 +9612,17 @@ var Modal = {
 
     } else if (cur > 0 && pos <= CONST.VERDICT.LOW) {
       v.className = 'verdict buy-v';
-      v.innerHTML = '<span class="vi">✦</span><div class="vt"><b>역대 최저가 수준 · 지금이 기회</b>'
+      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>수집 가격대 하단 · 현재는 낮은 편이에요</b>'
         + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 저렴해요.</span></div>';
 
     } else if (cur > 0 && pos >= CONST.VERDICT.HIGH) {
       v.className = 'verdict wait';
-      v.innerHTML = '<span class="vi">⏳</span><div class="vt"><b>지금은 비싼 편 · 조금 기다려보세요</b>'
+      v.innerHTML = '<span class="vi">↗</span><div class="vt"><b>수집 평균보다 높은 가격이에요</b>'
         + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 비싸요. 최저 ' + Fmt.won(st.min) + '원까지 내려간 적 있어요.</span></div>';
 
     } else if (cur > 0 && cur <= st.avg) {
       v.className = 'verdict buy-v';
-      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>평균보다 저렴 · 사기 좋은 시점</b>'
+      v.innerHTML = '<span class="vi">↘</span><div class="vt"><b>수집 평균보다 낮은 가격이에요</b>'
         + '<span>평균보다 ' + diffPct + '% (' + Fmt.won(diffWon) + '원) 저렴해요.</span></div>';
 
     } else {
@@ -11722,54 +11722,38 @@ var HeroCarousel = {
 };
 
 var Policy = {
-  openPrivacy: function() {
-    var o = $('privacyOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closePrivacy: function() {
-    var o = $('privacyOverlay');
-    if (o) o.style.display = 'none';
-  },
-  openTerms: function() {
-    var o = $('termsOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closeTerms: function() {
-    var o = $('termsOverlay');
-    if (o) o.style.display = 'none';
-  },
-
-  openBusiness: function() {
-    var o = $('businessOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closeBusiness: function() {
-    var o = $('businessOverlay');
-    if (o) o.style.display = 'none';
-  },
-
   /*
-   * 참전용사 지원 — 히어로 4번 슬라이드의 「취지 보기」.
-   *
-   * ★ display 만 바꾸지 않고 .open 도 함께 준다. .overlay 는 기본값이
-   *   opacity:0 · visibility:hidden 이고 보이게 하는 것은 .open 이다.
-   *   display:flex 한 줄만으로는 화면에 아무것도 나타나지 않는다.
+   * 정책/사업자/취지 모달은 모두 같은 overlay 계약을 쓴다.
+   * display:flex 만으로는 .overlay의 opacity:0 / pointer-events:none이 남아
+   * 실제로 보이지 않는다. 열 때 .open까지 붙이고, 닫을 때 전환 뒤 숨긴다.
+   * Focus.enter/leave로 키보드 사용자의 위치도 복원한다.
    */
-  openVeteran: function() {
-    var o = $('veteranOverlay');
-    if (!o) return;
+  _open: function(id) {
+    var o = $(id);
+    if (!o || o.classList.contains('open')) return;
     o.style.display = 'flex';
-    void o.offsetWidth;            // 전환이 보이도록 한 프레임 확정
+    void o.offsetWidth;
     o.classList.add('open');
-    var c = o.querySelector('.modal-close');
-    if (c) c.focus();
+    Focus.enter(id);
   },
-  closeVeteran: function() {
-    var o = $('veteranOverlay');
-    if (!o) return;
+  _close: function(id) {
+    var o = $(id);
+    if (!o || !o.classList.contains('open')) return;
     o.classList.remove('open');
-    setTimeout(function() { if (!o.classList.contains('open')) o.style.display = 'none'; }, 300);
-  }
+    Focus.leave();
+    setTimeout(function() {
+      if (!o.classList.contains('open')) o.style.display = 'none';
+    }, 300);
+  },
+
+  openPrivacy: function() { Policy._open('privacyOverlay'); },
+  closePrivacy: function() { Policy._close('privacyOverlay'); },
+  openTerms: function() { Policy._open('termsOverlay'); },
+  closeTerms: function() { Policy._close('termsOverlay'); },
+  openBusiness: function() { Policy._open('businessOverlay'); },
+  closeBusiness: function() { Policy._close('businessOverlay'); },
+  openVeteran: function() { Policy._open('veteranOverlay'); },
+  closeVeteran: function() { Policy._close('veteranOverlay'); }
 };
 
 // 정책 모달 닫기 버튼 바인딩
