@@ -1,5 +1,5 @@
 const supabase = require('./_supabase');
-const { applyCors, cachePublic, readStringList } = require('./_http');
+const { applyCors, cachePublic, readStringList, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { observedKstDate, sameVendorRows } = require('./_price');
 
@@ -226,7 +226,7 @@ async function singleHandler(req, res) {
     }
     res.json({ points, deal, fair });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'history', route: '/api/history', message: '가격 이력을 불러오지 못했어요.' });
   }
 }
 
@@ -390,7 +390,7 @@ async function batchHandler(req, res) {
     });
     res.json({ points: map, fair });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    return fail(res, e, { where: 'history-batch', route: '/api/history-batch', message: '가격 이력을 불러오지 못했어요.' });
   }
 }
 
