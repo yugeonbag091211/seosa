@@ -4020,11 +4020,11 @@ select:focus-visible,textarea:focus-visible,
   </div>
 </div>
 
-<div class="overlay" id="privacyOverlay" style="display:none">
+<div class="overlay" id="privacyOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="privacyTitle">
   <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
     <div class="modal-head">
-      <div><div class="mt">개인정보처리방침</div></div>
-      <button class="modal-close" data-act="close-privacy">×</button>
+      <div><div class="mt" id="privacyTitle">개인정보처리방침</div></div>
+      <button class="modal-close" data-act="close-privacy" aria-label="개인정보처리방침 닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <h3>1. 수집하는 개인정보</h3>
@@ -4072,9 +4072,11 @@ select:focus-visible,textarea:focus-visible,
       <h3>5. 외부 서비스 / 처리 위탁</h3>
       <p>다음 외부 서비스와 데이터를 공유합니다:</p>
       <ul style="margin-left:20px;margin-bottom:20px">
-        <li><strong>OpenRouter:</strong> AI 큐레이션 서비스 제공 (사용자 질문 → 응답 생성)</li>
-        <li><strong>Supabase / PostgreSQL:</strong> 데이터 저장소 (암호화됨)</li>
-        <li><strong>쿠팡 검색 API:</strong> 상품 가격 및 정보 수집 (사용자 정보 공유 안 함)</li>
+        <li><strong>Google Gemini, Groq, OpenRouter:</strong> 가용한 무료 AI 제공자 중 하나를 통해 사용자 질문의 응답을 생성할 수 있습니다</li>
+        <li><strong>Supabase / PostgreSQL:</strong> 로그인·프로필·알림·서비스 데이터 저장 및 인증 처리</li>
+        <li><strong>Resend:</strong> 인증 코드 및 가격 알림 등 서비스 이메일 발송</li>
+        <li><strong>Google Analytics:</strong> 방문·페이지 이용 통계 측정. 광고 개인화를 위한 이메일 등 직접 식별정보는 전송하지 않습니다</li>
+        <li><strong>쿠팡 / ADPICK 제휴몰 API:</strong> 상품 가격·링크·상품 정보 수집. 사용자 이메일·프로필은 전달하지 않습니다</li>
       </ul>
       <p style="color:var(--faint);font-size:.9rem"><strong>※ 사업자가 최종 확인해야 할 사항:</strong> 외부 서비스의 개인정보보호 약관과 계약 상 위탁 범위 재확인</p>
 
@@ -4092,17 +4094,17 @@ select:focus-visible,textarea:focus-visible,
         <li>Instagram: @seosakorea</li>
       </ul>
 
-      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
+      <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 9월 19일</p>
     </div>
   </div>
 </div>
 
 <!-- 이용약관 -->
-<div class="overlay" id="termsOverlay" style="display:none">
+<div class="overlay" id="termsOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="termsTitle">
   <div class="modal" style="max-width:800px;height:80vh;overflow-y:auto">
     <div class="modal-head">
-      <div><div class="mt">이용약관</div></div>
-      <button class="modal-close" data-act="close-terms">×</button>
+      <div><div class="mt" id="termsTitle">이용약관</div></div>
+      <button class="modal-close" data-act="close-terms" aria-label="이용약관 닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <h3>1. 서비스 목적</h3>
@@ -4111,15 +4113,15 @@ select:focus-visible,textarea:focus-visible,
       <h3>2. 회원 / 비회원 이용</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
         <li><strong>비회원:</strong> 상품 검색, 가격 조회, 가격 그래프 열람 가능</li>
-        <li><strong>회원:</strong> 위시리스트 저장, 가격 알림 신청, 횟수 제한 없는 AI Concierge</li>
+        <li><strong>회원:</strong> 위시리스트·취향 프로필·가격 알림을 계정에 연결하고 AI Concierge에서 저장한 취향을 반영할 수 있습니다</li>
       </ul>
 
       <h3>3. 상품 검색 및 가격 정보</h3>
       <ul style="margin-left:20px;margin-bottom:20px">
-        <li>모든 상품 정보는 쿠팡 검색 API에서 실시간으로 수집합니다</li>
-        <li>가격은 변동할 수 있으며, 사이트에 표시된 가격과 쿠팡의 실제 가격이 일치하지 않을 수 있습니다</li>
-        <li>쿠팡의 기술적 제한으로 일부 상품의 정가(원래 가격)를 수집하지 못할 수 있습니다</li>
-        <li>쿠팡 링크를 클릭하면 쿠팡의 정책에 따릅니다</li>
+        <li>상품 정보와 가격은 쿠팡 및 ADPICK 제휴몰 연동 결과와 SEOSA가 저장한 최근 가격 기록을 함께 사용합니다</li>
+        <li>API 캐시와 수집 주기 때문에 사이트 표시 가격이 판매처의 순간 가격과 다를 수 있으므로 구매 직전에 판매처에서 다시 확인해야 합니다</li>
+        <li>판매처가 정가·배송·옵션 정보를 제공하지 않는 경우 일부 정보는 표시되지 않을 수 있습니다</li>
+        <li>외부 쇼핑몰 링크를 클릭한 이후의 상품·결제·배송 조건은 해당 판매처 정책을 따릅니다</li>
       </ul>
 
       <h3>4. 가격 정보의 한계</h3>
@@ -4192,11 +4194,11 @@ select:focus-visible,textarea:focus-visible,
 </div>
 
 
-<div class="overlay" id="businessOverlay" style="display:none">
+<div class="overlay" id="businessOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="businessTitle">
   <div class="modal" style="max-width:600px">
     <div class="modal-head">
-      <div><div class="mt">사업자 정보</div></div>
-      <button class="modal-close" data-act="close-business">×</button>
+      <div><div class="mt" id="businessTitle">사업자 정보</div></div>
+      <button class="modal-close" data-act="close-business" aria-label="사업자 정보 닫기">×</button>
     </div>
     <div class="modal-body" style="padding:32px">
       <div style="background:var(--subtle);padding:20px;border-radius:8px;font-size:.95rem;line-height:1.8">
@@ -4258,8 +4260,8 @@ select:focus-visible,textarea:focus-visible,
     없지만, 무엇이 답을 썼는지 밝히는 편이 사용자에게 정직하므로 함께 적는다.
   -->
   <p style="margin-top:10px;font-size:.7rem;color:var(--faint);line-height:1.6">
-    AI 설명은 <strong style="font-weight:600">Built with MiniMax M3</strong> ·
-    NVIDIA Nemotron 오픈 모델로 생성됩니다.
+    AI 설명은 <strong style="font-weight:600">Built with MiniMax M3</strong>를 포함한
+    여러 무료 AI 모델 중 가용한 모델로 생성될 수 있습니다.
     가격·최저가·구매 시점 판정은 모델이 아니라 SEOSA 서버가 수집한 기록으로 계산합니다.
   </p>
   <p style="margin-top:10px;font-size:.7rem;color:var(--faint)">
@@ -11722,31 +11724,38 @@ var HeroCarousel = {
 };
 
 var Policy = {
-  openPrivacy: function() {
-    var o = $('privacyOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closePrivacy: function() {
-    var o = $('privacyOverlay');
-    if (o) o.style.display = 'none';
-  },
-  openTerms: function() {
-    var o = $('termsOverlay');
-    if (o) o.style.display = 'flex';
-  },
-  closeTerms: function() {
-    var o = $('termsOverlay');
-    if (o) o.style.display = 'none';
+  _lastFocus: null,
+
+  open: function(id) {
+    var o = $(id);
+    if (!o) return;
+    Policy._lastFocus = document.activeElement;
+    o.style.display = 'flex';
+    void o.offsetWidth;
+    o.classList.add('open');
+    var c = o.querySelector('.modal-close');
+    if (c) c.focus();
   },
 
-  openBusiness: function() {
-    var o = $('businessOverlay');
-    if (o) o.style.display = 'flex';
+  close: function(id) {
+    var o = $(id);
+    if (!o) return;
+    o.classList.remove('open');
+    setTimeout(function() {
+      if (!o.classList.contains('open')) o.style.display = 'none';
+    }, 300);
+    if (Policy._lastFocus && typeof Policy._lastFocus.focus === 'function') {
+      try { Policy._lastFocus.focus(); } catch (e) {}
+    }
+    Policy._lastFocus = null;
   },
-  closeBusiness: function() {
-    var o = $('businessOverlay');
-    if (o) o.style.display = 'none';
-  },
+
+  openPrivacy: function() { Policy.open('privacyOverlay'); },
+  closePrivacy: function() { Policy.close('privacyOverlay'); },
+  openTerms: function() { Policy.open('termsOverlay'); },
+  closeTerms: function() { Policy.close('termsOverlay'); },
+  openBusiness: function() { Policy.open('businessOverlay'); },
+  closeBusiness: function() { Policy.close('businessOverlay'); },
 
   /*
    * 참전용사 지원 — 히어로 4번 슬라이드의 「취지 보기」.
@@ -11782,6 +11791,14 @@ document.addEventListener('click', function(e) {
   if (e.target.id === 'termsOverlay') Policy.closeTerms();
   if (e.target.id === 'businessOverlay') Policy.closeBusiness();
 }, true);
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  if ($('privacyOverlay') && $('privacyOverlay').classList.contains('open')) Policy.closePrivacy();
+  else if ($('termsOverlay') && $('termsOverlay').classList.contains('open')) Policy.closeTerms();
+  else if ($('businessOverlay') && $('businessOverlay').classList.contains('open')) Policy.closeBusiness();
+  else if ($('veteranOverlay') && $('veteranOverlay').classList.contains('open')) Policy.closeVeteran();
+});
 
 Init.run();
 </script>
