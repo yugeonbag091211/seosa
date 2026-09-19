@@ -1630,6 +1630,77 @@ function probeChild(envLines) {
   }
   console.log('');
 
+  /* ==============================================================
+   *  §14  예산 동시성 — in-flight 예약이 hard ceiling 을 넘지 않는다
+   *
+   *  2026-09-19 운영에서 COUPANG_DAY_BUDGET=2800인데 실제 collect 호출이
+   *  2801회 기록됐다. CONCURRENCY=4의 여러 호출이 응답 전 같은 남은 슬롯을
+   *  보고 동시에 진입했기 때문이다. 이 테스트는 실행 상한을 2로 줄이고
+   *  네 요청을 동시에 시작해 공급자 함수가 정확히 2번만 불리는지 고정한다.
+   * ============================================================== */
+  section('§14  예산 동시성 — in-flight 슬롯 예약');
+  {
+    const src = `
+      process.env.COUPANG_ACCESS_KEY='test-access';
+      process.env.COUPANG_SECRET_KEY='test-secret';
+      process.env.COUPANG_RUN_BUDGET='2';
+      process.env.COUPANG_DAY_BUDGET='999';
+      const path=require('path'), Module=require('module');
+      const DIR=${JSON.stringify(__dirname)};
+      function inject(rel,ex){const p=require.resolve(path.join(DIR,'..',rel));
+        require.cache[p]=new Module(p,null);require.cache[p].filename=p;
+        require.cache[p].loaded=true;require.cache[p].exports=ex;}
+      const fakeDb={from:()=>{const c={select:()=>c,in:()=>c,eq:()=>c,lt:()=>c,gte:()=>c,
+        not:()=>c,order:()=>c,limit:()=>c,range:()=>c,upsert:()=>Promise.resolve({data:[],error:null}),
+        update:()=>c,then:r=>Promise.resolve({data:[],error:null,count:0}).then(r)};return c;},
+        rpc:()=>Promise.resolve({data:[],error:null})};
+      inject('api/_supabase.js',fakeDb);
+      inject('api/_notify.js',{send:()=>Promise.resolve({ok:true})});
+      let providerCalls=0, release;
+      const gate=new Promise(r=>{release=r;});
+      inject('api/_coupang.js',{
+        searchCoupang:async()=>{providerCalls++;await gate;return {from:'api',items:[],allItems:[],blocked:false,error:null};},
+        isBlocked:()=>false,
+        localStats:()=>({calls:providerCalls,cacheHits:0,denied:0,blocked:false,blockReason:''})
+      });
+      inject('api/_adpick.js',{
+        searchAdpick:async()=>({from:'api',items:[],blocked:false,error:null}),
+        isBlocked:()=>false,
+        localStats:()=>({calls:0,cacheHits:0,denied:0,blocked:false,blockReason:''}),
+        hasKey:()=>false
+      });
+      const mod=require(path.join(DIR,'collect-all-prices.js'));
+      const pending=[1,2,3,4].map(i=>mod.fetchCoupangAll('q'+i));
+      setImmediate(()=>release());
+      Promise.all(pending).then(rs=>{
+        console.log('__BUDGET__'+JSON.stringify({
+          providerCalls,
+          ok:rs.filter(x=>x.ok).length,
+          budgetRejects:rs.filter(x=>!x.ok && /예산/.test(x.reason||'')).length
+        }));
+      });
+    `;
+    let out='';
+    try { out=execFileSync(process.execPath,['-e',src],{encoding:'utf8',timeout:30000}); }
+    catch(e){ out=String((e.stdout||'')+(e.stderr||'')); }
+    const m=out.match(/__BUDGET__(\{.*\})/);
+    let got=null;
+    try { got=m?JSON.parse(m[1]):null; } catch(_) {}
+    check(got && got.providerCalls===2,
+      '★★ 동시 4요청이어도 실행 상한 2를 넘겨 공급자 API를 부르지 않는다', got || out.slice(-400));
+    check(got && got.budgetRejects===2,
+      '★★ 남은 2요청은 실제 API 호출 없이 budget 거절된다', got || out.slice(-400));
+
+    const collectorSrc=require('fs').readFileSync(path.join(__dirname,'collect-all-prices.js'),'utf8');
+    check(/_coupangCalls \+ _coupangInFlight >= COUPANG_RUN_BUDGET/.test(collectorSrc),
+      '★ 실행 예산 판정이 in-flight 예약을 포함한다');
+    check(/_coupangDayUsed \+ _coupangCalls \+ _coupangInFlight >= COUPANG_DAY_BUDGET/.test(collectorSrc),
+      '★ 하루 예산 판정도 in-flight 예약을 포함한다');
+    check(/COUPANG_DAY_BUDGET\) \|\| 3400/.test(collectorSrc),
+      '★ 현재 일일 대상 규모에 맞춘 쿠팡 하루 상한은 3,400이다');
+  }
+  console.log('');
+
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('테스트 실행 오류:', e); process.exit(1); });
