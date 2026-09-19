@@ -1,0 +1,26 @@
+name: Collector Regression
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/collect-all-prices.js'
+      - 'scripts/test-second-pass.js'
+      - 'scripts/test-price-mall-collection.js'
+      - '.github/workflows/collector-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  collector-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Second-pass and budget regression
+        run: node scripts/test-second-pass.js
+      - name: Mall collection/report regression
+        run: node scripts/test-price-mall-collection.js
