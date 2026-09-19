@@ -24,7 +24,7 @@
  */
 
 const { readBody, applyCors, noStore } = require('./_http');
-const { guard } = require('./_ratelimit');
+const { guardGlobal } = require('./_ratelimit');
 const { identify } = require('./_auth');
 const supabase = require('./_supabase');
 const toss = require('./_toss');
@@ -494,7 +494,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
 
   // 결제 엔드포인트는 반복 호출로 결제사 API 를 두드릴 수 있으니 좁게 잡는다.
-  if (!guard(req, res, { name: 'payment', limit: 20, windowMs: 60 * 1000 })) return;
+  if (!(await guardGlobal(req, res, { name: 'payment', limit: 20, windowMs: 60 * 1000 }))) return;
 
   // 신원은 토큰에서만. body 의 email 은 보지 않는다.
   const who = identify(req);
