@@ -99,13 +99,46 @@ function ok(cond, name, detail) {
 function eq(a, b, name) { ok(a === b, name, a === b ? String(a) : `기대 ${b} / 실제 ${a}`); }
 function section(t) { console.log(`\n[${t}]`); }
 
+/*
+ * ── fixture 날짜는 «상대» 로 만든다 ───────────────────────────────
+ *
+ * ★ 여기에 날짜를 못 박으면 테스트가 시한폭탄이 된다.
+ *
+ *   funnel.report(n) 은 «오늘 기준 n일» 이라는 움직이는 창으로 조회한다
+ *   (api/_funnel.js: since = kstToday(now - (n-1)일)). 그런데 7·8·9 절의
+ *   fixture 는 order_date/event_date 를 '2026-09-07' 로 못 박아 두었다.
+ *   그래서 벽시계가 2026-09-14 를 넘긴 순간 fixture 가 통째로 창 밖으로
+ *   나갔고, report() 가 빈 결과를 돌려주면서 회계 단언들이 «제품 버그 없이»
+ *   무너졌다 (2026-09-20 실측: 측정 GMV·전체 GMV·클릭 집계 3건 FAIL 뒤
+ *   topProducts[0] 이 undefined 라 TypeError).
+ *
+ *   못 박힌 날짜가 통과하던 동안에도 그 단언들은 «이유가 틀린 채» 통과했다.
+ *   창 밖이라 데이터가 0건이면 GMV 는 커버리지와 무관하게 null 이 되므로,
+ *   "일부만 연결됐으면 null" 이 정말로 커버리지 때문인지 알 수 없었다.
+ *
+ * ★ 창을 만드는 쪽과 «같은» kstToday() 를 쓴다. 날짜 경계를 두 군데서 서로
+ *   다르게 해석할 자리를 아예 없앤다. scripts/test-price-integrity.js 의
+ *   daysAgo() 와 같은 관례다.
+ */
+const { kstToday } = require('../api/_kst');
+function daysAgo(n) { return kstToday(new Date(Date.now() - n * 86400000)); }
+
+const ORDER_DAY   = daysAgo(3);   // 주문한 날
+const CANCEL_DAY  = daysAgo(2);   // 주문 다음날 취소
+const CONFIRM_DAY = daysAgo(1);   // 주문 이틀 뒤 확정
+/*
+ * report(7) 의 창 «안». 창은 오늘 포함 7일(since = 6일 전)이므로 1일 전이면
+ * 실행 도중 KST 자정을 넘겨도 양쪽으로 여유가 남는다.
+ */
+const IN_WINDOW   = daysAgo(1);
+
 /** ADPICK 공식 계약 모양의 행 하나. */
 const row = (over) => Object.assign({
   idx: '1001', cp_code: 'CP1', cp_name: '11번가', o_cd: 'ORDER-1', trlog_id: 'TRL-1',
-  p_cd: 'PROD-1', p_nm: '상품명', regdate: '2026-09-05 12:00:00', confirm_date: '',
+  p_cd: 'PROD-1', p_nm: '상품명', regdate: ORDER_DAY + ' 12:00:00', confirm_date: '',
   qty: 1, sales: 50000, commission: 2500, commission_rate: '5',
   status: '정상', trans_comment: '', p_data: 'hotdeal-ab12cd34',
-  link_id: 'LNK1', api_date: '2026-09-05'
+  link_id: 'LNK1', api_date: ORDER_DAY
 }, over || {});
 
 const ENV_KEYS = ['ADPICK_API_KEY', 'COUPANG_ACCESS_KEY', 'COUPANG_SECRET_KEY',
@@ -131,7 +164,7 @@ ENV_KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
 
   section('2) 정규화 — 공식 계약 필드만');
   {
-    const r = C.fromAdpick(row({ status: '확정', confirm_date: '2026-09-07 09:00:00' }));
+    const r = C.fromAdpick(row({ status: '확정', confirm_date: CONFIRM_DAY + ' 09:00:00' }));
     eq(r.ok, true, '정상 행');
     eq(r.row.status, 'CONFIRMED', '상태');
     eq(r.row.partner_status, '확정', '★ 파트너 원문 보존');
@@ -139,16 +172,16 @@ ENV_KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
     eq(r.row.commission, 2500, 'commission');
     eq(r.row.external_id, 'TRL-1', '기본 식별자 trlog_id');
     eq(r.row.source, 'adpick-report', '기존 스키마 호환 source');
-    eq(r.row.order_date, '2026-09-05', 'regdate → order_date');
+    eq(r.row.order_date, ORDER_DAY, 'regdate → order_date (시각 부분은 잘린다)');
     ok(!!r.row.confirmed_at, 'confirm_date → confirmed_at');
     eq(r.row.cancelled_at, null, '확정이면 cancelled_at 없음');
     ok(!('p_nm' in r.row.raw_json), '★ 상품명(p_nm)을 raw_json 에 담지 않는다');
     ok(!('trans_comment' in r.row.raw_json), '★ 판매자 자유문자열을 담지 않는다');
     // 확정 아닌 건은 confirmed_at 을 만들지 않는다
-    eq(C.fromAdpick(row({ status: '정상', confirm_date: '2026-09-07' })).row.confirmed_at, null,
+    eq(C.fromAdpick(row({ status: '정상', confirm_date: CONFIRM_DAY })).row.confirmed_at, null,
       "★ '정상' 에는 confirmed_at 을 붙이지 않는다");
     // 취소
-    const c = C.fromAdpick(row({ status: '취소', confirm_date: '2026-09-06' }));
+    const c = C.fromAdpick(row({ status: '취소', confirm_date: CANCEL_DAY }));
     eq(c.row.status, 'CANCELLED', '취소 상태');
     ok(!!c.row.cancelled_at, 'cancelled_at 기록');
   }
@@ -206,7 +239,7 @@ ENV_KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
   {
     db.conversions.length = 0;
     const { upsert } = require('./import-conversions.js');
-    const mk = st => C.fromAdpick(row({ status: st, confirm_date: st === '정상' ? '' : '2026-09-07' })).row;
+    const mk = st => C.fromAdpick(row({ status: st, confirm_date: st === '정상' ? '' : CONFIRM_DAY })).row;
 
     await upsert([mk('정상')]);
     eq(db.conversions.length, 1, '첫 적재 1행');
@@ -248,7 +281,7 @@ ENV_KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
     eq(cov.complete, false, '커버리지 불완전');
 
     // 확정 전환이 있어도 전체 GMV 는 null 이어야 한다
-    db.conversions.push({ status: 'CONFIRMED', gmv: 500000, commission: 25000, order_date: '2026-09-07' });
+    db.conversions.push({ status: 'CONFIRMED', gmv: 500000, commission: 25000, order_date: IN_WINDOW });
     let rep = await funnel.report(7);
     eq(rep.measuredConfirmedGmv, 500000, '측정된 확정 매출은 숫자로 낸다');
     eq(rep.gmv, null, '★★ 일부만 연결됐으면 전체 GMV 는 null');
@@ -274,7 +307,7 @@ ENV_KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
     funnel._internal._reset();
     for (let i = 0; i < 100; i++) {
       db.funnel_events.push({ event: 'affiliate_click', product_id: 'P1', mall: '쿠팡',
-        price: 50000, event_date: '2026-09-07' });
+        price: 50000, event_date: IN_WINDOW });
     }
     const rep = await funnel.report(7);
     eq(rep.events.affiliate_click, 100, '클릭 100건 집계');
@@ -288,8 +321,8 @@ ENV_KEYS.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; });
   section('9) pending only → confirmedGmv 0');
   {
     db.conversions.length = 0;
-    db.conversions.push({ status: 'PENDING', gmv: 800000, commission: 40000, order_date: '2026-09-07' });
-    db.conversions.push({ status: 'ORDERED', gmv: 200000, commission: 10000, order_date: '2026-09-07' });
+    db.conversions.push({ status: 'PENDING', gmv: 800000, commission: 40000, order_date: IN_WINDOW });
+    db.conversions.push({ status: 'ORDERED', gmv: 200000, commission: 10000, order_date: IN_WINDOW });
     const rep = await funnel.report(7);
     eq(rep.confirmedGmv, 0, '★ 확정이 없으면 0 (주문액을 매출로 세지 않는다)');
     eq(rep.orderedGmv, 1000000, '주문액은 따로 보인다');
