@@ -57,6 +57,7 @@ const RESULT_LIMIT = 10;
 
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
+  if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 지원' });
 
   // 이 엔드포인트는 호출 한 번당 쿠팡 API를 호출하고 DB에도 쓴다.
   // 무제한으로 열어두면 외부 API 일일 쿼터와 DB 비용이 그대로 소진된다.
