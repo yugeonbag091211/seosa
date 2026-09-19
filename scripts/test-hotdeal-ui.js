@@ -43,6 +43,9 @@ assert(live.includes("'getHotdeals':'/api/hotdeals'"),'홈 핫딜 데이터는 /
 assert(live.includes("Api.call('getHotdeals', [], function(items)"),'Drop.load 가 Hot Deal API를 읽는다');
 assert(live.includes('Drop.show((items || []).map(Drop.fromHotdeal))'),'Hot Deal 응답을 기존 카드 모양으로 변환한다');
 assert(live.includes('data-act="ledger-open"')&&live.includes('data-act="ledger-buy"')&&live.includes('data-act="ledger-alert"'),'카드 → 가격 추이 · 구매 · 알림 그대로');
+assert(live.includes('nearHistoricalLow: !!s.nearHistoricalLow'),'서버 near-low 신호를 exact-low로 바꾸지 않는다');
+assert(live.includes('수집 최저가 근처'),'±2% near-low를 «최저»라고 과장하지 않는다');
+assert(!live.includes('isAllTimeLow: !!s.nearHistoricalLow'),'near-low를 isAllTimeLow로 오표기하지 않는다');
 const hotApi=read('api/hotdeals.js');
 assert(hotApi.includes(".from('hotdeals')"),'Hot Deal API는 검증 결과 원장을 읽는다');
 
