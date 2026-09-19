@@ -186,7 +186,19 @@ const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 500;
  *   / 쿠팡 공식 한도(검색 50회/분). 이 값은 하루 총량의 천장일 뿐이고,
  *   scripts/test-second-pass.js 가 간격 6000ms 를 소스에서 그대로 고정한다.
  */
-const COUPANG_DAY_BUDGET = Number(process.env.COUPANG_DAY_BUDGET) || 2800;
+/*
+ * ★ 2,800 → 3,400 (2026-09-19).
+ *
+ * bulk seed 카탈로그를 일일 대상에서 분리한 뒤 운영 대상은 쿠팡 1,831개가 됐다.
+ * 이 중 최근 14일 안에 실제로 한 번 이상 잡힌 상품은 1,679개(91.7%)라 90%
+ * 목표는 도달 가능하다. 반면 최근 2,800호출 날의 현재 대상 기준 일일 보유는
+ * 약 1,300대였고, 09-08 실측 한계수익(~0.6개/추가 호출)을 적용하면 90%까지
+ * 약 500여 호출이 더 필요하다. 그래서 여유를 포함해 3,400으로 둔다.
+ *
+ * 분당 속도는 바꾸지 않는다. COUPANG_MIN_GAP_MS=6000과 _coupang의 전역
+ * 분당 제한은 그대로이며, 이 값은 KST 하루 총량의 천장만 넓힌다.
+ */
+const COUPANG_DAY_BUDGET = Number(process.env.COUPANG_DAY_BUDGET) || 3400;
 
 /** ADPICK 도 같은 안전판. ADPICK 수집 대상 712개 / 검색어 75종(2026-09-03 실측)이라
  *  이 값을 넘길 일이 당분간 없지만, 폭주 방지용으로 똑같이 둔다. */
@@ -586,6 +598,7 @@ function pickOption(target, items) {
 let _coupangBlocked = false;
 let _coupangBlockMsg = '';
 let _coupangCalls = 0;      // 실제로 나간 호출 수 (캐시 적중은 제외)
+let _coupangInFlight = 0;   // 예산을 예약하고 아직 응답이 안 온 호출 수
 let _coupangSkipped = 0;    // 예산/상한/차단으로 건너뛴 횟수
 let _coupangBudgetWarned = false;
 let _coupangDayUsed = 0;        // 오늘(KST) 이 수집기가 이미 쓴 호출 수
@@ -629,7 +642,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
   if (!COUP_ACCESS || !COUP_SECRET) return { ok: false, items: [], reason: '쿠팡 키 미설정' };
   if (_coupangBlocked || isCoupangBlockedGlobal()) return { ok: false, items: [], reason: '쿠팡 차단 상태' };
 
-  if (_coupangCalls >= COUPANG_RUN_BUDGET) {
+  if (_coupangCalls + _coupangInFlight >= COUPANG_RUN_BUDGET) {
     _coupangSkipped++;
     if (!_coupangBudgetWarned) {
       _coupangBudgetWarned = true;
@@ -639,7 +652,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
   }
 
   // 하루 총량 상한 (COUPANG_DAY_BUDGET 주석 참고). 실행당 상한과 별개의 천장이다.
-  if (_coupangDayUsed + _coupangCalls >= COUPANG_DAY_BUDGET) {
+  if (_coupangDayUsed + _coupangCalls + _coupangInFlight >= COUPANG_DAY_BUDGET) {
     _coupangSkipped++;
     if (!_coupangDayWarned) {
       _coupangDayWarned = true;
@@ -652,15 +665,27 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
 
   // forceRefresh를 쓰지 않는다. 최근 6시간 안에 받아둔 값이면 그것도 "오늘 가격"이라
   // 하루 한 번 스냅샷을 남기는 이 스크립트에는 충분하고, 그만큼 호출이 줄어든다.
-  const r = await searchCoupang(keyword, {
-    limit,
-    source: 'collect',
-    minGapMs: COUPANG_MIN_GAP_MS,
-    maxWaitMs: COUPANG_MAX_WAIT_MS
-  });
+  /*
+   * 예산 검사는 동시 호출이 시작되기 전에 슬롯을 예약해야 한다.
+   * CONCURRENCY=4라서 응답 뒤에만 _coupangCalls 를 올리면 네 호출이 모두
+   * 같은 "남은 1칸"을 보고 들어갈 수 있다. 2026-09-19 운영에서 하루 상한
+   * 2,800인데 실제 2,801회가 기록된 원인이 이것이었다.
+   */
+  _coupangInFlight++;
+  let r;
+  try {
+    r = await searchCoupang(keyword, {
+      limit,
+      source: 'collect',
+      minGapMs: COUPANG_MIN_GAP_MS,
+      maxWaitMs: COUPANG_MAX_WAIT_MS
+    });
 
-  if (r.from === 'api') _coupangCalls++;
-  else if (r.from === 'none') _coupangSkipped++;
+    if (r.from === 'api') _coupangCalls++;
+    else if (r.from === 'none') _coupangSkipped++;
+  } finally {
+    _coupangInFlight = Math.max(0, _coupangInFlight - 1);
+  }
 
   /*
    * 오래된 캐시는 "오늘 가격"이 아니다.
@@ -764,6 +789,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
 let _adpickBlocked = false;   // 이번 실행에서 차단을 본 적이 있는가 (리포트 전용)
 let _adpickBlockMsg = '';
 let _adpickCalls = 0;
+let _adpickInFlight = 0;    // 실행 예산을 예약하고 아직 응답이 안 온 호출 수
 let _adpickSkipped = 0;
 let _adpickBudgetWarned = false;
 
@@ -784,7 +810,7 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
    */
   if (isAdpickBlockedGlobal()) return { ok: false, items: [], reason: 'ADPICK 차단 상태' };
 
-  if (_adpickCalls >= ADPICK_RUN_BUDGET) {
+  if (_adpickCalls + _adpickInFlight >= ADPICK_RUN_BUDGET) {
     _adpickSkipped++;
     if (!_adpickBudgetWarned) {
       _adpickBudgetWarned = true;
@@ -793,15 +819,21 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
     return { ok: false, items: [], reason: `실행당 호출 예산 ${ADPICK_RUN_BUDGET}회 소진` };
   }
 
-  const r = await searchAdpick(keyword, {
-    limit,
-    source: 'collect',
-    minGapMs: ADPICK_MIN_GAP_MS,
-    maxWaitMs: ADPICK_MAX_WAIT_MS
-  });
+  _adpickInFlight++;
+  let r;
+  try {
+    r = await searchAdpick(keyword, {
+      limit,
+      source: 'collect',
+      minGapMs: ADPICK_MIN_GAP_MS,
+      maxWaitMs: ADPICK_MAX_WAIT_MS
+    });
 
-  if (r.from === 'api') _adpickCalls++;
-  else if (r.from === 'none') _adpickSkipped++;
+    if (r.from === 'api') _adpickCalls++;
+    else if (r.from === 'none') _adpickSkipped++;
+  } finally {
+    _adpickInFlight = Math.max(0, _adpickInFlight - 1);
+  }
 
   /*
    * ★ 차단 기록을 stale-cache 판정 «앞» 으로 옮겼다 (2026-09-08 감사).
@@ -3000,6 +3032,7 @@ async function runLocked(state, lockToken) {
     mallName: '쿠팡', rows: coupangRows, fetchAllFn: fetchCoupangAll,
     savedState: coupangSaved, deadlineTs: started + coupangShare
   });
+  coupangResult.apiCalls = _coupangCalls;
 
   // ── ADPICK — 쿠팡이 일찍 끝났으면 남은 시간을 전부 받는다(최소 절반 보장).
   const adpickResult = await runMallCollection({
@@ -3012,6 +3045,7 @@ async function runLocked(state, lockToken) {
      */
     isBlockedFn: isAdpickBlockedGlobal
   });
+  adpickResult.apiCalls = _adpickCalls;
 
   // ── 콘솔 리포트 (몰별 트리) ──────────────────────────────
   console.log(`\n${'═'.repeat(60)}`);
@@ -3031,7 +3065,8 @@ async function runLocked(state, lockToken) {
       + ` / 시도했으나 무매칭 ${r.noMatchProducts}`
       + `   (시도율 ${rateStr(r.attemptedProducts, r.targetProducts)},`
       + ` 시도대비 성공률 ${rateStr(r.collectorSuccessProducts, r.attemptedProducts)})`);
-    console.log(`  attempt 총 ${r.attemptCalls} / 성공 ${r.attemptSuccess} / 실패 ${r.attemptFailed}  (${cats})`);
+    console.log(`  검색시도 ${r.attemptCalls} / 성공 ${r.attemptSuccess} / 실패 ${r.attemptFailed}  (${cats})`);
+    console.log(`  외부API 실제 호출 ${r.apiCalls || 0}`);
     console.log(`  저장   price_history ${r.recorded}행 / products ${r.saved}행`
       + ` / 급변 보류 ${r.suspect} / 값 이상 거부 ${r.rejected}`);
     console.log(`  진행   오늘 ${r.processed}/${r.total} (검색 그룹에 담긴 상품 ${r.processedProducts}개)`);
@@ -3206,6 +3241,7 @@ async function runLocked(state, lockToken) {
     attemptSuccess: sum('attemptSuccess'),
     attemptFailed: sum('attemptFailed'),
     attemptCallsRecovery: sum('attemptCallsRecovery'),
+    apiCalls: sum('apiCalls'),
     failCats: mergedFailureCategories,
 
     /* ── 행 단위 (DB 저장 결과) ── */
@@ -3224,6 +3260,9 @@ async function runLocked(state, lockToken) {
      * 검색으로는 더 손댈 수 없다는 뜻이다.
      */
     recoveryQueueRemaining: sum('secondPassRemaining'),
+    // 1차 자체가 예산·차단 등으로 응답을 못 받아 다음 실행에서 다시 불러야 하는 검색어.
+    retryQueueRemaining: (coupangResult.failedKeywords || []).length
+      + (adpickResult.failedKeywords || []).length,
 
     /* ── 패스별 성적 (전략 비교의 근거) ── */
     passStats: mergePassStats([coupangResult, adpickResult])
@@ -3391,7 +3430,8 @@ function todayPriceRate(report) {
  * ★ 이 메일의 규칙 하나: 한 칸에는 한 단위만 담는다.
  *
  *   상품 단위    대상 / 성공 상품 / 미수집 상품        (하루 누적, 분모 = 대상)
- *   attempt 단위 수집 attempt / 성공·실패 / 실패 원인  (collector 호출 1회 = 1)
+ *   attempt 단위 검색 attempt / 성공·실패 / 실패 원인  (검색어 처리 1회 = 1)
+ *   API 단위     실제 외부 API 호출                        (cache·budget 거절 제외)
  *   행 단위      price_history 저장 / products 갱신 / 급변 보류 / 값 이상 거부
  *
  *   2026-09-01 리포트가 "실패 26 인데 실패 원인 합계 151" 로 나온 것은
@@ -3404,9 +3444,9 @@ function buildReportHtml(report) {
     targetProducts, collectorSuccessProducts, collectorMissingProducts,
     attemptedProducts, skippedProducts, noMatchProducts,
     todayPriceProducts, uncoveredProducts,
-    attemptCalls, attemptSuccess, attemptFailed, attemptCallsRecovery,
+    attemptCalls, attemptSuccess, attemptFailed, attemptCallsRecovery, apiCalls,
     recorded, saved, suspect, rejected, processedProducts,
-    passStats, recoveryQueueRemaining
+    passStats, recoveryQueueRemaining, retryQueueRemaining
   } = report;
 
   function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -3571,9 +3611,10 @@ function buildReportHtml(report) {
   </td></tr>
 
   <tr><td style="padding:20px 32px 0">
-    <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin-bottom:4px">수집 실행 <span style="color:#bbb;font-weight:400">(단위: attempt = 실제 API 호출 1회 / 저장은 행)</span></div>
+    <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin-bottom:4px">수집 실행 <span style="color:#bbb;font-weight:400">(검색 시도와 실제 외부 API 호출을 분리)</span></div>
     <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">
-      ${row('수집 attempt (실제 API 호출)', num(attemptCalls), { bold: true })}
+      ${row('검색 attempt (collector 검색 시도)', num(attemptCalls), { bold: true })}
+      ${row('실제 외부 API 호출', num(apiCalls), { bold: true })}
       ${row('&nbsp;&nbsp;└ 1차 검색 / 회수 패스',
             `${num(attemptCalls) - num(attemptCallsRecovery)} / ${num(attemptCallsRecovery)}`)}
       ${row('성공 attempt', num(attemptSuccess), { color: '#0b7a4b' })}
@@ -3586,7 +3627,8 @@ function buildReportHtml(report) {
     </table>
     <div style="font-size:11px;color:#bbb;margin-top:4px">
       성공 attempt ${num(attemptSuccess)} + 실패 attempt ${num(attemptFailed)} = 수집 attempt ${num(attemptCalls)}<br>
-      ※ 처리 상품 수는 호출 횟수가 아니다 — 한 attempt(검색어 1회 호출)가 여러 상품을 덮는다.<br>
+      ※ 처리 상품 수는 검색 시도 횟수가 아니다 — 한 attempt가 여러 상품을 덮는다.<br>
+      ※ budget·차단처럼 API 입구에서 거절된 attempt는 실제 외부 API 호출에 포함되지 않는다.<br>
       ※ price_history 값은 upsert 로 보낸 행 수다. 같은 날 같은 (상품·몰·vendor)을 다시
       수집하면 UNIQUE 제약으로 기존 행을 덮으므로, DB 에 새로 생긴 행 수는 이보다 적을 수 있다.
     </div>
@@ -3597,18 +3639,19 @@ function buildReportHtml(report) {
     <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;border:1px solid #eee;border-radius:6px">
       <tr style="background:#f8f8f7">
         <td style="padding:6px 12px;color:#888;font-size:11px">패스</td>
-        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">호출</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">검색시도</td>
         <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">응답</td>
-        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">적중 호출</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">적중 시도</td>
         <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">회수 상품</td>
-        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">호출당 회수</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">시도당 회수</td>
       </tr>
       ${passRows}
     </table>
     <div style="font-size:11px;color:#bbb;margin-top:4px">
       pass1 = 1차 키워드 검색 · facet = 큰 그룹 분할 · r1~r9 = 상품별 검색어 사다리(라운드).<br>
-      ※ 비교 기준은 "호출당 회수" 다 — 한 호출이 여러 상품을 덮으므로 회수 상품 수만으로는 전략을 비교할 수 없다.<br>
-      남은 회수 큐(오늘 아직 안 부른 검색어): <b>${num(recoveryQueueRemaining)}</b>종
+      ※ 비교 기준은 "시도당 회수" 다 — 한 검색 시도가 여러 상품을 덮으므로 회수 상품 수만으로는 전략을 비교할 수 없다.<br>
+      남은 1차 재시도 큐(예산·차단 등으로 응답 못 받음): <b>${num(retryQueueRemaining)}</b>종<br>
+      남은 회수 큐(1차 응답 후 추가 검색 전략): <b>${num(recoveryQueueRemaining)}</b>종
     </div>
   </td></tr>
 
@@ -3631,7 +3674,7 @@ function buildReportHtml(report) {
         <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">대상<br>(상품)</td>
         <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">수집성공<br>(상품)</td>
         <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">가격보유<br>(상품)</td>
-        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">attempt</td>
+        <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">검색<br>attempt</td>
         <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">실패<br>(attempt)</td>
         <td style="padding:6px 12px;text-align:right;color:#888;font-size:11px">저장<br>(행)</td>
       </tr>
