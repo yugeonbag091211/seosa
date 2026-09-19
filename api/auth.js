@@ -1,5 +1,5 @@
 const { readBody, applyCors, readEmail, noStore, fail } = require('./_http');
-const { guard } = require('./_ratelimit');
+const { guardGlobal } = require('./_ratelimit');
 const { createCode, consumeCode, issueToken, TOKEN_TTL_MS, CODE_TTL_MS } = require('./_auth');
 const notify = require('./_notify');
 // 표가 «없을» 때만 마이그레이션 안내를 한다. DB 일시 장애에 "테이블이 없습니다" 를 말하지 않는다.
@@ -58,7 +58,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
 
   // 메일 발송 비용과 스팸을 막는다. 코드 확인은 조금 더 넉넉히 잡는다.
-  if (!guard(req, res, { name: 'auth', limit: 12, windowMs: 10 * 60 * 1000 })) return;
+  if (!(await guardGlobal(req, res, { name: 'auth', limit: 12, windowMs: 10 * 60 * 1000 }))) return;
 
   const body = readBody(req);
   const email = readEmail(body.email);
