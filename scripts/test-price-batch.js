@@ -10,7 +10,10 @@
  */
 'use strict';
 
-const { kstToday, buildPlan, splitBatches, resumeFrom } = require('./collect-all-prices');
+const {
+  kstToday, buildPlan, splitBatches, resumeFrom,
+  rotationBucketForDate, collectorTargetMeta, BULK_ROTATION_DAYS
+} = require('./collect-all-prices');
 
 let pass = 0, fail = 0;
 const results = [];
@@ -60,6 +63,31 @@ eq('UTC 2026-08-14T00:00Z → KST 08-14', kstToday(new Date('2026-08-14T00:00:00
 eq('Actions 실행시각 15:00 UTC = KST 새 날', kstToday(new Date('2026-08-13T15:00:00Z')), '2026-08-14');
 // 연말 경계
 eq('UTC 2026-12-31T15:00Z → KST 2027-01-01', kstToday(new Date('2026-12-31T15:00:00Z')), '2027-01-01');
+results.splice(0).forEach(r => console.log(r));
+
+/* ── 1-B. 전체 카탈로그 회전 버킷 ───────────────────────────── */
+console.log('\n[1-B] 전체 카탈로그 회전 버킷');
+{
+  eq('기본 회전 주기 = 7일', BULK_ROTATION_DAYS, 7);
+  const start = Date.parse('2026-09-21T00:00:00Z');
+  const buckets = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(start + i * 86400000).toISOString().slice(0, 10);
+    return rotationBucketForDate(d, 7);
+  });
+  eq('7일 연속이면 0~6 버킷을 정확히 한 번씩 돈다',
+    [...new Set(buckets.slice(0, 7))].sort((a, b) => a - b).join(','),
+    '0,1,2,3,4,5,6');
+  check('14일이면 각 버킷이 정확히 두 번 나온다',
+    Array.from({ length: 7 }, (_, b) => buckets.filter(x => x === b).length).every(n => n === 2),
+    JSON.stringify(buckets));
+
+  const m = collectorTargetMeta('2026-09-21');
+  eq('기본 정책은 rotation', m.mode, 'rotation');
+  eq('정책 메타의 회전 주기 = 7', m.rotationDays, 7);
+  eq('같은 날짜는 항상 같은 버킷', m.rotationBucket, rotationBucketForDate('2026-09-21', 7));
+  check('targetSignature 에 정책 버전·날짜·주기·버킷이 들어간다',
+    /^rotation-v1:2026-09-21:7:[0-6]$/.test(m.signature), m.signature);
+}
 results.splice(0).forEach(r => console.log(r));
 
 /* ── 2. 배치 분할 / 마지막 배치 크기 ────────────────────────── */
