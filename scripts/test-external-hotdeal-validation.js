@@ -639,6 +639,86 @@ async function captureFailure(promise) {
     assert.equal(notListed.exposed, 0);
   });
 
+  await check('affiliate enrichment: strict match only, uses commission/partner link, never source URL', async () => {
+    const deal = Normalize.normalizeExternalHotdeal({
+      externalId: 'aff-1',
+      title: 'Samsung Galaxy S24 SM-S921N 256GB',
+      price: 799000,
+      mall: '쿠팡',
+      postUrl: 'https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=999001',
+      postedAt: hoursAgo(1),
+      metadata: { rawTitle: '[쿠팡] Samsung Galaxy S24 SM-S921N 256GB (799,000원/무료)' }
+    }, 'ppomppu');
+    const row = {
+      source: 'ppomppu',
+      source_post_id: '999001',
+      source_url: deal.postUrl,
+      title: deal.title,
+      price: deal.price,
+      matched_product_id: null,
+      metadata: {}
+    };
+    let saved = null;
+    const affiliate = {
+      title: 'Samsung Galaxy S24 SM-S921N 256GB',
+      lprice: 799000,
+      link: 'https://link.coupang.com/a/seosa-test',
+      mall: '쿠팡',
+      mallLabel: '쿠팡',
+      productId: 's24',
+      vendorItemId: '777',
+      _source: 'api'
+    };
+    const stats = await Collector.enrichAffiliateRows([deal], [row], {
+      lookupLimit: 1,
+      searchAll: async () => ({ items: [affiliate], from: 'api' }),
+      saveProducts: async (keyword, items, opts) => {
+        saved = { keyword, items, opts };
+        return { saved: 1, errors: [] };
+      }
+    });
+    assert.equal(stats.attempted, 1);
+    assert.equal(stats.matched, 1);
+    assert.equal(row.metadata.affiliateUrl, affiliate.link);
+    assert.equal(row.metadata.affiliateProductId, 's24');
+    assert(row.metadata.affiliateConfidence >= 0.9);
+    assert.equal(row.source_url, deal.postUrl, 'community source remains attribution/source, not commerce destination');
+    assert.equal(row.matched_product_id, 's24');
+    assert(saved && saved.items.length === 1);
+    assert.equal(saved.opts.source, 'external-hotdeal');
+  });
+
+  await check('affiliate enrichment: a merely similar product is never monetized as the same deal', async () => {
+    const deal = Normalize.normalizeExternalHotdeal({
+      externalId: 'aff-2',
+      title: '코카콜라 제로 355ml 24캔',
+      price: 17900,
+      mall: '쿠팡',
+      postUrl: 'https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=999002',
+      postedAt: hoursAgo(1),
+      metadata: { rawTitle: '[쿠팡] 코카콜라 제로 355ml 24캔 (17,900원/무료)' }
+    }, 'ppomppu');
+    const row = { source: 'ppomppu', source_post_id: '999002', source_url: deal.postUrl,
+      title: deal.title, price: deal.price, matched_product_id: null, metadata: {} };
+    const wrong = {
+      title: '코카콜라 제로 355ml 48캔',
+      lprice: 29900,
+      link: 'https://link.coupang.com/a/wrong',
+      mall: '쿠팡',
+      productId: 'wrong',
+      vendorItemId: '888',
+      _source: 'api'
+    };
+    const stats = await Collector.enrichAffiliateRows([deal], [row], {
+      lookupLimit: 1,
+      searchAll: async () => ({ items: [wrong], from: 'api' }),
+      saveProducts: async () => { throw new Error('wrong candidate must never be saved'); }
+    });
+    assert.equal(stats.matched, 0);
+    assert.equal(row.metadata.affiliateUrl, undefined);
+    assert.equal(row.matched_product_id, null);
+  });
+
   await check('dry-run before the migration: reads work, nothing is written, table absence is reported', async () => {
     const db = fakeDb(baseTables(), { missing: ['external_hotdeals'] });
     const summary = await Collector.main({ db, registry: fakeRegistry([colaDeal]), env: {}, now: NOW, today: TODAY, dryRun: true, quiet: true });
