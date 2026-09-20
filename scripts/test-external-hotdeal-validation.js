@@ -836,6 +836,37 @@ async function captureFailure(promise) {
     assert(Number(row.metadata.imageMatchConfidence) >= 0.70);
   });
 
+  await check('external image: full-title search fallback picks a relevant photo and rejects unrelated photos', () => {
+    const deal = {
+      title: '명품 차량용 방향제 고급 블랙체리 100ml 1개',
+      mall: '쿠팡'
+    };
+    const good = {
+      title: '차량용 방향제 블랙체리 디퓨저 100ml 1개',
+      image: 'https://img.example/diffuser.jpg',
+      mall: '쿠팡',
+      productId: 'diffuser',
+      vendorItemId: 'v1',
+      link: 'https://link.coupang.com/a/diffuser',
+      lprice: 5900
+    };
+    const bad = {
+      title: '헤어왁스 100ml 1개',
+      image: 'https://img.example/wax.jpg',
+      mall: '쿠팡',
+      productId: 'wax',
+      vendorItemId: 'v2',
+      link: 'https://link.coupang.com/a/wax',
+      lprice: 4900
+    };
+    const picked = Collector.referenceImageCandidate(deal, [bad, good]);
+    assert(picked);
+    assert.equal(picked.item.productId, 'diffuser');
+    assert.equal(picked.image, 'https://img.example/diffuser.jpg');
+    assert(picked.confidence < 0.70, 'fallback photo never upgrades product identity');
+    assert.equal(Collector.referenceImageCandidate(deal, [bad]), null);
+  });
+
   await check('external image: unsafe/non-https image URL is rejected', () => {
     assert.equal(Collector.safeImageUrl('javascript:alert(1)'), '');
     assert.equal(Collector.safeImageUrl('http://img.example/a.jpg'), '');
