@@ -217,7 +217,7 @@ async function enrichAffiliateRows(deals, rows, options) {
     if (!row || !deal) continue;
     row.metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
 
-    if (row.metadata.affiliateUrl) { stats.skipped++; continue; }
+    if (row.metadata.affiliateUrl || row.matched_product_id) { stats.skipped++; continue; }
     if (stats.attempted >= lookupLimit) break;
 
     const keyword = Shop.searchPhraseFromTitle(deal.title, 3);
