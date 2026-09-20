@@ -688,6 +688,15 @@ async function main() {
     const offers = [];
     /** 이번 회차에 실제로 판정한 오퍼 키 — 끝난 딜을 그 자리에서 만료시키는 데 쓴다. */
     const seenKeys = new Set();
+    /*
+     * «오늘 vs 어제»를 실제로 비교할 근거까지 확보한 키만 즉시 만료할 수 있다.
+     *
+     * 가격 수집보다 핫딜 판정이 먼저 돌면 dailyDrop 은 NO_TODAY/NO_YESTERDAY가
+     * 된다. 그 상태는 «딜이 끝났다»가 아니라 «아직 비교할 수 없다»다.
+     * 예전에는 seenKeys 에만 들어가도 아래 expireEnded 대상이 되어, 2026-09-21
+     * 01:10 KST 조기 실행에서 4,000건 전부 NO_TODAY인데 기존 핫딜을 끝내 버렸다.
+     */
+    const expirySafeKeys = new Set();
     const nowIso = new Date().toISOString();
 
     for (const p of products) {
@@ -739,6 +748,9 @@ async function main() {
       const offerKey = offerKeyOf(HS.INTERNAL_HISTORY.id, cand.externalId, mall);
       if (verdict.status !== HD.STATUS.REJECTED) {
         seenKeys.add(offerKey);
+        if (![DD.REASON.NO_POINTS, DD.REASON.NO_TODAY, DD.REASON.NO_YESTERDAY].includes(drop.reason)) {
+          expirySafeKeys.add(offerKey);
+        }
         offers.push({
           key: offerKey, title: cand.title, price: cand.salePrice, mall,
           url: cand.affiliateUrl, productId: p.product_id,
@@ -810,6 +822,8 @@ async function main() {
             const extKey = offerKeyOf(HS.ADPICK_HOTDEAL.id, cand.externalId, extMall);
             if (verdict.status !== HD.STATUS.REJECTED) {
               seenKeys.add(extKey);
+              // 외부 소스는 자체 현재 후보로 다시 판정했으므로 기존 만료 규칙을 유지한다.
+              expirySafeKeys.add(extKey);
               /*
                * ★ vendorItemId 는 «우리가 아는» 값만 넣는다.
                *   ADPICK 은 옵션 식별자를 주지 않는다. 우리가 이어붙인 쿠팡
@@ -877,11 +891,17 @@ async function main() {
      */
     const keptKeys = new Set(rows.map(r => offerKeyOf(r.source, r.source_external_id, r.mall)));
     const endedIds = [];
+    let expiryProtected = 0;
     existing.forEach((prev, key) => {
       if (!seenKeys.has(key) || keptKeys.has(key)) return;
+      if (!expirySafeKeys.has(key)) { expiryProtected++; return; }
       if (['NEW', 'ACTIVE', 'COOLING'].indexOf(prev.lifecycle) < 0) return;
       endedIds.push(prev.id);
     });
+    summary.expiryProtected = expiryProtected;
+    if (expiryProtected) {
+      log('expiry_protected_missing_daily_basis', { n: expiryProtected });
+    }
 
     log('evaluated', summary);
 
