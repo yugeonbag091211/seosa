@@ -3720,7 +3720,7 @@ select:focus-visible,textarea:focus-visible,
         <div class="sec-title">핫딜<span class="sec-count" id="dropCount"></span></div>
         <div class="sec-sub">SEOSA 가격 이력으로 검증한 지금 주목할 만한 가격이에요.</div>
       </div>
-      <button class="sec-more" data-act="scroll-today">모두 보기 <span aria-hidden="true">›</span></button>
+      <button class="sec-more" id="dropMore" data-act="drop-more" style="display:none">더보기 <span aria-hidden="true">›</span></button>
     </div>
     <div id="dropWrap">
       <div class="drop-loading" id="dropLoading"><div class="ring"></div>가격 변동 데이터를 불러오는 중…</div>
@@ -3743,6 +3743,7 @@ select:focus-visible,textarea:focus-visible,
         <div class="sec-title">실시간 핫딜<span class="sec-count" id="externalHotCount"></span></div>
         <div class="sec-sub">커뮤니티에서 발견한 핫딜을 모아 보여드려요. SEOSA 가격 이력과 매칭되면 검증 정보도 함께 표시합니다.</div>
       </div>
+      <button class="sec-more" id="externalHotMore" data-act="external-hot-more" style="display:none">더보기 <span aria-hidden="true">›</span></button>
     </div>
     <div class="drop-loading" id="externalHotLoading"><div class="ring"></div>외부 핫딜을 검증하는 중…</div>
     <div class="radar-deals" id="externalHotRows"></div>
@@ -5330,9 +5331,11 @@ var Api = {
     } else if (fnName === 'getProfileRecommendations') {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
     } else if (fnName === 'getHotdeals') {
-      queryUrl = url + '?limit=8&sort=score';
+      // 홈은 처음 5개만 보여 주되 «더보기» 때 서버를 다시 치지 않도록
+      // 최대 60개를 한 번 받아 두고 클라이언트에서 10개씩 펼친다.
+      queryUrl = url + '?limit=60&sort=score';
     } else if (fnName === 'getExternalHotdeals') {
-      queryUrl = url + '?view=external&limit=12&minScore=60';
+      queryUrl = url + '?view=external&limit=60&minScore=60';
     } else if (fnName === 'payPrepare' || fnName === 'payConfirm'
                || fnName === 'payCancel' || fnName === 'payStatus') {
       /*
@@ -7571,6 +7574,11 @@ var Search = {
  *  ExternalHot — community discovery verified by SEOSA history
  * ========================================================== */
 var ExternalHot = {
+  INITIAL: 5,
+  STEP: 10,
+  items: [],
+  visible: 5,
+
   sourceLabel: function(source) {
     var labels = { 'fmkorea':'FM코리아', 'ppomppu':'뽐뿌', 'quasarzone':'퀘이사존',
       'arca-live':'아카라이브', 'mock-hotdeal':'테스트 피드' };
@@ -7625,6 +7633,8 @@ var ExternalHot = {
   },
 
   load: function() {
+    ExternalHot.items = [];
+    ExternalHot.visible = ExternalHot.INITIAL;
     Api.call('getExternalHotdeals', [], ExternalHot.show, function() {
       show('externalHotLoading', false);
       show('externalHot', false);
@@ -7639,14 +7649,31 @@ var ExternalHot = {
     });
     show('externalHotLoading', false);
     if (!external.length) {
+      ExternalHot.items = [];
+      ExternalHot.visible = ExternalHot.INITIAL;
       AppState.ready.externalHot = false;
+      show('externalHotMore', false);
       show('externalHot', false);
       return;
     }
-    setText('externalHotCount', external.length + '개');
-    setHTML('externalHotRows', external.map(ExternalHot.cardHTML).join(''));
+    ExternalHot.items = external;
+    ExternalHot.visible = ExternalHot.INITIAL;
+    ExternalHot.render();
     AppState.ready.externalHot = true;
     show('externalHot', !isSearching());
+  },
+
+  render: function() {
+    var total = ExternalHot.items.length;
+    var take = Math.min(total, ExternalHot.visible);
+    setText('externalHotCount', total + '개');
+    setHTML('externalHotRows', ExternalHot.items.slice(0, take).map(ExternalHot.cardHTML).join(''));
+    show('externalHotMore', take < total);
+  },
+
+  more: function() {
+    ExternalHot.visible += ExternalHot.STEP;
+    ExternalHot.render();
   }
 };
 
@@ -7983,6 +8010,10 @@ var Record = {
  *  [15] Drop — 핫딜 (실제 /api/hotdeals 엔진, 기존 카드 UI 재사용)
  * ========================================================== */
 var Drop = {
+  INITIAL: 5,
+  STEP: 10,
+  items: [],
+  visible: 5,
 
   fromHotdeal: function(it) {
     it = it || {};
@@ -8005,6 +8036,8 @@ var Drop = {
   },
 
   load: function() {
+    Drop.items = [];
+    Drop.visible = Drop.INITIAL;
     show('priceDrop', true);
     Api.call('getHotdeals', [], function(items) {
       Drop.show((items || []).map(Drop.fromHotdeal));
@@ -8131,12 +8164,17 @@ var Drop = {
     Drop.renderRecordBar(items);
 
     if (!items || !items.length) {
+      Drop.items = [];
+      Drop.visible = Drop.INITIAL;
       AppState.ready.drop = false;
+      show('dropMore', false);
       show('priceDrop', false);
       return;
     }
 
-    setHTML('dropRows', items.map(Drop.rowHTML).join(''));
+    Drop.items = items;
+    Drop.visible = Drop.INITIAL;
+    Drop.render();
     show('dropLedger', true);
 
     AppState.ready.drop = true;
@@ -8150,10 +8188,22 @@ var Drop = {
     }
   },
 
+  render: function() {
+    var total = Drop.items.length;
+    var take = Math.min(total, Drop.visible);
+    setHTML('dropRows', Drop.items.slice(0, take).map(Drop.rowHTML).join(''));
+    show('dropMore', take < total);
+  },
+
+  more: function() {
+    Drop.visible += Drop.STEP;
+    Drop.render();
+  },
+
   renderRecordBar: function(items) {
     var n = Array.isArray(items) ? items.length : 0;
     Record.setDropCount(n);
-    // 개수는 섹션 제목 옆에 (Record.render 주석 참고)
+    // 개수는 «현재 보이는 수»가 아니라 전체 후보 수다.
     setText('dropCount', n > 0 ? n + '개' : '');
   },
 
@@ -10835,6 +10885,8 @@ var Actions = {
     Recent.addViewed(info);
     openLink(info.link);
   },
+  'drop-more': function() { Drop.more(); },
+  'external-hot-more': function() { ExternalHot.more(); },
 
   // ── 추천 섹션 ──
   'rec-chip':        function(el) { Rec.loadKeyword(el.dataset.kw); },
