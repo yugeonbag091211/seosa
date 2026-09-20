@@ -19,7 +19,7 @@ name: SEOSA HOT
 # 실데이터가 쌓인 뒤 노출 건수와 만료 정확도를 보고 주기를 조정한다.
 
 on:
-  # Temporary one-shot main trigger for cross-mall reference image backfill.
+  # Temporary one-shot main trigger for pack-size reference image backfill.
   push:
     branches: [main]
     paths:
