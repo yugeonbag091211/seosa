@@ -27,9 +27,14 @@ function sweep(now) {
 /**
  * @returns {{ok: boolean, retryAfter: number}}
  */
-function check(req, { limit, windowMs, name = '' }) {
+function check(req, { limit, windowMs, name = '', key: scopedKey = '' }) {
   const now = Date.now();
-  const key = name + '|' + clientKey(req);
+  /*
+   * scopedKey는 반드시 서버가 검증한 신원에서 만들어 넘긴다.
+   * 클라이언트 header/body 값을 그대로 넣으면 rate limit 우회키가 된다.
+   */
+  const subject = String(scopedKey || '').trim() || clientKey(req);
+  const key = name + '|' + subject;
 
   // 상한을 넘으면 만료된 것부터 정리하고, 그래도 넘치면 새 키를 받지 않는다.
   if (buckets.size > MAX_KEYS) sweep(now);

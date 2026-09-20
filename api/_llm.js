@@ -33,10 +33,20 @@ const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
 /* 정확히 검토한 free-tier 대상만 허용한다. 임의 환경변수는 호출 권한이 아니다. */
 const GEMINI_FREE_MODELS = Object.freeze(['gemini-2.5-flash-lite', 'gemini-2.5-flash']);
-const GROQ_FREE_MODELS = Object.freeze(['llama-3.1-8b-instant', 'llama-3.3-70b-versatile']);
+/*
+ * Groq Free/Developer tier: llama-3.1-8b-instant / llama-3.3-70b-versatile는
+ * 2026-08-16 shutdown. Groq 공식 migration 대상인 gpt-oss로 고정한다.
+ * 두 모델 모두 Groq 현재 rate-limit 표에 있고, 원 모델은 Apache-2.0이라
+ * 상업 서비스에서도 사용할 수 있다.
+ */
+const GROQ_FREE_MODELS = Object.freeze(['openai/gpt-oss-20b', 'openai/gpt-oss-120b']);
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite';
-const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant';
+const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
 const PROVIDER_COOLDOWN_MS = 60 * 1000;
+const QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
+const AUTH_COOLDOWN_MS = 10 * 60 * 1000;
+const MAX_RETRY_AFTER_MS = 30 * 60 * 1000;
+const PROVIDER_MAX_INFLIGHT = 2;
 
 /* ═══════════════════════════════════════════════════════════════════
  *  ZERO-COST 정책 (2026-09-02 감사)
@@ -202,6 +212,8 @@ const MAX_MODEL_LEN = 80;
 const state = {
   dead: new Map(),      // model → 언제까지 죽은 것으로 볼지
   providerDead: new Map(), // provider:model → 짧은 cooldown
+  providerInflight: new Map(), // provider:model → 현재 네트워크 호출 수
+  inflightChats: new Map(), // cache key → 진행 중 chat Promise (동일 질문 stampede 방지)
   cache: new Map(),     // key → { at, text, finish, model }
   /*
    * ── AI Cost Guard 계수기 (2026-09-02) ─────────────────────────
@@ -218,6 +230,7 @@ const state = {
   paidBlocked: 0,    // 가드가 막은 유료 호출 시도
   failures: 0,
   cacheHits: 0,
+  coalesced: 0,
   totalMs: 0,
   inTok: 0,
   outTok: 0,
@@ -411,6 +424,11 @@ function cacheSet(key, ttl, value) {
 }
 
 function providerReady(provider, model, now) {
+  const globalKey = `${provider}:*`;
+  const globalUntil = state.providerDead.get(globalKey) || 0;
+  if (globalUntil > now) return false;
+  if (globalUntil) state.providerDead.delete(globalKey);
+
   const k = `${provider}:${model}`;
   const until = state.providerDead.get(k) || 0;
   if (until > now) return false;
@@ -418,13 +436,58 @@ function providerReady(provider, model, now) {
   return true;
 }
 
-function coolProvider(provider, model, reason) {
-  if (['rate', 'server', 'timeout', 'parse', 'empty'].indexOf(reason) >= 0) {
-    state.providerDead.set(`${provider}:${model}`, Date.now() + PROVIDER_COOLDOWN_MS);
-  }
+function acquireProvider(provider, model) {
+  const k = `${provider}:${model}`;
+  const n = state.providerInflight.get(k) || 0;
+  if (n >= PROVIDER_MAX_INFLIGHT) return false;
+  state.providerInflight.set(k, n + 1);
+  return true;
+}
+
+function releaseProvider(provider, model) {
+  const k = `${provider}:${model}`;
+  const n = state.providerInflight.get(k) || 0;
+  if (n <= 1) state.providerInflight.delete(k);
+  else state.providerInflight.set(k, n - 1);
+}
+
+function retryAfterMs(response) {
+  try {
+    const raw = response && response.headers && typeof response.headers.get === 'function'
+      ? response.headers.get('retry-after') : '';
+    if (!raw) return 0;
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(MAX_RETRY_AFTER_MS, Math.round(seconds * 1000));
+    }
+    const at = Date.parse(raw);
+    if (Number.isFinite(at)) {
+      return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, at - Date.now()));
+    }
+  } catch (e) {}
+  return 0;
+}
+
+function coolProvider(provider, model, reason, retryMs) {
+  let ms = 0;
+  if (reason === 'auth') ms = AUTH_COOLDOWN_MS;
+  else if (reason === 'quota') ms = QUOTA_COOLDOWN_MS;
+  else if (['rate', 'server', 'timeout', 'network', 'parse', 'empty'].indexOf(reason) >= 0) ms = PROVIDER_COOLDOWN_MS;
+  if (retryMs) ms = Math.max(ms, Math.min(MAX_RETRY_AFTER_MS, retryMs));
+  if (!ms) return;
+
+  /*
+   * auth는 같은 provider의 같은 key를 쓰므로 모델을 바꿔도 소용없다.
+   * quota/rate는 모델별 공급자 상태일 수 있어 모델 단위로만 식힌다.
+   */
+  const k = reason === 'auth' ? `${provider}:*` : `${provider}:${model}`;
+  state.providerDead.set(k, Date.now() + ms);
 }
 
 async function providerFetch(provider, model, request, timeoutMs, parse) {
+  if (!acquireProvider(provider, model)) {
+    return { ok: false, reason: 'busy', advance: true };
+  }
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   const startedAt = Date.now();
@@ -441,7 +504,10 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
     coolProvider(provider, model, reason);
     console.warn(`[llm] ${provider}/${model} ${reason}`);
     return { ok: false, reason, advance: true };
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+    releaseProvider(provider, model);
+  }
 
   state.totalMs += Date.now() - startedAt;
   if (!r || !r.ok) {
@@ -449,7 +515,7 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
     const cls = classifyStatus((r && r.status) || 0);
     let detail = '';
     try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
-    coolProvider(provider, model, cls.reason);
+    coolProvider(provider, model, cls.reason, retryAfterMs(r));
     console.warn(`[llm] ${provider}/${model} ${(r && r.status) || 0} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     return { ok: false, reason: cls.reason, advance: true };
   }
@@ -538,6 +604,10 @@ async function attempt(model, opts, timeoutMs) {
     return { ok: false, reason: 'paid-blocked', advance: true };
   }
 
+  if (!acquireProvider('openrouter', model)) {
+    return { ok: false, reason: 'busy', advance: true };
+  }
+
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
 
@@ -569,11 +639,16 @@ async function attempt(model, opts, timeoutMs) {
   } catch (e) {
     state.failures++;
     state.totalMs += Date.now() - startedAt;
-    if (e && e.name === 'AbortError') return { ok: false, reason: 'timeout', advance: true };
+    if (e && e.name === 'AbortError') {
+      coolProvider('openrouter', model, 'timeout');
+      return { ok: false, reason: 'timeout', advance: true };
+    }
+    coolProvider('openrouter', model, 'network');
     console.warn(`[llm] ${model} 연결 실패: ${redact(e && e.message)}`);
     return { ok: false, reason: 'network', advance: true };
   } finally {
     clearTimeout(timer);
+    releaseProvider('openrouter', model);
   }
 
   state.totalMs += Date.now() - startedAt;
@@ -586,6 +661,7 @@ async function attempt(model, opts, timeoutMs) {
     try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
     console.warn(`[llm] ${model} ${status} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     if (cls.reason === 'model') state.dead.set(model, Date.now() + DEAD_MODEL_MS);
+    coolProvider('openrouter', model, cls.reason, retryAfterMs(r));
     return { ok: false, reason: cls.reason, advance: cls.advance };
   }
 
@@ -593,6 +669,7 @@ async function attempt(model, opts, timeoutMs) {
   try { data = await r.json(); }
   catch (e) {
     state.failures++;
+    coolProvider('openrouter', model, 'parse');
     console.warn(`[llm] ${model} 응답 파싱 실패`);
     return { ok: false, reason: 'parse', advance: true };
   }
@@ -606,7 +683,11 @@ async function attempt(model, opts, timeoutMs) {
    * 성공으로 다루면 호출부가 "답변을 만들지 못했어요" 로 끝내 버린다.
    * 다음 모델에 물어보면 대개 답이 나온다.
    */
-  if (!text.trim()) { state.failures++; return { ok: false, reason: 'empty', advance: true }; }
+  if (!text.trim()) {
+    state.failures++;
+    coolProvider('openrouter', model, 'empty');
+    return { ok: false, reason: 'empty', advance: true };
+  }
 
   /*
    * ★ usage 는 provider 가 준 값을 그대로만 싣는다 (2026-09-01).
@@ -644,7 +725,7 @@ async function attempt(model, opts, timeoutMs) {
  *            reason:string, tried:Array<{model:string, reason:string}>}}
  *   ok=false 일 때 reason 은 마지막 실패 이유다. 업스트림 원문은 담기지 않는다.
  */
-async function chat(opts) {
+async function chatOnce(opts) {
   const o = opts || {};
   const role = o.role === 'classify' ? 'classify' : 'answer';
   const messages = Array.isArray(o.messages) ? o.messages : [];
@@ -707,6 +788,11 @@ async function chat(opts) {
   }
   for (let i = 0; i < chain.length; i++) {
     const model = chain[i];
+    if (!providerReady('openrouter', model, Date.now())) {
+      tried.push({ provider: 'openrouter', model, reason: 'cooldown' });
+      last = 'cooldown';
+      continue;
+    }
     const remaining = deadline - Date.now();
     if (remaining < MIN_ATTEMPT_MS) {
       tried.push({ model, reason: 'budget' });
@@ -733,13 +819,56 @@ async function chat(opts) {
   return { ok: false, text: '', finish: '', model: '', reason: last, tried };
 }
 
+
+/*
+ * 동일 프롬프트가 동시에 몰리면 첫 요청 하나만 upstream으로 보낸다.
+ * 기본 캐시가 켜진 경우에만 적용하므로, 운영자가 AI_CACHE_TTL_MS=0 으로
+ * 캐시를 명시적으로 끈 테스트/진단에서는 기존 의미를 바꾸지 않는다.
+ */
+async function chat(opts) {
+  const o = opts || {};
+  const role = o.role === 'classify' ? 'classify' : 'answer';
+  const messages = Array.isArray(o.messages) ? o.messages : [];
+  const maxTokens = Math.max(1, Number(o.maxTokens) || 900);
+  const temperature = Number.isFinite(Number(o.temperature)) ? Number(o.temperature) : 0.2;
+  const ttl = cacheTtl();
+  const key = ttl && messages.length ? cacheKey(role, messages, maxTokens, temperature) : '';
+
+  if (!key) return chatOnce(opts);
+
+  const pending = state.inflightChats.get(key);
+  if (pending) {
+    state.coalesced++;
+    const startedAt = Date.now();
+    const r = await pending;
+    if (!r || !r.ok) return r;
+    return Object.assign({}, r, {
+      reason: r.reason === 'cache' ? 'cache' : 'coalesced',
+      cached: true,
+      usage: null,
+      costUsd: 0,
+      latencyMs: Date.now() - startedAt
+    });
+  }
+
+  const p = chatOnce(opts);
+  state.inflightChats.set(key, p);
+  try {
+    return await p;
+  } finally {
+    if (state.inflightChats.get(key) === p) state.inflightChats.delete(key);
+  }
+}
+
 /** 테스트가 프로세스 기억을 지우기 위해 부른다. */
 function _reset() {
   state.dead.clear();
   state.providerDead.clear();
+  state.providerInflight.clear();
+  state.inflightChats.clear();
   state.cache.clear();
   state.calls = 0; state.freeCalls = 0; state.paidCalls = 0; state.paidBlocked = 0;
-  state.failures = 0; state.cacheHits = 0; state.totalMs = 0;
+  state.failures = 0; state.cacheHits = 0; state.coalesced = 0; state.totalMs = 0;
   state.inTok = 0; state.outTok = 0; state.costUsd = 0;
 }
 
@@ -759,6 +888,9 @@ function stats() {
     paidBlocked: state.paidBlocked,
     failures: state.failures,
     cacheHits: state.cacheHits,
+    coalesced: state.coalesced,
+    cooldowns: state.providerDead.size,
+    providerInflight: Array.from(state.providerInflight.values()).reduce((a, b) => a + b, 0),
     avgLatencyMs: state.calls ? Math.round(state.totalMs / state.calls) : 0,
     inputTokens: state.inTok,
     outputTokens: state.outTok,
@@ -774,7 +906,7 @@ module.exports = {
   FREE_ANSWER_CHAIN, FREE_CLASSIFY_CHAIN,
   GEMINI_FREE_MODELS, GROQ_FREE_MODELS, DEFAULT_GEMINI_MODEL, DEFAULT_GROQ_MODEL,
   MODEL_PRICES_USD_PER_1M, estimateCostUsd, isFreeModel,
-  MAX_CHAIN, MIN_ATTEMPT_MS, DEAD_MODEL_MS,
+  MAX_CHAIN, MIN_ATTEMPT_MS, DEAD_MODEL_MS, PROVIDER_MAX_INFLIGHT,
   _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset, attempt,
     providerModel, attemptGemini, attemptGroq }
 };

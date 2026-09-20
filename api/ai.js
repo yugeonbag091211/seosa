@@ -2493,15 +2493,17 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
 
   /*
-   * 인메모리 레이트리미터는 그대로 둔다. 다만 역할이 다르다.
+   * 두 단계 flood 방어.
    *
-   *   여기(in-memory)  — 짧은 순간의 폭주를 막는 보조 방어선.
-   *                      서버리스라 인스턴스마다 카운터가 따로 놀아서
-   *                      "하루 몇 회" 같은 판정에는 쓸 수 없다.
-   * 제품 정책상의 일일 질문 횟수 제한은 없다. 이 방어선은 자동화 봇과 prompt
-   * flood만 막으며 정상 사용자의 연속 대화를 차단하지 않도록 넉넉하게 둔다.
+   * 1) IP 300회/분은 오직 gross flood를 막는 안전망이다. 학교/회사/NAT의 정상
+   *    사용자들이 이 한도를 공유해도 실사용에서는 거의 닿지 않게 넉넉히 둔다.
+   * 2) 아래 신원 확인 뒤 로그인 사용자는 이메일별 30회/분으로 분리한다.
+   *    예전처럼 같은 공인 IP 사용자 전원이 30회를 나눠 쓰지 않는다.
+   *
+   * 서버리스 인메모리라 전역 일일 quota 판정에는 쓰지 않는다. 제품 정책상의
+   * 일일 질문 횟수 제한은 계속 없다.
    */
-  if (!guard(req, res, { name: 'ai', limit: 30, windowMs: 60 * 1000 })) return;
+  if (!guard(req, res, { name: 'ai-ip-flood', limit: 300, windowMs: 60 * 1000 })) return;
 
   /* ── 1) 신원 확인 ────────────────────────────────────────────────
    *
@@ -2532,6 +2534,14 @@ module.exports = async function handler(req, res) {
   if (!who.ok && !guest) {
     return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
   }
+
+  /*
+   * 로그인 사용자는 검증된 token의 email을 rate key로 쓴다.
+   * body.email이나 임의 header는 절대 쓰지 않는다. 게스트만 IP 30회/분을 공유한다.
+   */
+  const aiRateKey = who.ok ? `user:${String(who.email || '').trim().toLowerCase()}` : '';
+  if (!guard(req, res, { name: 'ai', limit: 30, windowMs: 60 * 1000, key: aiRateKey })) return;
+
   // 로그인 여부와 무관하게 키는 서버 환경에서만 읽는다.
   if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
     return res.status(500).json({ error: '무료 AI provider 환경변수 없음', text: '' });

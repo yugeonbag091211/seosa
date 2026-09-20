@@ -216,6 +216,49 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
     check('★ 전부 빈 응답이면 성공이 아니다', r.ok === false && r.reason === 'empty', r.reason);
   }
 
+
+  /* ── 4b. 사용량 폭증 / quota 소진 시 재공격 방지 ─────────────── */
+  console.log('\n[4b] 사용량 폭증 resilience');
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', AI_CACHE_TTL_MS: '0' });
+    ext.byModel['a/one:free'] = 429;
+    const first = await ask();
+    check('첫 429는 다른 무료 모델로 즉시 우회한다',
+      first.ok === true && first.model === 'b/two:free', ext.calls.join(','));
+
+    ext.calls = [];
+    const second = await ask();
+    check('★★ 직전 429 모델은 다음 요청에서 다시 두드리지 않는다',
+      second.ok === true && ext.calls.join(',') === 'b/two:free', ext.calls.join(',') || '(호출 없음)');
+  }
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', AI_CACHE_TTL_MS: '0' });
+    ext.fallback = 402;
+    const first = await ask();
+    check('quota 소진 시 한 요청 안에서는 각 무료 모델을 최대 1회만 확인한다',
+      first.ok === false && ext.calls.join(',') === 'a/one:free,b/two:free', ext.calls.join(','));
+
+    ext.calls = [];
+    const second = await ask();
+    check('★★ 이미 quota 소진이 확인된 모델은 다음 요청에서 0회 호출한다',
+      second.ok === false && second.reason === 'cooldown' && ext.calls.length === 0,
+      `${ext.calls.length}회 / ${second.reason}`);
+  }
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', AI_CACHE_TTL_MS: '0' });
+    ext.fallback = 401;
+    const first = await ask();
+    check('잘못된 OpenRouter key는 첫 모델에서 즉시 중단한다',
+      first.ok === false && first.reason === 'auth' && ext.calls.length === 1,
+      `${ext.calls.length}회 / ${first.reason}`);
+
+    ext.calls = [];
+    const second = await ask();
+    check('★★ auth 장애는 provider 전체 cooldown으로 바꿔 반복 호출을 막는다',
+      second.ok === false && second.reason === 'cooldown' && ext.calls.length === 0,
+      `${ext.calls.length}회 / ${second.reason}`);
+  }
+
   /* ── 5. 없는 모델 id ────────────────────────────────────────── */
   console.log('\n[5] 없는 모델 id (404)');
   reset({ OPENROUTER_MODELS: 'gone/model:free, b/two:free', AI_CACHE_TTL_MS: '0' });
@@ -287,6 +330,73 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
     await llm.chat({ role: 'answer', messages: [{ role: 'user', content: '다른 질문' }],
       maxTokens: 900, temperature: 0.2 });
     check('다른 프롬프트는 캐시를 쓰지 않는다', ext.calls.length === before + 1);
+  }
+
+
+  /* ── 8b. 동시 폭주 ───────────────────────────────────────────── */
+  console.log('\n[8b] 동시 폭주');
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free', AI_CACHE_TTL_MS: '60000' });
+    const priorFetch = global.fetch;
+    let releaseGate;
+    const gate = new Promise(resolve => { releaseGate = resolve; });
+    let started = 0;
+    global.fetch = async (_url, opts) => {
+      started++;
+      const body = JSON.parse(opts.body);
+      await gate;
+      return {
+        ok: true, status: 200,
+        json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: `answered-by:${body.model}` } }] })
+      };
+    };
+
+    const burst = Array.from({ length: 12 }, () => ask());
+    await new Promise(resolve => setImmediate(resolve));
+    check('★★ 같은 질문 12개가 동시에 와도 upstream은 1회만 시작한다',
+      started === 1, String(started));
+
+    releaseGate();
+    const results = await Promise.all(burst);
+    global.fetch = priorFetch;
+    check('single-flight에 합쳐진 12개 요청이 모두 답을 받는다',
+      results.every(r => r && r.ok), results.filter(r => r && r.ok).length + '/12');
+    check('병합된 follower가 계측된다',
+      llm.stats().coalesced === 11, String(llm.stats().coalesced));
+  }
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free', AI_CACHE_TTL_MS: '0' });
+    const priorFetch = global.fetch;
+    let releaseGate;
+    const gate = new Promise(resolve => { releaseGate = resolve; });
+    let started = 0;
+    global.fetch = async (_url, opts) => {
+      started++;
+      const body = JSON.parse(opts.body);
+      await gate;
+      return {
+        ok: true, status: 200,
+        json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: `answered-by:${body.model}` } }] })
+      };
+    };
+
+    const burst = Array.from({ length: 10 }, (_, i) => llm.chat({
+      role: 'answer',
+      messages: [{ role: 'user', content: '서로 다른 질문 ' + i }],
+      maxTokens: 900, temperature: 0.2, budgetMs: 10000
+    }));
+    await new Promise(resolve => setImmediate(resolve));
+    check('★★ 서로 다른 질문 폭주도 모델당 동시 upstream 상한을 넘지 않는다',
+      started === llm.PROVIDER_MAX_INFLIGHT,
+      `${started} / 상한 ${llm.PROVIDER_MAX_INFLIGHT}`);
+
+    releaseGate();
+    const results = await Promise.all(burst);
+    global.fetch = priorFetch;
+    check('동시 상한에 막힌 요청은 무한 대기하지 않고 busy로 빠진다',
+      results.some(r => r && r.reason === 'busy'), results.map(r => r.reason).join(','));
+    check('폭주가 끝난 뒤 provider slot이 모두 반환된다',
+      llm.stats().providerInflight === 0, String(llm.stats().providerInflight));
   }
 
   /* ── 9. 로그 위생 ───────────────────────────────────────────── */
