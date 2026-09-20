@@ -37,6 +37,9 @@ const GROQ_FREE_MODELS = Object.freeze(['llama-3.1-8b-instant', 'llama-3.3-70b-v
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite';
 const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant';
 const PROVIDER_COOLDOWN_MS = 60 * 1000;
+const QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
+const AUTH_COOLDOWN_MS = 10 * 60 * 1000;
+const MAX_RETRY_AFTER_MS = 30 * 60 * 1000;
 
 /* ═══════════════════════════════════════════════════════════════════
  *  ZERO-COST 정책 (2026-09-02 감사)
@@ -411,6 +414,11 @@ function cacheSet(key, ttl, value) {
 }
 
 function providerReady(provider, model, now) {
+  const globalKey = `${provider}:*`;
+  const globalUntil = state.providerDead.get(globalKey) || 0;
+  if (globalUntil > now) return false;
+  if (globalUntil) state.providerDead.delete(globalKey);
+
   const k = `${provider}:${model}`;
   const until = state.providerDead.get(k) || 0;
   if (until > now) return false;
@@ -418,10 +426,37 @@ function providerReady(provider, model, now) {
   return true;
 }
 
-function coolProvider(provider, model, reason) {
-  if (['rate', 'server', 'timeout', 'parse', 'empty'].indexOf(reason) >= 0) {
-    state.providerDead.set(`${provider}:${model}`, Date.now() + PROVIDER_COOLDOWN_MS);
-  }
+function retryAfterMs(response) {
+  try {
+    const raw = response && response.headers && typeof response.headers.get === 'function'
+      ? response.headers.get('retry-after') : '';
+    if (!raw) return 0;
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(MAX_RETRY_AFTER_MS, Math.round(seconds * 1000));
+    }
+    const at = Date.parse(raw);
+    if (Number.isFinite(at)) {
+      return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, at - Date.now()));
+    }
+  } catch (e) {}
+  return 0;
+}
+
+function coolProvider(provider, model, reason, retryMs) {
+  let ms = 0;
+  if (reason === 'auth') ms = AUTH_COOLDOWN_MS;
+  else if (reason === 'quota') ms = QUOTA_COOLDOWN_MS;
+  else if (['rate', 'server', 'timeout', 'network', 'parse', 'empty'].indexOf(reason) >= 0) ms = PROVIDER_COOLDOWN_MS;
+  if (retryMs) ms = Math.max(ms, Math.min(MAX_RETRY_AFTER_MS, retryMs));
+  if (!ms) return;
+
+  /*
+   * auth는 같은 provider의 같은 key를 쓰므로 모델을 바꿔도 소용없다.
+   * quota/rate는 모델별 공급자 상태일 수 있어 모델 단위로만 식힌다.
+   */
+  const k = reason === 'auth' ? `${provider}:*` : `${provider}:${model}`;
+  state.providerDead.set(k, Date.now() + ms);
 }
 
 async function providerFetch(provider, model, request, timeoutMs, parse) {
@@ -449,7 +484,7 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
     const cls = classifyStatus((r && r.status) || 0);
     let detail = '';
     try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
-    coolProvider(provider, model, cls.reason);
+    coolProvider(provider, model, cls.reason, retryAfterMs(r));
     console.warn(`[llm] ${provider}/${model} ${(r && r.status) || 0} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     return { ok: false, reason: cls.reason, advance: true };
   }
@@ -569,7 +604,11 @@ async function attempt(model, opts, timeoutMs) {
   } catch (e) {
     state.failures++;
     state.totalMs += Date.now() - startedAt;
-    if (e && e.name === 'AbortError') return { ok: false, reason: 'timeout', advance: true };
+    if (e && e.name === 'AbortError') {
+      coolProvider('openrouter', model, 'timeout');
+      return { ok: false, reason: 'timeout', advance: true };
+    }
+    coolProvider('openrouter', model, 'network');
     console.warn(`[llm] ${model} 연결 실패: ${redact(e && e.message)}`);
     return { ok: false, reason: 'network', advance: true };
   } finally {
@@ -586,6 +625,7 @@ async function attempt(model, opts, timeoutMs) {
     try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
     console.warn(`[llm] ${model} ${status} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     if (cls.reason === 'model') state.dead.set(model, Date.now() + DEAD_MODEL_MS);
+    coolProvider('openrouter', model, cls.reason, retryAfterMs(r));
     return { ok: false, reason: cls.reason, advance: cls.advance };
   }
 
@@ -593,6 +633,7 @@ async function attempt(model, opts, timeoutMs) {
   try { data = await r.json(); }
   catch (e) {
     state.failures++;
+    coolProvider('openrouter', model, 'parse');
     console.warn(`[llm] ${model} 응답 파싱 실패`);
     return { ok: false, reason: 'parse', advance: true };
   }
@@ -606,7 +647,11 @@ async function attempt(model, opts, timeoutMs) {
    * 성공으로 다루면 호출부가 "답변을 만들지 못했어요" 로 끝내 버린다.
    * 다음 모델에 물어보면 대개 답이 나온다.
    */
-  if (!text.trim()) { state.failures++; return { ok: false, reason: 'empty', advance: true }; }
+  if (!text.trim()) {
+    state.failures++;
+    coolProvider('openrouter', model, 'empty');
+    return { ok: false, reason: 'empty', advance: true };
+  }
 
   /*
    * ★ usage 는 provider 가 준 값을 그대로만 싣는다 (2026-09-01).
@@ -707,6 +752,11 @@ async function chat(opts) {
   }
   for (let i = 0; i < chain.length; i++) {
     const model = chain[i];
+    if (!providerReady('openrouter', model, Date.now())) {
+      tried.push({ provider: 'openrouter', model, reason: 'cooldown' });
+      last = 'cooldown';
+      continue;
+    }
     const remaining = deadline - Date.now();
     if (remaining < MIN_ATTEMPT_MS) {
       tried.push({ model, reason: 'budget' });
@@ -759,6 +809,7 @@ function stats() {
     paidBlocked: state.paidBlocked,
     failures: state.failures,
     cacheHits: state.cacheHits,
+    cooldowns: state.providerDead.size,
     avgLatencyMs: state.calls ? Math.round(state.totalMs / state.calls) : 0,
     inputTokens: state.inTok,
     outputTokens: state.outTok,
