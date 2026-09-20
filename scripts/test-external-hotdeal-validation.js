@@ -867,6 +867,27 @@ async function captureFailure(promise) {
     assert.equal(Collector.referenceImageCandidate(deal, [bad]), null);
   });
 
+  await check('external image: reference photo may come from another mall without changing commerce identity', () => {
+    const deal = {
+      title: '명품 차량용 방향제 고급 블랙체리 100ml 1개',
+      mall: '네이버'
+    };
+    const coupangPhoto = {
+      title: '명품 차량용 고급 송풍구 방향제 100ml 1개 블랙체리',
+      image: 'https://img.example/car-diffuser.jpg',
+      mall: '쿠팡',
+      mallLabel: '쿠팡',
+      productId: 'cross-mall-photo',
+      vendorItemId: 'v3',
+      link: 'https://link.coupang.com/a/cross-mall-photo',
+      lprice: 36000
+    };
+    const picked = Collector.referenceImageCandidate(deal, [coupangPhoto]);
+    assert(picked, '판매처가 달라도 같은 상품 계열의 참고 사진은 쓸 수 있다');
+    assert.equal(picked.item.productId, 'cross-mall-photo');
+    assert(picked.confidence < 0.70, '교차 몰 참고 사진은 상품 identity/제휴 매칭으로 승격하지 않는다');
+  });
+
   await check('external image: unsafe/non-https image URL is rejected', () => {
     assert.equal(Collector.safeImageUrl('javascript:alert(1)'), '');
     assert.equal(Collector.safeImageUrl('http://img.example/a.jpg'), '');
