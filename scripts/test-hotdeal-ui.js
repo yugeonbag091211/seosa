@@ -114,6 +114,7 @@ assert(live.includes("'getExternalHotdeals':'/api/hotdeals'"),'기존 읽기 API
 assert(live.includes('커뮤니티 발견')&&live.includes('SEOSA 검증')&&live.includes('가격 검증 전'),'검증/미검증 상태를 명확히 구분한다');
 assert(live.includes('가격 이력 보기')&&live.includes('원문 보기'),'가격 이력/원문 행동');
 assert(live.includes('제휴 상품 보기')&&live.includes('SEOSA에서 상품 찾기'),'외부 딜 구매 경로는 제휴 링크 또는 SEOSA 검색으로 간다');
+assert(live.includes('radar-img-note')&&live.includes('참고 이미지'),'정확 매칭 전 사진은 참고 이미지로 표시한다');
 assert(live.includes("it.affiliateUrl || (it.monetized ? it.productUrl : '')"),'일반 원문 URL을 제휴 상품 링크처럼 쓰지 않는다');
 assert(!live.includes('var productUrl = Fmt.safeUrl(it.productUrl || it.url);'),'원문 fallback 상품 버튼 회귀 금지');
 assert(live.includes('it.communityOnly === true'),'매칭 전 커뮤니티 항목도 별도 상태로 렌더한다');
