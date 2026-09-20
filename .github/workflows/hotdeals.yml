@@ -74,9 +74,15 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # 외부 커뮤니티 글을 SEOSA 제휴 상품으로 안전하게 재탐색할 때만 쓴다.
+          # 기존 _coupang/_adpick 리미터·캐시를 그대로 거치며 secret 값은 로그에 쓰지 않는다.
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
           EXTERNAL_HOTDEAL_PPOMPPU_ENABLED: ${{ vars.EXTERNAL_HOTDEAL_PPOMPPU_ENABLED }}
           EXTERNAL_HOTDEAL_SHADOW: ${{ vars.EXTERNAL_HOTDEAL_SHADOW }}
           EXTERNAL_HOTDEAL_PUBLIC_SOURCES: ${{ vars.EXTERNAL_HOTDEAL_PUBLIC_SOURCES }}
+          EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS: ${{ vars.EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS }}
         run: |
           node scripts/collect-external-hotdeals.js \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
