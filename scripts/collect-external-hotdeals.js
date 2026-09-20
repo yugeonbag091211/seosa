@@ -31,6 +31,7 @@ const registry = require('../api/_hotdeal-sources/registry');
 const Radar = require('../api/_external-hotdeal');
 const { kstToday } = require('../api/_kst');
 const { sameVendorRows } = require('../api/_price');
+const Shop = require('../api/_shop');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const SAMPLE = process.argv.includes('--sample');
@@ -41,6 +42,14 @@ const HISTORY_DAYS = 90;
 const HISTORY_CHUNK = 20;
 /** Stored posts inside this window are regrouped with the current batch (closeInTime is 48h). */
 const GROUP_WINDOW_HOURS = 72;
+/**
+ * 커뮤니티 핫딜 → 제휴 상품 연결은 «정확도 우선».
+ * 한 실행에서 너무 많은 쇼핑 API를 부르지 않도록 신규/미매칭 딜 일부만 보강한다.
+ * 12건 × (쿠팡+ADPICK)도 기존 각 공급자 리미터/캐시를 그대로 거친다.
+ */
+const AFFILIATE_LOOKUP_LIMIT = Math.max(0, Math.min(30,
+  Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS) || 12));
+const AFFILIATE_MATCH_THRESHOLD = 0.90;
 
 function log(message, extra) {
   console.log(JSON.stringify({ at: new Date().toISOString(), message, ...(extra || {}) }));
@@ -119,6 +128,7 @@ function historyFor(match, history) {
 function rowFor(deal, match, verification, nowMs) {
   const product = match && match.product;
   const candidate = match && match.candidate;
+  const affiliateSafe = !!(product && product.link && Number(match && match.confidence) >= AFFILIATE_MATCH_THRESHOLD);
   return {
     source: deal.source,
     source_post_id: deal.externalId,
@@ -159,10 +169,119 @@ function rowFor(deal, match, verification, nowMs) {
       bestCandidateTitle: !product && candidate ? String(candidate.title || '').slice(0, 200) : '',
       effectivePrice: verification.effectivePrice,
       priceVs30dMedian: verification.priceVs30dMedian,
-      scoreParts: verification.parts
+      scoreParts: verification.parts,
+      ...(affiliateSafe ? {
+        affiliateUrl: String(product.link),
+        affiliateMall: String(product.mall || ''),
+        affiliatePrice: Number(product.lprice || product.price) || null,
+        affiliateProductId: String(product.product_id || product.productId || ''),
+        affiliateVendorItemId: String(product.vendor_item_id || product.vendorItemId || ''),
+        affiliateConfidence: Number(match.confidence) || 0,
+        affiliateMatchReason: String(match.reason || '')
+      } : {})
     },
     last_verified_at: new Date(nowMs).toISOString()
   };
+}
+
+/** _shop 검색 결과를 External Radar matcher가 읽는 catalog 모양으로 바꾼다. */
+function affiliateCandidateProduct(item) {
+  return {
+    product_id: String((item && item.productId) || ''),
+    vendor_item_id: String((item && item.vendorItemId) || ''),
+    mall: String((item && item.mall) || ''),
+    title: String((item && item.title) || ''),
+    link: String((item && item.link) || ''),
+    lprice: Number(item && item.lprice) || 0
+  };
+}
+
+/**
+ * 미매칭 커뮤니티 딜을 SEOSA의 기존 제휴 검색 통로(쿠팡 Partners + ADPICK)로
+ * 한 번 더 찾는다. 외부 글의 일반 링크를 제휴 링크처럼 재사용하지 않는다.
+ *
+ * MATCH_THRESHOLD(0.75)보다 높은 0.90을 요구한다. 돈이 걸리는 버튼은
+ * «비슷해 보인다»가 아니라 모델/identity A 수준의 근거가 있어야 한다.
+ */
+async function enrichAffiliateRows(deals, rows, options) {
+  const opts = options || {};
+  const search = opts.searchAll || Shop.searchAll;
+  const save = opts.saveProducts || Shop.saveProducts;
+  const lookupLimit = Math.max(0, Math.min(30,
+    Number.isFinite(opts.lookupLimit) ? opts.lookupLimit : AFFILIATE_LOOKUP_LIMIT));
+  const stats = { attempted: 0, matched: 0, saved: 0, skipped: 0, errors: 0 };
+
+  for (let i = 0; i < (rows || []).length; i++) {
+    const row = rows[i];
+    const deal = (deals || [])[i];
+    if (!row || !deal) continue;
+    row.metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+
+    if (row.metadata.affiliateUrl) { stats.skipped++; continue; }
+    if (stats.attempted >= lookupLimit) break;
+
+    const keyword = Shop.searchPhraseFromTitle(deal.title, 3);
+    if (!keyword) { stats.skipped++; continue; }
+
+    stats.attempted++;
+    try {
+      const result = await search(keyword, {
+        coupangLimit: 10,
+        coupangOpts: { source: 'external-hotdeal', maxWaitMs: 15000 },
+        adpickLimit: 10,
+        adpickOpts: { source: 'external-hotdeal', maxWaitMs: 15000 }
+      });
+      const candidates = (result && result.items || [])
+        .filter(it => it && it.link && it.productId && Number(it.lprice) > 0);
+      if (!candidates.length) continue;
+
+      const products = candidates.map(affiliateCandidateProduct);
+      const match = Radar.matchProduct(deal, products, AFFILIATE_MATCH_THRESHOLD);
+      if (!match.product) continue;
+
+      const chosen = candidates.find(it =>
+        String(it.productId) === String(match.product.product_id)
+        && String(it.mall || '') === String(match.product.mall || '')
+      );
+      if (!chosen) continue;
+
+      const meta = {
+        ...row.metadata,
+        affiliateUrl: String(chosen.link),
+        affiliateMall: String(chosen.mallLabel || chosen.mall || ''),
+        affiliatePrice: Number(chosen.lprice) || null,
+        affiliateProductId: String(chosen.productId || ''),
+        affiliateVendorItemId: String(chosen.vendorItemId || ''),
+        affiliateConfidence: Number(match.confidence) || 0,
+        affiliateMatchReason: String(match.reason || '')
+      };
+      row.metadata = meta;
+
+      // 정확한 제휴 후보는 다음 실행부터 가격 이력 검증도 받을 수 있게 catalog/원장에 남긴다.
+      const saved = await save(keyword, [chosen], {
+        from: chosen._source || (result && result.from) || 'api',
+        source: 'external-hotdeal'
+      });
+      if (saved && Number(saved.saved) > 0) stats.saved += Number(saved.saved);
+
+      // 0.90+ identity만 row의 SEOSA 상품 identity로 승격한다.
+      row.matched_product_id = String(chosen.productId || '');
+      row.matched_mall = String(chosen.mall || '');
+      row.matched_vendor_item_id = String(chosen.vendorItemId || '');
+      row.match_confidence = Number(match.confidence) || 0;
+      row.match_method = 'affiliate-' + String(match.method || 'identity');
+      stats.matched++;
+    } catch (error) {
+      stats.errors++;
+      log('affiliate_enrich_error', {
+        source: row.source,
+        id: row.source_post_id,
+        error: String((error && error.message) || error).slice(0, 180)
+      });
+    }
+  }
+
+  return stats;
 }
 
 // 표가 «없을» 때만 참이다. DB 일시 장애를 마이그레이션 전으로 읽지 않는다 (api/_dberror.js).
@@ -261,8 +380,11 @@ function summaryText(s) {
     lines.push(`  Verified >=${Radar.EXPOSURE_SCORE}: ${src.verified}  Suspicious: ${src.suspicious}  Grouped under another post: ${src.groupedUnderOther}  Exposed: ${src.exposed}`);
   }
   if (!s.sources.length) lines.push('Source: (none enabled)');
-  lines.push(`Mode: ${s.dryRun ? 'dry-run' : 'write'} · ${s.shadow ? 'shadow (no public exposure)' : `public sources=[${s.publicSources.join(',')}]`}`
+  lines.push(`Mode: ${s.dryRun ? 'dry-run' : 'write'} · ${s.shadow ? 'shadow (verified exposure off; community feed may still show unverified rows)' : `public sources=[${s.publicSources.join(',')}]`}`
     + ` · written=${s.written} · carried=${s.carriedFromDb}${s.tableMissing ? ' · external_hotdeals table missing' : ''}`);
+  if (s.affiliate) {
+    lines.push(`Affiliate: attempted=${s.affiliate.attempted} matched=${s.affiliate.matched} saved=${s.affiliate.saved} errors=${s.affiliate.errors}`);
+  }
   return lines.join('\n');
 }
 
@@ -307,12 +429,22 @@ async function main(options) {
   let rows = [];
   let carried = 0;
   let tableMissing = false;
+  let affiliate = { attempted: 0, matched: 0, saved: 0, skipped: 0, errors: 0 };
   if (fetched.items.length) {
     const products = await loadProducts(db);
     const matches = fetched.items.map(deal => Radar.matchProduct(deal, products));
     const history = await loadHistory(matches, db, today);
     const current = fetched.items.map((deal, i) => rowFor(deal, matches[i],
       Radar.verifyDeal(deal, matches[i], historyFor(matches[i], history), today), nowMs));
+
+    // dry-run은 외부 쇼핑 API를 추가로 부르지 않는다. 테스트는 주입한 fake search로 별도 검증한다.
+    affiliate = dryRun
+      ? { attempted: 0, matched: 0, saved: 0, skipped: 0, errors: 0 }
+      : await enrichAffiliateRows(fetched.items, current, {
+          searchAll: opts.searchAll,
+          saveProducts: opts.saveProducts,
+          lookupLimit: opts.affiliateLookupLimit
+        });
     const recent = await loadRecentGroupRows(db, current, nowMs, dryRun);
     tableMissing = recent.tableMissing;
     const grouped = regroup(current, recent.rows, policy);
@@ -325,6 +457,7 @@ async function main(options) {
   const currentRows = rows.filter(r => currentKeys.has(`${r.source}|${r.source_post_id}`));
   const summary = summarize(fetched.sources || [], currentRows,
     { dryRun, policy, written: dryRun ? 0 : rows.length, carried, tableMissing });
+  summary.affiliate = affiliate;
 
   if (!opts.quiet) {
     console.log(summaryText(summary));
@@ -340,5 +473,6 @@ if (require.main === module) {
 
 module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
+  enrichAffiliateRows, affiliateCandidateProduct,
   summaryText, sampleOf
 };
