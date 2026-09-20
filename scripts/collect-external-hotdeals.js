@@ -32,6 +32,7 @@ const Radar = require('../api/_external-hotdeal');
 const { kstToday } = require('../api/_kst');
 const { sameVendorRows } = require('../api/_price');
 const Shop = require('../api/_shop');
+const HD = require('../api/_hotdeal');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const SAMPLE = process.argv.includes('--sample');
@@ -56,6 +57,13 @@ const AFFILIATE_LOOKUP_LIMIT = Math.max(0, Math.min(30,
 const AFFILIATE_SEARCH_LIMIT = Math.max(0, Math.min(60,
   Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES) || 24));
 const AFFILIATE_MATCH_THRESHOLD = 0.90;
+/**
+ * 사진은 구매 링크보다 한 단계 낮은 0.82까지 허용하되, title-only / partial 은 제외한다.
+ * 즉 수량·용량·모델 충돌을 모두 통과한 identity B 이상일 때만 검색 결과 사진을 쓴다.
+ * 사진 때문에 엉뚱한 상품으로 보이는 것보다 빈 썸네일이 낫다.
+ */
+const IMAGE_MATCH_THRESHOLD = 0.82;
+const IMAGE_MATCH_METHODS = new Set(['identity', 'model', 'mall-id', 'url']);
 
 function log(message, extra) {
   console.log(JSON.stringify({ at: new Date().toISOString(), message, ...(extra || {}) }));
@@ -85,7 +93,7 @@ async function selectPaged(build, limit) {
 async function loadProducts(db) {
   try {
     return await selectPaged(() => db.from('products')
-      .select('product_id, vendor_item_id, mall, title, link, lprice, collected_at')
+      .select('product_id, vendor_item_id, mall, title, link, image, lprice, collected_at')
       .order('collected_at', { ascending: false })
       .order('product_id', { ascending: true })
       .order('mall', { ascending: true }), PRODUCT_LIMIT);
@@ -147,7 +155,7 @@ function rowFor(deal, match, verification, nowMs) {
     mall: deal.mall,
     product_url: deal.productUrl,
     canonical_product_url: deal.canonicalProductUrl,
-    image_url: deal.imageUrl,
+    image_url: deal.imageUrl || (product && product.image) || '',
     posted_at: deal.postedAt,
     fetched_at: deal.fetchedAt,
     matched_product_id: product ? String(product.product_id) : null,
@@ -198,8 +206,20 @@ function affiliateCandidateProduct(item) {
     mall: String((item && item.mall) || ''),
     title: String((item && item.title) || ''),
     link: String((item && item.link) || ''),
+    image: String((item && item.image) || ''),
     lprice: Number(item && item.lprice) || 0
   };
+}
+
+function safeImageUrl(value) {
+  const url = HD.safeUrl(String(value || ''));
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' ? url : '';
+  } catch (_) {
+    return '';
+  }
 }
 
 /**
@@ -290,6 +310,8 @@ async function enrichAffiliateRows(deals, rows, options) {
       let chosen = null;
       let matchedKeyword = '';
       let matchedFrom = 'api';
+      let visualChosen = null;
+      let visualMatch = null;
 
       for (let queryIndex = 0; queryIndex < queries.length; queryIndex++) {
         const keyword = queries[queryIndex];
@@ -338,6 +360,21 @@ async function enrichAffiliateRows(deals, rows, options) {
         // 커뮤니티 제목의 "77%할인/특가" 같은 홍보 문구는 상품 identity가 아니다.
         // 수량·용량·모델은 보존한 채 홍보 문구만 걷어 동일상품 판정에 사용한다.
         const matchDeal = { ...deal, title: cleanAffiliateQuery(deal.title) || deal.title };
+        // 구매 링크는 0.90+, 사진은 identity B(0.82)+까지만 허용한다.
+        // 둘 다 같은 conflict guard(수량/용량/모델/옵션)를 거친다.
+        const vm = Radar.matchProduct(matchDeal, products, IMAGE_MATCH_THRESHOLD);
+        if (!visualChosen && vm.product && IMAGE_MATCH_METHODS.has(String(vm.method || ''))) {
+          const candidate = candidates.find(it =>
+            String(it.productId) === String(vm.product.product_id)
+            && String(it.mall || '') === String(vm.product.mall || '')
+          );
+          const image = candidate && safeImageUrl(candidate.image);
+          if (image) {
+            visualChosen = candidate;
+            visualMatch = vm;
+          }
+        }
+
         match = Radar.matchProduct(matchDeal, products, AFFILIATE_MATCH_THRESHOLD);
         if (!match.product) continue;
 
@@ -357,7 +394,24 @@ async function enrichAffiliateRows(deals, rows, options) {
         }
       }
 
+      if (!row.image_url && visualChosen && visualMatch) {
+        const image = safeImageUrl(visualChosen.image);
+        if (image) {
+          row.image_url = image;
+          row.metadata = {
+            ...row.metadata,
+            imageSource: String(visualChosen.mallLabel || visualChosen.mall || ''),
+            imageProductId: String(visualChosen.productId || ''),
+            imageMatchConfidence: Number(visualMatch.confidence) || 0,
+            imageMatchReason: String(visualMatch.reason || '')
+          };
+        }
+      }
+
       if (!chosen || !match || !match.product) continue;
+
+      const chosenImage = safeImageUrl(chosen.image);
+      if (chosenImage) row.image_url = chosenImage;
 
       const meta = {
         ...row.metadata,
@@ -368,7 +422,13 @@ async function enrichAffiliateRows(deals, rows, options) {
         affiliateVendorItemId: String(chosen.vendorItemId || ''),
         affiliateConfidence: Number(match.confidence) || 0,
         affiliateMatchReason: String(match.reason || ''),
-        affiliateSearchQuery: String(matchedKeyword || '').slice(0, 80)
+        affiliateSearchQuery: String(matchedKeyword || '').slice(0, 80),
+        ...(chosenImage ? {
+          imageSource: String(chosen.mallLabel || chosen.mall || ''),
+          imageProductId: String(chosen.productId || ''),
+          imageMatchConfidence: Number(match.confidence) || 0,
+          imageMatchReason: String(match.reason || '')
+        } : {})
       };
       row.metadata = meta;
 
@@ -589,6 +649,6 @@ if (require.main === module) {
 
 module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
-  enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery,
+  enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery, safeImageUrl,
   summaryText, sampleOf
 };
