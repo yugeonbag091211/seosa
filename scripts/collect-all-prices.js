@@ -3713,7 +3713,9 @@ function todayPriceRate(report) {
  */
 function buildReportHtml(report) {
   const {
-    execAt, date, productsTotal, otherTotal, otherByMall, malls, failCats,
+    execAt, date, productsTotal, targetLoadedProducts,
+    dailyTargetProducts, rotationTargetProducts, rotationDays, rotationBucket,
+    otherTotal, otherByMall, malls, failCats,
     targetProducts, collectorSuccessProducts, collectorMissingProducts,
     attemptedProducts, skippedProducts, noMatchProducts,
     todayPriceProducts, uncoveredProducts,
@@ -3857,6 +3859,8 @@ function buildReportHtml(report) {
     <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin-bottom:4px">상품 현황 <span style="color:#bbb;font-weight:400">(단위: 상품)</span></div>
     <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">
       ${row('쿠팡·ADPICK 수집 대상', num(targetProducts), { bold: true })}
+      ${num(rotationDays) > 0 ? row('└ 상시 추적 <span style="color:#bbb">(매일)</span>', num(dailyTargetProducts)) : ''}
+      ${num(rotationDays) > 0 ? row(`└ 회전 수집 <span style="color:#bbb">(버킷 ${num(rotationBucket) + 1}/${num(rotationDays)})</span>`, num(rotationTargetProducts)) : ''}
       ${row('수집 성공 상품 <span style="color:#bbb">(collector)</span>', num(collectorSuccessProducts), { bold: true, color: '#0b7a4b' })}
       ${row('수집 미확보 상품 <span style="color:#bbb">(collector)</span>', num(collectorMissingProducts), { bold: true })}
       ${row('오늘 가격 보유 상품 <span style="color:#bbb">(모든 경로)</span>', num(todayPriceProducts))}
@@ -3867,9 +3871,9 @@ function buildReportHtml(report) {
       ${row('시도한 상품 <span style="color:#bbb">(호출이 실제로 나감)</span>', num(attemptedProducts))}
       ${row('미시도 상품 <span style="color:#bbb">(차단·예산·상한으로 못 부름)</span>', num(skippedProducts))}
       ${row('시도했으나 무매칭 <span style="color:#bbb">(응답에 우리 product_id 없음)</span>', num(noMatchProducts))}
-      ${row('시도율 <span style="color:#bbb">attempted ÷ eligible</span>', pct(rateOf(attemptedProducts, targetProducts)), { bold: true })}
+      ${row('시도율 <span style="color:#bbb">attempted ÷ target</span>', pct(rateOf(attemptedProducts, targetProducts)), { bold: true })}
       ${row('시도 대비 성공률 <span style="color:#bbb">success ÷ attempted</span>', pct(rateOf(collectorSuccessProducts, attemptedProducts)), { bold: true })}
-      ${row('전체 수집 성공률 <span style="color:#bbb">success ÷ eligible</span>', pct(rateOf(collectorSuccessProducts, targetProducts)), { bold: true })}
+      ${row('전체 수집 성공률 <span style="color:#bbb">success ÷ target</span>', pct(rateOf(collectorSuccessProducts, targetProducts)), { bold: true })}
     </table>
     <div style="font-size:11px;color:#bbb;margin-top:4px">
       시도 ${num(attemptedProducts)} + 미시도 ${num(skippedProducts)} = 대상 ${num(targetProducts)}<br>
@@ -3959,6 +3963,8 @@ function buildReportHtml(report) {
     <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin-bottom:8px">전체 products (참고)</div>
     <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">
       ${row('products 전체', num(productsTotal))}
+      ${num(targetLoadedProducts) > 0 ? row('오늘 로드한 수집 대상', num(targetLoadedProducts)) : ''}
+      ${num(rotationDays) > 0 ? row(`전체 카탈로그 회전 주기`, `${num(rotationDays)}일`) : ''}
     </table>
   </td></tr>
 
