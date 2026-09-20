@@ -33,9 +33,15 @@ const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
 /* 정확히 검토한 free-tier 대상만 허용한다. 임의 환경변수는 호출 권한이 아니다. */
 const GEMINI_FREE_MODELS = Object.freeze(['gemini-2.5-flash-lite', 'gemini-2.5-flash']);
-const GROQ_FREE_MODELS = Object.freeze(['llama-3.1-8b-instant', 'llama-3.3-70b-versatile']);
+/*
+ * Groq Free/Developer tier: llama-3.1-8b-instant / llama-3.3-70b-versatile는
+ * 2026-08-16 shutdown. Groq 공식 migration 대상인 gpt-oss로 고정한다.
+ * 두 모델 모두 Groq 현재 rate-limit 표에 있고, 원 모델은 Apache-2.0이라
+ * 상업 서비스에서도 사용할 수 있다.
+ */
+const GROQ_FREE_MODELS = Object.freeze(['openai/gpt-oss-20b', 'openai/gpt-oss-120b']);
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite';
-const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant';
+const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
 const PROVIDER_COOLDOWN_MS = 60 * 1000;
 const QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
 const AUTH_COOLDOWN_MS = 10 * 60 * 1000;
