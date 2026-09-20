@@ -888,6 +888,31 @@ async function captureFailure(promise) {
     assert(picked.confidence < 0.70, '교차 몰 참고 사진은 상품 identity/제휴 매칭으로 승격하지 않는다');
   });
 
+  await check('external image: pack-size difference is okay for a labeled reference photo, model conflict is not', () => {
+    const foodDeal = { title: '참도깨비 사누끼 포차우동 10인분 + 소스 10봉', mall: '네이버' };
+    const foodPhoto = {
+      title: '사누끼 포차 우동 4인분 면 4개 소스 4개',
+      image: 'https://img.example/udon.jpg',
+      mall: 'ADPICK', mallLabel: '오늘의집',
+      productId: 'udon-photo', vendorItemId: '',
+      link: 'https://example.com/udon', lprice: 10000
+    };
+    const picked = Collector.referenceImageCandidate(foodDeal, [foodPhoto]);
+    assert(picked, '포장 수량이 달라도 같은 우동 상품 계열 사진은 참고용으로 허용');
+    assert.equal(picked.item.productId, 'udon-photo');
+    assert(picked.confidence < 0.70);
+
+    const modelDeal = { title: 'QCY AilyBuds E10 무선 블루투스 이어폰', mall: 'G마켓' };
+    const wrongModel = {
+      title: 'QCY AilyBuds T35 무선 블루투스 이어폰',
+      image: 'https://img.example/qcy-t35.jpg',
+      mall: '쿠팡', productId: 'qcy-t35', vendorItemId: 'v35',
+      link: 'https://example.com/qcy-t35', lprice: 20000
+    };
+    assert.equal(Collector.referenceImageCandidate(modelDeal, [wrongModel]), null,
+      '모델 코드가 다르면 참고 이미지도 사용하지 않는다');
+  });
+
   await check('external image: unsafe/non-https image URL is rejected', () => {
     assert.equal(Collector.safeImageUrl('javascript:alert(1)'), '');
     assert.equal(Collector.safeImageUrl('http://img.example/a.jpg'), '');
