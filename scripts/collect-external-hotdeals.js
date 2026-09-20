@@ -255,51 +255,75 @@ function referenceImageCandidate(deal, items) {
   const title = cleanAffiliateQuery(deal && deal.title);
   const dw = imageWords(title);
   if (!dw.length) return null;
-  const dset = new Set(dw);
-  const dmodels = Identity.modelCodes(title);
   const dealMall = mallKey(deal && deal.mall);
+  const dmodels = Identity.modelCodes(title);
+  const dgrades = Identity.grades(title);
+  const dformats = Identity.formats(title);
+  const dvariants = Identity.variants(title);
+  const dcolors = Identity.colors(title);
   let best = null;
+
+  const conflicts = (a, b) => a.size && b.size && ![...a].some(v => b.has(v));
+  const semanticShared = (left, right) => {
+    const out = [];
+    for (const a of left) {
+      const hit = right.find(b => a === b
+        || (a.length >= 2 && b.length >= 2 && (a.includes(b) || b.includes(a))));
+      if (hit) out.push(a);
+    }
+    return out;
+  };
 
   for (const item of items || []) {
     const image = safeImageUrl(item && item.image);
     if (!image) continue;
 
-    const itemMall = mallKey((item && item.mallLabel) || (item && item.mall));
-    /*
-     * 사진은 판매처가 아니라 상품 자체의 참고 시각자료다.
-     * 외부 글이 G마켓/네이버/롯데온이어도 쿠팡·ADPICK에 같은 상품 사진이 있으면
-     * 참고 이미지로 쓸 수 있다. 판매처 불일치는 구매 링크에는 절대 허용하지 않고,
-     * 여기서는 순위 보너스만 준다.
-     */
-    const sameMall = !!dealMall && !!itemMall && dealMall === itemMall;
-
-    const product = affiliateCandidateProduct(item);
-    const judged = Radar.matchScore({ ...(deal || {}), title }, product);
-    if (judged.method === 'conflict' || judged.method === 'identity-reject' || judged.confidence <= 0.05) continue;
-
-    const cw = imageWords(item && item.title);
+    const candidateTitle = cleanAffiliateQuery(item && item.title);
+    const cw = imageWords(candidateTitle);
     if (!cw.length) continue;
-    const cset = new Set(cw);
-    const shared = [...dset].filter(w => cset.has(w));
-    const overlap = shared.length / Math.max(1, Math.min(dset.size, cset.size));
-    const sameFirst = dw[0] && cw[0] && dw[0] === cw[0];
-    const cmodels = Identity.modelCodes(item && item.title);
+
+    /*
+     * 참고 사진은 «상품 판매 단위»가 아니라 «보이는 물건»을 돕는 용도다.
+     * 그래서 10봉↔4봉, 1kg↔600g 같은 수량/용량 차이는 참고 이미지에서는
+     * 허용한다. 하지만 모델/세대/형태/색상처럼 사진 자체가 다른 물건이 되는
+     * 충돌은 계속 거부한다. 구매 링크의 0.90 identity 판정은 전혀 건드리지 않는다.
+     */
+    const cmodels = Identity.modelCodes(candidateTitle);
+    const cgrades = Identity.grades(candidateTitle);
+    const cformats = Identity.formats(candidateTitle);
+    const cvariants = Identity.variants(candidateTitle);
+    const ccolors = Identity.colors(candidateTitle);
+    if (conflicts(dmodels, cmodels)
+      || conflicts(dgrades, cgrades)
+      || conflicts(dformats, cformats)
+      || conflicts(dvariants, cvariants)
+      || conflicts(dcolors, ccolors)) continue;
+
+    const shared = semanticShared(dw, cw);
+    const overlap = shared.length / Math.max(1, Math.min(dw.length, cw.length));
+    const sameFirst = dw[0] && cw[0]
+      && (dw[0] === cw[0] || dw[0].includes(cw[0]) || cw[0].includes(dw[0]));
     const sharedModel = [...dmodels].some(m => cmodels.has(m));
 
+    // 모델이 없으면 최소 2개 핵심어, 혹은 긴 고유어 하나 + 높은 겹침을 요구한다.
+    const distinctiveOne = shared.length === 1 && shared[0].length >= 4 && overlap >= 0.45;
     const enough = sharedModel
       || shared.length >= 3
-      || (shared.length >= 2 && (sameFirst || overlap >= 0.5));
+      || (shared.length >= 2 && (sameFirst || overlap >= 0.34))
+      || distinctiveOne;
     if (!enough) continue;
 
-    const rank = (sharedModel ? 100 : 0) + shared.length * 10 + overlap * 5
-      + (sameMall ? 3 : 0) + Math.max(0, judged.confidence);
+    const itemMall = mallKey((item && item.mallLabel) || (item && item.mall));
+    const sameMall = !!dealMall && !!itemMall && dealMall === itemMall;
+    const rank = (sharedModel ? 100 : 0) + shared.length * 10 + overlap * 8 + (sameMall ? 3 : 0);
     if (!best || rank > best.rank) {
       best = {
         item,
         image,
         rank,
-        confidence: Math.min(0.69, 0.45 + Math.min(0.18, shared.length * 0.04) + Math.min(0.06, overlap * 0.06)),
-        reason: `전체 제목 검색 결과 핵심 단어 ${shared.length}개 일치`
+        confidence: Math.min(0.69,
+          0.44 + Math.min(0.19, shared.length * 0.045) + Math.min(0.06, overlap * 0.06)),
+        reason: `전체 제목 검색 결과 핵심 단어 ${shared.length}개 일치 · 참고용`
       };
     }
   }
