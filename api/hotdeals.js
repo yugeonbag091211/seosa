@@ -450,13 +450,15 @@ async function loadExternal(queryParams, minScore, limit) {
     const posted = Date.parse(row.posted_at || '');
     if (!Number.isFinite(posted) || Number(row.price) <= 0 || !row.source_url) continue;
 
-    const verified = row.is_exposed === true
+    const verificationEligible = row.is_exposed === true
       && EXTERNAL_VISIBLE.indexOf(row.verification_status) > -1
-      && Number(row.deal_score) >= Math.max(60, minScore)
       && posted >= verifiedSince;
+    const verified = verificationEligible
+      && Number(row.deal_score) >= Math.max(60, minScore);
 
     if (verified) items.push(toExternalListItem(row));
-    else if (posted >= communitySince && row.verification_status !== 'SUSPICIOUS_PRICE') {
+    else if (!verificationEligible && posted >= communitySince
+      && row.verification_status !== 'SUSPICIOUS_PRICE') {
       items.push(toCommunityListItem(row));
     }
 
