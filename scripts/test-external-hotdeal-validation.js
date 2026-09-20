@@ -713,7 +713,7 @@ async function captureFailure(promise) {
       mall: '쿠팡', productId: 'water20', vendorItemId: '20', _source: 'api'
     };
     const right = {
-      title: '에브리워터 무라벨 500ml 40개 1박스',
+      title: '에브리워터 무라벨 500ml 40개',
       lprice: 4900, link: 'https://link.coupang.com/a/right-water',
       mall: '쿠팡', productId: 'water40', vendorItemId: '40', _source: 'api'
     };
