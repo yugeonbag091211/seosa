@@ -445,9 +445,15 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
   delete process.env.EXTERNAL_HOTDEAL_PUBLIC;
   reset([deal({ source: 'internal-history', hot_score: 95 })], [externalRow()]);
   {
+    const on = await call({ view: 'external' });
+    eq(on.body.items.length, 1, '외부 피드는 기본 ON');
+    eq(on.body.externalEnabled, true, 'externalEnabled=true');
+  }
+  process.env.EXTERNAL_HOTDEAL_PUBLIC = '0';
+  {
     const off = await call({ view: 'external' });
-    eq(off.body.items.length, 0, '공개 스위치 OFF(기본) — 외부 카드 0');
-    eq(off.body.externalEnabled, false, 'externalEnabled=false');
+    eq(off.body.items.length, 0, '명시적 kill switch=0 이면 외부 카드 0');
+    eq(off.body.externalEnabled, false, 'kill switch에서 externalEnabled=false');
   }
   process.env.EXTERNAL_HOTDEAL_PUBLIC = '1';
   {
@@ -468,13 +474,22 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     eq(it.priceVs90dLow, -2, '90일 최저가 비교');
     eq(it.productId, 'p81', 'SEOSA matched product id');
     eq(it.sourceCount, 2, '중복 source 수');
+    eq(it.verified, true, '검증 통과 카드는 verified=true');
+    eq(it.communityOnly, false, '검증 통과 카드는 communityOnly=false');
     ok(it.verificationReasons.indexOf('BELOW_30D_AVG') > -1, 'verification reasons 는 API 에 남는다');
-    eq((await call({ view: 'external', source: 'fmkorea', minScore: '99' })).body.items.length, 0, 'minScore 미달 제외');
+    eq((await call({ view: 'external', source: 'fmkorea', minScore: '99' })).body.items.length, 0, 'minScore 미달 검증 카드는 커뮤니티 카드로 강등하지 않는다');
   }
   {
-    reset([], [externalRow({ id: 82, source_post_id: 'post-82', is_exposed: false }),
-      externalRow({ id: 83, source_post_id: 'post-83', posted_at: iso(100) })]);
-    eq((await call({ view: 'external' })).body.items.length, 0, 'shadow 행(is_exposed=false)·72시간 지난 글은 공개 view 에도 없다');
+    reset([], [externalRow({ id: 82, source_post_id: 'post-82', is_exposed: false, verification_status: 'UNMATCHED',
+        deal_score: 0, matched_product_id: null, match_confidence: 0.12 }),
+      externalRow({ id: 83, source_post_id: 'post-83', posted_at: iso(100), is_exposed: false,
+        verification_status: 'UNMATCHED', deal_score: 0, matched_product_id: null, match_confidence: 0.1 })]);
+    const community = await call({ view: 'external' });
+    eq(community.body.items.length, 1, '최근 shadow/unmatched 글은 커뮤니티 카드로 노출하고 오래된 글은 제외');
+    eq(community.body.items[0].communityOnly, true, '커뮤니티 카드는 communityOnly=true');
+    eq(community.body.items[0].verified, false, '커뮤니티 카드는 verified=false');
+    eq(community.body.items[0].dealScore, null, '검증 전 카드에 점수를 만들지 않는다');
+    eq(community.body.items[0].productId, '', '검증 전 카드에 SEOSA 상품 id를 만들지 않는다');
   }
   {
     // 회귀: 예전 병합은 limit 로 잘라 내부 항목을 커서 밖으로 흘렸다.
