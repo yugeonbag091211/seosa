@@ -349,10 +349,12 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
 
   section('9) 같은 계열 도배 방지 — 버리지 않고 자리만 바꾼다');
   reset([
-    deal({ title: '소니 WF-1000XM5 무선 이어폰 블랙', group_key: 'a', hot_score: 99 }),
-    deal({ title: '소니 WF-1000XM5 무선 이어폰 화이트', group_key: 'b', hot_score: 98 }),
-    deal({ title: '소니 WF-1000XM5 무선 이어폰 실버', group_key: 'c', hot_score: 97 }),
-    deal({ title: '삼성전자 갤럭시 버즈3 프로 SM-R630N', group_key: 'd', hot_score: 96 })
+    // 기본 정렬은 daily다. 하락률을 명시해 입력 순서를 고정하지 않으면
+    // deal()이 호출될 때의 ms 차이(last_checked_at)가 이 테스트를 흔든다.
+    deal({ title: '소니 WF-1000XM5 무선 이어폰 블랙', group_key: 'a', hot_score: 99, price_drop_percent: 40 }),
+    deal({ title: '소니 WF-1000XM5 무선 이어폰 화이트', group_key: 'b', hot_score: 98, price_drop_percent: 39 }),
+    deal({ title: '소니 WF-1000XM5 무선 이어폰 실버', group_key: 'c', hot_score: 97, price_drop_percent: 38 }),
+    deal({ title: '삼성전자 갤럭시 버즈3 프로 SM-R630N', group_key: 'd', hot_score: 96, price_drop_percent: 37 })
   ]);
   {
     const items = (await call({})).body.items;
