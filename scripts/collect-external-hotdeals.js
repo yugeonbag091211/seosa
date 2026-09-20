@@ -62,8 +62,8 @@ const AFFILIATE_MATCH_THRESHOLD = 0.90;
  * 즉 수량·용량·모델 충돌을 모두 통과한 identity B 이상일 때만 검색 결과 사진을 쓴다.
  * 사진 때문에 엉뚱한 상품으로 보이는 것보다 빈 썸네일이 낫다.
  */
-const IMAGE_MATCH_THRESHOLD = 0.82;
-const IMAGE_MATCH_METHODS = new Set(['identity', 'model', 'mall-id', 'url']);
+const IMAGE_MATCH_THRESHOLD = 0.70;
+const IMAGE_MATCH_METHODS = new Set(['identity', 'identity-partial', 'model', 'mall-id', 'url']);
 
 function log(message, extra) {
   console.log(JSON.stringify({ at: new Date().toISOString(), message, ...(extra || {}) }));
@@ -403,7 +403,8 @@ async function enrichAffiliateRows(deals, rows, options) {
             imageSource: String(visualChosen.mallLabel || visualChosen.mall || ''),
             imageProductId: String(visualChosen.productId || ''),
             imageMatchConfidence: Number(visualMatch.confidence) || 0,
-            imageMatchReason: String(visualMatch.reason || '')
+            imageMatchReason: String(visualMatch.reason || ''),
+            imageReference: Number(visualMatch.confidence) < AFFILIATE_MATCH_THRESHOLD
           };
         }
       }
@@ -427,7 +428,8 @@ async function enrichAffiliateRows(deals, rows, options) {
           imageSource: String(chosen.mallLabel || chosen.mall || ''),
           imageProductId: String(chosen.productId || ''),
           imageMatchConfidence: Number(match.confidence) || 0,
-          imageMatchReason: String(match.reason || '')
+          imageMatchReason: String(match.reason || ''),
+          imageReference: false
         } : {})
       };
       row.metadata = meta;

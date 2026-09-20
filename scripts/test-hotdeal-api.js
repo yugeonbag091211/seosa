@@ -448,7 +448,8 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
       affiliateMall: '쿠팡',
       affiliatePrice: 29900,
       affiliateConfidence: 0.97,
-      affiliateMatchReason: '브랜드 + 모델번호 일치'
+      affiliateMatchReason: '브랜드 + 모델번호 일치',
+      imageReference: false
     },
     verification_reasons: ['HIGH_MATCH_CONFIDENCE', 'BELOW_30D_AVG'],
     last_verified_at: iso(0), is_primary: true, is_exposed: true
@@ -490,12 +491,14 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     eq(it.sourceCount, 2, '중복 source 수');
     eq(it.verified, true, '검증 통과 카드는 verified=true');
     eq(it.communityOnly, false, '검증 통과 카드는 communityOnly=false');
+    eq(it.imageReference, false, '정확 매칭 이미지는 참고 이미지가 아니다');
     ok(it.verificationReasons.indexOf('BELOW_30D_AVG') > -1, 'verification reasons 는 API 에 남는다');
     eq((await call({ view: 'external', source: 'fmkorea', minScore: '99' })).body.items.length, 0, 'minScore 미달 검증 카드는 커뮤니티 카드로 강등하지 않는다');
   }
   {
     reset([], [externalRow({ id: 82, source_post_id: 'post-82', is_exposed: false, verification_status: 'UNMATCHED',
-        deal_score: 0, matched_product_id: null, match_confidence: 0.12, metadata: { matchReason: '후보 없음' } }),
+        deal_score: 0, matched_product_id: null, match_confidence: 0.12, image_url: 'https://img.example/ref82.jpg',
+        metadata: { matchReason: '후보 없음', imageReference: true } }),
       externalRow({ id: 83, source_post_id: 'post-83', posted_at: iso(100), is_exposed: false,
         verification_status: 'UNMATCHED', deal_score: 0, matched_product_id: null, match_confidence: 0.1,
         metadata: { matchReason: '후보 없음' } })]);
@@ -507,6 +510,8 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     eq(community.body.items[0].productId, '', '검증 전 카드에 SEOSA 상품 id를 만들지 않는다');
     eq(community.body.items[0].productUrl, '', '제휴 매칭이 없으면 일반 상품 URL을 구매 링크로 노출하지 않는다');
     eq(community.body.items[0].monetized, false, '제휴 매칭이 없으면 monetized=false');
+    eq(community.body.items[0].image, 'https://img.example/ref82.jpg', '커뮤니티 카드에 참고 상품 사진 노출');
+    eq(community.body.items[0].imageReference, true, '참고 이미지 상태를 API가 보존');
   }
   {
     // 회귀: 예전 병합은 limit 로 잘라 내부 항목을 커서 밖으로 흘렸다.

@@ -1972,8 +1972,11 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .radar-deal{min-width:0;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .radar-deal-top{display:flex;align-items:flex-start;gap:12px}
 .radar-deal-thumb{width:58px;height:58px;flex:0 0 auto;border-radius:9px;background:var(--bg);overflow:hidden;
-  display:flex;align-items:center;justify-content:center}
+  display:flex;align-items:center;justify-content:center;position:relative}
 .radar-deal-thumb img{width:100%;height:100%;object-fit:contain}
+.radar-img-note{position:absolute;left:3px;right:3px;bottom:3px;padding:2px 3px;border-radius:4px;
+  background:rgba(255,255,255,.9);color:var(--soft);font-size:.52rem;line-height:1.2;
+  text-align:center;white-space:nowrap}
 .radar-deal-copy{min-width:0;flex:1}
 .radar-deal-name{font-size:.78rem;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;
   -webkit-box-orient:vertical;overflow:hidden}
@@ -7617,7 +7620,8 @@ var ExternalHot = {
       ? '<a href="/?p=' + encodeURIComponent(it.productId) + '">가격 이력 보기</a>' : '';
     return '<article class="radar-deal">'
       + '<div class="radar-deal-top"><div class="radar-deal-thumb">'
-      + (image ? '<img src="' + Fmt.esc(image) + '" loading="lazy" referrerpolicy="no-referrer" alt="">' : '⌁')
+      + (image ? '<img src="' + Fmt.esc(image) + '" loading="lazy" referrerpolicy="no-referrer" alt="">'
+        + (it.imageReference ? '<span class="radar-img-note">참고 이미지</span>' : '') : '⌁')
       + '</div><div class="radar-deal-copy"><div class="radar-deal-name">' + Fmt.esc(it.title) + '</div>'
       + '<div class="radar-deal-price">' + Fmt.won(it.price) + '원</div></div></div>'
       + '<div class="radar-deal-proof">' + proof + '<span>' + Fmt.esc(verdict) + '</span></div>'
