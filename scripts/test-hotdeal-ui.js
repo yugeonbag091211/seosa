@@ -50,6 +50,10 @@ assert(live.includes('SEOSA 가격 이력으로 검증한 지금 주목할 만�
  */
 assert(live.includes("'getHotdeals':'/api/hotdeals'"),'홈 핫딜 데이터는 /api/hotdeals (Hot Deal 엔진)');
 assert(live.includes("Api.call('getHotdeals', []"),'Drop.load 는 핫딜 엔진을 부른다');
+assert(live.includes("queryUrl = url + '?limit=60&sort=score'"),'더보기용 후보를 한 번에 받아 서버 재호출 없이 펼친다');
+assert(live.includes('INITIAL: 5')&&live.includes('STEP: 10'),'핫딜은 기본 5개, 더보기는 10개씩');
+assert(live.includes('data-act="drop-more"')&&live.includes("'drop-more': function() { Drop.more(); }"),'내부 핫딜 더보기 액션');
+assert(live.includes("Drop.items.slice(0, take)"),'내부 핫딜은 visible 개수까지만 렌더한다');
 assert(live.includes('Drop.fromHotdeal'),'엔진 응답을 기존 카드 모양으로 옮긴다 (UI 재사용)');
 assert(live.includes('data-act="ledger-open"')&&live.includes('data-act="ledger-buy"')&&live.includes('data-act="ledger-alert"'),'카드 → 가격 추이 · 구매 · 알림 그대로');
 const init=read('api/init.js');
@@ -119,7 +123,10 @@ assert(hd.includes('toCommunityListItem')&&hd.includes("row.verification_status 
 assert(hd.includes("process.env.EXTERNAL_HOTDEAL_PUBLIC !== '0'"),'외부 피드는 기본 ON, 명시적 0 kill switch 유지');
 assert(live.includes('@media(max-width:560px){.radar-deals{grid-template-columns:1fr}'),'모바일 1열');
 
-assert(live.includes("'?view=external&limit=12&minScore=60'"),'외부 카드는 전용 view 로만 읽는다(내부 목록과 섞지 않는다)');
+assert(live.includes("'?view=external&limit=60&minScore=60'"),'외부 카드는 전용 view 로 최대 60개를 미리 읽는다(내부 목록과 섞지 않는다)');
+assert(live.includes('id="externalHotMore"')&&live.includes('data-act="external-hot-more"'),'외부 핫딜 더보기 버튼');
+assert(live.includes("'external-hot-more': function() { ExternalHot.more(); }"),'외부 핫딜 더보기 액션');
+assert(live.includes("ExternalHot.items.slice(0, take)"),'외부 핫딜도 기본 5개에서 10개씩 펼친다');
 assert.equal((live.match(/ExternalHot.load()/g)||[]).length,1,'ExternalHot.load 는 한 번만 호출된다(init 폴백에서 중복 호출 금지)');
 
-console.log('PASS hotdeal UI: legacy page removed, internal price-drop preserved, external verified radar added, mobile/actions/badges');
+console.log('PASS hotdeal UI: legacy page removed, internal/external hotdeal progressive reveal 5 + 10, mobile/actions/badges');
