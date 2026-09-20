@@ -440,7 +440,14 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     verification_status: 'STRONG_DEAL', price_vs_30d_avg: 23, price_vs_90d_low: -2,
     average_30d: 38800, low_90d: 30500, previous_price: 39000,
     history_observation_count: 18, history_last_observed_at: '2026-09-12', source_count: 2,
-    sources: ['fmkorea', 'ppomppu'], metadata: { matchReason: '모델번호 일치' },
+    sources: ['fmkorea', 'ppomppu'], metadata: {
+      matchReason: '모델번호 일치',
+      affiliateUrl: 'https://link.coupang.com/a/external81',
+      affiliateMall: '쿠팡',
+      affiliatePrice: 29900,
+      affiliateConfidence: 0.97,
+      affiliateMatchReason: '브랜드 + 모델번호 일치'
+    },
     verification_reasons: ['HIGH_MATCH_CONFIDENCE', 'BELOW_30D_AVG'],
     last_verified_at: iso(0), is_primary: true, is_exposed: true
   }, over || {});
@@ -470,7 +477,9 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     const it = r.body.items[0];
     eq(it.source, 'fmkorea', 'source');
     eq(it.sourceUrl, 'https://community.example/81', '원문 URL');
-    eq(it.productUrl, 'https://shop.example/81', '상품 URL');
+    eq(it.productUrl, 'https://link.coupang.com/a/external81', '상품 URL은 검증된 제휴 링크만 노출');
+    eq(it.affiliateUrl, 'https://link.coupang.com/a/external81', 'affiliateUrl');
+    eq(it.monetized, true, '제휴 경로가 있으면 monetized=true');
     eq(it.dealScore, 91, 'deal score');
     eq(it.matchConfidence, 0.97, 'match confidence');
     eq(it.priceVs30dAvg, 23, '30일 평균 대비');
@@ -484,15 +493,18 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
   }
   {
     reset([], [externalRow({ id: 82, source_post_id: 'post-82', is_exposed: false, verification_status: 'UNMATCHED',
-        deal_score: 0, matched_product_id: null, match_confidence: 0.12 }),
+        deal_score: 0, matched_product_id: null, match_confidence: 0.12, metadata: { matchReason: '후보 없음' } }),
       externalRow({ id: 83, source_post_id: 'post-83', posted_at: iso(100), is_exposed: false,
-        verification_status: 'UNMATCHED', deal_score: 0, matched_product_id: null, match_confidence: 0.1 })]);
+        verification_status: 'UNMATCHED', deal_score: 0, matched_product_id: null, match_confidence: 0.1,
+        metadata: { matchReason: '후보 없음' } })]);
     const community = await call({ view: 'external' });
     eq(community.body.items.length, 1, '최근 shadow/unmatched 글은 커뮤니티 카드로 노출하고 오래된 글은 제외');
     eq(community.body.items[0].communityOnly, true, '커뮤니티 카드는 communityOnly=true');
     eq(community.body.items[0].verified, false, '커뮤니티 카드는 verified=false');
     eq(community.body.items[0].dealScore, null, '검증 전 카드에 점수를 만들지 않는다');
     eq(community.body.items[0].productId, '', '검증 전 카드에 SEOSA 상품 id를 만들지 않는다');
+    eq(community.body.items[0].productUrl, '', '제휴 매칭이 없으면 일반 상품 URL을 구매 링크로 노출하지 않는다');
+    eq(community.body.items[0].monetized, false, '제휴 매칭이 없으면 monetized=false');
   }
   {
     // 회귀: 예전 병합은 limit 로 잘라 내부 항목을 커서 밖으로 흘렸다.
