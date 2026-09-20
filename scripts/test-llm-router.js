@@ -332,6 +332,73 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
     check('다른 프롬프트는 캐시를 쓰지 않는다', ext.calls.length === before + 1);
   }
 
+
+  /* ── 8b. 동시 폭주 ───────────────────────────────────────────── */
+  console.log('\n[8b] 동시 폭주');
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free', AI_CACHE_TTL_MS: '60000' });
+    const priorFetch = global.fetch;
+    let releaseGate;
+    const gate = new Promise(resolve => { releaseGate = resolve; });
+    let started = 0;
+    global.fetch = async (_url, opts) => {
+      started++;
+      const body = JSON.parse(opts.body);
+      await gate;
+      return {
+        ok: true, status: 200,
+        json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: `answered-by:${body.model}` } }] })
+      };
+    };
+
+    const burst = Array.from({ length: 12 }, () => ask());
+    await new Promise(resolve => setImmediate(resolve));
+    check('★★ 같은 질문 12개가 동시에 와도 upstream은 1회만 시작한다',
+      started === 1, String(started));
+
+    releaseGate();
+    const results = await Promise.all(burst);
+    global.fetch = priorFetch;
+    check('single-flight에 합쳐진 12개 요청이 모두 답을 받는다',
+      results.every(r => r && r.ok), results.filter(r => r && r.ok).length + '/12');
+    check('병합된 follower가 계측된다',
+      llm.stats().coalesced === 11, String(llm.stats().coalesced));
+  }
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free', AI_CACHE_TTL_MS: '0' });
+    const priorFetch = global.fetch;
+    let releaseGate;
+    const gate = new Promise(resolve => { releaseGate = resolve; });
+    let started = 0;
+    global.fetch = async (_url, opts) => {
+      started++;
+      const body = JSON.parse(opts.body);
+      await gate;
+      return {
+        ok: true, status: 200,
+        json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: `answered-by:${body.model}` } }] })
+      };
+    };
+
+    const burst = Array.from({ length: 10 }, (_, i) => llm.chat({
+      role: 'answer',
+      messages: [{ role: 'user', content: '서로 다른 질문 ' + i }],
+      maxTokens: 900, temperature: 0.2, budgetMs: 10000
+    }));
+    await new Promise(resolve => setImmediate(resolve));
+    check('★★ 서로 다른 질문 폭주도 모델당 동시 upstream 상한을 넘지 않는다',
+      started === llm.PROVIDER_MAX_INFLIGHT,
+      `${started} / 상한 ${llm.PROVIDER_MAX_INFLIGHT}`);
+
+    releaseGate();
+    const results = await Promise.all(burst);
+    global.fetch = priorFetch;
+    check('동시 상한에 막힌 요청은 무한 대기하지 않고 busy로 빠진다',
+      results.some(r => r && r.reason === 'busy'), results.map(r => r.reason).join(','));
+    check('폭주가 끝난 뒤 provider slot이 모두 반환된다',
+      llm.stats().providerInflight === 0, String(llm.stats().providerInflight));
+  }
+
   /* ── 9. 로그 위생 ───────────────────────────────────────────── */
   console.log('\n[9] 로그 위생');
   {
