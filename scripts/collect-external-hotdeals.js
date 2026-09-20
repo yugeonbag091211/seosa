@@ -261,7 +261,9 @@ function affiliateCandidateKey(item) {
  */
 async function enrichAffiliateRows(deals, rows, options) {
   const opts = options || {};
-  const search = opts.searchAll || Shop.searchAll;
+  const injectedSearch = opts.searchAll || null;
+  const fetchCoupang = opts.fetchCoupang || Shop.fetchCoupang;
+  const fetchAdpick = opts.fetchAdpick || Shop.fetchAdpick;
   const save = opts.saveProducts || Shop.saveProducts;
   const lookupLimit = Math.max(0, Math.min(30,
     Number.isFinite(opts.lookupLimit) ? opts.lookupLimit : AFFILIATE_LOOKUP_LIMIT));
@@ -289,16 +291,40 @@ async function enrichAffiliateRows(deals, rows, options) {
       let matchedKeyword = '';
       let matchedFrom = 'api';
 
-      for (const keyword of queries) {
+      for (let queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+        const keyword = queries[queryIndex];
         if (stats.searches >= searchLimit) break;
         stats.searches++;
 
-        const result = await search(keyword, {
-          coupangLimit: 10,
-          coupangOpts: { source: 'external-hotdeal', maxWaitMs: 15000 },
-          adpickLimit: 10,
-          adpickOpts: { source: 'external-hotdeal', maxWaitMs: 15000 }
-        });
+        let result;
+        if (injectedSearch) {
+          // 테스트/호출부가 searchAll을 주입한 경우 기존 계약을 그대로 쓴다.
+          result = await injectedSearch(keyword, {
+            coupangLimit: 10,
+            coupangOpts: { source: 'external-hotdeal', maxWaitMs: 15000 },
+            adpickLimit: 10,
+            adpickOpts: { source: 'external-hotdeal', maxWaitMs: 15000 }
+          });
+        } else {
+          /*
+           * 운영에서는 ADPICK을 모든 재시도에 호출하지 않는다.
+           * 첫 검색어가 모델/용량/수량을 모두 보존하므로 ADPICK은 여기서 한 번만 보고,
+           * 2·3차 재검색은 쿠팡만 사용한다. 2026-09-20 실측에서 11번째 ADPICK
+           * 호출부터 429가 발생했으므로, 재현율을 올리면서도 공급자 차단은 피한다.
+           */
+          const coupang = await fetchCoupang(keyword, 10,
+            { source: 'external-hotdeal', maxWaitMs: 15000 })
+            .catch(e => ({ items: [], error: e.message, from: 'none' }));
+          const adpick = queryIndex === 0
+            ? await fetchAdpick(keyword, 10,
+                { source: 'external-hotdeal', maxWaitMs: 15000 })
+                .catch(e => ({ items: [], error: e.message, from: 'none' }))
+            : { items: [], error: null, from: 'none' };
+          result = {
+            items: [...(coupang.items || []), ...(adpick.items || [])],
+            from: coupang.from || adpick.from || 'none'
+          };
+        }
 
         for (const item of (result && result.items || [])) {
           if (!item || !item.link || !item.productId || !(Number(item.lprice) > 0)) continue;
