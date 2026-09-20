@@ -678,6 +678,7 @@ async function captureFailure(promise) {
       }
     });
     assert.equal(stats.attempted, 1);
+    assert.equal(stats.searches, 1);
     assert.equal(stats.matched, 1);
     assert.equal(row.metadata.affiliateUrl, affiliate.link);
     assert.equal(row.metadata.affiliateProductId, 's24');
@@ -686,6 +687,48 @@ async function captureFailure(promise) {
     assert.equal(row.matched_product_id, 's24');
     assert(saved && saved.items.length === 1);
     assert.equal(saved.opts.source, 'external-hotdeal');
+  });
+
+  await check('affiliate enrichment: preserves SKU specs and retries with alternate search phrases', async () => {
+    const deal = Normalize.normalizeExternalHotdeal({
+      externalId: 'aff-retry',
+      title: '에브리워터 무라벨 500ml 40개 77%할인',
+      price: 4400,
+      mall: '쿠팡',
+      postUrl: 'https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=999003',
+      postedAt: hoursAgo(1),
+      metadata: { rawTitle: '[쿠팡] 에브리워터 무라벨 500ml 40개 77%할인 (4,400원/무료)' }
+    }, 'ppomppu');
+    const queries = Collector.affiliateSearchQueries(deal);
+    assert(queries.length >= 2);
+    assert(queries[0].includes('500ml'), queries[0]);
+    assert(queries[0].includes('40개'), queries[0]);
+    assert(!queries[0].includes('77%'), queries[0]);
+
+    const row = { source: 'ppomppu', source_post_id: '999003', source_url: deal.postUrl,
+      title: deal.title, price: deal.price, matched_product_id: null, metadata: {} };
+    const wrong = {
+      title: '에브리워터 무라벨 500ml 20개',
+      lprice: 5900, link: 'https://link.coupang.com/a/wrong-water',
+      mall: '쿠팡', productId: 'water20', vendorItemId: '20', _source: 'api'
+    };
+    const right = {
+      title: '에브리워터 무라벨 500ml 40개 1박스',
+      lprice: 4900, link: 'https://link.coupang.com/a/right-water',
+      mall: '쿠팡', productId: 'water40', vendorItemId: '40', _source: 'api'
+    };
+    let calls = 0;
+    const stats = await Collector.enrichAffiliateRows([deal], [row], {
+      lookupLimit: 1,
+      searchLimit: 3,
+      searchAll: async () => ({ items: [++calls === 1 ? wrong : right], from: 'api' }),
+      saveProducts: async () => ({ saved: 1, errors: [] })
+    });
+    assert.equal(calls, 2, '첫 검색 실패 후 두 번째 검색어로 재시도');
+    assert.equal(stats.searches, 2);
+    assert.equal(stats.matched, 1);
+    assert.equal(row.metadata.affiliateUrl, right.link);
+    assert.equal(row.metadata.affiliateSearchQuery, queries[1]);
   });
 
   await check('affiliate enrichment: a merely similar product is never monetized as the same deal', async () => {
@@ -711,10 +754,12 @@ async function captureFailure(promise) {
     };
     const stats = await Collector.enrichAffiliateRows([deal], [row], {
       lookupLimit: 1,
+      searchLimit: 3,
       searchAll: async () => ({ items: [wrong], from: 'api' }),
       saveProducts: async () => { throw new Error('wrong candidate must never be saved'); }
     });
     assert.equal(stats.matched, 0);
+    assert(stats.searches >= 2, '한 검색어 실패로 포기하지 않는다');
     assert.equal(row.metadata.affiliateUrl, undefined);
     assert.equal(row.matched_product_id, null);
   });
