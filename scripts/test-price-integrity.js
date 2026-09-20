@@ -588,6 +588,80 @@ function case11() {
     'TEST B · (대조) 옵션을 안 좁히면 그 거짓 하락이 통과했다 ★');
 }
 
+/* ------------------------------------------------------------------ *
+ *  CASE 12. 카탈로그 분해가 «빠짐없이, 겹침없이» 맞아떨어진다
+ *
+ *  ── 왜 시험으로 고정하는가 (2026-09-20 감사) ──────────────────────
+ *
+ *  «products 69,666행인데 수집 대상은 2,965» 라는 말은 그 차이 66,701개가
+ *  어디로 갔는지 설명되지 않으면 아무 뜻이 없다. 설명은 두 조건을 만족해야
+ *  한다 — 모든 상품이 «어딘가» 에 들어가고(빠짐없이), «한 군데만»
+ *  들어간다(겹침없이). 그래야 합계가 전체와 같아지고, 그제서야 «이 칸은
+ *  풀어도 되는가» 를 따질 수 있다.
+ *
+ *  2026-09-20 운영 실측이 이 규칙으로 정확히 맞아떨어졌다:
+ *    ELIGIBLE 2,965 / 수집됐지만 미승격 13,754 / seed 뿐 52,942 /
+ *    이력 없음 5  =  69,666  ✔
+ *
+ *  여기서는 규칙 자체(분류 함수)를 픽스처로 고정한다. DB 는 보지 않는다.
+ * ------------------------------------------------------------------ */
+function case12() {
+  section('CASE 12. 카탈로그 분해 — 빠짐없이 · 겹침없이');
+
+  const { reconcile } = require('./audit-price-engine');
+
+  const P = (id, mall, extra) => Object.assign({ product_id: id, mall, vendor_item_id: 'v' + id, lprice: 1000 }, extra || {});
+  const H = (src) => ({ source: src });
+
+  const products = [
+    P('e1', '쿠팡'), P('e2', 'ADPICK'),              // 대상
+    P('c1', '쿠팡'), P('c2', 'ADPICK'),              // 수집은 됐지만 미승격
+    P('s1', 'ADPICK'), P('s2', 'ADPICK'), P('s3', '쿠팡'),  // seed 뿐
+    P('n1', '쿠팡'),                                  // 이력 없음
+    P('k1', '쿠팡', { vendor_item_id: '' }),          // 쿠팡인데 옵션 id 없음
+    P('m1', '11번가')                                  // 지원하지 않는 몰
+  ];
+  const elig = new Set(['e1|쿠팡', 'e2|ADPICK']);
+  const hist = new Map([
+    ['e1|쿠팡', [H('collect'), H('search')]],
+    ['e2|ADPICK', [H('cron')]],
+    ['c1|쿠팡', [H('seed'), H('collect')]],
+    ['c2|ADPICK', [H('collect')]],
+    ['s1|ADPICK', [H('seed')]], ['s2|ADPICK', [H('seed')]], ['s3|쿠팡', [H('seed')]],
+    ['k1|쿠팡', [H('seed')]],
+    ['m1|11번가', [H('seed')]]
+    // n1 은 일부러 없다
+  ]);
+
+  const { buckets } = reconcile(products, elig, hist);
+  const total = Object.values(buckets).reduce((s, v) => s + v, 0);
+
+  check(total === products.length,
+    '★ 분류 합계가 products 전체와 같다 (빠짐없이 · 겹침없이)', `${total} / ${products.length}`);
+  check(buckets.ELIGIBLE === 2, '대상은 대상 칸에만', String(buckets.ELIGIBLE));
+  check(buckets.X5_수집은_됐지만_승격되지_않음 === 2,
+    'collect 이력이 있어도 승격되지 않은 상품은 따로 센다', String(buckets.X5_수집은_됐지만_승격되지_않음));
+  check(buckets.X6_seed_뿐 === 3, 'seed 이력뿐인 상품', String(buckets.X6_seed_뿐));
+  check(buckets.X4_이력이_아예_없음 === 1, '이력이 없는 상품', String(buckets.X4_이력이_아예_없음));
+  check(buckets.X3_쿠팡인데_옵션id_없음 === 1,
+    '쿠팡인데 옵션 id 가 없으면 추적 불가로 분류', String(buckets.X3_쿠팡인데_옵션id_없음));
+  check(buckets.X1_지원하지_않는_몰 === 1, '연동 없는 몰', String(buckets.X1_지원하지_않는_몰));
+
+  /*
+   * ★ 대상 판정이 «이력의 종류» 보다 먼저다.
+   *   eligible 이면 collect/seed 이력이 무엇이든 ELIGIBLE 칸에 들어간다.
+   *   순서가 뒤집히면 대상 상품이 X5 로 새어 분모가 조용히 줄어든다.
+   */
+  const only = reconcile([P('e1', '쿠팡')], new Set(['e1|쿠팡']), new Map([['e1|쿠팡', [H('seed')]]]));
+  check(only.buckets.ELIGIBLE === 1 && only.buckets.X6_seed_뿐 === 0,
+    '★ 대상이면 seed 이력이 있어도 대상으로 센다 (판정 순서 고정)');
+
+  // 대상 집합을 모르는 환경(RPC 없음)에서도 합계는 맞아야 한다.
+  const noElig = reconcile(products, null, hist);
+  const t2 = Object.values(noElig.buckets).reduce((s, v) => s + v, 0);
+  check(t2 === products.length, '대상 집합을 몰라도 합계는 전체와 같다', `${t2} / ${products.length}`);
+}
+
 /* ------------------------------------------------------------------ */
 (async () => {
   console.log('\nSEOSA 가격 데이터 신뢰성 회귀 테스트 (DB 접근 0회)\n');
@@ -602,6 +676,7 @@ function case11() {
   case9();
   case10();
   case11();
+  case12();
 
   console.log(`\n${'─'.repeat(52)}`);
   console.log(`  PASS ${pass}  /  FAIL ${fail}`);

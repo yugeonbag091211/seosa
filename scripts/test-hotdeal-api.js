@@ -49,6 +49,26 @@ const fakeSupabase = {
       eq(c, v) { touch(c); filters.push(r => String(r[c]) === String(v)); return q; },
       in(c, vs) { touch(c); filters.push(r => vs.map(String).indexOf(String(r[c])) > -1); return q; },
       gte(c, v) { touch(c); filters.push(r => cmp(r[c], v) >= 0); return q; },
+      /*
+       * PostgREST 의 .or('a.is.null,a.gt.X') — 콤마로 나뉜 조건의 OR 이다.
+       * 실제와 같은 뜻으로 구현해야 «만료된 딜이 빠지는가» 시험이 뜻을 갖는다.
+       */
+      or(expr) {
+        const terms = String(expr || '').split(',').map(s => s.trim()).filter(Boolean)
+          .map(t => {
+            const i = t.indexOf('.'), j = t.indexOf('.', i + 1);
+            const col = t.slice(0, i), op = t.slice(i + 1, j), val = t.slice(j + 1);
+            touch(col);
+            if (op === 'is') return r => (val === 'null' ? r[col] == null : String(r[col]) === val);
+            if (op === 'gt') return r => r[col] != null && cmp(r[col], val) > 0;
+            if (op === 'gte') return r => r[col] != null && cmp(r[col], val) >= 0;
+            if (op === 'lt') return r => r[col] != null && cmp(r[col], val) < 0;
+            if (op === 'eq') return r => String(r[col]) === val;
+            throw new Error(`테스트 스텁이 모르는 or 연산자: ${op}`);
+          });
+        filters.push(r => terms.some(f => f(r)));
+        return q;
+      },
       order(c, o) { touch(c); orders.push({ c, asc: !o || o.ascending !== false }); return q; },
       limit(n) { limitN = n; return q; },
       range(a, b) { rangeFrom = a; rangeTo = b; return q; },
@@ -314,7 +334,14 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
     eq((await call({ sort: 'price' })).body.items[0].current_price, undefined, 'price 필드는 노출 이름이 price');
     eq((await call({ sort: 'price' })).body.items[0].price, 3000, 'sort=price 는 싼 것부터');
     eq((await call({ sort: 'drop' })).body.items[0].id, 3, 'sort=drop 은 하락률 순');
-    eq((await call({ sort: '이상한값' })).body.items[0].id, 2, '모르는 정렬은 점수순으로 떨어진다');
+    /*
+     * 2026-09-20: 기본 정렬이 «어제 대비 하락률» 로 바뀌었다 (api/hotdeals.js
+     * SORTS 주석). 모르는 정렬값은 예전처럼 «기본 정렬» 로 떨어지고, 그 기본이
+     * 이제 daily 다. 점수 정렬은 지우지 않았으므로 ?sort=score 로 그대로 쓴다.
+     */
+    eq((await call({ sort: '이상한값' })).body.items[0].id, 3, '모르는 정렬은 기본 정렬(일일 하락률)로 떨어진다');
+    eq((await call({})).body.items[0].id, 3, '기본 정렬은 어제 대비 하락률이 큰 쪽이 위');
+    eq((await call({ sort: 'score' })).body.items[0].id, 2, 'sort=score 는 예전처럼 점수순 (기능 보존)');
   }
 
   section('9) 같은 계열 도배 방지 — 버리지 않고 자리만 바꾼다');
@@ -470,6 +497,50 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
   }
   if (savedPublic === undefined) delete process.env.EXTERNAL_HOTDEAL_PUBLIC;
   else process.env.EXTERNAL_HOTDEAL_PUBLIC = savedPublic;
+
+  /* ───────────────────────────────────────────────────────────────
+   * 2026-09-20 감사 — 만료된 딜은 목록에 오르지 않는다.
+   *
+   * 실측 배경: lifecycle=ACTIVE 49행 중 44행의 expires_at 이 이미 지났는데도
+   * «오늘의 핫딜» 자리에 떠 있었다. lifecycle 을 EXPIRED 로 바꾸는 주체가
+   * 수집기 하나뿐이라, 수집기가 그 상품을 다시 보지 못하면 영원히 ACTIVE 다.
+   * 목록 쪽에서 expires_at 을 읽는 것이 두 번째 방어선이다.
+   * ─────────────────────────────────────────────────────────────── */
+  section('12) 만료 — expires_at 이 지난 딜은 내보내지 않는다');
+  reset([
+    deal({ expires_at: iso(-6), group_key: 'ok' }),       // 6시간 «뒤» 만료 → 살아 있다
+    deal({ expires_at: iso(1), group_key: 'gone' }),       // 1시간 «전» 만료 → 좀비
+    deal({ expires_at: null, group_key: 'nullexp' })      // 값이 없으면 막지 않는다
+  ]);
+  {
+    const ids = (await call({})).body.items.map(i => i.id);
+    eq(ids.indexOf(2) < 0, true, 'expires_at 이 지난 행은 빠진다');
+    eq(ids.indexOf(1) > -1, true, '아직 유효한 행은 남는다');
+    eq(ids.indexOf(3) > -1, true, 'expires_at 이 없는 행은 예전처럼 남는다');
+    eq(ids.length, 2, '남은 항목 수');
+  }
+  {
+    // lifecycle 이 ACTIVE 여도 만료됐으면 못 나간다 — 두 조건은 AND 다.
+    reset([deal({ lifecycle: 'ACTIVE', expires_at: iso(72), group_key: 'z' })]);
+    eq((await call({})).body.items.length, 0, 'lifecycle=ACTIVE 여도 만료면 노출하지 않는다');
+  }
+
+  section('13) 기본 정렬 — 어제 대비 하락률 → 하락액 → 신선도');
+  reset([
+    deal({ group_key: 'a', price_drop_percent: 8, hot_score: 95,
+      signal_json: { dailyDropAmount: 800, dailyDropPct: 8 }, expires_at: iso(-6) }),
+    deal({ group_key: 'b', price_drop_percent: 20, hot_score: 40,
+      signal_json: { dailyDropAmount: 2000, dailyDropPct: 20 }, expires_at: iso(-6) }),
+    deal({ group_key: 'c', price_drop_percent: 20, hot_score: 40,
+      signal_json: { dailyDropAmount: 9000, dailyDropPct: 20 }, expires_at: iso(-6) })
+  ]);
+  {
+    const ids = (await call({})).body.items.map(i => i.id);
+    eq(ids[0], 3, '하락률 동률이면 하락액이 큰 쪽이 위');
+    eq(ids[1], 2, '그다음이 같은 하락률의 작은 하락액');
+    eq(ids[2], 1, '하락률이 낮으면 점수가 높아도 아래');
+    eq((await call({})).body.items.map(i => i.id).join(','), ids.join(','), '같은 입력이면 같은 순서');
+  }
 
   console.log('\n====================================================');
   console.log(`PASS ${pass}  /  FAIL ${fail}`);

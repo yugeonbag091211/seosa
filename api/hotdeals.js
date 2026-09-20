@@ -66,12 +66,75 @@ const TIE_BREAK = [
   ['price_drop_percent', false]
 ];
 
+/*
+ * ★ 기본 정렬이 «어제 대비 하락률» 이다 (2026-09-20 감사).
+ *
+ *   예전 기본값은 hot_score 였다. 그 점수는 100점 중 83점이 30·90일 중앙값
+ *   비교에서 나오는데(api/_hotdeal.js hotScore), 중앙값은 하루 사이에 거의
+ *   움직이지 않는다. 그래서 순위도 거의 움직이지 않았고, 사용자에게는
+ *   «어제와 오늘 핫딜 창이 같다» 로 보였다.
+ *
+ *   수집기가 이제 price_drop_percent 에 «어제 대비 오늘» 값을 싣는다
+ *   (api/_dailydrop.js). 정렬 1순위를 그 값으로 바꾸면, 카드에 찍히는 숫자와
+ *   순서를 정하는 값이 같아져서 «왜 이 순서인가» 를 설명할 수 있다.
+ *
+ *   ?sort=score 로 예전 정렬을 그대로 쓸 수 있다 — 지우지 않는다.
+ *
+ *   하락 «액» 은 DB 정렬 키에 넣지 않는다. 그 값은 signal_json(jsonb) 안이라
+ *   인덱스를 탈 수 없고, 정렬 키로 쓰면 커서 페이지네이션이 흔들린다.
+ *   대신 같은 하락률 구간 안에서만 응답 페이지 안에서 다시 정렬한다
+ *   (아래 byDailyDrop 참고) — 페이지 경계를 넘지 않으므로 항목이 사라지지 않는다.
+ */
+const DROP_TIE = [
+  ['confidence_rank', false],
+  ['last_checked_at', false],
+  ['hot_score', false]
+];
+
+/*
+ * baseCol — 2026-09-07 마이그레이션 «전» 환경에서 대신 쓸 정렬 컬럼.
+ *
+ * ★ 이게 없으면 기본 정렬이 목록을 통째로 죽인다. price_drop_percent 는
+ *   GROUP_COLS 라 마이그레이션 전에는 없는 컬럼인데, 폴백 경로(run(false))가
+ *   select 만 BASE_COLS 로 바꾸고 order 는 그대로 두고 있었다. 그래서 «컬럼이
+ *   없어서» 시작된 폴백이 «없는 컬럼으로 정렬하다» 다시 실패했다.
+ *   (예전에는 기본값이 hot_score 라 드러나지 않았고, ?sort=drop 에서만 났다)
+ */
 const SORTS = {
-  score: { col: 'hot_score', asc: false, tie: TIE_BREAK },
-  recent: { col: 'last_checked_at', asc: false, tie: [['hot_score', false], ['confidence_rank', false]] },
-  price: { col: 'current_price', asc: true, tie: [['hot_score', false], ['confidence_rank', false]] },
-  drop: { col: 'price_drop_percent', asc: false, tie: [['hot_score', false], ['confidence_rank', false]] }
+  daily: { col: 'price_drop_percent', baseCol: 'hot_score', asc: false, tie: DROP_TIE },
+  score: { col: 'hot_score', baseCol: 'hot_score', asc: false, tie: TIE_BREAK },
+  recent: { col: 'last_checked_at', baseCol: 'last_checked_at', asc: false, tie: [['hot_score', false], ['confidence_rank', false]] },
+  price: { col: 'current_price', baseCol: 'current_price', asc: true, tie: [['hot_score', false], ['confidence_rank', false]] },
+  drop: { col: 'price_drop_percent', baseCol: 'hot_score', asc: false, tie: DROP_TIE }
 };
+
+const DEFAULT_SORT = 'daily';
+
+/** signal_json 의 하락액. 없으면 0 — 없는 값을 지어내지 않는다. */
+function dropAmountOf(r) {
+  const s = obj(r && r.signal_json);
+  const v = Number(s.dailyDropAmount != null ? s.dailyDropAmount : s.priceDropAmount);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * 같은 하락률 안에서 하락액이 큰 쪽을 위로. DB 정렬을 «덮지» 않고 «다듬는다».
+ *
+ * 순서는 1) 하락률 2) 하락액 3) 신선도 이고, 1과 3은 DB 가 이미 정렬해 왔다
+ * (SORTS.daily + DROP_TIE). 여기서 하는 일은 2번뿐이다.
+ *
+ * ★ 하락률·하락액이 모두 같으면 0 을 돌려준다. Array#sort 는 안정 정렬이라
+ *   그때 «들어온 순서» 가 그대로 남는다 — 즉 DB 가 정한 tie-breaker
+ *   (confidence_rank → last_checked_at → id)가 살아 있다. 여기서 id 순으로
+ *   다시 세우면 근거가 얇은 쪽이 위로 올라온다.
+ */
+function byDailyDrop(rows) {
+  return rows.slice().sort((a, b) => {
+    const pa = Number(a.price_drop_percent) || 0, pb = Number(b.price_drop_percent) || 0;
+    if (pb !== pa) return pb - pa;
+    return dropAmountOf(b) - dropAmountOf(a);
+  });
+}
 
 function intParam(v, fallback, min, max) {
   const n = parseInt(String(v == null ? '' : v), 10);
@@ -379,7 +442,7 @@ module.exports = async function handler(req, res) {
     const limit = intParam(q.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
     const minScore = intParam(q.minScore, 0, 0, 100);
     const offset = intParam(q.cursor, 0, 0, 10000);
-    const sort = SORTS[String(q.sort || 'score')] || SORTS.score;
+    const sort = SORTS[String(q.sort || DEFAULT_SORT)] || SORTS[DEFAULT_SORT];
 
     /*
      * External Radar is its own view. Folding it into this list and slicing to
@@ -411,19 +474,42 @@ module.exports = async function handler(req, res) {
      * 마이그레이션 전에는 새 컬럼이 없다. 그때는 예전 모양으로 한 번 더
      * 물어본다 — 배포 순서(코드 먼저 / SQL 나중)에 목록이 죽지 않아야 한다.
      */
+    /*
+     * ★ 만료된 딜은 내보내지 않는다 (2026-09-20 감사).
+     *
+     *   예전에는 deal_status 와 lifecycle 만 봤다. 그런데 lifecycle 을 EXPIRED
+     *   로 바꾸는 것은 수집기이고, 수집기가 그 상품을 «다시 판정했을 때만»
+     *   바꾼다. 2026-09-18 seed 이후 후보 선정이 어긋나면서 원래 추적하던
+     *   상품이 한 번도 다시 판정되지 않았고, 그래서 lifecycle 이 ACTIVE 인 채로
+     *   굳었다.
+     *
+     *   2026-09-20 운영 실측: lifecycle=ACTIVE 49행 중 44행의 expires_at 이
+     *   이미 지났다 (가장 오래된 것은 2026-09-08 만료). 그 44행이 «오늘의 핫딜»
+     *   자리에 그대로 떠 있었다.
+     *
+     *   expires_at 은 수집기가 근거의 신선도에 따라 12/24/48시간으로 찍어 두는
+     *   값이다 (rowFor 주석). 그 값을 읽기만 해도 좀비 행이 사라진다. 수집기
+     *   수정과 별개로 동작하는 두 번째 방어선이다.
+     *
+     *   컬럼이 없는 환경(마이그레이션 전)에서는 아래 isMissingColumn 폴백이
+     *   예전 모양으로 한 번 더 물어본다 — 목록이 죽지 않는다.
+     */
+    const nowIso = new Date().toISOString();
+
     const run = async (withGroups) => {
       let query = supabase
         .from('hotdeals')
         .select(withGroups ? BASE_COLS + GROUP_COLS : BASE_COLS)
         .in('deal_status', statuses)
-        .in('lifecycle', VISIBLE_LIFECYCLE);
+        .in('lifecycle', VISIBLE_LIFECYCLE)
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
 
       if (withGroups) query = query.eq('is_primary', true);
       if (q.mall) query = query.eq('mall', String(q.mall).slice(0, 40));
       if (q.source) query = query.eq('source', String(q.source).slice(0, 60));
       if (minScore > 0) query = query.gte('hot_score', minScore);
 
-      query = query.order(sort.col, { ascending: sort.asc });
+      query = query.order(withGroups ? sort.col : (sort.baseCol || sort.col), { ascending: sort.asc });
       if (withGroups) {
         (sort.tie || []).forEach(([col, asc]) => { query = query.order(col, { ascending: asc }); });
       }
@@ -448,7 +534,13 @@ module.exports = async function handler(req, res) {
      *   것은 괜찮지만, 항목이 사라지는 것은 괜찮지 않다.
      */
     const nextCursor = rows.length === limit ? offset + rows.length : null;
-    const items = spread(dropDuplicateGroups(rows)).map(toListItem);
+    /*
+     * 하락률 동률 구간에서만 하락액 순으로 다시 세운다 (byDailyDrop 주석).
+     * 그 뒤 중복 군집을 접고, 같은 계열이 연달아 붙지 않게 자리를 바꾼다 —
+     * 순서만 바뀌고 항목은 하나도 빠지지 않으므로 커서가 어긋나지 않는다.
+     */
+    const ordered = sort === SORTS[DEFAULT_SORT] || sort === SORTS.drop ? byDailyDrop(rows) : rows;
+    const items = spread(dropDuplicateGroups(ordered)).map(toListItem);
 
     // 목록은 자주 바뀌지 않는다 — 수집기가 도는 주기가 시간 단위다.
     cachePublic(res, 120);
@@ -477,7 +569,8 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports._internal = {
-  VISIBLE, VISIBLE_LIFECYCLE, SORTS, MAX_FAMILY_RUN,
+  VISIBLE, VISIBLE_LIFECYCLE, SORTS, DEFAULT_SORT, MAX_FAMILY_RUN,
   toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId,
-  toExternalListItem, externalStatus, loadExternal, isMissingExternalTable
+  toExternalListItem, externalStatus, loadExternal, isMissingExternalTable,
+  byDailyDrop, dropAmountOf
 };

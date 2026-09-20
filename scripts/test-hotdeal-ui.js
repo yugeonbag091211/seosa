@@ -38,19 +38,36 @@ assert(!radar.includes('hotdeals.html'),'레이더도 옛 핫딜 페이지로 �
 assert(!live.includes('오늘의 하락')&&!live.includes('최근 가격이 내려간 상품'),'옛 이름이 화면에 남지 않는다');
 assert(/<section id="priceDrop"[^>]*aria-label="핫딜"/.test(live),'섹션 id 는 그대로, 이름은 핫딜');
 assert(/<div class="sec-title">핫딜<span class="sec-count" id="dropCount"><\/span><\/div>/.test(live),'제목 «핫딜» + 개수 자리');
-assert(live.includes('오늘 확인한 가격이 직전 기록보다 내려간 상품이에요.'),'설명은 판정(todayDropConfirmed)과 같은 말을 한다');
-// 데이터 경로 — 새 핫딜 알고리즘이 아니다
-assert(live.includes("'getPriceDropTop':'/api/init'"),'데이터는 /api/init');
-assert(live.includes("Api.call('getPriceDropTop', [8], Drop.show"),'Drop.load 그대로');
-assert(live.includes('Drop.show(d.priceDrop)'),'부팅 경로 그대로');
+assert(live.includes('SEOSA 가격 이력으로 검증한 지금 주목할 만한 가격이에요.'),'설명은 판정 근거(우리 가격 이력)와 같은 말을 한다');
+/*
+ * ── 데이터 경로 (2026-09-20 갱신) ──────────────────────────────────
+ *
+ * 이 단언들은 2026-09-18 커밋(3141353 / 9c35e9d)이 홈 핫딜을 /api/init 의
+ * price_drop_top 에서 실제 Hot Deal 엔진(/api/hotdeals)으로 옮긴 뒤로
+ * «실패한 채 방치돼» 있었다 — 이 파일은 CI 에 걸려 있지 않아 아무도 몰랐다.
+ * 지금의 계약으로 맞춘다. 옛 경로(/api/init 의 priceDrop)는 지우지 않았고
+ * 다른 화면이 계속 쓰므로, 서버 쪽 판정 경로 단언은 그대로 둔다.
+ */
+assert(live.includes("'getHotdeals':'/api/hotdeals'"),'홈 핫딜 데이터는 /api/hotdeals (Hot Deal 엔진)');
+assert(live.includes("Api.call('getHotdeals', []"),'Drop.load 는 핫딜 엔진을 부른다');
+assert(live.includes('Drop.fromHotdeal'),'엔진 응답을 기존 카드 모양으로 옮긴다 (UI 재사용)');
 assert(live.includes('data-act="ledger-open"')&&live.includes('data-act="ledger-buy"')&&live.includes('data-act="ledger-alert"'),'카드 → 가격 추이 · 구매 · 알림 그대로');
 const init=read('api/init.js');
-assert(init.includes(".from('price_drop_top')")&&init.includes('.filter(plausibleDrop)')&&init.includes('todayDropConfirmed')&&init.includes('priceDrop: dropRows'),'서버 판정 경로 그대로');
+assert(init.includes(".from('price_drop_top')")&&init.includes('.filter(plausibleDrop)')&&init.includes('todayDropConfirmed')&&init.includes('priceDrop: dropRows'),'서버의 오늘 하락 판정 경로는 그대로 (다른 화면이 쓴다)');
+/*
+ * 핫딜의 «정의» 가 일일 델타인지를 코드에서 고정한다 (2026-09-20 감사).
+ * 이게 없으면 다시 30·90일 중앙값 순위로 돌아가도 아무도 모른다.
+ */
+const hd=read('api/hotdeals.js'), ch=read('scripts/collect-hotdeals.js');
+assert(hd.includes("const DEFAULT_SORT = 'daily'"),'목록 기본 정렬은 어제 대비 하락률');
+assert(hd.includes('expires_at.is.null,expires_at.gt.'),'만료된 딜은 목록에서 뺀다');
+assert(ch.includes("DD.dailyDrop(points, { today })")&&ch.includes('if (!drop.ok)'),'수집기는 어제 대비 하락이 없으면 핫딜로 만들지 않는다');
 
 /* ── 3) 진입점 ─────────────────────────────────────────────────────── */
 assert(live.includes('<a class="nav-link hide-m" href="#priceDrop" data-act="scroll-drop">핫딜</a>'),'헤더 «핫딜» = 이 섹션');
 assert(!live.includes('가격 변동</span>'),'같은 섹션을 가리키던 «가격 변동» 은 «핫딜» 로 합쳤다');
-assert.equal((live.match(/data-act="scroll-drop"/g)||[]).length,2,'헤더 1 + 메뉴 1');
+// 헤더 1 + 모바일 메뉴 1 + 히어로 CTA 1 (히어로 캐러셀 aa10ecc 에서 추가됐다).
+assert.equal((live.match(/data-act="scroll-drop"/g)||[]).length,3,'헤더 1 + 메뉴 1 + 히어로 CTA 1');
 assert(live.includes('data-act="scroll-drop">핫딜 보기</button>'),'모바일 메뉴 «핫딜 보기»');
 assert(radar.includes('<a href="/#priceDrop">핫딜</a>'),'레이더 «핫딜» → 홈 섹션');
 assert(/location\.hash === '#priceDrop'/.test(live),'/#priceDrop 로 들어오면 데이터가 온 뒤 섹션으로 옮긴다');

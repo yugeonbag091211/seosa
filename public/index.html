@@ -3531,7 +3531,7 @@ select:focus-visible,textarea:focus-visible,
        <div class="hero-copy">
          <span class="hc-label">검토 중인 프로젝트</span>
          <h1 class="hero-title">가격을 아끼는 일에서,<br>기억을 지키는 일까지.</h1>
-         <p class="hero-sub">SEOSA는 제휴 수익의 34%를 6·25 참전용사 지원에 사용하는 방안을 검토하고 있습니다.</p>
+         <p class="hero-sub">SEOSA는 제휴 수익의 6.25%를 6·25 참전용사 지원에 사용하는 방안을 검토하고 있습니다.</p>
          <button class="hero-cta" data-act="open-veteran">취지 보기 <span aria-hidden="true">→</span></button>
          <p class="hc-note">아직 확정되거나 시행된 계획이 아닙니다.</p>
        </div>
@@ -4003,8 +4003,8 @@ select:focus-visible,textarea:focus-visible,
         검토하고 있습니다.
       </p>
       <p style="font-size:.86rem;line-height:1.72;color:var(--soft);margin:0 0 14px">
-        검토 중인 안은 <strong style="color:var(--ink)">제휴 수익의 34%를 6·25 참전용사 지원에
-        사용하는 것</strong>입니다. 34%라는 숫자는 6·25 정전 기념일(7월 27일)이 아니라,
+        검토 중인 안은 <strong style="color:var(--ink)">제휴 수익의 6.25%를 6·25 참전용사 지원에
+        사용하는 것</strong>입니다. 6.25%라는 숫자는 6·25 정전 기념일(7월 27일)이 아니라,
         이 일을 시작할 때 스스로에게 건 최소선으로 정한 값입니다.
       </p>
       <p style="font-size:.86rem;line-height:1.72;color:var(--soft);margin:0 0 18px">
@@ -10872,8 +10872,27 @@ var Actions = {
     Chat.prefill(Nav.aiPrompt(ctx));
   },
 
-  // ── 히어로 4번 슬라이드: 참전용사 지원(검토 중) 설명 ──
-  'open-veteran':  function() { Policy.openVeteran(); },
+  /*
+   * ── 히어로 4번 슬라이드 「취지 보기」 ────────────────────────────
+   *
+   * 목적지를 공식 인스타그램 게시물로 바꿨다 (2026-09-20).
+   * 예전에는 이 자리에서 #veteranOverlay 모달을 열었다.
+   *
+   * ★ 버튼 마크업은 한 글자도 건드리지 않는다. <button class="hero-cta">
+   *   를 그대로 두고 «목적지» 만 바꾸므로 위치·크기·폰트·색·애니메이션이
+   *   전부 그대로다. <a> 로 바꿔 끼우면 그 보장이 깨진다.
+   *
+   * ★ <a target="_blank" rel="noopener noreferrer"> 에 해당하는 보호를
+   *   window.open 의 windowFeatures 로 준다. noopener 가 없으면 열린 창이
+   *   window.opener 로 이 페이지를 조작할 수 있다.
+   *
+   * ★ 이 핸들러는 document 클릭 위임에서 «동기로» 불린다. 사용자 제스처가
+   *   그대로 살아 있어 데스크톱·모바일 모두 팝업 차단에 걸리지 않는다.
+   *   (비동기로 미루면 그 순간 차단 대상이 된다)
+   */
+  'open-veteran':  function() {
+    window.open('https://www.instagram.com/p/DdfHLf2Ei4_/', '_blank', 'noopener,noreferrer');
+  },
   'close-veteran': function() { Policy.closeVeteran(); },
 
   'toggle-menu':  function() { Nav.toggleMenu(); },

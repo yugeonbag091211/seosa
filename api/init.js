@@ -24,6 +24,8 @@ const { guard } = require('./_ratelimit');
 // 달력 월은 KST 기준이다. new Date().getMonth() 는 런타임 TZ(Vercel=UTC)를 따라가서
 // KST 매월 1일 00:00~08:59 동안 지난달 큐레이션을 보게 된다 (_kst.kstMonth 주석 참고).
 const { kstMonth } = require('./_kst');
+// 시세판 조회 실패를 «데이터 없음» 과 구분해 로그에 남긴다 (2026-09-13 전수 감사 규칙).
+const DbError = require('./_dberror');
 
 const SECTION_SIZE = 8;
 
@@ -219,11 +221,40 @@ module.exports = async function handler(req, res) {
 
     // 정렬을 뷰에 맡기지 않는다. order 없이 limit 을 걸면 어떤 8행이 올지
     // 보장되지 않아서 "오늘의 가격 하락 TOP"이 TOP 이 아니게 된다.
-    const { data: priceDrop } = await supabase
+    /*
+     * ★ 필요한 컬럼만 읽는다 (2026-09-20 감사).
+     *
+     *   select('*') 였다. 뷰가 13컬럼인데 toDropRow 가 쓰는 것은 11개이고,
+     *   그중 all_time_low 는 is_all_time_low 를 통해서만 쓰인다.
+     *   200행 기준 실측 191 KB → 필요한 컬럼만이면 그만큼 줄어든다.
+     *   /api/init 은 홈 첫 화면마다 불리므로 이 차이가 매일 쌓인다.
+     *
+     * ★ 오류를 버리지 않는다.
+     *
+     *   예전에는 `const { data: priceDrop } = await ...` 라 error 를 아예
+     *   받지 않았다. 그런데 이 뷰는 price_history 전체에 window 함수와
+     *   min() 집계를 돌려서 실제로 자주 느리다 — 2026-09-20 실측으로 같은
+     *   질의를 세 번 돌렸더니 2.5초 / 8.6초 타임아웃 / 8.6초 타임아웃이었다
+     *   (canceling statement due to statement timeout).
+     *
+     *   그때 priceDrop 이 undefined 가 되고, 아래 `(priceDrop || [])` 가
+     *   빈 배열로 받아서 화면은 «오늘은 하락한 상품이 없어요» 처럼 보인다.
+     *   DB 장애가 «데이터 없음» 으로 둔갑하는 것이라, 2026-09-13 전수 감사의
+     *   _dberror 규칙과 정확히 같은 종류의 문제다. 섹션은 예전처럼 비우되,
+     *   원인은 로그에 남긴다.
+     */
+    const DROP_COLS = 'product_id, mall, mall_label, title, current_price, prev_price,'
+      + ' drop_amount, drop_pct, is_all_time_low, link, image';
+    const { data: priceDrop, error: dropErr } = await supabase
       .from('price_drop_top')
-      .select('*')
+      .select(DROP_COLS)
       .order('drop_pct', { ascending: false })
       .limit(DROP_FETCH);
+    if (dropErr) {
+      const info = DbError.classifyDbError(dropErr);
+      console.warn(`[init] 시세판 조회 실패 [${info.kind}] — 섹션을 비우고 진행합니다`
+        + `${info.transient ? ' (일시 장애: 데이터가 없는 것이 아니다)' : ''}: ${dropErr.message}`);
+    }
 
     // 프론트의 Monthly.show는 monthly.products를 그리는데 monthly_curation 행에는
     // 그 컬럼이 없다. 이달의 키워드로 products를 조회해 붙여준다.

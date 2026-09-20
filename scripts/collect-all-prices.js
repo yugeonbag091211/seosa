@@ -883,22 +883,97 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
 }
 
 // ─── DB 조회 ──────────────────────────────────────────────────
+/*
+ * vendor_item_id / item_id 를 반드시 같이 읽는다 (2026-09-03).
+ *
+ * 이 두 컬럼이 없으면 수집기는 "우리가 어떤 옵션을 추적하고 있는지"를
+ * 모른 채 응답을 채택하게 된다. 실제로 그랬고, 그래서 다른 옵션의
+ * 가격이 기록됐다 (pickOption 주석의 실측 참고).
+ *
+ * 값이 비어 있어도 _price.vendorIdOf 가 link 에서 뽑아내므로 폴백이
+ * 있다 — 운영 쿠팡 상품 1,554개 전부에서 vid 확보를 확인했다.
+ *
+ * ★ 상수로 뽑은 이유 — 전체 스캔(fetchAllProducts)과 대상만 읽기
+ *   (fetchProductsByIds)가 반드시 «같은 모양»의 행을 돌려줘야 한다.
+ *   두 경로의 컬럼이 갈리면 어느 경로를 탔느냐에 따라 매칭이 달라진다.
+ */
+const PRODUCT_COLS = 'product_id, mall, title, keyword, link, image, vendor_item_id, item_id';
+
+/**
+ * 수집 대상 상품만 골라 읽는다 (2026-09-20 감사).
+ *
+ * ── 왜 필요한가: 실측 31.2MB 중 29.1MB 를 버리고 있었다 ──────────────
+ *
+ *   2026-09-18 대량 seed 이후 products 는 69,666행이 됐다. 그런데
+ *   fetchCollectorEligibleKeys() 가 그중 2,965행만 남기고 전부 버린다.
+ *   그런데도 fetchAllProducts() 는 «먼저 69,666행을 전부 내려받은 뒤»
+ *   필터를 걸고 있었다.
+ *
+ *   2026-09-20 운영 실측 (읽기 전용, 같은 select):
+ *     전체 스캔      69,666행 / 448 B/행 / 요청 70회 →  31.2 MB
+ *     대상만 읽기     2,965행 / 724 B/행 / 요청  9회 →   2.15 MB   (-93.1%)
+ *     행 집합은 완전히 같다 (2,965 = 2,965, 몰 필터로 빠지는 행 0)
+ *
+ *   daily-prices.yml 은 하루 18칸이라, 버려지는 29MB 가 곧 Supabase
+ *   egress 초과(6.94GB / 5GB)의 가장 큰 몫이다.
+ *
+ * ── 안전장치 ────────────────────────────────────────────────────────
+ *
+ *   · id 배치는 chunkIdsByLength 로 자른다 — ADPICK product_id 가 64자라
+ *     개수로 자르면 URI 가 터진다 (그 함수 주석의 2026-09-05 실측 참고).
+ *   · error 를 버리지 않는다. 한 배치라도 실패하면 대상이 조용히 줄어들어
+ *     "오늘 수집 안 됨" 으로 보이므로, 던져서 실행을 멈춘다.
+ *   · product_id 로 물어본 뒤 (product_id, mall) 키로 다시 좁힌다 —
+ *     같은 product_id 가 두 몰에 있을 수 있다.
+ *   · 정렬은 전체 스캔과 같은 product_id 오름차순으로 맞춘다. 순서가 곧
+ *     커서(price_job_state.cursor_key)의 의미라, 흔들리면 이어받기가 깨진다.
+ */
+async function fetchProductsByIds(keys) {
+  const ids = [...new Set([...keys].map(k => k.slice(0, k.lastIndexOf('|'))))];
+  const out = [];
+  for (const chunk of chunkIdsByLength(ids)) {
+    const { data, error } = await supabase
+      .from('products')
+      .select(PRODUCT_COLS)
+      .in('product_id', chunk);
+    if (error) throw new Error('products 대상 조회 실패: ' + error.message);
+    (data || []).forEach(r => { if (keys.has(`${r.product_id}|${r.mall}`)) out.push(r); });
+  }
+  out.sort((a, b) => String(a.product_id).localeCompare(String(b.product_id)));
+  return out;
+}
+
+/**
+ * 카탈로그 규모만 센다 — 행을 내려받지 않는다 (head 요청, 응답 본문 0바이트).
+ * 로그의 "products 전체 / 기타(연동 없음)" 줄을 예전 그대로 찍기 위한 값이고,
+ * 실패해도 수집에는 아무 영향이 없다.
+ */
+async function countCatalog() {
+  const one = async (build) => {
+    const { count, error } = await build();
+    if (error) throw new Error(error.message);
+    return Number(count) || 0;
+  };
+  try {
+    const total = await one(() => supabase.from('products')
+      .select('*', { count: 'exact', head: true }));
+    const coupang = await one(() => supabase.from('products')
+      .select('*', { count: 'exact', head: true }).eq('mall', '쿠팡'));
+    const adpick = await one(() => supabase.from('products')
+      .select('*', { count: 'exact', head: true }).eq('mall', 'ADPICK'));
+    return { total, coupang, adpick, other: Math.max(0, total - coupang - adpick) };
+  } catch (e) {
+    console.warn(`[카탈로그] 규모 조회 실패(로그 표시만 영향): ${e.message}`);
+    return null;
+  }
+}
+
 async function fetchAllProducts() {
   const all = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('products')
-      /*
-       * vendor_item_id / item_id 를 반드시 같이 읽는다 (2026-09-03).
-       *
-       * 이 두 컬럼이 없으면 수집기는 "우리가 어떤 옵션을 추적하고 있는지"를
-       * 모른 채 응답을 채택하게 된다. 실제로 그랬고, 그래서 다른 옵션의
-       * 가격이 기록됐다 (pickOption 주석의 실측 참고).
-       *
-       * 값이 비어 있어도 _price.vendorIdOf 가 link 에서 뽑아내므로 폴백이
-       * 있다 — 운영 쿠팡 상품 1,554개 전부에서 vid 확보를 확인했다.
-       */
-      .select('product_id, mall, title, keyword, link, image, vendor_item_id, item_id')
+      .select(PRODUCT_COLS)
       .order('product_id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error('products 조회 실패: ' + error.message);
@@ -2994,34 +3069,38 @@ async function runLocked(state, lockToken) {
     return;
   }
 
-  const products = await fetchAllProducts();
+  /*
+   * ★ 대상을 «먼저» 정하고, 그 대상만 읽는다 (2026-09-20 감사).
+   *
+   *   예전 순서는 «전체 69,666행을 내려받고 → 2,965행만 남긴다» 였다.
+   *   같은 결과를 얻으면서 29MB 를 매 실행 버렸다 (fetchProductsByIds 주석의
+   *   실측 참고). 순서만 뒤집으면 행 집합은 한 줄도 달라지지 않는다.
+   *
+   *   PRICE_INCLUDE_BULK_SEED=1(비상 우회) 과 PRICE_SEED_ONLY=1(시드 모드)은
+   *   대상이 카탈로그 전체이므로 예전처럼 전체 스캔을 그대로 쓴다.
+   */
+  const eligible = SEED_ONLY ? null : await fetchCollectorEligibleKeys();
+  const catalog = await countCatalog();
+
+  let products;
+  if (eligible) {
+    products = await fetchProductsByIds(eligible);
+    console.log(`\n[collector 대상 필터] bulk seed 제외 — 실제 관측 카탈로그만 일일 갱신합니다.`);
+    console.log(`  대상 키 ${eligible.size}개 → products ${products.length}행을 읽었습니다`
+      + `${catalog ? ` (카탈로그 전체 ${catalog.total}행 중)` : ''}`);
+  } else {
+    products = await fetchAllProducts();
+    if (!SEED_ONLY) {
+      console.warn('\n[collector 대상 필터] PRICE_INCLUDE_BULK_SEED=1 — 전체 products 를 수집 대상으로 사용합니다.');
+    }
+  }
+
   let coupangRows = products.filter(isCoupangRow);
   let adpickRows  = products.filter(isAdpickRow);
   const otherRows   = products.filter(p => !isCoupangRow(p) && !isAdpickRow(p));
 
   const otherByMall = new Map();
   otherRows.forEach(p => otherByMall.set(p.mall, (otherByMall.get(p.mall) || 0) + 1));
-
-  /*
-   * ★ 일일 collector 대상과 대량 seed 카탈로그를 분리한다.
-   *
-   * products 전체는 검색/히스토리 용도로 그대로 보존한다. 여기서는 매일 가격을
-   * 재수집할 대상만 좁힌다. 이렇게 해야 2026-09-18 seed 6만+ 건이 collector
-   * 분모와 호출 예산을 잡아먹지 않는다.
-   */
-  if (!SEED_ONLY) {
-    const eligible = await fetchCollectorEligibleKeys();
-    if (eligible) {
-      const beforeC = coupangRows.length, beforeA = adpickRows.length;
-      coupangRows = coupangRows.filter(p => eligible.has(`${p.product_id}|${p.mall}`));
-      adpickRows  = adpickRows.filter(p => eligible.has(`${p.product_id}|${p.mall}`));
-      console.log(`\n[collector 대상 필터] bulk seed 제외 — 실제 관측 카탈로그만 일일 갱신합니다.`);
-      console.log(`  쿠팡   ${beforeC}개 → ${coupangRows.length}개`);
-      console.log(`  ADPICK ${beforeA}개 → ${adpickRows.length}개`);
-    } else {
-      console.warn('\n[collector 대상 필터] PRICE_INCLUDE_BULK_SEED=1 — 전체 products 를 수집 대상으로 사용합니다.');
-    }
-  }
 
   /*
    * ★ 시드 모드 필터 — SEED_ONLY 주석 참고.
@@ -3038,8 +3117,19 @@ async function runLocked(state, lockToken) {
     console.log(`  ADPICK ${beforeA}개 → ${adpickRows.length}개`);
   }
 
+  /*
+   * ★ 분모를 이름으로 구분해 찍는다 (2026-09-20 감사).
+   *
+   *   "products 전체" 와 "수집 대상" 이 같은 줄에 섞여 있어서, seed 이후
+   *   69,666 과 2,965 중 어느 쪽이 수집률의 분모인지 로그만으로는 알 수 없었다.
+   *   카탈로그 규모는 head 요청으로만 세므로 행을 내려받지 않는다.
+   */
   console.log(`\n가격 수집 시작 (${TODAY}, ${kstNowStamp()})`);
-  console.log(`  products 전체        ${products.length}개${SEED_ONLY ? ' (시드 모드 — 실제 대상은 위 필터 참고)' : ''}`);
+  if (catalog) {
+    console.log(`  카탈로그 전체        ${catalog.total}개  (쿠팡 ${catalog.coupang} / ADPICK ${catalog.adpick}`
+      + `${catalog.other ? ` / 기타 ${catalog.other}` : ''})  ← 수집률의 분모가 아니다`);
+  }
+  console.log(`  수집 대상            ${products.length}개${SEED_ONLY ? ' (시드 모드 — 실제 대상은 위 필터 참고)' : ''}`);
   console.log(`  ├ 쿠팡               ${coupangRows.length}개`);
   console.log(`  ├ ADPICK             ${adpickRows.length}개`);
   console.log(`  └ 기타(연동 없음)     ${otherRows.length}개`

@@ -1,0 +1,61 @@
+name: Tests
+
+# ── 왜 이 워크플로가 뒤늦게 생겼는가 (2026-09-20) ────────────────────
+#
+# 그동안 CI 에서 npm test 를 도는 곳이 «한 군데도» 없었다.
+# collector-regression.yml 은 수집기 파일 3개가 바뀐 PR 에서만, 그것도
+# 52개 중 2개만 돌렸다. 나머지는 사람이 손으로 돌릴 때만 실행됐다.
+#
+# 그 결과가 실측으로 드러났다.
+#
+#   scripts/test-conversions.js     2026-09-14 부터 죽어 있었다. fixture 가
+#     날짜를 못 박아 둬서(order_date '2026-09-07') 7일 창이 지나가자 통째로
+#     창 밖으로 나갔다. 엿새 동안 아무도 몰랐다.
+#   scripts/test-price.js           47a2ab2 가 리포트 라벨을 둘로 나눴는데
+#     테스트만 옛 이름에 남아 붉었다.
+#   scripts/test-hotdeal-ui.js      3141353·9c35e9d 이 홈 핫딜의 판정 자체를
+#     price_drop_top 에서 /api/hotdeals 엔진으로 갈아끼웠는데 테스트는 옛
+#     경로를 요구하고 있었다.
+#
+# 셋 다 «고장난 줄 모르고 지나간» 종류다. 붉은 것을 붉다고 말해 주는 자리가
+# 없으면 테스트는 조용히 썩는다. 그래서 전부를, 모든 PR 에서 돈다.
+#
+# ── 왜 paths 필터를 두지 않는가 ──────────────────────────────────────
+#
+# 바로 그 필터가 위 사고를 만들었다. npm test 는 api/ · scripts/ · public/ 을
+# 가로질러 시험하므로 «어디를 고치면 무엇이 깨지는지» 를 미리 적어 둘 수
+# 없다. 게다가 아낄 것도 없다 — 52개 전부가 15초다(아래 실측).
+#
+# ── 왜 secrets 가 하나도 없는가 ──────────────────────────────────────
+#
+# 52개 전부 오프라인이다. 각 스크립트가 global.fetch 를 막아 외부 호출을
+# 스스로 금지하고(test-release.js 의 SAFE 검사 관례), Supabase 는 가짜
+# 클라이언트를 끼운다. 실측으로 확인했다 — 자격증명 없이 52/52 통과.
+# 그러니 이 워크플로에 키를 넣지 않는다. 넣을 이유가 생기면 그건 테스트가
+# 오프라인 계약을 깬 것이므로, 키가 아니라 그 테스트를 고쳐야 한다.
+# fork PR 에서도 그대로 도는 것이 이 성질의 덤이다.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # 같은 PR 에 새 커밋이 오면 앞 실행은 의미가 없다 — 취소해 러너를 아낀다.
+  group: seosa-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # 로컬 실측 15초(52개 전부). 남는 시간은 대부분 npm ci 가 쓴다.
+    # 러너가 느린 날을 감안해 넉넉히 두되 무한정 매달리지는 않게 한다.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: npm test
+        run: npm test

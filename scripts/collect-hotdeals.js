@@ -46,6 +46,7 @@ const HD = require('../api/_hotdeal');
 const HS = require('../api/_hotsource');
 const HG = require('../api/_hotgroup');
 const { kstToday } = require('../api/_kst');
+const DD = require('../api/_dailydrop');
 
 const DRY = process.argv.indexOf('--dry-run') > -1;
 
@@ -187,14 +188,91 @@ async function releaseLock(lock, status, summary, db) {
 
 /* ── 1) 후보 상품 ──────────────────────────────────────────────────── */
 
-async function loadProducts() {
+const PRODUCT_COLS =
+  'product_id, mall, mall_label, vendor_item_id, title, lprice, oprice, image, link, collected_at';
+
+/**
+ * 판정 대상은 «매일 추적하는 상품» 이다 — 최근에 카탈로그가 만져진 상품이 아니다.
+ *
+ * ── 2026-09-20 감사: 여기가 «어제와 오늘 핫딜이 같다» 의 발원지였다 ──
+ *
+ *   예전 규칙은 `collected_at >= now-3d` 를 `collected_at DESC` 로 정렬해
+ *   앞에서 4,000개를 잘랐다. 2026-09-18 대량 seed 로 products 가 69,666행이
+ *   되면서 collected_at 최신 68,672행이 전부 seed 행이 됐고, 그래서
+ *   «가장 최근에 만져진 4,000개» = 관측이 딱 1번뿐인 seed 상품이 됐다.
+ *
+ *   운영 실측 (hotdeal_job_state, 2026-09-19T15:54Z 실행):
+ *     scanned 4,000 / evaluated 4,000 / byStatus NORMAL 3,995 / kept 5
+ *
+ *   결과가 두 겹으로 나빴다.
+ *     ① 새 딜이 사실상 0건이다 (관측 1회짜리는 근거가 없어 전부 REJECTED).
+ *     ② 원래 추적하던 상품이 «한 번도 다시 판정되지 않는다». 판정되지 않으면
+ *        만료도 되지 않아서, 09-07~09-17 에 잡힌 행이 lifecycle=ACTIVE 인 채로
+ *        계속 노출됐다 (실측: ACTIVE 49행 중 44행이 expires_at 이 이미 지남,
+ *        43행의 last_checked_at 이 2026-09-17).
+ *     그래서 화면의 핫딜 창이 며칠째 같은 얼굴이었다.
+ *
+ *   고침: 가격 수집기와 «같은 대상 집합» 을 쓴다. collector_eligible_products()
+ *   는 실제로 매일 가격을 갱신하는 (product_id, mall) 만 돌려주므로, 정의상
+ *   이력이 여러 날 쌓여 있는 상품이고 판정할 근거가 있다. 규모도 실측 2,965로
+ *   MAX_PRODUCTS(4,000) 안이라 매 회차 «전부» 다시 판정된다 — ②가 사라진다.
+ *
+ *   RPC 가 없는 환경(마이그레이션 전)이면 예전 규칙으로 되돌아간다. 판정이
+ *   통째로 멈추는 것보다 낫고, 동작은 이 커밋 이전과 같다.
+ */
+async function loadEligibleKeys() {
+  const seen = new Set();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .rpc('collector_eligible_products')
+      .range(from, from + PAGE - 1);
+    if (error) {
+      log('eligible_rpc_unavailable', { error: error.message });
+      return null;
+    }
+    (data || []).forEach(r => seen.add(`${r.product_id}|${r.mall}`));
+    if (!data || data.length < PAGE) return seen;
+  }
+}
+
+/** id 글자 수로 자른다 — ADPICK product_id 가 64자라 개수로 자르면 URI 가 터진다. */
+function chunkIdsByLength(ids, budget = 12000) {
+  const out = [];
+  let cur = [], len = 0;
+  for (const id of ids) {
+    const cost = String(id).length + 3;
+    if (cur.length && len + cost > budget) { out.push(cur); cur = []; len = 0; }
+    cur.push(id); len += cost;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+async function loadProductsByKeys(keys) {
+  const ids = [...new Set([...keys].map(k => k.slice(0, k.lastIndexOf('|'))))];
+  const out = [];
+  for (const chunk of chunkIdsByLength(ids)) {
+    const { data, error } = await supabase
+      .from('products')
+      .select(PRODUCT_COLS)
+      .in('product_id', chunk);
+    if (error) throw new Error(`products 대상 조회 실패: ${error.message}`);
+    (data || []).forEach(r => { if (keys.has(`${r.product_id}|${r.mall}`)) out.push(r); });
+  }
+  // 회차마다 같은 순서여야 MAX_PRODUCTS 로 잘릴 때 같은 쪽이 잘린다.
+  out.sort((a, b) => String(a.product_id).localeCompare(String(b.product_id)));
+  return out.slice(0, MAX_PRODUCTS);
+}
+
+async function loadProductsByRecency() {
   const fresh = new Date(Date.now() - PRODUCT_FRESH_DAYS * 86400000).toISOString();
   const out = [];
   const PAGE = 1000;
   for (let from = 0; from < MAX_PRODUCTS; from += PAGE) {
     const { data, error } = await supabase
       .from('products')
-      .select('product_id, mall, mall_label, vendor_item_id, title, lprice, oprice, image, link, collected_at')
+      .select(PRODUCT_COLS)
       .gte('collected_at', fresh)
       .order('collected_at', { ascending: false })
       .range(from, from + PAGE - 1);
@@ -206,6 +284,17 @@ async function loadProducts() {
   return out.slice(0, MAX_PRODUCTS);
 }
 
+async function loadProducts() {
+  const keys = await loadEligibleKeys();
+  if (!keys || !keys.size) {
+    log('candidate_source', { kind: 'recency_fallback' });
+    return loadProductsByRecency();
+  }
+  const rows = await loadProductsByKeys(keys);
+  log('candidate_source', { kind: 'collector_eligible', keys: keys.size, rows: rows.length });
+  return rows;
+}
+
 /* ── 2) 관측 이력 ──────────────────────────────────────────────────── */
 
 /** `${product_id}|${mall}|${vendor_item_id}` → [{date, price}] */
@@ -214,39 +303,82 @@ async function loadHistory(products) {
   const ids = [...new Set(products.map(p => String(p.product_id)))];
   const byKey = new Map();
 
+  let loadedRows = 0, pages = 0, truncated = 0;
+
   for (let i = 0; i < ids.length; i += CHUNK) {
     if (overBudget()) { log('history_budget_stop', { at: i, of: ids.length }); break; }
     /*
-     * ★ 정렬을 명시하고, 잘렸는지 확인한다.
+     * ★ 페이지로 끝까지 읽는다 — .limit() 하나로는 «못 읽는다» (2026-09-20 실측).
      *
-     * 예전에는 .limit(20000) 만 걸고 정렬이 없었다. 상한에 걸리면 «어느 행이
-     * 돌아오는지»가 보장되지 않아, 같은 입력으로 돌려도 회차마다 다른 이력을
-     * 받았다(실측: history_loaded 3,484 ↔ 3,371). 이력이 달라지면 중앙값도
-     * 판정도 달라진다 — 핫딜 엔진이 결정론이어야 하는데 입력이 흔들린 것이다.
+     * ── 무슨 일이 있었나 ────────────────────────────────────────────
      *
-     * 정렬을 주면 잘리더라도 «항상 같은 쪽»이 잘리고, 잘린 사실 자체를
-     * 로그로 남겨 CHUNK 를 줄일 근거를 만든다.
+     *   예전 코드는 .limit(20000) 을 걸고 `data.length >= 20000` 이면 잘렸다고
+     *   경고하려 했다. 그런데 Supabase PostgREST 는 db-max-rows = 1000 이라
+     *   요청한 limit 과 «무관하게» 한 응답에 1,000행만 준다. 그래서
+     *     · 실제로는 늘 1,000행에서 잘리고
+     *     · 잘림 경고는 20,000 과 비교하니 «단 한 번도» 울리지 않았다.
+     *
+     *   2026-09-20 운영 실측 (읽기 전용 재현, 대상 2,965 상품 / 30청크):
+     *     예전 방식   29,722행 / 계열 2,987   ← 모든 청크가 정확히 1,000행
+     *     범위 페이징 48,195행 / 계열 4,861
+     *     유실       18,473행 (38.3%) · 계열 1,874개 (38.6%)
+     *
+     *   정렬이 product_id ASC 이므로 잘리는 쪽은 늘 «청크 뒤쪽 상품» 이다.
+     *   그 상품들은 이력 0건으로 판정돼 근거 부족(REJECTED)이 되고, 경계에
+     *   걸친 상품은 «반쪽 이력» 으로 중앙값이 계산돼 없는 딜이 생기거나
+     *   있는 딜이 사라진다. 실측: 2,965개 후보 중 1,055개(35.6%)가 이력 0건으로
+     *   판정되고 있었다.
+     *
+     * ── 고침 ────────────────────────────────────────────────────────
+     *
+     *   .range(from, from+PAGE-1) 로 1,000행씩 끝까지 읽는다. 정렬은 그대로
+     *   두어야 페이지 경계가 흔들리지 않는다 (product_id, recorded_date).
+     *   안전판으로 청크당 최대 페이지 수를 두고, 거기 닿으면 «진짜로» 경고한다.
+     *
+     * ★ recorded_at 도 읽는다. 일일 하락 판정(api/_dailydrop.js)은 «KST 로
+     *   오늘/어제» 를 알아야 하는데, recorded_date 라벨은 2026-08-27 이전 행
+     *   9,040개가 UTC 로 잘려 있어 하루가 밀린다. 같은 날 여러 번 관측됐을 때
+     *   «어느 쪽이 나중인가» 도 라벨로는 알 수 없다.
+     *   (중앙값 기준선은 예전처럼 recorded_date 를 쓴다 — 회귀 없음)
      */
-    const LIMIT = 20000;
-    const { data, error } = await supabase
-      .from('price_history')
-      .select('product_id, mall, vendor_item_id, price, recorded_date')
-      .in('product_id', ids.slice(i, i + CHUNK))
-      .gte('recorded_date', cut)
-      .order('product_id', { ascending: true })
-      .order('recorded_date', { ascending: true })
-      .limit(LIMIT);
-    if (error) { log('history_chunk_failed', { error: error.message }); continue; }
-    if (data && data.length >= LIMIT) {
-      // 잘렸다. 조용히 넘어가면 그 청크의 상품들이 잘못된 기준선으로 판정된다.
-      log('history_chunk_truncated', { at: i, rows: data.length, hint: 'CHUNK 를 줄이세요' });
+    const PAGE = 1000;
+    const MAX_PAGES = 40;                 // 청크(상품 100개)당 40,000행이면 충분하다
+    const slice = ids.slice(i, i + CHUNK);
+    let rows = [];
+    let failed = false;
+    for (let p = 0; p < MAX_PAGES; p++) {
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('product_id, mall, vendor_item_id, price, recorded_date, recorded_at')
+        .in('product_id', slice)
+        .gte('recorded_date', cut)
+        .order('product_id', { ascending: true })
+        .order('recorded_date', { ascending: true })
+        .range(p * PAGE, p * PAGE + PAGE - 1);
+      if (error) { log('history_chunk_failed', { at: i, page: p, error: error.message }); failed = true; break; }
+      pages++;
+      rows = rows.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      if (p === MAX_PAGES - 1) {
+        truncated++;
+        log('history_chunk_truncated', { at: i, rows: rows.length, hint: 'CHUNK 를 줄이세요' });
+      }
     }
-    (data || []).forEach(r => {
+    if (failed) continue;
+    loadedRows += rows.length;
+    rows.forEach(r => {
       const key = `${r.product_id}|${r.mall || ''}|${r.vendor_item_id || ''}`;
       if (!byKey.has(key)) byKey.set(key, []);
-      byKey.get(key).push({ date: String(r.recorded_date).slice(0, 10), price: Math.round(Number(r.price) || 0) });
+      byKey.get(key).push({
+        date: String(r.recorded_date).slice(0, 10),
+        price: Math.round(Number(r.price) || 0),
+        // 일일 하락 판정 전용. 중앙값 기준선(baselineFrom)은 이 필드를 보지 않는다.
+        recorded_at: r.recorded_at || '',
+        recorded_date: String(r.recorded_date).slice(0, 10)
+      });
     });
   }
+  log('history_pages', { requests: pages, rows: loadedRows, series: byKey.size, truncatedChunks: truncated });
   return byKey;
 }
 
@@ -260,8 +392,9 @@ function offerKeyOf(source, externalId, mall) {
 /** confidence → 정렬 가능한 숫자. SQL 쪽 confidence_rank 와 뜻이 같아야 한다. */
 const CONFIDENCE_RANK = { HIGH: 3, MEDIUM: 2, LOW: 1, INSUFFICIENT: 0 };
 
-function rowFor(product, cand, verdict, today) {
+function rowFor(product, cand, verdict, today, drop) {
   const b = verdict.baseline;
+  const dd = drop || null;
   /*
    * 만료 시각.
    *
@@ -296,10 +429,32 @@ function rowFor(product, cand, verdict, today) {
      * 설명 가능한 신호. 화면이 "왜 핫딜인가"를 스스로 말할 수 있게 하는
      * 재료이며, 전부 baseline 에서 나온 값이라 price_history 로 되짚을 수 있다.
      * 모르는 값은 0 이 아니라 null 로 들어간다 — 0 은 "0원"으로 읽힌다.
+     *
+     * ★ 2026-09-20: 일일 하락 값을 같이 싣는다 (dailyDrop*).
+     *   어제 가격 · 오늘 가격 · 하락액 · 하락률 · 양쪽 관측 시각이 전부 들어 있어,
+     *   카드 하나를 놓고 "왜 이 숫자인가" 를 price_history 로 되짚을 수 있다.
+     *   사용자 화면에 이 값을 새로 그리지는 않는다 — 기존 카드는 여전히
+     *   priceDropPercent 하나만 읽는다.
      */
-    signal_json: verdict.signals,
-    price_drop_percent: Number(verdict.signals.priceDropPercent) > 0
-      ? Number(verdict.signals.priceDropPercent) : 0,
+    signal_json: dd ? Object.assign({}, verdict.signals, {
+      /* 기존 카드가 읽는 필드. 이제 «어제 대비 오늘» 이 그 값이 된다. */
+      priceDropPercent: dd.pct,
+      priceDropAmount: dd.amount,
+      previousPrice: dd.yesterdayPrice,
+      dailyDropPct: dd.pct,
+      dailyDropAmount: dd.amount,
+      dailyTodayPrice: dd.todayPrice,
+      dailyYesterdayPrice: dd.yesterdayPrice,
+      dailyTodayAt: dd.todayAt,
+      dailyYesterdayAt: dd.yesterdayAt,
+      dailyBasis: 'kst-today-vs-yesterday'
+    }) : verdict.signals,
+    /*
+     * 목록 정렬의 1순위 키. 이제 «30일 중앙값 대비» 가 아니라 «어제 대비» 다.
+     * 정렬 기준과 카드에 찍히는 숫자가 같은 값이어야 순서를 설명할 수 있다.
+     */
+    price_drop_percent: dd ? dd.pct
+      : (Number(verdict.signals.priceDropPercent) > 0 ? Number(verdict.signals.priceDropPercent) : 0),
     confidence_rank: CONFIDENCE_RANK[verdict.confidence] || 0,
 
     last_checked_at: new Date().toISOString(),
@@ -504,7 +659,7 @@ async function main() {
     return;
   }
 
-  const summary = { scanned: 0, evaluated: 0, kept: 0, rejected: 0, byStatus: {} };
+  const summary = { scanned: 0, evaluated: 0, kept: 0, rejected: 0, noDailyDrop: 0, byStatus: {}, dropReasons: {} };
   let outcome = 'done';
   try {
     const products = await loadProducts();
@@ -563,6 +718,23 @@ async function main() {
       const verdict = HD.evaluate({ candidate: cand, storedTitle: p.title, points, today });
       summary.byStatus[verdict.status] = (summary.byStatus[verdict.status] || 0) + 1;
 
+      /*
+       * ★ 일일 하락 관문 (2026-09-20 감사) — «어제보다 오늘 내려갔는가».
+       *
+       *   HD.evaluate 는 그대로 둔다. 그쪽은 «이 값을 믿어도 되는가»(동일성·
+       *   이상치·관측 충분성)를 보는 정밀도 관문이고, 여기는 «오늘 핫딜인가»를
+       *   정하는 정의다. 둘 다 통과해야 노출된다 (api/_dailydrop.js 주석 참고).
+       *
+       *   이 관문이 없을 때 실제로 벌어진 일: 30·90일 중앙값이 점수의 83%를
+       *   차지해 순위가 며칠씩 그대로였고, 다시 판정되지 않은 행은 만료도 되지
+       *   않아 09-07 에 잡힌 딜이 09-20 에도 «오늘의 핫딜» 로 떠 있었다.
+       *
+       *   points 는 이 (product_id, mall, vendor_item_id) 계열의 행만 담고
+       *   있으므로, 다른 옵션·다른 몰의 어제 가격이 섞일 자리가 없다.
+       */
+      const drop = DD.dailyDrop(points, { today });
+      summary.dropReasons[drop.reason] = (summary.dropReasons[drop.reason] || 0) + 1;
+
       const mall = HS.normalizeMall(p.mall_label || p.mall);
       const offerKey = offerKeyOf(HS.INTERNAL_HISTORY.id, cand.externalId, mall);
       if (verdict.status !== HD.STATUS.REJECTED) {
@@ -580,7 +752,14 @@ async function main() {
         summary.rejected++;
         continue;
       }
-      const row = rowFor(p, cand, verdict, today);
+      /*
+       * 정밀도 관문은 통과했지만 오늘 실제로 내려가지 않았다 → 노출하지 않는다.
+       * 이유는 집계에 이미 남겼다(summary.dropReasons). 행을 만들지 않으므로,
+       * 어제 잡혔던 같은 딜은 아래 expireEnded 가 만료시킨다.
+       */
+      if (!drop.ok) { summary.noDailyDrop++; continue; }
+
+      const row = rowFor(p, cand, verdict, today, drop);
       const prev = existing.get(`${row.source}|${row.source_external_id}|${row.mall}`);
       row.lifecycle = lifecycleFor(prev, verdict);
       withDetectedAt(row, prev, nowIso);

@@ -203,7 +203,26 @@ function reserveSlot(minGapMs, maxWaitMs) {
     const slotAt = Math.max(at, windowFreeAt);
     const waitMs = slotAt - now;
     if (waitMs > maxWaitMs) {
-      const why = windowFreeAt > at
+      /*
+       * ★ 어느 한도가 막았는지 «흔들리지 않게» 고른다 (2026-09-20).
+       *
+       *   예전 조건은 `windowFreeAt > at` 이었다. 그런데 창이 찼을 때는
+       *   앞선 호출이 이미 창 때문에 미래 슬롯을 예약해 두어 lastCallAt 이
+       *   그만큼 밀려 있다. 그래서 두 값이 «1ms 차이로» 엇갈리고, 같은
+       *   시나리오가 실행할 때마다 다른 사유를 냈다.
+       *
+       *   실측: scripts/test-adpick-observability.js 의 마지막 절이 4회 중
+       *   1회꼴로 «간격 제한» 을 받아 실패했다. 막힌 것은 매번 같은데
+       *   설명만 달라진 것이다 — 관측값이 흔들리면 관측이 아니다.
+       *
+       *   창이 아직 차 있으면 창이 원인이다. lastCallAt 이 미래인 것 자체가
+       *   창 때문에 밀린 결과이므로, 그쪽을 먼저 말하는 편이 사실에 가깝다.
+       *
+       * ★ 막는 기준은 한 자리도 바뀌지 않는다 — waitMs 계산도, maxWaitMs
+       *   비교도 그대로다. 달라지는 것은 사유 문구뿐이다.
+       */
+      const windowFull = state.window.length >= MAX_PER_MIN && windowFreeAt > now;
+      const why = windowFull
         ? `인스턴스 분당 한도 ${state.window.length}/${MAX_PER_MIN} — ${waitMs}ms 대기 필요`
         : `간격 제한 — ${waitMs}ms 대기 필요`;
       return { ok: false, blocked: false, reason: why };
