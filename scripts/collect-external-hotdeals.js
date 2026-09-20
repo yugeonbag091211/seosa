@@ -242,6 +242,23 @@ function mallKey(value) {
 }
 
 /**
+ * 이미지 전용 짧은 모델 코드. _identity.modelCodes 는 4자 이상이라 E10/T35 같은
+ * 짧은 이어폰 모델을 놓친다. 참고 사진에서 다른 모델을 보여주는 것도 오해를
+ * 만들 수 있으므로 영문+숫자 3자 이상을 추가로 잡는다.
+ */
+function imageModelCodes(value) {
+  const out = new Set(Identity.modelCodes(value));
+  const tokens = String(value || '').toUpperCase()
+    .replace(/[^0-9A-Z\s-]/g, ' ')
+    .split(/\s+/).filter(Boolean);
+  const unit = /^\d+(?:\.\d+)?(?:ML|L|G|KG|GB|TB|MAH|CM|MM|OZ)$/;
+  for (const token of tokens) {
+    if (token.length >= 3 && /[A-Z]/.test(token) && /\d/.test(token) && !unit.test(token)) out.add(token);
+  }
+  return out;
+}
+
+/**
  * 정확 SKU 판정(0.70)에도 못 미치지만 검색 결과 자체는 꽤 가까운 경우,
  * 카드에 «참고 이미지»만 붙이기 위한 별도 선택기.
  *
@@ -256,7 +273,7 @@ function referenceImageCandidate(deal, items) {
   const dw = imageWords(title);
   if (!dw.length) return null;
   const dealMall = mallKey(deal && deal.mall);
-  const dmodels = Identity.modelCodes(title);
+  const dmodels = imageModelCodes(title);
   const dgrades = Identity.grades(title);
   const dformats = Identity.formats(title);
   const dvariants = Identity.variants(title);
@@ -288,7 +305,7 @@ function referenceImageCandidate(deal, items) {
      * 허용한다. 하지만 모델/세대/형태/색상처럼 사진 자체가 다른 물건이 되는
      * 충돌은 계속 거부한다. 구매 링크의 0.90 identity 판정은 전혀 건드리지 않는다.
      */
-    const cmodels = Identity.modelCodes(candidateTitle);
+    const cmodels = imageModelCodes(candidateTitle);
     const cgrades = Identity.grades(candidateTitle);
     const cformats = Identity.formats(candidateTitle);
     const cvariants = Identity.variants(candidateTitle);
@@ -774,6 +791,6 @@ if (require.main === module) {
 module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
   enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery, safeImageUrl,
-  imageWords, referenceImageCandidate,
+  imageWords, imageModelCodes, referenceImageCandidate,
   summaryText, sampleOf
 };
