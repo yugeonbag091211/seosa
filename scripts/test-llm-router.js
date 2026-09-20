@@ -216,6 +216,49 @@ const ask = (o) => llm.chat(Object.assign({ role: 'answer', messages: MSGS, maxT
     check('★ 전부 빈 응답이면 성공이 아니다', r.ok === false && r.reason === 'empty', r.reason);
   }
 
+
+  /* ── 4b. 사용량 폭증 / quota 소진 시 재공격 방지 ─────────────── */
+  console.log('\n[4b] 사용량 폭증 resilience');
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', AI_CACHE_TTL_MS: '0' });
+    ext.byModel['a/one:free'] = 429;
+    const first = await ask();
+    check('첫 429는 다른 무료 모델로 즉시 우회한다',
+      first.ok === true && first.model === 'b/two:free', ext.calls.join(','));
+
+    ext.calls = [];
+    const second = await ask();
+    check('★★ 직전 429 모델은 다음 요청에서 다시 두드리지 않는다',
+      second.ok === true && ext.calls.join(',') === 'b/two:free', ext.calls.join(',') || '(호출 없음)');
+  }
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', AI_CACHE_TTL_MS: '0' });
+    ext.fallback = 402;
+    const first = await ask();
+    check('quota 소진 시 한 요청 안에서는 각 무료 모델을 최대 1회만 확인한다',
+      first.ok === false && ext.calls.join(',') === 'a/one:free,b/two:free', ext.calls.join(','));
+
+    ext.calls = [];
+    const second = await ask();
+    check('★★ 이미 quota 소진이 확인된 모델은 다음 요청에서 0회 호출한다',
+      second.ok === false && second.reason === 'cooldown' && ext.calls.length === 0,
+      `${ext.calls.length}회 / ${second.reason}`);
+  }
+  {
+    reset({ OPENROUTER_MODELS: 'a/one:free, b/two:free', AI_CACHE_TTL_MS: '0' });
+    ext.fallback = 401;
+    const first = await ask();
+    check('잘못된 OpenRouter key는 첫 모델에서 즉시 중단한다',
+      first.ok === false && first.reason === 'auth' && ext.calls.length === 1,
+      `${ext.calls.length}회 / ${first.reason}`);
+
+    ext.calls = [];
+    const second = await ask();
+    check('★★ auth 장애는 provider 전체 cooldown으로 바꿔 반복 호출을 막는다',
+      second.ok === false && second.reason === 'cooldown' && ext.calls.length === 0,
+      `${ext.calls.length}회 / ${second.reason}`);
+  }
+
   /* ── 5. 없는 모델 id ────────────────────────────────────────── */
   console.log('\n[5] 없는 모델 id (404)');
   reset({ OPENROUTER_MODELS: 'gone/model:free, b/two:free', AI_CACHE_TTL_MS: '0' });
