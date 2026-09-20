@@ -26,6 +26,7 @@
  */
 
 const crypto = require('crypto');
+const globalCircuit = require('./_global-circuit');
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -340,7 +341,8 @@ function classifyStatus(status) {
   if (status === 401 || status === 403) return { reason: 'auth',   advance: false };
   if (status === 402)                   return { reason: 'quota',  advance: true };
   if (status === 429)                   return { reason: 'rate',   advance: true };
-  if (status === 400 || status === 404) return { reason: 'model',  advance: true };
+  if (status === 404)                   return { reason: 'model',  advance: true };
+  if (status === 400)                   return { reason: 'http',   advance: true };
   if (status >= 500)                    return { reason: 'server', advance: true };
   return { reason: 'http', advance: true };
 }
@@ -487,7 +489,7 @@ function withinDeadline(promise, deadline, controller) {
   ]).finally(() => clearTimeout(timer));
 }
 
-function coolProvider(provider, model, reason, retryMs) {
+async function coolProvider(provider, model, reason, retryMs, probeToken) {
   let ms = 0;
   if (reason === 'auth') ms = AUTH_COOLDOWN_MS;
   else if (reason === 'model') ms = DEAD_MODEL_MS;
@@ -501,7 +503,8 @@ function coolProvider(provider, model, reason, retryMs) {
    * quota/rate는 모델별 공급자 상태일 수 있어 모델 단위로만 식힌다.
    */
   const k = reason === 'auth' ? `${provider}:*` : `${provider}:${model}`;
-  state.providerDead.set(k, Date.now() + ms);
+  state.providerDead.set(k, Math.max(state.providerDead.get(k) || 0, Date.now() + ms));
+  await globalCircuit.failure(provider, model, reason, ms, probeToken);
 }
 
 async function providerFetch(provider, model, request, timeoutMs, parse) {
@@ -511,6 +514,8 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
   try {
   const ac = new AbortController();
   const deadline = Date.now() + timeoutMs;
+  const gate = await globalCircuit.before(provider, model);
+  if (!gate.allowed) return { ok: false, reason: 'cooldown', advance: true };
   const startedAt = Date.now();
   state.calls++; state.freeCalls++;
   let r;
@@ -522,7 +527,7 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
   } catch (e) {
     state.failures++; state.totalMs += Date.now() - startedAt;
     const reason = e && e.name === 'AbortError' ? 'timeout' : 'network';
-    coolProvider(provider, model, reason);
+    await coolProvider(provider, model, reason, 0, gate.probeToken);
     console.warn(`[llm] ${provider}/${model} ${reason}`);
     return { ok: false, reason, advance: true };
   }
@@ -533,7 +538,7 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
     const cls = classifyStatus((r && r.status) || 0);
     let detail = '';
     try { detail = redact(String(await withinDeadline(r.text(), deadline, ac)).slice(0, 200)); } catch (e) { detail = ''; }
-    coolProvider(provider, model, cls.reason, retryAfterMs(r));
+    await coolProvider(provider, model, cls.reason, retryAfterMs(r), gate.probeToken);
     console.warn(`[llm] ${provider}/${model} ${(r && r.status) || 0} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     return { ok: false, reason: cls.reason, advance: true };
   }
@@ -542,20 +547,21 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
   try { data = await withinDeadline(r.json(), deadline, ac); }
   catch (e) {
     const reason = e && e.name === 'AbortError' ? 'timeout' : 'parse';
-    state.failures++; coolProvider(provider, model, reason);
+    state.failures++; await coolProvider(provider, model, reason, 0, gate.probeToken);
     return { ok: false, reason, advance: true };
   }
   let out;
   try { out = parse(data); }
   catch (e) {
-    state.failures++; coolProvider(provider, model, 'parse');
+    state.failures++; await coolProvider(provider, model, 'parse', 0, gate.probeToken);
     return { ok: false, reason: 'parse', advance: true };
   }
   if (!out || !String(out.text || '').trim()) {
-    state.failures++; coolProvider(provider, model, 'empty');
+    state.failures++; await coolProvider(provider, model, 'empty', 0, gate.probeToken);
     return { ok: false, reason: 'empty', advance: true };
   }
   if (out.usage) { state.inTok += out.usage.inputTokens; state.outTok += out.usage.outputTokens; }
+  await globalCircuit.success(provider, model, gate.probeToken);
   return Object.assign({ ok: true }, out);
   } finally {
     releaseProvider(provider, model);
@@ -633,6 +639,8 @@ async function attempt(model, opts, timeoutMs) {
 
   const ac = new AbortController();
   const deadline = Date.now() + timeoutMs;
+  const gate = await globalCircuit.before('openrouter', model);
+  if (!gate.allowed) return { ok: false, reason: 'cooldown', advance: true };
 
   const body = {
     model,
@@ -663,10 +671,10 @@ async function attempt(model, opts, timeoutMs) {
     state.failures++;
     state.totalMs += Date.now() - startedAt;
     if (e && e.name === 'AbortError') {
-      coolProvider('openrouter', model, 'timeout');
+      await coolProvider('openrouter', model, 'timeout', 0, gate.probeToken);
       return { ok: false, reason: 'timeout', advance: true };
     }
-    coolProvider('openrouter', model, 'network');
+    await coolProvider('openrouter', model, 'network', 0, gate.probeToken);
     console.warn(`[llm] ${model} 연결 실패: ${redact(e && e.message)}`);
     return { ok: false, reason: 'network', advance: true };
   }
@@ -681,7 +689,7 @@ async function attempt(model, opts, timeoutMs) {
     try { detail = redact(String(await withinDeadline(r.text(), deadline, ac)).slice(0, 200)); } catch (e) { detail = ''; }
     console.warn(`[llm] ${model} ${status} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     if (cls.reason === 'model') state.dead.set(model, Date.now() + DEAD_MODEL_MS);
-    coolProvider('openrouter', model, cls.reason, retryAfterMs(r));
+    await coolProvider('openrouter', model, cls.reason, retryAfterMs(r), gate.probeToken);
     return { ok: false, reason: cls.reason, advance: cls.advance };
   }
 
@@ -690,7 +698,7 @@ async function attempt(model, opts, timeoutMs) {
   catch (e) {
     const reason = e && e.name === 'AbortError' ? 'timeout' : 'parse';
     state.failures++;
-    coolProvider('openrouter', model, reason);
+    await coolProvider('openrouter', model, reason, 0, gate.probeToken);
     console.warn(`[llm] ${model} 응답 ${reason}`);
     return { ok: false, reason, advance: true };
   }
@@ -706,7 +714,7 @@ async function attempt(model, opts, timeoutMs) {
    */
   if (!text.trim()) {
     state.failures++;
-    coolProvider('openrouter', model, 'empty');
+    await coolProvider('openrouter', model, 'empty', 0, gate.probeToken);
     return { ok: false, reason: 'empty', advance: true };
   }
 
@@ -727,6 +735,7 @@ async function attempt(model, opts, timeoutMs) {
   const cost = estimateCostUsd(model, usage);
   if (cost) state.costUsd += cost;
 
+  await globalCircuit.success('openrouter', model, gate.probeToken);
   return { ok: true, text, finish: String(choice.finish_reason || ''), usage };
   } finally {
     releaseProvider('openrouter', model);
@@ -886,6 +895,7 @@ async function chat(opts) {
 
 /** 테스트가 프로세스 기억을 지우기 위해 부른다. */
 function _reset() {
+  globalCircuit._reset();
   state.dead.clear();
   state.providerDead.clear();
   state.providerInflight.clear();
@@ -915,6 +925,7 @@ function stats() {
     coalesced: state.coalesced,
     cooldowns: state.providerDead.size,
     providerInflight: Array.from(state.providerInflight.values()).reduce((a, b) => a + b, 0),
+    globalCircuit: globalCircuit.stats(),
     avgLatencyMs: state.calls ? Math.round(state.totalMs / state.calls) : 0,
     inputTokens: state.inTok,
     outputTokens: state.outTok,

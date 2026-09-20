@@ -94,7 +94,14 @@ const NEW_MIGRATIONS = [
    */
   '2026-09-19-collector-eligible-catalog.sql',
   // 2026-09-20: price_drop_top 타임아웃 대응 인덱스 (데이터 변경 없음).
-  '2026-09-20-price-drop-top-index.sql'
+  '2026-09-20-price-drop-top-index.sql',
+  /*
+   * 2026-09-20: 인스턴스 사이에서 provider 장애를 공유하는 AI 회로.
+   * 미적용이면 api/_global-circuit.js 가 매 요청 RPC 를 놓치고 프로세스
+   * 로컬 보호로만 떨어진다 — AI 는 계속 돌지만, 50개 인스턴스가 저마다
+   * 429 를 새로 맞던 고치기 전 상태로 조용히 되돌아간다.
+   */
+  '2026-09-20-ai-global-circuit.sql'
 ];
 
 function checkStatic() {
@@ -184,7 +191,7 @@ async function checkLive() {
     return !error;
   };
 
-  const applied = { payment: true, view: true, analytics: true, adpick: true };
+  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true };
 
   for (const [t, c] of [['subscriptions', 'last_renew_at'], ['subscriptions', 'renew_failures']]) {
     const has = await hasColumn(t, c);
@@ -257,19 +264,47 @@ async function checkLive() {
     } else ok('adpick_api_calls 테이블');
   }
 
+  /* ── AI 공유 회로 (2026-09-20-ai-global-circuit.sql) ──────────── */
+  {
+    /*
+     * head:true 를 쓰지 않는 이유는 위 visitors 검사 주석과 같다.
+     * 이 표에는 provider 장애 상태만 들어간다 — 질문도 계정도 IP 도 없다.
+     */
+    const { error } = await supabase.from('ai_provider_circuit').select('*').limit(1);
+    if (error) {
+      bad('ai_provider_circuit 표 없음', '인스턴스 사이 provider 장애 공유가 꺼진다');
+      applied.circuit = false;
+    } else ok('ai_provider_circuit 표');
+  }
+  {
+    /*
+     * 인자 검증에서 바로 걸리도록 부른다 — 함수가 있어도 행을 잠그거나
+     * 만들지 않는다. p_model = '*' 는 gate 가 첫 줄에서 거부한다.
+     */
+    const { error } = await supabase.rpc('ai_circuit_gate', {
+      p_provider: 'gemini', p_model: '*',
+      p_token: '00000000-0000-0000-0000-000000000000'
+    });
+    const missing = error && /could not find|does not exist|schema cache/i.test(error.message);
+    if (missing) { bad('ai_circuit_gate() RPC 없음', '429 가 인스턴스마다 따로 터진다'); applied.circuit = false; }
+    else ok('ai_circuit_gate() RPC');
+  }
+
   // 이력은 절대 줄면 안 된다. 적용 전후 대조용 수치를 남긴다.
   const { count: ph } = await supabase.from('price_history').select('*', { count: 'exact', head: true });
   const { count: pdt } = await supabase.from('price_drop_top').select('*', { count: 'exact', head: true });
   console.log(`        price_history ${ph}행 / price_drop_top ${pdt}행`);
   console.log('        ※ 뷰를 적용해도 price_history 행 수는 변하지 않아야 한다.');
 
-  if (!applied.payment || !applied.view || !applied.analytics || !applied.adpick) {
+  if (!applied.payment || !applied.view || !applied.analytics || !applied.adpick
+      || !applied.circuit) {
     console.log('\n  적용하려면 Supabase 대시보드 > SQL Editor 에서 아래를 순서대로 실행하세요:');
     let n = 0;
     if (!applied.payment)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[0]}`);
     if (!applied.view)      console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[1]}`);
     if (!applied.analytics) console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[2]}`);
     if (!applied.adpick)    console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[3]}`);
+    if (!applied.circuit)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[6]}`);
     console.log('    ※ 서로 의존하지 않으므로 순서가 바뀌어도 되지만, 위 순서를 권한다.');
   }
 }
