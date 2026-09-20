@@ -291,7 +291,10 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
   {
     const items = (await call({})).body.items;
     eq(items.length, 2, '군집 하나당 카드 하나');
-    const g1 = items[0];
+    // 기본 정렬은 daily → last_checked_at tie-breaker라 생성 시각 몇 ms 차이로
+    // G2가 먼저 올 수 있다. 순서가 아니라 id=1인 G1 대표 자체를 검사한다.
+    const g1 = items.find(i => i.id === 1);
+    ok(!!g1, 'G1 대표 카드가 남는다');
     eq(g1.offerCount, 3, '군집 크기를 알려 준다');
     eq(g1.lowestPrice, 9000, '현재 최저가');
     eq(g1.lowestMall, 'ADPICK', '최저가 몰');
