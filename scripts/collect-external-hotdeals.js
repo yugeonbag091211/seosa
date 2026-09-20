@@ -309,7 +309,10 @@ async function enrichAffiliateRows(deals, rows, options) {
         const candidates = [...candidateMap.values()];
         if (!candidates.length) continue;
         const products = candidates.map(affiliateCandidateProduct);
-        match = Radar.matchProduct(deal, products, AFFILIATE_MATCH_THRESHOLD);
+        // 커뮤니티 제목의 "77%할인/특가" 같은 홍보 문구는 상품 identity가 아니다.
+        // 수량·용량·모델은 보존한 채 홍보 문구만 걷어 동일상품 판정에 사용한다.
+        const matchDeal = { ...deal, title: cleanAffiliateQuery(deal.title) || deal.title };
+        match = Radar.matchProduct(matchDeal, products, AFFILIATE_MATCH_THRESHOLD);
         if (!match.product) continue;
 
         chosen = candidates.find(it =>
