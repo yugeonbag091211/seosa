@@ -33,6 +33,7 @@ const { kstToday } = require('../api/_kst');
 const { sameVendorRows } = require('../api/_price');
 const Shop = require('../api/_shop');
 const HD = require('../api/_hotdeal');
+const Identity = require('../api/_identity');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const SAMPLE = process.argv.includes('--sample');
@@ -222,6 +223,88 @@ function safeImageUrl(value) {
   }
 }
 
+const IMAGE_GENERIC_WORDS = new Set([
+  '무료배송','무료','무배','핫딜','특가','정품','공식','국산','국내산','프리미엄',
+  '고급','대용량','신상품','최신형','증정','사은품','골라담기','선물세트','세트'
+]);
+const IMAGE_UNIT_WORD_RE = /^\d+(?:\.\d+)?(?:g|kg|ml|l|개|매|입|팩|병|캔|장|봉|종|인분|cm|mm|인치|gb|tb)?$/i;
+
+function imageWords(value) {
+  return cleanAffiliateQuery(value)
+    .toLowerCase()
+    .replace(/[^0-9a-z가-힣\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !IMAGE_GENERIC_WORDS.has(w) && !IMAGE_UNIT_WORD_RE.test(w));
+}
+
+function mallKey(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, '').replace(/지마켓/g, 'g마켓');
+}
+
+/**
+ * 정확 SKU 판정(0.70)에도 못 미치지만 검색 결과 자체는 꽤 가까운 경우,
+ * 카드에 «참고 이미지»만 붙이기 위한 별도 선택기.
+ *
+ * 구매 링크/상품 ID에는 절대 쓰지 않는다.
+ * - 첫 번째(전체 제목) 검색 결과만 대상으로 함
+ * - 기존 hard conflict(수량·용량·모델·옵션 충돌)는 그대로 차단
+ * - 몰이 명시됐으면 같은 몰을 우선/강제
+ * - 핵심 단어 2~3개 이상이 겹쳐야 함
+ */
+function referenceImageCandidate(deal, items) {
+  const title = cleanAffiliateQuery(deal && deal.title);
+  const dw = imageWords(title);
+  if (!dw.length) return null;
+  const dset = new Set(dw);
+  const dmodels = Identity.modelCodes(title);
+  const dealMall = mallKey(deal && deal.mall);
+  let best = null;
+
+  for (const item of items || []) {
+    const image = safeImageUrl(item && item.image);
+    if (!image) continue;
+
+    const itemMall = mallKey((item && item.mallLabel) || (item && item.mall));
+    if (dealMall) {
+      if (dealMall === '쿠팡') {
+        if (mallKey(item && item.mall) !== '쿠팡') continue;
+      } else if (itemMall && itemMall !== dealMall) {
+        continue;
+      }
+    }
+
+    const product = affiliateCandidateProduct(item);
+    const judged = Radar.matchScore({ ...(deal || {}), title }, product);
+    if (judged.method === 'conflict' || judged.method === 'identity-reject' || judged.confidence <= 0.05) continue;
+
+    const cw = imageWords(item && item.title);
+    if (!cw.length) continue;
+    const cset = new Set(cw);
+    const shared = [...dset].filter(w => cset.has(w));
+    const overlap = shared.length / Math.max(1, Math.min(dset.size, cset.size));
+    const sameFirst = dw[0] && cw[0] && dw[0] === cw[0];
+    const cmodels = Identity.modelCodes(item && item.title);
+    const sharedModel = [...dmodels].some(m => cmodels.has(m));
+
+    const enough = sharedModel
+      || shared.length >= 3
+      || (shared.length >= 2 && (sameFirst || overlap >= 0.5));
+    if (!enough) continue;
+
+    const rank = (sharedModel ? 100 : 0) + shared.length * 10 + overlap * 5 + Math.max(0, judged.confidence);
+    if (!best || rank > best.rank) {
+      best = {
+        item,
+        image,
+        rank,
+        confidence: Math.min(0.69, 0.45 + Math.min(0.18, shared.length * 0.04) + Math.min(0.06, overlap * 0.06)),
+        reason: `전체 제목 검색 결과 핵심 단어 ${shared.length}개 일치`
+      };
+    }
+  }
+  return best;
+}
+
 /**
  * 제휴 검색용 제목 정리.
  *
@@ -360,16 +443,30 @@ async function enrichAffiliateRows(deals, rows, options) {
         // 커뮤니티 제목의 "77%할인/특가" 같은 홍보 문구는 상품 identity가 아니다.
         // 수량·용량·모델은 보존한 채 홍보 문구만 걷어 동일상품 판정에 사용한다.
         const matchDeal = { ...deal, title: cleanAffiliateQuery(deal.title) || deal.title };
-        // 구매 링크는 0.90+, 사진은 identity B(0.82)+까지만 허용한다.
+
+        // 전체 제목 검색에서만, 구매와 무관한 «참고 이미지» 후보를 먼저 잡아 둔다.
+        if (!visualChosen && queryIndex === 0) {
+          const refImage = referenceImageCandidate(matchDeal, result && result.items);
+          if (refImage) {
+            visualChosen = refImage.item;
+            visualMatch = {
+              confidence: refImage.confidence,
+              reason: refImage.reason,
+              method: 'reference-search'
+            };
+          }
+        }
+
+        // 구매 링크는 0.90+, 사진은 identity B/partial(0.70)+까지 허용한다.
         // 둘 다 같은 conflict guard(수량/용량/모델/옵션)를 거친다.
         const vm = Radar.matchProduct(matchDeal, products, IMAGE_MATCH_THRESHOLD);
-        if (!visualChosen && vm.product && IMAGE_MATCH_METHODS.has(String(vm.method || ''))) {
+        if (vm.product && IMAGE_MATCH_METHODS.has(String(vm.method || ''))) {
           const candidate = candidates.find(it =>
             String(it.productId) === String(vm.product.product_id)
             && String(it.mall || '') === String(vm.product.mall || '')
           );
           const image = candidate && safeImageUrl(candidate.image);
-          if (image) {
+          if (image && (!visualMatch || Number(vm.confidence) > Number(visualMatch.confidence || 0))) {
             visualChosen = candidate;
             visualMatch = vm;
           }
@@ -652,5 +749,6 @@ if (require.main === module) {
 module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
   enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery, safeImageUrl,
+  imageWords, referenceImageCandidate,
   summaryText, sampleOf
 };
