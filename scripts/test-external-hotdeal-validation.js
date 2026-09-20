@@ -731,6 +731,42 @@ async function captureFailure(promise) {
     assert.equal(row.metadata.affiliateSearchQuery, queries[1]);
   });
 
+  await check('affiliate enrichment: ADPICK is called only on the first query while Coupang retries', async () => {
+    const deal = Normalize.normalizeExternalHotdeal({
+      externalId: 'aff-budget',
+      title: '테스트브랜드 ABC123 500ml 20개 50%할인',
+      price: 10000,
+      mall: '쿠팡',
+      postUrl: 'https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=999004',
+      postedAt: hoursAgo(1),
+      metadata: { rawTitle: '[쿠팡] 테스트브랜드 ABC123 500ml 20개 50%할인 (10,000원/무료)' }
+    }, 'ppomppu');
+    const row = { source: 'ppomppu', source_post_id: '999004', source_url: deal.postUrl,
+      title: deal.title, price: deal.price, matched_product_id: null, metadata: {} };
+    const wrong = {
+      title: '테스트브랜드 ABC999 500ml 20개',
+      lprice: 10000, link: 'https://link.coupang.com/a/wrong-budget',
+      mall: '쿠팡', productId: 'wrong-budget', vendorItemId: '1', _source: 'api'
+    };
+    const right = {
+      title: '테스트브랜드 ABC123 500ml 20개',
+      lprice: 10000, link: 'https://link.coupang.com/a/right-budget',
+      mall: '쿠팡', productId: 'right-budget', vendorItemId: '2', _source: 'api'
+    };
+    let coupangCalls = 0, adpickCalls = 0;
+    const stats = await Collector.enrichAffiliateRows([deal], [row], {
+      lookupLimit: 1,
+      searchLimit: 3,
+      fetchCoupang: async () => ({ items: [++coupangCalls === 1 ? wrong : right], from: 'api' }),
+      fetchAdpick: async () => { adpickCalls++; return { items: [], from: 'api' }; },
+      saveProducts: async () => ({ saved: 1, errors: [] })
+    });
+    assert.equal(coupangCalls, 2);
+    assert.equal(adpickCalls, 1, 'ADPICK은 전체 제목 검색 한 번만 호출');
+    assert.equal(stats.matched, 1);
+    assert.equal(row.metadata.affiliateUrl, right.link);
+  });
+
   await check('affiliate enrichment: a merely similar product is never monetized as the same deal', async () => {
     const deal = Normalize.normalizeExternalHotdeal({
       externalId: 'aff-2',
