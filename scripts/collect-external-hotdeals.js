@@ -265,13 +265,13 @@ function referenceImageCandidate(deal, items) {
     if (!image) continue;
 
     const itemMall = mallKey((item && item.mallLabel) || (item && item.mall));
-    if (dealMall) {
-      if (dealMall === '쿠팡') {
-        if (mallKey(item && item.mall) !== '쿠팡') continue;
-      } else if (itemMall && itemMall !== dealMall) {
-        continue;
-      }
-    }
+    /*
+     * 사진은 판매처가 아니라 상품 자체의 참고 시각자료다.
+     * 외부 글이 G마켓/네이버/롯데온이어도 쿠팡·ADPICK에 같은 상품 사진이 있으면
+     * 참고 이미지로 쓸 수 있다. 판매처 불일치는 구매 링크에는 절대 허용하지 않고,
+     * 여기서는 순위 보너스만 준다.
+     */
+    const sameMall = !!dealMall && !!itemMall && dealMall === itemMall;
 
     const product = affiliateCandidateProduct(item);
     const judged = Radar.matchScore({ ...(deal || {}), title }, product);
@@ -291,7 +291,8 @@ function referenceImageCandidate(deal, items) {
       || (shared.length >= 2 && (sameFirst || overlap >= 0.5));
     if (!enough) continue;
 
-    const rank = (sharedModel ? 100 : 0) + shared.length * 10 + overlap * 5 + Math.max(0, judged.confidence);
+    const rank = (sharedModel ? 100 : 0) + shared.length * 10 + overlap * 5
+      + (sameMall ? 3 : 0) + Math.max(0, judged.confidence);
     if (!best || rank > best.rank) {
       best = {
         item,
