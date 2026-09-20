@@ -19,11 +19,6 @@ name: SEOSA HOT
 # 실데이터가 쌓인 뒤 노출 건수와 만료 정확도를 보고 주기를 조정한다.
 
 on:
-  # Temporary push trigger: this commit starts one main run; removed after verification.
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/hotdeals.yml'
   schedule:
     - cron: '20 0 * * *'
     - cron: '20 12 * * *'
@@ -91,7 +86,9 @@ jobs:
           EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES: ${{ vars.EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES }}
         run: |
           node scripts/collect-external-hotdeals.js \
-            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
+            2>&1 | tee /tmp/external-hotdeals.log
+          exit ${PIPESTATUS[0]}
 
       - name: Summary
         if: always()
@@ -101,3 +98,11 @@ jobs:
           grep -E '"msg":"(grouped|evaluated|expired_ended|upserted|dry_run_no_write|failed)"' /tmp/hotdeals.log \
             | tail -8 >> $GITHUB_STEP_SUMMARY || echo '{"msg":"no log"}' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ -f /tmp/external-hotdeals.log ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### External affiliate matching" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            grep -E '^(Source:|Mode:|Affiliate:)' /tmp/external-hotdeals.log \
+              | tail -6 >> $GITHUB_STEP_SUMMARY || echo "no external summary" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
