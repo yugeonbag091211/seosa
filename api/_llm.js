@@ -40,6 +40,7 @@ const PROVIDER_COOLDOWN_MS = 60 * 1000;
 const QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
 const AUTH_COOLDOWN_MS = 10 * 60 * 1000;
 const MAX_RETRY_AFTER_MS = 30 * 60 * 1000;
+const PROVIDER_MAX_INFLIGHT = 2;
 
 /* ═══════════════════════════════════════════════════════════════════
  *  ZERO-COST 정책 (2026-09-02 감사)
@@ -205,6 +206,8 @@ const MAX_MODEL_LEN = 80;
 const state = {
   dead: new Map(),      // model → 언제까지 죽은 것으로 볼지
   providerDead: new Map(), // provider:model → 짧은 cooldown
+  providerInflight: new Map(), // provider:model → 현재 네트워크 호출 수
+  inflightChats: new Map(), // cache key → 진행 중 chat Promise (동일 질문 stampede 방지)
   cache: new Map(),     // key → { at, text, finish, model }
   /*
    * ── AI Cost Guard 계수기 (2026-09-02) ─────────────────────────
@@ -221,6 +224,7 @@ const state = {
   paidBlocked: 0,    // 가드가 막은 유료 호출 시도
   failures: 0,
   cacheHits: 0,
+  coalesced: 0,
   totalMs: 0,
   inTok: 0,
   outTok: 0,
@@ -426,6 +430,21 @@ function providerReady(provider, model, now) {
   return true;
 }
 
+function acquireProvider(provider, model) {
+  const k = `${provider}:${model}`;
+  const n = state.providerInflight.get(k) || 0;
+  if (n >= PROVIDER_MAX_INFLIGHT) return false;
+  state.providerInflight.set(k, n + 1);
+  return true;
+}
+
+function releaseProvider(provider, model) {
+  const k = `${provider}:${model}`;
+  const n = state.providerInflight.get(k) || 0;
+  if (n <= 1) state.providerInflight.delete(k);
+  else state.providerInflight.set(k, n - 1);
+}
+
 function retryAfterMs(response) {
   try {
     const raw = response && response.headers && typeof response.headers.get === 'function'
@@ -460,6 +479,9 @@ function coolProvider(provider, model, reason, retryMs) {
 }
 
 async function providerFetch(provider, model, request, timeoutMs, parse) {
+  if (!acquireProvider(provider, model)) {
+    return { ok: false, reason: 'busy', advance: true };
+  }
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   const startedAt = Date.now();
@@ -476,7 +498,10 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
     coolProvider(provider, model, reason);
     console.warn(`[llm] ${provider}/${model} ${reason}`);
     return { ok: false, reason, advance: true };
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+    releaseProvider(provider, model);
+  }
 
   state.totalMs += Date.now() - startedAt;
   if (!r || !r.ok) {
@@ -573,6 +598,10 @@ async function attempt(model, opts, timeoutMs) {
     return { ok: false, reason: 'paid-blocked', advance: true };
   }
 
+  if (!acquireProvider('openrouter', model)) {
+    return { ok: false, reason: 'busy', advance: true };
+  }
+
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
 
@@ -613,6 +642,7 @@ async function attempt(model, opts, timeoutMs) {
     return { ok: false, reason: 'network', advance: true };
   } finally {
     clearTimeout(timer);
+    releaseProvider('openrouter', model);
   }
 
   state.totalMs += Date.now() - startedAt;
@@ -689,7 +719,7 @@ async function attempt(model, opts, timeoutMs) {
  *            reason:string, tried:Array<{model:string, reason:string}>}}
  *   ok=false 일 때 reason 은 마지막 실패 이유다. 업스트림 원문은 담기지 않는다.
  */
-async function chat(opts) {
+async function chatOnce(opts) {
   const o = opts || {};
   const role = o.role === 'classify' ? 'classify' : 'answer';
   const messages = Array.isArray(o.messages) ? o.messages : [];
@@ -783,13 +813,56 @@ async function chat(opts) {
   return { ok: false, text: '', finish: '', model: '', reason: last, tried };
 }
 
+
+/*
+ * 동일 프롬프트가 동시에 몰리면 첫 요청 하나만 upstream으로 보낸다.
+ * 기본 캐시가 켜진 경우에만 적용하므로, 운영자가 AI_CACHE_TTL_MS=0 으로
+ * 캐시를 명시적으로 끈 테스트/진단에서는 기존 의미를 바꾸지 않는다.
+ */
+async function chat(opts) {
+  const o = opts || {};
+  const role = o.role === 'classify' ? 'classify' : 'answer';
+  const messages = Array.isArray(o.messages) ? o.messages : [];
+  const maxTokens = Math.max(1, Number(o.maxTokens) || 900);
+  const temperature = Number.isFinite(Number(o.temperature)) ? Number(o.temperature) : 0.2;
+  const ttl = cacheTtl();
+  const key = ttl && messages.length ? cacheKey(role, messages, maxTokens, temperature) : '';
+
+  if (!key) return chatOnce(opts);
+
+  const pending = state.inflightChats.get(key);
+  if (pending) {
+    state.coalesced++;
+    const startedAt = Date.now();
+    const r = await pending;
+    if (!r || !r.ok) return r;
+    return Object.assign({}, r, {
+      reason: r.reason === 'cache' ? 'cache' : 'coalesced',
+      cached: true,
+      usage: null,
+      costUsd: 0,
+      latencyMs: Date.now() - startedAt
+    });
+  }
+
+  const p = chatOnce(opts);
+  state.inflightChats.set(key, p);
+  try {
+    return await p;
+  } finally {
+    if (state.inflightChats.get(key) === p) state.inflightChats.delete(key);
+  }
+}
+
 /** 테스트가 프로세스 기억을 지우기 위해 부른다. */
 function _reset() {
   state.dead.clear();
   state.providerDead.clear();
+  state.providerInflight.clear();
+  state.inflightChats.clear();
   state.cache.clear();
   state.calls = 0; state.freeCalls = 0; state.paidCalls = 0; state.paidBlocked = 0;
-  state.failures = 0; state.cacheHits = 0; state.totalMs = 0;
+  state.failures = 0; state.cacheHits = 0; state.coalesced = 0; state.totalMs = 0;
   state.inTok = 0; state.outTok = 0; state.costUsd = 0;
 }
 
@@ -809,7 +882,9 @@ function stats() {
     paidBlocked: state.paidBlocked,
     failures: state.failures,
     cacheHits: state.cacheHits,
+    coalesced: state.coalesced,
     cooldowns: state.providerDead.size,
+    providerInflight: Array.from(state.providerInflight.values()).reduce((a, b) => a + b, 0),
     avgLatencyMs: state.calls ? Math.round(state.totalMs / state.calls) : 0,
     inputTokens: state.inTok,
     outputTokens: state.outTok,
@@ -825,7 +900,7 @@ module.exports = {
   FREE_ANSWER_CHAIN, FREE_CLASSIFY_CHAIN,
   GEMINI_FREE_MODELS, GROQ_FREE_MODELS, DEFAULT_GEMINI_MODEL, DEFAULT_GROQ_MODEL,
   MODEL_PRICES_USD_PER_1M, estimateCostUsd, isFreeModel,
-  MAX_CHAIN, MIN_ATTEMPT_MS, DEAD_MODEL_MS,
+  MAX_CHAIN, MIN_ATTEMPT_MS, DEAD_MODEL_MS, PROVIDER_MAX_INFLIGHT,
   _internal: { sanitizeModel, classifyStatus, usableChain, redact, cacheKey, state, _reset, attempt,
     providerModel, attemptGemini, attemptGroq }
 };
