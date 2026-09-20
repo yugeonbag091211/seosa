@@ -74,6 +74,25 @@ const PAGE          = 1000;
  *   검색 결과에 없으면 여느 상품과 똑같이 미수집으로 남는다.
  */
 const SEED_ONLY = process.env.PRICE_SEED_ONLY === '1';
+
+/*
+ * ★ 전체 카탈로그 회전 수집 (2026-09-21).
+ *
+ * 상시 추적 대상(collector_eligible_products)은 매일 그대로 수집하고,
+ * bulk seed 전용 상품은 고정 해시 버킷으로 나눠 하루에 한 버킷씩 추가한다.
+ * 기본 7버킷이라 정상적으로 한 바퀴가 끝나면 모든 지원 몰 상품이 7일 안에
+ * 최소 한 번은 collector 대상이 된다.
+ *
+ * 중요한 점:
+ *   - PRICE_INCLUDE_BULK_SEED=1 처럼 7만 행을 매 실행 전부 읽지 않는다.
+ *   - 같은 상품은 product_id|mall 해시로 항상 같은 버킷에 들어간다.
+ *   - 상시 추적 상품은 회전 버킷에서 제외하므로 중복 대상이 없다.
+ *   - API 분당 제한/실행 예산/하루 예산은 전혀 올리지 않는다.
+ */
+const BULK_ROTATION_ENABLED = process.env.PRICE_BULK_ROTATION !== '0';
+const BULK_ROTATION_DAYS = Math.max(1, Number(process.env.PRICE_BULK_ROTATION_DAYS) || 7);
+const COLLECTOR_TARGET_VERSION = 'rotation-v1';
+
 const UPSERT_CHUNK  = 200;
 /*
  * 키워드당 가져올 상품 수.
@@ -1035,6 +1054,100 @@ async function fetchCollectorEligibleKeys() {
     (data || []).forEach(r => seen.add(`${r.product_id}|${r.mall}`));
     if (!data || data.length < PAGE) return seen;
   }
+}
+
+/** YYYY-MM-DD 를 고정된 N개 회전 버킷 중 하나로 매핑한다. */
+function rotationBucketForDate(date, days = BULK_ROTATION_DAYS) {
+  const n = Math.max(1, Number(days) || 1);
+  const ms = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(ms)) throw new Error(`회전 버킷 날짜 형식 오류: ${date}`);
+  const dayNo = Math.floor(ms / 86400000);
+  return ((dayNo % n) + n) % n;
+}
+
+/**
+ * 현재 실행의 대상 정책을 DB 조회 없이 식별한다.
+ *
+ * targetSignature 는 같은 날 이미 완료한 상태를 재사용해도 되는지 판단한다.
+ * 정책 버전/버킷 수/오늘 버킷이 하나라도 달라지면 기존 completed 상태를
+ * 무효화하고 새 대상 집합으로 다시 시작한다. 2026-09-21 배포 당일에도
+ * 기존 3천개-only completed 상태에 갇히지 않게 하는 장치다.
+ */
+function collectorTargetMeta(date = TODAY) {
+  if (SEED_ONLY) {
+    return { mode: 'seed', rotationDays: 0, rotationBucket: null,
+      signature: `seed-v1:${date}` };
+  }
+  if (process.env.PRICE_INCLUDE_BULK_SEED === '1') {
+    return { mode: 'all', rotationDays: 1, rotationBucket: 0,
+      signature: `all-v1:${date}` };
+  }
+  if (!BULK_ROTATION_ENABLED) {
+    return { mode: 'daily', rotationDays: 0, rotationBucket: null,
+      signature: `daily-v1:${date}` };
+  }
+  const rotationBucket = rotationBucketForDate(date, BULK_ROTATION_DAYS);
+  return {
+    mode: 'rotation',
+    rotationDays: BULK_ROTATION_DAYS,
+    rotationBucket,
+    signature: `${COLLECTOR_TARGET_VERSION}:${date}:${BULK_ROTATION_DAYS}:${rotationBucket}`
+  };
+}
+
+/**
+ * 상시 추적 + 오늘 회전 버킷의 키만 받는다.
+ *
+ * DB 함수가 tier(daily/rotation)를 붙여 돌려주므로 전체 products 를
+ * 내려받아 JS 에서 6만 행을 버리는 일이 없다.
+ */
+async function fetchCollectorTargetKeys(meta = collectorTargetMeta()) {
+  if (meta.mode === 'all' || meta.mode === 'seed') return null;
+
+  if (meta.mode === 'daily') {
+    const dailyKeys = await fetchCollectorEligibleKeys();
+    return {
+      keys: dailyKeys,
+      dailyKeys,
+      rotationKeys: new Set(),
+      rotationDays: 0,
+      rotationBucket: null
+    };
+  }
+
+  const keys = new Set();
+  const dailyKeys = new Set();
+  const rotationKeys = new Set();
+
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .rpc('collector_target_products', {
+        p_rotation_days: meta.rotationDays,
+        p_rotation_bucket: meta.rotationBucket
+      })
+      .range(from, from + PAGE - 1);
+
+    if (error) {
+      throw new Error('collector_target_products 조회 실패: ' + error.message
+        + ' — Supabase migration collector_full_catalog_rotation 적용 여부를 확인하세요.');
+    }
+
+    (data || []).forEach(r => {
+      const key = `${r.product_id}|${r.mall}`;
+      keys.add(key);
+      if (r.tier === 'rotation') rotationKeys.add(key);
+      else dailyKeys.add(key);
+    });
+    if (!data || data.length < PAGE) break;
+  }
+
+  return {
+    keys,
+    dailyKeys,
+    rotationKeys,
+    rotationDays: meta.rotationDays,
+    rotationBucket: meta.rotationBucket
+  };
 }
 
 /* ─── 진행 상태 (price_job_state) ─────────────────────────────
@@ -2998,74 +3111,72 @@ async function run() {
 
 /** 잠금을 쥔 상태에서 도는 본체. 예외는 호출부(run)가 finally 로 받는다. */
 async function runLocked(state, lockToken) {
-  const savedMalls = (state && state.last_result && state.last_result.malls) || {};
-  const coupangSaved = state
-    ? { job_date: state.job_date, cursor_key: state.cursor_key, processed: state.processed, total: state.total,
-        status: state.status,
+  /*
+   * 오늘 수집 대상의 정체성을 먼저 정한다. 같은 날짜라도 2026-09-21 이전
+   * completed 상태에는 targetSignature 가 없으므로 새 회전 정책 배포 즉시
+   * 기존 커서를 버리고 다시 시작한다.
+   */
+  const targetMeta = collectorTargetMeta(TODAY);
+  const previousTargetSignature = state && state.last_result && state.last_result.targetSignature;
+  const targetStateMatches = !state || state.job_date !== TODAY
+    || previousTargetSignature === targetMeta.signature;
+  const resumeState = targetStateMatches ? state : null;
+
+  if (state && state.job_date === TODAY && !targetStateMatches) {
+    console.log(`\n[진행] 오늘 수집 대상 정책이 바뀌었습니다 — 기존 상태를 리셋하고 새 대상 집합으로 시작합니다.`);
+    console.log(`       이전=${previousTargetSignature || '(없음)'} / 현재=${targetMeta.signature}`);
+  }
+
+  const savedMalls = (resumeState && resumeState.last_result && resumeState.last_result.malls) || {};
+  const coupangSaved = resumeState
+    ? { job_date: resumeState.job_date, cursor_key: resumeState.cursor_key,
+        processed: resumeState.processed, total: resumeState.total,
+        status: resumeState.status,
         last_result: {
-          failedKeywords: (state.last_result || {}).failedKeywords || [],
+          failedKeywords: (resumeState.last_result || {}).failedKeywords || [],
           /*
            * 오늘 앞선 실행이 확보한 상품 목록. 이걸 안 넘기면 이어받기 실행이
-           * 빈 집합에서 시작해 성공률이 자기 몫으로 축소된다 —
-           * 2026-09-01 에 실제로 났던 사고(13.7%)와 같은 형태다.
+           * 빈 집합에서 시작해 성공률이 자기 몫으로 축소된다.
            */
           collectorCovered: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorCovered) || [],
           collectorAttempted: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorAttempted) || [],
           secondPassDone: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
             && savedMalls['쿠팡'].last_result.secondPassDone)
-            || (state.last_result && state.last_result.secondPassDone) || [],
+            || (resumeState.last_result && resumeState.last_result.secondPassDone) || [],
           facetDryGroups: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
             && savedMalls['쿠팡'].last_result.facetDryGroups) || [],
-          /* 오늘 확정된 옵션 실패 목록 (P1) — 이어받기 실행이 같은 상품을 다시 파지 않게. */
           terminalOptionFailures: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
             && savedMalls['쿠팡'].last_result.terminalOptionFailures) || [],
           optionMissStreaks: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
             && savedMalls['쿠팡'].last_result.optionMissStreaks) || {}
         } }
     : null;
-  /*
-   * ★ ADPICK 도 하루 누적 목록을 이어받아야 한다 (2026-09-03 실측 버그).
-   *
-   *   여기서 last_result 를 새로 만들면서 failedKeywords 만 담고 있었다.
-   *   그래서 runMallCollection 이 priorCollectorCovered 를 빈 배열로 시작했고,
-   *   ADPICK 성공 상품 수가 매 실행 그 실행 몫으로 축소됐다.
-   *
-   *   실측: 2026-09-03 한 실행이 231개를 확보해 저장했는데, 곧이은 다음 실행이
-   *   7개만 확보하자 상태의 collectorCovered 가 231 → 7 로 덮였다.
-   *   쿠팡 경로(coupangSaved)는 이미 세 키를 다 넘기고 있었다 — 같은 모양으로 맞춘다.
-   *   (원장 자체는 멀쩡하다. 잘못되는 것은 성공률 보고다.)
-   */
+
   const adpickSaved = savedMalls['ADPICK']
     ? {
-        job_date: state.job_date, ...savedMalls['ADPICK'],
+        job_date: resumeState.job_date, ...savedMalls['ADPICK'],
         last_result: {
           failedKeywords: savedMalls['ADPICK'].failedKeywords || [],
           collectorCovered: savedMalls['ADPICK'].collectorCovered || [],
           collectorAttempted: savedMalls['ADPICK'].collectorAttempted || [],
           secondPassDone: (savedMalls['ADPICK'].last_result || {}).secondPassDone || [],
           facetDryGroups: (savedMalls['ADPICK'].last_result || {}).facetDryGroups || [],
-          /* 오늘 확정된 옵션 실패 목록 (P1) — 쿠팡 경로와 같은 모양으로 맞춘다. */
           terminalOptionFailures: (savedMalls['ADPICK'].last_result || {}).terminalOptionFailures || [],
           optionMissStreaks: (savedMalls['ADPICK'].last_result || {}).optionMissStreaks || {}
         }
       }
     : null;
 
-  /*
-   * ★ 두 몰이 모두 오늘 완료 상태여야만 "이미 완료"로 아무것도 하지 않는다.
-   *   쿠팡만 완료고 ADPICK이 아직이면(또는 그 반대면) 계속 진행해야 한다 —
-   *   예전처럼 top-level status 하나만 보면 쿠팡이 끝나는 순간 ADPICK 은
-   *   같은 날 다시는 시도되지 않는다.
-   */
-  const coupangDoneToday = state && state.job_date === TODAY && state.status === 'completed';
-  const adpickDoneToday  = state && state.job_date === TODAY
+  const coupangDoneToday = resumeState && resumeState.job_date === TODAY
+    && resumeState.status === 'completed';
+  const adpickDoneToday  = resumeState && resumeState.job_date === TODAY
     && savedMalls['ADPICK'] && savedMalls['ADPICK'].status === 'completed';
 
   if (coupangDoneToday && adpickDoneToday) {
     console.log(`\n[진행] ${TODAY} (KST) 작업은 두 몰 모두 이미 완료되었습니다`
-      + ` — 쿠팡 ${state.processed}/${state.total}, ADPICK ${savedMalls['ADPICK'].processed}/${savedMalls['ADPICK'].total}.`
+      + ` — 쿠팡 ${resumeState.processed}/${resumeState.total}, ADPICK ${savedMalls['ADPICK'].processed}/${savedMalls['ADPICK'].total}.`
       + ` 이번 실행은 아무 상품도 처리하지 않습니다.`);
-    console.log('       (다음 작업은 KST 자정 이후 실행부터 시작합니다)');
+    console.log(`       대상 정책: ${targetMeta.signature}`);
     return;
   }
 
@@ -3079,19 +3190,34 @@ async function runLocked(state, lockToken) {
    *   PRICE_INCLUDE_BULK_SEED=1(비상 우회) 과 PRICE_SEED_ONLY=1(시드 모드)은
    *   대상이 카탈로그 전체이므로 예전처럼 전체 스캔을 그대로 쓴다.
    */
-  const eligible = SEED_ONLY ? null : await fetchCollectorEligibleKeys();
+  const target = SEED_ONLY ? null : await fetchCollectorTargetKeys(targetMeta);
   const catalog = await countCatalog();
 
   let products;
-  if (eligible) {
-    products = await fetchProductsByIds(eligible);
-    console.log(`\n[collector 대상 필터] bulk seed 제외 — 실제 관측 카탈로그만 일일 갱신합니다.`);
-    console.log(`  대상 키 ${eligible.size}개 → products ${products.length}행을 읽었습니다`
-      + `${catalog ? ` (카탈로그 전체 ${catalog.total}행 중)` : ''}`);
+  let dailyTargetProducts = 0;
+  let rotationTargetProducts = 0;
+
+  if (target) {
+    products = await fetchProductsByIds(target.keys);
+    dailyTargetProducts = target.dailyKeys.size;
+    rotationTargetProducts = target.rotationKeys.size;
+
+    if (targetMeta.mode === 'rotation') {
+      console.log(`\n[collector 대상] 상시 추적 + 전체 카탈로그 회전 수집`);
+      console.log(`  상시 추적 ${dailyTargetProducts}개 + 회전 ${rotationTargetProducts}개`
+        + ` = 오늘 대상 ${target.keys.size}개`);
+      console.log(`  회전 버킷 ${target.rotationBucket + 1}/${target.rotationDays}`
+        + ` — 지원 몰 전체를 ${target.rotationDays}일 주기로 나눠 갱신합니다.`);
+    } else {
+      console.log(`\n[collector 대상] 상시 추적 카탈로그만 갱신합니다 (회전 수집 비활성).`);
+      console.log(`  대상 키 ${target.keys.size}개 → products ${products.length}행`);
+    }
+    if (catalog) console.log(`  카탈로그 전체 ${catalog.total}행 중 오늘 ${products.length}행을 읽었습니다.`);
   } else {
     products = await fetchAllProducts();
+    dailyTargetProducts = products.length;
     if (!SEED_ONLY) {
-      console.warn('\n[collector 대상 필터] PRICE_INCLUDE_BULK_SEED=1 — 전체 products 를 수집 대상으로 사용합니다.');
+      console.warn('\n[collector 대상] PRICE_INCLUDE_BULK_SEED=1 — 전체 products 를 한 번에 수집 대상으로 사용합니다.');
     }
   }
 
@@ -3273,7 +3399,14 @@ async function runLocked(state, lockToken) {
       failedKeywords: coupangResult.failedKeywords, // 쿠팡 몫(하위호환)
       secondPassDone: coupangResult.secondPassDone || [],   // 쿠팡 2차 진행(하위호환 경로)
       failureCategories: mergedFailureCategories,
-      productsTotal: products.length,
+      targetSignature: targetMeta.signature,
+      targetMode: targetMeta.mode,
+      rotationDays: targetMeta.rotationDays,
+      rotationBucket: targetMeta.rotationBucket,
+      dailyTargetProducts,
+      rotationTargetProducts,
+      productsTotal: catalog ? catalog.total : products.length,
+      targetLoadedProducts: products.length,
       coupangTotal: coupangRows.length,
       adpickTotal: adpickRows.length,
       otherTotal: otherRows.length,
@@ -3346,7 +3479,13 @@ async function runLocked(state, lockToken) {
   const report = {
     execAt: kstNowStamp(),
     date: TODAY,
-    productsTotal: products.length,
+    productsTotal: catalog ? catalog.total : products.length,
+    targetLoadedProducts: products.length,
+    dailyTargetProducts,
+    rotationTargetProducts,
+    rotationDays: targetMeta.rotationDays,
+    rotationBucket: targetMeta.rotationBucket,
+    targetMode: targetMeta.mode,
     otherTotal: otherRows.length,
     otherByMall: Object.fromEntries(otherByMall),
     malls: [coupangResult, adpickResult],
@@ -3921,6 +4060,8 @@ module.exports = {
    * 검증하지 못한다. 노출만 하고 동작은 손대지 않는다.
    */
   fetchCoupangAll, fetchAdpickAll,
+  // 전체 카탈로그 회전 수집 — 순수 함수는 test-price-batch 가 고정한다.
+  rotationBucketForDate, collectorTargetMeta, BULK_ROTATION_DAYS,
   // 리포트 집계의 계약 — 테스트가 이 둘로 불변조건을 고정한다.
   reportInvariantErrors, productSuccessRate, todayPriceRate,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
