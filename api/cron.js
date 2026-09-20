@@ -84,6 +84,14 @@ const CRON_LIMIT = 10;
  */
 const DEMAND_SEED_MAX = Number(process.env.CRON_DEMAND_SEED_MAX) || 6;
 
+/*
+ * 홈 AI 쇼핑 예시의 Sony WH-1000XM6 링크와 같은 상품군을 하루 한 번 새로 조회한다.
+ * Vercel Cron이 이 엔드포인트를 하루 한 번 호출하고, CRON_COUPANG.forceRefresh=true라
+ * 신선한 쿠팡 파트너스 검색 응답(제휴 productUrl 포함)으로 캐시를 갱신한다.
+ * 실제 클릭 대상은 public/index.html의 고정 쿠팡 파트너스 단축 링크다.
+ */
+const HERO_COUPANG_KEYWORD = 'Sony WH-1000XM6';
+
 async function demandKeywords() {
   try {
     const { isValidSuggestion } = require('./_search');
@@ -117,7 +125,7 @@ async function collectTargets() {
   }
   const demand = await demandKeywords();
   // 순서가 곧 우선순위다 — 시간 예산이 모자라면 뒤쪽(수요 시딩)이 다음 실행으로 밀린다.
-  return [...new Set([...monthly, ...TODAY_PICKS, ...demand])];
+  return [...new Set([HERO_COUPANG_KEYWORD, ...monthly, ...TODAY_PICKS, ...demand])];
 }
 
 module.exports = Object.assign(async function handler(req, res) {
