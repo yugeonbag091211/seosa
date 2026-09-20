@@ -316,9 +316,8 @@ function chainFor(role) {
 /**
  * 지금 시도해 볼 만한 모델만 남긴다.
  *
- * ★ 전부 걸러지면 거르지 않은 사슬을 그대로 쓴다. 최적화 때문에 아무것도
- *   시도하지 않는 것이 가장 나쁜 결과다 — 기억이 틀렸을 수도 있으니
- *   한 번은 부딪혀 본다.
+ * 404로 확인된 모델은 만료 전 재시도하지 않는다. 모두 404라면 즉시
+ * 결정론 fallback으로 넘긴다. 만료 후 다시 탐색할 수 있다.
  */
 function usableChain(chain, now) {
   const live = chain.filter(m => {
@@ -328,7 +327,7 @@ function usableChain(chain, now) {
     if (!isFree(m)) return false;
     return true;
   });
-  return live.length ? live : chain.slice();
+  return live;
 }
 
 /**
@@ -468,9 +467,30 @@ function retryAfterMs(response) {
   return 0;
 }
 
+// fetch가 헤더만 반환한 뒤 본문에서 멈추거나 AbortSignal을 무시하는 경우도
+// 요청 예산 안에서 끝낸다. race의 원래 Promise에는 rejection handler가 붙는다.
+function withinDeadline(promise, deadline, controller) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    controller.abort();
+    return Promise.reject(Object.assign(new Error('deadline'), { name: 'AbortError' }));
+  }
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(Object.assign(new Error('deadline'), { name: 'AbortError' }));
+      }, remaining);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
 function coolProvider(provider, model, reason, retryMs) {
   let ms = 0;
   if (reason === 'auth') ms = AUTH_COOLDOWN_MS;
+  else if (reason === 'model') ms = DEAD_MODEL_MS;
   else if (reason === 'quota') ms = QUOTA_COOLDOWN_MS;
   else if (['rate', 'server', 'timeout', 'network', 'parse', 'empty'].indexOf(reason) >= 0) ms = PROVIDER_COOLDOWN_MS;
   if (retryMs) ms = Math.max(ms, Math.min(MAX_RETRY_AFTER_MS, retryMs));
@@ -488,25 +508,23 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
   if (!acquireProvider(provider, model)) {
     return { ok: false, reason: 'busy', advance: true };
   }
+  try {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const deadline = Date.now() + timeoutMs;
   const startedAt = Date.now();
   state.calls++; state.freeCalls++;
   let r;
   try {
-    r = await fetch(request.url, {
+    r = await withinDeadline(fetch(request.url, {
       method: 'POST', signal: ac.signal, headers: request.headers,
       body: JSON.stringify(request.body)
-    });
+    }), deadline, ac);
   } catch (e) {
     state.failures++; state.totalMs += Date.now() - startedAt;
     const reason = e && e.name === 'AbortError' ? 'timeout' : 'network';
     coolProvider(provider, model, reason);
     console.warn(`[llm] ${provider}/${model} ${reason}`);
     return { ok: false, reason, advance: true };
-  } finally {
-    clearTimeout(timer);
-    releaseProvider(provider, model);
   }
 
   state.totalMs += Date.now() - startedAt;
@@ -514,17 +532,18 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
     state.failures++;
     const cls = classifyStatus((r && r.status) || 0);
     let detail = '';
-    try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
+    try { detail = redact(String(await withinDeadline(r.text(), deadline, ac)).slice(0, 200)); } catch (e) { detail = ''; }
     coolProvider(provider, model, cls.reason, retryAfterMs(r));
     console.warn(`[llm] ${provider}/${model} ${(r && r.status) || 0} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     return { ok: false, reason: cls.reason, advance: true };
   }
 
   let data;
-  try { data = await r.json(); }
+  try { data = await withinDeadline(r.json(), deadline, ac); }
   catch (e) {
-    state.failures++; coolProvider(provider, model, 'parse');
-    return { ok: false, reason: 'parse', advance: true };
+    const reason = e && e.name === 'AbortError' ? 'timeout' : 'parse';
+    state.failures++; coolProvider(provider, model, reason);
+    return { ok: false, reason, advance: true };
   }
   let out;
   try { out = parse(data); }
@@ -538,6 +557,9 @@ async function providerFetch(provider, model, request, timeoutMs, parse) {
   }
   if (out.usage) { state.inTok += out.usage.inputTokens; state.outTok += out.usage.outputTokens; }
   return Object.assign({ ok: true }, out);
+  } finally {
+    releaseProvider(provider, model);
+  }
 }
 
 function openAiUsage(data) {
@@ -607,9 +629,10 @@ async function attempt(model, opts, timeoutMs) {
   if (!acquireProvider('openrouter', model)) {
     return { ok: false, reason: 'busy', advance: true };
   }
+  try {
 
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const deadline = Date.now() + timeoutMs;
 
   const body = {
     model,
@@ -627,7 +650,7 @@ async function attempt(model, opts, timeoutMs) {
 
   let r;
   try {
-    r = await fetch(ENDPOINT, {
+    r = await withinDeadline(fetch(ENDPOINT, {
       method: 'POST',
       signal: ac.signal,
       headers: {
@@ -635,7 +658,7 @@ async function attempt(model, opts, timeoutMs) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(body)
-    });
+    }), deadline, ac);
   } catch (e) {
     state.failures++;
     state.totalMs += Date.now() - startedAt;
@@ -646,9 +669,6 @@ async function attempt(model, opts, timeoutMs) {
     coolProvider('openrouter', model, 'network');
     console.warn(`[llm] ${model} 연결 실패: ${redact(e && e.message)}`);
     return { ok: false, reason: 'network', advance: true };
-  } finally {
-    clearTimeout(timer);
-    releaseProvider('openrouter', model);
   }
 
   state.totalMs += Date.now() - startedAt;
@@ -658,7 +678,7 @@ async function attempt(model, opts, timeoutMs) {
     const status = (r && r.status) || 0;
     const cls = classifyStatus(status);
     let detail = '';
-    try { detail = redact(String(await r.text()).slice(0, 200)); } catch (e) { detail = ''; }
+    try { detail = redact(String(await withinDeadline(r.text(), deadline, ac)).slice(0, 200)); } catch (e) { detail = ''; }
     console.warn(`[llm] ${model} ${status} ${cls.reason}${detail ? ` — ${detail}` : ''}`);
     if (cls.reason === 'model') state.dead.set(model, Date.now() + DEAD_MODEL_MS);
     coolProvider('openrouter', model, cls.reason, retryAfterMs(r));
@@ -666,12 +686,13 @@ async function attempt(model, opts, timeoutMs) {
   }
 
   let data;
-  try { data = await r.json(); }
+  try { data = await withinDeadline(r.json(), deadline, ac); }
   catch (e) {
+    const reason = e && e.name === 'AbortError' ? 'timeout' : 'parse';
     state.failures++;
-    coolProvider('openrouter', model, 'parse');
-    console.warn(`[llm] ${model} 응답 파싱 실패`);
-    return { ok: false, reason: 'parse', advance: true };
+    coolProvider('openrouter', model, reason);
+    console.warn(`[llm] ${model} 응답 ${reason}`);
+    return { ok: false, reason, advance: true };
   }
 
   const choice = ((data && data.choices) || [])[0] || {};
@@ -707,6 +728,9 @@ async function attempt(model, opts, timeoutMs) {
   if (cost) state.costUsd += cost;
 
   return { ok: true, text, finish: String(choice.finish_reason || ''), usage };
+  } finally {
+    releaseProvider('openrouter', model);
+  }
 }
 
 /**
