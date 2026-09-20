@@ -262,11 +262,16 @@ const EXTERNAL_COLS = 'id, source, source_post_id, source_url, title, price, ori
   + ' product_url, image_url, posted_at, matched_product_id, match_confidence, deal_score,'
   + ' verification_status, price_vs_30d_avg, price_vs_90d_low, average_30d, low_90d,'
   + ' previous_price, history_observation_count, history_last_observed_at, source_count, sources,'
-  + ' metadata, verification_reasons, last_verified_at';
-/** Community-sourced cards stay dark until this is set on the deployment (collector is_exposed is the other switch). */
+  + ' metadata, verification_reasons, last_verified_at, is_exposed, is_primary';
+/** 검증된 외부 딜은 최대 72시간, 커뮤니티 발견 피드는 기본 24시간만 노출한다. */
 const EXTERNAL_MAX_AGE_HOURS = 72;
+const EXTERNAL_COMMUNITY_MAX_AGE_HOURS = 24;
 
-function externalPublicEnabled() { return process.env.EXTERNAL_HOTDEAL_PUBLIC === '1'; }
+/*
+ * 외부 커뮤니티 피드는 사용자가 다시 켜기로 확정했다 (2026-09-20).
+ * 명시적으로 0을 넣으면 즉시 끌 수 있게 kill switch는 남긴다.
+ */
+function externalPublicEnabled() { return process.env.EXTERNAL_HOTDEAL_PUBLIC !== '0'; }
 
 function externalStatus(status) {
   return status === 'STRONG_DEAL' ? 'VERIFIED_HOT'
@@ -284,6 +289,8 @@ function externalReason(row) {
 function toExternalListItem(r) {
   const meta = obj(r.metadata);
   return {
+    verified: true,
+    communityOnly: false,
     id: `external:${r.id}`,
     status: externalStatus(r.verification_status),
     score: Number(r.deal_score),
@@ -333,6 +340,66 @@ function toExternalListItem(r) {
   };
 }
 
+/**
+ * SEOSA 가격 이력과 매칭되지 않은 커뮤니티 글.
+ *
+ * 이 항목은 «핫딜 검증 완료»라고 부르지 않는다. 원문 제목·가격·출처만 보여주고
+ * 명시적으로 verificationStatus=UNMATCHED / communityOnly=true 를 내려 프론트가
+ * «커뮤니티 발견 · 가격 검증 전»이라고 표시하게 한다.
+ */
+function toCommunityListItem(r) {
+  return {
+    id: `community:${r.id}`,
+    status: 'COMMUNITY',
+    score: null,
+    title: r.title,
+    image: r.image_url || '',
+    mall: r.mall || '',
+    price: Number(r.price) || 0,
+    listPrice: Number(r.original_price) || 0,
+    reason: '커뮤니티에서 발견한 핫딜 · SEOSA 가격 검증 전',
+    productId: '',
+    vendorItemId: '',
+    url: r.product_url || r.source_url || '',
+    checkedAt: r.last_verified_at || r.posted_at,
+    source: r.source,
+    sourceUrl: r.source_url || '',
+    productUrl: r.product_url || '',
+    dealScore: null,
+    matchConfidence: Number(r.match_confidence) || 0,
+    verificationStatus: r.verification_status || 'UNMATCHED',
+    verified: false,
+    communityOnly: true,
+    verificationReasons: arr(r.verification_reasons),
+    postedAt: r.posted_at,
+    priceVs30dAvg: null,
+    priceVs90dLow: null,
+    sourceCount: Math.max(1, Number(r.source_count) || 1),
+    sources: arr(r.sources),
+    badges: ['커뮤니티 발견', '가격 검증 전'],
+    signals: {
+      priceDropPercent: null,
+      priceDropAmount: null,
+      referencePrice: null,
+      referenceKind: null,
+      previousPrice: null,
+      nearHistoricalLow: false,
+      observedLow: null,
+      historyCount: 0,
+      historyDays: 0,
+      freshness: null,
+      staleDays: 0,
+      currentObserved: false
+    },
+    offerCount: Math.max(1, Number(r.source_count) || 1),
+    otherOfferCount: 0,
+    lowestPrice: Number(r.price) || 0,
+    lowestMall: r.mall || '',
+    isLowest: true,
+    matchReason: obj(r.metadata).matchReason || ''
+  };
+
+
 /*
  * ★ 표가 «없을» 때만 참이다 — 전수 감사(PR #32)와 같은 규칙 (api/_dberror.js).
  *   "schema cache" 낱말만 보면 DB 일시 장애(PGRST002)도 마이그레이션 전으로 읽혀
@@ -344,27 +411,59 @@ function isMissingExternalTable(message) {
 
 async function loadExternal(queryParams, minScore, limit) {
   if (!externalPublicEnabled()) return { items: [], pending: false, enabled: false };
+
+  /*
+   * 두 층을 한 응답에 담는다.
+   *   1) is_exposed + 검증 상태 통과 → 기존 «SEOSA 검증» 카드
+   *   2) 아직 매칭되지 않은 최신 커뮤니티 글 → «가격 검증 전» 카드
+   *
+   * 2번을 1번처럼 보이게 하지 않는 것이 핵심이다. SUSPICIOUS_PRICE 는 원문 가격
+   * 파싱/옵션 문제 가능성이 있으므로 커뮤니티 피드에서도 제외한다.
+   */
   const maxAgeHours = Math.max(1, Math.min(168,
     Number(process.env.EXTERNAL_HOTDEAL_MAX_AGE_HOURS) || EXTERNAL_MAX_AGE_HOURS));
+  const communityAgeHours = Math.max(1, Math.min(72,
+    Number(process.env.EXTERNAL_HOTDEAL_COMMUNITY_MAX_AGE_HOURS) || EXTERNAL_COMMUNITY_MAX_AGE_HOURS));
+  const sinceHours = Math.max(maxAgeHours, communityAgeHours);
+
   let query = supabase.from('external_hotdeals')
     .select(EXTERNAL_COLS)
-    .eq('is_exposed', true)
-    .in('verification_status', EXTERNAL_VISIBLE)
     .eq('is_primary', true)
-    .gte('deal_score', Math.max(60, minScore))
-    // A community post is a moment, not a listing. Old posts are usually sold out.
-    .gte('posted_at', new Date(Date.now() - maxAgeHours * 3600000).toISOString())
-    .order('deal_score', { ascending: false })
+    .gte('posted_at', new Date(Date.now() - sinceHours * 3600000).toISOString())
     .order('posted_at', { ascending: false })
-    .limit(limit);
+    .limit(Math.min(MAX_LIMIT * 4, Math.max(limit * 4, limit)));
   if (queryParams.source) query = query.eq('source', String(queryParams.source).slice(0, 60));
   if (queryParams.mall) query = query.eq('mall', String(queryParams.mall).slice(0, 40));
+
   const { data, error } = await query;
   if (error && (isMissingExternalTable(error.message) || isMissingColumn(error.message))) {
     return { items: [], pending: true, enabled: true };
   }
   if (error) throw new Error(error.message);
-  return { items: (data || []).map(toExternalListItem), pending: false, enabled: true };
+
+  const now = Date.now();
+  const verifiedSince = now - maxAgeHours * 3600000;
+  const communitySince = now - communityAgeHours * 3600000;
+  const items = [];
+
+  for (const row of data || []) {
+    const posted = Date.parse(row.posted_at || '');
+    if (!Number.isFinite(posted) || Number(row.price) <= 0 || !row.source_url) continue;
+
+    const verified = row.is_exposed === true
+      && EXTERNAL_VISIBLE.indexOf(row.verification_status) > -1
+      && Number(row.deal_score) >= Math.max(60, minScore)
+      && posted >= verifiedSince;
+
+    if (verified) items.push(toExternalListItem(row));
+    else if (posted >= communitySince && row.verification_status !== 'SUSPICIOUS_PRICE') {
+      items.push(toCommunityListItem(row));
+    }
+
+    if (items.length >= limit) break;
+  }
+
+  return { items, pending: false, enabled: true };
 }
 
 /**
@@ -571,6 +670,6 @@ module.exports = async function handler(req, res) {
 module.exports._internal = {
   VISIBLE, VISIBLE_LIFECYCLE, SORTS, DEFAULT_SORT, MAX_FAMILY_RUN,
   toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId,
-  toExternalListItem, externalStatus, loadExternal, isMissingExternalTable,
+  toExternalListItem, toCommunityListItem, externalStatus, loadExternal, isMissingExternalTable,
   byDailyDrop, dropAmountOf
 };
