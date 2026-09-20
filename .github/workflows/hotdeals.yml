@@ -83,6 +83,7 @@ jobs:
           EXTERNAL_HOTDEAL_SHADOW: ${{ vars.EXTERNAL_HOTDEAL_SHADOW }}
           EXTERNAL_HOTDEAL_PUBLIC_SOURCES: ${{ vars.EXTERNAL_HOTDEAL_PUBLIC_SOURCES }}
           EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS: ${{ vars.EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS }}
+          EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES: ${{ vars.EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES }}
         run: |
           node scripts/collect-external-hotdeals.js \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}

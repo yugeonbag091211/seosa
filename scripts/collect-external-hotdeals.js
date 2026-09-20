@@ -49,6 +49,12 @@ const GROUP_WINDOW_HOURS = 72;
  */
 const AFFILIATE_LOOKUP_LIMIT = Math.max(0, Math.min(30,
   Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS) || 12));
+/**
+ * 한 상품에서 검색어를 바꿔 재시도할 수 있지만 전체 호출은 별도 상한으로 막는다.
+ * 기본 24회면 최대 12개 딜을 평균 2번씩 찾을 수 있다.
+ */
+const AFFILIATE_SEARCH_LIMIT = Math.max(0, Math.min(60,
+  Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES) || 24));
 const AFFILIATE_MATCH_THRESHOLD = 0.90;
 
 function log(message, extra) {
@@ -197,6 +203,56 @@ function affiliateCandidateProduct(item) {
 }
 
 /**
+ * 제휴 검색용 제목 정리.
+ *
+ * 첫 시도는 수량/용량/모델명을 절대 버리지 않는다. 기존 searchPhraseFromTitle()
+ * 은 재수집용이라 500ml·40개 같은 옵션 토큰을 의도적으로 제거하는데, 외부 핫딜
+ * 제휴 매칭에서는 바로 그 값이 동일상품을 찾는 핵심이다.
+ */
+function cleanAffiliateQuery(value) {
+  return String(value || '')
+    .replace(/\b\d{1,3}(?:\.\d+)?\s*%\s*(?:할인)?/gi, ' ')
+    .replace(/\b(?:무료배송|무배|핫딜|특가)\b/gi, ' ')
+    .replace(/[\[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+    .trim();
+}
+
+/**
+ * 한 상품을 한 검색어로만 찾지 않는다.
+ *
+ * 1) 전체 제목(수량·용량·모델 유지) — 가장 정확한 SKU 검색
+ * 2) 앞 5개 핵심 토큰 — 쇼핑몰 제목 장식/판매자 문구가 다른 경우
+ * 3) 앞 3개 핵심 토큰 — 마지막 재현율 보강
+ *
+ * 중복은 제거하고 최대 3개만 쓴다. 매칭 문턱(0.90)은 그대로라 검색 범위만
+ * 넓어지고 잘못된 제휴 상품을 승인하는 기준은 느슨해지지 않는다.
+ */
+function affiliateSearchQueries(deal) {
+  const title = String(deal && deal.title || '');
+  const out = [];
+  const add = q => {
+    const v = cleanAffiliateQuery(q);
+    if (v && out.indexOf(v) < 0) out.push(v);
+  };
+  add(title);
+  add(Shop.searchPhraseFromTitle(title, 5));
+  add(Shop.searchPhraseFromTitle(title, 3));
+  return out.slice(0, 3);
+}
+
+function affiliateCandidateKey(item) {
+  return [
+    String(item && item.mall || ''),
+    String(item && item.productId || ''),
+    String(item && item.vendorItemId || ''),
+    String(item && item.link || '')
+  ].join('|');
+}
+
+/**
  * 미매칭 커뮤니티 딜을 SEOSA의 기존 제휴 검색 통로(쿠팡 Partners + ADPICK)로
  * 한 번 더 찾는다. 외부 글의 일반 링크를 제휴 링크처럼 재사용하지 않는다.
  *
@@ -209,7 +265,9 @@ async function enrichAffiliateRows(deals, rows, options) {
   const save = opts.saveProducts || Shop.saveProducts;
   const lookupLimit = Math.max(0, Math.min(30,
     Number.isFinite(opts.lookupLimit) ? opts.lookupLimit : AFFILIATE_LOOKUP_LIMIT));
-  const stats = { attempted: 0, matched: 0, saved: 0, skipped: 0, errors: 0 };
+  const searchLimit = Math.max(0, Math.min(60,
+    Number.isFinite(opts.searchLimit) ? opts.searchLimit : AFFILIATE_SEARCH_LIMIT));
+  const stats = { attempted: 0, searches: 0, matched: 0, saved: 0, skipped: 0, errors: 0 };
 
   for (let i = 0; i < (rows || []).length; i++) {
     const row = rows[i];
@@ -218,32 +276,62 @@ async function enrichAffiliateRows(deals, rows, options) {
     row.metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
 
     if (row.metadata.affiliateUrl || row.matched_product_id) { stats.skipped++; continue; }
-    if (stats.attempted >= lookupLimit) break;
+    if (stats.attempted >= lookupLimit || stats.searches >= searchLimit) break;
 
-    const keyword = Shop.searchPhraseFromTitle(deal.title, 3);
-    if (!keyword) { stats.skipped++; continue; }
+    const queries = affiliateSearchQueries(deal);
+    if (!queries.length) { stats.skipped++; continue; }
 
     stats.attempted++;
     try {
-      const result = await search(keyword, {
-        coupangLimit: 10,
-        coupangOpts: { source: 'external-hotdeal', maxWaitMs: 15000 },
-        adpickLimit: 10,
-        adpickOpts: { source: 'external-hotdeal', maxWaitMs: 15000 }
-      });
-      const candidates = (result && result.items || [])
-        .filter(it => it && it.link && it.productId && Number(it.lprice) > 0);
-      if (!candidates.length) continue;
+      const candidateMap = new Map();
+      let match = null;
+      let chosen = null;
+      let matchedKeyword = '';
+      let matchedFrom = 'api';
 
-      const products = candidates.map(affiliateCandidateProduct);
-      const match = Radar.matchProduct(deal, products, AFFILIATE_MATCH_THRESHOLD);
-      if (!match.product) continue;
+      for (const keyword of queries) {
+        if (stats.searches >= searchLimit) break;
+        stats.searches++;
 
-      const chosen = candidates.find(it =>
-        String(it.productId) === String(match.product.product_id)
-        && String(it.mall || '') === String(match.product.mall || '')
-      );
-      if (!chosen) continue;
+        const result = await search(keyword, {
+          coupangLimit: 10,
+          coupangOpts: { source: 'external-hotdeal', maxWaitMs: 15000 },
+          adpickLimit: 10,
+          adpickOpts: { source: 'external-hotdeal', maxWaitMs: 15000 }
+        });
+
+        for (const item of (result && result.items || [])) {
+          if (!item || !item.link || !item.productId || !(Number(item.lprice) > 0)) continue;
+          const key = affiliateCandidateKey(item);
+          if (!candidateMap.has(key)) candidateMap.set(key, item);
+        }
+
+        const candidates = [...candidateMap.values()];
+        if (!candidates.length) continue;
+        const products = candidates.map(affiliateCandidateProduct);
+        // 커뮤니티 제목의 "77%할인/특가" 같은 홍보 문구는 상품 identity가 아니다.
+        // 수량·용량·모델은 보존한 채 홍보 문구만 걷어 동일상품 판정에 사용한다.
+        const matchDeal = { ...deal, title: cleanAffiliateQuery(deal.title) || deal.title };
+        match = Radar.matchProduct(matchDeal, products, AFFILIATE_MATCH_THRESHOLD);
+        if (!match.product) continue;
+
+        chosen = candidates.find(it =>
+          String(it.productId) === String(match.product.product_id)
+          && String(it.mall || '') === String(match.product.mall || '')
+          && String(it.link || '') === String(match.product.link || '')
+        ) || candidates.find(it =>
+          String(it.productId) === String(match.product.product_id)
+          && String(it.mall || '') === String(match.product.mall || '')
+        );
+
+        if (chosen) {
+          matchedKeyword = keyword;
+          matchedFrom = chosen._source || (result && result.from) || 'api';
+          break;
+        }
+      }
+
+      if (!chosen || !match || !match.product) continue;
 
       const meta = {
         ...row.metadata,
@@ -253,13 +341,14 @@ async function enrichAffiliateRows(deals, rows, options) {
         affiliateProductId: String(chosen.productId || ''),
         affiliateVendorItemId: String(chosen.vendorItemId || ''),
         affiliateConfidence: Number(match.confidence) || 0,
-        affiliateMatchReason: String(match.reason || '')
+        affiliateMatchReason: String(match.reason || ''),
+        affiliateSearchQuery: String(matchedKeyword || '').slice(0, 80)
       };
       row.metadata = meta;
 
       // 정확한 제휴 후보는 다음 실행부터 가격 이력 검증도 받을 수 있게 catalog/원장에 남긴다.
-      const saved = await save(keyword, [chosen], {
-        from: chosen._source || (result && result.from) || 'api',
+      const saved = await save(matchedKeyword, [chosen], {
+        from: matchedFrom,
         source: 'external-hotdeal'
       });
       if (saved && Number(saved.saved) > 0) stats.saved += Number(saved.saved);
@@ -383,7 +472,7 @@ function summaryText(s) {
   lines.push(`Mode: ${s.dryRun ? 'dry-run' : 'write'} · ${s.shadow ? 'shadow (verified exposure off; community feed may still show unverified rows)' : `public sources=[${s.publicSources.join(',')}]`}`
     + ` · written=${s.written} · carried=${s.carriedFromDb}${s.tableMissing ? ' · external_hotdeals table missing' : ''}`);
   if (s.affiliate) {
-    lines.push(`Affiliate: attempted=${s.affiliate.attempted} matched=${s.affiliate.matched} saved=${s.affiliate.saved} errors=${s.affiliate.errors}`);
+    lines.push(`Affiliate: attempted=${s.affiliate.attempted} searches=${s.affiliate.searches || 0} matched=${s.affiliate.matched} saved=${s.affiliate.saved} errors=${s.affiliate.errors}`);
   }
   return lines.join('\n');
 }
@@ -429,7 +518,7 @@ async function main(options) {
   let rows = [];
   let carried = 0;
   let tableMissing = false;
-  let affiliate = { attempted: 0, matched: 0, saved: 0, skipped: 0, errors: 0 };
+  let affiliate = { attempted: 0, searches: 0, matched: 0, saved: 0, skipped: 0, errors: 0 };
   if (fetched.items.length) {
     const products = await loadProducts(db);
     const matches = fetched.items.map(deal => Radar.matchProduct(deal, products));
@@ -439,11 +528,12 @@ async function main(options) {
 
     // dry-run은 외부 쇼핑 API를 추가로 부르지 않는다. 테스트는 주입한 fake search로 별도 검증한다.
     affiliate = dryRun
-      ? { attempted: 0, matched: 0, saved: 0, skipped: 0, errors: 0 }
+      ? { attempted: 0, searches: 0, matched: 0, saved: 0, skipped: 0, errors: 0 }
       : await enrichAffiliateRows(fetched.items, current, {
           searchAll: opts.searchAll,
           saveProducts: opts.saveProducts,
-          lookupLimit: opts.affiliateLookupLimit
+          lookupLimit: opts.affiliateLookupLimit,
+          searchLimit: opts.affiliateSearchLimit
         });
     const recent = await loadRecentGroupRows(db, current, nowMs, dryRun);
     tableMissing = recent.tableMissing;
@@ -473,6 +563,6 @@ if (require.main === module) {
 
 module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
-  enrichAffiliateRows, affiliateCandidateProduct,
+  enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery,
   summaryText, sampleOf
 };
