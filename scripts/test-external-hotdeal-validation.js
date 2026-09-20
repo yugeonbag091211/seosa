@@ -800,7 +800,40 @@ async function captureFailure(promise) {
     assert.equal(row.metadata.affiliateUrl, undefined);
     assert.equal(row.image_url, 'https://img.example/puma.jpg');
     assert.equal(row.metadata.imageProductId, 'puma-photo');
-    assert(Number(row.metadata.imageMatchConfidence) >= 0.82);
+    assert(Number(row.metadata.imageMatchConfidence) >= 0.70);
+    assert.equal(row.metadata.imageReference, true, '0.90 미만 사진은 참고 이미지로 표시');
+  });
+
+  await check('external image: identity-partial photo is allowed but still cannot monetize', async () => {
+    const deal = Normalize.normalizeExternalHotdeal({
+      externalId: 'img-2',
+      title: '푸마 코트 클래식 클린 스니커즈',
+      price: 35160,
+      mall: '쿠팡',
+      postUrl: 'https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=999006',
+      postedAt: hoursAgo(1),
+      metadata: { rawTitle: '[쿠팡] 푸마 코트 클래식 클린 스니커즈 (35,160원/무료)' }
+    }, 'ppomppu');
+    const row = { source: 'ppomppu', source_post_id: '999006', source_url: deal.postUrl,
+      title: deal.title, price: deal.price, matched_product_id: null, image_url: '', metadata: {} };
+    const visual = {
+      title: '푸마 코트 클래식 클린 스니커즈 남녀공용 운동화 신발 캐주얼 데일리',
+      lprice: 35900,
+      link: 'https://link.coupang.com/a/puma-photo-partial',
+      image: 'https://img.example/puma-partial.jpg',
+      mall: '쿠팡', productId: 'puma-photo-partial', vendorItemId: 'puma-v2', _source: 'api'
+    };
+    const stats = await Collector.enrichAffiliateRows([deal], [row], {
+      lookupLimit: 1,
+      searchLimit: 1,
+      searchAll: async () => ({ items: [visual], from: 'api' }),
+      saveProducts: async () => { throw new Error('reference photo must not be saved as affiliate'); }
+    });
+    assert.equal(stats.matched, 0);
+    assert.equal(row.metadata.affiliateUrl, undefined);
+    assert.equal(row.image_url, 'https://img.example/puma-partial.jpg');
+    assert.equal(row.metadata.imageReference, true);
+    assert(Number(row.metadata.imageMatchConfidence) >= 0.70);
   });
 
   await check('external image: unsafe/non-https image URL is rejected', () => {
