@@ -7587,8 +7587,11 @@ var ExternalHot = {
   cardHTML: function(it) {
     if (!it || !it.title || !it.sourceUrl) return '';
     var image = Fmt.safeUrl(it.image);
-    var productUrl = Fmt.safeUrl(it.productUrl || it.url);
+    // 상품 구매 버튼은 «제휴 링크»일 때만 외부로 바로 보낸다.
+    // 원문 URL을 상품 URL처럼 fallback하면 클릭은 나가지만 SEOSA 수익은 잡히지 않는다.
+    var affiliateUrl = Fmt.safeUrl(it.affiliateUrl || (it.monetized ? it.productUrl : ''));
     var sourceUrl = Fmt.safeUrl(it.sourceUrl);
+    var searchUrl = '/?q=' + encodeURIComponent(it.title || '');
     var communityOnly = it.communityOnly === true || it.verified === false;
     var pct = Number(it.priceVs30dAvg);
     var proof = communityOnly
@@ -7615,7 +7618,9 @@ var ExternalHot = {
       + '<div class="radar-deal-source">' + Fmt.esc(sourceText) + '</div>'
       + '<div class="radar-deal-actions">' + history
       + (sourceUrl ? '<a href="' + Fmt.esc(sourceUrl) + '" target="_blank" rel="noopener noreferrer">원문 보기</a>' : '')
-      + (productUrl ? '<a href="' + Fmt.esc(productUrl) + '" target="_blank" rel="noopener noreferrer">상품 보기</a>' : '')
+      + (affiliateUrl
+          ? '<a href="' + Fmt.esc(affiliateUrl) + '" target="_blank" rel="noopener noreferrer">제휴 상품 보기</a>'
+          : '<a href="' + Fmt.esc(searchUrl) + '">SEOSA에서 상품 찾기</a>')
       + '</div></article>';
   },
 
