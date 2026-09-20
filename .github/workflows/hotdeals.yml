@@ -27,6 +27,10 @@ on:
     - cron: '50 23 * * *'
     - cron: '20 0 * * *'
     - cron: '20 12 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/hotdeal-now-trigger'
   workflow_dispatch:
     inputs:
       dry_run:
