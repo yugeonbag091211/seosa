@@ -78,7 +78,7 @@ function reset(g, q, o) {
 
   reset('ok', 'ok', 'ok');
   process.env.GEMINI_MODEL = 'gemini-3.7-pro-paid';
-  process.env.GROQ_MODEL = 'openai/gpt-oss-120b';
+  process.env.GROQ_MODEL = 'llama-3.1-8b-instant'; // 2026-08-16 shutdown: 반드시 차단
   r = await llm.chat(base);
   ok(r.ok && r.provider === 'openrouter', 'allowlist 밖 Gemini/Groq 모델은 skip');
   ok(state.calls.every(x => x.provider === 'openrouter' && /:free$/.test(x.model)), '유료/미승인 provider 모델 network attempt 0');
