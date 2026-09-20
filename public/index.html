@@ -3741,7 +3741,7 @@ select:focus-visible,textarea:focus-visible,
     <div class="sec-head">
       <div>
         <div class="sec-title">실시간 핫딜<span class="sec-count" id="externalHotCount"></span></div>
-        <div class="sec-sub">외부에서 발견한 가격을 SEOSA 가격 이력으로 다시 검증했어요.</div>
+        <div class="sec-sub">커뮤니티에서 발견한 핫딜을 모아 보여드려요. SEOSA 가격 이력과 매칭되면 검증 정보도 함께 표시합니다.</div>
       </div>
     </div>
     <div class="drop-loading" id="externalHotLoading"><div class="ring"></div>외부 핫딜을 검증하는 중…</div>
@@ -7589,23 +7589,29 @@ var ExternalHot = {
     var image = Fmt.safeUrl(it.image);
     var productUrl = Fmt.safeUrl(it.productUrl || it.url);
     var sourceUrl = Fmt.safeUrl(it.sourceUrl);
+    var communityOnly = it.communityOnly === true || it.verified === false;
     var pct = Number(it.priceVs30dAvg);
-    var proof = Number.isFinite(pct) && pct > 0
-      ? '최근 30일 평균 대비 <strong>↓ ' + Fmt.esc(String(pct)) + '%</strong>'
-      : '<strong>' + Fmt.esc(it.reason || '가격 이력으로 검증') + '</strong>';
+    var proof = communityOnly
+      ? '<strong>커뮤니티에서 발견</strong>'
+      : (Number.isFinite(pct) && pct > 0
+          ? '최근 30일 평균 대비 <strong>↓ ' + Fmt.esc(String(pct)) + '%</strong>'
+          : '<strong>' + Fmt.esc(it.reason || '가격 이력으로 검증') + '</strong>');
+    var verdict = communityOnly
+      ? 'SEOSA 가격 검증 전'
+      : 'SEOSA 판단 · ' + ExternalHot.grade(it.dealScore);
     var sourceText = it.sourceCount > 1
       ? '출처 ' + Fmt.int(it.sourceCount) + '곳에서 발견'
       : '커뮤니티 발견 · ' + ExternalHot.sourceLabel(it.source);
-    var history = it.productId
+    var history = !communityOnly && it.productId
       ? '<a href="/?p=' + encodeURIComponent(it.productId) + '">가격 이력 보기</a>' : '';
     return '<article class="radar-deal">'
       + '<div class="radar-deal-top"><div class="radar-deal-thumb">'
       + (image ? '<img src="' + Fmt.esc(image) + '" loading="lazy" referrerpolicy="no-referrer" alt="">' : '⌁')
       + '</div><div class="radar-deal-copy"><div class="radar-deal-name">' + Fmt.esc(it.title) + '</div>'
       + '<div class="radar-deal-price">' + Fmt.won(it.price) + '원</div></div></div>'
-      + '<div class="radar-deal-proof">' + proof + '<span>SEOSA 판단 · ' + ExternalHot.grade(it.dealScore) + '</span></div>'
+      + '<div class="radar-deal-proof">' + proof + '<span>' + Fmt.esc(verdict) + '</span></div>'
       + '<div class="radar-deal-badges"><span class="radar-badge">커뮤니티 발견</span>'
-      + '<span class="radar-badge">SEOSA 검증</span></div>'
+      + '<span class="radar-badge">' + (communityOnly ? '가격 검증 전' : 'SEOSA 검증') + '</span></div>'
       + '<div class="radar-deal-source">' + Fmt.esc(sourceText) + '</div>'
       + '<div class="radar-deal-actions">' + history
       + (sourceUrl ? '<a href="' + Fmt.esc(sourceUrl) + '" target="_blank" rel="noopener noreferrer">원문 보기</a>' : '')
@@ -7623,7 +7629,8 @@ var ExternalHot = {
 
   show: function(items) {
     var external = (items || []).filter(function(it) {
-      return it && it.source && it.source !== 'internal-history' && it.sourceUrl && Number(it.dealScore) >= 60;
+      return it && it.source && it.source !== 'internal-history' && it.sourceUrl
+        && (it.communityOnly === true || it.verified === true || Number(it.dealScore) >= 60);
     });
     show('externalHotLoading', false);
     if (!external.length) {
