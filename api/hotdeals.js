@@ -398,7 +398,7 @@ function toCommunityListItem(r) {
     isLowest: true,
     matchReason: obj(r.metadata).matchReason || ''
   };
-
+}
 
 /*
  * ★ 표가 «없을» 때만 참이다 — 전수 감사(PR #32)와 같은 규칙 (api/_dberror.js).
