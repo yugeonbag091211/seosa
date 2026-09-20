@@ -112,6 +112,8 @@ function clip(v, n) {
  */
 function safeText(v, n) {
   return String(v == null ? '' : v)
+    // 출력은 n자뿐이다. 거대한 클라이언트 필드 전체에 정규식을 돌리지 않는다.
+    .slice(0, Math.max(1024, n * 4))
     // \p{C} = 제어·서식·미할당 문자. 줄바꿈은 물론 폭 없는 문자(zero-width)까지 없앤다.
     // (소스에 제어문자를 직접 넣으면 grep이 이 파일을 바이너리로 취급하므로 쓰지 않는다)
     .replace(/\p{C}/gu, ' ')
@@ -2495,16 +2497,13 @@ module.exports = async function handler(req, res) {
   /*
    * 두 단계 flood 방어.
    *
-   * 1) IP 300회/분은 오직 gross flood를 막는 안전망이다. 학교/회사/NAT의 정상
-   *    사용자들이 이 한도를 공유해도 실사용에서는 거의 닿지 않게 넉넉히 둔다.
-   * 2) 아래 신원 확인 뒤 로그인 사용자는 이메일별 30회/분으로 분리한다.
-   *    예전처럼 같은 공인 IP 사용자 전원이 30회를 나눠 쓰지 않는다.
+   * 1) 게스트는 IP당 30회/분, gross flood 300회/분 안전망을 쓴다.
+   * 2) 로그인 사용자는 검증된 이메일별 30회/분으로 분리한다.
+   *    공인 IP를 공유하는 학교/회사/NAT 사용자가 서로 막지 않게 한다.
    *
    * 서버리스 인메모리라 전역 일일 quota 판정에는 쓰지 않는다. 제품 정책상의
    * 일일 질문 횟수 제한은 계속 없다.
    */
-  if (!guard(req, res, { name: 'ai-ip-flood', limit: 300, windowMs: 60 * 1000 })) return;
-
   /* ── 1) 신원 확인 ────────────────────────────────────────────────
    *
    * 호출 1회당 실제 요금이 나가므로 익명 사용을 더는 허용하지 않는다.
@@ -2534,6 +2533,9 @@ module.exports = async function handler(req, res) {
   if (!who.ok && !guest) {
     return res.status(401).json({ error: who.reason, needsAuth: true, text: '' });
   }
+  // 검증된 계정은 각자 30회/분 제한을 받는다. NAT의 다른 계정과 IP 한도를
+  // 공유하면 한 사용자가 이웃 사용자의 AI 사용을 막을 수 있다.
+  if (guest && !guard(req, res, { name: 'ai-ip-flood', limit: 300, windowMs: 60 * 1000 })) return;
 
   /*
    * 로그인 사용자는 검증된 token의 email을 rate key로 쓴다.
@@ -2626,6 +2628,7 @@ module.exports = async function handler(req, res) {
    * 토큰이 안 오면 null 이고 추정해서 채우지 않는다.
    */
   let llmMetrics = null;
+  let providerExhausted = false;
 
   try {
     // 프론트가 옛날 방식으로 JSON 문자열을 보낼 수도 있으니 방어적으로 파싱한다.
@@ -3377,6 +3380,7 @@ module.exports = async function handler(req, res) {
        * 아래 결정론 fallback으로 잇는다. 이미 계산한 쇼핑 판정과 카드를
        * provider 장애 때문에 버리지 않는다.
        */
+      providerExhausted = true;
       throw new Error(`llm ${llmRes.reason}`);
     }
 
@@ -3672,6 +3676,16 @@ module.exports = async function handler(req, res) {
         && (resolvedCanonicalIntent === 'PRODUCT_SEARCH' || resolvedCanonicalIntent === 'PRODUCT_DECISION')) {
       const body = {
         text: '현재 상품 검색이 지연되어 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        intent: resolvedCanonicalIntent,
+        degraded: true
+      };
+      if (guest) body.guest = true;
+      return res.json(body);
+    }
+
+    if (providerExhausted) {
+      const body = {
+        text: '현재 AI 답변이 지연되고 있습니다. 확인되지 않은 내용은 안내하지 않겠습니다. 잠시 후 다시 질문해 주세요.',
         intent: resolvedCanonicalIntent,
         degraded: true
       };

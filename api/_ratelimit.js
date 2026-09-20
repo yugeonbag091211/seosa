@@ -15,7 +15,7 @@ function clientKey(req) {
   const fwd = req.headers['x-forwarded-for'];
   const ip = (Array.isArray(fwd) ? fwd[0] : String(fwd || ''))
     .split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
-  return ip;
+  return ip.slice(0, 128);
 }
 
 function sweep(now) {
@@ -36,12 +36,21 @@ function check(req, { limit, windowMs, name = '', key: scopedKey = '' }) {
   const subject = String(scopedKey || '').trim() || clientKey(req);
   const key = name + '|' + subject;
 
-  // 상한을 넘으면 만료된 것부터 정리하고, 그래도 넘치면 새 키를 받지 않는다.
-  if (buckets.size > MAX_KEYS) sweep(now);
-
   let b = buckets.get(key);
   if (!b || b.resetAt <= now) {
-    b = { count: 0, resetAt: now + windowMs };
+    if (b) buckets.delete(key);
+    if (buckets.size >= MAX_KEYS) sweep(now);
+    // 게스트가 고유 IP로 맵을 채워도 새 검증 계정을 막지 않는다. 새 게스트는
+    // fail-closed로 거절하고, 검증 계정은 우선 게스트 버킷을 하나 비운다.
+    if (buckets.size >= MAX_KEYS) {
+      if (!scopedKey) return { ok: false, retryAfter: 1 };
+      let evict;
+      for (const [k, v] of buckets) {
+        if (!v.scoped) { evict = k; break; }
+      }
+      buckets.delete(evict || buckets.keys().next().value);
+    }
+    b = { count: 0, resetAt: now + windowMs, scoped: !!scopedKey };
     buckets.set(key, b);
   }
 
@@ -67,4 +76,4 @@ function guard(req, res, opts) {
   return false;
 }
 
-module.exports = { guard, check };
+module.exports = { guard, check, _internal: { buckets, MAX_KEYS } };
