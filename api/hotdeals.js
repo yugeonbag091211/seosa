@@ -288,9 +288,14 @@ function externalReason(row) {
 
 function toExternalListItem(r) {
   const meta = obj(r.metadata);
+  const affiliateUrl = String(meta.affiliateUrl || '');
   return {
     verified: true,
     communityOnly: false,
+    monetized: !!affiliateUrl,
+    affiliateUrl,
+    affiliateMall: String(meta.affiliateMall || ''),
+    affiliatePrice: meta.affiliatePrice == null ? null : Number(meta.affiliatePrice),
     id: `external:${r.id}`,
     status: externalStatus(r.verification_status),
     score: Number(r.deal_score),
@@ -301,11 +306,11 @@ function toExternalListItem(r) {
     listPrice: Number(r.original_price) || 0,
     reason: externalReason(r),
     productId: r.matched_product_id || '',
-    url: r.product_url || r.source_url || '',
+    url: affiliateUrl || r.source_url || '',
     checkedAt: r.last_verified_at,
     source: r.source,
     sourceUrl: r.source_url || '',
-    productUrl: r.product_url || '',
+    productUrl: affiliateUrl,
     dealScore: Number(r.deal_score),
     matchConfidence: Number(r.match_confidence),
     verificationStatus: r.verification_status,
@@ -348,8 +353,14 @@ function toExternalListItem(r) {
  * «커뮤니티 발견 · 가격 검증 전»이라고 표시하게 한다.
  */
 function toCommunityListItem(r) {
+  const meta = obj(r.metadata);
+  const affiliateUrl = String(meta.affiliateUrl || '');
   return {
     id: `community:${r.id}`,
+    monetized: !!affiliateUrl,
+    affiliateUrl,
+    affiliateMall: String(meta.affiliateMall || ''),
+    affiliatePrice: meta.affiliatePrice == null ? null : Number(meta.affiliatePrice),
     status: 'COMMUNITY',
     score: null,
     title: r.title,
@@ -360,11 +371,11 @@ function toCommunityListItem(r) {
     reason: '커뮤니티에서 발견한 핫딜 · SEOSA 가격 검증 전',
     productId: '',
     vendorItemId: '',
-    url: r.product_url || r.source_url || '',
+    url: affiliateUrl || r.source_url || '',
     checkedAt: r.last_verified_at || r.posted_at,
     source: r.source,
     sourceUrl: r.source_url || '',
-    productUrl: r.product_url || '',
+    productUrl: affiliateUrl,
     dealScore: null,
     matchConfidence: Number(r.match_confidence) || 0,
     verificationStatus: r.verification_status || 'UNMATCHED',
@@ -396,7 +407,9 @@ function toCommunityListItem(r) {
     lowestPrice: Number(r.price) || 0,
     lowestMall: r.mall || '',
     isLowest: true,
-    matchReason: obj(r.metadata).matchReason || ''
+    matchReason: meta.matchReason || '',
+    affiliateMatchReason: String(meta.affiliateMatchReason || ''),
+    affiliateConfidence: Number(meta.affiliateConfidence) || 0
   };
 }
 
