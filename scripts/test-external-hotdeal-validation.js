@@ -667,6 +667,7 @@ async function captureFailure(promise) {
       mallLabel: '쿠팡',
       productId: 's24',
       vendorItemId: '777',
+      image: 'https://img.example/s24.jpg',
       _source: 'api'
     };
     const stats = await Collector.enrichAffiliateRows([deal], [row], {
@@ -683,6 +684,8 @@ async function captureFailure(promise) {
     assert.equal(row.metadata.affiliateUrl, affiliate.link);
     assert.equal(row.metadata.affiliateProductId, 's24');
     assert(row.metadata.affiliateConfidence >= 0.9);
+    assert.equal(row.image_url, 'https://img.example/s24.jpg', '정확 매칭은 제휴상품 사진도 저장');
+    assert.equal(row.metadata.imageProductId, 's24');
     assert.equal(row.source_url, deal.postUrl, 'community source remains attribution/source, not commerce destination');
     assert.equal(row.matched_product_id, 's24');
     assert(saved && saved.items.length === 1);
@@ -765,6 +768,45 @@ async function captureFailure(promise) {
     assert.equal(adpickCalls, 1, 'ADPICK은 전체 제목 검색 한 번만 호출');
     assert.equal(stats.matched, 1);
     assert.equal(row.metadata.affiliateUrl, right.link);
+  });
+
+  await check('external image: identity-B candidate may supply photo without becoming an affiliate match', async () => {
+    const deal = Normalize.normalizeExternalHotdeal({
+      externalId: 'img-1',
+      title: '푸마 코트 클래식 클린 스니커즈',
+      price: 35160,
+      mall: '쿠팡',
+      postUrl: 'https://www.ppomppu.co.kr/zboard/view.php?id=ppomppu&no=999005',
+      postedAt: hoursAgo(1),
+      metadata: { rawTitle: '[쿠팡] 푸마 코트 클래식 클린 스니커즈 (35,160원/무료)' }
+    }, 'ppomppu');
+    const row = { source: 'ppomppu', source_post_id: '999005', source_url: deal.postUrl,
+      title: deal.title, price: deal.price, matched_product_id: null, image_url: '', metadata: {} };
+    const visual = {
+      title: '푸마 코트 클래식 클린 스니커즈 운동화',
+      lprice: 35900,
+      link: 'https://link.coupang.com/a/puma-photo',
+      image: 'https://img.example/puma.jpg',
+      mall: '쿠팡', productId: 'puma-photo', vendorItemId: 'puma-v1', _source: 'api'
+    };
+    const stats = await Collector.enrichAffiliateRows([deal], [row], {
+      lookupLimit: 1,
+      searchLimit: 3,
+      searchAll: async () => ({ items: [visual], from: 'api' }),
+      saveProducts: async () => { throw new Error('0.82 image-only match must not be saved as affiliate'); }
+    });
+    assert.equal(stats.matched, 0, '0.82 photo match is below affiliate 0.90 threshold');
+    assert.equal(row.matched_product_id, null);
+    assert.equal(row.metadata.affiliateUrl, undefined);
+    assert.equal(row.image_url, 'https://img.example/puma.jpg');
+    assert.equal(row.metadata.imageProductId, 'puma-photo');
+    assert(Number(row.metadata.imageMatchConfidence) >= 0.82);
+  });
+
+  await check('external image: unsafe/non-https image URL is rejected', () => {
+    assert.equal(Collector.safeImageUrl('javascript:alert(1)'), '');
+    assert.equal(Collector.safeImageUrl('http://img.example/a.jpg'), '');
+    assert.equal(Collector.safeImageUrl('https://img.example/a.jpg'), 'https://img.example/a.jpg');
   });
 
   await check('affiliate enrichment: a merely similar product is never monetized as the same deal', async () => {
