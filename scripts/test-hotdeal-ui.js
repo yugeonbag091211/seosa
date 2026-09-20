@@ -107,10 +107,13 @@ assert(read('api/_radarapi.js').includes(".from('hotdeals')"),'레이더 HOT_DEA
 /* ── 4) 새 External Hotdeal Radar는 기존 핫딜을 복제하지 않는다 ─── */
 assert(/<section id="externalHot"[^>]*aria-label="실시간 핫딜"/.test(live),'외부 검증 섹션');
 assert(live.includes("'getExternalHotdeals':'/api/hotdeals'"),'기존 읽기 API를 재사용');
-assert(live.includes('커뮤니티 발견')&&live.includes('SEOSA 검증'),'발견/검증 badge');
+assert(live.includes('커뮤니티 발견')&&live.includes('SEOSA 검증')&&live.includes('가격 검증 전'),'검증/미검증 상태를 명확히 구분한다');
 assert(live.includes('가격 이력 보기')&&live.includes('원문 보기'),'가격 이력/원문 행동');
-assert(live.includes('Number(it.dealScore) >= 60'),'60점 미만 기본 노출 제외');
+assert(live.includes('it.communityOnly === true'),'매칭 전 커뮤니티 항목도 별도 상태로 렌더한다');
 assert(live.includes("it.source !== 'internal-history'"),'내부 price-drop과 중복 렌더하지 않는다');
+assert(hd.includes('toCommunityListItem')&&hd.includes("row.verification_status !== 'SUSPICIOUS_PRICE'"),
+  '커뮤니티 항목은 검증 완료로 위장하지 않고 의심 가격은 제외한다');
+assert(hd.includes("process.env.EXTERNAL_HOTDEAL_PUBLIC !== '0'"),'외부 피드는 기본 ON, 명시적 0 kill switch 유지');
 assert(live.includes('@media(max-width:560px){.radar-deals{grid-template-columns:1fr}'),'모바일 1열');
 
 assert(live.includes("'?view=external&limit=12&minScore=60'"),'외부 카드는 전용 view 로만 읽는다(내부 목록과 섞지 않는다)');
