@@ -107,7 +107,13 @@ const NEW_MIGRATIONS = [
    * 미적용이어도 기능은 동작한다 — 원장 정렬이 인덱스를 타지 못해 느릴 뿐이다
    * (2026-09-21 실측 2,636 ms). 데이터 변경 없음, CREATE INDEX 한 줄.
    */
-  '2026-09-21-price-history-recorded-at-index.sql'
+  '2026-09-21-price-history-recorded-at-index.sql',
+  /*
+   * 2026-09-22: collector target RPC 가 authenticator 8s 제한에 걸린 사고 대응.
+   * 함수 단위 timeout 만 30s 로 늘리고, 전체 target 을 JSONB 한 행으로 반환해
+   * 1,000행 페이지마다 같은 무거운 계산을 다시 하지 않게 한다.
+   */
+  '2026-09-22-collector-target-timeout-batch.sql'
 ];
 
 function checkStatic() {
