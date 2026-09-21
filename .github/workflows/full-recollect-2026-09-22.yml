@@ -1,0 +1,165 @@
+name: One-shot Full Price Recollection 2026-09-22
+
+on:
+  push:
+    branches:
+      - ops/full-recollect-2026-09-22
+    paths:
+      - .github/full-recollect-2026-09-22.trigger
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: one-shot-full-recollect-2026-09-22
+  cancel-in-progress: false
+
+jobs:
+  recollect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Stop previous collector run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_RUN_ID: "35664977419"
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${OLD_RUN_ID}"
+          status="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${api}" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).status))")"
+          echo "old run status before cancel: ${status}"
+          if [ "${status}" != "completed" ]; then
+            code="$(curl -sS -o /tmp/cancel.json -w "%{http_code}" -X POST               -H "Authorization: Bearer ${GH_TOKEN}"               -H "Accept: application/vnd.github+json"               -H "X-GitHub-Api-Version: 2022-11-28"               "${api}/cancel")"
+            echo "cancel response: HTTP ${code}"
+            if [ "${code}" != "202" ] && [ "${code}" != "409" ]; then
+              cat /tmp/cancel.json || true
+              exit 1
+            fi
+          fi
+          for i in $(seq 1 60); do
+            status="$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${api}" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).status))")"
+            echo "old run status: ${status}"
+            [ "${status}" = "completed" ] && exit 0
+            sleep 5
+          done
+          echo "Old collector did not stop; refusing to reset while a writer is active."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reset today price collection only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          node <<'NODE'
+          const { createClient } = require('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          (async () => {
+            const start = '2026-09-21T15:00:00.000Z';
+            const end = '2026-09-22T15:00:00.000Z';
+
+            const before = await supabase.from('price_history')
+              .select('*', { count: 'exact', head: true })
+              .gte('recorded_at', start).lt('recorded_at', end);
+            if (before.error) throw before.error;
+            console.log('today rows before reset:', before.count || 0);
+
+            const del = await supabase.from('price_history')
+              .delete({ count: 'exact' })
+              .gte('recorded_at', start).lt('recorded_at', end);
+            if (del.error) throw del.error;
+            console.log('today rows deleted:', del.count || 0);
+
+            const reset = await supabase.from('price_job_state').upsert({
+              id: 1,
+              job_date: '1970-01-01',
+              cursor_key: '',
+              processed: 0,
+              total: 0,
+              status: 'running',
+              last_run_at: null,
+              last_result: {},
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+            if (reset.error) throw reset.error;
+
+            const after = await supabase.from('price_history')
+              .select('*', { count: 'exact', head: true })
+              .gte('recorded_at', start).lt('recorded_at', end);
+            if (after.error) throw after.error;
+            console.log('today rows after reset:', after.count || 0);
+            if ((after.count || 0) !== 0) throw new Error('today price_history reset verification failed');
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
+
+      - name: Full catalog recollection - dawn style continuation passes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          PRICE_INCLUDE_BULK_SEED: "1"
+          ADPICK_COLLECT_MIN_GAP_MS: "12000"
+          ADPICK_MAX_PER_MIN: "5"
+        run: |
+          set -o pipefail
+          : > /tmp/full-recollect.log
+          for pass in 1 2 3 4 5 6; do
+            echo "================ FULL CATALOG PASS ${pass}/6 ================" | tee -a /tmp/full-recollect.log
+            node scripts/collect-all-prices.js 2>&1 | tee -a /tmp/full-recollect.log
+            rc=${PIPESTATUS[0]}
+            if [ "${rc}" -ne 0 ]; then
+              echo "collector failed on pass ${pass} (exit ${rc})"
+              exit "${rc}"
+            fi
+          done
+
+      - name: Check price alerts and send notifications
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+        run: node scripts/check-alerts.js
+
+      - name: Final full-catalog state
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          node <<'NODE'
+          const { createClient } = require('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          (async () => {
+            const start = '2026-09-21T15:00:00.000Z';
+            const end = '2026-09-22T15:00:00.000Z';
+            const hist = await supabase.from('price_history')
+              .select('*', { count: 'exact', head: true })
+              .gte('recorded_at', start).lt('recorded_at', end);
+            if (hist.error) throw hist.error;
+            const state = await supabase.from('price_job_state')
+              .select('job_date,status,processed,total,last_result,updated_at')
+              .eq('id', 1).maybeSingle();
+            if (state.error) throw state.error;
+            console.log('today price_history rows:', hist.count || 0);
+            console.log('job state:', JSON.stringify(state.data));
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
