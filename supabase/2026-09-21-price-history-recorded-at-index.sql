@@ -1,0 +1,91 @@
+-- ══════════════════════════════════════════════════════════════════
+--  2026-09-21  price_history(recorded_at) 인덱스
+--              — 홈 핫딜 «오늘 가격 하락» 이 쓰는 유일한 정렬 키
+--
+--  ★ 데이터를 바꾸지 않는다. CREATE INDEX IF NOT EXISTS 한 줄뿐이다.
+--    테이블도, 뷰도, 어떤 행도 건드리지 않는다. 여러 번 실행해도 안전하다.
+--
+--  ★ 적용하지 않아도 기능은 동작한다. 이 파일은 «느려지지 않게» 하는 것이지
+--    «되게» 하는 것이 아니다. 적용 전에도 홈 핫딜은 정상이다(아래 실측).
+-- ══════════════════════════════════════════════════════════════════
+
+-- ── 왜 필요한가 ───────────────────────────────────────────────────
+--
+--  /api/hotdeals?view=today-drop 은 원장에 두 가지를 묻는다.
+--
+--    ① KST 오늘 관측       where recorded_at >= <오늘 00:00 KST>
+--                          order by recorded_at asc
+--    ② 그 직전 관측         where recorded_at <  <오늘 00:00 KST>
+--                          order by recorded_at desc   limit 1000 씩
+--
+--  ★ 왜 recorded_date 라벨을 쓰지 않는가
+--    그 컬럼은 운영 DB 가 recorded_at 을 UTC 로 잘라 덮어쓴다. KST 01시
+--    수집분이 통째로 «어제» 라벨을 달기 때문에 «오늘» 의 경계로 쓸 수 없다
+--    (api/_price.js kstToday 주석의 실측: price_history 15,155행 전부가
+--     recorded_date === UTC(recorded_at), 예외 0건). 그래서 경계와 순서를
+--    모두 절대 시각 recorded_at 으로 정한다.
+--
+--  그런데 recorded_at 에는 인덱스가 하나도 없다. 지금 있는 것은
+--
+--    price_history_pid_mall_date_idx        (product_id, mall, recorded_date desc)
+--    price_history_pid_mall_vid_date_idx    (product_id, mall, vendor_item_id, recorded_date desc)
+--    price_history_recorded_date_idx        (recorded_date)
+--    price_history_vid_idx                  (vendor_item_id)
+--
+--  전부 recorded_date 쪽이라 위 두 질의의 정렬을 돕지 못한다. 그래서 매번
+--  테이블 전체(2026-09-21 기준 137,301행 이상)를 읽고 정렬한다.
+--
+-- ── 실측 (2026-09-21, 운영 읽기 전용) ─────────────────────────────
+--
+--    질의                                        1,000행 응답
+--    ────────────────────────────────────────────────────────
+--    recorded_at >= 경계, order by recorded_at    1,078 ms
+--    recorded_at <  경계, order by recorded_at desc  366 ms
+--
+--  한 요청에 이런 질의가 6장(오늘 3 + 직전 3) 들어간다. 처음에는 한 장씩
+--  순서대로 읽어 12,695 ms 가 나왔고 — Vercel 함수 한도(10초)를 넘는다 —
+--  동시에 던지도록 고쳐 2,636 ms 가 됐다 (api/hotdeals.js 의
+--  «왜 페이지를 동시에 던지는가» 주석). 즉 지금도 동작하지만, 그 2.6초는
+--  거의 전부 «인덱스 없는 정렬» 값이다.
+--
+--  같은 표가 2026-09-18 대량 seed 로 며칠 만에 67,993행 늘어난 전례가 있다
+--  (supabase/2026-09-20-price-drop-top-index.sql). 그때 price_drop_top 이
+--  statement timeout 으로 8.6초씩 죽었고, 화면에는 «오늘 하락한 상품이
+--  없어요» 로 보였다. 같은 일이 이 경로에서 반복되지 않게 미리 막는다.
+--
+-- ── 무엇을 더하는가 ───────────────────────────────────────────────
+--
+--  질의가 실제로 쓰는 모양 그대로의 인덱스 하나.
+--  desc 로 만드는 이유는 «직전 관측» 질의가 내림차순이기 때문이고,
+--  B-tree 는 양방향으로 읽을 수 있어 오름차순 질의(①)도 같이 탄다.
+--
+--  ★ 적용 시간: 137,301행 기준 수 초 안에 끝난다.
+--    그래도 쓰기를 잠깐 막으므로, 가격 수집 cron 이 도는 KST 00~08시는
+--    피해서 실행할 것.
+--
+--  ★ 되돌리기: drop index if exists price_history_recorded_at_idx;
+--    (인덱스만 사라지고 데이터는 그대로다)
+
+create index if not exists price_history_recorded_at_idx
+  on price_history (recorded_at desc);
+
+-- PostgREST 스키마 캐시 갱신 (인덱스만 바뀌면 필수는 아니지만 관례를 지킨다)
+notify pgrst, 'reload schema';
+
+-- ── 적용 뒤 확인 ──────────────────────────────────────────────────
+--
+--  explain analyze
+--  select product_id, mall, title, price, link, recorded_at, recorded_date,
+--         vendor_item_id, item_id
+--    from price_history
+--   where recorded_at < '2026-09-20T15:00:00Z'
+--   order by recorded_at desc
+--   limit 1000;
+--
+--  기대: Seq Scan + Sort 가 Index Scan Backward using
+--        price_history_recorded_at_idx 로 바뀐다.
+--
+--  그리고 운영 API 로 한 번 더:
+--    curl -s 'https://seosa.ai.kr/api/hotdeals?view=today-drop&limit=60' | jq .stats
+--  stats.todayRows / stats.priorScanned 는 그대로여야 하고(읽는 양은 같다),
+--  응답 시간만 줄어든다.

@@ -26,6 +26,8 @@ const { applyCors, cachePublic, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const HG = require('./_hotgroup');
 const DbError = require('./_dberror');
+const TD = require('./_todaydrop');
+const { kstToday, kstDayStartUtc } = require('./_price');
 
 /** 사용자에게 보여줄 상태. NORMAL·REJECTED 는 목록에 오르지 않는다. */
 const VISIBLE = ['VERIFIED_HOT', 'GOOD_DEAL', 'POTENTIAL_DEAL'];
@@ -510,6 +512,307 @@ function dropDuplicateGroups(rows) {
   });
 }
 
+/* ════════════════════════════════════════════════════════════════════
+ *  view=today-drop — 홈 «핫딜» 의 기본 목록
+ *
+ *  판정 규칙은 전부 api/_todaydrop.js 에 있다. 여기서 하는 일은 원장을
+ *  «필요한 만큼만» 읽어서 그 함수에 넘기고, 화면이 쓸 모양으로 옮기는 것뿐이다.
+ *
+ *  ★ 기존 목록(/api/hotdeals 기본 경로)과 외부 레이더(view=external)는
+ *    한 줄도 건드리지 않는다. 이 갈래는 완전히 별도의 분기다.
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 원장에서 읽는 컬럼. 필요한 것만 읽는다 — 2,000행이 넘게 오는 질의다. */
+const LEDGER_COLS = 'product_id, mall, title, price, link, recorded_at, recorded_date, vendor_item_id, item_id';
+/** PostgREST 한 장의 최대 행 수. 서버가 정한 값이라 더 크게 요청해도 1,000행만 온다(실측). */
+const LEDGER_PAGE = 1000;
+/**
+ * 오늘치를 몇 장까지 읽을지. 2026-09-21 실측 2,135행 = 3장.
+ * 한 번에 이만큼을 «동시에» 던지고, 마지막 장이 꽉 차 있으면 한 묶음 더 간다.
+ */
+const TODAY_MAX_PAGES = Number(process.env.HOME_DROP_TODAY_PAGES) || 4;
+/** 직전 관측을 몇 장까지 훑을지. fetchPriorRows 주석의 실측 참고. */
+const PRIOR_MAX_PAGES = Number(process.env.HOME_DROP_PRIOR_PAGES) || 3;
+/** 오늘치가 예상보다 많을 때 추가로 더 갈 수 있는 묶음 수. 무한정 커지지 않게 한다. */
+const TODAY_MAX_ROUNDS = 3;
+/** products 를 한 번에 물어볼 최대 상품 수. URL 길이 상한을 넘기지 않기 위한 값. */
+const PRODUCT_LOOKUP_CHUNK = 60;
+
+async function fetchLedgerPage(builder) {
+  const { data, error } = await builder;
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+/*
+ * ── 왜 페이지를 «동시에» 던지는가 (2026-09-21 실측) ──────────────────
+ *
+ * PostgREST 는 한 번에 1,000행까지만 준다(더 크게 요청해도 1,000행이다).
+ * 그래서 원장 한 뭉치를 읽으려면 여러 장이 필요한데, 처음에는 한 장씩
+ * 순서대로 읽었다. 그 결과가 이렇다.
+ *
+ *   오늘 3장 + 직전 6장 + 핫딜 1 + 상품 1 = 11회 왕복   →  12,695 ms
+ *
+ * Vercel 함수 한도(10초) 를 넘는다. 장끼리는 서로의 결과를 필요로 하지
+ * 않으므로 순서대로 기다릴 이유가 없다 — 한 묶음씩 동시에 던진다.
+ *
+ * 조기 종료(«다 찾았으면 멈춘다»)는 포기한다. 그 최적화는 «앞 장의 결과를
+ * 봐야» 하므로 직렬 왕복을 되살리기 때문이다. 상한 안에서 전부 던지고
+ * 남는 행은 버리는 쪽이 빠르고 동작이 예측 가능하다.
+ */
+
+/**
+ * KST 오늘의 원장 행.
+ *
+ * ★ recorded_date 라벨이 아니라 recorded_at 으로 자른다. 라벨은 운영 DB 가
+ *   UTC 로 잘라 덮어써서, KST 01시 수집분이 통째로 «어제» 라벨을 단다
+ *   (api/_price.js kstToday 주석의 실측). 경계값은 kstDayStartUtc 가 만든다.
+ */
+async function fetchTodayRows(dayStartIso) {
+  const rows = [];
+  let pages = 0;
+
+  for (let round = 0; round < TODAY_MAX_ROUNDS; round++) {
+    const base = round * TODAY_MAX_PAGES;
+    const chunks = await Promise.all(
+      Array.from({ length: TODAY_MAX_PAGES }, (_, i) => {
+        const from = (base + i) * LEDGER_PAGE;
+        return fetchLedgerPage(
+          supabase.from('price_history').select(LEDGER_COLS)
+            .gte('recorded_at', dayStartIso)
+            .order('recorded_at', { ascending: true })
+            .range(from, from + LEDGER_PAGE - 1)
+        );
+      })
+    );
+    chunks.forEach(c => { if (c.length) pages++; rows.push(...c); });
+    // 마지막 장이 꽉 차 있지 않으면 더 읽을 것이 없다.
+    if (chunks[chunks.length - 1].length < LEDGER_PAGE) break;
+  }
+
+  return { rows, pages };
+}
+
+/**
+ * 오늘 관측된 계열들의 «직전 관측» 한 점씩.
+ *
+ * ── 왜 이렇게 읽는가 ───────────────────────────────────────────────
+ *
+ * 계열마다 «오늘 이전의 가장 최근 관측» 을 따로 물어보면 2,000번이 넘는
+ * 질의가 된다. 대신 오늘 경계보다 앞선 행을 recorded_at 내림차순으로 훑으면,
+ * 한 계열을 «처음 만나는 순간» 그것이 곧 그 계열의 가장 최근 직전 관측이다.
+ * 그래서 계열당 첫 번째 것만 담고 나머지는 버린다.
+ *
+ * ★ 장을 동시에 던지므로 도착 순서는 믿을 수 없다. 그래서 «요청한 장 번호
+ *   순서» 로 다시 세워서 훑는다 — 그래야 앞 장(=더 최근)이 먼저다.
+ *
+ * 2026-09-21 운영 실측 (오늘 관측 2,134 계열)
+ *   1장(1,000행) → 939 계열 확보
+ *   2장           → 1,864
+ *   3장           → 1,979   ← 채택. 오늘 관측 계열의 92.7%
+ *   5장           → 1,980
+ *   40장          → 2,002   ← 천장이다 (나머지 132 계열은 오늘이 첫 관측)
+ *
+ * 3장과 40장이 만들어내는 카드가 같다는 것도 같은 날 확인했다(둘 다 24장).
+ * 3장 위로 더 가도 찾는 계열은 23개뿐인데 왕복은 13번 늘어난다.
+ *
+ * ★ 상한에 걸려 못 찾은 계열은 «직전 관측 없음» 이 되어 목록에서 빠진다.
+ *   근거가 없는 하락을 지어내느니 빠지는 쪽이 맞다 — 다만 그 수를 stats 에
+ *   남겨서, 상한이 실제로 무엇을 자르고 있는지 언제든 셀 수 있게 한다.
+ */
+async function fetchPriorRows(dayStartIso) {
+  const chunks = await Promise.all(
+    Array.from({ length: PRIOR_MAX_PAGES }, (_, i) => {
+      const from = i * LEDGER_PAGE;
+      return fetchLedgerPage(
+        supabase.from('price_history').select(LEDGER_COLS)
+          .lt('recorded_at', dayStartIso)
+          .order('recorded_at', { ascending: false })
+          .range(from, from + LEDGER_PAGE - 1)
+      );
+    })
+  );
+
+  let scanned = 0;
+  const rows = [];
+  chunks.forEach(c => { scanned += c.length; rows.push(...c); });
+  return { rows, pages: PRIOR_MAX_PAGES, scanned };
+}
+
+/**
+ * 오늘 관측된 계열만 남기고, 계열마다 가장 최근 직전 관측 하나만 고른다.
+ *
+ * 훑는 순서가 이미 최신순이므로 «처음 만난 것» 이 답이다. 그래도 시각을
+ * 한 번 더 비교하는 이유는, 장을 동시에 던지면서 한 계열의 여러 관측이
+ * 서로 다른 장에 흩어질 수 있기 때문이다 — 순서를 믿는 대신 값을 본다.
+ */
+function pickPriorRows(rows, wanted) {
+  const found = new Map();
+  for (const row of rows || []) {
+    const key = TD.seriesKeyOf(row);
+    if (!wanted.has(key)) continue;
+    const cur = found.get(key);
+    if (!cur || String(row.recorded_at || '') > String(cur.recorded_at || '')) found.set(key, row);
+  }
+  return found;
+}
+
+/**
+ * 오늘 하락 카드에 붙일 검증 행.
+ *
+ * hotdeals 표 전체가 아니라 «지금 검증이라고 말할 수 있는» 행만 읽는다.
+ * 2026-09-21 운영 실측으로 그 수는 2행이다 — 한 번의 가벼운 질의로 끝난다.
+ */
+async function fetchVerifiedDeals(nowIso) {
+  const cols = 'id, product_id, mall, vendor_item_id, deal_status, hot_score, lifecycle,'
+    + ' expires_at, is_primary, affiliate_url, image';
+  const { data, error } = await supabase
+    .from('hotdeals')
+    .select(cols)
+    .in('deal_status', TD.VERIFIED_STATUS)
+    .in('lifecycle', TD.VERIFIED_LIFECYCLE)
+    .eq('is_primary', true)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .limit(MAX_LIMIT * 10);
+
+  /*
+   * 표나 컬럼이 아직 없어도 홈이 죽지 않는다. 그때는 배지가 붙지 않을 뿐,
+   * «오늘 내려간 상품» 목록 자체는 그대로 나간다 — 그게 이 변경의 요지다.
+   */
+  if (error && (DbError.isMissingTable(error.message) || isMissingColumn(error.message))) return [];
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+/** 카드가 가리키는 상품들의 이미지·표시 이름·판매 링크. */
+async function fetchProducts(cards) {
+  const ids = Array.from(new Set(cards.map(c => c.productId).filter(Boolean)))
+    .slice(0, PRODUCT_LOOKUP_CHUNK);
+  if (!ids.length) return new Map();
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('product_id, mall, title, image, link, mall_label, collected_at')
+    .in('product_id', ids);
+  if (error) throw new Error(error.message);
+
+  /*
+   * 같은 (product_id, mall) 에 행이 여럿일 수 있다(키워드별 수집). 가장 최근에
+   * 수집된 것을 쓴다 — 이미지·링크가 가장 덜 낡았다.
+   */
+  const byKey = new Map();
+  for (const row of data || []) {
+    const key = `${row.product_id || ''}|${row.mall || ''}`;
+    const cur = byKey.get(key);
+    if (!cur || String(row.collected_at || '') > String(cur.collected_at || '')) byKey.set(key, row);
+  }
+  return byKey;
+}
+
+/**
+ * 구매 링크 우선순위 — 기존 규칙을 그대로 따른다.
+ *
+ *   1) 엔진이 정리해 둔 제휴 링크 (hotdeals.affiliate_url)
+ *   2) 상품 카탈로그의 링크      (products.link — ADPICK 은 이것이 제휴 링크다)
+ *   3) 원장에 남은 링크          (price_history.link)
+ *
+ * 셋 다 없으면 빈 문자열이다. 화면은 링크 없는 카드를 «링크 없음» 으로 그린다
+ * (public/index.html Drop.rowHTML) — 눌러도 갈 곳이 없는 버튼을 만들지 않는다.
+ */
+function linkFor(card, product) {
+  return String(card.dealUrl || (product && product.link) || card.historyLink || '');
+}
+
+/** 이미지는 카탈로그가 먼저다. 엔진이 들고 있는 이미지는 그 다음 수단이다. */
+function imageFor(card, product) {
+  return String((product && product.image) || card.dealImage || '');
+}
+
+/**
+ * 응답 한 항목.
+ *
+ * ★ 기존 목록 항목(toListItem)과 같은 이름을 쓰는 필드는 같은 뜻이어야 한다.
+ *   프론트의 Drop.read / Modal / Alert 이 productId·vendorItemId·mall 로
+ *   가격 이력을 다시 찾기 때문이다.
+ */
+function toTodayDropItem(card, product) {
+  return {
+    id: `today:${card.key}`,
+    productId: card.productId,
+    vendorItemId: card.vendorItemId,
+    title: card.title || (product && product.title) || '',
+    image: imageFor(card, product),
+    mall: card.mall,
+    mallLabel: (product && product.mall_label) || '',
+    currentPrice: card.currentPrice,
+    previousPrice: card.previousPrice,
+    dropAmount: card.dropAmount,
+    dropPct: card.dropPct,
+    verified: card.verified,
+    badge: card.badge,
+    // 검증되지 않은 카드는 null 이다 — 0 이나 'NORMAL' 을 지어내지 않는다.
+    dealStatus: card.dealStatus,
+    hotScore: card.hotScore,
+    link: linkFor(card, product),
+    recordedAt: card.recordedAt,
+    // 카드가 «무엇과 비교한 값인지» 말할 수 있게 직전 관측 시각도 싣는다.
+    previousAt: card.previousAt,
+    dealId: card.dealId
+  };
+}
+
+/**
+ * 홈 핫딜 목록을 만든다. 읽기 전용 — 아무것도 쓰지 않는다.
+ *
+ * @param {number} limit  응답에 실을 최대 카드 수
+ */
+async function loadTodayDrops(limit) {
+  const today = kstToday();
+  const dayStart = kstDayStartUtc(today);
+  if (!dayStart) throw new Error('KST 날짜 경계를 만들 수 없습니다');
+
+  /*
+   * 세 질의는 서로의 결과를 필요로 하지 않는다. 직렬로 기다리면 그만큼
+   * 그대로 응답 시간이 된다 — 한 번에 던진다 (위 «왜 동시에» 주석 참고).
+   */
+  const [today_, prior, deals] = await Promise.all([
+    fetchTodayRows(dayStart),
+    fetchPriorRows(dayStart),
+    fetchVerifiedDeals(new Date().toISOString())
+  ]);
+
+  const todayRows = today_.rows;
+  const wanted = new Set(todayRows.map(TD.seriesKeyOf));
+  const priorRows = Array.from(pickPriorRows(prior.rows, wanted).values());
+
+  const built = TD.buildDrops(todayRows.concat(priorRows), { today });
+  const merged = TD.applyVerified(built.items, deals, { now: Date.now() });
+
+  const page = merged.slice(0, limit);
+  const products = await fetchProducts(page);
+  const items = page.map(c => toTodayDropItem(c, products.get(`${c.productId}|${c.mall}`)));
+
+  return {
+    items,
+    total: merged.length,
+    stats: {
+      kstDate: today,
+      todayRows: todayRows.length,
+      todayPages: today_.pages,
+      todaySeries: wanted.size,
+      priorMatched: priorRows.length,
+      priorPages: prior.pages,
+      priorScanned: prior.scanned,
+      lowered: built.stats.lowered,
+      passed: built.stats.passed,
+      cards: built.stats.cards,
+      verified: merged.filter(c => c.verified).length,
+      todayDrop: merged.filter(c => !c.verified).length,
+      reasons: built.stats.reasons
+    }
+  };
+}
+
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET만 지원' });
@@ -566,6 +869,31 @@ module.exports = async function handler(req, res) {
      * advanced past them (they never appeared on any page), and pushed external
      * cards out whenever 12 internal rows scored higher.
      */
+    /*
+     * 홈 핫딜. «오늘 내려간 상품» 이 기본 목록이고, 검증은 배지로 구분한다.
+     *
+     * ★ 이 분기는 기존 목록과 완전히 분리돼 있다. 아래 기존 경로는 한 줄도
+     *   바뀌지 않았으므로 /api/hotdeals, ?id=, view=external 소비자는 그대로다.
+     */
+    if (String(q.view || '') === 'today-drop') {
+      const drops = await loadTodayDrops(limit);
+      // 원장은 수집기가 도는 주기로만 바뀐다. 기존 목록과 같은 120초를 쓴다.
+      cachePublic(res, 120);
+      return res.json({
+        items: drops.items,
+        nextCursor: null,
+        total: drops.total,
+        view: 'today-drop',
+        counts: drops.items.reduce((acc, it) => {
+          const k = it.verified ? 'VERIFIED' : 'TODAY_DROP';
+          acc[k] = (acc[k] || 0) + 1;
+          return acc;
+        }, {}),
+        // 「왜 N개인가」를 화면·운영 양쪽에서 되짚을 수 있게 남긴다.
+        stats: drops.stats
+      });
+    }
+
     if (String(q.view || '') === 'external') {
       const external = await loadExternal(q, minScore, limit);
       cachePublic(res, 120);
@@ -688,5 +1016,7 @@ module.exports._internal = {
   VISIBLE, VISIBLE_LIFECYCLE, SORTS, DEFAULT_SORT, MAX_FAMILY_RUN,
   toListItem, otherOffers, spread, dropDuplicateGroups, isMissingColumn, dealId,
   toExternalListItem, toCommunityListItem, externalStatus, loadExternal, isMissingExternalTable,
-  byDailyDrop, dropAmountOf
+  byDailyDrop, dropAmountOf,
+  loadTodayDrops, toTodayDropItem, linkFor, imageFor, fetchTodayRows, fetchPriorRows,
+  fetchVerifiedDeals, fetchProducts, pickPriorRows, LEDGER_COLS, TODAY_MAX_PAGES, PRIOR_MAX_PAGES
 };
