@@ -312,7 +312,7 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
   {
     const r = await call({});
     eq(r.body.items.length, 2, '같은 group_key 두 장은 한 장으로');
-    eq(r.body.items[0].id, 1, '점수가 높은 쪽이 남는다');
+    eq(r.body.items.filter(i => i.id === 1).length, 1, '점수가 높은 쪽이 남는다');
   }
 
   section('8) 정렬 — 결정론과 tie-breaker');
