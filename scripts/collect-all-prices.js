@@ -1118,28 +1118,64 @@ async function fetchCollectorTargetKeys(meta = collectorTargetMeta()) {
   const keys = new Set();
   const dailyKeys = new Set();
   const rotationKeys = new Set();
+  let rows = null;
 
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .rpc('collector_target_products', {
-        p_rotation_days: meta.rotationDays,
-        p_rotation_bucket: meta.rotationBucket
-      })
-      .range(from, from + PAGE - 1);
+  /*
+   * 회전 대상 RPC 는 본체가 price_history/products 를 훑는 비교적 무거운 쿼리다.
+   * 예전에는 PostgREST max-rows 때문에 1,000개씩 .range() 하면서 같은 RPC 전체를
+   * 페이지마다 다시 실행했다. 오늘 대상이 1.2만개면 같은 계산을 13번 반복한다.
+   *
+   * batch RPC 는 결과를 JSONB 한 행으로 묶어 한 번만 계산한다. 운영 DB 함수에는
+   * 함수 단위 statement_timeout(30s)도 붙어 있어 authenticator 기본 8s 제한을
+   * 넘는 정상 쿼리가 중간에 취소되지 않는다.
+   *
+   * 새 migration 이 아직 없는 환경에서만 구형 pagination 으로 fallback 한다.
+   * timeout/DB 장애는 fallback 하지 않는다 — 같은 무거운 쿼리를 반복해 상황을
+   * 악화시키지 않고 원인을 그대로 실패로 올린다.
+   */
+  const batch = await supabase.rpc('collector_target_products_batch', {
+    p_rotation_days: meta.rotationDays,
+    p_rotation_bucket: meta.rotationBucket
+  });
 
-    if (error) {
-      throw new Error('collector_target_products 조회 실패: ' + error.message
-        + ' — Supabase migration collector_full_catalog_rotation 적용 여부를 확인하세요.');
+  if (!batch.error) {
+    if (!Array.isArray(batch.data)) {
+      throw new Error('collector_target_products_batch 응답 형식 오류: JSON 배열이 아닙니다.');
+    }
+    rows = batch.data;
+  } else {
+    const msg = String(batch.error.message || '');
+    const missingBatch = /PGRST202|could not find|does not exist|schema cache/i.test(msg);
+    if (!missingBatch) {
+      throw new Error('collector_target_products_batch 조회 실패: ' + msg);
     }
 
-    (data || []).forEach(r => {
-      const key = `${r.product_id}|${r.mall}`;
-      keys.add(key);
-      if (r.tier === 'rotation') rotationKeys.add(key);
-      else dailyKeys.add(key);
-    });
-    if (!data || data.length < PAGE) break;
+    console.warn('[collector 대상] batch RPC 미적용 — 구형 pagination fallback 을 사용합니다.');
+    rows = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .rpc('collector_target_products', {
+          p_rotation_days: meta.rotationDays,
+          p_rotation_bucket: meta.rotationBucket
+        })
+        .range(from, from + PAGE - 1);
+
+      if (error) {
+        throw new Error('collector_target_products 조회 실패: ' + error.message
+          + ' — Supabase migration collector_target_timeout_batch 적용 여부를 확인하세요.');
+      }
+
+      rows.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
   }
+
+  rows.forEach(r => {
+    const key = `${r.product_id}|${r.mall}`;
+    keys.add(key);
+    if (r.tier === 'rotation') rotationKeys.add(key);
+    else dailyKeys.add(key);
+  });
 
   return {
     keys,
