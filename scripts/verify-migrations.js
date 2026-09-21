@@ -101,7 +101,13 @@ const NEW_MIGRATIONS = [
    * 로컬 보호로만 떨어진다 — AI 는 계속 돌지만, 50개 인스턴스가 저마다
    * 429 를 새로 맞던 고치기 전 상태로 조용히 되돌아간다.
    */
-  '2026-09-20-ai-global-circuit.sql'
+  '2026-09-20-ai-global-circuit.sql',
+  /*
+   * 2026-09-21: 홈 핫딜 «오늘 가격 하락» 이 쓰는 recorded_at 정렬 인덱스.
+   * 미적용이어도 기능은 동작한다 — 원장 정렬이 인덱스를 타지 못해 느릴 뿐이다
+   * (2026-09-21 실측 2,636 ms). 데이터 변경 없음, CREATE INDEX 한 줄.
+   */
+  '2026-09-21-price-history-recorded-at-index.sql'
 ];
 
 function checkStatic() {

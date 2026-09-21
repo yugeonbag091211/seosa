@@ -38,7 +38,21 @@ assert(!radar.includes('hotdeals.html'),'레이더도 옛 핫딜 페이지로 �
 assert(!live.includes('오늘의 하락')&&!live.includes('최근 가격이 내려간 상품'),'옛 이름이 화면에 남지 않는다');
 assert(/<section id="priceDrop"[^>]*aria-label="핫딜"/.test(live),'섹션 id 는 그대로, 이름은 핫딜');
 assert(/<div class="sec-title">핫딜<span class="sec-count" id="dropCount"><\/span><\/div>/.test(live),'제목 «핫딜» + 개수 자리');
-assert(live.includes('SEOSA 가격 이력으로 검증한 지금 주목할 만한 가격이에요.'),'설명은 판정 근거(우리 가격 이력)와 같은 말을 한다');
+/*
+ * ── 설명 문구 (2026-09-21) ─────────────────────────────────────────
+ *
+ * 예전 문구는 «SEOSA 가격 이력으로 검증한 …» 이었다. 그때는 목록에 검증
+ * 통과분만 올라갔으므로 사실이었다. 이제 기본 목록이 «오늘 실제로 내려간
+ * 상품» 이고 검증분은 배지로 구분되므로, 옛 문구를 그대로 두면 검증하지
+ * 않은 카드까지 «SEOSA 가 검증했다» 고 말하게 된다.
+ *
+ * 그래서 두 가지를 같이 고정한다 — 옛 주장이 돌아오지 않는 것과,
+ * 새 문구가 목록의 실제 구성을 말하는 것.
+ */
+assert(!live.includes('SEOSA 가격 이력으로 검증한 지금 주목할 만한 가격이에요.'),
+  '«전부 검증했다»는 옛 설명이 돌아오지 않는다');
+assert(live.includes('오늘(한국시간) 가격이 내려간 상품이에요.')&&live.includes('«SEOSA 검증» 배지를 붙였어요'),
+  '설명은 목록의 실제 구성(하락이 기본 · 검증은 배지)을 말한다');
 /*
  * ── 데이터 경로 (2026-09-20 갱신) ──────────────────────────────────
  *
@@ -50,11 +64,31 @@ assert(live.includes('SEOSA 가격 이력으로 검증한 지금 주목할 만�
  */
 assert(live.includes("'getHotdeals':'/api/hotdeals'"),'홈 핫딜 데이터는 /api/hotdeals (Hot Deal 엔진)');
 assert(live.includes("Api.call('getHotdeals', []"),'Drop.load 는 핫딜 엔진을 부른다');
-assert(live.includes("queryUrl = url + '?limit=60&sort=score'"),'더보기용 후보를 한 번에 받아 서버 재호출 없이 펼친다');
+/*
+ * ── 노출의 기본이 «오늘 실제 하락» 이다 (2026-09-21) ────────────────
+ *
+ * 예전에는 ?limit=60&sort=score 로 엔진의 «검증 통과분» 만 받았다.
+ * 2026-09-21 운영 실측: 그 수가 2개였고, 같은 날 실제로 내려간 상품은
+ * 24개였다 — 22개가 홈에 오르지 못했다. 이 단언이 없으면 조용히 예전
+ * 구조로 되돌아가도 아무도 모른다.
+ */
+assert(live.includes("queryUrl = url + '?view=today-drop&limit=60'"),'홈 핫딜은 오늘 하락 목록을 받는다 (검증 통과분만이 아니다)');
+assert(!live.includes("queryUrl = url + '?limit=60&sort=score'"),'검증 통과분만 받던 옛 호출이 돌아오지 않는다');
 assert(live.includes('INITIAL: 5')&&live.includes('STEP: 10'),'핫딜은 기본 5개, 더보기는 10개씩');
 assert(live.includes('data-act="drop-more"')&&live.includes("'drop-more': function() { Drop.more(); }"),'내부 핫딜 더보기 액션');
 assert(live.includes("Drop.items.slice(0, take)"),'내부 핫딜은 visible 개수까지만 렌더한다');
-assert(live.includes('Drop.fromHotdeal'),'엔진 응답을 기존 카드 모양으로 옮긴다 (UI 재사용)');
+assert(live.includes('Drop.fromTodayDrop'),'오늘 하락 응답을 기존 카드 모양으로 옮긴다 (UI 재사용)');
+assert(!live.includes('fromHotdeal'),'부르는 곳이 없어진 옛 변환 함수는 남기지 않는다');
+/* 배지 — 검증분과 하락분을 카드가 스스로 구분해 말한다. */
+assert(live.includes('class="dbadge')&&live.includes('is-verified'),'카드에 검증 / 하락 배지가 있다');
+assert(live.includes('.dmall .dbadge{'),'배지 스타일은 기존 판매처 줄 안에 얹는다 (카드 구조 유지)');
+assert(live.includes("badge: it.badge || '오늘 가격 하락'"),'배지 문구는 서버가 정하고 화면은 기본값만 갖는다');
+const td=read('api/_todaydrop.js');
+assert(td.includes("BADGE_VERIFIED = 'SEOSA 검증'")&&td.includes("BADGE_TODAY = '오늘 가격 하락'"),'배지 두 문구는 한 곳에서만 정해진다');
+assert(td.includes('return pct >= p || amount >= a'),'노출 관문은 5% «또는» 1,000원 (AND 가 아니다)');
+const hdApi=read('api/hotdeals.js');
+assert(hdApi.includes("String(q.view || '') === 'today-drop'"),'today-drop 은 기존 목록과 분리된 분기다');
+assert(hdApi.includes("String(q.view || '') === 'external'"),'외부 레이더 view 는 그대로 남아 있다');
 assert(live.includes('data-act="ledger-open"')&&live.includes('data-act="ledger-buy"')&&live.includes('data-act="ledger-alert"'),'카드 → 가격 추이 · 구매 · 알림 그대로');
 const init=read('api/init.js');
 assert(init.includes(".from('price_drop_top')")&&init.includes('.filter(plausibleDrop)')&&init.includes('todayDropConfirmed')&&init.includes('priceDrop: dropRows'),'서버의 오늘 하락 판정 경로는 그대로 (다른 화면이 쓴다)');

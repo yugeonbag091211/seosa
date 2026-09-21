@@ -1830,6 +1830,23 @@ html[data-theme="dark"] .cmp-table tr.best{background:rgba(61,187,130,.08)}
 .dmall .atl{color:var(--soft);font-weight:600;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 /*
+ * 핫딜 배지 — 「SEOSA 검증」 / 「오늘 가격 하락」 (2026-09-21).
+ *
+ * 카드 구조는 그대로 두고 판매처 줄에 한 조각만 얹는다. 알약(채운 면)을
+ * 쓰지 않는 이유는 카드 폭이 좁아서다 — 다섯 장이 한 줄에 들어가야 하는데
+ * 배경을 채우면 판매처 이름이 밀려 잘린다(.atl 과 같은 판단).
+ *
+ * 색으로 둘을 가른다. 검증은 하락 색(--down)을 쓰고, 검증 전은 판매처
+ * 이름과 같은 흐린 색이다 — «아직 우리가 보증하지 않는다» 가 눈에 먼저
+ * 들어와야 한다.
+ */
+.dmall .dbadge{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;
+  color:var(--faint);font-weight:600;white-space:nowrap}
+.dmall .dbadge::before{content:'';width:4px;height:4px;border-radius:50%;
+  background:currentColor;opacity:.45;flex:0 0 auto}
+.dmall .dbadge.is-verified{color:var(--down)}
+.dmall .dbadge.is-verified::before{opacity:1}
+/*
  * 가격 하락 카드의 액션 줄.
  * 카드 폭이 좁으므로 알약이나 채운 면을 쓰지 않는다 — 「구매」만 진하게,
  * 「알림」은 흐리게 둔다. 상품 카드(.card-actions)와 같은 언어다.
@@ -3721,7 +3738,13 @@ select:focus-visible,textarea:focus-visible,
           개수는 이 목록의 사실이므로 이 목록의 머리에 있는 것이 맞다.
         -->
         <div class="sec-title">핫딜<span class="sec-count" id="dropCount"></span></div>
-        <div class="sec-sub">SEOSA 가격 이력으로 검증한 지금 주목할 만한 가격이에요.</div>
+        <!--
+          ★ 2026-09-21: 「검증한 …」 → 「내려간 … 검증된 상품에는 배지」.
+            목록의 기본이 검증 통과분에서 «오늘 실제로 내려간 상품» 으로
+            바뀌었다. 예전 문구를 그대로 두면 검증하지 않은 카드까지
+            «SEOSA 가 검증했다» 고 말하는 셈이 된다.
+        -->
+        <div class="sec-sub">오늘(한국시간) 가격이 내려간 상품이에요. SEOSA 가격 이력으로 근거까지 확인한 상품에는 «SEOSA 검증» 배지를 붙였어요.</div>
       </div>
       <button class="sec-more" id="dropMore" data-act="drop-more" style="display:none">더보기 <span aria-hidden="true">›</span></button>
     </div>
@@ -5334,9 +5357,22 @@ var Api = {
     } else if (fnName === 'getProfileRecommendations') {
       queryUrl = url + '?cats=' + encodeURIComponent(JSON.stringify(args[0] || []));
     } else if (fnName === 'getHotdeals') {
-      // 홈은 처음 5개만 보여 주되 «더보기» 때 서버를 다시 치지 않도록
-      // 최대 60개를 한 번 받아 두고 클라이언트에서 10개씩 펼친다.
-      queryUrl = url + '?limit=60&sort=score';
+      /*
+       * 홈 핫딜은 «오늘 가격이 내려간 상품» 이 기본 목록이다(view=today-drop).
+       *
+       * 예전에는 ?limit=60&sort=score 로 엔진의 «검증 통과분» 만 받았다.
+       * 2026-09-21 운영 실측으로 그 수가 2개였고, 같은 날 실제로 내려간
+       * 상품은 24개였다 — 22개가 화면에 오르지 못했다. 이제 기본 목록은
+       * 실제 하락분이고, 검증 통과분에는 배지가 붙어 맨 앞에 온다
+       * (api/_todaydrop.js).
+       *
+       * 목록 자체(/api/hotdeals, ?id=, view=external)는 그대로 살아 있다 —
+       * 다른 소비자가 계속 쓴다.
+       *
+       * 처음 5개만 보여 주되 «더보기» 때 서버를 다시 치지 않도록 최대 60개를
+       * 한 번 받아 두고 클라이언트에서 10개씩 펼친다.
+       */
+      queryUrl = url + '?view=today-drop&limit=60';
     } else if (fnName === 'getExternalHotdeals') {
       queryUrl = url + '?view=external&limit=60&minScore=60';
     } else if (fnName === 'payPrepare' || fnName === 'payConfirm'
@@ -8019,23 +8055,47 @@ var Drop = {
   items: [],
   visible: 5,
 
-  fromHotdeal: function(it) {
+  /*
+   * view=today-drop 응답 → 기존 카드 모양.
+   *
+   * ★ 2026-09-21 이전에는 Drop.fromHotdeal 이 이 자리였다 (엔진의 검증
+   *   통과분 → 카드). 홈이 더 이상 그 목록을 받지 않으므로 지웠다 —
+   *   부르는 곳이 없는 변환 함수를 남겨 두면 «어느 쪽이 진짜인가» 가
+   *   흐려진다. 엔진과 /api/hotdeals 목록·상세는 그대로 살아 있고
+   *   (scripts/test-hotdeal-api.js 가 계약을 지킨다), 검증 결과는 이제
+   *   이 목록 안에서 «SEOSA 검증» 배지로 나온다.
+   *
+   * fromHotdeal 과 같은 자리에 같은 이름을 채운다(lprice/oprice/savePct…).
+   * 카드 렌더(rowHTML)·모달(Drop.read)·알림(Alert)이 전부 그 이름을 읽으므로,
+   * 여기서 모양만 맞춰 주면 UI 는 한 줄도 바뀌지 않는다.
+   *
+   * ★ oprice 는 이제 «쇼핑몰 표시 정가» 가 아니라 «직전 관측 가격» 이다.
+   *   카드 툴팁의 «이전 기록가» 가 가리키던 값이 바로 그것이고, 하락률도
+   *   같은 두 값에서 나온다 — 화면의 숫자끼리 서로 어긋나지 않는다.
+   */
+  fromTodayDrop: function(it) {
     it = it || {};
-    var s = it.signals || {};
-    var cur = Fmt.int(it.price);
-    var ref = Fmt.int(s.referencePrice || it.listPrice || cur);
-    var pct = Number(s.priceDropPercent);
+    var cur = Fmt.int(it.currentPrice);
+    var prev = Fmt.int(it.previousPrice);
+    var pct = Number(it.dropPct);
     if (!Number.isFinite(pct) || pct <= 0) {
-      pct = ref > cur && ref > 0 ? Math.round((ref - cur) / ref * 1000) / 10 : 0;
+      pct = prev > cur && prev > 0 ? Math.round((prev - cur) / prev * 1000) / 10 : 0;
     }
     return {
       title: it.title || '', image: it.image || '', mall: it.mall || '',
+      // ADPICK 은 표시 이름(cp_name)과 저장 키(mall)가 다르다 — 따로 들고 간다.
+      mallLabel: it.mallLabel || '',
       productId: it.productId || '', vendorItemId: it.vendorItemId || '',
-      lprice: cur, oprice: ref, savePct: Math.max(0, pct),
-      isAllTimeLow: !!s.nearHistoricalLow,
-      link: it.productUrl || it.url || '',
-      hotdealStatus: it.status || '', hotScore: it.dealScore,
-      reason: it.reason || ''
+      lprice: cur, oprice: prev, savePct: Math.max(0, pct),
+      dropAmount: Fmt.int(it.dropAmount),
+      // 이 목록은 «오늘 내려갔다» 만 말한다. 최저가 주장은 여기서 하지 않는다.
+      isAllTimeLow: false,
+      link: it.link || '',
+      verified: !!it.verified,
+      badge: it.badge || '오늘 가격 하락',
+      // 검증된 카드는 엔진의 원래 판정도 그대로 들고 간다.
+      hotdealStatus: it.dealStatus || '', hotScore: it.hotScore,
+      reason: ''
     };
   },
 
@@ -8044,7 +8104,7 @@ var Drop = {
     Drop.visible = Drop.INITIAL;
     show('priceDrop', true);
     Api.call('getHotdeals', [], function(items) {
-      Drop.show((items || []).map(Drop.fromHotdeal));
+      Drop.show((items || []).map(Drop.fromTodayDrop));
     }, function() {
       // 예전엔 로딩 표시만 끄고 섹션은 열어둬서, 조회에 실패하면
       // "오늘의 가격 하락" 제목만 있고 내용이 텅 빈 칸이 남았다.
@@ -8127,6 +8187,25 @@ var Drop = {
     var tip = '이전 기록가 ' + Fmt.won(prev) + '원'
       + (it.isAllTimeLow ? ' · SEOSA 수집 이후 최저' : '');
 
+    /*
+     * 배지 — 「SEOSA 검증」 또는 「오늘 가격 하락」.
+     *
+     * ★ 이 두 말은 서로 다른 주장이다. 섞어 쓰면 둘 다 뜻을 잃는다.
+     *     SEOSA 검증   : 가격 이력으로 근거까지 확인한 딜(VERIFIED_HOT/GOOD_DEAL).
+     *                    엄격한 관문을 통과한 소수다.
+     *     오늘 가격 하락: 오늘(KST) 관측이 직전 관측보다 낮다는 «사실» 하나.
+     *                    그 이상은 말하지 않는다.
+     *   예전에는 검증분만 목록에 올렸기 때문에 배지가 필요 없었다. 이제는
+     *   둘이 한 목록에 있으므로, 어느 쪽인지 카드가 스스로 말해야 한다.
+     */
+    var badge = it.badge
+      ? '<span class="dbadge' + (it.verified ? ' is-verified' : '') + '" title="'
+        + Fmt.esc(it.verified
+            ? 'SEOSA 가격 이력으로 근거까지 확인한 핫딜입니다.'
+            : '오늘(한국시간) 관측한 가격이 직전 관측보다 내려갔습니다. 추가 검증은 아직 통과하지 않았어요.')
+        + '">' + Fmt.esc(it.badge) + '</span>'
+      : '';
+
     return '<div class="dcard" data-act="ledger-open" role="button" tabindex="0"'
       + ' aria-label="' + Fmt.esc(it.title) + ' 가격 추이 보기"'
       + ' title="' + Fmt.esc(tip) + '"'
@@ -8146,7 +8225,7 @@ var Drop = {
       +   '<div class="dname">' + Fmt.esc(it.title) + '</div>'
       +   '<div class="dprice">' + Fmt.won(price) + '<span class="w">원</span>'
       +     '<span class="dchg">↓' + pct + '%</span></div>'
-      +   '<div class="dmall">' + Fmt.esc(m.name) + atl + '</div>'
+      +   '<div class="dmall">' + Fmt.esc(m.name) + badge + atl + '</div>'
       /*
        * 액션 줄. 카드 전체가 「가격 추이 열기」라서 두 버튼은 각자
        * e.stopPropagation() 으로 모달이 같이 열리는 것을 막는다
