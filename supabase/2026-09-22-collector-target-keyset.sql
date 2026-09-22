@@ -98,6 +98,19 @@ comment on table collector_eligible_cache is
   '않게 한다. 진실의 원본은 여전히 collector_eligible_products() 이고, '
   '이 표는 collector_refresh_eligible() 로만 갱신한다.';
 
+-- 이 캐시는 수집기 내부 상태다. public 스키마의 새 표가 Data API 기본
+-- 권한 변화나 프로젝트 설정에 따라 노출되지 않도록 RLS와 명시적 권한을
+-- 함께 고정한다. service_role 만 함수 실행과 캐시 갱신에 사용한다.
+alter table public.collector_eligible_cache enable row level security;
+revoke all on table public.collector_eligible_cache
+  from public, anon, authenticated;
+revoke all on sequence public.collector_eligible_cache_id_seq
+  from public, anon, authenticated;
+grant select, insert, update, delete on table public.collector_eligible_cache
+  to service_role;
+grant usage, select on sequence public.collector_eligible_cache_id_seq
+  to service_role;
+
 -- 갱신 시각으로 «얼마나 오래된 캐시인가» 를 묻는다.
 create index if not exists collector_eligible_cache_refreshed_idx
   on collector_eligible_cache (refreshed_at desc);

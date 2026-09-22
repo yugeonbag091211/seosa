@@ -198,6 +198,29 @@ function checkStatic() {
     const innerJoin = /(^|\s)join\s+products\s+p2/i.test(sql) && !/left\s+join\s+products\s+p2/i.test(sql);
     ok('price_drop_top: products inner join', innerJoin ? '고아 이력 배제' : '확인 필요');
   }
+
+  /* collector 캐시는 service_role 전용이어야 한다. */
+  const collectorSql = path.join(SQL_DIR, '2026-09-22-collector-target-keyset.sql');
+  if (fs.existsSync(collectorSql)) {
+    const sql = stripSqlComments(fs.readFileSync(collectorSql, 'utf8'));
+    if (/alter\s+table\s+(?:public\.)?collector_eligible_cache\s+enable\s+row\s+level\s+security/i.test(sql)) {
+      ok('collector_eligible_cache: RLS 활성화');
+    } else bad('collector_eligible_cache: RLS 활성화 없음');
+
+    const tableRevoked = /revoke\s+all\s+on\s+table\s+(?:public\.)?collector_eligible_cache[\s\S]*?from\s+public\s*,\s*anon\s*,\s*authenticated/i.test(sql);
+    const sequenceRevoked = /revoke\s+all\s+on\s+sequence\s+(?:public\.)?collector_eligible_cache_id_seq[\s\S]*?from\s+public\s*,\s*anon\s*,\s*authenticated/i.test(sql);
+    if (tableRevoked && sequenceRevoked) {
+      ok('collector_eligible_cache: public/anon/authenticated 권한 회수', 'table / sequence');
+    } else bad('collector_eligible_cache: 공개 권한 회수 불완전',
+      `table=${tableRevoked} sequence=${sequenceRevoked}`);
+
+    const serviceTable = /grant\s+select\s*,\s*insert\s*,\s*update\s*,\s*delete\s+on\s+table\s+(?:public\.)?collector_eligible_cache[\s\S]*?to\s+service_role/i.test(sql);
+    const serviceSequence = /grant\s+usage\s*,\s*select\s+on\s+sequence\s+(?:public\.)?collector_eligible_cache_id_seq[\s\S]*?to\s+service_role/i.test(sql);
+    if (serviceTable && serviceSequence) {
+      ok('collector_eligible_cache: service_role 최소 권한', 'table / sequence');
+    } else bad('collector_eligible_cache: service_role 권한 불완전',
+      `table=${serviceTable} sequence=${serviceSequence}`);
+  }
 }
 
 /* ------------------------------------------------------------------ *
