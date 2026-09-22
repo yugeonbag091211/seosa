@@ -70,7 +70,13 @@ const PROTECTED_TABLES = [
 /** 지워도 되는 테이블 — 일회성/파생 데이터. */
 const EPHEMERAL_TABLES = [
   'auth_codes', 'coupang_api_calls', 'coupang_search_cache',
-  'adpick_api_calls', 'adpick_search_cache'
+  'adpick_api_calls', 'adpick_search_cache',
+  /*
+   * 2026-09-22: collector_eligible_products() 의 결과를 하루 한 번 굳혀 둔
+   * 캐시. 원본은 price_history/products 이고 언제든 다시 만들 수 있다
+   * (collector_refresh_eligible). 지워도 잃는 사실이 없다.
+   */
+  'collector_eligible_cache'
 ];
 
 function deleteTargets(sql) {
@@ -113,7 +119,15 @@ const NEW_MIGRATIONS = [
    * 함수 단위 timeout 만 30s 로 늘리고, 전체 target 을 JSONB 한 행으로 반환해
    * 1,000행 페이지마다 같은 무거운 계산을 다시 하지 않게 한다.
    */
-  '2026-09-22-collector-target-timeout-batch.sql'
+  '2026-09-22-collector-target-timeout-batch.sql',
+  /*
+   * 2026-09-22: 위 timeout 처방이 하루 만에 다시 30초를 넘겼다 (운영 실측
+   * 30,362 ms / 57014). 비싼 계산을 캐시 표로 분리하고 대상 조회를
+   * (mall, product_id) 키셋 페이지로 바꾼다. 미적용이면 수집기가
+   * collector_target_products_batch 로 자동 폴백하므로 «동작은 하지만
+   * 카탈로그가 커질수록 다시 죽는» 상태로 남는다.
+   */
+  '2026-09-22-collector-target-keyset.sql'
 ];
 
 function checkStatic() {
@@ -300,6 +314,42 @@ async function checkLive() {
     const missing = error && /could not find|does not exist|schema cache/i.test(error.message);
     if (missing) { bad('ai_circuit_gate() RPC 없음', '429 가 인스턴스마다 따로 터진다'); applied.circuit = false; }
     else ok('ai_circuit_gate() RPC');
+  }
+
+  /* ── 수집 대상 키셋 (2026-09-22-collector-target-keyset.sql) ────
+   *
+   * 미적용이어도 수집기는 collector_target_products_batch 로 폴백해서
+   * 돈다. 그래서 «조용히 느려지는» 상태가 된다 — 그 상태를 이름으로
+   * 드러내는 것이 이 검사의 목적이다.
+   */
+  {
+    const { error } = await supabase.from('collector_eligible_cache').select('*').limit(1);
+    if (error) {
+      wrn('collector_eligible_cache 표 없음',
+        '수집 대상 조회가 매 실행 price_history 전체를 다시 훑는다');
+    } else ok('collector_eligible_cache 표');
+  }
+  {
+    /*
+     * 커서를 «모든 값보다 큰» 자리에 두고 부른다. 함수가 있으면 0행이
+     * 즉시 오고(비용 없음), 없으면 스키마 캐시 오류가 온다.
+     */
+    const { error } = await supabase.rpc('collector_target_page', {
+      p_rotation_days: 7, p_rotation_bucket: 0,
+      p_after_mall: '￿', p_after_product_id: '', p_limit: 1, p_include_all: false
+    });
+    const missing = error && /could not find|does not exist|schema cache/i.test(error.message);
+    if (missing) wrn('collector_target_page() RPC 없음', '구형 batch RPC 로 폴백 — 카탈로그가 커지면 다시 timeout');
+    else if (error) wrn('collector_target_page() 조회 실패', error.message.slice(0, 80));
+    else ok('collector_target_page() RPC');
+  }
+  {
+    // p_max_age_minutes 를 아주 크게 줘서 «재계산하지 않는» 경로로만 부른다.
+    const { error } = await supabase.rpc('collector_refresh_eligible', { p_max_age_minutes: 525600 });
+    const missing = error && /could not find|does not exist|schema cache/i.test(error.message);
+    if (missing) wrn('collector_refresh_eligible() RPC 없음', '상시 추적 캐시를 채울 수 없다');
+    else if (error) wrn('collector_refresh_eligible() 조회 실패', error.message.slice(0, 80));
+    else ok('collector_refresh_eligible() RPC');
   }
 
   // 이력은 절대 줄면 안 된다. 적용 전후 대조용 수치를 남긴다.

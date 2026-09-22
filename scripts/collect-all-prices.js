@@ -947,7 +947,31 @@ const PRODUCT_COLS = 'product_id, mall, title, keyword, link, image, vendor_item
  *   · 정렬은 전체 스캔과 같은 product_id 오름차순으로 맞춘다. 순서가 곧
  *     커서(price_job_state.cursor_key)의 의미라, 흔들리면 이어받기가 깨진다.
  */
-async function fetchProductsByIds(keys) {
+/**
+ * IN 목록으로 물을지, 카탈로그를 통째로 훑을지 정하는 경계 (2026-09-22).
+ *
+ *   IN 목록의 요청 수는 «대상 수 ÷ 배치 크기» 이고, 배치 크기는 URI 예산
+ *   12,000자를 id 길이로 나눈 값이다 (ADPICK 은 64자라 배치당 179개).
+ *   전체 스캔의 요청 수는 «카탈로그 ÷ 1,000» 으로 고정이다.
+ *
+ *   2026-09-22 운영 수치 (products 69,743 / 쿠팡 22,924 / ADPICK 46,819):
+ *     대상  2,965개 → IN 약  20 요청  vs 전체 스캔 70 요청  → IN 이 싸다
+ *     대상 12,666개 → IN 약  75 요청  vs 전체 스캔 70 요청  → 비슷
+ *     대상 40,000개 → IN 약 230 요청  vs 전체 스캔 70 요청  → 스캔이 싸다
+ *
+ *   0.35 는 그 교차점(≈0.3)에 여유를 둔 값이다. 어느 쪽을 골라도
+ *   **돌려주는 행 집합은 완전히 같다** — 마지막에 keys 로 거르기 때문이다.
+ */
+const TARGET_FULLSCAN_RATIO = Math.max(0, Math.min(1,
+  Number(process.env.PRICE_TARGET_FULLSCAN_RATIO) || 0.35));
+
+async function fetchProductsByIds(keys, catalogTotal = 0) {
+  if (catalogTotal > 0 && keys.size >= catalogTotal * TARGET_FULLSCAN_RATIO) {
+    console.log(`  [대상 조회] 대상 ${keys.size}개 / 카탈로그 ${catalogTotal}개`
+      + ` — IN 목록보다 전체 키셋 스캔이 싸서 그쪽으로 읽습니다.`);
+    const all = await fetchAllProducts();
+    return all.filter(r => keys.has(`${r.product_id}|${r.mall}`));
+  }
   const ids = [...new Set([...keys].map(k => k.slice(0, k.lastIndexOf('|'))))];
   const out = [];
   for (const chunk of chunkIdsByLength(ids)) {
@@ -987,18 +1011,88 @@ async function countCatalog() {
   }
 }
 
-async function fetchAllProducts() {
-  const all = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from('products')
-      .select(PRODUCT_COLS)
-      .order('product_id', { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error('products 조회 실패: ' + error.message);
-    all.push(...(data || []));
-    if (!data || data.length < PAGE) return all;
+/**
+ * 표 하나를 «커서 뒤부터» 끝까지 훑는다 (키셋 페이지네이션).
+ *
+ * ── 왜 offset(.range) 을 버리는가 (2026-09-22) ────────────────────
+ *
+ *   PostgREST 의 .range(from, to) 는 SQL 의 OFFSET 이다. OFFSET n 은
+ *   «건너뛸 n 행을 실제로 읽은 뒤 버리는» 동작이라, 뒤쪽 페이지일수록
+ *   같은 1,000행을 받는 데 더 많이 읽는다. 카탈로그가 69,743행이면
+ *   한 바퀴에 읽히는 행 수는 1,000+2,000+…+69,743 ≈ 243만 행이다
+ *   (한 바퀴에 필요한 행의 35배).
+ *
+ *   키셋은 «마지막으로 본 값보다 큰 것부터 1,000행» 이라 페이지마다
+ *   읽는 양이 같다. 6만 번째 페이지도 첫 페이지와 같은 비용이다.
+ *
+ * ── 그리고 정렬 없는 .range 는 «틀린 답» 을 준다 ─────────────────
+ *
+ *   ORDER BY 가 없는 질의의 행 순서는 Postgres 가 보장하지 않는다.
+ *   페이지 사이에 순서가 흔들리면 어떤 행은 두 번, 어떤 행은 한 번도
+ *   안 나온다. fetchEverCollectedKeys 가 정확히 그 모양이었다 —
+ *   price_history 143,282행을 정렬 없이 143페이지로 나눠 읽고 있었다.
+ *   키셋은 커서 컬럼으로 반드시 정렬하므로 구조적으로 그럴 수 없다.
+ *
+ * @param {object} o
+ *   build      () => PostgrestFilterBuilder — 매 페이지 새로 만든다
+ *   columns    select 할 컬럼 (커서 컬럼을 반드시 포함할 것)
+ *   cursor     커서 컬럼 이름. 유일하고 단조여야 한다 (기본 'id')
+ *   pageSize   한 페이지 행 수
+ *   label      오류 메시지에 쓸 이름
+ *   onPage     (rows) => void — 페이지마다 부른다. 주면 배열을 쌓지 않는다
+ *              (6만~10만 행을 통째로 메모리에 올리지 않기 위한 출구)
+ * @returns {Array} onPage 를 주지 않았을 때만 전체 행
+ */
+async function keysetScan({ build, columns, cursor = 'id', pageSize = PAGE, label = '조회', onPage = null }) {
+  const all = onPage ? null : [];
+  let after = null;
+  let guard = 0;
+  /*
+   * ★ 끝 판정의 기준은 «요청한 크기» 가 아니라 «서버가 준 최대 크기» 다.
+   *   PostgREST 의 db-max-rows(운영 1,000)가 요청보다 작으면, 요청 크기로
+   *   판단할 때 첫 페이지에서 루프가 끝나 나머지를 통째로 잃는다.
+   *   fetchTargetPages 의 같은 주석 참고.
+   */
+  let maxPage = 0;
+  for (;;) {
+    if (++guard > 100000) throw new Error(`${label}: 키셋 페이지가 100,000장을 넘었습니다 (커서 컬럼 '${cursor}' 이 단조롭지 않을 수 있습니다)`);
+    let q = build().select(columns).order(cursor, { ascending: true }).limit(pageSize);
+    if (after !== null) q = q.gt(cursor, after);
+    const { data, error } = await q;
+    if (error) throw new Error(`${label} 실패: ` + error.message);
+    const rows = data || [];
+    if (onPage) onPage(rows); else all.push(...rows);
+    if (rows.length === 0) return all;
+    maxPage = Math.max(maxPage, rows.length);
+    if (rows.length < maxPage) return all;
+    const next = rows[rows.length - 1][cursor];
+    if (next === undefined || next === null) {
+      throw new Error(`${label}: 커서 컬럼 '${cursor}' 이 응답에 없습니다 (columns 에 포함시킬 것)`);
+    }
+    after = next;
   }
+}
+
+/**
+ * 카탈로그 전체를 읽는다 (PRICE_INCLUDE_BULK_SEED / PRICE_SEED_ONLY 경로).
+ *
+ * ★ 돌려주는 행의 «모양»은 fetchProductsByIds 와 완전히 같아야 한다
+ *   (그 함수 주석 참고). 커서로 쓴 id 는 여기서 떼어낸다.
+ * ★ 정렬도 예전 그대로 product_id 오름차순으로 맞춘다 — 그 순서가 곧
+ *   커서(price_job_state.cursor_key)의 의미라 흔들리면 이어받기가 깨진다.
+ *   (키셋은 id 순으로 읽으므로, 다 읽은 뒤 한 번 정렬한다)
+ */
+async function fetchAllProducts() {
+  const rows = await keysetScan({
+    build: () => supabase.from('products'),
+    columns: 'id, ' + PRODUCT_COLS,
+    cursor: 'id',
+    label: 'products 조회'
+  });
+  const out = rows.map(({ id, ...rest }) => rest);   // eslint-disable-line no-unused-vars
+  out.sort((a, b) => String(a.product_id).localeCompare(String(b.product_id))
+    || String(a.mall).localeCompare(String(b.mall)));
+  return out;
 }
 
 /**
@@ -1012,15 +1106,15 @@ async function fetchAllProducts() {
  */
 async function fetchEverCollectedKeys() {
   const seen = new Set();
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from('price_history')
-      .select('product_id, mall')
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error('price_history 조회 실패(시드 모드): ' + error.message);
-    (data || []).forEach(r => seen.add(`${r.product_id}|${r.mall}`));
-    if (!data || data.length < PAGE) return seen;
-  }
+  await keysetScan({
+    build: () => supabase.from('price_history'),
+    columns: 'id, product_id, mall',
+    cursor: 'id',
+    label: 'price_history 조회(시드 모드)',
+    // 14만 행을 배열로 쌓지 않는다 — Set 하나만 남긴다.
+    onPage: rows => rows.forEach(r => seen.add(`${r.product_id}|${r.mall}`))
+  });
+  return seen;
 }
 
 /**
@@ -1043,6 +1137,41 @@ async function fetchCollectorEligibleKeys() {
   if (process.env.PRICE_INCLUDE_BULK_SEED === '1') return null;
 
   const seen = new Set();
+
+  /*
+   * ★ 캐시 표가 있으면 그것을 읽는다 (2026-09-22).
+   *
+   *   아래 RPC 경로는 PostgREST max-rows(1,000) 때문에 페이지마다 같은
+   *   함수를 처음부터 다시 실행한다. 그 함수 한 번이 6초다(운영 실측).
+   *   대상이 2,965개면 같은 6초짜리 계산을 세 번 한다.
+   *   캐시 표는 인덱스 있는 평범한 표라 키셋으로 훑으면 된다.
+   *
+   *   캐시가 비었거나 표가 없으면 아무 말 없이 예전 경로로 내려간다 —
+   *   «상시 추적 대상 0개» 로 조용히 좁히는 것이 가장 위험하기 때문이다.
+   */
+  try {
+    const cache = await refreshEligibleCache();
+    if (cache.ok && cache.rows > 0) {
+      await keysetScan({
+        build: () => supabase.from('collector_eligible_cache'),
+        /*
+         * ★ 커서는 id 다. product_id 는 유일하지 않다 — 같은 product_id 가
+         *   두 몰에 있을 수 있고, 그 두 행이 페이지 경계에 걸리면 뒤엣것을
+         *   조용히 건너뛴다 (마이그레이션의 id 주석 참고).
+         */
+        columns: 'id, product_id, mall',
+        cursor: 'id',
+        label: 'collector_eligible_cache 조회',
+        onPage: rowsPage => rowsPage.forEach(r => seen.add(`${r.product_id}|${r.mall}`))
+      });
+      if (seen.size > 0) return seen;
+      console.warn('[collector 대상] 상시 추적 캐시를 읽었으나 0건 — 원본 RPC 로 내려갑니다.');
+    }
+  } catch (e) {
+    console.warn(`[collector 대상] 상시 추적 캐시 읽기 실패 — 원본 RPC 로 내려갑니다: ${e.message}`);
+    seen.clear();
+  }
+
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .rpc('collector_eligible_products')
@@ -1054,6 +1183,167 @@ async function fetchCollectorEligibleKeys() {
     (data || []).forEach(r => seen.add(`${r.product_id}|${r.mall}`));
     if (!data || data.length < PAGE) return seen;
   }
+}
+
+/* ─── 수집 대상 조회 (2026-09-22 타임아웃 사고 대응) ─────────────
+ *
+ * ★ 무엇이 터졌나.
+ *
+ *   2026-09-22 KST 07:41·07:23 운영 실측 (gh run 35663976131 / 35662376120):
+ *     치명적 오류: collector_target_products 조회 실패:
+ *       canceling statement due to statement timeout
+ *   수집기가 **첫 줄에서** 죽었다. 한 상품도 시도하지 못했다.
+ *
+ *   읽기 전용 재현 (2026-09-22 10:19 KST):
+ *     rpc('collector_target_products', {7, 0}).limit(3)
+ *       → 57014 statement timeout, 30,362 ms
+ *     rpc('collector_eligible_products')                  6,034 ms
+ *     products 69,743행 / price_history 143,282행
+ *
+ *   하루 전(2026-09-22-collector-target-timeout-batch.sql)에 함수 단위
+ *   statement_timeout 을 8초 → 30초로 올려 둔 것을 **하루 만에 다시**
+ *   넘겼다. 한도를 올리는 처방은 수명이 끝났다.
+ *
+ * ★ 왜 한도를 올려도 안 되는가.
+ *
+ *   collector_target_products() 한 번의 비용은 «오늘 대상이 몇 개인가» 가
+ *   아니라 «원장과 카탈로그가 얼마나 큰가» 로 정해진다. 안에서
+ *     · price_history 전체 Seq Scan (recorded_at OR source — 인덱스 불가)
+ *     · products 조인 + select distinct
+ *     · products 69,743행 전부에 hashtextextended 계산
+ *   이 매 실행 다시 돈다. 카탈로그가 10만이 되면 60초로 올려도 같은
+ *   자리에서 죽는다.
+ *
+ * ★ 무엇으로 바꾸는가.
+ *
+ *   비싼 계산을 하루 한 번 캐시 표에 굳히고(collector_refresh_eligible),
+ *   대상은 (mall, product_id) 키셋으로 한 페이지씩 받는다
+ *   (collector_target_page). 한 문장이 읽는 양이 페이지 크기로 고정되므로
+ *   카탈로그가 6만이든 100만이든 **한 문장의 시간은 같다.**
+ *   중간에 한 페이지가 실패해도 그 커서부터 다시 받으면 된다.
+ *
+ *   migration(2026-09-22-collector-target-keyset.sql)이 아직 없는 환경은
+ *   예전 batch RPC → 예전 pagination 순으로 폴백한다. 동작은 그대로고
+ *   «구조적으로 다시 죽을 수 있는 상태» 라는 것만 경고로 남긴다.
+ * ------------------------------------------------------------------ */
+
+/**
+ * 대상 한 페이지 크기. 한 문장이 읽는 양의 상한이기도 하다.
+ *
+ * ★ 1,000 을 넘기지 않는다 — PostgREST 의 db-max-rows 가 1,000 이다.
+ *   2026-09-22 읽기 전용 실측: limit 2,000 으로 물어도 정확히 1,000행만
+ *   온다 (rpc('collector_eligible_products') 도 같다). 그 상태에서
+ *   «요청한 만큼 안 왔으니 마지막 페이지» 로 판단하면 첫 페이지에서
+ *   루프가 끝나 **대상의 대부분을 조용히 잃는다.**
+ *   아래 루프는 그것과 별개로 «서버가 실제로 준 최대 페이지» 를 보고
+ *   끝을 판단하므로, 이 값이 틀려도 데이터를 잃지 않는다.
+ */
+const TARGET_PAGE = Math.max(100, Math.min(1000,
+  Number(process.env.PRICE_TARGET_PAGE) || 1000));
+
+/**
+ * 상시 추적 캐시를 필요하면 다시 계산한다.
+ *
+ * 하루 18칸(daily-prices.yml)이 전부 이 함수를 부르지만, 실제 재계산은
+ * 캐시가 p_max_age_minutes 보다 낡았을 때만 일어난다 — 하루 한 번이다.
+ *
+ * 실패해도 던지지 않는다. 캐시가 낡았다는 사실을 호출부가 보고 판단한다.
+ * @returns {{ok: boolean, refreshed: boolean, rows: number, reason: string}}
+ */
+async function refreshEligibleCache() {
+  const maxAge = Math.max(0, Number(process.env.PRICE_ELIGIBLE_MAX_AGE_MIN) || 720);
+  const { data, error } = await supabase.rpc('collector_refresh_eligible',
+    { p_max_age_minutes: maxAge });
+  if (error) {
+    return { ok: false, refreshed: false, rows: 0, reason: String(error.message || error) };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    ok: true,
+    refreshed: !!(row && row.refreshed),
+    rows: Number(row && row.row_count) || 0,
+    reason: ''
+  };
+}
+
+/**
+ * collector_target_page 를 커서 끝까지 돌려 대상 행을 모은다.
+ *
+ * ★ 중복이 생길 수 없다. 커서가 (mall, product_id) 오름차순이고 다음
+ *   페이지는 언제나 «마지막으로 본 행보다 큰» 것만 받는다. 그래도 방어로
+ *   Set 에 넣어 동일 키를 한 번만 센다 (DB 함수가 바뀌어도 리포트의
+ *   «대상 수» 가 부풀지 않게).
+ *
+ * ★ 한 페이지가 실패하면 그 커서를 그대로 들고 재시도한다. 처음부터
+ *   다시 받지 않는다 — 이미 받은 페이지는 버리지 않는다.
+ *
+ * @returns {Array<{product_id, mall, tier}>}
+ */
+async function fetchTargetPages(meta, { includeAll = false } = {}) {
+  const rows = [];
+  const seen = new Set();
+  let afterMall = null, afterId = null;
+  let pages = 0;
+  /*
+   * ★ 끝 판정을 «요청한 크기» 가 아니라 «서버가 실제로 준 최대 크기» 로 한다.
+   *
+   *   PostgREST 는 db-max-rows(운영 1,000) 로 응답을 자른다. p_limit 을
+   *   2,000 으로 주면 1,000행이 오는데, 그걸 «요청보다 적으니 마지막» 으로
+   *   읽으면 첫 페이지에서 멈춰 대상의 대부분을 조용히 잃는다.
+   *   서버가 스스로 준 최대치보다 적게 온 페이지가 진짜 마지막이다.
+   */
+  let maxPage = 0;
+
+  for (;;) {
+    let page = null;
+    let lastErr = null;
+    /*
+     * 페이지 단위 재시도. 커서를 잃지 않으므로 한 번 실패해도 그 자리에서
+     * 이어붙는다 — 전체를 처음부터 다시 받는 일이 없다.
+     */
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { data, error } = await supabase.rpc('collector_target_page', {
+        p_rotation_days: meta.rotationDays || 7,
+        p_rotation_bucket: meta.rotationBucket == null ? 0 : meta.rotationBucket,
+        p_after_mall: afterMall,
+        p_after_product_id: afterId,
+        p_limit: TARGET_PAGE,
+        p_include_all: includeAll
+      });
+      if (!error) { page = data || []; lastErr = null; break; }
+      lastErr = error;
+      const info = DbError.classifyDbError(error);
+      // 없는 함수·권한 오류는 재시도해도 같다. 폴백 판단은 호출부가 한다.
+      if (!info.transient) break;
+      const waitMs = 2000 * attempt;
+      console.warn(`[collector 대상] 페이지 ${pages + 1} 일시 실패(${info.kind})`
+        + ` — ${attempt}회째, ${Math.round(waitMs / 1000)}초 뒤 같은 커서로 다시 받습니다: ${error.message}`);
+      await sleep(waitMs);
+    }
+    if (lastErr) {
+      const e = new Error('collector_target_page 조회 실패: ' + lastErr.message);
+      e.rpcError = lastErr;
+      e.pagesDone = pages;
+      throw e;
+    }
+
+    pages++;
+    page.forEach(r => {
+      const key = `${r.product_id}|${r.mall}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      rows.push(r);
+    });
+
+    if (page.length === 0) break;
+    maxPage = Math.max(maxPage, page.length);
+    if (page.length < maxPage) break;
+    const last = page[page.length - 1];
+    afterMall = last.mall;
+    afterId = last.product_id;
+  }
+
+  return rows;
 }
 
 /** YYYY-MM-DD 를 고정된 N개 회전 버킷 중 하나로 매핑한다. */
@@ -1119,30 +1409,66 @@ async function fetchCollectorTargetKeys(meta = collectorTargetMeta()) {
   const dailyKeys = new Set();
   const rotationKeys = new Set();
   let rows = null;
+  let source = '';
 
   /*
-   * 회전 대상 RPC 는 본체가 price_history/products 를 훑는 비교적 무거운 쿼리다.
+   * ① 키셋 페이지 (2026-09-22-collector-target-keyset.sql).
+   *
+   *   한 문장이 읽는 양이 TARGET_PAGE 로 고정이라 카탈로그 크기와 무관하게
+   *   같은 시간에 끝난다. 이 경로가 있으면 다른 경로는 쓰지 않는다.
+   *
+   *   ★ 캐시를 먼저 채운다. 캐시가 비어 있으면 상시 추적 대상이 «0개» 로
+   *     읽혀서 오늘 대상이 회전 버킷만으로 조용히 좁아진다 — 가장 위험한
+   *     실패 모양이라, 그때는 폴백으로 내려가 구형 경로로 계산한다.
+   */
+  const cache = await refreshEligibleCache();
+  if (cache.ok && cache.rows > 0) {
+    try {
+      rows = await fetchTargetPages(meta);
+      source = 'keyset';
+      console.log(`[collector 대상] 키셋 페이지 ${TARGET_PAGE}행 단위로 ${rows.length}개를 받았습니다`
+        + ` (상시 추적 캐시 ${cache.rows}개${cache.refreshed ? ', 이번 실행에서 갱신' : ''}).`);
+    } catch (e) {
+      const msg = String((e.rpcError && e.rpcError.message) || e.message || '');
+      const missing = /PGRST202|could not find|does not exist|schema cache/i.test(msg);
+      if (!missing) throw e;   // 진짜 장애는 숨기지 않는다
+      console.warn('[collector 대상] collector_target_page 미적용 — 구형 경로로 내려갑니다.');
+      rows = null;
+    }
+  } else if (!cache.ok) {
+    console.warn(`[collector 대상] 상시 추적 캐시를 갱신하지 못했습니다 — 구형 경로로 내려갑니다: ${cache.reason}`);
+  } else {
+    console.warn('[collector 대상] 상시 추적 캐시가 비어 있습니다 — 구형 경로로 내려갑니다.');
+  }
+
+  /*
+   * ② 구형 batch RPC (2026-09-22-collector-target-timeout-batch.sql).
+   *
+   * 회전 대상 RPC 는 본체가 price_history/products 를 훑는 무거운 쿼리다.
    * 예전에는 PostgREST max-rows 때문에 1,000개씩 .range() 하면서 같은 RPC 전체를
    * 페이지마다 다시 실행했다. 오늘 대상이 1.2만개면 같은 계산을 13번 반복한다.
    *
-   * batch RPC 는 결과를 JSONB 한 행으로 묶어 한 번만 계산한다. 운영 DB 함수에는
-   * 함수 단위 statement_timeout(30s)도 붙어 있어 authenticator 기본 8s 제한을
-   * 넘는 정상 쿼리가 중간에 취소되지 않는다.
+   * batch RPC 는 결과를 JSONB 한 행으로 묶어 한 번만 계산한다. 그래도
+   * «한 문장이 카탈로그 전체를 훑는다» 는 성질은 그대로라, 2026-09-22 에
+   * 30초 한도를 다시 넘겼다. 그래서 이제 이 경로는 폴백이다.
    *
    * 새 migration 이 아직 없는 환경에서만 구형 pagination 으로 fallback 한다.
    * timeout/DB 장애는 fallback 하지 않는다 — 같은 무거운 쿼리를 반복해 상황을
    * 악화시키지 않고 원인을 그대로 실패로 올린다.
    */
-  const batch = await supabase.rpc('collector_target_products_batch', {
+  const batch = rows ? { error: null } : await supabase.rpc('collector_target_products_batch', {
     p_rotation_days: meta.rotationDays,
     p_rotation_bucket: meta.rotationBucket
   });
 
-  if (!batch.error) {
+  if (rows) {
+    /* ①이 성공했다 — 구형 경로는 건드리지 않는다. */
+  } else if (!batch.error) {
     if (!Array.isArray(batch.data)) {
       throw new Error('collector_target_products_batch 응답 형식 오류: JSON 배열이 아닙니다.');
     }
     rows = batch.data;
+    source = 'batch';
   } else {
     const msg = String(batch.error.message || '');
     const missingBatch = /PGRST202|could not find|does not exist|schema cache/i.test(msg);
@@ -1168,6 +1494,7 @@ async function fetchCollectorTargetKeys(meta = collectorTargetMeta()) {
       rows.push(...(data || []));
       if (!data || data.length < PAGE) break;
     }
+    source = 'pagination';
   }
 
   rows.forEach(r => {
@@ -1182,7 +1509,9 @@ async function fetchCollectorTargetKeys(meta = collectorTargetMeta()) {
     dailyKeys,
     rotationKeys,
     rotationDays: meta.rotationDays,
-    rotationBucket: meta.rotationBucket
+    rotationBucket: meta.rotationBucket,
+    /* 리포트가 «어느 경로로 대상을 받았는가» 를 그대로 싣는다. */
+    source
   };
 }
 
@@ -1527,12 +1856,74 @@ function chunkIdsByLength(ids, budget = ID_BATCH_CHARS) {
   return out;
 }
 
+/*
+ * ★ 대상이 커지면 «IN 목록으로 묻기» 가 가장 비싼 방법이 된다 (2026-09-22).
+ *
+ *   chunkIdsByLength 는 URI 예산 12,000자로 자른다. product_id 길이가
+ *   몰마다 달라서 한 배치에 들어가는 개수도 다르다.
+ *
+ *     쿠팡   10자 → 배치당 약  920개  → 22,924개면 약  25 요청
+ *     ADPICK 64자 → 배치당 약  179개  → 46,819개면 약 262 요청
+ *
+ *   즉 카탈로그 전체(6만)를 대상으로 삼는 날이면 이 함수 하나가 287번
+ *   왕복한다. 그런데 «오늘 이미 기록된 행» 은 아무리 많아도 오늘 수집한
+ *   만큼이고, 그건 (recorded_at 범위 + mall) 로 곧장 훑을 수 있다.
+ *
+ *   그래서 둘 중 싼 쪽을 고른다.
+ *     대상이 작다  → 예전 그대로 IN 목록 (필요한 행만 정확히 받는다)
+ *     대상이 크다  → 오늘·그 몰의 행을 키셋으로 훑고 JS 에서 교집합
+ *
+ *   ★ 결과 집합은 두 방식이 완전히 같다. 어느 쪽도 «오늘 기록된 행» 의
+ *     정의(recorded_at 이 KST 오늘 범위 + 같은 mall)를 바꾸지 않는다.
+ *     day-scan 쪽은 마지막에 collectible 키로 교집합을 취해 대상 밖 행을
+ *     떨어뜨린다 — IN 목록이 하던 일과 같다.
+ */
+const TODAY_SCAN_THRESHOLD = Math.max(0,
+  Number(process.env.PRICE_TODAY_SCAN_THRESHOLD) || 5000);
+
+/** 오늘·그 몰의 원장 행을 키셋으로 훑어 대상과 교집합을 낸다. */
+async function collectedTodayByDayScan(mallName, collectible, dayStart, dayEnd) {
+  const want = new Set(collectible.map(p => `${p.product_id}|${p.mall}`));
+  const found = new Set();
+  await keysetScan({
+    build: () => supabase
+      .from('price_history')
+      .gte('recorded_at', dayStart)
+      .lt('recorded_at', dayEnd)
+      .eq('mall', mallName),
+    columns: 'id, product_id, mall',
+    cursor: 'id',
+    label: `[${mallName}] 오늘 기록 스캔`,
+    onPage: rows => rows.forEach(r => {
+      const k = `${r.product_id}|${r.mall}`;
+      if (want.has(k)) found.add(k);
+    })
+  });
+  return found;
+}
+
 async function collectedTodayKeys(mallName, collectible) {
   const found = new Set();
   // KST 는 서머타임이 없어 하루가 정확히 24시간이다.
   const dayStart = kstDayStartUtc(TODAY);
   const dayEnd = new Date(Date.parse(dayStart) + 24 * 60 * 60 * 1000).toISOString();
   let failed = 0;
+
+  if (collectible.length > TODAY_SCAN_THRESHOLD) {
+    try {
+      const scanned = await collectedTodayByDayScan(mallName, collectible, dayStart, dayEnd);
+      console.log(`  [${mallName}] 오늘 기록 ${scanned.size}개 확인`
+        + ` (대상 ${collectible.length}개 — 원장 일자 스캔)`);
+      return scanned;
+    } catch (e) {
+      /*
+       * 스캔이 실패하면 IN 목록으로 내려간다. 조용히 «0개» 를 돌려주면
+       * 이미 확보한 상품을 전부 다시 부르게 된다 — 그게 가장 비싼 실패다.
+       */
+      console.warn(`  [${mallName}] 오늘 기록 일자 스캔 실패 — IN 목록으로 내려갑니다: ${e.message}`);
+    }
+  }
+
   try {
     const ids = collectible.map(p => p.product_id);
     for (const chunk of chunkIdsByLength(ids)) {
@@ -1594,13 +1985,17 @@ async function cacheHintQueries(wantIds) {
   const out = new Map();
   if (!wantIds || wantIds.size === 0) return out;
   try {
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabase
-        .from('coupang_search_cache')
-        .select('keyword, items')
-        .range(from, from + PAGE - 1);
-      if (error) throw new Error(error.message);
-      (data || []).forEach(row => {
+    /*
+     * 커서는 keyword 다 — search_stats_keyword_key 와 같은 유일 키이고,
+     * 이 표의 기본키이기도 하다. 정렬 없는 .range 는 페이지 경계에서 행을
+     * 빠뜨리거나 두 번 줄 수 있다 (keysetScan 주석 참고).
+     */
+    await keysetScan({
+      build: () => supabase.from('coupang_search_cache'),
+      columns: 'keyword, items',
+      cursor: 'keyword',
+      label: 'coupang_search_cache 조회',
+      onPage: rows => rows.forEach(row => {
         const items = Array.isArray(row.items) ? row.items : [];
         items.forEach(it => {
           const pid = String(it && it.productId);
@@ -1609,14 +2004,101 @@ async function cacheHintQueries(wantIds) {
           const list = out.get(pid);
           if (list.indexOf(row.keyword) < 0) list.push(row.keyword);
         });
-      });
-      if (!data || data.length < PAGE) break;
-    }
+      })
+    });
   } catch (e) {
     console.warn(`  [캐시 힌트] 조회 실패(무시하고 진행): ${e.message}`);
     return new Map();
   }
   return out;
+}
+
+/* ─── 상품 단위 최종 상태 (2026-09-22) ──────────────────────────
+ *
+ * ★ 왜 필요한가.
+ *
+ *   기존 리포트에는 두 축이 있었다.
+ *     상품 단위  수집성공 / 수집미확보 / 시도 / 미시도 / 무매칭
+ *     attempt 단위 blocked / budget / rateLimit / network / …
+ *   앞은 «몇 개인가» 만 말하고, 뒤는 «호출이 왜 실패했는가» 만 말한다.
+ *   그래서 «이 상품이 오늘 왜 비었는가» 라는 질문에 답하는 칸이 없었다.
+ *   미확보 3,000개가 차단 때문인지 예산 때문인지 옵션 불일치 때문인지
+ *   리포트만 보고는 구분할 수 없었다.
+ *
+ * ★ 규칙: 대상 상품 하나는 정확히 한 칸에만 들어간다.
+ *   따라서 모든 칸의 합 = 대상 상품 수 다 (reportInvariantErrors 가 고정).
+ *
+ *   collected           수집기가 오늘 직접 가격을 확보했다
+ *   already_collected   오늘 가격은 있는데 수집기가 아니라 다른 경로가 썼다
+ *                       (Vercel cron / 사용자 검색 / AI / 임포트)
+ *   no_match            호출이 나가 응답을 받았는데 우리 상품이 없었다
+ *                       (옵션 불일치로 채택하지 않은 경우도 여기다 —
+ *                        다른 옵션 가격을 대신 쓰지 않는 것이 규칙이다)
+ *   blocked             공급자가 막았다 (403 / 이용제한 / 서킷 브레이커)
+ *   rate_limited        분당·일일 상한, 호출 간격 대기로 못 나갔다
+ *   timeout             응답 시간 초과
+ *   api_error           그 밖의 API 오류 (5xx / 파싱 실패 / 키 미설정)
+ *   db_error            DB 쪽 실패로 못 시도했다
+ *   budget              실행당 호출 예산·시간 예산을 다 써서 못 갔다
+ *   pending             오늘 아직 차례가 오지 않았다 (커서 뒤 · 다음 실행 몫)
+ *   target_query_error  대상 조회 자체가 실패했다 — 이 칸은 몰 단위가
+ *                       아니라 실행 단위다 (run 의 치명적 오류 경로에서만
+ *                       0 이 아니게 되고, 그때는 몰별 집계가 아예 없다)
+ *   unknown             위 어디에도 넣을 근거가 없었다
+ *
+ * ★ pending / budget 은 요청받은 목록에 없던 칸이다. 그런데 이 둘을
+ *   unknown 으로 밀어 넣으면 하루의 첫 실행에서 unknown 이 가장 큰 칸이
+ *   되어 분류가 쓸모없어진다 («아직 안 했다» 는 «원인 불명» 이 아니다).
+ *   합이 대상 수와 맞아야 한다는 요구를 지키면서 사실대로 적으려면
+ *   칸을 더하는 수밖에 없다.
+ * ------------------------------------------------------------------ */
+const OUTCOME_KEYS = [
+  'collected', 'already_collected', 'no_match',
+  'blocked', 'rate_limited', 'timeout', 'api_error', 'db_error',
+  'budget', 'pending', 'target_query_error', 'unknown'
+];
+
+const outcomesTemplate = () => OUTCOME_KEYS.reduce((o, k) => { o[k] = 0; return o; }, {});
+
+/**
+ * 호출 실패 사유 문자열을 상품 단위 칸으로 옮긴다.
+ *
+ * categorizeFailure 와 «같은 낱말» 을 본다 — 두 분류가 다른 규칙을 쓰면
+ * attempt 단위 합계와 상품 단위 합계가 서로 다른 이야기를 하게 된다.
+ * 다만 칸 이름은 요청받은 taxonomy 를 따른다.
+ */
+function outcomeFromReason(reason) {
+  const raw = String(reason || '');
+  if (!raw) return 'unknown';
+  const r = raw.toLowerCase();
+  /*
+   * ★ 공급자 이름이 실려 있으면 «API 쪽 사건» 이다.
+   *
+   *   DbError.classifyDbError 는 원래 Supabase 응답을 분류하려고 만든
+   *   것이라 "fetch failed" / "network error" / 5xx 같은 전송 계층 낱말을
+   *   전부 DB_UNAVAILABLE 로 본다. 그 규칙을 그대로 쓰면
+   *   «ADPICK 네트워크 오류: fetch failed» 가 db_error 로 들어간다 —
+   *   운영자가 DB 를 들여다보게 만드는 잘못된 안내다.
+   *
+   *   그래서 쿠팡/ADPICK 이 준 사유는 DB 분류를 아예 거치지 않는다.
+   *   반대로 공급자 이름이 없는 사유는 DB 를 먼저 묻는다 — 그래야
+   *   «canceling statement due to statement timeout» 이 timeout 이 아니라
+   *   db_error 로 들어간다 (그건 공급자가 느린 게 아니라 우리 DB 다).
+   */
+  const fromProvider = /쿠팡|adpick|coupang/i.test(raw);
+  if (!fromProvider) {
+    const db = DbError.classifyDbError({ message: raw });
+    if (db.kind !== DbError.KIND.UNKNOWN) return 'db_error';
+  }
+  if (r.includes('시간 초과') || r.includes('timeout') || r.includes('timed out')) return 'timeout';
+  if (r.includes('차단') || r.includes('중단') || r.includes('403')) return 'blocked';
+  if (r.includes('예산') || r.includes('budget')) return 'budget';
+  if (r.includes('429') || r.includes('상한') || r.includes('한도')
+      || r.includes('간격') || r.includes('대기')) return 'rate_limited';
+  if (r.includes('네트워크') || r.includes('network') || r.includes('캐시')
+      || r.includes('cache') || r.includes('키 미설정') || r.includes('환경변수')
+      || r.includes('api') || r.includes('파싱') || r.includes('파일')) return 'api_error';
+  return 'unknown';
 }
 
 function categorizeFailure(reason) {
@@ -1703,7 +2185,20 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     + `(검색어 ${derivedGroups.size}종) / 유도 실패 ${noPhrase})  전체 ${rows.length}개 중`);
 
   const base = {
-    mallName, targetProducts: collectible.length, productsTotal: rows.length, noPhraseTotal: noPhrase
+    mallName, targetProducts: collectible.length, productsTotal: rows.length, noPhraseTotal: noPhrase,
+    /*
+     * ★ «한 바퀴에 필요한 API 호출 수» (2026-09-22).
+     *
+     *   이 수집기는 상품 단위로 부르지 않는다 — 검색어 하나로 여러 상품을
+     *   덮는다. 그래서 «대상 6만개» 가 «호출 6만회» 를 뜻하지 않는다.
+     *   2026-09-22 운영 카탈로그 실측:
+     *     쿠팡   22,924개 / 검색어 4,053종 (상품 5.7개/검색어)
+     *     ADPICK 46,819개 / 검색어 3,165종 (상품 14.8개/검색어)
+     *
+     *   «오늘 전량을 돌 수 있는가» 는 상품 수가 아니라 이 값과 호출 예산을
+     *   나란히 놓아야 답이 나온다. 그래서 리포트에 그대로 싣는다.
+     */
+    planGroups: plan.length
   };
 
   /*
@@ -1743,6 +2238,27 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       noMatchProducts: Math.max(0, collectorAttemptedIds.length - collectorCoveredIds.length),
       collectorAttempted: collectorAttemptedIds,
       todayPriceProducts, uncoveredProducts: collectible.length - todayPriceProducts,
+      /*
+       * 아무것도 하지 않은 실행도 상품 단위 상태는 사실대로 채운다.
+       * 이번 실행이 시도하지 않았을 뿐, 오늘 누적 상태는 존재한다.
+       *   확보함        → collected
+       *   오늘 가격 있음 → already_collected
+       *   찾아는 봤음   → no_match
+       *   그 밖         → pending (이 실행이 시도하지 않았다)
+       */
+      outcomes: (() => {
+        const o = outcomesTemplate();
+        const cov = new Set(collectorCoveredIds);
+        const att = new Set(collectorAttemptedIds);
+        collectible.forEach(p => {
+          const k = `${p.product_id}|${p.mall}`;
+          if (cov.has(k)) o.collected++;
+          else if (done.has(k)) o.already_collected++;
+          else if (att.has(k)) o.no_match++;
+          else o.pending++;
+        });
+        return o;
+      })(),
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
       passStats: [], crossRecovered: 0, optionRejects: {},
       facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
@@ -1854,6 +2370,17 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     + ` 배치당 ${BATCH_PRODUCTS}개 상품, 간격 ${Math.round(BATCH_INTERVAL_MS / 1000)}초) ──`);
 
   const uncovered = new Map();
+  /*
+   * 상품 → «이 상품을 찾으려던 호출이 왜 실패했는가» (2026-09-22).
+   * 마지막 사유로 덮는다 — 여러 패스가 같은 상품을 여러 번 시도할 수
+   * 있고, 가장 최근 시도가 지금 상태를 가장 잘 말한다.
+   * 수집 동작에는 전혀 쓰이지 않는다. 리포트 분류 전용이다.
+   */
+  const productReason = new Map();
+  const noteProductReason = (rows, reason) => {
+    if (!reason) return;
+    (rows || []).forEach(p => productReason.set(`${p.product_id}|${p.mall}`, String(reason)));
+  };
   /* 1차 호출이 실제로 성공(ok)한 상품. 2차 패스의 자격 조건이다 — processGroup 주석 참고. */
   const pass1Succeeded = new Set();
   collectible.forEach(p => uncovered.set(`${p.product_id}|${p.mall}`, p));
@@ -2001,9 +2528,16 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   읽기 몇 번이 잘못된 API 호출 수백 회보다 싸다. 실패하면 그냥 넘어간다
    *   (수집을 막을 이유가 없다).
    */
+  /*
+   * 이 실행이 «시작할 때» 이미 오늘 가격이 있던 상품. 아래 상품 단위
+   * 최종 분류(outcomes)에서 already_collected 와 db_error 를 가르는 유일한
+   * 근거다 — 둘 다 "uncovered 에는 없는데 이번 실행이 확보하지도 않은"
+   * 모양이라, 이 집합 없이는 구분할 수 없다.
+   */
+  const todayAtStart = new Set();
   if (!isNewDay) {
     const already = await collectedTodayFn(mallName, collectible);
-    already.forEach(k => uncovered.delete(k));
+    already.forEach(k => { uncovered.delete(k); todayAtStart.add(k); });
     if (already.size) console.log(`  [${mallName}] 오늘 이미 기록된 ${already.size}개는 건너뜁니다.`);
   }
 
@@ -2249,6 +2783,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
        *   "실패 attempt 수 > 실패 원인 합계" 가 되었다.
        */
       noteAttemptFailure(e.message);
+      noteProductReason(groupRows, e.message);
       console.log(`  [${mallName}] [실패] [${kw}] ${e.message} — 나머지는 계속 진행합니다.`);
       return;
     }
@@ -2257,6 +2792,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       notePass('pass1', { ok: false, hit: 0 });
       failedKeywords.set(kw, r.reason);
       noteAttemptFailure(r.reason);
+      noteProductReason(groupRows, r.reason);
       console.log(`  [${mallName}] [보류] [${kw}] ${r.reason} — 재시도 대상`);
       return;
     }
@@ -2603,12 +3139,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       catch (e) {
         recoveryFailed = true;
         notePass(pass, { ok: false, hit: 0 }); noteAttemptFailure(e.message);
+        noteProductReason(rows, e.message);
         return { ok: false, items: -1, hit: 0 };
       }
       if (!r.ok) {
         recoveryFailed = true;
         const category = categorizeFailure(r.reason);
         notePass(pass, { ok: false, hit: 0 }); noteAttemptFailure(r.reason);
+        noteProductReason(rows, r.reason);
         /*
          * ★ 중단 자체는 예전과 똑같다 — 사유가 무엇이든 여기서 즉시 멈춘다.
          *   달라지는 것은 그다음뿐이다: 시간이 지나면 풀리는 사유에 한해,
@@ -2986,7 +3524,48 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   const collectorSuccessProducts = collectorCoveredIds.length;
   const collectorAttemptedIds = [...collectorAttempted].filter(k => collectibleKeys.has(k));
 
+  /*
+   * ── 상품 단위 최종 상태 (OUTCOME_KEYS 주석 참고) ─────────────
+   *
+   * 대상 상품을 정확히 한 칸씩 넣는다. 우선순위가 곧 정의다:
+   *   ① 수집기가 확보했다            → collected
+   *   ② 오늘 가격은 있다(다른 경로)  → already_collected
+   *   ③ 호출이 나가 응답을 받았다    → no_match
+   *   ④ 못 나갔다                    → 마지막 실패 사유로 분류
+   *   ⑤ 사유 기록이 없다             → 아직 차례가 안 왔으면 pending,
+   *                                     이번 실행이 예산/시간으로 끊겼으면 budget
+   *
+   * ★ 이 계산은 읽기 전용이고 수집 동작에 전혀 영향을 주지 않는다.
+   *   위에서 이미 확정된 집합(uncovered / collectorCovered /
+   *   collectorAttempted / productReason)만 다시 세는 것이다.
+   */
+  const coveredSet = new Set(collectorCoveredIds);
+  const attemptedSet = new Set(collectorAttemptedIds);
+  const outcomes = outcomesTemplate();
+  /* 사유를 알 수 없는 미시도 상품이 pending 인지 budget 인지의 기준. */
+  const ranOutOfRoom = stoppedEarly;
+  collectible.forEach(p => {
+    const key = `${p.product_id}|${p.mall}`;
+    if (coveredSet.has(key)) { outcomes.collected++; return; }
+    if (!uncovered.has(key)) {
+      /*
+       * uncovered 에서 빠졌는데 collectorCovered 에는 없다 = 응답에는
+       * 있었는데 원장에 행이 남지 않았다 (값 이상 거부 / upsert 실패).
+       * markCovered 주석의 "이 둘이 갈리는 경우" 가 정확히 이것이다.
+       * 그것을 already_collected 로 세면 «오늘 가격이 있다» 는 거짓말이 된다.
+       */
+      if (todayAtStart.has(key)) outcomes.already_collected++;
+      else outcomes.db_error++;
+      return;
+    }
+    if (attemptedSet.has(key)) { outcomes.no_match++; return; }
+    const reason = productReason.get(key);
+    if (reason) { outcomes[outcomeFromReason(reason)]++; return; }
+    outcomes[ranOutOfRoom ? 'budget' : 'pending']++;
+  });
+
   return {
+    outcomes,
     ...base,
     skipped: false,
     cursorKey, processed, total: planTotal, status,
@@ -3234,7 +3813,7 @@ async function runLocked(state, lockToken) {
   let rotationTargetProducts = 0;
 
   if (target) {
-    products = await fetchProductsByIds(target.keys);
+    products = await fetchProductsByIds(target.keys, catalog ? catalog.total : 0);
     dailyTargetProducts = target.dailyKeys.size;
     rotationTargetProducts = target.rotationKeys.size;
 
@@ -3366,6 +3945,8 @@ async function runLocked(state, lockToken) {
     console.log(`  저장   price_history ${r.recorded}행 / products ${r.saved}행`
       + ` / 급변 보류 ${r.suspect} / 값 이상 거부 ${r.rejected}`);
     console.log(`  진행   오늘 ${r.processed}/${r.total} (검색 그룹에 담긴 상품 ${r.processedProducts}개)`);
+    console.log(`  한바퀴 검색어 ${r.planGroups}종 = 1회전에 필요한 API 호출 ${r.planGroups}회`
+      + `  (대상 ${r.targetProducts}개 ÷ ${r.planGroups}종 = 검색어당 ${r.planGroups > 0 ? (r.targetProducts / r.planGroups).toFixed(1) : '-'}개)`);
     /*
      * 패스별 성적. "호출당 회수" 가 전략 사이의 유일한 공정한 비교값이다
      * (한 호출이 여러 상품을 덮으므로 상품 수만으로는 비교가 안 된다).
@@ -3526,6 +4107,18 @@ async function runLocked(state, lockToken) {
     otherByMall: Object.fromEntries(otherByMall),
     malls: [coupangResult, adpickResult],
 
+    /*
+     * ── 상품 단위 최종 상태 (OUTCOME_KEYS 주석 참고) ──
+     *   모든 칸의 합 = targetProducts. reportInvariantErrors 가 고정한다.
+     *   target_query_error 는 여기서 언제나 0 이다 — 대상 조회가 실패하면
+     *   이 코드에 닿기 전에 run() 이 죽고 sendFailureNotice 가 그 사실을
+     *   따로 보낸다.
+     */
+    outcomes: OUTCOME_KEYS.reduce((o, k) => {
+      o[k] = ((coupangResult.outcomes || {})[k] || 0) + ((adpickResult.outcomes || {})[k] || 0);
+      return o;
+    }, {}),
+
     /* ── 상품 단위 · collector 성과 (대표 지표) ── */
     targetProducts: sum('targetProducts'),
     collectorSuccessProducts: sum('collectorSuccessProducts'),
@@ -3585,6 +4178,12 @@ async function runLocked(state, lockToken) {
   const catTotal = Object.values(mergedFailureCategories).reduce((s, v) => s + v, 0);
   console.log('\n── 집계 검증 ──');
   console.log(`  수집성공 + 수집미확보 = 대상            ${report.collectorSuccessProducts} + ${report.collectorMissingProducts} = ${report.targetProducts}`);
+  {
+    const o = report.outcomes || {};
+    const oSum = OUTCOME_KEYS.reduce((t, k) => t + (Number(o[k]) || 0), 0);
+    console.log(`  최종 상태 분류 합계 = 대상              ${oSum} = ${report.targetProducts}`);
+    console.log(`    ${OUTCOME_KEYS.map(k => `${k} ${Number(o[k]) || 0}`).join(' / ')}`);
+  }
   console.log(`  시도 + 미시도 = 대상                    ${report.attemptedProducts} + ${report.skippedProducts} = ${report.targetProducts}`);
   console.log(`  수집성공 + 무매칭 = 시도                ${report.collectorSuccessProducts} + ${report.noMatchProducts} = ${report.attemptedProducts}`);
   console.log(`  가격보유 + 미보유 = 대상 (모든 경로)     ${report.todayPriceProducts} + ${report.uncoveredProducts} = ${report.targetProducts}`);
@@ -3698,6 +4297,21 @@ function reportInvariantErrors(report) {
   if (catSum !== n(report.attemptFailed)) {
     out.push(`attempt 단위: 실패 ${n(report.attemptFailed)} ≠ 실패 원인 합계 ${catSum}`);
   }
+  /*
+   * 상품 단위 최종 상태는 모집단을 «남김없이, 겹침없이» 나눈다.
+   * 합이 대상 수와 다르면 어떤 상품이 두 칸에 들어갔거나 어느 칸에도
+   * 못 들어간 것이고, 둘 다 분류 규칙이 틀렸다는 뜻이다.
+   */
+  if (report.outcomes) {
+    const oSum = OUTCOME_KEYS.reduce((t, k) => t + n(report.outcomes[k]), 0);
+    if (oSum !== target) {
+      out.push(`상품 단위(최종 상태): 분류 합계 ${oSum} ≠ 대상 ${target}`);
+    }
+    if (n(report.outcomes.collected) !== cOk) {
+      out.push(`상품 단위(최종 상태): collected ${n(report.outcomes.collected)}`
+        + ` ≠ 수집 성공 ${cOk} — 같은 사실을 두 곳이 다르게 세고 있다`);
+    }
+  }
   if (n(report.attemptSuccess) + n(report.attemptFailed) !== n(report.attemptCalls)) {
     out.push(`attempt 단위: 성공 ${n(report.attemptSuccess)} + 실패 ${n(report.attemptFailed)}`
       + ` ≠ 총 attempt ${n(report.attemptCalls)}`);
@@ -3751,7 +4365,7 @@ function buildReportHtml(report) {
   const {
     execAt, date, productsTotal, targetLoadedProducts,
     dailyTargetProducts, rotationTargetProducts, rotationDays, rotationBucket,
-    otherTotal, otherByMall, malls, failCats,
+    otherTotal, otherByMall, malls, failCats, outcomes,
     targetProducts, collectorSuccessProducts, collectorMissingProducts,
     attemptedProducts, skippedProducts, noMatchProducts,
     todayPriceProducts, uncoveredProducts,
@@ -3809,6 +4423,41 @@ function buildReportHtml(report) {
         </tr>`;
       }).join('')
     : '<tr><td colspan="6" style="padding:6px 12px;color:#888;border-top:1px solid #eee">이번 실행은 수집 호출이 없었습니다</td></tr>';
+
+  /*
+   * ── 상품 단위 최종 상태 (2026-09-22) ─────────────────────────
+   *
+   * ★ 이 표만이 «미확보 n개가 왜 비었는가» 에 답한다. 기존 두 축은
+   *   상품 수(얼마나)와 호출 실패 사유(왜 호출이 실패했나)를 따로 말할 뿐,
+   *   «이 상품» 과 «그 사유» 를 잇지 못했다.
+   *
+   * ★ 0인 칸도 지우지 않는다. 지우면 합이 맞는지 눈으로 확인할 수 없고,
+   *   "이번엔 왜 이 칸이 안 보이지" 를 매번 다시 따져야 한다.
+   */
+  const OUTCOME_LABEL = {
+    collected:          ['수집 성공', '수집기가 오늘 직접 확보', '#0b7a4b'],
+    already_collected:  ['이미 수집됨', '다른 경로(검색·cron·AI)가 오늘 기록', '#0b7a4b'],
+    no_match:           ['무매칭', '응답을 받았으나 우리 상품/옵션이 없음', '#8a6d3b'],
+    blocked:            ['차단', '403 · 이용제한 · 서킷 브레이커', '#c9362b'],
+    rate_limited:       ['호출 제한', '429 · 분당/일일 상한 · 간격 대기', '#c9362b'],
+    timeout:            ['응답 시간 초과', '', '#c9362b'],
+    api_error:          ['API 오류', '5xx · 파싱 실패 · 키 미설정', '#c9362b'],
+    db_error:           ['DB 오류', '응답은 받았으나 원장에 남지 않음', '#c9362b'],
+    budget:             ['예산 소진', '이번 실행의 호출·시간 예산이 끝남', '#8a6d3b'],
+    pending:            ['대기', '오늘 아직 차례가 오지 않음 (다음 실행 몫)', '#888'],
+    target_query_error: ['대상 조회 실패', '수집 대상 자체를 못 읽음', '#c9362b'],
+    unknown:            ['원인 불명', '', '#c9362b']
+  };
+  const outcomeSum = OUTCOME_KEYS.reduce((t, k) => t + num((outcomes || {})[k]), 0);
+  const outcomeRows = OUTCOME_KEYS.map(k => {
+    const [label, hint, color] = OUTCOME_LABEL[k];
+    const v = num((outcomes || {})[k]);
+    return `<tr>
+      <td style="padding:5px 0;font-size:13px;color:#444">${esc(label)}
+        <span style="color:#bbb;font-size:11px">${esc(k)}${hint ? ' · ' + hint : ''}</span></td>
+      <td style="padding:5px 0;text-align:right;font-weight:${v ? 700 : 400};color:${v ? color : '#ccc'}">${v}</td>
+    </tr>`;
+  }).join('');
 
   const catEntries = Object.entries(failCats || {});
   const catSum = catEntries.reduce((s, [, v]) => s + num(v), 0);
@@ -3920,6 +4569,15 @@ function buildReportHtml(report) {
       수집 성공 ${num(collectorSuccessProducts)} + 수집 미확보 ${num(collectorMissingProducts)} = 대상 ${num(targetProducts)}<br>
       가격 보유 ${num(todayPriceProducts)} + 미보유 ${num(uncoveredProducts)} = 대상 ${num(targetProducts)}<br>
       ※ 두 축의 차이 ${Math.max(0, num(todayPriceProducts) - num(collectorSuccessProducts))}개는 이 수집기가 아닌 경로(사용자 검색 · Vercel cron · AI)가 남긴 가격이다.
+    </div>
+    <div style="font-size:12px;font-weight:700;color:#888;letter-spacing:.06em;margin:14px 0 4px">상품별 최종 상태 <span style="color:#bbb;font-weight:400">(단위: 상품 · 한 상품은 한 칸에만)</span></div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">
+      ${outcomeRows}
+    </table>
+    <div style="font-size:11px;color:${outcomeSum === num(targetProducts) ? '#bbb' : '#c9362b'};margin-top:4px">
+      분류 합계 ${outcomeSum} ${outcomeSum === num(targetProducts) ? '=' : '≠'} 대상 ${num(targetProducts)}
+      ${outcomeSum === num(targetProducts) ? '' : ' — 분류 규칙이 모집단을 남김없이 나누지 못하고 있다'}<br>
+      ※ «대기» 는 장애가 아니다 — 오늘 남은 실행이 이어서 처리할 몫이다.
     </div>
   </td></tr>
 
@@ -4055,6 +4713,26 @@ async function sendReport(report) {
  *   운영자는 "메일이 안 왔다 = 별일 없었나 보다"로 오해하게 된다. 반드시
  *   와야 할 신호가 조용히 사라지는 것이 가장 나쁜 실패 모드다.
  */
+/**
+ * 실행이 죽은 «단계» 를 이름으로 돌려준다 (2026-09-22).
+ *
+ * 몰별 집계가 없는 실패에서는 상품 단위 분류(outcomes)를 만들 수 없다.
+ * 그래도 «대상 조회에서 죽었다» 와 «저장에서 죽었다» 는 완전히 다른
+ * 사건이고, 메일 제목만 보고 구분할 수 있어야 한다.
+ * 이 값은 outcomes 의 target_query_error 칸과 같은 이름을 쓴다.
+ */
+function failureStage(err) {
+  const m = String((err && err.message) || err || '');
+  if (/collector_target_page|collector_target_products|collector_eligible_products|collector_refresh_eligible|대상 조회/.test(m)) {
+    return 'target_query_error';
+  }
+  if (/price_job_state/.test(m)) return 'state_error';
+  if (/products 조회|price_history 조회/.test(m)) return 'db_error';
+  const kind = DbError.classifyDbError({ message: m }).kind;
+  if (kind !== DbError.KIND.UNKNOWN) return 'db_error';
+  return 'unknown';
+}
+
 async function sendFailureNotice(err) {
   if (!process.env.RESEND_API_KEY) return;
   try {
@@ -4064,6 +4742,7 @@ async function sendFailureNotice(err) {
 <div style="background:#fff;border-radius:12px;padding:32px;max-width:560px;margin:0 auto">
   <div style="font-size:18px;font-weight:800;color:#c9362b">⚠️ SEOSA 가격 수집 — 실행 자체가 실패했습니다</div>
   <div style="font-size:13px;color:#888;margin-top:8px">기준 날짜(KST): ${TODAY} / 실행 시각: ${kstNowStamp()}</div>
+  <div style="font-size:13px;color:#888;margin-top:4px">실패 단계: <b style="color:#c9362b">${failureStage(err)}</b></div>
   <div style="margin-top:20px;padding:16px;background:#fdf2f2;border-radius:8px;font-size:13px;color:#c9362b;white-space:pre-wrap;word-break:break-word">${
     String((err && err.message) || err).replace(/&/g, '&amp;').replace(/</g, '&lt;').slice(0, 2000)
   }</div>
@@ -4072,7 +4751,7 @@ async function sendFailureNotice(err) {
 </body></html>`;
     const result = await email.send({
       to: REPORT_EMAIL,
-      subject: `[SEOSA] ${TODAY} 가격 수집 실패 — 실행 자체가 중단됨`,
+      subject: `[SEOSA] ${TODAY} 가격 수집 실패 — 실행 자체가 중단됨 (${failureStage(err)})`,
       html
     });
     console.log(result.ok
@@ -4106,6 +4785,14 @@ module.exports = {
   rotationBucketForDate, collectorTargetMeta, BULK_ROTATION_DAYS,
   // 리포트 집계의 계약 — 테스트가 이 둘로 불변조건을 고정한다.
   reportInvariantErrors, productSuccessRate, todayPriceRate,
+  /*
+   * 상품 단위 최종 상태 — test-collector-scale 이 «합 = 대상» 과
+   * 사유→칸 매핑을 고정한다.
+   */
+  OUTCOME_KEYS, outcomesTemplate, outcomeFromReason, failureStage,
+  // 키셋 스캔 — 커서 진행/중복 없음/커서 컬럼 누락 검출을 테스트가 고정한다.
+  keysetScan, TARGET_PAGE, fetchTargetPages, refreshEligibleCache,
+  TODAY_SCAN_THRESHOLD, collectedTodayByDayScan,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
   acquireLock, releaseLock, LOCK_TTL_MS,
   // 상태 읽기의 오류 분류 — test-audit-regressions 가 일시 장애 재시도/표 없음 안내를 고정한다.
