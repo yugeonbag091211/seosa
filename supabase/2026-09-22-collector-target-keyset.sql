@@ -7,6 +7,18 @@
 --    collector_target_products_batch() 는 한 줄도 바꾸지 않는다 —
 --    구버전 수집기가 그대로 돌아야 하기 때문이다.
 --    전부 create ... if not exists / or replace 라 몇 번을 실행해도 안전하다.
+--
+--  ★ 언제 실행하는가 — KST 00~08시(수집 cron 시간대)는 피할 것.
+--
+--    아래 §4 의 CREATE INDEX 는 CONCURRENTLY 가 아니다 (Supabase SQL Editor 의
+--    Run 은 한 트랜잭션이라 CONCURRENTLY 를 쓸 수 없다 —
+--    supabase/2026-09-01-price-history-source.sql 의 같은 주석 참고).
+--    그래서 인덱스를 만드는 동안 그 표의 **쓰기가 잠깐 막힌다**(SHARE 잠금).
+--    price_history 144,376행 기준 수 초지만, 그 몇 초 동안 수집기의 upsert 가
+--    줄을 서고 자기 타임아웃에 걸릴 수 있다.
+--    읽기는 막지 않는다 — 사이트는 그대로 돈다.
+--
+--  ★ 되돌리기는 파일 맨 아래에 있다. 어떤 행도 잃지 않는다.
 -- ══════════════════════════════════════════════════════════════════
 
 -- ── 무엇이 터졌나 (2026-09-22 KST 07:41, 운영 실측) ─────────────────
@@ -123,6 +135,23 @@ declare
 begin
   select max(c.refreshed_at) into v_newest from collector_eligible_cache c;
 
+  -- ★ 두 수집기가 동시에 갱신하지 않게 한다 (권고 잠금).
+  --
+  --   수집기 잠금(price_job_state 의 CAS)은 이 함수보다 «뒤» 에 걸리므로,
+  --   같은 순간 두 실행이 여기에 들어올 수 있다. 그때
+  --     · 같은 6초짜리 계산을 두 번 한다 (낭비)
+  --     · 두 세션이 같은 행들을 서로 다른 순서로 UPSERT 하면 교착이 날 수 있다
+  --       (INSERT ... SELECT 의 행 순서는 보장되지 않는다)
+  --   둘 다 여기서 없앤다. 잠금을 못 잡은 쪽은 «지금 갱신 중이다» 로 보고
+  --   현재 캐시 상태를 그대로 돌려준다 — 기다리지 않는다(try_ 라서 즉시 반환).
+  --   트랜잭션 잠금이라 함수가 끝나면 자동으로 풀린다. 남는 잠금이 없다.
+  if not pg_try_advisory_xact_lock(hashtext('collector_refresh_eligible')::bigint) then
+    select count(*)::integer into v_rows from collector_eligible_cache;
+    return jsonb_build_object(
+      'refreshed', false, 'row_count', v_rows, 'refreshed_at', v_newest,
+      'skipped', 'another refresh in progress');
+  end if;
+
   -- 아직 새것이면 아무 일도 하지 않는다. 하루 18칸이 전부 불러도
   -- 실제 재계산은 하루 한 번이다.
   if v_newest is not null
@@ -132,9 +161,12 @@ begin
     return jsonb_build_object('refreshed', false, 'row_count', v_rows, 'refreshed_at', v_newest);
   end if;
 
+  -- ★ order by 는 장식이 아니다. 행을 언제나 같은 순서로 잠가야
+  --   (혹시 권고 잠금 밖에서 동시 실행되더라도) 교착이 생기지 않는다.
   insert into collector_eligible_cache (product_id, mall, refreshed_at)
   select e.product_id, e.mall, v_started
     from public.collector_eligible_products() e
+   order by e.product_id, e.mall
   on conflict (product_id, mall)
   do update set refreshed_at = excluded.refreshed_at;
 
