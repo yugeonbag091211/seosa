@@ -303,11 +303,15 @@ function reset(rows, external) { db.hotdeals = rows || []; db.external_hotdeals 
   }
 
   section('7) is_primary 가 새어도 마지막에 막는다');
-  // 수집기가 죽어 stale 한 is_primary=true 가 두 개 남은 상황
+  // 수집기가 죽어 stale 한 is_primary=true 가 두 개 남은 상황.
+  // 기본 정렬의 동점 순서는 confidence_rank → last_checked_at → hot_score 다.
+  // last_checked_at 을 비워 두면 deal() 호출 시각(ms)이 갈려 id 2 가 먼저 오기도 했다
+  // (Date.now 를 1ms 씩 흐르게 하면 5/5 실패). 같은 시각으로 고정해 점수만 다르게 둔다.
+  const checked = iso(1);
   reset([
-    deal({ group_key: 'G9', is_primary: true, hot_score: 90 }),
-    deal({ group_key: 'G9', is_primary: true, hot_score: 89 }),
-    deal({ group_key: 'G8', is_primary: true, hot_score: 80 })
+    deal({ group_key: 'G9', is_primary: true, hot_score: 90, last_checked_at: checked }),
+    deal({ group_key: 'G9', is_primary: true, hot_score: 89, last_checked_at: checked }),
+    deal({ group_key: 'G8', is_primary: true, hot_score: 80, last_checked_at: checked })
   ]);
   {
     const r = await call({});
