@@ -853,18 +853,24 @@ let _adpickDayWarned = false;
  */
 let _runAborted = false;
 
-/** 오늘(KST) collect 소스로 나간 ADPICK 외부 호출 수. 실패하면 0 (상한 때문에 멈추는 것이 더 나쁘다). */
-async function loadAdpickDayUsage() {
+/** V3 일일 상한: 이전 사용량을 확인하지 못하면 안전하게 ADPICK 수집만 중단한다. */
+async function loadAdpickDayUsage(db = supabase) {
   try {
-    const { count, error } = await supabase
+    const { count, error } = await db
       .from('adpick_api_calls')
       .select('id', { count: 'exact', head: true })
       .eq('kst_date', TODAY).eq('source', 'collect').eq('external_call', true);
     if (error) throw new Error(error.message);
-    _adpickDayUsed = Number(count) || 0;
+    const used = Number(count);
+    if (count == null || !Number.isSafeInteger(used) || used < 0) {
+      throw new Error('ADPICK 오늘 호출 수가 유효한 정수가 아닙니다');
+    }
+    _adpickDayUsed = used;
   } catch (e) {
-    _adpickDayUsed = 0;
-    console.warn(`[ADPICK] 오늘 호출량 조회 실패(0 으로 두고 진행): ${e.message}`);
+    // 0으로 두면 새 V3 실행마다 예산을 다시 사용해 일일 상한을 넘을 수 있다.
+    // 이 실행에서는 하루 예산을 소진한 것으로 처리한다. 쿠팡 수집은 계속한다.
+    _adpickDayUsed = ADPICK_DAY_BUDGET;
+    console.warn(`[ADPICK] 오늘 호출량 확인 불가 — 안전을 위해 이 실행의 ADPICK 수집 중단: ${e.message}`);
   }
   return _adpickDayUsed;
 }
@@ -5271,7 +5277,7 @@ module.exports = {
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
-  v3KillReason, markV3Kill,
+  v3KillReason, markV3Kill, loadAdpickDayUsage,
   V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET
 };
 
