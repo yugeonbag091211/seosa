@@ -111,6 +111,19 @@ jobs:
 
       - run: npm ci
 
+      # ── V3 카나리 게이트 (2026-09-23) ─────────────────────────────────
+      # PRICE_V3_CANARY_DATES 에 적힌 KST 날짜에만 수집기 V3 를 켠다. 날짜가 지나면
+      # 저절로 레거시다. 그날 수집기가 429·차단·집계 불변조건 위반·잠금 상실·저장 0행을
+      # 보면 price_job_state 에 비활성화 표식을 남기고, 그 뒤 칸은 레거시로 돈다.
+      # 이 단계는 실패하지 않는다 — 어떤 오류든 PRICE_COLLECTOR_V3=0(레거시)로 떨어진다.
+      # V3 의 ADPICK 하루 상한은 코드 기본값 740(최근 레거시 최대 738) — 늘리지 않는다.
+      - name: V3 canary gate
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PRICE_V3_CANARY_DATES: '2026-09-24'
+        run: node scripts/v3-canary-gate.js
+
       - name: Collect all product prices
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

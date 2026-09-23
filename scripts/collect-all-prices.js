@@ -1797,6 +1797,51 @@ async function releaseLock(token) {
  * ★ 체크포인트가 곧 잠금 연장(heartbeat)이다 — 쓸 때마다 until 을 TTL 만큼 민다.
  * ------------------------------------------------------------------ */
 
+/**
+ * V3 카나리를 그날 멈춰야 하는 이상 신호. 없으면 '' (순수 함수 — test-collector-v3 가 고정한다).
+ *   · ADPICK 429 — 공식 한도(분당 10회) 위반 신호. 리미터가 막았어야 한다
+ *   · 쿠팡 차단 · ADPICK 차단 — 제공자 쪽 이상
+ *   · 리포트 불변조건 위반 — 집계 코드가 틀렸다
+ *   · 잠금 상실 — 다른 실행과 겹쳤다
+ *   · 호출은 나갔는데 저장 0행
+ */
+function v3KillReason(s) {
+  const r = [];
+  if (s.adpick429) r.push('ADPICK HTTP 429');
+  if (s.coupangBlocked) r.push('쿠팡 차단');
+  if (s.adpickBlocked && !s.adpick429) r.push('ADPICK 차단');
+  if (s.violations && s.violations.length) r.push(`리포트 불변조건 위반 ${s.violations.length}건`);
+  if (s.lockLost) r.push('잠금 상실');
+  if (s.collectedNothing) r.push('호출했는데 저장 0행');
+  return r.join(' · ');
+}
+
+/**
+ * 그날의 V3 비활성화 표식을 남긴다 (잠금이 우리 것일 때만).
+ * 실패해도 던지지 않는다 — 표식을 못 남기면 다음 칸이 다시 V3 로 돌 뿐이고,
+ * 그 칸도 같은 이상을 보면 다시 표식을 시도한다.
+ */
+async function markV3Kill(lockToken, reason, opts) {
+  const db = (opts && opts.db) || supabase;
+  const at = new Date().toISOString();
+  try {
+    const { data, error } = await db.from('price_job_state').select('last_result').eq('id', 1).maybeSingle();
+    if (error) throw new Error(error.message);
+    const lr = (data && data.last_result) || {};
+    const kill = { date: TODAY, at, reason, runId: lockToken };
+    const u = await db.from('price_job_state')
+      .update({ last_result: { ...lr, v3Kill: kill } })
+      .eq('id', 1).eq('last_result->lock->>runId', lockToken).select('id');
+    if (u.error) throw new Error(u.error.message);
+    if (!u.data || !u.data.length) throw new Error('잠금이 우리 것이 아니다');
+    console.error(`⛔ [V3 카나리] 오늘(${TODAY}) 남은 실행은 레거시로 돌아갑니다 — ${reason}`);
+    return true;
+  } catch (e) {
+    console.error(`[V3 카나리] 비활성화 표식을 남기지 못했습니다 (${reason}): ${e.message}`);
+    return false;
+  }
+}
+
 /** 이 실행이 상태에 적을 대상 서명. 계획기를 쓰면 레거시와 다른 서명이 된다. */
 function targetSignatureFor(meta, v3Planner = V3_PLANNER) {
   return v3Planner ? `${meta.signature}:planner-v3` : meta.signature;
@@ -4409,6 +4454,12 @@ async function runLocked(state, lockToken) {
       failedKeywords: coupangResult.failedKeywords, // 쿠팡 몫(하위호환)
       secondPassDone: coupangResult.secondPassDone || [],   // 쿠팡 2차 진행(하위호환 경로)
       failureCategories: mergedFailureCategories,
+      /*
+       * V3 카나리 비활성화 표식은 그날 끝까지 살아 있어야 한다. 레거시 실행도
+       * last_result 를 통째로 새로 쓰므로 여기서 이어 적지 않으면 다음 칸이 V3 를 다시 켠다.
+       */
+      ...(state && state.job_date === TODAY && state.last_result && state.last_result.v3Kill
+        && state.last_result.v3Kill.date === TODAY ? { v3Kill: state.last_result.v3Kill } : {}),
       targetSignature: targetMeta.signature,
       /* V3 기아 레인 커서 — 레거시 실행은 이 값을 모르므로 계획기를 쓸 때만 적는다. */
       ...(V3_PLANNER ? { plannerStarveCursor: mergeStarveCursor(priorStarve,
@@ -4623,6 +4674,19 @@ async function runLocked(state, lockToken) {
    *   (상품 수로 판정하면 "호출은 0회인데 상품은 많다" 같은 경로에서 오판한다)
    */
   const collectedNothing = report.attemptCalls > 0 && report.recorded === 0;
+
+  /*
+   * ★ V3 카나리 자동 비활성화. 이상 신호가 하나라도 있으면 그날 남은 실행은
+   *   레거시로 돌아간다 (scripts/v3-canary-gate.js 가 이 표식을 읽는다).
+   */
+  if (V3) {
+    const killReason = v3KillReason({
+      adpick429: /\b429\b/.test(`${_adpickBlockMsg} ${as.blockReason || ''}`),
+      coupangBlocked, adpickBlocked, violations,
+      lockLost: !!(writer && writer.stats.lost), collectedNothing
+    });
+    if (killReason) await markV3Kill(lockToken, killReason);
+  }
 
   if (bothBlocked || collectedNothing) {
     console.error('\n수집 실패로 처리합니다 (exit 1)');
@@ -5207,6 +5271,7 @@ module.exports = {
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
+  v3KillReason, markV3Kill,
   V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET
 };
 
