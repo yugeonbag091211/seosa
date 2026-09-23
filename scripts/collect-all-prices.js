@@ -1043,7 +1043,12 @@ async function countCatalog() {
  *              (6만~10만 행을 통째로 메모리에 올리지 않기 위한 출구)
  * @returns {Array} onPage 를 주지 않았을 때만 전체 행
  */
-async function keysetScan({ build, columns, cursor = 'id', pageSize = PAGE, label = '조회', onPage = null }) {
+/*
+ *   filter     (q) => q — select 뒤에 거는 필터. supabase-js v2 에서 .gte/.eq 같은
+ *              필터는 select() 가 돌려준 빌더에만 있다. build() 안에서 from() 뒤에
+ *              바로 걸면 "gte is not a function" 으로 매번 실패한다 (2026-09-23 운영 실측).
+ */
+async function keysetScan({ build, columns, cursor = 'id', pageSize = PAGE, label = '조회', onPage = null, filter = null }) {
   const all = onPage ? null : [];
   let after = null;
   let guard = 0;
@@ -1056,7 +1061,9 @@ async function keysetScan({ build, columns, cursor = 'id', pageSize = PAGE, labe
   let maxPage = 0;
   for (;;) {
     if (++guard > 100000) throw new Error(`${label}: 키셋 페이지가 100,000장을 넘었습니다 (커서 컬럼 '${cursor}' 이 단조롭지 않을 수 있습니다)`);
-    let q = build().select(columns).order(cursor, { ascending: true }).limit(pageSize);
+    let q = build().select(columns);
+    if (filter) q = filter(q);
+    q = q.order(cursor, { ascending: true }).limit(pageSize);
     if (after !== null) q = q.gt(cursor, after);
     const { data, error } = await q;
     if (error) throw new Error(`${label} 실패: ` + error.message);
@@ -1886,11 +1893,8 @@ async function collectedTodayByDayScan(mallName, collectible, dayStart, dayEnd) 
   const want = new Set(collectible.map(p => `${p.product_id}|${p.mall}`));
   const found = new Set();
   await keysetScan({
-    build: () => supabase
-      .from('price_history')
-      .gte('recorded_at', dayStart)
-      .lt('recorded_at', dayEnd)
-      .eq('mall', mallName),
+    build: () => supabase.from('price_history'),
+    filter: q => q.gte('recorded_at', dayStart).lt('recorded_at', dayEnd).eq('mall', mallName),
     columns: 'id, product_id, mall',
     cursor: 'id',
     label: `[${mallName}] 오늘 기록 스캔`,
