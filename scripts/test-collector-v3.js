@@ -365,6 +365,54 @@ function rng(seed) {
     check('★ 환경변수가 없으면 V3 는 꺼져 있다 (레거시 그대로)', C.V3 === false && C.V3_PLANNER === false && C.V3_PARALLEL === false && C.V3_CHECKPOINT === false);
   }
   eq('ADPICK 하루 상한 기본값 740 (최근 레거시 최대 738 이내 — 일일 한도 미확인)', C.ADPICK_DAY_BUDGET, 740);
+  console.log('');
+
+  /* ── 6. V3 카나리 — 게이트와 자동 비활성화 ─────────────────────── */
+  console.log('[6] V3 카나리 게이트 · 자동 비활성화');
+  {
+    const G = require('./v3-canary-gate');
+    const on = G.canaryDecision({ today: '2026-09-24', dates: '2026-09-24', state: { last_result: {} } });
+    check('★ 카나리 날짜 · 표식 없음 → ON', on.on === true, on.reason);
+    check('★ 날짜가 지나면 저절로 OFF', G.canaryDecision({ today: '2026-09-25', dates: '2026-09-24', state: null }).on === false);
+    check('날짜 목록이 비면 OFF', G.canaryDecision({ today: '2026-09-24', dates: '', state: null }).on === false);
+    check('★ 오늘 비활성화 표식 → OFF',
+      G.canaryDecision({ today: '2026-09-24', dates: '2026-09-24', state: { last_result: { v3Kill: { date: '2026-09-24', reason: 'ADPICK HTTP 429' } } } }).on === false);
+    check('어제 표식은 오늘을 막지 않는다',
+      G.canaryDecision({ today: '2026-09-24', dates: '2026-09-24,2026-09-25', state: { last_result: { v3Kill: { date: '2026-09-23' } } } }).on === true);
+    check('★ 상태를 못 읽으면 OFF (표식을 확인할 수 없다)',
+      G.canaryDecision({ today: '2026-09-24', dates: '2026-09-24', state: null, stateError: '504' }).on === false);
+
+    eq('정상 실행 → 비활성화 사유 없음', C.v3KillReason({ violations: [] }), '');
+    check('★ ADPICK 429 → 비활성화', /429/.test(C.v3KillReason({ adpick429: true, adpickBlocked: true })));
+    check('쿠팡 차단 → 비활성화', /쿠팡 차단/.test(C.v3KillReason({ coupangBlocked: true })));
+    check('불변조건 위반 → 비활성화', /불변조건/.test(C.v3KillReason({ violations: ['x'] })));
+    check('잠금 상실 → 비활성화', /잠금 상실/.test(C.v3KillReason({ lockLost: true })));
+    check('저장 0행 → 비활성화', /저장 0행/.test(C.v3KillReason({ collectedNothing: true })));
+
+    /* 표식은 잠금이 우리 것일 때만 남긴다 */
+    const writes = [];
+    const fakeKillDb = held => ({
+      from() {
+        const api = { _upd: null, _f: [] };
+        api.select = () => api;
+        api.eq = (c, v) => { api._f.push([c, v]); return api; };
+        api.maybeSingle = () => Promise.resolve({ data: { last_result: { lock: { runId: held }, malls: {} } }, error: null });
+        api.update = b => { api._upd = b; return api; };
+        api.then = res => {
+          const own = api._f.some(([c, v]) => c === 'last_result->lock->>runId' && v === held);
+          if (api._upd) writes.push(api._upd);
+          return res({ data: api._upd && own ? [{ id: 1 }] : [], error: null });
+        };
+        return api;
+      }
+    });
+    const err = console.error; console.error = () => {};
+    const ok = await C.markV3Kill('T1', 'ADPICK HTTP 429', { db: fakeKillDb('T1') });
+    const lost = await C.markV3Kill('T1', 'ADPICK HTTP 429', { db: fakeKillDb('OTHER') });
+    console.error = err;
+    check('★ 우리 잠금 → 표식 기록 (기존 last_result 보존 + v3Kill)', ok === true && writes[0].last_result.v3Kill.reason === 'ADPICK HTTP 429' && !!writes[0].last_result.malls);
+    check('남의 잠금 → 기록 실패로 끝난다 (던지지 않는다)', lost === false);
+  }
   const meta = { signature: 'rotation-v1:2026-09-23:7:6' };
   eq('V3 서명', C.targetSignatureFor(meta, true), 'rotation-v1:2026-09-23:7:6:planner-v3');
   eq('레거시 서명 그대로', C.targetSignatureFor(meta, false), 'rotation-v1:2026-09-23:7:6');
