@@ -113,12 +113,15 @@ const V3_PARALLEL = V3 && process.env.PRICE_V3_PARALLEL !== '0';
 const V3_CHECKPOINT = V3 && process.env.PRICE_V3_CHECKPOINT !== '0';
 const CHECKPOINT_MIN_INTERVAL_MS = Number(process.env.PRICE_CHECKPOINT_INTERVAL_MS) || 90 * 1000;
 /*
- * ADPICK 하루 호출 상한 (V3 전용). 레거시는 하루 270~740회라 이 벽이 필요 없었다.
- * 병렬 실행은 하루 ADPICK 호출을 약 1,960회까지 늘릴 수 있다(4.9회/분 × 약 400분, 추정).
- * 공식 한도는 확인되지 않았고, 운영 실측으로 2026-09-18 하루 3,794회에서 429 가
- * 10회(0.26%) 났다. 그 절반 아래로 둔다. 분당 상한(ADPICK_MAX_PER_MIN)·간격은 그대로다.
+ * ADPICK 하루 호출 상한 (V3 전용). 레거시는 하루 268~738회(2026-09-16~23, 장애일 제외)라
+ * 이 벽이 필요 없었다. 병렬 실행은 하루 ADPICK 호출을 약 1,960회까지 늘릴 수 있다(추정).
+ *
+ * ★ 2026-09-23 공식 가이드 확인: 상품 검색은 «분당 10회(API 키 기준)» 이고 일일 한도는
+ *   적혀 있지 않다. 09-01 이후 429 22건도 전부 분당 초과(직전 60초 11·12번째)였다.
+ *   그래도 «일일 한도 없음» 을 공급자에게 확인받은 것은 아니므로, 기본값은 최근 레거시
+ *   사용량 범위(최대 738) 안인 740 으로 둔다. 늘리려면 카나리 실측 뒤 env 로 올린다.
  */
-const ADPICK_DAY_BUDGET = Number(process.env.ADPICK_DAY_BUDGET) || 1800;
+const ADPICK_DAY_BUDGET = Number(process.env.ADPICK_DAY_BUDGET) || 740;
 const Planner = require('../api/_collectplan');
 
 const UPSERT_CHUNK  = 200;

@@ -16,15 +16,12 @@
  *
  * 쿠팡(api/_coupang.js)과 다른 점
  *   - HMAC 서명이 없다 (키가 URL에 있음).
- *   - 전역(교차 인스턴스) DB 카운터/차단 RPC를 새로 만들지 않았다. ADPICK의
- *     공식 호출 한도가 아직 문서로 확인되지 않았고, 이 시점의 호출 규모도
- *     크지 않다. 대신 다음 세 겹으로 방어한다.
+ *   - 공식 한도: 상품 검색 분당 10회(API 키 기준). 다음 네 겹으로 지킨다.
  *       1) Supabase 캐시(adpick_search_cache) — 같은 키워드 재조회는 API를 타지 않는다
- *       2) 인스턴스 리미터 — 분당 상한 + 최소 호출 간격
- *       3) 인스턴스 로컬 서킷 브레이커 — 오류가 나면 일정 시간 호출을 멈춘다
- *     (3)은 인스턴스별로만 유효하다(서버리스 인스턴스가 여러 개면 각자 판단한다).
- *     교차 인스턴스 차단이 필요해질 만큼 트래픽이 커지면 coupang_api_state
- *     같은 테이블을 추가하면 된다.
+ *       2) 인스턴스 리미터 — 분당 상한 + 최소 간격, 실제 시작 시각 기준 (api/_adpicklimit.js)
+ *       3) 전역 리미터 — adpick_acquire 가 모든 프로세스의 예약을 한 줄로 세운다
+ *          (supabase/2026-09-23-adpick-rate-limiter.sql 적용 전에는 건너뛴다)
+ *       4) 인스턴스 로컬 서킷 브레이커 — 오류가 나면 일정 시간 호출을 멈춘다
  *
  * ADPICK 호출 코드는 반드시 searchAdpick()만 쓸 것. 직접 fetch 하면 캐시와
  * 리미터를 전부 우회한다.
@@ -40,10 +37,23 @@ function envNum(name, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** 인스턴스당 자체 상한. 공식 한도가 확인되지 않아 보수적으로 잡는다. */
-const MAX_PER_MIN = envNum('ADPICK_MAX_PER_MIN', 20);
+/*
+ * 인스턴스당 자체 상한.
+ *
+ * ★ 공식 한도: 상품 검색 «분당 10회, API 키 기준» (ADPICK BIZ API 가이드, 2026-09-23 확인).
+ *   키 하나를 수집기(GitHub Actions)·Vercel(검색·cron)·핫딜 workflow 가 나눠 쓴다.
+ *   예전 기본값 20회/1초 때문에 Vercel cron 이 매일 18:12Z 에 11~12회를 몰아 부르다
+ *   429 를 받았다 (09-13~09-21 매일). 이제 env 가 없는 프로세스의 기본값은 3회/10초다.
+ *   수집기는 workflow env 로 5회/12초를 받는다 — 둘이 겹쳐도 8회 ≤ 공식 10회.
+ *   모든 경로의 합은 전역 리미터(adpick_acquire, 기본 8회)가 따로 묶는다.
+ */
+const MAX_PER_MIN = envNum('ADPICK_MAX_PER_MIN', 3);
 /** 호출 사이 최소 간격. */
-const MIN_GAP_MS = envNum('ADPICK_MIN_GAP_MS', 1000);
+const MIN_GAP_MS = envNum('ADPICK_MIN_GAP_MS', 10000);
+/** 모든 경로를 합친 검색 상한 (전역 리미터). 공식 10회 아래로 둔다. */
+const GLOBAL_MAX_PER_MIN = Math.min(10, envNum('ADPICK_GLOBAL_MAX_PER_MIN', 8));
+/** 전역 예약의 여유 — 프로세스·DB 시계 차와 응답 지연을 덮는다. */
+const GLOBAL_MARGIN_MS = envNum('ADPICK_GLOBAL_MARGIN_MS', 1000);
 /** 캐시 수명. */
 const CACHE_TTL_MS = envNum('ADPICK_CACHE_TTL_MS', 6 * 60 * 60 * 1000);
 /** 호출을 못 하게 됐을 때 그래도 쓸 수 있는 캐시의 최대 나이. */
@@ -77,7 +87,7 @@ const COOLDOWN_MIN = {
  *
  * 명시적인 인증·호출한도·서비스 차단 신호만 공급자 전체 장애로 본다.
  * 알 수 없는 success=false는 해당 검색어만 실패시키고 다음 검색어를 계속한다.
- * 속도 제한은 reserveSlot이 그대로 지키므로 이 분리가 호출 폭주를 만들지 않는다.
+ * 속도 제한은 리미터가 그대로 지키므로 이 분리가 호출 폭주를 만들지 않는다.
  */
 function isTerminalApiError(message) {
   const s = String(message || '').toLowerCase();
@@ -85,11 +95,8 @@ function isTerminalApiError(message) {
     || /인증|권한|접근\s*거부|호출\s*(한도|제한)|사용\s*제한|차단|점검/.test(s);
 }
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const state = {
-  window: [],
-  lastCallAt: 0,
   blockedUntil: 0,
   blockReason: '',
   totalCalls: 0,
@@ -142,100 +149,40 @@ function redact(text) {
 function log(source, keyword, decision, extra) {
   console.log(
     `[adpick] source=${source} kw="${String(keyword).slice(0, 30)}" ${decision}`
-    + ` win=${state.window.length}/${MAX_PER_MIN}`
+    + ` win=${limiter.inWindow()}/${MAX_PER_MIN}`
     + ` calls=${state.totalCalls} cache=${state.totalCacheHits} denied=${state.totalDenied}`
     + (extra ? ` ${extra}` : '')
   );
 }
 
 /* ------------------------------------------------------------------ *
- *  인스턴스 리미터 (api/_coupang.js reserveSlot과 동일한 구조)
+ *  리미터 (api/_adpicklimit.js)
+ *
+ *  ★ 예전 reserveSlot 은 «예약 시각» 으로 간격·창을 계산하고, DB 에는 sleep 뒤
+ *    «실제 시작 시각» 을 적었다. 타이머가 몇 ms 늦으면 기록상 60초 창에 6회가
+ *    들어갔다(설정 5회/분, 실측 59.991초). 이제 실제 시작 시각으로 계산하고
+ *    그 값을 그대로 startedAt 으로 기록한다 — 기록이 곧 한도 준수의 증명이다.
+ *  ★ 창이 차면 거절하지 않고 호출부가 허락한 maxWaitMs 만큼 기다린다(2026-09-10
+ *    감사의 결정 그대로). maxWaitMs=0 인 사용자 요청은 줄에 서지 않고 바로 거절한다.
  * ------------------------------------------------------------------ */
-let reserveChain = Promise.resolve();
-
-function reserveSlot(minGapMs, maxWaitMs) {
-  const p = reserveChain.then(() => {
-    const now = Date.now();
-
-    while (state.window.length && state.window[0] <= now - 60000) state.window.shift();
-
-    if (state.blockedUntil > now) {
-      const left = Math.ceil((state.blockedUntil - now) / 1000);
-      return { ok: false, blocked: true, reason: `호출 중단 중 (${left}초 남음): ${state.blockReason}` };
-    }
-    /*
-     * 분당 창이 찼을 때 «거절» 이 아니라 «대기» 로 처리한다 (2026-09-10 감사).
-     *
-     * ★ 무엇이 잘못돼 있었나 — 창이 차면 즉시 거절했다. 그런데 이 모듈의
-     *   거절은 호출부에서 «그 검색어를 이번 실행에서 포기한다» 와 같은 뜻이다
-     *   (scripts/collect-all-prices.js fetchAdpickAll → from='none' →
-     *    processGroup 이 failedKeywords 로 넘기고 다음 검색어로 간다).
-     *   거절에는 대기가 없으므로, 창이 비는 순간까지 수집기가 남은 검색어를
-     *   «최고 속도로» 태워 없앤다.
-     *
-     *   오프라인 재현 (가짜 ADPICK 서버 + 가짜 Supabase, 외부 호출 0회):
-     *     ADPICK_MAX_PER_MIN=5 · minGap 12,000ms · 동시성 4 · 75초
-     *       시도 2,783,804건 → 실제 호출 7건 / 거절 2,783,797건
-     *     이 설정 «이전» 값(MAX_PER_MIN=20 · minGap 1,500ms)에서도 같은 일이
-     *     일어난다 — 20회로 창이 차는 28.5초부터 60초까지 전부 거절이다.
-     *     즉 새 설정이 만든 버그가 아니라, 새 설정이 드러낸 버그다.
-     *
-     * ★ 고치는 방법은 «호출을 늘리는 것» 이 아니라 «기다리는 것» 이다.
-     *   창에서 가장 오래된 호출이 빠지는 시각까지 슬롯을 미룬다. 그 대기가
-     *   호출부가 허락한 maxWaitMs 를 넘으면 예전 그대로 거절한다.
-     *
-     * ★ 분당 호출 속도는 한 자리도 늘지 않는다.
-     *     · 새 슬롯은 여전히 앞 호출로부터 minGapMs 뒤다
-     *     · 새 슬롯 기준 최근 60초 안의 호출 수는 여전히 MAX_PER_MIN 미만이다
-     *     · 사용자 요청 경로(maxWaitMs=0 — api/search.js, api/_shop.js)는
-     *       대기가 0보다 크므로 예전과 똑같이 즉시 거절된다
-     *   달라지는 것은 «기다리면 부를 수 있었던 호출을 버렸는가» 하나뿐이다.
-     */
-    const at = Math.max(now, state.lastCallAt + minGapMs);
-    /*
-     * 창이 찼다면, 새 슬롯이 설 수 있는 가장 이른 시각.
-     * window 는 예약 순(오름차순)이라, 뒤에서 MAX_PER_MIN 번째 호출이 60초를
-     * 넘겨 빠져야 한 자리가 난다.
-     */
-    const windowFreeAt = state.window.length >= MAX_PER_MIN
-      ? state.window[state.window.length - MAX_PER_MIN] + 60000
-      : 0;
-    const slotAt = Math.max(at, windowFreeAt);
-    const waitMs = slotAt - now;
-    if (waitMs > maxWaitMs) {
-      /*
-       * ★ 어느 한도가 막았는지 «흔들리지 않게» 고른다 (2026-09-20).
-       *
-       *   예전 조건은 `windowFreeAt > at` 이었다. 그런데 창이 찼을 때는
-       *   앞선 호출이 이미 창 때문에 미래 슬롯을 예약해 두어 lastCallAt 이
-       *   그만큼 밀려 있다. 그래서 두 값이 «1ms 차이로» 엇갈리고, 같은
-       *   시나리오가 실행할 때마다 다른 사유를 냈다.
-       *
-       *   실측: scripts/test-adpick-observability.js 의 마지막 절이 4회 중
-       *   1회꼴로 «간격 제한» 을 받아 실패했다. 막힌 것은 매번 같은데
-       *   설명만 달라진 것이다 — 관측값이 흔들리면 관측이 아니다.
-       *
-       *   창이 아직 차 있으면 창이 원인이다. lastCallAt 이 미래인 것 자체가
-       *   창 때문에 밀린 결과이므로, 그쪽을 먼저 말하는 편이 사실에 가깝다.
-       *
-       * ★ 막는 기준은 한 자리도 바뀌지 않는다 — waitMs 계산도, maxWaitMs
-       *   비교도 그대로다. 달라지는 것은 사유 문구뿐이다.
-       */
-      const windowFull = state.window.length >= MAX_PER_MIN && windowFreeAt > now;
-      const why = windowFull
-        ? `인스턴스 분당 한도 ${state.window.length}/${MAX_PER_MIN} — ${waitMs}ms 대기 필요`
-        : `간격 제한 — ${waitMs}ms 대기 필요`;
-      return { ok: false, blocked: false, reason: why };
-    }
-
-    state.lastCallAt = slotAt;
-    state.window.push(slotAt);
-    return { ok: true, waitMs };
-  });
-
-  reserveChain = p.then(() => {}, () => {});
-  return p;
-}
+const Limit = require('./_adpicklimit');
+const limiter = Limit.createLimiter({
+  maxPerMin: MAX_PER_MIN,
+  minGapMs: MIN_GAP_MS,
+  marginMs: envNum('ADPICK_RATE_MARGIN_MS', 0),
+  stallMs: Math.floor(GLOBAL_MARGIN_MS / 2)
+});
+/*
+ * 전역 리미터는 첫 호출 때 만든다. _supabase 는 지연 프록시라 모듈 로드 시점에
+ * 건드리면 Supabase 설정이 없는 환경(단위 테스트·로컬 도구)에서 require 자체가 죽는다.
+ */
+const globalAcquire = process.env.ADPICK_GLOBAL_LIMIT === '0' ? null : Limit.createGlobalAcquire({
+  rpc: (fn, args) => supabase.rpc(fn, args),
+  bucket: 'search',
+  maxPerMin: GLOBAL_MAX_PER_MIN,
+  marginMs: GLOBAL_MARGIN_MS,
+  isMissingObject: msg => require('./_dberror').isMissingObject(msg)
+});
 
 /** 로컬 서킷 브레이커. */
 function trip(minutes, reason) {
@@ -456,14 +403,16 @@ async function searchAdpick(keyword, opts = {}) {
     return { items: [], error: reason, from: 'none', blocked: !!blocked, apiCalled };
   };
 
-  const slot = await reserveSlot(minGapMs, maxWaitMs);
-  if (!slot.ok) return fallback(slot.reason, slot.blocked);
-  if (slot.waitMs > 0) {
-    await sleep(slot.waitMs);
-    if (state.blockedUntil > Date.now()) {
-      return fallback(`대기 중 차단됨: ${state.blockReason}`, true);
-    }
+  if (state.blockedUntil > Date.now()) {
+    const left = Math.ceil((state.blockedUntil - Date.now()) / 1000);
+    return fallback(`호출 중단 중 (${left}초 남음): ${state.blockReason}`, true);
   }
+  const slot = await limiter.acquire({
+    maxWaitMs, minGapMs,
+    global: globalAcquire ? a => globalAcquire({ ...a, source }) : null,
+    isBlocked: () => (state.blockedUntil > Date.now() ? state.blockReason || '차단' : '')
+  });
+  if (!slot.ok) return fallback(slot.reason, slot.kind === 'blocked');
 
   apiCalled = true;
   state.totalCalls++;
@@ -479,7 +428,8 @@ async function searchAdpick(keyword, opts = {}) {
    * recorded 플래그로 이중 기록을 막는다 — 한 요청이 두 행이 되면 공급자에게
    * 대는 총량이 부풀고, 그건 계측이 없는 것보다 나쁘다.
    */
-  const startedAt = Date.now();
+  /* 리미터가 간격·창을 계산한 바로 그 시각을 기록한다 — 기록이 곧 한도 준수의 증명이다. */
+  const startedAt = slot.startMs;
   let recorded = false;
   const finish = async (outcome, httpStatus, itemCount, detail) => {
     if (recorded) return;
@@ -571,7 +521,8 @@ function localStats() {
     maxPerMin: MAX_PER_MIN,
     minGapMs: MIN_GAP_MS,
     cacheTtlMs: CACHE_TTL_MS,
-    inWindow: state.window.filter(t => t > now - 60000).length,
+    inWindow: limiter.inWindow(),
+    globalMaxPerMin: globalAcquire ? GLOBAL_MAX_PER_MIN : 0,
     calls: state.totalCalls,
     cacheHits: state.totalCacheHits,
     denied: state.totalDenied,
@@ -582,7 +533,7 @@ function localStats() {
 }
 
 module.exports = {
-  searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName, redact,
+  searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName, redact, recordExternalCall,
   isTerminalApiError,
   MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };
