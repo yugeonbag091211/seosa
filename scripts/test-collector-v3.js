@@ -364,7 +364,7 @@ function rng(seed) {
   } else {
     check('★ 환경변수가 없으면 V3 는 꺼져 있다 (레거시 그대로)', C.V3 === false && C.V3_PLANNER === false && C.V3_PARALLEL === false && C.V3_CHECKPOINT === false);
   }
-  eq('ADPICK 하루 상한 기본값 1,800', C.ADPICK_DAY_BUDGET, 1800);
+  eq('ADPICK 하루 상한 기본값 740 (최근 레거시 최대 738 이내 — 일일 한도 미확인)', C.ADPICK_DAY_BUDGET, 740);
   const meta = { signature: 'rotation-v1:2026-09-23:7:6' };
   eq('V3 서명', C.targetSignatureFor(meta, true), 'rotation-v1:2026-09-23:7:6:planner-v3');
   eq('레거시 서명 그대로', C.targetSignatureFor(meta, false), 'rotation-v1:2026-09-23:7:6');

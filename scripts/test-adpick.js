@@ -116,6 +116,13 @@ require.cache[supabasePath].filename = supabasePath;
 require.cache[supabasePath].loaded = true;
 require.cache[supabasePath].exports = fakeSupabase;
 
+/*
+ * 이 파일은 응답 분류·서킷·키 가림을 본다. 호출률은 scripts/test-adpick-limit.js 가 본다.
+ * 운영 기본값(분당 3회)이면 한 인스턴스로 6회를 잇달아 부르는 서킷 절이 한도에 걸려
+ * 서킷이 아니라 리미터를 시험하게 된다 — 그래서 여기서만 예전 값으로 고정한다.
+ * (_shop 이 _adpick 을 먼저 불러오므로 그 앞에서 정해야 한다)
+ */
+process.env.ADPICK_MAX_PER_MIN = process.env.ADPICK_MAX_PER_MIN || '20';
 const { recordPrices, adpickProductId } = require('../api/_shop');
 const { attachTrust } = require('../api/_trust');
 const { kstToday, observedKstDate, todayDropConfirmed, vendorIdOf } = require('../api/_price');

@@ -363,7 +363,16 @@ async function runAndCollectQueries(rows, opts) {
     const cou = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
     check(/COUPANG_MAX_PER_MIN', 20\)/.test(cou), '★★ 쿠팡 분당 상한 20 유지');
     const adp = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_adpick.js'), 'utf8');
-    check(/ADPICK_MAX_PER_MIN', 20\)/.test(adp), '★★ ADPICK 분당 상한 20 유지');
+    /*
+     * ADPICK 은 공식 한도가 확인됐다 — 상품 검색 분당 10회(API 키 기준, 2026-09-23).
+     * 기본값 20 은 그 한도를 넘어 매일 429 를 불렀으므로 3 으로 낮췄다. 여기서는
+     * «올리지 못하게» 막는다: 인스턴스 기본값·전역 상한 모두 공식 10회 이하여야 한다.
+     */
+    const adpDefault = Number((/envNum\('ADPICK_MAX_PER_MIN', (\d+)\)/.exec(adp) || [])[1]);
+    const adpGlobal = Number((/envNum\('ADPICK_GLOBAL_MAX_PER_MIN', (\d+)\)/.exec(adp) || [])[1]);
+    check(adpDefault > 0 && adpDefault <= 10, '★★ ADPICK 인스턴스 기본 분당 상한 ≤ 공식 10회', adpDefault);
+    check(adpGlobal > 0 && adpGlobal <= 10 && /Math\.min\(10, envNum\('ADPICK_GLOBAL_MAX_PER_MIN'/.test(adp),
+      '★★ ADPICK 전역 분당 상한 ≤ 공식 10회 (env 로도 못 넘긴다)', adpGlobal);
   }
 
   /* ==============================================================

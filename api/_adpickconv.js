@@ -37,8 +37,12 @@ const MAX_ROWS_PER_PAGE = 200;
 const MAX_RANGE_DAYS = 365;
 /** 페이지를 무한히 돌지 않는다. 200 × 50 = 10,000행이면 한 회차로 충분하다. */
 const MAX_PAGES = 50;
-/** 페이지 사이 간격 — 상대 서버를 몰아붙이지 않는다. */
-const PAGE_INTERVAL_MS = Number(process.env.ADPICK_CONV_INTERVAL_MS) || 1200;
+/*
+ * 페이지 사이 간격 — 상대 서버를 몰아붙이지 않는다.
+ * 공식 한도: 성과 조회 분당 60회, 그리고 «모든 기능 합» 분당 60회(초과 시 403).
+ * 같은 API 키로 상품 검색(최대 10회/분)도 돌므로 1.5초(분당 40회 이하)로 둔다 — 합 50회 < 60회.
+ */
+const PAGE_INTERVAL_MS = Math.max(1500, Number(process.env.ADPICK_CONV_INTERVAL_MS) || 1500);
 const TIMEOUT_MS = Number(process.env.ADPICK_CONV_TIMEOUT_MS) || 20000;
 
 function apiKey() { return String(process.env.ADPICK_API_KEY || '').trim(); }
@@ -105,9 +109,25 @@ async function fetchPage(from, to, page) {
 
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  /*
+   * 같은 API 키의 호출은 전부 adpick_api_calls 한 표에 남긴다 — 공급자에게 대는
+   * 분당 합(모든 기능 60회)을 한 곳에서 셀 수 있어야 한다. 기록 실패는 조회를 막지 않는다.
+   */
+  const startedAt = Date.now();
+  const note = (httpStatus, outcome, items, detail) => {
+    try {
+      return require('./_adpick').recordExternalCall({
+        at: startedAt, source: 'import-conversions', query: '', operation: 'conversion',
+        reqLimit: MAX_ROWS_PER_PAGE, httpStatus, outcome, items,
+        latencyMs: Date.now() - startedAt, detail: redact(detail || '')
+      });
+    } catch (e) { return undefined; }
+  };
   try {
     const res = await fetch(url, { signal: ctl.signal, headers: { accept: 'application/json' } });
     const text = await res.text();
+    await note(res.status, res.ok ? 'ok' : ({ 403: '403', 429: '429' }[res.status] || 'other'), 0,
+      res.ok ? '' : text.replace(/\s+/g, ' ').slice(0, 200));
 
     if (!res.ok) {
       const wl = isWhitelistError(res.status, text);
@@ -140,6 +160,7 @@ async function fetchPage(from, to, page) {
     return { ok: true, rows: rows, status: res.status, whitelist: false, reason: '' };
   } catch (e) {
     const msg = (e && e.name === 'AbortError') ? 'timeout' : redact(e && e.message);
+    await note(0, msg === 'timeout' ? 'timeout' : 'network_error', 0, msg);
     return { ok: false, rows: [], status: 0, whitelist: false, reason: String(msg).slice(0, 160) };
   } finally {
     clearTimeout(timer);
