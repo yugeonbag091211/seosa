@@ -190,6 +190,52 @@ eq('대상 페이지 크기가 PostgREST db-max-rows(1,000)를 넘지 않는다'
   check('오류를 삼키지 않는다 (라벨 + 원인)', /가짜표 조회 실패: boom/.test(threw), threw);
 }
 
+{
+  /*
+   * ★ supabase-js v2 처럼 «엄격한» 가짜 표 (2026-09-23).
+   *   from() 은 select 만 갖고, 필터(gte/lt/eq)는 select() 가 돌려준 빌더에만 있다.
+   *   위 fakeTable 은 순서를 가리지 않아서 collectedTodayByDayScan 의
+   *   from().gte(...) 가 운영에서 매번 "gte is not a function" 으로 실패하는 것을 놓쳤다.
+   */
+  const rows = Array.from({ length: 2500 }, (_, i) => ({
+    id: i + 1, mall: i % 2 ? 'ADPICK' : '쿠팡', recorded_at: new Date(Date.UTC(2026, 8, 22, 0, 0, i * 30)).toISOString()
+  }));
+  const strict = () => ({
+    select(cols) {
+      const f = { preds: [], _gt: null, _limit: 0 };
+      const api = {
+        gte: (c, v) => { f.preds.push(r => r[c] >= v); return api; },
+        lt: (c, v) => { f.preds.push(r => r[c] < v); return api; },
+        eq: (c, v) => { f.preds.push(r => r[c] === v); return api; },
+        gt: (c, v) => { f._gt = v; return api; },
+        order: () => api,
+        limit: n => { f._limit = n; return api; },
+        then: resolve => resolve({
+          error: null,
+          data: rows.filter(r => (f._gt === null || r.id > f._gt) && f.preds.every(p => p(r))).slice(0, Math.min(f._limit, 1000))
+            .map(r => Object.fromEntries(String(cols).split(',').map(c => c.trim()).map(c => [c, r[c]])))
+        })
+      };
+      return api;
+    }
+  });
+  let oldThrew = '';
+  try {
+    await keysetScan({ build: () => strict().gte('recorded_at', 'x'), columns: 'id', label: '옛 모양' });
+  } catch (e) { oldThrew = e.message; }
+  check('★ 엄격한 빌더에서 from().gte() 는 실패한다 (운영에서 난 바로 그 오류)', /gte is not a function/.test(oldThrew), oldThrew);
+
+  const from = '2026-09-22T00:05:00.000Z', to = '2026-09-22T00:15:00.000Z';
+  const got = await keysetScan({
+    build: strict,
+    filter: q => q.gte('recorded_at', from).lt('recorded_at', to).eq('mall', 'ADPICK'),
+    columns: 'id, mall, recorded_at', label: '필터 스캔'
+  });
+  const want = rows.filter(r => r.recorded_at >= from && r.recorded_at < to && r.mall === 'ADPICK');
+  eq('★ filter 인자: select 뒤에 걸려 범위·몰 조건을 지킨다', got.length, want.length);
+  check('filter 인자: 페이지를 넘어도 누락·중복 없음', new Set(got.map(r => r.id)).size === want.length && got.every(r => r.mall === 'ADPICK'));
+}
+
 /* ================================================================
  *  2. 대상 조회 — 규모별 · 한 페이지 실패해도 처음부터 다시 받지 않는다
  * ================================================================ */
