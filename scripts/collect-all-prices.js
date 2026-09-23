@@ -93,6 +93,34 @@ const BULK_ROTATION_ENABLED = process.env.PRICE_BULK_ROTATION !== '0';
 const BULK_ROTATION_DAYS = Math.max(1, Number(process.env.PRICE_BULK_ROTATION_DAYS) || 7);
 const COLLECTOR_TARGET_VERSION = 'rotation-v1';
 
+/*
+ * ★ 수집기 V3 (2026-09-23) — PRICE_COLLECTOR_V3=1 일 때만 켜진다. 꺼져 있으면
+ *   아래 네 값이 전부 false 이고 레거시 동작은 한 줄도 달라지지 않는다.
+ *
+ *   PLANNER     1차 그룹을 가나다순 대신 기대 회수량 순으로 부른다 (api/_collectplan.js)
+ *   PARALLEL    쿠팡·ADPICK 을 한 실행 안에서 동시에 돌린다. 두 제공자의 분당 한도는
+ *               서로 독립이라 병렬로 돌려도 어느 쪽의 호출 속도도 바뀌지 않는다.
+ *               바뀌는 것은 ADPICK 이 받는 «시간» 이다 — 실측(2026-09-16~23 로그)으로
+ *               정상일 작업 실행 8회×50분 중 ADPICK 몫은 64~148분뿐이었다.
+ *   CHECKPOINT  배치마다(최소 간격 CHECKPOINT_MIN_INTERVAL_MS) 진행 상태를 저장하고,
+ *               모든 상태 쓰기를 «우리 잠금일 때만» 한다. 예전에는 실행 끝에 한 번만
+ *               저장해서 프로세스가 죽으면 그 실행의 진행을 통째로 잃었다.
+ *   하위 플래그로 하나씩 끌 수 있다: PRICE_V3_PLANNER=0 / PRICE_V3_PARALLEL=0 / PRICE_V3_CHECKPOINT=0
+ */
+const V3 = process.env.PRICE_COLLECTOR_V3 === '1' && !SEED_ONLY;
+const V3_PLANNER = V3 && process.env.PRICE_V3_PLANNER !== '0';
+const V3_PARALLEL = V3 && process.env.PRICE_V3_PARALLEL !== '0';
+const V3_CHECKPOINT = V3 && process.env.PRICE_V3_CHECKPOINT !== '0';
+const CHECKPOINT_MIN_INTERVAL_MS = Number(process.env.PRICE_CHECKPOINT_INTERVAL_MS) || 90 * 1000;
+/*
+ * ADPICK 하루 호출 상한 (V3 전용). 레거시는 하루 270~740회라 이 벽이 필요 없었다.
+ * 병렬 실행은 하루 ADPICK 호출을 약 1,960회까지 늘릴 수 있다(4.9회/분 × 약 400분, 추정).
+ * 공식 한도는 확인되지 않았고, 운영 실측으로 2026-09-18 하루 3,794회에서 429 가
+ * 10회(0.26%) 났다. 그 절반 아래로 둔다. 분당 상한(ADPICK_MAX_PER_MIN)·간격은 그대로다.
+ */
+const ADPICK_DAY_BUDGET = Number(process.env.ADPICK_DAY_BUDGET) || 1800;
+const Planner = require('../api/_collectplan');
+
 const UPSERT_CHUNK  = 200;
 /*
  * 키워드당 가져올 상품 수.
@@ -660,6 +688,7 @@ async function loadCoupangDayUsage() {
 async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
   if (!COUP_ACCESS || !COUP_SECRET) return { ok: false, items: [], reason: '쿠팡 키 미설정' };
   if (_coupangBlocked || isCoupangBlockedGlobal()) return { ok: false, items: [], reason: '쿠팡 차단 상태' };
+  if (_runAborted) return { ok: false, items: [], reason: '잠금 상실 — 이 실행은 더 부르지 않는다' };
 
   if (_coupangCalls + _coupangInFlight >= COUPANG_RUN_BUDGET) {
     _coupangSkipped++;
@@ -811,6 +840,31 @@ let _adpickCalls = 0;
 let _adpickInFlight = 0;    // 실행 예산을 예약하고 아직 응답이 안 온 호출 수
 let _adpickSkipped = 0;
 let _adpickBudgetWarned = false;
+let _adpickDayUsed = 0;       // 오늘(KST) 이 수집기가 이미 쓴 ADPICK 외부 호출 (V3 에서만 읽는다)
+let _adpickDayWarned = false;
+
+/*
+ * 이 실행이 잠금을 잃었는가 (V3 체크포인트가 올린다).
+ * 잠금을 잃은 실행이 계속 부르면 다음 실행과 같은 검색어를 두 번 태운다.
+ * 켜지면 두 fetch 함수가 호출 없이 즉시 실패를 돌려준다.
+ */
+let _runAborted = false;
+
+/** 오늘(KST) collect 소스로 나간 ADPICK 외부 호출 수. 실패하면 0 (상한 때문에 멈추는 것이 더 나쁘다). */
+async function loadAdpickDayUsage() {
+  try {
+    const { count, error } = await supabase
+      .from('adpick_api_calls')
+      .select('id', { count: 'exact', head: true })
+      .eq('kst_date', TODAY).eq('source', 'collect').eq('external_call', true);
+    if (error) throw new Error(error.message);
+    _adpickDayUsed = Number(count) || 0;
+  } catch (e) {
+    _adpickDayUsed = 0;
+    console.warn(`[ADPICK] 오늘 호출량 조회 실패(0 으로 두고 진행): ${e.message}`);
+  }
+  return _adpickDayUsed;
+}
 
 /**
  * ADPICK 검색. api/_adpick.js를 통해서만 나간다 — 캐시/분당 상한/서킷
@@ -828,6 +882,17 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
    *   예산도, 서킷 브레이커 자체도 한 줄 그대로다.
    */
   if (isAdpickBlockedGlobal()) return { ok: false, items: [], reason: 'ADPICK 차단 상태' };
+  if (_runAborted) return { ok: false, items: [], reason: '잠금 상실 — 이 실행은 더 부르지 않는다' };
+
+  if (V3 && _adpickDayUsed + _adpickCalls + _adpickInFlight >= ADPICK_DAY_BUDGET) {
+    _adpickSkipped++;
+    if (!_adpickDayWarned) {
+      _adpickDayWarned = true;
+      console.warn(`⚠️  ADPICK 하루 호출 예산 ${ADPICK_DAY_BUDGET}회 소진`
+        + ` (오늘 앞선 실행 ${_adpickDayUsed}회 + 이번 실행 ${_adpickCalls}회) — 남은 검색어는 내일 이어갑니다.`);
+    }
+    return { ok: false, items: [], reason: `하루 호출 예산 ${ADPICK_DAY_BUDGET}회 소진` };
+  }
 
   if (_adpickCalls + _adpickInFlight >= ADPICK_RUN_BUDGET) {
     _adpickSkipped++;
@@ -916,7 +981,12 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
  *   (fetchProductsByIds)가 반드시 «같은 모양»의 행을 돌려줘야 한다.
  *   두 경로의 컬럼이 갈리면 어느 경로를 탔느냐에 따라 매칭이 달라진다.
  */
-const PRODUCT_COLS = 'product_id, mall, title, keyword, link, image, vendor_item_id, item_id';
+const PRODUCT_COLS = 'product_id, mall, title, keyword, link, image, vendor_item_id, item_id'
+  /*
+   * V3 계획기는 «마지막 성공 경과» 를 collected_at 에서 읽는다 (추가 조회 0회).
+   * addRow 는 대상 행에서 필드를 골라 담으므로 이 값이 저장 경로로 새지 않는다.
+   */
+  + (V3_PLANNER ? ', collected_at' : '');
 
 /**
  * 수집 대상 상품만 골라 읽는다 (2026-09-20 감사).
@@ -1708,6 +1778,158 @@ async function releaseLock(token) {
   }
 }
 
+/* ─── V3 체크포인트 (2026-09-23) ─────────────────────────────────
+ *
+ * ★ 왜 필요한가. 레거시는 실행 끝에 saveState 를 딱 한 번 부른다. 그 전에
+ *   프로세스가 죽으면(러너 종료·네트워크·timeout-minutes) 가격은 원장에 남지만
+ *   «어디까지 찾아봤는가» 가 사라져 다음 실행이 같은 검색어를 다시 부른다.
+ *   쿠팡 하루 상한(3,400)을 그렇게 태우면 그날 수집률이 그만큼 줄어든다.
+ *
+ * ★ 모든 쓰기는 «잠금이 아직 우리 것일 때만» 들어간다.
+ *     update ... where id=1 and last_result->lock->>runId = <우리 토큰>
+ *   레거시의 최종 저장은 이 조건이 없어서, TTL(80분)을 넘긴 실행이 뒤이어 잠금을
+ *   잡은 실행의 상태와 잠금을 덮어쓸 수 있었다. 0행이 갱신되면 잠금을 잃은
+ *   것이므로 onLost 로 알려 두 레인을 멈춘다.
+ *
+ * ★ 체크포인트가 곧 잠금 연장(heartbeat)이다 — 쓸 때마다 until 을 TTL 만큼 민다.
+ * ------------------------------------------------------------------ */
+
+/** 이 실행이 상태에 적을 대상 서명. 계획기를 쓰면 레거시와 다른 서명이 된다. */
+function targetSignatureFor(meta, v3Planner = V3_PLANNER) {
+  return v3Planner ? `${meta.signature}:planner-v3` : meta.signature;
+}
+
+/**
+ * 같은 날 저장된 상태를 이어받아도 되는가.
+ * V3 는 레거시 상태를 이어받는다. 레거시는 V3 상태를 이어받지 않는다(커서가 비어 있다).
+ */
+function resumeCompatible(prevSignature, meta, v3Planner = V3_PLANNER) {
+  if (prevSignature === targetSignatureFor(meta, v3Planner)) return true;
+  return !!v3Planner && prevSignature === meta.signature;
+}
+
+/** 레인 스냅숏 → price_job_state.last_result.malls[몰] 모양. 최종 저장과 같은 키를 쓴다. */
+function mallStateFromSnapshot(s) {
+  return {
+    cursor_key: s.cursorKey || '', processed: s.processed || 0, total: s.total || 0,
+    status: s.status || 'running', failedKeywords: s.failedKeywords || [],
+    last_result: {
+      secondPassDone: s.secondPassDone || [], facetDryGroups: s.facetDryGroups || [],
+      terminalOptionFailures: s.terminalOptionFailures || [], optionMissStreaks: s.optionMissStreaks || {}
+    },
+    collectorCovered: s.collectorCovered || [], collectorAttempted: s.collectorAttempted || []
+  };
+}
+
+/**
+ * 체크포인트 한 번에 쓸 행.
+ * @param {object} o
+ *   base  { jobDate, targetSignature, prevLastResult, malls } — 실행 시작 때 이어받은 오늘 상태
+ *   snaps { 몰: 스냅숏 } — 이번 실행 레인이 넘긴 최신 값
+ */
+function checkpointPayload({ base, snaps, lockToken, nowMs, ttlMs }) {
+  const malls = { ...(base.malls || {}) };
+  Object.entries(snaps || {}).forEach(([m, s]) => {
+    malls[m] = { ...(malls[m] || {}), ...mallStateFromSnapshot(s) };
+  });
+  const c = malls['쿠팡'] || {};
+  const iso = new Date(nowMs).toISOString();
+  return {
+    job_date: base.jobDate,
+    cursor_key: c.cursor_key || '', processed: c.processed || 0, total: c.total || 0,
+    status: c.status || 'running',
+    last_run_at: iso,
+    last_result: {
+      ...(base.prevLastResult || {}),
+      lock: { runId: lockToken, at: iso, until: new Date(nowMs + ttlMs).toISOString() },
+      targetSignature: base.targetSignature,
+      failedKeywords: c.failedKeywords || [],
+      secondPassDone: (c.last_result && c.last_result.secondPassDone) || [],
+      plannerStarveCursor: mergeStarveCursor(base.plannerStarveCursor,
+        Object.fromEntries(Object.entries(snaps || {}).map(([m, s]) => [m, s.starveCursor]))),
+      malls
+    }
+  };
+}
+
+/** 기아 레인 커서를 몰별로 합친다. 새 값이 없으면(null/undefined) 이전 값을 지킨다. */
+function mergeStarveCursor(prev, next) {
+  const out = { ...(prev || {}) };
+  Object.entries(next || {}).forEach(([m, v]) => { if (v != null) out[m] = v; });
+  return out;
+}
+
+/**
+ * 잠금 소유를 조건으로 상태를 쓰는 기록기.
+ * note() 는 최소 간격(minIntervalMs)을 지키며 배경에서 쓰고, flush()/finalize() 는 기다린다.
+ */
+function createCheckpointWriter(o) {
+  const db = o.db || supabase;
+  const now = o.now || (() => Date.now());
+  const minInterval = o.minIntervalMs == null ? CHECKPOINT_MIN_INTERVAL_MS : o.minIntervalMs;
+  const ttlMs = o.ttlMs || LOCK_TTL_MS;
+  const snaps = {};
+  const stats = { writes: 0, failures: 0, lost: false };
+  const abortSignal = { aborted: false };
+  let lastWrite = now();   // 실행 시작 직후에는 쓰지 않는다 — 방금 잠금을 잡으며 썼다
+  let inflight = null;
+  let dirty = false;
+
+  async function conditionalUpdate(body) {
+    const { data, error } = await db.from('price_job_state')
+      .update({ ...body, updated_at: new Date(now()).toISOString() })
+      .eq('id', 1)
+      .eq('last_result->lock->>runId', o.lockToken)
+      .select('id');
+    if (error) {
+      stats.failures++;
+      console.warn(`  [체크포인트] 저장 실패(다음 배치에서 다시 쓴다): ${error.message}`);
+      return false;
+    }
+    if (!data || !data.length) {
+      if (!stats.lost) {
+        stats.lost = true;
+        abortSignal.aborted = true;
+        console.error('⛔ [체크포인트] 잠금이 더 이상 우리 것이 아닙니다 — 상태를 쓰지 않고 이 실행을 멈춥니다.');
+        if (o.onLost) o.onLost();
+      }
+      return false;
+    }
+    stats.writes++;
+    lastWrite = now();
+    return true;
+  }
+
+  function writeLatest() {
+    dirty = false;
+    return conditionalUpdate(checkpointPayload({
+      base: o.base, snaps, lockToken: o.lockToken, nowMs: now(), ttlMs
+    }));
+  }
+
+  return {
+    abortSignal,
+    stats,
+    note(mall, snap) {
+      snaps[mall] = snap;
+      dirty = true;
+      if (inflight || stats.lost || now() - lastWrite < minInterval) return;
+      inflight = writeLatest().finally(() => { inflight = null; });
+    },
+    async flush() {
+      if (inflight) await inflight;
+      if (dirty && !stats.lost) return writeLatest();
+      return !stats.lost;
+    },
+    /** 최종 저장 — 레거시 saveState 와 같은 행을 쓰되 잠금 조건을 건다. */
+    async finalize(fullState) {
+      if (inflight) await inflight;
+      if (stats.lost) return false;
+      return conditionalUpdate(fullState);
+    }
+  };
+}
+
 /* ─── 배치 계획 (순수 함수 — 쿠팡/DB 접근 없음) ────────────────
  *
  * 테스트가 이 세 함수만 가지고 배치·커서·완료 판정을 전부 검증한다.
@@ -2167,7 +2389,16 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
                                    collectedTodayFn = collectedTodayKeys,
                                    recordPricesFn = recordPrices,
                                    cacheHintFn = cacheHintQueries,
-                                   isBlockedFn = null }) {
+                                   isBlockedFn = null,
+                                   /*
+                                    * V3 (PRICE_COLLECTOR_V3). 셋 다 없으면 레거시 동작 그대로다.
+                                    *   planner      { tierOf(row), dayStartMs, limit } — 1차 순서를 기대 회수량으로
+                                    *   onCheckpoint (snapshot) => void — 배치마다 진행 상태를 넘긴다
+                                    *   abortSignal  { aborted } — 잠금을 잃으면 배치 루프를 멈춘다
+                                    */
+                                   planner = null,
+                                   onCheckpoint = null,
+                                   abortSignal = null }) {
   const withKeyword = rows.filter(p => p.keyword);
   const noKeyword   = rows.filter(p => !p.keyword);
 
@@ -2339,9 +2570,28 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       + (savedState ? `  (직전 작업일 ${savedState.job_date} / ${savedState.status})` : ''));
   }
 
-  const remaining = resumeFrom(plan, cursorKey);
+  /*
+   * ★ V3 는 커서가 아니라 «오늘 이미 찾아본 상품» 으로 이어받는다.
+   *
+   *   순서가 가나다가 아니므로 «커서보다 뒤» 라는 말이 성립하지 않는다.
+   *   대신 collectorAttempted(호출이 나가 결과를 받은 상품)·collectorCovered 를
+   *   쓴다 — 레거시도 매 실행 이어 적는 목록이라, 같은 날 레거시가 쓴 상태를
+   *   V3 가 그대로 이어받을 수 있다. 호출이 실패한 그룹은 attempted 에 들어가지
+   *   않으므로 따로 재시도 목록을 두지 않아도 자연히 다시 불린다.
+   */
+  const v3Plan = !!planner;
+  /* 기아 예약 레인 커서 (api/_collectplan.js). 날짜를 넘어 이어진다 — runLocked 가 넘긴다. */
+  let starveCursor = v3Plan && planner.starveAfter != null ? planner.starveAfter : null;
+  const priorDone = new Set([...priorCollectorAttempted, ...priorCollectorCovered]);
+  const pendingRowsOf = (g, extraDone) => g.rows.filter(p => {
+    const k = `${p.product_id}|${p.mall}`;
+    return !priorDone.has(k) && !(extraDone && extraDone.has(k));
+  });
+  let remaining = v3Plan
+    ? plan.map(g => ({ kw: g.kw, rows: pendingRowsOf(g) })).filter(g => g.rows.length)
+    : resumeFrom(plan, cursorKey);
   const failedKeywords = new Map(priorFailedKeywords.map(kw => [kw, '직전 실행에서 실패']));
-  const retryGroups = failedKeywords.size
+  const retryGroups = failedKeywords.size && !v3Plan
     ? plan.filter(g => failedKeywords.has(g.kw) && !remaining.some(x => x.kw === g.kw))
     : [];
 
@@ -2543,6 +2793,27 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     const already = await collectedTodayFn(mallName, collectible);
     already.forEach(k => { uncovered.delete(k); todayAtStart.add(k); });
     if (already.size) console.log(`  [${mallName}] 오늘 이미 기록된 ${already.size}개는 건너뜁니다.`);
+  }
+
+  /*
+   * ── V3 1차 순서 (api/_collectplan.js) ─────────────────────────────
+   *   오늘 다른 경로로 이미 가격이 생긴 상품까지 빼고 남은 상품만으로 그룹을
+   *   다시 만든 뒤, 기대 회수량 순으로 세운다. 모든 상품이 끝난 그룹은
+   *   호출하지 않는다 (레거시는 가격이 이미 있어도 그 그룹을 불렀다).
+   */
+  if (v3Plan) {
+    remaining = remaining
+      .map(g => ({ kw: g.kw, rows: pendingRowsOf(g, todayAtStart) }))
+      .filter(g => g.rows.length);
+    remaining = Planner.orderGroups(remaining, {
+      mall: mallName, date: TODAY, dayStartMs: planner.dayStartMs,
+      tierOf: planner.tierOf, limit: planner.limit, starveAfter: starveCursor
+    });
+    processed = planTotal - remaining.reduce((n, g) => n + g.rows.length, 0);
+    const starve = remaining.filter(g => g.lane === 'starve').length;
+    const exp = n => Planner.expectedWithin(remaining, n).toFixed(0);
+    console.log(`  [${mallName}] [V3 계획] 남은 그룹 ${remaining.length}종 (기아 예약 ${starve}종)`
+      + ` / 남은 상품 ${planTotal - processed}개 — 기대 회수 앞 100호출 ${exp(100)}개 · 300호출 ${exp(300)}개 · 전부 ${exp(remaining.length)}개`);
   }
 
   const obsMap = new Map();
@@ -2865,6 +3136,26 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     console.log(`  [${mallName}] [${kw}] ${hit}/${groupRows.length} (${pct}%) — ${r.items.length}건`);
   }
 
+  /*
+   * 다음 실행이 이어받는 데 필요한 값만 담은 스냅숏 (V3 체크포인트).
+   * 최종 결과 객체와 같은 이름·같은 상한(slice)을 쓴다 — 두 경로가 저장하는
+   * 모양이 갈리면 어느 쪽에서 끊겼느냐에 따라 이어받기가 달라진다.
+   * status 는 언제나 running 이다. 완료 판정은 실행 끝의 최종 저장만 한다.
+   */
+  function checkpointSnapshot() {
+    return {
+      cursorKey, processed, total: planTotal, status: 'running', starveCursor,
+      failedKeywords: [...failedKeywords.keys()],
+      collectorCovered: [...collectorCovered].filter(k => collectibleKeySet.has(k)),
+      collectorAttempted: [...collectorAttempted].filter(k => collectibleKeySet.has(k)),
+      secondPassDone: priorSecondDone.slice(-3000),
+      facetDryGroups: priorFacetDry,
+      terminalOptionFailures: [...terminalOption].slice(-3000),
+      optionMissStreaks: Object.fromEntries(
+        [...optionMissStreak.entries()].filter(([k]) => !terminalOption.has(k)).slice(-3000))
+    };
+  }
+
   /** 배치 하나(그룹 여러 개)를 처리하고 저장한다. */
   async function runBatch(batch) {
     for (let i = 0; i < batch.length; i += CONCURRENCY) {
@@ -2903,6 +3194,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   // ── 1) 본 배치 루프 ───────────────────────────────────────
   const batches = stoppedEarly ? [] : splitBatches(remaining, BATCH_PRODUCTS);
   for (let b = 0; b < batches.length && !stoppedEarly; b++) {
+    if (abortSignal && abortSignal.aborted) {
+      stoppedEarly = true;
+      console.warn(`⛔ [${mallName}] 잠금을 잃었습니다 — 배치 루프를 멈춥니다 (다른 실행이 이어받는다).`);
+      break;
+    }
     const batch = batches[b];
     attemptedGroups.push(...batch);
     const batchProducts = batch.reduce((n, g) => n + g.rows.length, 0);
@@ -2910,9 +3206,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
     const s = await runBatch(batch);
 
-    cursorKey = batch[batch.length - 1].kw;
+    if (!v3Plan) cursorKey = batch[batch.length - 1].kw;
+    else starveCursor = Planner.advanceStarveCursor(starveCursor, batch);
     processed += batchProducts;
     doneBatches++;
+    if (onCheckpoint) onCheckpoint(checkpointSnapshot());
 
     const elapsedS = Math.round((Date.now() - batchStart) / 1000);
     console.log(`  [${mallName}] └ 배치 ${b + 1}/${batches.length} 완료 — 상품 ${batchProducts}개,`
@@ -2922,7 +3220,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     if (usedUp && b < batches.length - 1) {
       stoppedEarly = true;
       console.log(`⏱  [${mallName}] 시간 예산 도달 — 여기까지 저장하고 종료합니다.`
-        + ` 다음 실행이 "${cursorKey}" 다음부터 이어갑니다.`);
+        + (v3Plan ? ' 다음 실행이 남은 그룹을 다시 계획해 이어갑니다.'
+          : ` 다음 실행이 "${cursorKey}" 다음부터 이어갑니다.`));
       break;
     }
     if (b === batches.length - 1) break;
@@ -3010,6 +3309,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       if (terminalOption.has(k)) return false;
       if (pass1Succeeded.has(k)) return true;                  // 이번 실행에서 1차 성공
       const kw = p.keyword || searchPhraseFromTitle(p.title);  // 오늘 앞선 실행이 1차를 돈 것
+      /* V3: 커서가 없다. 오늘 앞선 실행이 실제로 찾아본 상품인가로 가른다. */
+      if (v3Plan) return priorDone.has(k) && !failedKeywords.has(kw);
       if (!kw || !cursorKey || kw > cursorKey) return false;
       return !failedKeywords.has(kw);
     };
@@ -3573,6 +3874,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     ...base,
     skipped: false,
     cursorKey, processed, total: planTotal, status,
+    starveCursor,
     failedKeywords: [...failedKeywords.keys()],
     // ── 상품 단위 · collector 성과 (대표 지표) ──
     collectorSuccessProducts,
@@ -3736,9 +4038,18 @@ async function runLocked(state, lockToken) {
    * 기존 커서를 버리고 다시 시작한다.
    */
   const targetMeta = collectorTargetMeta(TODAY);
+  /*
+   * ★ V3 계획기는 서명 끝에 ':planner-v3' 를 붙인다.
+   *   V3 상태의 cursor_key 는 비어 있다(커서로 이어받지 않는다). 레거시가 그 상태를
+   *   이어받으면 «커서 없음 = 처음부터» 로 읽어 오늘 찾아본 검색어를 다시 부른다.
+   *   서명이 다르면 레거시는 상태를 초기화하고 새로 시작한다 — 호출 낭비는 있어도
+   *   잘못 이어받지는 않는다. 반대로 V3 는 같은 날 레거시 상태를 그대로 이어받는다
+   *   (레거시도 collectorAttempted/Covered 를 매 실행 적으므로 정보가 충분하다).
+   */
   const previousTargetSignature = state && state.last_result && state.last_result.targetSignature;
   const targetStateMatches = !state || state.job_date !== TODAY
-    || previousTargetSignature === targetMeta.signature;
+    || resumeCompatible(previousTargetSignature, targetMeta);
+  targetMeta.signature = targetSignatureFor(targetMeta);
   const resumeState = targetStateMatches ? state : null;
 
   if (state && state.job_date === TODAY && !targetStateMatches) {
@@ -3902,28 +4213,103 @@ async function runLocked(state, lockToken) {
     && Number(coupangSaved.processed) >= Number(coupangSaved.total));
   const adpickReserve = adpickReserveMs(coupangPass1Done);
   const coupangShare = coupangBudgetMs(adpickReserve);
-  console.log(`시간 배분: 쿠팡 ${Math.round(coupangShare / 60000)}분`
-    + ` / ADPICK ${Math.round(adpickReserve / 60000)}분`
-    + `  (쿠팡 1차 ${coupangPass1Done ? '완료 — ADPICK 에 더 준다' : '진행 중 — 쿠팡 몫을 지킨다'})`);
+  if (V3_PARALLEL) {
+    console.log(`시간 배분: [V3 병렬] 쿠팡·ADPICK 모두 ${Math.round(RUN_TIME_BUDGET_MS / 60000)}분`
+      + ` — 제공자별 분당 한도·간격은 그대로, 두 레인이 동시에 돈다.`);
+  } else {
+    console.log(`시간 배분: 쿠팡 ${Math.round(coupangShare / 60000)}분`
+      + ` / ADPICK ${Math.round(adpickReserve / 60000)}분`
+      + `  (쿠팡 1차 ${coupangPass1Done ? '완료 — ADPICK 에 더 준다' : '진행 중 — 쿠팡 몫을 지킨다'})`);
+  }
+  if (V3) {
+    await loadAdpickDayUsage();
+    console.log(`ADPICK 오늘 호출량: ${_adpickDayUsed}회 / 하루 상한 ${ADPICK_DAY_BUDGET}회`
+      + ` (이번 실행 상한 ${ADPICK_RUN_BUDGET}회)`);
+    console.log(`[V3] 계획기 ${V3_PLANNER ? 'ON' : 'OFF'} / 병렬 ${V3_PARALLEL ? 'ON' : 'OFF'}`
+      + ` / 체크포인트 ${V3_CHECKPOINT ? 'ON' : 'OFF'}  (대상 서명 ${targetMeta.signature})`);
+  }
 
-  // ── 쿠팡 먼저 — 자기 몫이 다 되면 남은 시간을 ADPICK 에게 넘긴다.
-  const coupangResult = await runMallCollection({
+  /* V3 계획기 입력 — tier 는 대상 RPC 가 준 값, 경과는 products.collected_at. */
+  const dayStartMs = Date.parse(kstDayStartUtc(TODAY));
+  const tierOfRow = p => (target && target.rotationKeys && target.rotationKeys.has(`${p.product_id}|${p.mall}`)
+    ? 'rotation' : 'daily');
+  /*
+   * 기아 레인 커서는 날짜를 넘어 이어진다 — 하루가 바뀌어도 어제 멈춘 자리 다음부터
+   * 굶은 그룹을 부른다. 그래서 오늘 상태가 아니라 «마지막 상태» 에서 읽는다.
+   */
+  const priorStarve = (state && state.last_result && state.last_result.plannerStarveCursor) || {};
+  const plannerFor = (limit, mall) => (V3_PLANNER
+    ? { tierOf: tierOfRow, dayStartMs, limit, starveAfter: priorStarve[mall] == null ? null : priorStarve[mall] }
+    : null);
+
+  /*
+   * 체크포인트 기록기. 오늘 이어받은 상태를 바탕으로 깔고 레인 스냅숏만 덮는다 —
+   * 아직 스냅숏이 없는 레인(이미 완료됐거나 시작 전)의 오늘 상태를 지우지 않기 위해서다.
+   */
+  const writer = V3_CHECKPOINT ? createCheckpointWriter({
+    lockToken,
+    base: {
+      jobDate: TODAY,
+      targetSignature: targetMeta.signature,
+      prevLastResult: resumeState && resumeState.job_date === TODAY
+        ? (() => { const { lock, malls, ...rest } = resumeState.last_result || {}; return rest; })()  // eslint-disable-line no-unused-vars
+        : {},
+      malls: resumeState && resumeState.job_date === TODAY ? savedMalls : {},
+      plannerStarveCursor: priorStarve
+    },
+    onLost: () => { _runAborted = true; }
+  }) : null;
+
+  const coupangArgs = {
     mallName: '쿠팡', rows: coupangRows, fetchAllFn: fetchCoupangAll,
-    savedState: coupangSaved, deadlineTs: started + coupangShare
-  });
-  coupangResult.apiCalls = _coupangCalls;
-
-  // ── ADPICK — 쿠팡이 일찍 끝났으면 남은 시간을 전부 받는다(최소 절반 보장).
-  const adpickResult = await runMallCollection({
+    savedState: coupangSaved,
+    planner: plannerFor(COUPANG_LIMIT, '쿠팡'),
+    onCheckpoint: writer ? snap => writer.note('쿠팡', snap) : null,
+    abortSignal: writer ? writer.abortSignal : null
+  };
+  const adpickArgs = {
     mallName: 'ADPICK', rows: adpickRows, fetchAllFn: fetchAdpickAll,
-    savedState: adpickSaved, deadlineTs: started + RUN_TIME_BUDGET_MS,
+    savedState: adpickSaved,
     /*
      * ★ ADPICK 에만 넘긴다 (isBlockedFn 문서 참고). 흔한 차단이 15초 타임아웃
      *   3연속으로 열리는 2분짜리라, 그것 하나로 8분 예산을 통째로 버리는 일이
      *   매 실행 벌어지고 있었다. 쿠팡에는 넘기지 않는다.
      */
-    isBlockedFn: isAdpickBlockedGlobal
-  });
+    isBlockedFn: isAdpickBlockedGlobal,
+    planner: plannerFor(ADPICK_LIMIT, 'ADPICK'),
+    onCheckpoint: writer ? snap => writer.note('ADPICK', snap) : null,
+    abortSignal: writer ? writer.abortSignal : null
+  };
+
+  let coupangResult, adpickResult;
+  if (V3_PARALLEL) {
+    /*
+     * ★ 두 레인이 공유하는 것은 DB 쓰기(서로 다른 mall 행)와 콘솔뿐이다. 호출 예산·
+     *   간격·서킷은 몰마다 따로 있는 모듈 변수(_coupang* / _adpick*)와 모듈
+     *   (api/_coupang.js / api/_adpick.js)에 있다. 상태 저장은 두 레인이 끝난 뒤
+     *   한 번, 중간에는 기록기가 한 줄로 합쳐 쓴다 — 레인끼리 서로를 덮지 않는다.
+     *
+     * ★ allSettled — 한 레인의 예외가 다른 레인의 진행을 버리지 않게 한다.
+     *   예외가 났으면 남은 스냅숏을 저장한 뒤 그 예외를 그대로 올린다.
+     */
+    const deadlineTs = started + RUN_TIME_BUDGET_MS;
+    const [c, a] = await Promise.allSettled([
+      runMallCollection({ ...coupangArgs, deadlineTs }),
+      runMallCollection({ ...adpickArgs, deadlineTs })
+    ]);
+    if (c.status === 'rejected' || a.status === 'rejected') {
+      if (writer) await writer.flush();
+      throw (c.status === 'rejected' ? c.reason : a.reason);
+    }
+    coupangResult = c.value;
+    adpickResult = a.value;
+  } else {
+    // ── 쿠팡 먼저 — 자기 몫이 다 되면 남은 시간을 ADPICK 에게 넘긴다.
+    coupangResult = await runMallCollection({ ...coupangArgs, deadlineTs: started + coupangShare });
+    // ── ADPICK — 쿠팡이 일찍 끝났으면 남은 시간을 전부 받는다(최소 절반 보장).
+    adpickResult = await runMallCollection({ ...adpickArgs, deadlineTs: started + RUN_TIME_BUDGET_MS });
+  }
+  coupangResult.apiCalls = _coupangCalls;
   adpickResult.apiCalls = _adpickCalls;
 
   // ── 콘솔 리포트 (몰별 트리) ──────────────────────────────
@@ -3989,7 +4375,7 @@ async function runLocked(state, lockToken) {
     mergedFailureCategories[k] = (coupangResult.failureCategories[k] || 0) + (adpickResult.failureCategories[k] || 0);
   });
 
-  await saveState({
+  const finalState = {
     /*
      * 하위호환: top-level 은 "쿠팡" 진행 상태를 그대로 담는다 — 두 몰 모두 완료된
      * 경우의 종합 상태를 넣으면 안 된다. runMallCollection('쿠팡', ...) 이 다음 실행에서
@@ -4021,6 +4407,9 @@ async function runLocked(state, lockToken) {
       secondPassDone: coupangResult.secondPassDone || [],   // 쿠팡 2차 진행(하위호환 경로)
       failureCategories: mergedFailureCategories,
       targetSignature: targetMeta.signature,
+      /* V3 기아 레인 커서 — 레거시 실행은 이 값을 모르므로 계획기를 쓸 때만 적는다. */
+      ...(V3_PLANNER ? { plannerStarveCursor: mergeStarveCursor(priorStarve,
+        { '쿠팡': coupangResult.starveCursor, 'ADPICK': adpickResult.starveCursor }) } : {}),
       targetMode: targetMeta.mode,
       rotationDays: targetMeta.rotationDays,
       rotationBucket: targetMeta.rotationBucket,
@@ -4093,7 +4482,15 @@ async function runLocked(state, lockToken) {
         }
       }
     }
-  });
+  };
+  if (writer) {
+    const ok = await writer.finalize(finalState);
+    console.log(`[체크포인트] 중간 저장 ${writer.stats.writes}회 / 실패 ${writer.stats.failures}회`
+      + ` / 최종 저장 ${ok ? '완료' : '못 함'}${writer.stats.lost ? ' — 잠금 상실' : ''}`);
+    if (writer.stats.lost) process.exitCode = 1;
+  } else {
+    await saveState(finalState);
+  }
 
   // ── 수집 결과 이메일 발송 (실패해도 수집 결과에 영향 없음, 여기서 절대 throw 하지 않는다) ──
   const sum = (f) => (Number(coupangResult[f]) || 0) + (Number(adpickResult[f]) || 0);
@@ -4804,7 +5201,10 @@ module.exports = {
   // .in() URI 상한 회귀 — test-price-mall-collection 이 이 계약을 고정한다.
   chunkIdsByLength, ID_BATCH_CHARS,
   // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
-  pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS
+  pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
+  // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
+  createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
+  V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET
 };
 
 if (require.main === module) {
