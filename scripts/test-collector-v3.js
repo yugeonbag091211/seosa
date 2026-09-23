@@ -365,6 +365,25 @@ function rng(seed) {
     check('★ 환경변수가 없으면 V3 는 꺼져 있다 (레거시 그대로)', C.V3 === false && C.V3_PLANNER === false && C.V3_PARALLEL === false && C.V3_CHECKPOINT === false);
   }
   eq('ADPICK 하루 상한 기본값 740 (최근 레거시 최대 738 이내 — 일일 한도 미확인)', C.ADPICK_DAY_BUDGET, 740);
+  {
+    // 운영 쿼리를 흉내 낸 체인: DB 장애나 null COUNT가 V3 예산을 0으로 초기화하면 안 된다.
+    const usageDb = (count, error = null) => ({
+      from(table) {
+        eq('일일 사용량은 ADPICK 기록 테이블에서 조회', table, 'adpick_api_calls');
+        const q = {
+          select() { return q; },
+          eq() { return q; },
+          then(resolve, reject) { return Promise.resolve({ count, error }).then(resolve, reject); }
+        };
+        return q;
+      }
+    });
+    eq('사용량 0은 정상 값', await C.loadAdpickDayUsage(usageDb(0)), 0);
+    eq('사용량 733은 그대로 반영', await C.loadAdpickDayUsage(usageDb(733)), 733);
+    eq('DB 조회 오류 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(null, { message: 'DB unavailable' })), 740);
+    eq('COUNT null 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(null)), 740);
+    eq('음수 COUNT 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(-1)), 740);
+  }
   console.log('');
 
   /* ── 6. V3 카나리 — 게이트와 자동 비활성화 ─────────────────────── */
