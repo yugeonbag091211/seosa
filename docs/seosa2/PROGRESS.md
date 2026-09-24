@@ -146,7 +146,7 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 - 열린 관련 PR: #72, #73, #80. PR #72/#73은 GitHub상 `mergeable=true`지만, 이것만으로 제품 검증이 끝난 것은 아니다. #72의 검증 데이터가 부족해 병합 보류.
 - PR #80 (`codex/seosa-home-feature-links`): 이 진행 기록을 추가하기 직전 head는 `cc23e31aa8a7deb0037be7e4d696b9d26b501902`, [PR 링크](https://github.com/yugeonbag091211/seosa/pull/80). 새 main 위에 재적용했고 해당 head의 Vercel 및 GitHub Actions `test` 모두 성공. 최신 Preview는 `https://seosa-git-codex-seosa-home-feature-links-seosa.vercel.app`.
 - Preview는 Vercel SSO에서 HTTP 302 로그인으로 돌려보낸다. 따라서 Preview의 실제 브라우저 화면과 함수 응답은 검증하지 못했다. **성공한 배포 체크를 기능 확인 완료로 간주하지 않는다.** 허용된 경우 로그인된 브라우저로 다시 확인한다.
-- 로컬 정적 렌더링(Chrome, JavaScript 비활성, 로컬 파일 서버)에서 홈과 2.0 허브를 데스크톱 1440px·모바일 375px로 확인했다. 운영/Preview 응답이 아니다. 캡처는 Codex 시각화 디렉터리에 있다.
+- 로컬 Chrome 캡처는 운영/Preview 응답이 아니다. 홈은 JavaScript 비활성, V2 허브는 로컬 정적 파일로 열고 실제 CSS viewport를 DevTools로 375×812·1440×1000으로 에뮬레이션했다. 홈 375px에서 `scrollWidth=375`; 세 링크는 모두 44px 높이로 두 줄에 배치되며 히어로 첫 화면 끝에서 19px 아래부터 시작한다. 1440px에서는 링크가 첫 화면 안에 있다. V2 허브 375px에서 `scrollWidth=375`, 카드 우측 경계 359px로 화면 안에 남았다. 화면 캡처는 Codex 시각화 디렉터리에 있다.
 - PR #80의 `public/v2/index.html`에서 병합 직전 상태에 남아 있던 타이밍·대기실 카드도 제거했다. 준비 전 기능은 링크뿐 아니라 공개 목록에도 나오지 않는다. 홈의 AI Concierge 아래 준비된 조사관·장바구니·이상 패턴 링크와 기존 `부가 기능` 허브 메뉴는 유지한다.
 
 ### Production · 검색
@@ -175,7 +175,7 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 
 ### 홈페이지 PR #80 변경 · 테스트
 
-- 변경 파일: `public/index.html`, `public/v2/index.html`, `vercel.json`, `scripts/test-v2-home-links.js`, 기존 세 V2 테스트 파일.
+- 변경 파일: `public/index.html`, `public/v2/index.html`, `public/v2/v2.css`, `vercel.json`, `scripts/test-v2-home-links.js`, 기존 세 V2 테스트 파일.
 - 기능 링크는 홈 Concierge 아래에 보조 링크로 표시하고, 타이밍·대기실은 홈과 2.0 목록에 표시하지 않는다. 터치 높이 44px, 링크 줄바꿈 적용. Vercel의 동적 helper 모듈 누락을 해결하기 위해 `api/ai.js`, `api/history.js`, `api/alerts.js` 함수에 `includeFiles: "api/_*.js"`를 추가했으나 운영 미배포.
 - 최종 로컬 결과: SEOSA 2.0 7개 그룹 PASS / 0 FAIL; regression 85/0; release 121/0; 조사관 accuracy 107/107; timing 52/52; waitroom 69/69. `git diff --check` 통과. 가격 수집과 핫딜 판정 코드는 변경하지 않았다.
 - 이 런타임에는 `npm` 명령이 없다. `npm test`는 `npm is not recognized`로 시작되지 않아 각 `node scripts/...` 명령을 직접 실행했다. Regression/release는 직접 실행 후 통과했다.
