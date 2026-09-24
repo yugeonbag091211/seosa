@@ -53,13 +53,17 @@ const stub = {
   stats: new Map(),       // loadStats 결과
   llm: {},                // { classify, resolve, answer, answerStatus }
   delays: {},             // { search, trust, save, history } ms
-  captured: {}            // { classify, resolve, main } 요청 본문
+  captured: {},           // { classify, resolve, main } 요청 본문
+  searchFn: null,         // (query) => items — 검색어마다 다른 결과가 필요할 때
+  searchCalls: []         // searchAll 이 받은 검색어 (재검색 횟수 확인용)
 };
 
 const delay = ms => ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
 
-shop.searchAll = async () => {
+shop.searchAll = async (query) => {
   await delay(stub.delays.search);
+  stub.searchCalls.push(String(query));
+  if (stub.searchFn) return { items: stub.searchFn(String(query)), allItems: [], from: 'api', blocked: false };
   if (stub.searchMode === 'throw') throw new Error('쿠팡 연결 실패(스텁)');
   if (stub.searchMode === 'blocked') return { items: [], allItems: [], from: 'none', blocked: true };
   if (stub.searchMode === 'empty') return { items: [], allItems: [], from: 'api', blocked: false };
@@ -157,6 +161,8 @@ function reset() {
   stub.llm = {};
   stub.delays = {};
   stub.captured = {};
+  stub.searchFn = null;
+  stub.searchCalls = [];
   /*
    * ★ 시나리오마다 LLM 캐시를 비운다 (2026-09-02).
    *
@@ -965,6 +971,76 @@ function reset() {
   r = await call({ question: '무선 이어폰 지금 사도 돼?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   ok(r.body.degraded === true && /구매 시점: 지금 사도 좋다/.test(r.body.text) && !/\bWAIT\b/.test(r.body.text),
     '★★ LLM WAIT와 서버 BUY 충돌 시 서버 BUY만 유지');
+
+  /* ── [42] 역할 선별 (2026-09-24 실사용 신고) ──────────────────────
+   * "100만 원 이하의 가볍고 배터리가 오래가는 노트북 3개" → 카드 8장이 전부 교체용 배터리·
+   * 건전지·키보드였고, 모델은 "다시 검색할까요?" 로 끝냈다.
+   *   ① 검색어에서 조건 낱말(배터리·오래가·3개)을 빼고 찾는다
+   *   ② 부속품·관련 없는 상품은 카드에서 뺀다
+   *   ③ 본체가 모자라면 짧은 검색어로 «한 번만» 더 찾는다
+   *   ④ 그래도 없으면 카드 0장 + 무엇을 왜 뺐는지 프롬프트에 사실대로 싣는다 */
+  console.log('\n[42] 역할 선별 — 본체를 찾는데 부속품이 온 경우');
+  const mk = (title, i, pre) => ({ title, lprice: 30000 + i * 1000, link: 'https://l.c/' + pre + i, image: '', mall: '쿠팡',
+    productId: pre + i, isCoupang: true, oprice: 0, savePct: 0 });
+  const accTitles = ['노트북 배터리 교체용 LG 그램 15Z90N 호환 72Wh', '에너자이저 알카라인 건전지 AA 20개입',
+    '로지텍 블루투스 키보드 K380 노트북 태블릿 호환', '노트북 충전기 어댑터 65W USB-C', '노트북 파우치 14인치',
+    '노트북 쿨링패드 17인치', '레노버 노트북 배터리 L19C4PF1 호환', '노트북 키보드 교체 부품 삼성 NT550'];
+  const lapTitles = ['LG전자 2025 그램 14 인텔 울트라5 램 16GB 1.19kg', '삼성전자 갤럭시북4 노트북 인텔 i5 16GB 256GB 1.55kg',
+    '에이서 스위프트 고 14 인텔 i5 16GB 512GB 1.25kg 노트북', '레노버 아이디어패드 슬림3 노트북 램 8GB SSD 256GB'];
+  const accItems = accTitles.map((t, i) => mk(t, i, 'X'));
+  const lapItems = lapTitles.map((t, i) => Object.assign(mk(t, i, 'L'), { lprice: 800000 + i * 10000 }));
+  const Q42 = '100만 원 이하의 가볍고 배터리가 오래가는 노트북 3개';
+
+  reset();
+  stub.stats = new Map();
+  stub.llm.classify = 'C|가볍고 배터리 오래가 노트북 3개';
+  stub.llm.answer = '에이서 스위프트 고 14를 권합니다.';
+  // 정리된 검색어에는 본체 1개 + 부속품, 짧은 검색어("노트북")에는 본체가 온다.
+  stub.searchFn = q => (q === '노트북' ? lapItems.concat(accItems.slice(0, 2)) : [lapItems[2]].concat(accItems));
+  r = await call({ question: Q42, contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(stub.searchCalls[0] === '경량 노트북', '★ 검색어에서 배터리·오래가·3개를 빼고 «경량 노트북» 으로 찾는다', stub.searchCalls.join(' | '));
+  ok(stub.searchCalls.length === 2 && stub.searchCalls[1] === '노트북', '★ 본체가 모자라 짧은 검색어로 한 번만 더 찾는다', stub.searchCalls.join(' | '));
+  const cards42 = (r.body.items || []).map(c => c.title);
+  ok(cards42.length >= 3 && cards42.every(t => lapTitles.indexOf(t) > -1), '★★ 카드에는 노트북 본체만 나간다 (배터리·건전지·키보드 0장)', cards42.join(' / '));
+  const sys42 = sys();
+  ok(/\[검색 결과 선별/.test(sys42) && /부속품 \d+개/.test(sys42) && /관련 없는 상품 \d+개\(건전지/.test(sys42),
+    '★ 무엇을 몇 개 뺐는지 프롬프트에 사실대로 싣는다');
+  ok(!/교체용|알카라인|쿨링패드/.test(sys42.split('[검색 결과 선별')[0] + (sys42.split('<상품데이터>')[1] || '')),
+    '★ 뺀 상품명은 <상품데이터> 에 들어가지 않는다');
+
+  reset();
+  stub.stats = new Map();
+  stub.llm.classify = 'C|가볍고 배터리 오래가 노트북 3개';
+  stub.llm.answer = '노트북 본체는 찾지 못했어요.';
+  stub.searchFn = () => accItems;   // 어떤 검색어로도 부속품뿐
+  r = await call({ question: Q42, contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(stub.searchCalls.length === 2, '★ 재검색은 최대 1회 (API 상한)', String(stub.searchCalls.length));
+  ok(!(r.body.items || []).length, '★★ 부속품뿐이면 카드 0장 — 부속품을 본체처럼 내보내지 않는다', (r.body.items || []).map(c => c.title).join(' / '));
+  const sys42b = sys();
+  ok(/다시 검색할지 묻지 마라/.test(sys42b) && /노트북 본체/.test(sys42b) && !/\[방금 검색했지만 못 찾았다\]/.test(sys42b),
+    '★ 모델에게 "이미 다시 찾았다·무엇을 뺐다" 를 알려 되묻고 끝내지 않게 한다');
+  ok(/노트북 본체는 찾지 못했어요/.test(r.body.text) && /부속품 \d+개\(/.test(r.body.text) && /관련 없는 상품 1개\(건전지 1\)/.test(r.body.text)
+    && /«노트북»으로 바꿔 한 번 더 찾았지만/.test(r.body.text) && !/다시 검색할까요/.test(r.body.text),
+    '★★ 사용자 답변에 검색 범위·뺀 종류와 개수·재검색 사실이 들어간다 (되묻고 끝내지 않는다)', r.body.text);
+
+  reset();
+  stub.stats = new Map();
+  stub.llm.classify = 'C|노트북 배터리';
+  stub.llm.answer = '노트북 배터리를 찾았어요.';
+  stub.searchFn = () => accItems.concat(lapItems);
+  r = await call({ question: '노트북 배터리 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const cards42c = (r.body.items || []).map(c => c.title);
+  ok(stub.searchCalls[0] === '노트북 배터리' && cards42c.length > 0 && cards42c.every(t => /배터리/.test(t)) && !cards42c.some(t => /알카라인/.test(t)),
+    '★ 부속을 찾는 질문("노트북 배터리")은 배터리만 — 노트북 본체·건전지는 뺀다', cards42c.join(' / '));
+
+  reset();
+  stub.stats = new Map();
+  stub.llm.classify = 'C|캠핑의자';
+  stub.llm.answer = '캠핑의자를 찾았어요.';
+  stub.searchFn = () => [mk('헬리녹스 체어원 캠핑의자', 1, 'G'), mk('캠핑의자 커버', 2, 'G')];
+  r = await call({ question: '캠핑의자 추천', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(stub.searchCalls.length === 1 && (r.body.items || []).length === 2, '목록 밖 카테고리는 기존 경로 그대로 (선별·재검색 없음)',
+    `${stub.searchCalls.length} / ${(r.body.items || []).length}`);
 
   /* ── 결과 ── */
   console.log(`\n=== 결과: ${pass}/${pass + fail} PASS ===`);

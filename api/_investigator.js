@@ -34,7 +34,8 @@ const { extractQuery, extractUseCase } = require('./_intent');
 const { fairness, statsFrom } = require('./_pricestat');
 const { dealOf } = require('./_deal');
 const { productLifecycle } = require('./_price');
-const { isAccessory } = require('./_radar');
+const PR = require('./_product-role');
+const PC = require('./_price-claims');
 const CG = require('./_concierge');
 
 /** 보고서에 싣는 최대 후보 수. */
@@ -48,6 +49,11 @@ const SOFT_BUDGET_SLACK = 0.1;
 /** 사양 «정확히» 요구(20L 쿨러)의 허용 폭. */
 const EQ_TOLERANCE = 0.1;
 const MAX_QUESTION = 300;
+/** 응답에 싣는 제외 상품 수 (종류별 개수는 excludedGroups 에 전부 있다). */
+const MAX_EXCLUDED = 30;
+
+/** 사용자가 개수를 말하지 않았을 때 보여 줄 수 — 말했으면 그 수(최대 MAX_CANDIDATES). */
+const DEFAULT_COUNT = MAX_CANDIDATES;
 
 /** 조사 요청 말투 — 검색어에서 뺀다. */
 const RESEARCH_WORDS = /^(조사|조사해|조사해줘|조사해주세요|알아봐|알아봐줘|알아봐주세요|비교|비교해|비교해줘|비교해주세요|찾아|찾아줘|찾아주세요|추천|추천해줘|추천해주세요|골라|골라줘|정리|정리해줘|분석|분석해줘|제외|제외하고|빼고|말고|이상|이하|초과|미만|정도|쯤|내외|좀|제품|상품|것|거)$/;
@@ -71,6 +77,27 @@ const BETTER_WORD = {
   battery_mah: ['배터리 용량이 가장 커요', '배터리 용량이 가장 작아요'],
   refresh_hz: ['주사율이 가장 높아요', '주사율이 가장 낮아요']
 };
+
+/*
+ * 숫자 없이 말한 조건 — "가볍고", "배터리가 오래가는".
+ *
+ * 예전에는 이 말들이 검색어에 그대로 남았다. "배터리" 가 검색어가 되어 교체용 배터리가
+ * 후보 위로 올라왔고(2026-09-24 신고), 조건 자체는 아무도 확인하지 않았다.
+ * 이제 검색어에서 빼고, 상품명에 적힌 것으로만 확인한다.
+ *   light    무게 숫자가 있으면 카테고리 기준(_product-role PROFILES.light)으로 판정.
+ *            숫자를 말한 경우("1.5kg 이하")는 사양 규칙이 맡으므로 여기서는 쓰지 않는다.
+ *   battery  기준이 되는 숫자가 없어 «충족» 을 선언하지 않는다. 판매자가 적은 사용 시간·
+ *            용량을 근거와 함께 보여 주고, 없으면 «확인 안 됨» 이다.
+ */
+const ATTRS = [
+  { key: 'light', label: '가벼움', re: /가볍|가벼|경량|무게\s*(?:가|이)?\s*(?:적|덜|안\s?나가)/ },
+  { key: 'battery', label: '배터리 오래감',
+    re: /배터리\s*(?:가|이|는)?\s*(?:오래|길|긴|넉넉|빵빵|좋|장시간|대용량|많이|잘\s?가|최대)|오래\s?가는\s*배터리|장시간\s*(?:사용|배터리)|대용량\s*배터리|배터리\s*(?:시간|수명|타임)/ }
+];
+/** 검색어에서 뺄 서술 낱말 (조건이지 상품 이름이 아니다). */
+const ATTR_WORD = /^(?:가볍|가벼|경량|초경량|오래|길|긴|좋|편|큰|크|많|넉넉|장시간|빵빵|튼튼|밝|선명|빠르|빠른|조용|넓|높|괜찮|저렴|싼|싸|가성비)/;
+/** "3개", "2~3개", "5가지" — 보여 줄 개수. "3개월"·"8개입" 은 개수 요청이 아니다. */
+const COUNT_RE = /(\d{1,2})\s*(?:[~\-]\s*(\d{1,2})\s*)?(?:개|가지|종류|종|대|제품)(?!월|입|년|국)/;
 
 function clean(v, max) {
   return String(v == null ? '' : v).replace(/\p{C}/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -143,6 +170,36 @@ function parseSpecRules(q) {
   return rules;
 }
 
+/** "3개" → 3. 없으면 null. */
+function parseCount(q) {
+  const m = COUNT_RE.exec(String(q || ''));
+  if (!m) return null;
+  const n = Number(m[2] || m[1]);
+  return n >= 1 ? { value: Math.min(n, MAX_CANDIDATES), said: n, text: m[0] } : null;
+}
+
+/** 숫자 없이 말한 조건 → [{key, label, text, rule, threshold, basis}] */
+function parseAttributes(q, specRules, target) {
+  const P = target && target.P;
+  const out = [];
+  ATTRS.forEach(a => {
+    const m = a.re.exec(q);
+    if (!m) return;
+    if (a.key === 'light' && specRules.some(r => r.key === 'weight_g')) return;   // "1.5kg 이하" 가 이미 있다
+    const th = a.key === 'light' && P && P.light ? P.light : null;
+    out.push({
+      key: a.key, label: a.label, text: m[0].trim(),
+      threshold: th,
+      rule: th ? `무게 ${fmtWeight(th)} 이하` : null,
+      basis: a.key === 'light'
+        ? (th ? `숫자를 말하지 않아 SEOSA 기준으로 확인해요` : '상품명의 무게 표기로만 확인해요')
+        : '상품명에 적힌 사용 시간·용량으로만 확인해요. 기준 숫자가 없어 «충족» 이라고 단정하지 않아요'
+    });
+  });
+  return out;
+}
+function fmtWeight(g) { return g >= 1000 ? `${Math.round(g / 100) / 10}kg` : `${g}g`; }
+
 /**
  * @returns {object|null} 이해할 수 없으면 null
  */
@@ -152,64 +209,109 @@ function parseQuestion(question) {
   const constraints = parseConstraints(raw);
   const exclusions = parseExclusions(raw);
   const specRules = parseSpecRules(raw);
+  const count = parseCount(raw);
 
   let phrase = extractQuery(raw);
-  // 조사 말투·제외어·사양 요구 문구는 검색어가 아니다.
+  // 조사 말투·제외어·사양 요구·개수 문구는 검색어가 아니다.
   specRules.forEach(r => { phrase = phrase.split(r.text).join(' '); });
+  if (count) phrase = phrase.split(count.text).join(' ');
   const tokens = phrase.split(/\s+/).filter(t => t && !RESEARCH_WORDS.test(t) && exclusions.indexOf(t) === -1
-    && !/^\d+(\.\d+)?(kg|g|l|ml|gb|tb|인치|형|mah|hz)?$/i.test(t));
-  const searchPhrase = tokens.join(' ').trim();
-  const category = detectCategory(searchPhrase || raw) || '';
+    && !/^\d+(\.\d+)?(kg|g|l|ml|gb|tb|인치|형|mah|hz|개|가지|대)?$/i.test(t));
+
   /*
-   * DB 에서 후보를 찾을 낱말. 카테고리 명사가 있으면 그것 하나가 가장 넓고 정확하다
-   * ("가벼운 게이밍 노트북" → "노트북"). 없으면 검색어의 마지막 낱말(대개 명사).
+   * 무엇을 찾는가 — 머리 명사 규칙(_product-role.targetOf).
+   * "배터리가 오래가는 노트북" 은 노트북(본체)을, "노트북 배터리" 는 배터리(부속)를 찾는다.
    */
-  const searchTokens = category && searchPhrase.indexOf(category) > -1
-    ? [category]
-    : tokens.filter(t => /[가-힣A-Za-z]/.test(t) && t.length >= 2).slice(-1);
+  const target = PR.targetOf(raw, { tokens });
+  const attributes = parseAttributes(raw, specRules, target);
+
+  /*
+   * 검색어 = 머리 명사 + 그 앞의 꾸밈말(게이밍·무선…). 조건 낱말(가볍고·오래가)과,
+   * 본체를 찾을 때의 부속 낱말(배터리)은 뺀다 — 검색어에 남으면 그 낱말을 가진 상품이
+   * 순위에서 올라온다(원래 버그).
+   */
+  let searchPhrase = tokens.join(' ').trim();
+  if (target) {
+    const P = target.P;
+    const isAccWord = t => !target.generic && P.accTerms.some(x => x.re.test(t));
+    const keep = tokens.filter(t => !ATTR_WORD.test(t) && !(target.role === PR.MAIN && isAccWord(t))
+      && lower(t).indexOf(lower(target.anchorText)) === -1 && lower(target.anchorText).indexOf(lower(t)) === -1);
+    const head = target.role === PR.ACCESSORY ? `${target.anchorText} ${target.accessory.term}` : target.anchorText;
+    searchPhrase = keep.concat([head]).join(' ').replace(/\s+/g, ' ').trim();
+  }
+  const category = (target && target.category) || detectCategory(searchPhrase || raw) || '';
+  /*
+   * DB 에서 후보를 찾을 낱말 — 기기 이름(부속을 찾으면 기기 이름 + 부속).
+   * 비어 있으면 무엇을 찾는지 모르는 것이다 (API 가 400).
+   */
+  const searchTokens = !target ? [] : (target.role === PR.ACCESSORY ? [target.anchorText, target.accessory.term] : [target.anchorText]);
+  let wanted = wantedFeatures(raw);
+  // "가볍고" 는 무게 숫자로 확인한다(attributes). 기능 «경량» 으로 한 번 더 세지 않는다.
+  if (attributes.some(a => a.key === 'light')) wanted = wanted.filter(f => f !== '경량');
   return {
     raw, searchPhrase, searchTokens, constraints, category,
-    wantedFeatures: wantedFeatures(raw), useCase: extractUseCase(raw),
-    exclusions, specRules
+    wantedFeatures: wanted, useCase: extractUseCase(raw),
+    exclusions, specRules, attributes,
+    requestedCount: count ? count.value : null, countSaid: count ? count.said : null,
+    target
   };
 }
+function lower(s) { return String(s || '').toLowerCase(); }
 
 /* ================================================================== *
  *  2) 후보 고르기 (사전 필터 — DB 에서 온 카탈로그 행)
  * ================================================================== */
 
 /**
- * @param {object[]} rows    products 행
+ * @param {object[]} rows    products 행 (여러 번의 검색에서 모은 것 — 중복은 여기서 걸러진다)
  * @param {object} parsed    parseQuestion 결과
- * @returns {{keep:object[], excluded:{productId,title,reason}[], relevant:number}}
+ * @returns {{keep:object[], excluded:{productId,title,reason,kind,group}[], relevant:number, accepted:number}}
+ *   keep      원장 검증까지 가져갈 행 (최대 MAX_VERIFY)
+ *   accepted  역할·판매 여부·제외 요청을 통과한 행 수 (MAX_VERIFY 로 자르기 전)
  */
 function prefilter(rows, parsed) {
   const keep = [];
   const excluded = [];
   const seen = new Set();
-  const wantAccessory = isAccessory(parsed.searchPhrase);
+  const target = parsed.target;
   const words = parsed.searchPhrase.split(/\s+/).filter(t => t.length >= 2 && /[가-힣A-Za-z]/.test(t));
+  const c = parsed.constraints || {};
+  const cap = c.budgetMax > 0 ? (c.budgetSoft ? c.budgetMax * (1 + SOFT_BUDGET_SLACK) : c.budgetMax) : 0;
   (rows || []).forEach(r => {
     if (!r || !r.product_id || !r.title) return;
     const key = `${r.product_id}|${r.mall || ''}|${r.vendor_item_id || ''}`;
     if (seen.has(key)) return;
     seen.add(key);
     const title = String(r.title);
-    const hay = `${title} ${r.keyword || ''}`;
-    // 검색 낱말(카테고리)이 제목·키워드에 없으면 관련 없는 상품이다 — 사유 목록에 올리지도 않는다.
-    if (!parsed.searchTokens.every(t => hay.indexOf(t) > -1)) return;
     const ex = { productId: r.product_id, title };
-    if (productLifecycle(r).state !== 'live') { excluded.push(Object.assign(ex, { reason: '최근 가격 확인이 안 돼 지금 파는지 알 수 없어요' })); return; }
-    if (!wantAccessory && isAccessory(title)) { excluded.push(Object.assign(ex, { reason: '본품이 아니라 부속품이에요' })); return; }
+    /*
+     * 1) 찾는 «종류» 인가 — 본체를 찾는데 배터리·건전지·키보드면 여기서 끝난다.
+     *    검색어에 «배터리» 가 들어 있다는 이유로 이 검사를 끄지 않는다(원래 버그).
+     *    판단은 상품명으로만 한다. 수집 키워드("노트북 배터리")는 근거가 아니다.
+     */
+    if (target) {
+      const cls = PR.classify(title, target);
+      const a = PR.accepts(target, cls);
+      if (!a.ok) { excluded.push(Object.assign(ex, { reason: a.reason, kind: a.kind, group: a.group })); return; }
+      r._role = cls;
+    }
+    if (productLifecycle(r).state !== 'live') {
+      excluded.push(Object.assign(ex, { reason: '최근 가격 확인이 안 돼 지금 파는지 알 수 없어요', kind: 'stale', group: null }));
+      return;
+    }
     const hit = parsed.exclusions.find(w => title.indexOf(w) > -1);
-    if (hit) { excluded.push(Object.assign(ex, { reason: `제외 요청(${hit})` })); return; }
+    if (hit) { excluded.push(Object.assign(ex, { reason: `제외 요청(${hit})`, kind: 'exclusion', group: hit })); return; }
+    const hay = `${title} ${r.keyword || ''}`;
     // 검색어의 다른 낱말(게이밍·무선…)이 얼마나 맞는지 — 순서를 정하는 데만 쓴다.
     r._match = words.filter(w => hay.indexOf(w) > -1).length;
+    // 카탈로그 가격이 예산 안인 것부터 검증한다 — 판정은 원장 가격으로 다시 한다.
+    r._inBudget = cap > 0 && Number(r.lprice) > 0 && Number(r.lprice) <= cap ? 1 : 0;
     keep.push(r);
   });
-  keep.sort((a, b) => (b._match - a._match) || String(b.collected_at || '').localeCompare(String(a.collected_at || '')));
-  // relevant = 카테고리가 맞아 실제로 «살펴본» 상품 수 (검증 상한에 걸려 잘린 것까지 센다).
-  return { keep: keep.slice(0, MAX_VERIFY), excluded, relevant: keep.length + excluded.length };
+  keep.sort((a, b) => (b._inBudget - a._inBudget) || (b._match - a._match)
+    || String(b.collected_at || '').localeCompare(String(a.collected_at || '')));
+  // relevant = 실제로 «살펴본» 상품 수 (종류가 달라 뺀 것, 검증 상한에 걸려 잘린 것까지 센다).
+  return { keep: keep.slice(0, MAX_VERIFY), excluded, relevant: keep.length + excluded.length, accepted: keep.length };
 }
 
 /* ================================================================== *
@@ -259,6 +361,69 @@ function checkRule(rule, specs) {
   return {};
 }
 
+/*
+ * 배터리 표기 — 판매자가 상품명에 적은 사용 시간·용량. 없으면 null.
+ * «배터리 20시간», «최대 20시간 사용», «72Wh» 처럼 숫자와 단위가 붙은 것만 쓴다.
+ */
+function batteryEvidence(title, specs) {
+  const t = String(title || '');
+  const h = /(?:배터리|사용|재생|연속|최대)[^\d\n]{0,8}(\d{1,2}(?:\.\d)?)\s*시간|(\d{1,2}(?:\.\d)?)\s*시간\s*(?:사용|재생|지속|연속)/.exec(t);
+  if (h) return { unit: 'h', value: Number(h[1] || h[2]), text: h[0].trim() };
+  const wh = /(\d{2,3}(?:\.\d{1,2})?)\s*wh(?![a-z])/i.exec(t);
+  if (wh) return { unit: 'wh', value: Number(wh[1]), text: wh[0].trim() };
+  if (specs.battery_mah) return { unit: 'mah', value: specs.battery_mah.value, text: specs.battery_mah.text };
+  return null;
+}
+
+/** 숫자 없이 말한 조건을 상품명으로 확인한다. status: met | unmet | claimed | unknown */
+function checkAttribute(attr, title, specs) {
+  if (attr.key === 'light') {
+    const w = specs.weight_g;
+    if (w && attr.threshold) {
+      return w.value <= attr.threshold
+        ? { status: 'met', pro: `무게 ${w.text} — 가벼움 기준(${fmtWeight(attr.threshold)} 이하)에 맞아요`, evidence: w.text }
+        : { status: 'unmet', violation: `무게 ${w.text} — «가벼운» 기준(${fmtWeight(attr.threshold)} 이하)보다 무거워요`, evidence: w.text };
+    }
+    if (w) return { status: 'claimed', pro: `무게 ${w.text} (상품명 표기)`, evidence: w.text };
+    const claim = /초경량|경량|가벼운|라이트\s?웨이트/.exec(title);
+    return {
+      status: 'unknown', evidence: claim ? claim[0] : null,
+      unknown: claim ? `무게: 숫자 표기가 없어 가벼운지 확인하지 못했어요 (상품명에는 «${claim[0]}» 라고만 적혀 있어요)`
+        : '무게: 상품명에 표기가 없어 «가벼운» 조건을 확인하지 못했어요'
+    };
+  }
+  if (attr.key === 'battery') {
+    const b = batteryEvidence(title, specs);
+    if (b) return { status: 'claimed', pro: `배터리: 상품명에 «${b.text}» 표기 (판매자 표기)`, evidence: b.text, battery: b };
+    const claim = /(?:대용량|장시간|고용량)\s*배터리|배터리\s*(?:대용량|장시간)/.exec(title);
+    return {
+      status: 'unknown', evidence: claim ? claim[0] : null,
+      unknown: claim ? `배터리: 사용 시간 숫자가 없어 확인하지 못했어요 (상품명에는 «${claim[0]}» 라고만 적혀 있어요)`
+        : '배터리: 상품명에 사용 시간·용량 표기가 없어 «배터리 오래가는» 조건을 확인하지 못했어요'
+    };
+  }
+  return { status: 'unknown', unknown: `${attr.label}: 확인하지 못했어요` };
+}
+
+/**
+ * 가격 기록의 두께 — «최저가» · «싸다» 를 말해도 되는지 (_price-claims 와 같은 기준).
+ * points 는 날짜별 최저가 한 점씩이므로 점 수 = 관측한 날 수다.
+ */
+function priceRecordOf(points, current) {
+  const pts = (points || []).filter(p => p && p.date && p.price > 0);
+  const b = PC.basisOf({ points: pts });
+  if (!pts.length) return { obs: 0, spanDays: 0, enough: false, low: null, lowDate: null, firstDate: null, lastDate: null, atLow: false };
+  const low = Math.min.apply(null, pts.map(p => p.price));
+  let lowDate = null;
+  for (let i = pts.length - 1; i >= 0; i--) { if (pts[i].price === low) { lowDate = pts[i].date; break; } }
+  return {
+    obs: b.obs, spanDays: b.spanDays, enough: b.enough,
+    minObs: PC.RECORD_MIN_OBS, minSpanDays: PC.RECORD_MIN_SPAN_DAYS,
+    low, lowDate, firstDate: pts[0].date, lastDate: pts[pts.length - 1].date,
+    atLow: current != null && current <= low
+  };
+}
+
 function evaluate(row, points, parsed, today) {
   const title = String(row.title);
   const specs = verifiedSpecs(title);
@@ -267,6 +432,7 @@ function evaluate(row, points, parsed, today) {
   const fm = parsed.wantedFeatures.length ? matchFeatures(extractSpecs(title), parsed.wantedFeatures) : { hit: [], miss: [] };
   const violations = [];
   const unknowns = [];
+  const attrPros = [];
   const c = parsed.constraints || {};
   if (price.value && c.budgetMax > 0) {
     const cap = c.budgetSoft ? c.budgetMax * (1 + SOFT_BUDGET_SLACK) : c.budgetMax;
@@ -281,11 +447,29 @@ function evaluate(row, points, parsed, today) {
     if (r.violation) violations.push(r.violation);
     if (r.unknown) unknowns.push(r.unknown);
   });
+  const attributes = (parsed.attributes || []).map(attr => {
+    const r = checkAttribute(attr, title, specs);
+    if (r.violation) violations.push(r.violation);
+    if (r.unknown) unknowns.push(r.unknown);
+    if (r.pro) attrPros.push(r.pro);
+    return { key: attr.key, label: attr.label, status: r.status, evidence: r.evidence || null, battery: r.battery || null };
+  });
+
+  /*
+   * 가격 위치·판정은 기록이 두꺼울 때만 (관측 7일 · 기간 14일 이상).
+   * 기록 3일로 "싼 편이다" · "지금 사도 좋다" 를 말하지 않는다.
+   */
+  const record = priceRecordOf(points, price.value);
   let level = null, deal = null;
   if (points && points.length) {
-    level = fairness(points, price.value, today);
-    const d = dealOf(statsFrom(points), price.value, today);
-    deal = d ? { verdict: d.verdict, label: d.label } : null;
+    if (record.enough) {
+      const lv = fairness(points, price.value, today);
+      level = { level: lv.level, label: lv.label, pctRank: lv.pctRank, obs: lv.obs, windowDays: lv.windowDays };
+      const d = dealOf(statsFrom(points), price.value, today);
+      deal = d ? { verdict: d.verdict, label: d.label } : null;
+    } else {
+      level = { level: 'insufficient', label: '판단 데이터 부족', pctRank: null, obs: record.obs, windowDays: record.spanDays };
+    }
   }
   return {
     productId: row.product_id,
@@ -296,15 +480,19 @@ function evaluate(row, points, parsed, today) {
     image: /^https:\/\//i.test(row.image || '') ? row.image : null,
     url: /^https:\/\//i.test(row.link || '') ? row.link : null,
     price,
+    priceHistory: record,
+    role: row._role ? { role: row._role.role, confidence: row._role.confidence, why: row._role.why } : null,
     specs: { verified: specs, matchedFeatures: fm.hit, unverifiedFeatures: fm.miss },
+    attributes,
     fits: violations.length === 0 && !!price.value,
     violations,
     unknowns,
-    level: level ? { level: level.level, label: level.label, pctRank: level.pctRank, obs: level.obs, windowDays: level.windowDays } : null,
+    level,
     deal,
     historyDays: points ? points.length : 0,
     pros: [],
-    cons: []
+    cons: [],
+    _attrPros: attrPros
   };
 }
 
@@ -341,16 +529,35 @@ function prosAndCons(list) {
       if (s.value === worst && rare(worst)) c.cons.push({ text: `${has.length}개 중 ${BETTER_WORD[key][1]} (${s.text})`, basis: 'title' });
     });
   });
+  // 배터리 표기 비교 — 같은 단위(시간·Wh·mAh)끼리만, 둘 이상일 때만.
+  ['h', 'wh', 'mah'].forEach(unit => {
+    const has = list.filter(c => (c.attributes || []).some(a => a.battery && a.battery.unit === unit));
+    if (has.length < 2) return;
+    const val = c => c.attributes.find(a => a.battery && a.battery.unit === unit).battery;
+    const hi = Math.max.apply(null, has.map(c => val(c).value));
+    const top = has.filter(c => val(c).value === hi);
+    if (top.length * 2 > has.length) return;
+    top.forEach(c => c.pros.push({ text: `${has.length}개 중 배터리 표기가 가장 커요 (${val(c).text})`, basis: 'title' }));
+  });
   list.forEach(c => {
+    (c._attrPros || []).forEach(t => c.pros.push({ text: t, basis: 'title' }));
     c.specs.matchedFeatures.forEach(f => c.pros.push({ text: `${f} — 상품명에 표기돼 있어요`, basis: 'title' }));
     c.specs.unverifiedFeatures.forEach(f => c.cons.push({ text: `${f} — 상품명에서 확인되지 않았어요 (없다는 뜻은 아니에요)`, basis: 'title' }));
+    /*
+     * 가격 위치 — 기간과 건수를 함께 말한다 ("최근 90일" 은 창의 길이일 뿐 기록의 길이가 아니다).
+     * 기록이 얇으면(evaluate 의 record.enough=false) 판단하지 않았다고만 말한다.
+     */
     const lv = c.level;
-    if (lv && lv.pctRank != null && lv.pctRank <= 30) {
-      c.pros.push({ text: `지금 가격이 최근 ${lv.windowDays}일 기록 중 하위 ${lv.pctRank}%예요`, basis: 'price_history' });
+    const rec = c.priceHistory || {};
+    const basis = `SEOSA 기록 ${rec.spanDays}일·관측 ${rec.obs}회`;
+    if (rec.enough && rec.atLow) {
+      c.pros.push({ text: `지금 가격이 ${basis} 중 최저가예요 (기록 이전 가격은 알 수 없어요)`, basis: 'price_history' });
+    } else if (lv && lv.pctRank != null && lv.pctRank <= 30) {
+      c.pros.push({ text: `지금 가격이 ${basis} 중 하위 ${lv.pctRank}%예요`, basis: 'price_history' });
     } else if (lv && lv.pctRank != null && lv.pctRank >= 70) {
-      c.cons.push({ text: `지금 가격이 최근 ${lv.windowDays}일 기록 중 상위 ${100 - lv.pctRank}%로 비싼 편이에요`, basis: 'price_history' });
+      c.cons.push({ text: `지금 가격이 ${basis} 중 상위 ${100 - lv.pctRank}%로 비싼 편이에요`, basis: 'price_history' });
     } else if (lv && lv.level === 'insufficient') {
-      c.cons.push({ text: `가격 기록이 ${lv.obs}일치뿐이라 싼지 비싼지 아직 판단하기 일러요`, basis: 'price_history' });
+      c.cons.push({ text: `가격 기록이 ${rec.spanDays}일·관측 ${rec.obs}회뿐이라 싼지 비싼지 아직 판단하기 일러요`, basis: 'price_history' });
     }
     if (c.deal && (c.deal.verdict === 'BUY' || c.deal.verdict === 'GOOD_BUY')) {
       c.pros.push({ text: `가격 판정: ${c.deal.label}`, basis: 'deal_engine' });
@@ -401,16 +608,54 @@ function evidenceOf(candidates, extra) {
   return ev;
 }
 
-function summarize(parsed, candidates, excluded, scanned) {
+/** "부속품 12개(배터리 8개·키보드 4개)" — 묶음이 많으면 앞의 3개만. */
+function groupLine(g) {
+  const parts = g.groups.slice(0, 3).map(x => `${x.name} ${x.count}개`);
+  return `${g.label} ${g.count}개${parts.length ? `(${parts.join('·')})` : ''}`;
+}
+
+/** 조사 범위 한 줄 — 어디서, 몇 번, 실시간 검색을 썼는가. */
+function scopeLine(coverage) {
+  const cv = coverage || {};
+  const n = (cv.attempts || []).length;
+  const live = cv.liveSearch === 'used'
+    ? '실시간 쇼핑몰 검색도 한 번 했어요'
+    : cv.liveSearch === 'off' ? '실시간 쇼핑몰 검색은 꺼져 있어 SEOSA가 이미 수집한 쿠팡·ADPICK 상품만 조사했어요' : '';
+  const tries = n > 1 ? `원하는 상품이 모자라 검색어를 바꿔 모두 ${n}번 찾았어요` : '';
+  return [tries, live].filter(Boolean).join('. ');
+}
+
+function summarize(parsed, candidates, excluded, scanned, ctx) {
+  const x = ctx || {};
   const lines = [];
-  const cond = constraintLine(parsed.constraints);
-  const what = parsed.searchPhrase || parsed.category || '요청하신 상품';
+  const cond = [constraintLine(parsed.constraints)].concat((parsed.attributes || []).map(a => a.label)).filter(Boolean).join(' · ');
+  const target = parsed.target;
+  const what = target ? PR.describeTarget(target) : (parsed.searchPhrase || parsed.category || '요청하신 상품');
   lines.push(`«${what}»${cond ? ` (${cond})` : ''}로 SEOSA 가격 기록이 있는 상품 ${scanned}개를 살펴 ${candidates.length}개를 비교했어요.`);
+  const scope = scopeLine(x.coverage);
+  const roleGroups = (x.groups || []).filter(g => ['accessory', 'accessory-other', 'unrelated', 'other-device', 'main'].indexOf(g.kind) > -1);
+  const notWhat = target && target.role === PR.ACCESSORY ? `찾는 ${target.accessory.term}` : PR.describeTarget(target);
+  const J = PR._internal.josa;
+  const roleText = roleGroups.length ? `${roleGroups.map(groupLine).join(', ')}는 ${notWhat}${J(notWhat, '이', '가')} 아니라서 뺐어요.` : '';
+  // 종류는 맞지만 조건(예산·무게·판매 여부·제외 요청)에 걸린 상품
+  const condText = x.condN ? `${target ? `${notWhat} 중 ` : ''}${x.condN}개는 조건에 맞지 않아 뺐어요 (아래 제외 사유 참고).` : '';
+
   if (!candidates.length) {
-    lines.push(excluded.length
-      ? '조건에 맞는 상품을 찾지 못했어요. 아래 제외 사유를 보고 조건을 조금 넓혀 보세요.'
-      : 'SEOSA가 가격을 기록하고 있는 상품 중에는 찾지 못했어요. 다른 말로 찾아보세요.');
+    if (target && x.accepted === 0 && !x.condN) {
+      lines.push(`${notWhat}${J(notWhat, '은', '는')} 찾지 못했어요.`);
+      if (roleText) lines.push(roleText);
+    } else {
+      lines.push(excluded.length
+        ? '조건에 맞는 상품을 찾지 못했어요. 아래 제외 사유를 보고 조건을 조금 넓혀 보세요.'
+        : 'SEOSA가 가격을 기록하고 있는 상품 중에는 찾지 못했어요. 다른 말로 찾아보세요.');
+      if (condText) lines.push(condText);
+      if (roleText) lines.push(roleText);
+    }
+    if (scope) lines.push(`${scope}.`);
     return lines.join(' ');
+  }
+  if (x.requested && candidates.length < x.requested) {
+    lines.push(`요청하신 ${x.requested}개 중 ${candidates.length}개만 조건에 맞았어요.`);
   }
   const top = candidates[0];
   const pro = top.pros[0];
@@ -423,18 +668,29 @@ function summarize(parsed, candidates, excluded, scanned) {
   const con = top.cons[0];
   if (con) lines.push(`다만 ${con.text}.`);
   if (candidates[1]) lines.push(`다음 후보: ${cutTitle(candidates[1].title, 34)} — ${won(candidates[1].price.value)}원.`);
+  // 종류가 달라 뺀 상품은 결과가 충분해도 밝힌다 — 무엇을 걸렀는지 사용자가 알아야 한다.
+  if (x.requested && candidates.length < x.requested && condText) lines.push(condText);
+  if (roleText) lines.push(roleText);
+  if (x.requested && candidates.length < x.requested && scope) lines.push(`${scope}.`);
   lines.push('사양은 상품명에 적힌 것만 옮겼고, 가격은 판매처에서 한 번 더 확인해 주세요.');
   return lines.join(' ');
 }
 
+/** 매긴 순서에 쓰는 조건 점수 — 확인된(met) 2, 판매자 표기(claimed) 1. */
+function attrScore(c) {
+  return (c.attributes || []).reduce((s, a) => s + (a.status === 'met' ? 2 : a.status === 'claimed' ? 1 : 0), 0);
+}
+
 /**
  * @param {{parsed:object, rows:object[], pointsByKey:Map, today:string, limit?:number, scanned?:number,
- *          excluded?:object[], source?:string}} input
+ *          excluded?:object[], source?:string, coverage?:object, accepted?:number}} input
  */
 function investigate(input) {
   const parsed = input.parsed;
   const today = input.today;
-  const limit = Math.max(1, Math.min(MAX_CANDIDATES, Number(input.limit) || MAX_CANDIDATES));
+  const asked = Number(input.limit) || parsed.requestedCount || DEFAULT_COUNT;
+  const limit = Math.max(1, Math.min(MAX_CANDIDATES, asked));
+  const requested = parsed.requestedCount ? limit : null;
   const excluded = (input.excluded || []).slice();
 
   const evaluated = (input.rows || []).map(r => evaluate(r,
@@ -442,59 +698,88 @@ function investigate(input) {
   const fits = [];
   evaluated.forEach(c => {
     if (c.fits) fits.push(c);
-    else excluded.push({ productId: c.productId, title: c.title, reason: c.violations[0] || c.unknowns[0] || '조건 확인 불가' });
+    else excluded.push({ productId: c.productId, title: c.title, reason: c.violations[0] || c.unknowns[0] || '조건 확인 불가', kind: 'condition', group: null });
   });
 
   // Concierge 와 같은 순서 — rankItems 가 예산·우선순위·검색어 적합도로 세운다.
   const items = fits.map(c => ({ title: c.title, price: c.price.value, mall: c.mallLabel, spec: extractSpecs(c.title), _c: c }));
   let ranked = items;
   try { ranked = rankItems(items, parsed.constraints, parsed.searchPhrase); } catch (e) { ranked = items; }
-  // 요청한 기능이 제목에서 확인된 상품을 앞에 — 같은 조건이면 확인된 쪽이 낫다.
   /*
    * 순서 보정 (Array.sort 는 안정 정렬이라 같은 값끼리는 Concierge 순서가 남는다).
    *   1) 요청한 기능이 제목에서 더 많이 확인된 상품
-   *   2) 요청 조건 중 «확인 못 한» 것이 적은 상품 — 무게 표기가 없는 상품이 무게가
+   *   2) 숫자 없이 말한 조건(가볍고·배터리)이 상품명으로 확인된 상품
+   *   3) 요청 조건 중 «확인 못 한» 것이 적은 상품 — 무게 표기가 없는 상품이 무게가
    *      확인된 상품보다 앞서면, 확인되지 않은 것을 조건 충족으로 대접하는 셈이다.
+   *   4) 가격이 원장으로 검증된 상품 — 확인 못 한 값을 1순위 가격으로 내세우지 않는다.
    */
   const candidates = ranked.map(it => it._c)
     .sort((a, b) => (b.specs.matchedFeatures.length - a.specs.matchedFeatures.length)
+      || (attrScore(b) - attrScore(a))
       || (a.unknowns.length - b.unknowns.length)
-      // 3) 가격이 원장으로 검증된 상품 — 확인 못 한 값을 1순위 가격으로 내세우지 않는다.
       || ((b.price.verified ? 1 : 0) - (a.price.verified ? 1 : 0)))
     .slice(0, limit);
 
   prosAndCons(candidates);
+  candidates.forEach(c => { delete c._attrPros; });
   const scanned = input.scanned == null ? evaluated.length : input.scanned;
-  let text = summarize(parsed, candidates, excluded, scanned);
-  const evidence = evidenceOf(candidates, [scanned, candidates.length,
+  const groups = PR.groupDropped(excluded);
+  const coverage = Object.assign({ source: input.source || 'catalog', scanned }, input.coverage || {});
+  const accepted = input.accepted == null ? evaluated.length : input.accepted;
+  const condN = excluded.filter(e => ['condition', 'stale', 'exclusion'].indexOf(e.kind) > -1).length;
+  let text = summarize(parsed, candidates, excluded, scanned, { groups, coverage, requested, accepted, condN });
+  const evidence = evidenceOf(candidates, [scanned, candidates.length, requested, parsed.countSaid, condN,
+    (coverage.attempts || []).length,
     parsed.constraints && parsed.constraints.budgetSaid, parsed.constraints && parsed.constraints.budgetMax,
     parsed.constraints && parsed.constraints.budgetMin]
+    .concat(groups.reduce((a, g) => a.concat([g.count], g.groups.map(x => x.count)), []))
+    .concat((parsed.attributes || []).map(a => a.threshold ? fmtWeight(a.threshold) : '').join(' ').match(/\d[\d,.]*/g) || [])
     .concat(parsed.specRules.map(r => String(r.text).match(/\d[\d,.]*/) ? String(r.text).match(/\d[\d,.]*/)[0].replace(/,/g, '') : ''))
-    .concat((constraintLine(parsed.constraints).match(/\d[\d,]*/g) || []).map(x => x.replace(/,/g, '')))
-    .concat((parsed.searchPhrase.match(/\d[\d,.]*/g) || []).map(x => x.replace(/,/g, '')))
-    .filter(Boolean));
+    .concat((constraintLine(parsed.constraints).match(/\d[\d,]*/g) || []).map(v => v.replace(/,/g, '')))
+    .concat((parsed.searchPhrase.match(/\d[\d,.]*/g) || []).map(v => v.replace(/,/g, '')))
+    .filter(v => v != null && v !== ''));
   let grounded = groundCheck(text, evidence);
   if (!grounded.ok) {
     // 숫자가 근거에서 벗어났다 — 숫자 없는 요약으로 물러난다.
     text = candidates.length
-      ? `조건에 맞는 상품 ${candidates.length}개를 비교했어요. 가장 잘 맞는 상품: ${cutTitle(candidates[0].title, 34)}. 자세한 가격과 사양은 아래 표를 확인해 주세요.`
-      : '조건에 맞는 상품을 찾지 못했어요.';
+      ? `조건에 맞는 상품을 비교했어요. 가장 잘 맞는 상품: ${cutTitle(candidates[0].title, 34)}. 자세한 가격과 사양은 아래 표를 확인해 주세요.`
+      : '조건에 맞는 상품을 찾지 못했어요. 아래 제외 사유를 확인해 주세요.';
     grounded = Object.assign(groundCheck(text, evidence), { replaced: true, original: grounded.unmatched });
   }
 
+  /*
+   * 제외 목록 — 조건을 어긴 «본체» 를 먼저 보여 준다. 부속품 수십 개가 앞을 채우면
+   * 사용자는 정작 예산에 걸린 본체를 보지 못한다. 종류별 개수는 excludedGroups 에 있다.
+   */
+  const ORDER = { condition: 0, exclusion: 1, stale: 2, main: 3, 'accessory-other': 4, accessory: 5, 'other-device': 6, unrelated: 7, unknown: 8 };
+  const excludedOut = excluded.map((e, i) => Object.assign({ _i: i }, e))
+    .sort((a, b) => ((ORDER[a.kind] == null ? 9 : ORDER[a.kind]) - (ORDER[b.kind] == null ? 9 : ORDER[b.kind])) || (a._i - b._i))
+    .slice(0, MAX_EXCLUDED)
+    .map(e => ({ productId: e.productId, title: e.title, reason: e.reason, kind: e.kind || null }));
+
+  const target = parsed.target;
   return {
     query: {
       raw: parsed.raw, searchPhrase: parsed.searchPhrase, category: parsed.category,
+      target: target ? {
+        profile: target.profile, label: target.label, role: target.role,
+        accessory: target.accessory ? target.accessory.term : null, describe: PR.describeTarget(target)
+      } : null,
+      requestedCount: parsed.requestedCount, countSaid: parsed.countSaid,
       constraints: parsed.constraints, constraintLine: constraintLine(parsed.constraints),
       wantedFeatures: parsed.wantedFeatures, useCase: parsed.useCase,
+      attributes: parsed.attributes || [],
       exclusions: parsed.exclusions, specRules: parsed.specRules
     },
     candidates,
-    excluded: excluded.slice(0, 20),
+    excluded: excludedOut,
+    excludedGroups: groups,
+    excludedTotal: excluded.length,
     summary: { text, grounded },
-    coverage: { source: input.source || 'catalog', scanned },
+    coverage,
     disclaimers: [
       '사양은 판매자가 쓴 상품명에서만 확인했어요. 상세 페이지에만 있는 사양은 «확인 안 됨» 으로 표시돼요.',
+      `«최저가»·«싼 편» 같은 가격 판단은 SEOSA 기록이 ${PC.RECORD_MIN_OBS}일·${PC.RECORD_MIN_SPAN_DAYS}일 이상 쌓인 상품에만 붙여요. 기록 이전 가격과 다른 판매처 가격은 알 수 없어요.`,
       '가격은 SEOSA가 기록한 시점의 값이에요. 쿠폰·카드 할인은 반영하지 않았어요.',
       '추천 순서는 광고나 수수료와 무관하게 조건 적합도로만 정했어요.'
     ]
@@ -503,6 +788,6 @@ function investigate(input) {
 
 module.exports = {
   parseQuestion, prefilter, investigate, evaluate, prosAndCons, groundCheck, evidenceOf,
-  parseExclusions, parseSpecRules, verifiedSpecs, cutTitle,
+  parseExclusions, parseSpecRules, parseCount, parseAttributes, verifiedSpecs, cutTitle, batteryEvidence,
   MAX_CANDIDATES, MAX_VERIFY, FRESH_DAYS
 };

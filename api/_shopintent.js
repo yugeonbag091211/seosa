@@ -555,8 +555,15 @@ function scoreItem(it, c, tokens) {
     }
 
     if (h.low > 0 && price > 0) {
-      if (price <= h.low) notes.push('기록상 최저가 수준');
-      else if (price <= Math.round(h.low * 1.03)) { score += 8; sub.timing += 8; notes.push('기록상 최저가에 근접'); }
+      /*
+       * «기록상 최저가» 문장은 기록이 두꺼울 때만, 기간과 함께 (_price-claims, 2026-09-24).
+       * 기록 1~2건이면 현재가가 곧 최저가라 이 말은 아무것도 구분하지 못한다.
+       * 순위 점수는 예전 그대로 둔다 — 바꾸는 것은 사용자에게 가는 문장뿐이다.
+       */
+      const rec = require('./_price-claims').basisOf(h);
+      const basis = rec.enough ? ` (${rec.spanDays}일·관측 ${rec.obs}회 기준)` : null;
+      if (price <= h.low) { if (basis) notes.push(`기록상 최저가 수준${basis}`); }
+      else if (price <= Math.round(h.low * 1.03)) { score += 8; sub.timing += 8; if (basis) notes.push(`기록상 최저가에 근접${basis}`); }
     }
 
     if (h.trendPct != null && h.trendDays >= 1) {

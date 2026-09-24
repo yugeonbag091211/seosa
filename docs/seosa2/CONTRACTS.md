@@ -188,6 +188,24 @@ waitroom_notifications (
 불변식: 요약 문장의 모든 금액·수치는 `candidates` 안의 값이어야 한다 (`grounded.ok`). 제목에서 확인되지 않은 기능은
 `unverifiedFeatures` 로만 말한다. AI Concierge 와 같은 모듈(`_shopintent` · `_specs` · `_deal` · `_concierge`)을 쓴다.
 
+**2026-09-24 검색 정확도 추가 필드** (기존 필드는 그대로 — 추가만):
+
+```
+query.target: { profile, label, role: 'MAIN'|'ACCESSORY', accessory|null, describe } | null
+query.requestedCount|null, query.countSaid|null        // "3개" → 3 (최대 8)
+query.attributes: [{ key:'light'|'battery', label, text, threshold|null, rule|null, basis }]
+candidates[].attributes: [{ key, label, status:'met'|'unmet'|'claimed'|'unknown', evidence|null }]
+candidates[].priceHistory: { obs, spanDays, enough, minObs:7, minSpanDays:14, low, lowDate, firstDate, lastDate, atLow }
+candidates[].role: { role, confidence, why }
+excluded[].kind: 'condition'|'exclusion'|'stale'|'main'|'accessory'|'accessory-other'|'unrelated'|'other-device'|'unknown'
+excludedGroups: [{ kind, label, count, groups:[{ name, count }] }], excludedTotal
+coverage: { source, scanned, scope, attempts:[{ step, where:'title'|'series'|'keyword'|'live', label, rows, newRows, accepted }],
+            maxDbAttempts:3, maxLiveAttempts:1, liveSearch:'off'|'unused'|'used' }
+```
+
+불변식 추가: 후보는 `_product-role.classify` 가 찾는 종류(본체 또는 요청한 부속)로 판별한 상품뿐이다. 판별은 상품명으로만 —
+수집 키워드는 근거가 아니다. «최저가»·«하위 N%»·가격 판정은 `priceHistory.enough`(관측 7일·기간 14일)일 때만, 기간·건수와 함께 말한다.
+
 ### ④ 브라우저 확장 — `GET /api/lookup`
 
 쿼리: `productId` · `vendorItemId` · `mall`(기본 쿠팡) · `title`
