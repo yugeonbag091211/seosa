@@ -20,6 +20,7 @@ const { db, state, T, mkReq, mkRes, fetchCalls } = kit.setup('test-v2-cart');
 
 const ROOT = path.resolve(__dirname, '..');
 const C = require('../api/_cart');
+const CartSummary = require('../public/v2/cart-summary');
 const cartApi = require('../api/_cart-api');
 const history = require('../api/history');
 
@@ -478,6 +479,17 @@ async function main() {
     C._internal.summarizePlan([{ subtotal: 0, shipping: 0, coupon: 0, total: 0, lines: [{ lineTotal: 574700 }] }], 0);
   } catch (e) { inconsistentRejected = /불변식/.test(e.message); }
   T.check(inconsistentRejected, '상품 행과 판매처 합계가 다른 응답은 금액을 내보내지 않는다');
+  const repairedSummary = CartSummary.summarize({
+    total: 574700, itemsCost: 0, shippingCost: 0, couponDiscount: 0,
+    byMall: [{ subtotal: 574700, shipping: 0, coupon: 0, total: 574700, lines: [{ lineTotal: 574700 }] }]
+  });
+  T.check(repairedSummary.ok && repairedSummary.itemsCost === 574700 && repairedSummary.itemsCostMismatch,
+    '서버 요약이 0원이어도 표시 행과 일치하는 상품 금액을 사용한다', repairedSummary);
+  const brokenSummary = CartSummary.summarize({
+    total: 574700, itemsCost: 574700, shippingCost: 0, couponDiscount: 0,
+    byMall: [{ subtotal: 0, shipping: 0, coupon: 0, total: 574700, lines: [{ lineTotal: 574700 }] }]
+  });
+  T.check(!brokenSummary.ok, '판매처 행·총액 구조가 모순이면 UI 금액을 숨긴다');
   T.check(b.plan.optimal === true && b.plan.searchedNodes > 0, 'optimal:true · searchedNodes 보고', b.plan);
   T.check(b.baselines.cheapestEach.total === 993900, '상품별 최저가 = 990,000 + 900 + 11번가 배송비 3,000', b.baselines);
   T.check(b.baselines.singleMall && b.baselines.singleMall.mall === '쿠팡' && b.baselines.singleMall.total === 991000,
@@ -630,3 +642,4 @@ async function main() {
 }
 
 main().catch(e => { console.error(e); process.exitCode = 1; });
+
