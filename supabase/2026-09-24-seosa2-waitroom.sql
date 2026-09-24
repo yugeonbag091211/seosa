@@ -80,10 +80,10 @@ create index if not exists waitroom_notifications_email_idx on public.waitroom_n
 alter table public.waitroom_items enable row level security;
 alter table public.waitroom_notifications enable row level security;
 
-revoke all on table public.waitroom_items from public, anon, authenticated;
-revoke all on table public.waitroom_notifications from public, anon, authenticated;
-revoke all on sequence public.waitroom_items_id_seq from public, anon, authenticated;
-revoke all on sequence public.waitroom_notifications_id_seq from public, anon, authenticated;
+revoke all on table public.waitroom_items from public, anon, authenticated, service_role;
+revoke all on table public.waitroom_notifications from public, anon, authenticated, service_role;
+revoke all on sequence public.waitroom_items_id_seq from public, anon, authenticated, service_role;
+revoke all on sequence public.waitroom_notifications_id_seq from public, anon, authenticated, service_role;
 
 grant select, insert, update, delete on table public.waitroom_items to service_role;
 grant select, insert, update on table public.waitroom_notifications to service_role;
