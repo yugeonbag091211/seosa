@@ -9,14 +9,32 @@ select relname, relrowsecurity as rls_enabled
   from pg_class
  where oid in ('public.waitroom_items'::regclass, 'public.waitroom_notifications'::regclass);
 
--- 3) 권한: anon/authenticated 는 전부 false, service_role 만 true 여야 한다
+-- 3) 권한: anon/authenticated 는 모두 false. service_role 은 items CRUD,
+--    notifications 는 DELETE 없이, sequence 는 USAGE/SELECT 만 가능해야 한다.
 select r as role,
        has_table_privilege(r, 'public.waitroom_items', 'select') as items_select,
        has_table_privilege(r, 'public.waitroom_items', 'insert') as items_insert,
-       has_table_privilege(r, 'public.waitroom_notifications', 'select') as notif_select
+       has_table_privilege(r, 'public.waitroom_items', 'update') as items_update,
+       has_table_privilege(r, 'public.waitroom_items', 'delete') as items_delete,
+       has_table_privilege(r, 'public.waitroom_notifications', 'select') as notif_select,
+       has_table_privilege(r, 'public.waitroom_notifications', 'insert') as notif_insert,
+       has_table_privilege(r, 'public.waitroom_notifications', 'update') as notif_update,
+       has_table_privilege(r, 'public.waitroom_notifications', 'delete') as notif_delete,
+       has_sequence_privilege(r, 'public.waitroom_items_id_seq', 'usage') as items_seq_usage,
+       has_sequence_privilege(r, 'public.waitroom_items_id_seq', 'select') as items_seq_select,
+       has_sequence_privilege(r, 'public.waitroom_items_id_seq', 'update') as items_seq_update,
+       has_sequence_privilege(r, 'public.waitroom_notifications_id_seq', 'usage') as notif_seq_usage,
+       has_sequence_privilege(r, 'public.waitroom_notifications_id_seq', 'select') as notif_seq_select,
+       has_sequence_privilege(r, 'public.waitroom_notifications_id_seq', 'update') as notif_seq_update
   from unnest(array['anon', 'authenticated', 'service_role']) as r;
 
--- 4) 중복 방지 제약이 있다
+-- 4) RLS policy count — service_role-only tables must have no end-user policies
+select count(*) as policies_expected_zero
+  from pg_policies
+ where schemaname = 'public'
+   and tablename in ('waitroom_items', 'waitroom_notifications');
+
+-- 5) 중복 방지 제약이 있다
 select conname from pg_constraint
  where conname in ('waitroom_items_series_key', 'waitroom_notifications_once_per_day');
 
