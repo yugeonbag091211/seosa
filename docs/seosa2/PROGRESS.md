@@ -137,3 +137,52 @@
 Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘솔 오류 0, 가로 넘침 0, 메뉴·허브 카드 정상 렌더.
 
 **기존 UI(헤더·검색·가격 카드·핫딜·그래프)를 바꾸는 변경이라 병합 전 사용자 승인이 필요하다.**
+
+## 7. 재개 확인 및 현재 중단 지점 (2026-09-24)
+
+### GitHub · 배포
+
+- `main`: `72a8e3c5af4c1bd8c37291ae47627c45873dc863` — PR #79 병합 후 기준.
+- 열린 관련 PR: #72, #73, #80. PR #72/#73은 GitHub상 `mergeable=true`지만, 이것만으로 제품 검증이 끝난 것은 아니다. #72의 검증 데이터가 부족해 병합 보류.
+- PR #80 (`codex/seosa-home-feature-links`): 이 진행 기록을 추가하기 직전 head는 `cc23e31aa8a7deb0037be7e4d696b9d26b501902`, [PR 링크](https://github.com/yugeonbag091211/seosa/pull/80). 새 main 위에 재적용했고 해당 head의 Vercel 및 GitHub Actions `test` 모두 성공. 최신 Preview는 `https://seosa-git-codex-seosa-home-feature-links-seosa.vercel.app`.
+- Preview는 Vercel SSO에서 HTTP 302 로그인으로 돌려보낸다. 따라서 Preview의 실제 브라우저 화면과 함수 응답은 검증하지 못했다. **성공한 배포 체크를 기능 확인 완료로 간주하지 않는다.** 허용된 경우 로그인된 브라우저로 다시 확인한다.
+- 로컬 정적 렌더링(Chrome, JavaScript 비활성, 로컬 파일 서버)에서 홈과 2.0 허브를 데스크톱 1440px·모바일 375px로 확인했다. 운영/Preview 응답이 아니다. 캡처는 Codex 시각화 디렉터리에 있다.
+- PR #80의 `public/v2/index.html`에서 병합 직전 상태에 남아 있던 타이밍·대기실 카드도 제거했다. 준비 전 기능은 링크뿐 아니라 공개 목록에도 나오지 않는다. 홈의 AI Concierge 아래 준비된 조사관·장바구니·이상 패턴 링크와 기존 `부가 기능` 허브 메뉴는 유지한다.
+
+### Production · 검색
+
+- 2026-09-24 읽기 요청: `/`, `/v2/index.html`, `/v2/investigator.html`, `/v2/cart.html`, `/v2/anomaly.html`은 모두 HTTP 200.
+- 운영 API: `/api/ai?__route=investigate`, `/api/history?__route=cart`, `/api/history?__route=anomaly` GET이 모두 HTTP 501. 별도로 요청된 노트북 질의의 `POST /api/investigate`도 `NOT_READY`를 반환했다. 추천 결과나 Concierge의 실제 사용자 응답은 확인되지 않았다. PR #80의 Vercel `includeFiles` 수정은 Preview SSO 때문에 런타임 검증 보류.
+- Supabase 프로젝트 `pcnhktxltojbkrmpafsz`의 SELECT만 사용. 상품 69,852행, 가격 이력 154,027행; `waitroom_items`, `waitroom_notifications` 및 해당 migration은 Production에 없다. 가격 기록의 non-positive price 0건, option identity 누락 0건.
+- DB 카탈로그 SELECT에서 본품 노트북 및 이미지 URL·쿠팡 제휴 URL 필드를 확인했다. 501 응답으로 사용자 API에서 실제 상품 이미지·제휴 링크 렌더는 확인되지 않았다. 제휴 URL을 클릭하지 않았다.
+- 메인 검색 PR #78의 정확도 스위트는 10개 기기 유형의 오프라인 테스트 107/107 PASS. Production 검색 API는 `NOT_READY`여서 본품·부속품 분리를 운영에서 검증했다고 말할 수 없다. 조사관 live search는 기본 꺼짐이며 켜는 API/공급자 호출은 하지 않았다.
+
+### #72 구매 타이밍
+
+- 기존 `scripts/backtest-timing.js`를 Production SELECT 스냅샷에 적용했다. 22,973 Coupang 상품 중 ≥10일 이력 1,305개, ≥45일 16개, ≥60일 0개, ≥90일 0개(중앙값 2일, 최댓값 53일).
+- 최신 600개 샘플에서 45일 이력을 가진 상품은 2개뿐이며 둘 다 전자제품이 아니다. H14 예측은 0개의 점수화 가능한 표본, Brier·기준모델 점수·skill 모두 산출 불가. 탐색 H7은 52표본, Brier 0.038 대 기준모델 0.038, skill 0, 결정 hit 0.
+- 옵션 단위 가격 및 KST 일별 최저가를 사용했다. 90일 백분위는 이 두 시계열 중 한 개에만 관측 45개를 기준으로 계산 가능했고, 다른 하나는 가격이 평평해 백분위 의미가 없었다. 이 기록으로 90일·14일 예측을 공개하거나 제품군 정확도를 주장할 수 없다.
+- 결과와 한계는 #72의 `docs/seosa2/timing-production-backtest-2026-09-24.md`, 커밋 `6b6f163c3a085f11441efe3ffb073fb2710033f8`에 기록했고 PR에 반영했다. timing 52/52, #72 Actions `test` 성공. DB 쓰기·공급자 호출 없음.
+
+### #73 구매 대기실
+
+- PR의 migration은 신규 두 테이블만 만들고 RLS 활성화, 사용자 직접 grant/policy 없이 service role로만 접근한다. 사용자별 필터, 중복 등록/알림 제약, 인덱스, VERIFY 및 ROLLBACK SQL을 정적으로 확인했다.
+- `scripts/test-v2-waitroom.js`: 69/69 PASS. `scripts/verify-migrations.js`: 55 OK / 0 FAIL / 1 warning (DB 자격증명 부재로 live schema check 생략). SQL은 별도 DB에서 실행하지 않았다.
+- `armed` 원자 claim 및 unique item/date로 동시 중복 발송을 막지만, 이메일 공급자가 수락한 직후 응답이 유실되면 재시도 시 같은 날짜에 중복 메일 가능성이 남는다. ROLLBACK은 신규 두 테이블과 그 데이터 전체를 삭제하므로 적용 후 먼저 export해야 한다.
+- 별도 Supabase 개발 브랜치 생성 비용은 `$0.01344/hour`로 확인했다. `supabase_confirm_cost` 사용자 확인과 개발 브랜치가 아직 없다. 비용 확인 전에는 branch/migration 실행을 중단한다. Production migration 미적용, 실제 이메일 0건, `WAITROOM_ENABLED` 변경 없음.
+
+### 홈페이지 PR #80 변경 · 테스트
+
+- 변경 파일: `public/index.html`, `public/v2/index.html`, `vercel.json`, `scripts/test-v2-home-links.js`, 기존 세 V2 테스트 파일.
+- 기능 링크는 홈 Concierge 아래에 보조 링크로 표시하고, 타이밍·대기실은 홈과 2.0 목록에 표시하지 않는다. 터치 높이 44px, 링크 줄바꿈 적용. Vercel의 동적 helper 모듈 누락을 해결하기 위해 `api/ai.js`, `api/history.js`, `api/alerts.js` 함수에 `includeFiles: "api/_*.js"`를 추가했으나 운영 미배포.
+- 최종 로컬 결과: SEOSA 2.0 7개 그룹 PASS / 0 FAIL; regression 85/0; release 121/0; 조사관 accuracy 107/107; timing 52/52; waitroom 69/69. `git diff --check` 통과. 가격 수집과 핫딜 판정 코드는 변경하지 않았다.
+- 이 런타임에는 `npm` 명령이 없다. `npm test`는 `npm is not recognized`로 시작되지 않아 각 `node scripts/...` 명령을 직접 실행했다. Regression/release는 직접 실행 후 통과했다.
+- PR #80의 merge는 승인 대기. Production 병합은 하지 않았다.
+
+### 다음 실행 지점
+
+1. 사용자가 `$0.01344/hour` Supabase dev branch 비용을 확인하면 개발 브랜치를 만들고 PR #73 migration → VERIFY → 테스트 결과 기록 순으로 **해당 브랜치에서만** 수행한다. Production migration은 별도 승인이 있을 때까지 금지.
+2. Vercel Preview가 SSO로 보호되어 있으므로 로그인된 접근 또는 승인된 우회 방법을 통해 PR #80 화면과 `/api/ai?__route=investigate`, `/api/history?__route=cart|anomaly`의 안전한 GET 결과를 확인한다. POST 검색은 비용/실시간 공급자 호출 여부를 먼저 확인하기 전 실행하지 않는다.
+3. PR #80 Production 병합 승인 요청 전 Preview 결과와 현재 PR check를 최신 head에서 다시 확인한다. 승인이 오기 전에는 병합하지 않는다.
+4. #72는 최소 90일 가격 원장이 쌓이고 사전 등록된 기준 모델과 비교할 만큼 평가 표본이 확보된 뒤 백테스트를 반복한다. 그 전에는 사용자 대상 미래 가격 예측을 공개하지 않고 PR merge 보류.
+5. 실제 이메일 발송, `WAITROOM_ENABLED=1`, 조사관 real-time search 활성화, Production DB migration, Production 병합은 각각 사용자 승인을 기다린다.
