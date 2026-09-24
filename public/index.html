@@ -3207,6 +3207,14 @@ select:focus-visible,textarea:focus-visible,
     <button class="nav-menu-item" role="menuitem" data-act="open-myalerts">가격 알림 관리</button>
     <button class="nav-menu-item" role="menuitem" data-act="open-profile">내 취향 설정</button>
     <!--
+      SEOSA 2.0 새 기능(AI 쇼핑 조사관·장바구니 최저가·가격 이상 패턴) 진입점.
+      기존 헤더 아이콘 줄(♡·사람·☰)·검색창·가격 카드·핫딜·그래프는 그대로 두고,
+      이미 있는 «부가 기능 모음» 메뉴에 항목 하나만 더한다 — 다른 항목과 같은 마크업
+      (<a class="nav-menu-item" href>, "내 레이더 보기" 참고)이라 새 CSS 가 없다.
+      /v2/index.html 은 아직 배포되지 않은 기능(①·②)을 "준비 중"으로 표시하고 숨긴다.
+    -->
+    <a class="nav-menu-item" role="menuitem" href="/v2/index.html">SEOSA 2.0 새 기능 (베타)</a>
+    <!--
       테마 토글은 헤더에서 이 메뉴로 옮겼다. 헤더 아이콘 줄을 목업대로
       ♡ · 사람 · ☰ 셋으로 맞추면서 자리가 없어졌는데, 기능은 없애지 않는다.
     -->
