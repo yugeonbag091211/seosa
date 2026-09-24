@@ -188,3 +188,53 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 3. PR #80 Production 병합 승인 요청 전 Preview 결과와 현재 PR check를 최신 head에서 다시 확인한다. 승인이 오기 전에는 병합하지 않는다.
 4. #72는 최소 90일 가격 원장이 쌓이고 사전 등록된 기준 모델과 비교할 만큼 평가 표본이 확보된 뒤 백테스트를 반복한다. 그 전에는 사용자 대상 미래 가격 예측을 공개하지 않고 PR merge 보류.
 5. 실제 이메일 발송, `WAITROOM_ENABLED=1`, 조사관 real-time search 활성화, Production DB migration, Production 병합은 각각 사용자 승인을 기다린다. 특히 live search 활성화 전에 Coupang Partners의 현행 호출 한도·과금과 중복 miss 방지, shared collector quota 영향을 해결한다.
+
+
+## 8. 전체 시스템 안정화 감사 및 가격 하락 쿼리 (2026-09-25)
+
+### 기준선 · 보호한 작업
+
+- 독립 checkout: `codex/price-drop-query-spill`, 시작점 `1252e0320e55b651bb065c2c5b8fbb937615ade0` (PR #82 병합 후 main). 원래 열려 있던 `codex/seosa2-integration`의 미커밋 변경과 다른 에이전트 worktree는 수정하지 않았다.
+- GitHub에서 최신 열린 PR은 #83, #81, #73, #72, #38, #34, #24, #10. #72/#73/#81/#83은 열어 두었고 어느 PR도 수정하거나 병합하지 않았다.
+- main의 Vercel 체크는 success. GitHub Actions 조회 도구는 PR 이벤트 실행만 반환하므로 main의 전체 워크플로 목록은 확인하지 못했다. 이전에 확인한 예약 가격 수집 run `36069279554`는 success였다.
+- Vercel 로그/Preview 세부 화면은 SSO에 막혀 열지 않았다. 환경변수·자격증명을 우회하지 않았다.
+
+### Production 읽기 전용 확인
+
+- 이전에 확인한 Production 페이지 `/`, `/v2/index.html`, 조사관·장바구니·이상 패턴 화면은 HTTP 200이며 홈에 2.0 진입 링크가 노출된다.
+- Production 라우트 안전 확인: 조사관/장바구니의 잘못된 입력은 각각 400 `BAD_INPUT`, 이상 패턴 라우트는 식별자 없는 요청에서 400 `BAD_INPUT`. 호출한 세 경로 모두 501 `NOT_READY`가 아니며, 위 응답은 DB 검색이나 외부 검색을 호출하지 않는다.
+- 실제 Production 이상 패턴 조회 1건은 200. 관측 3건뿐이라 결과는 `INSUFFICIENT`이고, 카탈로그 이미지와 제휴 URL은 존재했다. 이 상품으로 패턴 정확도를 입증하지는 못한다.
+- 장바구니 Production API는 동일 요청에서 `itemsCost=574700`, 배송비/쿠폰 0, 최종 합계 574700으로 일치했다. 별도 실제 브라우저 세션에서는 상품 요약이 0원인데 행과 총액은 574700원으로 보였다. 브라우저 요청의 원시 응답을 확인할 수 없어 클라이언트 배포 캐시/API 응답 중 어느 쪽인지 확정하지 않았다. #83을 건드리지 않았다.
+- Supabase Production 최근 24시간 집계: Edge 500 15건(그중 `price_drop_top` 12, RPC 3), 525 1건. `price_drop_top`은 12회 500, 1회 200이며 실패 응답은 평균 8.535초/최대 8.767초로 statement timeout과 맞는다. 원시 개인정보·토큰은 출력하지 않았다.
+- Production 비파괴 EXPLAIN은 최근 30일 창에서 약 137,948개 이력 행을 정렬하고, all-time 집계가 약 155,920개 행을 한 번 스캔하는 계획을 확인했다. Production에서 EXPLAIN ANALYZE는 부하를 만들 수 있어 실행하지 않았다.
+- 이전 읽기 전용 데이터 품질 확인: products 약 69,865행, history 약 155,767행, 0 이하 가격/시간 누락/비 HTTPS 링크 0건, 이미지 누락 28건. 카탈로그 최신가와 최신 history 간 키별 차이 12건은 수집 시점 차이 가능성이 있어 별도 조사가 필요하다.
+- RLS는 공개 제품/가격 표에도 활성화되어 있고 public/anon/authenticated 정책이 없는 표는 거부 기본값이다. 운영 테이블·수집 작업은 변경하지 않았다.
+
+### 실제 결함과 수정안: price_drop_top 임시 파일 spill
+
+- 기존 view는 같은 `ranked` CTE(30일 창)를 `rn=1` / `rn=2` 두 갈래에서 읽는다. Production planner도 둘을 위해 같은 ranked 결과를 물리화한다.
+- 기존 무료 Supabase 테스트 프로젝트의 별도 synthetic schema에 Production 규모(155,767 이력 행, 38,210 옵션 키) 표본을 만들었다. 기존 쿼리 계획은 137,948 ranked 행 임시 저장, 34,326 blocks read / 34,451 blocks written, 556.5 ms였다.
+- 한 번의 그룹 집계에서 `rn=1` / `rn=2`를 FILTER로 고르는 view를 테스트 DB에서 실제 생성하고 비교했다. `EXCEPT ALL` 양방향 차이는 0행(1회 관측 제외, legacy 제외, orphan 제외, 동일 상품 여러 옵션 포함), 12개 공개 출력 컬럼 순서도 일치했다. 계획은 temp read/write 모두 0, 281.3 ms였다. 이 차이는 테스트 표본 측정이며 Production 지연 개선률로 단정하지 않는다.
+- 수정 파일: `supabase/2026-09-25-price-drop-top-ranked-aggregation.sql`, `scripts/test-price-drop-top-query.js`, migration verifier 등록, npm test 등록, 롤백 문서. 운영 DB에는 아직 migration을 적용하지 않았다. 변경은 읽기 view뿐이며 가격 수집/핫딜 판정/제품 데이터는 건드리지 않는다.
+- synthetic schema는 기존 테스트 프로젝트에만 만들었다. Production에는 테이블·행·인덱스 변경이 없다.
+
+### 테스트 · 배포 상태
+
+- 신규 SQL 구조/안전성 테스트 9/9, migration 정적 검사 55 OK / 0 FAIL / 1 warning (CI 환경에 운영 DB 자격증명이 없어 live status 검사를 생략).
+- 전체 package.json test 체인 61/61 스크립트 성공. `test:regression` 85/85, `test:release` 121/121 성공. npm CLI가 설치되지 않아 Node 24.19로 package.json의 정확한 스크립트 체인을 직접 실행했고 기존 workspace의 의존성 경로를 읽기 전용으로 사용했다.
+- Production DB 변경, 이메일, 실시간 조사 검색, 신규 비용 발생은 0. test 프로젝트는 기존 Free 프로젝트를 썼다.
+- PR #84: https://github.com/yugeonbag091211/seosa/pull/84, 초기 코드 커밋 3ebda3f. 미병합 상태이며 Vercel Preview 성공은 SQL migration의 Production 적용/DB 검증을 뜻하지 않는다.
+
+### 남은 확인
+
+1. 브라우저 장바구니 0원/Production API 574,700원 간 응답 차이의 원시 browser network 응답과 Vercel runtime 로그는 SSO 때문에 확인하지 못했다.
+2. Production의 12개 `price_drop_top` 타임아웃은 관측했다. candidate view의 Production 적용·실측은 DB 변경 승인 후에만 가능하다.
+3. #72의 예측 데이터 부족, #73의 Production migration 미적용/메일 발송 비활성 상태는 기존 보고대로 유지한다. #72/#73 모두 병합하지 않았다.
+
+
+### 정리 · 추가 검증
+
+- Production 조사관/장바구니 invalid-input POST는 각각 400 `BAD_INPUT`; 이상 패턴 조회는 200, 3 observations, `INSUFFICIENT`, 이미지·제휴 URL 필드 존재. 조사관 정상 질의는 외부 검색 flag 상태를 확인할 수 없어 보내지 않았다.
+- 신규 기능 회귀: `test-v2-cart` 136/0, `test-v2-anomaly` 121/0, `test-v2-investigator-accuracy` 107/0.
+- 격리 DB에서 waitroom 테이블 2개가 그대로 존재함을 확인했다. 두 테이블 모두 RLS on, policy 0, anon/authenticated SELECT false, service_role SELECT true, unique constraint 각 1개. 우리가 만든 synthetic schemas는 검증 후 제거했고 잔여 schema 0개다.
+- 이번 이어서 수행한 구간은 약 40분(UTC 약 22:39–23:18). 앞선 작업이 섞인 전체 세션 시간은 정확히 분리할 수 없다.
