@@ -11,7 +11,9 @@
 <script defer src="/v2/v2.js"></script>
 <style>
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.scroll table{min-width:640px}
+.scroll table{min-width:720px}
+/* 날짜·종류·정도는 줄바꿈하지 않는다 — 좁은 화면에서 «정가부풀리기» 가 한 글자씩 세로로 쪼개졌다 */
+.scroll td:nth-child(-n+3){white-space:nowrap}
 .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin:8px 0 16px}
 .kpi b{font-size:18px}
 .hist{width:100%;height:auto;display:block}
