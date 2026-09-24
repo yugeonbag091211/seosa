@@ -59,3 +59,13 @@ jobs:
       - run: npm ci
       - name: npm test
         run: npm test
+      # ── 왜 regression · release 도 도는가 (2026-09-24) ──────────────────
+      #
+      # 위 주석이 말한 «붉은 것을 붉다고 말해 줄 자리가 없으면 테스트는 조용히
+      # 썩는다» 가 이 두 스크립트에서 그대로 다시 일어났다. 2ce1803(09-20)이
+      # provider 전면 장애 응답을 500 → 200 degraded 로 바꿨는데, npm test 의
+      # test-ai-redteam 만 새 계약을 배웠고 CI 밖의 test-release 는 옛 500 을
+      # 요구한 채 AI 6건이 나흘간 붉었다. 둘 다 오프라인·무자격증명이고 합쳐서
+      # 로컬 실측 15초다 — npm test 와 같은 이유로 모든 PR 에서 돈다.
+      - name: Regression + release suites
+        run: npm run test:regression && npm run test:release
