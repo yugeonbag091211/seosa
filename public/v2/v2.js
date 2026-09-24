@@ -98,11 +98,13 @@
     opts = opts || {};
     var pts = (points || []).filter(function (p) { return p && p.price > 0; });
     if (pts.length < 2) return '';
-    var W = opts.width || 640, H = opts.height || 180, L = 56, R = 8, T = 10, B = 22;
+    var W = opts.width || 640, H = opts.height || 180, R = 8, T = 10, B = 22;
     var prices = pts.map(function (p) { return p.price; });
     var lo = Math.min.apply(null, prices), hi = Math.max.apply(null, prices);
     if (opts.band) { lo = Math.min(lo, opts.band.lo || lo); hi = Math.max(hi, opts.band.hi || hi); }
     if (hi === lo) { hi = hi * 1.02 + 1; lo = lo * 0.98; }
+    // 왼쪽 여백은 축 글자 길이에 맞춘다 ("1,300,000원" 이 곡선을 덮지 않게). 10px 글꼴 ≈ 글자당 6px.
+    var L = Math.max(48, 10 + 6 * Math.max(won(hi).length, won(lo).length));
     var x = function (i) { return L + (W - L - R) * (i / (pts.length - 1)); };
     var y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
     var d = pts.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.price).toFixed(1); }).join(' ');
