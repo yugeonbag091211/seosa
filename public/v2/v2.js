@@ -37,11 +37,15 @@
     try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* 저장 불가 — 화면은 계속 */ }
   }
 
-  /** index.html 이 저장한 로그인 토큰 { token, email, expiresAt }. 만료면 null. */
+  /**
+   * index.html 이 저장한 로그인 토큰 { token, email, expiresAt }. 만료면 null.
+   * expiresAt 은 /api/auth 가 준 ISO 문자열이다 (옛 값이 숫자일 수도 있어 둘 다 읽는다).
+   */
   function session() {
     var t = readJSON('seosa_token', null);
     if (!t || !t.token) return null;
-    if (t.expiresAt && Date.now() > Number(t.expiresAt)) return null;
+    var exp = typeof t.expiresAt === 'number' ? t.expiresAt : Date.parse(t.expiresAt || '');
+    if (isFinite(exp) && Date.now() > exp) return null;
     return t;
   }
 
