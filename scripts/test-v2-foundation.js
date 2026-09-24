@@ -176,6 +176,23 @@ async function main() {
   T.check(/node scripts\/test-seosa2\.js/.test(pkg.scripts.test), 'npm test 체인에 러너가 있다');
   ['index.html', 'v2.css', 'v2.js'].forEach(f =>
     T.check(fs.existsSync(path.join(ROOT, 'public', 'v2', f)), `public/v2/${f} 존재`));
+  {
+    // V2.session() — index.html 이 저장하는 expiresAt(ISO 문자열)을 제대로 읽는가
+    const vm = require('vm');
+    const src = fs.readFileSync(path.join(ROOT, 'public', 'v2', 'v2.js'), 'utf8');
+    const sessionOf = stored => {
+      const store = { seosa_token: JSON.stringify(stored) };
+      const ctx = { localStorage: { getItem: k => store[k] || null, setItem() {} }, document: { addEventListener() {} } };
+      ctx.window = ctx;
+      vm.createContext(ctx);
+      vm.runInContext(src, ctx);
+      return ctx.V2.session();
+    };
+    T.check(!!sessionOf({ token: 't', expiresAt: new Date(Date.now() + 86400000).toISOString() }), '만료 전 토큰(ISO)은 로그인 상태');
+    T.check(!sessionOf({ token: 't', expiresAt: new Date(Date.now() - 1000).toISOString() }), '만료된 토큰(ISO)은 로그아웃 상태');
+    T.check(!sessionOf({ token: 't', expiresAt: Date.now() - 1000 }), '만료된 토큰(숫자)도 로그아웃 상태');
+    T.check(sessionOf({ expiresAt: '' }) === null, '토큰 없으면 null');
+  }
   const home = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
   T.check(home.indexOf('/v2/') === -1, '기존 홈 화면(index.html)은 v2 로 링크하지 않는다 (기존 UI 무수정)');
 
