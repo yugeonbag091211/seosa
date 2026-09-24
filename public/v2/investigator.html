@@ -71,8 +71,10 @@
     var url = V.safeUrl(c.url);
     return '<div class="card"><h3>' + (i + 1) + '. ' + V.esc(c.title) + '</h3>'
       + '<p><b>' + V.esc(V.won(c.price.value)) + '</b> <span class="stamp">' + V.esc(c.price.observedDate || '') + ' 기록</span> · ' + V.esc(c.mallLabel) + '</p>'
-      + '<div class="row"><div><b class="down">장점</b><ul class="plain">' + li(c.pros.map(function (p) { return p.text; })) + '</ul></div>'
-      + '<div><b class="up">주의</b><ul class="plain">' + li(c.cons.map(function (p) { return p.text; })) + '</ul></div></div>'
+      + '<div class="row">'
+      + (c.pros.length ? '<div><b class="down">장점</b><ul class="plain">' + li(c.pros.map(function (p) { return p.text; })) + '</ul></div>' : '')
+      + (c.cons.length ? '<div><b class="up">주의</b><ul class="plain">' + li(c.cons.map(function (p) { return p.text; })) + '</ul></div>' : '')
+      + '</div>'
       + '<p class="row">'
       + (url ? '<a class="button shrink" href="' + V.esc(url) + '" target="_blank" rel="noopener sponsored">판매처에서 보기</a>' : '')
       + '<a class="button shrink" href="' + V.esc('/v2/timing.html' + V.qs({ productId: c.productId, mall: c.mall, vendorItemId: c.vendorItemId })) + '">구매 타이밍</a>'
