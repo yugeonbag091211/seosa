@@ -2487,6 +2487,14 @@ function fallbackAnswer(top, deal, cons, cards, extra) {
 }
 
 module.exports = async function handler(req, res) {
+  /*
+   * SEOSA 2.0 쇼핑 조사관(/api/investigate) — api/_v2router.js 표에 적힌 __route
+   * 만 넘긴다. 아니면 null 이라 아래 기존 AI 대화 경로를 그대로 탄다.
+   */
+  const v2 = require('./_v2router');
+  const v2Route = v2.routeOf(req, 'ai');
+  if (v2Route) return v2.dispatch(v2Route, req, res);
+
   // 호출 1회당 실제 비용이 나가는 엔드포인트다. 공개 CORS(*)를 붙이면
   // 남의 사이트가 우리 키로 무료 AI API를 쓸 수 있다. 허용 오리진만.
   if (!applyCors(req, res, 'private')) return;
