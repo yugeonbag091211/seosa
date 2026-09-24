@@ -33,10 +33,11 @@
   <div id="out" hidden>
     <div class="notice" id="summary"></div>
     <p class="muted" id="understood"></p>
+    <p class="muted" id="scope"></p>
     <h2>비교한 상품</h2>
     <div id="table"></div>
     <div id="cards"></div>
-    <details id="exWrap"><summary>제외한 상품과 이유</summary><ul id="excluded" class="plain muted"></ul></details>
+    <details id="exWrap"><summary>제외한 상품과 이유</summary><p class="muted" id="exGroups"></p><ul id="excluded" class="plain muted"></ul></details>
     <ul id="disclaimers" class="plain muted"></ul>
   </div>
   <div id="err" class="error" hidden></div>
@@ -86,15 +87,26 @@
     var V = window.V2;
     $('summary').textContent = r.summary.text;
     var q = r.query, parts = [];
-    if (q.searchPhrase) parts.push('찾는 상품: ' + q.searchPhrase);
+    if (q.target && q.target.describe) parts.push('찾는 상품: ' + q.target.describe);
+    else if (q.searchPhrase) parts.push('찾는 상품: ' + q.searchPhrase);
+    if (q.requestedCount) parts.push(q.requestedCount + '개' + (q.countSaid > q.requestedCount ? ' (최대 ' + q.requestedCount + '개까지 비교)' : ''));
     if (q.constraintLine) parts.push(q.constraintLine);
+    (q.attributes || []).forEach(function (a) { parts.push(a.label + (a.rule ? ': ' + a.rule : '') + ' — ' + a.basis); });
     (q.specRules || []).forEach(function (s) { parts.push(s.text + (s.assumed ? ' (추정)' : '')); });
     if ((q.exclusions || []).length) parts.push('제외: ' + q.exclusions.join(', '));
     if ((q.wantedFeatures || []).length) parts.push('원하는 기능: ' + q.wantedFeatures.join(', '));
     $('understood').textContent = '이렇게 이해했어요 — ' + parts.join(' · ');
     $('table').innerHTML = r.candidates.length ? table(r.candidates) : '';
     $('cards').innerHTML = r.candidates.map(card).join('');
-    $('excluded').innerHTML = li((r.excluded || []).map(function (e) { return e.title + ' — ' + e.reason; }));
+    var cv = r.coverage || {}, tries = cv.attempts || [];
+    $('scope').textContent = '조사 범위 — ' + (cv.scope || 'SEOSA가 가격을 기록 중인 상품')
+      + ' · 검색 ' + tries.length + '회' + (tries.length ? ' (' + tries.map(function (a) { return a.label; }).join(' → ') + ')' : '')
+      + (cv.liveSearch === 'off' ? ' · 실시간 쇼핑몰 검색 꺼짐' : cv.liveSearch === 'used' ? ' · 실시간 검색 1회 포함' : '');
+    $('exGroups').textContent = (r.excludedGroups || []).map(function (g) {
+      return g.label + ' ' + g.count + '개' + (g.groups.length ? ' (' + g.groups.map(function (x) { return x.name + ' ' + x.count; }).join(', ') + ')' : '');
+    }).join(' · ');
+    $('excluded').innerHTML = li((r.excluded || []).map(function (e) { return e.title + ' — ' + e.reason; }))
+      + ((r.excludedTotal || 0) > (r.excluded || []).length ? '<li>… 외 ' + ((r.excludedTotal || 0) - (r.excluded || []).length) + '개</li>' : '');
     $('exWrap').hidden = !(r.excluded || []).length;
     $('disclaimers').innerHTML = li(r.disclaimers);
     $('out').hidden = false;
