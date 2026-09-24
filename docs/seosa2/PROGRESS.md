@@ -57,20 +57,34 @@
 - `test-release.js` SAFE 검사가 러너의 자식 테스트까지 펼친다
 - `public/v2/` — 공용 CSS·JS·허브. 기존 `index.html` 은 무수정
 
-### 3-2. 기능 — 아래 표를 기능 PR 이 채운다
+### 3-2. 기능 (2026-09-24 완료 — 전부 PR 로 올라가 있고 CI 초록, **병합·배포는 하지 않았다**)
 
-| 기능 | 상태 | 테스트 | 비고 |
-|---|---|---|---|
-| ① 구매 타이밍 | 진행 중 | — | |
-| ② 구매 대기실 | 진행 중 | — | |
-| ③ 쇼핑 조사관 | 진행 중 | — | |
-| ④ 브라우저 확장 | 진행 중 | — | |
-| ⑤ 장바구니 최저가 | 진행 중 | — | |
-| ⑥ 가격 이상 패턴 | 진행 중 | — | |
+| 기능 | PR | 테스트 | 운영 DB 쓰기 | 외부 API | 비고 |
+|---|---|---|---|---|---|
+| 릴리스 테스트 6건 | #70 (→ main) | release 121/0 | — | — | 낡은 테스트 · CI 편입 |
+| 기초 | #71 (→ main) | foundation 52/0 | — | — | 라우트 6개는 기능 PR 전까지 501 |
+| ① 구매 타이밍 | #72 | 52/0 | 없음 | 없음 | 카탈로그 백테스트 CLI 는 미실행(자격증명) |
+| ② 구매 대기실 | #73 | 69/0 | 새 표 2개 (**마이그레이션 미적용**) | Resend (기존) | 워크플로는 `WAITROOM_ENABLED=1` 때만 |
+| ③ 쇼핑 조사관 | #74 | 62/0 | 없음 | 없음 (실시간 검색 꺼짐) | `_specs` 사양 오독 수정 포함 |
+| ④ 브라우저 확장 | #75 | 262/0 | 없음 | 없음 | 실제 Chrome 로드 미확인 |
+| ⑤ 장바구니 최저가 | #77 | 133/0 | 없음 | 없음 | 무작위 4,550건 전수탐색 대조 |
+| ⑥ 가격 이상 패턴 | #76 | 121/0 | 없음 | 없음 | SHA-256 이력 지문 |
 
-## 4. 다음 실행 지점
 
-1. 기능 브랜치 여섯 개를 기초 브랜치에서 딴다 (없으면 `git checkout -b <이름> claude/lucid-wright-u0xgct`).
-2. 각 기능은 CONTRACTS.md §3 의 계약대로 `api/_<feature>.js`(순수) + `api/_<feature>-api.js`(핸들러) +
-   `scripts/test-v2-<feature>.js` + `public/v2/<feature>.html` 을 추가한다.
-3. `npm test` · `npm run test:regression` · `npm run test:release` 전부 초록이어야 PR 을 올린다.
+### 3-3. 통합 검증 (로컬 `integration-local` = 기초 + 릴리스 수정 + 여섯 기능 전부 병합)
+
+- 병합 충돌 0 — 기능 PR 이 공유 파일을 고치지 않은 결과
+- `npm test` exit 0 (SEOSA 2.0 7개 스위트 포함) · `test:regression` 85/0 · `test:release` **121/0** · `verify-migrations` 55 OK / 0 FAIL
+- 기능 간 경로: `/api/lookup` 이 ①·⑥ 모듈로 `timing`·`anomaly` 를 실제로 채운다
+- Chromium(Playwright) 으로 v2 화면 7개 × 모바일 390px·데스크톱 1280px: 콘솔 오류 0, 가로 넘침 0, 상품명 XSS escape 확인.
+  실제 핸들러 + 가짜 DB 로 서빙했다 (운영 접속 없음)
+
+## 4. 다음 실행 지점 (운영 반영 — 전부 승인 필요)
+
+1. 리뷰 후 #70 → #71 순으로 main 병합 (main 병합 = Vercel 운영 배포)
+2. 기능 PR 을 base `claude/lucid-wright-u0xgct` 에 병합하거나, #71 병합 뒤 각 PR 의 base 를 main 으로 바꿔 차례로 병합.
+   읽기 전용 기능(① ③ ④ ⑤ ⑥)은 운영 DB 쓰기·외부 호출이 없다
+3. ② 대기실: `supabase/2026-09-24-seosa2-waitroom.sql` → `.VERIFY.sql` → 배포 → 워크플로 dry-run → `WAITROOM_ENABLED=1` (`docs/seosa2/waitroom.md`)
+4. 운영 읽기 자격증명으로 `node scripts/backtest-timing.js --limit 200` 실행해 카탈로그 전체 정확도 확인
+5. 확장: 실제 Chrome 에서 로드, `https://seosa.ai.kr` 이 www 로 리다이렉트하지 않는지 확인, 아이콘 추가 후 스토어 등록 검토
+6. v2 화면 진입점(홈 링크 등)은 기존 UI 수정이라 별도 승인 후
