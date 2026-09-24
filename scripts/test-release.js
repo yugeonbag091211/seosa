@@ -714,6 +714,27 @@ async function runAI() {
     return res;
   }
 
+  /*
+   * 모든 provider 가 실패했을 때의 계약 (2026-09-20, 커밋 2ce1803 부터).
+   *
+   * 예전에는 500 + "다시 시도해 주세요" 였다. 2ce1803 이 이를 «200 + degraded»
+   * 로 바꿨다 — 쇼핑 판정이 없는 잡담에서 provider 가 전부 죽어도 벌거벗은
+   * 500 대신 확인되지 않은 내용을 말하지 않는 안내문을 준다. 그 계약은
+   * test-ai-redteam.js("all-provider outage … degrades without 500")가
+   * npm test 에서 고정하고 있는데, 이 파일은 CI(npm test) 밖이라 옛 500 을
+   * 그대로 요구한 채 붉게 남아 있었다. 같은 동작을 두 테스트가 반대로
+   * 요구하던 것을 현재 계약 하나로 맞춘다.
+   *
+   * ★ 완화가 아니다. 상태코드 한 줄을 바꾼 대신 확인 항목을 늘렸다 —
+   *   degraded 표식, error 필드 부재, 안내 문구, 그리고 아래 누출 검사 전부.
+   */
+  function degraded(res) {
+    const p = res.payload || {};
+    return res.code === 200 && p.degraded === true
+      && !Object.prototype.hasOwnProperty.call(p, 'error')
+      && /잠시 후 다시/.test(p.text || '');
+  }
+
   /* AI-1. 정상 응답 — 제품 질문 quota 없음 */
   {
     const res = await callAi('ok');
@@ -726,20 +747,21 @@ async function runAI() {
   /* AI-2. ★ 402 크레딧 부족 */
   {
     const res = await callAi('402');
-    check(res.code === 500, '사용자에게는 500 (업스트림 상태를 그대로 노출하지 않는다)', String(res.code));
+    check(degraded(res), '사용자에게는 200 degraded 안내 (업스트림 상태를 그대로 노출하지 않는다)',
+      `${res.code} ${JSON.stringify(res.payload)}`);
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     const blob = JSON.stringify(res.payload);
     check(blob.indexOf('Insufficient credits') === -1, '"Insufficient credits" 가 새지 않는다 ★');
     check(blob.indexOf('OpenRouter') === -1, '공급자 이름이 새지 않는다 ★');
     check(blob.indexOf('402') === -1, '업스트림 상태코드가 새지 않는다');
-    check(/다시 시도/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
+    check(/잠시 후 다시/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
     check(!Object.prototype.hasOwnProperty.call(res.payload, 'usage'), 'usage payload를 내보내지 않는다');
   }
 
   /* AI-3. provider 429 */
   {
     const res = await callAi('429');
-    check(res.code === 500, '429 도 사용자에게는 일반 오류', String(res.code));
+    check(degraded(res), '429 도 사용자에게는 같은 degraded 안내', `${res.code} ${JSON.stringify(res.payload)}`);
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(JSON.stringify(res.payload).indexOf('Rate limit') === -1, '업스트림 문구가 새지 않는다');
   }
@@ -747,14 +769,15 @@ async function runAI() {
   /* AI-4. 500 — 쿼터 복구 */
   {
     const res = await callAi('500');
-    check(res.code === 500, '업스트림 500', String(res.code));
+    check(degraded(res), '업스트림 500 → degraded 안내 (벌거벗은 500 없음)', `${res.code} ${JSON.stringify(res.payload)}`);
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
+    check(JSON.stringify(res.payload).indexOf('Internal Server Error') === -1, '업스트림 문구가 새지 않는다');
   }
 
-  /* AI-5. timeout — 안전한 일반 오류 (쇼핑 데이터가 있으면 결정론 fallback) */
+  /* AI-5. timeout — 안전한 안내 (쇼핑 데이터가 있으면 결정론 fallback) */
   {
     const res = await callAi('timeout');
-    check(res.code === 500, '데이터 없는 timeout → 안전한 일반 오류', String(res.code));
+    check(degraded(res), '데이터 없는 timeout → degraded 안내', `${res.code} ${JSON.stringify(res.payload)}`);
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(/시간|다시/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
   }
@@ -762,7 +785,7 @@ async function runAI() {
   /* AI-6. malformed 응답 — 죽지 않고 쿼터 복구 */
   {
     const res = await callAi('malformed');
-    check(res.code === 500, '파싱 불가 응답도 처리한다', String(res.code));
+    check(degraded(res), '파싱 불가 응답도 degraded 안내로 처리한다', `${res.code} ${JSON.stringify(res.payload)}`);
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
