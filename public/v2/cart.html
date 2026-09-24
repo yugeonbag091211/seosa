@@ -9,6 +9,7 @@
 <script src="/hot-theme.js"></script>
 <link rel="stylesheet" href="/v2/v2.css">
 <script defer src="/v2/v2.js"></script>
+<script src="/v2/cart-summary.js"></script>
 <style>
   .line{border:1px solid var(--line);border-radius:6px;padding:12px 14px;margin:10px 0}
   .line .row{align-items:flex-end}
@@ -295,11 +296,18 @@ document.addEventListener('DOMContentLoaded', function () {
       html += '<p class="error">계산할 수 있는 상품이 없어요. 아래 «찾지 못한 상품» 을 확인해 주세요.</p>';
       return html;
     }
+    var amounts = window.CartSummary && window.CartSummary.summarize(p);
+    if (!amounts || !amounts.ok) {
+      return html + '<p class="error">상품 행·배송비·쿠폰 합계가 맞지 않아 금액을 표시하지 않았어요. 다시 계산해 주세요.</p>';
+    }
+    if (amounts.itemsCostMismatch) {
+      html += '<p class="notice">상품 금액 요약과 상품 행 합계가 달라, 표시된 상품 행을 기준으로 다시 계산했어요.</p>';
+    }
     html += '<div class="kpis">'
-      + '<div class="kpi"><b>' + V2.esc(V2.won(p.total)) + '</b><span>총 결제 예상액</span></div>'
-      + '<div class="kpi"><b>' + V2.esc(V2.won(p.itemsCost)) + '</b><span>상품 금액</span></div>'
-      + '<div class="kpi"><b>' + V2.esc(V2.won(p.shippingCost)) + '</b><span>배송비</span></div>'
-      + '<div class="kpi"><b>' + (p.couponDiscount ? '−' : '') + V2.esc(V2.won(p.couponDiscount)) + '</b><span>쿠폰 할인</span></div>'
+      + '<div class="kpi"><b>' + V2.esc(V2.won(amounts.total)) + '</b><span>총 결제 예상액</span></div>'
+      + '<div class="kpi"><b>' + V2.esc(V2.won(amounts.itemsCost)) + '</b><span>상품 금액</span></div>'
+      + '<div class="kpi"><b>' + V2.esc(V2.won(amounts.shippingCost)) + '</b><span>배송비</span></div>'
+      + '<div class="kpi"><b>' + (amounts.couponDiscount ? '−' : '') + V2.esc(V2.won(amounts.couponDiscount)) + '</b><span>쿠폰 할인</span></div>'
       + '</div>';
     html += p.optimal
       ? '<p><span class="badge down">최저 조합 확인</span> <span class="muted">어떤 다른 조합도 이보다 싸지 않다는 것까지 확인했어요 (탐색 ' + V2.esc(Number(p.searchedNodes).toLocaleString('ko-KR')) + '단계).</span></p>'
@@ -448,3 +456,4 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 </body>
 </html>
+
