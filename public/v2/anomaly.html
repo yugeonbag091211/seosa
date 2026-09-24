@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>가격 이상 패턴 · SEOSA 2.0</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg">
+<script src="/hot-theme.js"></script>
+<link rel="stylesheet" href="/v2/v2.css">
+<script defer src="/v2/v2.js"></script>
+<style>
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.scroll table{min-width:640px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin:8px 0 16px}
+.kpi b{font-size:18px}
+.hist{width:100%;height:auto;display:block}
+.hist rect{fill:var(--soft);opacity:.55}
+.hist rect.cur{fill:var(--ink);opacity:1}
+.hist text{fill:var(--soft);font-size:10px;font-family:var(--sans)}
+.summary-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.summary-head .badge{font-size:14px;padding:3px 12px}
+.counts{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0;padding:0;list-style:none}
+.digest{word-break:break-all}
+td.note{min-width:260px}
+tr.flag-collection_error td,tr.flag-other_option td{color:var(--soft)}
+details>summary{cursor:pointer;min-height:44px;display:flex;align-items:center}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 이동</a>
+<header><nav class="wrap" aria-label="주요 탐색">
+  <a class="logo" href="/" aria-label="SEOSA 홈으로">S</a>
+  <a href="/v2/index.html">SEOSA 2.0</a>
+  <a href="/v2/anomaly.html" aria-current="page">가격 이상 패턴</a>
+  <button id="theme" class="spacer" type="button">다크모드</button>
+</nav></header>
+<main class="wrap" id="main" tabindex="-1">
+  <p class="eyebrow">SEOSA 2.0 · ⑥ 가격 이상 패턴</p>
+  <h1>이 가격 움직임, 진짜인가요?</h1>
+  <p class="intro">급등·급락, 할인 직전에 가격 올리기, 옵션 변경, 수집 오류를 서로 섞지 않고 구분해서 보여 드려요.
+    모든 판단은 SEOSA가 관측한 가격 기록에서 나오고, 그 기록 원본과 지문(SHA-256)을 함께 드려요.</p>
+
+  <form id="f" class="card" novalidate>
+    <div class="row">
+      <div>
+        <label for="pid">상품 번호 (productId)</label>
+        <input id="pid" name="productId" inputmode="numeric" autocomplete="off" required maxlength="120" placeholder="예: 8082654809">
+      </div>
+      <div>
+        <label for="mall">판매처</label>
+        <select id="mall" name="mall">
+          <option value="">자동</option>
+          <option value="쿠팡">쿠팡</option>
+          <option value="ADPICK">ADPICK</option>
+        </select>
+      </div>
+      <div>
+        <label for="vid">옵션 번호 (vendorItemId, 선택)</label>
+        <input id="vid" name="vendorItemId" inputmode="numeric" autocomplete="off" maxlength="120" placeholder="비우면 카탈로그 옵션">
+      </div>
+      <div class="shrink"><button class="primary" type="submit" id="go">분석하기</button></div>
+    </div>
+  </form>
+
+  <div id="msg" role="status" aria-live="polite"></div>
+
+  <section id="result" hidden>
+    <div class="card" id="summary"></div>
+
+    <h2>가격 흐름</h2>
+    <div id="chart"></div>
+    <p class="muted" id="chart-note"></p>
+
+    <h2>가격 분포</h2>
+    <div id="dist"></div>
+
+    <h2>감지된 사건</h2>
+    <div id="events"></div>
+
+    <h2>검증 가능한 기록</h2>
+    <div id="history"></div>
+  </section>
+
+  <p class="notice">가격은 SEOSA가 확인한 시점의 기록이에요. 실제 결제 금액은 판매처에서 확인해 주세요.
+    «수집 오류» 는 판매처의 잘못이 아니라 SEOSA가 받은 값이 앞뒤와 맞지 않는다는 뜻이에요.</p>
+</main>
+<footer class="wrap">SEOSA · 가격은 SEOSA가 확인한 시점의 기록입니다.</footer>
+
+<script>
+/* ⑥ 가격 이상 패턴 화면 (ES5). 서버 문자열은 전부 V2.esc 를 거친다. */
+document.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+  var V2 = window.V2;
+  if (!V2) return;
+
+  var KIND = {
+    SPIKE: '급등', CRASH: '급락', FAKE_DISCOUNT: '올렸다가 할인', SAWTOOTH: '주기적 등락',
+    OPTION_CHANGE: '옵션 변경', COLLECTION_ERROR: '수집 오류', REFERENCE_INFLATION: '정가 부풀리기'
+  };
+  var SEV = { info: ['참고', ''], warn: ['주의', 'warn'], alert: ['경고', 'up'] };
+  var STATUS_CLASS = { NORMAL: 'down', WATCH: 'warn', ANOMALOUS: 'up', INSUFFICIENT: '' };
+  var FLAG = {
+    ok: '정상', other_option: '다른 옵션', collection_error: '수집 오류',
+    spike: '급등', crash: '급락', fake_discount: '올렸다가 할인'
+  };
+  var MAX_PRICE = 100000000;
+  var lastObservations = [];
+
+  function $(id) { return document.getElementById(id); }
+  function signedPct(x) {
+    if (x == null || !isFinite(x)) return '—';
+    return (x > 0 ? '+' : '') + V2.pct(x, 1);
+  }
+  function setMsg(html, cls) {
+    $('msg').innerHTML = html ? '<p class="' + (cls || 'muted') + '">' + html + '</p>' : '';
+  }
+
+  /* ── 요약 ── */
+  function renderSummary(b) {
+    var p = b.product || {};
+    var s = b.summary || {};
+    var html = '<div class="summary-head">'
+      + '<span class="badge ' + (STATUS_CLASS[s.status] || '') + '">' + V2.esc(s.label || s.status || '') + '</span>'
+      + '<b>' + V2.esc(p.title || ('상품 ' + (p.productId || ''))) + '</b></div>';
+    html += '<p class="muted">' + V2.esc([p.mallLabel || p.mall, p.vendorItemId ? '옵션 ' + p.vendorItemId : '', '기준 ' + String(b.asOf || '').slice(0, 10)]
+      .filter(function (x) { return !!x; }).join(' · '));
+    var url = V2.safeUrl(p.url);
+    if (url) html += ' · <a href="' + V2.esc(url) + '" target="_blank" rel="nofollow sponsored noopener">판매처에서 보기</a>';
+    html += '</p>';
+    if (s.note) html += '<p>' + V2.esc(s.note) + '</p>';
+    var counts = s.counts || {};
+    var chips = Object.keys(KIND).filter(function (k) { return counts[k] > 0; }).map(function (k) {
+      return '<li class="badge">' + V2.esc(KIND[k]) + ' ' + V2.esc(counts[k]) + '</li>';
+    });
+    if (chips.length) html += '<ul class="counts" aria-label="사건 수">' + chips.join('') + '</ul>';
+    if (b.truncated) html += '<p class="muted">기록이 많아 가장 최근 것만 읽었어요.</p>';
+    $('summary').innerHTML = html;
+  }
+
+  /* ── 곡선 — 이 옵션의 관측(다른 옵션 제외)을 날짜당 최저가로 접는다 ── */
+  function renderChart(b) {
+    var obs = (b.history && b.history.observations) || [];
+    var byDate = {};
+    obs.forEach(function (o) {
+      if (!o || o.flag === 'other_option' || !o.date) return;
+      if (!(o.price > 0 && o.price <= MAX_PRICE)) return;
+      if (byDate[o.date] === undefined || o.price < byDate[o.date]) byDate[o.date] = o.price;
+    });
+    var points = Object.keys(byDate).sort().map(function (d) { return { date: d, price: byDate[d] }; });
+    var seen = {};
+    var flags = (b.events || []).map(function (e) { return e.date; }).filter(function (d) {
+      if (!d || seen[d]) return false; seen[d] = true; return true;
+    });
+    var svg = V2.chart(points, { flags: flags, label: '이 옵션의 날짜별 최저 관측가' });
+    $('chart').innerHTML = svg || '<p class="muted">곡선을 그릴 만큼 기록이 없어요.</p>';
+    $('chart-note').textContent = svg
+      ? '빨간 점은 사건이 있었던 날이에요. 수집 오류로 본 값도 곡선에는 그대로 보여 드려요(분포에서는 뺐어요).'
+      : '';
+  }
+
+  /* ── 분포 ── */
+  function histogramSvg(d, current) {
+    var bins = d.histogram || [];
+    if (!bins.length) return '';
+    var W = 640, H = 130, L = 8, R = 8, T = 8, B = 22;
+    var max = 0;
+    bins.forEach(function (h) { if (h.count > max) max = h.count; });
+    var bw = (W - L - R) / bins.length;
+    var svg = '<svg class="hist" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="가격 분포 히스토그램">';
+    bins.forEach(function (h, i) {
+      var bh = max ? Math.max(1, (H - T - B) * h.count / max) : 0;
+      var x = L + i * bw + 1, y = H - B - bh;
+      var cur = current != null && current >= h.from && current <= h.to;
+      svg += '<rect' + (cur ? ' class="cur"' : '') + ' x="' + x.toFixed(1) + '" y="' + y.toFixed(1)
+        + '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + bh.toFixed(1) + '"><title>'
+        + V2.esc(V2.won(h.from) + ' ~ ' + V2.won(h.to) + ' · ' + h.count + '일' + (cur ? ' (지금 가격)' : '')) + '</title></rect>';
+    });
+    svg += '<text x="' + L + '" y="' + (H - 6) + '">' + V2.esc(V2.won(bins[0].from)) + '</text>';
+    svg += '<text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end">' + V2.esc(V2.won(bins[bins.length - 1].to)) + '</text>';
+    return svg + '</svg>';
+  }
+
+  function renderDistribution(b) {
+    var d = b.distribution;
+    if (!d) {
+      $('dist').innerHTML = '<p class="muted">유효한 관측이 모자라 분포를 말하지 않아요.</p>';
+      return;
+    }
+    var obs = (b.history && b.history.observations) || [];
+    var current = null;
+    for (var i = obs.length - 1; i >= 0; i--) {
+      if (obs[i].flag !== 'other_option' && obs[i].flag !== 'collection_error' && obs[i].price > 0) { current = obs[i].price; break; }
+    }
+    var k = [
+      ['관측 일수', d.count + '일'], ['최저', V2.won(d.min)], ['하위 5%', V2.won(d.p5)], ['하위 25%', V2.won(d.p25)],
+      ['중앙값', V2.won(d.median)], ['상위 25%', V2.won(d.p75)], ['상위 5%', V2.won(d.p95)], ['최고', V2.won(d.max)],
+      ['평균', V2.won(d.mean)], ['중앙값 절대편차', V2.won(d.mad)], ['수집 오류로 뺀 관측', d.excluded + '건']
+    ];
+    $('dist').innerHTML = '<div class="kpis">' + k.map(function (x) {
+      return '<div class="kpi"><b>' + V2.esc(x[1]) + '</b><span>' + V2.esc(x[0]) + '</span></div>';
+    }).join('') + '</div>' + histogramSvg(d, current)
+      + '<p class="muted">날짜당 최저 관측가 한 점씩, 수집 오류로 본 관측은 뺀 분포예요.'
+      + (current != null ? ' 진하게 칠한 칸이 가장 최근 가격이 속한 구간이에요.' : '') + '</p>';
+  }
+
+  /* ── 사건 ── */
+  function renderEvents(b) {
+    var ev = b.events || [];
+    if (!ev.length) {
+      $('events').innerHTML = '<p class="muted">감지된 사건이 없어요.</p>';
+      return;
+    }
+    var rows = ev.slice().reverse().map(function (e) {
+      var sev = SEV[e.severity] || [e.severity, ''];
+      var conf = (e.kind === 'SPIKE' || e.kind === 'CRASH') ? (e.confirmed ? '확정' : '미확정') : '';
+      return '<tr><td>' + V2.esc(e.date || '날짜 모름') + '</td>'
+        + '<td>' + V2.esc(KIND[e.kind] || e.kind) + (conf ? ' <span class="muted">(' + V2.esc(conf) + ')</span>' : '') + '</td>'
+        + '<td><span class="badge ' + sev[1] + '">' + V2.esc(sev[0]) + '</span></td>'
+        + '<td class="num">' + V2.esc(e.price == null ? '—' : V2.won(e.price)) + '</td>'
+        + '<td class="num">' + V2.esc(signedPct(e.changePct)) + '</td>'
+        + '<td class="note">' + V2.esc(e.note) + '</td></tr>';
+    }).join('');
+    $('events').innerHTML = '<div class="scroll"><table><thead><tr><th>날짜</th><th>종류</th><th>정도</th>'
+      + '<th class="num">가격</th><th class="num">변화</th><th>설명</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+      + '<p class="muted">변화는 각 사건의 기준값 대비예요 (급등·급락은 직전 일주일 중앙값, 올렸다가 할인은 올린 값, 정가 부풀리기는 표시 정가).</p>';
+  }
+
+  /* ── 검증 가능한 기록 ── */
+  function renderHistory(b) {
+    var h = b.history || {};
+    var obs = h.observations || [];
+    lastObservations = obs;
+    var rows = obs.map(function (o) {
+      return '<tr class="flag-' + V2.esc(o.flag) + '"><td>' + V2.esc(o.at) + '</td><td>' + V2.esc(o.date || '') + '</td>'
+        + '<td class="num">' + V2.esc(o.price == null ? '—' : V2.won(o.price)) + '</td>'
+        + '<td>' + V2.esc(o.vendorItemId || '(옵션 모름)') + '</td><td>' + V2.esc(FLAG[o.flag] || o.flag) + '</td></tr>';
+    }).join('');
+    $('history').innerHTML = '<p>관측 ' + V2.esc(obs.length) + '건의 지문</p>'
+      + '<p class="stamp digest">' + V2.esc(h.digest || '') + '</p>'
+      + '<p class="muted">계산 규칙: ' + V2.esc(h.canonical || '') + '</p>'
+      + '<p><button type="button" id="verify">이 브라우저에서 다시 계산하기</button> <span id="verify-out" role="status" aria-live="polite"></span></p>'
+      + '<details><summary>관측 ' + V2.esc(obs.length) + '건 전부 보기</summary><div class="scroll"><table><thead><tr>'
+      + '<th>관측 시각(UTC)</th><th>날짜(KST)</th><th class="num">가격</th><th>옵션</th><th>표시</th></tr></thead><tbody>'
+      + rows + '</tbody></table></div></details>';
+    var btn = $('verify');
+    if (btn) btn.addEventListener('click', function () { verify(h.digest); });
+  }
+
+  function verify(expected) {
+    var out = $('verify-out');
+    var subtle = window.crypto && window.crypto.subtle;
+    if (!subtle || typeof TextEncoder === 'undefined') {
+      out.textContent = '이 브라우저는 SHA-256 계산을 지원하지 않아요.';
+      return;
+    }
+    var payload = JSON.stringify(lastObservations.map(function (o) { return [o.at, o.price, o.vendorItemId]; }));
+    subtle.digest('SHA-256', new TextEncoder().encode(payload)).then(function (buf) {
+      var bytes = new Uint8Array(buf), hex = '';
+      for (var i = 0; i < bytes.length; i++) hex += ('0' + bytes[i].toString(16)).slice(-2);
+      var mine = 'sha256:' + hex;
+      out.innerHTML = mine === expected
+        ? '<span class="badge down">일치</span>'
+        : '<span class="badge up">불일치</span> <span class="stamp">' + V2.esc(mine) + '</span>';
+    }, function () {
+      out.textContent = '계산하지 못했어요.';
+    });
+  }
+
+  /* ── 불러오기 ── */
+  function load(params) {
+    var btn = $('go');
+    btn.disabled = true;
+    setMsg('기록을 분석하는 중이에요…');
+    V2.api('/api/anomaly' + V2.qs(params)).then(function (b) {
+      btn.disabled = false;
+      if (!b || b.ok === false) {
+        $('result').hidden = true;
+        setMsg(V2.esc((b && b.error) || '분석하지 못했어요.'), 'error');
+        return;
+      }
+      setMsg('');
+      renderSummary(b);
+      renderChart(b);
+      renderDistribution(b);
+      renderEvents(b);
+      renderHistory(b);
+      $('result').hidden = false;
+    });
+  }
+
+  function readForm() {
+    return {
+      productId: $('pid').value.trim(),
+      mall: $('mall').value,
+      vendorItemId: $('vid').value.trim()
+    };
+  }
+
+  $('f').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var params = readForm();
+    if (!params.productId || !/^[\w.-]+$/.test(params.productId)) {
+      setMsg('상품 번호를 확인해 주세요.', 'error');
+      $('pid').focus();
+      return;
+    }
+    try { history.replaceState(null, '', location.pathname + V2.qs(params)); } catch (e) { /* 주소 갱신 실패는 무시 */ }
+    load(params);
+  });
+
+  var pid = V2.param('productId') || V2.param('pid');
+  var mall = V2.param('mall');
+  $('pid').value = pid;
+  $('vid').value = V2.param('vendorItemId');
+  if (mall === '쿠팡' || mall === 'ADPICK') $('mall').value = mall;
+  if (pid && /^[\w.-]+$/.test(pid)) load(readForm());
+});
+</script>
+</body>
+</html>
