@@ -609,7 +609,7 @@ async function main() {
     T.check(/V2\.safeUrl/.test(html) && /V2\.esc/.test(html), '서버 문자열은 V2.esc, 링크는 V2.safeUrl(https)');
     T.check((scripts.match(/V2\.esc\(/g) || []).length >= 10, '화면이 그리는 서버 문자열마다 V2.esc 를 거친다');
     const home = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    T.check(home.indexOf('/v2/cart') === -1, '기존 홈(index.html)은 cart 로 링크하지 않는다');
+    T.check(home.includes('/v2/cart.html'), '기존 홈에서 장바구니 최저가로 이동할 수 있다');
   }
 
   T.done();

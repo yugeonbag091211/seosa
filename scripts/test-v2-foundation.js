@@ -174,6 +174,10 @@ async function main() {
   T.check(discover().indexOf('test-v2-foundation.js') > -1, '러너가 test-v2-*.js 를 찾는다');
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   T.check(/node scripts\/test-seosa2\.js/.test(pkg.scripts.test), 'npm test 체인에 러너가 있다');
+  const vercelRoutes = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
+  T.check(['api/ai.js', 'api/history.js', 'api/alerts.js'].every(p =>
+    vercelRoutes.functions[p] && vercelRoutes.functions[p].includeFiles === 'api/_*.js'),
+  'Vercel 호스트 함수는 동적 라우트 모듈을 런타임에 포함한다');
   ['index.html', 'v2.css', 'v2.js'].forEach(f =>
     T.check(fs.existsSync(path.join(ROOT, 'public', 'v2', f)), `public/v2/${f} 존재`));
   {
@@ -202,6 +206,10 @@ async function main() {
   const home = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
   T.check((home.match(/href="\/v2\/index\.html"/g) || []).length === 1,
     '기존 홈 화면(index.html)은 SEOSA 2.0 허브(/v2/index.html) 하나만 링크한다 (개별 기능 무수정)');
+  T.check(['/v2/investigator.html', '/v2/cart.html', '/v2/anomaly.html'].every(p => home.includes(p)),
+    '기존 홈은 준비된 조사관·장바구니·이상 패턴으로 연결된다');
+  T.check(!home.includes('/v2/timing.html') && !home.includes('/v2/waitroom.html'),
+    '준비 전 타이밍·대기실은 기존 홈에서 공개하지 않는다');
 
   T.done();
 }

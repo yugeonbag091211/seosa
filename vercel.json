@@ -94,6 +94,15 @@
     },
     "api/payment.js": {
       "maxDuration": 60
+    },
+    "api/ai.js": {
+      "includeFiles": "api/_*.js"
+    },
+    "api/history.js": {
+      "includeFiles": "api/_*.js"
+    },
+    "api/alerts.js": {
+      "includeFiles": "api/_*.js"
     }
   },
   "crons": [

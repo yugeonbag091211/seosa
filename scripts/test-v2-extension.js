@@ -814,22 +814,22 @@ function testDocs() {
    * 배포 전이라 링크할 것이 없었기 때문이다. 이제 ③⑤⑥(조사관·장바구니·이상 패턴)이
    * 운영에 있으므로, 링크 자체가 아니라 «어떻게» 링크하는지를 고정한다.
    *
-   *   1) 딱 하나 — 기존 «부가 기능» 메뉴(#navMenu)에 항목 하나만 더한다.
-   *      개별 기능 6개를 헤더에 나열하지 않는다 (최소한의 진입점).
-   *   2) 허브 하나로만 — /v2/index.html(전체 목록, 배포 전 기능은 "준비 중"으로 가림)로만
-   *      보낸다. 개별 v2 페이지·확장 프로그램 설치 안내로 홈이 직접 딥링크하지 않는다.
-   *      (배포 전 기능을 실수로 먼저 노출하는 사고를 여기서 막는다.)
-   *   3) 새 CSS 없음 — 기존 .nav-menu-item 마크업을 그대로 쓴다.
+   *   1) SEOSA 2.0 허브 링크는 기존 «부가 기능» 메뉴 안에 하나만 둔다.
+   *     준비된 세 기능은 AI Concierge 아래에서 바로 찾을 수 있다.
+   *   2) 대기 중 기능과 확장 프로그램 설치 안내는 홈에서 공개하지 않는다.
+   *   3) 기존 홈의 다른 레이아웃과 새 CSS 구조를 건드리지 않는다.
    */
   const home = read('public/index.html');
   T.check(home.indexOf('extension.html') === -1, '홈은 확장 프로그램 설치 안내를 직접 링크하지 않는다');
-  ['/v2/timing.html', '/v2/waitroom.html', '/v2/investigator.html', '/v2/cart.html', '/v2/anomaly.html'].forEach(p => {
-    T.check(home.indexOf(p) === -1, `홈은 개별 v2 기능(${p})을 딥링크하지 않는다 — 허브를 거친다`);
+  ['/v2/timing.html', '/v2/waitroom.html'].forEach(p => {
+    T.check(home.indexOf(p) === -1, `홈은 준비 전 기능(${p})을 직접 공개하지 않는다`);
   });
   const v2Links = (home.match(/href="\/v2\/index\.html"/g) || []).length;
-  T.check(v2Links === 1, '★ SEOSA 2.0 진입점은 정확히 하나 — /v2/index.html(허브) 링크 1개', v2Links);
+  T.check(v2Links === 1, 'SEOSA 2.0 허브 링크는 하나', v2Links);
   T.check(/<div class="nav-menu"[^]*?<a class="nav-menu-item" role="menuitem" href="\/v2\/index\.html">[^<]*<\/a>[^]*?<\/div>/.test(home),
-    '★ 기존 «부가 기능» 메뉴 안에 있다 (새 헤더 아이콘·새 위젯이 아니다)');
+    '기존 «부가 기능» 메뉴의 허브 링크를 유지한다');
+  T.check(['/v2/investigator.html', '/v2/cart.html', '/v2/anomaly.html'].every(p => home.includes(p)),
+    'AI Concierge 아래에서 준비된 세 기능을 직접 찾을 수 있다');
   const privacy = read('extension/PRIVACY.md');
   T.check(/seosa\.ai\.kr\/api\/lookup/.test(privacy) && /chrome\.storage\.local/.test(privacy) && /쿠키/.test(privacy)
     && /누를 때|눌렀을 때/.test(privacy), 'PRIVACY — 무엇을 · 언제 · 어디로 · 무엇을 저장하는가');
