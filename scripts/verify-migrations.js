@@ -127,7 +127,9 @@ const NEW_MIGRATIONS = [
    * collector_target_products_batch 로 자동 폴백하므로 «동작은 하지만
    * 카탈로그가 커질수록 다시 죽는» 상태로 남는다.
    */
-  '2026-09-22-collector-target-keyset.sql'
+  '2026-09-22-collector-target-keyset.sql',
+  // 2026-09-25: read-only price_drop_top rewrite; no application data mutation.
+  '2026-09-25-price-drop-top-ranked-aggregation.sql'
 ];
 
 function checkStatic() {
