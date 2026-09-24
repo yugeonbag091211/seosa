@@ -1198,6 +1198,34 @@ function buildOffer(row, stat, today, identity, option) {
   return { offer, staleReason: p.staleReason, unknownSeller: mallLabelOf(row).unknownSeller };
 }
 
+/** 최종 응답 금액은 사용자가 보는 판매처별 행에서 합산한다. */
+function summarizePlan(byMall, expectedTotal) {
+  const summary = { total: 0, itemsCost: 0, shippingCost: 0, couponDiscount: 0 };
+  (byMall || []).forEach(group => {
+    const subtotal = Number(group.subtotal);
+    const shipping = Number(group.shipping);
+    const coupon = Number(group.coupon);
+    const total = Number(group.total);
+    const lineTotal = (group.lines || []).reduce((sum, line) => sum + Number(line.lineTotal), 0);
+    const values = [subtotal, shipping, coupon, total, lineTotal];
+    if (!values.every(Number.isSafeInteger) || values.some(value => value < 0)) {
+      throw new Error('[cart] 불변식 위반: 판매처별 금액이 정수가 아니다');
+    }
+    if (subtotal !== lineTotal || subtotal + shipping - coupon !== total) {
+      throw new Error('[cart] 불변식 위반: 상품 행과 판매처 합계가 다르다');
+    }
+    summary.itemsCost += lineTotal;
+    summary.shippingCost += shipping;
+    summary.couponDiscount += coupon;
+    summary.total += total;
+  });
+  if (!Number.isSafeInteger(expectedTotal) || summary.total !== expectedTotal
+    || summary.itemsCost + summary.shippingCost - summary.couponDiscount !== summary.total) {
+    throw new Error('[cart] 불변식 위반: 총액과 금액 구성이 다르다');
+  }
+  return summary;
+}
+
 function inputEcho(it) {
   return {
     productId: it.productId || null, mall: it.mall || null, vendorItemId: it.vendorItemId || null,
@@ -1320,6 +1348,10 @@ function assemble(p) {
     shippingEstimated: !!rules[g.group].estimated
   })).sort((a, b) => b.subtotal - a.subtotal || (a.mall < b.mall ? -1 : a.mall > b.mall ? 1 : 0));
 
+  // 카드 요약은 optimizer 내부 합계가 아니라 실제 표시할 행에서 다시 계산한다.
+  // 행·판매처 합계·결제액이 다르면 잘못된 금액 대신 오류로 멈춘다.
+  const planSummary = summarizePlan(byMall, r.total);
+
   const single = r.baselines.singleMall;
   const baselines = {
     singleMall: single ? { mall: groupLabel.get(single.group) || single.group, total: single.total } : null,
@@ -1366,7 +1398,8 @@ function assemble(p) {
     ok: true,
     items: outItems,
     plan: {
-      total: r.total, itemsCost: r.itemsCost, shippingCost: r.shippingCost, couponDiscount: r.couponDiscount,
+      total: planSummary.total, itemsCost: planSummary.itemsCost,
+      shippingCost: planSummary.shippingCost, couponDiscount: planSummary.couponDiscount,
       optimal: r.optimal, searchedNodes: r.searchedNodes, byMall
     },
     baselines,
@@ -1382,5 +1415,5 @@ module.exports = {
   validateCart, shippingFor, couponDiscount, bestCoupon, extraOf,
   optimize, mallLabelOf, mallKey, titleSearchTokens, resolveBase, screenPool, statKeys, priceOf,
   buildOffer, assemble,
-  _internal: { prepare, evaluate, greedy, improve, search, identityReasonText, mergeReasonText, daysBetween }
+  _internal: { prepare, evaluate, greedy, improve, search, identityReasonText, mergeReasonText, daysBetween, summarizePlan }
 };

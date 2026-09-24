@@ -464,6 +464,20 @@ async function main() {
   /* 계획: 쿠팡 990,000 + 라면 쿠팡 1,000 → 쿠팡 한 곳, 무료배송 */
   T.check(b.plan.total === 991000 && b.plan.byMall.length === 1 && b.plan.byMall[0].mall === '쿠팡',
     '기본 배송비 추정이면 라면도 쿠팡에서 — 991,000원 한 곳', b.plan);
+  const displayedItems = b.plan.byMall.reduce((sum, group) => sum + group.lines.reduce((part, line) => part + line.lineTotal, 0), 0);
+  const displayedShipping = b.plan.byMall.reduce((sum, group) => sum + group.shipping, 0);
+  const displayedCoupons = b.plan.byMall.reduce((sum, group) => sum + group.coupon, 0);
+  const displayedTotal = b.plan.byMall.reduce((sum, group) => sum + group.total, 0);
+  T.check(b.plan.itemsCost === displayedItems, '요약 상품 금액은 표시된 상품 행 합계와 같다', { plan: b.plan.itemsCost, displayedItems });
+  T.check(b.plan.total === displayedTotal && b.plan.shippingCost === displayedShipping
+    && b.plan.couponDiscount === displayedCoupons
+    && b.plan.itemsCost + b.plan.shippingCost - b.plan.couponDiscount === b.plan.total,
+  '요약 총액은 상품·배송비·쿠폰과 판매처별 합계에 일치한다', b.plan);
+  let inconsistentRejected = false;
+  try {
+    C._internal.summarizePlan([{ subtotal: 0, shipping: 0, coupon: 0, total: 0, lines: [{ lineTotal: 574700 }] }], 0);
+  } catch (e) { inconsistentRejected = /불변식/.test(e.message); }
+  T.check(inconsistentRejected, '상품 행과 판매처 합계가 다른 응답은 금액을 내보내지 않는다');
   T.check(b.plan.optimal === true && b.plan.searchedNodes > 0, 'optimal:true · searchedNodes 보고', b.plan);
   T.check(b.baselines.cheapestEach.total === 993900, '상품별 최저가 = 990,000 + 900 + 11번가 배송비 3,000', b.baselines);
   T.check(b.baselines.singleMall && b.baselines.singleMall.mall === '쿠팡' && b.baselines.singleMall.total === 991000,
