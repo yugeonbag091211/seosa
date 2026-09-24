@@ -21,8 +21,11 @@ for (const [route, label] of routes) {
 }
 T.check(!/timing\.html|waitroom\.html|구매 타이밍 예측|구매 대기실/.test(home + lab),
   '운영 준비 전 구매 타이밍·대기실 기능은 공개하지 않는다');
+T.check(!/data-label="구매 시점 판단"|구매 타이밍 확인|지금 살까|지금 사도 좋아요|>BUY</.test(home),
+  '백테스트가 끝나지 않은 구매 타이밍을 홈 배너에서 권하지 않는다');
 T.check(home.includes('aria-label="가격 분석 도구"'), '가격 도구 탐색에 접근 가능한 이름이 있다');
 T.check(/\.v2-tools a\{[^}]*min-height:44px/s.test(styles), '도구 링크의 터치 높이가 44px 이상이다');
 T.check(/\.v2-tools\{[^}]*flex-wrap:wrap/s.test(styles), '좁은 화면에서 링크가 줄바꿈된다');
 
 T.done();
+
