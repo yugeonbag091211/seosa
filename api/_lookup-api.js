@@ -269,4 +269,3 @@ module.exports = {
     setOptional(name, mod) { optional[name] = mod; }
   }
 };
-

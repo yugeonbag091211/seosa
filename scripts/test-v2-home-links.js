@@ -28,4 +28,3 @@ T.check(/\.v2-tools a\{[^}]*min-height:44px/s.test(styles), '도구 링크의 �
 T.check(/\.v2-tools\{[^}]*flex-wrap:wrap/s.test(styles), '좁은 화면에서 링크가 줄바꿈된다');
 
 T.done();
-
