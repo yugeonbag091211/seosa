@@ -235,6 +235,24 @@ kind ∈ SPIKE · CRASH · FAKE_DISCOUNT · SAWTOOTH · OPTION_CHANGE · COLLECT
 
 ---
 
+## 3-7. 기능 사이 순수 함수 계약 (④ lookup 이 ①·⑥ 을 재사용)
+
+기능 모듈은 DB 를 모르는 순수 함수 `analyze` 를 내보낸다. 핸들러(`*-api.js`)는 `_series.loadSeries` 로 읽은 값을
+여기에 넘길 뿐이다. 다른 기능은 **모듈이 없을 수도 있다고 가정**하고 `try { require('./_timing') } catch` 로 쓴다
+(없으면 그 필드는 `null`).
+
+```
+_timing.analyze(points, { today, horizon = 14, product = null })
+  → { observations, firstDate, lastDate, staleDays, level, deal, forecast, recommendation, backtest, uncertainty }
+
+_anomaly.analyze({ rawRows, rows, points, product = null, vendorItemId = '', today })
+  → { distribution, events, summary, history }
+```
+
+둘 다 절대 throw 하지 않는다. 입력이 모자라면 `INSUFFICIENT` 상태를 담은 같은 모양을 돌려준다.
+
+---
+
 ## 4. 테스트 계약
 
 - 기능마다 `scripts/test-v2-<feature>.js`. `scripts/test-seosa2.js` 가 `test-v2-*.js` 를 찾아 전부 돌리고,
