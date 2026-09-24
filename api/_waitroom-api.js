@@ -161,6 +161,13 @@ async function handler(req, res) {
   const who = identify(req);
   if (!who.ok) return res.status(401).json({ ok: false, error: who.reason, needsAuth: true, code: 'AUTH' });
 
+  // 운영 migration만으로 사용자가 등록했다고 오해하지 않도록 별도 승인 전에는 닫아 둔다.
+  // 실제 메일 발송은 Actions의 WAITROOM_ENABLED 게이트가 별도로 제어한다.
+  if (process.env.WAITROOM_API_ENABLED !== '1') {
+    return res.status(503).json({ ok: false, code: 'WAITROOM_NOT_READY',
+      error: '구매 대기실은 아직 준비 중이에요. 곧 열어 드릴게요.' });
+  }
+
   try {
     if (req.method === 'GET') {
       const items = await list(who.email);
@@ -197,3 +204,4 @@ async function handler(req, res) {
 }
 
 module.exports = { handler, _internal: { liveInfo } };
+

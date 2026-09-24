@@ -28,6 +28,8 @@ const tokenMe = auth.issueToken(ME);
 const tokenOther = auth.issueToken(OTHER);
 const today = kstToday();
 const daysAgo = n => kstToday(new Date(Date.now() - n * 86400000));
+const previousWaitroomApiEnabled = process.env.WAITROOM_API_ENABLED;
+delete process.env.WAITROOM_API_ENABLED;
 
 state.uniques.waitroom_items = [['email', 'product_id', 'mall', 'vendor_item_id']];
 state.uniques.waitroom_notifications = [['item_id', 'notify_date']];
@@ -118,6 +120,11 @@ async function main() {
     T.check(r1.statusCode === 401 && r1.body.needsAuth, '토큰 없음 → 401');
     const r2 = await call(mkReq({ method: 'GET', headers: { authorization: 'Bearer v1.bad.token' } }));
     T.check(r2.statusCode === 401, '위조 토큰 → 401');
+    const writesBeforeDisabled = state.writes.length;
+    const disabled = await call(authed(tokenMe, { method: 'POST', body: { action: 'save', productId: '500', mall: '쿠팡', title: 't', targetPrice: 90000 } }));
+    T.check(disabled.statusCode === 503 && disabled.body.code === 'WAITROOM_NOT_READY', 'WAITROOM_API_ENABLED 승인 전 등록 API 는 닫혀 있다', disabled.body);
+    T.check(state.writes.length === writesBeforeDisabled, '비활성 API 는 DB 에 쓰지 않는다');
+    process.env.WAITROOM_API_ENABLED = '1';
     state.missingTables.add('waitroom_items');
     const r3 = await call(authed(tokenMe, { method: 'GET' }));
     T.check(r3.statusCode === 503 && r3.body.code === 'WAITROOM_NOT_READY', '표가 없으면 503 WAITROOM_NOT_READY', r3.body);
@@ -308,6 +315,9 @@ async function main() {
   const forbidden = state.writes.filter(w => ['products', 'price_history', 'alerts', 'hotdeals'].indexOf(w.table) > -1);
   T.check(forbidden.length === 0, '가격 원장·카탈로그·기존 알림·핫딜 표에 쓰지 않았다', forbidden.map(w => w.table));
   T.check(fetchCalls.length === 0, '외부 호출 0회', fetchCalls);
+
+  if (previousWaitroomApiEnabled === undefined) delete process.env.WAITROOM_API_ENABLED;
+  else process.env.WAITROOM_API_ENABLED = previousWaitroomApiEnabled;
 
   T.section('Resend idempotency adapter — mock only');
   const emailPath = require.resolve('../api/_channel/email');

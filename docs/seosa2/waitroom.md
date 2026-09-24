@@ -44,9 +44,10 @@ DB 기록 전에 종료된 경우에도 같은 안전 규칙을 적용한다. �
 
 1. Supabase SQL Editor 에서 `supabase/2026-09-24-seosa2-waitroom.sql` 실행
 2. `supabase/2026-09-24-seosa2-waitroom.VERIFY.sql` 로 표·RLS·권한·제약 확인
-3. 배포 (API 가 503 → 200 으로 열린다)
-4. Actions 에서 `SEOSA Waitroom (gated)` 를 `dry_run=true` 로 수동 실행해 판정만 확인
-5. 저장소 변수 `WAITROOM_ENABLED=1` 설정 → 매일 KST 09:40 발송 시작
+3. 배포 후에도 API 는 `WAITROOM_API_ENABLED` 가 없으면 계속 503 으로 닫힌다.
+4. 별도 승인 후 Vercel 에 `WAITROOM_API_ENABLED=1` 설정 → 등록 API 와 화면 링크를 연다.
+5. Actions 에서 `SEOSA Waitroom (gated)` 를 `dry_run=true` 로 수동 실행해 판정만 확인
+6. **실제 이메일 발송 별도 승인 후에만** 저장소 변수 `WAITROOM_ENABLED=1` 설정 → 매일 KST 09:40 발송 시작.
 
 되돌리기: 변수 삭제(발송 중단) → 필요 시 `.ROLLBACK.sql` (항목·기록 삭제 — 먼저 내보낼 것).
 
