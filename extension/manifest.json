@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "SEOSA 가격 기록",
+  "version": "0.1.0",
+  "description": "쿠팡 상품 페이지에서 버튼을 누르면 SEOSA가 매일 쌓은 가격 기록과 다른 판매처 가격을 보여 줍니다. 누르기 전에는 아무것도 보내지 않습니다.",
+  "minimum_chrome_version": "102",
+  "permissions": ["storage"],
+  "host_permissions": ["https://seosa.ai.kr/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "SEOSA 가격 기록 — 누르면 상품 페이지의 버튼을 보이거나 숨깁니다"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.coupang.com/vp/products/*"],
+      "js": ["src/parse.js", "src/content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.11st.co.kr/products/*",
+        "https://item.gmarket.co.kr/Item*"
+      ],
+      "js": ["src/parse.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SEOSA 가격 기록 확장</title>
+<meta name="description" content="쿠팡 상품 페이지에서 버튼 한 번으로 SEOSA 가격 기록과 다른 판매처 가격을 확인하는 Chrome 확장">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg">
+<script src="/hot-theme.js"></script>
+<link rel="stylesheet" href="/v2/v2.css">
+<script defer src="/v2/v2.js"></script>
+<style>
+  ol.steps{padding-left:20px;margin:6px 0}
+  ol.steps li{padding:3px 0}
+  code{font-family:var(--mono);font-size:13px;background:var(--surface);padding:1px 5px;border-radius:3px}
+  .demo-out h3{margin-top:14px}
+  details{margin:8px 0;font-size:14px}
+  details summary{cursor:pointer;color:var(--soft)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 이동</a>
+<header><nav class="wrap" aria-label="주요 탐색">
+  <a class="logo" href="/" aria-label="SEOSA 홈으로">S</a>
+  <a href="/v2/index.html">SEOSA 2.0</a>
+  <a href="/v2/extension.html" aria-current="page">④ 브라우저 확장</a>
+  <button id="theme" class="spacer" type="button">다크모드</button>
+</nav></header>
+<main class="wrap" id="main" tabindex="-1">
+  <p class="eyebrow">④ 브라우저 확장 · PREVIEW</p>
+  <h1>쿠팡 상품 페이지에서 바로 보는 가격 기록</h1>
+  <p class="intro">상품 페이지 오른쪽 아래의 버튼을 누르면, SEOSA가 매일 쌓은 가격 기록과 같은 상품의 다른 판매처 가격을 작은 패널로 보여 드려요. 누르기 전에는 아무것도 보내지 않아요.</p>
+
+  <h2>무엇을 보여 주나요</h2>
+  <div class="grid">
+    <div class="card">
+      <h3><span class="badge down">이 상품의 기록</span></h3>
+      <p class="muted">쿠팡 상품 번호가 SEOSA 카탈로그에 있으면, 보고 계신 옵션의 가격 곡선과 최근 90일 중 지금 가격의 위치를 보여 드려요.</p>
+    </div>
+    <div class="card">
+      <h3><span class="badge warn">비슷한 상품의 기록</span></h3>
+      <p class="muted">번호로는 없지만 제목으로 같은 상품을 찾았을 때예요. 보고 계신 상품의 기록이 아니라고 분명히 표시하고, 확신이 낮으면 «확신 낮음» 을 붙여요. 11번가·G마켓 페이지는 늘 이 방식이에요.</p>
+    </div>
+    <div class="card">
+      <h3><span class="badge">같은 상품, 다른 판매처</span></h3>
+      <p class="muted">용량·색상·수량까지 같은 상품이라고 판정된 것만 보여 드려요. 닮았지만 확신할 수 없는 상품은 싸 보여도 넣지 않아요.</p>
+    </div>
+  </div>
+
+  <h2>설치 (개발자 모드)</h2>
+  <ol class="steps">
+    <li>SEOSA 저장소를 받아 <code>extension</code> 폴더를 준비해요.</li>
+    <li>Chrome 주소창에 <code>chrome://extensions</code> 를 열어요.</li>
+    <li>오른쪽 위 <b>개발자 모드</b>를 켜요.</li>
+    <li><b>압축해제된 확장 프로그램 로드</b>를 누르고 <code>extension</code> 폴더를 골라요.</li>
+    <li>쿠팡 상품 페이지를 열면 오른쪽 아래에 <b>SEOSA 가격 기록 보기</b> 버튼이 생겨요.</li>
+  </ol>
+  <p class="muted">패널의 «이 버튼 숨기기» 로 숨길 수 있고, 브라우저 툴바의 확장 아이콘을 누르면 다시 보여요.</p>
+
+  <h2>권한</h2>
+  <table>
+    <thead><tr><th scope="col">권한</th><th scope="col">왜 필요한가</th></tr></thead>
+    <tbody>
+      <tr><td><code>storage</code></td><td>상품 페이지에 버튼을 보일지, 그 설정 하나만 이 브라우저에 기억해요.</td></tr>
+      <tr><td><code>https://seosa.ai.kr/*</code></td><td>가격 기록 API(<code>/api/lookup</code>)를 부르는 데만 써요. 다른 사이트로는 요청하지 않아요.</td></tr>
+      <tr><td>쿠팡 · 11번가 · G마켓 상품 상세 페이지</td><td>그 페이지에만 버튼을 그려요. 검색·장바구니·주문 페이지에서는 실행되지 않아요.</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">요청하지 않는 권한: <code>tabs</code> · <code>activeTab</code> · <code>scripting</code> · <code>cookies</code> · <code>history</code> · <code>webRequest</code> · 모든 사이트 접근.</p>
+
+  <h2>개인정보</h2>
+  <ul class="plain">
+    <li><b>언제</b> — 버튼을 눌렀을 때만 보내요. 같은 상품을 다시 열면 다시 보내지 않아요.</li>
+    <li><b>무엇을</b> — 쿠팡: 상품 번호 · 옵션 번호 · 아이템 번호(주소에 있을 때) · 상품명. 11번가·G마켓: 상품명만.</li>
+    <li><b>어디로</b> — <code>https://seosa.ai.kr/api/lookup</code> 한 곳. 쿠키와 리퍼러 없이 보내서 누가 눌렀는지 알 수 없어요.</li>
+    <li><b>저장</b> — 버튼 보이기 설정 하나(<code>chrome.storage.local</code>). 서버는 이 요청으로 아무것도 저장하지 않아요.</li>
+    <li><b>읽지 않는 것</b> — 쿠키, 로그인 정보, 입력란, 장바구니, 방문 기록, 다른 탭.</li>
+  </ul>
+
+  <h2>미리 해 보기</h2>
+  <p class="muted">확장이 서버에 묻는 것과 같은 질문을 이 페이지에서 해 볼 수 있어요. 주소는 이 페이지 안에서만 해석하고, 서버로는 번호와 상품명만 보내요.</p>
+  <form id="demo" class="card" novalidate>
+    <label for="url">쿠팡 상품 주소</label>
+    <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+      placeholder="https://www.coupang.com/vp/products/1234567890?itemId=…&amp;vendorItemId=…">
+    <label for="title">상품명 (선택 — 번호로 못 찾으면 제목으로 비슷한 상품을 찾아요)</label>
+    <input id="title" name="title" type="text" maxlength="200" autocomplete="off">
+    <div class="row" style="margin-top:12px">
+      <button class="primary shrink" type="submit" id="go">가격 기록 보기</button>
+      <p id="parsed" class="muted" style="margin:0"></p>
+    </div>
+  </form>
+  <div id="out" class="demo-out" aria-live="polite"></div>
+
+  <p class="notice">가격은 SEOSA가 확인한 시점의 기록이에요. 실제 결제 금액은 판매처에서 확인해 주세요.</p>
+</main>
+<footer class="wrap">SEOSA · 가격은 SEOSA가 확인한 시점의 기록입니다.</footer>
+<script>
+/*
+ * 미리 해 보기 — 확장과 같은 규칙으로 주소를 읽고 /api/lookup 을 부른다 (ES5, 빌드 없음).
+ * ★ 서버 문자열은 전부 V2.esc 를 거친다. 링크는 V2.safeUrl(https 만)을 거친다.
+ * ★ 주소 해석은 extension/src/parse.js 의 쿠팡 규칙을 옮긴 것이다: https · 정확히 www.coupang.com ·
+ *   /vp/products/{숫자}. 닮은 호스트(www.coupang.com.evil.example)나 사용자 정보가 낀 주소는 거절한다.
+ */
+(function () {
+  'use strict';
+  var ID = /^\d{1,20}$/;
+  var COUPANG = /^https:\/\/www\.coupang\.com(?::443)?\/vp\/products\/(\d{1,20})\/?(?:[?#]|$)/i;
+  var WAITROOM = /^\/v2\/waitroom\.html\?[^\s#"'<>]*$/;
+
+  function one(query, name) {
+    var found = [];
+    String(query || '').split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      var k = i < 0 ? kv : kv.slice(0, i);
+      if (k.toLowerCase() === name.toLowerCase()) found.push(i < 0 ? '' : kv.slice(i + 1));
+    });
+    return found.length === 1 && ID.test(found[0]) ? found[0] : '';
+  }
+
+  function parseCoupang(raw) {
+    var s = String(raw || '').replace(/^\s+|\s+$/g, '');
+    if (!s || s.length > 2048) return null;
+    var m = COUPANG.exec(s);
+    if (!m) return null;
+    var query = s.split('#')[0].split('?')[1] || '';
+    return { productId: m[1], itemId: one(query, 'itemId'), vendorItemId: one(query, 'vendorItemId') };
+  }
+
+  function statusBadge(m) {
+    if (m.status === 'EXACT') return '<span class="badge down">이 상품의 기록</span>';
+    if (m.status === 'SIMILAR') {
+      return '<span class="badge warn">비슷한 상품의 기록' + (m.tier === 'A' ? '' : ' · 확신 낮음') + '</span>'
+        + '<p class="muted">입력한 상품의 기록이 아니에요. SEOSA가 제목으로 찾은 다른 판매처 상품의 기록이에요.</p>';
+    }
+    return '<span class="badge">기록 없음</span><p class="muted">SEOSA에 이 상품의 가격 기록이 없어요.</p>';
+  }
+
+  function render(b) {
+    var m = b.match || {};
+    var h = statusBadge(m);
+    if (m.status !== 'NONE' && m.title) {
+      var url = m.status === 'SIMILAR' ? V2.safeUrl(m.url) : '';
+      h += '<h3>' + V2.esc(m.title) + '</h3><p class="muted">' + V2.esc(m.mallLabel || m.mall || '')
+        + (url ? ' · <a href="' + V2.esc(url) + '" target="_blank" rel="noopener noreferrer">그 상품 보기</a>' : '') + '</p>';
+    }
+    if (m.reasons && m.reasons.length) {
+      h += '<details><summary>판단 근거</summary><ul class="plain">';
+      m.reasons.slice(0, 6).forEach(function (r) { h += '<li>' + V2.esc(r) + '</li>'; });
+      h += '</ul></details>';
+    }
+
+    var svg = V2.chart(b.points || [], { label: m.status === 'SIMILAR' ? '비슷한 상품의 가격 추이' : '가격 추이' });
+    if (svg) h += svg;
+    else if (m.status !== 'NONE') h += '<p class="muted">곡선을 그릴 만큼 기록이 쌓이지 않았어요.</p>';
+
+    var lv = b.level;
+    var kpis = '';
+    if (lv && lv.label) {
+      kpis += '<div class="kpi"><b>' + V2.esc(lv.label) + '</b><span>'
+        + (m.status === 'SIMILAR' ? '가격 위치 (비슷한 상품 기준)' : '지금 가격의 위치')
+        + (lv.pctRank != null ? ' · 최근 ' + V2.esc(lv.windowDays || 90) + '일 중 하위 ' + V2.esc(lv.pctRank) + '%' : '') + '</span></div>';
+      if (lv.low) kpis += '<div class="kpi"><b>' + V2.esc(V2.won(lv.low)) + '</b><span>최근 최저</span></div>';
+      if (lv.high) kpis += '<div class="kpi"><b>' + V2.esc(V2.won(lv.high)) + '</b><span>최근 최고</span></div>';
+    }
+    if (b.timing && b.timing.label) kpis += '<div class="kpi"><b>' + V2.esc(b.timing.label) + '</b><span>구매 타이밍</span></div>';
+    if (b.anomaly && b.anomaly.label) kpis += '<div class="kpi"><b>' + V2.esc(b.anomaly.label) + '</b><span>가격 패턴</span></div>';
+    if (kpis) h += '<div class="grid">' + kpis + '</div>';
+    if (lv && lv.reason && lv.pctRank == null) h += '<p class="muted">' + V2.esc(lv.reason) + '</p>';
+
+    var offers = b.offers || [];
+    if (offers.length) {
+      h += '<h3>같은 상품, 다른 판매처</h3><table><thead><tr><th scope="col">판매처</th><th scope="col" class="num">가격</th><th scope="col">확인일</th></tr></thead><tbody>';
+      offers.forEach(function (o) {
+        var link = V2.safeUrl(o.url);
+        var name = V2.esc(o.mallLabel || o.mall || '판매처');
+        h += '<tr><td>' + (link ? '<a href="' + V2.esc(link) + '" target="_blank" rel="noopener noreferrer">' + name + '</a>' : name)
+          + '<div class="muted" style="font-size:12px">' + V2.esc(o.title) + '</div></td>'
+          + '<td class="num">' + V2.esc(V2.won(o.price)) + '</td><td>' + V2.esc(o.observedDate || '—') + '</td></tr>';
+      });
+      h += '</tbody></table>';
+    }
+
+    if (b.waitroomUrl && WAITROOM.test(b.waitroomUrl)) {
+      h += '<p><a class="button" href="' + V2.esc(b.waitroomUrl) + '">'
+        + (m.status === 'SIMILAR' ? '비슷한 상품을 대기실에 등록' : '대기실에 등록 (목표가 알림)') + '</a></p>';
+    }
+    return '<div class="card">' + h + '</div>';
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('demo');
+    var urlIn = document.getElementById('url');
+    var titleIn = document.getElementById('title');
+    var parsed = document.getElementById('parsed');
+    var out = document.getElementById('out');
+    var go = document.getElementById('go');
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var rawUrl = urlIn.value;
+      var title = String(titleIn.value || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 200);
+      var p = rawUrl ? parseCoupang(rawUrl) : null;
+      if (rawUrl && !p) {
+        parsed.textContent = '';
+        out.innerHTML = '<p class="error">쿠팡 상품 상세 주소(https://www.coupang.com/vp/products/숫자)만 읽을 수 있어요.</p>';
+        return;
+      }
+      if (!p && title.length < 2) {
+        out.innerHTML = '<p class="error">쿠팡 상품 주소나 두 글자 이상의 상품명을 입력해 주세요.</p>';
+        return;
+      }
+      parsed.textContent = p
+        ? '상품 번호 ' + p.productId + (p.vendorItemId ? ' · 옵션 ' + p.vendorItemId : '')
+        : '제목으로만 찾아요';
+      go.disabled = true;
+      out.innerHTML = '<p class="muted">불러오는 중이에요…</p>';
+      V2.api('/api/lookup' + V2.qs({
+        productId: p ? p.productId : '',
+        vendorItemId: p ? p.vendorItemId : '',
+        itemId: p ? p.itemId : '',
+        title: title
+      })).then(function (b) {
+        go.disabled = false;
+        if (!b || !b.ok || !b.match) {
+          out.innerHTML = '<p class="error">' + V2.esc((b && b.error) || '가격 기록을 불러오지 못했어요.') + '</p>';
+          return;
+        }
+        out.innerHTML = render(b);
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
