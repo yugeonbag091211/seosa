@@ -23,14 +23,21 @@
   <p class="intro">모든 판단은 SEOSA가 매일 쌓은 실제 가격 기록에서 나옵니다. 기록이 모자라면 모른다고 말합니다.</p>
 
   <div class="grid">
-    <a class="card button" style="display:block;text-align:left" href="/v2/timing.html">
-      <h3>① 구매 타이밍 예측</h3>
+    <!--
+      ①·② 는 아직 운영에 배포되지 않았다 (PR #72·#73, main 병합 · DB 마이그레이션 승인 대기).
+      배포 전에 버튼을 공개하면 /v2/timing.html · /v2/waitroom.html 이 없어 404 로 끝난다 —
+      실제로 이 페이지는 이미 main 에 있어서(foundation PR) 지금 운영에 그 상태로 떠 있었다.
+      링크를 빼는 대신 "준비 중" 배지를 단 채로 남겨, 여섯 기능의 전체 그림은 보여 준다.
+      #72·#73 이 병합되면 이 두 카드도 <a href> 로 되돌린다.
+    -->
+    <div class="card" style="opacity:.55" aria-disabled="true">
+      <h3>① 구매 타이밍 예측 <span class="badge">준비 중</span></h3>
       <p class="muted">지금 가격이 과거 기록에서 어디쯤인지, 기다리면 더 내려갈 확률은 얼마인지 알려 드려요. 이 상품의 과거 기록으로 한 백테스트 결과도 함께 보여 드려요.</p>
-    </a>
-    <a class="card button" style="display:block;text-align:left" href="/v2/waitroom.html">
-      <h3>② 구매 대기실</h3>
+    </div>
+    <div class="card" style="opacity:.55" aria-disabled="true">
+      <h3>② 구매 대기실 <span class="badge">준비 중</span></h3>
       <p class="muted">목표가를 정해 두면 매일 가격을 확인하고, 도달하면 이메일로 한 번 알려 드려요.</p>
-    </a>
+    </div>
     <a class="card button" style="display:block;text-align:left" href="/v2/investigator.html">
       <h3>③ 쇼핑 조사관</h3>
       <p class="muted">원하는 조건을 말로 적으면 여러 상품을 비교해요. 확인되지 않은 사양은 확인되지 않았다고 표시해요.</p>
