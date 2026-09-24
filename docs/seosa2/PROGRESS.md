@@ -156,6 +156,8 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 - Supabase 프로젝트 `pcnhktxltojbkrmpafsz`의 SELECT만 사용. 상품 69,852행, 가격 이력 154,027행; `waitroom_items`, `waitroom_notifications` 및 해당 migration은 Production에 없다. 가격 기록의 non-positive price 0건, option identity 누락 0건.
 - DB 카탈로그 SELECT에서 본품 노트북 및 이미지 URL·쿠팡 제휴 URL 필드를 확인했다. 501 응답으로 사용자 API에서 실제 상품 이미지·제휴 링크 렌더는 확인되지 않았다. 제휴 URL을 클릭하지 않았다.
 - 메인 검색 PR #78의 정확도 스위트는 10개 기기 유형의 오프라인 테스트 107/107 PASS. Production 검색 API는 `NOT_READY`여서 본품·부속품 분리를 운영에서 검증했다고 말할 수 없다. 조사관 live search는 기본 꺼짐이며 켜는 API/공급자 호출은 하지 않았다.
+- real-time search 코드 점검: `MAX_LIVE_ATTEMPTS=1`이지만 이 한 경로는 `_shop.searchAll`을 불러 Coupang과 ADPICK을 병렬로 조회한다. 결과는 DB에 저장하지 않으며 두 공급자의 6시간 캐시·전역 quota gate·회로 차단을 공유해 수집기/API 호출과 quota 경쟁을 할 수 있다. 순차 반복은 캐시가 줄이지만 keyword별 in-flight single-flight는 없어 동시 동일 질의가 중복 miss 할 수 있다.
+- 호출 상한 검토에서 차이를 발견했다. 현재 `_coupang.js`는 자체 기본 상한 20회/분, 코드 주석은 Search API 50회/분이라고 하지만, 공식 [Coupang Partners 사용 가이드(PDF, 2024-12-16)](https://partners.coupangcdn.com/partners-guide/partners-guide-20241216163254.pdf)는 Search를 시간당 최대 10회, 위반 1회 시 24시간 차단, 3회 시 전체 Partner 기능 차단으로 안내한다. 이 문서가 현행인지 계정 포털에서 재확인하고 quota를 맞추기 전에는 real-time search를 켜지 않는다. 요청당 유료 과금은 공식 자료로 확인하지 못했으며 provider 사용료를 0으로 단정하지 않는다.
 
 ### #72 구매 타이밍
 
@@ -185,4 +187,4 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 2. Vercel Preview가 SSO로 보호되어 있으므로 로그인된 접근 또는 승인된 우회 방법을 통해 PR #80 화면과 `/api/ai?__route=investigate`, `/api/history?__route=cart|anomaly`의 안전한 GET 결과를 확인한다. POST 검색은 비용/실시간 공급자 호출 여부를 먼저 확인하기 전 실행하지 않는다.
 3. PR #80 Production 병합 승인 요청 전 Preview 결과와 현재 PR check를 최신 head에서 다시 확인한다. 승인이 오기 전에는 병합하지 않는다.
 4. #72는 최소 90일 가격 원장이 쌓이고 사전 등록된 기준 모델과 비교할 만큼 평가 표본이 확보된 뒤 백테스트를 반복한다. 그 전에는 사용자 대상 미래 가격 예측을 공개하지 않고 PR merge 보류.
-5. 실제 이메일 발송, `WAITROOM_ENABLED=1`, 조사관 real-time search 활성화, Production DB migration, Production 병합은 각각 사용자 승인을 기다린다.
+5. 실제 이메일 발송, `WAITROOM_ENABLED=1`, 조사관 real-time search 활성화, Production DB migration, Production 병합은 각각 사용자 승인을 기다린다. 특히 live search 활성화 전에 Coupang Partners의 현행 호출 한도·과금과 중복 miss 방지, shared collector quota 영향을 해결한다.
