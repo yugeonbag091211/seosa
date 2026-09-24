@@ -127,7 +127,13 @@ const NEW_MIGRATIONS = [
    * collector_target_products_batch 로 자동 폴백하므로 «동작은 하지만
    * 카탈로그가 커질수록 다시 죽는» 상태로 남는다.
    */
-  '2026-09-22-collector-target-keyset.sql'
+  '2026-09-22-collector-target-keyset.sql',
+  /*
+   * 2026-09-24: SEOSA 2.0 ② 구매 대기실 — 새 표 두 개(waitroom_items ·
+   * waitroom_notifications)만 만든다. 기존 표를 읽지도 쓰지도 않는다.
+   * 미적용이면 /api/waitroom 은 503 WAITROOM_NOT_READY, 알림 잡은 아무것도 하지 않는다.
+   */
+  '2026-09-24-seosa2-waitroom.sql'
 ];
 
 function checkStatic() {
