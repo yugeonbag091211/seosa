@@ -223,7 +223,7 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 - 신규 SQL 구조/안전성 테스트 9/9, migration 정적 검사 55 OK / 0 FAIL / 1 warning (CI 환경에 운영 DB 자격증명이 없어 live status 검사를 생략).
 - 전체 package.json test 체인 61/61 스크립트 성공. `test:regression` 85/85, `test:release` 121/121 성공. npm CLI가 설치되지 않아 Node 24.19로 package.json의 정확한 스크립트 체인을 직접 실행했고 기존 workspace의 의존성 경로를 읽기 전용으로 사용했다.
 - Production DB 변경, 이메일, 실시간 조사 검색, 신규 비용 발생은 0. test 프로젝트는 기존 Free 프로젝트를 썼다.
-- 새 변경은 독립 PR로 제출 예정. Vercel Preview가 SQL migration을 실제 Production에 적용하지는 않으므로 Preview 성공을 DB 배포 검증으로 간주하지 않는다.
+- PR #84: https://github.com/yugeonbag091211/seosa/pull/84, 초기 코드 커밋 3ebda3f. 미병합 상태이며 Vercel Preview 성공은 SQL migration의 Production 적용/DB 검증을 뜻하지 않는다.
 
 ### 남은 확인
 
