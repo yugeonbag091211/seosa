@@ -1032,6 +1032,15 @@ async function runSAFE() {
       });
     };
     expand('test:all', 0);
+    /*
+     * SEOSA 2.0 러너(test-seosa2)는 test-v2-*.js 를 스스로 찾아 돌린다.
+     * 러너 파일만 검사하면 그 자식들이 SAFE 규칙의 사각지대가 되므로,
+     * 러너가 체인에 있으면 러너와 같은 규칙으로 자식을 펼친다.
+     */
+    if (seen.has('test-seosa2')) {
+      const { discover } = require(path.join(ROOT, 'scripts', 'test-seosa2.js'));
+      discover().forEach(f => seen.add(f.replace(/\.js$/, '')));
+    }
     return [...seen];
   }
 
