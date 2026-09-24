@@ -19,10 +19,13 @@
  *      잡이 둘 겹쳐 돌아도 한쪽만 이긴다.
  *   b) 발송 기록을 선점한다 — waitroom_notifications UNIQUE (item_id, notify_date).
  *   c) 보낸다.
- *   d) 성공이면 기록을 sent 로, 실패면 failed 로 남기고 항목을 다시 무장한다
- *      (같은 날 MAX_ATTEMPTS 번까지 다시 시도).
+ *   d) 성공이면 항목을 먼저 REACHED 로 기록한 뒤 발송 기록을 sent 로 바꾼다.
+ *      명확한 거절만 failed 로 남기고 재무장해 같은 날 MAX_ATTEMPTS 번까지 다시 시도한다.
+ *      타임아웃·연결 단절·5xx 처럼 수락 여부가 불분명하면 claimed 를 유지하고 재무장하지
+ *      않는다. Resend Idempotency-Key 와 다음 실행의 claimed 조회가 중복 발송을 막는다.
  *
- *   a 와 c 사이에서 프로세스가 죽으면 그 알림은 빠진다. 대신 두 번 가지는 않는다.
+ *   a 와 c 사이에서 프로세스가 죽으면 그 알림은 빠질 수 있다. claimed 는 자동 재시도하지
+ *   않는다. 전달 여부를 확인할 수 없는 경우 중복보다 누락을 택한다.
  *
  * ── 마이그레이션 전 ───────────────────────────────────────────────
  * 표가 없으면 아무것도 하지 않고 정상 종료한다(exit 0). 워크플로는 저장소 변수
@@ -56,6 +59,19 @@ async function fetchAll(label, build) {
     out.push(...(data || []));
     if (!data || data.length < PAGE) return out;
   }
+}
+
+/** 이전 실행이 메일 수락 여부를 확인하지 못한 항목은 자동 재전송·재무장하지 않는다. */
+async function pendingClaims(items) {
+  const out = new Set();
+  const ids = items.map(i => i.id);
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await supabase.from('waitroom_notifications').select('item_id')
+      .in('item_id', ids.slice(i, i + CHUNK)).eq('status', 'claimed');
+    if (error) throw new Error(`미확정 발송 조회 실패: ${error.message}`);
+    (data || []).forEach(r => out.add(String(r.item_id)));
+  }
+  return out;
 }
 
 /** 항목별 최신 관측 {price, observedAt, observedDate} — 그 항목의 옵션(vendor_item_id)으로 좁힌다. */
@@ -125,7 +141,7 @@ async function run(opts) {
   const o = opts || {};
   const today = kstToday();
   const summary = { today, items: 0, observed: 0, notified: 0, wouldNotify: 0, rearmed: 0, updated: 0,
-    failed: 0, notReady: false, skipped: {} };
+    failed: 0, unconfirmed: 0, notReady: false, skipped: {} };
   const skip = r => { summary.skipped[r] = (summary.skipped[r] || 0) + 1; };
 
   let dryRun = !!o.dryRun;
@@ -152,6 +168,10 @@ async function run(opts) {
   summary.items = items.length;
   if (!items.length) { console.log('대기 중인 항목이 없습니다.'); return summary; }
 
+  // 프로세스가 발송 후 DB 기록 전에 죽은 경우도 claimed 행으로 남는다. 메일 수락 여부를
+  // 판별할 수 없으므로 재무장이나 다음 날 재발송이 일어나지 않게 먼저 막는다.
+  const claimedItems = await pendingClaims(items);
+
   const obsMap = await latestObservations(items);
   summary.observed = obsMap.size;
 
@@ -166,6 +186,7 @@ async function run(opts) {
   }
 
   async function processItem(item) {
+    if (claimedItems.has(String(item.id))) { skip('delivery-unconfirmed'); return; }
     const obs = obsMap.get(item.id) || null;
     const ev = W.evaluate(item, obs, { today, now: Date.now() });
     const nowIso = new Date().toISOString();
@@ -200,6 +221,7 @@ async function run(opts) {
 
     // c) 발송
     const result = await send({
+      idempotencyKey: `waitroom/${item.id}/${today}`,
       to: item.email,
       subject: `[SEOSA] 목표가 도달 — ${String(item.title || '').slice(0, 25)}`,
       html: W.emailHtml({ title: item.title, price: obs.price, target: item.target_price, mall: item.mall,
@@ -208,13 +230,28 @@ async function run(opts) {
 
     // d) 기록
     if (result && result.ok) {
-      await supabase.from('waitroom_notifications').update({ status: 'sent', sent_at: nowIso }).eq('id', noteId);
+      // 먼저 항목에 cooldown·해제를 남긴다. 발송은 수락됐지만 다음 DB 쓰기가 실패해도
+      // 다음 실행이 새 날짜 키로 같은 알림을 다시 보내지 않는다.
       await patchItem(item.id, Object.assign({}, ev.patch, W.afterSend(item, obs.price, nowIso)));
+      const { error: sentErr } = await supabase.from('waitroom_notifications')
+        .update({ status: 'sent', sent_at: nowIso }).eq('id', noteId);
+      if (sentErr) throw new Error(`발송 완료 기록 실패(${item.id}): ${sentErr.message}`);
       summary.notified++;
       console.log(`✅ ${item.id} → 목표가 도달 알림 (${obs.price}원 ≤ ${item.target_price}원)`);
+    } else if (result && result.uncertain) {
+      const err = String(result.error || 'delivery outcome unknown').slice(0, 300);
+      const { error: claimErr } = await supabase.from('waitroom_notifications')
+        .update({ error: `delivery outcome unknown: ${err}` }).eq('id', noteId).eq('status', 'claimed');
+      if (claimErr) throw new Error(`미확정 발송 기록 실패(${item.id}): ${claimErr.message}`);
+      await patchItem(item.id, Object.assign({}, ev.patch, { armed: false, updated_at: nowIso }));
+      summary.unconfirmed++;
+      skip('delivery-unconfirmed');
+      console.error(`⚠️ 발송 수락 여부를 확인할 수 없음(${item.id}) — 자동 재전송하지 않습니다.`);
     } else {
       const err = String((result && result.error) || 'unknown').slice(0, 300);
-      await supabase.from('waitroom_notifications').update({ status: 'failed', error: err }).eq('id', noteId);
+      const { error: failedErr } = await supabase.from('waitroom_notifications')
+        .update({ status: 'failed', error: err }).eq('id', noteId);
+      if (failedErr) throw new Error(`발송 실패 기록 실패(${item.id}): ${failedErr.message}`);
       await patchItem(item.id, Object.assign({}, ev.patch, { armed: true, updated_at: nowIso }));
       summary.failed++;
       console.error(`❌ 발송 실패(${item.id}): ${err}`);
@@ -231,3 +268,4 @@ if (require.main === module) {
 }
 
 module.exports = { run, latestObservations, claim, OBS_LOOKBACK_DAYS };
+

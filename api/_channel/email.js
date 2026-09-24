@@ -171,19 +171,34 @@ async function send(payload) {
   const subject = String(payload.subject
     || `[SEOSA] ${(payload.product && payload.product.title || '').slice(0, 30)} 가격 알림`)
     .replace(/[\r\n]+/g, ' ').slice(0, 200);
+  const idempotencyKey = payload.idempotencyKey == null ? '' : String(payload.idempotencyKey);
+  if (idempotencyKey.length > 256 || /[\r\n]/.test(idempotencyKey)) {
+    return { ok: false, error: 'invalid idempotency key' };
+  }
+  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + RESEND_KEY };
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + RESEND_KEY },
+      headers,
       body: JSON.stringify({ from: FROM, to: [payload.to], subject, html })
     });
     const body = await res.json();
-    if (!res.ok) return { ok: false, error: body.message || res.status };
+    if (!res.ok) return {
+      ok: false,
+      error: body.message || res.status,
+      // A timeout, conflict, or server error can happen after the provider accepted the email.
+      uncertain: res.status === 408 || res.status === 409 || res.status >= 500
+    };
+    if (!body || !body.id) return { ok: false, error: 'provider response has no email id', uncertain: true };
     return { ok: true, id: body.id };
   } catch (e) {
-    return { ok: false, error: e.message };
+    // The request may have reached Resend before the connection was lost. Never treat that
+    // ambiguous outcome as a definite rejection; the caller must not automatically resend it.
+    return { ok: false, error: e.message, uncertain: true };
   }
 }
 
 module.exports = { send };
+

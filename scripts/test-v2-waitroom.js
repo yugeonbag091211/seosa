@@ -221,6 +221,7 @@ async function main() {
     seedJob();
     const s1 = await runJob({ send: fakeSend });
     T.check(sent.length === 1 && sent[0].to === ME && /A상품/.test(sent[0].subject), '목표가에 닿은 A 에만 한 통', sent.map(x => x.subject));
+    T.check(sent[0].idempotencyKey === `waitroom/1/${today}`, '항목·날짜별로 안정된 Resend idempotency key');
     const a = db.waitroom_items.find(r => r.id === 1);
     T.check(a.armed === false && a.status === 'REACHED' && a.notified_price === 9500 && a.notify_count === 1, 'A 는 해제·기록된다', a);
     const note = db.waitroom_notifications.find(n => n.item_id === 1);
@@ -238,7 +239,7 @@ async function main() {
     seedJob(); sent.length = 0;
     db.waitroom_notifications.push({ id: 77, item_id: 1, email: ME, notify_date: today, price: 9500, target_price: 10000, status: 'claimed', attempts: 1 });
     const s3 = await runJob({ send: fakeSend });
-    T.check(sent.length === 0 && s3.skipped['already-claimed'] === 1, '다른 실행이 선점했으면 보내지 않는다 (한 번 빠질지언정 두 번 가지 않는다)');
+    T.check(sent.length === 0 && s3.skipped['delivery-unconfirmed'] === 1, '다른 실행의 claimed 행은 다시 보내지 않는다');
 
     // 실패 → 재시도 → 한도
     seedJob(); sent.length = 0; sendMode = 'fail';
@@ -249,10 +250,39 @@ async function main() {
     await runJob({ send: fakeSend });
     n = db.waitroom_notifications.find(x => x.item_id === 1);
     T.check(n.status === 'sent' && n.attempts === 2 && sent.length === 2, '같은 날 재시도 → 성공 (attempts 2)');
+    T.check(sent[0].idempotencyKey === sent[1].idempotencyKey, '명확한 실패 재시도에도 같은 provider key를 쓴다');
     seedJob(); sent.length = 0; sendMode = 'fail';
     for (let k = 0; k < 5; k++) await runJob({ send: fakeSend });
     T.check(sent.length === W.MAX_ATTEMPTS, `같은 날 재시도는 ${W.MAX_ATTEMPTS}번까지`, sent.length);
     sendMode = 'ok';
+
+    // 공급자는 수락했지만 응답이 유실된 경우: 미확정 상태로 고정하고 다시 보내지 않는다.
+    seedJob(); sent.length = 0;
+    const acceptedKeys = new Set();
+    let providerAccepted = 0;
+    const acceptedButLost = async payload => {
+      sent.push(payload);
+      if (!acceptedKeys.has(payload.idempotencyKey)) {
+        acceptedKeys.add(payload.idempotencyKey);
+        providerAccepted++;
+      }
+      return { ok: false, uncertain: true, error: 'mock response lost after provider acceptance' };
+    };
+    const unknown = await runJob({ send: acceptedButLost });
+    let pending = db.waitroom_notifications.find(x => x.item_id === 1);
+    T.check(unknown.unconfirmed === 1 && providerAccepted === 1 && pending.status === 'claimed'
+      && !db.waitroom_items.find(r => r.id === 1).armed,
+    '수락 후 응답 유실은 claimed·disarmed 로 남긴다 (실제 메일 없이 mock)');
+    pending.notify_date = daysAgo(1); // 다음 날짜에 실행한 상황
+    db.price_history.filter(r => r.product_id === 'A' && r.vendor_item_id === '1').forEach(r => { r.price = 12000; });
+    const rise = await runJob({ send: acceptedButLost });
+    T.check(sent.length === 1 && !db.waitroom_items.find(r => r.id === 1).armed
+      && rise.skipped['delivery-unconfirmed'] === 1,
+    '다음 날 가격이 올라 재무장 조건이어도 미확정 발송은 그대로 잠근다');
+    db.price_history.filter(r => r.product_id === 'A' && r.vendor_item_id === '1').forEach(r => { r.price = 9500; });
+    const fall = await runJob({ send: acceptedButLost });
+    T.check(sent.length === 1 && providerAccepted === 1 && fall.skipped['delivery-unconfirmed'] === 1,
+      '미확정 발송 뒤 가격이 다시 내려도 중복 이메일을 보내지 않는다');
 
     // dry-run: 아무것도 쓰지 않는다
     seedJob(); sent.length = 0;
@@ -279,7 +309,55 @@ async function main() {
   T.check(forbidden.length === 0, '가격 원장·카탈로그·기존 알림·핫딜 표에 쓰지 않았다', forbidden.map(w => w.table));
   T.check(fetchCalls.length === 0, '외부 호출 0회', fetchCalls);
 
+  T.section('Resend idempotency adapter — mock only');
+  const emailPath = require.resolve('../api/_channel/email');
+  const previousEmailModule = require.cache[emailPath];
+  const previousResendKey = process.env.RESEND_API_KEY;
+  const previousFetch = global.fetch;
+  process.env.RESEND_API_KEY = 'mock-only-not-a-secret';
+  delete require.cache[emailPath];
+  const emailChannel = require('../api/_channel/email');
+  const accepted = new Map();
+  const idempotencyHeaders = [];
+  let mockAccepts = 0, mockCalls = 0, dropFirstResponse = true;
+  const testPayload = {
+    to: 'no-send@example.invalid', subject: 'waitroom test', html: '<p>mock only</p>',
+    idempotencyKey: `waitroom/42/${today}`
+  };
+  global.fetch = async (url, options) => {
+    mockCalls++;
+    idempotencyHeaders.push(options.headers['Idempotency-Key']);
+    if (!accepted.has(options.headers['Idempotency-Key'])) {
+      accepted.set(options.headers['Idempotency-Key'], { body: options.body, id: 'mock-email-id' });
+      mockAccepts++;
+    } else {
+      T.check(accepted.get(options.headers['Idempotency-Key']).body === options.body,
+        '재요청은 같은 idempotency key와 동일 payload를 사용한다');
+    }
+    if (dropFirstResponse) {
+      dropFirstResponse = false;
+      throw new Error('simulated response loss after mock provider acceptance');
+    }
+    return { ok: true, status: 200, json: async () => ({ id: accepted.get(options.headers['Idempotency-Key']).id }) };
+  };
+  try {
+    const first = await emailChannel.send(testPayload);
+    const retry = await emailChannel.send(testPayload);
+    T.check(!first.ok && first.uncertain === true, '응답 유실은 전달 여부 미확정으로 분류된다');
+    T.check(retry.ok && retry.id === 'mock-email-id', 'mock provider 재요청은 최초 이메일 ID를 돌려준다');
+    T.check(mockCalls === 2 && mockAccepts === 1 && accepted.size === 1,
+      'Idempotency-Key가 provider 수락을 한 번으로 제한한다');
+    T.check(idempotencyHeaders.every(k => k === testPayload.idempotencyKey), '모든 provider 시도에 같은 Idempotency-Key 전달');
+  } finally {
+    global.fetch = previousFetch;
+    if (previousResendKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousResendKey;
+    delete require.cache[emailPath];
+    if (previousEmailModule) require.cache[emailPath] = previousEmailModule;
+  }
+
   T.done();
 }
 
 main().catch(e => { console.error(e); process.exitCode = 1; });
+

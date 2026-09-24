@@ -9,7 +9,7 @@ GitHub Actions (KST 09:40, WAITROOM_ENABLED=1 일 때만)
   scripts/check-waitroom.js
     ├ price_history 최근 3일 → 항목 옵션의 최신 관측 (sameVendorRows)
     ├ api/_waitroom.evaluate → NOTIFY / REARM / NONE
-    └ NOTIFY: 무장 해제(CAS) → 발송 기록 선점(UNIQUE) → Resend → sent/failed
+    └ NOTIFY: 무장 해제(CAS) → 발송 기록 선점(UNIQUE) → Resend(idempotency key) → 결과 기록
 ```
 
 ## 중복 알림 방지 (세 겹 + 한 겹)
@@ -21,8 +21,17 @@ GitHub Actions (KST 09:40, WAITROOM_ENABLED=1 일 때만)
 | `notified_at` + COOLDOWN_DAYS 7 | 같은 항목 7일에 두 번 이상 |
 | NOTIFY_MAX_STALE_DAYS 1 | 이틀 넘은 관측으로 «지금 도달» 을 말하는 것 |
 
-발송 순서는 **at-most-once** 다 — 무장 해제 → 선점 → 발송. 중간에 죽으면 그 알림은 빠지지만 두 번 가지 않는다.
-실패는 같은 날 3번까지 다시 시도한다.
+Resend에는 `waitroom/{item_id}/{KST 날짜}` 키를 보낸다. 성공이면 항목의 `notified_at`·cooldown을 먼저
+기록한 뒤 발송 행을 `sent`로 바꾼다. 명확한 공급자 거절만 `failed`로 기록하고 같은 날 최대 3번까지
+재시도한다.
+
+타임아웃·연결 단절·HTTP 408/409/5xx처럼 **공급자가 수락했는지 모르는 결과**는 `claimed`로 남긴다.
+항목은 재무장하지 않고, 다음 잡도 이전 `claimed`를 확인해 재전송을 막는다. 프로세스가 Resend 수락 직후
+DB 기록 전에 종료된 경우에도 같은 안전 규칙을 적용한다. 이때 메일이 실제로 전달되지 않았을 수 있으며
+자동 재시도하지 않는다 — 운영자가 공급자 로그와 발송 기록을 대조해 수동으로 해결해야 한다.
+
+따라서 정책은 at-most-once 이며 exactly-once 전달을 보장하지 않는다. 모호한 장애에서는 중복보다 누락을
+선택한다. 실제 이메일 전송은 별도 승인 전까지 하지 않는다.
 
 ## 추적 범위 (정직하게)
 
@@ -40,3 +49,4 @@ GitHub Actions (KST 09:40, WAITROOM_ENABLED=1 일 때만)
 5. 저장소 변수 `WAITROOM_ENABLED=1` 설정 → 매일 KST 09:40 발송 시작
 
 되돌리기: 변수 삭제(발송 중단) → 필요 시 `.ROLLBACK.sql` (항목·기록 삭제 — 먼저 내보낼 것).
+
