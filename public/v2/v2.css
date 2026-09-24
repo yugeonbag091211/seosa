@@ -59,4 +59,9 @@ ul.plain li{padding:3px 0}
 [hidden]{display:none!important}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 footer{margin:48px auto 32px;font-size:13px;border-top:1px solid var(--line);padding-top:16px}
-@media (max-width:600px){.wrap{padding-left:16px;padding-right:16px}nav{gap:12px}.eyebrow{margin-top:28px}}
+@media (max-width:600px){
+  .wrap{padding-left:16px;padding-right:16px}
+  nav{gap:12px}
+  .eyebrow{margin-top:28px}
+  h1,.intro{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+}
