@@ -565,8 +565,10 @@ function analyze(points, opts) {
       const n5 = Math.round(fc.dropProbability.pct5 * fc.samples);
       reasons.push(`${fc.conditioned ? '지금과 비슷한 가격 위치였던' : '기록된'} 과거 ${fc.samples}일 중 ${n5}일은 `
         + `${H}일 안에 5% 이상 내려갔어요 (${pctText(fc.dropProbability.pct5)}).`);
-      reasons.push(`${H}일 안 최저가는 ${won(fc.expectedMin.p10)} ~ ${won(fc.expectedMin.p90)} 사이일 가능성이 높고, `
-        + `가운데 값은 ${won(fc.expectedMin.p50)}이에요.`);
+      const em = fc.expectedMin;
+      reasons.push(em.p10 === em.p90
+        ? `과거 사례에서 ${H}일 안 최저가는 거의 언제나 ${won(em.p50)}이었어요.`
+        : `${H}일 안 최저가는 ${won(em.p10)} ~ ${won(em.p90)} 사이일 가능성이 높고, 가운데 값은 ${won(em.p50)}이에요.`);
       action = coreAction(fc, posNow, current);
     } else {
       action = 'NEUTRAL';
