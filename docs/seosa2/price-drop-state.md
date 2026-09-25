@@ -124,5 +124,5 @@
 ## 테스트
 
 - `scripts/test-price-drop-state.js` (PGlite, `npm test`): 경계 사례 · 무작위 원장 · 증분 · 재구성 · 공개 세대 · 스크립트 자동 모드 · 권한 · ROLLBACK.
-- `scripts/test-price-drop-state-pg.js` (실제 PostgreSQL, CI `price-drop-state-pg` 잡의 postgres:17 서비스): 재구성 중 다른 연결이 보는 결과,
+- `scripts/test-price-drop-state-pg.js` (실제 PostgreSQL, CI `postgres-integration` 잡의 postgres:17 서비스): 재구성 중 다른 연결이 보는 결과,
   수집기 동시 쓰기, 증분 동시 실행, 배치 도중 연결 끊김, 소유권 인수, 공개 게이트, 과거 날짜 INSERT, 삭제·정정·옵션 변경 탐지, 되돌리기.

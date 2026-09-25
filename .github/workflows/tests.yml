@@ -70,12 +70,12 @@ jobs:
       - name: Regression + release suites
         run: npm run test:regression && npm run test:release
 
-  # ── 가격 하락 상태표 — 연결이 여럿인 실제 PostgreSQL 17 (2026-09-25) ──────
+  # ── 실제 PostgreSQL 17 통합 시험 (2026-09-25) ────────────────────────────
   #
-  # 원자적 재구성(재구성 중 다른 연결이 보는 결과), 증분 두 개 동시 실행, 배치 도중 연결 끊김,
-  # 소유권 인수, 삭제 탐지(pg_stat)는 연결이 하나뿐인 PGlite(npm test)로는 시험할 수 없다.
-  # 러너 안의 일회용 postgres:17 서비스에만 붙는다 — 자격증명·운영 DB 와 무관하다.
-  price-drop-state-pg:
+  # 동시 실행 · 배치 도중 연결 끊김 · 제약 · RLS/권한처럼 연결이 여럿인 실제 Postgres 가
+  # 있어야 시험할 수 있는 것들이다 (scripts/test-*-pg.js). npm test 의 PGlite · 가짜 DB 로는
+  # 볼 수 없다. 러너 안의 일회용 postgres:17 서비스에만 붙는다 — 자격증명 · 운영 DB 와 무관하다.
+  postgres-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -97,7 +97,13 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      - name: Price drop state on real Postgres
+      - name: scripts/test-*-pg.js
         env:
           PG_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: node scripts/test-price-drop-state-pg.js
+        run: |
+          set -e
+          for f in scripts/test-*-pg.js; do
+            echo "::group::$f"
+            node "$f"
+            echo "::endgroup::"
+          done

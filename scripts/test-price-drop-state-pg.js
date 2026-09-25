@@ -7,7 +7,7 @@
  *   PG_TEST_URL=postgres://user:pass@host:port/db node scripts/test-price-drop-state-pg.js
  *
  * PG_TEST_URL 이 없으면 건너뛴다(exit 0). CI 는 러너 안의 일회용 postgres:17 서비스로 돈다
- * (.github/workflows/tests.yml 의 price-drop-state-pg 잡). 운영·테스트 Supabase 에 붙이지 않는다 —
+ * (.github/workflows/tests.yml 의 postgres-integration 잡). 운영·테스트 Supabase 에 붙이지 않는다 —
  * 시작할 때 새 데이터베이스를 만들고 끝나면 지운다.
  *
  * 여기서 고정하는 것
