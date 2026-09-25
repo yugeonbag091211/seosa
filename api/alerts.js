@@ -7,14 +7,6 @@ const MAX_TITLE_LEN = 300;
 const MAX_ALERTS_PER_EMAIL = 100;
 
 module.exports = async function handler(req, res) {
-  /*
-   * SEOSA 2.0 구매 대기실(/api/waitroom) — api/_v2router.js 표에 적힌 __route 만
-   * 넘긴다. 아니면 null 이라 아래 기존 알림 경로를 그대로 탄다.
-   */
-  const v2 = require('./_v2router');
-  const v2Route = v2.routeOf(req, 'alerts');
-  if (v2Route) return v2.dispatch(v2Route, req, res);
-
   // 개인 데이터라 Access-Control-Allow-Origin: * 를 붙이지 않는다.
   if (!applyCors(req, res, 'private')) return;
   noStore(res);   // 개인 데이터 — 중간 캐시에 남으면 안 된다

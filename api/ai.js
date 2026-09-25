@@ -1189,117 +1189,6 @@ function fromSearchResult(it) {
  *   스킴을 거르므로, 상품명에 태그가 섞여 있어도 XSS 가 되지 않는다.
  *   AI 가 만든 문자열은 여기에 한 글자도 들어가지 않는다 — 전부 검색 결과다.
  */
-/*
- * ══════════════════════════════════════════════════════════════════
- *  역할 선별 — "노트북" 을 찾는데 배터리·건전지·키보드가 카드로 나가지 않게 (2026-09-24)
- *
- *  실사용 신고: "100만 원 이하의 가볍고 배터리가 오래가는 노트북 3개"
- *    → 검색어 "가볍고 배터리 오래가 노트북 3개" → 쿠팡이 교체용 배터리·건전지를 돌려줬고,
- *      카드 8장이 전부 부속품이었다. 모델은 추천을 거절하고 "다시 검색할까요?" 로 끝냈다.
- *
- *  1) 검색어 정리 — 머리 명사가 본체(노트북)인데 부속 낱말(배터리)·개수(3개)·서술(오래가)이
- *     섞여 있으면 뺀다. "가볍고" 는 "경량" 으로. 기기 이름을 알아본 질문에서만 바꾼다.
- *  2) 결과 선별 — 상품명으로 본체/부속/관련 없음을 가른다(_product-role). 본체를 찾으면
- *     부속품·관련 없는 상품만 뺀다. 판별이 애매한 상품(UNKNOWN)은 남긴다 — 여기서는
- *     빼는 쪽이 더 위험하다(쿠팡 검색 결과는 대개 맞는 종류다).
- *  3) 재검색 1회 — 남은 본체가 ROLE_MIN_KEEP 보다 적고 검색 예산이 남았으면 더 짧은 검색어
- *     ("노트북")로 한 번만 더 찾는다. searchAll 의 분당 상한·캐시·서킷을 그대로 탄다.
- *
- *  ★ 목록 밖 카테고리(PROFILES 에 없는 것)는 건드리지 않는다 — 기존 경로 그대로.
- * ══════════════════════════════════════════════════════════════════
- */
-const ROLE_MIN_KEEP = 3;
-const ROLE_RETRY_MIN_MS = 2500;
-const ROLE_MAX_RETRY = 1;
-
-function roleTargetOf(query) {
-  try {
-    const PR = require('./_product-role');
-    const t = PR.targetOf(query, { tokens: String(query || '').split(/\s+/) });
-    return t && !t.generic ? t : null;
-  } catch (e) {
-    console.warn(`[ai] 역할 판별 실패(선별 없이 진행): ${e.message}`);
-    return null;
-  }
-}
-
-/** 검색어에서 조건 낱말을 뺀다. 바뀐 것이 없으면 원래 검색어. */
-function roleSearchQuery(query, target) {
-  if (!target) return query;
-  const PR = require('./_product-role');
-  const toks = String(query || '').split(/\s+/).filter(Boolean);
-  const isAcc = t => target.P.accTerms.some(x => x.re.test(t)) && !target.P.anchors.some(a => a.re.test(t));
-  const out = [];
-  toks.forEach(t => {
-    if (/^\d+\s*(?:개|가지|대|종류)$/.test(t)) return;                          // "3개"
-    if (/^(?:가볍|가벼|경량|초경량)/.test(t)) { if (out.indexOf('경량') < 0) out.push('경량'); return; }
-    // 서술 — 본체를 찾을 때만 뺀다 ("배터리 오래가 노트북" 의 오래가). 부속 검색어는 건드리지 않는다.
-    if (target.role === PR.MAIN && /^(?:오래\S*|길고|길게|긴|넉넉\S*|빵빵\S*|장시간|튼튼\S*|좋은|좋고|좋게|편한|편하고)$/.test(t)) return;
-    if (target.role === PR.MAIN && isAcc(t)) return;                             // 본체를 찾는데 "배터리"
-    out.push(t);
-  });
-  const q = out.join(' ').trim();
-  return q && target.P.anchors.some(a => a.re.test(q)) ? q : query;
-}
-
-/**
- * 검색 결과를 찾는 종류로 거른다 (필요하면 1회 재검색).
- * @returns {Promise<{found:object, note:string|null, retried:string|null, dropped:number}>}
- */
-async function screenByRole(target, found, firstQuery, budget) {
-  const PR = require('./_product-role');
-  const keepOk = (it) => {
-    const cls = PR.classify(it && it.title, target);
-    if (cls.role === PR.UNKNOWN) return { ok: true };
-    const a = PR.accepts(target, cls);
-    return a;
-  };
-  const split = (list) => {
-    const keep = [], dropped = [];
-    (list || []).forEach(it => { const a = keepOk(it); if (a.ok) keep.push(it); else dropped.push(Object.assign({ title: it && it.title }, a)); });
-    return { keep, dropped };
-  };
-  let list = found.items || [];
-  let r = split(list);
-  let retried = null;
-  let retries = 0;
-  const retryQuery = PR.searchPhraseOf(target);
-  while (r.keep.length < ROLE_MIN_KEEP && r.dropped.length && retries < ROLE_MAX_RETRY
-    && retryQuery && retryQuery !== firstQuery && budget.remaining() - ANSWER_RESERVE_MS > ROLE_RETRY_MIN_MS) {
-    retries++;
-    const again = await searchProducts(retryQuery, Math.max(1, budget.remaining() - ANSWER_RESERVE_MS));
-    retried = retryQuery;
-    if (!again.ok || !again.items.length) break;
-    const seen = new Set(list.map(it => `${it.productId}|${it.mall || ''}`));
-    list = list.concat(again.items.filter(it => !seen.has(`${it.productId}|${it.mall || ''}`)));
-    r = split(list);
-  }
-  if (!r.dropped.length) return { found: Object.assign({}, found, { items: list }), note: null, userText: null, retried, dropped: 0 };
-  const groups = PR.groupDropped(r.dropped).map(g => `${g.label} ${g.count}개${g.groups.length ? `(${g.groups.slice(0, 3).map(x => `${x.name} ${x.count}`).join('·')})` : ''}`);
-  const what = PR.describeTarget(target);
-  const J = PR._internal.josa;
-  /*
-   * 남은 것이 없을 때 사용자에게 가는 문장 — 모델 답변은 상품 0개면 grounding 게이트가
-   * 버리므로(noCatalog), 무엇을 찾아봤고 왜 뺐는지는 코드가 직접 말한다. 숫자는 전부 센 값이다.
-   */
-  const userText = r.keep.length ? null : [
-    `${what}${J(what, '은', '는')} 찾지 못했어요.`,
-    `쇼핑몰 검색 결과 ${r.dropped.length}개가 모두 ${what}${J(what, '이', '가')} 아니었어요 — ${groups.join(', ')}.`,
-    retried ? `검색어를 «${retried}»${PR._internal.ro(retried)} 바꿔 한 번 더 찾았지만 결과는 같았어요.` : '',
-    '예산·조건을 조금 넓히거나 모델명(예: 제품군 이름)으로 물어봐 주세요.'
-  ].filter(Boolean).join(' ');
-  const note = [
-    '[검색 결과 선별 — 코드가 한 일]',
-    `- 사용자가 찾는 것: ${what}.`,
-    `- 검색 결과에서 ${what}가 아닌 상품 ${r.dropped.length}개를 뺐다: ${groups.join(', ')}.`,
-    retried ? `- 검색어를 «${retried}»${PR._internal.ro(retried)} 바꿔 한 번 더 찾았다.` : '',
-    r.keep.length
-      ? `- 아래 <상품데이터>는 남은 ${r.keep.length}개다. 빠진 부속품은 추천하지 마라.`
-      : `- 남은 상품이 없다. 다시 검색할지 묻지 마라 — 이미 다시 찾았다. ${what}를 찾지 못했다는 것, 뺀 상품의 종류와 개수, 조건(예산 등)을 넓히거나 모델명으로 물어 달라는 것을 짧게 사실대로 말하라.`
-  ].filter(Boolean).join('\n');
-  return { found: Object.assign({}, found, { items: r.keep }), note, userText, retried, dropped: r.dropped.length };
-}
-
 function toCard(it, stat) {
   const card = {
     title: safeText(it && it.title, MAX_TITLE_LEN),
@@ -1327,12 +1216,7 @@ function toCard(it, stat) {
    */
   const price = card.lprice;
   if (stat && price > 0) {
-    /*
-     * «최저가» 는 기록이 두꺼울 때만, 기간과 함께 (_price-claims — 관측 7일·기간 14일).
-     * 예전에는 기록 1건이어도 "기록상 최저가" 였다 — 처음 본 가격은 언제나 최저가다.
-     */
-    const low = stat.low > 0 && price <= stat.low ? require('./_price-claims').recordLowNote(stat, price) : null;
-    if (low) card.note = low;
+    if (stat.low > 0 && price <= stat.low) card.note = '기록상 최저가';
     else if (stat.avg30 > 0) {
       const pct = Math.round((1 - price / stat.avg30) * 100);
       if (pct >= 3) card.note = `30일 평균보다 ${pct}% 저렴`;
@@ -2603,14 +2487,6 @@ function fallbackAnswer(top, deal, cons, cards, extra) {
 }
 
 module.exports = async function handler(req, res) {
-  /*
-   * SEOSA 2.0 쇼핑 조사관(/api/investigate) — api/_v2router.js 표에 적힌 __route
-   * 만 넘긴다. 아니면 null 이라 아래 기존 AI 대화 경로를 그대로 탄다.
-   */
-  const v2 = require('./_v2router');
-  const v2Route = v2.routeOf(req, 'ai');
-  if (v2Route) return v2.dispatch(v2Route, req, res);
-
   // 호출 1회당 실제 비용이 나가는 엔드포인트다. 공개 CORS(*)를 붙이면
   // 남의 사이트가 우리 키로 무료 AI API를 쓸 수 있다. 허용 오리진만.
   if (!applyCors(req, res, 'private')) return;
@@ -2704,8 +2580,6 @@ module.exports = async function handler(req, res) {
   let cards = [];
   let degradedByGrounding = false;
   let searchState = 'none';   // none | found | empty | failed
-  let roleNote = null;        // 역할 선별이 뺀 것 (screenByRole) — 프롬프트에 사실대로 싣는다
-  let roleUserText = null;    // 남은 상품이 없을 때 답변 끝에 붙이는 사실 문장
 
   /*
    * 결정 데이터도 try 밖에 둔다.
@@ -2995,20 +2869,7 @@ module.exports = async function handler(req, res) {
     };
 
     if (intent && needsShopContext(intent) && shouldSearch(query, view, items)) {
-      // 찾는 «종류» 를 알아볼 수 있으면 검색어에서 조건 낱말을 빼고, 결과에서 부속품을 거른다.
-      const roleTarget = roleTargetOf(query);
-      const searchQuery = roleSearchQuery(query, roleTarget);
-      let found = await searchProducts(searchQuery, Math.max(1, budget.remaining() - ANSWER_RESERVE_MS));
-      if (found.ok && roleTarget && found.items.length) {
-        try {
-          const sc = await screenByRole(roleTarget, found, searchQuery, budget);
-          found = sc.found;
-          roleNote = sc.note;
-          roleUserText = sc.userText;
-        } catch (e) {
-          console.warn(`[ai] 역할 선별 실패(원래 결과로 진행): ${e.message}`);
-        }
-      }
+      const found = await searchProducts(query, Math.max(1, budget.remaining() - ANSWER_RESERVE_MS));
       if (!found.ok) {
         searchState = 'failed';
       } else if (!found.items.length) {
@@ -3411,8 +3272,7 @@ module.exports = async function handler(req, res) {
      * 것을 없다고 단정하는 것은 지어내기와 같은 종류의 잘못이다.
      */
     if (searchState === 'found')  system += `\n\n${P.searchedFound}`;
-    if (searchState === 'empty')  system += `\n\n${roleNote ? '' : P.searchedEmpty}`;
-    if (roleNote) system += `\n\n${roleNote}`;
+    if (searchState === 'empty')  system += `\n\n${P.searchedEmpty}`;
     if (searchState === 'failed') system += `\n\n${P.searchFailed}`;
 
     // 취향 프로필은 무엇을 살지 고를 때만 쓸모가 있다. 잡담·지식 질문에는 넣지 않는다.
@@ -3722,8 +3582,6 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // 본체를 하나도 못 찾았으면 무엇을 왜 뺐는지 코드가 직접 덧붙인다 (screenByRole).
-    if (roleUserText && !cards.length && text.indexOf(roleUserText) < 0) text = `${text}\n\n${roleUserText}`;
     const payload = cards.length ? { text, items: cards } : { text };
     payload.intent = resolvedCanonicalIntent;
     if (guest) payload.guest = true;
@@ -3801,7 +3659,7 @@ module.exports = async function handler(req, res) {
       const body = {
         text: fallbackAnswer(fallbackTop, fallbackDeal, fallbackCons, cards, {
           items: fallbackItems, decision: fallbackDecision, noResult: fallbackNoResult
-        }) + (roleUserText && !cards.length ? `\n\n${roleUserText}` : ''),
+        }),
         items: cards,
         degraded: true
       };
@@ -3857,6 +3715,5 @@ module.exports._internal = {
   unsupportedComparisons, mentionsAnyCard, attachSpecs, collectWantedFeatures,
   CLASSIFY_SYSTEM, CLASSIFY_FORCE, fallbackAnswer,
   heuristicIntent, hasAuthHeader,
-  roleTargetOf, roleSearchQuery, screenByRole, ROLE_MIN_KEEP,
   PROMPT_VERSION
 };

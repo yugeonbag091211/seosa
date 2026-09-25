@@ -33,30 +33,6 @@
       "destination": "/api/history?__route=sitemap"
     },
     {
-      "source": "/api/timing",
-      "destination": "/api/history?__route=timing"
-    },
-    {
-      "source": "/api/anomaly",
-      "destination": "/api/history?__route=anomaly"
-    },
-    {
-      "source": "/api/cart",
-      "destination": "/api/history?__route=cart"
-    },
-    {
-      "source": "/api/lookup",
-      "destination": "/api/history?__route=lookup"
-    },
-    {
-      "source": "/api/waitroom",
-      "destination": "/api/alerts?__route=waitroom"
-    },
-    {
-      "source": "/api/investigate",
-      "destination": "/api/ai?__route=investigate"
-    },
-    {
       "source": "/((?!api/).*)",
       "destination": "/public/$1"
     }
@@ -94,15 +70,6 @@
     },
     "api/payment.js": {
       "maxDuration": 60
-    },
-    "api/ai.js": {
-      "includeFiles": "api/_*.js"
-    },
-    "api/history.js": {
-      "includeFiles": "api/_*.js"
-    },
-    "api/alerts.js": {
-      "includeFiles": "api/_*.js"
     }
   },
   "crons": [
