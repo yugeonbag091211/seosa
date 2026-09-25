@@ -14,6 +14,9 @@
 -- Rollback: deploy the API call back to public.price_drop_top, then drop this
 -- function with the statement in docs/seosa2/price-drop-top-candidates-rpc-rollback.md.
 
+BEGIN;
+SET LOCAL lock_timeout = '2s';
+
 create or replace function public.price_drop_top_candidates(p_limit integer default 200)
 returns table (
   product_id text,
@@ -49,14 +52,14 @@ as $function$
   ),
   latest_prev as (
     select
-      product_id,
-      mall,
-      vendor_item_id,
-      max(price) filter (where rn = 1) as current_price,
-      max(price) filter (where rn = 2) as prev_price
-    from ranked
-    group by product_id, mall, vendor_item_id
-    having count(*) filter (where rn = 2) > 0
+      r.product_id,
+      r.mall,
+      r.vendor_item_id,
+      max(r.price) filter (where r.rn = 1) as current_price,
+      max(r.price) filter (where r.rn = 2) as prev_price
+    from ranked r
+    group by r.product_id, r.mall, r.vendor_item_id
+    having count(*) filter (where r.rn = 2) > 0
   ),
   candidates as materialized (
     select
@@ -110,3 +113,4 @@ revoke all on function public.price_drop_top_candidates(integer) from public, an
 grant execute on function public.price_drop_top_candidates(integer) to service_role;
 
 notify pgrst, 'reload schema';
+COMMIT;
