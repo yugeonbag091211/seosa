@@ -91,7 +91,8 @@ assert(hdApi.includes("String(q.view || '') === 'today-drop'"),'today-drop 은 �
 assert(hdApi.includes("String(q.view || '') === 'external'"),'외부 레이더 view 는 그대로 남아 있다');
 assert(live.includes('data-act="ledger-open"')&&live.includes('data-act="ledger-buy"')&&live.includes('data-act="ledger-alert"'),'카드 → 가격 추이 · 구매 · 알림 그대로');
 const init=read('api/init.js');
-assert(init.includes(".from('price_drop_top')")&&init.includes('.filter(plausibleDrop)')&&init.includes('todayDropConfirmed')&&init.includes('priceDrop: dropRows'),'서버의 오늘 하락 판정 경로는 그대로 (다른 화면이 쓴다)');
+const dropSource = init.includes(".from('price_drop_top')") || init.includes(".rpc('price_drop_top_candidates'");
+assert(dropSource&&init.includes('.filter(plausibleDrop)')&&init.includes('todayDropConfirmed')&&init.includes('priceDrop: dropRows'),'서버의 오늘 하락 판정 경로는 그대로 (다른 화면이 쓴다)');
 /*
  * 핫딜의 «정의» 가 일일 델타인지를 코드에서 고정한다 (2026-09-20 감사).
  * 이게 없으면 다시 30·90일 중앙값 순위로 돌아가도 아무도 모른다.
