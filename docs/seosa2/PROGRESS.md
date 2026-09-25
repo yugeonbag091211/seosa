@@ -280,3 +280,13 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 2. `price_drop_top`는 Production timeout이 남아 있다. 테스트 DB에서 제안 쿼리/사전 집계를 최신 운영 형태로 검증하고 결과 parity·잠금 위험·롤백을 문서화한다. 운영 SQL 적용은 승인 전 금지한다.
 3. #81 병합 승인을 받기 전까지 Production의 구매 타이밍 BUY 문구가 노출될 수 있음을 알린다. #73은 mergeability/CI를 다시 확인하고 운영 migration/API/이메일 각 별도 승인 전에는 비활성으로 유지한다.
 4. 실제 Investigator 정상 검색은 `INVESTIGATOR_LIVE_SEARCH` Production 값과 공급자 할당량/비용을 확인할 때까지 실행하지 않는다. Concierge는 외부 LLM 사용 비용을 확인할 수 없어 Production 호출하지 않았다.
+
+
+### Production UI · GitHub Actions 추가 확인
+
+- Production 홈에는 2.0 조사관·장바구니·가격 이상 링크가 보인다. 현재 홈 슬라이드는 검증되지 않은 “지금 사도 좋아요” 예시와 구매 타이밍 진입 버튼도 노출한다. #81의 UI 안전 수정은 아직 승인/병합되지 않았다.
+- 조사관과 이상 패턴 화면은 실제 Production에서 열렸다. 조사관 입력은 외부 검색 flag와 비용을 확인할 수 없어 전송하지 않았다. AI Concierge 패널은 열리지만 유료 가능성이 있는 질의는 보내지 않았다.
+- 실제 읽기 전용 이상 분석 1회: BIRDPLAY 노트북, productId `9584791839`, 옵션 `95554810254`; 응답은 “판단 데이터 부족”, 3일 기록(최소 기준 5일)으로 제한을 설명했다. 카드/상세 제휴 링크의 pageKey·vendorItemId가 동일 상품·옵션과 맞았다. 가격 이상이라는 근거는 아니며 패턴 판정은 미확정이다.
+- Chrome 확장 MV3 소스는 `extension/manifest.json`과 세 스크립트에 있으며 설치 방법은 unpacked `extension` 폴더 로드다. zip/web store 산출물은 저장소 트리에서 확인하지 못했고, 이 브라우저 세션에는 Chrome 브라우저가 없어 실제 설치 테스트는 못 했다.
+- 2026-09-25 GitHub Actions: main SHA #83에서 Daily Price Collection 여러 회와 SEOSA HOT 예약 run이 success, `pages build and deployment` success. 이는 가격 수집/핫딜 workflow 종료 상태일 뿐 Production Vercel alias 배포 확인을 대체하지 않는다. #85 문서 PR의 Tests run도 success였으며 이후 이 문서 보완으로 새 run이 필요하다.
+- 새 프로젝트/테스트 데이터/운영 변경은 없고, 오늘의 가격 카드 화면은 이전에 열린 탭 상태라 API 장애 이후 신선한 DB 결과라고 간주하지 않았다.
