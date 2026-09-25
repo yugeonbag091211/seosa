@@ -162,12 +162,19 @@ function seriesKey(row) {
 }
 
 /**
- * Resend Idempotency-Key. 같은 사람·같은 상품·같은 날이면 항목을 지우고 다시 담아도 같은 키다
- * (공급자가 24시간 안의 재요청을 한 통으로 합친다). 이메일 원문을 키에 싣지 않는다.
+ * Resend Idempotency-Key — «같은 사람·같은 상품 · 날짜 · 시도 번호». 이메일 원문은 싣지 않는다.
+ *
+ * Resend 공식 문서(2026-09-25 확인): 키는 24시간 보존되고, 같은 키·같은 본문이면 다시 보내지 않고
+ * 원래 응답을 준다. 같은 키에 «다른 본문» 이면 409 invalid_idempotent_request, 동시 요청은
+ * 409 concurrent_idempotent_requests.
+ *   · 항목을 지우고 다시 담아도 같은 계열·날짜·시도면 같은 키다 → 공급자가 한 통으로 합친다.
+ *   · 시도 번호를 넣는 이유: 명확한 거절(4xx)은 발송이 없었다는 뜻인데, 같은 날 재시도 때 가격이
+ *     바뀌어 본문이 달라지면 같은 키로는 409 를 받아 «수락 여부 불명» 으로 영영 막혔다.
+ *     재시도는 명확한 거절 뒤에만 일어나므로(불명은 재시도하지 않는다) 새 키가 안전하다.
  */
-function providerKey(row, date) {
+function providerKey(row, date, attempt) {
   const h = require('crypto').createHash('sha256').update(seriesKey(row)).digest('hex').slice(0, 32);
-  return `waitroom/${h}/${date}`;
+  return `waitroom/${h}/${date}/${Math.max(1, Math.floor(Number(attempt) || 1))}`;
 }
 
 /** 발송 성공 뒤 항목에 남길 값. */

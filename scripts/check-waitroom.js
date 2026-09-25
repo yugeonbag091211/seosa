@@ -123,7 +123,8 @@ async function latestObservations(items) {
 
 /**
  * 발송 기록 선점 — 같은 사람·같은 상품·같은 날에 하나 (UNIQUE email, product_id, mall, notify_date).
- * 이미 있으면 «실패한 기록» 만 다시 선점할 수 있다. @returns {number|null} 기록 id
+ * 이미 있으면 «실패한 기록» 만 다시 선점할 수 있다.
+ * @returns {{id:number, attempt:number}|null} 기록 id 와 이번이 몇 번째 시도인지 (공급자 키에 쓴다)
  */
 async function claim(item, obs, today) {
   const row = {
@@ -134,7 +135,7 @@ async function claim(item, obs, today) {
     .upsert(row, { onConflict: 'email,product_id,mall,notify_date', ignoreDuplicates: true })
     .select('id');
   if (error) throw new Error(`발송 기록 선점 실패: ${error.message}`);
-  if (data && data.length) return data[0].id;
+  if (data && data.length) return { id: data[0].id, attempt: 1 };
 
   const { data: ex, error: exErr } = await supabase.from('waitroom_notifications')
     .select('id, status, attempts').eq('email', item.email).eq('product_id', item.product_id)
@@ -146,7 +147,7 @@ async function claim(item, obs, today) {
     .eq('id', ex.id).eq('status', 'failed').eq('attempts', ex.attempts)
     .select('id');
   if (reErr) throw new Error(`발송 기록 재선점 실패: ${reErr.message}`);
-  return re && re.length ? re[0].id : null;
+  return re && re.length ? { id: re[0].id, attempt: ex.attempts + 1 } : null;
 }
 
 async function patchItem(id, patch) {
@@ -240,20 +241,21 @@ async function run(opts) {
     if (!cas || !cas.length) { skip('race-lost'); return; }
 
     // b) 발송 기록 선점
-    let noteId;
-    try { noteId = await claim(item, obs, today); } catch (e) {
+    let note;
+    try { note = await claim(item, obs, today); } catch (e) {
       console.error(`❌ ${e.message}`);
       await patchItem(item.id, { armed: true, updated_at: nowIso });
       summary.failed++;
       return;
     }
-    if (!noteId) { skip('already-claimed'); return; }
+    if (!note) { skip('already-claimed'); return; }
+    const noteId = note.id;
     // 이 실행에서 같은 사람·같은 상품의 다른 항목은 결과와 상관없이 더 보내지 않는다.
     notifiedThisRun.add(series);
 
-    // c) 발송 — 공급자 키도 항목이 아니라 계열·날짜 (항목을 지우고 다시 담아도 같은 키)
+    // c) 발송 — 공급자 키는 항목이 아니라 «계열·날짜·시도» (W.providerKey 주석)
     const result = await send({
-      idempotencyKey: W.providerKey(item, today),
+      idempotencyKey: W.providerKey(item, today, note.attempt),
       to: item.email,
       subject: `[SEOSA] 목표가 도달 — ${String(item.title || '').slice(0, 25)}`,
       html: W.emailHtml({ title: item.title, price: obs.price, target: item.target_price, mall: item.mall,

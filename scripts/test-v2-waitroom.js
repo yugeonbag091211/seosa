@@ -258,7 +258,9 @@ async function main() {
     await runJob({ send: fakeSend });
     n = db.waitroom_notifications.find(x => x.item_id === 1);
     T.check(n.status === 'sent' && n.attempts === 2 && sent.length === 2, '같은 날 재시도 → 성공 (attempts 2)');
-    T.check(sent[0].idempotencyKey === sent[1].idempotencyKey, '명확한 실패 재시도에도 같은 provider key를 쓴다');
+    T.check(/\/1$/.test(sent[0].idempotencyKey) && /\/2$/.test(sent[1].idempotencyKey)
+      && sent[0].idempotencyKey.replace(/\/\d+$/, '') === sent[1].idempotencyKey.replace(/\/\d+$/, ''),
+    '명확한 거절 뒤 재시도는 같은 계열·날짜에 시도 번호만 다른 키 (같은 키·다른 본문은 Resend 가 409)', sent.map(p => p.idempotencyKey));
     seedJob(); sent.length = 0; sendMode = 'fail';
     for (let k = 0; k < 5; k++) await runJob({ send: fakeSend });
     T.check(sent.length === W.MAX_ATTEMPTS, `같은 날 재시도는 ${W.MAX_ATTEMPTS}번까지`, sent.length);
@@ -291,6 +293,71 @@ async function main() {
     const fall = await runJob({ send: acceptedButLost });
     T.check(sent.length === 1 && providerAccepted === 1 && fall.skipped['delivery-unconfirmed'] === 1,
       '미확정 발송 뒤 가격이 다시 내려도 중복 이메일을 보내지 않는다');
+
+    /* Resend 규칙을 흉내 낸 공급자 (공식 문서, 2026-09-25 확인):
+     *   키 24시간 보존 · 같은 키·같은 본문 → 다시 보내지 않고 원래 응답 · 같은 키·다른 본문 → 409
+     *   (email.js 는 409 를 «수락 여부 불명» 으로 돌려준다). delivered 가 실제로 받은 편지함이다. */
+    function resendLike(opts) {
+      const o = opts || {};
+      const keys = new Map();
+      const delivered = [];
+      let calls = 0;
+      const send = async p => {
+        calls++;
+        const body = JSON.stringify([p.to, p.subject, p.html]);
+        if (keys.has(p.idempotencyKey)) {
+          const k = keys.get(p.idempotencyKey);
+          if (k.body !== body) return { ok: false, uncertain: true, error: 409, code: 'invalid_idempotent_request' };
+          return k.result;
+        }
+        if (o.reject && o.reject(calls)) {
+          // 발송 없음. 문서는 거절된 요청의 키를 저장하는지 밝히지 않는다 → 저장한다고 보수적으로 가정
+          const result = { ok: false, error: 'validation_error 422' };
+          keys.set(p.idempotencyKey, { body, result });
+          return result;
+        }
+        keys.set(p.idempotencyKey, { body, result: { ok: true, id: 'em_' + calls } });
+        delivered.push(p);
+        if (o.loseResponse && o.loseResponse(calls)) return { ok: false, uncertain: true, error: 'socket hang up after acceptance' };
+        return { ok: true, id: 'em_' + calls };
+      };
+      return { send, delivered, calls: () => calls, keys };
+    }
+
+    // ① 수락 뒤 응답 유실 → 같은 날 재실행 · 운영자 수동 재전송 · 다음 날 → 편지함에는 한 통
+    seedJob();
+    const lost1 = resendLike({ loseResponse: n => n === 1 });
+    await runJob({ send: lost1.send });
+    await runJob({ send: lost1.send });
+    const key1 = [...lost1.keys.keys()][0];
+    const manual = await lost1.send({ idempotencyKey: key1, to: lost1.delivered[0].to, subject: lost1.delivered[0].subject, html: lost1.delivered[0].html });
+    const noteA = db.waitroom_notifications.find(x => x.product_id === 'A' && x.email === ME);
+    noteA.notify_date = daysAgo(1);
+    await runJob({ send: lost1.send });
+    T.check(lost1.delivered.length === 1 && lost1.calls() === 2 && manual.ok === true,
+      '수락 뒤 응답 유실: 잡은 다시 보내지 않고, 같은 키로 수동 재전송해도 공급자가 합쳐 편지함에는 한 통',
+      { delivered: lost1.delivered.length, calls: lost1.calls() });
+
+    // ② 명확한 거절(422) → 같은 날 가격이 바뀐 뒤 재시도 → 새 시도 키로 정상 발송 (409 로 막히지 않는다)
+    seedJob();
+    const rej = resendLike({ reject: n => n === 1 });
+    await runJob({ send: rej.send });
+    db.price_history.filter(r => r.product_id === 'A' && r.vendor_item_id === '1').forEach(r => { r.price = r.price - 300; });
+    const retry = await runJob({ send: rej.send });
+    const noteB = db.waitroom_notifications.find(x => x.product_id === 'A' && x.email === ME);
+    T.check(rej.delivered.length === 1 && retry.notified === 1 && noteB.status === 'sent' && noteB.attempts === 2,
+      '명확한 거절 뒤 가격이 바뀐 재시도도 한 통 발송', { delivered: rej.delivered.length, retry, noteB });
+    // 옛 키(시도 번호 없음)였다면: 거절된 키가 저장된 공급자에서 본문이 바뀐 재시도는 409 → «불명» 으로 잠긴다
+    const oldKey = rej.keys.has(W.providerKey({ email: ME, product_id: 'A', mall: '쿠팡' }, today, 1));
+    const replay = await rej.send({ idempotencyKey: W.providerKey({ email: ME, product_id: 'A', mall: '쿠팡' }, today, 1), to: ME, subject: 's', html: 'changed' });
+    T.check(oldKey && replay.uncertain === true && replay.code === 'invalid_idempotent_request',
+      '같은 키·다른 본문은 409(불명) — 시도 번호를 키에 넣은 이유가 재현된다', replay);
+
+    // ③ 예약 실행 둘이 동시에 → 한 통
+    seedJob();
+    const both = resendLike();
+    await Promise.all([runJob({ send: both.send }), runJob({ send: both.send })]);
+    T.check(both.delivered.length === 1, '동시에 돈 두 실행 → 편지함에는 한 통 (무장 해제 CAS · 선점 UNIQUE)', both.delivered.length);
 
     // dry-run: 아무것도 쓰지 않는다
     seedJob(); sent.length = 0;
