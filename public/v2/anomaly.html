@@ -15,7 +15,7 @@
 /* 날짜·종류·정도는 줄바꿈하지 않는다 — 좁은 화면에서 «정가부풀리기» 가 한 글자씩 세로로 쪼개졌다 */
 .scroll td:nth-child(-n+3){white-space:nowrap}
 .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin:8px 0 16px}
-.kpi b{font-size:18px}
+.kpi dd{font-size:18px}
 .hist{width:100%;height:auto;display:block}
 .hist rect{fill:var(--soft);opacity:.55}
 .hist rect.cur{fill:var(--ink);opacity:1}
@@ -199,9 +199,9 @@ document.addEventListener('DOMContentLoaded', function () {
       ['중앙값', V2.won(d.median)], ['상위 25%', V2.won(d.p75)], ['상위 5%', V2.won(d.p95)], ['최고', V2.won(d.max)],
       ['평균', V2.won(d.mean)], ['중앙값 절대편차', V2.won(d.mad)], ['수집 오류로 뺀 관측', d.excluded + '건']
     ];
-    $('dist').innerHTML = '<div class="kpis">' + k.map(function (x) {
-      return '<div class="kpi"><b>' + V2.esc(x[1]) + '</b><span>' + V2.esc(x[0]) + '</span></div>';
-    }).join('') + '</div>' + histogramSvg(d, current)
+    $('dist').innerHTML = '<dl class="kpis">' + k.map(function (x) {
+      return V2.kpi(x[0], x[1]);
+    }).join('') + '</dl>' + histogramSvg(d, current)
       + '<p class="muted">날짜당 최저 관측가 한 점씩, 수집 오류로 본 관측은 뺀 분포예요.'
       + (current != null ? ' 진하게 칠한 칸이 가장 최근 가격이 속한 구간이에요.' : '') + '</p>';
   }

@@ -24,6 +24,19 @@
     return (Math.round(Number(x) * Math.pow(10, digits || 0)) / Math.pow(10, digits || 0)) + '%';
   }
 
+  /**
+   * 요약 수치 한 칸. 부모는 <dl class="kpis"> / <dl class="grid"> 다.
+   *
+   * 예전 모양 <b>값</b><span>라벨</span> 은 라벨이 «다음 칸의 값» 바로 앞에 놓였다.
+   * 텍스트로 읽으면 «574,700원 총 결제 예상액 574,700원 상품 금액 0원 배송비 …» 라서
+   * 스크린리더·텍스트 추출이 «상품 금액 0원» 으로 짝을 지었다(0원은 배송비 값).
+   * 2026-09-25 운영 장바구니 «상품 금액 0원» 보고가 바로 이것이었다 — API 와 DOM 값은 맞았다.
+   * 그래서 문서 순서는 라벨 → 값(dt → dd)으로 묶고, 값을 위에 크게 보이는 모양은 CSS 로만 만든다.
+   */
+  function kpi(label, value) {
+    return '<div class="kpi"><dt>' + esc(label) + '</dt><dd>' + esc(value) + '</dd></div>';
+  }
+
   /** https 만, 그리고 스킴이 없는 값은 버린다 (javascript: 등 차단). */
   function safeUrl(u) {
     var s = String(u || '').trim();
@@ -140,7 +153,7 @@
   }
 
   global.V2 = {
-    esc: esc, won: won, pct: pct, safeUrl: safeUrl, api: api, qs: qs, param: param,
+    esc: esc, won: won, pct: pct, kpi: kpi, safeUrl: safeUrl, api: api, qs: qs, param: param,
     chart: chart, session: session, readJSON: readJSON, writeJSON: writeJSON, themeToggle: themeToggle
   };
 
