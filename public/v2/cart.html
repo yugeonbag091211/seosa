@@ -24,6 +24,9 @@
   details{margin:6px 0}
   details summary{cursor:pointer;font-size:14px}
   .table-wrap{overflow-x:auto}
+  /* 375px 에서 표 마지막 칸이 좁아져 «구매하러 가기» 가 한 글자씩 세로로 꺾였다(13×131px).
+     줄을 바꾸지 않고 표는 .table-wrap 안에서 가로로 스크롤한다. 터치 높이도 확보한다. */
+  .mall-card td a{white-space:nowrap;display:inline-block;padding:10px 0}
 </style>
 </head>
 <body>

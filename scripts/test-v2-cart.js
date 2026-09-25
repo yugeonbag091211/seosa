@@ -670,6 +670,8 @@ async function main() {
     const cartSrc = fs.readFileSync(path.join(ROOT, 'public', 'v2', 'cart.html'), 'utf8');
     T.check(/V2\.kpi\('상품 금액', V2\.won\(amounts\.itemsCost\)\)/.test(cartSrc) && /<dl class="kpis">/.test(cartSrc),
       '장바구니 요약은 V2.kpi 로 «상품 금액» 과 행 합계(itemsCost)를 묶는다');
+    T.check(/\.mall-card td a\{white-space:nowrap/.test(cartSrc) && /\.table-wrap\{overflow-x:auto\}/.test(cartSrc),
+      '판매처 표의 구매 링크는 줄바꿈되지 않고 표가 가로로 스크롤한다 (375px 에서 13×131px 로 꺾이던 결함)');
     ['cart.html', 'anomaly.html', 'extension.html'].forEach(f => {
       const src = fs.readFileSync(path.join(ROOT, 'public', 'v2', f), 'utf8');
       T.check(!/class="kpi"><b>/.test(src), `${f}: 값이 라벨보다 먼저 오는 옛 요약 모양이 남아 있지 않다`);
