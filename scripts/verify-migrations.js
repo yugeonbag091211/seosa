@@ -129,7 +129,9 @@ const NEW_MIGRATIONS = [
    */
   '2026-09-22-collector-target-keyset.sql',
   // 2026-09-25: read-only price_drop_top rewrite; no application data mutation.
-  '2026-09-25-price-drop-top-ranked-aggregation.sql'
+  '2026-09-25-price-drop-top-ranked-aggregation.sql',
+  // 2026-09-25: bounded read-only RPC for the home price-drop candidates.
+  '2026-09-25-price-drop-top-candidates-rpc.sql'
 ];
 
 function checkStatic() {
