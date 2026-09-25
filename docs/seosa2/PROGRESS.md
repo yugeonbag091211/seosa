@@ -238,3 +238,45 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 - 신규 기능 회귀: `test-v2-cart` 136/0, `test-v2-anomaly` 121/0, `test-v2-investigator-accuracy` 107/0.
 - 격리 DB에서 waitroom 테이블 2개가 그대로 존재함을 확인했다. 두 테이블 모두 RLS on, policy 0, anon/authenticated SELECT false, service_role SELECT true, unique constraint 각 1개. 우리가 만든 synthetic schemas는 검증 후 제거했고 잔여 schema 0개다.
 - 이번 이어서 수행한 구간은 약 40분(UTC 약 22:39–23:18). 앞선 작업이 섞인 전체 세션 시간은 정확히 분리할 수 없다.
+
+
+
+## 9. SEOSA 2.0 최종 안정화 재점검 (2026-09-25)
+
+### GitHub · Vercel 기준선
+
+- GitHub `main` 최신 SHA는 PR #83 병합 커밋 `5645df74d259a4a91fe11b1e7706077f4c59f4b4` (2026-09-24 23:59:48 UTC)이다. 부모 커밋 중 하나는 #84 병합 `30584eaad06bf22d47e4ef6bf3ab2f2e947d6865`.
+- #84가 Production Supabase migration `20260924235257 price_drop_top_ranked_aggregation_2026_09_25`로 기록되어 있음을 확인했다.
+- #83 main SHA의 Vercel GitHub 상태 체크는 success지만 Production 별칭이 가리키는 실제 배포 SHA는 확인하지 못했다. Vercel CLI는 이 환경에 없고 대시보드는 로그인으로 리디렉션됐다. 브라우저에 로그인된 Vercel 팀 세션이 필요하다.
+- #81은 open·mergeable, head `863f3de50899fc3c527351deb5cf58c0618ede24`, CI/상태 체크 success. 홈의 미검증 BUY 문구와 타이밍/대기실 진입점을 감추는 변경이다. 사용자 승인 전에는 병합하지 않았다.
+- #72 open·미병합. #73 open·mergeable=false. 병합, 운영 DB migration, 이메일 발송 및 기능 플래그 변경은 하지 않았다.
+
+### Production 가격 하락 조회
+
+- 운영 Supabase 로그에서 `/rest/v1/price_drop_top` 요청을 2026-09-24 05:00–2026-09-25 05:00 UTC로 집계했다. #84 migration 기준 전 11건, 적용 후 3건이 있었고 모두 HTTP 500이었다.
+- 적용 후 3건은 각각 8,642–8,688ms (평균 8,663ms) 뒤 실패했다. 같은 구간 Postgres 로그에서 3건 모두 SQLSTATE `57014` (statement timeout cancellation)이다. #84 view 교체 후에도 장애가 지속된다는 Production 근거다.
+- migration은 view 하나만 `CREATE OR REPLACE`했고 가격 원장이나 수집/핫딜 로직을 바꾸지 않았다. 운영 `EXPLAIN`은 실행했으나 부하가 큰 `EXPLAIN ANALYZE`는 하지 않았다. 기존 계획은 최근 30일 창의 대량 window/group 연산과 all-time 최저가 집계를 포함한다.
+- 테스트 프로젝트의 Production 규모 합성 데이터에서는 결과 parity 0행 차이, 임시 파일 spill 0, 281.3ms를 측정했지만 실제 Production 지연을 예측하지 못했다. 추가 사전 집계/캐시/인덱스는 테스트와 롤백안을 먼저 마련하고, Production DDL 전 별도 승인을 받아야 한다.
+- 90일 이상 이력 수 재집계를 위해 3초 statement timeout을 둔 읽기 전용 집계는 시간 초과됐다. 이 결과로 표본이 늘었다고 판단하지 않는다. #72는 직전 백테스트 문서의 부족한 표본 결과를 유지하며 병합/공개하지 않는다.
+
+### Production 장바구니 재현
+
+- 새 탭에서 `/v2/cart.html?cache_probe=20260925T0532Z`를 열고 장바구니 계산을 다시 요청했다. 화면은 상품 행 574,700원 × 1, 판매처 소계 574,700원, 배송비 0원, 쿠폰 0원, 최종 574,700원인데 상단 “상품 금액”만 0원으로 표시했다.
+- 동일한 값이 새 탭·cache-busting 쿼리에서도 반복됐다. 행의 옵션 `95554810254`와 제휴 URL의 `vendorItemId`가 일치했다. 링크를 클릭하지 않았다.
+- main의 #83 코드는 `public/v2/cart-summary.js`를 로드하고 `byMall[].lines[].lineTotal`에서 상단 합계를 계산하며 응답 불일치 때 오류 메시지를 보여 준다. Production 화면에는 요약 0원과 함께 그 보호 메시지가 없었다. 이 관측은 서버 계산보다는 오래된/미실행 프런트 코드 제공을 강하게 시사하지만, 원시 브라우저 Network 응답·실제 제공 JS 해시·Vercel Production SHA를 보지 못해 CDN 캐시와 오래된 배포 중 어느 쪽인지 확정하지 않는다.
+- Production 장바구니 API 응답 원문은 브라우저 도구에서 확보하지 못했다. 행·판매처 합계·최종가가 일치한다는 UI는 확인했지만 API JSON 필드의 독립 검증은 미완료다.
+- 브라우저 스냅샷에서 약 927px 화면 폭 기준 폼 필드가 오른쪽으로 잘리는 모습도 확인했다. 375/390·1280/1440px 뷰포트와 다크 모드는 이 환경에서 강제할 수 없어 검증하지 않았다.
+
+### 구매 대기실 · 비용 · 보안 메모
+
+- 기존 Free 테스트 프로젝트 `seosa-pr73-waitroom-test`가 ACTIVE_HEALTHY이며 #73 최종 테스트 migration 기록이 남아 있다. 앞선 읽기 전용 검증에서 두 테이블 모두 RLS on, 정책 0, anon/authenticated SELECT 불허, service_role만 접근 가능함을 확인했다.
+- Supabase 보안 advisor의 “RLS enabled, no policy”는 Production 30건 / 테스트 DB 2건의 INFO finding이다. 해당 waitroom 테이블은 직접 권한도 차단되어 deny-by-default다. 이번 작업에서는 권한·테이블을 변경하지 않았다.
+- #73 latest는 테스트 81 PASS로 보고되어 있으나 GitHub mergeability가 false이므로 최신 main 기준 충돌/갱신 후 다시 CI가 필요하다. 실제 이메일 0건, 운영 migration 0회, `WAITROOM_ENABLED` 변경 0회.
+- 이번 점검에서 신규 프로젝트/브랜치, 유료 검색 호출, 이메일, 운영 쓰기, 강제 수집은 0건이다. Vercel·Resend 계정의 실제 사용료와 할당량은 이 환경에서 확인할 수 없다.
+
+### 이어서 완료할 일
+
+1. 사용자가 현재 브라우저에서 Vercel 팀에 로그인한 뒤 Production 별칭 SHA, 정적 파일 배포본 및 런타임 로그를 확인한다. #83 UI 소스가 실제 제공되는지 확인한 후 cart API Network JSON과 비교해 근본 원인을 확정한다.
+2. `price_drop_top`는 Production timeout이 남아 있다. 테스트 DB에서 제안 쿼리/사전 집계를 최신 운영 형태로 검증하고 결과 parity·잠금 위험·롤백을 문서화한다. 운영 SQL 적용은 승인 전 금지한다.
+3. #81 병합 승인을 받기 전까지 Production의 구매 타이밍 BUY 문구가 노출될 수 있음을 알린다. #73은 mergeability/CI를 다시 확인하고 운영 migration/API/이메일 각 별도 승인 전에는 비활성으로 유지한다.
+4. 실제 Investigator 정상 검색은 `INVESTIGATOR_LIVE_SEARCH` Production 값과 공급자 할당량/비용을 확인할 때까지 실행하지 않는다. Concierge는 외부 LLM 사용 비용을 확인할 수 없어 Production 호출하지 않았다.
