@@ -31,9 +31,11 @@ h3{font-size:16px;margin:18px 0 6px}
 .row>.shrink{flex:0 0 auto}
 .card{border:1px solid var(--line);border-radius:6px;padding:16px;margin:12px 0;background:var(--bg)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
-.kpi{border-top:1px solid var(--line);padding-top:8px}
-.kpi b{display:block;font-size:22px;letter-spacing:-.02em}
-.kpi span{font-size:12px;color:var(--soft)}
+dl.grid{margin:0}
+/* 문서 순서는 dt(라벨) → dd(값). 화면에서는 값을 위에 크게 — column-reverse 로만 뒤집는다 (V2.kpi 주석). */
+.kpi{display:flex;flex-direction:column-reverse;justify-content:flex-end;border-top:1px solid var(--line);padding-top:8px}
+.kpi dd{margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em}
+.kpi dt{font-size:12px;color:var(--soft)}
 .badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:12px;white-space:nowrap}
 .badge.down{color:var(--down);border-color:currentColor}
 .badge.up{color:var(--up);border-color:currentColor}

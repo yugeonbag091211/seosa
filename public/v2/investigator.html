@@ -78,8 +78,6 @@
       + '</div>'
       + '<p class="row">'
       + (url ? '<a class="button shrink" href="' + V.esc(url) + '" target="_blank" rel="noopener sponsored">판매처에서 보기</a>' : '')
-      + '<a class="button shrink" href="' + V.esc('/v2/timing.html' + V.qs({ productId: c.productId, mall: c.mall, vendorItemId: c.vendorItemId })) + '">구매 타이밍</a>'
-      + '<a class="button shrink" href="' + V.esc('/v2/waitroom.html' + V.qs({ add: 1, productId: c.productId, mall: c.mall, vendorItemId: c.vendorItemId, title: c.title, link: url })) + '">대기실에 담기</a>'
       + '</p></div>';
   }
 
