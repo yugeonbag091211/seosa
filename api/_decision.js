@@ -207,11 +207,8 @@ function priceOpportunity(it) {
   }
 
   if (h.low > 0) {
-    // «최저가» 는 기록이 두꺼울 때만, 기간과 함께 (_price-claims — 관측 7일·기간 14일).
-    const rec = require('./_price-claims').basisOf(h);
-    const basis = ` (${rec.spanDays}일·관측 ${rec.obs}회 기준)`;
-    if (price <= h.low) { if (rec.enough) out.reasons.push(`기록상 최저가 수준${basis}`); }
-    else if (price <= Math.round(h.low * 1.03)) { if (rec.enough) out.reasons.push(`기록상 최저가에 근접${basis}`); }
+    if (price <= h.low) out.reasons.push('기록상 최저가 수준');
+    else if (price <= Math.round(h.low * 1.03)) out.reasons.push('기록상 최저가에 근접');
     else out.caution = `기록상 ${h.low.toLocaleString('en-US')}원까지 내려간 적 있음`;
   }
   if (h.avg30 > 0) {
@@ -512,9 +509,8 @@ function alternatives(ranked, c) {
    * 결정해 두었으므로(assess) 그것을 그대로 쓴다. good 이 여럿이면
    * 최저가에 가장 가까운 쪽을 고른다.
    */
-  // «기록상 최저가» 를 말하므로 기록이 두꺼운 상품만 (_price-claims).
   const timely = list.filter(it => it.verdict && it.verdict.verdict === 'good'
-    && it.hist && it.hist.low > 0 && require('./_price-claims').recordEnough(it.hist));
+    && it.hist && it.hist.low > 0);
   if (timely.length) {
     const best = timely.reduce((a, b) => {
       const ra = a.price / a.hist.low;

@@ -406,14 +406,6 @@ async function batchHandler(req, res) {
  * 구현은 api/_product-page.js 에 있다 — 이 파일은 갈래만 나눈다.
  */
 module.exports = async function handler(req, res) {
-  /*
-   * SEOSA 2.0 라우트(timing · lookup · cart · anomaly) — api/_v2router.js 표에
-   * 적힌 __route 만 넘긴다. 아니면 null 이라 아래 기존 경로를 그대로 탄다.
-   */
-  const v2 = require('./_v2router');
-  const v2Route = v2.routeOf(req, 'history');
-  if (v2Route) return v2.dispatch(v2Route, req, res);
-
   if (!applyCors(req, res, 'public')) return;
 
   const q = req.query || {};

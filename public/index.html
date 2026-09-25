@@ -985,14 +985,6 @@ html[data-theme="dark"] .bs-tip{background:rgba(30,32,36,.76);
   vertical-align:2px;margin-left:4px;transition:width .18s}
 .hero-ai:hover::after{width:12px}
 
-/* 준비된 SEOSA 2.0 도구 — 기존 AI Concierge보다 약한 보조 링크로 둔다. */
-.v2-tools{display:flex;align-items:center;flex-wrap:wrap;gap:0 16px;margin:2px 0 0;padding:0;list-style:none}
-.v2-tools-label{color:var(--faint);font-size:.7rem}
-.v2-tools a{display:inline-flex;align-items:center;min-height:44px;padding:0 3px;
-  color:var(--soft);font-size:.76rem;text-decoration:none;border-bottom:1px solid transparent}
-.v2-tools a:hover{color:var(--ink);border-bottom-color:var(--line-2)}
-.hero-band>.v2-tools{max-width:1240px;margin:0 auto;padding:0 28px 12px}
-
 /*
  * 맥락 AI 진입점 (검색 결과 / 상품 상세 / 몰별 비교).
  * 고스트 버튼 — 검정 대형 CTA 를 추가하지 않는다. 무시해도 되는 보조 행동이다.
@@ -3126,10 +3118,6 @@ select:focus-visible,textarea:focus-visible,
   /* 성별 선택 두 칸(42.6px). 가로도 44px 을 넘겨 둔다. */
   #profileGender .tbtn{min-width:44px}
 }
-@media(max-width:640px){
-  .v2-tools{gap:0 10px;padding-left:8px}
-  .v2-tools a{font-size:.76rem}
-}
 </style>
 </head>
 <body>
@@ -3218,14 +3206,6 @@ select:focus-visible,textarea:focus-visible,
     <button class="nav-menu-item" role="menuitem" data-act="ai-entry" data-ctx="home">서사 AI에게 물어보기</button>
     <button class="nav-menu-item" role="menuitem" data-act="open-myalerts">가격 알림 관리</button>
     <button class="nav-menu-item" role="menuitem" data-act="open-profile">내 취향 설정</button>
-    <!--
-      SEOSA 2.0 새 기능(AI 쇼핑 조사관·장바구니 최저가·가격 이상 패턴) 진입점.
-      기존 헤더 아이콘 줄(♡·사람·☰)·검색창·가격 카드·핫딜·그래프는 그대로 두고,
-      이미 있는 «부가 기능 모음» 메뉴에 항목 하나만 더한다 — 다른 항목과 같은 마크업
-      (<a class="nav-menu-item" href>, "내 레이더 보기" 참고)이라 새 CSS 가 없다.
-      /v2/index.html 은 아직 배포되지 않은 기능(①·②)을 "준비 중"으로 표시하고 숨긴다.
-    -->
-    <a class="nav-menu-item" role="menuitem" href="/v2/index.html">SEOSA 2.0 새 기능 (베타)</a>
     <!--
       테마 토글은 헤더에서 이 메뉴로 옮겼다. 헤더 아이콘 줄을 목업대로
       ♡ · 사람 · ☰ 셋으로 맞추면서 자리가 없어졌는데, 기능은 없애지 않는다.
@@ -3523,17 +3503,20 @@ select:focus-visible,textarea:focus-visible,
       </div>
      </div>
 
-     <!-- ── 3 · 가격 기록 ───────────────────────────────────────── -->
-     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="가격 기록">
+     <!-- ── 3 · 가격 인텔리전스 ──────────────────────────────────── -->
+     <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="구매 시점 판단">
       <div class="hero-inner">
        <div class="hero-copy">
-         <h1 class="hero-title">가격의 흐름을,<br>기록으로 살펴봐요.</h1>
-         <p class="hero-sub">SEOSA가 관측한 가격 흐름을 보여 드려요. 기록이 부족하면 부족하다고 알려드려요.</p>
-         <button class="hero-cta" data-act="scroll-drop">가격 흐름 살펴보기 <span aria-hidden="true">→</span></button>
+         <h1 class="hero-title">지금 살까,<br>조금 더 기다릴까.</h1>
+         <p class="hero-sub">가격 이력과 AI 분석으로 지금이 살 때인지 판단해드립니다.</p>
+         <button class="hero-cta" data-act="scroll-drop">구매 타이밍 확인 <span aria-hidden="true">→</span></button>
        </div>
        <div class="hero-art">
         <div class="hc-visual hc-scene hc-price"><div class="hc-stone" aria-hidden="true"></div><div class="hc-sphere" aria-hidden="true"></div>
-         <!-- 예시 그래프다. 특정 상품의 가격이나 구매 판정을 나타내지 않는다. -->
+         <!--
+           ★ 예시 그래프다. 특정 상품의 가격도, 그 상품에 대한 구매 판정도 아니다.
+             실제 판정은 상품 카드의 가격 추이 모달에서 서버가 계산한 값으로만 나온다.
+         -->
          <div class="hc-demo">
           <span class="hc-demo-tag">예시 화면</span>
           <svg class="hc-chart" viewBox="0 0 280 96" role="img"
@@ -3547,6 +3530,10 @@ select:focus-visible,textarea:focus-visible,
             <circle cx="276" cy="59" r="7" fill="var(--down-bg)"/>
             <circle cx="276" cy="59" r="3.4" fill="var(--down)"/>
           </svg>
+          <div class="hc-verdict">
+            <span class="hc-badge">BUY</span>
+            <span class="hc-verdict-t">지금 사도 좋아요</span>
+          </div>
          </div>
         </div>
        </div>
@@ -3650,12 +3637,6 @@ select:focus-visible,textarea:focus-visible,
     <!-- 슬라이드가 바뀐 사실만 한 줄로 알린다(내용 전체를 다시 읽지 않는다). -->
     <p class="hc-sr" id="hcLive" aria-live="polite" aria-atomic="true"></p>
    </section>
-   <nav class="v2-tools" aria-label="가격 분석 도구">
-     <span class="v2-tools-label">더 자세히 보기</span>
-     <a href="/v2/investigator.html">AI 쇼핑 조사관</a>
-     <a href="/v2/cart.html">장바구니 최저가</a>
-     <a href="/v2/anomaly.html">가격 이상 패턴</a>
-   </nav>
   </div>
 
 <main class="wrap">
@@ -11767,10 +11748,10 @@ var HeroCarousel = {
     el.style.opacity = pos === 0 ? '1' : '0';
     el.classList.toggle('on', pos === 0);
     /*
-     * 숨겨진 장은 보조 기술과 키보드 순서 모두에서 제외한다.
-     * aria-hidden 은 보조 기술에, inert 는 전환 중 포커스에 적용한다.
+     * 보이지 않는 장은 스크린리더에서도 없는 것으로 친다. 이게 없으면
+     * 네 장이 한꺼번에 읽혀 어디를 듣고 있는지 알 수 없다.
+     * (visibility:hidden 이라 탭 순서에서는 CSS 가 이미 빼 준다)
      */
-    el.inert = pos !== 0;
     el.setAttribute('aria-hidden', pos === 0 ? 'false' : 'true');
     if (!animate) {
       void el.offsetWidth;          // 시작 위치를 브라우저에 확정시킨다
