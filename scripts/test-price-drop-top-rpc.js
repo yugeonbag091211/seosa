@@ -37,7 +37,7 @@ check('pins search_path and returns the existing 11-column API contract',
 check('preserves the last-30-day option identity and latest-two-price calculation',
   /recorded_date\s*>=\s*current_date\s*-\s*interval\s+'30 days'/i.test(sql)
   && /partition\s+by\s+ph\.product_id\s*,\s*ph\.mall\s*,\s*ph\.vendor_item_id\s+order\s+by\s+ph\.recorded_date\s+desc/i.test(sql)
-  && /having\s+count\s*\(\s*\*\s*\)\s*filter\s*\(\s*where\s+rn\s*=\s*2\s*\)\s*>\s*0/i.test(sql));
+  && /having\s+count\s*\(\s*\*\s*\)\s*filter\s*\(\s*where\s+(?:r\.)?rn\s*=\s*2\s*\)\s*>\s*0/i.test(sql));
 
 check('caps and materializes top candidates before all-time minimum lookups',
   /candidates\s+as\s+materialized\s*\(/i.test(sql)
