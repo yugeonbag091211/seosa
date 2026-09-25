@@ -238,6 +238,8 @@ async function main() {
 
     const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'v2', 'investigator.html'), 'utf8');
     T.check(/V2\.esc/.test(html) && !/innerHTML\s*=\s*[^;]*\+\s*(it|c|r)\.title/.test(html), '화면은 상품명을 escape 해서 그린다');
+    T.check(!html.includes('/v2/timing.html'), '검증되지 않은 구매 타이밍 링크를 결과에 공개하지 않는다');
+    T.check(!html.includes('/v2/waitroom.html'), '운영 미승인 구매 대기실 링크를 결과에 공개하지 않는다');
   }
 
   T.section('안전');

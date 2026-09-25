@@ -638,6 +638,46 @@ async function main() {
     T.check(home.includes('/v2/cart.html'), '기존 홈에서 장바구니 최저가로 이동할 수 있다');
   }
 
+  /* ── 12. 요약 수치의 읽는 순서 ─────────────────────────────────
+   * 2026-09-25 운영 «상품 금액 0원» 보고: API(itemsCost 574,700)와 DOM 값은 맞았고,
+   * <b>값</b><span>라벨</span> 순서 때문에 텍스트로 읽으면 라벨 뒤에 다음 칸의 값(배송비 0원)이 왔다. */
+  T.section('화면 — 요약 수치는 라벨 → 값 순서로 읽힌다');
+  {
+    const vm = require('vm');
+    const sandbox = { document: { addEventListener() {} } };
+    sandbox.window = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'public', 'v2', 'v2.js'), 'utf8'), sandbox);
+    const V2 = sandbox.V2;
+    // 문서 순서대로 읽은 텍스트 조각 (스크린리더·innerText·텍스트 추출이 보는 순서).
+    const tokens = html => html.replace(/<\/?(dt|dd|b|span)>/g, '\n').replace(/<[^>]+>/g, '')
+      .split('\n').map(s => s.trim()).filter(Boolean);
+    const after = (list, label) => list[list.indexOf(label) + 1];
+    // 운영 응답과 같은 값 (productId 9584791839 · 옵션 95554810254, 2026-09-25 실측)
+    const a = { total: 574700, itemsCost: 574700, shippingCost: 0, couponDiscount: 0 };
+    const legacy = [['총 결제 예상액', a.total], ['상품 금액', a.itemsCost], ['배송비', a.shippingCost], ['쿠폰 할인', a.couponDiscount]]
+      .map(([l, v]) => '<div class="kpi"><b>' + V2.won(v) + '</b><span>' + l + '</span></div>').join('');
+    T.check(after(tokens(legacy), '상품 금액') === '0원', '옛 모양은 «상품 금액» 다음에 배송비 값(0원)이 읽혔다 — 보고된 증상 재현');
+    const fixed = '<dl class="kpis">' + V2.kpi('총 결제 예상액', V2.won(a.total)) + V2.kpi('상품 금액', V2.won(a.itemsCost))
+      + V2.kpi('배송비', V2.won(a.shippingCost)) + V2.kpi('쿠폰 할인', V2.won(a.couponDiscount)) + '</dl>';
+    const t = tokens(fixed);
+    T.check(after(t, '총 결제 예상액') === '574,700원' && after(t, '상품 금액') === '574,700원'
+      && after(t, '배송비') === '0원' && after(t, '쿠폰 할인') === '0원', '새 모양은 라벨 바로 뒤에 자기 값이 읽힌다', t);
+    T.check(V2.kpi('<b>', '<i>') === '<div class="kpi"><dt>&lt;b&gt;</dt><dd>&lt;i&gt;</dd></div>', 'V2.kpi 는 라벨·값을 escape 한다');
+
+    const css = fs.readFileSync(path.join(ROOT, 'public', 'v2', 'v2.css'), 'utf8');
+    T.check(/\.kpi\{[^}]*flex-direction:column-reverse/.test(css), '값을 위에 크게 보이는 모양은 CSS(column-reverse)로만 만든다');
+    const cartSrc = fs.readFileSync(path.join(ROOT, 'public', 'v2', 'cart.html'), 'utf8');
+    T.check(/V2\.kpi\('상품 금액', V2\.won\(amounts\.itemsCost\)\)/.test(cartSrc) && /<dl class="kpis">/.test(cartSrc),
+      '장바구니 요약은 V2.kpi 로 «상품 금액» 과 행 합계(itemsCost)를 묶는다');
+    T.check(/\.mall-card td a\{white-space:nowrap/.test(cartSrc) && /\.table-wrap\{overflow-x:auto\}/.test(cartSrc),
+      '판매처 표의 구매 링크는 줄바꿈되지 않고 표가 가로로 스크롤한다 (375px 에서 13×131px 로 꺾이던 결함)');
+    ['cart.html', 'anomaly.html', 'extension.html'].forEach(f => {
+      const src = fs.readFileSync(path.join(ROOT, 'public', 'v2', f), 'utf8');
+      T.check(!/class="kpi"><b>/.test(src), `${f}: 값이 라벨보다 먼저 오는 옛 요약 모양이 남아 있지 않다`);
+    });
+  }
+
   T.done();
 }
 
