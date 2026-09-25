@@ -324,3 +324,15 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 
 
 - 이 진행 기록 PR #85의 최신 head 21cb3d15058b853be4f5fbb1a90780360c5e9f5c Actions run 36101811878도 success다.
+
+
+## 11. Production RPC migration result (2026-09-25)
+
+- User approved applying the latest PR #86 migration at head c5203681ff524e72f1fc3d97de915f978f5fcf95. Rechecked its 2-second lock-timeout transaction and additive-function-only SQL before execution.
+- Before apply: no existing public.price_drop_top_candidates overload or dependents; the supporting option-price index exists. pg_stat_activity showed 0 active price-history/collector queries and 0 waiting relation locks. No session was terminated.
+- Production migration applied successfully as version 20260925063627, name price_drop_top_candidates_20260925.
+- Post-apply catalog verification: signature price_drop_top_candidates(integer); expected 11-column result; STABLE; SECURITY INVOKER; search_path=public, pg_temp; service_role EXECUTE true; anon/authenticated/PUBLIC EXECUTE false.
+- The Production price_history and products tables were not altered; no row, index, collection, hotdeal, email, or feature-flag change was made. PR #86 API code remains unmerged and current Production API still uses the existing view.
+- A read-only Production request for RPC limit 200, capped by SET LOCAL statement_timeout=7s, was canceled with SQLSTATE 57014. The first attempt also included row/options verification and timed out; a second attempt calling the RPC itself (without those additional history lookups) also timed out at the 7-second ceiling. No further Production query or DB change was attempted.
+- The RPC migration is safely additive but has not met the runtime gate. Do not merge/deploy PR #86 until a new optimization is validated against Production limits. No rollback DDL was applied because that would be another Production schema change; the new function is not yet used by application code.
+- Supporting test-project parity remains 200 rows versus 200, bidirectional difference 0. This test result did not predict Production runtime.
