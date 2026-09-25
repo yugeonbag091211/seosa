@@ -3,35 +3,38 @@ name: Price Drop State (gated)
 # ── 홈 «가격 하락» 사전 집계 갱신 ──────────────────────────────────────
 #
 # /api/init 이 요청마다 최근 30일 원장을 옵션별로 순위 매기던 계산(price_drop_top)을
-# 상태표(price_drop_state)로 옮겼다. 이 워크플로는 그 상태표를 원장에서 다시 계산한다.
-# supabase/2026-09-25-price-drop-state.sql 머리말 참고.
+# 세대별 상태표(price_drop_state)로 옮겼다. 이 워크플로가 그 상태표를 원장에서 다시 계산한다.
+# 설계·운영 절차: docs/seosa2/price-drop-state.md
 #
 # ★ 저장소 변수 PRICE_DROP_STATE_ENABLED=1 이 없으면 job 이 통째로 건너뛰어진다.
 #   마이그레이션을 운영에 적용하고 승인을 받은 뒤에만 켠다.
 #
 # ★ 가격을 수집하지 않는다. 쿠팡·ADPICK 을 부르지 않는다. price_history · products ·
-#   hotdeals 에 쓰지 않는다. 가격 수집 워크플로(daily-prices.yml)를 한 줄도 바꾸지 않고
-#   그 «끝난 뒤» 에 따로 돈다 — 이 워크플로가 실패해도 수집은 영향이 없다.
+#   hotdeals 에 쓰지 않고 기존 뷰 price_drop_top 을 부르지 않는다. 가격 수집 워크플로를
+#   한 줄도 바꾸지 않고 그 «끝난 뒤» 에 따로 돈다 — 이 워크플로가 실패해도 수집은 영향이 없다.
 #
 # 언제:
-#   · 가격 수집 실행이 끝날 때마다 (workflow_run) — 증분 비용은 «최근 2일에 기록된 상품» 뿐
-#   · 낮 동안 /api/search 가 쓴 관측을 반영하는 예약 칸 (KST 09:15 · 12:15 · 15:15 · 18:15 · 21:15)
-#   · 수동: mode=full 은 초기 적재·복구(오래된 날짜를 고친 뒤)
-#   같은 시각에 둘이 겹쳐도 함수의 권고 잠금이 한 번만 계산하게 한다.
+#   · 가격 수집 실행이 끝날 때마다 (workflow_run) — 자동 모드: 증분 + 표본 검증,
+#     필요하면(미초기화 · 삭제 탐지 · 검증 불일치) 원자적 재구성
+#   · 낮 동안 /api/search 가 쓴 관측 반영 (KST 12:15 · 15:15 · 18:15 · 21:15)
+#   · KST 10:40 원자적 전체 재구성 — 증분이 볼 수 없는 과거 행 수정의 상한을 하루로 묶는다
+#   · 수동: mode=full · verify · rollback · abort
+#   겹쳐 돌아도 DB 함수의 권고 잠금과 재구성 소유권(하트비트)이 한 번에 하나만 쓰게 한다.
 
 on:
   workflow_run:
     workflows: ['Daily Price Collection']
     types: [completed]
   schedule:
-    - cron: '15 0,3,6,9,12 * * *'
+    - cron: '15 3,6,9,12 * * *'
+    - cron: '40 1 * * *'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'recent = 최근 기록만 다시 계산, full = 전체 재구성(복구)'
+        description: 'auto = 증분+검증(필요 시 재구성), full = 원자적 전체 재구성, verify = 표본 검증만, rollback = 직전 세대로, abort = 진행 중 재구성 버림'
         type: choice
-        options: [recent, full]
-        default: recent
+        options: [auto, full, verify, rollback, abort]
+        default: auto
 
 concurrency:
   group: price-drop-state
@@ -41,7 +44,7 @@ jobs:
   refresh:
     if: vars.PRICE_DROP_STATE_ENABLED == '1'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,11 +56,18 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          MODE: ${{ github.event.inputs.mode || 'recent' }}
+          MODE: ${{ github.event.inputs.mode || (github.event.schedule == '40 1 * * *' && 'full') || 'auto' }}
         run: |
-          if [ "$MODE" = "full" ]; then
-            node scripts/refresh-price-drop-state.js --full
-          else
-            node scripts/refresh-price-drop-state.js
-          fi
-          node scripts/refresh-price-drop-state.js --status
+          case "$MODE" in
+            full)     node scripts/refresh-price-drop-state.js --full ;;
+            verify)   node scripts/refresh-price-drop-state.js --verify ;;
+            rollback) node scripts/refresh-price-drop-state.js --rollback ;;
+            abort)    node scripts/refresh-price-drop-state.js --abort ;;
+            *)        node scripts/refresh-price-drop-state.js ;;
+          esac
+      - name: Status
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: node scripts/refresh-price-drop-state.js --status

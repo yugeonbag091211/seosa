@@ -57,14 +57,22 @@ async function main() {
   check(!/create\s+(or\s+replace\s+)?trigger/i.test(sql), '트리거를 만들지 않는다 (가격 수집 쓰기 경로에 아무것도 걸지 않는다)');
   check(!/create\s+or\s+replace\s+view\s+(public\.)?price_drop_top\s/i.test(sql), '기존 뷰 price_drop_top 은 재정의하지 않는다');
   check(/set\s+local\s+lock_timeout\s*=\s*'2s'/i.test(sql), '2초 lock_timeout 트랜잭션 안에서 적용한다');
-  check((sql.match(/security\s+invoker/gi) || []).length === 3 && !/security\s+definer/i.test(sql), '함수 셋 모두 SECURITY INVOKER');
-  check((sql.match(/set\s+search_path\s*=\s*public,\s*pg_temp/gi) || []).length === 3, '함수 셋 모두 search_path 고정');
-  check(/pg_try_advisory_xact_lock/.test(sql), '동시 갱신은 권고 잠금으로 한 번만');
+  const fnCount = (sql.match(/create\s+or\s+replace\s+function/gi) || []).length;
+  check(fnCount === 9 && (sql.match(/security\s+invoker/gi) || []).length === fnCount && !/security\s+definer/i.test(sql),
+    `함수 ${fnCount}개 모두 SECURITY INVOKER`);
+  check((sql.match(/set\s+search_path\s*=\s*public,\s*pg_temp/gi) || []).length === fnCount, '함수 모두 search_path 고정');
+  check(/pg_advisory_xact_lock\(hashtext\('price_drop_state'\)/.test(sql), '증분·재구성 배치·공개는 같은 권고 잠금으로 한 번에 하나');
+  check(/where\s+s\.gen\s*=\s*\(select\s+m\.published_gen/i.test(sql), '읽기(price_drop_top_fast)는 공개 세대만 본다 — 재구성 중인 세대는 보이지 않는다');
+  const verifySql = fs.readFileSync(path.join(ROOT, 'supabase', '2026-09-25-price-drop-state.VERIFY.sql'), 'utf8').replace(/--[^\n]*/g, ' ');
+  check(!/price_drop_top\b(?!_)/.test(verifySql) && !/statement_timeout/i.test(verifySql) && /price_drop_state_verify\(null,\s*\d+,\s*false\)/.test(verifySql),
+    '운영 VERIFY.sql 은 기존 뷰를 부르지 않고 timeout 을 올리지 않으며 아무것도 쓰지 않는다');
+  const verifyFn = /function public\.price_drop_state_verify[\s\S]*?\$\$([\s\S]*?)\$\$/.exec(sql);
+  check(verifyFn && !/price_drop_top\b(?!_)/.test(verifyFn[1]), '표본 검증 함수는 기존 뷰 price_drop_top 을 부르지 않는다');
   // 운영 규모 합성 데이터(원장 26만 행)에서 NOT EXISTS (… from calc) 반연결은 증분 갱신을
   // 0.3초 → 13초로 만들었다(CTE 행 수 오추정 → 중첩 루프). 지울 키는 EXCEPT 로 구한다.
   check(/\bexcept\b[\s\S]{0,120}from\s+calc\b/i.test(sql) && !/not\s+exists\s*\(\s*select[\s\S]{0,40}from\s+calc\b/i.test(sql),
     '지울 키는 EXCEPT(해시)로 구한다 — CTE 반연결(NOT EXISTS) 금지');
-  check(/where\s+s\.prev_date\s*>=\s*current_date\s*-\s*30\b/i.test(sql), '30일 창은 조회 시점에 prev_date 로만 건다');
+  check(/create\s+or\s+replace\s+view\s+public\.price_drop_top_fast[\s\S]*?\bs\.prev_date\s*>=\s*current_date\s*-\s*30\b/i.test(sql), '30일 창은 조회 시점에 prev_date 로만 건다');
   check(/revoke\s+all\s+on\s+table\s+public\.price_drop_state\s+from\s+public,\s*anon,\s*authenticated/i.test(sql)
     && /revoke\s+all\s+on\s+table\s+public\.price_drop_top_fast\s+from\s+public,\s*anon,\s*authenticated/i.test(sql),
   '상태표·새 뷰는 anon/authenticated 에 열지 않는다');
@@ -102,16 +110,18 @@ async function main() {
              (select count(*) from price_drop_top)::int n`)).rows[0];
     return r;
   }
+  /** 원자적 재구성: 새 세대에 배치로 쓰고, 게이트를 통과하면 공개한다. @returns 배치 수 */
   async function rebuild(limit) {
-    let after = '';
+    const st = (await q(`select price_drop_state_rebuild_start('test') r`)).rows[0].r;
     let batches = 0;
     for (;;) {
-      const r = (await q(`select price_drop_state_rebuild_batch($1, $2) r`, [after, limit])).rows[0].r;
+      const r = (await q(`select price_drop_state_rebuild_step($1, 'test', $2) r`, [st.gen, limit])).rows[0].r;
       batches++;
-      if (!r.next_after) return batches;
-      after = r.next_after;
+      if (r.done) break;
       if (batches > 10000) throw new Error('rebuild loop');
     }
+    await q(`select price_drop_state_publish($1, 'test') r`, [st.gen]);
+    return batches;
   }
   const ins = rows => Promise.all(rows.map(r => q(
     `insert into price_history (product_id, mall, vendor_item_id, price, recorded_date, recorded_at, source)
@@ -144,7 +154,7 @@ async function main() {
   await rebuild(3);
   const d0 = await diff();
   check(d0.a === 0 && d0.b === 0 && d0.n > 0, `초기 적재 뒤 전체 결과 동일 (${d0.n}행, 뷰 정의 ${viewFile})`, d0);
-  const fast = (await q(`select product_id, vendor_item_id, prev_date - current_date as prev_off from price_drop_state order by 1, 2`)).rows;
+  const fast = (await q(`select product_id, vendor_item_id from price_drop_state where gen = (select published_gen from price_drop_state_meta) order by 1, 2`)).rows;
   const ids = (await q(`select product_id from price_drop_top_fast order by 1`)).rows.map(r => r.product_id);
   check(ids.includes('P2') && !ids.includes('P3'), '30일 전 prev 는 포함, 31일 전 prev 는 제외 (기존 뷰와 같다)', ids);
   check(ids.includes('P4') && !ids.includes('P5') && !ids.includes('P10') && !ids.includes('GHOST'),
@@ -162,7 +172,7 @@ async function main() {
   const d1 = await diff();
   check(d1.a === 0 && d1.b === 0, '증분 갱신 뒤 다시 전체 결과 동일', { d1, r1 });
   const r2 = (await q(`select price_drop_state_refresh_recent(2) r`)).rows[0].r;
-  check(r2.upserted === 0 && r2.deleted === 0, '바뀐 것이 없으면 한 행도 다시 쓰지 않는다', r2);
+  check(r2.published.upserted === 0 && r2.published.deleted === 0, '바뀐 것이 없으면 한 행도 다시 쓰지 않는다', r2);
 
   section('무작위 원장 (시드 고정) — 전체 재구성 · 증분 · 복구');
   let seed = 7;
@@ -205,39 +215,65 @@ async function main() {
               and vendor_item_id <> '__LEGACY__' limit 40 on conflict do nothing`);
   await q(`delete from price_history where id in (select id from price_history where recorded_date between current_date - 25 and current_date - 5 order by id limit 40)`);
   await q(`delete from price_history where product_id in ('R0003','R0100','R0399')`);   // 원장에서 통째로 사라진 상품
-  await q(`select price_drop_state_refresh_recent(2)`);
+  // 증분이 고르지 않는 키(최근 기록·새 id 없음)의 최신 관측을 지운다 — 원장에 흔적이 남지 않는 변경
+  const victim = (await q(`select s.product_id, s.mall, s.vendor_item_id, s.latest_date from price_drop_state s
+      where s.gen = (select published_gen from price_drop_state_meta) and s.prev_date >= current_date - 30 and s.latest_date < current_date - 2
+        and not exists (select 1 from price_history h where h.product_id = s.product_id
+                          and (h.id > (select id_watermark from price_drop_state_meta) or h.recorded_date >= current_date - 2))
+        and exists (select 1 from products p where p.product_id = s.product_id and p.mall = s.mall)
+      order by s.product_id limit 1`)).rows[0];
+  await q('delete from price_history where product_id = $1 and mall = $2 and vendor_item_id = $3 and recorded_date = $4',
+    [victim.product_id, victim.mall, victim.vendor_item_id, victim.latest_date]);
+  await q(`select price_drop_state_refresh_recent(2, 0)`);
   const d4 = await diff();
-  check(d4.a + d4.b > 0, '오래된 날짜 수정·삭제는 증분이 못 본다 (설계상 — 재구성의 몫)', d4);
+  check(d4.a + d4.b > 0, '삭제는 증분이 볼 수 없다 (설계상 — 탐지해서 재구성으로; 동시성·탐지는 test-price-drop-state-pg)', d4);
   await rebuild(37);
   const d5 = await diff();
   check(d5.a === 0 && d5.b === 0, '전체 재구성이 복구한다', d5);
-  const ghosts = (await q(`select count(*)::int n from price_drop_state where product_id in ('R0003','R0100','R0399')`)).rows[0].n;
+  const ghosts = (await q(`select count(*)::int n from price_drop_state where gen = (select published_gen from price_drop_state_meta) and product_id in ('R0003','R0100','R0399')`)).rows[0].n;
   check(ghosts === 0, '원장에서 사라진 상품의 상태 행은 배치 경계를 넘어서도 지워진다');
   await q('truncate price_drop_state');
   await rebuild(3000);
   const d6 = await diff();
   check(d6.a === 0 && d6.b === 0, '상태표를 비워도 재구성으로 같은 결과', d6);
+  const gens = (await q('select count(distinct gen)::int n from price_drop_state')).rows[0].n;
+  check(gens <= 2, `공개 뒤 남는 세대는 공개·직전 둘 이하 (${gens})`);
 
   section('갱신 스크립트 (scripts/refresh-price-drop-state.js) — rpc 를 같은 Postgres 로 연결');
   {
     const kit = require('./_v2-testkit');
-    const { state } = kit.setup('test-price-drop-state');
+    const { state, db: fakeDb } = kit.setup('test-price-drop-state');
     const viaPg = fn => async args => {
       try { return { data: (await q(`select ${fn}(${Object.keys(args).map((k, i) => `${k} => $${i + 1}`).join(', ')}) r`, Object.values(args))).rows[0].r, error: null }; }
       catch (e) { return { data: null, error: { message: e.message, code: e.code } }; }
     };
-    state.rpc.price_drop_state_rebuild_batch = viaPg('price_drop_state_rebuild_batch');
-    state.rpc.price_drop_state_refresh_recent = viaPg('price_drop_state_refresh_recent');
+    for (const fn of ['rebuild_start', 'rebuild_step', 'publish', 'refresh_recent', 'verify', 'rollback_publish', 'abort_build']) {
+      state.rpc['price_drop_state_' + fn] = viaPg('price_drop_state_' + fn);
+    }
+    // status() 는 표를 읽는다 — 가짜 DB 에 같은 Postgres 의 메타 행을 비춰 준다
+    const syncMeta = async () => { fakeDb.price_drop_state_meta = (await q('select * from price_drop_state_meta')).rows; };
     const script = require('./refresh-price-drop-state');
-    await q('truncate price_drop_state');
-    const full = await script.full(50);
-    const d7 = await diff();
-    check(!full.error && full.batches > 1 && d7.a === 0 && d7.b === 0, `--full: 배치 ${full.batches}개를 커서로 이어 돌고 결과가 같다`, { full, d7 });
     await ins([['R0001', '쿠팡', 'o0', 1234, 1], ['R0002', 'ADPICK', 'o0', 2345, 1]]);
-    const rec = await script.recent(2);
+    await syncMeta();
+    const a1 = await script.auto({ days: 2, sample: 100 });
+    const d7 = await diff();
+    check(a1.ok && a1.log.some(x => x.step === 'recent') && d7.a === 0 && d7.b === 0, '자동 모드: 증분 → 표본 검증 ok, 결과 동일', { log: a1.log, d7 });
+    const genBefore = (await q('select published_gen g from price_drop_state_meta')).rows[0].g;
+    await syncMeta();
+    const a2 = await script.auto({ full: true, batch: 50, sample: 100 });
+    const m2 = (await q('select published_gen g, previous_gen p from price_drop_state_meta')).rows[0];
     const d8 = await diff();
-    check(!rec.error && rec.data.refreshed === true && d8.a === 0 && d8.b === 0, '증분 모드도 같은 결과', { rec, d8 });
-    state.rpc.price_drop_state_refresh_recent = async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.price_drop_state_refresh_recent' } });
+    check(a2.ok && Number(m2.g) > Number(genBefore) && Number(m2.p) === Number(genBefore) && d8.a === 0 && d8.b === 0,
+      `--full: 배치 여러 개로 새 세대를 만들고 공개 (gen ${genBefore} → ${m2.g}), 결과 동일`, { log: a2.log, d8 });
+    await q(`update price_drop_state_meta set needs_rebuild = true, needs_rebuild_reason = 'test', needs_rebuild_at = now()`);
+    await syncMeta();
+    const a3 = await script.auto({ batch: 500, sample: 100 });
+    const flag = (await q('select needs_rebuild n from price_drop_state_meta')).rows[0].n;
+    check(a3.ok && a3.log[0].step === 'rebuild' && a3.log[0].why === 'test' && flag === false,
+      'needs_rebuild 이면 자동 모드가 원자적 재구성으로 복구하고 플래그를 내린다', a3.log);
+    // 마이그레이션 전: 메타 표도 함수도 없다
+    state.missingTables.add('price_drop_state_meta');
+    for (const k of Object.keys(state.rpc)) state.rpc[k] = async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.' + k } });
     const log = console.log; const lines = []; console.log = (...a) => lines.push(a.join(' '));
     let threw = null;
     try { await script.main(); } catch (e) { threw = e; } finally { console.log = log; }
@@ -253,11 +289,11 @@ async function main() {
   check(/price_drop_state_rank_idx/.test(plan), '상위 200 은 drop_pct 인덱스로 읽을 수 있다', plan);
   const priv = (await q(`select has_table_privilege('anon','price_drop_state','select') a, has_table_privilege('authenticated','price_drop_top_fast','select') b,
                                has_table_privilege('service_role','price_drop_top_fast','select') c,
-                               has_function_privilege('anon','price_drop_state_refresh_recent(integer)','execute') d,
-                               has_function_privilege('service_role','price_drop_state_rebuild_batch(text,integer)','execute') e`)).rows[0];
+                               has_function_privilege('anon','price_drop_state_refresh_recent(integer,integer)','execute') d,
+                               has_function_privilege('service_role','price_drop_state_rebuild_step(bigint,text,integer)','execute') e`)).rows[0];
   check(!priv.a && !priv.b && priv.c && !priv.d && priv.e, 'anon/authenticated 는 읽기·실행 불가, service_role 만', priv);
-  const meta = (await q(`select last_recent_at is not null a, last_full_finished is not null b, full_cursor from price_drop_state_meta`)).rows[0];
-  check(meta.a && meta.b && meta.full_cursor === null, '갱신 기록이 남고 재구성 커서는 끝나면 비워진다', meta);
+  const meta = (await q(`select last_recent_at is not null a, last_publish_at is not null b, building_gen, building_cursor, published_gen from price_drop_state_meta`)).rows[0];
+  check(meta.a && meta.b && meta.building_gen === null && meta.building_cursor === null && meta.published_gen !== null, '갱신·공개 기록이 남고 재구성 칸은 공개 뒤 비워진다', meta);
 
   const rollback = fs.readFileSync(path.join(ROOT, 'supabase', '2026-09-25-price-drop-state.ROLLBACK.sql'), 'utf8');
   await db.exec(rollback);

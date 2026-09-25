@@ -1,8 +1,11 @@
 -- ══════════════════════════════════════════════════════════════════
---  2026-09-25-price-drop-state.sql 적용 뒤 확인 — 전부 읽기 전용 (SELECT 만)
+--  2026-09-25-price-drop-state.sql 확인 — 운영에서 돌려도 되는 것만
 --
---  ★ §3 은 기존 뷰 price_drop_top 을 한 번 통째로 계산한다(운영에서 8초를 넘기던 그 계산).
---    SQL Editor 에서 가격 수집 시간대(KST 00~09시)를 피해 한 번만 돌릴 것.
+--  ★ 기존 뷰 price_drop_top 을 부르지 않는다 (운영에서 8초를 넘기던 그 계산).
+--    statement_timeout 도 올리지 않는다. 전부 표본 키 · 인덱스 조회 · 카탈로그 조회다.
+--  ★ 아무것도 쓰지 않는다 (price_drop_state_verify 를 p_record => false 로 부른다).
+--  ★ 기존 뷰와의 전체 대조는 테스트 DB 전용 파일
+--    2026-09-25-price-drop-state.TESTDB-PARITY.sql 에 있다. 운영에서 돌리지 않는다.
 -- ══════════════════════════════════════════════════════════════════
 
 -- §1. 객체 · 권한 · 설정
@@ -23,37 +26,39 @@ select p.proname, p.prosecdef as security_definer, p.proconfig,
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
  where n.nspname = 'public' and p.proname like 'price_drop_state_%'
  order by p.proname;
--- 기대: 3개 · security_definer=false · search_path 고정 · anon/authenticated false.
+-- 기대: 9개 · security_definer=false · search_path 고정 · anon/authenticated false.
 
--- §2. 신선도 (전체 재구성과 증분이 돌았는가)
-select m.*, (select count(*) from public.price_drop_state) as state_rows,
-       (select count(*) from public.price_drop_top_fast) as fast_rows
-  from public.price_drop_state_meta m;
+-- §2. 공개 상태 · 신선도
+select published_gen, previous_gen, building_gen, building_cursor, building_done, building_heartbeat,
+       needs_rebuild, needs_rebuild_reason, last_recent_at, last_recent_ms, last_recent_products,
+       last_publish_at, last_publish->'rows' as published_rows, last_verify_at, last_verify->'ok' as last_verify_ok
+  from public.price_drop_state_meta;
+-- 기대: published_gen 이 있고 needs_rebuild=false, last_recent_at 이 마지막 수집 뒤.
 
--- §3. 기존 뷰와 전체 결과 대조 (양방향 EXCEPT ALL 이 둘 다 0 이어야 한다)
---   증분 갱신 뒤 새 원장 쓰기가 끼어들면 0 이 아닐 수 있다 — 그때는 증분을 한 번 더
---   돌리고 다시 대조한다. 0 이 아닌 채로 PRICE_DROP_SOURCE=state 를 켜지 않는다.
-begin;
-set local statement_timeout = '120s';
-with a as (
-  select product_id, mall, title, current_price, prev_price, all_time_low, drop_amount, drop_pct,
-         is_all_time_low, link, image, mall_label
-    from public.price_drop_top
-), d as (
-  select product_id, mall, title, current_price, prev_price, all_time_low, drop_amount, drop_pct,
-         is_all_time_low, link, image, mall_label
-    from public.price_drop_top_fast
-)
-select (select count(*) from a) as view_rows,
-       (select count(*) from d) as fast_rows,
-       (select count(*) from (select * from a except all select * from d) x) as view_minus_fast,
-       (select count(*) from (select * from d except all select * from a) x) as fast_minus_view;
-commit;
+-- §3. 표본 독립 검증 (기록 없음) — 상위 노출 · 무작위 · 30일 경계 · 최근 원장 기록 키를
+--     price_history 에서 그 키의 행만 다시 읽어 최신가 · 직전가 · 전체 최저가 · 하락률 ·
+--     누락(missing) · 잉여(extra) · products 조인 중복을 대조한다.
+select public.price_drop_state_verify(null, 200, false) as verify;
+-- 기대: ok=true, mismatches=0, duplicates=0. pending 은 마지막 증분 뒤 새 기록이라 0 이 아니어도 된다.
 
--- §4. 홈이 실제로 던지는 질의의 계획 (Index Scan using price_drop_state_rank_idx 기대)
+-- §4. 특정 상품 하나를 손으로 대조할 때 (값을 바꿔 넣는다)
+-- select s.*, (select jsonb_agg(jsonb_build_array(h.recorded_date, h.price) order by h.recorded_date desc)
+--                from public.price_history h
+--               where h.product_id = s.product_id and h.mall = s.mall and h.vendor_item_id = s.vendor_item_id) as ledger
+--   from public.price_drop_state s
+--  where s.gen = (select published_gen from public.price_drop_state_meta) and s.product_id = '9584791839';
+
+-- §5. 홈이 던지는 질의의 계획 (EXPLAIN 만 — 실행하지 않는다)
+--     기대: Index Scan using price_drop_state_rank_idx, Sort 없음, Limit 200.
 explain
 select product_id, mall, mall_label, title, current_price, prev_price, drop_amount, drop_pct,
        is_all_time_low, link, image
   from public.price_drop_top_fast
  order by drop_pct desc
  limit 200;
+
+-- §6. 저장공간 (세대가 공개·직전·재구성 중 최대 셋)
+select gen, count(*) as rows from public.price_drop_state group by gen order by gen;
+select pg_size_pretty(pg_table_size('public.price_drop_state'))   as table_size,
+       pg_size_pretty(pg_indexes_size('public.price_drop_state')) as indexes_size,
+       pg_size_pretty(pg_total_relation_size('public.price_drop_state')) as total_size;
