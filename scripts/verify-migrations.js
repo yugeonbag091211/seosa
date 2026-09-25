@@ -133,6 +133,12 @@ const NEW_MIGRATIONS = [
    * 카탈로그가 커질수록 다시 죽는» 상태로 남는다.
    */
   '2026-09-22-collector-target-keyset.sql',
+  /*
+   * 2026-09-24: SEOSA 2.0 ② 구매 대기실 — 새 표 두 개(waitroom_items ·
+   * waitroom_notifications)만 만든다. 기존 표를 읽지도 쓰지도 않는다.
+   * 미적용이면 /api/waitroom 은 503 WAITROOM_NOT_READY, 알림 잡은 아무것도 하지 않는다.
+   */
+  '2026-09-24-seosa2-waitroom.sql',
   // 2026-09-25: read-only price_drop_top rewrite; no application data mutation.
   '2026-09-25-price-drop-top-ranked-aggregation.sql',
   // 2026-09-25: 가격 하락 상태표(파생) + 증분/재구성 함수 + price_drop_top_fast. 원장·기존 뷰 미변경.

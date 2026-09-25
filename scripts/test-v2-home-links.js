@@ -19,8 +19,11 @@ for (const [route, label] of routes) {
   T.check(home.includes(`href="${route}">${label}</a>`), `홈에서 ${label}로 연결된다`);
   T.check(lab.includes(`href="${route}"`), `SEOSA 2.0 목록에서 ${label}로 연결된다`);
 }
-T.check(!/timing\.html|waitroom\.html|구매 타이밍 예측|구매 대기실/.test(home + lab),
-  '운영 준비 전 구매 타이밍·대기실 기능은 공개하지 않는다');
+T.check(!/timing\.html|구매 타이밍 예측/.test(home + lab),
+  '백테스트 전 구매 타이밍 기능은 공개하지 않는다');
+T.check(!/waitroom\.html|구매 대기실/.test(home),
+  '구매 대기실은 홈이 아니라 SEOSA 2.0 목록에서만 들어간다');
+T.check(lab.includes('href="/v2/waitroom.html"'), 'SEOSA 2.0 목록에서 구매 대기실로 연결된다');
 T.check(!/data-label="구매 시점 판단"|구매 타이밍 확인|지금 살까|지금 사도 좋아요|>BUY</.test(home),
   '백테스트가 끝나지 않은 구매 타이밍을 홈 배너에서 권하지 않는다');
 T.check(home.includes('aria-label="가격 분석 도구"'), '가격 도구 탐색에 접근 가능한 이름이 있다');
