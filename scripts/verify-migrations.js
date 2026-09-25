@@ -133,7 +133,9 @@ const NEW_MIGRATIONS = [
    * waitroom_notifications)만 만든다. 기존 표를 읽지도 쓰지도 않는다.
    * 미적용이면 /api/waitroom 은 503 WAITROOM_NOT_READY, 알림 잡은 아무것도 하지 않는다.
    */
-  '2026-09-24-seosa2-waitroom.sql'
+  '2026-09-24-seosa2-waitroom.sql',
+  // 2026-09-25: read-only price_drop_top rewrite; no application data mutation.
+  '2026-09-25-price-drop-top-ranked-aggregation.sql'
 ];
 
 function checkStatic() {

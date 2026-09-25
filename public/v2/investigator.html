@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 쇼핑 조사관 · SEOSA 2.0</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg">
+<script src="/hot-theme.js"></script>
+<link rel="stylesheet" href="/v2/v2.css">
+<script defer src="/v2/v2.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 이동</a>
+<header><nav class="wrap" aria-label="주요 탐색">
+  <a class="logo" href="/" aria-label="SEOSA 홈으로">S</a>
+  <a href="/v2/index.html">SEOSA 2.0</a>
+  <a href="/v2/investigator.html" aria-current="page">쇼핑 조사관</a>
+  <button id="theme" class="spacer" type="button">다크모드</button>
+</nav></header>
+<main class="wrap" id="main" tabindex="-1">
+  <p class="eyebrow">③ SHOPPING INVESTIGATOR</p>
+  <h1>원하는 조건을 말로 적어 주세요</h1>
+  <p class="intro">SEOSA가 가격을 기록하고 있는 상품 중에서 조건에 맞는 것을 찾아 비교해요. 사양은 상품명에 적힌 것만 옮기고, 확인되지 않은 것은 확인되지 않았다고 표시해요.</p>
+
+  <form id="f" class="card" autocomplete="off">
+    <label for="q">무엇을 찾고 있나요?</label>
+    <textarea id="q" maxlength="300" required placeholder="예: 150만원 이하 1.5kg 이하 노트북, 램 16GB 이상, 삼성 제외"></textarea>
+    <p class="row"><button class="primary shrink" type="submit">조사하기</button></p>
+  </form>
+
+  <p id="status" role="status" class="muted"></p>
+  <div id="out" hidden>
+    <div class="notice" id="summary"></div>
+    <p class="muted" id="understood"></p>
+    <p class="muted" id="scope"></p>
+    <h2>비교한 상품</h2>
+    <div id="table"></div>
+    <div id="cards"></div>
+    <details id="exWrap"><summary>제외한 상품과 이유</summary><p class="muted" id="exGroups"></p><ul id="excluded" class="plain muted"></ul></details>
+    <ul id="disclaimers" class="plain muted"></ul>
+  </div>
+  <div id="err" class="error" hidden></div>
+</main>
+<footer class="wrap">추천 순서는 조건 적합도로만 정했어요. 가격은 SEOSA가 확인한 시점의 기록이며, 실제 결제 금액은 판매처에서 확인해 주세요.</footer>
+<script>
+(function () {
+  'use strict';
+  var SPEC_ORDER = ['weight_g', 'ram_gb', 'storage_gb', 'size_inch', 'battery_mah', 'refresh_hz', 'capacity_ml', 'power_w'];
+  var SPEC_NAME = { weight_g: '무게', ram_gb: '램', storage_gb: '저장', size_inch: '크기', battery_mah: '배터리', refresh_hz: '주사율', capacity_ml: '용량', power_w: '전력' };
+  function $(id) { return document.getElementById(id); }
+  function li(list) { return (list || []).map(function (t) { return '<li>' + window.V2.esc(t) + '</li>'; }).join(''); }
+
+  function table(cs) {
+    var V = window.V2;
+    var keys = SPEC_ORDER.filter(function (k) { return cs.some(function (c) { return c.specs.verified[k]; }); });
+    var h = '<div style="overflow-x:auto"><table><thead><tr><th>상품</th><th class="num">가격</th><th>가격 위치</th>';
+    keys.forEach(function (k) { h += '<th>' + V.esc(SPEC_NAME[k]) + '</th>'; });
+    h += '</tr></thead><tbody>';
+    cs.forEach(function (c) {
+      h += '<tr><td>' + V.esc(c.title) + '</td>'
+        + '<td class="num">' + V.esc(V.won(c.price.value)) + (c.price.verified ? '' : ' <span class="badge warn" title="최근 기록으로 확인하지 못했어요">미확인</span>') + '</td>'
+        + '<td>' + V.esc(c.level ? (c.level.pctRank == null ? c.level.label : '하위 ' + c.level.pctRank + '%') : '—') + '</td>';
+      keys.forEach(function (k) { var s = c.specs.verified[k]; h += '<td>' + (s ? V.esc(s.text) : '<span class="muted">표기 없음</span>') + '</td>'; });
+      h += '</tr>';
+    });
+    return h + '</tbody></table></div>';
+  }
+
+  function card(c, i) {
+    var V = window.V2;
+    var url = V.safeUrl(c.url);
+    return '<div class="card"><h3>' + (i + 1) + '. ' + V.esc(c.title) + '</h3>'
+      + '<p><b>' + V.esc(V.won(c.price.value)) + '</b> <span class="stamp">' + V.esc(c.price.observedDate || '') + ' 기록</span> · ' + V.esc(c.mallLabel) + '</p>'
+      + '<div class="row">'
+      + (c.pros.length ? '<div><b class="down">장점</b><ul class="plain">' + li(c.pros.map(function (p) { return p.text; })) + '</ul></div>' : '')
+      + (c.cons.length ? '<div><b class="up">주의</b><ul class="plain">' + li(c.cons.map(function (p) { return p.text; })) + '</ul></div>' : '')
+      + '</div>'
+      + '<p class="row">'
+      + (url ? '<a class="button shrink" href="' + V.esc(url) + '" target="_blank" rel="noopener sponsored">판매처에서 보기</a>' : '')
+      + '<a class="button shrink" href="' + V.esc('/v2/timing.html' + V.qs({ productId: c.productId, mall: c.mall, vendorItemId: c.vendorItemId })) + '">구매 타이밍</a>'
+      + '<a class="button shrink" href="' + V.esc('/v2/waitroom.html' + V.qs({ add: 1, productId: c.productId, mall: c.mall, vendorItemId: c.vendorItemId, title: c.title, link: url })) + '">대기실에 담기</a>'
+      + '</p></div>';
+  }
+
+  function render(r) {
+    var V = window.V2;
+    $('summary').textContent = r.summary.text;
+    var q = r.query, parts = [];
+    if (q.target && q.target.describe) parts.push('찾는 상품: ' + q.target.describe);
+    else if (q.searchPhrase) parts.push('찾는 상품: ' + q.searchPhrase);
+    if (q.requestedCount) parts.push(q.requestedCount + '개' + (q.countSaid > q.requestedCount ? ' (최대 ' + q.requestedCount + '개까지 비교)' : ''));
+    if (q.constraintLine) parts.push(q.constraintLine);
+    (q.attributes || []).forEach(function (a) { parts.push(a.label + (a.rule ? ': ' + a.rule : '') + ' — ' + a.basis); });
+    (q.specRules || []).forEach(function (s) { parts.push(s.text + (s.assumed ? ' (추정)' : '')); });
+    if ((q.exclusions || []).length) parts.push('제외: ' + q.exclusions.join(', '));
+    if ((q.wantedFeatures || []).length) parts.push('원하는 기능: ' + q.wantedFeatures.join(', '));
+    $('understood').textContent = '이렇게 이해했어요 — ' + parts.join(' · ');
+    $('table').innerHTML = r.candidates.length ? table(r.candidates) : '';
+    $('cards').innerHTML = r.candidates.map(card).join('');
+    var cv = r.coverage || {}, tries = cv.attempts || [];
+    $('scope').textContent = '조사 범위 — ' + (cv.scope || 'SEOSA가 가격을 기록 중인 상품')
+      + ' · 검색 ' + tries.length + '회' + (tries.length ? ' (' + tries.map(function (a) { return a.label; }).join(' → ') + ')' : '')
+      + (cv.liveSearch === 'off' ? ' · 실시간 쇼핑몰 검색 꺼짐' : cv.liveSearch === 'used' ? ' · 실시간 검색 1회 포함' : '');
+    $('exGroups').textContent = (r.excludedGroups || []).map(function (g) {
+      return g.label + ' ' + g.count + '개' + (g.groups.length ? ' (' + g.groups.map(function (x) { return x.name + ' ' + x.count; }).join(', ') + ')' : '');
+    }).join(' · ');
+    $('excluded').innerHTML = li((r.excluded || []).map(function (e) { return e.title + ' — ' + e.reason; }))
+      + ((r.excludedTotal || 0) > (r.excluded || []).length ? '<li>… 외 ' + ((r.excludedTotal || 0) - (r.excluded || []).length) + '개</li>' : '');
+    $('exWrap').hidden = !(r.excluded || []).length;
+    $('disclaimers').innerHTML = li(r.disclaimers);
+    $('out').hidden = false;
+  }
+
+  function run(e) {
+    if (e) e.preventDefault();
+    var V = window.V2;
+    var question = $('q').value.trim();
+    if (question.length < 2) return;
+    $('status').textContent = '가격 기록을 뒤지는 중…';
+    $('err').hidden = true; $('out').hidden = true;
+    V.api('/api/investigate', { method: 'POST', body: { question: question }, timeoutMs: 25000 }).then(function (r) {
+      $('status').textContent = '';
+      if (!r.ok) { $('err').textContent = r.error; $('err').hidden = false; return; }
+      render(r);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    $('f').addEventListener('submit', run);
+    var q = window.V2.param('q');
+    if (q) { $('q').value = q; run(); }
+  });
+})();
+</script>
+</body>
+</html>

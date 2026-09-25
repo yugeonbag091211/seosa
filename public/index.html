@@ -985,6 +985,14 @@ html[data-theme="dark"] .bs-tip{background:rgba(30,32,36,.76);
   vertical-align:2px;margin-left:4px;transition:width .18s}
 .hero-ai:hover::after{width:12px}
 
+/* 준비된 SEOSA 2.0 도구 — 기존 AI Concierge보다 약한 보조 링크로 둔다. */
+.v2-tools{display:flex;align-items:center;flex-wrap:wrap;gap:0 16px;margin:2px 0 0;padding:0;list-style:none}
+.v2-tools-label{color:var(--faint);font-size:.7rem}
+.v2-tools a{display:inline-flex;align-items:center;min-height:44px;padding:0 3px;
+  color:var(--soft);font-size:.76rem;text-decoration:none;border-bottom:1px solid transparent}
+.v2-tools a:hover{color:var(--ink);border-bottom-color:var(--line-2)}
+.hero-band>.v2-tools{max-width:1240px;margin:0 auto;padding:0 28px 12px}
+
 /*
  * 맥락 AI 진입점 (검색 결과 / 상품 상세 / 몰별 비교).
  * 고스트 버튼 — 검정 대형 CTA 를 추가하지 않는다. 무시해도 되는 보조 행동이다.
@@ -3118,6 +3126,10 @@ select:focus-visible,textarea:focus-visible,
   /* 성별 선택 두 칸(42.6px). 가로도 44px 을 넘겨 둔다. */
   #profileGender .tbtn{min-width:44px}
 }
+@media(max-width:640px){
+  .v2-tools{gap:0 10px;padding-left:8px}
+  .v2-tools a{font-size:.76rem}
+}
 </style>
 </head>
 <body>
@@ -3206,6 +3218,14 @@ select:focus-visible,textarea:focus-visible,
     <button class="nav-menu-item" role="menuitem" data-act="ai-entry" data-ctx="home">서사 AI에게 물어보기</button>
     <button class="nav-menu-item" role="menuitem" data-act="open-myalerts">가격 알림 관리</button>
     <button class="nav-menu-item" role="menuitem" data-act="open-profile">내 취향 설정</button>
+    <!--
+      SEOSA 2.0 새 기능(AI 쇼핑 조사관·장바구니 최저가·가격 이상 패턴) 진입점.
+      기존 헤더 아이콘 줄(♡·사람·☰)·검색창·가격 카드·핫딜·그래프는 그대로 두고,
+      이미 있는 «부가 기능 모음» 메뉴에 항목 하나만 더한다 — 다른 항목과 같은 마크업
+      (<a class="nav-menu-item" href>, "내 레이더 보기" 참고)이라 새 CSS 가 없다.
+      /v2/index.html 은 아직 배포되지 않은 기능(①·②)을 "준비 중"으로 표시하고 숨긴다.
+    -->
+    <a class="nav-menu-item" role="menuitem" href="/v2/index.html">SEOSA 2.0 새 기능 (베타)</a>
     <!--
       테마 토글은 헤더에서 이 메뉴로 옮겼다. 헤더 아이콘 줄을 목업대로
       ♡ · 사람 · ☰ 셋으로 맞추면서 자리가 없어졌는데, 기능은 없애지 않는다.
@@ -3637,6 +3657,12 @@ select:focus-visible,textarea:focus-visible,
     <!-- 슬라이드가 바뀐 사실만 한 줄로 알린다(내용 전체를 다시 읽지 않는다). -->
     <p class="hc-sr" id="hcLive" aria-live="polite" aria-atomic="true"></p>
    </section>
+   <nav class="v2-tools" aria-label="가격 분석 도구">
+     <span class="v2-tools-label">더 자세히 보기</span>
+     <a href="/v2/investigator.html">AI 쇼핑 조사관</a>
+     <a href="/v2/cart.html">장바구니 최저가</a>
+     <a href="/v2/anomaly.html">가격 이상 패턴</a>
+   </nav>
   </div>
 
 <main class="wrap">

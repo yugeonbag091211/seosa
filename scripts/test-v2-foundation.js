@@ -174,6 +174,10 @@ async function main() {
   T.check(discover().indexOf('test-v2-foundation.js') > -1, '러너가 test-v2-*.js 를 찾는다');
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   T.check(/node scripts\/test-seosa2\.js/.test(pkg.scripts.test), 'npm test 체인에 러너가 있다');
+  const vercelRoutes = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
+  T.check(['api/ai.js', 'api/history.js', 'api/alerts.js'].every(p =>
+    vercelRoutes.functions[p] && vercelRoutes.functions[p].includeFiles === 'api/_*.js'),
+  'Vercel 호스트 함수는 동적 라우트 모듈을 런타임에 포함한다');
   ['index.html', 'v2.css', 'v2.js'].forEach(f =>
     T.check(fs.existsSync(path.join(ROOT, 'public', 'v2', f)), `public/v2/${f} 존재`));
   {
@@ -193,8 +197,19 @@ async function main() {
     T.check(!sessionOf({ token: 't', expiresAt: Date.now() - 1000 }), '만료된 토큰(숫자)도 로그아웃 상태');
     T.check(sessionOf({ expiresAt: '' }) === null, '토큰 없으면 null');
   }
+  /*
+   * 홈페이지 진입점 (2026-09-24, 별도 승인 PR — scripts/test-v2-extension.js 에 상세 계약).
+   * 배포 전에는 "링크 자체가 없다" 가 계약이었다. 이제 ③⑤⑥이 운영에 있으므로,
+   * "허브(/v2/index.html) 하나로만, 기존 부가 기능 메뉴 안에서" 로 계약을 좁힌다 —
+   * 개별 기능 딥링크·새 헤더 요소가 없다는 것은 test-v2-extension.js 가 자세히 고정한다.
+   */
   const home = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-  T.check(home.indexOf('/v2/') === -1, '기존 홈 화면(index.html)은 v2 로 링크하지 않는다 (기존 UI 무수정)');
+  T.check((home.match(/href="\/v2\/index\.html"/g) || []).length === 1,
+    '기존 홈 화면(index.html)은 SEOSA 2.0 허브(/v2/index.html) 하나만 링크한다 (개별 기능 무수정)');
+  T.check(['/v2/investigator.html', '/v2/cart.html', '/v2/anomaly.html'].every(p => home.includes(p)),
+    '기존 홈은 준비된 조사관·장바구니·이상 패턴으로 연결된다');
+  T.check(!home.includes('/v2/timing.html') && !home.includes('/v2/waitroom.html'),
+    '준비 전 타이밍·대기실은 기존 홈에서 공개하지 않는다');
 
   T.done();
 }
