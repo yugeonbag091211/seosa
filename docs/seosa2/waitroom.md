@@ -16,12 +16,23 @@ GitHub Actions (KST 09:40, WAITROOM_ENABLED=1 일 때만)
 
 | 겹 | 무엇이 막나 |
 |---|---|
-| `waitroom_notifications (item_id, notify_date)` UNIQUE | 같은 날 두 번 (재실행·동시 실행) |
+| `waitroom_notifications (email, product_id, mall, notify_date)` UNIQUE | 같은 사람·같은 상품 같은 날 두 번 (재실행·동시 실행·항목 재등록·옵션 표기 차이) |
 | `armed` + REARM_RATIO 1.03 | 목표가 아래에 머무는 동안 매일 발송 · 목표가 ±1% 진동 |
-| `notified_at` + COOLDOWN_DAYS 7 | 같은 항목 7일에 두 번 이상 |
+| 발송 기록 + COOLDOWN_DAYS 7 (사람·상품 기준) | 같은 상품 7일에 두 번 이상 — 항목을 지우고 다시 담아도 |
 | NOTIFY_MAX_STALE_DAYS 1 | 이틀 넘은 관측으로 «지금 도달» 을 말하는 것 |
 
-Resend에는 `waitroom/{item_id}/{KST 날짜}` 키를 보낸다. 성공이면 항목의 `notified_at`·cooldown을 먼저
+**중복 방지 단위는 항목(item_id)이 아니라 «같은 사람·같은 상품» (`email, product_id, mall`)이다.**
+첫 판은 세 겹 모두 item_id 기준이었고 발송 기록이 `on delete cascade` 였다. 테스트에서 다음 세 경로가
+같은 상품 메일을 두 번 보냈다: ① 알림 뒤 항목 삭제 → 재등록, ② 같은 상품을 옵션 번호 있이/없이 두 번 담기,
+③ 수락 여부 불명(`claimed`) 기록이 삭제와 함께 사라진 뒤 재등록. 지금은 발송 기록을 `on delete set null`로
+남기고, 쿨다운·미확정 차단·같은 날 UNIQUE·공급자 키를 모두 사람·상품 기준으로 본다
+(`scripts/test-v2-waitroom.js` «계열 중복» 절). 첫 판을 이미 적용한 테스트 프로젝트는
+`supabase/2026-09-25-seosa2-waitroom-series-dedupe.UPGRADE.sql` 로 올린다 (운영에는 불필요).
+한계: 같은 상품의 서로 다른 두 옵션을 담으면 먼저 닿은 쪽 한 통만 가고, 다른 옵션은 7일 뒤에 알린다
+(중복보다 누락을 택하는 정책과 메일 본문의 «같은 상품은 7일에 한 번까지» 약속에 맞춘 것).
+
+Resend에는 `waitroom/{sha256(email|product_id|mall) 앞 32자}/{KST 날짜}` 키를 보낸다 (이메일 원문은 싣지 않는다).
+성공이면 항목의 `notified_at`·cooldown을 먼저
 기록한 뒤 발송 행을 `sent`로 바꾼다. 명확한 공급자 거절만 `failed`로 기록하고 같은 날 최대 3번까지
 재시도한다.
 

@@ -32,7 +32,7 @@ const previousWaitroomApiEnabled = process.env.WAITROOM_API_ENABLED;
 delete process.env.WAITROOM_API_ENABLED;
 
 state.uniques.waitroom_items = [['email', 'product_id', 'mall', 'vendor_item_id']];
-state.uniques.waitroom_notifications = [['item_id', 'notify_date']];
+state.uniques.waitroom_notifications = [['email', 'product_id', 'mall', 'notify_date']];
 
 function authed(token, o) {
   return mkReq(Object.assign({}, o, { headers: Object.assign({ authorization: `Bearer ${token}` }, (o && o.headers) || {}) }));
@@ -228,7 +228,8 @@ async function main() {
     seedJob();
     const s1 = await runJob({ send: fakeSend });
     T.check(sent.length === 1 && sent[0].to === ME && /A상품/.test(sent[0].subject), '목표가에 닿은 A 에만 한 통', sent.map(x => x.subject));
-    T.check(sent[0].idempotencyKey === `waitroom/1/${today}`, '항목·날짜별로 안정된 Resend idempotency key');
+    T.check(sent[0].idempotencyKey === W.providerKey({ email: ME, product_id: 'A', mall: '쿠팡' }, today)
+      && sent[0].idempotencyKey.indexOf(ME) === -1, '사람·상품·날짜별로 안정된 Resend idempotency key (이메일 원문은 싣지 않는다)', sent[0].idempotencyKey);
     const a = db.waitroom_items.find(r => r.id === 1);
     T.check(a.armed === false && a.status === 'REACHED' && a.notified_price === 9500 && a.notify_count === 1, 'A 는 해제·기록된다', a);
     const note = db.waitroom_notifications.find(n => n.item_id === 1);
@@ -244,7 +245,7 @@ async function main() {
 
     // 동시 실행: 다른 잡이 이미 선점한 상태 (무장은 아직 true 로 남아 있다고 가정)
     seedJob(); sent.length = 0;
-    db.waitroom_notifications.push({ id: 77, item_id: 1, email: ME, notify_date: today, price: 9500, target_price: 10000, status: 'claimed', attempts: 1 });
+    db.waitroom_notifications.push({ id: 77, item_id: 1, email: ME, product_id: 'A', mall: '쿠팡', notify_date: today, price: 9500, target_price: 10000, status: 'claimed', attempts: 1 });
     const s3 = await runJob({ send: fakeSend });
     T.check(sent.length === 0 && s3.skipped['delivery-unconfirmed'] === 1, '다른 실행의 claimed 행은 다시 보내지 않는다');
 
@@ -309,6 +310,76 @@ async function main() {
     const nk = await runJob({});
     T.check(nk.wouldNotify === 1 && process.exitCode === 1, 'RESEND_API_KEY 가 없으면 보내지 않고 exit 1 로 알린다');
     process.exitCode = prevExit;
+  }
+
+  /* ── 4. 계열 중복 — 같은 사람·같은 상품 (2026-09-25 재현 → 수정) ──────────
+   * 첫 판은 세 겹 모두 item_id 기준이었고 발송 기록은 on delete cascade 였다.
+   * 아래 셋 모두 수정 전 코드에서 같은 상품 메일(공급자 요청)이 2번 나갔다. */
+  T.section('계열 중복 — 항목을 지우고 다시 담아도 · 옵션 표기가 달라도 한 통');
+  {
+    const save = vid => call(authed(tokenMe, { method: 'POST',
+      body: { action: 'save', productId: 'A', mall: '쿠팡', vendorItemId: vid, title: 'A상품', targetPrice: 10000 } }));
+    const del = id => call(authed(tokenMe, { method: 'DELETE', body: { id } }));
+    // 운영 FK 는 on delete set null — 항목을 지워도 발송 기록은 남는다 (가짜 DB 는 FK 가 없어 흉내 낸다)
+    const onDeleteSetNull = () => db.waitroom_notifications.forEach(n => {
+      if (n.item_id != null && !db.waitroom_items.some(i => i.id === n.item_id)) n.item_id = null;
+    });
+    const fresh = () => { seedJob(); db.waitroom_items = []; db.waitroom_notifications = []; sent.length = 0; sendMode = 'ok'; };
+    const aKey = W.providerKey({ email: ME, product_id: 'A', mall: '쿠팡' }, today);
+
+    // [1] 알림 → 삭제 → 같은 상품 재등록 → 같은 날 재실행
+    fresh();
+    await save('1');
+    await runJob({ send: fakeSend });
+    await del(db.waitroom_items[0].id); onDeleteSetNull();
+    await save('1');
+    const again = await runJob({ send: fakeSend });
+    T.check(sent.length === 1 && again.skipped['series-cooldown'] === 1, '[1] 알림 뒤 지우고 다시 담아도 같은 날 두 번째 메일이 없다', { sent: sent.length, again: again.skipped });
+    T.check(db.waitroom_notifications.length === 1 && db.waitroom_notifications[0].item_id === null
+      && db.waitroom_notifications[0].status === 'sent', '[1] 발송 기록은 항목 삭제 뒤에도 남는다 (item_id 만 비운다)', db.waitroom_notifications);
+    const readded = db.waitroom_items[0];
+    T.check(readded.armed === true, '[1] 막힌 항목은 무장 해제(CAS)하지 않는다 — 쿨다운이 끝나면 정상 판정', readded);
+    // 다음 날(발송 1일 뒤)에도 7일 쿨다운은 사람·상품 기준으로 이어진다
+    const note = db.waitroom_notifications[0];
+    note.notify_date = daysAgo(1); note.created_at = note.sent_at = new Date(Date.now() - 86400000).toISOString();
+    const nextDay = await runJob({ send: fakeSend });
+    T.check(sent.length === 1 && nextDay.skipped['series-cooldown'] === 1, '[1] 다음 날에도 7일 안이면 보내지 않는다 (메일 본문의 약속)');
+    note.notify_date = daysAgo(8); note.created_at = note.sent_at = new Date(Date.now() - 8 * 86400000).toISOString();
+    await runJob({ send: fakeSend });
+    T.check(sent.length === 2 && sent[1].idempotencyKey === aKey, '[1] 7일이 지나면 다시 담은 항목이 정상적으로 알린다', sent.map(p => p.idempotencyKey));
+
+    // [2] 같은 상품을 옵션 번호 있이 / 없이 두 번 담음 → 한 실행에서 한 통
+    fresh();
+    await save('1'); await save('');
+    const two = await runJob({ send: fakeSend });
+    T.check(db.waitroom_items.length === 2 && sent.length === 1 && two.skipped['series-already-notified'] === 1,
+      '[2] 옵션 표기가 다른 두 항목이라도 같은 상품이면 한 통', { items: db.waitroom_items.length, sent: sent.length, skipped: two.skipped });
+    T.check(db.waitroom_items.filter(i => i.armed).length === 1, '[2] 건너뛴 쪽은 무장 상태를 건드리지 않는다');
+    const twoAgain = await runJob({ send: fakeSend });
+    T.check(sent.length === 1 && twoAgain.skipped['series-cooldown'] === 1, '[2] 재실행해도 두 번째 항목이 보내지 않는다');
+
+    // [3] 수락 여부 불명(claimed) → 삭제 → 재등록 → 재실행: 공급자에 다시 요청하지 않는다
+    fresh();
+    let requests = 0;
+    const lost = async p => { sent.push(p); requests++; return { ok: false, uncertain: true, error: 'socket hang up' }; };
+    await save('1');
+    await runJob({ send: lost });
+    await del(db.waitroom_items[0].id); onDeleteSetNull();
+    await save('1');
+    const after = await runJob({ send: lost });
+    T.check(requests === 1 && after.skipped['delivery-unconfirmed'] === 1,
+      '[3] 수락 여부를 모르는 발송은 항목을 지웠다 다시 담아도 재전송하지 않는다', { requests, skipped: after.skipped });
+
+    // 과차단 없음: 같은 사람의 다른 상품, 다른 사람의 같은 상품은 각각 한 통
+    fresh();
+    db.waitroom_items = [
+      { id: 11, email: ME, product_id: 'A', mall: '쿠팡', vendor_item_id: '1', title: 'A상품', target_price: 10000, status: 'WAITING', armed: true, notify_count: 0 },
+      { id: 12, email: OTHER, product_id: 'A', mall: '쿠팡', vendor_item_id: '1', title: 'A상품', target_price: 10000, status: 'WAITING', armed: true, notify_count: 0 },
+      { id: 13, email: ME, product_id: 'D', mall: '쿠팡', vendor_item_id: '9', title: 'D옵션9', target_price: 1000, status: 'WAITING', armed: true, notify_count: 0 }
+    ];
+    await runJob({ send: fakeSend });
+    T.check(sent.length === 3 && new Set(sent.map(p => p.idempotencyKey)).size === 3,
+      '다른 상품 · 다른 사람은 막지 않는다 (각 한 통, 키도 서로 다르다)', sent.map(p => [p.to, p.subject]));
   }
 
   T.section('안전');

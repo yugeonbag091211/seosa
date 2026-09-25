@@ -61,17 +61,34 @@ async function fetchAll(label, build) {
   }
 }
 
-/** 이전 실행이 메일 수락 여부를 확인하지 못한 항목은 자동 재전송·재무장하지 않는다. */
-async function pendingClaims(items) {
-  const out = new Set();
-  const ids = items.map(i => i.id);
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await supabase.from('waitroom_notifications').select('item_id')
-      .in('item_id', ids.slice(i, i + CHUNK)).eq('status', 'claimed');
-    if (error) throw new Error(`미확정 발송 조회 실패: ${error.message}`);
-    (data || []).forEach(r => out.add(String(r.item_id)));
+/**
+ * 발송 기록을 «같은 사람·같은 상품» (W.seriesKey) 단위로 읽는다. 항목 id 로 읽지 않는다 —
+ * 항목을 지우고 다시 담으면 id 가 바뀌지만 발송 기록은 남아 있다(on delete set null).
+ *
+ *   unconfirmed  이전 실행이 수락 여부를 확인하지 못한 계열 — 자동 재전송·재무장하지 않는다
+ *   lastSent     최근 COOLDOWN_DAYS 안에 보냈(거나 보냈을 수 있)던 계열 → 그 시각
+ */
+async function seriesLedger(items, now) {
+  const unconfirmed = new Set();
+  const lastSent = new Map();
+  const emails = [...new Set(items.map(i => i.email))];
+  // notify_date(KST 날짜)는 선점 때 항상 채워진다 — 하루 여유를 두고 거른 뒤 시각으로 다시 잰다.
+  const sinceDate = kstToday(new Date(now - (W.COOLDOWN_DAYS + 1) * 86400000));
+  for (let i = 0; i < emails.length; i += CHUNK) {
+    const chunk = emails.slice(i, i + CHUNK);
+    const claimed = await fetchAll('미확정 발송', () => supabase.from('waitroom_notifications')
+      .select('id, email, product_id, mall').in('email', chunk).eq('status', 'claimed').order('id', { ascending: true }));
+    claimed.forEach(r => unconfirmed.add(W.seriesKey(r)));
+    const recent = await fetchAll('최근 발송', () => supabase.from('waitroom_notifications')
+      .select('id, email, product_id, mall, status, notify_date, created_at, sent_at').in('email', chunk)
+      .in('status', ['sent', 'claimed']).gte('notify_date', sinceDate).order('id', { ascending: true }));
+    recent.forEach(r => {
+      const at = Date.parse(r.sent_at || r.created_at || `${r.notify_date}T00:00:00+09:00`);
+      const k = W.seriesKey(r);
+      if (Number.isFinite(at) && !(lastSent.get(k) >= at)) lastSent.set(k, at);
+    });
   }
-  return out;
+  return { unconfirmed, lastSent };
 }
 
 /** 항목별 최신 관측 {price, observedAt, observedDate} — 그 항목의 옵션(vendor_item_id)으로 좁힌다. */
@@ -104,24 +121,28 @@ async function latestObservations(items) {
   return out;
 }
 
-/** 발송 기록 선점. 이미 있으면 «실패한 기록» 만 다시 선점할 수 있다. @returns {number|null} 기록 id */
+/**
+ * 발송 기록 선점 — 같은 사람·같은 상품·같은 날에 하나 (UNIQUE email, product_id, mall, notify_date).
+ * 이미 있으면 «실패한 기록» 만 다시 선점할 수 있다. @returns {number|null} 기록 id
+ */
 async function claim(item, obs, today) {
   const row = {
-    item_id: item.id, email: item.email, notify_date: today,
+    item_id: item.id, email: item.email, product_id: item.product_id, mall: item.mall, notify_date: today,
     price: obs.price, target_price: item.target_price, status: 'claimed', attempts: 1
   };
   const { data, error } = await supabase.from('waitroom_notifications')
-    .upsert(row, { onConflict: 'item_id,notify_date', ignoreDuplicates: true })
+    .upsert(row, { onConflict: 'email,product_id,mall,notify_date', ignoreDuplicates: true })
     .select('id');
   if (error) throw new Error(`발송 기록 선점 실패: ${error.message}`);
   if (data && data.length) return data[0].id;
 
   const { data: ex, error: exErr } = await supabase.from('waitroom_notifications')
-    .select('id, status, attempts').eq('item_id', item.id).eq('notify_date', today).maybeSingle();
+    .select('id, status, attempts').eq('email', item.email).eq('product_id', item.product_id)
+    .eq('mall', item.mall).eq('notify_date', today).maybeSingle();
   if (exErr) throw new Error(`발송 기록 조회 실패: ${exErr.message}`);
   if (!ex || ex.status !== 'failed' || ex.attempts >= W.MAX_ATTEMPTS) return null;
   const { data: re, error: reErr } = await supabase.from('waitroom_notifications')
-    .update({ status: 'claimed', attempts: ex.attempts + 1, error: '', price: obs.price })
+    .update({ status: 'claimed', attempts: ex.attempts + 1, error: '', price: obs.price, item_id: item.id })
     .eq('id', ex.id).eq('status', 'failed').eq('attempts', ex.attempts)
     .select('id');
   if (reErr) throw new Error(`발송 기록 재선점 실패: ${reErr.message}`);
@@ -170,7 +191,9 @@ async function run(opts) {
 
   // 프로세스가 발송 후 DB 기록 전에 죽은 경우도 claimed 행으로 남는다. 메일 수락 여부를
   // 판별할 수 없으므로 재무장이나 다음 날 재발송이 일어나지 않게 먼저 막는다.
-  const claimedItems = await pendingClaims(items);
+  // 항목이 아니라 «같은 사람·같은 상품» 단위로 막는다 (W.seriesKey 주석).
+  const ledger = await seriesLedger(items, Date.now());
+  const notifiedThisRun = new Set();
 
   const obsMap = await latestObservations(items);
   summary.observed = obsMap.size;
@@ -186,7 +209,8 @@ async function run(opts) {
   }
 
   async function processItem(item) {
-    if (claimedItems.has(String(item.id))) { skip('delivery-unconfirmed'); return; }
+    const series = W.seriesKey(item);
+    if (ledger.unconfirmed.has(series)) { skip('delivery-unconfirmed'); return; }
     const obs = obsMap.get(item.id) || null;
     const ev = W.evaluate(item, obs, { today, now: Date.now() });
     const nowIso = new Date().toISOString();
@@ -201,7 +225,13 @@ async function run(opts) {
       return;
     }
 
-    if (dryRun) { summary.wouldNotify++; return; }
+    // 같은 사람·같은 상품: 이번 실행에서 이미 보냈거나, 7일 안에 보낸 기록이 있으면 쉰다.
+    // 무장 해제(CAS) «전» 에 거른다 — 막힌 항목의 armed 를 건드리지 않는다.
+    if (notifiedThisRun.has(series)) { skip('series-already-notified'); return; }
+    const lastAt = ledger.lastSent.get(series);
+    if (lastAt !== undefined && Date.now() - lastAt < W.COOLDOWN_DAYS * 86400000) { skip('series-cooldown'); return; }
+
+    if (dryRun) { summary.wouldNotify++; notifiedThisRun.add(series); return; }
 
     // a) 무장 해제 (compare-and-set)
     const { data: cas, error: casErr } = await supabase.from('waitroom_items')
@@ -218,10 +248,12 @@ async function run(opts) {
       return;
     }
     if (!noteId) { skip('already-claimed'); return; }
+    // 이 실행에서 같은 사람·같은 상품의 다른 항목은 결과와 상관없이 더 보내지 않는다.
+    notifiedThisRun.add(series);
 
-    // c) 발송
+    // c) 발송 — 공급자 키도 항목이 아니라 계열·날짜 (항목을 지우고 다시 담아도 같은 키)
     const result = await send({
-      idempotencyKey: `waitroom/${item.id}/${today}`,
+      idempotencyKey: W.providerKey(item, today),
       to: item.email,
       subject: `[SEOSA] 목표가 도달 — ${String(item.title || '').slice(0, 25)}`,
       html: W.emailHtml({ title: item.title, price: obs.price, target: item.target_price, mall: item.mall,
@@ -267,5 +299,5 @@ if (require.main === module) {
     .catch(e => { console.error('오류:', e.message); process.exit(1); });
 }
 
-module.exports = { run, latestObservations, claim, OBS_LOOKBACK_DAYS };
+module.exports = { run, latestObservations, claim, seriesLedger, OBS_LOOKBACK_DAYS };
 

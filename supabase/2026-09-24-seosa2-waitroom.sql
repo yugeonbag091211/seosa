@@ -12,10 +12,19 @@
 --   · 운영 중인 check-alerts.js 와 그 메일 약속을 바꾸지 않으려고 표를 나눈다.
 --
 -- 중복 알림 방지 (세 겹)
---   1) waitroom_notifications UNIQUE (item_id, notify_date) — 같은 날 두 번 선점할 수 없다.
---      잡이 두 개 겹쳐 돌아도 행을 먼저 넣은 쪽만 메일을 보낸다.
+--   1) waitroom_notifications UNIQUE (email, product_id, mall, notify_date) — 같은 사람·같은 상품은
+--      같은 날 두 번 선점할 수 없다. 잡이 두 개 겹쳐 돌아도 행을 먼저 넣은 쪽만 메일을 보낸다.
 --   2) waitroom_items.armed — 알린 뒤 false. 가격이 목표가 × 1.03 위로 올라갔다가 와야 다시 true.
---   3) notified_at — 같은 항목은 7일에 한 번을 넘지 않는다 (코드 api/_waitroom.js COOLDOWN_DAYS).
+--   3) 발송 기록 — 같은 사람·같은 상품은 7일에 한 번을 넘지 않는다 (코드 api/_waitroom.js COOLDOWN_DAYS).
+--
+--   ★ 왜 item_id 가 아니라 (email, product_id, mall) 인가 (2026-09-25 수정)
+--     첫 판은 세 겹 모두 item_id 에 걸려 있었고 발송 기록은 on delete cascade 였다. 그래서
+--       · 알림을 받은 뒤 항목을 지우고 다시 담으면 새 id 라 쿨다운·같은 날 UNIQUE·Resend 키가
+--         전부 처음부터였다 → 같은 날 같은 상품 메일 2통 (테스트 재현)
+--       · 같은 상품을 옵션 번호 있이/없이 두 번 담으면 두 항목이 각각 1통 → 2통
+--       · 수락 여부를 모르는 발송(claimed)이 삭제와 함께 사라져, 다시 담으면 재발송
+--     메일 본문이 «같은 상품은 7일에 한 번까지» 라고 약속하므로 기준을 상품으로 올리고,
+--     발송 기록은 항목을 지워도 남긴다(on delete set null).
 --
 -- 안전성
 --   · 새 표 두 개만 만든다. 기존 표(alerts·products·price_history …)를 읽지도 쓰지도 않는다.
@@ -58,8 +67,11 @@ create index if not exists waitroom_items_active_idx on public.waitroom_items (s
 
 create table if not exists public.waitroom_notifications (
   id            bigserial   primary key,
-  item_id       bigint      not null references public.waitroom_items (id) on delete cascade,
+  -- 항목을 지워도 발송 기록은 남는다 — 지우고 다시 담아 쿨다운·미확정 발송 차단을 우회하지 못하게.
+  item_id       bigint      references public.waitroom_items (id) on delete set null,
   email         text        not null,
+  product_id    text        not null,
+  mall          text        not null,
   notify_date   date        not null,
   price         integer     not null,
   target_price  integer     not null,
@@ -69,13 +81,16 @@ create table if not exists public.waitroom_notifications (
   error         text        not null default '',
   created_at    timestamptz not null default now(),
   sent_at       timestamptz,
-  constraint waitroom_notifications_once_per_day unique (item_id, notify_date)
+  constraint waitroom_notifications_once_per_day unique (email, product_id, mall, notify_date)
 );
 
 comment on table public.waitroom_notifications is
-  'SEOSA 2.0 구매 대기실 발송 기록 겸 선점표. (item_id, notify_date) UNIQUE 가 중복 발송을 막는다.';
+  'SEOSA 2.0 구매 대기실 발송 기록 겸 선점표. (email, product_id, mall, notify_date) UNIQUE 가 중복 발송을 막는다.';
 
 create index if not exists waitroom_notifications_email_idx on public.waitroom_notifications (email, created_at desc);
+-- 쿨다운·미확정 발송 조회 (같은 사람·같은 상품의 최근 기록)
+create index if not exists waitroom_notifications_series_idx
+  on public.waitroom_notifications (email, product_id, mall, created_at desc);
 
 alter table public.waitroom_items enable row level security;
 alter table public.waitroom_notifications enable row level security;

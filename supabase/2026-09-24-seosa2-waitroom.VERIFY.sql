@@ -34,9 +34,13 @@ select count(*) as policies_expected_zero
  where schemaname = 'public'
    and tablename in ('waitroom_items', 'waitroom_notifications');
 
--- 5) 중복 방지 제약이 있다
-select conname from pg_constraint
- where conname in ('waitroom_items_series_key', 'waitroom_notifications_once_per_day');
+-- 5) 중복 방지 제약이 있다 — 발송 기록 UNIQUE 는 (email, product_id, mall, notify_date),
+--    항목 FK 는 ON DELETE SET NULL (항목을 지워도 발송 기록이 남는다)
+select conname, pg_get_constraintdef(oid) as definition from pg_constraint
+ where conname in ('waitroom_items_series_key', 'waitroom_notifications_once_per_day')
+    or (conrelid = 'public.waitroom_notifications'::regclass and contype = 'f');
+-- 기대: once_per_day = UNIQUE (email, product_id, mall, notify_date)
+--       FK = ... REFERENCES waitroom_items(id) ON DELETE SET NULL
 
 -- 5) 운영 관찰용: 상태별 항목 수와 최근 7일 발송 결과
 select status, armed, count(*) from public.waitroom_items group by status, armed order by status, armed;

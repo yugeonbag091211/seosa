@@ -149,6 +149,27 @@ function evaluate(item, obs, ctx) {
   return { action: 'NOTIFY', patch, reason: 'target-reached' };
 }
 
+/**
+ * 중복 발송을 막는 단위 — «같은 사람 · 같은 상품» (email, product_id, mall).
+ *
+ * item_id 가 아니다. 첫 판은 item_id 로 막아서, 알림 뒤 항목을 지우고 다시 담거나
+ * 같은 상품을 옵션 번호 있이/없이 두 번 담으면 같은 날 같은 상품 메일이 두 통 갔다
+ * (scripts/test-v2-waitroom.js «계열 중복» 절). 메일 본문도 «같은 상품은 7일에 한 번까지»
+ * 라고 약속한다. vendor_item_id 는 넣지 않는다 — 옵션 표기 차이가 곧 우회로였다.
+ */
+function seriesKey(row) {
+  return [row.email, row.product_id, row.mall].map(v => String(v == null ? '' : v)).join('|');
+}
+
+/**
+ * Resend Idempotency-Key. 같은 사람·같은 상품·같은 날이면 항목을 지우고 다시 담아도 같은 키다
+ * (공급자가 24시간 안의 재요청을 한 통으로 합친다). 이메일 원문을 키에 싣지 않는다.
+ */
+function providerKey(row, date) {
+  const h = require('crypto').createHash('sha256').update(seriesKey(row)).digest('hex').slice(0, 32);
+  return `waitroom/${h}/${date}`;
+}
+
 /** 발송 성공 뒤 항목에 남길 값. */
 function afterSend(item, price, nowIso) {
   return {
@@ -226,7 +247,7 @@ ${link ? `<p style="margin:22px 0 0"><a href="${esc(link)}" style="display:inlin
 }
 
 module.exports = {
-  validateSave, checkTarget, evaluate, afterSend, publicItem, emailHtml,
+  validateSave, checkTarget, evaluate, afterSend, publicItem, emailHtml, seriesKey, providerKey,
   MAX_ITEMS_PER_USER, TARGET_MAX_RATIO, REARM_RATIO, COOLDOWN_DAYS, NOTIFY_MAX_STALE_DAYS,
   MAX_ATTEMPTS, MALLS, STATUS
 };
