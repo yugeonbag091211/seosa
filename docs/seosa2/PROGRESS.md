@@ -306,18 +306,21 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 
 ### PR #86 후보 RPC
 
-- PR #86: https://github.com/yugeonbag091211/seosa/pull/86, branch codex/price-drop-top-candidates-20260925, head e5801d1ff7d542e83cbeaa0f7489b5c7e17162d2. #84의 view는 보존하고 api/init.js가 추가된 price_drop_top_candidates RPC를 호출한다.
+- PR #86: https://github.com/yugeonbag091211/seosa/pull/86, branch codex/price-drop-top-candidates-20260925, head c5203681ff524e72f1fc3d97de915f978f5fcf95. #84의 view는 보존하고 api/init.js가 추가된 price_drop_top_candidates RPC를 호출한다.
 - 최근 30일의 옵션별 최신/직전가 산식은 유지하고, 상위 최대 200 후보를 먼저 고른 다음 정확한 (product, mall, vendor_item_id) 키로 기존 가격 이력 인덱스를 사용해 all-time minimum을 조회한다.
 - 함수는 STABLE SECURITY INVOKER, 고정 search_path, service_role 전용 EXECUTE 권한을 사용한다. migration은 함수 객체와 권한만 추가하며 lock_timeout=2s 트랜잭션 안에서 실행한다. 기존 뷰, 가격 원장, 수집 및 핫딜 규칙에는 변경이 없다.
 - 기존 무료 테스트 Supabase 프로젝트의 격리된 합성 schema에 최종 SQL을 실행했다. 500개 상품·옵션별 이력에서 RPC 200행과 기존 쿼리 200행의 양방향 EXCEPT ALL 차이는 0, 음수 limit은 1행, 큰 limit은 200행이었다. 합성 schema를 제거했고 waitroom 공개 테이블 2개가 남아 있음을 확인했다.
 - 이전 Production 규모 합성 benchmark(155,767 history 행, 38,210 option 키)에서 후보별 all-time 조회 방식은 한 번의 표본에서 약 239ms, 기존 집계는 약 1,667ms였다. 단일 테스트 DB 측정이며 Production 성능 결과가 아니다.
-- 새 정적 계약 테스트 9/9 PASS. PR #86 GitHub Actions Tests run 36101674744는 최신 head에서 실행 중이며, 완료 전 통과로 간주하지 않는다. Vercel Preview 브라우저 검증도 아직 확인하지 못했다.
+- 새 정적 계약 테스트 9/9 PASS. 첫 Actions run 36101674744는 test-hotdeal-ui.js가 직접 .from('price_drop_top') 문자열만 고정한 탓에 실패했다. 오늘 하락 필터 경로는 그대로 두고 동등한 RPC도 허용하도록 테스트를 고쳤다. 최신 head c5203681ff524e72f1fc3d97de915f978f5fcf95의 Actions run 36101893198과 Vercel GitHub status는 success다. Preview UI는 Vercel SSO로 확인하지 못했다.
 - PR #86 migration/API 배포는 아직 Production에 반영하지 않았다. Production DB 적용과 API merge/deploy는 별도 승인 후 진행한다.
 
 ### 남은 문제와 다음 실행 지점
 
 1. Vercel 팀에 로그인된 세션으로 Production alias SHA, 배포/런타임 로그, 실제 장바구니 API JSON 및 다운로드된 cart JS hash를 확인한다. 현재 Vercel 대시보드가 SSO login으로 리디렉션돼 해당 비교는 미확정이다.
-2. PR #86 Actions 완료 후 전체 npm, regression, release 결과 및 Preview 상태를 최신 head에서 확인한다.
+2. PR #86 최신 head에서 전체 npm, regression, release Actions가 통과했다. Vercel check도 success지만 Preview UI는 SSO 때문에 아직 확인하지 못했다.
 3. 사용자 승인 전 Production RPC migration을 적용하지 않는다. 승인되면 2초 lock timeout으로 함수만 추가하고 역할/시그니처를 읽기 전용 검사한다. 운영 RPC/API 요청은 별도 승인 단계에서 낮은 요청 수로 측정한다.
 4. #72는 90일 이상의 충분한 검증 표본이 없으므로 미병합 상태로 둔다. #73도 운영 SQL/병합/메일/플래그를 적용하지 않는다.
 5. 장바구니 상단 0원 재현은 API 원문·Production SHA와 함께 다시 비교하고, 원인을 확정하기 전 새 cart PR 또는 Production 배포 완료로 표시하지 않는다.
+
+
+- 이 진행 기록 PR #85의 최신 head 21cb3d15058b853be4f5fbb1a90780360c5e9f5c Actions run 36101811878도 success다.
