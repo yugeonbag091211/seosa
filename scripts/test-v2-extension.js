@@ -590,12 +590,20 @@ async function testLookup() {
   else T.check(b.timing === null || (typeof b.timing.action === 'string' && typeof b.timing.label === 'string'), '① timing 모양');
   if (!hasAnomaly) T.check(b.anomaly === null, '⑥ _anomaly 모듈이 없으면 anomaly 는 null');
   else T.check(b.anomaly === null || (typeof b.anomaly.status === 'string' && typeof b.anomaly.label === 'string'), '⑥ anomaly 모양');
-  T.check(b.waitroomUrl === '/v2/waitroom.html?add=1&productId=1001&mall=' + encodeURIComponent('쿠팡')
-    + '&vendorItemId=9001&title=' + encodeURIComponent(M), 'waitroomUrl — 상대 경로 · URL 인코딩', b.waitroomUrl);
+  T.check(b.waitroomUrl === null, 'WAITROOM_API_ENABLED 승인 전에는 확장 API 가 대기실 링크를 숨긴다', b.waitroomUrl);
   T.check(/public/.test(ex.headers['cache-control'] || '') && /s-maxage=600/.test(ex.headers['cache-control'] || ''),
     'Cache-Control public · s-maxage=600', ex.headers['cache-control']);
   T.check(ex.headers['access-control-allow-origin'] === '*', 'public CORS');
   T.check(state.reads.length - readsBefore <= 5, `조회 횟수 상한 (EXACT ${state.reads.length - readsBefore}회 ≤ 5)`);
+  {
+    const previous = process.env.WAITROOM_API_ENABLED;
+    process.env.WAITROOM_API_ENABLED = '1';
+    const enabled = await get({ productId: '1001', vendorItemId: '9001' });
+    if (previous === undefined) delete process.env.WAITROOM_API_ENABLED;
+    else process.env.WAITROOM_API_ENABLED = previous;
+    T.check(enabled.body.waitroomUrl === '/v2/waitroom.html?add=1&productId=1001&mall=' + encodeURIComponent('쿠팡')
+      + '&vendorItemId=9001&title=' + encodeURIComponent(M), '승인된 대기실은 상대 경로 · URL 인코딩을 사용한다', enabled.body.waitroomUrl);
+  }
 
   T.section('/api/lookup — 다른 판매처 오퍼 (SEOSA HOT 과 같은 관문)');
   const offers = b.offers || [];
@@ -661,8 +669,7 @@ async function testLookup() {
       '카탈로그에 없는 번호 + 같은 제목 → SIMILAR (tier A, 쿠팡 1001)', m);
     T.check(m.status !== 'EXACT' && /이 페이지의 상품이 아니라/.test(m.reasons[0]), 'SIMILAR 임을 reasons 첫 줄에 적는다', m.reasons);
     T.check(r.body.points.length === 20 && r.body.level && r.body.level.obs === 20, '곡선 · level 은 찾은 상품의 것');
-    T.check(r.body.waitroomUrl.indexOf('productId=1001') > -1 && r.body.waitroomUrl.indexOf('7777') === -1,
-      '대기실 링크는 기록이 있는 (찾은) 상품');
+    T.check(r.body.waitroomUrl === null, '미승인 대기실의 SIMILAR 등록 링크는 숨긴다');
     T.check(r.body.offers.length === 4 && !r.body.offers.some(o => o.mall === '쿠팡' && o.title === M && o.price === 1080000),
       '오퍼는 찾은 상품 기준 · 찾은 상품 자신은 빠진다');
     T.check(state.reads.length - before <= 8, `조회 횟수 상한 (SIMILAR ${state.reads.length - before}회 ≤ 8)`);
@@ -704,9 +711,8 @@ async function testLookup() {
   }
   {
     const r = await get({ productId: '8888' });
-    T.check(r.body.match.status === 'NONE' && r.body.match.productId === '8888'
-      && r.body.waitroomUrl === '/v2/waitroom.html?add=1&productId=8888&mall=' + encodeURIComponent('쿠팡'),
-    '카탈로그에 없는 쿠팡 번호 → NONE · 대기실은 그 번호로 (추적 안 됨 등록)', r.body);
+    T.check(r.body.match.status === 'NONE' && r.body.match.productId === '8888' && r.body.waitroomUrl === null,
+    '카탈로그에 없는 쿠팡 번호도 대기실 승인 전 링크를 내보내지 않는다', r.body);
   }
 
   T.section('/api/lookup — ①·⑥ 모듈 (있을 때만 · 실패해도 조회는 산다)');

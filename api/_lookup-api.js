@@ -199,7 +199,7 @@ async function lookup(input) {
       },
       points: [], level: null, timing: null, anomaly: null, offers: [],
       // 카탈로그에 없어도 쿠팡 번호가 있으면 대기실은 «추적 안 됨» 상태로 등록할 수 있다.
-      waitroomUrl: input.productId ? L.waitroomUrl({
+      waitroomUrl: process.env.WAITROOM_API_ENABLED === '1' && input.productId ? L.waitroomUrl({
         productId: input.productId, mall: L.EXACT_MALL, vendorItemId: input.vendorItemId, title: input.title
       }) : null
     };
@@ -230,7 +230,10 @@ async function lookup(input) {
       mallLabel: product.mallLabel || key.mall, title, url: L.safeLink(product.url), tier, reasons
     },
     points, level, timing, anomaly, offers,
-    waitroomUrl: L.waitroomUrl({ productId: key.productId, mall: key.mall, vendorItemId: key.vendorItemId, title })
+    // 대기실 등록 API 가 별도 승인으로 열리기 전에는 확장 API 에도 링크를 내보내지 않는다.
+    waitroomUrl: process.env.WAITROOM_API_ENABLED === '1'
+      ? L.waitroomUrl({ productId: key.productId, mall: key.mall, vendorItemId: key.vendorItemId, title })
+      : null
   };
 }
 
