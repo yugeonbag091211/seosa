@@ -25,11 +25,39 @@ const { guard } = require('./_ratelimit');
 const { identify } = require('./_auth');
 const { isMissingObject } = require('./_dberror');
 const { loadStats } = require('./_pricestat');
-const { productLifecycle } = require('./_price');
+const { productLifecycle, vendorIdOf } = require('./_price');
 const W = require('./_waitroom');
 
 const COLS = 'id, email, product_id, mall, vendor_item_id, title, image, link, target_price, status, armed,'
-  + ' last_price, last_price_at, notified_at, notified_price, notify_count, created_at, updated_at';
+  + ' last_price, last_price_at, notified_at, notified_price, notify_count, consent_at, created_at, updated_at';
+
+/**
+ * 옵션 번호를 비워 두면 어느 옵션의 가격과 목표가를 견줄지 정해야 한다.
+ *
+ * 비운 채로 두면 매일 잡의 sameVendorRows(rows, '') 가 «모든 옵션» 관측을 섞어 돌려준다 —
+ * 256GB 를 기다리는 사람에게 128GB 가격으로 «목표가 도달» 메일이 갈 수 있다.
+ * 그래서 저장할 때 한 옵션으로 확정한다.
+ *   1) 카탈로그 행의 옵션 (카드·구매 링크가 가리키는 바로 그 옵션)
+ *   2) 원장에 기록된 옵션이 하나뿐이면 그 옵션
+ *   3) 기록이 아예 없으면 비운 채 (섞일 관측도 없다)
+ *   4) 옵션이 여럿인데 고를 근거가 없으면 거절 — 옵션 번호를 받는다
+ * @returns {Promise<{vid:string}|{error:string}>}
+ */
+async function resolveOption(productId, mall) {
+  const { data: prods, error: pErr } = await supabase.from('products').select('vendor_item_id, link')
+    .eq('product_id', productId).eq('mall', mall).limit(1);
+  if (pErr) throw new Error(`products 조회 실패: ${pErr.message}`);
+  const fromCatalog = String((prods && prods[0] && vendorIdOf(prods[0])) || '').trim();
+  if (fromCatalog && fromCatalog !== '__LEGACY__') return { vid: fromCatalog };
+  const { data: hist, error: hErr } = await supabase.from('price_history').select('vendor_item_id')
+    .eq('product_id', productId).eq('mall', mall).limit(1000);
+  if (hErr) throw new Error(`price_history 조회 실패: ${hErr.message}`);
+  const vids = [...new Set((hist || []).map(r => String(r.vendor_item_id || '').trim())
+    .filter(v => v && v !== '__LEGACY__'))];
+  if (vids.length === 1) return { vid: vids[0] };
+  if (vids.length === 0) return { vid: '' };
+  return { error: '이 상품은 옵션이 여러 개예요. 알림을 받을 옵션 번호(vendorItemId)를 넣어 주세요' };
+}
 const CHUNK = 60;
 
 class NotReady extends Error {}
@@ -87,8 +115,13 @@ async function list(email) {
 
 async function save(email, body) {
   const v = W.validateSave(body);
-  if (!v.ok) return { status: 400, body: { ok: false, error: v.error, code: 'BAD_INPUT' } };
+  if (!v.ok) return { status: 400, body: { ok: false, error: v.error, code: v.code || 'BAD_INPUT' } };
   const s = v.value;
+  if (!s.vendorItemId) {
+    const opt = await resolveOption(s.productId, s.mall);
+    if (opt.error) return { status: 400, body: { ok: false, error: opt.error, code: 'OPTION_REQUIRED' } };
+    s.vendorItemId = opt.vid;
+  }
 
   const { data: existing, error: exErr } = await supabase.from('waitroom_items').select('id, product_id, mall, vendor_item_id')
     .eq('email', email).limit(W.MAX_ITEMS_PER_USER + 1);
@@ -111,7 +144,9 @@ async function save(email, body) {
     title: s.title, image: s.image, link: s.link, target_price: s.targetPrice,
     // 목표가를 새로 정하면 새 의도다 — 다시 무장한다. 단, notified_at 은 지우지 않는다
     // (목표가를 바꿔 가며 메일을 여러 번 받는 것을 쿨다운이 계속 막는다).
-    status: W.STATUS.WAITING, armed: true, updated_at: nowIso
+    status: W.STATUS.WAITING, armed: true, updated_at: nowIso,
+    // validateSave 가 consent === true 를 요구한다 — 저장할 때마다 동의 시각을 새로 남긴다.
+    consent_at: nowIso
   };
   const { data, error } = await supabase.from('waitroom_items')
     .upsert(row, { onConflict: 'email,product_id,mall,vendor_item_id' })

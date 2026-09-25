@@ -14,6 +14,9 @@
 begin;
 set local lock_timeout = '2s';
 
+-- 수신 동의 시각 (기존 항목은 NULL = 동의 기록 없음 → 다시 저장해 동의할 때까지 보내지 않는다)
+alter table public.waitroom_items add column if not exists consent_at timestamptz;
+
 alter table public.waitroom_notifications add column if not exists product_id text;
 alter table public.waitroom_notifications add column if not exists mall text;
 

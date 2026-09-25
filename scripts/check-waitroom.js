@@ -113,6 +113,12 @@ async function latestObservations(items) {
   const out = new Map();
   items.forEach(it => {
     const scoped = sameVendorRows(byKey.get(`${it.product_id}|${it.mall}`) || [], it.vendor_item_id);
+    // 옵션 번호가 비었는데 관측이 여러 옵션에 걸쳐 있으면 어느 옵션 가격인지 모른다 — 알리지 않는다.
+    // (저장 API 가 옵션을 확정하므로 새 항목에는 생기지 않는다. 옛 항목·수동 입력 방어)
+    if (!it.vendor_item_id) {
+      const opts = new Set(scoped.map(r => String(r.vendor_item_id || '').trim()).filter(v => v && v !== '__LEGACY__'));
+      if (opts.size > 1) return;
+    }
     const last = scoped[scoped.length - 1];
     if (last && Number(last.price) > 0) {
       out.set(it.id, { price: Math.round(Number(last.price)), observedAt: last.recorded_at, observedDate: observedKstDate(last) });
@@ -187,6 +193,17 @@ async function run(opts) {
     }
     throw e;
   }
+  // 운영자 시험 발송: 지정한 주소의 항목만 처리한다 (다른 사용자에게는 보내지도 쓰지도 않는다).
+  // 공개 저장소의 수동 실행 입력은 누구나 볼 수 있으므로 주소 대신 sha256(소문자 주소) 64자도 받는다.
+  const only = String(o.onlyEmail != null ? o.onlyEmail : (process.env.WAITROOM_ONLY_EMAIL || '')).trim().toLowerCase();
+  if (only) {
+    const sha = e => require('crypto').createHash('sha256').update(String(e || '').trim().toLowerCase()).digest('hex');
+    const match = /^[0-9a-f]{64}$/.test(only)
+      ? i => sha(i.email) === only
+      : i => String(i.email || '').trim().toLowerCase() === only;
+    items = items.filter(match);
+    summary.onlyEmail = true;
+  }
   summary.items = items.length;
   if (!items.length) { console.log('대기 중인 항목이 없습니다.'); return summary; }
 
@@ -212,6 +229,8 @@ async function run(opts) {
   async function processItem(item) {
     const series = W.seriesKey(item);
     if (ledger.unconfirmed.has(series)) { skip('delivery-unconfirmed'); return; }
+    // 수신 동의 기록이 없으면 보내지 않는다 (UPGRADE 전 항목 · 동의 없이 들어온 행)
+    if (!item.consent_at) { skip('no-consent'); return; }
     const obs = obsMap.get(item.id) || null;
     const ev = W.evaluate(item, obs, { today, now: Date.now() });
     const nowIso = new Date().toISOString();

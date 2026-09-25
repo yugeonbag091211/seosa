@@ -79,6 +79,10 @@ function validateSave(body) {
   if (!Number.isInteger(target) || !isSanePrice(target)) {
     return { ok: false, error: '목표 가격은 1원 이상 1억 원 이하의 정수로 넣어 주세요' };
   }
+  // 알림 메일 수신 동의 — 등록·목표가 변경 때마다 사용자가 직접 체크한다. 동의 없이 담지 않는다.
+  if (b.consent !== true) {
+    return { ok: false, error: '목표 가격에 닿으면 이메일로 알려 드려요. 알림 메일 수신에 동의해 주세요', code: 'CONSENT_REQUIRED' };
+  }
   return {
     ok: true,
     value: {
@@ -217,6 +221,7 @@ function publicItem(row, live) {
     reached: !!(lastPrice && target && lastPrice <= target),
     notifiedAt: row.notified_at || null,
     notifiedPrice: row.notified_price == null ? null : row.notified_price,
+    consentAt: row.consent_at || null,
     createdAt: row.created_at || null
   };
 }

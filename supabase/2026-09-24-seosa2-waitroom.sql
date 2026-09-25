@@ -54,10 +54,14 @@ create table if not exists public.waitroom_items (
   notified_at     timestamptz,
   notified_price  integer,
   notify_count    integer     not null default 0,
+  -- 알림 메일 수신 동의 시각. 등록·목표가 변경 때 사용자가 체크한 시각이다. NULL 이면 보내지 않는다.
+  consent_at      timestamptz,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   constraint waitroom_items_series_key unique (email, product_id, mall, vendor_item_id)
 );
+-- 첫 판을 이미 적용한 환경(테스트 프로젝트)에서 다시 실행해도 동의 칸이 생기게
+alter table public.waitroom_items add column if not exists consent_at timestamptz;
 
 comment on table public.waitroom_items is
   'SEOSA 2.0 구매 대기실. 사용자별 관심 상품과 목표가. api/_waitroom-api.js · scripts/check-waitroom.js 만 쓴다.';

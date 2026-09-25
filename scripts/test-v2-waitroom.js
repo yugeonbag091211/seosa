@@ -12,6 +12,8 @@
  *   6) 가격 원장·카탈로그·기존 알림 표에 쓰지 않는다. 외부 호출 0회 (메일은 가짜 발송기)
  */
 
+const fs = require('fs');
+const path = require('path');
 const kit = require('./_v2-testkit');
 const { db, state, T, mkReq, mkRes, fetchCalls } = kit.setup('test-v2-waitroom');
 
@@ -50,7 +52,7 @@ async function main() {
   /* ── 1. 규칙 (순수 함수) ───────────────────────────────────── */
   T.section('입력 검증');
   {
-    const ok = W.validateSave({ productId: '123', mall: '쿠팡', title: ' 무선​ 이어폰\n', targetPrice: 50000,
+    const ok = W.validateSave({ consent: true, productId: '123', mall: '쿠팡', title: ' 무선​ 이어폰\n', targetPrice: 50000,
       link: 'https://link.coupang.com/a', image: 'http://insecure/img.jpg' });
     T.check(ok.ok && ok.value.title === '무선 이어폰', '제어·폭 없는 문자를 지운다', ok);
     T.check(ok.ok && ok.value.image === '' && ok.value.link === 'https://link.coupang.com/a', 'https 가 아닌 링크는 버린다');
@@ -121,14 +123,14 @@ async function main() {
     const r2 = await call(mkReq({ method: 'GET', headers: { authorization: 'Bearer v1.bad.token' } }));
     T.check(r2.statusCode === 401, '위조 토큰 → 401');
     const writesBeforeDisabled = state.writes.length;
-    const disabled = await call(authed(tokenMe, { method: 'POST', body: { action: 'save', productId: '500', mall: '쿠팡', title: 't', targetPrice: 90000 } }));
+    const disabled = await call(authed(tokenMe, { method: 'POST', body: { action: 'save', consent: true, productId: '500', mall: '쿠팡', title: 't', targetPrice: 90000 } }));
     T.check(disabled.statusCode === 503 && disabled.body.code === 'WAITROOM_NOT_READY', 'WAITROOM_API_ENABLED 승인 전 등록 API 는 닫혀 있다', disabled.body);
     T.check(state.writes.length === writesBeforeDisabled, '비활성 API 는 DB 에 쓰지 않는다');
     process.env.WAITROOM_API_ENABLED = '1';
     state.missingTables.add('waitroom_items');
     const r3 = await call(authed(tokenMe, { method: 'GET' }));
     T.check(r3.statusCode === 503 && r3.body.code === 'WAITROOM_NOT_READY', '표가 없으면 503 WAITROOM_NOT_READY', r3.body);
-    const r4 = await call(authed(tokenMe, { method: 'POST', body: { action: 'save', productId: '500', mall: '쿠팡', title: 't', targetPrice: 90000 } }));
+    const r4 = await call(authed(tokenMe, { method: 'POST', body: { action: 'save', consent: true, productId: '500', mall: '쿠팡', vendorItemId: '5001', title: 't', targetPrice: 90000 } }));
     T.check(r4.statusCode === 503, '표가 없으면 저장도 503');
     resetTables();
     const r5 = await call(authed(tokenMe, { method: 'GET', headers: { origin: 'https://evil.example' } }));
@@ -139,7 +141,7 @@ async function main() {
   T.section('/api/waitroom — 저장 · 목록 · 멈춤 · 삭제');
   {
     const save = await call(authed(tokenMe, { method: 'POST', body: {
-      action: 'save', productId: '500', mall: '쿠팡', vendorItemId: '5001', title: '노캔 이어폰', targetPrice: 95000,
+      action: 'save', consent: true, productId: '500', mall: '쿠팡', vendorItemId: '5001', title: '노캔 이어폰', targetPrice: 95000,
       email: OTHER   // ← 본문의 email 은 무시돼야 한다
     } }));
     T.check(save.statusCode === 200 && save.body.item && save.body.item.targetPrice === 95000, '저장 200', save.body);
@@ -149,21 +151,21 @@ async function main() {
     T.check(save.body.reachedNow === false, '아직 목표가 위');
 
     const again = await call(authed(tokenMe, { method: 'POST', body: {
-      action: 'save', productId: '500', mall: '쿠팡', vendorItemId: '5001', title: '노캔 이어폰', targetPrice: 100000 } }));
+      action: 'save', consent: true, productId: '500', mall: '쿠팡', vendorItemId: '5001', title: '노캔 이어폰', targetPrice: 100000 } }));
     T.check(db.waitroom_items.length === 1 && db.waitroom_items[0].target_price === 100000, '같은 가격 계열은 새 행이 아니라 목표가 갱신');
     T.check(again.body.reachedNow === true && again.body.notice.some(n => /이미 목표가 이하/.test(n)), '이미 도달했으면 알려 준다');
 
     const untracked = await call(authed(tokenMe, { method: 'POST', body: {
-      action: 'save', productId: '600', mall: '쿠팡', title: '키워드 없는 상품', targetPrice: 15000 } }));
+      action: 'save', consent: true, productId: '600', mall: '쿠팡', title: '키워드 없는 상품', targetPrice: 15000 } }));
     T.check(untracked.body.item.tracking === 'UNTRACKED' && untracked.body.notice.some(n => /알림이 가지 않을 수/.test(n)),
       '매일 수집되지 않는 상품은 UNTRACKED 로 솔직하게 알린다', untracked.body);
 
     const tooHigh = await call(authed(tokenMe, { method: 'POST', body: {
-      action: 'save', productId: '500', mall: '쿠팡', vendorItemId: '5001', title: 'x', targetPrice: 900000 } }));
+      action: 'save', consent: true, productId: '500', mall: '쿠팡', vendorItemId: '5001', title: 'x', targetPrice: 900000 } }));
     T.check(tooHigh.statusCode === 400 && tooHigh.body.code === 'BAD_TARGET', '현재가의 5배를 넘는 목표가 → 400');
 
     await call(authed(tokenOther, { method: 'POST', body: {
-      action: 'save', productId: '500', mall: '쿠팡', vendorItemId: '5001', title: '남의 것', targetPrice: 80000 } }));
+      action: 'save', consent: true, productId: '500', mall: '쿠팡', vendorItemId: '5001', title: '남의 것', targetPrice: 80000 } }));
     const mine = await call(authed(tokenMe, { method: 'GET' }));
     T.check(mine.body.items.length === 2 && mine.body.items.every(i => i.title !== '남의 것'), '목록에는 내 항목만');
     const otherId = db.waitroom_items.find(r => r.email === OTHER).id;
@@ -190,7 +192,7 @@ async function main() {
     for (let i = 0; i < W.MAX_ITEMS_PER_USER; i++) {
       db.waitroom_items.push({ id: i + 1, email: ME, product_id: `9${i}`, mall: '쿠팡', vendor_item_id: '', title: 't', target_price: 1, status: 'WAITING', armed: true });
     }
-    const over = await call(authed(tokenMe, { method: 'POST', body: { action: 'save', productId: '500', mall: '쿠팡', title: 't', targetPrice: 90000 } }));
+    const over = await call(authed(tokenMe, { method: 'POST', body: { action: 'save', consent: true, productId: '500', mall: '쿠팡', vendorItemId: '5001', title: 't', targetPrice: 90000 } }));
     T.check(over.statusCode === 400 && over.body.code === 'LIMIT', `사용자당 ${W.MAX_ITEMS_PER_USER}개 한도`);
     const viaAlerts = mkRes();
     await alerts(authed(tokenMe, { method: 'GET', query: { __route: 'waitroom' } }), viaAlerts);
@@ -223,6 +225,7 @@ async function main() {
       { id: 5, email: OTHER, product_id: 'E', mall: '쿠팡', vendor_item_id: '5', title: 'E상품', target_price: 4500, status: 'WAITING', armed: true, notify_count: 0 },
       { id: 6, email: OTHER, product_id: 'A', mall: '쿠팡', vendor_item_id: '1', title: 'A상품(멈춤)', target_price: 10000, status: 'PAUSED', armed: true, notify_count: 0 }
     ];
+    db.waitroom_items.forEach(i => { i.consent_at = new Date(Date.now() - 86400000).toISOString(); });
   }
   {
     seedJob();
@@ -385,7 +388,7 @@ async function main() {
   T.section('계열 중복 — 항목을 지우고 다시 담아도 · 옵션 표기가 달라도 한 통');
   {
     const save = vid => call(authed(tokenMe, { method: 'POST',
-      body: { action: 'save', productId: 'A', mall: '쿠팡', vendorItemId: vid, title: 'A상품', targetPrice: 10000 } }));
+      body: { action: 'save', consent: true, productId: 'A', mall: '쿠팡', vendorItemId: vid, title: 'A상품', targetPrice: 10000 } }));
     const del = id => call(authed(tokenMe, { method: 'DELETE', body: { id } }));
     // 운영 FK 는 on delete set null — 항목을 지워도 발송 기록은 남는다 (가짜 DB 는 FK 가 없어 흉내 낸다)
     const onDeleteSetNull = () => db.waitroom_notifications.forEach(n => {
@@ -418,10 +421,13 @@ async function main() {
     // [2] 같은 상품을 옵션 번호 있이 / 없이 두 번 담음 → 한 실행에서 한 통
     fresh();
     await save('1'); await save('');
+    T.check(db.waitroom_items.length === 1 && db.waitroom_items[0].vendor_item_id === '1',
+      '[2] 옵션 번호를 비워 담으면 원장의 유일한 옵션(1)으로 확정돼 같은 항목이 된다', db.waitroom_items.map(i => i.vendor_item_id));
+    // 옵션 표기가 달라 두 항목이 된 경우(첫 판 데이터·수동 입력)도 같은 상품이면 한 통
+    db.waitroom_items.push(Object.assign({}, db.waitroom_items[0], { id: 99, vendor_item_id: '' }));
     const two = await runJob({ send: fakeSend });
-    T.check(db.waitroom_items.length === 2 && sent.length === 1 && two.skipped['series-already-notified'] === 1,
-      '[2] 옵션 표기가 다른 두 항목이라도 같은 상품이면 한 통', { items: db.waitroom_items.length, sent: sent.length, skipped: two.skipped });
-    T.check(db.waitroom_items.filter(i => i.armed).length === 1, '[2] 건너뛴 쪽은 무장 상태를 건드리지 않는다');
+    T.check(sent.length === 1 && two.skipped['series-already-notified'] === 1,
+      '[2] 옵션 표기가 다른 두 항목이라도 같은 상품이면 한 통', { sent: sent.length, skipped: two.skipped });
     const twoAgain = await runJob({ send: fakeSend });
     T.check(sent.length === 1 && twoAgain.skipped['series-cooldown'] === 1, '[2] 재실행해도 두 번째 항목이 보내지 않는다');
 
@@ -444,9 +450,74 @@ async function main() {
       { id: 12, email: OTHER, product_id: 'A', mall: '쿠팡', vendor_item_id: '1', title: 'A상품', target_price: 10000, status: 'WAITING', armed: true, notify_count: 0 },
       { id: 13, email: ME, product_id: 'D', mall: '쿠팡', vendor_item_id: '9', title: 'D옵션9', target_price: 1000, status: 'WAITING', armed: true, notify_count: 0 }
     ];
+    db.waitroom_items.forEach(i => { i.consent_at = new Date().toISOString(); });
     await runJob({ send: fakeSend });
     T.check(sent.length === 3 && new Set(sent.map(p => p.idempotencyKey)).size === 3,
       '다른 상품 · 다른 사람은 막지 않는다 (각 한 통, 키도 서로 다르다)', sent.map(p => [p.to, p.subject]));
+  }
+
+  T.section('수신 동의 · 옵션 확정 · 운영자 시험 발송 · 화면');
+  {
+    resetTables();
+    db.products = [
+      { product_id: '500', mall: '쿠팡', keyword: '이어폰', lprice: 100000, collected_at: new Date().toISOString() },
+      { product_id: '600', mall: '쿠팡', keyword: '', lprice: 20000, collected_at: new Date().toISOString() },
+      { product_id: '700', mall: '쿠팡', keyword: '마우스', lprice: 30000, collected_at: new Date().toISOString(),
+        link: 'https://link.coupang.com/re/AFFSDP?pageKey=700&itemId=1&vendorItemId=7002' }
+    ];
+    db.price_history = kit.historyRows({ productId: '500', vendorItemId: '5001', prices: [110000, 105000, 100000] })
+      .concat(kit.historyRows({ productId: '500', vendorItemId: '5999', prices: [3000, 3000, 3000], startId: 900 }))
+      .concat(kit.historyRows({ productId: '700', vendorItemId: '7001', prices: [20000, 20000], startId: 1200 }))
+      .concat(kit.historyRows({ productId: '700', vendorItemId: '7002', prices: [31000, 30000], startId: 1300 }));
+    const post = b => call(authed(tokenMe, { method: 'POST', body: Object.assign({ action: 'save', mall: '쿠팡', title: 'x' }, b) }));
+    const noConsent = await post({ productId: '500', vendorItemId: '5001', targetPrice: 95000 });
+    T.check(noConsent.statusCode === 400 && noConsent.body.code === 'CONSENT_REQUIRED' && db.waitroom_items.length === 0,
+      '수신 동의 없이는 담지 않는다 (400 CONSENT_REQUIRED, 쓰기 0)', noConsent.body);
+    const falseConsent = await post({ productId: '500', vendorItemId: '5001', targetPrice: 95000, consent: 'true' });
+    T.check(falseConsent.statusCode === 400 && falseConsent.body.code === 'CONSENT_REQUIRED', '동의는 true 불리언만 인정한다');
+    const ok = await post({ productId: '500', vendorItemId: '5001', targetPrice: 95000, consent: true });
+    T.check(ok.statusCode === 200 && !!db.waitroom_items[0].consent_at && ok.body.item.consentAt, '동의하면 동의 시각을 저장한다', ok.body);
+    const ambiguous = await post({ productId: '500', targetPrice: 95000, consent: true });
+    T.check(ambiguous.statusCode === 400 && ambiguous.body.code === 'OPTION_REQUIRED',
+      '옵션이 여럿인데 옵션 번호를 비우면 거절한다 — 다른 옵션 가격으로 알리지 않게', ambiguous.body);
+    const catalog = await post({ productId: '700', targetPrice: 29000, consent: true });
+    T.check(catalog.statusCode === 200 && catalog.body.item.vendorItemId === '7002',
+      '옵션 번호를 비우면 카탈로그 링크가 가리키는 옵션으로 확정한다', catalog.body.item);
+    const noHistory = await post({ productId: '600', targetPrice: 15000, consent: true });
+    T.check(noHistory.statusCode === 200 && noHistory.body.item.vendorItemId === '', '기록이 없는 상품은 옵션을 비운 채 담는다(섞일 관측도 없다)');
+
+    // 매일 잡: 동의 기록 없는 항목, 옵션이 섞인 옛 항목은 알리지 않는다
+    sent.length = 0;
+    db.waitroom_items = [
+      { id: 1, email: ME, product_id: '500', mall: '쿠팡', vendor_item_id: '5001', title: '동의없음', target_price: 200000, status: 'WAITING', armed: true, notify_count: 0 },
+      { id: 2, email: ME, product_id: '700', mall: '쿠팡', vendor_item_id: '', title: '옵션섞임', target_price: 25000, status: 'WAITING', armed: true, notify_count: 0, consent_at: new Date().toISOString() }
+    ];
+    const j = await runJob({ send: fakeSend });
+    T.check(sent.length === 0 && j.skipped['no-consent'] === 1, '수신 동의 기록이 없으면 보내지 않는다', j.skipped);
+    T.check(!sent.some(p => /옵션섞임/.test(p.subject)), '옵션 번호가 비었는데 관측이 여러 옵션이면 알리지 않는다 (7001 의 20,000원으로 25,000원 목표를 채우지 않는다)');
+
+    // 운영자 한정 실행: 다른 사람 항목은 처리하지도 쓰지도 않는다 (주소 또는 sha256)
+    db.waitroom_items = [
+      { id: 1, email: ME, product_id: '500', mall: '쿠팡', vendor_item_id: '5001', title: '운영자', target_price: 200000, status: 'WAITING', armed: true, notify_count: 0, consent_at: new Date().toISOString() },
+      { id: 2, email: OTHER, product_id: '500', mall: '쿠팡', vendor_item_id: '5001', title: '다른사람', target_price: 200000, status: 'WAITING', armed: true, notify_count: 0, consent_at: new Date().toISOString() }
+    ];
+    db.waitroom_notifications = [];
+    const hash = require('crypto').createHash('sha256').update(ME).digest('hex');
+    const only = await runJob({ send: fakeSend, onlyEmail: hash });
+    T.check(only.items === 1 && sent.length === 1 && sent[0].to === ME && db.waitroom_items.find(i => i.id === 2).armed === true
+      && !db.waitroom_notifications.some(n => n.email === OTHER), '운영자 한정 실행(sha256): 운영자 항목만 발송, 다른 사람 항목은 그대로', { items: only.items, sent: sent.map(p => p.to) });
+
+    const page = fs.readFileSync(path.join(__dirname, '..', 'public', 'v2', 'waitroom.html'), 'utf8');
+    T.check(/id="consent" type="checkbox" required/.test(page) && /consent: \$\('consent'\)\.checked === true/.test(page), '화면: 수신 동의 체크가 필수이고 요청에 실린다');
+    T.check(!/timing\.html/.test(page), '화면: 비공개 기능(구매 타이밍)으로 가는 링크가 없다');
+    T.check(/data-act="edit"/.test(page) && /function editTarget/.test(page)
+      && /link: card\.getAttribute\('data-link'\), image: card\.getAttribute\('data-image'\)/.test(page),
+    '화면: 목표가 바꾸기 (판매처 링크·이미지를 지우지 않는다)');
+    const hub = fs.readFileSync(path.join(__dirname, '..', 'public', 'v2', 'index.html'), 'utf8');
+    T.check(hub.includes('href="/v2/waitroom.html"') && !hub.includes('timing.html'), 'SEOSA 2.0 허브에서 대기실로 들어간다 (타이밍은 비공개 유지)');
+    const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'waitroom.yml'), 'utf8');
+    T.check(/RESEND_FROM: \$\{\{ secrets\.RESEND_FROM \}\}/.test(wf) && /only_email/.test(wf) && /exit 1/.test(wf),
+      '워크플로: 발신 주소 시크릿 전달 · 정기 발송이 꺼진 수동 실제 발송은 운영자 주소 필수');
   }
 
   T.section('안전');

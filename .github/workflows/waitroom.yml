@@ -22,6 +22,10 @@ on:
         description: '판정만 하고 메일·저장은 하지 않음'
         type: boolean
         default: true
+      only_email:
+        description: '이 주소의 항목만 처리 (운영자 시험 발송). 공개 저장소라 주소 대신 sha256(소문자 주소) 권장. WAITROOM_ENABLED 가 꺼져 있을 때 실제 발송은 필수'
+        type: string
+        default: ''
 
 concurrency:
   group: seosa-waitroom
@@ -29,7 +33,8 @@ concurrency:
 
 jobs:
   check:
-    if: vars.WAITROOM_ENABLED == '1'
+    # 예약 실행은 WAITROOM_ENABLED=1 일 때만. 수동 실행은 운영자의 명시적 동작이라 dry-run·시험 발송을 허용한다.
+    if: vars.WAITROOM_ENABLED == '1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -44,5 +49,15 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
           WAITROOM_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
-        run: node scripts/check-waitroom.js
+          WAITROOM_ONLY_EMAIL: ${{ github.event.inputs.only_email }}
+          WAITROOM_ENABLED: ${{ vars.WAITROOM_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # 정기 발송이 꺼진 상태의 수동 실제 발송은 운영자 주소 한 곳으로만 (전체 사용자 일괄 발송 금지)
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WAITROOM_DRY_RUN" != "true" ] && [ "$WAITROOM_ENABLED" != "1" ] && [ -z "$WAITROOM_ONLY_EMAIL" ]; then
+            echo "WAITROOM_ENABLED 가 꺼져 있을 때 실제 발송은 only_email 이 필요합니다." >&2
+            exit 1
+          fi
+          node scripts/check-waitroom.js

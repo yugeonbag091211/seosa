@@ -50,6 +50,8 @@
         <div><label for="target">목표 가격 (원)</label><input id="target" inputmode="numeric" required></div>
         <div class="shrink"><button class="primary" type="submit">담기</button></div>
       </div>
+      <p><label><input id="consent" type="checkbox" required> 목표 가격에 닿으면 로그인한 이메일 주소로 알림 메일을 받는 데 동의해요.
+        같은 상품은 7일에 한 번까지 보내고, 알림은 언제든 끄거나 지울 수 있어요.</label></p>
       <p id="addMsg" class="muted" role="status"></p>
     </form>
     <h2>대기 중인 상품 <span id="count" class="muted"></span></h2>
@@ -57,7 +59,7 @@
   </section>
   <div id="err" class="error" hidden></div>
 </main>
-<footer class="wrap">가격은 SEOSA가 확인한 시점의 기록이에요. 실제 결제 금액은 판매처에서 확인해 주세요. 메일 발송은 운영 승인 후 켜집니다.</footer>
+<footer class="wrap">가격은 SEOSA가 확인한 시점의 기록이에요. 실제 결제 금액은 판매처에서 확인해 주세요. 목표가에 닿았는지는 하루 한 번 확인해요.</footer>
 <script>
 (function () {
   'use strict';
@@ -70,8 +72,9 @@
     var st = STATUS[it.status] || [it.status, ''];
     var gap = it.gapPct == null ? '' : (it.gapPct > 0 ? '목표까지 ' + it.gapPct + '% 남음' : '목표가 이하');
     var link = V.safeUrl(it.link);
-    var timing = '/v2/timing.html' + V.qs({ productId: it.productId, mall: it.mall, vendorItemId: it.vendorItemId });
-    return '<div class="card" data-id="' + V.esc(it.id) + '">'
+    return '<div class="card" data-id="' + V.esc(it.id) + '" data-pid="' + V.esc(it.productId) + '" data-mall="' + V.esc(it.mall)
+      + '" data-vid="' + V.esc(it.vendorItemId) + '" data-title="' + V.esc(it.title) + '" data-target="' + V.esc(it.targetPrice)
+      + '" data-link="' + V.esc(link || '') + '" data-image="' + V.esc(V.safeUrl(it.image) || '') + '">'
       + '<div class="row" style="align-items:center">'
       + '<div style="flex:3 1 260px"><b>' + V.esc(it.title) + '</b><br>'
       + '<span class="badge ' + st[1] + '">' + V.esc(st[0]) + '</span> '
@@ -81,9 +84,10 @@
       + '<div><span class="muted">마지막 가격</span><br><b>' + V.esc(V.won(it.lastPrice)) + '</b><br><span class="muted">' + V.esc(gap) + '</span></div>'
       + '</div>'
       + (it.notifiedAt ? '<p class="muted">알림 보냄: ' + V.esc(String(it.notifiedAt).slice(0, 10)) + ' · ' + V.esc(V.won(it.notifiedPrice)) + '</p>' : '')
+      + '<p class="muted">옵션 ' + V.esc(it.vendorItemId || '확인 안 됨') + '</p>'
       + '<p class="row">'
-      + '<a class="button shrink" href="' + V.esc(timing) + '">구매 타이밍 보기</a>'
       + (link ? '<a class="button shrink" href="' + V.esc(link) + '" target="_blank" rel="noopener sponsored">판매처</a>' : '')
+      + '<button class="shrink" type="button" data-act="edit">목표가 바꾸기</button>'
       + '<button class="shrink" type="button" data-act="' + (it.status === 'PAUSED' ? 'resume' : 'pause') + '">' + (it.status === 'PAUSED' ? '알림 켜기' : '알림 끄기') + '</button>'
       + '<button class="shrink" type="button" data-act="delete">삭제</button>'
       + '</p></div>';
@@ -112,12 +116,29 @@
     req.then(function (r) { if (!r.ok) return handleFail(r); load(); });
   }
 
+  // 같은 상품·옵션으로 다시 저장하면 목표가가 바뀐다 (API 가 같은 항목을 갱신한다).
+  function editTarget(card) {
+    var V = window.V2;
+    var input = window.prompt('새 목표 가격(원)을 넣어 주세요.\n저장하면 이 주소로 알림 메일을 받는 데 다시 동의하게 돼요.', card.getAttribute('data-target'));
+    if (input == null) return;
+    var target = Number(String(input).replace(/[^\d]/g, ''));
+    var body = { action: 'save', productId: card.getAttribute('data-pid'), mall: card.getAttribute('data-mall'),
+      vendorItemId: card.getAttribute('data-vid'), title: card.getAttribute('data-title'), targetPrice: target,
+      link: card.getAttribute('data-link'), image: card.getAttribute('data-image'), consent: true };
+    V.api('/api/waitroom', { auth: true, method: 'POST', body: body }).then(function (r) {
+      if (!r.ok) return handleFail(r);
+      $('addMsg').textContent = '목표 가격을 바꿨어요. ' + (r.notice || []).join(' ');
+      load();
+    });
+  }
+
   function add(e) {
     e.preventDefault();
     var V = window.V2;
     var target = Number(String($('target').value).replace(/[^\d]/g, ''));
     var body = { action: 'save', productId: $('pid').value.trim(), mall: $('mall').value, vendorItemId: $('vid').value.trim(),
-      title: $('title').value.trim(), targetPrice: target, link: V.param('link'), image: V.param('image') };
+      title: $('title').value.trim(), targetPrice: target, link: V.param('link'), image: V.param('image'),
+      consent: $('consent').checked === true };
     $('addMsg').textContent = '담는 중…';
     V.api('/api/waitroom', { auth: true, method: 'POST', body: body }).then(function (r) {
       if (!r.ok) { $('addMsg').textContent = ''; return handleFail(r); }
@@ -174,6 +195,7 @@
       var btn = e.target.closest ? e.target.closest('button[data-act]') : null;
       if (!btn) return;
       var card = btn.closest('[data-id]');
+      if (btn.getAttribute('data-act') === 'edit') return editTarget(card);
       if (btn.getAttribute('data-act') === 'delete' && !window.confirm('대기실에서 지울까요?')) return;
       act(card.getAttribute('data-id'), btn.getAttribute('data-act'));
     });

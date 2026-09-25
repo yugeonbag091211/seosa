@@ -136,7 +136,10 @@ async function main() {
     section('7) 첫 판 적용 환경 → UPGRADE');
     await c.query(ROLLBACK);
     const itemsOnly = MIGRATION.replace(/create table if not exists public\.waitroom_notifications[\s\S]*?\n\);/, FIRST_DRAFT_NOTIFICATIONS)
-      .replace(/create index if not exists waitroom_notifications_series_idx[\s\S]*?;/, '');
+      .replace(/create index if not exists waitroom_notifications_series_idx[\s\S]*?;/, '')
+      .replace(/\n[ \t]*consent_at[ \t]+timestamptz,/, '')
+      .replace(/alter table public\.waitroom_items add column if not exists consent_at timestamptz;/, '');
+    check(!/consent_at/.test(itemsOnly), '첫 판 모양: 수신 동의 칸 없음');
     await c.query(itemsOnly);
     await c.query(`insert into waitroom_items (email, product_id, mall, vendor_item_id, target_price) values ('old@x','Z','쿠팡','9',5000);
       insert into waitroom_notifications (item_id, email, notify_date, price, target_price, status)
@@ -149,6 +152,9 @@ async function main() {
     check(up.some(r => /UNIQUE \(email, product_id, mall, notify_date\)/.test(r.d)) && up.some(r => /ON DELETE SET NULL/.test(r.d))
       && !up.some(r => /CASCADE|UNIQUE \(item_id/.test(r.d)) && rows.length === 1 && rows[0].product_id === 'Z',
     'UPGRADE 두 번: 새 제약 · 기존 기록 보존(상품·몰 채움)', { up, rows });
+    const consent = (await c.query(`select count(*)::int n, count(*) filter (where consent_at is null)::int nulls from waitroom_items`)).rows[0];
+    check(consent.n === 1 && consent.nulls === 1,
+      'UPGRADE: 수신 동의 칸이 생기고 기존 항목은 동의 기록 없음(NULL) — 동의 없이 메일이 나가지 않는다', consent);
 
     // 첫 판의 중복 버그가 이미 남긴 흔적(같은 사람·상품·날짜 두 행)이 있으면 UPGRADE 는 멈추고 아무것도 바꾸지 않는다
     await c.query(ROLLBACK);

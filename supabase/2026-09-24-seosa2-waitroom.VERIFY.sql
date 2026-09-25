@@ -42,7 +42,12 @@ select conname, pg_get_constraintdef(oid) as definition from pg_constraint
 -- 기대: once_per_day = UNIQUE (email, product_id, mall, notify_date)
 --       FK = ... REFERENCES waitroom_items(id) ON DELETE SET NULL
 
--- 5) 운영 관찰용: 상태별 항목 수와 최근 7일 발송 결과
+-- 6) 수신 동의 칸 — 동의 기록(consent_at)이 없는 항목에는 메일을 보내지 않는다
+select column_name, data_type from information_schema.columns
+ where table_schema = 'public' and table_name = 'waitroom_items' and column_name = 'consent_at';
+select count(*) filter (where consent_at is null) as no_consent, count(*) as items from public.waitroom_items;
+
+-- 7) 운영 관찰용: 상태별 항목 수와 최근 7일 발송 결과
 select status, armed, count(*) from public.waitroom_items group by status, armed order by status, armed;
 select status, count(*) from public.waitroom_notifications
  where created_at > now() - interval '7 days' group by status;
