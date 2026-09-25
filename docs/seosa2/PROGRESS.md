@@ -238,3 +238,101 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 - 신규 기능 회귀: `test-v2-cart` 136/0, `test-v2-anomaly` 121/0, `test-v2-investigator-accuracy` 107/0.
 - 격리 DB에서 waitroom 테이블 2개가 그대로 존재함을 확인했다. 두 테이블 모두 RLS on, policy 0, anon/authenticated SELECT false, service_role SELECT true, unique constraint 각 1개. 우리가 만든 synthetic schemas는 검증 후 제거했고 잔여 schema 0개다.
 - 이번 이어서 수행한 구간은 약 40분(UTC 약 22:39–23:18). 앞선 작업이 섞인 전체 세션 시간은 정확히 분리할 수 없다.
+
+
+
+## 9. SEOSA 2.0 최종 안정화 재점검 (2026-09-25)
+
+### GitHub · Vercel 기준선
+
+- GitHub `main` 최신 SHA는 PR #83 병합 커밋 `5645df74d259a4a91fe11b1e7706077f4c59f4b4` (2026-09-24 23:59:48 UTC)이다. 부모 커밋 중 하나는 #84 병합 `30584eaad06bf22d47e4ef6bf3ab2f2e947d6865`.
+- #84가 Production Supabase migration `20260924235257 price_drop_top_ranked_aggregation_2026_09_25`로 기록되어 있음을 확인했다.
+- #83 main SHA의 Vercel GitHub 상태 체크는 success지만 Production 별칭이 가리키는 실제 배포 SHA는 확인하지 못했다. Vercel CLI는 이 환경에 없고 대시보드는 로그인으로 리디렉션됐다. 브라우저에 로그인된 Vercel 팀 세션이 필요하다.
+- #81은 open·mergeable, head `863f3de50899fc3c527351deb5cf58c0618ede24`, CI/상태 체크 success. 홈의 미검증 BUY 문구와 타이밍/대기실 진입점을 감추는 변경이다. 사용자 승인 전에는 병합하지 않았다.
+- #72 open·미병합. #73 open·mergeable=false. 병합, 운영 DB migration, 이메일 발송 및 기능 플래그 변경은 하지 않았다.
+
+### Production 가격 하락 조회
+
+- 운영 Supabase 로그에서 `/rest/v1/price_drop_top` 요청을 2026-09-24 05:00–2026-09-25 05:00 UTC로 집계했다. #84 migration 기준 전 11건, 적용 후 3건이 있었고 모두 HTTP 500이었다.
+- 적용 후 3건은 각각 8,642–8,688ms (평균 8,663ms) 뒤 실패했다. 같은 구간 Postgres 로그에서 3건 모두 SQLSTATE `57014` (statement timeout cancellation)이다. #84 view 교체 후에도 장애가 지속된다는 Production 근거다.
+- migration은 view 하나만 `CREATE OR REPLACE`했고 가격 원장이나 수집/핫딜 로직을 바꾸지 않았다. 운영 `EXPLAIN`은 실행했으나 부하가 큰 `EXPLAIN ANALYZE`는 하지 않았다. 기존 계획은 최근 30일 창의 대량 window/group 연산과 all-time 최저가 집계를 포함한다.
+- 테스트 프로젝트의 Production 규모 합성 데이터에서는 결과 parity 0행 차이, 임시 파일 spill 0, 281.3ms를 측정했지만 실제 Production 지연을 예측하지 못했다. 추가 사전 집계/캐시/인덱스는 테스트와 롤백안을 먼저 마련하고, Production DDL 전 별도 승인을 받아야 한다.
+- 90일 이상 이력 수 재집계를 위해 3초 statement timeout을 둔 읽기 전용 집계는 시간 초과됐다. 이 결과로 표본이 늘었다고 판단하지 않는다. #72는 직전 백테스트 문서의 부족한 표본 결과를 유지하며 병합/공개하지 않는다.
+
+### Production 장바구니 재현
+
+- 새 탭에서 `/v2/cart.html?cache_probe=20260925T0532Z`를 열고 장바구니 계산을 다시 요청했다. 화면은 상품 행 574,700원 × 1, 판매처 소계 574,700원, 배송비 0원, 쿠폰 0원, 최종 574,700원인데 상단 “상품 금액”만 0원으로 표시했다.
+- 동일한 값이 새 탭·cache-busting 쿼리에서도 반복됐다. 행의 옵션 `95554810254`와 제휴 URL의 `vendorItemId`가 일치했다. 링크를 클릭하지 않았다.
+- main의 #83 코드는 `public/v2/cart-summary.js`를 로드하고 `byMall[].lines[].lineTotal`에서 상단 합계를 계산하며 응답 불일치 때 오류 메시지를 보여 준다. Production 화면에는 요약 0원과 함께 그 보호 메시지가 없었다. 이 관측은 서버 계산보다는 오래된/미실행 프런트 코드 제공을 강하게 시사하지만, 원시 브라우저 Network 응답·실제 제공 JS 해시·Vercel Production SHA를 보지 못해 CDN 캐시와 오래된 배포 중 어느 쪽인지 확정하지 않는다.
+- Production 장바구니 API 응답 원문은 브라우저 도구에서 확보하지 못했다. 행·판매처 합계·최종가가 일치한다는 UI는 확인했지만 API JSON 필드의 독립 검증은 미완료다.
+- 브라우저 스냅샷에서 약 927px 화면 폭 기준 폼 필드가 오른쪽으로 잘리는 모습도 확인했다. 375/390·1280/1440px 뷰포트와 다크 모드는 이 환경에서 강제할 수 없어 검증하지 않았다.
+
+### 구매 대기실 · 비용 · 보안 메모
+
+- 기존 Free 테스트 프로젝트 `seosa-pr73-waitroom-test`가 ACTIVE_HEALTHY이며 #73 최종 테스트 migration 기록이 남아 있다. 앞선 읽기 전용 검증에서 두 테이블 모두 RLS on, 정책 0, anon/authenticated SELECT 불허, service_role만 접근 가능함을 확인했다.
+- Supabase 보안 advisor의 “RLS enabled, no policy”는 Production 30건 / 테스트 DB 2건의 INFO finding이다. 해당 waitroom 테이블은 직접 권한도 차단되어 deny-by-default다. 이번 작업에서는 권한·테이블을 변경하지 않았다.
+- #73 latest는 테스트 81 PASS로 보고되어 있으나 GitHub mergeability가 false이므로 최신 main 기준 충돌/갱신 후 다시 CI가 필요하다. 실제 이메일 0건, 운영 migration 0회, `WAITROOM_ENABLED` 변경 0회.
+- 이번 점검에서 신규 프로젝트/브랜치, 유료 검색 호출, 이메일, 운영 쓰기, 강제 수집은 0건이다. Vercel·Resend 계정의 실제 사용료와 할당량은 이 환경에서 확인할 수 없다.
+
+### 이어서 완료할 일
+
+1. 사용자가 현재 브라우저에서 Vercel 팀에 로그인한 뒤 Production 별칭 SHA, 정적 파일 배포본 및 런타임 로그를 확인한다. #83 UI 소스가 실제 제공되는지 확인한 후 cart API Network JSON과 비교해 근본 원인을 확정한다.
+2. `price_drop_top`는 Production timeout이 남아 있다. 테스트 DB에서 제안 쿼리/사전 집계를 최신 운영 형태로 검증하고 결과 parity·잠금 위험·롤백을 문서화한다. 운영 SQL 적용은 승인 전 금지한다.
+3. #81 병합 승인을 받기 전까지 Production의 구매 타이밍 BUY 문구가 노출될 수 있음을 알린다. #73은 mergeability/CI를 다시 확인하고 운영 migration/API/이메일 각 별도 승인 전에는 비활성으로 유지한다.
+4. 실제 Investigator 정상 검색은 `INVESTIGATOR_LIVE_SEARCH` Production 값과 공급자 할당량/비용을 확인할 때까지 실행하지 않는다. Concierge는 외부 LLM 사용 비용을 확인할 수 없어 Production 호출하지 않았다.
+
+
+### Production UI · GitHub Actions 추가 확인
+
+- Production 홈에는 2.0 조사관·장바구니·가격 이상 링크가 보인다. 현재 홈 슬라이드는 검증되지 않은 “지금 사도 좋아요” 예시와 구매 타이밍 진입 버튼도 노출한다. #81의 UI 안전 수정은 아직 승인/병합되지 않았다.
+- 조사관과 이상 패턴 화면은 실제 Production에서 열렸다. 조사관 입력은 외부 검색 flag와 비용을 확인할 수 없어 전송하지 않았다. AI Concierge 패널은 열리지만 유료 가능성이 있는 질의는 보내지 않았다.
+- 실제 읽기 전용 이상 분석 1회: BIRDPLAY 노트북, productId `9584791839`, 옵션 `95554810254`; 응답은 “판단 데이터 부족”, 3일 기록(최소 기준 5일)으로 제한을 설명했다. 카드/상세 제휴 링크의 pageKey·vendorItemId가 동일 상품·옵션과 맞았다. 가격 이상이라는 근거는 아니며 패턴 판정은 미확정이다.
+- Chrome 확장 MV3 소스는 `extension/manifest.json`과 세 스크립트에 있으며 설치 방법은 unpacked `extension` 폴더 로드다. zip/web store 산출물은 저장소 트리에서 확인하지 못했고, 이 브라우저 세션에는 Chrome 브라우저가 없어 실제 설치 테스트는 못 했다.
+- 2026-09-25 GitHub Actions: main SHA #83에서 Daily Price Collection 여러 회와 SEOSA HOT 예약 run이 success, `pages build and deployment` success. 이는 가격 수집/핫딜 workflow 종료 상태일 뿐 Production Vercel alias 배포 확인을 대체하지 않는다. #85 문서 PR의 Tests run도 success였으며 이후 이 문서 보완으로 새 run이 필요하다.
+- 새 프로젝트/테스트 데이터/운영 변경은 없고, 오늘의 가격 카드 화면은 이전에 열린 탭 상태라 API 장애 이후 신선한 DB 결과라고 간주하지 않았다.
+
+
+- 후속 확인: 이 보완 커밋 `691998a`의 GitHub Actions run `36099380911`도 success. `npm ci`, `npm test`, regression + release suites가 모두 통과했다.
+
+
+## 10. 2026-09-25 이어서: timeout 원인과 후보 RPC
+
+### 최신 상태와 운영 증거
+
+- 다시 확인한 main은 #83 merge SHA 5645df74d259a4a91fe11b1e7706077f4c59f4b4로 동일하다. #85는 open·mergeable이며 최신 문서 head fc6a842750340fd8de831528e7e4677d7c6857b5의 Actions run 36099460902는 success다.
+- Production price_drop_top은 #84 적용 뒤에도 3/3 요청이 HTTP 500, 8,642–8,688ms에 취소됐다. 해당 구간 Postgres SQLSTATE는 모두 57014; authenticator 역할 설정에서 statement_timeout=8s를 확인했다. 요청 시간·역할 제한·취소 로그가 일치한다.
+- Production products.product_id와 price_history.product_id는 text; price, mall, vendor_item_id 타입도 새 RPC 반환 계약과 일치한다. 현재 뷰와 가격 원장/상품 테이블을 읽었으며 Production SQL은 실행하지 않았다.
+- 장바구니 브라우저에서는 #83 배포 후에도 상단 상품 금액 0원, 행/판매처/최종 합계 574,700원을 재현했다. API 원문과 제공 JS SHA는 Vercel 인증/브라우저 도구 제한으로 수집 못 해 코드 배포 불일치와 클라이언트 실행 문제 중 하나로 확정하지 않았다.
+
+### PR #86 후보 RPC
+
+- PR #86: https://github.com/yugeonbag091211/seosa/pull/86, branch codex/price-drop-top-candidates-20260925, head c5203681ff524e72f1fc3d97de915f978f5fcf95. #84의 view는 보존하고 api/init.js가 추가된 price_drop_top_candidates RPC를 호출한다.
+- 최근 30일의 옵션별 최신/직전가 산식은 유지하고, 상위 최대 200 후보를 먼저 고른 다음 정확한 (product, mall, vendor_item_id) 키로 기존 가격 이력 인덱스를 사용해 all-time minimum을 조회한다.
+- 함수는 STABLE SECURITY INVOKER, 고정 search_path, service_role 전용 EXECUTE 권한을 사용한다. migration은 함수 객체와 권한만 추가하며 lock_timeout=2s 트랜잭션 안에서 실행한다. 기존 뷰, 가격 원장, 수집 및 핫딜 규칙에는 변경이 없다.
+- 기존 무료 테스트 Supabase 프로젝트의 격리된 합성 schema에 최종 SQL을 실행했다. 500개 상품·옵션별 이력에서 RPC 200행과 기존 쿼리 200행의 양방향 EXCEPT ALL 차이는 0, 음수 limit은 1행, 큰 limit은 200행이었다. 합성 schema를 제거했고 waitroom 공개 테이블 2개가 남아 있음을 확인했다.
+- 이전 Production 규모 합성 benchmark(155,767 history 행, 38,210 option 키)에서 후보별 all-time 조회 방식은 한 번의 표본에서 약 239ms, 기존 집계는 약 1,667ms였다. 단일 테스트 DB 측정이며 Production 성능 결과가 아니다.
+- 새 정적 계약 테스트 9/9 PASS. 첫 Actions run 36101674744는 test-hotdeal-ui.js가 직접 .from('price_drop_top') 문자열만 고정한 탓에 실패했다. 오늘 하락 필터 경로는 그대로 두고 동등한 RPC도 허용하도록 테스트를 고쳤다. 최신 head c5203681ff524e72f1fc3d97de915f978f5fcf95의 Actions run 36101893198과 Vercel GitHub status는 success다. Preview UI는 Vercel SSO로 확인하지 못했다.
+- PR #86 migration/API 배포는 아직 Production에 반영하지 않았다. Production DB 적용과 API merge/deploy는 별도 승인 후 진행한다.
+
+### 남은 문제와 다음 실행 지점
+
+1. Vercel 팀에 로그인된 세션으로 Production alias SHA, 배포/런타임 로그, 실제 장바구니 API JSON 및 다운로드된 cart JS hash를 확인한다. 현재 Vercel 대시보드가 SSO login으로 리디렉션돼 해당 비교는 미확정이다.
+2. PR #86 최신 head에서 전체 npm, regression, release Actions가 통과했다. Vercel check도 success지만 Preview UI는 SSO 때문에 아직 확인하지 못했다.
+3. 사용자 승인 전 Production RPC migration을 적용하지 않는다. 승인되면 2초 lock timeout으로 함수만 추가하고 역할/시그니처를 읽기 전용 검사한다. 운영 RPC/API 요청은 별도 승인 단계에서 낮은 요청 수로 측정한다.
+4. #72는 90일 이상의 충분한 검증 표본이 없으므로 미병합 상태로 둔다. #73도 운영 SQL/병합/메일/플래그를 적용하지 않는다.
+5. 장바구니 상단 0원 재현은 API 원문·Production SHA와 함께 다시 비교하고, 원인을 확정하기 전 새 cart PR 또는 Production 배포 완료로 표시하지 않는다.
+
+
+- 이 진행 기록 PR #85의 최신 head 21cb3d15058b853be4f5fbb1a90780360c5e9f5c Actions run 36101811878도 success다.
+
+
+## 11. Production RPC migration result (2026-09-25)
+
+- User approved applying the latest PR #86 migration at head c5203681ff524e72f1fc3d97de915f978f5fcf95. Rechecked its 2-second lock-timeout transaction and additive-function-only SQL before execution.
+- Before apply: no existing public.price_drop_top_candidates overload or dependents; the supporting option-price index exists. pg_stat_activity showed 0 active price-history/collector queries and 0 waiting relation locks. No session was terminated.
+- Production migration applied successfully as version 20260925063627, name price_drop_top_candidates_20260925.
+- Post-apply catalog verification: signature price_drop_top_candidates(integer); expected 11-column result; STABLE; SECURITY INVOKER; search_path=public, pg_temp; service_role EXECUTE true; anon/authenticated/PUBLIC EXECUTE false.
+- The Production price_history and products tables were not altered; no row, index, collection, hotdeal, email, or feature-flag change was made. PR #86 API code remains unmerged and current Production API still uses the existing view.
+- A read-only Production request for RPC limit 200, capped by SET LOCAL statement_timeout=7s, was canceled with SQLSTATE 57014. The first attempt also included row/options verification and timed out; a second attempt calling the RPC itself (without those additional history lookups) also timed out at the 7-second ceiling. No further Production query or DB change was attempted.
+- The RPC migration is safely additive but has not met the runtime gate. Do not merge/deploy PR #86 until a new optimization is validated against Production limits. No rollback DDL was applied because that would be another Production schema change; the new function is not yet used by application code.
+- Supporting test-project parity remains 200 rows versus 200, bidirectional difference 0. This test result did not predict Production runtime.
