@@ -290,3 +290,6 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 - Chrome 확장 MV3 소스는 `extension/manifest.json`과 세 스크립트에 있으며 설치 방법은 unpacked `extension` 폴더 로드다. zip/web store 산출물은 저장소 트리에서 확인하지 못했고, 이 브라우저 세션에는 Chrome 브라우저가 없어 실제 설치 테스트는 못 했다.
 - 2026-09-25 GitHub Actions: main SHA #83에서 Daily Price Collection 여러 회와 SEOSA HOT 예약 run이 success, `pages build and deployment` success. 이는 가격 수집/핫딜 workflow 종료 상태일 뿐 Production Vercel alias 배포 확인을 대체하지 않는다. #85 문서 PR의 Tests run도 success였으며 이후 이 문서 보완으로 새 run이 필요하다.
 - 새 프로젝트/테스트 데이터/운영 변경은 없고, 오늘의 가격 카드 화면은 이전에 열린 탭 상태라 API 장애 이후 신선한 DB 결과라고 간주하지 않았다.
+
+
+- 후속 확인: 이 보완 커밋 `691998a`의 GitHub Actions run `36099380911`도 success. `npm ci`, `npm test`, regression + release suites가 모두 통과했다.
