@@ -293,3 +293,31 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 
 
 - 후속 확인: 이 보완 커밋 `691998a`의 GitHub Actions run `36099380911`도 success. `npm ci`, `npm test`, regression + release suites가 모두 통과했다.
+
+
+## 10. 2026-09-25 이어서: timeout 원인과 후보 RPC
+
+### 최신 상태와 운영 증거
+
+- 다시 확인한 main은 #83 merge SHA 5645df74d259a4a91fe11b1e7706077f4c59f4b4로 동일하다. #85는 open·mergeable이며 최신 문서 head fc6a842750340fd8de831528e7e4677d7c6857b5의 Actions run 36099460902는 success다.
+- Production price_drop_top은 #84 적용 뒤에도 3/3 요청이 HTTP 500, 8,642–8,688ms에 취소됐다. 해당 구간 Postgres SQLSTATE는 모두 57014; authenticator 역할 설정에서 statement_timeout=8s를 확인했다. 요청 시간·역할 제한·취소 로그가 일치한다.
+- Production products.product_id와 price_history.product_id는 text; price, mall, vendor_item_id 타입도 새 RPC 반환 계약과 일치한다. 현재 뷰와 가격 원장/상품 테이블을 읽었으며 Production SQL은 실행하지 않았다.
+- 장바구니 브라우저에서는 #83 배포 후에도 상단 상품 금액 0원, 행/판매처/최종 합계 574,700원을 재현했다. API 원문과 제공 JS SHA는 Vercel 인증/브라우저 도구 제한으로 수집 못 해 코드 배포 불일치와 클라이언트 실행 문제 중 하나로 확정하지 않았다.
+
+### PR #86 후보 RPC
+
+- PR #86: https://github.com/yugeonbag091211/seosa/pull/86, branch codex/price-drop-top-candidates-20260925, head e5801d1ff7d542e83cbeaa0f7489b5c7e17162d2. #84의 view는 보존하고 api/init.js가 추가된 price_drop_top_candidates RPC를 호출한다.
+- 최근 30일의 옵션별 최신/직전가 산식은 유지하고, 상위 최대 200 후보를 먼저 고른 다음 정확한 (product, mall, vendor_item_id) 키로 기존 가격 이력 인덱스를 사용해 all-time minimum을 조회한다.
+- 함수는 STABLE SECURITY INVOKER, 고정 search_path, service_role 전용 EXECUTE 권한을 사용한다. migration은 함수 객체와 권한만 추가하며 lock_timeout=2s 트랜잭션 안에서 실행한다. 기존 뷰, 가격 원장, 수집 및 핫딜 규칙에는 변경이 없다.
+- 기존 무료 테스트 Supabase 프로젝트의 격리된 합성 schema에 최종 SQL을 실행했다. 500개 상품·옵션별 이력에서 RPC 200행과 기존 쿼리 200행의 양방향 EXCEPT ALL 차이는 0, 음수 limit은 1행, 큰 limit은 200행이었다. 합성 schema를 제거했고 waitroom 공개 테이블 2개가 남아 있음을 확인했다.
+- 이전 Production 규모 합성 benchmark(155,767 history 행, 38,210 option 키)에서 후보별 all-time 조회 방식은 한 번의 표본에서 약 239ms, 기존 집계는 약 1,667ms였다. 단일 테스트 DB 측정이며 Production 성능 결과가 아니다.
+- 새 정적 계약 테스트 9/9 PASS. PR #86 GitHub Actions Tests run 36101674744는 최신 head에서 실행 중이며, 완료 전 통과로 간주하지 않는다. Vercel Preview 브라우저 검증도 아직 확인하지 못했다.
+- PR #86 migration/API 배포는 아직 Production에 반영하지 않았다. Production DB 적용과 API merge/deploy는 별도 승인 후 진행한다.
+
+### 남은 문제와 다음 실행 지점
+
+1. Vercel 팀에 로그인된 세션으로 Production alias SHA, 배포/런타임 로그, 실제 장바구니 API JSON 및 다운로드된 cart JS hash를 확인한다. 현재 Vercel 대시보드가 SSO login으로 리디렉션돼 해당 비교는 미확정이다.
+2. PR #86 Actions 완료 후 전체 npm, regression, release 결과 및 Preview 상태를 최신 head에서 확인한다.
+3. 사용자 승인 전 Production RPC migration을 적용하지 않는다. 승인되면 2초 lock timeout으로 함수만 추가하고 역할/시그니처를 읽기 전용 검사한다. 운영 RPC/API 요청은 별도 승인 단계에서 낮은 요청 수로 측정한다.
+4. #72는 90일 이상의 충분한 검증 표본이 없으므로 미병합 상태로 둔다. #73도 운영 SQL/병합/메일/플래그를 적용하지 않는다.
+5. 장바구니 상단 0원 재현은 API 원문·Production SHA와 함께 다시 비교하고, 원인을 확정하기 전 새 cart PR 또는 Production 배포 완료로 표시하지 않는다.
