@@ -238,3 +238,64 @@ Chromium 데스크톱 1280px·모바일 390px × 라이트/다크 4장 — 콘�
 - 신규 기능 회귀: `test-v2-cart` 136/0, `test-v2-anomaly` 121/0, `test-v2-investigator-accuracy` 107/0.
 - 격리 DB에서 waitroom 테이블 2개가 그대로 존재함을 확인했다. 두 테이블 모두 RLS on, policy 0, anon/authenticated SELECT false, service_role SELECT true, unique constraint 각 1개. 우리가 만든 synthetic schemas는 검증 후 제거했고 잔여 schema 0개다.
 - 이번 이어서 수행한 구간은 약 40분(UTC 약 22:39–23:18). 앞선 작업이 섞인 전체 세션 시간은 정확히 분리할 수 없다.
+
+
+## 2026-09-25 저녁 — 출시 준비 마무리 (#81 · #87 · #88 · #73, Claude 세션)
+
+기준: main `5645df7` = 최신 Production 배포 SHA (GitHub Deployments `environment=Production` success, 00:00:08Z).
+운영 DB 변경 · 병합 · 재배포 · 실제 이메일 · 유료 AI 호출은 하지 않았다. 다른 에이전트 작업 트리(`.codex/worktrees/seosa-cart-cache-fix` 미커밋 등)는 건드리지 않았다.
+
+### 접근 제약
+
+- 앱 내 브라우저의 Vercel · Supabase 로그인 없음, Chrome 확장 미연결, Supabase CLI 토큰 없음 → **무료 테스트 Supabase 프로젝트는 이 세션에서 쓰지 못했다.**
+  대신 로컬 실제 PostgreSQL 17.10(다중 연결)과 PGlite 로 검증했고, CI 에 `postgres:17` 서비스 잡(`postgres-integration`)을 추가했다.
+- 브라우저 패널이 숨겨져 있어 스크린샷·실제 키 입력은 못 했다. 뷰포트 에뮬레이션 + DOM 측정(위치·크기·읽기 순서·포커스 순서)으로 검증했다.
+  숨은 패널에서는 CSS 전환과 부드러운 스크롤이 멈춘다 — 측정 때만 전환을 끄는 스타일을 주입했다(코드 변경 아님).
+
+### #87 장바구니 (head `0021ac8`)
+
+- 375 · 390 · 1280 · 1440px: 요약 `<dl>` 이 «라벨 → 값» 으로 읽히고(`총 결제 예상액 574,700원 | 상품 금액 574,700원 | 배송비 0원 | 쿠폰 할인 0원`),
+  값은 라벨 위 22px 굵게 / 라벨 12px 로 기존 모양 그대로, 가로 넘침 없음, 행·소계·합계 574,700원 일치, 다크모드 색 정상. 운영 `/api/cart` 로 계산했다.
+- 추가 수정: 375px 에서 판매처 표의 «구매하러 가기» 가 13×131px 로 한 글자씩 꺾였다(운영 main 에도 있음) → `white-space:nowrap` · 81×42px.
+
+### #81 미검증 타이밍 문구 · 대기실 링크 (head `863f3de`)
+
+- 변경은 홈 3번 슬라이드 문구 · `BUY 지금 사도 좋아요` 예시 배지, 조사관 카드의 타이밍 · 대기실 버튼, lookup API 의 `waitroomUrl`(`WAITROOM_API_ENABLED=1` 일 때만) 뿐.
+- 운영 홈은 지금도 `지금 살까` · `구매 타이밍 확인` · `BUY` · `지금 사도 좋아요` 를 노출한다. 운영 `/api/lookup` 은 운영에서 404 인 `/v2/waitroom.html` 링크를 준다.
+- 4개 폭에서 3번 슬라이드 새 문구 · CTA 188×48 · 예시 그래프가 화면 안, 가로 넘침 없음. CTA 는 실제 `#priceDrop` 으로 스크롤한다.
+- 최신 main 과 합친 상태에서 npm test · regression 85/0 · release 121/0 · 조사관 64/0 · 확장 267/0 · 홈 링크 11/0.
+- 범위 밖 기존 결함: 비활성 캐러셀 슬라이드가 `aria-hidden=true` 인데 `inert` 가 아니라 안의 링크·버튼(최대 16개)이 키보드 포커스를 받는다(운영 main 에도 있음).
+
+### #88 가격 하락 상태표 (head `d6b3ea3`) — 설계 · 측정은 `docs/seosa2/price-drop-state.md`
+
+- 원자적 재구성: 세대(gen) + 메타 `published_gen` 한 칸 교체. 공개 게이트(배치 완료 · 따라잡기 · 행 수 90% · 표본 검증).
+  소유 토큰 · 하트비트 · 권고 잠금으로 중복 실행 · 중간 장애 · 인수 처리. 직전 세대 즉시 되돌리기.
+- 안전한 VERIFY: 표본 키만 원장 인덱스로 독립 재계산. 기존 뷰를 부르지 않고 timeout 을 올리지 않는다. 전체 대조는 테스트 DB 전용 파일.
+- 증분: 최근 날짜 창 + `id` 워터마크(과거 날짜 INSERT 포함). 삭제는 `pg_stat` 로, 과거 행 정정은 표본 검증으로 탐지 → 원자적 재구성. 일일 재구성이 상한.
+- 운영 증상 재확인: `/api/init` 의 `priceDrop` 이 0행(기존 뷰 timeout 으로 비어 있음, CDN STALE 응답).
+- 로컬 PostgreSQL 17 (원장 278,183행): 상위 200 조회 1.5ms (기존 뷰 358ms, #86 RPC 251ms) · 전체 재구성 1.36초 · 증분 362ms · 표본 검증 43ms ·
+  세대당 약 10MB · 재구성 중 수집기 upsert 10.1 → 13.1ms · 기존 뷰와 전체 대조 0/0. **운영 성능이 아니다.**
+- 테스트: PGlite 39/0 (`npm test`), 실제 PostgreSQL 34/0 (동시성 · 끊김 · 인수 · 게이트 · 탐지 · 되돌리기).
+
+### #73 구매 대기실 (head `5719e9a`)
+
+- Resend 문서: 키 24시간 보존, 같은 키·같은 본문은 재발송 없이 원래 응답, 같은 키·다른 본문 409. → 명확한 거절 뒤 가격이 바뀐 재시도가
+  같은 키로 409(«불명») 에 영영 막히던 결함을 시도 번호 키로 고쳤다.
+- mock 95/0: 수락 뒤 응답 유실(재실행 · 24시간 안 같은 키 수동 재전송 · 다음 날 모두 편지함 한 통), 거절 뒤 재시도 한 통, 동시 두 실행 한 통.
+- 실제 PostgreSQL 18/0: 재적용 · RLS/권한(anon/authenticated 거부, service_role 도 발송 기록 삭제 불가) · 동시 12연결 선점·CAS 하나 ·
+  삭제 뒤 이력 보존 · 옵션 · 첫 판 → UPGRADE(중복 흔적 있으면 실패하고 그대로) · ROLLBACK.
+- 한계: 정확히 한 번은 보장 못 한다. 24시간이 지나거나 본문이 다른 수동 재전송은 공급자가 막지 않는다. 수락 불명은 자동 복구하지 않는다(누락 가능).
+
+### 운영 읽기 전용 확인 (2026-09-25)
+
+- 장바구니 계산 · 가격 이상(23일 기록, 상태 «정상», 이력 digest) · lookup(일치 A, 23점, timing null) · 오늘 하락 카드 3개(https 제휴 링크의
+  pageKey=상품번호 · vendorItemId=옵션 불일치 0) 동작. 가격 수집 · 핫딜 워크플로 main 에서 최근 실행 모두 success.
+- Chrome 확장: MV3, 권한 `storage` + `seosa.ai.kr`, 참조 파일 누락 0, 스크립트 문법 OK — «압축해제된 확장 로드» 형태. 실제 Chrome 설치는 못 했다. 아이콘 없음.
+- 조사관 · Concierge: 유료 LLM/외부 검색 비용을 확인할 수 없어 운영 호출하지 않았다(오프라인 테스트만).
+- #72: `/api/timing` 501 NOT_READY, `/v2/timing.html` 404 — 비공개 유지.
+
+### 네 PR 합산 (main `5645df7` + #81 + #87 + #88 + #73, 로컬 임시 병합 — 원격 변경 없음)
+
+- 충돌 0. `verify-migrations.js` 목록에 대기실 · 기존 뷰 · 상태표 마이그레이션 셋이 모두 남고, `postgres-integration` 잡은 하나로 합쳐진다.
+- `npm test` exit 0 · regression 85/0 · release 121/0 · 실제 PostgreSQL 34/0 · 18/0 · `verify-migrations` 63 OK / 0 FAIL ·
+  cart 147 · waitroom 95 · investigator 64 · extension 267 · home-links 11 · anomaly 121 · price-drop-state 39 (모두 FAIL 0).

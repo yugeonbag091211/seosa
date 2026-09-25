@@ -47,6 +47,26 @@ const SECTION_SIZE = 8;
  */
 const DROP_FETCH = 200;
 
+/*
+ * 시세판 후보를 어디서 읽는가.
+ *
+ * 기본은 기존 뷰 price_drop_top — 요청마다 최근 30일 원장을 옵션별로 순위 매긴다.
+ * 운영에서 이 계산이 8초 statement_timeout 에 3/3 취소됐다(2026-09-25, #84 적용 뒤에도).
+ *
+ * PRICE_DROP_SOURCE=state 면 사전 집계 상태표 뷰 price_drop_top_fast 를 읽는다
+ * (supabase/2026-09-25-price-drop-state.sql). 같은 12컬럼 · 같은 결과이고, 요청 때는
+ * 상태표 인덱스로 상위 200행만 읽는다. 상태표는 수집 뒤 갱신 워크플로가
+ * 원장에서 다시 계산한다(scripts/refresh-price-drop-state.js).
+ *
+ * ★ 환경변수를 켜는 순서: 마이그레이션 적용 → 전체 재구성 → VERIFY.sql 대조 → 이 변수.
+ *   변수만 지우면 즉시 기존 뷰로 돌아간다 (DB 되돌리기 없이).
+ * ★ 상태표가 조금 늦어도 «틀린 하락» 은 나가지 않는다 — 아래 todayDropConfirmed 가
+ *   오늘 원장으로 다시 확인하므로, 낡은 후보는 걸러져 칸이 줄 뿐이다.
+ */
+function dropSource() {
+  return process.env.PRICE_DROP_SOURCE === 'state' ? 'state' : 'view';
+}
+
 /** 키워드 하나당 훑을 상품 수. 아래 셀렉션 루프의 limit(100)과 같은 기준. */
 const KEYWORD_PROBE_ROWS = 100;
 
@@ -245,14 +265,17 @@ module.exports = async function handler(req, res) {
      */
     const DROP_COLS = 'product_id, mall, mall_label, title, current_price, prev_price,'
       + ' drop_amount, drop_pct, is_all_time_low, link, image';
-    const { data: priceDrop, error: dropErr } = await supabase
-      .from('price_drop_top')
+    const source = dropSource();
+    const dropTable = source === 'state'
+      ? supabase.from('price_drop_top_fast')
+      : supabase.from('price_drop_top');
+    const { data: priceDrop, error: dropErr } = await dropTable
       .select(DROP_COLS)
       .order('drop_pct', { ascending: false })
       .limit(DROP_FETCH);
     if (dropErr) {
       const info = DbError.classifyDbError(dropErr);
-      console.warn(`[init] 시세판 조회 실패 [${info.kind}] — 섹션을 비우고 진행합니다`
+      console.warn(`[init] 시세판 조회 실패 [${info.kind}] (${source}) — 섹션을 비우고 진행합니다`
         + `${info.transient ? ' (일시 장애: 데이터가 없는 것이 아니다)' : ''}: ${dropErr.message}`);
     }
 

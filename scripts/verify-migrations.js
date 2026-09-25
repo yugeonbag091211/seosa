@@ -76,7 +76,12 @@ const EPHEMERAL_TABLES = [
    * 캐시. 원본은 price_history/products 이고 언제든 다시 만들 수 있다
    * (collector_refresh_eligible). 지워도 잃는 사실이 없다.
    */
-  'collector_eligible_cache'
+  'collector_eligible_cache',
+  /*
+   * 2026-09-25: 가격 하락 사전 집계. 원본은 price_history/products 이고
+   * price_drop_state_rebuild_batch 로 언제든 다시 만든다.
+   */
+  'price_drop_state', 'price_drop_state_meta'
 ];
 
 function deleteTargets(sql) {
@@ -129,7 +134,9 @@ const NEW_MIGRATIONS = [
    */
   '2026-09-22-collector-target-keyset.sql',
   // 2026-09-25: read-only price_drop_top rewrite; no application data mutation.
-  '2026-09-25-price-drop-top-ranked-aggregation.sql'
+  '2026-09-25-price-drop-top-ranked-aggregation.sql',
+  // 2026-09-25: 가격 하락 상태표(파생) + 증분/재구성 함수 + price_drop_top_fast. 원장·기존 뷰 미변경.
+  '2026-09-25-price-drop-state.sql'
 ];
 
 function checkStatic() {
