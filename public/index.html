@@ -11767,10 +11767,10 @@ var HeroCarousel = {
     el.style.opacity = pos === 0 ? '1' : '0';
     el.classList.toggle('on', pos === 0);
     /*
-     * 보이지 않는 장은 스크린리더에서도 없는 것으로 친다. 이게 없으면
-     * 네 장이 한꺼번에 읽혀 어디를 듣고 있는지 알 수 없다.
-     * (visibility:hidden 이라 탭 순서에서는 CSS 가 이미 빼 준다)
+     * 숨겨진 장은 보조 기술과 키보드 순서 모두에서 제외한다.
+     * aria-hidden 은 보조 기술에, inert 는 전환 중 포커스에 적용한다.
      */
+    el.inert = pos !== 0;
     el.setAttribute('aria-hidden', pos === 0 ? 'false' : 'true');
     if (!animate) {
       void el.offsetWidth;          // 시작 위치를 브라우저에 확정시킨다
