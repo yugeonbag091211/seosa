@@ -303,12 +303,13 @@ document.addEventListener('DOMContentLoaded', function () {
     if (amounts.itemsCostMismatch) {
       html += '<p class="notice">상품 금액 요약과 상품 행 합계가 달라, 표시된 상품 행을 기준으로 다시 계산했어요.</p>';
     }
-    html += '<div class="kpis">'
-      + '<div class="kpi"><b>' + V2.esc(V2.won(amounts.total)) + '</b><span>총 결제 예상액</span></div>'
-      + '<div class="kpi"><b>' + V2.esc(V2.won(amounts.itemsCost)) + '</b><span>상품 금액</span></div>'
-      + '<div class="kpi"><b>' + V2.esc(V2.won(amounts.shippingCost)) + '</b><span>배송비</span></div>'
-      + '<div class="kpi"><b>' + (amounts.couponDiscount ? '−' : '') + V2.esc(V2.won(amounts.couponDiscount)) + '</b><span>쿠폰 할인</span></div>'
-      + '</div>';
+    // 라벨 → 값 순서로 묶는다 (V2.kpi 주석: «상품 금액 0원» 오독의 원인).
+    html += '<dl class="kpis">'
+      + V2.kpi('총 결제 예상액', V2.won(amounts.total))
+      + V2.kpi('상품 금액', V2.won(amounts.itemsCost))
+      + V2.kpi('배송비', V2.won(amounts.shippingCost))
+      + V2.kpi('쿠폰 할인', (amounts.couponDiscount ? '−' : '') + V2.won(amounts.couponDiscount))
+      + '</dl>';
     html += p.optimal
       ? '<p><span class="badge down">최저 조합 확인</span> <span class="muted">어떤 다른 조합도 이보다 싸지 않다는 것까지 확인했어요 (탐색 ' + V2.esc(Number(p.searchedNodes).toLocaleString('ko-KR')) + '단계).</span></p>'
       : '<p><span class="badge warn">탐색 한도 도달</span> <span class="muted">조합이 너무 많아 ' + V2.esc(Number(p.searchedNodes).toLocaleString('ko-KR')) + '단계에서 멈췄어요. 찾은 것 중 가장 싼 조합이고, 최저가가 아닐 수 있어요.</span></p>';

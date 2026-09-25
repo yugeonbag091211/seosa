@@ -158,15 +158,14 @@
     var lv = b.level;
     var kpis = '';
     if (lv && lv.label) {
-      kpis += '<div class="kpi"><b>' + V2.esc(lv.label) + '</b><span>'
-        + (m.status === 'SIMILAR' ? '가격 위치 (비슷한 상품 기준)' : '지금 가격의 위치')
-        + (lv.pctRank != null ? ' · 최근 ' + V2.esc(lv.windowDays || 90) + '일 중 하위 ' + V2.esc(lv.pctRank) + '%' : '') + '</span></div>';
-      if (lv.low) kpis += '<div class="kpi"><b>' + V2.esc(V2.won(lv.low)) + '</b><span>최근 최저</span></div>';
-      if (lv.high) kpis += '<div class="kpi"><b>' + V2.esc(V2.won(lv.high)) + '</b><span>최근 최고</span></div>';
+      kpis += V2.kpi((m.status === 'SIMILAR' ? '가격 위치 (비슷한 상품 기준)' : '지금 가격의 위치')
+        + (lv.pctRank != null ? ' · 최근 ' + (lv.windowDays || 90) + '일 중 하위 ' + lv.pctRank + '%' : ''), lv.label);
+      if (lv.low) kpis += V2.kpi('최근 최저', V2.won(lv.low));
+      if (lv.high) kpis += V2.kpi('최근 최고', V2.won(lv.high));
     }
-    if (b.timing && b.timing.label) kpis += '<div class="kpi"><b>' + V2.esc(b.timing.label) + '</b><span>구매 타이밍</span></div>';
-    if (b.anomaly && b.anomaly.label) kpis += '<div class="kpi"><b>' + V2.esc(b.anomaly.label) + '</b><span>가격 패턴</span></div>';
-    if (kpis) h += '<div class="grid">' + kpis + '</div>';
+    if (b.timing && b.timing.label) kpis += V2.kpi('구매 타이밍', b.timing.label);
+    if (b.anomaly && b.anomaly.label) kpis += V2.kpi('가격 패턴', b.anomaly.label);
+    if (kpis) h += '<dl class="grid">' + kpis + '</dl>';
     if (lv && lv.reason && lv.pctRank == null) h += '<p class="muted">' + V2.esc(lv.reason) + '</p>';
 
     var offers = b.offers || [];
