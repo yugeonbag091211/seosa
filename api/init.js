@@ -243,13 +243,8 @@ module.exports = async function handler(req, res) {
      *   _dberror 규칙과 정확히 같은 종류의 문제다. 섹션은 예전처럼 비우되,
      *   원인은 로그에 남긴다.
      */
-    const DROP_COLS = 'product_id, mall, mall_label, title, current_price, prev_price,'
-      + ' drop_amount, drop_pct, is_all_time_low, link, image';
     const { data: priceDrop, error: dropErr } = await supabase
-      .from('price_drop_top')
-      .select(DROP_COLS)
-      .order('drop_pct', { ascending: false })
-      .limit(DROP_FETCH);
+      .rpc('price_drop_top_candidates', { p_limit: DROP_FETCH });
     if (dropErr) {
       const info = DbError.classifyDbError(dropErr);
       console.warn(`[init] 시세판 조회 실패 [${info.kind}] — 섹션을 비우고 진행합니다`
