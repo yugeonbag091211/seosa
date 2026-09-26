@@ -243,6 +243,42 @@ function rng(seed) {
     check('체크포인트 attempted 가 누적된다', last.collectorAttempted.length === 6, String(last.collectorAttempted.length));
   }
   {
+    /*
+     * 운영 회귀: 회전 그룹이 커져도 daily 1차+회수 패스가 먼저 돌고,
+     * 회전 그룹은 running 으로 다음 실행에 남아야 한다. 외부 API/DB 0회.
+     */
+    const mix = mkRows([
+      ['PRIO_D1', '상시 키워드', 0.8],
+      ['PRIO_R1', '회전 키워드1', 0.8],
+      ['PRIO_R2', '회전 키워드2', 0.8]
+    ]);
+    const calls = [];
+    const r = await C.runMallCollection({
+      mallName: 'ADPICK', rows: mix,
+      fetchAllFn: async kw => {
+        calls.push(kw);
+        return { ok: true, reason: '', items: kw === '상시 키워드'
+          ? [] : (kw.includes('PRIO_D1') ? [{
+            productId: 'PRIO_D1', lprice: 1000, oprice: 1000, title: '상품 PRIO_D1',
+            mall: 'ADPICK', link: '', itemId: '', vendorItemId: ''
+          }] : []) };
+      },
+      savedState: null, deadlineTs: Date.now() + 8000,
+      recordPricesFn: recordStub, cacheHintFn: NO_HINT,
+      collectedTodayFn: async () => new Set(),
+      planner: { tierOf: p => p.product_id === 'PRIO_D1' ? 'daily' : 'rotation',
+        dayStartMs: DAY_START, limit: 20, dailyFirst: true, pass1GroupCap: 1 }
+    });
+    eq('★ 회전 대상 2개보다 daily 1차가 먼저 실행된다', calls[0], '상시 키워드');
+    check('★ 1차가 중단돼도 검색 실패 daily 회수 패스가 실행된다',
+      calls.some(q => q !== '상시 키워드') && r.secondPassRecovered >= 1,
+      JSON.stringify({calls, recovery:r.secondPassRecovered}));
+    check('★ 회전 그룹은 아직 호출하지 않고 다음 실행으로 넘긴다',
+      !calls.includes('회전 키워드1') && !calls.includes('회전 키워드2'));
+    eq('★ 회전 미진행인데 completed 오판 금지', r.status, 'running');
+    check('★ 회전 재개용 processed 가 total 미만', r.processed < r.total);
+  }
+  {
     /* 레거시가 같은 날 이미 찾아본 상품은 V3 가 다시 부르지 않는다 */
     const calls = [];
     const saved = {
