@@ -174,6 +174,24 @@ section('5. 토큰 분류 (브랜드·모델·명사)');
   const m2 = modelsOf('닥터헤디슨 알로에 베라 수딩 젤 2개 500ml');
   check(!m2.includes('500ml'), '★★ 단위(500ml)를 모델코드로 오인하지 않는다', m2);
 
+  // 회수 검색에서 4SET·3PCS를 모델로 우선 검색하면 호출을 낭비한다.
+  const quantityModels = modelsOf('푸마 여성 드로즈 4SET 캘빈클라인 3PCS 10000mAh 144Hz');
+  check(!quantityModels.some(x => /^(4SET|3PCS|10000mAh|144Hz)$/i.test(x)),
+    '★★ 영문 수량·규격을 모델코드로 오인하지 않는다', quantityModels);
+  check(modelsOf('삼성 갤럭시 SM-S928N 256GB').includes('SM-S928N'),
+    '★★ 진짜 모델코드는 수량 필터 후에도 유지한다');
+
+  // 실제 브랜드·모델이 괄호 안에 있을 때 장식 머리표처럼 버리지 않는다.
+  check(brandOf('[삼성전자] 갤럭시 S24 블랙') === '삼성전자',
+    '★★ 브랜드 대괄호는 브랜드 자체를 보존한다');
+  check(modelsOf('쿠쿠 (CRP-DHAS069FWM) 고무패킹').includes('CRP-DHAS069FWM'),
+    '★★ 괄호 안 모델코드 보존 → 회수 검색어 생성 가능');
+  check(brandOf('[로켓프레시] (냉동) 비비고 고기만두') === '비비고',
+    '★★ 배송·보관 장식 머리표는 그대로 제거한다');
+  const bracketQueries = generateSecondPassQueries(P('[삼성전자] 갤럭시 (SM-S928N) 256GB 블랙', '갤럭시'));
+  check(bracketQueries.some(q => q.includes('삼성전자 SM-S928N')),
+    '★★ 괄호 속 모델을 활용한 브랜드+모델 회수 검색어', bracketQueries);
+
   const n = nounsOf('포렙 게이밍 유선 마우스 FV-X9');
   check(!n.includes('FV-X9'), '명사 목록에 모델코드가 섞이지 않는다', n);
 
