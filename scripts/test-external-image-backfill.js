@@ -11,7 +11,9 @@ Module._load = function(id, parent) {
   if (resolved === supa) return {};
   if (resolved === source) return {
     safeImageUrl,
-    IMAGE_META_KEYS: ['imageSource', 'imageProductId', 'imageMatchConfidence', 'imageMatchReason', 'imageReference'],
+    IMAGE_META_KEYS: ['imageSource', 'imageProductId', 'imageMatchConfidence', 'imageMatchReason', 'imageReference', 'imageCandidateTitle'],
+    // 가짜 판정기 — «후보 제목에 BAD» 가 들어 있으면 지금 규칙으로 탈락
+    referencePhotoAllowed: (_d, c) => !/BAD/.test(String(c)),
     probeImageUrl: async () => { throw Error('unexpected real image probe'); },
     isEphemeralImageUrl: u => /cloudfront\.net\/apis\/search_img\.php/.test(String(u)),
     enrichAffiliateRows: async () => { throw Error('unexpected real enrichment'); }
@@ -191,6 +193,35 @@ function fakeClient(rows) {
   assert.equal(u21.patch.metadata.imageRevoked.url, 'https://img.example/kunkook.jpg');
   assert.equal(u21.patch.metadata.imageReference, undefined, 'the label goes with the revoked photo');
   assert.equal('imageDeadUrl' in u21.patch.metadata, false, 'a revoked photo is not reported as dead');
+
+  // 8) --revalidate — 검색 없이 저장된 쌍을 지금 규칙으로 다시 판정
+  const rvRows = [
+    { id: 31, title: 'A', image_url: 'https://img.example/a.jpg', metadata: { imageReference: true, imageCandidateTitle: 'A BAD 후보' } },
+    { id: 32, title: 'B', image_url: 'https://img.example/b.jpg', metadata: { imageReference: true, imageCandidateTitle: 'B 좋은 후보' } },
+    { id: 33, title: 'C', image_url: 'https://img.example/c.jpg', metadata: { imageReference: true }, matched_product_id: 'p' },
+    { id: 34, title: 'D', image_url: 'https://img.example/d.jpg', metadata: { imageReference: true } },
+    { id: 35, title: 'E', image_url: 'https://img.example/e.jpg', metadata: { imageReference: false, imageCandidateTitle: 'E BAD' } },
+    { id: 36, title: 'F', image_url: '', metadata: { imageReference: true, imageCandidateTitle: 'F BAD' } }
+  ];
+  assert.ok(Backfill.revalidateVerdict(rvRows[0]), 'a stored pair failing current rules is revoked');
+  assert.equal(Backfill.revalidateVerdict(rvRows[1]), null);
+  assert.ok(Backfill.revalidateVerdict(rvRows[2]), 'old-rule reference photo on an affiliate-matched row (cannot be re-searched)');
+  assert.equal(Backfill.revalidateVerdict(rvRows[3]), null, 'unmatched old-rule rows are left to --recheck-reference');
+  assert.equal(Backfill.revalidateVerdict(rvRows[4]), null, 'exact-match photos are never touched');
+  assert.equal(Backfill.revalidateVerdict(rvRows[5]), null, 'no photo, nothing to revoke');
+  const rvDry = fakeClient(rvRows);
+  const r8d = await Backfill.main({ db: rvDry, nowMs, revalidate: true, dryRun: true,
+    probeImage: async () => { throw Error('revalidate must not probe'); }, enrich: async () => { throw Error('revalidate must not search'); } });
+  assert.deepEqual(r8d.ids, [31, 33]); assert.equal(rvDry.updates.length, 0, 'dry-run writes nothing');
+  const rv = fakeClient(rvRows);
+  const r8 = await Backfill.main({ db: rv, nowMs, revalidate: true,
+    probeImage: async () => { throw Error('revalidate must not probe'); }, enrich: async () => { throw Error('revalidate must not search'); } });
+  assert.equal(r8.revoked, 2); assert.equal(r8.kept, 2); assert.equal(r8.checked, 4, 'only reference photos are checked');
+  const u31 = rv.updates.find(u => u.where.some(w => w[1] === 'id' && w[2] === 31));
+  assert.equal(u31.patch.image_url, '');
+  assert.equal(u31.patch.metadata.imageRevoked.candidateTitle, 'A BAD 후보');
+  assert.equal(u31.patch.metadata.imageReference, undefined);
+  assert.ok(u31.where.some(w => w[1] === 'image_url' && w[2] === 'https://img.example/a.jpg'), 'CAS on the photo we judged');
 
   console.log('Community image backfill offline checks PASS');
 })().catch(e => { console.error(e); process.exitCode = 1; });
