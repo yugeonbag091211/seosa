@@ -22,14 +22,15 @@ const res = (status, type, extra) => ({
   headers: { get: k => ({ 'content-type': type, ...(extra || {}) })[k.toLowerCase()] || null },
   body: { cancel: async () => {} }
 });
-const DEAD = 'https://d2iaagr1j041pi.cloudfront.net/apis/search_img.php?code=495916396';
+// 죽은 일반 사진(임시 토큰이 아닌 404). ADPICK 토큰(search_img.php)은 [3b] 가 따로 본다.
+const DEAD = 'https://img.gone.example/product/495916396.jpg';
 const LIVE = 'https://image4.coupangcdn.com/image/vendor_inventory/cola.jpg';
-const fakeProbe = async url => (/search_img\.php/.test(url)
+const fakeProbe = async url => (/gone\.example/.test(url)
   ? { ok: false, status: 404, reason: 'http-404' } : { ok: true, status: 200, reason: 'ok' });
 
 (async () => {
   console.log('[1] 사진 주소 검사');
-  await check('404 text/html (ADPICK search_img.php 실측 응답) → 죽은 사진', async () => {
+  await check('404 text/html (ADPICK 만료 토큰의 실측 응답 모양) → 죽은 사진', async () => {
     const r = await C.probeImageUrl(DEAD, { fetch: async () => res(404, 'text/html; charset=UTF-8', { 'content-length': '0' }), cache: new Map() });
     assert.equal(r.ok, false); assert.equal(r.reason, 'http-404'); assert.ok(!r.transient);
   });
@@ -156,6 +157,31 @@ const fakeProbe = async url => (/search_img\.php/.test(url)
     await C.enrichAffiliateRows([deal], [old], { searchAll: async () => { calls++; return { items: [] }; },
       saveProducts: async () => ({}), probeImage: fakeProbe, nowMs, skipRecentlyLooked: true, lookupLimit: 1, searchLimit: 1 });
     assert.equal(calls, 1);
+  });
+
+  console.log('[3b] ADPICK 임시 토큰 사진');
+  const TOKEN = 'https://d2iaagr1j041pi.cloudfront.net/apis/search_img.php?code=496601772';
+  await check('search_img.php 는 임시 토큰 — 저장 가능한 사진이 아니다', async () => {
+    assert.equal(C.isEphemeralImageUrl(TOKEN), true); assert.equal(C.durableImageUrl(TOKEN), '');
+    assert.equal(C.isEphemeralImageUrl(LIVE), false); assert.equal(C.durableImageUrl(LIVE), LIVE);
+    assert.equal(C.durableImageUrl('https://shop2.daumcdn.net/shophow/p/S36905939918.jpg'), 'https://shop2.daumcdn.net/shophow/p/S36905939918.jpg');
+  });
+  await check('★ 지금 열리는(프로브 ok) 토큰이어도 카드 사진으로 저장하지 않는다', async () => {
+    const row = { image_url: '', metadata: {} };
+    await C.enrichAffiliateRows([deal], [row], { searchAll: search([item('코카콜라 제로 190ml 24개', TOKEN, { mall: 'ADPICK' })]),
+      saveProducts: async () => ({}), probeImage: async () => ({ ok: true }), lookupLimit: 1, searchLimit: 1 });
+    assert.equal(row.image_url, ''); assert.equal(row.metadata.imageLookup.outcome, 'no-safe-candidate');
+  });
+  await check('토큰보다 순위가 낮아도 쿠팡 사진이 있으면 그쪽을 쓴다', async () => {
+    const row = { image_url: '', metadata: {} };
+    await C.enrichAffiliateRows([deal], [row], { searchAll: search([item('코카콜라 제로 190ml 24개', TOKEN, { mall: 'ADPICK' }), item('코카콜라 190ml 캔', LIVE)]),
+      saveProducts: async () => ({}), probeImage: async () => ({ ok: true }), lookupLimit: 1, searchLimit: 1 });
+    assert.equal(row.image_url, LIVE);
+  });
+  await check('★ 저장된 토큰 사진은 열어 보지 않고 비운다 (사유 ephemeral-adpick)', async () => {
+    let probed = 0; const rows = [{ image_url: TOKEN, metadata: { imageReference: true } }];
+    const n = await C.dropDeadImages(rows, { probeImage: async () => { probed++; return { ok: true }; } });
+    assert.equal(n, 1); assert.equal(probed, 0); assert.equal(rows[0].image_url, ''); assert.equal(rows[0].metadata.imageDeadReason, 'ephemeral-adpick');
   });
 
   console.log('[4] 저장된 행 — 죽은 사진 비우기 · 앞 실행 결과 이어받기');
