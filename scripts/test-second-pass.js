@@ -166,6 +166,23 @@ function probeChild(envLines) {
 (async () => {
   console.log('=== 2차 패스 · 배치 간격 테스트 ===');
 
+  /* 1차 검색어와 동일한 cache hint 는 API 를 한 번 더 쓰지 않는다. */
+  section('0. 이미 성공한 1차 검색어를 hint 에서 중복 호출하지 않는다');
+  {
+    const p = prod('DUP', '브랜드 고유한 헤드폰 모델 블랙', '공통 검색어');
+    const called = [];
+    const r = await runMallCollection({
+      mallName: '쿠팡', rows: [p], savedState: null, deadlineTs: FAR(),
+      collectedTodayFn: async () => new Set(), recordPricesFn: NO_WRITE,
+      cacheHintFn: async () => new Map([['DUP', ['공통 검색어']]]),
+      fetchAllFn: async kw => { called.push(kw); return { ok: true, reason: '', items: [] }; }
+    });
+    check(called.filter(q => q === '공통 검색어').length === 1,
+      '★★ 1차 정상 응답의 검색어는 hint 패스에서 다시 부르지 않는다', called);
+    check(r.outcomes.no_match === 1,
+      '★★ 정확한 매칭 실패는 그대로 미수집이며 수집률을 부풀리지 않는다', r.outcomes);
+  }
+
   /* ==============================================================
    *  1. 1차에서 놓친 상품이 2차에서 회수된다
    * ============================================================== */
