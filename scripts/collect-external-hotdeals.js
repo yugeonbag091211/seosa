@@ -50,13 +50,13 @@ const GROUP_WINDOW_HOURS = 72;
  * 12건 × (쿠팡+ADPICK)도 기존 각 공급자 리미터/캐시를 그대로 거친다.
  */
 const AFFILIATE_LOOKUP_LIMIT = Math.max(0, Math.min(30,
-  Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS) || 12));
+  Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS) || 20));
 /**
  * 한 상품에서 검색어를 바꿔 재시도할 수 있지만 전체 호출은 별도 상한으로 막는다.
  * 기본 24회면 최대 12개 딜을 평균 2번씩 찾을 수 있다.
  */
 const AFFILIATE_SEARCH_LIMIT = Math.max(0, Math.min(60,
-  Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES) || 24));
+  Number(process.env.EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES) || 40));
 const AFFILIATE_MATCH_THRESHOLD = 0.90;
 /**
  * 사진은 구매 링크보다 한 단계 낮은 0.82까지 허용하되, title-only / partial 은 제외한다.
@@ -486,17 +486,17 @@ async function enrichAffiliateRows(deals, rows, options) {
         // 수량·용량·모델은 보존한 채 홍보 문구만 걷어 동일상품 판정에 사용한다.
         const matchDeal = { ...deal, title: cleanAffiliateQuery(deal.title) || deal.title };
 
-        // 전체 제목 검색에서만, 구매와 무관한 «참고 이미지» 후보를 먼저 잡아 둔다.
-        if (!visualChosen && queryIndex === 0) {
-          const refImage = referenceImageCandidate(matchDeal, result && result.items);
-          if (refImage) {
-            visualChosen = refImage.item;
-            visualMatch = {
-              confidence: refImage.confidence,
-              reason: refImage.reason,
-              method: 'reference-search'
-            };
-          }
+        // Every already-budgeted query may yield a reference photo. Compare against
+        // the ORIGINAL deal title; model/variant/color conflicts are still rejected.
+        // Reference photos never grant an affiliate link or product identity.
+        const refImage = referenceImageCandidate(matchDeal, result && result.items);
+        if (refImage && (!visualMatch || refImage.confidence > Number(visualMatch.confidence || 0))) {
+          visualChosen = refImage.item;
+          visualMatch = {
+            confidence: refImage.confidence,
+            reason: refImage.reason,
+            method: 'reference-search'
+          };
         }
 
         // 구매 링크는 0.90+, 사진은 identity B/partial(0.70)+까지 허용한다.
