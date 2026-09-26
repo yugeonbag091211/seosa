@@ -97,6 +97,12 @@ jobs:
 
       # Fill existing photo-less community cards as a small, separate bounded pass.
       # Uses the normal shared provider limiters; a failure cannot hide internal HOT.
+      # Cards whose stored photo no longer loads (ADPICK search_img.php 404) are re-searched too.
+      # 12 cards × (쿠팡 ≤3 + ADPICK 1). ADPICK stays at this process's default 3/min, 10 s gap,
+      # so with the price collector's 5/min the key never exceeds 8/min (official 10/min).
+      #
+      # ★ One backslash. In a `run: |` block `\\` is a literal backslash for bash: the
+      #   command ended there, dry_run=true still wrote, and `--dry-run` ran as its own command.
       - name: Backfill existing community photos
         continue-on-error: true
         env:
@@ -105,9 +111,9 @@ jobs:
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
           ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
-          EXTERNAL_IMAGE_BACKFILL_ROWS: '8'
+          EXTERNAL_IMAGE_BACKFILL_ROWS: '12'
         run: |
-          node scripts/backfill-external-hotdeal-images.js \\
+          node scripts/backfill-external-hotdeal-images.js \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
 
       - name: Summary

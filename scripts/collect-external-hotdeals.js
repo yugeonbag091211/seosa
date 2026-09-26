@@ -65,6 +65,15 @@ const AFFILIATE_MATCH_THRESHOLD = 0.90;
  */
 const IMAGE_MATCH_THRESHOLD = 0.70;
 const IMAGE_MATCH_METHODS = new Set(['identity', 'identity-partial', 'model', 'mall-id', 'url']);
+/**
+ * 한 글을 다시 찾아보기까지의 간격. 피드에 며칠씩 남는 글을 실행마다(하루 세 번)
+ * 같은 검색어로 다시 부르지 않는다. 사진을 못 찾은 글의 재시도는 백필이 맡는다.
+ */
+const LOOKUP_COOLDOWN_MS = 12 * 3600 * 1000;
+/** 사진에 딸린 메타 키. 사진을 옮기거나 지울 때 같이 옮기고 지운다. */
+const IMAGE_META_KEYS = ['imageSource', 'imageProductId', 'imageMatchConfidence', 'imageMatchReason', 'imageReference'];
+const AFFILIATE_META_KEYS = ['affiliateUrl', 'affiliateMall', 'affiliatePrice', 'affiliateProductId',
+  'affiliateVendorItemId', 'affiliateConfidence', 'affiliateMatchReason', 'affiliateSearchQuery'];
 
 function log(message, extra) {
   console.log(JSON.stringify({ at: new Date().toISOString(), message, ...(extra || {}) }));
@@ -223,6 +232,76 @@ function safeImageUrl(value) {
   }
 }
 
+/*
+ * ── 사진 URL 은 «실제로 열리는가» 로 판정한다 (2026-09-26) ──────────────
+ *
+ *   ADPICK 검색 응답의 photo 가 가리키는
+ *   d2iaagr1j041pi.cloudfront.net/apis/search_img.php?code=… 는 원 서버(Apache)가
+ *   404 text/html 을 준다(리퍼러·UA 무관, 표본 20/20). 카드 사진 143장 중 63장이 이 주소였고,
+ *   화면에서는 깨진 사진 위에 «참고 이미지» 표시만 남았다. 형식 검사(https)만으로는
+ *   못 거른다 — 그래서 저장 전에 한 번 GET 해서 200/206 + image/* 인지 본다.
+ *   본문은 읽지 않고 헤더만 본 뒤 끊는다. 한 실행 안에서는 URL 별로 결과를 기억한다.
+ */
+const IMAGE_PROBE_TIMEOUT_MS = 6000;
+const _imageProbeCache = new Map();
+/** 테스트가 네트워크 없이 돌도록 기본 검사기를 바꿔 끼운다. 운영 코드는 부르지 않는다. */
+let _defaultProbe = null;
+function _setImageProbe(fn) { _defaultProbe = typeof fn === 'function' ? fn : null; _imageProbeCache.clear(); }
+
+async function probeImageUrl(value, opts) {
+  const o = opts || {};
+  if (_defaultProbe && !o.fetch) return _defaultProbe(value);
+  const url = safeImageUrl(value);
+  if (!url) return { ok: false, status: 0, reason: 'invalid-url' };
+  const cache = o.cache || _imageProbeCache;
+  if (cache.has(url)) return cache.get(url);
+  const fetchImpl = o.fetch || (typeof fetch === 'function' ? fetch : null);
+  if (!fetchImpl) return { ok: false, status: 0, reason: 'no-fetch' };
+  let out;
+  try {
+    const res = await fetchImpl(url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { Accept: 'image/*', Range: 'bytes=0-2047', 'User-Agent': 'Mozilla/5.0 (compatible; SEOSA-ImageCheck/1.0)' },
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+        ? AbortSignal.timeout(o.timeoutMs || IMAGE_PROBE_TIMEOUT_MS) : undefined
+    });
+    const type = String((res.headers && res.headers.get && res.headers.get('content-type')) || '').toLowerCase();
+    const length = res.headers && res.headers.get && res.headers.get('content-length');
+    try { if (res.body && res.body.cancel) await res.body.cancel(); } catch (_) { /* 헤더만 필요하다 */ }
+    if (res.status !== 200 && res.status !== 206) out = { ok: false, status: res.status, reason: `http-${res.status}` };
+    else if (!type.startsWith('image/')) out = { ok: false, status: res.status, reason: `not-image:${type || 'none'}` };
+    else if (length === '0') out = { ok: false, status: res.status, reason: 'empty' };
+    else out = { ok: true, status: res.status, reason: 'ok' };
+  } catch (error) {
+    // 시간 초과·네트워크 오류는 «죽은 사진» 이 아니라 «확인 못 함» 이다. 캐시하지 않는다.
+    return { ok: false, status: 0, reason: 'probe-error', transient: true };
+  }
+  cache.set(url, out);
+  return out;
+}
+
+/**
+ * 사진 전용 용량. _identity.capacities 는 g·L 을 보지 않는다(32G 같은 사양 표기와
+ * 섞이지 않게). 사진은 190ml 캔과 500ml 병이 다른 물건으로 보이므로 g·kg·ml·L 까지
+ * 기준 단위로 바꿔 비교한다. 1.7kg = 1700g.
+ */
+function imageCapacities(value) {
+  const out = new Set();
+  const re = /(\d+(?:\.\d+)?)\s?(kg|g|ml|l|gb|tb|mah|인치)(?![a-z])/gi;
+  let m;
+  const s = String(value || '');
+  while ((m = re.exec(s)) !== null) {
+    const n = Number(m[1]);
+    const unit = m[2].toLowerCase();
+    if (!(n > 0)) continue;
+    if (unit === 'kg') out.add(`${Math.round(n * 1000)}g`);
+    else if (unit === 'l') out.add(`${Math.round(n * 1000)}ml`);
+    else out.add(`${Math.round(n * 1000) / 1000}${unit}`);
+  }
+  return out;
+}
+
 const IMAGE_GENERIC_WORDS = new Set([
   '무료배송','무료','무배','핫딜','특가','정품','공식','국산','국내산','프리미엄',
   '고급','대용량','신상품','최신형','증정','사은품','골라담기','선물세트','세트'
@@ -269,16 +348,22 @@ function imageModelCodes(value) {
  * - 핵심 단어 2~3개 이상이 겹쳐야 함
  */
 function referenceImageCandidate(deal, items) {
+  return referenceImageCandidates(deal, items)[0] || null;
+}
+
+/** 위 선택기의 후보 전체(높은 순위 먼저). 1순위 사진이 죽어 있으면 다음 후보를 본다. */
+function referenceImageCandidates(deal, items) {
   const title = cleanAffiliateQuery(deal && deal.title);
   const dw = imageWords(title);
-  if (!dw.length) return null;
+  if (!dw.length) return [];
   const dealMall = mallKey(deal && deal.mall);
   const dmodels = imageModelCodes(title);
   const dgrades = Identity.grades(title);
   const dformats = Identity.formats(title);
   const dvariants = Identity.variants(title);
   const dcolors = Identity.colors(title);
-  let best = null;
+  const dcaps = imageCapacities(title);
+  const found = [];
 
   const conflicts = (a, b) => a.size && b.size && ![...a].some(v => b.has(v));
   const semanticShared = (left, right) => {
@@ -301,9 +386,10 @@ function referenceImageCandidate(deal, items) {
 
     /*
      * 참고 사진은 «상품 판매 단위»가 아니라 «보이는 물건»을 돕는 용도다.
-     * 그래서 10봉↔4봉, 1kg↔600g 같은 수량/용량 차이는 참고 이미지에서는
-     * 허용한다. 하지만 모델/세대/형태/색상처럼 사진 자체가 다른 물건이 되는
-     * 충돌은 계속 거부한다. 구매 링크의 0.90 identity 판정은 전혀 건드리지 않는다.
+     * 그래서 10봉↔4봉 같은 수량(개수) 차이는 참고 이미지에서 허용한다.
+     * 하지만 모델/세대/형태/색상, 그리고 용량(190ml 캔 ↔ 500ml 병, 1kg ↔ 600g)처럼
+     * 사진 자체가 다른 물건이 되는 충돌은 거부한다 (2026-09-26: 용량 충돌 추가).
+     * 구매 링크의 0.90 identity 판정은 전혀 건드리지 않는다.
      */
     const cmodels = imageModelCodes(candidateTitle);
     const cgrades = Identity.grades(candidateTitle);
@@ -314,7 +400,8 @@ function referenceImageCandidate(deal, items) {
       || conflicts(dgrades, cgrades)
       || conflicts(dformats, cformats)
       || conflicts(dvariants, cvariants)
-      || conflicts(dcolors, ccolors)) continue;
+      || conflicts(dcolors, ccolors)
+      || conflicts(dcaps, imageCapacities(candidateTitle))) continue;
 
     const shared = semanticShared(dw, cw);
     const overlap = shared.length / Math.max(1, Math.min(dw.length, cw.length));
@@ -333,18 +420,17 @@ function referenceImageCandidate(deal, items) {
     const itemMall = mallKey((item && item.mallLabel) || (item && item.mall));
     const sameMall = !!dealMall && !!itemMall && dealMall === itemMall;
     const rank = (sharedModel ? 100 : 0) + shared.length * 10 + overlap * 8 + (sameMall ? 3 : 0);
-    if (!best || rank > best.rank) {
-      best = {
-        item,
-        image,
-        rank,
-        confidence: Math.min(0.69,
-          0.44 + Math.min(0.19, shared.length * 0.045) + Math.min(0.06, overlap * 0.06)),
-        reason: `전체 제목 검색 결과 핵심 단어 ${shared.length}개 일치 · 참고용`
-      };
-    }
+    found.push({
+      item,
+      image,
+      rank,
+      confidence: Math.min(0.69,
+        0.44 + Math.min(0.19, shared.length * 0.045) + Math.min(0.06, overlap * 0.06)),
+      reason: `전체 제목 검색 결과 핵심 단어 ${shared.length}개 일치 · 참고용`
+    });
   }
-  return best;
+  // 같은 점수면 먼저 온 결과(검색 순위가 높은 쪽)를 앞에 둔다 — 예전 «최고 1개» 와 같은 선택.
+  return found.map((f, i) => ({ f, i })).sort((a, b) => (b.f.rank - a.f.rank) || (a.i - b.i)).map(x => x.f);
 }
 
 /**
@@ -414,7 +500,11 @@ async function enrichAffiliateRows(deals, rows, options) {
     Number.isFinite(opts.lookupLimit) ? opts.lookupLimit : AFFILIATE_LOOKUP_LIMIT));
   const searchLimit = Math.max(0, Math.min(60,
     Number.isFinite(opts.searchLimit) ? opts.searchLimit : AFFILIATE_SEARCH_LIMIT));
-  const stats = { attempted: 0, searches: 0, matched: 0, saved: 0, skipped: 0, errors: 0 };
+  // 사진 검사기 — 테스트는 주입한다. 운영은 실제 GET(헤더만)으로 본다.
+  const probe = opts.probeImage || (url => probeImageUrl(url));
+  const nowIso = new Date(opts.nowMs == null ? Date.now() : Number(opts.nowMs)).toISOString();
+  const stats = { attempted: 0, searches: 0, matched: 0, saved: 0, skipped: 0, errors: 0,
+    imageFilled: 0, deadImagesRejected: 0 };
 
   for (let i = 0; i < (rows || []).length; i++) {
     const row = rows[i];
@@ -423,25 +513,44 @@ async function enrichAffiliateRows(deals, rows, options) {
     row.metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
 
     if (row.metadata.affiliateUrl || row.matched_product_id) { stats.skipped++; continue; }
+    // 같은 글을 실행마다 다시 찾지 않는다 — 앞 실행이 이미 찾아봤고 사진도 있으면 건너뛴다.
+    if (opts.skipRecentlyLooked && row.metadata.imageLookup
+      && Date.parse(row.metadata.imageLookup.at || '') > Date.parse(nowIso) - LOOKUP_COOLDOWN_MS) { stats.skipped++; continue; }
     if (stats.attempted >= lookupLimit || stats.searches >= searchLimit) break;
 
     const queries = affiliateSearchQueries(deal);
     if (!queries.length) { stats.skipped++; continue; }
 
     stats.attempted++;
+    const lookup = { at: nowIso, searches: 0, results: 0, candidates: 0, dead: 0, probeErrors: 0, outcome: '' };
     try {
       const candidateMap = new Map();
       let match = null;
       let chosen = null;
       let matchedKeyword = '';
       let matchedFrom = 'api';
-      let visualChosen = null;
-      let visualMatch = null;
+      // 사진 후보 전부 — identity(0.70+) 와 참고 사진(≤0.69). 저장 전에 순서대로 열어 본다.
+      const visuals = [];
+      const visualByImage = new Map();
+      const addVisual = (item, vm) => {
+        const image = safeImageUrl(item && item.image);
+        if (!image) return;
+        const seen = visualByImage.get(image);
+        // 같은 사진이 참고(≤0.69)와 identity(0.70+) 로 두 번 오면 높은 쪽 근거를 남긴다.
+        if (seen) {
+          if (Number(vm.confidence) > Number(seen.match.confidence)) { seen.item = item; seen.match = vm; }
+          return;
+        }
+        const v = { item, image, match: vm };
+        visualByImage.set(image, v);
+        visuals.push(v);
+      };
 
       for (let queryIndex = 0; queryIndex < queries.length; queryIndex++) {
         const keyword = queries[queryIndex];
         if (stats.searches >= searchLimit) break;
         stats.searches++;
+        lookup.searches++;
 
         let result;
         if (injectedSearch) {
@@ -473,6 +582,7 @@ async function enrichAffiliateRows(deals, rows, options) {
           };
         }
 
+        lookup.results += (result && result.items || []).length;
         for (const item of (result && result.items || [])) {
           if (!item || !item.link || !item.productId || !(Number(item.lprice) > 0)) continue;
           const key = affiliateCandidateKey(item);
@@ -487,16 +597,10 @@ async function enrichAffiliateRows(deals, rows, options) {
         const matchDeal = { ...deal, title: cleanAffiliateQuery(deal.title) || deal.title };
 
         // Every already-budgeted query may yield a reference photo. Compare against
-        // the ORIGINAL deal title; model/variant/color conflicts are still rejected.
+        // the ORIGINAL deal title; model/variant/color/capacity conflicts are rejected.
         // Reference photos never grant an affiliate link or product identity.
-        const refImage = referenceImageCandidate(matchDeal, result && result.items);
-        if (refImage && (!visualMatch || refImage.confidence > Number(visualMatch.confidence || 0))) {
-          visualChosen = refImage.item;
-          visualMatch = {
-            confidence: refImage.confidence,
-            reason: refImage.reason,
-            method: 'reference-search'
-          };
+        for (const ref of referenceImageCandidates(matchDeal, result && result.items)) {
+          addVisual(ref.item, { confidence: ref.confidence, reason: ref.reason, method: 'reference-search' });
         }
 
         // 구매 링크는 0.90+, 사진은 identity B/partial(0.70)+까지 허용한다.
@@ -507,11 +611,7 @@ async function enrichAffiliateRows(deals, rows, options) {
             String(it.productId) === String(vm.product.product_id)
             && String(it.mall || '') === String(vm.product.mall || '')
           );
-          const image = candidate && safeImageUrl(candidate.image);
-          if (image && (!visualMatch || Number(vm.confidence) > Number(visualMatch.confidence || 0))) {
-            visualChosen = candidate;
-            visualMatch = vm;
-          }
+          if (candidate) addVisual(candidate, vm);
         }
 
         match = Radar.matchProduct(matchDeal, products, AFFILIATE_MATCH_THRESHOLD);
@@ -533,25 +633,58 @@ async function enrichAffiliateRows(deals, rows, options) {
         }
       }
 
-      if (!row.image_url && visualChosen && visualMatch) {
-        const image = safeImageUrl(visualChosen.image);
-        if (image) {
-          row.image_url = image;
+      lookup.candidates = visuals.length;
+      /** 높은 확신 순으로 열어 보고, 처음으로 실제 열리는 사진을 준다. */
+      const firstLiveImage = async (list) => {
+        const ordered = list.map((v, k) => ({ v, k }))
+          .sort((a, b) => (Number(b.v.match.confidence) - Number(a.v.match.confidence)) || (a.k - b.k))
+          .map(x => x.v);
+        for (const v of ordered) {
+          const p = await probe(v.image);
+          if (p && p.ok) return v;
+          if (p && p.transient) lookup.probeErrors++;
+          else { lookup.dead++; stats.deadImagesRejected++; }
+        }
+        return null;
+      };
+      const imageMeta = (item, vm, reference) => ({
+        imageSource: String(item.mallLabel || item.mall || ''),
+        imageProductId: String(item.productId || ''),
+        imageMatchConfidence: Number(vm.confidence) || 0,
+        imageMatchReason: String(vm.reason || ''),
+        imageReference: reference
+      });
+
+      let chosenImage = '';
+      if (chosen && match && match.product) {
+        const own = safeImageUrl(chosen.image);
+        const p = own ? await probe(own) : null;
+        if (p && p.ok) chosenImage = own;
+        else if (own) { if (p && p.transient) lookup.probeErrors++; else { lookup.dead++; stats.deadImagesRejected++; } }
+      }
+
+      if (!row.image_url && !chosenImage && visuals.length) {
+        const live = await firstLiveImage(visuals);
+        if (live) {
+          row.image_url = live.image;
           row.metadata = {
             ...row.metadata,
-            imageSource: String(visualChosen.mallLabel || visualChosen.mall || ''),
-            imageProductId: String(visualChosen.productId || ''),
-            imageMatchConfidence: Number(visualMatch.confidence) || 0,
-            imageMatchReason: String(visualMatch.reason || ''),
-            imageReference: Number(visualMatch.confidence) < AFFILIATE_MATCH_THRESHOLD
+            ...imageMeta(live.item, live.match, Number(live.match.confidence) < AFFILIATE_MATCH_THRESHOLD)
           };
+          stats.imageFilled++;
         }
       }
 
+      lookup.outcome = chosen && match && match.product ? 'affiliate'
+        : row.image_url ? 'image'
+        : !lookup.results ? 'no-results'
+        : !visuals.length ? 'no-safe-candidate'
+        : lookup.probeErrors && !lookup.dead ? 'probe-error' : 'image-dead';
+      row.metadata = { ...row.metadata, imageLookup: lookup };
+
       if (!chosen || !match || !match.product) continue;
 
-      const chosenImage = safeImageUrl(chosen.image);
-      if (chosenImage) row.image_url = chosenImage;
+      if (chosenImage) { if (!row.image_url) stats.imageFilled++; row.image_url = chosenImage; }
 
       const meta = {
         ...row.metadata,
@@ -598,6 +731,88 @@ async function enrichAffiliateRows(deals, rows, options) {
   }
 
   return stats;
+}
+
+/**
+ * 저장된 사진이 실제로 열리지 않으면 비운다 (죽은 주소는 metadata.imageDeadUrl 에 남긴다).
+ * 확인이 안 된 경우(시간 초과 등)는 건드리지 않는다. 비운 행은 enrich 가 다시 찾는다.
+ * @returns {number} 비운 행 수
+ */
+async function dropDeadImages(rows, opts) {
+  const o = opts || {};
+  const probe = o.probeImage || (url => probeImageUrl(url));
+  const nowIso = new Date(o.nowMs == null ? Date.now() : Number(o.nowMs)).toISOString();
+  let dropped = 0;
+  for (const row of rows || []) {
+    const url = safeImageUrl(row && row.image_url);
+    if (!url) continue;
+    const p = await probe(url);
+    if (!p || p.ok || p.transient) continue;
+    const meta = { ...(row.metadata || {}) };
+    IMAGE_META_KEYS.forEach(k => { delete meta[k]; });
+    row.metadata = { ...meta, imageDeadUrl: url, imageDeadReason: String(p.reason || ''), imageDeadAt: nowIso };
+    row.image_url = '';
+    dropped++;
+  }
+  return dropped;
+}
+
+/**
+ * 이번 피드에 다시 실린 글이 «이미 찾은 것» 을 이어받는다 (2026-09-26).
+ *
+ *   rowFor 는 행을 매 실행 새로 만들고 save 는 (source, source_post_id) 로 upsert 한다.
+ *   그래서 앞 실행·백필이 찾은 사진과 제휴 링크가 다음 실행에서 빈 값으로 덮였고,
+ *   피드에 남은 같은 글을 실행마다 다시 검색했다. 제휴는 0.90 이상 affiliate- 매칭만
+ *   이어받는다 — 이번 실행 카탈로그 매칭이 있으면 그쪽이 이긴다.
+ * @returns {Promise<{carriedImages:number, carriedAffiliates:number}>}
+ */
+async function carryStoredEnrichment(db, rows) {
+  const out = { carriedImages: 0, carriedAffiliates: 0 };
+  const bySource = new Map();
+  (rows || []).forEach(r => {
+    if (!r || !r.source || !r.source_post_id) return;
+    if (!bySource.has(r.source)) bySource.set(r.source, []);
+    bySource.get(r.source).push(String(r.source_post_id));
+  });
+  const stored = new Map();
+  for (const [source, ids] of bySource) {
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await db.from('external_hotdeals')
+        .select('source, source_post_id, image_url, metadata, matched_product_id, matched_mall, matched_vendor_item_id, match_confidence, match_method')
+        .in('source', [source]).in('source_post_id', ids.slice(i, i + 100));
+      if (error) {
+        if (isMissingTable(error.message)) return out;
+        throw new Error(`external_hotdeals(carry): ${error.message}`);
+      }
+      (data || []).forEach(s => stored.set(`${s.source}|${s.source_post_id}`, s));
+    }
+  }
+  for (const row of rows || []) {
+    const s = stored.get(`${row.source}|${row.source_post_id}`);
+    if (!s) continue;
+    const sm = s.metadata && typeof s.metadata === 'object' ? s.metadata : {};
+    row.metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    if (!safeImageUrl(row.image_url) && safeImageUrl(s.image_url)) {
+      row.image_url = s.image_url;
+      IMAGE_META_KEYS.forEach(k => { if (sm[k] !== undefined) row.metadata[k] = sm[k]; });
+      out.carriedImages++;
+    }
+    if (!row.matched_product_id && !row.metadata.affiliateUrl && sm.affiliateUrl && s.matched_product_id
+      && Number(s.match_confidence) >= AFFILIATE_MATCH_THRESHOLD
+      && String(s.match_method || '').startsWith('affiliate-')) {
+      AFFILIATE_META_KEYS.forEach(k => { if (sm[k] !== undefined) row.metadata[k] = sm[k]; });
+      row.matched_product_id = s.matched_product_id;
+      row.matched_mall = s.matched_mall || '';
+      row.matched_vendor_item_id = s.matched_vendor_item_id || '';
+      row.match_confidence = Number(s.match_confidence) || 0;
+      row.match_method = s.match_method;
+      out.carriedAffiliates++;
+    }
+    ['imageLookup', 'imageBackfillAttemptedAt', 'imageDeadUrl', 'imageDeadReason', 'imageDeadAt'].forEach(k => {
+      if (sm[k] !== undefined && row.metadata[k] === undefined) row.metadata[k] = sm[k];
+    });
+  }
+  return out;
 }
 
 // 표가 «없을» 때만 참이다. DB 일시 장애를 마이그레이션 전으로 읽지 않는다 (api/_dberror.js).
@@ -754,14 +969,27 @@ async function main(options) {
       Radar.verifyDeal(deal, matches[i], historyFor(matches[i], history), today), nowMs));
 
     // dry-run은 외부 쇼핑 API를 추가로 부르지 않는다. 테스트는 주입한 fake search로 별도 검증한다.
+    // 사진 검사(이미지 CDN GET)도 dry-run 에서는 하지 않는다.
+    let imageCare = { droppedDead: 0, carriedImages: 0, carriedAffiliates: 0 };
+    if (!dryRun) {
+      const probeOpts = { probeImage: opts.probeImage, nowMs };
+      // 이번 행의 죽은 사진(카탈로그 ADPICK 주소 등) → 앞 실행이 찾은 것 이어받기 → 이어받은 것도 검사
+      imageCare.droppedDead += await dropDeadImages(current, probeOpts);
+      Object.assign(imageCare, await carryStoredEnrichment(db, current));
+      imageCare.droppedDead += await dropDeadImages(current, probeOpts);
+    }
     affiliate = dryRun
       ? { attempted: 0, searches: 0, matched: 0, saved: 0, skipped: 0, errors: 0 }
       : await enrichAffiliateRows(fetched.items, current, {
           searchAll: opts.searchAll,
           saveProducts: opts.saveProducts,
           lookupLimit: opts.affiliateLookupLimit,
-          searchLimit: opts.affiliateSearchLimit
+          searchLimit: opts.affiliateSearchLimit,
+          probeImage: opts.probeImage,
+          nowMs,
+          skipRecentlyLooked: true
         });
+    affiliate.imageCare = imageCare;
     const recent = await loadRecentGroupRows(db, current, nowMs, dryRun);
     tableMissing = recent.tableMissing;
     const grouped = regroup(current, recent.rows, policy);
@@ -791,6 +1019,7 @@ if (require.main === module) {
 module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
   enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery, safeImageUrl,
-  imageWords, imageModelCodes, referenceImageCandidate,
+  imageWords, imageModelCodes, referenceImageCandidate, referenceImageCandidates, imageCapacities,
+  probeImageUrl, _setImageProbe, dropDeadImages, carryStoredEnrichment, LOOKUP_COOLDOWN_MS, IMAGE_META_KEYS,
   summaryText, sampleOf
 };

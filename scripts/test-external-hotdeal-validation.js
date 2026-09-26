@@ -35,6 +35,8 @@ Module._load = function(request) {
 global.fetch = async url => { throw new Error(`offline test made a network request: ${url}`); };
 
 const Collector = require('./collect-external-hotdeals');
+// 사진 검사는 네트워크 없이 — 픽스처의 https 사진은 열린다고 본다. 죽은 사진 판정은 전용 테스트가 주입한다.
+Collector._setImageProbe(async url => (Collector.safeImageUrl(url) ? { ok: true, status: 200, reason: 'ok' } : { ok: false, status: 0, reason: 'invalid-url' }));
 const registry = require('../api/_hotdeal-sources/registry');
 const ppomppu = require('../api/_hotdeal-sources/adapters/ppomppu');
 const Normalize = require('../api/_hotdeal-sources/normalize');
