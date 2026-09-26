@@ -2893,6 +2893,20 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       mall: mallName, date: TODAY, dayStartMs: planner.dayStartMs,
       tierOf: planner.tierOf, limit: planner.limit, starveAfter: starveCursor
     });
+    /*
+     * 9/27 원인 분석: 9/21 상시 대상 3,027개 중 2,221개(73.4%) 확보.
+     * 회전 대상(9천+개) 추가 후 9/26 마지막 실행도 1차에만 131회를 쓰고
+     * 회수는 1회뿐, 남은 2차 검색어 12,874개. 따라서 V3 운영에서만
+     * 상시 추적 그룹을 앞에 두고 실행당 1차 호출 수를 제한한다.
+     * 나머지 시간은 아래 기존 hint/facet/ladder 에 사용하며 다음 cron은
+     * collectorAttempted 와 lock 체크포인트를 이용해 1차를 이어받는다.
+     * 기존 계획기 내부의 기아 예약 순서는 tier 안에서 그대로 유지한다.
+     */
+    if (planner.dailyFirst) {
+      remaining.sort((a, b) =>
+        Number(b.rows.some(p => planner.tierOf(p) === 'daily'))
+        - Number(a.rows.some(p => planner.tierOf(p) === 'daily')));
+    }
     processed = planTotal - remaining.reduce((n, g) => n + g.rows.length, 0);
     const starve = remaining.filter(g => g.lane === 'starve').length;
     const exp = n => Planner.expectedWithin(remaining, n).toFixed(0);
@@ -3277,7 +3291,20 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   }
 
   // ── 1) 본 배치 루프 ───────────────────────────────────────
-  const batches = stoppedEarly ? [] : splitBatches(remaining, BATCH_PRODUCTS);
+  /*
+   * 1차가 회전 그룹을 끝낼 때까지 회수 패스가 영원히 못 도는 현상을 막는다.
+   * runMallCollection 직호출·레거시는 cap 미설정이므로 기존 행동을 유지한다.
+   * 이 슬롯은 호출 *속도*나 하루 한도가 아니라 실행별 1차 그룹 배분만 바꾼다.
+   */
+  const pass1Cap = v3Plan && Number.isInteger(planner.pass1GroupCap)
+    && planner.pass1GroupCap > 0 ? planner.pass1GroupCap : 0;
+  const primaryWindow = pass1Cap ? remaining.slice(0, pass1Cap) : remaining;
+  const primaryDeferred = primaryWindow.length < remaining.length;
+  if (primaryDeferred) {
+    console.log(`  [${mallName}] 1차 그룹 ${primaryWindow.length}/${remaining.length}개만 먼저 실행`
+      + ' — 남은 호출 여력을 미수집 상품 회수에 할당하고 다음 cron에서 1차를 이어갑니다.');
+  }
+  const batches = stoppedEarly ? [] : splitBatches(primaryWindow, BATCH_PRODUCTS);
   for (let b = 0; b < batches.length && !stoppedEarly; b++) {
     if (abortSignal && abortSignal.aborted) {
       stoppedEarly = true;
@@ -3870,7 +3897,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   secondPassRemaining 이 0 이 되어 completed 로 끝난다. 하루가 바뀌면
    *   isNewDay 가 전부 리셋한다.
    */
-  const isFullyDone = !stoppedEarly && batches.length === doneBatches;
+  const isFullyDone = !primaryDeferred && !stoppedEarly && batches.length === doneBatches;
   const status = isFullyDone && !failedKeywords.size && secondPassRemaining === 0 && !recoveryFailed
     ? 'completed' : 'running';
 
@@ -4328,7 +4355,15 @@ async function runLocked(state, lockToken) {
    */
   const priorStarve = (state && state.last_result && state.last_result.plannerStarveCursor) || {};
   const plannerFor = (limit, mall) => (V3_PLANNER
-    ? { tierOf: tierOfRow, dayStartMs, limit, starveAfter: priorStarve[mall] == null ? null : priorStarve[mall] }
+    ? {
+        tierOf: tierOfRow, dayStartMs, limit,
+        starveAfter: priorStarve[mall] == null ? null : priorStarve[mall],
+        // 순수 실행 예산 배분. 실제 속도·하루 총량·동시실행 잠금은 모두 기존 코드.
+        dailyFirst: true,
+        pass1GroupCap: Math.max(1, Number(process.env[mall === '쿠팡'
+          ? 'PRICE_COUPANG_PASS1_GROUP_CAP' : 'PRICE_ADPICK_PASS1_GROUP_CAP'])
+          || (mall === '쿠팡' ? 220 : 140))
+      }
     : null);
 
   /*
