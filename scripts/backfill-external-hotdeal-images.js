@@ -83,17 +83,29 @@ async function probeStored(rows, probe) {
   return live;
 }
 
+/** 네트워크 없이 내릴 수 있는 판정만 — ADPICK 임시 토큰은 주소만 보고 죽은 사진이다. */
+function staticVerdicts(rows) {
+  const live = new Map();
+  for (const r of rows) {
+    const url = safeImageUrl(r.image_url);
+    if (url && isEphemeralImageUrl(url)) live.set(r.id, { ok: false, status: 0, reason: 'ephemeral-adpick' });
+  }
+  return live;
+}
+
 function hostOf(url) {
   try { return new URL(url).host; } catch (_) { return '?'; }
 }
 
 function audit(rows, live) {
-  const out = { window: rows.length, validImage: 0, deadImage: 0, unverifiable: 0, noImage: 0,
+  const out = { window: rows.length, validImage: 0, deadImage: 0, unverifiable: 0, unprobed: 0, noImage: 0,
     affiliateLinked: 0, deadByHost: {}, lookupOutcomes: {} };
   for (const r of rows) {
     const url = safeImageUrl(r.image_url);
     const p = url ? live.get(r.id) : null;
     if (!url) out.noImage++;
+    // dry-run 은 사진을 열어 보지 않는다 — 판정이 없는 사진을 «죽음» 으로 세지 않는다.
+    else if (!p) out.unprobed++;
     else if (p && p.ok) out.validImage++;
     else if (p && p.transient) out.unverifiable++;
     else { out.deadImage++; const h = hostOf(url); out.deadByHost[h] = (out.deadByHost[h] || 0) + 1; }
@@ -116,8 +128,8 @@ async function main(opts = {}) {
   const rowLimit = opts.rowLimit || ROW_LIMIT;
 
   const rows = await loadWindow(client, nowMs, hours);
-  // dry-run 은 예전처럼 형식만 본다 — 외부로 아무것도 부르지 않는다.
-  const live = dryRun ? new Map() : await probeStored(rows, probe);
+  // dry-run 은 외부로 아무것도 부르지 않는다 — ADPICK 임시 토큰만 주소 모양으로 가린다.
+  const live = dryRun ? staticVerdicts(rows) : await probeStored(rows, probe);
   const before = audit(rows, live);
   if (auditOnly) {
     const report = { event: 'image_audit', hours, ...before };
@@ -125,12 +137,12 @@ async function main(opts = {}) {
     return report;
   }
 
-  const chosen = chooseRows(rows, nowMs, rowLimit, { live: dryRun ? null : live, force: FORCE || !!opts.force });
+  const chosen = chooseRows(rows, nowMs, rowLimit, { live, force: FORCE || !!opts.force });
   const stats = {
     hours, window: rows.length,
     before: { validImage: before.validImage, deadImage: before.deadImage, noImage: before.noImage,
-      unverifiable: before.unverifiable, affiliateLinked: before.affiliateLinked },
-    eligible: chooseRows(rows, nowMs, Infinity, { live: dryRun ? null : live, force: true }).length,
+      unverifiable: before.unverifiable, unprobed: before.unprobed, affiliateLinked: before.affiliateLinked },
+    eligible: chooseRows(rows, nowMs, Infinity, { live, force: true }).length,
     selected: chosen.length, searched: 0, imageFilled: 0, deadRepaired: 0, deadCleared: 0,
     affiliateMatched: 0, outcomes: {}, errors: 0, dryRun
   };

@@ -151,5 +151,17 @@ function fakeClient(rows) {
   assert.equal(s5.before.deadImage, 1); assert.equal(s5.deadCleared, 1);
   assert.equal(tokenClient.updates[0].patch.metadata.imageDeadReason, 'ephemeral-adpick');
 
+  // 6) dry-run — 사진을 열어 보지 않는다. 판정 없는 사진을 «죽음» 으로 세지 않는다(운영 dry-run 이 86 으로 찍었다)
+  const dryClient = fakeClient([rows[1], tokenRow, rows[0]]);
+  const s6 = await Backfill.main({ db: dryClient, nowMs, dryRun: true, rowLimit: 12,
+    probeImage: async () => { throw Error('dry-run must not probe'); },
+    enrich: async () => { throw Error('dry-run must not search'); } });
+  assert.equal(s6.before.unprobed, 1, 'a normal photo is unprobed, not dead');
+  assert.equal(s6.before.deadImage, 1, 'an ADPICK token is dead by its URL shape alone');
+  assert.equal(s6.before.validImage, 0);
+  assert.equal(s6.selected, 2, 'token row + empty row would be filled');
+  assert.equal(s6.searched, 0);
+  assert.equal(dryClient.updates.length, 0, 'dry-run writes nothing');
+
   console.log('Community image backfill offline checks PASS');
 })().catch(e => { console.error(e); process.exitCode = 1; });
