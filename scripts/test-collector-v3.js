@@ -44,6 +44,29 @@ function rng(seed) {
   console.log('=== 수집기 V3 테스트 ===\n');
 
   /* ── 1. 계획기 단위 ─────────────────────────────────────────── */
+  // ADPICK 캐시의 commissionlink 로 상품 식별자를 재구성한다. 운영 접근 없음.
+  {
+    const { adpickProductId } = require('../api/_shop');
+    const link = 'https://biz.adpick.co.kr/r4679321';
+    const pid = adpickProductId(link);
+    const cp = C.addCacheHints(new Map(), [
+      { keyword: '이어폰', items: [{ productId: 'CP100' }] },
+      { keyword: '헤드폰', items: [{ productId: 'CP100' }] }
+    ], new Set(['CP100']), '쿠팡');
+    eq('쿠팡 캐시의 productId 검색어 2개', cp.get('CP100').length, 2);
+    const ad = C.addCacheHints(new Map(), [
+      { keyword: '원래 키워드', items: [{ commissionlink: link, price: 1234 }] },
+      { keyword: '다른 키워드', items: [{ commissionlink: link, price: 9999 }] },
+      { keyword: '원래 키워드', items: [{ commissionlink: link }] },
+      { keyword: '무효 상품', items: [{ commissionlink: '' }, { productId: 'CP100' }] }
+    ], new Set([pid]), 'ADPICK');
+    eq('ADPICK 캐시 commissionlink SHA-256 일치 검색어 2개', ad.get(pid).length, 2);
+    check('캐시 가격은 검색 힌트에 포함되지 않는다', ad.get(pid).every(q => typeof q === 'string'));
+    check('다른 상품 ID 로 힌트가 오염되지 않는다', ad.size === 1 && !ad.has('CP100'));
+    eq('쿠팡 캐시가 ADPICK 상품을 반환하지 않는다',
+      C.addCacheHints(new Map(), [{ keyword:'쿠팡',items:[{productId:'CP100'}] }], new Set([pid]), '쿠팡').size, 0);
+  }
+
   console.log('[1] 신선도·긴급도·채점');
   eq('daily 0.9일 = fresh', Planner.freshnessClass(0.9, 'daily'), 'fresh');
   eq('daily 1.5일 = fresh (경계 포함)', Planner.freshnessClass(1.5, 'daily'), 'fresh');

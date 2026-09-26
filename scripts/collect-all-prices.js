@@ -2277,33 +2277,44 @@ async function collectedTodayKeys(mallName, collectible) {
  * @param {Set<string>} wantIds 찾고 싶은 product_id 문자열 집합
  * @returns {Map<string, string[]>} product_id → 그 상품을 돌려준 적 있는 검색어들
  */
-async function cacheHintQueries(wantIds) {
+/**
+ * 몰별 검색 캐시에서 상품을 실제 반환했던 키워드만 추출한다.
+ * 캐시의 오래된 가격은 반환하지 않고, 이후 검색은 기존 실시간 API 경로를 탄다.
+ */
+function addCacheHints(out, rows, wantIds, mallName) {
+  const isAdpick = mallName === 'ADPICK';
+  for (const row of rows || []) {
+    const kw = String(row && row.keyword || '').trim();
+    if (!kw) continue;
+    for (const it of Array.isArray(row.items) ? row.items : []) {
+      const pid = isAdpick
+        ? (it && it.commissionlink ? adpickProductId(it.commissionlink) : '')
+        : String(it && it.productId || '');
+      if (!pid || !wantIds.has(pid)) continue;
+      if (!out.has(pid)) out.set(pid, []);
+      const list = out.get(pid);
+      if (!list.includes(kw)) list.push(kw);
+    }
+  }
+  return out;
+}
+
+async function cacheHintQueries(wantIds, mallName = '쿠팡') {
   const out = new Map();
   if (!wantIds || wantIds.size === 0) return out;
+  if (mallName !== '쿠팡' && mallName !== 'ADPICK') return out;
+  const table = mallName === 'ADPICK' ? 'adpick_search_cache' : 'coupang_search_cache';
   try {
-    /*
-     * 커서는 keyword 다 — search_stats_keyword_key 와 같은 유일 키이고,
-     * 이 표의 기본키이기도 하다. 정렬 없는 .range 는 페이지 경계에서 행을
-     * 빠뜨리거나 두 번 줄 수 있다 (keysetScan 주석 참고).
-     */
+    // 두 테이블 모두 keyword PK. keysetScan 이 PostgREST 페이지 제한을 넘겨 순회한다.
     await keysetScan({
-      build: () => supabase.from('coupang_search_cache'),
+      build: () => supabase.from(table),
       columns: 'keyword, items',
       cursor: 'keyword',
-      label: 'coupang_search_cache 조회',
-      onPage: rows => rows.forEach(row => {
-        const items = Array.isArray(row.items) ? row.items : [];
-        items.forEach(it => {
-          const pid = String(it && it.productId);
-          if (!wantIds.has(pid)) return;
-          if (!out.has(pid)) out.set(pid, []);
-          const list = out.get(pid);
-          if (list.indexOf(row.keyword) < 0) list.push(row.keyword);
-        });
-      })
+      label: table + ' 조회',
+      onPage: rows => addCacheHints(out, rows, wantIds, mallName)
     });
   } catch (e) {
-    console.warn(`  [캐시 힌트] 조회 실패(무시하고 진행): ${e.message}`);
+    console.warn(`  [${mallName} 캐시 힌트] 조회 실패(무시하고 진행): ${e.message}`);
     return new Map();
   }
   return out;
@@ -3576,7 +3587,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      */
     if (CACHE_HINT_ENABLED && canCall() && uncovered.size) {
       const want = new Set([...uncovered.values()].filter(eligible).map(p => String(p.product_id)));
-      const hints = await cacheHintFn(want);
+      const hints = await cacheHintFn(want, mallName);
       const byQuery = new Map();
       hints.forEach((queries, pid) => {
         queries.slice(0, CACHE_HINT_MAX_PER_PRODUCT).forEach(q => {
@@ -5299,6 +5310,7 @@ module.exports = {
   chunkIdsByLength, ID_BATCH_CHARS,
   // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
+  addCacheHints, cacheHintQueries,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   v3KillReason, markV3Kill, loadAdpickDayUsage,
