@@ -5963,7 +5963,20 @@ document.addEventListener('error', function(e) {
 
   var card = img.closest('.card');
   var lthumb = img.closest('.lthumb');
+  var radar = img.closest('.radar-deal-thumb');
   img.style.display = 'none';
+  // 커뮤니티 핫딜 사진이 안 열리면 «참고 이미지» 표시만 빈 칸 위에 남던 것을
+  // 사진 없는 카드와 같은 모양(⌁)으로 되돌린다.
+  if (radar) {
+    var note = radar.querySelector('.radar-img-note');
+    if (note) note.remove();
+    if (!radar.querySelector('.radar-img-fallback')) {
+      var g3 = document.createElement('span');
+      g3.className = 'radar-img-fallback';
+      g3.textContent = '⌁';
+      radar.appendChild(g3);
+    }
+  }
   if (card && !card.querySelector('.glyph')) {
     var g = document.createElement('span');
     g.className = 'glyph';
