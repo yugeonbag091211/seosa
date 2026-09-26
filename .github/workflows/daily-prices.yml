@@ -119,12 +119,22 @@ jobs:
       # 저절로 레거시다. 그날 수집기가 429·차단·집계 불변조건 위반·잠금 상실·저장 0행을
       # 보면 price_job_state 에 비활성화 표식을 남기고, 그 뒤 칸은 레거시로 돈다.
       # 이 단계는 실패하지 않는다 — 어떤 오류든 PRICE_COLLECTOR_V3=0(레거시)로 떨어진다.
-      # V3 의 ADPICK 하루 상한은 코드 기본값 740(최근 레거시 최대 738) — 늘리지 않는다.
+      #
+      # ── 2026-09-26: 카나리 → 상시(자동 비활성화 유지) ──────────────────
+      # 09-24 카나리 실측: 킬 0 · ADPICK 429 0 · 중복 0 · 옵션 자기모순 0 · 잠금 상실 0,
+      #   ADPICK 740호출 → 2,621개(3.54/호출) · 쿠팡 3,400호출 → 2,427개. 리포트의
+      #   추적옵션불일치 3건은 기록 뒤에 추적 옵션이 바뀐 재등록 착시(행 셋 다 기록 당시 일치).
+      # 같은 카탈로그의 레거시(09-26): 직렬이라 ADPICK 이 실행당 8분(≈42호출)만 받아
+      #   7,674개 중 17.5% 만 시도, 전체 23.4%.
+      # PRICE_V3_ON_FROM 날짜부터 V3 로 돈다. 킬 표식이 서면 그날 남은 칸은 레거시다.
+      # 배포 없이 끄려면 저장소 변수 PRICE_V3_OFF=1 (Settings → Variables → Actions).
       - name: V3 canary gate
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           PRICE_V3_CANARY_DATES: '2026-09-24'
+          PRICE_V3_ON_FROM: '2026-09-26'
+          PRICE_V3_OFF: ${{ vars.PRICE_V3_OFF }}
         run: node scripts/v3-canary-gate.js
 
       - name: Collect all product prices
@@ -140,6 +150,12 @@ jobs:
           # 12초 간격 + 모듈 자체 5회/분 상한의 이중 방어다.
           ADPICK_COLLECT_MIN_GAP_MS: '12000'
           ADPICK_MAX_PER_MIN: '5'
+          # V3 전용 ADPICK 하루 상한(코드 기본 740). 분당 속도는 위 5회 그대로다.
+          # 근거: 공식 가이드는 검색 «분당 10회/키» 만 적고 일일 한도가 없다. 운영 실측
+          #   09-18 하루 3,794회에서 429 10건은 전부 분당 초과였고 일일 차단은 없었다.
+          #   09-24~26 429 0건, 수집기 외 ADPICK 사용은 하루 16~37회.
+          # 5회/분으로 하루에 실제로 쓸 수 있는 양(작업 칸 × 50분)에 맞춘 값이다.
+          ADPICK_DAY_BUDGET: '1800'
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
         run: |

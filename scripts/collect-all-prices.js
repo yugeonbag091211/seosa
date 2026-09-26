@@ -535,6 +535,22 @@ function coupangBudgetMs(reserveMs) {
 const COUPANG_BUDGET_MS = coupangBudgetMs(ADPICK_RESERVE_MS);
 
 /*
+ * ── 실행 마감은 KST 자정을 넘지 않는다 (2026-09-26) ─────────────────
+ *
+ *   #91 이 KST 21·23시 칸을 더했고, GitHub 예약은 실측 2~4시간 밀린다
+ *   (09-26: 15:00Z 칸이 19:06Z 에 발화). 늦게 뜬 칸이 50분을 다 쓰면 자정을 넘는다.
+ *   TODAY 는 프로세스 시작 시각으로 고정이라, 자정 뒤 기록은 recorded_at 기준으로
+ *   다음 날 수집률에 잡히고 상태는 어제 날짜로 남는다. 그래서
+ *     마감 = min(시작 + 실행 예산, 다음 KST 자정 − 여유)
+ *   마감이 이미 지났으면 레인은 호출 없이 곧바로 상태만 저장하고 끝난다.
+ */
+const DAY_END_MARGIN_MS = 2 * 60 * 1000;
+function runDeadline(startedMs, today = TODAY, budgetMs = RUN_TIME_BUDGET_MS) {
+  const dayEndMs = Date.parse(kstDayStartUtc(today)) + 24 * 60 * 60 * 1000;
+  return Math.min(startedMs + budgetMs, dayEndMs - DAY_END_MARGIN_MS);
+}
+
+/*
  * 한국시간(Asia/Seoul) 기준 오늘 날짜는 api/_price.kstToday 하나만 쓴다.
  * price_history.recorded_date 도, price_job_state.job_date 도, 여기서 하루
  * 경계를 판정하는 자리도 모두 같은 함수를 거친다 — 예전에는 저장은 UTC 로
@@ -4275,6 +4291,10 @@ async function runLocked(state, lockToken) {
       + ` / ADPICK ${Math.round(adpickReserve / 60000)}분`
       + `  (쿠팡 1차 ${coupangPass1Done ? '완료 — ADPICK 에 더 준다' : '진행 중 — 쿠팡 몫을 지킨다'})`);
   }
+  if (runDeadline(started) < started + RUN_TIME_BUDGET_MS) {
+    console.log(`  └ KST 자정 마감 — 이번 실행은 ${Math.max(0, Math.round((runDeadline(started) - started) / 60000))}분만 쓴다`
+      + ' (남은 일은 상태에 저장되고 다음 날 새 대상으로 시작한다)');
+  }
   if (V3) {
     await loadAdpickDayUsage();
     console.log(`ADPICK 오늘 호출량: ${_adpickDayUsed}회 / 하루 상한 ${ADPICK_DAY_BUDGET}회`
@@ -4346,7 +4366,7 @@ async function runLocked(state, lockToken) {
      * ★ allSettled — 한 레인의 예외가 다른 레인의 진행을 버리지 않게 한다.
      *   예외가 났으면 남은 스냅숏을 저장한 뒤 그 예외를 그대로 올린다.
      */
-    const deadlineTs = started + RUN_TIME_BUDGET_MS;
+    const deadlineTs = runDeadline(started);
     const [c, a] = await Promise.allSettled([
       runMallCollection({ ...coupangArgs, deadlineTs }),
       runMallCollection({ ...adpickArgs, deadlineTs })
@@ -4359,9 +4379,9 @@ async function runLocked(state, lockToken) {
     adpickResult = a.value;
   } else {
     // ── 쿠팡 먼저 — 자기 몫이 다 되면 남은 시간을 ADPICK 에게 넘긴다.
-    coupangResult = await runMallCollection({ ...coupangArgs, deadlineTs: started + coupangShare });
+    coupangResult = await runMallCollection({ ...coupangArgs, deadlineTs: Math.min(started + coupangShare, runDeadline(started)) });
     // ── ADPICK — 쿠팡이 일찍 끝났으면 남은 시간을 전부 받는다(최소 절반 보장).
-    adpickResult = await runMallCollection({ ...adpickArgs, deadlineTs: started + RUN_TIME_BUDGET_MS });
+    adpickResult = await runMallCollection({ ...adpickArgs, deadlineTs: runDeadline(started) });
   }
   coupangResult.apiCalls = _coupangCalls;
   adpickResult.apiCalls = _adpickCalls;
@@ -5278,7 +5298,9 @@ module.exports = {
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   v3KillReason, markV3Kill, loadAdpickDayUsage,
-  V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET
+  V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET,
+  // 자정 마감 — test-collector-v3 가 «자정을 넘지 않는다» 를 고정한다.
+  runDeadline, DAY_END_MARGIN_MS
 };
 
 if (require.main === module) {

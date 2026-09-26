@@ -401,6 +401,32 @@ function rng(seed) {
     check('★ 상태를 못 읽으면 OFF (표식을 확인할 수 없다)',
       G.canaryDecision({ today: '2026-09-24', dates: '2026-09-24', state: null, stateError: '504' }).on === false);
 
+    // ON_FROM (2026-09-26) — 그날부터 켜되 킬 표식·상태 오류·운영자 스위치는 그대로 이긴다
+    check('★ ON_FROM 당일 → ON', G.canaryDecision({ today: '2026-09-26', dates: '2026-09-24', from: '2026-09-26', state: { last_result: {} } }).on === true);
+    check('ON_FROM 이후 → ON', G.canaryDecision({ today: '2026-10-02', dates: '', from: '2026-09-26', state: { last_result: {} } }).on === true);
+    check('★ ON_FROM 이전 → OFF', G.canaryDecision({ today: '2026-09-25', dates: '', from: '2026-09-26', state: null }).on === false);
+    check('형식이 틀린 ON_FROM 은 무시 → OFF', G.canaryDecision({ today: '2026-09-26', dates: '', from: '2026/09/26', state: null }).on === false);
+    check('★ ON_FROM 이어도 오늘 킬 표식 → OFF',
+      G.canaryDecision({ today: '2026-09-27', dates: '', from: '2026-09-26', state: { last_result: { v3Kill: { date: '2026-09-27', reason: 'ADPICK HTTP 429' } } } }).on === false);
+    check('ON_FROM 이어도 상태 오류 → OFF',
+      G.canaryDecision({ today: '2026-09-27', dates: '', from: '2026-09-26', state: null, stateError: '504' }).on === false);
+    check('★ 운영자 스위치 PRICE_V3_OFF=1 → 날짜와 무관하게 OFF',
+      G.canaryDecision({ today: '2026-09-26', dates: '2026-09-26', from: '2026-09-26', off: '1', state: { last_result: {} } }).on === false);
+    check('스위치 값이 1 이 아니면 무시', G.canaryDecision({ today: '2026-09-26', dates: '', from: '2026-09-26', off: '', state: { last_result: {} } }).on === true);
+
+    // 자정 마감 — 늦게 뜬 칸(#91 KST 23시)이 날짜를 넘지 않는다
+    {
+      const budget = 50 * 60 * 1000;
+      const dayEnd = Date.parse('2026-09-26T15:00:00Z');   // KST 09-27 00:00
+      const early = Date.parse('2026-09-26T12:00:00Z');    // KST 21:00
+      eq('KST 21시 시작 → 예산 50분 그대로', C.runDeadline(early, '2026-09-26', budget), early + budget);
+      const late = Date.parse('2026-09-26T14:40:00Z');     // KST 23:40
+      eq('★ KST 23:40 시작 → 자정 − 여유에서 끊는다', C.runDeadline(late, '2026-09-26', budget), dayEnd - C.DAY_END_MARGIN_MS);
+      check('자정을 넘긴 마감은 없다', C.runDeadline(late, '2026-09-26', budget) < dayEnd);
+      const after = Date.parse('2026-09-26T14:59:30Z');
+      check('여유 안쪽에서 시작 → 마감이 이미 지나 호출 없이 끝난다', C.runDeadline(after, '2026-09-26', budget) <= after);
+    }
+
     eq('정상 실행 → 비활성화 사유 없음', C.v3KillReason({ violations: [] }), '');
     check('★ ADPICK 429 → 비활성화', /429/.test(C.v3KillReason({ adpick429: true, adpickBlocked: true })));
     check('쿠팡 차단 → 비활성화', /쿠팡 차단/.test(C.v3KillReason({ coupangBlocked: true })));
