@@ -2707,6 +2707,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   };
   /* 1차 호출이 실제로 성공(ok)한 상품. 2차 패스의 자격 조건이다 — processGroup 주석 참고. */
   const pass1Succeeded = new Set();
+  // 첫 패스에서 정상 응답을 받은 문구는 같은 실행의 hint/facet/ladder에서 재호출하지 않는다.
+  // 실패·차단된 문구는 제외해야 후속 재시도 경로를 막지 않는다.
+  const firstPassQueried = new Set();
   collectible.forEach(p => uncovered.set(`${p.product_id}|${p.mall}`, p));
   /*
    * ── 수집기가 오늘 직접 확보한 상품 (Daily Collection 성공률의 유일한 근거) ──
@@ -3153,6 +3156,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   상태에서 2차가 120회를 더 태웠고 회수는 0이었다. 그 호출이 ADPICK
      *   일일 쿼터를 갉아먹어 HTTP 429 까지 갔다. 낭비일 뿐 아니라 유해하다.
      */
+    firstPassQueried.add(kw);
     groupRows.forEach(p => {
       const k = `${p.product_id}|${p.mall}`;
       pass1Succeeded.add(k);
@@ -3364,7 +3368,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   if (SECOND_PASS_ENABLED && !stoppedEarly) {
     const attemptedNow = [...retryGroups, ...attemptedGroups].flatMap(g => g.rows);
     const attemptedNowKeys = new Set(attemptedNow.map(p => `${p.product_id}|${p.mall}`));
-    const alreadyTried = new Set(priorSecondDone);
+    const alreadyTried = new Set([...priorSecondDone, ...firstPassQueried]);
 
     /** 이 상품이 회수 패스 대상인가 — 1차가 "성공적으로" 지나간 것만. */
     const eligible = (p) => {
