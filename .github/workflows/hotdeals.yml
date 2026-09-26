@@ -43,7 +43,7 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +94,21 @@ jobs:
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
             2>&1 | tee /tmp/external-hotdeals.log
           exit ${PIPESTATUS[0]}
+
+      # Fill existing photo-less community cards as a small, separate bounded pass.
+      # Uses the normal shared provider limiters; a failure cannot hide internal HOT.
+      - name: Backfill existing community photos
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          EXTERNAL_IMAGE_BACKFILL_ROWS: '8'
+        run: |
+          node scripts/backfill-external-hotdeal-images.js \\
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
 
       - name: Summary
         if: always()
