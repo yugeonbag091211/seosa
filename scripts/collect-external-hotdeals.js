@@ -242,6 +242,30 @@ function safeImageUrl(value) {
  *   못 거른다 — 그래서 저장 전에 한 번 GET 해서 200/206 + image/* 인지 본다.
  *   본문은 읽지 않고 헤더만 본 뒤 끊는다. 한 실행 안에서는 URL 별로 결과를 기억한다.
  */
+/*
+ * ── ADPICK 사진 주소는 «임시 토큰» 이다 (2026-09-26 실측) ─────────────
+ *
+ *   search_img.php?code=… 는 발급 직후에는 200 image/jpeg 인데, 검색 캐시 fetched_at
+ *   기준 7시간 이상 지난 코드는 전부 404 였다(0~0.5시간 3/4 가 200, 7h+ 9/9 가 404).
+ *   #94 의 «저장 전에 열어 본다» 만으로는 부족했다 — 저장할 때는 열리고 몇 시간 뒤 죽는다.
+ *   그래서 카드 사진으로는 아예 쓰지 않는다. 쿠팡(ads-partners)·다음 CDN 사진은
+ *   09-13 저장분도 지금 열린다(감사 80/80).
+ */
+function isEphemeralImageUrl(value) {
+  try {
+    const u = new URL(String(value || ''));
+    return /(^|\.)cloudfront\.net$/i.test(u.hostname) && /\/apis\/search_img\.php$/i.test(u.pathname);
+  } catch (_) {
+    return false;
+  }
+}
+
+/** 카드에 «저장해도 되는» 사진 주소 — https 이고 임시 토큰이 아니다. */
+function durableImageUrl(value) {
+  const url = safeImageUrl(value);
+  return url && !isEphemeralImageUrl(url) ? url : '';
+}
+
 const IMAGE_PROBE_TIMEOUT_MS = 6000;
 const _imageProbeCache = new Map();
 /** 테스트가 네트워크 없이 돌도록 기본 검사기를 바꿔 끼운다. 운영 코드는 부르지 않는다. */
@@ -377,7 +401,7 @@ function referenceImageCandidates(deal, items) {
   };
 
   for (const item of items || []) {
-    const image = safeImageUrl(item && item.image);
+    const image = durableImageUrl(item && item.image);
     if (!image) continue;
 
     const candidateTitle = cleanAffiliateQuery(item && item.title);
@@ -502,6 +526,8 @@ async function enrichAffiliateRows(deals, rows, options) {
     Number.isFinite(opts.searchLimit) ? opts.searchLimit : AFFILIATE_SEARCH_LIMIT));
   // 사진 검사기 — 테스트는 주입한다. 운영은 실제 GET(헤더만)으로 본다.
   const probe = opts.probeImage || (url => probeImageUrl(url));
+  // 공급자 리미터가 «기다려 보라» 고 할 때 얼마나 기다릴지. 수집기(라이브)는 15초, 백필은 분당 창을 기다린다.
+  const maxWaitMs = Math.max(1000, Math.min(120000, Number(opts.maxWaitMs) || 15000));
   const nowIso = new Date(opts.nowMs == null ? Date.now() : Number(opts.nowMs)).toISOString();
   const stats = { attempted: 0, searches: 0, matched: 0, saved: 0, skipped: 0, errors: 0,
     imageFilled: 0, deadImagesRejected: 0 };
@@ -533,7 +559,7 @@ async function enrichAffiliateRows(deals, rows, options) {
       const visuals = [];
       const visualByImage = new Map();
       const addVisual = (item, vm) => {
-        const image = safeImageUrl(item && item.image);
+        const image = durableImageUrl(item && item.image);
         if (!image) return;
         const seen = visualByImage.get(image);
         // 같은 사진이 참고(≤0.69)와 identity(0.70+) 로 두 번 오면 높은 쪽 근거를 남긴다.
@@ -557,9 +583,9 @@ async function enrichAffiliateRows(deals, rows, options) {
           // 테스트/호출부가 searchAll을 주입한 경우 기존 계약을 그대로 쓴다.
           result = await injectedSearch(keyword, {
             coupangLimit: 10,
-            coupangOpts: { source: 'external-hotdeal', maxWaitMs: 15000 },
+            coupangOpts: { source: 'external-hotdeal', maxWaitMs },
             adpickLimit: 10,
-            adpickOpts: { source: 'external-hotdeal', maxWaitMs: 15000 }
+            adpickOpts: { source: 'external-hotdeal', maxWaitMs }
           });
         } else {
           /*
@@ -569,11 +595,11 @@ async function enrichAffiliateRows(deals, rows, options) {
            * 호출부터 429가 발생했으므로, 재현율을 올리면서도 공급자 차단은 피한다.
            */
           const coupang = await fetchCoupang(keyword, 10,
-            { source: 'external-hotdeal', maxWaitMs: 15000 })
+            { source: 'external-hotdeal', maxWaitMs })
             .catch(e => ({ items: [], error: e.message, from: 'none' }));
           const adpick = queryIndex === 0
             ? await fetchAdpick(keyword, 10,
-                { source: 'external-hotdeal', maxWaitMs: 15000 })
+                { source: 'external-hotdeal', maxWaitMs })
                 .catch(e => ({ items: [], error: e.message, from: 'none' }))
             : { items: [], error: null, from: 'none' };
           result = {
@@ -657,7 +683,7 @@ async function enrichAffiliateRows(deals, rows, options) {
 
       let chosenImage = '';
       if (chosen && match && match.product) {
-        const own = safeImageUrl(chosen.image);
+        const own = durableImageUrl(chosen.image);
         const p = own ? await probe(own) : null;
         if (p && p.ok) chosenImage = own;
         else if (own) { if (p && p.transient) lookup.probeErrors++; else { lookup.dead++; stats.deadImagesRejected++; } }
@@ -746,7 +772,8 @@ async function dropDeadImages(rows, opts) {
   for (const row of rows || []) {
     const url = safeImageUrl(row && row.image_url);
     if (!url) continue;
-    const p = await probe(url);
+    // ADPICK 임시 토큰은 지금 열려도 몇 시간 뒤 죽는다 — 열어 보지 않고 비운다.
+    const p = isEphemeralImageUrl(url) ? { ok: false, reason: 'ephemeral-adpick' } : await probe(url);
     if (!p || p.ok || p.transient) continue;
     const meta = { ...(row.metadata || {}) };
     IMAGE_META_KEYS.forEach(k => { delete meta[k]; });
@@ -792,7 +819,7 @@ async function carryStoredEnrichment(db, rows) {
     if (!s) continue;
     const sm = s.metadata && typeof s.metadata === 'object' ? s.metadata : {};
     row.metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-    if (!safeImageUrl(row.image_url) && safeImageUrl(s.image_url)) {
+    if (!durableImageUrl(row.image_url) && durableImageUrl(s.image_url)) {
       row.image_url = s.image_url;
       IMAGE_META_KEYS.forEach(k => { if (sm[k] !== undefined) row.metadata[k] = sm[k]; });
       out.carriedImages++;
@@ -1020,6 +1047,6 @@ module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
   enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery, safeImageUrl,
   imageWords, imageModelCodes, referenceImageCandidate, referenceImageCandidates, imageCapacities,
-  probeImageUrl, _setImageProbe, dropDeadImages, carryStoredEnrichment, LOOKUP_COOLDOWN_MS, IMAGE_META_KEYS,
+  probeImageUrl, _setImageProbe, isEphemeralImageUrl, durableImageUrl, dropDeadImages, carryStoredEnrichment, LOOKUP_COOLDOWN_MS, IMAGE_META_KEYS,
   summaryText, sampleOf
 };

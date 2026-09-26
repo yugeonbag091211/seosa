@@ -22,7 +22,7 @@
 require('./_env');
 const db = require('../api/_supabase');
 const {
-  enrichAffiliateRows, safeImageUrl, probeImageUrl, IMAGE_META_KEYS
+  enrichAffiliateRows, safeImageUrl, probeImageUrl, isEphemeralImageUrl, IMAGE_META_KEYS
 } = require('./collect-external-hotdeals');
 
 const COOLDOWN_HOURS = 12;
@@ -77,7 +77,8 @@ async function probeStored(rows, probe) {
   const live = new Map();
   for (const r of rows) {
     const url = safeImageUrl(r.image_url);
-    if (url) live.set(r.id, await probe(url));
+    // ADPICK search_img.php 는 임시 토큰 — 지금 열려도 몇 시간 뒤 404 (collect-external-hotdeals 주석).
+    if (url) live.set(r.id, isEphemeralImageUrl(url) ? { ok: false, status: 0, reason: 'ephemeral-adpick' } : await probe(url));
   }
   return live;
 }
@@ -148,7 +149,8 @@ async function main(opts = {}) {
     };
     try {
       // 한 카드에 검색어 세 개까지(전체 제목 → 앞 5단어 → 앞 3단어). ADPICK 은 첫 검색어만.
-      await enrich([deal], [row], { lookupLimit: 1, searchLimit: 3, probeImage: probe, nowMs });
+      // 백필은 서두를 일이 없다 — 리미터가 분당 창을 기다리라고 하면 기다린다(건너뛰지 않는다).
+      await enrich([deal], [row], { lookupLimit: 1, searchLimit: 3, probeImage: probe, nowMs, maxWaitMs: 65000 });
       stats.searched++;
       const photo = safeImageUrl(row.image_url);
       const lookup = row.metadata && row.metadata.imageLookup;
@@ -156,7 +158,8 @@ async function main(opts = {}) {
       stats.outcomes[outcome] = (stats.outcomes[outcome] || 0) + 1;
 
       const patch = {
-        image_url: photo || null,
+        // image_url 은 NOT NULL 이다(운영 스키마). 비울 때는 빈 문자열.
+        image_url: photo || '',
         metadata: {
           ...row.metadata,
           imageBackfillAttemptedAt: nowIso,

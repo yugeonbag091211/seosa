@@ -13,6 +13,7 @@ Module._load = function(id, parent) {
     safeImageUrl,
     IMAGE_META_KEYS: ['imageSource', 'imageProductId', 'imageMatchConfidence', 'imageMatchReason', 'imageReference'],
     probeImageUrl: async () => { throw Error('unexpected real image probe'); },
+    isEphemeralImageUrl: u => /cloudfront\.net\/apis\/search_img\.php/.test(String(u)),
     enrichAffiliateRows: async () => { throw Error('unexpected real enrichment'); }
   };
   return real.apply(this, arguments);
@@ -60,6 +61,7 @@ function fakeClient(rows) {
     { id: 6, title: 'F 190ml', price: 9000, source_url: 'https://example.com/6', image_url: 'https://dead.example/search_img.php?code=1', metadata: { imageReference: true, imageSource: 'ADPICK' } },
     { id: 7, title: 'G', price: 9000, source_url: 'https://example.com/7', image_url: 'https://slow.example/g.jpg', metadata: {} }
   ];
+  const tokenRow = { id: 8, title: 'H', price: 9000, source_url: 'https://example.com/8', image_url: 'https://d2iaagr1j041pi.cloudfront.net/apis/search_img.php?code=496601772', metadata: {} };
 
   // 1) 선택 — 예전 규칙(형식만)과 새 규칙(실제로 열리는가)
   assert.deepEqual(Backfill.chooseRows(rows, nowMs, 8).map(r => r.id), [1, 5], 'format-only selection is unchanged');
@@ -117,7 +119,7 @@ function fakeClient(rows) {
   assert.equal('verification_status' in u1.patch, false, 'never marks a community deal as price-verified');
   assert.equal('matched_product_id' in u1.patch, false, 'a photo never grants an affiliate identity');
   const u6 = byId(6);
-  assert.equal(u6.patch.image_url, null, 'a dead photo with no live replacement is cleared (card shows the placeholder)');
+  assert.equal(u6.patch.image_url, '', 'a dead photo with no live replacement is cleared to "" (image_url is NOT NULL in production)');
   assert.equal(u6.patch.metadata.imageDeadUrl, 'https://dead.example/search_img.php?code=1');
   assert.equal(u6.patch.metadata.imageDeadReason, 'http-404');
   assert.ok(u6.where.some(w => w[0] === 'eq' && w[1] === 'image_url' && w[2] === rows[5].image_url),
@@ -138,6 +140,16 @@ function fakeClient(rows) {
     enrich: async (_d, changed) => { changed[0].matched_product_id = 'p9'; changed[0].match_confidence = 0.8; } });
   assert.equal(s3.affiliateMatched, 0, 'below 0.90 is never stored as an affiliate identity');
   assert.equal('matched_product_id' in client3.updates[0].patch, false);
+
+  // 5) ADPICK 임시 토큰 — 지금 열려도(프로브 ok) 저장된 사진으로 인정하지 않는다
+  let probedToken = 0;
+  const tokenClient = fakeClient([tokenRow]);
+  const s5 = await Backfill.main({ db: tokenClient, nowMs, rowLimit: 1,
+    probeImage: async () => { probedToken++; return { ok: true, status: 200 }; },
+    enrich: async (_d, changed) => { assert.equal(changed[0].image_url, ''); changed[0].metadata.imageLookup = { outcome: 'no-safe-candidate' }; } });
+  assert.equal(probedToken, 0, 'a search_img.php token is not even probed');
+  assert.equal(s5.before.deadImage, 1); assert.equal(s5.deadCleared, 1);
+  assert.equal(tokenClient.updates[0].patch.metadata.imageDeadReason, 'ephemeral-adpick');
 
   console.log('Community image backfill offline checks PASS');
 })().catch(e => { console.error(e); process.exitCode = 1; });
