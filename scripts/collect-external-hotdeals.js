@@ -310,6 +310,49 @@ async function probeImageUrl(value, opts) {
  * 섞이지 않게). 사진은 190ml 캔과 500ml 병이 다른 물건으로 보이므로 g·kg·ml·L 까지
  * 기준 단위로 바꿔 비교한다. 1.7kg = 1700g.
  */
+/*
+ * ── 사진 전용 «상품 종류» 와 «한쪽에만 있는 맛·변형» (2026-09-26 운영 감사) ──
+ *
+ *   백필이 채운 참고 사진 83장을 딜 제목 ↔ 후보 제목으로 전수 대조했더니, 같은 브랜드의
+ *   다른 종류가 섞였다: 진정크림 ↔ 클렌징폼, 팬티라이너 ↔ 오버나이트 생리대,
+ *   차렵이불 ↔ 매트리스 커버, 스프라이트 ↔ 스프라이트 제로.
+ *   종류 낱말이 양쪽에 있는데 하나도 겹치지 않으면, 또는 제로·라이트·디카페인이 한쪽에만
+ *   있으면 사진이 다른 물건이다. 구매 링크(0.90 identity)는 이 판정과 무관하다.
+ */
+const IMAGE_TYPE_WORDS = [
+  ['크림', /크림(?!치즈|빵|파스타|우동)/], ['폼', /클렌징\s*폼|폼클렌징|(?:^|[^가-힣])폼(?:$|[^가-힣])/], ['로션', /로션/],
+  ['에센스', /에센스|세럼|앰플/], ['토너', /토너|스킨(?!케어)/], ['샴푸', /샴푸/], ['린스', /린스|트리트먼트|컨디셔너/],
+  ['바디워시', /바디\s*워시|샤워\s*젤/], ['치약', /치약/], ['칫솔', /칫솔/],
+  ['생리대', /생리대|오버나이트/], ['라이너', /라이너/], ['기저귀', /기저귀/], ['물티슈', /물티슈/],
+  ['이불', /이불|차렵|구스다운\s*이불/], ['커버', /커버/], ['매트리스', /매트리스/], ['베개', /베개/],
+  ['세제', /세제/], ['섬유유연제', /유연제/], ['탈취제', /탈취제/],
+  ['자켓', /자켓|재킷|점퍼|패딩|바람막이/], ['티셔츠', /티셔츠|긴팔티|반팔티|맨투맨/], ['팬츠', /팬츠|바지|슬랙스|청바지/],
+  ['운동화', /운동화|스니커즈|슬립온|러닝화/], ['샌들', /샌들|슬리퍼|크록스/],
+  ['띠부씰', /띠부씰|스티커/], ['빵', /빵(?!가루)/], ['과자', /과자|쿠키|칩(?:스)?(?![가-힣])/],
+  ['라면', /라면|짜파게티|너구리|우동|국수/], ['음료', /음료|주스|에이드|드링크/], ['커피', /커피|아메리카노|라떼/],
+  ['이어폰', /이어폰|이어버드|헤드셋|헤드폰/], ['가습기', /가습기/], ['청소기', /청소기/]
+];
+function imageTypes(value) {
+  const s = String(value || '');
+  return new Set(IMAGE_TYPE_WORDS.filter(([, re]) => re.test(s)).map(([k]) => k));
+}
+// 라이트는 낱말로 설 때만 — «데일리라이트» 같은 상품명 안의 라이트는 변형이 아니다(운영 실측 폴햄 바람막이).
+const FLAVOR_ONE_SIDED = [/제로|zero/i, /(?:^|[\s(\[\/,])(?:라이트|light)(?=$|[\s)\]\/,])/i, /디카페인|decaf/i, /무가당|무설탕/];
+function oneSidedFlavor(a, b) {
+  const x = String(a || ''), y = String(b || '');
+  return FLAVOR_ONE_SIDED.some(re => re.test(x) !== re.test(y));
+}
+
+/**
+ * 저장된 (딜 제목, 사진 후보 제목) 쌍이 지금 규칙으로도 참고 사진이 될 수 있는가.
+ * 검색 없이 다시 판정할 때 쓴다 (backfill --revalidate).
+ */
+function referencePhotoAllowed(dealTitle, candidateTitle) {
+  if (!candidateTitle) return false;
+  return !!referenceImageCandidate({ title: dealTitle, mall: '' },
+    [{ title: candidateTitle, image: 'https://revalidate.invalid/x.jpg', mall: '', mallLabel: '' }]);
+}
+
 function imageCapacities(value) {
   const out = new Set();
   const re = /(\d+(?:\.\d+)?)\s?(kg|g|ml|l|gb|tb|mah|인치)(?![a-z])/gi;
@@ -427,7 +470,9 @@ function referenceImageCandidates(deal, items) {
       || conflicts(dformats, cformats)
       || conflicts(dvariants, cvariants)
       || conflicts(dcolors, ccolors)
-      || conflicts(dcaps, imageCapacities(candidateTitle))) continue;
+      || conflicts(dcaps, imageCapacities(candidateTitle))
+      || conflicts(imageTypes(title), imageTypes(candidateTitle))
+      || oneSidedFlavor(title, candidateTitle)) continue;
 
     const shared = semanticShared(dw, cw);
     const overlap = shared.length / Math.max(1, Math.min(dw.length, cw.length));
@@ -1065,6 +1110,6 @@ module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
   enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery, safeImageUrl,
   imageWords, imageModelCodes, referenceImageCandidate, referenceImageCandidates, imageCapacities,
-  probeImageUrl, _setImageProbe, isEphemeralImageUrl, durableImageUrl, dropDeadImages, carryStoredEnrichment, LOOKUP_COOLDOWN_MS, IMAGE_META_KEYS,
+  probeImageUrl, _setImageProbe, isEphemeralImageUrl, durableImageUrl, dropDeadImages, imageTypes, oneSidedFlavor, referencePhotoAllowed, carryStoredEnrichment, LOOKUP_COOLDOWN_MS, IMAGE_META_KEYS,
   summaryText, sampleOf
 };

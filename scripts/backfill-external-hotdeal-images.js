@@ -22,7 +22,7 @@
 require('./_env');
 const db = require('../api/_supabase');
 const {
-  enrichAffiliateRows, safeImageUrl, probeImageUrl, isEphemeralImageUrl, IMAGE_META_KEYS
+  enrichAffiliateRows, safeImageUrl, probeImageUrl, isEphemeralImageUrl, IMAGE_META_KEYS, referencePhotoAllowed
 } = require('./collect-external-hotdeals');
 
 const COOLDOWN_HOURS = 12;
@@ -38,6 +38,23 @@ const AUDIT = process.argv.includes('--audit');
 const FORCE = process.argv.includes('--force');
 // 옛 규칙(브랜드 닻 이전)으로 고른 참고 사진을 다시 판정한다 — 새 규칙을 통과하는 사진이 없으면 비운다.
 const RECHECK_REFERENCE = process.argv.includes('--recheck-reference');
+// 검색 없이 저장된 (딜 제목, 사진 후보 제목) 쌍을 지금 규칙으로 다시 판정한다 — 통과 못 하면 비운다.
+const REVALIDATE = process.argv.includes('--revalidate');
+
+/**
+ * --revalidate 대상과 사유. 참고 사진(imageReference=true)만 본다 — 정확 일치 사진은 건드리지 않는다.
+ *   · 후보 제목이 있는데 지금 규칙(브랜드 닻·종류·맛·용량·모델·색상)을 통과하지 못한다
+ *   · 제휴 매칭 행이라 재검색이 안 되는데 옛 규칙(후보 제목 없음)으로 고른 참고 사진이다
+ */
+function revalidateVerdict(r) {
+  const m = (r && r.metadata) || {};
+  if (!safeImageUrl(r && r.image_url) || m.imageReference !== true) return null;
+  if (m.imageCandidateTitle) {
+    return referencePhotoAllowed(r.title, m.imageCandidateTitle)
+      ? null : `지금 규칙으로 다른 상품 사진 — 후보 «${String(m.imageCandidateTitle).slice(0, 60)}»`;
+  }
+  return r.matched_product_id ? '제휴 매칭 행의 옛 규칙 참고 사진 — 후보 제목이 없어 대조할 수 없다' : null;
+}
 
 /**
  * 채울 행을 고른다. `live` 는 이미 검사한 사진 판정(id → probe 결과)이다 —
@@ -132,6 +149,29 @@ async function main(opts = {}) {
   const rowLimit = opts.rowLimit || ROW_LIMIT;
 
   const rows = await loadWindow(client, nowMs, hours);
+
+  if (REVALIDATE || opts.revalidate) {
+    const out = { event: 'image_revalidate', hours, window: rows.length, checked: 0, revoked: 0, kept: 0, errors: 0, dryRun, ids: [] };
+    for (const r of rows) {
+      if (!safeImageUrl(r.image_url) || !(r.metadata && r.metadata.imageReference === true)) continue;
+      out.checked++;
+      const reason = revalidateVerdict(r);
+      if (!reason) { out.kept++; continue; }
+      out.ids.push(r.id);
+      if (dryRun) { out.revoked++; continue; }
+      const meta = { ...(r.metadata || {}) };
+      IMAGE_META_KEYS.forEach(k => { delete meta[k]; });
+      meta.imageRevoked = { url: r.image_url, at: nowIso, reason, candidateTitle: (r.metadata || {}).imageCandidateTitle || '' };
+      // CAS — 읽은 사진 그대로일 때만. image_url 은 NOT NULL.
+      const saved = await client.from('external_hotdeals').update({ image_url: '', metadata: meta })
+        .eq('id', r.id).eq('image_url', r.image_url);
+      if (saved.error) { out.errors++; console.error(JSON.stringify({ event: 'image_revalidate_failed', id: r.id, reason: saved.error.message })); }
+      else out.revoked++;
+    }
+    console.log(JSON.stringify(out));
+    return out;
+  }
+
   // dry-run 은 외부로 아무것도 부르지 않는다 — ADPICK 임시 토큰만 주소 모양으로 가린다.
   const live = dryRun ? staticVerdicts(rows) : await probeStored(rows, probe);
   const before = audit(rows, live);
@@ -222,4 +262,4 @@ if (require.main === module) main().catch(e => {
   console.error(JSON.stringify({ event: 'image_backfill_fatal', reason: String(e.message || e) }));
   process.exitCode = 1;
 });
-module.exports = { chooseRows, main, audit };
+module.exports = { chooseRows, main, audit, revalidateVerdict };

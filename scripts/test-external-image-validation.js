@@ -108,6 +108,21 @@ const fakeProbe = async url => (/gone\.example/.test(url)
     assert.equal(row.metadata.imageCandidateTitle, '코카콜라 제로 190ml 24개');
     assert.ok(C.IMAGE_META_KEYS.includes('imageCandidateTitle'), 'moves and clears together with the photo');
   });
+  await check('★ 같은 브랜드라도 종류가 다르면 사진을 쓰지 않는다 (운영 감사 4건)', async () => {
+    const reject = [
+      ['메디팜 시카 트러블 진정크림 220ml 2개 + 스팟젤 15ml', '메디팜 아크네 진정 시카 클렌징폼, 220ml, 3개'],
+      ['예지미인 데일리코튼 롱 팬티라이너 81px2팩', '예지미인 데일리코튼 입는 오버나이트 생리대'],
+      ['로렌 플라워 사계절 항균 다운필 차렵이불', '사계절 프리미엄 항균 방수 매트리스 커버'],
+      ['스프라이트 300ml 24개 + 카리나부채증정', '스프라이트 제로 사이다, 300ml, 24개']
+    ];
+    reject.forEach(([d, c]) => assert.equal(C.referencePhotoAllowed(d, c), false, `${d} ↛ ${c}`));
+  });
+  await check('상품명 안의 라이트(데일리라이트)는 변형이 아니다 · 진짜 같은 종류는 통과', async () => {
+    assert.equal(C.referencePhotoAllowed('폴햄 남녀 바람막이', '매장정품 폴햄 POLHAM 남성 UV차단 데일리라이트 하이넥 바람막이 점퍼'), true);
+    assert.equal(C.referencePhotoAllowed('동서 필라델피아 크림치즈 미니 41g 16개', '동서 필라델피아 크림치즈 미니 41g'), true, '크림치즈 is not 크림');
+    assert.equal(C.referencePhotoAllowed('리챔 오리지널 200g 8캔', '리챔 라이트 200g 8캔'), false, 'one-sided 라이트 variant');
+    assert.equal(C.referencePhotoAllowed('코카콜라제로 190ml 30캔', '코카콜라 제로 190ml 24캔'), true, '제로 on both sides');
+  });
   await check('후보 목록은 순위 순 — 예전 «최고 1개» 선택과 같다', async () => {
     const deal = { title: '폴햄 남녀 바람막이 자켓', mall: '' };
     const list = C.referenceImageCandidates(deal, [item('폴햄 바람막이', 'https://a.example/1.jpg'), item('폴햄 남녀 바람막이 자켓 블랙', 'https://a.example/2.jpg')]);
@@ -122,8 +137,8 @@ const fakeProbe = async url => (/gone\.example/.test(url)
     const row = { image_url: '', metadata: {} };
     const probed = [];
     // 죽은 쪽이 핵심어를 더 많이 공유해 1순위다 (제로·코카콜라 vs 코카콜라).
-    const top = item('코카콜라 제로 190ml 24개', DEAD, { mall: 'ADPICK', mallLabel: 'G마켓' });
-    const next = item('코카콜라 190ml 캔', LIVE);
+    const top = item('코카콜라 제로 190ml 24개', DEAD);  // 같은 몰(쿠팡) 가산으로 1순위
+    const next = item('코카콜라 제로 캔 음료', LIVE, { mall: 'ADPICK', mallLabel: 'G마켓' });
     assert.equal(C.referenceImageCandidates(deal, [next, top])[0].image, DEAD, 'fixture: the dead photo ranks first');
     const stats = await C.enrichAffiliateRows([deal], [row], {
       searchAll: search([top, next]),
@@ -196,7 +211,7 @@ const fakeProbe = async url => (/gone\.example/.test(url)
   });
   await check('토큰보다 순위가 낮아도 쿠팡 사진이 있으면 그쪽을 쓴다', async () => {
     const row = { image_url: '', metadata: {} };
-    await C.enrichAffiliateRows([deal], [row], { searchAll: search([item('코카콜라 제로 190ml 24개', TOKEN, { mall: 'ADPICK' }), item('코카콜라 190ml 캔', LIVE)]),
+    await C.enrichAffiliateRows([deal], [row], { searchAll: search([item('코카콜라 제로 190ml 24개', TOKEN, { mall: 'ADPICK' }), item('코카콜라 제로 190ml 캔', LIVE)]),
       saveProducts: async () => ({}), probeImage: async () => ({ ok: true }), lookupLimit: 1, searchLimit: 1 });
     assert.equal(row.image_url, LIVE);
   });
