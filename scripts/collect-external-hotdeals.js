@@ -71,7 +71,7 @@ const IMAGE_MATCH_METHODS = new Set(['identity', 'identity-partial', 'model', 'm
  */
 const LOOKUP_COOLDOWN_MS = 12 * 3600 * 1000;
 /** 사진에 딸린 메타 키. 사진을 옮기거나 지울 때 같이 옮기고 지운다. */
-const IMAGE_META_KEYS = ['imageSource', 'imageProductId', 'imageMatchConfidence', 'imageMatchReason', 'imageReference'];
+const IMAGE_META_KEYS = ['imageSource', 'imageProductId', 'imageMatchConfidence', 'imageMatchReason', 'imageReference', 'imageCandidateTitle'];
 const AFFILIATE_META_KEYS = ['affiliateUrl', 'affiliateMall', 'affiliatePrice', 'affiliateProductId',
   'affiliateVendorItemId', 'affiliateConfidence', 'affiliateMatchReason', 'affiliateSearchQuery'];
 
@@ -328,7 +328,9 @@ function imageCapacities(value) {
 
 const IMAGE_GENERIC_WORDS = new Set([
   '무료배송','무료','무배','핫딜','특가','정품','공식','국산','국내산','프리미엄',
-  '고급','대용량','신상품','최신형','증정','사은품','골라담기','선물세트','세트'
+  '고급','대용량','신상품','최신형','증정','사은품','골라담기','선물세트','세트',
+  // 쇼핑몰 제목 머리의 판매 문구 — 머리말 닻(브랜드)으로 쓰이지 않게 뺀다.
+  '해외','해외직구','단독','로켓배송','당일발송','공식판매처'
 ]);
 const IMAGE_UNIT_WORD_RE = /^\d+(?:\.\d+)?(?:g|kg|ml|l|개|매|입|팩|병|캔|장|봉|종|인분|cm|mm|인치|gb|tb)?$/i;
 
@@ -432,6 +434,19 @@ function referenceImageCandidates(deal, items) {
     const sameFirst = dw[0] && cw[0]
       && (dw[0] === cw[0] || dw[0].includes(cw[0]) || cw[0].includes(dw[0]));
     const sharedModel = [...dmodels].some(m => cmodels.has(m));
+
+    /*
+     * ★ 머리말(대개 브랜드) 닻 (2026-09-26 운영 실측). «매일두유 검은콩 190ml 48팩» 카드에
+     *   «건국 검은콩 두유 190ml 24개» 사진이 붙었다 — 검은콩·두유 두 낱말만 같았다.
+     *   딜의 첫 핵심어가 후보 제목에 있거나 후보의 첫 핵심어가 딜 제목에 있어야 한다.
+     *   모델코드가 같으면 닻 없이도 된다. 다른 브랜드 사진보다 빈 썸네일이 낫다.
+     */
+    const candFlat = cw.join(' ');
+    const dealFlat = dw.join(' ');
+    const anchored = sharedModel
+      || (dw[0] && dw[0].length >= 2 && candFlat.includes(dw[0]))
+      || (cw[0] && cw[0].length >= 2 && dealFlat.includes(cw[0]));
+    if (!anchored) continue;
 
     // 모델이 없으면 최소 2개 핵심어, 혹은 긴 고유어 하나 + 높은 겹침을 요구한다.
     const distinctiveOne = shared.length === 1 && shared[0].length >= 4 && overlap >= 0.45;
@@ -678,7 +693,9 @@ async function enrichAffiliateRows(deals, rows, options) {
         imageProductId: String(item.productId || ''),
         imageMatchConfidence: Number(vm.confidence) || 0,
         imageMatchReason: String(vm.reason || ''),
-        imageReference: reference
+        imageReference: reference,
+        // 나중에 사진이 맞는지 사람이 대조할 수 있게 후보 제목을 남긴다.
+        imageCandidateTitle: String(item.title || '').slice(0, 120)
       });
 
       let chosenImage = '';
@@ -727,7 +744,8 @@ async function enrichAffiliateRows(deals, rows, options) {
           imageProductId: String(chosen.productId || ''),
           imageMatchConfidence: Number(match.confidence) || 0,
           imageMatchReason: String(match.reason || ''),
-          imageReference: false
+          imageReference: false,
+          imageCandidateTitle: String(chosen.title || '').slice(0, 120)
         } : {})
       };
       row.metadata = meta;

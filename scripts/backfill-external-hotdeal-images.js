@@ -36,6 +36,8 @@ const ROW_LIMIT = Math.max(1, Math.min(200,
 const DRY_RUN = process.argv.includes('--dry-run');
 const AUDIT = process.argv.includes('--audit');
 const FORCE = process.argv.includes('--force');
+// 옛 규칙(브랜드 닻 이전)으로 고른 참고 사진을 다시 판정한다 — 새 규칙을 통과하는 사진이 없으면 비운다.
+const RECHECK_REFERENCE = process.argv.includes('--recheck-reference');
 
 /**
  * 채울 행을 고른다. `live` 는 이미 검사한 사진 판정(id → probe 결과)이다 —
@@ -48,6 +50,8 @@ function chooseRows(rows, nowMs, max = ROW_LIMIT, opts = {}) {
     if (!r || !r.id || !r.title || !r.source_url || !Number(r.price)) return false;
     if (r.matched_product_id) return false;
     const url = safeImageUrl(r.image_url);
+    if (opts.recheckReference && url && live && live.has(r.id) && live.get(r.id).ok
+      && r.metadata && r.metadata.imageReference === true && !r.metadata.imageCandidateTitle) return true;
     if (url && (!live || !live.has(r.id) || live.get(r.id).ok || live.get(r.id).transient)) return false;
     if (opts.force) return true;
     const last = Date.parse(r.metadata && r.metadata.imageBackfillAttemptedAt || '');
@@ -137,21 +141,27 @@ async function main(opts = {}) {
     return report;
   }
 
-  const chosen = chooseRows(rows, nowMs, rowLimit, { live, force: FORCE || !!opts.force });
+  const recheckReference = RECHECK_REFERENCE || !!opts.recheckReference;
+  const chosen = chooseRows(rows, nowMs, rowLimit, { live, force: FORCE || !!opts.force, recheckReference });
   const stats = {
     hours, window: rows.length,
     before: { validImage: before.validImage, deadImage: before.deadImage, noImage: before.noImage,
       unverifiable: before.unverifiable, unprobed: before.unprobed, affiliateLinked: before.affiliateLinked },
     eligible: chooseRows(rows, nowMs, Infinity, { live, force: true }).length,
     selected: chosen.length, searched: 0, imageFilled: 0, deadRepaired: 0, deadCleared: 0,
+    recheckKept: 0, recheckReplaced: 0, recheckCleared: 0,
     affiliateMatched: 0, outcomes: {}, errors: 0, dryRun
   };
   if (dryRun) { console.log(JSON.stringify(stats)); return stats; }
 
   for (const original of chosen) {
-    const deadUrl = safeImageUrl(original.image_url) || '';
+    const oldUrl = safeImageUrl(original.image_url) || '';
+    const verdict = live.get(original.id);
+    // 열리는 사진인데 뽑혔다면 --recheck-reference 대상이다(죽은 사진이 아니다).
+    const recheckUrl = oldUrl && verdict && verdict.ok ? oldUrl : '';
+    const deadUrl = oldUrl && !recheckUrl ? oldUrl : '';
     const meta0 = { ...(original.metadata || {}) };
-    if (deadUrl) IMAGE_META_KEYS.forEach(k => { delete meta0[k]; });
+    if (oldUrl) IMAGE_META_KEYS.forEach(k => { delete meta0[k]; });
     // 죽은 사진은 비운 상태로 다시 찾는다 — enrich 는 사진이 없는 행만 채운다.
     const row = { ...original, image_url: '', metadata: meta0 };
     const deal = {
@@ -175,7 +185,9 @@ async function main(opts = {}) {
         metadata: {
           ...row.metadata,
           imageBackfillAttemptedAt: nowIso,
-          ...(deadUrl ? { imageDeadUrl: deadUrl, imageDeadReason: String((live.get(original.id) || {}).reason || ''), imageDeadAt: nowIso } : {})
+          ...(deadUrl ? { imageDeadUrl: deadUrl, imageDeadReason: String((live.get(original.id) || {}).reason || ''), imageDeadAt: nowIso } : {}),
+          ...(recheckUrl && !photo ? { imageRevoked: { url: recheckUrl, at: nowIso,
+            reason: '참고 사진 재판정 — 머리말(브랜드) 닻·용량 규칙을 통과하는 후보 없음' } } : {})
         }
       };
       // A verified 0.90 identity may be stored, but never alter verification_status
@@ -192,7 +204,8 @@ async function main(opts = {}) {
       update = original.image_url == null ? update.is('image_url', null) : update.eq('image_url', original.image_url);
       const saved = await update;
       if (saved.error) throw new Error('update image metadata: ' + saved.error.message);
-      if (photo && deadUrl) stats.deadRepaired++;
+      if (recheckUrl) stats[photo ? (photo === recheckUrl ? 'recheckKept' : 'recheckReplaced') : 'recheckCleared']++;
+      else if (photo && deadUrl) stats.deadRepaired++;
       else if (photo) stats.imageFilled++;
       else if (deadUrl) stats.deadCleared++;
       if (patch.matched_product_id) stats.affiliateMatched++;
