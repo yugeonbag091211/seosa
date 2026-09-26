@@ -85,6 +85,9 @@ on:
     - cron: '30 22 * * *'   # UTC 22:30 = KST 07:30
     - cron: '0 23 * * *'    # UTC 23:00 = KST 08:00
     - cron: '30 23 * * *'   # UTC 23:30 = KST 08:30
+    # Late catch-up slots: resume today's checkpoint; existing DB lock and daily caps still apply.
+    - cron: '0 12 * * *'    # UTC 12:00 = KST 21:00
+    - cron: '0 14 * * *'    # UTC 14:00 = KST 23:00
   workflow_dispatch:        # 수동 실행 버튼
 
 jobs:
