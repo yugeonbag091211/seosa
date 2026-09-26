@@ -74,7 +74,7 @@ const NOISE = new Set([
 const YEAR_RE = /^(19|20)\d{2}$/;
 
 /** 규격·수량. 상품을 구분하기는 하지만 검색어로는 너무 흔하다. */
-const UNIT_RE = /^\d+(\.\d+)?(ml|l|g|kg|gb|tb|mm|cm|m|인치|w|k|p|매|개|팩|입|구|병|장|호|년|주|박스|캔|세트|매입)$/i;
+const UNIT_RE = /^\d+(\.\d+)?(ml|l|g|kg|gb|tb|mm|cm|m|인치|w|k|p|매|개|팩|입|구|병|장|호|년|주|박스|캔|세트|매입|set|sets|ea|pcs|pc|box|pack|pk|ct|mah|hz|v|kcal)$/i;
 
 /** 영문+숫자가 섞인 4자 이상 = 모델코드 후보. 단위는 위에서 걸러진다. */
 const MODEL_RE = /^(?=.*[a-z])(?=.*\d)[a-z0-9-]{4,}$/i;
@@ -87,8 +87,14 @@ const MODEL_RE = /^(?=.*[a-z])(?=.*\d)[a-z0-9-]{4,}$/i;
  */
 function tokenize(title) {
   return String(title || '')
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\([^)]*\)/g, ' ')
+    // 배송·판촉 머리표만 버린다. [삼성], (CRP-DHAS069FWM) 같은 실제
+    // 브랜드·모델 정보를 통째로 삭제하면 2차 검색 후보가 영원히 못 찾는다.
+    .replace(/\[([^\]]*)\]|\(([^)]*)\)/g, (_whole, square, round) => {
+      const inside = String(square == null ? round : square).trim();
+      const words = inside.split(/\s+/).filter(Boolean);
+      return words.length && words.every(w => NOISE.has(w) || w === '냉동')
+        ? ' ' : ' ' + inside + ' ';
+    })
     .replace(/[^0-9a-zA-Z가-힣\s-]/g, ' ')
     .split(/\s+/)
     .filter(w => w.length >= 2 && !NOISE.has(w) && !YEAR_RE.test(w));
