@@ -58,8 +58,15 @@ function overlap(a, b) {
 
 /** 영문+숫자 4자 이상 = 모델코드 후보. 하이픈 포함. */
 const MODEL_RE = /^(?=.*[a-z])(?=.*\d)[a-z0-9-]{4,}$/i;
-/** 단위는 모델코드가 아니다. */
-const UNIT_RE = /^\d+(\.\d+)?(ml|l|g|kg|gb|tb|mm|cm|m|인치|w|k|p|매|개|팩|입|구|병|장|호|년|주|박스|캔|oz)$/i;
+/**
+ * 단위는 모델코드가 아니다.
+ *
+ * ★ 2026-09-26: 수량(4SET·10EA·3PCS·2BOX·100CT)과 물리 단위(10000mAh·144Hz·220V)가
+ *   빠져 있어 모델코드로 잡혔다. 외부 핫딜 제휴 판정이 «브랜드 + 모델번호 일치» 0.97 로
+ *   다른 상품을 연결했다 — 실측 «푸마 여성 드로즈 4set» ↔ «[푸마] 남성 브라팬티 4SET»,
+ *   «캘빈클라인 남성 드로즈 3PCS» ↔ «캘빈클라인 여성 브라렛 3PCS». 수량 차이는 counts() 가 본다.
+ */
+const UNIT_RE = /^\d+(\.\d+)?(ml|l|g|kg|gb|tb|mm|cm|m|인치|w|k|p|매|개|팩|입|구|병|장|호|년|주|박스|캔|oz|set|ea|pcs|pc|box|pack|pk|ct|mah|hz|v|kcal)$/i;
 
 function modelCodes(t) {
   return new Set(String(t == null ? '' : t)
@@ -160,13 +167,18 @@ const setsDiffer = (a, b) => [...a].some(x => !b.has(x)) || [...b].some(x => !a.
  *   External Hotdeal Radar 매칭 감사(실카탈로그 2,647 제목 변형)에서 확인한 규칙과 같다.
  */
 const COUNT_UNIT_ALIAS = { '개입': '개', '입': '개' };
+/** 영문 수량 단위 → 한글 표기 (4SET = 4세트, 10EA = 10개). modelCodes 에서 빠진 대신 여기서 센다. */
+const EN_COUNT_ALIAS = { set: '세트', ea: '개', pcs: '개', pc: '개' };
 const TOTAL_COUNT_RE = /총\s*\d+(?:\.\d+)?\s*(?:ml|l|g|kg|캔|병|개입|개|입|팩|박스|봉|포|정|롤|매|장|권)/gi;
 
 function countsIn(s) {
   const out = [];
-  const re = /(\d+(?:\.\d+)?)\s*(캔|병|개입|개|입|팩|박스|봉|포|정|롤|매|장|권)(?![가-힣])/gi;
+  const re = /(\d+(?:\.\d+)?)\s*(캔|병|개입|개|입|팩|박스|봉|포|정|롤|매|장|권|세트|켤레|족)(?![가-힣])/gi;
   let m;
   while ((m = re.exec(s)) !== null) out.push(`${Number(m[1])}${COUNT_UNIT_ALIAS[m[2]] || m[2]}`);
+  // 영문 수량 — 앞이 글자가 아닌 숫자일 때만(모델코드 안의 숫자와 섞이지 않게), 뒤는 영문이 아닐 때만(4settings 제외).
+  const en = /(?<![a-z0-9])(\d{1,3})\s*(set|ea|pcs|pc)(?![a-z])/gi;
+  while ((m = en.exec(s)) !== null) out.push(`${Number(m[1])}${EN_COUNT_ALIAS[m[2].toLowerCase()]}`);
   // "200ml x2" 같은 맨 배수도 수량이다. "340x3408x870" 같은 치수는 앞 글자가 숫자라 제외된다.
   const mult = /(?<=[a-z가-힣)\s])[x×*]\s*(\d{1,2})(?![\d가-힣a-z.])/gi;
   while ((m = mult.exec(s)) !== null) out.push(`${Number(m[1])}개`);

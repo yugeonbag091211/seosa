@@ -152,6 +152,34 @@ section('5. 안전 기본값');
   check(r.tier === 'D' && r.reasons.length > 0, '★ 판정에는 항상 이유가 붙는다', r);
 }
 
+/* ================================================================
+ *  6. 수량·물리 단위는 모델코드가 아니다 (2026-09-26 제휴 오연결 실측)
+ * ================================================================ */
+section('6. 수량 단위 ≠ 모델코드');
+{
+  const I = require('../api/_identity');
+  ['4SET', '10EA', '3PCS', '2BOX', '100CT', '10000mAh', '144Hz', '220V']
+    .forEach(u => check(!I.modelCodes(`브랜드 상품 ${u}`).size, `★ ${u} 는 모델코드가 아니다`));
+  ['C25K', 'M300', 'SDN3A1A', 'RTX4070', 'CRP-DHAS069FWM']
+    .forEach(c => check(I.modelCodes(`브랜드 ${c}`).has(c), `진짜 모델코드 ${c} 는 그대로`));
+  check(JSON.stringify(I.counts('브라팬티 4SET')) === JSON.stringify(['4세트']), '4SET 은 수량 4세트로 센다');
+  check(JSON.stringify(I.counts('면봉 10EA')) === JSON.stringify(['10개']), '10EA 는 10개');
+  check(JSON.stringify(I.counts('양말 5켤레')) === JSON.stringify(['5켤레']), '켤레도 수량');
+  check(!I.counts('4settings 모드').length, '4settings 같은 낱말은 수량이 아니다');
+  check(!I.counts('RTX4070 3PCSX').length, '모델코드 안의 숫자·영문 꼬리는 수량이 아니다');
+
+  const Radar = require('../api/_external-hotdeal');
+  const cand = title => ({ product_id: 'p1', vendor_item_id: '', mall: '쿠팡', title, link: 'https://x/p1', lprice: 10000 });
+  const link = (d, c) => Radar.matchProduct({ title: d, price: 10000, mall: '' }, [cand(c)], 0.90);
+  check(!link('푸마 여성 드로즈 4set', '[푸마] 남성 브라팬티 4SET').product,
+    '★ 브랜드 + «4SET» 만 같은 다른 상품에 제휴 링크를 달지 않는다');
+  check(!link('캘빈클라인 남성 드로즈 3PCS', '캘빈클라인 여성 브라렛 3PCS').product,
+    '★ 브랜드 + «3PCS» 만 같은 다른 상품에 제휴 링크를 달지 않는다');
+  const q = link('푸마 노와이어 프리미엄 코튼터치 브라팬티 4set', '[푸마] 노와이어 프리미엄 코튼터치 브라팬티 2SET');
+  check(!q.product && /수량/.test(q.reason), '★ 4SET ↔ 2SET 은 수량 충돌로 거절된다', q);
+  check(!!link('푸마 C25K 운동화', '푸마 C25K (40386001)').product, '진짜 모델번호 일치는 그대로 연결된다');
+}
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);
 
