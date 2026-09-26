@@ -86,6 +86,28 @@ const fakeProbe = async url => (/gone\.example/.test(url)
     const deal = { title: '국내산 삼치 손질 냉동 1.7kg', mall: '' };
     assert.ok(C.referenceImageCandidate(deal, [item('국내산 삼치 손질 냉동 1700g 대사이즈', LIVE)]));
   });
+  await check('★ 다른 브랜드 사진은 쓰지 않는다 (매일두유 딜 ↔ 건국 두유 사진, 운영 실측)', async () => {
+    const d = { title: '매일두유 검은콩 190ml 48팩', mall: '' };
+    assert.equal(C.referenceImageCandidate(d, [item('건국 검은콩 두유, 190ml, 24개', LIVE)]), null);
+    const same = C.referenceImageCandidate(d, [item('매일두유 검은콩 190ml 24팩', LIVE)]);
+    assert.ok(same && same.image === LIVE, 'same brand, different pack count is fine for a reference photo');
+  });
+  await check('머리말 닻은 후보 쪽 첫 낱말로도 선다 ([10분러시] 풀무원 ↔ 풀무원 …)', async () => {
+    const d = { title: '[10분러시] 풀무원 톡스콤부차 스파클링 레몬맛 350ml 24캔', mall: '' };
+    assert.ok(C.referenceImageCandidate(d, [item('풀무원 톡스 콤부차 스파클링 레몬 350ml 24캔', LIVE)]));
+  });
+  await check('판매 문구 머리말([해외])은 닻이 아니다', async () => {
+    const d = { title: '샤오미 미지아 무선 청소기 G10', mall: '' };
+    assert.equal(C.referenceImageCandidate(d, [item('[해외] 드리미 무선 청소기 V10', LIVE)]), null);
+  });
+  await check('저장되는 사진에는 대조용 후보 제목이 붙는다 (imageCandidateTitle)', async () => {
+    const row = { image_url: '', metadata: {} };
+    const cola = { title: '코카콜라 제로 190ml 30개', price: 17900, mall: '쿠팡' };
+    await C.enrichAffiliateRows([cola], [row], { searchAll: async () => ({ items: [item('코카콜라 제로 190ml 24개', LIVE)], from: 'api' }),
+      saveProducts: async () => ({}), probeImage: fakeProbe, lookupLimit: 1, searchLimit: 1 });
+    assert.equal(row.metadata.imageCandidateTitle, '코카콜라 제로 190ml 24개');
+    assert.ok(C.IMAGE_META_KEYS.includes('imageCandidateTitle'), 'moves and clears together with the photo');
+  });
   await check('후보 목록은 순위 순 — 예전 «최고 1개» 선택과 같다', async () => {
     const deal = { title: '폴햄 남녀 바람막이 자켓', mall: '' };
     const list = C.referenceImageCandidates(deal, [item('폴햄 바람막이', 'https://a.example/1.jpg'), item('폴햄 남녀 바람막이 자켓 블랙', 'https://a.example/2.jpg')]);

@@ -163,5 +163,34 @@ function fakeClient(rows) {
   assert.equal(s6.searched, 0);
   assert.equal(dryClient.updates.length, 0, 'dry-run writes nothing');
 
+  // 7) --recheck-reference — 옛 규칙으로 고른 참고 사진(후보 제목 없음)만 다시 판정한다
+  const oldRef = { id: 21, title: '매일두유 검은콩 190ml 48팩', price: 24785, source_url: 'https://example.com/21',
+    image_url: 'https://img.example/kunkook.jpg', metadata: { imageReference: true, imageBackfillAttemptedAt: new Date(nowMs - 1000).toISOString() } };
+  const oldRefKeep = { id: 22, title: '코카콜라 제로 190ml 30개', price: 17900, source_url: 'https://example.com/22',
+    image_url: 'https://img.example/cola.jpg', metadata: { imageReference: true } };
+  const newRef = { id: 23, title: 'X', price: 1000, source_url: 'https://example.com/23',
+    image_url: 'https://img.example/x.jpg', metadata: { imageReference: true, imageCandidateTitle: 'X 후보' } };
+  const exact = { id: 24, title: 'Y', price: 1000, source_url: 'https://example.com/24',
+    image_url: 'https://img.example/y.jpg', metadata: { imageReference: false } };
+  const liveR = new Map([[21, { ok: true }], [22, { ok: true }], [23, { ok: true }], [24, { ok: true }]]);
+  assert.deepEqual(Backfill.chooseRows([oldRef, oldRefKeep, newRef, exact], nowMs, 8, { live: liveR }).map(r => r.id), [],
+    'without the flag, live photos are never re-searched');
+  assert.deepEqual(Backfill.chooseRows([oldRef, oldRefKeep, newRef, exact], nowMs, 8, { live: liveR, recheckReference: true }).map(r => r.id), [21, 22],
+    'only old-rule reference photos are rechecked (not new-rule or exact-match photos), cooldown ignored');
+  const rc = fakeClient([oldRef, oldRefKeep, newRef, exact]);
+  const s7 = await Backfill.main({ db: rc, nowMs, rowLimit: 8, recheckReference: true, probeImage: probe,
+    enrich: async (_d, changed) => {
+      const r = changed[0];
+      assert.equal(r.image_url, '', 'the photo under review is cleared before the new search');
+      if (r.id === 22) { r.image_url = 'https://img.example/cola.jpg'; r.metadata.imageCandidateTitle = '코카콜라 제로 190ml 24개'; r.metadata.imageReference = true; }
+      r.metadata.imageLookup = { outcome: r.image_url ? 'image' : 'no-safe-candidate' };
+    } });
+  assert.equal(s7.recheckCleared, 1); assert.equal(s7.recheckKept, 1); assert.equal(s7.deadCleared, 0);
+  const u21 = rc.updates.find(u => u.where.some(w => w[1] === 'id' && w[2] === 21));
+  assert.equal(u21.patch.image_url, '');
+  assert.equal(u21.patch.metadata.imageRevoked.url, 'https://img.example/kunkook.jpg');
+  assert.equal(u21.patch.metadata.imageReference, undefined, 'the label goes with the revoked photo');
+  assert.equal('imageDeadUrl' in u21.patch.metadata, false, 'a revoked photo is not reported as dead');
+
   console.log('Community image backfill offline checks PASS');
 })().catch(e => { console.error(e); process.exitCode = 1; });
