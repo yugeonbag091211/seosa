@@ -85,9 +85,13 @@ on:
     - cron: '30 22 * * *'   # UTC 22:30 = KST 07:30
     - cron: '0 23 * * *'    # UTC 23:00 = KST 08:00
     - cron: '30 23 * * *'   # UTC 23:30 = KST 08:30
+    # 낮 보충 실행: 기존 08:30~21:00 KST 공백 동안 이어받을 기회를 추가한다.
+    # 매시 정각은 GitHub 예약 실행이 지연/누락될 수 있어 :17로 분산한다.
+    # CAS 잠금, 자정 마감, 하루 API 총량 제한은 기존 수집기에서 그대로 적용된다.
+    - cron: '17 1,5,9 * * *' # UTC 01:17/05:17/09:17 = KST 10:17/14:17/18:17
     # Late catch-up slots: resume today's checkpoint; existing DB lock and daily caps still apply.
-    - cron: '0 12 * * *'    # UTC 12:00 = KST 21:00
-    - cron: '0 14 * * *'    # UTC 14:00 = KST 23:00
+    - cron: '17 12 * * *'   # UTC 12:17 = KST 21:17
+    - cron: '17 14 * * *'   # UTC 14:17 = KST 23:17
   workflow_dispatch:        # 수동 실행 버튼
 
 jobs:
