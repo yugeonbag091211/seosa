@@ -253,10 +253,11 @@ function extractQuery(text) {
  * 이런 말에는 확신을 높음으로 주지 않는다 — 검색어를 문맥에서 풀어야 하고,
  * 그 일은 LLM 이 우리보다 낫다 (api/ai.js resolveQuery).
  */
-const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|상품))/;
+const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|이\s*(?:제품|상품|모델)|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|상품))/;
 /* 좁게 확인된 후속 문구만 LLM 분류를 생략한다. "좀 더 싼 거"처럼
  * 의미가 넓은 표현은 기존의 문맥 분류 경로를 유지한다. */
-const DETERMINISTIC_CONTEXT_FOLLOWUP_RE = /(?:이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|아까\s*(?:추천한|말한|보여준)\s*(?:상품|제품|것|거)?|그\s*(?:제품|상품|모델)\s*(?:지금\s*)?(?:사도\s*(?:돼|될|괜찮)|살까|가격|현재가))/;
+const DETERMINISTIC_CONTEXT_FOLLOWUP_RE = /(?:이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|아까\s*(?:추천한|말한|보여준)\s*(?:그\s*)?(?:상품|제품|것|거)?|그\s*(?:제품|상품|모델)\s*(?:지금\s*)?(?:사도\s*(?:돼|될|괜찮)|살까|가격|현재가))/;
+const PRIOR_RECOMMENDATION_RE = /아까\s*(?:추천한|말한|보여준)\s*(?:그\s*)?(?:상품|제품|것|거)/;
 
 /**
  * 의도 판정.
@@ -376,6 +377,7 @@ function classify(text, hist) {
 
   return {
     intent, query, source: 'heuristic', confidence, contextualFollowup,
+    requiresRecommendationIdentity: PRIOR_RECOMMENDATION_RE.test(s),
     /*
      * LLM 이 뽑던 조건 중 정규식으로 확실한 것만 채운다 (extractUseCase 주석).
      * brand·avoid 는 표현이 너무 열려 있어 만들지 않는다 — 지어내느니 비운다.

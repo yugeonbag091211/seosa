@@ -24,6 +24,7 @@
 
 require('./_env.js');
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-or-v1-OFFLINE-TEST';
+process.env.AUTH_SECRET = 'offline-ai-context-signing-key';
 delete process.env.GEMINI_API_KEY;
 delete process.env.GROQ_API_KEY;
 process.env.AI_SEARCH_TIMEOUT_MS = '80';
@@ -49,6 +50,7 @@ const pricestat = require('../api/_pricestat');
 /** 시나리오마다 갈아끼우는 스텁 상태 */
 const stub = {
   searchItems: [],        // searchAll 이 돌려줄 상품
+  searchAllItems: null,   // 옵션이 collapse된 public items와 원본 옵션 집합을 분리할 때 사용
   searchMode: 'ok',       // ok | empty | blocked | throw
   searchCacheEnabled: false, // 로컬 서버 캐시 fixture; 공급자 캐시 경로만 모사
   searchCache: new Map(),
@@ -66,6 +68,8 @@ const delay = ms => ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : P
 
 shop.searchAll = async (keyword) => {
   offlineMetrics.shopSearches++;
+  stub.captured.searchQueries = stub.captured.searchQueries || [];
+  stub.captured.searchQueries.push(String(keyword || ''));
   await delay(stub.delays.search);
   const cacheKey = String(keyword || '').trim().replace(/\s+/g, ' ').toLowerCase();
   if (stub.searchCacheEnabled) {
@@ -107,10 +111,11 @@ shop.searchAll = async (keyword) => {
     return { items: [freshAdpick], allItems: [freshAdpick], from: 'none', blocked: true };
   }
   const items = stub.searchItems.map(it => ({ ...it, _source: 'api' }));
+  const allItems = (stub.searchAllItems || stub.searchItems).map(it => ({ ...it, _source: 'api' }));
   if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, {
-    at: Date.now(), items: stub.searchItems, allItems: stub.searchItems
+    at: Date.now(), items: stub.searchItems, allItems: stub.searchAllItems || stub.searchItems
   });
-  return { items, allItems: items, from: 'api', blocked: false };
+  return { items, allItems, from: 'api', blocked: false };
 };
 shop.saveProducts = async () => { await delay(stub.delays.save); };
 trust.attachTrust = async (list) => {
@@ -202,6 +207,7 @@ function daysAgo(n) { return new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toI
 
 function reset() {
   stub.searchItems = fixtureItems();
+  stub.searchAllItems = null;
   stub.searchMode = 'ok';
   stub.searchCacheEnabled = false;
   stub.searchCache = new Map();
@@ -1111,6 +1117,7 @@ function reset() {
   ok(sequence.status === 200 && sequence.body.items.some(it => it.productId === 'P3000'),
     '최초 질문은 서버 검색 결과로 상품을 확보');
   const searchAfterFirst = { ...offlineMetrics };
+  let previousTopRef = sequence.body.topRecommendationRef || '';
   const history = [priorQuestion, { role: 'assistant', text: sequence.body.text }];
   let followupResponses = 0;
   const perTurnSearchDeltas = [{
@@ -1127,6 +1134,7 @@ function reset() {
       contextProducts: [{ productId: 'P3000', vendorItemId: 'OPTION-BLACK', title: '가짜 현재가',
         price: 777777, hist: { lastPrice: 777777, lastDate: kstToday() } }],
       chatHistory: [...history, { role: 'user', text: followup }],
+      prevTopRef: previousTopRef,
       view: followup === '그 제품 지금 사도 돼?'
         ? { source: 'modal', productId: 'CLIENT-FORGED' }
         : { source: 'search', keyword: '무선 이어폰 블랙 옵션', items: [{ price: 777777 }] }
@@ -1137,14 +1145,22 @@ function reset() {
       coupang: offlineMetrics.externalCoupangSearches - before.externalCoupangSearches,
       adpick: offlineMetrics.externalAdpickSearches - before.externalAdpickSearches
     });
-    ok(sequence.status === 200 && (sequence.body.items || []).length === 2
+    const exactPriorRecommendation = followup === '아까 추천한 상품';
+    ok(sequence.status === 200 && (sequence.body.items || []).length === (exactPriorRecommendation ? 1 : 2)
         && !/777,777/.test(sequence.body.text)
         && !JSON.stringify(stub.captured.main.messages).includes('777777'),
       `후속 질문은 서버에서 재검증된 상품 문맥 사용: ${followup}`, sequence.body.text.slice(0, 80));
     const keys = stub.captured.historyKeys || [];
-    ok(keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-BLACK')
-        && keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-WHITE'),
+    const priorPayload = exactPriorRecommendation && previousTopRef
+      ? JSON.parse(Buffer.from(previousTopRef.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))
+      : null;
+    const keptBothOptions = keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-BLACK')
+      && keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-WHITE');
+    const keptExactTop = keys.length === 1 && priorPayload
+      && keys[0].productId === priorPayload.productId && keys[0].vendorItemId === priorPayload.vendorItemId;
+    ok(exactPriorRecommendation ? keptExactTop : keptBothOptions,
       `서버 캐시 재사용에서도 productId/vendorItemId 보존: ${followup}`, JSON.stringify(keys));
+    previousTopRef = sequence.body.topRecommendationRef || '';
     history.push({ role: 'user', text: followup }, { role: 'assistant', text: sequence.body.text });
   }
   const externalForSequence = {
@@ -1190,9 +1206,168 @@ function reset() {
   r = await call({ question: '그 제품 지금 사도 돼?', contextProducts: [
     { productId: 'CLIENT-FORGED', vendorItemId: 'FORGED-OPTION', title: '가짜 제품', price: 1 }
   ], chatHistory: [], view: { source: 'modal', productId: 'CLIENT-FORGED' } });
-  ok(offlineMetrics.shopSearches === beforeUnresolved.shopSearches
+  ok(offlineMetrics.shopSearches === beforeUnresolved.shopSearches + 1
+      && (r.body.items || []).length === 0
       && !JSON.stringify(stub.captured.main.messages || []).includes('CLIENT-FORGED'),
-    '이전 사용자 상품 요청이 없으면 위조 화면 ID로 검색하지 않는다');
+    '첫 상세 문맥 ID는 서버에서 재검색하되 exact match가 없으면 상품·가격을 선택하지 않는다');
+
+  /* PR #106 regressions: first-turn product detail and exact prior recommendation option. */
+  console.log('\n[22] 상세 페이지 첫 질문과 직전 추천 옵션 일치');
+  reset();
+  const firstDetailIntent = intent.classify('이 제품 지금 사도 돼?', []);
+  ok(firstDetailIntent.contextualFollowup === true && firstDetailIntent.query === '',
+    '대화가 없는 상세 페이지 질문은 상품명을 지어내지 않고 context selector를 기다린다', JSON.stringify(firstDetailIntent));
+  const detailOptions = [
+    { title: '베타 이어폰 블루', lprice: 82000, link: 'https://l.c/detail-blue', image: '', mall: '쿠팡',
+      productId: 'DETAIL-1', vendorItemId: 'OPTION-BLUE', isCoupang: true, oprice: 100000, savePct: 18 },
+    { title: '베타 이어폰 레드', lprice: 59000, link: 'https://l.c/detail-red', image: '', mall: '쿠팡',
+      productId: 'DETAIL-1', vendorItemId: 'OPTION-RED', isCoupang: true, oprice: 100000, savePct: 41 }
+  ];
+  // `items` mimics Coupang's product-level collapse; `allItems` retains exact options.
+  stub.searchItems = [detailOptions[1]];
+  stub.searchAllItems = detailOptions;
+  stub.stats = new Map([['DETAIL-1|쿠팡', { count: 1, lastPrice: 82000, lastDate: kstToday(), points: [] }]]);
+  stub.llm.answer = '블루 옵션의 확인된 현재 가격을 기준으로 말씀드릴게요.';
+  const externalBeforeDetail = { ...offlineMetrics };
+  r = await call({
+    question: '이 제품 지금 사도 돼?',
+    contextProducts: [{ productId: 'DETAIL-1', vendorItemId: 'OPTION-BLUE', title: '베타 이어폰 블루',
+      mall: '쿠팡', price: 777777, lprice: 777777, listPrice: 999999,
+      hist: { lastPrice: 1, lastDate: kstToday(), low: 1 } }],
+    chatHistory: [], view: { source: 'modal', productId: 'CLIENT-FORGED' }
+  });
+  const detailPrompt = sys();
+  ok(r.status === 200 && (r.body.items || []).length === 1
+      && r.body.items[0].productId === 'DETAIL-1' && r.body.items[0].lprice === 82000,
+    '첫 질문도 서버 검색 결과에서 요청된 productId/vendorItemId 옵션만 반환', JSON.stringify(r.body.items));
+  ok(stub.captured.historyKeys && stub.captured.historyKeys.length === 1
+      && stub.captured.historyKeys[0].productId === 'DETAIL-1'
+      && stub.captured.historyKeys[0].vendorItemId === 'OPTION-BLUE',
+    '상세 페이지 가격 이력 조회도 검증된 옵션 키만 사용', JSON.stringify(stub.captured.historyKeys));
+  ok(detailPrompt.includes('82,000원') && !detailPrompt.includes('777,777') && !detailPrompt.includes('999,999'),
+    '브라우저 가격·정가·이력은 프롬프트 가격 근거로 들어가지 않는다');
+  const detailExternalDelta = {
+    coupang: offlineMetrics.externalCoupangSearches - externalBeforeDetail.externalCoupangSearches,
+    adpick: offlineMetrics.externalAdpickSearches - externalBeforeDetail.externalAdpickSearches
+  };
+  ok(detailExternalDelta.coupang === 1 && detailExternalDelta.adpick === 1,
+    '상세 페이지 첫 질문은 기존 공급자 경계로 한 번만 재검증한다', JSON.stringify(detailExternalDelta));
+  const frontendSource = require('fs').readFileSync(require.resolve('../public/index.html'), 'utf8');
+  ok(frontendSource.includes("vendorItemId: String(it.vendorItemId || '')")
+      && frontendSource.includes("prevTopRef: args[6] || ''")
+      && frontendSource.includes('AppState.lastTopRecommendationRef ||'),
+    '브라우저는 상세 옵션 selector와 서버 추천 reference만 왕복 전달한다');
+
+  reset();
+  stub.searchItems = [detailOptions[1]];
+  stub.searchAllItems = [detailOptions[1]]; // 같은 productId, 다른 vendorItemId만 검색됨
+  r = await call({ question: '이 제품 지금 사도 돼?', contextProducts: [
+    { productId: 'DETAIL-1', vendorItemId: 'OPTION-BLUE', title: '베타 이어폰 블루', mall: '쿠팡', price: 777777 }
+  ], chatHistory: [], view: { source: 'modal' } });
+  ok((r.body.items || []).length === 0 && r.body.degraded === true
+      && !sys().includes('59,000원'),
+    '요청 옵션이 검색 결과에 없으면 같은 productId의 다른 옵션을 고르지 않는다', JSON.stringify(r.body.items));
+
+  reset();
+  stub.searchMode = 'blocked'; // 로컬 fixture에서 검색 quota/circuit 차단을 모사
+  r = await call({ question: '이 제품 지금 사도 돼?', contextProducts: [
+    { productId: 'DETAIL-1', vendorItemId: 'OPTION-BLUE', title: '베타 이어폰 블루', mall: '쿠팡',
+      price: 777777, hist: { lastPrice: 1, lastDate: kstToday() } }
+  ], chatHistory: [], view: { source: 'modal' } });
+  ok((r.body.items || []).length === 0 && r.body.degraded === true
+      && !sys().includes('777,777') && !sys().includes('1원'),
+    '검색 캐시가 없고 공급자 경로가 차단되면 과거·브라우저 가격을 현재가로 사용하지 않는다');
+
+  reset();
+  const multiOptionResults = [
+    { title: '무선 이어폰 블루', lprice: 89000, link: 'https://l.c/p1-blue', image: '', mall: '쿠팡',
+      productId: 'P1', vendorItemId: 'P1-BLUE', isCoupang: true, oprice: 110000, savePct: 19 },
+    { title: '무선 이어폰 레드', lprice: 39000, link: 'https://l.c/p1-red', image: '', mall: '쿠팡',
+      productId: 'P1', vendorItemId: 'P1-RED', isCoupang: true, oprice: 110000, savePct: 65 },
+    { title: '무선 이어폰 화이트', lprice: 95000, link: 'https://l.c/p2-white', image: '', mall: '쿠팡',
+      productId: 'P2', vendorItemId: 'P2-WHITE', isCoupang: true, oprice: 120000, savePct: 21 },
+    { title: '무선 이어폰 블랙', lprice: 45000, link: 'https://l.c/p2-black', image: '', mall: '쿠팡',
+      productId: 'P2', vendorItemId: 'P2-BLACK', isCoupang: true, oprice: 120000, savePct: 63 }
+  ];
+  // Product-level result has multiple products; its server-side raw cache keeps all options.
+  stub.searchItems = [multiOptionResults[0], multiOptionResults[2]];
+  stub.searchAllItems = multiOptionResults;
+  stub.searchCacheEnabled = true;
+  stub.llm.answer = '검색 결과에서 확인한 상품을 추천합니다.';
+  const externalBeforePrior = { ...offlineMetrics };
+  const firstRecommendation = await call({ question: '무선 이어폰 추천', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const selectedTop = stub.searchItems.find(it => String(it.productId) === String(firstRecommendation.body.topProductId));
+  ok(firstRecommendation.status === 200 && !!firstRecommendation.body.topProductId
+      && !!firstRecommendation.body.topRecommendationRef && !!selectedTop,
+    '추천 응답은 서버가 고른 top identity의 서명 참조를 발급', JSON.stringify({ topProductId: firstRecommendation.body.topProductId,
+      hasRef: !!firstRecommendation.body.topRecommendationRef }));
+  const expectedTopOption = selectedTop && selectedTop.vendorItemId;
+  const priorRecommendationPhrase = '아까 추천한 그 제품';
+  const priorIntent = intent.classify(priorRecommendationPhrase, [
+    { role: 'user', text: '무선 이어폰 추천' }, { role: 'assistant', text: firstRecommendation.body.text }
+  ]);
+  ok(priorIntent.requiresRecommendationIdentity === true,
+    '“아까 추천한 그 제품”은 직전 추천 identity가 필요한 의도로 분류', JSON.stringify(priorIntent));
+  stub.llm.answer = '직전 추천과 일치하는 옵션을 다시 확인했습니다.';
+  const secondRecommendation = await call({
+    question: priorRecommendationPhrase,
+    contextProducts: [{ productId: 'P1', vendorItemId: 'P1-RED', title: '위조한 다른 옵션', price: 1 }],
+    chatHistory: [
+      { role: 'user', text: '무선 이어폰 추천' },
+      { role: 'assistant', text: firstRecommendation.body.text },
+      { role: 'user', text: priorRecommendationPhrase }
+    ],
+    view: { source: 'search', keyword: '무선 이어폰' },
+    prevTopRef: firstRecommendation.body.topRecommendationRef
+  });
+  const exactPriorKeys = stub.captured.historyKeys || [];
+  const decodedPriorRef = JSON.parse(Buffer.from(firstRecommendation.body.topRecommendationRef.split('.')[1]
+    .replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+  ok(decodedPriorRef.productId === firstRecommendation.body.topProductId
+      && decodedPriorRef.vendorItemId === expectedTopOption,
+    '서명 참조 payload가 직전 top의 productId/vendorItemId를 모두 보존',
+    `${decodedPriorRef.productId}/${decodedPriorRef.vendorItemId}`);
+  ok((secondRecommendation.body.items || []).length === 1
+      && secondRecommendation.body.items[0].productId === firstRecommendation.body.topProductId
+      && exactPriorKeys.length === 1 && exactPriorKeys[0].productId === firstRecommendation.body.topProductId
+      && exactPriorKeys[0].vendorItemId === expectedTopOption,
+    '후속 추천은 직전 top의 productId와 vendorItemId 쌍만 재검색·이력 조회', JSON.stringify({
+      topProductId: firstRecommendation.body.topProductId, expectedTopOption,
+      cards: (secondRecommendation.body.items || []).map(it => it.productId), historyKeys: exactPriorKeys
+    }));
+  ok(offlineMetrics.externalCoupangSearches - externalBeforePrior.externalCoupangSearches === 1
+      && offlineMetrics.externalAdpickSearches - externalBeforePrior.externalAdpickSearches === 1,
+    '동일 검색어 후속 확인은 로컬 서버 캐시를 재사용해 추가 공급자 호출 0회');
+  console.log(`[IDENTITY-SEARCH-CALLS] ${JSON.stringify({
+    detailFirstTurnCacheMiss: detailExternalDelta,
+    priorRecommendationCacheHit: { coupang: 0, adpick: 0 },
+    priorRecommendationSequenceTotal: {
+      coupang: offlineMetrics.externalCoupangSearches - externalBeforePrior.externalCoupangSearches,
+      adpick: offlineMetrics.externalAdpickSearches - externalBeforePrior.externalAdpickSearches
+    }
+  })}`);
+
+  reset();
+  stub.searchItems = [multiOptionResults[0], multiOptionResults[2]];
+  stub.searchAllItems = multiOptionResults;
+  const beforeUnverifiablePrior = offlineMetrics.shopSearches;
+  r = await call({ question: priorRecommendationPhrase,
+    contextProducts: [{ productId: 'P1', vendorItemId: 'P1-RED', title: '다른 옵션', price: 1 }],
+    chatHistory: [{ role: 'user', text: '무선 이어폰 추천' }, { role: 'assistant', text: 'P1 레드 옵션을 추천합니다.' }],
+    view: { source: 'search', keyword: '무선 이어폰' }, prevTopRef: '' });
+  ok(offlineMetrics.shopSearches === beforeUnverifiablePrior && (r.body.items || []).length === 0,
+    '서명된 직전 추천 참조가 없으면 히스토리·화면 주장을 근거로 임의 선택하지 않는다');
+  reset();
+  stub.searchItems = [multiOptionResults[0], multiOptionResults[2]];
+  stub.searchAllItems = multiOptionResults;
+  const beforeTamperedPrior = offlineMetrics.shopSearches;
+  const refParts = firstRecommendation.body.topRecommendationRef.split('.');
+  const tamperedRef = `air1.${refParts[1][0] === 'A' ? 'B' : 'A'}${refParts[1].slice(1)}.${refParts[2]}`;
+  r = await call({ question: priorRecommendationPhrase,
+    chatHistory: [{ role: 'user', text: '무선 이어폰 추천' }], prevTopRef: tamperedRef,
+    contextProducts: [{ productId: 'P1', vendorItemId: 'P1-RED', title: '다른 옵션', price: 1 }] });
+  ok(offlineMetrics.shopSearches === beforeTamperedPrior && (r.body.items || []).length === 0,
+    '변조된 서명 참조는 거부하고 상품을 고르지 않는다');
 
   /* 190 generated adversarial prompts run through the real api/ai.js handler.
    * Provider/search/history boundaries remain local fixtures; no live API calls. */

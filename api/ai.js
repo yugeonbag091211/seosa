@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { readBody, applyCors, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { identify } = require('./_auth');
@@ -134,6 +135,83 @@ function safeText(v, n) {
     .slice(0, n);
 }
 
+/*
+ * A signed, short-lived reference to the exact item selected in the previous
+ * answer. It carries identity and the server search phrase only; it is never a
+ * price fact. Browser-supplied IDs below remain selectors and must be matched
+ * against a server search/cache result before they can ground an answer.
+ */
+const AI_RECOMMENDATION_REF_TTL_MS = 24 * 60 * 60 * 1000;
+function aiRecommendationSigningKey() {
+  const base = process.env.AUTH_SECRET || process.env.SUPABASE_SECRET_KEY;
+  if (!base) return null;
+  return crypto.createHmac('sha256', String(base))
+    .update('seosa-ai-recommendation-ref-v1').digest();
+}
+function b64url(value) {
+  return Buffer.from(value).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+function unb64url(value) {
+  return Buffer.from(String(value).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+}
+function createRecommendationRef(item, query) {
+  const productId = safeText(item && item.productId, 60);
+  const vendorItemId = safeText(item && item.vendorItemId, 60);
+  const searchQuery = safeText(query, 40);
+  const key = aiRecommendationSigningKey();
+  if (!key || !productId || !searchQuery) return '';
+  // Coupang option identity is incomplete without vendorItemId.
+  if ((item && item.isCoupang === true || String(item && item.mall || '') === '쿠팡') && !vendorItemId) return '';
+  const payload = b64url(JSON.stringify({ productId, vendorItemId, query: searchQuery, issuedAt: Date.now() }));
+  const signature = b64url(crypto.createHmac('sha256', key).update(payload).digest());
+  return `air1.${payload}.${signature}`;
+}
+function verifyRecommendationRef(value) {
+  const token = String(value || '').slice(0, 1024);
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== 'air1' || !/^[A-Za-z0-9_-]+$/.test(parts[1])
+      || !/^[A-Za-z0-9_-]+$/.test(parts[2])) return null;
+  try {
+    const key = aiRecommendationSigningKey();
+    if (!key) return null;
+    const expected = crypto.createHmac('sha256', key).update(parts[1]).digest();
+    const supplied = unb64url(parts[2]);
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
+    const data = JSON.parse(unb64url(parts[1]).toString('utf8'));
+    const issuedAt = Number(data && data.issuedAt);
+    const productId = safeText(data && data.productId, 60);
+    const vendorItemId = safeText(data && data.vendorItemId, 60);
+    const query = safeText(data && data.query, 40);
+    if (!productId || !query || !Number.isFinite(issuedAt)
+        || issuedAt > Date.now() + 60_000
+        || Date.now() - issuedAt > AI_RECOMMENDATION_REF_TTL_MS) return null;
+    return { productId, vendorItemId, query };
+  } catch (e) {
+    return null;
+  }
+}
+function contextIdentitySelector(contextProducts) {
+  if (!Array.isArray(contextProducts) || contextProducts.length !== 1) return null;
+  const raw = contextProducts[0];
+  if (!raw || typeof raw !== 'object'
+      || !Object.prototype.hasOwnProperty.call(raw, 'vendorItemId')) return null;
+  const productId = safeText(raw.productId, 60);
+  const vendorItemId = safeText(raw.vendorItemId, 60);
+  const query = safeText(raw.title, MAX_TITLE_LEN);
+  if (!productId || !query) return null;
+  return { productId, vendorItemId, query };
+}
+function identityMatches(item, selector) {
+  if (!item || !selector) return false;
+  const productId = safeText(item.productId, 60);
+  const vendorItemId = safeText(item.vendorItemId, 60);
+  if (!productId || productId !== selector.productId || vendorItemId !== selector.vendorItemId) return false;
+  // Never let a missing Coupang option ID collapse to the product-level ID.
+  if (item.isCoupang && !vendorItemId) return false;
+  return true;
+}
+
 /** 유한한 정수만 통과. 프론트가 보낸 값을 그대로 믿지 않는다. */
 function num(v) {
   const n = Math.round(Number(v));
@@ -177,6 +255,7 @@ function normItem(raw) {
     mall: safeText(p.mall, 30),
     price
   };
+  if (p.isCoupang === true) out.isCoupang = true;
   const vendorItemId = safeText(p.vendorItemId, 60);
   if (vendorItemId) out.vendorItemId = vendorItemId;
 
@@ -1092,7 +1171,7 @@ function shouldSearch(query, view, items) {
  *   ok=true 에 items=[] 는 "찾아봤는데 없었다"이다. 둘을 뭉뚱그리면
  *   AI 가 "그런 상품은 없습니다"라고 단정하게 된다 — 확인하지 못한 것뿐인데.
  */
-async function searchProducts(query, budgetMs) {
+async function searchProducts(query, budgetMs, identitySelector) {
   /*
    * 지연 require.
    *
@@ -1124,20 +1203,30 @@ async function searchProducts(query, budgetMs) {
     const { items, allItems, from, blocked } = searched.value || {};
 
     const list = Array.isArray(items) ? items : [];
+    // Coupang's public list may collapse vendor options by productId. Use the
+    // server-authored uncollapsed set when an exact option selector is present.
+    const identityPool = identitySelector && Array.isArray(allItems) && allItems.length
+      ? allItems : list;
     const currentSource = source => source === 'api' || source === 'cache';
     // searchAll combines independent suppliers. Trust each server-authored _source
     // separately; stale-cache is useful for historical display elsewhere, but it is
     // not evidence for a current-price answer in this AI path.
-    const currentItems = list.filter(it => {
+    const currentItems = (identitySelector ? identityPool : list).filter(it => {
       const itemSource = it && it._source;
-      return currentSource(itemSource || from);
+      return currentSource(itemSource || from)
+        && (!identitySelector || identityMatches(it, identitySelector));
     });
     if (!currentItems.length && (blocked || from === 'none')) {
       return { ok: false, items: [], reason: 'blocked' };
     }
     // A successful fresh search with zero matches is a confirmed empty result,
     // distinct from a failed search or a stale-only payload.
-    if (!list.length && currentSource(from)) {
+    if (identitySelector && currentItems.length !== 1) {
+      // A product match without its exact option (or duplicate exact rows) is
+      // not enough to make a current-price claim.
+      return { ok: false, items: [], reason: currentItems.length ? 'identity-ambiguous' : 'identity-mismatch' };
+    }
+    if (!identitySelector && !list.length && currentSource(from)) {
       return { ok: true, items: [], reason: from };
     }
     if (!currentItems.length) {
@@ -1202,6 +1291,7 @@ function fromSearchResult(it) {
     mall: (it && it.mallLabel) || (it && it.mall) || '쿠팡',
     price
   };
+  if (it && it.isCoupang === true) o.isCoupang = true;
   // 쿠팡의 옵션 식별자를 보존한다. 같은 상품 페이지라도 옵션별 가격 기록은
   // 분리되어야 하므로 price_history 키 생성 전에 이 값을 잃으면 안 된다.
   const vendorItemId = safeText(it && it.vendorItemId, 60);
@@ -2735,7 +2825,10 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: '무료 AI provider 환경변수 없음', text: '' });
   }
 
-  const { question, chatHistory, profile, view, prevTop: prevTopRaw } = readBody(req);
+  const body = readBody(req);
+  const { question, chatHistory, profile, view, prevTop: prevTopRaw } = body;
+  const contextProducts = body && body.contextProducts;
+  const previousRecommendation = verifyRecommendationRef(body && body.prevTopRef);
 
   /*
    * 직전 응답의 1위 상품 id.
@@ -2934,7 +3027,27 @@ module.exports = async function handler(req, res) {
      * 하나라도 아니면 호출하지 않는다. 잡담에 쿠팡 API 를 쓰지 않는다.
      */
     searchState = 'none';
-    const query = (cls && cls.query) || '';
+    let query = (cls && cls.query) || '';
+    let identitySelector = null;
+    if (cls && cls.requiresRecommendationIdentity) {
+      // “아까 추천한 그 제품” needs proof of the exact previous server-picked
+      // option. Chat text and browser context are claims, not recommendation history.
+      if (previousRecommendation) {
+        identitySelector = previousRecommendation;
+        query = previousRecommendation.query;
+      } else {
+        query = '';
+      }
+    } else if (cls && cls.contextualFollowup && !query) {
+      // A first-turn product-detail question can use the browser identity only
+      // to locate a server result. Price/history/option facts from that payload
+      // are never read. Multiple or incomplete context rows fail closed.
+      const selectedContext = contextIdentitySelector(contextProducts);
+      if (selectedContext) {
+        identitySelector = selectedContext;
+        if (!query) query = selectedContext.query;
+      }
+    }
 
     /*
      * 사용자가 말한 조건을 모은다.
@@ -3050,7 +3163,8 @@ module.exports = async function handler(req, res) {
     };
 
     if (intent && needsShopContext(intent) && query) {
-      const found = await searchProducts(query, Math.max(1, budget.remaining() - ANSWER_RESERVE_MS));
+      const found = await searchProducts(query,
+        Math.max(1, budget.remaining() - ANSWER_RESERVE_MS), identitySelector);
       if (!found.ok) {
         searchState = 'failed';
       } else if (!found.items.length) {
@@ -3798,6 +3912,11 @@ module.exports = async function handler(req, res) {
     if (followups.length) payload.followups = followups;
     if (decision && decision.top && decision.top.productId) {
       payload.topProductId = decision.top.productId;
+      // _decision intentionally exposes a minimal display contract ({ref, productId}).
+      // Resolve its ref back to the ranked server item so vendorItemId is preserved.
+      const selectedTop = items.find(it => it && it.ref === decision.top.ref);
+      const recommendationRef = createRecommendationRef(selectedTop, query);
+      if (recommendationRef) payload.topRecommendationRef = recommendationRef;
     }
     if (decision && decision.change) {
       payload.recommendationChange = {

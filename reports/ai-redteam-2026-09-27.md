@@ -38,7 +38,8 @@
 ## PR #106 후속 대화와 검색 호출 보강
 
 - 로컬 코드에서 확인한 쿠팡·ADPICK 경로는 둘 다 검색어 키 기준 6시간 서버 캐시를 먼저 읽는다. 캐시 payload는 공급자 응답을 통해 만들어지고, 쿠팡 `productId`와 `vendorItemId`가 보존된다. `price_history`는 과거 관측이며 현재 가격의 대체 근거가 아니므로 재사용하지 않는다. Supabase 운영 데이터는 읽거나 쓰지 않았다.
-- `이 중에서 가장 싼 것`, `아까 추천한 상품`, `그 제품 지금 사도 돼?`는 이전의 명확한 **사용자 검색 요청**으로만 검색어를 연결한다. assistant 발화, 브라우저 `contextProducts`, `view`, 가격·이력·옵션 필드는 검색 근거로 쓰지 않는다. 연결된 검색어는 기존 서버 캐시/공급자 경로를 통과하고 검색 결과의 productId·vendorItemId를 가격 이력 키까지 유지한다. 대상이 될 과거 사용자 검색이 없으면 임의 상품 검색을 하지 않는다. 더 넓고 모호한 `좀 더 싼 거`는 기존 LLM 문맥 분류 경로를 보존한다.
+- `이 중에서 가장 싼 것`과 일반 후속 질문은 이전의 명확한 **사용자 검색 요청**으로만 검색어를 연결한다. 첫 상세 페이지 질문처럼 대화가 없을 때는 브라우저 문맥에서 `productId`, `vendorItemId`, 상품명만 selector로 읽어 기존 서버 검색 경로를 호출하고, 서버 응답의 미압축 옵션 집합에서 ID 쌍이 정확히 한 건 일치할 때만 사용한다. 브라우저 가격·정가·할인·이력은 여전히 근거로 쓰지 않는다. 같은 productId의 다른 vendorItemId, 검색 차단, 또는 ID 미확인 시 상품을 선택하지 않는다.
+- `아까 추천한 그 제품`은 assistant 대화 문장이나 브라우저 상품 목록을 추천 이력으로 신뢰하지 않는다. 서버가 이전 응답의 실제 ranked top 상품에서 `productId + vendorItemId + 검색어`를 뽑아 기존 서버 전용 서명 키(AUTH_SECRET, 없으면 SUPABASE_SECRET_KEY에서 파생)로 24시간 유효한 HMAC reference를 발급한다. 프론트는 이 opaque reference만 다음 요청에 돌려주며, 서버는 서명·만료를 확인한 뒤 같은 검색어의 `api|cache` 원본 옵션 집합에서 ID 쌍을 다시 일치시킨다. 참조가 없거나 변조됐거나 정확한 옵션이 현재 검색 결과에 없으면 임의 후보를 고르지 않는다. 이전 대화는 DB에 저장하지 않는다.
 - AI 가격 답변에서는 항목별 `_source=api|cache`만 현재 가격 근거로 허용한다. `stale-cache`만 있으면 상품·가격을 답변 근거에서 제외한다. 쿠팡이 stale-cache이거나 차단돼도 ADPICK에 신선한 API 응답이 있으면 그 항목만 남긴다. 따라서 API가 차단되거나 호출 한도를 다 써서 stale 값만 남는 경우 과거 값을 오늘 가격으로 올리지 않는다.
 
 ### AI 요청당 외부 검색 호출 — 로컬 fixture replay
@@ -56,6 +57,7 @@
 세 후속 질문은 `3/3`개 성공했고, 캐시가 있는 대화에서 공급자 호출은 공급자별 `3 → 1`회로 줄었다. `searchAll`/서버 캐시 조회는 네 요청 모두에서 실행되지만 외부 검색은 최초 cache miss에만 발생했다. 운영에서는 두 캐시 TTL이 끝났거나 캐시가 없으면 기존 quota gate를 거쳐 공급자 호출을 시도하며, 차단/한도 소진으로 stale 값만 돌아오면 현재가 응답은 거부한다. 이번 횟수는 전부 로컬 모의 값이고 실제 Coupang·ADPICK 호출은 0회다.
 
 - 새 회귀 테스트는 productId는 같고 `vendorItemId`가 다른 옵션 둘을 캐시에 둬 매 요청의 `price_history` 키를 검사한다. 위조된 브라우저 가격·이력은 응답 프롬프트에 들어가지 않는다. stale-only 및 stale Coupang + fresh ADPICK 혼합 결과도 각각 검증한다.
+- 추가된 상세 페이지 첫 질문 fixture에서는 cache miss 때 기존 `searchAll` 경계를 공급자별 1회씩 호출하고, 요청 옵션이 서버의 원본 결과와 일치할 때만 현재가를 내보낸다. 같은 키의 cache hit 직전 추천 재확인은 추가 공급자 호출 `0 / 0`이며, `price_history` key 하나만 직전 top의 `productId + vendorItemId`와 일치한다. 옵션 불일치·차단·누락 또는 변조된 reference는 전부 후보를 비운다.
 - Supabase `products`의 오래된 현재가 필드를 추가 경로로 읽지 않았다. 서버의 공식 검색 응답 캐시가 이미 현재 조회용 경로이고, `price_history`는 이력 전용이기 때문이다. ID/옵션 동일성은 검색 payload에서 이어지는 `productId + vendorItemId` 조합으로 확인한다.
 
 ## 공격 실행 결과
@@ -82,7 +84,7 @@
 |---|---:|
 | `node scripts/test-ai-redteam.js` | 93 PASS / 0 FAIL |
 | `node scripts/eval-adversarial.js` | 146/146 offline 평가 PASS; 실제 LLM 품질은 unavailable |
-| `node scripts/test-ai-pipeline.js` | 371 PASS / 0 FAIL; generated handler attacks 190/190; 후속 질문 3/3 |
+| `node scripts/test-ai-pipeline.js` | 386 PASS / 0 FAIL; generated handler attacks 190/190; 기존 후속 질문 3/3 및 상세/직전 옵션 회귀 PASS |
 | `node scripts/test-guest.js` | 80 PASS / 0 FAIL; 모달에서 브라우저 상품·가격값 거부 |
 | `node scripts/test-ai.js` | 179 PASS / 0 FAIL |
 | `node scripts/test-intent-routing.js` | 26 PASS / 0 FAIL |
@@ -100,6 +102,7 @@
 
 - `api/ai.js`
 - `api/_intent.js`
+- `public/index.html` (비시각적 AI 요청 문맥 필드 전달)
 - `scripts/test-ai-pipeline.js`
 - `scripts/test-guest.js`
 - `scripts/test-ai.js`
