@@ -112,6 +112,7 @@ function makeRows(mall, n, withKeyword = true) {
   /* ── 2. 실패 사유 분류 ────────────────────────────────────── */
   console.log('[2] 실패 사유 분류(categorizeFailure)');
   eq('쿠팡 차단', categorizeFailure('쿠팡 차단: Access denied'), 'blocked');
+  eq('운영 로그의 쿠팡 HTTP 401 차단', categorizeFailure('쿠팡 API 401: {'), 'blocked');
   eq('ADPICK 차단 문구(중단)', categorizeFailure('호출 중단 중 (12초 남음): HTTP 429'), 'blocked');
   eq('예산 소진', categorizeFailure('실행당 호출 예산 400회 소진'), 'budget');
   eq('오래된 캐시', categorizeFailure('오래된 캐시 — 오늘 가격으로 쓸 수 없음'), 'staleCache');

@@ -66,7 +66,7 @@ require.cache[supabasePath].loaded = true;
 require.cache[supabasePath].exports = fakeSupabase;
 
 const { recordPrices } = require('../api/_shop');
-const { pickOption, runMallCollection } = require('./collect-all-prices');
+const { pickOption, runMallCollection, historyRowMatchesTargetOption } = require('./collect-all-prices');
 
 /* ------------------------------------------------------------------ */
 let pass = 0, fail = 0;
@@ -102,6 +102,18 @@ function item(pid, itemId, vid, price) {
 /* ================================================================== *
  *  A. pickOption — 순수 판정
  * ================================================================== */
+console.log('=== A0. 오늘 기록 조회도 현재 옵션 ID 를 확인한다 ===\n');
+const historyTarget = { product_id: 'H1', mall: '쿠팡', vendor_item_id: 'wanted-option' };
+eq('[H1] 같은 product_id·vendorItemId 는 오늘 기록으로 인정한다',
+  historyRowMatchesTargetOption({ product_id: 'H1', mall: '쿠팡', vendor_item_id: 'wanted-option' }, historyTarget), true);
+eq('[H1] 다른 vendorItemId 의 오늘 기록은 현재 옵션 가격으로 보지 않는다',
+  historyRowMatchesTargetOption({ product_id: 'H1', mall: '쿠팡', vendor_item_id: 'old-option' }, historyTarget), false);
+eq('[H1] target vendorItemId 를 모르면 쿠팡 이력을 옵션 일치로 간주하지 않는다',
+  historyRowMatchesTargetOption({ product_id: 'H1', mall: '쿠팡', vendor_item_id: 'old-option' },
+    { product_id: 'H1', mall: '쿠팡', vendor_item_id: '' }), false);
+eq('[H1] ADPICK 은 product_id 가 판매 단위라 vendorItemId 없이 기록을 인정한다',
+  historyRowMatchesTargetOption({ product_id: 'A1', mall: 'ADPICK', vendor_item_id: null },
+    { product_id: 'A1', mall: 'ADPICK', vendor_item_id: '' }), true);
 console.log('\n=== A. pickOption (순수 판정) ===\n');
 
 /* Test 1 — 같은 productId, 타겟 vid A, 응답 vid B → 채택 금지 */
