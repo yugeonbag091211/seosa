@@ -2,15 +2,11 @@
 /*
  * 쿠팡 파트너스 API 단일 통로.
  *
- * 쿠팡 공식 한도 (2026-08 이용제한 안내 기준)
- *   검색 API      1분당  50회
- *   리포트 API    1시간당 500회
- *   모든 API 합계 1분당 100회
- *   링크 생성     1분당  50회
- *   → 경고 3회 누적이면 이용 제한
+ * 쿠팡 파트너스 공식 가이드(2024-12-16): Search 시간당 10회.
+ * 이 저장소의 쿠팡 호출은 모두 Search 경로이므로 전역 DB 게이트가
+ * 모든 인스턴스와 호출자 합계에 이 한도를 적용한다.
  *
- * 경고를 다시 받으면 복구가 어려우므로 공식 한도의 40%(기본 분당 20회)에서
- * 스스로 멈춘다. 쿠팡을 부르는 코드는 반드시 searchCoupang()만 쓸 것.
+ * 쿠팡을 부르는 코드는 반드시 searchCoupang()만 쓸 것.
  * 직접 fetch 하면 캐시 / 전역 카운터 / 차단 감지를 전부 우회한다.
  *
  * 방어선은 네 겹이다.
@@ -25,6 +21,7 @@
 const crypto = require('crypto');
 const supabase = require('./_supabase');
 const { parsePrice, coupangItemIds } = require('./_price');
+const { isSameKstDate } = require('./_cache-date');
 
 // 테스트에서만 다른 호스트를 물린다. 운영에서는 절대 설정하지 말 것.
 const HOST = process.env.COUPANG_API_HOST || 'https://api-gateway.coupang.com';
@@ -35,8 +32,9 @@ function envNum(name, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** 자체 상한. 쿠팡 공식 50회/분의 40%. */
+/** 로컬 보호 상한. 공급자 전체 한도는 전역 DB 게이트가 적용한다. */
 const MAX_PER_MIN = Math.min(envNum('COUPANG_MAX_PER_MIN', 20), 40);
+const MAX_PER_HOUR = 10;
 /** 호출 사이 최소 간격. 순간적으로 몰리는 걸 막는다. */
 const MIN_GAP_MS = envNum('COUPANG_MIN_GAP_MS', 1200);
 /** 캐시 수명. 상품 가격은 하루 단위로 봐도 충분하다. */
@@ -105,11 +103,24 @@ const TIMEOUT_MS = envNum('COUPANG_TIMEOUT_MS', 8000);
 const COUPANG_MAX_LIMIT = 10;
 const FETCH_LIMIT = Math.min(envNum('COUPANG_FETCH_LIMIT', COUPANG_MAX_LIMIT), COUPANG_MAX_LIMIT);
 
+function shouldDisableGlobalGateForTest(flag, host = HOST) {
+  if (flag !== '1') return false;
+  try {
+    const url = new URL(host);
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && ['127.0.0.1', 'localhost'].includes(url.hostname.toLowerCase());
+  } catch (e) {
+    return false;
+  }
+}
+const DISABLE_GLOBAL_GATE_FOR_LOCAL_TEST =
+  shouldDisableGlobalGateForTest(process.env.COUPANG_DISABLE_GLOBAL_GATE, HOST);
+
 /** 응답 종류별 호출 중단 시간(분). */
 const COOLDOWN_MIN = {
   http429: 15,   // 명시적 레이트리밋 — 넉넉히 쉰다
-  http403: 60,   // 이용 제한 / 권한 거부
-  http401: 60,   // 서명 실패. 재시도해도 똑같이 실패한다
+  http403: 1440, // 이용 제한 / 권한 거부 — 공식 API 이용 제한 복구 시간
+  http401: 1440, // 인증 거부/계정 제한 — 재시도로 차단 시간을 반복하지 않는다
   httpOther: 5,
   rcode: 60,     // rCode 차단 응답
   htmlDenied: 30,// HTTP 200 인데 본문이 차단 안내 HTML
@@ -138,15 +149,13 @@ const state = {
   /*
    * 전역 카운터/차단 상태(Supabase) 사용 여부.
    *
-   * 기본은 켜짐. 끄는 경우는 두 가지다.
-   *   - 스키마가 아직 안 올라간 환경 (자동으로 false 가 된다)
-   *   - 로컬 개발/테스트 (COUPANG_DISABLE_GLOBAL_GATE=1)
+   * 운영에서는 항상 켜 둔다. 스키마 누락이나 Supabase 오류도 호출 허가 실패로
+   * 처리해 제한을 우회하지 않는다. 단, 로컬 mock 호스트에서만 테스트 스위치를 허용한다.
    *
-   * 로컬 스위치가 필요한 이유: scripts/dev-server.js 는 운영 Supabase 를 그대로
-   * 본다. 로컬에서 차단 응답을 한 번 받으면 coupang_api_state 에 전역 차단이
-   * 기록돼서 운영 사이트의 검색까지 같이 멈춘다.
+   * COUPANG_DISABLE_GLOBAL_GATE 는 loopback mock 호스트에서만 적용한다.
+   * 운영 API 호스트에서는 스키마 오류·DB 장애 때도 fail-closed 로 제한을 지킨다.
    */
-  dbGate: process.env.COUPANG_DISABLE_GLOBAL_GATE !== '1',
+  dbGate: !DISABLE_GLOBAL_GATE_FOR_LOCAL_TEST,
   dbGateWarned: false,
   totalCalls: 0,
   totalCacheHits: 0,
@@ -219,8 +228,8 @@ function reserveSlot(minGapMs, maxWaitMs) {
 
 /* ------------------------------------------------------------------ *
  *  전역 카운터 / 차단 상태 (Supabase)
- *  DB가 없거나 스키마가 아직 안 올라갔으면 로컬 리미터만으로 계속 간다.
- *  (검색 기능 자체를 죽이지 않는 게 우선)
+ *  허가 확인에 실패하면 호출을 진행하지 않는다. 제공자 제한을 넘기는
+ *  로컬 리미터 폴백은 운영에서 허용하지 않는다.
  * ------------------------------------------------------------------ */
 /**
  * 다시 시도해도 소용없는 실패인가?
@@ -231,8 +240,7 @@ const { classifyDbError, KIND: DB_KIND } = require('./_dberror');
 /*
  * ★ "schema cache" 낱말만으로 판정하지 않는다 (2026-09-13 감사).
  *   PostgREST 는 DB 에 잠깐 못 붙을 때도 "Could not query the database for the schema
- *   cache" 라고 답한다. 그걸 영구 실패로 읽으면 전역 호출 카운터가 이 프로세스가 끝날
- *   때까지 꺼지고, 쿠팡 분당 한도를 인스턴스마다 따로 세게 된다.
+ *   cache" 라고 답한다. 오류 분류는 경고 문구에만 쓰며, 카운터는 끄지 않는다.
  */
 function permanentGateFailure(msg) {
   const info = classifyDbError(msg);
@@ -240,7 +248,7 @@ function permanentGateFailure(msg) {
 }
 
 async function dbAcquire(source, keyword) {
-  if (!state.dbGate) return { allowed: true, callId: null, reason: '', degraded: true };
+  if (!state.dbGate) return { allowed: true, callId: null, reason: '로컬 mock API 테스트', degraded: true };
   try {
     const { data, error } = await supabase.rpc('coupang_acquire', {
       max_per_min: MAX_PER_MIN, src: String(source || ''), kw: String(keyword || '')
@@ -248,6 +256,7 @@ async function dbAcquire(source, keyword) {
     if (error) throw new Error(error.message);
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error('coupang_acquire 응답 없음');
+    if (row.allowed && !row.call_id) throw new Error('coupang_acquire 허가에 호출 예약 ID가 없습니다');
     return {
       allowed: !!row.allowed,
       callId: row.call_id || null,
@@ -256,15 +265,14 @@ async function dbAcquire(source, keyword) {
     };
   } catch (e) {
     if (permanentGateFailure(e.message)) {
-      state.dbGate = false;
       if (!state.dbGateWarned) {
         state.dbGateWarned = true;
-        console.warn(`[coupang] 전역 카운터 없음 — supabase/schema.sql을 Supabase SQL Editor에서 실행하세요. (${e.message})`);
+        console.warn(`[coupang] 전역 호출 게이트 확인 실패 — 쿠팡 검색 호출을 거부합니다. 적용 마이그레이션을 확인하세요. (${e.message})`);
       }
     } else {
-      console.warn(`[coupang] 전역 카운터 조회 실패(이번 호출은 로컬 한도로 진행): ${e.message}`);
+      console.warn('[coupang] 전역 카운터 조회 실패 — 안전을 위해 이번 호출을 거부합니다: ' + e.message);
     }
-    return { allowed: true, callId: null, reason: '', degraded: true };
+    return { allowed: false, callId: null, reason: '전역 쿠팡 호출 허가 확인 실패', degraded: true };
   }
 }
 
@@ -308,6 +316,7 @@ async function readCache(keyword) {
       items: collapseOptions(allItems),
       allItems,
       limit: data.req_limit || 0,
+      isTodayKst: isSameKstDate(data.fetched_at),
       ageMs: Date.now() - new Date(data.fetched_at).getTime()
     };
   } catch (e) {
@@ -487,7 +496,7 @@ async function searchCoupang(keyword, opts = {}) {
 
   // 1) 캐시 — 여기서 끝나면 쿠팡 API 호출은 0회다.
   const cached = useCache ? await readCache(kw) : null;
-  if (cached && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
+  if (cached && cached.isTodayKst && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
     state.totalCacheHits++;
     log(source, kw, 'CACHE', `age=${Math.round(cached.ageMs / 1000)}s items=${cached.items.length}`);
     return { items: cached.items.slice(0, limit), allItems: (cached.allItems || cached.items).slice(0, limit), error: null, from: 'cache', blocked: false };
@@ -655,6 +664,7 @@ function localStats() {
   const now = Date.now();
   return {
     maxPerMin: MAX_PER_MIN,
+    maxPerHour: MAX_PER_HOUR,
     minGapMs: MIN_GAP_MS,
     cacheTtlMs: CACHE_TTL_MS,
     inWindow: state.window.filter(t => t > now - 60000).length,
@@ -693,6 +703,6 @@ async function pruneLog(keepDays = 7) {
 module.exports = {
   searchCoupang, collapseOptions, isBlocked, localStats, globalUsage, pruneLog,
   // 전역 카운터 영구 실패 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
-  permanentGateFailure,
-  MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
+  permanentGateFailure, shouldDisableGlobalGateForTest, COOLDOWN_MIN,
+  MAX_PER_MIN, MAX_PER_HOUR, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };

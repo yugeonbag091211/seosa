@@ -5,7 +5,7 @@
 --  schema.sql 은 다시 실행하지 마세요 — 그쪽에는 monthly_curation 7월
 --  키워드를 하드코딩 값으로 덮어쓰는 update 가 들어 있습니다.
 --
---  쿠팡 공식 한도: 검색 API 1분당 50회 / 모든 API 1분당 100회.
+--  쿠팡 공식 한도: Search API 시간당 10회 (Partners Guide, 2024-12-16).
 --  경고 3회면 이용 제한. 서버리스 인스턴스가 몇 개든, GitHub Actions 가
 --  동시에 돌든 합계가 상한을 넘지 않도록 카운터를 DB 에 둔다.
 --  (인메모리 카운터는 인스턴스마다 따로 놀아서 전역 한도를 못 지킨다)
@@ -60,7 +60,7 @@ create table if not exists coupang_search_cache (
 
 -- ── 2. 함수 ──────────────────────────────────────────────────────
 
--- 호출 허가. 차단 중이거나 최근 1분 호출이 상한이면 false 를 주고,
+-- 호출 허가. 차단 중이거나 최근 1시간/1분 호출이 상한이면 false 를 주고,
 -- 허가할 때만 로그 행을 만들어 id 를 돌려준다 (허가 = 카운트).
 --
 -- advisory lock 으로 직렬화한다. 없으면 동시 호출이 같은 카운트를 읽고
@@ -75,6 +75,7 @@ declare
   v_blocked timestamptz;
   v_reason  text;
   v_used    int;
+  v_hour_used int;
   v_id      bigint;
 begin
   -- 이 함수 전용 락 번호. 다른 advisory lock 과 겹치지만 않으면 값 자체는 무의미하다.
@@ -89,6 +90,16 @@ begin
       '호출 중단 중 (재개 ' || to_char(v_blocked, 'YYYY-MM-DD HH24:MI:SSOF') || ') '
         || coalesce(v_reason, ''),
       0;
+    return;
+  end if;
+
+  select count(*)::int into v_hour_used
+    from coupang_api_calls
+   where called_at > now() - interval '1 hour';
+
+  if v_hour_used >= 10 then
+    return query select false, null::bigint,
+      '시간당 검색 한도 ' || v_hour_used || '/10', v_hour_used;
     return;
   end if;
 

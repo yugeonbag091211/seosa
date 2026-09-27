@@ -442,6 +442,7 @@ function rng(seed) {
     eq('DB 조회 오류 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(null, { message: 'DB unavailable' })), 740);
     eq('COUNT null 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(null)), 740);
     eq('음수 COUNT 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(-1)), 740);
+    eq('레거시 모드에서도 이미 확보한 일일 예산을 막는다', C.adpickDayBudgetExceeded(), true);
   }
   console.log('');
 

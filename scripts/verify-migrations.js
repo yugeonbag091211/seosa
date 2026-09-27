@@ -127,7 +127,8 @@ const NEW_MIGRATIONS = [
    * collector_target_products_batch 로 자동 폴백하므로 «동작은 하지만
    * 카탈로그가 커질수록 다시 죽는» 상태로 남는다.
    */
-  '2026-09-22-collector-target-keyset.sql'
+  '2026-09-22-collector-target-keyset.sql',
+  '2026-09-27-coupang-search-hourly-limit.sql'
 ];
 
 function checkStatic() {
@@ -166,6 +167,19 @@ function checkStatic() {
     // PostgREST 스키마 캐시 갱신 — 빠뜨리면 새 컬럼/함수를 한동안 못 찾는다
     if (/notify\s+pgrst/i.test(sql)) ok(`${name}: 스키마 캐시 갱신 포함`);
     else wrn(`${name}: notify pgrst 없음`, '새 컬럼/함수를 한동안 못 찾을 수 있다');
+  }
+
+  const quotaSql = path.join(SQL_DIR, '2026-09-27-coupang-search-hourly-limit.sql');
+  if (fs.existsSync(quotaSql)) {
+    const sql = stripSqlComments(fs.readFileSync(quotaSql, 'utf8'));
+    if (/interval\s+'1 hour'/i.test(sql) && /v_hour_used\s*>=\s*10/i.test(sql)
+        && /pg_advisory_xact_lock/i.test(sql)) {
+      ok('coupang_acquire: 전역 원자적 시간당 Search 10회 상한');
+    } else bad('coupang_acquire: Search 시간당 10회 상한 불완전');
+    if (/insert\s+into\s+public\.coupang_api_calls/i.test(sql)
+        && /v_hour_used\s*>=\s*10[\s\S]*?return;[\s\S]*?insert\s+into\s+public\.coupang_api_calls/i.test(sql)) {
+      ok('coupang_acquire: 한도 검사 뒤에만 호출 예약을 기록');
+    } else bad('coupang_acquire: 초과 호출 예약 가능');
   }
 
   /* security definer 함수는 실행 권한을 반드시 좁혀야 한다. */

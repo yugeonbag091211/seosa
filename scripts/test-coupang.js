@@ -117,10 +117,12 @@ server.listen(0, async () => {
   process.env.COUPANG_API_HOST = 'http://127.0.0.1:' + server.address().port;
 
   // 캐시(Supabase)를 안 타도록 useCache:false 로만 부른다.
-  const { searchCoupang, isBlocked } = require('../api/_coupang');
+  const { searchCoupang, isBlocked, COOLDOWN_MIN } = require('../api/_coupang');
   const common = { source: 'test', useCache: false, maxWaitMs: 5000 };
 
   console.log('\napi/_coupang.js 응답 처리 테스트 (실제 쿠팡 호출 0회)\n');
+  check(COOLDOWN_MIN.http401 === 24 * 60 && COOLDOWN_MIN.http403 === 24 * 60,
+    'HTTP 401/403 은 공식 제한 회복 시간인 24시간 후에만 재시도한다');
 
   // 1) 정상 응답
   mode = 'ok';
@@ -211,6 +213,7 @@ server.listen(0, async () => {
         '차단 중에는 호출하지 않고 즉시 폴백', 'from=' + r.from);
   mode = origMode;
   void before;
+
 
   server.close();
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);

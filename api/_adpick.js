@@ -29,6 +29,7 @@
 
 const supabase = require('./_supabase');
 const { parsePrice } = require('./_price');
+const { isSameKstDate } = require('./_cache-date');
 
 const HOST = process.env.ADPICK_API_HOST || 'https://biz.adpick.co.kr';
 
@@ -205,6 +206,7 @@ async function readCache(keyword) {
     return {
       items: Array.isArray(data.items) ? data.items : [],
       limit: data.req_limit || 0,
+      isTodayKst: isSameKstDate(data.fetched_at),
       ageMs: Date.now() - new Date(data.fetched_at).getTime()
     };
   } catch (e) {
@@ -381,7 +383,7 @@ async function searchAdpick(keyword, opts = {}) {
   }
 
   const cached = useCache ? await readCache(kw) : null;
-  if (cached && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
+  if (cached && cached.isTodayKst && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
     state.totalCacheHits++;
     log(source, kw, 'CACHE', `age=${Math.round(cached.ageMs / 1000)}s items=${cached.items.length}`);
     return { items: cached.items.slice(0, limit), error: null, from: 'cache', blocked: false };

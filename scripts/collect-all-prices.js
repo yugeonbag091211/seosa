@@ -859,7 +859,7 @@ let _adpickCalls = 0;
 let _adpickInFlight = 0;    // 실행 예산을 예약하고 아직 응답이 안 온 호출 수
 let _adpickSkipped = 0;
 let _adpickBudgetWarned = false;
-let _adpickDayUsed = 0;       // 오늘(KST) 이 수집기가 이미 쓴 ADPICK 외부 호출 (V3 에서만 읽는다)
+let _adpickDayUsed = 0;       // 오늘(KST) 이 수집기가 이미 쓴 ADPICK 외부 호출
 let _adpickDayWarned = false;
 
 /*
@@ -869,7 +869,7 @@ let _adpickDayWarned = false;
  */
 let _runAborted = false;
 
-/** V3 일일 상한: 이전 사용량을 확인하지 못하면 안전하게 ADPICK 수집만 중단한다. */
+/** ADPICK 일일 상한: 이전 사용량을 확인하지 못하면 안전하게 ADPICK 수집만 중단한다. */
 async function loadAdpickDayUsage(db = supabase) {
   try {
     const { count, error } = await db
@@ -891,6 +891,10 @@ async function loadAdpickDayUsage(db = supabase) {
   return _adpickDayUsed;
 }
 
+function adpickDayBudgetExceeded() {
+  return _adpickDayUsed + _adpickCalls + _adpickInFlight >= ADPICK_DAY_BUDGET;
+}
+
 /**
  * ADPICK 검색. api/_adpick.js를 통해서만 나간다 — 캐시/분당 상한/서킷
  * 브레이커가 거기 있다. 쿠팡과 마찬가지로 retry로 감싸지 않는다.
@@ -909,7 +913,7 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
   if (isAdpickBlockedGlobal()) return { ok: false, items: [], reason: 'ADPICK 차단 상태' };
   if (_runAborted) return { ok: false, items: [], reason: '잠금 상실 — 이 실행은 더 부르지 않는다' };
 
-  if (V3 && _adpickDayUsed + _adpickCalls + _adpickInFlight >= ADPICK_DAY_BUDGET) {
+  if (adpickDayBudgetExceeded()) {
     _adpickSkipped++;
     if (!_adpickDayWarned) {
       _adpickDayWarned = true;
@@ -4456,10 +4460,10 @@ async function runLocked(state, lockToken) {
     console.log(`  └ KST 자정 마감 — 이번 실행은 ${Math.max(0, Math.round((runDeadline(started) - started) / 60000))}분만 쓴다`
       + ' (남은 일은 상태에 저장되고 다음 날 새 대상으로 시작한다)');
   }
+  await loadAdpickDayUsage();
+  console.log(`ADPICK 오늘 호출량: ${_adpickDayUsed}회 / 하루 상한 ${ADPICK_DAY_BUDGET}회`
+    + ` (이번 실행 상한 ${ADPICK_RUN_BUDGET}회)`);
   if (V3) {
-    await loadAdpickDayUsage();
-    console.log(`ADPICK 오늘 호출량: ${_adpickDayUsed}회 / 하루 상한 ${ADPICK_DAY_BUDGET}회`
-      + ` (이번 실행 상한 ${ADPICK_RUN_BUDGET}회)`);
     console.log(`[V3] 계획기 ${V3_PLANNER ? 'ON' : 'OFF'} / 병렬 ${V3_PARALLEL ? 'ON' : 'OFF'}`
       + ` / 체크포인트 ${V3_CHECKPOINT ? 'ON' : 'OFF'}  (대상 서명 ${targetMeta.signature})`);
   }
@@ -5480,7 +5484,7 @@ module.exports = {
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   sameTargetSet, coverageOnlyResumeState,
-  v3KillReason, markV3Kill, loadAdpickDayUsage,
+  v3KillReason, markV3Kill, loadAdpickDayUsage, adpickDayBudgetExceeded,
   V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET,
   // 자정 마감 — test-collector-v3 가 «자정을 넘지 않는다» 를 고정한다.
   runDeadline, DAY_END_MARGIN_MS

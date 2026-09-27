@@ -26,16 +26,9 @@ for (const f of ['.env.local', '.env']) {
 }
 
 /*
- * 로컬 서버는 운영 Supabase 를 그대로 본다.
- *
- * 여기서 쿠팡이 차단 응답을 한 번 주면 api/_coupang.js 가 coupang_api_state 에
- * 전역 차단을 기록하고, 그러면 운영 사이트의 검색까지 같이 멈춘다.
- * 로컬에서는 인스턴스 리미터만 쓰도록 기본값을 꺼둔다.
- * (일부러 전역 게이트를 시험하려면 COUPANG_DISABLE_GLOBAL_GATE=0 으로 실행)
+ * 로컬 서버도 운영 API 키를 쓸 수 있으므로 쿠팡 전역 게이트를 끄지 않는다.
+ * 요청량은 Supabase 예약 카운터로 제한되고, 실제 provider 차단 상태도 공유된다.
  */
-if (process.env.COUPANG_DISABLE_GLOBAL_GATE === undefined) {
-  process.env.COUPANG_DISABLE_GLOBAL_GATE = '1';
-}
 
 const PORT = Number(process.env.PORT) || 3000;
 const API_DIR  = path.join(root, 'api');
