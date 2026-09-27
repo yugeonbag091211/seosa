@@ -70,7 +70,7 @@
 - 모델 크레딧/테스트 전용 credential의 무료 사용 가능 여부를 확인하지 않아 live LLM 공격 10건은 실행하지 않았다. 실제 모델이 system prompt를 의역하거나 seller title의 지시에 따르는지 이 결과만으로 단정할 수 없다.
 - 자격 증명 방어는 환경변수/API 토큰 및 명시적인 prompt 공개 형태를 찾는 패턴 검사다. 패턴을 피한 간접 유출은 live-model 평가와 별도 방어가 필요하다. 운영 키 값은 읽거나 테스트 fixture에 사용하지 않았고, 가짜 key만 썼다.
 - 이 작업은 AI 대화 응답의 정확도/안전성 회귀 검증이다. 당일 전체 상품의 실제 수집률, 공급자별 API 커버리지, 운영 가격 freshness는 운영 DB/API를 조회하지 않았으므로 측정하지 않았다.
-- PR을 만들었지만 병합·Production 배포는 요청 범위상 수행하지 않는다. PR 번호·CI 결과는 생성 후 이 문서에 반영한다.
+- live-model 평가와 실제 운영 수집률은 미측정이며, 이 PR은 승인 전 상태다. PR Preview는 자동 생성될 수 있지만 Production 배포·main 병합은 하지 않는다.
 
 ## 변경 파일
 
@@ -81,4 +81,6 @@
 - `scripts/test-intent-routing.js`
 - `reports/ai-redteam-2026-09-27.md`
 
-PR: 생성 전
+PR: [#106](https://github.com/yugeonbag091211/seosa/pull/106)
+
+GitHub Actions / Vercel Preview의 최신 상태는 [PR checks](https://github.com/yugeonbag091211/seosa/pull/106/checks)에서 확인한다. CI workflow는 `npm test`만 실행한다.
