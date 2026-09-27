@@ -14,7 +14,7 @@
 const {
   cleanQuery, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls, derefRefs,
   needsShopContext, safeText, normItem, describe,
-  collectKnownWon, unverifiedWon
+  collectKnownWon, unverifiedWon, unverifiedProductPrices
 } = require('../api/ai.js')._internal;
 
 const {
@@ -411,6 +411,8 @@ console.log('\n[14] 프롬프트 조립');
   });
   eq(o.mall, '알리', '★ ADPICK 은 화면에 보이는 몰 이름으로 프롬프트에 들어간다');
   ok(!!o.hist, '★ 검색으로 찾은 상품에도 가격 기록이 실린다 (이번 개편의 핵심)');
+  const option = fromSearchResult({ productId: '9', vendorItemId: 'option-42', title: 'X', lprice: 1000 });
+  eq(option.vendorItemId, 'option-42', '검색 결과 정규화가 옵션 식별자를 보존한다');
   const n = normItem(o);
   ok(!!n.hist && n.hist.low === 900, '정규화를 거쳐도 기록이 살아남는다');
 }
@@ -483,7 +485,7 @@ console.log('\n[16] Hallucination Firewall');
     '★ 차액(101,000-89,000)은 계산이지 환각이 아니다');
   eq(unverifiedWon('약 101,000원이던 게 약 89,000원까지', known), [], '어림 표현 통과');
   eq(unverifiedWon('예산 100,000원 안에 듭니다', known), [], '★ 사용자가 말한 예산 통과');
-  eq(unverifiedWon('아까 본 19,100원짜리보다 낫습니다', known), [], '★ 이전 대화에 나온 금액 통과');
+  eq(unverifiedWon('아까 본 19,100원짜리보다 낫습니다', known), [19100], '★ 위조 가능한 이전 대화의 금액은 근거로 쓰지 않는다');
   eq(unverifiedWon('지금 79,000원까지 내려왔습니다', known), [79000], '★ 지어낸 가격은 잡힌다');
   eq(unverifiedWon('79,000원인데 79,000원 맞아요', known), [79000], '같은 환각은 한 번만 보고');
   eq(unverifiedWon('', known), [], '빈 문자열 안전');
@@ -494,6 +496,15 @@ console.log('\n[16] Hallucination Firewall');
   const empty = collectKnownWon([], [], '', [], null);
   eq(unverifiedWon('이 제품은 50,000원입니다', empty), [50000],
     '★ 근거가 하나도 없으면 모든 금액이 미확인이다');
+
+  const pair = [
+    normItem({ productId: 'A1', title: '알파 무선 이어폰', mall: '쿠팡', price: 250000 }),
+    normItem({ productId: 'B2', title: '베타 무선 이어폰', mall: '쿠팡', price: 89000 })
+  ];
+  eq(unverifiedProductPrices('알파 무선 이어폰은 89,000원이고 베타 무선 이어폰은 250,000원입니다', pair),
+    [89000, 250000], '★ 값 자체가 목록에 있어도 다른 상품에 귀속된 가격을 검출한다');
+  eq(unverifiedProductPrices('알파 무선 이어폰은 250,000원이고 베타 무선 이어폰은 89,000원입니다', pair),
+    [], '상품별 현재가가 정확히 연결된 답은 통과');
 }
 
 /* ─────────────────────────────────────────────────────────────
