@@ -369,12 +369,13 @@ for (const total of [100, 1000, 10000, 60000]) {
 section('[3] 상품별 최종 상태 분류 (outcomes)');
 
 eq('칸 이름이 요청받은 taxonomy 를 전부 담는다', [
-  'collected', 'already_collected', 'no_match', 'blocked', 'rate_limited',
+  'collected', 'already_collected', 'no_match', 'option_mismatch', 'blocked', 'rate_limited',
   'timeout', 'api_error', 'db_error', 'target_query_error', 'unknown'
 ].every(k => OUTCOME_KEYS.indexOf(k) > -1), true);
 
 const REASON_CASES = [
   ['쿠팡 API 403: Access denied', 'blocked'],
+  ['쿠팡 API 401: {', 'blocked'],
   ['차단 상태 — 서킷 브레이커', 'blocked'],
   ['ADPICK API 429: 사용 횟수를 초과하였습니다', 'rate_limited'],
   ['분당 상한 도달 — 대기 중', 'rate_limited'],
@@ -382,6 +383,9 @@ const REASON_CASES = [
   ['실행 예산 소진 (budget)', 'budget'],
   ['쿠팡 응답 파싱 실패', 'api_error'],
   ['ADPICK 네트워크 오류: fetch failed', 'api_error'],
+  ['OPTION_MISMATCH', 'option_mismatch'],
+  ['RESPONSE_VID_MISSING', 'option_mismatch'],
+  ['TARGET_VID_UNKNOWN', 'option_mismatch'],
   ['canceling statement due to statement timeout', 'db_error'],
   ['', 'unknown']
 ];
@@ -476,6 +480,55 @@ for (const n of [1000, 10000]) {
  *  4. 중복 방지 · 부분 실패 후 이어받기
  * ================================================================ */
 section('[4] 재실행 안전성 — 중복 없음 / 실패분만 이어받기');
+
+{
+  /* V3 → 레거시 전환: 시도·확보 ID를 유지하고 기존 keyword 그룹은 재호출하지 않는다. */
+  const rows = rowsFor(12, '쿠팡', 2);
+  rows[0].vendor_item_id = 'v0';
+  rows[1].vendor_item_id = 'v1';
+  const key = p => `${p.product_id}|${p.mall}`;
+  const priorAttempted = rows.slice(0, 4).map(key);
+  const calls = [];
+  const saved = {
+    job_date: C.kstToday(), cursor_key: '', processed: 0, total: rows.length, status: 'running',
+    last_result: {
+      coverageOnlyResume: true,
+      collectorCovered: [key(rows[0])],
+      collectorAttempted: priorAttempted,
+      collectorOptionMismatches: [key(rows[1])],
+      failedKeywords: []
+    }
+  };
+  const r = await runMallCollection({
+    mallName: '쿠팡', rows,
+    fetchAllFn: async kw => { calls.push(kw); return { ok: true, items: [], allItems: [] }; },
+    savedState: saved, deadlineTs: Date.now() + 20000,
+    recordPricesFn: NO_WRITE, cacheHintFn: NO_HINT,
+    collectedTodayFn: async () => new Set(rows.slice(4, 6).map(key))
+  });
+  check('★ 전환 후 이미 시도한 V3 그룹을 다시 호출하지 않는다',
+    !calls.includes('kw0000') && !calls.includes('kw0001'), JSON.stringify(calls));
+  check('전환 후 기존 성공 ID가 합계에 남는다', r.collectorCovered.includes(key(rows[0])));
+  check('전환 후 기존 시도 ID가 합계에 남는다', priorAttempted.every(k => r.collectorAttempted.includes(k)));
+  eq('전환 후 옵션 불일치 ID도 별도 누적된다', r.optionMismatchProducts, 1);
+  eq('price_history 교차 확인한 타 경로 상품은 다시 요청하지 않는다', calls.includes('kw0002'), false);
+  eq('전환 이후 모든 outcome 합계 = 대상', outcomeSum(r.outcomes), r.targetProducts);
+}
+
+{
+  /* product_id가 같아도 vendor_item_id가 다르면 옵션 불일치로 남긴다. */
+  const rows = rowsFor(1, '쿠팡', 1);
+  rows[0].vendor_item_id = 'expected-option';
+  const r = await runOnce(rows, async () => {
+    const item = { productId: rows[0].product_id, vendorItemId: 'different-option',
+      lprice: 12000, oprice: 12000, title: rows[0].title, mall: '쿠팡', itemId: 'item-1' };
+    return { ok: true, items: [item], allItems: [item] };
+  });
+  eq('★ 옵션 ID 불일치는 무매칭에 합치지 않는다', r.outcomes.option_mismatch, 1);
+  eq('옵션 불일치는 무매칭 수에서 빠진다', r.noMatchProducts, 0);
+  eq('옵션 불일치 상품은 시도 수에 포함된다', r.attemptedProducts, 1);
+  eq('옵션 불일치 검사 뒤 대상 합계가 맞는다', outcomeSum(r.outcomes), r.targetProducts);
+}
 
 {
   const rows = rowsFor(60, '쿠팡', 2);   // 검색어 30종

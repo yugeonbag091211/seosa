@@ -1683,6 +1683,7 @@ function recordedPrice(productId) {
 
   const html = buildReportHtml(sampleReport);
   check(typeof html === 'string' && html.length > 100, 'HTML 문자열을 반환한다');
+  check(html.includes('옵션 불일치'), '옵션 불일치 outcome도 HTML 리포트로 렌더링한다');
   check(html.includes('2026-08-21'), '기준 날짜(KST)가 포함된다');
   check(html.includes('01:15 KST'), '실행 시각(KST)이 포함된다');
   check(html.includes('84.2% (800/950)'),
@@ -1724,7 +1725,7 @@ function recordedPrice(productId) {
   check(html.includes('집계 검증'), '집계 검증 블록이 있다');
   check(html.includes('수집 성공 상품 + 수집 미확보 상품 = 대상 상품')
      && html.includes('시도 상품 + 미시도 상품 = 대상 상품')
-     && html.includes('수집 성공 상품 + 무매칭 상품 = 시도 상품')
+     && html.includes('수집 성공 + 무매칭 + 옵션 불일치 = 시도 상품')
      && html.includes('오늘 가격 보유 + 미보유 = 대상 상품')
      && html.includes('수집 성공 상품 ≤ 오늘 가격 보유 상품')
      && html.includes('성공 attempt + 실패 attempt = 전체 attempt')
@@ -1735,14 +1736,16 @@ function recordedPrice(productId) {
   check(html.includes('병목 분해'), '★ 병목 분해 블록이 메일에 있다');
   check(html.includes('시도 900 + 미시도 50 = 대상 950'),
         '★ 시도 + 미시도 = 대상 항등식을 메일에 직접 적는다');
-  check(html.includes('수집 성공 800 + 무매칭 100 = 시도 900'),
-        '★ 수집 성공 + 무매칭 = 시도 항등식을 메일에 직접 적는다');
+  check(html.includes('수집 성공 800 + 무매칭 100 + 옵션 불일치 0 = 시도 900'),
+        '★ 수집 성공 + 무매칭 + 옵션 불일치 = 시도 항등식을 메일에 직접 적는다');
   check(html.includes('94.7%') && html.includes('88.9%'),
         '★ 시도율과 시도 대비 성공률을 따로 표시한다');
   check(reportInvariantErrors({ ...sampleReport, attemptedProducts: 800 }).length > 0,
         '★ 시도 + 미시도 불일치를 검출한다');
   check(reportInvariantErrors({ ...sampleReport, noMatchProducts: 0 }).length > 0,
-        '★ 수집 성공 + 무매칭 불일치를 검출한다');
+        '★ 수집 성공 + 무매칭 + 옵션 불일치 불일치를 검출한다');
+  check(reportInvariantErrors({ ...sampleReport, optionMismatchProducts: 1 }).length > 0,
+        '★ 옵션 불일치도 시도 항등식에 포함한다');
   check(html.includes('총 실패 attempt'), '실패 항목이 attempt 단위로 표기된다');
   check(html.includes('실패 원인 합계 20 = 총 실패 attempt 20'),
         '★ 실패 원인 합계와 총 실패 attempt 가 같음을 메일에 직접 적는다');

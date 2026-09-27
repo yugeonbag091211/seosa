@@ -204,6 +204,23 @@ const rows = () => db.adpick_api_calls;
   }
 
   {
+    resetAll();
+    mode = 'ok';
+    const today = require('../api/_cache-date').kstDateKey(new Date());
+    const previousKstMidnight = Date.parse(today + 'T00:00:00+09:00');
+    db.adpick_search_cache.push({
+      keyword: '전날 캐시', items: [], req_limit: 20,
+      fetched_at: new Date(previousKstMidnight - 60000).toISOString()
+    });
+    const { searchAdpick } = freshAdpick();
+    const r = await searchAdpick('전날 캐시', {
+      limit: 5, source: 'collect', cacheTtlMs: 24 * 60 * 60 * 1000
+    });
+    check(r.from === 'api', '전날 캐시는 24시간 TTL 안이어도 새 API 결과를 받는다', String(r.from));
+    check(seenPaths.length === 1, '전날 캐시가 fresh 경로로 외부 호출을 막지 않는다', String(seenPaths.length));
+  }
+
+  {
     // 서킷 브레이커 사전 차단: 403 으로 브레이커를 연 뒤 두 번째 호출.
     resetAll();
     mode = '403';

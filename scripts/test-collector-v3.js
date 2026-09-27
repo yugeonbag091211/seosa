@@ -442,6 +442,7 @@ function rng(seed) {
     eq('DB 조회 오류 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(null, { message: 'DB unavailable' })), 740);
     eq('COUNT null 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(null)), 740);
     eq('음수 COUNT 시 ADPICK 하루 예산 소진 처리', await C.loadAdpickDayUsage(usageDb(-1)), 740);
+    eq('레거시 모드에서도 이미 확보한 일일 예산을 막는다', C.adpickDayBudgetExceeded(), true);
   }
   console.log('');
 
@@ -523,6 +524,42 @@ function rng(seed) {
   check('★ V3 는 같은 날 레거시 상태를 이어받는다', C.resumeCompatible('rotation-v1:2026-09-23:7:6', meta, true));
   check('★ 레거시는 V3 상태를 이어받지 않는다 (커서가 비어 있다)', !C.resumeCompatible('rotation-v1:2026-09-23:7:6:planner-v3', meta, false));
   check('다른 날/버킷 서명은 둘 다 거부', !C.resumeCompatible('rotation-v1:2026-09-22:7:5', meta, true));
+  check('planner 꼬리표만 다르면 대상 집합은 같다', C.sameTargetSet('rotation-v1:2026-09-23:7:6:planner-v3', meta));
+  check('다른 날짜/버킷의 대상 집합은 다르다', !C.sameTargetSet('rotation-v1:2026-09-22:7:5:planner-v3', meta));
+  const v3State = {
+    job_date: '2026-09-23', cursor_key: '', processed: 5, status: 'running',
+    last_result: { targetSignature: 'rotation-v1:2026-09-23:7:6:planner-v3', v3Kill: { reason: '쿠팡 차단' },
+      malls: {
+        '쿠팡': { cursor_key: '', processed: 3, total: 8, status: 'running',
+          collectorCovered: ['C1|쿠팡'], collectorAttempted: ['C1|쿠팡', 'C2|쿠팡'],
+          last_result: { collectorOptionMismatches: ['C2|쿠팡'], secondPassDone: ['stale-v3-state'] } },
+        ADPICK: { cursor_key: '', processed: 2, total: 4, status: 'completed',
+          collectorCovered: ['A1|ADPICK'], collectorAttempted: ['A1|ADPICK'], last_result: {} }
+      }
+    }
+  };
+  const carried = C.coverageOnlyResumeState(v3State, meta);
+  eq('V3 → 레거시 상태는 검색 커서를 초기화한다', carried.last_result.malls['쿠팡'].cursor_key, '');
+  eq('전환 시 누적 성공 ID를 보존한다', carried.last_result.malls['쿠팡'].collectorCovered.join(','), 'C1|쿠팡');
+  eq('전환 시 누적 시도 ID를 보존한다', carried.last_result.malls['쿠팡'].collectorAttempted.join(','), 'C1|쿠팡,C2|쿠팡');
+  eq('전환 시 확인된 옵션 불일치 ID를 보존한다', carried.last_result.malls['쿠팡'].collectorOptionMismatches.join(','), 'C2|쿠팡');
+  eq('V3 전용 검색어 진행 기록은 이어받지 않는다',
+    (carried.last_result.malls['쿠팡'].last_result.secondPassDone || []).length, 0);
+  eq('완료된 몰은 완료 상태를 유지한다', carried.last_result.malls.ADPICK.status, 'completed');
+  eq('비활성화 원인은 이어서 기록된다', carried.last_result.v3Kill.reason, '쿠팡 차단');
+  const partialTransitionCheckpoint = C.checkpointPayload({
+    base: { jobDate: '2026-09-23', targetSignature: meta.signature,
+      prevLastResult: carried.last_result, malls: carried.last_result.malls },
+    snaps: { ADPICK: { cursorKey: '', processed: 1, total: 4, status: 'running',
+      collectorCovered: ['A1|ADPICK'], collectorAttempted: ['A1|ADPICK'],
+      collectorOptionMismatches: [], secondPassDone: [], facetDryGroups: [],
+      terminalOptionFailures: [], optionMissStreaks: {} } },
+    lockToken: 'T1', nowMs: DAY_START, ttlMs: 80 * 60000
+  });
+  eq('한 몰의 체크포인트가 다른 몰의 coverage-only 표식을 보존한다',
+    partialTransitionCheckpoint.last_result.malls['쿠팡'].last_result.coverageOnlyResume, true);
+  eq('다른 대상 집합에는 coverage-only 상태를 만들지 않는다', C.coverageOnlyResumeState(v3State,
+    { signature: 'rotation-v1:2026-09-22:7:5' }), null);
 
   console.log(`\n====================================================\nPASS ${pass}  /  FAIL ${fail}`);
   process.exit(fail ? 1 : 0);

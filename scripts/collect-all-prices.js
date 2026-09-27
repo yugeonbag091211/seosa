@@ -859,7 +859,7 @@ let _adpickCalls = 0;
 let _adpickInFlight = 0;    // 실행 예산을 예약하고 아직 응답이 안 온 호출 수
 let _adpickSkipped = 0;
 let _adpickBudgetWarned = false;
-let _adpickDayUsed = 0;       // 오늘(KST) 이 수집기가 이미 쓴 ADPICK 외부 호출 (V3 에서만 읽는다)
+let _adpickDayUsed = 0;       // 오늘(KST) 이 수집기가 이미 쓴 ADPICK 외부 호출
 let _adpickDayWarned = false;
 
 /*
@@ -869,7 +869,7 @@ let _adpickDayWarned = false;
  */
 let _runAborted = false;
 
-/** V3 일일 상한: 이전 사용량을 확인하지 못하면 안전하게 ADPICK 수집만 중단한다. */
+/** ADPICK 일일 상한: 이전 사용량을 확인하지 못하면 안전하게 ADPICK 수집만 중단한다. */
 async function loadAdpickDayUsage(db = supabase) {
   try {
     const { count, error } = await db
@@ -891,6 +891,10 @@ async function loadAdpickDayUsage(db = supabase) {
   return _adpickDayUsed;
 }
 
+function adpickDayBudgetExceeded() {
+  return _adpickDayUsed + _adpickCalls + _adpickInFlight >= ADPICK_DAY_BUDGET;
+}
+
 /**
  * ADPICK 검색. api/_adpick.js를 통해서만 나간다 — 캐시/분당 상한/서킷
  * 브레이커가 거기 있다. 쿠팡과 마찬가지로 retry로 감싸지 않는다.
@@ -909,7 +913,7 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
   if (isAdpickBlockedGlobal()) return { ok: false, items: [], reason: 'ADPICK 차단 상태' };
   if (_runAborted) return { ok: false, items: [], reason: '잠금 상실 — 이 실행은 더 부르지 않는다' };
 
-  if (V3 && _adpickDayUsed + _adpickCalls + _adpickInFlight >= ADPICK_DAY_BUDGET) {
+  if (adpickDayBudgetExceeded()) {
     _adpickSkipped++;
     if (!_adpickDayWarned) {
       _adpickDayWarned = true;
@@ -1878,6 +1882,46 @@ function resumeCompatible(prevSignature, meta, v3Planner = V3_PLANNER) {
   return !!v3Planner && prevSignature === meta.signature;
 }
 
+/** The planner suffix changes traversal, not the target set itself. */
+function sameTargetSet(prevSignature, meta) {
+  return !!(meta && meta.signature)
+    && (prevSignature === meta.signature || prevSignature === `${meta.signature}:planner-v3`);
+}
+
+/**
+ * V3 has no legacy keyword cursor. On planner → legacy fallback, carry only
+ * identity-level daily results and intentionally start legacy traversal fresh.
+ */
+function coverageOnlyResumeState(state, meta) {
+  if (!state || !meta || !meta.signature
+      || state.last_result?.targetSignature !== `${meta.signature}:planner-v3`) return null;
+  const previousMalls = (state.last_result && state.last_result.malls) || {};
+  const malls = {};
+  for (const mallName of ['쿠팡', 'ADPICK']) {
+    const previous = previousMalls[mallName];
+    if (!previous) continue;
+    const previousResult = previous.last_result || {};
+    malls[mallName] = {
+      cursor_key: '', processed: 0, total: previous.total || 0,
+      status: previous.status === 'completed' ? 'completed' : 'running',
+      failedKeywords: [],
+      collectorCovered: previous.collectorCovered || [],
+      collectorAttempted: previous.collectorAttempted || [],
+      collectorOptionMismatches: previousResult.collectorOptionMismatches || [],
+      last_result: {
+        collectorCovered: previous.collectorCovered || [],
+        collectorAttempted: previous.collectorAttempted || [],
+        collectorOptionMismatches: previousResult.collectorOptionMismatches || [],
+        coverageOnlyResume: true
+      }
+    };
+  }
+  return {
+    ...state, cursor_key: '', processed: 0, status: 'running',
+    last_result: { ...state.last_result, targetSignature: meta.signature, malls }
+  };
+}
+
 /** 레인 스냅숏 → price_job_state.last_result.malls[몰] 모양. 최종 저장과 같은 키를 쓴다. */
 function mallStateFromSnapshot(s) {
   return {
@@ -1887,7 +1931,8 @@ function mallStateFromSnapshot(s) {
       secondPassDone: s.secondPassDone || [], facetDryGroups: s.facetDryGroups || [],
       terminalOptionFailures: s.terminalOptionFailures || [], optionMissStreaks: s.optionMissStreaks || {}
     },
-    collectorCovered: s.collectorCovered || [], collectorAttempted: s.collectorAttempted || []
+    collectorCovered: s.collectorCovered || [], collectorAttempted: s.collectorAttempted || [],
+    collectorOptionMismatches: s.collectorOptionMismatches || []
   };
 }
 
@@ -2172,27 +2217,39 @@ function chunkIdsByLength(ids, budget = ID_BATCH_CHARS) {
  *     대상이 작다  → 예전 그대로 IN 목록 (필요한 행만 정확히 받는다)
  *     대상이 크다  → 오늘·그 몰의 행을 키셋으로 훑고 JS 에서 교집합
  *
- *   ★ 결과 집합은 두 방식이 완전히 같다. 어느 쪽도 «오늘 기록된 행» 의
- *     정의(recorded_at 이 KST 오늘 범위 + 같은 mall)를 바꾸지 않는다.
+ *   ★ 결과 집합은 두 방식이 완전히 같다. «오늘 기록된 행» 은
+ *     recorded_at 이 KST 오늘 범위이고, 쿠팡은 현재 target vendorItemId 와도 같다.
  *     day-scan 쪽은 마지막에 collectible 키로 교집합을 취해 대상 밖 행을
  *     떨어뜨린다 — IN 목록이 하던 일과 같다.
  */
 const TODAY_SCAN_THRESHOLD = Math.max(0,
   Number(process.env.PRICE_TODAY_SCAN_THRESHOLD) || 5000);
 
-/** 오늘·그 몰의 원장 행을 키셋으로 훑어 대상과 교집합을 낸다. */
+/** A same-day history row only covers the exact tracked sale unit. */
+function historyRowMatchesTargetOption(historyRow, target) {
+  if (!historyRow || !target
+      || String(historyRow.product_id) !== String(target.product_id)
+      || historyRow.mall !== target.mall) return false;
+  if (!isCoupangRow(target)) return true;
+  const targetVendorItemId = vendorIdOf(target);
+  return !!targetVendorItemId
+    && String(historyRow.vendor_item_id || '') === targetVendorItemId;
+}
+
+/** 오늘·그 몰의 원장 행을 키셋으로 훑어 정확한 대상 옵션과 교집합을 낸다. */
 async function collectedTodayByDayScan(mallName, collectible, dayStart, dayEnd) {
-  const want = new Set(collectible.map(p => `${p.product_id}|${p.mall}`));
+  const targets = new Map(collectible.map(p => [`${p.product_id}|${p.mall}`, p]));
   const found = new Set();
   await keysetScan({
     build: () => supabase.from('price_history'),
     filter: q => q.gte('recorded_at', dayStart).lt('recorded_at', dayEnd).eq('mall', mallName),
-    columns: 'id, product_id, mall',
+    columns: 'id, product_id, mall, vendor_item_id',
     cursor: 'id',
     label: `[${mallName}] 오늘 기록 스캔`,
     onPage: rows => rows.forEach(r => {
       const k = `${r.product_id}|${r.mall}`;
-      if (want.has(k)) found.add(k);
+      const target = targets.get(k);
+      if (historyRowMatchesTargetOption(r, target)) found.add(k);
     })
   });
   return found;
@@ -2200,6 +2257,7 @@ async function collectedTodayByDayScan(mallName, collectible, dayStart, dayEnd) 
 
 async function collectedTodayKeys(mallName, collectible) {
   const found = new Set();
+  const targetById = new Map(collectible.map(p => [String(p.product_id), p]));
   // KST 는 서머타임이 없어 하루가 정확히 24시간이다.
   const dayStart = kstDayStartUtc(TODAY);
   const dayEnd = new Date(Date.parse(dayStart) + 24 * 60 * 60 * 1000).toISOString();
@@ -2225,7 +2283,7 @@ async function collectedTodayKeys(mallName, collectible) {
     for (const chunk of chunkIdsByLength(ids)) {
       const { data, error } = await supabase
         .from('price_history')
-        .select('product_id, mall')
+        .select('product_id, mall, vendor_item_id')
         .gte('recorded_at', dayStart)
         .lt('recorded_at', dayEnd)
         .eq('mall', mallName)
@@ -2239,7 +2297,10 @@ async function collectedTodayKeys(mallName, collectible) {
         console.warn(`  [${mallName}] 오늘 기록 조회 배치 실패 (${chunk.length}개): ${error.message}`);
         continue;
       }
-      (data || []).forEach(r => found.add(`${r.product_id}|${r.mall}`));
+      (data || []).forEach(r => {
+        const target = targetById.get(String(r.product_id));
+        if (historyRowMatchesTargetOption(r, target)) found.add(`${r.product_id}|${r.mall}`);
+      });
     }
   } catch (e) {
     console.warn(`  [${mallName}] 오늘 기록 조회 실패(무시하고 진행): ${e.message}`);
@@ -2325,7 +2386,7 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡') {
  * ★ 왜 필요한가.
  *
  *   기존 리포트에는 두 축이 있었다.
- *     상품 단위  수집성공 / 수집미확보 / 시도 / 미시도 / 무매칭
+ *     상품 단위  수집성공 / 수집미확보 / 시도 / 미시도 / 무매칭 / 옵션 불일치
  *     attempt 단위 blocked / budget / rateLimit / network / …
  *   앞은 «몇 개인가» 만 말하고, 뒤는 «호출이 왜 실패했는가» 만 말한다.
  *   그래서 «이 상품이 오늘 왜 비었는가» 라는 질문에 답하는 칸이 없었다.
@@ -2338,10 +2399,9 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡') {
  *   collected           수집기가 오늘 직접 가격을 확보했다
  *   already_collected   오늘 가격은 있는데 수집기가 아니라 다른 경로가 썼다
  *                       (Vercel cron / 사용자 검색 / AI / 임포트)
- *   no_match            호출이 나가 응답을 받았는데 우리 상품이 없었다
- *                       (옵션 불일치로 채택하지 않은 경우도 여기다 —
- *                        다른 옵션 가격을 대신 쓰지 않는 것이 규칙이다)
- *   blocked             공급자가 막았다 (403 / 이용제한 / 서킷 브레이커)
+ *   no_match            호출 응답에 우리 product_id 가 없었다
+ *   option_mismatch     product_id 는 있었지만 추적 vendorItemId 는 없거나 달랐다
+ *   blocked             공급자가 막았다 (쿠팡 401/403 / 이용제한 / 서킷 브레이커)
  *   rate_limited        분당·일일 상한, 호출 간격 대기로 못 나갔다
  *   timeout             응답 시간 초과
  *   api_error           그 밖의 API 오류 (5xx / 파싱 실패 / 키 미설정)
@@ -2360,7 +2420,7 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡') {
  *   칸을 더하는 수밖에 없다.
  * ------------------------------------------------------------------ */
 const OUTCOME_KEYS = [
-  'collected', 'already_collected', 'no_match',
+  'collected', 'already_collected', 'no_match', 'option_mismatch',
   'blocked', 'rate_limited', 'timeout', 'api_error', 'db_error',
   'budget', 'pending', 'target_query_error', 'unknown'
 ];
@@ -2378,6 +2438,8 @@ function outcomeFromReason(reason) {
   const raw = String(reason || '');
   if (!raw) return 'unknown';
   const r = raw.toLowerCase();
+  if (r.includes('option_mismatch') || r.includes('response_vid_missing')
+      || r.includes('target_vid_unknown')) return 'option_mismatch';
   /*
    * ★ 공급자 이름이 실려 있으면 «API 쪽 사건» 이다.
    *
@@ -2398,7 +2460,8 @@ function outcomeFromReason(reason) {
     if (db.kind !== DbError.KIND.UNKNOWN) return 'db_error';
   }
   if (r.includes('시간 초과') || r.includes('timeout') || r.includes('timed out')) return 'timeout';
-  if (r.includes('차단') || r.includes('중단') || r.includes('403')) return 'blocked';
+  if (r.includes('차단') || r.includes('중단') || r.includes('403')
+      || (r.includes('쿠팡') && r.includes('401'))) return 'blocked';
   if (r.includes('예산') || r.includes('budget')) return 'budget';
   if (r.includes('429') || r.includes('상한') || r.includes('한도')
       || r.includes('간격') || r.includes('대기')) return 'rate_limited';
@@ -2410,7 +2473,7 @@ function outcomeFromReason(reason) {
 
 function categorizeFailure(reason) {
   const r = String(reason || '').toLowerCase();
-  if (r.includes('차단') || r.includes('중단')) return 'blocked';
+  if (r.includes('차단') || r.includes('중단') || (r.includes('쿠팡') && r.includes('401'))) return 'blocked';
   if (r.includes('예산') || r.includes('budget')) return 'budget';
   if (r.includes('캐시') || r.includes('cache')) return 'staleCache';
   if (r.includes('네트워크') || r.includes('network')) return 'network';
@@ -2535,11 +2598,16 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      */
     const carried = (savedState && savedState.last_result && savedState.last_result.collectorCovered) || [];
     const carriedAttempt = (savedState && savedState.last_result && savedState.last_result.collectorAttempted) || [];
+    const carriedOptionMismatch = (savedState && savedState.last_result
+      && savedState.last_result.collectorOptionMismatches) || [];
     const collectibleKeys = new Set(collectible.map(p => `${p.product_id}|${p.mall}`));
     const collectorCoveredIds = carried.filter(k => collectibleKeys.has(k));
     // 확보 ⊆ 시도 (위 collectorAttempted 주석과 같은 이유)
     const collectorAttemptedIds = [...new Set([...carriedAttempt, ...carried])]
       .filter(k => collectibleKeys.has(k));
+    const collectorOptionMismatchIds = [...new Set(carriedOptionMismatch)]
+      .filter(k => collectibleKeys.has(k) && collectorAttemptedIds.includes(k)
+        && !collectorCoveredIds.includes(k));
     return {
       ...base,
       skipped: false, status: 'completed',
@@ -2551,14 +2619,18 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       collectorCovered: collectorCoveredIds,
       attemptedProducts: collectorAttemptedIds.length,
       skippedProducts: collectible.length - collectorAttemptedIds.length,
-      noMatchProducts: Math.max(0, collectorAttemptedIds.length - collectorCoveredIds.length),
+      noMatchProducts: Math.max(0, collectorAttemptedIds.length - collectorCoveredIds.length
+        - collectorOptionMismatchIds.length),
+      optionMismatchProducts: collectorOptionMismatchIds.length,
       collectorAttempted: collectorAttemptedIds,
+      collectorOptionMismatches: collectorOptionMismatchIds,
       todayPriceProducts, uncoveredProducts: collectible.length - todayPriceProducts,
       /*
        * 아무것도 하지 않은 실행도 상품 단위 상태는 사실대로 채운다.
        * 이번 실행이 시도하지 않았을 뿐, 오늘 누적 상태는 존재한다.
        *   확보함        → collected
        *   오늘 가격 있음 → already_collected
+       *   찾았지만 옵션이 다름 → option_mismatch
        *   찾아는 봤음   → no_match
        *   그 밖         → pending (이 실행이 시도하지 않았다)
        */
@@ -2570,6 +2642,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
           const k = `${p.product_id}|${p.mall}`;
           if (cov.has(k)) o.collected++;
           else if (done.has(k)) o.already_collected++;
+          else if (att.has(k) && collectorOptionMismatchIds.includes(k)) o.option_mismatch++;
           else if (att.has(k)) o.no_match++;
           else o.pending++;
         });
@@ -2622,6 +2695,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    * 하루 누적 합집합을 이어 간다 (collectorAttempted 주석 참고).
    */
   let priorCollectorAttempted = [];
+  let priorCollectorOptionMismatches = [];
   /*
    * 오늘 옵션 게이트가 "이 상품은 검색어를 바꿔도 소용없다" 고 확정한 상품
    * (P1, 2026-09-06). terminalOption 주석 참고. 하루 단위로만 이어 간다.
@@ -2643,6 +2717,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     priorFacetDry = (savedState.last_result && savedState.last_result.facetDryGroups) || [];
     priorCollectorCovered = (savedState.last_result && savedState.last_result.collectorCovered) || [];
     priorCollectorAttempted = (savedState.last_result && savedState.last_result.collectorAttempted) || [];
+    priorCollectorOptionMismatches = (savedState.last_result
+      && savedState.last_result.collectorOptionMismatches) || [];
     priorFailedKeywords = (savedState.last_result && savedState.last_result.failedKeywords) || [];
     console.log(`[${mallName}] ${TODAY} (KST) 이어서 진행 — ${processed}/${savedState.total || planTotal}개 완료,`
       + ` 커서 "${cursorKey}" 다음부터`);
@@ -2661,6 +2737,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   않으므로 따로 재시도 목록을 두지 않아도 자연히 다시 불린다.
    */
   const v3Plan = !!planner;
+  const coverageOnlyResume = !!(savedState && savedState.last_result
+    && savedState.last_result.coverageOnlyResume);
   /* 기아 예약 레인 커서 (api/_collectplan.js). 날짜를 넘어 이어진다 — runLocked 가 넘긴다. */
   let starveCursor = v3Plan && planner.starveAfter != null ? planner.starveAfter : null;
   const priorDone = new Set([...priorCollectorAttempted, ...priorCollectorCovered]);
@@ -2670,7 +2748,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   });
   let remaining = v3Plan
     ? plan.map(g => ({ kw: g.kw, rows: pendingRowsOf(g) })).filter(g => g.rows.length)
-    : resumeFrom(plan, cursorKey);
+    : coverageOnlyResume
+      ? plan.map(g => ({ kw: g.kw, rows: pendingRowsOf(g) })).filter(g => g.rows.length)
+      : resumeFrom(plan, cursorKey);
   const failedKeywords = new Map(priorFailedKeywords.map(kw => [kw, '직전 실행에서 실패']));
   const retryGroups = failedKeywords.size && !v3Plan
     ? plan.filter(g => failedKeywords.has(g.kw) && !remaining.some(x => x.kw === g.kw))
@@ -2763,6 +2843,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    * 저장된다 — 마이그레이션이 없다.
    */
   const collectorAttempted = new Set(priorCollectorAttempted);
+  /* Exact option identity failures accumulate per product across same-day runs. */
+  const collectorOptionMismatches = new Set(priorCollectorOptionMismatches);
   /*
    * 확보한 상품은 정의상 시도한 상품이다. 이어받은 목록에서도 그 포함관계를
    * 강제해 둔다 — collectorAttempted 키가 없던 시절의 상태를 이어받아도
@@ -2867,7 +2949,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   (수집을 막을 이유가 없다).
    */
   /*
-   * 이 실행이 «시작할 때» 이미 오늘 가격이 있던 상품. 아래 상품 단위
+   * 이 실행이 «시작할 때» 이미 오늘의 정확한 target 옵션 가격이 있던 상품. 아래 상품 단위
    * 최종 분류(outcomes)에서 already_collected 와 db_error 를 가르는 유일한
    * 근거다 — 둘 다 "uncovered 에는 없는데 이번 실행이 확보하지도 않은"
    * 모양이라, 이 집합 없이는 구분할 수 없다.
@@ -2876,6 +2958,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   if (!isNewDay) {
     const already = await collectedTodayFn(mallName, collectible);
     already.forEach(k => { uncovered.delete(k); todayAtStart.add(k); });
+    if (coverageOnlyResume) {
+      remaining = remaining
+        .map(g => ({ kw: g.kw, rows: pendingRowsOf(g, todayAtStart) }))
+        .filter(g => g.rows.length);
+    }
     if (already.size) console.log(`  [${mallName}] 오늘 이미 기록된 ${already.size}개는 건너뜁니다.`);
   }
 
@@ -3081,6 +3168,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     const pick = pickOption(target, items);
     if (!pick.item) {
       optionRejects.set(pick.reason, (optionRejects.get(pick.reason) || 0) + 1);
+      if (['OPTION_MISMATCH', 'RESPONSE_VID_MISSING', 'TARGET_VID_UNKNOWN'].includes(pick.reason)) {
+        collectorAttempted.add(key);
+        collectorOptionMismatches.add(key);
+        productReason.set(key, pick.reason);
+      }
       if (pick.reason === 'OPTION_MISMATCH' && optionRejectLogged < OPTION_REJECT_LOG_MAX) {
         optionRejectLogged++;
         console.warn(`  [${mallName}] OPTION_MISMATCH productId=${target.product_id}`
@@ -3114,6 +3206,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     optionMissStreak.delete(key);
     terminalOption.delete(key);
     terminalOptionNew.delete(key);
+    collectorOptionMismatches.delete(key);
     return 'MATCH';
   }
 
@@ -3247,6 +3340,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       failedKeywords: [...failedKeywords.keys()],
       collectorCovered: [...collectorCovered].filter(k => collectibleKeySet.has(k)),
       collectorAttempted: [...collectorAttempted].filter(k => collectibleKeySet.has(k)),
+      collectorOptionMismatches: [...collectorOptionMismatches].filter(k => collectibleKeySet.has(k)),
       secondPassDone: priorSecondDone.slice(-3000),
       facetDryGroups: priorFacetDry,
       terminalOptionFailures: [...terminalOption].slice(-3000),
@@ -3420,6 +3514,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
        */
       if (terminalOption.has(k)) return false;
       if (pass1Succeeded.has(k)) return true;                  // 이번 실행에서 1차 성공
+      if (coverageOnlyResume && priorDone.has(k)) return false; // 전환 전 V3 시도분은 다시 회수 호출하지 않는다
       const kw = p.keyword || searchPhraseFromTitle(p.title);  // 오늘 앞선 실행이 1차를 돈 것
       /* V3: 커서가 없다. 오늘 앞선 실행이 실제로 찾아본 상품인가로 가른다. */
       if (v3Plan) return priorDone.has(k) && !failedKeywords.has(kw);
@@ -3947,9 +4042,10 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    * 대상 상품을 정확히 한 칸씩 넣는다. 우선순위가 곧 정의다:
    *   ① 수집기가 확보했다            → collected
    *   ② 오늘 가격은 있다(다른 경로)  → already_collected
-   *   ③ 호출이 나가 응답을 받았다    → no_match
-   *   ④ 못 나갔다                    → 마지막 실패 사유로 분류
-   *   ⑤ 사유 기록이 없다             → 아직 차례가 안 왔으면 pending,
+   *   ③ product_id 는 응답에 있지만 옵션이 다르다 → option_mismatch
+   *   ④ 시도했지만 응답에 product_id 가 없다 → no_match
+   *   ⑤ 못 나갔다                    → 마지막 실패 사유로 분류
+   *   ⑥ 사유 기록이 없다             → 아직 차례가 안 왔으면 pending,
    *                                     이번 실행이 예산/시간으로 끊겼으면 budget
    *
    * ★ 이 계산은 읽기 전용이고 수집 동작에 전혀 영향을 주지 않는다.
@@ -3958,6 +4054,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    */
   const coveredSet = new Set(collectorCoveredIds);
   const attemptedSet = new Set(collectorAttemptedIds);
+  const collectorOptionMismatchIds = [...collectorOptionMismatches]
+    .filter(k => collectibleKeys.has(k) && attemptedSet.has(k) && !coveredSet.has(k));
+  const optionMismatchSet = new Set(collectorOptionMismatchIds);
   const outcomes = outcomesTemplate();
   /* 사유를 알 수 없는 미시도 상품이 pending 인지 budget 인지의 기준. */
   const ranOutOfRoom = stoppedEarly;
@@ -3975,7 +4074,10 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       else outcomes.db_error++;
       return;
     }
-    if (attemptedSet.has(key)) { outcomes.no_match++; return; }
+    if (attemptedSet.has(key)) {
+      outcomes[optionMismatchSet.has(key) ? 'option_mismatch' : 'no_match']++;
+      return;
+    }
     const reason = productReason.get(key);
     if (reason) { outcomes[outcomeFromReason(reason)]++; return; }
     outcomes[ranOutOfRoom ? 'budget' : 'pending']++;
@@ -3992,6 +4094,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     collectorSuccessProducts,
     collectorMissingProducts: collectible.length - collectorSuccessProducts,
     collectorCovered: collectorCoveredIds,
+    collectorOptionMismatches: collectorOptionMismatchIds,
     /*
      * ── 시도 단위(상품) — 하루 누적 ──
      *   attemptedProducts  실제로 호출이 나가 결과를 받아 본 상품
@@ -4000,7 +4103,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      */
     attemptedProducts: collectorAttemptedIds.length,
     skippedProducts: collectible.length - collectorAttemptedIds.length,
-    noMatchProducts: Math.max(0, collectorAttemptedIds.length - collectorSuccessProducts),
+    noMatchProducts: Math.max(0, collectorAttemptedIds.length - collectorSuccessProducts
+      - collectorOptionMismatchIds.length),
+    optionMismatchProducts: collectorOptionMismatchIds.length,
     collectorAttempted: collectorAttemptedIds,
     // ── 상품 단위 · 모든 기록 경로 (데이터 신선도 참고) ──
     todayPriceProducts,
@@ -4161,27 +4266,41 @@ async function runLocked(state, lockToken) {
   const previousTargetSignature = state && state.last_result && state.last_result.targetSignature;
   const targetStateMatches = !state || state.job_date !== TODAY
     || resumeCompatible(previousTargetSignature, targetMeta);
+  const coverageResumeState = state && state.job_date === TODAY && !targetStateMatches
+    && sameTargetSet(previousTargetSignature, targetMeta)
+    ? coverageOnlyResumeState(state, targetMeta) : null;
   targetMeta.signature = targetSignatureFor(targetMeta);
-  const resumeState = targetStateMatches ? state : null;
+  const resumeState = targetStateMatches ? state : (coverageResumeState || null);
 
   if (state && state.job_date === TODAY && !targetStateMatches) {
-    console.log(`\n[진행] 오늘 수집 대상 정책이 바뀌었습니다 — 기존 상태를 리셋하고 새 대상 집합으로 시작합니다.`);
-    console.log(`       이전=${previousTargetSignature || '(없음)'} / 현재=${targetMeta.signature}`);
+    if (coverageResumeState) {
+      console.log(`\n[진행] V3 → 레거시 전환: 같은 대상 집합의 성공·시도 ID는 보존하고 검색 커서만 비웁니다.`);
+      console.log(`       대상=${targetMeta.signature} / 몰별 기록 ${Object.keys(coverageResumeState.last_result.malls).join(', ')}`);
+    } else {
+      console.log(`\n[진행] 오늘 수집 대상 정책이 바뀌었습니다 — 기존 상태를 리셋하고 새 대상 집합으로 시작합니다.`);
+      console.log(`       이전=${previousTargetSignature || '(없음)'} / 현재=${targetMeta.signature}`);
+    }
   }
 
   const savedMalls = (resumeState && resumeState.last_result && resumeState.last_result.malls) || {};
   const coupangSaved = resumeState
-    ? { job_date: resumeState.job_date, cursor_key: resumeState.cursor_key,
-        processed: resumeState.processed, total: resumeState.total,
-        status: resumeState.status,
+    ? { job_date: resumeState.job_date,
+        cursor_key: coverageResumeState ? (savedMalls['쿠팡'] && savedMalls['쿠팡'].cursor_key) || '' : resumeState.cursor_key,
+        processed: coverageResumeState ? (savedMalls['쿠팡'] && savedMalls['쿠팡'].processed) || 0 : resumeState.processed,
+        total: coverageResumeState ? (savedMalls['쿠팡'] && savedMalls['쿠팡'].total) || resumeState.total : resumeState.total,
+        status: coverageResumeState ? (savedMalls['쿠팡'] && savedMalls['쿠팡'].status) || 'running' : resumeState.status,
         last_result: {
-          failedKeywords: (resumeState.last_result || {}).failedKeywords || [],
+          failedKeywords: coverageResumeState ? [] : (resumeState.last_result || {}).failedKeywords || [],
           /*
            * 오늘 앞선 실행이 확보한 상품 목록. 이걸 안 넘기면 이어받기 실행이
            * 빈 집합에서 시작해 성공률이 자기 몫으로 축소된다.
            */
           collectorCovered: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorCovered) || [],
           collectorAttempted: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorAttempted) || [],
+          collectorOptionMismatches: (savedMalls['쿠팡'] && savedMalls['쿠팡'].collectorOptionMismatches) || [],
+          coverageOnlyResume: !!coverageResumeState
+            || !!(savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
+              && savedMalls['쿠팡'].last_result.coverageOnlyResume),
           secondPassDone: (savedMalls['쿠팡'] && savedMalls['쿠팡'].last_result
             && savedMalls['쿠팡'].last_result.secondPassDone)
             || (resumeState.last_result && resumeState.last_result.secondPassDone) || [],
@@ -4201,6 +4320,9 @@ async function runLocked(state, lockToken) {
           failedKeywords: savedMalls['ADPICK'].failedKeywords || [],
           collectorCovered: savedMalls['ADPICK'].collectorCovered || [],
           collectorAttempted: savedMalls['ADPICK'].collectorAttempted || [],
+          collectorOptionMismatches: savedMalls['ADPICK'].collectorOptionMismatches || [],
+          coverageOnlyResume: !!coverageResumeState
+            || !!(savedMalls['ADPICK'].last_result && savedMalls['ADPICK'].last_result.coverageOnlyResume),
           secondPassDone: (savedMalls['ADPICK'].last_result || {}).secondPassDone || [],
           facetDryGroups: (savedMalls['ADPICK'].last_result || {}).facetDryGroups || [],
           terminalOptionFailures: (savedMalls['ADPICK'].last_result || {}).terminalOptionFailures || [],
@@ -4210,7 +4332,8 @@ async function runLocked(state, lockToken) {
     : null;
 
   const coupangDoneToday = resumeState && resumeState.job_date === TODAY
-    && resumeState.status === 'completed';
+    && (coverageResumeState ? savedMalls['쿠팡'] && savedMalls['쿠팡'].status === 'completed'
+      : resumeState.status === 'completed');
   const adpickDoneToday  = resumeState && resumeState.job_date === TODAY
     && savedMalls['ADPICK'] && savedMalls['ADPICK'].status === 'completed';
 
@@ -4337,10 +4460,10 @@ async function runLocked(state, lockToken) {
     console.log(`  └ KST 자정 마감 — 이번 실행은 ${Math.max(0, Math.round((runDeadline(started) - started) / 60000))}분만 쓴다`
       + ' (남은 일은 상태에 저장되고 다음 날 새 대상으로 시작한다)');
   }
+  await loadAdpickDayUsage();
+  console.log(`ADPICK 오늘 호출량: ${_adpickDayUsed}회 / 하루 상한 ${ADPICK_DAY_BUDGET}회`
+    + ` (이번 실행 상한 ${ADPICK_RUN_BUDGET}회)`);
   if (V3) {
-    await loadAdpickDayUsage();
-    console.log(`ADPICK 오늘 호출량: ${_adpickDayUsed}회 / 하루 상한 ${ADPICK_DAY_BUDGET}회`
-      + ` (이번 실행 상한 ${ADPICK_RUN_BUDGET}회)`);
     console.log(`[V3] 계획기 ${V3_PLANNER ? 'ON' : 'OFF'} / 병렬 ${V3_PARALLEL ? 'ON' : 'OFF'}`
       + ` / 체크포인트 ${V3_CHECKPOINT ? 'ON' : 'OFF'}  (대상 서명 ${targetMeta.signature})`);
   }
@@ -4452,6 +4575,7 @@ async function runLocked(state, lockToken) {
       + ` / 수집미확보 ${r.collectorMissingProducts} / 오늘가격보유(모든경로) ${r.todayPriceProducts}`);
     console.log(`  분해   시도 ${r.attemptedProducts} / 미시도 ${r.skippedProducts}`
       + ` / 시도했으나 무매칭 ${r.noMatchProducts}`
+      + ` / 옵션 불일치 ${r.optionMismatchProducts}`
       + `   (시도율 ${rateStr(r.attemptedProducts, r.targetProducts)},`
       + ` 시도대비 성공률 ${rateStr(r.collectorSuccessProducts, r.attemptedProducts)})`);
     console.log(`  검색시도 ${r.attemptCalls} / 성공 ${r.attemptSuccess} / 실패 ${r.attemptFailed}  (${cats})`);
@@ -4561,16 +4685,19 @@ async function runLocked(state, lockToken) {
             facetDryGroups: coupangResult.facetDryGroups || [],
             // 오늘 확정된 옵션 실패 (P1) — 같은 날 후속 실행이 이어받는다.
             terminalOptionFailures: coupangResult.terminalOptionFailures || [],
-            optionMissStreaks: coupangResult.optionMissStreaks || {}
+            optionMissStreaks: coupangResult.optionMissStreaks || {},
+            collectorOptionMismatches: coupangResult.collectorOptionMismatches || []
           },
           secondPassRecovered: coupangResult.secondPassRecovered,
           secondPassRemaining: coupangResult.secondPassRemaining,
           // 상품 단위 — collectorCovered 가 내일 성공률의 근거다(하루 누적, 합집합)
           collectorCovered: coupangResult.collectorCovered || [],
           collectorAttempted: coupangResult.collectorAttempted || [],
+          collectorOptionMismatches: coupangResult.collectorOptionMismatches || [],
           attemptedProducts: coupangResult.attemptedProducts,
           skippedProducts: coupangResult.skippedProducts,
           noMatchProducts: coupangResult.noMatchProducts,
+          optionMismatchProducts: coupangResult.optionMismatchProducts,
           passStats: coupangResult.passStats || [],
           targetProducts: coupangResult.targetProducts,
           collectorSuccessProducts: coupangResult.collectorSuccessProducts,
@@ -4591,15 +4718,18 @@ async function runLocked(state, lockToken) {
             facetDryGroups: adpickResult.facetDryGroups || [],
             // 오늘 확정된 옵션 실패 (P1) — 같은 날 후속 실행이 이어받는다.
             terminalOptionFailures: adpickResult.terminalOptionFailures || [],
-            optionMissStreaks: adpickResult.optionMissStreaks || {}
+            optionMissStreaks: adpickResult.optionMissStreaks || {},
+            collectorOptionMismatches: adpickResult.collectorOptionMismatches || []
           },
           secondPassRecovered: adpickResult.secondPassRecovered,
           secondPassRemaining: adpickResult.secondPassRemaining,
           collectorCovered: adpickResult.collectorCovered || [],
           collectorAttempted: adpickResult.collectorAttempted || [],
+          collectorOptionMismatches: adpickResult.collectorOptionMismatches || [],
           attemptedProducts: adpickResult.attemptedProducts,
           skippedProducts: adpickResult.skippedProducts,
           noMatchProducts: adpickResult.noMatchProducts,
+          optionMismatchProducts: adpickResult.optionMismatchProducts,
           passStats: adpickResult.passStats || [],
           targetProducts: adpickResult.targetProducts,
           collectorSuccessProducts: adpickResult.collectorSuccessProducts,
@@ -4659,11 +4789,12 @@ async function runLocked(state, lockToken) {
      *   39.6% 같은 낮은 값이 "못 찾아봐서" 인지 "찾아봤는데 없어서" 인지를
      *   이 세 줄이 갈라 준다 (collectorAttempted 주석 참고).
      *     attemptedProducts + skippedProducts        = targetProducts
-     *     collectorSuccessProducts + noMatchProducts = attemptedProducts
+     *     collectorSuccessProducts + noMatchProducts + optionMismatchProducts = attemptedProducts
      */
     attemptedProducts: sum('attemptedProducts'),
     skippedProducts: sum('skippedProducts'),
     noMatchProducts: sum('noMatchProducts'),
+    optionMismatchProducts: sum('optionMismatchProducts'),
 
     /* ── 상품 단위 · 모든 기록 경로 (데이터 신선도) ── */
     todayPriceProducts: sum('todayPriceProducts'),
@@ -4798,7 +4929,7 @@ const REPORT_EMAIL = process.env.PRICE_REPORT_EMAIL || 'yugeonbag091211@gmail.co
  *
  *   1) 수집 성공 상품 + 수집 미확보 상품 = 대상 상품   (상품 단위 · collector)
  *   1-b) 시도 상품 + 미시도 상품 = 대상 상품           (상품 단위 · 시도 분해)
- *   1-c) 수집 성공 상품 + 무매칭 상품 = 시도 상품      (상품 단위 · 시도 분해)
+ *   1-c) 수집 성공 + 무매칭 + 옵션 불일치 = 시도 상품 (상품 단위 · 시도 분해)
  *   2) 오늘 가격 보유 + 미보유 = 대상 상품             (상품 단위 · 모든 경로)
  *   3) 실패 attempt = 모든 실패 원인의 합              (attempt 단위)
  *   4) 성공 attempt + 실패 attempt = 총 attempt        (attempt 단위)
@@ -4818,16 +4949,18 @@ function reportInvariantErrors(report) {
   }
   /*
    *   1-b) 시도 + 미시도 = 대상            (상품 단위 · 시도 분해)
-   *   1-c) 수집 성공 + 무매칭 = 시도       (상품 단위 · 시도 분해)
+   *   1-c) 수집 성공 + 무매칭 + 옵션 불일치 = 시도 (상품 단위 · 시도 분해)
    * 이 둘이 깨지면 "시도율이 문제냐 매칭률이 문제냐" 라는 질문 자체가
    * 성립하지 않는다 — 두 축이 같은 모집단을 나누고 있지 않다는 뜻이다.
    */
   const att = n(report.attemptedProducts), skp = n(report.skippedProducts), nm = n(report.noMatchProducts);
+  const optionMismatch = n(report.optionMismatchProducts);
   if (att + skp !== target) {
     out.push(`상품 단위(시도): 시도 ${att} + 미시도 ${skp} = ${att + skp} ≠ 대상 ${target}`);
   }
-  if (cOk + nm !== att) {
-    out.push(`상품 단위(시도): 수집 성공 ${cOk} + 무매칭 ${nm} = ${cOk + nm} ≠ 시도 ${att}`);
+  if (cOk + nm + optionMismatch !== att) {
+    out.push(`상품 단위(시도): 수집 성공 ${cOk} + 무매칭 ${nm} + 옵션 불일치 ${optionMismatch}`
+      + ` = ${cOk + nm + optionMismatch} ≠ 시도 ${att}`);
   }
   const ok = n(report.todayPriceProducts), unc = n(report.uncoveredProducts);
   if (ok + unc !== target) {
@@ -4911,7 +5044,7 @@ function buildReportHtml(report) {
     dailyTargetProducts, rotationTargetProducts, rotationDays, rotationBucket,
     otherTotal, otherByMall, malls, failCats, outcomes,
     targetProducts, collectorSuccessProducts, collectorMissingProducts,
-    attemptedProducts, skippedProducts, noMatchProducts,
+    attemptedProducts, skippedProducts, noMatchProducts, optionMismatchProducts,
     todayPriceProducts, uncoveredProducts,
     attemptCalls, attemptSuccess, attemptFailed, attemptCallsRecovery, apiCalls,
     recorded, saved, suspect, rejected, processedProducts,
@@ -4982,6 +5115,7 @@ function buildReportHtml(report) {
     collected:          ['수집 성공', '수집기가 오늘 직접 확보', '#0b7a4b'],
     already_collected:  ['이미 수집됨', '다른 경로(검색·cron·AI)가 오늘 기록', '#0b7a4b'],
     no_match:           ['무매칭', '응답을 받았으나 우리 상품/옵션이 없음', '#8a6d3b'],
+    option_mismatch:    ['옵션 불일치', '상품 ID는 같지만 vendorItemId가 다름', '#8a6d3b'],
     blocked:            ['차단', '403 · 이용제한 · 서킷 브레이커', '#c9362b'],
     rate_limited:       ['호출 제한', '429 · 분당/일일 상한 · 간격 대기', '#c9362b'],
     timeout:            ['응답 시간 초과', '', '#c9362b'],
@@ -5021,9 +5155,9 @@ function buildReportHtml(report) {
     ['시도 상품 + 미시도 상품 = 대상 상품',
       `${num(attemptedProducts)} + ${num(skippedProducts)} = ${num(targetProducts)}`,
       num(attemptedProducts) + num(skippedProducts) === num(targetProducts)],
-    ['수집 성공 상품 + 무매칭 상품 = 시도 상품',
-      `${num(collectorSuccessProducts)} + ${num(noMatchProducts)} = ${num(attemptedProducts)}`,
-      num(collectorSuccessProducts) + num(noMatchProducts) === num(attemptedProducts)],
+    ['수집 성공 + 무매칭 + 옵션 불일치 = 시도 상품',
+      `${num(collectorSuccessProducts)} + ${num(noMatchProducts)} + ${num(optionMismatchProducts)} = ${num(attemptedProducts)}`,
+      num(collectorSuccessProducts) + num(noMatchProducts) + num(optionMismatchProducts) === num(attemptedProducts)],
     ['오늘 가격 보유 + 미보유 = 대상 상품',
       `${num(todayPriceProducts)} + ${num(uncoveredProducts)} = ${num(targetProducts)}`,
       num(todayPriceProducts) + num(uncoveredProducts) === num(targetProducts)],
@@ -5100,13 +5234,14 @@ function buildReportHtml(report) {
       ${row('시도한 상품 <span style="color:#bbb">(호출이 실제로 나감)</span>', num(attemptedProducts))}
       ${row('미시도 상품 <span style="color:#bbb">(차단·예산·상한으로 못 부름)</span>', num(skippedProducts))}
       ${row('시도했으나 무매칭 <span style="color:#bbb">(응답에 우리 product_id 없음)</span>', num(noMatchProducts))}
+      ${row('시도했으나 옵션 불일치 <span style="color:#bbb">(product_id는 일치, vendorItemId는 불일치·미확인)</span>', num(optionMismatchProducts))}
       ${row('시도율 <span style="color:#bbb">attempted ÷ target</span>', pct(rateOf(attemptedProducts, targetProducts)), { bold: true })}
       ${row('시도 대비 성공률 <span style="color:#bbb">success ÷ attempted</span>', pct(rateOf(collectorSuccessProducts, attemptedProducts)), { bold: true })}
       ${row('전체 수집 성공률 <span style="color:#bbb">success ÷ target</span>', pct(rateOf(collectorSuccessProducts, targetProducts)), { bold: true })}
     </table>
     <div style="font-size:11px;color:#bbb;margin-top:4px">
       시도 ${num(attemptedProducts)} + 미시도 ${num(skippedProducts)} = 대상 ${num(targetProducts)}<br>
-      수집 성공 ${num(collectorSuccessProducts)} + 무매칭 ${num(noMatchProducts)} = 시도 ${num(attemptedProducts)}<br>
+      수집 성공 ${num(collectorSuccessProducts)} + 무매칭 ${num(noMatchProducts)} + 옵션 불일치 ${num(optionMismatchProducts)} = 시도 ${num(attemptedProducts)}<br>
       ※ 시도율이 낮으면 시간·호출 예산 문제이고, 시도 대비 성공률이 낮으면 검색어·매칭 문제다.
     </div>
     <div style="font-size:11px;color:#bbb;margin-top:4px">
@@ -5336,7 +5471,7 @@ module.exports = {
   OUTCOME_KEYS, outcomesTemplate, outcomeFromReason, failureStage,
   // 키셋 스캔 — 커서 진행/중복 없음/커서 컬럼 누락 검출을 테스트가 고정한다.
   keysetScan, TARGET_PAGE, fetchTargetPages, refreshEligibleCache,
-  TODAY_SCAN_THRESHOLD, collectedTodayByDayScan,
+  TODAY_SCAN_THRESHOLD, collectedTodayByDayScan, historyRowMatchesTargetOption,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
   acquireLock, releaseLock, LOCK_TTL_MS,
   // 상태 읽기의 오류 분류 — test-audit-regressions 가 일시 장애 재시도/표 없음 안내를 고정한다.
@@ -5348,7 +5483,8 @@ module.exports = {
   addCacheHints, cacheHintQueries,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
-  v3KillReason, markV3Kill, loadAdpickDayUsage,
+  sameTargetSet, coverageOnlyResumeState,
+  v3KillReason, markV3Kill, loadAdpickDayUsage, adpickDayBudgetExceeded,
   V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET,
   // 자정 마감 — test-collector-v3 가 «자정을 넘지 않는다» 를 고정한다.
   runDeadline, DAY_END_MARGIN_MS
