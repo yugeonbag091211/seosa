@@ -158,7 +158,9 @@ function normItem(raw) {
   const p = (raw && typeof raw === 'object') ? raw : {};
 
   // 구버전 프론트는 {title, price}만 보낸다. lprice도 함께 본다.
-  const price = num(p.price != null ? p.price : p.lprice);
+  const parsedPrice = num(p.price != null ? p.price : p.lprice);
+  // Client-supplied context is not trusted: reject negative or unsafe prices.
+  const price = Number.isSafeInteger(parsedPrice) && parsedPrice > 0 ? parsedPrice : 0;
 
   const out = {
     productId: safeText(p.productId, 60),
@@ -171,8 +173,8 @@ function normItem(raw) {
   const listPrice = num(p.listPrice);
   if (listPrice > price && price > 0) {
     out.listPrice = listPrice;
-    const pct = num(p.discountPct);
-    out.discountPct = (pct > 0 && pct < 100) ? pct : Math.round((1 - price / listPrice) * 100);
+    // Recompute from the two displayed amounts; an injected discountPct can contradict them.
+    out.discountPct = Math.round((1 - price / listPrice) * 100);
   }
 
   // 네이버 hprice는 "같은 상품을 파는 곳 중 최고가"라서 정가가 아니다.
