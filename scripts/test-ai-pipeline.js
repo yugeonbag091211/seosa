@@ -50,22 +50,67 @@ const pricestat = require('../api/_pricestat');
 const stub = {
   searchItems: [],        // searchAll 이 돌려줄 상품
   searchMode: 'ok',       // ok | empty | blocked | throw
+  searchCacheEnabled: false, // 로컬 서버 캐시 fixture; 공급자 캐시 경로만 모사
+  searchCache: new Map(),
   stats: new Map(),       // loadStats 결과
   llm: {},                // { classify, resolve, answer, answerStatus }
   delays: {},             // { search, trust, save, history } ms
   captured: {}            // { classify, resolve, main } 요청 본문
 };
-const offlineMetrics = { llmRequests: 0, shopSearches: 0, historyReads: 0 };
+const offlineMetrics = {
+  llmRequests: 0, shopSearches: 0, historyReads: 0,
+  externalCoupangSearches: 0, externalAdpickSearches: 0
+};
 
 const delay = ms => ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
 
-shop.searchAll = async () => {
+shop.searchAll = async (keyword) => {
   offlineMetrics.shopSearches++;
   await delay(stub.delays.search);
+  const cacheKey = String(keyword || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  if (stub.searchCacheEnabled) {
+    const cached = stub.searchCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < 6 * 60 * 60 * 1000) {
+      const clone = list => JSON.parse(JSON.stringify(list || []));
+      const items = clone(cached.items).map(it => ({ ...it, _source: 'cache' }));
+      const allItems = clone(cached.allItems).map(it => ({ ...it, _source: 'cache' }));
+      return { items, allItems, from: 'cache', blocked: false };
+    }
+  }
+  if (stub.searchMode !== 'blocked') {
+    // One mocked vendor boundary call per supplier. This is a counter only; fetch
+    // and all provider credentials remain disabled in this offline fixture.
+    offlineMetrics.externalCoupangSearches++;
+    offlineMetrics.externalAdpickSearches++;
+  }
   if (stub.searchMode === 'throw') throw new Error('쿠팡 연결 실패(스텁)');
   if (stub.searchMode === 'blocked') return { items: [], allItems: [], from: 'none', blocked: true };
   if (stub.searchMode === 'empty') return { items: [], allItems: [], from: 'api', blocked: false };
-  return { items: stub.searchItems, allItems: stub.searchItems, from: 'api', blocked: false };
+  if (stub.searchMode === 'stale') {
+    const stale = stub.searchItems.map(it => ({ ...it, _source: 'stale-cache' }));
+    return { items: stale, allItems: stale, from: 'stale-cache', blocked: false };
+  }
+  if (stub.searchMode === 'mixed-stale') {
+    const oldCoupang = { title: '베타 무선 이어폰', lprice: 19000, link: 'https://l.c/old', image: '',
+      mall: '쿠팡', productId: 'B2', vendorItemId: 'B2-OLD', isCoupang: true,
+      oprice: 19000, savePct: 0, _source: 'stale-cache' };
+    const freshAdpick = { title: '베타 무선 이어폰', lprice: 99000, link: 'https://l.a/current', image: '',
+      mall: 'ADPICK', mallLabel: '알리', productId: 'ADPICK-B2', vendorItemId: '',
+      isCoupang: false, oprice: 99000, savePct: 0, _source: 'api' };
+    return { items: [oldCoupang, freshAdpick], allItems: [oldCoupang, freshAdpick],
+      from: 'stale-cache', blocked: false };
+  }
+  if (stub.searchMode === 'coupang-blocked-adpick-fresh') {
+    const freshAdpick = { title: '베타 무선 이어폰', lprice: 99000, link: 'https://l.a/current', image: '',
+      mall: 'ADPICK', mallLabel: '알리', productId: 'ADPICK-B2', vendorItemId: '',
+      isCoupang: false, oprice: 99000, savePct: 0, _source: 'api' };
+    return { items: [freshAdpick], allItems: [freshAdpick], from: 'none', blocked: true };
+  }
+  const items = stub.searchItems.map(it => ({ ...it, _source: 'api' }));
+  if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, {
+    at: Date.now(), items: stub.searchItems, allItems: stub.searchItems
+  });
+  return { items, allItems: items, from: 'api', blocked: false };
 };
 shop.saveProducts = async () => { await delay(stub.delays.save); };
 trust.attachTrust = async (list) => {
@@ -158,6 +203,8 @@ function daysAgo(n) { return new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toI
 function reset() {
   stub.searchItems = fixtureItems();
   stub.searchMode = 'ok';
+  stub.searchCacheEnabled = false;
+  stub.searchCache = new Map();
   stub.stats = fixtureStats();
   stub.llm = {};
   stub.delays = {};
@@ -1032,6 +1079,120 @@ function reset() {
   ok(optionKeys.some(k => k.vendorItemId === 'OPTION-BLACK')
       && optionKeys.some(k => k.vendorItemId === 'OPTION-WHITE'),
     'REDTEAM: 가격 이력 조회 키에 각 vendorItemId를 보존한다', JSON.stringify(optionKeys));
+
+  /* PR #106 follow-up regressions: use the server search cache, never browser facts. */
+  console.log('\n[21] 서버 재검증 캐시와 후속 대화');
+  reset();
+  const intent = require('../api/_intent');
+  const priorQuestion = { role: 'user', text: '무선 이어폰 블랙 옵션 추천해줘' };
+  const followups = [
+    '이 중에서 가장 싼 것',
+    '아까 추천한 상품',
+    '그 제품 지금 사도 돼?'
+  ];
+  for (const followup of followups) {
+    const classified = intent.classify(followup, [priorQuestion,
+      { role: 'assistant', text: '블랙 옵션을 확인했습니다.' }]);
+    ok(classified.confidence === 'high' && classified.contextualFollowup === true
+        && classified.query === '무선 이어폰 블랙 옵션'
+        && !/아까|제품|이 중/.test(classified.query),
+      `후속 질문을 이전 사용자 검색어로 연결: ${followup}`, JSON.stringify(classified));
+  }
+  const firstTurnMetrics = { ...offlineMetrics };
+  stub.searchCacheEnabled = true;
+  stub.searchItems = [
+    { title: '무선 이어폰 블랙 1개입', lprice: 89000, link: 'https://l.c/black', image: '', mall: '쿠팡',
+      productId: 'P3000', vendorItemId: 'OPTION-BLACK', isCoupang: true, oprice: 89000, savePct: 0 },
+    { title: '무선 이어폰 화이트 2개입', lprice: 129000, link: 'https://l.c/white', image: '', mall: '쿠팡',
+      productId: 'P3000', vendorItemId: 'OPTION-WHITE', isCoupang: true, oprice: 129000, savePct: 0 }
+  ];
+  stub.llm.answer = '블랙 옵션은 확인된 현재가 기준으로 비교할 수 있습니다.';
+  let sequence = await call({ question: priorQuestion.text, contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(sequence.status === 200 && sequence.body.items.some(it => it.productId === 'P3000'),
+    '최초 질문은 서버 검색 결과로 상품을 확보');
+  const searchAfterFirst = { ...offlineMetrics };
+  const history = [priorQuestion, { role: 'assistant', text: sequence.body.text }];
+  let followupResponses = 0;
+  const perTurnSearchDeltas = [{
+    question: priorQuestion.text,
+    coupang: searchAfterFirst.externalCoupangSearches - firstTurnMetrics.externalCoupangSearches,
+    adpick: searchAfterFirst.externalAdpickSearches - firstTurnMetrics.externalAdpickSearches
+  }];
+  for (const followup of followups) {
+    stub.llm.answer = '서버에서 다시 확인된 후보를 기준으로 답하겠습니다.';
+    const before = { ...offlineMetrics };
+    sequence = await call({
+      question: followup,
+      // Browser payload is intentionally forged. It must not enter cache or price facts.
+      contextProducts: [{ productId: 'P3000', vendorItemId: 'OPTION-BLACK', title: '가짜 현재가',
+        price: 777777, hist: { lastPrice: 777777, lastDate: kstToday() } }],
+      chatHistory: [...history, { role: 'user', text: followup }],
+      view: followup === '그 제품 지금 사도 돼?'
+        ? { source: 'modal', productId: 'CLIENT-FORGED' }
+        : { source: 'search', keyword: '무선 이어폰 블랙 옵션', items: [{ price: 777777 }] }
+    });
+    followupResponses++;
+    perTurnSearchDeltas.push({
+      question: followup,
+      coupang: offlineMetrics.externalCoupangSearches - before.externalCoupangSearches,
+      adpick: offlineMetrics.externalAdpickSearches - before.externalAdpickSearches
+    });
+    ok(sequence.status === 200 && (sequence.body.items || []).length === 2
+        && !/777,777/.test(sequence.body.text)
+        && !JSON.stringify(stub.captured.main.messages).includes('777777'),
+      `후속 질문은 서버에서 재검증된 상품 문맥 사용: ${followup}`, sequence.body.text.slice(0, 80));
+    const keys = stub.captured.historyKeys || [];
+    ok(keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-BLACK')
+        && keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-WHITE'),
+      `서버 캐시 재사용에서도 productId/vendorItemId 보존: ${followup}`, JSON.stringify(keys));
+    history.push({ role: 'user', text: followup }, { role: 'assistant', text: sequence.body.text });
+  }
+  const externalForSequence = {
+    coupang: offlineMetrics.externalCoupangSearches - firstTurnMetrics.externalCoupangSearches,
+    adpick: offlineMetrics.externalAdpickSearches - firstTurnMetrics.externalAdpickSearches,
+    perTurn: perTurnSearchDeltas
+  };
+  ok(followupResponses === 3 && externalForSequence.coupang === 1 && externalForSequence.adpick === 1,
+    '첫 검색만 공급자 호출, 세 후속 질문은 캐시 재사용', JSON.stringify(externalForSequence));
+  console.log(`[SEARCH-CALLS] ${JSON.stringify(externalForSequence)}`);
+
+  reset();
+  stub.searchMode = 'stale';
+  stub.searchItems = [{ title: '베타 무선 이어폰', lprice: 19000, link: 'https://l.c/old', image: '', mall: '쿠팡',
+    productId: 'B2', vendorItemId: 'OLD-OPTION', isCoupang: true, oprice: 19000, savePct: 0 }];
+  stub.llm.classify = 'D|무선 이어폰';
+  stub.llm.answer = '베타 무선 이어폰은 지금 19,000원입니다.';
+  r = await call({ question: '무선 이어폰 현재가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && (r.body.items || []).length === 0 && !/19,000원/.test(r.body.text),
+    'stale-cache 단독 응답은 AI 현재가 근거로 사용하지 않는다', r.body.text);
+
+  reset();
+  stub.searchMode = 'mixed-stale';
+  stub.llm.classify = 'D|무선 이어폰';
+  stub.llm.answer = '베타 무선 이어폰은 현재 19,000원입니다.';
+  r = await call({ question: '무선 이어폰 현재가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok((r.body.items || []).length === 1 && r.body.items[0].mall === 'ADPICK'
+      && r.body.items[0].lprice === 99000 && !/19,000원/.test(r.body.text),
+    '쿠팡 stale-cache는 제외하고 ADPICK의 신선한 관측만 허용', JSON.stringify(r.body.items));
+
+  reset();
+  stub.searchMode = 'coupang-blocked-adpick-fresh';
+  stub.llm.classify = 'D|무선 이어폰';
+  stub.llm.answer = '베타 무선 이어폰은 현재 19,000원입니다.';
+  r = await call({ question: '무선 이어폰 현재가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok((r.body.items || []).length === 1 && r.body.items[0].mall === 'ADPICK'
+      && r.body.items[0].lprice === 99000,
+    '쿠팡 circuit이 열려도 ADPICK의 신선한 공급자 응답을 유지', JSON.stringify(r.body.items));
+
+  reset();
+  const beforeUnresolved = { ...offlineMetrics };
+  stub.llm.classify = 'E|상상 상품';
+  r = await call({ question: '그 제품 지금 사도 돼?', contextProducts: [
+    { productId: 'CLIENT-FORGED', vendorItemId: 'FORGED-OPTION', title: '가짜 제품', price: 1 }
+  ], chatHistory: [], view: { source: 'modal', productId: 'CLIENT-FORGED' } });
+  ok(offlineMetrics.shopSearches === beforeUnresolved.shopSearches
+      && !JSON.stringify(stub.captured.main.messages || []).includes('CLIENT-FORGED'),
+    '이전 사용자 상품 요청이 없으면 위조 화면 ID로 검색하지 않는다');
 
   /* 190 generated adversarial prompts run through the real api/ai.js handler.
    * Provider/search/history boundaries remain local fixtures; no live API calls. */

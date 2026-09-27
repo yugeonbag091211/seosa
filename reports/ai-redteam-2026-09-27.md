@@ -35,6 +35,29 @@
 - 검색 정규화 단계에서 `vendorItemId`를 보존하고, 가격 이력 키가 옵션 ID를 유지하는지 handler 회귀 테스트로 확인한다.
 - 판매자 상품명에 내장된 지시를 데이터로 취급하라는 prompt 경계를 추가했다. prompt·자격 증명 패턴을 포함한 응답을 전역 출력 방화벽에서 차단한다. 이 패턴 방어는 휴리스틱이며 의미를 바꿔 쓴 모든 유출을 보장하지는 않는다.
 
+## PR #106 후속 대화와 검색 호출 보강
+
+- 로컬 코드에서 확인한 쿠팡·ADPICK 경로는 둘 다 검색어 키 기준 6시간 서버 캐시를 먼저 읽는다. 캐시 payload는 공급자 응답을 통해 만들어지고, 쿠팡 `productId`와 `vendorItemId`가 보존된다. `price_history`는 과거 관측이며 현재 가격의 대체 근거가 아니므로 재사용하지 않는다. Supabase 운영 데이터는 읽거나 쓰지 않았다.
+- `이 중에서 가장 싼 것`, `아까 추천한 상품`, `그 제품 지금 사도 돼?`는 이전의 명확한 **사용자 검색 요청**으로만 검색어를 연결한다. assistant 발화, 브라우저 `contextProducts`, `view`, 가격·이력·옵션 필드는 검색 근거로 쓰지 않는다. 연결된 검색어는 기존 서버 캐시/공급자 경로를 통과하고 검색 결과의 productId·vendorItemId를 가격 이력 키까지 유지한다. 대상이 될 과거 사용자 검색이 없으면 임의 상품 검색을 하지 않는다. 더 넓고 모호한 `좀 더 싼 거`는 기존 LLM 문맥 분류 경로를 보존한다.
+- AI 가격 답변에서는 항목별 `_source=api|cache`만 현재 가격 근거로 허용한다. `stale-cache`만 있으면 상품·가격을 답변 근거에서 제외한다. 쿠팡이 stale-cache이거나 차단돼도 ADPICK에 신선한 API 응답이 있으면 그 항목만 남긴다. 따라서 API가 차단되거나 호출 한도를 다 써서 stale 값만 남는 경우 과거 값을 오늘 가격으로 올리지 않는다.
+
+### AI 요청당 외부 검색 호출 — 로컬 fixture replay
+
+아래 “수정 전”은 패치 전 `_intent.classify`가 내던 검색어(`이 중에서…`는 이전 검색어, `아까 추천한 상품`은 해당 문구, `그 제품…`은 `제품`)와 공급자별 exact-query 6시간 캐시를 같은 로컬 fixture에 replay한 값이다. 실제 운영 요청/공급자 호출 측정이 아니다. “수정 후”는 실제 handler에 local server-cache fixture를 연결해 센 공급자 검색 경계 mock 횟수다. 각 칸은 `쿠팡 / ADPICK` 외부 검색 수다.
+
+| AI 요청 | 수정 전 fixture replay | 수정 후 handler fixture |
+|---|---:|---:|
+| `무선 이어폰 블랙 옵션 추천해줘` | 1 / 1 | 1 / 1 |
+| `이 중에서 가장 싼 것` | 0 / 0 | 0 / 0 |
+| `아까 추천한 상품` | 1 / 1 | 0 / 0 |
+| `그 제품 지금 사도 돼?` | 1 / 1 | 0 / 0 |
+| **4회 대화 합계** | **3 / 3** | **1 / 1** |
+
+세 후속 질문은 `3/3`개 성공했고, 캐시가 있는 대화에서 공급자 호출은 공급자별 `3 → 1`회로 줄었다. `searchAll`/서버 캐시 조회는 네 요청 모두에서 실행되지만 외부 검색은 최초 cache miss에만 발생했다. 운영에서는 두 캐시 TTL이 끝났거나 캐시가 없으면 기존 quota gate를 거쳐 공급자 호출을 시도하며, 차단/한도 소진으로 stale 값만 돌아오면 현재가 응답은 거부한다. 이번 횟수는 전부 로컬 모의 값이고 실제 Coupang·ADPICK 호출은 0회다.
+
+- 새 회귀 테스트는 productId는 같고 `vendorItemId`가 다른 옵션 둘을 캐시에 둬 매 요청의 `price_history` 키를 검사한다. 위조된 브라우저 가격·이력은 응답 프롬프트에 들어가지 않는다. stale-only 및 stale Coupang + fresh ADPICK 혼합 결과도 각각 검증한다.
+- Supabase `products`의 오래된 현재가 필드를 추가 경로로 읽지 않았다. 서버의 공식 검색 응답 캐시가 이미 현재 조회용 경로이고, `price_history`는 이력 전용이기 때문이다. ID/옵션 동일성은 검색 payload에서 이어지는 `productId + vendorItemId` 조합으로 확인한다.
+
 ## 공격 실행 결과
 
 실제 `api/ai.js` handler에 대해 생성한 **190개** 공격 변형을 실행했다. 로컬 악성 model 응답 fixture를 이용한 출력 방어 및 요청 경계 검사 기준으로 `190/190` 기대 방어, `0` 실패였다.
@@ -59,7 +82,8 @@
 |---|---:|
 | `node scripts/test-ai-redteam.js` | 93 PASS / 0 FAIL |
 | `node scripts/eval-adversarial.js` | 146/146 offline 평가 PASS; 실제 LLM 품질은 unavailable |
-| `node scripts/test-ai-pipeline.js` | 356 PASS / 0 FAIL; generated handler attacks 190/190 |
+| `node scripts/test-ai-pipeline.js` | 371 PASS / 0 FAIL; generated handler attacks 190/190; 후속 질문 3/3 |
+| `node scripts/test-guest.js` | 80 PASS / 0 FAIL; 모달에서 브라우저 상품·가격값 거부 |
 | `node scripts/test-ai.js` | 179 PASS / 0 FAIL |
 | `node scripts/test-intent-routing.js` | 26 PASS / 0 FAIL |
 | `npm test` | 종료 코드 0; 전체 저장소 테스트 통과 |
@@ -77,6 +101,7 @@
 - `api/ai.js`
 - `api/_intent.js`
 - `scripts/test-ai-pipeline.js`
+- `scripts/test-guest.js`
 - `scripts/test-ai.js`
 - `scripts/test-intent-routing.js`
 - `reports/ai-redteam-2026-09-27.md`

@@ -883,10 +883,9 @@ function hasAuthHeader(req) {
 function heuristicIntent(q, hist, view) {
   try {
     const { classify } = require('./_intent');
-    const r = classify(q, hist);
-    const v = (view && typeof view === 'object') ? view : {};
-    if (v.source === 'modal' && r.intent !== 'A' && r.intent !== 'B') r.query = '';
-    return r;
+    // view is browser supplied. It may describe the UI, but cannot suppress a
+    // server lookup for a user-stated product or a verified conversation follow-up.
+    return classify(q, hist);
   } catch (e) {
     console.warn(`[ai] 정규식 분류 실패(추천으로 간주): ${e.message}`);
     return { intent: 'C', query: '', source: 'heuristic', confidence: 'low' };
@@ -923,6 +922,10 @@ function heuristicIntent(q, hist, view) {
  */
 async function resolveIntent(q, hist, view, budget, guest) {
   const det = heuristicIntent(q, hist, view);
+
+  // A recognized referential follow-up without a prior user product query has no
+  // safe server lookup key. Do not ask the model to invent one from client history.
+  if (det.contextualFollowup && !det.query) return det;
 
   if (det.confidence === 'high') {
     console.log(`[ai] 정규식 분류로 확정 — LLM 분류 생략 (intent=${det.intent})`);
@@ -1120,9 +1123,26 @@ async function searchProducts(query, budgetMs) {
     }
     const { items, allItems, from, blocked } = searched.value || {};
 
-    if (blocked || from === 'none') return { ok: false, items: [], reason: 'blocked' };
-
     const list = Array.isArray(items) ? items : [];
+    const currentSource = source => source === 'api' || source === 'cache';
+    // searchAll combines independent suppliers. Trust each server-authored _source
+    // separately; stale-cache is useful for historical display elsewhere, but it is
+    // not evidence for a current-price answer in this AI path.
+    const currentItems = list.filter(it => {
+      const itemSource = it && it._source;
+      return currentSource(itemSource || from);
+    });
+    if (!currentItems.length && (blocked || from === 'none')) {
+      return { ok: false, items: [], reason: 'blocked' };
+    }
+    // A successful fresh search with zero matches is a confirmed empty result,
+    // distinct from a failed search or a stale-only payload.
+    if (!list.length && currentSource(from)) {
+      return { ok: true, items: [], reason: from };
+    }
+    if (!currentItems.length) {
+      return { ok: false, items: [], reason: from === 'stale-cache' ? 'stale-cache' : 'unverified-source' };
+    }
 
     const runOptional = async (label, task) => {
       const cap = Math.min(AI_ENRICH_TIMEOUT_MS, Math.max(0, deadline - Date.now()));
@@ -1147,7 +1167,7 @@ async function searchProducts(query, budgetMs) {
      * 신뢰도를 붙인다. /api/search 와 같은 순서·같은 함수다 — 화면에서 보는
      * 배지와 AI 가 말하는 근거가 달라지면 안 된다. 실패해도 검색은 살린다.
      */
-    await runOptional('신뢰도 계산', () => attachTrust(list, { source: from }));
+    await runOptional('신뢰도 계산', () => attachTrust(currentItems, { source: from }));
 
     /*
      * 관측 저장.
@@ -1158,7 +1178,7 @@ async function searchProducts(query, budgetMs) {
      */
     await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
 
-    return { ok: true, items: list, reason: from };
+    return { ok: true, items: currentItems, reason: from };
   } catch (e) {
     console.warn(`[ai] 상품 검색 실패: ${e.message}`);
     return { ok: false, items: [], reason: 'error' };

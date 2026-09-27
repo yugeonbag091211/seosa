@@ -43,7 +43,7 @@ const TIMING_RE = /(지금\s*사도|지금\s*살|살까|사도\s*(돼|될|괜찮
 const PRICE_RE = /(얼마|현재\s*가|현재\s*가격|판매\s*가|시세|정가|쿠폰\s*가|할인율|최저가|가격\s*(?:알려|찾아|비교|어때|좀)|어디서\s*(사|살|사는|구매)|판매처|링크\s*(줘|주세요|알려)|살\s*수\s*있|파는\s*곳|얼마나\s*해)/;
 
 /** 추천·선택 — "추천해줘" "골라줘" "뭐가 좋아" */
-const RECOMMEND_RE = /(추천|골라|찾아\s*(줘|주세요|봐|줄래)|보여\s*(줘|주세요)|뭐\s*(가|를|사|살)|어떤\s*(게|걸|것|거)|괜찮은\s*(거|게|것)|살\s*만한|사고\s*싶|사려고|사려는|구매하려|필요해|필요한데|살\s*건데|고민|비교해|vs|중에\s*(뭐|어떤))/;
+const RECOMMEND_RE = /(추천|골라|찾아\s*(줘|주세요|봐|줄래)|보여\s*(줘|주세요)|뭐\s*(가|를|사|살)|어떤\s*(게|걸|것|거)|괜찮은\s*(거|게|것)|살\s*만한|사고\s*싶|사려고|사려는|구매하려|필요해|필요한데|살\s*건데|고민|비교해|vs|중에\s*(뭐|어떤)|이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|가장\s*싼\s*(?:것|거|상품|제품)?)/;
 
 /** 고르는 방법을 묻는 말 — 추천이 아니라 지식이다. */
 const HOWTO_RE = /(어떻게\s*(골라|고르|고를|선택|사야|사는|보고\s*사)|고르는\s*(법|방법|기준|요령|팁)|뭘\s*봐야|뭐를\s*봐야|무엇을\s*봐야)/;
@@ -253,7 +253,10 @@ function extractQuery(text) {
  * 이런 말에는 확신을 높음으로 주지 않는다 — 검색어를 문맥에서 풀어야 하고,
  * 그 일은 LLM 이 우리보다 낫다 (api/ai.js resolveQuery).
  */
-const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|그중|그 중|아까|방금|위에|말한|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|상품))/;
+const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|상품))/;
+/* 좁게 확인된 후속 문구만 LLM 분류를 생략한다. "좀 더 싼 거"처럼
+ * 의미가 넓은 표현은 기존의 문맥 분류 경로를 유지한다. */
+const DETERMINISTIC_CONTEXT_FOLLOWUP_RE = /(?:이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|아까\s*(?:추천한|말한|보여준)\s*(?:상품|제품|것|거)?|그\s*(?:제품|상품|모델)\s*(?:지금\s*)?(?:사도\s*(?:돼|될|괜찮)|살까|가격|현재가))/;
 
 /**
  * 의도 판정.
@@ -326,12 +329,22 @@ function classify(text, hist) {
    * 이어받을 것이 없으면 빈 검색어로 둔다(호출부가 품목을 되묻는다).
    */
   const ownQuery = !!query;   // 이 메시지 자체에서 뽑은 검색어인가
-  if (!query && intent !== 'A' && intent !== 'B' && Array.isArray(hist)) {
+  const contextualFollowup = CONTEXT_DEPENDENT_RE.test(s);
+  let inheritedProductQuery = false;
+  if ((!query || contextualFollowup) && intent !== 'A' && intent !== 'B' && Array.isArray(hist)) {
     for (let i = hist.length - 1; i >= 0; i--) {
       const h = hist[i];
       if (!h || h.role === 'assistant') continue;
-      const q2 = extractQuery(h.text || h.content);
-      if (q2) { query = q2; break; }
+      const previousText = String(h.text || h.content || '').trim();
+      // Do not turn a prior constraint or another pronoun question into a product query.
+      if (!previousText || CONTEXT_DEPENDENT_RE.test(previousText)) continue;
+      const previous = classify(previousText, []);
+      if (['C', 'D', 'E'].includes(previous.intent)
+          && previous.confidence === 'high' && previous.query) {
+        query = previous.query;
+        inheritedProductQuery = true;
+        break;
+      }
     }
   }
 
@@ -354,9 +367,15 @@ function classify(text, hist) {
     else if (intent === 'B') confidence = 'high';
     else if (ownQuery) confidence = 'high';
   }
+  // Re-search a recognized follow-up using only the user's prior search phrase.
+  // Product, option, price, and history facts still come from the server results.
+  if (DETERMINISTIC_CONTEXT_FOLLOWUP_RE.test(s) && inheritedProductQuery && ['C', 'D', 'E'].includes(intent)) {
+    confidence = 'high';
+  }
+  if (contextualFollowup && !inheritedProductQuery) query = '';
 
   return {
-    intent, query, source: 'heuristic', confidence,
+    intent, query, source: 'heuristic', confidence, contextualFollowup,
     /*
      * LLM 이 뽑던 조건 중 정규식으로 확실한 것만 채운다 (extractUseCase 주석).
      * brand·avoid 는 표현이 너무 열려 있어 만들지 않는다 — 지어내느니 비운다.

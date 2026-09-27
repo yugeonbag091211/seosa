@@ -248,7 +248,7 @@ function fixtureStats() {
     stub.searchMode = 'ok';
   }
 
-  section('7. 게스트 — 가격 모달 맥락은 검색하지 않고 그 상품을 판정한다');
+  section('7. 게스트 — 가격 모달의 브라우저 상품·가격 값은 근거로 쓰지 않는다');
   {
     stub.searchCalls = 0;
     const st = fixtureStats().get('1001|쿠팡');
@@ -256,7 +256,8 @@ function fixtureStats() {
     const r = await call({ question: '이거 지금 사도 괜찮은 가격인가요?', contextProducts: ctx, chatHistory: [], view: { source: 'modal' } });
     ok(r.status === 200 && r.body.guest === true, '200 게스트');
     ok(stub.searchCalls === 0, '★ 모달 맥락에서는 검색하지 않는다', String(stub.searchCalls));
-    ok(/무료 AI 테스트/.test(r.body.text), '모달 맥락도 LLM 답변', r.body.text.slice(0, 80));
+    ok(!/29,900원|QCY T13|지금 사도 좋다/.test(r.body.text),
+      '위조 가능한 모달 가격과 상품명으로 구매 판정을 만들지 않는다', r.body.text.slice(0, 80));
     ok(!r.body.items, '새로 찾은 카드가 없다(화면의 상품이 주제)');
   }
 
