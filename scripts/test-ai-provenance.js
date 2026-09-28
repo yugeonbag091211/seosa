@@ -475,6 +475,18 @@ function searchFixture() {
         && Intent.classify('가격 한 번 더 확인해줘', []).intent === 'D'
         && Intent.classify('지금 가격 대비 성능 좋은 노트북 추천해줘', []).intent === 'C',
       '가격 재확인 문구는 가격 의도(D)로, "가격 대비 성능"은 추천(C)으로 간다');
+    // 가격을 다시 묻는 말의 남은 낱말("다시"·"확인해줘"·"이력")이 쇼핑 검색어가 되면 안 된다.
+    const junk = ['지금 가격 다시 알려줘', '가격 한 번 더 확인해줘', '가격 좀 확인해줘', '가격 다시 말해줘',
+      '가격 이력 알려줘', '가격 기록 알려줘', 'price history please'].map(q => [q, Intent.classify(q, []).query]);
+    ok(junk.every(([, query]) => query === ''), '가격 재질문·기록 질문은 빈 검색어 (쿠팡에 "다시"·"이력"을 검색하지 않는다)', JSON.stringify(junk));
+    const named = [['에어팟 프로 가격 다시 알려줘', '에어팟 프로'], ['택배 가격 확인해줘', '택배'],
+      ['수면 기록 밴드 추천해줘', '수면 기록 밴드'], ['에어팟 가격 이력 알려줘', '에어팟']];
+    ok(named.every(([q, want]) => Intent.classify(q, []).query === want),
+      '상품 이름은 그대로 남는다 (가격 기록 문구만 걷어낸다)', JSON.stringify(named.map(([q]) => Intent.classify(q, []).query)));
+    const inherit = Intent.classify('지금 가격 다시 알려줘', [{ role: 'user', text: '에어팟 프로 추천해줘' }, { role: 'assistant', text: '에어팟 프로 2를 권합니다.' }]);
+    ok(inherit.query === '에어팟 프로' && inherit.confidence === 'low', '재질문은 앞 대화의 상품을 이어받고 LLM 확인으로 넘긴다', JSON.stringify(inherit));
+    const reask = await ask({ question: '지금 가격 다시 알려줘' }, { classify: 'D', answer: '어떤 상품인지 알려 주세요.', searchItems: searchFixture() });
+    ok(reask.searches === 0, '문맥 없는 가격 재질문은 쇼핑 API 를 부르지 않는다', JSON.stringify({ searches: reask.searches }));
 
     const withGenuine = await ask({ question: '고마워', chatHistory: [{ role: 'user', text: '갤럭시 버즈3 프로 지금 사도 돼?' }, genuine] },
       { classify: 'A', answer: '천만에요.' });
