@@ -884,9 +884,10 @@ function filterMainProductCandidates(keyword, items) {
 function rankItems(keyword, items, opts = {}) {
   const minScore = Number.isFinite(opts.minScore) ? opts.minScore : MIN_SCORE;
   const { items: deduped, removed } = dedupeItems(items);
-  const intentFiltered = filterMainProductCandidates(keyword, deduped);
-  const uniq = intentFiltered.items;
-  const intentDropped = intentFiltered.dropped;
+  // General search ranks accessory matches below main products but keeps them available.
+  // The AI path applies the explicit intent filter in _shopintent.js before its early return.
+  const uniq = deduped;
+  const intentDropped = 0;
   // 브랜드 판정에 이번 목록을 쓴다 (detectBrandHead 주석 참고).
   const analysis = analyzeQuery(keyword, { titles: deduped.map(it => (it && it.title) || '') });
 
