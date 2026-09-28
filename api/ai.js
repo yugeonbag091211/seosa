@@ -1333,6 +1333,12 @@ function toCard(it, stat) {
    */
   const label = safeText(it && it.mallLabel, 30);
   if (label) card.mallLabel = label;
+  // Keep the exact Coupang option attached to its price and purchase URL in the response.
+  // ADPICK identifiers must never be mislabeled as Coupang vendorItemIds.
+  if (it && it.isCoupang === true && AC.isCoupangMall(it.mall)) {
+    const vendorItemId = safeText(it.vendorItemId, 60);
+    if (vendorItemId) card.vendorItemId = vendorItemId;
+  }
 
   /*
    * 카드에 붙는 한 줄 근거.
