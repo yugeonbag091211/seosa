@@ -2106,7 +2106,7 @@ function unverifiedContextualPrices(text, items) {
     const before = s.slice(Math.max(0, start - 48), start);
     const after = s.slice(end, Math.min(s.length, end + 48));
     const clearBefore = /(?:현재\s*(?:가|가격|판매가)(?:는|이|가|:)?|오늘\s*(?:가격|판매가)(?:은|이|가|:)?|지금\s*(?:가격|판매가)(?:은|이|가|:)?|판매가(?:는|가|이|:)?|가격(?:은|이|을|:)|최저가(?:는|가|이|:)?|할인가(?:는|가|이|:)?|쿠폰가(?:는|가|이|:)?|금액(?:은|이|:)|비용(?:은|이|:)|current\s+price|price\s*(?:is|:))\s*(?:약|대략)?\s*$/i.test(before);
-    const clearAfter = /^\s*(?:에\s*(?:살|구매|결제)|으로\s*(?:살|구매|결제)|대에\s*(?:살|구매)|이면\s*(?:살|구매|가능)|을?\s*주고\s*(?:살|구매)|can\s+buy\s+for)\b/i.test(after);
+    const clearAfter = /^\s*(?:에\s*(?:살|구매|결제)|으로\s*(?:살|구매|결제)|대에\s*(?:살|구매)|이면\s*(?:살|구매|가능)|을?\s*주고\s*(?:살|구매)|can\s+buy\s+for)(?=$|[\s,.!?])/i.test(after);
     if (!clearBefore && !clearAfter) continue;
     occupied.push({ start, end });
     add({ start, end, value, currency: 'KRW', kind: priceClaimKind(s, start, end) });
