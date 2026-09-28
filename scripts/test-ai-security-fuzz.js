@@ -232,6 +232,28 @@ try {
   check('record_low_evidence', 'confirmed-low-card-bounded',
     /최근 관측 기록 최저/.test(I.toCard(cardBase, confirmedLowHistory).note || ''),
     'confirmed low card wording was not bounded');
+
+  const optionRows = [
+    { productId: 'PAIR-P', vendorItemId: 'PAIR-BLUE', mall: '쿠팡', isCoupang: true,
+      title: '이어폰 블루', lprice: 12900, link: 'https://affiliate.invalid/item/PAIR-BLUE' },
+    { productId: 'PAIR-P', vendorItemId: 'PAIR-WHITE', mall: '쿠팡', isCoupang: true,
+      title: '이어폰 화이트', lprice: 15900, link: 'https://affiliate.invalid/item/PAIR-WHITE' }
+  ];
+  const optionCards = optionRows.map(row => I.toCard(row, null));
+  check('affiliate_identity', 'price-link-option-pair',
+    optionCards.every((card, i) => card.productId === optionRows[i].productId
+      && card.vendorItemId === optionRows[i].vendorItemId
+      && card.mall === optionRows[i].mall && card.lprice === optionRows[i].lprice
+      && card.link === optionRows[i].link
+      && card.link.endsWith('/' + card.vendorItemId)),
+    'card option, price, mall, and purchase URL were detached');
+  const adpickCard = I.toCard({ productId: 'AP-P', vendorItemId: 'FAKE-COUPANG-V',
+    mall: 'ADPICK', isCoupang: false, title: 'ADPICK 이어폰', lprice: 19900,
+    link: 'https://affiliate.invalid/adpick/AP-P' }, null);
+  check('affiliate_identity', 'no-coupang-option-on-adpick',
+    adpickCard.mall === 'ADPICK' && adpickCard.isCoupang === false
+      && !Object.prototype.hasOwnProperty.call(adpickCard, 'vendorItemId'),
+    'ADPICK card carried a Coupang option identifier');
   check('korean_price_claims', 'spec-model-numbers',
     I.unverifiedContextualPrices('RTX 5090, iPhone 17, Galaxy S26, WH-1000XM6, 14ZD95U, 128GB, 240Hz, 65W, 2026년', [item(129000)]).length === 0,
     'model/spec/year number was treated as a price');
