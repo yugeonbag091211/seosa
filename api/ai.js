@@ -1976,9 +1976,10 @@ function priceClaimKind(text, start, end) {
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:낮|싸|저렴)/.test(head)) return 'current-below-average';
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:높|비싸)/.test(head)) return 'current-above-average';
   if (/(?:현재\s*(?:가|가격|판매가)|오늘\s*(?:가격|판매가)|지금\s*(?:가격|판매가)|판매가|가격|최저가|할인가|쿠폰가|금액|비용)(?:는|은|이|을|가|:)?\s*(?:약|대략)?\s*$/i.test(tail)) return 'current';
-  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'average';
+  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:은|이|가|:|\()\s*$/i.test(tail)) return 'average';
   if (/(?:정가|정상가|소비자가|원래\s*(?:가격|는|가)?|list\s*price)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'reference';
   if (/(?:기록|최근|지난\s*\d+\s*일|어제|전날|당시|과거|이전|저점|최저가)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'history';
+  if (/^\s*(?:차이(?:가|는|도)?|차액(?:은|이|가)?|difference\b)/i.test(head)) return 'difference';
   if (/^\s*보다\s*(?:더\s*)?(?:싸|저렴|낮)/.test(head)) return 'compare-less';
   if (/^\s*보다\s*(?:더\s*)?(?:비싸|높)/.test(head)) return 'compare-more';
   if (/(?:대비|비교해)\s*$/.test(tail)) return 'current';
@@ -2001,6 +2002,14 @@ function priceEvidenceValues(item, kind) {
   const history = h ? [
     h.lastPrice, h.prevPrice, h.trendFrom, ...(Array.isArray(h.points) ? h.points.map(pt => pt && (pt.p != null ? pt.p : pt.price)) : [])
   ].map(positive).filter(Boolean) : [];
+  if (kind === 'difference') {
+    const references = history.concat(h ? [h.avg30] : [])
+      .concat(hasConfirmedRecordLow(h) ? [h.low] : [])
+      .map(positive).filter(Boolean);
+    return Array.from(new Set(current().flatMap(now =>
+      references.map(reference => Math.abs(now - reference)).filter(value => value > 0)
+    )));
+  }
   if (kind === 'current' || kind === 'current-below-average' || kind === 'current-above-average') return current();
   if (kind === 'average') return h ? [positive(h.avg30)].filter(Boolean) : [];
   if (kind === 'reference') return [positive(item.listPrice)].filter(Boolean);

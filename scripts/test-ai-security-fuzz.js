@@ -162,6 +162,21 @@ try {
     I.unverifiedCurrentPrices('현재가 ₩55,777', []).length > 0, 'claim passed with no evidence');
 
 
+  /* Comparative prices preserve their own evidence class, and deltas derive only from trusted values. */
+  const comparisonEvidence = item(89000, { hist: {
+    low: 85000, lowCount: 2, lowConfirmed: true, count: 12, historyDays: 20,
+    firstDate: '2026-08-01', lastDate: '2026-08-20', avg30: 101000,
+    lastPrice: 89000, prevPrice: 95000, points: [{ p: 85000 }, { p: 89000 }]
+  } });
+  const supportedComparison = '현재 89,000원으로 30일 평균(101,000원)보다 저렴하고 기록상 최저가 85,000원과 4,000원 차이입니다.';
+  check('price_comparison_grounding', 'parenthetical-average-and-derived-difference',
+    I.unverifiedContextualPrices(supportedComparison, [comparisonEvidence]).length === 0,
+    JSON.stringify(I.unverifiedContextualPrices(supportedComparison, [comparisonEvidence])));
+  const forgedDifference = supportedComparison.replace('4,000원 차이', '4,001원 차이');
+  check('price_comparison_grounding', 'forged-derived-difference-rejected',
+    I.unverifiedContextualPrices(forgedDifference, [comparisonEvidence]).length > 0,
+    'unexplained difference was accepted');
+
   /* Korean/English price forms, comparison semantics, and irrelevant model/spec numbers. */
   const contextualCases = [
     ['plain-won', '현재가는 129,000원입니다.', 129000, 129000],

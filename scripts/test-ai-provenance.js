@@ -580,7 +580,7 @@ function searchFixture() {
         expect = f.includes('SEOSA 보유 관측 기록 중 확인된 최저가 135,000원') && f.includes('현재가 139,000원')
           && !/(?<![0-9,])(?:89,000|79,000|99,\d00)원/.test(f);
       } else if (vid === 'V-WHITE') {
-        expect = f.includes('SEOSA 보유 관측 기록 중 확인된 최저가 99,000원') && !f.includes('현재가 99,000원')
+        expect = f.includes('최근 관측 기록 최저 99,000원') && !f.includes('현재가 99,000원')
           && !/(?<![0-9,])(?:135,000|139,000|89,000|79,000)원/.test(f) && !productData(r.system).includes('productId=7001');
       } else if (vid) {
         expect = !/\d{2},\d{3}원/.test(f) && /옵션=VID-OPTION/.test(noteBlock(r.system));
@@ -617,7 +617,7 @@ function searchFixture() {
       '검색 결과의 두 옵션은 각자 자기 옵션의 최저가를 갖는다', JSON.stringify({ bBlock: bBlock.slice(0, 200), wBlock: wBlock.slice(0, 200) }));
     const cards = sr.body.items || [];
     const bCard = cards.find(c => c.title === BUDS.title), wCard = cards.find(c => /화이트/.test(c.title));
-    ok(wCard && wCard.note === '기록상 최저가' && bCard && bCard.note !== '기록상 최저가',
+    ok(wCard && wCard.note === '최근 관측 기록 최저' && bCard && bCard.note !== '최근 관측 기록 최저',
       '카드 한 줄 근거도 옵션별 기록으로 계산한다', JSON.stringify(cards.map(c => [c.title, c.note])));
     ok(dbWrites === 0, '옵션 검증 중 DB 쓰기 0회');
   }
@@ -690,7 +690,7 @@ function searchFixture() {
       '추천 응답은 직전 추천 참조와 발화 서명을 함께 준다');
 
     const modal = await ask({ question: '이거 지금 사도 돼?', contextProducts: [budsContext()], view: { source: 'modal' } },
-      { classify: 'E', answer: '현재가 139,000원으로 기록상 최저가 135,000원보다 4,000원 높습니다.' });
+      { classify: 'E', answer: '현재가는 139,000원입니다. 기록상 최저가와 4,000원 차이입니다.' });
     ok(modal.searches === 0 && modal.body.degraded !== true && modal.body.text.includes('139,000원')
         && productData(modal.system).includes('SEOSA 확인'),
       '상세 화면 가격 질문: 검색 없이 카탈로그로 확인한 가격으로 답한다(확인 날짜 표시)', modal.body.text);
