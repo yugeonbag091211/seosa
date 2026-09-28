@@ -195,6 +195,22 @@ try {
     I.unverifiedContextualPrices('현재가는 12,900입니다.', [item(12900)]).length === 0
       && I.wonMatches('현재가는 12,900입니다.').length === 0,
     'unitless exact price was not contextually validated');
+
+  const daysAgoKst = days => new Date(Date.now() + 9 * 3600000 - days * 86400000).toISOString().slice(0, 10);
+  const staleCatalogPrice = item(12900, { checkedAt: daysAgoKst(10) });
+  const recentCatalogPrice = item(12900, { checkedAt: daysAgoKst(1) });
+  check('catalog_price_freshness', 'ten-day-snapshot-not-current',
+    I.unverifiedCurrentPrices('현재가는 12,900원입니다.', [staleCatalogPrice]).length > 0,
+    'ten-day catalog snapshot passed as current price');
+  check('catalog_price_freshness', 'stale-snapshot-wording',
+    I.describe(Object.assign({ ref: 'P1' }, staleCatalogPrice), false, false).includes('마지막 확인 가격'),
+    'stale catalog snapshot was described as current');
+  check('catalog_price_freshness', 'recent-snapshot-current',
+    I.unverifiedCurrentPrices('현재가는 12,900원입니다.', [recentCatalogPrice]).length === 0,
+    'recent verified catalog snapshot was rejected');
+  check('catalog_price_freshness', 'future-snapshot-rejected',
+    I.unverifiedCurrentPrices('현재가는 12,900원입니다.', [item(12900, { checkedAt: daysAgoKst(-1) })]).length > 0,
+    'future-dated catalog snapshot passed as current');
   check('korean_price_claims', 'spec-model-numbers',
     I.unverifiedContextualPrices('RTX 5090, iPhone 17, Galaxy S26, WH-1000XM6, 14ZD95U, 128GB, 240Hz, 65W, 2026년', [item(129000)]).length === 0,
     'model/spec/year number was treated as a price');
