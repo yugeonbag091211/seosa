@@ -143,11 +143,11 @@ try {
   check('server_price_binding', 'ambiguous-options',
     I.unverifiedCurrentPrices('갤럭시 버즈 현재가 55,777원', [
       item(55777, { vendorItemId: 'BLACK', title: '갤럭시 버즈 블랙' }),
-      item(55777, { vendorItemId: 'WHITE', title: '갤럭시 버즈 화이트' })
+      item(65000, { vendorItemId: 'WHITE', title: '갤럭시 버즈 화이트' })
     ]).length > 0, 'ambiguous options accepted');
   check('server_price_binding', 'different-option',
     I.unverifiedCurrentPrices('갤럭시 버즈 블랙 현재가 55,777원',
-      [item(55777, { vendorItemId: 'WHITE', title: '갤럭시 버즈 화이트' })]).length > 0,
+      [item(65000, { vendorItemId: 'WHITE', title: '갤럭시 버즈 화이트' })]).length > 0,
     'different option price accepted');
   check('server_price_binding', 'no-evidence',
     I.unverifiedCurrentPrices('현재가 ₩55,777', []).length > 0, 'claim passed with no evidence');
