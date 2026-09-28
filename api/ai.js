@@ -2496,13 +2496,24 @@ function unsupportedSuperlatives(text, items) {
   const out = [];
 
   /* ── ① 가격 기록에 대한 주장 ── */
-  const hasLow = list.some(it => it.hist && it.hist.low > 0);
-  if (!hasLow) {
-    let m;
-    SUPERLATIVE.lastIndex = 0;
-    while ((m = SUPERLATIVE.exec(t)) !== null) {
-      if (out.indexOf(m[1]) < 0) out.push(m[1]);
-    }
+  // price_history 는 제한된 최근 관측 창이므로 '역대/사상' 최저를 증명할 수 없다.
+  const allTimeClaim = /(?:역대|사상)\s*최저(?:가)?/i.test(t);
+  if (allTimeClaim) out.push('역대 최저가');
+
+  // 일반 기록 최저도 정확한 옵션의 충분한 관측 범위에서만 허용한다.
+  SUPERLATIVE.lastIndex = 0;
+  let recordMatch;
+  while ((recordMatch = SUPERLATIVE.exec(t)) !== null) {
+    if (/(?:역대|사상)/.test(recordMatch[1])) continue;
+    const refs = referencedItems(t, recordMatch.index, list);
+    const candidates = refs.length ? refs : list;
+    const supported = candidates.length > 0 && candidates.every(it => {
+      const h = it && it.hist;
+      return !!h && Number(h.low) > 0 && Number(h.count) >= 7
+        && Number(h.historyDays) >= 7 && !!h.firstDate && !!h.lastDate
+        && h.lowConfirmed !== false;
+    });
+    if (!supported && out.indexOf(recordMatch[1]) < 0) out.push(recordMatch[1]);
   }
 
   /*
