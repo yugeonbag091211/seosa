@@ -461,7 +461,7 @@ function dealOf(stat, price, today) {
   if (stat.low > 0 && p > stat.low) {
     const over = (p - stat.low) / stat.low;
     if (over > 0.02) {
-      cautions.push('역대 최저가는 아니다(' + stat.lowDate + ' ' + won(stat.low) + '원, ' + pct(over) + '% 위)');
+      cautions.push('SEOSA 보유 관측 기록의 최저가보다 높다(' + stat.lowDate + ' ' + won(stat.low) + '원, ' + pct(over) + '% 위)');
     }
   } else if (stat.low > 0 && p < stat.low) {
     /*
@@ -530,7 +530,7 @@ function dealOf(stat, price, today) {
   const a = assess(stat, p, today);
   if (a && a.verdict === 'wait' && DEAL_ORDER[verdict] > DEAL_ORDER.NORMAL) {
     verdict = 'NORMAL';
-    cautions.push('다른 기준(30일 평균·역대 최저가)에서는 싸지 않아 낮춰 판단했다');
+    cautions.push('다른 기준(30일 평균·관측 기록 최저)에서는 싸지 않아 낮춰 판단했다');
   }
   if (a && a.verdict === 'good' && DEAL_ORDER[verdict] < DEAL_ORDER.WATCH) {
     verdict = 'WATCH';
