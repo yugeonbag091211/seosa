@@ -56,12 +56,15 @@ const VARIANTS = [
 ];
 
 async function probe(keyword, variant) {
-  const query = `keyword=${encodeURIComponent(keyword)}&limit=5`;
+  const url = new URL(PATH, HOST);
+  url.searchParams.set('keyword', String(keyword));
+  url.searchParams.set('limit', '5');
+  const query = url.search.slice(1);
   const started = Date.now();
   let r, text;
   try {
-    r = await fetch(`${HOST}${PATH}?${query}`, {
-      headers: Object.assign({ Authorization: sign('GET', PATH, query) }, variant.headers)
+    r = await fetch(url, {
+      headers: Object.assign({ Authorization: sign('GET', url.pathname, query) }, variant.headers)
     });
     text = await r.text();
   } catch (e) {

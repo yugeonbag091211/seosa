@@ -9,6 +9,7 @@ const path = require('path');
 let apiHits = 0;
 let rpcMode = 'denied';
 let rpcCalls = 0;
+let lastAcquire = null;
 let cacheRow = null;
 
 const server = http.createServer((req, res) => {
@@ -27,12 +28,13 @@ const server = http.createServer((req, res) => {
 
 function fakeSupabase() {
   return {
-    rpc(name) {
-      if (name === 'coupang_acquire') {
+    rpc(name, args) {
+      if (name === 'coupang_acquire_v2') {
         rpcCalls++;
+        lastAcquire = args;
         if (rpcMode === 'error') return Promise.resolve({ data: null, error: { message: 'temporary Supabase timeout' } });
         if (rpcMode === 'denied') return Promise.resolve({
-          data: [{ allowed: false, call_id: null, reason: '시간당 검색 한도 10/10', used: 10 }],
+          data: [{ allowed: false, call_id: null, reason: 'Search 분당 운영 budget 20/20', used: 20 }],
           error: null
         });
         if (rpcMode === 'no-id') return Promise.resolve({
@@ -75,6 +77,10 @@ function fakeSupabase() {
   process.env.COUPANG_API_HOST = 'http://127.0.0.1';
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   process.env.COUPANG_API_HOST = 'http://127.0.0.1:' + server.address().port;
+  // A legacy setting may have allowed 40/min; it must not raise the new
+  // initial operating budget unless the new setting is explicitly provided.
+  process.env.COUPANG_MAX_PER_MIN = '40';
+  delete process.env.COUPANG_SEARCH_OPERATING_CAP;
 
   const supabasePath = require.resolve(path.join(__dirname, '..', 'api', '_supabase.js'));
   const coupangPath = require.resolve(path.join(__dirname, '..', 'api', '_coupang.js'));
@@ -84,17 +90,32 @@ function fakeSupabase() {
   delete require.cache[coupangPath];
   const Coupang = require('../api/_coupang');
   const attempt = opts => Coupang.searchCoupang('quota fixture', {
-    source: 'test', limit: 1, maxWaitMs: 5000, minGapMs: 1, ...opts
+    source: 'search', limit: 1, maxWaitMs: 5000, minGapMs: 1, ...opts
   });
 
   try {
-    assert.strictEqual(Coupang.MAX_PER_HOUR, 10, 'official hourly limit is explicit');
+    assert.strictEqual(Coupang.MAX_PER_MIN, 20, 'initial Search operating budget is 20/min');
+    assert.strictEqual(Coupang.SEARCH_HARD_CAP, 50, 'Search hard cap is 50/min');
+    assert.strictEqual(Coupang.GLOBAL_OPERATING_CAP, 80, 'initial global operating budget is 80/min');
+    assert.strictEqual(Coupang.GLOBAL_HARD_CAP, 100, 'global API hard cap is 100/min');
+    assert.strictEqual(Coupang.INTERACTIVE_RESERVE, 15, '15/min remains available to interactive search');
+    assert.strictEqual(Coupang.COLLECTOR_BUDGET, 5, 'collector/background budget is 5/min');
     assert.strictEqual(Coupang.shouldDisableGlobalGateForTest('1', 'https://api-gateway.coupang.com'), false,
       'test switch cannot disable the production-host quota gate');
     assert.strictEqual(Coupang.shouldDisableGlobalGateForTest('1', 'http://127.0.0.1:3000'), true,
       'test switch only disables a loopback mock');
     let result = await attempt({ useCache: false });
-    assert.strictEqual(result.apiCalled, false, 'hourly gate denies before provider call');
+    assert.strictEqual(result.apiCalled, false, 'minute budget denies before provider call');
+    assert.strictEqual(lastAcquire.p_source, 'search');
+    assert.strictEqual(lastAcquire.p_search_operating_cap, 20);
+    assert.strictEqual(lastAcquire.p_global_operating_cap, 80);
+    assert.strictEqual(lastAcquire.p_interactive_reserve, 15);
+    assert.strictEqual(lastAcquire.p_collector_cap, 5);
+    assert.strictEqual(apiHits, 0);
+
+    result = await attempt({ source: 'collect', useCache: false });
+    assert.strictEqual(result.apiCalled, false, 'collector uses the same atomic gate without consuming an interactive call');
+    assert.strictEqual(lastAcquire.p_source, 'collect', 'source identity reaches the DB quota function');
     assert.strictEqual(apiHits, 0);
 
     rpcMode = 'error';
@@ -136,7 +157,7 @@ function fakeSupabase() {
     assert.strictEqual(result.apiCalled, false);
     assert.strictEqual(apiHits, beforeApi);
 
-    console.log('PASS: global quota gate, reserved-call invariant, and cache date boundary');
+    console.log('PASS: minute quota config, isolated call source, fail-closed reservation, and cache date boundary');
     process.exitCode = 0;
   } catch (error) {
     console.error(error.stack || error);
