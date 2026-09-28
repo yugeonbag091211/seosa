@@ -170,6 +170,15 @@ try {
     check('option_identity', 'forged-' + i, forged === 'option-mismatch', 'forged status=' + forged);
   }
 
+  check('option_identity', 'wrong-mall',
+    AC.matchCatalog({ productId: 'CAT-WRONG-MALL', vendorItemId: 'VID-WRONG-MALL',
+      mallId: 'ADPICK', mall: '알리', title: 'wrong mall' }, [{
+      product_id: 'CAT-WRONG-MALL', mall: '쿠팡', vendor_item_id: 'VID-WRONG-MALL',
+      title: 'wrong mall', lprice: 10000, keyword: 'test',
+      collected_at: new Date().toISOString(),
+      link: 'https://www.coupang.com/vp/products/CAT-WRONG-MALL?vendorItemId=VID-WRONG-MALL'
+    }]).status === 'not-found', 'cross-mall identity was accepted');
+
   /* Signed references bind product, option, mall, issuance, expiry; no price is signed. */
   const refItem = { productId: 'SIGNED-P1', vendorItemId: 'SIGNED-V1', mall: '쿠팡', mallId: '쿠팡' };
   const ref = AC.createRecommendationRef(refItem);
