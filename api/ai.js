@@ -1883,8 +1883,8 @@ const KRW_ALIAS_RE = /(?:[₩￦]|(?<![A-Za-z])KRW)\s*(-?[0-9０-９](?:[0-9０-
 const FOREIGN_CURRENCY_RE = /(?:[$€£¥]|(?<![A-Za-z])(?:USD|EUR|GBP|JPY|CNY)\s*)(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)|(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)\s*(?:USD|EUR|GBP|JPY|CNY|dollars?|euros?|pounds?|yen|yuan)(?![A-Za-z])/gi;
 
 function wonValue(match) {
-  const raw = String(match && match.digits || '').normalize('NFKC').replace(/[,\\s]/g, '');
-  if (!/^-?\\d+$/.test(raw)) return NaN;
+  const raw = String(match && match.digits || '').normalize('NFKC').replace(/[,\s]/g, '');
+  if (!/^-?\d+$/.test(raw)) return NaN;
   const n = Number(raw);
   if (!Number.isSafeInteger(n)) return NaN;
   return match.negative ? -Math.abs(n) : n;
