@@ -2219,7 +2219,7 @@ function unverifiedCurrentPrices(text, items) {
     // 상품명이 특정되지 않았거나 같은 이름의 옵션이 여러 개라면, 일부 후보에서
     // 가격이 우연히 일치하는 것만으로 그 가격을 답변에 귀속시키지 않는다.
     if (m.currency !== 'KRW' || value <= 0 || !candidates.length
-        || !candidates.every(it => Math.round(Number(it && it.price) || 0) === value)) {
+        || !candidates.every(it => priceEvidenceValues(it, 'current').includes(value))) {
       if (out.indexOf(value) < 0) out.push(value);
     }
   }
@@ -2249,13 +2249,14 @@ function unverifiedProductPrices(text, items) {
       if (m.currency !== 'KRW' || value <= 0) return false;
       if (listClaim) return Math.round(Number(it && it.listPrice) || 0) === value;
       if (averageClaim) return Math.round(Number(it && it.hist && it.hist.avg30) || 0) === value;
-      if (lowClaim) return Math.round(Number(it && it.hist && it.hist.low) || 0) === value;
+      if (lowClaim) return hasConfirmedRecordLow(it && it.hist)
+        && Math.round(Number(it.hist.low) || 0) === value;
       if (historicalClaim) {
         const h = it && it.hist;
         const values = h ? [h.lastPrice, h.prevPrice, h.trendFrom, ...(h.points || []).map(pt => pt && pt.p)] : [];
         return values.some(v => Math.round(Number(v) || 0) === value);
       }
-      return Math.round(Number(it && it.price) || 0) === value;
+      return priceEvidenceValues(it, 'current').includes(value);
     };
     if (!candidates.length || !candidates.every(matchesClaim)) {
       if (out.indexOf(value) < 0) out.push(value);
@@ -2280,8 +2281,11 @@ function unverifiedDiscountPct(text, items) {
       const at = m.index + Math.floor(m[0].length / 2);
       const refs = referencedItems(s, at, items);
       const candidates = refs.length ? refs : (items || []);
-      const verified = candidates.length > 0 && candidates.every(it => Number(it && it.discountPct) === pct
-        && Number(it && it.listPrice) > Number(it && it.price));
+      const verified = candidates.length > 0 && candidates.every(it => {
+        const currentPrice = priceEvidenceValues(it, 'current')[0] || 0;
+        return currentPrice > 0 && Number(it && it.discountPct) === pct
+          && Number(it && it.listPrice) > currentPrice;
+      });
       if (!verified && out.indexOf(pct) < 0) out.push(pct);
     }
   });
@@ -2541,8 +2545,13 @@ function unsupportedSuperlatives(text, items) {
    * 최저가 상품의 이름이 그 근처에 있는지 본다. 둘 다 확인할 수 없으면
    * 판단을 유보한다 — 맞는 말을 틀렸다고 경고하는 것도 나쁘다.
    */
-  const prices = list.map(it => Math.round(Number(it.price) || 0)).filter(p => p > 0);
-  if (prices.length >= 2 && CHEAPEST_CLAIM.test(t)) {
+  const claimCheapest = CHEAPEST_CLAIM.test(t);
+  CHEAPEST_CLAIM.lastIndex = 0;
+  const prices = list.map(it => priceEvidenceValues(it, 'current')[0] || 0);
+  if (claimCheapest && prices.length > 0 && prices.some(p => p <= 0)) {
+    out.push('가장 저렴');
+  }
+  if (prices.length >= 2 && prices.every(p => p > 0) && claimCheapest) {
     const min = Math.min.apply(null, prices);
     /*
      * 주장에 "붙어 있는" 금액만 본다 — 앞쪽 30자까지.
