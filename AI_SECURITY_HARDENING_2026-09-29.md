@@ -189,7 +189,7 @@ shell 시작 요청은 \`helper_unknown_error: setup refresh had errors\`로 실
 - 업데이트 직전 원격 변경 파일은 보고서, api/_concierge.js, api/_deal.js, api/_decision.js, api/_priceevidence.js, api/_search.js, api/_shopintent.js, api/ai.js, package.json, scripts/test-ai-pipeline.js, scripts/test-ai-security-fuzz.js였다.
 - public/UI 파일, collector/scheduling/price collection, price_history, hotdeal/today-drop, Coupang/ADPICK quota, DB schema/migration 변경은 없다.
 - Production API, model, affiliate API를 호출하지 않았고 Production DB write도 없었다.
-- PR: 생성하지 않음. CI: 최신 확인 SHA 68142888ebfecdaa1b8f73708c18522ebee8d4ed에 GitHub Actions workflow run 0건; Vercel status success는 앱 배포 check일 뿐 required test evidence로 보지 않는다.
+- PR: 생성하지 않음. CI: 코드 SHA 68142888ebfecdaa1b8f73708c18522ebee8d4ed 및 보고서 갱신 SHA 5c328d78db24eb92ac39164914c8e4fad2cadc40에 GitHub Actions workflow run 0건. 보고서 갱신 SHA의 Vercel status는 success지만 required test evidence로 보지 않는다.
 - merge: 하지 않음. Production deploy/smoke: 하지 않음.
 
 ### 남은 위험과 Claude 전달 지시
