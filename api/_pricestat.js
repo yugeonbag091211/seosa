@@ -267,10 +267,28 @@ function statsFrom(points) {
  * vendorItemId 를 함께 주면 그 옵션의 기록만 쓴다. 주지 않으면 예전처럼
  * pid+mall 전체를 본다 (좁힐 근거가 없을 때 0건을 만들지 않는다).
  *
+ * ── opts.strictOption (AI 답변 전용, 2026-09-28 레드팀 RT-03) ─────────
+ *
+ * 위 폴백은 화면의 그래프에는 맞는 선택이지만, AI 가 "역대 최저가입니다" 를
+ * 사실로 말하는 근거로는 너무 넓다. 옵션 표시가 없는 옛 행('' / '__LEGACY__')은
+ * 어느 옵션의 가격이었는지 알 수 없는데, 폴백은 그 행들을 이 옵션의 기록으로
+ * 읽는다. strictOption 이면 exactOptionRows 규칙으로만 고른다.
+ *
+ *   · 옵션 ID 를 주면 vendor_item_id 가 정확히 같은 행만 쓴다. 옛 행은 버린다.
+ *   · 쿠팡인데 옵션 ID 가 없으면 아무 행도 쓰지 않는다 — 옵션을 고를 수 없다.
+ *   · 옵션 개념이 없는 몰(ADPICK)은 옵션 표시가 없는 행만 쓴다.
+ *
+ * strictOption 결과 키는 `${productId}|${mall}|${vendorItemId}` 다. 같은
+ * pid+mall 을 한 옵션만 물었을 때에 한해 예전 키(`${productId}|${mall}`)도 같은
+ * 값으로 채운다 — 옵션이 둘 이상이면 예전 키는 모호하므로 만들지 않는다.
+ * 기존 호출부(strictOption 없이 부르는 곳)의 동작은 한 글자도 바뀌지 않는다.
+ *
  * @param {Array<{productId:string, mall:string, vendorItemId?:string}>} keys
+ * @param {{strictOption?:boolean}} [opts]
  * @returns {Promise<Map<string, object>>} key(`${productId}|${mall}`) → statsFrom 결과
  */
-async function loadStats(keys) {
+async function loadStats(keys, opts) {
+  const strictOption = !!(opts && opts.strictOption);
   const out = new Map();
   const list = (keys || []).filter(k => k && k.productId);
   if (!list.length) return out;
@@ -326,6 +344,26 @@ async function loadStats(keys) {
     });
   }
 
+  if (strictOption) {
+    // 같은 pid+mall 에 옵션이 몇 개 물렸는지 — 예전 키를 만들어도 되는지 가른다.
+    const vidsPerBase = new Map();
+    list.forEach(k => {
+      const base = `${k.productId}|${k.mall || ''}`;
+      if (!vidsPerBase.has(base)) vidsPerBase.set(base, new Set());
+      vidsPerBase.get(base).add(String(k.vendorItemId || '').trim());
+    });
+    list.forEach(k => {
+      const base = `${k.productId}|${k.mall || ''}`;
+      const vid = String(k.vendorItemId || '').trim();
+      const picked = exactOptionRows(rowsByKey.get(base) || [], vid, String(k.mall || '') === '쿠팡');
+      const st = statsFrom(dailyLowest(picked));
+      if (!st) return;
+      out.set(`${base}|${vid}`, st);
+      if (vidsPerBase.get(base).size === 1) out.set(base, st);
+    });
+    return out;
+  }
+
   rowsByKey.forEach((rows, key) => {
     /*
      * 같은 product_id 의 다른 옵션 행은 섞지 않는다.
@@ -338,25 +376,47 @@ async function loadStats(keys) {
      * 폴백 규칙(옵션 표시가 하나도 없는 옛 기록은 예전처럼 상품 단위로 본다)은
      * _price.sameVendorRows 에 있다. 상품 페이지·모달과 같은 함수를 쓴다.
      */
-    const byDate = new Map();
-    sameVendorRows(rows, vidOf.get(key)).forEach(r => {
-      const date = observedKstDate(r);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-      const price = int(r.price);
-      if (price <= 0) return;
-      const cur = byDate.get(date);
-      // 같은 날 여러 행이면 최저가 한 점만 (history-batch keepLowest 와 같은 기준)
-      if (cur === undefined || price < cur) byDate.set(date, price);
-    });
-
-    const points = [...byDate.entries()]
-      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .map(([date, price]) => ({ date, price }));
-    const st = statsFrom(points);
+    const st = statsFrom(dailyLowest(sameVendorRows(rows, vidOf.get(key))));
     if (st) out.set(key, st);
   });
 
   return out;
+}
+
+/** 행 → 날짜별 최저가 점 (오래된 날 → 최근 날). */
+function dailyLowest(rows) {
+  const byDate = new Map();
+  (rows || []).forEach(r => {
+    const date = observedKstDate(r);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const price = int(r.price);
+    if (price <= 0) return;
+    const cur = byDate.get(date);
+    // 같은 날 여러 행이면 최저가 한 점만 (history-batch keepLowest 와 같은 기준)
+    if (cur === undefined || price < cur) byDate.set(date, price);
+  });
+  return [...byDate.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([date, price]) => ({ date, price }));
+}
+
+/**
+ * AI 답변용 옵션 행 고르기 (loadStats strictOption 주석).
+ *
+ * _price.sameVendorRows 와 달리 폴백이 없다. 옵션을 모르는 행을 이 옵션의 것으로
+ * 읽지 않고, 옵션을 모르는 요청에 다른 옵션의 행을 주지 않는다.
+ * DB 행을 고치거나 지우지 않는다 — 읽을 때 고를 뿐이다.
+ */
+function exactOptionRows(rows, vendorItemId, coupang) {
+  const vid = String(vendorItemId || '').trim();
+  const of = r => {
+    const v = String((r && r.vendor_item_id) || '').trim();
+    return v === '__LEGACY__' ? '' : v;
+  };
+  const list = Array.isArray(rows) ? rows : [];
+  if (vid) return list.filter(r => of(r) === vid);
+  if (coupang) return [];
+  return list.some(r => of(r)) ? [] : list;
 }
 
 /* ==================================================================
@@ -676,7 +736,7 @@ function fairness(points, currentPrice, today) {
 }
 
 module.exports = {
-  statsFrom, loadStats, spanDays, assess, fairness,
+  statsFrom, loadStats, spanDays, assess, fairness, exactOptionRows,
   WINDOW_DAYS, AVG_DAYS, TREND_DAYS, SHORT_AVG_DAYS,
   ASSESS_MIN_DAYS, ASSESS_MAX_STALE, STALE_WARN_DAYS, VERDICT_LABEL, LOW_CONFIRM_DAYS,
   FAIR_WINDOW_DAYS, FAIR_MIN_OBS, FAIR_FULL_OBS, FAIR_MIN_SPREAD, FAIR_MAX_STALE, FAIR_LABEL

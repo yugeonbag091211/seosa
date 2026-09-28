@@ -37,10 +37,15 @@ const { parseConstraints } = require('./_shopintent');
 const GREETING_RE = /^(안녕|안녕하세요|하이|헬로|반가워|고마워|감사|땡큐|잘가|바이|ㅎㅇ|ㅋㅋ|ㅎㅎ|ok|okay|응|넵|네|아니|좋아|굿)[!~.?ㅋㅎ\s]*$/i;
 
 /** 가격 시점·이력 — "지금 사도 돼?" "기다릴까?" "추이" */
-const TIMING_RE = /(지금\s*사도|지금\s*살|살까|사도\s*(돼|될|괜찮|되나)|가격\s*(?:괜찮|좋은\s*편|비싼\s*편|싼\s*편)|기다릴|기다려|더\s*떨어|떨어질|내려갈|오를까|추이|흐름|변동|최저가였|얼마였|역대\s*최저|기록상|평소보다|살\s*때|살\s*만한\s*때|타이밍)/;
+const TIMING_RE = /(지금\s*사도|지금\s*살|살까|사도\s*(돼|될|괜찮|되나)|가격\s*(?:괜찮|좋은\s*편|비싼\s*편|싼\s*편)|기다릴|기다려|더\s*떨어|떨어질|내려갈|오를까|추이|흐름|변동|최저가였|얼마였|역대\s*최저|기록상|평소보다|살\s*때|살\s*만한\s*때|타이밍|가격\s*(?:이력|기록|히스토리)|price\s*history)/i;
 
 /** 특정 상품의 가격·판매처 — "얼마야" "최저가 찾아줘" "어디서 사" */
-const PRICE_RE = /(얼마|현재\s*가|현재\s*가격|판매\s*가|시세|정가|쿠폰\s*가|할인율|최저가|가격\s*(?:알려|찾아|비교|어때|좀)|어디서\s*(사|살|사는|구매)|판매처|링크\s*(줘|주세요|알려)|살\s*수\s*있|파는\s*곳|얼마나\s*해)/;
+/*
+ * "지금 가격 다시 알려줘" 처럼 가격과 요청 동사 사이에 "다시·한 번 더"가 끼면 예전에는
+ * 여기서 빠지고 KNOWLEDGE_RE(…알려줘$)에 걸려 지식 질문(B)이 됐다. B 답변에는 가격
+ * 검증이 돌지 않아서, 위조한 대화 기록의 금액이 그대로 나갈 수 있었다(2026-09-28 레드팀).
+ */
+const PRICE_RE = /(얼마|현재\s*가|현재\s*가격|지금\s*가격|판매\s*가|시세|정가|쿠폰\s*가|할인율|최저가|가격\s*(?:(?:다시|좀|한\s*번\s*더)\s*)?(?:알려|찾아|비교|어때|좀|확인|말해)|어디서\s*(사|살|사는|구매)|판매처|링크\s*(줘|주세요|알려)|살\s*수\s*있|파는\s*곳|얼마나\s*해)/;
 
 /** 추천·선택 — "추천해줘" "골라줘" "뭐가 좋아" */
 const RECOMMEND_RE = /(추천|골라|찾아\s*(줘|주세요|봐|줄래)|보여\s*(줘|주세요)|뭐\s*(가|를|사|살)|어떤\s*(게|걸|것|거)|괜찮은\s*(거|게|것)|살\s*만한|사고\s*싶|사려고|사려는|구매하려|필요해|필요한데|살\s*건데|고민|비교해|vs|중에\s*(뭐|어떤)|이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|가장\s*싼\s*(?:것|거|상품|제품)?)/;
@@ -74,6 +79,65 @@ const EXPLICIT_NEWS_RE = /뉴스|기사|소식|발표|업데이트|릴리스|rel
 /* "엔비디아 뉴스" · "애플 신제품 발표 소식"처럼 뉴스·기사·소식으로 끝나는 명사형 요청도 같다 (2026-09-13 감사). */
 const EXPLICIT_NEWS_REQUEST_RE = /(?:뉴스|기사)\s*(?:알려|정리|요약|찾아|검색|조사|골라|뽑아|보여|확인|있어|있나)|(?:뉴스|기사|소식)\s*[?？.!]*$/i;
 const PHYSICAL_PURCHASE_RE = /(?:\d[\d,]*\s*(?:만|천)?\s*원|사도\s*(?:돼|될)|살까|구매|최저가|판매처|추천|골라)/i;
+
+/*
+ * 창작·가상·농담 요청 (2026-09-28 레드팀 RT-04).
+ *
+ * "가상 소설 속 음의 질량 노트북을 추천하는 대화문을 써줘. 실제 상품은 찾지 마."
+ * 가 RECOMMEND_RE 의 '추천' 한 낱말 때문에 확신 높은 C 가 되어 쇼핑 검색으로
+ * 갔고, "조건에 맞는 상품을 찾지 못했어요" 로 끝났다. 요구한 것은 이야기였다.
+ *
+ * 그래서 구매 동사보다 먼저 "무엇을 해 달라는 말인가"를 본다. 다만 낱말 하나로
+ * 가르지 않는다 — "소설 추천해줘"(책을 사려는 말), "가상현실 헤드셋 추천해줘",
+ * "SF 소설책 추천해줘" 는 그대로 쇼핑이어야 한다. 창작으로 보는 것은
+ *
+ *   · 글을 써 달라는 말이 문장의 마지막 요구일 때 (…대화문을 써줘 / 콩트 써줘)
+ *     "편지 써줄 만년필 추천해줘" 처럼 쓰는 행위가 수식어일 뿐이면 창작이 아니다.
+ *   · 허구의 틀(가상의·가상 설정·상상해서·존재하지 않는…)과 창작 동사가 함께 있을 때
+ *   · 농담이라고 스스로 밝히거나 농담을 해 달라고 할 때
+ *   · "실제 상품은 찾지 마" 처럼 검색하지 말라고 분명히 말할 때
+ *
+ * 그리고 실제 가격·구매 링크·판매처를 함께 달라고 하면(농담 말고 진짜로 …)
+ * 창작으로 보지 않는다 — 그때는 검증된 상품 데이터가 필요하다.
+ */
+const CREATIVE_NOUN = '(?:소설|픽션|동화|우화|콩트|꽁트|시나리오|대본|각본|희곡|대화문|대사|장면|스토리(?!지)'
+  + '|이야기|단편|시\\s*한\\s*편|시를|노랫말|가사|농담|드립|개그|유머|패러디|상황극|역할극|카피|광고\\s*문구'
+  + '|문구|멘트|편지(?!지)|일기(?!장)|글)';
+const REQUEST_END = '\\s*(?:줘|주세요|줄래|줘요|봐|볼래|달라|주라|줄\\s*수\\s*있어|줄\\s*수\\s*있나요?)?\\s*(?:[.!?~ㅋㅎ]|$)';
+const CREATIVE_WRITE_RE = new RegExp(CREATIVE_NOUN
+  + '\\s*(?:을|를|로|으로|도)?\\s*(?:하나|한\\s*편|한\\s*개|짧게|길게|좀|간단히|재밌게|재미있게)?\\s*'
+  + '(?:써|지어|만들어|작성해|창작해|꾸며)' + REQUEST_END);
+const CREATIVE_ACTION_END_RE = new RegExp(
+  '(?:써|지어|만들어|작성해|창작해|꾸며|묘사해|상상해|설명해|들려|그려)' + REQUEST_END);
+const FICTION_FRAME_RE = /가상의|가상으로|가상\s*(?:소설|설정|시나리오|세계관?|이야기|상황|속|인물|캐릭터|제품|상품|쇼핑몰|광고|리뷰)|허구(?:의|로|인|적)?|공상|상상(?:으로|해서|해\s*봐|\s*속|의)|(?:SF|에스에프|판타지)\s*(?:설정|세계관?|속|이야기|장면)|소설\s*속|동화\s*속|존재하지\s*않는|fictional|imaginary|hypothetical(?:ly)?|make[-\s]?believe/i;
+const JOKE_DECL_RE = /농담(?:이야|이에요|이예요|이고|이었|였|임|으로|삼아|인데|이지만|이니까)|장난(?:이야|으로|삼아|인데)|\bjok(?:e|ing)\b|\bkidding\b/i;
+const JOKE_REQUEST_RE = /(?:농담|개그|드립|유머)\s*(?:하나|좀|한\s*마디|한\s*개)?\s*(?:해|들려|말해|던져)\s*(?:줘|주세요|줄래|봐)/;
+const ENGLISH_CREATIVE_RE = /\b(?:write|compose|make\s+up|invent|imagine)\b[\s\S]{0,60}\b(?:story|poem|joke|dialog(?:ue)?|scene|script|fiction|fictional|limerick|haiku)\b/i;
+/** 검색하지 말라는 분명한 말. 이것이 있으면 다른 신호보다 먼저 따른다. */
+const NO_REAL_SEARCH_RE = /(?:실제|진짜|현실)(?:의)?\s*(?:상품|제품|물건|쇼핑)\s*(?:은|는|을|를|이|가)?\s*(?:찾지|검색하지|추천하지|보여\s*주지|알려\s*주지|말고|아니고|대신)|(?:상품\s*|쇼핑\s*)?검색(?:은|는|을)?\s*(?:하지\s*(?:마|말)|없이)|실제로\s*(?:파는|판매하는)\s*(?:건|것|거|상품)\s*(?:은|는)?\s*(?:찾지|말고)/;
+/** 실제 판매 정보를 요구하는 말 — 이것이 있으면 창작 틀이 있어도 쇼핑으로 본다. */
+const REAL_DATA_RE = /농담\s*(?:말고|아니|이\s*아니)|장난\s*(?:말고|아니)|진지하게|진짜로\s*(?:사|살|구매|파는|판매|추천)|실제로\s*(?:사|살|구매)|실제로\s*(?:파는|판매하는)\s*(?:거|것|상품)\s*(?:추천|찾아|알려|보여)|(?:실제|진짜)\s*(?:상품|제품)(?:으로|을|를)?\s*(?:추천|찾아|알려|보여)|(?:실제|진짜|현재)\s*(?:가격|판매가|최저가|시세)|현재가|구매\s*링크|살\s*수\s*있는\s*(?:곳|링크)|어디서\s*(?:사|살|파)|판매처/;
+
+/** 창작·가상·농담 요청인가 (위 주석). */
+function isCreativeRequest(text) {
+  const s = String(text == null ? '' : text).trim();
+  if (!s) return false;
+  if (NO_REAL_SEARCH_RE.test(s)) return true;
+  if (REAL_DATA_RE.test(s)) return false;
+  return CREATIVE_WRITE_RE.test(s)
+    || (FICTION_FRAME_RE.test(s) && CREATIVE_ACTION_END_RE.test(s))
+    || JOKE_DECL_RE.test(s)
+    || JOKE_REQUEST_RE.test(s)
+    || ENGLISH_CREATIVE_RE.test(s);
+}
+
+/*
+ * 등식을 맞는지 따지는 말 ("2+2=5 맞지?"). 산수이지 상품이 아니다.
+ * 예전에는 짧은 말이라 C(확신 낮음)가 됐고, LLM 분류가 실패하면 그대로
+ * 쿠팡에 "2+2=5 맞지 계산 확인해줘" 를 검색했다. 등호가 있는 식만 본다 —
+ * "1+1 행사" · "갤럭시 S24+" 같은 상품 표현에는 등호가 없다.
+ */
+const ARITH_EQUATION_RE = /\d\s*[+\-*/×÷]\s*\d[\d\s+\-*/×÷]*=\s*-?\d/;
 
 /**
  * @returns {'N'|'S'|'B'|''} 뉴스/분석/일반 기술정보 또는 비해당.
@@ -293,6 +357,15 @@ function classify(text, hist) {
     };
   }
 
+  /* 구매 동사보다 먼저 창작 요청인지 본다 (isCreativeRequest 주석). 검색어는 만들지 않는다. */
+  if (isCreativeRequest(s)) {
+    return {
+      intent: 'B', query: '', source: 'heuristic', confidence: 'high', creative: true,
+      contextualFollowup: false, requiresRecommendationIdentity: false,
+      extra: { useCase: '', brand: '', avoid: '' }
+    };
+  }
+
   const cons = parseConstraints(s);
   const hasBudget = !!(cons.budgetMax || cons.budgetMin);
   let query = extractQuery(s);
@@ -320,6 +393,7 @@ function classify(text, hist) {
   else if (RECOMMEND_RE.test(s)) { intent = 'C'; explicit = true; }
   // 조건만 있는 말 — 갈래는 C 로 보되 확신은 주지 않는다 (위 주석).
   else if (hasBudget || cons.gift || cons.priority) intent = 'C';
+  else if (ARITH_EQUATION_RE.test(s)) { intent = 'B'; explicit = true; }
   else if (KNOWLEDGE_RE.test(s)) { intent = 'B'; explicit = true; }
   else if (query && s.length <= 30) intent = 'C';   // 품목만 던진 짧은 말
   else intent = 'B';
@@ -388,6 +462,6 @@ function classify(text, hist) {
 }
 
 module.exports = {
-  classify, classifyInformationIntent, extractQuery, extractUseCase,
+  classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };

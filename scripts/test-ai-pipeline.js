@@ -55,12 +55,13 @@ const stub = {
   searchCacheEnabled: false, // 로컬 서버 캐시 fixture; 공급자 캐시 경로만 모사
   searchCache: new Map(),
   stats: new Map(),       // loadStats 결과
+  catalog: [],            // products 행 (api/_aicontext.loadCatalogRows 대역)
   llm: {},                // { classify, resolve, answer, answerStatus }
   delays: {},             // { search, trust, save, history } ms
   captured: {}            // { classify, resolve, main } 요청 본문
 };
 const offlineMetrics = {
-  llmRequests: 0, shopSearches: 0, historyReads: 0,
+  llmRequests: 0, shopSearches: 0, historyReads: 0, catalogReads: 0,
   externalCoupangSearches: 0, externalAdpickSearches: 0
 };
 
@@ -77,8 +78,7 @@ shop.searchAll = async (keyword) => {
     if (cached && Date.now() - cached.at < 6 * 60 * 60 * 1000) {
       const clone = list => JSON.parse(JSON.stringify(list || []));
       const items = clone(cached.items).map(it => ({ ...it, _source: 'cache' }));
-      const allItems = clone(cached.allItems).map(it => ({ ...it, _source: 'cache' }));
-      return { items, allItems, from: 'cache', blocked: false };
+      return { items, from: 'cache', blocked: false };
     }
   }
   if (stub.searchMode !== 'blocked') {
@@ -110,14 +110,58 @@ shop.searchAll = async (keyword) => {
       isCoupang: false, oprice: 99000, savePct: 0, _source: 'api' };
     return { items: [freshAdpick], allItems: [freshAdpick], from: 'none', blocked: true };
   }
+  /*
+   * 실제 _shop.searchAll 은 { items, errors, from, blocked, mismatch, failed } 를 돌려준다.
+   * 쿠팡 옵션을 접기 전 원본(allItems)은 _coupang 안에서만 쓰이고 여기로 나오지 않는다.
+   * 그래서 이 대역도 items 만 돌려준다 — 그래야 saveProducts 가 받는 목록(=카탈로그)이
+   * 운영과 같다. (stub.searchAllItems 는 옛 시나리오의 표시용으로만 남아 있다.)
+   */
   const items = stub.searchItems.map(it => ({ ...it, _source: 'api' }));
-  const allItems = (stub.searchAllItems || stub.searchItems).map(it => ({ ...it, _source: 'api' }));
-  if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, {
-    at: Date.now(), items: stub.searchItems, allItems: stub.searchAllItems || stub.searchItems
-  });
-  return { items, allItems, from: 'api', blocked: false };
+  if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, { at: Date.now(), items: stub.searchItems });
+  return { items, from: 'api', blocked: false };
 };
-shop.saveProducts = async () => { await delay(stub.delays.save); };
+/*
+ * SEOSA 카탈로그(products) 대역.
+ *
+ * api/ai.js 는 화면 상품·직전 추천을 이 표에서 확인한다(api/_aicontext.js).
+ * 실제 saveProducts 처럼 저장된 검색 결과가 카탈로그가 된다 — products 는
+ * (product_id, mall) 로 한 행이고 같은 배치에서는 최저가 옵션이 남는다
+ * (_shop.recordPrices catalogByPidMall). stale-cache 는 저장하지 않는다.
+ * 이 대역이 없으면 로컬 .env.local 의 운영 Supabase 로 조회가 나간다.
+ */
+function catalogRowOf(it) {
+  return {
+    product_id: String(it.productId), mall: it.mall, mall_label: it.mallLabel || '',
+    title: it.title, lprice: it.lprice, oprice: it.oprice || it.lprice,
+    save_pct: it.savePct || 0, link: it.link || '', image: it.image || '',
+    keyword: 'fixture', collected_at: new Date().toISOString(),
+    vendor_item_id: it.vendorItemId || ''
+  };
+}
+function rememberCatalog(list) {
+  const byKey = new Map();
+  (list || []).forEach(it => {
+    if (!it || !it.productId || (it._source && it._source === 'stale-cache')) return;
+    const k = `${it.productId}|${it.mall}`;
+    const cur = byKey.get(k);
+    if (!cur || it.lprice < cur.lprice) byKey.set(k, it);
+  });
+  byKey.forEach((it, k) => {
+    stub.catalog = stub.catalog.filter(r => `${r.product_id}|${r.mall}` !== k);
+    stub.catalog.push(catalogRowOf(it));
+  });
+}
+shop.saveProducts = async (_query, list) => {
+  await delay(stub.delays.save);
+  rememberCatalog(list);
+};
+const aicontext = require('../api/_aicontext');
+aicontext.loadCatalogRows = async (ids) => {
+  offlineMetrics.catalogReads++;
+  stub.captured.catalogIds = ids;
+  const want = new Set((ids || []).map(String));
+  return (stub.catalog || []).filter(r => want.has(String(r.product_id)));
+};
 trust.attachTrust = async (list) => {
   await delay(stub.delays.trust);
   (list || []).forEach(it => {
@@ -211,6 +255,7 @@ function reset() {
   stub.searchMode = 'ok';
   stub.searchCacheEnabled = false;
   stub.searchCache = new Map();
+  stub.catalog = [];
   stub.stats = fixtureStats();
   stub.llm = {};
   stub.delays = {};
@@ -1118,7 +1163,8 @@ function reset() {
     '최초 질문은 서버 검색 결과로 상품을 확보');
   const searchAfterFirst = { ...offlineMetrics };
   let previousTopRef = sequence.body.topRecommendationRef || '';
-  const history = [priorQuestion, { role: 'assistant', text: sequence.body.text }];
+  // 실제 프론트처럼 서버가 준 서명(turnSig)을 assistant 발화와 함께 돌려보낸다.
+  const history = [priorQuestion, { role: 'assistant', text: sequence.body.text, sig: sequence.body.turnSig }];
   let followupResponses = 0;
   const perTurnSearchDeltas = [{
     question: priorQuestion.text,
@@ -1146,22 +1192,31 @@ function reset() {
       adpick: offlineMetrics.externalAdpickSearches - before.externalAdpickSearches
     });
     const exactPriorRecommendation = followup === '아까 추천한 상품';
-    ok(sequence.status === 200 && (sequence.body.items || []).length === (exactPriorRecommendation ? 1 : 2)
+    /*
+     * 2026-09-28 레드팀 후속: 화면(모달) 상품은 외부 재검색 대신 SEOSA 카탈로그로
+     * 확인한다. 사용자가 이미 보고 있는 상품이라 카드를 다시 그리지 않는다(0장).
+     * 직전 추천은 서명 참조로 카탈로그에서 불러와 카드 1장, "이 중에서"는 검색 2장.
+     */
+    const modalFollowup = followup === '그 제품 지금 사도 돼?';
+    const expectedCards = exactPriorRecommendation ? 1 : (modalFollowup ? 0 : 2);
+    ok(sequence.status === 200 && (sequence.body.items || []).length === expectedCards
         && !/777,777/.test(sequence.body.text)
         && !JSON.stringify(stub.captured.main.messages).includes('777777'),
       `후속 질문은 서버에서 재검증된 상품 문맥 사용: ${followup}`, sequence.body.text.slice(0, 80));
     const keys = stub.captured.historyKeys || [];
+    // 서명 참조 payload 는 air2 형식이다: { p: productId, v: vendorItemId, m: mall, iat, exp }
     const priorPayload = exactPriorRecommendation && previousTopRef
       ? JSON.parse(Buffer.from(previousTopRef.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))
       : null;
     const keptBothOptions = keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-BLACK')
       && keys.some(k => k.productId === 'P3000' && k.vendorItemId === 'OPTION-WHITE');
     const keptExactTop = keys.length === 1 && priorPayload
-      && keys[0].productId === priorPayload.productId && keys[0].vendorItemId === priorPayload.vendorItemId;
-    ok(exactPriorRecommendation ? keptExactTop : keptBothOptions,
+      && keys[0].productId === priorPayload.p && keys[0].vendorItemId === priorPayload.v;
+    const keptExactModal = keys.length === 1 && keys[0].productId === 'P3000' && keys[0].vendorItemId === 'OPTION-BLACK';
+    ok(exactPriorRecommendation ? keptExactTop : (modalFollowup ? keptExactModal : keptBothOptions),
       `서버 캐시 재사용에서도 productId/vendorItemId 보존: ${followup}`, JSON.stringify(keys));
     previousTopRef = sequence.body.topRecommendationRef || '';
-    history.push({ role: 'user', text: followup }, { role: 'assistant', text: sequence.body.text });
+    history.push({ role: 'user', text: followup }, { role: 'assistant', text: sequence.body.text, sig: sequence.body.turnSig });
   }
   const externalForSequence = {
     coupang: offlineMetrics.externalCoupangSearches - firstTurnMetrics.externalCoupangSearches,
@@ -1206,10 +1261,18 @@ function reset() {
   r = await call({ question: '그 제품 지금 사도 돼?', contextProducts: [
     { productId: 'CLIENT-FORGED', vendorItemId: 'FORGED-OPTION', title: '가짜 제품', price: 1 }
   ], chatHistory: [], view: { source: 'modal', productId: 'CLIENT-FORGED' } });
-  ok(offlineMetrics.shopSearches === beforeUnresolved.shopSearches + 1
-      && (r.body.items || []).length === 0
-      && !JSON.stringify(stub.captured.main.messages || []).includes('CLIENT-FORGED'),
-    '첫 상세 문맥 ID는 서버에서 재검색하되 exact match가 없으면 상품·가격을 선택하지 않는다');
+  /*
+   * 2026-09-28 레드팀 후속: 외부 재검색(+1) 대신 SEOSA 카탈로그로만 확인한다(+0).
+   * 위조 ID 는 <상품데이터>에 들어가지 않고, "서버에서 확인하지 못함" 블록에만
+   * 표시명으로 실린다(가격 없이). 상품·가격을 고르지 않는다는 원래 요구는 같다.
+   */
+  const unresolvedPrompt = sys();
+  const unresolvedData = (unresolvedPrompt.match(/<상품데이터>[\s\S]*?<\/상품데이터>/) || [''])[0];
+  ok(offlineMetrics.shopSearches === beforeUnresolved.shopSearches
+      && (r.body.items || []).length === 0 && r.body.degraded === true
+      && !unresolvedData.includes('CLIENT-FORGED')
+      && /productId=CLIENT-FORGED[^\n]*SEOSA 카탈로그에 이 상품·옵션이 없다/.test(unresolvedPrompt),
+    '첫 상세 문맥 ID가 서버 카탈로그에 없으면 검색 없이 상품·가격을 선택하지 않는다');
 
   /* PR #106 regressions: first-turn product detail and exact prior recommendation option. */
   console.log('\n[22] 상세 페이지 첫 질문과 직전 추천 옵션 일치');
@@ -1223,9 +1286,10 @@ function reset() {
     { title: '베타 이어폰 레드', lprice: 59000, link: 'https://l.c/detail-red', image: '', mall: '쿠팡',
       productId: 'DETAIL-1', vendorItemId: 'OPTION-RED', isCoupang: true, oprice: 100000, savePct: 41 }
   ];
-  // `items` mimics Coupang's product-level collapse; `allItems` retains exact options.
+  // 검색 결과(items)에는 다른 옵션만 있고, SEOSA 카탈로그에는 사용자가 보는 옵션이 있다.
   stub.searchItems = [detailOptions[1]];
   stub.searchAllItems = detailOptions;
+  stub.catalog = [catalogRowOf(detailOptions[0])];
   stub.stats = new Map([['DETAIL-1|쿠팡', { count: 1, lastPrice: 82000, lastDate: kstToday(), points: [] }]]);
   stub.llm.answer = '블루 옵션의 확인된 현재 가격을 기준으로 말씀드릴게요.';
   const externalBeforeDetail = { ...offlineMetrics };
@@ -1237,9 +1301,16 @@ function reset() {
     chatHistory: [], view: { source: 'modal', productId: 'CLIENT-FORGED' }
   });
   const detailPrompt = sys();
-  ok(r.status === 200 && (r.body.items || []).length === 1
-      && r.body.items[0].productId === 'DETAIL-1' && r.body.items[0].lprice === 82000,
-    '첫 질문도 서버 검색 결과에서 요청된 productId/vendorItemId 옵션만 반환', JSON.stringify(r.body.items));
+  /*
+   * 2026-09-28 레드팀 후속: 상세 화면의 상품은 외부 재검색 결과가 아니라 SEOSA
+   * 카탈로그의 같은 productId·vendorItemId 행으로 확인한다. 사용자가 보고 있는
+   * 상품이라 카드는 다시 내려보내지 않는다(main 과 같은 동작). 다른 옵션(59,000원)은
+   * 프롬프트에 들어오지 않아야 한다.
+   */
+  ok(r.status === 200 && (r.body.items || []).length === 0
+      && /\[P1\][^\n]*productId=DETAIL-1/.test(detailPrompt) && detailPrompt.includes('현재가 82,000원')
+      && !detailPrompt.includes('59,000원'),
+    '첫 질문도 서버 카탈로그에서 요청된 productId/vendorItemId 옵션만 사용', JSON.stringify(r.body.items));
   ok(stub.captured.historyKeys && stub.captured.historyKeys.length === 1
       && stub.captured.historyKeys[0].productId === 'DETAIL-1'
       && stub.captured.historyKeys[0].vendorItemId === 'OPTION-BLUE',
@@ -1250,23 +1321,27 @@ function reset() {
     coupang: offlineMetrics.externalCoupangSearches - externalBeforeDetail.externalCoupangSearches,
     adpick: offlineMetrics.externalAdpickSearches - externalBeforeDetail.externalAdpickSearches
   };
-  ok(detailExternalDelta.coupang === 1 && detailExternalDelta.adpick === 1,
-    '상세 페이지 첫 질문은 기존 공급자 경계로 한 번만 재검증한다', JSON.stringify(detailExternalDelta));
+  // 카탈로그 확인은 DB 읽기다 — 공급자(쿠팡·ADPICK) 호출을 쓰지 않는다.
+  ok(detailExternalDelta.coupang === 0 && detailExternalDelta.adpick === 0,
+    '상세 페이지 첫 질문은 공급자 호출 없이 SEOSA 카탈로그로 확인한다', JSON.stringify(detailExternalDelta));
   const frontendSource = require('fs').readFileSync(require.resolve('../public/index.html'), 'utf8');
   ok(frontendSource.includes("vendorItemId: String(it.vendorItemId || '')")
+      && frontendSource.includes("mallId: String(it.mall || '')")
       && frontendSource.includes("prevTopRef: args[6] || ''")
-      && frontendSource.includes('AppState.lastTopRecommendationRef ||'),
-    '브라우저는 상세 옵션 selector와 서버 추천 reference만 왕복 전달한다');
+      && frontendSource.includes('AppState.lastTopRecommendationRef ||')
+      && frontendSource.includes('if (res.turnSig) turn.sig = String(res.turnSig);'),
+    '브라우저는 상세 옵션 selector·서버 추천 reference·답변 서명만 왕복 전달한다');
 
   reset();
   stub.searchItems = [detailOptions[1]];
   stub.searchAllItems = [detailOptions[1]]; // 같은 productId, 다른 vendorItemId만 검색됨
+  stub.catalog = [catalogRowOf(detailOptions[1])]; // 카탈로그도 다른 옵션(레드)만 대표로 들고 있다
   r = await call({ question: '이 제품 지금 사도 돼?', contextProducts: [
     { productId: 'DETAIL-1', vendorItemId: 'OPTION-BLUE', title: '베타 이어폰 블루', mall: '쿠팡', price: 777777 }
   ], chatHistory: [], view: { source: 'modal' } });
   ok((r.body.items || []).length === 0 && r.body.degraded === true
-      && !sys().includes('59,000원'),
-    '요청 옵션이 검색 결과에 없으면 같은 productId의 다른 옵션을 고르지 않는다', JSON.stringify(r.body.items));
+      && !sys().includes('59,000원') && !sys().includes('777,777'),
+    '요청 옵션이 카탈로그에 없으면 같은 productId의 다른 옵션 가격을 고르지 않는다', JSON.stringify(r.body.items));
 
   reset();
   stub.searchMode = 'blocked'; // 로컬 fixture에서 검색 quota/circuit 차단을 모사
@@ -1323,10 +1398,12 @@ function reset() {
   const exactPriorKeys = stub.captured.historyKeys || [];
   const decodedPriorRef = JSON.parse(Buffer.from(firstRecommendation.body.topRecommendationRef.split('.')[1]
     .replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-  ok(decodedPriorRef.productId === firstRecommendation.body.topProductId
-      && decodedPriorRef.vendorItemId === expectedTopOption,
+  // air2 payload: { p: productId, v: vendorItemId, m: mall, iat, exp } — 만료 시각도 서명 안에 있다.
+  ok(decodedPriorRef.p === firstRecommendation.body.topProductId
+      && decodedPriorRef.v === expectedTopOption && decodedPriorRef.m === '쿠팡'
+      && decodedPriorRef.exp > decodedPriorRef.iat,
     '서명 참조 payload가 직전 top의 productId/vendorItemId를 모두 보존',
-    `${decodedPriorRef.productId}/${decodedPriorRef.vendorItemId}`);
+    `${decodedPriorRef.p}/${decodedPriorRef.v}`);
   ok((secondRecommendation.body.items || []).length === 1
       && secondRecommendation.body.items[0].productId === firstRecommendation.body.topProductId
       && exactPriorKeys.length === 1 && exactPriorKeys[0].productId === firstRecommendation.body.topProductId
@@ -1362,7 +1439,8 @@ function reset() {
   stub.searchAllItems = multiOptionResults;
   const beforeTamperedPrior = offlineMetrics.shopSearches;
   const refParts = firstRecommendation.body.topRecommendationRef.split('.');
-  const tamperedRef = `air1.${refParts[1][0] === 'A' ? 'B' : 'A'}${refParts[1].slice(1)}.${refParts[2]}`;
+  // 버전 접두어는 그대로 두고 payload 한 글자만 바꾼다 — 서명 검사가 막아야 한다.
+  const tamperedRef = `${refParts[0]}.${refParts[1][0] === 'A' ? 'B' : 'A'}${refParts[1].slice(1)}.${refParts[2]}`;
   r = await call({ question: priorRecommendationPhrase,
     chatHistory: [{ role: 'user', text: '무선 이어폰 추천' }], prevTopRef: tamperedRef,
     contextProducts: [{ productId: 'P1', vendorItemId: 'P1-RED', title: '다른 옵션', price: 1 }] });

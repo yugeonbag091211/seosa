@@ -9308,9 +9308,11 @@ var Chat = {
       var o = {
         ref: 'P' + (i + 1),
         productId: String(it.productId || ''),
-        // 서버가 상세 상품의 정확한 옵션을 다시 검색할 때만 쓰는 선택자다.
-        // price/history 등 브라우저 문맥의 사실은 API가 다시 검증해야 한다.
+        // 서버가 SEOSA 카탈로그에서 정확한 상품·옵션을 찾을 때만 쓰는 선택자다.
+        // price/history 등 브라우저 문맥의 사실은 서버가 읽지 않는다(api/_aicontext.js).
         vendorItemId: String(it.vendorItemId || ''),
+        // 백엔드 몰 식별자('쿠팡'·'ADPICK'). mall 은 화면 표시 이름이라 식별에 못 쓴다.
+        mallId: String(it.mall || ''),
         title: String(it.title || ''),
         mall: m.name,
         price: price,
@@ -9478,7 +9480,14 @@ var Chat = {
             Chat.guestCta();
           }
 
-          AppState.chatHistory.push({ role: 'assistant', text: res.text || '' });
+          /*
+           * 서버가 이 답변 본문에 붙인 서명(turnSig)을 함께 남긴다. 다음 질문에서
+           * 서버는 서명이 맞는 발화만 AI 의 이전 답변으로 인정한다(api/ai.js
+           * normalizeHistory). 본문을 고치면 서명이 맞지 않으므로 그대로 둔다.
+           */
+          var turn = { role: 'assistant', text: res.text || '' };
+          if (res.turnSig) turn.sig = String(res.turnSig);
+          AppState.chatHistory.push(turn);
           if (AppState.chatHistory.length > CONST.LIMIT.CHAT_HISTORY) {
             AppState.chatHistory = AppState.chatHistory.slice(-CONST.LIMIT.CHAT_HISTORY);
           }
