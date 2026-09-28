@@ -594,25 +594,26 @@ function scoreItem(it, c, tokens) {
  * @returns {Array} 같은 객체들. fit/notes 가 붙고 순서가 바뀐다.
  */
 function rankItems(items, c, query, opts) {
-  const list = (items || []).filter(Boolean);
-  if (list.length <= 1) {
-    list.forEach(it => { if (!it.fit) it.fit = ''; if (!it.notes) it.notes = []; });
-    return list;
-  }
-
+  let list = (items || []).filter(Boolean);
   const cons = c || {};
-  const sh = shop();
-  const tokens = (query && sh) ? sh.keywordTokens(query) : [];
   let searchHelpers = null, intentContext = null;
   if (query) {
     try {
       searchHelpers = require('./_search');
+      list = searchHelpers.filterMainProductCandidates(query, list).items;
       intentContext = searchHelpers.productIntentContext(query, list.map(it => it && it.title));
     } catch (_e) {
       searchHelpers = null;
       intentContext = null;
     }
   }
+  if (list.length <= 1) {
+    list.forEach(it => { if (!it.fit) it.fit = ''; if (!it.notes) it.notes = []; });
+    return list;
+  }
+
+  const sh = shop();
+  const tokens = (query && sh) ? sh.keywordTokens(query) : [];
 
   const prices = list.map(it => Math.round(Number(it.price) || 0)).filter(p => p > 0);
   const min = prices.length ? Math.min.apply(null, prices) : 0;
