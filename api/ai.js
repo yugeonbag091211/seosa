@@ -1911,6 +1911,209 @@ function wonMatches(text) {
   return out.sort((a, b) => a.index - b.index);
 }
 
+
+const KOREAN_PRICE_AMOUNT_RE = /(?<![0-9A-Za-z])(-?[0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)\s*(?:(-?[0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(만|천)?)?\s*원?/g;
+const KOREAN_PRICE_RANGE_RE = /(?<![0-9A-Za-z])([0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)?\s*(?:~|〜|～|–|에서)\s*([0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)\s*원?/g;
+const BARE_PRICE_NUMBER_RE = /(?<![0-9A-Za-z])([0-9０-９][0-9０-９,，]{2,})(?![0-9A-Za-z])/g;
+const KRW_UNIT = { 억: 100000000, 만: 10000, 천: 1000 };
+
+function localizedWonNumber(raw, unit, tailRaw, tailUnit) {
+  const parse = v => {
+    const n = Number(String(v || '').normalize('NFKC').replace(/[,\s]/g, ''));
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const base = parse(raw);
+  if (!Number.isFinite(base) || !KRW_UNIT[unit]) return NaN;
+  let value = base * KRW_UNIT[unit];
+  if (tailRaw) {
+    const tail = parse(tailRaw);
+    if (!Number.isFinite(tail)) return NaN;
+    value += tailUnit ? tail * (KRW_UNIT[tailUnit] || 0) : tail;
+  }
+  value = Math.round(value);
+  return Number.isSafeInteger(value) ? value : NaN;
+}
+
+function productIdentityMatches(a, b) {
+  if (!a || !b) return false;
+  const productA = String(a.productId || '').trim();
+  const productB = String(b.productId || '').trim();
+  const optionA = String(a.vendorItemId || '').trim();
+  const optionB = String(b.vendorItemId || '').trim();
+  const mallA = String(a.mallId || a.mall || '').trim().toLowerCase();
+  const mallB = String(b.mallId || b.mall || '').trim().toLowerCase();
+  if (!productA || productA !== productB || !mallA || mallA !== mallB || optionA !== optionB) return false;
+  const coupang = a.isCoupang === true || b.isCoupang === true || /쿠팡|coupang/i.test(mallA);
+  return !coupang || !!optionA;
+}
+
+/** Context classifier for prices. It only treats bare numbers as prices beside clear price language. */
+function priceClaimKind(text, start, end) {
+  const s = String(text || '');
+  const before = s.slice(Math.max(0, start - 48), start);
+  const after = s.slice(end, Math.min(s.length, end + 48));
+  const tail = before.slice(-28);
+  const head = after.slice(0, 32);
+  if (/(?:역대|사상)\s*(?:최저|최저가|low(?:est)?\s+ever)/i.test(tail + head)) return 'all-time';
+  if (/(?:예산|budget)\s*(?:은|이|을|상한|:)?\s*$/i.test(tail)) return 'budget';
+  if (/(?:현재\s*(?:가|가격|판매가)|오늘\s*(?:가격|판매가)|지금\s*(?:가격|판매가)|판매가|가격(?:은|이|을|:)|최저가(?:는|가|이)?|할인가|쿠폰가|금액(?:은|이|:)|비용(?:은|이|:))\s*(?:약|대략)?\s*$/i.test(tail)) return 'current';
+  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'average';
+  if (/(?:정가|정상가|소비자가|원래\s*(?:가격|는|가)?|list\s*price)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'reference';
+  if (/(?:기록|최근|지난\s*\d+\s*일|어제|전날|당시|과거|이전|저점|최저가)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'history';
+  if (/^\s*보다\s*(?:더\s*)?(?:싸|저렴|낮)/.test(head)) return 'compare-less';
+  if (/^\s*보다\s*(?:더\s*)?(?:비싸|높)/.test(head)) return 'compare-more';
+  if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:낮|싸|저렴)/.test(head)) return 'current-below-average';
+  if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:높|비싸)/.test(head)) return 'current-above-average';
+  if (/(?:대비|비교해)\s*$/.test(tail)) return 'current';
+  return 'any';
+}
+
+function priceEvidenceValues(item, kind) {
+  if (!item) return [];
+  const positive = v => {
+    const n = Number(v);
+    return Number.isSafeInteger(n) && n > 0 ? n : 0;
+  };
+  const h = item.hist || null;
+  const current = () => {
+    const trust = item.trust && String(item.trust.level || '').toLowerCase();
+    if (trust === 'stale' || trust === 'unknown') return [];
+    const p = positive(item.price);
+    return p ? [p] : [];
+  };
+  const history = h ? [
+    h.lastPrice, h.prevPrice, h.trendFrom, ...(Array.isArray(h.points) ? h.points.map(pt => pt && (pt.p != null ? pt.p : pt.price)) : [])
+  ].map(positive).filter(Boolean) : [];
+  if (kind === 'current' || kind === 'current-below-average' || kind === 'current-above-average') return current();
+  if (kind === 'average') return h ? [positive(h.avg30)].filter(Boolean) : [];
+  if (kind === 'reference') return [positive(item.listPrice)].filter(Boolean);
+  if (kind === 'history') return history;
+  if (kind === 'low') {
+    if (!h || Number(h.count) < 2 || Number(h.historyDays) < 7 || h.lowConfirmed === false) return [];
+    return [positive(h.low)].filter(Boolean);
+  }
+  if (kind === 'any') {
+    return [...current(), positive(item.listPrice), ...history].filter(Boolean);
+  }
+  return [];
+}
+
+function supportsPriceClaim(claim, item) {
+  if (claim.kind === 'budget') return true; // A user budget may be echoed, but it is not product-price evidence.
+  if (claim.kind === 'all-time' || claim.currency !== 'KRW' || !Number.isSafeInteger(claim.value) || claim.value <= 0) return false;
+  if (claim.kind === 'compare-less' || claim.kind === 'compare-more') {
+    const p = priceEvidenceValues(item, 'current')[0] || 0;
+    if (!p) return false;
+    return claim.kind === 'compare-less' ? p < claim.value : p > claim.value;
+  }
+  if (claim.kind === 'current-below-average' || claim.kind === 'current-above-average') {
+    const p = priceEvidenceValues(item, 'current')[0] || 0;
+    const avg = Number(item && item.hist && item.hist.avg30) || 0;
+    if (p !== claim.value || avg <= 0) return false;
+    return claim.kind === 'current-below-average' ? p < avg : p > avg;
+  }
+  if (claim.range) {
+    const values = priceEvidenceValues(item, claim.kind === 'current' ? 'current' : (claim.kind === 'average' ? 'average' : (claim.kind === 'reference' ? 'reference' : (claim.kind === 'history' ? 'history' : 'any')));
+    return values.some(v => v >= claim.low && v <= claim.high);
+  }
+  const values = priceEvidenceValues(item, claim.kind === 'low' ? 'low' : claim.kind);
+  return values.some(v => claim.approxStep
+    ? Math.round(v / claim.approxStep) === Math.round(claim.value / claim.approxStep)
+    : v === claim.value);
+}
+
+/**
+ * Catch Korean shorthand and context-only amounts, plus validate explicit amounts
+ * in comparisons. A matching number in user text or another option is never evidence.
+ */
+function unverifiedContextualPrices(text, items) {
+  const s = String(text || '');
+  const claims = [];
+  const occupied = [];
+  const add = claim => {
+    if (!Number.isSafeInteger(claim.value) || claim.value <= 0) {
+      claims.push(claim);
+      return;
+    }
+    const duplicate = claims.some(c => c.start === claim.start && c.end === claim.end && c.value === claim.value && c.kind === claim.kind);
+    if (!duplicate) claims.push(claim);
+  };
+  const overlap = (start, end, spans) => spans.some(r => start < r.end && end > r.start);
+
+  // Price ranges such as 10~13만원 and 10만원에서 13만원 are one claim, not two endpoints.
+  KOREAN_PRICE_RANGE_RE.lastIndex = 0;
+  let m;
+  while ((m = KOREAN_PRICE_RANGE_RE.exec(s)) !== null) {
+    const leftUnit = m[2] || m[4];
+    const low = localizedWonNumber(m[1], leftUnit, '', '');
+    const high = localizedWonNumber(m[3], m[4], '', '');
+    const start = m.index, end = m.index + m[0].length;
+    occupied.push({ start, end });
+    add({ start, end, value: Number.isSafeInteger(high) ? high : low,
+      low: Math.min(low, high), high: Math.max(low, high), range: true,
+      currency: 'KRW', kind: priceClaimKind(s, start, end) });
+  }
+
+  // Korean 만/천/억 notation, including decimal 만원 and mixed 12만 9천원 forms.
+  KOREAN_PRICE_AMOUNT_RE.lastIndex = 0;
+  while ((m = KOREAN_PRICE_AMOUNT_RE.exec(s)) !== null) {
+    const start = m.index, end = m.index + m[0].length;
+    if (overlap(start, end, occupied)) continue;
+    const value = localizedWonNumber(m[1], m[2], m[3], m[4]);
+    const after = s.slice(end, Math.min(s.length, end + 8));
+    const before = s.slice(Math.max(0, start - 8), start);
+    let low = value, high = value, range = false, approxStep = 0;
+    if (/^\s*대/.test(after) && Number.isSafeInteger(value) && value > 0) {
+      const step = KRW_UNIT[m[2]];
+      low = value;
+      high = value + step - 1;
+      range = true;
+    } else if (/(?:약|대략|거의)\s*$/.test(before)) {
+      approxStep = KRW_UNIT[m[2]];
+    }
+    occupied.push({ start, end });
+    add({ start, end, value, low, high, range, approxStep,
+      currency: 'KRW', kind: priceClaimKind(s, start, end) });
+  }
+
+  // Explicit tokens are included here so comparison grammar is checked even if a
+  // broad historical/current-price matcher would otherwise skip the sentence.
+  const explicit = wonMatches(s);
+  explicit.forEach(token => {
+    const start = token.index, end = token.index + token.text.length;
+    occupied.push({ start, end });
+    add({ start, end, value: wonValue(token), currency: token.currency,
+      kind: priceClaimKind(s, start, end) });
+  });
+
+  // Bare integers are price claims only beside unambiguous price/buying language.
+  BARE_PRICE_NUMBER_RE.lastIndex = 0;
+  while ((m = BARE_PRICE_NUMBER_RE.exec(s)) !== null) {
+    const start = m.index, end = m.index + m[0].length;
+    if (overlap(start, end, occupied)) continue;
+    const normalized = String(m[1]).normalize('NFKC').replace(/[,\s]/g, '');
+    const value = Number(normalized);
+    if (!Number.isSafeInteger(value) || value < 1000 || value > 1000000000) continue;
+    const before = s.slice(Math.max(0, start - 48), start);
+    const after = s.slice(end, Math.min(s.length, end + 48));
+    const clearBefore = /(?:현재\s*(?:가|가격|판매가)(?:는|이|가|:)?|오늘\s*(?:가격|판매가)(?:은|이|가|:)?|지금\s*(?:가격|판매가)(?:은|이|가|:)?|판매가(?:는|가|이|:)?|가격(?:은|이|을|:)|최저가(?:는|가|이|:)?|할인가(?:는|가|이|:)?|쿠폰가(?:는|가|이|:)?|금액(?:은|이|:)|비용(?:은|이|:)|current\s+price|price\s*(?:is|:))\s*(?:약|대략)?\s*$/i.test(before);
+    const clearAfter = /^\s*(?:에\s*(?:살|구매|결제)|으로\s*(?:살|구매|결제)|대에\s*(?:살|구매)|이면\s*(?:살|구매|가능)|을?\s*주고\s*(?:살|구매)|can\s+buy\s+for)\b/i.test(after);
+    if (!clearBefore && !clearAfter) continue;
+    occupied.push({ start, end });
+    add({ start, end, value, currency: 'KRW', kind: priceClaimKind(s, start, end) });
+  }
+
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  const invalid = [];
+  claims.forEach(claim => {
+    const candidates = referencedItems(s, claim.start + Math.floor((claim.end - claim.start) / 2), list);
+    const matchedItems = candidates.length ? candidates : list;
+    const supported = matchedItems.length > 0 && matchedItems.every(it => supportsPriceClaim(claim, it));
+    if (!supported) invalid.push(claim.value);
+  });
+  return invalid;
+}
+
 /** 답변에서 근거로 되짚어지지 않는 원화 금액을 찾는다. */
 function unverifiedWon(text, known) {
   const out = [];
@@ -3476,7 +3679,7 @@ module.exports = async function handler(req, res) {
          * 사용자는 다른 상품을 보게 된다. 순서는 한 곳에서 정한다.
          */
         // 같은 상품 페이지의 옵션끼리 순서가 뒤섞이지 않게 옵션까지 키로 쓴다.
-        const idOf = it => `${it.productId}|${String(it.vendorItemId || '')}`;
+        const idOf = it => `${String(it.mallId || it.mall || '')}|${it.productId}|${String(it.vendorItemId || '')}`;
         const order = new Map(items.map((it, i) => [idOf(it), i]));
         cards = raw
           .slice()
@@ -3546,8 +3749,8 @@ module.exports = async function handler(req, res) {
          * 프롬프트만 길어지고 읽히지 않는다.
          */
         const { dealOf } = require('./_deal');
-        const head = items.find(it => it.hist);
-        if (head) deal = dealOf(head.hist, head.price, today);
+        const head = items[0] || null;
+        if (head && head.hist) deal = dealOf(head.hist, head.price, today);
         // LLM 이 죽어도 이 판정은 전할 수 있어야 한다 (fallbackAnswer 참고)
         fallbackDeal = deal;
       } catch (e) {
@@ -3579,7 +3782,12 @@ module.exports = async function handler(req, res) {
          */
         let matchFeatures = null;
         try { ({ matchFeatures } = require('./_specs')); } catch (e) { /* 없으면 기능 가정만 생략 */ }
-        decision = decide(items, constraints, wanted, prevTop, { rank: rankItems, matchFeatures });
+        const candidateDecision = decide(items, constraints, wanted, prevTop, { rank: rankItems, matchFeatures });
+        if (candidateDecision && productIdentityMatches(items[0], candidateDecision.top)) {
+          decision = candidateDecision;
+        } else if (candidateDecision) {
+          console.warn('[ai] 결정 대상 identity 불일치 — 구매 판정 제거');
+        }
         fallbackDecision = decision;   // LLM 이 죽어도 이 결론은 전할 수 있어야 한다
       } catch (e) {
         // 결정이 없어도 답변은 한다 — 예전처럼 상품 데이터만으로 진행한다.
@@ -4036,6 +4244,7 @@ module.exports = async function handler(req, res) {
        */
       const groundItems = items.concat(searchState === 'found' ? [] : contextNotes.historyOnly);
       const badWon   = unverifiedWon(text, collectKnownWon(groundItems, cards, q, hist, constraints));
+      const badContextualPrice = unverifiedContextualPrices(text, groundItems);
       const badProductPrice = unverifiedProductPrices(text, groundItems);
       const badCurrentPrice = unverifiedCurrentPrices(text, groundItems);
       const badDiscountPct = unverifiedDiscountPct(text, groundItems);
@@ -4053,10 +4262,10 @@ module.exports = async function handler(req, res) {
        * 서버 데이터로 되짚을 수 없는 가격·사양·상품·구매 판정이 하나라도
        * 있으면 전체 LLM 답변을 폐기하고 동일한 서버 계산값으로 다시 조립한다.
        */
-      if (badWon.length || badProductPrice.length || badCurrentPrice.length || badDiscountPct.length || badBudgetPick ||
+      if (badWon.length || badContextualPrice.length || badProductPrice.length || badCurrentPrice.length || badDiscountPct.length || badBudgetPick ||
           badSpec.length || badCmp.length || badSuper.length || badDecision || badIdentity || noCatalog) {
         console.warn('[ai] grounding 실패 — deterministic 답변으로 대체 ' + JSON.stringify({
-          won: badWon.length, productPrice: badProductPrice.length, currentPrice: badCurrentPrice.length,
+          won: badWon.length, contextualPrice: badContextualPrice.length, productPrice: badProductPrice.length, currentPrice: badCurrentPrice.length,
           discountPct: badDiscountPct.length, budgetPick: badBudgetPick,
           spec: badSpec.length, compare: badCmp.length,
           superlative: badSuper.length, decision: badDecision,
@@ -4345,7 +4554,7 @@ module.exports = async function handler(req, res) {
 module.exports._internal = {
   cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls, derefRefs,
   needsShopContext, canonicalIntent, safeText, num, won, safeDate, normItem, describe,
-  trimToSentence, collectKnownWon, unverifiedWon, unverifiedProductPrices, unverifiedCurrentPrices,
+  trimToSentence, collectKnownWon, unverifiedWon, unverifiedContextualPrices, productIdentityMatches, unverifiedProductPrices, unverifiedCurrentPrices,
   unverifiedDiscountPct, unsupportedOffBudgetRecommendation, looksLikeSensitiveDisclosure,
   unverifiedSpecs, unsupportedSuperlatives,
   unsupportedComparisons, mentionsAnyCard, attachSpecs, collectWantedFeatures,
