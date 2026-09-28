@@ -1875,16 +1875,38 @@ function collectKnownWon(items, cards, question, hist, constraints) {
  *
  * @returns {Array<{index:number, text:string, digits:string}>} 위치 순
  */
-const WON_BIG_RE = /([0-9][0-9,]{2,})\s*원/g;
-const WON_SMALL_RE = /(?<![0-9A-Za-z.,])([0-9]{1,2})\s*원(?=\s*(?:짜리|입니다|이에요|예요|이야|이고|이라|으로|에|부터|까지|이면|인데|대|$)|[.,!?)\]」』~])/g;
+const WON_BIG_RE = /(-?[0-9０-９][0-9０-９,，\s]{2,})\s*원/gi;
+const WON_SMALL_RE = /(?<![0-9A-Za-z.,])(-?[0-9０-９]{1,2})\s*원(?=\s*(?:짜리|입니다|이에요|예요|이야|이고|이라|으로|에|부터|까지|이면|인데|대|$)|[.,!?)\]」』~])/gi;
+/* Amount notation accepted outside the plain "12,900원" form. Foreign currency is
+ * recognized too, but never accepted as evidence because SEOSA catalog prices are KRW. */
+const KRW_ALIAS_RE = /(?:[₩￦]|(?<![A-Za-z])KRW)\s*(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)|(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)\s*(?:KRW|won)(?![A-Za-z])/gi;
+const FOREIGN_CURRENCY_RE = /(?:[$€£¥]|(?<![A-Za-z])(?:USD|EUR|GBP|JPY|CNY)\s*)(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)|(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)\s*(?:USD|EUR|GBP|JPY|CNY|dollars?|euros?|pounds?|yen|yuan)(?![A-Za-z])/gi;
+
+function wonValue(match) {
+  const raw = String(match && match.digits || '').normalize('NFKC').replace(/[,\s]/g, '');
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return NaN;
+  return match.negative ? -Math.abs(n) : Math.round(n);
+}
+
 function wonMatches(text) {
   const s = String(text || '');
   const out = [];
-  [WON_BIG_RE, WON_SMALL_RE].forEach(re => {
+  const add = (re, currency) => {
     re.lastIndex = 0;
     let m;
-    while ((m = re.exec(s)) !== null) out.push({ index: m.index, text: m[0], digits: m[1] });
-  });
+    while ((m = re.exec(s)) !== null) {
+      const digits = m[1] || m[2];
+      const prefix = s.slice(Math.max(0, m.index - 12), m.index);
+      const raw = String(digits || '').normalize('NFKC').replace(/[,\s]/g, '');
+      const negative = Number(raw) < 0 || /-\s*$/.test(prefix);
+      out.push({ index: m.index, text: m[0], digits, currency, negative });
+    }
+  };
+  add(WON_BIG_RE, 'KRW');
+  add(WON_SMALL_RE, 'KRW');
+  add(KRW_ALIAS_RE, 'KRW');
+  add(FOREIGN_CURRENCY_RE, 'FOREIGN');
   return out.sort((a, b) => a.index - b.index);
 }
 
@@ -1892,8 +1914,9 @@ function wonMatches(text) {
 function unverifiedWon(text, known) {
   const out = [];
   wonMatches(text).forEach(m => {
-    const v = Number(m.digits.replace(/,/g, ''));
-    if (Number.isFinite(v) && v > 0 && !known.has(v) && out.indexOf(v) < 0) out.push(v);
+    const v = wonValue(m);
+    if ((!Number.isFinite(v) || v <= 0 || m.currency !== 'KRW' || !known.has(v))
+        && out.indexOf(v) < 0) out.push(v);
   });
   return out;
 }
@@ -1962,7 +1985,7 @@ function unverifiedCurrentPrices(text, items) {
   const current = /현재(?:가|가격)?|오늘|금일|방금|지금|실시간|판매가/;
   const historical = /어제|전날|지난\s*\d+일|기록|과거|이전|당시/;
   for (const m of wonMatches(text)) {
-    const value = Number(m.digits.replace(/,/g, ''));
+    const value = wonValue(m);
     const before = String(text).slice(Math.max(0, m.index - 32), m.index);
     const after = String(text).slice(m.index + m.text.length, m.index + m.text.length + 20);
     const near = before + after;
@@ -1974,7 +1997,8 @@ function unverifiedCurrentPrices(text, items) {
     const candidates = refs.length ? refs : (items || []);
     // 상품명이 특정되지 않았거나 같은 이름의 옵션이 여러 개라면, 일부 후보에서
     // 가격이 우연히 일치하는 것만으로 그 가격을 답변에 귀속시키지 않는다.
-    if (!candidates.length || !candidates.every(it => Math.round(Number(it && it.price) || 0) === value)) {
+    if (m.currency !== 'KRW' || value <= 0 || !candidates.length
+        || !candidates.every(it => Math.round(Number(it && it.price) || 0) === value)) {
       if (out.indexOf(value) < 0) out.push(value);
     }
   }
@@ -1987,7 +2011,7 @@ function unverifiedProductPrices(text, items) {
   const s = String(text || '');
   const derived = /차액|차이|더\s*(?:저렴|싸)|높(?:습니다|아요|다)|낮(?:습니다|아요|다)|예산|배송비/;
   for (const m of wonMatches(s)) {
-    const value = Number(m.digits.replace(/,/g, ''));
+    const value = wonValue(m);
     const before = s.slice(Math.max(0, m.index - 48), m.index);
     const after = s.slice(m.index + m.text.length, m.index + m.text.length + 28);
     const local = before.slice(-28) + after.slice(0, 16);
@@ -2001,6 +2025,7 @@ function unverifiedProductPrices(text, items) {
     const lowClaim = /(?:역대\s*)?최저가/.test(claimPrefix);
     const historicalClaim = /어제|전날|지난\s*\d+일|기록가|당시|과거|이전|최근\s*기록/.test(claimPrefix);
     const matchesClaim = it => {
+      if (m.currency !== 'KRW' || value <= 0) return false;
       if (listClaim) return Math.round(Number(it && it.listPrice) || 0) === value;
       if (averageClaim) return Math.round(Number(it && it.hist && it.hist.avg30) || 0) === value;
       if (lowClaim) return Math.round(Number(it && it.hist && it.hist.low) || 0) === value;
@@ -2067,9 +2092,6 @@ const LIVE_PRICE_NOTE = '지금 판매 가격은 SEOSA가 확인한 상품 데�
 function unverifiedLivePriceClaim(text) {
   const s = String(text || '');
   const hits = wonMatches(s).map(m => m.index);
-  const en = /([0-9][0-9,]{2,})\s*(?:won\b|KRW)/gi;
-  let m;
-  while ((m = en.exec(s)) !== null) hits.push(m.index);
   return hits.some(at => LIVE_PRICE_CUE.test(s.slice(Math.max(0, at - 24), at)));
 }
 
