@@ -1913,7 +1913,7 @@ function wonMatches(text) {
 
 
 const KOREAN_PRICE_AMOUNT_RE = /(?<![0-9A-Za-z])(-?[0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)\s*(?:(-?[0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(만|천)?)?\s*원?/g;
-const KOREAN_PRICE_RANGE_RE = /(?<![0-9A-Za-z])([0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)?\s*(?:~|〜|～|–|에서)\s*([0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)\s*원?/g;
+const KOREAN_PRICE_RANGE_RE = /(?<![0-9A-Za-z])([0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)?\s*원?\s*(?:~|〜|～|–|에서)\s*([0-9０-９][0-9０-９,，]*(?:\.[0-9０-９]+)?)\s*(억|만|천)\s*원?/g;
 const BARE_PRICE_NUMBER_RE = /(?<![0-9A-Za-z])([0-9０-９][0-9０-９,，]{2,})(?![0-9A-Za-z])/g;
 const KRW_UNIT = { 억: 100000000, 만: 10000, 천: 1000 };
 
@@ -2086,6 +2086,8 @@ function unverifiedContextualPrices(text, items) {
   const explicit = wonMatches(s);
   explicit.forEach(token => {
     const start = token.index, end = token.index + token.text.length;
+    // Avoid reparsing the tail of compounds such as 12만9000원 as a separate 9,000원 claim.
+    if (overlap(start, end, occupied)) return;
     occupied.push({ start, end });
     add({ start, end, value: wonValue(token), currency: token.currency,
       kind: priceClaimKind(s, start, end) });
