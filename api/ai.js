@@ -1969,6 +1969,9 @@ function priceClaimKind(text, start, end) {
   const after = s.slice(end, Math.min(s.length, end + 48));
   const tail = before.slice(-28);
   const head = after.slice(0, 32);
+  // A following 차이/차액 labels this number as a derived delta, even when
+  // a historical-low claim appeared immediately before it in the same sentence.
+  if (/^\s*(?:차이(?:가|는|도)?|차액(?:은|이|가)?|difference\b)/i.test(head)) return 'difference';
   if (/(?:역대|사상)\s*(?:최저|최저가|low(?:est)?\s+ever)/i.test(tail + head)) return 'all-time';
   if (/(?:기록(?:상|\s*내|\s*중)?|관측(?:한|된)?|최근(?:\s*\d+\s*일)?|지난\s*\d+\s*일).{0,16}최저(?:가)?/i.test(tail)
       || /\b(?:record|historical|recent)\s+low\b/i.test(tail)) return 'low';
@@ -1976,10 +1979,9 @@ function priceClaimKind(text, start, end) {
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:낮|싸|저렴)/.test(head)) return 'current-below-average';
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:높|비싸)/.test(head)) return 'current-above-average';
   if (/(?:현재\s*(?:가|가격|판매가)|오늘\s*(?:가격|판매가)|지금\s*(?:가격|판매가)|판매가|가격|최저가|할인가|쿠폰가|금액|비용)(?:는|은|이|을|가|:)?\s*(?:약|대략)?\s*$/i.test(tail)) return 'current';
-  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:은|이|가|:|\()\s*$/i.test(tail)) return 'average';
+  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:은|이|가|:|\()?\s*$/i.test(tail)) return 'average';
   if (/(?:정가|정상가|소비자가|원래\s*(?:가격|는|가)?|list\s*price)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'reference';
   if (/(?:기록|최근|지난\s*\d+\s*일|어제|전날|당시|과거|이전|저점|최저가)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'history';
-  if (/^\s*(?:차이(?:가|는|도)?|차액(?:은|이|가)?|difference\b)/i.test(head)) return 'difference';
   if (/^\s*보다\s*(?:더\s*)?(?:싸|저렴|낮)/.test(head)) return 'compare-less';
   if (/^\s*보다\s*(?:더\s*)?(?:비싸|높)/.test(head)) return 'compare-more';
   if (/(?:대비|비교해)\s*$/.test(tail)) return 'current';
