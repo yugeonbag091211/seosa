@@ -211,6 +211,27 @@ try {
   check('catalog_price_freshness', 'future-snapshot-rejected',
     I.unverifiedCurrentPrices('현재가는 12,900원입니다.', [item(12900, { checkedAt: daysAgoKst(-1) })]).length > 0,
     'future-dated catalog snapshot passed as current');
+
+  const shortLowHistory = { low: 12900, count: 2, lowCount: 1, historyDays: 1,
+    lowConfirmed: false, firstDate: daysAgoKst(1), lastDate: daysAgoKst(0), lastPrice: 15000 };
+  const confirmedLowHistory = { low: 12900, count: 10, lowCount: 2, historyDays: 9,
+    lowConfirmed: true, firstDate: daysAgoKst(9), lastDate: daysAgoKst(0), lastPrice: 15000 };
+  const shortHistoryNote = I.contextNoteBlock({ historyOnly: [item(0, { hist: shortLowHistory })] });
+  const confirmedHistoryNote = I.contextNoteBlock({ historyOnly: [item(0, { hist: confirmedLowHistory })] });
+  check('record_low_evidence', 'short-history-not-in-context',
+    !shortHistoryNote.includes('12,900원') && !shortHistoryNote.includes('최저'),
+    'unconfirmed low was exposed as context evidence');
+  check('record_low_evidence', 'confirmed-low-bounded-context',
+    confirmedHistoryNote.includes('최근 관측 기록 최저 12,900원') && !confirmedHistoryNote.includes('역대'),
+    'confirmed low context was not bounded');
+  const cardBase = { title: '테스트 제품', lprice: 12900, link: 'https://example.invalid/item',
+    image: '', mall: '쿠팡', isCoupang: true, productId: 'P-LOW' };
+  check('record_low_evidence', 'short-history-card-no-low-claim',
+    !/최저/.test(I.toCard(cardBase, shortLowHistory).note || ''),
+    'card note asserted a low from short history');
+  check('record_low_evidence', 'confirmed-low-card-bounded',
+    /최근 관측 기록 최저/.test(I.toCard(cardBase, confirmedLowHistory).note || ''),
+    'confirmed low card wording was not bounded');
   check('korean_price_claims', 'spec-model-numbers',
     I.unverifiedContextualPrices('RTX 5090, iPhone 17, Galaxy S26, WH-1000XM6, 14ZD95U, 128GB, 240Hz, 65W, 2026년', [item(129000)]).length === 0,
     'model/spec/year number was treated as a price');
