@@ -7,7 +7,7 @@ const { identify } = require('./_auth');
  * 서명·대조만 하는 순수 함수이고 DB 조회(loadCatalogRows)는 호출할 때만 돈다.
  */
 const AC = require('./_aicontext');
-const { hasConfirmedRecordLow } = require('./_priceevidence');
+const { hasConfirmedRecordLow, isCurrentPriceFresh } = require('./_priceevidence');
 /*
  * 조건 해석·랭킹은 순수 계산이라 최상단에서 불러도 안전하다
  * (그 안에서 _shop 을 쓸 때만 지연 require 한다 — _shopintent.js 주석 참고).
@@ -352,8 +352,9 @@ function describe(it, withPoints, compact) {
 
   const lines = [head];
 
-  let priceLine = `  현재가 ${won(it.price)}원`;
+  let priceLine = `  ${isCurrentPriceFresh(it) ? '현재가' : '마지막 확인 가격'} ${won(it.price)}원`;
   // 화면 상품은 방금 검색한 값이 아니라 SEOSA 가 마지막으로 확인한 값이다. 그 날을 밝힌다.
+  // 3일을 넘긴 카탈로그 snapshot은 현재가로 부르지 않고 마지막 확인값으로만 제시한다.
   if (it.checkedAt) priceLine += ` (SEOSA 확인 ${it.checkedAt})`;
   if (it.listPrice) priceLine += ` | 쿠팡 정가 ${won(it.listPrice)}원 | 정가 대비 할인율 ${it.discountPct}%`;
   if (it.refHighPrice) priceLine += ` | 네이버 참고최고가 ${won(it.refHighPrice)}원(정가 아님·할인율 계산 금지)`;
@@ -1985,7 +1986,7 @@ function priceEvidenceValues(item, kind) {
   const h = item.hist || null;
   const current = () => {
     const trust = item.trust && String(item.trust.level || '').toLowerCase();
-    if (trust === 'stale' || trust === 'unknown') return [];
+    if (trust === 'stale' || trust === 'unknown' || !isCurrentPriceFresh(item)) return [];
     const p = positive(item.price);
     return p ? [p] : [];
   };
@@ -4586,6 +4587,6 @@ module.exports._internal = {
   CLASSIFY_SYSTEM, CLASSIFY_FORCE, fallbackAnswer,
   heuristicIntent, hasAuthHeader,
   historyMessage, normalizeHistory, resolveContext, contextNoteBlock, statFor, markFiction, P,
-  unverifiedLivePriceClaim, wonMatches, hasConfirmedRecordLow,
+  unverifiedLivePriceClaim, wonMatches, hasConfirmedRecordLow, isCurrentPriceFresh,
   PROMPT_VERSION
 };
