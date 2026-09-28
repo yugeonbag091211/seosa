@@ -13,7 +13,9 @@ function hasConfirmedRecordLow(history) {
   const days = Number(history.historyDays);
   const validDate = value => {
     const text = String(value || '');
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(text)) return false;
+    if (text.length !== 10 || text[4] !== '-' || text[7] !== '-') return false;
+    const digits = text.slice(0, 4) + text.slice(5, 7) + text.slice(8, 10);
+    if (!digits.split('').every(ch => ch >= '0' && ch <= '9')) return false;
     const parsed = new Date(text + 'T00:00:00Z');
     return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
   };
