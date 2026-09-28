@@ -4805,6 +4805,8 @@ var AppState = {
    * 그때는 변경 감지만 못 할 뿐 나머지는 그대로 동작한다.
    */
   lastTopProductId: '',
+  // 서버가 서명한 직전 추천의 productId/vendorItemId/query 참조. 가격은 담지 않는다.
+  lastTopRecommendationRef: '',
 
   // 모달
   modalHist: [],
@@ -5392,7 +5394,7 @@ var Api = {
     } else if (fnName === 'askAI') {
       method = 'POST';
       // view: 지금 사용자가 보고 있는 화면(검색어·정렬·필터). 없으면 서버가 알아서 넘긴다.
-      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4], prevTop: args[5] || '' });
+      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4], prevTop: args[5] || '', prevTopRef: args[6] || '' });
     } else if (fnName === 'saveAlert') {
       method = 'POST';
       fetchOpts.body = JSON.stringify({ email: args[0], title: args[1], targetPrice: args[2], currentPrice: args[3], link: args[4], image: args[5], mall: args[6], productId: args[7], onDeal: !!args[8] });
@@ -9008,6 +9010,8 @@ var Chat = {
   /** 대화 전체 삭제 */
   clear: function() {
     AppState.chatHistory = [];
+    AppState.lastTopProductId = '';
+    AppState.lastTopRecommendationRef = '';
     // [대화 세션 만료] 빈 배열을 써 두면 옛 형식으로 남는다. 지우는 게 뜻에 맞다.
     Store.del(CONST.LS.CHAT);
 
@@ -9304,6 +9308,11 @@ var Chat = {
       var o = {
         ref: 'P' + (i + 1),
         productId: String(it.productId || ''),
+        // 서버가 SEOSA 카탈로그에서 정확한 상품·옵션을 찾을 때만 쓰는 선택자다.
+        // price/history 등 브라우저 문맥의 사실은 서버가 읽지 않는다(api/_aicontext.js).
+        vendorItemId: String(it.vendorItemId || ''),
+        // 백엔드 몰 식별자('쿠팡'·'ADPICK'). mall 은 화면 표시 이름이라 식별에 못 쓴다.
+        mallId: String(it.mall || ''),
         title: String(it.title || ''),
         mall: m.name,
         price: price,
@@ -9419,7 +9428,7 @@ var Chat = {
     Chat.ensureHistory(ctx.items, function() {
       if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
 
-      Api.call('askAI', [val, Chat.buildContext(ctx.items), AppState.chatHistory, AppState.profile, view, AppState.lastTopProductId || ''],
+      Api.call('askAI', [val, Chat.buildContext(ctx.items), AppState.chatHistory, AppState.profile, view, AppState.lastTopProductId || '', AppState.lastTopRecommendationRef || ''],
         function(res) {
           if (settled) return;   // 타임아웃이 이미 처리했다
           settled = true;
@@ -9460,6 +9469,7 @@ var Chat = {
            * 이 값이다. 탭을 닫으면 함께 사라진다 — 그거면 충분하다.
            */
           if (res.topProductId) AppState.lastTopProductId = String(res.topProductId);
+          AppState.lastTopRecommendationRef = String(res.topRecommendationRef || '');
 
           /*
            * 게스트 응답이면 사용량 줄 대신 로그인 안내 한 줄을 둔다.
@@ -9470,7 +9480,14 @@ var Chat = {
             Chat.guestCta();
           }
 
-          AppState.chatHistory.push({ role: 'assistant', text: res.text || '' });
+          /*
+           * 서버가 이 답변 본문에 붙인 서명(turnSig)을 함께 남긴다. 다음 질문에서
+           * 서버는 서명이 맞는 발화만 AI 의 이전 답변으로 인정한다(api/ai.js
+           * normalizeHistory). 본문을 고치면 서명이 맞지 않으므로 그대로 둔다.
+           */
+          var turn = { role: 'assistant', text: res.text || '' };
+          if (res.turnSig) turn.sig = String(res.turnSig);
+          AppState.chatHistory.push(turn);
           if (AppState.chatHistory.length > CONST.LIMIT.CHAT_HISTORY) {
             AppState.chatHistory = AppState.chatHistory.slice(-CONST.LIMIT.CHAT_HISTORY);
           }

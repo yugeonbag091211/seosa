@@ -97,6 +97,8 @@ async function test(name, fn) {
   console.log('\nINTENT ROUTING / NEWS PIPELINE');
 
   const cases = [
+    ['무선 이어폰 현재가 알려줘', 'PRODUCT_SEARCH'],
+    ['무선 이어폰 할인율 확인해줘', 'PRODUCT_SEARCH'],
     ['오늘 AI 뉴스', 'NEWS_RESEARCH'],
     ['오늘의집 소파 추천', 'PRODUCT_SEARCH'],
     ['오늘 에어팟 사도 돼?', 'PRODUCT_DECISION'],

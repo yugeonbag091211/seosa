@@ -275,6 +275,39 @@ function followups(ctx) {
  *  4) 답변 조립
  * ================================================================== */
 
+/**
+ * 서버가 보증하지 못한 화면 상품에 대한 결정론 문장 (api/ai.js contextNoteBlock 과 짝).
+ *
+ * ★ 가격은 옵션 기록으로 확인된 과거 값만 말한다. "현재가"라고 부르지 않는다.
+ * ★ 화면 표시명은 쓰지 않는다 — 브라우저가 보낸 문자열이다.
+ */
+function contextLines(ctx) {
+  const c = ctx || {};
+  const history = Array.isArray(c.historyOnly) ? c.historyOnly : [];
+  const unverified = Array.isArray(c.unverified) ? c.unverified : [];
+  const L = [];
+  if (c.refMissing) {
+    L.push('직전에 추천한 상품을 서버 기록으로 확인할 수 없어요.'
+      + ' 어떤 상품인지 이름을 알려 주시면 그 상품으로 다시 확인해 드릴게요.');
+  }
+  history.forEach(it => {
+    const h = it && it.hist;
+    if (!h) return;
+    L.push('보고 계신 상품의 이 옵션은 현재 판매가를 SEOSA 서버에서 확인하지 못했어요.');
+    const facts = [];
+    if (h.lastPrice > 0) facts.push(`최근 기록가 ${won(h.lastPrice)}원${h.lastDate ? `(${h.lastDate})` : ''}`);
+    if (h.low > 0) facts.push(`기록상 최저가 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''}`);
+    if (h.count > 0) facts.push(`기록 ${h.count}일치`);
+    if (facts.length) L.push(`SEOSA에 남은 이 옵션의 가격 기록: ${facts.join(' · ')}.`);
+    L.push('지금 가격은 상품 페이지에서 확인해 주세요.');
+  });
+  if (unverified.length && !history.length) {
+    L.push('지금 보고 계신 상품은 SEOSA 서버 기록에서 같은 상품·옵션을 확인하지 못해,'
+      + ' 가격·할인·구매 시점은 말씀드리기 어려워요.');
+  }
+  return L;
+}
+
 const DEGRADED_HEAD = '지금은 AI 설명을 만들지 못했어요. 대신 서버가 계산한 결과를 그대로 알려 드릴게요.';
 const DEGRADED_FOOT = '설명이 짧은 것은 AI 응답이 실패했기 때문이고, 위 숫자와 판정은 평소와 같은 계산입니다.';
 const SAFETY_HEAD = '확인된 상품·가격 데이터만 기준으로 정리했어요.';
@@ -303,6 +336,18 @@ function compose(ctx) {
   else if (c.degraded) { L.push(DEGRADED_HEAD); L.push(''); }
 
   if (!top) {
+    /*
+     * 화면 상품을 서버가 확인하지 못한 경우 (api/ai.js resolveContext).
+     *
+     * "조건에 맞는 상품을 찾지 못했어요" 는 틀린 말이다 — 사용자는 상품을 보고
+     * 있고, 우리가 그 상품·옵션의 가격을 보증하지 못했을 뿐이다. 그 사실을 말한다.
+     * 화면 표시명은 브라우저가 보낸 문자열이라 우리 목소리로 되풀이하지 않는다.
+     */
+    const notes = contextLines(c.context);
+    if (notes.length) {
+      notes.forEach(x => L.push(x));
+      return { text: L.join('\n'), followups: followups(c) };
+    }
     /*
      * 상품이 없다. 있는 척하지 않는다.
      * 카드라도 있으면 그것만 가리킨다 (검색은 됐는데 랭킹에서 비었을 때).
@@ -423,6 +468,6 @@ module.exports = {
   compose, followups, looksLikeBlockDump, blockLabelCount,
   BLOCK_LABELS, BLOCK_DUMP_MIN,
   // 테스트·다른 모듈이 같은 문구를 쓰도록 노출한다 (문구가 두 벌이 되면 어긋난다)
-  conclusion, reasons, timing, cautions, others, hedgeFor, shortTitle, won, derefs,
+  conclusion, reasons, timing, cautions, others, hedgeFor, shortTitle, won, derefs, contextLines,
   STANCE, MAX_FOLLOWUPS, DEGRADED_HEAD, DEGRADED_FOOT, SAFETY_HEAD
 };

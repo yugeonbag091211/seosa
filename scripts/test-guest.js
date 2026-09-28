@@ -46,12 +46,14 @@ Module._load = function(request, parent, isMain) {
 /* ── OpenRouter 가짜 응답 ───────────────────────────────────── */
 let fetchCalls = 0, failModels = false;
 const calledModels = [];
+let lastAnswerSystem = '';   // 본답변(max_tokens ≥ 700) 의 system 프롬프트
 global.fetch = async (_url, opts) => {
   fetchCalls++;
   const body = JSON.parse(opts.body);
   calledModels.push(body.model);
   if (failModels) return { ok: false, status: 429, text: async () => '{"error":"rate limited"}' };
   const prompt = (body.messages || []).map(m => m.content || '').join('\n');
+  if (body.max_tokens >= 700) lastAnswerSystem = ((body.messages || [])[0] || {}).content || '';
   const content = prompt.includes('QCY T13')
     ? 'QCY T13 무선 이어폰을 추천합니다.'
     : '무료 AI 테스트 답변입니다.';
@@ -90,6 +92,16 @@ trust.attachTrust = async list => {
   return list;
 };
 pricestat.loadStats = async () => stub.stats;
+/*
+ * SEOSA 카탈로그(products) 대역 — 화면 상품은 이 표로 확인된다(api/_aicontext.js).
+ * 위의 가짜 Supabase 가 어차피 막지만, 시나리오가 카탈로그 행을 직접 정하게 한다.
+ */
+const aicontext = require('../api/_aicontext');
+stub.catalog = [];
+aicontext.loadCatalogRows = async ids => {
+  const want = new Set((ids || []).map(String));
+  return stub.catalog.filter(r => want.has(String(r.product_id)));
+};
 
 const handler = require('../api/ai.js');
 const { classify, extractQuery } = require('../api/_intent.js');
@@ -250,14 +262,43 @@ function fixtureStats() {
 
   section('7. 게스트 — 가격 모달 맥락은 검색하지 않고 그 상품을 판정한다');
   {
+    /*
+     * 2026-09-28 레드팀 후속으로 fixture 를 실제 흐름에 맞췄다.
+     *
+     *   · 프론트는 이제 productId 와 함께 vendorItemId·mallId(선택자)를 보낸다.
+     *     쿠팡 상품은 옵션 ID 가 있어야 서버가 그 옵션을 특정한다.
+     *   · 서버는 브라우저의 price·hist 를 읽지 않고 SEOSA 카탈로그에서 확인한다.
+     *     그래서 브라우저가 보낸 1,111원은 어디에도 나오면 안 되고, 카탈로그의
+     *     29,900원이 <상품데이터>에 실린다.
+     *
+     * 예전 기대값 /무료 AI 테스트/ 는 가짜 분류기 응답("무료 AI 테스트…")이 A(잡담)로
+     * 읽혀서만 맞았다 — 모달 상품이 프롬프트에 아예 들어가지 않은 채 통과했다
+     * (main 실측 [ai:obs] intent:"A"). 지금은 E 로 판정돼 상품이 실리므로 가짜 모델은
+     * 상품명이 든 답을 준다. 둘 다 LLM 답변이다 — 확인하려는 것은 "결정론 대체가 아니라
+     * LLM 답변이 나간다"는 것이다.
+     */
     stub.searchCalls = 0;
+    stub.stats = fixtureStats();
+    const item = fixtureItems()[0];
+    stub.catalog = [{
+      product_id: item.productId, mall: item.mall, mall_label: '', title: item.title,
+      lprice: item.lprice, oprice: item.oprice, save_pct: item.savePct, link: item.link, image: item.image,
+      keyword: '무선 이어폰', collected_at: new Date().toISOString(), vendor_item_id: '1001-V1'
+    }];
     const st = fixtureStats().get('1001|쿠팡');
-    const ctx = [{ ref: 'P1', productId: '1001', title: 'QCY T13 무선 블루투스 이어폰', mall: '쿠팡', price: 29900, hist: st }];
+    const ctx = [{ ref: 'P1', productId: '1001', vendorItemId: '1001-V1', mallId: '쿠팡',
+      title: 'QCY T13 무선 블루투스 이어폰', mall: '쿠팡', price: 1111,
+      hist: Object.assign({}, st, { low: 1111, lastPrice: 1111 }) }];
     const r = await call({ question: '이거 지금 사도 괜찮은 가격인가요?', contextProducts: ctx, chatHistory: [], view: { source: 'modal' } });
     ok(r.status === 200 && r.body.guest === true, '200 게스트');
     ok(stub.searchCalls === 0, '★ 모달 맥락에서는 검색하지 않는다', String(stub.searchCalls));
-    ok(/무료 AI 테스트/.test(r.body.text), '모달 맥락도 LLM 답변', r.body.text.slice(0, 80));
+    ok(/무료 AI 테스트|QCY T13 무선 이어폰을 추천합니다/.test(r.body.text) && r.body.degraded !== true,
+      '모달 맥락도 LLM 답변', r.body.text.slice(0, 80));
+    ok(!/1,111원/.test(r.body.text) && !lastAnswerSystem.includes('1,111')
+        && lastAnswerSystem.includes('현재가 29,900원'),
+      '위조 가능한 모달 가격 대신 서버 카탈로그 가격으로 판정한다', r.body.text.slice(0, 80));
     ok(!r.body.items, '새로 찾은 카드가 없다(화면의 상품이 주제)');
+    stub.catalog = [];
   }
 
   section('7-1. 무료 모델 전체 실패 → 게스트 deterministic fallback');
