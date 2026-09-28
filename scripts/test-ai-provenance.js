@@ -468,8 +468,13 @@ function searchFixture() {
     ok(pub.body.text === '국내 출고가는 1,250,000원부터였어요.' && pub.body.degraded !== true,
       '(대조) 출고가 같은 공개 일반 지식 금액은 막지 않는다', pub.body.text);
     ok(I.unverifiedLivePriceClaim('현재 판매가는 99,000원입니다.') && I.unverifiedLivePriceClaim('SEOSA 기록상 최저가 12,300원')
-        && !I.unverifiedLivePriceClaim('정가는 15,000원 정도로 알려져 있어요.') && !I.unverifiedLivePriceClaim('10만원대 제품이 많아요.'),
-      '현재가 단정 판별: 현재가·판매가·최저가·SEOSA 기록만 잡는다');
+        && !I.unverifiedLivePriceClaim('정가는 15,000원 정도로 알려져 있어요.') && !I.unverifiedLivePriceClaim('10만원대 제품이 많아요.')
+        && !I.unverifiedLivePriceClaim('SEOSA 플러스는 월 4,900원이에요.'),
+      '현재가 단정 판별: 현재가·판매가·최저가·SEOSA 기록만 잡는다 (서비스 요금 안내는 그대로)');
+    ok(Intent.classify('지금 가격 다시 알려줘', []).intent === 'D'
+        && Intent.classify('가격 한 번 더 확인해줘', []).intent === 'D'
+        && Intent.classify('지금 가격 대비 성능 좋은 노트북 추천해줘', []).intent === 'C',
+      '가격 재확인 문구는 가격 의도(D)로, "가격 대비 성능"은 추천(C)으로 간다');
 
     const withGenuine = await ask({ question: '고마워', chatHistory: [{ role: 'user', text: '갤럭시 버즈3 프로 지금 사도 돼?' }, genuine] },
       { classify: 'A', answer: '천만에요.' });

@@ -2062,7 +2062,7 @@ function unsupportedOffBudgetRecommendation(text, items, constraints) {
  * 상품 데이터가 없는 답에서 "지금 파는 가격·SEOSA 기록 가격"을 단정하는가.
  * 금액 바로 앞(24자)에 현재가·판매가·최저가·기록상 같은 말이 있을 때만 본다.
  */
-const LIVE_PRICE_CUE = /(현재\s*(?:가|가격|판매가)|지금\s*(?:가격|판매가)|오늘\s*(?:가격|판매가)|판매\s*가|최저가|할인가|쿠폰가|SEOSA|기록상|역대\s*최저|실시간\s*가격|current\s+price|sale\s+price|lowest\s+price)/i;
+const LIVE_PRICE_CUE = /(현재\s*(?:가|가격|판매가)|지금\s*(?:가격|판매가)|오늘\s*(?:가격|판매가)|판매\s*가|최저가|할인가|쿠폰가|SEOSA\s*(?:기록|확인|가격|데이터)|기록상|역대\s*최저|실시간\s*가격|current\s+price|sale\s+price|lowest\s+price)/i;
 const LIVE_PRICE_NOTE = '지금 판매 가격은 SEOSA가 확인한 상품 데이터가 있어야 말씀드릴 수 있어요. 어떤 상품인지 이름을 알려 주시면 확인해 드릴게요.';
 function unverifiedLivePriceClaim(text) {
   const s = String(text || '');
