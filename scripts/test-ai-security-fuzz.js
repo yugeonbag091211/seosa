@@ -334,8 +334,8 @@ try {
     'explicit accessory intent was blocked');
 
   /* Recent-window lows cannot be promoted to all-time lowest claims. */
-  const shortHistory = item(55777, { hist: { low: 55777, lowConfirmed: true, count: 3, historyDays: 14, firstDate: '2026-09-01', lastDate: '2026-09-15' } });
-  const enoughHistory = item(55777, { hist: { low: 55777, lowConfirmed: true, count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01' } });
+  const shortHistory = item(55777, { hist: { low: 55777, lowCount: 2, lowConfirmed: true, count: 3, historyDays: 14, firstDate: '2026-09-01', lastDate: '2026-09-15' } });
+  const enoughHistory = item(55777, { hist: { low: 55777, lowCount: 4, lowIsLatest: false, lowConfirmed: true, count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01' } });
   check('historical_claims', 'all-time-always-rejected',
     I.unsupportedSuperlatives('역대 최저가입니다.', [enoughHistory]).length > 0,
     'bounded recent observations were treated as all-time evidence');
@@ -345,6 +345,33 @@ try {
   check('historical_claims', 'long-window-supported',
     I.unsupportedSuperlatives('기록상 최저가입니다.', [enoughHistory]).length === 0,
     'sufficient bounded record history was rejected');
+
+  const confirmedLow = I.normItem(item(60000, { hist: {
+    low: 55777, lowCount: 4, lowIsLatest: false, lowConfirmed: true,
+    count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01'
+  } }));
+  check('historical_claims', 'norm-preserves-confirmation',
+    confirmedLow.hist.lowCount === 4 && confirmedLow.hist.lowConfirmed === true
+      && confirmedLow.hist.lowIsLatest === false,
+    'server confirmation metadata was dropped during AI normalization');
+  check('historical_claims', 'numeric-low-matches-history',
+    I.unverifiedContextualPrices('기록상 최저가 55,777원입니다.', [confirmedLow]).length === 0,
+    'record-low amount was not matched to the recorded low');
+  check('historical_claims', 'numeric-low-mismatch-rejected',
+    I.unverifiedContextualPrices('기록상 최저가 56,000원입니다.', [confirmedLow]).length > 0,
+    'current-price equality allowed a false record-low amount');
+
+  const unconfirmedLow = I.normItem(item(60000, { hist: {
+    low: 55777, lowCount: 1, lowIsLatest: true, lowConfirmed: false,
+    count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01'
+  } }));
+  check('historical_claims', 'unconfirmed-low-rejected',
+    I.unverifiedContextualPrices('기록상 최저가 55,777원입니다.', [unconfirmedLow]).length > 0
+      && I.unsupportedSuperlatives('기록상 최저가입니다.', [unconfirmedLow]).length > 0,
+    'a single observed low was treated as confirmed');
+  check('historical_claims', 'missing-repeat-count-rejected',
+    I.hasConfirmedRecordLow({ low: 55777, lowConfirmed: true, count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01' }) === false,
+    'missing low observation count was treated as confirmation');
 
   [null, undefined, '', '   ', 0, {}, [], 'NaN', 'Infinity', '가격은 １２万９千원', '<script>현재가 12,900</script>']
     .forEach((value, i) => {
