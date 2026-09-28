@@ -261,20 +261,26 @@ try {
     text => '【갤럭시 버즈3 프로 블랙】' + text,
     text => text + ' 제품명에 포함된 숫자 17과 옵션 표기 128GB는 가격이 아닙니다.'
   ];
+  const MATRIX_SEED = 0x5e05a1;
   let matrixAssertions = 0;
-  matrixFormats.forEach(format => evidenceStates.forEach(state => contextVariants.forEach((decorate, vi) => {
-    const sourceItem = state.make();
-    const items = sourceItem ? [sourceItem] : [];
-    const claimText = decorate(format.text(matrixPrice));
-    const invalid = I.unverifiedContextualPrices(claimText, items).length > 0;
-    const expectedAllow = sourceItem ? format.allow(Number(sourceItem.price)) && state.id !== 'history-only'
-      && state.id !== 'list-only' && state.id !== 'stale-current' && state.id !== 'client-only'
-      && state.id !== 'zero-current' && state.id !== 'negative-current' && state.id !== 'nan-current' : false;
-    check('fixed_seed_price_matrix', format.id + '-' + state.id + '-ctx' + vi,
-      invalid === !expectedAllow,
-      'expectedAllow=' + expectedAllow + ' invalid=' + invalid + ' claim=' + claimText);
-    matrixAssertions++;
-  })));
+  matrixFormats.forEach((format, fi) => evidenceStates.forEach((state, si) => {
+    const rotation = (MATRIX_SEED + fi * 31 + si * 17) % contextVariants.length;
+    contextVariants.forEach((_unused, vi) => {
+      const contextIndex = (vi + rotation) % contextVariants.length;
+      const decorate = contextVariants[contextIndex];
+      const sourceItem = state.make();
+      const items = sourceItem ? [sourceItem] : [];
+      const claimText = decorate(format.text(matrixPrice));
+      const invalid = I.unverifiedContextualPrices(claimText, items).length > 0;
+      const expectedAllow = sourceItem ? format.allow(Number(sourceItem.price)) && state.id !== 'history-only'
+        && state.id !== 'list-only' && state.id !== 'stale-current' && state.id !== 'client-only'
+        && state.id !== 'zero-current' && state.id !== 'negative-current' && state.id !== 'nan-current' : false;
+      check('fixed_seed_price_matrix', format.id + '-' + state.id + '-ctx' + contextIndex,
+        invalid === !expectedAllow,
+        'seed=' + MATRIX_SEED + ' expectedAllow=' + expectedAllow + ' invalid=' + invalid + ' claim=' + claimText);
+      matrixAssertions++;
+    });
+  }));
   check('fixed_seed_price_matrix', 'minimum-assertions',
     matrixAssertions >= 1000, 'only ' + matrixAssertions + ' matrix assertions were added');
 
