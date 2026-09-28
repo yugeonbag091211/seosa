@@ -889,7 +889,7 @@ async function runY2() {
 
   const finishes = [];
   rpcHandler = (name, args) => {
-    if (name === 'coupang_acquire') return { data: [{ allowed: true, call_id: 'call-1', reason: '', used: 1 }], error: null };
+    if (name === 'coupang_acquire_v2') return { data: [{ allowed: true, call_id: 'call-1', reason: '', used: 1 }], error: null };
     if (name === 'coupang_finish') { finishes.push(args); return { data: null, error: null }; }
     return { data: null, error: null };
   };
@@ -1022,7 +1022,8 @@ async function runR2() {
     const hasAbort = /AbortController/.test(src);
     check(hasAbort, '_coupang.js 가 AbortController 로 요청을 끊는다',
       hasAbort ? '' : 'signal 없이 fetch 한다 (api/_toss.js / api/ai.js 와 불일치)');
-    check(!/retry|재시도\s*루프/i.test(src.replace(/재시도는[^\n]*/g, '')),
+    const hasRetryLoop = /\bfor\s*\([^)]*(?:retry|attempt)|\bwhile\s*\([^)]*(?:retry|attempt)|(?:retry|attempt)\s*<\s*\d|retryCount/i.test(src);
+    check(!hasRetryLoop,
       '타임아웃 대응으로 재시도 루프를 넣지 않는다 (쿠팡 경고 누적 방지)');
   }
 }

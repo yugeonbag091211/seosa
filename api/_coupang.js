@@ -2,17 +2,17 @@
 /*
  * 쿠팡 파트너스 API 단일 통로.
  *
- * 쿠팡 파트너스 공식 가이드(2024-12-16): Search 시간당 10회.
- * 이 저장소의 쿠팡 호출은 모두 Search 경로이므로 전역 DB 게이트가
- * 모든 인스턴스와 호출자 합계에 이 한도를 적용한다.
+ * 쿠팡 파트너스 고객센터(2026-09-28): Search 분당 50회, 전체 API 분당 100회.
+ * Search hard cap 은 DB 게이트에서 50/min, 전역 API hard cap 은 100/min 이다.
+ * 운영 초기 budget 은 Search 20/min·전체 API 80/min 으로 낮춰 시작한다.
  *
  * 쿠팡을 부르는 코드는 반드시 searchCoupang()만 쓸 것.
  * 직접 fetch 하면 캐시 / 전역 카운터 / 차단 감지를 전부 우회한다.
  *
  * 방어선은 네 겹이다.
  *   1) Supabase 캐시     — 같은 키워드 재조회는 아예 네트워크를 타지 않는다
- *   2) 인스턴스 리미터   — 분당 상한 + 호출 간 최소 간격(동시 호출 직렬화)
- *   3) 전역 카운터(DB)   — 서버리스 인스턴스가 여러 개여도 합계가 상한을 넘지 않는다
+ *   2) 인스턴스 리미터   — 운영 분당 budget + 호출 간 최소 간격(동시 호출 직렬화)
+ *   3) 전역 카운터(DB)   — Search/global hard cap 과 interactive/collector 분리
  *   4) 서킷 브레이커     — 429/403/rCode 차단이 오면 정해진 시간 동안 호출 중단
  *
  * 그리고 쿠팡 호출에는 재시도가 없다. 제한 응답을 재시도하면 경고만 더 쌓인다.
@@ -32,9 +32,18 @@ function envNum(name, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** 로컬 보호 상한. 공급자 전체 한도는 전역 DB 게이트가 적용한다. */
-const MAX_PER_MIN = Math.min(envNum('COUPANG_MAX_PER_MIN', 20), 40);
-const MAX_PER_HOUR = 10;
+/** 초기 운영 budget. DB 가 고정된 Search 50/min hard cap 을 한 번 더 강제한다. */
+const SEARCH_HARD_CAP = 50;
+const GLOBAL_HARD_CAP = 100;
+// Use a new variable name so a legacy COUPANG_MAX_PER_MIN=40 deployment
+// setting cannot silently raise the requested initial 20/min operating budget.
+const MAX_PER_MIN = Math.min(envNum('COUPANG_SEARCH_OPERATING_CAP', 20), SEARCH_HARD_CAP);
+const GLOBAL_OPERATING_CAP = Math.min(envNum('COUPANG_GLOBAL_MAX_PER_MIN', 80), GLOBAL_HARD_CAP);
+const INTERACTIVE_RESERVE = Math.min(envNum('COUPANG_INTERACTIVE_RESERVE_PER_MIN', 15), MAX_PER_MIN);
+const COLLECTOR_BUDGET = Math.min(
+  envNum('COUPANG_COLLECTOR_MAX_PER_MIN', 5),
+  Math.max(0, MAX_PER_MIN - INTERACTIVE_RESERVE)
+);
 /** 호출 사이 최소 간격. 순간적으로 몰리는 걸 막는다. */
 const MIN_GAP_MS = envNum('COUPANG_MIN_GAP_MS', 1200);
 /** 캐시 수명. 상품 가격은 하루 단위로 봐도 충분하다. */
@@ -182,6 +191,37 @@ function sign(method, path, query) {
     + `signed-date=${ts}, signature=${sig}`;
 }
 
+/**
+ * Build the one canonical URL used both on the wire and in the HMAC input.
+ * URLSearchParams percent-encodes apostrophes and other reserved characters;
+ * using the same URL object for fetch prevents the signed query from drifting
+ * from the query that Node actually sends.
+ */
+function buildSearchRequest(keyword, limit, host = HOST) {
+  const url = new URL(SEARCH_PATH, host);
+  url.searchParams.set('keyword', String(keyword));
+  url.searchParams.set('limit', String(limit));
+  return { url, path: url.pathname, query: url.search.slice(1) };
+}
+
+/** Parse Retry-After delta-seconds or HTTP-date. Invalid values return null. */
+function parseRetryAfter(value, now = Date.now()) {
+  if (value == null || String(value).trim() === '') return null;
+  const raw = String(value).trim();
+  let delayMs;
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    delayMs = Number(raw) * 1000;
+  } else {
+    const retryAt = Date.parse(raw);
+    if (!Number.isFinite(retryAt)) return null;
+    delayMs = retryAt - now;
+  }
+  if (!Number.isFinite(delayMs)) return null;
+  // Never retry in the same instant and do not let an invalidly huge provider
+  // value lock every instance indefinitely.
+  return Math.min(7 * 24 * 60 * 60 * 1000, Math.max(1000, Math.ceil(delayMs)));
+}
+
 function log(source, keyword, decision, extra) {
   console.log(
     `[coupang] source=${source} kw="${String(keyword).slice(0, 30)}" ${decision}`
@@ -250,13 +290,18 @@ function permanentGateFailure(msg) {
 async function dbAcquire(source, keyword) {
   if (!state.dbGate) return { allowed: true, callId: null, reason: '로컬 mock API 테스트', degraded: true };
   try {
-    const { data, error } = await supabase.rpc('coupang_acquire', {
-      max_per_min: MAX_PER_MIN, src: String(source || ''), kw: String(keyword || '')
+    const { data, error } = await supabase.rpc('coupang_acquire_v2', {
+      p_source: String(source || 'unknown'),
+      p_keyword: String(keyword || ''),
+      p_search_operating_cap: MAX_PER_MIN,
+      p_global_operating_cap: GLOBAL_OPERATING_CAP,
+      p_interactive_reserve: INTERACTIVE_RESERVE,
+      p_collector_cap: COLLECTOR_BUDGET
     });
     if (error) throw new Error(error.message);
     const row = Array.isArray(data) ? data[0] : data;
-    if (!row) throw new Error('coupang_acquire 응답 없음');
-    if (row.allowed && !row.call_id) throw new Error('coupang_acquire 허가에 호출 예약 ID가 없습니다');
+    if (!row) throw new Error('coupang_acquire_v2 응답 없음');
+    if (row.allowed && !row.call_id) throw new Error('coupang_acquire_v2 허가에 호출 예약 ID가 없습니다');
     return {
       allowed: !!row.allowed,
       callId: row.call_id || null,
@@ -290,14 +335,19 @@ async function dbFinish(callId, outcome, httpStatus, rCode, items) {
 }
 
 /** 로컬 + 전역 모두 호출을 멈춘다. */
-async function trip(minutes, reason) {
-  state.blockedUntil = Math.max(state.blockedUntil, Date.now() + minutes * 60000);
+async function tripForMs(durationMs, reason) {
+  const seconds = Math.max(1, Math.min(7 * 24 * 60 * 60, Math.ceil(durationMs / 1000)));
+  state.blockedUntil = Math.max(state.blockedUntil, Date.now() + seconds * 1000);
   state.blockReason = reason;
-  console.error(`[coupang] 차단 감지 — ${minutes}분간 호출 중단: ${reason}`);
+  console.error(`[coupang] 차단 감지 — ${seconds}초간 호출 중단: ${reason}`);
   if (!state.dbGate) return;
   try {
-    await supabase.rpc('coupang_block', { minutes, why: reason });
+    await supabase.rpc('coupang_block_seconds', { p_seconds: seconds, why: reason });
   } catch (e) { /* 로컬 차단만으로도 이번 인스턴스는 멈춘다 */ }
+}
+
+async function trip(minutes, reason) {
+  return tripForMs(minutes * 60000, reason);
 }
 
 /* ------------------------------------------------------------------ *
@@ -546,7 +596,7 @@ async function searchCoupang(keyword, opts = {}) {
   // 호출자가 요구한 수와 상관없이 공용 캐시용으로 넉넉히 받는다 (FETCH_LIMIT 주석 참고).
   // 상한은 100 이 아니라 COUPANG_MAX_LIMIT(10) 이다. 넘기면 rCode=400.
   const reqLimit = Math.max(1, Math.min(COUPANG_MAX_LIMIT, Math.max(limit, FETCH_LIMIT)));
-  const query = `keyword=${encodeURIComponent(kw)}&limit=${reqLimit}`;
+  const request = buildSearchRequest(kw, reqLimit);
 
   let r, text;
   /*
@@ -557,10 +607,10 @@ async function searchCoupang(keyword, opts = {}) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   try {
-    r = await fetch(`${HOST}${SEARCH_PATH}?${query}`, {
+    r = await fetch(request.url, {
       signal: ac.signal,
       headers: {
-        Authorization: sign('GET', SEARCH_PATH, query),
+        Authorization: sign('GET', request.path, request.query),
         // Node 의 기본 User-Agent 는 "node" 다. 파트너 API 앞단 WAF 입장에서는
         // 정체를 밝히지 않는 봇과 구분되지 않는다. 어떤 서비스가 부르는지 밝힌다.
         // (2026-08 차단을 이 헤더로 재현·해소하지는 못했지만, 기본값으로 두는 것보다는 낫다)
@@ -595,7 +645,10 @@ async function searchCoupang(keyword, opts = {}) {
   if (!r.ok) {
     const mins = COOLDOWN_MIN['http' + r.status] || COOLDOWN_MIN.httpOther;
     const body = (text || '').replace(/<[^>]*>/g, ' ').slice(0, 150);
-    await trip(mins, `HTTP ${r.status}: ${body}`);
+    const retryAfterMs = r.status === 429 ? parseRetryAfter(r.headers && r.headers.get('retry-after')) : null;
+    const cooldownMs = retryAfterMs == null ? mins * 60000 : retryAfterMs;
+    const retryNote = retryAfterMs == null ? '' : ` Retry-After=${Math.ceil(retryAfterMs / 1000)}s`;
+    await tripForMs(cooldownMs, `HTTP ${r.status}:${retryNote} ${body}`);
     await dbFinish(gate.callId, 'http_error', r.status, '', 0);
     return fallback(`쿠팡 API ${r.status}: ${body}`, [401, 403, 429].indexOf(r.status) > -1);
   }
@@ -664,7 +717,11 @@ function localStats() {
   const now = Date.now();
   return {
     maxPerMin: MAX_PER_MIN,
-    maxPerHour: MAX_PER_HOUR,
+    searchHardCap: SEARCH_HARD_CAP,
+    globalOperatingCap: GLOBAL_OPERATING_CAP,
+    globalHardCap: GLOBAL_HARD_CAP,
+    interactiveReserve: INTERACTIVE_RESERVE,
+    collectorBudget: COLLECTOR_BUDGET,
     minGapMs: MIN_GAP_MS,
     cacheTtlMs: CACHE_TTL_MS,
     inWindow: state.window.filter(t => t > now - 60000).length,
@@ -704,5 +761,7 @@ module.exports = {
   searchCoupang, collapseOptions, isBlocked, localStats, globalUsage, pruneLog,
   // 전역 카운터 영구 실패 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
   permanentGateFailure, shouldDisableGlobalGateForTest, COOLDOWN_MIN,
-  MAX_PER_MIN, MAX_PER_HOUR, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
+  MAX_PER_MIN, SEARCH_HARD_CAP, GLOBAL_OPERATING_CAP, GLOBAL_HARD_CAP,
+  INTERACTIVE_RESERVE, COLLECTOR_BUDGET, parseRetryAfter, buildSearchRequest,
+  MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };

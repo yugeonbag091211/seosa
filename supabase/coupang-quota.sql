@@ -1,25 +1,28 @@
 -- ══════════════════════════════════════════════════════════════════
 --  쿠팡 파트너스 API 호출 통제 (api/_coupang.js 가 사용)
 --
---  Supabase 대시보드 > SQL Editor 에서 이 파일만 통째로 한 번 실행하세요.
+--  Historical bootstrap: Supabase SQL Editor 에서 신규 DB 초기화 때 한 번 실행.
+--  현재 애플리케이션은 아래의 후속 migration도 필요하다:
+--    supabase/2026-09-28-coupang-minute-quota.sql
+--  후속 migration 적용 뒤에는 이 bootstrap을 재실행하지 말 것.
 --  schema.sql 은 다시 실행하지 마세요 — 그쪽에는 monthly_curation 7월
 --  키워드를 하드코딩 값으로 덮어쓰는 update 가 들어 있습니다.
 --
---  쿠팡 공식 한도: Search API 시간당 10회 (Partners Guide, 2024-12-16).
---  경고 3회면 이용 제한. 서버리스 인스턴스가 몇 개든, GitHub Actions 가
---  동시에 돌든 합계가 상한을 넘지 않도록 카운터를 DB 에 둔다.
+--  아래 coupang_acquire 는 과거 Search 시간당 10회 정책을 반영한 초기 정의다.
+--  2026-09-28 minute-quota migration 이 이를 분당 gate 로 교체한다.
+--  호출 카운터는 서버리스 인스턴스와 GitHub Actions 사이에서 공유된다.
 --  (인메모리 카운터는 인스턴스마다 따로 놀아서 전역 한도를 못 지킨다)
 --
 --  안전성
---    - 전부 create if not exists / create or replace / on conflict do nothing
+--    - 초기화용 객체 생성은 재실행에 안전한 문장을 사용한다.
 --    - 기존 테이블(products, price_history, search_stats, monthly_curation,
 --      price_drop_top, alerts, profiles, user_data)을 읽지도 쓰지도 않는다
 --    - 최상위에 drop / truncate / delete 가 없다
 --    - 이름이 전부 coupang_ 접두사라 기존 객체와 겹치지 않는다
---    → 몇 번을 실행해도 안전하다
+--    → bootstrap 단계의 문장 자체는 재실행 가능하지만, 후속 minute migration 뒤에는 재실행 금지
 --
---  ※ 이 파일을 실행하지 않아도 사이트는 동작한다. 다만 전역 카운터 없이
---    인스턴스별 한도로만 막게 되므로 반드시 실행할 것.
+--  ※ 이 파일 단독으로는 구형 시간당 gate 가 남는다. 현재 코드를 실행하기 전
+--    반드시 minute-quota migration 을 적용할 것.
 -- ══════════════════════════════════════════════════════════════════
 
 

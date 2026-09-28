@@ -13,6 +13,7 @@
 'use strict';
 
 const http = require('http');
+const crypto = require('crypto');
 
 // ── 반드시 _coupang.js 를 require 하기 전에 잡아야 한다 (모듈 로드 시 읽는다) ──
 process.env.COUPANG_DISABLE_GLOBAL_GATE = '1';
@@ -26,6 +27,7 @@ const DENIED_HTML =
   + '<body><div class="error-page"><p>Sorry! Access denied</p></div></body></html>';
 
 let mode = 'ok';   // 서버 응답 모드. 테스트마다 바꾼다.
+let lastRequest = null;
 
 /*
  * 실제로 받았던 응답 모양 — 같은 productId 가 옵션마다 한 행씩 온다.
@@ -69,6 +71,7 @@ const DISCOUNT_ROWS = [
 ];
 
 const server = http.createServer((req, res) => {
+  lastRequest = { target: req.url, authorization: req.headers.authorization || '' };
   if (mode === 'options') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ rCode: '0', data: { productData: OPTION_ROWS } }));
@@ -132,6 +135,22 @@ server.listen(0, async () => {
   check(r.items[0].productId === '111' && r.items[0].lprice === 39000,
         'productId / 가격 정규화', JSON.stringify(r.items[0]).slice(0, 60));
   check(!isBlocked(), '정상 응답은 차단을 걸지 않는다');
+
+  // Apostrophe, plus, percent, slash, query delimiter, and Korean must be
+  // encoded once and the exact transmitted query must be the HMAC input.
+  const oddKeyword = "Sam's + 50% / 한글?";
+  r = await searchCoupang(oddKeyword, { ...common, limit: 2 });
+  const wireUrl = new URL(lastRequest.target, process.env.COUPANG_API_HOST);
+  const auth = /signed-date=([^,]+), signature=([a-f0-9]{64})/.exec(lastRequest.authorization);
+  const expectedSignature = auth && crypto.createHmac('sha256', 'test-secret-key')
+    .update(auth[1] + 'GET' + wireUrl.pathname + wireUrl.search.slice(1)).digest('hex');
+  check(wireUrl.searchParams.get('keyword') === oddKeyword,
+        '특수문자 검색어가 전송 후에도 원문과 일치한다');
+  check(wireUrl.search.includes('%27') && wireUrl.search.includes('%2B')
+        && wireUrl.search.includes('%25') && wireUrl.search.includes('%2F'),
+        'apostrophe / plus / percent / slash를 canonical query로 인코딩한다');
+  check(!!auth && auth[2] === expectedSignature,
+        '실제 전송 query와 동일한 query로 HMAC 서명한다');
 
   // 1-b) 같은 productId 의 옵션 행 접기
   //      ★ "SEOSA 75,000원 / 쿠팡 39,900원" 신고의 정확한 기전이다.

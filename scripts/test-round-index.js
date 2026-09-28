@@ -361,7 +361,7 @@ async function runAndCollectQueries(rows, opts) {
     check(/const COUPANG_MIN_GAP_MS\s*=\s*6000;/.test(src),
       '★★ COUPANG_MIN_GAP_MS 6000 유지');
     const cou = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
-    check(/COUPANG_MAX_PER_MIN', 20\)/.test(cou), '★★ 쿠팡 분당 상한 20 유지');
+    check(/COUPANG_SEARCH_OPERATING_CAP', 20\)/.test(cou), '★★ 쿠팡 초기 Search operating budget 20 유지');
     const adp = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_adpick.js'), 'utf8');
     /*
      * ADPICK 은 공식 한도가 확인됐다 — 상품 검색 분당 10회(API 키 기준, 2026-09-23).

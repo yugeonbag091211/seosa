@@ -88,6 +88,10 @@ function deleteTargets(sql) {
 }
 
 /** 이번 릴리스에서 새로 추가한 마이그레이션. 여기 있는 것만 강하게 검사한다. */
+const COUPANG_QUOTA_MIGRATION = '2026-09-28-coupang-minute-quota.sql';
+const COUPANG_QUOTA_SEARCH_PATH_MIGRATION = '2026-09-28-coupang-quota-search-path.sql';
+const AI_CIRCUIT_MIGRATION = '2026-09-20-ai-global-circuit.sql';
+
 const NEW_MIGRATIONS = [
   '2026-08-24-payment-pending-and-auth-attempts.sql',
   '2026-08-24-price-drop-top-orphan-policy.sql',
@@ -128,7 +132,9 @@ const NEW_MIGRATIONS = [
    * 카탈로그가 커질수록 다시 죽는» 상태로 남는다.
    */
   '2026-09-22-collector-target-keyset.sql',
-  '2026-09-27-coupang-search-hourly-limit.sql'
+  '2026-09-27-coupang-search-hourly-limit.sql',
+  COUPANG_QUOTA_MIGRATION,
+  COUPANG_QUOTA_SEARCH_PATH_MIGRATION
 ];
 
 function checkStatic() {
@@ -169,17 +175,42 @@ function checkStatic() {
     else wrn(`${name}: notify pgrst 없음`, '새 컬럼/함수를 한동안 못 찾을 수 있다');
   }
 
-  const quotaSql = path.join(SQL_DIR, '2026-09-27-coupang-search-hourly-limit.sql');
+  const quotaSql = path.join(SQL_DIR, '2026-09-28-coupang-minute-quota.sql');
   if (fs.existsSync(quotaSql)) {
     const sql = stripSqlComments(fs.readFileSync(quotaSql, 'utf8'));
-    if (/interval\s+'1 hour'/i.test(sql) && /v_hour_used\s*>=\s*10/i.test(sql)
-        && /pg_advisory_xact_lock/i.test(sql)) {
-      ok('coupang_acquire: 전역 원자적 시간당 Search 10회 상한');
-    } else bad('coupang_acquire: Search 시간당 10회 상한 불완전');
-    if (/insert\s+into\s+public\.coupang_api_calls/i.test(sql)
-        && /v_hour_used\s*>=\s*10[\s\S]*?return;[\s\S]*?insert\s+into\s+public\.coupang_api_calls/i.test(sql)) {
-      ok('coupang_acquire: 한도 검사 뒤에만 호출 예약을 기록');
-    } else bad('coupang_acquire: 초과 호출 예약 가능');
+    const atomic = /pg_advisory_xact_lock/i.test(sql);
+    const searchHard = /v_search_used\s*>=\s*50/i.test(sql);
+    const globalHard = /v_global_used\s*>=\s*100/i.test(sql);
+    const sourceSplit = /v_source\s*<>\s*'search'/i.test(sql)
+      && /v_interactive_reserve/i.test(sql) && /v_collector_cap/i.test(sql);
+    const reserveAfterGates = /insert\s+into\s+public\.coupang_api_calls/i.test(sql)
+      && /v_search_used\s*>=\s*50[\s\S]*?return;[\s\S]*?insert\s+into\s+public\.coupang_api_calls/i.test(sql);
+    if (atomic && searchHard && globalHard && !/interval\s+'1 hour'/i.test(sql)) {
+      ok('Coupang Search 50/min + global 100/min: atomic minute hard caps; obsolete hourly rejection absent');
+    } else bad('Coupang minute hard caps', `atomic=${atomic} search50=${searchHard} global100=${globalHard}`);
+    if (sourceSplit) ok('Coupang interactive/collector quota split and interactive reserve');
+    else bad('Coupang interactive/collector quota split missing');
+    if (reserveAfterGates) ok('Coupang quota reservation is inserted only after gates pass');
+    else bad('Coupang quota reservation may bypass a gate');
+    if (/coupang_block_seconds\(p_seconds\s+int/i.test(sql)
+        && /make_interval\(secs\s*=>/i.test(sql)) {
+      ok('Coupang shared Retry-After seconds block');
+    } else bad('Coupang Retry-After seconds block missing');
+    if (/from\s+anon,\s*authenticated/i.test(sql)
+        && /revoke\s+all\s+on\s+function\s+public\.coupang_acquire_v2/i.test(sql)) {
+      ok('Coupang quota RPC execution revoked from anon/authenticated');
+    } else bad('Coupang quota RPC execution grant is too broad');
+  }
+  const quotaSearchPathSql = path.join(SQL_DIR, COUPANG_QUOTA_SEARCH_PATH_MIGRATION);
+  if (fs.existsSync(quotaSearchPathSql)) {
+    const sql = stripSqlComments(fs.readFileSync(quotaSearchPathSql, 'utf8'));
+    const pathsFixed = [
+      /alter\s+function\s+public\.coupang_acquire_v2[\s\S]*?set\s+search_path\s*=\s*''/i,
+      /alter\s+function\s+public\.coupang_acquire\([\s\S]*?set\s+search_path\s*=\s*''/i,
+      /alter\s+function\s+public\.coupang_block_seconds[\s\S]*?set\s+search_path\s*=\s*''/i
+    ].every(re => re.test(sql));
+    if (pathsFixed) ok('Coupang quota RPC search_path is fixed on all three functions');
+    else bad('Coupang quota RPC mutable search_path remains');
   }
 
   /* security definer 함수는 실행 권한을 반드시 좁혀야 한다. */
@@ -254,7 +285,36 @@ async function checkLive() {
     return !error;
   };
 
-  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true };
+  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true, coupang: true };
+
+  /* ── Coupang minute quota migration (read-only probes) ───────── */
+  {
+    const { error } = await supabase.from('coupang_api_calls').select('api_type').limit(1);
+    if (error) {
+      bad('coupang_api_calls.api_type 없음', '분당 quota migration 미적용');
+      applied.coupang = false;
+    } else ok('coupang_api_calls.api_type');
+  }
+  {
+    // Invalid p_source is rejected before any lock or quota insert; this checks
+    // the RPC exists without reserving a call or changing production state.
+    const { error } = await supabase.rpc('coupang_acquire_v2', {
+      p_source: null, p_keyword: '', p_search_operating_cap: 20,
+      p_global_operating_cap: 80, p_interactive_reserve: 15, p_collector_cap: 5
+    });
+    const missing = error && /could not find|does not exist|schema cache/i.test(error.message);
+    if (missing) {
+      bad('coupang_acquire_v2() RPC 없음', '분당 quota migration 미적용');
+      applied.coupang = false;
+    } else if (error && /p_source is required/i.test(error.message)) {
+      ok('coupang_acquire_v2() RPC (invalid-source probe created no reservation)');
+    } else if (error) {
+      wrn('coupang_acquire_v2() probe 응답 확인 필요', error.message.slice(0, 80));
+    } else {
+      bad('coupang_acquire_v2() invalid-source guard missing', 'quota reservation 여부를 안전하게 판정할 수 없음');
+      applied.coupang = false;
+    }
+  }
 
   for (const [t, c] of [['subscriptions', 'last_renew_at'], ['subscriptions', 'renew_failures']]) {
     const has = await hasColumn(t, c);
@@ -396,14 +456,15 @@ async function checkLive() {
   console.log('        ※ 뷰를 적용해도 price_history 행 수는 변하지 않아야 한다.');
 
   if (!applied.payment || !applied.view || !applied.analytics || !applied.adpick
-      || !applied.circuit) {
+      || !applied.circuit || !applied.coupang) {
     console.log('\n  적용하려면 Supabase 대시보드 > SQL Editor 에서 아래를 순서대로 실행하세요:');
     let n = 0;
     if (!applied.payment)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[0]}`);
     if (!applied.view)      console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[1]}`);
     if (!applied.analytics) console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[2]}`);
     if (!applied.adpick)    console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[3]}`);
-    if (!applied.circuit)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[6]}`);
+    if (!applied.circuit)   console.log(`    ${++n}) supabase/${AI_CIRCUIT_MIGRATION}`);
+    if (!applied.coupang)   console.log(`    ${++n}) supabase/${COUPANG_QUOTA_MIGRATION}`);
     console.log('    ※ 서로 의존하지 않으므로 순서가 바뀌어도 되지만, 위 순서를 권한다.');
   }
 }

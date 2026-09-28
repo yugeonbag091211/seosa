@@ -406,7 +406,7 @@ function probeChild(envLines) {
       '★★ COUPANG_MIN_GAP_MS 는 6000 그대로 — rate limit 을 우회하지 않았다');
 
     const cou = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
-    check(/COUPANG_MAX_PER_MIN', 20\)/.test(cou),
+    check(/COUPANG_SEARCH_OPERATING_CAP', 20\)/.test(cou),
       '★ 분당 상한 기본값(20)이 그대로다');
 
     /*
