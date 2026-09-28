@@ -20,6 +20,9 @@ const AI = require('../api/ai.js');
 const I = AI._internal;
 const AC = require('../api/_aicontext');
 const Intent = require('../api/_intent');
+const Search = require('../api/_search');
+const ShopIntent = require('../api/_shopintent');
+const Decision = require('../api/_decision');
 let total = 0, passed = 0, failed = 0;
 const groups = Object.create(null), failures = [], ids = new Set();
 
@@ -135,10 +138,16 @@ try {
     const price = 30000 + i * 137;
     const trusted = '갤럭시 버즈3 프로 현재가 ' + price.toLocaleString('en-US') + '원입니다.';
     const forged = '갤럭시 버즈3 프로 현재가 ' + (price + 1).toLocaleString('en-US') + '원입니다.';
+    const exactParsed = I.wonMatches(trusted).some(m => m.currency === 'KRW'
+      && Number(String(m.digits || '').normalize('NFKC').replace(/[,\s]/g, '')) === price);
     check('server_price_binding', 'exact-' + i,
-      I.unverifiedCurrentPrices(trusted, [item(price)]).length === 0, 'exact price rejected');
+      exactParsed && I.unverifiedCurrentPrices(trusted, [item(price)]).length === 0
+        && I.unverifiedContextualPrices(trusted, [item(price)]).length === 0,
+      'exact price rejected or parser failed to recognize the claim');
     check('server_price_binding', 'forged-' + i,
-      I.unverifiedCurrentPrices(forged, [item(price)]).length > 0, 'forged price accepted');
+      I.unverifiedCurrentPrices(forged, [item(price)]).length > 0
+        && I.unverifiedContextualPrices(forged, [item(price)]).length > 0,
+      'forged price accepted');
   }
   check('server_price_binding', 'ambiguous-options',
     I.unverifiedCurrentPrices('갤럭시 버즈 현재가 55,777원', [
@@ -151,6 +160,193 @@ try {
     'different option price accepted');
   check('server_price_binding', 'no-evidence',
     I.unverifiedCurrentPrices('현재가 ₩55,777', []).length > 0, 'claim passed with no evidence');
+
+
+  /* Korean/English price forms, comparison semantics, and irrelevant model/spec numbers. */
+  const contextualCases = [
+    ['plain-won', '현재가는 129,000원입니다.', 129000, 129000],
+    ['no-comma-won', '현재가는 129000원입니다.', 129000, 129000],
+    ['won-symbol', '현재가는 ₩129,000입니다.', 129000, 129000],
+    ['krw-prefix', '현재 가격 KRW 129000입니다.', 129000, 129000],
+    ['won-suffix', '현재가는 129,000 won입니다.', 129000, 129000],
+    ['twelve-nine-thousand', '현재가는 12만9천원입니다.', 129000, 129000],
+    ['spaced-subunit', '현재가는 12만 9천원입니다.', 129000, 129000],
+    ['literal-subunit', '현재가는 12만9000원입니다.', 129000, 129000],
+    ['decimal-man', '현재가는 12.9만원입니다.', 129000, 129000],
+    ['thousand-unit', '현재가는 129천원입니다.', 129000, 129000],
+    ['bare-current', '현재가는 129000입니다.', 129000, 129000],
+    ['bare-price', '가격은 129000입니다.', 129000, 129000],
+    ['bare-buy', '129000에 살 수 있어요.', 129000, 129000],
+    ['approximate-man', '약 13만원이면 적당합니다.', 130000, 129000],
+    ['man-band', '현재 가격은 13만원대입니다.', 130000, 135000],
+    ['range-wave', '현재 가격은 10~13만원입니다.', 100000, 130000],
+    ['range-from', '현재 가격은 10만원에서 13만원입니다.', 100000, 129000]
+  ];
+  contextualCases.forEach(([name, text, low, high]) => {
+    const expected = I.unverifiedContextualPrices(text, [item(129000)]).length === 0;
+    const shouldAllow = name === 'man-band' ? false : true;
+    check('korean_price_claims', name + '-baseline',
+      expected === shouldAllow, 'baseline price form mismatch');
+  });
+  check('korean_price_claims', 'bare-unitless-forged',
+    I.unverifiedContextualPrices('현재가는 12,900입니다.', [item(55777)]).length > 0,
+    'unitless forged current amount passed');
+  check('korean_price_claims', 'bare-unitless-exact',
+    I.unverifiedContextualPrices('현재가는 12,900입니다.', [item(12900)]).length === 0
+      && I.wonMatches('현재가는 12,900입니다.').length === 0,
+    'unitless exact price was not contextually validated');
+  check('korean_price_claims', 'spec-model-numbers',
+    I.unverifiedContextualPrices('RTX 5090, iPhone 17, Galaxy S26, WH-1000XM6, 14ZD95U, 128GB, 240Hz, 65W, 2026년', [item(129000)]).length === 0,
+    'model/spec/year number was treated as a price');
+  check('korean_price_claims', 'comparison-less-supported',
+    I.unverifiedContextualPrices('13,000원보다 싸요.', [item(12900)]).length === 0,
+    'supported comparison rejected');
+  check('korean_price_claims', 'comparison-less-forged',
+    I.unverifiedContextualPrices('13,000원보다 싸요.', [item(14000)]).length > 0,
+    'comparison threshold bypassed');
+  check('korean_price_claims', 'average-comparison-supported',
+    I.unverifiedContextualPrices('12,900원으로 평균보다 낮습니다.', [
+      item(12900, { hist: { avg30: 15000, count: 10, historyDays: 14, points: [] } })
+    ]).length === 0, 'supported average comparison rejected');
+  check('korean_price_claims', 'average-comparison-forged',
+    I.unverifiedContextualPrices('12,900원으로 평균보다 낮습니다.', [
+      item(12900, { hist: { avg30: 12000, count: 10, historyDays: 14, points: [] } })
+    ]).length > 0, 'false average comparison passed');
+  check('korean_price_claims', 'average-reference',
+    I.unverifiedContextualPrices('평균 20,000원 대비 15,000원입니다.', [
+      item(15000, { hist: { avg30: 20000, count: 10, historyDays: 14, points: [] } })
+    ]).length === 0, 'valid two-price average comparison rejected');
+
+  /* Fixed-seed matrix: 17 price encodings × 11 evidence states × 8 benign context variants. */
+  const matrixPrice = 129000;
+  const matrixFormats = [
+    { id: 'comma-won', text: p => '현재가는 ' + p.toLocaleString('en-US') + '원입니다.', allow: p => p === matrixPrice },
+    { id: 'plain-won', text: p => '현재가는 ' + p + '원입니다.', allow: p => p === matrixPrice },
+    { id: 'symbol', text: p => '현재가는 ₩' + p.toLocaleString('en-US') + '입니다.', allow: p => p === matrixPrice },
+    { id: 'krw', text: p => '현재 가격 KRW ' + p + '입니다.', allow: p => p === matrixPrice },
+    { id: 'won-word', text: p => '현재가는 ' + p.toLocaleString('en-US') + ' won입니다.', allow: p => p === matrixPrice },
+    { id: 'mixed-subunit', text: () => '현재가는 12만9천원입니다.', allow: p => p === matrixPrice },
+    { id: 'spaced-subunit', text: () => '현재가는 12만 9천원입니다.', allow: p => p === matrixPrice },
+    { id: 'literal-subunit', text: () => '현재가는 12만9000원입니다.', allow: p => p === matrixPrice },
+    { id: 'decimal-man', text: () => '현재가는 12.9만원입니다.', allow: p => p === matrixPrice },
+    { id: 'thousand-unit', text: () => '현재가는 129천원입니다.', allow: p => p === matrixPrice },
+    { id: 'bare-current', text: () => '현재가는 129000입니다.', allow: p => p === matrixPrice },
+    { id: 'bare-price', text: () => '가격은 129000입니다.', allow: p => p === matrixPrice },
+    { id: 'bare-buy', text: () => '129000에 살 수 있어요.', allow: p => p === matrixPrice },
+    { id: 'approx-man', text: () => '약 13만원이면 적당합니다.', allow: p => Math.round(p / 10000) === 13 },
+    { id: 'man-band', text: () => '현재 가격은 13만원대입니다.', allow: p => p >= 130000 && p < 140000 },
+    { id: 'range-wave', text: () => '현재 가격은 10~13만원입니다.', allow: p => p >= 100000 && p <= 130000 },
+    { id: 'range-from', text: () => '현재 가격은 10만원에서 13만원입니다.', allow: p => p >= 100000 && p <= 130000 }
+  ];
+  const evidenceStates = [
+    { id: 'exact-current', make: () => item(matrixPrice) },
+    { id: 'near-current', make: () => item(matrixPrice + 1000) },
+    { id: 'far-current', make: () => item(matrixPrice + 20000) },
+    { id: 'history-only', make: () => item(0, { hist: { lastPrice: matrixPrice, count: 10, historyDays: 14, points: [{ p: matrixPrice }] } }) },
+    { id: 'list-only', make: () => item(0, { listPrice: matrixPrice }) },
+    { id: 'stale-current', make: () => item(matrixPrice, { trust: { level: 'stale' } }) },
+    { id: 'missing', make: () => null },
+    { id: 'client-only', make: () => item(0, { currentPrice: matrixPrice, userPrice: matrixPrice }) },
+    { id: 'zero-current', make: () => item(0) },
+    { id: 'negative-current', make: () => item(-matrixPrice) },
+    { id: 'nan-current', make: () => item(NaN) }
+  ];
+  const contextVariants = [
+    text => text,
+    text => '갤럭시 버즈3 프로 블랙 ' + text,
+    text => '확인 결과, 갤럭시 버즈3 프로 블랙의 ' + text,
+    text => text + ' (모델 RTX 5090, 128GB, 240Hz, 65W, 2026년)',
+    text => '갤럭시 버즈3 프로 블랙 확인: ' + text + ' 성능은 별도 확인이 필요합니다.',
+    text => 'For 갤럭시 버즈3 프로 블랙: ' + text,
+    text => '【갤럭시 버즈3 프로 블랙】' + text,
+    text => text + ' 제품명에 포함된 숫자 17과 옵션 표기 128GB는 가격이 아닙니다.'
+  ];
+  let matrixAssertions = 0;
+  matrixFormats.forEach(format => evidenceStates.forEach(state => contextVariants.forEach((decorate, vi) => {
+    const sourceItem = state.make();
+    const items = sourceItem ? [sourceItem] : [];
+    const claimText = decorate(format.text(matrixPrice));
+    const invalid = I.unverifiedContextualPrices(claimText, items).length > 0;
+    const expectedAllow = sourceItem ? format.allow(Number(sourceItem.price)) && state.id !== 'history-only'
+      && state.id !== 'list-only' && state.id !== 'stale-current' && state.id !== 'client-only'
+      && state.id !== 'zero-current' && state.id !== 'negative-current' && state.id !== 'nan-current' : false;
+    check('fixed_seed_price_matrix', format.id + '-' + state.id + '-ctx' + vi,
+      invalid === !expectedAllow,
+      'expectedAllow=' + expectedAllow + ' invalid=' + invalid + ' claim=' + claimText);
+    matrixAssertions++;
+  })));
+  check('fixed_seed_price_matrix', 'minimum-assertions',
+    matrixAssertions >= 1000, 'only ' + matrixAssertions + ' matrix assertions were added');
+
+  /* Product identity is a tuple; matching price alone cannot equate options or malls. */
+  const identityBase = { productId: 'IDENTITY-P', vendorItemId: 'IDENTITY-V', mallId: '쿠팡', isCoupang: true };
+  check('decision_identity', 'exact', I.productIdentityMatches(identityBase, Object.assign({}, identityBase)), 'exact identity rejected');
+  check('decision_identity', 'wrong-product', !I.productIdentityMatches(identityBase, Object.assign({}, identityBase, { productId: 'OTHER-P' })), 'different product accepted');
+  check('decision_identity', 'wrong-option', !I.productIdentityMatches(identityBase, Object.assign({}, identityBase, { vendorItemId: 'OTHER-V' })), 'different option accepted');
+  check('decision_identity', 'missing-option', !I.productIdentityMatches(identityBase, Object.assign({}, identityBase, { vendorItemId: '' })), 'missing Coupang option accepted');
+  check('decision_identity', 'wrong-mall', !I.productIdentityMatches(identityBase, Object.assign({}, identityBase, { mallId: 'ADPICK' })), 'different mall accepted');
+
+  const decisionItem = Object.assign({}, identityBase, {
+    ref: 'P1', title: '갤럭시 버즈3 프로', price: 55777, _score: 10, notes: [], featureHit: [], featureMiss: []
+  });
+  const decision = Decision.decide([decisionItem], {}, [], null, {});
+  check('decision_identity', 'decision-carries-option-and-mall',
+    !!decision && I.productIdentityMatches(decisionItem, decision.top),
+    'decision lost product/option/mall identity');
+  check('decision_identity', 'one-result-deal-stays-with-top',
+    I.productIdentityMatches(decisionItem, decision.top) && decision.top.vendorItemId === identityBase.vendorItemId,
+    'decision target drifted from displayed first result');
+
+  /* AI ranking shares general-search accessory intent: cheap cases cannot outrank the main product. */
+  const mainTitle = '애플 에어팟 프로 본품 블루투스 이어폰';
+  const caseTitle = '애플 에어팟 프로 케이스 보호 커버';
+  const mainIntent = Search.productIntentContext('에어팟 최저가', [mainTitle, caseTitle]);
+  const caseIntent = Search.productIntentContext('에어팟 케이스 추천', [mainTitle, caseTitle]);
+  check('accessory_intent', 'main-product-classified',
+    mainIntent.intent === 'MAIN_PRODUCT_INTENT'
+      && Search.accessoryFocus(mainIntent, caseTitle).penalty > 0
+      && Search.accessoryFocus(mainIntent, mainTitle).penalty === 0,
+    'main-product search did not penalize an accessory');
+  check('accessory_intent', 'accessory-classified',
+    caseIntent.intent === 'ACCESSORY_INTENT'
+      && Search.accessoryFocus(caseIntent, caseTitle).penalty === 0,
+    'explicit case search was incorrectly penalized');
+
+  const rankedMain = ShopIntent.rankItems([
+    { productId: 'MAIN', title: mainTitle, price: 50000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'MAIN-V' },
+    { productId: 'CASE', title: caseTitle, price: 1000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'CASE-V' }
+  ], { priority: 'price' }, '에어팟 최저가');
+  check('accessory_intent', 'cheap-case-not-main-result',
+    rankedMain[0] && rankedMain[0].productId === 'MAIN',
+    'cheap accessory outranked the main product');
+  const rankedCase = ShopIntent.rankItems([
+    { productId: 'MAIN', title: mainTitle, price: 50000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'MAIN-V' },
+    { productId: 'CASE', title: caseTitle, price: 1000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'CASE-V' }
+  ], { priority: 'price' }, '에어팟 케이스 추천');
+  check('accessory_intent', 'explicit-case-remains-recommended',
+    rankedCase[0] && rankedCase[0].productId === 'CASE',
+    'explicit accessory intent was blocked');
+
+  /* Recent-window lows cannot be promoted to all-time lowest claims. */
+  const shortHistory = item(55777, { hist: { low: 55777, lowConfirmed: true, count: 3, historyDays: 14, firstDate: '2026-09-01', lastDate: '2026-09-15' } });
+  const enoughHistory = item(55777, { hist: { low: 55777, lowConfirmed: true, count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01' } });
+  check('historical_claims', 'all-time-always-rejected',
+    I.unsupportedSuperlatives('역대 최저가입니다.', [enoughHistory]).length > 0,
+    'bounded recent observations were treated as all-time evidence');
+  check('historical_claims', 'short-window-rejected',
+    I.unsupportedSuperlatives('기록상 최저가입니다.', [shortHistory]).length > 0,
+    'short history was treated as sufficient record-low evidence');
+  check('historical_claims', 'long-window-supported',
+    I.unsupportedSuperlatives('기록상 최저가입니다.', [enoughHistory]).length === 0,
+    'sufficient bounded record history was rejected');
+
+  [null, undefined, '', '   ', 0, {}, [], 'NaN', 'Infinity', '가격은 １２万９千원', '<script>현재가 12,900</script>']
+    .forEach((value, i) => {
+      let result, threw = false;
+      try { result = I.unverifiedContextualPrices(value, [item(12900)]); } catch (_e) { threw = true; }
+      check('price_parser_robustness', 'shape-' + i, !threw && Array.isArray(result),
+        'parser threw on malformed/unicode/html input');
+    });
 
   /* Product page identity does not collapse Coupang options. */
   const now = new Date().toISOString();
