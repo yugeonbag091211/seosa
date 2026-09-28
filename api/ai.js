@@ -1993,7 +1993,9 @@ function priceEvidenceValues(item, kind) {
     return [positive(h.low)].filter(Boolean);
   }
   if (kind === 'any') {
-    return [...current(), positive(item.listPrice), ...history].filter(Boolean);
+    // An unqualified amount in a shopping answer is read as a current price.
+    // Historical or reference values require explicit wording and their own evidence class.
+    return current();
   }
   return [];
 }
