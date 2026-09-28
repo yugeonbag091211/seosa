@@ -333,6 +333,24 @@ try {
     rankedCase[0] && rankedCase[0].productId === 'CASE',
     'explicit accessory intent was blocked');
 
+  const caseOnly = { productId: 'CASE', title: caseTitle, price: 1000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'CASE-V' };
+  const generalMainOnlyCase = Search.rankItems('에어팟 최저가', [caseOnly]);
+  const generalExplicitCase = Search.rankItems('에어팟 케이스 추천', [caseOnly]);
+  const aiMainOnlyCase = ShopIntent.rankItems([Object.assign({}, caseOnly)], { priority: 'price' }, '에어팟 최저가');
+  const aiExplicitCase = ShopIntent.rankItems([Object.assign({}, caseOnly)], { priority: 'price' }, '에어팟 케이스 추천');
+  check('accessory_intent', 'single-case-filtered-general',
+    generalMainOnlyCase.items.length === 0 && generalMainOnlyCase.allBelow === true,
+    'general search returned a sole accessory for main-product intent');
+  check('accessory_intent', 'single-case-preserved-general',
+    generalExplicitCase.items.length === 1 && generalExplicitCase.items[0].productId === 'CASE',
+    'general search filtered an explicitly requested accessory');
+  check('accessory_intent', 'single-case-filtered-ai',
+    aiMainOnlyCase.length === 0,
+    'AI search returned a sole accessory for main-product intent');
+  check('accessory_intent', 'single-case-preserved-ai',
+    aiExplicitCase.length === 1 && aiExplicitCase[0].productId === 'CASE',
+    'AI search filtered an explicitly requested accessory');
+
   /* Recent-window lows cannot be promoted to all-time lowest claims. */
   const shortHistory = item(55777, { hist: { low: 55777, lowCount: 2, lowConfirmed: true, count: 3, historyDays: 14, firstDate: '2026-09-01', lastDate: '2026-09-15' } });
   const enoughHistory = item(55777, { hist: { low: 55777, lowCount: 4, lowIsLatest: false, lowConfirmed: true, count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01' } });
