@@ -845,6 +845,28 @@ function sortByRelevance(items) {
  * @returns {{items, dropped, removed, allBelow}}
  *   allBelow — 받아온 건 있는데 전부 기준선 아래였다 ("결과 없음"과 구분해야 한다)
  */
+function productIntentContext(keyword, titles) {
+  const analysis = analyzeQuery(keyword, { titles: Array.isArray(titles) ? titles : [] });
+  return {
+    analysis,
+    intent: queryWantsAccessory(analysis) ? 'ACCESSORY_INTENT' : 'MAIN_PRODUCT_INTENT'
+  };
+}
+
+/** Reuse normal search's head-noun/accessory evidence in AI ranking. */
+function accessoryFocus(context, title) {
+  if (!context || !context.analysis) return { intent: 'MAIN_PRODUCT_INTENT', accessory: '', factor: 1, penalty: 0 };
+  const focus = productFocus(context.analysis, title);
+  const penalty = context.intent === 'MAIN_PRODUCT_INTENT'
+    ? Math.round((1 - Number(focus.factor || 1)) * 100) : 0;
+  return {
+    intent: context.intent,
+    accessory: focus.accessory || '',
+    factor: focus.factor || 1,
+    penalty
+  };
+}
+
 function rankItems(keyword, items, opts = {}) {
   const minScore = Number.isFinite(opts.minScore) ? opts.minScore : MIN_SCORE;
   const { items: uniq, removed } = dedupeItems(items);
@@ -1337,7 +1359,7 @@ module.exports = {
   normalizeText, canonicalKey, splitTokens, analyzeQuery, analyzeTitle,
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
-  productFocus, coreTokens, ACCESSORY_TIER,
+  productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY
