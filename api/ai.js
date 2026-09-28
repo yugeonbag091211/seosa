@@ -1873,20 +1873,21 @@ function collectKnownWon(items, cards, question, hist, constraints) {
  * 통과했다(2026-09-28 레드팀 후속 실측). 다만 "S24 원 UI"·"1원칙" 같은 말까지 잡지
  * 않도록, 한두 자리는 앞이 글자·숫자가 아니고 뒤가 가격을 말하는 꼴일 때만 본다.
  *
- * @returns {Array<{index:number, text:string, digits:string}>} 위치 순
+ * @returns {Array<{index:number, text:string, digits:string, currency:string, negative:boolean}>} 위치 순
  */
 const WON_BIG_RE = /(-?[0-9０-９][0-9０-９,，\s]{2,})\s*원/gi;
-const WON_SMALL_RE = /(?<![0-9A-Za-z.,])(-?[0-9０-９]{1,2})\s*원(?=\s*(?:짜리|입니다|이에요|예요|이야|이고|이라|으로|에|부터|까지|이면|인데|대|$)|[.,!?)\]」』~])/gi;
+const WON_SMALL_RE = /(?<![0-9０-９A-Za-z.,，])(-?[0-9０-９]{1,2})\s*원(?=\s*(?:짜리|입니다|이에요|예요|이야|이고|이라|으로|에|부터|까지|이면|인데|대|$)|[.,!?)\]」』~])/gi;
 /* Amount notation accepted outside the plain "12,900원" form. Foreign currency is
  * recognized too, but never accepted as evidence because SEOSA catalog prices are KRW. */
 const KRW_ALIAS_RE = /(?:[₩￦]|(?<![A-Za-z])KRW)\s*(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)|(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)\s*(?:KRW|won)(?![A-Za-z])/gi;
 const FOREIGN_CURRENCY_RE = /(?:[$€£¥]|(?<![A-Za-z])(?:USD|EUR|GBP|JPY|CNY)\s*)(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)|(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)\s*(?:USD|EUR|GBP|JPY|CNY|dollars?|euros?|pounds?|yen|yuan)(?![A-Za-z])/gi;
 
 function wonValue(match) {
-  const raw = String(match && match.digits || '').normalize('NFKC').replace(/[,\s]/g, '');
+  const raw = String(match && match.digits || '').normalize('NFKC').replace(/[,\\s]/g, '');
+  if (!/^-?\\d+$/.test(raw)) return NaN;
   const n = Number(raw);
-  if (!Number.isFinite(n)) return NaN;
-  return match.negative ? -Math.abs(n) : Math.round(n);
+  if (!Number.isSafeInteger(n)) return NaN;
+  return match.negative ? -Math.abs(n) : n;
 }
 
 function wonMatches(text) {
