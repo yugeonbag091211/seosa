@@ -303,7 +303,9 @@ console.log('\n[8] Grounding / Firewall');
     productId: '1', title: '베타 무선 이어폰 노이즈캔슬링 500mAh', mall: '쿠팡',
     price: 89000, listPrice: 120000, discountPct: 26,
     hist: {
-      count: 12, low: 85000, lowDate: '2026-07-02', avg30: 101000, avg30Days: 12,
+      count: 12, low: 85000, lowDate: '2026-07-02', lowCount: 2, lowConfirmed: true,
+      historyDays: 27, firstDate: '2026-08-01', lastDate: '2026-08-27',
+      avg30: 101000, avg30Days: 12,
       lastPrice: 89000, lastDate: '2026-08-27', prevPrice: 95000,
       trendPct: -6.3, trendDays: 7, trendFrom: 95000, trendFromDate: '2026-08-20',
       points: [{ d: '2026-08-20', p: 95000 }]
@@ -339,9 +341,11 @@ console.log('\n[8] Grounding / Firewall');
     score('Grounding', JSON.stringify(got) === JSON.stringify(want), label, `기대 ${JSON.stringify(want)} / 실제 ${JSON.stringify(got)}`);
   });
 
-  // 최상급: 가격 기록이 있으면 허용, 없으면 잡는다
-  score('Grounding', unsupportedSuperlatives('역대 최저가입니다', items).length === 0,
-    '가격 기록이 있으면 최저가 언급 허용');
+  // 관측 최저와 all-time 최저를 구분한다. 최근 데이터만으로 all-time은 증명할 수 없다.
+  score('Grounding', unsupportedSuperlatives('기록상 최저가입니다', items).length === 0,
+    '충분하고 반복 확인된 기록이면 관측 최저 언급 허용');
+  score('Grounding', unsupportedSuperlatives('역대 최저가입니다', items).length === 1,
+    '★ 제한된 가격 기록으로 "역대 최저가" 는 허용하지 않는다');
   score('Grounding', unsupportedSuperlatives('역대 최저가입니다', [{ title: 'x' }]).length === 1,
     '★ 근거 없는 "역대 최저가" 는 잡는다');
 
