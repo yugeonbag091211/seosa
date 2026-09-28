@@ -39,7 +39,7 @@ function hasConfirmedRecordLow(history) {
 function isCurrentPriceFresh(item, now = Date.now()) {
   if (!item || !item.checkedAt) return true;
   const checkedAt = String(item.checkedAt);
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(checkedAt)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkedAt)) return false;
   const parsed = new Date(checkedAt + 'T00:00:00Z');
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== checkedAt) return false;
   const kstToday = new Date(Number(now) + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
