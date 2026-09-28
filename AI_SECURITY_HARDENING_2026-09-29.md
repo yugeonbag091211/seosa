@@ -98,16 +98,17 @@ PR #108 설명에 기록된 오프라인 결과:
 
 | 단계 | 총 대상 | 실행 | PASS | FAIL | 실행 불가 |
 |---|---:|---:|---:|---:|---:|
-| syntax/lint | 1 | 0 | 0 | 0 | 1 |
-| targeted unit/security | 새 fuzz 321 | 0 | 0 | 0 | 321 |
+| Node syntax 검사 | 1 | 0 | 0 | 0 | 1 |
+| 새 targeted security fuzz | 321 assertions | 0 | 0 | 0 | 321 |
 | AI pipeline | 1 suite | 0 | 0 | 0 | 1 |
 | 기존 red-team | 200 공격 | 0 | 0 | 0 | 200 |
-| npm test | 전체 65 scripts(기존 PR #108 기록) | 0 | 0 | 0 | 65 scripts |
+| npm test | 전체 65 scripts(기존 PR #108 기록, 위 suites와 중복) | 0 | 0 | 0 | 65 scripts |
 | build | 1 | 0 | 0 | 0 | 1 |
+| lint | 저장소에 구성된 lint script 없음 | — | — | — | — |
 
 shell 시작 요청은 \`helper_unknown_error: setup refresh had errors\`로 실패했다. GitHub commit status에는 feature branch의 Vercel check success가 표시됐지만, 이는 위 Node 테스트/build 실행 증거가 아니다. 해당 commit에 대한 GitHub Actions workflow run은 없었다.
 
-**이번 작업의 저장소 테스트 총계:** 실행 0, PASS 0, FAIL 0, 실행 불가 289개 대상(321개 fuzz assertion 포함; 테스트 suite 수와 개별 assertion 수는 별도). 별도 pure-function probe는 39 PASS / 1 FAIL이다. 실행하지 않은 저장소 테스트는 통과로 표시하지 않았다.
+**이번 작업의 저장소 테스트 총계:** suite 실행 0, PASS 0, FAIL 0. 새 fuzz 321 assertion, 기존 red-team 200 공격, `npm test` 65 scripts는 서로 중복되는 범위가 있어 합산하지 않는다. 별도 pure-function probe는 39 PASS / 1 FAIL이다. 실행하지 않은 저장소 테스트는 통과로 표시하지 않았다.
 
 ## CI, PR, merge, 배포
 
