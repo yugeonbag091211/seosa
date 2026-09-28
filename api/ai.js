@@ -7,6 +7,7 @@ const { identify } = require('./_auth');
  * 서명·대조만 하는 순수 함수이고 DB 조회(loadCatalogRows)는 호출할 때만 돈다.
  */
 const AC = require('./_aicontext');
+const { hasConfirmedRecordLow } = require('./_priceevidence');
 /*
  * 조건 해석·랭킹은 순수 계산이라 최상단에서 불러도 안전하다
  * (그 안에서 _shop 을 쓸 때만 지연 require 한다 — _shopintent.js 주석 참고).
@@ -279,6 +280,9 @@ function normItem(raw) {
       prevPrice: num(h.prevPrice),
       low:       num(h.low),
       lowDate:   safeDate(h.lowDate),
+      lowCount:  num(h.lowCount),
+      lowIsLatest: typeof h.lowIsLatest === 'boolean' ? h.lowIsLatest : null,
+      lowConfirmed: typeof h.lowConfirmed === 'boolean' ? h.lowConfirmed : null,
       avg30:     num(h.avg30),
       avg30Days: num(h.avg30Days),
       trendPct:  Number.isFinite(Number(h.trendPct)) ? Math.round(Number(h.trendPct) * 10) / 10 : null,
@@ -416,7 +420,7 @@ function describe(it, withPoints, compact) {
 
   const h = it.hist;
   if (!h) {
-    lines.push('  가격 기록: 없음 → 역대 최저가·평균·추세를 판단할 수 없음');
+    lines.push('  가격 기록: 없음 → SEOSA 보유 기록의 최저가·평균·추세를 판단할 수 없음');
     return lines.join('\n');
   }
 
@@ -425,12 +429,14 @@ function describe(it, withPoints, compact) {
 
   // 차이는 서버에서 다시 계산한다. 프론트가 보낸 값을 그대로 찍으면
   // 프론트 버전이 어긋났을 때 프롬프트 안에서 숫자끼리 모순이 난다.
-  if (h.low > 0) {
+  if (hasConfirmedRecordLow(h)) {
     const d = it.price - h.low;
     const rel = d > 0 ? `현재가가 ${won(d)}원 높음`
-              : d < 0 ? `현재가가 ${won(-d)}원 낮음(기록상 최저가보다 쌈)`
-              : '현재가 = 역대 최저가';
-    lines.push(`  역대 최저가 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''} → ${rel}`);
+              : d < 0 ? `현재가가 ${won(-d)}원 낮음(기존 관측 최저보다 낮음)`
+              : '현재가가 확인된 관측 최저와 같음';
+    lines.push(`  SEOSA 보유 관측 기록 중 확인된 최저가 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''} → ${rel}`);
+  } else if (h.low > 0 && h.lowConfirmed === false && h.lowIsLatest === true) {
+    lines.push(`  관측 최저 후보 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''} → 하루만 관측되어 최저 여부 확인 중`);
   }
 
   /*
@@ -1955,6 +1961,8 @@ function priceClaimKind(text, start, end) {
   const tail = before.slice(-28);
   const head = after.slice(0, 32);
   if (/(?:역대|사상)\s*(?:최저|최저가|low(?:est)?\s+ever)/i.test(tail + head)) return 'all-time';
+  if (/(?:기록(?:상|\s*내|\s*중)?|관측(?:한|된)?|최근(?:\s*\d+\s*일)?|지난\s*\d+\s*일).{0,16}최저(?:가)?/i.test(tail)
+      || /\b(?:record|historical|recent)\s+low\b/i.test(tail)) return 'low';
   if (/(?:예산|budget)\s*(?:은|이|을|상한|:)?\s*$/i.test(tail)) return 'budget';
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:낮|싸|저렴)/.test(head)) return 'current-below-average';
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:높|비싸)/.test(head)) return 'current-above-average';
@@ -1989,8 +1997,7 @@ function priceEvidenceValues(item, kind) {
   if (kind === 'reference') return [positive(item.listPrice)].filter(Boolean);
   if (kind === 'history') return history;
   if (kind === 'low') {
-    if (!h || Number(h.count) < 2 || Number(h.historyDays) < 7 || h.lowConfirmed === false) return [];
-    return [positive(h.low)].filter(Boolean);
+    return hasConfirmedRecordLow(h) ? [positive(h.low)].filter(Boolean) : [];
   }
   if (kind === 'any') {
     // An unqualified amount in a shopping answer is read as a current price.
@@ -2518,9 +2525,7 @@ function unsupportedSuperlatives(text, items) {
     const candidates = refs.length ? refs : list;
     const supported = candidates.length > 0 && candidates.every(it => {
       const h = it && it.hist;
-      return !!h && Number(h.low) > 0 && Number(h.count) >= 7
-        && Number(h.historyDays) >= 7 && !!h.firstDate && !!h.lastDate
-        && h.lowConfirmed !== false;
+      return hasConfirmedRecordLow(h);
     });
     if (!supported && out.indexOf(recordMatch[1]) < 0) out.push(recordMatch[1]);
   }
@@ -2707,7 +2712,7 @@ P.rolePrice = [
   '가격인지"를 설명한다. 이 기록이 네가 일반 챗봇과 다른 유일한 근거다.',
   '',
   '[가격 판단 순서]',
-  '1. 현재 가격과 역대 최저가를 비교한다.',
+  '1. 현재 가격과 SEOSA 보유 관측 기록의 확인된 최저가를 비교한다.',
   '2. 현재 가격과 최근 30일 평균을 비교한다.',
   '3. 최근 가격 추세를 확인한다.',
   '4. 여러 상품·쇼핑몰의 가격을 서로 비교한다.',
@@ -2784,7 +2789,7 @@ const FACT_CORE = [
   '- <상품데이터>에 적힌 숫자만 쓴다. 그대로 옮기고 어림하거나 다시 계산하지 않는다.',
   '- 없는 상품·가격·할인율·링크를 지어내지 않는다. 근거 없이 "역대 최저가입니다"',
   '  "최근 크게 떨어졌습니다" 같은 문장을 만드는 것은 어떤 경우에도 금지다.',
-  '- 역대 최저가·30일 평균·가격 추세는 그 줄이 실제로 있을 때만 말한다.',
+  '- SEOSA 보유 관측 기록의 확인된 최저가·30일 평균·가격 추세는 그 줄이 실제로 있을 때만 말한다.',
   '  "가격 기록: 없음"인 상품에는 만들어내지 말고, 기록이 부족하다고 밝힌다.',
   '- "쿠팡 정가"와 "정가 대비 할인율"만 진짜 정가 기준 할인이다.',
   '  "네이버 참고최고가"는 정가가 아니다. 그 값으로 할인율을 계산하지 마라.',
@@ -3117,7 +3122,7 @@ const SYSTEM_BASE = [
   '- 어떤 상품을 말하는지 알 수 없으면 추측하지 말고 무엇에 대한 이야기인지 물어라.',
   '',
   '[가격 판단 순서]  ※ D·E(가격을 묻는 질문)에만 적용한다',
-  '1. 현재 가격과 역대 최저가를 비교한다.',
+  '1. 현재 가격과 SEOSA 보유 관측 기록의 확인된 최저가를 비교한다.',
   '2. 현재 가격과 최근 30일 평균을 비교한다.',
   '3. 최근 가격 추세를 확인한다.',
   '4. 여러 상품·쇼핑몰의 가격을 서로 비교한다.',
@@ -3142,7 +3147,7 @@ const SYSTEM_BASE = [
   '  ※ 사용자를 검색창으로 돌려보내지 마라. 검색은 우리가 한다.',
   '',
   '[가격 기록이 없는 상품]',
-  '- 역대 최저가·평균 가격·가격 추세를 만들어내지 마라.',
+  '- SEOSA 보유 관측 기록의 최저가·평균 가격·가격 추세를 만들어내지 마라.',
   '- "아직 충분한 가격 기록이 없어 가격 추세를 판단하기 어렵습니다"라고 말한다.',
   '',
   '[가격 신뢰도]',
@@ -4581,6 +4586,6 @@ module.exports._internal = {
   CLASSIFY_SYSTEM, CLASSIFY_FORCE, fallbackAnswer,
   heuristicIntent, hasAuthHeader,
   historyMessage, normalizeHistory, resolveContext, contextNoteBlock, statFor, markFiction, P,
-  unverifiedLivePriceClaim, wonMatches,
+  unverifiedLivePriceClaim, wonMatches, hasConfirmedRecordLow,
   PROMPT_VERSION
 };
