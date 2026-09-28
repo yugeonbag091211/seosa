@@ -2209,9 +2209,12 @@ function unverifiedCurrentPrices(text, items) {
   const historical = /어제|전날|지난\s*\d+일|기록|과거|이전|당시/;
   for (const m of wonMatches(text)) {
     const value = wonValue(m);
-    const before = String(text).slice(Math.max(0, m.index - 32), m.index);
-    const after = String(text).slice(m.index + m.text.length, m.index + m.text.length + 20);
+    const source = String(text);
+    const before = source.slice(Math.max(0, m.index - 32), m.index);
+    const after = source.slice(m.index + m.text.length, m.index + m.text.length + 20);
     const near = before + after;
+    const kind = priceClaimKind(source, m.index, m.index + m.text.length);
+    if (['reference', 'average', 'history', 'low', 'all-time', 'budget'].includes(kind)) continue;
     if (!current.test(near) || historical.test(before.slice(-18))) continue;
     // 정가·평균·최저가 문장은 각각의 별도 가격 근거로 검증한다.
     if (/정가|평균|최저가|쿠폰/.test(near)) continue;
@@ -2243,21 +2246,17 @@ function unverifiedProductPrices(text, items) {
     const at = m.index + Math.floor(m.text.length / 2);
     const refs = referencedItems(s, at, items);
     const candidates = refs.length ? refs : (items || []);
-    const listClaim = /정가|정상가|소비자가|리스트\s*가격/.test(claimPrefix);
-    const averageClaim = /평균/.test(claimPrefix);
-    const lowClaim = /(?:역대\s*)?최저가/.test(claimPrefix);
-    const historicalClaim = /어제|전날|지난\s*\d+일|기록가|당시|과거|이전|최근\s*기록/.test(claimPrefix);
+    const kind = priceClaimKind(s, m.index, m.index + m.text.length);
     const matchesClaim = it => {
-      if (m.currency !== 'KRW' || value <= 0) return false;
-      if (listClaim) return Math.round(Number(it && it.listPrice) || 0) === value;
-      if (averageClaim) return Math.round(Number(it && it.hist && it.hist.avg30) || 0) === value;
-      if (lowClaim) return hasConfirmedRecordLow(it && it.hist)
-        && Math.round(Number(it.hist.low) || 0) === value;
-      if (historicalClaim) {
-        const h = it && it.hist;
-        const values = h ? [h.lastPrice, h.prevPrice, h.trendFrom, ...(h.points || []).map(pt => pt && pt.p)] : [];
-        return values.some(v => Math.round(Number(v) || 0) === value);
+      if (m.currency !== 'KRW' || value <= 0 || kind === 'all-time') return false;
+      if (kind === 'reference') return priceEvidenceValues(it, 'reference').includes(value);
+      if (kind === 'average') return priceEvidenceValues(it, 'average').includes(value);
+      if (kind === 'low') return priceEvidenceValues(it, 'low').includes(value);
+      if (kind === 'history') return priceEvidenceValues(it, 'history').includes(value);
+      if (kind === 'compare-less' || kind === 'compare-more') {
+        return supportsPriceClaim({ kind, value, currency: m.currency }, it);
       }
+      if (kind === 'budget') return true;
       return priceEvidenceValues(it, 'current').includes(value);
     };
     if (!candidates.length || !candidates.every(matchesClaim)) {
