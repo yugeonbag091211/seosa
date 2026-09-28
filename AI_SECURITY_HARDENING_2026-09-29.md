@@ -133,3 +133,82 @@ shell 시작 요청은 \`helper_unknown_error: setup refresh had errors\`로 실
 4. \`npm test\`와 프로젝트 build를 실행한다. 기존 assertion을 낮추지 않는다.
 5. 전부 green이고 Medium bare-price gap도 해결한 뒤에만 PR 생성·merge를 다시 검토한다.
 6. live model 검증은 deterministic suite와 별도로 승인된 비용 한도/환경에서만 수행한다. 이번 작업에서는 실행하지 않았다.
+
+## 2026-09-29 연속 작업 업데이트
+
+### 실행 상태와 branch 기준
+
+- 이 업데이트는 기존 보고서 뒤에 이어 붙였다. 기존 RT-01~04 구현을 다시 작성하지 않았다.
+- 기준 main SHA: daeda7417e1f693ffd198202d7b7bd5bb5ec20e8.
+- 업데이트 직전 branch SHA: 68142888ebfecdaa1b8f73708c18522ebee8d4ed. main 기준 44 commits ahead, 0 behind.
+- shell runtime가 세 차례 helper_unknown_error: setup refresh had errors로 시작하지 못해 Node 테스트를 실행하지 않았다. 같은 복구를 반복하지 않고 static review와 제한된 V8 source probe로 가능한 확인을 진행했다.
+- 저장소 test runner 및 build 실행 수는 0이다. 아래 V8 probe는 저장소의 npm/node 실행 증거가 아니며 CI 통과를 뜻하지 않는다.
+
+### 추가 발견과 브랜치 수정
+
+| ID / Severity | 영향 경로 | 실패 시나리오 및 원인 가설 | 수정 및 상태 |
+|---|---|---|---|
+| C-AI-01 / Critical | api/ai.js의 BUY/WAIT decision 조립, api/_decision.js | 표시 1위 상품 A 대신 history가 있는 첫 상품 B로 decision을 만들면 A 카드에 B의 구매 판단이 붙을 수 있었다. display와 decision의 상품·옵션·몰 tuple 검증이 없거나 불완전한 경로가 원인이다. | decision을 표시 대상과 productId, vendorItemId, mall까지 일치시킨다. 일치 history가 없으면 그 상품에 대해 근거 부족으로 답하고 다른 항목 history로 fallback하지 않는다. 수정됨. 실제 통합 테스트는 미실행. |
+| H-AI-01 / High | api/_search.js, api/_shopintent.js | ‘에어팟 최저가’가 액세서리만 가진 결과에서 일찍 반환되거나 가격 boost로 케이스/필름이 본품보다 앞설 수 있었다. single-result early return 전에 main-product intent filtering이 실행되지 않는 점이 원인이다. | 공용 accessory 분류를 적용해 본품 intent와 명시적 accessory intent를 구분하고 early return 전에도 거른다. ‘에어팟 케이스’ 같은 accessory 구매 intent는 유지한다. 수정됨. fixture V8 probe 5/5; 실제 저장소 테스트 미실행. |
+| H-AI-02 / High | api/_priceevidence.js, api/ai.js | checkedAt이 오래된 catalog price가 현재가 근거로 통과하거나, description 쪽 직접 price 비교가 freshness helper를 우회할 수 있었다. | checkedAt 존재 시 KST 기준 0~3일만 current price evidence로 사용한다. stale snapshot은 마지막 확인 가격으로 표시하며, 모든 validator의 current price 비교가 공통 evidence helper를 거치도록 했다. checkedAt 없는 non-catalog server evidence의 기존 동작은 유지한다. 수정됨. freshness 직접 probe 10/10 및 후속 parser probe; 실제 저장소 테스트 미실행. |
+| M-AI-01 / Medium | api/ai.js price claim parser 및 response validator | ‘현재가는 12,900입니다’에서 통화 단위가 없으면 wonMatches가 빈 배열이고 validator가 가격 주장을 놓쳤다. 가격 문맥과 무관한 모델명/규격 숫자와 구별하는 parser가 없던 것이 원인이다. | 가격 문맥 기반 unitless, KRW/₩/원/만원/천원 표기와 비교 문장을 결정적으로 분류하고 서버 evidence 가격에 결합한다. 모델·규격·연도 숫자는 가격 문맥이 없으면 무시한다. 수정됨. 단위/비교 parser probe 15/15. |
+| H-AI-03 / High | api/ai.js claim classification and validation | 일반 비교 문장의 과거가·평균가·기준가 숫자를 현재가로 오분류하거나, 반대로 비교 문장에 숨겨진 근거 없는 값을 통과시킬 수 있었다. | claim을 current, historical, reference, range, comparison 및 low/superlative 문맥으로 구분하고 허용 evidence class를 비교한다. history 텍스트와 사용자 주장은 숫자가 서버 evidence에 우연히 같아도 provenance가 되지 않는다. 수정됨. 해당 분류 direct probe에 포함; 저장소 테스트 미실행. |
+| H-AI-04 / High | api/_priceevidence.js, api/ai.js, api/_concierge.js, api/_deal.js | history 1~2개만으로 ‘역대 최저가’ 문구가 나오거나 card/context/fallback에서 제한 없는 low 표현이 붙을 수 있었다. | hasConfirmedRecordLow는 양의 안전 정수 low, count 7 이상, lowCount 2 이상, 기간 7일 이상, lowConfirmed true 및 유효한 날짜 범위를 요구한다. 출력은 ‘최근 관측 기록 최저’로 제한한다. 미확정이면 카드·문맥·fallback에서 low 주장을 생략한다. 수정됨. card/context V8 probe 6/6 범위에 포함. |
+| M-AI-02 / Medium | api/ai.js toCard, scripts/test-ai-security-fuzz.js | 카드 응답에서 Coupang vendorItemId가 빠지면 가격·구매 링크와 옵션 identity의 결합을 후속 단계가 유지하기 어렵다. ADPICK row에 Coupang 옵션 ID가 섞이면 교차 몰 identity도 혼동된다. | 쿠팡 row이며 mall 검사도 통과한 경우에만 card에 vendorItemId를 전달한다. affiliate tuple과 ADPICK 오염 방지 회귀 assertion을 추가했다. V8 source probe 6/6. 구매/affiliate API 호출은 하지 않았다. |
+
+### 이어받은 신뢰 경계와 Product Identity Chain
+
+- PR #108의 RT-01~04는 재구현하지 않았다. client 가격/이력/할인, 브라우저 상태, 사용자·assistant 대화, product 설명, LLM 문장은 가격 evidence로 승격시키지 않는다.
+- signed prior recommendation은 서버 서명 및 만료를 확인하고 상품·옵션·몰 tuple을 유지한다. 이 작업에서는 해당 흐름의 source review 및 기존 테스트를 보존했다.
+- AI card와 decision의 선택된 server row tuple을 확인하고, 가격 history는 strict option lookup 결과에만 연결한다. 옵션이 없거나 모호한 경우 더 싼 다른 옵션을 대신 택하지 않는다.
+- Affiliate identity에 대한 새 deterministic fixture는 두 옵션 각각의 productId/vendorItemId/mall/price/link가 함께 유지되고 ADPICK에 Coupang option ID가 붙지 않는지 검사한다. 실제 affiliate API 호출은 없었다.
+- low history의 관측 범위를 보장하지 못하는 값에는 all-time claim을 허용하지 않고 bounded wording을 사용한다.
+
+### Fuzz 및 실제 수행한 제한 probe
+
+- deterministic fuzz의 기존 321 assertion은 유지했다. matrix를 고정 seed의 20 × 13 × 8 조합, 총 2,080 assertion으로 확장했다. fresh/stale catalog evidence도 matrix에 포함한다.
+- 제한된 V8 source probe: 2,080/2,080 matrix assertion, price spelling/comparison 15/15, freshness 10/10, card/context/affiliate 6/6, accessory/decision fixture 5/5. 이 probe들은 테스트 스크립트의 관련 소스/함수를 분리 실행한 것으로 Node module loading, 전체 suite, API 통합 실행이 아니다. 수치들은 별도 probe의 결과이며 하나의 통합 테스트 수치로 합산하지 않는다.
+- syntax preflight는 9개 JavaScript 파일을 V8 Function parser로 구문 분석하고 package.json을 JSON.parse했다. Node --check나 npm build를 실행한 것은 아니다.
+- 입력 전체 fuzz, full AI pipeline, red-team, npm test, build 및 모델 호출은 실행하지 않았다.
+
+### 저장소 테스트 결과
+
+| 단계 | 대상 | 실제 실행 | PASS | FAIL | 실행 불가 |
+|---|---:|---:|---:|---:|---:|
+| Targeted price/decision/accessory/follow-up/signed-reference suites | 6 suites | 0 | 0 | 0 | 6 |
+| AI security fuzz runner | 2,080 matrix assertions + fixed cases | 0 | 0 | 0 | 전체 runner |
+| AI pipeline | 1 suite | 0 | 0 | 0 | 1 |
+| red-team runner | 기존 공격 suite | 0 | 0 | 0 | 1 suite |
+| npm test | package scripts 전체 | 0 | 0 | 0 | 전체 |
+| build | 1 | 0 | 0 | 0 | 1 |
+
+위 표에서 실행 불가는 실패나 통과가 아니라 미실행이다. 앞 절의 V8 probe는 제한된 source-level 검증으로 따로 보고했다. 환경이 복구되지 않아 required PR 조건을 만족하지 못했다.
+
+### 변경 범위, PR/CI/배포
+
+- 업데이트 직전 원격 변경 파일은 보고서, api/_concierge.js, api/_deal.js, api/_decision.js, api/_priceevidence.js, api/_search.js, api/_shopintent.js, api/ai.js, package.json, scripts/test-ai-pipeline.js, scripts/test-ai-security-fuzz.js였다.
+- public/UI 파일, collector/scheduling/price collection, price_history, hotdeal/today-drop, Coupang/ADPICK quota, DB schema/migration 변경은 없다.
+- Production API, model, affiliate API를 호출하지 않았고 Production DB write도 없었다.
+- PR: 생성하지 않음. CI: 최신 확인 SHA 68142888ebfecdaa1b8f73708c18522ebee8d4ed에 GitHub Actions workflow run 0건; Vercel status success는 앱 배포 check일 뿐 required test evidence로 보지 않는다.
+- merge: 하지 않음. Production deploy/smoke: 하지 않음.
+
+### 남은 위험과 Claude 전달 지시
+
+1. Node 실행 환경에서 실제 targeted tests를 먼저 실행한다. price parser, decision identity, accessory intent, signed follow-up, freshness/record-low, affiliate tuple 순으로 실행하고 실패 시 원인을 고친다.
+2. test-ai-security-fuzz.js 전체 2,080 matrix와 추가 fixed assertions를 실행한다. empty/exception/no-output가 PASS가 되는지, assertion이 실제 runtime validator와 연결되는지 확인하고 기대값을 약화하지 않는다.
+3. test-ai-redteam, test-ai-pipeline, npm test, build를 실행하고 결과를 이 보고서에 별도 기록한다. 실행되지 않은 항목을 PASS로 표시하지 않는다.
+4. freshness cutoff 3일과 lowConfirmed/count/date 조건이 실제 DB metadata 의미와 맞는지 검토한다. checkedAt 없는 evidence는 catalog row에 사용되지 않는지 확인한다.
+5. displayed product, decision, option, mall, price, history, affiliate URL, follow-up reference가 같은 identity chain을 유지하는 통합 테스트를 추가 또는 확인한다.
+6. 정상 쇼핑 intent와 명시적 창작 요청이 모두 회귀 테스트에서 유지되는지 검증한다. 전체 tests와 build가 green이 된 뒤에만 PR을 만든다. UI, collector, quota, price collection 경로는 열지 않는다.
+
+## 최종 상태
+
+- Critical fixed: 1 (코드 반영, 통합 실행 검증 미완료).
+- High fixed: 4 (코드 반영, 통합 실행 검증 미완료).
+- Medium fixed: 2 (코드 반영, 통합 실행 검증 미완료).
+- unresolved/operational: Node test runtime unavailable; instance-memory AI rate limiter has no cross-instance atomicity; live model behavior unverified.
+- fuzz: 2,080 matrix assertions implemented; limited V8 source probe 2,080/2,080; repository runner not executed.
+- Targeted suites, AI pipeline, red-team runner, npm test, build: NOT RUN.
+- PR: 없음. CI required checks: 없음. Merge: NO.
+- Production DB changed: NO. Collector changed: NO. Coupang quota changed: NO. UI changed: NO.
+- Final status: BLOCKED_BY_EXECUTION_ENVIRONMENT. SAFE_TO_MERGE 아님.
