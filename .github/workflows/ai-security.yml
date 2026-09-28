@@ -1,0 +1,57 @@
+name: AI security validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seosa-ai-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install dependencies
+        id: install
+        run: npm ci
+      - name: AI targeted tests
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: |
+          node scripts/test-ai.js
+          node scripts/test-ai-provenance.js
+          node scripts/test-ai-global-circuit.js
+          node scripts/test-ai-concierge.js
+          node scripts/test-intent-routing.js
+      - name: AI security fuzz
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-security-fuzz.js
+      - name: AI pipeline
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-pipeline.js
+      - name: AI red-team
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: |
+          node scripts/test-ai-redteam.js
+          node scripts/test-ai-redteam-200.js
+      - name: Build
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: |
+          node --check api/ai.js
+          node --check api/_priceevidence.js
+          node --check api/_concierge.js
+          node --check api/_decision.js
+          node --check api/_search.js
+          node --check api/_shopintent.js
+          node --check api/_deal.js
+          node --check scripts/test-ai-security-fuzz.js
+          node -e "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8'))"
