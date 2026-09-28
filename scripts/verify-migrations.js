@@ -89,6 +89,7 @@ function deleteTargets(sql) {
 
 /** 이번 릴리스에서 새로 추가한 마이그레이션. 여기 있는 것만 강하게 검사한다. */
 const COUPANG_QUOTA_MIGRATION = '2026-09-28-coupang-minute-quota.sql';
+const COUPANG_QUOTA_SEARCH_PATH_MIGRATION = '2026-09-28-coupang-quota-search-path.sql';
 const AI_CIRCUIT_MIGRATION = '2026-09-20-ai-global-circuit.sql';
 
 const NEW_MIGRATIONS = [
@@ -132,7 +133,8 @@ const NEW_MIGRATIONS = [
    */
   '2026-09-22-collector-target-keyset.sql',
   '2026-09-27-coupang-search-hourly-limit.sql',
-  COUPANG_QUOTA_MIGRATION
+  COUPANG_QUOTA_MIGRATION,
+  COUPANG_QUOTA_SEARCH_PATH_MIGRATION
 ];
 
 function checkStatic() {
@@ -198,6 +200,17 @@ function checkStatic() {
         && /revoke\s+all\s+on\s+function\s+public\.coupang_acquire_v2/i.test(sql)) {
       ok('Coupang quota RPC execution revoked from anon/authenticated');
     } else bad('Coupang quota RPC execution grant is too broad');
+  }
+  const quotaSearchPathSql = path.join(SQL_DIR, COUPANG_QUOTA_SEARCH_PATH_MIGRATION);
+  if (fs.existsSync(quotaSearchPathSql)) {
+    const sql = stripSqlComments(fs.readFileSync(quotaSearchPathSql, 'utf8'));
+    const pathsFixed = [
+      /alter\s+function\s+public\.coupang_acquire_v2[\s\S]*?set\s+search_path\s*=\s*''/i,
+      /alter\s+function\s+public\.coupang_acquire\([\s\S]*?set\s+search_path\s*=\s*''/i,
+      /alter\s+function\s+public\.coupang_block_seconds[\s\S]*?set\s+search_path\s*=\s*''/i
+    ].every(re => re.test(sql));
+    if (pathsFixed) ok('Coupang quota RPC search_path is fixed on all three functions');
+    else bad('Coupang quota RPC mutable search_path remains');
   }
 
   /* security definer 함수는 실행 권한을 반드시 좁혀야 한다. */
