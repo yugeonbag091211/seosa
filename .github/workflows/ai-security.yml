@@ -24,26 +24,33 @@ jobs:
       - name: Install dependencies
         id: install
         run: npm ci
-      - name: AI targeted tests
+      # Keep each offline suite visible even when another suite fails.
+      # The paid/live test-ai-concierge.js is intentionally excluded.
+      - name: AI targeted — unit
         if: ${{ always() && steps.install.outcome == 'success' }}
-        run: |
-          node scripts/test-ai.js
-          node scripts/test-ai-provenance.js
-          node scripts/test-ai-global-circuit.js
-          node scripts/test-ai-concierge.js
-          node scripts/test-intent-routing.js
+        run: node scripts/test-ai.js
+      - name: AI targeted — provenance
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-provenance.js
+      - name: AI targeted — global circuit
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-global-circuit.js
+      - name: AI targeted — intent routing
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-intent-routing.js
       - name: AI security fuzz
         if: ${{ always() && steps.install.outcome == 'success' }}
         run: node scripts/test-ai-security-fuzz.js
       - name: AI pipeline
         if: ${{ always() && steps.install.outcome == 'success' }}
         run: node scripts/test-ai-pipeline.js
-      - name: AI red-team
+      - name: AI red-team baseline
         if: ${{ always() && steps.install.outcome == 'success' }}
-        run: |
-          node scripts/test-ai-redteam.js
-          node scripts/test-ai-redteam-200.js
-      - name: Build
+        run: node scripts/test-ai-redteam.js
+      - name: AI red-team 200 cases
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-redteam-200.js
+      - name: Syntax validation (repository has no build script)
         if: ${{ always() && steps.install.outcome == 'success' }}
         run: |
           node --check api/ai.js

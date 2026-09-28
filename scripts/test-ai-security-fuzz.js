@@ -436,9 +436,11 @@ try {
   const generalExplicitCase = Search.rankItems('에어팟 케이스 추천', [caseOnly]);
   const aiMainOnlyCase = ShopIntent.rankItems([Object.assign({}, caseOnly)], { priority: 'price' }, '에어팟 최저가');
   const aiExplicitCase = ShopIntent.rankItems([Object.assign({}, caseOnly)], { priority: 'price' }, '에어팟 케이스 추천');
-  check('accessory_intent', 'single-case-filtered-general',
-    generalMainOnlyCase.items.length === 0 && generalMainOnlyCase.allBelow === true,
-    'general search returned a sole accessory for main-product intent');
+  check('accessory_intent', 'single-case-preserved-general-fallback',
+    generalMainOnlyCase.items.length === 1 && generalMainOnlyCase.items[0].productId === 'CASE'
+      && generalMainOnlyCase.allBelow === false,
+    'general search discarded a relevant fallback candidate');
+
   check('accessory_intent', 'single-case-preserved-general',
     generalExplicitCase.items.length === 1 && generalExplicitCase.items[0].productId === 'CASE',
     'general search filtered an explicitly requested accessory');
@@ -657,6 +659,14 @@ try {
   ];
   shopping.forEach((prompt, i) => check('fiction_intent', 'shopping-' + i,
     Intent.isCreativeRequest(prompt) === false, 'shopping request treated as fiction: ' + prompt));
+
+  check('malformed_input', 'non-scalar-identifiers-rejected',
+    AC.selectorsFrom([
+      { productId: 'P', vendorItemId: { toString: 'spoof' }, mallId: '쿠팡' },
+      { productId: ['P'], vendorItemId: 'V', mallId: '쿠팡' },
+      { productId: 'P', vendorItemId: ['V'], mallId: '쿠팡' }
+    ]).length === 0,
+    'object/array identifiers were coerced into selector strings');
 
   /* Malformed values cannot throw or propagate prices through selector projection. */
   const malformed = [

@@ -77,7 +77,10 @@ shop.searchAll = async (keyword) => {
     const cached = stub.searchCache.get(cacheKey);
     if (cached && Date.now() - cached.at < 6 * 60 * 60 * 1000) {
       const clone = list => JSON.parse(JSON.stringify(list || []));
-      const items = clone(cached.items).map(it => ({ ...it, _source: 'cache' }));
+      const items = clone(cached.items).map(it => {
+        const normalized = { ...it, _source: 'cache' };
+        return normalized;
+      });
       return { items, from: 'cache', blocked: false };
     }
   }
@@ -116,8 +119,19 @@ shop.searchAll = async (keyword) => {
    * 그래서 이 대역도 items 만 돌려준다 — 그래야 saveProducts 가 받는 목록(=카탈로그)이
    * 운영과 같다. (stub.searchAllItems 는 옛 시나리오의 표시용으로만 남아 있다.)
    */
-  const items = stub.searchItems.map(it => ({ ...it, _source: 'api' }));
-  if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, { at: Date.now(), items: stub.searchItems });
+  const providerFixtureItem = (it, source) => {
+    const normalized = { ...it };
+    // Coupang provider fixtures use the same required option identity as live results.
+    // Explicit vendorItemId: '' remains available for missing-option security cases.
+    if (normalized.isCoupang === true && normalized.productId
+        && !Object.prototype.hasOwnProperty.call(normalized, 'vendorItemId')) {
+      normalized.vendorItemId = 'OFFLINE-OPTION-' + String(normalized.productId);
+    }
+    normalized._source = source;
+    return normalized;
+  };
+  const items = stub.searchItems.map(it => providerFixtureItem(it, 'api'));
+  if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, { at: Date.now(), items });
   return { items, from: 'api', blocked: false };
 };
 /*

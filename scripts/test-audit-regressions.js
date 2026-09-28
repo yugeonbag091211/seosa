@@ -282,7 +282,7 @@ function callApi(handler, query) {
   section('H) 구매 판정');
   const Stat = require('../api/_pricestat');
   const Deal = require('../api/_deal');
-  const TODAY = '2026-09-13';
+  const TODAY = new Date().toISOString().slice(0, 10);
   const series = (n, f) => Array.from({ length: n }, (_, i) => {
     const back = n - 1 - i;
     return { date: new Date(Date.parse(`${TODAY}T00:00:00Z`) - back * 86400000).toISOString().slice(0, 10), price: f(back) };
