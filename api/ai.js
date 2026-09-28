@@ -1343,7 +1343,9 @@ function toCard(it, stat) {
    */
   const price = card.lprice;
   if (stat && price > 0) {
-    if (stat.low > 0 && price <= stat.low) card.note = '기록상 최저가';
+    if (hasConfirmedRecordLow(stat) && price <= stat.low) {
+      card.note = price < stat.low ? '최근 관측 기록 최저보다 낮음' : '최근 관측 기록 최저';
+    }
     else if (stat.avg30 > 0) {
       const pct = Math.round((1 - price / stat.avg30) * 100);
       if (pct >= 3) card.note = `30일 평균보다 ${pct}% 저렴`;
@@ -1605,13 +1607,13 @@ function contextNoteBlock(notes) {
     L.push('  어느 상품인지 특정할 수 없다. 대화 기록의 상품명·금액으로 추측하지 말고, 상품 이름을 짧게 되물어라.');
   }
   history.forEach(it => {
-    const h = it.hist;
-    L.push(`- 화면 표시명: ${safeText(it.title, MAX_TITLE_LEN) || '(이름 없음)'} | productId=${it.productId}`
-      + (it.vendorItemId ? ` | 옵션=${it.vendorItemId}` : ''));
-    L.push(`  현재가: 확인하지 못함 (${CONTEXT_REASON[it.reason] || '서버에서 확인하지 못했다'})`);
-    L.push(`  이 옵션의 SEOSA 가격 기록 ${h.count}일치`
-      + (h.lastPrice ? ` | 최근 기록가 ${won(h.lastPrice)}원${h.lastDate ? `(${h.lastDate})` : ''}` : '')
-      + (h.low ? ` | 기록상 최저가 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''}` : ''));
+    const h = it && it.hist && typeof it.hist === 'object' ? it.hist : {};
+    L.push(`- 화면 표시명: ${safeText(it && it.title, MAX_TITLE_LEN) || '(이름 없음)'} | productId=${safeText(it && it.productId, 60)}`
+      + (it && it.vendorItemId ? ` | 옵션=${safeText(it.vendorItemId, 60)}` : ''));
+    L.push(`  현재가: 확인하지 못함 (${CONTEXT_REASON[it && it.reason] || '서버에서 확인하지 못했다'})`);
+    L.push(`  이 옵션의 SEOSA 가격 기록 ${num(h.count)}일치`
+      + (num(h.lastPrice) > 0 ? ` | 최근 기록가 ${won(h.lastPrice)}원${safeDate(h.lastDate) ? `(${safeDate(h.lastDate)})` : ''}` : '')
+      + (hasConfirmedRecordLow(h) ? ` | 최근 관측 기록 최저 ${won(h.low)}원${safeDate(h.lowDate) ? `(${safeDate(h.lowDate)})` : ''}` : ''));
     L.push('  ※ 이 수치는 과거 기록이다. "현재가"나 "지금 가격"으로 바꿔 말하지 마라.');
   });
   unverified.forEach(u => {
