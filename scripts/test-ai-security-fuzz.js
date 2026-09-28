@@ -261,6 +261,8 @@ try {
     { id: 'history-only', make: () => item(0, { hist: { lastPrice: matrixPrice, count: 10, historyDays: 14, points: [{ p: matrixPrice }] } }) },
     { id: 'list-only', make: () => item(0, { listPrice: matrixPrice }) },
     { id: 'stale-current', make: () => item(matrixPrice, { trust: { level: 'stale' } }) },
+    { id: 'catalog-fresh', make: () => item(matrixPrice, { checkedAt: new Date(Date.now() + 9 * 3600000 - 86400000).toISOString().slice(0, 10) }) },
+    { id: 'catalog-stale', make: () => item(matrixPrice, { checkedAt: new Date(Date.now() + 9 * 3600000 - 10 * 86400000).toISOString().slice(0, 10) }) },
     { id: 'missing', make: () => null },
     { id: 'client-only', make: () => item(0, { currentPrice: matrixPrice, userPrice: matrixPrice }) },
     { id: 'zero-current', make: () => item(0) },
@@ -289,7 +291,7 @@ try {
       const claimText = decorate(format.text(matrixPrice));
       const invalid = I.unverifiedContextualPrices(claimText, items).length > 0;
       const expectedAllow = sourceItem ? format.allow(Number(sourceItem.price)) && state.id !== 'history-only'
-        && state.id !== 'list-only' && state.id !== 'stale-current' && state.id !== 'client-only'
+        && state.id !== 'list-only' && state.id !== 'stale-current' && state.id !== 'catalog-stale' && state.id !== 'client-only'
         && state.id !== 'zero-current' && state.id !== 'negative-current' && state.id !== 'nan-current' : false;
       check('fixed_seed_price_matrix', format.id + '-' + state.id + '-ctx' + contextIndex,
         invalid === !expectedAllow,
