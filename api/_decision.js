@@ -857,7 +857,13 @@ function decide(ranked, c, wanted, prevTop, deps) {
   if (list.some(it => it.trust)) evidenceUsed.push('price_trust');
 
   return {
-    top: { ref: top.ref, productId: top.productId },
+    top: {
+      ref: top.ref,
+      productId: top.productId,
+      vendorItemId: top.vendorItemId || '',
+      mallId: top.mallId || top.mall || '',
+      isCoupang: top.isCoupang === true
+    },
     recommendation: recommendLevel(confidence.confidence, regret, fitOk),
     recommendationLabel: RECOMMEND_LABEL[recommendLevel(confidence.confidence, regret, fitOk)],
     margin,
