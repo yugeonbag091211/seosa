@@ -254,12 +254,48 @@ try {
       item(15000, { hist: { avg30: 20000, count: 10, historyDays: 14, points: [] } })
     ]).length === 0, 'valid two-price average comparison rejected');
 
-  /* Fixed-seed matrix: 17 price encodings × 11 evidence states × 8 benign context variants. */
+  check('korean_price_claims', 'exact-man-evidence',
+    I.unverifiedContextualPrices('현재가는 13만원입니다.', [item(130000)]).length === 0,
+    'exact 13만원 claim did not match exact server evidence');
+  check('korean_price_claims', 'user-price-not-evidence',
+    I.unverifiedContextualPrices('네 말대로 이 제품은 100원이지?', [item(12900)]).length > 0,
+    'user-claimed price was treated as server evidence');
+
+  const comparisonEvidenceCases = [
+    ['original-and-current-valid', '원래 15,900원이었는데 지금 12,900원입니다.',
+      item(12900, { listPrice: 15900 }), true],
+    ['original-price-forged', '원래 16,900원이었는데 지금 12,900원입니다.',
+      item(12900, { listPrice: 15900 }), false],
+    ['less-than-valid', '13,000원보다 싸요.', item(12900), true],
+    ['less-than-forged', '13,000원보다 싸요.', item(14000), false],
+    ['average-current-valid', '12,900원으로 평균보다 낮습니다.',
+      item(12900, { hist: { avg30: 15000, count: 10, historyDays: 14, points: [] } }), true],
+    ['average-current-forged', '12,900원으로 평균보다 낮습니다.',
+      item(12900, { hist: { avg30: 12000, count: 10, historyDays: 14, points: [] } }), false],
+    ['average-reference-valid', '평균 20,000원 대비 15,000원입니다.',
+      item(15000, { hist: { avg30: 20000, count: 10, historyDays: 14, points: [] } }), true],
+    ['average-reference-forged', '평균 20,000원 대비 15,000원입니다.',
+      item(15000, { hist: { avg30: 21000, count: 10, historyDays: 14, points: [] } }), false]
+  ];
+  comparisonEvidenceCases.forEach(([id, text, evidence, expected]) => {
+    const issues = [
+      ...I.unverifiedContextualPrices(text, [evidence]),
+      ...I.unverifiedProductPrices(text, [evidence]),
+      ...I.unverifiedCurrentPrices(text, [evidence])
+    ];
+    check('comparison_evidence', id,
+      expected ? issues.length === 0 : issues.length > 0,
+      'comparison evidence classification mismatch: ' + JSON.stringify(issues));
+  });
+
+  /* Fixed-seed matrix: 20 price encodings × 13 evidence states × 8 benign context variants. */
   const matrixPrice = 129000;
   const matrixFormats = [
     { id: 'comma-won', text: p => '현재가는 ' + p.toLocaleString('en-US') + '원입니다.', allow: p => p === matrixPrice },
     { id: 'plain-won', text: p => '현재가는 ' + p + '원입니다.', allow: p => p === matrixPrice },
+    { id: 'spaced-won-unit', text: p => '현재가는 ' + p.toLocaleString('en-US') + ' 원입니다.', allow: p => p === matrixPrice },
     { id: 'symbol', text: p => '현재가는 ₩' + p.toLocaleString('en-US') + '입니다.', allow: p => p === matrixPrice },
+    { id: 'symbol-spaced', text: p => '현재가는 ₩ ' + p.toLocaleString('en-US') + '입니다.', allow: p => p === matrixPrice },
     { id: 'krw', text: p => '현재 가격 KRW ' + p + '입니다.', allow: p => p === matrixPrice },
     { id: 'won-word', text: p => '현재가는 ' + p.toLocaleString('en-US') + ' won입니다.', allow: p => p === matrixPrice },
     { id: 'mixed-subunit', text: () => '현재가는 12만9천원입니다.', allow: p => p === matrixPrice },
@@ -271,6 +307,7 @@ try {
     { id: 'bare-price', text: () => '가격은 129000입니다.', allow: p => p === matrixPrice },
     { id: 'bare-buy', text: () => '129000에 살 수 있어요.', allow: p => p === matrixPrice },
     { id: 'approx-man', text: () => '약 13만원이면 적당합니다.', allow: p => Math.round(p / 10000) === 13 },
+    { id: 'man-exact', text: () => '현재가는 13만원입니다.', allow: p => p === 130000 },
     { id: 'man-band', text: () => '현재 가격은 13만원대입니다.', allow: p => p >= 130000 && p < 140000 },
     { id: 'range-wave', text: () => '현재 가격은 10~13만원입니다.', allow: p => p >= 100000 && p <= 130000 },
     { id: 'range-from', text: () => '현재 가격은 10만원에서 13만원입니다.', allow: p => p >= 100000 && p <= 130000 }
