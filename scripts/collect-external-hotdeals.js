@@ -552,10 +552,70 @@ function affiliateSearchQueries(deal) {
     const v = cleanAffiliateQuery(q);
     if (v && out.indexOf(v) < 0) out.push(v);
   };
+
+  // 1) 원문 SKU 전체 — 수량/용량/모델을 보존한다.
   add(title);
+
+  // 2) 브랜드/상품명 쪽을 넉넉히 남긴 검색어.
+  add(Shop.searchPhraseFromTitle(title, 8));
+
+  // 3) 모델 코드가 있으면 모델을 중심으로 한 번 더 찾는다.
+  //    쇼핑몰 제목의 장식 문구가 달라도 모델명은 가장 강한 식별자다.
+  const models = [...Identity.modelCodes(title)].filter(Boolean).slice(0, 2);
+  if (models.length) {
+    const first = Shop.searchPhraseFromTitle(title, 1);
+    add([first, ...models].filter(Boolean).join(' '));
+  }
+
+  // 4~5) 점점 짧게 — 재현율을 올리되 최종 동일상품 문턱(0.90)은 낮추지 않는다.
   add(Shop.searchPhraseFromTitle(title, 5));
   add(Shop.searchPhraseFromTitle(title, 3));
-  return out.slice(0, 3);
+  return out.slice(0, 5);
+}
+
+/**
+ * 제휴 후보가 여러 개면 "커뮤니티가 말한 판매처"를 먼저 보존한다.
+ * 그 다음 동일상품 확신도, 마지막 동률에서만 쿠팡 Partners를 우선한다.
+ *
+ * 즉 수익화를 위해 다른 상품/다른 옵션을 고르지는 않는다. 0.90 미만은
+ * 어떤 경우에도 제휴 링크가 되지 않는다.
+ */
+function selectAffiliateCandidate(deal, candidates) {
+  const matchDeal = { ...deal, title: cleanAffiliateQuery(deal && deal.title) || String(deal && deal.title || '') };
+  const dealMall = mallKey(deal && deal.mall);
+  const ranked = [];
+
+  for (const item of candidates || []) {
+    if (!item || !item.link || !item.productId || !(Number(item.lprice) > 0)) continue;
+    const product = affiliateCandidateProduct(item);
+    const score = Radar.matchScore(matchDeal, product);
+    if (!score || Number(score.confidence) < AFFILIATE_MATCH_THRESHOLD) continue;
+
+    const itemMall = mallKey(item.mallLabel || item.mall);
+    const sameMall = !!dealMall && !!itemMall && dealMall === itemMall;
+    const isCoupang = mallKey(item.mall) === mallKey('쿠팡');
+    const dealPrice = Number(deal && deal.price) || 0;
+    const itemPrice = Number(item.lprice) || 0;
+    const priceGap = dealPrice > 0 && itemPrice > 0
+      ? Math.abs(itemPrice - dealPrice) / Math.max(itemPrice, dealPrice)
+      : 1;
+
+    ranked.push({
+      item,
+      match: { ...score, product },
+      sameMall,
+      isCoupang,
+      priceGap
+    });
+  }
+
+  ranked.sort((a, b) =>
+    Number(b.sameMall) - Number(a.sameMall)
+    || Number(b.match.confidence) - Number(a.match.confidence)
+    || Number(b.isCoupang) - Number(a.isCoupang)
+    || a.priceGap - b.priceGap
+  );
+  return ranked[0] || null;
 }
 
 function affiliateCandidateKey(item) {
@@ -700,23 +760,14 @@ async function enrichAffiliateRows(deals, rows, options) {
           if (candidate) addVisual(candidate, vm);
         }
 
-        match = Radar.matchProduct(matchDeal, products, AFFILIATE_MATCH_THRESHOLD);
-        if (!match.product) continue;
+        const selected = selectAffiliateCandidate(matchDeal, candidates);
+        match = selected && selected.match;
+        chosen = selected && selected.item;
+        if (!chosen || !match || !match.product) continue;
 
-        chosen = candidates.find(it =>
-          String(it.productId) === String(match.product.product_id)
-          && String(it.mall || '') === String(match.product.mall || '')
-          && String(it.link || '') === String(match.product.link || '')
-        ) || candidates.find(it =>
-          String(it.productId) === String(match.product.product_id)
-          && String(it.mall || '') === String(match.product.mall || '')
-        );
-
-        if (chosen) {
-          matchedKeyword = keyword;
-          matchedFrom = chosen._source || (result && result.from) || 'api';
-          break;
-        }
+        matchedKeyword = keyword;
+        matchedFrom = chosen._source || (result && result.from) || 'api';
+        break;
       }
 
       lookup.candidates = visuals.length;
@@ -1108,7 +1159,7 @@ if (require.main === module) {
 
 module.exports = {
   main, loadProducts, loadHistory, historyFor, rowFor, exposurePolicy, regroup, selectPaged,
-  enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, cleanAffiliateQuery, safeImageUrl,
+  enrichAffiliateRows, affiliateCandidateProduct, affiliateSearchQueries, selectAffiliateCandidate, cleanAffiliateQuery, safeImageUrl,
   imageWords, imageModelCodes, referenceImageCandidate, referenceImageCandidates, imageCapacities,
   probeImageUrl, _setImageProbe, isEphemeralImageUrl, durableImageUrl, dropDeadImages, imageTypes, oneSidedFlavor, referencePhotoAllowed, carryStoredEnrichment, LOOKUP_COOLDOWN_MS, IMAGE_META_KEYS,
   summaryText, sampleOf
