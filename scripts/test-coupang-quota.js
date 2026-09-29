@@ -34,7 +34,7 @@ function fakeSupabase() {
         lastAcquire = args;
         if (rpcMode === 'error') return Promise.resolve({ data: null, error: { message: 'temporary Supabase timeout' } });
         if (rpcMode === 'denied') return Promise.resolve({
-          data: [{ allowed: false, call_id: null, reason: 'Search 분당 운영 budget 20/20', used: 20 }],
+          data: [{ allowed: false, call_id: null, reason: 'Search 분당 운영 budget 35/35', used: 35 }],
           error: null
         });
         if (rpcMode === 'no-id') return Promise.resolve({
@@ -78,7 +78,7 @@ function fakeSupabase() {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   process.env.COUPANG_API_HOST = 'http://127.0.0.1:' + server.address().port;
   // A legacy setting may have allowed 40/min; it must not raise the new
-  // initial operating budget unless the new setting is explicitly provided.
+  // configured operating budget unless the new setting is explicitly provided.
   process.env.COUPANG_MAX_PER_MIN = '40';
   delete process.env.COUPANG_SEARCH_OPERATING_CAP;
 
@@ -94,12 +94,12 @@ function fakeSupabase() {
   });
 
   try {
-    assert.strictEqual(Coupang.MAX_PER_MIN, 20, 'initial Search operating budget is 20/min');
+    assert.strictEqual(Coupang.MAX_PER_MIN, 35, 'Search operating budget is 35/min');
     assert.strictEqual(Coupang.SEARCH_HARD_CAP, 50, 'Search hard cap is 50/min');
     assert.strictEqual(Coupang.GLOBAL_OPERATING_CAP, 80, 'initial global operating budget is 80/min');
     assert.strictEqual(Coupang.GLOBAL_HARD_CAP, 100, 'global API hard cap is 100/min');
     assert.strictEqual(Coupang.INTERACTIVE_RESERVE, 15, '15/min remains available to interactive search');
-    assert.strictEqual(Coupang.COLLECTOR_BUDGET, 5, 'collector/background budget is 5/min');
+    assert.strictEqual(Coupang.COLLECTOR_BUDGET, 15, 'collector/background budget is 15/min');
     assert.strictEqual(Coupang.shouldDisableGlobalGateForTest('1', 'https://api-gateway.coupang.com'), false,
       'test switch cannot disable the production-host quota gate');
     assert.strictEqual(Coupang.shouldDisableGlobalGateForTest('1', 'http://127.0.0.1:3000'), true,
@@ -107,10 +107,10 @@ function fakeSupabase() {
     let result = await attempt({ useCache: false });
     assert.strictEqual(result.apiCalled, false, 'minute budget denies before provider call');
     assert.strictEqual(lastAcquire.p_source, 'search');
-    assert.strictEqual(lastAcquire.p_search_operating_cap, 20);
+    assert.strictEqual(lastAcquire.p_search_operating_cap, 35);
     assert.strictEqual(lastAcquire.p_global_operating_cap, 80);
     assert.strictEqual(lastAcquire.p_interactive_reserve, 15);
-    assert.strictEqual(lastAcquire.p_collector_cap, 5);
+    assert.strictEqual(lastAcquire.p_collector_cap, 15);
     assert.strictEqual(apiHits, 0);
 
     result = await attempt({ source: 'collect', useCache: false });

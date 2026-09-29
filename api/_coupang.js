@@ -4,7 +4,7 @@
  *
  * 쿠팡 파트너스 고객센터(2026-09-28): Search 분당 50회, 전체 API 분당 100회.
  * Search hard cap 은 DB 게이트에서 50/min, 전역 API hard cap 은 100/min 이다.
- * 운영 초기 budget 은 Search 20/min·전체 API 80/min 으로 낮춰 시작한다.
+ * 운영 budget 은 Search 35/min·전체 API 80/min 으로 두고, 소비자 검색 15/min을 예약한 채 collector를 15/min까지 허용한다.
  *
  * 쿠팡을 부르는 코드는 반드시 searchCoupang()만 쓸 것.
  * 직접 fetch 하면 캐시 / 전역 카운터 / 차단 감지를 전부 우회한다.
@@ -36,12 +36,12 @@ function envNum(name, fallback) {
 const SEARCH_HARD_CAP = 50;
 const GLOBAL_HARD_CAP = 100;
 // Use a new variable name so a legacy COUPANG_MAX_PER_MIN=40 deployment
-// setting cannot silently raise the requested initial 20/min operating budget.
-const MAX_PER_MIN = Math.min(envNum('COUPANG_SEARCH_OPERATING_CAP', 20), SEARCH_HARD_CAP);
+// setting cannot silently raise the requested operating budget.
+const MAX_PER_MIN = Math.min(envNum('COUPANG_SEARCH_OPERATING_CAP', 35), SEARCH_HARD_CAP);
 const GLOBAL_OPERATING_CAP = Math.min(envNum('COUPANG_GLOBAL_MAX_PER_MIN', 80), GLOBAL_HARD_CAP);
 const INTERACTIVE_RESERVE = Math.min(envNum('COUPANG_INTERACTIVE_RESERVE_PER_MIN', 15), MAX_PER_MIN);
 const COLLECTOR_BUDGET = Math.min(
-  envNum('COUPANG_COLLECTOR_MAX_PER_MIN', 5),
+  envNum('COUPANG_COLLECTOR_MAX_PER_MIN', 15),
   Math.max(0, MAX_PER_MIN - INTERACTIVE_RESERVE)
 );
 /** 호출 사이 최소 간격. 순간적으로 몰리는 걸 막는다. */
