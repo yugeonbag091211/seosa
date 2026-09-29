@@ -20,3 +20,6 @@
 .unit{margin-left:8px;font-size:12px;font-weight:400}
 .cheaper{margin-top:8px;font-size:13px;color:var(--soft);overflow-wrap:anywhere}
 .load-error{padding:14px 0;color:var(--soft);font-size:14px}
+
+/* 제휴 고지 — public/index.html .aff-note 와 같은 모양·문구 */
+.aff-note{display:flex;align-items:baseline;gap:8px;margin:16px 0 0;padding:8px 12px;background:var(--surface);border-radius:4px;font-size:13px;line-height:1.55;color:var(--soft);word-break:keep-all;overflow-wrap:anywhere}.aff-note b{flex:none;color:var(--ink)}
