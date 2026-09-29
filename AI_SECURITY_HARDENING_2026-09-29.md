@@ -212,3 +212,29 @@ shell 시작 요청은 \`helper_unknown_error: setup refresh had errors\`로 실
 - PR: 없음. CI required checks: 없음. Merge: NO.
 - Production DB changed: NO. Collector changed: NO. Coupang quota changed: NO. UI changed: NO.
 - Final status: BLOCKED_BY_EXECUTION_ENVIRONMENT. SAFE_TO_MERGE 아님.
+
+
+## CI follow-up — 2026-09-29 (PR #110)
+
+This section supersedes the earlier “NOT RUN” / `BLOCKED_BY_EXECUTION_ENVIRONMENT` status above. The local Windows Node setup still returned `helper_unknown_error: setup refresh had errors`, but PR CI ran the repository tests on GitHub Actions.
+
+### Verified on implementation commit `7212e3e511ad6c201ce2fb60251f7962c4e12fe4`
+
+- AI security validation run #11 (`36501676682`): PASS. AI targeted unit, provenance, global circuit and intent routing; pipeline; red-team baseline (93/93); red-team 200-case suite (200/200); syntax validation.
+- Security fuzz: 2,484/2,484 deterministic offline assertions PASS.
+- Full `npm test` run #142 (`36501676666`): PASS, exit 0.
+- Vercel Preview status: success. The repository has no `npm run build` script, so Vercel Preview is the deployment-build evidence.
+- This CI run used the exact implementation commit above. The report-only commit that adds this section will receive a fresh CI and Preview run before merge.
+
+### CI failure corrections
+
+- Updated stale evaluation fixtures that treated a bounded price-history window as proof of an all-time low. The expected behavior now rejects “역대 최저가” and only permits bounded “기록상 최저가” wording when confirmed observation count, duration and dates are present.
+- Tightened the deal prompt-block injection assertion: malformed `lowDate` metadata must never appear as instructions. `api/_deal.js` now renders a price-history date only when it is a valid ISO calendar date. No verdict thresholds or price-judgment rules changed.
+- The assertions were corrected to match the evidence boundary and strengthened where the prior `OR` condition could accept leaked text.
+
+### Final diff scope audit
+
+- Changed paths are limited to AI request/decision/evidence/search code, the AI security workflow, package test wiring, the security report and offline test/evaluation scripts.
+- No collector implementation, Coupang/ADPICK quota, price collection, `price_history` schema/data, Production DB migration, UI design, or secret changes were found.
+- No Production writes, collector runs, paid model calls, affiliate API calls, or live Coupang/ADPICK stress tests were performed.
+- PR #110 remains Draft pending final checks on the report-update commit and subsequent Ready-for-review/squash-merge transition.
