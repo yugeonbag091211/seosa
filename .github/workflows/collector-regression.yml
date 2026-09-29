@@ -7,6 +7,8 @@ on:
       - 'scripts/test-second-pass.js'
       - 'scripts/test-price-mall-collection.js'
       - 'scripts/test-collector-scale.js'
+      - 'scripts/test-collector-coverage.js'
+      - 'api/_blockreason.js'
       - 'supabase/2026-09-22-collector-target-keyset.sql'
       - '.github/workflows/collector-regression.yml'
   workflow_dispatch:
@@ -31,5 +33,9 @@ jobs:
       # 상품별 최종 상태 합계를 고정한다. DB/외부 API 를 부르지 않는다.
       - name: Collector scale and durability regression
         run: node scripts/test-collector-scale.js
+      # 2026-09-29 미시도 원인 회귀: 100개/호출 20회/5회 → 전부 시도, P0→P1→P2→P3 순서,
+      # 일시 쿨다운 대기·거절 정지·예산 즉시 정지·체크포인트 이어받기·당일 캐시.
+      - name: Collector coverage and priority regression
+        run: node scripts/test-collector-coverage.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js

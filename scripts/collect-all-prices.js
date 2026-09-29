@@ -46,6 +46,7 @@ const supabase = require('../api/_supabase');
 const { searchCoupang, isBlocked: isCoupangBlockedGlobal, localStats: coupangLocalStats } = require('../api/_coupang');
 const { searchAdpick, isBlocked: isAdpickBlockedGlobal, localStats: adpickLocalStats, hasKey: adpickHasKey } = require('../api/_adpick');
 const { recordPrices, searchPhraseFromTitle, adpickProductId } = require('../api/_shop');
+const { isTransientBlockReason } = require('../api/_blockreason');
 /*
  * 검색어 후보 생성 — 규칙과 그 근거(실측 적중률)는 api/_query.js 주석에 있다.
  * 수집 스크립트는 "어떤 검색어를 쓸까"를 직접 정하지 않는다. 규칙이 두 벌로
@@ -111,7 +112,27 @@ const V3 = process.env.PRICE_COLLECTOR_V3 === '1' && !SEED_ONLY;
 const V3_PLANNER = V3 && process.env.PRICE_V3_PLANNER !== '0';
 const V3_PARALLEL = V3 && process.env.PRICE_V3_PARALLEL !== '0';
 const V3_CHECKPOINT = V3 && process.env.PRICE_V3_CHECKPOINT !== '0';
+/*
+ * 잠금 조건부 체크포인트는 레거시에도 켠다 (2026-09-29).
+ *   레거시는 실행 끝에 한 번, 잠금 확인 없이 상태를 덮어썼고 잠금 연장도 없었다.
+ *   2026-09-29 캐치업(실행 예산 5.8시간)은 TTL 80분이 지나 정기 실행에 잠금을 뺏긴 채
+ *   51분 동시에 돌았고, 끝에 정기 실행의 상태를 덮어썼다. 체크포인트는 쓸 때마다 잠금을
+ *   연장하고(heartbeat) 잠금이 남의 것이면 쓰지 않고 레인을 멈춘다.
+ */
+const STATE_CHECKPOINT = process.env.PRICE_CHECKPOINT !== '0' && process.env.PRICE_V3_CHECKPOINT !== '0';
 const CHECKPOINT_MIN_INTERVAL_MS = Number(process.env.PRICE_CHECKPOINT_INTERVAL_MS) || 90 * 1000;
+/*
+ * 레인이 공급자의 «일시» 쿨다운(네트워크 2분 · 5xx 5분)을 기다려 주는 최대 시간(실행당 합계).
+ * 이보다 긴 차단(ADPICK 429 15분 등)이나 거절(401/403/rCode)은 기다리지 않고 레인을 멈춘다.
+ */
+const PASS_BLOCK_MAX_WAIT_MS = Number(process.env.PRICE_BLOCK_MAX_WAIT_MS) || 10 * 60 * 1000;
+/*
+ * 수집기가 인정하는 검색 캐시의 나이. 공급자 모듈이 «같은 KST 날짜» 인지 먼저 보므로
+ * 24시간은 곧 «오늘 받은 응답이면 쓴다» 는 뜻이다. 2026-09-29 쿠팡 수집 호출 2,755회 중
+ * 같은 날 같은 검색어 재호출이 281회였고 그중 277회가 6시간 캐시가 만료된 뒤였다.
+ * 이 수집기는 하루 한 번의 가격 스냅숏을 남기므로 오늘 받은 응답은 오늘 가격이다.
+ */
+const COLLECT_CACHE_TTL_MS = Number(process.env.PRICE_COLLECT_CACHE_TTL_MS) || 24 * 60 * 60 * 1000;
 /*
  * ADPICK 하루 호출 상한 (V3 전용). 레거시는 하루 268~738회(2026-09-16~23, 장애일 제외)라
  * 이 벽이 필요 없었다. 병렬 실행은 하루 ADPICK 호출을 약 1,960회까지 늘릴 수 있다(추정).
@@ -669,6 +690,25 @@ let _coupangSkipped = 0;    // 예산/상한/차단으로 건너뛴 횟수
 let _coupangBudgetWarned = false;
 let _coupangDayUsed = 0;        // 오늘(KST) 이 수집기가 이미 쓴 호출 수
 let _coupangDayWarned = false;
+let _coupangTransientBlocks = 0; // 기다리면 풀리는 차단(네트워크·5xx)을 본 횟수 — 래치하지 않는다
+
+/*
+ * 레인 정지 판정 (runMallCollection 의 laneGate). 이번 실행에서 더 불러도 소용없는
+ * 사유만 돌려준다 — 예산·키·거절 래치·잠금 상실. 일시 차단은 여기가 아니라
+ * coupangBlockedUntilMs 로 «언제까지 기다리면 되는가» 를 알려 준다.
+ */
+function coupangLaneStop() {
+  if (!COUP_ACCESS || !COUP_SECRET) return 'noKeys';
+  if (_runAborted) return 'lock_lost';
+  if (_coupangBlocked) return 'blocked';
+  if (_coupangCalls >= COUPANG_RUN_BUDGET) return 'budget';
+  if (_coupangDayUsed + _coupangCalls >= COUPANG_DAY_BUDGET) return 'budget';
+  return '';
+}
+function coupangBlockedUntilMs() {
+  const s = coupangLocalStats();
+  return s.blocked ? Date.now() + Math.max(1, Number(s.blockedForSec) || 0) * 1000 : 0;
+}
 
 /**
  * 오늘(KST) collect 소스로 나간 쿠팡 호출 수를 읽는다. 읽기 전용, 실행당 1회.
@@ -745,7 +785,8 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
       limit,
       source: 'collect',
       minGapMs: COUPANG_MIN_GAP_MS,
-      maxWaitMs: COUPANG_MAX_WAIT_MS
+      maxWaitMs: COUPANG_MAX_WAIT_MS,
+      cacheTtlMs: COLLECT_CACHE_TTL_MS
     });
 
     if (r.apiCalled === true || (r.apiCalled == null && r.from === 'api')) _coupangCalls++;
@@ -767,13 +808,30 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
     return { ok: false, items: [], reason: '오래된 캐시 — 오늘 가격으로 쓸 수 없음' };
   }
 
-  if (r.blocked && !_coupangBlocked) {
-    _coupangBlocked = true;
-    _coupangBlockMsg = r.error || '차단';
-    console.error(`\n⚠️  쿠팡 API 차단 감지: ${_coupangBlockMsg}`);
-    console.error('    → 이번 실행에서는 쿠팡 호출을 멈춥니다.\n');
+  /*
+   * ★ 실행 끝까지 멈추는 래치는 «공급자의 거절» 에만 건다 (2026-09-29).
+   *   401/403/429/rCode/차단 안내 페이지는 예전처럼 이번 실행의 쿠팡을 멈춘다.
+   *   네트워크 타임아웃·5xx 는 api/_coupang.js 가 이미 2~5분 쿨다운을 걸었으므로
+   *   그 시각까지만 쉰다 — 레인이 기다리고(awaitProvider), 풀리면 이어서 부른다.
+   *   운영 실측: 8초 타임아웃 1건이 쿠팡 레인 46분과 그날 V3 전체를, HTTP 504 1건이
+   *   캐치업의 쿠팡 몫 2.6시간(검색어 996종)을 멈췄다.
+   */
+  if (r.blocked) {
+    const why = String(r.error || '차단');
+    if (isTransientBlockReason(why)) {
+      _coupangTransientBlocks++;
+      if (_coupangTransientBlocks === 1 || _coupangTransientBlocks % 20 === 0) {
+        console.warn(`⚠️  쿠팡 일시 장애(${_coupangTransientBlocks}회째): ${why.slice(0, 120)}`
+          + ' — 공급자 쿨다운이 끝날 때까지만 쉬고 이어갑니다.');
+      }
+    } else if (!_coupangBlocked) {
+      _coupangBlocked = true;
+      _coupangBlockMsg = why;
+      console.error(`\n⚠️  쿠팡 API 차단 감지: ${_coupangBlockMsg}`);
+      console.error('    → 공급자 거절이라 이번 실행에서는 쿠팡 호출을 멈춥니다.\n');
+    }
+    return { ok: false, items: [], reason: `쿠팡 차단: ${why.slice(0, 60)}` };
   }
-  if (r.blocked) return { ok: false, items: [], reason: `쿠팡 차단: ${String(r.error || '').slice(0, 60)}` };
 
   // 호출이 아예 나가지 못한 경우(분당 상한 등)도 재시도 대상이다.
   if (r.from === 'none') {
@@ -861,6 +919,26 @@ let _adpickSkipped = 0;
 let _adpickBudgetWarned = false;
 let _adpickDayUsed = 0;       // 오늘(KST) 이 수집기가 이미 쓴 ADPICK 외부 호출
 let _adpickDayWarned = false;
+let _adpickTransientBlocks = 0;
+
+/* coupangLaneStop 과 같은 계약. ADPICK 의 차단은 전부 시각 기반이라 래치가 없다. */
+function adpickLaneStop() {
+  if (!adpickHasKey()) return 'noKeys';
+  if (_runAborted) return 'lock_lost';
+  if (_adpickDayUsed + _adpickCalls >= ADPICK_DAY_BUDGET) return 'budget';
+  if (_adpickCalls >= ADPICK_RUN_BUDGET) return 'budget';
+  return '';
+}
+/** 두 제공자 모두 오늘 더 부를 수 없는가 (키가 없거나 하루 예산을 다 썼다). 순수 함수. */
+function nothingLeftToCall(s) {
+  const coupangDone = !s.coupangKeys || s.coupangUsed >= s.coupangBudget;
+  const adpickDone = !s.adpickKey || s.adpickUsed >= s.adpickBudget;
+  return coupangDone && adpickDone;
+}
+function adpickBlockedUntilMs() {
+  const s = adpickLocalStats();
+  return s.blocked ? Date.now() + Math.max(1, Number(s.blockedForSec) || 0) * 1000 : 0;
+}
 
 /*
  * 이 실행이 잠금을 잃었는가 (V3 체크포인트가 올린다).
@@ -939,7 +1017,8 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
       limit,
       source: 'collect',
       minGapMs: ADPICK_MIN_GAP_MS,
-      maxWaitMs: ADPICK_MAX_WAIT_MS
+      maxWaitMs: ADPICK_MAX_WAIT_MS,
+      cacheTtlMs: COLLECT_CACHE_TTL_MS
     });
 
     if (r.apiCalled === true || (r.apiCalled == null && r.from === 'api')) _adpickCalls++;
@@ -957,12 +1036,26 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
    *   였고, 리포트에는 아무 일도 없었던 것처럼 남았다. 지금은 사유가
    *   무엇이든 «차단을 봤다» 는 사실이 먼저 기록된다.
    */
-  if (r.blocked && !_adpickBlocked) {
-    _adpickBlocked = true;
-    _adpickBlockMsg = r.error || '차단';
-    console.error(`\n⚠️  ADPICK API 차단/오류 감지: ${_adpickBlockMsg}`);
-    console.error('    → 차단이 풀릴 때까지만 멈춥니다 (사유별 시간은 api/_adpick.js COOLDOWN_MIN).'
-      + ' 쿠팡 수집은 영향받지 않습니다.\n');
+  /*
+   * _adpickBlocked 는 «공급자 거절» 만 적는다 (2026-09-29). V3 자동 비활성화와 실패 종료가
+   * 이 값을 읽는데, 15초 타임아웃 3연속(2분 쿨다운)까지 «차단» 으로 적으면 전송 장애
+   * 하나가 그날 남은 실행 전부를 레거시 직렬(ADPICK 실행당 8분)로 떨어뜨린다.
+   */
+  if (r.blocked) {
+    const why = String(r.error || '차단');
+    if (isTransientBlockReason(why)) {
+      _adpickTransientBlocks++;
+      if (_adpickTransientBlocks === 1 || _adpickTransientBlocks % 20 === 0) {
+        console.warn(`⚠️  ADPICK 일시 장애(${_adpickTransientBlocks}회째): ${why.slice(0, 120)}`
+          + ' — 쿨다운이 끝날 때까지만 쉽니다 (api/_adpick.js COOLDOWN_MIN).');
+      }
+    } else if (!_adpickBlocked) {
+      _adpickBlocked = true;
+      _adpickBlockMsg = why;
+      console.error(`\n⚠️  ADPICK API 차단/오류 감지: ${_adpickBlockMsg}`);
+      console.error('    → 차단이 풀릴 때까지만 멈춥니다 (사유별 시간은 api/_adpick.js COOLDOWN_MIN).'
+        + ' 쿠팡 수집은 영향받지 않습니다.\n');
+    }
   }
 
   // 쿠팡과 같은 이유 — 오래된 캐시를 "오늘 가격"으로 기록하지 않는다.
@@ -2419,10 +2512,14 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡') {
  *   합이 대상 수와 맞아야 한다는 요구를 지키면서 사실대로 적으려면
  *   칸을 더하는 수밖에 없다.
  * ------------------------------------------------------------------ */
+/*
+ * time (2026-09-29): «호출 예산이 끝나서» 와 «실행 시간이 끝나서» 못 간 상품을 가른다.
+ *   앞은 오늘 더 부를 수 없다는 뜻이고, 뒤는 다음 실행이 이어받는다는 뜻이다.
+ */
 const OUTCOME_KEYS = [
   'collected', 'already_collected', 'no_match', 'option_mismatch',
   'blocked', 'rate_limited', 'timeout', 'api_error', 'db_error',
-  'budget', 'pending', 'target_query_error', 'unknown'
+  'budget', 'time', 'pending', 'target_query_error', 'unknown'
 ];
 
 const outcomesTemplate = () => OUTCOME_KEYS.reduce((o, k) => { o[k] = 0; return o; }, {});
@@ -2462,6 +2559,8 @@ function outcomeFromReason(reason) {
   if (r.includes('시간 초과') || r.includes('timeout') || r.includes('timed out')) return 'timeout';
   if (r.includes('차단') || r.includes('중단') || r.includes('403')
       || (r.includes('쿠팡') && r.includes('401'))) return 'blocked';
+  // DB 게이트의 «분당 budget» 은 속도 제한이다 — 하루/실행 예산 소진과 다르다 (categorizeFailure 주석).
+  if (r.includes('분당') || r.includes('per min')) return 'rate_limited';
   if (r.includes('예산') || r.includes('budget')) return 'budget';
   if (r.includes('429') || r.includes('상한') || r.includes('한도')
       || r.includes('간격') || r.includes('대기')) return 'rate_limited';
@@ -2474,6 +2573,14 @@ function outcomeFromReason(reason) {
 function categorizeFailure(reason) {
   const r = String(reason || '').toLowerCase();
   if (r.includes('차단') || r.includes('중단') || (r.includes('쿠팡') && r.includes('401'))) return 'blocked';
+  /*
+   * ★ «분당» 이 «예산» 보다 먼저다 (2026-09-29).
+   *   DB 게이트는 "전역 제한: collector/background 분당 budget 5/5" 로 거절한다. 예전에는
+   *   budget 낱말 때문에 «예산 소진» 으로 세어, 09-29 레거시 실행마다 1차 시도 ~210건이
+   *   예산 소진으로 보고됐다(실제 하루 사용량 1,138/3,400). 속도 제한은 1분 뒤면 풀리므로
+   *   레인을 멈추는 사유(HALT_PERMANENT·laneStop)가 아니라 재시도 대상이다.
+   */
+  if (r.includes('분당') || r.includes('per min')) return 'rateLimit';
   if (r.includes('예산') || r.includes('budget')) return 'budget';
   if (r.includes('캐시') || r.includes('cache')) return 'staleCache';
   if (r.includes('네트워크') || r.includes('network')) return 'network';
@@ -2542,7 +2649,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
                                     */
                                    planner = null,
                                    onCheckpoint = null,
-                                   abortSignal = null }) {
+                                   abortSignal = null,
+                                   /*
+                                    * laneGate (2026-09-29) — 공급자 상태를 레인에 알려 준다. 없으면 예전 동작.
+                                    *   stopReason()    '' 이 아니면 이번 실행에서 더 불러도 소용없다
+                                    *                   ('budget' | 'noKeys' | 'blocked' | 'lock_lost')
+                                    *   blockedUntilMs() 일시 쿨다운이 끝나는 시각(ms), 없으면 0
+                                    */
+                                   laneGate = null }) {
   const withKeyword = rows.filter(p => p.keyword);
   const noKeyword   = rows.filter(p => !p.keyword);
 
@@ -2752,8 +2866,10 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       ? plan.map(g => ({ kw: g.kw, rows: pendingRowsOf(g) })).filter(g => g.rows.length)
       : resumeFrom(plan, cursorKey);
   const failedKeywords = new Map(priorFailedKeywords.map(kw => [kw, '직전 실행에서 실패']));
-  const retryGroups = failedKeywords.size && !v3Plan
-    ? plan.filter(g => failedKeywords.has(g.kw) && !remaining.some(x => x.kw === g.kw))
+  const remainingKw = new Set(remaining.map(g => g.kw));
+  /* P2 — 오늘 호출이 일시 실패(전송 장애·분당 제한·예산)로 끝난 그룹. 순서는 아래 «우선순위» 주석. */
+  let retryGroups = failedKeywords.size && !v3Plan
+    ? plan.filter(g => failedKeywords.has(g.kw) && !remainingKw.has(g.kw))
     : [];
 
   /*
@@ -2962,6 +3078,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       remaining = remaining
         .map(g => ({ kw: g.kw, rows: pendingRowsOf(g, todayAtStart) }))
         .filter(g => g.rows.length);
+    } else if (!v3Plan && todayAtStart.size) {
+      /*
+       * P4 — 레거시도 «그룹 전원이 오늘 이미 가격을 가진» 검색어는 부르지 않는다 (2026-09-29).
+       * 그룹 모양은 그대로 둔다(커서 의미 유지). 하나라도 남았으면 예전처럼 부른다.
+       */
+      const hasPending = g => g.rows.some(p => !todayAtStart.has(`${p.product_id}|${p.mall}`));
+      remaining = remaining.filter(hasPending);
+      retryGroups = retryGroups.filter(hasPending);
     }
     if (already.size) console.log(`  [${mallName}] 오늘 이미 기록된 ${already.size}개는 건너뜁니다.`);
   }
@@ -2995,9 +3119,22 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         - Number(a.rows.some(p => planner.tierOf(p) === 'daily')));
     }
     processed = planTotal - remaining.reduce((n, g) => n + g.rows.length, 0);
+    /*
+     * ★ P0 과 P2 를 가른다 (2026-09-29). V3 는 호출이 실패한 그룹을 attempted 에 넣지 않으므로
+     *   예전에는 그 그룹이 오늘 한 번도 안 부른 그룹(P0)과 한 줄에 섞였다. 오늘 이미 한 번
+     *   불렀다가 일시 실패한 그룹은 P0 이 다 끝나고 P1(캐시 힌트)까지 돈 뒤에 다시 부른다.
+     */
+    if (failedKeywords.size) {
+      // 남은 상품이 없는 그룹(다른 경로가 오늘 가격을 채웠다)은 다시 부를 것이 없다.
+      const pendingKw = new Set(remaining.map(g => g.kw));
+      [...failedKeywords.keys()].forEach(kw => { if (!pendingKw.has(kw)) failedKeywords.delete(kw); });
+      retryGroups = remaining.filter(g => failedKeywords.has(g.kw));
+      remaining = remaining.filter(g => !failedKeywords.has(g.kw));
+    }
     const starve = remaining.filter(g => g.lane === 'starve').length;
     const exp = n => Planner.expectedWithin(remaining, n).toFixed(0);
-    console.log(`  [${mallName}] [V3 계획] 남은 그룹 ${remaining.length}종 (기아 예약 ${starve}종)`
+    console.log(`  [${mallName}] [V3 계획] 남은 그룹 P0 ${remaining.length}종 (기아 예약 ${starve}종)`
+      + ` + P2 재시도 ${retryGroups.length}종`
       + ` / 남은 상품 ${planTotal - processed}개 — 기대 회수 앞 100호출 ${exp(100)}개 · 300호출 ${exp(300)}개 · 전부 ${exp(remaining.length)}개`);
   }
 
@@ -3256,9 +3393,25 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
     if (!r.ok) {
       notePass('pass1', { ok: false, hit: 0 });
-      failedKeywords.set(kw, r.reason);
       noteAttemptFailure(r.reason);
       noteProductReason(groupRows, r.reason);
+      /*
+       * 호출 예산·키가 없어서 못 나간 호출은 이번 실행에서 다시 나갈 수 없다.
+       * 예전에는 남은 그룹을 전부 돌며 15초 배치마다 «보류» 로 적었다(09-29 ADPICK
+       * 247그룹, 호출 0회). 레인을 그 자리에서 세우고 남은 그룹은 손대지 않는다.
+       *
+       * ★ 그 그룹은 «실패»(P2)가 아니다 — 호출이 나가지도 않았다. failedKeywords 에
+       *   넣으면 다음 실행에서 P0·P1 뒤로 밀린다. 오늘 한 번도 검색하지 않은 P0 로 남긴다
+       *   (runBatch 가 그 배치를 partial 로 보고 레거시 커서도 넘기지 않는다).
+       */
+      const cat = categorizeFailure(r.reason);
+      if (cat === 'budget' || cat === 'noKeys') {
+        if (!laneStop) laneStop = cat;
+        budgetDeferred.add(kw);
+        console.log(`  [${mallName}] [보류] [${kw}] ${r.reason} — 다음 실행의 P0 로 남긴다`);
+        return;
+      }
+      failedKeywords.set(kw, r.reason);
       console.log(`  [${mallName}] [보류] [${kw}] ${r.reason} — 재시도 대상`);
       return;
     }
@@ -3341,54 +3494,161 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       collectorCovered: [...collectorCovered].filter(k => collectibleKeySet.has(k)),
       collectorAttempted: [...collectorAttempted].filter(k => collectibleKeySet.has(k)),
       collectorOptionMismatches: [...collectorOptionMismatches].filter(k => collectibleKeySet.has(k)),
-      secondPassDone: priorSecondDone.slice(-3000),
-      facetDryGroups: priorFacetDry,
+      /* 이번 실행이 부른 회수 검색어도 싣는다 — 중간에 끊겨도 다음 실행이 같은 문구를 다시 부르지 않는다. */
+      secondPassDone: [...priorSecondDone, ...secondPassTried].slice(-3000),
+      facetDryGroups: facetDryOut,
       terminalOptionFailures: [...terminalOption].slice(-3000),
       optionMissStreaks: Object.fromEntries(
         [...optionMissStreak.entries()].filter(([k]) => !terminalOption.has(k)).slice(-3000))
     };
   }
 
-  /** 배치 하나(그룹 여러 개)를 처리하고 저장한다. */
+  /*
+   * ── 공급자 대기 (2026-09-29) ─────────────────────────────────────────
+   *
+   * 그룹 몇 개를 부르기 전마다 묻는다: 지금 불러도 되는가?
+   *   · 이번 실행에서 더 불러도 소용없다(예산·키·거절·잠금 상실) → 레인을 멈춘다.
+   *     남은 그룹은 손대지 않는다 — «보류» 로 적지도, 커서를 넘기지도 않는다.
+   *   · 일시 쿨다운 중이다(네트워크 2분 · 5xx 5분) → 그 시각까지만 잔다.
+   *     실행당 누적 PASS_BLOCK_MAX_WAIT_MS 를 넘거나 마감보다 길면 멈춘다.
+   * 예전에는 쿨다운 동안에도 그룹을 계속 넘기며 전부 «차단» 실패로 적었다.
+   *
+   * 기다리는 동안 호출은 0회다. 속도·예산·서킷은 공급자 모듈이 그대로 정한다.
+   */
+  let laneStop = '';
+  let blockWaitedMs = 0;
+  let blockWaitLogged = false;
+  async function awaitProvider() {
+    if (laneStop) return laneStop;
+    if (abortSignal && abortSignal.aborted) { laneStop = 'lock_lost'; return laneStop; }
+    if (!laneGate) return '';
+    const hard = typeof laneGate.stopReason === 'function' ? laneGate.stopReason() : '';
+    if (hard) { laneStop = hard; return laneStop; }
+    if (typeof laneGate.blockedUntilMs !== 'function') return '';
+    for (;;) {
+      const until = Number(laneGate.blockedUntilMs()) || 0;
+      const now = Date.now();
+      if (until <= now) return '';
+      const left = until - now;
+      if (now + left >= deadlineTs) { laneStop = 'time'; return laneStop; }
+      if (blockWaitedMs + left > PASS_BLOCK_MAX_WAIT_MS) { laneStop = 'blocked'; return laneStop; }
+      if (!blockWaitLogged) {
+        blockWaitLogged = true;
+        console.log(`  [${mallName}] 공급자 일시 쿨다운 — ${Math.ceil(left / 1000)}초 기다린 뒤 이어갑니다 (호출 0회).`);
+      }
+      const nap = Math.min(left + 250, 30000);
+      await sleep(nap);
+      blockWaitedMs += nap;
+      if (abortSignal && abortSignal.aborted) { laneStop = 'lock_lost'; return laneStop; }
+    }
+  }
+
+  /**
+   * 배치 하나(그룹 여러 개)를 처리하고 저장한다.
+   * 동시 호출 묶음마다 공급자 상태를 묻고, 멈춰야 하면 남은 그룹은 부르지 않는다.
+   * @returns 저장 결과 + doneGroups(실제로 처리한 그룹 수)
+   */
   async function runBatch(batch) {
+    let doneGroups = 0;
     for (let i = 0; i < batch.length; i += CONCURRENCY) {
-      await Promise.all(batch.slice(i, i + CONCURRENCY).map(processGroup));
+      if (await awaitProvider()) break;
+      const slice = batch.slice(i, i + CONCURRENCY);
+      await Promise.all(slice.map(processGroup));
+      doneGroups += slice.length;
     }
     const s = await saveAll();
     obsMap.clear();
     totalRecorded += s.recorded; totalSaved += s.saved; totalRejected += s.rejected; totalSuspect += s.suspect;
-    return s;
+    // 예산으로 못 나간 그룹이 끼어 있으면 끝까지 처리한 배치가 아니다 (커서를 넘기지 않는다).
+    const deferred = batch.some(g => budgetDeferred.has(g.kw));
+    return { ...s, doneGroups, partial: deferred || doneGroups < batch.length };
   }
+  /* 예산·키 소진으로 호출이 나가지 못한 1차 그룹 — 실패가 아니라 다음 실행의 P0 다. */
+  const budgetDeferred = new Set();
 
   const attemptedGroups = [];
+  /* 체크포인트 스냅숏이 읽으므로 1차 루프보다 먼저 선언한다. */
+  let facetDryOut = [...priorFacetDry];
+  const secondPassTried = [];
+  /* 우선순위 대기열 크기 (이번 실행 시작 시점) — 리포트·운영 검증용. */
+  const priorityAtStart = {
+    p0Groups: remaining.length, p0Products: remaining.reduce((n, g) => n + g.rows.length, 0),
+    p2Groups: retryGroups.length, p2Products: retryGroups.reduce((n, g) => n + g.rows.length, 0),
+    p4Products: todayAtStart.size,
+    /* P1+P3 후보: 오늘 찾아봤지만 아직 가격이 없는 상품 (P1 = 그중 캐시 힌트가 있는 것 — 힌트 패스가 센다) */
+    p13Products: [...collectorAttempted].filter(k => collectibleKeySet.has(k) && !collectorCovered.has(k)
+      && !todayAtStart.has(k) && !terminalOption.has(k)).length
+  };
+  console.log(`  [${mallName}] 우선순위 — P0 미시도 ${priorityAtStart.p0Products}개(${priorityAtStart.p0Groups}종)`
+    + ` · P1+P3 찾아봤지만 미수집 ${priorityAtStart.p13Products}개`
+    + ` · P2 일시 실패 재시도 ${priorityAtStart.p2Products}개(${priorityAtStart.p2Groups}종)`
+    + ` · P4 오늘 이미 가격 있음 ${priorityAtStart.p4Products}개(부르지 않음)`);
 
-  // ── 0) 재시도 패스 — 직전 실행에서 호출이 못 나갔던 검색어를 먼저 다시 시도한다.
-  if (retryGroups.length) {
-    console.log(`── [${mallName}] 재시도: 직전 실행에서 못 받은 검색어 ${retryGroups.length}종 ──`);
-    const retryBatches = splitBatches(retryGroups, BATCH_PRODUCTS);
+  /*
+   * ── 우선순위 (2026-09-29) ───────────────────────────────────────────
+   *   P0  오늘 한 번도 검색하지 않은 상품의 그룹          → 아래 1) 본 배치 루프
+   *   P1  찾아봤지만 못 잡았고, 예전에 잡혔던 검색어가 있다 → 2) 캐시 힌트
+   *   P2  오늘 호출이 일시 실패로 끝난 그룹               → 2.5) 재시도
+   *   P3  찾아봤지만 못 잡은 나머지                      → 3) facet · 4) 사다리
+   *   P4  오늘 이미 가격이 있다                          → 부르지 않는다
+   * 예전에는 재시도가 맨 앞이었고, V3 는 1차를 실행당 220/140 그룹에서 끊고 남은 시간을
+   * 회수(호출당 0.4~0.7개)에 썼다 — 그동안 한 번도 안 불린 그룹(호출당 1.6~6개)이 기다렸다.
+   */
+  // ── 0) (예전 자리) 재시도 패스는 P0·P1 뒤로 옮겼다 — runRetryPass 참고.
+  let retryPassRan = false;
+  async function runRetryPass() {
+    if (retryPassRan || stoppedEarly) return;
+    retryPassRan = true;
+    /*
+     * 앞선 실행이 남긴 P2 + 이번 실행 1차에서 일시 실패한 그룹(쿨다운을 기다린 뒤라 다시 나갈 수 있다).
+     * 예산 소진·거절이면 여기 오지 않는다(laneStop).
+     */
+    const known = new Set(retryGroups.map(g => g.kw));
+    /*
+     * 이번 실행의 실패를 같은 실행에서 다시 부르는 것은 laneGate 가 있을 때만이다 — 공급자가
+     * «풀렸다» 고 말해 줄 수단이 없으면 곧바로 다시 두드리는 셈이다(쿠팡에는 재시도를 걸지 않는다).
+     */
+    const inRun = laneGate ? attemptedGroups.filter(g => failedKeywords.has(g.kw) && !known.has(g.kw)) : [];
+    const list = [...retryGroups, ...inRun];
+    if (!list.length) return;
+    console.log(`── [${mallName}] P2 재시도: 오늘 호출이 일시 실패한 검색어 ${list.length}종`
+      + ` (앞선 실행 ${retryGroups.length} / 이번 실행 ${inRun.length}) ──`);
+    const retryBatches = splitBatches(list, BATCH_PRODUCTS);
     for (let rbi = 0; rbi < retryBatches.length; rbi++) {
+      if (Date.now() >= deadlineTs) { stoppedEarly = true; stopCause = stopCause || 'time'; break; }
       const rb = retryBatches[rbi];
       const bs = Date.now();
       const s = await runBatch(rb);
+      retriedGroups.push(...rb.slice(0, s.doneGroups));
+      if (onCheckpoint) onCheckpoint(checkpointSnapshot());
       console.log(`  [${mallName}] └ 재시도 배치 완료 — 기록 ${s.recorded}행 (남은 재시도 ${failedKeywords.size}종)`);
-      // 마지막 재시도 배치면 다음 배치를 기다릴 필요가 없다 — 여기서 멈추면
-      // 실제로는 다 끝났는데도 deadline 근처라는 이유만으로 stoppedEarly 가
-      // 되어 본 배치 루프까지 통째로 건너뛰는(=완료를 running 으로 오판하는) 문제가 있었다.
+      if (s.partial) {
+        stoppedEarly = true; stopCause = stopCause || laneStop || 'pending';
+        console.log(`⏸  [${mallName}] 재시도를 멈춥니다 — ${laneStop || '중단'} (남은 그룹은 다음 실행 몫)`);
+        break;
+      }
+      // 마지막 재시도 배치면 다음 배치를 기다릴 필요가 없다.
       if (rbi === retryBatches.length - 1) break;
-      if (Date.now() >= deadlineTs) { stoppedEarly = true; break; }
       const w = BATCH_INTERVAL_MS - (Date.now() - bs);
       if (w > 0) {
-        if (Date.now() + w >= deadlineTs) { stoppedEarly = true; break; }
+        if (Date.now() + w >= deadlineTs) { stoppedEarly = true; stopCause = stopCause || 'time'; break; }
         await sleep(w);
       }
     }
   }
+  /* 실제로 다시 부른 P2 그룹 — «이번 실행이 돈 그룹» 집계에 들어간다. */
+  const retriedGroups = [];
+  /* 레인이 왜 멈췄는가: 'time' | 'budget' | 'blocked' | 'noKeys' | 'lock_lost' | 'pending' */
+  let stopCause = '';
 
-  // ── 1) 본 배치 루프 ───────────────────────────────────────
+  // ── 1) 본 배치 루프 (P0) ───────────────────────────────────
   /*
-   * 1차가 회전 그룹을 끝낼 때까지 회수 패스가 영원히 못 도는 현상을 막는다.
-   * runMallCollection 직호출·레거시는 cap 미설정이므로 기존 행동을 유지한다.
-   * 이 슬롯은 호출 *속도*나 하루 한도가 아니라 실행별 1차 그룹 배분만 바꾼다.
+   * ★ 1차 그룹 상한(pass1GroupCap)은 기본 끔 (2026-09-29).
+   *   9/27 에 넣은 상한은 쿠팡이 시간당 10회 게이트에 묶여 1차가 끝나지 않던 때의 처방이다.
+   *   분당 15회가 된 지금은 1차 2,510종이 하루 4실행 안에 끝나고, 상한은 역효과다 —
+   *   09-28 V3 실행마다 ADPICK 이 1차를 140그룹에서 끊고 회수 r1(호출당 0.4~0.7개)에
+   *   ~105회를 썼다. 같은 시각 한 번도 안 불린 1차 그룹은 호출당 1.6~5개였다.
+   *   운영자가 env(PRICE_*_PASS1_GROUP_CAP)로 켤 수는 있다.
    */
   const pass1Cap = v3Plan && Number.isInteger(planner.pass1GroupCap)
     && planner.pass1GroupCap > 0 ? planner.pass1GroupCap : 0;
@@ -3401,30 +3661,43 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   const batches = stoppedEarly ? [] : splitBatches(primaryWindow, BATCH_PRODUCTS);
   for (let b = 0; b < batches.length && !stoppedEarly; b++) {
     if (abortSignal && abortSignal.aborted) {
-      stoppedEarly = true;
+      stoppedEarly = true; stopCause = 'lock_lost';
       console.warn(`⛔ [${mallName}] 잠금을 잃었습니다 — 배치 루프를 멈춥니다 (다른 실행이 이어받는다).`);
       break;
     }
     const batch = batches[b];
-    attemptedGroups.push(...batch);
-    const batchProducts = batch.reduce((n, g) => n + g.rows.length, 0);
     const batchStart = Date.now();
 
     const s = await runBatch(batch);
-
-    if (!v3Plan) cursorKey = batch[batch.length - 1].kw;
-    else starveCursor = Planner.advanceStarveCursor(starveCursor, batch);
-    processed += batchProducts;
-    doneBatches++;
+    /*
+     * 멈춘 배치(partial)는 «실제로 부른 그룹» 만 센다. 레거시 커서는 넘기지 않는다 —
+     * 넘기면 부르지 않은 그룹이 오늘 영영 건너뛰어진다. 이미 부른 그룹은 다음 실행이
+     * 같은 검색어를 다시 부르지만 같은 날 캐시에 걸려 외부 호출은 0회다.
+     */
+    const doneRows = batch.slice(0, s.doneGroups).filter(g => !budgetDeferred.has(g.kw));
+    attemptedGroups.push(...doneRows);
+    const batchProducts = doneRows.reduce((n, g) => n + g.rows.length, 0);
+    if (!v3Plan) { if (!s.partial) cursorKey = batch[batch.length - 1].kw; }
+    else starveCursor = Planner.advanceStarveCursor(starveCursor, doneRows);
+    if (v3Plan || !s.partial) processed += batchProducts;
+    if (!s.partial) doneBatches++;
     if (onCheckpoint) onCheckpoint(checkpointSnapshot());
 
     const elapsedS = Math.round((Date.now() - batchStart) / 1000);
     console.log(`  [${mallName}] └ 배치 ${b + 1}/${batches.length} 완료 — 상품 ${batchProducts}개,`
       + ` 기록 ${s.recorded}행, ${elapsedS}초  [누적 ${processed}/${planTotal}]`);
 
+    if (s.partial) {
+      stoppedEarly = true; stopCause = laneStop || 'pending';
+      const why = { budget: '호출 예산 소진', noKeys: 'API 키 없음', blocked: '공급자 거절/긴 차단',
+        lock_lost: '잠금 상실', time: '쿨다운이 마감보다 길다' }[laneStop] || laneStop || '중단';
+      console.log(`⏸  [${mallName}] 레인을 멈춥니다 — ${why}. 남은 그룹은 부르지 않고 다음 실행 몫으로 둡니다.`);
+      break;
+    }
+
     const usedUp = Date.now() >= deadlineTs;
     if (usedUp && b < batches.length - 1) {
-      stoppedEarly = true;
+      stoppedEarly = true; stopCause = 'time';
       console.log(`⏱  [${mallName}] 시간 예산 도달 — 여기까지 저장하고 종료합니다.`
         + (v3Plan ? ' 다음 실행이 남은 그룹을 다시 계획해 이어갑니다.'
           : ` 다음 실행이 "${cursorKey}" 다음부터 이어갑니다.`));
@@ -3434,7 +3707,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
     const waitMs = BATCH_INTERVAL_MS - (Date.now() - batchStart);
     if (waitMs > 0) {
-      if (Date.now() + waitMs >= deadlineTs) { stoppedEarly = true; break; }
+      if (Date.now() + waitMs >= deadlineTs) { stoppedEarly = true; stopCause = 'time'; break; }
       await sleep(waitMs);
     }
   }
@@ -3481,13 +3754,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   secondPassRemaining  오늘 아직 안 부른 검색어 수 (>0 이면 status='running')
    *   secondPassTried      이번 실행에서 부른 검색어 (다음 실행이 건너뛰도록 저장)
    */
-  /* 회수 블록 밖에서도 읽어야 해서 여기서 선언한다 (2차 패스가 꺼져 있으면 그대로 이어받는다). */
-  let facetDryOut = [...priorFacetDry];
+  /* 회수 블록 밖에서도 읽어야 해서 여기서 선언한다 (facetDryOut·secondPassTried 는 1차 루프 위). */
   let secondPassCalls = 0, secondPassRecovered = 0, secondPassGroups = 0;
   let secondPassRemaining = 0;
   let recoveryFailed = false;
   let recoveryHalted = false;
-  const secondPassTried = [];
   let facetCalls = 0, facetRecovered = 0;
   /*
    * 캐시 힌트 패스의 호출 수. 블록 밖에서 선언하는 이유는 회수 합계 로그와
@@ -3498,8 +3769,6 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   let hintCalls = 0;
 
   if (SECOND_PASS_ENABLED && !stoppedEarly) {
-    const attemptedNow = [...retryGroups, ...attemptedGroups].flatMap(g => g.rows);
-    const attemptedNowKeys = new Set(attemptedNow.map(p => `${p.product_id}|${p.mall}`));
     const alreadyTried = new Set([...priorSecondDone, ...firstPassQueried]);
 
     /** 이 상품이 회수 패스 대상인가 — 1차가 "성공적으로" 지나간 것만. */
@@ -3555,7 +3824,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   시간 상한(420) 아래였다.
      *   (scripts/test-second-pass.js §13-A 가 이 관계를 고정한다)
      */
-    const canCall = () => !recoveryHalted
+    const canCall = () => !recoveryHalted && !stoppedEarly && !laneStop
       && secondPassCalls + facetCalls < SECOND_PASS_MAX_CALLS
       && Date.now() < deadlineTs;
 
@@ -3602,18 +3871,26 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      */
     const HALT_PERMANENT = ['budget', 'noKeys'];
     const HALT_TEMPORARY = ['blocked', 'rateLimit'];
-    let blockWaitedMs = 0;
+    let recoveryBlockWaitedMs = 0;
 
     /**
      * 차단이 풀릴 때까지만 기다렸다가 회수 패스를 재개한다.
-     * 공급자 상태를 알 수 없으면(isBlockedFn 미주입) 아무것도 하지 않는다 —
+     * 공급자 상태를 알 수 없으면(isBlockedFn·laneGate 미주입) 아무것도 하지 않는다 —
      * 그 경우 recoveryHalted 가 그대로 남아 예전처럼 실행이 끝난다.
+     *
+     * laneGate 가 있으면 1차와 같은 규칙(awaitProvider)을 쓴다: 쿨다운 시각까지만 자고,
+     * 거절·예산 소진이면 기다리지 않고 멈춘다. 대기 한도는 1차와 합쳐 실행당 하나다.
      */
     async function resumeWhenUnblocked() {
+      if (laneGate) {
+        const stop = await awaitProvider();
+        if (!stop && Date.now() < deadlineTs) recoveryHalted = false;
+        return;
+      }
       if (typeof isBlockedFn !== 'function') return;
       const maxWaitMs = RECOVERY_BLOCK_MAX_WAITS * RECOVERY_BLOCK_WAIT_MS;
       while (isBlockedFn()) {
-        if (blockWaitedMs >= maxWaitMs) {
+        if (recoveryBlockWaitedMs >= maxWaitMs) {
           console.warn(`  [${mallName}] 차단이 ${Math.round(maxWaitMs / 1000)}초를 넘겨 계속됩니다`
             + ' — 짧은 딸꾹질이 아니라고 보고 이번 실행의 회수 패스를 마칩니다.');
           return;                       // recoveryHalted 를 그대로 둔 채 끝낸다
@@ -3622,12 +3899,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         if (room <= 0) return;
         const nap = Math.min(RECOVERY_BLOCK_WAIT_MS, room);
         await sleep(nap);
-        blockWaitedMs += nap;
+        recoveryBlockWaitedMs += nap;
       }
       // 공급자가 «풀렸다» 고 말했다 — 남은 시간과 예산이 있으면 이어서 부른다.
       if (Date.now() >= deadlineTs) return;
       recoveryHalted = false;
-      console.log(`  [${mallName}] 차단이 풀렸습니다 (누적 대기 ${Math.round(blockWaitedMs / 1000)}초)`
+      console.log(`  [${mallName}] 차단이 풀렸습니다 (누적 대기 ${Math.round(recoveryBlockWaitedMs / 1000)}초)`
         + ' — 회수 패스를 이어갑니다.');
     }
 
@@ -3640,6 +3917,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      */
     async function callAndMatch(query, rows, pass) {
       let r;
+      /*
+       * 회수 패스는 한 실행에서 수십 분을 돌 수 있다 — 여기서도 진행을 넘겨 잠금을
+       * 연장하고(기록기가 최소 간격을 지킨다) 부른 회수 검색어를 저장한다.
+       */
+      if (onCheckpoint) onCheckpoint(checkpointSnapshot());
       /*
        * ★ 회수 패스 호출도 attempt 다 (2026-09-01).
        *   실제로 나간 수집 호출이므로 1차와 같은 카운터로 센다. 여기를 빼면
@@ -3668,6 +3950,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         if (HALT_PERMANENT.indexOf(category) > -1 || HALT_TEMPORARY.indexOf(category) > -1) {
           recoveryHalted = true;
         }
+        // 예산·키 소진은 이번 실행 끝까지다 — 뒤의 P2 재시도·사다리도 부르지 않는다.
+        if (HALT_PERMANENT.indexOf(category) > -1 && !laneStop) laneStop = category;
         if (HALT_TEMPORARY.indexOf(category) > -1) await resumeWhenUnblocked();
         return { ok: false, items: -1, hit: 0 };
       }
@@ -3746,6 +4030,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         secondPassRecovered += hintHit;
       }
     }
+
+    /* ── 2.5) P2 재시도 — P0·P1 뒤, P3(facet·사다리) 앞 (우선순위 주석 참고) ── */
+    if (!laneStop) await runRetryPass();
+    // 다시 부른 1차 검색어를 facet·사다리가 또 부르지 않게 한다.
+    firstPassQueried.forEach(q => alreadyTried.add(q));
 
     /* ── 2) facet 패스 — 큰 그룹부터 (호출당 회수가 가장 높다) ──────
      *
@@ -3969,6 +4258,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     secondPassCalls += facetCalls + hintCalls;
     facetDryOut = [...facetDry];
   }
+  // 회수 패스가 꺼져 있거나 건너뛰었어도 P2 재시도는 돈다 (이미 돌았으면 아무것도 안 한다).
+  if (!laneStop) await runRetryPass();
 
   if (recovered) {
     console.log(`  [${mallName}] ✅ keyword 가 없던 상품 ${recovered}개를 찾아 검색어를 채웠습니다.`);
@@ -4008,7 +4299,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
    *   전체(collectible)를 분모로 두면 절반만 돈 정상 실행이 낮은 커버리지로
    *   찍혀서 진짜로 망가진 실행과 구분이 안 된다.
    */
-  const attempted = [...retryGroups, ...attemptedGroups].flatMap(g => g.rows);
+  // 1차에서 일시 실패한 뒤 같은 실행에서 재시도한 그룹이 두 번 세어지지 않게 검색어로 합친다.
+  const attempted = [...new Map([...attemptedGroups, ...retriedGroups].map(g => [g.kw, g])).values()]
+    .flatMap(g => g.rows);
   const attemptedKeys = new Set(attempted.map(p => `${p.product_id}|${p.mall}`));
   const failedRows = [...uncovered.values()].filter(p => attemptedKeys.has(`${p.product_id}|${p.mall}`));
   const success = attempted.length - failedRows.length;
@@ -4058,8 +4351,13 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     .filter(k => collectibleKeys.has(k) && attemptedSet.has(k) && !coveredSet.has(k));
   const optionMismatchSet = new Set(collectorOptionMismatchIds);
   const outcomes = outcomesTemplate();
-  /* 사유를 알 수 없는 미시도 상품이 pending 인지 budget 인지의 기준. */
-  const ranOutOfRoom = stoppedEarly;
+  /*
+   * 사유 기록이 없는 미시도 상품의 칸 = 레인이 멈춘 이유 (2026-09-29).
+   *   시간 마감 → time(다음 실행이 이어받음) · 호출 예산 → budget · 거절/긴 차단 → blocked
+   *   키 없음 → api_error · 그 밖(잠금 상실 등)이나 끝까지 돌았는데 남은 것 → pending
+   */
+  const unreachedKey = !stoppedEarly ? 'pending'
+    : ({ time: 'time', budget: 'budget', blocked: 'blocked', noKeys: 'api_error' }[stopCause] || 'pending');
   collectible.forEach(p => {
     const key = `${p.product_id}|${p.mall}`;
     if (coveredSet.has(key)) { outcomes.collected++; return; }
@@ -4080,7 +4378,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     }
     const reason = productReason.get(key);
     if (reason) { outcomes[outcomeFromReason(reason)]++; return; }
-    outcomes[ranOutOfRoom ? 'budget' : 'pending']++;
+    outcomes[unreachedKey]++;
   });
 
   return {
@@ -4089,6 +4387,10 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     skipped: false,
     cursorKey, processed, total: planTotal, status,
     starveCursor,
+    /* 레인이 멈춘 이유와 공급자 쿨다운 대기 — 운영 검증이 «왜 덜 돌았나» 를 바로 읽는다. */
+    stopCause: stoppedEarly ? (stopCause || 'pending') : '',
+    blockWaitMs: blockWaitedMs,
+    priorityAtStart,
     failedKeywords: [...failedKeywords.keys()],
     // ── 상품 단위 · collector 성과 (대표 지표) ──
     collectorSuccessProducts,
@@ -4355,6 +4657,21 @@ async function runLocked(state, lockToken) {
    *   PRICE_INCLUDE_BULK_SEED=1(비상 우회) 과 PRICE_SEED_ONLY=1(시드 모드)은
    *   대상이 카탈로그 전체이므로 예전처럼 전체 스캔을 그대로 쓴다.
    */
+  /*
+   * ★ 두 제공자 모두 오늘 더 부를 수 없으면 대상을 읽지 않고 끝낸다 (2026-09-29).
+   *   낮 이어받기 칸이 늘면서, 하루 예산을 다 쓴 뒤에도 칸마다 대상 1.27만 행(약 10MB
+   *   egress)을 읽고 호출 0회로 끝나는 실행이 생긴다. 사용량은 count 두 번이면 안다.
+   */
+  await loadCoupangDayUsage();
+  await loadAdpickDayUsage();
+  if (!SEED_ONLY && nothingLeftToCall({
+    coupangUsed: _coupangDayUsed, coupangBudget: COUPANG_DAY_BUDGET, coupangKeys: !!(COUP_ACCESS && COUP_SECRET),
+    adpickUsed: _adpickDayUsed, adpickBudget: ADPICK_DAY_BUDGET, adpickKey: adpickHasKey()
+  })) {
+    console.log(`\n[진행] 오늘(${TODAY}) 쿠팡 ${_coupangDayUsed}/${COUPANG_DAY_BUDGET} · ADPICK ${_adpickDayUsed}/${ADPICK_DAY_BUDGET}`
+      + ' — 두 제공자 모두 하루 호출 예산을 다 썼습니다. 대상을 읽지 않고 끝냅니다 (외부 호출 0).');
+    return;
+  }
   const target = SEED_ONLY ? null : await fetchCollectorTargetKeys(targetMeta);
   const catalog = await countCatalog();
 
@@ -4483,9 +4800,9 @@ async function runLocked(state, lockToken) {
         starveAfter: priorStarve[mall] == null ? null : priorStarve[mall],
         // 순수 실행 예산 배분. 실제 속도·하루 총량·동시실행 잠금은 모두 기존 코드.
         dailyFirst: true,
-        pass1GroupCap: Math.max(1, Number(process.env[mall === '쿠팡'
-          ? 'PRICE_COUPANG_PASS1_GROUP_CAP' : 'PRICE_ADPICK_PASS1_GROUP_CAP'])
-          || (mall === '쿠팡' ? 220 : 140))
+        // 기본 0 = 상한 없음: P0(미시도) 그룹을 다 부른 뒤에 회수로 간다 (runMallCollection 1) 주석).
+        pass1GroupCap: Math.max(0, Number(process.env[mall === '쿠팡'
+          ? 'PRICE_COUPANG_PASS1_GROUP_CAP' : 'PRICE_ADPICK_PASS1_GROUP_CAP']) || 0)
       }
     : null);
 
@@ -4493,7 +4810,7 @@ async function runLocked(state, lockToken) {
    * 체크포인트 기록기. 오늘 이어받은 상태를 바탕으로 깔고 레인 스냅숏만 덮는다 —
    * 아직 스냅숏이 없는 레인(이미 완료됐거나 시작 전)의 오늘 상태를 지우지 않기 위해서다.
    */
-  const writer = V3_CHECKPOINT ? createCheckpointWriter({
+  const writer = STATE_CHECKPOINT ? createCheckpointWriter({
     lockToken,
     base: {
       jobDate: TODAY,
@@ -4510,6 +4827,13 @@ async function runLocked(state, lockToken) {
   const coupangArgs = {
     mallName: '쿠팡', rows: coupangRows, fetchAllFn: fetchCoupangAll,
     savedState: coupangSaved,
+    /*
+     * 쿠팡도 이제 넘긴다 (2026-09-29). «풀렸는가» 는 api/_coupang.js 의 시각 기반 쿨다운
+     * (전역 차단은 DB 재개 시각까지 옮겨 적는다)이고, 거절(401/403/429/rCode)은 래치가
+     * 실행 끝까지 막는다 — laneGate.stopReason 이 'blocked' 를 돌려 기다리지도 않는다.
+     */
+    isBlockedFn: () => _coupangBlocked || isCoupangBlockedGlobal(),
+    laneGate: { stopReason: coupangLaneStop, blockedUntilMs: coupangBlockedUntilMs },
     planner: plannerFor(COUPANG_LIMIT, '쿠팡'),
     onCheckpoint: writer ? snap => writer.note('쿠팡', snap) : null,
     abortSignal: writer ? writer.abortSignal : null
@@ -4523,6 +4847,7 @@ async function runLocked(state, lockToken) {
      *   매 실행 벌어지고 있었다. 쿠팡에는 넘기지 않는다.
      */
     isBlockedFn: isAdpickBlockedGlobal,
+    laneGate: { stopReason: adpickLaneStop, blockedUntilMs: adpickBlockedUntilMs },
     planner: plannerFor(ADPICK_LIMIT, 'ADPICK'),
     onCheckpoint: writer ? snap => writer.note('ADPICK', snap) : null,
     abortSignal: writer ? writer.abortSignal : null
@@ -4580,6 +4905,12 @@ async function runLocked(state, lockToken) {
       + ` 시도대비 성공률 ${rateStr(r.collectorSuccessProducts, r.attemptedProducts)})`);
     console.log(`  검색시도 ${r.attemptCalls} / 성공 ${r.attemptSuccess} / 실패 ${r.attemptFailed}  (${cats})`);
     console.log(`  외부API 실제 호출 ${r.apiCalls || 0}`);
+    if (r.priorityAtStart) {
+      const q = r.priorityAtStart;
+      console.log(`  우선순위(시작) P0 ${q.p0Products}개/${q.p0Groups}종 · P2 ${q.p2Products}개/${q.p2Groups}종`
+        + ` · P4 ${q.p4Products}개   레인 종료 ${r.stopCause || '끝까지 돎'}`
+        + `${r.blockWaitMs ? ` · 쿨다운 대기 ${Math.round(r.blockWaitMs / 1000)}초` : ''}`);
+    }
     console.log(`  저장   price_history ${r.recorded}행 / products ${r.saved}행`
       + ` / 급변 보류 ${r.suspect} / 값 이상 거부 ${r.rejected}`);
     console.log(`  진행   오늘 ${r.processed}/${r.total} (검색 그룹에 담긴 상품 ${r.processedProducts}개)`);
@@ -4610,6 +4941,26 @@ async function runLocked(state, lockToken) {
   console.log(`쿠팡 API 호출: ${cs.calls}회 (실행 예산 ${COUPANG_RUN_BUDGET}회) / 캐시 ${cs.cacheHits} / 생략 ${cs.denied + _coupangSkipped}`);
   console.log(`  └ 오늘 누적: ${_coupangDayUsed + _coupangCalls}회 / 하루 상한 ${COUPANG_DAY_BUDGET}회`);
   console.log(`ADPICK API 호출: ${as.calls}회 (예산 ${ADPICK_RUN_BUDGET}회) / 캐시 ${as.cacheHits} / 생략 ${as.denied + _adpickSkipped}`);
+  console.log(`  └ 오늘 누적: ${_adpickDayUsed + _adpickCalls}회 / 하루 상한 ${ADPICK_DAY_BUDGET}회`);
+  if (_coupangTransientBlocks || _adpickTransientBlocks) {
+    console.log(`일시 장애(래치 안 함, 쿨다운만 대기): 쿠팡 ${_coupangTransientBlocks}회 / ADPICK ${_adpickTransientBlocks}회`);
+  }
+  /*
+   * 운영 검증용 한 줄 요약 (2026-09-29) — 제공자마다 같은 칸을 같은 순서로 찍는다.
+   * 캐시 적중 = 같은 날 이미 받은 응답을 다시 쓴 호출(중복 호출 회피) 수다.
+   */
+  [[coupangResult, cs, _coupangTransientBlocks, _coupangBlocked], [adpickResult, as, _adpickTransientBlocks, _adpickBlocked]]
+    .forEach(([r, st, transient, refused]) => {
+      const q = r.priorityAtStart || {};
+      const fc = r.failureCategories || {};
+      console.log(`[검증 요약] provider=${r.mallName} P0시작=${q.p0Products == null ? '-' : q.p0Products}`
+        + ` P0남음=${r.skippedProducts} P1+P3시작=${q.p13Products == null ? '-' : q.p13Products}`
+        + ` P2시작=${q.p2Products == null ? '-' : q.p2Products} P4건너뜀=${q.p4Products == null ? '-' : q.p4Products}`
+        + ` uniqueAttempted=${r.attemptedProducts}/${r.targetProducts} collected=${r.collectorSuccessProducts}`
+        + ` apiCalls=${r.apiCalls || 0} cacheHits(중복회피)=${st.cacheHits}`
+        + ` rateLimited=${fc.rateLimit || 0} budget=${fc.budget || 0} transient=${transient} providerBlock=${refused ? 'yes' : 'no'}`
+        + ` stop=${r.stopCause || 'none'} blockWait=${Math.round((r.blockWaitMs || 0) / 1000)}s`);
+    });
   if (_coupangBlocked || cs.blocked) {
     console.log(`⚠️  쿠팡 API: 차단 상태 — ${String(_coupangBlockMsg || cs.blockReason).replace(/<[^>]*>/g, '').slice(0, 150)}`);
   }
@@ -4708,7 +5059,9 @@ async function runLocked(state, lockToken) {
           attemptFailed: coupangResult.attemptFailed, failureCategories: coupangResult.failureCategories,
           // 행 단위 + 참고(실행 단위 상품 수)
           processedProducts: coupangResult.processedProducts, processedProductsCovered: coupangResult.processedProductsCovered,
-          recorded: coupangResult.recorded, saved: coupangResult.saved
+          recorded: coupangResult.recorded, saved: coupangResult.saved,
+          stopCause: coupangResult.stopCause || '', blockWaitMs: coupangResult.blockWaitMs || 0,
+          priorityAtStart: coupangResult.priorityAtStart || null, outcomes: coupangResult.outcomes || null
         },
         'ADPICK': {
           cursor_key: adpickResult.cursorKey, processed: adpickResult.processed, total: adpickResult.total,
@@ -4738,15 +5091,17 @@ async function runLocked(state, lockToken) {
           attemptCalls: adpickResult.attemptCalls, attemptSuccess: adpickResult.attemptSuccess,
           attemptFailed: adpickResult.attemptFailed, failureCategories: adpickResult.failureCategories,
           processedProducts: adpickResult.processedProducts, processedProductsCovered: adpickResult.processedProductsCovered,
-          recorded: adpickResult.recorded, saved: adpickResult.saved
+          recorded: adpickResult.recorded, saved: adpickResult.saved,
+          stopCause: adpickResult.stopCause || '', blockWaitMs: adpickResult.blockWaitMs || 0,
+          priorityAtStart: adpickResult.priorityAtStart || null, outcomes: adpickResult.outcomes || null
         }
       }
     }
   };
   if (writer) {
     const ok = await writer.finalize(finalState);
-    console.log(`[체크포인트] 중간 저장 ${writer.stats.writes}회 / 실패 ${writer.stats.failures}회`
-      + ` / 최종 저장 ${ok ? '완료' : '못 함'}${writer.stats.lost ? ' — 잠금 상실' : ''}`);
+    console.log(`[체크포인트] 중간 저장 ${writer.stats.writes}회(= 잠금 연장 heartbeat) / 실패 ${writer.stats.failures}회`
+      + ` / 최종 저장 ${ok ? '완료' : '못 함'} / 잠금 상실 ${writer.stats.lost ? 'YES' : 'no'}`);
     if (writer.stats.lost) process.exitCode = 1;
   } else {
     await saveState(finalState);
@@ -4873,8 +5228,13 @@ async function runLocked(state, lockToken) {
    *   - 두 몰 다 차단됨(둘 중 하나만 차단이면 절반은 정상 수집됐으므로 실패로 안 본다)
    *   - 시도한 상품이 있는데 두 몰 합쳐 한 행도 저장 못함
    */
-  const coupangBlocked = _coupangBlocked || cs.blocked;
-  const adpickBlocked = (_adpickBlocked || as.blocked) && adpickRows.length > 0;
+  /*
+   * «차단» 은 공급자의 거절만이다 (2026-09-29). 실행이 끝나는 순간 네트워크·5xx 쿨다운이
+   * 걸려 있었다는 것(cs.blocked/as.blocked)은 차단이 아니다 — 예전에는 그것으로 V3 를 그날
+   * 통째로 껐다(09-28 20:33Z, 8초 타임아웃 1건). 거절은 fetch 가 래치로 적어 둔다.
+   */
+  const coupangBlocked = _coupangBlocked;
+  const adpickBlocked = _adpickBlocked && adpickRows.length > 0;
   const bothBlocked = coupangBlocked && (adpickBlocked || adpickRows.length === 0);
   /*
    * ★ 판정 기준은 attempt 단위다 — 호출이 실제로 나갔는데 한 행도 못 남겼다면 실패다.
@@ -5121,7 +5481,8 @@ function buildReportHtml(report) {
     timeout:            ['응답 시간 초과', '', '#c9362b'],
     api_error:          ['API 오류', '5xx · 파싱 실패 · 키 미설정', '#c9362b'],
     db_error:           ['DB 오류', '응답은 받았으나 원장에 남지 않음', '#c9362b'],
-    budget:             ['예산 소진', '이번 실행의 호출·시간 예산이 끝남', '#8a6d3b'],
+    budget:             ['호출 예산 소진', '실행당·하루 호출 예산이 끝남', '#8a6d3b'],
+    time:               ['실행 시간 부족', '이번 실행의 시간 예산이 끝남 (다음 실행이 이어받음)', '#888'],
     pending:            ['대기', '오늘 아직 차례가 오지 않음 (다음 실행 몫)', '#888'],
     target_query_error: ['대상 조회 실패', '수집 대상 자체를 못 읽음', '#c9362b'],
     unknown:            ['원인 불명', '', '#c9362b']
@@ -5486,6 +5847,9 @@ module.exports = {
   sameTargetSet, coverageOnlyResumeState,
   v3KillReason, markV3Kill, loadAdpickDayUsage, adpickDayBudgetExceeded,
   V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET,
+  // 2026-09-29 — 우선순위·쿨다운 대기·당일 캐시·레거시 체크포인트 (test-collector-coverage 가 고정한다)
+  STATE_CHECKPOINT, PASS_BLOCK_MAX_WAIT_MS, COLLECT_CACHE_TTL_MS, COUPANG_DAY_BUDGET, COUPANG_RUN_BUDGET,
+  nothingLeftToCall,
   // 자정 마감 — test-collector-v3 가 «자정을 넘지 않는다» 를 고정한다.
   runDeadline, DAY_END_MARGIN_MS
 };

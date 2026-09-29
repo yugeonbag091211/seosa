@@ -472,8 +472,9 @@ for (const n of [1000, 10000]) {
   eq('시간이 끊긴 실행: 합계 = 대상', outcomeSum(r.outcomes), r.targetProducts);
   check('★ 아직 못 돈 상품이 unknown 으로 새지 않는다',
     r.outcomes.unknown === 0, JSON.stringify(r.outcomes));
-  check('그 상품들은 pending 또는 budget 에 있다',
-    r.outcomes.pending + r.outcomes.budget > 0, JSON.stringify(r.outcomes));
+  // 2026-09-29: 시간 마감으로 못 간 상품은 호출 예산 소진(budget)과 따로 «time» 에 센다.
+  check('★ 그 상품들은 time(실행 시간 부족)에 있다 — 호출 예산 소진과 섞이지 않는다',
+    r.outcomes.time > 0 && r.outcomes.budget === 0, JSON.stringify(r.outcomes));
 }
 
 /* ================================================================
