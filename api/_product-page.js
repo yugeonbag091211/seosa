@@ -282,8 +282,17 @@ const CSS = [
   '.sib li a{display:block;text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:.8rem;min-height:100%}',
   '.sib .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--soft);margin-bottom:6px}.sib .p{font-weight:700;font-variant-numeric:tabular-nums}',
   'footer{margin:48px 0 32px;font-size:.74rem;color:var(--soft);border-top:1px solid var(--line);padding-top:16px}',
-  '.trust{font-size:.78rem;color:var(--soft);margin-top:10px}'
+  '.trust{font-size:.78rem;color:var(--soft);margin-top:10px}',
+  // 제휴 고지 — public/index.html .aff-note 와 같은 모양·문구 (그 주석 참고)
+  '.aff-note{display:flex;align-items:baseline;gap:8px;margin:22px 0 -10px;padding:8px 12px;background:var(--surface,#f4f5f7);border-radius:6px;font-size:.8rem;line-height:1.55;color:var(--soft);word-break:keep-all;overflow-wrap:anywhere}.aff-note b{flex:none;color:var(--ink)}'
 ].join('');
+
+/**
+ * 제휴 링크 경제적 이해관계 고지 (2026-09-29, ADPICK 승인 요청).
+ * 판매처 링크가 있을 때만 그 버튼 «바로 위» 에 붙는다. 문구를 줄이지 마라 —
+ * scripts/test-affiliate-disclosure.js 가 public/index.html 과 같은 문구인지 본다.
+ */
+const AFFILIATE_DISCLOSURE = '이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받을 수 있습니다.';
 
 function mallName(product) {
   return product.mallLabel || product.mall || '';
@@ -442,6 +451,7 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
   ${spark ? `<div class="spark">${spark}</div><div class="note">${PRICE_SOURCE_NOTE}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${PRICE_SOURCE_NOTE}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
   ${storyHtml}
 
+  ${link ? `<p class="aff-note" data-aff-note="product"><b>제휴 안내</b><span>${AFFILIATE_DISCLOSURE}</span></p>` : ''}
   <div class="cta">
     ${link ? `<a class="btn primary" id="affiliateLink" href="${esc(link)}" target="_blank" rel="nofollow sponsored noopener">${esc(mall)}에서 보기 →</a>` : '<span class="btn off">판매처 링크 없음</span>'}
     <a class="btn" href="/?p=${encodeURIComponent(product.productId)}">SEOSA에서 가격 추이 보기</a>
@@ -451,7 +461,6 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
 </main>
 <footer class="wrap">
   SEOSA 는 상품을 직접 팔지 않아요. 위 가격은 SEOSA 가 그 시점에 <b>관측한 값</b>이고 판매처의 실제 결제 금액과 다를 수 있어요.
-  판매처로 이동하면 제휴 수수료를 받을 수 있어요.
   판정은 SEOSA 가 수집한 기록만을 근거로 계산한 것이고 미래 가격을 예측하지 않아요.
 </footer>
 <script>(function(){
