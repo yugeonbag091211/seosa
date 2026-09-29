@@ -202,7 +202,8 @@ function world(n, budget) {
         saved = savedFrom(r);
         perRun.push({ k, pass1: w.log.filter(x => x.run === k && /^검색어\d{3}$/.test(x.kw)).map(x => x.kw),
           other: w.log.filter(x => x.run === k && !/^검색어\d{3}$/.test(x.kw)).length,
-          attempted: r.attemptedProducts, stop: r.stopCause });
+          attempted: r.attemptedProducts, stop: r.stopCause, failed: r.failedKeywords.length,
+          attemptedKeys: new Set(r.collectorAttempted) });
       }
       const run1 = new Set(perRun[0].pass1);
       eq(`${label}: 1회차는 외부 호출 20회 전부를 1차(미시도) 검색에 쓴다`, perRun[0].pass1.length, 20);
@@ -218,6 +219,17 @@ function world(n, budget) {
       check(`${label}: 1~4회차 레인은 «호출 예산 소진» 으로 멈춘다 (다음 실행이 잇는다)`,
         perRun.slice(0, 4).every(x => x.stop === 'budget'), JSON.stringify(perRun.map(x => x.stop)));
       eq(`${label}: 짝수 50개 수집`, [...w.ledger].length, 50);
+      /*
+       * 예산에 막혀 호출이 나가지 못한 그룹(laneGate 가 없으면 동시 묶음 안에서 생긴다)은
+       * «실패»(P2)가 아니다 — 실패 목록에 들어가지 않고 다음 실행의 P0 로 남아야 한다.
+       */
+      check(`${label}: ★ 예산으로 못 나간 그룹은 실패(P2)로 적지 않는다`,
+        perRun.slice(0, 4).every(x => x.failed === 0), JSON.stringify(perRun.map(x => x.failed)));
+      {
+        // 미시도 풀(P0)이 실행마다 정확히 줄어든다: 100 → 80 → 60 → 40 → 20 → 0
+        const p0Left = perRun.slice(0, 5).map(x => 100 - x.attemptedKeys.size);
+        eq(`${label}: ★ 미시도(P0) 풀이 실행마다 20개씩 줄어든다`, p0Left.join(','), '80,60,40,20,0');
+      }
       const collectedKw = new Set(w.rows.filter((_, i) => i % 2 === 0).map(p => p.keyword));
       const afterCollect = w.log.filter(x => x.run >= 2 && collectedKw.has(x.kw)
         && perRun.findIndex(p => p.pass1.includes(x.kw)) + 1 < x.run);

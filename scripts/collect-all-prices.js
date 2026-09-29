@@ -3393,16 +3393,25 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
     if (!r.ok) {
       notePass('pass1', { ok: false, hit: 0 });
-      failedKeywords.set(kw, r.reason);
       noteAttemptFailure(r.reason);
       noteProductReason(groupRows, r.reason);
       /*
        * 호출 예산·키가 없어서 못 나간 호출은 이번 실행에서 다시 나갈 수 없다.
        * 예전에는 남은 그룹을 전부 돌며 15초 배치마다 «보류» 로 적었다(09-29 ADPICK
        * 247그룹, 호출 0회). 레인을 그 자리에서 세우고 남은 그룹은 손대지 않는다.
+       *
+       * ★ 그 그룹은 «실패»(P2)가 아니다 — 호출이 나가지도 않았다. failedKeywords 에
+       *   넣으면 다음 실행에서 P0·P1 뒤로 밀린다. 오늘 한 번도 검색하지 않은 P0 로 남긴다
+       *   (runBatch 가 그 배치를 partial 로 보고 레거시 커서도 넘기지 않는다).
        */
       const cat = categorizeFailure(r.reason);
-      if ((cat === 'budget' || cat === 'noKeys') && !laneStop) laneStop = cat;
+      if (cat === 'budget' || cat === 'noKeys') {
+        if (!laneStop) laneStop = cat;
+        budgetDeferred.add(kw);
+        console.log(`  [${mallName}] [보류] [${kw}] ${r.reason} — 다음 실행의 P0 로 남긴다`);
+        return;
+      }
+      failedKeywords.set(kw, r.reason);
       console.log(`  [${mallName}] [보류] [${kw}] ${r.reason} — 재시도 대상`);
       return;
     }
@@ -3550,8 +3559,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     const s = await saveAll();
     obsMap.clear();
     totalRecorded += s.recorded; totalSaved += s.saved; totalRejected += s.rejected; totalSuspect += s.suspect;
-    return { ...s, doneGroups, partial: doneGroups < batch.length };
+    // 예산으로 못 나간 그룹이 끼어 있으면 끝까지 처리한 배치가 아니다 (커서를 넘기지 않는다).
+    const deferred = batch.some(g => budgetDeferred.has(g.kw));
+    return { ...s, doneGroups, partial: deferred || doneGroups < batch.length };
   }
+  /* 예산·키 소진으로 호출이 나가지 못한 1차 그룹 — 실패가 아니라 다음 실행의 P0 다. */
+  const budgetDeferred = new Set();
 
   const attemptedGroups = [];
   /* 체크포인트 스냅숏이 읽으므로 1차 루프보다 먼저 선언한다. */
@@ -3657,7 +3670,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 넘기면 부르지 않은 그룹이 오늘 영영 건너뛰어진다. 이미 부른 그룹은 다음 실행이
      * 같은 검색어를 다시 부르지만 같은 날 캐시에 걸려 외부 호출은 0회다.
      */
-    const doneRows = batch.slice(0, s.doneGroups);
+    const doneRows = batch.slice(0, s.doneGroups).filter(g => !budgetDeferred.has(g.kw));
     attemptedGroups.push(...doneRows);
     const batchProducts = doneRows.reduce((n, g) => n + g.rows.length, 0);
     if (!v3Plan) { if (!s.partial) cursorKey = batch[batch.length - 1].kw; }
