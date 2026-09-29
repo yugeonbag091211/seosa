@@ -142,7 +142,7 @@ const ADPICK_LIMIT  = Number(process.env.ADPICK_FETCH_LIMIT) || 20;
 
 // 배치 실행이라 사용자 대기 시간이 없다. 호출 간격을 넉넉히 벌려
 // 라이브 검색(/api/search)이 쓸 몫을 분당 절반 이상 남겨둔다.
-const COUPANG_MIN_GAP_MS  = 6000;    // → 이 스크립트만으로는 분당 최대 10회
+const COUPANG_MIN_GAP_MS  = 4000;    // → 이 스크립트만으로는 분당 최대 15회
 const COUPANG_MAX_WAIT_MS = 120000;
 // ADPICK은 api/_adpick.js 자체 상한(분당 20회, 기본 간격 1초)이 쿠팡보다 느슨하다.
 // 이 스크립트는 그보다 더 보수적으로 잡아 라이브 검색(/api/search) 몫을 남긴다.
@@ -164,14 +164,14 @@ const ADPICK_MAX_WAIT_MS  = 60000;
  *   "폭주 시 안전판" 역할만 한다. 316종을 하루에 한 바퀴 돌리려면 316 이상이어야 한다.
  *
  *   호출 속도는 이 값과 무관하게 세 겹으로 막혀 있다:
- *     COUPANG_MIN_GAP_MS(6초)  → 이 스크립트만으로 분당 최대 10회
+ *     COUPANG_MIN_GAP_MS(4초)  → 이 스크립트만으로 분당 최대 10회
  *     _coupang.MAX_PER_MIN(20) → 모든 인스턴스 합산 분당 20회
  *     쿠팡 공식 한도            → 분당 50회
  *
  *   ★ 400 → 500 (2026-09-03). 시간이 먼저 멈추게 하기 위해서다.
  *
  *     쿠팡 몫이 42분(COUPANG_BUDGET_MS)이 되면서 한 실행이 쓸 수 있는 호출이
- *     42분 ÷ 6초 = 420회가 됐다. 400 을 그대로 두면 시간이 남았는데도 예산이
+ *     42분 ÷ 4초 = 630회가 됐다. 400 을 그대로 두면 시간이 남았는데도 예산이
  *     먼저 걸려 20회를 버린다. 이 값은 "폭주 시 안전판" 이지 페이스 조절
  *     장치가 아니므로, 정상 실행에서 닿지 않는 자리(500)로 올린다.
  *
@@ -182,7 +182,7 @@ const ADPICK_MAX_WAIT_MS  = 60000;
  *       쿠팡 공식 문서의 한도는 분당(검색 50회/분)이고 일일 상한은 공표된 바
  *       없다. 우리 최고 속도는 그 한도의 20%(10회/분)로 변함이 없다.
  */
-const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 500;
+const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 700;
 /*
  * ── 하루 총량 상한 (2026-09-03 신설) ─────────────────────────────
  *
@@ -202,7 +202,7 @@ const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 500;
  *
  *   즉 "필요한 만큼 + 여유" 이지 "쓸 수 있는 만큼" 이 아니다.
  *
- * ★ 분당 속도와는 무관하다. 속도는 COUPANG_MIN_GAP_MS(6초, 분당 10회)와
+ * ★ 분당 속도와는 무관하다. 속도는 COUPANG_MIN_GAP_MS(4초, 분당 15회)와
  *   _coupang.MAX_PER_MIN(20), 쿠팡 공식 한도(검색 50회/분)가 정하고 그대로다.
  *   이 값은 하루 총량의 천장일 뿐이다.
  *
@@ -232,9 +232,9 @@ const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 500;
  *   "살 것이 남아 있는 만큼" 이다.
  *
  * ★ 분당 호출 속도는 한 자리도 바뀌지 않는다. 세 겹 그대로다 —
- *   COUPANG_MIN_GAP_MS(6초, 분당 10회) / _coupang.MAX_PER_MIN(전역 분당 20회)
+ *   COUPANG_MIN_GAP_MS(4초, 분당 15회) / _coupang.MAX_PER_MIN(전역 분당 20회)
  *   / 쿠팡 공식 한도(검색 50회/분). 이 값은 하루 총량의 천장일 뿐이고,
- *   scripts/test-second-pass.js 가 간격 6000ms 를 소스에서 그대로 고정한다.
+ *   scripts/test-second-pass.js 가 간격 4000ms 를 소스에서 그대로 고정한다.
  */
 /*
  * ★ 2,800 → 3,400 (2026-09-19).
@@ -245,7 +245,7 @@ const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 500;
  * 약 1,300대였고, 09-08 실측 한계수익(~0.6개/추가 호출)을 적용하면 90%까지
  * 약 500여 호출이 더 필요하다. 그래서 여유를 포함해 3,400으로 둔다.
  *
- * 분당 속도는 바꾸지 않는다. COUPANG_MIN_GAP_MS=6000과 _coupang의 전역
+ * 분당 속도는 바꾸지 않는다. COUPANG_MIN_GAP_MS=4000과 _coupang의 전역
  * 분당 제한은 그대로이며, 이 값은 KST 하루 총량의 천장만 넓힌다.
  */
 const COUPANG_DAY_BUDGET = Number(process.env.COUPANG_DAY_BUDGET) || 3400;
@@ -283,7 +283,7 @@ const BATCH_PRODUCTS    = Number(process.env.PRICE_BATCH_PRODUCTS) || 20;
  *
  * ── 왜 줄여도 안전한가 ──────────────────────────────────────────
  * 실제 API 호출 속도를 정하는 것은 이 값이 아니라 호출 간격이다.
- *   · 쿠팡  COUPANG_MIN_GAP_MS = 6000  (분당 10회)  ← 그대로 둔다
+ *   · 쿠팡  COUPANG_MIN_GAP_MS = 4000  (분당 10회)  ← 그대로 둔다
  *   · 전역  coupang_acquire(max_per_min)             ← 그대로 둔다
  *   · 서킷 브레이커 / 실행당 호출 예산                ← 그대로 둔다
  * 배치 간격은 그 위에 얹힌 **이중 규제**라, 줄여도 분당 호출 수는 변하지
@@ -308,8 +308,8 @@ const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 15000;
  *       (1차 processGroup · facet · 회수 라운드 전부 fetchAllFn 경유).
  *
  *     ★ 먼저 걸려야 하는 것은 이 하위 상한이 아니라 **시간**이다.
- *       쿠팡 몫 42분(COUPANG_BUDGET_MS) ÷ 호출 간격 6초
- *         = 실행당 실제 API 호출 420회
+ *       쿠팡 몫 42분(COUPANG_BUDGET_MS) ÷ 호출 간격 4초
+ *         = 실행당 실제 API 호출 630회
  *       canCall() 이 deadlineTs 를 매 호출마다 검사하므로, 시간이 다하면
  *       이 값과 무관하게 회수 패스는 그 자리에서 멈춘다.
  *       (캐시 적중은 간격을 먹지 않으므로 이 계산에서 빠진다)
@@ -318,7 +318,7 @@ const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 15000;
  *
  *       240 은 "몰당 25분 = 250회" 를 전제로 고른 값이었다. 그 전제가
  *       바뀌었다 — ADPICK_RESERVE_MS 주석 참고. 쿠팡 몫이 42분으로 늘어
- *       한 실행이 시간 안에 낼 수 있는 호출이 42분 ÷ 6초 = 420회가 됐다.
+ *       한 실행이 시간 안에 낼 수 있는 호출이 42분 ÷ 4초 = 630회가 됐다.
  *
  *       그리고 하루의 **두 번째 이후 실행은 1차 패스가 이미 끝나 있다**
  *       (커서가 끝에 있어 1차는 호출 0회로 지나간다). 즉 그 실행의 시간은
@@ -334,7 +334,7 @@ const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 15000;
  *         scripts/test-second-pass.js 가 이 관계(상한 ≤ 시간이 허용하는 호출 수,
  *         상한 < COUPANG_RUN_BUDGET)를 소스에서 직접 계산해 고정한다.
  *
- *       분당 속도는 한 자리도 바뀌지 않는다 — COUPANG_MIN_GAP_MS(6초)와
+ *       분당 속도는 한 자리도 바뀌지 않는다 — COUPANG_MIN_GAP_MS(4초)와
  *       전역 분당 상한이 그대로 정한다.
  *
  *   SECOND_PASS_TOKENS     (구) 제목에서 뽑을 토큰 수. 검색어 생성이
@@ -343,7 +343,7 @@ const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 15000;
  *                          있을 수 있어서다 — 읽되 동작에 영향은 없다.
  */
 const SECOND_PASS_ENABLED   = process.env.PRICE_SECOND_PASS !== '0';
-const SECOND_PASS_MAX_CALLS = Number(process.env.PRICE_SECOND_PASS_MAX_CALLS) || 420;
+const SECOND_PASS_MAX_CALLS = Number(process.env.PRICE_SECOND_PASS_MAX_CALLS) || 630;
 const SECOND_PASS_TOKENS    = Number(process.env.PRICE_SECOND_PASS_TOKENS) || 5;
 
 /*
