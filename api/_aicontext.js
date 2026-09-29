@@ -65,6 +65,13 @@ function clean(v, n) {
     .slice(0, n);
 }
 
+function cleanSelectorField(value, maxLength) {
+  if (value == null) return '';
+  if (typeof value === 'string') return clean(value, maxLength);
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return clean(value, maxLength);
+  return null;
+}
+
 /* ================================================================== *
  *  1) 화면 상품 → 선택자
  * ================================================================== */
@@ -93,15 +100,13 @@ function selectorsFrom(contextProducts) {
   const seen = new Set();
   list.slice(0, MAX_SELECTORS).forEach(raw => {
     if (!raw || typeof raw !== 'object') return;
-    const productId = clean(raw.productId, ID_LEN);
-    if (!productId) return;
-    const sel = {
-      productId,
-      vendorItemId: clean(raw.vendorItemId, ID_LEN),
-      mall: clean(raw.mall, 30),
-      mallId: clean(raw.mallId, 30),
-      title: clean(raw.title, TITLE_LEN)
-    };
+    const productId = cleanSelectorField(raw.productId, ID_LEN);
+    const vendorItemId = cleanSelectorField(raw.vendorItemId, ID_LEN);
+    const mall = cleanSelectorField(raw.mall, 30);
+    const mallId = cleanSelectorField(raw.mallId, 30);
+    const title = cleanSelectorField(raw.title, TITLE_LEN);
+    if (!productId || vendorItemId === null || mall === null || mallId === null || title === null) return;
+    const sel = { productId, vendorItemId, mall, mallId, title };
     const key = `${sel.productId}|${sel.mallId || sel.mall}|${sel.vendorItemId}`;
     if (seen.has(key)) return;
     seen.add(key);

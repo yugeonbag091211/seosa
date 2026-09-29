@@ -211,9 +211,9 @@ function seed() {
   ];
   const rows = [];
   // 블랙(현재 대표 옵션): 20일치. 오늘 139,000원, 10일 전 135,000원이 저점.
-  for (let n = 0; n < 20; n++) rows.push(ph('7001', '쿠팡', 'V-BLACK', n, n === 10 ? 135000 : 139000 + (n % 4) * 3000));
+  for (let n = 0; n < 20; n++) rows.push(ph('7001', '쿠팡', 'V-BLACK', n, (n === 10 || n === 11) ? 135000 : 139000 + (n % 4) * 3000));
   // 화이트(같은 상품 페이지의 다른 옵션): 더 싸다. 블랙의 기록에 섞이면 안 된다.
-  for (let n = 0; n < 10; n++) rows.push(ph('7001', '쿠팡', 'V-WHITE', n, 99000 + n * 500));
+  for (let n = 0; n < 10; n++) rows.push(ph('7001', '쿠팡', 'V-WHITE', n, n < 2 ? 99000 : 99000 + n * 500));
   // 옵션 표시가 없는 옛 기록: 어느 옵션 것인지 모른다. 어떤 옵션에도 붙이면 안 된다.
   for (let n = 11; n < 16; n++) rows.push(ph('7001', '쿠팡', '', n, 89000));
   for (let n = 16; n < 19; n++) rows.push(ph('7001', '쿠팡', '__LEGACY__', n, 79000));
@@ -425,7 +425,7 @@ function searchFixture() {
   {
     // 진짜 서명 발화 하나를 먼저 만든다 (재사용·재배치 공격용).
     const first = await ask({ question: '갤럭시 버즈3 프로 지금 사도 돼?', contextProducts: [budsContext()], view: { source: 'modal' } },
-      { classify: 'E', answer: '현재가 139,000원이고 기록상 최저가는 135,000원입니다.' });
+      { classify: 'E', answer: '현재가 139,000원입니다.' });
     ok(first.body.turnSig && /^at1\./.test(first.body.turnSig) && first.body.degraded !== true,
       '정상 답변에는 서버 서명(turnSig)이 붙는다', JSON.stringify(first.body).slice(0, 200));
     const genuine = { role: 'assistant', text: first.body.text, sig: first.body.turnSig };
@@ -577,10 +577,10 @@ function searchFixture() {
       const f = facts(r.system);
       let expect;
       if (vid === 'V-BLACK') {
-        expect = f.includes('역대 최저가 135,000원') && f.includes('현재가 139,000원')
+        expect = f.includes('SEOSA 보유 관측 기록 중 확인된 최저가 135,000원') && f.includes('현재가 139,000원')
           && !/(?<![0-9,])(?:89,000|79,000|99,\d00)원/.test(f);
       } else if (vid === 'V-WHITE') {
-        expect = f.includes('기록상 최저가 99,000원') && !f.includes('현재가 99,000원')
+        expect = f.includes('최근 관측 기록 최저 99,000원') && !f.includes('현재가 99,000원')
           && !/(?<![0-9,])(?:135,000|139,000|89,000|79,000)원/.test(f) && !productData(r.system).includes('productId=7001');
       } else if (vid) {
         expect = !/\d{2},\d{3}원/.test(f) && /옵션=VID-OPTION/.test(noteBlock(r.system));
@@ -598,7 +598,7 @@ function searchFixture() {
       { classify: 'E', answer: '기록을 확인했습니다.' });
     const s = r.system;
     const e = EXPECT_BLACK;
-    ok(s.includes(`역대 최저가 ${won(e.low)}원(${e.lowDate})`), `옵션 최저가 = 블랙 행의 최저가 ${won(e.low)}원`);
+    ok(s.includes(`SEOSA 보유 관측 기록 중 확인된 최저가 ${won(e.low)}원(${e.lowDate})`), `옵션 최저가 = 블랙 행의 최저가 ${won(e.low)}원`);
     ok(s.includes(`최근 30일 평균 ${won(e.avg30)}원`), `옵션 30일 평균 = 블랙 행의 평균 ${won(e.avg30)}원`);
     ok(s.includes(`${won(e.trendFrom)}원 → ${e.lastDate} ${won(e.lastPrice)}원`) && s.includes(`${e.trendPct}%`),
       `옵션 최근 추세(하락률) = 블랙 행 ${won(e.trendFrom)}→${won(e.lastPrice)} ${e.trendPct}%`);
@@ -612,11 +612,12 @@ function searchFixture() {
     const lines = sr.system.split('\n');
     const blockOf = title => { const i = lines.findIndex(l => l.includes(`| ${title} |`)); return i < 0 ? '' : lines.slice(i, i + 12).join('\n').split(/\n\[P\d\]/)[0]; };
     const bBlock = blockOf(BUDS.title), wBlock = blockOf('삼성 갤럭시 버즈3 프로 화이트');
-    ok(/역대 최저가 135,000원/.test(bBlock) && /역대 최저가 99,000원/.test(wBlock),
+    ok(/SEOSA 보유 관측 기록 중 확인된 최저가 135,000원/.test(bBlock)
+        && /SEOSA 보유 관측 기록 중 확인된 최저가 99,000원/.test(wBlock),
       '검색 결과의 두 옵션은 각자 자기 옵션의 최저가를 갖는다', JSON.stringify({ bBlock: bBlock.slice(0, 200), wBlock: wBlock.slice(0, 200) }));
     const cards = sr.body.items || [];
     const bCard = cards.find(c => c.title === BUDS.title), wCard = cards.find(c => /화이트/.test(c.title));
-    ok(wCard && wCard.note === '기록상 최저가' && bCard && bCard.note !== '기록상 최저가',
+    ok(wCard && wCard.note === '최근 관측 기록 최저' && bCard && bCard.note !== '최근 관측 기록 최저',
       '카드 한 줄 근거도 옵션별 기록으로 계산한다', JSON.stringify(cards.map(c => [c.title, c.note])));
     ok(dbWrites === 0, '옵션 검증 중 DB 쓰기 0회');
   }
@@ -689,7 +690,7 @@ function searchFixture() {
       '추천 응답은 직전 추천 참조와 발화 서명을 함께 준다');
 
     const modal = await ask({ question: '이거 지금 사도 돼?', contextProducts: [budsContext()], view: { source: 'modal' } },
-      { classify: 'E', answer: '현재가 139,000원으로 기록상 최저가 135,000원보다 4,000원 높습니다.' });
+      { classify: 'E', answer: '현재가는 139,000원입니다. 기록상 최저가와 4,000원 차이입니다.' });
     ok(modal.searches === 0 && modal.body.degraded !== true && modal.body.text.includes('139,000원')
         && productData(modal.system).includes('SEOSA 확인'),
       '상세 화면 가격 질문: 검색 없이 카탈로그로 확인한 가격으로 답한다(확인 날짜 표시)', modal.body.text);

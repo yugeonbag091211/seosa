@@ -845,15 +845,58 @@ function sortByRelevance(items) {
  * @returns {{items, dropped, removed, allBelow}}
  *   allBelow — 받아온 건 있는데 전부 기준선 아래였다 ("결과 없음"과 구분해야 한다)
  */
+function productIntentContext(keyword, titles) {
+  const analysis = analyzeQuery(keyword, { titles: Array.isArray(titles) ? titles : [] });
+  return {
+    analysis,
+    intent: queryWantsAccessory(analysis) ? 'ACCESSORY_INTENT' : 'MAIN_PRODUCT_INTENT'
+  };
+}
+
+/** Reuse normal search's head-noun/accessory evidence in AI ranking. */
+function accessoryFocus(context, title) {
+  if (!context || !context.analysis) return { intent: 'MAIN_PRODUCT_INTENT', accessory: '', factor: 1, penalty: 0 };
+  const focus = productFocus(context.analysis, title);
+  const penalty = context.intent === 'MAIN_PRODUCT_INTENT'
+    ? Math.round((1 - Number(focus.factor || 1)) * 100) : 0;
+  return {
+    intent: context.intent,
+    accessory: focus.accessory || '',
+    factor: focus.factor || 1,
+    penalty
+  };
+}
+
+/**
+ * Keep accessories out of a main-product search while preserving explicit accessory searches.
+ * Both the site search and AI ranking use this same deterministic filter.
+ */
+function filterMainProductCandidates(keyword, items) {
+  const list = (items || []).filter(Boolean);
+  const context = productIntentContext(keyword, list.map(it => it && it.title));
+  if (context.intent !== 'MAIN_PRODUCT_INTENT') {
+    return { items: list, dropped: 0, intent: context.intent };
+  }
+  const kept = list.filter(it => accessoryFocus(context, it && it.title).penalty === 0);
+  return { items: kept, dropped: list.length - kept.length, intent: context.intent };
+}
+
 function rankItems(keyword, items, opts = {}) {
   const minScore = Number.isFinite(opts.minScore) ? opts.minScore : MIN_SCORE;
-  const { items: uniq, removed } = dedupeItems(items);
+  const { items: deduped, removed } = dedupeItems(items);
+  // General search ranks accessory matches below main products but keeps them available.
+  // The AI path applies the explicit intent filter in _shopintent.js before its early return.
+  const uniq = deduped;
+  const intentDropped = 0;
   // 브랜드 판정에 이번 목록을 쓴다 (detectBrandHead 주석 참고).
-  const analysis = analyzeQuery(keyword, { titles: uniq.map(it => (it && it.title) || '') });
+  const analysis = analyzeQuery(keyword, { titles: deduped.map(it => (it && it.title) || '') });
 
-  if (!analysis.tokens.length || !uniq.length) {
+  if (!uniq.length) {
+    return { items: [], dropped: intentDropped, removed, allBelow: deduped.length > 0 };
+  }
+  if (!analysis.tokens.length) {
     uniq.forEach(it => { if (it) it.relevance = 1; });
-    return { items: uniq, dropped: 0, removed, allBelow: false };
+    return { items: uniq, dropped: intentDropped, removed, allBelow: false };
   }
 
   const scored = uniq.map(it => {
@@ -880,12 +923,12 @@ function rankItems(keyword, items, opts = {}) {
 
   const kept = scored.filter(s => s.r.score >= minScore);
   if (!kept.length) {
-    return { items: [], dropped: scored.length, removed, allBelow: true };
+    return { items: [], dropped: scored.length + intentDropped, removed, allBelow: true };
   }
 
   return {
     items: kept.map(s => s.it),
-    dropped: scored.length - kept.length,
+    dropped: scored.length - kept.length + intentDropped,
     removed,
     allBelow: false
   };
@@ -1337,7 +1380,7 @@ module.exports = {
   normalizeText, canonicalKey, splitTokens, analyzeQuery, analyzeTitle,
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
-  productFocus, coreTokens, ACCESSORY_TIER,
+  productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY

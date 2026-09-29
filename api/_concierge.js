@@ -1,4 +1,5 @@
 'use strict';
+const { hasConfirmedRecordLow } = require('./_priceevidence');
 /*
  * SEOSA Concierge — LLM 없이 만드는 답변과 후속 질문.
  *
@@ -296,7 +297,7 @@ function contextLines(ctx) {
     L.push('보고 계신 상품의 이 옵션은 현재 판매가를 SEOSA 서버에서 확인하지 못했어요.');
     const facts = [];
     if (h.lastPrice > 0) facts.push(`최근 기록가 ${won(h.lastPrice)}원${h.lastDate ? `(${h.lastDate})` : ''}`);
-    if (h.low > 0) facts.push(`기록상 최저가 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''}`);
+    if (hasConfirmedRecordLow(h)) facts.push(`SEOSA 보유 관측 기록 중 확인된 최저가 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''}`);
     if (h.count > 0) facts.push(`기록 ${h.count}일치`);
     if (facts.length) L.push(`SEOSA에 남은 이 옵션의 가격 기록: ${facts.join(' · ')}.`);
     L.push('지금 가격은 상품 페이지에서 확인해 주세요.');

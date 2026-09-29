@@ -77,7 +77,10 @@ shop.searchAll = async (keyword) => {
     const cached = stub.searchCache.get(cacheKey);
     if (cached && Date.now() - cached.at < 6 * 60 * 60 * 1000) {
       const clone = list => JSON.parse(JSON.stringify(list || []));
-      const items = clone(cached.items).map(it => ({ ...it, _source: 'cache' }));
+      const items = clone(cached.items).map(it => {
+        const normalized = { ...it, _source: 'cache' };
+        return normalized;
+      });
       return { items, from: 'cache', blocked: false };
     }
   }
@@ -116,8 +119,19 @@ shop.searchAll = async (keyword) => {
    * 그래서 이 대역도 items 만 돌려준다 — 그래야 saveProducts 가 받는 목록(=카탈로그)이
    * 운영과 같다. (stub.searchAllItems 는 옛 시나리오의 표시용으로만 남아 있다.)
    */
-  const items = stub.searchItems.map(it => ({ ...it, _source: 'api' }));
-  if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, { at: Date.now(), items: stub.searchItems });
+  const providerFixtureItem = (it, source) => {
+    const normalized = { ...it };
+    // Coupang provider fixtures use the same required option identity as live results.
+    // Explicit vendorItemId: '' remains available for missing-option security cases.
+    if (normalized.isCoupang === true && normalized.productId
+        && !Object.prototype.hasOwnProperty.call(normalized, 'vendorItemId')) {
+      normalized.vendorItemId = 'OFFLINE-OPTION-' + String(normalized.productId);
+    }
+    normalized._source = source;
+    return normalized;
+  };
+  const items = stub.searchItems.map(it => providerFixtureItem(it, 'api'));
+  if (stub.searchCacheEnabled) stub.searchCache.set(cacheKey, { at: Date.now(), items });
   return { items, from: 'api', blocked: false };
 };
 /*
@@ -235,7 +249,7 @@ function fixtureStats() {
   // 베타: 기록 풍부 + 평균보다 저렴 → 랭킹·판정·카드 근거가 전부 나와야 한다
   m.set('B2|쿠팡', {
     count: 15, lastPrice: 89000, lastDate: kstToday(), prevPrice: 95000,
-    low: 85000, lowDate: '2026-07-02', avg30: 101000, avg30Days: 15,
+    low: 85000, lowDate: '2026-07-02', lowCount: 2, lowIsLatest: false, lowConfirmed: true, avg30: 101000, avg30Days: 15,
     trendPct: -6.3, trendDays: 7, trendFrom: 95000, trendFromDate: daysAgo(7),
     points: [{ d: daysAgo(7), p: 95000 }, { d: kstToday(), p: 89000 }],
     // Deal Engine(api/_deal.js)이 쓰는 값. statsFrom 이 실제로 내는 모양과 맞춘다 —
@@ -428,7 +442,7 @@ function reset() {
     view: { source: 'modal' }
   });
   const s9 = sys();
-  ok(s9.includes('역대 최저가 85,000원'), '★ 프론트가 못 채운 가격 기록을 서버가 채운다');
+  ok(s9.includes('SEOSA 보유 관측 기록 중 확인된 최저가 85,000원'), '★ 서버 이력은 범위와 반복 관측 근거를 붙여 제공한다');
   ok(s9.includes('가격 수준 판정'), '판정도 함께 실린다');
 
   /* 10 ─ 상품명 스펙이 프롬프트에 실리고 랭킹에 반영되는가 */
@@ -905,7 +919,7 @@ function reset() {
     ok(/다시 판단하지 마라/.test(s), '★ 모델이 판정을 다시 내리지 말라고 못 박는다');
     ok(/기록 내 위치: 하위 \d+%/.test(s), '★ 할인율이 아니라 기록 내 백분위를 준다',
       (s.match(/기록 내 위치: 하위 \d+%/) || [])[0]);
-    ok(/역대 최저가는 아니다/.test(s), '★ 좋은 소식만 주지 않는다 — 주의도 함께 준다');
+    ok(/SEOSA 보유 관측 기록의 최저가보다 높다/.test(s), '★ 관측 기간으로 한정해 주의도 함께 준다');
     ok(/\[확신도 —/.test(s), '★ 축별 확신도 블록이 실린다');
     ok(/가격 최신성: /.test(s), '★ 최신성을 별도 축으로 준다');
   }

@@ -594,13 +594,24 @@ function scoreItem(it, c, tokens) {
  * @returns {Array} 같은 객체들. fit/notes 가 붙고 순서가 바뀐다.
  */
 function rankItems(items, c, query, opts) {
-  const list = (items || []).filter(Boolean);
+  let list = (items || []).filter(Boolean);
+  const cons = c || {};
+  let searchHelpers = null, intentContext = null;
+  if (query) {
+    try {
+      searchHelpers = require('./_search');
+      list = searchHelpers.filterMainProductCandidates(query, list).items;
+      intentContext = searchHelpers.productIntentContext(query, list.map(it => it && it.title));
+    } catch (_e) {
+      searchHelpers = null;
+      intentContext = null;
+    }
+  }
   if (list.length <= 1) {
     list.forEach(it => { if (!it.fit) it.fit = ''; if (!it.notes) it.notes = []; });
     return list;
   }
 
-  const cons = c || {};
   const sh = shop();
   const tokens = (query && sh) ? sh.keywordTokens(query) : [];
 
@@ -689,6 +700,19 @@ function rankItems(items, c, query, opts) {
       }
     }
   });
+
+  // 일반 검색의 핵심 명사 판정을 AI 경로에도 반영한다.
+  // '에어팟 최저가'의 케이스가 가격 가점만으로 본품을 앞서지 않게 하고,
+  // 사용자가 '에어팟 케이스'를 찾을 때는 accessory intent를 그대로 보존한다.
+  if (searchHelpers && intentContext) {
+    list.forEach(it => {
+      const focus = searchHelpers.accessoryFocus(intentContext, it && it.title);
+      if (focus.penalty > 0) {
+        it._score -= focus.penalty;
+        it._accessoryPenalty = focus.penalty;
+      }
+    });
+  }
 
   // 동점이면 원래 순서를 지킨다 (쇼핑몰이 준 순서에도 정보가 있다).
   const ranked = list

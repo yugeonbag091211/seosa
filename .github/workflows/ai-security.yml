@@ -1,0 +1,64 @@
+name: AI security validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seosa-ai-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install dependencies
+        id: install
+        run: npm ci
+      # Keep each offline suite visible even when another suite fails.
+      # The paid/live test-ai-concierge.js is intentionally excluded.
+      - name: AI targeted — unit
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai.js
+      - name: AI targeted — provenance
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-provenance.js
+      - name: AI targeted — global circuit
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-global-circuit.js
+      - name: AI targeted — intent routing
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-intent-routing.js
+      - name: AI security fuzz
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-security-fuzz.js
+      - name: AI pipeline
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-pipeline.js
+      - name: AI red-team baseline
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-redteam.js
+      - name: AI red-team 200 cases
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: node scripts/test-ai-redteam-200.js
+      - name: Syntax validation (repository has no build script)
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        run: |
+          node --check api/ai.js
+          node --check api/_priceevidence.js
+          node --check api/_concierge.js
+          node --check api/_decision.js
+          node --check api/_search.js
+          node --check api/_shopintent.js
+          node --check api/_deal.js
+          node --check scripts/test-ai-security-fuzz.js
+          node -e "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8'))"
