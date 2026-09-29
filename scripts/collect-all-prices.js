@@ -3574,9 +3574,13 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   const priorityAtStart = {
     p0Groups: remaining.length, p0Products: remaining.reduce((n, g) => n + g.rows.length, 0),
     p2Groups: retryGroups.length, p2Products: retryGroups.reduce((n, g) => n + g.rows.length, 0),
-    p4Products: todayAtStart.size
+    p4Products: todayAtStart.size,
+    /* P1+P3 후보: 오늘 찾아봤지만 아직 가격이 없는 상품 (P1 = 그중 캐시 힌트가 있는 것 — 힌트 패스가 센다) */
+    p13Products: [...collectorAttempted].filter(k => collectibleKeySet.has(k) && !collectorCovered.has(k)
+      && !todayAtStart.has(k) && !terminalOption.has(k)).length
   };
   console.log(`  [${mallName}] 우선순위 — P0 미시도 ${priorityAtStart.p0Products}개(${priorityAtStart.p0Groups}종)`
+    + ` · P1+P3 찾아봤지만 미수집 ${priorityAtStart.p13Products}개`
     + ` · P2 일시 실패 재시도 ${priorityAtStart.p2Products}개(${priorityAtStart.p2Groups}종)`
     + ` · P4 오늘 이미 가격 있음 ${priorityAtStart.p4Products}개(부르지 않음)`);
 
@@ -4941,6 +4945,22 @@ async function runLocked(state, lockToken) {
   if (_coupangTransientBlocks || _adpickTransientBlocks) {
     console.log(`일시 장애(래치 안 함, 쿨다운만 대기): 쿠팡 ${_coupangTransientBlocks}회 / ADPICK ${_adpickTransientBlocks}회`);
   }
+  /*
+   * 운영 검증용 한 줄 요약 (2026-09-29) — 제공자마다 같은 칸을 같은 순서로 찍는다.
+   * 캐시 적중 = 같은 날 이미 받은 응답을 다시 쓴 호출(중복 호출 회피) 수다.
+   */
+  [[coupangResult, cs, _coupangTransientBlocks, _coupangBlocked], [adpickResult, as, _adpickTransientBlocks, _adpickBlocked]]
+    .forEach(([r, st, transient, refused]) => {
+      const q = r.priorityAtStart || {};
+      const fc = r.failureCategories || {};
+      console.log(`[검증 요약] provider=${r.mallName} P0시작=${q.p0Products == null ? '-' : q.p0Products}`
+        + ` P0남음=${r.skippedProducts} P1+P3시작=${q.p13Products == null ? '-' : q.p13Products}`
+        + ` P2시작=${q.p2Products == null ? '-' : q.p2Products} P4건너뜀=${q.p4Products == null ? '-' : q.p4Products}`
+        + ` uniqueAttempted=${r.attemptedProducts}/${r.targetProducts} collected=${r.collectorSuccessProducts}`
+        + ` apiCalls=${r.apiCalls || 0} cacheHits(중복회피)=${st.cacheHits}`
+        + ` rateLimited=${fc.rateLimit || 0} budget=${fc.budget || 0} transient=${transient} providerBlock=${refused ? 'yes' : 'no'}`
+        + ` stop=${r.stopCause || 'none'} blockWait=${Math.round((r.blockWaitMs || 0) / 1000)}s`);
+    });
   if (_coupangBlocked || cs.blocked) {
     console.log(`⚠️  쿠팡 API: 차단 상태 — ${String(_coupangBlockMsg || cs.blockReason).replace(/<[^>]*>/g, '').slice(0, 150)}`);
   }
@@ -5080,8 +5100,8 @@ async function runLocked(state, lockToken) {
   };
   if (writer) {
     const ok = await writer.finalize(finalState);
-    console.log(`[체크포인트] 중간 저장 ${writer.stats.writes}회 / 실패 ${writer.stats.failures}회`
-      + ` / 최종 저장 ${ok ? '완료' : '못 함'}${writer.stats.lost ? ' — 잠금 상실' : ''}`);
+    console.log(`[체크포인트] 중간 저장 ${writer.stats.writes}회(= 잠금 연장 heartbeat) / 실패 ${writer.stats.failures}회`
+      + ` / 최종 저장 ${ok ? '완료' : '못 함'} / 잠금 상실 ${writer.stats.lost ? 'YES' : 'no'}`);
     if (writer.stats.lost) process.exitCode = 1;
   } else {
     await saveState(finalState);
