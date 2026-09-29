@@ -694,6 +694,51 @@ async function captureFailure(promise) {
     assert.equal(saved.opts.source, 'external-hotdeal');
   });
 
+  await check('affiliate selection: same mall wins, Coupang only breaks safe ties', () => {
+    const deal = {
+      title: 'Samsung Galaxy S24 SM-S921N 256GB',
+      price: 799000,
+      mall: 'G마켓'
+    };
+    const sameMall = {
+      title: 'Samsung Galaxy S24 SM-S921N 256GB',
+      lprice: 805000,
+      link: 'https://adpick.example/gmarket-s24',
+      mall: 'ADPICK',
+      mallLabel: 'G마켓',
+      productId: 'gmarket-s24',
+      vendorItemId: '',
+      _source: 'api'
+    };
+    const coupang = {
+      title: 'Samsung Galaxy S24 SM-S921N 256GB',
+      lprice: 790000,
+      link: 'https://link.coupang.com/a/s24-safe-tie',
+      mall: '쿠팡',
+      mallLabel: '쿠팡',
+      productId: 'coupang-s24',
+      vendorItemId: '777',
+      _source: 'api'
+    };
+    const selected = Collector.selectAffiliateCandidate(deal, [coupang, sameMall]);
+    assert(selected);
+    assert.equal(selected.item.productId, 'gmarket-s24', '원 판매처 제휴 링크를 우선 보존');
+
+    const noMallDeal = { ...deal, mall: '' };
+    const tied = Collector.selectAffiliateCandidate(noMallDeal, [sameMall, coupang]);
+    assert(tied);
+    assert.equal(tied.item.productId, 'coupang-s24', '동일 확신도 동률에서만 쿠팡 Partners 우선');
+    assert(Number(tied.match.confidence) >= 0.90);
+  });
+
+  await check('affiliate queries: model-code query expands recall without dropping exact SKU query', () => {
+    const deal = { title: '삼성 갤럭시 S24 SM-S921N 256GB 자급제 특가' };
+    const queries = Collector.affiliateSearchQueries(deal);
+    assert(queries.length >= 3 && queries.length <= 5);
+    assert(queries[0].includes('SM-S921N'));
+    assert(queries.some(q => q.includes('SM-S921N') && q !== queries[0]), queries.join(' | '));
+  });
+
   await check('affiliate enrichment: preserves SKU specs and retries with alternate search phrases', async () => {
     const deal = Normalize.normalizeExternalHotdeal({
       externalId: 'aff-retry',
