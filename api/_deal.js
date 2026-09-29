@@ -85,6 +85,14 @@ function freshness(staleDays) {
   return { level: 'stale', days: d, label: '오래된 가격', trusted: false };
 }
 
+/** Only render a real ISO calendar date from price-history metadata into prompt text. */
+function safeDateLabel(value) {
+  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return '';
+  const parsed = new Date(value + 'T00:00:00Z');
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return '';
+  return value;
+}
+
 /**
  * 현재가가 기록 안에서 어느 위치인가 (0 = 역대 최저, 100 = 역대 최고).
  *
@@ -255,6 +263,7 @@ const OUTLIER_RATIO = 3;
  */
 function dealOf(stat, price, today) {
   const p = Math.round(Number(price) || 0);
+  const lowDateLabel = safeDateLabel(stat && stat.lowDate);
   const base = {
     verdict: 'UNKNOWN', label: DEAL_LABEL.UNKNOWN, score: null,
     percentile: null, freshness: freshness(0),
@@ -355,7 +364,7 @@ function dealOf(stat, price, today) {
    */
   const unconfirmedLow = stat.lowConfirmed === false && !!stat.lowIsLatest && p <= stat.low;
   if (unconfirmedLow) {
-    cautions.push('이 가격은 ' + stat.lowDate + ' 하루만 관측됐다. '
+    cautions.push('이 가격은 ' + (lowDateLabel ? lowDateLabel + ' 하루만 관측됐다. ' : '하루만 관측됐다. ')
       + '다음 수집에서 같은 값이 다시 나와야 최저가로 확정된다');
   }
 
@@ -461,7 +470,8 @@ function dealOf(stat, price, today) {
   if (stat.low > 0 && p > stat.low) {
     const over = (p - stat.low) / stat.low;
     if (over > 0.02) {
-      cautions.push('SEOSA 보유 관측 기록의 최저가보다 높다(' + stat.lowDate + ' ' + won(stat.low) + '원, ' + pct(over) + '% 위)');
+      cautions.push('SEOSA 보유 관측 기록의 최저가보다 높다(' + (lowDateLabel ? lowDateLabel + ' ' : '')
+        + won(stat.low) + '원, ' + pct(over) + '% 위)');
     }
   } else if (stat.low > 0 && p < stat.low) {
     /*
