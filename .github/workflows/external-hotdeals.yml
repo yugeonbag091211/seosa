@@ -1,0 +1,64 @@
+name: SEOSA External Hotdeals
+
+# 외부 커뮤니티 발견 피드만 가볍게 갱신한다.
+# 내부 가격 핫딜 판정(SEOSA HOT)과 분리해 15분 주기로 돌려도
+# price_history 전체 판정/수집을 반복하지 않는다.
+#
+# 같은 글은 collector의 imageLookup 쿨다운 + 공급자 캐시를 이어받기 때문에
+# 매 실행마다 쿠팡/ADPICK API를 다시 소모하지 않는다.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '외부 피드만 읽고 DB/API 보강 저장은 하지 않음'
+        type: boolean
+        default: false
+
+concurrency:
+  group: seosa-external-hotdeals
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Collect community hotdeals and convert safe matches to affiliate links
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          EXTERNAL_HOTDEAL_PPOMPPU_ENABLED: ${{ vars.EXTERNAL_HOTDEAL_PPOMPPU_ENABLED }}
+          EXTERNAL_HOTDEAL_SHADOW: ${{ vars.EXTERNAL_HOTDEAL_SHADOW }}
+          EXTERNAL_HOTDEAL_PUBLIC_SOURCES: ${{ vars.EXTERNAL_HOTDEAL_PUBLIC_SOURCES }}
+          EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS: ${{ vars.EXTERNAL_HOTDEAL_AFFILIATE_LOOKUPS }}
+          EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES: ${{ vars.EXTERNAL_HOTDEAL_AFFILIATE_SEARCHES }}
+        run: |
+          node scripts/collect-external-hotdeals.js \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
+            2>&1 | tee /tmp/external-hotdeals.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## External Hotdeals" >> $GITHUB_STEP_SUMMARY
+          echo '~~~text' >> $GITHUB_STEP_SUMMARY
+          grep -E '^(Source:|Mode:|Affiliate:)' /tmp/external-hotdeals.log \
+            | tail -8 >> $GITHUB_STEP_SUMMARY || echo "no external summary" >> $GITHUB_STEP_SUMMARY
+          echo '~~~' >> $GITHUB_STEP_SUMMARY
