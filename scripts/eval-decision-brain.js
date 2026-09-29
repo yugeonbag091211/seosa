@@ -817,7 +817,18 @@ console.log('\n[L] 적대적');
   score('Adv', unsupportedSuperlatives('역대 최저가입니다', [{ title: 'x' }]).length === 1,
     '근거 없는 "역대 최저가"는 잡힌다');
   score('Adv', unsupportedSuperlatives('역대 최저가입니다',
-    [{ title: 'x', hist: { low: 1000 } }]).length === 0, '가격 기록이 있으면 통과');
+    [{ title: 'x', hist: { low: 1000 } }]).length === 1,
+    '제한된 가격 기록만으로 역대 최저가를 확정하지 않는다');
+  const confirmedLowHistory = {
+    low: 1000, count: 14, lowCount: 3, historyDays: 30, lowConfirmed: true,
+    firstDate: ago(30), lastDate: ago(1)
+  };
+  score('Adv', unsupportedSuperlatives('기록상 최저가입니다',
+    [{ title: 'x', hist: confirmedLowHistory }]).length === 0,
+    '충분한 관측 범위의 기록상 최저가는 통과');
+  score('Adv', unsupportedSuperlatives('기록상 최저가입니다',
+    [{ title: 'x', hist: { low: 1000, count: 2 } }]).length === 1,
+    '관측 수와 기간이 부족하면 기록상 최저가를 차단');
 
   // 사양 환각
   score('Adv', unverifiedSpecs('배터리가 30시간 갑니다', [{ title: '이어폰' }]).length === 1,
