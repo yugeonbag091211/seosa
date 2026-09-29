@@ -1,0 +1,118 @@
+name: One-off Price Catch-up 2026-09-29
+
+on:
+  push:
+    branches:
+      - ops/catchup-20260929
+
+concurrency:
+  group: seosa-price-catchup-20260929
+  cancel-in-progress: false
+
+jobs:
+  catchup_1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: V3 gate
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PRICE_V3_CANARY_DATES: '2026-09-24'
+          PRICE_V3_ON_FROM: '2026-09-26'
+          PRICE_V3_OFF: ${{ vars.PRICE_V3_OFF }}
+        run: node scripts/v3-canary-gate.js
+
+      - name: Catch up remaining prices - pass 1
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          PRICE_RUN_BUDGET_MS: '21000000'
+          PRICE_ADPICK_RESERVE_MS: '10500000'
+          PRICE_ADPICK_RESERVE_LATE_MS: '10500000'
+          ADPICK_COLLECT_MIN_GAP_MS: '12000'
+          ADPICK_MAX_PER_MIN: '5'
+          ADPICK_RUN_BUDGET: '1800'
+          ADPICK_DAY_BUDGET: '3000'
+        run: |
+          if [ "$(TZ=Asia/Seoul date +%F)" != "2026-09-29" ]; then
+            echo "KST date is not 2026-09-29; skipping one-off catch-up."
+            exit 0
+          fi
+          node scripts/collect-all-prices.js 2>&1 | tee /tmp/collect.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Check alerts
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+        run: node scripts/check-alerts.js
+
+  catchup_2:
+    needs: catchup_1
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: V3 gate
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PRICE_V3_CANARY_DATES: '2026-09-24'
+          PRICE_V3_ON_FROM: '2026-09-26'
+          PRICE_V3_OFF: ${{ vars.PRICE_V3_OFF }}
+        run: node scripts/v3-canary-gate.js
+
+      - name: Catch up remaining prices - pass 2
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          PRICE_RUN_BUDGET_MS: '21000000'
+          PRICE_ADPICK_RESERVE_MS: '10500000'
+          PRICE_ADPICK_RESERVE_LATE_MS: '10500000'
+          ADPICK_COLLECT_MIN_GAP_MS: '12000'
+          ADPICK_MAX_PER_MIN: '5'
+          ADPICK_RUN_BUDGET: '1800'
+          ADPICK_DAY_BUDGET: '3000'
+        run: |
+          if [ "$(TZ=Asia/Seoul date +%F)" != "2026-09-29" ]; then
+            echo "KST date is not 2026-09-29; skipping one-off catch-up."
+            exit 0
+          fi
+          node scripts/collect-all-prices.js 2>&1 | tee /tmp/collect.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Check alerts
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+        run: node scripts/check-alerts.js
