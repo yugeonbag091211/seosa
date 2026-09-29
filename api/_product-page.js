@@ -292,7 +292,7 @@ const CSS = [
  * 판매처 링크가 있을 때만 그 버튼 «바로 위» 에 붙는다. 문구를 줄이지 마라 —
  * scripts/test-affiliate-disclosure.js 가 public/index.html 과 같은 문구인지 본다.
  */
-const AFFILIATE_DISCLOSURE = '이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받을 수 있습니다.';
+const AFFILIATE_DISCLOSURE = '이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.';
 
 function mallName(product) {
   return product.mallLabel || product.mall || '';

@@ -20,7 +20,7 @@ const path = require('path');
 const Module = require('module');
 
 const ROOT = path.resolve(__dirname, '..');
-const TEXT = '이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받을 수 있습니다.';
+const TEXT = '이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.';
 
 let pass = 0, fail = 0;
 const failures = [];
