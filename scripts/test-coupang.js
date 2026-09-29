@@ -233,6 +233,26 @@ server.listen(0, async () => {
   mode = origMode;
   void before;
 
+  // 5) 다른 인스턴스가 연 전역 차단의 재개 시각을 로컬 쿨다운에 옮겨 적는다 (2026-09-29)
+  {
+    const { mirrorSharedBlock, localStats } = require('../api/_coupang');
+    const fmt = (ms, off = '+00') => {
+      const shifted = new Date(ms + (off === '+09' ? 9 * 3600e3 : 0)).toISOString();
+      return `${shifted.slice(0, 10)} ${shifted.slice(11, 19)}${off}`;
+    };
+    const base = localStats().blockedForSec;
+    mirrorSharedBlock(`호출 중단 중 (재개 ${fmt(Date.now() + 3 * 3600e3)}) 네트워크 응답 시간 초과 (8000ms)`);
+    const s = localStats();
+    check(s.blockedForSec > 3 * 3600 - 60 && s.blockedForSec <= 3 * 3600 + 1,
+      '전역 차단 재개 시각(UTC 오프셋)이 로컬 쿨다운이 된다', `before=${base} after=${s.blockedForSec}`);
+    check(/네트워크 응답 시간 초과/.test(s.blockReason), '원래 차단 사유를 그대로 옮긴다', s.blockReason);
+    mirrorSharedBlock(`호출 중단 중 (재개 ${fmt(Date.now() + 5 * 3600e3, '+09')}) HTTP 504: gateway`);
+    const s2 = localStats();
+    check(s2.blockedForSec > 5 * 3600 - 60 && s2.blockedForSec <= 5 * 3600 + 1, '+09 오프셋도 같은 절대 시각으로 읽는다', String(s2.blockedForSec));
+    mirrorSharedBlock(`호출 중단 중 (재개 ${fmt(Date.now() - 60e3)}) 지난 차단`);
+    mirrorSharedBlock('Search 분당 운영 budget 35/35');
+    check(localStats().blockedForSec === s2.blockedForSec, '지난 시각·차단이 아닌 거절은 쿨다운을 바꾸지 않는다');
+  }
 
   server.close();
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);

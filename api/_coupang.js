@@ -287,6 +287,23 @@ function permanentGateFailure(msg) {
   return info.missing || info.kind === DB_KIND.CONFIG_MISSING;
 }
 
+/*
+ * 다른 인스턴스가 연 전역 차단(coupang_api_state)을 이 인스턴스의 쿨다운에도 옮겨 적는다.
+ * 그래야 isBlocked()/localStats() 가 «언제 풀리는가» 를 알고, 수집기가 레인을
+ * 실행 끝까지 세우는 대신 그 시각까지만 기다린다. 제한을 더 엄격하게 할 뿐이다.
+ */
+const SHARED_BLOCK_RE = /호출 중단 중 \(재개 (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)([+-]\d{2})(?::?(\d{2}))?\)\s*(.*)$/;
+function mirrorSharedBlock(reason) {
+  const m = SHARED_BLOCK_RE.exec(String(reason || ''));
+  if (!m) return;
+  const until = Date.parse(`${m[1]}T${m[2]}${m[3]}:${m[4] || '00'}`);
+  if (!Number.isFinite(until) || until <= Date.now()) return;
+  if (until > state.blockedUntil) {
+    state.blockedUntil = until;
+    state.blockReason = m[5] || '전역 차단';
+  }
+}
+
 async function dbAcquire(source, keyword) {
   if (!state.dbGate) return { allowed: true, callId: null, reason: '로컬 mock API 테스트', degraded: true };
   try {
@@ -302,6 +319,7 @@ async function dbAcquire(source, keyword) {
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error('coupang_acquire_v2 응답 없음');
     if (row.allowed && !row.call_id) throw new Error('coupang_acquire_v2 허가에 호출 예약 ID가 없습니다');
+    if (!row.allowed) mirrorSharedBlock(row.reason);
     return {
       allowed: !!row.allowed,
       callId: row.call_id || null,
@@ -760,7 +778,7 @@ async function pruneLog(keepDays = 7) {
 module.exports = {
   searchCoupang, collapseOptions, isBlocked, localStats, globalUsage, pruneLog,
   // 전역 카운터 영구 실패 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
-  permanentGateFailure, shouldDisableGlobalGateForTest, COOLDOWN_MIN,
+  permanentGateFailure, shouldDisableGlobalGateForTest, COOLDOWN_MIN, mirrorSharedBlock,
   MAX_PER_MIN, SEARCH_HARD_CAP, GLOBAL_OPERATING_CAP, GLOBAL_HARD_CAP,
   INTERACTIVE_RESERVE, COLLECTOR_BUDGET, parseRetryAfter, buildSearchRequest,
   MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
