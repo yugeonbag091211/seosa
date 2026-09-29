@@ -929,6 +929,12 @@ function adpickLaneStop() {
   if (_adpickCalls >= ADPICK_RUN_BUDGET) return 'budget';
   return '';
 }
+/** 두 제공자 모두 오늘 더 부를 수 없는가 (키가 없거나 하루 예산을 다 썼다). 순수 함수. */
+function nothingLeftToCall(s) {
+  const coupangDone = !s.coupangKeys || s.coupangUsed >= s.coupangBudget;
+  const adpickDone = !s.adpickKey || s.adpickUsed >= s.adpickBudget;
+  return coupangDone && adpickDone;
+}
 function adpickBlockedUntilMs() {
   const s = adpickLocalStats();
   return s.blocked ? Date.now() + Math.max(1, Number(s.blockedForSec) || 0) * 1000 : 0;
@@ -4634,6 +4640,21 @@ async function runLocked(state, lockToken) {
    *   PRICE_INCLUDE_BULK_SEED=1(비상 우회) 과 PRICE_SEED_ONLY=1(시드 모드)은
    *   대상이 카탈로그 전체이므로 예전처럼 전체 스캔을 그대로 쓴다.
    */
+  /*
+   * ★ 두 제공자 모두 오늘 더 부를 수 없으면 대상을 읽지 않고 끝낸다 (2026-09-29).
+   *   낮 이어받기 칸이 늘면서, 하루 예산을 다 쓴 뒤에도 칸마다 대상 1.27만 행(약 10MB
+   *   egress)을 읽고 호출 0회로 끝나는 실행이 생긴다. 사용량은 count 두 번이면 안다.
+   */
+  await loadCoupangDayUsage();
+  await loadAdpickDayUsage();
+  if (!SEED_ONLY && nothingLeftToCall({
+    coupangUsed: _coupangDayUsed, coupangBudget: COUPANG_DAY_BUDGET, coupangKeys: !!(COUP_ACCESS && COUP_SECRET),
+    adpickUsed: _adpickDayUsed, adpickBudget: ADPICK_DAY_BUDGET, adpickKey: adpickHasKey()
+  })) {
+    console.log(`\n[진행] 오늘(${TODAY}) 쿠팡 ${_coupangDayUsed}/${COUPANG_DAY_BUDGET} · ADPICK ${_adpickDayUsed}/${ADPICK_DAY_BUDGET}`
+      + ' — 두 제공자 모두 하루 호출 예산을 다 썼습니다. 대상을 읽지 않고 끝냅니다 (외부 호출 0).');
+    return;
+  }
   const target = SEED_ONLY ? null : await fetchCollectorTargetKeys(targetMeta);
   const catalog = await countCatalog();
 
@@ -5795,6 +5816,7 @@ module.exports = {
   V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET,
   // 2026-09-29 — 우선순위·쿨다운 대기·당일 캐시·레거시 체크포인트 (test-collector-coverage 가 고정한다)
   STATE_CHECKPOINT, PASS_BLOCK_MAX_WAIT_MS, COLLECT_CACHE_TTL_MS, COUPANG_DAY_BUDGET, COUPANG_RUN_BUDGET,
+  nothingLeftToCall,
   // 자정 마감 — test-collector-v3 가 «자정을 넘지 않는다» 를 고정한다.
   runDeadline, DAY_END_MARGIN_MS
 };

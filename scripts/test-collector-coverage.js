@@ -172,6 +172,13 @@ function world(n, budget) {
   check('★ 잠금 조건부 체크포인트는 레거시에도 기본 ON', C.STATE_CHECKPOINT === true);
   eq('수집기는 같은 KST 날짜의 캐시를 인정한다 (24시간 — 날짜 검사는 공급자 모듈)', C.COLLECT_CACHE_TTL_MS, 24 * 3600 * 1000);
   eq('일시 쿨다운 대기 한도 기본 10분/실행', C.PASS_BLOCK_MAX_WAIT_MS, 10 * 60 * 1000);
+  {
+    const s = { coupangUsed: 3400, coupangBudget: 3400, coupangKeys: true, adpickUsed: 3000, adpickBudget: 3000, adpickKey: true };
+    check('★ 두 제공자 모두 하루 예산을 다 썼으면 대상을 읽지 않고 끝낸다', C.nothingLeftToCall(s) === true);
+    check('ADPICK 이 남았으면 돈다', C.nothingLeftToCall({ ...s, adpickUsed: 2999 }) === false);
+    check('쿠팡이 남았으면 돈다', C.nothingLeftToCall({ ...s, coupangUsed: 10 }) === false);
+    check('키가 없는 제공자는 «남은 것 없음» 으로 본다', C.nothingLeftToCall({ ...s, coupangUsed: 0, coupangKeys: false }) === true);
+  }
   console.log('');
 
   /* ── 2. 100개 / 호출 20회 / 5회 실행 ───────────────────────────── */
