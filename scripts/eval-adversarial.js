@@ -242,8 +242,8 @@ console.log('\n[B] 가짜 사실');
   // 최상급
   score('FakeFact', unsupportedSuperlatives('역대 최저가입니다', [{ title: 'x' }]).length === 1,
     '★ 가격 기록 없이 "역대 최저가"');
-  score('FakeFact', unsupportedSuperlatives('역대 최저가입니다', items).length === 0,
-    '가격 기록이 있으면 통과');
+  score('FakeFact', unsupportedSuperlatives('역대 최저가입니다', items).length === 1,
+    '제한된 가격 기록만으로 역대 최저가를 확정하지 않는다');
   score('FakeFact', unsupportedSuperlatives('업계 최고 사양입니다', [{ title: 'x' }]).length > 0,
     '★ 근거 없는 "업계 최고"');
 
