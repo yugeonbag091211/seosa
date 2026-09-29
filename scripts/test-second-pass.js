@@ -402,8 +402,8 @@ function probeChild(envLines) {
     check(m && Number(m[1]) === 15000,
       '★★ 기본 배치 간격이 15,000ms 다 (60,000 → 15,000)', m && m[1]);
 
-    check(/const COUPANG_MIN_GAP_MS\s*=\s*6000;/.test(src),
-      '★★ COUPANG_MIN_GAP_MS 는 6000 그대로 — rate limit 을 우회하지 않았다');
+    check(/const COUPANG_MIN_GAP_MS\s*=\s*4000;/.test(src),
+      '★★ COUPANG_MIN_GAP_MS 는 4000 — collector 최대 15/min');
 
     const cou = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
     check(/COUPANG_SEARCH_OPERATING_CAP', 35\)/.test(cou),
@@ -434,8 +434,8 @@ function probeChild(envLines) {
      * 두게 되고, 그러면 시간이 남는데 예산이 먼저 끊는 상태가 된다.
      *
      * 그래서 지켜야 할 **관계**를 고정한다:
-     *   1) 호출 간격 6초는 그대로다             ← 실제 rate limit 방어선
-     *   2) 실행 예산은 절대 상한(600) 이하       ← 예산 폭주 방지
+     *   1) 호출 간격 4초로 15/min을 고정한다             ← 실제 rate limit 방어선
+     *   2) 실행 예산은 절대 상한(800) 이하       ← 예산 폭주 방지
      *   3) 회수 상한 ≤ 시간이 허용하는 호출 수   ← 안전판이 벽 노릇을 한다
      *   4) 회수 상한 < 실행 예산                ← 1차·facet 몫이 남는다
      *   5) 실행 예산 ≥ 시간이 허용하는 호출 수   ← 시간이 먼저 멈춘다
@@ -454,12 +454,12 @@ function probeChild(envLines) {
       return m ? Number(m[0]) : -1;
     };
     const gapMs = constNum('COUPANG_MIN_GAP_MS');
-    check(gapMs === 6000,
-      '★★ 쿠팡 호출 간격 6초 유지 — 분당 호출 속도를 올리지 않았다', gapMs);
+    check(gapMs === 4000,
+      '★★ 쿠팡 호출 간격 4초 — collector 최대 15/min', gapMs);
 
     const runBudget = constNum('COUPANG_RUN_BUDGET');
-    check(runBudget > 0 && runBudget <= 600,
-      '★★ COUPANG_RUN_BUDGET 이 절대 상한(600) 안에 있다', runBudget);
+    check(runBudget > 0 && runBudget <= 800,
+      '★★ COUPANG_RUN_BUDGET 이 절대 상한(800) 안에 있다', runBudget);
     check((runCode.match(/await fetchAllFn\(/g) || []).length === 2,
       '★★ 쿠팡 호출 경로가 두 곳뿐이다 (1차 · 회수) — 예산을 우회하는 샛길 없음',
       (runCode.match(/await fetchAllFn\(/g) || []).length);
@@ -1589,8 +1589,8 @@ function probeChild(envLines) {
     const dayB = num('COUPANG_DAY_BUDGET'), runB = num('COUPANG_RUN_BUDGET');
     check(dayB > runB,
       '★★ [C] 하루 상한이 실행당 상한보다 크다 (실행 여러 번을 전제한다)', { dayB, runB });
-    check(num('COUPANG_MIN_GAP_MS') === 6000,
-      '★★ [C] 하루 상한을 올려도 호출 간격 6초는 그대로다 (분당 속도 불변)',
+    check(num('COUPANG_MIN_GAP_MS') === 4000,
+      '★★ [C] 하루 상한을 올려도 호출 간격 4초로 15/min을 고정한다 (분당 속도 불변)',
       num('COUPANG_MIN_GAP_MS'));
 
     /* (D) fetchAdpickAll — 차단 래치가 시각 기반이고, stale-cache 가 그것을
