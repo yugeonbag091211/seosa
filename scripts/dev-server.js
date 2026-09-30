@@ -83,7 +83,12 @@ const REWRITES = {
    */
   '/api/radar':         { path: '/api/history', query: { __route: 'radar' } },
   '/api/alternatives':  { path: '/api/history', query: { __route: 'alternatives' } },
-  '/sitemap-products.xml': { path: '/api/history', query: { __route: 'sitemap' } }
+  '/sitemap-products.xml': { path: '/api/history', query: { __route: 'sitemap' } },
+  // 계정 삭제도 새 함수가 아니라 auth.js 의 분기다 (api/_account.js).
+  '/api/account/delete': { path: '/api/auth', query: { action: 'delete-account' } },
+  // 정책 문서의 짧은 주소 — vercel.json 과 같은 rewrite (정적 파일).
+  '/privacy':           { path: '/privacy.html', query: {} },
+  '/terms':             { path: '/terms.html',   query: {} }
 };
 // vercel.json 의 "/p/:pid" 와 같은 규칙. 상품 페이지는 api/history.js 가 그린다.
 const PRODUCT_PAGE_RE = /^\/p\/([^/?#]+)\/?$/;
