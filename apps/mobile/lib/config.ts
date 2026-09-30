@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { createApi } from './api';
+import { buildLinks } from './links';
 
 /*
  * Public configuration only. The app is a public client: anything here ends up in the bundle.
@@ -10,16 +11,7 @@ export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://seo
 
 export const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 
-/*
- * The web shows the privacy policy and terms as overlays inside index.html; there is no
- * standalone URL yet, and no public support address has been chosen. Empty values render as
- * "준비 중" instead of a link (see docs/STORE_READINESS.md — both are required for submission).
- */
-export const LINKS = {
-  site: 'https://seosa.ai.kr',
-  privacy: '',
-  terms: '',
-  support: '',
-} as const;
+/** Policy pages and support contact (lib/links.ts). Support stays empty until EXPO_PUBLIC_SUPPORT_EMAIL is set. */
+export const LINKS = buildLinks({ supportEmail: process.env.EXPO_PUBLIC_SUPPORT_EMAIL });
 
 export const api = createApi({ baseUrl: API_BASE_URL });

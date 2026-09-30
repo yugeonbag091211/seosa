@@ -14,7 +14,6 @@ import { Platform } from 'react-native';
 export const KEYS = {
   saved: 'seosa.saved.v1',
   recentSearches: 'seosa.searches.v1',
-  session: 'seosa.session.v1',
 } as const;
 
 export const kv = {

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { KEYS, secure } from './storage';
-import { isSessionUsable, restoreSession } from './sessionModel';
+import { secure } from './storage';
+import { createSessionStore } from './sessionStore';
+import { isSessionUsable } from './sessionModel';
 import type { Session } from './types';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -11,11 +12,15 @@ type SessionValue = {
   /** The token for an API call, or undefined when signed out / expired (guest AI then). */
   token: () => string | undefined;
   signIn: (s: Session) => Promise<void>;
-  /** User-initiated, or after the server answered 401: forget the token on this device. */
-  signOut: () => Promise<void>;
+  /**
+   * User-initiated, after the server answered 401, or after account deletion: forget the
+   * token on this device. Resolves false if secure storage still holds it afterwards.
+   */
+  signOut: () => Promise<boolean>;
 };
 
 const Ctx = createContext<SessionValue | null>(null);
+const store = createSessionStore(secure);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -23,10 +28,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    secure.get(KEYS.session).then(raw => {
+    store.load().then(s => {
       if (!alive) return;
-      const s = restoreSession(raw);
-      if (raw && !s) secure.remove(KEYS.session);   // expired or unreadable: do not keep it around
       setSession(s);
       setStatus(s ? 'signedIn' : 'signedOut');
     });
@@ -34,16 +37,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (s: Session) => {
-    if (!isSessionUsable(s)) throw new Error('invalid session');
-    await secure.set(KEYS.session, JSON.stringify(s));
+    await store.save(s);
     setSession(s);
     setStatus('signedIn');
   }, []);
 
   const signOut = useCallback(async () => {
-    await secure.remove(KEYS.session);
+    const removed = await store.clear();
     setSession(null);
     setStatus('signedOut');
+    return removed;
   }, []);
 
   const token = useCallback(() => (isSessionUsable(session) ? session.token : undefined), [session]);

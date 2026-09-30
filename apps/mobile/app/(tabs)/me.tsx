@@ -1,6 +1,6 @@
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText } from '../../components/AppText';
 import { Icon } from '../../components/Icon';
 import { ScreenHeader } from '../../components/Screen';
@@ -39,15 +39,16 @@ export default function Me() {
   const { status, session, signOut } = useSession();
   const { saved, recent, clearRecent } = useLocalData();
 
-  const confirmSignOut = () => Alert.alert('로그아웃할까요?', '이 기기에 저장된 로그인 정보가 삭제돼요.', [
-    { text: '취소', style: 'cancel' },
-    { text: '로그아웃', style: 'destructive', onPress: () => { signOut(); } },
-  ]);
-
-  const deletion = () => Alert.alert(
-    '계정 삭제',
-    '앱은 로그인 토큰만 이 기기에 보관하고, 로그아웃하면 지워져요.\n\n서버에 저장된 데이터(찜 동기화·취향·가격 알림)를 지우는 기능은 아직 준비 중이에요.',
-  );
+  const confirmSignOut = () => {
+    const title = '로그아웃할까요?';
+    const message = '이 기기에 저장된 로그인 정보가 삭제돼요.';
+    // react-native-web has no Alert buttons; the web build (development preview only) uses confirm().
+    if (Platform.OS === 'web') { if (globalThis.confirm?.(`${title}\n${message}`)) signOut(); return; }
+    Alert.alert(title, message, [
+      { text: '취소', style: 'cancel' },
+      { text: '로그아웃', style: 'destructive', onPress: () => { signOut(); } },
+    ]);
+  };
 
   return (
     <ScrollView style={{ backgroundColor: theme.bg }} contentContainerStyle={{ paddingBottom: space.section }}>
@@ -60,7 +61,7 @@ export default function Me() {
             <Hairline inset={space.gutter} />
             <Row label="로그아웃" onPress={confirmSignOut} />
             <Hairline inset={space.gutter} />
-            <Row label="계정 삭제" onPress={deletion} danger />
+            <Row label="계정 삭제" onPress={() => router.push('/account-delete')} danger />
           </>
         ) : (
           <Row label={status === 'loading' ? '확인 중…' : '이메일로 로그인'} onPress={status === 'loading' ? undefined : () => router.push('/login')} />

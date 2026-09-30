@@ -16,6 +16,7 @@ import { parseProductKey, sameProduct } from '../../lib/identity';
 import { useLocalData } from '../../lib/local';
 import { recallProduct } from '../../lib/productCache';
 import { useCatalogProduct, usePriceHistory } from '../../lib/queries';
+import { verdictView } from '../../lib/verdict';
 import { mallColor, radius, space, type as t, useTheme } from '../../lib/theme';
 import type { Product } from '../../lib/types';
 
@@ -61,7 +62,8 @@ export default function ProductDetail() {
   const last = points.length ? points[points.length - 1] : null;
   const headline = last ? last.price : product.price;
   const asOf = last ? `${observedLabel(last.date)} 기록` : product.collectedAt ? `${observedLabel(product.collectedAt)} 기준` : '';
-  const deal = history.data?.deal || null;
+  // Only once history has arrived — before that there is nothing to judge or to call "collecting".
+  const verdict = history.data ? verdictView(points.length, history.data.deal) : null;
   const summary = rangeSummary(points);
   const saved = isSaved(product);
   // The drop label belongs to the row's price; once history moves the headline, it no longer applies.
@@ -101,11 +103,16 @@ export default function ProductDetail() {
             ) : null}
           </View>
 
-          {deal ? (
+          {verdict?.kind === 'collecting' ? (
+            <View style={[styles.verdict, { borderLeftColor: theme.line2 }]}>
+              <AppText style={[t.callout, { fontWeight: '700' }]}>가격 추이를 수집하고 있어요</AppText>
+              <AppText tone="soft" style={t.footnote}>기록이 이틀 이상 쌓이면 지금 가격이 어떤지 알려 드려요.</AppText>
+            </View>
+          ) : verdict?.kind === 'deal' ? (
             <View style={[styles.verdict, { borderLeftColor: theme.ink }]}>
-              <AppText style={[t.callout, { fontWeight: '700' }]}>{deal.label}</AppText>
-              {deal.reasons.slice(0, 3).map(r => <AppText key={r} tone="soft" style={t.footnote}>{r}</AppText>)}
-              {deal.cautions.slice(0, 2).map(c => <AppText key={c} tone="faint" style={t.footnote}>{c}</AppText>)}
+              <AppText style={[t.callout, { fontWeight: '700' }]}>{verdict.deal.label}</AppText>
+              {verdict.deal.reasons.slice(0, 3).map(r => <AppText key={r} tone="soft" style={t.footnote}>{r}</AppText>)}
+              {verdict.deal.cautions.slice(0, 2).map(c => <AppText key={c} tone="faint" style={t.footnote}>{c}</AppText>)}
             </View>
           ) : null}
         </View>

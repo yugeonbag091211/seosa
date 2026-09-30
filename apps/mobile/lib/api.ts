@@ -62,6 +62,7 @@ export const TIMEOUTS = {
   init: 20_000,     // cold miss measured 13–14.5 s (2026-09-28); edge-cached for 5 min otherwise
   auth: 15_000,
   ai: 30_000,       // the web's CHAT_TIMEOUT_MS
+  account: 20_000,
 } as const;
 
 export function normalizeBaseUrl(value: string): string {
@@ -263,6 +264,19 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
       const answer = parseAiAnswer(r.body);
       if (!answer) throw new ApiError('invalid_response', '', r.status);
       return answer;
+    },
+
+    /**
+     * POST /api/account/delete (api/_account.js). The server takes the account from the token
+     * alone; the body carries only the explicit confirmation, never an e-mail.
+     *   401 → token missing/expired · 409 → PRO auto-renewal still on · 5xx → nothing to assume
+     */
+    async deleteAccount(token: string): Promise<{ retained: string[] }> {
+      if (!token) throw new ApiError('unauthorized', '');
+      const r = await request('/api/account/delete', { method: 'POST', body: { confirm: 'delete-account' }, token, timeoutMs: TIMEOUTS.account });
+      const b = r.body as { deleted?: unknown; retained?: unknown };
+      if (!b || b.deleted !== true) throw new ApiError('invalid_response', '', r.status);
+      return { retained: Array.isArray(b.retained) ? b.retained.filter((t): t is string => typeof t === 'string') : [] };
     },
   };
 }

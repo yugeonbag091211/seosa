@@ -18,6 +18,8 @@ type LocalValue = {
   recent: string[];
   addRecent: (keyword: string) => void;
   clearRecent: () => void;
+  /** Account deletion: forget everything this device kept for the user. */
+  clearAll: () => Promise<void>;
 };
 
 const Ctx = createContext<LocalValue | null>(null);
@@ -55,11 +57,16 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
   const addRecent = useCallback((keyword: string) => setRecent(prev => pushRecent(prev, keyword)), []);
   const clearRecent = useCallback(() => setRecent([]), []);
+  const clearAll = useCallback(async () => {
+    setSaved([]);
+    setRecent([]);
+    await Promise.all([kv.remove(KEYS.saved), kv.remove(KEYS.recentSearches)]);
+  }, []);
 
   const isSaved = useCallback((id: ProductIdentity) => inList(saved, id), [saved]);
 
-  const value = useMemo(() => ({ ready, saved, isSaved, toggleSaved: toggle, removeSaved: remove, recent, addRecent, clearRecent }),
-    [ready, saved, isSaved, toggle, remove, recent, addRecent, clearRecent]);
+  const value = useMemo(() => ({ ready, saved, isSaved, toggleSaved: toggle, removeSaved: remove, recent, addRecent, clearRecent, clearAll }),
+    [ready, saved, isSaved, toggle, remove, recent, addRecent, clearRecent, clearAll]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
