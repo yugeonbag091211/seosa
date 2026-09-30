@@ -35,7 +35,7 @@
 | 항목 | 상태 | 메모 |
 |---|---|---|
 | Data safety 양식 | ⛔ | App Privacy 와 같은 근거로 작성 |
-| 계정 삭제 **웹 링크** | ⛔ | Play 는 앱 밖에서 삭제를 요청할 수 있는 URL 도 요구한다. 지금은 앱에서만 가능 — 웹 삭제 안내(또는 요청 폼) 필요 |
+| 계정 삭제 **웹 링크** | 🟡 | Play 는 앱 밖에서 삭제를 요청할 수 있는 URL 도 요구한다 → `https://seosa.ai.kr/privacy#delete-account` (#118): 로그인 이메일로 삭제 요청 메일을 보내는 방식. 받는 주소는 기존 정책에 게시된 주소 — 고객지원 연락처가 정해지면 함께 확인 |
 | 실기기 / 내부 테스트 트랙 빌드 | ⛔ | Play Console 계정 필요 |
 
 ## 제휴 링크 — 출시 전 필수 검증 (Coupang / ADPICK affiliate link use in native mobile app)
