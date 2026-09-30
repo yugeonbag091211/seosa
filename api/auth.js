@@ -10,6 +10,7 @@ const { isMissingObject } = require('./_dberror');
  *
  *   POST /api/auth  { email }         → 코드 메일 발송
  *   POST /api/auth  { email, code }   → { token, email, expiresAt }
+ *   POST /api/account/delete          → 계정 삭제 (api/_account.js)
  *
  * 발급된 토큰은 /api/sync, /api/profile, /api/alerts 에
  * Authorization: Bearer <token> 으로 넣어 쓴다.
@@ -56,6 +57,16 @@ module.exports = async function handler(req, res) {
   noStore(res);
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
+
+  /*
+   * 계정 삭제 — POST /api/account/delete (vercel.json rewrite → ?action=delete-account).
+   * 새 함수를 만들 수 없어(Vercel Hobby 12개 상한) 인증과 같은 함수에 둔다.
+   * 신원·삭제 범위·레이트리밋은 전부 api/_account.js 가 따로 정한다 —
+   * 아래 코드 발급 흐름(이메일 입력·auth 한도)과는 아무것도 공유하지 않는다.
+   */
+  if (String((req.query && req.query.action) || '') === 'delete-account') {
+    return require('./_account').deleteAccountHandler(req, res);
+  }
 
   // 메일 발송 비용과 스팸을 막는다. 코드 확인은 조금 더 넉넉히 잡는다.
   if (!guard(req, res, { name: 'auth', limit: 12, windowMs: 10 * 60 * 1000 })) return;

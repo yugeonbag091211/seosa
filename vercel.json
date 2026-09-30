@@ -33,6 +33,18 @@
       "destination": "/api/history?__route=sitemap"
     },
     {
+      "source": "/api/account/delete",
+      "destination": "/api/auth?action=delete-account"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/public/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/public/terms.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/public/$1"
     }
