@@ -237,7 +237,7 @@ function detectBrandHead(headToken, titles) {
  * @param {string} keyword
  * @param {object} opts
  *   titles — 이번에 받아온 상품명들. 머리 토큰이 브랜드인지 판단하는 데만 쓴다.
- * @returns {{raw, normalized, tokens, totalWeight, brandHead}}
+ * @returns {{raw, normalized, tokens, totalWeight, brandHead, intent, modelKeys, accessories}}
  */
 function analyzeQuery(keyword, opts = {}) {
   const normalized = normalizeText(keyword);
@@ -259,7 +259,21 @@ function analyzeQuery(keyword, opts = {}) {
   });
 
   const totalWeight = tokens.reduce((a, t) => a + t.weight, 0);
-  return { raw: String(keyword || ''), normalized, tokens, totalWeight, brandHead: !!brandHead };
+  const analysis = { raw: String(keyword || ''), normalized, tokens, totalWeight, brandHead: !!brandHead };
+  analysis.modelKeys = modelCodes(keyword);
+  analysis.accessories = accessoryTerms(normalized);
+  // A broad head query need not partition the candidates: every returned title
+  // may contain it. Infer this intent from a primary title, without a brand list.
+  const primaryHead = head && raw[0] === head && (opts.titles || []).some(title => {
+    const core = identityTokens(title);
+    return core[0] && core[0].startsWith(head)
+      && !compatibilityMention(analysis, title) && !accessoryTerms(normalizeText(title)).length;
+  });
+  analysis.intent = analysis.accessories.length ? 'ACCESSORY'
+    : analysis.modelKeys.length ? 'MODEL'
+    : raw.length === 1 && (brandHead || primaryHead) ? 'BRAND_ONLY'
+    : brandHead || primaryHead ? 'BRAND_PRODUCT' : 'PRODUCT';
+  return analysis;
 }
 
 /**
@@ -480,10 +494,88 @@ const ACCESSORY_TIER = [
  * 아예 안 거는 쪽이 낫다.
  */
 
-/** 검색어 자체가 부속을 가리키는가 (그렇다면 부속 감점을 걸면 안 된다). */
+/** 검색어 자체가 부속을 가리키는가 (요청한 부속은 본품으로 취급한다). */
 function queryWantsAccessory(analysis) {
-  const n = analysis.normalized || '';
-  return ACCESSORY_TIER.some(([w]) => n.indexOf(w) > -1);
+  return accessoryTerms(analysis.normalized || '').length > 0;
+}
+
+// Generic sold-object nouns, not manufacturers or product families. Ambiguous
+// printer consumables/mechanical gears require title context below.
+const COMPONENT_TIER = [
+  ['어셈블리', 0.45], ['브래킷', 0.45], ['브라켓', 0.45],
+  ['assembly', 0.45], ['bracket', 0.45], ['toner', 0.55],
+  ['이어패드', 0.72], ['깔창', 0.72], ['신발끈', 0.72],
+  ['earpad', 0.72], ['ear', 0.72], ['sole', 0.72], ['cable', 0.72], ['brush', 0.85],
+  ['case', 0.72], ['cover', 0.72], ['filter', 0.85],
+  ['battery', 0.85], ['charger', 0.85]
+];
+
+function termInToken(word, token) {
+  return /^[a-z]+$/.test(word) ? token === word || token === `${word}s`
+    : token.includes(word);
+}
+
+function accessoryTermAt(word, tokens, at) {
+  // "ear" alone also names a wearable's shape. Only the sold ear component
+  // phrases count; whole-ear/on-ear headphones remain main products.
+  if (word === '토너' || word === '잉크') {
+    return new RegExp(`^(?:정품|재생|호환|교체용)?${word}(?:카트리지|세트|팩)?$`).test(tokens[at]);
+  }
+  return termInToken(word, tokens[at]) && (word !== 'ear'
+    || /^(tips?|pads?)$/.test(tokens[at + 1] || ''));
+}
+
+function accessoryTerms(normalized) {
+  const tokens = splitTokens(normalized);
+  return [...ACCESSORY_TIER, ...COMPONENT_TIER, ['토너', 0.55], ['잉크', 0.55], ['기어', 0.45]]
+    .filter(([word]) => tokens.some((token, i) => accessoryTermAt(word, tokens, i)))
+    .map(([word]) => word);
+}
+
+function modelCodes(text) {
+  return (String(text || '').normalize('NFKC').toLowerCase()
+    .match(/[a-z0-9]+(?:[-_][a-z0-9]+)*/g) || [])
+    .filter(code => /[a-z]/.test(code) && /\d/.test(code)
+      && !UNIT_RE.test(code) && !CAPACITY_RE.test(code));
+}
+
+function identityTokens(title) {
+  const plain = String(title || '').replace(/^\s*\[([^\]]+)\]\s*/, (whole, label) =>
+    /해외|국내|배송|할인|결제|특가|공식|정품|쿠폰/.test(label) ? '' : whole);
+  return coreTokens(plain).filter(token => !COMMON_WORDS.has(token)
+    && !TAIL_NOISE.has(token) && !YEAR_RE.test(token) && !UNIT_RE.test(token));
+}
+
+function compatibilityMention(analysis, title) {
+  const normalized = normalizeText(title);
+  const tokens = splitTokens(normalized);
+  const wanted = analysis.tokens.filter(token => token.kind !== KIND.COMMON);
+  const targetSuffix = wanted.some(token => token.text.length >= 2 && tokens.some(t =>
+    t.includes(`${token.text}용`) || t.includes(`${token.text}전용`)));
+  // Relation words only affect ranking when a sold accessory is also found.
+  return targetSuffix || /호환|교체용|전용/.test(normalized)
+    || /\b(?:for|compatible|replacement)\b/.test(normalized);
+}
+
+function titleRelation(analysis, title) {
+  let factor = 1;
+  const reasons = [];
+  const raw = String(title || '').normalize('NFKC').toLowerCase();
+  if (analysis.modelKeys.length && !analysis.modelKeys.every(wanted => {
+    const pattern = wanted.replace(/[-_]/g, '').split('').join('[-_\\s]*');
+    return new RegExp(`(?:^|[^a-z0-9])${pattern}(?=$|[^a-z0-9])`).test(raw);
+  })) {
+    factor *= 0.4;
+    reasons.push('model-boundary-miss');
+  }
+  // A late head mention is evidence of a different product identity. Keep
+  // family/category queries conservative: only broad primary-head evidence
+  // enables this signal, and one preceding manufacturer token is harmless.
+  if (analysis.intent === 'BRAND_ONLY') {
+    const at = matchIndex(analysis.tokens[0], identityTokens(title));
+    if (at >= 2) { factor *= 0.65; reasons.push('late-head'); }
+  }
+  return { factor, reason: reasons.join(',') };
 }
 
 /**
@@ -500,10 +592,9 @@ function queryWantsAccessory(analysis) {
 function productFocus(analysis, rawTitle) {
   const none = { factor: 1, at: -1, accessory: '', reason: '' };
   if (!analysis || !analysis.tokens || !analysis.tokens.length) return none;
-  // 검색어가 부속을 찾고 있으면(이어팁·충전기 검색) 부속을 내리면 안 된다.
-  if (queryWantsAccessory(analysis)) return none;
-
-  const core = coreTokens(rawTitle);
+  // Retain inclusion/giveaway words: coreTokens removes these trailing words,
+  // which would turn a bundled main product into a standalone accessory.
+  const core = splitTokens(normalizeText(rawTitle));
   if (core.length < 2) return none;
 
   // 검색어가 제목에 «처음» 닿는 자리. 여러 토큰이면 그중 가장 앞.
@@ -516,19 +607,56 @@ function productFocus(analysis, rawTitle) {
   if (at < 0) return none;
 
   /*
-   * 닿은 자리 «뒤» 에서만 부속 낱말을 찾는다. 앞이나 같은 자리는 보지 않는다.
+   * 보통 닿은 자리 뒤에서 부속을 찾는다. 명시적 호환 관계라면 앞의 부속도,
+   * 붙여 쓴 '아이폰케이스'라면 같은 토큰 안의 뒤쪽 부속도 실제 판매 대상이다.
    * 여러 개면 가장 강한(계수가 낮은) 것을 쓴다 — "뚜껑 실리콘 패킹" 처럼
    * 약한 말과 강한 말이 같이 오면 강한 쪽이 이 상품의 정체에 가깝다.
    */
+  const requested = analysis.accessories || accessoryTerms(analysis.normalized || '');
+  const requestedAt = core.findIndex((token, i) => requested.some(w => accessoryTermAt(w, core, i)));
+  const compatible = compatibilityMention(analysis, rawTitle);
+  const norm = normalizeText(rawTitle);
+  const printerContext = /프린터|레이저|printer|laser|카트리지|정품토너/.test(norm);
+  const cosmeticContext = /피부|보습|스킨|화장품|페이스|skin|facial|hydrating/.test(norm)
+    || core.some(token => /^\d+ml$/.test(token));
+  const consumableContext = printerContext || (modelCodes(rawTitle).length > 0 && !cosmeticContext);
+  const tiers = [...ACCESSORY_TIER, ...COMPONENT_TIER];
+  if (consumableContext) tiers.push(['토너', 0.55], ['잉크', 0.55]);
+  if (/베벨|리프팅|카세트|브래킷|브라켓|부품|교체/.test(norm)) tiers.push(['기어', 0.45]);
+  if (compatible) tiers.push(['display', 0.72]);
+  if (compatible && /\breplacement\b/.test(norm)) tiers.push(['scanner', 0.45]);
   let factor = 1, hit = '';
-  for (let i = at + 1; i < core.length; i++) {
-    for (const [w, weight] of ACCESSORY_TIER) {
-      if (core[i].indexOf(w) > -1 && weight < factor) { factor = weight; hit = w; }
+  for (let i = 0; i < core.length; i++) {
+    // Before the query anchor, only an explicit target relation is evidence.
+    if (i < at && !compatible) continue;
+    for (const [w, weight] of tiers) {
+      if (!accessoryTermAt(w, core, i)) continue;
+      if (i === at && !compatible && !analysis.tokens.some(tok => {
+        const start = core[i].indexOf(tok.text);
+        return start >= 0 && core[i].indexOf(w) >= start + tok.text.length;
+      })) continue;
+      if (requested.some(q => q === w || (SYNONYMS.get(q) || new Set()).has(w))) continue;
+      // Descriptors of the requested accessory (replacement tips, lid seal,
+      // refill bottle) are still that accessory. A later enclosure can instead
+      // be a different sold object, e.g. a case for the requested battery.
+      if (requested.length) {
+        const enclosure = /^(케이스|커버|파우치|보관함|case|cover)$/.test(w);
+        const between = core.slice(Math.min(i, requestedAt), Math.max(i, requestedAt) + 1);
+        const accessoryTarget = between.some(t => /^(전용|호환|for|compatible)$/.test(t)
+          || requested.some(q => t.includes(`${q}용`) || t.includes(`${q}전용`)));
+        if (requestedAt < 0 || /^(교체용|소모품|부품|리필)$/.test(w)
+          || !(enclosure || accessoryTarget)) continue;
+      }
+      // A supplied accessory is not the sold object. Both prefix giveaways and
+      // trailing bundles stay available; no category/brand dictionary needed.
+      if (core[i + 1] && /^(포함|증정|동봉|내장|사은품|included)$/.test(core[i + 1])) continue;
+      const adjusted = compatible ? Math.min(weight, 0.4) : weight;
+      if (adjusted < factor) { factor = adjusted; hit = w; }
     }
   }
   if (!hit) return none;
 
-  return { factor, at, accessory: hit, reason: `tail-acc:${hit}` };
+  return { factor, at, accessory: hit, reason: `${compatible ? 'compat-acc' : 'tail-acc'}:${hit}` };
 }
 
 /** 상품명을 한 번만 분석해 두고 여러 검색어에 재사용한다. */
@@ -913,10 +1041,11 @@ function rankItems(keyword, items, opts = {}) {
      * 서로 다른 물음이라 한 숫자에 섞지 않는 편이 낫다.
      */
     const f = productFocus(analysis, it && it.title);
+    const relation = titleRelation(analysis, it && it.title);
     if (it) {
-      it.relevance = Math.round(r.score * f.factor * 1000) / 1000;
+      it.relevance = Math.round(r.score * f.factor * relation.factor * 1000) / 1000;
       // 왜 내려갔는지 남긴다. 진단용이고 응답 형태를 바꾸지 않는다(undefined 면 직렬화에서 빠진다).
-      it.relevanceWhy = [r.reason, f.reason].filter(Boolean).join(',') || undefined;
+      it.relevanceWhy = [r.reason, f.reason, relation.reason].filter(Boolean).join(',') || undefined;
     }
     return { it, r, f };
   });

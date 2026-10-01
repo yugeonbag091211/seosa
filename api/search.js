@@ -178,7 +178,9 @@ module.exports = async function handler(req, res) {
      * 가 아니라 "무엇을 먼저 볼까" 이기 때문이다. 관련도가 낮은 것은 아래로
      * 내려갈 뿐 목록에는 남는다.
      */
-    rankItems(keyword, items, { minScore: 0 });
+    // rankItems normalizes text itself; retain original model separators so
+    // SM-S942N is checked as a complete code, not only the S942N fragment.
+    const relevance = rankItems(rawKeyword, items, { minScore: 0 });
 
     /*
      * 순서.
@@ -190,7 +192,7 @@ module.exports = async function handler(req, res) {
      * 상품"이 1위인 것은 최저가 비교 서비스에서 가장 하기 쉬운 실수다
      * (_search.sortByRelevance 주석 참고).
      */
-    const ranked = sortByRelevance(items);
+    const ranked = sortByRelevance(relevance.items);
 
     /*
      * 결과가 없을 때만 보정/대체 검색어를 만든다.
