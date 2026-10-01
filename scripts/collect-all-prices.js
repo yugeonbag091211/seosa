@@ -2474,6 +2474,19 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡') {
   return out;
 }
 
+/**
+ * 현재 미확보 상품에 대한 추가 검색의 우선순위.
+ * 상품별 정확한 ID 검증·API 한도와는 독립적인 순서 정책이다.
+ * 1개의 상시 상품을 찾는 검색은 단순 회전 검색보다 우대하되,
+ * 여러 상품을 함께 찾을 수 있는 회전 검색도 기회를 유지한다.
+ */
+function recoveryPriorityScore(rows, planner) {
+  const ps = Array.isArray(rows) ? rows : [];
+  if (!planner || !planner.dailyFirst || typeof planner.tierOf !== 'function') return ps.length;
+  const daily = ps.filter(p => planner.tierOf(p) === 'daily').length;
+  return Math.min(planner.limit || 10, ps.length) + 3 * daily;
+}
+
 /* ─── 상품 단위 최종 상태 (2026-09-22) ──────────────────────────
  *
  * ★ 왜 필요한가.
@@ -4008,7 +4021,21 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         // ★ hintCalls 는 바깥 변수다 (선언부 주석 참고) — canCall() 이 매
         //   반복마다 이 값을 보고 회수 상한을 지킨다.
         let hintHit = 0;
-        for (const [q, pids] of byQuery) {
+        /*
+         * cacheHintQueries 는 PK(keyword) 순서로 반환한다. 그대로 부르면
+         * 오래된/희귀 상품의 가나다순 검색어가 고수율 상시 상품의 힌트를
+         * 선점한다. 오늘 실제 미확보 대상 수와 daily 가중치로 순서를 잡는다.
+         * 새 가격은 항상 기존 fetchAllFn 에서만 받는다.
+         */
+        const hintQueue = [...byQuery.entries()].map(([q, pids]) => ({
+          q, pids,
+          rows: [...uncovered.values()].filter(p => pids.includes(String(p.product_id)))
+        }));
+        if (v3Plan && planner.dailyFirst) {
+          hintQueue.sort((a, b) =>
+            recoveryPriorityScore(b.rows, planner) - recoveryPriorityScore(a.rows, planner));
+        }
+        for (const { q, pids } of hintQueue) {
           if (!canCall()) break;
           // 앞선 호출이 이미 잡았거나, 옵션 게이트가 확정 실패를 낸 상품은 뺀다 (P1).
           const targets = [...uncovered.values()]
@@ -4064,7 +4091,16 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     const facetDry = new Set(priorFacetDry);
     const bigGroups = plan
       .filter(g => g.rows.length > FACET_MIN_GROUP && !facetDry.has(g.kw) && g.rows.some(eligible))
-      .sort((x, y) => y.rows.length - x.rows.length);
+      .sort((x, y) => {
+        if (v3Plan && planner.dailyFirst) {
+          const score = recoveryPriorityScore(
+            y.rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`) && eligible(p)), planner)
+            - recoveryPriorityScore(
+              x.rows.filter(p => uncovered.has(`${p.product_id}|${p.mall}`) && eligible(p)), planner);
+          if (score) return score;
+        }
+        return y.rows.length - x.rows.length;
+      });
 
     if (bigGroups.length && canCall()) {
       console.log(`── [${mallName}] facet 패스: ${FACET_MIN_GROUP}개 초과 그룹 ${bigGroups.length}종 ──`);
@@ -4197,7 +4233,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
        */
       const queue = [...byQuery.entries()]
         .map(([q, rows]) => ({ q, rows }))
-        .sort((a, b) => b.rows.length - a.rows.length);
+        .sort((a, b) => {
+          if (v3Plan && planner.dailyFirst) {
+            const score = recoveryPriorityScore(b.rows, planner)
+              - recoveryPriorityScore(a.rows, planner);
+            if (score) return score;
+          }
+          return b.rows.length - a.rows.length;
+        });
 
       let roundCalls = 0, roundHit = 0;
       for (const { q, rows } of queue) {
@@ -5841,7 +5884,7 @@ module.exports = {
   chunkIdsByLength, ID_BATCH_CHARS,
   // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
-  addCacheHints, cacheHintQueries,
+  addCacheHints, cacheHintQueries, recoveryPriorityScore,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   sameTargetSet, coverageOnlyResumeState,
