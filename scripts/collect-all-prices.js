@@ -161,115 +161,35 @@ const COUPANG_LIMIT = Number(process.env.COUPANG_FETCH_LIMIT) || 10;
 /** ADPICK 검색 API limit 상한은 20 (api/_adpick.js ADPICK_MAX_LIMIT). */
 const ADPICK_LIMIT  = Number(process.env.ADPICK_FETCH_LIMIT) || 20;
 
-// 배치 실행이라 사용자 대기 시간이 없다. 호출 간격을 넉넉히 벌려
-// 라이브 검색(/api/search)이 쓸 몫을 분당 절반 이상 남겨둔다.
-const COUPANG_MIN_GAP_MS  = 4000;    // → 이 스크립트만으로는 분당 최대 15회
+// collector만 3초/20회로 운용한다. DB gate는 Search 35회 중 interactive 15회를 예약한다.
+// 배포 env는 이 1차 상향의 상한을 낮출 수만 있다.
+function coupangBudgetEnv(name, ceiling) {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.min(ceiling, Math.max(1, Math.floor(n))) : ceiling;
+}
+const COUPANG_MIN_GAP_MS  = Math.max(3000, Number(process.env.COUPANG_COLLECT_MIN_GAP_MS) || 3000);
 const COUPANG_MAX_WAIT_MS = 120000;
 // ADPICK은 api/_adpick.js 자체 상한(분당 20회, 기본 간격 1초)이 쿠팡보다 느슨하다.
 // 이 스크립트는 그보다 더 보수적으로 잡아 라이브 검색(/api/search) 몫을 남긴다.
 const ADPICK_MIN_GAP_MS   = Number(process.env.ADPICK_COLLECT_MIN_GAP_MS) || 1500;
 const ADPICK_MAX_WAIT_MS  = 60000;
 /*
- * 실행당 쿠팡 호출 상한.
- *
- * 2026-08-13 운영 DB 실측:
- *   products 1,479행
- *     ├ 쿠팡    770 (keyword 있음 487 / 제목에서 유도 283, 유도 실패 0)
- *     └ 비쿠팡  709 → 연동이 없어 수집 대상이 아니다
- *   고유 검색어 316종 = 하루 한 바퀴에 필요한 호출 수
- *
- * ★ 예산을 120 → 400 으로 올렸다.
- *   예전에는 이 값이 "한 실행이 얼마나 도는가"를 결정했다(며칠에 걸쳐 한 바퀴).
- *   이제는 배치 루프가 1분 간격으로 페이스를 잡고 진행 위치를 DB 에 남기므로,
- *   속도를 정하는 것은 이 예산이 아니라 BATCH_INTERVAL_MS 다. 예산은
- *   "폭주 시 안전판" 역할만 한다. 316종을 하루에 한 바퀴 돌리려면 316 이상이어야 한다.
- *
- *   호출 속도는 이 값과 무관하게 세 겹으로 막혀 있다:
- *     COUPANG_MIN_GAP_MS(4초)  → 이 스크립트만으로 분당 최대 10회
- *     _coupang.MAX_PER_MIN(20) → 모든 인스턴스 합산 분당 20회
- *     쿠팡 공식 한도            → 분당 50회
- *
- *   ★ 400 → 500 (2026-09-03). 시간이 먼저 멈추게 하기 위해서다.
- *
- *     쿠팡 몫이 42분(COUPANG_BUDGET_MS)이 되면서 한 실행이 쓸 수 있는 호출이
- *     42분 ÷ 4초 = 630회가 됐다. 400 을 그대로 두면 시간이 남았는데도 예산이
- *     먼저 걸려 20회를 버린다. 이 값은 "폭주 시 안전판" 이지 페이스 조절
- *     장치가 아니므로, 정상 실행에서 닿지 않는 자리(500)로 올린다.
- *
- *     ★ 분당 속도는 한 자리도 바뀌지 않는다. 위 세 겹은 그대로다.
- *       달라지는 것은 하루 총량이고, 그 값은 아래와 같다:
- *         현재(1차 패스만)    실측 ~380회/일
- *         목표(1차+회수 패스) 계산 ~1,300회/일
- *       쿠팡 공식 문서의 한도는 분당(검색 50회/분)이고 일일 상한은 공표된 바
- *       없다. 우리 최고 속도는 그 한도의 20%(10회/분)로 변함이 없다.
+ * 실행당 쿠팡 실제 외부 호출 상한: 기본 900회. 캐시·DB gate 거절은 제외하고,
+ * 오류/타임아웃도 외부 호출이면 포함한다. in-flight 예약으로 동시 호출 초과를 막는다.
+ * #112의 4초/15회·700회에서 3초/20회·900회로 1차 상향한다.
+ * 속도는 collector 간격과 DB gate(Search 운영 35/min, reserve 15/min)가 정한다.
+ * DB 고정 hard cap은 Search 50/min·전체 API 100/min이다.
  */
-const COUPANG_RUN_BUDGET  = Number(process.env.COUPANG_RUN_BUDGET) || 700;
+const COUPANG_RUN_BUDGET  = coupangBudgetEnv('COUPANG_RUN_BUDGET', 900);
 /*
- * ── 하루 총량 상한 (2026-09-03 신설) ─────────────────────────────
- *
- * ★ 왜 실행당 예산만으로는 부족한가.
- *
- *   같은 감사에서 cron 칸을 3개 → 8개로 늘렸다(.github/workflows/daily-prices.yml).
- *   실행 횟수가 늘면 "실행당 500회" 는 하루 총량을 더 이상 묶어 주지 못한다.
- *   최악의 경우 8 × 500 = 4,000회가 되는데, 그 값을 아무도 의도한 적이 없다.
- *
- * ★ 2,200 인 근거 (실측 기반 계산).
- *
- *     1차 패스        399회   (고유 검색어 399종)
- *     회수 패스   ~1,330회   (미수집 792개 × 회수 1개당 2.17회 ÷ 회수율 77.8%
- *                            — 미수집 실상품 45개 표본의 실측값)
- *     합계        ~1,730회   ← 90% 도달에 필요한 양
- *     여유          +470회   ← 재시도·부분 실패분
- *
- *   즉 "필요한 만큼 + 여유" 이지 "쓸 수 있는 만큼" 이 아니다.
- *
- * ★ 분당 속도와는 무관하다. 속도는 COUPANG_MIN_GAP_MS(4초, 분당 15회)와
- *   _coupang.MAX_PER_MIN(20), 쿠팡 공식 한도(검색 50회/분)가 정하고 그대로다.
- *   이 값은 하루 총량의 천장일 뿐이다.
- *
- * 오늘 이미 쓴 양은 coupang_api_calls 에서 실행 시작 때 한 번 읽는다
- * (loadCoupangDayUsage). 조회에 실패하면 0 으로 두고 진행한다 — 이 상한
- * 때문에 수집이 멈추는 것이 실패보다 나쁘기 때문이다.
+ * KST 하루 collect-source 호출 상한은 3,400회로 유지한다.
+ * 2026-09-19 회수 가능한 미수집 상품과 당시 추가 호출당 회수율(~0.6개)을 근거로
+ * 2,800→3,400으로 정했다. 이번 변경은 일일 총량을 늘리지 않는다.
+ * 시작 시 읽은 사용량 + 이번 실행의 실제 호출 + in-flight로 로컬에서 제한한다.
+ * 조회 오류는 fail-closed, 여러 실행의 합산은 coupang_acquire_v2의 같은 DB 잠금이 보호한다.
+ * DB 예약은 pending/error도 포함해 프로세스가 죽어도 한도가 다시 열리지 않는다.
  */
-/*
- * ★ 2,200 → 2,800 (2026-09-08 감사). 근거는 «한계수익이 아직 안 꺾였다» 는 실측이다.
- *
- *   일별 실측 (coupang_api_calls × price_history, 읽기 전용 조회):
- *     KST 09-03   호출 2,128 → 쿠팡 1,369/1,648 (83.1%)
- *     KST 09-06   호출 2,200 ← 상한 소진 → 1,379 (83.7%)
- *     KST 09-07   호출 2,200 ← 상한 소진 → 1,346 (81.7%)
- *   즉 좋은 날의 천장을 만든 것은 시간도 검색 품질도 아니고 이 상수였다.
- *
- *   그리고 호출을 더 해도 수익이 떨어지지 않는다. 같은 날 회수 패스의
- *   100호출 구간별 회수량(2026-09-08 실행 로그 34161068885·34164621465 에서 계산):
- *     1-100  0.40/호출   151-250  0.64   301-400  0.62   401-500  0.64
- *   887회까지 평평하다. 포화 곡선이 아니라 직선이라, 상한을 올린 만큼
- *   그대로 회수로 돌아온다 (실측 기울기 0.6개/호출).
- *
- *   2,800 인 근거: 남은 미수집 중 «도달 가능이 증명된» 상품(최근 14일 안에
- *   최소 한 번 수집된 적 있는 상품)을 0.6개/호출로 덮는 데 필요한 양이
- *   +600회다. 그 위로는 구조적 불가 87개(14일간 전무 = 색인 이탈/판매 종료)
- *   뿐이라 호출을 더 줘도 살 것이 없다. "쓸 수 있는 만큼" 이 아니라
- *   "살 것이 남아 있는 만큼" 이다.
- *
- * ★ 분당 호출 속도는 한 자리도 바뀌지 않는다. 세 겹 그대로다 —
- *   COUPANG_MIN_GAP_MS(4초, 분당 15회) / _coupang.MAX_PER_MIN(전역 분당 20회)
- *   / 쿠팡 공식 한도(검색 50회/분). 이 값은 하루 총량의 천장일 뿐이고,
- *   scripts/test-second-pass.js 가 간격 4000ms 를 소스에서 그대로 고정한다.
- */
-/*
- * ★ 2,800 → 3,400 (2026-09-19).
- *
- * bulk seed 카탈로그를 일일 대상에서 분리한 뒤 운영 대상은 쿠팡 1,831개가 됐다.
- * 이 중 최근 14일 안에 실제로 한 번 이상 잡힌 상품은 1,679개(91.7%)라 90%
- * 목표는 도달 가능하다. 반면 최근 2,800호출 날의 현재 대상 기준 일일 보유는
- * 약 1,300대였고, 09-08 실측 한계수익(~0.6개/추가 호출)을 적용하면 90%까지
- * 약 500여 호출이 더 필요하다. 그래서 여유를 포함해 3,400으로 둔다.
- *
- * 분당 속도는 바꾸지 않는다. COUPANG_MIN_GAP_MS=4000과 _coupang의 전역
- * 분당 제한은 그대로이며, 이 값은 KST 하루 총량의 천장만 넓힌다.
- */
-const COUPANG_DAY_BUDGET = Number(process.env.COUPANG_DAY_BUDGET) || 3400;
+const COUPANG_DAY_BUDGET = coupangBudgetEnv('COUPANG_DAY_BUDGET', 3400);
 
 /** ADPICK 도 같은 안전판. ADPICK 수집 대상 712개 / 검색어 75종(2026-09-03 실측)이라
  *  이 값을 넘길 일이 당분간 없지만, 폭주 방지용으로 똑같이 둔다. */
@@ -304,64 +224,23 @@ const BATCH_PRODUCTS    = Number(process.env.PRICE_BATCH_PRODUCTS) || 20;
  *
  * ── 왜 줄여도 안전한가 ──────────────────────────────────────────
  * 실제 API 호출 속도를 정하는 것은 이 값이 아니라 호출 간격이다.
- *   · 쿠팡  COUPANG_MIN_GAP_MS = 4000  (분당 10회)  ← 그대로 둔다
- *   · 전역  coupang_acquire(max_per_min)             ← 그대로 둔다
+ *   · 쿠팡  COUPANG_MIN_GAP_MS = 3000  (collector 최대 분당 20회)
+ *   · 전역  coupang_acquire_v2 (Search 35 / reserve 15 / collector 20)
  *   · 서킷 브레이커 / 실행당 호출 예산                ← 그대로 둔다
  * 배치 간격은 그 위에 얹힌 **이중 규제**라, 줄여도 분당 호출 수는 변하지
  * 않는다. 줄어드는 것은 "아무 호출도 하지 않고 흘려보내는 시간"뿐이다.
  *
  * rate limit 을 우회하는 변경이 아니다 — 우회할 대상(minGap·전역 카운터)은
- * 손대지 않았고, 이 값을 0 으로 해도 호출은 여전히 6초에 한 번만 나간다.
+ * 손대지 않았고, 이 값을 0 으로 해도 호출은 최소 3초에 한 번만 나간다.
  */
 const BATCH_INTERVAL_MS = Number(process.env.PRICE_BATCH_INTERVAL_MS) || 15000;
 
 /*
- * ── 2차 패스 (P0-1) ────────────────────────────────────────────
- * 1차에서 못 잡은 상품만 좁은 검색어로 다시 찾는다. 자세한 근거는
- * runMallCollection 안의 "2차 패스" 주석 참고.
- *
- *   SECOND_PASS_ENABLED    끄고 싶으면 PRICE_SECOND_PASS=0
- *   SECOND_PASS_MAX_CALLS  이 패스가 쓸 수 있는 최대 호출 수.
- *
- *     ★ 이것은 실행 예산 자체가 아니라 **회수 패스의 하위 상한**이다.
- *       호출 예산 hard stop 은 COUPANG_RUN_BUDGET(400) 이고,
- *       모든 쿠팡 호출이 fetchCoupangAll 을 지나면서 그 검사를 받는다
- *       (1차 processGroup · facet · 회수 라운드 전부 fetchAllFn 경유).
- *
- *     ★ 먼저 걸려야 하는 것은 이 하위 상한이 아니라 **시간**이다.
- *       쿠팡 몫 42분(COUPANG_BUDGET_MS) ÷ 호출 간격 4초
- *         = 실행당 실제 API 호출 630회
- *       canCall() 이 deadlineTs 를 매 호출마다 검사하므로, 시간이 다하면
- *       이 값과 무관하게 회수 패스는 그 자리에서 멈춘다.
- *       (캐시 적중은 간격을 먹지 않으므로 이 계산에서 빠진다)
- *
- *     ── 240 → 420 (2026-09-03) ────────────────────────────────
- *
- *       240 은 "몰당 25분 = 250회" 를 전제로 고른 값이었다. 그 전제가
- *       바뀌었다 — ADPICK_RESERVE_MS 주석 참고. 쿠팡 몫이 42분으로 늘어
- *       한 실행이 시간 안에 낼 수 있는 호출이 42분 ÷ 4초 = 630회가 됐다.
- *
- *       그리고 하루의 **두 번째 이후 실행은 1차 패스가 이미 끝나 있다**
- *       (커서가 끝에 있어 1차는 호출 0회로 지나간다). 즉 그 실행의 시간은
- *       거의 전부 회수 패스 몫인데, 240 이 그 절반을 잘라내고 있었다.
- *
- *         하루 회수 호출 = 실행1(420 - 399 1차) + 이후 실행들
- *           상한 240 →  21 + 240 + 240 + …
- *           상한 420 →  21 + 420 + 420 + …   ← 시간이 상한이 된다
- *
- *       ★ 420 을 넘기지 않는다. 시간이 허용하는 것보다 큰 상한은 안전판
- *         노릇을 못 한다 — 값을 올려도 실제 호출은 늘지 않으면서, 시간
- *         계산이 틀렸을 때 막아 줄 벽만 사라진다.
- *         scripts/test-second-pass.js 가 이 관계(상한 ≤ 시간이 허용하는 호출 수,
- *         상한 < COUPANG_RUN_BUDGET)를 소스에서 직접 계산해 고정한다.
- *
- *       분당 속도는 한 자리도 바뀌지 않는다 — COUPANG_MIN_GAP_MS(4초)와
- *       전역 분당 상한이 그대로 정한다.
- *
- *   SECOND_PASS_TOKENS     (구) 제목에서 뽑을 토큰 수. 검색어 생성이
- *                          api/_query.js 로 옮겨간 뒤로는 쓰이지 않는다.
- *                          지우지 않는 이유는 env 로 값을 넣어 둔 배포가
- *                          있을 수 있어서다 — 읽되 동작에 영향은 없다.
+ * 2차 패스는 1차에서 못 잡은 상품만 좁은 검색어로 회수한다.
+ * PRICE_SECOND_PASS=0으로 끈다. PRICE_SECOND_PASS_MAX_CALLS는 회수의 하위 상한이다.
+ * 기본 630은 ADPICK에도 공유되므로 이번 쿠팡 상향에서 변경하지 않는다.
+ * 모든 쿠팡 경로(1차·facet·회수)는 fetchCoupangAll의 run 900/day 3400을 지난다.
+ * 시간 마감과 3초 간격·DB 분당 gate는 이 하위 상한과 별도로 적용된다.
  */
 const SECOND_PASS_ENABLED   = process.env.PRICE_SECOND_PASS !== '0';
 const SECOND_PASS_MAX_CALLS = Number(process.env.PRICE_SECOND_PASS_MAX_CALLS) || 630;
@@ -480,7 +359,7 @@ const RUN_TIME_BUDGET_MS = Number(process.env.PRICE_RUN_BUDGET_MS) || 50 * 60 * 
  *
  * ★ 절반씩 나누는 것이 왜 틀렸나 — 두 몰의 일이 같은 크기가 아니다.
  *
- *   실측 (2026-09-03 운영 DB):
+ *   당시 실측 (2026-09-03 운영 DB, 아래 간격·호출량은 역사적 값):
  *     쿠팡    수집 대상 1,548개 / 고유 검색어 399종
  *             호출 간격 6초  → 1차 패스만으로 399 × 6s = 39.9분
  *     ADPICK  수집 대상   712개 / 고유 검색어  75종
@@ -500,8 +379,8 @@ const RUN_TIME_BUDGET_MS = Number(process.env.PRICE_RUN_BUDGET_MS) || 50 * 60 * 
  *   넘으므로 회수 패스까지 충분하다. 쿠팡이 이 시각에 멈추므로 ADPICK 은
  *   최소 8분을 보장받고, 쿠팡이 일찍 끝나면 그만큼 더 받는다(예전과 같다).
  *
- * ★ 호출 속도는 이 배분과 무관하다. 간격(COUPANG_MIN_GAP_MS 6초 /
- *   ADPICK_MIN_GAP_MS 1.5초)·전역 분당 상한·서킷 브레이커는 그대로다.
+ * ★ 호출 속도는 이 배분과 무관하다. 현재 쿠팡 간격은 3초이고 ADPICK은 기존
+ *   환경 설정을 따른다. 전역 분당 gate·서킷 브레이커는 시간 배분과 별개다.
  *   달라지는 것은 "쓰지도 않을 시간을 붙잡고 있는가" 뿐이다.
  */
 const ADPICK_RESERVE_MS = Number(process.env.PRICE_ADPICK_RESERVE_MS) || 8 * 60 * 1000;
@@ -509,7 +388,8 @@ const ADPICK_RESERVE_MS = Number(process.env.PRICE_ADPICK_RESERVE_MS) || 8 * 60 
 /*
  * ── 1차가 끝난 «이후» 실행의 배분 (2026-09-08 감사) ──────────────────
  *
- * ★ 위 8분은 «1차 패스가 아직 남은 실행» 에 맞춘 값이고, 그 자리에서는 옳다.
+ * ★ 아래 호출량은 2026-09-08 당시 6초 간격 기준이다. 현재 3초/20회 정책과 다르다.
+ *   위 8분은 «1차 패스가 아직 남은 실행» 에 맞춘 값이었다.
  *   쿠팡 1차는 검색어 411종 = 411호출이 필요하고 42분(420회)에 겨우 들어간다.
  *   여기를 줄이면 1차가 다음 실행으로 밀린다 — 1차는 호출당 1.65개를 내는
  *   가장 좋은 패스라 미룰 이유가 없다.
@@ -533,9 +413,9 @@ const ADPICK_RESERVE_MS = Number(process.env.PRICE_ADPICK_RESERVE_MS) || 8 * 60 
  *   얻는 것은 ADPICK 12분 ≈ 45개다.
  *
  * ★ 이 변경은 외부 호출을 «늘리지 않는다». 오히려 쿠팡 호출이 실행당
- *   420 → 300 으로 줄어든다. 호출 간격(쿠팡 6초 / ADPICK 1.5초)도, 전역
- *   분당 상한도, 하루 상한도 한 자리 그대로다. 바뀌는 것은 같은 50분을
- *   어느 쪽에 쓰는가 하나뿐이다.
+ *   당시 420 → 300 으로 줄었다. 시간 배분 설정은 이번 상향에서 변경하지 않는다.
+ *   현재 쿠팡 3초 간격에서는 42분이 최대 840회, 30분이 최대 600회이며,
+ *   V3 병렬 레인은 제공자마다 전체 실행 마감을 사용한다.
  */
 /* 한 줄로 둔다 — test-second-pass 의 상수 파서가 줄 단위로 숫자를 읽는다. */
 const ADPICK_RESERVE_LATE_MS = Number(process.env.PRICE_ADPICK_RESERVE_LATE_MS) || 20 * 60 * 1000;
@@ -712,7 +592,7 @@ function coupangBlockedUntilMs() {
 
 /**
  * 오늘(KST) collect 소스로 나간 쿠팡 호출 수를 읽는다. 읽기 전용, 실행당 1회.
- * 실패하면 0 을 준다 — 상한 때문에 수집이 멈추는 것보다 낫다.
+ * 실패하면 하루 예산을 소진한 것으로 두고 collector를 멈춘다. DB gate도 같은 천장을 지킨다.
  */
 async function loadCoupangDayUsage() {
   try {
@@ -724,10 +604,11 @@ async function loadCoupangDayUsage() {
       .gte('called_at', dayStart).lt('called_at', dayEnd)
       .eq('source', 'collect');
     if (error) throw new Error(error.message);
-    _coupangDayUsed = Number(count) || 0;
+    if (!Number.isInteger(count) || count < 0) throw new Error('유효한 일일 호출량이 없습니다');
+    _coupangDayUsed = count;
   } catch (e) {
-    _coupangDayUsed = 0;
-    console.warn(`[쿠팡] 오늘 호출량 조회 실패(0 으로 두고 진행): ${e.message}`);
+    _coupangDayUsed = COUPANG_DAY_BUDGET;
+    console.warn(`[쿠팡] 오늘 호출량 조회 실패 — 안전을 위해 수집 호출 중단: ${e.message}`);
   }
   return _coupangDayUsed;
 }
@@ -770,7 +651,7 @@ async function fetchCoupangAll(keyword, limit = COUPANG_LIMIT) {
     return { ok: false, items: [], reason: `하루 호출 예산 ${COUPANG_DAY_BUDGET}회 소진` };
   }
 
-  // forceRefresh를 쓰지 않는다. 최근 6시간 안에 받아둔 값이면 그것도 "오늘 가격"이라
+  // forceRefresh를 쓰지 않는다. 같은 KST 날짜에 받아둔 캐시면 그것도 "오늘 가격"이라
   // 하루 한 번 스냅샷을 남기는 이 스크립트에는 충분하고, 그만큼 호출이 줄어든다.
   /*
    * 예산 검사는 동시 호출이 시작되기 전에 슬롯을 예약해야 한다.
@@ -2575,7 +2456,7 @@ function categorizeFailure(reason) {
   if (r.includes('차단') || r.includes('중단') || (r.includes('쿠팡') && r.includes('401'))) return 'blocked';
   /*
    * ★ «분당» 이 «예산» 보다 먼저다 (2026-09-29).
-   *   DB 게이트는 "전역 제한: collector/background 분당 budget 5/5" 로 거절한다. 예전에는
+   *   당시 DB 게이트는 "전역 제한: collector/background 분당 budget 5/5" 로 거절했다. 예전에는
    *   budget 낱말 때문에 «예산 소진» 으로 세어, 09-29 레거시 실행마다 1차 시도 ~210건이
    *   예산 소진으로 보고됐다(실제 하루 사용량 1,138/3,400). 속도 제한은 1분 뒤면 풀리므로
    *   레인을 멈추는 사유(HALT_PERMANENT·laneStop)가 아니라 재시도 대상이다.
@@ -3645,7 +3526,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   /*
    * ★ 1차 그룹 상한(pass1GroupCap)은 기본 끔 (2026-09-29).
    *   9/27 에 넣은 상한은 쿠팡이 시간당 10회 게이트에 묶여 1차가 끝나지 않던 때의 처방이다.
-   *   분당 15회가 된 지금은 1차 2,510종이 하루 4실행 안에 끝나고, 상한은 역효과다 —
+   *   당시 분당 15회로 올라간 뒤에는 1차 2,510종이 하루 4실행 안에 끝나고, 상한은 역효과였다 —
    *   09-28 V3 실행마다 ADPICK 이 1차를 140그룹에서 끊고 회수 r1(호출당 0.4~0.7개)에
    *   ~105회를 썼다. 같은 시각 한 번도 안 불린 1차 그룹은 호출당 1.6~5개였다.
    *   운영자가 env(PRICE_*_PASS1_GROUP_CAP)로 켤 수는 있다.
@@ -5849,6 +5730,7 @@ module.exports = {
   V3, V3_PLANNER, V3_PARALLEL, V3_CHECKPOINT, ADPICK_DAY_BUDGET,
   // 2026-09-29 — 우선순위·쿨다운 대기·당일 캐시·레거시 체크포인트 (test-collector-coverage 가 고정한다)
   STATE_CHECKPOINT, PASS_BLOCK_MAX_WAIT_MS, COLLECT_CACHE_TTL_MS, COUPANG_DAY_BUDGET, COUPANG_RUN_BUDGET,
+  COUPANG_MIN_GAP_MS, loadCoupangDayUsage,
   nothingLeftToCall,
   // 자정 마감 — test-collector-v3 가 «자정을 넘지 않는다» 를 고정한다.
   runDeadline, DAY_END_MARGIN_MS

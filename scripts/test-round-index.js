@@ -357,9 +357,9 @@ async function runAndCollectQueries(rows, opts) {
     check(/pickOption\(target, items\)/.test(code),
       '★★ 채택은 판매 단위(vendorItemId)까지 확인한 뒤에만 이뤄진다');
 
-    // rate limit 불변
-    check(/const COUPANG_MIN_GAP_MS\s*=\s*4000;/.test(src),
-      '★★ COUPANG_MIN_GAP_MS 4000 유지 (collector 15/min)');
+    // Read the production config so environment parsing does not fool a source-number regex.
+    check(require('./collect-all-prices').COUPANG_MIN_GAP_MS === 3000,
+      '★★ 실제 collector 간격 기본값 3000ms (최대 20/min)');
     const cou = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
     check(/COUPANG_SEARCH_OPERATING_CAP', 35\)/.test(cou), '★★ 쿠팡 Search operating budget 35 유지');
     const adp = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_adpick.js'), 'utf8');

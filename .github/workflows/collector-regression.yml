@@ -8,8 +8,18 @@ on:
       - 'scripts/test-price-mall-collection.js'
       - 'scripts/test-collector-scale.js'
       - 'scripts/test-collector-coverage.js'
+      - 'scripts/test-coupang-quota.js'
+      - 'scripts/test-coupang-db-quota.js'
+      - 'scripts/test-coupang-collector-budget.js'
+      - 'scripts/test-coupang-interactive-priority.js'
+      - 'scripts/test-coupang-retry-after.js'
+      - 'api/_coupang.js'
       - 'api/_blockreason.js'
       - 'supabase/2026-09-22-collector-target-keyset.sql'
+      - 'supabase/*coupang*.sql'
+      - 'supabase/migrations/*coupang*.sql'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/collector-regression.yml'
   workflow_dispatch:
 
@@ -17,6 +27,19 @@ jobs:
   collector-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local-quota-fixture
+          POSTGRES_DB: seosa_coupang_quota_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +47,16 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      - name: Coupang production DB quota and concurrent reservation regression
+        env:
+          COUPANG_QUOTA_TEST_DATABASE_URL: postgresql://postgres:local-quota-fixture@127.0.0.1:5432/seosa_coupang_quota_test
+        run: node scripts/test-coupang-db-quota.js
+      - name: Coupang external-call budget, cache, and Retry-After regression
+        run: |
+          node scripts/test-coupang-quota.js
+          node scripts/test-coupang-retry-after.js
+          node scripts/test-coupang-collector-budget.js
+          node scripts/test-coupang-interactive-priority.js
       - name: Second-pass and budget regression
         run: node scripts/test-second-pass.js
       - name: Mall collection/report regression

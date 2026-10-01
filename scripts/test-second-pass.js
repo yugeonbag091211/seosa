@@ -85,7 +85,8 @@ function inject(rel, exports) {
 inject('api/_supabase.js', fakeSupabase);
 inject('api/_notify.js', { send: () => Promise.resolve({ ok: true }) });
 
-const { runMallCollection } = require('./collect-all-prices');
+const collector = require('./collect-all-prices');
+const { runMallCollection } = collector;
 
 /* 운영 DB 에 절대 쓰지 않는 저장 훅 — test-price-mall-collection.js 의 같은 주석 참고. */
 /* 캐시 힌트 조회는 운영 테이블 전체 스캔이라 테스트에서는 막는다. */
@@ -402,8 +403,8 @@ function probeChild(envLines) {
     check(m && Number(m[1]) === 15000,
       '★★ 기본 배치 간격이 15,000ms 다 (60,000 → 15,000)', m && m[1]);
 
-    check(/const COUPANG_MIN_GAP_MS\s*=\s*4000;/.test(src),
-      '★★ COUPANG_MIN_GAP_MS 는 4000 — collector 최대 15/min');
+    check(collector.COUPANG_MIN_GAP_MS === 3000,
+      '★★ 실제 collector 호출 간격 기본값은 3000ms — 최대 20/min');
 
     const cou = require('fs').readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
     check(/COUPANG_SEARCH_OPERATING_CAP', 35\)/.test(cou),
@@ -434,8 +435,8 @@ function probeChild(envLines) {
      * 두게 되고, 그러면 시간이 남는데 예산이 먼저 끊는 상태가 된다.
      *
      * 그래서 지켜야 할 **관계**를 고정한다:
-     *   1) 호출 간격 4초로 15/min을 고정한다             ← 실제 rate limit 방어선
-     *   2) 실행 예산은 절대 상한(800) 이하       ← 예산 폭주 방지
+     *   1) 호출 간격 3초와 DB collector 20/min          ← 실제 rate limit 방어선
+     *   2) 실행 예산은 900회                     ← 실제 외부 호출 회귀로 검증
      *   3) 회수 상한 ≤ 시간이 허용하는 호출 수   ← 안전판이 벽 노릇을 한다
      *   4) 회수 상한 < 실행 예산                ← 1차·facet 몫이 남는다
      *   5) 실행 예산 ≥ 시간이 허용하는 호출 수   ← 시간이 먼저 멈춘다
@@ -445,6 +446,7 @@ function probeChild(envLines) {
      * 정규식 이스케이프에 기대지 않고 줄을 잘라 숫자를 뽑는다(가장 앞 숫자).
      */
     const constNum = (name) => {
+      if (name.startsWith('COUPANG_') && typeof collector[name] === 'number') return collector[name];
       const i = src.indexOf('const ' + name);
       if (i < 0) return -1;
       const eol = src.indexOf(String.fromCharCode(10), i);
@@ -454,12 +456,12 @@ function probeChild(envLines) {
       return m ? Number(m[0]) : -1;
     };
     const gapMs = constNum('COUPANG_MIN_GAP_MS');
-    check(gapMs === 4000,
-      '★★ 쿠팡 호출 간격 4초 — collector 최대 15/min', gapMs);
+    check(gapMs === 3000,
+      '★★ 쿠팡 호출 간격 3초 — collector 최대 20/min', gapMs);
 
     const runBudget = constNum('COUPANG_RUN_BUDGET');
-    check(runBudget > 0 && runBudget <= 800,
-      '★★ COUPANG_RUN_BUDGET 이 절대 상한(800) 안에 있다', runBudget);
+    check(runBudget === 900,
+      '★★ COUPANG_RUN_BUDGET 기본값은 900 (외부 호출 경계는 별도 실행 회귀)', runBudget);
     check((runCode.match(/await fetchAllFn\(/g) || []).length === 2,
       '★★ 쿠팡 호출 경로가 두 곳뿐이다 (1차 · 회수) — 예산을 우회하는 샛길 없음',
       (runCode.match(/await fetchAllFn\(/g) || []).length);
@@ -1559,6 +1561,7 @@ function probeChild(envLines) {
     const srcNow = require('fs').readFileSync(
       path.join(__dirname, 'collect-all-prices.js'), 'utf8');
     const num = (name) => {
+      if (name.startsWith('COUPANG_') && typeof collector[name] === 'number') return collector[name];
       const i = srcNow.indexOf('const ' + name);
       const eol = srcNow.indexOf(String.fromCharCode(10), i);
       const m = srcNow.slice(i, eol).split('//')[0].match(/[0-9]+/g);
@@ -1589,8 +1592,8 @@ function probeChild(envLines) {
     const dayB = num('COUPANG_DAY_BUDGET'), runB = num('COUPANG_RUN_BUDGET');
     check(dayB > runB,
       '★★ [C] 하루 상한이 실행당 상한보다 크다 (실행 여러 번을 전제한다)', { dayB, runB });
-    check(num('COUPANG_MIN_GAP_MS') === 4000,
-      '★★ [C] 하루 상한을 올려도 호출 간격 4초로 15/min을 고정한다 (분당 속도 불변)',
+    check(num('COUPANG_MIN_GAP_MS') === 3000,
+      '★★ [C] 호출 간격 3초로 collector 최대 20/min을 지킨다',
       num('COUPANG_MIN_GAP_MS'));
 
     /* (D) fetchAdpickAll — 차단 래치가 시각 기반이고, stale-cache 가 그것을
@@ -1713,7 +1716,7 @@ function probeChild(envLines) {
       '★ 실행 예산 판정이 in-flight 예약을 포함한다');
     check(/_coupangDayUsed \+ _coupangCalls \+ _coupangInFlight >= COUPANG_DAY_BUDGET/.test(collectorSrc),
       '★ 하루 예산 판정도 in-flight 예약을 포함한다');
-    check(/COUPANG_DAY_BUDGET\) \|\| 3400/.test(collectorSrc),
+    check(collector.COUPANG_DAY_BUDGET === 3400,
       '★ 현재 일일 대상 규모에 맞춘 쿠팡 하루 상한은 3,400이다');
   }
   console.log('');

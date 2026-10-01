@@ -4,7 +4,7 @@
  *
  * 쿠팡 파트너스 고객센터(2026-09-28): Search 분당 50회, 전체 API 분당 100회.
  * Search hard cap 은 DB 게이트에서 50/min, 전역 API hard cap 은 100/min 이다.
- * 운영 budget 은 Search 35/min·전체 API 80/min 으로 두고, 소비자 검색 15/min을 예약한 채 collector를 15/min까지 허용한다.
+ * 운영 budget 은 Search 35/min·전체 API 80/min 으로 두고, 소비자 검색 15/min을 예약한 채 collector를 20/min까지 허용한다.
  *
  * 쿠팡을 부르는 코드는 반드시 searchCoupang()만 쓸 것.
  * 직접 fetch 하면 캐시 / 전역 카운터 / 차단 감지를 전부 우회한다.
@@ -39,9 +39,10 @@ const GLOBAL_HARD_CAP = 100;
 // setting cannot silently raise the requested operating budget.
 const MAX_PER_MIN = Math.min(envNum('COUPANG_SEARCH_OPERATING_CAP', 35), SEARCH_HARD_CAP);
 const GLOBAL_OPERATING_CAP = Math.min(envNum('COUPANG_GLOBAL_MAX_PER_MIN', 80), GLOBAL_HARD_CAP);
-const INTERACTIVE_RESERVE = Math.min(envNum('COUPANG_INTERACTIVE_RESERVE_PER_MIN', 15), MAX_PER_MIN);
+const INTERACTIVE_RESERVE = Math.min(Math.max(envNum('COUPANG_INTERACTIVE_RESERVE_PER_MIN', 15), 15), MAX_PER_MIN);
 const COLLECTOR_BUDGET = Math.min(
-  envNum('COUPANG_COLLECTOR_MAX_PER_MIN', 15),
+  envNum('COUPANG_COLLECTOR_MAX_PER_MIN', 20),
+  20, // 1차 상향 천장. 25/min은 별도 PR과 운영 검증이 필요하다.
   Math.max(0, MAX_PER_MIN - INTERACTIVE_RESERVE)
 );
 /** 호출 사이 최소 간격. 순간적으로 몰리는 걸 막는다. */
@@ -151,8 +152,8 @@ function looksDenied(body) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const state = {
-  window: [],        // 최근 60초 호출 시각
-  lastCallAt: 0,     // 마지막으로 "예약된" 호출 시각
+  window: [],        // 최근 60초 실제 호출 직전 슬롯 { at, source }
+  lastCallAt: 0,     // 마지막으로 확보한 호출 시각 (미래 슬롯은 예약하지 않는다)
   blockedUntil: 0,
   blockReason: '',
   /*
@@ -236,34 +237,53 @@ function log(source, keyword, decision, extra) {
  * ------------------------------------------------------------------ */
 let reserveChain = Promise.resolve();
 
-function reserveSlot(minGapMs, maxWaitMs) {
-  const p = reserveChain.then(() => {
-    const now = Date.now();
+async function reserveSlot(source, minGapMs, maxWaitMs) {
+  const deadline = Date.now() + Math.max(0, maxWaitMs);
+  let waited = false;
+  while (true) {
+    const p = reserveChain.then(() => {
+      const now = Date.now();
+      while (state.window.length && state.window[0].at <= now - 60000) state.window.shift();
+      if (waited && now > deadline) {
+        return { ok: false, blocked: false, reason: '간격 제한 — 최대 대기 시간 소진' };
+      }
+      if (state.blockedUntil > now) {
+        const left = Math.ceil((state.blockedUntil - now) / 1000);
+        return { ok: false, blocked: true, reason: `호출 중단 중 (${left}초 남음): ${state.blockReason}` };
+      }
+      if (state.window.length >= MAX_PER_MIN) {
+        return { ok: false, blocked: false, reason: `인스턴스 분당 한도 ${state.window.length}/${MAX_PER_MIN}` };
+      }
+      const backgroundUsed = state.window.filter(slot => slot.source !== 'search').length;
+      if (source !== 'search' && (backgroundUsed >= COLLECTOR_BUDGET
+          || state.window.length >= Math.max(0, MAX_PER_MIN - INTERACTIVE_RESERVE))) {
+        return { ok: false, blocked: false, reason: `collector/background 인스턴스 분당 budget ${backgroundUsed}/${COLLECTOR_BUDGET}` };
+      }
+      const waitMs = Math.max(0, state.lastCallAt + minGapMs - now);
+      if (waitMs > Math.max(0, deadline - now)) {
+        return { ok: false, blocked: false, reason: `간격 제한 — ${waitMs}ms 대기 필요` };
+      }
+      // Waiting collectors do not occupy future slots. Interactive requests
+      // can use their shorter existing gap while background work is asleep.
+      if (waitMs > 0) return { waiting: true, waitMs };
+      const reservation = { at: now, source };
+      state.lastCallAt = now;
+      state.window.push(reservation);
+      return { ok: true, reservation };
+    });
+    reserveChain = p.then(() => {}, () => {});
+    const slot = await p;
+    if (!slot.waiting) return slot;
+    await sleep(Math.min(slot.waitMs, 30000));
+    waited = true;
+  }
+}
 
-    while (state.window.length && state.window[0] <= now - 60000) state.window.shift();
-
-    if (state.blockedUntil > now) {
-      const left = Math.ceil((state.blockedUntil - now) / 1000);
-      return { ok: false, blocked: true, reason: `호출 중단 중 (${left}초 남음): ${state.blockReason}` };
-    }
-    if (state.window.length >= MAX_PER_MIN) {
-      return { ok: false, blocked: false, reason: `인스턴스 분당 한도 ${state.window.length}/${MAX_PER_MIN}` };
-    }
-
-    // 앞 호출로부터 minGapMs 뒤를 잡는다. 동시에 들어와도 서로 다른 슬롯을 받는다.
-    const at = Math.max(now, state.lastCallAt + minGapMs);
-    const waitMs = at - now;
-    if (waitMs > maxWaitMs) {
-      return { ok: false, blocked: false, reason: `간격 제한 — ${waitMs}ms 대기 필요` };
-    }
-
-    state.lastCallAt = at;
-    state.window.push(at);
-    return { ok: true, waitMs };
-  });
-
-  reserveChain = p.then(() => {}, () => {});
-  return p;
+function releaseSlot(slot) {
+  const i = state.window.indexOf(slot.reservation);
+  if (i < 0) return;
+  state.window.splice(i, 1);
+  state.lastCallAt = state.window.length ? state.window[state.window.length - 1].at : 0;
 }
 
 /* ------------------------------------------------------------------ *
@@ -592,21 +612,23 @@ async function searchCoupang(keyword, opts = {}) {
   };
 
   // 2) 인스턴스 리미터 + 서킷 브레이커
-  const slot = await reserveSlot(minGapMs, maxWaitMs);
+  const slot = await reserveSlot(source, minGapMs, maxWaitMs);
   if (!slot.ok) return fallback(slot.reason, slot.blocked);
-  if (slot.waitMs > 0) {
-    await sleep(slot.waitMs);
-    // 대기하는 동안 앞선 호출이 429/403을 받았을 수 있다. 슬롯을 잡을 때 한 번
-    // 봤다고 끝이 아니다 — 다시 확인하지 않으면 이미 차단된 걸 알면서도
-    // 예약해둔 만큼(동시성 수 - 1) 더 때리게 된다.
-    if (state.blockedUntil > Date.now()) {
-      return fallback(`대기 중 차단됨: ${state.blockReason}`, true);
-    }
-  }
 
   // 3) 전역 카운터 (인스턴스가 여러 개여도 합계를 지킨다)
   const gate = await dbAcquire(source, kw);
-  if (!gate.allowed) return fallback(`전역 제한: ${gate.reason}`, /중단|blocked/.test(gate.reason));
+  if (!gate.allowed) {
+    releaseSlot(slot); // DB 거절은 실제 외부 호출도, interactive 슬롯 소비도 아니다.
+    return fallback(`전역 제한: ${gate.reason}`, /중단|blocked/.test(gate.reason));
+  }
+  // A concurrent provider response may have opened the circuit while this
+  // request was awaiting the DB. Keep its DB reservation conservatively, but
+  // do not send an external request after the local circuit has opened.
+  if (state.blockedUntil > Date.now()) {
+    releaseSlot(slot);
+    await dbFinish(gate.callId, 'cancelled_before_fetch', 0, '', 0);
+    return fallback(`대기 중 차단됨: ${state.blockReason}`, true);
+  }
 
   // 4) 실제 호출 — 재시도 없음
   apiCalled = true;
@@ -701,7 +723,7 @@ async function searchCoupang(keyword, opts = {}) {
     if (String(rCode) === '400') {
       console.warn(`[coupang] rCode=400 파라미터 오류 (서킷 브레이커 미작동): ${msg}`);
       await dbFinish(gate.callId, 'param_error', r.status, rCode, 0);
-      return { items: [], error: `쿠팡 rCode=400: ${msg}`, from: 'none', blocked: false };
+      return { items: [], error: `쿠팡 rCode=400: ${msg}`, from: 'none', blocked: false, apiCalled: true };
     }
     await trip(COOLDOWN_MIN.rcode, `rCode=${rCode}: ${msg}`);
     await dbFinish(gate.callId, 'blocked', r.status, rCode, 0);
@@ -742,7 +764,7 @@ function localStats() {
     collectorBudget: COLLECTOR_BUDGET,
     minGapMs: MIN_GAP_MS,
     cacheTtlMs: CACHE_TTL_MS,
-    inWindow: state.window.filter(t => t > now - 60000).length,
+    inWindow: state.window.filter(slot => slot.at > now - 60000).length,
     calls: state.totalCalls,
     cacheHits: state.totalCacheHits,
     denied: state.totalDenied,

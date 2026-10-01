@@ -11,10 +11,13 @@ let rpcMode = 'denied';
 let rpcCalls = 0;
 let lastAcquire = null;
 let cacheRow = null;
+let responseMode = 'ok';
 
 const server = http.createServer((req, res) => {
   apiHits++;
   res.writeHead(200, { 'Content-Type': 'application/json' });
+  if (responseMode === 'parse-error') return res.end('temporarily invalid JSON');
+  if (responseMode === 'param-error') return res.end(JSON.stringify({ rCode: '400', rMessage: 'bad fixture parameter' }));
   res.end(JSON.stringify({
     rCode: '0',
     data: { productData: [{
@@ -81,6 +84,9 @@ function fakeSupabase() {
   // configured operating budget unless the new setting is explicitly provided.
   process.env.COUPANG_MAX_PER_MIN = '40';
   delete process.env.COUPANG_SEARCH_OPERATING_CAP;
+  delete process.env.COUPANG_COLLECTOR_MAX_PER_MIN;
+  delete process.env.COUPANG_INTERACTIVE_RESERVE_PER_MIN;
+  delete process.env.COUPANG_GLOBAL_MAX_PER_MIN;
 
   const supabasePath = require.resolve(path.join(__dirname, '..', 'api', '_supabase.js'));
   const coupangPath = require.resolve(path.join(__dirname, '..', 'api', '_coupang.js'));
@@ -99,7 +105,7 @@ function fakeSupabase() {
     assert.strictEqual(Coupang.GLOBAL_OPERATING_CAP, 80, 'initial global operating budget is 80/min');
     assert.strictEqual(Coupang.GLOBAL_HARD_CAP, 100, 'global API hard cap is 100/min');
     assert.strictEqual(Coupang.INTERACTIVE_RESERVE, 15, '15/min remains available to interactive search');
-    assert.strictEqual(Coupang.COLLECTOR_BUDGET, 15, 'collector/background budget is 15/min');
+    assert.strictEqual(Coupang.COLLECTOR_BUDGET, 20, 'collector/background budget is 20/min');
     assert.strictEqual(Coupang.shouldDisableGlobalGateForTest('1', 'https://api-gateway.coupang.com'), false,
       'test switch cannot disable the production-host quota gate');
     assert.strictEqual(Coupang.shouldDisableGlobalGateForTest('1', 'http://127.0.0.1:3000'), true,
@@ -110,7 +116,7 @@ function fakeSupabase() {
     assert.strictEqual(lastAcquire.p_search_operating_cap, 35);
     assert.strictEqual(lastAcquire.p_global_operating_cap, 80);
     assert.strictEqual(lastAcquire.p_interactive_reserve, 15);
-    assert.strictEqual(lastAcquire.p_collector_cap, 15);
+    assert.strictEqual(lastAcquire.p_collector_cap, 20);
     assert.strictEqual(apiHits, 0);
 
     result = await attempt({ source: 'collect', useCache: false });
@@ -133,6 +139,15 @@ function fakeSupabase() {
     assert.strictEqual(result.from, 'api', 'valid reservation permits one request');
     assert.strictEqual(result.apiCalled, true);
     assert.strictEqual(apiHits, 1, 'no unreserved request reached the API');
+    responseMode = 'param-error';
+    result = await attempt({ useCache: false });
+    assert.strictEqual(result.apiCalled, true, 'rCode=400 still consumes an actual external call');
+    assert.strictEqual(apiHits, 2, 'parameter errors are not retried');
+    responseMode = 'parse-error';
+    result = await attempt({ useCache: false });
+    assert.strictEqual(result.apiCalled, true, 'invalid JSON still consumes an actual external call');
+    assert.strictEqual(apiHits, 3, 'invalid responses are not retried');
+    responseMode = 'ok';
 
     const cacheDate = require('../api/_cache-date');
     const today = cacheDate.kstDateKey(new Date());
@@ -148,6 +163,18 @@ function fakeSupabase() {
     assert.strictEqual(result.from, 'cache', 'today cache remains reusable');
     assert.strictEqual(rpcCalls, beforeRpc, 'today cache does not reserve a provider call');
     assert.strictEqual(apiHits, beforeApi);
+
+    // The DB gate remains authoritative; deployment values cannot consume the
+    // reserved interactive share or turn this first rollout into 25/min.
+    const loadConfig = () => { delete require.cache[coupangPath]; return require('../api/_coupang'); };
+    process.env.COUPANG_COLLECTOR_MAX_PER_MIN = '25';
+    process.env.COUPANG_INTERACTIVE_RESERVE_PER_MIN = '1';
+    const unsafeConfig = loadConfig();
+    assert.strictEqual(unsafeConfig.COLLECTOR_BUDGET, 20, 'an excessive collector override is clamped at 20/min');
+    assert.strictEqual(unsafeConfig.INTERACTIVE_RESERVE, 15, 'an override cannot remove the minimum interactive reserve');
+    process.env.COUPANG_SEARCH_OPERATING_CAP = '30';
+    const lowerConfig = loadConfig();
+    assert.strictEqual(lowerConfig.COLLECTOR_BUDGET, 15, 'a lower operating cap leaves the interactive reserve intact');
 
     const midnight = Date.parse(today + 'T00:00:00+09:00');
     cacheRow.fetched_at = new Date(midnight - 60000).toISOString();

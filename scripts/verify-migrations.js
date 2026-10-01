@@ -90,6 +90,7 @@ function deleteTargets(sql) {
 /** 이번 릴리스에서 새로 추가한 마이그레이션. 여기 있는 것만 강하게 검사한다. */
 const COUPANG_QUOTA_MIGRATION = '2026-09-28-coupang-minute-quota.sql';
 const COUPANG_QUOTA_SEARCH_PATH_MIGRATION = '2026-09-28-coupang-quota-search-path.sql';
+const COUPANG_COLLECTOR_DAY_MIGRATION = 'migrations/20261001074444_coupang_collector_daily_budget.sql';
 const AI_CIRCUIT_MIGRATION = '2026-09-20-ai-global-circuit.sql';
 
 const NEW_MIGRATIONS = [
@@ -134,7 +135,8 @@ const NEW_MIGRATIONS = [
   '2026-09-22-collector-target-keyset.sql',
   '2026-09-27-coupang-search-hourly-limit.sql',
   COUPANG_QUOTA_MIGRATION,
-  COUPANG_QUOTA_SEARCH_PATH_MIGRATION
+  COUPANG_QUOTA_SEARCH_PATH_MIGRATION,
+  COUPANG_COLLECTOR_DAY_MIGRATION
 ];
 
 function checkStatic() {
@@ -214,6 +216,20 @@ function checkStatic() {
   }
 
   /* security definer 함수는 실행 권한을 반드시 좁혀야 한다. */
+  const collectorDaySql = stripSqlComments(fs.readFileSync(path.join(SQL_DIR, COUPANG_COLLECTOR_DAY_MIGRATION), 'utf8'));
+  if (/pg_advisory_xact_lock\(8912042601\)/.test(collectorDaySql)
+      && /v_search_used\s*>=\s*50/.test(collectorDaySql)
+      && /v_global_used\s*>=\s*100/.test(collectorDaySql)
+      && /v_day_used\s*>=\s*3400/.test(collectorDaySql)
+      && /Asia\/Seoul/.test(collectorDaySql)) {
+    ok('Coupang collector KST daily 3400 and minute hard caps share one DB lock');
+  } else bad('Coupang collector daily/minute DB guard missing');
+  if (/set\s+search_path\s*=\s*''/.test(collectorDaySql)
+      && /from public, anon, authenticated/.test(collectorDaySql)
+      && !/security\s+definer/i.test(collectorDaySql)) {
+    ok('Coupang collector gate preserves invoker, fixed search_path and private execution');
+  } else bad('Coupang collector gate privileges changed');
+
   const authSql = path.join(SQL_DIR, NEW_MIGRATIONS[0]);
   if (fs.existsSync(authSql)) {
     const sql = stripSqlComments(fs.readFileSync(authSql, 'utf8'));
