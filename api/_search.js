@@ -531,6 +531,220 @@ function productFocus(analysis, rawTitle) {
   return { factor, at, accessory: hit, reason: `tail-acc:${hit}` };
 }
 
+/* ------------------------------------------------------------------ *
+ *  3-c. 브랜드 단독 검색 (BRAND_ONLY_INTENT)
+ *
+ *  ── 무엇이 잘못돼 있었나 (2026-10-01, "삼성" 검색) ─────────────────
+ *
+ *      1.000   23,000원  [해외] 삼성 CLX-9201 … 카세트 브래킷 … 기어
+ *      1.000   61,000원  삼성 MLT-D758S 정품토너 검정
+ *      1.000  186,000원  … HP LaserJet … 삼성 K7 시리즈용 레이저 스캐너 어셈블리
+ *      0.900   89,000원  삼성전자 갤럭시 버즈3 FE 블루투스 이어폰
+ *      0.900 1,155,000원 삼성전자 갤럭시 S26 자급제
+ *
+ *  검색어가 한 단어(브랜드)면 그 단어를 품은 제목이 전부 같은 점수가 되고
+ *  가격이 순서를 정한다. 더 나빴던 점은 «본품이 오히려 낮았다» 는 것이다.
+ *  제조사 표기 "삼성전자" 는 한 토큰이라 부분 일치(0.9)인데, 호환·부품 상품은
+ *  "삼성 K7", "삼성 CLX" 처럼 브랜드를 «맨 낱말» 로 써서 정확 일치(1.0)였다.
+ *  productFocus 는 브래킷·어셈블리·토너를 모르고(토너는 화장품 본품이라 일부러
+ *  뺐다), detectBrandHead 는 브랜드가 목록 전체에 깔리므로(7/8) 범주어로 본다.
+ *
+ *  ── 무엇으로 가르는가 — 브랜드 사전 없이 «목록의 구조» 로 ─────────
+ *
+ *  (1) 의도: 검색어의 의미 있는 토큰이 하나이고, 받아온 목록에서 그 말이
+ *      «상품명의 머리» 에 반복해서 온다. 그런데 «상품의 정체(맨 뒤 명사)» 로는
+ *      거의 오지 않는다. 한국어 상품명은 [브랜드] … [종류명] 순이라, 브랜드는
+ *      앞에, 범주어(텀블러·노트북)는 뒤에 온다. 그래서 범주어 검색은 여기 걸리지
+ *      않는다.
+ *  (2) 위치: 브랜드가 상품명 머리에 있으면 그 브랜드의 물건이고, 중간·뒤에만
+ *      있으면 다른 물건의 «호환 대상» 설명일 가능성이 크다.
+ *  (3) 관계: 브랜드 바로 근처의 호환·전용·…용 은 "이 브랜드 제품에 맞춘 다른
+ *      물건" 이라는 뜻이다.
+ *  (4) 소모품·수리부품: 검색어에 종류명이 없을 때만 내린다. "삼성 토너" 처럼
+ *      종류명이 있으면 (1) 에 걸리지 않으므로 토너가 정상 본품이다.
+ *
+ *  scoreTitle(질의 커버리지 계약) 과 productFocus(AI 경로가 이걸로 «걸러낸다»)
+ *  는 건드리지 않는다. 이 계수는 rankItems 의 정렬값에만 곱한다 — 아무것도
+ *  지우지 않고 순서만 바꾼다.
+ * ------------------------------------------------------------------ */
+
+/** 이 개수 이상의 상품명이 검색어로 시작해야 브랜드 단독 검색으로 본다. */
+const BRAND_ONLY_HEAD_MIN = 2;
+/** 검색어를 품은 상품명 중 머리에 둔 비율의 하한. */
+const BRAND_ONLY_HEAD_RATIO = 0.5;
+/** 검색어가 상품의 정체(맨 뒤 명사)로 쓰인 비율의 상한. 넘으면 범주어다. */
+const BRAND_ONLY_IDENTITY_MAX = 0.2;
+
+/*
+ * 머리에서 이만큼 뒤에 브랜드가 오면 얼마를 곱하는가 (0 = 머리).
+ * 둘째 자리(1)는 깎지 않는다 — "삼성전자 갤럭시 기어" 를 "갤럭시" 로 찾을 때처럼
+ * 제조사 뒤에 제품군이 오는 본품이 흔하다. 둘째 자리에 오는 호환품("호환 삼성
+ * 토너", "에이스 LG 호환 필터")은 위치가 아니라 관계어(brandUsedAsCompat)가 잡는다.
+ */
+const BRAND_POSITION_FACTOR = [1, 1, 0.8];
+const BRAND_POSITION_FAR = 0.6;
+/** 브랜드가 호환·전용 설명으로 쓰였을 때 더 곱하는 값. */
+const BRAND_COMPAT_FACTOR = 0.6;
+/** 브랜드 단독 검색에서 소모품·수리부품일 때 곱하는 값. */
+const BRAND_PART_FACTOR = 0.75;
+
+/*
+ * 브랜드 근처에서 "다른 제품에 맞춘 물건" 을 뜻하는 말.
+ * '호환' 은 COMMON_WORDS 에도 있다 — 검색어 가중치를 낮추는 목록과는 역할이 다르다.
+ */
+const COMPAT_MARKERS = new Set(['호환', '호환용', '호환품', '전용', 'compatible', 'replacement']);
+/** "…시리즈용" 처럼 «다른 제품을 가리키는 말 + 용» 의 앞부분. */
+const COMPAT_REF_NOUNS = new Set(['시리즈', '기종', '모델', '계열']);
+/** 브랜드 바로 뒤 몇 토큰까지 관계어를 찾는가. */
+const COMPAT_WINDOW = 3;
+
+/*
+ * 브랜드 단독 검색에서만 쓰는 소모품·수리부품 낱말 («접미사» 일치: 정품토너·호환잉크).
+ * ACCESSORY_TIER 에 넣지 «않는다» — 그쪽은 모든 검색에 걸리고, 토너·잉크는
+ * 화장품·프린터의 본품 이름이기도 하다(ACCESSORY_TIER 아래 주석).
+ * 그래서 두 겹으로 막는다: 검색어에 종류명이 없을 때만, 그리고 상품명에 기기
+ * 모델 코드(MLT-D758S·CLX-9201)가 있을 때만 내린다. "설화수 토너 150ml" 은
+ * 모델 코드가 없어 그대로다.
+ *
+ * ── 넣지 않은 말 (본품 이름이라서) ──
+ *   기어   갤럭시 기어(스마트워치)      드럼  드럼세탁기
+ *   롤러   롤러 청소기 헤드·폼롤러       카세트 카세트 플레이어
+ *   헤드   헤드폰                       스캐너·모듈·벨트  그 자체로 팔리는 본품
+ */
+const BRAND_PART_WORDS = ['토너', '잉크', '브래킷', '어셈블리', '퓨저'];
+/** 기기 모델 코드 꼴: 영문 1~5자 + 숫자 2자리 이상 (mlt-d758s, clx-9201, sm-s942n). */
+const DEVICE_MODEL_RE = /[a-z]{1,5}-?\d{2,}[a-z0-9]*/i;
+
+/** 상품명 머리의 수식 표기([해외]·정품·연도·수량)를 건너뛴 첫 내용 토큰의 자리. */
+function leadIndex(toks) {
+  let i = 0;
+  while (i < toks.length - 1) {
+    const t = toks[i];
+    const k = classify(t);
+    const noise = TAIL_NOISE.has(t) || k === KIND.YEAR || k === KIND.NUMBER
+      || k === KIND.UNIT || k === KIND.COMMON;
+    if (!noise) break;
+    i++;
+  }
+  return i;
+}
+
+/**
+ * 브랜드가 상품명 토큰에 «처음» 나오는 자리. 없으면 -1.
+ * 한글은 "삼성전자" 처럼 뒤에 붙어 한 토큰이 되므로 앞부분 일치도 인정한다.
+ * 영문은 splitTokens 가 이미 떼어 놓으므로("lg전자" → lg, 전자) 정확 일치만 본다.
+ */
+function brandIndexIn(term, toks) {
+  const hangul = /^[가-힣]{2,}$/.test(term);
+  for (let i = 0; i < toks.length; i++) {
+    if (toks[i] === term) return i;
+    if (hangul && toks[i].indexOf(term) === 0) return i;
+  }
+  return -1;
+}
+
+/** 상품의 정체 — 뒤에서부터 첫 «일반 낱말» (모델 코드·숫자·옵션 표기는 건너뛴다). */
+function identityNoun(toks) {
+  for (let i = toks.length - 1; i >= 0; i--) {
+    const t = toks[i];
+    if (TAIL_NOISE.has(t) || /\d/.test(t)) continue;
+    if (classify(t) === KIND.WORD) return t;
+  }
+  return '';
+}
+
+/** 검색어가 «이름 하나» 인가 — 맞으면 그 토큰, 아니면 ''. */
+function brandOnlyTerm(analysis) {
+  if (!analysis || !analysis.tokens || !analysis.tokens.length) return '';
+  const meaningful = analysis.tokens.filter(t => t.kind !== KIND.COMMON && t.kind !== KIND.UNIT
+    && t.kind !== KIND.NUMBER && t.kind !== KIND.YEAR);
+  if (meaningful.length !== 1) return '';
+  const tok = meaningful[0];
+  // 모델명 단독 검색(14zd95u)은 브랜드 의도가 아니다.
+  if (tok.kind === KIND.MODEL || tok.text.length < 2) return '';
+  // "케이스" 같은 부속 검색은 부속을 찾는 것이다 (queryWantsAccessory 주석 참고).
+  if (queryWantsAccessory(analysis)) return '';
+  return tok.text;
+}
+
+/**
+ * 받아온 목록이 "브랜드 단독 검색" 의 모양인가.
+ *
+ * @param {object} analysis analyzeQuery 결과
+ * @param {string[]} titles 이번에 받아온 상품명
+ * @returns {{term:string, head:number, contains:number, identity:number}|null}
+ */
+function detectBrandOnlyIntent(analysis, titles) {
+  const term = brandOnlyTerm(analysis);
+  if (!term || !Array.isArray(titles) || !titles.length) return null;
+  let contains = 0, head = 0, identity = 0;
+  titles.forEach(title => {
+    const toks = coreTokens(title);
+    const i = brandIndexIn(term, toks);
+    if (i < 0) return;
+    contains++;
+    if (i === leadIndex(toks)) head++;
+    const idn = identityNoun(toks);
+    if (idn && (idn === term || idn.endsWith(term))) identity++;
+  });
+  if (!contains || head < BRAND_ONLY_HEAD_MIN) return null;
+  if (head / contains < BRAND_ONLY_HEAD_RATIO) return null;
+  if (identity / contains >= BRAND_ONLY_IDENTITY_MAX) return null;
+  return { term, head, contains, identity };
+}
+
+/** 브랜드가 «다른 제품에 맞춘 물건» 을 설명하는 데 쓰였는가. */
+function brandUsedAsCompat(term, toks, i) {
+  const at = toks[i];
+  // 붙여 쓴 꼴: 삼성용·삼성호환·삼성전용
+  if (at !== term && (at.endsWith('용') || at.indexOf('호환') > -1 || at.indexOf('전용') > -1)) return true;
+  const prev = toks[i - 1];
+  if (prev === 'for' || prev === '호환' || prev === '호환용') return true;
+  for (let j = i + 1; j < toks.length && j <= i + COMPAT_WINDOW; j++) {
+    const t = toks[j];
+    if (COMPAT_MARKERS.has(t)) return true;
+    // "a6400용" → ["a6400", "용"] — 모델 코드 뒤에 떨어진 '용'
+    if (t === '용') return true;
+    if (t.length > 1 && t.endsWith('용') && COMPAT_REF_NOUNS.has(t.slice(0, -1))) return true;
+  }
+  return false;
+}
+
+/**
+ * 브랜드 단독 검색의 정렬 계수 (0~1). rankItems 가 relevance 에 곱한다.
+ *
+ * @param {string} term 브랜드 토큰 (detectBrandOnlyIntent 의 term)
+ * @param {string} rawTitle 원본 상품명
+ * @returns {{factor:number, fused:boolean, reason:string}}
+ *   fused — 브랜드가 "삼성전자" 처럼 붙은 꼴로 맞았다 (커버리지 0.9 보정용)
+ */
+function brandOnlyFocus(term, rawTitle) {
+  const toks = coreTokens(rawTitle);
+  const i = brandIndexIn(term, toks);
+  // 브랜드가 없으면 커버리지가 이미 낮다 — 여기서 더 판단할 근거가 없다.
+  if (i < 0) return { factor: 1, fused: false, reason: '' };
+
+  const pos = Math.max(0, i - leadIndex(toks));
+  let factor = pos < BRAND_POSITION_FACTOR.length ? BRAND_POSITION_FACTOR[pos] : BRAND_POSITION_FAR;
+  const reasons = factor < 1 ? [`brand-pos:${pos}`] : [];
+
+  if (brandUsedAsCompat(term, toks, i)) { factor *= BRAND_COMPAT_FACTOR; reasons.push('brand-compat'); }
+
+  // 기기 모델 코드: "MLT-D758S"·"CLX-9201" 꼴이거나, "206A" 처럼 숫자가 앞서는 MODEL 토큰.
+  // "150ml"(UNIT)·"1025"(NUMBER) 는 해당하지 않는다 — 화장품 토너를 지키는 자리다.
+  const hasDeviceModel = DEVICE_MODEL_RE.test(String(rawTitle || ''))
+    || toks.some(t => classify(t) === KIND.MODEL);
+  if (hasDeviceModel) {
+    let part = '';
+    for (let j = i + 1; j < toks.length && !part; j++) {
+      part = BRAND_PART_WORDS.find(w => toks[j] === w || (toks[j].length > w.length && toks[j].endsWith(w))) || '';
+    }
+    if (part) { factor *= BRAND_PART_FACTOR; reasons.push(`brand-part:${part}`); }
+  }
+
+  return { factor: Math.round(factor * 1000) / 1000, fused: toks[i] !== term, reason: reasons.join(',') };
+}
+
 /** 상품명을 한 번만 분석해 두고 여러 검색어에 재사용한다. */
 function analyzeTitle(title) {
   const normalized = normalizeText(title);
@@ -899,6 +1113,12 @@ function rankItems(keyword, items, opts = {}) {
     return { items: uniq, dropped: intentDropped, removed, allBelow: false };
   }
 
+  /*
+   * 브랜드 단독 검색인지 목록 전체로 한 번만 판정한다 (3-c 주석 참고).
+   * 아니면 null 이고, 그때 아래 계산은 예전과 글자 그대로 같다.
+   */
+  const brandOnly = detectBrandOnlyIntent(analysis, uniq.map(it => (it && it.title) || ''));
+
   const scored = uniq.map(it => {
     const r = scoreTitle(analysis, it && it.title);
     /*
@@ -913,10 +1133,21 @@ function rankItems(keyword, items, opts = {}) {
      * 서로 다른 물음이라 한 숫자에 섞지 않는 편이 낫다.
      */
     const f = productFocus(analysis, it && it.title);
+    /*
+     * 브랜드 단독 검색이면 위치·관계·소모품 계수를 더 곱한다.
+     *
+     * 커버리지 보정: "삼성전자" 처럼 브랜드가 한글 토큰 앞에 붙어 맞으면
+     * tokenQuality 는 부분 일치(Q.SUBSTRING)를 준다. 같은 브랜드를 «맨 낱말» 로
+     * 쓴 호환품이 정확 일치로 앞서는 원인이었으므로, 정렬값에서만 그 차이를
+     * 지운다. scoreTitle 의 반환값(r.score)과 기준선 판정은 그대로다.
+     */
+    const b = brandOnly ? brandOnlyFocus(brandOnly.term, it && it.title) : null;
+    const coverage = b && b.fused ? Math.min(1, r.score / Q.SUBSTRING) : r.score;
+    const brandFactor = b ? b.factor : 1;
     if (it) {
-      it.relevance = Math.round(r.score * f.factor * 1000) / 1000;
+      it.relevance = Math.round(coverage * f.factor * brandFactor * 1000) / 1000;
       // 왜 내려갔는지 남긴다. 진단용이고 응답 형태를 바꾸지 않는다(undefined 면 직렬화에서 빠진다).
-      it.relevanceWhy = [r.reason, f.reason].filter(Boolean).join(',') || undefined;
+      it.relevanceWhy = [r.reason, f.reason, b && b.reason].filter(Boolean).join(',') || undefined;
     }
     return { it, r, f };
   });
@@ -1381,6 +1612,8 @@ module.exports = {
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
+  // 브랜드 단독 검색 — test-search.js 의 브랜드 단독 섹션이 고정한다.
+  detectBrandOnlyIntent, brandOnlyFocus,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY

@@ -787,6 +787,188 @@ const kept = S.rankItems('텀블러', [
 check(kept.items.length === 1 && kept.dropped === 0,
   '★ 걸러내기는 원점수로 한다 — 감점 때문에 상품이 사라지면 안 된다', kept);
 
+/* ================================================================ *
+ *  O. 브랜드 단독 검색 (BRAND_ONLY_INTENT, 2026-10-01)
+ *
+ *  실사용 사고: "삼성" 검색 상단이 프린터 브래킷·토너·HP 스캐너 부품이었다.
+ *  제조사 표기 "삼성전자" 는 한 토큰이라 부분 일치(0.9)인데 호환·부품 상품은
+ *  "삼성 K7" 처럼 맨 낱말이라 정확 일치(1.0)였고, 동점 안에서는 가격이 순서를
+ *  정했다. 브랜드 사전 없이 «목록의 구조» (머리 위치·관계어·소모품)로 가른다.
+ *  모든 검사는 실제 경로(rankItems → sortByRelevance)를 지난다.
+ * ================================================================ */
+section('O. 브랜드 단독 검색 (본품 > 호환품·부품·소모품)');
+
+/** 실제 검색 경로로 세운 뒤 productId 순서를 돌려준다. 신뢰도는 모두 같게 둔다. */
+function brandRank(q, rows) {
+  const items = rows.map(([id, title, price]) => ({ productId: id, mall: '쿠팡', title, lprice: price }));
+  S.rankItems(q, items, { minScore: 0 });
+  return S.sortByRelevance(items);
+}
+const idxOf = (ranked, id) => ranked.findIndex(x => x.productId === id);
+/** mains 의 모든 상품이 others 의 모든 상품보다 앞에 섰는가. */
+function allAbove(ranked, mains, others) {
+  const lastMain = Math.max(...mains.map(id => idxOf(ranked, id)));
+  const firstOther = Math.min(...others.map(id => idxOf(ranked, id)));
+  return lastMain < firstOther;
+}
+const order = ranked => ranked.map(x => `${x.productId}:${x.relevance}`).join(' ');
+
+/* 부품을 본품보다 싸게 둔다 — 가격이 순서를 정하면 바로 드러난다. */
+const SAMSUNG_ROWS = [
+  ['P1', '삼성전자 갤럭시 S26 자급제 SM-S942N', 1155000],
+  ['P2', '삼성전자 갤럭시 A37 자급제 SM-A376N', 499000],
+  ['P3', '삼성전자 갤럭시 버즈3 FE 블루투스 이어폰', 89000],
+  ['X4', '[해외] JC97-04574A HP LaserJet Managed MFP E82540 E82550 E82560 삼성 K7 시리즈용 레이저 스캐너 어셈블리', 186000],
+  ['X5', '[해외] 삼성 CLX-9201 CLX-9251 CLX-9301 카세트 브래킷 서브 리프팅 베벨 기어', 23000],
+  ['X6', '삼성 MLT-D758S 정품토너 검정', 61000],
+  ['X7', '삼성 정품토너 MLT-K250L', 72000],
+  ['U8', '오뚜기 진라면 매운맛 120g 5개', 4380]
+];
+const SS_MAIN = ['P1', 'P2', 'P3'], SS_PARTS = ['X4', 'X5', 'X6', 'X7'];
+
+/* ── ① 원인 고정: 커버리지만으로는 부품(1.0)이 본품(0.9)보다 높았다 ── */
+{
+  const titles = SAMSUNG_ROWS.map(r => r[1]);
+  const a = S.analyzeQuery('삼성', { titles });
+  const main = S.scoreTitle(a, SAMSUNG_ROWS[0][1]).score, part = S.scoreTitle(a, SAMSUNG_ROWS[4][1]).score;
+  check(main === 0.9 && part === 1,
+    '★ 원인: "삼성전자"(붙은 꼴)=0.9 < "삼성 CLX"(맨 낱말)=1.0 — scoreTitle 계약은 그대로 둔다', { main, part });
+  const intent = S.detectBrandOnlyIntent(a, titles);
+  check(intent && intent.term === '삼성', '★ "삼성" 은 목록 구조로 브랜드 단독 검색으로 판정된다', intent);
+}
+
+/* ── ② 문제 fixture: 본품 1~3 > 부품·소모품 4~7 > 무관 ── */
+{
+  const r = brandRank('삼성', SAMSUNG_ROWS);
+  check(allAbove(r, SS_MAIN, SS_PARTS), '★★ [삼성] 본품(갤럭시 S26·A37·버즈3) 전부 > 부품·토너 전부', order(r));
+  check(r[r.length - 1].productId === 'U8', '★ [삼성] 무관 상품(라면)은 맨 아래', order(r));
+  check(idxOf(r, 'X5') > idxOf(r, 'P1'),
+    '★★ [삼성] 23,000원 브래킷이 1,155,000원 갤럭시 S26 위로 오지 않는다 (가격이 덮어쓰지 않음)', order(r));
+  const hp = r.find(x => x.productId === 'X4');
+  check(/brand-pos/.test(hp.relevanceWhy || '') && /brand-compat/.test(hp.relevanceWhy || ''),
+    '★ [삼성] HP 부품은 «위치(뒤쪽)·호환 관계» 로 내려갔다 (진단 사유)', hp.relevanceWhy);
+  const toner = r.find(x => x.productId === 'X6');
+  check(/brand-part:토너/.test(toner.relevanceWhy || ''), '[삼성] 토너는 소모품으로 내려갔다', toner.relevanceWhy);
+  /* 부품 가격을 1원으로 낮춰도 순서는 그대로 — 관련도가 다르면 가격은 보지 않는다. */
+  const cheap = brandRank('삼성', SAMSUNG_ROWS.map(([id, t, p]) => [id, t, SS_PARTS.includes(id) ? 1 : p]));
+  check(allAbove(cheap, SS_MAIN, SS_PARTS), '★ [삼성] 부품이 1원이어도 본품 아래', order(cheap));
+}
+
+/* ── ③ 반대 검색: 종류명이 있으면 그 종류가 본품이다 ── */
+{
+  const toner = brandRank('삼성 토너', SAMSUNG_ROWS);
+  check(S.detectBrandOnlyIntent(S.analyzeQuery('삼성 토너'), SAMSUNG_ROWS.map(r => r[1])) === null,
+    '★ "삼성 토너" 는 브랜드 단독이 아니다');
+  check(allAbove(toner, ['X6', 'X7'], SS_MAIN), '★★ [삼성 토너] 삼성 토너 > 갤럭시 (토너를 부속으로 내리지 않는다)', order(toner));
+
+  const CASE_ROWS = [
+    ['C1', '삼성 갤럭시 S26 울트라 정품 실리콘 케이스', 39000],
+    ['C2', '갤럭시 S26 호환 투명 젤리 케이스', 6900],
+    ...SAMSUNG_ROWS
+  ];
+  const cs = brandRank('삼성 케이스', CASE_ROWS);
+  check(S.productIntentContext('삼성 케이스', CASE_ROWS.map(r => r[1])).intent === 'ACCESSORY_INTENT',
+    '★ [삼성 케이스] queryWantsAccessory 동작 보존 (ACCESSORY_INTENT)');
+  check(cs[0].productId === 'C1', '★★ [삼성 케이스] 삼성 갤럭시 케이스가 1위', order(cs));
+
+  const scan = brandRank('HP 삼성 K7 스캐너', SAMSUNG_ROWS);
+  check(scan[0].productId === 'X4', '★★ [HP 삼성 K7 스캐너] 부품을 구체적으로 찾으면 그 부품이 1위', order(scan));
+}
+
+/* ── ④ 일반화: 브랜드 문자열은 코드 어디에도 없다 ── */
+const BRAND_SETS = [
+  ['애플', ['M1', 'M2', 'M3'], ['A1', 'A2', 'A3', 'A4'], [
+    ['M1', '애플 아이폰 17 프로 256GB 자급제', 1790000],
+    ['M2', '애플 맥북 에어 13 M4 2025', 1590000],
+    ['M3', '애플 에어팟 프로 3 USB-C', 369000],
+    ['A1', '애플 아이폰 16 호환 실리콘 케이스', 9900],
+    ['A2', '애플 아이폰 15 강화유리 액정보호필름 2매', 5900],
+    ['A3', '아이폰 14 프로 후면 카메라 교체 수리 부품 애플', 32000],
+    ['A4', '애플 맥북 호환 65W USB-C 충전기 어댑터', 18900]
+  ]],
+  ['LG', ['M1', 'M2', 'M3', 'M4'], ['A1', 'A2', 'A3', 'A4'], [
+    ['M1', 'LG전자 그램 16 노트북 16Z90T', 1890000],
+    ['M2', 'LG전자 올레드 TV 65인치 OLED65C5', 2790000],
+    ['M3', 'LG전자 퓨리케어 공기청정기 AS183DWFA', 590000],
+    ['M4', 'LG전자 트롬 드럼세탁기 F21VDSK', 1290000],
+    ['A1', 'LG 그램 호환 65W USB-C 충전기 어댑터', 15900],
+    ['A2', 'LG 퓨리케어 공기청정기 호환 필터 AS181DAW용', 21900],
+    ['A3', '에이스 호환 LG 냉장고 정수 필터', 12900],
+    ['A4', 'LG 트롬 세탁기 배수펌프 교체 부품', 24900]
+  ]],
+  ['소니', ['M1', 'M2', 'M3'], ['A1', 'A2', 'A3'], [
+    ['M1', '소니 WH-1000XM6 노이즈캔슬링 블루투스 헤드폰', 549000],
+    ['M2', '소니 알파 A7M4 미러리스 카메라 바디', 2690000],
+    ['M3', '소니 ZV-E10 II 브이로그 카메라', 999000],
+    ['A1', '소니 WH-1000XM5 호환 헤드폰 케이스', 15900],
+    ['A2', '소니 NP-FZ100 호환 배터리 2개', 29900],
+    ['A3', '카메라 가방 소니 알파 a6400용 하드케이스', 19900]
+  ]],
+  ['다이슨', ['M1', 'M2'], ['A1', 'A2'], [
+    ['M1', '다이슨 V15 디텍트 무선청소기', 1090000],
+    ['M2', '다이슨 에어랩 멀티 스타일러 컴플리트', 749000],
+    ['A1', '다이슨 V8 V10 호환 필터 2개', 9900],
+    ['A2', '다이슨 청소기 거치대 스탠드', 15900]
+  ]]
+];
+BRAND_SETS.forEach(([q, mains, others, rows]) => {
+  const r = brandRank(q, rows);
+  check(S.detectBrandOnlyIntent(S.analyzeQuery(q), rows.map(x => x[1])) !== null,
+    `[${q}] 브랜드 단독 검색으로 판정`);
+  check(allAbove(r, mains, others), `★★ [${q}] 본품 전부 > 호환품·부품·액세서리 전부`, order(r));
+});
+check(!/삼성|애플|소니|다이슨|['"]lg['"]/i.test(
+  require('fs').readFileSync(require('path').join(__dirname, '..', 'api', '_search.js'), 'utf8')
+    .split('BRAND_ONLY_INTENT')[1].split('function rankItems')[0]
+    .split('\n').filter(l => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n')),
+  '★ 브랜드 단독 로직의 실행 코드에 특정 브랜드 문자열이 없다 (주석 제외)');
+
+/* ── ⑤ 오탐 방지: 범주어·모델명·화장품 브랜드·본품 이름 ── */
+check(S.detectBrandOnlyIntent(S.analyzeQuery('텀블러'),
+  ['스탠리 퀜처 진공 텀블러 887ml', '락앤락 메트로 텀블러 보온병', '텀블러 세척솔 3개', '텀블러 뚜껑 실리콘 패킹']) === null,
+  '★ 범주어(텀블러)는 브랜드 단독이 아니다 — 상품의 정체(맨 뒤 명사)로 쓰인다');
+check(S.detectBrandOnlyIntent(S.analyzeQuery('노트북'),
+  ['LG전자 그램 16 노트북 16Z90T', '레노버 아이디어패드 슬림3 노트북', '노트북 거치대 알루미늄', '노트북 파우치 15인치', '노트북 쿨링패드 대형']) === null,
+  '★ 부속이 머리에 몰린 범주어(노트북)도 브랜드 단독으로 오판하지 않는다');
+check(S.detectBrandOnlyIntent(S.analyzeQuery('14ZD95U'),
+  ['LG전자 LG그램 14ZD95U-GX56K', 'LG전자 14ZD95U-GX5WK 키보드키커버 키스킨']) === null,
+  '모델명 단독 검색은 브랜드 단독이 아니다');
+{
+  const cos = brandRank('설화수', [
+    ['M1', '설화수 윤조에센스 90ml', 135000], ['M2', '설화수 자음수 토너 150ml', 62000], ['M3', '설화수 자음생크림 50ml', 210000]
+  ]);
+  check(cos.every(x => x.relevance === 1), '★ [설화수] 화장품 토너는 소모품으로 내리지 않는다 (모델 코드 없음)', order(cos));
+  const names = [
+    ['LG', 'LG전자 트롬 드럼세탁기 F21VDSK', 'LG전자 그램 16 노트북 16Z90T'],
+    ['HP', 'HP 잉크젯 복합기 2775', 'HP 레이저 프린터 M211dw'],
+    ['갤럭시', '삼성전자 갤럭시 기어 S3 프론티어 SM-R760', '갤럭시 워치8 클래식 SM-L500']
+  ];
+  names.forEach(([q, t, peer]) => {
+    const r = brandRank(q, [['a', t, 1], ['b', peer, 2], ['c', `${q} 정품 박스`, 3]]);
+    check(r.find(x => x.productId === 'a').relevance === 1, `★ [${q}] 본품 이름 속 낱말(드럼·잉크젯·기어)로 깎지 않는다`, t);
+  });
+}
+
+/* ── ⑥ 계약: 아무것도 지우지 않고, 다른 경로는 그대로 ── */
+{
+  const tonerOnly = [{ productId: 't', mall: '쿠팡', title: '삼성 MLT-D758S 정품토너 검정', lprice: 61000 },
+    { productId: 'g', mall: '쿠팡', title: '삼성전자 갤럭시 S26 자급제 SM-S942N', lprice: 1155000 },
+    { productId: 'b', mall: '쿠팡', title: '삼성전자 갤럭시 버즈3 FE 블루투스 이어폰', lprice: 89000 }];
+  const keptB = S.rankItems('삼성', tonerOnly, { minScore: 0.9 });
+  check(keptB.items.some(x => x.productId === 't'),
+    '★ 기준선 판정은 원점수로 한다 — 정렬 감점 때문에 토너가 사라지지 않는다', keptB.items.map(x => [x.productId, x.relevance]));
+  const a = S.analyzeQuery('삼성', { titles: SAMSUNG_ROWS.map(r => r[1]) });
+  check(S.productFocus(a, '삼성 MLT-D758S 정품토너 검정').factor === 1,
+    '★ productFocus(AI 경로가 걸러내는 데 쓴다)는 바뀌지 않았다');
+  const filtered = S.filterMainProductCandidates('삼성', SAMSUNG_ROWS.map(([productId, title]) => ({ productId, title })));
+  check(filtered.dropped === 0, '★ AI 본품 필터가 브랜드 단독 검색에서 상품을 새로 지우지 않는다', filtered.dropped);
+  /* 비(非)브랜드 검색은 예전 값(커버리지 × 핵심명사 계수)과 같다. */
+  const tumbler = brandRank('텀블러', [['a', '스탠리 진공 텀블러 590ml', 40000], ['b', '텀블러 세척솔 롱 브러시', 3000]]);
+  const titlesT = ['스탠리 진공 텀블러 590ml', '텀블러 세척솔 롱 브러시'];
+  check(tumbler.every(x => x.relevance === focusRel('텀블러', x.title, titlesT)),
+    '★ 브랜드 단독이 아닌 검색의 relevance 는 예전 계산과 같다', tumbler.map(x => [x.title, x.relevance]));
+}
+
 
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);
