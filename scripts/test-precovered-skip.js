@@ -252,6 +252,96 @@ const FILLER_RESP = { k1_fill: ok([item('F1')]), k2_fill: ok([item('F2')]), k3_f
     check(!bCovered, 'B 는 collectorCovered 에 들어가지 않았다', r.collectorCovered);
   }
 
+  /* ================================================================
+   * Case 8 — 동일 product_id · 서로 다른 tracked vendorItemId 두 행.
+   *
+   * ★ 운영 전제 (2026-10-01, read-only 확인): 현재 쿠팡 products 에 같은
+   *   (product_id, mall) 을 공유하는 행은 0건이다. 그래서 아래 경계는 지금
+   *   운영에서 «발생하지 않는다». 다만 스키마는 price_history identity 로
+   *   (product_id, mall, vendor_item_id) 를 허용하므로, 장차 같은 productId
+   *   아래 서로 다른 vid 두 행이 생길 수 있어 그 경계를 고정한다.
+   *
+   * ★ 결론 (이 테스트가 증명하는 것):
+   *   (A) 가격 «쓰기» identity 는 옵션 단위로 보존된다 — V1 가격이 V2 로
+   *       기록되는 일은 없다(옵션 게이트). 이것이 정확성의 핵심이고 안전하다.
+   *   (B) PR #120 의 preCovered skip 은 중복 (product_id,mall) 행에서
+   *       «발동조차 하지 않는다»(preCoveredSkips===0). 즉 base(main)와 동작이
+   *       완전히 같아, #120 이 이 경계를 새로 악화시키지 않는다.
+   *   (C) 그러나 collector 의 «집계/추적» 단위는 전부터 product_id|mall 이다
+   *       (uncovered · collectibleById · byId · markCovered · collectorCovered).
+   *       그래서 중복 행 중 한 쪽만 추적되고(나머지는 Map 덮어쓰기로 ghost),
+   *       todayPriceProducts 가 과다 집계될 수 있다. 이는 PR #120 이전부터
+   *       존재한 구조적 한계이며, multi-option 카탈로그 지원 전에 별도 수정이
+   *       필요하다. 아래에서 그 «현재 동작» 을 숨기지 않고 그대로 고정한다.
+   * ================================================================ */
+  section('Case 8 — 동일 productId·다른 vendorItemId 경계 (옵션 동일성)');
+  {
+    // 명시적 pid+vid 행/항목 (prod 는 vid 를 id 에서 유도하므로 여기선 직접 만든다).
+    const dprod = (pid, vid) => ({ product_id: pid, mall: '쿠팡', keyword: 'dup',
+      title: `${pid} 구체적 상품명 ${vid}`, link: '', image: '', item_id: 'I' + vid, vendor_item_id: vid });
+    const ditem = (pid, vid) => ({ productId: pid, title: 't' + vid, lprice: 10000, oprice: 10000,
+      link: `https://x/${pid}/${vid}`, image: '', mall: '쿠팡', itemId: 'I' + vid, vendorItemId: vid });
+
+    // 쓰기 경로가 실제로 받은 옵션(vid)을 포착하는 recordPricesFn.
+    async function runCapture(rows, byKw) {
+      const written = [];
+      const cap = async (obs) => {
+        obs.forEach(o => written.push(`${o.productId}|${o.mall}|${o.vendorItemId}`));
+        return { saved: obs.length, recorded: obs.length,
+          recordedKeys: [...new Set(obs.map(o => `${o.productId}|${o.mall}`))], rejected: 0, suspect: 0, errors: [] };
+      };
+      const calledKw = [];
+      const fetchAllFn = async (k) => { calledKw.push(k); const v = byKw[k]; return (typeof v === 'function' ? v() : v) || ok([]); };
+      const r = await runMallCollection({ mallName: '쿠팡', rows, fetchAllFn,
+        recordPricesFn: cap, cacheHintFn: NO_HINT, collectedTodayFn: NO_TODAY,
+        savedState: null, deadlineTs: FAR() });
+      return { r, written, calledKw };
+    }
+
+    // ── 8.1 쓰기 identity 안전 (point 1·4): V2 추적, 응답엔 V1 만 → 아무것도 안 쓴다. ──
+    {
+      const { r, written } = await runCapture([dprod('123', 'V2')], { dup: ok([ditem('123', 'V1')]) });
+      check(written.length === 0, '8.1 V2 추적·응답 V1 뿐 → V1 가격을 V2 로 기록하지 않는다 (아무것도 안 씀)', written);
+      check(!written.includes('123|쿠팡|V2'), '8.1 V2 identity 로 쓴 가격이 없다', written);
+      check(r.preCoveredSkips === 0, '8.1 preCoveredSkips === 0 (옵션 불일치는 확보가 아니다)', r.preCoveredSkips);
+    }
+
+    // ── 8.2 두 행 같은 그룹·응답 V1 뿐 (point 2·3): 검색은 나가고, skip 은 발동하지 않는다. ──
+    {
+      const rows = [dprod('123', 'V1'), dprod('123', 'V2')];
+      const { r, written, calledKw } = await runCapture(rows, { dup: ok([ditem('123', 'V1')]) });
+      check(calledKw.includes('dup'), '8.2 미확보 vid 가 있어 그룹 1차 검색이 나갔다 (skip 안 함)', calledKw);
+      check(r.preCoveredSkips === 0, '8.2 preCoveredSkips === 0 — skip 이 옵션 단위를 거짓 병합하지 않는다', r.preCoveredSkips);
+      // 추적 단위가 pid|mall 이라 응답의 V1 조차 (덮어쓰기로) 채택되지 않는다 → 쓰기 0.
+      check(!written.includes('123|쿠팡|V2'), '8.2 V2 가 확보되지 않았다 (V2 identity 쓰기 없음)', written);
+    }
+
+    // ── 8.3 응답에 V1·V2 둘 다 → 추적된 vid 만 쓰인다 (다른 옵션 가격으로 오염 없음). ──
+    {
+      const rows = [dprod('123', 'V1'), dprod('123', 'V2')];
+      const { r, written } = await runCapture(rows, { dup: ok([ditem('123', 'V1'), ditem('123', 'V2')]) });
+      // 쓰인 vid 는 정확히 하나이고, 그 값은 응답 항목의 vid 와 일치한다 (교차 오염 없음).
+      check(written.length === 1 && /^123\|쿠팡\|V[12]$/.test(written[0]),
+        '8.3 추적된 옵션의 vid 로만 기록된다 (다른 옵션 가격으로 오염 없음)', written);
+      check(r.preCoveredSkips === 0, '8.3 preCoveredSkips === 0 (중복 행에서 skip 미발동)', r.preCoveredSkips);
+    }
+
+    // ── 8.4 알려진 선행 구조적 한계 (PR #120 이전부터) — 숨기지 않고 현재 동작을 고정. ──
+    //    collector 집계 단위가 product_id|mall 이라 중복 행 2개가 1개로 접힌다.
+    //    ★ 운영에는 중복 (product_id,mall) 0건이라 지금은 발생하지 않는다.
+    //    ★ multi-option 카탈로그 지원 전에 별도 identity 수정이 필요하다.
+    {
+      const rows = [dprod('123', 'V1'), dprod('123', 'V2')];
+      const { r } = await runCapture(rows, { dup: ok([ditem('123', 'V1'), ditem('123', 'V2')]) });
+      check(r.collectorSuccessProducts === 1,
+        '8.4 [선행 한계] collectorSuccess 는 pid|mall 단위라 중복 2행이 1로 집계된다 (과다집계는 아님)', r.collectorSuccessProducts);
+      check(r.uncoveredProducts === 0,
+        '8.4 [선행 한계] uncovered 가 pid|mall 로 접혀 둘 다 확보로 보인다 (ghost 행 발생)', r.uncoveredProducts);
+      check(r.todayPriceProducts === 2,
+        '8.4 [선행 한계·주의] todayPriceProducts 는 collectible(2) 기준이라 과다 집계된다 — 향후 수정 대상', r.todayPriceProducts);
+    }
+  }
+
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL`);
   if (store.price_history && store.price_history.length) {
     // NO_WRITE 를 쓰므로 여기엔 아무것도 없어야 한다 — 운영 미접촉의 마지막 확인.

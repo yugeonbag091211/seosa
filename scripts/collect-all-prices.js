@@ -3401,6 +3401,18 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * ★ 회수 상품 수는 줄지 않는다. skip 된 그룹의 응답이 공짜로 흡수했을
      *   다른 상품(X)은, X 자신의 1차 그룹과 회수 패스가 그대로 노린다 —
      *   X 는 uncovered 에 남아 있다. 사라지는 것은 중복 호출 하나뿐이다.
+     *
+     * ★ 식별 단위 전제 (product_id|mall) — 선행 구조적 한계, 2026-10-01 확인.
+     *   이 가드의 키는 uncovered·collectibleById·byId·markCovered·collectorCovered
+     *   와 «똑같이» product_id|mall 이다. 그래서 같은 (product_id, mall) 아래
+     *   서로 다른 vendor_item_id 를 추적하는 행이 둘 이상이면 collector 전체가
+     *   그 둘을 하나로 접는다(이 가드만의 문제가 아니다). 운영 read-only 확인:
+     *   현재 쿠팡 products 에 그런 중복 행은 0건이라 지금은 발생하지 않는다.
+     *   «가격 쓰기» identity 는 vendor_item_id 단위로 보존되므로(addRow /
+     *   recordPrices 옵션 게이트) 다른 옵션 가격으로 오염되는 일은 없고, 이
+     *   가드는 base(main)와 동작이 같아 이 경계를 새로 악화시키지 않는다
+     *   (scripts/test-precovered-skip.js Case 8). multi-option 카탈로그로
+     *   중복 행을 허용하기 전에 집계 키를 옵션 단위로 올리는 별도 수정이 필요하다.
      */
     if (!groupRows.some(p => uncovered.has(`${p.product_id}|${p.mall}`))) {
       preCoveredSkips++;
