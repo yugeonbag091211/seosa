@@ -2763,7 +2763,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         return o;
       })(),
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
-      passStats: [], crossRecovered: 0, optionRejects: {},
+      passStats: [], crossRecovered: 0, preCoveredSkips: 0, optionRejects: {},
       facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
       /* 아무 일도 하지 않은 실행이 오늘의 terminal 목록을 지우면 안 된다 (P1). */
       terminalOptionFailures:
@@ -3014,6 +3014,12 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
   /** 이 실행에서 교차 매칭으로 건진 상품 수 (리포트용). */
   let crossRecovered = 0;
+
+  /*
+   * 이 실행 «도중» 전원이 가격을 확보해, 1차 호출을 내보내지 않고 건너뛴 그룹 수
+   * (리포트/효과 측정용 — processGroup 맨 앞의 skip 가드 참고).
+   */
+  let preCoveredSkips = 0;
 
   /**
    * 응답 항목을 전체 미수집 집합과 대조해서 새로 잡히는 것을 흡수한다.
@@ -3369,6 +3375,50 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
   /** 검색어 그룹 하나를 처리한다. 실패해도 던지지 않는다 — 호출부가 계속 돈다. */
   async function processGroup({ kw, rows: groupRows }) {
+    /*
+     * ── 호출 직전 재확인: 전원이 이미 확보된 그룹은 1차 호출을 내보내지 않는다 ──
+     *   (2026-10-01, within-run cross-match 낭비)
+     *
+     * ★ 무엇이 남아 있었나.
+     *
+     *   시작 시점의 P4 필터(todayAtStart)는 «실행이 시작될 때» 이미 오늘 가격이
+     *   있던 그룹만 걸러낸다. 그런데 교차 매칭(absorbCrossMatches)은 실행
+     *   «도중에» 앞 그룹의 응답으로 뒤 그룹의 상품을 흡수한다. 그렇게 전원이
+     *   확보된 그룹이 remaining 에 그대로 남아, 커서가 닿으면 아무도 기다리지
+     *   않는 1차 호출이 한 번 나갔다. 회수 패스는 이미 uncovered 로 걸러
+     *   (`targets.length` 검사) 같은 낭비를 막고 있었는데 1차만 빠져 있었다.
+     *   이 가드는 그 회수 패스와 글자 그대로 같은 기준을 1차에도 적용한다.
+     *
+     * ★ 정밀도는 한 글자도 바뀌지 않는다 (가격 정확성 > API 절약).
+     *   상품이 uncovered 에서 빠지는 경로는 둘뿐이다:
+     *     · adoptOne === 'MATCH'  = productId + vendorItemId(옵션) 완전 일치
+     *     · collectedTodayFn      = 오늘 원장에 그 옵션의 가격이 이미 있다
+     *   그래서 이 skip 은 «정확히 그 옵션의 오늘 가격을 이미 가진» 그룹에만
+     *   걸린다. productId 만 같다고, 제목이 비슷하다고 거르는 일은 없다.
+     *   terminal 이지만 아직 미확보인 상품은 uncovered 에 그대로 있으므로
+     *   그 그룹은 skip 되지 않는다(1차 동작 불변).
+     *
+     * ★ 회수 상품 수는 줄지 않는다. skip 된 그룹의 응답이 공짜로 흡수했을
+     *   다른 상품(X)은, X 자신의 1차 그룹과 회수 패스가 그대로 노린다 —
+     *   X 는 uncovered 에 남아 있다. 사라지는 것은 중복 호출 하나뿐이다.
+     *
+     * ★ 식별 단위 전제 (product_id|mall) — 선행 구조적 한계, 2026-10-01 확인.
+     *   이 가드의 키는 uncovered·collectibleById·byId·markCovered·collectorCovered
+     *   와 «똑같이» product_id|mall 이다. 그래서 같은 (product_id, mall) 아래
+     *   서로 다른 vendor_item_id 를 추적하는 행이 둘 이상이면 collector 전체가
+     *   그 둘을 하나로 접는다(이 가드만의 문제가 아니다). 운영 read-only 확인:
+     *   현재 쿠팡 products 에 그런 중복 행은 0건이라 지금은 발생하지 않는다.
+     *   «가격 쓰기» identity 는 vendor_item_id 단위로 보존되므로(addRow /
+     *   recordPrices 옵션 게이트) 다른 옵션 가격으로 오염되는 일은 없고, 이
+     *   가드는 base(main)와 동작이 같아 이 경계를 새로 악화시키지 않는다
+     *   (scripts/test-precovered-skip.js Case 8). multi-option 카탈로그로
+     *   중복 행을 허용하기 전에 집계 키를 옵션 단위로 올리는 별도 수정이 필요하다.
+     */
+    if (!groupRows.some(p => uncovered.has(`${p.product_id}|${p.mall}`))) {
+      preCoveredSkips++;
+      return;
+    }
+
     const byId = new Map();
     // 키는 반드시 문자열로 맞춘다 — 응답의 productId 는 normalize 가 String() 한 값이다.
     groupRows.forEach(p => byId.set(String(p.product_id), p));
@@ -4264,6 +4314,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   if (recovered) {
     console.log(`  [${mallName}] ✅ keyword 가 없던 상품 ${recovered}개를 찾아 검색어를 채웠습니다.`);
   }
+  if (preCoveredSkips) {
+    console.log(`  [${mallName}] ⏭  실행 도중 전원 확보로 1차 검색 ${preCoveredSkips}회를 생략했습니다 (교차 매칭으로 아낀 중복 호출).`);
+  }
 
   /*
    * ★ 2차 미시도가 남아 있으면 아직 '완료'가 아니다 (2026-08-31).
@@ -4443,6 +4496,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     passStats: [...passStats.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass)),
     /* 교차 매칭으로 건진 상품 수 — 응답 전체 대조가 실제로 얼마를 벌었는지. */
     crossRecovered,
+    /* 실행 도중 전원 확보로 1차 호출을 건너뛴 그룹 수 — 절약한 중복 호출 수와 같다. */
+    preCoveredSkips,
     /*
      * 옵션 게이트가 채택을 거부한 이유별 건수 (pickOption 주석 참고).
      *
