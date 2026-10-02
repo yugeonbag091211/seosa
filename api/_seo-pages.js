@@ -155,10 +155,85 @@ function categoryProducts(cat, rows) {
   return priceBand(dedupe(out));
 }
 
-/** 브랜드에 속한 본품 — 제목 첫 낱말이 별칭과 정확히 같은 것만 (_seo.brandOfTitle). */
-function brandProducts(brand, rows) {
+/**
+ * 브랜드에 속한 본품 — 제목 첫 낱말이 별칭과 정확히 같은 것만 (_seo.brandOfTitle).
+ *
+ * memberKeysOf(cat) 가 주어지면, 레지스트리 카테고리 검색어로 모인 행은 그 카테고리의
+ * 본품이기도 해야 한다 (상품 페이지 productContext 의 brand 규칙과 같다). 그래야
+ * «LG 그램 노트북 핀 타입 19V» 어댑터가 /brand/lg 에는 LG전자 제품으로 오르고 그
+ * 상품 페이지는 brand 를 빼는 식으로 두 곳이 갈리지 않는다. 판정 집합이 없으면 뺀다.
+ */
+function brandProducts(brand, rows, memberKeysOf) {
   const mine = usable(rows).filter(r => SEO.brandOfTitle(r.title) === brand);
-  return dedupe(mainOnly(mine, brand.name));
+  const main = dedupe(mainOnly(mine, brand.name));
+  if (!memberKeysOf) return main;
+  return main.filter(r => {
+    const cat = SEO.categoryOfKeyword(r.keyword);
+    if (!cat) return true;
+    const keys = memberKeysOf(cat);
+    return !!keys && keys.has(`${r.product_id}|${r.mall}`);
+  });
+}
+
+/** 행 목록에 나오는 레지스트리 카테고리들의 본품 집합 (인스턴스 메모 재사용). */
+async function memberKeysFor(rows) {
+  const cats = new Map();
+  (rows || []).forEach(r => { const c = SEO.categoryOfKeyword(r.keyword); if (c) cats.set(c.slug, c); });
+  const sets = new Map();
+  await Promise.all([...cats.values()].map(async c => { sets.set(c.slug, await categoryMemberKeys(c)); }));
+  return cat => sets.get(cat.slug);
+}
+
+/*
+ * 상품 페이지의 카테고리 breadcrumb · Product.brand (2026-10-02 레드팀 후속).
+ *
+ * 레드팀이 실제로 찾은 것: 키워드 «노트북» 으로 수집된 백팩·노트북가방·«LG 그램
+ * 노트북 핀 타입 19V» 어댑터가 index 페이지에서 «홈 › 노트북 › …» 이었고, 어댑터는
+ * brand=LG전자 였다. «닌텐도 스위치 OLED 전용 필름» 은 brand=닌텐도.
+ *
+ *   카테고리 — 그 카테고리 목록(categoryProducts)에 «실제로 드는» 상품일 때만.
+ *              목록 페이지와 같은 함수·같은 행이라 둘의 판단이 갈리지 않는다.
+ *   브랜드   — 첫 낱말 별칭(brandOfTitle) + 브랜드 목록의 본품 판정(brandProducts:
+ *              부속 낱말이 있으면 탈락) + 카테고리 검색어로 모인 상품이면 그
+ *              카테고리 본품이어야 한다(어댑터처럼 부속 낱말이 없는 부속을 막는다).
+ *   판정할 수 없으면(조회 실패 등) 둘 다 비운다 — 틀린 계층·브랜드보다 없는 편이 낫다.
+ *
+ * 검색·매칭 로직은 바꾸지 않는다. SEO 메타데이터 판정에만 쓴다.
+ *
+ * ★ 비용: 카테고리 검색어로 모인 상품 페이지는 그 카테고리 목록 조회가 1회 늘어난다.
+ *   같은 인스턴스에서 같은 카테고리의 상품 페이지가 이어서 그려지면(크롤러가 흔히
+ *   그렇게 돈다) 본품 집합을 CATEGORY_MEMBERS_MEMO_MS 동안 재사용한다. 본품 집합은
+ *   가격 수집(하루 한 번) 때만 바뀌므로 10분 묵어도 판단이 달라지지 않는다.
+ */
+const CATEGORY_MEMBERS_MEMO_MS = 10 * 60 * 1000;
+const categoryMembersMemo = new Map();   // slug → { at, keys: Set<'pid|mall'> } 또는 진행 중 Promise
+
+function categoryMemberKeys(cat) {
+  const hit = categoryMembersMemo.get(cat.slug);
+  if (hit && hit.keys && Date.now() - hit.at < CATEGORY_MEMBERS_MEMO_MS) return Promise.resolve(hit.keys);
+  if (hit && hit.pending) return hit.pending;
+  const pending = loadCategoryRows(cat)
+    .then(rows => {
+      const keys = new Set(categoryProducts(cat, rows).map(r => `${r.product_id}|${r.mall}`));
+      categoryMembersMemo.set(cat.slug, { at: Date.now(), keys });
+      return keys;
+    })
+    .catch(e => { categoryMembersMemo.delete(cat.slug); throw e; });
+  categoryMembersMemo.set(cat.slug, { pending });
+  return pending;
+}
+
+async function productContext(row) {
+  if (!row) return {};
+  const cat = SEO.categoryOfKeyword(row.keyword);
+  let category = null;
+  if (cat) {
+    const keys = await categoryMemberKeys(cat);
+    if (keys.has(`${row.product_id}|${row.mall}`)) category = cat;
+  }
+  const b = SEO.brandOfTitle(SEO.cleanText(row.title));
+  const brandOk = !!b && brandProducts(b, [row]).length === 1 && (!cat || !!category);
+  return { category, brand: brandOk ? b : null };
 }
 
 /**
@@ -287,21 +362,44 @@ async function computeHub() {
   for (let i = 0; i < keywords.length; i += CHUNK) kwChunks.push(keywords.slice(i, i + CHUNK));
 
   // 허브는 «몇 개인가» 만 센다 — 이미지·옵션 컬럼은 받지 않는다 (전송량이 절반이 된다).
-  const [catRowSets, brandRows] = await Promise.all([
+  const [catRowSets, brandRows, eligible] = await Promise.all([
     Promise.all(kwChunks.map(chunk => readAll(opts => supabase.from('products').select(HUB_COLS, opts)
       .in('keyword', chunk).gte('collected_at', cutoff), MAX_PAGES))),
-    loadBrandRows(SEO.BRANDS, HUB_COLS)
+    loadBrandRows(SEO.BRANDS, HUB_COLS),
+    eligibleProductIds()
   ]);
   const catRows = [].concat(...catRowSets);
 
-  const entry = (kind, def, products, min) => {
+  const entry = (kind, def, products, gate) => {
     const st = listStats(products);
-    return { kind, def, count: products.length, lastmod: st ? st.updated : '', indexable: products.length >= min };
+    const g = gate(products, eligible);
+    return { kind, def, count: products.length, tracked: g.tracked, lastmod: st ? st.updated : '', indexable: g.indexable };
   };
+  // 카테고리 본품 집합은 이미 읽은 행으로 만든다 — 브랜드 판정(brandProducts)에 추가 조회가 없다.
+  const catMembers = new Map(SEO.CATEGORIES.map(c => [c.slug, categoryProducts(c, catRows)]));
+  const memberKeys = new Map([...catMembers].map(([slug, list]) => [slug, new Set(list.map(r => `${r.product_id}|${r.mall}`))]));
   return {
-    categories: SEO.CATEGORIES.map(c => entry('category', c, categoryProducts(c, catRows), SEO.CATEGORY_MIN_PRODUCTS)),
-    brands: SEO.BRANDS.map(b => entry('brand', b, brandProducts(b, brandRows), SEO.BRAND_MIN_PRODUCTS))
+    categories: SEO.CATEGORIES.map(c => entry('category', c, catMembers.get(c.slug), categoryGate)),
+    brands: SEO.BRANDS.map(b => entry('brand', b, brandProducts(b, brandRows, cat => memberKeys.get(cat.slug)), brandGate))
   };
+}
+
+/*
+ * 목록 페이지 색인 판정 — 카테고리·브랜드 페이지 · 허브 · pages.xml 이 이 둘만 쓴다.
+ *   ① 현재가가 살아 있는 본품 ≥ *_MIN_PRODUCTS
+ *   ② 그중 상품 페이지가 index 인 것(= 상품 사이트맵에 오른 것) ≥ *_MIN_TRACKED
+ * ②의 판정은 상품 사이트맵과 «같은 목록» 을 쓴다 — 목록마다 따로 이력을 세지 않는다.
+ */
+function trackedCount(products, eligible) {
+  return products.filter(p => eligible.has(String(p.product_id))).length;
+}
+function categoryGate(products, eligible) {
+  const tracked = trackedCount(products, eligible);
+  return { tracked, indexable: products.length >= SEO.CATEGORY_MIN_PRODUCTS && tracked >= SEO.CATEGORY_MIN_TRACKED };
+}
+function brandGate(products, eligible) {
+  const tracked = trackedCount(products, eligible);
+  return { tracked, indexable: products.length >= SEO.BRAND_MIN_PRODUCTS && tracked >= SEO.BRAND_MIN_TRACKED };
 }
 
 async function hubData() {
@@ -365,7 +463,7 @@ function layout(o) {
 <title>${esc(o.title)}</title>
 <meta name="description" content="${esc(o.description)}">
 <meta name="robots" content="${o.indexable ? 'index,follow' : 'noindex,follow'}">
-<link rel="canonical" href="${esc(o.canonical)}">
+${o.canonical ? `<link rel="canonical" href="${esc(o.canonical)}">` : ''}
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 ${SEO.verificationMeta()}
 <meta property="og:type" content="website">
@@ -373,7 +471,7 @@ ${SEO.verificationMeta()}
 <meta property="og:locale" content="ko_KR">
 <meta property="og:title" content="${esc(o.title)}">
 <meta property="og:description" content="${esc(o.description)}">
-<meta property="og:url" content="${esc(o.canonical)}">
+${o.canonical ? `<meta property="og:url" content="${esc(o.canonical)}">` : ''}
 <meta property="og:image" content="${SITE}/og.png">
 <meta name="twitter:card" content="summary">
 ${graph.length ? SEO.jsonLdScript({ '@context': 'https://schema.org', '@graph': graph }) : ''}
@@ -443,24 +541,28 @@ function renderListing(o) {
   // 가격 기록은 화면에 그린 목록(shown)에만 붙어 있다 — 그래서 문구도 «목록 중» 이라고 말한다.
   const drops = [...hist.values()].filter(h => h.prevDate && h.diff < 0).length;
   const tracked = [...hist.values()].filter(h => h.days >= 7).length;
-  const cheapest = order === 'asc' ? shown[0] : null;
 
   const title = `${name} 최저가·가격비교 | SEOSA`;
   const description = stats
-    ? `${name} ${stats.count}개 상품의 현재가 ${won(stats.low)}원~${won(stats.high)}원. ${stats.malls.map(m => m[0]).slice(0, 3).join('·')} 가격을 SEOSA가 매일 기록해 비교합니다.`.slice(0, 160)
+    ? `${name} 목록 ${stats.count}개 상품의 현재가 범위 ${won(stats.low)}원~${won(stats.high)}원. ${stats.malls.map(m => m[0]).slice(0, 3).join('·')} 가격을 SEOSA가 매일 기록해 비교합니다.`.slice(0, 160)
     : `${name} 가격을 SEOSA가 매일 기록해 비교합니다.`;
 
   const facts = stats ? `
   <dl class="facts">
     <div><dt>가격 기록 중인 상품</dt><dd>${won(stats.count)}개</dd></div>
-    <div><dt>현재가 범위</dt><dd>${won(stats.low)}~${won(stats.high)}원</dd></div>
-    <div><dt>현재가 중앙값</dt><dd>${won(stats.median)}원</dd></div>
+    <div><dt>목록 현재가 범위</dt><dd>${won(stats.low)}~${won(stats.high)}원</dd></div>
+    <div><dt>목록 현재가 중앙값</dt><dd>${won(stats.median)}원</dd></div>
     <div><dt>목록 중 직전 관측보다 내린 상품</dt><dd>${hist.size ? `${drops}개` : '—'}</dd></div>
   </dl>` : '';
-  const trackedNote = tracked ? ` 목록의 상품 중 가격 기록이 7일 이상 쌓인 것은 ${tracked}개입니다.` : '';
-  const lead = cheapest
-    ? `<p class="lead">지금 현재가가 가장 낮은 ${esc(name)} 상품은 ${esc(mallName(cheapest))}의 «${esc(SEO.shortName(cheapest.title, 40))}» ${won(cheapest.lprice)}원입니다.${trackedNote}</p>`
-    : (trackedNote ? `<p class="lead">${trackedNote.trim()}</p>` : '');
+  /*
+   * «지금 가장 낮은 ○○ 상품은 …» 문장을 쓰지 않는다 (2026-10-02 레드팀 후속).
+   *
+   * 목록 1위가 본품이 아닌 경우가 실제로 남아 있다 — /category/body-lotion 1위
+   * «빈티지 도자기 로션 병»(빈 병), /category/rice 1위 «쌀조청». 그 행을 «가장 낮은
+   * 바디로션» 이라고 부르면 거짓 문장이다. 목록은 «현재가 낮은 순» 으로 보여 주기만 하고,
+   * 어떤 행이 최저가 본품이라고 단정하지 않는다.
+   */
+  const lead = tracked ? `<p class="lead">목록의 상품 중 가격 기록이 7일 이상 쌓인 것은 ${tracked}개입니다.</p>` : '';
   const urls = shown.map(p => pageUrl(p.product_id));
 
   const body = `
@@ -497,7 +599,8 @@ function render404(what) {
   return layout({
     title: '페이지를 찾을 수 없어요 | SEOSA',
     description: '요청한 페이지가 없어요.',
-    canonical: `${SITE}/category`,
+    // 404 에는 canonical 을 달지 않는다 — 없는 상품 페이지(api/_product-page.js render404)와 같은 정책.
+    canonical: '',
     indexable: false,
     body: `<h1 style="margin-top:40px">«${esc(what)}» 페이지를 찾을 수 없어요</h1>
   <p class="meta">주소가 바뀌었거나 지금 가격을 확인한 상품이 없어요.</p>
@@ -524,8 +627,9 @@ async function categoryHandler(req, res) {
   const products = categoryProducts(cat, await loadCategoryRows(cat));
   if (!products.length) { cachePublic(res, 300); return sendHtml(res, 404, render404(cat.name), false); }
 
-  const hist = await loadHistory(orderProducts(products, 'asc'));
-  const indexable = products.length >= SEO.CATEGORY_MIN_PRODUCTS;
+  // 색인 판정은 허브·pages.xml 과 같은 함수·같은 목록으로 (categoryGate 주석).
+  const [hist, eligible] = await Promise.all([loadHistory(orderProducts(products, 'asc')), eligibleProductIds()]);
+  const indexable = categoryGate(products, eligible).indexable;
   cachePublic(res, PAGE_CACHE_S);
   return sendHtml(res, 200, renderListing({
     name: cat.name, products, hist, stats: listStats(products), indexable,
@@ -540,11 +644,12 @@ async function brandHandler(req, res) {
   const brand = SLUG_RE.test(slug) ? SEO.brandBySlug(slug) : null;
   if (!brand) { cachePublic(res, 300); return sendHtml(res, 404, render404('브랜드'), false); }
 
-  const products = brandProducts(brand, await loadBrandRows([brand]));
+  const rows = await loadBrandRows([brand]);
+  const products = brandProducts(brand, rows, await memberKeysFor(rows.filter(r => SEO.brandOfTitle(r.title) === brand)));
   if (!products.length) { cachePublic(res, 300); return sendHtml(res, 404, render404(brand.name), false); }
 
-  const hist = await loadHistory(orderProducts(products, 'desc'));
-  const indexable = products.length >= SEO.BRAND_MIN_PRODUCTS;
+  const [hist, eligible] = await Promise.all([loadHistory(orderProducts(products, 'desc')), eligibleProductIds()]);
+  const indexable = brandGate(products, eligible).indexable;
   cachePublic(res, PAGE_CACHE_S);
   return sendHtml(res, 200, renderListing({
     name: brand.name, products, hist, stats: listStats(products), indexable,
@@ -564,7 +669,7 @@ async function hubHandler(req, res) {
   const body = `
   ${crumbs([{ name: '홈', href: '/' }, { name: '카테고리·브랜드' }])}
   <h1>카테고리·브랜드별 최저가</h1>
-  <p class="meta">SEOSA 가 매일 가격을 기록하는 상품을 카테고리와 브랜드로 묶었어요. 지금 현재가를 확인한 상품이 ${SEO.CATEGORY_MIN_PRODUCTS}개 이상인 묶음만 보여드려요.</p>
+  <p class="meta">SEOSA 가 매일 가격을 기록하는 상품을 카테고리와 브랜드로 묶었어요. 지금 현재가를 확인한 상품이 ${SEO.CATEGORY_MIN_PRODUCTS}개 이상이고 가격 기록이 충분히 쌓인 상품이 ${SEO.CATEGORY_MIN_TRACKED}개 이상인 묶음만 보여드려요.</p>
   <h2 id="categories">카테고리</h2>
   ${cats.length ? `<ul class="tiles">${cats.map(tile).join('')}</ul>` : '<p class="meta">지금 보여드릴 카테고리가 없어요.</p>'}
   <h2 id="brands">브랜드</h2>
@@ -597,10 +702,11 @@ async function rpcRange(from, to) {
     if (error.code === 'PGRST202' || /could not find the function/i.test(error.message || '')) return { ok: false };
     throw new Error(error.message);
   }
-  const arr = Array.isArray(data) ? data : [];
+  // 배열이 아니면 «빈 결과» 로 삼키지 않는다 — 형식이 틀린 응답은 오류다.
+  if (!Array.isArray(data)) throw new Error(`seo_sitemap_products 응답 형식 오류: ${typeof data}`);
   return {
     ok: true,
-    list: arr.filter(x => Array.isArray(x) && PID_RE.test(String(x[0] || '')))
+    list: data.filter(x => Array.isArray(x) && PID_RE.test(String(x[0] || '')))
       .map(x => ({ pid: String(x[0]), lastmod: String(x[1] || '') }))
   };
 }
@@ -615,10 +721,132 @@ function productFileCount(maxId) {
   return Math.max(1, Math.ceil((Number(maxId) + 1) / PRODUCT_ID_RANGE));
 }
 
+/*
+ * ── 상품 사이트맵 원천 — 한 번 계산해 인덱스·파일·목록 색인 판정이 같이 쓴다 ──
+ *
+ * 2026-10-02 레드팀 후속. 예전에는 /sitemap.xml 이 범위별 RPC 6개를 전부 성공해야
+ * 응답했다 — 하나만 실패해도 500 이고 pages.xml 까지 인덱스에서 사라졌다.
+ *
+ *   · 범위 하나가 실패해도 나머지는 낸다. 실패는 로그로 남긴다.
+ *   · 실패한 범위는 «직전 정상 결과» 가 있으면 그것을 쓴다 (이 인스턴스가 이미 센 값).
+ *   · 성공했어도 직전보다 비정상적으로 적으면(절반 미만, 직전 ≥ DROP_MIN) 직전 결과를
+ *     쓴다 — «0개나 반토막을 200 으로 정상 처리» 하는 것이 가장 위험하다.
+ *   · 전부 실패했고 직전 결과도 없으면 던진다 → 503 (크롤러가 나중에 다시 온다).
+ *
+ * «직전 정상 결과» 는 이 서버리스 인스턴스의 메모리뿐이다. 새 저장소를 만들지 않는다 —
+ * 허브 집계(hubMemo)와 같은 방식이다. 갓 뜬 인스턴스에는 비교 기준이 없다.
+ */
+const SITEMAP_MEMO_MS = 10 * 60 * 1000;
+const DROP_RATIO = 0.5;
+const DROP_MIN = 20;
+let smLastGood = null;   // { at, mode, count, shards: Map<n, list> }
+let smInflight = null;
+
+function looksDropped(prevLen, curLen) {
+  return prevLen >= DROP_MIN && curLen < prevLen * DROP_RATIO;
+}
+
+async function computeProductSitemap() {
+  const probe = await rpcRange(0, 0);   // 함수가 있는가 (권한·timeout 은 여기서 던진다)
+  if (!probe.ok) {
+    // DB 함수 미적용 — 폴백(묶인 양만 읽는 안전망)을 products-1 하나로 낸다.
+    const list = await require('./_product-page')._internal.indexableProducts();
+    return { mode: 'legacy', count: 1, shards: new Map([[1, list]]), failed: [] };
+  }
+  const count = productFileCount(await maxProductId());
+  const shards = new Map();
+  const failed = [];
+  for (let i = 0; i < count; i += 3) {
+    const nums = [];
+    for (let n = i + 1; n <= Math.min(count, i + 3); n++) nums.push(n);
+    const settled = await Promise.allSettled(nums.map(n => rpcRange((n - 1) * PRODUCT_ID_RANGE, n * PRODUCT_ID_RANGE)));
+    settled.forEach((s, k) => {
+      const n = nums[k];
+      if (s.status === 'fulfilled' && s.value.ok) shards.set(n, s.value.list);
+      else {
+        failed.push(n);
+        console.error(`[seo] 상품 사이트맵 ${n}번 범위 실패: ${s.status === 'rejected' ? s.reason && s.reason.message : '함수 없음'}`);
+      }
+    });
+  }
+  if (!shards.size) throw new Error(`상품 사이트맵 범위 ${count}개 전부 실패`);
+  return { mode: 'rpc', count, shards, failed };
+}
+
+/**
+ * 직전 결과를 «기준» 으로 쓸 수 있는 최대 나이. 급감이 진짜(상품이 대량으로 stale)일
+ * 수도 있으므로 하루가 지나면 기준을 버리고 새 계산을 받아들인다 — 영원히 옛 목록을
+ * 붙들지 않는다.
+ */
+const BASELINE_MAX_MS = 24 * 60 * 60 * 1000;
+
+/** 이번 계산을 직전 정상 결과와 맞춰 본다. */
+function reconcile(cur, prev, now) {
+  const t = now || Date.now();
+  const same = prev && prev.mode === cur.mode && t - (prev.computedAt || 0) < BASELINE_MAX_MS;
+  const shards = new Map(cur.shards);
+  const stale = [];
+  cur.failed.forEach(n => {
+    if (same && prev.shards.has(n)) { shards.set(n, prev.shards.get(n)); stale.push(n); }
+  });
+  if (same) {
+    for (const [n, list] of cur.shards) {
+      const before = prev.shards.get(n);
+      if (before && looksDropped(before.length, list.length)) {
+        console.error(`[seo] 상품 사이트맵 ${n}번이 ${before.length} → ${list.length} 로 급감 — 직전 결과를 유지한다`);
+        shards.set(n, before);
+        stale.push(n);
+      }
+    }
+    const total = m => [...m.values()].reduce((s, l) => s + l.length, 0);
+    if (looksDropped(total(prev.shards), total(shards))) {
+      console.error(`[seo] 상품 사이트맵 전체가 ${total(prev.shards)} → ${total(shards)} 로 급감 — 직전 결과를 유지한다`);
+      // computedAt 은 직전 값 그대로 — 기준 나이(BASELINE_MAX_MS)가 계속 흐르게 한다.
+      return Object.assign({}, prev, { stale: [...prev.shards.keys()], missing: [] });
+    }
+  }
+  const missing = cur.failed.filter(n => !shards.has(n));
+  // computedAt — «새로 센» 시각. 직전 결과로 대신한 경우에도 이번 계산이 받아들여진 것이므로 갱신한다.
+  return { mode: cur.mode, count: cur.count, shards, stale, missing, computedAt: t };
+}
+
+async function productSitemap() {
+  if (smLastGood && Date.now() - smLastGood.at < SITEMAP_MEMO_MS) return smLastGood;
+  if (!smInflight) {
+    smInflight = computeProductSitemap()
+      .then(cur => {
+        const out = reconcile(cur, smLastGood);
+        // at — 메모 유효 시간의 기준(10분). out 의 옛 at 이 덮어쓰지 않게 마지막에 둔다.
+        smLastGood = Object.assign({}, out, { at: Date.now() });
+        return smLastGood;
+      })
+      .catch(e => {
+        if (!smLastGood) throw e;
+        console.error(`[seo] 상품 사이트맵 계산 실패 — ${Math.round((Date.now() - smLastGood.at) / 60000)}분 전 결과를 쓴다: ${e.message}`);
+        // 전 범위를 «직전 결과로 대신함» 으로 표시한다 → 짧게만 캐시. 메모 시각은 그대로라 다음 요청이 다시 센다.
+        return Object.assign({}, smLastGood, { stale: [...smLastGood.shards.keys()] });
+      })
+      .finally(() => { smInflight = null; });
+  }
+  return smInflight;
+}
+
+/** 상품 페이지가 index 인 product_id 집합 — 목록 색인 판정(categoryGate·brandGate)이 쓴다. */
+async function eligibleProductIds() {
+  const sm = await productSitemap();
+  const ids = new Set();
+  for (const list of sm.shards.values()) list.forEach(p => ids.add(String(p.pid)));
+  return ids;
+}
+
 async function pagesEntries() {
   const hub = await hubData();
-  const today = kstToday();
-  const out = [{ loc: `${SITE}/`, lastmod: today }, { loc: `${SITE}/category`, lastmod: today }];
+  /*
+   * 홈·허브에는 lastmod 를 달지 않는다. 매 요청 «오늘» 을 찍으면 실제로 바뀌지 않은 날도
+   * 바뀌었다고 말하게 된다 — 근거 없는 최신 날짜보다 생략이 낫다. 카테고리·브랜드는
+   * 목록 상품의 마지막 수집일(KST)이라 실제 값이다.
+   */
+  const out = [{ loc: `${SITE}/` }, { loc: `${SITE}/category` }];
   hub.categories.concat(hub.brands).filter(e => e.indexable).forEach(e => {
     out.push({ loc: e.kind === 'brand' ? SEO.brandUrl(e.def) : SEO.categoryUrl(e.def), lastmod: e.lastmod });
   });
@@ -630,24 +858,25 @@ function sendXml(res, status, xml) {
   return res.status(status).end(xml);
 }
 
-/** /sitemap.xml — 인덱스 */
+/** 계산할 수 없을 때 — 캐시하지 않는 503. 크롤러는 나중에 다시 오고, 이미 아는 URL 은 버리지 않는다. */
+function unavailable(res, e, where) {
+  console.error(`[seo] ${where} 503: ${e && e.message}`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Retry-After', '3600');
+  return sendXml(res, 503, SEO.urlsetXml([]));
+}
+
+/** /sitemap.xml — 인덱스. pages.xml 은 상품 사이트맵과 무관하게 항상 싣는다. */
 async function sitemapIndexHandler(req, res) {
   const files = [{ loc: `${SITE}/sitemaps/pages.xml` }];
-  const probe = await rpcRange(0, 0);
-  if (!probe.ok) {
-    files.push({ loc: `${SITE}/sitemaps/products-1.xml` });
-  } else {
-    const n = productFileCount(await maxProductId());
-    // 비어 있는 범위는 인덱스에 올리지 않는다 (빈 사이트맵은 Search Console 경고만 만든다).
-    const sizes = [];
-    for (let i = 0; i < n; i += 3) {
-      const batch = [];
-      for (let j = i; j < Math.min(n, i + 3); j++) batch.push(rpcRange(j * PRODUCT_ID_RANGE, (j + 1) * PRODUCT_ID_RANGE));
-      (await Promise.all(batch)).forEach(r => sizes.push(r.ok ? r.list.length : 0));
-    }
-    sizes.forEach((size, i) => { if (size > 0) files.push({ loc: `${SITE}/sitemaps/products-${i + 1}.xml` }); });
-  }
-  cachePublic(res, SITEMAP_CACHE_S);
+  let sm;
+  try { sm = await productSitemap(); } catch (e) { return unavailable(res, e, 'sitemap.xml'); }
+  // 비어 있는 범위는 올리지 않는다 (빈 사이트맵은 Search Console 경고만 만든다).
+  [...sm.shards.entries()].sort((a, b) => a[0] - b[0]).forEach(([n, list]) => {
+    if (list.length) files.push({ loc: `${SITE}/sitemaps/products-${n}.xml` });
+  });
+  // 실패했고 직전 결과도 없던 범위·직전 결과로 대신한 범위는 짧게만 캐시한다 — 곧 다시 센다.
+  cachePublic(res, (sm.missing && sm.missing.length) || (sm.stale && sm.stale.length) ? 600 : SITEMAP_CACHE_S);
   return sendXml(res, 200, SEO.sitemapIndexXml(files));
 }
 
@@ -655,33 +884,34 @@ async function sitemapIndexHandler(req, res) {
 async function sitemapFileHandler(req, res) {
   const file = String((req.query || {}).file || '').trim();
   if (file === 'pages.xml') {
+    let entries;
+    try { entries = await pagesEntries(); } catch (e) { return unavailable(res, e, 'pages.xml'); }
     cachePublic(res, SITEMAP_CACHE_S);
-    return sendXml(res, 200, SEO.urlsetXml(await pagesEntries()));
+    return sendXml(res, 200, SEO.urlsetXml(entries));
   }
   const m = /^products-([1-9]\d{0,3})\.xml$/.exec(file);
   if (!m) { cachePublic(res, 300); return sendXml(res, 404, SEO.urlsetXml([])); }
   const n = Number(m[1]);
 
-  const r = await rpcRange((n - 1) * PRODUCT_ID_RANGE, n * PRODUCT_ID_RANGE);
-  let list;
-  if (r.ok) {
-    if (n > productFileCount(await maxProductId())) { cachePublic(res, 300); return sendXml(res, 404, SEO.urlsetXml([])); }
-    list = r.list;
-  } else {
-    // 함수 미적용 — 예전 계산(상한 5,000개)을 products-1 하나로 낸다.
-    if (n !== 1) { cachePublic(res, 300); return sendXml(res, 404, SEO.urlsetXml([])); }
-    list = await require('./_product-page')._internal.indexableProducts();
-  }
-  cachePublic(res, SITEMAP_CACHE_S);
+  let sm;
+  try { sm = await productSitemap(); } catch (e) { return unavailable(res, e, file); }
+  if (n > sm.count) { cachePublic(res, 300); return sendXml(res, 404, SEO.urlsetXml([])); }
+  const list = sm.shards.get(n);
+  if (!list) return unavailable(res, new Error(`${n}번 범위를 셀 수 없었다`), file);
+  cachePublic(res, sm.stale && sm.stale.indexOf(n) > -1 ? 600 : SITEMAP_CACHE_S);
   return sendXml(res, 200, SEO.urlsetXml(list.map(p => ({ loc: pageUrl(p.pid), lastmod: p.lastmod }))));
 }
 
 module.exports = {
-  categoryHandler, brandHandler, hubHandler, sitemapIndexHandler, sitemapFileHandler,
+  categoryHandler, brandHandler, hubHandler, sitemapIndexHandler, sitemapFileHandler, productContext,
   _internal: {
     categoryProducts, brandProducts, brandPrefixes, listStats, loadHistory, hubData, renderListing,
-    rpcRange, productFileCount, pagesEntries, PRODUCT_ID_RANGE, LIST_SHOW,
-    resetMemo() { hubMemo = null; hubInflight = null; },
-    expireMemo() { if (hubMemo) hubMemo.at = Date.now() - HUB_MEMO_MS - 1; }
+    rpcRange, productFileCount, pagesEntries, productSitemap, eligibleProductIds, categoryGate, brandGate,
+    reconcile, PRODUCT_ID_RANGE, LIST_SHOW, DROP_RATIO, DROP_MIN,
+    resetMemo() { hubMemo = null; hubInflight = null; smLastGood = null; smInflight = null; categoryMembersMemo.clear(); },
+    expireMemo() {
+      if (hubMemo) hubMemo.at = Date.now() - HUB_MEMO_MS - 1;
+      if (smLastGood) smLastGood.at = Date.now() - SITEMAP_MEMO_MS - 1;
+    }
   }
 };

@@ -207,6 +207,42 @@ async function loadSiblings(row, limit) {
   }
 }
 
+/*
+ * ── 상품 페이지 색인 규칙 — 한 곳 (2026-10-02 레드팀 후속) ──────────────
+ *
+ * 이 두 함수를 상품 페이지(buildView)와 폴백 사이트맵(indexableProducts)이 같이
+ * 쓴다. supabase/2026-10-02-seo-sitemap.sql 의 seo_sitemap_products 가 같은 규칙을
+ * SQL 로 옮긴 것이다 — 한쪽을 고치면 셋 다 고친다 (scripts/test-seo.js 가 본다).
+ *
+ * 레드팀 실측: 예전 폴백은 관측일을 옵션 구분 없이 세서, 페이지는 noindex 인데
+ * 사이트맵에는 오른 URL 이 표본 250개 중 5개였다 (/p/9606124637: 전체 18일 ·
+ * 현재 옵션 1일). 관측일은 반드시 «현재 옵션(sameVendorRows)» 으로 센다.
+ */
+
+/** 이 상품(현재 옵션)의 관측 KST 날짜 수. */
+function observedDays(rows, vendorItemId) {
+  const days = new Set();
+  sameVendorRows(rows || [], vendorItemId).forEach(r => {
+    const d = observedKstDate(r);
+    if (d) days.add(d);
+  });
+  return days.size;
+}
+
+/**
+ * 상품 페이지가 index 인가.
+ *   live(수집 10일 이내 · 수집 가능한 몰 · 가격 > 0) · 판매처 링크 · /p/ 주소로 쓸 수
+ *   있는 id · 구매 가격(렌탈·구독·100원 미만 아님) · 현재 옵션 관측 INDEX_MIN_DAYS 일 이상
+ */
+function isIndexableProduct(row, days) {
+  return !!row
+    && productLifecycle(row).state === LIFECYCLE.LIVE
+    && !!safeUrl(row.link)
+    && !!cleanPid(row.product_id)
+    && !SEO.isNonPurchaseListing(row)
+    && Number(days) >= INDEX_MIN_DAYS;
+}
+
 /**
  * 페이지·JSON 이 공유하는 뷰 모델. 없으면 null.
  * @returns {{row, product, points, stat, deal, life, price, indexable, today}}
@@ -227,9 +263,8 @@ async function buildView(pid, mall) {
   const price = points.length ? points[points.length - 1].price : (Number(product.lprice) || 0);
   const deal = dealOf(stat, price, today);
   const life = productLifecycle(row);
-  // 렌탈 월 요금·1원 명목가는 구매 가격이 아니다 — 페이지는 열되 색인·구조화 데이터에서 뺀다 (_seo.isNonPurchaseListing).
-  const indexable = life.state === LIFECYCLE.LIVE && points.length >= INDEX_MIN_DAYS && !!safeUrl(row.link)
-    && !SEO.isNonPurchaseListing(row);
+  // points 는 현재 옵션의 KST 날짜당 한 점이라 그 길이가 곧 관측일 수다 (observedDays 와 같다).
+  const indexable = isIndexableProduct(row, points.length);
 
   return { row, product, points, stat, deal, life, price, indexable, today };
 }
@@ -320,7 +355,8 @@ function describeForMeta(v) {
   return SEO.productDescription({
     title: SEO.cleanText(product.title),
     price: v.price,
-    mall: mallName(product),
+    // 판매처를 아는 경우만 이름을 쓴다 — "현재 ADPICK 99,000원" 은 ADPICK 이 판다는 말이 된다.
+    mall: SEO.sellerOf(v.row),
     lastDate: points.length ? points[points.length - 1].date : '',
     summary: SEO.priceSummary(points, stat)
   });
@@ -365,7 +401,14 @@ function summaryHtml(s) {
   </section>`;
 }
 
-function renderPage(v, siblings) {
+/**
+ * @param {object} v         buildView 결과
+ * @param {Array}  siblings  비슷한 가격의 다른 선택
+ * @param {{category?:object, brand?:object}} [ctx]
+ *   본품 판정을 통과한 카테고리·브랜드 (api/_seo-pages.productContext). 없으면
+ *   breadcrumb 은 «홈 › 상품» 이고 brand 를 쓰지 않는다 — 틀린 계층보다 짧은 계층이 낫다.
+ */
+function renderPage(v, siblings, ctx) {
   const { product, points, stat, deal, price, indexable, row } = v;
   // DB 에 HTML 엔티티째 저장된 제목이 있다 ("팝콘&amp;나쵸"). 풀어서 한 번만 이스케이프한다.
   const title = SEO.cleanText(product.title).slice(0, 200);
@@ -379,15 +422,28 @@ function renderPage(v, siblings) {
   const mall = mallName(product);
   const name = SEO.shortName(title);
   const summary = SEO.priceSummary(points, stat);
-  // 레지스트리에서 확인되는 것만 — 추측한 카테고리·브랜드를 화면·구조화 데이터에 쓰지 않는다.
-  const category = SEO.categoryOfKeyword(row.keyword);
-  const brand = SEO.brandOfTitle(title);
+  /*
+   * 카테고리·브랜드 — 본품 판정을 통과한 것만 (2026-10-02 레드팀 후속).
+   *
+   * 예전에는 products.keyword 가 «노트북» 이면 무조건 «홈 › 노트북 › 상품» 이었고,
+   * 상품명 첫 낱말이 «LG» 면 brand=LG전자 였다. 그래서 노트북 키워드로 수집된
+   * 백팩·노트북가방·«LG 그램 노트북 핀 타입 19V» 어댑터가 노트북 계층에, 어댑터는
+   * LG전자 제품으로 표시됐다. 판정은 카테고리 목록과 같은 규칙으로 호출부가 한다.
+   */
+  const category = (ctx && ctx.category) || null;
+  const brand = (ctx && ctx.brand) || null;
+  const seller = SEO.sellerOf(row);
 
   const crumbItems = [{ name: '홈', url: `${SITE}/` }]
     .concat(category ? [{ name: category.name, url: SEO.categoryUrl(category) }] : [])
     .concat([{ name, url }]);
-  // 색인되는 페이지에만. 가격은 화면 큰 글씨와 같은 값(마지막 관측가)이다.
-  const productLd = indexable && price > 0 ? SEO.productJsonLd({
+  /*
+   * Product 는 ① 색인되는 페이지 ② 가격이 있고 ③ 마지막 관측이 STALE_OFFER_DAYS 이내일
+   * 때만. 가격은 화면 큰 글씨와 같은 값(마지막 관측가)이다. 묵은 값을 현재가 Offer 로
+   * 내보내느니 Product 를 빼는 편이 낫다 (_seo.STALE_OFFER_DAYS 주석).
+   */
+  const offerFresh = !!last && SEO.offerIsFresh(last, v.today || kstToday());
+  const productLd = indexable && price > 0 && offerFresh ? SEO.productJsonLd({
     name: title,
     url,
     image: shareImg,
@@ -395,7 +451,8 @@ function renderPage(v, siblings) {
     // 쿠팡이 준 판매 단위 식별자만 — ADPICK 의 product_id 는 우리가 만든 해시라 sku 가 아니다.
     sku: product.isCoupang && product.vendorItemId ? String(product.vendorItemId) : undefined,
     brand: brand ? brand.name : undefined,
-    offers: [{ price, seller: mall }]
+    // 판매처를 모르면 seller 를 쓰지 않는다 — "ADPICK" 은 판매처가 아니다.
+    offers: [{ price, seller: seller || undefined }]
   }) : null;
 
   const jsonLd = {
@@ -609,10 +666,14 @@ async function pageHandler(req, res) {
     cachePublic(res, 60);
     return res.status(404).end(render404(pid));
   }
-  const siblings = await loadSiblings(v.row);
+  const [siblings, ctx] = await Promise.all([
+    loadSiblings(v.row),
+    // 실패하면 빈 맥락 — breadcrumb 은 «홈 › 상품», brand 없음 (틀린 값보다 없는 값).
+    require('./_seo-pages').productContext(v.row).catch(() => ({}))
+  ]);
   if (!v.indexable) res.setHeader('X-Robots-Tag', 'noindex');
   cachePublic(res, PAGE_CACHE_S);
-  return res.status(200).end(renderPage(v, siblings));
+  return res.status(200).end(renderPage(v, siblings, ctx));
 }
 
 /**
@@ -665,6 +726,18 @@ async function readPages(build, page, maxPages) {
   return firstRows.concat(...results);
 }
 
+/*
+ * 폴백 사이트맵 — DB 함수(seo_sitemap_products)가 아직 없을 때만 쓰는 안전망.
+ *
+ * 읽는 양은 예전 그대로 묶어 둔다 (이력 40페이지 · 상품 10페이지). 매 요청마다
+ * 운영 DB 를 전부 훑지 않는다 — 전수 계산은 DB 함수의 몫이다. 그래서 이 목록은
+ * «전부» 가 아니다 (레드팀 재현: 2,012개 중 약 1,140개).
+ *
+ * 대신 «담은 것은 전부 index» 여야 한다. 판정은 상품 페이지와 같은
+ * isIndexableProduct 이고, 관측일은 현재 옵션(sameVendorRows)으로 센다. 읽은
+ * 이력은 30일 창의 일부라 관측일은 실제보다 적게 나온다 — 빠뜨릴 수는 있어도
+ * 페이지가 noindex 인 URL 을 올리는 쪽으로는 틀리지 않는다.
+ */
 async function indexableProducts() {
   const PAGE = 1000;
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
@@ -672,30 +745,29 @@ async function indexableProducts() {
   const [history, products] = await Promise.all([
     readPages(opts => supabase
       .from('price_history')
-      .select('product_id, mall, recorded_date, recorded_at', opts)
+      .select('product_id, mall, recorded_date, recorded_at, vendor_item_id', opts)
       .gte('recorded_at', since)
       .order('id', { ascending: true }), PAGE, 40),
     readPages(opts => supabase
       .from('products')
-      .select('product_id, mall, keyword, title, lprice, link, collected_at', opts)
+      .select('product_id, mall, keyword, title, lprice, link, collected_at, vendor_item_id', opts)
       .order('collected_at', { ascending: false }), PAGE, 10)
   ]);
 
-  const days = new Map();
+  const rowsByKey = new Map();
   history.forEach(r => {
     const k = `${r.product_id}|${r.mall}`;
-    if (!days.has(k)) days.set(k, new Set());
-    days.get(k).add(observedKstDate(r));
+    if (!rowsByKey.has(k)) rowsByKey.set(k, []);
+    rowsByKey.get(k).push(r);
   });
 
   const out = [];
   for (const p of products) {
-    if (productLifecycle(p).state !== LIFECYCLE.LIVE) continue;
-    if (!safeUrl(p.link) || !cleanPid(p.product_id)) continue;
-    if (SEO.isNonPurchaseListing(p)) continue;   // buildView 의 indexable 과 같은 규칙
-    const d = days.get(`${p.product_id}|${p.mall}`);
-    if (!d || d.size < INDEX_MIN_DAYS) continue;
-    out.push({ pid: p.product_id, lastmod: String(p.collected_at || '').slice(0, 10) });
+    const days = observedDays(rowsByKey.get(`${p.product_id}|${p.mall}`), p.vendor_item_id);
+    if (!isIndexableProduct(p, days)) continue;
+    // lastmod 는 KST 날짜 — UTC 로 자르면 KST 00~09시 수집분이 하루 이르게 찍힌다.
+    const t = Date.parse(p.collected_at || '');
+    out.push({ pid: p.product_id, lastmod: Number.isFinite(t) ? kstToday(t) : '' });
     if (out.length >= SITEMAP_MAX) break;
   }
   return out;
@@ -717,5 +789,6 @@ async function sitemapHandler(req, res) {
 module.exports = {
   productHandler, pageHandler, sitemapHandler,
   // 테스트용 순수 함수
-  _internal: { esc, safeUrl, cleanPid, pageUrl, sparkSvg, renderPage, render404, describeForMeta, buildView, indexableProducts, INDEX_MIN_DAYS, SITE }
+  _internal: { esc, safeUrl, cleanPid, pageUrl, sparkSvg, renderPage, render404, describeForMeta, buildView, indexableProducts,
+    observedDays, isIndexableProduct, INDEX_MIN_DAYS, SITE }
 };

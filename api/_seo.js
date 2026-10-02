@@ -509,6 +509,64 @@ const BRANDS = [
 const CATEGORY_MIN_PRODUCTS = 8;
 const BRAND_MIN_PRODUCTS = 8;
 
+/*
+ * 목록 페이지 색인 문턱 ② — «가격 기록이 쌓인 상품» 수 (2026-10-02 레드팀 후속).
+ *
+ * 현재가가 살아 있는 상품만 많고 가격 기록이 없는 목록은 쇼핑몰 목록과 다를 것이
+ * 없다. 레드팀 실측: 70개 목록이 전부 index 였는데 26개는 7일 이상 기록된 상품이 0개.
+ *
+ * «기록이 쌓인 상품» = 그 상품의 /p/ 페이지가 index 인 상품 (= 상품 사이트맵에
+ * 오르는 상품). 같은 판정을 한 곳(상품 사이트맵)에서 가져오므로 목록·허브·
+ * pages.xml 이 서로 다른 숫자를 쓰지 않는다. 운영 DB 재현(2,012개 기준)으로
+ * 문턱 3 이면 70개 중 35개가 index, 35개가 noindex — 데이터가 쌓이면 자동으로 오른다.
+ */
+const CATEGORY_MIN_TRACKED = 3;
+const BRAND_MIN_TRACKED = 3;
+
+/*
+ * 구조화 데이터의 판매자 (2026-10-02 레드팀 후속).
+ *
+ * ADPICK 은 제휴 네트워크이지 판매처가 아니다. 그런데 살아 있는 ADPICK 상품
+ * 25,616행 중 25,534행(99.7%)이 mall_label 이 비어 있어서 seller 가 "ADPICK"
+ * 으로 나갔다. 판매처를 모르면 seller 를 «쓰지 않는다» — 추측하지 않는다.
+ *   쿠팡                       → "쿠팡" (쿠팡 파트너스 상품은 쿠팡에서 판다)
+ *   ADPICK + 실제 몰 이름(라벨) → 그 이름
+ *   ADPICK + 라벨 없음          → ''  (seller 생략)
+ *   그 밖의 몰                  → ''  (연동이 끊긴 몰 — 색인되지도 않는다)
+ */
+function sellerOf(row) {
+  if (!row) return '';
+  if (row.mall === '쿠팡') return '쿠팡';
+  if (row.mall === 'ADPICK') {
+    const label = cleanText(row.mall_label);
+    return label && label.toUpperCase() !== 'ADPICK' ? label : '';
+  }
+  return '';
+}
+
+/*
+ * Offer 를 «현재가» 로 내보내도 되는 최대 나이(일) — 마지막 관측일 기준.
+ *
+ * 상품 페이지 색인 문턱(수집 10일 이내)을 그대로 쓰면 4~10일 묵은 값이 현재가로
+ * 나간다 (레드팀 실측: 색인 대상의 7.4%). 그 경우 Offer 를 빼고, Offer 가 없는
+ * Product 는 제품 스니펫 필수 조건(offers·review·aggregateRating 중 하나)을
+ * 못 채워 Search Console 에 «잘못된 항목» 으로 잡히므로 Product 통째로 뺀다.
+ * 페이지(가격 기록·관측일 표시)와 색인 여부는 그대로다.
+ */
+const STALE_OFFER_DAYS = 3;
+
+/** 'YYYY-MM-DD' 두 날짜 사이의 일수 (b - a). 읽을 수 없으면 Infinity. */
+function daysBetween(a, b) {
+  const ta = Date.parse(`${a}T00:00:00Z`), tb = Date.parse(`${b}T00:00:00Z`);
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return Infinity;
+  return Math.round((tb - ta) / 86400000);
+}
+
+/** 마지막 관측일이 오늘(KST)로부터 STALE_OFFER_DAYS 이내인가. */
+function offerIsFresh(lastDate, today) {
+  return daysBetween(lastDate, today) <= STALE_OFFER_DAYS;
+}
+
 const CATEGORY_BY_SLUG = new Map(CATEGORIES.map(c => [c.slug, c]));
 const BRAND_BY_SLUG = new Map(BRANDS.map(b => [b.slug, b]));
 const CATEGORY_BY_KEYWORD = new Map();
@@ -567,7 +625,8 @@ module.exports = {
   SITE, esc, xmlEsc, cleanText, won, jsonLdScript, compact, verificationMeta,
   shortName, priceSummary, productTitle, productDescription,
   offersJsonLd, productJsonLd, breadcrumbJsonLd, itemListJsonLd, isDurableImage, isNonPurchaseListing, NOMINAL_PRICE_MIN,
-  CATEGORIES, BRANDS, CATEGORY_MIN_PRODUCTS, BRAND_MIN_PRODUCTS,
+  CATEGORIES, BRANDS, CATEGORY_MIN_PRODUCTS, BRAND_MIN_PRODUCTS, CATEGORY_MIN_TRACKED, BRAND_MIN_TRACKED,
+  sellerOf, STALE_OFFER_DAYS, daysBetween, offerIsFresh,
   categoryBySlug, brandBySlug, categoryOfKeyword, brandOfTitle, categoryUrl, brandUrl,
   urlsetXml, sitemapIndexXml, SITEMAP_FILE_MAX, TITLE_NAME_MAX
 };

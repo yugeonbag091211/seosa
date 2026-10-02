@@ -178,7 +178,8 @@ const server = http.createServer(async (rawReq, rawRes) => {
   // 정적 파일이 아니라 api/history.js 가 그린다 (vercel.json 과 같은 순서).
   applyRewrites(req);
   // vercel.json headers 의 noindex 와 같다 — 검색·딥링크 URL과 개인 레이더.
-  if ((req.path === '/' && (req.query.q !== undefined || req.query.p !== undefined)) || req.path === '/radar.html') {
+  if (((req.path === '/' || req.path === '/index.html') && (req.query.q !== undefined || req.query.p !== undefined))
+      || req.path === '/radar.html') {
     rawRes.setHeader('X-Robots-Tag', 'noindex, follow');
   }
   if (req.path.startsWith('/api/')) {

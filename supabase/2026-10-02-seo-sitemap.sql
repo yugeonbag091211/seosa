@@ -21,7 +21,7 @@
 --
 --   이 함수는 같은 판정을 DB 안에서 한 번에 하고 결과만 돌려준다.
 --
--- ── 판정 규칙 (api/_product-page.js buildView 의 indexable 과 같다) ──
+-- ── 판정 규칙 (api/_product-page.js isIndexableProduct 와 같다) ──────
 --
 --   1) mall 이 수집 가능한 몰 (쿠팡 · ADPICK)                — isRefreshableMall
 --   2) lprice > 0, collected_at 이 p_max_age_days 이내       — productLifecycle LIVE

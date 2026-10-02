@@ -201,6 +201,21 @@ function seed() {
   series('2001', [1490000, 1490000, 1480000, 1480000, 1470000, 1470000, 1490000, 1500000, 1500000, 1490000,
     1480000, 1480000, 1470000, 1470000, 1460000, 1460000, 1450000, 1460000, 1460000, 1429000]);
   series('2002', [1590000, 1590000, 1590000]);
+  // 노트북 목록 색인 문턱 ②(색인 상품 ≥ 3) — 그램(20일) 외에 7일 기록 둘
+  series('2003', Array(7).fill(1390000));
+  series('2004', Array(7).fill(690000));
+  // 노트북 키워드로 모인 «부속» — 부속 낱말(어댑터·충전기) / 부속 낱말 없이 값만 동떨어진 것(핀 어댑터)
+  db.products.push(product({ product_id: '2014', keyword: '노트북', title: 'LG 그램 전용 어댑터 19V 65W 노트북 충전기', lprice: 29000 }));
+  db.products.push(product({ product_id: '2015', keyword: '노트북', title: 'LG 그램 노트북 핀 타입 19V 이우 2.53A 48 엘지전자', lprice: 27500 }));
+  series('2014', Array(7).fill(29000));
+  series('2015', Array(7).fill(27500));
+  // 레지스트리 카테고리 밖의 부속 · 호환품 · 본품
+  db.products.push(product({ product_id: '2016', keyword: '닌텐도 스위치 필름', title: '닌텐도 스위치 OLED 전용 필름', lprice: 9900 }));
+  db.products.push(product({ product_id: '2017', keyword: '아이폰 케이스', title: '애플 호환 케이스 아이폰 16 투명', lprice: 12000 }));
+  db.products.push(product({ product_id: '2018', keyword: '닌텐도 스위치', title: '닌텐도 스위치 2 본체 마리오 카트 세트', lprice: 640000 }));
+  series('2016', Array(7).fill(9900));
+  series('2017', Array(7).fill(12000));
+  series('2018', Array(7).fill(640000));
   // 모니터 카테고리 — 본품 3개뿐 (문턱 미만 → noindex)
   ['3001', '3002', '3003'].forEach((pid, i) => db.products.push(product({ product_id: pid, keyword: '게이밍 모니터', title: `${['LG', '삼성', '델'][i]} 게이밍 모니터 27인치 QHD`, lprice: 300000 + i * 10000 })));
   // 브랜드 함정 — LG 가 첫 낱말이지만 다른 회사 · 호환품 · 몰 이름 머리
@@ -209,13 +224,70 @@ function seed() {
   db.products.push(product({ product_id: '4003', keyword: '세탁기', title: '[보리보리] LG전자 세탁기', lprice: 500000, mall: 'ADPICK', mall_label: '보리보리', link: 'https://biz.adpick.co.kr/r1', image: 'https://d2iaagr1j041pi.cloudfront.net/apis/search_img.php?code=1' }));
   ['4004', '4005', '4006', '4007', '4008', '4009', '4010'].forEach((pid, i) =>
     db.products.push(product({ product_id: pid, keyword: '세탁기', title: `LG전자 트롬 드럼세탁기 ${21 + i}kg 방문설치`, lprice: 900000 + i * 10000 })));
+  // LG전자 브랜드 색인 문턱 ②: 그램(20일) + 세탁기 둘(7일) = 3
+  series('4004', Array(7).fill(900000));
+  series('4005', Array(7).fill(910000));
   db.products.push(product({ product_id: '4011', keyword: '냉장고', title: '[LG] [LG구독인증점]LG냉장고렌탈/구독 디오스 김치톡톡 327L', lprice: 1, mall: 'ADPICK', mall_label: '', link: 'https://biz.adpick.co.kr/r2', image: 'https://shop2.daumcdn.net/shophow/p/A1.jpg' }));
   series('4011', [1, 1, 1, 1, 1, 1, 1, 1], { mall: 'ADPICK' });
   // 가격 없는 상품 · XSS 제목
   db.products.push(product({ product_id: '5001', keyword: '노트북 거치대', title: '가격 없는 상품', lprice: 0 }));
   db.products.push(product({ product_id: '5002', keyword: '마우스', title: '마우스 </script><script>alert(1)</script> & "따옴표"', lprice: 19900 }));
   series('5002', [19900, 19900, 19900, 19900, 19900, 19900, 19900, 19900]);
+
+  // 면도기 — 본품 8개지만 7일 기록 상품 2개 → noindex (문턱 ②)
+  for (let n = 1; n <= 8; n++) db.products.push(product({ product_id: String(6000 + n), keyword: '면도기', title: `브라운 시리즈${n} 전기 면도기 습식 건식`, lprice: 89000 + n * 1000 }));
+  series('6001', Array(7).fill(90000));
+  series('6002', Array(7).fill(91000));
+  // 전기포트 — 7개 전부 7일 기록 · 본품 7개 < 8 → noindex (문턱 ①)
+  for (let n = 1; n <= 7; n++) {
+    db.products.push(product({ product_id: String(6100 + n), keyword: '전기포트', title: `한일 무선 전기포트 1.${n}L 스테인리스`, lprice: 20000 + n * 1000 }));
+    series(String(6100 + n), Array(7).fill(20000 + n * 1000));
+  }
+  // 필립스 — 브랜드 본품 8개 · 7일 기록 1개 → noindex
+  for (let n = 1; n <= 8; n++) db.products.push(product({ product_id: String(6200 + n), keyword: '필립스 전동칫솔', title: `필립스 소닉케어 전동칫솔 HX${n}000`, lprice: 50000 + n * 1000 }));
+  series('6201', Array(7).fill(51000));
+
+  // 판매처 — ADPICK + 실제 몰 이름 / ADPICK + 몰 이름 없음
+  db.products.push(product({ product_id: '7101', keyword: '러닝화', title: '하프클럽 테스트 러닝화 270', lprice: 59000, mall: 'ADPICK', mall_label: '하프클럽', link: 'https://biz.adpick.co.kr/r7101', image: 'https://shop2.daumcdn.net/shophow/p/R1.jpg' }));
+  db.products.push(product({ product_id: '7102', keyword: '블루투스 스피커', title: '라벨 없는 제휴몰 블루투스 스피커', lprice: 39000, mall: 'ADPICK', mall_label: '', link: 'https://biz.adpick.co.kr/r7102', image: 'https://shop2.daumcdn.net/shophow/p/R2.jpg' }));
+  series('7101', Array(7).fill(59000), { mall: 'ADPICK' });
+  series('7102', Array(7).fill(39000), { mall: 'ADPICK' });
+
+  // 구조화 데이터 신선도 — 마지막 관측이 0·1·3·4·10일 전 (전부 8일 기록 · live · index)
+  [0, 1, 3, 4, 10].forEach(d => {
+    const pid = String(7200 + d);
+    db.products.push(product({ product_id: pid, keyword: '신선도 테스트', title: `구조화 데이터 신선도 ${d}일`, lprice: 10000 }));
+    series(pid, Array(8).fill(10000), { endAgo: d });
+  });
+
+  // 7일 색인 경계 — 관측 6 · 7 · 8일
+  [6, 7, 8].forEach(n => {
+    const pid = String(7300 + n);
+    db.products.push(product({ product_id: pid, keyword: '경계 테스트', title: `관측 ${n}일 경계 상품`, lprice: 15000 }));
+    series(pid, Array(n).fill(15000));
+  });
+
+  // 옵션(vendor_item_id) — 다른 옵션의 8일은 세지 않는다 / 같은 옵션 8일 / 옵션 표시 없는 옛 행 8일
+  db.products.push(product({ product_id: '8001', keyword: '옵션 테스트', title: '옵션 바뀐 상품', lprice: 30000, vendor_item_id: 'V1' }));
+  series('8001', Array(8).fill(25000), { vid: 'V0', endAgo: 2 });
+  series('8001', [30000, 30000], { vid: 'V1' });
+  db.products.push(product({ product_id: '8002', keyword: '옵션 테스트', title: '옵션 그대로인 상품', lprice: 30000, vendor_item_id: 'V2' }));
+  series('8002', Array(8).fill(30000), { vid: 'V2' });
+  db.products.push(product({ product_id: '8003', keyword: '옵션 테스트', title: '옛 행만 있는 상품', lprice: 30000, vendor_item_id: 'V3' }));
+  series('8003', Array(8).fill(30000), { vid: '' });
+
+  // KST lastmod — UTC 16:00 수집 = KST 다음 날 01:00
+  {
+    const n = new Date();
+    let t = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate(), 16, 0, 0);
+    if (t > Date.now()) t -= 86400000;
+    KST_LASTMOD_AT = t;
+    db.products.push(product({ product_id: '8101', keyword: '시간대 테스트', title: 'KST 날짜 상품', lprice: 10000, collected_at: new Date(t).toISOString() }));
+    series('8101', Array(7).fill(10000));
+  }
+  pages._internal.resetMemo();
 }
+let KST_LASTMOD_AT = 0;
 
 /* ══════════════════════════════════════════════════════════════════ */
 (async () => {
@@ -259,6 +331,50 @@ function seed() {
     const one = SEO.priceSummary([{ date: kst(0), price: 10000 }], null, { now });
     ok(one && !one.prev && !one.window7 && !one.window30 && one.sentences.length === 0, '기록 1일 → 비교 줄 없음 (지어내지 않는다)');
     ok(SEO.priceSummary([], null) === null && SEO.priceSummary([{ date: kst(0), price: 0 }], null) === null, '기록 없음·0원 → null');
+  }
+
+  section('2-1. 날짜 경계 — 7일 · 30일 창, KST 자정');
+  {
+    const now = Date.now();
+    // 8일: 7일 전(창 밖) 10,000 → 오늘 80,000 — 창이 하루라도 밀리면 low/avg 가 바뀐다
+    const eight = [10, 20, 30, 40, 50, 60, 70, 80].map((k, i) => ({ date: kst(7 - i), price: k * 1000 }));
+    const s8 = SEO.priceSummary(eight, statsFrom(eight), { now });
+    ok(s8.window7.count === 7 && s8.window7.low === 20000 && s8.window7.avg === 50000, '★ 7일 창 = 오늘 포함 7일 (7일 전 제외) · low 20,000 · avg 50,000', JSON.stringify(s8.window7));
+    const six = eight.slice(2);   // 6일 관측
+    const s6 = SEO.priceSummary(six, statsFrom(six), { now });
+    ok(s6.window7.count === 6 && s6.window7.low === 30000 && s6.window7.avg === 55000, '관측 6일 → 6점 · low 30,000 · avg 55,000', JSON.stringify(s6.window7));
+    const seven = eight.slice(1); // 7일 관측 (6일 전 ~ 오늘)
+    const s7 = SEO.priceSummary(seven, statsFrom(seven), { now });
+    ok(s7.window7.count === 7 && s7.window7.low === 20000, '관측 7일 → 7점 전부 창 안', JSON.stringify(s7.window7));
+    // 31일: 30일 전(창 밖) 1,000 → 오늘 31,000
+    const t31 = Array.from({ length: 31 }, (_, i) => ({ date: kst(30 - i), price: (i + 1) * 1000 }));
+    const s31 = SEO.priceSummary(t31, statsFrom(t31), { now });
+    const in30 = t31.slice(1).map(p => p.price);
+    ok(s31.window30.count === 30 && s31.window30.low === 2000 && s31.window30.avg === Math.round(in30.reduce((a, b) => a + b, 0) / 30), '★ 30일 창 = 오늘 포함 30일 (30일 전 제외)', JSON.stringify(s31.window30));
+    const s30 = SEO.priceSummary(t31.slice(1), statsFrom(t31.slice(1)), { now });
+    ok(s30.window30.count === 30 && s30.window30.low === 2000, '관측 30일 → 30점 전부', String(s30.window30.count));
+    const s29 = SEO.priceSummary(t31.slice(2), statsFrom(t31.slice(2)), { now });
+    ok(s29.window30.count === 29 && s29.window30.low === 3000, '관측 29일 → 29점', String(s29.window30.count));
+
+    // KST 자정 — UTC 전날 15:00 은 KST 00:00 (다음 날), UTC 전날 14:59 는 KST 23:59 (그날)
+    const base = Date.UTC(2026, 9, 1, 15, 0, 0);   // KST 2026-10-02 00:00:00
+    ok(kstToday(base) === '2026-10-02' && kstToday(base - 60000) === '2026-10-01', 'KST 00:00 = UTC 전날 15:00 · UTC 14:59 는 KST 전날 23:59');
+    const atMid = SEO.priceSummary([{ date: '2026-10-01', price: 1000 }, { date: '2026-10-02', price: 900 }], null, { now: base + 30000 });
+    ok(atMid.today === '2026-10-02' && atMid.prev.label === '어제 대비', 'KST 00:00:30 — 오늘은 10-02 · «어제 대비»', atMid.prev.label);
+    const before = SEO.priceSummary([{ date: '2026-09-30', price: 1000 }, { date: '2026-10-01', price: 900 }], null, { now: base - 30000 });
+    ok(before.today === '2026-10-01' && before.prev.label === '어제 대비', 'KST 23:59:30 — 오늘은 10-01', before.today);
+
+    // 관측일 수 — KST 날짜로 센다 (UTC 날짜가 같아도 KST 로 다른 날이면 2일)
+    const PP = productPage._internal;
+    const iso = t => new Date(t).toISOString();
+    const rows = [{ recorded_at: iso(base - 60000), vendor_item_id: '' }, { recorded_at: iso(base), vendor_item_id: '' }];
+    ok(PP.observedDays(rows, '') === 2, '★ UTC 14:59 와 15:00 은 KST 로 다른 날 → 관측 2일');
+    const same = [{ recorded_at: iso(base), vendor_item_id: '' }, { recorded_at: iso(base + 8 * 3600e3), vendor_item_id: '' }];
+    ok(PP.observedDays(same, '') === 1, 'KST 같은 날 두 번 관측 → 1일');
+    const mixed = [{ recorded_at: iso(base), vendor_item_id: 'A' }, { recorded_at: iso(base + 86400e3), vendor_item_id: 'B' }, { recorded_at: iso(base + 2 * 86400e3), vendor_item_id: 'B' }];
+    ok(PP.observedDays(mixed, 'A') === 1 && PP.observedDays(mixed, 'B') === 2 && PP.observedDays(mixed, 'C') === 0, '★ 관측일은 현재 옵션(sameVendorRows)만 센다 — 다른 옵션의 날짜를 섞지 않는다');
+    const live = { product_id: '1', mall: '쿠팡', lprice: 1000, link: 'https://x.y/z', collected_at: new Date().toISOString(), title: 'x' };
+    ok(!PP.isIndexableProduct(live, 6) && PP.isIndexableProduct(live, 7) && PP.isIndexableProduct(live, 8), '★ 색인 문턱: 6일 ✗ · 7일 ✓ · 8일 ✓');
   }
 
   section('3. title · description · shortName');
@@ -407,6 +523,63 @@ function seed() {
     ok(!/\d원/.test(desc), '★ 가격 없음 → description 에 금액 없음', desc);
   }
 
+  section('9-1. 판매처 (seller)');
+  {
+    const prod = pid => call({ __route: 'page', pid }).then(r => ({ r, p: ldNodes(r.text).find(n => n['@type'] === 'Product') }));
+    const cp = await prod('2001');
+    ok(cp.p && cp.p.offers.seller && cp.p.offers.seller.name === '쿠팡', '쿠팡 → seller «쿠팡»');
+    const known = await prod('7101');
+    ok(known.p && known.p.offers.seller && known.p.offers.seller.name === '하프클럽', 'ADPICK + 몰 이름 → seller «하프클럽»', JSON.stringify(known.p && known.p.offers));
+    const unknown = await prod('7102');
+    ok(unknown.p && unknown.p.offers && !('seller' in unknown.p.offers), '★ ADPICK + 몰 이름 없음 → seller 속성 자체가 없다', JSON.stringify(unknown.p && unknown.p.offers));
+    ok(!/"name":"ADPICK"/.test(unknown.r.text) && !/현재 ADPICK/.test(unknown.r.text), '★ "ADPICK" 을 판매자로 쓰지 않는다 (구조화 데이터·description)');
+    ok(SEO.sellerOf({ mall: 'ADPICK', mall_label: 'ADPICK' }) === '' && SEO.sellerOf({ mall: '네이버' }) === '', '라벨이 ADPICK 이거나 모르는 몰 → 판매자 없음');
+  }
+
+  section('9-2. 부속 · 호환품 — brand · breadcrumb');
+  {
+    const look = async pid => {
+      const r = await call({ __route: 'page', pid });
+      const nodes = ldNodes(r.text);
+      const crumb = nodes.find(n => n['@type'] === 'BreadcrumbList').itemListElement.map(i => i.name);
+      const p = nodes.find(n => n['@type'] === 'Product');
+      const nav = ((r.text.match(/<nav class="crumb"[^>]*>([\s\S]*?)<\/nav>/) || [])[1] || '').replace(/<[^>]+>/g, '');
+      return { r, crumb, brand: p && p.brand ? p.brand.name : null, hasProduct: !!p, nav };
+    };
+    const main = await look('2001');
+    ok(main.crumb.length === 3 && main.crumb[1] === '노트북' && main.brand === 'LG전자', '본품(그램) → 홈 > 노트북 > 상품 · brand LG전자');
+    for (const [pid, label] of [['2014', 'LG 그램 전용 어댑터'], ['2015', 'LG 그램 노트북 핀 타입 19V (부속 낱말 없음)'], ['2016', '닌텐도 스위치 OLED 전용 필름'], ['2017', '애플 호환 케이스']]) {
+      const a = await look(pid);
+      ok(a.hasProduct && a.brand === null, `★ ${label} → brand 없음`, String(a.brand));
+      ok(a.crumb.length === 2 && a.crumb[0] === '홈' && !/노트북 ›/.test(a.nav), `★ ${label} → 홈 > 상품 (카테고리 계층 없음)`, a.crumb.join(' > '));
+      ok(!/href="\/brand\//.test(a.r.text) && !/href="\/category\/laptop">노트북 최저가 전체 보기/.test(a.r.text), `${label} → 브랜드·카테고리 링크도 달지 않는다`);
+    }
+    const nsw = await look('2018');
+    ok(nsw.brand === '닌텐도' && nsw.crumb.length === 2, '카테고리 밖 본품(닌텐도 스위치 2) → brand 있음 · 홈 > 상품');
+    const lg = await call({ __route: 'brand', slug: 'lg' });
+    ok(!/href="\/p\/2015"/.test(lg.text) && !/href="\/p\/2014"/.test(lg.text), '★ /brand/lg 목록도 같은 규칙 — 어댑터·핀을 LG전자 제품으로 올리지 않는다');
+  }
+
+  section('9-3. 구조화 데이터 신선도 (마지막 관측 기준 3일)');
+  {
+    for (const d of [0, 1, 3, 4, 10]) {
+      const r = await call({ __route: 'page', pid: String(7200 + d) });
+      const p = ldNodes(r.text).find(n => n['@type'] === 'Product');
+      ok(/content="index,follow"/.test(r.text), `관측 ${d}일 전 — 페이지 색인 정책은 그대로 index (구조화 데이터와 별개)`);
+      if (d <= SEO.STALE_OFFER_DAYS) ok(p && p.offers && p.offers.price === 10000, `관측 ${d}일 전 → Product + Offer`);
+      else ok(!p && !/"@type":"Offer"/.test(r.text), `★ 관측 ${d}일 전 → Product·Offer 없음 (묵은 값을 현재가로 내지 않는다)`);
+    }
+  }
+
+  section('9-4. 상품 페이지 색인 경계 — 관측 6 · 7 · 8일');
+  {
+    for (const n of [6, 7, 8]) {
+      const r = await call({ __route: 'page', pid: String(7300 + n) });
+      const want = n >= 7 ? 'index,follow' : 'noindex,follow';
+      ok(r.text.indexOf(`<meta name="robots" content="${want}">`) > -1, `★ 관측 ${n}일 → ${want}`);
+    }
+  }
+
   {
     const r = await call({ __route: 'page', pid: '4011' });
     ok(r.status === 200 && /content="noindex,follow"/.test(r.text) && !ldNodes(r.text).some(n => n['@type'] === 'Product'), '★ 렌탈 1원 상품: 기록 8일이어도 noindex · Product 없음 (페이지는 열린다)');
@@ -416,7 +589,8 @@ function seed() {
   {
     const r = await call({ __route: 'category', slug: 'laptop' });
     const t = r.text;
-    ok(r.status === 200 && /content="index,follow"/.test(t) && !r.headers['x-robots-tag'], '본품 9개 ≥ 8 → index');
+    ok(r.status === 200 && /content="index,follow"/.test(t) && !r.headers['x-robots-tag'], '★ 본품 9개 ≥ 8 · 색인 상품 3개 ≥ 3 → index');
+    ok(!/가장 낮은/.test(t), '★ «가장 낮은 ○○ 상품» 단정 문장이 없다');
     ok(/<title>노트북 최저가·가격비교 \| SEOSA<\/title>/.test(t) && /<h1>노트북 최저가·가격 추이<\/h1>/.test(t), 'title · h1');
     ok(/rel="canonical" href="https:\/\/seosa\.ai\.kr\/category\/laptop"/.test(t), 'canonical /category/laptop');
     const links = [...t.matchAll(/<li><a href="\/p\/(\d+)">/g)].map(m => m[1]);
@@ -433,11 +607,21 @@ function seed() {
 
     const thin = await call({ __route: 'category', slug: 'monitor' });
     ok(thin.status === 200 && /content="noindex,follow"/.test(thin.text) && thin.headers['x-robots-tag'] === 'noindex', `★ 본품 3개 < ${SEO.CATEGORY_MIN_PRODUCTS} → noindex`);
+    const shaver = await call({ __route: 'category', slug: 'shaver' });
+    ok(shaver.status === 200 && /content="noindex,follow"/.test(shaver.text) && shaver.headers['x-robots-tag'] === 'noindex', `★ 본품 8개 · 색인 상품 2개 < ${SEO.CATEGORY_MIN_TRACKED} → noindex,follow`);
+    const kettle = await call({ __route: 'category', slug: 'electric-kettle' });
+    ok(kettle.status === 200 && /content="noindex,follow"/.test(kettle.text), '★ 본품 7개 (전부 기록 충분) < 8 → noindex,follow');
+    const gate = (n, t) => pages._internal.categoryGate(Array.from({ length: n }, (_, i) => ({ product_id: String(i) })), new Set(Array.from({ length: t }, (_, i) => String(i))));
+    ok(gate(8, 3).indexable && !gate(8, 2).indexable && !gate(7, 7).indexable && gate(9, 9).indexable, '판정 함수: 8+3 ✓ · 8+2 ✗ · 7+7 ✗');
     const empty = await call({ __route: 'category', slug: 'tent' });
     ok(empty.status === 404 && /noindex/.test(empty.text), '레지스트리에 있어도 상품이 없으면 404 (soft 404 금지)');
     const unknown = await call({ __route: 'category', slug: 'not-a-category' });
     const bad = await call({ __route: 'category', slug: '../etc' });
     ok(unknown.status === 404 && bad.status === 404, '★ 레지스트리에 없는 slug → 404 (검색어마다 페이지를 찍지 않는다)');
+    const noBrand = await call({ __route: 'brand', slug: 'not-a-brand' });
+    const noProduct = await call({ __route: 'page', pid: '99999999' });
+    ok([unknown, empty, noBrand, noProduct].every(x => x.status === 404 && !/rel="canonical"/.test(x.text) && !/og:url/.test(x.text)),
+      '★ 404 응답(카테고리·브랜드·상품)에는 canonical · og:url 이 없다');
   }
 
   section('11. 브랜드 · 허브');
@@ -448,7 +632,9 @@ function seed() {
     ok(ids.indexOf('4001') < 0 && ids.indexOf('4002') < 0 && ids.indexOf('4003') < 0, '★ LG생활건강 · 호환품 · 몰 머리 제목 제외', ids.join(','));
     ok(ids.indexOf('4011') < 0 && !/>1원/.test(r.text), '★ 렌탈 1원 상품은 «가장 싼 LG전자» 가 되지 않는다');
     ok(ids.indexOf('2001') > -1 && ids.filter(x => /^400[4-9]|4010$/.test(x)).length === 7 && ids.length === 9, 'LG전자 본품 9개 (그램 1 + 세탁기 7 + 모니터 1)', String(ids.length));
-    ok(/content="index,follow"/.test(r.text), '9개 ≥ 8 → index');
+    ok(/content="index,follow"/.test(r.text), '★ 본품 9개 · 색인 상품 3개 → index');
+    const ph = await call({ __route: 'brand', slug: 'philips' });
+    ok(ph.status === 200 && /content="noindex,follow"/.test(ph.text), '★ 브랜드 본품 8개 · 색인 상품 1개 → noindex,follow');
     ok(/<h2>현재가 높은 순<\/h2>/.test(r.text) && ids[0] === '2001' && !/가장 낮은 LG전자/.test(r.text),
       '★ 브랜드는 현재가 높은 순 · «가장 싼 제품» 문장 없음 (TV 와 리모컨을 견주지 않는다)', ids[0]);
     const sam = await call({ __route: 'brand', slug: 'samsung' });
@@ -457,9 +643,9 @@ function seed() {
     pages._internal.resetMemo();
     const hub = await call({ __route: 'hub' });
     ok(hub.status === 200 && /href="\/category\/laptop"/.test(hub.text) && /href="\/brand\/lg"/.test(hub.text), '허브: 색인 문턱을 넘은 카테고리·브랜드 링크');
-    ok(!/href="\/category\/monitor"/.test(hub.text) && !/href="\/brand\/samsung"/.test(hub.text), '★ 허브는 noindex 페이지로 링크하지 않는다');
+    ok(!/href="\/category\/monitor"/.test(hub.text) && !/href="\/brand\/samsung"/.test(hub.text) && !/href="\/category\/shaver"/.test(hub.text) && !/href="\/brand\/philips"/.test(hub.text), '★ 허브는 noindex 페이지로 링크하지 않는다');
 
-    // DB 가 바빠 다시 세지 못하면 직전 결과로 답한다 (인스턴스 메모).
+    // DB 가 바빠 다시 세지 못하면 직전 결과로 답한다 (인스턴스 메모). 허브·상품 사이트맵 메모를 둘 다 만료시킨다.
     pages._internal.expireMemo();
     dbDown = true;
     const stale = await call({ __route: 'hub' });
@@ -469,7 +655,7 @@ function seed() {
     dbDown = true;
     const cold = await call({ __route: 'hub' });
     dbDown = false;
-    ok(cold.status >= 500, '직전 결과도 없으면 오류를 숨기지 않는다', String(cold.status));
+    ok(cold.status === 503 && cold.headers['retry-after'] && /no-store/.test(cold.headers['cache-control'] || ''), '직전 결과도 없으면 503 · Retry-After · no-store', String(cold.status));
     pages._internal.resetMemo();
   }
   {
@@ -497,13 +683,20 @@ function seed() {
     const p1 = await call({ __route: 'sitemap-file', file: 'products-1.xml' });
     ok(p1.status === 200 && wellFormed(p1.text, 'urlset') === '', 'products-1 형식');
     const urls = locs(p1.text);
-    ok(urls.indexOf('https://seosa.ai.kr/p/2001') > -1 && urls.indexOf('https://seosa.ai.kr/p/5002') > -1 && urls.length === 2, '예전 계산(관측 7일 이상)', urls.join(','));
+    const has = pid => urls.indexOf(`https://seosa.ai.kr/p/${pid}`) > -1;
+    ok(['2001', '2003', '2004', '5002', '7307', '7308', '8002', '8003'].every(has), '관측 7일 이상 · live · 구매 가격 상품이 오른다');
+    ok(!['2002', '4011', '7306', '5001'].some(has), '★ 기록 부족·렌탈·가격 없음은 오르지 않는다');
+    ok(!has('8001'), '★ 다른 옵션의 8일을 세지 않는다 — 현재 옵션 2일인 8001 은 사이트맵에 없다 (sameVendorRows)');
+    const lm = (p1.text.match(/<loc>https:\/\/seosa\.ai\.kr\/p\/8101<\/loc><lastmod>([^<]+)</) || [])[1];
+    ok(lm === kstToday(KST_LASTMOD_AT) && lm !== new Date(KST_LASTMOD_AT).toISOString().slice(0, 10), '★ lastmod 는 KST 날짜 (UTC 16:00 수집 = KST 다음 날)', `${lm}`);
     const p2 = await call({ __route: 'sitemap-file', file: 'products-2.xml' });
     ok(p2.status === 404, '함수 없음 → products-2 는 404');
     const pg = await call({ __route: 'sitemap-file', file: 'pages.xml' });
     const pl = locs(pg.text);
     ok(pl[0] === 'https://seosa.ai.kr/' && pl.indexOf('https://seosa.ai.kr/category') > -1 && pl.indexOf('https://seosa.ai.kr/category/laptop') > -1 && pl.indexOf('https://seosa.ai.kr/brand/lg') > -1, 'pages.xml: 홈 · 허브 · 색인 카테고리·브랜드');
-    ok(pl.indexOf('https://seosa.ai.kr/category/monitor') < 0 && pl.indexOf('https://seosa.ai.kr/brand/samsung') < 0, '★ noindex 페이지는 사이트맵에 없다');
+    ok(/<url><loc>https:\/\/seosa\.ai\.kr\/<\/loc><\/url>/.test(pg.text) && /<url><loc>https:\/\/seosa\.ai\.kr\/category<\/loc><\/url>/.test(pg.text), '★ 홈·허브에는 근거 없는 «오늘» lastmod 를 달지 않는다');
+    ok(/<loc>https:\/\/seosa\.ai\.kr\/category\/laptop<\/loc><lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/.test(pg.text), '카테고리 lastmod 는 실제 수집일');
+    ok(['category/monitor', 'brand/samsung', 'category/shaver', 'category/electric-kettle', 'brand/philips'].every(u => pl.indexOf(`https://seosa.ai.kr/${u}`) < 0), '★ noindex 목록 페이지는 사이트맵에 없다');
     const junk = await call({ __route: 'sitemap-file', file: '../../etc/passwd' });
     ok(junk.status === 404, '이상한 파일 이름 → 404');
     ok(/s-maxage=43200/.test(ix.headers['cache-control'] || ''), '사이트맵 Edge 캐시 12시간');
@@ -542,10 +735,84 @@ function seed() {
     ok(p4.status === 200 && locs(p4.text).length === 0, '범위 안이지만 비어 있으면 빈 urlset (404 아님)');
     const p9 = await call({ __route: 'sitemap-file', file: 'products-9.xml' });
     ok(p9.status === 404, '최대 id 를 넘는 번호 → 404');
-    rpcImpl = () => ({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } });
+    const goodImpl = rpcImpl;
+    const TIMEOUT = { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } };
+    const p1Before = locs((await call({ __route: 'sitemap-file', file: 'products-1.xml' })).text);
+
+    // (1) 직전 결과 있음 + RPC 전부 실패 → 직전 결과로 200 (짧게만 캐시)
+    pages._internal.expireMemo();
+    rpcImpl = () => TIMEOUT;
+    const lg1 = await call({ __route: 'sitemap-file', file: 'products-1.xml' });
+    ok(lg1.status === 200 && locs(lg1.text).join() === p1Before.join() && /s-maxage=600\b/.test(lg1.headers['cache-control'] || ''), '★ 직전 결과 있음 + RPC 실패 → 직전 목록 200 · 10분만 캐시', `${lg1.status} ${lg1.headers['cache-control']}`);
+    const lgIx = await call({ __route: 'sitemap-index' });
+    ok(lgIx.status === 200 && locs(lgIx.text).length === 3, '직전 결과로 인덱스도 그대로 (pages + products-1·2)');
+
+    // (2) 직전 결과 없음 + RPC 전부 실패 → 503 · Retry-After · no-store
+    pages._internal.resetMemo();
     const errd = await call({ __route: 'sitemap-file', file: 'products-1.xml' });
-    ok(errd.status >= 500, '★ DB 오류는 «빈 사이트맵» 으로 숨기지 않는다 (5xx → 크롤러가 나중에 다시 온다)', String(errd.status));
+    ok(errd.status === 503 && errd.headers['retry-after'] && /no-store/.test(errd.headers['cache-control'] || ''), '★ 직전 결과 없음 + 전부 실패 → 503 · Retry-After · no-store (빈 사이트맵 200 이 아니다)', String(errd.status));
+    const errIx = await call({ __route: 'sitemap-index' });
+    ok(errIx.status === 503 && /no-store/.test(errIx.headers['cache-control'] || ''), '인덱스도 503 (상품 사이트맵이 사라진 200 이 아니다)', String(errIx.status));
+
+    // (3) 범위 하나만 실패 · 나머지 정상 · 직전 결과 없음 → 나머지만 내고, 실패 범위는 503
+    const R2 = pages._internal.PRODUCT_ID_RANGE;
+    rpcImpl = (name, p) => (p.p_id_from === R2 ? TIMEOUT : goodImpl(name, p));
+    pages._internal.resetMemo();
+    const part = await call({ __route: 'sitemap-index' });
+    const partFiles = locs(part.text).map(u => u.split('/').pop());
+    ok(part.status === 200 && partFiles.join() === 'pages.xml,products-1.xml' && /s-maxage=600\b/.test(part.headers['cache-control'] || ''), '★ 범위 하나 실패 → 전체를 죽이지 않고 pages·products-1 만 · 짧게 캐시', partFiles.join());
+    const part2 = await call({ __route: 'sitemap-file', file: 'products-2.xml' });
+    ok(part2.status === 503, '실패한 범위 파일 → 503 (빈 200 이 아니다)', String(part2.status));
+
+    // (4) 범위 하나 실패 + 직전 결과 있음 → 그 범위는 직전 결과
+    rpcImpl = goodImpl;
+    pages._internal.resetMemo();
+    await call({ __route: 'sitemap-index' });
+    pages._internal.expireMemo();
+    rpcImpl = (name, p) => (p.p_id_from === R2 ? TIMEOUT : goodImpl(name, p));
+    const keep = await call({ __route: 'sitemap-index' });
+    const keep2 = await call({ __route: 'sitemap-file', file: 'products-2.xml' });
+    ok(locs(keep.text).length === 3 && keep2.status === 200 && locs(keep2.text).join() === 'https://seosa.ai.kr/p/9001', '★ 실패한 범위는 직전 결과로 유지 (pages · 1 · 2 그대로)');
+
+    // (5) 형식이 틀린 응답은 «빈 성공» 이 아니다
+    rpcImpl = () => ({ data: { rows: 1 }, error: null });
+    pages._internal.resetMemo();
+    const bad = await call({ __route: 'sitemap-index' });
+    ok(bad.status === 503, '★ RPC 응답이 배열이 아니면 오류 — 0개 성공으로 삼키지 않는다', String(bad.status));
+    let threw = '';
+    try { await pages._internal.rpcRange(0, 10); } catch (e) { threw = e.message; }
+    ok(/형식 오류/.test(threw), 'rpcRange: 형식 오류를 던진다', threw);
+
+    // (6) 정상 빈 범위 vs 실패 — 빈 범위는 200 빈 urlset, 실패는 503
+    rpcImpl = goodImpl;
+    pages._internal.resetMemo();
+    const legitEmpty = await call({ __route: 'sitemap-file', file: 'products-4.xml' });
+    ok(legitEmpty.status === 200 && locs(legitEmpty.text).length === 0, '정상적으로 비어 있는 범위 → 200 빈 urlset (실패와 구별)');
     rpcImpl = null;
+    pages._internal.resetMemo();
+  }
+
+  section('13-1. 직전 결과 대조 (reconcile)');
+  {
+    const rc = pages._internal.reconcile;
+    const L = n => Array.from({ length: n }, (_, i) => ({ pid: String(i), lastmod: '' }));
+    const now = Date.now();
+    const prev = { mode: 'rpc', count: 2, shards: new Map([[1, L(40)], [2, L(30)]]), computedAt: now - 60000 };
+    let o = rc({ mode: 'rpc', count: 2, shards: new Map([[1, L(10)], [2, L(30)]]), failed: [] }, prev, now);
+    ok(o.shards.get(1).length === 40 && o.stale.indexOf(1) > -1, `★ 범위 하나가 절반 미만으로 급감(40→10) → 직전 결과 유지 (기준 ${pages._internal.DROP_RATIO})`);
+    o = rc({ mode: 'rpc', count: 2, shards: new Map([[1, L(25)], [2, L(30)]]), failed: [] }, prev, now);
+    ok(o.shards.get(1).length === 25 && !o.stale.length, '절반 이상(40→25) → 새 결과 받아들임');
+    o = rc({ mode: 'rpc', count: 2, shards: new Map([[1, L(40)]]), failed: [2] }, prev, now);
+    ok(o.shards.get(2).length === 30 && o.stale.indexOf(2) > -1 && !o.missing.length, '실패한 범위 → 직전 결과로');
+    o = rc({ mode: 'rpc', count: 2, shards: new Map([[1, L(40)]]), failed: [2] }, null, now);
+    ok(!o.shards.has(2) && o.missing.join() === '2', '직전 결과가 없으면 실패한 범위는 빠지고 missing 으로 남는다');
+    const small = { mode: 'rpc', count: 1, shards: new Map([[1, L(10)]]), computedAt: now - 60000 };
+    o = rc({ mode: 'rpc', count: 1, shards: new Map([[1, L(0)]]), failed: [] }, small, now);
+    ok(o.shards.get(1).length === 0, `직전이 ${pages._internal.DROP_MIN}개 미만이면 0 도 정상으로 받아들인다 (비교할 근거가 없다)`);
+    o = rc({ mode: 'rpc', count: 2, shards: new Map([[1, L(5)], [2, L(5)]]), failed: [] }, Object.assign({}, prev, { computedAt: now - 25 * 3600e3 }), now);
+    ok(o.shards.get(1).length === 5, '★ 직전 결과가 24시간보다 오래되면 기준으로 쓰지 않는다 (옛 목록을 영원히 붙들지 않는다)');
+    o = rc({ mode: 'legacy', count: 1, shards: new Map([[1, L(3)]]), failed: [] }, prev, now);
+    ok(o.shards.get(1).length === 3, '방식이 바뀌면(rpc→legacy) 비교하지 않는다');
   }
 
   section('14. 정적 파일 · 라우팅');
@@ -562,7 +829,21 @@ function seed() {
     ok((body.match(/<h2 class="hero-title">/g) || []).length === 3, '나머지 슬라이드 제목은 같은 class 의 h2 (모양 그대로)');
     ok(/<title>SEOSA · 최저가·가격비교·가격 추이<\/title>/.test(body), '홈 title');
     ok(/<meta property="og:title" content="SEOSA · 최저가도 고급스럽게">/.test(body), '공유 카드 브랜드 문구는 그대로');
-    ok(/<link rel="canonical" href="https:\/\/seosa\.ai\.kr\/">/.test(body) && /\[\?&\]\(q\|p\)=/.test(body), '?q= · ?p= 로 열리면 canonical 을 떼고 noindex');
+    ok(/<link rel="canonical" href="https:\/\/seosa\.ai\.kr\/">/.test(body), '홈 원본 HTML 은 canonical = 홈');
+    // 머리의 인라인 스크립트를 실제로 돌려 «행동» 을 본다 (정규식 모양을 단언하지 않는다).
+    const headScript = [...body.split('</head>')[0].matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).find(src => /canonical/.test(src));
+    const runHead = search => {
+      const canonical = { removed: false };
+      canonical.parentNode = { removeChild() { canonical.removed = true; } };
+      const robots = { content: 'index,follow', setAttribute(k, v) { if (k === 'content') this.content = v; } };
+      const document = { querySelector(sel) { if (/canonical/.test(sel)) return canonical.removed ? null : canonical; if (/robots/.test(sel)) return robots; return null; } };
+      new Function('location', 'document', headScript)({ search }, document);
+      return `${canonical.removed ? 'no-canonical' : 'canonical'}/${robots.content}`;
+    };
+    const NOIDX = 'no-canonical/noindex,follow', IDX = 'canonical/index,follow';
+    const cases = [['?q=%EB%85%B8%ED%8A%B8%EB%B6%81', NOIDX], ['?p=1', NOIDX], ['?q=', NOIDX], ['?q', NOIDX], ['?utm_source=x&q=y', NOIDX], ['', IDX], ['?foo=bar', IDX], ['?Q=x', IDX], ['?qq=1', IDX]];
+    const wrong = cases.filter(([q, want]) => runHead(q) !== want).map(([q]) => q || '(없음)');
+    ok(!!headScript && !wrong.length, '★ 열린 주소별 행동: ?q·?p(값 없음 포함) → canonical 제거 + noindex · 그 밖은 그대로', wrong.join(','));
     ok(/<a href="\/category"[^>]*>카테고리·브랜드별 최저가<\/a>/.test(body), '홈 → /category 진짜 링크');
     ok(!/naver-site-verification" content="[^여]/.test(body), '네이버 확인 값을 지어내지 않는다 (주석 자리만)');
     const radar = fs.readFileSync(path.join(ROOT, 'public', 'radar.html'), 'utf8');
@@ -576,6 +857,16 @@ function seed() {
     ok(need.every(s => rw.indexOf(s) > -1 && rw.indexOf(s) < catchAll), '★ 새 경로는 정적 catch-all 보다 앞', need.filter(s => !(rw.indexOf(s) > -1 && rw.indexOf(s) < catchAll)).join(','));
     const noindexQ = vercel.headers.filter(h => h.source === '/' && (h.has || []).some(x => x.type === 'query' && (x.key === 'q' || x.key === 'p')));
     ok(noindexQ.length === 2 && noindexQ.every(h => h.headers.some(x => x.key === 'X-Robots-Tag' && /noindex/.test(x.value) && /follow/.test(x.value))), '/?q= · /?p= → X-Robots-Tag: noindex, follow');
+    // Vercel 규칙(문서): headers.source 는 쿼리를 뺀 경로와 맞추고, has.type=query 에 value 가 없으면 «키가 있기만 하면» 맞는다.
+    const robotsHeader = (pathname, query) => vercel.headers
+      .filter(h => h.source === pathname || h.source === '/(.*)')
+      .filter(h => (h.has || []).every(c => c.type === 'query' && c.value === undefined && Object.prototype.hasOwnProperty.call(query, c.key)))
+      .reduce((acc, h) => acc.concat(h.headers), [])
+      .filter(x => x.key === 'X-Robots-Tag').map(x => x.value).join();
+    const hcases = [['/', { q: '노트북' }, true], ['/', { p: '1' }, true], ['/', { q: '' }, true], ['/index.html', { q: 'x' }, true], ['/index.html', { p: '1' }, true],
+      ['/radar.html', {}, true], ['/', {}, false], ['/', { foo: 'bar' }, false], ['/index.html', {}, false]];
+    const hwrong = hcases.filter(([p, q, want]) => /noindex/.test(robotsHeader(p, q)) !== want).map(([p, q]) => p + JSON.stringify(q));
+    ok(!hwrong.length, '★ vercel.json 헤더 규칙: /?q·/?p·/index.html?q·/index.html?p → noindex · / 와 /?foo 는 아님', hwrong.join(' '));
     const dev = fs.readFileSync(path.join(ROOT, 'scripts', 'dev-server.js'), 'utf8');
     ok(/'sitemap-index'/.test(dev) && /route: 'category'/.test(dev) && /route: 'brand'/.test(dev) && /route: 'sitemap-file'/.test(dev), '로컬 서버도 같은 경로를 안다');
 

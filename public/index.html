@@ -43,7 +43,7 @@
   «색인하지 마라» 와 «홈이 원본이다» 를 동시에 말하지 않게 한다.
   상품마다 색인되는 주소는 /p/{id} 이고, 검색어 대신 /category · /brand 페이지가 있다.
 -->
-<script>(function(){try{if(/[?&](q|p)=/.test(location.search)){var c=document.querySelector('link[rel="canonical"]');if(c)c.parentNode.removeChild(c);var r=document.querySelector('meta[name="robots"]');if(r)r.setAttribute('content','noindex,follow');}}catch(e){}})();</script>
+<script>(function(){try{if(/[?&](q|p)(=|&|$)/.test(location.search)){var c=document.querySelector('link[rel="canonical"]');if(c)c.parentNode.removeChild(c);var r=document.querySelector('meta[name="robots"]');if(r)r.setAttribute('content','noindex,follow');}}catch(e){}})();</script>
 <!--
   네이버 서치어드바이저 소유 확인 — 발급받은 값을 아래 주석 대신 붙여 넣는다.
   (홈은 정적 파일이라 환경변수를 읽지 못한다. 서버가 그리는 페이지는

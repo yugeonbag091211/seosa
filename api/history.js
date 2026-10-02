@@ -459,8 +459,15 @@ module.exports = async function handler(req, res) {
       const pages = require('./_seo-pages');
       return await pages[SEO_ROUTES[q.__route]](req, res);
     } catch (e) {
+      /*
+       * 이 경로의 실패는 «지금 데이터를 셀 수 없다» 는 뜻이다 — 503 + Retry-After, 캐시 금지.
+       * 크롤러는 나중에 다시 오고 이미 아는 URL 을 버리지 않는다. 500 으로 두면 Edge 가
+       * 영구 오류처럼 다루고, 200 으로 덮으면 빈 페이지를 색인한다.
+       */
       const { fail } = require('./_http');
-      return fail(res, e, { where: 'seo-pages', route: `/api/history?__route=${q.__route}`, message: '페이지를 불러오지 못했어요.' });
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Retry-After', '600');
+      return fail(res, e, { where: 'seo-pages', route: `/api/history?__route=${q.__route}`, message: '페이지를 불러오지 못했어요.', status: 503 });
     }
   }
   return singleHandler(req, res);

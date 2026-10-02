@@ -119,6 +119,36 @@
       ]
     },
     {
+      "source": "/index.html",
+      "has": [
+        {
+          "type": "query",
+          "key": "q"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, follow"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "has": [
+        {
+          "type": "query",
+          "key": "p"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, follow"
+        }
+      ]
+    },
+    {
       "source": "/radar.html",
       "headers": [
         {
