@@ -83,15 +83,33 @@ const REWRITES = {
    */
   '/api/radar':         { path: '/api/history', query: { __route: 'radar' } },
   '/api/alternatives':  { path: '/api/history', query: { __route: 'alternatives' } },
-  '/sitemap-products.xml': { path: '/api/history', query: { __route: 'sitemap' } }
+  // 사이트맵 인덱스 (2026-10-02) — 예전 주소도 같은 인덱스를 낸다 (vercel.json 과 같다).
+  '/sitemap.xml':          { path: '/api/history', query: { __route: 'sitemap-index' } },
+  '/sitemap-products.xml': { path: '/api/history', query: { __route: 'sitemap-index' } },
+  '/category':             { path: '/api/history', query: { __route: 'hub' } }
 };
 // vercel.json 의 "/p/:pid" 와 같은 규칙. 상품 페이지는 api/history.js 가 그린다.
 const PRODUCT_PAGE_RE = /^\/p\/([^/?#]+)\/?$/;
+// vercel.json 의 "/category/:slug" · "/brand/:slug" · "/sitemaps/:file" 과 같은 규칙.
+const PARAM_ROUTES = [
+  { re: /^\/category\/([^/?#]+)\/?$/, route: 'category', key: 'slug' },
+  { re: /^\/brand\/([^/?#]+)\/?$/,    route: 'brand',    key: 'slug' },
+  { re: /^\/sitemaps\/([^/?#]+)$/,    route: 'sitemap-file', key: 'file' }
+];
 function applyRewrites(req) {
   const rw = REWRITES[req.path];
   if (rw) {
     req.path = rw.path;
     Object.assign(req.query, rw.query);
+    return;
+  }
+  for (const r of PARAM_ROUTES) {
+    const hit = r.re.exec(req.path || '');
+    if (!hit) continue;
+    let v = hit[1];
+    try { v = decodeURIComponent(v); } catch (e) { /* 깨진 인코딩은 그대로 둔다 */ }
+    req.path = '/api/history';
+    Object.assign(req.query, { __route: r.route, [r.key]: v });
     return;
   }
   const m = PRODUCT_PAGE_RE.exec(req.path || '');
@@ -159,6 +177,11 @@ const server = http.createServer(async (rawReq, rawRes) => {
   // 리라이트는 정적 판정보다 먼저다 — /p/{id} 와 /sitemap-products.xml 은
   // 정적 파일이 아니라 api/history.js 가 그린다 (vercel.json 과 같은 순서).
   applyRewrites(req);
+  // vercel.json headers 의 noindex 와 같다 — 검색·딥링크 URL과 개인 레이더.
+  if (((req.path === '/' || req.path === '/index.html') && (req.query.q !== undefined || req.query.p !== undefined))
+      || req.path === '/radar.html') {
+    rawRes.setHeader('X-Robots-Tag', 'noindex, follow');
+  }
   if (req.path.startsWith('/api/')) {
     console.log(`${req.method} ${req.url}`);
     await handleApi(req.path, req, res);
