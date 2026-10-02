@@ -5,6 +5,11 @@
       "source": "/hotdeals.html",
       "destination": "/",
       "permanent": false
+    },
+    {
+      "source": "/brand",
+      "destination": "/category",
+      "permanent": false
     }
   ],
   "rewrites": [
@@ -29,8 +34,28 @@
       "destination": "/api/history?__route=page&pid=:pid"
     },
     {
+      "source": "/sitemap.xml",
+      "destination": "/api/history?__route=sitemap-index"
+    },
+    {
       "source": "/sitemap-products.xml",
-      "destination": "/api/history?__route=sitemap"
+      "destination": "/api/history?__route=sitemap-index"
+    },
+    {
+      "source": "/sitemaps/:file",
+      "destination": "/api/history?__route=sitemap-file&file=:file"
+    },
+    {
+      "source": "/category",
+      "destination": "/api/history?__route=hub"
+    },
+    {
+      "source": "/category/:slug",
+      "destination": "/api/history?__route=category&slug=:slug"
+    },
+    {
+      "source": "/brand/:slug",
+      "destination": "/api/history?__route=brand&slug=:slug"
     },
     {
       "source": "/((?!api/).*)",
@@ -60,6 +85,45 @@
         {
           "key": "Strict-Transport-Security",
           "value": "max-age=31536000; includeSubDomains"
+        }
+      ]
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "query",
+          "key": "q"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, follow"
+        }
+      ]
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "query",
+          "key": "p"
+        }
+      ],
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, follow"
+        }
+      ]
+    },
+    {
+      "source": "/radar.html",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, follow"
         }
       ]
     }

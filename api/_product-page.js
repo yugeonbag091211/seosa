@@ -19,15 +19,17 @@
  *     현재가로 쓸 수 없는(stale·링크 없음) 상품은 noindex 이고 사이트맵에도 없다.
  *   · 값은 전부 DB 에 실제로 있는 것이다. 판정 문장은 api/_deal.js 가 만든 것을
  *     그대로 옮긴다 — 화면 모달·AI 답변·알림 메일과 같은 말을 한다.
- *   · Product/Offer 구조화 데이터를 넣지 않는다. SEOSA 는 판매자가 아니고 링크는
- *     제휴 링크다 (public/index.html 머리말의 판단과 같다). BreadcrumbList 와
- *     WebPage 만 넣고, 가격 사실은 본문 텍스트로 낸다.
+ *   · 구조화 데이터는 BreadcrumbList · WebPage, 그리고 색인되는 페이지에만
+ *     Product(제품 스니펫, Offer 1곳). 2026-10-02 에 판단을 바꿨다 — 그 이유와
+ *     지키는 선은 api/_seo.js productJsonLd 주석에 있다. 가격 사실은 여전히
+ *     본문 텍스트(«가격 요약»)로도 낸다 — 검색봇이 그래프 안의 숫자를 읽지 못한다.
  *   · 상품명·링크·이미지는 판매자 문자열이다. 전부 이스케이프하고 URL 은
  *     http(s) 만 통과시킨다.
  *   · 읽기 전용. 아무것도 쓰지 않는다.
  */
 
 const supabase = require('./_supabase');
+const SEO = require('./_seo');
 const { toClientProduct, freshRows, relevantRows, preferLive } = require('./_shop');
 const { attachTrust } = require('./_trust');
 const { observedKstDate, kstToday, productLifecycle, sameVendorRows, LIFECYCLE } = require('./_price');
@@ -225,7 +227,9 @@ async function buildView(pid, mall) {
   const price = points.length ? points[points.length - 1].price : (Number(product.lprice) || 0);
   const deal = dealOf(stat, price, today);
   const life = productLifecycle(row);
-  const indexable = life.state === LIFECYCLE.LIVE && points.length >= INDEX_MIN_DAYS && !!safeUrl(row.link);
+  // 렌탈 월 요금·1원 명목가는 구매 가격이 아니다 — 페이지는 열되 색인·구조화 데이터에서 뺀다 (_seo.isNonPurchaseListing).
+  const indexable = life.state === LIFECYCLE.LIVE && points.length >= INDEX_MIN_DAYS && !!safeUrl(row.link)
+    && !SEO.isNonPurchaseListing(row);
 
   return { row, product, points, stat, deal, life, price, indexable, today };
 }
@@ -284,7 +288,13 @@ const CSS = [
   'footer{margin:48px 0 32px;font-size:.74rem;color:var(--soft);border-top:1px solid var(--line);padding-top:16px}',
   '.trust{font-size:.78rem;color:var(--soft);margin-top:10px}',
   // 제휴 고지 — public/index.html .aff-note 와 같은 모양·문구 (그 주석 참고)
-  '.aff-note{display:flex;align-items:baseline;gap:8px;margin:22px 0 -10px;padding:8px 12px;background:var(--surface,#f4f5f7);border-radius:6px;font-size:.8rem;line-height:1.55;color:var(--soft);word-break:keep-all;overflow-wrap:anywhere}.aff-note b{flex:none;color:var(--ink)}'
+  '.aff-note{display:flex;align-items:baseline;gap:8px;margin:22px 0 -10px;padding:8px 12px;background:var(--surface,#f4f5f7);border-radius:6px;font-size:.8rem;line-height:1.55;color:var(--soft);word-break:keep-all;overflow-wrap:anywhere}.aff-note b{flex:none;color:var(--ink)}',
+  // 가격 요약 (2026-10-02) — .stats 와 같은 칸 모양을 쓴다
+  '.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 10px}@media(max-width:560px){.facts{grid-template-columns:repeat(2,1fr)}}',
+  '.facts div{border:1px solid var(--line);border-radius:6px;padding:10px 12px}.facts dt{font-size:.7rem;color:var(--soft)}.facts dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums}',
+  '.facts .dn{color:var(--down)}.facts .upc{color:var(--up)}.lead{font-size:.88rem;color:var(--soft);margin:0}.lead b{color:var(--ink);font-weight:600}',
+  '.thumb.noimg:after{content:"이미지 없음";color:var(--soft);font-size:.8rem}',
+  '.explore p{margin:0;font-size:.86rem}.explore a{color:var(--ink)}'
 ].join('');
 
 /**
@@ -298,54 +308,114 @@ function mallName(product) {
   return product.mallLabel || product.mall || '';
 }
 
+/*
+ * meta description — api/_seo.productDescription 이 만든다 (2026-10-02).
+ *
+ * 현재가와 최근 30일 최저를 «따로» 적는다 (test-price-integrity CASE 2).
+ * 숫자는 전부 이 상품의 실제 기록이라 페이지마다 다르다 — 같은 설명이
+ * 수천 페이지에 반복되지 않는다.
+ */
 function describeForMeta(v) {
-  const { product, stat, deal, points } = v;
-  const parts = [];
-  parts.push(`${mallName(product)} ${won(v.price)}원`);
-  if (stat) {
-    parts.push(`SEOSA 기록 ${points.length}일`);
-    if (stat.low > 0) parts.push(`최저 ${won(stat.low)}원`);
-    if (stat.avg30 > 0) parts.push(`30일 평균 ${won(stat.avg30)}원`);
+  const { product, stat, points } = v;
+  return SEO.productDescription({
+    title: SEO.cleanText(product.title),
+    price: v.price,
+    mall: mallName(product),
+    lastDate: points.length ? points[points.length - 1].date : '',
+    summary: SEO.priceSummary(points, stat)
+  });
+}
+
+/** -31,000원 / +5,000원 / 0원 */
+function signedWon(n) {
+  const v = Math.round(Number(n) || 0);
+  return `${v < 0 ? '-' : v > 0 ? '+' : ''}${won(Math.abs(v))}원`;
+}
+function signedPct(p) {
+  return p === null || p === undefined ? '' : `${p < 0 ? '-' : p > 0 ? '+' : ''}${Math.abs(p)}%`;
+}
+
+/**
+ * 가격 요약 — 숫자와 문장이 HTML 텍스트로 남는다 (그래프 SVG 안에만 있으면
+ * 검색봇이 읽지 못한다). 값은 전부 api/_seo.priceSummary 가 이 상품의 기록에서
+ * 계산한 것이다. 기록이 모자란 줄은 그리지 않는다.
+ */
+function summaryHtml(s) {
+  if (!s || !(s.prev || s.window7 || s.window30)) return '';
+  const rows = [];
+  if (s.prev) {
+    const cls = s.prev.diff < 0 ? 'dn' : s.prev.diff > 0 ? 'upc' : '';
+    const val = s.prev.diff
+      ? `${signedWon(s.prev.diff)}${s.prev.diffPct !== null ? ` (${signedPct(s.prev.diffPct)})` : ''}`
+      : '변동 없음';
+    rows.push(`<div><dt>${esc(s.prev.label)}</dt><dd${cls ? ` class="${cls}"` : ''}>${val}</dd></div>`);
   }
-  if (deal && deal.verdict !== 'UNKNOWN') parts.push(`판정: ${deal.label}`);
-  return parts.join(' · ').slice(0, 155);
+  if (s.window7) rows.push(`<div><dt>최근 7일 최저 · 평균</dt><dd>${won(s.window7.low)}원 · ${won(s.window7.avg)}원</dd></div>`);
+  if (s.window30) rows.push(`<div><dt>최근 30일 최저 · 평균</dt><dd>${won(s.window30.low)}원 · ${won(s.window30.avg)}원</dd></div>`);
+  if (s.vsAvg30Pct !== null) {
+    const cls = s.vsAvg30Pct < 0 ? 'dn' : s.vsAvg30Pct > 0 ? 'upc' : '';
+    rows.push(`<div><dt>30일 평균 대비</dt><dd${cls ? ` class="${cls}"` : ''}>${signedPct(s.vsAvg30Pct)}</dd></div>`);
+  }
+  // 업데이트 날짜는 칸이 아니라 문장 줄 머리에 둔다 — 칸이 5개면 4열 격자에서 한 칸만 줄을 넘는다.
+  return `
+  <section aria-labelledby="price-summary">
+    <h2 id="price-summary">가격 요약</h2>
+    <dl class="facts">${rows.join('')}</dl>
+    <p class="lead"><b>가격 업데이트 ${esc(s.lastDate)}</b>${s.sentences.length ? ` · ${s.sentences.map(esc).join(' ')}` : ''}</p>
+  </section>`;
 }
 
 function renderPage(v, siblings) {
   const { product, points, stat, deal, price, indexable, row } = v;
-  const title = String(product.title || '').slice(0, 200);
+  // DB 에 HTML 엔티티째 저장된 제목이 있다 ("팝콘&amp;나쵸"). 풀어서 한 번만 이스케이프한다.
+  const title = SEO.cleanText(product.title).slice(0, 200);
   const img = safeUrl(product.image);
+  // 검색엔진·공유 카드가 나중에 가져가도 열리는 이미지만 밖으로 낸다 (_seo.isDurableImage).
+  const shareImg = SEO.isDurableImage(img) ? img : '';
   const link = safeUrl(product.link);
   const url = pageUrl(product.productId);
   const last = points.length ? points[points.length - 1].date : '';
   const desc = describeForMeta(v);
   const mall = mallName(product);
+  const name = SEO.shortName(title);
+  const summary = SEO.priceSummary(points, stat);
+  // 레지스트리에서 확인되는 것만 — 추측한 카테고리·브랜드를 화면·구조화 데이터에 쓰지 않는다.
+  const category = SEO.categoryOfKeyword(row.keyword);
+  const brand = SEO.brandOfTitle(title);
+
+  const crumbItems = [{ name: '홈', url: `${SITE}/` }]
+    .concat(category ? [{ name: category.name, url: SEO.categoryUrl(category) }] : [])
+    .concat([{ name, url }]);
+  // 색인되는 페이지에만. 가격은 화면 큰 글씨와 같은 값(마지막 관측가)이다.
+  const productLd = indexable && price > 0 ? SEO.productJsonLd({
+    name: title,
+    url,
+    image: shareImg,
+    description: desc,
+    // 쿠팡이 준 판매 단위 식별자만 — ADPICK 의 product_id 는 우리가 만든 해시라 sku 가 아니다.
+    sku: product.isCoupang && product.vendorItemId ? String(product.vendorItemId) : undefined,
+    brand: brand ? brand.name : undefined,
+    offers: [{ price, seller: mall }]
+  }) : null;
 
   const jsonLd = {
     '@context': 'https://schema.org',
     '@graph': [
-      {
-        '@type': 'BreadcrumbList',
-        itemListElement: [
-          { '@type': 'ListItem', position: 1, name: 'SEOSA', item: `${SITE}/` },
-          row.keyword
-            ? { '@type': 'ListItem', position: 2, name: String(row.keyword), item: `${SITE}/?q=${encodeURIComponent(row.keyword)}` }
-            : null,
-          { '@type': 'ListItem', position: row.keyword ? 3 : 2, name: title, item: url }
-        ].filter(Boolean)
-      },
-      {
+      SEO.breadcrumbJsonLd(crumbItems),
+      SEO.compact({
         '@type': 'WebPage',
         '@id': url,
         url,
-        name: `${title} 가격 기록`,
+        name: `${name} 최저가·가격 추이`,
         description: desc,
         inLanguage: 'ko-KR',
         isPartOf: { '@id': `${SITE}/#website` },
         dateModified: last ? `${last}T00:00:00+09:00` : undefined,
-        primaryImageOfPage: img ? { '@type': 'ImageObject', url: img } : undefined
-      }
-    ]
+        primaryImageOfPage: shareImg ? { '@type': 'ImageObject', url: shareImg } : undefined,
+        mainEntity: productLd ? { '@id': productLd['@id'] } : undefined
+      }),
+      productLd
+    ].filter(Boolean)
   };
 
   const reasons = (deal.reasons || []).slice(0, 3);
@@ -390,7 +460,7 @@ function renderPage(v, siblings) {
     <h2>비슷한 가격의 다른 선택</h2>
     <ul class="sib">${siblings.map(s => `
       <li><a href="/p/${encodeURIComponent(s.product_id)}">
-        <div class="t">${esc(s.title)}</div>
+        <div class="t">${esc(SEO.cleanText(s.title))}</div>
         <div class="p">${won(s.lprice)}원</div>
       </a></li>`).join('')}
     </ul>` : '';
@@ -399,40 +469,52 @@ function renderPage(v, siblings) {
   const storyHtml = storyPoints.length ? `<section class="journey" aria-labelledby="price-story"><h2 id="price-story">가격에도 서사가 있습니다.</h2><ol>${storyPoints.map((p, i) => `<li><span>${i === 2 ? '오늘' : esc(p.date)}</span><b>${won(p.price)}원</b></li>`).join('')}</ol></section>` : '';
   const radarProduct = JSON.stringify({ title, productId: product.productId, mall: product.mall, mallLabel: mall, price, link, image: img, verdict: deal.verdict, verdictLabel: deal.label, verdictReason: reasons[0] || '' }).replace(/</g, '\\u003c');
 
+  // 내부 링크 — 이 상품이 속한 카테고리·브랜드 페이지 (레지스트리에서 확인된 것만).
+  const explore = [
+    category ? `<a href="/category/${esc(category.slug)}">${esc(category.name)} 최저가 전체 보기</a>` : '',
+    brand ? `<a href="/brand/${esc(brand.slug)}">${esc(brand.name)} 제품 가격비교</a>` : ''
+  ].filter(Boolean);
+  const exploreHtml = explore.length
+    ? `<nav class="explore" aria-label="더 둘러보기"><h2>더 둘러보기</h2><p>${explore.join(' · ')}</p></nav>`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} 가격 기록 · SEOSA</title>
+<title>${esc(SEO.productTitle(title))}</title>
 <meta name="description" content="${esc(desc)}">
 <meta name="robots" content="${indexable ? 'index,follow' : 'noindex,follow'}">
 <link rel="canonical" href="${esc(url)}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+${SEO.verificationMeta()}
 <script src="/radar-store.js"></script>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SEOSA">
 <meta property="og:locale" content="ko_KR">
-<meta property="og:title" content="${esc(title)} · ${won(price)}원">
+<meta property="og:title" content="${esc(name)}${price > 0 ? ` · ${won(price)}원` : ''}">
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${esc(url)}">
-${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og:image" content="${SITE}/og.png">`}
+<meta property="og:image" content="${esc(shareImg || `${SITE}/og.png`)}">
 <meta name="twitter:card" content="summary">
-<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
+<meta name="twitter:title" content="${esc(name)}${price > 0 ? ` · ${won(price)}원` : ''}">
+<meta name="twitter:description" content="${esc(desc)}">
+${SEO.jsonLdScript(jsonLd)}
 <style>${CSS}</style>
 </head>
 <body>
 <header><div class="wrap">
   <a class="logo" href="/">SEO<b>SA</b></a>
-  <a href="/?q=${encodeURIComponent(row.keyword || title.split(' ').slice(0, 2).join(' '))}" style="font-size:.82rem;color:var(--soft);text-decoration:none">비슷한 상품 더 보기 →</a>
+  <a rel="nofollow" href="/?q=${encodeURIComponent(row.keyword || title.split(' ').slice(0, 2).join(' '))}" style="font-size:.82rem;color:var(--soft);text-decoration:none">비슷한 상품 더 보기 →</a>
 </div></header>
 <main class="wrap">
-  <nav class="crumb" aria-label="경로"><a href="/">홈</a> › ${row.keyword ? `<a href="/?q=${encodeURIComponent(row.keyword)}">${esc(row.keyword)}</a> › ` : ''}가격 기록</nav>
+  <nav class="crumb" aria-label="경로"><a href="/">홈</a> › ${category ? `<a href="/category/${esc(category.slug)}">${esc(category.name)}</a> › ` : ''}${esc(name)}</nav>
   <h1>${esc(title)}</h1>
   <div class="meta"><span>${esc(mall)}</span>${last ? `<span>${esc(last)} 관측</span>` : ''}${row.keyword ? `<span>검색어 ${esc(row.keyword)}</span>` : ''}</div>
 
   <section class="hero">
-    <div class="thumb">${img ? `<img src="${esc(img)}" alt="" referrerpolicy="no-referrer">` : '<span style="color:var(--soft)">이미지 없음</span>'}</div>
+    <div class="thumb">${img ? `<img src="${esc(img)}" alt="${esc(SEO.shortName(title, 80))}" decoding="async" fetchpriority="high" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add('noimg');this.remove()">` : '<span style="color:var(--soft)">이미지 없음</span>'}</div>
     <div>
       <div class="price">${price > 0 ? `${won(price)}<small> 원</small>` : '가격 미확인'}</div>
       ${unitHtml}
@@ -447,6 +529,7 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
     </div>
   </section>
 
+  ${summaryHtml(summary)}
   ${statsHtml}
   ${spark ? `<div class="spark">${spark}</div><div class="note">${PRICE_SOURCE_NOTE}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${PRICE_SOURCE_NOTE}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
   ${storyHtml}
@@ -458,6 +541,7 @@ ${img ? `<meta property="og:image" content="${esc(img)}">` : `<meta property="og
   </div>
 
   ${sibHtml}
+  ${exploreHtml}
 </main>
 <footer class="wrap">
   SEOSA 는 상품을 직접 팔지 않아요. 위 가격은 SEOSA 가 그 시점에 <b>관측한 값</b>이고 판매처의 실제 결제 금액과 다를 수 있어요.
@@ -608,6 +692,7 @@ async function indexableProducts() {
   for (const p of products) {
     if (productLifecycle(p).state !== LIFECYCLE.LIVE) continue;
     if (!safeUrl(p.link) || !cleanPid(p.product_id)) continue;
+    if (SEO.isNonPurchaseListing(p)) continue;   // buildView 의 indexable 과 같은 규칙
     const d = days.get(`${p.product_id}|${p.mall}`);
     if (!d || d.size < INDEX_MIN_DAYS) continue;
     out.push({ pid: p.product_id, lastmod: String(p.collected_at || '').slice(0, 10) });

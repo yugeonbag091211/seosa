@@ -9,7 +9,8 @@
  *   ② 기록이 INDEX_MIN_DAYS 미만이거나 stale·링크 없음이면 noindex (저품질 페이지 금지)
  *   ③ 없는 상품은 404, 이상한 식별자는 400/404
  *   ④ 사이트맵은 색인 가능한 상품만 담는다
- *   ⑤ Product/Offer 구조화 데이터를 넣지 않는다 (SEOSA 는 판매자가 아니다)
+ *   ⑤ Product 구조화 데이터는 색인 페이지에만, 가격은 화면 값 그대로, 평점·리뷰·재고 없음
+ *      (2026-10-02 판단 변경 — api/_seo.js productJsonLd 주석)
  *
  * ── 안전성 ───────────────────────────────────────────────────────
  * 운영 Supabase 0회. 가짜 Supabase 가 products / price_history 를 흉내 낸다.
@@ -163,7 +164,27 @@ function seed() {
     ok(/29,900/.test(r.text), '현재가 29,900 이 본문에 있다');
     ok(/기록<\/span><b>20일/.test(r.text), '기록 일수 20일');
     ok(/BreadcrumbList/.test(r.text) && /"WebPage"/.test(r.text), 'BreadcrumbList + WebPage JSON-LD');
-    ok(!/"@type":"Product"/.test(r.text) && !/"Offer"/.test(r.text), '★ Product/Offer 구조화 데이터를 넣지 않는다');
+    /*
+     * ── Product 구조화 데이터 (2026-10-02 판단 변경) ─────────────────────
+     *
+     * 예전 단언은 "Product/Offer 를 넣지 않는다" 였다. 그 근거(판매자만 쓸 수
+     * 있다)는 Google «판매자 목록» 에는 맞지만 «제품 스니펫» 에는 맞지 않는다 —
+     * 가격 비교 페이지는 offers 로 제품 스니펫 조건을 채운다 (api/_seo.js
+     * productJsonLd 주석). 그래서 단언을 «넣되 거짓이 없다» 로 바꾼다. 더 약해지지
+     * 않았다: 가격이 화면 값과 같은지, 리뷰·평점·재고를 지어내지 않는지까지 본다.
+     */
+    {
+      const blocks = [...r.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
+      const graph = [].concat(...blocks.map(b => b['@graph'] || [b]));
+      const prod = graph.find(n => n['@type'] === 'Product');
+      ok(!!prod && prod.offers && prod.offers['@type'] === 'Offer', '색인 페이지에 Product + Offer(판매처 1곳)');
+      // 화면 큰 글씨(.price)에 찍힌 값을 HTML 에서 직접 읽어 비교한다 — 마지막 관측가다.
+      const shown = Number(((r.text.match(/<div class="price">([\d,]+)<small>/) || [])[1] || '').replace(/,/g, ''));
+      ok(prod && shown > 0 && prod.offers.price === shown && prod.offers.priceCurrency === 'KRW',
+        '★ Offer 가격 = 화면 큰 글씨 현재가 · KRW', `화면 ${shown} / JSON-LD ${prod && prod.offers.price}`);
+      ok(prod && !prod.aggregateRating && !prod.review && !prod.offers.availability, '★ 평점·리뷰·재고를 지어내지 않는다');
+      ok(prod && prod.url === 'https://seosa.ai.kr/p/1001' && prod.offers.seller && prod.offers.seller.name === '쿠팡', 'Product.url = canonical · seller = 쿠팡');
+    }
     ok(/rel="nofollow sponsored noopener"/.test(r.text), '제휴 링크는 nofollow sponsored');
     ok(/href="\/\?p=1001"/.test(r.text), '앱 딥링크 ?p=1001');
     ok(/<svg/.test(r.text), '스파크라인 SVG');
@@ -204,6 +225,7 @@ function seed() {
     const r = await call({ __route: 'page', pid: '1003' });
     ok(r.status === 200 && /content="noindex,follow"/.test(r.text), `★ 기록 ${INDEX_MIN_DAYS}일 미만 → noindex (저품질 페이지 금지)`);
     ok(r.headers['x-robots-tag'] === 'noindex', 'X-Robots-Tag: noindex 헤더');
+    ok(!/"@type":"Product"/.test(r.text), '★ noindex 페이지에는 Product 구조화 데이터가 없다');
     const s = await call({ __route: 'page', pid: '1004' });
     ok(s.status === 200 && /content="noindex,follow"/.test(s.text), 'stale(40일 미확인) → noindex');
     const n = await call({ __route: 'page', pid: '1005' });
