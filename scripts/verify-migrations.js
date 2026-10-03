@@ -134,7 +134,8 @@ const NEW_MIGRATIONS = [
   '2026-09-22-collector-target-keyset.sql',
   '2026-09-27-coupang-search-hourly-limit.sql',
   COUPANG_QUOTA_MIGRATION,
-  COUPANG_QUOTA_SEARCH_PATH_MIGRATION
+  COUPANG_QUOTA_SEARCH_PATH_MIGRATION,
+  'migrations/20261003003832_collector_daily_efficiency.sql'
 ];
 
 function checkStatic() {

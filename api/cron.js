@@ -15,6 +15,7 @@ const supabase = require('./_supabase');
 const { TODAY_PICKS, searchAll, saveProducts } = require('./_shop');
 const { searchCoupang, localStats, globalUsage, pruneLog } = require('./_coupang');
 const { qualitySnapshot } = require('./_quality');
+const Progress = require('./_collector-progress');
 // 달력 월은 KST 기준이다. 이 크론은 KST 03:00 에 도는데, 그 시각의 UTC 는
 // 매월 1일이면 아직 전달이다 (_kst.kstMonth 주석 참고).
 const { kstMonth } = require('./_kst');
@@ -236,8 +237,23 @@ module.exports = Object.assign(async function handler(req, res) {
           coupangLimit: CRON_LIMIT, coupangOpts: opts,
           adpickLimit: CRON_LIMIT, adpickOpts
         });
-        const { saved, errors: saveErrors } = await saveProducts(keyword, allItems || items, { from, source: 'cron' });
-        return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors] };
+        const { saved, errors: saveErrors, recordedOptions = [] } = await saveProducts(keyword, allItems || items, { from, source: 'cron' });
+        // Confirmed writes become daily collector success so a later collector run skips them.
+        // Bookkeeping only: a failure is reported but never hides the prices already saved.
+        const progressErrors = [];
+        if (Progress.enabled()) {
+          for (const source of ['coupang', 'adpick']) {
+            const mall = source === 'coupang' ? '쿠팡' : 'ADPICK';
+            try {
+              const progress = Progress.createProgress({ source, enforceDate: true });
+              await progress.record(recordedOptions.filter(p => p.mall === mall).map(p => ({
+                product_key: `${p.product_id}|${p.mall}${source === 'coupang' && p.vendor_item_id ? `|${p.vendor_item_id}` : ''}`,
+                query: keyword, success: true, status: 'success'
+              })));
+            } catch (e) { progressErrors.push(`progress ${source}: ${e.message}`); }
+          }
+        }
+        return { keyword, found: items.length, saved, from, errors: [...errors, ...saveErrors, ...progressErrors] };
       } catch (e) {
         return { keyword, found: 0, saved: 0, errors: [e.message] };
       }

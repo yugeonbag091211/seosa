@@ -714,6 +714,20 @@ async function runAI() {
     return res;
   }
 
+  // Provider exhaustion has an established HTTP 200/degraded contract in ai.js.
+  // Verify the complete safe response; a plain 200 or invented answer must fail.
+  function checkSafeDegraded(res, label) {
+    const payload = res.payload || {};
+    const text = String(payload.text || '');
+    check(res.code === 200, `${label}: 안전한 degraded 응답 HTTP 200`, String(res.code));
+    check(payload.degraded === true, `${label}: degraded:true 명시`);
+    check(/확인되지 않은 내용은 안내하지 않겠습니다/.test(text), `${label}: 미확인 답변 생성 금지`, text);
+    check((payload.items === undefined || Array.isArray(payload.items)) && (payload.items || []).length === 0,
+      `${label}: 확인하지 않은 상품 카드를 만들지 않는다`);
+    check(!Object.prototype.hasOwnProperty.call(payload, 'error'), `${label}: 안전한 안내를 연결 오류로 버리지 않는다`);
+    check(ext.aiCalls > 0, `${label}: 실제 mock 실패를 거쳤다 (캐시 우회 없음)`, `${ext.aiCalls}회`);
+  }
+
   /* AI-1. 정상 응답 — 제품 질문 quota 없음 */
   {
     const res = await callAi('ok');
@@ -726,20 +740,20 @@ async function runAI() {
   /* AI-2. ★ 402 크레딧 부족 */
   {
     const res = await callAi('402');
-    check(res.code === 500, '사용자에게는 500 (업스트림 상태를 그대로 노출하지 않는다)', String(res.code));
+    checkSafeDegraded(res, '402');
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     const blob = JSON.stringify(res.payload);
     check(blob.indexOf('Insufficient credits') === -1, '"Insufficient credits" 가 새지 않는다 ★');
     check(blob.indexOf('OpenRouter') === -1, '공급자 이름이 새지 않는다 ★');
     check(blob.indexOf('402') === -1, '업스트림 상태코드가 새지 않는다');
-    check(/다시 시도/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
+    check(/다시 (?:시도|질문)/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
     check(!Object.prototype.hasOwnProperty.call(res.payload, 'usage'), 'usage payload를 내보내지 않는다');
   }
 
   /* AI-3. provider 429 */
   {
     const res = await callAi('429');
-    check(res.code === 500, '429 도 사용자에게는 일반 오류', String(res.code));
+    checkSafeDegraded(res, '429');
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(JSON.stringify(res.payload).indexOf('Rate limit') === -1, '업스트림 문구가 새지 않는다');
   }
@@ -747,14 +761,14 @@ async function runAI() {
   /* AI-4. 500 — 쿼터 복구 */
   {
     const res = await callAi('500');
-    check(res.code === 500, '업스트림 500', String(res.code));
+    checkSafeDegraded(res, '500');
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
-  /* AI-5. timeout — 안전한 일반 오류 (쇼핑 데이터가 있으면 결정론 fallback) */
+  /* AI-5. timeout — 확인한 데이터가 없으면 안전한 degraded 안내 */
   {
     const res = await callAi('timeout');
-    check(res.code === 500, '데이터 없는 timeout → 안전한 일반 오류', String(res.code));
+    checkSafeDegraded(res, 'timeout');
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(/시간|다시/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
   }
@@ -762,7 +776,7 @@ async function runAI() {
   /* AI-6. malformed 응답 — 죽지 않고 쿼터 복구 */
   {
     const res = await callAi('malformed');
-    check(res.code === 500, '파싱 불가 응답도 처리한다', String(res.code));
+    checkSafeDegraded(res, 'malformed');
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
@@ -995,25 +1009,43 @@ async function runSAFE() {
   const fs = require('fs');
 
   /** package.json 의 test / test:all 체인에 실제로 들어가는 스크립트. */
-  function chainScripts() {
-    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  function chainScripts(pkg) {
     const seen = new Set();
-    const expand = (name, depth) => {
-      if (depth > 5) return;
-      const cmd = (pkg.scripts || {})[name] || '';
+    const expanded = new Set(), expanding = new Set();
+    const expand = name => {
+      if (expanding.has(name)) throw new Error(`Cyclic test script chain: ${name}`);
+      if (expanded.has(name)) return;
+      const cmd = (pkg.scripts || {})[name];
+      if (typeof cmd !== 'string' || !cmd.trim()) throw new Error(`Missing test script: ${name}`);
+      expanding.add(name);
       cmd.split('&&').forEach(part => {
-        const m = /node\s+scripts\/([\w.-]+)\.js/.exec(part.trim());
+        const m = /^node\s+scripts\/([\w.-]+)\.js(?:\s+.*)?$/.exec(part.trim());
         if (m) { seen.add(m[1]); return; }
-        const nm = /npm\s+(?:run\s+)?([\w:]+)/.exec(part.trim());
-        if (nm) expand(nm[1] === 'test' ? 'test' : nm[1], depth + 1);
+        const nm = /^npm(?:\.cmd)?\s+(?:run(?:-script)?\s+)?([\w:.-]+)(?:\s+.*)?$/.exec(part.trim());
+        if (nm) { expand(nm[1]); return; }
+        throw new Error(`Unverified test command: ${part.trim()}`);
       });
+      expanding.delete(name); expanded.add(name);
     };
-    expand('test:all', 0);
+    expand('test:all');
     return [...seen];
   }
 
-  const scripts = chainScripts();
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const scripts = chainScripts(pkg);
   check(scripts.length >= 8, 'test:all 체인의 스크립트를 찾았다', scripts.join(', '));
+  const nested = chainScripts({ scripts: { 'test:all': 'npm test', test: 'npm run test:collector-efficiency',
+    'test:collector-efficiency': 'node scripts/test-collector-query.js && node scripts/test-collector-ledger-db.js' } });
+  check(nested.includes('test-collector-query') && nested.includes('test-collector-ledger-db'),
+    'hyphen이 있는 npm 하위 스위트도 모두 검사한다');
+  for (const scripts of [
+    { 'test:all': 'npm run missing-script' }, { 'test:all': 'npm run test:all' },
+    { 'test:all': 'curl https://example.invalid' }
+  ]) {
+    let rejected = false;
+    try { chainScripts({ scripts }); } catch (_) { rejected = true; }
+    check(rejected, '누락/순환/알 수 없는 테스트 명령은 검사를 통과시키지 않는다');
+  }
 
   /** 주석을 벗긴다 — 설명문에 적힌 URL 을 호출로 오인하지 않기 위해. */
   const strip = s => s
@@ -1022,20 +1054,34 @@ async function runSAFE() {
 
   const offenders = { paid: [], db: [], coupang: [] };
 
+  function callsUnmockedFetch(src) {
+    const mocksFetch = /(?:global|globalThis)\s*\.\s*fetch\s*=/.test(src);
+    // An object/VM fixture's fetch() { throw ... } defines a method; it is not a
+    // fetch invocation. Keep its body so any actual nested fetch remains detected.
+    const calls = src.replace(/(^|[,{])\s*(?:async\s+)?fetch\s*\([^)]*\)\s*\{/gm, '$1 __fixtureFetch() {');
+    return /(^|[^.\w])(?:(?:global|globalThis)\s*\.\s*)?fetch\s*\(/.test(calls) && !mocksFetch;
+  }
+  check(!callsUnmockedFetch("const context = { fetch() { throw new Error('unexpected network'); } };"),
+    '네트워크 차단용 VM fetch 메서드 정의는 실제 호출이 아니다');
+  check(callsUnmockedFetch("fetch('https://example.invalid');"), 'mock 없는 직접 fetch 호출을 탐지한다');
+  check(callsUnmockedFetch("globalThis.fetch('https://example.invalid');"), 'mock 없는 globalThis.fetch 호출을 탐지한다');
+  check(callsUnmockedFetch("const context = { fetch() { return fetch('https://example.invalid'); } };"),
+    'VM 메서드 안의 실제 fetch 호출도 탐지한다');
+  check(!callsUnmockedFetch("global.fetch = async () => ({}); fetch('https://example.invalid');"),
+    '명시적으로 mock된 fetch 호출은 허용한다');
+
   for (const name of scripts) {
     const p = path.join(ROOT, 'scripts', name + '.js');
     if (!fs.existsSync(p)) { check(false, `${name}.js 존재`); continue; }
     const src = strip(fs.readFileSync(p, 'utf8'));
 
-    const mocksFetch = /global\.fetch\s*=/.test(src);
     /*
      * "실제 호출" 의 판정은 URL 문자열이 아니라 fetch 호출이다.
      * scripts/test-ai-monetization.js 는 api/ai.js 소스에서 호출 순서를
      * 정적으로 검사하느라 OpenRouter URL 을 문자열로 들고 있을 뿐, fetch 를
      * 한 번도 부르지 않는다. 문자열만 보면 그런 파일이 전부 오탐이 된다.
      */
-    const callsFetch = /(^|[^.\w])fetch\s*\(/.test(src);
-    if (callsFetch && !mocksFetch) offenders.paid.push(name);
+    if (callsUnmockedFetch(src)) offenders.paid.push(name);
 
     // 운영 Supabase 로 나가는 경로: _supabase 를 require 하면서 가짜를 심지 않음
     const usesSupabase = /require\((['"])\.\.\/api\/_supabase\1\)/.test(src);
