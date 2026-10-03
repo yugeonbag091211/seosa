@@ -1,0 +1,303 @@
+{
+  "schema_version": 1,
+  "generated_by": "scripts/analyze-nomatch.js (SELECT-only)",
+  "snapshot_kst_date": "2026-10-03",
+  "note": "Aggregates only (no titles, IDs or query text). Collector state is the in-progress day snapshot at generation time.",
+  "malls": {
+    "ADPICK": {
+      "attempted": 7125,
+      "covered": 4304,
+      "option": 0,
+      "nomatch": 2821,
+      "causes": {
+        "A_recent_dropped_from_keyword_ranking": 522,
+        "G_stale_not_in_any_answer": 2099,
+        "F_similar_only_in_keyword_answer": 113,
+        "H_exact_item_in_todays_answers": 5,
+        "E_same_title_new_id": 48,
+        "NO_RESULT_empty_answer": 34
+      },
+      "features": {
+        "query_has_option_qty_color": 41,
+        "query_has_promo_special": 2,
+        "title_has_model_code": 930
+      },
+      "ladder": {
+        "recent": {
+          "tried": 27,
+          "recovered": 4,
+          "queries": 27,
+          "stillNomatch": 4
+        },
+        "stale": {
+          "tried": 27,
+          "recovered": 4,
+          "queries": 27,
+          "stillNomatch": 17
+        }
+      },
+      "strategies": {
+        "recent": {
+          "brand_nouns23": {
+            "executed": 3,
+            "exact": 2,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          },
+          "tail_only": {
+            "executed": 22,
+            "exact": 2,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          },
+          "brand_tailnoun": {
+            "executed": 2,
+            "exact": 0,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          }
+        },
+        "stale": {
+          "tail_only": {
+            "executed": 25,
+            "exact": 4,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          },
+          "brand_nouns23": {
+            "executed": 1,
+            "exact": 0,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          },
+          "brand_tailnoun": {
+            "executed": 1,
+            "exact": 0,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          }
+        }
+      },
+      "firstPassGroups": {
+        "mixed": {
+          "groups": 728,
+          "products": 3536,
+          "q1Hits": 1802
+        },
+        "all_recent": {
+          "groups": 319,
+          "products": 1229,
+          "q1Hits": 1024
+        },
+        "all_stale": {
+          "groups": 1002,
+          "products": 2360,
+          "q1Hits": 1335
+        }
+      },
+      "fuzzyFalsePositivesAvoided": 0,
+      "relist": {
+        "candidates": 48,
+        "unique": 43,
+        "uniquePriceWithin30": 40
+      },
+      "counterfactualRecentFirst": {
+        "ladderQueries": 54,
+        "actualRecovered": 8,
+        "recentPool": 658,
+        "untriedRecent": 631,
+        "recentRate": 0.148,
+        "staleRate": 0.148,
+        "queriesPerProduct": {
+          "recent": 1,
+          "stale": 1
+        },
+        "expectedRecovered": 8,
+        "expectedGain": 0
+      }
+    },
+    "쿠팡": {
+      "attempted": 5265,
+      "covered": 2283,
+      "option": 627,
+      "nomatch": 2355,
+      "causes": {
+        "G_stale_not_in_any_answer": 1639,
+        "A_recent_dropped_from_keyword_ranking": 593,
+        "F_similar_only_in_keyword_answer": 60,
+        "E_same_title_new_id": 57,
+        "H_exact_item_in_todays_answers": 6
+      },
+      "features": {
+        "query_has_option_qty_color": 31,
+        "query_has_promo_special": 8,
+        "title_has_model_code": 502
+      },
+      "ladder": {
+        "recent": {
+          "tried": 494,
+          "recovered": 290,
+          "queries": 564,
+          "stillNomatch": 56
+        },
+        "stale": {
+          "tried": 283,
+          "recovered": 20,
+          "queries": 377,
+          "stillNomatch": 142
+        }
+      },
+      "strategies": {
+        "recent": {
+          "title48": {
+            "executed": 314,
+            "exact": 210,
+            "otherOption": 74,
+            "similarDifferentId": 29
+          },
+          "brand_model": {
+            "executed": 88,
+            "exact": 44,
+            "otherOption": 16,
+            "similarDifferentId": 4
+          },
+          "brand_tailnoun": {
+            "executed": 39,
+            "exact": 7,
+            "otherOption": 9,
+            "similarDifferentId": 1
+          },
+          "compressed": {
+            "executed": 7,
+            "exact": 0,
+            "otherOption": 3,
+            "similarDifferentId": 1
+          },
+          "brand_model_noun": {
+            "executed": 18,
+            "exact": 7,
+            "otherOption": 7,
+            "similarDifferentId": 3
+          },
+          "brand_model_split": {
+            "executed": 7,
+            "exact": 1,
+            "otherOption": 1,
+            "similarDifferentId": 0
+          },
+          "brand_nouns23": {
+            "executed": 30,
+            "exact": 15,
+            "otherOption": 4,
+            "similarDifferentId": 2
+          },
+          "tail_only": {
+            "executed": 60,
+            "exact": 7,
+            "otherOption": 3,
+            "similarDifferentId": 2
+          },
+          "model_only": {
+            "executed": 1,
+            "exact": 1,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          }
+        },
+        "stale": {
+          "brand_model": {
+            "executed": 71,
+            "exact": 1,
+            "otherOption": 25,
+            "similarDifferentId": 13
+          },
+          "title48": {
+            "executed": 163,
+            "exact": 16,
+            "otherOption": 72,
+            "similarDifferentId": 37
+          },
+          "brand_tailnoun": {
+            "executed": 51,
+            "exact": 1,
+            "otherOption": 9,
+            "similarDifferentId": 6
+          },
+          "brand_model_noun": {
+            "executed": 28,
+            "exact": 1,
+            "otherOption": 8,
+            "similarDifferentId": 7
+          },
+          "brand_nouns23": {
+            "executed": 24,
+            "exact": 0,
+            "otherOption": 1,
+            "similarDifferentId": 3
+          },
+          "compressed": {
+            "executed": 6,
+            "exact": 0,
+            "otherOption": 1,
+            "similarDifferentId": 0
+          },
+          "brand_model_split": {
+            "executed": 10,
+            "exact": 1,
+            "otherOption": 1,
+            "similarDifferentId": 1
+          },
+          "tail_only": {
+            "executed": 23,
+            "exact": 0,
+            "otherOption": 1,
+            "similarDifferentId": 1
+          },
+          "model_only": {
+            "executed": 1,
+            "exact": 0,
+            "otherOption": 0,
+            "similarDifferentId": 0
+          }
+        }
+      },
+      "firstPassGroups": {
+        "mixed": {
+          "groups": 593,
+          "products": 2531,
+          "q1Hits": 650
+        },
+        "all_stale": {
+          "groups": 860,
+          "products": 1093,
+          "q1Hits": 118
+        },
+        "all_recent": {
+          "groups": 1105,
+          "products": 1618,
+          "q1Hits": 926
+        }
+      },
+      "fuzzyFalsePositivesAvoided": 110,
+      "relist": {
+        "candidates": 57,
+        "unique": 48,
+        "uniquePriceWithin30": 35
+      },
+      "counterfactualRecentFirst": {
+        "ladderQueries": 941,
+        "actualRecovered": 310,
+        "recentPool": 1091,
+        "untriedRecent": 597,
+        "recentRate": 0.587,
+        "staleRate": 0.071,
+        "queriesPerProduct": {
+          "recent": 1.14,
+          "stale": 1.33
+        },
+        "expectedRecovered": 484,
+        "expectedGain": 174
+      }
+    }
+  }
+}
