@@ -22,6 +22,8 @@ const crypto = require('crypto');
 const supabase = require('./_supabase');
 const { parsePrice, coupangItemIds } = require('./_price');
 const { isSameKstDate } = require('./_cache-date');
+const { runProviderQuery, validPayload } = require('./_collector-query');
+const Failure = require('./_collector-failure');
 
 // 테스트에서만 다른 호스트를 물린다. 운영에서는 절대 설정하지 말 것.
 const HOST = process.env.COUPANG_API_HOST || 'https://api-gateway.coupang.com';
@@ -383,6 +385,10 @@ async function readCache(keyword) {
     return {
       items: collapseOptions(allItems),
       allItems,
+      fetchedAt: data.fetched_at,
+      validForLedger: Array.isArray(data.items) && validPayload('coupang', {
+        version: 1, source: 'coupang', items: allItems, allItems, fetchedAt: data.fetched_at
+      }, Date.now()),
       limit: data.req_limit || 0,
       isTodayKst: isSameKstDate(data.fetched_at),
       ageMs: Date.now() - new Date(data.fetched_at).getTime()
@@ -542,6 +548,12 @@ function collapseOptions(items) {
  *   from: 'cache' | 'stale-cache' | 'api' | 'none'
  */
 async function searchCoupang(keyword, opts = {}) {
+  return runProviderQuery('coupang', keyword, opts, beforeRequest => searchCoupangOnce(keyword, {
+    ...opts, _queryBeforeRequest: beforeRequest, _ledgerMode: !!beforeRequest
+  }));
+}
+
+async function searchCoupangOnce(keyword, opts = {}) {
   const {
     limit = 6,
     source = 'unknown',
@@ -553,21 +565,25 @@ async function searchCoupang(keyword, opts = {}) {
   } = opts;
 
   const kw = String(keyword || '').trim().slice(0, 80);
-  if (!kw) return { items: [], error: '키워드 없음', from: 'none', blocked: false };
+  if (!kw) return { items: [], error: '키워드 없음', failureReason: 'INVALID_PRODUCT', from: 'none', blocked: false };
 
   if (!hasKeys()) {
     return {
       items: [], from: 'none', blocked: false,
-      error: 'COUPANG_ACCESS_KEY / COUPANG_SECRET_KEY 환경변수 없음'
+      error: 'COUPANG_ACCESS_KEY / COUPANG_SECRET_KEY 환경변수 없음', failureReason: 'AUTH_ERROR'
     };
   }
 
   // 1) 캐시 — 여기서 끝나면 쿠팡 API 호출은 0회다.
   const cached = useCache ? await readCache(kw) : null;
-  if (cached && cached.isTodayKst && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
+  if (cached && cached.isTodayKst && (!forceRefresh || opts._ledgerMode)
+      && cached.ageMs < (opts._ledgerMode ? 24 * 60 * 60 * 1000 : cacheTtlMs) && cached.limit >= limit
+      && (!opts._ledgerMode || cached.validForLedger)) {
     state.totalCacheHits++;
     log(source, kw, 'CACHE', `age=${Math.round(cached.ageMs / 1000)}s items=${cached.items.length}`);
-    return { items: cached.items.slice(0, limit), allItems: (cached.allItems || cached.items).slice(0, limit), error: null, from: 'cache', blocked: false };
+    return { items: opts._ledgerMode ? cached.items : cached.items.slice(0, limit),
+      allItems: opts._ledgerMode ? (cached.allItems || cached.items) : (cached.allItems || cached.items).slice(0, limit),
+      error: null, from: 'cache', blocked: false, apiCalled: false, resultFetchedAt: cached.fetchedAt };
   }
 
   // 호출을 못 하게 됐을 때의 최선 — 아직 쓸 만큼 최근인 캐시가 있으면 그걸 쓴다.
@@ -575,12 +591,14 @@ async function searchCoupang(keyword, opts = {}) {
   // "아직 쓸 만큼"에 상한이 없으면 몇 주 전 가격을 현재가 자리에 올리게 된다.
   // 그건 결과가 없는 것보다 나쁘다. 사용자는 틀린 걸 모른 채 클릭한다.
   let apiCalled = false;
-  const fallback = (reason, blocked) => {
+  // failureReason: typed cause when this code knows it (api/_collector-failure.js); null = parse reason.
+  const fallback = (reason, blocked, failureReason = null) => {
     state.totalDenied++;
     if (cached && cached.ageMs <= STALE_MAX_MS) {
       log(source, kw, 'STALE-CACHE', `이유=${reason} age=${Math.round(cached.ageMs / 3600000)}h`);
       const staleAll = (cached.allItems || cached.items).slice(0, limit);
-      return { items: cached.items.slice(0, limit), allItems: staleAll, error: reason, from: 'stale-cache', blocked: !!blocked, apiCalled };
+      return { items: cached.items.slice(0, limit), allItems: staleAll, error: reason, failureReason,
+        from: 'stale-cache', blocked: !!blocked, apiCalled };
     }
     if (cached) {
       log(source, kw, 'CACHE-EXPIRED',
@@ -588,12 +606,12 @@ async function searchCoupang(keyword, opts = {}) {
     } else {
       log(source, kw, 'SKIP', `이유=${reason}`);
     }
-    return { items: [], allItems: [], error: reason, from: 'none', blocked: !!blocked, apiCalled };
+    return { items: [], allItems: [], error: reason, failureReason, from: 'none', blocked: !!blocked, apiCalled };
   };
 
   // 2) 인스턴스 리미터 + 서킷 브레이커
   const slot = await reserveSlot(minGapMs, maxWaitMs);
-  if (!slot.ok) return fallback(slot.reason, slot.blocked);
+  if (!slot.ok) return fallback(slot.reason, slot.blocked, slot.blocked ? null : 'RATE_LIMIT');
   if (slot.waitMs > 0) {
     await sleep(slot.waitMs);
     // 대기하는 동안 앞선 호출이 429/403을 받았을 수 있다. 슬롯을 잡을 때 한 번
@@ -609,12 +627,17 @@ async function searchCoupang(keyword, opts = {}) {
   if (!gate.allowed) return fallback(`전역 제한: ${gate.reason}`, /중단|blocked/.test(gate.reason));
 
   // 4) 실제 호출 — 재시도 없음
-  apiCalled = true;
-  state.totalCalls++;
   // 호출자가 요구한 수와 상관없이 공용 캐시용으로 넉넉히 받는다 (FETCH_LIMIT 주석 참고).
   // 상한은 100 이 아니라 COUPANG_MAX_LIMIT(10) 이다. 넘기면 rCode=400.
   const reqLimit = Math.max(1, Math.min(COUPANG_MAX_LIMIT, Math.max(limit, FETCH_LIMIT)));
   const request = buildSearchRequest(kw, reqLimit);
+  if (opts._queryBeforeRequest && !await opts._queryBeforeRequest()) {
+    await dbFinish(gate.callId, 'skipped_query', 0, '', 0);
+    return { items: [], allItems: [], error: 'Query lease unavailable', failureReason: 'SOURCE_ERROR',
+      from: 'none', blocked: false, apiCalled: false };
+  }
+  apiCalled = true;
+  state.totalCalls++;
 
   let r, text;
   /*
@@ -655,7 +678,7 @@ async function searchCoupang(keyword, opts = {}) {
       : `네트워크 오류: ${e.message}`;
     await trip(COOLDOWN_MIN.network, why);
     await dbFinish(gate.callId, timedOut ? 'timeout' : 'network_error', 0, '', 0);
-    return fallback(`쿠팡 ${why}`, false);
+    return fallback(`쿠팡 ${why}`, false, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR');
   } finally {
     clearTimeout(timer);
   }
@@ -668,7 +691,8 @@ async function searchCoupang(keyword, opts = {}) {
     const retryNote = retryAfterMs == null ? '' : ` Retry-After=${Math.ceil(retryAfterMs / 1000)}s`;
     await tripForMs(cooldownMs, `HTTP ${r.status}:${retryNote} ${body}`);
     await dbFinish(gate.callId, 'http_error', r.status, '', 0);
-    return fallback(`쿠팡 API ${r.status}: ${body}`, [401, 403, 429].indexOf(r.status) > -1);
+    return fallback(`쿠팡 API ${r.status}: ${body}`, [401, 403, 429].indexOf(r.status) > -1,
+      Failure.fromHttpStatus(r.status, body));
   }
 
   let data = null;
@@ -687,11 +711,11 @@ async function searchCoupang(keyword, opts = {}) {
     if (looksDenied(peek)) {
       await trip(COOLDOWN_MIN.htmlDenied, `HTML 차단 응답(HTTP 200): ${peek.slice(0, 120)}`);
       await dbFinish(gate.callId, 'blocked_html', r.status, '', 0);
-      return fallback(`쿠팡 접근 차단: ${peek.slice(0, 120)}`, true);
+      return fallback(`쿠팡 접근 차단: ${peek.slice(0, 120)}`, true, 'AUTH_ERROR');
     }
 
     await dbFinish(gate.callId, 'parse_error', r.status, '', 0);
-    return fallback('쿠팡 응답 파싱 실패', false);
+    return fallback('쿠팡 응답 파싱 실패', false, 'SOURCE_ERROR');
   }
 
   const rCode = data.rCode;
@@ -701,11 +725,12 @@ async function searchCoupang(keyword, opts = {}) {
     if (String(rCode) === '400') {
       console.warn(`[coupang] rCode=400 파라미터 오류 (서킷 브레이커 미작동): ${msg}`);
       await dbFinish(gate.callId, 'param_error', r.status, rCode, 0);
-      return { items: [], error: `쿠팡 rCode=400: ${msg}`, from: 'none', blocked: false };
+      return { items: [], error: `쿠팡 rCode=400: ${msg}`, failureReason: 'INVALID_PRODUCT',
+        from: 'none', blocked: false, apiCalled: true };
     }
     await trip(COOLDOWN_MIN.rcode, `rCode=${rCode}: ${msg}`);
     await dbFinish(gate.callId, 'blocked', r.status, rCode, 0);
-    return fallback(`쿠팡 rCode=${rCode}: ${msg}`, true);
+    return fallback(`쿠팡 rCode=${rCode}: ${msg}`, true, Failure.fromHttpStatus(Number(rCode), msg) || 'SOURCE_ERROR');
   }
 
   const allItems = normalize((data.data && data.data.productData) || []);
@@ -722,7 +747,9 @@ async function searchCoupang(keyword, opts = {}) {
   if (useCache) await writeCache(kw, allItems, reqLimit);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);
-  return { items: items.slice(0, limit), allItems: allItems.slice(0, limit), error: null, from: 'api', blocked: false, apiCalled: true };
+  return { items: opts._ledgerMode ? items : items.slice(0, limit),
+    allItems: opts._ledgerMode ? allItems : allItems.slice(0, limit),
+    error: null, from: 'api', blocked: false, apiCalled: true, resultFetchedAt: new Date().toISOString() };
 }
 
 /** 지금 호출이 가능한 상태인지 (네트워크는 건드리지 않는다). */

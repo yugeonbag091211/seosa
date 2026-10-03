@@ -146,6 +146,8 @@ jobs:
 
       - name: Collect all product prices
         env:
+          # Enable only after the additive schema is verified in both Actions and Vercel.
+          PRICE_QUERY_LEDGER: ${{ vars.PRICE_QUERY_LEDGER }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}

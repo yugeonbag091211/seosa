@@ -1,0 +1,807 @@
+{
+  "schema_version": 1,
+  "period": {
+    "from_kst_date": "2026-09-26",
+    "through_kst_date": "2026-10-02"
+  },
+  "collected_at": "2026-10-03T00:43:13.402101+00:00",
+  "repository": "yugeonbag091211/seosa",
+  "main_sha": "dea0f069cb5cd643b930e708a09a05310fdfbc90",
+  "production_access": "Read-only transactions only; no external shopping API calls, DB writes, collector dispatches or lock changes",
+  "normalization": "PostgreSQL NFKC + trim + lower + whitespace collapse. Provider + normalized query + KST date; caller source filtered to collect.",
+  "limitations": [
+    "Coupang rows reserve request slots; pending rows may be requests whose final outcome was not recorded. They remain counted conservatively.",
+    "Historical search response contents and per-request newly matched products are not retained. Dedup replay predicts request savings only, not new price matches or a 90% success rate.",
+    "Safe replay suppresses only calls AFTER an earlier outcome=ok for the same provider/query/date. Errors before the first success remain available for bounded retry.",
+    "Different same-day successful responses may contain different products or prices. Match preservation cannot be established from aggregate call logs alone.",
+    "Historical targets reconstructed from CURRENT catalog/eligible cache/current vendor option have target/option drift. Actual observed target snapshots are reported separately.",
+    "Attempted product sets exist in a mutable singleton resume state, not an immutable daily ledger; 2026-09-27 illustrates reset provenance.",
+    "Coupang keyword logs truncate at 80 characters; zero collector calls hit that boundary in this evidence period."
+  ],
+  "days": [
+    {
+      "calls": 1102,
+      "errors": 0,
+      "kst_date": "2026-09-26",
+      "provider": "adpick",
+      "returned_items": 21874,
+      "unique_queries": 1102,
+      "duplicate_calls": 0,
+      "safely_reusable_calls": 0
+    },
+    {
+      "calls": 3400,
+      "errors": 0,
+      "kst_date": "2026-09-26",
+      "provider": "coupang",
+      "returned_items": 27813,
+      "unique_queries": 3331,
+      "duplicate_calls": 69,
+      "safely_reusable_calls": 69
+    },
+    {
+      "calls": 1876,
+      "errors": 0,
+      "kst_date": "2026-09-27",
+      "provider": "adpick",
+      "returned_items": 36908,
+      "unique_queries": 1797,
+      "duplicate_calls": 79,
+      "safely_reusable_calls": 79
+    },
+    {
+      "calls": 3400,
+      "errors": 1,
+      "kst_date": "2026-09-27",
+      "provider": "coupang",
+      "returned_items": 28381,
+      "unique_queries": 3028,
+      "duplicate_calls": 372,
+      "safely_reusable_calls": 372
+    },
+    {
+      "calls": 1800,
+      "errors": 2,
+      "kst_date": "2026-09-28",
+      "provider": "adpick",
+      "returned_items": 33991,
+      "unique_queries": 1798,
+      "duplicate_calls": 2,
+      "safely_reusable_calls": 0
+    },
+    {
+      "calls": 202,
+      "errors": 0,
+      "kst_date": "2026-09-28",
+      "provider": "coupang",
+      "returned_items": 1713,
+      "unique_queries": 202,
+      "duplicate_calls": 0,
+      "safely_reusable_calls": 0
+    },
+    {
+      "calls": 3000,
+      "errors": 1,
+      "kst_date": "2026-09-29",
+      "provider": "adpick",
+      "returned_items": 58795,
+      "unique_queries": 2761,
+      "duplicate_calls": 239,
+      "safely_reusable_calls": 238
+    },
+    {
+      "calls": 3319,
+      "errors": 7,
+      "kst_date": "2026-09-29",
+      "provider": "coupang",
+      "returned_items": 27347,
+      "unique_queries": 3036,
+      "duplicate_calls": 283,
+      "safely_reusable_calls": 279
+    },
+    {
+      "calls": 2228,
+      "errors": 0,
+      "kst_date": "2026-09-30",
+      "provider": "adpick",
+      "returned_items": 44067,
+      "unique_queries": 2228,
+      "duplicate_calls": 0,
+      "safely_reusable_calls": 0
+    },
+    {
+      "calls": 3400,
+      "errors": 1,
+      "kst_date": "2026-09-30",
+      "provider": "coupang",
+      "returned_items": 27764,
+      "unique_queries": 3396,
+      "duplicate_calls": 4,
+      "safely_reusable_calls": 3
+    },
+    {
+      "calls": 2240,
+      "errors": 1,
+      "kst_date": "2026-10-01",
+      "provider": "adpick",
+      "returned_items": 44197,
+      "unique_queries": 2240,
+      "duplicate_calls": 0,
+      "safely_reusable_calls": 0
+    },
+    {
+      "calls": 3400,
+      "errors": 0,
+      "kst_date": "2026-10-01",
+      "provider": "coupang",
+      "returned_items": 27481,
+      "unique_queries": 3397,
+      "duplicate_calls": 3,
+      "safely_reusable_calls": 3
+    },
+    {
+      "calls": 1872,
+      "errors": 0,
+      "kst_date": "2026-10-02",
+      "provider": "adpick",
+      "returned_items": 37003,
+      "unique_queries": 1872,
+      "duplicate_calls": 0,
+      "safely_reusable_calls": 0
+    },
+    {
+      "calls": 3400,
+      "errors": 2,
+      "kst_date": "2026-10-02",
+      "provider": "coupang",
+      "returned_items": 27449,
+      "unique_queries": 3395,
+      "duplicate_calls": 5,
+      "safely_reusable_calls": 4
+    }
+  ],
+  "duplicate_group_histograms": [
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-26",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 69
+    },
+    {
+      "provider": "adpick",
+      "kst_date": "2026-09-27",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 79
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-27",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 366
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-27",
+      "calls_per_query": 4,
+      "safely_reusable_calls_per_query": 3,
+      "outcomes": {
+        "ok": 4
+      },
+      "query_groups": 2
+    },
+    {
+      "provider": "adpick",
+      "kst_date": "2026-09-28",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 0,
+      "outcomes": {
+        "ok": 1,
+        "other": 1
+      },
+      "query_groups": 1
+    },
+    {
+      "provider": "adpick",
+      "kst_date": "2026-09-28",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 0,
+      "outcomes": {
+        "ok": 1,
+        "timeout": 1
+      },
+      "query_groups": 1
+    },
+    {
+      "provider": "adpick",
+      "kst_date": "2026-09-29",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 238
+    },
+    {
+      "provider": "adpick",
+      "kst_date": "2026-09-29",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 0,
+      "outcomes": {
+        "ok": 1,
+        "timeout": 1
+      },
+      "query_groups": 1
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-29",
+      "calls_per_query": 3,
+      "safely_reusable_calls_per_query": 2,
+      "outcomes": {
+        "ok": 3
+      },
+      "query_groups": 10
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-29",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 259
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-29",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 0,
+      "outcomes": {
+        "ok": 1,
+        "http_error": 1
+      },
+      "query_groups": 4
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-30",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 3
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-09-30",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 0,
+      "outcomes": {
+        "ok": 1,
+        "timeout": 1
+      },
+      "query_groups": 1
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-10-01",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 3
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-10-02",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 1,
+      "outcomes": {
+        "ok": 2
+      },
+      "query_groups": 4
+    },
+    {
+      "provider": "coupang",
+      "kst_date": "2026-10-02",
+      "calls_per_query": 2,
+      "safely_reusable_calls_per_query": 0,
+      "outcomes": {
+        "ok": 1,
+        "timeout": 1
+      },
+      "query_groups": 1
+    }
+  ],
+  "late_run_snapshots": [
+    {
+      "kst_date": "2026-10-02",
+      "run_id": 37000305255,
+      "source_url": "https://github.com/yugeonbag091211/seosa/actions/runs/37000305255",
+      "interpretation": "Late regular run snapshot; later external catch-up or catalog changes may differ",
+      "providers": [
+        {
+          "provider": "coupang",
+          "targets": 5155,
+          "collector_success": 2276,
+          "today_prices_all_sources": 2311,
+          "attempted": 5125,
+          "unattempted": 30,
+          "no_match": 2237,
+          "option_mismatch": 612
+        },
+        {
+          "provider": "adpick",
+          "targets": 7961,
+          "collector_success": 3876,
+          "today_prices_all_sources": 3883,
+          "attempted": 6230,
+          "unattempted": 1731,
+          "no_match": 2354,
+          "option_mismatch": 0
+        }
+      ]
+    },
+    {
+      "kst_date": "2026-10-01",
+      "run_id": 36865960109,
+      "source_url": "https://github.com/yugeonbag091211/seosa/actions/runs/36865960109",
+      "interpretation": "Late regular run snapshot; later external catch-up or catalog changes may differ",
+      "providers": [
+        {
+          "provider": "coupang",
+          "targets": 5141,
+          "collector_success": 2359,
+          "today_prices_all_sources": 2460,
+          "attempted": 5044,
+          "unattempted": 97,
+          "no_match": 2099,
+          "option_mismatch": 586
+        },
+        {
+          "provider": "adpick",
+          "targets": 8090,
+          "collector_success": 4360,
+          "today_prices_all_sources": 4492,
+          "attempted": 7472,
+          "unattempted": 618,
+          "no_match": 3112,
+          "option_mismatch": 0
+        }
+      ]
+    },
+    {
+      "kst_date": "2026-09-30",
+      "run_id": 36707888582,
+      "source_url": "https://github.com/yugeonbag091211/seosa/actions/runs/36707888582",
+      "interpretation": "Late regular run snapshot; later external catch-up or catalog changes may differ",
+      "providers": [
+        {
+          "provider": "coupang",
+          "targets": 5115,
+          "collector_success": 2399,
+          "today_prices_all_sources": 2403,
+          "attempted": 5111,
+          "unattempted": 4,
+          "no_match": 2140,
+          "option_mismatch": 572
+        },
+        {
+          "provider": "adpick",
+          "targets": 7919,
+          "collector_success": 4700,
+          "today_prices_all_sources": 4711,
+          "attempted": 7388,
+          "unattempted": 531,
+          "no_match": 2688,
+          "option_mismatch": 0
+        }
+      ]
+    },
+    {
+      "kst_date": "2026-09-29",
+      "run_id": 36566495859,
+      "source_url": "https://github.com/yugeonbag091211/seosa/actions/runs/36566495859",
+      "interpretation": "Late regular run snapshot; later external catch-up or catalog changes may differ",
+      "providers": [
+        {
+          "provider": "coupang",
+          "targets": 4971,
+          "collector_success": 2199,
+          "today_prices_all_sources": 2250,
+          "attempted": 4957,
+          "unattempted": 14,
+          "no_match": 2240,
+          "option_mismatch": 518
+        },
+        {
+          "provider": "adpick",
+          "targets": 7745,
+          "collector_success": 4959,
+          "today_prices_all_sources": 4963,
+          "attempted": 7272,
+          "unattempted": 473,
+          "no_match": 2313,
+          "option_mismatch": 0
+        }
+      ]
+    },
+    {
+      "kst_date": "2026-09-28",
+      "run_id": 36389179340,
+      "source_url": "https://github.com/yugeonbag091211/seosa/actions/runs/36389179340",
+      "interpretation": "Late regular run snapshot; later external catch-up or catalog changes may differ",
+      "providers": [
+        {
+          "provider": "coupang",
+          "targets": 5081,
+          "collector_success": 296,
+          "today_prices_all_sources": 347,
+          "attempted": 1138,
+          "unattempted": 3943,
+          "no_match": 766,
+          "option_mismatch": 76
+        },
+        {
+          "provider": "adpick",
+          "targets": 7924,
+          "collector_success": 3664,
+          "today_prices_all_sources": 3677,
+          "attempted": 5204,
+          "unattempted": 2720,
+          "no_match": 1540,
+          "option_mismatch": 0
+        }
+      ]
+    },
+    {
+      "kst_date": "2026-09-27",
+      "run_id": 36326922507,
+      "source_url": "https://github.com/yugeonbag091211/seosa/actions/runs/36326922507",
+      "interpretation": "Resume provenance reset: attempted/success are not whole-day values; today_prices comes from history",
+      "providers": [
+        {
+          "provider": "coupang",
+          "targets": 4986,
+          "collector_success": 544,
+          "today_prices_all_sources": 2314,
+          "attempted": 1292,
+          "unattempted": 3694,
+          "no_match": 748,
+          "option_mismatch": 0
+        },
+        {
+          "provider": "adpick",
+          "targets": 8012,
+          "collector_success": 440,
+          "today_prices_all_sources": 4662,
+          "attempted": 647,
+          "unattempted": 7365,
+          "no_match": 207,
+          "option_mismatch": 0
+        }
+      ]
+    },
+    {
+      "kst_date": "2026-09-26",
+      "run_id": 36248702112,
+      "source_url": "https://github.com/yugeonbag091211/seosa/actions/runs/36248702112",
+      "interpretation": "Late regular run snapshot; later external catch-up or catalog changes may differ",
+      "providers": [
+        {
+          "provider": "coupang",
+          "targets": 5014,
+          "collector_success": 2423,
+          "today_prices_all_sources": 2436,
+          "attempted": 5014,
+          "unattempted": 0,
+          "no_match": 2591,
+          "option_mismatch": 0
+        },
+        {
+          "provider": "adpick",
+          "targets": 7673,
+          "collector_success": 2936,
+          "today_prices_all_sources": 2955,
+          "attempted": 4682,
+          "unattempted": 2991,
+          "no_match": 1746,
+          "option_mismatch": 0
+        }
+      ]
+    }
+  ],
+  "current_catalog_history_reconstruction": {
+    "method": "CURRENT catalog and eligible cache, exact rotation and current vendor identity; historical target/option drift unknown",
+    "coverage": [
+      {
+        "mall": "ADPICK",
+        "targets": 7910,
+        "kst_date": "2026-09-26",
+        "daily_targets": 1529,
+        "raw_success_pct": 37.37,
+        "success_collector": 2937,
+        "success_all_sources": 2956
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5265,
+        "kst_date": "2026-09-26",
+        "daily_targets": 2201,
+        "raw_success_pct": 46.21,
+        "success_collector": 2421,
+        "success_all_sources": 2433
+      },
+      {
+        "mall": "ADPICK",
+        "targets": 8209,
+        "kst_date": "2026-09-27",
+        "daily_targets": 1529,
+        "raw_success_pct": 56.79,
+        "success_collector": 4598,
+        "success_all_sources": 4662
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5172,
+        "kst_date": "2026-09-27",
+        "daily_targets": 2201,
+        "raw_success_pct": 44.66,
+        "success_collector": 2205,
+        "success_all_sources": 2310
+      },
+      {
+        "mall": "ADPICK",
+        "targets": 8104,
+        "kst_date": "2026-09-28",
+        "daily_targets": 1529,
+        "raw_success_pct": 45.43,
+        "success_collector": 3638,
+        "success_all_sources": 3682
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5259,
+        "kst_date": "2026-09-28",
+        "daily_targets": 2201,
+        "raw_success_pct": 6.52,
+        "success_collector": 288,
+        "success_all_sources": 343
+      },
+      {
+        "mall": "ADPICK",
+        "targets": 7917,
+        "kst_date": "2026-09-29",
+        "daily_targets": 1529,
+        "raw_success_pct": 62.7,
+        "success_collector": 4945,
+        "success_all_sources": 4964
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5138,
+        "kst_date": "2026-09-29",
+        "daily_targets": 2201,
+        "raw_success_pct": 43.91,
+        "success_collector": 2208,
+        "success_all_sources": 2256
+      },
+      {
+        "mall": "ADPICK",
+        "targets": 8079,
+        "kst_date": "2026-09-30",
+        "daily_targets": 1529,
+        "raw_success_pct": 58.31,
+        "success_collector": 4692,
+        "success_all_sources": 4711
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5265,
+        "kst_date": "2026-09-30",
+        "daily_targets": 2201,
+        "raw_success_pct": 45.62,
+        "success_collector": 2392,
+        "success_all_sources": 2402
+      },
+      {
+        "mall": "ADPICK",
+        "targets": 8122,
+        "kst_date": "2026-10-01",
+        "daily_targets": 1529,
+        "raw_success_pct": 55.31,
+        "success_collector": 4348,
+        "success_all_sources": 4492
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5193,
+        "kst_date": "2026-10-01",
+        "daily_targets": 2201,
+        "raw_success_pct": 47.26,
+        "success_collector": 2352,
+        "success_all_sources": 2454
+      },
+      {
+        "mall": "ADPICK",
+        "targets": 7989,
+        "kst_date": "2026-10-02",
+        "daily_targets": 1529,
+        "raw_success_pct": 48.95,
+        "success_collector": 3855,
+        "success_all_sources": 3911
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5179,
+        "kst_date": "2026-10-02",
+        "daily_targets": 2201,
+        "raw_success_pct": 45.01,
+        "success_collector": 2268,
+        "success_all_sources": 2331
+      }
+    ],
+    "history_rows": 206714,
+    "tracked_rows": 70421,
+    "catalog_snapshot_at": "2026-10-03T00:41:26.626461+00:00"
+  },
+  "rate_and_cache_snapshot": {
+    "snapshot_at": "2026-10-03T00:44:40.419156+00:00",
+    "max_search_calls_rolling_60s": {
+      "adpick": 8,
+      "coupang": 20
+    },
+    "cache_candidate_identity_only": [
+      {
+        "mall": "ADPICK",
+        "targets": 7910,
+        "exact_identity_in_fresh_cache": 3423,
+        "cache_identity_matches_without_today_price": 12
+      },
+      {
+        "mall": "쿠팡",
+        "targets": 5265,
+        "exact_identity_in_fresh_cache": 2289,
+        "cache_identity_matches_without_today_price": 1
+      }
+    ]
+  },
+  "in_progress_snapshot": {
+    "snapshot_at": "2026-10-03T00:37:42.239407+00:00",
+    "kst_date": "2026-10-03",
+    "status": "running",
+    "providers": {
+      "ADPICK": {
+        "target_products": 7910,
+        "attempted_products": 5580,
+        "collected_products": 3329,
+        "today_price_products": 3329,
+        "outcomes": {
+          "time": 2330,
+          "budget": 0,
+          "blocked": 0,
+          "pending": 0,
+          "timeout": 0,
+          "unknown": 0,
+          "db_error": 0,
+          "no_match": 2251,
+          "api_error": 0,
+          "collected": 3329,
+          "rate_limited": 0,
+          "option_mismatch": 0,
+          "already_collected": 0,
+          "target_query_error": 0
+        }
+      },
+      "쿠팡": {
+        "target_products": 5265,
+        "attempted_products": 5259,
+        "collected_products": 2275,
+        "today_price_products": 2283,
+        "outcomes": {
+          "time": 0,
+          "budget": 0,
+          "blocked": 0,
+          "pending": 0,
+          "timeout": 0,
+          "unknown": 0,
+          "db_error": 0,
+          "no_match": 2351,
+          "api_error": 3,
+          "collected": 2275,
+          "rate_limited": 3,
+          "option_mismatch": 625,
+          "already_collected": 8,
+          "target_query_error": 0
+        }
+      }
+    }
+  },
+  "api_outcome_counts": {
+    "adpick_collector_outcomes": [
+      {
+        "calls": 1,
+        "outcome": "other",
+        "http_status": 503,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 2,
+        "outcome": "timeout",
+        "http_status": 0,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 1,
+        "outcome": "other",
+        "http_status": 502,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 14114,
+        "outcome": "ok",
+        "http_status": 200,
+        "zero_result_calls": 72
+      }
+    ],
+    "coupang_collector_outcomes": [
+      {
+        "calls": 1,
+        "outcome": "http_error",
+        "http_status": 401,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 2,
+        "outcome": "timeout",
+        "http_status": 0,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 4,
+        "outcome": "http_error",
+        "http_status": 504,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 1,
+        "outcome": "blocked",
+        "http_status": 200,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 3,
+        "outcome": "pending",
+        "http_status": 0,
+        "zero_result_calls": 0
+      },
+      {
+        "calls": 20510,
+        "outcome": "ok",
+        "http_status": 200,
+        "zero_result_calls": 0
+      }
+    ],
+    "duplicate_excess_price_rows": 0,
+    "duplicate_daily_option_price_groups": 0
+  },
+  "coupang_log_truncation": {
+    "rows_at_80_character_limit": 0,
+    "unique_queries_at_80_character_limit": 0
+  }
+}

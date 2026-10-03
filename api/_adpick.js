@@ -30,6 +30,8 @@
 const supabase = require('./_supabase');
 const { parsePrice } = require('./_price');
 const { isSameKstDate } = require('./_cache-date');
+const { runProviderQuery, validPayload } = require('./_collector-query');
+const Failure = require('./_collector-failure');
 
 const HOST = process.env.ADPICK_API_HOST || 'https://biz.adpick.co.kr';
 
@@ -205,6 +207,10 @@ async function readCache(keyword) {
     if (error || !data) return null;
     return {
       items: Array.isArray(data.items) ? data.items : [],
+      fetchedAt: data.fetched_at,
+      validForLedger: Array.isArray(data.items) && validPayload('adpick', {
+        version: 1, source: 'adpick', items: data.items, allItems: data.items, fetchedAt: data.fetched_at
+      }, Date.now()),
       limit: data.req_limit || 0,
       isTodayKst: isSameKstDate(data.fetched_at),
       ageMs: Date.now() - new Date(data.fetched_at).getTime()
@@ -365,6 +371,12 @@ function normalize(raw) {
  *   from: 'cache' | 'stale-cache' | 'api' | 'none'
  */
 async function searchAdpick(keyword, opts = {}) {
+  return runProviderQuery('adpick', keyword, opts, beforeRequest => searchAdpickOnce(keyword, {
+    ...opts, _queryBeforeRequest: beforeRequest, _ledgerMode: !!beforeRequest
+  }));
+}
+
+async function searchAdpickOnce(keyword, opts = {}) {
   const {
     limit = 10,
     source = 'unknown',
@@ -376,25 +388,30 @@ async function searchAdpick(keyword, opts = {}) {
   } = opts;
 
   const kw = String(keyword || '').trim().slice(0, 80);
-  if (!kw) return { items: [], error: '키워드 없음', from: 'none', blocked: false };
+  if (!kw) return { items: [], error: '키워드 없음', failureReason: 'INVALID_PRODUCT', from: 'none', blocked: false };
 
   if (!hasKey()) {
-    return { items: [], from: 'none', blocked: false, error: 'ADPICK_API_KEY 환경변수 없음' };
+    return { items: [], from: 'none', blocked: false, error: 'ADPICK_API_KEY 환경변수 없음', failureReason: 'AUTH_ERROR' };
   }
 
   const cached = useCache ? await readCache(kw) : null;
-  if (cached && cached.isTodayKst && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
+  if (cached && cached.isTodayKst && (!forceRefresh || opts._ledgerMode)
+      && cached.ageMs < (opts._ledgerMode ? 24 * 60 * 60 * 1000 : cacheTtlMs) && cached.limit >= limit
+      && (!opts._ledgerMode || cached.validForLedger)) {
     state.totalCacheHits++;
     log(source, kw, 'CACHE', `age=${Math.round(cached.ageMs / 1000)}s items=${cached.items.length}`);
-    return { items: cached.items.slice(0, limit), error: null, from: 'cache', blocked: false };
+    return { items: opts._ledgerMode ? cached.items : cached.items.slice(0, limit),
+      error: null, from: 'cache', blocked: false, apiCalled: false, resultFetchedAt: cached.fetchedAt };
   }
 
   let apiCalled = false;
-  const fallback = (reason, blocked) => {
+  // failureReason: typed cause when this code knows it (api/_collector-failure.js); null = parse reason.
+  const fallback = (reason, blocked, failureReason = null) => {
     state.totalDenied++;
     if (cached && cached.ageMs <= STALE_MAX_MS) {
       log(source, kw, 'STALE-CACHE', `이유=${reason} age=${Math.round(cached.ageMs / 3600000)}h`);
-      return { items: cached.items.slice(0, limit), error: reason, from: 'stale-cache', blocked: !!blocked, apiCalled };
+      return { items: cached.items.slice(0, limit), error: reason, failureReason, from: 'stale-cache',
+        blocked: !!blocked, apiCalled };
     }
     if (cached) {
       log(source, kw, 'CACHE-EXPIRED',
@@ -402,7 +419,7 @@ async function searchAdpick(keyword, opts = {}) {
     } else {
       log(source, kw, 'SKIP', `이유=${reason}`);
     }
-    return { items: [], error: reason, from: 'none', blocked: !!blocked, apiCalled };
+    return { items: [], error: reason, failureReason, from: 'none', blocked: !!blocked, apiCalled };
   };
 
   if (state.blockedUntil > Date.now()) {
@@ -414,13 +431,17 @@ async function searchAdpick(keyword, opts = {}) {
     global: globalAcquire ? a => globalAcquire({ ...a, source }) : null,
     isBlocked: () => (state.blockedUntil > Date.now() ? state.blockReason || '차단' : '')
   });
-  if (!slot.ok) return fallback(slot.reason, slot.kind === 'blocked');
+  if (!slot.ok) return fallback(slot.reason, slot.kind === 'blocked', slot.kind === 'blocked' ? null : 'RATE_LIMIT');
 
-  apiCalled = true;
-  state.totalCalls++;
   const reqLimit = Math.max(1, Math.min(ADPICK_MAX_LIMIT, Math.max(limit, FETCH_LIMIT)));
   const url = `${HOST}/api/${encodeURIComponent(process.env.ADPICK_API_KEY)}/search`
     + `?q=${encodeURIComponent(kw)}&limit=${reqLimit}`;
+  if (opts._queryBeforeRequest && !await opts._queryBeforeRequest()) {
+    return { items: [], error: 'Query lease unavailable', failureReason: 'SOURCE_ERROR',
+      from: 'none', blocked: false, apiCalled: false };
+  }
+  apiCalled = true;
+  state.totalCalls++;
 
   /*
    * 여기부터가 "외부 요청 1회" 다. state.totalCalls++ 와 같은 자리에서 시작해
@@ -463,7 +484,7 @@ async function searchAdpick(keyword, opts = {}) {
     // 응답이 아예 오지 않았다 — http_status 는 0 으로 둔다.
     await finish(timedOut ? 'timeout' : 'network_error', 0, 0, why);
     const blocked = noteTransientFailure(COOLDOWN_MIN.network, why);
-    return fallback(`ADPICK ${why}`, blocked);
+    return fallback(`ADPICK ${why}`, blocked, timedOut ? 'TIMEOUT' : 'NETWORK_ERROR');
   } finally {
     clearTimeout(timer);
   }
@@ -479,7 +500,7 @@ async function searchAdpick(keyword, opts = {}) {
     if (hard) trip(mins, `HTTP ${r.status}: ${body}`);
     else if (r.status >= 500) blocked = noteTransientFailure(mins, `HTTP ${r.status}: ${body}`);
     else clearTransientFailures(); // 요청 하나의 4xx는 공급자 전체 장애가 아니다.
-    return fallback(`ADPICK API ${r.status}: ${body}`, blocked);
+    return fallback(`ADPICK API ${r.status}: ${body}`, blocked, Failure.fromHttpStatus(r.status, body));
   }
 
   let data = null;
@@ -489,7 +510,7 @@ async function searchAdpick(keyword, opts = {}) {
     console.error(`[adpick] JSON 아님 (http=${r.status} len=${(text || '').length}): ${peek}`);
     await finish('invalid_response', r.status, 0, `JSON 아님(len=${(text || '').length}): ${peek}`);
     const blocked = noteTransientFailure(COOLDOWN_MIN.apiError, 'ADPICK 응답 파싱 실패');
-    return fallback('ADPICK 응답 파싱 실패', blocked);
+    return fallback('ADPICK 응답 파싱 실패', blocked, 'SOURCE_ERROR');
   }
 
   // success 필드 판정만 한다. 그 이상의 에러 코드 체계는 실측되지 않았으므로 만들지 않는다.
@@ -510,7 +531,8 @@ async function searchAdpick(keyword, opts = {}) {
   if (useCache) await writeCache(kw, items, reqLimit);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);
-  return { items: items.slice(0, limit), error: null, from: 'api', blocked: false, apiCalled: true };
+  return { items: opts._ledgerMode ? items : items.slice(0, limit), error: null, from: 'api', blocked: false,
+    apiCalled: true, resultFetchedAt: new Date().toISOString() };
 }
 
 function isBlocked() {

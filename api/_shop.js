@@ -913,6 +913,8 @@ async function recordPrices(observations, opts = {}) {
      *     숫자 의미가 달라진다. 여기만 원장 성공 여부로 판정한다.
      */
     recordedKeys: historyFailed ? [] : [...new Set(historyRows.map(r => `${r.product_id}|${r.mall}`))],
+    recordedOptions: historyFailed ? [] : historyRows.map(r => ({ product_id: r.product_id, mall: r.mall,
+      vendor_item_id: r.vendor_item_id || '' })),
     rejected,
     suspect,
     optionMismatch,
@@ -973,7 +975,8 @@ async function saveProducts(keyword, items, opts = {}) {
     mallLabel: it.mallLabel
   })), { label: keyword, now: opts.now, source: opts.source || '' });
 
-  return { saved: r.saved, errors: r.errors, rejected: r.rejected, suspect: r.suspect };
+  return { saved: r.saved, errors: r.errors, rejected: r.rejected, suspect: r.suspect,
+    recordedKeys: r.recordedKeys || [], recordedOptions: r.recordedOptions || [] };
 }
 
 /**

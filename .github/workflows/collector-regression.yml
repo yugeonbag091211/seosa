@@ -9,6 +9,17 @@ on:
       - 'scripts/test-collector-scale.js'
       - 'scripts/test-collector-coverage.js'
       - 'api/_blockreason.js'
+      - 'api/_collector-*.js'
+      - 'api/_coupang.js'
+      - 'api/_adpick.js'
+      - 'api/cron.js'
+      - 'scripts/test-collector-*.js'
+      - 'scripts/_collector-sql-harness.js'
+      - 'scripts/replay-collector-efficiency.js'
+      - 'api/_shop.js'
+      - 'package.json'
+      - 'reports/collector-efficiency-*.json'
+      - 'supabase/migrations/**'
       - 'supabase/2026-09-22-collector-target-keyset.sql'
       - '.github/workflows/collector-regression.yml'
   workflow_dispatch:
@@ -17,6 +28,16 @@ jobs:
   collector-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Disposable PostgreSQL for multi-backend claim/progress races (test-collector-ledger-pg.js).
+    # 15 is the older Supabase major; PGlite in the same suite covers 17.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,3 +60,7 @@ jobs:
         run: node scripts/test-collector-coverage.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js
+      - name: Atomic query ledger, global progress, real SQL (PGlite + PostgreSQL 15 races) and replay
+        env:
+          COLLECTOR_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: npm run test:collector-efficiency
