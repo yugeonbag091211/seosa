@@ -65,7 +65,7 @@
     "test:daily-drop": "node scripts/test-daily-drop.js",
     "test:today-drop": "node scripts/test-today-drop.js",
     "test:ai-security-fuzz": "node scripts/test-ai-security-fuzz.js",
-    "test:collector-efficiency": "node scripts/test-collector-query.js && node scripts/test-collector-progress.js && node scripts/test-collector-ledger-db.js && node scripts/test-collector-ledger-pg.js && node scripts/test-collector-efficiency-replay.js"
+    "test:collector-efficiency": "node scripts/test-collector-query.js && node scripts/test-collector-progress.js && node scripts/test-collector-ledger-db.js && node scripts/test-collector-ledger-pg.js && node scripts/test-collector-efficiency-replay.js && node scripts/test-nomatch-recall.js"
   },
   "keywords": [],
   "author": "",

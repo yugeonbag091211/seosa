@@ -1817,8 +1817,10 @@ async function saveState(patch) {
  *
  * ★ 잠금이 영구히 남지 않는다.
  *   프로세스가 죽어 해제를 못 해도 LOCK_TTL_MS 가 지나면 만료로 본다.
- *   TTL 은 한 실행의 최대 시간(RUN_TIME_BUDGET_MS=50분)보다 넉넉히 크고,
- *   cron 최소 간격(UTC 16→18시 = 120분)보다는 작아야 한다. 80분으로 둔다.
+ *   TTL 은 cron 최소 간격(UTC 16→18시 = 120분)보다는 작아야 한다. 80분으로 둔다.
+ *   실행이 TTL 보다 길어도(워크플로 85분) 잠금은 살아 있다 — 체크포인트(90초)가
+ *   쓸 때마다 until 을 TTL 만큼 민다(heartbeat, 레거시·V3 공통). TTL 은 프로세스가
+ *   죽어 heartbeat 가 끊긴 경우에만 효력이 있다.
  */
 const LOCK_TTL_MS = Number(process.env.PRICE_LOCK_TTL_MS) || 80 * 60 * 1000;
 
@@ -4349,9 +4351,13 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
        * 한 검색어가 여러 상품을 덮으면 그만큼 기대값이 크다. 과거 성공률
        * 데이터가 없으므로 통계를 지어내지 않고 이 결정론적 값만 쓴다.
        */
-      const queue = [...byQuery.entries()]
-        .map(([q, rows]) => ({ q, rows }))
-        .sort((a, b) => b.rows.length - a.rows.length);
+      /*
+       * 쿠팡은 하루 예산이 이 큐의 중간에서 끝난다 — 무엇이 먼저 불리느냐가 곧 회수량이다.
+       * 마지막 가격이 최근인 상품(사다리 회수율 59%)을 오래 못 잡은 상품(7%)보다 먼저 부른다.
+       * 같은 회수 확률이면 예전처럼 공유 상품 수 순서다 (api/_collectplan.js orderRecoveryQueue).
+       */
+      const queue = Planner.orderRecoveryQueue([...byQuery.entries()].map(([q, rows]) => ({ q, rows })),
+        { mall: mallName, dayStartMs: Date.parse(kstDayStartUtc(TODAY)) });
 
       let roundCalls = 0, roundHit = 0;
       for (const { q, rows } of queue) {

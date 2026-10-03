@@ -308,6 +308,16 @@ const MAX_CANDIDATES = 10;
  * @returns {string[]}
  */
 function generateSecondPassQueries(product, opts) {
+  return generateSecondPassCandidates(product, opts).map(c => c.query);
+}
+
+/**
+ * generateSecondPassQueries 와 같은 후보·같은 순서에 «어떤 전략인가» 를 붙인다.
+ * 회수 분석(scripts/analyze-nomatch.js)이 전략별 적중률을 셀 때 쓴다 —
+ * 후보 생성 규칙을 두 곳에 두지 않기 위해서다.
+ * @returns {{type:string, query:string}[]}
+ */
+function generateSecondPassCandidates(product, opts) {
   const title = (product && product.title) || '';
   if (!title.trim()) return [];
 
@@ -332,7 +342,7 @@ function generateSecondPassQueries(product, opts) {
   const lastNoun = ns.length ? ns[ns.length - 1] : '';
 
   const raw = [
-    (b && ms.length && ms[0] !== b) ? `${b} ${ms[0]}` : '',     // 1) 브랜드 + 모델코드
+    ['brand_model', (b && ms.length && ms[0] !== b) ? `${b} ${ms[0]}` : ''],     // 1) 브랜드 + 모델코드
     /*
      * 2) 브랜드 + 모델코드 + 꼬리 명사 (2026-09-03 신설)
      *
@@ -344,20 +354,20 @@ function generateSecondPassQueries(product, opts) {
      *      기존 사다리에는 모델코드와 구분 명사를 **함께** 넣는 후보가 없었다
      *      ("쿠쿠 패킹" 은 모델코드가 빠지고, 제목 48자는 노이즈가 낀다).
      */
-    (b && ms.length && tail && tail !== b && tail !== ms[0])
-      ? `${b} ${ms[0]} ${tail}` : '',
-    (b && mSplit) ? `${b} ${mSplit}` : '',                      // 3) 브랜드 + 모델코드(띄어쓴 표기)
-    title,                                                      // 4) 제목 48자
-    (b && tail && tail !== b) ? `${b} ${tail}` : '',            // 5) 브랜드 + 꼬리 명사
-    compressTitle(title, 4),                                     // 6) 제목 압축 (T4)
+    ['brand_model_noun', (b && ms.length && tail && tail !== b && tail !== ms[0])
+      ? `${b} ${ms[0]} ${tail}` : ''],
+    ['brand_model_split', (b && mSplit) ? `${b} ${mSplit}` : ''],  // 3) 브랜드 + 모델코드(띄어쓴 표기)
+    ['title48', title],                                         // 4) 제목 48자
+    ['brand_tailnoun', (b && tail && tail !== b) ? `${b} ${tail}` : ''],  // 5) 브랜드 + 꼬리 명사
+    ['compressed', compressTitle(title, 4)],                    // 6) 제목 압축 (T4)
     /* 7) 모델코드 + 꼬리 명사 — 브랜드 표기가 제각각인 상품용 (2026-09-03 신설) */
-    (ms.length && tail && tail !== ms[0]) ? `${ms[0]} ${tail}` : '',
-    (b && ns.length >= 3) ? `${b} ${ns[1]} ${ns[2]}` : '',       // 8) 브랜드 + 명사 2·3
-    normalizeSpecial(title),                                     // 9) 제목 특수문자 정규화 (T7)
-    ms.length ? ms[0] : '',                                     // 10) 모델코드 단독
+    ['model_noun', (ms.length && tail && tail !== ms[0]) ? `${ms[0]} ${tail}` : ''],
+    ['brand_nouns23', (b && ns.length >= 3) ? `${b} ${ns[1]} ${ns[2]}` : ''],  // 8) 브랜드 + 명사 2·3
+    ['special_normalized', normalizeSpecial(title)],            // 9) 제목 특수문자 정규화 (T7)
+    ['model_only', ms.length ? ms[0] : ''],                     // 10) 모델코드 단독
     /* 11) 예전 4번 — 꼬리 명사가 노이즈를 건너뛰었을 때만 다른 값이 된다 */
-    (b && lastNoun && lastNoun !== b && lastNoun !== tail) ? `${b} ${lastNoun}` : '',
-    (b && sp.length && sp[0] !== b) ? `${b} ${sp[0]}` : '',     // 12) 브랜드 + 규격
+    ['brand_lastnoun', (b && lastNoun && lastNoun !== b && lastNoun !== tail) ? `${b} ${lastNoun}` : ''],
+    ['brand_spec', (b && sp.length && sp[0] !== b) ? `${b} ${sp[0]}` : ''],  // 12) 브랜드 + 규격
     /*
      * 13) 꼬리 명사 단독 (2026-09-03 신설) — 마지막 안전망.
      *
@@ -373,17 +383,17 @@ function generateSecondPassQueries(product, opts) {
      *   사다리 맨 끝이라 앞 후보가 다 실패한 상품에서만 호출된다.
      *   채택 기준은 그대로 product_id 완전 일치라 오매칭 위험은 없다.
      */
-    (tail && tail !== b && tail.length >= 4) ? tail : ''
+    ['tail_only', (tail && tail !== b && tail.length >= 4) ? tail : '']
   ];
 
   const out = [];
-  for (const r of raw) {
+  for (const [type, r] of raw) {
     if (out.length >= cap) break;          // 상품당 상한 (호출 예산 보호)
     const q = normalizeQuery(r);
     if (!q) continue;                      // 신호가 없어 만들지 못한 후보
     if (exclude.has(q)) continue;          // 이미 부른 검색어
-    if (out.indexOf(q) > -1) continue;     // 정규화 후 같아진 후보
-    out.push(q);
+    if (out.some(c => c.query === q)) continue;  // 정규화 후 같아진 후보
+    out.push({ type, query: q });
   }
   return out;
 }
@@ -451,5 +461,5 @@ module.exports = {
   MAX_QUERY_LEN, MAX_CANDIDATES,
   tokenize, normalizeQuery, brandOf, modelsOf, nounsOf, specsOf,
   compressTitle, normalizeSpecial, splitModelCode,
-  generateSecondPassQueries, buildFacetQueries
+  generateSecondPassQueries, generateSecondPassCandidates, buildFacetQueries
 };

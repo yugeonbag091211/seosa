@@ -218,8 +218,54 @@ function expectedWithin(ordered, n) {
   return s;
 }
 
+/*
+ * ── 회수 사다리 순서 (2026-10-03) ──────────────────────────────────────
+ *
+ * P̂(회수 | 몰, 마지막 가격 경과) — 1차에서 못 찾은 상품에 사다리 검색어를 냈을 때
+ * 그 상품(쿠팡 productId+vendorItemId / ADPICK 판매단위)이 정확히 잡힌 비율.
+ * 측정: 2026-10-03 KST 운영 캐시 replay — 그날 수집기가 실제로 낸 사다리 검색어
+ * (쿠팡 1,045회)를 대상 상품과 대조. scripts/analyze-nomatch.js 로 재현한다.
+ *   쿠팡   마지막 가격 ≤7일 전   시도 494개 → 회수 290개 (0.587)
+ *   쿠팡   마지막 가격 >7일 전   시도 283개 → 회수  20개 (0.071)
+ *   ADPICK  시도 49개 (≤7일 4/24, >7일 4/25) — 차이를 말할 표본이 아니라 같은 값.
+ *           같은 값이면 정렬은 «공유 상품 수» 만 남아 예전 순서와 같다.
+ *
+ * ★ 왜 순서가 회수량을 바꾸는가. 쿠팡은 하루 예산을 다 쓰고, 회수 라운드는 예산이
+ *   끝나는 곳에서 잘린다. 예전 큐는 «공유 상품 수» 로만 정렬돼 사실상 카탈로그 순서였고,
+ *   그날 사다리 호출의 37%(391회)가 회수율 7% 상품에 갔다. 같은 호출 수를 회수율
+ *   59% 상품에 먼저 쓰게 할 뿐 호출을 늘리지 않는다. 채택 기준(정확 일치)은 그대로다.
+ * ★ 오래 못 잡은 상품을 버리지 않는다 — 같은 라운드 뒤쪽에 선다. 남는 예산이 있으면
+ *   그대로 불린다.
+ */
+const RECOVERY_PRIOR = Object.freeze({
+  '쿠팡': Object.freeze({ recent: 0.587, stale: 0.071 }),
+  'ADPICK': Object.freeze({ recent: 0.16, stale: 0.16 })
+});
+const RECOVERY_RECENT_DAYS = 7;
+
+/** 사다리 검색어 1회가 이 상품을 정확히 회수할 확률 (위 표). */
+function recoveryProbability(mall, ageDays) {
+  const t = RECOVERY_PRIOR[mall] || RECOVERY_PRIOR['쿠팡'];
+  return ageDays != null && Number.isFinite(ageDays) && ageDays <= RECOVERY_RECENT_DAYS ? t.recent : t.stale;
+}
+
+/**
+ * 회수 라운드 큐 순서: 기대 회수량(Σ 대상 상품의 회수 확률) 내림차순 → 공유 상품 수
+ * 내림차순 → 원래 순서. 경과는 products.collected_at(모든 경로의 마지막 가격 기록,
+ * 운영 실측 97.8% 가 price_history 마지막 날짜와 하루 이내로 일치).
+ * @param {Array<{q:string, rows:Array}>} queue
+ * @param {{mall:string, dayStartMs:number}} ctx
+ */
+function orderRecoveryQueue(queue, { mall, dayStartMs }) {
+  return queue.map((x, i) => ({ x, i, v: x.rows.reduce((s, p) =>
+    s + recoveryProbability(mall, ageDaysOf(p.collected_at, dayStartMs)), 0) }))
+    .sort((a, b) => b.v - a.v || b.x.rows.length - a.x.rows.length || a.i - b.i)
+    .map(e => e.x);
+}
+
 module.exports = {
   PRIOR, INTERVAL_DAYS, URGENCY_CAP, STARVE_DAYS, STARVE_EVERY,
   freshnessClass, urgencyOf, ageDaysOf, scoreProduct, scoreGroup, orderGroups, expectedWithin, hash32,
-  advanceStarveCursor
+  advanceStarveCursor,
+  RECOVERY_PRIOR, RECOVERY_RECENT_DAYS, recoveryProbability, orderRecoveryQueue
 };
