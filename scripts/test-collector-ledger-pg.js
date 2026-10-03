@@ -50,7 +50,7 @@ async function main() {
   end $$;`);
   await admin.query(`grant usage on schema public to service_role`);
   await admin.query(migration);
-  const { rows: [{ v }] } = await admin.query('show server_version');
+  const { rows: [{ v }] } = await admin.query("select current_setting('server_version') as v");
   console.log(`PostgreSQL ${v}, ${N} parallel backends`);
   const clients = await Promise.all(Array.from({ length: N }, connect));
   const date = (await admin.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text as d")).rows[0].d;
