@@ -23,7 +23,7 @@
  *   으로 프롬프트에 적는다. 빈 통계를 0 으로 채워 넣지 않는다.
  */
 const supabase = require('./_supabase');
-const { observedKstDate, kstToday, sameVendorRows } = require('./_price');
+const { observedKstDate, kstToday, sameVendorRows, acceptedObservations } = require('./_price');
 
 /** 조회 창. 역대 최저가를 말하려면 30일(_trust)보다는 길어야 한다. */
 const WINDOW_DAYS = 180;
@@ -355,7 +355,8 @@ async function loadStats(keys, opts) {
     list.forEach(k => {
       const base = `${k.productId}|${k.mall || ''}`;
       const vid = String(k.vendorItemId || '').trim();
-      const picked = exactOptionRows(rowsByKey.get(base) || [], vid, String(k.mall || '') === '쿠팡');
+      /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
+      const picked = acceptedObservations(exactOptionRows(rowsByKey.get(base) || [], vid, String(k.mall || '') === '쿠팡'));
       const st = statsFrom(dailyLowest(picked));
       if (!st) return;
       out.set(`${base}|${vid}`, st);
@@ -376,7 +377,7 @@ async function loadStats(keys, opts) {
      * 폴백 규칙(옵션 표시가 하나도 없는 옛 기록은 예전처럼 상품 단위로 본다)은
      * _price.sameVendorRows 에 있다. 상품 페이지·모달과 같은 함수를 쓴다.
      */
-    const st = statsFrom(dailyLowest(sameVendorRows(rows, vidOf.get(key))));
+    const st = statsFrom(dailyLowest(acceptedObservations(sameVendorRows(rows, vidOf.get(key)))));
     if (st) out.set(key, st);
   });
 
