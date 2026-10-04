@@ -236,7 +236,7 @@ function callHandler(handler, req) {
   const nowIso = new Date().toISOString();
   const products = Array.from({ length: 300 }, (_, i) => ({
     product_id: String(700000 + i), mall: '쿠팡', keyword: '마우스', title: `상품 ${i}`, lprice: 10000,
-    link: `https://www.coupang.com/vp/products/${700000 + i}?vendorItemId=${900000 + i}`, collected_at: nowIso
+    link: `https://link.coupang.com/re/AFFSDP?lptag=AF8789251&pageKey=${700000 + i}&vendorItemId=${900000 + i}`, collected_at: nowIso
   }));
   const history = [];
   products.forEach((p, i) => {

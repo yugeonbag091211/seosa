@@ -701,7 +701,100 @@ function isDisplayable(row, opts) {
   return productLifecycle(row, opts).state === LIFECYCLE.LIVE;
 }
 
+/* ------------------------------------------------------------------ *
+ *  의심 관측 격리 — 읽는 쪽 (2026-10-04 독립 리뷰 재현)
+ *
+ *  쓰는 쪽(classifyPrice → _shop.recordPrices)은 직전 관측 대비 5배 이상 튄
+ *  값을 suspect 로 보고 products 현재가로 올리지 않는다. 원장(price_history)에는
+ *  남긴다 — 다음 관측이 같은 수준이면 그걸로 승격되고, 무슨 일이 있었는지도 남는다.
+ *
+ *  그런데 원장을 «읽는» 화면들은 그 표시를 몰랐다. 원장에는 suspect 표시 컬럼이
+ *  없기 때문이다. 그래서 500,000 → 90,000 단발 관측 하나가 products 는 500,000 으로
+ *  지키는 동안 차트 마지막 점 · 모달·상세 헤드라인 · JSON-LD Offer · AI 가격 근거
+ *  로는 90,000 으로 나갔다.
+ *
+ *  스키마를 바꾸지 않고, 읽을 때 원장을 «같은 규칙으로 다시 재생» 한다.
+ *    · 직전에 «승인된» 관측 대비 SUSPECT_RATIO 배 이상이고 SUSPECT_WINDOW_DAYS 안
+ *      → 의심. 단, 그다음 «날짜» 의 관측이 같은 수준(SUSPECT_RATIO 미만)이면 승격.
+ *    · 같은 날 두 번 저장된 값은 서로를 확인해 주지 못한다(쓰는 쪽도 직전 관측을
+ *      «오늘 이전» 에서만 찾는다).
+ *  행을 지우지 않는다 — 화면 근거에서만 뺀다.
+ * ------------------------------------------------------------------ */
+
+function observedMs(r) {
+  const a = Date.parse(r && r.recorded_at);
+  if (Number.isFinite(a)) return a;
+  const d = Date.parse(String((r && r.recorded_date) || '').slice(0, 10) + 'T00:00:00+09:00');
+  return Number.isFinite(d) ? d : 0;
+}
+
+/** 한 옵션 계열(시간순 정렬)에서 승인된 관측의 집합. */
+function acceptedInSeries(sorted) {
+  const keep = new Set();
+  let acc = null;
+  for (let i = 0; i < sorted.length; i++) {
+    const r = sorted[i];
+    const p = parsePrice(r.price);
+    if (!acc) { keep.add(r); acc = r; continue; }
+    const ap = parsePrice(acc.price);
+    const ratio = p > ap ? p / ap : ap / p;
+    const gap = (observedMs(r) - observedMs(acc)) / 86400000;
+    if (gap > SUSPECT_WINDOW_DAYS || ratio < SUSPECT_RATIO) { keep.add(r); acc = r; continue; }
+    const day = observedKstDate(r);
+    const next = sorted.slice(i + 1).find(x => observedKstDate(x) > day);
+    if (next) {
+      const np = parsePrice(next.price);
+      if ((np > p ? np / p : p / np) < SUSPECT_RATIO) { keep.add(r); acc = r; }
+    }
+  }
+  return keep;
+}
+
+/**
+ * 화면 근거로 써도 되는 관측만 남긴다(원래 순서 유지). 옵션(vendor_item_id)별로 따로 재생한다.
+ * 가격 값이 아닌 행도 뺀다.
+ */
+function acceptedObservations(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const groups = new Map();
+  list.forEach(r => {
+    if (!r || !parsePrice(r.price)) return;
+    const k = String((r.vendor_item_id != null ? r.vendor_item_id : r.vendorItemId) || '');
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  });
+  const keep = new Set();
+  groups.forEach(g => acceptedInSeries(g.slice().sort((a, b) => observedMs(a) - observedMs(b))).forEach(r => keep.add(r)));
+  return list.filter(r => keep.has(r));
+}
+
+/**
+ * 방금 받아온 가격을 «현재가» 로 보여 줘도 되는가.
+ *
+ * @param {Array} rows  그 항목 «한 옵션» 의 원장 행 (오늘 행이 섞여 있어도 된다 — 뺀다)
+ * @param {*} observed  방금 관측한 가격
+ * @returns {{withheld:boolean, acceptedPrice:number}}
+ *   withheld=true 면 이 값은 아직 확인되지 않은 급변이다. acceptedPrice(직전에 승인된
+ *   관측가)를 대신 보여 준다. 다음 날 같은 수준이 다시 관측되면 그때 승격된다.
+ */
+function currentPriceVerdict(rows, observed, now) {
+  const price = parsePrice(observed);
+  if (!price) return { withheld: false, acceptedPrice: 0 };
+  const nowMs = now instanceof Date ? now.getTime() : (Number(now) || Date.now());
+  const today = kstToday(nowMs);
+  const prior = (Array.isArray(rows) ? rows : [])
+    .filter(r => r && parsePrice(r.price) && observedKstDate(r) && observedKstDate(r) < today)
+    .sort((a, b) => observedMs(a) - observedMs(b));
+  if (!prior.length) return { withheld: false, acceptedPrice: price };
+  const candidate = { price, recorded_at: new Date(nowMs).toISOString() };
+  const keep = acceptedInSeries(prior.concat([candidate]));
+  if (keep.has(candidate)) return { withheld: false, acceptedPrice: price };
+  const last = prior.filter(r => keep.has(r)).pop();
+  return { withheld: !!last, acceptedPrice: last ? parsePrice(last.price) : price };
+}
+
 module.exports = {
+  acceptedObservations, currentPriceVerdict,
   MAX_PRICE, SUSPECT_RATIO, SUSPECT_WINDOW_DAYS, OPTION_SWITCH_RATIO, MAX_DISPLAY_AGE_DAYS,
   MAX_PLAUSIBLE_DROP_PCT, LIFECYCLE, DROP_MAX_AGE_DAYS,
   parsePrice, isSanePrice, ageDays, kstToday, kstDayStartUtc, classifyPrice, coupangItemIds, isRefreshableMall,

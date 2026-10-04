@@ -1247,7 +1247,8 @@ async function searchProducts(query, budgetMs) {
      * 신뢰도를 붙인다. /api/search 와 같은 순서·같은 함수다 — 화면에서 보는
      * 배지와 AI 가 말하는 근거가 달라지면 안 된다. 실패해도 검색은 살린다.
      */
-    await runOptional('신뢰도 계산', () => attachTrust(currentItems, { source: from }));
+    // guardPrice: 확인 전 급변(suspect)은 AI 의 현재가 근거로도 쓰지 않는다. 저장은 원래 관측값으로 한다.
+    await runOptional('신뢰도 계산', () => attachTrust(currentItems, { source: from, guardPrice: true }));
 
     /*
      * 관측 저장.
@@ -1320,7 +1321,8 @@ function toCard(it, stat) {
   const card = {
     title: safeText(it && it.title, MAX_TITLE_LEN),
     lprice: num(it && it.lprice),
-    link: String((it && it.link) || ''),
+    // 구매 링크는 공통 관문(_affiliate)을 지난 값만 — 옵션까지 맞아야 한다.
+    link: require('./_affiliate').safeBuyLink(it && it.link, it),
     image: String((it && it.image) || ''),
     mall: safeText((it && it.mall) || '쿠팡', 30),
     isCoupang: !!(it && it.isCoupang),

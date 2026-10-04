@@ -1,5 +1,6 @@
 const supabase = require('./_supabase');
 const { TODAY_PICKS, toClientProduct, roundRobin, preferLive, relevantRows, freshRows } = require('./_shop');
+const { safeBuyLink } = require('./_affiliate');
 /*
  * 가격 하락 판정을 _price.js 로 옮겼다. 옮기기만 한 게 아니라 조건이 늘었다.
  *
@@ -189,7 +190,7 @@ function toDropRow(p) {
      * 가리키고, 모달이 보여줘야 할 것도 바로 그 옵션이다.
      */
     vendorItemId: vendorIdOf(p),
-    link: p.link || '',
+    link: safeBuyLink(p.link, { vendorItemId: vendorIdOf(p) }),
     image: p.image || '',
     lprice: p.current_price,
     oprice: p.prev_price,
@@ -450,3 +451,6 @@ module.exports = async function handler(req, res) {
     fail(res, e, { where: 'init', route: '/api/init', message: '홈 데이터를 불러오지 못했어요.' });
   }
 };
+
+/* 테스트용 노출 — 동작과 무관하다 (scripts/test-affiliate-integrity.js). */
+module.exports._internal = { toDropRow };

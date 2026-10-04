@@ -203,7 +203,7 @@ function rowToItem(row) {
   return {
     title: row.title || '',
     lprice,
-    link: row.link || '',
+    link: require('./_affiliate').safeBuyLink(row.link, row),
     image: row.image || '',
     mall: row.mall || '',
     mallLabel: row.mall_label || '',

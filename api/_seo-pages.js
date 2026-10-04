@@ -26,8 +26,9 @@
 const supabase = require('./_supabase');
 const SEO = require('./_seo');
 const { cachePublic } = require('./_http');
-const { productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS, sameVendorRows, observedKstDate, kstToday } = require('./_price');
+const { productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS, sameVendorRows, acceptedObservations, observedKstDate, kstToday } = require('./_price');
 const { relevantRows } = require('./_shop');
+const { safeBuyLink } = require('./_affiliate');
 const { withDbRetry } = require('./_dberror');
 
 const { SITE, esc, won } = SEO;
@@ -51,7 +52,6 @@ const PID_RE = /^[0-9a-f]{1,64}$/i;
 const SLUG_RE = /^[a-z0-9-]{1,40}$/;
 
 function pageUrl(pid) { return `${SITE}/p/${encodeURIComponent(pid)}`; }
-function safeUrl(u) { const s = String(u == null ? '' : u).trim(); return /^https?:\/\//i.test(s) ? s : ''; }
 function liveCutoffIso() { return new Date(Date.now() - MAX_DISPLAY_AGE_DAYS * 86400000).toISOString(); }
 /** 판매처 표시 이름. ADPICK 은 제휴 네트워크 이름이지 판매처가 아니다 — 몰 이름이 없으면 «제휴몰». */
 function mallName(r) { return r.mall_label || (r.mall === 'ADPICK' ? '제휴몰' : r.mall) || ''; }
@@ -89,7 +89,7 @@ function usable(rows) {
   return (rows || []).filter(r => r
     && productLifecycle(r).state === LIFECYCLE.LIVE
     && !SEO.isNonPurchaseListing(r)      // 렌탈 월 요금·1원 명목가는 «최저가» 가 아니다
-    && safeUrl(r.link)
+    && safeBuyLink(r.link, r)
     && PID_RE.test(String(r.product_id || '')));
 }
 
@@ -304,7 +304,8 @@ async function loadHistory(products) {
     list.forEach(p => {
       const k = `${p.product_id}|${p.mall}`;
       const daily = new Map();
-      sameVendorRows(byKey.get(k) || [], p.vendor_item_id).forEach(r => {
+      /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
+      acceptedObservations(sameVendorRows(byKey.get(k) || [], p.vendor_item_id)).forEach(r => {
         const d = observedKstDate(r);
         if (!d || !(Number(r.price) > 0)) return;
         const cur = daily.get(d);

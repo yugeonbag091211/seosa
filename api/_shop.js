@@ -963,7 +963,8 @@ async function saveProducts(keyword, items, opts = {}) {
     mall: it.mall,
     keyword,
     title: it.title,
-    price: it.lprice,
+    // 화면용으로 현재가를 보류한 항목(_trust guardPrice)도 원장에는 실제 관측값을 남긴다.
+    price: it._observedLprice != null ? it._observedLprice : it.lprice,
     oprice: it.oprice,
     savePct: it.savePct,
     link: it.link,
@@ -985,7 +986,8 @@ function toClientProduct(p) {
   return {
     title: p.title,
     lprice: p.lprice,
-    link: p.link,
+    // 구매 링크는 공통 관문(_affiliate)을 지난 값만 — 옵션(vendor_item_id)까지 맞아야 한다.
+    link: require('./_affiliate').safeBuyLink(p.link, p),
     image: p.image,
     mall: p.mall,
     // 화면 표시용 몰 이름(ADPICK은 cp_name 기반). 없으면 raw mall로 대체 —

@@ -64,6 +64,7 @@ const fakeSupabase = {
       order(c, o) { orders.push({ c, asc: !o || o.ascending !== false }); return q; },
       limit(n) { limitN = n; return q; },
       range(a, b) { rangeFrom = a; rangeTo = b; return q; },
+      abortSignal() { return q; },
       maybeSingle() { single = true; return q; },
       then(resolve) {
         let rows = (db[table] || []).filter(r => filters.every(f => f(r)));
@@ -91,6 +92,12 @@ const fakeSupabase = {
     };
     return q;
   }
+};
+
+/* 직전 관측 RPC(supabase/2026-10-04-price-history-prior-obs.sql)는 아직 없다 — 폴백 경로를 본다. */
+fakeSupabase.rpc = () => {
+  const r = { data: null, error: { message: 'Could not find the function public.price_history_prior_obs in the schema cache', code: 'PGRST202' } };
+  return { abortSignal() { return Promise.resolve(r); }, then(res) { return Promise.resolve(r).then(res); } };
 };
 
 const supabasePath = path.resolve(__dirname, '..', 'api', '_supabase.js');
@@ -172,7 +179,7 @@ function deal(over) {
     source: 'internal-history', source_external_id: 'ext' + id,
     product_id: 'p1', mall: '쿠팡', vendor_item_id: 'v1',
     title: '상품 p1', image: 'https://img/deal.jpg',
-    affiliate_url: 'https://link.coupang.com/deal/' + id,
+    affiliate_url: 'https://link.coupang.com/a/deal' + id,
     current_price: 19800, source_reference_price: 29800,
     deal_status: 'VERIFIED_HOT', hot_score: 84,
     confidence: 'HIGH', identity_confidence: 'EXACT',
@@ -565,7 +572,7 @@ db.hotdeals = [deal()];
   eq(a.badge, 'SEOSA 검증', 'badge');
   eq(a.dealStatus, 'VERIFIED_HOT', 'dealStatus');
   eq(a.hotScore, 84, 'hotScore');
-  eq(a.link, 'https://link.coupang.com/deal/1', 'link — 제휴 링크가 최우선');
+  eq(a.link, 'https://link.coupang.com/a/deal1', 'link — 제휴 링크가 최우선');
   ok(!!a.recordedAt, 'recordedAt', a.recordedAt);
   ok(!!a.previousAt, 'previousAt (무엇과 비교했는지)', a.previousAt);
 
@@ -595,6 +602,41 @@ section('6-2) 노출 수 — 홈은 5개로 시작해 10개씩 펼친다');
   ok(html.includes('Drop.fromTodayDrop'), '새 응답을 기존 카드 모양으로 옮긴다');
   ok(html.includes('Drop.items.slice(0, take)'), 'visible 개수까지만 렌더한다');
   ok(html.includes('class="dbadge'), '카드에 배지 자리가 있다');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ *  6-3. 직전 관측이 «최근 원장 몇 장» 밖에 있어도 찾는다 (2026-10-04)
+ *
+ *  운영 실측: 카탈로그가 7만 개가 되고 수집기가 순환하면서, 오늘 관측된
+ *  계열의 직전 관측은 대부분 2~7일 전이다. 예전 구현은 «오늘 이전 원장을
+ *  최신순 3,000행» 만 훑어서 4,136 계열 중 57개(1.4%)만 직전 가격을 찾았고,
+ *  홈 핫딜이 1장이었다. 상품 id 로 직접 찾으면 같은 날 197장이었다.
+ * ════════════════════════════════════════════════════════════════ */
+section('6-3) 직전 관측이 최근 원장 3,000행 밖이어도 찾는다');
+{
+  const keep = { ph: db.price_history, products: db.products, hotdeals: db.hotdeals };
+  const filler = Array.from({ length: 3200 }, (_, i) =>
+    ph(YESTERDAY, '23:00', 5000, { product_id: 'f' + i, vendor_item_id: 'fv' + i, title: '다른 상품 ' + i }));
+  db.price_history = [
+    ph(dayOffset(-3), '10:00', 12000, { product_id: 'pz', vendor_item_id: 'vz', title: '상품 pz' }),
+    ph(TODAY, '03:00', 9000, { product_id: 'pz', vendor_item_id: 'vz', title: '상품 pz' }),
+    // 창(8일) 밖의 직전 관측만 있는 계열 — 근거가 너무 오래돼 비교하지 않는다.
+    ph(dayOffset(-20), '10:00', 30000, { product_id: 'po', vendor_item_id: 'vo', title: '상품 po' }),
+    ph(TODAY, '03:00', 20000, { product_id: 'po', vendor_item_id: 'vo', title: '상품 po' })
+  ].concat(filler);
+  db.products = [];
+  db.hotdeals = [];
+
+  const r = await call({ view: 'today-drop', limit: 60 });
+  const ids = (r.body.items || []).map(i => i.productId);
+  ok(ids.indexOf('pz') > -1, '★ 3일 전 관측과 비교한 하락 카드가 나온다 (사이에 다른 관측 3,200행)', ids.join(','));
+  const pz = (r.body.items || []).find(i => i.productId === 'pz');
+  eq(pz && pz.previousPrice, 12000, '★ 비교 대상은 그 계열의 직전 관측 가격');
+  eq(pz && pz.previousAt && pz.previousAt.slice(0, 10) <= dayOffset(-3), true, '★ previousAt 이 무엇과 비교했는지 밝힌다');
+  ok(ids.indexOf('po') === -1, '조회 창(8일) 밖의 관측과는 비교하지 않는다 — 지어내지 않는다', ids.join(','));
+  eq(r.body.stats.priorMatched, 1, 'stats: 직전 관측을 찾은 계열 수');
+
+  db.price_history = keep.ph; db.products = keep.products; db.hotdeals = keep.hotdeals;
 }
 
 /* ══════════════════════════════════════════════════════════════════
