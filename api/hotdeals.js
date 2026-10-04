@@ -531,8 +531,16 @@ const LEDGER_PAGE = 1000;
  * 한 번에 이만큼을 «동시에» 던지고, 마지막 장이 꽉 차 있으면 한 묶음 더 간다.
  */
 const TODAY_MAX_PAGES = Number(process.env.HOME_DROP_TODAY_PAGES) || 4;
-/** 직전 관측을 몇 장까지 훑을지. fetchPriorRows 주석의 실측 참고. */
-const PRIOR_MAX_PAGES = Number(process.env.HOME_DROP_PRIOR_PAGES) || 3;
+/** 직전 관측을 며칠 전까지 거슬러 볼지. fetchPriorRows 주석의 실측 참고. */
+const PRIOR_LOOKBACK_DAYS = Number(process.env.HOME_DROP_PRIOR_DAYS) || 8;
+/** 직전 관측 조회를 동시에 몇 개까지 띄울지. */
+const PRIOR_CONCURRENCY = 24;
+/**
+ * 직전 관측 조회의 시간 예산(ms). 넘기면 그때까지 찾은 것만 쓴다 — 못 찾은
+ * 계열은 «직전 관측 없음» 으로 빠질 뿐 하락을 지어내지 않는다. Vercel 10초
+ * 한도 안에서 오늘치·상품 조회 몫을 남겨 둔다.
+ */
+const PRIOR_BUDGET_MS = Number(process.env.HOME_DROP_PRIOR_BUDGET_MS) || 4500;
 /** 오늘치가 예상보다 많을 때 추가로 더 갈 수 있는 묶음 수. 무한정 커지지 않게 한다. */
 const TODAY_MAX_ROUNDS = 3;
 /** products 를 한 번에 물어볼 최대 상품 수. URL 길이 상한을 넘기지 않기 위한 값. */
@@ -594,49 +602,74 @@ async function fetchTodayRows(dayStartIso) {
 }
 
 /**
- * 오늘 관측된 계열들의 «직전 관측» 한 점씩.
+ * 오늘 관측된 계열들의 «직전 관측» 후보 행.
  *
- * ── 왜 이렇게 읽는가 ───────────────────────────────────────────────
+ * ── 왜 상품 id 로 직접 찾는가 (2026-10-04 운영 실측) ──────────────────
  *
- * 계열마다 «오늘 이전의 가장 최근 관측» 을 따로 물어보면 2,000번이 넘는
- * 질의가 된다. 대신 오늘 경계보다 앞선 행을 recorded_at 내림차순으로 훑으면,
- * 한 계열을 «처음 만나는 순간» 그것이 곧 그 계열의 가장 최근 직전 관측이다.
- * 그래서 계열당 첫 번째 것만 담고 나머지는 버린다.
+ * 예전에는 오늘 경계보다 앞선 원장을 최신순으로 3,000행만 훑었다. 하루
+ * 관측이 2천 건이고 같은 상품을 매일 다시 보던 2026-09-21 에는 그 3,000행이
+ * 오늘 계열의 92.7% 를 덮었다. 카탈로그가 7만 개가 되고 수집기가 순환하자
+ * 직전 관측은 대부분 며칠 전이 됐다 — 오늘 4,136 계열 중 57개(1.4%)만
+ * 찾았고 홈 핫딜은 1장이었다. 같은 날 직전 관측까지의 간격은
+ *   1일 이내 1,360 · 2~3일 94 · 4~7일 2,346 · 8~14일 49 · 15일+ 416
+ * 이었다.
  *
- * ★ 장을 동시에 던지므로 도착 순서는 믿을 수 없다. 그래서 «요청한 장 번호
- *   순서» 로 다시 세워서 훑는다 — 그래야 앞 장(=더 최근)이 먼저다.
+ * 그래서 오늘 계열의 product_id 로 (product_id 인덱스를 타고) 직접 찾는다.
+ * 창은 PRIOR_LOOKBACK_DAYS(8일)이다 — 같은 날 실측으로 3,809 계열을 찾고
+ * 카드 197장을 만들었다(30일 창은 233장이지만 읽는 행이 3배). 창 밖의
+ * 관측과는 비교하지 않는다. 너무 오래된 값과의 차이를 «오늘 하락» 이라고
+ * 부르지 않기 위해서다.
  *
- * 2026-09-21 운영 실측 (오늘 관측 2,134 계열)
- *   1장(1,000행) → 939 계열 확보
- *   2장           → 1,864
- *   3장           → 1,979   ← 채택. 오늘 관측 계열의 92.7%
- *   5장           → 1,980
- *   40장          → 2,002   ← 천장이다 (나머지 132 계열은 오늘이 첫 관측)
- *
- * 3장과 40장이 만들어내는 카드가 같다는 것도 같은 날 확인했다(둘 다 24장).
- * 3장 위로 더 가도 찾는 계열은 23개뿐인데 왕복은 13번 늘어난다.
- *
- * ★ 상한에 걸려 못 찾은 계열은 «직전 관측 없음» 이 되어 목록에서 빠진다.
- *   근거가 없는 하락을 지어내느니 빠지는 쪽이 맞다 — 다만 그 수를 stats 에
- *   남겨서, 상한이 실제로 무엇을 자르고 있는지 언제든 셀 수 있게 한다.
+ * ★ 판정(«오늘 이전의 가장 최근 관측») 은 그대로 _todaydrop 이 한다.
+ *   여기서는 후보 행을 모을 뿐이다 — pickPriorRows 가 계열당 하나를 고른다.
+ * ★ 조각 하나가 실패하거나 예산을 넘겨도 목록 전체를 버리지 않는다. 그
+ *   계열들만 «직전 관측 없음» 이 된다 — 그 수는 stats 에 남는다.
  */
-async function fetchPriorRows(dayStartIso) {
-  const chunks = await Promise.all(
-    Array.from({ length: PRIOR_MAX_PAGES }, (_, i) => {
-      const from = i * LEDGER_PAGE;
-      return fetchLedgerPage(
-        supabase.from('price_history').select(LEDGER_COLS)
-          .lt('recorded_at', dayStartIso)
-          .order('recorded_at', { ascending: false })
-          .range(from, from + LEDGER_PAGE - 1)
-      );
-    })
-  );
+async function fetchPriorRows(dayStartIso, todayRows) {
+  const ids = Array.from(new Set((todayRows || []).map(r => r && r.product_id).filter(Boolean)));
+  const since = new Date(Date.parse(dayStartIso) - PRIOR_LOOKBACK_DAYS * 86400000).toISOString();
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += PRODUCT_LOOKUP_CHUNK) chunks.push(ids.slice(i, i + PRODUCT_LOOKUP_CHUNK));
 
-  let scanned = 0;
   const rows = [];
-  chunks.forEach(c => { scanned += c.length; rows.push(...c); });
-  return { rows, pages: PRIOR_MAX_PAGES, scanned };
+  const out = { rows, chunks: chunks.length, done: 0, scanned: 0, capped: 0, errors: 0, lookbackDays: PRIOR_LOOKBACK_DAYS };
+  let next = 0;
+  let closed = false;
+
+  async function worker() {
+    while (!closed && next < chunks.length) {
+      const chunk = chunks[next++];
+      try {
+        const data = await fetchLedgerPage(
+          supabase.from('price_history').select(LEDGER_COLS)
+            .in('product_id', chunk)
+            .lt('recorded_at', dayStartIso)
+            .gte('recorded_at', since)
+            .order('recorded_at', { ascending: false })
+            .limit(LEDGER_PAGE)
+        );
+        if (closed) return;
+        out.done++;
+        out.scanned += data.length;
+        // 상한에 닿으면 가장 오래된 쪽이 잘린다 — 최신순이라 직전 관측은 남는다.
+        if (data.length >= LEDGER_PAGE) out.capped++;
+        rows.push(...data);
+      } catch (e) {
+        if (closed) return;
+        out.errors++;
+      }
+    }
+  }
+
+  let timer = null;
+  const budget = new Promise(resolve => { timer = setTimeout(resolve, PRIOR_BUDGET_MS); });
+  await Promise.race([
+    Promise.all(Array.from({ length: Math.min(PRIOR_CONCURRENCY, chunks.length) }, worker)),
+    budget
+  ]);
+  clearTimeout(timer);
+  closed = true;
+  return out;
 }
 
 /**
@@ -772,14 +805,15 @@ async function loadTodayDrops(limit) {
   if (!dayStart) throw new Error('KST 날짜 경계를 만들 수 없습니다');
 
   /*
-   * 세 질의는 서로의 결과를 필요로 하지 않는다. 직렬로 기다리면 그만큼
-   * 그대로 응답 시간이 된다 — 한 번에 던진다 (위 «왜 동시에» 주석 참고).
+   * 오늘치와 검증 행은 서로의 결과를 필요로 하지 않는다 — 한 번에 던진다
+   * (위 «왜 동시에» 주석 참고). 직전 관측은 오늘 계열의 상품 id 로 찾으므로
+   * 오늘치 다음이다. 검증 행 조회는 그동안 계속 달린다.
    */
-  const [today_, prior, deals] = await Promise.all([
-    fetchTodayRows(dayStart),
-    fetchPriorRows(dayStart),
-    fetchVerifiedDeals(new Date().toISOString())
-  ]);
+  const dealsP = fetchVerifiedDeals(new Date().toISOString());
+  dealsP.catch(() => {});   // 아래에서 await 한다. 그 전에 실패해도 처리되지 않은 거부로 남기지 않는다.
+  const today_ = await fetchTodayRows(dayStart);
+  const prior = await fetchPriorRows(dayStart, today_.rows);
+  const deals = await dealsP;
 
   const todayRows = today_.rows;
   const wanted = new Set(todayRows.map(TD.seriesKeyOf));
@@ -801,8 +835,12 @@ async function loadTodayDrops(limit) {
       todayPages: today_.pages,
       todaySeries: wanted.size,
       priorMatched: priorRows.length,
-      priorPages: prior.pages,
+      priorLookbackDays: prior.lookbackDays,
+      priorChunks: prior.chunks,
+      priorChunksDone: prior.done,
       priorScanned: prior.scanned,
+      priorCapped: prior.capped,
+      priorErrors: prior.errors,
       lowered: built.stats.lowered,
       passed: built.stats.passed,
       cards: built.stats.cards,
@@ -1018,5 +1056,5 @@ module.exports._internal = {
   toExternalListItem, toCommunityListItem, externalStatus, loadExternal, isMissingExternalTable,
   byDailyDrop, dropAmountOf,
   loadTodayDrops, toTodayDropItem, linkFor, imageFor, fetchTodayRows, fetchPriorRows,
-  fetchVerifiedDeals, fetchProducts, pickPriorRows, LEDGER_COLS, TODAY_MAX_PAGES, PRIOR_MAX_PAGES
+  fetchVerifiedDeals, fetchProducts, pickPriorRows, LEDGER_COLS, TODAY_MAX_PAGES, PRIOR_LOOKBACK_DAYS
 };

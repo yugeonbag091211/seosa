@@ -788,5 +788,72 @@ check(kept.items.length === 1 && kept.dropped === 0,
   '★ 걸러내기는 원점수로 한다 — 감점 때문에 상품이 사라지면 안 된다', kept);
 
 
+/* ================================================================ *
+ *  P. 옵션 칸의 호환 모델 · «포함» 묶음 (2026-10-04 운영 실측)
+ *
+ *  운영 "에어팟 프로 2" 검색·AI 응답에서 그대로 가져온 상품명이다.
+ *    검색  3위   3,000원 실리콘 케이스      0.8
+ *          4위 209,000원 에어팟 프로 2 본품  0.8  ← «케이스 포함» 때문에 부속 감점
+ *    AI    «추천: 5세컨즈 실리콘 … 케이스 — 3,000원 · 이번 후보 중 최저가»
+ *  쿠팡 상품명은 «판매 상품명, 색상, 수량, 호환 모델» 순이라 검색어가 맨 뒤
+ *  옵션 칸에만 닿는다. 부속 낱말이 검색어 «앞» 에 있으니 본품으로 읽혔다.
+ * ================================================================ */
+section('P. 옵션 칸의 호환 모델 · «포함» 묶음');
+
+const AP_MAIN = 'Apple 에어팟 프로 2 Magsafe 충전 케이스 포함, 인이어 액티브 노이즈 캔슬링, 블루투스 이어폰, USB-C';
+const AP_CASE = '5세컨즈 실리콘 지문방지 슬림 이어폰 케이스 + 카라비너 세트, 다크그린, 1개, 에어팟 프로2';
+const AP_RING = '아이몰 분실방지 핸드폰 거치 맥세이프 도어락 케이스, 핑크, 1개, 에어팟 Pro / Pro2';
+const AP_RESELL = '[셀러허브] Apple 에어팟 프로 2세대 USB-C 타입 (MTJV3KH/A) Fs (S16732076)[이마트몰] [16732076]';
+const AP_TITLES = [AP_RESELL, AP_CASE, AP_MAIN, AP_RING];
+
+check(focusRel('에어팟 프로 2', AP_MAIN, AP_TITLES) > focusRel('에어팟 프로 2', AP_CASE, AP_TITLES),
+  '★ [에어팟 프로 2] 본품 > 옵션 칸에 모델이 적힌 실리콘 케이스',
+  { 본품: focusRel('에어팟 프로 2', AP_MAIN, AP_TITLES), 케이스: focusRel('에어팟 프로 2', AP_CASE, AP_TITLES) });
+check(focusRel('에어팟 프로 2', AP_MAIN, AP_TITLES) > focusRel('에어팟 프로 2', AP_RING, AP_TITLES),
+  '★ [에어팟 프로 2] 본품 > 옵션 칸에 모델이 적힌 도어락 케이스');
+check(score('에어팟 프로 2', AP_MAIN, AP_TITLES) === 1,
+  '★ «충전 케이스 포함» 은 본품의 구성이다 — 커버리지 감점 없음', score('에어팟 프로 2', AP_MAIN, AP_TITLES));
+check(score('에어팟 프로 2', '에어팟 프로 2 실리콘 케이스 (키링 포함)', AP_TITLES) < 1,
+  '«포함» 이 다른 낱말에 붙은 진짜 케이스는 그대로 감점');
+check(score('아이폰 16', '아이폰 16 강화유리 필름 (케이스 포함)') < 1,
+  '묶음 표시는 바로 앞 낱말만 풀어 준다 — 강화유리·필름은 그대로 감점');
+
+{
+  const items = [
+    { productId: 'resell', mall: 'ADPICK', title: AP_RESELL, lprice: 440000 },
+    { productId: 'case', mall: '쿠팡', title: AP_CASE, lprice: 3000 },
+    { productId: 'main', mall: '쿠팡', title: AP_MAIN, lprice: 209000 },
+    { productId: 'ring', mall: '쿠팡', title: AP_RING, lprice: 12900 }
+  ];
+  const sorted = S.sortByRelevance(S.rankItems('에어팟 프로 2', items, { minScore: 0 }).items);
+  check(sorted[0].productId === 'main',
+    '★ 검색 정렬: 본품 최저가(209,000원)가 1위 — 3,000원 케이스가 앞서지 않는다',
+    sorted.map(x => [x.productId, x.relevance, x.lprice]));
+  const idx = id => sorted.findIndex(x => x.productId === id);
+  check(idx('case') > idx('resell') && idx('ring') > idx('resell'),
+    '★ 검색 정렬: 부속은 모든 본품 뒤', sorted.map(x => x.productId));
+}
+
+{
+  const f = S.filterMainProductCandidates('에어팟 프로 2', [
+    { title: AP_CASE, lprice: 3000 }, { title: AP_RING, lprice: 12900 }, { title: AP_MAIN, lprice: 209000 }
+  ]);
+  check(f.items.length === 1 && f.items[0].title === AP_MAIN,
+    '★ AI 후보: 옵션 칸 호환 케이스 2건을 걸러내고 본품만 남긴다', f.items.map(x => x.title));
+}
+
+/* ── 부작용 가드 ── */
+check(S.productFocus(S.analyzeQuery('에어팟 프로 2 케이스'), AP_CASE).factor === 1,
+  '케이스를 찾는 검색어면 옵션 칸 규칙도 감점하지 않는다');
+check(S.productFocus(S.analyzeQuery('에어팟 프로 2'), 'Apple 정품 무선 이어폰, 화이트, 에어팟 프로 2').factor === 1,
+  '첫 칸에 부속 낱말이 없으면 옵션 칸에 모델이 있어도 본품');
+check(S.productFocus(S.analyzeQuery('에어팟 프로 2'), 'Apple 무선 충전 케이스 포함 이어폰, 화이트, 에어팟 프로 2').factor === 1,
+  '첫 칸의 부속 낱말이 «포함» 묶음이면 본품');
+check(S.productFocus(S.analyzeQuery('갤럭시 S25'), '삼성 정품 25W 고속 충전기, 화이트, 1개, 갤럭시 S25').factor < 1,
+  '옵션 칸에 모델이 적힌 충전기는 부속');
+check(S.productFocus(S.analyzeQuery('노트북'), '노트북 거치대 1,000개 판매 돌파 알루미늄').factor < 1,
+  '숫자 안의 쉼표(1,000)는 칸 구분이 아니다 — 기존 꼬리 규칙 그대로');
+
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);

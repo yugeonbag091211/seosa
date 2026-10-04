@@ -4764,6 +4764,27 @@ var Track = {
     if (!name || Track._once[name]) return;
     Track._once[name] = true;
     Track.ev(name);
+  },
+
+  /*
+   * 제휴 링크 클릭 — 상품 단위 행(funnel_events) (2026-10-04).
+   *
+   * 예전에는 히어로 책등·헤드폰만 이 이벤트를 보냈고, 검색 결과·가격 모달·
+   * 핫딜·AI 카드의 구매 클릭은 날짜 카운터(external_shop_click)로만 남았다.
+   * 그래서 «무엇이 어느 몰로, 어느 화면에서 눌렸는가» 를 답할 수 없었다.
+   * 히어로 책등과 같은 모양(src·mall·pid·vid)이고 가격은 «화면에 보인
+   * 관측값» 이다. 구매가 아니라 클릭이다 (api/_funnel.js 머리말).
+   * src 는 서버 화이트리스트(_funnel.SOURCES) 이름만 쓴다.
+   */
+  affiliate: function(it, src) {
+    if (!it) return;
+    var qs = 'event=affiliate_click&src=' + encodeURIComponent(src || '');
+    if (it.mall) qs += '&mall=' + encodeURIComponent(it.mall);
+    if (it.productId) qs += '&pid=' + encodeURIComponent(it.productId);
+    var price = Fmt.int(it.lprice);
+    if (price > 0) qs += '&price=' + price;
+    try { qs += '&vid=' + encodeURIComponent(Track.vid()); } catch (e) {}
+    Track.ping(qs);
   }
 };
 
@@ -5959,6 +5980,8 @@ var Card = {
     // 따로 심어 둔다 — Card.read가 이 값으로 되찾는다.
     return '<div class="card" data-glyph="' + glyph + '"'
       + ' data-pid="' + Fmt.esc(it.productId || '') + '"'
+      // data-vid: 옵션 식별자. Drop 행의 data-vid 와 같은 이유다(Drop.rowHTML 주석).
+      + ' data-vid="' + Fmt.esc(it.vendorItemId || '') + '"'
       + ' data-mall="' + Fmt.esc(it.mall || '') + '">'
       + Card.thumbHTML(it, m, glyph)
       + '<div class="info">'
@@ -6018,6 +6041,15 @@ var Card = {
       mallLabel: stored.mallLabel || mall,
       // 가격 그래프·알림이 상품명이 아니라 상품 단위로 붙도록 같이 넘긴다.
       productId: pid || stored.productId || '',
+      /*
+       * 옵션 식별자 (2026-10-04 운영 실측으로 추가).
+       *
+       * 빠져 있던 동안 검색·홈 카드에서 연 가격 모달은 vendorItemId 없이
+       * /api/history 를 불렀고, 서버는 옵션을 좁히지 못해 같은 상품 페이지의
+       * 다른 옵션 가격까지 한 곡선으로 섞었다 — "드립백 봉투" 2,500원 카드의
+       * 그래프 최고가가 다른 옵션의 42,000원이었다. Drop.read 와 같은 기준이다.
+       */
+      vendorItemId: card.dataset.vid || stored.vendorItemId || '',
       link: stored.link || '',
       image: stored.image || '',
       // 서버가 계산한 신뢰도. 가격 모달이 근거를 그대로 다시 보여준다.
@@ -7270,6 +7302,14 @@ var Search = {
      */
     var heroEl = document.querySelector('.hero');
     if (heroEl) heroEl.style.display = 'none';
+    /*
+     * 히어로 캐러셀도 접는다 (2026-10-04 390×844 실측).
+     * 접지 않으면 모바일에서 780px 밴드가 결과 위에 남아, 검색 직후 첫 카드의
+     * 가격·구매 버튼이 화면 밖(y≈1,100)에 있었다. 캐러셀은 화면 밖이면 스스로
+     * 멈춘다(HeroCarousel.paused.out). goHome 이 되돌린다.
+     */
+    var bandEl = document.querySelector('.hero-band');
+    if (bandEl) bandEl.style.display = 'none';
 
     show('results', true);
     show('sortBar', false);
@@ -7684,6 +7724,8 @@ var Search = {
     }
     var heroEl = document.querySelector('.hero');
     if (heroEl) heroEl.style.display = '';
+    var bandEl = document.querySelector('.hero-band');
+    if (bandEl) bandEl.style.display = '';
 
     show('monthly',   AppState.ready.monthly);
     show('recent',    AppState.ready.recent);
@@ -9275,7 +9317,10 @@ var Chat = {
       ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
       : '';
 
-    return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.safeUrl(it.link)) + '">'
+    return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.safeUrl(it.link)) + '"'
+      // 제휴 클릭 계측용 (Track.affiliate). 화면에는 쓰지 않는다.
+      + ' data-pid="' + Fmt.esc(it.productId || '') + '" data-mall="' + Fmt.esc(it.mall || '') + '"'
+      + ' data-price="' + Fmt.int(it.lprice) + '">'
       + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>' + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mprice">' + Fmt.won(it.lprice) + '원</div>'
@@ -11058,6 +11103,7 @@ var Actions = {
     var info = Card.read(el.closest('.card'));
     trackCardOrigin(el);
     Track.ev('external_shop_click');
+    if (info && Fmt.safeUrl(info.link)) Track.affiliate(info, el.closest('#resGrid') ? 'search' : 'home');
     Recent.addViewed(info);
     openLink(info && info.link);
   },
@@ -11069,6 +11115,7 @@ var Actions = {
     e.stopPropagation();
     var info = Drop.read(el.closest('.dcard'));
     Track.ev('external_shop_click');
+    if (Fmt.safeUrl(info.link)) Track.affiliate(info, 'hotdeal');
     Recent.addViewed(info);
     openLink(info.link);
   },
@@ -11151,7 +11198,12 @@ var Actions = {
   'chat-suggest': function(el) { Chat.send(el.dataset.q); },
   'chat-clear':   function() { Chat.clear(); },
   'ai-login':     function() { Chat.loginFromGuest(); },
-  'mini-go':      function(el) { openLink(el.dataset.link); },
+  'mini-go':      function(el) {
+    if (Fmt.safeUrl(el.dataset.link)) {
+      Track.affiliate({ mall: el.dataset.mall, productId: el.dataset.pid, lprice: el.dataset.price }, 'ai');
+    }
+    openLink(el.dataset.link);
+  },
 
   // ── 모달 ──
   'close-modal': function() { Modal.close(); },
@@ -11163,6 +11215,7 @@ var Actions = {
     var it = AppState.modalItem;
     if (!it) return;
     Track.ev('external_shop_click');
+    if (Fmt.safeUrl(it.link)) Track.affiliate(it, 'product');
     Recent.addViewed(it);
     openLink(it.link);
   },

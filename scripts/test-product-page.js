@@ -237,6 +237,23 @@ function seed() {
     const ad = await call({ __route: 'page', pid: 'a3f9c2' });
     ok(ad.status === 200 && /알리에서 보기/.test(ad.text), 'ADPICK 상품은 표시 몰 이름으로 버튼을 만든다');
   }
+  {
+    /*
+     * 2026-10-04 운영 실측: 쿠팡 23,339행 중 6행이 네이버 가격비교 경유 링크
+     * (/re/PCSNAVERPCSDP, lptag=다른 파트너)였고, /p/ 페이지가 그 링크로 구매
+     * 버튼을 냈다. 누르면 SEOSA 제휴 추적이 없다. 링크가 없는 상품과 같게 다룬다.
+     */
+    const PCS = 'https://link.coupang.com/re/PCSNAVERPCSDP?pageKey=5475665757&ctag=5475665757&lptag=l000000000000&itemId=93189768786&vendorItemId=95176818964&spec=10305198';
+    db.products.push({ id: 99, product_id: '60864925310', mall: '쿠팡', keyword: '무선 이어폰', title: '로랜텍 커널형 버즈 무선 블루투스이어폰 RSM-R510', lprice: 19800, oprice: 19800, save_pct: 0, link: PCS, image: '', collected_at: daysAgoIso(68), item_id: '93189768786', vendor_item_id: '95176818964' });
+    const r = await call({ __route: 'page', pid: '60864925310' });
+    ok(r.status === 200 && r.text.indexOf('PCSNAVERPCSDP') < 0 && /판매처 링크 없음/.test(r.text),
+      '★ 제휴 추적이 없는 쿠팡 가격비교 링크로는 구매 버튼을 만들지 않는다');
+    const j = await call({ __route: 'product', pid: '60864925310' });
+    ok(j.body && j.body.product && j.body.product.link === '', '★ JSON(?p= 딥링크)도 그 링크를 내보내지 않는다', j.body && j.body.product && j.body.product.link);
+    const keep = await call({ __route: 'product', pid: '1001' });
+    ok(keep.body.product.link === 'https://link.coupang.com/a/1001', '제휴 링크는 그대로 나간다');
+    db.products = db.products.filter(p => p.id !== 99);
+  }
 
   section('3. __route=sitemap (XML)');
   {

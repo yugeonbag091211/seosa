@@ -339,6 +339,9 @@ const ACCESSORY_WORDS = [
   '보호', '액정보호', '강화유리', '충전기', '어댑터', '케이블', '받침대'
 ];
 
+/** 바로 앞 낱말이 «본품에 딸려 오는 것» 임을 밝히는 표시 ("케이스 포함", "충전기 증정"). */
+const BUNDLE_MARK_RE = /^(포함|증정|동봉|내장|사은품|included)$/;
+
 /* ------------------------------------------------------------------ *
  *  3-b. 핵심 명사 정렬 (단일 토큰 포화 해소)
  *
@@ -625,10 +628,19 @@ function productFocus(analysis, rawTitle) {
   if (/베벨|리프팅|카세트|브래킷|브라켓|부품|교체/.test(norm)) tiers.push(['기어', 0.45]);
   if (compatible) tiers.push(['display', 0.72]);
   if (compatible && /\breplacement\b/.test(norm)) tiers.push(['scanner', 0.45]);
+  /*
+   * 쿠팡 상품명은 «판매 상품명, 색상, 수량, 호환 모델» 순이다. 검색어가 쉼표
+   * 뒤 옵션 칸에서야 처음 닿고 첫 칸(판매 상품명)에 부속 낱말이 있으면, 그
+   * 부속이 판매 대상이다 — 위치만 앞일 뿐 명시적 호환 관계와 같은 증거다.
+   * (2026-10-04 운영: "…슬림 이어폰 케이스 + 카라비너 세트, 다크그린, 1개,
+   *  에어팟 프로2" 3,000원이 AI 추천 1순위였다.)
+   */
+  const seg = commaSegments(rawTitle, core.length);
+  const optionTarget = !!seg && seg[at] > 0;
   let factor = 1, hit = '';
   for (let i = 0; i < core.length; i++) {
     // Before the query anchor, only an explicit target relation is evidence.
-    if (i < at && !compatible) continue;
+    if (i < at && !compatible && !(optionTarget && seg[i] === 0)) continue;
     for (const [w, weight] of tiers) {
       if (!accessoryTermAt(w, core, i)) continue;
       if (i === at && !compatible && !analysis.tokens.some(tok => {
@@ -649,14 +661,28 @@ function productFocus(analysis, rawTitle) {
       }
       // A supplied accessory is not the sold object. Both prefix giveaways and
       // trailing bundles stay available; no category/brand dictionary needed.
-      if (core[i + 1] && /^(포함|증정|동봉|내장|사은품|included)$/.test(core[i + 1])) continue;
+      if (core[i + 1] && BUNDLE_MARK_RE.test(core[i + 1])) continue;
       const adjusted = compatible ? Math.min(weight, 0.4) : weight;
       if (adjusted < factor) { factor = adjusted; hit = w; }
     }
   }
   if (!hit) return none;
 
-  return { factor, at, accessory: hit, reason: `${compatible ? 'compat-acc' : 'tail-acc'}:${hit}` };
+  const kind = compatible ? 'compat-acc' : (optionTarget ? 'option-acc' : 'tail-acc');
+  return { factor, at, accessory: hit, reason: `${kind}:${hit}` };
+}
+
+/**
+ * core 토큰마다 «쉼표+공백» 으로 나뉜 몇 번째 칸에 있는지. 칸이 하나뿐이거나
+ * 토큰 수가 어긋나면 null — 그때는 칸 정보 없이 예전 규칙만 쓴다.
+ * 공백 없는 쉼표(1,000 · 갤럭시S26,S26플러스)는 칸 구분으로 보지 않는다.
+ */
+function commaSegments(rawTitle, count) {
+  const parts = String(rawTitle || '').split(/,\s+/);
+  if (parts.length < 2) return null;
+  const out = [];
+  parts.forEach((p, k) => splitTokens(normalizeText(p)).forEach(() => out.push(k)));
+  return out.length === count ? out : null;
 }
 
 /** 상품명을 한 번만 분석해 두고 여러 검색어에 재사용한다. */
@@ -763,7 +789,14 @@ function scoreTitle(analysis, title) {
   if (modelTotal && !modelHit) { score *= MODEL_MISS_PENALTY; reasons.push('model-miss'); }
 
   const queryHasAccessory = ACCESSORY_WORDS.some(w => analysis.normalized.indexOf(w) > -1);
-  if (!queryHasAccessory && ACCESSORY_WORDS.some(w => T.flat.indexOf(w) > -1)) {
+  /*
+   * «충전 케이스 포함» 의 케이스는 본품의 구성이다 (2026-10-04 운영 실측:
+   * "에어팟 프로 2" 본품 209,000원이 이 감점으로 3,000원 케이스와 0.8 동점이
+   * 되어 가격순으로 그 아래에 섰다). productFocus 와 같은 묶음 표시 규칙으로,
+   * 바로 뒤에 «포함·증정…» 이 붙은 토큰만 빼고 본다.
+   */
+  const soldFlat = T.tokens.filter((t, i) => !BUNDLE_MARK_RE.test(T.tokens[i + 1] || '')).join('');
+  if (!queryHasAccessory && ACCESSORY_WORDS.some(w => soldFlat.indexOf(w) > -1)) {
     score *= ACCESSORY_PENALTY;
     reasons.push('accessory');
   }

@@ -977,6 +977,24 @@ async function saveProducts(keyword, items, opts = {}) {
 }
 
 /**
+ * SEOSA 제휴 추적이 없는 쿠팡 링크인가.
+ *
+ * 2026-10-04 운영 실측: 쿠팡 23,339행 중 6행(2026-07-27~28, 네이버 연동 시절
+ * 수집분)이 네이버 가격비교 경유 링크(/re/PCSNAVERPCSDP, lptag=다른 파트너)다.
+ * 나머지는 전부 파트너스 API 가 준 제휴 링크(/re/AFF…, /a/…)다. 이 링크로
+ * 구매 버튼을 내면 클릭이 SEOSA 수익으로 잡히지 않는다 — 링크 없음으로 다룬다.
+ * 가격비교(PCS) 경유라는 사실만 본다. 파트너 id 를 코드에 박지 않는다.
+ */
+function isUntrackedCoupangLink(link) {
+  try {
+    const u = new URL(String(link || ''));
+    return u.hostname === 'link.coupang.com' && /^\/re\/PCS/i.test(u.pathname);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * products 테이블 행 → 프론트가 쓰는 상품 모양.
  * rec.js / init.js가 각자 똑같이 풀어 쓰던 것을 한 곳으로 모은 것이라
  * 컬럼이 늘어나도 한 군데만 고치면 된다.
@@ -985,7 +1003,7 @@ function toClientProduct(p) {
   return {
     title: p.title,
     lprice: p.lprice,
-    link: p.link,
+    link: isUntrackedCoupangLink(p.link) ? '' : p.link,
     image: p.image,
     mall: p.mall,
     // 화면 표시용 몰 이름(ADPICK은 cp_name 기반). 없으면 raw mall로 대체 —
