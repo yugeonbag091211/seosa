@@ -133,12 +133,14 @@ console.log('\n[5] 상품 카드 변환');
 {
   const c = toCard({
     productId: '9', title: '테스트 상품', lprice: 12345,
-    link: 'https://link.coupang.com/x', image: 'https://img/x.jpg',
+    link: 'https://link.coupang.com/re/AFFSDP?lptag=AF8789251&pageKey=9&vendorItemId=19', image: 'https://img/x.jpg',
     mall: '쿠팡', isCoupang: true
   });
   eq(c.title, '테스트 상품', '상품명');
   eq(c.lprice, 12345, '가격은 정수');
-  eq(c.link, 'https://link.coupang.com/x', '링크 보존');
+  eq(c.link, 'https://link.coupang.com/re/AFFSDP?lptag=AF8789251&pageKey=9&vendorItemId=19', '링크 보존');
+  eq(toCard({ productId: '9', title: 'x', lprice: 1, link: 'https://link.coupang.com/re/AFFSDP?lptag=AF0000000&pageKey=9' }).link, '',
+    '다른 파트너 lptag 링크는 카드에 싣지 않는다 (공통 관문)');
   eq(c.isCoupang, true, '쿠팡 플래그 보존');
   eq(Object.keys(c).sort().join(','),
     'image,isCoupang,link,lprice,mall,productId,title',

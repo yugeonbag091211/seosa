@@ -100,7 +100,8 @@ const PLACEMENTS = [
   const chatAt = html.indexOf('html += AFF_NOTE_HTML;');
   const gridAt = html.indexOf(`html += '<div class="mini-grid">'`);
   ok(chatAt > -1 && gridAt > chatAt && gridAt - chatAt < 200, 'AI 카드: 고지가 mini-grid 바로 앞');
-  ok(/res\.items\.some\(function\(it\) \{ return it && Fmt\.safeUrl\(it\.link\); \}\)\) html \+= AFF_NOTE_HTML/.test(html),
+  // 2026-10-04: «링크 있음» 의 판정은 구매 링크 관문(Fmt.buyUrl)이다 — 막힌 링크만 있는 답변에는 고지를 넣지 않는다.
+  ok(/res\.items\.some\(function\(it\) \{ return it && Fmt\.buyUrl\(it\.link, it\); \}\)\) html \+= AFF_NOTE_HTML/.test(html),
      'AI 카드: 링크 있는 카드가 하나라도 있을 때만 (링크 없는 답변에는 넣지 않는다)');
 
   section('4. 문구는 모든 자리에서 같고 줄이지 않았다');
@@ -139,7 +140,9 @@ const PLACEMENTS = [
   ok(html.includes('href="https://link.coupang.com/a/hb5vuuKbV6" target="_blank" rel="noopener noreferrer sponsored nofollow"'), '히어로 헤드폰 쿠팡 링크 그대로');
   ok(html.includes('href="https://biz.adpick.co.kr/r4544668" target="_blank" rel="noopener noreferrer sponsored nofollow"'), '히어로 ADPICK 링크 그대로');
   ok(html.includes("window.open(url, '_blank', 'noopener,noreferrer');"), 'openLink: 원래 URL 을 그대로 새 탭으로');
-  ok(/function openLink\(link\) \{\s*var url = Fmt\.safeUrl\(link\);/.test(html), 'openLink: 링크 가공 없음');
+  // 2026-10-04: 구매 링크 관문(Fmt.buyUrl)을 지난다. 관문은 링크를 통과(같은 문자열) 또는
+  // 차단('')할 뿐 고쳐 쓰지 않는다 — 실제 동작은 scripts/test-user-flow.js 가 실행해서 본다.
+  ok(/function openLink\(link, it\) \{\s*var url = Fmt\.buyUrl\(link, it\);/.test(html), 'openLink: 링크 가공 없음 (관문 통과 시 원문 그대로)');
 
   section('8. 내 레이더 페이지(radar.html)');
   const rn = noteAt(radarHtml, 'radar');
@@ -193,7 +196,7 @@ const PLACEMENTS = [
   const kst = n => new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
   // ADPICK commissionlink 모양 — 추적 쿼리가 한 글자라도 바뀌면 안 된다
   const ADPICK_LINK = 'https://adpick.co.kr/?ac=click&site=abc123&ad=987&pid=a3f9c2&sub=seosa&url=https%3A%2F%2Fwww.ssg.com%2Fitem%2FitemView.ssg%3FitemId%3D1000&x=1';
-  const COUPANG_LINK = 'https://link.coupang.com/re/AFFSDP?lptag=AF1234567&pageKey=7001&itemId=8001&vendorItemId=9001&traceid=V0-153';
+  const COUPANG_LINK = 'https://link.coupang.com/re/AFFSDP?lptag=AF8789251&pageKey=7001&itemId=8001&vendorItemId=9001&traceid=V0-153';
   db.products.push(
     { id: 1, product_id: 'a3f9c2', mall: 'ADPICK', mall_label: 'SSG', keyword: '무선 이어폰', title: '무선 이어폰 A', lprice: 12000, oprice: 12000, save_pct: 0, link: ADPICK_LINK, image: '', collected_at: nowIso, item_id: '', vendor_item_id: '' },
     { id: 2, product_id: '7001', mall: '쿠팡', keyword: '무선 이어폰', title: '무선 이어폰 B', lprice: 22000, oprice: 22000, save_pct: 0, link: COUPANG_LINK, image: '', collected_at: nowIso, item_id: '8001', vendor_item_id: '9001' },

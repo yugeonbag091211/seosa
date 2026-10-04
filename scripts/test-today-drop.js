@@ -64,6 +64,7 @@ const fakeSupabase = {
       order(c, o) { orders.push({ c, asc: !o || o.ascending !== false }); return q; },
       limit(n) { limitN = n; return q; },
       range(a, b) { rangeFrom = a; rangeTo = b; return q; },
+      abortSignal() { return q; },
       maybeSingle() { single = true; return q; },
       then(resolve) {
         let rows = (db[table] || []).filter(r => filters.every(f => f(r)));
@@ -91,6 +92,12 @@ const fakeSupabase = {
     };
     return q;
   }
+};
+
+/* 직전 관측 RPC(supabase/2026-10-04-price-history-prior-obs.sql)는 아직 없다 — 폴백 경로를 본다. */
+fakeSupabase.rpc = () => {
+  const r = { data: null, error: { message: 'Could not find the function public.price_history_prior_obs in the schema cache', code: 'PGRST202' } };
+  return { abortSignal() { return Promise.resolve(r); }, then(res) { return Promise.resolve(r).then(res); } };
 };
 
 const supabasePath = path.resolve(__dirname, '..', 'api', '_supabase.js');
@@ -172,7 +179,7 @@ function deal(over) {
     source: 'internal-history', source_external_id: 'ext' + id,
     product_id: 'p1', mall: '쿠팡', vendor_item_id: 'v1',
     title: '상품 p1', image: 'https://img/deal.jpg',
-    affiliate_url: 'https://link.coupang.com/deal/' + id,
+    affiliate_url: 'https://link.coupang.com/a/deal' + id,
     current_price: 19800, source_reference_price: 29800,
     deal_status: 'VERIFIED_HOT', hot_score: 84,
     confidence: 'HIGH', identity_confidence: 'EXACT',
@@ -565,7 +572,7 @@ db.hotdeals = [deal()];
   eq(a.badge, 'SEOSA 검증', 'badge');
   eq(a.dealStatus, 'VERIFIED_HOT', 'dealStatus');
   eq(a.hotScore, 84, 'hotScore');
-  eq(a.link, 'https://link.coupang.com/deal/1', 'link — 제휴 링크가 최우선');
+  eq(a.link, 'https://link.coupang.com/a/deal1', 'link — 제휴 링크가 최우선');
   ok(!!a.recordedAt, 'recordedAt', a.recordedAt);
   ok(!!a.previousAt, 'previousAt (무엇과 비교했는지)', a.previousAt);
 

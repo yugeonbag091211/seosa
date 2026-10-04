@@ -17,6 +17,7 @@
 require('./_env');
 const supabase = require('../api/_supabase');
 const notify   = require('../api/_notify');
+const { firstSafeBuyLink } = require('../api/_affiliate');
 const { kstToday, kstDayStartUtc, observedKstDate, sameVendorRows } = require('../api/_price');
 
 const DROP_THRESHOLD = 0.05; // 5% 이상 하락 시 알림
@@ -378,7 +379,8 @@ async function run() {
       title: alert.title,
       currentPrice: cur,
       mall: alert.mall || todayRow.mall || '',
-      link: alert.link || todayRow.link || '',
+      // 메일의 구매 링크도 공통 관문을 지난다 — 오늘 관측한 옵션(curVid)과 맞아야 한다.
+      link: firstSafeBuyLink([alert.link, todayRow.link], { vendorItemId: curVid }),
       image: alert.image || ''
     };
 

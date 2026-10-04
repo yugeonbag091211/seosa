@@ -31,8 +31,9 @@
 const supabase = require('./_supabase');
 const SEO = require('./_seo');
 const { toClientProduct, freshRows, relevantRows, preferLive } = require('./_shop');
+const { safeBuyLink } = require('./_affiliate');
 const { attachTrust } = require('./_trust');
-const { observedKstDate, kstToday, productLifecycle, sameVendorRows, LIFECYCLE } = require('./_price');
+const { observedKstDate, kstToday, productLifecycle, sameVendorRows, acceptedObservations, LIFECYCLE } = require('./_price');
 const { statsFrom } = require('./_pricestat');
 const { dealOf } = require('./_deal');
 const { cachePublic } = require('./_http');
@@ -151,7 +152,8 @@ async function loadPoints(pid, mall, vendorItemId) {
     .limit(MAX_ROWS);
   if (error) throw new Error(error.message);
   const byDate = new Map();
-  sameVendorRows(data || [], vendorItemId).forEach(r => {
+  /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
+  acceptedObservations(sameVendorRows(data || [], vendorItemId)).forEach(r => {
     const d = observedKstDate(r);
     if (!d) return;
     const cur = byDate.get(d);
@@ -237,7 +239,8 @@ function observedDays(rows, vendorItemId) {
 function isIndexableProduct(row, days) {
   return !!row
     && productLifecycle(row).state === LIFECYCLE.LIVE
-    && !!safeUrl(row.link)
+    // 구매 링크가 공통 관문을 통과해야 색인한다 — 추적 없는 링크만 가진 상품은 noindex.
+    && !!safeBuyLink(row.link, row)
     && !!cleanPid(row.product_id)
     && !SEO.isNonPurchaseListing(row)
     && Number(days) >= INDEX_MIN_DAYS;
@@ -415,7 +418,7 @@ function renderPage(v, siblings, ctx) {
   const img = safeUrl(product.image);
   // 검색엔진·공유 카드가 나중에 가져가도 열리는 이미지만 밖으로 낸다 (_seo.isDurableImage).
   const shareImg = SEO.isDurableImage(img) ? img : '';
-  const link = safeUrl(product.link);
+  const link = safeBuyLink(product.link, product);
   const url = pageUrl(product.productId);
   const last = points.length ? points[points.length - 1].date : '';
   const desc = describeForMeta(v);

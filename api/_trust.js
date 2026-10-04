@@ -31,7 +31,7 @@
  */
 
 const supabase = require('./_supabase');
-const { ageDays, vendorIdOf, isRefreshableMall, parsePrice, kstToday, observedKstDate } = require('./_price');
+const { ageDays, vendorIdOf, isRefreshableMall, parsePrice, kstToday, observedKstDate, acceptedObservations, currentPriceVerdict } = require('./_price');
 
 /* ── 임계값 ─────────────────────────────────────────────────────── */
 
@@ -363,7 +363,34 @@ async function attachTrust(items, opts = {}) {
      * 30일 이력이 통째로 안 보이게 되어, 멀쩡한 상품이 "기록 없음"으로 떨어진다.
      * 폴백 동작은 vendor_item_id 도입 이전과 같으므로 회귀가 아니다.
      */
-    const points = history.get(`${base}|${vid}`) || history.get(base) || [];
+    // 의심 관측(확인 전 급변)은 신뢰도 근거에서도 뺀다 — _price.acceptedObservations.
+    const points = acceptedObservations(history.get(`${base}|${vid}`) || history.get(base) || []);
+
+    /*
+     * ★ 방금 받아온 가격이 확인 전 급변이면 현재가로 내보내지 않는다 (opts.guardPrice).
+     *
+     *   2026-10-04 독립 리뷰 재현: 승인 현재가 500,000 → 단발 관측 90,000.
+     *   저장(recordPrices)은 products 를 500,000 으로 지키는데, 검색·AI 응답은
+     *   API 가 준 90,000 을 그대로 보여 줬다. 같은 옵션의 원장으로 재생해서
+     *   확인 전이면 직전 승인가를 보여 준다. 다음 날 같은 수준이 다시 관측되면
+     *   그때 승격된다(쓰는 쪽과 같은 규칙).
+     *
+     *   원래 관측값은 원장에 남아야 한다 — 저장(_shop.saveProducts)이 이 항목을
+     *   나중에 저장해도 90,000 을 기록하도록 열거되지 않는 속성에 둔다(JSON 응답에는
+     *   실리지 않는다).
+     */
+    if (opts.guardPrice) {
+      const v = currentPriceVerdict(history.get(`${base}|${vid}`) || [], it.lprice);
+      if (v.withheld) {
+        if (!Object.prototype.hasOwnProperty.call(it, '_observedLprice')) {
+          Object.defineProperty(it, '_observedLprice', { value: it.lprice, enumerable: false, writable: true });
+        }
+        it.lprice = v.acceptedPrice;
+        it.oprice = v.acceptedPrice;
+        it.savePct = 0;
+        it.priceWithheld = true;
+      }
+    }
 
     /*
      * ★ 출처는 항목별로 본다. 배치 하나로 뭉뚱그리면 안 된다.

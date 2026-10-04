@@ -4623,6 +4623,8 @@ select:focus-visible,textarea:focus-visible,
  *  [1] CONST — 매직넘버 통합
  * ========================================================== */
 var CONST = {
+  /* SEOSA 쿠팡 파트너스 lptag — api/_affiliate.SEOSA_COUPANG_LPTAG 와 같은 값. 모든 SEOSA 쿠팡 링크에 공개적으로 실려 있다. */
+  COUPANG_LPTAG: 'AF8789251',
   SKELETON: {
     DELAY_MS: 180,   // 이 시간 안에 응답 오면 스켈레톤 아예 안 띄움
     MIN_MS:   300,   // 한 번 뜨면 최소 이만큼은 유지
@@ -4934,7 +4936,7 @@ function isSearching() { var r = $('results'); return r ? r.style.display === 'b
  * 같은 상품명이 네이버와 쿠팡에 동시에 있는 일이 흔해서 title만 쓰면
  * 나중에 그려진 카드가 앞의 것을 덮어쓰고, 구매 버튼이 다른 몰 링크를 연다.
  */
-function productKey(title, mall, productId) {
+function productKey(title, mall, productId, vendorItemId) {
   // productId 는 몰 안에서 고유하다. 있으면 그걸로 키를 만든다.
   //
   // title+mall 로만 만들면 같은 몰에 같은 이름의 다른 상품이 있을 때
@@ -4946,7 +4948,13 @@ function productKey(title, mall, productId) {
   // 구분자는 NUL — 상품명·몰 이름에 절대 들어갈 수 없다.
   // (예전엔 소스에 NUL 바이트를 직접 넣어 두어서 grep 이 이 파일을 바이너리로 취급했다)
   var SEP = '\u0000';
-  if (productId) return 'id' + SEP + String(productId) + SEP + String(mall || '');
+  /*
+   * 옵션(vendorItemId)까지 키에 넣는다 (2026-10-04 독립 리뷰 재현).
+   * 같은 productId 의 옵션 A(2,500원)·B(42,000원)가 이 맵 하나를 공유하면, B 를
+   * 그린 순간 A 카드가 읽는 링크가 B 로 바뀌었다 — «가격은 A, 링크는 B».
+   * 가격·옵션·링크가 같은 옵션 스냅숏에서 나오게 한다.
+   */
+  if (productId) return 'id' + SEP + String(productId) + SEP + String(mall || '') + SEP + String(vendorItemId || '');
   return String(title || '') + SEP + String(mall || '');
 }
 
@@ -4961,7 +4969,11 @@ function productKey(title, mall, productId) {
  */
 function sameProduct(a, b) {
   if (!a || !b) return false;
-  if (a.productId && b.productId) return String(a.productId) === String(b.productId);
+  if (a.productId && b.productId) {
+    if (String(a.productId) !== String(b.productId)) return false;
+    // 둘 다 옵션을 알면 옵션까지 같아야 같은 상품이다 (productKey 와 같은 기준).
+    return !(a.vendorItemId && b.vendorItemId && String(a.vendorItemId) !== String(b.vendorItemId));
+  }
   if (a.title !== b.title) return false;
   if (!a.mall || !b.mall) return true;
   return a.mall === b.mall;
@@ -5176,6 +5188,39 @@ var Fmt = {
   safeUrl: function(u) {
     var s = String(u == null ? '' : u).trim();
     return /^https?:\/\//i.test(s) ? s : '';
+  },
+
+  /*
+   * 구매 링크 관문 — api/_affiliate.safeBuyLink 와 같은 규칙 (2026-10-04).
+   *
+   * 서버가 이미 걸렀어도 브라우저에서 한 번 더 건다. localStorage 에 남은 옛 찜·
+   * 최근 본 상품의 링크는 서버를 다시 지나지 않기 때문이다.
+   *   쿠팡  link.coupang.com/re/AFF…?lptag=<SEOSA> 또는 /a/<code> 만. 다른 파트너
+   *         lptag · lptag 없음 · /re/PCS… · 상품 페이지 원본 URL 은 막는다.
+   *         항목이 옵션(vendorItemId)을 알면 링크의 옵션과 같아야 한다 —
+   *         «가격은 A 옵션, 링크는 B 옵션» 이 되지 않게.
+   *   ADPICK commissionlink 는 그대로. 그 밖의 호스트는 스킴만 본다.
+   * 막히면 '' — 화면은 «링크 없음» 으로 그린다. 원본 URL 로 되살리지 않는다.
+   */
+  buyUrl: function(link, it) {
+    var s = Fmt.safeUrl(link);
+    if (!s) return '';
+    var u;
+    try { u = new URL(s); } catch (e) { return ''; }
+    var host = u.hostname.toLowerCase();
+    if (/(^|\.)coupang\.com$|^coupa\.ng$/.test(host)) {
+      if (u.protocol !== 'https:' || host !== 'link.coupang.com') return '';
+      if (!/^\/a\/[A-Za-z0-9]+\/?$/.test(u.pathname)) {
+        if (!/^\/re\/AFF[A-Z]*$/.test(u.pathname)) return '';
+        if (u.searchParams.get('lptag') !== CONST.COUPANG_LPTAG) return '';
+      }
+      var want = String((it && it.vendorItemId) || '');
+      var got = u.searchParams.get('vendorItemId') || '';
+      if (want && got && want !== got) return '';
+      return s;
+    }
+    if (host === 'biz.adpick.co.kr') return u.protocol === 'https:' ? s : '';
+    return s;
   },
 
   mall: function(it) {
@@ -5935,7 +5980,7 @@ var Card = {
      *   모달 하단의 같은 액션들은 그대로 둔다 — 상세를 보다가 사는 경로도
      *   여전히 필요하다. 두 자리 모두에 있는 것이 맞다.
      */
-    var hasLink = !!(it && Fmt.safeUrl(it.link));
+    var hasLink = !!(it && Fmt.buyUrl(it.link, it));
     /*
      * 판매처 링크가 없으면 누를 수 있게 생긴 버튼을 두지 않는다.
      * 예전에는 버튼이 그대로 있고 누르면 토스트만 떴다 — 누를 수 있게
@@ -6031,7 +6076,8 @@ var Card = {
     // data-mall이 없는 옛 카드(캐시된 페이지 등)에는 텍스트로 폴백한다.
     var mall  = card.dataset.mall || Fmt.textOf(card.querySelector('.mall-line'));
     var pid   = card.dataset.pid || '';
-    var stored = AppState.products[productKey(title, mall, pid)] || {};
+    var vid   = card.dataset.vid || '';
+    var stored = AppState.products[productKey(title, mall, pid, vid)] || {};
     return {
       title: title,
       lprice: Fmt.priceOf(card.querySelector('.price')),
@@ -6049,7 +6095,7 @@ var Card = {
        * 다른 옵션 가격까지 한 곡선으로 섞었다 — "드립백 봉투" 2,500원 카드의
        * 그래프 최고가가 다른 옵션의 42,000원이었다. Drop.read 와 같은 기준이다.
        */
-      vendorItemId: card.dataset.vid || stored.vendorItemId || '',
+      vendorItemId: vid || stored.vendorItemId || '',
       link: stored.link || '',
       image: stored.image || '',
       // 서버가 계산한 신뢰도. 가격 모달이 근거를 그대로 다시 보여준다.
@@ -6114,7 +6160,7 @@ var Grid = {
       // 카드의 data-mall(raw) / data-pid 와 같은 키를 써야 Card.read가 다시 찾을 수 있다.
       // 표시 이름(Fmt.mall(it).name)이 아니라 raw mall로 키를 잡아야 한다 — ADPICK은
       // cp_name에 따라 표시 이름이 상품마다 달라 키가 흩어진다(Card.html 주석 참고).
-      AppState.products[productKey(it.title, it.mall, it.productId)] = it;
+      AppState.products[productKey(it.title, it.mall, it.productId, it.vendorItemId)] = it;
 
       var wrap = document.createElement('div');
       wrap.innerHTML = Card.html(it);
@@ -6475,8 +6521,9 @@ var Focus = {
 /* 제휴 고지 한 줄 — HTML 에 박힌 .aff-note 와 같은 문구다(.aff-note 주석 참고). */
 var AFF_NOTE_HTML = '<p class="aff-note" data-aff-note="chat"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>';
 
-function openLink(link) {
-  var url = Fmt.safeUrl(link);
+/* it: 그 링크를 단 항목 — 옵션(vendorItemId)이 링크와 맞는지까지 본다 (Fmt.buyUrl). */
+function openLink(link, it) {
+  var url = Fmt.buyUrl(link, it);
   if (url) {
     // 상품 클릭은 여기 하나로 모인다 — 카드·시세판·모달이 전부 이 함수를 부른다.
     // 링크가 실제로 열리는 경우만 센다 (링크 없는 상품은 클릭이 아니다).
@@ -7765,7 +7812,7 @@ var ExternalHot = {
     var image = Fmt.safeUrl(it.image);
     // 상품 구매 버튼은 «제휴 링크»일 때만 외부로 바로 보낸다.
     // 원문 URL을 상품 URL처럼 fallback하면 클릭은 나가지만 SEOSA 수익은 잡히지 않는다.
-    var affiliateUrl = Fmt.safeUrl(it.affiliateUrl || (it.monetized ? it.productUrl : ''));
+    var affiliateUrl = Fmt.buyUrl(it.affiliateUrl || (it.monetized ? it.productUrl : ''));
     var sourceUrl = Fmt.safeUrl(it.sourceUrl);
     var searchUrl = '/?q=' + encodeURIComponent(it.title || '');
     var communityOnly = it.communityOnly === true || it.verified === false;
@@ -7796,7 +7843,9 @@ var ExternalHot = {
       + '<div class="radar-deal-actions">' + history
       + (sourceUrl ? '<a href="' + Fmt.esc(sourceUrl) + '" target="_blank" rel="noopener noreferrer">원문 보기</a>' : '')
       + (affiliateUrl
-          ? '<a href="' + Fmt.esc(affiliateUrl) + '" target="_blank" rel="noopener noreferrer">제휴 상품 보기</a>'
+          ? '<a href="' + Fmt.esc(affiliateUrl) + '" target="_blank" rel="noopener noreferrer" data-aff-track="hotdeal"'
+              + ' data-pid="' + Fmt.esc(it.productId || '') + '" data-mall="' + Fmt.esc(it.affiliateMall || it.mall || '') + '"'
+              + ' data-price="' + Fmt.int(it.affiliatePrice || it.price) + '">제휴 상품 보기</a>'
           : '<a href="' + Fmt.esc(searchUrl) + '">SEOSA에서 상품 찾기</a>')
       + '</div></article>';
   },
@@ -8252,7 +8301,7 @@ var Drop = {
      * 이름과 저장값이 같아야 한다는 예전 전제가 가격 그래프 버그의 원인이었다).
      */
     var m = Fmt.mall(it);
-    AppState.products[productKey(it.title, it.mall, it.productId)] = it;
+    AppState.products[productKey(it.title, it.mall, it.productId, it.vendorItemId)] = it;
 
     var price = Fmt.int(it.lprice);
     var prev  = Fmt.int(it.oprice);
@@ -8363,7 +8412,7 @@ var Drop = {
        */
       +   '<div class="dacts">'
       +     '<button class="lact" data-act="ledger-alert">알림</button>'
-      +     (Fmt.safeUrl(it.link)
+      +     (Fmt.buyUrl(it.link, it)
             ? '<button class="lact dark" data-act="ledger-buy">구매</button>'
             : '<span class="lact is-off" aria-disabled="true"'
               + ' title="이 상품은 판매처 링크가 확인되지 않았어요">링크 없음</span>')
@@ -8424,7 +8473,7 @@ var Drop = {
     var title = row.dataset.title;
     var mall  = row.dataset.mall;
     var pid   = row.dataset.pid || '';
-    var stored = AppState.products[productKey(title, mall, pid)] || {};
+    var stored = AppState.products[productKey(title, mall, pid, row.dataset.vid || '')] || {};
     return {
       title: title,
       lprice: Fmt.int(row.dataset.price),
@@ -8549,8 +8598,8 @@ var Wish = {
       + '<div class="wi-mall">' + MallBrand.render(w.mall, w.mallLabel) + '</div>'
       + '<div class="wi-name">' + Fmt.esc(w.title || '') + '</div>'
       + '<div class="wi-price">' + Fmt.won(showPrice) + '원' + chg + '</div></div>'
-      + (Fmt.safeUrl(w.link)
-          ? '<a href="' + Fmt.esc(Fmt.safeUrl(w.link)) + '" target="_blank" rel="noopener noreferrer" class="wi-buy">구매</a>'
+      + (Fmt.buyUrl(w.link, w)
+          ? '<a href="' + Fmt.esc(Fmt.buyUrl(w.link, w)) + '" target="_blank" rel="noopener noreferrer" class="wi-buy">구매</a>'
           : '')
       + '<button class="wi-del" data-act="wish-del" data-idx="' + i + '" title="삭제">×</button>'
       + '</div>';
@@ -8686,7 +8735,7 @@ var Recent = {
     if (!info || !info.title) return;
 
     // 캐시에 있으면 더 완전한 정보(이미지/링크)를 쓰고, 없으면 넘어온 값으로 채운다.
-    var cached = AppState.products[productKey(info.title, info.mall, info.productId)] || {};
+    var cached = AppState.products[productKey(info.title, info.mall, info.productId, info.vendorItemId)] || {};
     var it = {
       title:  info.title,
       lprice: Fmt.int(info.lprice) || Fmt.int(cached.lprice),
@@ -8695,7 +8744,9 @@ var Recent = {
       mall:   info.mall  || cached.mall  || '',
       // 화면 표시용 몰 이름(ADPICK은 cp_name 기반) — 최근 본 상품 카드도 이걸로 그린다.
       mallLabel: info.mallLabel || cached.mallLabel || info.mall || cached.mall || '',
-      productId: info.productId || cached.productId || ''
+      productId: info.productId || cached.productId || '',
+      // 옵션도 함께 남긴다 — 다시 열 때 그 옵션의 이력과 링크를 찾는다.
+      vendorItemId: info.vendorItemId || cached.vendorItemId || ''
     };
 
     // ★ 이미 본 적 있으면 "처음 본 가격"을 유지 (변동 비교용)
@@ -9317,9 +9368,10 @@ var Chat = {
       ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
       : '';
 
-    return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.safeUrl(it.link)) + '"'
-      // 제휴 클릭 계측용 (Track.affiliate). 화면에는 쓰지 않는다.
+    return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '"'
+      // 제휴 클릭 계측·옵션 확인용 (Track.affiliate · Fmt.buyUrl). 화면에는 쓰지 않는다.
       + ' data-pid="' + Fmt.esc(it.productId || '') + '" data-mall="' + Fmt.esc(it.mall || '') + '"'
+      + ' data-vid="' + Fmt.esc(it.vendorItemId || '') + '"'
       + ' data-price="' + Fmt.int(it.lprice) + '">'
       + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>' + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
@@ -9575,7 +9627,7 @@ var Chat = {
           html += Chat.fmtText(res.text || '');
           if (res.items && res.items.length) {
             // 제휴 고지 — 카드(외부 판매처 링크)보다 먼저 읽힌다. .aff-note 주석 참고.
-            if (res.items.some(function(it) { return it && Fmt.safeUrl(it.link); })) html += AFF_NOTE_HTML;
+            if (res.items.some(function(it) { return it && Fmt.buyUrl(it.link, it); })) html += AFF_NOTE_HTML;
             html += '<div class="mini-grid">' + res.items.map(Chat.miniCard).join('') + '</div>';
           }
           Chat.bubble(html, 'ai');
@@ -9678,7 +9730,7 @@ var Modal = {
      * 처음부터 없는 편이 정직하다 (카드의 .buy.is-off 와 같은 판단).
      */
     var buyBtn = $('modalBuy');
-    if (buyBtn) buyBtn.hidden = !Fmt.safeUrl(p.link);
+    if (buyBtn) buyBtn.hidden = !Fmt.buyUrl(p.link, p);
 
     // 신뢰도 근거는 이력 조회를 기다릴 필요가 없다 (서버가 이미 계산해 보냈다).
     Modal.renderTrust(p.trust);
@@ -10610,8 +10662,8 @@ var Compare = {
         + '<td class="cmp-diff hide-s ' + (it._suspect ? '' : (diff === 0 ? 'zero' : 'plus')) + '">'
         +   (it._suspect ? '—' : (diff === 0 ? '최저' : '+' + Fmt.won(diff))) + '</td>'
         + '<td style="text-align:right">'
-        +   (Fmt.safeUrl(it.link)
-              ? '<a class="cmp-go" href="' + Fmt.esc(Fmt.safeUrl(it.link)) + '" target="_blank" rel="noopener noreferrer">구매</a>'
+        +   (Fmt.buyUrl(it.link, it)
+              ? '<a class="cmp-go" href="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '" target="_blank" rel="noopener noreferrer">구매</a>'
               : '<span style="color:var(--faint);font-size:.72rem">링크 없음</span>')
         + '</td></tr>';
     });
@@ -11103,9 +11155,9 @@ var Actions = {
     var info = Card.read(el.closest('.card'));
     trackCardOrigin(el);
     Track.ev('external_shop_click');
-    if (info && Fmt.safeUrl(info.link)) Track.affiliate(info, el.closest('#resGrid') ? 'search' : 'home');
+    if (info && Fmt.buyUrl(info.link, info)) Track.affiliate(info, el.closest('#resGrid') ? 'search' : 'home');
     Recent.addViewed(info);
-    openLink(info && info.link);
+    openLink(info && info.link, info);
   },
 
   // ── 시세판 ──
@@ -11115,9 +11167,9 @@ var Actions = {
     e.stopPropagation();
     var info = Drop.read(el.closest('.dcard'));
     Track.ev('external_shop_click');
-    if (Fmt.safeUrl(info.link)) Track.affiliate(info, 'hotdeal');
+    if (Fmt.buyUrl(info.link, info)) Track.affiliate(info, 'hotdeal');
     Recent.addViewed(info);
-    openLink(info.link);
+    openLink(info.link, info);
   },
   'drop-more': function() { Drop.more(); },
   'external-hot-more': function() { ExternalHot.more(); },
@@ -11199,10 +11251,11 @@ var Actions = {
   'chat-clear':   function() { Chat.clear(); },
   'ai-login':     function() { Chat.loginFromGuest(); },
   'mini-go':      function(el) {
-    if (Fmt.safeUrl(el.dataset.link)) {
+    var opt = { vendorItemId: el.dataset.vid || '' };
+    if (Fmt.buyUrl(el.dataset.link, opt)) {
       Track.affiliate({ mall: el.dataset.mall, productId: el.dataset.pid, lprice: el.dataset.price }, 'ai');
     }
-    openLink(el.dataset.link);
+    openLink(el.dataset.link, opt);
   },
 
   // ── 모달 ──
@@ -11215,9 +11268,9 @@ var Actions = {
     var it = AppState.modalItem;
     if (!it) return;
     Track.ev('external_shop_click');
-    if (Fmt.safeUrl(it.link)) Track.affiliate(it, 'product');
+    if (Fmt.buyUrl(it.link, it)) Track.affiliate(it, 'product');
     Recent.addViewed(it);
-    openLink(it.link);
+    openLink(it.link, it);
   },
   /* 카드에서 모달로 옮겨 온 두 액션 (Card.actionsHTML 주석 참고). */
   'modal-compare': function() {
@@ -11267,6 +11320,16 @@ document.addEventListener('click', function(e) {
    * 누른 경우는 각 핸들러가 알아서 처리하므로 여기서 건드리지 않는다.
    */
   if (!e.target.closest('#navMenu') && !e.target.closest('#menuBtn')) Nav.closeMenu();
+
+  /*
+   * 앵커로 직접 여는 제휴 링크(외부 핫딜 «제휴 상품 보기»)도 같은 계측을 남긴다.
+   * 이동은 <a target="_blank"> 가 그대로 한다 — 여기서는 «세기만» 한다.
+   */
+  var aff = e.target.closest('a[data-aff-track]');
+  if (aff) {
+    Track.ev('external_shop_click');
+    Track.affiliate({ mall: aff.dataset.mall, productId: aff.dataset.pid, lprice: aff.dataset.price }, aff.dataset.affTrack);
+  }
 
   if (!el) return;
 
@@ -11524,7 +11587,7 @@ var Shelf = {
     Array.prototype.forEach.call(svg.querySelectorAll('g[data-bs]'), function(g) {
       var idx  = Number(g.getAttribute('data-bs'));
       var book = SHELF_BOOKS[idx];
-      var url  = book ? Fmt.safeUrl(book.coupangUrl) : '';
+      var url  = book ? Fmt.buyUrl(book.coupangUrl) : '';
       if (!url) return;                       // 링크 없는 책은 그림 그대로 둔다
 
       /*
@@ -11777,7 +11840,7 @@ var Init = {
       .then(function(d) {
         var p = d && d.product;
         if (!p || !p.title) return;
-        AppState.products[productKey(p.title, p.mall, p.productId)] = p;
+        AppState.products[productKey(p.title, p.mall, p.productId, p.vendorItemId)] = p;
         Modal.open(p);
       })
       .catch(function() {});

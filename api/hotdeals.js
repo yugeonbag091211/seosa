@@ -22,6 +22,7 @@
  */
 
 const supabase = require('./_supabase');
+const { safeBuyLink, firstSafeBuyLink } = require('./_affiliate');
 const { applyCors, cachePublic, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const HG = require('./_hotgroup');
@@ -188,7 +189,7 @@ function otherOffers(row) {
     .map(o => ({
       mall: String(o.mall || ''),
       price: Number(o.price) || 0,
-      url: String(o.url || ''),
+      url: safeBuyLink(o.url, o),
       status: String(o.status || ''),
       productId: String(o.productId || '')
     }));
@@ -197,6 +198,8 @@ function otherOffers(row) {
 /** 목록용 최소 형태. 근거는 한 줄만 — 나머지는 상세에서 준다. */
 function toListItem(r) {
   const reasons = arr(r.reason_json);
+  // 구매 링크는 공통 관문(_affiliate)을 지난 값만 — 옵션(vendor_item_id)까지 맞아야 한다.
+  const aff = safeBuyLink(r.affiliate_url, r);
   const s = obj(r.signal_json);
   const others = otherOffers(r);
   const groupSize = Number(r.group_size) > 0 ? Number(r.group_size) : 1;
@@ -216,11 +219,11 @@ function toListItem(r) {
     reason: reasons.length ? String(reasons[0].text || '') : '',
     productId: r.product_id || '',
     vendorItemId: r.vendor_item_id || '',
-    url: r.affiliate_url || '',
+    url: aff,
     checkedAt: r.last_checked_at,
     source: r.source || 'internal-history',
-    sourceUrl: r.source && r.source !== 'internal-history' ? (r.affiliate_url || '') : '',
-    productUrl: r.affiliate_url || '',
+    sourceUrl: r.source && r.source !== 'internal-history' ? aff : '',
+    productUrl: aff,
     dealScore: (r.confidence === 'HIGH' || r.confidence === 'MEDIUM') ? r.hot_score : null,
     matchConfidence: r.identity_confidence === 'EXACT' ? 1
       : r.identity_confidence === 'STRONG' ? 0.85 : null,
@@ -290,7 +293,8 @@ function externalReason(row) {
 
 function toExternalListItem(r) {
   const meta = obj(r.metadata);
-  const affiliateUrl = String(meta.affiliateUrl || '');
+  // 제휴 링크도 공통 관문을 지난다. 막히면 «원문 보기» 만 남는다(monetized=false).
+  const affiliateUrl = safeBuyLink(meta.affiliateUrl);
   return {
     verified: true,
     communityOnly: false,
@@ -357,7 +361,8 @@ function toExternalListItem(r) {
  */
 function toCommunityListItem(r) {
   const meta = obj(r.metadata);
-  const affiliateUrl = String(meta.affiliateUrl || '');
+  // 제휴 링크도 공통 관문을 지난다. 막히면 «원문 보기» 만 남는다(monetized=false).
+  const affiliateUrl = safeBuyLink(meta.affiliateUrl);
   return {
     id: `community:${r.id}`,
     monetized: !!affiliateUrl,
@@ -533,18 +538,83 @@ const LEDGER_PAGE = 1000;
 const TODAY_MAX_PAGES = Number(process.env.HOME_DROP_TODAY_PAGES) || 4;
 /** 직전 관측을 며칠 전까지 거슬러 볼지. fetchPriorRows 주석의 실측 참고. */
 const PRIOR_LOOKBACK_DAYS = Number(process.env.HOME_DROP_PRIOR_DAYS) || 8;
-/** 직전 관측 조회를 동시에 몇 개까지 띄울지. */
-const PRIOR_CONCURRENCY = 24;
-/**
- * 직전 관측 조회의 시간 예산(ms). 넘기면 그때까지 찾은 것만 쓴다 — 못 찾은
- * 계열은 «직전 관측 없음» 으로 빠질 뿐 하락을 지어내지 않는다. Vercel 10초
- * 한도 안에서 오늘치·상품 조회 몫을 남겨 둔다.
- */
-const PRIOR_BUDGET_MS = Number(process.env.HOME_DROP_PRIOR_BUDGET_MS) || 4500;
 /** 오늘치가 예상보다 많을 때 추가로 더 갈 수 있는 묶음 수. 무한정 커지지 않게 한다. */
 const TODAY_MAX_ROUNDS = 3;
 /** products 를 한 번에 물어볼 최대 상품 수. URL 길이 상한을 넘기지 않기 위한 값. */
 const PRODUCT_LOOKUP_CHUNK = 60;
+
+/*
+ * ── 시간 상한 (2026-10-04 독립 리뷰 측정) ──────────────────────────────
+ *
+ * 첫 구현은 직전 관측 조회에만 4.5초 예산을 걸었다. 오늘치가 6초 걸리면
+ * 합계 10.5초로 Vercel 10초 한도를 넘었고, 예산이 지나도 이미 떠난 요청은
+ * 취소되지 않았으며, 동시 요청이 25개까지 올라갔다.
+ *
+ * 그래서 «요청 하나» 의 전체 시간을 먼저 정하고 단계마다 몫을 나눈다.
+ *   DROP_TOTAL_BUDGET_MS  한 요청 전체. 이 시각에 남은 질의는 전부 취소한다.
+ *   TODAY_BUDGET_MS       오늘치 원장 읽기 몫. 넘기면 그때까지 읽은 장만 쓴다.
+ *   DROP_RESERVE_MS       상품(이미지·링크) 조회와 응답 몫으로 남겨 둔다.
+ * 시간이 모자라 못 읽은 계열은 «직전 관측 없음» 으로 빠진다 — 하락을 지어내지
+ * 않는다(fail-closed). 그런 응답은 캐시를 짧게 둔다(handler).
+ */
+const DROP_TOTAL_BUDGET_MS = Number(process.env.HOME_DROP_BUDGET_MS) || 7000;
+const TODAY_BUDGET_MS = 3000;
+const DROP_RESERVE_MS = 1200;
+/** 직전 관측 조회 동시 요청 수. RPC 는 한 번에 500 id 를 받으므로 더 적게. */
+const PRIOR_CONCURRENCY = 6;
+const PRIOR_RPC_CONCURRENCY = 3;
+/** supabase/2026-10-04-price-history-prior-obs.sql — 계열당 한 행. 없으면 조각 조회로 폴백. */
+const PRIOR_RPC = 'price_history_prior_obs';
+const PRIOR_RPC_CHUNK = 500;
+/**
+ * 폴백 조각 하나의 크기. product_id 를 URL 에 싣기 때문에 글자 수(약 4KB)로 자르고,
+ * 짧은 쿠팡 id 도 한 조각 PRIOR_MAX_IDS 개까지만 — 행이 1,000행 상한을 넘지 않게
+ * (8일 창 실측 id 당 약 2.5행).
+ */
+const PRIOR_URL_BUDGET = 3800;
+const PRIOR_MAX_IDS = 200;
+/** RPC 함수가 없다고 확인되면 이 인스턴스에서는 다시 부르지 않는다. */
+let priorRpcMissing = false;
+
+/**
+ * 작업을 동시 N 개로 돌리되 deadline 에 멈춘다. 그 순간 떠 있는 요청은 AbortSignal
+ * 로 취소한다 — 예산이 지난 뒤에 도착한 결과는 쓰지 않는다.
+ *
+ * @param {Array<function(AbortSignal):Promise>} tasks
+ * @returns {{results:Array, done:number, errors:number, aborted:number, skipped:number,
+ *            timedOut:boolean, peak:number, firstError:string}}
+ */
+async function runBounded(tasks, concurrency, deadlineMs) {
+  const ctrl = new AbortController();
+  const out = { results: [], done: 0, errors: 0, aborted: 0, skipped: 0, timedOut: false, peak: 0, firstError: '' };
+  let next = 0, inflight = 0, closed = false;
+  async function worker() {
+    while (!closed && next < tasks.length) {
+      const task = tasks[next++];
+      inflight++;
+      if (inflight > out.peak) out.peak = inflight;
+      try {
+        const r = await task(ctrl.signal);
+        if (!closed) { out.done++; out.results.push(r); }
+      } catch (e) {
+        if (!closed) { out.errors++; if (!out.firstError) out.firstError = String((e && e.message) || e); }
+      } finally {
+        inflight--;
+      }
+    }
+  }
+  let timer = null;
+  const wait = Math.max(0, deadlineMs - Date.now());
+  const budget = new Promise(resolve => { timer = setTimeout(() => { out.timedOut = true; resolve(); }, wait); });
+  await Promise.race([Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker)), budget]);
+  clearTimeout(timer);
+  // 지금 떠 있는 요청은 취소한다 — 그 결과는 늦게 와도 쓰지 않는다(closed).
+  out.aborted = inflight;
+  closed = true;
+  ctrl.abort();
+  out.skipped = tasks.length - next;
+  return out;
+}
 
 async function fetchLedgerPage(builder) {
   const { data, error } = await builder;
@@ -576,29 +646,34 @@ async function fetchLedgerPage(builder) {
  *   UTC 로 잘라 덮어써서, KST 01시 수집분이 통째로 «어제» 라벨을 단다
  *   (api/_price.js kstToday 주석의 실측). 경계값은 kstDayStartUtc 가 만든다.
  */
-async function fetchTodayRows(dayStartIso) {
+async function fetchTodayRows(dayStartIso, deadlineMs) {
   const rows = [];
-  let pages = 0;
+  let pages = 0, partial = false;
+  const deadline = deadlineMs || (Date.now() + TODAY_BUDGET_MS);
 
   for (let round = 0; round < TODAY_MAX_ROUNDS; round++) {
     const base = round * TODAY_MAX_PAGES;
-    const chunks = await Promise.all(
-      Array.from({ length: TODAY_MAX_PAGES }, (_, i) => {
-        const from = (base + i) * LEDGER_PAGE;
-        return fetchLedgerPage(
-          supabase.from('price_history').select(LEDGER_COLS)
-            .gte('recorded_at', dayStartIso)
-            .order('recorded_at', { ascending: true })
-            .range(from, from + LEDGER_PAGE - 1)
-        );
-      })
-    );
-    chunks.forEach(c => { if (c.length) pages++; rows.push(...c); });
+    const r = await runBounded(Array.from({ length: TODAY_MAX_PAGES }, (_, i) => async signal => {
+      const from = (base + i) * LEDGER_PAGE;
+      const data = await fetchLedgerPage(
+        supabase.from('price_history').select(LEDGER_COLS)
+          .gte('recorded_at', dayStartIso)
+          .order('recorded_at', { ascending: true })
+          .range(from, from + LEDGER_PAGE - 1)
+          .abortSignal(signal)
+      );
+      return { i, data };
+    }), TODAY_MAX_PAGES, deadline);
+    // 오늘치 원장을 못 읽는 것은 장애다 — 예전처럼 오류로 올린다(시간 초과는 아니다).
+    if (r.errors) throw new Error(r.firstError);
+    r.results.forEach(x => { if (x.data.length) pages++; rows.push(...x.data); });
+    if (r.timedOut || r.aborted || r.skipped) { partial = true; break; }
     // 마지막 장이 꽉 차 있지 않으면 더 읽을 것이 없다.
-    if (chunks[chunks.length - 1].length < LEDGER_PAGE) break;
+    const last = r.results.find(x => x.i === TODAY_MAX_PAGES - 1);
+    if (!last || last.data.length < LEDGER_PAGE) break;
   }
 
-  return { rows, pages };
+  return { rows, pages, partial };
 }
 
 /**
@@ -625,50 +700,68 @@ async function fetchTodayRows(dayStartIso) {
  * ★ 조각 하나가 실패하거나 예산을 넘겨도 목록 전체를 버리지 않는다. 그
  *   계열들만 «직전 관측 없음» 이 된다 — 그 수는 stats 에 남는다.
  */
-async function fetchPriorRows(dayStartIso, todayRows) {
+async function fetchPriorRows(dayStartIso, todayRows, deadlineMs) {
   const ids = Array.from(new Set((todayRows || []).map(r => r && r.product_id).filter(Boolean)));
   const since = new Date(Date.parse(dayStartIso) - PRIOR_LOOKBACK_DAYS * 86400000).toISOString();
-  const chunks = [];
-  for (let i = 0; i < ids.length; i += PRODUCT_LOOKUP_CHUNK) chunks.push(ids.slice(i, i + PRODUCT_LOOKUP_CHUNK));
+  const deadline = deadlineMs || (Date.now() + DROP_TOTAL_BUDGET_MS - TODAY_BUDGET_MS - DROP_RESERVE_MS);
+  const out = {
+    rows: [], via: '', chunks: 0, done: 0, scanned: 0, capped: 0, errors: 0, aborted: 0, skipped: 0,
+    timedOut: false, peak: 0, lookbackDays: PRIOR_LOOKBACK_DAYS
+  };
+  if (!ids.length) return out;
 
-  const rows = [];
-  const out = { rows, chunks: chunks.length, done: 0, scanned: 0, capped: 0, errors: 0, lookbackDays: PRIOR_LOOKBACK_DAYS };
-  let next = 0;
-  let closed = false;
+  const absorb = (r, via) => {
+    out.via = via;
+    out.chunks += r.done + r.errors + r.aborted + r.skipped;
+    out.done += r.done; out.errors += r.errors; out.aborted += r.aborted; out.skipped += r.skipped;
+    out.timedOut = out.timedOut || r.timedOut;
+    out.peak = Math.max(out.peak, r.peak);
+    r.results.forEach(data => {
+      out.scanned += data.length;
+      // 상한에 닿으면 가장 오래된 쪽이 잘린다 — 최신순이라 직전 관측은 남는다.
+      if (data.length >= LEDGER_PAGE) out.capped++;
+      out.rows.push(...data);
+    });
+  };
 
-  async function worker() {
-    while (!closed && next < chunks.length) {
-      const chunk = chunks[next++];
-      try {
-        const data = await fetchLedgerPage(
-          supabase.from('price_history').select(LEDGER_COLS)
-            .in('product_id', chunk)
-            .lt('recorded_at', dayStartIso)
-            .gte('recorded_at', since)
-            .order('recorded_at', { ascending: false })
-            .limit(LEDGER_PAGE)
-        );
-        if (closed) return;
-        out.done++;
-        out.scanned += data.length;
-        // 상한에 닿으면 가장 오래된 쪽이 잘린다 — 최신순이라 직전 관측은 남는다.
-        if (data.length >= LEDGER_PAGE) out.capped++;
-        rows.push(...data);
-      } catch (e) {
-        if (closed) return;
-        out.errors++;
+  /* ① RPC — 계열당 한 행, id 는 POST 본문. 함수가 아직 없으면 ② 로 */
+  if (!priorRpcMissing) {
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += PRIOR_RPC_CHUNK) chunks.push(ids.slice(i, i + PRIOR_RPC_CHUNK));
+    let missing = false;
+    const r = await runBounded(chunks.map(c => async signal => {
+      const { data, error } = await supabase
+        .rpc(PRIOR_RPC, { p_ids: c, p_before: dayStartIso, p_since: since })
+        .abortSignal(signal);
+      if (error) {
+        if (DbError.isMissingFunction(error.message)) missing = true;
+        throw new Error(error.message);
       }
-    }
+      return data || [];
+    }), PRIOR_RPC_CONCURRENCY, deadline);
+    if (!missing) { absorb(r, 'rpc'); return out; }
+    priorRpcMissing = true;
   }
 
-  let timer = null;
-  const budget = new Promise(resolve => { timer = setTimeout(resolve, PRIOR_BUDGET_MS); });
-  await Promise.race([
-    Promise.all(Array.from({ length: Math.min(PRIOR_CONCURRENCY, chunks.length) }, worker)),
-    budget
-  ]);
-  clearTimeout(timer);
-  closed = true;
+  /* ② 폴백 — product_id 조각. URL 길이와 행 상한 안에서 자른다. */
+  const chunks = [];
+  let cur = [], len = 0;
+  ids.forEach(id => {
+    const w = encodeURIComponent(String(id)).length + 3;
+    if (cur.length && (len + w > PRIOR_URL_BUDGET || cur.length >= PRIOR_MAX_IDS)) { chunks.push(cur); cur = []; len = 0; }
+    cur.push(id); len += w;
+  });
+  if (cur.length) chunks.push(cur);
+  const r = await runBounded(chunks.map(chunk => signal => fetchLedgerPage(
+    supabase.from('price_history').select(LEDGER_COLS)
+      .in('product_id', chunk)
+      .lt('recorded_at', dayStartIso)
+      .gte('recorded_at', since)
+      .order('recorded_at', { ascending: false })
+      .limit(LEDGER_PAGE)
+      .abortSignal(signal)
+  )), PRIOR_CONCURRENCY, deadline);
+  absorb(r, 'chunks');
   return out;
 }
 
@@ -696,7 +789,7 @@ function pickPriorRows(rows, wanted) {
  * hotdeals 표 전체가 아니라 «지금 검증이라고 말할 수 있는» 행만 읽는다.
  * 2026-09-21 운영 실측으로 그 수는 2행이다 — 한 번의 가벼운 질의로 끝난다.
  */
-async function fetchVerifiedDeals(nowIso) {
+async function fetchVerifiedDeals(nowIso, signal) {
   const cols = 'id, product_id, mall, vendor_item_id, deal_status, hot_score, lifecycle,'
     + ' expires_at, is_primary, affiliate_url, image';
   const { data, error } = await supabase
@@ -706,7 +799,8 @@ async function fetchVerifiedDeals(nowIso) {
     .in('lifecycle', TD.VERIFIED_LIFECYCLE)
     .eq('is_primary', true)
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-    .limit(MAX_LIMIT * 10);
+    .limit(MAX_LIMIT * 10)
+    .abortSignal(signal || new AbortController().signal);
 
   /*
    * 표나 컬럼이 아직 없어도 홈이 죽지 않는다. 그때는 배지가 붙지 않을 뿐,
@@ -718,7 +812,7 @@ async function fetchVerifiedDeals(nowIso) {
 }
 
 /** 카드가 가리키는 상품들의 이미지·표시 이름·판매 링크. */
-async function fetchProducts(cards) {
+async function fetchProducts(cards, signal) {
   const ids = Array.from(new Set(cards.map(c => c.productId).filter(Boolean)))
     .slice(0, PRODUCT_LOOKUP_CHUNK);
   if (!ids.length) return new Map();
@@ -726,7 +820,8 @@ async function fetchProducts(cards) {
   const { data, error } = await supabase
     .from('products')
     .select('product_id, mall, title, image, link, mall_label, collected_at')
-    .in('product_id', ids);
+    .in('product_id', ids)
+    .abortSignal(signal || new AbortController().signal);
   if (error) throw new Error(error.message);
 
   /*
@@ -753,7 +848,8 @@ async function fetchProducts(cards) {
  * (public/index.html Drop.rowHTML) — 눌러도 갈 곳이 없는 버튼을 만들지 않는다.
  */
 function linkFor(card, product) {
-  return String(card.dealUrl || (product && product.link) || card.historyLink || '');
+  // 순서는 그대로, 각 후보가 공통 관문(_affiliate)을 통과해야 한다. 막힌 후보는 건너뛴다.
+  return firstSafeBuyLink([card.dealUrl, product && product.link, card.historyLink], card);
 }
 
 /** 이미지는 카탈로그가 먼저다. 엔진이 들고 있는 이미지는 그 다음 수단이다. */
@@ -799,56 +895,80 @@ function toTodayDropItem(card, product) {
  *
  * @param {number} limit  응답에 실을 최대 카드 수
  */
-async function loadTodayDrops(limit) {
+async function loadTodayDrops(limit, opts) {
+  const o = opts || {};
+  const t0 = Date.now();
+  const deadline = t0 + (o.totalBudgetMs || DROP_TOTAL_BUDGET_MS);
+  const reserve = o.reserveMs != null ? o.reserveMs : DROP_RESERVE_MS;
   const today = kstToday();
   const dayStart = kstDayStartUtc(today);
   if (!dayStart) throw new Error('KST 날짜 경계를 만들 수 없습니다');
 
   /*
-   * 오늘치와 검증 행은 서로의 결과를 필요로 하지 않는다 — 한 번에 던진다
-   * (위 «왜 동시에» 주석 참고). 직전 관측은 오늘 계열의 상품 id 로 찾으므로
-   * 오늘치 다음이다. 검증 행 조회는 그동안 계속 달린다.
+   * 검증 행은 오늘치와 서로의 결과를 필요로 하지 않는다 — 먼저 던져 두고
+   * 마지막에 받는다. 직전 관측은 오늘 계열의 상품 id 로 찾으므로 오늘치 다음이다.
+   * 모든 질의는 요청 전체 상한(deadline)에 취소된다.
    */
-  const dealsP = fetchVerifiedDeals(new Date().toISOString());
-  dealsP.catch(() => {});   // 아래에서 await 한다. 그 전에 실패해도 처리되지 않은 거부로 남기지 않는다.
-  const today_ = await fetchTodayRows(dayStart);
-  const prior = await fetchPriorRows(dayStart, today_.rows);
-  const deals = await dealsP;
+  const endCtrl = new AbortController();
+  const endTimer = setTimeout(() => endCtrl.abort(), Math.max(0, deadline - Date.now()));
+  try {
+    const dealsP = fetchVerifiedDeals(new Date().toISOString(), endCtrl.signal).catch(e => {
+      if (endCtrl.signal.aborted) return [];   // 시간이 모자라면 검증 배지만 못 붙인다
+      throw e;
+    });
+    const today_ = await fetchTodayRows(dayStart, Math.min(deadline - reserve, t0 + (o.todayBudgetMs || TODAY_BUDGET_MS)));
+    const prior = await fetchPriorRows(dayStart, today_.rows, deadline - reserve);
+    const deals = await dealsP;
 
-  const todayRows = today_.rows;
-  const wanted = new Set(todayRows.map(TD.seriesKeyOf));
-  const priorRows = Array.from(pickPriorRows(prior.rows, wanted).values());
+    const todayRows = today_.rows;
+    const wanted = new Set(todayRows.map(TD.seriesKeyOf));
+    const priorRows = Array.from(pickPriorRows(prior.rows, wanted).values());
 
-  const built = TD.buildDrops(todayRows.concat(priorRows), { today });
-  const merged = TD.applyVerified(built.items, deals, { now: Date.now() });
+    const built = TD.buildDrops(todayRows.concat(priorRows), { today });
+    const merged = TD.applyVerified(built.items, deals, { now: Date.now() });
 
-  const page = merged.slice(0, limit);
-  const products = await fetchProducts(page);
-  const items = page.map(c => toTodayDropItem(c, products.get(`${c.productId}|${c.mall}`)));
+    const page = merged.slice(0, limit);
+    // 이미지·링크 보강. 시간이 모자라 취소되면 원장 링크(historyLink)로만 그린다.
+    const products = await fetchProducts(page, endCtrl.signal).catch(e => {
+      if (endCtrl.signal.aborted) return new Map();
+      throw e;
+    });
+    const items = page.map(c => toTodayDropItem(c, products.get(`${c.productId}|${c.mall}`)));
 
-  return {
-    items,
-    total: merged.length,
-    stats: {
-      kstDate: today,
-      todayRows: todayRows.length,
-      todayPages: today_.pages,
-      todaySeries: wanted.size,
-      priorMatched: priorRows.length,
-      priorLookbackDays: prior.lookbackDays,
-      priorChunks: prior.chunks,
-      priorChunksDone: prior.done,
-      priorScanned: prior.scanned,
-      priorCapped: prior.capped,
-      priorErrors: prior.errors,
-      lowered: built.stats.lowered,
-      passed: built.stats.passed,
-      cards: built.stats.cards,
-      verified: merged.filter(c => c.verified).length,
-      todayDrop: merged.filter(c => !c.verified).length,
-      reasons: built.stats.reasons
-    }
-  };
+    return {
+      items,
+      total: merged.length,
+      partial: !!(today_.partial || prior.timedOut || prior.aborted || prior.skipped || prior.errors),
+      stats: {
+        kstDate: today,
+        elapsedMs: Date.now() - t0,
+        todayRows: todayRows.length,
+        todayPages: today_.pages,
+        todayPartial: today_.partial,
+        todaySeries: wanted.size,
+        priorMatched: priorRows.length,
+        priorVia: prior.via,
+        priorLookbackDays: prior.lookbackDays,
+        priorChunks: prior.chunks,
+        priorChunksDone: prior.done,
+        priorScanned: prior.scanned,
+        priorCapped: prior.capped,
+        priorErrors: prior.errors,
+        priorAborted: prior.aborted,
+        priorSkipped: prior.skipped,
+        priorTimedOut: prior.timedOut,
+        priorPeakConcurrency: prior.peak,
+        lowered: built.stats.lowered,
+        passed: built.stats.passed,
+        cards: built.stats.cards,
+        verified: merged.filter(c => c.verified).length,
+        todayDrop: merged.filter(c => !c.verified).length,
+        reasons: built.stats.reasons
+      }
+    };
+  } finally {
+    clearTimeout(endTimer);
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -916,7 +1036,8 @@ module.exports = async function handler(req, res) {
     if (String(q.view || '') === 'today-drop') {
       const drops = await loadTodayDrops(limit);
       // 원장은 수집기가 도는 주기로만 바뀐다. 기존 목록과 같은 120초를 쓴다.
-      cachePublic(res, 120);
+      // 시간 상한에 걸려 일부만 읽은 응답은 짧게 — 다음 요청이 온전한 목록을 다시 만든다.
+      cachePublic(res, drops.partial ? 30 : 120);
       return res.json({
         items: drops.items,
         nextCursor: null,
@@ -1056,5 +1177,7 @@ module.exports._internal = {
   toExternalListItem, toCommunityListItem, externalStatus, loadExternal, isMissingExternalTable,
   byDailyDrop, dropAmountOf,
   loadTodayDrops, toTodayDropItem, linkFor, imageFor, fetchTodayRows, fetchPriorRows,
-  fetchVerifiedDeals, fetchProducts, pickPriorRows, LEDGER_COLS, TODAY_MAX_PAGES, PRIOR_LOOKBACK_DAYS
+  fetchVerifiedDeals, fetchProducts, pickPriorRows, LEDGER_COLS, TODAY_MAX_PAGES, PRIOR_LOOKBACK_DAYS,
+  runBounded, PRIOR_CONCURRENCY, PRIOR_RPC_CONCURRENCY, PRIOR_RPC, PRIOR_MAX_IDS, PRIOR_URL_BUDGET, DROP_TOTAL_BUDGET_MS,
+  _resetPriorRpc() { priorRpcMissing = false; }
 };

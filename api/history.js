@@ -1,7 +1,7 @@
 const supabase = require('./_supabase');
 const { applyCors, cachePublic, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { observedKstDate, sameVendorRows } = require('./_price');
+const { observedKstDate, sameVendorRows, acceptedObservations } = require('./_price');
 
 /*
  * 차트의 가로축 날짜는 KST 달력으로 찍는다.
@@ -159,7 +159,8 @@ async function singleHandler(req, res) {
        * 통째로 "기록 없음" 이 되는데, 같은 상품의 /p/ 페이지는 그 기록을
        * 그대로 그렸다. 두 화면이 다른 말을 하고 있었다.
        */
-      const picked = sameVendorRows(data || [], vendorItemId);
+      /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
+      const picked = acceptedObservations(sameVendorRows(data || [], vendorItemId));
       if (picked.length) rows = picked;
     }
 
@@ -342,7 +343,8 @@ async function batchHandler(req, res) {
           const p = parsed.get(origKey);
           const byDate = new Map();
           // 단건 조회(collapseToDaily)와 같은 기준으로 KST 날짜에 접는다.
-          sameVendorRows(rows, p && p.vendorItemId).forEach(r => {
+          /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
+          acceptedObservations(sameVendorRows(rows, p && p.vendorItemId)).forEach(r => {
             const date = observedKstDate(r);
             if (!date) return;
             keepLowest(byDate, date, r.price);

@@ -618,29 +618,33 @@ function productFocus(analysis, rawTitle) {
   const requested = analysis.accessories || accessoryTerms(analysis.normalized || '');
   const requestedAt = core.findIndex((token, i) => requested.some(w => accessoryTermAt(w, core, i)));
   const compatible = compatibilityMention(analysis, rawTitle);
-  const norm = normalizeText(rawTitle);
-  const printerContext = /프린터|레이저|printer|laser|카트리지|정품토너/.test(norm);
-  const cosmeticContext = /피부|보습|스킨|화장품|페이스|skin|facial|hydrating/.test(norm)
-    || core.some(token => /^\d+ml$/.test(token));
-  const consumableContext = printerContext || (modelCodes(rawTitle).length > 0 && !cosmeticContext);
-  const tiers = [...ACCESSORY_TIER, ...COMPONENT_TIER];
-  if (consumableContext) tiers.push(['토너', 0.55], ['잉크', 0.55]);
-  if (/베벨|리프팅|카세트|브래킷|브라켓|부품|교체/.test(norm)) tiers.push(['기어', 0.45]);
-  if (compatible) tiers.push(['display', 0.72]);
-  if (compatible && /\breplacement\b/.test(norm)) tiers.push(['scanner', 0.45]);
+  const tiers = accessoryTiers(rawTitle, core, compatible);
+
   /*
-   * 쿠팡 상품명은 «판매 상품명, 색상, 수량, 호환 모델» 순이다. 검색어가 쉼표
-   * 뒤 옵션 칸에서야 처음 닿고 첫 칸(판매 상품명)에 부속 낱말이 있으면, 그
-   * 부속이 판매 대상이다 — 위치만 앞일 뿐 명시적 호환 관계와 같은 증거다.
-   * (2026-10-04 운영: "…슬림 이어폰 케이스 + 카라비너 세트, 다크그린, 1개,
-   *  에어팟 프로2" 3,000원이 AI 추천 1순위였다.)
+   * 판매 대상(sold object)을 먼저 본다 (2026-10-04 독립 리뷰 반례).
+   *
+   * 부속 낱말이 «어디 있나» 만 보면 두 방향으로 틀린다.
+   *   «에어팟 프로 2 실리콘 케이스 포함 카라비너 세트» — 케이스+카라비너를 판다
+   *   «충전 케이스 탑재 블루투스 무선 이어폰, 화이트, 에어팟 프로 2» — 이어폰을 판다
+   * 상품명 끝에서부터 첫 «관심 명사» 가 판매 대상이다(soldObject 주석).
+   * 부속을 찾는 검색어(requested)는 아래 기존 규칙이 더 세밀하게 다룬다.
    */
-  const seg = commaSegments(rawTitle, core.length);
-  const optionTarget = !!seg && seg[at] > 0;
-  let factor = 1, hit = '';
+  let factor = 1, hit = '', kind = 'tail-acc';
+  if (!requested.length) {
+    const sold = soldObject(core, at, tiers);
+    if (sold.kind === 'main') return none;
+    // 판매 대상이 부속이면 그 세기에서 시작한다. 아래 규칙이 더 강한 부속
+    // 낱말을 찾으면 그쪽을 쓴다 — «공병 리필 용기» 는 용기(0.85)가 아니라 공병(0.72).
+    if (sold.kind === 'accessory') {
+      factor = compatible ? Math.min(sold.weight, 0.4) : sold.weight;
+      hit = sold.word;
+      kind = 'head-acc';
+    }
+  }
+
   for (let i = 0; i < core.length; i++) {
     // Before the query anchor, only an explicit target relation is evidence.
-    if (i < at && !compatible && !(optionTarget && seg[i] === 0)) continue;
+    if (i < at && !compatible) continue;
     for (const [w, weight] of tiers) {
       if (!accessoryTermAt(w, core, i)) continue;
       if (i === at && !compatible && !analysis.tokens.some(tok => {
@@ -663,26 +667,126 @@ function productFocus(analysis, rawTitle) {
       // trailing bundles stay available; no category/brand dictionary needed.
       if (core[i + 1] && BUNDLE_MARK_RE.test(core[i + 1])) continue;
       const adjusted = compatible ? Math.min(weight, 0.4) : weight;
-      if (adjusted < factor) { factor = adjusted; hit = w; }
+      if (adjusted < factor) { factor = adjusted; hit = w; kind = 'tail-acc'; }
     }
   }
   if (!hit) return none;
 
-  const kind = compatible ? 'compat-acc' : (optionTarget ? 'option-acc' : 'tail-acc');
-  return { factor, at, accessory: hit, reason: `${kind}:${hit}` };
+  return { factor, at, accessory: hit, reason: `${compatible ? 'compat-acc' : kind}:${hit}` };
 }
 
-/**
- * core 토큰마다 «쉼표+공백» 으로 나뉜 몇 번째 칸에 있는지. 칸이 하나뿐이거나
- * 토큰 수가 어긋나면 null — 그때는 칸 정보 없이 예전 규칙만 쓴다.
- * 공백 없는 쉼표(1,000 · 갤럭시S26,S26플러스)는 칸 구분으로 보지 않는다.
+/** 이 제목에서 부속으로 볼 낱말과 세기. 문맥(프린터·화장품·호환)에 따라 몇 개가 더 붙는다. */
+function accessoryTiers(rawTitle, core, compatible) {
+  const norm = normalizeText(rawTitle);
+  const printerContext = /프린터|레이저|printer|laser|카트리지|정품토너/.test(norm);
+  const cosmeticContext = /피부|보습|스킨|화장품|페이스|skin|facial|hydrating/.test(norm)
+    || core.some(token => /^\d+ml$/.test(token));
+  const consumableContext = printerContext || (modelCodes(rawTitle).length > 0 && !cosmeticContext);
+  const tiers = [...ACCESSORY_TIER, ...COMPONENT_TIER];
+  if (consumableContext) tiers.push(['토너', 0.55], ['잉크', 0.55]);
+  if (/베벨|리프팅|카세트|브래킷|브라켓|부품|교체/.test(norm)) tiers.push(['기어', 0.45]);
+  if (compatible) tiers.push(['display', 0.72]);
+  if (compatible && /\breplacement\b/.test(norm)) tiers.push(['scanner', 0.45]);
+  return tiers;
+}
+
+/*
+ * 기기 «범주» 명사 — 그 자체로 팔리는 본품의 종류명이다. 브랜드·제품군 이름은
+ * 넣지 않는다(에어팟·갤럭시는 부속 제목에도 호환 대상으로 똑같이 들어간다).
+ * 끝말 일치로 본다 — "블루투스이어폰" 은 이어폰, "이어폰케이스" 는 아니다.
  */
-function commaSegments(rawTitle, count) {
-  const parts = String(rawTitle || '').split(/,\s+/);
-  if (parts.length < 2) return null;
-  const out = [];
-  parts.forEach((p, k) => splitTokens(normalizeText(p)).forEach(() => out.push(k)));
-  return out.length === count ? out : null;
+const DEVICE_NOUNS = [
+  '이어폰', '이어버드', '헤드폰', '헤드셋', '스피커', '사운드바',
+  '청소기', '스마트폰', '휴대폰', '핸드폰', '자급제', '공기계', '단말기',
+  '노트북', '랩탑', '태블릿', '모니터', '프린터', '복합기', '카메라', '캠코더',
+  '스마트워치', '냉장고', '세탁기', '건조기', '에어컨', '공기청정기', '가습기', '제습기',
+  '선풍기', '서큘레이터', '드라이어', '고데기', '면도기', '전동칫솔', '전자레인지',
+  '에어프라이어', '밥솥', '커피머신', '블렌더', '믹서기', '정수기', '프로젝터', '공유기',
+  'earphones', 'earbuds', 'headphones', 'headset', 'speaker', 'vacuum', 'laptop', 'tablet', 'monitor', 'smartphone'
+];
+
+function deviceTermIn(token) {
+  const t = String(token || '');
+  // "이어폰용·이어폰전용" 은 부속이 «무엇에 쓰이는가» 다. 판매 대상이 아니다.
+  if (/(용|전용)$/.test(t)) return '';
+  return DEVICE_NOUNS.find(w => (/^[a-z]+$/.test(w) ? t === w : t.endsWith(w))) || '';
+}
+
+/*
+ * 부속 낱말 바로 뒤에서 «본품에 딸려 온다» 를 밝히는 말. "케이스 포함", "필터 탑재",
+ * "케이스와 함께 제공". 토큰 안에 붙어 오기도 한다("케이스증정").
+ */
+const COMPONENT_MARK_RE = /^(포함|증정|동봉|내장|사은품|included|탑재|장착|부착|함께|구성)$/;
+const COMPONENT_SUFFIX_RE = /(포함|증정|동봉|내장|사은품|탑재|장착)$/;
+
+/**
+ * 이 상품명이 «무엇을 파는가» (2026-10-04 독립 리뷰 반례로 다시 짰다).
+ *
+ * 부속 낱말이 «어디» 있는지가 아니라 «어떤 자격» 으로 있는지를 본다.
+ *
+ *   accessory  딸려 온다는 표시 없이 부속 낱말이 있다 — 그 부속을 판다.
+ *              «… 실리콘 케이스, 핑크, 1개, 에어팟 프로 2»
+ *              «벤틴 140W GaN 충전기, … (아이폰 16, 노트북, 휴대폰용)»
+ *              «휴대폰케이스 … 갤럭시S25울트라 지폐수납 핸드폰 카드»
+ *              뒤에 기기 범주어가 와도 그건 호환 대상·설명이다.
+ *   main       기기 범주어(DEVICE_NOUNS)가 있고, 제목의 부속 낱말이 전부
+ *              «포함·탑재·함께 …» 로 딸린 구성품이다.
+ *              «충전 케이스 탑재 블루투스 무선 이어폰, 화이트, 에어팟 프로 2»
+ *              «보관 케이스와 함께 제공되는 블루투스 헤드폰, 블랙, Sony WH-1000XM5»
+ *   unknown    둘 다 아니다 — 기존 자리 규칙(productFocus 아래쪽)이 판단한다.
+ *
+ * «포함» 이 붙어도 기기가 없으면 부속끼리의 묶음이다 («케이스 포함 카라비너 세트»).
+ * 다만 검색어보다 앞에 오는 증정 머리말(«[케이스증정] 에어팟 …»)은 판매 대상이 아니다.
+ *
+ * @returns {{kind:'main'|'accessory'|'unknown', at:number, word:string, weight:number}}
+ */
+function soldObject(core, at, tiers) {
+  const unknown = { kind: 'unknown', at: -1, word: '', weight: 1 };
+  if (!core || !core.length) return unknown;
+  const accessoryIn = i => {
+    let best = null;
+    for (const [w, weight] of tiers) {
+      if (accessoryTermAt(w, core, i) && (!best || weight < best.weight)) best = { word: w, weight };
+    }
+    return best;
+  };
+  const componentAt = i => COMPONENT_MARK_RE.test(core[i + 1] || '') || COMPONENT_SUFFIX_RE.test(core[i]);
+  /*
+   * 기기 범주어라도 판매 대상이 아닌 자리 — «replacement battery for 청소기»
+   * 처럼 호환 대상으로 오거나, «스마트폰 포함» 처럼 딸려 온다고 적힌 것.
+   */
+  const deviceAt = i => {
+    if (!deviceTermIn(core[i]) || accessoryIn(i) || componentAt(i)) return '';
+    if (/^(for|호환|전용|compatible)$/.test(core[i - 1] || '')) return '';
+    return deviceTermIn(core[i]);
+  };
+  const devicePresent = core.some((t, i) => !!deviceAt(i));
+
+  let sold = null;
+  for (let i = 0; i < core.length; i++) {
+    const acc = accessoryIn(i);
+    if (!acc) continue;
+    if (componentAt(i) && (devicePresent || (at >= 0 && i < at))) continue;
+    if (!sold || acc.weight < sold.weight) sold = { kind: 'accessory', at: i, word: acc.word, weight: acc.weight };
+  }
+  if (sold) return sold;
+  if (devicePresent) {
+    const i = core.findIndex((t, k) => !!deviceAt(k));
+    return { kind: 'main', at: i, word: deviceAt(i), weight: 1 };
+  }
+  return unknown;
+}
+
+/** scoreTitle 용 — analyzeTitle 결과(T)로 판매 대상 종류만 구한다. */
+function soldKind(analysis, T) {
+  const core = T.tokens || [];
+  let at = -1;
+  (analysis.tokens || []).forEach(tok => {
+    const i = matchIndex(tok, core);
+    if (i > -1 && (at < 0 || i < at)) at = i;
+  });
+  const raw = T.raw || T.normalized || '';
+  return soldObject(core, at, accessoryTiers(raw, core, compatibilityMention(analysis, raw))).kind;
 }
 
 /** 상품명을 한 번만 분석해 두고 여러 검색어에 재사용한다. */
@@ -690,6 +794,7 @@ function analyzeTitle(title) {
   const normalized = normalizeText(title);
   const tokens = splitTokens(normalized);
   return {
+    raw: String(title || ''),
     normalized,
     tokens,
     set: new Set(tokens),
@@ -790,13 +895,14 @@ function scoreTitle(analysis, title) {
 
   const queryHasAccessory = ACCESSORY_WORDS.some(w => analysis.normalized.indexOf(w) > -1);
   /*
-   * «충전 케이스 포함» 의 케이스는 본품의 구성이다 (2026-10-04 운영 실측:
-   * "에어팟 프로 2" 본품 209,000원이 이 감점으로 3,000원 케이스와 0.8 동점이
-   * 되어 가격순으로 그 아래에 섰다). productFocus 와 같은 묶음 표시 규칙으로,
-   * 바로 뒤에 «포함·증정…» 이 붙은 토큰만 빼고 본다.
+   * 판매 대상이 기기 본품이면 제목 속 부속 낱말은 구성품·특징이다 (2026-10-04).
+   * «Apple 에어팟 프로 2 Magsafe 충전 케이스 포함, …, 블루투스 이어폰» 본품
+   * 209,000원이 이 감점으로 3,000원 케이스와 0.8 동점이 되어 가격순으로 그 아래에
+   * 섰다. 판매 대상이 부속이거나 알 수 없으면 예전처럼 감점한다 — «포함» 이라는
+   * 낱말 하나로 풀어 주면 «케이스 포함 카라비너 세트» 가 본품과 동점이 된다.
    */
-  const soldFlat = T.tokens.filter((t, i) => !BUNDLE_MARK_RE.test(T.tokens[i + 1] || '')).join('');
-  if (!queryHasAccessory && ACCESSORY_WORDS.some(w => soldFlat.indexOf(w) > -1)) {
+  if (!queryHasAccessory && ACCESSORY_WORDS.some(w => T.flat.indexOf(w) > -1)
+      && soldKind(analysis, T) !== 'main') {
     score *= ACCESSORY_PENALTY;
     reasons.push('accessory');
   }

@@ -258,7 +258,9 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_facets': { async attachPriceChange() { calls.facets++; } },
     './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
     './_ratelimit': { guard: () => true },
-    './_search': S
+    './_search': S,
+    // 구매 링크 관문 — 순수 함수라 진짜 모듈을 쓴다.
+    './_affiliate': require('../api/_affiliate')
   };
   const context = { module: { exports: {} }, console, require(name) {
     if (!(name in dependencies)) throw new Error(`unexpected dependency: ${name}`);

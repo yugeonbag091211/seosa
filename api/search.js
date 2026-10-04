@@ -5,6 +5,7 @@ const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
+const { sanitizeItemLinks } = require('./_affiliate');
 
 const MAX_KEYWORD_LEN = 80;
 
@@ -142,7 +143,8 @@ module.exports = async function handler(req, res) {
      * 교차 확인 여부를 판단해야 화면과 DB 가 어긋나지 않는다.
      * from 을 넘기면 '방금 확인'과 '오래된 캐시'를 구분한다.
      */
-    await attachTrust(items, { source: from });
+    // guardPrice: 확인 전 급변(suspect)은 현재가로 내보내지 않는다 (_trust.attachTrust 주석).
+    await attachTrust(items, { source: from, guardPrice: true });
 
     /*
      * "최근 가격 하락" 정보.
@@ -235,7 +237,8 @@ module.exports = async function handler(req, res) {
     // DB 쓰기까지 줄이려고 Edge 에도 짧게 세워둔다. 결과가 달라지지는 않는다.
     // 단 stale-cache 는 캐시하지 않는다 — 차단이 풀린 직후에도 옛 값이 5분 더 남는다.
     if (ranked.length && from !== 'stale-cache') cachePublic(res, 300);
-    res.json(ranked);
+    // 구매 링크는 공통 관문(_affiliate)을 지난 값만 내보낸다. 저장(saveProducts)은 위에서 원본으로 끝났다.
+    res.json(sanitizeItemLinks(ranked));
   } catch (e) {
     // 내부 오류 문구(Supabase·쿠팡 메시지)는 로그에만 남긴다.
     fail(res, e, { where: 'search', route: '/api/search', message: '검색 중 오류가 났어요. 잠시 후 다시 시도해 주세요.' });

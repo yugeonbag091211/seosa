@@ -855,5 +855,68 @@ check(S.productFocus(S.analyzeQuery('노트북'), '노트북 거치대 1,000개 
   '숫자 안의 쉼표(1,000)는 칸 구분이 아니다 — 기존 꼬리 규칙 그대로');
 
 
+/* ================================================================ *
+ *  Q. 판매 대상(sold object) — 2026-10-04 독립 리뷰(Codex) 반례
+ *
+ *  P 의 첫 구현은 두 방향으로 틀렸다.
+ *    A  «케이스 포함» 이면 무조건 본품 구성으로 봐서, 케이스+카라비너 세트가
+ *       본품과 동점이 되고 가격순으로 위에 섰다.
+ *    B  첫 칸에 부속 낱말만 있으면 부속으로 봐서, «충전 케이스 탑재 … 이어폰»
+ *       같은 본품이 AI 후보에서 지워졌다.
+ *  판단은 낱말의 «자리» 가 아니라 «무엇을 파는가(head noun)» 로 한다.
+ * ================================================================ */
+section('Q. 판매 대상(sold object) — 독립 리뷰 반례');
+
+{
+  const MAIN = 'Apple 에어팟 프로 2세대 USB-C 블루투스 이어폰';
+  const BUNDLE = '에어팟 프로 2 실리콘 케이스 포함 카라비너 세트';
+  const titles = [MAIN, BUNDLE];
+  check(focusRel('에어팟 프로 2', MAIN, titles) > focusRel('에어팟 프로 2', BUNDLE, titles),
+    '★ A: 본품 > «실리콘 케이스 포함 카라비너 세트»',
+    { 본품: focusRel('에어팟 프로 2', MAIN, titles), 세트: focusRel('에어팟 프로 2', BUNDLE, titles) });
+  const sorted = S.sortByRelevance(S.rankItems('에어팟 프로 2', [
+    { productId: 'bundle', mall: '쿠팡', title: BUNDLE, lprice: 9900 },
+    { productId: 'main', mall: '쿠팡', title: MAIN, lprice: 289000 }
+  ], { minScore: 0 }).items);
+  check(sorted[0].productId === 'main', '★ A: 검색 정렬에서 본품이 저가 부속 세트보다 위',
+    sorted.map(x => [x.productId, x.relevance, x.relevanceWhy]));
+  const f = S.filterMainProductCandidates('에어팟 프로 2', [{ title: BUNDLE }, { title: MAIN }]);
+  check(f.items.length === 1 && f.items[0].title === MAIN, '★ A: AI 본품 후보에서 부속 세트를 뺀다', f.items.map(x => x.title));
+}
+
+const B_CASES = [
+  ['에어팟 프로 2', '충전 케이스 탑재 블루투스 무선 이어폰, 화이트, 에어팟 프로 2'],
+  ['다이슨 V15', '고성능 필터 탑재 무선 청소기, 옐로우, Dyson V15'],
+  ['WH-1000XM5', '보관 케이스와 함께 제공되는 블루투스 헤드폰, 블랙, Sony WH-1000XM5']
+];
+B_CASES.forEach(([q, t]) => {
+  const a = S.analyzeQuery(q, { titles: [t] });
+  check(S.productFocus(a, t).factor === 1, `★ B: 본품 유지 — ${t.slice(0, 24)}…`, S.productFocus(a, t));
+  check(S.scoreTitle(a, t).reason.indexOf('accessory') < 0, `★ B: 커버리지 부속 감점 없음 — ${t.slice(0, 24)}…`, S.scoreTitle(a, t));
+  check(S.filterMainProductCandidates(q, [{ title: t }]).items.length === 1, `★ B: AI 본품 후보에 남는다 — ${t.slice(0, 24)}…`);
+});
+
+const REAL_ACCESSORIES = [
+  ['에어팟 프로 2', '에어팟 프로 2 실리콘 케이스'],
+  ['에어팟 프로 2', '실리콘 케이스, 핑크, 1개, 에어팟 프로 2'],
+  ['LG 그램 14ZD95U', 'LG 그램 14ZD95U 키스킨'],
+  ['WH-1000XM5', '소니 WH-1000XM5 교체용 이어패드'],
+  ['다이슨 V15', '다이슨 V15 호환 필터']
+];
+REAL_ACCESSORIES.forEach(([q, t]) => {
+  const a = S.analyzeQuery(q, { titles: [t] });
+  check(S.productFocus(a, t).factor < 1, `★ 실제 부속 유지 — ${t}`, S.productFocus(a, t));
+  check(S.filterMainProductCandidates(q, [{ title: t }]).items.length === 0, `★ AI 본품 후보에서 제외 — ${t}`);
+});
+
+/* 부속을 찾는 검색어면 그대로 부속이 답이다 (판매 대상 판정이 끼어들지 않는다). */
+check(S.productFocus(S.analyzeQuery('에어팟 프로 2 케이스'), '에어팟 프로 2 실리콘 케이스 포함 카라비너 세트').factor === 1,
+  '부속을 찾는 검색어에는 감점하지 않는다');
+check(S.productFocus(S.analyzeQuery('에어팟'), '[케이스증정] Apple 에어팟 프로 2세대').factor === 1,
+  '앞에 붙은 증정 표기는 판매 대상이 아니다');
+check(S.productFocus(S.analyzeQuery('에어팟'), '에어팟 프로 2 케이스 블루투스 이어폰용').factor < 1,
+  '«…이어폰용» 은 부속의 대상이지 판매 대상이 아니다');
+
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);
