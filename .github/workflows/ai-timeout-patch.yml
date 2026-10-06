@@ -1,0 +1,125 @@
+name: AI timeout patch
+
+on:
+  push:
+    branches:
+      - fix/ai-response-timeout-race
+    paths:
+      - .github/workflows/ai-timeout-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ai-response-timeout-race
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Patch timeout ownership
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          p = Path('public/index.html')
+          s = p.read_text(encoding='utf-8')
+
+          old = '  CHAT_TIMEOUT_MS: 30000,'
+          new = '  CHAT_TIMEOUT_MS: 35000,'
+          assert s.count(old) == 1, f'CHAT_TIMEOUT_MS match count={s.count(old)}'
+          s = s.replace(old, new, 1)
+
+          old_timer = '''    var timer = setTimeout(function() {
+                if (settled) return;
+                settled = true;
+                Chat.setSending(false);
+                if (typing && typing.parentNode) typing.remove();
+                Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
+              }, CONST.CHAT_TIMEOUT_MS);
+          '''
+          # Preserve indentation exactly as it exists in the source; fall back to the
+          # canonical 4-space block if GitHub's whitespace differs.
+          if s.count(old_timer) != 1:
+              old_timer = '''    var timer = setTimeout(function() {
+      if (settled) return;
+      settled = true;
+      Chat.setSending(false);
+      if (typing && typing.parentNode) typing.remove();
+      Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
+    }, CONST.CHAT_TIMEOUT_MS);
+'''
+          assert s.count(old_timer) == 1, f'timer block match count={s.count(old_timer)}'
+          s = s.replace(old_timer, '    var timer = null;\n', 1)
+
+          hook = '''    Chat.ensureHistory(ctx.items, function() {
+      if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
+
+      Api.call('askAI' '''
+          if s.count(hook) != 1:
+              hook = '''    Chat.ensureHistory(ctx.items, function() {
+      if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
+
+      Api.call('askAI','''
+          assert s.count(hook) == 1, f'ensureHistory hook match count={s.count(hook)}'
+
+          ask = "      Api.call('askAI'"
+          inserted = '''    Chat.ensureHistory(ctx.items, function() {
+      if (settled) return;
+
+      // 가격 이력 조회는 선택적 사전 준비다. 이 4초를 AI의 응답 제한에
+      // 포함하면 서버의 27초 예산과 합쳐 30초 프론트 제한을 넘을 수 있다.
+      // 실제 /api/ai 요청을 보내는 순간부터 응답 타이머를 센다.
+      timer = setTimeout(function() {
+        if (settled) return;
+        settled = true;
+        Chat.setSending(false);
+        if (typing && typing.parentNode) typing.remove();
+        Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
+      }, CONST.CHAT_TIMEOUT_MS);
+
+'''
+          # Replace only the callback prefix, leaving the full Api.call line untouched.
+          prefix = '''    Chat.ensureHistory(ctx.items, function() {
+      if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
+
+'''
+          assert s.count(prefix) == 1, f'ensureHistory prefix match count={s.count(prefix)}'
+          s = s.replace(prefix, inserted, 1)
+          p.write_text(s, encoding='utf-8')
+
+          vp = Path('vercel.json')
+          cfg = json.loads(vp.read_text(encoding='utf-8'))
+          funcs = cfg.setdefault('functions', {})
+          funcs['api/ai.js'] = {'maxDuration': 40}
+          vp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Verify timeout contract
+        run: node scripts/test-ai-timeout-contract.js
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Focused regressions
+        run: |
+          node scripts/test-user-flow.js
+          node scripts/test-ai-pipeline.js
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "SEOSA AI Fix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add public/index.html vercel.json
+          git diff --cached --check
+          git commit -m "fix: prevent AI response timeout race"
+          git push origin HEAD:fix/ai-response-timeout-race
