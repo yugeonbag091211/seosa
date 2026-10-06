@@ -164,6 +164,9 @@
     },
     "api/payment.js": {
       "maxDuration": 60
+    },
+    "api/ai.js": {
+      "maxDuration": 40
     }
   },
   "crons": [

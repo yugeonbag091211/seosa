@@ -4651,7 +4651,7 @@ var CONST = {
     // URL 길이 한도를 넘어 414가 나면서 위시 최신가가 통째로 갱신되지 않는다.
     HIST_BATCH:      40
   },
-  CHAT_TIMEOUT_MS: 30000,
+  CHAT_TIMEOUT_MS: 35000,
   /*
    * ── [대화 세션 만료] ────────────────────────────────────────
    * 저장된 대화를 언제까지 "이어지는 대화"로 볼 것인가.
@@ -9574,13 +9574,7 @@ var Chat = {
     // 히스토리에도 중복으로 쌓였다. 먼저 끝난 쪽만 처리하도록 잠근다.
     var settled = false;
 
-    var timer = setTimeout(function() {
-      if (settled) return;
-      settled = true;
-      Chat.setSending(false);
-      if (typing && typing.parentNode) typing.remove();
-      Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
-    }, CONST.CHAT_TIMEOUT_MS);
+    var timer = null;
 
     // 최신 프로필 반영
     AppState.profile = normalizeProfile(Store.get(CONST.LS.PROFILE, AppState.profile));
@@ -9595,7 +9589,18 @@ var Chat = {
 
     // 빠진 가격 이력만 채운 뒤 질문한다 (실패해도 그냥 진행)
     Chat.ensureHistory(ctx.items, function() {
-      if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
+      if (settled) return;
+
+      // 가격 이력 조회는 선택적 사전 준비다. 이 4초를 AI의 응답 제한에
+      // 포함하면 서버의 27초 예산과 합쳐 30초 프론트 제한을 넘을 수 있다.
+      // 실제 /api/ai 요청을 보내는 순간부터 응답 타이머를 센다.
+      timer = setTimeout(function() {
+        if (settled) return;
+        settled = true;
+        Chat.setSending(false);
+        if (typing && typing.parentNode) typing.remove();
+        Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
+      }, CONST.CHAT_TIMEOUT_MS);
 
       Api.call('askAI', [val, Chat.buildContext(ctx.items), AppState.chatHistory, AppState.profile, view, AppState.lastTopProductId || '', AppState.lastTopRecommendationRef || ''],
         function(res) {
