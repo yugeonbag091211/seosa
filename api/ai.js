@@ -1040,9 +1040,14 @@ async function resolveIntent(q, hist, view, budget, guest) {
    *   LLM 이 고른 것은 의도와 검색어뿐이므로, 참조 사실은 그대로 얹는다.
    */
   if (viaLlm) {
+    if (det.requiresRecommendationIdentity && needsShopContext(det.intent)) {
+      viaLlm.intent = det.intent;
+      viaLlm.query = '';
+    }
     viaLlm.contextualFollowup = !!(viaLlm.contextualFollowup || det.contextualFollowup);
     viaLlm.requiresRecommendationIdentity = !!det.requiresRecommendationIdentity;
     viaLlm.referencesKnownProduct = !!det.referencesKnownProduct;
+    viaLlm.recommendationTarget = det.recommendationTarget || null;
   }
   /*
    * LLM 분류가 실패하면(null) 정규식 결과로 이어 간다.
@@ -1578,7 +1583,7 @@ async function resolveContext(selectors) {
    * 쿠팡인데 옵션 ID 가 없으면 기록조차 묻지 않는다 — 어느 옵션의 것인지 가를 수 없다.
    */
   const probes = pending
-    .filter(p => p.sel.vendorItemId || !AC.isCoupangMall(p.mall))
+    .filter(p => p.status !== 'title-mismatch' && (p.sel.vendorItemId || !AC.isCoupangMall(p.mall)))
     .map(p => ({ productId: p.sel.productId, mall: p.mall, vendorItemId: p.sel.vendorItemId, pending: p }));
   const [stats] = await Promise.all([
     attachHistory(out.verified.concat(probes)),
@@ -1613,6 +1618,7 @@ const CONTEXT_REASON = {
   'not-found':       'SEOSA 카탈로그에 이 상품·옵션이 없다',
   'option-missing':  '옵션(vendorItemId)이 없어 어느 옵션인지 특정할 수 없다',
   'option-mismatch': 'SEOSA가 확인한 현재가는 같은 상품 페이지의 다른 옵션 것이다',
+  'title-mismatch':  '참조 당시 상품명과 현재 서버 카탈로그 상품명이 달라 정체성을 다시 확인할 수 없다',
   'ambiguous':       '같은 식별자의 기록이 여럿이라 하나로 특정할 수 없다',
   'stale':           'SEOSA가 이 가격을 확인한 지 오래돼 현재가로 쓸 수 없다',
   'lookup-failed':   'SEOSA 서버 기록을 지금 조회하지 못했다'
@@ -2307,7 +2313,7 @@ function referencedItems(text, at, items, windowSize = 90) {
 }
 
 /** A current/today price claim must match that product's current search result. */
-function unverifiedCurrentPrices(text, items) {
+function unverifiedCurrentPrices(text, items, selectedItem) {
   const out = [];
   const current = /현재(?:가|가격)?|오늘|금일|방금|지금|실시간|판매가/;
   const historical = /어제|전날|지난\s*\d+일|기록|과거|이전|당시/;
@@ -2324,7 +2330,7 @@ function unverifiedCurrentPrices(text, items) {
     if (/정가|평균|최저가|쿠폰/.test(near)) continue;
     const at = m.index + Math.floor(m.text.length / 2);
     const refs = referencedItems(text, at, items);
-    const candidates = refs.length ? refs : (items || []);
+    const candidates = selectedItem ? [selectedItem] : (refs.length ? refs : (items || []));
     // 상품명이 특정되지 않았거나 같은 이름의 옵션이 여러 개라면, 일부 후보에서
     // 가격이 우연히 일치하는 것만으로 그 가격을 답변에 귀속시키지 않는다.
     if (m.currency !== 'KRW' || value <= 0 || !candidates.length
@@ -2336,7 +2342,7 @@ function unverifiedCurrentPrices(text, items) {
 }
 
 /** Prices adjacent to a product name must belong to that product/option. */
-function unverifiedProductPrices(text, items) {
+function unverifiedProductPrices(text, items, selectedItem) {
   const out = [];
   const s = String(text || '');
   const derived = /차액|차이|더\s*(?:저렴|싸)|높(?:습니다|아요|다)|낮(?:습니다|아요|다)|예산|배송비/;
@@ -2349,7 +2355,7 @@ function unverifiedProductPrices(text, items) {
     if (derived.test(local)) continue;
     const at = m.index + Math.floor(m.text.length / 2);
     const refs = referencedItems(s, at, items);
-    const candidates = refs.length ? refs : (items || []);
+    const candidates = selectedItem ? [selectedItem] : (refs.length ? refs : (items || []));
     const kind = priceClaimKind(s, m.index, m.index + m.text.length);
     const matchesClaim = it => {
       if (m.currency !== 'KRW' || value <= 0 || kind === 'all-time') return false;
@@ -2716,6 +2722,21 @@ function mentionsAnyCard(text, cards) {
       .filter(w => w.length >= 2 && !/^\d+$/.test(w));
     return words.some(w => t.includes(w));
   });
+}
+
+/** A named model/variant in a single-product answer must match the selected card. */
+function identityMismatch(text, selected) {
+  if (!selected || !selected.title) return false;
+  try {
+    const PID = require('./_productid');
+    const clean = String(text || '')
+      .replace(/\d[\d,]*(?:\.\d+)?\s*(?:억|만|천)?\s*원/g, ' ')
+      .replace(/(?:현재|지금|최저가|판매가|가격|얼마|추천합니다|추천해요|입니다|이에요|예요|입니다만)/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    const identity = PID.queryIdentity(clean);
+    if (identity.mode === 'none') return false;
+    return PID.relation(identity, selected.title).relation === 'different';
+  } catch (e) { return false; }
 }
 
 /** 가격 이력이나 서버 구매 판정 없이는 내보낼 수 없는 주장인가. */
@@ -3406,13 +3427,6 @@ module.exports = async function handler(req, res) {
   const { question, chatHistory, profile, view, prevTop: prevTopRaw } = body;
   const contextProducts = body && body.contextProducts;
   /*
-   * 직전 추천 1위의 서명 참조 (api/_aicontext.js createRecommendationRef).
-   * 서명이 없거나·변조됐거나·만료됐으면 null — 그때 "아까 추천한 그 제품"은
-   * 특정할 수 없는 것으로 다룬다. 대화 기록의 상품명·금액으로 대신 고르지 않는다.
-   */
-  const previousRecommendation = AC.verifyRecommendationRef(body && body.prevTopRef);
-
-  /*
    * 직전 응답의 1위 상품 id.
    *
    * ── 왜 프론트가 보내는가 ────────────────────────────────────────
@@ -3429,6 +3443,16 @@ module.exports = async function handler(req, res) {
   const prevTop = safeText(prevTopRaw, 60);
   const q = clip(question, MAX_QUESTION_LEN).trim();
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
+  const recommendationSessionId = guest
+    ? AC.getOrCreateRecommendationSession(req, res)
+    : AC.sessionBinding({ email: who.email });
+  const aliasDefinition = require('./_intent').recommendationAliasDefinition(q);
+  /*
+   * 직전 추천의 서명 참조 (api/_aicontext.js createRecommendationRef).
+   * 서명은 같은 브라우저 세션에서만 되살리고, 대화 기록의 이름·금액은 대신 쓰지 않는다.
+   */
+  const previousRecommendation = AC.verifyRecommendationRef(body && body.prevTopRef, Date.now(),
+    { session: recommendationSessionId, required: true });
 
   /*
    * 찾아낸 상품 카드.
@@ -3625,7 +3649,7 @@ module.exports = async function handler(req, res) {
      */
     let selectors = [];
     let refSelected = false;
-    const strongRef = !!(cls && cls.requiresRecommendationIdentity);
+    const strongRef = !!(cls && cls.requiresRecommendationIdentity) || !!(aliasDefinition && aliasDefinition.current);
     const weakRef = !!(cls && cls.referencesKnownProduct);
     if (strongRef || weakRef) {
       /*
@@ -3649,8 +3673,25 @@ module.exports = async function handler(req, res) {
       if (!strongRef && viewSource === 'modal' && onScreen.length) {
         selectors = onScreen;
       } else if (previousRecommendation) {
-        selectors = [previousRecommendation];
-        refSelected = true;
+        const target = cls && cls.recommendationTarget;
+        const list = Array.isArray(previousRecommendation.items) ? previousRecommendation.items : [];
+        let targetItem = null;
+        if (target && target.kind === 'alias') {
+          const letter = String.fromCharCode(65 + target.index);
+          targetItem = previousRecommendation.aliases && previousRecommendation.aliases[letter] || null;
+        } else if (target && Number.isInteger(target.index)) {
+          targetItem = list[target.index] || null;
+        } else if (target && target.kind === 'last') {
+          targetItem = list.length ? list[list.length - 1] : null;
+        } else {
+          targetItem = previousRecommendation;
+        }
+        if (targetItem) {
+          selectors = [targetItem];
+          refSelected = true;
+        } else {
+          contextNotes.refMissing = true;
+        }
       } else if (!strongRef && onScreen.length) {
         selectors = onScreen;
       } else {
@@ -3819,7 +3860,24 @@ module.exports = async function handler(req, res) {
          * "현재가가 30일 평균보다 싼가"를 판단할 근거가 없고, 답변도
          * 현재가만 읽는 수준에 머문다. (attachHistory 주석 참고)
          */
-        const raw = found.items.slice(0, MAX_CTX_ITEMS);
+        let raw = found.items.slice(0, MAX_CTX_ITEMS);
+        /* Keep an explicitly requested accessory subtype inside the AI candidate cap. */
+        try {
+          const PID = require('./_productid');
+          const roleText = FB.stripNegatedTerms(q);
+          const wantedRoles = PID.accessoryRoles(roleText);
+          if (wantedRoles.size) {
+            const roleMatches = found.items.filter(item => [...PID.accessoryRoles(item && item.title || '')]
+              .some(role => wantedRoles.has(role)));
+            if (roleMatches.length) {
+              const selected = new Set(roleMatches);
+              raw = roleMatches.slice(0, MAX_CTX_ITEMS).concat(found.items
+                .filter(item => !selected.has(item))
+                .slice(0, Math.max(0, MAX_CTX_ITEMS - Math.min(roleMatches.length, MAX_CTX_ITEMS))))
+                .slice(0, MAX_CTX_ITEMS);
+            }
+          }
+        } catch (e) { /* preserve the normal candidate cap if the subtype parser is unavailable */ }
         const historyCap = Math.min(AI_ENRICH_TIMEOUT_MS,
           Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
         let stats = new Map();
@@ -4429,8 +4487,13 @@ module.exports = async function handler(req, res) {
       const groundItems = items.concat(searchState === 'found' ? [] : contextNotes.historyOnly);
       const badWon   = unverifiedWon(text, collectKnownWon(groundItems, cards, q, hist, constraints));
       const badContextualPrice = unverifiedContextualPrices(text, groundItems);
-      const badProductPrice = unverifiedProductPrices(text, groundItems);
-      const badCurrentPrice = unverifiedCurrentPrices(text, groundItems);
+      const PID = require('./_productid');
+      const comparisonAsk = PID.isComparisonRequest(q);
+      const selectedCard = cards[0] || null;
+      const selectedGround = selectedCard && groundItems.find(it => productIdentityMatches(it, selectedCard)) || selectedCard;
+      const singleTarget = !comparisonAsk ? selectedGround : null;
+      const badProductPrice = unverifiedProductPrices(text, groundItems, singleTarget);
+      const badCurrentPrice = unverifiedCurrentPrices(text, groundItems, singleTarget);
       const badDiscountPct = unverifiedDiscountPct(text, groundItems);
       const badBudgetPick = unsupportedOffBudgetRecommendation(text, items, constraints);
       const badSpec  = unverifiedSpecs(text, items);
@@ -4438,7 +4501,10 @@ module.exports = async function handler(req, res) {
       const badSuper = unsupportedSuperlatives(text, items);
 
       const badDecision = unsupportedPriceDecision(text, items, deal);
-      const badIdentity = cards.length > 0 && !mentionsAnyCard(text, cards);
+      const badIdentity = cards.length > 0 && (comparisonAsk
+        ? !mentionsAnyCard(text, cards)
+        : (!mentionsAnyCard(text, selectedCard ? [selectedCard] : cards)
+          || identityMismatch(text, selectedCard)));
       const noCatalog = groundItems.length === 0;
 
       /*
@@ -4609,12 +4675,42 @@ module.exports = async function handler(req, res) {
     if (guest) payload.guest = true;
     if (degradedByGrounding) payload.degraded = true;
     if (followups.length) payload.followups = followups;
-    if (decision && decision.top && decision.top.productId) {
-      payload.topProductId = decision.top.productId;
-      // _decision intentionally exposes a minimal display contract ({ref, productId}).
-      // Resolve its ref back to the ranked server item so vendorItemId is preserved.
-      const selectedTop = items.find(it => it && it.ref === decision.top.ref);
-      const recommendationRef = AC.createRecommendationRef(selectedTop);
+    const referenceTop = cards[0] || (decision && decision.top)
+      || (aliasDefinition && aliasDefinition.current && previousRecommendation ? previousRecommendation : null);
+    if (referenceTop && referenceTop.productId) {
+      payload.topProductId = referenceTop.productId;
+      // The visible card order defines ordinal and A/B/C references. The signed
+      // token binds every target to its exact product, option, mall, and title.
+      const displayedItems = cards.slice(0, AC.MAX_REFERENCE_ITEMS).map(card => ({
+        productId: card.productId,
+        vendorItemId: card.vendorItemId || '',
+        mall: card.mall,
+        mallId: card.mall,
+        title: card.title
+      }));
+      const recommendationItems = refSelected && previousRecommendation && previousRecommendation.items.length
+        ? previousRecommendation.items : displayedItems;
+      const recommendationAliases = Object.assign({}, previousRecommendation && previousRecommendation.aliases || {});
+      const picked = cards[0] || (decision && decision.top) || referenceTop;
+      if (aliasDefinition && picked && picked.productId) {
+        const aliasItem = aliasDefinition.current
+          ? (refSelected && selectors[0] ? selectors[0] : (previousRecommendation || picked))
+          : picked;
+        if (aliasItem && aliasItem.productId) recommendationAliases[aliasDefinition.letter] = {
+          productId: aliasItem.productId,
+          vendorItemId: aliasItem.vendorItemId || '',
+          mall: aliasItem.mall || aliasItem.mallId,
+          mallId: aliasItem.mallId || aliasItem.mall,
+          title: aliasItem.title || '',
+          titleHash: aliasItem.titleHash || ''
+        };
+      }
+      const recommendationRef = AC.createRecommendationRef(recommendationItems, Date.now(), {
+        session: recommendationSessionId,
+        required: true,
+        aliases: recommendationAliases,
+        selected: picked
+      });
       if (recommendationRef) payload.topRecommendationRef = recommendationRef;
     }
     if (decision && decision.change) {

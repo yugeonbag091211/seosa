@@ -48,6 +48,7 @@ const MAX_SELECTORS = 8;
  */
 const REF_TTL_MS = 2 * 60 * 60 * 1000;
 const TURN_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_REFERENCE_ITEMS = 3;
 /** 서버 시계 차이로 미래 시각이 찍힌 서명을 얼마나 봐줄지. */
 const CLOCK_SKEW_MS = 60 * 1000;
 
@@ -186,6 +187,7 @@ function matchCatalog(sel, rows) {
   if (exact.length > 1) return { status: 'ambiguous' };
 
   const row = exact[0];
+  if (sel.titleHash && titleDigest(row.title || '') !== sel.titleHash) return { status: 'title-mismatch', row };
   if (productLifecycle(row).state !== LIFECYCLE.LIVE) return { status: 'stale', row };
   return { status: 'verified', row };
 }
@@ -266,6 +268,65 @@ function sameMac(a, b) {
 
 const REF_PREFIX = 'air2';
 const REF_LABEL = 'seosa-ai-recommendation-ref-v2';
+const SESSION_COOKIE = 'seosa_ai_sid';
+const SESSION_PREFIX = 'sid1';
+const SESSION_LABEL = 'seosa-ai-browser-session-v1';
+
+function titleDigest(title) {
+  return crypto.createHash('sha256').update(clean(title, TITLE_LEN), 'utf8').digest('hex');
+}
+
+function sessionMac(id) {
+  const key = keyFor(SESSION_LABEL);
+  return key ? b64url(crypto.createHmac('sha256', key).update(`${SESSION_PREFIX}.${id}`).digest()) : '';
+}
+
+/** Stable, one-way binding for an authenticated account; never embeds the email. */
+function sessionBinding(identity) {
+  const email = String(identity && identity.email || '').trim().toLowerCase();
+  const key = keyFor(SESSION_LABEL);
+  if (!email || !key) return '';
+  return crypto.createHmac('sha256', key).update(`user:${email}`).digest('hex').slice(0, 48);
+}
+
+function referenceOptions(value) {
+  if (value && typeof value === 'object') {
+    return { session: String(value.session || ''), aliases: value.aliases || {}, selected: value.selected || null, required: value.required === true };
+  }
+  return { session: String(value || ''), aliases: {}, selected: null, required: false };
+}
+
+function recommendationSessionFromCookie(header) {
+  const raw = String(header || '').split(';').map(s => s.trim())
+    .find(s => s.startsWith(`${SESSION_COOKIE}=`));
+  if (!raw) return '';
+  let token;
+  try { token = decodeURIComponent(raw.slice(SESSION_COOKIE.length + 1)); }
+  catch (e) { return ''; }
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== SESSION_PREFIX || !/^[a-f0-9]{48}$/.test(parts[1])) return '';
+  const expected = sessionMac(parts[1]);
+  if (!expected || !sameMac(Buffer.from(parts[2]), Buffer.from(expected))) return '';
+  return parts[1];
+}
+
+/** Issue/read a signed, HttpOnly browser binding used only by recommendation refs. */
+function getOrCreateRecommendationSession(req, res) {
+  const key = keyFor(SESSION_LABEL);
+  if (!key) return '';
+  const headers = req && req.headers || {};
+  const existing = recommendationSessionFromCookie(headers.cookie);
+  if (existing) return existing;
+  const id = crypto.randomBytes(24).toString('hex');
+  const token = `${SESSION_PREFIX}.${id}.${sessionMac(id)}`;
+  const forwardedProto = String(headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  const host = String(headers.host || '').toLowerCase();
+  const secure = forwardedProto === 'https' || (host && !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host));
+  const flags = [`${SESSION_COOKIE}=${encodeURIComponent(token)}`, 'Path=/api/ai', 'HttpOnly', 'SameSite=Lax', `Max-Age=${Math.floor(REF_TTL_MS / 1000)}`];
+  if (secure) flags.push('Secure');
+  if (res && typeof res.setHeader === 'function') res.setHeader('Set-Cookie', flags.join('; '));
+  return id;
+}
 
 /**
  * 직전 추천 1위의 서명 참조.
@@ -277,15 +338,49 @@ const REF_LABEL = 'seosa-ai-recommendation-ref-v2';
  * 쿠팡 상품은 옵션 ID 없이 발급하지 않는다 (옵션을 특정할 수 없는 참조는
  * 결국 "그중 아무 옵션"을 고르게 만든다).
  */
-function createRecommendationRef(item, now) {
+function createRecommendationRef(item, now, sessionArg) {
   const key = keyFor(REF_LABEL);
-  const productId = clean(item && item.productId, ID_LEN);
-  const vendorItemId = clean(item && item.vendorItemId, ID_LEN);
-  const mall = clean(item && (item.mallId || item.mall), 30);
-  if (!key || !productId || !mall) return '';
-  if (isCoupangMall(mall) && !vendorItemId) return '';
+  if (!key) return '';
+  const options = referenceOptions(sessionArg);
+  if (options.required && !options.session) return '';
+  const source = Array.isArray(item) ? item : [item];
+  const entries = [];
+  source.slice(0, MAX_REFERENCE_ITEMS).forEach(value => {
+    const productId = clean(value && value.productId, ID_LEN);
+    const vendorItemId = clean(value && value.vendorItemId, ID_LEN);
+    const mall = clean(value && (value.mallId || value.mall), 30);
+    const title = clean(value && value.title, TITLE_LEN);
+    if (!productId || !mall || (isCoupangMall(mall) && !vendorItemId)) return;
+    const suppliedHash = String(value && value.titleHash || '');
+    const h = /^[a-f0-9]{64}$/.test(suppliedHash) ? suppliedHash : titleDigest(title);
+    entries.push({ p: productId, v: vendorItemId, m: mall, h });
+  });
+  if (!entries.length) return '';
   const iat = Number.isFinite(now) ? now : Date.now();
-  const payload = b64url(JSON.stringify({ p: productId, v: vendorItemId, m: mall, iat, exp: iat + REF_TTL_MS }));
+  const picked = options.selected || source[0];
+  const selectedProductId = clean(picked && picked.productId, ID_LEN);
+  const selectedVendorItemId = clean(picked && picked.vendorItemId, ID_LEN);
+  const selectedMall = clean(picked && (picked.mallId || picked.mall), 30);
+  const selectedTitle = clean(picked && picked.title, TITLE_LEN);
+  const selectedHashInput = String(picked && picked.titleHash || '');
+  const selectedHash = /^[a-f0-9]{64}$/.test(selectedHashInput) ? selectedHashInput : titleDigest(selectedTitle);
+  if (!selectedProductId || !selectedMall || (isCoupangMall(selectedMall) && !selectedVendorItemId)) return '';
+  const selected = { p: selectedProductId, v: selectedVendorItemId, m: selectedMall, h: selectedHash };
+  const sid = options.session;
+  if (sid && !/^[a-f0-9]{48}$/.test(sid)) return '';
+  const aliases = {};
+  ['A', 'B', 'C'].forEach(letter => {
+    const value = options.aliases && options.aliases[letter];
+    if (!value) return;
+    const p = clean(Array.isArray(value) ? value[0] : value.productId, ID_LEN);
+    const v = clean(Array.isArray(value) ? value[1] : value.vendorItemId, ID_LEN);
+    const m = clean(Array.isArray(value) ? value[2] : (value.mallId || value.mall), 30);
+    const h = String(Array.isArray(value) ? value[3] : value.titleHash || titleDigest(value.title || '') || '');
+    if (p && m && /^[a-f0-9]{64}$/.test(h) && (!isCoupangMall(m) || v)) aliases[letter] = [p, v, m, h];
+  });
+  const payload = b64url(JSON.stringify({ p: selected.p, v: selected.v, m: selected.m, h: selected.h,
+    l: entries.map(entry => [entry.p, entry.v, entry.m, entry.h]), a: aliases,
+    s: sid || undefined, iat, exp: iat + REF_TTL_MS }));
   const sig = b64url(crypto.createHmac('sha256', key).update(`${REF_PREFIX}.${payload}`).digest());
   return `${REF_PREFIX}.${payload}.${sig}`;
 }
@@ -294,7 +389,7 @@ function createRecommendationRef(item, now) {
  * @returns {{productId, vendorItemId, mall, mallId}|null}
  *   서명이 없거나·형식이 틀리거나·변조됐거나·만료됐으면 null.
  */
-function verifyRecommendationRef(value, now) {
+function verifyRecommendationRef(value, now, sessionArg) {
   const token = String(value || '');
   if (!token || token.length > 1024) return null;
   const parts = token.split('.');
@@ -306,17 +401,50 @@ function verifyRecommendationRef(value, now) {
     const expected = crypto.createHmac('sha256', key).update(`${REF_PREFIX}.${parts[1]}`).digest();
     if (!sameMac(unb64url(parts[2]), expected)) return null;
     const d = JSON.parse(unb64url(parts[1]).toString('utf8'));
+    const options = referenceOptions(sessionArg);
     const t = Number.isFinite(now) ? now : Date.now();
     const iat = Number(d && d.iat);
     const exp = Number(d && d.exp);
     if (!Number.isFinite(iat) || !Number.isFinite(exp)) return null;
     if (iat > t + CLOCK_SKEW_MS || exp < t || exp - iat > REF_TTL_MS) return null;
-    const productId = clean(d.p, ID_LEN);
-    const vendorItemId = clean(d.v, ID_LEN);
-    const mall = clean(d.m, 30);
-    if (!productId || !mall) return null;
-    if (isCoupangMall(mall) && !vendorItemId) return null;
-    return { productId, vendorItemId, mall, mallId: mall, title: '' };
+    if (options.required && !d.s) return null;
+    if (d.s && (!options.session || String(d.s) !== options.session)) return null;
+    if (options.session && String(d.s || '') !== options.session) return null;
+    const rawItems = Array.isArray(d.l) ? d.l : (Array.isArray(d.items) ? d.items : [d]);
+    if (!rawItems.length || rawItems.length > MAX_REFERENCE_ITEMS) return null;
+    const items = [];
+    for (const entry of rawItems) {
+      const productId = clean(Array.isArray(entry) ? entry[0] : entry && entry.p, ID_LEN);
+      const vendorItemId = clean(Array.isArray(entry) ? entry[1] : entry && entry.v, ID_LEN);
+      const mall = clean(Array.isArray(entry) ? entry[2] : entry && entry.m, 30);
+      const titleHash = String(Array.isArray(entry) ? entry[3] : entry && entry.h || '');
+      if (!productId || !mall || !/^[a-f0-9]{64}$/.test(titleHash)
+          || (isCoupangMall(mall) && !vendorItemId)) return null;
+      items.push({ productId, vendorItemId, mall, mallId: mall, title: '', titleHash });
+    }
+    const selectedProductId = clean(d && d.p, ID_LEN);
+    const selectedVendorItemId = clean(d && d.v, ID_LEN);
+    const selectedMall = clean(d && d.m, 30);
+    const selectedTitleHash = String(d && d.h || '');
+    if (!selectedProductId || !selectedMall || !/^[a-f0-9]{64}$/.test(selectedTitleHash)
+        || (isCoupangMall(selectedMall) && !selectedVendorItemId)) return null;
+    const aliases = {};
+    const rawAliases = d && d.a && typeof d.a === 'object' ? d.a : {};
+    for (const letter of ['A', 'B', 'C']) {
+      const entry = rawAliases[letter];
+      if (!entry) continue;
+      const productId = clean(Array.isArray(entry) ? entry[0] : entry.p, ID_LEN);
+      const vendorItemId = clean(Array.isArray(entry) ? entry[1] : entry.v, ID_LEN);
+      const mall = clean(Array.isArray(entry) ? entry[2] : entry.m, 30);
+      const titleHash = String(Array.isArray(entry) ? entry[3] : entry.h || '');
+      if (!productId || !mall || !/^[a-f0-9]{64}$/.test(titleHash)
+          || (isCoupangMall(mall) && !vendorItemId)) return null;
+      aliases[letter] = { productId, vendorItemId, mall, mallId: mall, title: '', titleHash };
+    }
+    return Object.assign({ items, aliases }, {
+      productId: selectedProductId, vendorItemId: selectedVendorItemId,
+      mall: selectedMall, mallId: selectedMall, title: '', titleHash: selectedTitleHash
+    });
   } catch (e) {
     return null;
   }
@@ -373,5 +501,6 @@ module.exports = {
   selectorsFrom, matchCatalog, rowToItem, rowVendorId, isCoupangMall,
   loadCatalogRows,
   createRecommendationRef, verifyRecommendationRef, signTurn, verifyTurn,
-  REF_TTL_MS, TURN_TTL_MS, MAX_SELECTORS
+  getOrCreateRecommendationSession, sessionBinding, titleDigest,
+  REF_TTL_MS, TURN_TTL_MS, MAX_SELECTORS, MAX_REFERENCE_ITEMS
 };

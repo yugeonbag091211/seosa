@@ -1,4 +1,7 @@
 'use strict';
+
+/* 상품 정체성 서명 (등급·세대·색상·SKU 구분) — modelVariantMismatch 주석. */
+const PID = require('./_productid');
 /*
  * 검색 품질 — 검색어 정규화 / 관련도 점수 / 중복 제거 / 오타 보정.
  *
@@ -267,6 +270,7 @@ function analyzeQuery(keyword, opts = {}) {
   const analysis = { raw: String(keyword || ''), normalized, tokens, totalWeight, brandHead: !!brandHead };
   analysis.modelKeys = modelCodes(keyword);
   analysis.accessories = accessoryTerms(normalized);
+  analysis.accessoryRoles = PID.accessoryRoles(keyword);
   // A broad head query need not partition the candidates: every returned title
   // may contain it. Infer this intent from a primary title, without a brand list.
   const primaryHead = head && raw[0] === head && (opts.titles || []).some(title => {
@@ -279,18 +283,20 @@ function analyzeQuery(keyword, opts = {}) {
     : raw.length === 1 && (brandHead || primaryHead) ? 'BRAND_ONLY'
     : brandHead || primaryHead ? 'BRAND_PRODUCT' : 'PRODUCT';
   /*
-   * 모델 표기 차이 판정의 재료 (MODEL_EXTENSION_RE · modelVariantMismatch 주석).
+   * 모델 정체성 판정의 재료 (modelVariantMismatch 주석, api/_productid.js).
    *
-   *   modelWantedExtension  질의 자신이 적은 모델 꼬리말 ('' = 기본 표기)
-   *   modelExactSeen        이번 결과에 그 표기를 가진 후보가 실제로 있는가
+   *   identity            질의의 정체성 (모델코드·제품군·등급·세대)
+   *   identityExactSeen   이번 결과에 질의와 «같은 모델» 인 후보가 실제로 있는가
+   *   identityFamilySeen  이번 결과에 질의와 «같은 제품군» 인 후보가 실제로 있는가
    *
    * 목록이 없으면(저장된 products 단건 판정 등) 켜지 않는다 — 근거 없이 깎지 않는다.
    */
-  analysis.modelWantedExtension = queryWantedExtension(analysis);
-  analysis.modelExactSeen = analysis.modelKeys.length > 0 && (opts.titles || []).some(title => {
-    const d = modelDesignation(analysis.modelKeys, title);
-    return d.found && (d.extension || '') === analysis.modelWantedExtension;
-  });
+  analysis.identity = PID.queryIdentity(keyword);
+  const titles = opts.titles || [];
+  analysis.identityExactSeen = analysis.identity.mode !== 'none'
+    && titles.some(title => PID.relation(analysis.identity, title).relation === 'same');
+  analysis.identityFamilySeen = analysis.identity.mode !== 'none'
+    && titles.some(title => !PID.familyMismatch(analysis.identity, title));
   return analysis;
 }
 
@@ -579,122 +585,55 @@ function compatibilityMention(analysis, title) {
 }
 
 /*
- * 모델 표기를 «늘리는» 꼬리말.
+ * ── 모델 정체성 (2026-10-08 운영 soak → 같은 날 Codex 독립 레드팀) ──
  *
- * ── 왜 필요한가 (2026-10-08 운영 soak) ──────────────────────────
+ * «G304 가격 알려줘» 에 «로지텍 G304 X SUPERLIGHT»(109,000원) 가 선택됐다. 두
+ * 상품은 같은 모델코드 토큰을 쓰므로 질의 커버리지가 둘 다 1.0 이고, 동점
+ * 처리가 어느 쪽이든 1위로 만들 수 있었다.
  *
- * «G304 가격 알려줘» 에 «로지텍 G304 X SUPERLIGHT»(109,000원) 가 선택됐다.
- * 두 상품은 같은 모델코드 토큰(g304)을 쓰기 때문에 질의 커버리지가 둘 다
- * 1.0 으로 같다 — 관련도만으로는 가를 수 없었고, 그 뒤의 동점 처리(가격·
- * 식별자)가 어느 쪽이든 1위로 만들 수 있었다. 실제로 다른 모델의 가격이
- * 일반 G304 의 가격처럼 답변됐다.
+ * 1차 수정은 «모델코드 바로 뒤의 1~2글자 영문 = 꼬리말» 이라는 자리 규칙이었고,
+ * 독립 레드팀이 양쪽으로 깼다 — BK·WH·K/DA(색상) 를 다른 모델로 보고, Buds3 Pro ·
+ * Pro 2/3 · Pro Max · V15 Detect · 3S 는 같은 모델로 봤다. 글자 수는 의미가 아니다.
  *
- *   로지텍 G304 LIGHTSPEED …      ← 사용자가 말한 그 모델
- *   로지텍 G304 X SUPERLIGHT …    ← 모델코드 뒤에 «X» 가 붙은 다른 제품
+ * 그래서 판정은 api/_productid.js 가 한다 — 토큰을 base·세대·등급·색상·SKU 로
+ * 나누고 질의와 상품명의 정체성 구간을 맞춘다(그 파일 머리 주석).
  *
- * 쿠팡 제목에서 모델코드 바로 뒤에 붙는 1~2글자 영문 토큰은 같은 숫자를
- * 쓰는 다른 제품을 가르는 표기다 (G304 ↔ G304 X, RTX 5070 ↔ 5070 Ti,
- * 갤럭시 S24 ↔ S24 FE). 사전이 아니라 «자리» 로 판정한다 — 특정 브랜드·
- * 상품명을 코드에 박지 않는다.
- *
- * ── 왜 이것만으로는 안 되고 «증거» 가 필요한가 ──────────────────
- *
- * 꼬리말만 보고 깎으면 색상 코드(«G304 BK»)처럼 같은 상품인 표기까지
- * 내려간다. 그래서 이 신호는 «이번 결과 안에 꼬리말 없는 후보가 실제로
- * 있을 때» 만 켠다(analysis.modelBare). 사용자가 말한 표기와 정확히 같은
- * 후보가 있는데 굳이 늘어난 표기를 고르는 일만 막는다.
+ * ★ 증거 없이는 켜지 않는다 (analysis.identityExactSeen).
+ *   이번 결과에 «질의와 같은 정체성» 을 가진 후보가 실제로 있을 때만 다른 것을
+ *   내린다. 사용자가 말한 그 모델이 결과에 없으면 아무것도 내리지 않는다.
  */
-const MODEL_EXTENSION_RE = /^[a-z]{1,2}$/;
-/** 늘어난 표기를 고를 때 곱하는 값. 지우지 않는다 — 순서만 내린다. */
+/** 다른 모델을 고를 때 곱하는 값. 지우지 않는다 — 순서만 내린다. */
 const MODEL_VARIANT_PENALTY = 0.55;
 
 /**
- * 이 제목이 질의의 모델코드를 어떻게 적었는가.
+ * 질의가 지목한 모델과 다른 모델인가 (등급·세대 차이).
  *
- * @returns {{found:boolean, extension:string}}
- *   found     질의의 모델코드 토큰이 제목에 그대로 있다
- *   extension 그 바로 뒤에 붙은 모델 꼬리말 (없으면 '')
+ * 모델코드 자체가 없는 상품(«G304» 질의의 «G PRO X»)은 여기서 보지 않는다 —
+ * 그것은 «다른 제품군» 이고 productFamilyMismatch 가 따로 판정한다.
+ *
+ * @param {object} analysis analyzeQuery 결과
+ * @param {string} title
+ * @param {object} [opts] specificOnly — 모델코드·세대가 있는 질의에서만 판정(일반 검색용)
+ * @returns {string} 다르면 사람이 읽을 수 있는 차이, 같으면 ''
  */
-function modelDesignation(modelKeys, title) {
-  const out = { found: false, extension: '' };
-  if (!modelKeys || !modelKeys.length) return out;
-  const tokens = splitTokens(normalizeText(title));
-  for (let i = 0; i < tokens.length; i++) {
-    if (!modelKeys.some(k => tokens[i] === k)) continue;
-    out.found = true;
-    const next = tokens[i + 1];
-    if (next && MODEL_EXTENSION_RE.test(next) && !UNIT_RE.test(next) && !CAPACITY_RE.test(next)) {
-      // 꼬리말이 없는 자리를 하나라도 찾으면 그쪽이 사용자가 말한 표기다.
-      if (!out.extension) out.extension = next;
-    } else {
-      out.extension = '';
-      return out;
-    }
-  }
-  return out;
+function modelVariantMismatch(analysis, title, opts = {}) {
+  if (!analysis || !analysis.identity || !analysis.identityExactSeen) return '';
+  if (opts.specificOnly && analysis.identity.mode !== 'specific') return '';
+  const r = PID.relation(analysis.identity, title);
+  if (r.relation !== 'different') return '';
+  /* A model-code change inside the same product family is a model mismatch.
+   * A different family is handled separately by productFamilyMismatch. */
+  if (/^code:/.test(r.reason) && PID.familyMismatch(analysis.identity, title)) return '';
+  return r.reason;
 }
 
 /**
- * 질의가 적은 모델 꼬리말.
- *
- * ★ 제목과 달리 «자리» 를 요구하지 않는다.
- *
- *   제목은 판매자가 쓴 긴 문자열이라 모델코드 바로 뒤라는 자리가 신호가 된다.
- *   질의는 사람이 몇 낱말로 쓴 것이고 어순이 자유롭다 — 실측 변형:
- *     "G304 엑스 가격 알려줘"      꼬리말을 한글로 적었다
- *     "G304 슈퍼라이트 X 최저가"   꼬리말이 모델코드에 붙어 있지 않다
- *   둘 다 X 를 찾는 말인데 자리로만 보면 «기본형» 으로 읽혀, 판정이 정확히
- *   반대로 돌았다(G304 X 를 물었는데 일반형이 1위).
- *
- *   그래서 질의에서는 꼬리말 «꼴» 의 토큰을 어디서든 찾고, 한글 음차는
- *   기존 동의어 표(SYNONYM_GROUPS)로 되돌린다.
+ * 다른 제품군인가 — «AirPods Pro 3» 질의의 «Galaxy Buds3 Pro».
+ * 증거(같은 제품군 후보가 실제로 있음)가 있을 때만 참이다.
  */
-function queryWantedExtension(analysis) {
-  if (!analysis || !analysis.modelKeys || !analysis.modelKeys.length) return '';
-  for (const tok of analysis.tokens) {
-    const text = tok.text;
-    if (analysis.modelKeys.indexOf(text) > -1) continue;
-    if (UNIT_RE.test(text) || CAPACITY_RE.test(text) || YEAR_RE.test(text)) continue;
-    if (MODEL_EXTENSION_RE.test(text)) return text;
-    const syn = SYNONYMS.get(text);
-    if (syn) {
-      for (const s of syn) if (MODEL_EXTENSION_RE.test(s)) return s;
-    }
-  }
-  return '';
-}
-
-/**
- * 질의가 지목한 모델과 다른 표기를 쓴 제목인가.
- *
- * ★ 양방향이다 (2026-10-08 변형 공격 246건).
- *
- *   한 방향만 보면 반쪽이다. «G304» 에 «G304 X» 가 오는 것만 막고,
- *   «G304 X 가격» 에 일반 G304 가 1위로 오는 것은 못 막는다 — 실측에서
- *   12개 변형 중 9개가 그렇게 샜다. 질의 커버리지(일반형 0.6 vs X 0.8)가
- *   둘 다 어중간해서 커버리지 감점 문턱(0.9)이 열리지 않았기 때문이다.
- *
- *   그래서 «질의가 적은 표기» 와 «제목이 적은 표기» 를 그대로 맞춘다.
- *     질의 g304    · 제목 g304        → 같다
- *     질의 g304    · 제목 g304 x      → 다르다
- *     질의 g304 x  · 제목 g304        → 다르다  ← 이 방향이 빠져 있었다
- *     질의 g304 x  · 제목 g304 x      → 같다
- *
- * ★ 증거 없이는 켜지 않는다 (analysis.modelExactSeen).
- *   이번 결과에 «질의가 적은 그 표기» 를 가진 후보가 실제로 있을 때만 본다.
- *   그래야 색상 코드(«G304 BK») 처럼 같은 상품인 표기나, 애초에 그 표기가
- *   없는 결과를 근거 없이 내리지 않는다.
- *
- * @returns {string} 다르면 사람이 읽을 수 있는 그 차이, 같으면 ''
- */
-function modelVariantMismatch(analysis, title) {
-  if (!analysis || !analysis.modelExactSeen || !analysis.modelKeys || !analysis.modelKeys.length) return '';
-  const want = analysis.modelWantedExtension || '';
-  const d = modelDesignation(analysis.modelKeys, title);
-  if (!d.found) return '';
-  const got = d.extension || '';
-  if (got === want) return '';
-  return got || `${want.toUpperCase()} 없는 기본 표기`;
+function productFamilyMismatch(analysis, title) {
+  if (!analysis || !analysis.identity || !analysis.identityFamilySeen) return false;
+  return PID.familyMismatch(analysis.identity, title);
 }
 
 function titleRelation(analysis, title) {
@@ -708,8 +647,9 @@ function titleRelation(analysis, title) {
     factor *= 0.4;
     reasons.push('model-boundary-miss');
   }
-  // 같은 모델코드에 붙은 다른 표기 (MODEL_EXTENSION_RE 머리 주석).
-  if (modelVariantMismatch(analysis, title)) {
+  // 같은 모델의 다른 등급·세대 (modelVariantMismatch 주석). 일반 검색은 모델코드·세대가
+  // 있는 질의에서만 건다 — «미니 선풍기» 같은 범주 질의의 순서를 흔들지 않는다.
+  if (modelVariantMismatch(analysis, title, { specificOnly: true })) {
     factor *= MODEL_VARIANT_PENALTY;
     reasons.push('model-variant');
   }
@@ -1325,6 +1265,13 @@ function productIntentContext(keyword, titles, opts = {}) {
  */
 function accessoryRequestMismatch(analysis, title) {
   if (!analysis) return false;
+  const requestedRoles = analysis.accessoryRoles || PID.accessoryRoles(analysis.raw || '');
+  const explicitSubtype = /충전|charging|보호|protective|실리콘|silicone|하드\s*케이스|hard\s*case|지갑\s*케이스|wallet\s*case|이어팁|ear\s*tips?|배터리\s*팩|battery\s*pack/i
+    .test(String(analysis.raw || ''));
+  if (requestedRoles.size && explicitSubtype) {
+    const actualRoles = PID.accessoryRoles(title);
+    return ![...requestedRoles].some(role => actualRoles.has(role));
+  }
   const requested = analysis.accessories || [];
   if (!requested.length) return false;
   const normalized = normalizeText(title);
@@ -1369,10 +1316,18 @@ function rankItems(keyword, items, opts = {}) {
   const { items: deduped, removed } = dedupeItems(items);
   // General search ranks accessory matches below main products but keeps them available.
   // The AI path applies the explicit intent filter in _shopintent.js before its early return.
-  const uniq = deduped;
+  let uniq = deduped;
   const intentDropped = 0;
   // 브랜드 판정에 이번 목록을 쓴다 (detectBrandHead 주석 참고).
   const analysis = analyzeQuery(keyword, { titles: deduped.map(it => (it && it.title) || '') });
+
+  /* A specific identity query with a same-family result has evidence to exclude
+   * unrelated product families. Comparison queries keep both sides; model
+   * variants inside the requested family remain available. */
+  if (analysis.identity && analysis.identity.mode === 'specific' && !analysis.identity.codes.size
+      && analysis.identityFamilySeen && !PID.isComparisonRequest(keyword)) {
+    uniq = deduped.filter(it => !productFamilyMismatch(analysis, it && it.title));
+  }
 
   if (!uniq.length) {
     return { items: [], dropped: intentDropped, removed, allBelow: deduped.length > 0 };
@@ -1865,7 +1820,7 @@ module.exports = {
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
-  modelVariantMismatch, modelDesignation, titleRelation, accessoryRequestMismatch,
+  modelVariantMismatch, productFamilyMismatch, titleRelation, accessoryRequestMismatch, soldKind,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY

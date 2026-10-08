@@ -617,8 +617,34 @@ function rankItems(items, c, query, opts) {
        * (_search.MAIN_PRODUCT_REQUEST_RE 주석). 상품·가격 사실로는 쓰지 않는다.
        */
       const ctxOpts = { userText: (opts && opts.userText) || '' };
-      list = searchHelpers.filterMainProductCandidates(query, list, ctxOpts).items;
+      const PID = require('./_productid');
+      let roleText = ctxOpts.userText || query;
+      try { roleText = require('./_feedback').stripNegatedTerms(roleText); } catch (e) { /* original text */ }
+      const explicitAccessoryRoles = PID.accessoryRoles(roleText);
+      if (!explicitAccessoryRoles.size) {
+        list = searchHelpers.filterMainProductCandidates(query, list, ctxOpts).items;
+      }
       intentContext = searchHelpers.productIntentContext(query, list.map(it => it && it.title), ctxOpts);
+      /*
+       * ── 후보 자격: 다른 제품군 (2026-10-08 Codex 독립 레드팀) ──────
+       *
+       * «AirPods Pro 3» 본품 질의 50건 전부에서 Galaxy Buds 가 상위 3 안에 남았다.
+       * 최종 1위만 맞으면 되는 것이 아니다 — 카드는 사용자가 누르는 결론이고,
+       * 답변 모델은 이 목록 안에서 말한다.
+       *
+       * ★ 지우는 조건은 셋을 모두 만족할 때뿐이다.
+       *   1) 질의가 «특정 모델» 이다 — 모델코드나 세대 숫자가 있다(_productid 의
+       *      specific). "가벼운 노트북" 같은 범주 질의에서는 지우지 않는다.
+       *   2) 같은 제품군 후보가 결과에 실제로 있다(증거). 없으면 아무것도 지우지
+       *      않는다.
+       *   3) 비교 요청이 아니다. "AirPods Pro 3 랑 Buds3 Pro 비교" 에는 둘 다 필요하다.
+       */
+      const askText = ctxOpts.userText || query;
+      const id = intentContext.analysis.identity;
+      if (id && id.mode === 'specific' && !PID.isComparisonRequest(askText)
+          && intentContext.analysis.identityFamilySeen) {
+        list = list.filter(it => !searchHelpers.productFamilyMismatch(intentContext.analysis, it && it.title));
+      }
     } catch (_e) {
       searchHelpers = null;
       intentContext = null;
@@ -783,19 +809,78 @@ function rankItems(items, c, query, opts) {
      */
     list.forEach(it => {
       if (!searchHelpers.accessoryRequestMismatch(intentContext.analysis, it && it.title)) return;
+      const PID = require('./_productid');
+      let targetText = (opts && opts.userText) || query;
+      try { targetText = require('./_feedback').stripNegatedTerms(targetText); } catch (e) { /* 원문으로 */ }
+      const targetRoles = PID.accessoryRoles(targetText);
+      const titleRoles = PID.accessoryRoles((it && it.title) || '');
+      if ([...targetRoles].some(role => titleRoles.has(role))) return;
       it._identityMiss = true;
       it._accessoryRequestMiss = true;
       it.notes.push('사용자가 지목한 부속이 상품명에 없다');
     });
 
-    /* 같은 모델코드에 붙은 다른 표기 (_search.MODEL_EXTENSION_RE 주석). */
+    /*
+     * 부속의 «종류» (2026-10-08 Codex 독립 레드팀 — 명시적 부속 요청 50건 중 23건).
+     *
+     * 부속이냐 아니냐만 보면 «충전 케이스» 요구에 보호 커버가, «이어팁» 요구에
+     * 다른 부속이 1위였다. 사용자가 종류를 말했으면(api/_productid.accessoryRoles)
+     * 그 종류가 아닌 부속과, 부속이 아니라 기기 본품인 상품은 식별 어긋남이다.
+     *
+     * ★ 증거가 있을 때만 — 그 종류의 후보가 실제로 있어야 다른 것을 내린다.
+     * ★ 종류는 사용자가 «빼 달라» 고 한 말을 걷어낸 뒤에 읽는다
+     *   ("케이스 말고 이어팁" 은 이어팁 요구다).
+     */
+    {
+      const PID = require('./_productid');
+      let askText = (opts && opts.userText) || query;
+      try { askText = require('./_feedback').stripNegatedTerms(askText); } catch (e) { /* 원문으로 */ }
+      const wantRoles = PID.accessoryRoles(askText);
+      const matches = it => [...PID.accessoryRoles((it && it.title) || '')].some(r => wantRoles.has(r));
+      const isDevice = it => {
+        if (PID.accessoryRoles((it && it.title) || '').size) return false;
+        try {
+          return searchHelpers.soldKind(intentContext.analysis,
+            searchHelpers.analyzeTitle((it && it.title) || '')) === 'main';
+        } catch (e) { return false; }
+      };
+      if (wantRoles.size && !PID.isComparisonRequest(askText)
+          && list.some(it => matches(it) && !isDevice(it))) {
+        list.forEach(it => {
+          if (matches(it) && !isDevice(it)) return;
+          if (!it._identityMiss) it.notes.push(isDevice(it) ? '부속이 아니라 기기 본품이다' : '사용자가 지목한 부속 종류가 아니다');
+          it._identityMiss = true;
+          it._accessoryRequestMiss = true;
+        });
+      }
+    }
+
+    /* 같은 모델의 다른 등급·세대 (_search.modelVariantMismatch · api/_productid.js). */
     list.forEach(it => {
       const variant = searchHelpers.modelVariantMismatch(intentContext.analysis, it && it.title);
       if (!variant) return;
       it._identityMiss = true;
       it._modelVariant = variant;
-      it.notes.unshift(`검색하신 모델 표기와 다른 상품이다(${variant})`);
+      it.notes.unshift('검색하신 모델과 등급·세대가 다른 상품이다');
     });
+
+    /* Do not let an explicitly used/refurbished listing win a normal new-item query. */
+    {
+      let askText = (opts && opts.userText) || query;
+      try { askText = require('./_feedback').stripNegatedTerms(askText); } catch (e) { /* original text */ }
+      const asksUsed = /중고|리퍼(?:비시)?|\bused\b|\brefurb(?:ished)?\b/i.test(askText);
+      const usedListing = it => /(?:^|[\s\[\]()])(?:중고|리퍼(?:비시)?|used|refurb(?:ished)?)(?:$|[\s\]()[,])/i.test(String(it && it.title || ''));
+      const hasNewIdentityMatch = !asksUsed && intentContext.analysis.identity.mode === 'specific'
+        && list.some(it => !usedListing(it)
+          && !searchHelpers.productFamilyMismatch(intentContext.analysis, it && it.title)
+          && !searchHelpers.modelVariantMismatch(intentContext.analysis, it && it.title));
+      if (hasNewIdentityMatch) list.forEach(it => {
+        if (!usedListing(it)) return;
+        it._identityMiss = true;
+        it._usedListingMiss = true;
+        it.notes.unshift('새 상품 요청에 중고·리퍼 상품은 맞지 않는다');
+      });
+    }
 
     /*
      * 상품명이 검색어를 «얼마나» 담았는가 (2026-10-04 운영 실측).

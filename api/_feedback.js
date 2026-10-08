@@ -125,7 +125,15 @@ const HARD_EXCLUDE_RE = /절대|무조건|아예|전부\s*빼/;
  * 사전을 만들지 않는다. 부정 표지 «앞/뒤» 라는 자리로만 판정한다.
  */
 /** 한국어: 제외 대상 + (조사) + 부정 표지. 이어지는 영문·숫자 토큰까지 한 덩어리로 본다. */
-const NEGATED_KO_RE = /([가-힣A-Za-z0-9]+(?:\s+[A-Za-z0-9]+){0,2})\s*(?:은|는|이|가|을|를)?\s*(?:절대|무조건|아예|전부|다|좀|이제)?\s*(?:빼고|빼줘|빼라|빼|제외하고|제외한|제외해|제외|말고|아니고|아닌|아님|아니야|싫어|싫은|필요\s*없|없는\s*거)/g;
+const NEGATION_MARKER = '(?:빼고|빼줘|빼라|빼|제외하고|제외한|제외해|제외|말고|아니고|아니라|아닌|아님|아니야|싫어|싫은|싫고|필요\\s*없|없는\\s*거)';
+const NEGATED_TERM = '[가-힣A-Za-z0-9]+(?:\\s+(?:[A-Za-z0-9]+|모델|버전|버젼|타입|에디션|계열|사양)){0,2}';
+const NEGATED_KO_RE = new RegExp(`(${NEGATED_TERM})\\s*(?:은|는|이|가|을|를|도|만)?\\s*(?:절대|무조건|아예|전부|다|좀|이제)?\\s*${NEGATION_MARKER}`, 'g');
+/* Coordinated list immediately before one negation marker: X랑 Y랑 Z는 빼고. */
+const NEGATED_COORD_KO_RE = new RegExp(
+  `(${NEGATED_TERM}(?:\\s*(?:이랑|랑|하고|와|과|및|또는|나|,|/|&)\\s*${NEGATED_TERM})+)`
+  + `\\s*(?:은|는|이|가|을|를|도|만)?\\s*(?:절대|무조건|아예|전부|다|좀|이제)?\\s*${NEGATION_MARKER}`, 'g');
+const NEGATED_INCLUSION_RE = /([가-힣A-Za-z0-9]+)\s*(?:포함|들어간|들어있는|있는)\s*(?:은|는|이|가|을|를)?\s*(?:제외하고|제외|빼고|말고)/g;
+const NEGATED_TRAILING_LIST_RE = /(?:빼줘|빼라|제외하고|제외해|빼고)\s*([가-힣A-Za-z0-9]+(?:\s*(?:이랑|랑|하고|와|과|및|또는|나|,|\/|&)\s*[가-힣A-Za-z0-9]+)+)/g;
 /** 영어: 부정 표지 + (관사) + 제외 대상. */
 const NEGATED_EN_RE = /\b(?:no|not|without|except|excluding|minus)\s+(?:the|a|an)?\s*([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+){0,2})\b/gi;
 /*
@@ -150,16 +158,64 @@ const NEGATED_QUALIFIED_RE = new RegExp(
 function negatedSpans(text) {
   const s = String(text == null ? '' : text);
   const out = [];
-  [NEGATED_KO_RE, NEGATED_EN_RE, NEGATED_QUALIFIED_RE].forEach(re => {
+  const push = (term, start, whole) => {
+    const clean = String(term || '').trim().replace(/(?:은|는|이|가|을|를|도|만)$/, '');
+    if (clean) out.push({ term: clean, start, length: clean.length, whole });
+  };
+  [NEGATED_KO_RE, NEGATED_EN_RE, NEGATED_QUALIFIED_RE, NEGATED_INCLUSION_RE].forEach(re => {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(s)) !== null) {
       const term = String(m[1] || '').trim();
       if (!term) continue;
-      out.push({ term, start: s.indexOf(term, m.index), length: term.length, whole: m[0] });
+      const rawStart = s.indexOf(term, m.index);
+      push(term, rawStart, m[0]);
       if (re.lastIndex === m.index) re.lastIndex++;   // 빈 일치 보호
     }
   });
+  NEGATED_COORD_KO_RE.lastIndex = 0;
+  let list;
+  while ((list = NEGATED_COORD_KO_RE.exec(s)) !== null) {
+    const raw = String(list[1] || '');
+    const rawStart = s.indexOf(raw, list.index);
+    const splitRe = /\s*(?:이랑|랑|하고|와|과|및|또는|나|,|\/|&)\s*/g;
+    let cursor = 0;
+    let part;
+    const pieces = [];
+    while ((part = splitRe.exec(raw)) !== null) {
+      pieces.push({ text: raw.slice(cursor, part.index), offset: cursor });
+      cursor = part.index + part[0].length;
+    }
+    pieces.push({ text: raw.slice(cursor), offset: cursor });
+    pieces.forEach((piece, index) => {
+      let term = piece.text.trim().replace(/(?:은|는|이|가|을|를|도|만)$/, '').trim();
+      const words = term.split(/\s+/).filter(Boolean);
+      if (index === 0 && pieces.length > 1 && words.length > 1) {
+        const last = words[words.length - 1];
+        const before = words[words.length - 2];
+        term = /^(?:모델|버전|버젼|타입|에디션|계열|사양)$/i.test(last)
+          && /^[A-Za-z0-9]$/.test(before) ? `${before} ${last}` : last;
+      }
+      if (!term) return;
+      const offset = piece.text.indexOf(term);
+      push(term, rawStart + piece.offset + Math.max(0, offset), list[0]);
+    });
+    if (NEGATED_COORD_KO_RE.lastIndex === list.index) NEGATED_COORD_KO_RE.lastIndex++;
+  }
+  NEGATED_TRAILING_LIST_RE.lastIndex = 0;
+  while ((list = NEGATED_TRAILING_LIST_RE.exec(s)) !== null) {
+    const raw = String(list[1] || '');
+    const rawStart = s.indexOf(raw, list.index);
+    const splitRe = /\s*(?:이랑|랑|하고|와|과|및|또는|나|,|\/|&)\s*/g;
+    let cursor = 0;
+    let part;
+    while ((part = splitRe.exec(raw)) !== null) {
+      push(raw.slice(cursor, part.index).trim(), rawStart + cursor, list[0]);
+      cursor = part.index + part[0].length;
+    }
+    push(raw.slice(cursor).trim(), rawStart + cursor, list[0]);
+    if (NEGATED_TRAILING_LIST_RE.lastIndex === list.index) NEGATED_TRAILING_LIST_RE.lastIndex++;
+  }
   return out;
 }
 
@@ -220,15 +276,18 @@ function strippableTerm(term) {
 function stripNegatedTerms(text) {
   const s = String(text == null ? '' : text);
   if (!s) return s;
+  let source = s;
+  try { source = require('./_productid').stripNegatedAccessoryTerms(source); } catch (e) { /* optional shared identity parser */ }
+  if (!source) return source;
   /*
    * ★ 문자열 치환이 아니라 «그 자리» 만 지운다.
    *   한국어에는 낱말 경계가 없어서 같은 글자를 전부 지우면 다른 낱말이 깨진다
    *   ("에어 제외하고 에어팟" 에서 "에어" 를 모두 지우면 "팟" 이 남는다).
    */
-  const cuts = negatedSpans(s)
+  const cuts = negatedSpans(source)
     .filter(span => span.start >= 0 && strippableTerm(span.term))
     .sort((a, b) => b.start - a.start);
-  let out = s;
+  let out = source;
   let lastStart = out.length + 1;
   cuts.forEach(span => {
     const end = span.start + span.length;

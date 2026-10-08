@@ -221,7 +221,7 @@ const STRIP_WORDS = [
    * 부정 표지와 그것이 받는 일반 명사. 빼 달라고 한 «대상» 은
    * _feedback.stripNegatedTerms 가 이미 지웠고, 남은 표지는 물건 이름이 아니다.
    */
-  '아니고', '아닌', '아님', '아니야', '말고', '제외', '제외하고', '빼고', '없고',
+  '아니고', '아니라', '아닌', '아님', '아니야', '말고', '제외', '제외하고', '빼고', '없고',
   '버전', '버젼', '타입', '에디션',
   // 사람
   '나', '내', '내가', '저', '제', '제가', '우리', '엄마', '아빠', '아버지', '어머니', '부모님',
@@ -453,7 +453,9 @@ function productReference(text) {
   const s = String(text == null ? '' : text);
   const out = { strong: false, weak: false };
   if (!s.trim()) return out;
-  if (LIST_REFERENCE_RE.test(s) || ALTERNATIVE_REQUEST_RE.test(s)) return out;
+  out.target = recommendationTarget(s);
+  if ((LIST_REFERENCE_RE.test(s) || ALTERNATIVE_REQUEST_RE.test(s)) && !out.target) return out;
+  const currentAliasDefinition = recommendationAliasDefinition(s);
   /*
    * ★ 거부는 참조가 아니다 (2026-10-08 회귀).
    *
@@ -465,11 +467,49 @@ function productReference(text) {
    *   지연 require — extractQuery 와 같은 이유다.
    */
   try {
-    if (require('./_feedback').readFeedback(s).isReject) return out;
+    if (require('./_feedback').readFeedback(s).isReject && !out.target) return out;
   } catch (e) { /* 모듈이 없으면 아래 판정만으로 간다 */ }
-  out.strong = PRIOR_RECOMMENDATION_RE.test(s) || STRONG_REFERENCE_PATTERNS.some(re => re.test(s));
+  out.strong = PRIOR_RECOMMENDATION_RE.test(s) || STRONG_REFERENCE_PATTERNS.some(re => re.test(s))
+    || !!out.target || !!(currentAliasDefinition && currentAliasDefinition.current);
   out.weak = !out.strong && WEAK_REFERENCE_RE.test(s);
   return out;
+}
+
+function recommendationTarget(text) {
+  const original = String(text == null ? '' : text);
+  let s = original;
+  /* Ignore an ordinal that is explicitly excluded, then resolve the remaining one. */
+  s = s.replace(/(?:맨\s*)?(?:첫|처음|두|둘|세|셋|네|넷|다섯|여섯|\d+)\s*(?:번째|째|번)(?:\s*(?:상품|제품|모델|것|거|걸|꺼))?\s*(?:말고|아니고|아니라|제외하고|제외|빼고)/gi, ' ');
+  try { s = require('./_feedback').stripNegatedTerms(s); } catch (e) { /* plain parser below */ }
+  const ordinal = /(?:맨\s*위|위에\s*(?:있는\s*)?(?:거|것|상품|제품)|맨\s*처음|처음\s*(?:거|것|상품|제품)?|첫째|첫\s*번째|첫번째|1\s*번째|1번|(?:둘째|두\s*번째|두번째|2\s*번째|2번)|(?:셋째|세\s*번째|세번째|3\s*번째|3번)|(?:넷째|네\s*번째|네번째|4\s*번째|4번)|(?:다섯째|다섯\s*번째|다섯번째|5\s*번째|5번)|(?:여섯째|여섯\s*번째|여섯번째|6\s*번째|6번)|(?:마지막(?![가-힣])|맨\s*아래)\s*(?:상품|제품|것|거|걸|꺼)?)(?:\s*(?:상품|제품|모델|것|거|걸|꺼))?/i.exec(s);
+  if (ordinal) {
+    const word = ordinal[0].replace(/\s+/g, '').toLowerCase();
+    const values = [
+      [/^(?:맨위|위에|맨처음|처음|첫째|첫번째|1번째|1번)/, 0],
+      [/^(?:둘째|두번째|2번째|2번)/, 1],
+      [/^(?:셋째|세번째|3번째|3번)/, 2],
+      [/^(?:넷째|네번째|4번째|4번)/, 3],
+      [/^(?:다섯째|다섯번째|5번째|5번)/, 4],
+      [/^(?:여섯째|여섯번째|6번째|6번)/, 5]
+    ];
+    const found = values.find(([re]) => re.test(word));
+    if (found) return { kind: 'ordinal', index: found[1] };
+    if (/^(?:마지막|맨아래)/.test(word)) return { kind: 'last' };
+  }
+  const alias = /(?<![0-9A-Za-z가-힣-])([A-C])(?![0-9A-Za-z-])\s*(?:(?:은|는|이|가|을|를)\s*)?(?:(?:제품|상품|모델|가격|현재가|최저가|얼마야?|지금|다시|추천|보여줘|알려줘|사도|살까)\b|(?:제품|상품|모델|가격|현재가|최저가|얼마야?|지금|다시|추천|보여줘|알려줘|사도|살까)(?![가-힣]))/i.exec(s);
+  if (alias) return { kind: 'alias', index: alias[1].toUpperCase().charCodeAt(0) - 65 };
+  return null;
+}
+
+/** Parse “상품을 A라고 할게” and “이걸 B라고 부를게” alias definitions. */
+function recommendationAliasDefinition(text) {
+  const s = String(text == null ? '' : text).trim();
+  const m = /(.+?)\s*([A-C])\s*라고\s*(?:할게|할께|부를게|부를께|하자|부르자|하겠습니다|부르겠습니다)/i.exec(s);
+  if (!m) return null;
+  let name = m[1].trim().replace(/(?:을|를|은|는|이|가)\s*$/, '').trim();
+  if (!name) return null;
+  const current = /^(?:이거|이것|이걸|이 상품|이 제품|이 모델|그거|그것|그걸|위에 거|위에 것|방금 것|아까 것)$/i.test(name);
+  return { letter: m[2].toUpperCase(), name, current };
 }
 
 /**
@@ -519,6 +559,8 @@ function classify(text, hist) {
   const hasBudget = !!(cons.budgetMax || cons.budgetMin);
   let query = extractQuery(s);
   const reference = productReference(s);
+  const aliasDefinition = recommendationAliasDefinition(s);
+  const identityFollowup = reference.strong || !!(aliasDefinition && aliasDefinition.current);
 
   let intent;
   /*
@@ -548,9 +590,10 @@ function classify(text, hist) {
    *
    * 가리키는 대상이 있고 값을 물으면 그것은 그 상품의 가격 질문이다.
    */
-  else if ((reference.strong || reference.weak) && REFERENCED_PRICE_RE.test(s)) {
+  else if ((identityFollowup || reference.weak) && REFERENCED_PRICE_RE.test(s)) {
     intent = 'D'; explicit = true;
   }
+  else if (identityFollowup) { intent = 'C'; explicit = true; }
   // "어떻게 골라야 해" 는 고르는 방법을 묻는 지식 질문이다 — 추천 요청보다 먼저 본다
   // (api/ai.js CLASSIFY_SYSTEM: "어떻게 고르나"는 B, "골라 줘"는 C).
   else if (HOWTO_RE.test(s)) { intent = 'B'; explicit = true; }
@@ -573,7 +616,8 @@ function classify(text, hist) {
    * 하는 것은 같고, 다른 점은 «무엇으로 푸는가» 다 — 문자열이 아니라 서버가
    * 보증한 식별자로 푼다(productReference 머리 주석, api/ai.js).
    */
-  const contextualFollowup = CONTEXT_DEPENDENT_RE.test(s) || reference.strong || reference.weak;
+  const contextualFollowup = CONTEXT_DEPENDENT_RE.test(s) || reference.strong || reference.weak
+    || !!(aliasDefinition && aliasDefinition.current);
   let inheritedProductQuery = false;
   if ((!query || contextualFollowup) && intent !== 'A' && intent !== 'B' && Array.isArray(hist)) {
     for (let i = hist.length - 1; i >= 0; i--) {
@@ -620,8 +664,9 @@ function classify(text, hist) {
 
   return {
     intent, query, source: 'heuristic', confidence, contextualFollowup,
-    requiresRecommendationIdentity: reference.strong,
+    requiresRecommendationIdentity: identityFollowup,
     referencesKnownProduct: reference.weak,
+    recommendationTarget: reference.target,
     /*
      * LLM 이 뽑던 조건 중 정규식으로 확실한 것만 채운다 (extractUseCase 주석).
      * brand·avoid 는 표현이 너무 열려 있어 만들지 않는다 — 지어내느니 비운다.
@@ -633,5 +678,5 @@ function classify(text, hist) {
 
 module.exports = {
   classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, productReference,
-  MAX_QUERY_TOKENS, MAX_QUERY_LEN
+  recommendationTarget, recommendationAliasDefinition, MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };

@@ -38,6 +38,7 @@
  */
 const H = require('./_ai-offline-harness.js');
 const { stub, call, reset } = H;
+const Intent = require('../api/_intent');
 
 /* ── 검사 도구 ────────────────────────────────────────────────── */
 const groups = new Map();
@@ -341,11 +342,27 @@ const UNMATCHED = [
       record('5. 상품 참조 유지', q, false, `1턴 준비 실패 top=${topId(first)}`);
       continue;
     }
-    const ref = first.body.topRecommendationRef;
-    const history = [
+    let ref = first.body.topRecommendationRef;
+    let history = [
       { role: 'user', text: '로지텍 G304 기본형 찾아줘' },
       { role: 'assistant', text: first.body.text, sig: first.body.turnSig }
     ];
+    if (/^[AB]\b/.test(q)) {
+      for (const [definition, query] of [
+        ['G304를 A라고 할게', 'G304'],
+        ['G304 X SUPERLIGHT를 B라고 할게', 'G304 X SUPERLIGHT']
+      ]) {
+        stub.searchItems = mouseItems();
+        stub.llm.classify = `C|${query}`;
+        stub.llm.resolve = JSON.stringify({ q: query, use: '', brand: '', avoid: '' });
+        stub.llm.answer = NEUTRAL_ANSWER;
+        const bound = await call({ question: definition, contextProducts: [], chatHistory: history,
+          prevTopRef: ref, view: { source: 'none' } });
+        ref = bound.body.topRecommendationRef || ref;
+        history = history.concat([{ role: 'user', text: definition },
+          { role: 'assistant', text: bound.body.text, sig: bound.body.turnSig }]);
+      }
+    }
     stub.searchItems = mouseItemsPriceInverted();
     stub.llm.classify = `D|${q}`;
     stub.llm.resolve = JSON.stringify({ q, use: '', brand: '', avoid: '' });
@@ -355,10 +372,12 @@ const UNMATCHED = [
       prevTopRef: ref, prevTop: 'G1', view: { source: 'none' }
     });
     const cards = (r.body.items || []).map(c => c.productId);
-    record('5. 상품 참조 유지', q, cards.length === 1 && cards[0] === 'G1',
-      `cards=${cards.join(',') || '없음'}`);
-    record('5b. 참조가 다른 모델로 바뀌지 않는다', q, !cards.includes('G2'),
-      `cards=${cards.join(',') || '없음'}`);
+    const target = Intent.productReference(q).target;
+    const expectedId = ['G1', 'G2', 'G3'][target && target.index] || 'G1';
+    record('5. 상품 참조 유지', q, cards.length === 1 && cards[0] === expectedId,
+      `expected=${expectedId} cards=${cards.join(',') || '없음'}`);
+    record('5b. 서명된 목록의 지목 위치에 고정', q, cards.length === 1 && cards[0] === expectedId,
+      `expected=${expectedId} cards=${cards.join(',') || '없음'}`);
   }
 
   /* 6 — (대조) 새 후보 요구는 다시 찾아야 한다. */

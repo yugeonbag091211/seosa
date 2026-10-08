@@ -58,7 +58,8 @@ const stub = {
   catalog: [],            // products 행 (api/_aicontext.loadCatalogRows 대역)
   llm: {},                // { classify, resolve, answer, answerStatus }
   delays: {},             // { search, trust, save, history } ms
-  captured: {}            // { classify, resolve, main } 요청 본문
+  captured: {},           // { classify, resolve, main } 요청 본문
+  sessionCookies: Object.create(null)
 };
 const offlineMetrics = {
   llmRequests: 0, shopSearches: 0, historyReads: 0, catalogReads: 0,
@@ -217,13 +218,21 @@ const handler = require('../api/ai.js');
 function call(body) {
   return new Promise((resolve, reject) => {
     let code = 200;
+    const cookie = stub.sessionCookies.default || '';
     const res = {
       status(c) { code = c; return this; },
-      setHeader() { return this; },
+      setHeader(name, value) {
+        if (String(name || '').toLowerCase() === 'set-cookie') {
+          const line = Array.isArray(value) ? value[0] : value;
+          const pair = String(line || '').split(';', 1)[0].trim();
+          if (pair) stub.sessionCookies.default = pair;
+        }
+        return this;
+      },
       json(payload) { resolve({ status: code, body: payload }); return this; },
       end() { resolve({ status: code, body: {} }); return this; }
     };
-    Promise.resolve(handler({ method: 'POST', headers: {}, query: {}, body }, res)).catch(reject);
+    Promise.resolve(handler({ method: 'POST', headers: cookie ? { cookie } : {}, query: {}, body }, res)).catch(reject);
   });
 }
 
@@ -274,6 +283,7 @@ function reset() {
   stub.llm = {};
   stub.delays = {};
   stub.captured = {};
+  stub.sessionCookies = Object.create(null);
   /*
    * ★ 시나리오마다 LLM 캐시를 비운다 (2026-09-02).
    *

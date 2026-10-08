@@ -29,7 +29,14 @@ process.env.AI_SEARCH_TIMEOUT_MS = process.env.AI_SEARCH_TIMEOUT_MS || '120';
 process.env.AI_ENRICH_TIMEOUT_MS = process.env.AI_ENRICH_TIMEOUT_MS || '40';
 
 const auth = require('../api/_auth');
-auth.identify = () => ({ ok: true, email: 'qa@seosa.local' });
+/*
+ * 신원 대역. 시나리오가 stub.guest / stub.email 로 바꾼다.
+ * 세션 결속(서명 참조를 다른 사람·다른 브라우저가 재사용하는가)을 재려면
+ * «누가 보냈는가» 를 시나리오마다 바꿀 수 있어야 한다.
+ */
+auth.identify = () => (stub.guest
+  ? { ok: false, reason: '로그인이 필요합니다' }
+  : { ok: true, email: stub.email });
 const http = require('../api/_http');
 http.applyCors = () => true;
 http.noStore = () => {};
@@ -43,6 +50,8 @@ const aicontext = require('../api/_aicontext');
 
 /** 시나리오마다 갈아끼우는 대역 상태 */
 const stub = {
+  email: 'qa@seosa.local',
+  guest: false,
   searchItems: [],
   searchMode: 'ok',        // ok | empty | blocked | throw
   catalog: [],
@@ -157,18 +166,56 @@ global.fetch = async (url, opts) => {
 
 const handler = require('../api/ai.js');
 
-/** 핸들러 1회 호출. res 는 운영에서 Vercel 이 주는 것과 같은 모양만 흉내 낸다. */
-function call(body) {
+/**
+ * 핸들러 1회 호출. res 는 운영에서 Vercel 이 주는 것과 같은 모양만 흉내 낸다.
+ *
+ * @param {object} body
+ * @param {object} [opts]  headers — 요청 헤더(쿠키 등). 응답 헤더는 결과의 headers 로 돌려준다.
+ */
+function call(body, opts) {
+  const reqHeaders = Object.assign({}, (opts && opts.headers) || {});
   return new Promise((resolve, reject) => {
     let code = 200;
+    const headers = {};
     const res = {
       status(c) { code = c; return this; },
-      setHeader() { return this; },
-      json(payload) { resolve({ status: code, body: payload }); return this; },
-      end() { resolve({ status: code, body: {} }); return this; }
+      setHeader(k, v) { headers[String(k).toLowerCase()] = v; return this; },
+      getHeader(k) { return headers[String(k).toLowerCase()]; },
+      json(payload) { resolve({ status: code, body: payload, headers }); return this; },
+      end() { resolve({ status: code, body: {}, headers }); return this; }
     };
-    Promise.resolve(handler({ method: 'POST', headers: {}, query: {}, body }, res)).catch(reject);
+    Promise.resolve(handler({ method: 'POST', headers: reqHeaders, query: {}, body }, res)).catch(reject);
   });
+}
+
+/**
+ * 쿠키를 기억하는 브라우저 하나.
+ *
+ * 서버가 Set-Cookie 로 준 값을 다음 요청의 Cookie 헤더로 돌려보낸다 — 실제
+ * 브라우저의 same-origin fetch 와 같은 동작이다. 서로 다른 Browser 는 서로의
+ * 쿠키를 모른다(= 서로 다른 세션).
+ */
+function browser() {
+  const jar = new Map();
+  const absorb = headers => {
+    const raw = headers && headers['set-cookie'];
+    (Array.isArray(raw) ? raw : raw ? [raw] : []).forEach(line => {
+      const first = String(line).split(';')[0];
+      const at = first.indexOf('=');
+      if (at > 0) jar.set(first.slice(0, at).trim(), first.slice(at + 1).trim());
+    });
+  };
+  const cookieHeader = () => [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+  return {
+    jar,
+    async call(body, extraHeaders) {
+      const headers = Object.assign({}, extraHeaders || {});
+      if (jar.size) headers.cookie = cookieHeader();
+      const r = await call(body, { headers });
+      absorb(r.headers);
+      return r;
+    }
+  };
 }
 
 /** 시나리오 사이에 LLM 캐시·cooldown 을 비운다. 시나리오는 서로 독립이어야 한다. */
@@ -207,6 +254,8 @@ function statsFor(items) {
 
 /** 시나리오 초기화. items 를 주면 그것이 검색 결과이자 가격 기록의 대상이다. */
 function reset(items) {
+  stub.email = 'qa@seosa.local';
+  stub.guest = false;
   stub.searchItems = (items || []).map(it => Object.assign({}, it));
   stub.searchMode = 'ok';
   stub.catalog = [];
@@ -217,4 +266,4 @@ function reset(items) {
   llmReset();
 }
 
-module.exports = { stub, call, reset, llmReset, statsFor, kstToday, daysAgo };
+module.exports = { stub, call, browser, reset, llmReset, statsFor, kstToday, daysAgo };
