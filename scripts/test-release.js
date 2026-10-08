@@ -726,20 +726,22 @@ async function runAI() {
   /* AI-2. ★ 402 크레딧 부족 */
   {
     const res = await callAi('402');
-    check(res.code === 500, '사용자에게는 500 (업스트림 상태를 그대로 노출하지 않는다)', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && !res.payload.error,
+      '공급자 전부 실패해도 일반 degraded 응답 (오류 본문으로 실패 정보를 노출하지 않는다)', String(res.code));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     const blob = JSON.stringify(res.payload);
     check(blob.indexOf('Insufficient credits') === -1, '"Insufficient credits" 가 새지 않는다 ★');
     check(blob.indexOf('OpenRouter') === -1, '공급자 이름이 새지 않는다 ★');
     check(blob.indexOf('402') === -1, '업스트림 상태코드가 새지 않는다');
-    check(/다시 시도/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
+    check(/다시 질문|다시 시도/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
     check(!Object.prototype.hasOwnProperty.call(res.payload, 'usage'), 'usage payload를 내보내지 않는다');
   }
 
   /* AI-3. provider 429 */
   {
     const res = await callAi('429');
-    check(res.code === 500, '429 도 사용자에게는 일반 오류', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && !res.payload.error,
+      '429도 안전한 degraded 응답', String(res.code));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(JSON.stringify(res.payload).indexOf('Rate limit') === -1, '업스트림 문구가 새지 않는다');
   }
@@ -747,14 +749,16 @@ async function runAI() {
   /* AI-4. 500 — 쿼터 복구 */
   {
     const res = await callAi('500');
-    check(res.code === 500, '업스트림 500', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && !res.payload.error,
+      '업스트림 500도 안전한 degraded 응답', String(res.code));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
-  /* AI-5. timeout — 안전한 일반 오류 (쇼핑 데이터가 있으면 결정론 fallback) */
+  /* AI-5. timeout — 안전한 degraded 응답 (쇼핑 데이터가 있으면 결정론 fallback) */
   {
     const res = await callAi('timeout');
-    check(res.code === 500, '데이터 없는 timeout → 안전한 일반 오류', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && !res.payload.error,
+      '데이터 없는 timeout → 안전한 degraded 응답', String(res.code));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(/시간|다시/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
   }
@@ -762,7 +766,8 @@ async function runAI() {
   /* AI-6. malformed 응답 — 죽지 않고 쿼터 복구 */
   {
     const res = await callAi('malformed');
-    check(res.code === 500, '파싱 불가 응답도 처리한다', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && !res.payload.error,
+      '파싱 불가 응답도 안전한 degraded 응답으로 처리한다', String(res.code));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
@@ -1034,7 +1039,9 @@ async function runSAFE() {
      * 정적으로 검사하느라 OpenRouter URL 을 문자열로 들고 있을 뿐, fetch 를
      * 한 번도 부르지 않는다. 문자열만 보면 그런 파일이 전부 오탐이 된다.
      */
-    const callsFetch = /(^|[^.\w])fetch\s*\(/.test(src);
+    // Ignore fetch method stubs in VM contexts while still catching actual calls.
+    const withoutFetchStubs = src.replace(/(^|[,{]\s*)(?:async\s+)?fetch\s*\([^)]*\)\s*\{/g, '$1 ');
+    const callsFetch = /(^|[^.\w])fetch\s*\(/.test(withoutFetchStubs);
     if (callsFetch && !mocksFetch) offenders.paid.push(name);
 
     // 운영 Supabase 로 나가는 경로: _supabase 를 require 하면서 가짜를 심지 않음

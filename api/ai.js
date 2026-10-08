@@ -721,7 +721,19 @@ const CLASSIFY_FORCE = [
 const MAX_QUERY_LEN = 40;
 
 function cleanQuery(raw) {
-  const s = String(raw == null ? '' : raw)
+  /*
+   * 모델이 뽑은 검색어에도 부정 구문이 남아 온다 (api/_feedback.js negatedTerms 주석).
+   *
+   * RESOLVE_SYSTEM 은 "조건은 빼라"고 지시하지만 작은 모델은 사용자 문장을
+   * 거의 그대로 돌려준다. "AirPods Pro 3 earbuds only, no case" 가 그대로
+   * 오면 «case» 때문에 _search 가 액세서리 검색으로 읽는다. 사용자가 빼
+   * 달라고 한 말은 어느 경로로 들어오든 검색어가 되지 않게 한 곳에서 막는다.
+   */
+  let negationStripped = String(raw == null ? '' : raw);
+  try {
+    negationStripped = require('./_feedback').stripNegatedTerms(negationStripped);
+  } catch (e) { /* 모듈이 없으면 예전과 같이 원문으로 진행한다 */ }
+  const s = negationStripped
     .replace(/\p{C}/gu, ' ')
     .replace(/["'`<>|]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -1016,6 +1028,27 @@ async function resolveIntent(q, hist, view, budget, guest) {
   }
 
   const viaLlm = await classifyIntent(q, hist, budget);
+  /*
+   * ★ 참조 판정은 LLM 분류가 덮어쓸 수 없다 (2026-10-08).
+   *
+   *   parseClassification 은 {intent, query} 만 돌려준다. 그래서 LLM 분류가
+   *   성공한 요청에서는 requiresRecommendationIdentity 가 아예 없었고,
+   *   «아까 추천한 그 상품» 조차 서명 참조 경로를 타지 않았다 — 그 경로는
+   *   정규식 분류가 확신 높음으로 끝낸 요청에서만 돌고 있었다.
+   *
+   *   참조 여부는 문장 구조의 사실이고 결정적으로 판정된다(_intent.productReference).
+   *   LLM 이 고른 것은 의도와 검색어뿐이므로, 참조 사실은 그대로 얹는다.
+   */
+  if (viaLlm) {
+    if (det.requiresRecommendationIdentity && needsShopContext(det.intent)) {
+      viaLlm.intent = det.intent;
+      viaLlm.query = '';
+    }
+    viaLlm.contextualFollowup = !!(viaLlm.contextualFollowup || det.contextualFollowup);
+    viaLlm.requiresRecommendationIdentity = !!det.requiresRecommendationIdentity;
+    viaLlm.referencesKnownProduct = !!det.referencesKnownProduct;
+    viaLlm.recommendationTarget = det.recommendationTarget || null;
+  }
   /*
    * LLM 분류가 실패하면(null) 정규식 결과로 이어 간다.
    *
@@ -1550,7 +1583,7 @@ async function resolveContext(selectors) {
    * 쿠팡인데 옵션 ID 가 없으면 기록조차 묻지 않는다 — 어느 옵션의 것인지 가를 수 없다.
    */
   const probes = pending
-    .filter(p => p.sel.vendorItemId || !AC.isCoupangMall(p.mall))
+    .filter(p => p.status !== 'title-mismatch' && (p.sel.vendorItemId || !AC.isCoupangMall(p.mall)))
     .map(p => ({ productId: p.sel.productId, mall: p.mall, vendorItemId: p.sel.vendorItemId, pending: p }));
   const [stats] = await Promise.all([
     attachHistory(out.verified.concat(probes)),
@@ -1585,6 +1618,7 @@ const CONTEXT_REASON = {
   'not-found':       'SEOSA 카탈로그에 이 상품·옵션이 없다',
   'option-missing':  '옵션(vendorItemId)이 없어 어느 옵션인지 특정할 수 없다',
   'option-mismatch': 'SEOSA가 확인한 현재가는 같은 상품 페이지의 다른 옵션 것이다',
+  'title-mismatch':  '참조 당시 상품명과 현재 서버 카탈로그 상품명이 달라 정체성을 다시 확인할 수 없다',
   'ambiguous':       '같은 식별자의 기록이 여럿이라 하나로 특정할 수 없다',
   'stale':           'SEOSA가 이 가격을 확인한 지 오래돼 현재가로 쓸 수 없다',
   'lookup-failed':   'SEOSA 서버 기록을 지금 조회하지 못했다'
@@ -2176,6 +2210,48 @@ function titleWords(item) {
   return distinctive.length ? distinctive : unique;
 }
 
+/*
+ * 후보들 사이에서 «이 상품만» 가리키는 낱말 (2026-10-08).
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────
+ *
+ * referencedItems 는 금액 앞에서 가장 가까운 상품명 낱말을 찾는다. 그런데
+ * 후보 제목들이 범용어를 공유하면 그 범용어가 «모든 후보» 를 끌고 온다.
+ *
+ *   후보  로지텍 G304 LIGHTSPEED 무선 게이밍 마우스        39,000원
+ *         로지텍 G304 X SUPERLIGHT 무선 게이밍 마우스     109,000원
+ *   답변  "로지텍 G304 X SUPERLIGHT 무선 게이밍 마우스는 현재 109,000원입니다."
+ *
+ * «게이밍» 이 금액 바로 앞에 있고 두 후보에 모두 들어 있어서, 금액이 두
+ * 상품에 동시에 귀속됐다. 그러면 일반 G304(39,000원)가 109,000원을
+ * 뒷받침하지 못하므로 — 정확히 맞는 답변이 근거 없음으로 폐기된다.
+ * 실측으로 재현했다: 올바른 귀속이 degraded fallback 으로 떨어진다.
+ * 이것이 운영에서 본 «fallback 반복» 의 한 원인이고, provider 장애가 아니다.
+ *
+ * ── 어떻게 가르는가 ─────────────────────────────────────────────
+ *
+ * 같은 자리에서 여러 후보가 걸리면 «더 구체적으로 불린» 후보를 남긴다.
+ * 구체성은 그 상품명 고유 낱말 중 답변에 실제로 나온 것들의 글자 수 합이다.
+ *
+ *   답변 "…G304 X SUPERLIGHT 무선 게이밍 마우스는 현재 109,000원…"
+ *     일반 G304      로지텍+g304+게이밍            = 10자
+ *     G304 X         로지텍+g304+superlight+게이밍 = 20자  ← 이 상품을 불렀다
+ *     G PRO X SL 2   로지텍+superlight+게이밍      = 16자
+ *
+ *   답변 "로지텍 G304 LIGHTSPEED 무선 게이밍 마우스는 현재 109,000원…"
+ *     일반 G304 가 20자로 가장 구체적이다 → 그 상품의 가격(39,000원)과
+ *     맞지 않으므로 예전처럼 근거 없음으로 걸린다. 느슨해지지 않는다.
+ *
+ * ★ 후보를 «늘리지» 않는다. 동점이면 예전처럼 전부 남긴다. 좁히는 쪽이
+ *   안전한 이유는, 좁힌 뒤에도 그 상품이 그 금액을 뒷받침해야 통과하기
+ *   때문이다 — "불린 상품의 가격만 말한다" 는 요구와 같은 방향이다.
+ */
+function namedSpecificity(window, item) {
+  return titleWords(item)
+    .filter(w => window.indexOf(w) >= 0)
+    .reduce((sum, w) => sum + w.length, 0);
+}
+
 /** Return the closest product title(s) around a factual claim. */
 function referencedItems(text, at, items, windowSize = 90) {
   const t = String(text || '').toLowerCase();
@@ -2210,19 +2286,34 @@ function referencedItems(text, at, items, windowSize = 90) {
     if (before !== undefined && at - before <= windowSize) beforeHits.push({ item, at: before });
     else if (after !== undefined && after - at <= windowSize) afterHits.push({ item, at: after });
   });
+  /*
+   * 같은 자리에 여러 후보가 걸렸으면 더 구체적으로 불린 쪽을 남긴다
+   * (namedSpecificity 머리 주석). 동점이면 예전처럼 전부 남긴다.
+   */
+  const narrow = (hits, lo, hi) => {
+    if (hits.length <= 1) return hits.map(h => h.item);
+    const window = t.slice(Math.max(0, lo), hi);
+    const scored = hits.map(h => ({ h, score: namedSpecificity(window, h.item) }));
+    const best = Math.max.apply(null, scored.map(s => s.score));
+    if (!(best > 0)) return hits.map(h => h.item);
+    return scored.filter(s => s.score === best).map(s => s.h.item);
+  };
+
   // A product named immediately before its amount owns that amount; a following
   // product begins the next clause (Alpha 90,000won and Beta 120,000won).
   if (beforeHits.length) {
     const latest = Math.max(...beforeHits.map(h => h.at));
-    return beforeHits.filter(h => h.at === latest).map(h => h.item);
+    const tied = beforeHits.filter(h => h.at === latest);
+    return narrow(tied, latest - windowSize, at);
   }
   if (!afterHits.length) return [];
   const nearest = Math.min(...afterHits.map(h => h.at));
-  return afterHits.filter(h => h.at === nearest).map(h => h.item);
+  const tiedAfter = afterHits.filter(h => h.at === nearest);
+  return narrow(tiedAfter, at, nearest + windowSize);
 }
 
 /** A current/today price claim must match that product's current search result. */
-function unverifiedCurrentPrices(text, items) {
+function unverifiedCurrentPrices(text, items, selectedItem) {
   const out = [];
   const current = /현재(?:가|가격)?|오늘|금일|방금|지금|실시간|판매가/;
   const historical = /어제|전날|지난\s*\d+일|기록|과거|이전|당시/;
@@ -2239,7 +2330,7 @@ function unverifiedCurrentPrices(text, items) {
     if (/정가|평균|최저가|쿠폰/.test(near)) continue;
     const at = m.index + Math.floor(m.text.length / 2);
     const refs = referencedItems(text, at, items);
-    const candidates = refs.length ? refs : (items || []);
+    const candidates = selectedItem ? [selectedItem] : (refs.length ? refs : (items || []));
     // 상품명이 특정되지 않았거나 같은 이름의 옵션이 여러 개라면, 일부 후보에서
     // 가격이 우연히 일치하는 것만으로 그 가격을 답변에 귀속시키지 않는다.
     if (m.currency !== 'KRW' || value <= 0 || !candidates.length
@@ -2251,7 +2342,7 @@ function unverifiedCurrentPrices(text, items) {
 }
 
 /** Prices adjacent to a product name must belong to that product/option. */
-function unverifiedProductPrices(text, items) {
+function unverifiedProductPrices(text, items, selectedItem) {
   const out = [];
   const s = String(text || '');
   const derived = /차액|차이|더\s*(?:저렴|싸)|높(?:습니다|아요|다)|낮(?:습니다|아요|다)|예산|배송비/;
@@ -2264,7 +2355,7 @@ function unverifiedProductPrices(text, items) {
     if (derived.test(local)) continue;
     const at = m.index + Math.floor(m.text.length / 2);
     const refs = referencedItems(s, at, items);
-    const candidates = refs.length ? refs : (items || []);
+    const candidates = selectedItem ? [selectedItem] : (refs.length ? refs : (items || []));
     const kind = priceClaimKind(s, m.index, m.index + m.text.length);
     const matchesClaim = it => {
       if (m.currency !== 'KRW' || value <= 0 || kind === 'all-time') return false;
@@ -2631,6 +2722,21 @@ function mentionsAnyCard(text, cards) {
       .filter(w => w.length >= 2 && !/^\d+$/.test(w));
     return words.some(w => t.includes(w));
   });
+}
+
+/** A named model/variant in a single-product answer must match the selected card. */
+function identityMismatch(text, selected) {
+  if (!selected || !selected.title) return false;
+  try {
+    const PID = require('./_productid');
+    const clean = String(text || '')
+      .replace(/\d[\d,]*(?:\.\d+)?\s*(?:억|만|천)?\s*원/g, ' ')
+      .replace(/(?:현재|지금|최저가|판매가|가격|얼마|추천합니다|추천해요|입니다|이에요|예요|입니다만)/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    const identity = PID.queryIdentity(clean);
+    if (identity.mode === 'none') return false;
+    return PID.relation(identity, selected.title).relation === 'different';
+  } catch (e) { return false; }
 }
 
 /** 가격 이력이나 서버 구매 판정 없이는 내보낼 수 없는 주장인가. */
@@ -3321,13 +3427,6 @@ module.exports = async function handler(req, res) {
   const { question, chatHistory, profile, view, prevTop: prevTopRaw } = body;
   const contextProducts = body && body.contextProducts;
   /*
-   * 직전 추천 1위의 서명 참조 (api/_aicontext.js createRecommendationRef).
-   * 서명이 없거나·변조됐거나·만료됐으면 null — 그때 "아까 추천한 그 제품"은
-   * 특정할 수 없는 것으로 다룬다. 대화 기록의 상품명·금액으로 대신 고르지 않는다.
-   */
-  const previousRecommendation = AC.verifyRecommendationRef(body && body.prevTopRef);
-
-  /*
    * 직전 응답의 1위 상품 id.
    *
    * ── 왜 프론트가 보내는가 ────────────────────────────────────────
@@ -3344,6 +3443,16 @@ module.exports = async function handler(req, res) {
   const prevTop = safeText(prevTopRaw, 60);
   const q = clip(question, MAX_QUESTION_LEN).trim();
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
+  const recommendationSessionId = guest
+    ? AC.getOrCreateRecommendationSession(req, res)
+    : AC.sessionBinding({ email: who.email });
+  const aliasDefinition = require('./_intent').recommendationAliasDefinition(q);
+  /*
+   * 직전 추천의 서명 참조 (api/_aicontext.js createRecommendationRef).
+   * 서명은 같은 브라우저 세션에서만 되살리고, 대화 기록의 이름·금액은 대신 쓰지 않는다.
+   */
+  const previousRecommendation = AC.verifyRecommendationRef(body && body.prevTopRef, Date.now(),
+    { session: recommendationSessionId, required: true });
 
   /*
    * 찾아낸 상품 카드.
@@ -3540,11 +3649,51 @@ module.exports = async function handler(req, res) {
      */
     let selectors = [];
     let refSelected = false;
-    if (cls && cls.requiresRecommendationIdentity) {
+    const strongRef = !!(cls && cls.requiresRecommendationIdentity) || !!(aliasDefinition && aliasDefinition.current);
+    const weakRef = !!(cls && cls.referencesKnownProduct);
+    if (strongRef || weakRef) {
+      /*
+       * 확정된 상품을 가리키는 말 (api/_intent.js productReference 주석).
+       *
+       * 어느 경우에도 검색어는 비운다 — 대화 문장으로 다시 검색해서 "비슷한
+       * 것"을 고르면 그것이 바로 임의 선택이다. 대신 서버가 보증할 수 있는
+       * 식별자 중에서 «가장 구체적인 것» 을 고른다.
+       *
+       *   strong  앞선 답변·순서·별칭을 가리킨다 → 서명 참조만이 답이다.
+       *           없으면 되묻는다. 화면 목록으로 대신하지 않는다 — 사용자가
+       *           가리킨 것은 화면이 아니라 우리가 한 말이다.
+       *   weak    맨 지시어("그거", "그 제품").
+       *           상세 모달을 열어 둔 사람에게는 화면의 그 상품이 가장 정확한
+       *           지시 대상이고(모달에는 상품이 하나뿐이다), 채팅만 하는
+       *           사람에게는 직전 추천이다. 둘 다 서버가 다시 확인한다.
+       */
       query = '';
-      if (previousRecommendation) {
-        selectors = [previousRecommendation];
-        refSelected = true;
+      const onScreen = (!intent || needsShopContext(intent)) ? AC.selectorsFrom(contextProducts) : [];
+      const viewSource = String((view && typeof view === 'object' && view.source) || '');
+      if (!strongRef && viewSource === 'modal' && onScreen.length) {
+        selectors = onScreen;
+      } else if (previousRecommendation) {
+        const target = cls && cls.recommendationTarget;
+        const list = Array.isArray(previousRecommendation.items) ? previousRecommendation.items : [];
+        let targetItem = null;
+        if (target && target.kind === 'alias') {
+          const letter = String.fromCharCode(65 + target.index);
+          targetItem = previousRecommendation.aliases && previousRecommendation.aliases[letter] || null;
+        } else if (target && Number.isInteger(target.index)) {
+          targetItem = list[target.index] || null;
+        } else if (target && target.kind === 'last') {
+          targetItem = list.length ? list[list.length - 1] : null;
+        } else {
+          targetItem = previousRecommendation;
+        }
+        if (targetItem) {
+          selectors = [targetItem];
+          refSelected = true;
+        } else {
+          contextNotes.refMissing = true;
+        }
+      } else if (!strongRef && onScreen.length) {
+        selectors = onScreen;
       } else {
         contextNotes.refMissing = true;
       }
@@ -3680,12 +3829,21 @@ module.exports = async function handler(req, res) {
      *   기존 랭킹 코드가 예전과 완전히 같은 경로로 돈다 — 개인화가
      *   "없는 사람에게는 아무 일도 일어나지 않는다"가 코드로 보장된다.
      */
+    /*
+     * ★ userText 는 언제나 넘긴다.
+     *
+     *   검색어는 조건·부정 구문을 걷어낸 값이라 «본체만 / no case» 같은
+     *   요구 표시가 남지 않는다. 그 표시는 본품/부속 판정에만 쓰이므로
+     *   (_search.MAIN_PRODUCT_REQUEST_RE) 원문을 함께 넘긴다. 상품·가격
+     *   사실로는 쓰이지 않는다.
+     */
     const rankOpts = () => {
-      if (!profileWeights) return undefined;
+      const base = { userText: q };
+      if (!profileWeights) return base;
       try {
         const PF = require('./_profile');
-        return { weights: PF.multipliers(profileWeights) };
-      } catch (e) { return undefined; }
+        return Object.assign(base, { weights: PF.multipliers(profileWeights) });
+      } catch (e) { return base; }
     };
 
     if (intent && needsShopContext(intent) && shouldSearch(query, view, items)) {
@@ -3702,7 +3860,24 @@ module.exports = async function handler(req, res) {
          * "현재가가 30일 평균보다 싼가"를 판단할 근거가 없고, 답변도
          * 현재가만 읽는 수준에 머문다. (attachHistory 주석 참고)
          */
-        const raw = found.items.slice(0, MAX_CTX_ITEMS);
+        let raw = found.items.slice(0, MAX_CTX_ITEMS);
+        /* Keep an explicitly requested accessory subtype inside the AI candidate cap. */
+        try {
+          const PID = require('./_productid');
+          const roleText = FB.stripNegatedTerms(q);
+          const wantedRoles = PID.accessoryRoles(roleText);
+          if (wantedRoles.size) {
+            const roleMatches = found.items.filter(item => [...PID.accessoryRoles(item && item.title || '')]
+              .some(role => wantedRoles.has(role)));
+            if (roleMatches.length) {
+              const selected = new Set(roleMatches);
+              raw = roleMatches.slice(0, MAX_CTX_ITEMS).concat(found.items
+                .filter(item => !selected.has(item))
+                .slice(0, Math.max(0, MAX_CTX_ITEMS - Math.min(roleMatches.length, MAX_CTX_ITEMS))))
+                .slice(0, MAX_CTX_ITEMS);
+            }
+          }
+        } catch (e) { /* preserve the normal candidate cap if the subtype parser is unavailable */ }
         const historyCap = Math.min(AI_ENRICH_TIMEOUT_MS,
           Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
         let stats = new Map();
@@ -3733,16 +3908,28 @@ module.exports = async function handler(req, res) {
          * 답변이 "첫 번째 것을 권합니다"라고 말하는데 카드 순서가 다르면
          * 사용자는 다른 상품을 보게 된다. 순서는 한 곳에서 정한다.
          */
+        /*
+         * ★ 카드는 «랭킹이 남긴 후보» 만이다 (2026-10-08 운영 soak).
+         *
+         *   예전에는 raw(검색 결과 원본)를 전부 카드로 내보내고 순서만
+         *   랭킹에 맞췄다. 그래서 랭킹이 일부러 버린 상품이 답변 바로 아래에
+         *   그대로 떴다. 실측:
+         *
+         *     "에어팟 프로 3 본체만. 케이스 제외."
+         *     → filterMainProductCandidates 가 충전 케이스·보호 커버·이어팁을
+         *       후보에서 떨어뜨렸는데, 카드로는 넷 다 나갔다. 본품 후보가 없는
+         *       질문에서는 액세서리가 «추천» 자리(첫 카드)에 올라앉았다.
+         *
+         *   카드는 사용자가 실제로 누르는 결론이다. 후보에서 뺀 상품을 카드로
+         *   보여 주는 것은 답변과 화면이 다른 말을 하는 것이다.
+         *   하드 제외("삼성 절대 빼줘")도 같은 이유로 카드에서 사라진다.
+         */
         // 같은 상품 페이지의 옵션끼리 순서가 뒤섞이지 않게 옵션까지 키로 쓴다.
         const idOf = it => `${String(it.mallId || it.mall || '')}|${it.productId}|${String(it.vendorItemId || '')}`;
         const order = new Map(items.map((it, i) => [idOf(it), i]));
         cards = raw
-          .slice()
-          .sort((a, b) => {
-            const ia = order.has(idOf(a)) ? order.get(idOf(a)) : 99;
-            const ib = order.has(idOf(b)) ? order.get(idOf(b)) : 99;
-            return ia - ib;
-          })
+          .filter(it => order.has(idOf(it)))
+          .sort((a, b) => order.get(idOf(a)) - order.get(idOf(b)))
           .map(it => toCard(it, statFor(stats, it)));
       }
     } else if (items.length && (!intent || needsShopContext(intent))) {
@@ -4300,8 +4487,13 @@ module.exports = async function handler(req, res) {
       const groundItems = items.concat(searchState === 'found' ? [] : contextNotes.historyOnly);
       const badWon   = unverifiedWon(text, collectKnownWon(groundItems, cards, q, hist, constraints));
       const badContextualPrice = unverifiedContextualPrices(text, groundItems);
-      const badProductPrice = unverifiedProductPrices(text, groundItems);
-      const badCurrentPrice = unverifiedCurrentPrices(text, groundItems);
+      const PID = require('./_productid');
+      const comparisonAsk = PID.isComparisonRequest(q);
+      const selectedCard = cards[0] || null;
+      const selectedGround = selectedCard && groundItems.find(it => productIdentityMatches(it, selectedCard)) || selectedCard;
+      const singleTarget = !comparisonAsk ? selectedGround : null;
+      const badProductPrice = unverifiedProductPrices(text, groundItems, singleTarget);
+      const badCurrentPrice = unverifiedCurrentPrices(text, groundItems, singleTarget);
       const badDiscountPct = unverifiedDiscountPct(text, groundItems);
       const badBudgetPick = unsupportedOffBudgetRecommendation(text, items, constraints);
       const badSpec  = unverifiedSpecs(text, items);
@@ -4309,7 +4501,10 @@ module.exports = async function handler(req, res) {
       const badSuper = unsupportedSuperlatives(text, items);
 
       const badDecision = unsupportedPriceDecision(text, items, deal);
-      const badIdentity = cards.length > 0 && !mentionsAnyCard(text, cards);
+      const badIdentity = cards.length > 0 && (comparisonAsk
+        ? !mentionsAnyCard(text, cards)
+        : (!mentionsAnyCard(text, selectedCard ? [selectedCard] : cards)
+          || identityMismatch(text, selectedCard)));
       const noCatalog = groundItems.length === 0;
 
       /*
@@ -4480,12 +4675,42 @@ module.exports = async function handler(req, res) {
     if (guest) payload.guest = true;
     if (degradedByGrounding) payload.degraded = true;
     if (followups.length) payload.followups = followups;
-    if (decision && decision.top && decision.top.productId) {
-      payload.topProductId = decision.top.productId;
-      // _decision intentionally exposes a minimal display contract ({ref, productId}).
-      // Resolve its ref back to the ranked server item so vendorItemId is preserved.
-      const selectedTop = items.find(it => it && it.ref === decision.top.ref);
-      const recommendationRef = AC.createRecommendationRef(selectedTop);
+    const referenceTop = cards[0] || (decision && decision.top)
+      || (aliasDefinition && aliasDefinition.current && previousRecommendation ? previousRecommendation : null);
+    if (referenceTop && referenceTop.productId) {
+      payload.topProductId = referenceTop.productId;
+      // The visible card order defines ordinal and A/B/C references. The signed
+      // token binds every target to its exact product, option, mall, and title.
+      const displayedItems = cards.slice(0, AC.MAX_REFERENCE_ITEMS).map(card => ({
+        productId: card.productId,
+        vendorItemId: card.vendorItemId || '',
+        mall: card.mall,
+        mallId: card.mall,
+        title: card.title
+      }));
+      const recommendationItems = refSelected && previousRecommendation && previousRecommendation.items.length
+        ? previousRecommendation.items : displayedItems;
+      const recommendationAliases = Object.assign({}, previousRecommendation && previousRecommendation.aliases || {});
+      const picked = cards[0] || (decision && decision.top) || referenceTop;
+      if (aliasDefinition && picked && picked.productId) {
+        const aliasItem = aliasDefinition.current
+          ? (refSelected && selectors[0] ? selectors[0] : (previousRecommendation || picked))
+          : picked;
+        if (aliasItem && aliasItem.productId) recommendationAliases[aliasDefinition.letter] = {
+          productId: aliasItem.productId,
+          vendorItemId: aliasItem.vendorItemId || '',
+          mall: aliasItem.mall || aliasItem.mallId,
+          mallId: aliasItem.mallId || aliasItem.mall,
+          title: aliasItem.title || '',
+          titleHash: aliasItem.titleHash || ''
+        };
+      }
+      const recommendationRef = AC.createRecommendationRef(recommendationItems, Date.now(), {
+        session: recommendationSessionId,
+        required: true,
+        aliases: recommendationAliases,
+        selected: picked
+      });
       if (recommendationRef) payload.topRecommendationRef = recommendationRef;
     }
     if (decision && decision.change) {

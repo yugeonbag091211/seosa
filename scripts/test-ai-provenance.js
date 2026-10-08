@@ -71,6 +71,7 @@ Module._load = function(request, parent, isMain) {
 /* ── 가짜 LLM (OpenRouter 만 허용) ────────────────────────────────── */
 const llmStub = { classify: 'A', resolve: '', answer: '' };
 const captured = { main: null, classify: 0 };
+let sessionCookie = '';
 let externalCalls = 0;
 global.fetch = async (url, opts) => {
   if (!String(url).includes('openrouter.ai')) {
@@ -157,16 +158,24 @@ async function ask(body, opts = {}) {
   const searchBefore = stubSearch.calls;
   const statBefore = statCalls.length;
   let status = 200, payload;
+  const reqCookie = sessionCookie;
   const res = {
     status(c) { status = c; return this; },
-    setHeader() { return this; },
+    setHeader(name, value) {
+      if (String(name || '').toLowerCase() === 'set-cookie') {
+        const line = Array.isArray(value) ? value[0] : value;
+        const pair = String(line || '').split(';', 1)[0].trim();
+        if (pair) sessionCookie = pair;
+      }
+      return this;
+    },
     json(v) { payload = v; return this; },
     end() { payload = {}; return this; }
   };
   const quiet = console.log, quietWarn = console.warn, quietErr = console.error;
   console.log = () => {}; console.warn = () => {}; console.error = () => {};
   try {
-    await handler({ method: 'POST', headers: {}, query: {}, body: Object.assign({ chatHistory: [], contextProducts: [], view: { source: 'none' } }, body) }, res);
+    await handler({ method: 'POST', headers: reqCookie ? { cookie: reqCookie } : {}, query: {}, body: Object.assign({ chatHistory: [], contextProducts: [], view: { source: 'none' } }, body) }, res);
   } finally {
     console.log = quiet; console.warn = quietWarn; console.error = quietErr;
   }
@@ -539,7 +548,7 @@ function searchFixture() {
         classify: 'C|무선 이어폰', resolve: '{"q":"무선 이어폰"}',
         searchItems: searchFixture(),
         answer: caves ? `말씀하신 대로 삼성 갤럭시 버즈3 프로 블랙 현재가는 ${won(123456 + t)}원입니다.`
-          : '삼성 갤럭시 버즈3 프로 블랙을 권합니다. 현재가는 139,000원입니다.'
+          : 'QCY 무선 이어폰 T13을 권합니다. 현재가는 25,900원입니다.'
       });
       if (t === 3) { turn3Sig = r.body.turnSig; turn3Text = r.body.text; }
       ok(caves ? (!r.body.text.includes(won(123456 + t)) && r.body.degraded === true)
@@ -682,9 +691,9 @@ function searchFixture() {
   {
     const rec = await ask({ question: '무선 이어폰 추천해줘' }, {
       classify: 'C|무선 이어폰', searchItems: searchFixture(),
-      answer: '삼성 갤럭시 버즈3 프로 블랙을 권합니다. 현재가는 139,000원이고 기록상 최저가는 135,000원입니다.'
+      answer: 'QCY 무선 이어폰 T13을 권합니다. 현재가는 25,900원입니다.'
     });
-    ok(rec.searches === 1 && rec.body.degraded !== true && (rec.body.items || []).length === 3 && /139,000원/.test(rec.body.text),
+    ok(rec.searches === 1 && rec.body.degraded !== true && (rec.body.items || []).length === 3 && /25,900원/.test(rec.body.text),
       '추천: 검색 결과로 답하고 서버 가격은 그대로 통과', JSON.stringify({ degraded: rec.body.degraded, text: rec.body.text.slice(0, 80) }));
     ok(/^air2\./.test(rec.body.topRecommendationRef || '') && /^at1\./.test(rec.body.turnSig || ''),
       '추천 응답은 직전 추천 참조와 발화 서명을 함께 준다');
@@ -702,12 +711,12 @@ function searchFixture() {
 
     // 다중 턴: 예산 조건과 이전 답변 문맥이 이어진다.
     const t1 = await ask({ question: '20만원 이하 무선 이어폰 추천해줘' }, {
-      classify: 'C|무선 이어폰', searchItems: searchFixture(), answer: '삼성 갤럭시 버즈3 프로 블랙을 권합니다. 현재가는 139,000원입니다.'
+      classify: 'C|무선 이어폰', searchItems: searchFixture(), answer: 'QCY 무선 이어폰 T13을 권합니다. 현재가는 25,900원입니다.'
     });
     const h2 = [{ role: 'user', text: '20만원 이하 무선 이어폰 추천해줘' }, { role: 'assistant', text: t1.body.text, sig: t1.body.turnSig }];
     const t2 = await ask({ question: '통화 품질도 중요해', chatHistory: h2.concat([{ role: 'user', text: '통화 품질도 중요해' }]) }, {
       classify: 'C', resolve: '{"q":"무선 이어폰","use":"","brand":"","avoid":""}', searchItems: searchFixture(),
-      answer: '통화까지 보면 삼성 갤럭시 버즈3 프로 블랙이 맞습니다.'
+      answer: '통화까지 보면 QCY 무선 이어폰 T13이 맞습니다.'
     });
     ok(/200,000원|20만/.test(t2.system) && t2.messages.some(m => m.role === 'assistant' && m.content === t1.body.text),
       '다중 턴: 앞 턴 예산이 이어지고, 서명된 이전 답변은 assistant 문맥으로 남는다');
@@ -723,14 +732,15 @@ function searchFixture() {
       JSON.stringify({ top: rec.body.topProductId, items: prior.body.items, text: prior.body.text }));
 
     // 참조 대상 옵션이 더는 카탈로그의 대표 옵션이 아니면 현재가를 고르지 않는다.
-    const whiteRef = AC.createRecommendationRef({ productId: '7001', vendorItemId: 'V-WHITE', mallId: '쿠팡' });
+    const sid = AC.sessionBinding({ email: 'provenance@fixture.local' });
+    const whiteRef = AC.createRecommendationRef({ productId: '7001', vendorItemId: 'V-WHITE', mallId: '쿠팡', title: '삼성 갤럭시 버즈3 프로 화이트' }, Date.now(), sid);
     const moved = await ask({ question: '아까 추천한 그 제품 지금 사도 돼?', prevTopRef: whiteRef }, {
       classify: 'E', answer: '그 제품 현재가는 139,000원입니다.'
     });
     ok(!/139,000원/.test(moved.body.text) && moved.body.degraded === true && /최근 기록가 99,000원/.test(moved.body.text),
       '참조한 옵션의 현재가를 확인 못 하면 다른 옵션 가격을 고르지 않고 그 옵션의 기록만 말한다', moved.body.text);
 
-    const expired = AC.createRecommendationRef({ productId: '7001', vendorItemId: 'V-BLACK', mallId: '쿠팡' }, Date.now() - AC.REF_TTL_MS - 60e3);
+    const expired = AC.createRecommendationRef({ productId: '7001', vendorItemId: 'V-BLACK', mallId: '쿠팡' }, Date.now() - AC.REF_TTL_MS - 60e3, sid);
     const exp = await ask({ question: '아까 추천한 그 제품 지금 사도 돼?', prevTopRef: expired }, { classify: 'E', answer: '139,000원입니다.' });
     ok(!/139,000원/.test(exp.body.text) && /직전에 추천한 상품을 서버 기록으로 확인할 수 없어요/.test(exp.body.text),
       '만료된 참조 → 되묻고 가격을 고르지 않는다', exp.body.text);

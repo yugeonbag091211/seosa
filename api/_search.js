@@ -1,4 +1,7 @@
 'use strict';
+
+/* 상품 정체성 서명 (등급·세대·색상·SKU 구분) — modelVariantMismatch 주석. */
+const PID = require('./_productid');
 /*
  * 검색 품질 — 검색어 정규화 / 관련도 점수 / 중복 제거 / 오타 보정.
  *
@@ -170,7 +173,12 @@ const SYNONYM_GROUPS = [
   // 한/영 표기 차이. "LG 그램 프로 16" 의 "프로" 는 제목에 "Pro" 로 온다
   ['프로', 'pro'], ['플러스', 'plus'], ['에어', 'air'], ['미니', 'mini'],
   ['맥스', 'max'], ['울트라', 'ultra'], ['라이트', 'lite'], ['그램', 'gram'],
-  ['케이스', '커버', 'case'], ['충전기', '어댑터', '충전어댑터', 'charger']
+  ['케이스', '커버', 'case'], ['충전기', '어댑터', '충전어댑터', 'charger'],
+  /*
+   * 모델 표기 꼬리말의 한글 음차. "G304 엑스" 는 "G304 X" 를 찾는 말이다
+   * (modelVariantMismatch 주석 — 그 판정이 이 변형에서 반대로 돌았다).
+   */
+  ['엑스', 'x']
 ];
 
 const SYNONYMS = (() => {
@@ -262,6 +270,7 @@ function analyzeQuery(keyword, opts = {}) {
   const analysis = { raw: String(keyword || ''), normalized, tokens, totalWeight, brandHead: !!brandHead };
   analysis.modelKeys = modelCodes(keyword);
   analysis.accessories = accessoryTerms(normalized);
+  analysis.accessoryRoles = PID.accessoryRoles(keyword);
   // A broad head query need not partition the candidates: every returned title
   // may contain it. Infer this intent from a primary title, without a brand list.
   const primaryHead = head && raw[0] === head && (opts.titles || []).some(title => {
@@ -273,6 +282,21 @@ function analyzeQuery(keyword, opts = {}) {
     : analysis.modelKeys.length ? 'MODEL'
     : raw.length === 1 && (brandHead || primaryHead) ? 'BRAND_ONLY'
     : brandHead || primaryHead ? 'BRAND_PRODUCT' : 'PRODUCT';
+  /*
+   * 모델 정체성 판정의 재료 (modelVariantMismatch 주석, api/_productid.js).
+   *
+   *   identity            질의의 정체성 (모델코드·제품군·등급·세대)
+   *   identityExactSeen   이번 결과에 질의와 «같은 모델» 인 후보가 실제로 있는가
+   *   identityFamilySeen  이번 결과에 질의와 «같은 제품군» 인 후보가 실제로 있는가
+   *
+   * 목록이 없으면(저장된 products 단건 판정 등) 켜지 않는다 — 근거 없이 깎지 않는다.
+   */
+  analysis.identity = PID.queryIdentity(keyword);
+  const titles = opts.titles || [];
+  analysis.identityExactSeen = analysis.identity.mode !== 'none'
+    && titles.some(title => PID.relation(analysis.identity, title).relation === 'same');
+  analysis.identityFamilySeen = analysis.identity.mode !== 'none'
+    && titles.some(title => !PID.familyMismatch(analysis.identity, title));
   return analysis;
 }
 
@@ -560,6 +584,58 @@ function compatibilityMention(analysis, title) {
     || /\b(?:for|compatible|replacement)\b/.test(normalized);
 }
 
+/*
+ * ── 모델 정체성 (2026-10-08 운영 soak → 같은 날 Codex 독립 레드팀) ──
+ *
+ * «G304 가격 알려줘» 에 «로지텍 G304 X SUPERLIGHT»(109,000원) 가 선택됐다. 두
+ * 상품은 같은 모델코드 토큰을 쓰므로 질의 커버리지가 둘 다 1.0 이고, 동점
+ * 처리가 어느 쪽이든 1위로 만들 수 있었다.
+ *
+ * 1차 수정은 «모델코드 바로 뒤의 1~2글자 영문 = 꼬리말» 이라는 자리 규칙이었고,
+ * 독립 레드팀이 양쪽으로 깼다 — BK·WH·K/DA(색상) 를 다른 모델로 보고, Buds3 Pro ·
+ * Pro 2/3 · Pro Max · V15 Detect · 3S 는 같은 모델로 봤다. 글자 수는 의미가 아니다.
+ *
+ * 그래서 판정은 api/_productid.js 가 한다 — 토큰을 base·세대·등급·색상·SKU 로
+ * 나누고 질의와 상품명의 정체성 구간을 맞춘다(그 파일 머리 주석).
+ *
+ * ★ 증거 없이는 켜지 않는다 (analysis.identityExactSeen).
+ *   이번 결과에 «질의와 같은 정체성» 을 가진 후보가 실제로 있을 때만 다른 것을
+ *   내린다. 사용자가 말한 그 모델이 결과에 없으면 아무것도 내리지 않는다.
+ */
+/** 다른 모델을 고를 때 곱하는 값. 지우지 않는다 — 순서만 내린다. */
+const MODEL_VARIANT_PENALTY = 0.55;
+
+/**
+ * 질의가 지목한 모델과 다른 모델인가 (등급·세대 차이).
+ *
+ * 모델코드 자체가 없는 상품(«G304» 질의의 «G PRO X»)은 여기서 보지 않는다 —
+ * 그것은 «다른 제품군» 이고 productFamilyMismatch 가 따로 판정한다.
+ *
+ * @param {object} analysis analyzeQuery 결과
+ * @param {string} title
+ * @param {object} [opts] specificOnly — 모델코드·세대가 있는 질의에서만 판정(일반 검색용)
+ * @returns {string} 다르면 사람이 읽을 수 있는 차이, 같으면 ''
+ */
+function modelVariantMismatch(analysis, title, opts = {}) {
+  if (!analysis || !analysis.identity || !analysis.identityExactSeen) return '';
+  if (opts.specificOnly && analysis.identity.mode !== 'specific') return '';
+  const r = PID.relation(analysis.identity, title);
+  if (r.relation !== 'different') return '';
+  /* A model-code change inside the same product family is a model mismatch.
+   * A different family is handled separately by productFamilyMismatch. */
+  if (/^code:/.test(r.reason) && PID.familyMismatch(analysis.identity, title)) return '';
+  return r.reason;
+}
+
+/**
+ * 다른 제품군인가 — «AirPods Pro 3» 질의의 «Galaxy Buds3 Pro».
+ * 증거(같은 제품군 후보가 실제로 있음)가 있을 때만 참이다.
+ */
+function productFamilyMismatch(analysis, title) {
+  if (!analysis || !analysis.identity || !analysis.identityFamilySeen) return false;
+  return PID.familyMismatch(analysis.identity, title);
+}
+
 function titleRelation(analysis, title) {
   let factor = 1;
   const reasons = [];
@@ -570,6 +646,12 @@ function titleRelation(analysis, title) {
   })) {
     factor *= 0.4;
     reasons.push('model-boundary-miss');
+  }
+  // 같은 모델의 다른 등급·세대 (modelVariantMismatch 주석). 일반 검색은 모델코드·세대가
+  // 있는 질의에서만 건다 — «미니 선풍기» 같은 범주 질의의 순서를 흔들지 않는다.
+  if (modelVariantMismatch(analysis, title, { specificOnly: true })) {
+    factor *= MODEL_VARIANT_PENALTY;
+    reasons.push('model-variant');
   }
   // A late head mention is evidence of a different product identity. Keep
   // family/category queries conservative: only broad primary-head evidence
@@ -1112,12 +1194,93 @@ function sortByRelevance(items) {
  * @returns {{items, dropped, removed, allBelow}}
  *   allBelow — 받아온 건 있는데 전부 기준선 아래였다 ("결과 없음"과 구분해야 한다)
  */
-function productIntentContext(keyword, titles) {
+/*
+ * 사용자가 «본품» 을 콕 집어 말한 표시 (2026-10-08 변형 공격).
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────
+ *
+ * 부속 의도는 «검색어에 부속 낱말이 있는가» 로 판정한다. 그런데 사용자가
+ * 부속을 «빼 달라» 고 말할 때도 그 낱말은 문장 안에 있다. 부정 구문은
+ * api/_feedback.js 가 지우지만, 한국어는 낱말 경계가 없어 여러 토큰에 걸친
+ * 부정 범위를 안전하게 지울 수 없다 — 실측으로 남은 두 꼴:
+ *
+ *   "충전 케이스 단품 아니고 에어팟 프로 3 본체 가격"  → «단품» 만 지워진다
+ *   "케이스 필요 없고 에어팟 프로 3 본체만 알려줘"      → «필요 없고» 는 표지가 아니다
+ *
+ * 둘 다 «본체» 라고 분명히 말했다. 그 말은 상품 이름이 아니라 «무엇을 사려는가» 이고,
+ * 부속 낱말이 함께 있어도 요구는 본품이다. 그 하나만 보고 본품 의도로 확정한다.
+ *
+ * ★ 상품·브랜드 사전이 아니다. 요구를 밝히는 말의 목록이고, 거짓 양성이 나도
+ *   «본품을 고른다» 쪽이라 액세서리를 본품으로 내세우는 사고로는 이어지지 않는다.
+ * ★ '단품' 은 넣지 않는다 — "충전 케이스 단품" 처럼 부속이 따로 팔린다는 뜻으로도 쓰인다.
+ */
+const MAIN_PRODUCT_REQUEST_RE = /본체|본품|기기만|유닛만|이어버드만|알맹이만|제품만\s*(?:주|사|보)|\b(?:earbuds|buds|unit|body|device|headphones?)\s+only\b|\bonly\s+the\s+(?:earbuds|buds|unit|body|device)\b|\bno\s+(?:case|cover|accessor\w*)\b|\bwithout\s+(?:the\s+)?(?:case|cover|accessor\w*)\b/i;
+
+/**
+ * @param {string} keyword 검색어 (부정 구문이 제거된 뒤의 값)
+ * @param {Array<string>} titles 이번 후보 상품명
+ * @param {object} [opts]
+ *   userText — 사용자 원문. 검색어에서 걷어낸 «본품» 표시가 여기에는 남아 있다.
+ */
+function productIntentContext(keyword, titles, opts = {}) {
   const analysis = analyzeQuery(keyword, { titles: Array.isArray(titles) ? titles : [] });
+  const mainRequested = MAIN_PRODUCT_REQUEST_RE.test(String(opts.userText || '') || String(keyword || ''));
+  /*
+   * ★ 본품을 요구했으면 «요구한 부속» 목록을 비운다.
+   *
+   *   의도 글자만 바꾸는 것으로는 부족하다. productFocus 와
+   *   accessoryRequestMismatch 는 analysis.accessories 를 읽어 «사용자가 이
+   *   부속을 원한다» 로 다루고, 그래서 부속이 걸러지지도(필터가 전부 통과)
+   *   않고 오히려 본품이 «요구한 부속이 아니다» 로 내려갔다(실측:
+   *   "충전 케이스 단품 아니고 … 본체 가격" → 보호 케이스가 1위).
+   */
+  if (mainRequested && analysis.accessories && analysis.accessories.length) {
+    analysis.accessories = [];
+  }
   return {
     analysis,
-    intent: queryWantsAccessory(analysis) ? 'ACCESSORY_INTENT' : 'MAIN_PRODUCT_INTENT'
+    mainRequested,
+    intent: (!mainRequested && queryWantsAccessory(analysis)) ? 'ACCESSORY_INTENT' : 'MAIN_PRODUCT_INTENT'
   };
+}
+
+/*
+ * 사용자가 부속을 지목했는데 그 부속이 제목에 아예 없는가 (2026-10-08).
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────
+ *
+ * «에어팟 프로 3 케이스 가격» 에 본품(329,000원 이어폰)이 1위로 나왔다.
+ * 부속 의도(ACCESSORY_INTENT)에서는 본품/부속 필터가 — 당연히 — 꺼지는데,
+ * 그 결과 «요구한 부속이 아닌 것» 에 대한 신호가 하나도 남지 않는다.
+ * 본품 요구에서 부속을 내리는 규칙(accessoryFocus)의 거울이 없었던 셈이다.
+ *
+ * ── 판정 ────────────────────────────────────────────────────────
+ *
+ * 요구한 부속 낱말(또는 그 동의어: 케이스↔커버↔case)이 제목에 하나도 없으면
+ * 그것은 사용자가 말한 물건이 아니다.
+ *
+ * ★ 제목에 그 낱말이 «있으면» 건드리지 않는다. 그래서 «케이스 포함» 본품
+ *   번들은 그대로 남는다 — 부속 낱말 하나로 본품을 지우는 실수를 되풀이하지
+ *   않는다(scoreTitle 의 2026-10-04 주석과 같은 선).
+ */
+function accessoryRequestMismatch(analysis, title) {
+  if (!analysis) return false;
+  const requestedRoles = analysis.accessoryRoles || PID.accessoryRoles(analysis.raw || '');
+  const explicitSubtype = /충전|charging|보호|protective|실리콘|silicone|하드\s*케이스|hard\s*case|지갑\s*케이스|wallet\s*case|이어팁|ear\s*tips?|배터리\s*팩|battery\s*pack/i
+    .test(String(analysis.raw || ''));
+  if (requestedRoles.size && explicitSubtype) {
+    const actualRoles = PID.accessoryRoles(title);
+    return ![...requestedRoles].some(role => actualRoles.has(role));
+  }
+  const requested = analysis.accessories || [];
+  if (!requested.length) return false;
+  const normalized = normalizeText(title);
+  const tokens = splitTokens(normalized);
+  return !requested.some(word => {
+    const family = [word, ...(SYNONYMS.get(word) || [])];
+    return family.some(w => tokens.some((token, i) => accessoryTermAt(w, tokens, i))
+      || (w.length >= 2 && normalized.replace(/\s+/g, '').indexOf(w) > -1));
+  });
 }
 
 /** Reuse normal search's head-noun/accessory evidence in AI ranking. */
@@ -1138,9 +1301,9 @@ function accessoryFocus(context, title) {
  * Keep accessories out of a main-product search while preserving explicit accessory searches.
  * Both the site search and AI ranking use this same deterministic filter.
  */
-function filterMainProductCandidates(keyword, items) {
+function filterMainProductCandidates(keyword, items, opts = {}) {
   const list = (items || []).filter(Boolean);
-  const context = productIntentContext(keyword, list.map(it => it && it.title));
+  const context = productIntentContext(keyword, list.map(it => it && it.title), opts);
   if (context.intent !== 'MAIN_PRODUCT_INTENT') {
     return { items: list, dropped: 0, intent: context.intent };
   }
@@ -1153,10 +1316,18 @@ function rankItems(keyword, items, opts = {}) {
   const { items: deduped, removed } = dedupeItems(items);
   // General search ranks accessory matches below main products but keeps them available.
   // The AI path applies the explicit intent filter in _shopintent.js before its early return.
-  const uniq = deduped;
+  let uniq = deduped;
   const intentDropped = 0;
   // 브랜드 판정에 이번 목록을 쓴다 (detectBrandHead 주석 참고).
   const analysis = analyzeQuery(keyword, { titles: deduped.map(it => (it && it.title) || '') });
+
+  /* A specific identity query with a same-family result has evidence to exclude
+   * unrelated product families. Comparison queries keep both sides; model
+   * variants inside the requested family remain available. */
+  if (analysis.identity && analysis.identity.mode === 'specific' && !analysis.identity.codes.size
+      && analysis.identityFamilySeen && !PID.isComparisonRequest(keyword)) {
+    uniq = deduped.filter(it => !productFamilyMismatch(analysis, it && it.title));
+  }
 
   if (!uniq.length) {
     return { items: [], dropped: intentDropped, removed, allBelow: deduped.length > 0 };
@@ -1649,6 +1820,7 @@ module.exports = {
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
+  modelVariantMismatch, productFamilyMismatch, titleRelation, accessoryRequestMismatch, soldKind,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY
