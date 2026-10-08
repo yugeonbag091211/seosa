@@ -612,8 +612,13 @@ function rankItems(items, c, query, opts) {
   if (query) {
     try {
       searchHelpers = require('./_search');
-      list = searchHelpers.filterMainProductCandidates(query, list).items;
-      intentContext = searchHelpers.productIntentContext(query, list.map(it => it && it.title));
+      /*
+       * userText — 사용자 원문. 검색어에는 남지 않는 «본품» 표시를 읽는 데만 쓴다
+       * (_search.MAIN_PRODUCT_REQUEST_RE 주석). 상품·가격 사실로는 쓰지 않는다.
+       */
+      const ctxOpts = { userText: (opts && opts.userText) || '' };
+      list = searchHelpers.filterMainProductCandidates(query, list, ctxOpts).items;
+      intentContext = searchHelpers.productIntentContext(query, list.map(it => it && it.title), ctxOpts);
     } catch (_e) {
       searchHelpers = null;
       intentContext = null;
@@ -631,6 +636,34 @@ function rankItems(items, c, query, opts) {
   const min = prices.length ? Math.min.apply(null, prices) : 0;
   const max = prices.length ? Math.max.apply(null, prices) : 0;
 
+  /*
+   * 상품명이 검색어를 얼마나 담았는가 (0~1). 아래 두 곳에서 쓴다.
+   *   · 취향 가점을 줄 자격이 있는가 (바로 다음 블록)
+   *   · 덜 담은 만큼 내린다 (searchHelpers 블록의 커버리지 감점)
+   * 예전에는 뒤쪽에서만 계산했다.
+   */
+  const coverOf = new Map();
+  if (searchHelpers && intentContext) {
+    list.forEach(it => coverOf.set(it,
+      searchHelpers.scoreTitle(intentContext.analysis, (it && it.title) || '').score));
+  }
+  const coverMax = coverOf.size ? Math.max.apply(null, [...coverOf.values()]) : 0;
+  /*
+   * ★ 가격 취향 가점은 «검색어를 충분히 담은» 후보들 사이에서만 준다
+   *   (2026-10-08 변형 공격).
+   *
+   *   "에어팟 프로 3 본체 최저가 알려줘" 에서 «최저가» 가 priority='price' 로
+   *   잡히고, 그 가점(+14)이 다른 브랜드 상품(삼성 버즈3 프로, 커버리지 0.5)에
+   *   붙었다. 커버리지 감점(−15)과 거의 맞먹어서 할인율 1%p 차이로 순서가
+   *   뒤집혔다 — 사용자가 찾던 상품이 아닌 것이 1위가 됐다.
+   *
+   *   «싼 것을 좋아한다» 는 같은 물건들 사이의 취향이다. 애초에 그 물건이
+   *   아닌 후보를 싸다는 이유로 올리는 데 쓸 값이 아니다.
+   */
+  const prefEligible = it => !coverOf.size
+    || coverMax < COVERAGE_STRONG
+    || (coverOf.get(it) || 0) >= COVERAGE_OK;
+
   list.forEach(it => {
     const s = scoreItem(it, cons, tokens);
     it.fit = s.fit;
@@ -646,7 +679,7 @@ function rankItems(items, c, query, opts) {
      * 안에서의 위치(0~1)로만 준다. 후보가 전부 같은 값이면 아무 영향이 없다.
      */
     const price = Math.round(Number(it.price) || 0);
-    if (price > 0 && max > min) {
+    if (price > 0 && max > min && prefEligible(it)) {
       const pos = (price - min) / (max - min);     // 0=가장 쌈, 1=가장 비쌈
       if (cons.priority === 'price') it._score += Math.round((1 - pos) * 14);
       else if (cons.priority === 'quality') it._score += Math.round(pos * 8);
@@ -726,6 +759,45 @@ function rankItems(items, c, query, opts) {
     });
 
     /*
+     * ── 상품 식별 (2026-10-08 운영 soak · 변형 공격 247건) ───────
+     *
+     * 일반 검색은 이 두 가지를 relevance 로 이미 쓰는데(_search.titleRelation ·
+     * productFocus), AI 경로의 순서는 relevance 가 아니라 이 점수로 정해진다.
+     * 그래서 같은 판정을 여기서 한 번 더 내려야 «G304» 질문에
+     * «G304 X SUPERLIGHT» 가 1위로 오지 않는다.
+     *
+     * ★ 점수를 깎지 않고 _identityMiss 로 표시만 한다. 실제 처리는 아래
+     *   정렬 단계다 — 그 이유는 거기 주석에 적어 두었다.
+     * ★ 모델이 최종 문장을 쓰므로 사실로도 남긴다. notes 는 프롬프트의
+     *   "조건 대조:" 줄로 들어가고(api/ai.js describe), 간추린 형태에서는
+     *   notes[0] 만 실리므로 모델 표기 차이는 맨 앞에 둔다 — 그 상품에 대해
+     *   가장 먼저 알아야 할 사실이다.
+     */
+
+    /*
+     * 요구한 부속이 아닌 상품 (_search.accessoryRequestMismatch 주석).
+     *
+     * 본품 요구에서 부속을 내리는 규칙의 거울이다. 실측: "에어팟 프로 3
+     * 케이스 가격" 에 본품 이어폰(329,000원)이 1위였다 — 부속 의도에서는
+     * 본품/부속 필터가 꺼지므로 이 신호가 없으면 아무것도 가르지 못한다.
+     */
+    list.forEach(it => {
+      if (!searchHelpers.accessoryRequestMismatch(intentContext.analysis, it && it.title)) return;
+      it._identityMiss = true;
+      it._accessoryRequestMiss = true;
+      it.notes.push('사용자가 지목한 부속이 상품명에 없다');
+    });
+
+    /* 같은 모델코드에 붙은 다른 표기 (_search.MODEL_EXTENSION_RE 주석). */
+    list.forEach(it => {
+      const variant = searchHelpers.modelVariantMismatch(intentContext.analysis, it && it.title);
+      if (!variant) return;
+      it._identityMiss = true;
+      it._modelVariant = variant;
+      it.notes.unshift(`검색하신 모델 표기와 다른 상품이다(${variant})`);
+    });
+
+    /*
      * 상품명이 검색어를 «얼마나» 담았는가 (2026-10-04 운영 실측).
      *
      * scoreItem 의 적합도는 토큰이 «하나라도» 맞으면 같은 +12 다. 그래서
@@ -738,19 +810,36 @@ function rankItems(items, c, query, opts) {
      * ★ 지우지 않는다 — 순서만 내린다. 최저가 가점(최대 14)보다 크게 잡아,
      *   검색어의 절반도 못 담은 상품이 가격만으로 온전한 일치를 넘지 못하게 한다.
      */
-    const cover = list.map(it => searchHelpers.scoreTitle(intentContext.analysis, (it && it.title) || '').score);
-    if (Math.max.apply(null, cover) >= COVERAGE_STRONG) {
-      list.forEach((it, i) => {
-        const p = cover[i] >= COVERAGE_OK ? 0 : Math.round((1 - cover[i]) * COVERAGE_GAP);
+    // 커버리지는 위에서 한 번 계산해 두었다 (coverOf — 취향 가점 자격과 공유한다).
+    if (coverMax >= COVERAGE_STRONG) {
+      list.forEach(it => {
+        const cover = coverOf.get(it) || 0;
+        const p = cover >= COVERAGE_OK ? 0 : Math.round((1 - cover) * COVERAGE_GAP);
         if (p > 0) { it._score -= p; it._coveragePenalty = p; }
       });
     }
   }
 
-  // 동점이면 원래 순서를 지킨다 (쇼핑몰이 준 순서에도 정보가 있다).
+  /*
+   * 정렬.
+   *
+   * ★ 상품 식별은 «하드» 조건이다 (2026-10-08).
+   *
+   *   예산·가격·성향은 점수로 겨룬다. 그런데 «사용자가 말한 그 상품인가» 는
+   *   겨룰 일이 아니다 — 다른 모델이면 값이 싸든 예산에 맞든 그것은 답이
+   *   아니다. 점수로 깎아 두면 예산 적합(+50)과 예산 초과(−48)의 폭이 식별
+   *   감점을 삼킨다(실측: "5만원 이하 G304" 에서 예산에 맞는 G304 X 가 1위).
+   *
+   *   그래서 식별이 어긋난 후보는 «맞은 후보 전부 뒤» 로 보낸다. 지우지는
+   *   않는다 — 사용자가 다음 턴에 그것을 지목할 수 있어야 하고, 전부
+   *   어긋났다면(맞은 후보가 하나도 없으면) 순서는 그대로다.
+   *
+   * 동점이면 원래 순서를 지킨다 (쇼핑몰이 준 순서에도 정보가 있다).
+   */
   const ranked = list
     .map((it, i) => ({ it, i }))
-    .sort((a, b) => (b.it._score - a.it._score) || (a.i - b.i))
+    .sort((a, b) => (!!a.it._identityMiss - !!b.it._identityMiss)
+      || (b.it._score - a.it._score) || (a.i - b.i))
     .map(x => x.it);
 
   /*

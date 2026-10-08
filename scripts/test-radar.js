@@ -93,8 +93,20 @@ function ok(cond, name, detail) {
 function eq(a, b, name) { ok(a === b, name, a === b ? String(a) : `기대 ${b} / 실제 ${a}`); }
 function section(t) { console.log(`\n[${t}]`); }
 
-const TODAY = '2026-09-07';
+/*
+ * ★ 기준일은 «오늘»(KST)이어야 한다. 고정 날짜는 시한폭탄이다.
+ *
+ *   2026-09-07 로 박아 두었더니 한 달이 지난 뒤 [4] "하락률 근거" 가 깨졌다.
+ *   _pricestat.statsFrom 의 avg30 은 «지금부터 30일» 이라는 굴러가는 창으로
+ *   계산하는데, 픽스처의 관측이 전부 그 창 밖으로 나가 avg30 이 비고,
+ *   _radar.decisionOf 의 dropPercent(=pct(avg30, price))가 null 이 됐다.
+ *   운영에서는 늘 최근 관측이 있으므로 코드 쪽 결함이 아니다 —
+ *   픽스처가 시계와 함께 굴러가야 한다.
+ */
+const TODAY = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 const day = n => new Date(Date.parse(TODAY + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
+/** 카탈로그 행의 마지막 확인 시각. 기준일과 함께 굴러간다. */
+const COLLECTED_AT = `${TODAY}T00:00:00Z`;
 /** n일치 관측. f(i) 가 i일 전의 가격. */
 const series = (n, f) => { const a = []; for (let i = n - 1; i >= 0; i--) a.push({ date: day(i), price: f(i) }); return a; };
 const statOf = (n, f) => P.statsFrom(series(n, f));
@@ -127,19 +139,19 @@ function seed() {
   db.products.push(
     { product_id: 'A1', mall: '쿠팡', mall_label: '쿠팡', vendor_item_id: 'v1', keyword: '무선 이어폰',
       title: '소니 WF-1000XM5 무선 이어폰', lprice: 199000, image: 'https://i/1.jpg',
-      link: 'https://link.coupang.com/a/1', collected_at: '2026-09-07T00:00:00Z' },
+      link: 'https://link.coupang.com/a/1', collected_at: COLLECTED_AT },
     { product_id: 'B2', mall: '쿠팡', mall_label: '쿠팡', vendor_item_id: '', keyword: '무선 이어폰',
       title: '삼성 갤럭시 버즈3 프로', lprice: 209000, image: '', link: 'https://link.coupang.com/a/2',
-      collected_at: '2026-09-07T00:00:00Z' },
+      collected_at: COLLECTED_AT },
     { product_id: 'C3', mall: '쿠팡', mall_label: '쿠팡', vendor_item_id: '', keyword: '무선 이어폰',
       title: '소니 WF-1000XM5 무선 이어폰 실리콘 케이스', lprice: 12000, image: '', link: '',
-      collected_at: '2026-09-07T00:00:00Z' },
+      collected_at: COLLECTED_AT },
     { product_id: 'D4', mall: '쿠팡', mall_label: '쿠팡', vendor_item_id: '', keyword: '무선 이어폰',
       title: '초고가 레퍼런스 헤드폰', lprice: 1900000, image: '', link: '',
-      collected_at: '2026-09-07T00:00:00Z' },
+      collected_at: COLLECTED_AT },
     { product_id: 'THIN', mall: '쿠팡', mall_label: '쿠팡', vendor_item_id: '', keyword: '무선 이어폰',
       title: '기록이 거의 없는 상품', lprice: 50000, image: '', link: '',
-      collected_at: '2026-09-07T00:00:00Z' }
+      collected_at: COLLECTED_AT }
   );
   let id = 1;
   const hist = (pid, n, f) => series(n, f).forEach(p => db.price_history.push({

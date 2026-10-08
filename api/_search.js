@@ -170,7 +170,12 @@ const SYNONYM_GROUPS = [
   // 한/영 표기 차이. "LG 그램 프로 16" 의 "프로" 는 제목에 "Pro" 로 온다
   ['프로', 'pro'], ['플러스', 'plus'], ['에어', 'air'], ['미니', 'mini'],
   ['맥스', 'max'], ['울트라', 'ultra'], ['라이트', 'lite'], ['그램', 'gram'],
-  ['케이스', '커버', 'case'], ['충전기', '어댑터', '충전어댑터', 'charger']
+  ['케이스', '커버', 'case'], ['충전기', '어댑터', '충전어댑터', 'charger'],
+  /*
+   * 모델 표기 꼬리말의 한글 음차. "G304 엑스" 는 "G304 X" 를 찾는 말이다
+   * (modelVariantMismatch 주석 — 그 판정이 이 변형에서 반대로 돌았다).
+   */
+  ['엑스', 'x']
 ];
 
 const SYNONYMS = (() => {
@@ -273,6 +278,19 @@ function analyzeQuery(keyword, opts = {}) {
     : analysis.modelKeys.length ? 'MODEL'
     : raw.length === 1 && (brandHead || primaryHead) ? 'BRAND_ONLY'
     : brandHead || primaryHead ? 'BRAND_PRODUCT' : 'PRODUCT';
+  /*
+   * 모델 표기 차이 판정의 재료 (MODEL_EXTENSION_RE · modelVariantMismatch 주석).
+   *
+   *   modelWantedExtension  질의 자신이 적은 모델 꼬리말 ('' = 기본 표기)
+   *   modelExactSeen        이번 결과에 그 표기를 가진 후보가 실제로 있는가
+   *
+   * 목록이 없으면(저장된 products 단건 판정 등) 켜지 않는다 — 근거 없이 깎지 않는다.
+   */
+  analysis.modelWantedExtension = queryWantedExtension(analysis);
+  analysis.modelExactSeen = analysis.modelKeys.length > 0 && (opts.titles || []).some(title => {
+    const d = modelDesignation(analysis.modelKeys, title);
+    return d.found && (d.extension || '') === analysis.modelWantedExtension;
+  });
   return analysis;
 }
 
@@ -560,6 +578,125 @@ function compatibilityMention(analysis, title) {
     || /\b(?:for|compatible|replacement)\b/.test(normalized);
 }
 
+/*
+ * 모델 표기를 «늘리는» 꼬리말.
+ *
+ * ── 왜 필요한가 (2026-10-08 운영 soak) ──────────────────────────
+ *
+ * «G304 가격 알려줘» 에 «로지텍 G304 X SUPERLIGHT»(109,000원) 가 선택됐다.
+ * 두 상품은 같은 모델코드 토큰(g304)을 쓰기 때문에 질의 커버리지가 둘 다
+ * 1.0 으로 같다 — 관련도만으로는 가를 수 없었고, 그 뒤의 동점 처리(가격·
+ * 식별자)가 어느 쪽이든 1위로 만들 수 있었다. 실제로 다른 모델의 가격이
+ * 일반 G304 의 가격처럼 답변됐다.
+ *
+ *   로지텍 G304 LIGHTSPEED …      ← 사용자가 말한 그 모델
+ *   로지텍 G304 X SUPERLIGHT …    ← 모델코드 뒤에 «X» 가 붙은 다른 제품
+ *
+ * 쿠팡 제목에서 모델코드 바로 뒤에 붙는 1~2글자 영문 토큰은 같은 숫자를
+ * 쓰는 다른 제품을 가르는 표기다 (G304 ↔ G304 X, RTX 5070 ↔ 5070 Ti,
+ * 갤럭시 S24 ↔ S24 FE). 사전이 아니라 «자리» 로 판정한다 — 특정 브랜드·
+ * 상품명을 코드에 박지 않는다.
+ *
+ * ── 왜 이것만으로는 안 되고 «증거» 가 필요한가 ──────────────────
+ *
+ * 꼬리말만 보고 깎으면 색상 코드(«G304 BK»)처럼 같은 상품인 표기까지
+ * 내려간다. 그래서 이 신호는 «이번 결과 안에 꼬리말 없는 후보가 실제로
+ * 있을 때» 만 켠다(analysis.modelBare). 사용자가 말한 표기와 정확히 같은
+ * 후보가 있는데 굳이 늘어난 표기를 고르는 일만 막는다.
+ */
+const MODEL_EXTENSION_RE = /^[a-z]{1,2}$/;
+/** 늘어난 표기를 고를 때 곱하는 값. 지우지 않는다 — 순서만 내린다. */
+const MODEL_VARIANT_PENALTY = 0.55;
+
+/**
+ * 이 제목이 질의의 모델코드를 어떻게 적었는가.
+ *
+ * @returns {{found:boolean, extension:string}}
+ *   found     질의의 모델코드 토큰이 제목에 그대로 있다
+ *   extension 그 바로 뒤에 붙은 모델 꼬리말 (없으면 '')
+ */
+function modelDesignation(modelKeys, title) {
+  const out = { found: false, extension: '' };
+  if (!modelKeys || !modelKeys.length) return out;
+  const tokens = splitTokens(normalizeText(title));
+  for (let i = 0; i < tokens.length; i++) {
+    if (!modelKeys.some(k => tokens[i] === k)) continue;
+    out.found = true;
+    const next = tokens[i + 1];
+    if (next && MODEL_EXTENSION_RE.test(next) && !UNIT_RE.test(next) && !CAPACITY_RE.test(next)) {
+      // 꼬리말이 없는 자리를 하나라도 찾으면 그쪽이 사용자가 말한 표기다.
+      if (!out.extension) out.extension = next;
+    } else {
+      out.extension = '';
+      return out;
+    }
+  }
+  return out;
+}
+
+/**
+ * 질의가 적은 모델 꼬리말.
+ *
+ * ★ 제목과 달리 «자리» 를 요구하지 않는다.
+ *
+ *   제목은 판매자가 쓴 긴 문자열이라 모델코드 바로 뒤라는 자리가 신호가 된다.
+ *   질의는 사람이 몇 낱말로 쓴 것이고 어순이 자유롭다 — 실측 변형:
+ *     "G304 엑스 가격 알려줘"      꼬리말을 한글로 적었다
+ *     "G304 슈퍼라이트 X 최저가"   꼬리말이 모델코드에 붙어 있지 않다
+ *   둘 다 X 를 찾는 말인데 자리로만 보면 «기본형» 으로 읽혀, 판정이 정확히
+ *   반대로 돌았다(G304 X 를 물었는데 일반형이 1위).
+ *
+ *   그래서 질의에서는 꼬리말 «꼴» 의 토큰을 어디서든 찾고, 한글 음차는
+ *   기존 동의어 표(SYNONYM_GROUPS)로 되돌린다.
+ */
+function queryWantedExtension(analysis) {
+  if (!analysis || !analysis.modelKeys || !analysis.modelKeys.length) return '';
+  for (const tok of analysis.tokens) {
+    const text = tok.text;
+    if (analysis.modelKeys.indexOf(text) > -1) continue;
+    if (UNIT_RE.test(text) || CAPACITY_RE.test(text) || YEAR_RE.test(text)) continue;
+    if (MODEL_EXTENSION_RE.test(text)) return text;
+    const syn = SYNONYMS.get(text);
+    if (syn) {
+      for (const s of syn) if (MODEL_EXTENSION_RE.test(s)) return s;
+    }
+  }
+  return '';
+}
+
+/**
+ * 질의가 지목한 모델과 다른 표기를 쓴 제목인가.
+ *
+ * ★ 양방향이다 (2026-10-08 변형 공격 246건).
+ *
+ *   한 방향만 보면 반쪽이다. «G304» 에 «G304 X» 가 오는 것만 막고,
+ *   «G304 X 가격» 에 일반 G304 가 1위로 오는 것은 못 막는다 — 실측에서
+ *   12개 변형 중 9개가 그렇게 샜다. 질의 커버리지(일반형 0.6 vs X 0.8)가
+ *   둘 다 어중간해서 커버리지 감점 문턱(0.9)이 열리지 않았기 때문이다.
+ *
+ *   그래서 «질의가 적은 표기» 와 «제목이 적은 표기» 를 그대로 맞춘다.
+ *     질의 g304    · 제목 g304        → 같다
+ *     질의 g304    · 제목 g304 x      → 다르다
+ *     질의 g304 x  · 제목 g304        → 다르다  ← 이 방향이 빠져 있었다
+ *     질의 g304 x  · 제목 g304 x      → 같다
+ *
+ * ★ 증거 없이는 켜지 않는다 (analysis.modelExactSeen).
+ *   이번 결과에 «질의가 적은 그 표기» 를 가진 후보가 실제로 있을 때만 본다.
+ *   그래야 색상 코드(«G304 BK») 처럼 같은 상품인 표기나, 애초에 그 표기가
+ *   없는 결과를 근거 없이 내리지 않는다.
+ *
+ * @returns {string} 다르면 사람이 읽을 수 있는 그 차이, 같으면 ''
+ */
+function modelVariantMismatch(analysis, title) {
+  if (!analysis || !analysis.modelExactSeen || !analysis.modelKeys || !analysis.modelKeys.length) return '';
+  const want = analysis.modelWantedExtension || '';
+  const d = modelDesignation(analysis.modelKeys, title);
+  if (!d.found) return '';
+  const got = d.extension || '';
+  if (got === want) return '';
+  return got || `${want.toUpperCase()} 없는 기본 표기`;
+}
+
 function titleRelation(analysis, title) {
   let factor = 1;
   const reasons = [];
@@ -570,6 +707,11 @@ function titleRelation(analysis, title) {
   })) {
     factor *= 0.4;
     reasons.push('model-boundary-miss');
+  }
+  // 같은 모델코드에 붙은 다른 표기 (MODEL_EXTENSION_RE 머리 주석).
+  if (modelVariantMismatch(analysis, title)) {
+    factor *= MODEL_VARIANT_PENALTY;
+    reasons.push('model-variant');
   }
   // A late head mention is evidence of a different product identity. Keep
   // family/category queries conservative: only broad primary-head evidence
@@ -1112,12 +1254,86 @@ function sortByRelevance(items) {
  * @returns {{items, dropped, removed, allBelow}}
  *   allBelow — 받아온 건 있는데 전부 기준선 아래였다 ("결과 없음"과 구분해야 한다)
  */
-function productIntentContext(keyword, titles) {
+/*
+ * 사용자가 «본품» 을 콕 집어 말한 표시 (2026-10-08 변형 공격).
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────
+ *
+ * 부속 의도는 «검색어에 부속 낱말이 있는가» 로 판정한다. 그런데 사용자가
+ * 부속을 «빼 달라» 고 말할 때도 그 낱말은 문장 안에 있다. 부정 구문은
+ * api/_feedback.js 가 지우지만, 한국어는 낱말 경계가 없어 여러 토큰에 걸친
+ * 부정 범위를 안전하게 지울 수 없다 — 실측으로 남은 두 꼴:
+ *
+ *   "충전 케이스 단품 아니고 에어팟 프로 3 본체 가격"  → «단품» 만 지워진다
+ *   "케이스 필요 없고 에어팟 프로 3 본체만 알려줘"      → «필요 없고» 는 표지가 아니다
+ *
+ * 둘 다 «본체» 라고 분명히 말했다. 그 말은 상품 이름이 아니라 «무엇을 사려는가» 이고,
+ * 부속 낱말이 함께 있어도 요구는 본품이다. 그 하나만 보고 본품 의도로 확정한다.
+ *
+ * ★ 상품·브랜드 사전이 아니다. 요구를 밝히는 말의 목록이고, 거짓 양성이 나도
+ *   «본품을 고른다» 쪽이라 액세서리를 본품으로 내세우는 사고로는 이어지지 않는다.
+ * ★ '단품' 은 넣지 않는다 — "충전 케이스 단품" 처럼 부속이 따로 팔린다는 뜻으로도 쓰인다.
+ */
+const MAIN_PRODUCT_REQUEST_RE = /본체|본품|기기만|유닛만|이어버드만|알맹이만|제품만\s*(?:주|사|보)|\b(?:earbuds|buds|unit|body|device|headphones?)\s+only\b|\bonly\s+the\s+(?:earbuds|buds|unit|body|device)\b|\bno\s+(?:case|cover|accessor\w*)\b|\bwithout\s+(?:the\s+)?(?:case|cover|accessor\w*)\b/i;
+
+/**
+ * @param {string} keyword 검색어 (부정 구문이 제거된 뒤의 값)
+ * @param {Array<string>} titles 이번 후보 상품명
+ * @param {object} [opts]
+ *   userText — 사용자 원문. 검색어에서 걷어낸 «본품» 표시가 여기에는 남아 있다.
+ */
+function productIntentContext(keyword, titles, opts = {}) {
   const analysis = analyzeQuery(keyword, { titles: Array.isArray(titles) ? titles : [] });
+  const mainRequested = MAIN_PRODUCT_REQUEST_RE.test(String(opts.userText || '') || String(keyword || ''));
+  /*
+   * ★ 본품을 요구했으면 «요구한 부속» 목록을 비운다.
+   *
+   *   의도 글자만 바꾸는 것으로는 부족하다. productFocus 와
+   *   accessoryRequestMismatch 는 analysis.accessories 를 읽어 «사용자가 이
+   *   부속을 원한다» 로 다루고, 그래서 부속이 걸러지지도(필터가 전부 통과)
+   *   않고 오히려 본품이 «요구한 부속이 아니다» 로 내려갔다(실측:
+   *   "충전 케이스 단품 아니고 … 본체 가격" → 보호 케이스가 1위).
+   */
+  if (mainRequested && analysis.accessories && analysis.accessories.length) {
+    analysis.accessories = [];
+  }
   return {
     analysis,
-    intent: queryWantsAccessory(analysis) ? 'ACCESSORY_INTENT' : 'MAIN_PRODUCT_INTENT'
+    mainRequested,
+    intent: (!mainRequested && queryWantsAccessory(analysis)) ? 'ACCESSORY_INTENT' : 'MAIN_PRODUCT_INTENT'
   };
+}
+
+/*
+ * 사용자가 부속을 지목했는데 그 부속이 제목에 아예 없는가 (2026-10-08).
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────
+ *
+ * «에어팟 프로 3 케이스 가격» 에 본품(329,000원 이어폰)이 1위로 나왔다.
+ * 부속 의도(ACCESSORY_INTENT)에서는 본품/부속 필터가 — 당연히 — 꺼지는데,
+ * 그 결과 «요구한 부속이 아닌 것» 에 대한 신호가 하나도 남지 않는다.
+ * 본품 요구에서 부속을 내리는 규칙(accessoryFocus)의 거울이 없었던 셈이다.
+ *
+ * ── 판정 ────────────────────────────────────────────────────────
+ *
+ * 요구한 부속 낱말(또는 그 동의어: 케이스↔커버↔case)이 제목에 하나도 없으면
+ * 그것은 사용자가 말한 물건이 아니다.
+ *
+ * ★ 제목에 그 낱말이 «있으면» 건드리지 않는다. 그래서 «케이스 포함» 본품
+ *   번들은 그대로 남는다 — 부속 낱말 하나로 본품을 지우는 실수를 되풀이하지
+ *   않는다(scoreTitle 의 2026-10-04 주석과 같은 선).
+ */
+function accessoryRequestMismatch(analysis, title) {
+  if (!analysis) return false;
+  const requested = analysis.accessories || [];
+  if (!requested.length) return false;
+  const normalized = normalizeText(title);
+  const tokens = splitTokens(normalized);
+  return !requested.some(word => {
+    const family = [word, ...(SYNONYMS.get(word) || [])];
+    return family.some(w => tokens.some((token, i) => accessoryTermAt(w, tokens, i))
+      || (w.length >= 2 && normalized.replace(/\s+/g, '').indexOf(w) > -1));
+  });
 }
 
 /** Reuse normal search's head-noun/accessory evidence in AI ranking. */
@@ -1138,9 +1354,9 @@ function accessoryFocus(context, title) {
  * Keep accessories out of a main-product search while preserving explicit accessory searches.
  * Both the site search and AI ranking use this same deterministic filter.
  */
-function filterMainProductCandidates(keyword, items) {
+function filterMainProductCandidates(keyword, items, opts = {}) {
   const list = (items || []).filter(Boolean);
-  const context = productIntentContext(keyword, list.map(it => it && it.title));
+  const context = productIntentContext(keyword, list.map(it => it && it.title), opts);
   if (context.intent !== 'MAIN_PRODUCT_INTENT') {
     return { items: list, dropped: 0, intent: context.intent };
   }
@@ -1649,6 +1865,7 @@ module.exports = {
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
+  modelVariantMismatch, modelDesignation, titleRelation, accessoryRequestMismatch,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
   MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY

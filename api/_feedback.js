@@ -101,6 +101,144 @@ function cleanExcludeName(raw) {
 /** 제외를 강한 감점으로 다룰지, 아예 지울지 가르는 말 */
 const HARD_EXCLUDE_RE = /절대|무조건|아예|전부\s*빼/;
 
+/*
+ * ── 부정·제외 구문 (2026-10-08 운영 soak) ──────────────────────
+ *
+ * EXCLUDE_RE 는 «빼/제외/말고» 바로 앞의 낱말 하나만 본다. 그래서 두 가지가
+ * 샜다. 둘 다 실측으로 재현했다.
+ *
+ *   1) «G304 X 말고 일반 G304»
+ *      «X» 는 한 글자라 EXCLUDE_RE 의 {2,20} 에 걸리지 않는다 → 제외 없음.
+ *      여러 토큰으로 된 모델 표기(«G304 X SUPERLIGHT 말고») 도 못 잡는다.
+ *
+ *   2) «에어팟 프로 3 본체만. 케이스 제외.»
+ *      검색어 추출(_intent.extractQuery)이 «케이스» 를 그대로 남겨
+ *      «에어팟 프로 3 본체만 케이스» 가 됐다. 그 검색어는 _search.analyzeQuery
+ *      에서 ACCESSORY 의도로 읽혀 본품/액세서리 필터가 통째로 꺼졌고,
+ *      4,900원짜리 보호 케이스가 후보 최상위로 올라왔다 — 사용자가 빼 달라고
+ *      말한 바로 그것이다.
+ *
+ * 그래서 «무엇을 빼 달라고 했는가» 를 한 곳에서 읽고 두 곳이 함께 쓴다.
+ *   · 검색어에서 그 말을 지운다 (_intent.extractQuery, api/ai.js cleanQuery)
+ *   · 랭킹 제외로 넘긴다 (readFeedback → applyExcludes)
+ *
+ * 사전을 만들지 않는다. 부정 표지 «앞/뒤» 라는 자리로만 판정한다.
+ */
+/** 한국어: 제외 대상 + (조사) + 부정 표지. 이어지는 영문·숫자 토큰까지 한 덩어리로 본다. */
+const NEGATED_KO_RE = /([가-힣A-Za-z0-9]+(?:\s+[A-Za-z0-9]+){0,2})\s*(?:은|는|이|가|을|를)?\s*(?:절대|무조건|아예|전부|다|좀|이제)?\s*(?:빼고|빼줘|빼라|빼|제외하고|제외한|제외해|제외|말고|아니고|아닌|아님|아니야|싫어|싫은|필요\s*없|없는\s*거)/g;
+/** 영어: 부정 표지 + (관사) + 제외 대상. */
+const NEGATED_EN_RE = /\b(?:no|not|without|except|excluding|minus)\s+(?:the|a|an)?\s*([A-Za-z0-9]+(?:\s+[A-Za-z0-9]+){0,2})\b/gi;
+/*
+ * 영문 표기 + 일반 명사 꼴. "X 버전 아니고", "Ti 모델 말고".
+ *
+ * ★ 왜 따로 두는가 — 한국어는 낱말 경계가 없어서 부정 범위를 한글 토큰
+ *   여러 개로 넓히면 상품 이름을 삼킨다("에어팟 프로 3 케이스 제외" 에서
+ *   «프로 3 케이스» 를 지우게 된다). 그래서 넓히는 자리를 «영문·숫자 토큰
+ *   하나 + 표기를 받는 일반 명사» 로만 열어 둔다. 그 일반 명사는 상품 이름이
+ *   될 수 없는 말들이다.
+ */
+const QUALIFIER_NOUN = '(?:버전|버젼|타입|에디션|모델명?|라인업?|계열|사양)';
+const NEGATED_QUALIFIED_RE = new RegExp(
+  `([A-Za-z0-9]+)\\s*${QUALIFIER_NOUN}\\s*(?:은|는|이|가|을|를)?\\s*`
+  + '(?:아니고|아닌|아님|아니야|말고|제외하고|제외한|제외해|제외|빼고|빼줘|빼)', 'g');
+
+/*
+ * ★ 부정 표지 앞의 말이 «지시어» 면 제외 대상이 아니다.
+ *   "이거 말고 다른 거" 는 브랜드 «이거» 를 빼 달라는 말이 아니라 후보 거부다.
+ *   cleanExcludeName 의 NOT_A_NAME 이 그 판단을 이미 갖고 있다.
+ */
+function negatedSpans(text) {
+  const s = String(text == null ? '' : text);
+  const out = [];
+  [NEGATED_KO_RE, NEGATED_EN_RE, NEGATED_QUALIFIED_RE].forEach(re => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(s)) !== null) {
+      const term = String(m[1] || '').trim();
+      if (!term) continue;
+      out.push({ term, start: s.indexOf(term, m.index), length: term.length, whole: m[0] });
+      if (re.lastIndex === m.index) re.lastIndex++;   // 빈 일치 보호
+    }
+  });
+  return out;
+}
+
+/**
+ * 사용자가 빼 달라고 한 말들.
+ *
+ * @returns {Array<{name:string, hard:boolean, evidence:string}>}
+ */
+function negatedTerms(text) {
+  const s = String(text == null ? '' : text);
+  const hard = HARD_EXCLUDE_RE.test(s);
+  const seen = new Set();
+  const out = [];
+  negatedSpans(s).forEach(span => {
+    const name = cleanExcludeName(span.term);
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ name, hard, evidence: span.whole.trim().slice(0, 30), source: 'explicit' });
+  });
+  return out;
+}
+
+/*
+ * 검색어에서 지울 수 있는 제외 대상인가.
+ *
+ * ★ 랭킹 제외(negatedTerms)보다 느슨하다. 이유가 다르다.
+ *   랭킹 제외는 «이 이름이 상품명에 들어 있으면 내린다» 이므로 한 글자
+ *   이름을 받으면 아무 상품이나 걸린다(cleanExcludeName 이 2자 미만을 버리는
+ *   이유다). 검색어에서 지우는 일은 그런 위험이 없고, 오히려 한 글자 모델
+ *   표기를 반드시 지워야 한다 — «not the X» 의 «X» 가 검색어에 남으면
+ *   _search 가 «사용자가 X 를 함께 말했다» 로 읽어 G304 X 를 정답으로 본다.
+ */
+const NEGATION_FUNCTION_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'is', 'are', 'it', 'this', 'that',
+  'any', 'all', 'one', 'more', 'less', 'other', 'others', 'thanks', 'please'
+]);
+
+function strippableTerm(term) {
+  const s = String(term || '').trim();
+  if (!s || !/[0-9A-Za-z가-힣]/.test(s)) return false;
+  if (NOT_A_NAME.has(s)) return false;
+  const first = s.split(/\s+/)[0].toLowerCase();
+  if (NEGATION_FUNCTION_WORDS.has(first)) return false;
+  // 한 글자는 영문·숫자(모델 표기)일 때만 지운다. 한 글자 한글은 조사·어미일 수 있다.
+  if (s.length === 1 && !/^[0-9A-Za-z]$/.test(s)) return false;
+  return true;
+}
+
+/**
+ * 검색어에서 제외 대상을 지운다.
+ *
+ * 부정 표지 자체는 남겨 둔다 — 호출부(_intent.extractQuery)의 STRIP_SET 이
+ * 걷어내거나, 남아도 쿠팡 검색어에서 의미를 바꾸지 않는 말이다. 여기서
+ * 반드시 지워야 하는 것은 «빼 달라고 한 그 물건 이름» 하나다.
+ */
+function stripNegatedTerms(text) {
+  const s = String(text == null ? '' : text);
+  if (!s) return s;
+  /*
+   * ★ 문자열 치환이 아니라 «그 자리» 만 지운다.
+   *   한국어에는 낱말 경계가 없어서 같은 글자를 전부 지우면 다른 낱말이 깨진다
+   *   ("에어 제외하고 에어팟" 에서 "에어" 를 모두 지우면 "팟" 이 남는다).
+   */
+  const cuts = negatedSpans(s)
+    .filter(span => span.start >= 0 && strippableTerm(span.term))
+    .sort((a, b) => b.start - a.start);
+  let out = s;
+  let lastStart = out.length + 1;
+  cuts.forEach(span => {
+    const end = span.start + span.length;
+    if (end > lastStart) return;                 // 앞서 지운 자리와 겹친다
+    out = `${out.slice(0, span.start)} ${out.slice(end)}`;
+    lastStart = span.start;
+  });
+  return out.replace(/\s+/g, ' ').trim();
+}
+
 /**
  * 이번 발화가 거부인가, 그렇다면 무엇에 대한 거부인가.
  *
@@ -143,6 +281,17 @@ function readFeedback(text) {
       }
     }
   }
+
+  /*
+   * 여러 토큰·한 글자 모델 표기까지 (negatedTerms 머리 주석).
+   *
+   * ★ EXCLUDE_RE 가 찾은 것을 먼저 넣고, 여기서 «빠진 것만» 덧붙인다.
+   *   excludes[0] 이 바뀌면 기존 검사(eval-feedback.js [B])의 계약이 깨진다.
+   */
+  negatedTerms(s).forEach(e => {
+    if (out.excludes.some(x => String(x.name).toLowerCase() === String(e.name).toLowerCase())) return;
+    out.excludes.push(e);
+  });
 
   /* ── 이유 없는 거부 ── */
   const rejected = REJECT_RE.test(s);
@@ -305,5 +454,6 @@ const KIND_LABEL = {
 
 module.exports = {
   readFeedback, collectExcludes, toProfileSignals, applyExcludes, feedbackBlock,
+  negatedTerms, stripNegatedTerms,
   REASONS, KIND_LABEL, FEEDBACK_DELTA, EXCLUDE_PENALTY
 };

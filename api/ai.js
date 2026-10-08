@@ -721,7 +721,19 @@ const CLASSIFY_FORCE = [
 const MAX_QUERY_LEN = 40;
 
 function cleanQuery(raw) {
-  const s = String(raw == null ? '' : raw)
+  /*
+   * 모델이 뽑은 검색어에도 부정 구문이 남아 온다 (api/_feedback.js negatedTerms 주석).
+   *
+   * RESOLVE_SYSTEM 은 "조건은 빼라"고 지시하지만 작은 모델은 사용자 문장을
+   * 거의 그대로 돌려준다. "AirPods Pro 3 earbuds only, no case" 가 그대로
+   * 오면 «case» 때문에 _search 가 액세서리 검색으로 읽는다. 사용자가 빼
+   * 달라고 한 말은 어느 경로로 들어오든 검색어가 되지 않게 한 곳에서 막는다.
+   */
+  let negationStripped = String(raw == null ? '' : raw);
+  try {
+    negationStripped = require('./_feedback').stripNegatedTerms(negationStripped);
+  } catch (e) { /* 모듈이 없으면 예전과 같이 원문으로 진행한다 */ }
+  const s = negationStripped
     .replace(/\p{C}/gu, ' ')
     .replace(/["'`<>|]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -1016,6 +1028,22 @@ async function resolveIntent(q, hist, view, budget, guest) {
   }
 
   const viaLlm = await classifyIntent(q, hist, budget);
+  /*
+   * ★ 참조 판정은 LLM 분류가 덮어쓸 수 없다 (2026-10-08).
+   *
+   *   parseClassification 은 {intent, query} 만 돌려준다. 그래서 LLM 분류가
+   *   성공한 요청에서는 requiresRecommendationIdentity 가 아예 없었고,
+   *   «아까 추천한 그 상품» 조차 서명 참조 경로를 타지 않았다 — 그 경로는
+   *   정규식 분류가 확신 높음으로 끝낸 요청에서만 돌고 있었다.
+   *
+   *   참조 여부는 문장 구조의 사실이고 결정적으로 판정된다(_intent.productReference).
+   *   LLM 이 고른 것은 의도와 검색어뿐이므로, 참조 사실은 그대로 얹는다.
+   */
+  if (viaLlm) {
+    viaLlm.contextualFollowup = !!(viaLlm.contextualFollowup || det.contextualFollowup);
+    viaLlm.requiresRecommendationIdentity = !!det.requiresRecommendationIdentity;
+    viaLlm.referencesKnownProduct = !!det.referencesKnownProduct;
+  }
   /*
    * LLM 분류가 실패하면(null) 정규식 결과로 이어 간다.
    *
@@ -2176,6 +2204,48 @@ function titleWords(item) {
   return distinctive.length ? distinctive : unique;
 }
 
+/*
+ * 후보들 사이에서 «이 상품만» 가리키는 낱말 (2026-10-08).
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────
+ *
+ * referencedItems 는 금액 앞에서 가장 가까운 상품명 낱말을 찾는다. 그런데
+ * 후보 제목들이 범용어를 공유하면 그 범용어가 «모든 후보» 를 끌고 온다.
+ *
+ *   후보  로지텍 G304 LIGHTSPEED 무선 게이밍 마우스        39,000원
+ *         로지텍 G304 X SUPERLIGHT 무선 게이밍 마우스     109,000원
+ *   답변  "로지텍 G304 X SUPERLIGHT 무선 게이밍 마우스는 현재 109,000원입니다."
+ *
+ * «게이밍» 이 금액 바로 앞에 있고 두 후보에 모두 들어 있어서, 금액이 두
+ * 상품에 동시에 귀속됐다. 그러면 일반 G304(39,000원)가 109,000원을
+ * 뒷받침하지 못하므로 — 정확히 맞는 답변이 근거 없음으로 폐기된다.
+ * 실측으로 재현했다: 올바른 귀속이 degraded fallback 으로 떨어진다.
+ * 이것이 운영에서 본 «fallback 반복» 의 한 원인이고, provider 장애가 아니다.
+ *
+ * ── 어떻게 가르는가 ─────────────────────────────────────────────
+ *
+ * 같은 자리에서 여러 후보가 걸리면 «더 구체적으로 불린» 후보를 남긴다.
+ * 구체성은 그 상품명 고유 낱말 중 답변에 실제로 나온 것들의 글자 수 합이다.
+ *
+ *   답변 "…G304 X SUPERLIGHT 무선 게이밍 마우스는 현재 109,000원…"
+ *     일반 G304      로지텍+g304+게이밍            = 10자
+ *     G304 X         로지텍+g304+superlight+게이밍 = 20자  ← 이 상품을 불렀다
+ *     G PRO X SL 2   로지텍+superlight+게이밍      = 16자
+ *
+ *   답변 "로지텍 G304 LIGHTSPEED 무선 게이밍 마우스는 현재 109,000원…"
+ *     일반 G304 가 20자로 가장 구체적이다 → 그 상품의 가격(39,000원)과
+ *     맞지 않으므로 예전처럼 근거 없음으로 걸린다. 느슨해지지 않는다.
+ *
+ * ★ 후보를 «늘리지» 않는다. 동점이면 예전처럼 전부 남긴다. 좁히는 쪽이
+ *   안전한 이유는, 좁힌 뒤에도 그 상품이 그 금액을 뒷받침해야 통과하기
+ *   때문이다 — "불린 상품의 가격만 말한다" 는 요구와 같은 방향이다.
+ */
+function namedSpecificity(window, item) {
+  return titleWords(item)
+    .filter(w => window.indexOf(w) >= 0)
+    .reduce((sum, w) => sum + w.length, 0);
+}
+
 /** Return the closest product title(s) around a factual claim. */
 function referencedItems(text, at, items, windowSize = 90) {
   const t = String(text || '').toLowerCase();
@@ -2210,15 +2280,30 @@ function referencedItems(text, at, items, windowSize = 90) {
     if (before !== undefined && at - before <= windowSize) beforeHits.push({ item, at: before });
     else if (after !== undefined && after - at <= windowSize) afterHits.push({ item, at: after });
   });
+  /*
+   * 같은 자리에 여러 후보가 걸렸으면 더 구체적으로 불린 쪽을 남긴다
+   * (namedSpecificity 머리 주석). 동점이면 예전처럼 전부 남긴다.
+   */
+  const narrow = (hits, lo, hi) => {
+    if (hits.length <= 1) return hits.map(h => h.item);
+    const window = t.slice(Math.max(0, lo), hi);
+    const scored = hits.map(h => ({ h, score: namedSpecificity(window, h.item) }));
+    const best = Math.max.apply(null, scored.map(s => s.score));
+    if (!(best > 0)) return hits.map(h => h.item);
+    return scored.filter(s => s.score === best).map(s => s.h.item);
+  };
+
   // A product named immediately before its amount owns that amount; a following
   // product begins the next clause (Alpha 90,000won and Beta 120,000won).
   if (beforeHits.length) {
     const latest = Math.max(...beforeHits.map(h => h.at));
-    return beforeHits.filter(h => h.at === latest).map(h => h.item);
+    const tied = beforeHits.filter(h => h.at === latest);
+    return narrow(tied, latest - windowSize, at);
   }
   if (!afterHits.length) return [];
   const nearest = Math.min(...afterHits.map(h => h.at));
-  return afterHits.filter(h => h.at === nearest).map(h => h.item);
+  const tiedAfter = afterHits.filter(h => h.at === nearest);
+  return narrow(tiedAfter, at, nearest + windowSize);
 }
 
 /** A current/today price claim must match that product's current search result. */
@@ -3540,11 +3625,34 @@ module.exports = async function handler(req, res) {
      */
     let selectors = [];
     let refSelected = false;
-    if (cls && cls.requiresRecommendationIdentity) {
+    const strongRef = !!(cls && cls.requiresRecommendationIdentity);
+    const weakRef = !!(cls && cls.referencesKnownProduct);
+    if (strongRef || weakRef) {
+      /*
+       * 확정된 상품을 가리키는 말 (api/_intent.js productReference 주석).
+       *
+       * 어느 경우에도 검색어는 비운다 — 대화 문장으로 다시 검색해서 "비슷한
+       * 것"을 고르면 그것이 바로 임의 선택이다. 대신 서버가 보증할 수 있는
+       * 식별자 중에서 «가장 구체적인 것» 을 고른다.
+       *
+       *   strong  앞선 답변·순서·별칭을 가리킨다 → 서명 참조만이 답이다.
+       *           없으면 되묻는다. 화면 목록으로 대신하지 않는다 — 사용자가
+       *           가리킨 것은 화면이 아니라 우리가 한 말이다.
+       *   weak    맨 지시어("그거", "그 제품").
+       *           상세 모달을 열어 둔 사람에게는 화면의 그 상품이 가장 정확한
+       *           지시 대상이고(모달에는 상품이 하나뿐이다), 채팅만 하는
+       *           사람에게는 직전 추천이다. 둘 다 서버가 다시 확인한다.
+       */
       query = '';
-      if (previousRecommendation) {
+      const onScreen = (!intent || needsShopContext(intent)) ? AC.selectorsFrom(contextProducts) : [];
+      const viewSource = String((view && typeof view === 'object' && view.source) || '');
+      if (!strongRef && viewSource === 'modal' && onScreen.length) {
+        selectors = onScreen;
+      } else if (previousRecommendation) {
         selectors = [previousRecommendation];
         refSelected = true;
+      } else if (!strongRef && onScreen.length) {
+        selectors = onScreen;
       } else {
         contextNotes.refMissing = true;
       }
@@ -3680,12 +3788,21 @@ module.exports = async function handler(req, res) {
      *   기존 랭킹 코드가 예전과 완전히 같은 경로로 돈다 — 개인화가
      *   "없는 사람에게는 아무 일도 일어나지 않는다"가 코드로 보장된다.
      */
+    /*
+     * ★ userText 는 언제나 넘긴다.
+     *
+     *   검색어는 조건·부정 구문을 걷어낸 값이라 «본체만 / no case» 같은
+     *   요구 표시가 남지 않는다. 그 표시는 본품/부속 판정에만 쓰이므로
+     *   (_search.MAIN_PRODUCT_REQUEST_RE) 원문을 함께 넘긴다. 상품·가격
+     *   사실로는 쓰이지 않는다.
+     */
     const rankOpts = () => {
-      if (!profileWeights) return undefined;
+      const base = { userText: q };
+      if (!profileWeights) return base;
       try {
         const PF = require('./_profile');
-        return { weights: PF.multipliers(profileWeights) };
-      } catch (e) { return undefined; }
+        return Object.assign(base, { weights: PF.multipliers(profileWeights) });
+      } catch (e) { return base; }
     };
 
     if (intent && needsShopContext(intent) && shouldSearch(query, view, items)) {
@@ -3733,16 +3850,28 @@ module.exports = async function handler(req, res) {
          * 답변이 "첫 번째 것을 권합니다"라고 말하는데 카드 순서가 다르면
          * 사용자는 다른 상품을 보게 된다. 순서는 한 곳에서 정한다.
          */
+        /*
+         * ★ 카드는 «랭킹이 남긴 후보» 만이다 (2026-10-08 운영 soak).
+         *
+         *   예전에는 raw(검색 결과 원본)를 전부 카드로 내보내고 순서만
+         *   랭킹에 맞췄다. 그래서 랭킹이 일부러 버린 상품이 답변 바로 아래에
+         *   그대로 떴다. 실측:
+         *
+         *     "에어팟 프로 3 본체만. 케이스 제외."
+         *     → filterMainProductCandidates 가 충전 케이스·보호 커버·이어팁을
+         *       후보에서 떨어뜨렸는데, 카드로는 넷 다 나갔다. 본품 후보가 없는
+         *       질문에서는 액세서리가 «추천» 자리(첫 카드)에 올라앉았다.
+         *
+         *   카드는 사용자가 실제로 누르는 결론이다. 후보에서 뺀 상품을 카드로
+         *   보여 주는 것은 답변과 화면이 다른 말을 하는 것이다.
+         *   하드 제외("삼성 절대 빼줘")도 같은 이유로 카드에서 사라진다.
+         */
         // 같은 상품 페이지의 옵션끼리 순서가 뒤섞이지 않게 옵션까지 키로 쓴다.
         const idOf = it => `${String(it.mallId || it.mall || '')}|${it.productId}|${String(it.vendorItemId || '')}`;
         const order = new Map(items.map((it, i) => [idOf(it), i]));
         cards = raw
-          .slice()
-          .sort((a, b) => {
-            const ia = order.has(idOf(a)) ? order.get(idOf(a)) : 99;
-            const ib = order.has(idOf(b)) ? order.get(idOf(b)) : 99;
-            return ia - ib;
-          })
+          .filter(it => order.has(idOf(it)))
+          .sort((a, b) => order.get(idOf(a)) - order.get(idOf(b)))
           .map(it => toCard(it, statFor(stats, it)));
       }
     } else if (items.length && (!intent || needsShopContext(intent))) {
