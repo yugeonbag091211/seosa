@@ -67,10 +67,13 @@ function openRouterResponse(text) {
     ok(r.ok && r.provider === 'openai' && r.text === 'OPENAI_OK', 'OpenAI success is returned as primary');
     ok(calls.length === 1 && calls[0].url === 'https://api.openai.com/v1/responses', 'OpenAI Responses endpoint is called first');
     ok(calls[0].body.model === 'gpt-6-luna' && calls[0].body.store === false, 'configured model + store:false are enforced');
+    ok(calls[0].body.reasoning && calls[0].body.reasoning.effort === 'none', 'Luna uses reasoning:none for interactive latency');
     ok(calls[0].body.max_output_tokens === 200, 'output token ceiling is forwarded');
     const s = llm.stats();
     ok(s.primaryProvider === 'openai' && s.paidCalls === 1 && s.openAI.successes === 1, 'paid-provider accounting records the call');
     ok(Number(r.costUsd) > 0 && Number(s.estimatedCostUsd) > 0, 'known Luna usage produces a cost estimate');
+    const otherReq = require('../api/_openai-provider').request('gpt-6.1-sol', { messages: [{ role: 'user', content: 'x' }], maxTokens: 10 });
+    ok(!otherReq.body.reasoning, 'Luna latency override is not applied to other models');
   }
 
   // 2) Quota/rate failure: user still receives the old free OpenRouter answer.
