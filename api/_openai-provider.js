@@ -38,6 +38,12 @@ function request(model, opts) {
     max_output_tokens: Math.max(1, Number(opts && opts.maxTokens) || 900),
     store: false
   };
+  // GPT-6 Luna defaults to medium reasoning, which can consume most of SEOSA's
+  // interactive latency budget before producing visible text. SEOSA already does
+  // its product/ranking reasoning deterministically, so use Luna's documented
+  // no-reasoning mode for the final conversational pass. Do not apply this to
+  // other models because their supported effort levels can differ.
+  if (/^gpt-6-luna(?:$|-)/i.test(model)) body.reasoning = { effort: 'none' };
   if (instructions) body.instructions = instructions;
 
   return {
