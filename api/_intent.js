@@ -333,6 +333,30 @@ const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|
 const DETERMINISTIC_CONTEXT_FOLLOWUP_RE = /(?:이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|아까\s*(?:추천한|말한|보여준)\s*(?:그\s*)?(?:상품|제품|것|거)?|그\s*(?:제품|상품|모델)\s*(?:지금\s*)?(?:사도\s*(?:돼|될|괜찮)|살까|가격|현재가))/;
 const PRIOR_RECOMMENDATION_RE = /아까\s*(?:추천한|말한|보여준)\s*(?:그\s*)?(?:상품|제품|것|거)/;
 
+/*
+ * "이거 왜 추천했어?" — 직전 추천 1위를 고른 이유를 묻는 말 (2026-10-09 실측 사고).
+ *
+ * PRIOR_RECOMMENDATION_RE 는 "아까 추천한 …" 꼴만 알아봐서, 이 말은 문맥 의존어
+ * ("이거")만 걸린 채 화면 상품 선택자 경로로 갔다. 화면에 그 상품이 없으면
+ * "같은 상품·옵션을 확인하지 못해" 가 나갔다 — 대화 참조 문제를 가격 데이터
+ * 문제로 답한 것이다. 이 표현은 LLM 분류에 맡기지 않고 여기서 먼저 확정한다.
+ *
+ * ★ 새 추천을 요청하는 말("추천해줘", "골라줘")이 같이 있으면 잡지 않는다 —
+ *   "노트북 추천해 주고 추천 이유도 알려줘" 는 새 검색이다.
+ */
+const RECOMMENDATION_REASON_RE = new RegExp([
+  // 왜 (이거|이걸|그거|아까 추천한 거 …) 추천했/골랐/선택했
+  '왜\\s*(?:(?:이거|이걸|이것을?|그거|그걸|그것을?|저거|저걸|저것을?|이\\s*(?:상품|제품)을?|그\\s*(?:상품|제품)을?)\\s*)?'
+    + '(?:1\\s*(?:위|순위)로\\s*)?(?:추천\\s*(?:했|한|하셨|해\\s*줬|된)|골랐|고르셨|골라\\s*줬|선택\\s*(?:했|하셨|한))',
+  // 추천한 이유 · 추천 이유 · 고른 이유 · 선택한 근거
+  '(?:추천|고른|골라\\s*준|선택)\\s*(?:한|된|해\\s*준)?\\s*(?:이유|근거)'
+].join('|'));
+const NEW_RECOMMEND_REQUEST_RE = /추천\s*(?:해\s*(?:줘|주|줄|봐)|좀|부탁)|골라\s*(?:줘|주|봐)/;
+function isRecommendationReason(s) {
+  const t = String(s || '');
+  return RECOMMENDATION_REASON_RE.test(t) && !NEW_RECOMMEND_REQUEST_RE.test(t);
+}
+
 /**
  * 의도 판정.
  *
@@ -354,6 +378,18 @@ function classify(text, hist) {
   if (!s) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
 
   if (GREETING_RE.test(s)) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
+
+  /*
+   * 추천 이유 질문 — 직전 추천 1위의 서명 참조만 대상이다 (RECOMMENDATION_REASON_RE 주석).
+   * 검색어를 만들지 않는다: "이유"·"추천했어" 로 쇼핑몰을 검색하면 그게 임의 선택이다.
+   */
+  if (isRecommendationReason(s)) {
+    return {
+      intent: 'C', query: '', source: 'heuristic', confidence: 'high',
+      contextualFollowup: true, requiresRecommendationIdentity: true, recommendationReason: true,
+      extra: { useCase: '', brand: '', avoid: '' }
+    };
+  }
 
   /* 상품 조건 파싱보다 먼저 정보 목적을 본다. "골라줘"가 뉴스 선별에도 쓰이기 때문이다. */
   const informationIntent = classifyInformationIntent(s);
@@ -472,6 +508,6 @@ function classify(text, hist) {
 }
 
 module.exports = {
-  classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest,
+  classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, isRecommendationReason,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };

@@ -2371,6 +2371,18 @@ footer p{font-size:.75rem;color:var(--faint)}
 .mini .mbadge{position:absolute;top:5px;left:5px;font-size:.55rem;padding:2px 5px;
   border-radius:var(--r-sm);
   color:var(--soft);background:rgba(255,255,255,.92);font-weight:700;z-index:2;border:1px solid var(--line)}
+/*
+ * AI 가 실제로 1위로 추천한 카드 하나 (Chat.topCardIndex — 서버 identity 대조).
+ * 의미색 녹색(--down)으로 테두리 1.5px + 아주 옅은 면. 번지는 그림자(네온)는 쓰지 않는다.
+ * 테두리 두께는 1px 그대로 두고 0.5px 를 바깥 그림자로 더한다 — 두께를 바꾸면
+ * 이 카드만 크기가 달라져 2열 격자의 높이가 어긋난다.
+ * 사진 칸(.mt)은 원래 배경을 지킨다 — 상품 사진 뒤가 물들면 사진 색이 달라 보인다.
+ */
+.mini.is-top,.mini.is-top:hover{border-color:var(--down);box-shadow:0 0 0 .5px var(--down)}
+.mini.is-top .mb{background:var(--down-bg)}
+.mini .mtop{position:absolute;top:5px;right:5px;font-size:.55rem;padding:2px 5px;
+  border-radius:var(--r-sm);color:var(--card-bg);background:var(--down);font-weight:700;z-index:2;
+  letter-spacing:-.01em;white-space:nowrap}
 /* ── 챗 추천/후속 질문 칩 ── */
 .chat-suggest{display:flex;gap:6px;flex-wrap:wrap;padding:10px 18px 0;background:var(--bg)}
 /* 오늘 AI 사용량 — 조용한 한 줄. 배너나 팝업으로 키우지 않는다. */
@@ -2760,6 +2772,7 @@ html[data-theme="dark"] .autocomplete{background:var(--card-bg)}
   .mini .mprice{font-size:.74rem;margin-top:2px}
   .mini .mnote{font-size:.5rem;margin-top:2px}
   .mini .mbadge{font-size:.42rem;padding:2px 4px;top:3px;left:3px}
+  .mini .mtop{font-size:.42rem;padding:2px 4px;top:3px;right:3px}
   .chat-suggest{padding:8px 12px 0;gap:5px}
   .cs-chip{font-size:.64rem;padding:5px 10px}
   .chat-input{padding:10px 12px;gap:7px}
@@ -9362,7 +9375,38 @@ var Chat = {
     return out;
   },
 
-  miniCard: function(it) {
+  /**
+   * AI 가 실제로 1위로 추천한 카드의 자리 (없으면 -1).
+   *
+   * 서버가 결정 엔진의 1위를 카드와 identity 로 대조해 준 res.topRecommendation
+   * (productId · vendorItemId · mall)만 믿는다. res.items[0] 을 추천으로 가정하지
+   * 않는다 — 추천 1위가 없는 응답(일반 답변·권하기 어려운 1위)에는 이 값이 없다.
+   */
+  topCardIndex: function(res) {
+    var t = res && res.topRecommendation;
+    var list = res && res.items;
+    if (!t || !t.productId || !list || !list.length) return -1;
+    var same = function(it) {
+      return !!it && String(it.productId || '') === String(t.productId)
+        && String(it.vendorItemId || '') === String(t.vendorItemId || '')
+        && String(it.mall || '') === String(t.mall || '');
+    };
+    var idx = typeof t.index === 'number' ? t.index : -1;
+    if (idx >= 0 && idx < list.length && same(list[idx])) return idx;
+    var hits = [];
+    list.forEach(function(it, i) { if (same(it)) hits.push(i); });
+    return hits.length === 1 ? hits[0] : -1;
+  },
+
+  /** 답변 아래 카드 묶음. 추천 1위 카드 하나만 .is-top 으로 그린다. */
+  miniGrid: function(res) {
+    var top = Chat.topCardIndex(res);
+    return '<div class="mini-grid">' + res.items.map(function(it, i) {
+      return Chat.miniCard(it, i === top);
+    }).join('') + '</div>';
+  },
+
+  miniCard: function(it, isTop) {
     if (!it) return '';
     var m = Fmt.mall(it);
     var src = Fmt.safeUrl(it.image);
@@ -9381,12 +9425,13 @@ var Chat = {
       ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
       : '';
 
-    return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '"'
+    return '<div class="mini' + (isTop === true ? ' is-top' : '') + '" data-act="mini-go" data-link="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '"'
       // 제휴 클릭 계측·옵션 확인용 (Track.affiliate · Fmt.buyUrl). 화면에는 쓰지 않는다.
       + ' data-pid="' + Fmt.esc(it.productId || '') + '" data-mall="' + Fmt.esc(it.mall || '') + '"'
       + ' data-vid="' + Fmt.esc(it.vendorItemId || '') + '"'
       + ' data-price="' + Fmt.int(it.lprice) + '">'
-      + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>' + img + '</div>'
+      + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>'
+      + (isTop === true ? '<span class="mtop">추천 상품</span>' : '') + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mprice">' + Fmt.won(it.lprice) + '원</div>'
       + note + '</div>'
@@ -9646,7 +9691,7 @@ var Chat = {
           if (res.items && res.items.length) {
             // 제휴 고지 — 카드(외부 판매처 링크)보다 먼저 읽힌다. .aff-note 주석 참고.
             if (res.items.some(function(it) { return it && Fmt.buyUrl(it.link, it); })) html += AFF_NOTE_HTML;
-            html += '<div class="mini-grid">' + res.items.map(Chat.miniCard).join('') + '</div>';
+            html += Chat.miniGrid(res);
           }
           Chat.bubble(html, 'ai');
 

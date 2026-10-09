@@ -465,7 +465,126 @@ function looksLikeBlockDump(text) {
   return blockLabelCount(text) >= BLOCK_DUMP_MIN;
 }
 
+/* ==================================================================
+ *  6) "이거 왜 추천했어?" — 직전 추천 1위의 근거 (2026-10-09)
+ *
+ *  api/ai.js 가 직전 추천의 서명 참조(prevTopRef)로 그 상품·옵션만 다시 확인하고,
+ *  같은 조건(대화 속 사용자 발화)으로 랭킹·결정·구매 시점 엔진을 다시 돌린 결과를
+ *  넘긴다. 여기서는 그 결과에 실제로 있는 근거만 문장으로 옮긴다.
+ *
+ *  ★ 근거가 셋이면 셋만 말한다. 없는 근거를 채우지 않는다.
+ *  ★ 대화 참조가 없는 것(refMissing)과 가격 확인이 안 된 것(top 없음)은 다른
+ *    문제다. 앞의 것을 "같은 상품·옵션을 확인하지 못했다"고 말하지 않는다.
+ * ================================================================== */
+
+const REASON_REF_MISSING = '직전 추천 정보를 확인할 수 없어서 어떤 상품을 말씀하시는지 특정하기 어려워요.'
+  + ' 상품명을 눌러주시거나 다시 말씀해 주세요.';
+const REASON_PRICE_UNVERIFIED = '직전에 추천한 상품은 확인했지만, 지금 SEOSA 서버에서 그 상품·옵션의 현재 가격을'
+  + ' 확인하지 못해 추천 근거를 다시 계산할 수 없어요. 가격은 상품 페이지에서 확인해 주세요.';
+
+/** 마지막 글자의 받침으로 을/를. 한글이 아니면 둘 다 적는다. */
+function eulReul(word) {
+  const s = String(word || '').replace(/[…\s)\]」]+$/, '');
+  const ch = s.charCodeAt(s.length - 1);
+  if (!(ch >= 0xAC00 && ch <= 0xD7A3)) return '을(를)';
+  return (ch - 0xAC00) % 28 ? '을' : '를';
+}
+
+/** 100000 → "10만원", 125000 → "125,000원" */
+function budgetLabel(n) {
+  const v = Math.round(Number(n) || 0);
+  return v >= 10000 && v % 10000 === 0 ? `${v / 10000}만원` : `${won(v)}원`;
+}
+
+/** _deal 의 평서문("…낮다", "…가격이다")을 답변 말투로. 숫자는 건드리지 않는다. */
+function politeFact(s) {
+  const t = String(s == null ? '' : s).trim().replace(/[.。]$/, '');
+  if (!t) return '';
+  if (/이다$/.test(t)) return t.replace(/이다$/, '입니다.');
+  if (/않는다$/.test(t)) return t.replace(/않는다$/, '않습니다.');
+  if (/했다$/.test(t)) return t.replace(/했다$/, '했습니다.');
+  if (/렸다$/.test(t)) return t.replace(/렸다$/, '렸습니다.');
+  if (/랐다$/.test(t)) return t.replace(/랐다$/, '랐습니다.');
+  if (/하다$/.test(t)) return t.replace(/하다$/, '합니다.');
+  if (/다$/.test(t)) return t.replace(/다$/, '습니다.');
+  return `${t}.`;
+}
+
+/**
+ * @param {object} ctx
+ *   refMissing   서명된 직전 추천 참조가 없음·변조·만료
+ *   top          서버가 그 참조로 다시 확인한 상품 (가격 확인 실패면 null)
+ *   decision     api/_decision.js decide() — top 기준
+ *   deal         api/_deal.js dealOf() — top 기준
+ *   constraints  대화에서 모은 사용자 조건
+ * @returns {{text:string, reasonCount:number}}
+ */
+function recommendationReason(ctx) {
+  const c = ctx || {};
+  if (c.refMissing) return { text: REASON_REF_MISSING, reasonCount: 0 };
+  const top = c.top || null;
+  if (!top) return { text: REASON_PRICE_UNVERIFIED, reasonCount: 0 };
+
+  const name = shortTitle(top.title, 40);
+  const price = priceOf(top);
+  const cons = c.constraints || {};
+  const fit = [];      // 조건 적합 — 사용자가 말한 조건과 상품의 대조
+  const priceFacts = [];
+  const notes = [];    // 권하기 어려운 사정 (있으면 숨기지 않는다)
+
+  if (cons.budgetMax > 0 && price > 0) {
+    if (price <= cons.budgetMax) fit.push(`예산 ${budgetLabel(cons.budgetMax)} 이하에 들어옵니다.`);
+    else notes.push(`예산 ${budgetLabel(cons.budgetMax)}보다 ${won(price - cons.budgetMax)}원 비쌉니다.`);
+  }
+  if (cons.budgetMin > 0 && price >= cons.budgetMin) fit.push(`예산 하한 ${budgetLabel(cons.budgetMin)} 이상입니다.`);
+  const hit = Array.isArray(top.featureHit) ? top.featureHit.filter(Boolean) : [];
+  if (hit.length) fit.push(`요청하신 ${hit.join('·')} 조건에 맞습니다(상품명 기준).`);
+  if (cons.brand && String(top.title || '').toLowerCase().includes(String(cons.brand).toLowerCase())) {
+    fit.push(`말씀하신 ${cons.brand} 제품입니다.`);
+  }
+
+  const deal = c.deal || null;
+  const dealReasons = deal && deal.verdict !== 'UNKNOWN' && Array.isArray(deal.reasons) ? deal.reasons : [];
+  /*
+   * 30일 평균 대비 — 랭킹(_shopintent scoreItem)이 «가격 가치»로 점수를 준 그 축이다.
+   * _deal 문장에 같은 비교가 이미 있으면 두 번 말하지 않는다. 판정이 UNKNOWN(기록 멈춤)
+   * 이면 평균도 지금 시점의 근거가 아니므로 쓰지 않는다.
+   */
+  const h = top.hist || null;
+  if (dealReasons.length && h && h.avg30 > 0 && price > 0 && !dealReasons.some(r => /30일 평균/.test(r))) {
+    const pct = Math.round((1 - price / h.avg30) * 1000) / 10;
+    if (pct >= 3) priceFacts.push(`30일 평균 ${won(h.avg30)}원보다 ${pct}% 저렴합니다.`);
+  }
+  dealReasons.slice(0, 3).forEach(r => {
+    const s = politeFact(r);
+    if (s && priceFacts.indexOf(s) < 0) priceFacts.push(s);
+  });
+  if (priceFacts.length && price > 0) priceFacts[0] = `현재 ${won(price)}원으로 ${priceFacts[0]}`;
+  const priceGood = !!(deal && (deal.verdict === 'BUY' || deal.verdict === 'GOOD_BUY'));
+
+  const level = c.decision && c.decision.recommendation;
+  let why;
+  if (fit.length && priceFacts.length && priceGood) why = '조건과 가격 기록이 둘 다 좋았기 때문이에요';
+  else if (fit.length && !priceFacts.length) why = '말씀하신 조건에 맞았기 때문이에요';
+  else if (!fit.length && priceGood) why = '가격 기록상 지금 값이 좋았기 때문이에요';
+  else if (fit.length || priceFacts.length) why = '아래 근거를 함께 따졌기 때문이에요';
+  else why = '';
+
+  const L = [];
+  if (why) L.push(`${name}${eulReul(name)} 추천한 이유는 ${why}.`);
+  else L.push(`${name}${eulReul(name)} 1순위로 고른 근거를 다시 확인했지만, 조건이나 가격 기록에서 내세울 만한 근거는 확인되지 않았어요.`);
+  fit.concat(priceFacts).concat(notes).forEach(r => L.push(`- ${r}`));
+  if (!priceFacts.length) L.push('- 가격 기록이 충분하지 않아 가격 시점은 근거로 쓰지 않았습니다.');
+
+  if (level === 'weak') L.push('다만 후보 중 가장 가까웠을 뿐, 자신 있게 권하기는 어려운 상태였어요.');
+  else if (fit.length && priceGood) L.push('그래서 후보 중 조건 적합도와 가격 시점을 함께 따져 1순위로 추천했습니다.');
+  else if (fit.length || priceFacts.length) L.push('그래서 후보 중 이 상품을 1순위로 추천했습니다.');
+
+  return { text: L.join('\n'), reasonCount: fit.length + priceFacts.length };
+}
+
 module.exports = {
+  recommendationReason, REASON_REF_MISSING, REASON_PRICE_UNVERIFIED, politeFact, budgetLabel,
   compose, followups, looksLikeBlockDump, blockLabelCount,
   BLOCK_LABELS, BLOCK_DUMP_MIN,
   // 테스트·다른 모듈이 같은 문구를 쓰도록 노출한다 (문구가 두 벌이 되면 어긋난다)
