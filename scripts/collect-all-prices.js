@@ -1082,6 +1082,8 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
       link: it.commissionlink,
       image: it.photo,
       mall: 'ADPICK',
+      // 판매처 표시 이름(cp_name 기반). 빠져 있던 동안 매 수집이 mall_label 을 '' 로 덮었다.
+      mallLabel: it.mallLabel || '',
       itemId: '',
       vendorItemId: '', // ADPICK에는 쿠팡 같은 옵션(vendorItemId) 개념이 없다
     }))
@@ -3208,6 +3210,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       image: target.image || item.image || '',
       itemId: item.itemId || '',
       vendorItemId: item.vendorItemId || '',
+      // 비어 있으면 recordPrices 가 기존 mall_label 을 건드리지 않는다.
+      mallLabel: item.mallLabel || '',
       /*
        * ★ 저장 직전 방어막의 재료 (2026-09-03).
        *

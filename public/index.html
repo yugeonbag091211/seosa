@@ -6113,7 +6113,20 @@ document.addEventListener('error', function(e) {
   var card = img.closest('.card');
   var lthumb = img.closest('.lthumb');
   var radar = img.closest('.radar-deal-thumb');
+  var dthumb = img.closest('.dthumb');
   img.style.display = 'none';
+  /*
+   * 핫딜 썸네일 (2026-10-09). 예전엔 이 갈래가 없어 사진만 숨기고 빈 칸이 남았다.
+   * ADPICK search_img.php 사진은 몇 시간 뒤 404 가 되는 임시 주소라 운영 핫딜
+   * 54장 중 29장이 그 빈 칸이었다. 사진 없는 카드(Drop.rowHTML)와 같은 글리프로 맞춘다.
+   */
+  if (dthumb && !dthumb.querySelector('.glyph')) {
+    var dcard = img.closest('.dcard');
+    var g4 = document.createElement('span');
+    g4.className = 'glyph';
+    g4.textContent = Fmt.glyph(dcard ? dcard.getAttribute('data-title') : '');
+    dthumb.appendChild(g4);
+  }
   // 커뮤니티 핫딜 사진이 안 열리면 «참고 이미지» 표시만 빈 칸 위에 남던 것을
   // 사진 없는 카드와 같은 모양(⌁)으로 되돌린다.
   if (radar) {

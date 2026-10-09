@@ -550,8 +550,31 @@ async function upsertHistory(rows) {
   return upsertHistory(rows);
 }
 
-/** item_id/vendor_item_id/mall_label 을 붙여 upsert 하고, 컬럼이 없으면 하나씩 빼며 재시도한다. */
+/*
+ * products upsert — 빈 mall_label 은 «모른다» 이지 «지운다» 가 아니다 (2026-10-09).
+ *
+ *   on conflict do update 는 보낸 컬럼을 전부 덮는다. 수집기가 ADPICK 판매처를 잃은
+ *   채 mall_label: '' 을 보내던 동안, 검색이 저장해 둔 판매처 이름이 매 수집마다
+ *   지워졌다(운영 최근 ADPICK 1,000행 전부 빈 값). 그래서 이름이 빈 행은 그 컬럼을
+ *   아예 보내지 않는다 — 기존 행은 값을 지키고, 새 행은 컬럼 기본값('')을 받는다.
+ *   한 요청 안에서 행마다 컬럼을 달리 보낼 수 없으므로 두 묶음으로 나눈다.
+ */
 async function upsertProducts(rows) {
+  const labeled = rows.filter(r => r.mall_label);
+  const unlabeled = rows.filter(r => !r.mall_label).map(r => {
+    const { mall_label, ...rest } = r;   // eslint-disable-line no-unused-vars
+    return rest;
+  });
+  for (const batch of [labeled, unlabeled]) {
+    if (!batch.length) continue;
+    const msg = await upsertProductBatch(batch);
+    if (msg) return msg;
+  }
+  return null;
+}
+
+/** item_id/vendor_item_id/mall_label 을 붙여 upsert 하고, 컬럼이 없으면 하나씩 빼며 재시도한다. */
+async function upsertProductBatch(rows) {
   let candidate = rows;
   if (!mallLabelColumn) {
     candidate = candidate.map(r => {
@@ -574,12 +597,12 @@ async function upsertProducts(rows) {
     mallLabelColumn = false;
     console.warn('[save] products.mall_label 컬럼 없음 — 해당 값 없이 저장합니다 '
       + '(supabase/2026-08-mall-label.sql 을 실행하면 켜집니다).');
-    return upsertProducts(rows);
+    return upsertProductBatch(rows);
   }
   if (itemIdColumns) {
     itemIdColumns = false;
     console.warn('[save] products.item_id / vendor_item_id 컬럼 없음 — 해당 값 없이 저장합니다.');
-    return upsertProducts(rows);
+    return upsertProductBatch(rows);
   }
   return error.message;
 }
@@ -842,7 +865,12 @@ async function recordPrices(observations, opts = {}) {
   for (const row of catalogRows) {
     const k = `${row.product_id}|${row.mall}`;
     const cur = catalogByPidMall.get(k);
-    if (!cur || row.lprice < cur.lprice) catalogByPidMall.set(k, row);
+    if (!cur || row.lprice < cur.lprice) {
+      // 이긴 행에 판매처 이름이 없으면 진 행의 이름을 물려받는다 (같은 pid+mall 이다).
+      catalogByPidMall.set(k, cur && !row.mall_label && cur.mall_label ? { ...row, mall_label: cur.mall_label } : row);
+    } else if (!cur.mall_label && row.mall_label) {
+      catalogByPidMall.set(k, { ...cur, mall_label: row.mall_label });
+    }
   }
   const catalogUpsertRows = [...catalogByPidMall.values()];
 
