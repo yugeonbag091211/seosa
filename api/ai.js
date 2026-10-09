@@ -1951,6 +1951,28 @@ function localizedWonNumber(raw, unit, tailRaw, tailUnit) {
   return Number.isSafeInteger(value) ? value : NaN;
 }
 
+/**
+ * 화면에서 «추천 상품» 으로 강조할 카드 하나 (public/index.html Chat.topCardIndex).
+ *
+ * 결정 엔진이 실제로 고른 1위(decision.top.ref → items)를 카드의 원본 행과
+ * productId·vendorItemId·몰 identity 로 대조한다. 카드 순서(0번)로 추정하지 않는다.
+ * 권하기 어려운(weak) 1위, 대조가 안 되거나 둘 이상 맞는 경우는 아무것도 강조하지 않는다.
+ *
+ * @returns {{productId:string, vendorItemId:string, mall:string, index:number}|null}
+ */
+function topRecommendationCard(decision, items, cards, sources) {
+  if (!decision || !decision.top || decision.recommendation === 'weak') return null;
+  const top = (items || []).find(it => it && it.ref === decision.top.ref);
+  if (!top || !Array.isArray(cards) || !Array.isArray(sources)) return null;
+  const hits = [];
+  sources.forEach((raw, i) => {
+    if (cards[i] && productIdentityMatches(top, normItem(fromSearchResult(raw)))) hits.push(i);
+  });
+  if (hits.length !== 1) return null;
+  const card = cards[hits[0]];
+  return { productId: card.productId, vendorItemId: card.vendorItemId || '', mall: card.mall, index: hits[0] };
+}
+
 function productIdentityMatches(a, b) {
   if (!a || !b) return false;
   const productA = String(a.productId || '').trim();
@@ -3354,6 +3376,8 @@ module.exports = async function handler(req, res) {
    *   못했어요" 한 줄만 남는다 — 사용자 입장에서는 아무 일도 안 한 것과 같다.
    */
   let cards = [];
+  /* cards 와 같은 순서의 원본 행 — «추천 상품» 카드를 identity 로 찾는 데 쓴다 (topRecommendationCard). */
+  let cardSources = [];
   let degradedByGrounding = false;
   let searchState = 'none';   // none | found | empty | failed
 
@@ -3736,14 +3760,14 @@ module.exports = async function handler(req, res) {
         // 같은 상품 페이지의 옵션끼리 순서가 뒤섞이지 않게 옵션까지 키로 쓴다.
         const idOf = it => `${String(it.mallId || it.mall || '')}|${it.productId}|${String(it.vendorItemId || '')}`;
         const order = new Map(items.map((it, i) => [idOf(it), i]));
-        cards = raw
+        cardSources = raw
           .slice()
           .sort((a, b) => {
             const ia = order.has(idOf(a)) ? order.get(idOf(a)) : 99;
             const ib = order.has(idOf(b)) ? order.get(idOf(b)) : 99;
             return ia - ib;
-          })
-          .map(it => toCard(it, statFor(stats, it)));
+          });
+        cards = cardSources.map(it => toCard(it, statFor(stats, it)));
       }
     } else if (items.length && (!intent || needsShopContext(intent))) {
       /*
@@ -3757,6 +3781,7 @@ module.exports = async function handler(req, res) {
        * 사용자가 보고 있으므로 다시 그리지 않는다.
        */
       if (refSelected && contextRaw.length) {
+        cardSources = contextRaw.slice();
         cards = contextRaw.map(it => toCard(it, statFor(contextStats, it)));
       }
       // 2) 상품명 스펙 → 3) 조건 대조 순.
@@ -3925,6 +3950,42 @@ module.exports = async function handler(req, res) {
       } catch (e) {
         console.warn(`[ai] 다목적 분석 실패(결정만으로 진행): ${e.message}`);
       }
+    }
+
+    /*
+     * "이거 왜 추천했어?" — 직전 추천 1위의 근거를 서버 계산값으로만 답한다 (2026-10-09).
+     *
+     * 대상은 서명 참조(prevTopRef)로 다시 확인한 그 상품·옵션 하나다(위 selectors).
+     * 화면 상품·대화 속 상품명·새 검색으로 바꾸지 않는다. 근거는 같은 조건으로 다시 돌린
+     * 랭킹·결정·구매 시점 엔진의 결과이고, 모델에게 맡기면 없는 근거를 지어낼 수 있어
+     * LLM 을 부르지 않는다.
+     */
+    if (cls && cls.recommendationReason) {
+      const top = items[0] || null;
+      const verified = !!(refSelected && top && productIdentityMatches(top, previousRecommendation));
+      const reason = require('./_concierge').recommendationReason({
+        refMissing: !previousRecommendation,
+        top: verified ? top : null,
+        decision: verified ? decision : null,
+        deal: verified ? deal : null,
+        constraints
+      });
+      const reasonPayload = verified && cards.length ? { text: reason.text, items: cards } : { text: reason.text };
+      reasonPayload.intent = resolvedCanonicalIntent;
+      if (guest) reasonPayload.guest = true;
+      if (verified) {
+        reasonPayload.topProductId = top.productId;
+        const recommendationRef = AC.createRecommendationRef(top);
+        if (recommendationRef) reasonPayload.topRecommendationRef = recommendationRef;
+        const highlight = topRecommendationCard(decision, items, cards, cardSources);
+        if (highlight) reasonPayload.topRecommendation = highlight;
+      }
+      console.log('[ai:obs] ' + JSON.stringify({
+        v: PROMPT_VERSION, intent: intent || 'none', search: searchState, reason: true,
+        ref: previousRecommendation ? (verified ? 'verified' : 'unverified') : 'missing',
+        reasons: reason.reasonCount, model: 'none', ms: Date.now() - startedAt
+      }));
+      return res.json(withTurnSig(reasonPayload));
     }
 
     // 상품이 많을 때까지 날짜별 가격을 다 찍으면 입력 토큰이 몇 배로 뛴다.
@@ -4488,6 +4549,8 @@ module.exports = async function handler(req, res) {
       const recommendationRef = AC.createRecommendationRef(selectedTop);
       if (recommendationRef) payload.topRecommendationRef = recommendationRef;
     }
+    const highlight = topRecommendationCard(decision, items, cards, cardSources);
+    if (highlight) payload.topRecommendation = highlight;
     if (decision && decision.change) {
       payload.recommendationChange = {
         changed: true,
@@ -4563,6 +4626,9 @@ module.exports = async function handler(req, res) {
       };
       if (guest) body.guest = true;
       if (fbFollowups.length) body.followups = fbFollowups;
+      // fallbackAnswer 도 "추천: …" 으로 1위를 말한다 — 같은 identity 대조로만 강조한다.
+      const fbHighlight = topRecommendationCard(fallbackDecision, fallbackItems, cards, cardSources);
+      if (fbHighlight) body.topRecommendation = fbHighlight;
       return res.json(withTurnSig(body));
     }
 
@@ -4609,7 +4675,7 @@ module.exports = async function handler(req, res) {
 module.exports._internal = {
   cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls, derefRefs,
   needsShopContext, canonicalIntent, safeText, num, won, safeDate, normItem, describe,
-  trimToSentence, collectKnownWon, unverifiedWon, unverifiedContextualPrices, productIdentityMatches, unverifiedProductPrices, unverifiedCurrentPrices,
+  trimToSentence, collectKnownWon, unverifiedWon, unverifiedContextualPrices, productIdentityMatches, unverifiedProductPrices, unverifiedCurrentPrices, topRecommendationCard,
   unverifiedDiscountPct, unsupportedOffBudgetRecommendation, looksLikeSensitiveDisclosure,
   unverifiedSpecs, unsupportedSuperlatives,
   unsupportedComparisons, mentionsAnyCard, attachSpecs, collectWantedFeatures,

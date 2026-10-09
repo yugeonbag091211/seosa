@@ -98,7 +98,9 @@ const PLACEMENTS = [
   ok(!!constM, 'AFF_NOTE_HTML 상수 존재');
   ok(constM && constM[1].includes(TEXT), 'AFF_NOTE_HTML 문구가 같다');
   const chatAt = html.indexOf('html += AFF_NOTE_HTML;');
-  const gridAt = html.indexOf(`html += '<div class="mini-grid">'`);
+  // 2026-10-09: 카드 묶음은 Chat.miniGrid 가 그린다(추천 1위 강조). 호출 자리가 고지 바로 뒤여야 한다.
+  const gridAt = html.indexOf('html += Chat.miniGrid(res);');
+  ok(/miniGrid: function\(res\) \{[\s\S]{0,120}return '<div class="mini-grid">'/.test(html),'Chat.miniGrid 가 mini-grid 묶음을 그린다');
   ok(chatAt > -1 && gridAt > chatAt && gridAt - chatAt < 200, 'AI 카드: 고지가 mini-grid 바로 앞');
   // 2026-10-04: «링크 있음» 의 판정은 구매 링크 관문(Fmt.buyUrl)이다 — 막힌 링크만 있는 답변에는 고지를 넣지 않는다.
   ok(/res\.items\.some\(function\(it\) \{ return it && Fmt\.buyUrl\(it\.link, it\); \}\)\) html \+= AFF_NOTE_HTML/.test(html),
