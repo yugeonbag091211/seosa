@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const supabase = require('./_supabase');
 const { searchCoupang } = require('./_coupang');
 const { searchAdpick } = require('./_adpick');
+const ImageCache = require('./_imagecache');
 const {
   parsePrice, classifyPrice,
   vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS,
@@ -608,6 +609,35 @@ async function upsertProductBatch(rows) {
 }
 
 /**
+ * ADPICK 임시 사진 → Storage 원본 캐시 (api/_imagecache.js).
+ *
+ * 수집기만 opts.cacheImages 로 켠다. 검색·AI 경로는 사용자 응답을 기다리게 하므로
+ * 부르지 않는다. 관측치의 freshImage(이번 응답의 photo)만 쓰므로 API 호출은 늘지 않는다.
+ * 원장 쓰기가 끝난 뒤에 돌고, 실패하면 row.image 를 그대로 둔다 — 절대 throw 하지 않는다.
+ */
+async function applyImageCache(rows, observations, opts, label) {
+  if (!opts.cacheImages || !ImageCache.enabled()) return;
+  try {
+    const fresh = new Map();
+    for (const it of observations || []) {
+      if (it && it.mall === ADPICK_MALL && it.freshImage) fresh.set(it.productId, it.freshImage);
+    }
+    const items = rows
+      .filter(r => r.mall === ADPICK_MALL && fresh.has(r.product_id))
+      .map(r => ({ productId: r.product_id, currentImage: r.image, freshImage: fresh.get(r.product_id) }));
+    if (!items.length) return;
+    const { urls, stats } = await ImageCache.cacheImages(items, { storage: supabase.storage });
+    for (const r of rows) if (urls.has(r.product_id)) r.image = urls.get(r.product_id);
+    if (stats.attempted) {
+      console.log(`[imagecache${label ? ':' + label : ''}] 후보 ${stats.candidates} · 시도 ${stats.attempted}`
+        + ` · 저장 ${stats.saved} · 실패 ${stats.failed} · 보류 ${stats.skipped} ${JSON.stringify(stats.reasons)}`);
+    }
+  } catch (e) {
+    console.warn(`[imagecache] 건너뜀 (가격 저장은 계속): ${String(e && e.message || e).slice(0, 120)}`);
+  }
+}
+
+/**
  * 관측한 가격들을 검증해서 저장한다.
  *
  * @param {Array} observations
@@ -907,6 +937,7 @@ async function recordPrices(observations, opts = {}) {
       + ' — 원장 없는 현재가를 남기지 않기 위해서입니다. 다음 수집에서 다시 시도됩니다.'
     );
   } else if (catalogUpsertRows.length) {
+    await applyImageCache(catalogUpsertRows, observations, opts, label);
     const msg = await upsertProducts(catalogUpsertRows);
     if (msg) errors.push(`products: ${msg}`);
   }

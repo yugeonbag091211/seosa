@@ -3212,6 +3212,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       vendorItemId: item.vendorItemId || '',
       // 비어 있으면 recordPrices 가 기존 mall_label 을 건드리지 않는다.
       mallLabel: item.mallLabel || '',
+      // 이번 응답의 사진 주소. ADPICK 임시 주소면 recordPrices 가 살아 있을 때 원본을 저장한다
+      // (api/_imagecache.js — 이미 받은 응답만 쓴다, 사진 때문에 API 를 더 부르지 않는다).
+      freshImage: item.image || '',
       /*
        * ★ 저장 직전 방어막의 재료 (2026-09-03).
        *
@@ -3357,7 +3360,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     let recorded = 0, saved = 0, rejected = 0, suspect = 0;
     const errors = [];
     for (let i = 0; i < savedRows.length; i += UPSERT_CHUNK) {
-      const r = await recordPricesFn(savedRows.slice(i, i + UPSERT_CHUNK), { label: `collect:${mallName}`, source: 'collect' });
+      const r = await recordPricesFn(savedRows.slice(i, i + UPSERT_CHUNK), { label: `collect:${mallName}`, source: 'collect', cacheImages: true });
       recorded += r.recorded; saved += r.saved; rejected += r.rejected; suspect += r.suspect;
       /*
        * ★ 여기가 "가격을 확보했다" 의 유일한 판정 지점이다.
