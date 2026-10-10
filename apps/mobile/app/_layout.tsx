@@ -67,6 +67,7 @@ export default function RootLayout() {
                     <Stack.Screen name="concierge" options={{ presentation: 'modal', title: 'AI 컨시어지' }} />
                     <Stack.Screen name="login" options={{ presentation: 'modal', title: '로그인' }} />
                     <Stack.Screen name="account-delete" options={{ presentation: 'modal', title: '계정 삭제' }} />
+                    <Stack.Screen name="pledge" options={{ presentation: 'modal', title: '참전용사 지원' }} />
                   </Stack>
                 </View>
               </View>

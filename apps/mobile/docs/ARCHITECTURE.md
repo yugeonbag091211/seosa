@@ -66,8 +66,9 @@ apps/mobile/
     product/[key].tsx     상품 상세 (key = productId|mall|vendorItemId)
     concierge.tsx         AI (모달)
     login.tsx             이메일 코드 로그인 (모달)
-  components/             AppText · Icon · Thumb · Price · ProductRow · DropRow · PriceChart · BuyButton · Screen · ui
-  lib/                    순수: api · parse · types · identity · ai · aiText · chart · format · affiliate · savedModel · sessionModel · suggest · notifications · productCache · aiContext
+    pledge.tsx            참전용사 지원 안내 (모달, 히어로 4번)
+  components/             AppText · Icon · Thumb · Price · ProductRow · ProductTile · DropRow · PriceChart · BuyButton · Screen · ui · HeroCarousel · HeroArt · MonthlyPicks
+  lib/                    순수: api · parse · types · identity · ai · aiText · chart · format · affiliate · savedModel · sessionModel · suggest · notifications · productCache · aiContext · home
                           RN: config · storage · session · local · queries · theme · typeface · fontAssets
   tests/                  node --test (51개)
   assets/                 아이콘·스플래시·폰트
@@ -97,13 +98,14 @@ apps/mobile/
 | 딥링크 옵션 | `/api/history?__route=product` 는 (productId, mall) 당 한 행(한 옵션)만 준다 | 앱은 받은 행의 vendorItemId 가 다르면 가격을 보여 주지 않는다(구현됨) |
 | 관련 상품 | `/api/alternatives` 의 `mall` 은 표시 이름이고 vendorItemId 가 없다 → 안전한 식별 불가 | 서버 응답에 백엔드 mall·vid 를 **추가**하면 구현 가능. 이번엔 제외 |
 | 다른 판매처 비교 | 웹 «몰별 비교»는 상품명 앞 3단어로 **재검색**(쿠팡 호출 1회)하는 휴리스틱 | 쿼터 비용이 있어 이번엔 제외 |
-| `/api/init` 지연 | 캐시 MISS 13~14.5초(`price_drop_top` 뷰 타임아웃, 2026-09-28 실측) | 앱은 init 을 인기 검색어·셀렉션에만 쓰고, 홈 핫딜은 today-drop 을 따로 받아 먼저 그린다(타임아웃 20초) |
+| `/api/init` 지연 | 캐시 MISS 13~14.5초(`price_drop_top` 뷰 타임아웃, 2026-09-28 실측) | 앱은 init 을 인기 검색어·셀렉션·이달의 추천(`monthly`)에만 쓰고, 홈 핫딜은 today-drop 을 따로 받아 먼저 그린다(타임아웃 20초). 이달의 추천은 init 이 늦는 동안 제목(기기 KST 월)과 스피너만 보인다 |
 | ADPICK 표시 이름 | today-drop 일부 행의 `mallLabel` 이 비어 «ADPICK» 으로 보인다(웹도 같다) | 서버 `mall_label` 채움 문제 |
 | 운영 부하 | 앱 트래픽이 늘면 검색 한도(30/분/IP, 쿠팡 분당 쿼터)를 웹과 나눠 쓴다 | 한도 완화 없음. 모니터링 필요 |
 
 ## 9. 화면 구성
 
-- **홈**: SEOSA 워드마크 · AI 버튼 / 검색창 / 인기 검색어 칩 / 오늘 가격 하락 5개(«N개 모두 보기») / AI 진입 / 오늘의 셀렉션 4개 / 제휴 고지. 설명 문단 없음.
+- **홈** (2026-10-10 웹 홈과 정렬): SEOSA 워드마크 · AI 버튼 / 검색창 / **히어로 배너 4장**(웹 `#heroCarousel` 문구 그대로 — 브랜드·AI 쇼핑·구매 시점·참전용사 지원, 스와이프·점, 자동 넘김 없음, 1번에 «MM.DD 수집» 도장) / 인기 검색어 칩 / 오늘 가격 하락 5개(«N개 모두 보기») / AI 진입 / 오늘의 셀렉션 4개 / **«N월 추천 상품»**(`/api/init` `monthly` — 웹 이달의 추천과 같은 행, 키워드 칩 → 검색, 카드 → 상품 상세) / 제휴 고지. 히어로 문구는 웹에 API 가 없어 `lib/home.ts` 에 사본을 두고 `tests/home.test.mjs` 가 `public/index.html` 과 한 글자씩 대조한다.
+- **참전용사 지원** (모달 `pledge`): 히어로 4번 «취지 보기». 웹 `#veteranOverlay` 문구 그대로.
 - **검색**: 입력창(자동완성·최근·인기 순위) → 결과(가격 → 하락 → 상품명 → 판매처·로켓배송). 오래된 캐시면 경고 한 줄, 0건이면 서버 보정어 칩, 장애(503)면 «다시 시도».
 - **가격하락**: 순위 · 현재가 · 이전가(취소선) · ▼금액·% · «어제 대비» · SEOSA 검증 배지. 숫자는 전부 서버 값, 맞지 않으면 행을 버린다.
 - **상품 상세**: 이미지 · 판매처 · 상품명 · 현재가(관측일) · 서버 판정 / 가격 기록 그래프 · 최저(날짜)·최고·관측 횟수 / AI에게 묻기 / 제휴 고지 / 하단 고정 «쿠팡에서 보기».

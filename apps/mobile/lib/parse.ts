@@ -1,5 +1,5 @@
 import { decodeHtmlEntities } from './text.ts';
-import type { AiAnswer, Deal, DealStats, PriceChange, PricePoint, Product, TodayDrop, Trust, TrustReason } from './types.ts';
+import type { AiAnswer, Deal, DealStats, MonthlyCuration, PriceChange, PricePoint, Product, TodayDrop, Trust, TrustReason } from './types.ts';
 
 /*
  * Server payload → app types. Pure.
@@ -75,6 +75,29 @@ export function parseProduct(value: unknown): Product | null {
 
 export function parseProducts(value: unknown): Product[] {
   return Array.isArray(value) ? value.map(parseProduct).filter((p): p is Product => !!p) : [];
+}
+
+/**
+ * /api/init `monthly` (public/index.html Monthly.show reads the same fields).
+ * A row without a title and without keywords says nothing, so it is null rather than an empty banner.
+ * Products go through parseProduct like every other list: an unusable row is dropped, not patched.
+ */
+export function parseMonthly(value: unknown): MonthlyCuration | null {
+  if (!isObj(value)) return null;
+  const m = num(value.month);
+  const title = decodeHtmlEntities(str(value.title).trim()).slice(0, 40);
+  const subtitle = decodeHtmlEntities(str(value.subtitle).trim()).slice(0, 80);
+  const keywords = Array.isArray(value.keywords)
+    ? [...new Set(value.keywords.map(k => decodeHtmlEntities(str(k).trim())).filter(k => k && k.length <= 30))].slice(0, 12)
+    : [];
+  if (!title && !keywords.length) return null;
+  return {
+    month: Number.isInteger(m) && m >= 1 && m <= 12 ? m : 0,
+    title,
+    subtitle,
+    keywords,
+    products: parseProducts(value.products),
+  };
 }
 
 /**

@@ -94,9 +94,23 @@ export type SearchResult = {
   suggestions: string[];
 };
 
+/**
+ * The web home's «이달의 추천» (/api/init `monthly`, a monthly_curation row plus products the
+ * server picked for its keywords). The operator edits the row in Supabase; nothing is written here.
+ */
+export type MonthlyCuration = {
+  /** 1–12, the KST month the server looked up (api/_kst.kstMonth). 0 when the payload had none. */
+  month: number;
+  title: string;
+  subtitle: string;
+  keywords: string[];
+  products: Product[];
+};
+
 export type HomeFeed = {
   popular: string[];
   daily: { keyword: string; products: Product[] } | null;
+  monthly: MonthlyCuration | null;
 };
 
 export type Session = { token: string; email: string; expiresAt: string };

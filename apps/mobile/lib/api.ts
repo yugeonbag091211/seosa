@@ -1,4 +1,4 @@
-import { parseAiAnswer, parseDeal, parsePoints, parseProducts, parseTodayDrops } from './parse.ts';
+import { parseAiAnswer, parseDeal, parseMonthly, parsePoints, parseProducts, parseTodayDrops } from './parse.ts';
 import type { AiAnswer, HomeFeed, PriceHistory, PricePoint, Product, ProductIdentity, SearchResult, SearchSource, Session, TodayDrop } from './types.ts';
 
 /*
@@ -8,7 +8,7 @@ import type { AiAnswer, HomeFeed, PriceHistory, PricePoint, Product, ProductIden
  *   GET  /api/search?keyword=                     검색 (쿠팡·ADPICK, 서버 캐시)
  *   GET  /api/history?productId=&mall=&vendorItemId=&deal=1   가격 이력 + 서버 판정
  *   GET  /api/hotdeals?view=today-drop&limit=60   오늘 가격 하락 (웹 홈과 같은 목록)
- *   GET  /api/init                                 인기 검색어 · 오늘의 셀렉션
+ *   GET  /api/init                                 인기 검색어 · 오늘의 셀렉션 · 이달의 추천
  *   POST /api/auth                                 이메일 인증 코드 → 토큰
  *   POST /api/ai                                   AI 컨시어지
  * No endpoint, limit or parameter is invented here, and nothing writes except auth/AI,
@@ -235,10 +235,13 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
       return parseTodayDrops(r.body);
     },
 
-    /** Popular keywords and today's selection. `priceDrop` from this payload is legacy and not read (the web doesn't either). */
+    /**
+     * Popular keywords, today's selection and the monthly curation (the web's Monthly.show reads the
+     * same `monthly`). `priceDrop` from this payload is legacy and not read (the web doesn't either).
+     */
     async home(signal?: AbortSignal): Promise<HomeFeed> {
       const r = await request('/api/init', { timeoutMs: TIMEOUTS.init, signal });
-      const b = r.body as { popular?: unknown; daily?: unknown };
+      const b = r.body as { popular?: unknown; daily?: unknown; monthly?: unknown };
       if (!b || typeof b !== 'object') throw new ApiError('invalid_response', '', r.status);
       const popular = Array.isArray(b.popular)
         ? b.popular.map(p => (p && typeof p === 'object' ? (p as { keyword?: unknown }).keyword : p))
@@ -247,7 +250,7 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
       const d = b.daily as { keyword?: unknown; products?: unknown } | undefined;
       const daily = d && typeof d === 'object' && typeof d.keyword === 'string'
         ? { keyword: d.keyword, products: parseProducts(d.products) } : null;
-      return { popular, daily };
+      return { popular, daily, monthly: parseMonthly(b.monthly) };
     },
 
     /** Step 1: mail a 6-digit code. The code itself never comes back. */

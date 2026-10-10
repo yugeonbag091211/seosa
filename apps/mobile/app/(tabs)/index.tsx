@@ -3,10 +3,13 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../../components/AppText';
 import { DropRow } from '../../components/DropRow';
+import { HeroCarousel } from '../../components/HeroCarousel';
 import { Icon } from '../../components/Icon';
+import { MonthlyPicks } from '../../components/MonthlyPicks';
 import { ProductRow, Separator } from '../../components/ProductRow';
 import { Wordmark } from '../../components/Screen';
 import { AffiliateNote, Chip, EmptyState, ErrorState, Loading, SectionHeader } from '../../components/ui';
+import { recordStamp } from '../../lib/home';
 import { pushOnce } from '../../lib/navigation';
 import { useHomeFeed, useTodayDrops } from '../../lib/queries';
 import { radius, space, type as t, useTheme } from '../../lib/theme';
@@ -15,8 +18,13 @@ const HOME_DROPS = 5;
 const HOME_PICKS = 4;
 
 /**
- * Home: search first, then what moved today. No hero copy — the web's banner and
- * explanations stay on the web.
+ * Home, in the web home's order (public/index.html):
+ *   header (wordmark · search) → hero banners → popular keywords → 오늘 가격 하락 → AI →
+ *   오늘의 셀렉션 → 이달의 추천 → affiliate notice.
+ *
+ * Every product number comes from two calls the web also makes: /api/hotdeals today-drop for the
+ * drops, /api/init for keywords, the selection and the monthly curation. The hero's words are the
+ * web's (lib/home.ts); the «MM.DD 수집» stamp is the newest collection date among those products.
  */
 export default function Home() {
   const theme = useTheme();
@@ -27,6 +35,7 @@ export default function Home() {
   const refreshing = drops.isRefetching || home.isRefetching;
   const refresh = () => { drops.refetch(); home.refetch(); };
   const goSearch = (q?: string) => router.navigate({ pathname: '/search', params: q ? { q } : { focus: '1' } });
+  const stamp = recordStamp([home.data?.daily?.products, home.data?.monthly?.products]);
 
   return (
     <ScrollView
@@ -50,6 +59,10 @@ export default function Home() {
         <Icon name="search" size={20} color={theme.faint} />
         <AppText tone="faint" style={t.body}>어떤 상품의 최저가가 궁금하세요?</AppText>
       </Pressable>
+
+      <View style={styles.hero}>
+        <HeroCarousel stamp={stamp} />
+      </View>
 
       {home.data?.popular.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
@@ -103,6 +116,14 @@ export default function Home() {
         </View>
       ) : null}
 
+      <MonthlyPicks
+        monthly={home.data?.monthly}
+        pending={home.isPending}
+        error={home.isError ? home.error : null}
+        onRetry={() => home.refetch()}
+        onKeyword={goSearch}
+      />
+
       <AffiliateNote style={{ marginTop: space.xl }} />
     </ScrollView>
   );
@@ -111,7 +132,8 @@ export default function Home() {
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.gutter, height: 44 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: space.gutter, marginTop: space.md, height: 48, borderRadius: radius.lg, paddingHorizontal: 14 },
-  chips: { gap: 8, paddingHorizontal: space.gutter, paddingTop: space.md },
+  hero: { marginTop: space.lg },
+  chips: { gap: 8, paddingHorizontal: space.gutter, paddingTop: space.lg },
   section: { marginTop: space.section },
   ai: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginHorizontal: space.gutter, marginTop: space.xxl, padding: space.lg, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth * 2 },
 });
