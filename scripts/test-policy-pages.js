@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /*
- * /privacy · /terms 정책 페이지 테스트 — 파일·라우팅·«코드와 맞는가».
+ * /privacy · /terms · /support 정책·고객지원 페이지 테스트 — 파일·라우팅·«코드와 맞는가».
  *
  *   node scripts/test-policy-pages.js
  *
  * 정책 문서는 코드가 바뀌면 조용히 거짓이 된다. 그래서 문구 하나하나가 아니라
  * «코드에 있는 사실이 문서에 빠지지 않았는가 / 문서가 코드에 없는 것을 약속하지
  * 않았는가» 를 코드에서 직접 읽어 대조한다.
- *   · AI 모델 제공사 (api/_llm.js 의 호스트) · 메일 발송 (api/_channel/email.js)
+ *   · AI 모델 제공사 (api/ 전체에서 찾은 호스트 — _llm.js · _llm-free.js · _openai-provider.js 로
+ *     나뉘어도 빠지지 않게) · 메일 발송 (api/_channel/email.js)
  *   · Google Analytics (index.html 의 gtag) · 결제 (api/_toss.js)
  *   · 계정 삭제 대상 표 (api/_account.js USER_TABLES) 와 보관 표(payments)
  *   · 토큰 30일 · 인증 코드 10분 (api/_auth.js)
@@ -67,15 +68,48 @@ check(privacyHtml.includes('href="/support"') && termsHtml.includes('href="/supp
 check(/support@seosa\.ai\.kr/.test(privacy) && /support@seosa\.ai\.kr/.test(terms) && /support@seosa\.ai\.kr/.test(support), '공식 고객지원 이메일이 세 페이지에 동일하다');
 check(/고객지원 문의/.test(privacy) && /이메일 주소/.test(privacy) && /문의 내용/.test(privacy), '고객지원 문의의 개인정보 처리가 방침에 기재됨');
 
-// ── 3. 코드에 있는 처리 → 문서에 있다 ─────────────────────────────────
-const llm = read('api/_llm.js');
-const providers = [
-  ['openrouter.ai', /OpenRouter/], ['generativelanguage.googleapis.com', /Gemini/], ['api.groq.com', /Groq/]
-];
-for (const [host, re] of providers) {
-  if (llm.includes(host)) check(re.test(privacy), `AI 제공사 ${host} → 개인정보처리방침에 기재`);
+// 고객지원 페이지는 스토어의 Support URL 로 쓴다 — 혼자서 문의·삭제 안내가 끝나야 한다.
+check(/href="mailto:support@seosa\.ai\.kr/.test(supportHtml), 'support: 이메일을 누르면 메일 앱이 열린다 (mailto)');
+check(/<link rel="canonical" href="https:\/\/seosa\.ai\.kr\/support">/.test(supportHtml), 'support: canonical https://seosa.ai.kr/support');
+check(/prefers-color-scheme:\s*dark/.test(supportHtml), 'support: 다크 모드');
+check(/계정 삭제/.test(support) && supportHtml.includes('href="/privacy#delete-account"') && /id="delete-account"/.test(privacyHtml), 'support: 계정 삭제 안내 → 방침의 #delete-account 로 연결된다');
+check(/href="\/"/.test(supportHtml) && /홈으로/.test(support), 'support: 홈으로 돌아가기');
+check(/판매자가 아닙니다/.test(support), 'support: 거래(배송·환불) 문의는 판매처로 — SEOSA 가 판매자가 아님을 밝힌다');
+
+// 사용자에게 보이는 연락처는 공식 주소 하나다. 개인 메일함 주소를 다시 싣지 않는다.
+for (const [name, html] of [['privacy', privacyHtml], ['terms', termsHtml], ['support', supportHtml]]) {
+  const personal = (html.match(/[A-Za-z0-9._%+-]+@(?:gmail|naver|daum|hanmail|kakao)\.[a-z.]+/gi) || []);
+  check(personal.length === 0, `${name}: 개인 메일 주소를 노출하지 않는다`, personal.join(', '));
 }
-check(!/api\.openai\.com|api\.anthropic\.com/.test(llm) || /OpenAI|Anthropic/.test(privacy), '코드에 없는 AI 제공사를 쓰지 않았다(또는 기재됨)');
+// Instagram 공식 계정은 2026-10 에 seosakorea → seosashop 으로 바뀌었다 (main 6b8dc3e). 세 문서가 같은 계정을 가리킨다.
+const igHandles = [privacyHtml, termsHtml, supportHtml].map(h => (h.match(/instagram\.com\/([A-Za-z0-9._]+)/) || [])[1] || '');
+check(igHandles.every(h => h === 'seosashop'), '정책·고객지원 문서의 Instagram 이 공식 계정(@seosashop)으로 같다', igHandles.join(' / '));
+
+// ── 3. 코드에 있는 처리 → 문서에 있다 ─────────────────────────────────
+// AI 호출은 여러 파일로 나뉘어 있다(main: _llm.js 라우터 + _llm-free.js + _openai-provider.js).
+// 한 파일만 읽으면 호스트가 옮겨간 순간 검사가 조용히 건너뛰어진다 — api/ 전체에서 찾는다.
+function apiSources(dir = path.join(ROOT, 'api'), out = []) {
+  for (const name of fs.readdirSync(dir)) {
+    const p = path.join(dir, name);
+    if (fs.statSync(p).isDirectory()) apiSources(p, out);
+    else if (name.endsWith('.js')) out.push(fs.readFileSync(p, 'utf8'));
+  }
+  return out;
+}
+const apiCode = apiSources().join('\n');
+const providers = [
+  ['api.openai.com', /OpenAI/], ['openrouter.ai', /OpenRouter/], ['generativelanguage.googleapis.com', /Gemini/],
+  ['api.groq.com', /Groq/], ['api.anthropic.com', /Anthropic/]
+];
+const providersInCode = providers.filter(([host]) => apiCode.includes(host));
+check(providersInCode.length > 0, 'AI 제공사 호스트를 코드에서 찾았다 (못 찾으면 이 검사가 낡은 것)', providersInCode.map(p => p[0]).join(', '));
+for (const [host, re] of providersInCode) {
+  check(re.test(privacy), `AI 제공사 ${host} → 개인정보처리방침에 기재`);
+}
+// 반대 방향(문서에만 있는 제공사)은 이 브랜치가 운영(main)보다 오래됐을 때 생길 수 있어 경고로만 알린다.
+const docOnly = providers.filter(([host, re]) => re.test(privacy) && !apiCode.includes(host)).map(p => p[0]);
+if (docOnly.length) console.log(`  WARN  문서에는 있지만 이 트리의 코드에 없는 AI 제공사: ${docOnly.join(', ')} — 운영(main) 코드와 대조할 것`);
+if (/support@seosa\.ai\.kr/.test(privacy)) check(/ImprovMX/.test(privacy), '고객지원 메일의 전달 경로(ImprovMX)가 처리 위탁에 기재');
 if (read('api/_channel/email.js').includes('api.resend.com')) check(/Resend/.test(privacy), '메일 발송 Resend 기재');
 if (/googletagmanager\.com\/gtag/.test(read('public/index.html'))) check(/Google Analytics/.test(privacy) && /쿠키/.test(privacy), '웹의 Google Analytics(쿠키) 기재');
 if (fs.existsSync(path.join(ROOT, 'api/_toss.js'))) check(/토스페이먼츠/.test(privacy), '결제대행 토스페이먼츠 기재');
@@ -111,6 +145,11 @@ check(/SEOSA 데이터베이스에 저장하지 않습니다/.test(privacy), '�
 // ── 7. 약관이 코드와 어긋난 옛 문장을 되살리지 않는다 ─────────────────
 check(!/모든 상품 정보는 쿠팡 검색 API에서 실시간으로/.test(terms), '옛 문장(쿠팡 실시간 단일 출처) 없음');
 check(/로그인 없이[\s\S]{0,80}AI/.test(terms), '비로그인 AI 이용(게스트 모드) 반영');
+
+// ── 8. 코드로 확정할 수 없어 운영자가 채워야 하는 항목 (실패가 아니라 목록) ─────
+const todos = [privacyHtml, termsHtml, supportHtml].flatMap(h => [...h.matchAll(/<!--\s*TODO\(운영자[^)]*\):\s*([\s\S]*?)-->/g)].map(m => m[1].trim()));
+console.log(`\n운영자 확인 필요 ${todos.length}건 (문서 소스의 TODO 주석):`);
+todos.forEach(t => console.log(`  - ${t}`));
 
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);
