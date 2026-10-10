@@ -44,6 +44,8 @@ export default function Concierge() {
   const [sending, setSending] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const list = useRef<FlatList<Message>>(null);
+  // `sending` is state and lags a frame; two quick chip taps must not send two questions at once.
+  const inFlight = useRef(false);
 
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -55,7 +57,8 @@ export default function Concierge() {
 
   const send = async (raw: string) => {
     const question = raw.trim().slice(0, MAX_QUESTION);
-    if (!question || sending) return;
+    if (!question || sending || inFlight.current) return;
+    inFlight.current = true;
     setText('');
     setSending(true);
     setMessages(m => [...m, { id: nextId(), role: 'user', text: question }]);
@@ -79,12 +82,13 @@ export default function Concierge() {
       if (expired) await signOut();
       setMessages(m => [...m, { id: nextId(), role: 'error', text: expired ? '로그인이 만료됐어요. 다시 로그인하거나, 로그인 없이 다시 물어볼 수 있어요.' : userMessage(error), needsLogin: expired }]);
     } finally {
+      inFlight.current = false;
       setSending(false);
       setTimeout(() => list.current?.scrollToEnd({ animated: true }), 50);
     }
   };
 
-  const reset = () => { abort.current?.abort(); setMessages([]); setHistory([]); setPrevTop({ id: '', ref: '' }); setSending(false); };
+  const reset = () => { abort.current?.abort(); inFlight.current = false; setMessages([]); setHistory([]); setPrevTop({ id: '', ref: '' }); setSending(false); };
 
   const lastAi = [...messages].reverse().find((m): m is Extract<Message, { role: 'ai' }> => m.role === 'ai');
   const followups = lastAi?.answer.followups.length ? lastAi.answer.followups : messages.length ? [] : starters;

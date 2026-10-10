@@ -15,6 +15,12 @@ import { layout, palette } from '../lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+/**
+ * A cold seosa://product/… link would otherwise open the product as the only screen: no back
+ * button on iOS, no way to the tabs. With this the tabs sit underneath, as after a normal tap.
+ */
+export const unstable_settings = { initialRouteName: '(tabs)' };
+
 /** Longest the splash waits for fonts; after that the system font is used (text never waits on a font). */
 const FONT_WAIT_MS = 1500;
 
@@ -56,7 +62,7 @@ export default function RootLayout() {
                       contentStyle: { backgroundColor: theme.bg },
                     }}
                   >
-                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'SEOSA' /* back button label for screen readers, not "(tabs)" */ }} />
                     <Stack.Screen name="product/[key]" options={{ title: '' }} />
                     <Stack.Screen name="concierge" options={{ presentation: 'modal', title: 'AI 컨시어지' }} />
                     <Stack.Screen name="login" options={{ presentation: 'modal', title: '로그인' }} />

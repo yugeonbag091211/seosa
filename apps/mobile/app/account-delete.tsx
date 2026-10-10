@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText } from '../components/AppText';
 import { deleteAccountFlow, DELETED_ON_SERVER, RETAINED_ON_SERVER, type DeletionResult } from '../lib/accountDeletion';
@@ -23,9 +23,12 @@ export default function AccountDelete() {
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DeletionResult | null>(null);
+  // Synchronous twin of `busy`: a double tap in one frame must not send two deletions.
+  const inFlight = useRef(false);
 
   const run = async () => {
-    if (!acknowledged || busy) return;
+    if (!acknowledged || busy || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     const r = await deleteAccountFlow({
       token,
@@ -34,6 +37,7 @@ export default function AccountDelete() {
       clearCache: () => queryClient.clear(),
       clearLocalData: clearAll,
     });
+    inFlight.current = false;
     setBusy(false);
     setResult(r);
   };

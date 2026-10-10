@@ -167,3 +167,20 @@ test('chart price labels fit: the gutter grows with the widest label (no "1,250,
   assert.match(src('components/PriceChart.tsx'), /labelGutter\(shown\)/);
   assert.doesNotMatch(src('components/PriceChart.tsx'), /PAD\.right/, 'every position uses the computed gutter');
 });
+
+test('submit actions are guarded synchronously: no double code e-mail, no double AI question, no double deletion', () => {
+  // `busy`/`sending` are state and lag a frame; a ref flips before the next tap can read it.
+  for (const [file, fn] of [['app/login.tsx', 'submit'], ['app/concierge.tsx', 'send'], ['app/account-delete.tsx', 'run']]) {
+    const s = src(file);
+    assert.match(s, /const inFlight = useRef\(false\)/, `${file}: ref guard`);
+    const body = s.slice(s.indexOf(`const ${fn} = async`));
+    assert.match(body.slice(0, 260), /inFlight\.current/, `${file}: ${fn}() checks the guard first`);
+    assert.match(body, /inFlight\.current = false/, `${file}: released when the request ends`);
+  }
+});
+
+test('cold deep links land with the tabs underneath, and the back button has a real name', () => {
+  const root = src('app/_layout.tsx');
+  assert.match(root, /export const unstable_settings = \{ initialRouteName: '\(tabs\)' \}/);
+  assert.match(root, /name="\(tabs\)" options=\{\{ headerShown: false, title: 'SEOSA'/, 'VoiceOver/TalkBack read the previous title on the back button');
+});

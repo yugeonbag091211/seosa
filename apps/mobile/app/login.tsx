@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { AppText, useFontsReady } from '../components/AppText';
 import { userMessage } from '../lib/api';
@@ -23,26 +23,32 @@ export default function Login() {
   const [phase, setPhase] = useState<'email' | 'code'>('email');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  // Set synchronously: two taps in one frame (or keyboard submit + button) must not send two codes.
+  const inFlight = useRef(false);
 
   const fieldStyle = [styles.field, { color: theme.ink, backgroundColor: theme.surface, fontFamily: fontsReady ? 'Pretendard-Regular' : undefined }];
 
   const submit = async () => {
+    if (inFlight.current) return;
     setMessage('');
     if (phase === 'email') {
       if (!isEmail(email)) { setMessage('이메일 주소를 확인해 주세요.'); return; }
       setBusy(true);
+      inFlight.current = true;
       try {
         await api.requestCode(email.trim());
         setPhase('code');
       } catch (e) {
         setMessage(userMessage(e));
       } finally {
+        inFlight.current = false;
         setBusy(false);
       }
       return;
     }
     if (!/^\d{6}$/.test(code)) { setMessage('6자리 숫자 코드를 입력해 주세요.'); return; }
     setBusy(true);
+    inFlight.current = true;
     try {
       const session = await api.verifyCode(email.trim(), code);
       await signIn(session);
@@ -50,6 +56,7 @@ export default function Login() {
     } catch (e) {
       setMessage(userMessage(e));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
