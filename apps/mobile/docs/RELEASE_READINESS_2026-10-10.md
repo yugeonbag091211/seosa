@@ -134,7 +134,7 @@ Play **개인** 계정이면 비공개 테스트 14일이 가장 긴 막대다. 
 | `.claude/worktrees/web-policy` | feat/policy-pages-account-delete | `04e9c58` | `04e9c58` feat: add production support page and support contact (기존 미커밋 작업을 그대로 커밋) | 없음 |
 | `.claude/worktrees/mobile-app` | feat/mobile-app-v2 | `e63865e` | 없음 | `apps/mobile/.env.example`, `apps/mobile/docs/STORE_READINESS.md` — 내용은 아래 브랜치 첫 커밋에 포함됨 |
 | 이 세션 worktree | claude/policy-support-v1 | `a781071` | `a781071` fix(policy): match privacy/terms/support to production code; harden policy tests | — |
-| 이 세션 worktree | claude/mobile-v1-release (현재) | `66882c3` | `00568e2` chore: finalize mobile release support configuration and harden failure paths · `66882c3` fix(mobile): guard double submits; deep links keep the tabs underneath · (이 보고서 커밋) | 없음 (`apps/mobile/node_modules` 는 gitignore) |
+| 이 세션 worktree | claude/mobile-v1-release (현재) | 브랜치 끝 (코드 마지막 `66882c3`, 이후 문서 커밋만) | `00568e2` chore: finalize mobile release support configuration and harden failure paths · `66882c3` fix(mobile): guard double submits; deep links keep the tabs underneath · (이 보고서 커밋) | 없음 (`apps/mobile/node_modules` 는 gitignore) |
 | `C:\Users\yugeo\seosa` | fix/nomatch-reduction | `a57815e` | 건드리지 않음 | 사용자의 기존 미커밋 변경 그대로 |
 
 원래 브랜치로 옮기는 명령 — `C:\Users\yugeo\seosa` 에서, 확인한 뒤 실행. mobile-app 의 미커밋 2파일은 내용이 `00568e2` 에 들어 있으므로 되돌린 뒤 당긴다:
