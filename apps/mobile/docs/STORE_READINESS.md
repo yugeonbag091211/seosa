@@ -21,6 +21,7 @@
 | App Transport Security | ✅ | 실제 prebuild 템플릿은 `NSAllowsArbitraryLoads=false`. API 주소는 https 만 허용(`normalizeBaseUrl`, http 는 개발용 로컬 주소만) |
 | 개인정보 매니페스트(iOS) | 🟡 | RN pod install 이 모든 pod 의 `PrivacyInfo.xcprivacy` 를 앱 매니페스트로 합친다(`privacy_file_aggregation_enabled: true`). 첫 TestFlight 업로드 후 Apple 의 ITMS-91053 경고 메일이 없는지 확인 |
 | 아이콘 · 스플래시 | ✅ | 1024 RGB 풀블리드, Android adaptive(전경·배경·모노크롬), 라이트·다크 스플래시 |
+| SDK 패치 버전 | 🟡 | `npx expo install --check` (2026-10-10): expo 57.0.26→57.0.27, expo-constants 57.0.20→.21, expo-linking 57.0.11→.12, expo-router 57.0.24→.25 권장. 출시 블로커는 아니다. 첫 EAS 빌드 전에 `npx expo install --fix` → `npm run check` → Galaxy 재확인 |
 | 개인정보처리방침 URL | 🟡 | `https://seosa.ai.kr/privacy` — 정책 브랜치 머지·배포 후 열린다(그 전에는 404). 앱 마이 → 개인정보처리방침 |
 | 이용약관 URL | 🟡 | `https://seosa.ai.kr/terms` — 위와 같음 |
 | 고객지원 URL | 🟡 | `https://seosa.ai.kr/support` — 이메일, 문의 유형, 앱 밖 계정 삭제 안내, 사업자 정보, 판매처 문의 구분. 앱 마이 → 고객지원(시스템 브라우저). 웹 배포 후 사용 |
