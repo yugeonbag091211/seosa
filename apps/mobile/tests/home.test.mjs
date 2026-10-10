@@ -383,3 +383,27 @@ test('home order follows the web: search → hero → keywords → drops → sel
   assert.match(home, /monthly=\{home\.data\?\.monthly\}/);
   assert.match(home, /recordStamp\(\[home\.data\?\.daily\?\.products, home\.data\?\.monthly\?\.products\]\)/);
 });
+
+/* ── Large text (2026-10-10 polish) ────────────────────────────────── */
+
+test('large text: text grows into its boxes instead of spilling out of them', () => {
+  const home = src('app/(tabs)/index.tsx');
+  // The search box had a fixed 48 dp height; at 200 % its hint wrapped to two lines outside the box.
+  assert.match(home, /search: \{[^}]*minHeight: 48/, 'search box grows with its hint');
+  assert.doesNotMatch(home, /search: \{[^}]*[^n]height: 48/, 'no fixed height on the search box');
+  assert.match(home, /style=\{\[t\.body, \{ flexShrink: 1 \}\]\}>어떤 상품의 최저가가 궁금하세요\?/);
+  const hero = src('components/HeroCarousel.tsx');
+  assert.match(hero, /ctaText: \{ flexShrink: 1/, 'a long CTA label wraps inside its pill');
+  assert.match(hero, /cta: \{[^}]*maxWidth: '100%'/, 'the pill never runs past the band');
+  assert.match(hero, /maxFontSizeMultiplier=\{1\.3\}/, 'the two-line headline grows to 130 %, then wraps');
+  // Words inside the drawings are part of the picture: fixed size, hidden from screen readers.
+  const art = src('components/HeroArt.tsx');
+  assert.match(art, /PICTURE_TEXT = \{ maxFontSizeMultiplier: 1 \}/);
+  assert.match(art, /aria-hidden/);
+});
+
+test('tab labels: capped at 130 % on Android (fixed 49 dp bar); iOS keeps the Large Content Viewer', () => {
+  const tabs = src('app/(tabs)/_layout.tsx');
+  assert.match(tabs, /tabBarLabel: \(\{ color, children \}\) =>/);
+  assert.match(tabs, /allowFontScaling=\{Platform\.OS !== 'ios'\} maxFontSizeMultiplier=\{1\.3\}/);
+});

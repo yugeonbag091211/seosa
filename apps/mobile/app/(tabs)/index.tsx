@@ -57,7 +57,7 @@ export default function Home() {
         style={({ pressed }) => [styles.search, { backgroundColor: theme.surface, opacity: pressed ? 0.7 : 1 }]}
       >
         <Icon name="search" size={20} color={theme.faint} />
-        <AppText tone="faint" style={t.body}>어떤 상품의 최저가가 궁금하세요?</AppText>
+        <AppText tone="faint" style={[t.body, { flexShrink: 1 }]}>어떤 상품의 최저가가 궁금하세요?</AppText>
       </Pressable>
 
       <View style={styles.hero}>
@@ -131,7 +131,8 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.gutter, height: 44 },
-  search: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: space.gutter, marginTop: space.md, height: 48, borderRadius: radius.lg, paddingHorizontal: 14 },
+  // minHeight, not height: at large text sizes the hint wraps inside the box instead of spilling out of it.
+  search: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: space.gutter, marginTop: space.md, minHeight: 48, paddingVertical: 12, borderRadius: radius.lg, paddingHorizontal: 14 },
   hero: { marginTop: space.md },
   chips: { gap: 8, paddingHorizontal: space.gutter, paddingTop: space.md },
   section: { marginTop: space.section },
