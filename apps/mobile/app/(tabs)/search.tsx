@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { AffiliateNote, Chip, EmptyState, ErrorState, Loading, SectionHeader } f
 import { setAiContext } from '../../lib/aiContext';
 import { productKey } from '../../lib/identity';
 import { useLocalData } from '../../lib/local';
+import { pushOnce } from '../../lib/navigation';
 import { useHomeFeed, useSearch } from '../../lib/queries';
 import { suggestions } from '../../lib/suggest';
 import { radius, space, type as t, useTheme } from '../../lib/theme';
@@ -61,7 +62,7 @@ export default function Search() {
 
   const askAi = (items: Product[]) => {
     setAiContext({ source: 'search', keyword: query, products: items });
-    router.push('/concierge');
+    pushOnce('/concierge');
   };
 
   return (

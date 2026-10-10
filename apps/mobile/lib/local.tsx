@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { KEYS, kv } from './storage';
 import { isSaved as inList, removeSaved, restoreSaved, toggleSaved, type SavedItem } from './savedModel';
-import { pushRecent } from './suggest';
+import { pushRecent, restoreRecent } from './suggest';
 import type { Product, ProductIdentity } from './types';
 
 /*
@@ -34,7 +34,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     Promise.all([kv.get<unknown>(KEYS.saved, []), kv.get<unknown>(KEYS.recentSearches, [])]).then(([s, r]) => {
       if (!alive) return;
       // Merge, don't replace: a search or save made while storage was still loading must survive.
-      const stored = Array.isArray(r) ? r.filter((x): x is string => typeof x === 'string' && !!x).slice(0, 10) : [];
+      const stored = restoreRecent(r);
       setSaved(prev => restoreSaved([...prev, ...(Array.isArray(s) ? s : [])]));
       setRecent(prev => [...prev].reverse().reduce((acc, k) => pushRecent(acc, k), stored));
       setReady(true);

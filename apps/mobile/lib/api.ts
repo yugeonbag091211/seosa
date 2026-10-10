@@ -50,6 +50,18 @@ export function userMessage(error: unknown): string {
   }
 }
 
+/**
+ * Server 4xx text is shown only when it reads as a sentence written for people: Korean, short,
+ * and free of markup, JSON, stack frames or URLs. Anything else (a proxy's HTML page, an English
+ * framework message, a serialized object) falls back to the app's own wording in userMessage().
+ */
+export function displayableServerText(value: unknown): string {
+  const s = typeof value === 'string' ? value.trim() : '';
+  if (!s || s.length > 140 || !/[가-힣]/.test(s)) return '';
+  if (/[{}<>]|https?:\/\/|\bat\s+\S+\s*\(|\b(?:Error|Exception|undefined|null|NaN)\b/.test(s)) return '';
+  return s;
+}
+
 /** Retrying helps only for transient failures. A 4xx will fail the same way again. */
 export function isRetryable(error: unknown): boolean {
   return error instanceof ApiError && (error.kind === 'network' || error.kind === 'timeout' || error.kind === 'unavailable');
@@ -116,8 +128,7 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
       });
       let body: unknown = null;
       try { body = await res.json(); } catch { body = null; }
-      const serverText = body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
-        ? (body as { error: string }).error : '';
+      const serverText = body && typeof body === 'object' ? displayableServerText((body as { error?: unknown }).error) : '';
       const retryAfter = Number(res.headers.get('Retry-After')) || 0;
 
       if (res.status >= 500) throw new ApiError('unavailable', '', res.status, retryAfter);

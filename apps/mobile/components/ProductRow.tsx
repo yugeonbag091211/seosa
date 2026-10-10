@@ -1,6 +1,6 @@
-import { router } from 'expo-router';
 import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { pushOnce } from '../lib/navigation';
 import { rememberProduct } from '../lib/productCache';
 import { mallColor, space, type as t, useTheme } from '../lib/theme';
 import type { Product } from '../lib/types';
@@ -10,7 +10,7 @@ import { Thumb } from './Thumb';
 
 export function openProduct(p: Product) {
   const key = rememberProduct(p);
-  if (key) router.push({ pathname: '/product/[key]', params: { key } });
+  if (key) pushOnce({ pathname: '/product/[key]', params: { key } }, `product:${key}`);
 }
 
 /**

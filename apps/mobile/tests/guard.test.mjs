@@ -22,6 +22,8 @@ test('no server secret or server-only env name appears anywhere in the app', () 
   const banned = [
     /service_role/i, /SUPABASE_(SERVICE|SECRET|KEY|URL)/, /COUPANG_(ACCESS|SECRET)/, /ADPICK_(KEY|SECRET|API)/,
     /AUTH_SECRET|SIGNING_KEY|CRON_SECRET|ADMIN_TOKEN/, /GEMINI_API_KEY|GROQ_API_KEY|OPENROUTER_API_KEY|RESEND_API_KEY/,
+    /OPENAI_API_KEY|ANTHROPIC_API_KEY|SENTRY_DSN|TOSS_SECRET|TOSS_CLIENT_SECRET|SUPABASE_SECRET/,   // providers added on main (#129) and other server-only keys
+    /(?:sk|rk)_live_[A-Za-z0-9]{10,}|test_sk_[A-Za-z0-9]{10,}|live_sk_[A-Za-z0-9]{10,}/,          // Toss/Stripe-style secret keys
     /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/,          // JWT-shaped literal
     /\bsk-[A-Za-z0-9]{20,}/,
     /process\.env\.(?!EXPO_PUBLIC_)[A-Z_]+/,                  // only EXPO_PUBLIC_* may be read

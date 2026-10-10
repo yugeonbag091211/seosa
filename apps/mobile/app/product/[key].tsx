@@ -1,4 +1,4 @@
-import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import { rangeSummary } from '../../lib/chart';
 import { digits, observedLabel } from '../../lib/format';
 import { parseProductKey, sameProduct } from '../../lib/identity';
 import { useLocalData } from '../../lib/local';
+import { pushOnce } from '../../lib/navigation';
 import { recallProduct } from '../../lib/productCache';
 import { useCatalogProduct, usePriceHistory } from '../../lib/queries';
 import { verdictView } from '../../lib/verdict';
@@ -71,7 +72,7 @@ export default function ProductDetail() {
 
   const askAi = () => {
     setAiContext({ source: 'product', keyword: '', products: [product] });
-    router.push('/concierge');
+    pushOnce('/concierge');
   };
 
   return (

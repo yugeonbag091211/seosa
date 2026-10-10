@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +11,7 @@ import { takeAiContext } from '../lib/aiContext';
 import { formatAiText } from '../lib/aiText';
 import { ApiError, userMessage } from '../lib/api';
 import { api } from '../lib/config';
+import { pushOnce } from '../lib/navigation';
 import { useSession } from '../lib/session';
 import { radius, space, type as t, useTheme } from '../lib/theme';
 import type { AiAnswer, AiTurn } from '../lib/types';
@@ -129,7 +129,7 @@ export default function Concierge() {
             return (
               <View style={styles.pad}>
                 <AppText tone="soft" style={[t.callout, { marginVertical: space.md }]}>{item.text}</AppText>
-                {item.needsLogin ? <Chip label="로그인" onPress={() => router.push('/login')} /> : null}
+                {item.needsLogin ? <Chip label="로그인" onPress={() => pushOnce('/login')} /> : null}
               </View>
             );
           }
@@ -163,7 +163,7 @@ export default function Concierge() {
               {a.guest ? (
                 <View style={[styles.pad, { marginTop: space.sm }]}>
                   <AppText tone="faint" style={t.footnote}>무료 AI 답변이에요. 로그인하면 저장한 취향과 대화 맥락도 반영할 수 있어요.</AppText>
-                  {status !== 'signedIn' ? <Pressable onPress={() => router.push('/login')} hitSlop={8}><AppText style={[t.footnote, { fontWeight: '600', marginTop: 4, textDecorationLine: 'underline' }]}>로그인</AppText></Pressable> : null}
+                  {status !== 'signedIn' ? <Pressable onPress={() => pushOnce('/login')} hitSlop={8}><AppText style={[t.footnote, { fontWeight: '600', marginTop: 4, textDecorationLine: 'underline' }]}>로그인</AppText></Pressable> : null}
                 </View>
               ) : null}
             </View>

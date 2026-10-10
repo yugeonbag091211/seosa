@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
-import { availableRanges, buildChart, defaultRange, nearestIndex, withinRange, type ChartRange } from '../lib/chart';
+import { availableRanges, buildChart, defaultRange, labelGutter, nearestIndex, withinRange, type ChartRange } from '../lib/chart';
 import { digits, observedLabel, shortDate } from '../lib/format';
 import { radius, space, type as t, useTheme } from '../lib/theme';
 import type { PricePoint } from '../lib/types';
@@ -30,7 +30,9 @@ export function PriceChart({ points }: { points: PricePoint[] }) {
   const range: ChartRange = picked && ranges.includes(picked) ? picked : defaultRange(points);
 
   const shown = useMemo(() => withinRange(points, range), [points, range]);
-  const model = useMemo(() => buildChart(shown, width, HEIGHT, PAD), [shown, width]);
+  // The label gutter grows with the widest price label (lib/chart labelGutter).
+  const pad = useMemo(() => ({ ...PAD, right: labelGutter(shown) }), [shown]);
+  const model = useMemo(() => buildChart(shown, width, HEIGHT, pad), [shown, width, pad]);
 
   if (!points.length) return null;
 
@@ -67,10 +69,10 @@ export function PriceChart({ points }: { points: PricePoint[] }) {
         {model ? (
           <Svg width={width} height={HEIGHT}>
             {model.ticks.map(tk => (
-              <Line key={`g${tk.value}`} x1={0} x2={width - PAD.right + 8} y1={tk.y} y2={tk.y} stroke={theme.line} strokeWidth={1} strokeDasharray="3 4" />
+              <Line key={`g${tk.value}`} x1={0} x2={width - pad.right + 8} y1={tk.y} y2={tk.y} stroke={theme.line} strokeWidth={1} strokeDasharray="3 4" />
             ))}
             {model.ticks.map(tk => (
-              <SvgText key={`l${tk.value}`} x={width - PAD.right + 14} y={tk.y + 4} fontSize={11} fill={theme.faint} fontFamily={fontsReady ? 'IBMPlexMono-Regular' : undefined}>
+              <SvgText key={`l${tk.value}`} x={width - pad.right + 14} y={tk.y + 4} fontSize={11} fill={theme.faint} fontFamily={fontsReady ? 'IBMPlexMono-Regular' : undefined}>
                 {digits(tk.value)}
               </SvgText>
             ))}
@@ -78,12 +80,12 @@ export function PriceChart({ points }: { points: PricePoint[] }) {
             <Path d={model.path} stroke={theme.chartLine} strokeWidth={2} fill="none" strokeLinejoin="round" />
             {sel ? (
               <>
-                {active !== null ? <Line x1={sel.x} x2={sel.x} y1={PAD.top - 8} y2={HEIGHT - PAD.bottom} stroke={theme.line2} strokeWidth={1} /> : null}
+                {active !== null ? <Line x1={sel.x} x2={sel.x} y1={pad.top - 8} y2={HEIGHT - pad.bottom} stroke={theme.line2} strokeWidth={1} /> : null}
                 <Circle cx={sel.x} cy={sel.y} r={4.5} fill={theme.bg} stroke={theme.chartLine} strokeWidth={2} />
               </>
             ) : null}
             <SvgText x={0} y={HEIGHT - 4} fontSize={11} fill={theme.faint}>{shortDate(model.points[0].date)}</SvgText>
-            <SvgText x={width - PAD.right} y={HEIGHT - 4} fontSize={11} fill={theme.faint} textAnchor="end">
+            <SvgText x={width - pad.right} y={HEIGHT - 4} fontSize={11} fill={theme.faint} textAnchor="end">
               {shortDate(model.points[model.points.length - 1].date)}
             </SvgText>
           </Svg>

@@ -2,21 +2,12 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { digits, observedLabel } from '../lib/format';
 import { mallColor, radius, space, type as t, useTheme } from '../lib/theme';
-import type { Product, TodayDrop } from '../lib/types';
+import { dropAsProduct } from '../lib/products';
+import type { TodayDrop } from '../lib/types';
 import { AppText } from './AppText';
 import { DropLabel, Price } from './Price';
 import { openProduct } from './ProductRow';
 import { Thumb } from './Thumb';
-
-/** A today-drop card as a Product for the detail screen — its price is the server's current price. */
-export function dropAsProduct(d: TodayDrop): Product {
-  return {
-    productId: d.productId, mall: d.mall, vendorItemId: d.vendorItemId,
-    title: d.title, price: d.currentPrice, mallLabel: d.mallLabel, image: d.image, link: d.link,
-    listPrice: 0, savePct: 0, collectedAt: d.recordedAt, isRocket: null, trust: null,
-    priceChange: { prevPrice: d.previousPrice, dropAmount: d.dropAmount, dropPct: d.dropPct, isAllTimeLow: false },
-  };
-}
 
 /**
  * «오늘 가격 하락» row: previous → current, amount and percent, and when the previous price was seen.
@@ -59,7 +50,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, paddingHorizontal: space.gutter, paddingVertical: space.md },
   rank: { width: 20, fontSize: 12, marginTop: 4 },
   body: { flex: 1, gap: 3 },
-  priceLine: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
+  // Wraps instead of overflowing when both prices are long (eight-digit won on a 320 dp phone).
+  priceLine: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', columnGap: space.sm },
   prev: { textDecorationLine: 'line-through' },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   badge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: radius.sm },

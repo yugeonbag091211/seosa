@@ -36,6 +36,17 @@ export function suggestions(input: string, recent: readonly string[], popular: r
     .map(x => x.s);
 }
 
+/**
+ * Recent searches read back from storage. Storage can hold anything after an upgrade or a bad
+ * write, so only strings survive, each cut to the same 80 characters a search allows, deduped.
+ */
+export function restoreRecent(value: unknown, max = 10): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((x): x is string => typeof x === 'string')
+    .reduceRight((acc: string[], k) => pushRecent(acc, k, max), []);
+}
+
 /** Recent searches: newest first, case/space-insensitive dedupe, capped. */
 export function pushRecent(list: readonly string[], keyword: string, max = 10): string[] {
   const k = keyword.trim().slice(0, 80);

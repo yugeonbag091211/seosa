@@ -55,6 +55,14 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28, section: 4
 
 export const radius = { sm: 4, md: 8, lg: 12, pill: 999 } as const;
 
+/**
+ * Widest the app's column grows. Phones are narrower, so this only acts on Android tablets and
+ * unfolded foldables, where Android 16 ignores the portrait lock for apps targeting API 36 and
+ * rows, the chart and the buy button would otherwise stretch across 1,000+ dp. (iPad runs the
+ * iPhone layout: ios.supportsTablet is false.)
+ */
+export const layout = { maxWidth: 720 } as const;
+
 /** Type scale (dp). Weights resolve to Pretendard files in components/AppText. */
 export const type = {
   largeTitle: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.6 },

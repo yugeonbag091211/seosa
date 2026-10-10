@@ -8,6 +8,7 @@ import { Hairline } from '../../components/ui';
 import { AFFILIATE_NOTE, COUPANG_PARTNERS_NOTE } from '../../lib/affiliate';
 import { APP_VERSION, LINKS } from '../../lib/config';
 import { useLocalData } from '../../lib/local';
+import { pushOnce } from '../../lib/navigation';
 import { useSession } from '../../lib/session';
 import { maskEmail } from '../../lib/sessionModel';
 import { space, type as t, useTheme } from '../../lib/theme';
@@ -32,7 +33,17 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-const openLink = (url: string) => { if (url) Linking.openURL(url).catch(() => {}); };
+/**
+ * Opens a web page or the mail app with the OS. A failure is told, never swallowed: on a device
+ * without a mail app the row would otherwise look dead — the alert says where to write by hand.
+ */
+const openLink = (url: string) => {
+  if (!url) return;
+  Linking.openURL(url).catch(() => {
+    if (url.startsWith('mailto:')) Alert.alert('메일 앱을 열지 못했어요', `${LINKS.supportEmail} 로 메일을 보내 주세요.`);
+    else Alert.alert('링크를 열지 못했어요', url);
+  });
+};
 
 export default function Me() {
   const theme = useTheme();
@@ -61,10 +72,10 @@ export default function Me() {
             <Hairline inset={space.gutter} />
             <Row label="로그아웃" onPress={confirmSignOut} />
             <Hairline inset={space.gutter} />
-            <Row label="계정 삭제" onPress={() => router.push('/account-delete')} danger />
+            <Row label="계정 삭제" onPress={() => pushOnce('/account-delete')} danger />
           </>
         ) : (
-          <Row label={status === 'loading' ? '확인 중…' : '이메일로 로그인'} onPress={status === 'loading' ? undefined : () => router.push('/login')} />
+          <Row label={status === 'loading' ? '확인 중…' : '이메일로 로그인'} onPress={status === 'loading' ? undefined : () => pushOnce('/login')} />
         )}
       </Group>
 
@@ -77,11 +88,14 @@ export default function Me() {
       <Group title="정보">
         <Row label="SEOSA 웹사이트" onPress={() => openLink(LINKS.site)} />
         <Hairline inset={space.gutter} />
-        <Row label="개인정보처리방침" value={LINKS.privacy ? undefined : '준비 중'} onPress={LINKS.privacy ? () => openLink(LINKS.privacy) : undefined} />
+        <Row label="개인정보처리방침" onPress={() => openLink(LINKS.privacy)} />
         <Hairline inset={space.gutter} />
-        <Row label="이용약관" value={LINKS.terms ? undefined : '준비 중'} onPress={LINKS.terms ? () => openLink(LINKS.terms) : undefined} />
+        <Row label="이용약관" onPress={() => openLink(LINKS.terms)} />
         <Hairline inset={space.gutter} />
-        <Row label="고객지원" value={LINKS.support ? undefined : '준비 중'} onPress={LINKS.support ? () => openLink(LINKS.support) : undefined} />
+        {/* The web page always opens (no mail app needed) and also covers off-app deletion. */}
+        <Row label="고객지원" onPress={() => openLink(LINKS.support)} />
+        <Hairline inset={space.gutter} />
+        <Row label="이메일 문의" value={LINKS.supportEmail} onPress={() => openLink(LINKS.supportMailto)} />
         <Hairline inset={space.gutter} />
         <Row label="앱 버전" value={APP_VERSION} />
       </Group>

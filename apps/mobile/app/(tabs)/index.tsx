@@ -7,6 +7,7 @@ import { Icon } from '../../components/Icon';
 import { ProductRow, Separator } from '../../components/ProductRow';
 import { Wordmark } from '../../components/Screen';
 import { AffiliateNote, Chip, EmptyState, ErrorState, Loading, SectionHeader } from '../../components/ui';
+import { pushOnce } from '../../lib/navigation';
 import { useHomeFeed, useTodayDrops } from '../../lib/queries';
 import { radius, space, type as t, useTheme } from '../../lib/theme';
 
@@ -35,7 +36,7 @@ export default function Home() {
     >
       <View style={styles.top}>
         <Wordmark />
-        <Pressable onPress={() => router.push('/concierge')} hitSlop={10} accessibilityRole="button" accessibilityLabel="AI 컨시어지 열기">
+        <Pressable onPress={() => pushOnce('/concierge')} hitSlop={10} accessibilityRole="button" accessibilityLabel="AI 컨시어지 열기">
           <Icon name="sparkle" size={24} color={theme.ink} />
         </Pressable>
       </View>
@@ -78,7 +79,7 @@ export default function Home() {
       </View>
 
       <Pressable
-        onPress={() => router.push('/concierge')}
+        onPress={() => pushOnce('/concierge')}
         accessibilityRole="button"
         style={({ pressed }) => [styles.ai, { borderColor: theme.line, opacity: pressed ? 0.7 : 1 }]}
       >

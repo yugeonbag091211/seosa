@@ -93,6 +93,17 @@ export function buildChart(points: readonly PricePoint[], width: number, height:
   return { points: coords, path, area, min, max, ticks, width, height, flat };
 }
 
+/**
+ * Right gutter that fits the widest price label. Tick values never exceed the drawn maximum, and
+ * labels are set in the bundled IBM Plex Mono (advance 0.6 em → 6.6 dp at 11 dp) starting 14 dp
+ * past the plot. A fixed 64 dp gutter clipped every label from 1,000,000원 up ("1,250,00").
+ */
+export function labelGutter(points: readonly PricePoint[], fontSize = 11): number {
+  const max = points.reduce((m, p) => Math.max(m, p.price), 0);
+  const chars = String(Math.round(max)).replace(/\B(?=(\d{3})+(?!\d))/g, ',').length;
+  return Math.max(64, Math.ceil(14 + chars * fontSize * 0.6 + 4));
+}
+
 /** Index of the real point nearest to a finger at x. */
 export function nearestIndex(model: ChartModel, x: number): number {
   let best = 0;

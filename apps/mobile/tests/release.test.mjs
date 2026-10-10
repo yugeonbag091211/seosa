@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildLinks } from '../lib/links.ts';
+import { buildLinks, SUPPORT_EMAIL } from '../lib/links.ts';
 import { createSessionStore, SESSION_KEY } from '../lib/sessionStore.ts';
 import { deleteAccountFlow, DELETED_ON_SERVER } from '../lib/accountDeletion.ts';
 import { createApi, ApiError } from '../lib/api.ts';
@@ -22,21 +22,42 @@ test('policy pages are the standalone web URLs', () => {
   assert.equal(l.terms, 'https://seosa.ai.kr/terms');
 });
 
-test('support has no hard-coded address: empty unless EXPO_PUBLIC_SUPPORT_EMAIL is a valid e-mail', () => {
-  assert.equal(buildLinks().support, '');
-  assert.equal(buildLinks({ supportEmail: '' }).support, '');
-  assert.equal(buildLinks({ supportEmail: 'not an email' }).support, '');
-  assert.equal(buildLinks({ supportEmail: ' help@example.com ' }).support, 'mailto:help@example.com');
-  assert.equal(/@[a-z0-9-]+\.[a-z]/i.test(src('lib/links.ts').replace(/help@example\.com/g, '')), false, 'no e-mail literal in lib/links.ts');
+test('support: the web /support page and the official address, even in a build without .env', () => {
+  // EAS builds never see the gitignored .env, so the published address must be the default (decided 2026-10).
+  const l = buildLinks();
+  assert.equal(l.support, 'https://seosa.ai.kr/support');
+  assert.equal(l.supportEmail, 'support@seosa.ai.kr');
+  assert.equal(l.supportMailto, 'mailto:support@seosa.ai.kr');
+  assert.equal(SUPPORT_EMAIL, 'support@seosa.ai.kr');
+  // A valid EXPO_PUBLIC_SUPPORT_EMAIL overrides it; empty or malformed values never blank or corrupt the row.
+  assert.equal(buildLinks({ supportEmail: ' help@example.com ' }).supportMailto, 'mailto:help@example.com');
+  for (const bad of ['', '   ', 'not an email', 'a@b', 'x@y.z?cc=evil@example.com spaces', 'javascript:alert(1)']) {
+    assert.equal(buildLinks({ supportEmail: bad }).supportEmail, 'support@seosa.ai.kr', JSON.stringify(bad));
+  }
   assert.match(src('lib/config.ts'), /process\.env\.EXPO_PUBLIC_SUPPORT_EMAIL/);
+  // The example env and every build profile carry the same address (or none).
+  assert.match(src('.env.example'), /^EXPO_PUBLIC_SUPPORT_EMAIL=support@seosa\.ai\.kr\r?$/m);
+  const eas = JSON.parse(src('eas.json'));
+  for (const profile of Object.values(eas.build)) {
+    const v = profile.env?.EXPO_PUBLIC_SUPPORT_EMAIL;
+    assert.ok(v === undefined || v === 'support@seosa.ai.kr', 'a build profile must not ship another support address');
+  }
 });
 
-test('the 마이 screen opens both policy links and the deletion screen', () => {
+test('the 마이 screen opens the policy pages, the support page, the mail app and the deletion screen', () => {
   const me = src('app/(tabs)/me.tsx');
   assert.match(me, /openLink\(LINKS\.privacy\)/);
   assert.match(me, /openLink\(LINKS\.terms\)/);
-  assert.match(me, /router\.push\('\/account-delete'\)/);
+  assert.match(me, /openLink\(LINKS\.support\)/);
+  assert.match(me, /openLink\(LINKS\.supportMailto\)/);
+  assert.match(me, /value=\{LINKS\.supportEmail\}/, 'the address is visible on the row itself');
+  assert.match(me, /pushOnce\('\/account-delete'\)/);
   assert.match(me, /Linking\.openURL/);
+  assert.match(me, /value=\{APP_VERSION\}/);
+  // A failed open is told, not swallowed (no mail app, browser blocked).
+  assert.doesNotMatch(me, /openURL\([^)]*\)\.catch\(\(\) => \{\}\)/);
+  assert.match(me, /메일 앱을 열지 못했어요/);
+  assert.doesNotMatch(me, /준비 중/, 'no placeholder rows left');
   assert.ok(fs.existsSync(path.join(ROOT, 'app/account-delete.tsx')));
 });
 

@@ -9,21 +9,10 @@ import { Thumb } from '../../components/Thumb';
 import { AffiliateNote, EmptyState } from '../../components/ui';
 import { digits, observedLabel } from '../../lib/format';
 import { useLocalData } from '../../lib/local';
+import { savedAsProduct } from '../../lib/products';
 import { useLatestPrices } from '../../lib/queries';
-import { savedKey, savedStatus, type SavedItem } from '../../lib/savedModel';
+import { savedKey, savedStatus } from '../../lib/savedModel';
 import { mallColor, space, type as t, useTheme } from '../../lib/theme';
-import type { PricePoint, Product } from '../../lib/types';
-
-function asProduct(item: SavedItem, latest: PricePoint | null): Product {
-  return {
-    productId: item.productId, mall: item.mall, vendorItemId: item.vendorItemId,
-    title: item.title, mallLabel: item.mallLabel, image: item.image, link: item.link,
-    // Until the detail screen loads history, it shows the newest price we can date.
-    price: latest ? latest.price : item.savedPrice,
-    collectedAt: latest ? latest.date : item.savedAt,
-    listPrice: 0, savePct: 0, isRocket: null, trust: null, priceChange: null,
-  };
-}
 
 /**
  * Saved products, kept on this device. The newest recorded price per option comes from
@@ -47,7 +36,7 @@ export default function Saved() {
           const status = savedStatus(item, latest.data?.[savedKey(item)]);
           const price = status.latest ? status.latest.price : item.savedPrice;
           return (
-            <Pressable onPress={() => openProduct(asProduct(item, status.latest))} accessibilityRole="button" style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}>
+            <Pressable onPress={() => openProduct(savedAsProduct(item, status.latest))} accessibilityRole="button" style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}>
               <Thumb uri={item.image} title={item.title} size={76} />
               <View style={styles.body}>
                 <Price value={price} />

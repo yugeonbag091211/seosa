@@ -4,14 +4,14 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import { StyleSheet, View, useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TypefaceProvider } from '../components/AppText';
 import { FONT_ASSETS } from '../lib/fontAssets';
 import { LocalDataProvider } from '../lib/local';
 import { queryClient } from '../lib/queries';
 import { SessionProvider } from '../lib/session';
-import { palette } from '../lib/theme';
+import { layout, palette } from '../lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -43,22 +43,27 @@ export default function RootLayout() {
           <LocalDataProvider>
             <TypefaceProvider ready={fontsLoaded && !fontError}>
               <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-              <Stack
-                screenOptions={{
-                  headerShadowVisible: false,
-                  headerStyle: { backgroundColor: theme.bg },
-                  headerTintColor: theme.ink,
-                  headerTitleStyle: { fontFamily: fontsLoaded && !fontError ? 'Pretendard-SemiBold' : undefined, fontSize: 17 },
-                  headerBackButtonDisplayMode: 'minimal',
-                  contentStyle: { backgroundColor: theme.bg },
-                }}
-              >
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="product/[key]" options={{ title: '' }} />
-                <Stack.Screen name="concierge" options={{ presentation: 'modal', title: 'AI 컨시어지' }} />
-                <Stack.Screen name="login" options={{ presentation: 'modal', title: '로그인' }} />
-                <Stack.Screen name="account-delete" options={{ presentation: 'modal', title: '계정 삭제' }} />
-              </Stack>
+              {/* One centred column on wide screens (lib/theme layout.maxWidth); phones are narrower, so nothing changes there. */}
+              <View style={[styles.frame, { backgroundColor: theme.bg }]}>
+                <View style={styles.column}>
+                  <Stack
+                    screenOptions={{
+                      headerShadowVisible: false,
+                      headerStyle: { backgroundColor: theme.bg },
+                      headerTintColor: theme.ink,
+                      headerTitleStyle: { fontFamily: fontsLoaded && !fontError ? 'Pretendard-SemiBold' : undefined, fontSize: 17 },
+                      headerBackButtonDisplayMode: 'minimal',
+                      contentStyle: { backgroundColor: theme.bg },
+                    }}
+                  >
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="product/[key]" options={{ title: '' }} />
+                    <Stack.Screen name="concierge" options={{ presentation: 'modal', title: 'AI 컨시어지' }} />
+                    <Stack.Screen name="login" options={{ presentation: 'modal', title: '로그인' }} />
+                    <Stack.Screen name="account-delete" options={{ presentation: 'modal', title: '계정 삭제' }} />
+                  </Stack>
+                </View>
+              </View>
             </TypefaceProvider>
           </LocalDataProvider>
         </SessionProvider>
@@ -66,3 +71,8 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  frame: { flex: 1, alignItems: 'center' },
+  column: { flex: 1, width: '100%', maxWidth: layout.maxWidth },
+});
