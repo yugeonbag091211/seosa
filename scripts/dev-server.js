@@ -88,7 +88,8 @@ const REWRITES = {
   '/api/account/delete': { path: '/api/auth', query: { action: 'delete-account' } },
   // 정책 문서의 짧은 주소 — vercel.json 과 같은 rewrite (정적 파일).
   '/privacy':           { path: '/privacy.html', query: {} },
-  '/terms':             { path: '/terms.html',   query: {} }
+  '/terms':             { path: '/terms.html',   query: {} },
+  '/support':           { path: '/support.html', query: {} }
 };
 // vercel.json 의 "/p/:pid" 와 같은 규칙. 상품 페이지는 api/history.js 가 그린다.
 const PRODUCT_PAGE_RE = /^\/p\/([^/?#]+)\/?$/;

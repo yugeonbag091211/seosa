@@ -45,6 +45,10 @@
       "destination": "/public/terms.html"
     },
     {
+      "source": "/support",
+      "destination": "/public/support.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/public/$1"
     }

@@ -30,28 +30,30 @@ function check(ok, label, detail) {
 }
 const text = html => html.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<style[\s\S]*?<\/style>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
-console.log('\n정책 페이지 (/privacy · /terms)\n');
+console.log('\n정책·고객지원 페이지 (/privacy · /terms · /support)\n');
 
 const privacyHtml = read('public/privacy.html');
 const termsHtml = read('public/terms.html');
+const supportHtml = read('public/support.html');
 const privacy = text(privacyHtml);
 const terms = text(termsHtml);
+const support = text(supportHtml);
 
 // ── 1. 라우팅 ───────────────────────────────────────────────────────
 const vercel = JSON.parse(read('vercel.json'));
 const catchAll = vercel.rewrites.findIndex(r => r.source.startsWith('/((?!api/)'));
-for (const [src, dest, file] of [['/privacy', '/public/privacy.html', 'public/privacy.html'], ['/terms', '/public/terms.html', 'public/terms.html']]) {
+for (const [src, dest, file] of [['/privacy', '/public/privacy.html', 'public/privacy.html'], ['/terms', '/public/terms.html', 'public/terms.html'], ['/support', '/public/support.html', 'public/support.html']]) {
   const i = vercel.rewrites.findIndex(r => r.source === src);
   check(i >= 0 && vercel.rewrites[i].destination === dest, `vercel.json: ${src} → ${dest}`);
   check(i >= 0 && i < catchAll, `${src} rewrite 가 catch-all 앞에 있다`);
   check(fs.existsSync(path.join(ROOT, file)), `${file} 존재`);
 }
 const dev = read('scripts/dev-server.js');
-check(/'\/privacy':\s*\{\s*path:\s*'\/privacy\.html'/.test(dev) && /'\/terms':\s*\{\s*path:\s*'\/terms\.html'/.test(dev), '로컬 dev-server 도 같은 rewrite');
+check(/'\/privacy':\s*\{\s*path:\s*'\/privacy\.html'/.test(dev) && /'\/terms':\s*\{\s*path:\s*'\/terms\.html'/.test(dev) && /'\/support':\s*\{\s*path:\s*'\/support\.html'/.test(dev), '로컬 dev-server 도 같은 rewrite');
 check(/'\/api\/account\/delete':\s*\{\s*path:\s*'\/api\/auth'/.test(dev), '로컬 dev-server: /api/account/delete');
 
 // ── 2. 페이지 자체 ─────────────────────────────────────────────────
-for (const [name, html] of [['privacy', privacyHtml], ['terms', termsHtml]]) {
+for (const [name, html] of [['privacy', privacyHtml], ['terms', termsHtml], ['support', supportHtml]]) {
   check(!/<script/i.test(html), `${name}: 스크립트 없음 (분석 태그·외부 JS 없이 읽힌다)`);
   const external = [...html.matchAll(/<(?:link|img|iframe|source)[^>]+(?:href|src)="(https?:\/\/[^"]+)"/gi)].map(m => m[1])
     .filter(u => !/^https:\/\/seosa\.ai\.kr\//.test(u));
@@ -60,7 +62,10 @@ for (const [name, html] of [['privacy', privacyHtml], ['terms', termsHtml]]) {
   check(/285-34-01658/.test(html), `${name}: 사업자 정보가 index.html 과 같다`);
 }
 check(read('public/index.html').includes('285-34-01658'), 'index.html 사업자등록번호와 대조 가능');
-check(privacyHtml.includes('href="/terms"') && termsHtml.includes('href="/privacy"'), '두 문서가 서로 연결된다');
+check(privacyHtml.includes('href="/terms"') && termsHtml.includes('href="/privacy"'), '개인정보처리방침·이용약관이 서로 연결된다');
+check(privacyHtml.includes('href="/support"') && termsHtml.includes('href="/support"') && supportHtml.includes('href="/privacy"') && supportHtml.includes('href="/terms"'), '정책 문서와 고객지원 페이지가 서로 연결된다');
+check(/support@seosa\.ai\.kr/.test(privacy) && /support@seosa\.ai\.kr/.test(terms) && /support@seosa\.ai\.kr/.test(support), '공식 고객지원 이메일이 세 페이지에 동일하다');
+check(/고객지원 문의/.test(privacy) && /이메일 주소/.test(privacy) && /문의 내용/.test(privacy), '고객지원 문의의 개인정보 처리가 방침에 기재됨');
 
 // ── 3. 코드에 있는 처리 → 문서에 있다 ─────────────────────────────────
 const llm = read('api/_llm.js');
