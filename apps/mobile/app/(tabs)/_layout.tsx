@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { Icon, type IconName } from '../../components/Icon';
-import { useFontsReady } from '../../components/AppText';
+import { AppText } from '../../components/AppText';
 import { useLocalData } from '../../lib/local';
 import { useTheme } from '../../lib/theme';
 
@@ -20,7 +20,6 @@ const TABS: { name: string; title: string; icon: IconName; iconOn?: IconName }[]
 
 export default function TabLayout() {
   const theme = useTheme();
-  const fontsReady = useFontsReady();
   const { saved } = useLocalData();
   return (
     <Tabs
@@ -29,7 +28,16 @@ export default function TabLayout() {
         tabBarActiveTintColor: theme.ink,
         tabBarInactiveTintColor: theme.faint,
         tabBarStyle: { backgroundColor: theme.bg, borderTopColor: theme.line, borderTopWidth: StyleSheet.hairlineWidth, elevation: 0 },
-        tabBarLabelStyle: { fontSize: 10.5, fontFamily: fontsReady ? 'Pretendard-Medium' : undefined, fontWeight: fontsReady ? undefined : '500' },
+        /*
+         * The bar is a fixed 49 dp. On Android the label scales with the system text size and at
+         * 200 % it no longer fits under the icon, so it grows only to 130 %. iOS keeps its own rule:
+         * labels stay put and a long press shows the Large Content Viewer (React Navigation's default).
+         */
+        tabBarLabel: ({ color, children }) => (
+          <AppText allowFontScaling={Platform.OS !== 'ios'} maxFontSizeMultiplier={1.3} numberOfLines={1} style={{ fontSize: 10.5, lineHeight: 13, fontWeight: '500', color, textAlign: 'center' }}>
+            {children}
+          </AppText>
+        ),
         sceneStyle: { backgroundColor: theme.bg },
       }}
     >

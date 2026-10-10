@@ -70,7 +70,7 @@ export default function Home() {
         </ScrollView>
       ) : null}
 
-      <View style={styles.section}>
+      <View style={styles.firstSection}>
         <SectionHeader
           title="오늘 가격 하락"
           sub="직전 기록보다 실제로 내려간 상품"
@@ -132,8 +132,10 @@ export default function Home() {
 const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.gutter, height: 44 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: space.gutter, marginTop: space.md, height: 48, borderRadius: radius.lg, paddingHorizontal: 14 },
-  hero: { marginTop: space.lg },
-  chips: { gap: 8, paddingHorizontal: space.gutter, paddingTop: space.lg },
+  hero: { marginTop: space.md },
+  chips: { gap: 8, paddingHorizontal: space.gutter, paddingTop: space.md },
   section: { marginTop: space.section },
+  // The first list sits closer to the hero so its prices start inside the first screen.
+  firstSection: { marginTop: space.xxl },
   ai: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginHorizontal: space.gutter, marginTop: space.xxl, padding: space.lg, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth * 2 },
 });

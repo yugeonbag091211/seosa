@@ -126,20 +126,18 @@ export const VETERAN_PLEDGE = {
 export const MONTHLY_CARDS = 8;
 export const MONTHLY_CHIPS = 8;
 
-/** Month (1–12) on the KST calendar, like the server's api/_kst.kstMonth. 0 when the instant is unreadable. */
-export function kstMonthOf(now: Date | number = Date.now()): number {
-  const ymd = kstDate(now);
-  return ymd ? Number(ymd.slice(5, 7)) : 0;
-}
-
 /**
- * «10월 추천 상품». The server's month names the month these products were picked for, so it wins;
- * the device's KST month fills in only while loading or when the payload had none. (Right after
- * midnight on the 1st the server can still be serving last month's row — then the title says so.)
+ * «10월 추천 상품» — always the month the row itself says, never the device's.
+ *
+ * The server looks the row up by the current KST month (api/init.js, api/_kst.kstMonth), but its
+ * response is edge-cached (s-maxage 300 + stale-while-revalidate 1200) and the app keeps it in
+ * React Query, so for a while after midnight on the 1st a September row can still arrive in
+ * October. Labelling it with the clock would sell September's picks as «10월 추천». The web does
+ * the same: Monthly.show prints data.month. Without a month (loading, error, a row missing it) the
+ * heading is the web's own neutral «이달의 추천».
  */
-export function monthlyHeading(monthly: MonthlyCuration | null | undefined, now: Date | number = Date.now()): string {
-  const m = monthly?.month || kstMonthOf(now);
-  return m ? `${m}월 추천 상품` : '이달의 추천 상품';
+export function monthlyHeading(monthly: MonthlyCuration | null | undefined): string {
+  return monthly?.month ? `${monthly.month}월 추천 상품` : '이달의 추천 상품';
 }
 
 export type MonthlyState = 'hidden' | 'loading' | 'error' | 'empty' | 'cards';
@@ -187,23 +185,135 @@ export function recordStamp(lists: readonly (readonly Product[] | undefined | nu
 
 /** From this column width the copy and the drawing sit side by side (Android tablets, unfolded foldables). */
 export const HERO_WIDE_MIN = 600;
+/** Side padding of the band (lib/theme space.gutter). */
+export const HERO_GUTTER = 20;
+/** On phones the dots sit at the bottom left of the band, beside the drawing; this much stays free for them. */
+export const HERO_DOTS_ZONE = 104;
 
-export type HeroMetrics = { wide: boolean; titleSize: number; titleLine: number; artHeight: number };
+export type HeroMetrics = {
+  wide: boolean;
+  titleSize: number;
+  titleLine: number;
+  /** 0 when the drawing is left out (phones at very large text sizes). */
+  artHeight: number;
+  showArt: boolean;
+  /** Widest a drawing may be on a phone: the row minus the dots. */
+  artMaxWidth: number;
+};
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+
+/** The system text-size multiplier, sanitised (useWindowDimensions().fontScale; 1 when unknown). */
+export function safeFontScale(fontScale: number | undefined): number {
+  return Number.isFinite(fontScale) && (fontScale as number) > 0 ? clamp(fontScale as number, 0.8, 3.5) : 1;
+}
 
 /**
- * Sizes for a column `width` dp wide. Phones stack copy over the drawing with the headline scaled
- * to the width, so the longest line («가격을 아끼는 일에서,») stays on one line from 320 dp up;
- * wide columns put the drawing beside the copy at a fixed size.
+ * Sizes for a band `width` dp wide at the system text size `fontScale`.
+ *
+ * Wide columns: copy beside a 250 dp drawing (the web's desktop hero).
+ *
+ * Phones (2026-10-10 polish): the band was ~476 dp and the first product sat below the fold on
+ * every phone. Now the headline scales with the width (the longest line, «가격을 아끼는 일에서,»,
+ * stays on one line from 320 dp at the default text size), and the drawing shrinks to an 84 dp
+ * vignette at the bottom right with the dots beside it instead of in a row of their own.
+ * The words, the button, the disclosure and the stamp all stay.
+ *
+ * Large text: the words get the room. The drawing is decoration (hidden from screen readers), so
+ * it stays at the compact size through 150 % and is left out from 160 %; the text itself is never
+ * shrunk to fit. Keeping the example card at 84 dp also preserves its internal chart and answer.
  */
-export function heroMetrics(width: number): HeroMetrics {
+export function heroMetrics(width: number, fontScale = 1): HeroMetrics {
   const w = Number.isFinite(width) && width > 0 ? width : 375;
-  const wide = w >= HERO_WIDE_MIN;
-  const titleSize = wide ? 36 : Math.min(32, Math.max(25, Math.round(w * 0.08)));
-  return { wide, titleSize, titleLine: Math.round(titleSize * 1.22), artHeight: wide ? 250 : 156 };
+  const fs = safeFontScale(fontScale);
+  if (w >= HERO_WIDE_MIN) {
+    return { wide: true, titleSize: 36, titleLine: 44, artHeight: 250, showArt: true, artMaxWidth: 420 };
+  }
+  const titleSize = clamp(Math.round(w * 0.074), 24, 30);
+  const artHeight = fs >= 1.6 ? 0 : 84;
+  return {
+    wide: false,
+    titleSize,
+    // React Native scales both fontSize and explicit lineHeight by the same accessibility multiplier.
+    titleLine: Math.round(titleSize * 1.18),
+    artHeight,
+    showArt: artHeight > 0,
+    artMaxWidth: Math.max(0, w - 2 * HERO_GUTTER - HERO_DOTS_ZONE),
+  };
+}
+
+/**
+ * The box a drawing gets on a phone. The shelf and the memorial keep their aspect ratio
+ * (viewBox 388×322 and 370×300); the two example screens need ~200 dp to stay legible and are
+ * capped by the space the dots leave.
+ */
+export function heroArtBox(kind: HeroArtKind, m: HeroMetrics): { width: number; height: number } {
+  if (!m.showArt) return { width: 0, height: 0 };
+  const natural = kind === 'shelf' ? m.artHeight * (388 / 322)
+    : kind === 'memorial' ? m.artHeight * (370 / 300)
+      : 220;
+  return { width: Math.round(Math.min(natural, m.artMaxWidth)), height: m.artHeight };
 }
 
 /** The page a paging scroll view rests on. Never out of range, whatever the offset. */
 export function pageIndex(offsetX: number, pageWidth: number, count: number): number {
   if (!(pageWidth > 0) || !(count > 0) || !Number.isFinite(offsetX)) return 0;
   return Math.min(count - 1, Math.max(0, Math.round(offsetX / pageWidth)));
+}
+
+/* ── Carousel state ─────────────────────────────────────────────────── */
+
+/**
+ * Which dot is lit. `target` is set while a dot tap's animated scroll is under way: the pages the
+ * scroll passes on its way (1 → 2 → 3 → 4) must not light up, so scroll events are ignored until
+ * the scroller arrives, the user grabs it, or it comes to rest. A finger swipe has no target and
+ * follows the visible page as before.
+ */
+export type PagerState = { index: number; target: number | null };
+export type PagerEvent =
+  | { type: 'dot'; index: number }
+  | { type: 'scroll'; x: number; width: number }
+  | { type: 'drag' }
+  | { type: 'settle'; x: number; width: number };
+
+export const PAGER_START: PagerState = { index: 0, target: null };
+
+export function pagerStep(state: PagerState, event: PagerEvent, count: number): PagerState {
+  switch (event.type) {
+    case 'dot': {
+      const i = clamp(Math.round(event.index), 0, Math.max(0, count - 1));
+      // The dot already lit and at rest: nothing will scroll, so nothing to wait for.
+      if (i === state.index && state.target === null) return state;
+      return { index: i, target: i };
+    }
+    case 'scroll': {
+      const page = pageIndex(event.x, event.width, count);
+      if (state.target !== null) {
+        const arrived = Math.abs(event.x - state.target * event.width) < 2;
+        return arrived ? { index: state.target, target: null } : state;
+      }
+      return page === state.index ? state : { index: page, target: null };
+    }
+    case 'drag':
+      // The finger takes over from the tap; the next scroll event decides.
+      return state.target === null ? state : { index: state.index, target: null };
+    case 'settle': {
+      const page = pageIndex(event.x, event.width, count);
+      // A cancelled older animation can report its end while a newer dot target is in flight.
+      // Keep the newer selection pinned unless this end event landed on that actual target.
+      if (state.target !== null) return page === state.target ? { index: state.target, target: null } : state;
+      // A finger swipe has no target: the page under the band is the answer.
+      return page === state.index && state.target === null ? state : { index: page, target: null };
+    }
+  }
+}
+
+/* ── Product cards ──────────────────────────────────────────────────── */
+
+/**
+ * Width of a card in a horizontal rail. It grows with the text size (up to 135 %) so a seven-digit
+ * price still fits on one line at large text instead of breaking mid-number.
+ */
+export function tileWidth(fontScale = 1): number {
+  return Math.round(148 * clamp(safeFontScale(fontScale), 1, 1.35));
 }

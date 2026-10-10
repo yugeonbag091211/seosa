@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { createApi } from '../lib/api.ts';
 import { AFFILIATE_NOTE } from '../lib/affiliate.ts';
 import {
-  HERO_DEMO, HERO_SLIDES, HERO_WIDE_MIN, MONTHLY_CARDS, VETERAN_PLEDGE,
-  heroMetrics, kstMonthOf, monthlyHeading, monthlyState, monthlySubline, pageIndex, recordStamp,
+  HERO_DEMO, HERO_DOTS_ZONE, HERO_GUTTER, HERO_SLIDES, HERO_WIDE_MIN, MONTHLY_CARDS, PAGER_START, VETERAN_PLEDGE,
+  heroArtBox, heroMetrics, monthlyHeading, monthlyState, monthlySubline, pageIndex, pagerStep, recordStamp, safeFontScale, tileWidth,
 } from '../lib/home.ts';
 import { parseMonthly } from '../lib/parse.ts';
 
@@ -36,10 +36,10 @@ const MONTHLY = {
   products: [product(), product({ productId: '2', title: '가습기 대용량', lprice: 39000 })],
 };
 
-function fakeApi(body) {
+function fakeApi(body, status = 200) {
   return createApi({
     baseUrl: 'https://seosa.ai.kr',
-    fetchImpl: async () => ({ status: 200, headers: { get: () => null }, json: async () => body }),
+    fetchImpl: async () => ({ status, headers: { get: () => null }, json: async () => body }),
   });
 }
 
@@ -85,22 +85,57 @@ test('api.home: monthly rides along; a missing or broken monthly leaves the rest
   }
 });
 
-/* ── «N월 추천 상품» ───────────────────────────────────────────────── */
+test('monthly API outage and timeout lead to the retry state without live requests', async () => {
+  await assert.rejects(fakeApi({ error: 'mock outage' }, 503).home(), { kind: 'unavailable' });
+  assert.equal(monthlyState(undefined, false, true), 'error');
 
-test('monthly heading: the server month wins; the device KST month fills in', () => {
-  const oct = Date.parse('2026-10-10T03:00:00Z');
-  assert.equal(monthlyHeading(parseMonthly(MONTHLY), oct), '10월 추천 상품');
-  assert.equal(monthlyHeading({ ...parseMonthly(MONTHLY), month: 9 }, oct), '9월 추천 상품', 'last month’s row says last month');
-  assert.equal(monthlyHeading(null, oct), '10월 추천 상품');
-  assert.equal(monthlyHeading({ ...parseMonthly(MONTHLY), month: 0 }, oct), '10월 추천 상품');
-  assert.equal(monthlyHeading(null, NaN), '이달의 추천 상품');
+  const originalSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (callback, _delay, ...args) => originalSetTimeout(callback, 1, ...args);
+  try {
+    const hanging = createApi({
+      baseUrl: 'https://seosa.ai.kr',
+      fetchImpl: (_url, init) => new Promise((_, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('mock timeout')), { once: true });
+      }),
+    });
+    await assert.rejects(hanging.home(), { kind: 'timeout' });
+    assert.equal(monthlyState(undefined, false, true), 'error');
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
 });
 
-test('KST month boundaries (the server uses KST too)', () => {
-  assert.equal(kstMonthOf(Date.parse('2026-09-30T14:59:59Z')), 9);
-  assert.equal(kstMonthOf(Date.parse('2026-09-30T15:00:00Z')), 10, 'midnight KST on the 1st');
-  assert.equal(kstMonthOf(Date.parse('2026-12-31T15:00:00Z')), 1, 'year wraps');
-  assert.equal(kstMonthOf(NaN), 0);
+test('monthly parsing bounds long text and oversized product payloads', () => {
+  const many = Array.from({ length: 24 }, (_, i) => product({ productId: `monthly-${i}`, lprice: 1000 + i }));
+  const m = parseMonthly({
+    month: 'not-a-month', title: '가'.repeat(70), subtitle: '나'.repeat(130),
+    keywords: Array.from({ length: 40 }, (_, i) => `키워드${i}`), products: many,
+  });
+  assert.equal(m.month, 0, 'malformed month stays unknown');
+  assert.equal([...m.title].length, 60);
+  assert.equal(m.title.at(-1), '…');
+  assert.equal([...m.subtitle].length, 120);
+  assert.equal(m.subtitle.at(-1), '…');
+  assert.equal(m.keywords.length, 12);
+  assert.equal(m.products.length, 8, 'an oversized response cannot make an unbounded rail');
+  assert.equal(monthlyState(m, false, false), 'cards');
+});
+
+test('monthly product-only rows are usable; zero products keep the web empty state', () => {
+  const onlyProducts = parseMonthly({ month: 10, products: [product()] });
+  assert.equal(onlyProducts.products.length, 1);
+  assert.equal(monthlyState(onlyProducts, false, false), 'cards');
+  const empty = parseMonthly({ month: 10, title: '이번 달 추천', keywords: [], products: [] });
+  assert.equal(monthlyState(empty, false, false), 'empty');
+});
+
+/* ── «N월 추천 상품» ───────────────────────────────────────────────── */
+
+test('monthly heading follows the curation row and never relabels a stale month', () => {
+  assert.equal(monthlyHeading(parseMonthly(MONTHLY)), '10월 추천 상품');
+  assert.equal(monthlyHeading({ ...parseMonthly(MONTHLY), month: 9 }), '9월 추천 상품', 'October does not relabel a cached September row');
+  assert.equal(monthlyHeading(null), '이달의 추천 상품');
+  assert.equal(monthlyHeading({ ...parseMonthly(MONTHLY), month: 0 }), '이달의 추천 상품');
 });
 
 test('monthly subline joins whatever banner text exists', () => {
@@ -135,16 +170,44 @@ test('record stamp: newest collection date among the products, on the KST calend
 
 /* ── Hero layout ───────────────────────────────────────────────────── */
 
-test('hero metrics: stacked on phones, side by side from 600 dp; headline scales with width', () => {
+test('hero metrics: compact on phones, side by side from 600 dp; headline scales with width', () => {
   assert.equal(heroMetrics(320).wide, false);
   assert.equal(heroMetrics(390).wide, false);
   assert.equal(heroMetrics(HERO_WIDE_MIN - 1).wide, false);
   assert.equal(heroMetrics(HERO_WIDE_MIN).wide, true);
   assert.equal(heroMetrics(720).wide, true);
-  assert.equal(heroMetrics(390).titleSize, 31);
-  assert.equal(heroMetrics(320).titleSize, 26);
+  assert.equal(heroMetrics(390).titleSize, 29);
+  assert.equal(heroMetrics(320).titleSize, 24);
   assert.ok(heroMetrics(599).titleSize <= 32, 'capped on large phones');
   for (const bad of [0, -1, NaN, Infinity]) assert.equal(heroMetrics(bad).wide, false);
+});
+
+test('hero metrics: text uses a proportionate line box and hides art only from 160%', () => {
+  for (const scale of [1, 1.3, 1.5]) {
+    const m = heroMetrics(390, scale);
+    assert.equal(m.showArt, true, `art remains at ${scale}`);
+    assert.equal(m.artHeight, 84);
+    assert.equal(m.titleLine, Math.round(m.titleSize * 1.18), 'native Text scales the line box with the font');
+  }
+  assert.equal(heroMetrics(390, 1.6).showArt, false);
+  assert.equal(heroMetrics(800, 1.5).titleLine, 44);
+  assert.equal(safeFontScale(undefined), 1);
+  assert.equal(safeFontScale(NaN), 1);
+  assert.equal(safeFontScale(5), 3.5);
+  assert.equal(tileWidth(1), 148);
+  assert.equal(tileWidth(1.3), 192);
+  assert.equal(tileWidth(1.5), 200);
+});
+
+test('compact hero art fits beside the dot hit targets at common phone widths', () => {
+  for (const width of [320, 375, 390, 430]) {
+    const metrics = heroMetrics(width);
+    for (const kind of ['shelf', 'ai', 'price', 'memorial']) {
+      const box = heroArtBox(kind, metrics);
+      assert.equal(box.height, 84, `${kind} at ${width}`);
+      assert.ok(box.width > 0 && box.width <= width - 2 * HERO_GUTTER - HERO_DOTS_ZONE, `${kind} width at ${width}`);
+    }
+  }
 });
 
 test('hero metrics: the longest headline line fits one line at every phone width', () => {
@@ -169,6 +232,44 @@ test('page index: rounds to the nearest page and never leaves the range', () => 
   assert.equal(pageIndex(100, 0, 4), 0);
   assert.equal(pageIndex(NaN, 390, 4), 0);
   assert.equal(pageIndex(100, 390, 0), 0);
+});
+
+test('carousel dot jumps pin the target through intermediate scroll events in either direction', () => {
+  const width = 390;
+  let state = pagerStep(PAGER_START, { type: 'dot', index: 3 }, 4);
+  assert.deepEqual(state, { index: 3, target: 3 }, '0 → 3 selects the destination immediately');
+  for (const page of [0.4, 1.4, 2.4]) {
+    state = pagerStep(state, { type: 'scroll', x: width * page, width }, 4);
+    assert.deepEqual(state, { index: 3, target: 3 }, 'intermediate pages do not flicker the indicator');
+  }
+  state = pagerStep(state, { type: 'settle', x: width * 3, width }, 4);
+  assert.deepEqual(state, { index: 3, target: null });
+
+  state = pagerStep(state, { type: 'dot', index: 0 }, 4);
+  state = pagerStep(state, { type: 'settle', x: width * 2.4, width }, 4);
+  assert.deepEqual(state, { index: 0, target: 0 }, '3 → 0 stays pinned');
+  state = pagerStep(state, { type: 'settle', x: 0, width }, 4);
+  assert.deepEqual(state, { index: 0, target: null });
+});
+
+test('carousel rapid dot taps replace the pending target; swipes follow the visible page', () => {
+  const width = 390;
+  let state = pagerStep(PAGER_START, { type: 'dot', index: 3 }, 4);
+  state = pagerStep(state, { type: 'dot', index: 2 }, 4);
+  state = pagerStep(state, { type: 'dot', index: 1 }, 4);
+  state = pagerStep(state, { type: 'settle', x: width * 2.4, width }, 4);
+  assert.deepEqual(state, { index: 1, target: 1 }, 'an older animation ending cannot release the newer target');
+  state = pagerStep(state, { type: 'scroll', x: width * 2.4, width }, 4);
+  assert.deepEqual(state, { index: 1, target: 1 }, 'latest tap wins while the animation crosses older pages');
+  state = pagerStep(state, { type: 'settle', x: width, width }, 4);
+  assert.deepEqual(state, { index: 1, target: null });
+
+  state = pagerStep(PAGER_START, { type: 'scroll', x: width * 1.6, width }, 4);
+  assert.deepEqual(state, { index: 2, target: null }, 'a normal swipe follows the nearest visible page');
+  state = pagerStep(state, { type: 'drag' }, 4);
+  assert.deepEqual(state, { index: 2, target: null });
+  state = pagerStep(state, { type: 'settle', x: width * 2, width }, 4);
+  assert.deepEqual(state, { index: 2, target: null });
 });
 
 /* ── Hero content ──────────────────────────────────────────────────── */
@@ -239,6 +340,9 @@ test('hero buttons: AI → concierge, timing → 가격하락 tab, pledge → it
   assert.match(hero, /case 'drops': router\.navigate\('\/drops'\)/);
   assert.match(hero, /case 'pledge': pushOnce\('\/pledge'\)/);
   assert.match(hero, /onPress=\{\(\) => runHeroAction\(slide\.cta\.action\)\}/);
+  assert.match(hero, /onMomentumScrollEnd=/);
+  assert.match(hero, /onScrollBeginDrag=/);
+  assert.doesNotMatch(hero, /setTimeout|RELEASE_MS/, 'dot selection is released by scroll events, not a timer');
   for (const f of ['components/HeroCarousel.tsx', 'components/HeroArt.tsx', 'components/MonthlyPicks.tsx', 'components/ProductTile.tsx', 'app/pledge.tsx']) {
     const s = src(f);
     assert.doesNotMatch(s, /router\.push\(/, `${f} pushes through pushOnce`);
@@ -260,6 +364,7 @@ test('monthly cards open the product screen with the option key (same path as li
   const picks = src('components/MonthlyPicks.tsx');
   assert.match(picks, /onPress=\{\(\) => onKeyword\(k\)\}/);
   assert.match(picks, /monthlyState\(monthly, pending, !!error\)/);
+  assert.match(src('components/Thumb.tsx'), /onError=\{\(\) => setFailed\(true\)\}/, 'missing or broken image falls back to the local thumb');
 });
 
 test('home order follows the web: search → hero → keywords → drops → selection → monthly → disclosure', () => {

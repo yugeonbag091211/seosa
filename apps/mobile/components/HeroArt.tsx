@@ -13,18 +13,27 @@ import { AppText } from './AppText';
  *
  * Static shapes only (no filters, no animation): the web's blurred floor shadows become soft
  * radial gradients, which draw in one pass on every platform.
+ *
+ * `compact` (phones): the drawing is a small vignette in a fixed box at the bottom right of the
+ * slide (lib/home.ts heroArtBox). The example screens switch to a one-card layout that stays
+ * legible in ~200 dp. Their words are part of the picture — fixed size, hidden from screen
+ * readers — so they do not grow with the system text size; the slide's real text does.
  */
-export const HeroArt = memo(function HeroArt({ kind, height }: { kind: HeroArtKind; height: number }) {
+export const HeroArt = memo(function HeroArt({ kind, height, width, compact = false }: { kind: HeroArtKind; height: number; width?: number; compact?: boolean }) {
   const theme = useTheme();
+  const align = compact ? 'xMaxYMax meet' : 'xMidYMid meet';
   return (
-    <View style={[styles.frame, { height }]} aria-hidden>
-      {kind === 'shelf' ? <Shelf height={height} /> : null}
-      {kind === 'ai' ? <AiDemo theme={theme} /> : null}
-      {kind === 'price' ? <PriceDemo theme={theme} height={height} /> : null}
-      {kind === 'memorial' ? <Memorial height={height} /> : null}
+    <View style={[styles.frame, compact ? { width, height, alignItems: 'flex-end', justifyContent: 'flex-end' } : { height }]} aria-hidden>
+      {kind === 'shelf' ? <Shelf height={height} align={align} /> : null}
+      {kind === 'ai' ? (compact ? <AiDemoCompact theme={theme} /> : <AiDemo theme={theme} />) : null}
+      {kind === 'price' ? <PriceDemo theme={theme} height={height} compact={compact} /> : null}
+      {kind === 'memorial' ? <Memorial height={height} align={align} /> : null}
     </View>
   );
 });
+
+/** Words inside a drawing: drawn at a fixed size, like text in an image. */
+const PICTURE_TEXT = { maxFontSizeMultiplier: 1 } as const;
 
 /* ── 1 · 책장 ──────────────────────────────────────────────────────── */
 
@@ -73,9 +82,9 @@ function Spine({ b }: { b: Book }) {
   );
 }
 
-function Shelf({ height }: { height: number }) {
+function Shelf({ height, align }: { height: number; align: string }) {
   return (
-    <Svg width="100%" height={height} viewBox="36 8 388 322" preserveAspectRatio="xMidYMid meet">
+    <Svg width="100%" height={height} viewBox="36 8 388 322" preserveAspectRatio={align}>
       <Defs>
         <LinearGradient id="bsCurve" x1="0" y1="0" x2="1" y2="0">
           <Stop offset="0" stopColor="#000" stopOpacity={0.34} />
@@ -112,11 +121,11 @@ function Shelf({ height }: { height: number }) {
 
 /* ── 2 · AI 쇼핑 (예시 화면) ─────────────────────────────────────────── */
 
-function DemoTag({ theme }: { theme: Theme }) {
+function DemoTag({ theme, small }: { theme: Theme; small?: boolean }) {
   return (
-    <View style={[styles.demoTag, { borderColor: theme.line }]}>
+    <View style={[styles.demoTag, small && styles.demoTagSmall, { borderColor: theme.line }]}>
       <View style={[styles.demoDot, { backgroundColor: theme.line2 }]} />
-      <AppText tone="faint" style={styles.demoTagText}>{HERO_DEMO.tag}</AppText>
+      <AppText {...PICTURE_TEXT} tone="faint" style={[styles.demoTagText, small && styles.demoTagTextSmall]}>{HERO_DEMO.tag}</AppText>
     </View>
   );
 }
@@ -126,22 +135,43 @@ function AiDemo({ theme }: { theme: Theme }) {
   return (
     <View style={styles.aiStage}>
       <View style={[styles.card, styles.ask, card]}>
-        <AppText style={[t.footnote, { lineHeight: 19 }]}>{HERO_DEMO.ask.join('\n')}</AppText>
+        <AppText {...PICTURE_TEXT} style={[t.footnote, { lineHeight: 19 }]}>{HERO_DEMO.ask.join('\n')}</AppText>
       </View>
       <View style={[styles.card, styles.answer, card]}>
         <DemoTag theme={theme} />
         <View style={styles.answerRow}>
           <View style={[styles.rank, { backgroundColor: theme.ink }]}>
-            <AppText style={[styles.rankText, { color: theme.bg }]}>{HERO_DEMO.rank}</AppText>
+            <AppText {...PICTURE_TEXT} style={[styles.rankText, { color: theme.bg }]}>{HERO_DEMO.rank}</AppText>
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <AppText style={[t.footnote, { fontWeight: '600' }]} numberOfLines={1}>{HERO_DEMO.answerTitle}</AppText>
+            <AppText {...PICTURE_TEXT} style={[t.footnote, { fontWeight: '600' }]} numberOfLines={1}>{HERO_DEMO.answerTitle}</AppText>
             <View style={styles.answerMeta}>
-              <AppText style={[t.callout, { fontWeight: '700' }]}>{HERO_DEMO.answerPrice}</AppText>
-              <AppText style={[t.caption, { color: theme.down, fontWeight: '600' }]}>{HERO_DEMO.answerFit}</AppText>
+              <AppText {...PICTURE_TEXT} style={[t.callout, { fontWeight: '700' }]}>{HERO_DEMO.answerPrice}</AppText>
+              <AppText {...PICTURE_TEXT} style={[t.caption, { color: theme.down, fontWeight: '600' }]}>{HERO_DEMO.answerFit}</AppText>
             </View>
           </View>
         </View>
+      </View>
+    </View>
+  );
+}
+
+/** Phone vignette: question and answer on one card, 84 dp tall. */
+function AiDemoCompact({ theme }: { theme: Theme }) {
+  return (
+      <View style={[styles.card, styles.miniCard, { backgroundColor: theme.bg, borderColor: theme.line2 }]}>
+      <DemoTag theme={theme} small />
+      <View style={[styles.miniAsk, { backgroundColor: theme.surface }]}>
+        <AppText {...PICTURE_TEXT} style={styles.miniAskText} numberOfLines={2}>{HERO_DEMO.ask.join('\n')}</AppText>
+      </View>
+      <View style={styles.miniAnswer}>
+        <View style={styles.miniAnswerMain}>
+          <View style={[styles.rank, styles.miniRank, { backgroundColor: theme.ink }]}>
+            <AppText {...PICTURE_TEXT} style={[styles.miniRankText, { color: theme.bg }]}>{HERO_DEMO.rank}</AppText>
+          </View>
+          <AppText {...PICTURE_TEXT} style={styles.miniPrice} numberOfLines={1}>{HERO_DEMO.answerPrice}</AppText>
+        </View>
+        <AppText {...PICTURE_TEXT} style={[styles.miniFit, { color: theme.down }]} numberOfLines={1}>{HERO_DEMO.answerFit}</AppText>
       </View>
     </View>
   );
@@ -152,27 +182,27 @@ function AiDemo({ theme }: { theme: Theme }) {
 /** The web's example curve (.hc-chart): a fall that settles. Not any product's history. */
 const DEMO_PATH = 'M4 26 L14 28 L24 25 L34 30 L44 29 L54 32 L64 27 L74 28 L84 24 L94 29 L104 39 L114 36 L124 52 L134 50 L144 57 L154 55 L164 62 L174 60 L184 63 L194 58 L204 58 L214 60 L224 57 L234 59 L244 60 L254 58 L264 60 L276 59';
 
-function PriceDemo({ theme, height }: { theme: Theme; height: number }) {
-  // The card's tag, verdict and padding take ~90 dp; the curve gets the rest of the frame.
-  const chartHeight = Math.max(52, Math.min(96, height - 92));
+function PriceDemo({ theme, height, compact }: { theme: Theme; height: number; compact: boolean }) {
+  // The phone card has a shallow but still visible chart, followed by its explicit example verdict.
+  const chartHeight = compact ? Math.max(18, Math.min(24, height - 60)) : Math.max(52, Math.min(96, height - 92));
   const dark = theme === palette.dark;
   const badge = dark
     ? { color: '#C2D2BD', backgroundColor: '#344539', borderColor: '#667761' }
     : { color: '#46624D', backgroundColor: '#E2E8DD', borderColor: '#B7C5B4' };
   return (
-    <View style={[styles.card, styles.priceCard, { backgroundColor: theme.bg, borderColor: theme.line2, borderBottomColor: theme.line2 }]}>
-      <DemoTag theme={theme} />
-      <Svg width="100%" height={chartHeight} viewBox="0 0 280 96" preserveAspectRatio="none" style={{ marginTop: 6 }}>
+    <View style={[styles.card, compact ? styles.priceMiniCard : styles.priceCard, { backgroundColor: theme.bg, borderColor: theme.line2, borderBottomColor: theme.line2 }]}>
+      <DemoTag theme={theme} small={compact} />
+      <Svg width="100%" height={chartHeight} viewBox="0 0 280 96" preserveAspectRatio="none" style={{ marginTop: compact ? 2 : 6 }}>
         <Line x1={0} y1={88} x2={280} y2={88} stroke={theme.line} strokeWidth={1} />
         <Path d={DEMO_PATH} fill="none" stroke={theme.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         <Circle cx={276} cy={59} r={7} fill={theme.downBg} />
         <Circle cx={276} cy={59} r={3.4} fill={theme.down} />
       </Svg>
-      <View style={styles.verdict}>
-        <View style={[styles.badge, { backgroundColor: badge.backgroundColor, borderColor: badge.borderColor }]}>
-          <AppText style={[styles.badgeText, { color: badge.color }]}>{HERO_DEMO.verdictBadge}</AppText>
+      <View style={[styles.verdict, compact && { marginTop: 2, gap: 4 }]}>
+        <View style={[styles.badge, compact && styles.miniBadge, { backgroundColor: badge.backgroundColor, borderColor: badge.borderColor }]}>
+          <AppText {...PICTURE_TEXT} style={[styles.badgeText, compact && styles.miniBadgeText, { color: badge.color }]}>{HERO_DEMO.verdictBadge}</AppText>
         </View>
-        <AppText tone="soft" style={t.footnote}>{HERO_DEMO.verdictText}</AppText>
+        <AppText {...PICTURE_TEXT} tone="soft" style={compact ? styles.miniVerdictText : t.footnote}>{HERO_DEMO.verdictText}</AppText>
       </View>
     </View>
   );
@@ -184,9 +214,9 @@ function PriceDemo({ theme, height }: { theme: Theme; height: number }) {
  * The web's memorial still life (.hc-memorial), unchanged: a stone plaque, a woven ribbon, a
  * bronze medal and laurel. No battle scene, weapon or flag.
  */
-function Memorial({ height }: { height: number }) {
+function Memorial({ height, align }: { height: number; align: string }) {
   return (
-    <Svg width="100%" height={height} viewBox="0 0 370 300" preserveAspectRatio="xMidYMid meet">
+    <Svg width="100%" height={height} viewBox="0 0 370 300" preserveAspectRatio={align}>
       <Defs>
         <LinearGradient id="hcBronze" x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0" stopColor="#d6c7a6" /><Stop offset="0.35" stopColor="#b09b70" /><Stop offset="0.72" stopColor="#8b7754" /><Stop offset="1" stopColor="#65553c" />
@@ -250,11 +280,7 @@ function Memorial({ height }: { height: number }) {
 }
 
 const shadow = {
-  shadowColor: '#242721',
-  shadowOpacity: 0.12,
-  shadowRadius: 14,
-  shadowOffset: { width: 4, height: 8 },
-  elevation: 3,
+  boxShadow: '4px 8px 14px rgba(36,39,33,0.12)',
 } as const;
 
 const styles = StyleSheet.create({
@@ -272,6 +298,22 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.sm, borderWidth: 1 },
   badgeText: { fontSize: 11, lineHeight: 15, fontWeight: '800' },
   demoTag: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
+  demoTagSmall: { paddingHorizontal: 6, paddingVertical: 1, gap: 4 },
   demoDot: { width: 4, height: 4, borderRadius: 2 },
   demoTagText: { fontSize: 10, lineHeight: 14, fontWeight: '700' },
+  demoTagTextSmall: { fontSize: 9, lineHeight: 12 },
+  // Phone vignettes (≈200 × 84 dp).
+  miniCard: { width: '100%', height: '100%', paddingHorizontal: 9, paddingVertical: 3, borderRadius: 10, borderBottomWidth: StyleSheet.hairlineWidth * 2 },
+  priceMiniCard: { width: '100%', height: '100%', paddingHorizontal: 9, paddingVertical: 2, borderRadius: 10, borderBottomWidth: StyleSheet.hairlineWidth * 2 },
+  miniAsk: { marginTop: 2, paddingHorizontal: 7, paddingVertical: 0, borderRadius: 6 },
+  miniAskText: { fontSize: 10.5, lineHeight: 13 },
+  miniAnswer: { gap: 0, marginTop: 1 },
+  miniAnswerMain: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  miniRank: { paddingHorizontal: 5, paddingVertical: 2 },
+  miniRankText: { fontSize: 9, lineHeight: 11, fontWeight: '700' },
+  miniPrice: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
+  miniFit: { alignSelf: 'flex-end', flexShrink: 1, fontSize: 9.5, lineHeight: 12, fontWeight: '600' },
+  miniBadge: { paddingHorizontal: 5, paddingVertical: 1 },
+  miniBadgeText: { fontSize: 9.5, lineHeight: 12 },
+  miniVerdictText: { fontSize: 10.5, lineHeight: 14 },
 });

@@ -14,8 +14,8 @@ import { Chip, EmptyState, ErrorState, Loading, SectionHeader } from './ui';
  * the row once and the web and the app both change.
  *
  * States (lib/home.ts monthlyState):
- *   loading → the heading (device KST month) and a spinner
- *   error   → the heading and a retry (only when no earlier row is on screen)
+ *   loading → a neutral heading and a spinner
+ *   error   → a neutral heading and a retry (only when no earlier row is on screen)
  *   hidden  → nothing: this month has no curation
  *   empty   → the heading, the keywords to search, and the web's «준비 중» line
  *   cards   → keywords and a rail of product cards

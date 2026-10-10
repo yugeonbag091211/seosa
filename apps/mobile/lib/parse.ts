@@ -77,26 +77,35 @@ export function parseProducts(value: unknown): Product[] {
   return Array.isArray(value) ? value.map(parseProduct).filter((p): p is Product => !!p) : [];
 }
 
+/** Operator text longer than `max` ends in a visible «…», so a runaway field cannot fill the screen yet nothing is cut silently. */
+function clip(text: string, max: number): string {
+  const chars = [...text];
+  return chars.length > max ? `${chars.slice(0, max - 1).join('').trimEnd()}…` : text;
+}
+
 /**
  * /api/init `monthly` (public/index.html Monthly.show reads the same fields).
- * A row without a title and without keywords says nothing, so it is null rather than an empty banner.
- * Products go through parseProduct like every other list: an unusable row is dropped, not patched.
+ * A row with no title, no keywords and no usable product says nothing, so it is null rather than
+ * an empty banner. Products go through parseProduct like every other list: an unusable row is
+ * dropped, not patched.
  */
 export function parseMonthly(value: unknown): MonthlyCuration | null {
   if (!isObj(value)) return null;
   const m = num(value.month);
-  const title = decodeHtmlEntities(str(value.title).trim()).slice(0, 40);
-  const subtitle = decodeHtmlEntities(str(value.subtitle).trim()).slice(0, 80);
+  const title = clip(decodeHtmlEntities(str(value.title).trim()), 60);
+  const subtitle = clip(decodeHtmlEntities(str(value.subtitle).trim()), 120);
   const keywords = Array.isArray(value.keywords)
-    ? [...new Set(value.keywords.map(k => decodeHtmlEntities(str(k).trim())).filter(k => k && k.length <= 30))].slice(0, 12)
+    ? [...new Set(value.keywords.slice(0, 120).map(k => decodeHtmlEntities(str(k).trim())).filter(k => k && k.length <= 30))].slice(0, 12)
     : [];
-  if (!title && !keywords.length) return null;
+  // /api/init currently sends eight. Bound memory and render work if a stale or malformed payload is larger.
+  const products = parseProducts(value.products).slice(0, 8);
+  if (!title && !keywords.length && !products.length) return null;
   return {
     month: Number.isInteger(m) && m >= 1 && m <= 12 ? m : 0,
     title,
     subtitle,
     keywords,
-    products: parseProducts(value.products),
+    products,
   };
 }
 
