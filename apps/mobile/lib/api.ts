@@ -9,7 +9,7 @@ import type { AiAnswer, HomeFeed, PriceHistory, PricePoint, Product, ProductIden
  *   GET  /api/history?productId=&mall=&vendorItemId=&deal=1   가격 이력 + 서버 판정
  *   GET  /api/hotdeals?view=today-drop&limit=60   오늘 가격 하락 (웹 홈과 같은 목록)
  *   GET  /api/init                                 인기 검색어 · 오늘의 셀렉션 · 이달의 추천
- *   POST /api/auth                                 이메일 인증 코드 → 토큰
+ *   POST /api/auth                                 이메일 인증 코드(ageConfirmed: true) → 토큰
  *   POST /api/ai                                   AI 컨시어지
  * No endpoint, limit or parameter is invented here, and nothing writes except auth/AI,
  * which the web writes the same way.
@@ -19,18 +19,29 @@ export type ApiErrorKind =
   | 'network' | 'timeout' | 'unavailable' | 'rate_limited' | 'unauthorized'
   | 'bad_request' | 'not_found' | 'invalid_response' | 'aborted';
 
+/** Why a bad_request happened, when the server says so in a machine-readable flag. */
+export type ApiErrorReason = '' | 'age_confirmation';
+
+/**
+ * Login is for users aged 14 or over (api/auth.js, PR #118): a code request without
+ * `ageConfirmed: true` is refused with 400 + `needsAgeConfirm`. Same wording as the server.
+ */
+export const AGE_REQUIRED_MESSAGE = '만 14세 이상만 로그인할 수 있어요. 만 14세 이상인지 확인해 주세요.';
+
 export class ApiError extends Error {
   kind: ApiErrorKind;
   status: number;
   /** Seconds, from Retry-After, when the server sent one. */
   retryAfter: number;
+  reason: ApiErrorReason;
 
-  constructor(kind: ApiErrorKind, message: string, status = 0, retryAfter = 0) {
+  constructor(kind: ApiErrorKind, message: string, status = 0, retryAfter = 0, reason: ApiErrorReason = '') {
     super(message);
     this.name = 'ApiError';
     this.kind = kind;
     this.status = status;
     this.retryAfter = retryAfter;
+    this.reason = reason;
   }
 }
 
@@ -43,7 +54,9 @@ export function userMessage(error: unknown): string {
     case 'unavailable': return '지금은 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.';
     case 'rate_limited': return error.message || '요청이 많아요. 잠시 후 다시 시도해 주세요.';
     case 'unauthorized': return '로그인이 만료됐어요. 다시 로그인해 주세요.';
-    case 'bad_request': return error.message || '요청을 처리하지 못했어요.';
+    case 'bad_request':
+      if (error.reason === 'age_confirmation') return AGE_REQUIRED_MESSAGE;
+      return error.message || '요청을 처리하지 못했어요.';
     case 'not_found': return '정보를 찾을 수 없어요.';
     case 'invalid_response': return '받은 정보를 읽지 못했어요. 다시 시도해 주세요.';
     case 'aborted': return '';
@@ -135,7 +148,10 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
       if (res.status === 429) throw new ApiError('rate_limited', serverText, 429, retryAfter);
       if (res.status === 401) throw new ApiError('unauthorized', serverText, 401);
       if (res.status === 404) throw new ApiError('not_found', serverText, 404);
-      if (res.status >= 400) throw new ApiError('bad_request', serverText, res.status);
+      if (res.status >= 400) {
+        const needsAge = res.status === 400 && !!body && typeof body === 'object' && (body as { needsAgeConfirm?: unknown }).needsAgeConfirm === true;
+        throw new ApiError('bad_request', serverText, res.status, 0, needsAge ? 'age_confirmation' : '');
+      }
       if (body === null) {
         if (timedOut) throw new ApiError('timeout', '');
         if (opts.signal?.aborted) throw new ApiError('aborted', '');
@@ -254,8 +270,14 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
     },
 
     /** Step 1: mail a 6-digit code. The code itself never comes back. */
-    async requestCode(email: string): Promise<{ expiresInSec: number }> {
-      const r = await request('/api/auth', { method: 'POST', body: { email }, timeoutMs: TIMEOUTS.auth });
+    /**
+     * `ageConfirmed` must be the literal `true` (the user ticked «만 14세 이상입니다»). Anything else
+     * never reaches the network, and the body always carries the boolean `true`, never a copy of
+     * the argument — the server refuses "true", 1 and a missing field alike (api/auth.js).
+     */
+    async requestCode(email: string, ageConfirmed: true): Promise<{ expiresInSec: number }> {
+      if (ageConfirmed !== true) throw new ApiError('bad_request', AGE_REQUIRED_MESSAGE, 0, 0, 'age_confirmation');
+      const r = await request('/api/auth', { method: 'POST', body: { email, ageConfirmed: true }, timeoutMs: TIMEOUTS.auth });
       const b = r.body as { sent?: unknown; expiresInSec?: unknown };
       if (b?.sent !== true) throw new ApiError('invalid_response', '', r.status);
       return { expiresInSec: Number(b.expiresInSec) || 600 };

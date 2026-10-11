@@ -4,7 +4,7 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleShee
 import { AppText, useFontsReady } from '../components/AppText';
 import { userMessage } from '../lib/api';
 import { api } from '../lib/config';
-import { isEmail } from '../lib/format';
+import { AGE_CONFIRM_LABEL, AGE_CONFIRM_NOTE, AGE_UNCHECKED_MESSAGE, codeRequestProblem, requestLoginCode } from '../lib/login';
 import { useSession } from '../lib/session';
 import { radius, space, type as t, useTheme } from '../lib/theme';
 
@@ -13,6 +13,8 @@ import { radius, space, type as t, useTheme } from '../lib/theme';
  *   1. e-mail → the server mails a 6-digit code (valid 10 minutes)
  *   2. code → the server returns its signed token (30 days)
  * No password, no Supabase Auth session, no account form. The token goes to SecureStore.
+ * Step 1 needs «만 14세 이상입니다 (필수)» ticked (lib/login.ts, server api/auth.js). It starts
+ * unticked each time this screen opens and is never stored.
  */
 export default function Login() {
   const theme = useTheme();
@@ -20,6 +22,7 @@ export default function Login() {
   const { signIn } = useSession();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [phase, setPhase] = useState<'email' | 'code'>('email');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -32,14 +35,15 @@ export default function Login() {
     if (inFlight.current) return;
     setMessage('');
     if (phase === 'email') {
-      if (!isEmail(email)) { setMessage('이메일 주소를 확인해 주세요.'); return; }
+      // Unticked box or bad e-mail: say so and send nothing.
+      const problem = codeRequestProblem({ email, ageConfirmed });
+      if (problem) { setMessage(problem); return; }
       setBusy(true);
       inFlight.current = true;
       try {
-        await api.requestCode(email.trim());
-        setPhase('code');
-      } catch (e) {
-        setMessage(userMessage(e));
+        const r = await requestLoginCode({ email, ageConfirmed }, api.requestCode);
+        if (r.ok) setPhase('code');
+        else setMessage(r.message);
       } finally {
         inFlight.current = false;
         setBusy(false);
@@ -105,6 +109,27 @@ export default function Login() {
           />
         )}
 
+        {phase === 'email' ? (
+          // Same checkbox as app/account-delete.tsx (role, box, colours); the web's #authAge in words.
+          <Pressable
+            onPress={() => {
+              setAgeConfirmed(v => !v);
+              if (message === AGE_UNCHECKED_MESSAGE) setMessage('');
+            }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: ageConfirmed }}
+            style={[styles.ack, { borderColor: ageConfirmed ? theme.ink : theme.line2 }]}
+          >
+            <View style={[styles.box, { borderColor: theme.ink, backgroundColor: ageConfirmed ? theme.ink : 'transparent' }]}>
+              {ageConfirmed ? <AppText style={{ color: theme.bg, fontSize: 13, fontWeight: '700' }}>✓</AppText> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <AppText style={t.callout}>{AGE_CONFIRM_LABEL}</AppText>
+              <AppText tone="soft" style={[t.footnote, { marginTop: 2 }]}>{AGE_CONFIRM_NOTE}</AppText>
+            </View>
+          </Pressable>
+        ) : null}
+
         {message ? <AppText style={[t.footnote, { color: theme.up, marginTop: space.sm }]} accessibilityLiveRegion="polite">{message}</AppText> : null}
 
         <Pressable onPress={submit} disabled={busy} accessibilityRole="button" style={({ pressed }) => [styles.primary, { backgroundColor: theme.control, opacity: busy || pressed ? 0.7 : 1 }]}>
@@ -114,7 +139,7 @@ export default function Login() {
         </Pressable>
 
         {phase === 'code' ? (
-          <Pressable onPress={() => { setPhase('email'); setCode(''); setMessage(''); }} style={styles.secondary} hitSlop={8}>
+          <Pressable onPress={() => { setPhase('email'); setCode(''); setAgeConfirmed(false); setMessage(''); }} style={styles.secondary} hitSlop={8}>
             <AppText tone="soft" style={t.footnote}>이메일 다시 입력</AppText>
           </Pressable>
         ) : null}
@@ -131,6 +156,9 @@ const styles = StyleSheet.create({
   body: { padding: space.gutter, paddingTop: space.xxl },
   field: { marginTop: space.xl, height: 52, borderRadius: radius.lg, paddingHorizontal: 16, fontSize: 17 },
   code: { letterSpacing: 8, fontSize: 22, textAlign: 'center' },
+  // The acknowledgment row and box of app/account-delete.tsx, with the gap above sized for a form field.
+  ack: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md, padding: space.lg, borderRadius: radius.lg, borderWidth: 1 },
+  box: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   primary: { marginTop: space.lg, height: 52, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
   secondary: { alignSelf: 'center', marginTop: space.lg },
 });

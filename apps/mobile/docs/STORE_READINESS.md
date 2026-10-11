@@ -27,7 +27,8 @@
 | 고객지원 URL | 🟡 | `https://seosa.ai.kr/support` — 이메일, 문의 유형, 앱 밖 계정 삭제 안내, 사업자 정보, 판매처 문의 구분. 앱 마이 → 고객지원(시스템 브라우저). 웹 배포 후 사용 |
 | 고객지원 이메일 | ✅ | `support@seosa.ai.kr` (ImprovMX → 운영자 Gmail). 앱 기본값으로 코드에 있다 — **EAS 빌드는 gitignore 된 `.env` 를 받지 못하므로** env 에만 두면 스토어 빌드에서 사라졌다. `EXPO_PUBLIC_SUPPORT_EMAIL` 은 유효한 주소일 때만 덮어쓴다. 메일 앱이 없으면 주소를 알려 주는 안내가 뜬다 |
 | 정책 문서 정확성 | 🟡 | 2026-10-10 운영 코드(main)와 대조: OpenAI(1순위 AI) 추가, Instagram @seosashop, Sentry 문구 정정, 고객지원 메일 경로 기재. 정책 브랜치 `scripts/test-policy-pages.js` 67/0 (main 병합 시뮬레이션) |
-| 정책 문서 — 운영자 사실 확인 | ⛔ | 소스의 `TODO(운영자 확인 필요)` 4건: ① Supabase 저장 리전(국외 이전 국가) ② ImprovMX 처리 국가 ③ 운영에 `SENTRY_DSN` 설정 여부 ④ 만 14세 미만 이용 정책. 테스트가 목록을 출력한다 |
+| 정책 문서 — 운영자 사실 확인 | 🟡 | 2026-10-11 PR #118(`b1ca123`)에서 ① Supabase Inc. (인도) ② ImprovMX (프랑스·미국) ④ 만 14세 미만 로그인 제한을 반영. 남은 1건: ③ 운영에 `SENTRY_DSN` 설정 여부(코드 `api/_errors.js` 는 DSN 이 있으면 전송한다). 테스트가 목록을 출력한다 |
+| 만 14세 미만 로그인 제한 | ✅ | 서버(`api/auth.js`, PR #118)는 `ageConfirmed: true` 없는 인증 코드 요청을 400 으로 거절한다. 앱 로그인 화면은 «만 14세 이상입니다 (필수)» 체크(열 때마다 해제 상태)가 없으면 요청을 보내지 않고, 체크하면 정확히 `ageConfirmed: true` 를 싣는다(`lib/login.ts`, `tests/login.test.mjs`). 검색·가격 확인은 로그인 없이 그대로 |
 | 앱 내 계정 삭제 | 🟡 | 마이 → 계정 삭제(확인 체크 → 삭제). `POST /api/account/delete` 는 정책 브랜치에 있다 — 배포 전에는 앱에서 오류로 끝난다. 401→재로그인, 409(PRO 자동결제)→사유 표시, 5xx→재시도 문구 (`tests/release.test.mjs`, `tests/flows.test.mjs` FLOW E) |
 | 앱 밖 계정 삭제 | 🟡 | `https://seosa.ai.kr/support` 와 `/privacy#delete-account`: 로그인 이메일로 «계정 삭제 요청» 메일 → 운영자가 수동 처리(운영 절차 필요 — 아래 «사람 작업») |
 | 제휴 고지 | ✅ | 구매 링크가 보이는 모든 화면에 웹과 같은 문구, 마이에 쿠팡 파트너스 문구 |

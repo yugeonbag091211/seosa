@@ -112,13 +112,17 @@ test('FLOW D: 로그인 → 세션 유지(재시작) → 로그아웃', async ()
   const { api } = server({
     '/api/auth': (u, init) => {
       const b = JSON.parse(init.body);
-      if (!b.code) return { body: { sent: true, expiresInSec: 600 } };
+      if (!b.code) {
+        // PR #118 api/auth.js: no code without ageConfirmed === true.
+        if (b.ageConfirmed !== true) return { status: 400, body: { error: '만 14세 이상만 로그인할 수 있어요. 만 14세 이상인지 확인해 주세요.', needsAgeConfirm: true } };
+        return { body: { sent: true, expiresInSec: 600 } };
+      }
       return b.code === '123456'
         ? { body: { token: 'v1.eyJlIjoiYUBiLmNvIn0.signature-value', email: b.email, expiresAt: '2099-01-01T00:00:00Z' } }
         : { status: 400, body: { error: '인증 코드가 올바르지 않아요' } };
     },
   });
-  assert.deepEqual(await api.requestCode('a@b.co'), { expiresInSec: 600 });
+  assert.deepEqual(await api.requestCode('a@b.co', true), { expiresInSec: 600 });
   await assert.rejects(api.verifyCode('a@b.co', '000000'), e => userMessage(e) === '인증 코드가 올바르지 않아요');
   const session = await api.verifyCode('a@b.co', '123456');
   const disk = new Map();

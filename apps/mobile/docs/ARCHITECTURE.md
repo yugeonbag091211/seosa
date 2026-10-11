@@ -7,7 +7,7 @@
 | 프론트엔드 | 프레임워크 없음. `public/index.html` 한 파일(12,038줄)의 바닐라 JS SPA + `public/radar.html` | `vercel.json` rewrite `/(?!api/)` → `/public` |
 | API | Vercel 서버리스 13개(`api/*.js`), `_`로 시작하는 파일은 공용 모듈. Hobby 12개 한도 때문에 `history.js` 가 `__route` 로 batch·product·page·sitemap·radar·alternatives 를 겸한다 | `api/history.js:401` |
 | Supabase | **서버 전용**(service key, `api/_supabase.js`). 브라우저는 Supabase 를 전혀 부르지 않는다 | `public/index.html` 에 supabase 클라이언트 없음 |
-| 인증 | Supabase Auth 가 **아니다**. `/api/auth` 가 6자리 코드를 메일(Resend)로 보내고, 코드가 맞으면 HMAC 서명 토큰 `v1.<payload>.<sig>` (30일)을 준다. 서버에 세션 없음 | `api/auth.js`, `api/_auth.js:48` |
+| 인증 | Supabase Auth 가 **아니다**. `/api/auth` 가 6자리 코드를 메일(Resend)로 보내고, 코드가 맞으면 HMAC 서명 토큰 `v1.<payload>.<sig>` (30일)을 준다. 서버에 세션 없음. 코드 요청은 `ageConfirmed: true` 가 있어야 한다(만 14세 이상만 로그인 — PR #118, 앱은 `lib/login.ts` + 로그인 화면 필수 체크) | `api/auth.js`, `api/_auth.js:48` |
 | 검색 | `GET /api/search?keyword=` → 쿠팡 파트너스(limit 10) + ADPICK, 6시간 캐시, `products`/`price_history` 에 저장, 관련도→신뢰도→가격 정렬. 부가정보는 헤더(`X-Seosa-Source/Blocked/Correct/Suggest`). 30회/분/IP | `api/search.js` |
 | 상품 데이터 | `toClientProduct`: title·lprice·link·image·mall·mallLabel·productId·vendorItemId·oprice·savePct·collectedAt (+검색 시 trust·priceChange·isRocket) | `api/_shop.js:984` |
 | 가격 이력 | `GET /api/history?productId&mall&vendorItemId&deal=1` → `{points:[{date,price}], deal}`. KST 일별 최저가, 옵션은 `_price.sameVendorRows` 로 가른다. **상품명 조회 폴백은 제거됨** | `api/history.js:133` |

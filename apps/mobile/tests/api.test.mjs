@@ -103,15 +103,20 @@ test('history batch sends option keys', async () => {
 });
 
 test('auth: two steps, token returned, code never echoed', async () => {
+  // The server's contract since PR #118: step 1 needs ageConfirmed === true (api/auth.js).
   const f = fake((url, init) => {
     const b = JSON.parse(init.body);
-    return b.code ? { body: { token: 'v1.payloadpayload.signature', email: b.email, expiresAt: '2026-10-30T00:00:00Z' } } : { body: { sent: true, expiresInSec: 600 } };
+    if (b.code) return { body: { token: 'v1.payloadpayload.signature', email: b.email, expiresAt: '2026-10-30T00:00:00Z' } };
+    if (b.ageConfirmed !== true) return { status: 400, body: { error: '만 14세 이상만 로그인할 수 있어요. 만 14세 이상인지 확인해 주세요.', needsAgeConfirm: true } };
+    return { body: { sent: true, expiresInSec: 600 } };
   });
   const api = createApi({ baseUrl: 'https://seosa.ai.kr', fetchImpl: f.impl });
-  assert.deepEqual(await api.requestCode('a@b.co'), { expiresInSec: 600 });
+  assert.deepEqual(await api.requestCode('a@b.co', true), { expiresInSec: 600 });
   const s = await api.verifyCode('a@b.co', '123456');
   assert.equal(s.token, 'v1.payloadpayload.signature');
   assert.equal(f.calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(f.calls[0].init.body), { email: 'a@b.co', ageConfirmed: true });
+  assert.deepEqual(JSON.parse(f.calls[1].init.body), { email: 'a@b.co', code: '123456' }, 'step 2 is unchanged');
 });
 
 test('auth: wrong code shows the server message (written for users)', async () => {
