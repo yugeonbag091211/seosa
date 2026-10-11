@@ -4581,6 +4581,14 @@ select:focus-visible,textarea:focus-visible,
       <div class="alert-label" id="authMsg" style="line-height:1.6"></div>
       <span class="alert-label">이메일 주소</span>
       <input class="alert-input" id="authEmail" type="email" placeholder="이메일 주소" autocomplete="email">
+      <!-- 만 14세 미만은 로그인(계정)을 쓸 수 없다. 서버(api/auth.js)도 ageConfirmed 없는 코드 발급을 거절한다. -->
+      <div id="authAgeWrap">
+        <label class="alert-check">
+          <input type="checkbox" id="authAge">
+          <span>만 14세 이상입니다 (필수)
+            <small>만 14세 미만은 로그인할 수 없어요. 검색과 가격 확인은 로그인 없이 이용할 수 있어요.</small></span>
+        </label>
+      </div>
       <div id="authCodeWrap" style="display:none">
         <span class="alert-label">메일로 받은 6자리 코드</span>
         <input class="alert-input" id="authCode" type="text" inputmode="numeric" maxlength="6"
@@ -5366,7 +5374,11 @@ var Auth = {
     if (e) e.value = email || Store.get(CONST.LS.EMAIL, '') || '';
     var c = $('authCode');
     if (c) c.value = '';
+    // 나이 확인은 창을 열 때마다 직접 체크한다(미리 체크해 두지 않는다).
+    var age = $('authAge');
+    if (age) age.checked = false;
 
+    show('authAgeWrap', true);
     show('authCodeWrap', false);
     setText('authSubmit', '인증 코드 받기');
     setText('authMsg', '찜·취향·가격 알림은 본인 이메일에서만 볼 수 있어요. 인증 코드를 보내드릴게요.');
@@ -5398,6 +5410,11 @@ var Auth = {
       var code = ($('authCode') ? $('authCode').value : '').trim();
       if (!/^\d{6}$/.test(code)) { toast('6자리 숫자 코드를 입력해주세요'); return; }
       body.code = code;
+    } else {
+      // 만 14세 미만은 로그인할 수 없다 — 서버도 ageConfirmed 없이는 코드를 보내지 않는다.
+      var age = $('authAge');
+      if (!age || !age.checked) { toast('만 14세 이상인지 확인해 주세요'); return; }
+      body.ageConfirmed = true;
     }
 
     if (btn) { btn.disabled = true; btn.textContent = '처리 중…'; }
@@ -5420,6 +5437,7 @@ var Auth = {
           // 1단계 완료 — 코드 입력으로 넘어간다
           Auth.phase = 'code';
           Store.set(CONST.LS.EMAIL, email);
+          show('authAgeWrap', false);
           show('authCodeWrap', true);
           setText('authSubmit', '인증하기');
           setText('authMsg', email + ' 으로 6자리 코드를 보냈어요. 메일함을 확인해 주세요.');

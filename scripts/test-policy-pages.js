@@ -13,6 +13,8 @@
  *   · 계정 삭제 대상 표 (api/_account.js USER_TABLES) 와 보관 표(payments)
  *   · 토큰 30일 · 인증 코드 10분 (api/_auth.js)
  *   · 통계가 IP·이메일을 저장하지 않는다는 문장 (api/_funnel.js 의 저장 행)
+ *   · 만 14세 미만 로그인 제한 문장 (api/auth.js ageConfirmed 관문 · 웹 인증 창 체크박스)
+ *   · 운영자가 확인해 준 처리 국가 (Supabase 인도 · ImprovMX 프랑스·미국)
  */
 'use strict';
 process.env.AUTH_SECRET = process.env.AUTH_SECRET || 'test-only-secret';
@@ -146,7 +148,27 @@ check(/SEOSA 데이터베이스에 저장하지 않습니다/.test(privacy), '�
 check(!/모든 상품 정보는 쿠팡 검색 API에서 실시간으로/.test(terms), '옛 문장(쿠팡 실시간 단일 출처) 없음');
 check(/로그인 없이[\s\S]{0,80}AI/.test(terms), '비로그인 AI 이용(게스트 모드) 반영');
 
-// ── 8. 코드로 확정할 수 없어 운영자가 채워야 하는 항목 (실패가 아니라 목록) ─────
+// ── 8. 운영자가 확인해 준 처리 국가 (2026-10-11) ─────────────────────────
+//   Supabase 운영 프로젝트 리전 ap-south-1(뭄바이) · ImprovMX 수신(프랑스, AWS 파리)·발신(프랑스·미국).
+check(/Supabase Inc\. \(인도\)/.test(privacy), '처리 위탁: Supabase Inc. (인도) — 운영 프로젝트 리전 ap-south-1');
+check(/ImprovMX \(프랑스·미국\) · Google\(Gmail, 미국\)/.test(privacy), '처리 위탁: ImprovMX (프랑스·미국) · Google(Gmail, 미국)');
+
+// ── 9. 만 14세 미만: 문서의 약속 = 코드의 강제 ───────────────────────────
+//   문서만 «받지 않는다» 고 적고 코드가 그대로 받으면 거짓이다. 서버와 웹 양쪽을 읽는다.
+const authSrc = read('api/auth.js');
+const indexHtml = read('public/index.html');
+const childrenSection = (privacyHtml.match(/<h3 id="children">[\s\S]*?<\/p>/) || [''])[0];
+check(/만 14세 미만/.test(childrenSection) && /로그인/.test(childrenSection) && /이메일 주소도 저장하지 않습니다/.test(childrenSection),
+  '방침: 만 14세 미만은 로그인(계정)을 받지 않고, 확인 없으면 이메일도 저장하지 않는다');
+check(/상품 검색·가격 확인에는 나이 확인이 필요하지 않습니다/.test(childrenSection), '방침: 로그인 없는 검색·가격 확인은 막지 않는다');
+check(/만 14세 이상만 이용할 수 있습니다/.test(terms), '약관: 로그인(계정)은 만 14세 이상');
+check(/body\.ageConfirmed !== true/.test(authSrc), 'api/auth.js: ageConfirmed 가 정확히 true 가 아니면 코드를 발급하지 않는다');
+check(authSrc.indexOf('body.ageConfirmed !== true') > -1 && authSrc.indexOf('body.ageConfirmed !== true') < authSrc.indexOf('createCode(email)'),
+  'api/auth.js: 나이 확인이 createCode(이메일 저장)보다 앞에 있다');
+check(/id="authAge"/.test(indexHtml) && /만 14세 이상입니다/.test(indexHtml), '웹 인증 창: «만 14세 이상입니다» 체크박스');
+check(/body\.ageConfirmed = true/.test(indexHtml) && /!age \|\| !age\.checked/.test(indexHtml), '웹: 체크하지 않으면 보내지 않고, 체크했을 때만 ageConfirmed 를 싣는다');
+
+// ── 10. 코드로 확정할 수 없어 운영자가 채워야 하는 항목 (실패가 아니라 목록) ─────
 const todos = [privacyHtml, termsHtml, supportHtml].flatMap(h => [...h.matchAll(/<!--\s*TODO\(운영자[^)]*\):\s*([\s\S]*?)-->/g)].map(m => m[1].trim()));
 console.log(`\n운영자 확인 필요 ${todos.length}건 (문서 소스의 TODO 주석):`);
 todos.forEach(t => console.log(`  - ${t}`));
