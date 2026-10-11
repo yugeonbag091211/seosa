@@ -466,6 +466,54 @@ try {
     aiExplicitCase.length === 1 && aiExplicitCase[0].productId === 'CASE',
     'AI search filtered an explicitly requested accessory');
 
+  /*
+   * 2026-10-04 production: "에어팟 프로 2 지금 사도 될까? 최저가 알려줘" recommended the
+   * 3,000원 option-slot case; with cases filtered, the next pick was «에어로팟 프로» (a
+   * different product matching only «프로»). These are the eight real candidates.
+   */
+  const prodAirpods = [
+    ['9559954005', 3000, '5세컨즈 실리콘 지문방지 슬림 이어폰 케이스 + 카라비너 세트, 다크그린, 1개, 에어팟 프로2'],
+    ['9259922060', 12900, '아이몰 분실방지 핸드폰 거치 맥세이프 도어락 케이스, 핑크, 1개, 에어팟 Pro / Pro2'],
+    ['8390094060', 57800, 'SG ANC 노이즈캔슬링 커널형 블루투스 6.0 무선 이어폰 방수 에어로팟 프로, Airo-Pro7'],
+    ['9751742272', 209000, 'Apple 에어팟 프로 2 Magsafe 충전 케이스 포함, 인이어 액티브 노이즈 캔슬링, 블루투스 이어폰, USB-C'],
+    ['8825648110', 209870, '삼성전자 갤럭시 버즈3 프로 노이즈 리덕션 무선 블루투스이어폰, 스타리 실버, 단일상품'],
+    ['a1', 16000, '[해외] 귀여운 디자인의 타마고치 스타일 에어팟 프로 2/1 이어폰 케이스, 투명한 부드러운 실리콘 소재, 만화 캐릭터가 그려진 스트랩 스티커 포함'],
+    ['a2', 34900, '스키나마 스키나마 메카 에어팟 프로2 슬라이드 락 케이스 잠금 케이스'],
+    ['a3', 13746, '이레케이스앤굿즈/[버즈4 출시]토마토 버튼 에어팟1세대 2세대 3세대 4세대 에어팟프로 프로2 프로3 버즈2 버즈3 버즈4 투명케이스/기기케이스/스트랩 에어팟케이스']
+  ].map(([productId, price, title]) => ({ productId, title, price, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: productId + '-V' }));
+  const rankedProd = ShopIntent.rankItems(prodAirpods.map(x => Object.assign({}, x)), { priority: 'price' }, '에어팟 프로 2');
+  check('accessory_intent', 'prod-airpods-main-product-first',
+    rankedProd[0] && rankedProd[0].productId === '9751742272',
+    'AI top pick for "에어팟 프로 2 최저가" was ' + (rankedProd[0] && rankedProd[0].title));
+  check('accessory_intent', 'prod-airpods-option-slot-cases-filtered',
+    !rankedProd.some(x => x.productId === '9559954005' || x.productId === '9259922060'),
+    'option-slot case stayed in AI main-product candidates');
+  check('accessory_intent', 'prod-airpods-partial-title-match-below-full',
+    rankedProd.findIndex(x => x.productId === '8390094060') > rankedProd.findIndex(x => x.productId === '9751742272'),
+    'a product matching only «프로» outranked the full match on price');
+
+  /* Coverage only reorders when a near-complete match exists; equal coverage keeps price order. */
+  const twoMains = ShopIntent.rankItems([
+    { productId: 'EXP', title: 'Apple 에어팟 프로 2 USB-C', price: 300000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'E' },
+    { productId: 'CHEAP', title: 'Apple 에어팟 프로 2세대 MagSafe', price: 209000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'C' }
+  ], { priority: 'price' }, '에어팟 프로 2');
+  check('accessory_intent', 'equal-coverage-keeps-price-priority',
+    twoMains[0] && twoMains[0].productId === 'CHEAP', 'price priority lost between two full matches');
+  const vague = ShopIntent.rankItems([
+    { productId: 'V1', title: '무선 블루투스 이어폰 커널형', price: 30000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'V1' },
+    { productId: 'V2', title: '블루투스 넥밴드 이어폰', price: 20000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'V2' }
+  ], { priority: 'price' }, '노이즈캔슬링 무선 이어폰 방수');
+  check('accessory_intent', 'no-strong-match-no-coverage-penalty',
+    vague.every(x => !x._coveragePenalty), 'coverage penalty applied without any near-complete match');
+  /* Spacing variants ("노이즈 캔슬링") are the same words — they must not reorder main products. */
+  const spacing = ShopIntent.rankItems([
+    { productId: 'SP', title: '소니 가벼운 노이즈 캔슬링 블루투스 헤드폰, WH-CH720N', price: 139000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'S1' },
+    { productId: 'NS', title: '소니 WH-CH730N 노이즈캔슬링 블루투스 헤드폰', price: 199000, mall: '쿠팡', mallId: '쿠팡', isCoupang: true, vendorItemId: 'S2' }
+  ], {}, '노이즈캔슬링 헤드폰');
+  check('accessory_intent', 'spacing-variant-not-penalized',
+    spacing[0] && spacing[0].productId === 'SP' && spacing.every(x => !x._coveragePenalty),
+    'a spacing difference reordered two matching products');
+
   /* Recent-window lows cannot be promoted to all-time lowest claims. */
   const shortHistory = item(55777, { hist: { low: 55777, lowCount: 2, lowConfirmed: true, count: 3, historyDays: 14, firstDate: '2026-09-01', lastDate: '2026-09-15' } });
   const enoughHistory = item(55777, { hist: { low: 55777, lowCount: 4, lowIsLatest: false, lowConfirmed: true, count: 10, historyDays: 30, firstDate: '2026-08-01', lastDate: '2026-09-01' } });

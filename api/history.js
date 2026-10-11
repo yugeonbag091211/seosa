@@ -1,7 +1,7 @@
 const supabase = require('./_supabase');
 const { applyCors, cachePublic, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { observedKstDate, sameVendorRows } = require('./_price');
+const { observedKstDate, sameVendorRows, acceptedObservations } = require('./_price');
 
 /*
  * 차트의 가로축 날짜는 KST 달력으로 찍는다.
@@ -159,7 +159,8 @@ async function singleHandler(req, res) {
        * 통째로 "기록 없음" 이 되는데, 같은 상품의 /p/ 페이지는 그 기록을
        * 그대로 그렸다. 두 화면이 다른 말을 하고 있었다.
        */
-      const picked = sameVendorRows(data || [], vendorItemId);
+      /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
+      const picked = acceptedObservations(sameVendorRows(data || [], vendorItemId));
       if (picked.length) rows = picked;
     }
 
@@ -342,7 +343,8 @@ async function batchHandler(req, res) {
           const p = parsed.get(origKey);
           const byDate = new Map();
           // 단건 조회(collapseToDaily)와 같은 기준으로 KST 날짜에 접는다.
-          sameVendorRows(rows, p && p.vendorItemId).forEach(r => {
+          /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
+          acceptedObservations(sameVendorRows(rows, p && p.vendorItemId)).forEach(r => {
             const date = observedKstDate(r);
             if (!date) return;
             keepLowest(byDate, date, r.price);
@@ -437,6 +439,37 @@ module.exports = async function handler(req, res) {
     } catch (e) {
       const { fail } = require('./_http');
       return fail(res, e, { where: 'product-page', route: `/api/history?__route=${q.__route}`, message: '상품 페이지를 불러오지 못했어요.' });
+    }
+  }
+  /*
+   * 카테고리·브랜드 랜딩 · 사이트맵 인덱스 (2026-10-02).
+   *
+   *   /category               → __route=hub
+   *   /category/{slug}        → __route=category&slug=
+   *   /brand/{slug}           → __route=brand&slug=
+   *   /sitemap.xml            → __route=sitemap-index
+   *   /sitemaps/{file}        → __route=sitemap-file&file=
+   *
+   * 구현은 api/_seo-pages.js 에 있다. 새 함수를 만들지 않는 이유는 위와 같다.
+   */
+  const SEO_ROUTES = {
+    hub: 'hubHandler', category: 'categoryHandler', brand: 'brandHandler',
+    'sitemap-index': 'sitemapIndexHandler', 'sitemap-file': 'sitemapFileHandler'
+  };
+  if (Object.prototype.hasOwnProperty.call(SEO_ROUTES, q.__route)) {
+    try {
+      const pages = require('./_seo-pages');
+      return await pages[SEO_ROUTES[q.__route]](req, res);
+    } catch (e) {
+      /*
+       * 이 경로의 실패는 «지금 데이터를 셀 수 없다» 는 뜻이다 — 503 + Retry-After, 캐시 금지.
+       * 크롤러는 나중에 다시 오고 이미 아는 URL 을 버리지 않는다. 500 으로 두면 Edge 가
+       * 영구 오류처럼 다루고, 200 으로 덮으면 빈 페이지를 색인한다.
+       */
+      const { fail } = require('./_http');
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Retry-After', '600');
+      return fail(res, e, { where: 'seo-pages', route: `/api/history?__route=${q.__route}`, message: '페이지를 불러오지 못했어요.', status: 503 });
     }
   }
   return singleHandler(req, res);

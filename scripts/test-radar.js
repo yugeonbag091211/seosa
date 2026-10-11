@@ -93,7 +93,8 @@ function ok(cond, name, detail) {
 function eq(a, b, name) { ok(a === b, name, a === b ? String(a) : `기대 ${b} / 실제 ${a}`); }
 function section(t) { console.log(`\n[${t}]`); }
 
-const TODAY = '2026-09-07';
+// Keep fixture dates relative to the same KST calendar day used by api/_pricestat.js.
+const TODAY = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const day = n => new Date(Date.parse(TODAY + 'T00:00:00Z') - n * 86400000).toISOString().slice(0, 10);
 /** n일치 관측. f(i) 가 i일 전의 가격. */
 const series = (n, f) => { const a = []; for (let i = n - 1; i >= 0; i--) a.push({ date: day(i), price: f(i) }); return a; };

@@ -413,6 +413,18 @@ function constraintLine(c) {
  */
 const PREF_GAIN = 12;
 
+/*
+ * 상품명 커버리지 감점 (rankItems 의 «얼마나 담았는가» 주석).
+ *   COVERAGE_STRONG  이 이상 담은 후보가 하나라도 있어야 감점을 건다
+ *   COVERAGE_OK      이 이상이면 감점하지 않는다 — "노이즈 캔슬링"/"노이즈캔슬링"
+ *                    같은 표기 차이(0.93)로 본품끼리 순서가 뒤집히지 않게
+ *   COVERAGE_GAP     커버리지 0 일 때의 감점. 최저가 가점(14)보다 크다
+ * 커버리지 0.25(토큰 하나만 맞음)면 −23, 0.667 이면 −10 이다.
+ */
+const COVERAGE_STRONG = 0.9;
+const COVERAGE_OK = 0.8;
+const COVERAGE_GAP = 30;
+
 const TRUST_SCORE = { high: 8, medium: 4, unknown: 0, low: -8, stale: -10 };
 
 /**
@@ -712,6 +724,27 @@ function rankItems(items, c, query, opts) {
         it._accessoryPenalty = focus.penalty;
       }
     });
+
+    /*
+     * 상품명이 검색어를 «얼마나» 담았는가 (2026-10-04 운영 실측).
+     *
+     * scoreItem 의 적합도는 토큰이 «하나라도» 맞으면 같은 +12 다. 그래서
+     * "에어팟 프로 2 최저가" 에서 «에어로팟 프로»(57,800원, 다른 제품)가 «프로»
+     * 하나로 본품(209,000원)과 같은 점수를 받고 최저가 가점(+14)으로 1위가 됐다.
+     * 일반 검색과 같은 커버리지(scoreTitle, 0~1)로 덜 담은 만큼 내린다.
+     *
+     * ★ 후보 중에 검색어를 거의 다 담은 상품(COVERAGE_STRONG 이상)이 있을 때만
+     *   건다. 다들 어중간하게 맞으면 비교할 기준이 없어 순서를 건드리지 않는다.
+     * ★ 지우지 않는다 — 순서만 내린다. 최저가 가점(최대 14)보다 크게 잡아,
+     *   검색어의 절반도 못 담은 상품이 가격만으로 온전한 일치를 넘지 못하게 한다.
+     */
+    const cover = list.map(it => searchHelpers.scoreTitle(intentContext.analysis, (it && it.title) || '').score);
+    if (Math.max.apply(null, cover) >= COVERAGE_STRONG) {
+      list.forEach((it, i) => {
+        const p = cover[i] >= COVERAGE_OK ? 0 : Math.round((1 - cover[i]) * COVERAGE_GAP);
+        if (p > 0) { it._score -= p; it._coveragePenalty = p; }
+      });
+    }
   }
 
   // 동점이면 원래 순서를 지킨다 (쇼핑몰이 준 순서에도 정보가 있다).

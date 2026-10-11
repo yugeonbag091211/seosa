@@ -3,8 +3,13 @@ Allow: /
 
 # API는 색인 대상이 아니다. 크롤러가 /api/search를 긁으면
 # 쿠팡 파트너스 분당 호출 한도를 그대로 태운다.
+# (상품·카테고리·브랜드 페이지는 /p/ · /category/ · /brand/ 주소로 열린다 —
+#  내부적으로 /api/history 가 그리지만 크롤러가 보는 주소는 /api/ 가 아니다.)
 Disallow: /api/
 
+# 검색 결과(/?q=)와 상품 딥링크(/?p=)는 막지 않는다. 막으면 크롤러가
+# 응답의 X-Robots-Tag: noindex 를 읽지 못해서 오히려 주소만 색인될 수 있다.
+# 색인 제외는 vercel.json headers 의 noindex 가 맡는다.
+
+# 사이트맵 인덱스 — 홈·카테고리·브랜드(pages.xml)와 상품(products-N.xml).
 Sitemap: https://seosa.ai.kr/sitemap.xml
-# 상품 페이지(/p/{id}) — 가격 기록이 7일 이상 쌓인 상품만 올라간다 (api/_product-page.js).
-Sitemap: https://seosa.ai.kr/sitemap-products.xml

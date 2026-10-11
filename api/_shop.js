@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const supabase = require('./_supabase');
 const { searchCoupang } = require('./_coupang');
 const { searchAdpick } = require('./_adpick');
+const ImageCache = require('./_imagecache');
 const {
   parsePrice, classifyPrice,
   vendorIdOf, itemIdOf, productLifecycle, LIFECYCLE, MAX_DISPLAY_AGE_DAYS,
@@ -550,8 +551,31 @@ async function upsertHistory(rows) {
   return upsertHistory(rows);
 }
 
-/** item_id/vendor_item_id/mall_label 을 붙여 upsert 하고, 컬럼이 없으면 하나씩 빼며 재시도한다. */
+/*
+ * products upsert — 빈 mall_label 은 «모른다» 이지 «지운다» 가 아니다 (2026-10-09).
+ *
+ *   on conflict do update 는 보낸 컬럼을 전부 덮는다. 수집기가 ADPICK 판매처를 잃은
+ *   채 mall_label: '' 을 보내던 동안, 검색이 저장해 둔 판매처 이름이 매 수집마다
+ *   지워졌다(운영 최근 ADPICK 1,000행 전부 빈 값). 그래서 이름이 빈 행은 그 컬럼을
+ *   아예 보내지 않는다 — 기존 행은 값을 지키고, 새 행은 컬럼 기본값('')을 받는다.
+ *   한 요청 안에서 행마다 컬럼을 달리 보낼 수 없으므로 두 묶음으로 나눈다.
+ */
 async function upsertProducts(rows) {
+  const labeled = rows.filter(r => r.mall_label);
+  const unlabeled = rows.filter(r => !r.mall_label).map(r => {
+    const { mall_label, ...rest } = r;   // eslint-disable-line no-unused-vars
+    return rest;
+  });
+  for (const batch of [labeled, unlabeled]) {
+    if (!batch.length) continue;
+    const msg = await upsertProductBatch(batch);
+    if (msg) return msg;
+  }
+  return null;
+}
+
+/** item_id/vendor_item_id/mall_label 을 붙여 upsert 하고, 컬럼이 없으면 하나씩 빼며 재시도한다. */
+async function upsertProductBatch(rows) {
   let candidate = rows;
   if (!mallLabelColumn) {
     candidate = candidate.map(r => {
@@ -574,14 +598,43 @@ async function upsertProducts(rows) {
     mallLabelColumn = false;
     console.warn('[save] products.mall_label 컬럼 없음 — 해당 값 없이 저장합니다 '
       + '(supabase/2026-08-mall-label.sql 을 실행하면 켜집니다).');
-    return upsertProducts(rows);
+    return upsertProductBatch(rows);
   }
   if (itemIdColumns) {
     itemIdColumns = false;
     console.warn('[save] products.item_id / vendor_item_id 컬럼 없음 — 해당 값 없이 저장합니다.');
-    return upsertProducts(rows);
+    return upsertProductBatch(rows);
   }
   return error.message;
+}
+
+/**
+ * ADPICK 임시 사진 → Storage 원본 캐시 (api/_imagecache.js).
+ *
+ * 수집기만 opts.cacheImages 로 켠다. 검색·AI 경로는 사용자 응답을 기다리게 하므로
+ * 부르지 않는다. 관측치의 freshImage(이번 응답의 photo)만 쓰므로 API 호출은 늘지 않는다.
+ * 원장 쓰기가 끝난 뒤에 돌고, 실패하면 row.image 를 그대로 둔다 — 절대 throw 하지 않는다.
+ */
+async function applyImageCache(rows, observations, opts, label) {
+  if (!opts.cacheImages || !ImageCache.enabled()) return;
+  try {
+    const fresh = new Map();
+    for (const it of observations || []) {
+      if (it && it.mall === ADPICK_MALL && it.freshImage) fresh.set(it.productId, it.freshImage);
+    }
+    const items = rows
+      .filter(r => r.mall === ADPICK_MALL && fresh.has(r.product_id))
+      .map(r => ({ productId: r.product_id, currentImage: r.image, freshImage: fresh.get(r.product_id) }));
+    if (!items.length) return;
+    const { urls, stats } = await ImageCache.cacheImages(items, { storage: supabase.storage });
+    for (const r of rows) if (urls.has(r.product_id)) r.image = urls.get(r.product_id);
+    if (stats.attempted) {
+      console.log(`[imagecache${label ? ':' + label : ''}] 후보 ${stats.candidates} · 시도 ${stats.attempted}`
+        + ` · 저장 ${stats.saved} · 실패 ${stats.failed} · 보류 ${stats.skipped} ${JSON.stringify(stats.reasons)}`);
+    }
+  } catch (e) {
+    console.warn(`[imagecache] 건너뜀 (가격 저장은 계속): ${String(e && e.message || e).slice(0, 120)}`);
+  }
 }
 
 /**
@@ -842,7 +895,12 @@ async function recordPrices(observations, opts = {}) {
   for (const row of catalogRows) {
     const k = `${row.product_id}|${row.mall}`;
     const cur = catalogByPidMall.get(k);
-    if (!cur || row.lprice < cur.lprice) catalogByPidMall.set(k, row);
+    if (!cur || row.lprice < cur.lprice) {
+      // 이긴 행에 판매처 이름이 없으면 진 행의 이름을 물려받는다 (같은 pid+mall 이다).
+      catalogByPidMall.set(k, cur && !row.mall_label && cur.mall_label ? { ...row, mall_label: cur.mall_label } : row);
+    } else if (!cur.mall_label && row.mall_label) {
+      catalogByPidMall.set(k, { ...cur, mall_label: row.mall_label });
+    }
   }
   const catalogUpsertRows = [...catalogByPidMall.values()];
 
@@ -879,6 +937,7 @@ async function recordPrices(observations, opts = {}) {
       + ' — 원장 없는 현재가를 남기지 않기 위해서입니다. 다음 수집에서 다시 시도됩니다.'
     );
   } else if (catalogUpsertRows.length) {
+    await applyImageCache(catalogUpsertRows, observations, opts, label);
     const msg = await upsertProducts(catalogUpsertRows);
     if (msg) errors.push(`products: ${msg}`);
   }
@@ -963,7 +1022,8 @@ async function saveProducts(keyword, items, opts = {}) {
     mall: it.mall,
     keyword,
     title: it.title,
-    price: it.lprice,
+    // 화면용으로 현재가를 보류한 항목(_trust guardPrice)도 원장에는 실제 관측값을 남긴다.
+    price: it._observedLprice != null ? it._observedLprice : it.lprice,
     oprice: it.oprice,
     savePct: it.savePct,
     link: it.link,
@@ -985,7 +1045,8 @@ function toClientProduct(p) {
   return {
     title: p.title,
     lprice: p.lprice,
-    link: p.link,
+    // 구매 링크는 공통 관문(_affiliate)을 지난 값만 — 옵션(vendor_item_id)까지 맞아야 한다.
+    link: require('./_affiliate').safeBuyLink(p.link, p),
     image: p.image,
     mall: p.mall,
     // 화면 표시용 몰 이름(ADPICK은 cp_name 기반). 없으면 raw mall로 대체 —

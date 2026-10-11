@@ -1,6 +1,7 @@
 const supabase = require('./_supabase');
 const { readBody, dbError, applyCors, readEmail, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
+const { safeBuyLink } = require('./_affiliate');
 const { requireAuth } = require('./_auth');
 
 const MAX_TITLE_LEN = 300;
@@ -50,7 +51,7 @@ module.exports = async function handler(req, res) {
         title: a.title,
         targetPrice: a.target_price,
         currentPrice: a.current_price,
-        link: a.link || '',
+        link: safeBuyLink(a.link),
         image: a.image || '',
         mall: a.mall || '',
         sent: a.sent ? 'Y' : 'N',

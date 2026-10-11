@@ -5,7 +5,13 @@
 <meta charset="UTF-8">
 <meta name="google-site-verification" content="cvsPo0UmxiSR33BEuEzxYhk5vvG6UUus0jLENWBa63g" />
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SEOSA · 최저가도 고급스럽게</title>
+<!--
+  검색 결과 제목 (2026-10-02 SEO).
+  브랜드 문구 «최저가도 고급스럽게» 는 공유 카드(og:title · twitter:title)와
+  히어로에 그대로 둔다. 검색 결과 제목은 이 사이트가 «무엇을 하는 곳인지»
+  — 최저가 · 가격비교 · 가격 추이 — 가 먼저 읽히게 한다.
+-->
+<title>SEOSA · 최저가·가격비교·가격 추이</title>
 
 <!-- SEO / 공유 카드
      검색 결과와 카카오톡·슬랙 공유 링크에 뜨는 설명이다.
@@ -25,9 +31,25 @@
   "모든 쇼핑몰"이라고 넓히지는 않는다 — 그건 사실이 아니다(지시 2).
   수집하는 범위를 있는 그대로 적는다.
 -->
-<meta name="description" content="쿠팡·제휴몰 가격을 매일 기록하고 가격 추이 그래프로 보여드립니다. 지금이 살 때인지 데이터로 확인하고, 목표가에 도달하면 이메일로 알림을 받아보세요.">
+<meta name="description" content="쿠팡·제휴몰 상품의 최저가와 가격 추이를 매일 기록해 비교합니다. 가격이 내려간 상품을 확인하고, 지금이 살 때인지 데이터로 판단하세요. 목표가에 도달하면 이메일로 알려드립니다.">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://seosa.ai.kr/">
+<!--
+  검색 결과(/?q=) · 상품 딥링크(/?p=) 는 색인 대상이 아니다 (2026-10-02 SEO).
+
+  서버는 그 주소에 X-Robots-Tag: noindex, follow 를 보낸다 (vercel.json headers).
+  이 파일은 정적이라 주소마다 머리를 바꿀 수 없으므로, 그 주소로 열렸을 때만
+  홈을 가리키는 canonical 을 떼고 robots 를 noindex 로 맞춘다 — 같은 페이지가
+  «색인하지 마라» 와 «홈이 원본이다» 를 동시에 말하지 않게 한다.
+  상품마다 색인되는 주소는 /p/{id} 이고, 검색어 대신 /category · /brand 페이지가 있다.
+-->
+<script>(function(){try{if(/[?&](q|p)(=|&|$)/.test(location.search)){var c=document.querySelector('link[rel="canonical"]');if(c)c.parentNode.removeChild(c);var r=document.querySelector('meta[name="robots"]');if(r)r.setAttribute('content','noindex,follow');}}catch(e){}})();</script>
+<!--
+  네이버 서치어드바이저 소유 확인 — 발급받은 값을 아래 주석 대신 붙여 넣는다.
+  (홈은 정적 파일이라 환경변수를 읽지 못한다. 서버가 그리는 페이지는
+   NAVER_SITE_VERIFICATION 환경변수를 쓴다 — api/_seo.js verificationMeta.)
+  <meta name="naver-site-verification" content="여기에_발급값">
+-->
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/og.png">
 <!-- 모바일 브라우저 주소창 색. 다크/라이트 각각 배경색과 맞춘다. -->
@@ -100,7 +122,7 @@
       "name": "SEOSA",
       "url": "https://seosa.ai.kr/",
       "logo": "https://seosa.ai.kr/og.png",
-      "sameAs": ["https://www.instagram.com/seosakorea"]
+      "sameAs": ["https://www.instagram.com/seosashop/"]
     }
   ]
 }
@@ -2349,6 +2371,18 @@ footer p{font-size:.75rem;color:var(--faint)}
 .mini .mbadge{position:absolute;top:5px;left:5px;font-size:.55rem;padding:2px 5px;
   border-radius:var(--r-sm);
   color:var(--soft);background:rgba(255,255,255,.92);font-weight:700;z-index:2;border:1px solid var(--line)}
+/*
+ * AI 가 실제로 1위로 추천한 카드 하나 (Chat.topCardIndex — 서버 identity 대조).
+ * 의미색 녹색(--down)으로 테두리 1.5px + 아주 옅은 면. 번지는 그림자(네온)는 쓰지 않는다.
+ * 테두리 두께는 1px 그대로 두고 0.5px 를 바깥 그림자로 더한다 — 두께를 바꾸면
+ * 이 카드만 크기가 달라져 2열 격자의 높이가 어긋난다.
+ * 사진 칸(.mt)은 원래 배경을 지킨다 — 상품 사진 뒤가 물들면 사진 색이 달라 보인다.
+ */
+.mini.is-top,.mini.is-top:hover{border-color:var(--down);box-shadow:0 0 0 .5px var(--down)}
+.mini.is-top .mb{background:var(--down-bg)}
+.mini .mtop{position:absolute;top:5px;right:5px;font-size:.55rem;padding:2px 5px;
+  border-radius:var(--r-sm);color:var(--card-bg);background:var(--down);font-weight:700;z-index:2;
+  letter-spacing:-.01em;white-space:nowrap}
 /* ── 챗 추천/후속 질문 칩 ── */
 .chat-suggest{display:flex;gap:6px;flex-wrap:wrap;padding:10px 18px 0;background:var(--bg)}
 /* 오늘 AI 사용량 — 조용한 한 줄. 배너나 팝업으로 키우지 않는다. */
@@ -2738,6 +2772,7 @@ html[data-theme="dark"] .autocomplete{background:var(--card-bg)}
   .mini .mprice{font-size:.74rem;margin-top:2px}
   .mini .mnote{font-size:.5rem;margin-top:2px}
   .mini .mbadge{font-size:.42rem;padding:2px 4px;top:3px;left:3px}
+  .mini .mtop{font-size:.42rem;padding:2px 4px;top:3px;right:3px}
   .chat-suggest{padding:8px 12px 0;gap:5px}
   .cs-chip{font-size:.64rem;padding:5px 10px}
   .chat-input{padding:10px 12px;gap:7px}
@@ -3498,7 +3533,7 @@ select:focus-visible,textarea:focus-visible,
      <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="AI 쇼핑">
       <div class="hero-inner">
        <div class="hero-copy">
-         <h1 class="hero-title">찾지 말고,<br>그냥 말하세요.</h1>
+         <h2 class="hero-title">찾지 말고,<br>그냥 말하세요.</h2>
          <p class="hero-sub">예산과 용도를 말하면 SEOSA AI가 조건에 맞는 상품을 비교하고 좁혀드립니다.</p>
          <button class="hero-cta" data-act="ai-entry" data-ctx="home">AI에게 물어보기 <span aria-hidden="true">→</span></button>
          <p class="aff-note" data-aff-note="hero-ai"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>
@@ -3535,7 +3570,7 @@ select:focus-visible,textarea:focus-visible,
      <div class="hc-slide" role="group" aria-roledescription="슬라이드" data-label="구매 시점 판단">
       <div class="hero-inner">
        <div class="hero-copy">
-         <h1 class="hero-title">지금 살까,<br>조금 더 기다릴까.</h1>
+         <h2 class="hero-title">지금 살까,<br>조금 더 기다릴까.</h2>
          <p class="hero-sub">가격 이력과 AI 분석으로 지금이 살 때인지 판단해드립니다.</p>
          <button class="hero-cta" data-act="scroll-drop">구매 타이밍 확인 <span aria-hidden="true">→</span></button>
        </div>
@@ -3577,7 +3612,7 @@ select:focus-visible,textarea:focus-visible,
       <div class="hero-inner">
        <div class="hero-copy">
          <span class="hc-label">참전용사 지원</span>
-         <h1 class="hero-title">가격을 아끼는 일에서,<br>기억을 지키는 일까지.</h1>
+         <h2 class="hero-title">가격을 아끼는 일에서,<br>기억을 지키는 일까지.</h2>
          <p class="hero-sub">SEOSA는 앞으로 실제 정산된 제휴수익의 6.25%를 6·25 참전용사 지원에 사용합니다.</p>
          <button class="hero-cta" data-act="open-veteran">취지 보기 <span aria-hidden="true">→</span></button>
          <p class="hc-note">구매자의 추가 부담은 없습니다.</p>
@@ -4151,7 +4186,7 @@ select:focus-visible,textarea:focus-visible,
       <p>개인정보 처리와 관련하여 문의사항이 있으신 경우 아래로 연락주세요:</p>
       <ul style="margin-left:20px;margin-bottom:20px">
         <li>이메일: yugeonbag091211@gmail.com</li>
-        <li>Instagram: @seosakorea</li>
+        <li>Instagram: @seosashop</li>
       </ul>
 
       <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
@@ -4245,7 +4280,7 @@ select:focus-visible,textarea:focus-visible,
       <p>서비스 이용 중 문제가 있거나 의견이 있으시면 연락주세요:</p>
       <ul style="margin-left:20px;margin-bottom:20px">
         <li>이메일: yugeonbag091211@gmail.com</li>
-        <li>Instagram: @seosakorea</li>
+        <li>Instagram: @seosashop</li>
       </ul>
 
       <p style="color:var(--faint);font-size:.85rem;margin-top:40px">최종 수정: 2026년 8월 26일</p>
@@ -4295,13 +4330,13 @@ select:focus-visible,textarea:focus-visible,
   <div class="logo">SEOSA<small>PREMIUM CURATION</small></div>
   <p>최저가도 고급스럽게</p>
   <p style="margin-left:auto">
-    <a href="https://www.instagram.com/seosakorea" target="_blank" rel="noopener noreferrer"
+    <a href="https://www.instagram.com/seosashop/" target="_blank" rel="noopener noreferrer"
        style="color:var(--soft);font-size:.78rem;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:.2s"
        onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--soft)'">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
       </svg>
-      @seosakorea
+      @seosashop
     </a>
   </p>
  </div>
@@ -4325,7 +4360,14 @@ select:focus-visible,textarea:focus-visible,
     NVIDIA Nemotron 오픈 모델로 생성됩니다.
     가격·최저가·구매 시점 판정은 모델이 아니라 SEOSA 서버가 수집한 기록으로 계산합니다.
   </p>
+  <!--
+    카테고리·브랜드 페이지로 가는 «진짜 링크» (2026-10-02 SEO).
+    홈의 상품 카드는 JS 로 모달을 여는 버튼이라 크롤러가 따라갈 주소가 없다.
+    이 링크 하나가 홈 → /category → 카테고리·브랜드 → /p/{id} 로 이어지는
+    길이다. 수천 개 상품 링크를 푸터에 늘어놓지 않는다.
+  -->
   <p style="margin-top:10px;font-size:.7rem;color:var(--faint)">
+    <a href="/category" style="color:var(--faint);text-decoration:underline">카테고리·브랜드별 최저가</a> &nbsp;·&nbsp;
     <a href="#" onclick="Policy.openPrivacy();return false" style="color:var(--faint);text-decoration:underline">개인정보처리방침</a> &nbsp;·&nbsp;
     <a href="#" onclick="Policy.openTerms();return false" style="color:var(--faint);text-decoration:underline">이용약관</a> &nbsp;·&nbsp;
     <a href="#" onclick="Policy.openBusiness();return false" style="color:var(--faint);text-decoration:underline">사업자 정보</a>
@@ -4594,6 +4636,8 @@ select:focus-visible,textarea:focus-visible,
  *  [1] CONST — 매직넘버 통합
  * ========================================================== */
 var CONST = {
+  /* SEOSA 쿠팡 파트너스 lptag — api/_affiliate.SEOSA_COUPANG_LPTAG 와 같은 값. 모든 SEOSA 쿠팡 링크에 공개적으로 실려 있다. */
+  COUPANG_LPTAG: 'AF8789251',
   SKELETON: {
     DELAY_MS: 180,   // 이 시간 안에 응답 오면 스켈레톤 아예 안 띄움
     MIN_MS:   300,   // 한 번 뜨면 최소 이만큼은 유지
@@ -4620,7 +4664,7 @@ var CONST = {
     // URL 길이 한도를 넘어 414가 나면서 위시 최신가가 통째로 갱신되지 않는다.
     HIST_BATCH:      40
   },
-  CHAT_TIMEOUT_MS: 30000,
+  CHAT_TIMEOUT_MS: 35000,
   /*
    * ── [대화 세션 만료] ────────────────────────────────────────
    * 저장된 대화를 언제까지 "이어지는 대화"로 볼 것인가.
@@ -4735,6 +4779,27 @@ var Track = {
     if (!name || Track._once[name]) return;
     Track._once[name] = true;
     Track.ev(name);
+  },
+
+  /*
+   * 제휴 링크 클릭 — 상품 단위 행(funnel_events) (2026-10-04).
+   *
+   * 예전에는 히어로 책등·헤드폰만 이 이벤트를 보냈고, 검색 결과·가격 모달·
+   * 핫딜·AI 카드의 구매 클릭은 날짜 카운터(external_shop_click)로만 남았다.
+   * 그래서 «무엇이 어느 몰로, 어느 화면에서 눌렸는가» 를 답할 수 없었다.
+   * 히어로 책등과 같은 모양(src·mall·pid·vid)이고 가격은 «화면에 보인
+   * 관측값» 이다. 구매가 아니라 클릭이다 (api/_funnel.js 머리말).
+   * src 는 서버 화이트리스트(_funnel.SOURCES) 이름만 쓴다.
+   */
+  affiliate: function(it, src) {
+    if (!it) return;
+    var qs = 'event=affiliate_click&src=' + encodeURIComponent(src || '');
+    if (it.mall) qs += '&mall=' + encodeURIComponent(it.mall);
+    if (it.productId) qs += '&pid=' + encodeURIComponent(it.productId);
+    var price = Fmt.int(it.lprice);
+    if (price > 0) qs += '&price=' + price;
+    try { qs += '&vid=' + encodeURIComponent(Track.vid()); } catch (e) {}
+    Track.ping(qs);
   }
 };
 
@@ -4884,7 +4949,7 @@ function isSearching() { var r = $('results'); return r ? r.style.display === 'b
  * 같은 상품명이 네이버와 쿠팡에 동시에 있는 일이 흔해서 title만 쓰면
  * 나중에 그려진 카드가 앞의 것을 덮어쓰고, 구매 버튼이 다른 몰 링크를 연다.
  */
-function productKey(title, mall, productId) {
+function productKey(title, mall, productId, vendorItemId) {
   // productId 는 몰 안에서 고유하다. 있으면 그걸로 키를 만든다.
   //
   // title+mall 로만 만들면 같은 몰에 같은 이름의 다른 상품이 있을 때
@@ -4896,7 +4961,13 @@ function productKey(title, mall, productId) {
   // 구분자는 NUL — 상품명·몰 이름에 절대 들어갈 수 없다.
   // (예전엔 소스에 NUL 바이트를 직접 넣어 두어서 grep 이 이 파일을 바이너리로 취급했다)
   var SEP = '\u0000';
-  if (productId) return 'id' + SEP + String(productId) + SEP + String(mall || '');
+  /*
+   * 옵션(vendorItemId)까지 키에 넣는다 (2026-10-04 독립 리뷰 재현).
+   * 같은 productId 의 옵션 A(2,500원)·B(42,000원)가 이 맵 하나를 공유하면, B 를
+   * 그린 순간 A 카드가 읽는 링크가 B 로 바뀌었다 — «가격은 A, 링크는 B».
+   * 가격·옵션·링크가 같은 옵션 스냅숏에서 나오게 한다.
+   */
+  if (productId) return 'id' + SEP + String(productId) + SEP + String(mall || '') + SEP + String(vendorItemId || '');
   return String(title || '') + SEP + String(mall || '');
 }
 
@@ -4911,7 +4982,11 @@ function productKey(title, mall, productId) {
  */
 function sameProduct(a, b) {
   if (!a || !b) return false;
-  if (a.productId && b.productId) return String(a.productId) === String(b.productId);
+  if (a.productId && b.productId) {
+    if (String(a.productId) !== String(b.productId)) return false;
+    // 둘 다 옵션을 알면 옵션까지 같아야 같은 상품이다 (productKey 와 같은 기준).
+    return !(a.vendorItemId && b.vendorItemId && String(a.vendorItemId) !== String(b.vendorItemId));
+  }
   if (a.title !== b.title) return false;
   if (!a.mall || !b.mall) return true;
   return a.mall === b.mall;
@@ -5126,6 +5201,39 @@ var Fmt = {
   safeUrl: function(u) {
     var s = String(u == null ? '' : u).trim();
     return /^https?:\/\//i.test(s) ? s : '';
+  },
+
+  /*
+   * 구매 링크 관문 — api/_affiliate.safeBuyLink 와 같은 규칙 (2026-10-04).
+   *
+   * 서버가 이미 걸렀어도 브라우저에서 한 번 더 건다. localStorage 에 남은 옛 찜·
+   * 최근 본 상품의 링크는 서버를 다시 지나지 않기 때문이다.
+   *   쿠팡  link.coupang.com/re/AFF…?lptag=<SEOSA> 또는 /a/<code> 만. 다른 파트너
+   *         lptag · lptag 없음 · /re/PCS… · 상품 페이지 원본 URL 은 막는다.
+   *         항목이 옵션(vendorItemId)을 알면 링크의 옵션과 같아야 한다 —
+   *         «가격은 A 옵션, 링크는 B 옵션» 이 되지 않게.
+   *   ADPICK commissionlink 는 그대로. 그 밖의 호스트는 스킴만 본다.
+   * 막히면 '' — 화면은 «링크 없음» 으로 그린다. 원본 URL 로 되살리지 않는다.
+   */
+  buyUrl: function(link, it) {
+    var s = Fmt.safeUrl(link);
+    if (!s) return '';
+    var u;
+    try { u = new URL(s); } catch (e) { return ''; }
+    var host = u.hostname.toLowerCase();
+    if (/(^|\.)coupang\.com$|^coupa\.ng$/.test(host)) {
+      if (u.protocol !== 'https:' || host !== 'link.coupang.com') return '';
+      if (!/^\/a\/[A-Za-z0-9]+\/?$/.test(u.pathname)) {
+        if (!/^\/re\/AFF[A-Z]*$/.test(u.pathname)) return '';
+        if (u.searchParams.get('lptag') !== CONST.COUPANG_LPTAG) return '';
+      }
+      var want = String((it && it.vendorItemId) || '');
+      var got = u.searchParams.get('vendorItemId') || '';
+      if (want && got && want !== got) return '';
+      return s;
+    }
+    if (host === 'biz.adpick.co.kr') return u.protocol === 'https:' ? s : '';
+    return s;
   },
 
   mall: function(it) {
@@ -5885,7 +5993,7 @@ var Card = {
      *   모달 하단의 같은 액션들은 그대로 둔다 — 상세를 보다가 사는 경로도
      *   여전히 필요하다. 두 자리 모두에 있는 것이 맞다.
      */
-    var hasLink = !!(it && Fmt.safeUrl(it.link));
+    var hasLink = !!(it && Fmt.buyUrl(it.link, it));
     /*
      * 판매처 링크가 없으면 누를 수 있게 생긴 버튼을 두지 않는다.
      * 예전에는 버튼이 그대로 있고 누르면 토스트만 떴다 — 누를 수 있게
@@ -5930,6 +6038,8 @@ var Card = {
     // 따로 심어 둔다 — Card.read가 이 값으로 되찾는다.
     return '<div class="card" data-glyph="' + glyph + '"'
       + ' data-pid="' + Fmt.esc(it.productId || '') + '"'
+      // data-vid: 옵션 식별자. Drop 행의 data-vid 와 같은 이유다(Drop.rowHTML 주석).
+      + ' data-vid="' + Fmt.esc(it.vendorItemId || '') + '"'
       + ' data-mall="' + Fmt.esc(it.mall || '') + '">'
       + Card.thumbHTML(it, m, glyph)
       + '<div class="info">'
@@ -5979,7 +6089,8 @@ var Card = {
     // data-mall이 없는 옛 카드(캐시된 페이지 등)에는 텍스트로 폴백한다.
     var mall  = card.dataset.mall || Fmt.textOf(card.querySelector('.mall-line'));
     var pid   = card.dataset.pid || '';
-    var stored = AppState.products[productKey(title, mall, pid)] || {};
+    var vid   = card.dataset.vid || '';
+    var stored = AppState.products[productKey(title, mall, pid, vid)] || {};
     return {
       title: title,
       lprice: Fmt.priceOf(card.querySelector('.price')),
@@ -5989,6 +6100,15 @@ var Card = {
       mallLabel: stored.mallLabel || mall,
       // 가격 그래프·알림이 상품명이 아니라 상품 단위로 붙도록 같이 넘긴다.
       productId: pid || stored.productId || '',
+      /*
+       * 옵션 식별자 (2026-10-04 운영 실측으로 추가).
+       *
+       * 빠져 있던 동안 검색·홈 카드에서 연 가격 모달은 vendorItemId 없이
+       * /api/history 를 불렀고, 서버는 옵션을 좁히지 못해 같은 상품 페이지의
+       * 다른 옵션 가격까지 한 곡선으로 섞었다 — "드립백 봉투" 2,500원 카드의
+       * 그래프 최고가가 다른 옵션의 42,000원이었다. Drop.read 와 같은 기준이다.
+       */
+      vendorItemId: vid || stored.vendorItemId || '',
       link: stored.link || '',
       image: stored.image || '',
       // 서버가 계산한 신뢰도. 가격 모달이 근거를 그대로 다시 보여준다.
@@ -6006,7 +6126,20 @@ document.addEventListener('error', function(e) {
   var card = img.closest('.card');
   var lthumb = img.closest('.lthumb');
   var radar = img.closest('.radar-deal-thumb');
+  var dthumb = img.closest('.dthumb');
   img.style.display = 'none';
+  /*
+   * 핫딜 썸네일 (2026-10-09). 예전엔 이 갈래가 없어 사진만 숨기고 빈 칸이 남았다.
+   * ADPICK search_img.php 사진은 몇 시간 뒤 404 가 되는 임시 주소라 운영 핫딜
+   * 54장 중 29장이 그 빈 칸이었다. 사진 없는 카드(Drop.rowHTML)와 같은 글리프로 맞춘다.
+   */
+  if (dthumb && !dthumb.querySelector('.glyph')) {
+    var dcard = img.closest('.dcard');
+    var g4 = document.createElement('span');
+    g4.className = 'glyph';
+    g4.textContent = Fmt.glyph(dcard ? dcard.getAttribute('data-title') : '');
+    dthumb.appendChild(g4);
+  }
   // 커뮤니티 핫딜 사진이 안 열리면 «참고 이미지» 표시만 빈 칸 위에 남던 것을
   // 사진 없는 카드와 같은 모양(⌁)으로 되돌린다.
   if (radar) {
@@ -6053,7 +6186,7 @@ var Grid = {
       // 카드의 data-mall(raw) / data-pid 와 같은 키를 써야 Card.read가 다시 찾을 수 있다.
       // 표시 이름(Fmt.mall(it).name)이 아니라 raw mall로 키를 잡아야 한다 — ADPICK은
       // cp_name에 따라 표시 이름이 상품마다 달라 키가 흩어진다(Card.html 주석 참고).
-      AppState.products[productKey(it.title, it.mall, it.productId)] = it;
+      AppState.products[productKey(it.title, it.mall, it.productId, it.vendorItemId)] = it;
 
       var wrap = document.createElement('div');
       wrap.innerHTML = Card.html(it);
@@ -6414,8 +6547,9 @@ var Focus = {
 /* 제휴 고지 한 줄 — HTML 에 박힌 .aff-note 와 같은 문구다(.aff-note 주석 참고). */
 var AFF_NOTE_HTML = '<p class="aff-note" data-aff-note="chat"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>';
 
-function openLink(link) {
-  var url = Fmt.safeUrl(link);
+/* it: 그 링크를 단 항목 — 옵션(vendorItemId)이 링크와 맞는지까지 본다 (Fmt.buyUrl). */
+function openLink(link, it) {
+  var url = Fmt.buyUrl(link, it);
   if (url) {
     // 상품 클릭은 여기 하나로 모인다 — 카드·시세판·모달이 전부 이 함수를 부른다.
     // 링크가 실제로 열리는 경우만 센다 (링크 없는 상품은 클릭이 아니다).
@@ -7241,6 +7375,14 @@ var Search = {
      */
     var heroEl = document.querySelector('.hero');
     if (heroEl) heroEl.style.display = 'none';
+    /*
+     * 히어로 캐러셀도 접는다 (2026-10-04 390×844 실측).
+     * 접지 않으면 모바일에서 780px 밴드가 결과 위에 남아, 검색 직후 첫 카드의
+     * 가격·구매 버튼이 화면 밖(y≈1,100)에 있었다. 캐러셀은 화면 밖이면 스스로
+     * 멈춘다(HeroCarousel.paused.out). goHome 이 되돌린다.
+     */
+    var bandEl = document.querySelector('.hero-band');
+    if (bandEl) bandEl.style.display = 'none';
 
     show('results', true);
     show('sortBar', false);
@@ -7655,6 +7797,8 @@ var Search = {
     }
     var heroEl = document.querySelector('.hero');
     if (heroEl) heroEl.style.display = '';
+    var bandEl = document.querySelector('.hero-band');
+    if (bandEl) bandEl.style.display = '';
 
     show('monthly',   AppState.ready.monthly);
     show('recent',    AppState.ready.recent);
@@ -7694,7 +7838,7 @@ var ExternalHot = {
     var image = Fmt.safeUrl(it.image);
     // 상품 구매 버튼은 «제휴 링크»일 때만 외부로 바로 보낸다.
     // 원문 URL을 상품 URL처럼 fallback하면 클릭은 나가지만 SEOSA 수익은 잡히지 않는다.
-    var affiliateUrl = Fmt.safeUrl(it.affiliateUrl || (it.monetized ? it.productUrl : ''));
+    var affiliateUrl = Fmt.buyUrl(it.affiliateUrl || (it.monetized ? it.productUrl : ''));
     var sourceUrl = Fmt.safeUrl(it.sourceUrl);
     var searchUrl = '/?q=' + encodeURIComponent(it.title || '');
     var communityOnly = it.communityOnly === true || it.verified === false;
@@ -7725,7 +7869,9 @@ var ExternalHot = {
       + '<div class="radar-deal-actions">' + history
       + (sourceUrl ? '<a href="' + Fmt.esc(sourceUrl) + '" target="_blank" rel="noopener noreferrer">원문 보기</a>' : '')
       + (affiliateUrl
-          ? '<a href="' + Fmt.esc(affiliateUrl) + '" target="_blank" rel="noopener noreferrer">제휴 상품 보기</a>'
+          ? '<a href="' + Fmt.esc(affiliateUrl) + '" target="_blank" rel="noopener noreferrer" data-aff-track="hotdeal"'
+              + ' data-pid="' + Fmt.esc(it.productId || '') + '" data-mall="' + Fmt.esc(it.affiliateMall || it.mall || '') + '"'
+              + ' data-price="' + Fmt.int(it.affiliatePrice || it.price) + '">제휴 상품 보기</a>'
           : '<a href="' + Fmt.esc(searchUrl) + '">SEOSA에서 상품 찾기</a>')
       + '</div></article>';
   },
@@ -8181,7 +8327,7 @@ var Drop = {
      * 이름과 저장값이 같아야 한다는 예전 전제가 가격 그래프 버그의 원인이었다).
      */
     var m = Fmt.mall(it);
-    AppState.products[productKey(it.title, it.mall, it.productId)] = it;
+    AppState.products[productKey(it.title, it.mall, it.productId, it.vendorItemId)] = it;
 
     var price = Fmt.int(it.lprice);
     var prev  = Fmt.int(it.oprice);
@@ -8292,7 +8438,7 @@ var Drop = {
        */
       +   '<div class="dacts">'
       +     '<button class="lact" data-act="ledger-alert">알림</button>'
-      +     (Fmt.safeUrl(it.link)
+      +     (Fmt.buyUrl(it.link, it)
             ? '<button class="lact dark" data-act="ledger-buy">구매</button>'
             : '<span class="lact is-off" aria-disabled="true"'
               + ' title="이 상품은 판매처 링크가 확인되지 않았어요">링크 없음</span>')
@@ -8353,7 +8499,7 @@ var Drop = {
     var title = row.dataset.title;
     var mall  = row.dataset.mall;
     var pid   = row.dataset.pid || '';
-    var stored = AppState.products[productKey(title, mall, pid)] || {};
+    var stored = AppState.products[productKey(title, mall, pid, row.dataset.vid || '')] || {};
     return {
       title: title,
       lprice: Fmt.int(row.dataset.price),
@@ -8478,8 +8624,8 @@ var Wish = {
       + '<div class="wi-mall">' + MallBrand.render(w.mall, w.mallLabel) + '</div>'
       + '<div class="wi-name">' + Fmt.esc(w.title || '') + '</div>'
       + '<div class="wi-price">' + Fmt.won(showPrice) + '원' + chg + '</div></div>'
-      + (Fmt.safeUrl(w.link)
-          ? '<a href="' + Fmt.esc(Fmt.safeUrl(w.link)) + '" target="_blank" rel="noopener noreferrer" class="wi-buy">구매</a>'
+      + (Fmt.buyUrl(w.link, w)
+          ? '<a href="' + Fmt.esc(Fmt.buyUrl(w.link, w)) + '" target="_blank" rel="noopener noreferrer" class="wi-buy">구매</a>'
           : '')
       + '<button class="wi-del" data-act="wish-del" data-idx="' + i + '" title="삭제">×</button>'
       + '</div>';
@@ -8615,7 +8761,7 @@ var Recent = {
     if (!info || !info.title) return;
 
     // 캐시에 있으면 더 완전한 정보(이미지/링크)를 쓰고, 없으면 넘어온 값으로 채운다.
-    var cached = AppState.products[productKey(info.title, info.mall, info.productId)] || {};
+    var cached = AppState.products[productKey(info.title, info.mall, info.productId, info.vendorItemId)] || {};
     var it = {
       title:  info.title,
       lprice: Fmt.int(info.lprice) || Fmt.int(cached.lprice),
@@ -8624,7 +8770,9 @@ var Recent = {
       mall:   info.mall  || cached.mall  || '',
       // 화면 표시용 몰 이름(ADPICK은 cp_name 기반) — 최근 본 상품 카드도 이걸로 그린다.
       mallLabel: info.mallLabel || cached.mallLabel || info.mall || cached.mall || '',
-      productId: info.productId || cached.productId || ''
+      productId: info.productId || cached.productId || '',
+      // 옵션도 함께 남긴다 — 다시 열 때 그 옵션의 이력과 링크를 찾는다.
+      vendorItemId: info.vendorItemId || cached.vendorItemId || ''
     };
 
     // ★ 이미 본 적 있으면 "처음 본 가격"을 유지 (변동 비교용)
@@ -9227,7 +9375,38 @@ var Chat = {
     return out;
   },
 
-  miniCard: function(it) {
+  /**
+   * AI 가 실제로 1위로 추천한 카드의 자리 (없으면 -1).
+   *
+   * 서버가 결정 엔진의 1위를 카드와 identity 로 대조해 준 res.topRecommendation
+   * (productId · vendorItemId · mall)만 믿는다. res.items[0] 을 추천으로 가정하지
+   * 않는다 — 추천 1위가 없는 응답(일반 답변·권하기 어려운 1위)에는 이 값이 없다.
+   */
+  topCardIndex: function(res) {
+    var t = res && res.topRecommendation;
+    var list = res && res.items;
+    if (!t || !t.productId || !list || !list.length) return -1;
+    var same = function(it) {
+      return !!it && String(it.productId || '') === String(t.productId)
+        && String(it.vendorItemId || '') === String(t.vendorItemId || '')
+        && String(it.mall || '') === String(t.mall || '');
+    };
+    var idx = typeof t.index === 'number' ? t.index : -1;
+    if (idx >= 0 && idx < list.length && same(list[idx])) return idx;
+    var hits = [];
+    list.forEach(function(it, i) { if (same(it)) hits.push(i); });
+    return hits.length === 1 ? hits[0] : -1;
+  },
+
+  /** 답변 아래 카드 묶음. 추천 1위 카드 하나만 .is-top 으로 그린다. */
+  miniGrid: function(res) {
+    var top = Chat.topCardIndex(res);
+    return '<div class="mini-grid">' + res.items.map(function(it, i) {
+      return Chat.miniCard(it, i === top);
+    }).join('') + '</div>';
+  },
+
+  miniCard: function(it, isTop) {
     if (!it) return '';
     var m = Fmt.mall(it);
     var src = Fmt.safeUrl(it.image);
@@ -9246,8 +9425,13 @@ var Chat = {
       ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
       : '';
 
-    return '<div class="mini" data-act="mini-go" data-link="' + Fmt.esc(Fmt.safeUrl(it.link)) + '">'
-      + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>' + img + '</div>'
+    return '<div class="mini' + (isTop === true ? ' is-top' : '') + '" data-act="mini-go" data-link="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '"'
+      // 제휴 클릭 계측·옵션 확인용 (Track.affiliate · Fmt.buyUrl). 화면에는 쓰지 않는다.
+      + ' data-pid="' + Fmt.esc(it.productId || '') + '" data-mall="' + Fmt.esc(it.mall || '') + '"'
+      + ' data-vid="' + Fmt.esc(it.vendorItemId || '') + '"'
+      + ' data-price="' + Fmt.int(it.lprice) + '">'
+      + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>'
+      + (isTop === true ? '<span class="mtop">추천 상품</span>' : '') + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mprice">' + Fmt.won(it.lprice) + '원</div>'
       + note + '</div>'
@@ -9448,13 +9632,7 @@ var Chat = {
     // 히스토리에도 중복으로 쌓였다. 먼저 끝난 쪽만 처리하도록 잠근다.
     var settled = false;
 
-    var timer = setTimeout(function() {
-      if (settled) return;
-      settled = true;
-      Chat.setSending(false);
-      if (typing && typing.parentNode) typing.remove();
-      Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
-    }, CONST.CHAT_TIMEOUT_MS);
+    var timer = null;
 
     // 최신 프로필 반영
     AppState.profile = normalizeProfile(Store.get(CONST.LS.PROFILE, AppState.profile));
@@ -9469,7 +9647,18 @@ var Chat = {
 
     // 빠진 가격 이력만 채운 뒤 질문한다 (실패해도 그냥 진행)
     Chat.ensureHistory(ctx.items, function() {
-      if (settled) return;   // 이력 기다리는 사이 타임아웃이 났다
+      if (settled) return;
+
+      // 가격 이력 조회는 선택적 사전 준비다. 이 4초를 AI의 응답 제한에
+      // 포함하면 서버의 27초 예산과 합쳐 30초 프론트 제한을 넘을 수 있다.
+      // 실제 /api/ai 요청을 보내는 순간부터 응답 타이머를 센다.
+      timer = setTimeout(function() {
+        if (settled) return;
+        settled = true;
+        Chat.setSending(false);
+        if (typing && typing.parentNode) typing.remove();
+        Chat.bubble('응답이 너무 오래 걸려요. 다시 시도해 주세요.', 'ai');
+      }, CONST.CHAT_TIMEOUT_MS);
 
       Api.call('askAI', [val, Chat.buildContext(ctx.items), AppState.chatHistory, AppState.profile, view, AppState.lastTopProductId || '', AppState.lastTopRecommendationRef || ''],
         function(res) {
@@ -9501,8 +9690,8 @@ var Chat = {
           html += Chat.fmtText(res.text || '');
           if (res.items && res.items.length) {
             // 제휴 고지 — 카드(외부 판매처 링크)보다 먼저 읽힌다. .aff-note 주석 참고.
-            if (res.items.some(function(it) { return it && Fmt.safeUrl(it.link); })) html += AFF_NOTE_HTML;
-            html += '<div class="mini-grid">' + res.items.map(Chat.miniCard).join('') + '</div>';
+            if (res.items.some(function(it) { return it && Fmt.buyUrl(it.link, it); })) html += AFF_NOTE_HTML;
+            html += Chat.miniGrid(res);
           }
           Chat.bubble(html, 'ai');
 
@@ -9604,7 +9793,7 @@ var Modal = {
      * 처음부터 없는 편이 정직하다 (카드의 .buy.is-off 와 같은 판단).
      */
     var buyBtn = $('modalBuy');
-    if (buyBtn) buyBtn.hidden = !Fmt.safeUrl(p.link);
+    if (buyBtn) buyBtn.hidden = !Fmt.buyUrl(p.link, p);
 
     // 신뢰도 근거는 이력 조회를 기다릴 필요가 없다 (서버가 이미 계산해 보냈다).
     Modal.renderTrust(p.trust);
@@ -10536,8 +10725,8 @@ var Compare = {
         + '<td class="cmp-diff hide-s ' + (it._suspect ? '' : (diff === 0 ? 'zero' : 'plus')) + '">'
         +   (it._suspect ? '—' : (diff === 0 ? '최저' : '+' + Fmt.won(diff))) + '</td>'
         + '<td style="text-align:right">'
-        +   (Fmt.safeUrl(it.link)
-              ? '<a class="cmp-go" href="' + Fmt.esc(Fmt.safeUrl(it.link)) + '" target="_blank" rel="noopener noreferrer">구매</a>'
+        +   (Fmt.buyUrl(it.link, it)
+              ? '<a class="cmp-go" href="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '" target="_blank" rel="noopener noreferrer">구매</a>'
               : '<span style="color:var(--faint);font-size:.72rem">링크 없음</span>')
         + '</td></tr>';
     });
@@ -11029,8 +11218,9 @@ var Actions = {
     var info = Card.read(el.closest('.card'));
     trackCardOrigin(el);
     Track.ev('external_shop_click');
+    if (info && Fmt.buyUrl(info.link, info)) Track.affiliate(info, el.closest('#resGrid') ? 'search' : 'home');
     Recent.addViewed(info);
-    openLink(info && info.link);
+    openLink(info && info.link, info);
   },
 
   // ── 시세판 ──
@@ -11040,8 +11230,9 @@ var Actions = {
     e.stopPropagation();
     var info = Drop.read(el.closest('.dcard'));
     Track.ev('external_shop_click');
+    if (Fmt.buyUrl(info.link, info)) Track.affiliate(info, 'hotdeal');
     Recent.addViewed(info);
-    openLink(info.link);
+    openLink(info.link, info);
   },
   'drop-more': function() { Drop.more(); },
   'external-hot-more': function() { ExternalHot.more(); },
@@ -11122,7 +11313,13 @@ var Actions = {
   'chat-suggest': function(el) { Chat.send(el.dataset.q); },
   'chat-clear':   function() { Chat.clear(); },
   'ai-login':     function() { Chat.loginFromGuest(); },
-  'mini-go':      function(el) { openLink(el.dataset.link); },
+  'mini-go':      function(el) {
+    var opt = { vendorItemId: el.dataset.vid || '' };
+    if (Fmt.buyUrl(el.dataset.link, opt)) {
+      Track.affiliate({ mall: el.dataset.mall, productId: el.dataset.pid, lprice: el.dataset.price }, 'ai');
+    }
+    openLink(el.dataset.link, opt);
+  },
 
   // ── 모달 ──
   'close-modal': function() { Modal.close(); },
@@ -11134,8 +11331,9 @@ var Actions = {
     var it = AppState.modalItem;
     if (!it) return;
     Track.ev('external_shop_click');
+    if (Fmt.buyUrl(it.link, it)) Track.affiliate(it, 'product');
     Recent.addViewed(it);
-    openLink(it.link);
+    openLink(it.link, it);
   },
   /* 카드에서 모달로 옮겨 온 두 액션 (Card.actionsHTML 주석 참고). */
   'modal-compare': function() {
@@ -11185,6 +11383,16 @@ document.addEventListener('click', function(e) {
    * 누른 경우는 각 핸들러가 알아서 처리하므로 여기서 건드리지 않는다.
    */
   if (!e.target.closest('#navMenu') && !e.target.closest('#menuBtn')) Nav.closeMenu();
+
+  /*
+   * 앵커로 직접 여는 제휴 링크(외부 핫딜 «제휴 상품 보기»)도 같은 계측을 남긴다.
+   * 이동은 <a target="_blank"> 가 그대로 한다 — 여기서는 «세기만» 한다.
+   */
+  var aff = e.target.closest('a[data-aff-track]');
+  if (aff) {
+    Track.ev('external_shop_click');
+    Track.affiliate({ mall: aff.dataset.mall, productId: aff.dataset.pid, lprice: aff.dataset.price }, aff.dataset.affTrack);
+  }
 
   if (!el) return;
 
@@ -11442,7 +11650,7 @@ var Shelf = {
     Array.prototype.forEach.call(svg.querySelectorAll('g[data-bs]'), function(g) {
       var idx  = Number(g.getAttribute('data-bs'));
       var book = SHELF_BOOKS[idx];
-      var url  = book ? Fmt.safeUrl(book.coupangUrl) : '';
+      var url  = book ? Fmt.buyUrl(book.coupangUrl) : '';
       if (!url) return;                       // 링크 없는 책은 그림 그대로 둔다
 
       /*
@@ -11695,7 +11903,7 @@ var Init = {
       .then(function(d) {
         var p = d && d.product;
         if (!p || !p.title) return;
-        AppState.products[productKey(p.title, p.mall, p.productId)] = p;
+        AppState.products[productKey(p.title, p.mall, p.productId, p.vendorItemId)] = p;
         Modal.open(p);
       })
       .catch(function() {});

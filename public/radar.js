@@ -24,6 +24,28 @@
 
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function url(v) { try { var u = new URL(v); return /^https?:$/.test(u.protocol) ? u.href : ''; } catch (_) { return ''; } }
+  /*
+   * 구매 링크 관문 — api/_affiliate.safeBuyLink · index.html Fmt.buyUrl 과 같은 규칙.
+   * 저장된(localStorage) 옛 링크도 여기서 막힌다. 쿠팡은 SEOSA lptag 의 AFF 링크 또는
+   * /a/ 단축 링크만, 항목이 옵션을 알면 링크 옵션과 같아야 한다.
+   */
+  var COUPANG_LPTAG = 'AF8789251';
+  function buyUrl(v, it) {
+    var s = url(v);
+    if (!s) return '';
+    var u = new URL(s), host = u.hostname.toLowerCase();
+    if (/(^|\.)coupang\.com$|^coupa\.ng$/.test(host)) {
+      if (u.protocol !== 'https:' || host !== 'link.coupang.com') return '';
+      if (!/^\/a\/[A-Za-z0-9]+\/?$/.test(u.pathname)) {
+        if (!/^\/re\/AFF[A-Z]*$/.test(u.pathname) || u.searchParams.get('lptag') !== COUPANG_LPTAG) return '';
+      }
+      var want = String((it && it.vendorItemId) || ''), got = u.searchParams.get('vendorItemId') || '';
+      if (want && got && want !== got) return '';
+      return s;
+    }
+    if (host === 'biz.adpick.co.kr') return u.protocol === 'https:' ? s : '';
+    return s;
+  }
   /** ★ 숫자가 아니면 null. 문자열 '0' 도 NaN 도 undefined 도 전부 «모름» 이다. */
   function num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
   function won(v) { var n = num(v); return n == null || n <= 0 ? '' : n.toLocaleString('ko-KR') + '원'; }
@@ -145,7 +167,7 @@
     var img = url(d.image);
     var cur = num(d.currentPrice), seen = num(d.seenPrice), target = num(d.targetPrice);
     var detail = d.productId ? '/p/' + encodeURIComponent(d.productId) + '?mall=' + encodeURIComponent(d.mall || '') : '';
-    var buy = url(d.url) || url(saved && saved.link);
+    var buy = buyUrl(d.url, d) || buyUrl(saved && saved.link, saved);
 
     var change = '';
     if (cur != null && seen != null && cur !== seen) {

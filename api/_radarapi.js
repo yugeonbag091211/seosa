@@ -28,6 +28,7 @@
  */
 
 const supabase = require('./_supabase');
+const { safeBuyLink } = require('./_affiliate');
 const { applyCors, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { loadStats } = require('./_pricestat');
@@ -207,7 +208,7 @@ async function radarHandler(req, res) {
         mall: it.mall || (p && (p.mall_label || p.mall)) || '',
         title,
         image: (p && p.image) || '',
-        url: (p && p.link) || '',
+        url: p ? safeBuyLink(p.link, p) : '',
         currentPrice: price || null,
         /* 사용자가 마지막으로 본 값 — 프론트가 그대로 되돌려 준 것이다. */
         seenPrice: it.seenPrice || null,
@@ -290,7 +291,7 @@ async function alternativesHandler(req, res) {
       { productId: b.product_id, title: b.title, price: int(b.lprice) },
       (pool || []).map(p => ({
         productId: p.product_id, title: p.title, price: int(p.lprice),
-        mall: p.mall_label || p.mall, image: p.image, url: p.link
+        mall: p.mall_label || p.mall, image: p.image, url: safeBuyLink(p.link, p)
       })),
       limit
     );
