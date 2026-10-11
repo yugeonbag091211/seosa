@@ -58,6 +58,22 @@
       "destination": "/api/history?__route=brand&slug=:slug"
     },
     {
+      "source": "/api/account/delete",
+      "destination": "/api/auth?action=delete-account"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/public/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/public/terms.html"
+    },
+    {
+      "source": "/support",
+      "destination": "/public/support.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/public/$1"
     }

@@ -8,12 +8,26 @@ const { isMissingObject } = require('./_dberror');
 /*
  * 이메일 인증 코드 발급 / 확인.
  *
- *   POST /api/auth  { email }         → 코드 메일 발송
- *   POST /api/auth  { email, code }   → { token, email, expiresAt }
+ *   POST /api/auth  { email, ageConfirmed: true }  → 코드 메일 발송
+ *   POST /api/auth  { email, code }                → { token, email, expiresAt }
+ *   POST /api/account/delete                       → 계정 삭제 (api/_account.js)
  *
  * 발급된 토큰은 /api/sync, /api/profile, /api/alerts 에
  * Authorization: Bearer <token> 으로 넣어 쓴다.
+ *
+ * ── 만 14세 미만 (2026-10-11) ──────────────────────────────────────
+ *
+ *   SEOSA 는 법정대리인 동의 절차를 두지 않는다. 그래서 만 14세 미만은 로그인(계정)을
+ *   쓸 수 없게 한다. 이메일을 받는 기능(가격 알림·동기화·프로필·결제·계정 삭제)은
+ *   전부 여기서 발급한 토큰을 요구하므로, 코드 발급 한 곳에서 막으면 계정과 그에
+ *   딸린 개인정보 처리가 모두 막힌다. 로그인 없는 검색·가격 확인은 건드리지 않는다.
+ *
+ *   ageConfirmed 는 정확히 true 여야 한다("true"·1 은 거절). 확인이 없으면 인증 코드를
+ *   만들지도(auth_codes 에 이메일이 남지 않는다), 메일을 보내지도 않는다.
+ *   2단계(코드 확인)는 1단계에서 발급한 코드가 있어야만 통과하므로 따로 묻지 않는다.
  */
+
+const AGE_REQUIRED_MESSAGE = '만 14세 이상만 로그인할 수 있어요. 만 14세 이상인지 확인해 주세요.';
 
 const MIN_MINUTES = Math.round(CODE_TTL_MS / 60000);
 
@@ -57,6 +71,16 @@ module.exports = async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 지원' });
 
+  /*
+   * 계정 삭제 — POST /api/account/delete (vercel.json rewrite → ?action=delete-account).
+   * 새 함수를 만들 수 없어(Vercel Hobby 12개 상한) 인증과 같은 함수에 둔다.
+   * 신원·삭제 범위·레이트리밋은 전부 api/_account.js 가 따로 정한다 —
+   * 아래 코드 발급 흐름(이메일 입력·auth 한도)과는 아무것도 공유하지 않는다.
+   */
+  if (String((req.query && req.query.action) || '') === 'delete-account') {
+    return require('./_account').deleteAccountHandler(req, res);
+  }
+
   // 메일 발송 비용과 스팸을 막는다. 코드 확인은 조금 더 넉넉히 잡는다.
   if (!guard(req, res, { name: 'auth', limit: 12, windowMs: 10 * 60 * 1000 })) return;
 
@@ -87,6 +111,10 @@ module.exports = async function handler(req, res) {
     }
 
     /* ── 1단계: 코드 발급 → 메일 발송 ───────────────────────────── */
+    if (body.ageConfirmed !== true) {
+      return res.status(400).json({ error: AGE_REQUIRED_MESSAGE, needsAgeConfirm: true });
+    }
+
     if (!process.env.RESEND_API_KEY) {
       // 여기서 조용히 성공하면 사용자는 오지 않을 메일을 기다린다.
       console.error('[auth] RESEND_API_KEY 미설정 — 인증 코드를 보낼 수 없습니다.');
