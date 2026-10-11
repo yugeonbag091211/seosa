@@ -45,7 +45,7 @@ const support = text(supportHtml);
 // ── 1. 라우팅 ───────────────────────────────────────────────────────
 const vercel = JSON.parse(read('vercel.json'));
 const catchAll = vercel.rewrites.findIndex(r => r.source.startsWith('/((?!api/)'));
-for (const [src, dest, file] of [['/privacy', '/public/privacy.html', 'public/privacy.html'], ['/terms', '/public/terms.html', 'public/terms.html'], ['/support', '/public/support.html', 'public/support.html']]) {
+for (const [src, dest, file] of [['/privacy', '/privacy.html', 'public/privacy.html'], ['/terms', '/terms.html', 'public/terms.html'], ['/support', '/support.html', 'public/support.html']]) {
   const i = vercel.rewrites.findIndex(r => r.source === src);
   check(i >= 0 && vercel.rewrites[i].destination === dest, `vercel.json: ${src} → ${dest}`);
   check(i >= 0 && i < catchAll, `${src} rewrite 가 catch-all 앞에 있다`);
