@@ -63,15 +63,15 @@
     },
     {
       "source": "/privacy",
-      "destination": "/public/privacy.html"
+      "destination": "/privacy.html"
     },
     {
       "source": "/terms",
-      "destination": "/public/terms.html"
+      "destination": "/terms.html"
     },
     {
       "source": "/support",
-      "destination": "/public/support.html"
+      "destination": "/support.html"
     },
     {
       "source": "/((?!api/).*)",
