@@ -27,6 +27,8 @@ const path = require('path');
 const Module = require('module');
 
 process.env.AUTH_SECRET = 'offline-provenance-signing-key';
+// 이 suite는 OpenRouter 대역만 허용한다. 호출자 환경의 OpenAI primary 키를 격리한다.
+delete process.env.OPENAI_API_KEY;
 process.env.OPENROUTER_API_KEY = 'sk-or-v1-OFFLINE-PROVENANCE';
 process.env.OPENROUTER_MODELS = 'test/offline:free';
 delete process.env.GEMINI_API_KEY;

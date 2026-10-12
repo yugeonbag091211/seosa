@@ -110,7 +110,12 @@ function splitTokens(normalized) {
     if (!chunk) return;
     // 한글 덩어리 / 영문·숫자 덩어리를 번갈아 뽑는다.
     const parts = chunk.match(/[가-힣ㄱ-ㅎㅏ-ㅣ]+|[0-9a-z]+/g) || [];
-    parts.forEach(p => { if (p) out.push(p); });
+    parts.forEach(p => {
+      if (!p) return;
+      const fused = splitFusedWord(p);
+      if (fused) out.push(...fused);
+      else out.push(p);
+    });
   });
   return out;
 }
@@ -163,6 +168,16 @@ const SYNONYM_GROUPS = [
   ['이어폰', '이어버드', '버즈', 'earbuds', 'earphone'],
   ['무선', '블루투스', 'bluetooth', 'wireless'],
   ['스마트워치', '워치', 'watch', '스마트밴드'],
+  // Common Korean/English catalog spellings. These preserve identity when a
+  // shopper searches in one language and a merchant lists the other.
+  ['apple', '애플'], ['iphone', '아이폰'], ['airpods', '에어팟'],
+  ['samsung', '삼성', '삼성전자'], ['galaxy', '갤럭시'], ['buds', '버즈'],
+  ['dyson', '다이슨'], ['logitech', '로지텍'], ['detect', '디텍트', '디텍'],
+  // 같은 이유로 넣는다. "아이패드 에어" 가 영문 상품명 «iPad Air» 를 못 알아보면,
+  // 같은 'air' 를 단 «아이폰 17 에어» 가 대신 맞는 상품처럼 보인다 (2026-10-12 live 레드팀 F18).
+  ['ipad', '아이패드'], ['sony', '소니'], ['gopro', '고프로'],
+  ['스마트폰', '휴대폰', '핸드폰', 'smartphone'], ['헤드폰', '헤드셋', 'headphone', 'headset'],
+  ['마우스', 'mouse'], ['청소기', 'vacuum'],
   // "노트북 스티커" 검색에 맥북 스티커가 떨어졌다 — 맥북도 노트북이다
   ['노트북', '랩탑', '맥북', 'laptop', 'notebook', 'macbook'],
   ['캐리어', '여행가방', '트렁크', 'suitcase'],
@@ -183,6 +198,64 @@ const SYNONYMS = (() => {
   });
   return m;
 })();
+
+/* Explicit product-line suffixes that commonly distinguish sibling models. */
+const VARIANT_GROUPS = [
+  ['pro', '프로'], ['max', '맥스'], ['ultra', '울트라'], ['plus', '플러스'],
+  ['air', '에어'], ['mini', '미니'], ['fe'], ['se'],
+  ['detect', '디텍트', '디텍'], ['absolute', '앱솔루트']
+];
+const VARIANT_KEYS = new Map();
+VARIANT_GROUPS.forEach(group => group.forEach(word => VARIANT_KEYS.set(word, group[0])));
+
+/*
+ * Split a compact title/query only when its full spelling is explainable by
+ * known catalog words and model-number chunks. This keeps identifiers such as
+ * 14ZD95U intact, while turning GalaxyS26Ultra into Galaxy / S26 / Ultra.
+ */
+const FUSED_WORDS = [...new Set([...SYNONYMS.keys(), ...VARIANT_KEYS.keys(), 'mxmaster'])]
+  .filter(word => word.length >= 2)
+  .sort((a, b) => b.length - a.length);
+function splitFusedWord(word) {
+  const input = String(word || '');
+  if (input.length < 4 || input.length > 80) return null;
+  // Ordinary alphabetic words and complete Korean dictionary tokens cannot
+  // benefit from segmentation; fused model spellings carry digits or are
+  // multiword Korean compounds absent from the token list.
+  if (/^[a-z]+$/.test(input)) return null;
+  if (!/\d/.test(input) && FUSED_WORD_SET.has(input)) return null;
+  const memo = new Map();
+  function visit(at) {
+    if (at === input.length) return { parts: [], words: 0, models: 0 };
+    if (memo.has(at)) return memo.get(at);
+    let best = null;
+    for (const known of FUSED_WORDS_BY_FIRST.get(input[at]) || []) {
+      if (!input.startsWith(known, at)) continue;
+      const rest = visit(at + known.length);
+      if (!rest) continue;
+      const candidate = { parts: [known, ...rest.parts], words: rest.words + 1, models: rest.models };
+      if (!best || candidate.words > best.words
+        || (candidate.words === best.words && candidate.parts.length < best.parts.length)) best = candidate;
+    }
+    for (let end = at + 1; end <= input.length; end++) {
+      const piece = input.slice(at, end);
+      if (!/^(?:[a-z]*\d+[a-z]*|\d{1,4})$/.test(piece)) continue;
+      const rest = visit(end);
+      if (!rest) continue;
+      const candidate = { parts: [piece, ...rest.parts], words: rest.words, models: rest.models + 1 };
+      if (!best || candidate.words > best.words
+        || (candidate.words === best.words && candidate.parts.length < best.parts.length)) best = candidate;
+    }
+    memo.set(at, best);
+    return best;
+  }
+  const parsed = visit(0);
+  if (!parsed || parsed.parts.length < 2 || !parsed.words) return null;
+  // Keep technical labels such as Core Ultra 5 and Ryzen 5 PRO intact. A
+  // variant word alone followed by a digit is not enough to split a model.
+  if (parsed.words === 1 && parsed.models === 1 && VARIANT_KEYS.has(parsed.parts[0])) return null;
+  return parsed.parts;
+}
 
 /**
  * 질의의 머리 토큰이 정말 브랜드인가?
@@ -222,8 +295,9 @@ function detectBrandHead(headToken, titles) {
   let contains = 0;
 
   titles.forEach(t => {
-    const norm = normalizeText(t);
-    const first = splitTokens(norm)[0];
+    const title = t && Array.isArray(t.tokens) ? t : analyzeTitle(t);
+    const norm = title.normalized;
+    const first = title.tokens[0];
     if (first && first.indexOf(headToken) === 0) leads++;
     if (norm.replace(/\s+/g, '').indexOf(stem) > -1) contains++;
   });
@@ -260,14 +334,17 @@ function analyzeQuery(keyword, opts = {}) {
 
   const totalWeight = tokens.reduce((a, t) => a + t.weight, 0);
   const analysis = { raw: String(keyword || ''), normalized, tokens, totalWeight, brandHead: !!brandHead };
-  analysis.modelKeys = modelCodes(keyword);
-  analysis.accessories = accessoryTerms(normalized);
+  analysis.modelKeys = modelCodesFromTokens(raw);
+  analysis.variantMarkers = variantMarkers(keyword, raw);
+  analysis.accessories = accessoryTerms(normalized, raw);
   // A broad head query need not partition the candidates: every returned title
   // may contain it. Infer this intent from a primary title, without a brand list.
-  const primaryHead = head && raw[0] === head && (opts.titles || []).some(title => {
-    const core = identityTokens(title);
-    return core[0] && core[0].startsWith(head)
-      && !compatibilityMention(analysis, title) && !accessoryTerms(normalizeText(title)).length;
+  const primaryHead = head && raw[0] === head && (opts.titles || []).some(value => {
+    const title = value && Array.isArray(value.tokens) ? value : analyzeTitle(value);
+    const core = title.identityTokens || identityTokens(title.raw, title);
+    if (!core[0] || !core[0].startsWith(head)) return false;
+    return !compatibilityMention(analysis, title.raw, title)
+      && !accessoryTerms(title.normalized, title.tokens).length;
   });
   analysis.intent = analysis.accessories.length ? 'ACCESSORY'
     : analysis.modelKeys.length ? 'MODEL'
@@ -336,7 +413,9 @@ function stemOf(tok) {
  */
 const ACCESSORY_WORDS = [
   '케이스', '커버', '필름', '스킨', '키스킨', '파우치', '거치대', '스트랩',
-  '보호', '액정보호', '강화유리', '충전기', '어댑터', '케이블', '받침대'
+  '보호', '액정보호', '강화유리', '충전기', '어댑터', '케이블', '받침대',
+  '마우스패드', 'mousepad', 'shell', 'bumper', 'protector', 'nozzle',
+  'pouch', 'strap', 'adapter', 'dock'
 ];
 
 /** 바로 앞 낱말이 «본품에 딸려 오는 것» 임을 밝히는 표시 ("케이스 포함", "충전기 증정"). */
@@ -400,6 +479,16 @@ const TAIL_NOISE = new Set([
   '방문설치', '무료설치', '설치', '배송', '당일발송', '할인쿠폰', '쿠폰',
   '국내발송', '해외배송', '해외', '정품', '벌크', '박스', '리퍼'
 ]);
+FUSED_WORDS.push(...COMMON_WORDS, ...TAIL_NOISE);
+FUSED_WORDS.sort((a, b) => b.length - a.length);
+const FUSED_WORD_SET = new Set(FUSED_WORDS);
+const FUSED_WORDS_BY_FIRST = new Map();
+for (const word of FUSED_WORDS) {
+  const first = word[0];
+  const group = FUSED_WORDS_BY_FIRST.get(first) || [];
+  group.push(word);
+  FUSED_WORDS_BY_FIRST.set(first, group);
+}
 
 /**
  * 제목의 내용 토큰. 뒤에 붙은 수량·규격·색상 같은 옵션 표기를 떼어낸다.
@@ -411,7 +500,10 @@ const TAIL_NOISE = new Set([
  * 그렇게 잘랐다가 갤럭시 검색에서 케이스가 1위로 올라오는 회귀가 났다.
  */
 function coreTokens(rawTitle) {
-  const toks = splitTokens(normalizeText(rawTitle));
+  return coreTokensFromTokens(splitTokens(normalizeText(rawTitle)));
+}
+function coreTokensFromTokens(tokens) {
+  const toks = tokens.slice();
   while (toks.length > 1) {
     const last = toks[toks.length - 1];
     const k = classify(last);
@@ -469,6 +561,8 @@ const ACCESSORY_TIER = [
   // 거치대·받침대와 같은 계열이다. "허리 지지대"처럼 검색어에 있으면 queryWantsAccessory 가 풀어 준다.
   ['지지대', 0.72],
   ['케이블', 0.72], ['이어팁', 0.72], ['공병', 0.72], ['리필', 0.72],
+  ['마우스패드', 0.72], ['mousepad', 0.72], ['shell', 0.72], ['bumper', 0.72],
+  ['protector', 0.72], ['nozzle', 0.72], ['pouch', 0.72], ['strap', 0.72], ['adapter', 0.72], ['dock', 0.72],
   ['세척솔', 0.72], ['스쿱', 0.72], ['포장용기', 0.72], ['패킹', 0.72],
   ['교체용', 0.72], ['소모품', 0.72], ['부품', 0.72], ['리무버', 0.72],
   ['카트리지', 0.72], ['심지', 0.72],
@@ -528,30 +622,28 @@ function accessoryTermAt(word, tokens, at) {
     || /^(tips?|pads?)$/.test(tokens[at + 1] || ''));
 }
 
-function accessoryTerms(normalized) {
-  const tokens = splitTokens(normalized);
+function accessoryTerms(normalized, tokens = splitTokens(normalized)) {
   return [...ACCESSORY_TIER, ...COMPONENT_TIER, ['토너', 0.55], ['잉크', 0.55], ['기어', 0.45]]
     .filter(([word]) => tokens.some((token, i) => accessoryTermAt(word, tokens, i)))
     .map(([word]) => word);
 }
 
-function modelCodes(text) {
-  return (String(text || '').normalize('NFKC').toLowerCase()
-    .match(/[a-z0-9]+(?:[-_][a-z0-9]+)*/g) || [])
+function modelCodesFromTokens(tokens) {
+  return tokens
     .filter(code => /[a-z]/.test(code) && /\d/.test(code)
       && !UNIT_RE.test(code) && !CAPACITY_RE.test(code));
 }
+function modelCodes(text) { return modelCodesFromTokens(splitTokens(normalizeText(text))); }
 
-function identityTokens(title) {
-  const plain = String(title || '').replace(/^\s*\[([^\]]+)\]\s*/, (whole, label) =>
-    /해외|국내|배송|할인|결제|특가|공식|정품|쿠폰/.test(label) ? '' : whole);
-  return coreTokens(plain).filter(token => !COMMON_WORDS.has(token)
-    && !TAIL_NOISE.has(token) && !YEAR_RE.test(token) && !UNIT_RE.test(token));
+function identityTokens(title, titleInfo) {
+  const info = titleInfo || (title && Array.isArray(title.tokens) ? title : analyzeTitle(title));
+  return (info.identityTokens || []).slice();
 }
 
-function compatibilityMention(analysis, title) {
-  const normalized = normalizeText(title);
-  const tokens = splitTokens(normalized);
+function compatibilityMention(analysis, title, titleInfo) {
+  const info = titleInfo || (title && Array.isArray(title.tokens) ? title : analyzeTitle(title));
+  const normalized = info.normalized;
+  const tokens = info.tokens;
   const wanted = analysis.tokens.filter(token => token.kind !== KIND.COMMON);
   const targetSuffix = wanted.some(token => token.text.length >= 2 && tokens.some(t =>
     t.includes(`${token.text}용`) || t.includes(`${token.text}전용`)));
@@ -560,14 +652,12 @@ function compatibilityMention(analysis, title) {
     || /\b(?:for|compatible|replacement)\b/.test(normalized);
 }
 
-function titleRelation(analysis, title) {
+function titleRelation(analysis, title, titleInfo) {
   let factor = 1;
   const reasons = [];
-  const raw = String(title || '').normalize('NFKC').toLowerCase();
-  if (analysis.modelKeys.length && !analysis.modelKeys.every(wanted => {
-    const pattern = wanted.replace(/[-_]/g, '').split('').join('[-_\\s]*');
-    return new RegExp(`(?:^|[^a-z0-9])${pattern}(?=$|[^a-z0-9])`).test(raw);
-  })) {
+  const info = titleInfo || (title && Array.isArray(title.tokens) ? title : analyzeTitle(title));
+  const titleModels = new Set(info.modelKeys || modelCodesFromTokens(info.tokens));
+  if (analysis.modelKeys.length && !analysis.modelKeys.every(wanted => titleModels.has(wanted))) {
     factor *= 0.4;
     reasons.push('model-boundary-miss');
   }
@@ -575,10 +665,152 @@ function titleRelation(analysis, title) {
   // family/category queries conservative: only broad primary-head evidence
   // enables this signal, and one preceding manufacturer token is harmless.
   if (analysis.intent === 'BRAND_ONLY') {
-    const at = matchIndex(analysis.tokens[0], identityTokens(title));
+    const at = matchIndex(analysis.tokens[0], identityTokens(title, info));
     if (at >= 2) { factor *= 0.65; reasons.push('late-head'); }
   }
   return { factor, reason: reasons.join(',') };
+}
+
+function variantMarkers(raw, tokens) {
+  const markers = new Set();
+  const parts = tokens || splitTokens(normalizeText(raw));
+  const anchors = [];
+  parts.forEach((token, index) => {
+    // A suffix belongs to a model only beside a numeric identity token.
+    // Otherwise ordinary title text such as “air filtration” or “pro camera”
+    // must not turn into a sibling-model mismatch.
+    if (/\d/.test(token) && !UNIT_RE.test(token) && !CAPACITY_RE.test(token) && !YEAR_RE.test(token)) anchors.push(index);
+  });
+  anchors.forEach(anchor => {
+    for (const direction of [-1, 1]) {
+      for (let index = anchor + direction; index >= 0 && index < parts.length; index += direction) {
+        const key = VARIANT_KEYS.get(parts[index]);
+        if (!key) break;
+        markers.add(key);
+      }
+    }
+  });
+  // Galaxy S26+ and similar catalog suffixes lose '+' during tokenization.
+  const compactRaw = String(raw || '').normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+  if (anchors.some(index => compactRaw.includes(`${parts[index]}+`))) markers.add('plus');
+  return markers;
+}
+
+/** Rank explicit sibling-model suffixes only when the shared numeric identity matches. */
+function variantRelation(analysis, title, titleInfo) {
+  const queryVariants = analysis && analysis.variantMarkers || variantMarkers(analysis && analysis.raw);
+  const info = titleInfo || (title && Array.isArray(title.tokens) ? title : analyzeTitle(title));
+  const titleVariants = info.variantMarkers || variantMarkers(title, info.tokens);
+  if (!queryVariants.size && !titleVariants.size) return { factor: 1, reason: '' };
+
+  const sharedModelAnchor = (analysis.tokens || []).some(token =>
+    (token.kind === KIND.MODEL || token.kind === KIND.NUMBER) && tokenQuality(token, info) > 0);
+  if (!sharedModelAnchor) return { factor: 1, reason: '' };
+
+  const missing = [...queryVariants].filter(marker => !titleVariants.has(marker));
+  const extra = [...titleVariants].filter(marker => !queryVariants.has(marker));
+  if (!missing.length && !extra.length) return { factor: 1, reason: '' };
+
+  let factor = missing.length ? 0.4 : 1;
+  if (extra.length) factor *= Math.pow(0.72, Math.min(extra.length, 2));
+  return { factor, reason: `variant-mismatch:${[...missing, ...extra].join(',')}` };
+}
+
+/* A listing that explicitly says it is a replica or substitute is not the
+ * requested branded model. "OEM" alone is ambiguous, so require replacement
+ * plus compatibility wording before treating it as a substitute. */
+const SUBSTITUTE_MARK_RE = /유사품|가품|짝퉁|모조품|레플리카|대체품|\b(?:replica|imitation|lookalike|counterfeit|clone)\b/i;
+const OEM_COMPAT_RE = /\b(?:oem|aftermarket|replacement)\b.*\b(?:compatible(?:\s+with)?|for)\b/i;
+function substituteRelation(query, title) {
+  const q = String(query || '');
+  const t = String(title || '');
+  if (SUBSTITUTE_MARK_RE.test(q) || /\b(?:oem|aftermarket|replacement)\b/i.test(q)) return { factor: 1, reason: '' };
+  return SUBSTITUTE_MARK_RE.test(t) || OEM_COMPAT_RE.test(t)
+    ? { factor: 0.45, reason: 'substitute-listing' }
+    : { factor: 1, reason: '' };
+}
+
+const CONDITION_PATTERNS = [
+  ['rental', /렌탈|대여|\brental\b|\blease\b|월\s*구독/i],
+  ['refurbished', /리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|리퍼(?![가-힣])|\brefurbished\b|\brenewed\b/i],
+  ['used', /중고(?!\s*등\s*학생)|\bused\b(?!\s+(?:for|to|by|with|as|in|on)\b)|pre[ -]?owned|second[ -]?hand/i],
+  ['display', /전시\s*상품|전시품|진열\s*상품|\bdisplay\s*unit\b/i],
+  ['opened', /단순\s*개봉|박스\s*개봉|개봉\s*상품|open[ -]?box|opened\s*(?:box|item)/i],
+  ['sealed', /미개봉|미개봉품|\bsealed\b|\bbrand\s*new\b/i],
+  ['new', /새\s*상품|새\s*제품|신품/i]
+];
+function conditionState(text, metadata) {
+  const source = `${String(text || '')} ${String(metadata || '')}`;
+  for (const [state, pattern] of CONDITION_PATTERNS) if (pattern.test(source)) return state;
+  if (/^new$/i.test(String(metadata || '').trim())) return 'new';
+  return '';
+}
+function conditionIntent(text) {
+  const source = normalizeText(text);
+  const matches = [];
+  CONDITION_PATTERNS.forEach(([state, pattern]) => {
+    const expression = new RegExp(pattern.source, `${pattern.flags.replace(/g/g, '')}g`);
+    let match;
+    while ((match = expression.exec(source))) {
+      matches.push({ state, start: match.index, end: match.index + match[0].length });
+      if (!match[0].length) expression.lastIndex++;
+    }
+  });
+  matches.sort((a, b) => a.start - b.start || b.end - a.end);
+
+  const excluded = new Set();
+  const wanted = [];
+  matches.forEach((match, index) => {
+    let nextIndex = index + 1;
+    while (nextIndex < matches.length && matches[nextIndex].start < match.end) nextIndex++;
+    const next = matches[nextIndex];
+    const tail = source.slice(match.end, next ? next.start : match.end + 24);
+    const negated = /^\s*(?:(?:은|는|이|가|을|를|도)\s*)?(?:말고|제외(?:하고|한)?|아닌|아니라|아님|빼고|필요\s*없(?:음|고)?|없(?:이|고)?|rather\s+than|excluding|except|not)/i.test(tail);
+    if (negated) excluded.add(match.state);
+    else wanted.push(match.state);
+  });
+  return { wanted: wanted.length ? wanted[wanted.length - 1] : '', excluded };
+}
+function stripConditionTerms(text) {
+  // Keep punctuation such as the '+' in S26+ for variant parsing.
+  let result = String(text || '').normalize('NFKC').toLowerCase();
+  CONDITION_PATTERNS.forEach(([, pattern]) => {
+    result = result.replace(new RegExp(pattern.source, `${pattern.flags.replace(/g/g, '')}g`), ' ');
+  });
+  return result
+    .replace(/(?:^|\s)(?:(?:은|는|이|가|을|를|도)\s*)?(?:말고|제외(?:하고|한)?|아닌|아니라|아님|빼고|필요\s*없(?:음|고)?|없(?:이|고)?|rather\s+than|excluding|except|not)(?=\s|$)/gi, ' ')
+    .replace(/(?:^|\s)(?:만|only)(?=\s|$)/gi, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+function conditionRelation(query, title, item, intent) {
+  intent = intent || conditionIntent(query);
+  const actual = conditionState(title, item && item.condition);
+  if (actual && intent.excluded.has(actual)) {
+    return { factor: 0.25, reason: `excluded-condition:${actual}` };
+  }
+  const wanted = intent.wanted;
+  const matchesWanted = wanted === 'new' || wanted === 'sealed'
+    ? actual === 'new' || actual === 'sealed' : actual === wanted;
+  if (wanted) return matchesWanted ? { factor: 1, reason: '' }
+    : { factor: actual ? 0.35 : 0.55, reason: `condition-mismatch:${actual || 'unspecified'}` };
+  if (!actual || actual === 'new' || actual === 'sealed') return { factor: 1, reason: '' };
+  const factor = actual === 'rental' ? 0.3 : actual === 'used' || actual === 'refurbished' ? 0.65 : 0.75;
+  return { factor, reason: `unspecified-condition:${actual}` };
+}
+
+/** Exact identity evidence for user exclusions across fused and bilingual titles. */
+function identityMatchScore(query, title) {
+  const analysis = analyzeQuery(query, { titles: [String(title || '')] });
+  if (!analysis.tokens.length) return 0;
+  const coverage = scoreTitle(analysis, title).score;
+  const relation = titleRelation(analysis, title);
+  const variant = variantRelation(analysis, title);
+  return Math.round(coverage * relation.factor * variant.factor * 1000) / 1000;
+}
+function isIdentityMatch(query, title) {
+  // Synonym matches carry a deliberate 0.75 ceiling. Keep that signal usable
+  // for exclusions while rejecting a sibling with a missing/extra variant.
+  return identityMatchScore(query, title) >= 0.75;
 }
 
 /**
@@ -592,12 +824,13 @@ function titleRelation(analysis, title) {
  * @param {string} rawTitle 원본 상품명
  * @returns {{factor:number, at:number, accessory:string, reason:string}}
  */
-function productFocus(analysis, rawTitle) {
+function productFocus(analysis, rawTitle, titleInfo, soldContext) {
   const none = { factor: 1, at: -1, accessory: '', reason: '' };
   if (!analysis || !analysis.tokens || !analysis.tokens.length) return none;
+  const info = titleInfo || (rawTitle && Array.isArray(rawTitle.tokens) ? rawTitle : analyzeTitle(rawTitle));
   // Retain inclusion/giveaway words: coreTokens removes these trailing words,
   // which would turn a bundled main product into a standalone accessory.
-  const core = splitTokens(normalizeText(rawTitle));
+  const core = info.tokens;
   if (core.length < 2) return none;
 
   // 검색어가 제목에 «처음» 닿는 자리. 여러 토큰이면 그중 가장 앞.
@@ -617,8 +850,9 @@ function productFocus(analysis, rawTitle) {
    */
   const requested = analysis.accessories || accessoryTerms(analysis.normalized || '');
   const requestedAt = core.findIndex((token, i) => requested.some(w => accessoryTermAt(w, core, i)));
-  const compatible = compatibilityMention(analysis, rawTitle);
-  const tiers = accessoryTiers(rawTitle, core, compatible);
+  const compatible = compatibilityMention(analysis, info.raw, info);
+  const tiers = accessoryTiers(info.raw, core, compatible, info);
+  if (!mayContainAccessory(core, tiers)) return none;
 
   /*
    * 판매 대상(sold object)을 먼저 본다 (2026-10-04 독립 리뷰 반례).
@@ -632,6 +866,7 @@ function productFocus(analysis, rawTitle) {
   let factor = 1, hit = '', kind = 'tail-acc';
   if (!requested.length) {
     const sold = soldObject(core, at, tiers);
+    if (soldContext) soldContext.kind = sold.kind;
     if (sold.kind === 'main') return none;
     // 판매 대상이 부속이면 그 세기에서 시작한다. 아래 규칙이 더 강한 부속
     // 낱말을 찾으면 그쪽을 쓴다 — «공병 리필 용기» 는 용기(0.85)가 아니라 공병(0.72).
@@ -676,12 +911,13 @@ function productFocus(analysis, rawTitle) {
 }
 
 /** 이 제목에서 부속으로 볼 낱말과 세기. 문맥(프린터·화장품·호환)에 따라 몇 개가 더 붙는다. */
-function accessoryTiers(rawTitle, core, compatible) {
-  const norm = normalizeText(rawTitle);
+function accessoryTiers(rawTitle, core, compatible, titleInfo) {
+  const norm = titleInfo ? titleInfo.normalized : normalizeText(rawTitle);
   const printerContext = /프린터|레이저|printer|laser|카트리지|정품토너/.test(norm);
   const cosmeticContext = /피부|보습|스킨|화장품|페이스|skin|facial|hydrating/.test(norm)
     || core.some(token => /^\d+ml$/.test(token));
-  const consumableContext = printerContext || (modelCodes(rawTitle).length > 0 && !cosmeticContext);
+  const consumableContext = printerContext || ((titleInfo
+    ? titleInfo.modelKeys.length : modelCodesFromTokens(core).length) > 0 && !cosmeticContext);
   const tiers = [...ACCESSORY_TIER, ...COMPONENT_TIER];
   if (consumableContext) tiers.push(['토너', 0.55], ['잉크', 0.55]);
   if (/베벨|리프팅|카세트|브래킷|브라켓|부품|교체/.test(norm)) tiers.push(['기어', 0.45]);
@@ -777,6 +1013,11 @@ function soldObject(core, at, tiers) {
   return unknown;
 }
 
+function mayContainAccessory(core, tiers) {
+  const flat = (core || []).join('');
+  return tiers.some(([word]) => flat.indexOf(word) >= 0);
+}
+
 /** scoreTitle 용 — analyzeTitle 결과(T)로 판매 대상 종류만 구한다. */
 function soldKind(analysis, T) {
   const core = T.tokens || [];
@@ -786,19 +1027,28 @@ function soldKind(analysis, T) {
     if (i > -1 && (at < 0 || i < at)) at = i;
   });
   const raw = T.raw || T.normalized || '';
-  return soldObject(core, at, accessoryTiers(raw, core, compatibilityMention(analysis, raw))).kind;
+  const tiers = accessoryTiers(raw, core, compatibilityMention(analysis, raw, T), T);
+  return soldObject(core, at, tiers).kind;
 }
 
 /** 상품명을 한 번만 분석해 두고 여러 검색어에 재사용한다. */
 function analyzeTitle(title) {
+  const raw = String(title || '');
   const normalized = normalizeText(title);
   const tokens = splitTokens(normalized);
+  const headerStripped = raw.replace(/^\s*\[([^\]]+)\]\s*/, (whole, label) =>
+    /해외|국내|배송|할인|결제|특가|공식|정품|쿠폰/.test(label) ? '' : whole);
+  const identityBase = headerStripped === raw ? tokens : splitTokens(normalizeText(headerStripped));
   return {
-    raw: String(title || ''),
+    raw,
     normalized,
     tokens,
     set: new Set(tokens),
     flat: tokens.join(''),
+    modelKeys: modelCodesFromTokens(tokens),
+    variantMarkers: variantMarkers(raw, tokens),
+    identityTokens: coreTokensFromTokens(identityBase).filter(token => !COMMON_WORDS.has(token)
+      && !TAIL_NOISE.has(token) && !YEAR_RE.test(token) && !UNIT_RE.test(token)),
     /*
      * 숫자 토큰이 용량 표기에만 등장하는지 보기 위한 목록.
      * "16GB" 의 16 은 16인치 노트북을 찾는 사람에게 아무 의미가 없다.
@@ -867,7 +1117,7 @@ const ACCESSORY_PENALTY = 0.8;
  * @param {string|object} title 상품명 또는 analyzeTitle() 결과
  * @returns {{score, hits: Array, misses: Array, reason: string}}
  */
-function scoreTitle(analysis, title) {
+function scoreTitle(analysis, title, soldKindOverride) {
   const T = (title && title.set) ? title : analyzeTitle(title);
   if (!analysis.tokens.length) return { score: 1, hits: [], misses: [], reason: 'no-tokens' };
 
@@ -902,7 +1152,7 @@ function scoreTitle(analysis, title) {
    * 낱말 하나로 풀어 주면 «케이스 포함 카라비너 세트» 가 본품과 동점이 된다.
    */
   if (!queryHasAccessory && ACCESSORY_WORDS.some(w => T.flat.indexOf(w) > -1)
-      && soldKind(analysis, T) !== 'main') {
+      && (soldKindOverride || soldKind(analysis, T)) !== 'main') {
     score *= ACCESSORY_PENALTY;
     reasons.push('accessory');
   }
@@ -1155,19 +1405,21 @@ function rankItems(keyword, items, opts = {}) {
   // The AI path applies the explicit intent filter in _shopintent.js before its early return.
   const uniq = deduped;
   const intentDropped = 0;
-  // 브랜드 판정에 이번 목록을 쓴다 (detectBrandHead 주석 참고).
-  const analysis = analyzeQuery(keyword, { titles: deduped.map(it => (it && it.title) || '') });
-
   if (!uniq.length) {
     return { items: [], dropped: intentDropped, removed, allBelow: deduped.length > 0 };
   }
-  if (!analysis.tokens.length) {
+  if (!splitTokens(normalizeText(keyword)).length) {
     uniq.forEach(it => { if (it) it.relevance = 1; });
     return { items: uniq, dropped: intentDropped, removed, allBelow: false };
   }
+  // 브랜드 판정에 이번 목록을 쓴다 (detectBrandHead 주석 참고).
+  const titleInfos = deduped.map(it => analyzeTitle((it && it.title) || ''));
+  // Condition words and negation belong to conditionRelation, not product identity.
+  const analysis = analyzeQuery(stripConditionTerms(keyword), { titles: titleInfos });
+  const requestedCondition = conditionIntent(keyword);
 
-  const scored = uniq.map(it => {
-    const r = scoreTitle(analysis, it && it.title);
+  const scored = uniq.map((it, index) => {
+    const titleInfo = titleInfos[index];
     /*
      * 질의 커버리지(r.score) 에 «핵심 명사 정렬»(productFocus) 을 곱한다.
      *
@@ -1179,12 +1431,17 @@ function rankItems(keyword, items, opts = {}) {
      * 기대는 검사가 이미 있고, "질의가 얼마나 반영됐나" 와 "이게 그 물건인가" 는
      * 서로 다른 물음이라 한 숫자에 섞지 않는 편이 낫다.
      */
-    const f = productFocus(analysis, it && it.title);
-    const relation = titleRelation(analysis, it && it.title);
+    const soldContext = {};
+    const f = productFocus(analysis, it && it.title, titleInfo, soldContext);
+    const r = scoreTitle(analysis, titleInfo, soldContext.kind);
+    const relation = titleRelation(analysis, it && it.title, titleInfo);
+    const variant = variantRelation(analysis, it && it.title, titleInfo);
+    const condition = conditionRelation(keyword, it && it.title, it, requestedCondition);
+    const substitute = substituteRelation(keyword, it && it.title);
     if (it) {
-      it.relevance = Math.round(r.score * f.factor * relation.factor * 1000) / 1000;
+      it.relevance = Math.round(r.score * f.factor * relation.factor * variant.factor * condition.factor * substitute.factor * 1000) / 1000;
       // 왜 내려갔는지 남긴다. 진단용이고 응답 형태를 바꾸지 않는다(undefined 면 직렬화에서 빠진다).
-      it.relevanceWhy = [r.reason, f.reason, relation.reason].filter(Boolean).join(',') || undefined;
+      it.relevanceWhy = [r.reason, f.reason, relation.reason, variant.reason, condition.reason, substitute.reason].filter(Boolean).join(',') || undefined;
     }
     return { it, r, f };
   });
@@ -1647,6 +1904,10 @@ function nearest(entries, qKey, limit) {
 module.exports = {
   normalizeText, canonicalKey, splitTokens, analyzeQuery, analyzeTitle,
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
+  identityMatchScore, isIdentityMatch,
+  // AI 경로의 식별 계약(api/_aiidentity.js)이 같은 판정을 다시 쓴다 — 두 벌로 두지 않는다.
+  variantMarkers, conditionState, conditionIntent, substituteRelation, accessoryTerms, classify, CONDITION_PATTERNS,
+  VARIANT_KEYS, TAIL_NOISE, UNIT_RE, CAPACITY_RE, YEAR_RE, SYNONYMS,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,

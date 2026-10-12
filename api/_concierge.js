@@ -104,7 +104,7 @@ function conclusion(top, deal, decision) {
 
   const conf = (decision && decision.confidence && decision.confidence.confidence) || 'low';
   const hedge = hedgeFor(conf);
-  const name = shortTitle(top.title, 46);
+  const name = nameOf(top, 46);
   const p = priceOf(top);
 
   L.push(`추천: ${name}${p > 0 ? ` — ${won(p)}원` : ''}`);
@@ -141,7 +141,8 @@ function conclusion(top, deal, decision) {
  *
  * 지우는 것이 아니라 자리를 옮기는 것이다 — 아쉬운 점은 cautions() 가 맡는다.
  */
-const NEGATIVE_REASON = /(않음|않습니다|없음|없습니다|어려움|어렵|불가|미확인|확인 안 됨|초과)/;
+// "제외 요청하신 … 제품" · "요청 상품과 다름: …" 은 권하는 근거가 아니라 주의할 사실이다.
+const NEGATIVE_REASON = /(않음|않습니다|없음|없습니다|어려움|어렵|불가|미확인|확인 안 됨|초과|제외 요청|요청 상품과 다름)/;
 
 /** 왜 이것인가. rankItems / decide 가 이미 만들어 둔 문장을 옮긴다. */
 function reasons(top, decision) {
@@ -204,8 +205,24 @@ function derefs(text, items) {
   const list = Array.isArray(items) ? items : [];
   return String(text == null ? '' : text).replace(/\((P[1-8])\)/g, (m, ref) => {
     const it = list.find(x => x && x.ref === ref);
-    return it && it.title ? ` 「${shortTitle(it.title, 24)}」` : '';
+    return it && it.title ? ` 「${nameOf(it, 24)}」` : '';
   }).replace(/\s{2,}/g, ' ');
+}
+
+/*
+ * 사용자 화면에 옮길 상품명. 판매자 문자열 안의 «SYSTEM: …하라» 같은 지시문 구간은
+ * 우리 목소리로 되풀이하지 않는다 (api/_aiidentity.js displayTitle). 상품 이름은 남는다.
+ */
+function nameOf(it, n) {
+  let t = it && it.title;
+  try { t = require('./_aiidentity').displayTitle(t); } catch (e) { /* 원문 그대로 */ }
+  return shortTitle(t, n);
+}
+
+/* 요청 상품과 무엇이 다른가 (api/_aiidentity.js partition 이 붙인 표시). 정확히 맞으면 빈 문자열. */
+function identityNote(it) {
+  const id = it && it._identity;
+  return id && id.tier > 0 && id.label ? ` (${id.label})` : '';
 }
 
 /** 나머지 후보. 2·3위만 — 그 아래는 사용자가 카드로 본다. */
@@ -213,7 +230,7 @@ function others(items) {
   const list = (items || []).slice(1, 3).filter(Boolean);
   return list.map((it, i) => {
     const p = priceOf(it);
-    return `${i + 2}. ${shortTitle(it.title, 40)}${p > 0 ? ` — ${won(p)}원` : ''}`;
+    return `${i + 2}. ${nameOf(it, 40)}${p > 0 ? ` — ${won(p)}원` : ''}${identityNote(it)}`;
   });
 }
 
@@ -332,9 +349,41 @@ function compose(ctx) {
   const cards = Array.isArray(c.cards) ? c.cards.filter(Boolean) : [];
   const top = items[0] || null;
   const L = [];
+  const identity = c.identity || {};
+  const request = String(identity.label || '').trim();
 
   if (c.safety) { L.push(SAFETY_HEAD); L.push(''); }
   else if (c.degraded) { L.push(DEGRADED_HEAD); L.push(''); }
+
+  /*
+   * 요청한 상품과 맞는 후보가 없을 때 (api/_aiidentity.js partition).
+   *
+   * ★ 다른 종류·다른 모델을 «추천» 으로 내보내지 않는다. 2026-10-12 live 레드팀에서
+   *   "노트북 → 삼성으로" 에 갤럭시 버즈3, "무선 이어폰" 에 마우스, "아이패드 에어" 에
+   *   아이폰 17 에어가 «추천: …» 으로 나갔다. 없으면 없다고 말하고, 근접 후보는
+   *   무엇이 다른지와 함께만 보여 준다.
+   */
+  if (identity.state === 'NONE' || (identity.state === 'NEAR' && !top)) {
+    L.push(request
+      ? `「${request}」 조건에 맞는 상품을 이번 검색 결과에서 찾지 못했어요.`
+      : '지금 조건에 맞는 상품을 찾지 못했어요.');
+    L.push('다른 종류의 상품을 대신 권하지는 않을게요. 모델명이나 조건을 조금 바꿔서 다시 물어봐 주세요.');
+    if (c.degraded && !c.safety) { L.push(''); L.push(DEGRADED_FOOT); }
+    return { text: L.join('\n'), followups: [] };
+  }
+  if (identity.state === 'NEAR') {
+    L.push(request
+      ? `「${request}」 조건에 정확히 맞는 상품은 찾지 못했어요.`
+      : '요청하신 조건에 정확히 맞는 상품은 찾지 못했어요.');
+    L.push('가장 가까운 후보를 무엇이 다른지와 함께 보여 드릴게요.');
+    L.push('');
+    items.slice(0, 3).forEach((it, i) => {
+      const p = priceOf(it);
+      L.push(`${i + 1}. ${nameOf(it, 40)}${p > 0 ? ` — ${won(p)}원` : ''}${identityNote(it)}`);
+    });
+    if (c.degraded && !c.safety) { L.push(''); L.push(DEGRADED_FOOT); }
+    return { text: L.join('\n'), followups: followups(Object.assign({}, c, { decision: null, deal: null })) };
+  }
 
   if (!top) {
     /*

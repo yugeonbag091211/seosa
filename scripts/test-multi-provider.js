@@ -2,6 +2,8 @@
 'use strict';
 
 /* Gemini → Groq → OpenRouter(:free) 라우팅. 실제 네트워크 호출은 0회다. */
+// 이 테스트는 무료 fallback 사슬을 검증하므로 호출자의 유료 primary 키를 격리한다.
+delete process.env.OPENAI_API_KEY;
 process.env.GEMINI_API_KEY = 'gemini-secret-test';
 process.env.GROQ_API_KEY = 'groq-secret-test';
 process.env.OPENROUTER_API_KEY = 'sk-or-v1-secret-test';
