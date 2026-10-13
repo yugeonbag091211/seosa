@@ -219,6 +219,12 @@ function sampleProducts() {
     'scripts/test-identity-shadow.js',
     'scripts/test-identity-promotion.js',
     'scripts/test-identity-promotion-mutations.js',
+    'api/_identityreview.js',
+    'scripts/run-identity-review-ingest.js',
+    'scripts/test-identity-review.js',
+    'scripts/test-identity-review-mutations.js',
+    'supabase/2026-10-13-identity-review-phase4.sql',
+    'supabase/2026-10-13-identity-review-phase4-indexes.sql',
     'reports/product-identity-phase2-shadow-2026-10-13.md',
     'reports/product-identity-phase3-promotion-2026-10-13.md',
     '.github/workflows/identity-shadow.yml'
@@ -245,7 +251,7 @@ function sampleProducts() {
   // 운영 API 가 새 모듈을 require 하지도 않는다
   const apiFiles = fs.readdirSync(path.join(ROOT, 'api')).filter(f => f.endsWith('.js'));
   const importers = apiFiles.filter(f => fs.readFileSync(path.join(ROOT, 'api', f), 'utf8').includes('_identityshadow'));
-  ok(importers.length === 0, 'api/ 의 어떤 파일도 _identityshadow 를 require 하지 않는다', importers.join(', '));
+  ok(importers.every(f => f === '_identityreview.js'), 'only the Phase 4 admin review module may reuse _identityshadow', importers.join(', '));
 
   /* ================================================================
    *  C. 관문

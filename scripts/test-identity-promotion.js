@@ -395,6 +395,12 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
     'scripts/run-offer-identity-promotion.js',
     'scripts/test-identity-promotion.js',
     'scripts/test-identity-promotion-mutations.js',
+    'api/_identityreview.js',
+    'scripts/run-identity-review-ingest.js',
+    'scripts/test-identity-review.js',
+    'scripts/test-identity-review-mutations.js',
+    'supabase/2026-10-13-identity-review-phase4.sql',
+    'supabase/2026-10-13-identity-review-phase4-indexes.sql',
     'scripts/verify-migrations.js',
     'reports/product-identity-phase3-promotion-2026-10-13.md'
   ]);
