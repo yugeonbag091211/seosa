@@ -36,7 +36,8 @@ const { attachTrust } = require('./_trust');
 const { observedKstDate, kstToday, productLifecycle, sameVendorRows, acceptedObservations, LIFECYCLE } = require('./_price');
 const { statsFrom } = require('./_pricestat');
 const { dealOf } = require('./_deal');
-const { cachePublic } = require('./_http');
+const { cachePublic, noStore } = require('./_http');
+const Canonical = require('./_canonicalconsumer');
 
 /** 절대 URL 의 기준. 배포 도메인이 바뀌면 환경변수로 덮는다. */
 const SITE = String(process.env.SITE_ORIGIN || 'https://seosa.ai.kr').replace(/\/+$/, '');
@@ -259,6 +260,13 @@ async function buildView(pid, mall) {
   // vendorItemId 는 toClientProduct 가 이미 싣는다.
   const product = toClientProduct(row);
   try { await attachTrust([product]); } catch (e) { /* 신뢰도 없이 그린다 */ }
+  let canonical = null;
+  const canonicalConfig = Canonical.config();
+  if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
+    const grouped = await Canonical.collapseItems([product], { db: supabase, config: canonicalConfig });
+    if (grouped[0] && grouped[0].isCanonicalGroup) canonical = grouped[0];
+  }
+  const canonicalPoints = canonical ? await Canonical.loadAggregatedHistory(canonical, { db: supabase }) : null;
 
   const today = kstToday();
   const stat = statsFrom(points);
@@ -269,7 +277,8 @@ async function buildView(pid, mall) {
   // points 는 현재 옵션의 KST 날짜당 한 점이라 그 길이가 곧 관측일 수다 (observedDays 와 같다).
   const indexable = isIndexableProduct(row, points.length);
 
-  return { row, product, points, stat, deal, life, price, indexable, today };
+  return { row, product, points, stat, deal, life, price, indexable, today, canonical,
+    canonicalPoints: Array.isArray(canonicalPoints) ? canonicalPoints : null };
 }
 
 /* ── 스파크라인 ─────────────────────────────────────────────────── */
@@ -332,6 +341,7 @@ const CSS = [
   '.facts div{border:1px solid var(--line);border-radius:6px;padding:10px 12px}.facts dt{font-size:.7rem;color:var(--soft)}.facts dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums}',
   '.facts .dn{color:var(--down)}.facts .upc{color:var(--up)}.lead{font-size:.88rem;color:var(--soft);margin:0}.lead b{color:var(--ink);font-weight:600}',
   '.thumb.noimg:after{content:"이미지 없음";color:var(--soft);font-size:.8rem}',
+  '.canonical-offers{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:6px}.canonical-offers ul{list-style:none;margin:8px 0 0;padding:0}.canonical-offers li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:.84rem}.canonical-offers a{font-weight:700}.canonical-offers small{display:block;color:var(--soft)}',
   '.explore p{margin:0;font-size:.86rem}.explore a{color:var(--ink)}'
 ].join('');
 
@@ -436,6 +446,13 @@ function renderPage(v, siblings, ctx) {
   const category = (ctx && ctx.category) || null;
   const brand = (ctx && ctx.brand) || null;
   const seller = SEO.sellerOf(row);
+  const canonicalHtml = v.canonical && Array.isArray(v.canonical.offers)
+    ? `<section class="canonical-offers" aria-label="같은 상품 판매처 비교"><b>같은 상품의 현재 판매처 ${v.canonical.offers.length}곳</b><ul>${v.canonical.offers.map((offer, index) => {
+      const offerLink = safeBuyLink(offer.link, { mall: offer.mall, vendorItemId: offer.vendorItemId });
+      const action = offerLink ? `<a href="${esc(offerLink)}" target="_blank" rel="nofollow sponsored noopener">판매처 보기</a>` : '<span>링크 없음</span>';
+      return `<li><span>${esc(offer.mallLabel)}${index === 0 ? '<small>현재 확인된 최저</small>' : ''}</span><span>${won(offer.price)}원 · ${action}</span></li>`;
+    }).join('')}</ul></section>`
+    : '';
 
   const crumbItems = [{ name: '홈', url: `${SITE}/` }]
     .concat(category ? [{ name: category.name, url: SEO.categoryUrl(category) }] : [])
@@ -527,6 +544,9 @@ function renderPage(v, siblings, ctx) {
 
   const storyPoints = points.length >= 3 ? [points[0], points[Math.floor((points.length - 1) / 2)], points[points.length - 1]] : [];
   const storyHtml = storyPoints.length ? `<section class="journey" aria-labelledby="price-story"><h2 id="price-story">가격에도 서사가 있습니다.</h2><ol>${storyPoints.map((p, i) => `<li><span>${i === 2 ? '오늘' : esc(p.date)}</span><b>${won(p.price)}원</b></li>`).join('')}</ol></section>` : '';
+  const canonicalGraphHtml = v.canonical && v.canonicalPoints && v.canonicalPoints.length
+    ? `<section aria-label="같은 상품 판매처별 최저 관측가"><h2>판매처별 최저 관측가</h2><div class="spark">${sparkSvg(v.canonicalPoints)}</div><p class="note">같은 상품으로 확인된 판매처에서 날짜별로 확인된 가장 낮은 가격을 표시합니다. 현재 판매처와 가격은 위 판매처 목록에서 확인하세요.</p></section>`
+    : '';
   const radarProduct = JSON.stringify({ title, productId: product.productId, mall: product.mall, mallLabel: mall, price, link, image: img, verdict: deal.verdict, verdictLabel: deal.label, verdictReason: reasons[0] || '' }).replace(/</g, '\\u003c');
 
   // 내부 링크 — 이 상품이 속한 카테고리·브랜드 페이지 (레지스트리에서 확인된 것만).
@@ -593,8 +613,10 @@ ${SEO.jsonLdScript(jsonLd)}
   ${statsHtml}
   ${spark ? `<div class="spark">${spark}</div><div class="note">${PRICE_SOURCE_NOTE}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${PRICE_SOURCE_NOTE}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
   ${storyHtml}
+  ${canonicalGraphHtml}
 
   ${link ? `<p class="aff-note" data-aff-note="product"><b>제휴 안내</b><span>${AFFILIATE_DISCLOSURE}</span></p>` : ''}
+  ${canonicalHtml}
   <div class="cta">
     ${link ? `<a class="btn primary" id="affiliateLink" href="${esc(link)}" target="_blank" rel="nofollow sponsored noopener">${esc(mall)}에서 보기 →</a>` : '<span class="btn off">판매처 링크 없음</span>'}
     <a class="btn" href="/?p=${encodeURIComponent(product.productId)}">SEOSA에서 가격 추이 보기</a>
@@ -647,12 +669,18 @@ async function productHandler(req, res) {
   if (!pid) return res.status(400).json({ error: '상품 식별자 없음' });
   const v = await buildView(pid, String(q.mall || '').trim());
   if (!v) return res.status(404).json({ error: '상품 없음' });
-  cachePublic(res, 300);
+  const canonicalConfig = Canonical.config();
+  if (canonicalConfig.enabled && canonicalConfig.percent > 0) noStore(res);
+  else cachePublic(res, 300);
   return res.json({
     product: v.product,
     points: v.points,
     deal: { verdict: v.deal.verdict, label: v.deal.label, reasons: v.deal.reasons.slice(0, 4), cautions: v.deal.cautions.slice(0, 3) },
-    indexable: v.indexable
+    indexable: v.indexable,
+    canonical: v.canonical ? { id: v.canonical.canonicalGroupId, key: v.canonical.canonicalKey,
+      offerCount: v.canonical.offerCount, lowestPrice: v.canonical.lowestPrice,
+      lowestMerchant: v.canonical.lowestMerchant, offers: v.canonical.offers,
+      points: v.canonicalPoints || [] } : null
   });
 }
 
@@ -675,7 +703,9 @@ async function pageHandler(req, res) {
     require('./_seo-pages').productContext(v.row).catch(() => ({}))
   ]);
   if (!v.indexable) res.setHeader('X-Robots-Tag', 'noindex');
-  cachePublic(res, PAGE_CACHE_S);
+  const canonicalConfig = Canonical.config();
+  if (canonicalConfig.enabled && canonicalConfig.percent > 0) noStore(res);
+  else cachePublic(res, PAGE_CACHE_S);
   return res.status(200).end(renderPage(v, siblings, ctx));
 }
 

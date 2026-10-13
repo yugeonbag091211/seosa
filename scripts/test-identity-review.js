@@ -355,7 +355,7 @@ async function main() {
   same(collision.statusCode, 409, 'existing canonical membership collision is returned as conflict');
   same(collision.body.code, 'CONFLICT_EXISTING_CANONICAL_MEMBERSHIP', 'membership conflict does not move canonical members');
 
-  /* UI and routing are isolated from customer consumers. */
+  /* Admin review tables remain isolated from customer consumers. */
   const history = fs.readFileSync(path.join(ROOT, 'api', 'history.js'), 'utf8');
   ok(history.indexOf("q.__route === 'identity-review'") < history.indexOf("applyCors(req, res, 'public')"), 'private route is dispatched before public wildcard CORS');
   const vercel = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
@@ -368,7 +368,7 @@ async function main() {
   const consumerFiles = ['api/ai.js','api/search.js','api/_product-page.js','api/_radarapi.js','api/hotdeals.js','api/init.js','api/cron.js','api/rec.js','public/index.html'];
   for (const file of consumerFiles) if (fs.existsSync(path.join(ROOT, file))) {
     const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
-    ok(!/identity_review_queue|identity_review_decisions|canonical_product_groups|canonical_product_members/.test(source), `${file} stays Phase 5 consumer-zero`);
+    ok(!/identity_review_queue|identity_review_decisions/.test(source), `${file} does not read admin review tables`);
   }
   ok(!/identity_review_queue|identity_review_decisions/.test(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8')), 'no scheduler or customer rewrite reads the review tables');
   console.log(`Identity review: ${pass} assertions passed`);

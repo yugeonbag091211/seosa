@@ -396,6 +396,9 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
     'scripts/test-identity-promotion.js',
     'scripts/test-identity-promotion-mutations.js',
     'api/_identityreview.js',
+    'api/_canonicalconsumer.js',
+    'scripts/test-canonical-consumer.js',
+    'scripts/test-canonical-consumer-mutations.js',
     'scripts/run-identity-review-ingest.js',
     'scripts/test-identity-review.js',
     'scripts/test-identity-review-mutations.js',
@@ -417,7 +420,13 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
     const rel = path.relative(ROOT, file).split(path.sep).join('/');
     return !allow.has(rel) && tableNames.some(name => fs.readFileSync(file, 'utf8').includes(name));
   });
-  ok(offenders.length === 0, 'canonical tables have no search, AI, detail, price, hotdeal, collector, or mobile consumers', offenders.join(', '));
+  ok(offenders.length === 0, 'canonical table access stays inside the Phase 5 resolver, approved consumers, and tests', offenders.join(', '));
+  const phase5Consumers = ['api/search.js', 'api/history.js', 'api/_product-page.js', 'api/ai.js', 'api/hotdeals.js'];
+  ok(phase5Consumers.every(file => fs.readFileSync(path.join(ROOT, file), 'utf8').includes("require('./_canonicalconsumer')")),
+    'search, history, detail, AI, and internal hotdeals use the shared resolver');
+  const mobileFiles = walk(path.join(ROOT, 'apps', 'mobile'), []).filter(file => /\.(js|ts|tsx|jsx)$/.test(file));
+  ok(mobileFiles.every(file => !tableNames.some(name => fs.readFileSync(file, 'utf8').includes(name))),
+    'mobile remains backward-compatible and does not read canonical tables');
 
   console.log(`Phase 3 promotion: ${pass} PASS / 0 FAIL`);
 })().catch(err => {

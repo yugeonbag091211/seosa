@@ -6089,6 +6089,7 @@ var Card = {
       + '<div class="p-title" data-act="card-history">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mall-line">' + MallBrand.render(it.mall, it.mallLabel)
       +   Card.asOfHTML(it) + '</div>'
+      + Card.canonicalHTML(it)
       + Card.shipHTML(it)
       + Card.trustHTML(it)
       // data-key가 있으면 상품 단위(productId+mall)로, 없으면 상품명으로 이력을 찾는다.
@@ -6133,6 +6134,22 @@ var Card = {
       trust: stored.trust || null,
       glyph: card.dataset.glyph || '✦'
     };
+  },
+
+  /** ACTIVE canonical 그룹만 서버가 검증해 붙인다. 각 행은 실제 판매 단위 링크를 쓴다. */
+  canonicalHTML: function(it) {
+    if (!it || it.isCanonicalGroup !== true || !Array.isArray(it.offers) || it.offers.length < 2) return '';
+    var rows = it.offers.slice(0, 5).map(function(offer) {
+      var label = Fmt.esc(offer.mallLabel || offer.mall || '판매처');
+      var link = Fmt.buyUrl(offer.link, offer);
+      return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:.72rem;margin-top:4px">'
+        + '<span>' + label + '</span><span><b>' + Fmt.won(offer.price) + '원</b>'
+        + (link ? ' · <a href="' + Fmt.esc(link) + '" target="_blank" rel="nofollow sponsored noopener">보기</a>' : ' · 링크 없음')
+        + '</span></div>';
+    }).join('');
+    var rest = it.offers.length > 5 ? '<small> 외 ' + (it.offers.length - 5) + '곳</small>' : '';
+    return '<div style="margin-top:7px;padding:7px;border:1px solid var(--line);border-radius:5px">'
+      + '<b style="font-size:.72rem">같은 상품 · 현재 확인된 ' + Fmt.int(it.offerCount) + '곳</b>' + rest + rows + '</div>';
   }
 };
 
@@ -8317,6 +8334,11 @@ var Drop = {
       badge: it.badge || '오늘 가격 하락',
       // 검증된 카드는 엔진의 원래 판정도 그대로 들고 간다.
       hotdealStatus: it.dealStatus || '', hotScore: it.hotScore,
+      isCanonicalGroup: it.isCanonicalGroup === true,
+      canonicalOfferCount: Fmt.int(it.canonicalOfferCount),
+      canonicalLowestPrice: Fmt.int(it.canonicalLowestPrice),
+      canonicalLowestMerchant: it.canonicalLowestMerchant || '',
+      canonicalOffers: Array.isArray(it.canonicalOffers) ? it.canonicalOffers : [],
       reason: ''
     };
   },
@@ -8427,6 +8449,10 @@ var Drop = {
             : '오늘(한국시간) 관측한 가격이 직전 관측보다 내려갔습니다. 추가 검증은 아직 통과하지 않았어요.')
         + '">' + Fmt.esc(it.badge) + '</span>'
       : '';
+    var canonicalLine = it.isCanonicalGroup === true && it.canonicalOfferCount > 1
+      ? '<div style="font-size:.68rem;color:var(--soft);margin-top:3px">같은 상품 ' + Fmt.int(it.canonicalOfferCount)
+        + '곳 · 현재 최저 ' + Fmt.won(it.canonicalLowestPrice) + '원 (' + Fmt.esc(it.canonicalLowestMerchant) + ')</div>'
+      : '';
 
     return '<div class="dcard" data-act="ledger-open" role="button" tabindex="0"'
       + ' aria-label="' + Fmt.esc(it.title) + ' 가격 추이 보기"'
@@ -8447,7 +8473,7 @@ var Drop = {
       +   '<div class="dname">' + Fmt.esc(it.title) + '</div>'
       +   '<div class="dprice">' + Fmt.won(price) + '<span class="w">원</span>'
       +     '<span class="dchg">↓' + pct + '%</span></div>'
-      +   '<div class="dmall">' + Fmt.esc(m.name) + badge + atl + '</div>'
+      +   '<div class="dmall">' + Fmt.esc(m.name) + badge + atl + '</div>' + canonicalLine
       /*
        * 액션 줄. 카드 전체가 「가격 추이 열기」라서 두 버튼은 각자
        * e.stopPropagation() 으로 모달이 같이 열리는 것을 막는다
@@ -9442,6 +9468,9 @@ var Chat = {
     var note = it.note
       ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
       : '';
+    var canonical = it.isCanonicalGroup === true && Array.isArray(it.offers) && it.offers.length > 1
+      ? '<div class="mnote">같은 상품 ' + Fmt.int(it.offerCount) + '곳 · 현재 최저 ' + Fmt.won(it.lowestPrice) + '원 (' + Fmt.esc(it.lowestMerchant || '') + ')</div>'
+      : '';
 
     return '<div class="mini' + (isTop === true ? ' is-top' : '') + '" data-act="mini-go" data-link="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '"'
       // 제휴 클릭 계측·옵션 확인용 (Track.affiliate · Fmt.buyUrl). 화면에는 쓰지 않는다.
@@ -9452,7 +9481,7 @@ var Chat = {
       + (isTop === true ? '<span class="mtop">추천 상품</span>' : '') + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mprice">' + Fmt.won(it.lprice) + '원</div>'
-      + note + '</div>'
+      + note + canonical + '</div>'
       + '</div>';
   },
 

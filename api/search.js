@@ -6,6 +6,7 @@ const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
 const { sanitizeItemLinks } = require('./_affiliate');
+const Canonical = require('./_canonicalconsumer');
 
 const MAX_KEYWORD_LEN = 80;
 
@@ -194,7 +195,13 @@ module.exports = async function handler(req, res) {
      * 상품"이 1위인 것은 최저가 비교 서비스에서 가장 하기 쉬운 실수다
      * (_search.sortByRelevance 주석 참고).
      */
-    const ranked = sortByRelevance(relevance.items);
+    let ranked = sortByRelevance(relevance.items);
+    const canonicalConfig = Canonical.config();
+    if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
+      // The active group state is read on every request so a suspension is immediate.
+      noStore(res);
+      ranked = await Canonical.collapseItems(ranked, { db: supabase, config: canonicalConfig });
+    }
 
     /*
      * 결과가 없을 때만 보정/대체 검색어를 만든다.
@@ -236,7 +243,7 @@ module.exports = async function handler(req, res) {
     // 쿠팡 응답 자체가 이미 6시간 캐시된다. 같은 검색어가 몰릴 때 함수 실행과
     // DB 쓰기까지 줄이려고 Edge 에도 짧게 세워둔다. 결과가 달라지지는 않는다.
     // 단 stale-cache 는 캐시하지 않는다 — 차단이 풀린 직후에도 옛 값이 5분 더 남는다.
-    if (ranked.length && from !== 'stale-cache') cachePublic(res, 300);
+    if (ranked.length && from !== 'stale-cache' && !(canonicalConfig.enabled && canonicalConfig.percent > 0)) cachePublic(res, 300);
     // 구매 링크는 공통 관문(_affiliate)을 지난 값만 내보낸다. 저장(saveProducts)은 위에서 원본으로 끝났다.
     res.json(sanitizeItemLinks(ranked));
   } catch (e) {

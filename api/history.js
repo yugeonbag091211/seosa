@@ -1,7 +1,8 @@
 const supabase = require('./_supabase');
-const { applyCors, cachePublic, readStringList } = require('./_http');
+const { applyCors, cachePublic, noStore, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { observedKstDate, sameVendorRows, acceptedObservations } = require('./_price');
+const Canonical = require('./_canonicalconsumer');
 
 /*
  * 차트의 가로축 날짜는 KST 달력으로 찍는다.
@@ -138,6 +139,8 @@ async function singleHandler(req, res) {
   const productId    = String(q.productId || '').trim();
   const mall         = String(q.mall || '').trim();
   const vendorItemId = String(q.vendorItemId || '').trim();
+  const canonicalConfig = Canonical.config();
+  if (canonicalConfig.enabled && canonicalConfig.percent > 0) noStore(res);
 
   if (!title && !productId) return res.status(400).json({ error: '상품명 없음' });
 
@@ -181,13 +184,23 @@ async function singleHandler(req, res) {
      *  카드를 다시 열어 찜하면 productId 가 채워진 값으로 교체된다)
      */
     if (!productId) {
-      cachePublic(res, 300);
+      if (!(canonicalConfig.enabled && canonicalConfig.percent > 0)) cachePublic(res, 300);
       return res.json(wantEnvelope(q) ? { points: [], deal: null, fair: null } : []);
     }
 
     // 프론트는 오름차순 [{date, price}] 배열을 기대한다 (sparkSVG / 차트 라벨).
-    const points = collapseToDaily(rows, SINGLE_MAX_DAYS);
-    cachePublic(res, 300);
+    let points = collapseToDaily(rows, SINGLE_MAX_DAYS);
+    let canonicalGroup = null;
+    if (canonicalConfig.enabled && canonicalConfig.percent > 0 && mall) {
+      const request = { productId, mall, vendorItemId };
+      const resolved = await Canonical.resolveGroups([request], { db: supabase, config: canonicalConfig });
+      canonicalGroup = resolved.byOfferKey.get(Canonical.requestKey(request)) || null;
+      if (canonicalGroup) {
+        const aggregated = await Canonical.loadAggregatedHistory(canonicalGroup, { db: supabase });
+        if (Array.isArray(aggregated)) points = aggregated.slice(-SINGLE_MAX_DAYS);
+      }
+    }
+    if (!(canonicalConfig.enabled && canonicalConfig.percent > 0)) cachePublic(res, 300);
 
     if (!wantEnvelope(q)) return res.json(points);
 
@@ -225,7 +238,10 @@ async function singleHandler(req, res) {
       // 판정에 실패해도 가격 이력은 보내야 한다 — 차트가 비면 안 된다.
       console.warn(`[history] 구매 시점 판정 실패(이력만 보냄): ${e.message}`);
     }
-    res.json({ points, deal, fair });
+    res.json({ points, deal, fair, ...(canonicalGroup ? { canonical: {
+      id: canonicalGroup.id, key: canonicalGroup.key, offerCount: canonicalGroup.offers.length,
+      offers: canonicalGroup.offers.map(o => ({ mall: o.mall, mallLabel: o.mallLabel, price: o.price }))
+    } } : {}) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -293,6 +309,8 @@ async function batchHandler(req, res) {
   const wantStats = String(q.stats || '') === '1';
   const titles = readStringList(q.titles, MAX_TITLES);
   const keys   = readStringList(q.keys,   MAX_KEYS);
+  const canonicalConfig = Canonical.config();
+  if (canonicalConfig.enabled && canonicalConfig.percent > 0) noStore(res);
 
   if (titles === null) return res.status(400).json({ error: 'titles 파싱 실패' });
   if (keys === null)   return res.status(400).json({ error: 'keys 파싱 실패' });
@@ -353,6 +371,22 @@ async function batchHandler(req, res) {
         });
         byKey.forEach((byDate, k) => { map[k] = toPoints(byDate); });
       }
+      if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
+        const inputs = [...parsed.values()].filter(p => p.productId && p.mall);
+        const resolved = await Canonical.resolveGroups(inputs, { db: supabase, config: canonicalConfig });
+        const groupByRequest = new Map();
+        inputs.forEach(input => {
+          const group = resolved.byOfferKey.get(Canonical.requestKey(input));
+          if (group) groupByRequest.set(Canonical.requestKey(input), group);
+        });
+        const histories = await Canonical.loadAggregatedHistories([...new Set(groupByRequest.values())], { db: supabase });
+        if (histories) {
+          for (const [origKey, parsedKey] of parsed) {
+            const group = groupByRequest.get(Canonical.requestKey(parsedKey));
+            if (group && histories.has(group.id)) map[origKey] = histories.get(group.id);
+          }
+        }
+      }
     }
 
     /*
@@ -373,7 +407,7 @@ async function batchHandler(req, res) {
     }
 
     // 가격 기록은 하루 한 번만 늘어난다. 짧게 캐시해도 사용자가 보는 값은 같다.
-    cachePublic(res, 300);
+    if (!(canonicalConfig.enabled && canonicalConfig.percent > 0)) cachePublic(res, 300);
     if (!wantStats) return res.json(map);
 
     /*
