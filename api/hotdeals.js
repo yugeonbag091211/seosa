@@ -29,6 +29,7 @@ const HG = require('./_hotgroup');
 const DbError = require('./_dberror');
 const TD = require('./_todaydrop');
 const { kstToday, kstDayStartUtc } = require('./_price');
+const Canonical = require('./_canonicalconsumer');
 
 /** 사용자에게 보여줄 상태. NORMAL·REJECTED 는 목록에 오르지 않는다. */
 const VISIBLE = ['VERIFIED_HOT', 'GOOD_DEAL', 'POTENTIAL_DEAL'];
@@ -977,6 +978,8 @@ module.exports = async function handler(req, res) {
   if (!guard(req, res, { name: 'hotdeals', limit: 60, windowMs: 60 * 1000 })) return;
 
   const q = req.query || {};
+  const canonicalConfig = Canonical.config();
+  const canonicalReadEnabled = canonicalConfig.enabled && canonicalConfig.percent > 0;
 
   try {
     /* ── 상세 ── */
@@ -995,23 +998,28 @@ module.exports = async function handler(req, res) {
         return res.status(404).json({ error: '핫딜을 찾을 수 없어요' });
       }
 
-      cachePublic(res, 60);
+      if (canonicalReadEnabled) noStore(res); else cachePublic(res, 60);
+      let deal = Object.assign(toListItem(data), {
+        reasons: arr(data.reason_json),
+        confidence: data.confidence,
+        identityConfidence: data.identity_confidence,
+        lifecycle: data.lifecycle,
+        detectedAt: data.detected_at,
+        // 사용자에게 "얼마나 확인했는지"를 말할 재료. 내부 점수는 넘기지 않는다.
+        observations: data.observation_count,
+        spanDays: data.observation_span_days,
+        median30: data.median_30d,
+        observedLow: data.observed_low,
+        vendorItemId: data.vendor_item_id || '',
+        // 같은 상품을 파는 다른 곳. 대표 자신은 빠져 있다.
+        otherOffers: otherOffers(data)
+      });
+      if (canonicalReadEnabled) {
+        const grouped = await Canonical.collapseItems([deal], { db: supabase, config: canonicalConfig });
+        if (grouped[0]) deal = grouped[0];
+      }
       return res.json({
-        deal: Object.assign(toListItem(data), {
-          reasons: arr(data.reason_json),
-          confidence: data.confidence,
-          identityConfidence: data.identity_confidence,
-          lifecycle: data.lifecycle,
-          detectedAt: data.detected_at,
-          // 사용자에게 "얼마나 확인했는지"를 말할 재료. 내부 점수는 넘기지 않는다.
-          observations: data.observation_count,
-          spanDays: data.observation_span_days,
-          median30: data.median_30d,
-          observedLow: data.observed_low,
-          vendorItemId: data.vendor_item_id || '',
-          // 같은 상품을 파는 다른 곳. 대표 자신은 빠져 있다.
-          otherOffers: otherOffers(data)
-        })
+        deal
       });
     }
 
@@ -1034,10 +1042,14 @@ module.exports = async function handler(req, res) {
      *   바뀌지 않았으므로 /api/hotdeals, ?id=, view=external 소비자는 그대로다.
      */
     if (String(q.view || '') === 'today-drop') {
-      const drops = await loadTodayDrops(limit);
+      const drops = await loadTodayDrops(canonicalReadEnabled ? Math.min(MAX_LIMIT, limit * 2) : limit);
+      if (canonicalReadEnabled) {
+        const grouped = await Canonical.collapseItems(drops.items, { db: supabase, config: canonicalConfig });
+        drops.items = grouped.slice(0, limit);
+      }
       // 원장은 수집기가 도는 주기로만 바뀐다. 기존 목록과 같은 120초를 쓴다.
       // 시간 상한에 걸려 일부만 읽은 응답은 짧게 — 다음 요청이 온전한 목록을 다시 만든다.
-      cachePublic(res, drops.partial ? 30 : 120);
+      if (canonicalReadEnabled) noStore(res); else cachePublic(res, drops.partial ? 30 : 120);
       return res.json({
         items: drops.items,
         nextCursor: null,
@@ -1143,10 +1155,13 @@ module.exports = async function handler(req, res) {
      * 순서만 바뀌고 항목은 하나도 빠지지 않으므로 커서가 어긋나지 않는다.
      */
     const ordered = sort === SORTS[DEFAULT_SORT] || sort === SORTS.drop ? byDailyDrop(rows) : rows;
-    const items = spread(dropDuplicateGroups(ordered)).map(toListItem);
+    let items = spread(dropDuplicateGroups(ordered)).map(toListItem);
+    if (canonicalReadEnabled) {
+      items = await Canonical.collapseItems(items, { db: supabase, config: canonicalConfig });
+    }
 
     // 목록은 자주 바뀌지 않는다 — 수집기가 도는 주기가 시간 단위다.
-    cachePublic(res, 120);
+    if (canonicalReadEnabled) noStore(res); else cachePublic(res, 120);
     return res.json({
       items,
       nextCursor,

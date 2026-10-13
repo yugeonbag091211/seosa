@@ -28,6 +28,8 @@ const {
  * 그대로 전한다. 어느 단계에서 멈춰도 사용자는 빈손으로 끝나지 않는다.
  */
 const llm = require('./_llm');
+const Canonical = require('./_canonicalconsumer');
+const CANONICAL_SOURCE = Symbol('server-verified-canonical-consumer');
 
 /*
  * 프롬프트 판번호 (지시 47항).
@@ -273,6 +275,19 @@ function normItem(raw) {
     };
   }
 
+  // Canonical metadata is accepted only from server-verified catalog/search rows.
+  if (p[CANONICAL_SOURCE] === true && p.isCanonicalGroup === true && Array.isArray(p.offers)) {
+    out.isCanonicalGroup = true;
+    out.canonicalGroupId = safeText(p.canonicalGroupId, 40);
+    out.canonicalKey = safeText(p.canonicalKey, 80);
+    out.offerCount = Math.max(0, Math.min(20, Math.floor(num(p.offerCount))));
+    out.lowestPrice = num(p.lowestPrice);
+    out.lowestMerchant = safeText(p.lowestMerchant, 60);
+    out.offers = p.offers.slice(0, 20).map(offer => ({
+      mallLabel: safeText(offer && offer.mallLabel, 60), price: num(offer && offer.price)
+    })).filter(offer => offer.mallLabel && offer.price > 0);
+  }
+
   const h = (p.hist && typeof p.hist === 'object') ? p.hist : null;
   if (h) {
     const hist = {
@@ -361,6 +376,9 @@ function describe(it, withPoints, compact) {
   if (it.listPrice) priceLine += ` | 쿠팡 정가 ${won(it.listPrice)}원 | 정가 대비 할인율 ${it.discountPct}%`;
   if (it.refHighPrice) priceLine += ` | 네이버 참고최고가 ${won(it.refHighPrice)}원(정가 아님·할인율 계산 금지)`;
   lines.push(priceLine);
+  if (it.isCanonicalGroup === true && it.offerCount > 1 && it.lowestPrice > 0) {
+    lines.push(`  같은 상품으로 확인된 판매처 ${it.offerCount}곳; 현재 최저 관측가 ${won(it.lowestPrice)}원 (${safeText(it.lowestMerchant, 60)})`);
+  }
 
   if (compact) {
     /*
@@ -1333,6 +1351,16 @@ function fromSearchResult(it) {
     o.discountPct = num(it && it.savePct);
   }
   if (it && it.trust) o.trust = it.trust;
+  if (it && it.isCanonicalGroup === true && Array.isArray(it.offers)) {
+    o.isCanonicalGroup = true;
+    o.canonicalGroupId = it.canonicalGroupId;
+    o.canonicalKey = it.canonicalKey;
+    o.offerCount = it.offerCount;
+    o.lowestPrice = it.lowestPrice;
+    o.lowestMerchant = it.lowestMerchant;
+    o.offers = it.offers;
+    Object.defineProperty(o, CANONICAL_SOURCE, { value: true });
+  }
   // 가격 기록(attachHistory 가 붙여 둔 값). normItem 이 다시 한 번 검사한다.
   if (it && it.hist) o.hist = it.hist;
   return o;
@@ -1364,6 +1392,32 @@ function toCard(it, stat) {
    */
   const label = safeText(it && it.mallLabel, 30);
   if (label) card.mallLabel = label;
+  if (it && it.isCanonicalGroup === true && Array.isArray(it.offers) && it.offers.length > 1) {
+    card.isCanonicalGroup = true;
+    card.canonicalGroupId = safeText(it.canonicalGroupId, 40);
+    card.canonicalKey = safeText(it.canonicalKey, 80);
+    card.offerCount = Math.min(20, it.offers.length);
+    card.lowestPrice = num(it.lowestPrice);
+    card.lowestMerchant = safeText(it.lowestMerchant, 60);
+    card.offers = it.offers.slice(0, 20).map(offer => ({
+      mall: safeText(offer.mall, 30), mallLabel: safeText(offer.mallLabel, 60),
+      productId: safeText(offer.productId, 60), vendorItemId: safeText(offer.vendorItemId, 60),
+      title: safeText(offer.title, MAX_TITLE_LEN), price: num(offer.price),
+      link: require('./_affiliate').safeBuyLink(offer.link, offer)
+    })).filter(offer => offer.price > 0 && offer.link);
+    const lowest = card.offers.slice().sort((a, b) => a.price - b.price)[0];
+    if (lowest && lowest.link) {
+      card.canonicalLowestPrice = lowest.price;
+      card.canonicalLowestMerchant = lowest.mallLabel;
+      card.canonicalLowestMall = lowest.mall;
+      card.canonicalLowestLink = lowest.link;
+      card.canonicalLowestProductId = lowest.productId;
+      card.canonicalLowestVendorItemId = lowest.vendorItemId;
+      card.displayPrice = lowest.price;
+      card.displayMerchant = lowest.mallLabel;
+      card.displayBuyLink = lowest.link;
+    }
+  }
   // Keep the exact Coupang option attached to its price and purchase URL in the response.
   // ADPICK identifiers must never be mislabeled as Coupang vendorItemIds.
   if (it && it.isCoupang === true && AC.isCoupangMall(it.mall)) {
@@ -1379,7 +1433,7 @@ function toCard(it, stat) {
    *   않는다. 근거가 없으면 아무 줄도 붙이지 않는다.
    */
   const price = card.lprice;
-  if (stat && price > 0) {
+  if (stat && price > 0 && card.isCanonicalGroup !== true) {
     if (hasConfirmedRecordLow(stat) && price <= stat.low) {
       card.note = price < stat.low ? '최근 관측 기록 최저보다 낮음' : '최근 관측 기록 최저';
     }
@@ -3731,6 +3785,10 @@ module.exports = async function handler(req, res) {
         }));
       } else {
         contextRaw = settled.value.verified;
+        const canonicalConfig = Canonical.config();
+        if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
+          contextRaw = await Canonical.collapseItems(contextRaw, { config: canonicalConfig });
+        }
         contextStats = settled.value.stats;
         contextNotes.historyOnly = settled.value.historyOnly;
         contextNotes.unverified = settled.value.unverified;
@@ -3942,6 +4000,19 @@ module.exports = async function handler(req, res) {
          * 정규화된 몰 이름이 어긋나면 키가 전부 빗나가 원본 순서 그대로 나갔다.
          * 답변이 말하는 상품과 카드가 다른 상품이면 안 된다. 순서는 한 곳에서 정한다.
          */
+        const canonicalConfig = Canonical.config();
+        if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
+          items = await Canonical.collapseItems(items, { config: canonicalConfig });
+          items.forEach(it => {
+            if (!it || !it._raw || it.isCanonicalGroup !== true) return;
+            Object.assign(it._raw, {
+              isCanonicalGroup: true, canonicalGroupId: it.canonicalGroupId,
+              canonicalKey: it.canonicalKey, canonicalIdentity: it.canonicalIdentity,
+              offerCount: it.offerCount, offers: it.offers,
+              lowestPrice: it.lowestPrice, lowestMerchant: it.lowestMerchant, lowestLink: it.lowestLink
+            });
+          });
+        }
         cardSources = items.map(it => it._raw).filter(Boolean);
         cards = cardSources.map(it => toCard(it, statFor(stats, it)));
       }

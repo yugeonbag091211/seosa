@@ -259,6 +259,7 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
     './_ratelimit': { guard: () => true },
     './_search': S,
+    './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(items) { return items; } },
     // 구매 링크 관문 — 순수 함수라 진짜 모듈을 쓴다.
     './_affiliate': require('../api/_affiliate')
   };
