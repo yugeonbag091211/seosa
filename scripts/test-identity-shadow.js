@@ -212,10 +212,15 @@ function sampleProducts() {
     'identity_shadow_reviews', 'identity_shadow_job_state'];
   const ALLOWED = new Set([
     'supabase/2026-10-13-identity-shadow.sql',
+    'supabase/2026-10-13-identity-promotion.sql',
     'scripts/run-offer-identity-shadow.js',
+    'scripts/run-offer-identity-promotion.js',
     'scripts/compare-identity-shadow-runs.js',
     'scripts/test-identity-shadow.js',
+    'scripts/test-identity-promotion.js',
+    'scripts/test-identity-promotion-mutations.js',
     'reports/product-identity-phase2-shadow-2026-10-13.md',
+    'reports/product-identity-phase3-promotion-2026-10-13.md',
     '.github/workflows/identity-shadow.yml'
   ]);
   function walk(dir, out) {
@@ -235,7 +240,7 @@ function sampleProducts() {
     const text = fs.readFileSync(p, 'utf8');
     if (SHADOW_NAMES.some(n => text.includes(n))) offenders.push(rel);
   });
-  ok(offenders.length === 0, 'shadow 표 이름은 Phase 2 파일 밖에서 쓰이지 않는다', offenders.join(', '));
+  ok(offenders.length === 0, 'shadow 표 이름은 Phase 2/3 유지보수 도구 밖의 운영 경로에서 쓰이지 않는다', offenders.join(', '));
 
   // 운영 API 가 새 모듈을 require 하지도 않는다
   const apiFiles = fs.readdirSync(path.join(ROOT, 'api')).filter(f => f.endsWith('.js'));

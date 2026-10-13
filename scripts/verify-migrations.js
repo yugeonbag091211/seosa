@@ -91,6 +91,8 @@ function deleteTargets(sql) {
 const COUPANG_QUOTA_MIGRATION = '2026-09-28-coupang-minute-quota.sql';
 const COUPANG_QUOTA_SEARCH_PATH_MIGRATION = '2026-09-28-coupang-quota-search-path.sql';
 const AI_CIRCUIT_MIGRATION = '2026-09-20-ai-global-circuit.sql';
+const IDENTITY_PROMOTION_MIGRATION = '2026-10-13-identity-promotion.sql';
+const IDENTITY_PROMOTION_INDEXES_MIGRATION = '2026-10-13-identity-promotion-indexes.sql';
 
 const NEW_MIGRATIONS = [
   '2026-08-24-payment-pending-and-auth-attempts.sql',
@@ -134,7 +136,9 @@ const NEW_MIGRATIONS = [
   '2026-09-22-collector-target-keyset.sql',
   '2026-09-27-coupang-search-hourly-limit.sql',
   COUPANG_QUOTA_MIGRATION,
-  COUPANG_QUOTA_SEARCH_PATH_MIGRATION
+  COUPANG_QUOTA_SEARCH_PATH_MIGRATION,
+  IDENTITY_PROMOTION_MIGRATION,
+  IDENTITY_PROMOTION_INDEXES_MIGRATION
 ];
 
 function checkStatic() {
@@ -285,7 +289,17 @@ async function checkLive() {
     return !error;
   };
 
-  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true, coupang: true };
+  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true, coupang: true, identityPromotion: true };
+
+  /* Phase 3 canonical tables are additive and server-only. Probe existence only. */
+  for (const table of ['canonical_product_groups', 'canonical_product_members', 'canonical_product_promotions']) {
+    const exists = await hasColumn(table, 'id');
+    if (exists) ok(`${table} 표`);
+    else {
+      bad(`${table} 표 없음`, 'identity promotion migration 미적용');
+      applied.identityPromotion = false;
+    }
+  }
 
   /* ── Coupang minute quota migration (read-only probes) ───────── */
   {
@@ -456,7 +470,7 @@ async function checkLive() {
   console.log('        ※ 뷰를 적용해도 price_history 행 수는 변하지 않아야 한다.');
 
   if (!applied.payment || !applied.view || !applied.analytics || !applied.adpick
-      || !applied.circuit || !applied.coupang) {
+      || !applied.circuit || !applied.coupang || !applied.identityPromotion) {
     console.log('\n  적용하려면 Supabase 대시보드 > SQL Editor 에서 아래를 순서대로 실행하세요:');
     let n = 0;
     if (!applied.payment)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[0]}`);
@@ -465,6 +479,8 @@ async function checkLive() {
     if (!applied.adpick)    console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[3]}`);
     if (!applied.circuit)   console.log(`    ${++n}) supabase/${AI_CIRCUIT_MIGRATION}`);
     if (!applied.coupang)   console.log(`    ${++n}) supabase/${COUPANG_QUOTA_MIGRATION}`);
+    if (!applied.identityPromotion) console.log(`    ${++n}) supabase/${IDENTITY_PROMOTION_MIGRATION}`);
+    if (!applied.identityPromotion) console.log(`    ${++n}) supabase/${IDENTITY_PROMOTION_INDEXES_MIGRATION}`);
     console.log('    ※ 서로 의존하지 않으므로 순서가 바뀌어도 되지만, 위 순서를 권한다.');
   }
 }
