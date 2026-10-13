@@ -1,0 +1,84 @@
+name: Apply AI ADPICK product-id hotfix
+
+on:
+  push:
+    branches:
+      - fix/ai-adpick-productid-64
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ai-adpick-productid-64
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply focused fix and regression tests
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('api/ai.js')
+          s = p.read_text()
+          old = "const MAX_TITLE_LEN    = 120;"
+          new = "const MAX_TITLE_LEN    = 120;\n// ADPICK product_id is a full SHA-256 hex string (64 chars). Keep headroom for future source IDs.\nconst MAX_PRODUCT_ID_LEN = 128;"
+          assert old in s
+          s = s.replace(old, new, 1)
+          replacements = [
+              ("productId: safeText(p.productId, 60),", "productId: safeText(p.productId, MAX_PRODUCT_ID_LEN),"),
+              ("productId: safeText(it && it.productId, 60)", "productId: safeText(it && it.productId, MAX_PRODUCT_ID_LEN)"),
+              ("productId: safeText(offer.productId, 60), vendorItemId: safeText(offer.vendorItemId, 60),", "productId: safeText(offer.productId, MAX_PRODUCT_ID_LEN), vendorItemId: safeText(offer.vendorItemId, 60),"),
+              ("productId=${safeText(it && it.productId, 60)}`", "productId=${safeText(it && it.productId, MAX_PRODUCT_ID_LEN)}`"),
+              ("productId=${safeText(u.productId, 60)}`", "productId=${safeText(u.productId, MAX_PRODUCT_ID_LEN)}`"),
+          ]
+          for a, b in replacements:
+              assert a in s, a
+              s = s.replace(a, b, 1)
+          p.write_text(s)
+
+          p = Path('api/_aicontext.js')
+          s = p.read_text()
+          assert "const ID_LEN = 60;" in s
+          s = s.replace("/** 선택자 식별자 길이 상한 (api/ai.js normItem 과 같은 60자). */\nconst ID_LEN = 60;",
+              "/** 선택자 식별자 길이 상한 (api/ai.js MAX_PRODUCT_ID_LEN과 호환). */\n// ADPICK uses the full 64-char SHA-256 commission-link hash as product_id.\n// 60 truncated valid IDs and made catalog/canonical lookups silently miss.\nconst ID_LEN = 128;", 1)
+          p.write_text(s)
+
+          p = Path('scripts/test-ai-provenance.js')
+          s = p.read_text()
+          needle = "    ok(!/[<>\\n]/.test(sel[0].title) && !/[<>\\n]/.test(sel[0].productId), '선택자 문자열은 한 줄·꺾쇠 제거');\n"
+          assert needle in s
+          addition = needle + "    const adpickPid = 'a'.repeat(64);\n    const adpickSel = AC.selectorsFrom([{ productId: adpickPid, mall: 'ADPICK', mallId: 'ADPICK' }])[0];\n    ok(adpickSel && adpickSel.productId === adpickPid,\n      'ADPICK SHA-256 productId 64자를 자르지 않는다', adpickSel && adpickSel.productId);\n    const normedAdpick = I.normItem({ productId: adpickPid, mall: '롯데홈쇼핑', mallId: 'ADPICK', title: 'HyperX 오멘', price: 1 });\n    ok(normedAdpick.productId === adpickPid && normedAdpick.mallId === 'ADPICK',\n      'AI 정규화에서도 ADPICK 64자 productId와 backend mallId를 보존한다', JSON.stringify(normedAdpick));\n"
+          s = s.replace(needle, addition, 1)
+          p.write_text(s)
+          PY
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Focused regression
+        run: |
+          node scripts/test-ai-provenance.js
+          npm run test:canonical-consumer
+          npm run test:release
+          npm run test:search
+
+      - name: Commit hotfix and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-ai-productid-hotfix.yml
+          git add api/ai.js api/_aicontext.js scripts/test-ai-provenance.js
+          git commit -m "fix(ai): preserve full ADPICK product IDs"
+          git push origin HEAD:fix/ai-adpick-productid-64
