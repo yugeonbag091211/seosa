@@ -258,6 +258,13 @@ function searchFixture() {
         && !('discountPct' in sel[0]) && !('listPrice' in sel[0]),
       '선택자에는 가격·할인·신뢰도·기록이 들어가지 않는다', JSON.stringify(sel));
     ok(!/[<>\n]/.test(sel[0].title) && !/[<>\n]/.test(sel[0].productId), '선택자 문자열은 한 줄·꺾쇠 제거');
+    const adpickPid = 'a'.repeat(64);
+    const adpickSel = AC.selectorsFrom([{ productId: adpickPid, mall: 'ADPICK', mallId: 'ADPICK' }])[0];
+    ok(adpickSel && adpickSel.productId === adpickPid,
+      'ADPICK SHA-256 productId 64자를 자르지 않는다', adpickSel && adpickSel.productId);
+    const normedAdpick = I.normItem({ productId: adpickPid, mall: '롯데홈쇼핑', mallId: 'ADPICK', title: 'HyperX 오멘', price: 1 });
+    ok(normedAdpick.productId === adpickPid && normedAdpick.mallId === 'ADPICK',
+      'AI 정규화에서도 ADPICK 64자 productId와 backend mallId를 보존한다', JSON.stringify(normedAdpick));
     ok(AC.selectorsFrom(JSON.stringify([{ productId: 'X1' }])).length === 1, '옛 프론트의 JSON 문자열도 읽는다');
     ok(AC.selectorsFrom(Array.from({ length: 12 }, (_, i) => ({ productId: `P${i}` }))).length === 8, '선택자는 8개까지');
     ok(AC.selectorsFrom([{ productId: 'D1', vendorItemId: 'v' }, { productId: 'D1', vendorItemId: 'v' }]).length === 1, '중복 선택자는 하나로');

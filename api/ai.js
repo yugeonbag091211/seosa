@@ -76,6 +76,8 @@ const MAX_HISTORY_MSGS = 6;
 const MAX_HISTORY_LEN  = 450;    // 히스토리 메시지 1건당 — 상품명·가격·추천 근거를 담기에 충분
 const MAX_CTX_ITEMS    = 8;
 const MAX_TITLE_LEN    = 120;
+// ADPICK product_id is a full SHA-256 hex string (64 chars). Keep headroom for future source IDs.
+const MAX_PRODUCT_ID_LEN = 128;
 const MAX_PROFILE_LEN  = 300;    // 직렬화된 프로필
 /*
  * 평균이 이상치에 오염됐다고 볼 배수. api/_deal.js OUTLIER_RATIO 와 같은 기준이다.
@@ -232,7 +234,7 @@ function normItem(raw) {
   const price = num(p.price != null ? p.price : p.lprice);
 
   const out = {
-    productId: safeText(p.productId, 60),
+    productId: safeText(p.productId, MAX_PRODUCT_ID_LEN),
     title: safeText(p.title, MAX_TITLE_LEN),
     mall: safeText(p.mall, 30),
     price
@@ -1383,7 +1385,7 @@ function toCard(it, stat) {
     image: String((it && it.image) || ''),
     mall: safeText((it && it.mall) || '쿠팡', 30),
     isCoupang: !!(it && it.isCoupang),
-    productId: safeText(it && it.productId, 60)
+    productId: safeText(it && it.productId, MAX_PRODUCT_ID_LEN)
   };
 
   /*
@@ -1401,7 +1403,7 @@ function toCard(it, stat) {
     card.lowestMerchant = safeText(it.lowestMerchant, 60);
     card.offers = it.offers.slice(0, 20).map(offer => ({
       mall: safeText(offer.mall, 30), mallLabel: safeText(offer.mallLabel, 60),
-      productId: safeText(offer.productId, 60), vendorItemId: safeText(offer.vendorItemId, 60),
+      productId: safeText(offer.productId, MAX_PRODUCT_ID_LEN), vendorItemId: safeText(offer.vendorItemId, 60),
       title: safeText(offer.title, MAX_TITLE_LEN), price: num(offer.price),
       link: require('./_affiliate').safeBuyLink(offer.link, offer)
     })).filter(offer => offer.price > 0 && offer.link);
@@ -1699,7 +1701,7 @@ function contextNoteBlock(notes) {
   }
   history.forEach(it => {
     const h = it && it.hist && typeof it.hist === 'object' ? it.hist : {};
-    L.push(`- 화면 표시명: ${safeText(it && it.title, MAX_TITLE_LEN) || '(이름 없음)'} | productId=${safeText(it && it.productId, 60)}`
+    L.push(`- 화면 표시명: ${safeText(it && it.title, MAX_TITLE_LEN) || '(이름 없음)'} | productId=${safeText(it && it.productId, MAX_PRODUCT_ID_LEN)}`
       + (it && it.vendorItemId ? ` | 옵션=${safeText(it.vendorItemId, 60)}` : ''));
     L.push(`  현재가: 확인하지 못함 (${CONTEXT_REASON[it && it.reason] || '서버에서 확인하지 못했다'})`);
     L.push(`  이 옵션의 SEOSA 가격 기록 ${num(h.count)}일치`
@@ -1708,7 +1710,7 @@ function contextNoteBlock(notes) {
     L.push('  ※ 이 수치는 과거 기록이다. "현재가"나 "지금 가격"으로 바꿔 말하지 마라.');
   });
   unverified.forEach(u => {
-    L.push(`- 화면 표시명: ${safeText(u.title, MAX_TITLE_LEN) || '(이름 없음)'} | productId=${safeText(u.productId, 60)}`
+    L.push(`- 화면 표시명: ${safeText(u.title, MAX_TITLE_LEN) || '(이름 없음)'} | productId=${safeText(u.productId, MAX_PRODUCT_ID_LEN)}`
       + (u.vendorItemId ? ` | 옵션=${safeText(u.vendorItemId, 60)}` : '')
       + ` → ${CONTEXT_REASON[u.reason] || '서버에서 확인하지 못했다'}. 가격·할인·기록·신뢰도 모두 말하지 마라.`);
   });
