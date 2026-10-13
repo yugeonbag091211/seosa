@@ -1304,5 +1304,6 @@ module.exports = {
    */
   contextFactory,
   REQUIRED_DIMENSIONS,
-  _internal: { BRANDS, ALIASES, SUB_BRANDS, IMPLIED_BRAND, NOISE_WORDS, CATEGORY_CLASSES, normGtin, validGtin, codeParts, lineDimensionsOf }
+  // canonicalIdentity: Candidate Discovery v2 오프라인 평가가 합친 군집도 clusterOffers 와 같은 꼴로 내기 위해.
+  _internal: { BRANDS, ALIASES, SUB_BRANDS, IMPLIED_BRAND, NOISE_WORDS, CATEGORY_CLASSES, normGtin, validGtin, codeParts, lineDimensionsOf, canonicalIdentity }
 };
