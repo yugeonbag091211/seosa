@@ -201,6 +201,9 @@ const TRANSACTION_PATTERNS = [
  * 표기가 없으면 'unstated' — 새상품이라고 추측하지 않는다.
  */
 const EXTRA_CONDITION = [
+  // English listings commonly state "new" without "brand new"; keep this
+  // token-bound and exempt the New Balance brand so new/used is a hard conflict.
+  ['new', /\bnew\b(?!\s+balance\b)/i],
   ['used', /(?:^|[^a-z0-9가-힣])[sabc]\s*급|(?:^|[^a-z])(?:pre-?owned|second-?hand)(?:[^a-z]|$)/i],
   ['opened', /반품\s*(?:상품|제품|재판매)|리퍼브|\bopen\s*box\b/i]
 ];

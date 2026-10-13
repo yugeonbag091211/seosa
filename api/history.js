@@ -408,9 +408,11 @@ async function batchHandler(req, res) {
  * 구현은 api/_product-page.js 에 있다 — 이 파일은 갈래만 나눈다.
  */
 module.exports = async function handler(req, res) {
+  const q = req.query || {};
+  // Phase 4 admin data is private; dispatch before this public history handler sets wildcard CORS.
+  if (q.__route === 'identity-review') return require('./_identityreview').route(req, res);
   if (!applyCors(req, res, 'public')) return;
 
-  const q = req.query || {};
   if (q.__route === 'batch') return batchHandler(req, res);
   /*
    * 레이더 — 저장한 상품의 지금 상태.

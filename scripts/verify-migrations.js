@@ -93,6 +93,8 @@ const COUPANG_QUOTA_SEARCH_PATH_MIGRATION = '2026-09-28-coupang-quota-search-pat
 const AI_CIRCUIT_MIGRATION = '2026-09-20-ai-global-circuit.sql';
 const IDENTITY_PROMOTION_MIGRATION = '2026-10-13-identity-promotion.sql';
 const IDENTITY_PROMOTION_INDEXES_MIGRATION = '2026-10-13-identity-promotion-indexes.sql';
+const IDENTITY_REVIEW_MIGRATION = '2026-10-13-identity-review-phase4.sql';
+const IDENTITY_REVIEW_INDEXES_MIGRATION = '2026-10-13-identity-review-phase4-indexes.sql';
 
 const NEW_MIGRATIONS = [
   '2026-08-24-payment-pending-and-auth-attempts.sql',
@@ -138,7 +140,9 @@ const NEW_MIGRATIONS = [
   COUPANG_QUOTA_MIGRATION,
   COUPANG_QUOTA_SEARCH_PATH_MIGRATION,
   IDENTITY_PROMOTION_MIGRATION,
-  IDENTITY_PROMOTION_INDEXES_MIGRATION
+  IDENTITY_PROMOTION_INDEXES_MIGRATION,
+  IDENTITY_REVIEW_MIGRATION,
+  IDENTITY_REVIEW_INDEXES_MIGRATION
 ];
 
 function checkStatic() {
@@ -176,7 +180,9 @@ function checkStatic() {
 
     // PostgREST 스키마 캐시 갱신 — 빠뜨리면 새 컬럼/함수를 한동안 못 찾는다
     if (/notify\s+pgrst/i.test(sql)) ok(`${name}: 스키마 캐시 갱신 포함`);
-    else wrn(`${name}: notify pgrst 없음`, '새 컬럼/함수를 한동안 못 찾을 수 있다');
+    else if (name === IDENTITY_REVIEW_INDEXES_MIGRATION && /^create\s+index\b/i.test(sql.trim())) {
+      ok(`${name}: index-only migration; schema cache reload not required`);
+    } else wrn(`${name}: notify pgrst 없음`, '새 컬럼/함수를 한동안 못 찾을 수 있다');
   }
 
   const quotaSql = path.join(SQL_DIR, '2026-09-28-coupang-minute-quota.sql');
@@ -270,6 +276,46 @@ function checkStatic() {
     } else bad('collector_eligible_cache: service_role 권한 불완전',
       `table=${serviceTable} sequence=${serviceSequence}`);
   }
+
+  /* Phase 4 review tables are private and decisions are atomic/immutable. */
+  const reviewSqlPath = path.join(SQL_DIR, IDENTITY_REVIEW_MIGRATION);
+  const reviewIndexesPath = path.join(SQL_DIR, IDENTITY_REVIEW_INDEXES_MIGRATION);
+  if (fs.existsSync(reviewSqlPath)) {
+    const sql = stripSqlComments(fs.readFileSync(reviewSqlPath, 'utf8'));
+    const privateTables = ['identity_review_queue', 'identity_review_decisions'].every(table =>
+      new RegExp(`alter\\s+table\\s+public\\.${table}\\s+enable\\s+row\\s+level\\s+security`, 'i').test(sql)
+      && new RegExp(`revoke\\s+all\\s+on\\s+table\\s+public\\.${table}[\\s\\S]*?from\\s+anon,\\s*authenticated`, 'i').test(sql));
+    if (privateTables) ok('identity review: RLS enabled and client table grants revoked');
+    else bad('identity review: queue/audit tables are not private');
+
+    const atomic = /from\s+public\.identity_review_queue[\s\S]*?for\s+update/i.test(sql)
+      && /from\s+public\.products[\s\S]*?for\s+share/i.test(sql);
+    if (atomic) ok('identity review: queue compare-and-set and product row locks');
+    else bad('identity review: transaction locks missing');
+
+    const immutable = /before\s+update\s+or\s+delete\s+on\s+public\.identity_review_decisions/i.test(sql)
+      && /identity_review_decisions_immutable/i.test(sql);
+    if (immutable) ok('identity review: decision audit is immutable');
+    else bad('identity review: immutable audit trigger missing');
+
+    const resolvePrivate = /revoke\s+all\s+on\s+function\s+public\.identity_review_resolve[\s\S]*?from\s+public,\s*anon,\s*authenticated/i.test(sql)
+      && /grant\s+execute\s+on\s+function\s+public\.identity_review_resolve[\s\S]*?to\s+service_role/i.test(sql)
+      && /security\s+invoker\s+set\s+search_path\s*=\s*''/i.test(sql);
+    if (resolvePrivate) ok('identity review: resolve RPC is service-role only with fixed search_path');
+    else bad('identity review: resolve RPC permissions are too broad or search_path is mutable');
+
+    const safeMigration = /unique\s*\(group_key,\s*promotion_policy_version,\s*matcher_version,\s*candidate_hash\)/i.test(sql)
+      && /approval_source[\s\S]*?HUMAN_REVIEW/i.test(sql)
+      && !/\b(update\s+public\.products|insert\s+into\s+public\.price_history|update\s+public\.price_history|delete\s+from\s+public\.products|delete\s+from\s+public\.price_history)\b/i.test(sql);
+    if (safeMigration) ok('identity review: evidence-versioned ingest and explicit human source; catalog/history untouched');
+    else bad('identity review: idempotency, approval source, or catalog/history safety check failed');
+  }
+  if (fs.existsSync(reviewIndexesPath)) {
+    const sql = stripSqlComments(fs.readFileSync(reviewIndexesPath, 'utf8'));
+    if (/create\s+index\s+if\s+not\s+exists\s+identity_review_queue_source_group_idx/i.test(sql)) {
+      ok('identity review: source-group foreign key is indexed');
+    } else bad('identity review: source-group foreign key index missing');
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -289,7 +335,7 @@ async function checkLive() {
     return !error;
   };
 
-  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true, coupang: true, identityPromotion: true };
+  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true, coupang: true, identityPromotion: true, identityReview: true };
 
   /* Phase 3 canonical tables are additive and server-only. Probe existence only. */
   for (const table of ['canonical_product_groups', 'canonical_product_members', 'canonical_product_promotions']) {
@@ -300,6 +346,16 @@ async function checkLive() {
       applied.identityPromotion = false;
     }
   }
+
+  /* Phase 4 admin queue/audit schema is separate from customer consumers. */
+  for (const table of ['identity_review_queue', 'identity_review_decisions']) {
+    const exists = await hasColumn(table, 'id');
+    if (exists) ok(`${table} 표`);
+    else { bad(`${table} 표 없음`, 'identity review migration 미적용'); applied.identityReview = false; }
+  }
+  const approvalSource = await hasColumn('canonical_product_groups', 'approval_source');
+  if (approvalSource) ok('canonical_product_groups.approval_source');
+  else { bad('canonical_product_groups.approval_source 없음', 'human approval source 구분 불가'); applied.identityReview = false; }
 
   /* ── Coupang minute quota migration (read-only probes) ───────── */
   {
@@ -470,7 +526,7 @@ async function checkLive() {
   console.log('        ※ 뷰를 적용해도 price_history 행 수는 변하지 않아야 한다.');
 
   if (!applied.payment || !applied.view || !applied.analytics || !applied.adpick
-      || !applied.circuit || !applied.coupang || !applied.identityPromotion) {
+      || !applied.circuit || !applied.coupang || !applied.identityPromotion || !applied.identityReview) {
     console.log('\n  적용하려면 Supabase 대시보드 > SQL Editor 에서 아래를 순서대로 실행하세요:');
     let n = 0;
     if (!applied.payment)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[0]}`);
@@ -481,6 +537,8 @@ async function checkLive() {
     if (!applied.coupang)   console.log(`    ${++n}) supabase/${COUPANG_QUOTA_MIGRATION}`);
     if (!applied.identityPromotion) console.log(`    ${++n}) supabase/${IDENTITY_PROMOTION_MIGRATION}`);
     if (!applied.identityPromotion) console.log(`    ${++n}) supabase/${IDENTITY_PROMOTION_INDEXES_MIGRATION}`);
+    if (!applied.identityReview) console.log(`    ${++n}) supabase/${IDENTITY_REVIEW_MIGRATION}`);
+    if (!applied.identityReview) console.log(`    ${++n}) supabase/${IDENTITY_REVIEW_INDEXES_MIGRATION}`);
     console.log('    ※ 서로 의존하지 않으므로 순서가 바뀌어도 되지만, 위 순서를 권한다.');
   }
 }
