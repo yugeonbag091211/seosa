@@ -5886,7 +5886,7 @@ var Card = {
   },
 
   /** @param {boolean} isCoupang 쿠팡이면 oprice가 실제 정가(productPrice)다. */
-  priceHTML: function(price, oprice, savePct, isCoupang) {
+  priceHTML: function(price, oprice, savePct, isCoupang, displayLabel) {
     /*
      * ★ 가격 0 은 가격이 아니다 (2026-08-30 4차 감사).
      *
@@ -5918,7 +5918,8 @@ var Card = {
      */
     var save = savePct > 0 ? '<span class="save">-' + savePct + '%</span>' : '';
     return '<div class="price-row">'
-      + '<div class="price">' + Fmt.won(price) + '<span class="w">원</span></div>'
+      + '<div class="price">' + (displayLabel ? '<span class="canonical-price-label">' + Fmt.esc(displayLabel) + '</span>' : '')
+      + Fmt.won(price) + '<span class="w">원</span></div>'
       + save + '</div>';
   },
 
@@ -6011,14 +6012,16 @@ var Card = {
      *   모달 하단의 같은 액션들은 그대로 둔다 — 상세를 보다가 사는 경로도
      *   여전히 필요하다. 두 자리 모두에 있는 것이 맞다.
      */
-    var hasLink = !!(it && Fmt.buyUrl(it.link, it));
+    var buyInfo = Card.purchaseInfo(it);
+    var hasLink = !!(buyInfo && Fmt.buyUrl(buyInfo.link, buyInfo));
     /*
      * 판매처 링크가 없으면 누를 수 있게 생긴 버튼을 두지 않는다.
      * 예전에는 버튼이 그대로 있고 누르면 토스트만 떴다 — 누를 수 있게
      * 생겼는데 아무 데도 못 가는 버튼은 사용자를 한 번 속이는 것이다.
      */
     var buy = hasLink
-      ? '<button class="buy" data-act="card-buy">구매하기</button>'
+      ? '<button class="buy" data-act="card-buy">' + (it && it.isCanonicalGroup === true
+        ? Fmt.esc(it.canonicalLowestMerchant || '최저가 판매처') + '에서 구매' : '구매하기') + '</button>'
       : '<span class="buy is-off" aria-disabled="true" title="이 상품은 판매처 링크가 확인되지 않았어요">링크 없음</span>';
 
     return '<div class="card-actions">'
@@ -6044,6 +6047,9 @@ var Card = {
     if (!it || !it.title) return '';
     var m = Fmt.mall(it);
     var glyph = Fmt.glyph(it.title);
+    var canonical = it.isCanonicalGroup === true && Number(it.canonicalLowestPrice) > 0;
+    var cardPrice = canonical ? Fmt.int(it.displayPrice || it.canonicalLowestPrice) : Fmt.int(it.lprice);
+    var priceLabel = canonical ? '최저가 · ' + String(it.displayMerchant || it.canonicalLowestMerchant || '') : '';
 
     // data-pid: Card.read 가 이 카드의 상품을 정확히 되찾기 위한 값.
     // 없으면 같은 이름·같은 몰의 다른 상품과 캐시 키가 겹쳐 링크가 뒤바뀐다.
@@ -6079,13 +6085,13 @@ var Card = {
        * markAllTimeLow(N일 기록 중 최저)가 이력 도착 후 여기에 채운다 —
        * 5차 이전에는 후자가 **사진 위에** 얹혀 상품을 가리고 있었다.
        */
-      + Card.priceHTML(Fmt.int(it.lprice), Fmt.int(it.oprice), Fmt.int(it.savePct), m.cls === 'b-coupang')
+      + Card.priceHTML(cardPrice, canonical ? 0 : Fmt.int(it.oprice), canonical ? 0 : Fmt.int(it.savePct), m.cls === 'b-coupang', priceLabel)
       /*
        * 가격 변동 줄. Grid.markWhy / markAllTimeLow 가 여기에 채워 넣는다.
        * 자리를 미리 만들어 두는 이유는, 이력이 늦게 도착해도 카드가
        * 다시 흔들리지 않게 하기 위해서다(레이아웃 시프트 방지).
        */
-      + '<div class="pmove">' + Card.changeHTML(it) + '</div>'
+      + '<div class="pmove">' + (canonical ? '' : Card.changeHTML(it)) + '</div>'
       + '<div class="p-title" data-act="card-history">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mall-line">' + MallBrand.render(it.mall, it.mallLabel)
       +   Card.asOfHTML(it) + '</div>'
@@ -6112,7 +6118,7 @@ var Card = {
     var stored = AppState.products[productKey(title, mall, pid, vid)] || {};
     return {
       title: title,
-      lprice: Fmt.priceOf(card.querySelector('.price')),
+      lprice: stored.isCanonicalGroup === true ? Fmt.int(stored.lprice) : Fmt.priceOf(card.querySelector('.price')),
       mall: mall,
       // 화면에 보여줄 몰 이름. ADPICK은 cp_name 기반(예: '알리') — 위시/공유가
       // raw mall('ADPICK')을 그대로 보여주지 않도록 별도로 들고 다닌다.
@@ -6129,11 +6135,30 @@ var Card = {
        */
       vendorItemId: vid || stored.vendorItemId || '',
       link: stored.link || '',
+      displayPrice: Fmt.int(stored.displayPrice || stored.canonicalLowestPrice),
+      displayMerchant: stored.displayMerchant || stored.canonicalLowestMerchant || '',
+      buyInfo: Card.purchaseInfo(stored),
       image: stored.image || '',
       // 서버가 계산한 신뢰도. 가격 모달이 근거를 그대로 다시 보여준다.
       trust: stored.trust || null,
       glyph: card.dataset.glyph || '✦'
     };
+  },
+
+  /** Canonical purchase identity is deliberately separate from representative history identity. */
+  purchaseInfo: function(it) {
+    if (!it) return null;
+    if (it.isCanonicalGroup === true && it.canonicalLowestLink) return {
+      title: it.canonicalOffers && it.canonicalOffers[0] ? it.canonicalOffers[0].title : it.title,
+      link: it.canonicalLowestLink,
+      productId: it.canonicalLowestProductId || '',
+      mall: it.canonicalLowestMall || '',
+      mallLabel: it.canonicalLowestMerchant || '',
+      vendorItemId: it.canonicalLowestVendorItemId || '',
+      lprice: Fmt.int(it.canonicalLowestPrice),
+      isCoupang: /^(쿠팡|COUPANG)$/i.test(String(it.canonicalLowestMall || ''))
+    };
+    return it;
   },
 
   /** ACTIVE canonical 그룹만 서버가 검증해 붙인다. 각 행은 실제 판매 단위 링크를 쓴다. */
@@ -9465,22 +9490,30 @@ var Chat = {
      *   (api/ai.js toCard). 그래서 답변 문장이 무엇을 말하든 이 줄은 데이터와
      *   어긋나지 않는다. 없으면 아무것도 그리지 않는다.
      */
-    var note = it.note
+    var isCanonical = it.isCanonicalGroup === true && Number(it.canonicalLowestPrice || it.displayPrice) > 0;
+    var displayPrice = isCanonical ? Fmt.int(it.displayPrice || it.canonicalLowestPrice) : Fmt.int(it.lprice);
+    var purchase = isCanonical ? {
+      link: it.canonicalLowestLink || it.displayBuyLink,
+      mall: it.canonicalLowestMall || '', productId: it.canonicalLowestProductId || '',
+      vendorItemId: it.canonicalLowestVendorItemId || ''
+    } : it;
+    var purchaseUrl = Fmt.buyUrl(purchase.link, purchase);
+    var note = !isCanonical && it.note
       ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
       : '';
-    var canonical = it.isCanonicalGroup === true && Array.isArray(it.offers) && it.offers.length > 1
+    var canonical = isCanonical && Array.isArray(it.offers) && it.offers.length > 1
       ? '<div class="mnote">같은 상품 ' + Fmt.int(it.offerCount) + '곳 · 현재 최저 ' + Fmt.won(it.lowestPrice) + '원 (' + Fmt.esc(it.lowestMerchant || '') + ')</div>'
       : '';
 
-    return '<div class="mini' + (isTop === true ? ' is-top' : '') + '" data-act="mini-go" data-link="' + Fmt.esc(Fmt.buyUrl(it.link, it)) + '"'
+    return '<div class="mini' + (isTop === true ? ' is-top' : '') + '" data-act="mini-go" data-link="' + Fmt.esc(purchaseUrl) + '"'
       // 제휴 클릭 계측·옵션 확인용 (Track.affiliate · Fmt.buyUrl). 화면에는 쓰지 않는다.
-      + ' data-pid="' + Fmt.esc(it.productId || '') + '" data-mall="' + Fmt.esc(it.mall || '') + '"'
-      + ' data-vid="' + Fmt.esc(it.vendorItemId || '') + '"'
-      + ' data-price="' + Fmt.int(it.lprice) + '">'
+      + ' data-pid="' + Fmt.esc(purchase.productId || '') + '" data-mall="' + Fmt.esc(purchase.mall || '') + '"'
+      + ' data-vid="' + Fmt.esc(purchase.vendorItemId || '') + '"'
+      + ' data-price="' + (isCanonical ? displayPrice : Fmt.int(it.lprice)) + '">'
       + '<div class="mt"><span class="mbadge ' + m.cls + '">' + Fmt.esc(m.tag) + '</span>'
       + (isTop === true ? '<span class="mtop">추천 상품</span>' : '') + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
-      + '<div class="mprice">' + Fmt.won(it.lprice) + '원</div>'
+      + '<div class="mprice">' + (isCanonical ? '최저가 · ' + Fmt.esc(it.displayMerchant || it.canonicalLowestMerchant || '') + ' ' : '') + Fmt.won(displayPrice) + '원</div>'
       + note + canonical + '</div>'
       + '</div>';
   },
@@ -9840,7 +9873,12 @@ var Modal = {
      * 처음부터 없는 편이 정직하다 (카드의 .buy.is-off 와 같은 판단).
      */
     var buyBtn = $('modalBuy');
-    if (buyBtn) buyBtn.hidden = !Fmt.buyUrl(p.link, p);
+    var buyInfo = Card.purchaseInfo(p);
+    if (buyBtn) {
+      buyBtn.hidden = !buyInfo || !Fmt.buyUrl(buyInfo.link, buyInfo);
+      buyBtn.textContent = p.isCanonicalGroup === true
+        ? (p.canonicalLowestMerchant || '최저가 판매처') + '에서 구매' : '구매하러 가기';
+    }
 
     // 신뢰도 근거는 이력 조회를 기다릴 필요가 없다 (서버가 이미 계산해 보냈다).
     Modal.renderTrust(p.trust);
@@ -11263,11 +11301,12 @@ var Actions = {
   'card-alert':   function(el) { Alert.open(Card.read(el.closest('.card'))); },
   'card-buy':     function(el) {
     var info = Card.read(el.closest('.card'));
+    var buyInfo = info && info.buyInfo || info;
     trackCardOrigin(el);
     Track.ev('external_shop_click');
-    if (info && Fmt.buyUrl(info.link, info)) Track.affiliate(info, el.closest('#resGrid') ? 'search' : 'home');
+    if (buyInfo && Fmt.buyUrl(buyInfo.link, buyInfo)) Track.affiliate(buyInfo, el.closest('#resGrid') ? 'search' : 'home');
     Recent.addViewed(info);
-    openLink(info && info.link, info);
+    openLink(buyInfo && buyInfo.link, buyInfo);
   },
 
   // ── 시세판 ──
@@ -11377,10 +11416,11 @@ var Actions = {
   'modal-buy': function() {
     var it = AppState.modalItem;
     if (!it) return;
+    var buyInfo = Card.purchaseInfo(it);
     Track.ev('external_shop_click');
-    if (Fmt.buyUrl(it.link, it)) Track.affiliate(it, 'product');
+    if (buyInfo && Fmt.buyUrl(buyInfo.link, buyInfo)) Track.affiliate(buyInfo, 'product');
     Recent.addViewed(it);
-    openLink(it.link, it);
+    openLink(buyInfo && buyInfo.link, buyInfo);
   },
   /* 카드에서 모달로 옮겨 온 두 액션 (Card.actionsHTML 주석 참고). */
   'modal-compare': function() {

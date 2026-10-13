@@ -9,14 +9,14 @@ const testPath = path.join(__dirname, 'test-canonical-consumer.js');
 const original = fs.readFileSync(modulePath, 'utf8');
 const mutations = [
   ['ACTIVE status gate', "group.status !== 'ACTIVE'", 'false'],
-  ['current price freshness gate', '!currentPriceFresh(row, opts.now)', 'false'],
+  ['current price freshness gate', '&& currentPriceFresh(row, opts.now)', '&& true'],
   ['catalog vendor option gate', "if (currentVid !== String(member.vendor_item_id || '')) return null;", 'if (false) return null;'],
-  ['request vendor option gate', 'if (vendorIdOf(input) === offer.vendorItemId)', 'if (true)'],
+  ['request vendor option gate', 'if (vendorIdOf(input) === member.vendorItemId)', 'if (true)'],
   ['hard conflict gate', 'if (match.decision === OI.DECISION.NO_MATCH || (match.conflicts || []).length)', 'if (false)'],
   ['canonical identity key gate', "if (computed !== String(group.canonical_key)) return null;", 'if (false) return null;'],
   ['trusted price gate', "['high', 'medium'].includes(item.trust && item.trust.level)", 'true'],
-  ['displayable positive price gate', 'if (!Price.isDisplayable(row) || !(Number(row.lprice) > 0) || !currentPriceFresh(row, opts.now)) return null;', 'if (false || false || !currentPriceFresh(row, opts.now)) return null;'],
-  ['exact Coupang option link gate', 'if (!link || linked !== String(member.vendor_item_id)) return null;', 'if (false) return null;'],
+  ['displayable positive price gate', 'if (Price.isDisplayable(row) && Number(row.lprice) > 0 && currentPriceFresh(row, opts.now)) {', 'if (true) {'],
+  ['safe purchase link gate', 'if (!link) return null;', 'if (false) return null;'],
   ['identity snapshot freshness gate', 'if (P.stableJson(P.snapshotOf(identity)) !== P.stableJson(member.identity_snapshot || {})) return null;', 'if (false) return null;'],
   ['feature flag gate', 'if (!cfg.enabled || cfg.percent <= 0) return items;', 'if (false) return items;']
 ];

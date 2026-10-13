@@ -1404,7 +1404,19 @@ function toCard(it, stat) {
       productId: safeText(offer.productId, 60), vendorItemId: safeText(offer.vendorItemId, 60),
       title: safeText(offer.title, MAX_TITLE_LEN), price: num(offer.price),
       link: require('./_affiliate').safeBuyLink(offer.link, offer)
-    })).filter(offer => offer.price > 0);
+    })).filter(offer => offer.price > 0 && offer.link);
+    const lowest = card.offers.slice().sort((a, b) => a.price - b.price)[0];
+    if (lowest && lowest.link) {
+      card.canonicalLowestPrice = lowest.price;
+      card.canonicalLowestMerchant = lowest.mallLabel;
+      card.canonicalLowestMall = lowest.mall;
+      card.canonicalLowestLink = lowest.link;
+      card.canonicalLowestProductId = lowest.productId;
+      card.canonicalLowestVendorItemId = lowest.vendorItemId;
+      card.displayPrice = lowest.price;
+      card.displayMerchant = lowest.mallLabel;
+      card.displayBuyLink = lowest.link;
+    }
   }
   // Keep the exact Coupang option attached to its price and purchase URL in the response.
   // ADPICK identifiers must never be mislabeled as Coupang vendorItemIds.
@@ -1421,7 +1433,7 @@ function toCard(it, stat) {
    *   않는다. 근거가 없으면 아무 줄도 붙이지 않는다.
    */
   const price = card.lprice;
-  if (stat && price > 0) {
+  if (stat && price > 0 && card.isCanonicalGroup !== true) {
     if (hasConfirmedRecordLow(stat) && price <= stat.low) {
       card.note = price < stat.low ? '최근 관측 기록 최저보다 낮음' : '최근 관측 기록 최저';
     }

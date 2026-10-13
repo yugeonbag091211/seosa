@@ -24,8 +24,11 @@ delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SECRET_KEY;
 
 /* ── 가짜 Supabase — 필요한 연산자만 ─────────────────────────── */
-const db = { products: [], price_history: [] };
-function reset() { db.products = []; db.price_history = []; }
+const db = { products: [], price_history: [], canonical_product_groups: [], canonical_product_members: [] };
+function reset() {
+  db.products = []; db.price_history = [];
+  db.canonical_product_groups = []; db.canonical_product_members = [];
+}
 
 function cmp(a, b) {
   if (typeof a === 'number' && typeof b === 'number') return a - b;
@@ -129,6 +132,47 @@ function seed() {
   series('a3f9c2', 'ADPICK', 9, 12000);
 }
 
+function seedCanonicalDisplay() {
+  const OI = require('../api/_offeridentity');
+  const P = require('../api/_identitypromotion');
+  const title = 'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 2.5K 240Hz 고사양 게이밍 노트북';
+  const rows = [
+    { id: 21, product_id: '5f6cd0192af9a21b26db684e1d5e0da9f3c275bcd9ff7a4a2284eef0e310eec8', mall: 'ADPICK', mall_label: 'Hmall', keyword: 'canonical-test-a', title,
+      lprice: 6206000, oprice: 0, save_pct: 0, link: 'https://biz.adpick.co.kr/preview/hmall-offer?fixture=1',
+      image: '', collected_at: nowIso, item_id: '', vendor_item_id: '' },
+    { id: 22, product_id: '5270e8af7873b4b9c4d4e75cf31ae62e4a3f1d7e4be3936c4d95dc7de8ae9f4a', mall: 'ADPICK', mall_label: '롯데홈쇼핑', keyword: 'canonical-test-b', title,
+      lprice: 5884990, oprice: 0, save_pct: 0, link: 'https://biz.adpick.co.kr/preview/lotte-offer?fixture=1',
+      image: '', collected_at: nowIso, item_id: '', vendor_item_id: '' }
+  ];
+  db.products.push(...rows);
+  const identities = rows.map(row => {
+    const identity = OI.parseOffer({ key: row.mall + '|' + row.product_id, title: row.title,
+      mall: row.mall_label, productId: row.product_id, vendorItemId: row.vendor_item_id, price: row.lprice });
+    identity.sourceMall = row.mall;
+    return identity;
+  });
+  const strong = P.commonStrongIdentifier(identities);
+  const tier = strong ? 'A' : 'B';
+  const identity = P.canonicalIdentity(identities, strong, tier);
+  const canonicalKey = P.canonicalKeyOf(identity);
+  if (canonicalKey !== 'd8ef963465eef90d2c91db01d9588f9abd6a78ff6b427f1e09838b8a446a53e0') {
+    throw new Error('production smoke fixture no longer matches the reviewed canonical group key');
+  }
+  db.canonical_product_groups.push({ id: 91, canonical_key: canonicalKey, status: 'ACTIVE', identity, confidence_tier: tier });
+  db.canonical_product_members.push(...rows.map((row, i) => ({
+    group_id: 91, source_mall: row.mall, product_id: row.product_id, mall: row.mall_label,
+    vendor_item_id: row.vendor_item_id, offer_key: row.mall + '|' + row.product_id,
+    identity_snapshot: P.snapshotOf(identities[i])
+  })));
+  let id = 300;
+  rows.forEach((row, j) => {
+    for (let i = 0; i < 20; i++) db.price_history.push({ id: id++, product_id: row.product_id, mall: row.mall,
+      vendor_item_id: '', price: row.lprice + (i % 3) * 500,
+      recorded_date: kst(19 - i), recorded_at: daysAgoIso(19 - i) });
+  });
+  return { rows, canonicalKey };
+}
+
 (async () => {
   console.log('=== 상품 페이지 · JSON · 사이트맵 (외부 호출 0회) ===');
   seed();
@@ -220,6 +264,56 @@ function seed() {
       '가격 종류를 모른다는 사실과 결제 금액 확인 안내가 있다');
     ok(r.text.indexOf('쿠폰·카드 할인은 포함되지 않았어요') < 0,
       '★ 확인되지 않은 "쿠폰·카드 할인 미포함" 단정이 되살아나지 않았다');
+  }
+  section('2a. Phase 5 canonical display keeps representative identity');
+  {
+    const fixture = seedCanonicalDisplay();
+    const keys = ['IDENTITY_CANONICAL_CONSUMER_ENABLED', 'IDENTITY_CANONICAL_CONSUMER_ROLLOUT_PERCENT', 'IDENTITY_CANONICAL_CONSUMER_GROUP_KEYS'];
+    const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    process.env.IDENTITY_CANONICAL_CONSUMER_ENABLED = 'true';
+    process.env.IDENTITY_CANONICAL_CONSUMER_ROLLOUT_PERCENT = '100';
+    process.env.IDENTITY_CANONICAL_CONSUMER_GROUP_KEYS = fixture.canonicalKey;
+    try {
+      const json = await call({ __route: 'product', pid: fixture.rows[0].product_id });
+      ok(json.status === 200 && json.body.product.productId === fixture.rows[0].product_id && json.body.product.lprice === 6206000,
+        'canonical JSON preserves representative product and price identity');
+      ok(json.body.product.canonicalLowestPrice === 5884990
+        && json.body.product.canonicalLowestMerchant === '롯데홈쇼핑'
+        && json.body.product.canonicalLowestProductId === fixture.rows[1].product_id,
+      'canonical JSON separates verified lowest offer fields');
+      ok(json.body.product.canonicalLowestLink === fixture.rows[1].link
+        && json.body.canonical.lowestLink === fixture.rows[1].link
+        && json.body.canonical.lowestProductId === fixture.rows[1].product_id,
+      'detail CTA link and lowest offer identity stay paired');
+      ok(Array.isArray(json.body.canonical.points) && json.body.canonical.points.length === 20,
+        'canonical aggregate history remains available');
+      const html = await call({ __route: 'page', pid: fixture.rows[0].product_id });
+      ok(/<div class="price">5,884,990<small> 원<\/small><\/div>/.test(html.text)
+        && /현재 확인된 최저가 · 롯데홈쇼핑/.test(html.text),
+      'detail main price identifies canonical lowest seller');
+      ok(html.text.includes(`href="${fixture.rows[1].link}"`) && /롯데홈쇼핑에서 보기 →/.test(html.text),
+        'detail purchase CTA uses the exact lowest seller offer link');
+      ok(/Hmall/.test(html.text) && /롯데홈쇼핑/.test(html.text), 'detail comparison shows both clean seller labels');
+      const blocks = [...html.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(m => JSON.parse(m[1]));
+      const graph = [].concat(...blocks.map(b => b['@graph'] || [b]));
+      const prod = graph.find(n => n['@type'] === 'Product');
+      ok(prod && prod.offers.price === 5884990 && prod.offers.seller.name === '롯데홈쇼핑',
+        'canonical structured offer agrees with the visible price and seller');
+      process.env.IDENTITY_CANONICAL_CONSUMER_ENABLED = 'false';
+      const legacyJson = await call({ __route: 'product', pid: fixture.rows[0].product_id });
+      const legacyPage = await call({ __route: 'page', pid: fixture.rows[0].product_id });
+      ok(legacyJson.body.canonical === null && legacyJson.body.product.productId === fixture.rows[0].product_id,
+        'flag OFF restores legacy product detail response');
+      ok(/<div class="price">6,206,500<small> 원<\/small><\/div>/.test(legacyPage.text)
+        && /Hmall에서 보기 →/.test(legacyPage.text),
+      'flag OFF restores representative history price and seller CTA');
+    } finally {
+      keys.forEach(key => { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; });
+      db.products = db.products.filter(row => !fixture.rows.some(smoke => smoke.product_id === row.product_id));
+      db.price_history = db.price_history.filter(row => !fixture.rows.some(smoke => smoke.product_id === row.product_id));
+      db.canonical_product_groups = [];
+      db.canonical_product_members = [];
+    }
   }
   {
     const r = await call({ __route: 'page', pid: '1003' });

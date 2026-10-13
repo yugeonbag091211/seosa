@@ -53,6 +53,7 @@ function displayMerchant(row, member) {
 function toOffer(row, member) {
   if (row.mall === '쿠팡' && !String(member.vendor_item_id || '').trim()) return null;
   const link = Affiliate.safeBuyLink(row.link, { vendorItemId: member.vendor_item_id || '', isCoupang: row.mall === '쿠팡', mall: row.mall });
+  if (!link) return null;
   // For a known Coupang option, the affiliate URL must name this exact option.
   if (row.mall === '쿠팡' && member.vendor_item_id) {
     let linked = '';
@@ -78,6 +79,7 @@ function activeCandidate(group, members, rowsByKey, opts, stats) {
   const memberKeys = new Set();
   const offers = [];
   const identities = [];
+  const verifiedMembers = [];
   for (const member of members) {
     const source = String(member.source_mall || '');
     const pid = String(member.product_id || '');
@@ -88,16 +90,18 @@ function activeCandidate(group, members, rowsByKey, opts, stats) {
     if (!row || String(row.mall || '') !== source || String(row.product_id || '') !== pid) return null;
     const currentVid = Price.vendorIdOf(row);
     if (currentVid !== String(member.vendor_item_id || '')) return null;
-    if (!Price.isDisplayable(row) || !(Number(row.lprice) > 0) || !currentPriceFresh(row, opts.now)) return null;
-    const linkOffer = toOffer(row, member);
-    if (!linkOffer) return null;
-    offers.push(linkOffer);
     const identity = parseCurrent(row, member);
     if (P.stableJson(P.snapshotOf(identity)) !== P.stableJson(member.identity_snapshot || {})) return null;
     identities.push(identity);
+    verifiedMembers.push({ key, vendorItemId: currentVid });
+    // A member can remain a valid identity while its current offer is temporarily
+    // unusable (stale, suspect, unpriced, or missing a safe purchase link). Filter
+    // that offer so the next verified seller can become the canonical display.
+    if (Price.isDisplayable(row) && Number(row.lprice) > 0 && currentPriceFresh(row, opts.now)) {
+      const linkOffer = toOffer(row, member);
+      if (linkOffer) offers.push(linkOffer);
+    }
   }
-  const merchants = new Set(offers.map(o => o.mallLabel).filter(Boolean));
-  if (merchants.size < 2) return null;
   const context = OI.contextFactory(identities);
   for (let i = 0; i < identities.length; i++) {
     for (let j = i + 1; j < identities.length; j++) {
@@ -113,8 +117,10 @@ function activeCandidate(group, members, rowsByKey, opts, stats) {
   const strong = identity.strongIdentifier || null;
   const computed = P.canonicalKeyOf(P.canonicalIdentity(identities, strong, group.confidence_tier));
   if (computed !== String(group.canonical_key)) return null;
+  const merchants = new Set(offers.map(o => o.mallLabel).filter(Boolean));
+  if (offers.length < 2 || merchants.size < 2) return null;
   offers.sort((a, b) => a.price - b.price || a.mallLabel.localeCompare(b.mallLabel) || a.productId.localeCompare(b.productId));
-  return { id: String(group.id), key: String(group.canonical_key), identity, offers };
+  return { id: String(group.id), key: String(group.canonical_key), identity, offers, verifiedMembers };
 }
 
 async function resolveGroups(items, opts = {}) {
@@ -172,7 +178,10 @@ async function resolveGroups(items, opts = {}) {
       const offers = group.offers.map(() => trustItems[offset++]).filter(item => item
         && ['high', 'medium'].includes(item.trust && item.trust.level)
         && !(item.trust.reasons || []).some(reason => reason.code === 'volatile_high'));
-      if (offers.length !== group.offers.length) { stats.rejected++; return null; }
+      if (offers.length < 2 || new Set(offers.map(item => item.mallLabel).filter(Boolean)).size < 2) {
+        stats.rejected++;
+        return null;
+      }
       group.offers = offers.map(item => ({
         productId: item.productId, mall: item.mall, mallLabel: item.mallLabel,
         vendorItemId: item.vendorItemId, title: item.title, price: item.lprice,
@@ -181,8 +190,8 @@ async function resolveGroups(items, opts = {}) {
       return group;
     }).filter(Boolean);
     const membershipCount = new Map();
-    candidates.forEach(group => group.offers.forEach(offer => {
-      const key = offer.mall + '|' + offer.productId;
+    candidates.forEach(group => group.verifiedMembers.forEach(member => {
+      const key = member.key;
       membershipCount.set(key, (membershipCount.get(key) || 0) + 1);
     }));
     const byOfferKey = new Map();
@@ -194,15 +203,15 @@ async function resolveGroups(items, opts = {}) {
       inputsByOfferKey.get(key).push(item);
     });
     for (const group of candidates) {
-      const memberKeys = group.offers.map(offer => offer.mall + '|' + offer.productId);
+      const memberKeys = group.verifiedMembers.map(member => member.key);
       const valid = group.offers.length >= 2 && new Set(group.offers.map(x => x.mallLabel)).size >= 2
         && memberKeys.every(key => membershipCount.get(key) === 1);
       if (!valid) { stats.rejected++; continue; }
       let matchedInput = false;
-      group.offers.forEach(offer => {
-        const key = offer.mall + '|' + offer.productId;
+      group.verifiedMembers.forEach(member => {
+        const key = member.key;
         (inputsByOfferKey.get(key) || []).forEach(input => {
-          if (vendorIdOf(input) === offer.vendorItemId) {
+          if (vendorIdOf(input) === member.vendorItemId) {
             matchedInput = true;
             byOfferKey.set(requestKey(input), group);
           }
@@ -234,7 +243,17 @@ function annotate(item, group) {
   out.canonicalOffers = group.offers.map(offer => Object.assign({}, offer));
   out.canonicalLowestPrice = group.offers[0].price;
   out.canonicalLowestMerchant = group.offers[0].mallLabel;
+  out.canonicalLowestMall = group.offers[0].mall;
   out.canonicalLowestLink = group.offers[0].link;
+  out.canonicalLowestProductId = group.offers[0].productId;
+  out.canonicalLowestVendorItemId = group.offers[0].vendorItemId;
+  // Customer-facing display and purchase identities are explicit. The ranked
+  // representative's productId/title/link/price remain the history identity.
+  out.displayPrice = out.canonicalLowestPrice;
+  out.displayMerchant = out.canonicalLowestMerchant;
+  out.displayBuyLink = out.canonicalLowestLink;
+  out.displayProductId = out.canonicalLowestProductId;
+  out.displayVendorItemId = out.canonicalLowestVendorItemId;
   // Convenient aliases for search/AI rows that do not already define these fields.
   if (out.offerCount == null) out.offerCount = out.canonicalOfferCount;
   if (!(Number(out.lowestPrice) > 0)) out.lowestPrice = out.canonicalLowestPrice;

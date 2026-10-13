@@ -399,6 +399,7 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
     'api/_canonicalconsumer.js',
     'scripts/test-canonical-consumer.js',
     'scripts/test-canonical-consumer-mutations.js',
+    'scripts/test-product-page.js',
     'scripts/run-identity-review-ingest.js',
     'scripts/test-identity-review.js',
     'scripts/test-identity-review-mutations.js',

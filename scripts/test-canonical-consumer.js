@@ -1,16 +1,19 @@
 'use strict';
 const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
 const OI = require('../api/_offeridentity');
 const P = require('../api/_identitypromotion');
 const C = require(process.env.CANONICAL_CONSUMER_MODULE || '../api/_canonicalconsumer');
 
 function fixture(titles, options = {}) {
   const products = titles.map((title, i) => ({
-    product_id: String(700 + i), mall: options.mall || 'ADPICK',
-    mall_label: options.labels ? options.labels[i] : ['Hmall', 'Lotte Home Shopping'][i],
+    product_id: options.ids ? String(options.ids[i]) : String(700 + i), mall: options.rawMalls ? options.rawMalls[i] : options.mall || 'ADPICK',
+    mall_label: options.labels ? options.labels[i] : ['Hmall', '롯데홈쇼핑', 'SSG'][i],
     vendor_item_id: options.vids ? options.vids[i] : '', title,
     gtin: options.gtins ? options.gtins[i] : '',
-    lprice: [62000, 54000][i], link: 'https://biz.adpick.co.kr/offer/' + i,
+    lprice: options.prices ? options.prices[i] : [62000, 54000, 58000][i],
+    link: options.links ? options.links[i] : 'https://biz.adpick.co.kr/offer/' + i,
     image: 'https://img.example/' + i + '.jpg', keyword: 'mouse',
     collected_at: new Date().toISOString()
   }));
@@ -68,6 +71,38 @@ function opts(db, extra = {}) {
     attachTrust: async rows => rows.forEach(row => { row.trust = { level: 'high', reasons: [] }; }) }, extra);
 }
 
+function loadCardComponent() {
+  const source = fs.readFileSync(require.resolve('../public/index.html'), 'utf8');
+  const start = source.indexOf('var Card = {');
+  const imageFallback = source.indexOf('/** 이미지 로드 실패', start);
+  const marker = source.lastIndexOf('\n};', imageFallback);
+  assert.ok(start >= 0 && marker > start, 'Card component source boundaries exist');
+  const context = {
+    Fmt: {
+      int(value) { const n = parseInt(String(value == null ? '' : value).replace(/,/g, ''), 10); return Number.isFinite(n) ? n : 0; },
+      won(value) { return Number(value).toLocaleString('en-US'); },
+      esc(value) { return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); },
+      glyph() { return '✦'; },
+      mall(item) { return { cls: '', name: item.mallLabel || item.mall || '' }; },
+      buyUrl(link, item) { return require('../api/_affiliate').safeBuyLink(link, item); },
+      textOf(element) { return element && element.textContent || ''; },
+      priceOf() { return 0; },
+      asOf() { return ''; }
+    },
+    MallBrand: { render(mall, label) { return String(label || mall || ''); } },
+    AppState: { products: {} },
+    histKey() { return 'representative-history-key'; },
+    productKey(title, mall, pid, vid) { return [title, mall, pid, vid].join('|'); }
+  };
+  vm.runInNewContext(source.slice(start, marker + 3), context, { timeout: 1000 });
+  context.Card.thumbHTML = () => '';
+  context.Card.changeHTML = () => '';
+  context.Card.asOfHTML = () => '';
+  context.Card.shipHTML = () => '';
+  context.Card.trustHTML = () => '';
+  return context;
+}
+
 async function run() {
   // Flag OFF must return the original array and make no DB call.
   const off = fixture(['Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse']);
@@ -87,8 +122,161 @@ async function run() {
   assert.strictEqual(collapsed[0].isCanonicalGroup, true);
   assert.strictEqual(collapsed[0].offerCount, 2);
   assert.strictEqual(collapsed[0].lowestPrice, 54000);
-  assert.strictEqual(collapsed[0].lowestMerchant, 'Lotte Home Shopping');
+  assert.strictEqual(collapsed[0].lowestMerchant, '롯데홈쇼핑');
   assert.strictEqual(collapsed[0].productId, fx.inputs[0].productId, 'the ranked representative remains the card identity');
+  assert.strictEqual(collapsed[0].lprice, fx.inputs[0].lprice, 'representative price remains the history price');
+  assert.strictEqual(collapsed[0].link, fx.inputs[0].link, 'representative link remains attached to its product identity');
+  assert.strictEqual(collapsed[0].canonicalLowestPrice, 54000);
+  assert.strictEqual(collapsed[0].canonicalLowestMerchant, '롯데홈쇼핑');
+  assert.strictEqual(collapsed[0].displayPrice, 54000);
+  assert.strictEqual(collapsed[0].displayMerchant, '롯데홈쇼핑');
+  assert.strictEqual(collapsed[0].canonicalLowestProductId, fx.products[1].product_id);
+  assert.strictEqual(collapsed[0].canonicalLowestVendorItemId, '');
+  assert.strictEqual(collapsed[0].canonicalLowestLink, fx.products[1].link,
+    'canonical purchase link and lowest price point to the same seller offer');
+
+  // 3-member group: skip an unusable cheapest offer and choose the next safe seller.
+  const three = fixture([
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse'
+  ], { prices: [70000, 50000, 55000], labels: ['Hmall', '롯데홈쇼핑', 'SSG'] });
+  three.products[1].collected_at = new Date(Date.now() - 5 * 86400000).toISOString();
+  const afterStale = await C.collapseItems(three.inputs, opts(three.db));
+  assert.strictEqual(afterStale.length, 1);
+  assert.strictEqual(afterStale[0].canonicalLowestPrice, 55000);
+  assert.strictEqual(afterStale[0].canonicalLowestMerchant, 'SSG');
+  assert.strictEqual(afterStale[0].canonicalLowestProductId, three.products[2].product_id);
+  assert.strictEqual(afterStale[0].canonicalLowestLink, three.products[2].link,
+    'stale cheapest seller falls through to next valid offer');
+  assert.strictEqual(afterStale[0].productId, three.products[0].product_id,
+    'even a filtered representative keeps its history identity');
+  const suspect = fixture([
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse'
+  ], { prices: [70000, 50000, 55000], labels: ['Hmall', '롯데홈쇼핑', 'SSG'] });
+  const afterSuspect = await C.collapseItems(suspect.inputs, opts(suspect.db, {
+    attachTrust: async rows => rows.forEach(row => {
+      row.trust = row.lprice === 50000
+        ? { level: 'low', reasons: [{ code: 'volatile_high' }] } : { level: 'high', reasons: [] };
+    })
+  }));
+  assert.strictEqual(afterSuspect.length, 1);
+  assert.strictEqual(afterSuspect[0].canonicalLowestPrice, 55000,
+    'suspect cheapest seller falls through to next trusted offer');
+  const badLink = fixture([
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse'
+  ], { prices: [70000, 50000, 55000], labels: ['Hmall', '롯데홈쇼핑', 'SSG'],
+    links: ['https://biz.adpick.co.kr/offer/0', 'javascript:alert(1)', 'https://biz.adpick.co.kr/offer/2'] });
+  const afterBadLink = await C.collapseItems(badLink.inputs, opts(badLink.db));
+  assert.strictEqual(afterBadLink[0].canonicalLowestPrice, 55000,
+    'unsafe cheapest offer falls through to the next valid purchase offer');
+  assert.strictEqual(afterBadLink[0].canonicalLowestLink, badLink.products[2].link);
+  const allInvalid = fixture([
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse',
+    'Logitech MX Master 3S Wireless Mouse'
+  ], { prices: [70000, 50000, 55000], labels: ['Hmall', '롯데홈쇼핑', 'SSG'],
+    links: ['javascript:alert(1)', '', 'data:text/html,unsafe'] });
+  const allInvalidLinks = await C.collapseItems(allInvalid.inputs, opts(allInvalid.db));
+  assert.strictEqual(allInvalidLinks.length, allInvalid.inputs.length,
+    'all unsafe offers fall back to legacy ungrouped rows');
+  assert.ok(allInvalidLinks.every(row => row.isCanonicalGroup !== true));
+  const allInvalidRows = await C.collapseItems(allInvalid.inputs, opts(allInvalid.db, {
+    attachTrust: async rows => rows.forEach(row => { row.trust = { level: 'low', reasons: [] }; })
+  }));
+  assert.strictEqual(allInvalidRows.length, allInvalid.inputs.length,
+    'all invalid canonical offers fall back to legacy ungrouped rows');
+
+  const affiliate = require('../api/_affiliate');
+  const affiliateLink = `https://link.coupang.com/re/AFFSDP?lptag=${affiliate.SEOSA_COUPANG_LPTAG}&vendorItemId=12345`;
+  const affiliateFixture = fixture([
+    'Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse'
+  ], { rawMalls: ['ADPICK', '쿠팡'], labels: ['Hmall', '쿠팡'], prices: [6206000, 5884990],
+    vids: ['', '12345'], links: ['https://biz.adpick.co.kr/offer/hmall', affiliateLink] });
+  const affiliateCard = (await C.collapseItems(affiliateFixture.inputs, opts(affiliateFixture.db)))[0];
+  assert.strictEqual(affiliateCard.canonicalLowestLink, affiliateLink,
+    'the lowest offer retains its verified affiliate attribution');
+  assert.strictEqual(affiliate.safeBuyLink(affiliateCard.canonicalLowestLink, {
+    mall: affiliateCard.canonicalLowestMall, vendorItemId: affiliateCard.canonicalLowestVendorItemId
+  }), affiliateLink, 'purchase link still validates against the lowest offer option');
+  const wrongOptionLink = fixture([
+    'Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse'
+  ], { rawMalls: ['ADPICK', '쿠팡'], labels: ['Hmall', '쿠팡'], prices: [6206000, 5884990],
+    vids: ['', '12345'], links: ['https://biz.adpick.co.kr/offer/hmall',
+      `https://link.coupang.com/re/AFFSDP?lptag=${affiliate.SEOSA_COUPANG_LPTAG}&vendorItemId=99999`] });
+  const wrongOptionRows = await C.collapseItems(wrongOptionLink.inputs, opts(wrongOptionLink.db));
+  assert.ok(wrongOptionRows.every(row => row.isCanonicalGroup !== true),
+    'a valid Coupang affiliate link for a different vendor option cannot become a canonical offer');
+  const ui = loadCardComponent();
+  const legacyHtml = ui.Card.html(off.inputs[0]);
+  assert.ok(legacyHtml.includes('62,000') && !legacyHtml.includes('최저가 ·'),
+    'feature-off search card retains its legacy representative price presentation');
+  assert.strictEqual(ui.Card.purchaseInfo(off.inputs[0]), off.inputs[0],
+    'feature-off purchase CTA retains the legacy product/link identity');
+  const productionSmoke = fixture([
+    'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 2.5K 240Hz 고사양 게이밍 노트북',
+    'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 2.5K 240Hz 고사양 게이밍 노트북'
+  ], { ids: [
+    '5f6cd0192af9a21b26db684e1d5e0da9f3c275bcd9ff7a4a2284eef0e310eec8',
+    '5270e8af7873b4b9c4d4e75cf31ae62e4a3f1d7e4be3936c4d95dc7de8ae9f4a'
+  ], rawMalls: ['ADPICK', 'ADPICK'], labels: ['Hmall', '롯데홈쇼핑'], prices: [6206000, 5884990],
+  links: ['https://biz.adpick.co.kr/preview/hmall-offer?fixture=1', 'https://biz.adpick.co.kr/preview/lotte-offer?fixture=1'] });
+  const productionIdentities = productionSmoke.products.map(row => {
+    const identity = OI.parseOffer({ key: row.mall + '|' + row.product_id, title: row.title,
+      mall: row.mall_label, productId: row.product_id, vendorItemId: row.vendor_item_id, price: row.lprice });
+    identity.sourceMall = row.mall;
+    return identity;
+  });
+  const productionStrong = P.commonStrongIdentifier(productionIdentities);
+  const productionIdentity = P.canonicalIdentity(productionIdentities, productionStrong, 'A');
+  const productionKey = P.canonicalKeyOf(productionIdentity);
+  assert.strictEqual(productionKey, 'd8ef963465eef90d2c91db01d9588f9abd6a78ff6b427f1e09838b8a446a53e0',
+    'local production-derived smoke fixture identifies the currently active canonical group');
+  productionSmoke.group.canonical_key = productionKey;
+  productionSmoke.group.identity = productionIdentity;
+  productionSmoke.members.forEach((member, i) => { member.identity_snapshot = P.snapshotOf(productionIdentities[i]); });
+  const productionCard = (await C.collapseItems(productionSmoke.inputs, opts(productionSmoke.db)))[0];
+  assert.strictEqual(productionCard.productId, productionSmoke.inputs[0].productId,
+    'production-derived search card preserves the Hmall representative/history identity');
+  assert.strictEqual(productionCard.canonicalLowestPrice, 5884990);
+  assert.strictEqual(productionCard.canonicalLowestMerchant, '롯데홈쇼핑');
+  assert.ok(ui.Card.html(productionCard).includes('최저가 · 롯데홈쇼핑')
+    && ui.Card.html(productionCard).includes('5,884,990'),
+  'production-derived local search smoke displays the active group lowest offer');
+  assert.strictEqual(ui.Card.purchaseInfo(productionCard).link, productionSmoke.products[1].link,
+    'production-derived local search CTA follows the actual Lotte offer route');
+  assert.strictEqual(ui.Card.purchaseInfo(productionCard).productId, productionSmoke.products[1].product_id);
+  const ordinaryMallHtml = ui.Card.html(collapsed[0]);
+  assert.ok(ordinaryMallHtml.includes('최저가 · 롯데홈쇼핑') && ordinaryMallHtml.includes('54,000'),
+    'search card shows a lower canonical offer from the expected merchant');
+  assert.ok(ordinaryMallHtml.includes('롯데홈쇼핑에서 구매'),
+    'search card purchase CTA names the same lowest-price seller');
+  const cardHtml = ui.Card.html(affiliateCard);
+  assert.ok(cardHtml.includes('최저가 · 쿠팡') && cardHtml.includes('5,884,990'),
+    'search card main price is the canonical lowest price and seller');
+  assert.ok(cardHtml.includes('쿠팡에서 구매'), 'search card CTA names the lowest seller');
+  assert.ok(cardHtml.includes('data-pid="700"') && cardHtml.includes('data-vid=""'),
+    'rendered card keeps representative product and vendor identity');
+  ui.AppState.products[ui.productKey(affiliateCard.title, affiliateCard.mall, affiliateCard.productId, affiliateCard.vendorItemId)] = affiliateCard;
+  const readCard = ui.Card.read({
+    dataset: { title: affiliateCard.title, mall: affiliateCard.mall, pid: affiliateCard.productId, vid: affiliateCard.vendorItemId, glyph: '✦' },
+    querySelector(selector) { return selector === '.p-title' ? { textContent: affiliateCard.title } : null; }
+  });
+  assert.strictEqual(readCard.lprice, 6206000, 'card history reads representative price, not displayed lowest price');
+  assert.strictEqual(readCard.productId, '700', 'card history product ID remains representative');
+  assert.strictEqual(readCard.link, affiliateFixture.inputs[0].link, 'history identity keeps representative link');
+  assert.strictEqual(readCard.buyInfo.link, affiliateLink, 'purchase CTA uses same lowest offer affiliate link');
+  assert.strictEqual(readCard.buyInfo.productId, '701', 'purchase attribution uses lowest offer product ID');
+  assert.strictEqual(readCard.buyInfo.vendorItemId, '12345', 'purchase attribution uses lowest offer option ID');
+  const aiCard = require('../api/ai.js')._internal.toCard(affiliateCard, null);
+  assert.strictEqual(aiCard.canonicalLowestPrice, 5884990, 'AI card exposes the verified lowest display price');
+  assert.strictEqual(aiCard.canonicalLowestLink, affiliateLink, 'AI purchase identity keeps the same affiliate offer');
+  assert.strictEqual(aiCard.productId, '700', 'AI card retains the representative history identity');
+  assert.strictEqual(aiCard.lprice, 6206000, 'AI card does not replace representative price/history identity');
 
   // Status, freshness, price validity, trust, and option identity fail closed.
   const suspended = fixture(['Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse'], { status: 'SUSPENDED' });
