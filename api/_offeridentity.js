@@ -503,6 +503,9 @@ function parseOffer(input) {
   else if (years.size > 1) id.flags.push('year_multiple');
 
   s = s.replace(ORDINAL_RE, '$1 ');
+  // Tier B promotion must distinguish a product model anchor (AirPods Pro 3) from a
+  // generation-only number (G102IC 2세대). This metadata does not change MATCH decisions.
+  if (/(?:^|[^a-z0-9])\d{1,2}\s*(?:세대|gen(?:eration)?)(?![a-z가-힣])/i.test(s)) id.flags.push('generation_anchor');
   s = s.replace(/(?<=[0-9])\s*(?:세대|gen(?:eration)?)(?![a-z가-힣])/gi, ' ');
   /*
    * 남은 긴 숫자(5자리 이상)는 판매처 상품번호이거나 스타일·색 번호다. 모델 번호로 쓰지 않지만
