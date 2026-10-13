@@ -1,0 +1,72 @@
+name: SEOSA Product Identity Shadow
+
+# Phase 2 — shadow matching. 사용자에게 보이는 기능이 아니다.
+#
+# ★ 이 워크플로가 실제로 쓰려면 저장소 변수 IDENTITY_SHADOW_ENABLED 가 true 여야 한다.
+#   켜지 않으면 워커가 "disabled" 를 찍고 exit 0 한다. merge 와 운영 활성화를 분리하는 관문이다.
+#
+# 왜 하루 한 번인가: 카탈로그는 수집기가 하루 한 바퀴 갱신하고(daily-prices),
+# 식별 결과는 그 스냅숏에 대해서만 달라진다. 더 자주 돌리면 같은 답을 다시 쓰면서
+# shadow 표만 불린다. 수집이 끝난 뒤(KST 새벽)에 한 번 본다.
+
+on:
+  schedule:
+    # 19:10 UTC = 04:10 KST — daily-prices 가 끝난 뒤
+    - cron: '10 19 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '계산만 하고 shadow 표에 쓰지 않음'
+        type: boolean
+        default: true
+      limit:
+        description: '대상 products 수 상한 (0 = 전체)'
+        type: string
+        default: '0'
+      sample:
+        description: '로그로 볼 그룹 표본 수 (0 = 없음)'
+        type: string
+        default: '0'
+
+concurrency:
+  group: seosa-identity-shadow
+  cancel-in-progress: false
+
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Run shadow matching
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # 없으면 워커가 아무것도 하지 않는다 (opt-in 관문)
+          IDENTITY_SHADOW_ENABLED: ${{ vars.IDENTITY_SHADOW_ENABLED }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          node scripts/run-offer-identity-shadow.js \
+            ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
+            ${{ github.event.inputs.limit != '' && github.event.inputs.limit != '0' && format('--limit {0}', github.event.inputs.limit) || '' }} \
+            ${{ github.event.inputs.sample != '' && github.event.inputs.sample != '0' && format('--sample {0}', github.event.inputs.sample) || '' }} \
+            2>&1 | tee /tmp/identity-shadow.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Product Identity Shadow" >> $GITHUB_STEP_SUMMARY
+          echo '~~~json' >> $GITHUB_STEP_SUMMARY
+          grep -E '"msg":"(disabled|skipped|products_loaded|validated|dry_run_complete|completed|run_failed)"' \
+            /tmp/identity-shadow.log | tail -10 >> $GITHUB_STEP_SUMMARY || echo '{"msg":"no output"}' >> $GITHUB_STEP_SUMMARY
+          echo '~~~' >> $GITHUB_STEP_SUMMARY

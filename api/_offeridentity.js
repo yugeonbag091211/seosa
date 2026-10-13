@@ -1290,6 +1290,13 @@ function verifyGroups(groups, offersByKey) {
 
 module.exports = {
   DECISION, parseOffer, matchOffers, clusterOffers, blockKeys, verifyGroups, codeRelation,
+  /*
+   * clusterOffers 가 쓰는 것과 «같은» 쌍 비교 문맥을 밖에서도 만들 수 있게 한다.
+   * 이것 없이 matchOffers(a, b) 를 직접 부르면 계열 차원(lineDimensions)이 비어
+   * 군집이 내린 판정과 다른 답이 나온다. Phase 2 shadow 워커가 REVIEW 쌍의 근거를
+   * 다시 읽을 때 반드시 같은 문맥이어야 한다 (scripts/run-offer-identity-shadow.js).
+   */
+  contextFactory,
   REQUIRED_DIMENSIONS,
   _internal: { BRANDS, ALIASES, SUB_BRANDS, IMPLIED_BRAND, NOISE_WORDS, CATEGORY_CLASSES, normGtin, validGtin, codeParts, lineDimensionsOf }
 };
