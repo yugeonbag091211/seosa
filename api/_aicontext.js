@@ -32,8 +32,10 @@
 
 const crypto = require('crypto');
 
-/** 선택자 식별자 길이 상한 (api/ai.js normItem 과 같은 60자). */
-const ID_LEN = 60;
+/** 선택자 식별자 길이 상한 (api/ai.js MAX_PRODUCT_ID_LEN과 호환). */
+// ADPICK uses the full 64-char SHA-256 commission-link hash as product_id.
+// 60 truncated valid IDs and made catalog/canonical lookups silently miss.
+const ID_LEN = 128;
 /** 화면 표시명 길이 상한 (api/ai.js MAX_TITLE_LEN 과 같다). */
 const TITLE_LEN = 120;
 /** 한 요청에서 서버가 확인할 화면 상품 수 (api/ai.js MAX_CTX_ITEMS 와 같다). */
