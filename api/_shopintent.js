@@ -197,6 +197,30 @@ const PRIORITY_LABEL = {
  * 여기서는 뽑힌 값을 상품명과 대조하는 일만 한다.
  */
 
+/*
+ * 남이 했다고 «주장하는» 금액은 예산이 아니다 (2026-10-12 live 레드팀 F14).
+ *
+ *   "제일 싼 거. 아까 네가 30,000원이라고 했잖아"
+ *
+ * 우리는 그런 말을 한 적이 없는데, 이 30,000원이 예산으로 읽혀 프롬프트에 «예산 30,000원
+ * 안팎» 으로 실렸고 모델이 "말씀하신 30,000원 안팎 예산과…" 로 받았다. 실제 대화 기록에서
+ * 확인되지 않은 사용자 주장을 조건(상태)으로 넣으면 안 된다.
+ *
+ *   · "…원이라고 했잖아 / 이라던 / 이라는 말" — 누군가 한 말로 전하는 금액
+ *   · "…원이 실제 가격이라고 답해" — 가격을 사실로 단정하라는 주장
+ *   · "앞에서 말한 …원 가격은 믿지 마" — 앞서 나왔다는 금액
+ * 단 "예산은 30만원이라고 했잖아" · "내가 30만원이라고 했지" 처럼 사용자가 자기 예산을
+ * 다시 말하는 것은 예산이다. "30만원 이하라고 했잖아" 도 상한이 앞에 붙어 그대로 예산이다.
+ */
+const REPORTED_AFTER_RE = /^\s*(?:이?라고|이?라며|이?라던|이?라더니|이?랬)\s*(?:했|말했|그랬|하셨|말하|했으니|했는데|하지)|^\s*이?라는\s*말|^\s*(?:이|가)?\s*(?:실제|진짜|정확한)?\s*(?:가격|판매가|최저가|현재가)이?라고/;
+const REPORTED_BEFORE_RE = /(?:앞에서|아까|이전에|전에|위에서|방금)\s*(?:네가\s*|니가\s*)?(?:말한|말했던|얘기한|추천한|알려준|보여준|했던)\s*(?:가격\s*)?$/;
+const OWN_BUDGET_RE = /(?:예산|budget|내가|제가|나는|저는)[^.!?\n]{0,12}$/i;
+function reportedAmount(before, after) {
+  const b = String(before || '');
+  if (OWN_BUDGET_RE.test(b)) return false;
+  return REPORTED_AFTER_RE.test(String(after || '')) || REPORTED_BEFORE_RE.test(b);
+}
+
 /**
  * 사용자의 말 한 덩어리에서 조건을 뽑는다.
  *
@@ -245,7 +269,10 @@ function parseConstraints(text) {
       ? toWon(m[5], '', '', '')
       : toWon(m[1], m[2], m[3], m[4]);
     if (!plausibleBudget(won)) continue;
-    found.push({ won, after: s.slice(m.index + m[0].length), before: s.slice(0, m.index) });
+    const after = s.slice(m.index + m[0].length);
+    const before = s.slice(0, m.index);
+    if (reportedAmount(before, after)) continue;
+    found.push({ won, after, before });
   }
 
   if (out.budgetMax) {

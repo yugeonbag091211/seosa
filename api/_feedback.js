@@ -29,6 +29,7 @@
  */
 
 const { iga, eunn, eulr } = require('./_specs');
+const SEARCH = require('./_search');
 
 /*
  * 거부 신호.
@@ -204,7 +205,8 @@ function applyExcludes(items, excludes) {
   const out = [];
   list.forEach(it => {
     const title = String(it.title || '').toLowerCase();
-    const hit = ex.filter(e => title.includes(String(e.name).toLowerCase()));
+    const hit = ex.filter(e => title.includes(String(e.name).toLowerCase())
+      || SEARCH.isIdentityMatch(e.name, it.title));
     if (!hit.length) { out.push(it); return; }
 
     if (hit.some(e => e.hard)) return;          // "절대 빼" 는 목록에서 제거

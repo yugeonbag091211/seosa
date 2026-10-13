@@ -917,6 +917,152 @@ check(S.productFocus(S.analyzeQuery('에어팟'), '[케이스증정] Apple 에�
 check(S.productFocus(S.analyzeQuery('에어팟'), '에어팟 프로 2 케이스 블루투스 이어폰용').factor < 1,
   '«…이어폰용» 은 부속의 대상이지 판매 대상이 아니다');
 
+/* ================================================================ *
+ *  R. Adversarial regressions: variants, fused catalog titles, and conditions
+ * ================================================================ */
+section('R. variant specificity, fused titles, and conditions');
+function rankedIdentity(query, products) {
+  return S.sortByRelevance(S.rankItems(query, products.map((p, i) => ({
+    productId: `variant-${i}`, title: p.title, lprice: p.price, mall: '쿠팡',
+    trust: { score: 100 }, testIdentity: p.identity
+  })), { minScore: 0 }).items);
+}
+const variantChecks = [
+  ['iPhone 17 Pro', 'iphone17pro', [
+    { identity: 'iphone17promax', title: 'Apple iPhone 17 Pro Max 256GB 스마트폰', price: 1 },
+    { identity: 'iphone17pro', title: 'Apple iPhone 17 Pro 256GB 스마트폰', price: 900000 }
+  ]],
+  ['Galaxy S26', 's26', [
+    { identity: 's26ultra', title: '삼성 갤럭시 S26 Ultra 자급제 스마트폰', price: 1 },
+    { identity: 's26plus', title: '삼성 갤럭시 S26+ 자급제 스마트폰', price: 2 },
+    { identity: 's26', title: '삼성 갤럭시 S26 자급제 스마트폰', price: 900000 }
+  ]],
+  ['Dyson V15 Detect', 'dysonv15detect', [
+    { identity: 'dysonv15absolute', title: 'Dyson V15 Detect Absolute 무선 청소기 Silver', price: 1 },
+    { identity: 'dysonv15detect', title: 'DysonV15Detect 무선 청소기 Silver', price: 900000 }
+  ]],
+  ['AirPods 3', 'airpods3', [
+    { identity: 'airpodspro3', title: 'Apple AirPods Pro 3세대 블루투스 이어폰', price: 1 },
+    { identity: 'airpods3', title: 'Apple AirPods 3세대 블루투스 이어폰', price: 900000 }
+  ]]
+];
+variantChecks.forEach(([query, expected, items]) => {
+  const result = rankedIdentity(query, items);
+  check(result[0] && result[0].testIdentity === expected,
+    `[${query}] explicit sibling variant wins over cheaper suffix`, result.slice(0, 3).map(x => [x.testIdentity, x.relevance]));
+});
+
+const plusVariant = rankedIdentity('Galaxy S26+', [
+  { identity: 's26plus', title: '삼성 갤럭시 S26+ 자급제 스마트폰', price: 900000 },
+  { identity: 's26', title: '삼성 갤럭시 S26 자급제 스마트폰', price: 1 }
+]);
+check(plusVariant[0] && plusVariant[0].testIdentity === 's26plus',
+  'condition cleanup preserves the explicit “+” model suffix', plusVariant.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const fusedQuery = 'GalaxyS26Ultra';
+const fusedResult = rankedIdentity(fusedQuery, [
+  { identity: 's26ultra', title: '삼성전자 갤럭시 S26 Ultra 자급제 스마트폰', price: 900000 }
+]);
+check(fusedResult[0] && fusedResult[0].testIdentity === 's26ultra',
+  'fused English model query matches Korean title', fusedResult.map(x => [x.title, x.relevance]));
+
+const mxResults = rankedIdentity('MX Master 3S', [
+  { identity: 'mouse', title: 'Logitech MX Master 3S 무선 마우스', price: 900000 },
+  { identity: 'pad', title: 'MX Master 3S 마우스패드 300x250', price: 1 }
+]);
+check(mxResults[0] && mxResults[0].testIdentity === 'mouse',
+  'main mouse outranks a model-compatible mousepad', mxResults.map(x => [x.testIdentity, x.relevance]));
+const requestedPad = rankedIdentity('MX Master 3S mousepad', [
+  { identity: 'mouse', title: 'Logitech MX Master 3S wireless mouse', price: 900000 },
+  { identity: 'pad', title: 'MX Master 3S mousepad', price: 1 }
+]);
+check(requestedPad[0] && requestedPad[0].testIdentity === 'pad',
+  'explicit mousepad intent keeps the accessory answer', requestedPad.map(x => [x.testIdentity, x.relevance]));
+
+const conditionResults = rankedIdentity('Dyson V15', [
+  { identity: 'used', title: '중고 Dyson V15 무선 청소기', price: 1 },
+  { identity: 'new', title: 'Dyson V15 무선 청소기 미개봉', price: 900000 }
+]);
+check(conditionResults[0] && conditionResults[0].testIdentity === 'new',
+  'unrequested used condition stays below new stock', conditionResults.map(x => [x.testIdentity, x.relevance]));
+
+const studentCondition = rankedIdentity('학생 노트북', [
+  { identity: 'student-title', title: '삼성 노트북 학생용 중고등학생 추천 14인치', price: 1 },
+  { identity: 'plain-title', title: '삼성 노트북 학생용 14인치', price: 900000 }
+]);
+check(studentCondition[0].relevance === studentCondition[1].relevance
+  && studentCondition.every(x => !String(x.relevanceWhy || '').includes('condition')),
+  '“중고등학생” is an audience phrase, not used condition', studentCondition.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const negativeCondition = rankedIdentity('중고 말고 새 제품만 Dyson V15', [
+  { identity: 'used', title: '중고 Dyson V15 무선 청소기', price: 1, condition: 'used' },
+  { identity: 'new', title: '새 제품 미개봉 Dyson V15 무선 청소기', price: 900000, condition: 'new' }
+]);
+check(negativeCondition[0] && negativeCondition[0].testIdentity === 'new',
+  '“중고 말고 새 제품만” excludes used listings', negativeCondition.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const negativeRefurb = rankedIdentity('리퍼 말고 신품 Dyson V15', [
+  { identity: 'refurbished', title: '리퍼비시 Dyson V15 무선 청소기', price: 1, condition: 'refurbished' },
+  { identity: 'new', title: '새 제품 Dyson V15 무선 청소기', price: 900000, condition: 'new' }
+]);
+check(negativeRefurb[0] && negativeRefurb[0].testIdentity === 'new',
+  '“리퍼 말고 신품” excludes refurbished listings', negativeRefurb.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const newBalance = rankedIdentity('New Balance 574', [
+  { identity: 'brand', title: 'New Balance 574 running shoes', price: 900000, condition: 'new' },
+  { identity: 'not-brand', title: 'Balance 574 running shoes', price: 1, condition: 'new' }
+]);
+check(newBalance[0] && newBalance[0].testIdentity === 'brand',
+  'brand name “New Balance” is not stripped as a condition', newBalance.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const usedForGaming = rankedIdentity('laptop used for gaming', [
+  { identity: 'gaming-laptop', title: 'Gaming laptop used for gaming', price: 900000, condition: 'new' }
+]);
+check(usedForGaming[0] && !String(usedForGaming[0].relevanceWhy || '').includes('condition'),
+  'English “used for” describes use, not item condition', usedForGaming.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const longConditionQuery = `${'중고 '.repeat(2048)}Dyson V15`;
+const longConditionResult = S.rankItems(longConditionQuery, [
+  { productId: 'long-query', title: 'Dyson V15 무선 청소기', lprice: 900000, condition: 'used' }
+]);
+check(Array.isArray(longConditionResult.items) && Number.isFinite(longConditionResult.items[0].relevance),
+  'long repeated condition query stays bounded and returns a ranked result', longConditionResult.items[0] && longConditionResult.items[0].relevance);
+
+const deviceFeatureScore = S.scoreTitle(S.analyzeQuery('Galaxy S26 Ultra'),
+  '삼성 갤럭시 S26 Ultra 눈 보호 기능 스마트폰');
+check(deviceFeatureScore.score > 0.9 && !deviceFeatureScore.reason.includes('accessory'),
+  'broad “protection” wording in a device feature is not an accessory', deviceFeatureScore);
+
+const variantNegatives = rankedIdentity('GoPro HERO10', [
+  { identity: 'camera', title: 'GoPro HERO10 Black action camera', price: 900000 },
+  { identity: 'case', title: 'GoPro HERO10 protective case', price: 1 }
+]);
+check(variantNegatives[0] && variantNegatives[0].testIdentity === 'camera',
+  'variant token matching does not split GoPro into “Go” + “Pro”', variantNegatives.map(x => [x.testIdentity, x.relevance]));
+
+const incidentalAir = rankedIdentity('Dyson V15', [
+  { identity: 'v15', title: 'Dyson V15 cordless vacuum with advanced air filtration', price: 900000 },
+  { identity: 'detect', title: 'Dyson V15 Detect cordless vacuum', price: 1 }
+]);
+check(incidentalAir[0] && incidentalAir[0].testIdentity === 'v15',
+  'ordinary “air” feature text does not become the Dyson Air variant', incidentalAir.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const detectTypo = rankedIdentity('다이슨 V15 디텍', [
+  { identity: 'detect', title: 'Dyson V15 Detect 무선 청소기', price: 900000 },
+  { identity: 'v15', title: 'Dyson V15 무선 청소기', price: 1 }
+]);
+check(detectTypo[0] && detectTypo[0].testIdentity === 'detect',
+  'Korean shortened typo “디텍” keeps the Detect model identity', detectTypo.map(x => [x.testIdentity, x.relevance, x.relevanceWhy]));
+
+const FB = require('../api/_feedback');
+const excludes = FB.collectExcludes('무조건 아이폰17프로맥스 제외하고 아이폰17프로만', []);
+const filtered = FB.applyExcludes([
+  { title: 'Apple iPhone 17 Pro Max 256GB 스마트폰' },
+  { title: 'Apple iPhone 17 Pro 256GB 스마트폰' }
+], excludes);
+check(filtered.length === 1 && /Pro 256GB/.test(filtered[0].title),
+  'hard exclusion matches fused Korean identity in English title without excluding sibling', filtered.map(x => x.title));
+
 
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);

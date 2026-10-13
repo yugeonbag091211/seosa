@@ -21,6 +21,8 @@ const fs = require('fs');
 const Module = require('module');
 
 process.env.AUTH_SECRET = 'test-secret-guest';
+// 무료 fallback 게스트 경로를 격리한다. 유료 primary는 test-openai-primary가 검증한다.
+delete process.env.OPENAI_API_KEY;
 process.env.OPENROUTER_API_KEY = 'test-openrouter-secret-never-expose';
 delete process.env.GEMINI_API_KEY;
 delete process.env.GROQ_API_KEY;

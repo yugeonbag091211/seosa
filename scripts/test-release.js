@@ -726,20 +726,22 @@ async function runAI() {
   /* AI-2. ★ 402 크레딧 부족 */
   {
     const res = await callAi('402');
-    check(res.code === 500, '사용자에게는 500 (업스트림 상태를 그대로 노출하지 않는다)', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && /확인되지 않은 내용은 안내하지/.test(res.payload.text || ''),
+      '402 에도 확인되지 않은 내용을 배제한 degraded 응답', JSON.stringify({ code: res.code, degraded: res.payload.degraded }));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     const blob = JSON.stringify(res.payload);
     check(blob.indexOf('Insufficient credits') === -1, '"Insufficient credits" 가 새지 않는다 ★');
     check(blob.indexOf('OpenRouter') === -1, '공급자 이름이 새지 않는다 ★');
     check(blob.indexOf('402') === -1, '업스트림 상태코드가 새지 않는다');
-    check(/다시 시도/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
+    check(/잠시 후 다시 질문해 주세요/.test(res.payload.text || ''), '사람 말로 다시 질문을 안내한다', res.payload.text);
     check(!Object.prototype.hasOwnProperty.call(res.payload, 'usage'), 'usage payload를 내보내지 않는다');
   }
 
   /* AI-3. provider 429 */
   {
     const res = await callAi('429');
-    check(res.code === 500, '429 도 사용자에게는 일반 오류', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && /확인되지 않은 내용은 안내하지/.test(res.payload.text || ''),
+      '429 에도 확인되지 않은 내용을 배제한 degraded 응답', JSON.stringify({ code: res.code, degraded: res.payload.degraded }));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(JSON.stringify(res.payload).indexOf('Rate limit') === -1, '업스트림 문구가 새지 않는다');
   }
@@ -747,14 +749,16 @@ async function runAI() {
   /* AI-4. 500 — 쿼터 복구 */
   {
     const res = await callAi('500');
-    check(res.code === 500, '업스트림 500', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && /확인되지 않은 내용은 안내하지/.test(res.payload.text || ''),
+      '업스트림 500 에도 확인되지 않은 내용을 배제한 degraded 응답', JSON.stringify({ code: res.code, degraded: res.payload.degraded }));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
   /* AI-5. timeout — 안전한 일반 오류 (쇼핑 데이터가 있으면 결정론 fallback) */
   {
     const res = await callAi('timeout');
-    check(res.code === 500, '데이터 없는 timeout → 안전한 일반 오류', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && /확인되지 않은 내용은 안내하지/.test(res.payload.text || ''),
+      '데이터 없는 timeout → 확인되지 않은 내용을 배제한 degraded 응답', JSON.stringify({ code: res.code, degraded: res.payload.degraded }));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
     check(/시간|다시/.test(res.payload.text || ''), '사람 말로 안내한다', res.payload.text);
   }
@@ -762,7 +766,8 @@ async function runAI() {
   /* AI-6. malformed 응답 — 죽지 않고 쿼터 복구 */
   {
     const res = await callAi('malformed');
-    check(res.code === 500, '파싱 불가 응답도 처리한다', String(res.code));
+    check(res.code === 200 && res.payload.degraded === true && /확인되지 않은 내용은 안내하지/.test(res.payload.text || ''),
+      '파싱 불가 응답도 degraded 상태로 처리한다', JSON.stringify({ code: res.code, degraded: res.payload.degraded }));
     check(usedNow() === 0, '제품 quota 기록 없음 ★', String(usedNow()));
   }
 
@@ -1027,7 +1032,9 @@ async function runSAFE() {
     if (!fs.existsSync(p)) { check(false, `${name}.js 존재`); continue; }
     const src = strip(fs.readFileSync(p, 'utf8'));
 
-    const mocksFetch = /global\.fetch\s*=/.test(src);
+    // vm 격리 테스트는 VM 전용 fetch가 예외를 던져 외부 요청을 차단한다.
+    const mocksFetch = /global\.fetch\s*=/.test(src)
+      || (/vm\.runInNewContext/.test(src) && /fetch\s*\(\s*\)\s*\{\s*throw\s+new\s+Error/.test(src));
     /*
      * "실제 호출" 의 판정은 URL 문자열이 아니라 fetch 호출이다.
      * scripts/test-ai-monetization.js 는 api/ai.js 소스에서 호출 순서를

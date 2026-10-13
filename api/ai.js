@@ -7,6 +7,8 @@ const { identify } = require('./_auth');
  * 서명·대조만 하는 순수 함수이고 DB 조회(loadCatalogRows)는 호출할 때만 돈다.
  */
 const AC = require('./_aicontext');
+// 상품 식별 계약 — 가격·예산 가점이 «그 상품인가» 를 이기지 못하게 한다 (api/_aiidentity.js).
+const AIID = require('./_aiidentity');
 const { hasConfirmedRecordLow, isCurrentPriceFresh } = require('./_priceevidence');
 /*
  * 조건 해석·랭킹은 순수 계산이라 최상단에서 불러도 안전하다
@@ -1016,6 +1018,33 @@ async function resolveIntent(q, hist, view, budget, guest) {
   }
 
   const viaLlm = await classifyIntent(q, hist, budget);
+  /*
+   * 상품 검색 계약 (2026-10-12 live 레드팀 F08·F14·F19).
+   *
+   * LLM 분류가 쇼핑 의도(C·D·E)라고 하면서 검색어를 비워 오면("D" 한 글자) 검색이
+   * 통째로 생략돼 "맞는 상품을 찾지 못했어요" 로 끝났다 — 카탈로그에 그 상품이 있는데도.
+   * 이번 발화에서 결정적으로 뽑은 검색어가 있으면 그것으로 찾는다.
+   *
+   * 또 옵션·등급만 바꾸는 후속 말("검정색", "아니 프로맥스 말고 프로")은 정규식 쪽이 앞
+   * 상품에 누적한 검색어(stateQuery)가 기준이다. 모델이 다시 쓴 검색어는 방금 고른
+   * 용량·색을 자주 떨어뜨린다. 의도(갈래)는 모델 판단을 그대로 쓴다.
+   */
+  if (viaLlm && needsShopContext(viaLlm.intent) && det && det.query && (det.stateQuery || !viaLlm.query)) {
+    viaLlm.query = det.query;
+  }
+  // 같은 상품을 찾는 것이 확인되면(검색어가 같다) 식별은 사용자가 말한 전체 구절로 한다 (_intent identityText).
+  if (viaLlm && det && det.identityText && viaLlm.query && viaLlm.query === det.query) {
+    viaLlm.identityText = det.identityText;
+  }
+  /*
+   * 찾던 상품의 옵션·등급만 바꾸는 말("아니 프로맥스 말고 프로")을 모델이 잡담(A)·지식(B)으로
+   * 분류하면 검색 없이 말로만 답하고 카드가 사라졌다(2026-10-12 Stage A 실측). 앞 대화에 상품이
+   * 있고 이번 말이 그 상품의 정정일 뿐이라는 것은 결정적으로 판정된다 — 쇼핑 경로를 유지한다.
+   */
+  if (viaLlm && (viaLlm.intent === 'A' || viaLlm.intent === 'B') && det && det.refinement && det.stateQuery
+      && det.query && needsShopContext(det.intent)) {
+    return det;
+  }
   /*
    * LLM 분류가 실패하면(null) 정규식 결과로 이어 간다.
    *
@@ -2236,11 +2265,49 @@ function referencedItems(text, at, items, windowSize = 90) {
   // product begins the next clause (Alpha 90,000won and Beta 120,000won).
   if (beforeHits.length) {
     const latest = Math.max(...beforeHits.map(h => h.at));
-    return beforeHits.filter(h => h.at === latest).map(h => h.item);
+    const tied = beforeHits.filter(h => h.at === latest).map(h => h.item);
+    return tied.length > 1 ? narrowByMentionWindows(mentionWindows(text, at, windowSize, 'before'), tied) : tied;
   }
   if (!afterHits.length) return [];
   const nearest = Math.min(...afterHits.map(h => h.at));
-  return afterHits.filter(h => h.at === nearest).map(h => h.item);
+  const tiedAfter = afterHits.filter(h => h.at === nearest).map(h => h.item);
+  return tiedAfter.length > 1 ? narrowByMentionWindows(mentionWindows(text, at, windowSize, 'after'), tiedAfter) : tiedAfter;
+}
+
+/* 가까운 언급 구간부터 넓혀 가며, 처음으로 후보를 특정한 구간의 결과를 쓴다. */
+function narrowByMentionWindows(windows, tied) {
+  for (const w of windows) {
+    const narrowed = AIID.narrowByMention(w, tied);
+    if (narrowed.length < tied.length) return narrowed;
+  }
+  return tied;
+}
+
+/*
+ * 금액이 가리키는 상품 «언급» 구간 — 같은 문장 안, 다른 금액과 겹치지 않게.
+ *
+ * 형제 모델은 제목 낱말 대부분을 공유한다(에어팟·3세대·자급제). 그래서 금액 바로 앞
+ * 낱말만으로는 여러 상품이 동시에 걸리고, 그중 하나라도 가격이 다르면 정확한 답이
+ * 근거 없음으로 버려졌다. 언급 구간을 식별 계약으로 읽어 가장 잘 맞는 상품만 남긴다
+ * (api/_aiidentity.js narrowByMention — 좁히기만 하고, 좁힌 상품의 가격과 맞아야 통과한다).
+ * at 은 금액 토큰의 가운데라 그 금액의 숫자 조각은 걷어낸다 — 숫자가 모델 번호로 읽히면 안 된다.
+ * 다른 금액은 넘지 않는다. 그 안에서 가까운 문장부터 넓혀 간다 — "…USB-C를 권합니다. 현재가 359,000원"
+ * 처럼 상품명은 앞 문장에, 금액은 다음 문장에 오는 것이 흔하다.
+ *
+ * @returns {string[]} 가까운 것부터
+ */
+function mentionWindows(text, at, windowSize, side) {
+  const s = String(text || '');
+  const price = /[0-9０-９][0-9０-９,，]*\s*(?:원|만\s*원)/;
+  if (side === 'after') {
+    const seg = s.slice(at, at + windowSize).replace(/^[0-9０-９,，.]*\s*원?/, '').split(price)[0];
+    const sentences = seg.split(/[.!?\n]/);
+    return sentences.map((x, i) => sentences.slice(0, i + 1).join(' ')).filter(x => x.trim());
+  }
+  const segs = s.slice(Math.max(0, at - windowSize), at).replace(/[0-9０-９][0-9０-９,，.\s]*$/, '').split(price);
+  const seg = segs[segs.length - 1] || '';
+  const sentences = seg.split(/[.!?\n]/);
+  return sentences.map((x, i) => sentences.slice(sentences.length - 1 - i).join(' ')).filter(x => x.trim());
 }
 
 /** A current/today price claim must match that product's current search result. */
@@ -2656,11 +2723,23 @@ function mentionsAnyCard(text, cards) {
 }
 
 /** 가격 이력이나 서버 구매 판정 없이는 내보낼 수 없는 주장인가. */
+/*
+ * "기록이 없어 최저가와 비교할 수는 없습니다" 는 이력 주장이 아니라 이력이 없다는 고지다
+ * (프롬프트가 그렇게 말하라고 시킨다). 숫자 없이 «못 한다» 로 끝나는 문장은 이력 주장으로
+ * 세지 않는다. 숫자가 있는 이력 문장은 가격 검사(unverifiedContextualPrices 등)가 따로 본다.
+ */
+const HISTORY_DISCLAIMER_RE = /(?:없어|없고|없으므로|없습니다|없어요|부족|어렵|못\s*(?:합|해|하)|수\s*(?:는\s*)?없|판단하지\s*않|확인되지\s*않)/;
+function historyClaimText(t) {
+  return String(t || '').split(/(?<=[.!?。])\s+|\n+/)
+    .filter(s => !(HISTORY_DISCLAIMER_RE.test(s) && !/[0-9０-９]/.test(s)))
+    .join('\n');
+}
+
 function unsupportedPriceDecision(text, items, deal) {
   const t = String(text || '');
   const list = (items || []).filter(Boolean);
   const hasHistory = list.some(it => it.hist && Number(it.hist.count) > 0);
-  const historyClaim = /(역대|사상|기록상)\s*최저|(?:30일\s*)?평균가?|가격\s*(?:추이|흐름|변동)|평소보다/.test(t);
+  const historyClaim = /(역대|사상|기록상)\s*최저|(?:30일\s*)?평균가?|가격\s*(?:추이|흐름|변동)|평소보다/.test(historyClaimText(t));
   const timingClaim = /\b(?:BUY|WAIT|WATCH|DONT_BUY|GOOD_BUY)\b|지금\s*(?:사도|사는|구매)|(?:기다리|지켜보|서두르지|구매를?\s*(?:추천|미루))/.test(t);
   // 구매 시점 문장은 서버 판정이 있어도 LLM 원문을 쓰지 않는다. 같은 결론처럼
   // 보여도 강도나 부정어가 달라질 수 있으므로 deterministic 문장만 신뢰한다.
@@ -2740,6 +2819,25 @@ P.searchedFound = [
   '- 전부 나열하지 마라. 가장 적합한 하나를 먼저 권하고, 성격이 다른 후보를 최대 둘까지 덧붙인다.',
   '- 사용자가 말한 조건(예산 등)에 맞지 않는 것이 섞여 있으면 억지로 맞다고 하지 마라.',
   '  맞는 것이 없으면 검색 결과가 조건과 얼마나 차이 나는지 사실대로 말한다.'
+].join('\n');
+
+/*
+ * 요청 상품과의 대조 결과 (api/_aiidentity.js). 서버가 판정한 사실이다 — 모델이 다시
+ * 고르지 않는다. 근접 후보를 요청한 그 상품인 것처럼 권하는 것을 막는다.
+ */
+P.identityExact = [
+  '[요청 상품 대조 — 서버 판정]',
+  '- <상품데이터> 위쪽에는 사용자가 말한 모델·등급·옵션과 정확히 맞는 상품이 있다.',
+  '- "요청 상품과 다름:" 이 적힌 상품은 다른 용량·색·상태·등급·모델이다. 그 상품을 1위로 권하거나',
+  '  요청한 상품이라고 부르지 마라. 언급할 때는 무엇이 다른지 함께 말한다.',
+  '- 더 싸다는 이유로 다른 모델을 권하지 마라. 가격은 같은 모델 안에서만 비교한다.'
+].join('\n');
+P.identityNear = label => [
+  '[요청 상품 대조 — 서버 판정]',
+  `- 사용자가 찾은 「${label}」와 정확히 맞는 상품은 이번 검색 결과에 없다.`,
+  '- ★ 첫 문장에서 정확히 맞는 상품이 없다고 밝혀라. 아래 상품은 모두 근접 후보다.',
+  '- 근접 후보를 말할 때는 "요청 상품과 다름:" 에 적힌 차이(용량·색·등급·모델)를 함께 말한다.',
+  '- 근접 후보를 요청한 그 상품처럼 권하거나 "추천합니다" 로 단정하지 마라.'
 ].join('\n');
 
 P.searchedEmpty = [
@@ -3272,8 +3370,39 @@ function fallbackAnswer(top, deal, cons, cards, extra) {
     deal: deal || null,
     constraints: cons || null,
     noResult: e.noResult || null,
+    identity: e.identity || null,
     degraded: true
   }).text;
+}
+
+/*
+ * 모델 답변이 «처음 짚은 상품» 이 정확히 맞는 후보인가 (2026-10-12 live 레드팀).
+ *
+ * 카드와 서버 판정이 맞아도 답변 문장이 다른 모델을 권하면 사용자는 그 문장을 믿는다.
+ * 문장을 앞에서부터 읽어 어떤 후보를 가리키는지 식별 계약으로 좁히고, 처음으로 후보를
+ * 특정한 문장이 근접 후보(다른 등급·용량·모델)만 가리키면 어긋난 것으로 본다.
+ * "~는 조건과 다릅니다" 처럼 부정·대조하는 문장은 권하는 말이 아니므로 건너뛴다.
+ */
+const CONTRAST_RE = /아닌|아니|없(?:습|어|고|는|이)|말고|대신|않|제외|다른|다르|맞지|일치하지/;
+function recommendsNonExact(text, items) {
+  const list = (items || []).filter(Boolean);
+  if (list.length < 2 || !list.some(it => it._identity && it._identity.tier === AIID.TIER.EXACT)) return false;
+  const sentences = String(text || '').split(/(?<=[.!?。])\s+|\n+/).map(s => s.trim()).filter(Boolean);
+  for (const s of sentences.slice(0, 4)) {
+    const named = AIID.narrowByMention(s, list);
+    if (!named.length || named.length === list.length) continue;
+    if (CONTRAST_RE.test(s)) return false;
+    return !named.some(it => !it._identity || it._identity.tier === AIID.TIER.EXACT);
+  }
+  return false;
+}
+
+/* NEAR 상태에서 모델 답변이 "정확히 맞는 상품이 없다" 를 이미 밝혔는가. */
+function disclosesNoExactMatch(text) {
+  const s = String(text || '');
+  return /(?:정확히|딱)\s*(?:일치|맞는|같은)[^.\n]{0,24}(?:없|않|못)/.test(s)
+    || /(?:일치하는|해당하는|맞는)\s*(?:상품|제품|모델|옵션)[^.\n]{0,12}(?:없|않|못)/.test(s)
+    || /확인되지\s*않았|찾지\s*못했|없습니다|없어요/.test(s.split(/\n/)[0] || '');
 }
 
 module.exports = async function handler(req, res) {
@@ -3404,6 +3533,16 @@ module.exports = async function handler(req, res) {
   let fallbackItems = [];       // 랭킹 전체
   let fallbackDecision = null;  // api/_decision.js decide()
   let fallbackNoResult = null;  // api/_noresult.js analyze()
+  /*
+   * 요청 상품과의 대조 결과 (api/_aiidentity.js partition).
+   *   OPEN   계약이 비었다(품목만 말한 질문 등) — 예전과 같다
+   *   EXACT  정확히 맞는 후보가 있다 — 그것만 추천한다
+   *   NEAR   옵션·모델이 다른 근접 후보뿐이다 — "정확히 일치하는 상품 없음" 을 밝힌다
+   *   NONE   검색은 됐지만 맞는 종류가 하나도 없다 — 다른 상품을 대신 권하지 않는다
+   * LLM 이 실패한 catch 경로의 결정론 답변도 같은 값을 쓴다.
+   */
+  let identityState = 'OPEN';
+  let identityLabel = '';
   /** 답변과 함께 내려보낼 후속 질문 (LLM 호출 0회로 만든다) */
   let followups = [];
   /* catch에서도 뉴스 요청을 상품 fallback과 분리하기 위한 요청 단위 상태. */
@@ -3744,29 +3883,66 @@ module.exports = async function handler(req, res) {
         // 검색해서 찾은 것이 이번 질문의 주제다. 화면에 남아 있던 목록보다 우선한다.
         // normItem 을 한 번 더 통과시킨다 — 상품명은 판매자가 쓴 문자열이라
         // 화면에서 온 상품과 똑같이 걸러야 한다(safeText: 줄바꿈·꺾쇠 제거).
-        let normed = raw.map(it => normItem(fromSearchResult(it)));
+        // 원본 행은 숨은 속성으로 붙여 둔다 — 카드를 «이 후보 그 자체» 에서 만들기 위해서다(아래).
+        let normed = raw.map(it => {
+          const n = normItem(fromSearchResult(it));
+          Object.defineProperty(n, '_raw', { value: it, enumerable: false });
+          return n;
+        });
         // ★ 랭킹 전에 스펙을 붙인다 — "통화 중요"면 마이크 확인된 상품이 위로 와야 한다.
         attachSpecs(normed, wanted);
         // 제외 지시("삼성은 빼줘")를 랭킹 전에 반영한다.
         normed = FB.applyExcludes(normed, excludes);
-        items = rankItems(normed, constraints, query, rankOpts());
 
         /*
-         * 카드도 프롬프트와 같은 순서로 내려보낸다.
+         * 상품 식별 계약 (api/_aiidentity.js 머리 주석).
          *
-         * 답변이 "첫 번째 것을 권합니다"라고 말하는데 카드 순서가 다르면
-         * 사용자는 다른 상품을 보게 된다. 순서는 한 곳에서 정한다.
+         * 랭킹은 «부정 구문을 걷어낸» 검색어로 돈다. "에어팟 3세대 케이스 제외하고" 를
+         * 그대로 넘기면 '케이스' 때문에 부속 검색으로 읽혀 본품/부속 필터가 꺼진다.
+         * 그 다음 등급 순서로 다시 세운다 — 최저가·예산 가점은 등급 안에서만 겨룬다.
          */
-        // 같은 상품 페이지의 옵션끼리 순서가 뒤섞이지 않게 옵션까지 키로 쓴다.
-        const idOf = it => `${String(it.mallId || it.mall || '')}|${it.productId}|${String(it.vendorItemId || '')}`;
-        const order = new Map(items.map((it, i) => [idOf(it), i]));
-        cardSources = raw
-          .slice()
-          .sort((a, b) => {
-            const ia = order.has(idOf(a)) ? order.get(idOf(a)) : 99;
-            const ib = order.has(idOf(b)) ? order.get(idOf(b)) : 99;
-            return ia - ib;
-          });
+        // 식별은 사용자가 말한 상품 구절 전체로(검색어는 다섯 낱말로 잘릴 수 있다), 순서는 검색어로 매긴다.
+        const contract = AIID.buildContract({
+          query: (cls && cls.identityText) || query, userText: q, titles: normed.map(it => it.title)
+        });
+        items = rankItems(normed, constraints, AIID.splitNegations(query).positive || query, rankOpts());
+        const gate = AIID.partition(items, contract);
+        items = gate.items;
+        identityState = gate.state;
+        identityLabel = contract.label;
+        /*
+         * 제외어(_feedback.collectExcludes)는 "X 말고" 앞의 «한 낱말» 만 잡는다. "버즈2 Pro 말고 Buds3 Pro"
+         * 에서는 'Pro' 가 잡혀, 사용자가 방금 요청한 Buds3 Pro 에 «제외 요청하신 Pro 제품» 이 붙어
+         * 답변의 «이유» 자리에 나갔다(2026-10-12 Stage A). 이번 요청 구절 자체에 들어 있는 낱말은
+         * 그 요청을 빼 달라는 말일 수 없다 — 진짜로 뺄 대상은 식별 계약이 부정 범위로 판정한다(EXCLUDED).
+         */
+        items.forEach(it => {
+          if (!Array.isArray(it._excludeNames) || !it._excludeNames.length) return;
+          if (it._identity && it._identity.tier >= AIID.TIER.EXCLUDED) return;
+          const keep = it._excludeNames.filter(n => !AIID.mentionedIn(n, contract.positive));
+          if (keep.length === it._excludeNames.length) return;
+          it.notes = (it.notes || []).filter(n => !/^제외 요청하신 /.test(n));
+          if (keep.length) it.notes.push(`제외 요청하신 ${keep.join('·')} 제품`);
+          else it._excludePenalty = 0;
+          it._excludeNames = keep;
+        });
+        // 근접 후보가 무엇이 다른지는 사실로 남긴다 — "조건 대조:" 줄의 맨 앞(간추린 형태는 notes[0] 만 싣는다).
+        items.forEach(it => {
+          if (it._identity && it._identity.tier > AIID.TIER.EXACT && it._identity.label) {
+            it.notes = [`요청 상품과 다름: ${it._identity.label}`].concat(it.notes || []);
+          }
+        });
+
+        /*
+         * 카드는 위 후보 그 자체에서, 같은 순서로 만든다.
+         *
+         * 예전에는 원본 검색 결과(raw)를 전부 카드로 내보내고 순서만 키 대조로 맞췄다.
+         * 그래서 (1) 랭킹이 일부러 버린 부속·다른 종류가 카드에 그대로 남았고
+         * — "에어팟 3세대 케이스 제외" 의 첫 카드가 케이스였다 — (2) 원본의 mallId 와
+         * 정규화된 몰 이름이 어긋나면 키가 전부 빗나가 원본 순서 그대로 나갔다.
+         * 답변이 말하는 상품과 카드가 다른 상품이면 안 된다. 순서는 한 곳에서 정한다.
+         */
+        cardSources = items.map(it => it._raw).filter(Boolean);
         cards = cardSources.map(it => toCard(it, statFor(stats, it)));
       }
     } else if (items.length && (!intent || needsShopContext(intent))) {
@@ -3801,6 +3977,26 @@ module.exports = async function handler(req, res) {
     fallbackItems = items;
 
     /*
+     * 검색은 됐지만 요청한 종류의 상품이 하나도 없다 (identityState NONE).
+     *
+     * 남은 후보가 없으므로 모델이 말할 근거도 없다 — 어떤 답을 받아도 grounding 이
+     * 결정론 문장으로 바꾼다. 그래서 모델을 부르지 않고 바로 답한다. 다른 종류의
+     * 가장 싼 상품을 대신 내보내던 경로(“노트북 없음 → 버즈3 추천”)가 여기서 끊긴다.
+     */
+    if (identityState === 'NONE') {
+      const noneText = require('./_concierge').compose({
+        items: [], cards: [], constraints, identity: { state: 'NONE', label: identityLabel }
+      }).text;
+      console.log('[ai:obs] ' + JSON.stringify({
+        v: PROMPT_VERSION, intent: intent || 'none', search: searchState, items: 0, cards: 0,
+        identity: identityState, model: 'none', ms: Date.now() - startedAt
+      }));
+      const nonePayload = { text: noneText, intent: resolvedCanonicalIntent };
+      if (guest) nonePayload.guest = true;
+      return res.json(withTurnSig(nonePayload));
+    }
+
+    /*
      * 구매 시점 판정을 상품마다 붙인다 (assess — _pricestat 주석 참고).
      *
      * 검색으로 왔든 화면에서 왔든, 가격 기록이 있는 상품은 같은 기준으로
@@ -3830,7 +4026,8 @@ module.exports = async function handler(req, res) {
          */
         const { dealOf } = require('./_deal');
         const head = items[0] || null;
-        if (head && head.hist) deal = dealOf(head.hist, head.price, today);
+        // 정확히 맞는 상품이 없으면(NEAR) 근접 후보의 "지금 사도 된다" 를 말하지 않는다.
+        if (head && head.hist && identityState !== 'NEAR') deal = dealOf(head.hist, head.price, today);
         // LLM 이 죽어도 이 판정은 전할 수 있어야 한다 (fallbackAnswer 참고)
         fallbackDeal = deal;
       } catch (e) {
@@ -3862,7 +4059,17 @@ module.exports = async function handler(req, res) {
          */
         let matchFeatures = null;
         try { ({ matchFeatures } = require('./_specs')); } catch (e) { /* 없으면 기능 가정만 생략 */ }
-        const candidateDecision = decide(items, constraints, wanted, prevTop, { rank: rankItems, matchFeatures });
+        /*
+         * "무엇을 살까" 는 요청한 그 상품들 사이에서만 고른다. 근접 후보(다른 용량·
+         * 다른 등급)는 맥락으로 프롬프트에 남지만 1위 후보가 되지 않는다. 정확히 맞는
+         * 후보가 하나도 없으면(NEAR) 추천 결정 자체를 만들지 않는다.
+         */
+        const decidable = identityState === 'NEAR' ? []
+          : identityState === 'EXACT' ? items.filter(it => !it._identity || it._identity.tier === AIID.TIER.EXACT)
+          : items;
+        const candidateDecision = decidable.length
+          ? decide(decidable, constraints, wanted, prevTop, { rank: rankItems, matchFeatures })
+          : null;
         if (candidateDecision && productIdentityMatches(items[0], candidateDecision.top)) {
           decision = candidateDecision;
         } else if (candidateDecision) {
@@ -4163,6 +4370,8 @@ module.exports = async function handler(req, res) {
      * 것을 없다고 단정하는 것은 지어내기와 같은 종류의 잘못이다.
      */
     if (searchState === 'found')  system += `\n\n${P.searchedFound}`;
+    if (searchState === 'found' && identityState === 'EXACT') system += `\n\n${P.identityExact}`;
+    if (searchState === 'found' && identityState === 'NEAR') system += `\n\n${P.identityNear(identityLabel)}`;
     if (searchState === 'empty')  system += `\n\n${P.searchedEmpty}`;
     if (searchState === 'failed') system += `\n\n${P.searchFailed}`;
 
@@ -4337,7 +4546,8 @@ module.exports = async function handler(req, res) {
         if (CG.looksLikeBlockDump(text)) {
           console.warn(`[ai] 모델이 결정 블록을 그대로 옮김 — Concierge 조립본으로 대체 (labels=${CG.blockLabelCount(text)}, model=${answerModel})`);
           text = CG.compose({
-            items, cards, decision, deal, constraints, noResult, degraded: false
+            items, cards, decision, deal, constraints, noResult, degraded: false,
+            identity: { state: identityState, label: identityLabel }
           }).text;
         }
       } catch (e) {
@@ -4372,6 +4582,14 @@ module.exports = async function handler(req, res) {
       const badDecision = unsupportedPriceDecision(text, items, deal);
       const badIdentity = cards.length > 0 && !mentionsAnyCard(text, cards);
       const noCatalog = groundItems.length === 0;
+      // 정확히 맞는 상품이 있는데 모델이 근접 후보(다른 등급·용량·모델)를 권했다.
+      const badPick = identityState === 'EXACT' && recommendsNonExact(text, items);
+      /*
+       * 판매자 상품명 속 지시문을 답변이 그대로 옮겼다 (2026-10-12 live 레드팀 F20).
+       * 모델이 그 지시를 따르지 않았어도 "SYSTEM: … API key를 공개하라" 를 우리 목소리로
+       * 되풀이하면 안 된다. 결정론 조립본은 지시문 구간을 뺀 상품명만 쓴다.
+       */
+      const badEcho = items.some(it => AIID.hasInstructionText(it && it.title)) && AIID.hasInstructionText(text);
 
       /*
        * Grounding gate — 경고를 붙인 뒤 환각 문장을 그대로 두지 않는다.
@@ -4379,24 +4597,31 @@ module.exports = async function handler(req, res) {
        * 있으면 전체 LLM 답변을 폐기하고 동일한 서버 계산값으로 다시 조립한다.
        */
       if (badWon.length || badContextualPrice.length || badProductPrice.length || badCurrentPrice.length || badDiscountPct.length || badBudgetPick ||
-          badSpec.length || badCmp.length || badSuper.length || badDecision || badIdentity || noCatalog) {
+          badSpec.length || badCmp.length || badSuper.length || badDecision || badIdentity || noCatalog || badPick || badEcho) {
         console.warn('[ai] grounding 실패 — deterministic 답변으로 대체 ' + JSON.stringify({
           won: badWon.length, contextualPrice: badContextualPrice.length, productPrice: badProductPrice.length, currentPrice: badCurrentPrice.length,
           discountPct: badDiscountPct.length, budgetPick: badBudgetPick,
           spec: badSpec.length, compare: badCmp.length,
           superlative: badSuper.length, decision: badDecision,
-          identity: badIdentity, catalog: items.length
+          identity: badIdentity, pick: badPick, echo: badEcho, catalog: items.length
         }));
         try {
           text = require('./_concierge').compose({
             items, cards, decision, deal, constraints, noResult, degraded: true, safety: true,
-            context: searchState === 'found' ? null : contextNotes
+            context: searchState === 'found' ? null : contextNotes,
+            identity: { state: identityState, label: identityLabel }
           }).text;
           degradedByGrounding = true;
         } catch (e) {
           text = '지금은 확인된 상품·가격 근거가 부족해 구매 시점을 판단할 수 없어요.';
           degradedByGrounding = true;
         }
+      } else if (identityState === 'NEAR' && !disclosesNoExactMatch(text)) {
+        /*
+         * 정확히 맞는 상품이 없는데 모델 답변이 그 사실을 밝히지 않았다.
+         * 근접 후보를 요청한 상품으로 읽지 않게 서버 문장을 앞에 붙인다(사실을 더할 뿐 바꾸지 않는다).
+         */
+        text = `「${identityLabel}」 조건에 정확히 맞는 상품은 찾지 못해, 가장 가까운 후보로 안내드려요.\n\n${text}`;
       }
     }
 
@@ -4425,7 +4650,8 @@ module.exports = async function handler(req, res) {
         try {
           text = require('./_concierge').compose({
             items, cards, decision, deal, constraints, noResult, degraded: true, safety: true,
-            context: searchState === 'found' ? null : contextNotes
+            context: searchState === 'found' ? null : contextNotes,
+            identity: { state: identityState, label: identityLabel }
           }).text;
         } catch (e) {
           text = '확인된 정보가 부족해 답변을 안전하게 만들지 못했어요.';
@@ -4619,7 +4845,8 @@ module.exports = async function handler(req, res) {
 
       const body = {
         text: fallbackAnswer(fallbackTop, fallbackDeal, fallbackCons, cards, {
-          items: fallbackItems, decision: fallbackDecision, noResult: fallbackNoResult
+          items: fallbackItems, decision: fallbackDecision, noResult: fallbackNoResult,
+          identity: { state: identityState, label: identityLabel }
         }),
         items: cards,
         degraded: true

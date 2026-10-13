@@ -70,6 +70,8 @@ global.fetch = async (url, opts) => {
 function reset(env) {
   ext.byModel = {}; ext.fallback = 'ok'; ext.calls = [];
   llm._internal._reset();
+  // 이 파일은 무료 OpenRouter 라우터를 검증한다. 호출자의 유료 OpenAI 키를 격리한다.
+  delete process.env.OPENAI_API_KEY;
   delete process.env.OPENROUTER_MODELS;
   delete process.env.OPENROUTER_CLASSIFY_MODELS;
   delete process.env.OPENROUTER_MODEL;
