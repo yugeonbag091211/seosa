@@ -61,7 +61,7 @@
     const members = document.createElement('div'); members.className = 'members';
     d.members.forEach(m => {
       const card = document.createElement('article'); card.className = 'member';
-      card.append(text('h3', `${m.mall} · ${m.source_mall}`), text('div', m.title, 'title'), text('div', `${m.price.toLocaleString()}원`, 'price'));
+      card.append(text('h3', m.merchant_name || m.mall), text('div', m.title, 'title'), text('div', `${m.price.toLocaleString()}원`, 'price'));
       card.append(text('div', `상품 ID: ${m.product_id} · 판매자 ID: ${m.vendor_item_id || '—'}`, 'meta'));
       card.append(text('div', `모델 번호: ${m.model_number || 'UNKNOWN'} · GTIN: ${m.gtin_present ? '있음' : '없음'}`, 'attrs'));
       const identity = m.identity || {};
@@ -73,7 +73,7 @@
     }); detail.append(members);
     const table = document.createElement('table'); table.className = 'compare';
     const thead = document.createElement('thead'), hr = document.createElement('tr');
-    ['속성', '판정', ...d.members.map(m => m.mall)].forEach(x => hr.append(text('th', x))); thead.append(hr); table.append(thead);
+    ['속성', '판정', ...d.members.map(m => m.merchant_name || m.mall)].forEach(x => hr.append(text('th', x))); thead.append(hr); table.append(thead);
     const tbody = document.createElement('tbody');
     d.comparison.forEach(item => {
       const tr = document.createElement('tr'); tr.append(text('th', item.label), text('td', item.state, `state-${item.state.toLowerCase()}`));

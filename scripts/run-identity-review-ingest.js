@@ -123,8 +123,7 @@ async function run(db, options) {
       stats.stale++;
       continue;
     }
-    const merchants = new Set(fresh.offers.map(x => x.sourceMall || x.mall));
-    if (merchants.size < 2) continue;
+    if (R.merchantCountOf(fresh.offers) < 2) continue;
     stats.crossMerchantGroups++;
     const evaluation = P.evaluateGroup({
       run: runRow, group, members: fresh.offers, contextFactory: currentContext,

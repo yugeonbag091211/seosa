@@ -63,11 +63,13 @@ function candidateHash(groupKey, members, policyVersion, currentMatcherVersion) 
   return sha(stableJson({ groupKey, shape, policyVersion, matcherVersion: currentMatcherVersion }));
 }
 
+function merchantKeyOf(member) { return String((member && member.mall) || '').trim(); }
+function merchantCountOf(members) { return new Set((members || []).map(merchantKeyOf).filter(Boolean)).size; }
+
 function evaluationIsEligible(evaluation, members, group) {
   if (!evaluation || evaluation.decision !== P.DECISION.HOLD) return { eligible: false, reason: 'NOT_HOLD' };
   if (members.length < 2 || members.length !== Number(group.member_count)) return { eligible: false, reason: 'STALE_OR_INCOMPLETE' };
-  const merchants = new Set(members.map(m => String(m.source_mall || m.mall || '')).filter(Boolean));
-  if (merchants.size < 2) return { eligible: false, reason: 'NOT_CROSS_MERCHANT' };
+  if (merchantCountOf(members) < 2) return { eligible: false, reason: 'NOT_CROSS_MERCHANT' };
   for (const pair of evaluation.pairs || []) {
     if ((pair.result.conflicts || []).length || pair.result.decision === OI.DECISION.NO_MATCH) {
       return { eligible: false, reason: 'HARD_CONFLICT' };
@@ -177,6 +179,14 @@ function allowlist() {
 function failOnError(r, label) {
   if (r && r.error) throw new Error(`${label}: ${r.error.message || r.error.code || 'database error'}`);
   return r || { data: null };
+}
+
+function displayMerchantName(offer) {
+  const label = String((offer && offer._source && offer._source.mall_label) || '').trim();
+  if (label) return label;
+  const mall = merchantKeyOf(offer);
+  const slash = mall.indexOf('/');
+  return slash >= 0 ? mall.slice(slash + 1) : mall;
 }
 
 function sourceRowToOffer(row) {
@@ -294,7 +304,7 @@ async function route(req, res) {
       const conflict = hardConflictReport(offers, currentContext);
       const memberByKey = new Map((row.member_snapshot || []).map(m => [m.offer_key, m]));
       const members = offers.map(o => ({
-        product_id: o.productId, source_mall: o.sourceMall, mall: o.mall,
+        product_id: o.productId, source_mall: o.sourceMall, mall: o.mall, merchant_name: displayMerchantName(o),
         title: o._source.title, price: Number(o._source.lprice) || 0,
         vendor_item_id: o.vendorItemId || '', identity: SH.identitySnapshot(o),
         gtin_present: !!(o.gtins && o.gtins.length), model_number: o.modelNumbers && o.modelNumbers.length ? o.modelNumbers.join(', ') : null,
@@ -391,7 +401,7 @@ async function route(req, res) {
 
 module.exports = {
   APPROVE_REASONS, REJECT_REASONS, DEFER_REASONS, matcherVersion, stableJson,
-  candidateHash, evaluationIsEligible, reviewPriority, buildQueueRow, hardConflictReport,
-  makeApproval, fieldCompare, sourceRowToOffer, rawMember, allowlist,
+  candidateHash, merchantKeyOf, merchantCountOf, evaluationIsEligible, reviewPriority, buildQueueRow, hardConflictReport,
+  makeApproval, fieldCompare, displayMerchantName, sourceRowToOffer, rawMember, allowlist,
   currentRowsForQueue, loadQueue, adminAuth, route
 };

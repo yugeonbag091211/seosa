@@ -78,8 +78,8 @@ class FakeDb {
   async rpc(name, args) { this.rpcCalls.push({ name, args }); return { data: this.rpcResult || { status: args.p_decision }, error: null }; }
 }
 
-function product(id, mall, title, price) {
-  return { id, product_id: `p${id}`, mall, mall_label: mall === 'ADPICK' ? 'SSG' : '', title,
+function product(id, mall, title, price, mallLabel) {
+  return { id, product_id: `p${id}`, mall, mall_label: mall === 'ADPICK' ? (mallLabel || 'SSG') : '', title,
     lprice: price || 100000, vendor_item_id: `v${id}` };
 }
 function offers(rows) { return rows.map(R.sourceRowToOffer); }
@@ -162,6 +162,32 @@ async function main() {
   ok(!R.evaluationIsEligible(evaluation, sameMerchant, hold.group).eligible, 'same-merchant group is excluded');
   ok(!R.evaluationIsEligible(Object.assign({}, evaluation, { decision: 'PROMOTE' }), currentOffers, hold.group).eligible, 'PROMOTE is never ingested');
   ok(!R.evaluationIsEligible(Object.assign({}, evaluation, { decision: 'REJECT' }), currentOffers, hold.group).eligible, 'REJECT is never ingested');
+
+  /* Merchant identity contract: ADPICK is the source; mall_label is the displayed merchant. */
+  const adpickDifferentRows = [
+    product(101, 'ADPICK', 'Samsung Galaxy Buds3 Pro SM-R630 White new', 120000, 'Hmall'),
+    product(102, 'ADPICK', 'Samsung Galaxy Buds3 Pro White new', 121000, '롯데홈쇼핑')
+  ];
+  const adpickDifferent = offers(adpickDifferentRows);
+  same(R.merchantCountOf(adpickDifferent), 2, 'ADPICK Hmall vs 롯데홈쇼핑 are two displayed merchants');
+  const adpickHoldGroup = groupFixture(adpickDifferentRows, 101);
+  const adpickEvaluation = P.evaluateGroup({ run: { status: 'completed' }, group: adpickHoldGroup.group, members: adpickDifferent,
+    contextFactory: OI.contextFactory(adpickDifferent), observedRuns: 1, minRuns: 1 });
+  ok(adpickEvaluation.merchantCount === 2 && adpickEvaluation.decision === 'HOLD', 'Phase 3 uses displayed merchant identity for ADPICK submalls');
+  ok(R.evaluationIsEligible(adpickEvaluation, adpickDifferent, adpickHoldGroup.group).eligible, 'Phase 4 uses the same displayed merchant identity as Phase 3');
+  same(adpickDifferent.map(R.displayMerchantName), ['Hmall', '롯데홈쇼핑'], 'admin display shows merchant labels without ADPICK prefix');
+
+  const adpickSameRows = [
+    product(103, 'ADPICK', 'Samsung Galaxy Buds3 Pro SM-R630 White new', 120000, 'Hmall'),
+    product(104, 'ADPICK', 'Samsung Galaxy Buds3 Pro White new', 121000, 'Hmall')
+  ];
+  const adpickSame = offers(adpickSameRows);
+  same(R.merchantCountOf(adpickSame), 1, 'ADPICK Hmall vs Hmall is one displayed merchant');
+  const coupangVsAdpick = offers([
+    product(105, 'COUPANG', 'Samsung Galaxy Buds3 Pro SM-R630 White new', 120000),
+    product(106, 'ADPICK', 'Samsung Galaxy Buds3 Pro White new', 121000, 'Hmall')
+  ]);
+  same(R.merchantCountOf(coupangVsAdpick), 2, 'Coupang vs ADPICK Hmall is cross-merchant');
   const newCondition = offers([
     product(15, 'COUPANG', 'Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 new'),
     product(16, 'ADPICK', 'Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 used')
@@ -338,6 +364,7 @@ async function main() {
   const html = fs.readFileSync(path.join(ROOT, 'public', 'identity-review.html'), 'utf8');
   ok(/noindex,nofollow/.test(html) && /localStorage\.getItem\('seosa_token'\)/.test(html), 'admin shell has noindex and uses existing signed login token');
   ok(/approve_allowed/.test(html) && /btn\.disabled=true/.test(html), 'review UI disables unsafe approval');
+  ok(/merchant_name \|\| m\.mall/.test(html), 'admin UI prefers clean displayed merchant names');
   const consumerFiles = ['api/ai.js','api/search.js','api/_product-page.js','api/_radarapi.js','api/hotdeals.js','api/init.js','api/cron.js','api/rec.js','public/index.html'];
   for (const file of consumerFiles) if (fs.existsSync(path.join(ROOT, file))) {
     const source = fs.readFileSync(path.join(ROOT, file), 'utf8');
