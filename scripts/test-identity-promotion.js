@@ -345,8 +345,9 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
   ok(P.evaluateGroup({ run: { status: 'completed' }, group: { member_count: 2, merchant_count: 1 }, members: liveRun1 }).decision === 'REJECT', 'same-merchant group cannot be promoted');
   ok(W.promotionEnabled({}) === false && W.promotionEnabled({ IDENTITY_PROMOTION_ENABLED: 'false' }) === false, 'promotion is disabled unless explicitly enabled');
   ok(W.promotionEnabled({ IDENTITY_PROMOTION_ENABLED: 'true' }) === true && W.promotionEnabled({ IDENTITY_PROMOTION_ENABLED: '1' }) === true, 'explicit promotion opt-in accepted');
-  const args = W.parseArgs(['--dry-run', '--run-id', '1', '--min-runs', '2', '--explain']);
-  ok(args.dryRun && args.runId === 1 && args.minRuns === 2 && args.explain, 'CLI supports fixed run, dry-run, history gate, and explain');
+  const args = W.parseArgs(['--dry-run', '--run-id', '1', '--min-runs', '2', '--explain', '--group-id', '7', '--group-id', '9', '--group-id', '7']);
+  ok(args.dryRun && args.runId === 1 && args.minRuns === 2 && args.explain
+    && JSON.stringify(args.groupIds) === JSON.stringify([7, 9]), 'CLI supports fixed run, exact group filters, dry-run, history gate, and explain');
   assert.throws(() => W.parseArgs(['--write']), /--run-id/);
   assert.throws(() => W.parseArgs(['--write', '--run-id', '1']), /--max-promotions/);
   assert.throws(() => W.parseArgs(['--write', '--dry-run', '--run-id', '1', '--max-promotions', '1']), /함께/);
@@ -363,6 +364,17 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
   ok(dry.summary.promote === 1 && dry.dryRun, 'dry-run evaluates the Tier A group');
   ok(source._state.writes.length === 0, 'dry-run performs zero database writes');
   ok(dry.safety.productsUnchanged && dry.safety.priceHistoryUnchanged, 'dry-run checks production table counts');
+
+  const secondGroup = Object.assign({}, fixture.group, { id: 2, group_key: 'second-canary-group' });
+  const secondMembers = fixture.members.map((m, i) => Object.assign({}, m, { id: 100 + i, group_id: 2 }));
+  const filteredDb = fakeDb({ products: promotableProducts, groups: [fixture.group, secondGroup], members: [...fixture.members, ...secondMembers] });
+  const filtered = await W.run(filteredDb, { runId: 1, groupIds: [2], dryRun: true, write: false, log: () => {} });
+  ok(filtered.summary.shadowGroupsEvaluated === 1 && filtered.decisions[0].shadow_group_id === 2,
+    'exact group filter evaluates only the requested shadow group');
+  const missingFiltered = await W.run(filteredDb, { runId: 1, groupIds: [999], dryRun: true, write: false, log: () => {} });
+  ok(missingFiltered.failed && missingFiltered.reason === 'shadow_group_filter_missing'
+    && JSON.stringify(missingFiltered.missingGroupIds) === JSON.stringify([999]) && filteredDb._state.writes.length === 0,
+    'missing canary group fails closed before writes');
 
   const writer = fakeDb({ products: promotableProducts, groups: [fixture.group], members: fixture.members });
   const writeOpts = { runId: 1, write: true, dryRun: false, maxPromotions: 1, minRuns: 1, matcherVersion: 'test-sha', log: () => {} };

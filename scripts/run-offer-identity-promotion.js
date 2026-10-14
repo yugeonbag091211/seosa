@@ -30,10 +30,11 @@ function parseArgs(argv) {
     return i >= 0 && a[i + 1] && !String(a[i + 1]).startsWith('--') ? a[i + 1] : fallback;
   };
   const runId = positiveInt(value('--run-id', 0), 0);
+  const groupIds = [...new Set(a.flatMap((x, i) => x === '--group-id' ? [positiveInt(a[i + 1], 0)] : []).filter(Boolean))];
   const write = flag('--write');
   if (write && flag('--dry-run')) throw new Error('--write 와 --dry-run 은 함께 쓸 수 없습니다');
   const opts = {
-    runId,
+    runId, groupIds,
     dryRun: !write || flag('--dry-run'),
     write,
     explain: flag('--explain'),
@@ -324,8 +325,9 @@ async function ensureCanonicalGroup(db, run, evaluation, group, existing, opts) 
 }
 
 async function run(db, options) {
-  const opts = Object.assign({ dryRun: true, write: false, runId: 0, limit: 0, sample: DEFAULTS.sample,
+  const opts = Object.assign({ dryRun: true, write: false, runId: 0, groupIds: [], limit: 0, sample: DEFAULTS.sample,
     minRuns: DEFAULTS.minRuns, maxPromotions: 0, explain: false, now: () => Date.now(), matcherVersion: matcherVersion(), log: null }, options || {});
+  opts.groupIds = [...new Set((opts.groupIds || []).map(x => positiveInt(x, 0)).filter(Boolean))];
   const log = typeof opts.log === 'function' ? opts.log : (event, extra) => console.log(JSON.stringify(Object.assign({ event }, extra || {})));
   const started = opts.now();
   const summary = emptyStats();
@@ -340,7 +342,11 @@ async function run(db, options) {
     loadProducts(db, opts),
     loadCanonical(db)
   ]);
-  const groups = opts.limit ? groupsRaw.slice(0, opts.limit) : groupsRaw;
+  const requestedGroupIds = new Set(opts.groupIds);
+  const selectedGroups = requestedGroupIds.size ? groupsRaw.filter(g => requestedGroupIds.has(Number(g.id))) : groupsRaw;
+  const missingGroupIds = opts.groupIds.filter(id => !groupsRaw.some(g => Number(g.id) === Number(id)));
+  if (missingGroupIds.length) return { failed: true, reason: 'shadow_group_filter_missing', runId: runRow.id, missingGroupIds, summary };
+  const groups = opts.limit ? selectedGroups.slice(0, opts.limit) : selectedGroups;
   const membersByGroup = groupMembers(membersRaw);
   const contextFactory = OI.contextFactory(catalog.offers);
   const historyCounts = await loadHistoryCounts(db, groups);
