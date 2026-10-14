@@ -360,8 +360,51 @@ async function run() {
   { source_mall: '쿠팡', product_id: 'cp1', mall: '쿠팡', vendor_item_id: 'different-option' });
   assert.strictEqual(wrongCoupang, null, 'wrong Coupang option affiliate URL is excluded');
 
+  // Matcher transition dual-read: the staged next_* identity is accepted only when every member matches it exactly.
+  function staged(mutate) {
+    const f = fixture(['Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse']);
+    Object.assign(f.group, { next_canonical_key: f.group.canonical_key, next_identity: f.group.identity,
+      next_confidence_tier: f.group.confidence_tier, canonical_key: 'previous-matcher-key', identity: { previous: true } });
+    f.members.forEach(member => { member.next_identity_snapshot = member.identity_snapshot; member.identity_snapshot = { previous: true }; });
+    if (mutate) mutate(f);
+    return f;
+  }
+  const viaNext = staged();
+  const nextResult = await C.resolveGroups(viaNext.inputs, opts(viaNext.db));
+  assert.strictEqual(nextResult.groups.length, 1, 'a staged next identity keeps price comparison during the deploy window');
+  assert.strictEqual(nextResult.groups[0].identityVersion, 'next');
+  assert.strictEqual(nextResult.groups[0].key, viaNext.group.next_canonical_key);
+  assert.strictEqual(nextResult.stats.transition, 1);
+  assert.strictEqual((await C.resolveGroups(fx.inputs, opts(fx.db))).groups[0].identityVersion, 'primary');
+  const staleNext = staged(f => f.members.forEach(member => { member.next_identity_snapshot = { previous: true, stale: 1 }; }));
+  assert.strictEqual((await C.resolveGroups(staleNext.inputs, opts(staleNext.db))).groups.length, 0,
+    'next snapshots that differ from the current parse fail closed');
+  const mixed = staged(f => { f.members[0].identity_snapshot = f.members[0].next_identity_snapshot; f.members[0].next_identity_snapshot = null; });
+  assert.strictEqual((await C.resolveGroups(mixed.inputs, opts(mixed.db))).groups.length, 0,
+    'members split between primary and next fail closed');
+  const incomplete = staged(f => { f.group.next_identity = null; });
+  assert.strictEqual((await C.resolveGroups(incomplete.inputs, opts(incomplete.db))).groups.length, 0,
+    'an incomplete next identity fails closed');
+  const wrongNextKey = staged(f => { f.group.next_canonical_key = 'f'.repeat(64); });
+  assert.strictEqual((await C.resolveGroups(wrongNextKey.inputs, opts(wrongNextKey.db))).groups.length, 0,
+    'a next key that differs from the recomputed identity fails closed');
+  const conflictNext = fixture(['Logitech MX Master 3 Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse'], { gtins: ['1234567890128', '1234567890128'] });
+  Object.assign(conflictNext.group, { next_canonical_key: conflictNext.group.canonical_key, next_identity: conflictNext.group.identity,
+    next_confidence_tier: conflictNext.group.confidence_tier, canonical_key: 'previous-matcher-key' });
+  conflictNext.members.forEach(member => { member.next_identity_snapshot = member.identity_snapshot; member.identity_snapshot = { previous: true }; });
+  assert.strictEqual((await C.resolveGroups(conflictNext.inputs, opts(conflictNext.db))).groups.length, 0,
+    'the next path still runs the pairwise hard-conflict gate');
+  // Rollout exposure is pinned to the first key, so a key change neither drops nor widens the allowlist.
+  const finalized = fixture(['Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse']);
+  finalized.group.rollout_key = 'first-key';
+  const allow = keys => ({ config: { enabled: true, percent: 100, allowlist: new Set(keys) } });
+  assert.strictEqual((await C.resolveGroups(finalized.inputs, opts(finalized.db, allow(['first-key'])))).groups.length, 1);
+  assert.strictEqual((await C.resolveGroups(finalized.inputs, opts(finalized.db, allow([finalized.group.canonical_key])))).groups.length, 0);
+  assert.strictEqual(C._internal.rolloutKeyOf({ canonical_key: 'k' }), 'k');
+  assert.strictEqual(C._internal.rolloutKeyOf({ canonical_key: 'k', rollout_key: 'r' }), 'r');
+
   // A bounded DB failure falls back to ungrouped offers.
-  const broken = { from() { return { select() { return this; }, in() { return this; }, then(resolve) { resolve({ error: { message: 'missing table' } }); } }; } };
+  const broken ={ from() { return { select() { return this; }, in() { return this; }, then(resolve) { resolve({ error: { message: 'missing table' } }); } }; } };
   const fallback = await C.collapseItems(fx.inputs, opts(broken));
   assert.strictEqual(fallback.length, 2);
   assert.ok(C.eligibleForRollout('key', { config: { enabled: true, percent: 100, allowlist: new Set(['key']) } }));
