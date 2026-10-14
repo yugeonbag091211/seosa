@@ -25,6 +25,12 @@ const mutations = [
     expectedFailure: 'one-sided storage blocks promotion'
   },
   {
+    name: 'unknown merchant gate',
+    target: "  if (merchantEvidence.unknownCount) return result(DECISION.HOLD, ['HOLD_UNKNOWN_MERCHANT'], {\n    merchantCount: merchants.length, unknownMerchantCount: merchantEvidence.unknownCount\n  });\n",
+    replacement: '',
+    expectedFailure: 'bare ADPICK cannot satisfy promotion cross-merchant evidence'
+  },
+  {
     name: 'cross-merchant gate',
     target: "  if (merchants.length < 2) return result(DECISION.REJECT, ['REJECT_NOT_CROSS_MERCHANT'], { merchantCount: merchants.length });\n",
     replacement: '',

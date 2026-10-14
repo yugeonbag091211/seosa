@@ -10,7 +10,7 @@
 const crypto = require('crypto');
 const OI = require('./_offeridentity');
 
-const POLICY_VERSION = 'promotion_v1';
+const POLICY_VERSION = 'promotion_v2';
 const DECISION = Object.freeze({ PROMOTE: 'PROMOTE', HOLD: 'HOLD', REJECT: 'REJECT' });
 
 const CONFLICT_REASON = Object.freeze({
@@ -38,6 +38,26 @@ const CONFLICT_REASON = Object.freeze({
 });
 
 function unique(values) { return [...new Set(values)]; }
+
+/*
+ * Promotion merchant semantics are stricter than source-mall semantics.
+ * A bare ADPICK row tells us the affiliate source, not the actual merchant.
+ * Treat it as UNKNOWN so it can never satisfy the cross-merchant gate or be
+ * auto-promoted beside a labeled ADPICK merchant (or another known merchant).
+ */
+function promotionMerchantKey(member) {
+  const mall = String((member && member.mall) || '').trim();
+  if (!mall || mall.toUpperCase() === 'ADPICK') return '';
+  if (/^ADPICK\//i.test(mall)) {
+    const label = mall.slice(mall.indexOf('/') + 1).trim();
+    return label ? `ADPICK/${label}` : '';
+  }
+  return mall;
+}
+function promotionMerchantEvidence(members) {
+  const keys = (members || []).map(promotionMerchantKey);
+  return { merchants: unique(keys.filter(Boolean)), unknownCount: keys.filter(x => !x).length };
+}
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
   if (!value || typeof value !== 'object') return value;
@@ -231,7 +251,11 @@ function evaluateGroup(input) {
 
   if (run.status !== 'completed') return result(DECISION.HOLD, ['HOLD_SHADOW_RUN_NOT_COMPLETED']);
   if (members.length < 2 || Number(group.member_count) !== members.length) return result(DECISION.HOLD, ['HOLD_MEMBER_SNAPSHOT_INCOMPLETE']);
-  const merchants = unique(members.map(m => String(m.mall || '').trim()).filter(Boolean));
+  const merchantEvidence = promotionMerchantEvidence(members);
+  const merchants = merchantEvidence.merchants;
+  if (merchantEvidence.unknownCount) return result(DECISION.HOLD, ['HOLD_UNKNOWN_MERCHANT'], {
+    merchantCount: merchants.length, unknownMerchantCount: merchantEvidence.unknownCount
+  });
   if (merchants.length < 2) return result(DECISION.REJECT, ['REJECT_NOT_CROSS_MERCHANT'], { merchantCount: merchants.length });
   if (Number(group.merchant_count) !== merchants.length) add('HOLD_MERCHANT_COUNT_MISMATCH');
 
@@ -313,6 +337,7 @@ function evaluateExistingMembers(members, contextFactory) {
 module.exports = {
   POLICY_VERSION, DECISION, CONFLICT_REASON,
   stableJson, commonStrongIdentifier, canonicalIdentity, canonicalKeyOf,
+  promotionMerchantKey, promotionMerchantEvidence,
   snapshotOf, reasonFromUnknown, reasonFromConflict, pairwise,
   missingAttributeReasons, evaluateGroup, evaluateExistingMembers,
   // matcher 전환(api/_canonicaltransition.js)이 승격과 «같은» 등급 규칙으로 다음 식별을 만들도록.
