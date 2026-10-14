@@ -234,8 +234,26 @@ async function run() {
   const productionStrong = P.commonStrongIdentifier(productionIdentities);
   const productionIdentity = P.canonicalIdentity(productionIdentities, productionStrong, 'A');
   const productionKey = P.canonicalKeyOf(productionIdentity);
-  assert.strictEqual(productionKey, 'd8ef963465eef90d2c91db01d9588f9abd6a78ff6b427f1e09838b8a446a53e0',
-    'local production-derived smoke fixture identifies the currently active canonical group');
+  /*
+   * 운영 ACTIVE 그룹(2026-10-13 승격)의 키는 d8ef9634… 였다. matcher evidence v2 가 노트북의 CPU·GPU 를 모델번호에서
+   * 부품으로, «32G» 를 메모리로 읽게 바뀌면서 같은 제목의 정규 식별 · 스냅숏이 달라졌다. 그래서 이 키는 이제 재현되지
+   * 않고, 운영의 그 그룹은 새 matcher 로 다시 승격하기 전까지 소비자에서 빠진다(fail-closed — 아래 stale 검사).
+   * 이 단언은 «현재 matcher 가 만드는 키» 를 고정해 다음 파서 변경도 같은 방식으로 드러나게 한다.
+   */
+  const promotedUnderPreviousMatcher = 'd8ef963465eef90d2c91db01d9588f9abd6a78ff6b427f1e09838b8a446a53e0';
+  assert.strictEqual(productionKey, 'c926abe10082aebc8f747e117f9661ed0a473697e2d13d8e2fcb304eadfc2f6e',
+    'local production-derived smoke fixture yields the canonical key of the current matcher');
+  assert.notStrictEqual(productionKey, promotedUnderPreviousMatcher,
+    'the group promoted under the previous matcher no longer reproduces its key (re-promotion required)');
+  const staleProduction = fixture([
+    'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 2.5K 240Hz 고사양 게이밍 노트북',
+    'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 2.5K 240Hz 고사양 게이밍 노트북'
+  ], { rawMalls: ['ADPICK', 'ADPICK'], labels: ['Hmall', '롯데홈쇼핑'], prices: [6206000, 5884990],
+    links: ['https://biz.adpick.co.kr/preview/hmall-offer?fixture=1', 'https://biz.adpick.co.kr/preview/lotte-offer?fixture=1'] });
+  staleProduction.group.canonical_key = promotedUnderPreviousMatcher;
+  const staleRows = await C.collapseItems(staleProduction.inputs, opts(staleProduction.db));
+  assert.ok(staleRows.every(row => row.isCanonicalGroup !== true),
+    'a canonical group whose persisted key came from the previous matcher fails closed instead of being displayed');
   productionSmoke.group.canonical_key = productionKey;
   productionSmoke.group.identity = productionIdentity;
   productionSmoke.members.forEach((member, i) => { member.identity_snapshot = P.snapshotOf(productionIdentities[i]); });

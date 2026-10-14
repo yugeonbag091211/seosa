@@ -276,7 +276,8 @@ console.log('=== H. 순서 무관 ===');
  * ================================================================== */
 console.log('=== I. 소비자 0 ===');
 {
-  const ALLOWED = new Set(['api/_offerdiscovery.js', 'scripts/eval-offer-discovery.js', 'scripts/test-offer-discovery.js', 'scripts/test-offer-discovery-mutations.js']);
+  const ALLOWED = new Set(['api/_offerdiscovery.js', 'scripts/eval-offer-discovery.js', 'scripts/eval-offer-matcher-compare.js',
+    'scripts/test-offer-discovery.js', 'scripts/test-offer-discovery-mutations.js']);
   const offenders = [];
   const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).forEach(e => {
     if (e.name === 'node_modules' || e.name === '.git' || e.name.startsWith('.claude') || e.name.startsWith('.')) return;
