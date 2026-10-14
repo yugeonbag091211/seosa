@@ -13,12 +13,15 @@ const mutations = [
   ['catalog vendor option gate', "if (currentVid !== String(member.vendor_item_id || '')) return null;", 'if (false) return null;'],
   ['request vendor option gate', 'if (vendorIdOf(input) === member.vendorItemId)', 'if (true)'],
   ['hard conflict gate', 'if (match.decision === OI.DECISION.NO_MATCH || (match.conflicts || []).length)', 'if (false)'],
-  ['canonical identity key gate', "if (computed !== String(group.canonical_key)) return null;", 'if (false) return null;'],
+  ['canonical identity key gate', 'if (!computed || computed !== version.key) return null;', 'if (false) return null;'],
   ['trusted price gate', "['high', 'medium'].includes(item.trust && item.trust.level)", 'true'],
   ['displayable positive price gate', 'if (Price.isDisplayable(row) && Number(row.lprice) > 0 && currentPriceFresh(row, opts.now)) {', 'if (true) {'],
   ['safe purchase link gate', 'if (!link) return null;', 'if (false) return null;'],
-  ['identity snapshot freshness gate', 'if (P.stableJson(P.snapshotOf(identity)) !== P.stableJson(member.identity_snapshot || {})) return null;', 'if (false) return null;'],
-  ['feature flag gate', 'if (!cfg.enabled || cfg.percent <= 0) return items;', 'if (false) return items;']
+  // 2026-10-14: 스냅숏 비교는 identityVersion() 으로 옮겼다(기존 자리 · matcher 전환 next 자리).
+  ['identity snapshot freshness gate', 'const primary = members.every((member, i) => now[i] === P.stableJson(member.identity_snapshot || {}));', 'const primary = true;'],
+  ['transition next snapshot gate', 'members.every((member, i) => member.next_identity_snapshot && now[i] === P.stableJson(member.next_identity_snapshot))', 'members.every(member => member.next_identity_snapshot)'],
+  ['rollout pinned to first key', 'group.rollout_key || group.canonical_key', 'group.canonical_key'],
+  ['feature flag gate','if (!cfg.enabled || cfg.percent <= 0) return items;', 'if (false) return items;']
 ];
 
 for (let i = 0; i < mutations.length; i++) {

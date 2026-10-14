@@ -95,6 +95,12 @@ const IDENTITY_PROMOTION_MIGRATION = '2026-10-13-identity-promotion.sql';
 const IDENTITY_PROMOTION_INDEXES_MIGRATION = '2026-10-13-identity-promotion-indexes.sql';
 const IDENTITY_REVIEW_MIGRATION = '2026-10-13-identity-review-phase4.sql';
 const IDENTITY_REVIEW_INDEXES_MIGRATION = '2026-10-13-identity-review-phase4-indexes.sql';
+/*
+ * 2026-10-14: matcher 전환(PR #141) 때 ACTIVE 그룹이 끊기지 않게 next_* · previous_* 자리와 전환 RPC 를 더한다.
+ * additive 전용. 미적용이어도 소비자는 기존 자리로만 읽는다(=지금과 같다). 단 #141 배포 «전에» 적용·STAGE 해야
+ * 배포 순간 기존 그룹이 사라지지 않는다 — reports/canonical-matcher-transition-plan-2026-10-14.md.
+ */
+const IDENTITY_TRANSITION_MIGRATION = '2026-10-14-identity-matcher-transition.sql';
 
 const NEW_MIGRATIONS = [
   '2026-08-24-payment-pending-and-auth-attempts.sql',
@@ -142,7 +148,8 @@ const NEW_MIGRATIONS = [
   IDENTITY_PROMOTION_MIGRATION,
   IDENTITY_PROMOTION_INDEXES_MIGRATION,
   IDENTITY_REVIEW_MIGRATION,
-  IDENTITY_REVIEW_INDEXES_MIGRATION
+  IDENTITY_REVIEW_INDEXES_MIGRATION,
+  IDENTITY_TRANSITION_MIGRATION
 ];
 
 function checkStatic() {
@@ -316,6 +323,36 @@ function checkStatic() {
       ok('identity review: source-group foreign key is indexed');
     } else bad('identity review: source-group foreign key index missing');
   }
+
+  /* matcher 전환: STAGE 는 next_* 만, 모든 RPC 는 compare-and-set · service_role 전용, 감사 불변. */
+  const transitionSqlPath = path.join(SQL_DIR, IDENTITY_TRANSITION_MIGRATION);
+  if (fs.existsSync(transitionSqlPath)) {
+    const sql = stripSqlComments(fs.readFileSync(transitionSqlPath, 'utf8'));
+    const fns = ['stage', 'finalize', 'abort', 'revert'].map(a => `canonical_identity_transition_${a}`);
+    const privateFns = fns.every(f =>
+      new RegExp(`revoke\\s+all\\s+on\\s+function\\s+public\\.${f}[\\s\\S]*?from\\s+public,\\s*anon,\\s*authenticated`, 'i').test(sql)
+      && new RegExp(`grant\\s+execute\\s+on\\s+function\\s+public\\.${f}[\\s\\S]*?to\\s+service_role`, 'i').test(sql)
+      && new RegExp(`function\\s+public\\.${f}\\([\\s\\S]*?security\\s+invoker\\s+set\\s+search_path\\s*=\\s*''`, 'i').test(sql));
+    if (privateFns) ok('identity transition: four RPCs are service-role only with fixed search_path');
+    else bad('identity transition: RPC permissions are too broad or search_path is mutable');
+
+    const stageBody = (sql.match(/function\s+public\.canonical_identity_transition_stage\([\s\S]*?\n\$\$;/i) || [''])[0];
+    const stageSets = (stageBody.match(/\bset\b[\s\S]*?\bwhere\b/gi) || []).join(' ').replace(/next_\w+\s*=|updated_at\s*=/gi, '');
+    const casStage = /for\s+update/i.test(stageBody) && /for\s+share/i.test(stageBody)
+      && /canonical_key\s*<>\s*p_expected_canonical_key/i.test(stageBody)
+      && !/\b(canonical_key|identity|identity_snapshot|confidence_tier|status)\s*=/i.test(stageSets);
+    if (casStage) ok('identity transition: STAGE is compare-and-set and writes next_* only (current consumers unaffected)');
+    else bad('identity transition: STAGE may overwrite the live canonical identity');
+
+    const auditImmutable = /before\s+update\s+or\s+delete\s+on\s+public\.canonical_identity_transitions/i.test(sql)
+      && /alter\s+table\s+public\.canonical_identity_transitions\s+enable\s+row\s+level\s+security/i.test(sql);
+    if (auditImmutable) ok('identity transition: audit is immutable and private');
+    else bad('identity transition: audit trigger or RLS missing');
+
+    const catalogUntouched = !/\b(update\s+public\.products|insert\s+into\s+public\.price_history|update\s+public\.price_history|delete\s+from\s+public\.products|delete\s+from\s+public\.price_history)\b/i.test(sql);
+    if (catalogUntouched) ok('identity transition: catalog/history untouched');
+    else bad('identity transition: migration writes products or price_history');
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -335,7 +372,7 @@ async function checkLive() {
     return !error;
   };
 
-  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true, coupang: true, identityPromotion: true, identityReview: true };
+  const applied = { payment: true, view: true, analytics: true, adpick: true, circuit: true, coupang: true, identityPromotion: true, identityReview: true, identityTransition: true };
 
   /* Phase 3 canonical tables are additive and server-only. Probe existence only. */
   for (const table of ['canonical_product_groups', 'canonical_product_members', 'canonical_product_promotions']) {
@@ -356,6 +393,18 @@ async function checkLive() {
   const approvalSource = await hasColumn('canonical_product_groups', 'approval_source');
   if (approvalSource) ok('canonical_product_groups.approval_source');
   else { bad('canonical_product_groups.approval_source 없음', 'human approval source 구분 불가'); applied.identityReview = false; }
+
+  /* matcher 전환 자리 — 미적용이어도 지금 코드는 동작한다(경고). 단 #141 배포 전에는 적용·STAGE 가 필요하다. */
+  {
+    const probes = [['canonical_product_groups', 'next_canonical_key'], ['canonical_product_groups', 'rollout_key'],
+      ['canonical_product_members', 'next_identity_snapshot'], ['canonical_identity_transitions', 'id']];
+    const missing = [];
+    for (const [t, c] of probes) if (!(await hasColumn(t, c))) missing.push(`${t}.${c}`);
+    if (missing.length) {
+      wrn('identity transition 자리 없음', `${missing.join(', ')} — matcher 변경(#141) 배포 전에 적용·STAGE 필요`);
+      applied.identityTransition = false;
+    } else ok('identity transition 자리 (next_* · rollout_key · 감사 표)');
+  }
 
   /* ── Coupang minute quota migration (read-only probes) ───────── */
   {
@@ -526,7 +575,7 @@ async function checkLive() {
   console.log('        ※ 뷰를 적용해도 price_history 행 수는 변하지 않아야 한다.');
 
   if (!applied.payment || !applied.view || !applied.analytics || !applied.adpick
-      || !applied.circuit || !applied.coupang || !applied.identityPromotion || !applied.identityReview) {
+      || !applied.circuit || !applied.coupang || !applied.identityPromotion || !applied.identityReview || !applied.identityTransition) {
     console.log('\n  적용하려면 Supabase 대시보드 > SQL Editor 에서 아래를 순서대로 실행하세요:');
     let n = 0;
     if (!applied.payment)   console.log(`    ${++n}) supabase/${NEW_MIGRATIONS[0]}`);
@@ -539,6 +588,7 @@ async function checkLive() {
     if (!applied.identityPromotion) console.log(`    ${++n}) supabase/${IDENTITY_PROMOTION_INDEXES_MIGRATION}`);
     if (!applied.identityReview) console.log(`    ${++n}) supabase/${IDENTITY_REVIEW_MIGRATION}`);
     if (!applied.identityReview) console.log(`    ${++n}) supabase/${IDENTITY_REVIEW_INDEXES_MIGRATION}`);
+    if (!applied.identityTransition) console.log(`    ${++n}) supabase/${IDENTITY_TRANSITION_MIGRATION}  (#141 배포 전 — 적용 뒤 STAGE · --check-ready)`);
     console.log('    ※ 서로 의존하지 않으므로 순서가 바뀌어도 되지만, 위 순서를 권한다.');
   }
 }

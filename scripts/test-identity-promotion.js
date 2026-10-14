@@ -406,7 +406,13 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
     'supabase/2026-10-13-identity-review-phase4.sql',
     'supabase/2026-10-13-identity-review-phase4-indexes.sql',
     'scripts/verify-migrations.js',
-    'reports/product-identity-phase3-promotion-2026-10-13.md'
+    'reports/product-identity-phase3-promotion-2026-10-13.md',
+    // 2026-10-14 matcher 전환 — 스키마 · 워커 · 테스트 · 계획서. 순수 계획기(api/_canonicaltransition.js)는 표를 모른다.
+    'supabase/2026-10-14-identity-matcher-transition.sql',
+    'scripts/run-canonical-transition.js',
+    'scripts/test-canonical-transition.js',
+    'scripts/fixtures/canonical-transition-model.js',
+    'reports/canonical-matcher-transition-plan-2026-10-14.md'
   ]);
   function walk(dir, out) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

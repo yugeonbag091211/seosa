@@ -32,7 +32,9 @@ const CONFLICT_REASON = Object.freeze({
   accessory_type_mismatch: 'REJECT_ACCESSORY_CONFLICT',
   genuine_vs_substitute: 'REJECT_SUBSTITUTE_CONFLICT',
   merchant_option_mismatch: 'REJECT_MERCHANT_OPTION_CONFLICT',
-  category_mismatch: 'REJECT_PRODUCT_FAMILY_CONFLICT'
+  category_mismatch: 'REJECT_PRODUCT_FAMILY_CONFLICT',
+  cpu_mismatch: 'REJECT_CPU_CONFLICT',
+  gpu_mismatch: 'REJECT_GPU_CONFLICT'
 });
 
 function unique(values) { return [...new Set(values)]; }
@@ -112,6 +114,9 @@ function canonicalIdentity(members, strongIdentifier, tier) {
   commonList('variants', m => m.variants);
   commonList('storage', m => m.storage);
   commonList('memory', m => m.memory);
+  // 컴퓨터의 CPU·GPU (matcher evidence v2). 값이 없는 상품의 키는 예전과 같다(commonList 는 빈 값을 넣지 않는다).
+  commonList('cpu', m => m.cpu);
+  commonList('gpu', m => m.gpu);
   commonList('colors', m => m.colors);
   commonScalar('quantity', m => m.quantity);
   commonScalar('condition', m => m.condition === 'unstated' ? '' : m.condition);
@@ -151,7 +156,9 @@ function snapshotOf(id) {
     quantity: id.quantity, condition: id.condition, conditionStates: id.conditionStates,
     transactionType: id.transactionType, region: id.region, bundle: id.bundle,
     included: id.included, accessory: id.accessory, accessoryType: id.accessoryType,
-    substitute: id.substitute, year: id.year, deviceClass: id.deviceClass, flags: id.flags
+    substitute: id.substitute, year: id.year, deviceClass: id.deviceClass, flags: id.flags,
+    // CPU·GPU 는 값이 있을 때만 — 컴퓨터가 아닌 상품의 스냅숏은 예전과 같다(stableJson 은 undefined 를 버린다).
+    cpu: id.cpu && id.cpu.length ? id.cpu : undefined, gpu: id.gpu && id.gpu.length ? id.gpu : undefined
   };
 }
 
@@ -167,7 +174,8 @@ function reasonFromUnknown(unknown) {
     size: 'HOLD_MISSING_SIZE', price_gap: 'HOLD_PRICE_GAP', non_new_condition: 'HOLD_NON_NEW_CONDITION',
     non_purchase_listing: 'HOLD_NON_PURCHASE_LISTING', option_choice: 'HOLD_OPTION_CHOICE',
     multi_model_listing: 'HOLD_MULTI_MODEL_LISTING', listing_number: 'HOLD_LISTING_NUMBER',
-    no_model_anchor: 'HOLD_MISSING_MODEL', insufficient_evidence: 'HOLD_INSUFFICIENT_EVIDENCE'
+    no_model_anchor: 'HOLD_MISSING_MODEL', insufficient_evidence: 'HOLD_INSUFFICIENT_EVIDENCE',
+    cpu: 'HOLD_MISSING_CPU', cpu_detail: 'HOLD_CPU_NOT_EXACT', gpu: 'HOLD_MISSING_GPU'
   };
   if (u.startsWith('size_')) return 'HOLD_MISSING_SIZE';
   if (u.startsWith('title_words')) return 'HOLD_TITLE_WORD_DRIFT';
@@ -198,6 +206,8 @@ function missingAttributeReasons(members) {
   addOneSidedReason(reasons, fieldValues(members, m => m.variants), 'HOLD_MISSING_VARIANT');
   addOneSidedReason(reasons, fieldValues(members, m => m.storage), 'HOLD_MISSING_STORAGE');
   addOneSidedReason(reasons, fieldValues(members, m => m.memory), 'HOLD_MISSING_MEMORY');
+  addOneSidedReason(reasons, fieldValues(members, m => m.cpu), 'HOLD_MISSING_CPU');
+  addOneSidedReason(reasons, fieldValues(members, m => m.gpu), 'HOLD_MISSING_GPU');
   addOneSidedReason(reasons, fieldValues(members, m => m.colors), 'HOLD_MISSING_COLOR');
   addOneSidedReason(reasons, fieldValues(members, m => m.quantity == null ? null : [m.quantity]), 'HOLD_MISSING_QUANTITY');
   addOneSidedReason(reasons, fieldValues(members, m => m.condition === 'unstated' ? null : [m.condition]), 'HOLD_MISSING_CONDITION');
@@ -304,5 +314,7 @@ module.exports = {
   POLICY_VERSION, DECISION, CONFLICT_REASON,
   stableJson, commonStrongIdentifier, canonicalIdentity, canonicalKeyOf,
   snapshotOf, reasonFromUnknown, reasonFromConflict, pairwise,
-  missingAttributeReasons, evaluateGroup, evaluateExistingMembers
+  missingAttributeReasons, evaluateGroup, evaluateExistingMembers,
+  // matcher 전환(api/_canonicaltransition.js)이 승격과 «같은» 등급 규칙으로 다음 식별을 만들도록.
+  effectiveTier
 };

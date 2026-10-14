@@ -155,7 +155,12 @@ function seedCanonicalDisplay() {
   const tier = strong ? 'A' : 'B';
   const identity = P.canonicalIdentity(identities, strong, tier);
   const canonicalKey = P.canonicalKeyOf(identity);
-  if (canonicalKey !== 'd8ef963465eef90d2c91db01d9588f9abd6a78ff6b427f1e09838b8a446a53e0') {
+  /*
+   * 운영 ACTIVE 그룹은 이전 matcher 에서 d8ef9634… 로 승격됐다. matcher evidence v2(노트북 CPU·GPU 부품 · 32G=RAM)로
+   * 정규 식별이 바뀌어 지금 matcher 의 키는 c926abe1… 이다 — 운영 그룹은 다시 승격해야 소비된다
+   * (scripts/test-canonical-consumer.js 가 옛 키의 fail-closed 를 단언한다). 이 검사는 다음 파서 변경도 드러낸다.
+   */
+  if (canonicalKey !== 'c926abe10082aebc8f747e117f9661ed0a473697e2d13d8e2fcb304eadfc2f6e') {
     throw new Error('production smoke fixture no longer matches the reviewed canonical group key');
   }
   db.canonical_product_groups.push({ id: 91, canonical_key: canonicalKey, status: 'ACTIVE', identity, confidence_tier: tier });

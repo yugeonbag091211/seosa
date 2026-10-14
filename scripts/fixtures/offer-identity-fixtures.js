@@ -214,7 +214,22 @@ const NEGATIVE_PAIRS = [
     b: { title: 'HP 2025 노트북 15 N-시리즈', mall: '쿠팡', productId: '111', vendorItemId: 'v2' },
     conflict: 'merchant_option_mismatch', why: '같은 상품 페이지의 다른 옵션' },
   { a: { title: '무선 이어폰 X100', gtin: '8801234567893' }, b: { title: '무선 이어폰 X100', gtin: '8801234567886' },
-    conflict: 'gtin_mismatch', why: 'GTIN 다름' }
+    conflict: 'gtin_mismatch', why: 'GTIN 다름' },
+
+  // ── 컴퓨터 부품 · 색 (2026-10-14 matcher evidence v2 red-team) ──
+  { a: 'HP 오멘 16 16-AP0123AX 라이젠7 RTX4060 16GB 512GB 게이밍 노트북', b: 'HP 오멘 MAX 16 16-AH1075TX U7-270HXPlus RTX5070Ti 32GB 1TB 게이밍 노트북', conflict: 'gpu_mismatch', why: '오멘 16 RTX4060 ≠ 오멘 MAX 16 RTX5070Ti' },
+  { a: 'ASUS ROG Strix G16 G614JV RTX4060 16GB 1TB 노트북', b: 'ASUS ROG Strix G16 G614JV RTX5070Ti 16GB 1TB 노트북', conflict: 'gpu_mismatch', why: '같은 기본 모델 · 다른 GPU' },
+  { a: 'ASUS ROG Strix G16 G614JV RTX5070 16GB 1TB 노트북', b: 'ASUS ROG Strix G16 G614JV RTX 5070 Ti 16GB 1TB 노트북', conflict: 'gpu_mismatch', why: '5070 ≠ 5070 Ti' },
+  { a: '레노버 리전 5 16IRX9 i7-14650HX RTX4060 16GB 1TB 게이밍 노트북', b: '레노버 리전 5 16IRX9 i7-14650HX RTX4060Ti 16GB 1TB 게이밍 노트북', conflict: 'gpu_mismatch', why: '4060 ≠ 4060 Ti' },
+  { a: 'HP 오멘 MAX 16-AH1075TX 울트라7 270HX RTX5070Ti 32GB 1TB 노트북', b: 'HP 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32GB 1TB 노트북', conflict: 'cpu_mismatch', why: '270HX ≠ 270HXPlus' },
+  { a: '삼성 갤럭시북5 프로 NT960XHA 인텔 코어 울트라7 155H 16GB 512GB 노트북', b: '삼성 갤럭시북5 프로 NT960XHA 인텔 코어 울트라7 258V 16GB 512GB 노트북', conflict: 'cpu_mismatch', why: 'Ultra 7 155H ≠ 258V' },
+  { a: 'MSI 크로스헤어 16 A14VGK i7-14700HX RTX4070 16GB 1TB 노트북', b: 'MSI 크로스헤어 16 A14VGK 울트라7 270HX RTX4070 16GB 1TB 노트북', conflict: 'cpu_mismatch', why: 'Core i7-14700HX ≠ Ultra 7 270HX' },
+  { a: 'LG 그램 16Z90S-GA5BK 울트라5 16GB 512GB 노트북', b: 'LG 그램 16Z90S-GA5BK 울트라5 32GB 512GB 노트북', conflict: 'memory_mismatch', why: 'RAM 16GB ≠ 32GB (RAM 낱말 없이도 컴퓨터에서는 작은 용량이 RAM)' },
+  { a: 'LG 그램 16Z90S-GA5BK 울트라5 16GB 512GB 노트북', b: 'LG 그램 16Z90S-GA5BK 울트라5 16GB 1TB 노트북', conflict: 'storage_mismatch', why: 'SSD 512GB ≠ 1TB' },
+  { a: '소니 WH-1000XM6 블랙', b: '소니 WH-1000XM6 플래티넘 실버', conflict: 'color_mismatch', why: 'WH-1000XM6 Black ≠ Silver' },
+  { a: '로지텍 G304 LIGHTSPEED 무선 게이밍 마우스 블랙', b: '로지텍 G304 LIGHTSPEED 무선 게이밍 마우스 화이트', conflict: 'color_mismatch', why: 'G304 Black ≠ White' },
+  { a: '로지텍 G304 LIGHTSPEED 무선 게이밍 마우스 블랙', b: '로지텍 G304 LIGHTSPEED 무선 게이밍 마우스 라일락', conflict: 'color_mismatch', why: 'G304 Black ≠ Lilac (라일락도 색이다)' },
+  { a: '소니 WH-1000XM6 블랙', b: '소니 WH-1000XM6 전용 하드 케이스 블랙', conflict: 'main_vs_accessory', why: '같은 모델번호의 본품 ≠ 케이스' }
 ];
 
 /* 한쪽만 아는 값 — REVIEW. unknown 은 판정의 unknown 중 하나가 이 접두로 시작해야 한다. */
@@ -235,7 +250,13 @@ const AMBIGUOUS_PAIRS = [
   { a: 'LG 그램 16 16GB 512GB', b: 'LG 그램 16', unknown: 'storage', why: '노트북 사양 모름' },
   { a: 'Sony WH-1000XM5 블랙', b: '소니 WH1000XM5 블랙 노캔', unknown: 'title_words', why: '모델번호가 같아도 기능 낱말 한쪽(Tier A 도 낱말 차이는 REVIEW)' },
   { a: 'LG 오브제 OLED65C5FNA 벽걸이형', b: 'LG 오브제 OLED65C5FNA 스탠드형', unknown: 'title_words', why: '같은 모델번호 · 다른 설치 구성(운영 데이터 실례)' },
-  { a: 'Apple 아이폰 17 Pro 256GB 블랙', b: 'Apple 아이폰 17 Pro 256GB 512GB 블랙', unknown: 'storage', why: '용량 선택형 판매 글' }
+  { a: 'Apple 아이폰 17 Pro 256GB 블랙', b: 'Apple 아이폰 17 Pro 256GB 512GB 블랙', unknown: 'storage', why: '용량 선택형 판매 글' },
+  // ── matcher evidence v2 ──
+  { a: 'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 고사양 게이밍 노트북', b: 'HP HyperX 오멘 MAX 16-AH1075TX 울트라7 RTX5070Ti 32G 1TB', unknown: 'cpu_detail', why: '«울트라7» 은 계열만 — 정확한 CPU(270HXPlus)라고 확정하지 않는다' },
+  { a: 'ASUS ROG Strix G16 G614JV RTX4060 16GB 1TB 노트북', b: 'ASUS ROG Strix G16 G614JV 16GB 1TB 노트북', unknown: 'gpu', why: 'GPU 한쪽만' },
+  { a: '삼성전자 네오QLED KQ85QNH70AFXKR 스탠드형', b: '삼성전자 네오QLED KQ85QNH70AFXKR 벽걸이형', unknown: 'title_words', why: '강한 모델번호가 같아도 설치 형태 낱말은 설명 문구가 아니다' },
+  { a: '젠하이저 IE100 PRO Wired 모니터링 유선이어폰', b: '젠하이저 IE100 PRO Wireless 모니터링 무선이어폰', unknown: 'title_words', why: '유선 ≠ 무선 (운영 데이터 실례)' },
+  { a: '로지텍코리아 공식 G304 X SUPERLIGHT 게이밍 마우스 화이트', b: '로지텍 G304 X SUPERLIGHT (화이트) 무선 마우스', unknown: 'title_words', why: 'G304 는 짧은 계열 코드 — 설명 낱말 예외를 쓰지 않는다' }
 ];
 
 module.exports = { SAME_SKU_GROUPS, NEGATIVE_PAIRS, AMBIGUOUS_PAIRS };

@@ -234,8 +234,26 @@ async function run() {
   const productionStrong = P.commonStrongIdentifier(productionIdentities);
   const productionIdentity = P.canonicalIdentity(productionIdentities, productionStrong, 'A');
   const productionKey = P.canonicalKeyOf(productionIdentity);
-  assert.strictEqual(productionKey, 'd8ef963465eef90d2c91db01d9588f9abd6a78ff6b427f1e09838b8a446a53e0',
-    'local production-derived smoke fixture identifies the currently active canonical group');
+  /*
+   * 운영 ACTIVE 그룹(2026-10-13 승격)의 키는 d8ef9634… 였다. matcher evidence v2 가 노트북의 CPU·GPU 를 모델번호에서
+   * 부품으로, «32G» 를 메모리로 읽게 바뀌면서 같은 제목의 정규 식별 · 스냅숏이 달라졌다. 그래서 이 키는 이제 재현되지
+   * 않고, 운영의 그 그룹은 새 matcher 로 다시 승격하기 전까지 소비자에서 빠진다(fail-closed — 아래 stale 검사).
+   * 이 단언은 «현재 matcher 가 만드는 키» 를 고정해 다음 파서 변경도 같은 방식으로 드러나게 한다.
+   */
+  const promotedUnderPreviousMatcher = 'd8ef963465eef90d2c91db01d9588f9abd6a78ff6b427f1e09838b8a446a53e0';
+  assert.strictEqual(productionKey, 'c926abe10082aebc8f747e117f9661ed0a473697e2d13d8e2fcb304eadfc2f6e',
+    'local production-derived smoke fixture yields the canonical key of the current matcher');
+  assert.notStrictEqual(productionKey, promotedUnderPreviousMatcher,
+    'the group promoted under the previous matcher no longer reproduces its key (re-promotion required)');
+  const staleProduction = fixture([
+    'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 2.5K 240Hz 고사양 게이밍 노트북',
+    'HyperX 오멘 MAX 16-AH1075TX U7-270HXPlus RTX5070Ti 32G/1TB 2.5K 240Hz 고사양 게이밍 노트북'
+  ], { rawMalls: ['ADPICK', 'ADPICK'], labels: ['Hmall', '롯데홈쇼핑'], prices: [6206000, 5884990],
+    links: ['https://biz.adpick.co.kr/preview/hmall-offer?fixture=1', 'https://biz.adpick.co.kr/preview/lotte-offer?fixture=1'] });
+  staleProduction.group.canonical_key = promotedUnderPreviousMatcher;
+  const staleRows = await C.collapseItems(staleProduction.inputs, opts(staleProduction.db));
+  assert.ok(staleRows.every(row => row.isCanonicalGroup !== true),
+    'a canonical group whose persisted key came from the previous matcher fails closed instead of being displayed');
   productionSmoke.group.canonical_key = productionKey;
   productionSmoke.group.identity = productionIdentity;
   productionSmoke.members.forEach((member, i) => { member.identity_snapshot = P.snapshotOf(productionIdentities[i]); });
@@ -342,8 +360,51 @@ async function run() {
   { source_mall: '쿠팡', product_id: 'cp1', mall: '쿠팡', vendor_item_id: 'different-option' });
   assert.strictEqual(wrongCoupang, null, 'wrong Coupang option affiliate URL is excluded');
 
+  // Matcher transition dual-read: the staged next_* identity is accepted only when every member matches it exactly.
+  function staged(mutate) {
+    const f = fixture(['Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse']);
+    Object.assign(f.group, { next_canonical_key: f.group.canonical_key, next_identity: f.group.identity,
+      next_confidence_tier: f.group.confidence_tier, canonical_key: 'previous-matcher-key', identity: { previous: true } });
+    f.members.forEach(member => { member.next_identity_snapshot = member.identity_snapshot; member.identity_snapshot = { previous: true }; });
+    if (mutate) mutate(f);
+    return f;
+  }
+  const viaNext = staged();
+  const nextResult = await C.resolveGroups(viaNext.inputs, opts(viaNext.db));
+  assert.strictEqual(nextResult.groups.length, 1, 'a staged next identity keeps price comparison during the deploy window');
+  assert.strictEqual(nextResult.groups[0].identityVersion, 'next');
+  assert.strictEqual(nextResult.groups[0].key, viaNext.group.next_canonical_key);
+  assert.strictEqual(nextResult.stats.transition, 1);
+  assert.strictEqual((await C.resolveGroups(fx.inputs, opts(fx.db))).groups[0].identityVersion, 'primary');
+  const staleNext = staged(f => f.members.forEach(member => { member.next_identity_snapshot = { previous: true, stale: 1 }; }));
+  assert.strictEqual((await C.resolveGroups(staleNext.inputs, opts(staleNext.db))).groups.length, 0,
+    'next snapshots that differ from the current parse fail closed');
+  const mixed = staged(f => { f.members[0].identity_snapshot = f.members[0].next_identity_snapshot; f.members[0].next_identity_snapshot = null; });
+  assert.strictEqual((await C.resolveGroups(mixed.inputs, opts(mixed.db))).groups.length, 0,
+    'members split between primary and next fail closed');
+  const incomplete = staged(f => { f.group.next_identity = null; });
+  assert.strictEqual((await C.resolveGroups(incomplete.inputs, opts(incomplete.db))).groups.length, 0,
+    'an incomplete next identity fails closed');
+  const wrongNextKey = staged(f => { f.group.next_canonical_key = 'f'.repeat(64); });
+  assert.strictEqual((await C.resolveGroups(wrongNextKey.inputs, opts(wrongNextKey.db))).groups.length, 0,
+    'a next key that differs from the recomputed identity fails closed');
+  const conflictNext = fixture(['Logitech MX Master 3 Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse'], { gtins: ['1234567890128', '1234567890128'] });
+  Object.assign(conflictNext.group, { next_canonical_key: conflictNext.group.canonical_key, next_identity: conflictNext.group.identity,
+    next_confidence_tier: conflictNext.group.confidence_tier, canonical_key: 'previous-matcher-key' });
+  conflictNext.members.forEach(member => { member.next_identity_snapshot = member.identity_snapshot; member.identity_snapshot = { previous: true }; });
+  assert.strictEqual((await C.resolveGroups(conflictNext.inputs, opts(conflictNext.db))).groups.length, 0,
+    'the next path still runs the pairwise hard-conflict gate');
+  // Rollout exposure is pinned to the first key, so a key change neither drops nor widens the allowlist.
+  const finalized = fixture(['Logitech MX Master 3S Wireless Mouse', 'Logitech MX Master 3S Wireless Mouse']);
+  finalized.group.rollout_key = 'first-key';
+  const allow = keys => ({ config: { enabled: true, percent: 100, allowlist: new Set(keys) } });
+  assert.strictEqual((await C.resolveGroups(finalized.inputs, opts(finalized.db, allow(['first-key'])))).groups.length, 1);
+  assert.strictEqual((await C.resolveGroups(finalized.inputs, opts(finalized.db, allow([finalized.group.canonical_key])))).groups.length, 0);
+  assert.strictEqual(C._internal.rolloutKeyOf({ canonical_key: 'k' }), 'k');
+  assert.strictEqual(C._internal.rolloutKeyOf({ canonical_key: 'k', rollout_key: 'r' }), 'r');
+
   // A bounded DB failure falls back to ungrouped offers.
-  const broken = { from() { return { select() { return this; }, in() { return this; }, then(resolve) { resolve({ error: { message: 'missing table' } }); } }; } };
+  const broken ={ from() { return { select() { return this; }, in() { return this; }, then(resolve) { resolve({ error: { message: 'missing table' } }); } }; } };
   const fallback = await C.collapseItems(fx.inputs, opts(broken));
   assert.strictEqual(fallback.length, 2);
   assert.ok(C.eligibleForRollout('key', { config: { enabled: true, percent: 100, allowlist: new Set(['key']) } }));
