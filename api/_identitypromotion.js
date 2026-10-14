@@ -314,5 +314,7 @@ module.exports = {
   POLICY_VERSION, DECISION, CONFLICT_REASON,
   stableJson, commonStrongIdentifier, canonicalIdentity, canonicalKeyOf,
   snapshotOf, reasonFromUnknown, reasonFromConflict, pairwise,
-  missingAttributeReasons, evaluateGroup, evaluateExistingMembers
+  missingAttributeReasons, evaluateGroup, evaluateExistingMembers,
+  // matcher 전환(api/_canonicaltransition.js)이 승격과 «같은» 등급 규칙으로 다음 식별을 만들도록.
+  effectiveTier
 };
