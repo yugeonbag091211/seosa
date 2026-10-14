@@ -166,6 +166,8 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
     && /create index if not exists canonical_product_promotions_shadow_group_idx/.test(indexSql), 'foreign-key lookup indexes are present');
   ok(!/\b(drop|truncate)\s+table\b|\bdelete\s+from\b|\bupdate\s+products\b|\bupdate\s+price_history\b/i.test(indexSql), 'index migration is additive only');
 
+  ok(P.POLICY_VERSION === 'promotion_v2', 'promotion policy version is bumped for merchant-semantics audit isolation');
+
   /* Matcher and source-run gates. */
   const tierARows = makeProducts([
     'Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 신품',
@@ -178,6 +180,41 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
   ok(promoteA.canonicalKey && promoteA.canonicalKey.length === 64, 'canonical key is deterministic SHA-256');
   ok(!('unknown' in promoteA.canonicalIdentity) && !Object.values(promoteA.canonicalIdentity).includes(''), 'canonical key omits unknown fields instead of serializing empty values');
   ok(P.canonicalKeyOf(promoteA.canonicalIdentity) === promoteA.canonicalKey, 'canonical key is stable');
+
+  /* Bare ADPICK is an affiliate source with unknown underlying merchant. It must never auto-promote. */
+  const bareAdpickVsLabeled = [
+    freshIdentity('Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 new', 'ADPICK|u1', 'ADPICK', 'u1', ''),
+    freshIdentity('Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 new', 'ADPICK|u2', 'ADPICK/Hmall', 'u2', '')
+  ];
+  const unknownMerchantHeld = P.evaluateGroup({
+    run: { status: 'completed' }, group: { member_count: 2, merchant_count: 2, confidence_tier: 'A' },
+    members: bareAdpickVsLabeled, observedRuns: 1, minRuns: 1
+  });
+  ok(unknownMerchantHeld.decision === 'HOLD' && unknownMerchantHeld.reasonCodes.includes('HOLD_UNKNOWN_MERCHANT')
+    && unknownMerchantHeld.merchantCount === 1 && unknownMerchantHeld.unknownMerchantCount === 1,
+  'bare ADPICK cannot satisfy promotion cross-merchant evidence');
+
+  const bareAdpickVsKnown = [
+    freshIdentity('Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 new', 'ADPICK|u3', 'ADPICK', 'u3', ''),
+    freshIdentity('Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 new', 'KNOWN|u4', 'KNOWN_MERCHANT', 'u4', '')
+  ];
+  const unknownSourceHeld = P.evaluateGroup({
+    run: { status: 'completed' }, group: { member_count: 2, merchant_count: 2, confidence_tier: 'A' },
+    members: bareAdpickVsKnown, observedRuns: 1, minRuns: 1
+  });
+  ok(unknownSourceHeld.decision === 'HOLD' && unknownSourceHeld.reasonCodes.includes('HOLD_UNKNOWN_MERCHANT'),
+  'bare ADPICK plus a known external merchant stays HOLD');
+
+  const explicitAdpickMerchants = [
+    freshIdentity('Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 new', 'ADPICK|u5', 'ADPICK/Hmall', 'u5', ''),
+    freshIdentity('Samsung Galaxy Buds3 Pro SM-R630 White 4006381333931 new', 'ADPICK|u6', 'ADPICK/Lotte', 'u6', '')
+  ];
+  const explicitMerchantsPromote = P.evaluateGroup({
+    run: { status: 'completed' }, group: { member_count: 2, merchant_count: 2, confidence_tier: 'A' },
+    members: explicitAdpickMerchants, observedRuns: 1, minRuns: 1
+  });
+  ok(explicitMerchantsPromote.decision === 'PROMOTE' && explicitMerchantsPromote.merchantCount === 2,
+  'two labeled ADPICK merchants remain promotable');
 
   const tierBIds = [
     freshIdentity('Apple AirPods Pro 3 White 신품', '쿠팡|b1', '쿠팡', 'b1', 'v1'),
