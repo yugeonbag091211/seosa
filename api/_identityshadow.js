@@ -74,7 +74,9 @@ function identitySnapshot(id) {
     storage: id.storage, memory: id.memory, specs: id.specs, colors: id.colors,
     quantity: id.quantity, condition: id.condition, transactionType: id.transactionType,
     region: id.region, bundle: id.bundle, accessory: id.accessory, accessoryType: id.accessoryType,
-    substitute: id.substitute, year: id.year, deviceClass: id.deviceClass, flags: id.flags
+    substitute: id.substitute, year: id.year, deviceClass: id.deviceClass, flags: id.flags,
+    // CPU·GPU 는 값이 있을 때만 (컴퓨터가 아닌 상품의 스냅숏은 예전과 같다)
+    cpu: id.cpu && id.cpu.length ? id.cpu : undefined, gpu: id.gpu && id.gpu.length ? id.gpu : undefined
   };
 }
 

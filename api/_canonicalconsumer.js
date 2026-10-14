@@ -73,8 +73,33 @@ function parseCurrent(row, member) {
   offer.sourceMall = String(row.mall || '');
   return offer;
 }
+/*
+ * 저장된 식별이 지금 파서의 결과와 같은가 — 같은 자리를 «둘» 본다 (2026-10-14 matcher transition).
+ *
+ *   primary  기존 자리(canonical_key · identity · identity_snapshot). 예전 동작 그대로다.
+ *   next     matcher 전환 중에만 채워지는 다음 자리(next_*). 새 matcher 로 구성원 전부를 다시 검증한
+ *            그룹에만 staging 된다(scripts/run-canonical-transition.js). 새 코드가 배포된 직후에도
+ *            가격비교가 끊기지 않게 한다.
+ *
+ * 구성원 «전부» 가 한 자리와 같아야 그 자리를 쓴다. 섞이거나 어느 쪽과도 다르면 null — fail-closed.
+ * next 자리를 모르는 DB(마이그레이션 전)에서는 next 값이 없으므로 예전과 똑같이 동작한다.
+ */
+function identityVersion(group, members, identities) {
+  if (!group || !Array.isArray(members) || members.length !== identities.length || !members.length) return null;
+  const now = identities.map(identity => P.stableJson(P.snapshotOf(identity)));
+  const primary = members.every((member, i) => now[i] === P.stableJson(member.identity_snapshot || {}));
+  if (primary) return { version: 'primary', key: String(group.canonical_key || ''), identity: group.identity || {}, tier: group.confidence_tier };
+  const staged = group.next_canonical_key && group.next_identity && group.next_confidence_tier
+    && members.every((member, i) => member.next_identity_snapshot && now[i] === P.stableJson(member.next_identity_snapshot));
+  if (staged) return { version: 'next', key: String(group.next_canonical_key), identity: group.next_identity, tier: group.next_confidence_tier };
+  return null;
+}
+
+/* rollout 은 그룹의 «처음» 키로 정한다 — matcher 전환으로 키가 바뀌어도 노출 범위가 넓어지거나 끊기지 않는다. */
+function rolloutKeyOf(group) { return String((group && (group.rollout_key || group.canonical_key)) || ''); }
+
 function activeCandidate(group, members, rowsByKey, opts, stats) {
-  if (!group || group.status !== 'ACTIVE' || !group.canonical_key || !eligibleForRollout(group.canonical_key, opts)) return null;
+  if (!group || group.status !== 'ACTIVE' || !group.canonical_key || !eligibleForRollout(rolloutKeyOf(group), opts)) return null;
   if (!Array.isArray(members) || members.length < 2 || members.length > MAX_GROUP_MEMBERS) return null;
   const memberKeys = new Set();
   const offers = [];
@@ -90,9 +115,7 @@ function activeCandidate(group, members, rowsByKey, opts, stats) {
     if (!row || String(row.mall || '') !== source || String(row.product_id || '') !== pid) return null;
     const currentVid = Price.vendorIdOf(row);
     if (currentVid !== String(member.vendor_item_id || '')) return null;
-    const identity = parseCurrent(row, member);
-    if (P.stableJson(P.snapshotOf(identity)) !== P.stableJson(member.identity_snapshot || {})) return null;
-    identities.push(identity);
+    identities.push(parseCurrent(row, member));
     verifiedMembers.push({ key, vendorItemId: currentVid });
     // A member can remain a valid identity while its current offer is temporarily
     // unusable (stale, suspect, unpriced, or missing a safe purchase link). Filter
@@ -101,6 +124,12 @@ function activeCandidate(group, members, rowsByKey, opts, stats) {
       const linkOffer = toOffer(row, member);
       if (linkOffer) offers.push(linkOffer);
     }
+  }
+  // 저장된 식별(기존 자리 또는 matcher 전환의 next 자리)과 지금 파서의 결과가 같아야 한다. 아니면 fail-closed.
+  const version = identityVersion(group, members, identities);
+  if (!version) {
+    if (stats) stats.stale = (stats.stale || 0) + 1;
+    return null;
   }
   const context = OI.contextFactory(identities);
   for (let i = 0; i < identities.length; i++) {
@@ -112,15 +141,17 @@ function activeCandidate(group, members, rowsByKey, opts, stats) {
       }
     }
   }
-  const identity = group.identity || {};
-  if (!['A', 'B'].includes(group.confidence_tier) || identity.tier !== group.confidence_tier) return null;
+  // 키는 «맞은 자리» 의 키·식별·등급과 비교한다 — 기존 자리 스냅숏에 next 키를 섞어 받지 않는다.
+  const identity = version.identity || {};
+  if (!['A', 'B'].includes(version.tier) || identity.tier !== version.tier) return null;
   const strong = identity.strongIdentifier || null;
-  const computed = P.canonicalKeyOf(P.canonicalIdentity(identities, strong, group.confidence_tier));
-  if (computed !== String(group.canonical_key)) return null;
+  const computed = P.canonicalKeyOf(P.canonicalIdentity(identities, strong, version.tier));
+  if (!computed || computed !== version.key) return null;
   const merchants = new Set(offers.map(o => o.mallLabel).filter(Boolean));
   if (offers.length < 2 || merchants.size < 2) return null;
   offers.sort((a, b) => a.price - b.price || a.mallLabel.localeCompare(b.mallLabel) || a.productId.localeCompare(b.productId));
-  return { id: String(group.id), key: String(group.canonical_key), identity, offers, verifiedMembers };
+  if (version.version === 'next' && stats) stats.transition = (stats.transition || 0) + 1;
+  return { id: String(group.id), key: version.key, identity, identityVersion: version.version, offers, verifiedMembers };
 }
 
 async function resolveGroups(items, opts = {}) {
@@ -139,13 +170,14 @@ async function resolveGroups(items, opts = {}) {
     const matched = memberResult.data || [];
     if (!matched.length) return empty;
     const groupIds = [...new Set(matched.map(x => String(x.group_id)))];
+    // '*' — matcher 전환 컬럼(next_* · rollout_key)이 있으면 함께 받고, 마이그레이션 전 DB 에서도 그대로 동작한다.
     const groupResult = failOnError(await db.from('canonical_product_groups')
-      .select('id,canonical_key,status,identity,confidence_tier').in('id', groupIds).eq('status', 'ACTIVE'), 'canonical group lookup failed');
+      .select('*').in('id', groupIds).eq('status', 'ACTIVE'), 'canonical group lookup failed');
     const groupRows = groupResult.data || [];
     if (!groupRows.length) return empty;
     const activeIds = groupRows.map(x => x.id);
     const allMembersResult = failOnError(await db.from('canonical_product_members')
-      .select('group_id,source_mall,product_id,mall,vendor_item_id,offer_key,identity_snapshot').in('group_id', activeIds), 'canonical group members lookup failed');
+      .select('*').in('group_id', activeIds), 'canonical group members lookup failed');
     const allMembers = allMembersResult.data || [];
     const pids = [...new Set(allMembers.map(x => String(x.product_id)))];
     if (!pids.length || pids.length > groupRows.length * MAX_GROUP_MEMBERS) return empty;
@@ -336,5 +368,5 @@ module.exports = {
   config, envEnabled, eligibleForRollout, stableHash, resolveGroups, collapseItems,
   inputKey, requestKey, sourceMallOf, productIdOf, vendorIdOf, resolveIdentityForHistory,
   loadAggregatedHistory, loadAggregatedHistories,
-  _internal: { activeCandidate, currentPriceFresh, parseCurrent, toOffer, aggregateHistoryRows, METRICS, _resetMetrics, MAX_GROUP_MEMBERS, MAX_INPUTS }
+  _internal: { activeCandidate, identityVersion, rolloutKeyOf, currentPriceFresh, parseCurrent, toOffer, aggregateHistoryRows, METRICS, _resetMetrics, MAX_GROUP_MEMBERS, MAX_INPUTS }
 };

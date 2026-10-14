@@ -26,7 +26,8 @@ const UNKNOWN_LABELS = Object.freeze({
   HOLD_MISSING_COLOR: 'color', HOLD_MISSING_QUANTITY: 'quantity', HOLD_MISSING_CONDITION: 'condition',
   HOLD_MISSING_REGION: 'region', HOLD_MISSING_YEAR: 'year', HOLD_MISSING_SIZE: 'size',
   HOLD_MISSING_BUNDLE: 'bundle', HOLD_COMPONENT_EVIDENCE: 'included components',
-  HOLD_INSUFFICIENT_EVIDENCE: 'identity evidence', HOLD_PRICE_GAP: 'price consistency'
+  HOLD_INSUFFICIENT_EVIDENCE: 'identity evidence', HOLD_PRICE_GAP: 'price consistency',
+  HOLD_MISSING_CPU: 'CPU', HOLD_CPU_NOT_EXACT: 'CPU model', HOLD_MISSING_GPU: 'GPU'
 });
 
 function stable(value) {

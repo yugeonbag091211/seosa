@@ -67,7 +67,8 @@ const BRANDS = [
   ['apple', ['apple', '애플']],
   ['logitech', ['logitech', '로지텍', '로지텍코리아']],
   ['dyson', ['dyson', '다이슨']],
-  ['sony', ['sony', '소니']],
+  // 소니코리아 = 소니의 국내 법인(제조사 쪽 표기). 유통사·판매점 이름은 여기 넣지 않는다.
+  ['sony', ['sony', '소니', '소니코리아']],
   ['lg', ['lg', '엘지', 'lg전자']],
   ['bose', ['bose', '보스']],
   ['xiaomi', ['xiaomi', '샤오미']],
@@ -83,7 +84,10 @@ const BRANDS = [
   ['gopro', ['gopro', '고프로']],
   ['anker', ['anker', '앤커']],
   ['garmin', ['garmin', '가민']],
-  ['google', ['google', '구글']]
+  ['google', ['google', '구글']],
+  // 2026-10-14: «[HP] HyperX 오멘 …» 의 HP 가 낱말로 남아 같은 모델번호 판매 글이 REVIEW 였다.
+  ['hp', ['hp', '에이치피', '휴렛팩커드']],
+  ['asics', ['asics', '아식스']]
 ];
 const BRAND_OF = new Map();
 BRANDS.forEach(([canon, aliases]) => aliases.forEach(a => BRAND_OF.set(a, canon)));
@@ -171,7 +175,9 @@ const SINGLE_CHAR_STOP = new Set(['및', '등', '외', '의', '와', '과', '형
 const EXTRA_COLORS = new Map([
   ['카키', 'khaki'], ['khaki', 'khaki'], ['차콜', 'charcoal'], ['charcoal', 'charcoal'], ['버건디', 'burgundy'],
   ['burgundy', 'burgundy'], ['라벤더', 'lavender'], ['코랄', 'coral'], ['카멜', 'camel'], ['camel', 'camel'],
-  ['테라코타', 'terracotta'], ['보르도', 'bordeaux'], ['멜란지', 'melange'], ['옐로', 'yellow']
+  ['테라코타', 'terracotta'], ['보르도', 'bordeaux'], ['멜란지', 'melange'], ['옐로', 'yellow'],
+  // 2026-10-14: «G304 … 라일락» 이 색이 아니라 낱말로 남아 같은 모델의 블랙·화이트와 갈리지 않았다.
+  ['라일락', 'lilac'], ['lilac', 'lilac']
 ]);
 /* 의류·신발 — 색이 반드시 SKU 를 가른다(같은 스타일 번호라도 색마다 다른 상품이다). 낱말 끝말로 본다. */
 const APPAREL_NOUNS = ['운동화', '스니커즈', '러닝화', '런닝화', '조깅화', '축구화', '야구화', '등산화', '부츠', '샌들', '슬리퍼',
@@ -390,6 +396,7 @@ function parseOffer(input) {
     anchors: [], primaryAnchor: '', multiModel: false, variants: [],
     modelNumbers: [], gtins: [],
     storage: [], storageOptions: false, memory: [], specs: {}, included: [], longNumbers: [], wordSeq: [], quantity: null, quantityAmbiguous: false,
+    cpu: [], gpu: [], computer: false, tagWords: [],
     colors: [], year: '', condition: 'unstated', conditionStates: [], transactionType: 'purchase',
     region: '', bundle: 'none', accessory: false, accessoryType: '', part: false,
     substitute: false, flags: []
@@ -445,11 +452,23 @@ function parseOffer(input) {
   /* 옵션을 고르는 판매 글 ("색상선택", "사이즈 택1", "골라담기") — 어느 옵션인지 제목만으로는 모른다. */
   if (/색상\s*선택|옵션\s*선택|사이즈\s*선택|택\s*1|골라\s*담기|선택\s*가능/.test(s)) id.flags.push('option_choice');
   s = s.replace(/택\s*1/g, ' ');
+  // 판매처 상품번호 «(S50671126)» · «_P334379316» 의 머리 글자는 식별 낱말이 아니다 — 숫자와 함께 판매처 번호로 읽게 뗀다.
+  s = s.replace(/(?<![a-z0-9])[a-z](?=\d{7,}(?!\d))/g, ' ');
   const longNumbers = new Set();
   s = erase(s, /(?<!\d)\d{8,14}(?!\d)/g, m => {
     const g = normGtin(m);
     if (g && m.length >= 12) gt.add(g); else longNumbers.add(m);
   });
+
+  /* ── 컴퓨터의 CPU · GPU — 제품 모델번호가 아니라 «부품 옵션» 이다 (readComponents) ── */
+  const comp = readComponents(s, lower);
+  if (comp) {
+    s = comp.s;
+    id.cpu = comp.cpu;
+    id.gpu = comp.gpu;
+  }
+  // 컴퓨터인지는 CPU·GPU 를 적었는지와 따로 본다 — «G614JV 16GB 1TB 노트북» 도 16GB 는 RAM 이다.
+  id.computer = COMPUTER_WORD_RE.test(lower) || Boolean(comp && comp.computer);
 
   const counts = [];
   let total = null;
@@ -499,6 +518,7 @@ function parseOffer(input) {
     (specs[unit] = specs[unit] || new Set()).add(String(Number(n)));
     return ' ';
   });
+  if (id.computer) readComputerMemory(storage, memory, specs);
 
   const years = new Set();
   s = erase(s, YEAR_RE, (m, y) => years.add(y));
@@ -536,6 +556,8 @@ function parseOffer(input) {
       return;
     }
     if (EXTRA_COLORS.has(tok)) { extraColors.add(EXTRA_COLORS.get(tok)); return; }
+    // «로지텍G» 의 G 는 로지텍의 게이밍 하위 상표다 — 계열 낱말이 아니다.
+    if (tok === 'g' && BRAND_OF.get(prev) === 'logitech') return;
     /*
      * «X 용 · X 전용 · for X» — 앞(한국어)이나 뒤(영어)의 상표가 «이 상품이 쓰이는 대상» 이다.
      * 그 상품 자체가 아니다. 부속 낱말이 없어도 호환품으로 본다("for AirPods 실리콘…").
@@ -658,6 +680,17 @@ function parseOffer(input) {
     id.deviceClass = 'apparel';
   }
 
+  /*
+   * 맨 앞 대괄호 꼬리표에만 나오는 낱말 («[리디아넬]…» · «[셀러허브]…» · «[HP]…») — 판매처·입점사 표기일 수 있다.
+   * 판정은 하지 않는다. matchOffers 가 강한 모델번호 아래에서 «한쪽에만 있는 꼬리표» 를 설명 낱말로 볼 때만 쓴다.
+   */
+  const lead = (lower.match(LEADING_TAGS_RE) || [''])[0];
+  if (lead) {
+    const toks = text => new Set([].concat(...S.splitTokens(S.normalizeText(text)).map(t => ALIASES.get(t) || [t])));
+    const tagToks = toks(lead), restToks = toks(lower.slice(lead.length));
+    id.tagWords = id.words.filter(w => tagToks.has(w) && !restToks.has(w));
+  }
+
   id.accessoryTypes = [...accessories].sort();
   id.accessory = accessories.size > 0 || id.part;
   id.accessoryType = id.part && !accessories.size ? 'part' : id.accessoryTypes.join('+');
@@ -715,6 +748,123 @@ function readCapacities(s, storage, memory) {
   }
   caps.forEach(c => (c.mem ? memory : storage).add(`${c.gb}gb`));
 }
+
+/*
+ * 컴퓨터의 CPU · GPU (2026-10-14 matcher evidence v2).
+ *
+ * 노트북 제목의 «U7-270HXPlus» · «RTX5070Ti» 는 제품 모델번호가 아니라 부품이다. 모델번호로 읽으면 같은 노트북의
+ * 두 판매 글이 CPU 를 «울트라7» 처럼 짧게 적었다는 이유만으로 모델번호 비교가 깨지고(partial — 운영 데이터 1,396쌍),
+ * «울트라7» 은 모델 번호 7 + 등급 ultra 로 읽혀 «오멘 MAX» 의 MAX 까지 등급 표기로 오염된다.
+ * 그래서 CPU · GPU 를 정규형으로 따로 읽어 옵션처럼 비교한다(compareComponents).
+ *
+ *   · SKU 를 보존한다 — 270HX ≠ 270HXPlus · 155H ≠ 258V · 5070 ≠ 5070 Ti · i7-14700HX ≠ Ultra 7 270HX.
+ *   · «울트라7» 처럼 계열만 적은 표기는 계열만 안다(ultra7). 정확한 CPU 라고 확정하지 않는다.
+ *   · 컴퓨터가 아닌 판매 글(그래픽카드 · CPU 단품)은 그 칩이 곧 상품이다 — 예전대로 모델번호로 둔다.
+ *     다만 다른 강한 제품 모델번호(부품번호)가 함께 있으면 그쪽이 상품이고 칩은 부품이다.
+ */
+const COMPUTER_WORD_RE = /노트북|랩탑|laptop|notebook|데스크\s*[탑톱]|desktop|조립\s*pc|게이밍\s*pc|미니\s*pc|사무용\s*pc|올인원\s*pc|게이밍\s*컴퓨터|컴퓨터\s*본체|pc\s*본체|맥북|macbook/i;
+const INTEL_HEAD = '(?:intel\\s*|인텔\\s*)?(?:core\\s*|코어\\s*)?';
+/* 코어 · 인텔 머리가 «반드시» 붙은 것 — «코어Ultra5» · «인텔 i7» 은 CPU 이고, 맨 «울트라 5» 는 휴대폰 등급일 수 있다. */
+const INTEL_HEAD_REQUIRED = '(?:(?:intel\\s*|인텔\\s*)(?:core\\s*|코어\\s*)?|(?:core|코어)\\s*)';
+/*
+ * [정규식, 정규형, 종류] — 종류: full 정확한 모델 · head 계열만이지만 CPU 임이 분명함 · bare 계열만이고 CPU 인지 애매함.
+ * head 는 그것만으로 컴퓨터 판매 글의 근거가 되고(«레노버 요가 슬림 7 14IMH9 코어Ultra5 인텔 14세대»),
+ * bare 는 다른 근거(노트북 낱말 · GPU)가 있을 때만 CPU 로 쓴다(«갤럭시 S25 울트라 5G» 를 CPU 로 읽지 않게).
+ */
+const CPU_RES = [
+  [new RegExp(`(?<![a-z0-9])${INTEL_HEAD}(?:ultra|울트라)\\s*-?\\s*([3579])\\s*-?\\s*(\\d{3}[a-z]{0,2}(?:\\s*plus)?)(?![a-z0-9])`, 'g'), m => `ultra${m[1]}-${m[2].replace(/\s+/g, '')}`, 'full'],
+  [/(?<![a-z0-9])u([3579])\s*-\s*(\d{3}[a-z]{1,2}(?:plus)?)(?![a-z0-9])/g, m => `ultra${m[1]}-${m[2]}`, 'full'],
+  // i7-14700HX · i5 1335U — 하이픈이 있거나 끝에 영문이 있어야 한다(«i5 2024년형» 의 연식을 CPU 로 읽지 않게).
+  [new RegExp(`(?<![a-z0-9])${INTEL_HEAD}i([3579])(?:\\s*-\\s*(\\d{4,5}[a-z]{0,3})|\\s*(\\d{4,5}[a-z]{1,3}))(?![a-z0-9])`, 'g'), m => `i${m[1]}-${m[2] || m[3]}`, 'full'],
+  [/(?<![a-z0-9])(?:amd\s*)?(?:ryzen|라이젠)\s*-?\s*([3579])\s*-?\s*(\d{4}[a-z]{0,3})(?![a-z0-9])/g, m => (/^20[0-3]\d$/.test(m[2]) ? '' : `ryzen${m[1]}-${m[2]}`), 'full'],
+  [/(?<![a-z0-9])r([3579])\s*-\s*(\d{4}[a-z]{0,3})(?![a-z0-9])/g, m => `ryzen${m[1]}-${m[2]}`, 'full'],
+  // 계열만 적은 표기 — 위의 전체 표기를 지운 뒤에 본다. 뒤에 영문이 붙으면 아니다(«울트라 5G» 의 5G).
+  [new RegExp(`(?<![a-z0-9])${INTEL_HEAD_REQUIRED}(?:ultra|울트라)\\s*-?\\s*([3579])(?![0-9a-z])`, 'g'), m => `ultra${m[1]}`, 'head'],
+  [new RegExp(`(?<![a-z0-9])${INTEL_HEAD_REQUIRED}i([3579])(?![0-9a-z])`, 'g'), m => `i${m[1]}`, 'head'],
+  [/(?<![a-z0-9])(?:intel\s*|인텔\s*)?(?:core|코어)\s*([357])(?![0-9a-z])/g, m => `core${m[1]}`, 'head'],
+  [/(?<![a-z0-9])(?:amd\s*)?(?:ryzen|라이젠)\s*-?\s*([3579])(?![0-9a-z])/g, m => `ryzen${m[1]}`, 'head'],
+  [/(?<![a-z0-9])(?:ultra|울트라)\s*-?\s*([3579])(?![0-9a-z])/g, m => `ultra${m[1]}`, 'bare'],
+  [/(?<![a-z0-9])i([3579])(?![0-9a-z])/g, m => `i${m[1]}`, 'bare']
+];
+const GPU_RES = [
+  [/(?<![a-z0-9])(?:nvidia\s*|엔비디아\s*)?(?:geforce\s*|지포스\s*)?(rtx|gtx)\s*-?\s*(\d{4}|\d{3})\s*(ti\s*super|ti|super)?(?![a-z0-9])/g, m => `${m[1]}${m[2]}${(m[3] || '').replace(/\s+/g, '')}`],
+  [/(?<![a-z0-9])(?:amd\s*)?(?:radeon\s*|라데온\s*)?rx\s*-?\s*(\d{4})\s*(xtx|xt|gre)?(?![a-z0-9])/g, m => `rx${m[1]}${m[2] || ''}`],
+  [/(?<![a-z0-9])(?:intel\s*)?arc\s*-?\s*([ab]\d{3}[a-z]?)(?![a-z0-9])/g, m => `arc${m[1]}`]
+];
+
+function readComponents(s, lower) {
+  let rest = s;
+  const cpu = [], gpu = [], kinds = new Set();
+  const take = (res, out) => res.forEach(([re, fmt, kind]) => {
+    rest = rest.replace(re, (...m) => { const v = fmt(m); if (!v) return m[0]; out.push(v); if (kind) kinds.add(kind); return ' '; });
+  });
+  take(CPU_RES, cpu);
+  take(GPU_RES, gpu);
+  if (!cpu.length && !gpu.length) return null;
+  const computer = COMPUTER_WORD_RE.test(lower) || (cpu.length > 0 && gpu.length > 0) || kinds.has('head');
+  if (!computer) {
+    // 컴퓨터 근거가 없으면 맨 «울트라 5» · «i7» 은 부품 근거가 아니다 — 휴대폰 «울트라» 등급을 지우지 않게.
+    if (!gpu.length && !kinds.has('full')) return null;
+    const probe = new Set();
+    [CODE_HYPHEN_RE, APPLE_PART_RE, CODE_SINGLE_RE].forEach(re => (rest.match(re) || []).forEach(m => addCode(probe, m)));
+    if (![...probe].some(strongProductCode)) return null;
+  }
+  // 같은 계열의 전체 표기가 있으면 계열만 적은 표기는 버린다 («울트라7 155H … 울트라7»).
+  const uniq = [...new Set(cpu)];
+  const full = new Set(uniq.filter(c => c.includes('-')).map(c => c.split('-')[0]));
+  return { s: rest, cpu: uniq.filter(c => c.includes('-') || !full.has(c)).sort(), gpu: [...new Set(gpu)].sort(), computer };
+}
+
+/*
+ * 컴퓨터 제목의 «16GB 512GB» · «32G/1TB» — 작은 쪽은 메모리(RAM)다. RAM 낱말이 없어도 그렇다.
+ * 저장 용량으로 읽으면 같은 노트북의 «32GB RAM 1TB» 와 저장 용량 충돌(오판)이 난다.
+ * 정확한 값은 지킨다 — 16GB ≠ 32GB · 512GB ≠ 1TB 는 그대로 충돌이다. 용량이 셋 이상이면(선택형) 건드리지 않는다.
+ */
+const RAM_SIZES = new Set(['4', '8', '12', '16', '18', '24', '32', '36', '48', '64']);
+const STORAGE_G = new Set(['128', '256', '512']);
+function readComputerMemory(storage, memory, specs) {
+  // 먼저 B 를 뺀 표기를 용량으로 — «1T» · «512G» 는 저장 용량, «32G» 는 메모리(규격 t·g 로 읽혀 있었다).
+  if (specs.t && [...specs.t].every(v => /^(?:1|2|4|8)$/.test(v))) {
+    specs.t.forEach(v => storage.add(`${Number(v) * 1024}gb`));
+    delete specs.t;
+  }
+  if (specs.g && [...specs.g].every(v => RAM_SIZES.has(v) || STORAGE_G.has(v))) {
+    specs.g.forEach(v => (RAM_SIZES.has(v) ? memory : storage).add(`${v}gb`));
+    delete specs.g;
+  }
+  // 그다음 «16GB 512GB» 처럼 용량이 둘이면 작은 쪽이 메모리다.
+  const caps = [...storage].map(v => parseInt(v, 10)).sort((a, b) => a - b);
+  if (!memory.size && caps.length === 2 && RAM_SIZES.has(String(caps[0])) && caps[1] >= Math.max(64, caps[0] * 4)) {
+    storage.delete(`${caps[0]}gb`);
+    memory.add(`${caps[0]}gb`);
+  }
+}
+
+/*
+ * 제품을 SKU 수준으로 가리키는 모델번호 — 6자 이상 · 숫자 3개 이상 · 영문 포함 · 칩 이름(CPU·GPU)이 아님.
+ * «G304» 처럼 짧은 계열 코드는 아니다(같은 G304 아래 LIGHTSPEED · X SUPERLIGHT 가 다른 상품이다 — 실측).
+ */
+const CHIP_CODE_RE = /^(?:rtx|gtx|rx|arc)\d|^(?:u|i|r)[3579]\d{3}|^(?:ultra|ryzen|core)\d/;
+function strongProductCode(c) {
+  return c.length >= 6 && (c.match(/\d/g) || []).length >= 3 && /[a-z]/.test(c) && !CHIP_CODE_RE.test(c);
+}
+
+/* 맨 앞 대괄호 꼬리표 («[셀러허브] [리디아넬] …») */
+const LEADING_TAGS_RE = /^\s*(?:\[[^\]]*\]\s*)+/;
+
+/*
+ * 강한 모델번호가 같을 때 «상품을 가르지 않는» 설명 낱말 — 광고·판매 문구 · 기능 자랑 · 국내 법인 꼬리표.
+ * 2026-10-14 운영 데이터에서 같은 모델번호 판매 글 496쌍이 낱말 차이 하나로 REVIEW 였고, 그 낱말을 한 쌍씩 읽어 골랐다.
+ * ★ 넣지 않는 것 (같은 모델번호 아래에서도 SKU 를 갈랐다 — 실측): 색 이름(라일락 · 플래티넘 · 샌드스톤) · 소재(TPU) ·
+ *   스위치(적축) · 설치 형태(벽걸이형/스탠드형) · 성별(남성/여성) · 등급(mini · plus · ultra · edge) · 계열 이름
+ *   (lightspeed · superlight · x) · 유선/유무선 · 구성(풀세트 · 완조립) · 다른 브랜드·판매처 이름.
+ * ★ 모델번호가 약하거나 없으면 쓰지 않는다 — 그때 낱말 차이는 여전히 강한 근거다.
+ */
+const DESCRIPTOR_WORDS = new Set([
+  '공식', '공식판매', '공식인증', '인증', '고사양', '고성능', '플래그십', '최고급', '인기', '특가', '비밀특가', '한정특가',
+  '관부가세포함', '문앞배송', '전국무료배송', '홈쇼핑', '코리아', '게이밍', '게이머', '노이즈', '캔슬링', '노이즈캔슬링', '노이캔',
+  '스마트', '스테레오', '샤크닌자'
+]);
 
 /*
  * 영문만으로 붙여 쓴 계열·등급 ("ProMax", "AirPodsPro"). _search.splitTokens 는 숫자가 없는
@@ -865,6 +1015,8 @@ function matchOffers(a, b, ctx) {
   if (A.category && B.category && A.category !== B.category) conflict('category_mismatch', A.category, B.category);
   const codeRel = compareCodes(A, B);
   if (codeRel === 'conflict') conflict('model_number_mismatch', fmt(A.modelNumbers), fmt(B.modelNumbers));
+  const comp = compareComponents(A, B);
+  comp.conflicts.forEach(([tag, x, y]) => conflict(tag, x, y));
   const anchorRel = compareAnchors(A, B);
   if (anchorRel === 'conflict') conflict('model_mismatch', fmt(A.anchors), fmt(B.anchors));
   if (anchorRel !== 'conflict' && A.primaryAnchor && A.primaryAnchor === B.primaryAnchor && !eqList(A.variants, B.variants)) conflict('variant_mismatch', fmt(A.variants), fmt(B.variants));
@@ -875,6 +1027,7 @@ function matchOffers(a, b, ctx) {
   }
   if (A.memory.length && B.memory.length && !eqList(A.memory, B.memory)) conflict('memory_mismatch', fmt(A.memory), fmt(B.memory));
   Object.keys(A.specs).forEach(u => { if (B.specs[u] && !eqList(A.specs[u], B.specs[u])) conflict(`size_mismatch_${u}`, fmt(A.specs[u]), fmt(B.specs[u])); });
+  comp.unknown.forEach(unk);
   if (A.quantity != null && B.quantity != null && A.quantity !== B.quantity) conflict('quantity_mismatch', A.quantity, B.quantity);
   if (A.colors.length === 1 && B.colors.length === 1 && A.colors[0] !== B.colors[0]) conflict('color_mismatch', A.colors[0], B.colors[0]);
   if (A.accessory !== B.accessory) conflict('main_vs_accessory', A.accessory ? A.accessoryType : 'main', B.accessory ? B.accessoryType : 'main');
@@ -997,7 +1150,15 @@ function matchOffers(a, b, ctx) {
    * 같은 모델번호 아래 «벽걸이형 ↔ 스탠드형», «G304 LIGHTSPEED ↔ G304 X SUPERLIGHT», «[일반] ↔ [무결점]»,
    * 맛·마감 이름이 다른 판매 글이 실제로 있었다. GTIN 만 이 검사를 건너뛴다(GTIN 은 구성까지 가리킨다).
    */
-  if (tier === 'A' && !sameGtin && !sameWords) unk(`title_words:${diffWords(A.words, B.words)}`);
+  if (tier === 'A' && !sameGtin && !sameWords) {
+    /*
+     * 강한(SKU 수준) 모델번호가 정확히 같고 다른 값이 모두 맞으면, 광고·기능 문구(DESCRIPTOR_WORDS)와 한쪽에만 붙은
+     * 맨 앞 대괄호 꼬리표는 상품을 가르지 않는다. 그 밖의 낱말이 하나라도 다르면 그대로 REVIEW 다.
+     */
+    const desc = sharedStrongCode(A, B) ? descriptorOnlyDifference(A, B) : null;
+    if (desc) evidence.push(`descriptor_words_only:${desc.join(',')}`);
+    else unk(`title_words:${diffWords(A.words, B.words)}`);
+  }
   if (tier === 'A' && !sameGtin && !eqList(sorted(A.anchors), sorted(B.anchors))) unk('model_detail');
 
   if (!tier) {
@@ -1071,6 +1232,52 @@ function diffWords(a, b) {
   return [...a.filter(x => !B.has(x)), ...b.filter(x => !A.has(x))].slice(0, 6).join(',');
 }
 
+/**
+ * CPU · GPU 비교 (readComponents 의 정규형).
+ *   둘 다 적었고 다르면 충돌 — rtx4060 ≠ rtx5070ti · ultra7-270hx ≠ ultra7-270hxplus · i7 계열 ≠ ultra7 계열.
+ *   한쪽만 적었으면 모른다(gpu · cpu). 한쪽은 계열만(«울트라7»), 다른 쪽은 정확한 모델이면 모른다(cpu_detail) —
+ *   계열이 같다는 것만으로 정확한 CPU 가 같다고 말하지 않는다.
+ * @returns {{conflicts:Array<[string,string,string]>, unknown:string[]}}
+ */
+function compareComponents(A, B) {
+  const conflicts = [], unknown = [];
+  if (A.gpu.length && B.gpu.length) {
+    if (!A.gpu.some(g => B.gpu.includes(g))) conflicts.push(['gpu_mismatch', fmt(A.gpu), fmt(B.gpu)]);
+    else if (A.gpu.length > 1 || B.gpu.length > 1) unknown.push('gpu');
+  } else if (A.gpu.length || B.gpu.length) unknown.push('gpu');
+
+  const parts = c => { const [family, model = ''] = c.split('-'); return { family, model }; };
+  if (A.cpu.length && B.cpu.length) {
+    const a = A.cpu.map(parts), b = B.cpu.map(parts);
+    const compatible = (x, y) => x.family === y.family && (!x.model || !y.model || x.model === y.model);
+    if (!a.some(x => b.some(y => compatible(x, y)))) conflicts.push(['cpu_mismatch', fmt(A.cpu), fmt(B.cpu)]);
+    else if (a.length > 1 || b.length > 1) unknown.push('cpu');
+    else if (Boolean(a[0].model) !== Boolean(b[0].model)) unknown.push('cpu_detail');
+  } else if (A.cpu.length || B.cpu.length) unknown.push('cpu');
+  return { conflicts, unknown };
+}
+
+/** 두 오퍼가 강한(SKU 수준) 모델번호 하나를 정확히 같이 갖는가. */
+function sharedStrongCode(A, B) {
+  return A.modelNumbers.some(x => strongProductCode(x) && B.modelNumbers.some(y => codeRelation(x, y) === 'exact'));
+}
+
+/**
+ * 계열 낱말 차이가 «설명 낱말» 과 «한쪽에만 있는 맨 앞 대괄호 꼬리표» 뿐인가. 아니면 null.
+ * 양쪽에 서로 다른 꼬리표가 있으면 null 이다 — «[케이맘]» ↔ «[맥킨더]» 는 다른 판매처·브랜드일 수 있다.
+ * @returns {string[]|null} 무시한 낱말 (꼬리표는 tag: 를 붙인다)
+ */
+function descriptorOnlyDifference(A, B) {
+  const onlyA = A.words.filter(w => !B.words.includes(w));
+  const onlyB = B.words.filter(w => !A.words.includes(w));
+  const tagsA = onlyA.filter(w => !DESCRIPTOR_WORDS.has(w) && A.tagWords.includes(w));
+  const tagsB = onlyB.filter(w => !DESCRIPTOR_WORDS.has(w) && B.tagWords.includes(w));
+  if (tagsA.length && tagsB.length) return null;
+  const covered = (list, tags) => list.every(w => DESCRIPTOR_WORDS.has(w) || tags.includes(w));
+  if (!covered(onlyA, tagsA) || !covered(onlyB, tagsB)) return null;
+  return [...onlyA, ...onlyB].map(w => (DESCRIPTOR_WORDS.has(w) ? w : `tag:${w}`));
+}
+
 /** 모델번호 비교. 'exact'|'loose' 같은 모델, 'conflict' 다른 모델, 'partial' 일부만 겹침, '' 비교 불가. */
 function compareCodes(A, B) {
   if (!A.modelNumbers.length || !B.modelNumbers.length) return '';
@@ -1141,14 +1348,19 @@ function specificity(id) {
 function lineDimensionsOf(ids) {
   const byLine = new Map();
   ids.forEach(id => {
-    const k = lineKeyOf(id);
-    if (!k) return;
-    if (!byLine.has(k)) byLine.set(k, { storage: new Set(), color: new Set(), memory: new Set(), codes: [] });
-    const d = byLine.get(k);
-    id.storage.forEach(v => d.storage.add(v));
-    id.colors.forEach(v => d.color.add(v));
-    id.memory.forEach(v => d.memory.add(v));
-    id.modelNumbers.forEach(c => { if (!d.codes.some(x => codeRelation(x, c))) d.codes.push(c); });
+    lineKeysOf(id).forEach(k => {
+      if (!byLine.has(k)) byLine.set(k, { storage: new Set(), color: new Set(), memory: new Set(), codes: [] });
+      const d = byLine.get(k);
+      id.storage.forEach(v => d.storage.add(v));
+      /*
+       * 모델번호 계열은 «색을 하나만 적은» 판매 글의 색만 센다. 한 판매 글 안의 «그레이스 브라운» 은 색 이름 하나인데
+       * 회색·갈색 둘로 읽힌다 — 그것만으로 «이 모델에 색이 여럿» 이라고 하지 않는다(운영 실례: 쿠쿠 CFR-332GB).
+       */
+      if (!k.startsWith('code:') || id.colors.length === 1) id.colors.forEach(v => d.color.add(v));
+      id.memory.forEach(v => d.memory.add(v));
+      // 모델번호 계열(code:)은 그 모델번호 자체가 키다 — «다른 모델번호가 관측됨» 차원은 앵커 계열에서만 본다.
+      if (!k.startsWith('code:')) id.modelNumbers.forEach(c => { if (!d.codes.some(x => codeRelation(x, c))) d.codes.push(c); });
+    });
   });
   const out = new Map();
   byLine.forEach((d, k) => {
@@ -1169,12 +1381,30 @@ function lineKeyOf(id) {
   return head ? `${head}|${id.primaryAnchor}|${id.variants.join(',')}` : '';
 }
 
-/** 오퍼 목록 전체에서 계열 차원을 구하고, 두 오퍼의 비교 문맥(두 계열의 합집합)을 만든다. */
+/*
+ * 오퍼가 속한 계열 키 전부 — 앵커 계열 + 제품 모델번호 계열(code:<모델번호>).
+ *
+ * 앵커 계열만 보면 모델번호로만 식별되는 상품(G304 · WH-1000XM6)은 «이 모델에 색이 여럿» 을 보지 못했다.
+ * 그래서 양쪽 다 색을 안 적은 판매 글이 MATCH 였다(2026-10-14 감사: 교차 MATCH 표본 162쌍 중 약 21쌍).
+ * 모델번호 계열에서 색이 둘 이상 관측되면 그 모델의 «둘 다 안 적음» 도 모르는 값이다.
+ * 색이 하나만 관측된 모델(HD2590/05 화이트)이나 색마다 모델번호가 다른 상품(나이키 CT2864-200)은 그대로다.
+ */
+function lineKeysOf(id) {
+  const keys = [];
+  const k = lineKeyOf(id);
+  if (k) keys.push(k);
+  // 본품과 그 모델용 부속(«CRP-DHAS069FWM 사용 열림 버튼» · «WH-1000XM6 이어패드»)은 다른 계열이다.
+  const part = id.accessory ? id.accessoryType || 'accessory' : 'main';
+  id.modelNumbers.forEach(c => { if (!CHIP_CODE_RE.test(c)) keys.push(`code:${c}|${part}`); });
+  return keys;
+}
+
+/** 오퍼 목록 전체에서 계열 차원을 구하고, 두 오퍼의 비교 문맥(두 오퍼가 속한 모든 계열의 합집합)을 만든다. */
 function contextFactory(ids) {
   const lineDims = lineDimensionsOf(ids);
   return (x, y) => {
-    const dims = new Set(lineDims.get(lineKeyOf(x)) || []);
-    (lineDims.get(lineKeyOf(y)) || []).forEach(d => dims.add(d));
+    const dims = new Set();
+    lineKeysOf(x).concat(lineKeysOf(y)).forEach(k => (lineDims.get(k) || []).forEach(d => dims.add(d)));
     return { lineDimensions: dims };
   };
 }
@@ -1304,5 +1534,7 @@ module.exports = {
    */
   contextFactory,
   REQUIRED_DIMENSIONS,
-  _internal: { BRANDS, ALIASES, SUB_BRANDS, IMPLIED_BRAND, NOISE_WORDS, CATEGORY_CLASSES, normGtin, validGtin, codeParts, lineDimensionsOf }
+  // canonicalIdentity: Candidate Discovery v2 오프라인 평가가 합친 군집도 clusterOffers 와 같은 꼴로 내기 위해.
+  _internal: { BRANDS, ALIASES, SUB_BRANDS, IMPLIED_BRAND, NOISE_WORDS, CATEGORY_CLASSES, normGtin, validGtin, codeParts, lineDimensionsOf, canonicalIdentity,
+    DESCRIPTOR_WORDS, strongProductCode, CHIP_CODE_RE }
 };
