@@ -91,24 +91,55 @@ function createLimiter(o) {
        * «0ms 대기 필요» 를 받고 거절된다 (test-adpick-observability 에서 간헐 재현).
        */
       if (slot > Math.max(deadline, t)) return denyLocal(slot - t);
-      let usedGlobal = false;
-      if (a.global) {
-        const g = await a.global({ notBeforeMs: slot - t, maxWaitMs: deadline - t });
-        const after = now();
-        if (!g.ok) return { ok: false, kind: 'global', reason: g.reason || '전역 한도', waitMs: g.waitMs || 0 };
-        if (!g.skipped) {
-          usedGlobal = true;
-          // 응답을 받은 시각을 기준으로 잡는다 — 실제보다 늦게 잡는 쪽이라 안전하다.
-          slot = Math.max(slot, after + Math.max(0, g.waitMs || 0));
-        }
-        t = after;
-      }
+      /*
+     * 로컬 간격 때문에 미래 슬롯을 기다려야 하면 «먼저» 그만큼 잔다.
+     *
+     * 예전에는 전역 adpick_acquire 에 notBeforeMs=12초 같은 미래 시각을 먼저
+     * 예약한 뒤 잤다. SQL 은 예약 시각을 단조 증가시키므로, 다른 프로세스의
+     * 실시간 AI(maxWaitMs=0)가 그 12초 사이 지금 비어 있는 슬롯을 써도 안전한데
+     * 미래 예약 뒤로 밀려 즉시 거절됐다. 수집기가 트래픽을 선점하는
+     * head-of-line blocking 이었다.
+     *
+     * 로컬 pacing 은 이 프로세스만의 규칙이라 DB 슬롯을 미리 잡을 이유가 없다.
+     * 로컬 시간이 된 뒤 전역 슬롯을 예약하면 공식 분당 한도는 그대로 지키면서
+     * 다른 프로세스가 그 전의 빈 슬롯을 사용할 수 있다.
+     */
+    if (slot > t) {
       pendingSlot = slot;
       try {
         while (now() < slot) await sleep(slot - now());
       } finally {
         pendingSlot = 0;
       }
+      t = now();
+    }
+
+    let usedGlobal = false;
+    if (a.global) {
+      const g = await a.global({ notBeforeMs: 0, maxWaitMs: Math.max(0, deadline - t) });
+      const after = now();
+      if (!g.ok) return { ok: false, kind: 'global', reason: g.reason || '전역 한도', waitMs: g.waitMs || 0 };
+      if (!g.skipped) {
+        usedGlobal = true;
+        // 응답을 받은 시각을 기준으로 잡는다 — 실제보다 늦게 잡는 쪽이라 안전하다.
+        slot = after + Math.max(0, g.waitMs || 0);
+      } else {
+        slot = after;
+      }
+      t = after;
+    } else {
+      // 로컬 대기를 이미 마쳤다. 실제 시작 기준으로 기록한다.
+      slot = now();
+    }
+
+    if (slot > now()) {
+      pendingSlot = slot;
+      try {
+        while (now() < slot) await sleep(slot - now());
+      } finally {
+        pendingSlot = 0;
+      }
+    }
       const blocked = a.isBlocked ? a.isBlocked() : '';
       const start = now();
       if (blocked) return { ok: false, kind: 'blocked', reason: `대기 중 차단됨: ${blocked}` };
