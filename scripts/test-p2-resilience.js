@@ -76,6 +76,26 @@ function callHandler(handler, req) {
   /* ── A ───────────────────────────────────────────────────────────── */
   section('A) /api/search — 전면 장애와 «결과 없음» 구분');
   const realShop = require('../api/_shop');
+
+  await check('AI 후보 창은 공급원 배열 순서 때문에 정확 동일상품을 놓치지 않는다', async () => {
+    const q = '소니 WH-CH730N';
+    const coupang = Array.from({ length: 6 }, (_, i) => ({
+      mall: '쿠팡', productId: `c${i}`, title: `소니 WH-CH730N 노이즈 캔슬링 헤드폰 쿠팡 ${i}`
+    }));
+    const adpick = [
+      { mall: 'ADPICK', productId: 'a0', title: '[해외] 소니 FX3 카메라 케이지' },
+      { mall: 'ADPICK', productId: 'canonical', title: '소니 WH-CH730N 노이즈캔슬링 블루투스 헤드폰' },
+      { mall: 'ADPICK', productId: 'a2', title: '소니 WH-CH730N 공식대리점 헤드폰' },
+      { mall: 'ADPICK', productId: 'a3', title: '소니 WH-CH730N 무선 헤드폰' }
+    ];
+    const ordered = realShop.orderAiSearchCandidates(q, coupang, adpick);
+    const first8 = ordered.slice(0, 8);
+    assert.equal(first8.some(x => x.productId === 'canonical'), true);
+    assert.ok(first8.findIndex(x => x.productId === 'canonical') < 4,
+      '정확한 ADPICK 동일상품은 source-order 9번째가 아니라 앞 후보 창에 들어와야 한다');
+    assert.equal(ordered[0].mall, '쿠팡');
+    assert.equal(ordered[1].mall, 'ADPICK');
+  });
   let searchImpl = null;
   inject('api/_shop.js', Object.assign({}, realShop, {
     searchAll: (...args) => (searchImpl ? searchImpl(...args) : realShop.searchAll(...args)),

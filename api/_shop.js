@@ -264,6 +264,39 @@ async function fetchAdpick(keyword, limit = 10, opts = {}) {
   };
 }
 
+
+/**
+ * AI 전용 공급원 결합 순서.
+ *
+ * 같은 상품 식별 점수라면 provider-local 순번을 교차시킨다:
+ * C0, A0, C1, A1 ... . 따라서 한 공급원이 먼저 배열에 붙었다는 이유만으로
+ * 다른 공급원의 정확한 동일상품이 MAX_CTX_ITEMS 밖으로 밀리지 않는다.
+ */
+function orderAiSearchCandidates(keyword, coupangItems, adpickItems) {
+  const c = Array.isArray(coupangItems) ? coupangItems : [];
+  const a = Array.isArray(adpickItems) ? adpickItems : [];
+  const merged = [...c, ...a];
+  if (merged.length < 2) return merged;
+
+  let identityMatchScore;
+  try { ({ identityMatchScore } = require('./_search')); }
+  catch (_) { return merged; }
+  if (typeof identityMatchScore !== 'function') return merged;
+
+  const bucket = (items, sourceOffset) => items
+    .map((item, index) => ({
+      item,
+      index,
+      score: Number(identityMatchScore(keyword, item && item.title)) || 0
+    }))
+    .sort((x, y) => y.score - x.score || x.index - y.index)
+    .map((entry, rank) => Object.assign(entry, { tie: rank * 2 + sourceOffset }));
+
+  return bucket(c, 0).concat(bucket(a, 1))
+    .sort((x, y) => y.score - x.score || x.tie - y.tie)
+    .map(x => x.item);
+}
+
 /**
  * 쿠팡 + ADPICK을 함께 조회해 결과를 돌려준다.
  *
@@ -294,7 +327,23 @@ async function searchAll(keyword, {
   if (coupang.error) console.error(`[search:${keyword}] 쿠팡`, coupang.error);
   if (adpick.error) console.error(`[search:${keyword}] ADPICK`, adpick.error);
 
-  const items = [...coupang.items, ...adpick.items];
+  /*
+   * AI 후보 창은 공급원 결합 순서에 끌려가면 안 된다.
+   *
+   * searchAll 의 기본 결합은 역사적으로 쿠팡 → ADPICK 순서다. /api/search 는
+   * 뒤에서 관련도 정렬을 다시 하므로 문제가 없지만, AI 는 지연 상한 때문에
+   * 처음 몇 건만 가격 이력·식별 검증에 넣는다. 그 상태에서 쿠팡 6건이 먼저
+   * 오면 ADPICK 의 정확한 동일상품이 후보 창 밖으로 밀려 canonical 최저가를
+   * 놓칠 수 있다.
+   *
+   * AI 호출에서만 검색 식별 점수로 먼저 세우고, 점수가 같은 경우 두 공급원을
+   * 번갈아 놓는다. 결과를 버리거나 합치지 않으며, 일반 검색·cron 순서는
+   * 그대로다. 낮은 관련도의 타 공급원이 높은 관련도보다 앞서는 일도 없다.
+   */
+  const aiSource = coupangOpts.source === 'ai' || adpickOpts.source === 'ai';
+  const items = aiSource
+    ? orderAiSearchCandidates(keyword, coupang.items, adpick.items)
+    : [...coupang.items, ...adpick.items];
   const errors = [coupang.error, adpick.error].filter(Boolean);
 
   /*
@@ -1172,6 +1221,7 @@ module.exports = {
   TODAY_PICKS, fetchCoupang, fetchAdpick, adpickProductId,
   searchAll, saveProducts, recordPrices, toClientProduct, roundRobin, preferLive,
   relevantItems, relevantRows, freshRows, matchesKeyword, keywordTokens, isRecordableSource,
+  orderAiSearchCandidates,
   discountPct, searchPhraseFromTitle, MAX_DISPLAY_AGE_DAYS,
   // 컬럼 폴백 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
   missingColumn
