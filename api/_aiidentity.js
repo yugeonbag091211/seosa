@@ -308,6 +308,7 @@ function buildContract(o) {
   });
   // "S26+" 의 '+' 는 토큰화에서 사라진다 — _search.variantMarkers 가 읽는 방식 그대로.
   if (anchors.length) S.variantMarkers(positive, S.splitTokens(norm(positive))).forEach(v => variants.add(v));
+  const lineQualifiers = modelLineQualifiers(toks, slots);
 
   const storage = storageOf(positive);
   toks.forEach((t, i) => { if (slots[i] === 'storage' && STORAGE_SIZES.has(t)) storage.add(`${t}gb`); });
@@ -361,13 +362,67 @@ function buildContract(o) {
 
   const contract = {
     query, positive, label: requestLabel(positive || query),
-    anchors, core, head, brand, words, variants, strictBase,
+    anchors, core, head, brand, words, variants, strictBase, lineQualifiers,
     storage, colors, wantsAccessory, accessoryWanted, bundleWanted,
     condition, excluded, excludedColors, excludeAccessory
   };
   contract.empty = !anchors.length && !head && !variants.size && !storage.size && !colors.size
     && !excluded.length && !excludedColors.size && !condition.excluded.size && !condition.mentioned.size;
   return contract;
+}
+
+/*
+ * 모델 번호 바로 뒤의 계열 꼬리 — "G304 X SUPERLIGHT" 의 X · SUPERLIGHT, "RTX 5070 Ti" 의 Ti.
+ *
+ * 2026-10 운영 재생: "로지텍 G304 X SUPERLIGHT" 를 찾는데 앵커가 g304 하나뿐이라
+ * 다른 마우스인 «G304 LIGHTSPEED» 가 EXACT 로 1위 추천이 됐다. 'x' 는 한 글자라 generic,
+ * 'superlight' 는 앵커 뒤의 이름 낱말이라 계열 이름(core)에도 들지 않아 아무도 보지 않았다.
+ *
+ * 앵커 바로 뒤에 붙어 이어지는 영문 한 글자·영문 이름 낱말만 센다(등급 표기는 건너뛴다 —
+ * 그것은 variants 가 본다). 한글 낱말·종류명·용량·색이 나오면 꼬리는 끝난다.
+ * ★ 판정은 좁히는 쪽으로만 쓴다: 꼬리가 상품명에 없으면 EXACT 가 아니다.
+ */
+function modelLineQualifiers(toks, slots) {
+  const out = [];
+  for (let i = 0; i < toks.length; i++) {
+    if (slots[i] !== 'anchor') continue;
+    for (let j = i + 1; j < toks.length; j++) {
+      const t = toks[j];
+      if (slots[j] === 'variant') continue;
+      const letter = /^[a-z]$/.test(t);
+      const word = slots[j] === 'word' && /^[a-z]+$/.test(t) && !categoryNounOf(t);
+      if (!letter && !word) break;
+      if (out.indexOf(t) < 0) out.push(t);
+    }
+  }
+  return out;
+}
+
+/*
+ * 상품명에서 앵커 바로 뒤에 붙은 짧은 영문 계열 suffix.
+ *
+ * 한 글자(X)뿐 아니라 그래픽카드의 Ti/XT처럼 2글자 suffix도 다른 SKU를 뜻한다.
+ * 길이를 2자로 제한한다 — G304 LIGHTSPEED처럼 긴 마케팅/계열 낱말을 plain G304
+ * 질의에서 근거 없이 다른 모델로 밀어내지 않는다. query 쪽에서 명시한 긴 qualifier는
+ * modelLineQualifiers/missing 검사가 이미 잡는다.
+ */
+function titleLineSuffixes(anchors, tokens) {
+  const out = new Set();
+  anchors.forEach(anchor => {
+    for (let i = 0; i < tokens.length; i++) {
+      let joined = '';
+      for (let j = i; j < Math.min(tokens.length, i + 3); j++) {
+        joined += tokens[j];
+        if (joined === anchor) {
+          const next = tokens[j + 1] || '';
+          if (/^[a-z]{1,2}$/.test(next) && !categoryNounOf(next)) out.add(next);
+          break;
+        }
+        if (joined.length >= anchor.length) break;
+      }
+    }
+  });
+  return out;
 }
 
 /** 빼 달라고 한 대상 하나 ("S26+", "AirPods Pro 2", "프로맥스", "삼성"). */
@@ -500,6 +555,14 @@ function verdict(contract, item) {
       bump(TIER.MISMATCH, 'family', '다른 종류의 상품');
     } else if (!c.anchors.every(a => anchorHit(a, info.tokens))) {
       bump(TIER.SIBLING, 'model', '요청하신 모델 번호와 다름');
+    } else {
+      /* 같은 번호의 다른 계열 — "G304 X SUPERLIGHT" ↔ "G304 LIGHTSPEED" (양쪽 다) */
+      const q = c.lineQualifiers || [];
+      const missing = q.filter(w => (/^[a-z]$/.test(w) ? info.tokens.indexOf(w) < 0 : !wordHit(w, info)));
+      const extra = [...titleLineSuffixes(c.anchors, info.tokens)].filter(l => q.indexOf(l) < 0);
+      if (missing.length || extra.length) {
+        bump(TIER.SIBLING, 'model-line', `요청하신 모델 계열(${missing.concat(extra).map(x => x.toUpperCase()).join(' ')})과 다름`);
+      }
     }
   } else if (c.head && !wordHit(c.head, info)) {
     bump(TIER.MISMATCH, 'category', '다른 종류의 상품');
