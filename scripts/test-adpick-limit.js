@@ -10,6 +10,7 @@
  *      전역 예약이 없으면 같은 부하에서 공식 10회를 넘는다 (대조군)
  *   5) 전역 리미터 실패 모드: 함수 없음 → 건너뜀 / DB 오류 → 거절 / rpc 가 던짐 → 건너뜀
  *   6) 전역 예약 뒤 한참 늦게 깨면(멈춤) 부르지 않는다
+ *   7) 수집기의 미래 로컬 슬롯은 전역에 선예약하지 않아 실시간 호출을 막지 않는다
  *
  *   node scripts/test-adpick-limit.js
  */
@@ -231,6 +232,52 @@ async function drive(clock, acquire, { workers, total, maxWaitMs, minGapMs, rand
     await clock.run();
     const r2 = await p2;
     check('제때 깨면 부른다', r2.ok);
+  }
+
+  console.log('\n[7] 수집기 미래 로컬 슬롯이 실시간 호출의 빈 전역 슬롯을 선점하지 않는다');
+  {
+    const clock = virtualClock(() => 0);
+    const rand = () => 0;
+    const G = fakeGlobal(clock, { rand });
+    const collector = L.createLimiter({ maxPerMin: 5, minGapMs: 12000, now: clock.now, sleep: clock.sleep });
+    const live = L.createLimiter({ maxPerMin: 3, minGapMs: 10000, now: clock.now, sleep: clock.sleep });
+    const collectGlobal = L.createGlobalAcquire({
+      rpc: G.rpc, bucket: 'search', maxPerMin: 8, marginMs: 1000, isMissingObject: () => false, source: 'collect'
+    });
+    const liveGlobal = L.createGlobalAcquire({
+      rpc: G.rpc, bucket: 'search', maxPerMin: 8, marginMs: 1000, isMissingObject: () => false, source: 'ai'
+    });
+
+    const firstP = collector.acquire({
+      maxWaitMs: 60000,
+      global: a => collectGlobal({ ...a, source: 'collect' })
+    });
+    await clock.run();
+    const first = await firstP;
+    check('첫 수집 호출이 전역 슬롯을 정상 사용한다', first.ok, first.reason);
+
+    const secondP = collector.acquire({
+      maxWaitMs: 60000,
+      global: a => collectGlobal({ ...a, source: 'collect' })
+    });
+    await flush();
+    check('★ 12초 로컬 대기 중에는 미래 전역 슬롯을 아직 예약하지 않는다', G.calls.n === 1, `global rpc ${G.calls.n}회`);
+
+    const liveP = live.acquire({
+      maxWaitMs: 0,
+      global: a => liveGlobal({ ...a, source: 'ai' })
+    });
+    await clock.run();
+    const liveResult = await liveP;
+    const second = await secondP;
+
+    check('★ 실시간 AI(maxWaitMs=0)가 수집기 대기 중 빈 슬롯을 즉시 사용한다', liveResult.ok, liveResult.reason);
+    check('두 번째 수집 호출도 이후 정상 진행한다', second.ok, second.reason);
+    check('실시간 슬롯이 두 번째 수집 슬롯보다 먼저 잡힌다',
+      liveResult.ok && second.ok && liveResult.startMs < second.startMs,
+      liveResult.ok && second.ok ? `${liveResult.startMs} < ${second.startMs}` : '호출 실패');
+    const stats = L.rollingStats(G.slots);
+    check('전역 60초 상한은 그대로 지킨다', stats.maxIn60s <= 8, `최대 ${stats.maxIn60s}회`);
   }
 
   console.log(`\n====================================================\nPASS ${pass}  /  FAIL ${fail}`);
