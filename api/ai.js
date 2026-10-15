@@ -1217,6 +1217,28 @@ function shouldSearch(query, view, items) {
 }
 
 /**
+ * AI 검색어를 /api/search 와 같은 공급원 캐시 키로 맞춘다 (2026-10-15 #145 사후 감사).
+ *
+ * /api/search 는 normalizeText 한 검색어(«소니 wh ch730n»)로 쿠팡·ADPICK 캐시를 읽고 쓴다.
+ * AI 는 «소니 WH-CH730N» 그대로 물어 같은 상품의 신선한 ADPICK 캐시를 한 번도 맞히지
+ * 못했다. 캐시를 놓치면 실호출인데, AI 는 ADPICK 대기를 0 으로 두므로 수집기가 분당
+ * 한도를 쓰는 동안 거절되고 ADPICK 이 0건이 된다 — canonical 묶음이 후보에 들어올 길이
+ * 없었다(운영 adpick_api_calls 에 그 질의 행이 없음, 실측).
+ *
+ * 대소문자·공백·하이픈(밑줄)만 다를 때만 바꾼다. '+'·'.'·'/' 처럼 뜻이 있을 수 있는 기호가
+ * 빠지는 질의(«S25+», «1.5L»)는 공급원에 원문 그대로 보낸다 — 캐시를 위해 검색 대상을 바꾸지 않는다.
+ */
+function aiSearchKeyword(query) {
+  const raw = String(query || '');
+  let normalizeText;
+  try { ({ normalizeText } = require('./_search')); } catch (_) { return raw; }
+  const normalized = normalizeText(raw);
+  const separatorsOnly = raw.normalize('NFKC').toLowerCase()
+    .replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+  return normalized && normalized === separatorsOnly ? normalized : raw;
+}
+
+/**
  * 실제 상품 검색.
  *
  * @returns {{ok:boolean, items:Array, reason:string}}
@@ -1245,9 +1267,13 @@ async function searchProducts(query, budgetMs) {
   try {
     const deadline = Date.now() + Math.max(1, Number(budgetMs) || AI_SEARCH_TIMEOUT_MS);
     const searchCap = Math.min(AI_SEARCH_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
-    const searched = await settleWithin(searchAll(query, {
+    const searched = await settleWithin(searchAll(aiSearchKeyword(query), {
       coupangLimit: AI_SEARCH_LIMIT,
-      coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS }
+      coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS },
+      // 이름표뿐이다(/api/search 와 같다). maxWaitMs 를 넣지 않으므로 ADPICK 대기 정책은 그대로다.
+      adpickOpts: { source: 'ai' },
+      // 후보 창 정렬(식별 등급)은 정규화 전 상품 구절로 — 모델 코드의 구분자를 보존한다.
+      identityQuery: query
     }), searchCap);
     if (searched.timedOut) {
       console.warn(`[ai] 상품 검색 시간 초과(${searchCap}ms) — 빠른 fallback으로 전환`);
@@ -1366,6 +1392,68 @@ function fromSearchResult(it) {
   // 가격 기록(attachHistory 가 붙여 둔 값). normItem 이 다시 한 번 검사한다.
   if (it && it.hist) o.hist = it.hist;
   return o;
+}
+
+/**
+ * canonical 로 접힌 후보의 «AI 가 읽는» 가격·판매처를 카드 표시값과 맞춘다.
+ *
+ * Canonical.annotate 는 대표 상품의 productId·가격을 «기록 식별» 로 남기고 표시값을
+ * displayPrice·displayMerchant 로 따로 붙인다. 카드(toCard)는 표시값을 쓰는데 프롬프트·
+ * 결정론 답변·결정 엔진은 price·mall 을 읽는다. 대표가 최저가 판매처가 아니면 둘이 갈라져
+ * «카드 189,000원 / 답변 199,000원» 이 된다(2026-10-15 소니 WH-CH730N 실측).
+ *
+ * productId·mallId·vendorItemId(추천 참조·가격 기록 식별)는 그대로 둔다. 최저가 오퍼가
+ * 대표와 다른 판매 글이면 대표의 가격 기록·정가는 이 가격의 근거가 아니므로 뗀다 —
+ * 다른 판매처의 기록으로 «평소보다 싸다» 를 말하지 않는다(fail-closed).
+ */
+function canonicalDisplayItem(it, source) {
+  if (!it || it.isCanonicalGroup !== true) return it;
+  const s = source || it;
+  const price = num(s.displayPrice);
+  if (!(price > 0)) return it;
+  const merchant = safeText(s.displayMerchant, 60);
+  const sameOffer = String(s.displayProductId || '') === String(it.productId || '')
+    && String(s.displayVendorItemId || '') === String(it.vendorItemId || '')
+    && num(it.price) === price;
+  it.price = price;
+  if (merchant) it.mall = merchant;
+  if (!sameOffer) {
+    delete it.hist;
+    delete it.verdict;
+    delete it.listPrice;
+    delete it.discountPct;
+    delete it.refHighPrice;
+    // 표시 오퍼의 기록은 attachDisplayHistory 가 같은 기준(옵션 엄격)으로 따로 붙인다.
+    const key = {
+      productId: String(s.displayProductId || ''),
+      mall: String(s.canonicalLowestMall || ''),
+      vendorItemId: String(s.displayVendorItemId || '')
+    };
+    if (key.productId && key.mall) Object.defineProperty(it, '_displayHistKey', { value: key, enumerable: false, configurable: true });
+  }
+  return it;
+}
+
+/**
+ * canonicalDisplayItem 이 대표의 기록을 뗀 후보에, 표시 오퍼 «자신» 의 가격 기록을 붙인다.
+ *
+ * 그대로 두면 묶음 후보만 기록 가점(_shopintent scoreItem)을 잃어, 189,000원 묶음이
+ * 기록이 붙은 묶음 밖 199,000원보다 아래로 갔다(2026-10-15 운영 데이터 읽기 전용 재현).
+ * 기록이 없으면 붙이지 않는다 — 근거 없이 가점을 주지 않는다.
+ */
+async function attachDisplayHistory(items) {
+  const targets = (items || []).filter(it => it && it._displayHistKey && !it.hist);
+  if (!targets.length) return;
+  try {
+    const { loadStats } = require('./_pricestat');
+    const stats = await loadStats(targets.map(it => it._displayHistKey), { strictOption: true });
+    targets.forEach(it => {
+      const st = statFor(stats, it._displayHistKey);
+      if (st) it.hist = st;
+    });
+  } catch (e) {
+    console.warn(`[ai] 묶음 표시 오퍼 가격 기록 조회 실패(기록 없이 진행): ${e.message}`);
+  }
 }
 
 /**
@@ -3794,7 +3882,10 @@ module.exports = async function handler(req, res) {
         contextStats = settled.value.stats;
         contextNotes.historyOnly = settled.value.historyOnly;
         contextNotes.unverified = settled.value.unverified;
-        items = contextRaw.map(it => normItem(fromSearchResult(it)));
+        // 묶음 후보는 검색 경로와 같이 AI 가격·판매처를 카드 표시값(묶음 최저가)과 맞춘다.
+        items = contextRaw.map(it => canonicalDisplayItem(normItem(fromSearchResult(it)), it));
+        const displayCap = Math.min(AI_ENRICH_TIMEOUT_MS, Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
+        if (displayCap > 0) await settleWithin(attachDisplayHistory(items), displayCap);
       }
     }
 
@@ -3949,6 +4040,30 @@ module.exports = async function handler(req, res) {
           Object.defineProperty(n, '_raw', { value: it, enumerable: false });
           return n;
         });
+        /*
+         * 같은 상품 묶음(canonical)은 랭킹 «전» 에 접는다 (2026-10-15 #145 사후 감사).
+         *
+         * 예전에는 랭킹·식별 분할이 끝난 뒤에 접었다. 그래서 대표 판매처가 199,000원이면
+         * «최저가» 정렬도 결정론 답변도 199,000원으로 돌았고, 카드만 묶음 최저가 189,000원을
+         * 보였다 — 같은 응답 안에서 답변과 카드가 다른 값을 말했다. 묶음 밖 쿠팡 199,000원이
+         * 189,000원 묶음보다 위에 남는 것도 같은 원인이다. 접은 뒤 AI 가 읽는 가격·판매처를
+         * 카드의 displayPrice·displayMerchant 와 같은 오퍼로 맞춘다(canonicalDisplayItem).
+         */
+        const canonicalConfig = Canonical.config();
+        if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
+          normed = (await Canonical.collapseItems(normed, { config: canonicalConfig })).map(it => {
+            if (!it || !it._raw || it.isCanonicalGroup !== true) return it;
+            Object.assign(it._raw, {
+              isCanonicalGroup: true, canonicalGroupId: it.canonicalGroupId,
+              canonicalKey: it.canonicalKey, canonicalIdentity: it.canonicalIdentity,
+              offerCount: it.offerCount, offers: it.offers,
+              lowestPrice: it.lowestPrice, lowestMerchant: it.lowestMerchant, lowestLink: it.lowestLink
+            });
+            return canonicalDisplayItem(it);
+          });
+          const displayCap = Math.min(AI_ENRICH_TIMEOUT_MS, Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
+          if (displayCap > 0) await settleWithin(attachDisplayHistory(normed), displayCap);
+        }
         // ★ 랭킹 전에 스펙을 붙인다 — "통화 중요"면 마이크 확인된 상품이 위로 와야 한다.
         attachSpecs(normed, wanted);
         // 제외 지시("삼성은 빼줘")를 랭킹 전에 반영한다.
@@ -4002,19 +4117,6 @@ module.exports = async function handler(req, res) {
          * 정규화된 몰 이름이 어긋나면 키가 전부 빗나가 원본 순서 그대로 나갔다.
          * 답변이 말하는 상품과 카드가 다른 상품이면 안 된다. 순서는 한 곳에서 정한다.
          */
-        const canonicalConfig = Canonical.config();
-        if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
-          items = await Canonical.collapseItems(items, { config: canonicalConfig });
-          items.forEach(it => {
-            if (!it || !it._raw || it.isCanonicalGroup !== true) return;
-            Object.assign(it._raw, {
-              isCanonicalGroup: true, canonicalGroupId: it.canonicalGroupId,
-              canonicalKey: it.canonicalKey, canonicalIdentity: it.canonicalIdentity,
-              offerCount: it.offerCount, offers: it.offers,
-              lowestPrice: it.lowestPrice, lowestMerchant: it.lowestMerchant, lowestLink: it.lowestLink
-            });
-          });
-        }
         cardSources = items.map(it => it._raw).filter(Boolean);
         cards = cardSources.map(it => toCard(it, statFor(stats, it)));
       }
@@ -4973,7 +5075,7 @@ module.exports = async function handler(req, res) {
  * OpenRouter 를 한 번도 부르지 않고 돌 수 있다.
  */
 module.exports._internal = {
-  cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, stripRefs, stripUrls, derefRefs,
+  cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, canonicalDisplayItem, attachDisplayHistory, aiSearchKeyword, stripRefs, stripUrls, derefRefs,
   needsShopContext, canonicalIntent, safeText, num, won, safeDate, normItem, describe,
   trimToSentence, collectKnownWon, unverifiedWon, unverifiedContextualPrices, productIdentityMatches, unverifiedProductPrices, unverifiedCurrentPrices, topRecommendationCard,
   unverifiedDiscountPct, unsupportedOffBudgetRecommendation, looksLikeSensitiveDisclosure,
