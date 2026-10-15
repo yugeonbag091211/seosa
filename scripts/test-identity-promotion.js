@@ -460,6 +460,7 @@ function freshIdentity(title, key, mall, productId, vendorItemId) {
     'supabase/2026-10-14-identity-matcher-transition.sql',
     'scripts/run-canonical-transition.js',
     'scripts/test-canonical-transition.js',
+    'scripts/test-ai-canonical-candidates.js',
     'scripts/fixtures/canonical-transition-model.js',
     'reports/canonical-matcher-transition-plan-2026-10-14.md'
   ]);

@@ -271,6 +271,13 @@ async function fetchAdpick(keyword, limit = 10, opts = {}) {
  * 같은 상품 식별 점수라면 provider-local 순번을 교차시킨다:
  * C0, A0, C1, A1 ... . 따라서 한 공급원이 먼저 배열에 붙었다는 이유만으로
  * 다른 공급원의 정확한 동일상품이 MAX_CTX_ITEMS 밖으로 밀리지 않는다.
+ *
+ * 식별 점수만으로는 부족하다 (2026-10-15 #145 사후 감사). identityMatchScore 는
+ * «WH-CH730N 이어패드» · «[중고] WH-CH730N» · «렌탈» · «2개 세트» 에도 정확 상품과
+ * 같은 1.0 을 준다. 한 공급원의 앞자리가 그런 글로 차 있으면 교차해도 정확한
+ * 동일상품이 창 밖으로 밀린다. 그래서 먼저 AI 식별 계약(_aiidentity)의 등급으로
+ * 세운다 — 뒤의 AIID.partition 이 어차피 같은 등급 순서로 다시 세우므로, 창을 그
+ * 순서에 맞추는 것뿐이다. 버리는 후보는 없다(부속·중고는 뒤로 갈 뿐).
  */
 function orderAiSearchCandidates(keyword, coupangItems, adpickItems) {
   const c = Array.isArray(coupangItems) ? coupangItems : [];
@@ -278,22 +285,31 @@ function orderAiSearchCandidates(keyword, coupangItems, adpickItems) {
   const merged = [...c, ...a];
   if (merged.length < 2) return merged;
 
-  let identityMatchScore;
-  try { ({ identityMatchScore } = require('./_search')); }
-  catch (_) { return merged; }
+  let identityMatchScore, tierOf;
+  try {
+    ({ identityMatchScore } = require('./_search'));
+    const AIID = require('./_aiidentity');
+    const contract = AIID.buildContract({ query: keyword, titles: merged.map(x => String((x && x.title) || '')) });
+    tierOf = item => {
+      const tier = Number(AIID.verdict(contract, item).tier);
+      return Number.isFinite(tier) ? tier : AIID.TIER.MISMATCH;
+    };
+  } catch (_) { return merged; }
   if (typeof identityMatchScore !== 'function') return merged;
 
+  const rankOrder = (x, y) => x.tier - y.tier || y.score - x.score;
   const bucket = (items, sourceOffset) => items
     .map((item, index) => ({
       item,
       index,
+      tier: tierOf(item),
       score: Number(identityMatchScore(keyword, item && item.title)) || 0
     }))
-    .sort((x, y) => y.score - x.score || x.index - y.index)
+    .sort((x, y) => rankOrder(x, y) || x.index - y.index)
     .map((entry, rank) => Object.assign(entry, { tie: rank * 2 + sourceOffset }));
 
   return bucket(c, 0).concat(bucket(a, 1))
-    .sort((x, y) => y.score - x.score || x.tie - y.tie)
+    .sort((x, y) => rankOrder(x, y) || x.tie - y.tie)
     .map(x => x.item);
 }
 
@@ -315,7 +331,9 @@ function orderAiSearchCandidates(keyword, coupangItems, adpickItems) {
  */
 async function searchAll(keyword, {
   coupangLimit = 6, coupangOpts = {},
-  adpickLimit = 10, adpickOpts = {}
+  adpickLimit = 10, adpickOpts = {},
+  // AI 후보 창 정렬에만 쓴다 — 공급원에 보낸 검색어가 정규화됐어도 원래 상품 구절로 식별한다.
+  identityQuery = ''
 } = {}) {
   const [coupang, adpick] = await Promise.all([
     fetchCoupang(keyword, coupangLimit, coupangOpts)
@@ -336,13 +354,13 @@ async function searchAll(keyword, {
    * 오면 ADPICK 의 정확한 동일상품이 후보 창 밖으로 밀려 canonical 최저가를
    * 놓칠 수 있다.
    *
-   * AI 호출에서만 검색 식별 점수로 먼저 세우고, 점수가 같은 경우 두 공급원을
+   * AI 호출에서만 식별 등급·점수로 먼저 세우고(orderAiSearchCandidates), 같은 경우 두 공급원을
    * 번갈아 놓는다. 결과를 버리거나 합치지 않으며, 일반 검색·cron 순서는
    * 그대로다. 낮은 관련도의 타 공급원이 높은 관련도보다 앞서는 일도 없다.
    */
   const aiSource = coupangOpts.source === 'ai' || adpickOpts.source === 'ai';
   const items = aiSource
-    ? orderAiSearchCandidates(keyword, coupang.items, adpick.items)
+    ? orderAiSearchCandidates(identityQuery || keyword, coupang.items, adpick.items)
     : [...coupang.items, ...adpick.items];
   const errors = [coupang.error, adpick.error].filter(Boolean);
 
