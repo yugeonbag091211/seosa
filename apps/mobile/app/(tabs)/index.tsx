@@ -13,7 +13,7 @@ import { AffiliateNote, Chip, EmptyState, ErrorState, Loading, SectionHeader } f
 import { recordStamp } from '../../lib/home';
 import { pushOnce } from '../../lib/navigation';
 import { useCommunityDeals, useHomeFeed, useTodayDrops } from '../../lib/queries';
-import { space, type as t, useTheme } from '../../lib/theme';
+import { radius, space, type as t, useTheme } from '../../lib/theme';
 
 const QUICK_SEARCHES = ['무선 이어폰', '노트북', '마우스', '아이폰', '포터블 모니터', '키보드'] as const;
 const HOME_COMMUNITY = 5;
