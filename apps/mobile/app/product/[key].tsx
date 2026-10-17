@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable, ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../../components/AppText';
 import { BuyButton } from '../../components/BuyButton';
@@ -17,6 +17,7 @@ import { useLocalData } from '../../lib/local';
 import { pushOnce } from '../../lib/navigation';
 import { recallProduct } from '../../lib/productCache';
 import { useCatalogProduct, usePriceHistory } from '../../lib/queries';
+import { productShareContent } from '../../lib/share';
 import { verdictView } from '../../lib/verdict';
 import { mallColor, radius, space, type as t, useTheme } from '../../lib/theme';
 import type { Product } from '../../lib/types';
@@ -75,14 +76,27 @@ export default function ProductDetail() {
     pushOnce('/concierge');
   };
 
+  const shareProduct = async () => {
+    try {
+      await Share.share(productShareContent(product, headline));
+    } catch {
+      return;
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Pressable onPress={() => toggleSaved(product)} hitSlop={12} accessibilityRole="button" accessibilityLabel={saved ? '저장 해제' : '저장'} accessibilityState={{ selected: saved }}>
-              <Icon name={saved ? 'bookmarkFill' : 'bookmark'} size={24} color={theme.ink} />
-            </Pressable>
+            <View style={styles.headerActions}>
+              <Pressable onPress={shareProduct} hitSlop={12} accessibilityRole="button" accessibilityLabel="상품 공유">
+                <Icon name="send" size={24} color={theme.ink} />
+              </Pressable>
+              <Pressable onPress={() => toggleSaved(product)} hitSlop={12} accessibilityRole="button" accessibilityLabel={saved ? '저장 해제' : '저장'} accessibilityState={{ selected: saved }}>
+                <Icon name={saved ? 'bookmarkFill' : 'bookmark'} size={24} color={theme.ink} />
+              </Pressable>
+            </View>
           ),
         }}
       />
@@ -174,6 +188,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
   hero: { alignItems: 'center', paddingVertical: space.md },
   pad: { paddingHorizontal: space.gutter },
   priceBlock: { marginTop: space.lg, gap: 4 },
