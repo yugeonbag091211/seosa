@@ -83,7 +83,7 @@
     "collect:external-hotdeals": "node scripts/collect-external-hotdeals.js",
     "test:hotdeal-ui": "node scripts/test-hotdeal-ui.js",
     "test:radar": "node scripts/test-radar.js",
-    "test:conversions": "node scripts/test-conversions.js",
+    "test:conversions": "node scripts/test-conversions.js && node scripts/test-precovered-skip.js",
     "test:radar-ui": "node scripts/test-radar-ui.js",
     "test:daily-drop": "node scripts/test-daily-drop.js",
     "test:today-drop": "node scripts/test-today-drop.js",
