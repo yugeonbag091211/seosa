@@ -3,9 +3,24 @@ const { readBody, dbError, applyCors, readEmail, noStore } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { safeBuyLink } = require('./_affiliate');
 const { requireAuth } = require('./_auth');
+const { cleanVendorItemId } = require('./_alertidentity');
 
 const MAX_TITLE_LEN = 300;
 const MAX_ALERTS_PER_EMAIL = 100;
+
+function missingColumn(error, name) {
+  const message = String(error && error.message || '');
+  return message.includes(name) && /column|schema cache|does not exist/i.test(message);
+}
+
+async function selectAlerts(email, columns) {
+  return supabase
+    .from('alerts')
+    .select(columns)
+    .eq('email', email)
+    .order('created_at', { ascending: false })
+    .limit(MAX_ALERTS_PER_EMAIL);
+}
 
 module.exports = async function handler(req, res) {
   // 개인 데이터라 Access-Control-Allow-Origin: * 를 붙이지 않는다.
@@ -22,26 +37,25 @@ module.exports = async function handler(req, res) {
       if (!requireAuth(req, res, email)) return;
 
       /*
-       * on_deal 컬럼은 supabase/2026-08-28-alert-on-deal.sql 에서 추가된다.
-       * 아직 실행하지 않은 DB에서도 목록 조회는 되어야 하므로, 컬럼이 없다는
-       * 오류면 빼고 한 번 더 시도한다 (product_id 와 같은 방식).
+       * on_deal 과 vendor_item_id 는 각각 후속 마이그레이션에서 추가된다.
+       * 배포 순서가 뒤집혀도 기존 웹 목록은 살아 있어야 한다. 단, 옵션 식별자를
+       * 보낸 새 알림은 POST 에서 fail-closed 하므로 이 GET 폴백이 안전성을 낮추지 않는다.
        */
-      const COLS = 'title, target_price, current_price, link, image, mall, sent';
-      let { data, error } = await supabase
-        .from('alerts')
-        .select(`${COLS}, on_deal`)
-        .eq('email', email)
-        .order('created_at', { ascending: false })
-        .limit(MAX_ALERTS_PER_EMAIL);
+      const BASE = 'title, target_price, current_price, link, image, mall, sent, product_id';
+      let vendorSupported = true;
+      let onDealSupported = true;
+      let { data, error } = await selectAlerts(email, `${BASE}, on_deal, vendor_item_id`);
 
-      if (error && /on_deal|column/i.test(error.message)) {
+      if (missingColumn(error, 'vendor_item_id')) {
+        vendorSupported = false;
+        console.warn('[alerts] vendor_item_id 컬럼 없음 — 옵션 단위 알림은 아직 사용할 수 없습니다.');
+        ({ data, error } = await selectAlerts(email, `${BASE}, on_deal`));
+      }
+
+      if (missingColumn(error, 'on_deal')) {
+        onDealSupported = false;
         console.warn('[alerts] on_deal 컬럼 없음 — supabase/2026-08-28-alert-on-deal.sql을 실행하세요.');
-        ({ data, error } = await supabase
-          .from('alerts')
-          .select(COLS)
-          .eq('email', email)
-          .order('created_at', { ascending: false })
-          .limit(MAX_ALERTS_PER_EMAIL));
+        ({ data, error } = await selectAlerts(email, vendorSupported ? `${BASE}, vendor_item_id` : BASE));
       }
 
       const msg = dbError(error, 'alerts');
@@ -54,8 +68,10 @@ module.exports = async function handler(req, res) {
         link: safeBuyLink(a.link),
         image: a.image || '',
         mall: a.mall || '',
+        productId: a.product_id || '',
+        vendorItemId: vendorSupported ? cleanVendorItemId(a.vendor_item_id) : '',
         sent: a.sent ? 'Y' : 'N',
-        onDeal: !!a.on_deal
+        onDeal: onDealSupported ? !!a.on_deal : false
       })));
     }
 
@@ -97,54 +113,69 @@ module.exports = async function handler(req, res) {
         sent: false
       };
 
-      /*
-       * 상품 단위 식별자를 같이 저장한다.
-       *
-       * 프론트는 예전부터 productId 를 보내고 있었는데 여기서 버렸고, 그래서
-       * check-alerts.js 가 상품명만으로 오늘 가격을 찾는다. 쿠팡에는 같은 이름의
-       * 다른 상품이 흔해서, 엉뚱한 상품 가격으로 "목표가 달성" 메일이 나갈 수 있다.
-       *
-       * product_id 컬럼은 supabase/2026-08-hardening.sql 에서 추가된다.
-       * 아직 실행하지 않은 DB에서도 알림 신청 자체는 되어야 하므로,
-       * 컬럼이 없다는 오류면 빼고 한 번 더 시도한다 (check-alerts.js 와 같은 방식).
-       */
-      const productId = String(body.productId || '').slice(0, 100);
+      const productId = String(body.productId || '').trim().slice(0, 100);
+      const vendorItemId = cleanVendorItemId(body.vendorItemId);
 
       /*
-       * 컬럼이 없는 DB 로 점점 물러난다.
-       *   1) product_id + on_deal   (마이그레이션 전부 실행됨)
-       *   2) product_id 만          (on_deal 미실행)
-       *   3) 둘 다 없이             (hardening 도 미실행)
-       * 알림 신청 자체는 어느 단계에서도 되어야 한다.
+       * 새 모바일 알림은 product + mall + vendorItemId 로 옵션을 고정한다.
+       * vendorItemId 를 받은 요청에서 컬럼이 없다고 이 값을 버리고 저장하면,
+       * check-alerts 가 같은 상품 페이지의 다른 옵션 가격으로 메일을 보낼 수 있다.
+       * 따라서 "옵션을 보내온 요청"은 저장 능력이 없으면 503으로 fail-closed 한다.
+       *
+       * 기존 웹은 vendorItemId 를 보내지 않는다. 그 경로는 과거 마이그레이션
+       * 호환성을 위해 기존처럼 product_id / on_deal 컬럼이 없는 DB까지 물러난다.
        */
-      let { error } = await supabase
-        .from('alerts')
-        .upsert({ ...row, product_id: productId, on_deal: onDeal }, { onConflict: 'email,title' });
-
-      /*
-       * on_deal 을 저장하지 못한 채 성공으로 끝나면 사용자는 "AI 추천 알림"을
-       * 켰다고 믿는데 실제로는 아무 때도 발송되지 않는다 (2026-09-02 감사:
-       * 운영 DB 에 이 컬럼이 아직 없다). 폴백은 유지하되 그 사실을 응답에 싣고,
-       * 목표가도 없이 on_deal 만 켠 신청은 "조건 없는 알림"이 되므로 거절한다.
-       */
+      const payload = {
+        ...row,
+        product_id: productId,
+        vendor_item_id: vendorItemId,
+        on_deal: onDeal
+      };
       let onDealSaved = onDeal;
-      if (error && /on_deal|column/i.test(error.message)) {
-        console.warn('[alerts] on_deal 컬럼 없음 — supabase/2026-08-28-alert-on-deal.sql을 실행하세요.');
-        onDealSaved = false;
-        if (onDeal && targetPrice <= 0) {
-          return res.status(503).json({
-            error: 'AI 추천 알림은 아직 준비 중이에요. 목표 가격을 넣어 신청해 주세요.',
-            onDealUnavailable: true
-          });
-        }
-        ({ error } = await supabase
-          .from('alerts')
-          .upsert({ ...row, product_id: productId }, { onConflict: 'email,title' }));
-      }
+      let error = null;
 
-      if (error && /product_id|column/i.test(error.message)) {
-        console.warn('[alerts] product_id 컬럼 없음 — supabase/2026-08-hardening.sql을 실행하세요.');
-        ({ error } = await supabase.from('alerts').upsert(row, { onConflict: 'email,title' }));
+      for (let attempt = 0; attempt < 4; attempt++) {
+        ({ error } = await supabase.from('alerts').upsert(payload, { onConflict: 'email,title' }));
+        if (!error) break;
+
+        if (missingColumn(error, 'vendor_item_id')) {
+          if (vendorItemId) {
+            return res.status(503).json({
+              error: '이 옵션의 가격 알림을 안전하게 저장할 준비가 아직 끝나지 않았어요. 잠시 후 다시 시도해 주세요.',
+              optionIdentityUnavailable: true
+            });
+          }
+          console.warn('[alerts] vendor_item_id 컬럼 없음 — 기존 웹 알림으로 저장합니다.');
+          delete payload.vendor_item_id;
+          continue;
+        }
+
+        if (missingColumn(error, 'on_deal')) {
+          console.warn('[alerts] on_deal 컬럼 없음 — supabase/2026-08-28-alert-on-deal.sql을 실행하세요.');
+          onDealSaved = false;
+          if (onDeal && targetPrice <= 0) {
+            return res.status(503).json({
+              error: 'AI 추천 알림은 아직 준비 중이에요. 목표 가격을 넣어 신청해 주세요.',
+              onDealUnavailable: true
+            });
+          }
+          delete payload.on_deal;
+          continue;
+        }
+
+        if (missingColumn(error, 'product_id')) {
+          if (vendorItemId) {
+            return res.status(503).json({
+              error: '이 옵션의 가격 알림을 안전하게 저장할 준비가 아직 끝나지 않았어요. 잠시 후 다시 시도해 주세요.',
+              optionIdentityUnavailable: true
+            });
+          }
+          console.warn('[alerts] product_id 컬럼 없음 — supabase/2026-08-hardening.sql을 실행하세요.');
+          delete payload.product_id;
+          continue;
+        }
+
+        break;
       }
 
       const msg = dbError(error, 'alerts');
@@ -154,7 +185,9 @@ module.exports = async function handler(req, res) {
       return res.json({
         success: true,
         msg: dropped ? '목표가 알림만 신청됐어요. AI 추천 알림은 아직 준비 중이에요.' : '알림 신청 완료!',
-        onDeal: onDealSaved
+        onDeal: onDealSaved,
+        optionBound: !!vendorItemId,
+        vendorItemId: vendorItemId || ''
       });
     }
 
