@@ -70,6 +70,8 @@ export default function Me() {
           <>
             <Row label="로그인됨" value={maskEmail(session.email)} />
             <Hairline inset={space.gutter} />
+            <Row label="가격 알림" onPress={() => pushOnce('/alerts')} />
+            <Hairline inset={space.gutter} />
             <Row label="로그아웃" onPress={confirmSignOut} />
             <Hairline inset={space.gutter} />
             <Row label="계정 삭제" onPress={() => pushOnce('/account-delete')} danger />

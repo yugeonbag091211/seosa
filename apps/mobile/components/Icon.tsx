@@ -6,7 +6,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
  */
 export type IconName =
   | 'home' | 'search' | 'trendDown' | 'bookmark' | 'bookmarkFill' | 'person' | 'sparkle'
-  | 'chevronRight' | 'chevronLeft' | 'close' | 'clock' | 'external' | 'send';
+  | 'chevronRight' | 'chevronLeft' | 'close' | 'clock' | 'external' | 'send' | 'bell';
 
 export function Icon({ name, size = 24, color, strokeWidth = 1.6 }: { name: IconName; size?: number; color: string; strokeWidth?: number }) {
   const p = { stroke: color, strokeWidth, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -25,6 +25,7 @@ export function Icon({ name, size = 24, color, strokeWidth = 1.6 }: { name: Icon
       {name === 'clock' && <><Circle {...p} cx={12} cy={12} r={8} /><Path {...p} d="M12 7.5V12l3 2" /></>}
       {name === 'external' && <><Path {...p} d="M13.5 4.5h6v6" /><Path {...p} d="m19.5 4.5-9 9" /><Path {...p} d="M17.5 13.5v5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1h5" /></>}
       {name === 'send' && <Path {...p} d="M12 19.5v-15m0 0-6 6m6-6 6 6" />}
+      {name === 'bell' && <><Path {...p} d="M6.5 10a5.5 5.5 0 0 1 11 0v3.2l1.5 2.3H5l1.5-2.3z" /><Path {...p} d="M10 18.5c.4 1 1.1 1.5 2 1.5s1.6-.5 2-1.5" /></>}
     </Svg>
   );
 }

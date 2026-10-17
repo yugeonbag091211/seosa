@@ -15,7 +15,7 @@ import { digits, observedLabel } from '../../lib/format';
 import { parseProductKey, sameProduct } from '../../lib/identity';
 import { useLocalData } from '../../lib/local';
 import { pushOnce } from '../../lib/navigation';
-import { recallProduct } from '../../lib/productCache';
+import { recallProduct, rememberProduct } from '../../lib/productCache';
 import { useCatalogProduct, usePriceHistory } from '../../lib/queries';
 import { productShareContent } from '../../lib/share';
 import { verdictView } from '../../lib/verdict';
@@ -84,6 +84,14 @@ export default function ProductDetail() {
     }
   };
 
+  const openPriceAlert = () => {
+    // Carry the exact option and the latest price the user can see into the alert setup screen.
+    // The server independently re-checks product + mall + vendorItemId before it ever sends mail.
+    const alertKey = rememberProduct({ ...product, price: headline });
+    if (!alertKey) return;
+    pushOnce({ pathname: '/alerts', params: { key: alertKey } }, `alerts:${alertKey}`);
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <Stack.Screen
@@ -117,6 +125,20 @@ export default function ProductDetail() {
               <AppText tone="faint" style={t.footnote}>정가 <AppText tone="faint" style={[t.footnote, { textDecorationLine: 'line-through' }]}>{digits(product.listPrice)}원</AppText></AppText>
             ) : null}
           </View>
+
+          <Pressable
+            onPress={openPriceAlert}
+            accessibilityRole="button"
+            accessibilityLabel="목표가 가격 알림 설정"
+            style={({ pressed }) => [styles.alertRow, { borderColor: theme.line, opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Icon name="bell" size={20} color={theme.ink} />
+            <View style={{ flex: 1 }}>
+              <AppText style={[t.callout, { fontWeight: '600' }]}>목표가 알림</AppText>
+              <AppText tone="soft" style={t.footnote}>원하는 가격 이하가 되면 이메일로 알려드려요</AppText>
+            </View>
+            <Icon name="chevronRight" size={16} color={theme.faint} />
+          </Pressable>
 
           {verdict?.kind === 'collecting' ? (
             <View style={[styles.verdict, { borderLeftColor: theme.line2 }]}>
@@ -192,6 +214,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', paddingVertical: space.md },
   pad: { paddingHorizontal: space.gutter },
   priceBlock: { marginTop: space.lg, gap: 4 },
+  alertRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xl, padding: space.md, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth * 2 },
   verdict: { marginTop: space.xl, paddingLeft: space.md, borderLeftWidth: 2, gap: 4 },
   section: { marginTop: space.section },
   stats: { flexDirection: 'row', marginTop: space.lg, paddingTop: space.md, borderTopWidth: StyleSheet.hairlineWidth },
