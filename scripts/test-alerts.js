@@ -10,6 +10,7 @@
  *   ③ 목표가 없이 "AI 가 사도 좋다고 하면" 조건만으로 신청할 수 있다
  *   ④ on_deal 컬럼이 없는 DB 에서도 신청이 된다 (마이그레이션 전)
  *   ⑤ 목록 조회가 onDeal 을 그대로 돌려준다
+ *   ⑥ 옵션 고정 모바일 알림은 현재가 이상 목표가를 받지 않는다
  *
  * ── 왜 ②·③ 이 중요한가 ─────────────────────────────────────────
  * 목표가를 정하려면 사용자가 적정가를 미리 알아야 한다. 모르니까 알림을
@@ -166,6 +167,21 @@ const BASE = { email: USER, title: '무선 이어폰', productId: 'A-1111', mall
     const res = mkRes();
     await alerts(reqFor(USER, 'POST', { ...BASE, targetPrice: -5000 }), res);
     check(res.code === 400, '음수 목표가는 400', String(res.code));
+  }
+  {
+    reset();
+    const res = mkRes();
+    await alerts(reqFor(USER, 'POST', { ...BASE, vendorItemId: 'V-1', targetPrice: 100000 }), res);
+    check(res.code === 400, '★★ 옵션 고정 알림의 현재가와 같은 목표가는 400', String(res.code));
+    check(/현재 표시 가격보다 낮게/.test((res.payload || {}).error || ''),
+      '사용자가 고칠 수 있는 안내를 돌려준다', (res.payload || {}).error);
+    check(db.alerts.length === 0, '즉시 발송될 모바일 알림은 저장하지 않는다', String(db.alerts.length));
+  }
+  {
+    reset();
+    const res = mkRes();
+    await alerts(reqFor(USER, 'POST', { ...BASE, targetPrice: 100000 }), res);
+    check(res.code === 200, 'vendorItemId 없는 기존 웹 계약은 유지한다', String(res.code));
   }
 
   /* ================================================================ *
