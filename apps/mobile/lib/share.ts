@@ -1,5 +1,5 @@
-import { digits } from './format';
-import type { Product } from './types';
+import { digits } from './format.ts';
+import type { Product } from './types.ts';
 
 const SEOSA_ORIGIN = 'https://seosa.ai.kr';
 
