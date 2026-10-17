@@ -21,13 +21,13 @@ const HOME_DROPS = 5;
 const HOME_PICKS = 4;
 
 /**
- * Home, in the web home's order (public/index.html):
- *   header (wordmark · search) → hero banners → popular keywords → 오늘 가격 하락 → AI →
- *   오늘의 셀렉션 → 이달의 추천 → affiliate notice.
+ * Native web-home parity:
+ *   header → category/hotdeal/AI navigation → hero → quick keyword rail → AI link →
+ *   community discovery → verified price drops → daily selection → monthly picks → disclosure.
  *
- * Every product number comes from two calls the web also makes: /api/hotdeals today-drop for the
- * drops, /api/init for keywords, the selection and the monthly curation. The hero's words are the
- * web's (lib/home.ts); the «MM.DD 수집» stamp is the newest collection date among those products.
+ * Data remains sourced from existing SEOSA APIs (init, today-drop and external radar).
+ * Community posts are source posts, never substitute observations for price history.
+ * The «MM.DD 수집» stamp is the newest collection date among the selection products.
  */
 export default function Home() {
   const theme = useTheme();
