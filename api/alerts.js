@@ -86,6 +86,9 @@ module.exports = async function handler(req, res) {
       if (!requireAuth(req, res, email)) return;
 
       const targetPrice = parseInt(body.targetPrice, 10) || 0;
+      const currentPrice = parseInt(body.currentPrice, 10) || 0;
+      const productId = String(body.productId || '').trim().slice(0, 100);
+      const vendorItemId = cleanVendorItemId(body.vendorItemId);
 
       /*
        * 조건이 하나라도 있어야 한다.
@@ -101,20 +104,27 @@ module.exports = async function handler(req, res) {
       }
       if (targetPrice < 0) return res.status(400).json({ error: '목표 가격이 올바르지 않습니다' });
 
+      /*
+       * 새 모바일 알림은 현재 화면에 표시된 정확한 옵션 가격을 기준으로 목표가를 잡는다.
+       * 목표가가 현재가와 같거나 높으면 check-alerts 의 `cur <= target_price` 조건을
+       * 생성 직후 만족해 의미 없는 즉시 알림이 된다. 옵션 식별자를 보내는 새 경로만
+       * 여기서 막고, vendorItemId 가 없는 기존 웹 알림 계약은 그대로 둔다.
+       */
+      if (vendorItemId && targetPrice > 0 && currentPrice > 0 && targetPrice >= currentPrice) {
+        return res.status(400).json({ error: '목표 가격은 현재 표시 가격보다 낮게 입력해 주세요' });
+      }
+
       const row = {
         email,
         title,
         target_price: targetPrice,
-        current_price: parseInt(body.currentPrice, 10) || 0,
+        current_price: currentPrice,
         link: String(body.link || '').slice(0, 2000),
         image: String(body.image || '').slice(0, 2000),
         mall: String(body.mall || '').slice(0, 100),
         // 다시 신청하면 조건 충족 시 또 받아볼 수 있어야 한다.
         sent: false
       };
-
-      const productId = String(body.productId || '').trim().slice(0, 100);
-      const vendorItemId = cleanVendorItemId(body.vendorItemId);
 
       /*
        * 새 모바일 알림은 product + mall + vendorItemId 로 옵션을 고정한다.
