@@ -6,6 +6,7 @@ import { AppText, useFontsReady } from '../components/AppText';
 import { Icon } from '../components/Icon';
 import { Price } from '../components/Price';
 import { EmptyState, ErrorState, Hairline, Loading } from '../components/ui';
+import { TARGET_PRESETS, presetTargetPrice } from '../lib/alertTarget';
 import { userMessage } from '../lib/api';
 import { alertsApi } from '../lib/config';
 import { digits } from '../lib/format';
@@ -103,6 +104,31 @@ export default function PriceAlertsScreen() {
 
               {product.vendorItemId ? (
                 <>
+                  <View style={styles.presets}>
+                    {TARGET_PRESETS.map(percent => {
+                      const suggested = presetTargetPrice(product.price, percent);
+                      const selected = suggested > 0 && targetPrice === suggested;
+                      return (
+                        <Pressable
+                          key={percent}
+                          onPress={() => { if (suggested > 0) setTarget(String(suggested)); }}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`현재가보다 ${percent}% 낮은 목표가 설정`}
+                          style={({ pressed }) => [
+                            styles.preset,
+                            {
+                              borderColor: selected ? theme.control : theme.line2,
+                              backgroundColor: selected ? theme.control : theme.bg,
+                              opacity: pressed ? 0.6 : 1,
+                            },
+                          ]}
+                        >
+                          <AppText style={[t.caption, { color: selected ? theme.onControl : theme.ink, fontWeight: '600' }]}>{percent}% 낮게</AppText>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                   <View style={[styles.inputWrap, { borderColor: theme.line2, backgroundColor: theme.surface }]}>
                     <TextInput
                       value={target}
@@ -163,6 +189,8 @@ export default function PriceAlertsScreen() {
 const styles = StyleSheet.create({
   create: { gap: space.sm, paddingHorizontal: space.gutter, paddingTop: space.md, paddingBottom: space.xl, borderBottomWidth: StyleSheet.hairlineWidth },
   current: { gap: 2, marginTop: 2 },
+  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.xs },
+  preset: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 999, borderWidth: 1 },
   inputWrap: { minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth * 2 },
   input: { flex: 1, fontSize: 17, paddingVertical: 0 },
   primary: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 18, borderRadius: radius.lg },
