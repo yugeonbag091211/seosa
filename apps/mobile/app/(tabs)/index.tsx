@@ -65,7 +65,7 @@ export default function Home() {
       </Pressable>
 
       <View style={styles.siteNav}>
-        <Pressable onPress={() => goSearch()} accessibilityRole="button" style={styles.navItem}>
+        <Pressable onPress={() => pushOnce('/categories')} accessibilityRole="button" style={styles.navItem}>
           <AppText style={t.footnote}>카테고리</AppText>
         </Pressable>
         <Pressable onPress={() => pushOnce('/community')} accessibilityRole="button" style={styles.navItem}>

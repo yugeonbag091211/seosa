@@ -65,6 +65,9 @@ test('website parity: home has category / AI / community feed but keeps price dr
     assert.ok(home.includes(feature), feature);
   }
   assert.ok(source('app/_layout.tsx').includes('name="community"'));
+  assert.ok(source('app/_layout.tsx').includes('name="categories"'));
+  assert.match(home, /pushOnce\('\/categories'\)/);
+  assert.match(source('app/categories.tsx'), /pathname: '\/search', params: \{ q \}/);
   assert.ok(source('app/community.tsx').includes('useCommunityDeals'));
 });
 
