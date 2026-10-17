@@ -19,6 +19,7 @@ const supabase = require('../api/_supabase');
 const notify   = require('../api/_notify');
 const { firstSafeBuyLink } = require('../api/_affiliate');
 const { kstToday, kstDayStartUtc, observedKstDate, sameVendorRows } = require('../api/_price');
+const { cleanVendorItemId, indexPriceRows, priceRowForAlert } = require('../api/_alertidentity');
 
 const DROP_THRESHOLD = 0.05; // 5% 이상 하락 시 알림
 /*
@@ -156,36 +157,24 @@ async function run() {
   const todayStart = kstDayStartUtc(TODAY);
   const yestStart  = kstDayStartUtc(yesterday);
 
-  /*
-   * 한 상품이 하루에 여러 번 관측될 수 있다 (옵션별 행 + 크론이 여러 번 돎).
-   * 그날의 값은 가장 늦게 관측된 것이다 — 오름차순으로 받아 뒤에 온 것이
-   * 앞의 것을 덮게 한다. 예전 .eq(recorded_date) 질의는 라벨 UNIQUE 덕에
-   * 상품당 한 행이었으므로, 접지 않으면 임의의 옵션 값이 잡힌다.
-   */
-  const latestByProduct = rows => {
-    const m = new Map();
-    (rows || []).forEach(r => m.set(r.product_id + '|' + r.mall, r));
-    return m;
-  };
-
-  // 1. 오늘(KST) 수집된 가격
+  // 1. 오늘(KST) 수집된 가격. 오래된 행부터 넣어 가장 늦은 관측이 인덱스에 남는다.
   const todayRows = await fetchAllRows('오늘 가격', () => supabase
     .from('price_history')
-    // vendor_item_id 도 받는다 — 아래 이력 조회를 같은 옵션으로 좁히는 데 쓴다.
     .select('product_id, mall, title, price, link, recorded_at, vendor_item_id')
     .gte('recorded_at', todayStart)
     .order('recorded_at', { ascending: true })
     .order('id', { ascending: true }));
-  const todayPrices = [...latestByProduct(todayRows).values()];
+  const todayIndex = indexPriceRows(todayRows);
+  const todayPrices = [...todayIndex.byProductMall.values()];
 
   /*
    * 2. 어제(KST) 가격 (drop 조건용)
    *
-   * 여기서 실패해도 스크립트를 죽이지 않는다. 어제 값이 없으면 '전날 대비 하락'
-   * 조건만 판정할 수 없을 뿐, 목표가·역대 최저가 알림은 그대로 나가야 한다.
-   * (예전에도 이 조회의 오류를 무시하고 있었다 — 그 동작을 유지한다)
+   * 새 옵션 고정 알림은 어제도 같은 vendor_item_id 만 고른다. 기존 알림은 예전처럼
+   * product_id + mall 기준 최신 행을 고르고, 아래 옵션 불일치 방어로 다른 옵션이면
+   * 하락 조건만 건너뛴다.
    */
-  let prevMap = new Map();
+  let yesterdayIndex = indexPriceRows([]);
   try {
     const yesterdayRows = await fetchAllRows('어제 가격', () => supabase
       .from('price_history')
@@ -194,11 +183,7 @@ async function run() {
       .lt('recorded_at', todayStart)
       .order('recorded_at', { ascending: true })
       .order('id', { ascending: true }));
-    // 가격만이 아니라 옵션도 함께 기억한다 — 어제와 오늘이 다른 옵션이면
-    // 그 둘의 차이는 "가격이 내렸다" 가 아니라 "다른 상품을 봤다" 이다.
-    prevMap = new Map(
-      [...latestByProduct(yesterdayRows).entries()]
-        .map(([k, r]) => [k, { price: r.price, vid: String(r.vendor_item_id || '') }]));
+    yesterdayIndex = indexPriceRows(yesterdayRows);
   } catch (e) {
     console.warn(`⚠️ 어제 가격을 읽지 못했습니다(하락 조건만 생략): ${e.message}`);
   }
@@ -228,46 +213,44 @@ async function run() {
 
   for (const alert of alertList) {
     /*
-     * 오늘 가격은 상품 식별자(product_id [+ mall])로만 찾는다.
-     *
-     * 상품명 폴백은 없앴다. 상품명은 고유하지 않다 — 쿠팡에는 같은 이름의
-     * 다른 상품이 흔하고, 그중 싼 쪽 가격을 집으면 "목표가 달성" 메일이
-     * 사실이 아닌 채로 나간다. 화면 표시와 달리 메일은 되돌릴 수 없고,
-     * 사용자는 그걸 믿고 클릭해서 전혀 다른 가격을 보게 된다.
-     *
-     * product_id 는 supabase/2026-08-hardening.sql 적용 이후 신청분부터
-     * 채워진다. 그 전에 신청된 행은 빈 문자열이라 이제 발송 대상에서 빠진다.
-     * 잘못된 알림을 보내는 것보다 안 보내는 쪽이 낫다. 사용자가 그 상품을
-     * 다시 찜하거나 알림을 재신청하면 product_id 가 채워져 정상 동작한다.
+     * product_id 가 없는 옛 신청은 발송하지 않는다. 상품명은 고유하지 않아서
+     * 동명의 다른 상품으로 목표가 메일을 보내는 것보다 건너뛰는 편이 안전하다.
      */
     if (!alert.product_id) {
       skippedLegacy++;
       continue;
     }
 
-    const todayRow =
-      todayPrices.find(p => p.product_id === alert.product_id && p.mall === alert.mall)
-      || todayPrices.find(p => p.product_id === alert.product_id);
-    if (!todayRow) { skipped++; continue; }
+    /*
+     * vendor_item_id 가 있는 새 알림은 product + mall + vendor 를 모두 정확히 맞춘다.
+     * 정확한 옵션이 오늘 관측되지 않았으면 다른 옵션으로 대체하지 않고 건너뛴다.
+     * vendor_item_id 가 없는 기존 웹 알림만 이전 product 단위 선택 규칙을 유지한다.
+     */
+    const wantedVid = cleanVendorItemId(alert.vendor_item_id);
+    const todayRow = priceRowForAlert(alert, todayIndex);
+    if (!todayRow) {
+      if (wantedVid) console.log(`  · ${alert.title}: 오늘 정확한 옵션(${wantedVid}) 가격 없음 — 건너뜁니다`);
+      skipped++;
+      continue;
+    }
 
     const cur = todayRow.price;
-    /*
-     * 오늘 관측의 옵션(vendor_item_id). 아래 이력 조회를 전부 이 옵션으로 좁힌다.
-     *
-     * 좁히지 않으면 같은 상품 페이지에 묶인 다른 옵션의 값으로 "역대 최저가
-     * 갱신" 메일이 나간다. 운영 실측(2026-09-04): (product_id, mall) 조합
-     * 3,220개 중 301개에서 역대 최저가가 지금 파는 옵션의 값이 아니었다.
-     */
-    const curVid = String(todayRow.vendor_item_id || '');
+    const curVid = cleanVendorItemId(todayRow.vendor_item_id);
+    if (wantedVid && curVid !== wantedVid) {
+      console.error(`❌ ${alert.title}: 옵션 식별 불일치 ${wantedVid} != ${curVid} — 발송하지 않습니다`);
+      skipped++;
+      continue;
+    }
 
     /*
-     * 어제 가격 — 같은 옵션일 때만 쓴다.
-     *
-     * 어제는 A옵션(20,000원), 오늘은 B옵션(12,000원)이 잡혔다면 40% 하락이
-     * 아니라 다른 상품이다. 어느 한쪽의 옵션을 모르면(옛 기록) 예전처럼 비교한다 —
-     * 모른다는 이유로 알림을 없애지는 않는다.
+     * 어제 가격 — 새 알림은 priceRowForAlert 가 같은 vendor 를 강제한다.
+     * 기존 알림은 어느 한쪽의 옵션을 모르는 옛 기록을 허용하되, 양쪽 옵션이
+     * 명확하고 서로 다르면 가격 하락으로 보지 않는다.
      */
-    const prevRec = prevMap.get(todayRow.product_id + '|' + todayRow.mall);
+    const prevRow = priceRowForAlert(alert, yesterdayIndex);
+    const prevRec = prevRow
+      ? { price: prevRow.price, vid: cleanVendorItemId(prevRow.vendor_item_id) }
+      : null;
     const prevMismatch = !!(prevRec && prevRec.vid && curVid && prevRec.vid !== curVid);
     const prev = (prevRec && !prevMismatch) ? (prevRec.price || 0) : 0;
     if (prevMismatch) {
@@ -285,22 +268,15 @@ async function run() {
     /*
      * "AI 가 사도 좋다고 하면 알려줘" (alerts.on_deal).
      *
-     * 위 세 조건은 전부 "가격이 얼마인가" 만 본다. 목표가를 정하려면 사용자가
-     * 적정가를 미리 알아야 하는데, 모르니까 알림을 신청하는 것이다.
-     *
      * 이 조건은 api/_deal.js 판정을 그대로 쓴다. 여기서 다시 계산하지 않는다 —
      * 화면·AI 답변·알림 메일이 같은 상품을 두고 다른 말을 하면 안 된다.
      * BUY / GOOD_BUY 일 때만 보낸다. NORMAL 에 메일을 보내면 알림이 소음이 된다.
-     *
-     * on_deal 컬럼이 없는 DB에서는 undefined 라 그냥 건너뛴다.
      */
     if (alert.on_deal) {
       try {
         const { statsFrom } = require('../api/_pricestat');
         const { dealOf, DEAL_ORDER } = require('../api/_deal');
 
-        // 판정에 쓸 기록은 오늘 가격을 찾은 그 상품·그 옵션 것이어야 한다
-        // (아래 scoped 와 같은 기준).
         const { data: histRows } = await supabase
           .from('price_history')
           .select('recorded_date, recorded_at, price, vendor_item_id')
@@ -331,19 +307,8 @@ async function run() {
     }
 
     /*
-     * 역대 최저가 · 30일 통계를 볼 범위. 오늘 가격을 찾은 그 상품과 같아야 한다.
-     *
-     * 여기에도 상품명 폴백이 있었다. 오늘 값은 A상품에서, 역대 최저가는 동명의
-     * B상품에서 가져오면 "역대 최저가 갱신"도 "30일 평균보다 쌉니다"도 사실이
-     * 아니게 된다. 이제 상품 단위로만 본다.
-     */
-    /*
-     * ★ 옵션까지 좁힌다.
-     *
-     * 예전에는 (product_id, mall) 로만 좁히고 최저가 1행을 DB 에서 바로 뽑았다.
-     * 그러면 같은 상품 페이지의 다른 옵션 값이 "역대 최저" 가 되어, 살 수 없는
-     * 가격으로 메일이 나간다. 옵션 판정(_price.sameVendorRows)은 코드에서
-     * 해야 하므로 행을 받아 와서 거른 뒤 최저값을 구한다.
+     * 역대 최저가 · 30일 통계를 볼 범위도 오늘 가격을 찾은 같은 상품·같은 옵션으로
+     * 좁힌다. 같은 상품 페이지의 다른 옵션 가격은 절대 최저가 근거로 쓰지 않는다.
      */
     const scoped = () => supabase
       .from('price_history').select('price, vendor_item_id')

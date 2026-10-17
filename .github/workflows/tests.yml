@@ -59,3 +59,5 @@ jobs:
       - run: npm ci
       - name: npm test
         run: npm test
+      - name: Alert option identity safety
+        run: node scripts/test-alert-option-identity.js

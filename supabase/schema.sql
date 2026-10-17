@@ -31,6 +31,11 @@ create index if not exists alerts_email_idx on alerts (email);
 -- 같은 알림 메일이 매일 다시 발송된다.
 alter table alerts add column if not exists sent_at timestamptz;
 
+-- 정확한 옵션 식별자. 빈 문자열은 vendorItemId 를 저장하기 전의 기존 웹 알림이다.
+-- 새 모바일 알림은 이 값을 저장하고 check-alerts.js 가 product_id + mall + vendor_item_id
+-- 세 값 모두 일치하는 가격만 사용한다.
+alter table alerts add column if not exists vendor_item_id text not null default '';
+
 -- 정가 / 할인율. 없으면 DB에서 읽어오는 섹션(오늘의 셀렉션, 이달의 추천, 당신을 위한 추천)에서만
 -- 할인 배지가 사라져 검색 결과와 표시가 달라진다.
 alter table products add column if not exists oprice   integer not null default 0;
