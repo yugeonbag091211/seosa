@@ -2823,7 +2823,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
         return o;
       })(),
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
-      passStats: [], crossRecovered: 0, optionRejects: {},
+      passStats: [], crossRecovered: 0, preCoveredSkips: 0, optionRejects: {},
       facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
       /* 아무 일도 하지 않은 실행이 오늘의 terminal 목록을 지우면 안 된다 (P1). */
       terminalOptionFailures:
@@ -3074,6 +3074,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
   /** 이 실행에서 교차 매칭으로 건진 상품 수 (리포트용). */
   let crossRecovered = 0;
+  /* 1차 검색 직전, 오늘 가격이 모두 확보된 그룹을 건너뛴 횟수. */
+  let preCoveredSkips = 0;
 
   /**
    * 응답 항목을 전체 미수집 집합과 대조해서 새로 잡히는 것을 흡수한다.
@@ -3434,6 +3436,18 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
 
   /** 검색어 그룹 하나를 처리한다. 실패해도 던지지 않는다 — 호출부가 계속 돈다. */
   async function processGroup({ kw, rows: groupRows }) {
+    /*
+     * 1차 검색 직전 재확인: 실행 도중 다른 그룹의 정확한 옵션 가격을
+     * 이미 확보했다면 동일 그룹을 다시 검색하지 않는다.
+     * uncovered 는 기존 수집기의 동일한 키를 재사용하며,
+     * 이 가드는 MATCH / 오늘 원장 확보의 기존 판정만 신뢰한다.
+     * 다옵션 동일 상품 ID 가 새로 등록되면 집계 키 승격이 우선이다.
+     */
+    if (groupRows.length > 0 &&
+        !groupRows.some(p => uncovered.has(`${p.product_id}|${p.mall}`))) {
+      preCoveredSkips++;
+      return;
+    }
     const byId = new Map();
     // 키는 반드시 문자열로 맞춘다 — 응답의 productId 는 normalize 가 String() 한 값이다.
     groupRows.forEach(p => byId.set(String(p.product_id), p));
@@ -4329,6 +4343,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   if (recovered) {
     console.log(`  [${mallName}] ✅ keyword 가 없던 상품 ${recovered}개를 찾아 검색어를 채웠습니다.`);
   }
+  if (preCoveredSkips) {
+    console.log(`  [${mallName}] ⏭ 1차 중복 검색 ${preCoveredSkips}회를 생략했습니다.`);
+  }
 
   /*
    * ★ 2차 미시도가 남아 있으면 아직 '완료'가 아니다 (2026-08-31).
@@ -4508,6 +4525,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     passStats: [...passStats.values()].sort((a, b) => passOrder(a.pass) - passOrder(b.pass)),
     /* 교차 매칭으로 건진 상품 수 — 응답 전체 대조가 실제로 얼마를 벌었는지. */
     crossRecovered,
+    preCoveredSkips,
     /*
      * 옵션 게이트가 채택을 거부한 이유별 건수 (pickOption 주석 참고).
      *
