@@ -94,7 +94,7 @@ export default function Concierge() {
   const followups = lastAi?.answer.followups.length ? lastAi.answer.followups : messages.length ? [] : starters;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 56 : 0}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.bg }} behavior="padding" keyboardVerticalOffset={Platform.OS === 'ios' ? 56 : 0}>
       <FlatList
         ref={list}
         data={messages}
