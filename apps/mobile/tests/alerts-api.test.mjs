@@ -55,6 +55,22 @@ test('alerts api: app refuses to create a product-level alert when vendor identi
   assert.equal(called, 0);
 });
 
+test('alerts api: target price must be below the displayed current price', async () => {
+  let called = 0;
+  const api = createAlertsApi({
+    baseUrl: 'https://seosa.ai.kr',
+    fetchImpl: async () => { called++; return response(200, { success: true }); },
+  });
+
+  for (const targetPrice of [15900, 16000]) {
+    await assert.rejects(
+      () => api.save({ email: 'a@example.com', token: 't', product, currentPrice: 15900, targetPrice }),
+      error => error instanceof ApiError && error.kind === 'bad_request' && /현재 표시 가격보다 낮게/.test(error.message),
+    );
+  }
+  assert.equal(called, 0);
+});
+
 test('alerts api: list uses email query, auth and parses legacy Y/N sent values', async () => {
   let call;
   const api = createAlertsApi({
