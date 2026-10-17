@@ -1,5 +1,5 @@
 import { decodeHtmlEntities } from './text.ts';
-import type { AiAnswer, Deal, DealStats, MonthlyCuration, PriceChange, PricePoint, Product, TodayDrop, Trust, TrustReason } from './types.ts';
+import type { AiAnswer, CommunityDeal, Deal, DealStats, MonthlyCuration, PriceChange, PricePoint, Product, TodayDrop, Trust, TrustReason } from './types.ts';
 
 /*
  * Server payload → app types. Pure.
@@ -150,6 +150,32 @@ export function parseTodayDrops(value: unknown): TodayDrop[] {
 }
 
 /** Ascending daily points; unreadable or non-positive points are dropped, duplicates keep the lowest (server rule). */
+/**
+ * External/community discovery: keep its source URL only, NOT an unverified product/affiliate URL.
+ * Bad rows cannot turn into alleged verified SEOSA price records.
+ */
+export function parseCommunityDeals(value: unknown): CommunityDeal[] {
+  const items = isObj(value) && Array.isArray(value.items) ? value.items : [];
+  return items.slice(0, 60).map(item => {
+    if (!isObj(item)) return null;
+    const id = str(item.id).trim().slice(0, 80);
+    const title = decodeHtmlEntities(str(item.title).trim()).slice(0, 180);
+    const sourceUrl = safeUrl(item.sourceUrl);
+    if (!id || !title || !sourceUrl || !sourceUrl.startsWith('https://')) return null;
+    return {
+      id,
+      title,
+      price: positive(item.price),
+      image: safeUrl(item.image),
+      mall: decodeHtmlEntities(str(item.mall).trim()).slice(0, 60),
+      source: str(item.source).trim().slice(0, 60),
+      sourceUrl,
+      verified: item.verified === true && item.communityOnly === false,
+      postedAt: str(item.postedAt),
+    };
+  }).filter((item): item is CommunityDeal => item !== null);
+}
+
 export function parsePoints(value: unknown): PricePoint[] {
   if (!Array.isArray(value)) return [];
   const byDate = new Map<string, number>();

@@ -96,9 +96,12 @@ test('no app code builds, rewrites or wraps affiliate URLs', () => {
   assert.deepEqual(offenders, []);
 });
 
-test('only the buy button and the 마이 screen open external URLs', () => {
+test('only audited purchase, account and community-source screens open external URLs', () => {
   const openers = appSources().filter(f => /Linking\.openURL\(/.test(fs.readFileSync(f, 'utf8'))).map(f => path.relative(ROOT, f).replace(/\\/g, '/')).sort();
-  assert.deepEqual(openers, ['app/(tabs)/me.tsx', 'components/BuyButton.tsx']);
+  assert.deepEqual(openers, ['app/(tabs)/me.tsx', 'components/BuyButton.tsx', 'components/CommunityDealRow.tsx']);
+  const community = fs.readFileSync(path.join(ROOT, 'components/CommunityDealRow.tsx'), 'utf8');
+  assert.match(community, /Linking\.openURL\(deal\.sourceUrl\)/, 'community item opens its original post, not its affiliate link');
+  assert.doesNotMatch(community, /Linking\.openURL\(deal\.(?:affiliateUrl|productUrl|url)\)/, 'no accidental conversion to a purchase shortcut');
 });
 
 test('unsafe links are dropped, never «fixed» into something else', () => {

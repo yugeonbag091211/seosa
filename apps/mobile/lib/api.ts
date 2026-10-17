@@ -1,5 +1,5 @@
-import { parseAiAnswer, parseDeal, parseMonthly, parsePoints, parseProducts, parseTodayDrops } from './parse.ts';
-import type { AiAnswer, HomeFeed, PriceHistory, PricePoint, Product, ProductIdentity, SearchResult, SearchSource, Session, TodayDrop } from './types.ts';
+import { parseAiAnswer, parseCommunityDeals, parseDeal, parseMonthly, parsePoints, parseProducts, parseTodayDrops } from './parse.ts';
+import type { AiAnswer, CommunityDeal, HomeFeed, PriceHistory, PricePoint, Product, ProductIdentity, SearchResult, SearchSource, Session, TodayDrop } from './types.ts';
 
 /*
  * SEOSA API client. Pure (no React Native import) so node tests drive it with a fake fetch.
@@ -8,6 +8,7 @@ import type { AiAnswer, HomeFeed, PriceHistory, PricePoint, Product, ProductIden
  *   GET  /api/search?keyword=                     검색 (쿠팡·ADPICK, 서버 캐시)
  *   GET  /api/history?productId=&mall=&vendorItemId=&deal=1   가격 이력 + 서버 판정
  *   GET  /api/hotdeals?view=today-drop&limit=60   오늘 가격 하락 (웹 홈과 같은 목록)
+ *   GET  /api/hotdeals?view=external&limit=60     커뮤니티 발견 핫딜 (웹 홈과 같은 목록)
  *   GET  /api/init                                 인기 검색어 · 오늘의 셀렉션 · 이달의 추천
  *   POST /api/auth                                 이메일 인증 코드(ageConfirmed: true) → 토큰
  *   POST /api/ai                                   AI 컨시어지
@@ -249,6 +250,15 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
         throw new ApiError('invalid_response', '', r.status);
       }
       return parseTodayDrops(r.body);
+    },
+
+    /** Web home community radar, kept distinct from our verified price-drop ledger. */
+    async communityDeals(signal?: AbortSignal): Promise<CommunityDeal[]> {
+      const r = await request('/api/hotdeals', { query: { view: 'external', limit: '60' }, timeoutMs: TIMEOUTS.drops, signal });
+      if (!r.body || typeof r.body !== 'object' || !Array.isArray((r.body as { items?: unknown }).items)) {
+        throw new ApiError('invalid_response', '', r.status);
+      }
+      return parseCommunityDeals(r.body);
     },
 
     /**

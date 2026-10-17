@@ -23,6 +23,10 @@ export const queryClient = new QueryClient({
 
 const MIN = 60 * 1000;
 
+export function useCommunityDeals() {
+  return useQuery({ queryKey: ['communityDeals'], queryFn: ({ signal }) => api.communityDeals(signal), staleTime: 2 * MIN });
+}
+
 export function useTodayDrops() {
   return useQuery({ queryKey: ['todayDrops'], queryFn: ({ signal }) => api.todayDrops(signal), staleTime: 2 * MIN });
 }

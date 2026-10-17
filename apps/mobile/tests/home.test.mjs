@@ -367,13 +367,14 @@ test('monthly cards open the product screen with the option key (same path as li
   assert.match(src('components/Thumb.tsx'), /onError=\{\(\) => setFailed\(true\)\}/, 'missing or broken image falls back to the local thumb');
 });
 
-test('home order follows the web: search → hero → keywords → drops → selection → monthly → disclosure', () => {
+test('home order follows the web: search → hero → quick keywords → community → drops → selection → monthly → disclosure', () => {
   const home = src('app/(tabs)/index.tsx');
   const at = re => { const m = re.exec(home); assert.ok(m, String(re)); return m.index; };
   const order = [
     at(/accessibilityRole="search"/),
     at(/<HeroCarousel stamp=\{stamp\} \/>/),
-    at(/home\.data\.popular\.slice/),
+    at(/QUICK_SEARCHES\.map/),
+    at(/title=\{\`실시간 핫딜/),
     at(/title="오늘 가격 하락"/),
     at(/title="오늘의 셀렉션"/),
     at(/<MonthlyPicks/),
@@ -391,7 +392,7 @@ test('large text: text grows into its boxes instead of spilling out of them', ()
   // The search box had a fixed 48 dp height; at 200 % its hint wrapped to two lines outside the box.
   assert.match(home, /search: \{[^}]*minHeight: 48/, 'search box grows with its hint');
   assert.doesNotMatch(home, /search: \{[^}]*[^n]height: 48/, 'no fixed height on the search box');
-  assert.match(home, /style=\{\[t\.body, \{ flexShrink: 1 \}\]\}>어떤 상품의 최저가가 궁금하세요\?/);
+  assert.match(home, /style=\{\[t\.body, \{ flexShrink: 1 \}\]\}>상품을 검색하세요/);
   const hero = src('components/HeroCarousel.tsx');
   assert.match(hero, /ctaText: \{ flexShrink: 1/, 'a long CTA label wraps inside its pill');
   assert.match(hero, /cta: \{[^}]*maxWidth: '100%'/, 'the pill never runs past the band');
