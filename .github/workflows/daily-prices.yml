@@ -95,11 +95,21 @@ on:
     # 그날 일이 끝났으면 상태 한 줄만 읽고 20초 안에 끝난다(외부 API 0회). 공개 저장소라
     # Actions 분도 과금되지 않는다. 정각 혼잡을 피해 :05/:35 에 둔다.
     - cron: '5,35 0-14 * * *' # UTC 00:05~14:35 = KST 09:05~23:35 (자정 마감은 수집기가 지킨다)
-  workflow_dispatch:        # 수동 실행 버튼
+  workflow_dispatch:        # 수동 실행 버튼 + 이어 붙이기(아래 마지막 단계)
+    inputs:
+      chain:
+        description: '이어 붙이기 사슬 깊이 (수동 실행은 0 으로 둔다)'
+        required: false
+        default: '0'
 
 jobs:
   collect:
     runs-on: ubuntu-latest
+    # actions: write 는 마지막 단계(이어 붙이기)가 workflow_dispatch 를 만들 때만 쓴다.
+    # GITHUB_TOKEN 이 만든 이벤트는 새 실행을 만들지 않지만 workflow_dispatch 는 예외다.
+    permissions:
+      contents: read
+      actions: write
     # 스크립트 자체 예산은 PRICE_RUN_BUDGET_MS(기본 50분)이고, 여기서는 그보다
     # 넉넉히 잡아 npm ci·알림 단계까지 여유를 둔다. 예산을 넘기면 스크립트가
     # 진행 상태를 저장하고 정상 종료하므로, 타임아웃에 잘려도 다음 실행이
@@ -145,6 +155,7 @@ jobs:
         run: node scripts/v3-canary-gate.js
 
       - name: Collect all product prices
+        id: collect
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -170,6 +181,9 @@ jobs:
           ADPICK_DAY_BUDGET: '3000'
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          # 수집기가 «이어 붙일 가치가 있다» 고 판정했을 때만 이 파일을 쓴다
+          # (collect-all-prices.js continuationDecision 주석 참고).
+          PRICE_CONTINUE_FILE: /tmp/collector-continue.json
         run: |
           node scripts/collect-all-prices.js 2>&1 | tee /tmp/collect.log
           exit ${PIPESTATUS[0]}
@@ -195,3 +209,34 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat /tmp/collect.log 2>/dev/null || echo "(로그 없음 — 수집 단계 도달 전 실패)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+      # ── 이어 붙이기 (2026-10-16) ─────────────────────────────────────────
+      # GitHub 는 예약 칸을 버린다. 실측: 하루 48칸 중 일한 실행 7~11회, 낮에는 4시간 공백이
+      # 흔하다. 그래서 ADPICK(분당 5회)이 하루 예산 3,000 을 못 쓰고(10-15 2,388회) 미시도가 남는다.
+      # 수집기가 남긴 표식이 있을 때만 다음 실행을 바로 만든다 — 표식 조건은
+      #   · 레인이 시간/실행 예산 때문에 멈췄고 · 하루 예산이 남았고 · 이번 실행이 실제로 호출했고
+      #   · 실패·차단·잠금 상실이 아니다.
+      # 분당 속도·하루 예산·잠금은 그대로라 호출 총량의 천장은 바뀌지 않는다. 사슬은 하나뿐이다 —
+      # 잠금을 쥐고 끝까지 돈 실행만 표식을 쓰므로, 예약 칸과 겹친 쪽은 잠금에서 끝나 사슬을 잇지 않는다.
+      # 실패해도 수집 결과를 빨간불로 만들지 않는다(continue-on-error) — 다음 예약 칸이 이어받는다.
+      - name: Continue collection (dispatch next run)
+        if: always() && steps.collect.outcome == 'success' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHAIN: ${{ inputs.chain }}
+          MAX_CHAIN: '16'
+        run: |
+          f=/tmp/collector-continue.json
+          if [ ! -f "$f" ]; then echo "이어 붙이지 않음 — 수집기 표식 없음"; exit 0; fi
+          cat "$f"
+          case "$CHAIN" in ''|*[!0-9]*) CHAIN=0 ;; esac
+          if [ "$CHAIN" -ge "$MAX_CHAIN" ]; then echo "사슬 상한 $MAX_CHAIN 도달 — 다음 예약 칸에 맡긴다"; exit 0; fi
+          nb=$(node -e "process.stdout.write(String(Number(require('$f').notBeforeMs) || 0))")
+          now=$(date +%s%3N)
+          if [ "$nb" -gt "$now" ]; then
+            w=$(( (nb - now) / 1000 + 1 )); [ "$w" -gt 900 ] && w=900
+            echo "자정 뒤까지 ${w}초 기다렸다가 붙인다"; sleep "$w"
+          fi
+          gh workflow run daily-prices.yml --ref main -f chain=$((CHAIN + 1))
+          echo "다음 실행을 만들었습니다 (chain=$((CHAIN + 1)))"

@@ -572,6 +572,64 @@ function runDeadline(startedMs, today = TODAY, budgetMs = RUN_TIME_BUDGET_MS) {
 }
 
 /*
+ * ★ 이어 붙이기 (2026-10-16 감사) — 실행이 «시간이 모자라서» 끝났으면 다음 실행을 바로 붙인다.
+ *
+ *   낮 30분 칸(:05/:35, 하루 30칸)을 깔았지만 GitHub 는 예약을 버린다. 실측(gh run list):
+ *   KST 하루 48칸 중 실행이 만들어진 것은 ~21개, 실제로 일한(5분 넘은) 실행은 7~11회,
+ *   잠금 보유 시간은 하루 366~582분이다. 10-15 낮에는 05:19Z → 09:22Z, 10:14Z → 14:22Z
+ *   처럼 4시간씩 아무 실행도 없었다.
+ *   쿠팡은 그래도 하루 예산 3,400을 KST 09시 전에 다 쓴다. 병목은 ADPICK 이다 — 분당 5회라
+ *   하루 예산 3,000을 쓰려면 50분 실행 12회가 필요한데 7~11회만 돈다. 10-15 최종:
+ *   ADPICK 2,388/3,000회 사용, 미시도(time) 534개, 레인 종료 사유는 매 실행 'time'.
+ *
+ *   그래서 수집기가 «이어 붙일 가치가 있다» 고 판정할 때만 표식 파일을 남기고, 워크플로가
+ *   그 파일이 있을 때만 workflow_dispatch 로 다음 실행을 만든다.
+ *
+ * ★ 호출 속도·총량은 한 자리도 바뀌지 않는다. 분당 간격(쿠팡 4초·ADPICK 12초/5회), 실행 예산,
+ *   하루 예산(쿠팡 3,400·ADPICK 3,000), 전역 리미터, 잠금은 그대로다. 바뀌는 것은 하루 중
+ *   «레인이 놀고 있던 시간» 뿐이다. 하루 예산을 다 쓰면 레인 종료 사유가 'budget' 이고
+ *   dayUsedAfter ≥ dayBudget 이라 이어 붙이지 않는다.
+ *
+ * ★ 사슬이 늘어나지 않는 이유: 표식은 잠금을 쥐고 끝까지 돈 실행만 쓴다. 이어 붙인 실행이
+ *   예약 실행과 겹치면 한쪽은 잠금에서 바로 끝나고(표식 없음) 다른 한쪽만 사슬을 잇는다.
+ *   이번 실행이 외부 호출을 한 번도 못 했으면 이어 붙이지 않는다 — 헛도는 사슬을 끊는다.
+ *
+ * ★ 'pending'(쿨다운 대기)·'blocked'·'lock_lost'·'noKeys' 는 이어 붙이지 않는다 — 다음 예약
+ *   칸이 이어받는다. 차단 중인 제공자를 사슬로 두드리지 않는다.
+ *
+ * ★ 자정: 마감은 다음 KST 자정 − 2분이다. 그 창 안에서 끝나면 바로 이어 붙인 실행이 아직
+ *   어제 날짜(TODAY 는 프로세스 시작 시각)로 떠 호출 없이 끝난다. 그래서 notBeforeMs 로
+ *   자정 30초 뒤까지 기다렸다가 붙인다(워크플로가 잠깐 잔다).
+ */
+const CONTINUE_STOPS = ['time', 'budget'];
+const CONTINUE_MIDNIGHT_WINDOW_MS = 10 * 60 * 1000;
+/**
+ * @param {object} o
+ * @param {Array<{mall:string, stopCause:string, apiCalls:number, dayUsedAfter:number,
+ *                dayBudget:number, hasKey:boolean, refused:boolean}>} o.lanes
+ * @param {number} o.nowMs
+ * @param {number} o.dayEndMs   다음 KST 자정(절대 시각)
+ * @param {number} [o.exitCode] process.exitCode — 1 이면 이 실행은 실패다
+ * @returns {{continue:boolean, reason:string, malls?:string[], notBeforeMs?:number}}
+ */
+function continuationDecision(o) {
+  const lanes = Array.isArray(o && o.lanes) ? o.lanes : [];
+  if (o && o.exitCode === 1) return { continue: false, reason: 'failed' };
+  if (!lanes.some(l => (Number(l.apiCalls) || 0) > 0)) return { continue: false, reason: 'no_progress' };
+  const open = lanes.filter(l => l.hasKey && !l.refused
+    && CONTINUE_STOPS.indexOf(l.stopCause) > -1
+    && (Number(l.dayUsedAfter) || 0) < (Number(l.dayBudget) || 0));
+  if (!open.length) return { continue: false, reason: 'nothing_left' };
+  const nearMidnight = o.dayEndMs - o.nowMs <= CONTINUE_MIDNIGHT_WINDOW_MS;
+  return {
+    continue: true,
+    reason: open.map(l => `${l.mall}:${l.stopCause}`).join(','),
+    malls: open.map(l => l.mall),
+    notBeforeMs: nearMidnight ? o.dayEndMs + 30 * 1000 : 0
+  };
+}
+
+/*
  * 한국시간(Asia/Seoul) 기준 오늘 날짜는 api/_price.kstToday 하나만 쓴다.
  * price_history.recorded_date 도, price_job_state.job_date 도, 여기서 하루
  * 경계를 판정하는 자리도 모두 같은 함수를 거친다 — 예전에는 저장은 UTC 로
@@ -5283,6 +5341,33 @@ async function runLocked(state, lockToken) {
   }
   if (coupangBlocked) console.warn('경고: 쿠팡 API 차단 상태 (ADPICK 은 영향받지 않음)');
   if (adpickBlocked) console.warn('경고: ADPICK API 차단 상태 (쿠팡은 영향받지 않음)');
+
+  // 이어 붙이기 표식 (continuationDecision 주석 참고). 실패·차단·잠금 상실 경로는 위에서 이미 return 했다.
+  if (!SEED_ONLY) {
+    const decision = continuationDecision({
+      exitCode: process.exitCode,
+      nowMs: Date.now(),
+      dayEndMs: Date.parse(kstDayStartUtc(TODAY)) + 24 * 60 * 60 * 1000,
+      lanes: [
+        { mall: '쿠팡', stopCause: coupangResult.stopCause || '', apiCalls: coupangResult.apiCalls || 0,
+          dayUsedAfter: _coupangDayUsed + _coupangCalls, dayBudget: COUPANG_DAY_BUDGET,
+          hasKey: !!(COUP_ACCESS && COUP_SECRET), refused: !!_coupangBlocked },
+        { mall: 'ADPICK', stopCause: adpickResult.stopCause || '', apiCalls: adpickResult.apiCalls || 0,
+          dayUsedAfter: _adpickDayUsed + _adpickCalls, dayBudget: ADPICK_DAY_BUDGET,
+          hasKey: adpickHasKey(), refused: !!_adpickBlocked }
+      ]
+    });
+    console.log(`[이어 붙이기] ${decision.continue ? 'YES' : 'no'} — ${decision.reason}`
+      + (decision.notBeforeMs ? ` (자정 뒤 ${new Date(decision.notBeforeMs).toISOString()} 부터)` : ''));
+    const file = process.env.PRICE_CONTINUE_FILE;
+    if (decision.continue && file) {
+      try {
+        require('fs').writeFileSync(file, JSON.stringify({ ...decision, jobDate: TODAY }) + '\n');
+      } catch (e) {
+        console.warn(`[이어 붙이기] 표식 파일을 쓰지 못했습니다(다음 예약 칸이 이어받는다): ${e.message}`);
+      }
+    }
+  }
 }
 
 // ─── 수집 결과 이메일 ────────────────────────────────────────────
@@ -5858,7 +5943,9 @@ module.exports = {
   STATE_CHECKPOINT, PASS_BLOCK_MAX_WAIT_MS, COLLECT_CACHE_TTL_MS, COUPANG_DAY_BUDGET, COUPANG_RUN_BUDGET,
   nothingLeftToCall,
   // 자정 마감 — test-collector-v3 가 «자정을 넘지 않는다» 를 고정한다.
-  runDeadline, DAY_END_MARGIN_MS
+  runDeadline, DAY_END_MARGIN_MS,
+  // 이어 붙이기 — test-collector-continuation 이 판정 조건을 고정한다.
+  continuationDecision, CONTINUE_MIDNIGHT_WINDOW_MS
 };
 
 if (require.main === module) {
