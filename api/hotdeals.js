@@ -23,7 +23,7 @@
 
 const supabase = require('./_supabase');
 const { safeBuyLink, firstSafeBuyLink } = require('./_affiliate');
-const { applyCors, cachePublic, fail } = require('./_http');
+const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const HG = require('./_hotgroup');
 const DbError = require('./_dberror');
