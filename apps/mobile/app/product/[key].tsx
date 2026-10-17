@@ -1,4 +1,4 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -89,7 +89,7 @@ export default function ProductDetail() {
     // The server independently re-checks product + mall + vendorItemId before it ever sends mail.
     const alertKey = rememberProduct({ ...product, price: headline });
     if (!alertKey) return;
-    router.push({ pathname: '/alerts', params: { key: alertKey } });
+    pushOnce({ pathname: '/alerts', params: { key: alertKey } }, `alerts:${alertKey}`);
   };
 
   return (
