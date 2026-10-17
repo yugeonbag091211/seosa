@@ -92,4 +92,58 @@ export function savedStatus(item: SavedItem, points: readonly PricePoint[] | und
   return { latest, change: latest ? latest.price - item.savedPrice : null };
 }
 
+export type SavedSort = 'recent' | 'drop' | 'price';
+export type SavedLatestMap = Readonly<Record<string, readonly PricePoint[] | undefined>>;
+
+/** The price safe to show in Saved: latest observed price when available, otherwise the explicit saved-time price. */
+export function savedCurrentPrice(item: SavedItem, points: readonly PricePoint[] | undefined): number {
+  const status = savedStatus(item, points);
+  return status.latest ? status.latest.price : item.savedPrice;
+}
+
+/**
+ * Builds the Saved view without mutating persisted order.
+ *
+ * - recent: newest savedAt first (the persisted default, made deterministic after upgrades)
+ * - drop: biggest decrease since save first; unknown server prices go last
+ * - price: current observed price first, falling back to saved-time price when no observation exists
+ * - onlyDropped: requires a real latest observation and a strictly lower price than savedPrice
+ */
+export function arrangeSaved(
+  list: readonly SavedItem[],
+  latestByKey: SavedLatestMap | undefined,
+  sort: SavedSort = 'recent',
+  onlyDropped = false,
+): SavedItem[] {
+  const rows = list.map((item, index) => {
+    const points = latestByKey?.[productKey(item)];
+    const status = savedStatus(item, points);
+    return {
+      item,
+      index,
+      status,
+      currentPrice: status.latest ? status.latest.price : item.savedPrice,
+    };
+  }).filter(row => !onlyDropped || (row.status.change !== null && row.status.change < 0));
+
+  rows.sort((a, b) => {
+    if (sort === 'drop') {
+      if (a.status.change === null && b.status.change !== null) return 1;
+      if (a.status.change !== null && b.status.change === null) return -1;
+      if (a.status.change !== null && b.status.change !== null && a.status.change !== b.status.change) {
+        return a.status.change - b.status.change;
+      }
+    } else if (sort === 'price') {
+      if (a.currentPrice !== b.currentPrice) return a.currentPrice - b.currentPrice;
+    } else {
+      const aTime = Date.parse(a.item.savedAt) || 0;
+      const bTime = Date.parse(b.item.savedAt) || 0;
+      if (aTime !== bTime) return bTime - aTime;
+    }
+    return a.index - b.index;
+  });
+
+  return rows.map(row => row.item);
+}
+
 export const savedKey = productKey;
