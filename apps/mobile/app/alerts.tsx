@@ -5,7 +5,6 @@ import { Alert, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-n
 import { AppText, useFontsReady } from '../components/AppText';
 import { Icon } from '../components/Icon';
 import { Price } from '../components/Price';
-import { ScreenHeader } from '../components/Screen';
 import { EmptyState, ErrorState, Hairline, Loading } from '../components/ui';
 import { userMessage } from '../lib/api';
 import { alertsApi } from '../lib/config';
@@ -70,7 +69,6 @@ export default function PriceAlertsScreen() {
   if (status !== 'signedIn' || !session) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.bg }}>
-        <ScreenHeader title="가격 알림" />
         <EmptyState title="로그인이 필요해요" detail="알림을 보낼 이메일을 확인하기 위해 로그인해 주세요.">
           <Pressable onPress={() => pushOnce('/login')} accessibilityRole="button" style={({ pressed }) => [styles.primary, { backgroundColor: theme.control, opacity: pressed ? 0.65 : 1 }]}>
             <AppText style={[t.callout, { color: theme.onControl, fontWeight: '700' }]}>이메일로 로그인</AppText>
@@ -86,7 +84,6 @@ export default function PriceAlertsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
-      <ScreenHeader title="가격 알림" />
       {list.isPending ? <Loading /> : list.isError ? (
         <ErrorState error={list.error} onRetry={() => list.refetch()} />
       ) : (
