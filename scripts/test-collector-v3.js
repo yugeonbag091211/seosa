@@ -67,6 +67,20 @@ function rng(seed) {
       C.addCacheHints(new Map(), [{ keyword:'쿠팡',items:[{productId:'CP100'}] }], new Set([pid]), '쿠팡').size, 0);
   }
 
+  // 한 번의 회수 검색에서 상시 상품을 우대하되 대량 회전 회수도 버리지 않는다.
+  {
+    const daily = { product_id: 'DAILY' }, rotation = { product_id: 'ROTATION' };
+    const ctx = { dailyFirst: true, limit: 10,
+      tierOf: p => p.product_id === 'DAILY' ? 'daily' : 'rotation' };
+    check('회수 점수: 상시 1개 검색 > 회전 2개 검색',
+      C.recoveryPriorityScore([daily], ctx)
+      > C.recoveryPriorityScore([rotation, rotation], ctx));
+    check('회수 점수: 대량 회전 10개는 상시 1개보다 높음',
+      C.recoveryPriorityScore(Array.from({ length: 10 }, () => rotation), ctx)
+      > C.recoveryPriorityScore([daily], ctx));
+    eq('회수 점수: 레거시 설정은 상품 수 그대로', C.recoveryPriorityScore([daily], null), 1);
+    eq('회수 점수: 빈 그룹은 0', C.recoveryPriorityScore([], ctx), 0);
+  }
   console.log('[1] 신선도·긴급도·채점');
   eq('daily 0.9일 = fresh', Planner.freshnessClass(0.9, 'daily'), 'fresh');
   eq('daily 1.5일 = fresh (경계 포함)', Planner.freshnessClass(1.5, 'daily'), 'fresh');
