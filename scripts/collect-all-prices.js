@@ -4270,13 +4270,14 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       if (!byQuery.size) continue;
 
       /*
-       * 호출 순서 = 기대 회수량 내림차순.
-       * 한 검색어가 여러 상품을 덮으면 그만큼 기대값이 크다. 과거 성공률
-       * 데이터가 없으므로 통계를 지어내지 않고 이 결정론적 값만 쓴다.
+       * Recovery only: order existing keywords by the expected number of exact
+       * product/option recoveries from a dated replay. Never alter search keywords,
+       * calls-per-minute, caps, option identity or acceptance thresholds.
        */
-      const queue = [...byQuery.entries()]
-        .map(([q, rows]) => ({ q, rows }))
-        .sort((a, b) => b.rows.length - a.rows.length);
+      const queue = Planner.orderRecoveryQueue(
+        [...byQuery.entries()].map(([q, rows]) => ({ q, rows })),
+        { mall: mallName, dayStartMs: Date.parse(kstDayStartUtc(TODAY)) }
+      );
 
       let roundCalls = 0, roundHit = 0;
       for (const { q, rows } of queue) {
