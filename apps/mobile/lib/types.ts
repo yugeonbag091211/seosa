@@ -59,6 +59,21 @@ export type TodayDrop = ProductIdentity & {
   previousAt: string;
 };
 
+/** A community-posted deal from GET /api/hotdeals?view=external.
+ * A forum price is NOT our own price observation unless the server has explicitly verified it.
+ */
+export type CommunityDeal = {
+  id: string;
+  title: string;
+  price: number; // 0 means the post gave no usable price; the UI must not render "0원".
+  image: string;
+  mall: string;
+  source: string;
+  sourceUrl: string;
+  verified: boolean;
+  postedAt: string;
+};
+
 export type PricePoint = { date: string; price: number };
 
 export type DealStats = {
