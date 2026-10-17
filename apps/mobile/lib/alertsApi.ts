@@ -116,12 +116,16 @@ export function createAlertsApi(options: Options) {
       }
       const targetPrice = positiveInt(args.targetPrice);
       if (!targetPrice) throw new ApiError('bad_request', '목표 가격을 1원 이상 입력해 주세요.');
+      const currentPrice = positiveInt(args.currentPrice);
+      if (currentPrice > 0 && targetPrice >= currentPrice) {
+        throw new ApiError('bad_request', '목표 가격은 현재 표시 가격보다 낮게 입력해 주세요.');
+      }
 
       const payload = await request('POST', args.email, args.token, {
         email: args.email,
         title: args.product.title,
         targetPrice,
-        currentPrice: positiveInt(args.currentPrice),
+        currentPrice,
         link: args.product.link,
         image: args.product.image,
         mall: args.product.mall,
