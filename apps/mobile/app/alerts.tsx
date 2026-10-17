@@ -81,7 +81,8 @@ export default function PriceAlertsScreen() {
 
   const alerts = list.data || [];
   const targetPrice = Number(target);
-  const canSave = !!product?.vendorItemId && Number.isFinite(targetPrice) && targetPrice > 0 && !save.isPending;
+  const invalidHighTarget = !!product && product.price > 0 && targetPrice > 0 && targetPrice >= product.price;
+  const canSave = !!product?.vendorItemId && Number.isFinite(targetPrice) && targetPrice > 0 && !invalidHighTarget && !save.isPending;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -129,7 +130,7 @@ export default function PriceAlertsScreen() {
                       );
                     })}
                   </View>
-                  <View style={[styles.inputWrap, { borderColor: theme.line2, backgroundColor: theme.surface }]}>
+                  <View style={[styles.inputWrap, { borderColor: invalidHighTarget ? theme.up : theme.line2, backgroundColor: theme.surface }]}>
                     <TextInput
                       value={target}
                       onChangeText={value => setTarget(value.replace(/[^0-9]/g, '').slice(0, 10))}
@@ -142,7 +143,11 @@ export default function PriceAlertsScreen() {
                     />
                     <AppText tone="soft" style={t.callout}>원</AppText>
                   </View>
-                  {targetPrice > 0 ? <AppText tone="faint" style={t.footnote}>{digits(targetPrice)}원 이하가 되면 알려드려요.</AppText> : null}
+                  {invalidHighTarget ? (
+                    <AppText style={[t.footnote, { color: theme.up }]}>목표 가격은 현재 표시 가격보다 낮게 입력해 주세요.</AppText>
+                  ) : targetPrice > 0 ? (
+                    <AppText tone="faint" style={t.footnote}>{digits(targetPrice)}원 이하가 되면 알려드려요.</AppText>
+                  ) : null}
                   <Pressable
                     onPress={() => save.mutate()}
                     disabled={!canSave}
