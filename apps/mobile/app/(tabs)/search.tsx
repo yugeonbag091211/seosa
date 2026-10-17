@@ -11,13 +11,20 @@ import { productKey } from '../../lib/identity';
 import { useLocalData } from '../../lib/local';
 import { pushOnce } from '../../lib/navigation';
 import { useHomeFeed, useSearch } from '../../lib/queries';
+import { arrangeSearchResults, type SearchSort } from '../../lib/searchSort';
 import { suggestions } from '../../lib/suggest';
 import { radius, space, type as t, useTheme } from '../../lib/theme';
 import type { Product } from '../../lib/types';
 
+const SORTS: readonly { value: SearchSort; label: string }[] = [
+  { value: 'relevance', label: '관련도' },
+  { value: 'price', label: '낮은 가격' },
+  { value: 'drop', label: '많이 내린 순' },
+];
+
 /**
  * Search. Results come from /api/search unchanged — same ranking, same 10-item cap as the web
- * (Coupang's search limit), so the web and the app show the same products for the same words.
+ * (Coupang's search limit). Optional sorting only reorders those server-selected rows on-device.
  */
 export default function Search() {
   const theme = useTheme();
@@ -28,6 +35,7 @@ export default function Search() {
   const [text, setText] = useState('');
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
+  const [sort, setSort] = useState<SearchSort>('relevance');
   const { recent, addRecent, clearRecent } = useLocalData();
   const home = useHomeFeed();
   const search = useSearch(query);
@@ -59,6 +67,7 @@ export default function Search() {
 
   const popular = useMemo(() => home.data?.popular || [], [home.data]);
   const suggest = useMemo(() => (focused && text.trim() && text.trim() !== query ? suggestions(text, recent, popular) : []), [focused, text, query, recent, popular]);
+  const visibleItems = useMemo(() => arrangeSearchResults(search.data?.items || [], sort), [search.data?.items, sort]);
 
   const askAi = (items: Product[]) => {
     setAiContext({ source: 'search', keyword: query, products: items });
@@ -136,7 +145,7 @@ export default function Search() {
         </EmptyState>
       ) : (
         <FlatList
-          data={search.data.items}
+          data={visibleItems}
           keyExtractor={p => productKey(p)}
           renderItem={({ item }) => <ProductRow product={item} />}
           ItemSeparatorComponent={Separator}
@@ -149,7 +158,12 @@ export default function Search() {
                   <AppText tone="soft" style={t.footnote}>판매처 응답이 늦어 저장된 가격을 보여 드려요. 실제 가격과 다를 수 있어요.</AppText>
                 </View>
               ) : null}
-              <AppText tone="faint" style={[t.footnote, styles.count]}>{search.data.items.length}개 상품 · 관련도순</AppText>
+              <AppText tone="faint" style={[t.footnote, styles.count]}>{search.data.items.length}개 상품 · 서버가 찾은 결과 안에서 정렬</AppText>
+              <View style={styles.sorts}>
+                {SORTS.map(option => (
+                  <Chip key={option.value} label={option.label} onPress={() => setSort(option.value)} selected={sort === option.value} />
+                ))}
+              </View>
             </View>
           }
           ListFooterComponent={
@@ -175,6 +189,7 @@ const styles = StyleSheet.create({
   suggest: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.gutter, paddingVertical: 13 },
   block: { marginTop: space.xl },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: space.gutter },
+  sorts: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: space.gutter, paddingTop: space.sm, paddingBottom: space.md },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.gutter, paddingVertical: 11 },
   rankNo: { width: 20, fontSize: 13 },
   notice: { marginHorizontal: space.gutter, marginTop: space.sm, padding: space.md, borderRadius: radius.md },
