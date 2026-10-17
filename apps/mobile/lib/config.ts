@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { createApi } from './api';
+import { createAlertsApi } from './alertsApi';
 import { buildLinks } from './links';
 
 /*
@@ -15,3 +16,4 @@ export const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 export const LINKS = buildLinks({ supportEmail: process.env.EXPO_PUBLIC_SUPPORT_EMAIL });
 
 export const api = createApi({ baseUrl: API_BASE_URL });
+export const alertsApi = createAlertsApi({ baseUrl: API_BASE_URL });
