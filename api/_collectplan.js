@@ -218,8 +218,38 @@ function expectedWithin(ordered, n) {
   return s;
 }
 
+/*
+ * Recovery ladder preference from 2026-10-03 offline replay.
+ * The primary collector planner already handles starvation separately. This ordering only
+ * applies within a recovery round and NEVER drops stale products or increases API calls.
+ * These are dated calibration priors, not forecasts or claims of current conversion rates.
+ */
+const RECOVERY_PRIOR = Object.freeze({
+  '쿠팡': Object.freeze({ recent: 0.587, stale: 0.071 }),
+  'ADPICK': Object.freeze({ recent: 0.16, stale: 0.16 }),
+});
+const RECOVERY_RECENT_DAYS = 7;
+
+function recoveryProbability(mall, ageDays) {
+  const table = RECOVERY_PRIOR[mall];
+  if (!table) return 0.16; // Unknown mall: flat prior, preserve size-first ordering.
+  return ageDays !== null && Number.isFinite(ageDays) && ageDays <= RECOVERY_RECENT_DAYS
+    ? table.recent : table.stale;
+}
+
+function orderRecoveryQueue(queue, { mall, dayStartMs }) {
+  return queue.map((group, index) => ({
+    group, index,
+    expected: group.rows.reduce((sum, p) =>
+      sum + recoveryProbability(mall, ageDaysOf(p.collected_at, dayStartMs)), 0),
+  })).sort((a, b) =>
+    b.expected - a.expected || b.group.rows.length - a.group.rows.length || a.index - b.index
+  ).map(x => x.group);
+}
+
 module.exports = {
   PRIOR, INTERVAL_DAYS, URGENCY_CAP, STARVE_DAYS, STARVE_EVERY,
   freshnessClass, urgencyOf, ageDaysOf, scoreProduct, scoreGroup, orderGroups, expectedWithin, hash32,
-  advanceStarveCursor
+  advanceStarveCursor,
+  RECOVERY_PRIOR, RECOVERY_RECENT_DAYS, recoveryProbability, orderRecoveryQueue
 };
