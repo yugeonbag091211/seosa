@@ -7,7 +7,7 @@ This snapshot supersedes stale status statements in `STORE_READINESS.md` where t
 - App version: `1.0.0`
 - iOS bundle identifier: `kr.ai.seosa`
 - Android package: `kr.ai.seosa`
-- Expo SDK: 57 (`expo ~57.0.26`)
+- Expo SDK: 57 (`expo ~57.0.30` after #161)
 - React Native: `0.86.3`
 - API origin: `https://seosa.ai.kr`
 - OTA updates: disabled
@@ -21,6 +21,24 @@ This snapshot supersedes stale status statements in `STORE_READINESS.md` where t
 - Android AI composer now uses explicit `KeyboardAvoidingView` padding so the composer stays above the software keyboard; regression coverage added (#158).
 - EAS production versioning changed from local/manual to remote/automatic to prevent duplicate App Store / Play build numbers; regression coverage added (#159).
 - Tests, Mobile Check, and AI security validation passed for the release-setting changes before merge.
+
+## Progress on 2026-10-18 — web-parity implementation
+
+- #164 merged: within-run collector pre-covered skip + 33 offline regressions (server-only).
+- #165 merged: native home navigation, six quick-search shortcuts, community hotdeal list and `/community` route; the app reads the existing web server's `/api/hotdeals?view=external&limit=60`.
+- #166 merged: current-first NO_MATCH recovery-round prioritization with unchanged rate limits and option-matching logic (server-only, live outcome not established).
+- #167 merged: native `/categories` screen with six search shortcuts and dynamic popular keywords.
+- Mobile TypeScript, ESLint, native API parser tests, original mobile regression suite and root web/AI CI passed for each mobile merge.
+- Community-discovered products are labeled **verification pending** unless the API says both `verified=true` and `communityOnly=false`. The app opens the original HTTPS community post, not a synthesized affiliate URL.
+- No on-device smoke tests, EAS cloud builds, App Store / Play Console submissions, signing changes, or native affiliate-channel policy approval were performed by these PRs.
+
+### Ready for operator action
+
+1. On a developer device with repository access: `cd apps/mobile && npm ci && npm run check`.
+2. Authenticate **the owner's** Expo account: `npx eas-cli@latest login` then `npx eas-cli@latest init`; review and commit `extra.eas.projectId` in `app.json` before building. **This step remains blocked because the linked account/project is missing**, and this document cannot initialize it.
+3. Run `npx eas-cli@latest build --profile preview --platform android` for an installable APK, then complete `docs/DEVICE_SMOKE_CHECKLIST.md` on a physical Galaxy device.
+4. Compare the final native visuals and taps against the current `https://seosa.ai.kr` site on 390×844 and 360×800 devices, including light/dark themes and large fonts.
+5. Confirm the affiliate partners' rules for native app distribution, then review store accounts, privacy declarations and signing before production AAB/IPA.
 
 ## Store SDK requirements
 
@@ -46,7 +64,7 @@ As verified on 2026-10-17 against current official platform documentation:
 
 ### Deliberately deferred
 
-- Expo SDK 57 patch refresh (`npx expo install --fix`). The current dependency set is not a store-policy blocker. Run the official compatibility updater in a real checkout so the package lock and all Expo package versions move together, then run the full mobile check again.
+- SDK 57 patch refresh was completed and merged in #161 on 2026-10-17. Re-run `npx expo install --check` in the authenticated development checkout immediately before the first device build; update dependency/lockfile together only if any drift remains.
 - SDK 58 migration. Defer until after the first release unless required by a concrete issue.
 
 ## Hard blocker: EAS project linkage
