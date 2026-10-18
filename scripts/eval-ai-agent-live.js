@@ -20,6 +20,12 @@ const fs = require('fs');
 const path = require('path');
 
 const BASE = String(process.env.AI_EVAL_BASE_URL || '').replace(/\/+$/, '');
+/*
+ * Preview 가 Vercel Authentication 으로 보호돼 있으면 401 이 난다. Vercel 프로젝트 설정 →
+ * Deployment Protection → «Protection Bypass for Automation» 의 비밀값을 이 환경변수로 넘기면
+ * x-vercel-protection-bypass 헤더로 보낸다. 값은 출력·기록하지 않는다.
+ */
+const BYPASS = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
 const PAUSE_MS = Number(process.env.AI_EVAL_PAUSE_MS) || 2500;
 const ENGINES = String(process.env.AI_EVAL_ENGINES || 'v1,v2').split(',').map(s => s.trim()).filter(Boolean);
 const Tools = require('../api/_agenttools');
@@ -49,6 +55,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function post(engine, body) {
   const headers = { 'Content-Type': 'application/json' };
+  if (BYPASS) headers['x-vercel-protection-bypass'] = BYPASS;
   if (engine === 'v2') { headers['x-seosa-ai-engine'] = 'v2'; headers['x-seosa-ai-debug'] = '1'; }
   const started = Date.now();
   let status = 0, json = null, error = '';
@@ -159,6 +166,12 @@ function markdown(results, rows, startedAt) {
 
 (async () => {
   const startedAt = Date.now();
+  // 보호된 Preview 에 비밀값 없이 50번 보내지 않는다 — 한 번 확인하고 멈춘다.
+  const probe = await post('v1', { question: '안녕', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  if (probe.status === 401) {
+    console.error('Preview 가 Vercel Authentication 으로 보호돼 있다(401). VERCEL_AUTOMATION_BYPASS_SECRET 을 설정하고 다시 실행하세요.');
+    process.exit(3);
+  }
   const results = {};
   for (const engine of ENGINES) {
     results[engine] = [];

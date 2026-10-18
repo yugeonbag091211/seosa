@@ -54,6 +54,9 @@ v1 은 코드가 검색·랭킹·결정(`_decision`)을 끝내고 GPT 는 그 �
 2. 요청 단위: `x-seosa-ai-engine: v2`, 디버그 지표는 `x-seosa-ai-debug: 1` (Production 에서는 둘 다 무시).
 3. 화면에서 시험하려면 Preview 환경에만 `AI_CONCIERGE_V2_ENABLED=1`.
 4. v1↔v2 비교: `AI_EVAL_BASE_URL=https://<preview> npm run eval:agent-live` → `reports/ai-agent-v1-v2-live-<날짜>.md`
+   Preview 는 Vercel Authentication 으로 보호돼 있다(401). Vercel 프로젝트 설정 → Deployment Protection →
+   «Protection Bypass for Automation» 비밀값을 `VERCEL_AUTOMATION_BYPASS_SECRET` 으로 넘기면 헤더로 보낸다.
+   없으면 스크립트는 한 번 확인하고 멈춘다.
 
 ## 관측
 
