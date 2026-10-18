@@ -50,6 +50,10 @@ v1 은 코드가 검색·랭킹·결정(`_decision`)을 끝내고 GPT 는 그 �
 
 ## Preview 에서 시험
 
+0. 2026-10-18 확인: `OPENAI_API_KEY`·`OPENAI_MODEL`·`ADPICK_API_KEY`·`GROQ_API_KEY` 는 **Production 전용**(Sensitive)이다.
+   Preview 에는 OpenAI 키가 없어서 v2 는 `nokey` 로 v1 에 넘기고, v1 은 무료 OpenRouter 사슬로 답한다.
+   Sensitive 값은 CLI 로 읽거나 복사할 수 없다 — 대시보드에서 OPENAI_API_KEY(+OPENAI_MODEL)의 대상에
+   Preview(가능하면 이 브랜치만)를 추가한 뒤 Preview 를 다시 배포해야 v2 를 실제 OpenAI 로 잴 수 있다.
 1. Preview 배포에 `OPENAI_API_KEY` 가 있어야 한다(없으면 v2 는 조용히 v1 으로 넘어간다 — 응답에 `engine` 이 없다).
 2. 요청 단위: `x-seosa-ai-engine: v2`, 디버그 지표는 `x-seosa-ai-debug: 1` (Production 에서는 둘 다 무시).
 3. 화면에서 시험하려면 Preview 환경에만 `AI_CONCIERGE_V2_ENABLED=1`.
@@ -57,6 +61,12 @@ v1 은 코드가 검색·랭킹·결정(`_decision`)을 끝내고 GPT 는 그 �
    Preview 는 Vercel Authentication 으로 보호돼 있다(401). Vercel 프로젝트 설정 → Deployment Protection →
    «Protection Bypass for Automation» 비밀값을 `VERCEL_AUTOMATION_BYPASS_SECRET` 으로 넘기면 헤더로 보낸다.
    없으면 스크립트는 한 번 확인하고 멈춘다.
+   비밀값 없이: Vercel CLI 로 로그인해 두고 `AI_EVAL_TRANSPORT=vercel-curl AI_EVAL_VERCEL_CWD=<.vercel 연결된 폴더>`
+   로 실행하면 `vercel curl` 이 프로젝트의 우회 토큰을 스스로 붙인다(스크립트는 비밀값을 다루지 않는다).
+   이 PC 처럼 호스트 이름이 한글이면 Vercel CLI 가 "ByteString" 오류로 죽는다 —
+   `NODE_OPTIONS="--require ./scripts/_vercel-ascii-hostname.js" vercel login` (평가 스크립트는 자동 적용).
+   ※ Git Bash 에서 `vercel curl /api/ai` 를 직접 치면 경로가 `C:/Program Files/Git/api/ai` 로 바뀐다 — `MSYS_NO_PATHCONV=1`.
+   ※ `vercel curl --debug` 는 우회 토큰을 평문으로 찍는다 — 쓰지 말 것.
 
 ## 관측
 
@@ -66,5 +76,5 @@ v1 은 코드가 검색·랭킹·결정(`_decision`)을 끝내고 GPT 는 그 �
 
 ## 테스트
 
-- `npm run test:agent` — 오프라인 134 검사(모델 역할은 스크립트, 그 밖은 production 코드). `npm test` 에 포함.
+- `npm run test:agent` — 오프라인 146 검사(모델 역할은 스크립트, 그 밖은 production 코드). `npm test` 에 포함.
 - `npm run eval:agent-live` — 실제 GPT 판단 품질·지연·비용. 비용 발생, Preview 대상.

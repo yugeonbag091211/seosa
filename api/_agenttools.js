@@ -128,10 +128,12 @@ function pcSpecs(title) {
     out.cpu = `Apple M${m[1]}${tier ? ' ' + tier : ''}`;
     out.cpu_class_general = tier ? 'high' : 'mainstream';
   } else if ((m = /(?:core|코어|인텔|intel)\s*(?:ultra|울트라)\s*([3579])(?:[\s-]*(\d{3}[a-z]{0,2}))?(?![0-9])/i.exec(t))
-      || (m = /울트라\s*([579])[\s-]*(\d{3}[HUV])(?![0-9a-z])/i.exec(t))) {
+      || (m = /울트라\s*([579])[\s-]*(\d{3}[HUV])(?![0-9a-z])/i.exec(t))
+      // "Galaxy Book5 Pro … Ultra 5 RAM16GB" — 접두어 없는 Ultra 는 컴퓨터 상품명에서만 (S24 Ultra 5G 같은 폰 제외)
+      || (COMPUTER_CONTEXT_RE.test(t) && (m = /(?<![A-Za-z])ultra\s*([579])(?![0-9]|\s*g\b)(?:[\s-]*(\d{3}[hu]))?/i.exec(t)))) {
     out.cpu = `Intel Core Ultra ${m[1]}${m[2] ? ' ' + m[2].toUpperCase() : ''}`;
     out.cpu_class_general = { 3: 'basic', 5: 'mainstream', 7: 'upper', 9: 'high' }[m[1]];
-  } else if ((m = /(?<![A-Za-z0-9])(?:core\s*|코어\s*|인텔\s*|intel\s*)?i([3579])(?:[\s-]*(\d{4,5}[a-z]{0,2}))?(?![A-Za-z0-9])/i.exec(t))) {
+  } else if ((m = /(?<![A-Za-z0-9])(?:core\s*|코어\s*|인텔\s*|intel\s*)?i([3579])(?:[\s-]*(\d{4,5}[a-z]{0,2}\d?))?(?![A-Za-z0-9])/i.exec(t))) {
     out.cpu = `Intel Core i${m[1]}${m[2] ? '-' + m[2].toUpperCase() : ''}`;
     out.cpu_class_general = { 3: 'basic', 5: 'mainstream', 7: 'upper', 9: 'high' }[m[1]];
   } else if ((m = /(?:core|코어)\s*([357])[\s-]*(\d{3}[a-z]{0,2})(?![0-9])/i.exec(t))) {
@@ -155,11 +157,28 @@ function pcSpecs(title) {
     out.cpu_class_general = 'entry';
   }
 
+  /*
+   * 인텔 세대 — 같은 i7 이라도 8세대(2017년경)는 최신 i5 보다 느릴 수 있다. Preview 실측에서 "8세대 i7 램8G" 리퍼가
+   * «upper» 로만 보이면 성능 좋은 가성비로 오인될 수 있었다. "N세대" 표기 또는 모델 번호에서 읽는다
+   * (i3-6006U → 6, i5-1135G7 → 11, i3-1215U → 12, i5-12450H → 12).
+   */
+  if (/^Intel Core i/.test(out.cpu || '')) {
+    let gen = 0;
+    const g = /(?<![0-9])(\d{1,2})\s*세대/.exec(t);
+    if (g) gen = Number(g[1]);
+    const model = /-(\d{4,5})/.exec(out.cpu || '');
+    if (!gen && model) {
+      const d = model[1];
+      gen = d.length === 5 ? Number(d.slice(0, 2)) : (/^1[0-4]/.test(d) ? Number(d.slice(0, 2)) : Number(d[0]));
+    }
+    if (gen >= 1 && gen <= 15) out.cpu_generation = gen;
+  }
+
   const computer = !!out.cpu || COMPUTER_CONTEXT_RE.test(t);
   if (!computer) return out;
 
   const RAM_SIZES = new Set([2, 4, 6, 8, 12, 16, 18, 20, 24, 32, 36, 48, 64, 96, 128]);
-  if ((m = /(?:램|ram|메모리)\s*(\d{1,3})\s*gb|(\d{1,3})\s*gb\s*(?:램|ram|메모리|lpddr\d\w*|ddr\d\w*)/i.exec(t))) {
+  if ((m = /(?:램|ram|메모리)\s*(\d{1,3})\s*g(?:b)?(?![a-z])|(\d{1,3})\s*gb\s*(?:램|ram|메모리|lpddr\d\w*|ddr\d\w*)/i.exec(t))) {
     const v = Number(m[1] || m[2]);
     if (RAM_SIZES.has(v)) out.ram_gb = v;
   }
@@ -169,12 +188,36 @@ function pcSpecs(title) {
     if (!out.ram_gb && RAM_SIZES.has(ram) && st >= 32 && st > ram) out.ram_gb = ram;
     if (st >= 32 && st > ram) out.storage_gb = st;
   }
-  if (!out.storage_gb && (m = /(?:ssd|nvme|emmc)\s*(\d{2,4})\s*(gb|tb)|(\d{1,4})\s*(gb|tb)\s*(?:ssd|nvme|emmc)/i.exec(t))) {
+  if (!out.storage_gb && (m = /(?:ssd|nvme|emmc|hdd)\s*(\d{2,4})\s*(gb|tb)|(\d{1,4})\s*(gb|tb)\s*(?:ssd|nvme|emmc|hdd)/i.exec(t))) {
     const n = Number(m[1] || m[3]);
     out.storage_gb = n * (String(m[2] || m[4]).toLowerCase() === 'tb' ? 1024 : 1);
   }
+  /* 순서가 뒤집힌 표기("512GB, 16GB")·떨어진 표기 — 용량 값이 정확히 둘이고 하나는 램 크기, 하나는 저장 크기일 때만 */
+  if (!out.ram_gb || !out.storage_gb) {
+    const sizes = [];
+    const re = /(?<![0-9.])(\d{1,4})\s*(gb|tb)(?![a-z])/gi;
+    let s;
+    while ((s = re.exec(t)) !== null) {
+      const v = Number(s[1]) * (s[2].toLowerCase() === 'tb' ? 1024 : 1);
+      if (!sizes.includes(v)) sizes.push(v);
+    }
+    if (sizes.length === 2) {
+      const small = Math.min(...sizes), big = Math.max(...sizes);
+      if (RAM_SIZES.has(small) && small <= 64 && big >= 128) {
+        if (!out.ram_gb) out.ram_gb = small;
+        if (!out.storage_gb) out.storage_gb = big;
+      }
+    }
+  }
   if (/emmc/i.test(t)) out.storage_type = 'eMMC';
+  else if (/hdd/i.test(t) && !/ssd|nvme/i.test(t)) out.storage_type = 'HDD';
   else if (/ssd|nvme/i.test(t)) out.storage_type = 'SSD';
+
+  /* 운영체제 — 프리도스(윈도우 미포함)는 가성비 판단에 그대로 비용 차이다 */
+  if (/free\s*dos|프리\s*도스|os\s*미\s*(?:포함|탑재)|윈도우\s*미\s*(?:포함|설치)|no\s*os/i.test(t)) out.os = 'FreeDOS·OS 미포함(윈도우 별도)';
+  else if (/(?:win(?:dows)?|윈도우)\s*1[01]|윈도우\s*포함|윈도우포함/i.test(t)) out.os = 'Windows 포함(표기 기준)';
+  else if (/mac\s*os|맥북|macbook/i.test(t)) out.os = 'macOS';
+  else if (/chrome\s*os|크롬북|chromebook/i.test(t)) out.os = 'ChromeOS';
 
   if ((m = /(?:rtx|지포스\s*rtx|geforce\s*rtx)\s*-?\s*(\d{4})(\s*(?:ti|super))?/i.exec(t))) {
     out.gpu = `NVIDIA RTX ${m[1]}${m[2] ? ' ' + m[2].trim().toUpperCase() : ''}`;
@@ -195,6 +238,45 @@ function pcSpecs(title) {
 /* ================================================================== *
  *  레지스트리
  * ================================================================== */
+
+/*
+ * 상태·부속 — 공용 판정(_search.conditionState · productFocus)이 놓치는 판매 표기 (2026-10-18 Preview 실측).
+ *
+ *   "…노트북[리퍼코리아]"            리퍼(?![가-힣]) 규칙이 '리퍼코리아' 를 못 잡아 새 상품으로 보였다
+ *   "목걸이클립 … 이어폰목걸이 무선이어폰" 이어폰 검색에서 본품으로 보였다
+ *
+ * 공용 규칙(_search.js)은 v1 검색 순위에도 쓰이므로 여기서 바꾸지 않는다 — v2 도구 결과의 표시만 보탠다.
+ */
+const EXTRA_CONDITION = [
+  ['refurbished', /리퍼\s*(?:코리아|비시|비쉬|브|노트북|pc|제품|상품|폰)|\[\s*리퍼[^\]]*\]|refurb|재생\s*(?:노트북|pc|컴퓨터)|(?:^|[\s\[(])[sab]급\s*(?:리퍼|중고)?(?=[\s\])]|$)/i],
+  ['used', /중고\s*(?:노트북|폰|pc|컴퓨터|상품|제품)|\[\s*중고[^\]]*\]|사용감/i],
+  ['display', /전시\s*(?:상품|제품|품)|진열\s*(?:상품|제품|품)/i],
+  ['opened', /반품\s*(?:상품|제품)|단순\s*개봉|박스\s*훼손/i]
+];
+function extraCondition(title) {
+  const t = String(title || '').normalize('NFKC');
+  for (const [state, re] of EXTRA_CONDITION) if (re.test(t)) return state;
+  return '';
+}
+
+/* 본품과 함께 파는 표기("케이스 포함")는 부속이 아니다 — 그런 꼴이면 «부속일 수 있음» 으로만 둔다. */
+const STRONG_ACCESSORY_RE = /목걸이\s*(?:줄|클립)|이어폰\s*목걸이|분실\s*방지|고정\s*(?:크립|클립)|키\s*스킨|보호\s*필름|강화\s*유리\s*필름|이어\s*팁|이어\s*패드|교체용|(?:^|\s)(?:\S+\s*)?호환(?:용)?(?:\s|$)|전용\s*(?:케이스|커버|파우치|필름|거치대|충전기|케이블)/i;
+const SOFT_ACCESSORY_RE = /케이스|커버|파우치|슬리브|거치대|받침대|스트랩|충전\s*케이블|충전기|어댑터|동글|리시버|스탠드|가방|마우스\s*패드|장패드/i;
+const BUNDLED_RE = /(?:포함|증정|구성|동봉|사은품)/;
+function extraAccessory(query, title) {
+  const t = String(title || '').normalize('NFKC');
+  const q = String(query || '').normalize('NFKC');
+  if (STRONG_ACCESSORY_RE.test(q) || SOFT_ACCESSORY_RE.test(q)) return '';     // 부속을 찾는 검색
+  if (STRONG_ACCESSORY_RE.test(t)) return 'accessory';
+  const soft = SOFT_ACCESSORY_RE.exec(t);
+  if (soft && BUNDLED_RE.test(t.slice(soft.index, soft.index + soft[0].length + 6))) return 'bundled';
+  if (soft) {
+    // 상품명 맨 앞 두 낱말 안에 부속 낱말이 있으면 그것이 판매 대상이다("노트북 거치대 알루미늄")
+    const head = t.split(/\s+/).slice(0, 2).join(' ');
+    return SOFT_ACCESSORY_RE.test(head) ? 'accessory' : 'possible_accessory';
+  }
+  return '';
+}
 
 function kstToday(now) {
   return new Date((Number.isFinite(now) ? now : Date.now()) + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -255,6 +337,10 @@ function register(session, prefix, item, raw, stat, extra) {
     if (Number(focus.factor) < 1) accessory = 'accessory';
     else if (terms.length && !askedAccessory) accessory = 'possible_accessory';
   } catch (e) { /* 판정 실패 — main 으로 두되 사양·상태로 모델이 본다 */ }
+  const extraAcc = extraAccessory(query, title);
+  // "케이스 포함" 처럼 본품에 딸린 구성이면 공용 낱말 판정의 «부속일 수 있음» 을 거둔다(본품 판정 factor 가 1 일 때만).
+  if (extraAcc === 'bundled') { if (accessory === 'possible_accessory') accessory = 'main'; }
+  else if (extraAcc === 'accessory' || (extraAcc && accessory === 'main')) accessory = extraAcc;
   let specs = {};
   try {
     const sp = require('./_specs').extractSpecs(title);
@@ -264,6 +350,8 @@ function register(session, prefix, item, raw, stat, extra) {
       s.battery_mah ? { battery_mah: s.battery_mah } : {}, s.capacity_ml ? { capacity_ml: s.capacity_ml } : {},
       (sp && Array.isArray(sp.features) && sp.features.length) ? { features: sp.features.slice(0, 6) } : {});
   } catch (e) { /* 사양 없이 */ }
+  // _specs 의 «모델» 추출은 운영체제 표기(WIN11)를 모델로 집어 오는 일이 있다 — 그건 모델이 아니다.
+  if (specs.model && /^(?:win(?:dows)?\d*|winos|home|pro)$/i.test(String(specs.model))) delete specs.model;
   Object.assign(specs, pcSpecs(title));
   const entry = {
     handle,
@@ -272,7 +360,7 @@ function register(session, prefix, item, raw, stat, extra) {
     raw: raw || null,
     stat: stat || null,
     priceKnown: x.priceKnown !== false && num(item.price) > 0,
-    condition: S.conditionState(title, raw && raw.condition) || 'unspecified',
+    condition: S.conditionState(title, raw && raw.condition) || extraCondition(title) || 'unspecified',
     accessory,
     instructions: AIID.hasInstructionText(title),
     specs
@@ -689,6 +777,6 @@ async function execute(session, call) {
 }
 
 module.exports = {
-  TOOLS, LIMITS, createSession, register, execute, entryOf, view, pcSpecs, historyBrief, avgPolluted, kstToday,
+  TOOLS, LIMITS, createSession, register, execute, entryOf, view, pcSpecs, historyBrief, avgPolluted, kstToday, extraCondition, extraAccessory,
   CONDITION_KO
 };

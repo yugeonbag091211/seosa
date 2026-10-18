@@ -17,7 +17,20 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { spawnSync, execSync } = require('child_process');
+
+/*
+ * 전송 방식.
+ *   fetch        (기본) 직접 요청. 보호된 Preview 면 VERCEL_AUTOMATION_BYPASS_SECRET 이 필요하다.
+ *   vercel-curl  로그인한 Vercel CLI 의 `vercel curl` 로 보낸다. CLI 가 프로젝트의 보호 우회 토큰을
+ *                스스로 붙이므로 이 스크립트는 비밀값을 보지도 다루지도 않는다.
+ *                지연은 curl 의 time_total(실제 HTTP 왕복)이라 CLI 준비 시간은 섞이지 않는다.
+ *                AI_EVAL_VERCEL_CWD = .vercel 로 프로젝트가 연결된 폴더(기본: 현재 폴더)
+ */
+const TRANSPORT = String(process.env.AI_EVAL_TRANSPORT || 'fetch').trim();
+const LABEL = String(process.env.AI_EVAL_LABEL || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 30);
 
 const BASE = String(process.env.AI_EVAL_BASE_URL || '').replace(/\/+$/, '');
 /*
@@ -25,7 +38,36 @@ const BASE = String(process.env.AI_EVAL_BASE_URL || '').replace(/\/+$/, '');
  * Deployment Protection → «Protection Bypass for Automation» 의 비밀값을 이 환경변수로 넘기면
  * x-vercel-protection-bypass 헤더로 보낸다. 값은 출력·기록하지 않는다.
  */
-const BYPASS = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
+let BYPASS = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
+
+/* 비밀값이 환경변수에 없고 대화형 터미널이면 화면에 찍지 않고 묻는다(셸 기록·화면에 남지 않게). */
+function promptSecret(label) {
+  return new Promise(resolve => {
+    const stdin = process.stdin;
+    if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') { resolve(''); return; }
+    process.stdout.write(label);
+    let value = '';
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    const done = () => {
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.removeListener('data', onData);
+      process.stdout.write('\n');
+      resolve(value.trim());
+    };
+    const onData = chunk => {
+      for (const ch of String(chunk)) {
+        if (ch === '\r' || ch === '\n') { done(); return; }
+        if (ch === '\u0003') { process.stdout.write('\n'); process.exit(130); }
+        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
+        else if (ch >= ' ') value += ch;
+      }
+    };
+    stdin.on('data', onData);
+  });
+}
 const PAUSE_MS = Number(process.env.AI_EVAL_PAUSE_MS) || 2500;
 const ENGINES = String(process.env.AI_EVAL_ENGINES || 'v1,v2').split(',').map(s => s.trim()).filter(Boolean);
 const Tools = require('../api/_agenttools');
@@ -53,7 +95,47 @@ const DIALOGS = [
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+let vercelCli = '';
+function vercelCliJs() {
+  if (vercelCli) return vercelCli;
+  const fromEnv = String(process.env.VERCEL_CLI_JS || '').trim();
+  vercelCli = fromEnv || path.join(execSync('npm root -g', { encoding: 'utf8' }).trim(), 'vercel', 'dist', 'vc.js');
+  if (!fs.existsSync(vercelCli)) throw new Error(`Vercel CLI 를 찾지 못했다: ${vercelCli} (VERCEL_CLI_JS 로 지정)`);
+  return vercelCli;
+}
+
+function postViaVercelCurl(engine, body) {
+  const file = path.join(os.tmpdir(), `seosa-eval-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  fs.writeFileSync(file, JSON.stringify(body));
+  const marker = '__SEOSA_EVAL__';
+  const headers = engine === 'v2' ? ['--header', 'x-seosa-ai-engine: v2', '--header', 'x-seosa-ai-debug: 1'] : [];
+  const args = [vercelCliJs(), 'curl', '/api/ai', '--deployment', BASE, '--yes', '--',
+    '--silent', '--show-error', '--max-time', '60', '--request', 'POST', '--header', 'Content-Type: application/json',
+    ...headers, '--data-binary', `@${file}`, '--write-out', `\n${marker}%{http_code} %{time_total}`];
+  // 한글 호스트 이름에서 CLI 가 죽지 않게 (scripts/_vercel-ascii-hostname.js)
+  const preload = `--require ${JSON.stringify(path.join(__dirname, '_vercel-ascii-hostname.js'))}`;
+  const env = Object.assign({}, process.env, { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} ${preload}`.trim(), MSYS_NO_PATHCONV: '1' });
+  const started = Date.now();
+  const r = spawnSync(process.execPath, args, {
+    encoding: 'utf8', env, timeout: 120000, maxBuffer: 16 * 1024 * 1024,
+    cwd: process.env.AI_EVAL_VERCEL_CWD || process.cwd()
+  });
+  try { fs.unlinkSync(file); } catch (e) { /* 임시 파일 */ }
+  const out = String(r.stdout || '');
+  const at = out.lastIndexOf(marker);
+  if (at < 0) {
+    // CLI 오류 문구에는 비밀값이 없지만, 혹시 긴 토큰 꼴이 있으면 가린다.
+    const err = String(r.stderr || r.error || '').replace(/[A-Za-z0-9_-]{24,}/g, '<redacted>').split('\n').filter(Boolean).slice(-2).join(' ');
+    return { status: 0, json: null, error: err.slice(0, 160), ms: Date.now() - started };
+  }
+  const [code, secs] = out.slice(at + marker.length).trim().split(/\s+/);
+  let json = null;
+  try { json = JSON.parse(out.slice(0, at)); } catch (e) { json = null; }
+  return { status: Number(code) || 0, json, error: '', ms: Math.round(Number(secs) * 1000) || (Date.now() - started) };
+}
+
 async function post(engine, body) {
+  if (TRANSPORT === 'vercel-curl') return postViaVercelCurl(engine, body);
   const headers = { 'Content-Type': 'application/json' };
   if (BYPASS) headers['x-vercel-protection-bypass'] = BYPASS;
   if (engine === 'v2') { headers['x-seosa-ai-engine'] = 'v2'; headers['x-seosa-ai-debug'] = '1'; }
@@ -165,6 +247,7 @@ function markdown(results, rows, startedAt) {
 }
 
 (async () => {
+  if (!BYPASS && TRANSPORT !== 'vercel-curl') BYPASS = await promptSecret('Vercel Protection Bypass 비밀값 (입력은 표시되지 않음, 없으면 Enter): ');
   const startedAt = Date.now();
   // 보호된 Preview 에 비밀값 없이 50번 보내지 않는다 — 한 번 확인하고 멈춘다.
   const probe = await post('v1', { question: '안녕', contextProducts: [], chatHistory: [], view: { source: 'none' } });
@@ -186,8 +269,8 @@ function markdown(results, rows, startedAt) {
   const stamp = new Date().toISOString().slice(0, 10);
   const outDir = path.join(__dirname, '..', 'reports');
   fs.mkdirSync(outDir, { recursive: true });
-  const jsonPath = path.join(outDir, `ai-agent-v1-v2-live-${stamp}.json`);
-  const mdPath = path.join(outDir, `ai-agent-v1-v2-live-${stamp}.md`);
+  const jsonPath = path.join(outDir, `ai-agent-v1-v2-live-${stamp}${LABEL ? `-${LABEL}` : ""}.json`);
+  const mdPath = path.join(outDir, `ai-agent-v1-v2-live-${stamp}${LABEL ? `-${LABEL}` : ""}.md`);
   fs.writeFileSync(jsonPath, JSON.stringify({ base: BASE, startedAt, rows, results }, null, 2));
   fs.writeFileSync(mdPath, markdown(results, rows, startedAt));
   console.table(rows.map(r => ({ engine: r.engine, used: r.engineActuallyUsed, p50: r.p50ms, p90: r.p90ms, degraded: r.degraded, notFound: r.notFound, cost: r.v2CostUsd })));

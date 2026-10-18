@@ -449,6 +449,9 @@ function laptopBrain(mode, opts) {
     ok(cut.finish === 'incomplete:max_output_tokens', '잘린 응답 표시');
     const pf = Agent._internal.parseFinal(cut.text);
     ok(pf.truncated && /앞부분입니다/.test(pf.answer), '잘린 JSON 에서도 answer 를 건진다');
+    const flat = Agent._internal.flattenMarkdown('## 한 줄 요약\n| 구분 | 인텔 | AMD |\n|---|---|---|\n| **강점** | 단일 코어 | 멀티 코어 |\n| 약점 | 가격 | 호환성 |\n끝.');
+    ok(!/\|/.test(flat) && /\*\*한 줄 요약\*\*/.test(flat) && /- \*\*강점\*\* — 인텔: 단일 코어 \/ AMD: 멀티 코어/.test(flat) && /끝\./.test(flat),
+      '★ 화면이 못 그리는 표·제목은 목록·강조로 바꾼다(Preview 실측)', flat.replace(/\n/g, ' ⏎ '));
     const plain = Agent._internal.parseFinal('그냥 문장으로 답했어요.');
     ok(!plain.json && plain.answer === '그냥 문장으로 답했어요.' && plain.productIds.length === 0, 'JSON 이 아니면 본문만 쓰고 카드는 없다');
   }
@@ -463,6 +466,31 @@ function laptopBrain(mode, opts) {
     ok(b.cpu === 'Intel Celeron N5100' && b.cpu_class_general === 'entry', '셀러론 = entry');
     ok(c.gpu === 'NVIDIA RTX 4060' && c.storage_gb === 1024, 'RTX·1TB');
     ok(!Object.keys(Tools.pcSpecs('로지텍 M650 무선 마우스')).length, '컴퓨터가 아니면 아무것도 뽑지 않는다');
+  }
+
+  /* ---------------- 단위: Preview 실측 상품명 (2026-10-18 v1 기준선에서 실제로 나온 판매 글) ---------------- */
+  console.log('\n[U6] 실제 판매 상품명 — 상태·부속·사양 판정');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '' });
+    const reg = (q, t) => Tools.register(ses, 'S', I.normItem({ productId: `R${ses.registry.size}`, title: t, mall: '쿠팡', price: 1 }), null, null, { query: q });
+    const acer = reg('노트북', '에이서 아스파이어 5 A515-56 i5 11세대 윈도우포함 가정용 사무용 노트북[리퍼코리아]');
+    ok(acer.condition === 'refurbished' && acer.specs.cpu_generation === 11, '★ [리퍼코리아] = 리퍼 · i5 11세대', `${acer.condition} ${JSON.stringify(acer.specs)}`);
+    const nb9 = reg('노트북', '삼성전자 노트북9 NT901X5T 8세대 i7 램8G SSD256GB Win10 [RK]');
+    ok(nb9.specs.cpu_generation === 8 && nb9.specs.ram_gb === 8 && nb9.specs.storage_gb === 256, '★ 8세대 i7 · 램8G · SSD256GB', JSON.stringify(nb9.specs));
+    const hp = reg('노트북', 'HP 2026 노트북 15 라이젠5 라이젠 7000 시리즈, Natural silver, 512GB, 16GB, Free DOS, 15-fc10');
+    ok(hp.specs.ram_gb === 16 && hp.specs.storage_gb === 512 && /FreeDOS/.test(hp.specs.os), '뒤집힌 512GB, 16GB · Free DOS(윈도우 별도)', JSON.stringify(hp.specs));
+    const hdd = reg('노트북', '가성비 노트북 16인치 Intel i3-6006U 16GB 500GB HDD 윈도우10 지문인식 사무용 학습용 대화면 노트북');
+    ok(hdd.specs.cpu_generation === 6 && hdd.specs.storage_type === 'HDD', 'i3-6006U = 6세대 · HDD');
+    const gb5 = reg('노트북', 'Galaxy Book5 Pro 삼성전자 노트북 Ultra 5 RAM16GB Win11 Home, 그레이, NT940XHA-K51A(ck), 25');
+    ok(gb5.specs.cpu === 'Intel Core Ultra 5' && gb5.specs.ram_gb === 16, '접두어 없는 Ultra 5 · RAM16GB');
+    const jumper = reg('노트북', 'JUMPER 노트북 화면 대형 인텔 CPU 사무용 경량WIN11 home, S7MAX, WIN11 Home, 12GB, 256GB, 회색');
+    ok(jumper.specs.model !== 'WIN11' && !jumper.specs.cpu, '운영체제 표기(WIN11)를 모델로 읽지 않고, 없는 CPU 를 만들지 않는다');
+    const neck = reg('무선 이어폰', '목걸이클립 목걸이줄 이어폰목걸이 무선이어폰 자석 분실방지 줄목걸이 고정크립');
+    ok(neck.accessory === 'accessory', '★ 이어폰 목걸이줄은 본품이 아니다');
+    ok(reg('무선 이어폰', '삼성 갤럭시 버즈3 프로 무선 이어폰 케이스 포함').accessory === 'main', '"케이스 포함" 본품은 부속이 아니다');
+    ok(!reg('스마트폰', '삼성 갤럭시 S24 Ultra 5G 256GB 자급제').specs.cpu, '폰의 "Ultra 5G" 를 CPU 로 읽지 않는다');
+    ok(Tools.pcSpecs('i5-1135G7 8GB 256GB 노트북').cpu === 'Intel Core i5-1135G7', 'i5-1135G7 모델 번호 보존');
   }
 
   /* ---------------- A. 추천 품질 배관 ---------------- */

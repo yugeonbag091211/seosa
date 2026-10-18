@@ -132,6 +132,7 @@ const INSTRUCTIONS = [
   '- 사용자의 조건을 모두 함께 본다. "성능 좋고 가성비"는 가장 싼 것이 아니라 가격 대비 성능이 좋은 것이다. 가격만 말했을 때만 가격이 가장 중요하다.',
   '- 성능은 specs_from_title(상품명에 적힌 사양)로 비교한다. cpu_class_general 은 벤치마크가 아니라 널리 알려진 제품군 구분(entry < basic < mainstream < upper < high)이고 세대에 따라 차이가 있다. 이런 일반 지식을 쓸 때는 "일반적으로"처럼 밝힌다.',
   '- 상품명에 사양이 없으면 성능을 확인한 것처럼 말하지 않는다("상품명으로는 CPU를 확인할 수 없어요").',
+  '- cpu_generation 이 낮은 상위 등급(예: 인텔 8세대 i7)은 일반적으로 최신 하위 등급보다 느릴 수 있다. os 가 FreeDOS·OS 미포함이면 윈도우를 따로 마련해야 한다는 점을 가성비 비교에 반영한다. storage_type 이 HDD·eMMC 면 체감 속도가 느리다는 점을 밝힌다.',
   '- 본품을 찾는 사람에게 부속(kind=accessory)을 추천하지 않는다. 중고·리퍼·렌탈·전시(condition)는 사용자가 원하지 않았으면 피하고, 다룰 때는 반드시 그 사실을 밝힌다.',
   '- 조건에 맞는 후보가 없거나 적으면 그렇다고 말하고 가장 가까운 대안이나 조건 완화를 제안한다. 억지로 추천하지 않는다. 구매를 재촉하지 않는다.',
   '',
@@ -155,6 +156,7 @@ const INSTRUCTIONS = [
   '',
   '[답변 쓰기]',
   '- 자연스러운 한국어 존댓말. 결론부터, 짧고 분명하게(보통 3~8문장, 필요하면 "- " 목록과 **강조**). 매번 같은 틀을 되풀이하지 않는다.',
+  '- 화면은 **강조**와 "- " 목록만 그린다. 표(| … |)·제목(#)·코드 블록은 쓰지 않는다. 비교는 "- 항목: A는 …, B는 …" 목록으로 쓴다.',
   '- 상품은 이름으로 부른다. S01·R01 같은 ID 는 answer 에 쓰지 않는다.',
   '- 추천할 때는 왜 그 상품인지(사양·가격·가격 기록 근거)와 아쉬운 점을 함께 말한다.',
   '- 되묻기는 꼭 필요할 때 하나만, 줄 수 있는 답을 먼저 준 뒤에 한다.',
@@ -289,8 +291,36 @@ function parseFinal(text) {
   return { json: false, answer: s.startsWith('{') ? '' : s, productIds: [], primaryId: null, followups: [] };
 }
 
+/*
+ * 화면이 그리지 못하는 마크다운을 그릴 수 있는 꼴로 (public/index.html Chat.fmtText 는 **강조**·"- " 목록만 안다).
+ * Preview 실측에서 표가 그대로 "| 구분 | 인텔 | AMD |" 로 나갔다. 표 → "- 행이름 — 열: 값 / 열: 값", 제목 → **제목**.
+ */
+function flattenMarkdown(text) {
+  const lines = String(text || '').split('\n');
+  const out = [];
+  let header = null;
+  const cells = l => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  lines.forEach(line => {
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      const row = cells(line);
+      if (row.every(c => /^:?-{2,}:?$/.test(c) || !c)) return;          // 구분선
+      if (!header) { header = row; return; }
+      const label = row[0];
+      const rest = row.slice(1).map((c, i) => (header[i + 1] ? `${header[i + 1].replace(/\*\*/g, '')}: ${c}` : c)).filter(Boolean);
+      out.push(`- ${label}${rest.length ? ' — ' + rest.join(' / ') : ''}`);
+      return;
+    }
+    header = null;
+    const h = /^\s*#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
+    if (h) { out.push(`**${h[1].replace(/\*\*/g, '')}**`); return; }
+    if (/^\s*```/.test(line)) return;
+    out.push(line);
+  });
+  return out.join('\n');
+}
+
 function cleanAnswer(I, session, text) {
-  let s = String(text || '');
+  let s = flattenMarkdown(String(text || ''));
   // "(S01)" · "[R02]" 같은 꼬리표는 지우고, 맨 ID 는 상품 이름으로 바꾼다.
   s = s.replace(/\s*[([]\s*(?:ID\s*[:：]?\s*)?([SROV]\d{2})\s*[)\]]/g, (all, h) => (session.registry.has(h) ? '' : all));
   s = s.replace(/(?<![A-Za-z0-9])(?:ID\s*[:：]?\s*)?([SROV]\d{2})(?![A-Za-z0-9])/g, (all, h) => {
@@ -657,5 +687,5 @@ function finish(res, I, payload, obs, startedAt, req) {
 module.exports = {
   run, enabledFor, flagMode, nonProduction, debugAllowed,
   INSTRUCTIONS, FORMAT, AGENT_VERSION, BUDGET_MS,
-  _internal: { parseFinal, cleanAnswer, selectShown, contextBlock, safeAnswer, budgetValues, resolveConversation }
+  _internal: { parseFinal, cleanAnswer, flattenMarkdown, selectShown, contextBlock, safeAnswer, budgetValues, resolveConversation }
 };
