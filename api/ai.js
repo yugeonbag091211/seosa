@@ -3641,6 +3641,25 @@ module.exports = async function handler(req, res) {
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
 
   /*
+   * AI Concierge v2 — GPT 중심 쇼핑 에이전트 (api/_agent.js 머리 주석).
+   *
+   * 기본값은 꺼짐이다. 꺼져 있으면 이 블록은 아무것도 하지 않고 아래 v1 이 예전과 똑같이 돈다.
+   * 켜져 있어도 OpenAI 키가 없거나·쿨다운 중이거나·뉴스 질문이거나·초반에 실패하면
+   * handled=false 로 돌아오고 v1 이 이어서 답한다. 인증·레이트리밋·입력 상한은 위에서 이미 끝났다.
+   */
+  try {
+    const V2 = require('./_agent');
+    if (V2.enabledFor(req)) {
+      const v2 = await V2.run({ req, res, body, q, guest, internals: module.exports._internal });
+      if (v2 && v2.handled) return;
+      if (res.headersSent) return;
+    }
+  } catch (e) {
+    console.error('[ai] v2 디스패치 실패 — v1 로 진행:', e && e.message);
+    if (res.headersSent) return;
+  }
+
+  /*
    * 찾아낸 상품 카드.
    *
    * ★ try 밖에 둔다. 답변 생성이 실패해도(OpenRouter 장애·잔액 소진) 이미
@@ -5085,5 +5104,8 @@ module.exports._internal = {
   heuristicIntent, hasAuthHeader,
   historyMessage, normalizeHistory, resolveContext, contextNoteBlock, statFor, markFiction, P,
   unverifiedLivePriceClaim, wonMatches, hasConfirmedRecordLow, isCurrentPriceFresh,
-  PROMPT_VERSION
+  PROMPT_VERSION,
+  // AI Concierge v2 (api/_agent.js) 가 같은 검색·기록·카드·검증 경로를 다시 쓴다 — 두 벌로 두지 않는다.
+  searchProducts, attachHistory, settleWithin, withTurnSig, referencedItems, priceClaimKind, priceEvidenceValues,
+  searchTimeoutMs: AI_SEARCH_TIMEOUT_MS, enrichTimeoutMs: AI_ENRICH_TIMEOUT_MS
 };

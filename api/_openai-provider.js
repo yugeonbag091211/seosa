@@ -83,11 +83,108 @@ function parse(data) {
   };
 }
 
+/*
+ * ── Agent (function calling) requests — AI Concierge v2 (api/_agent.js) ──────
+ *
+ * The plain request() above folds a chat transcript into one Responses call.
+ * The v2 shopping agent instead runs a short tool loop: the model may answer
+ * directly, or emit function_call items that the server executes and returns as
+ * function_call_output items.  Everything stays stateless (store:false), so every
+ * round re-sends the transcript, including the model's own function_call items.
+ *
+ * The caller builds `input` as Responses input items.  This module only shapes
+ * the HTTP body and reads the output; tools run in api/_agenttools.js.
+ */
+const REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high']);
+
+function agentModelFromEnv() {
+  const raw = String(process.env.AI_V2_MODEL || '').trim().slice(0, MAX_MODEL_LEN);
+  return raw && MODEL_RE.test(raw) ? raw : modelFromEnv();
+}
+
+/** Reasoning effort for agent rounds. Luna keeps the same no-reasoning default as request(). */
+function agentReasoningEffort(model) {
+  const raw = String(process.env.AI_V2_REASONING_EFFORT || '').trim().toLowerCase();
+  if (REASONING_EFFORTS.has(raw)) return raw;
+  return /^gpt-6-luna(?:$|-)/i.test(model) ? 'none' : '';
+}
+
+function agentRequest(model, opts) {
+  const o = opts || {};
+  const body = {
+    model,
+    input: Array.isArray(o.input) ? o.input : [],
+    max_output_tokens: Math.max(16, Number(o.maxTokens) || 900),
+    store: false
+  };
+  if (o.instructions) body.instructions = String(o.instructions);
+  if (Array.isArray(o.tools) && o.tools.length) {
+    body.tools = o.tools;
+    body.tool_choice = o.toolChoice === 'none' || o.toolChoice === 'required' ? o.toolChoice : 'auto';
+    body.parallel_tool_calls = o.parallelToolCalls !== false;
+  }
+  if (o.textFormat && typeof o.textFormat === 'object') body.text = { format: o.textFormat };
+  const effort = agentReasoningEffort(model);
+  if (effort) {
+    body.reasoning = { effort };
+    // Stateless reasoning items can only be replayed with their encrypted content.
+    if (effort !== 'none') body.include = ['reasoning.encrypted_content'];
+  }
+  return {
+    url: ENDPOINT,
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body
+  };
+}
+
+/**
+ * Responses output → { text, toolCalls, replay, finish, usage }.
+ *
+ * replay holds the items to append to `input` before the next round: the model's
+ * function_call items (id dropped — store:false has nothing to reference) and any
+ * reasoning items carrying encrypted content.  Assistant text that accompanied tool
+ * calls is replayed as an assistant message so the next round sees it.
+ */
+function parseAgent(data) {
+  const base = parse(data);
+  const output = Array.isArray(data && data.output) ? data.output : [];
+  const toolCalls = [];
+  const replay = [];
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue;
+    if (item.type === 'function_call' && typeof item.name === 'string') {
+      const callId = String(item.call_id || item.id || '').slice(0, 128);
+      if (!callId) continue;
+      const args = typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments || {});
+      toolCalls.push({ callId, name: item.name.slice(0, 64), arguments: args });
+      replay.push({ type: 'function_call', call_id: callId, name: item.name.slice(0, 64), arguments: args });
+    } else if (item.type === 'reasoning' && item.encrypted_content) {
+      replay.push(item);
+    }
+  }
+  if (toolCalls.length && base.text) replay.unshift({ role: 'assistant', content: base.text });
+  const incomplete = data && data.incomplete_details && data.incomplete_details.reason;
+  return {
+    text: base.text,
+    toolCalls,
+    replay,
+    finish: incomplete ? `incomplete:${String(incomplete).slice(0, 40)}` : base.finish,
+    usage: base.usage
+  };
+}
+
 module.exports = {
   ENDPOINT,
   DEFAULT_MODEL,
   modelFromEnv,
   request,
   parse,
+  agentModelFromEnv,
+  agentReasoningEffort,
+  agentRequest,
+  parseAgent,
   _internal: { MODEL_RE }
 };
