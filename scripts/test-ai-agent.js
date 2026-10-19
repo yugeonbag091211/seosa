@@ -1280,6 +1280,37 @@ function laptopBrain(mode, opts) {
     ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
   }
 
+  console.log('\n[E15] 최종 실측 — 목록 줄머리 이름이 그 줄 금액의 주인 · 보장 어려움 · 2.4G · "안에" · 울트라PC 코드');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '30만원 이하 무선 마우스', budgetCap: 300000 });
+    const reg = (t, p) => Tools.register(ses, 'S', I.normItem({ productId: `K${ses.registry.size}`, title: t, mall: '쿠팡', price: p }), null, null, { source: 'search', query: '무선 마우스' });
+    reg('아이리버 항균처리 듀얼모드 멀티페어링 인비저블 블루투스 무소음 무선 마우스 MVM1', 13500);
+    reg('UGREEN 유그린 4000DPI 인체공학 버티컬 블루투스 무선 무소음 마우스', 22500);
+    const ultra = reg('LG전자 울트라PC 15U470 i5-7200U 16G Win10', 389000);
+    reg('HP ELITE X2 1012 G2 인텔 i5 8G 256G 윈도우11 정품설치 터치스크린 중고 노트북(펜 미포함)', 258000);
+    reg('LG 노트북 그램 14Z980 i5 16G M.2 SSD256 윈10 프로 슬림하게 가볍다', 598000);
+    ok(ultra.specs.screen_inch === 15.6, '★ "울트라PC 15U470" → 15.6인치', JSON.stringify(ultra.specs));
+    const ctx = { deps: I, entries: [...ses.registry.values()], budgets: new Set([300000]), budgetCap: 300000, history: new Map(), compares: [], userText: '30만원 이하', primary: null, shown: [] };
+    const kinds = s => Verify.verify(s, ctx).map(i => i.kind);
+    const good = [
+      '- **UGREEN 유그린 4000DPI 인체공학 버티컬 블루투스 무선 무소음 마우스** — 버티컬 구조(손목 부담 감소), 블루투스+멀티페어링 / 약 22,500원 · 장시간 업무용으로 좋아요.',
+      '- **아이리버 듀얼모드 마우스 MVM1** — 블루투스+2.4G 듀얼, 경량·저소음 / 약 13,500원',
+      '중고·리퍼 계열은 재고 상황에 따라 가격이 오르기도 해서, 앞으로 반드시 더 싸질 거라고 보장하기도 어렵습니다.',
+      '- **HP ELITE X2 1012 G2** — 중고 / i5 / RAM 8GB / SSD 256GB / 약 258,000원 · 30만원 안에 들어오는 몇 안 되는 선택지예요.',
+      '- **LG전자 울트라PC 15U470** — i5-7200U / 15인치 / 389,000원'
+    ];
+    const fp = good.map(s => [s.slice(0, 30), kinds(s)]).filter(([, k]) => k.length);
+    ok(fp.length === 0, `★ 최종 실측 문장 ${good.length}개 오탐 0`, JSON.stringify(fp));
+    const bad = [
+      ['- **UGREEN 유그린 버티컬 마우스** — 블루투스+멀티페어링 / 약 13,500원', 'price'],        // 줄머리 상품(UGREEN)의 값이 아니다
+      ['그램 선호면 14Z980(60만 원대)를 보세요.', 'price'],                                        // 598,000원은 50만 원대 (최종 실측의 진짜 오류)
+      ['앞으로 반드시 더 싸질 거예요.', 'forecast']
+    ];
+    const missed = bad.filter(([s, k]) => !kinds(s).includes(k)).map(([s, k]) => `${k}: ${s.slice(0, 40)} → ${JSON.stringify(kinds(s))}`);
+    ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
+  }
+
   console.log('\n[E11] 도구를 더 부를 수 없는 차례에는 «위 도구 결과로 답하라» 는 말을 붙인다');
   reset();
   oa.brain = (body) => {

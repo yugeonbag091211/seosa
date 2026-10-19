@@ -78,7 +78,7 @@ function mask(text, spans) {
   return chars.join('');
 }
 
-const BUDGET_AFTER_RE = /^\s*(?:원\s*)?(?:을|를|은|는|이|가|의)?\s*(?:딱\s*)?(?:지키|맞추|맞춰|이하|이내|미만|안쪽|아래|까지|선(?:에서|으로|이면)?|대(?:에서|로|의|\s)|정도|언더|예산|이상|초과|넘|짜리\s*예산|안에서|내에서|으로\s*(?:찾|맞|잡|정))/;
+const BUDGET_AFTER_RE = /^\s*(?:원\s*)?(?:을|를|은|는|이|가|의)?\s*(?:딱\s*)?(?:지키|맞추|맞춰|이하|이내|미만|안쪽|아래|까지|선(?:에서|으로|이면)?|대(?:에서|로|의|\s)|정도|언더|예산|이상|초과|넘|짜리\s*예산|안에서|내에서|안에\s|안으로|이내로|으로\s*(?:찾|맞|잡|정))/;
 const BUDGET_BEFORE_RE = /(?:예산|최대|최소|상한|하한|한도)\s*(?:은|는|이|가|을|를|:)?\s*(?:약|대략)?\s*$/;
 const DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:의\s*)?(?:차이|차액|더\s*(?:비싸|비쌉|싸|쌉|저렴|높|낮|들|써|드|주)|비싸|저렴|싸|아낄|아끼|절약|높|낮|올랐|내렸|떨어졌|오른|내린|오르|내려|비쌉|쌉|추가)/;
 const DIFF_BEFORE_MASK_RE = /(?:차이|차액)\s*(?:는|은|이|가|:)?\s*(?:약|대략)?\s*$/;
@@ -166,7 +166,7 @@ const TIMING_RE = /지금\s*(?:바로\s*)?(?:사(?:도|는|세요|시는|셔도|
  * 조건부·판단 보류 표현. "사도 좋아요" 의 '도 좋' 을 잡으면 단정이 조건부로 둔갑하므로
  * «~것도 방법» 처럼 명사구에 붙은 꼴만 본다. '어렵다' 는 어려워요·어려운 으로 활용된다.
  */
-const HEDGE_RE = /(?:것도\s*(?:방법|좋|괜찮)|수도\s*있|수\s*있어|일\s*수\s*있|고려해\s*보|가능성|모르|장담|보장할\s*수\s*없|예측할\s*수\s*없|단정하기\s*(?:어렵|어려)|판단하기\s*(?:어렵|어려))/;
+const HEDGE_RE = /(?:것도\s*(?:방법|좋|괜찮)|수도\s*있|수\s*있어|일\s*수\s*있|고려해\s*보|가능성|모르|장담|보장할\s*수\s*없|보장하기(?:도|는)?\s*(?:어렵|어려)|예측할\s*수\s*없|예측하기(?:도|는)?\s*(?:어렵|어려)|단정하기\s*(?:어렵|어려)|판단하기\s*(?:어렵|어려))/;
 const DISCLAIMER_RE = /(?:없어|없고|없으므로|없습니다|없어요|부족|어렵|어려(?:워|운|울)|못\s*(?:합|해|하)|수\s*(?:는\s*)?없|판단하지\s*않|확인되지\s*않|판단을\s*보류)/;
 /* 상품을 가리키지 않는 일반 지식 문장의 표시 — 프롬프트도 일반 지식은 이렇게 밝히라고 시킨다. */
 const GENERAL_RE = /(?:일반적으로|보통|대체로|흔히|통상|대개|일반적인|대부분|주로)/;
@@ -548,6 +548,7 @@ function verify(text, ctx) {
     const question = QUESTION_RE.test(sn.trim());
     if (!question) d.unverifiedSpecs(sn, refs).forEach(claim => {
       if (titles.includes(normalizeSpecClaim(claim))) return;
+      if (/^(?:2\.4|5|5\.8|6)g$/i.test(String(claim).trim())) return;   // "블루투스+2.4G 듀얼" — 무선 주파수 대역이지 무게가 아니다
       if (specSupported(claim, refEntries)) return;
       if (hypotheticalSpec(sn, claim)) return;
       if (generalClause(sn, claim)) return;
@@ -765,7 +766,14 @@ function priceAttribution(masked, items, d) {
      */
     const clause = si >= 0 ? clauseAround(s, spans[si][0], spans[si][1], c.start, c.end) : null;
     const clauseNamed = clause ? list.filter(it => mentions(s.slice(clause[0], clause[1]), it)) : [];
-    if (clauseNamed.length) pool = clauseNamed;
+    /*
+     * 목록 줄 "- 이름 — CPU … / 가격 …원 · 한 줄 평"(프롬프트가 쓰라는 꼴)은 줄머리의 이름이 그 줄 금액의 주인이다.
+     * 판매 글 앞머리에 기능 낱말("항균처리 듀얼모드 멀티페어링 …")이 몰려 있어, 절 안의 그런 낱말이 다른 상품을 가리킨 것으로
+     * 읽혔다(Preview 실측: UGREEN 마우스의 22,500원을 아이리버 마우스 값으로 검사).
+     */
+    const headOwners = si >= 0 ? lineHeadOwners(s.slice(spans[si][0], spans[si][1]), list, c.start - spans[si][0]) : [];
+    if (headOwners.length) pool = headOwners;
+    else if (clauseNamed.length) pool = clauseNamed;
     else if (si >= 0) {
       const [a, b] = spans[si];
       const before = named[si].filter(it => { const p = firstAt(a, b, it); return p >= 0 && p < c.start; });
@@ -789,6 +797,13 @@ function priceAttribution(masked, items, d) {
     if (!ok) bad.push(c.value);
   });
   return [...new Set(bad)];
+}
+
+/* "- 이름 — 나머지" · "- 이름: 나머지" 꼴 목록 줄에서, 금액이 나머지 쪽에 있으면 줄머리에서 이름을 댄 상품들 */
+function lineHeadOwners(line, list, at) {
+  const m = /^\s*(?:[-•*·]|\d+[.)])\s*(.{2,120}?)\s+(?:—|–|-{1,2}|:)\s+/.exec(String(line || ''));
+  if (!m || at < m[0].length) return [];
+  return list.filter(it => mentions(m[1], it));
 }
 
 /* 문장 [a,b) 안에서 금액 [start,end) 를 감싸는 절 — 쉼표·세미콜론(숫자 사이 천 단위 쉼표는 제외)으로 자른다 */
