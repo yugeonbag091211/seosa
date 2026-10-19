@@ -351,7 +351,10 @@ function createSession(deps, o) {
     searchInFlight: new Map(),
     calls: [],
     background: [],
-    evidence: { history: new Map(), compares: [], searchFailed: 0, searchEmpty: 0, searchOk: 0, queries: 0 }
+    evidence: {
+      history: new Map(), compares: [], searchFailed: 0, searchEmpty: 0, searchOk: 0, queries: 0,
+      searchRawItems: 0, searchNormalizedItems: 0, searchValidItems: 0, searchModelItems: 0
+    }
   };
 }
 
@@ -562,11 +565,18 @@ async function loadSearch(session, query) {
   const timing = { searchMs: Date.now() - t0, enrichMs: 0 };
   if (!found || !found.ok) {
     session.evidence.searchFailed++;
-    return { status: 'search_failed', reason: String((found && found.reason) || 'error').slice(0, 30), timing };
+    return {
+      status: 'search_failed', reason: String((found && found.reason) || 'error').slice(0, 30), timing,
+      providerRawCount: Number(found && found.rawCount) || (found && Array.isArray(found.items) ? found.items.length : 0),
+      rawCount: 0, normalizedCount: 0
+    };
   }
   if (!found.items.length) {
     session.evidence.searchEmpty++;
-    return { status: 'no_results', timing, from: String(found.reason || '') };
+    return {
+      status: 'no_results', timing, from: String(found.reason || ''),
+      providerRawCount: Number(found.rawCount) || 0, rawCount: 0, normalizedCount: 0
+    };
   }
   session.evidence.searchOk++;
   const raw = found.items.slice(0, LIMITS.rawPerSearch);
@@ -603,7 +613,11 @@ async function loadSearch(session, query) {
     console.warn(`[ai:v2] canonical 묶음 실패(묶지 않고 진행): ${e.message}`);
   }
   timing.enrichMs = Date.now() - t1;
-  return { status: 'ok', normed, stats, timing, from: String(found.reason || ''), rawCount: raw.length };
+  return {
+    status: 'ok', normed, stats, timing, from: String(found.reason || ''),
+    providerRawCount: Number(found.rawCount) || found.items.length,
+    rawCount: found.items.length, normalizedCount: normed.length
+  };
 }
 
 async function searchProducts(session, args, record) {
@@ -619,6 +633,7 @@ async function searchProducts(session, args, record) {
   Object.assign(rec, { query, maxPrice: maxPrice || null, condition: anyCondition ? 'any' : 'new_only' });
 
   let loaded = session.searchCache.get(key);
+  let fetched = false;
   if (loaded) rec.repeat = true;
   if (!loaded) {
     const inFlight = session.searchInFlight.get(key);
@@ -629,6 +644,7 @@ async function searchProducts(session, args, record) {
       return { status: 'limit', message: '이번 질문에서는 더 검색할 수 없다. 이미 찾은 후보로 답하고, 부족하면 부족하다고 말하라.' };
     } else {
       const pending = loadSearch(session, query);
+      fetched = true;
       session.searchInFlight.set(key, pending);
       try {
         loaded = await pending;
@@ -641,13 +657,25 @@ async function searchProducts(session, args, record) {
     }
     if (loaded.timing) Object.assign(rec, loaded.timing);
     rec.from = loaded.from || '';
+    rec.rawProvider = loaded.providerRawCount || 0;
     rec.raw = loaded.rawCount || 0;
+    rec.normalized = loaded.normalizedCount || 0;
+  }
+  if (loaded && !Object.prototype.hasOwnProperty.call(rec, 'rawProvider')) {
+    rec.from = loaded.from || '';
+    rec.rawProvider = loaded.providerRawCount || 0;
+    rec.raw = loaded.rawCount || 0;
+    rec.normalized = loaded.normalizedCount || 0;
   }
   if (loaded.status === 'no_time') return { status: 'no_time', message: '시간이 부족해 검색하지 못했다. 상품이 없다는 뜻이 아니다. 이미 찾은 후보로 답하라.' };
   if (loaded.status === 'search_failed') {
+    if (fetched) session.evidence.searchRawItems += Number(loaded.providerRawCount) || 0;
+    Object.assign(rec, { filtered: 0, validCandidates: 0, modelCandidates: 0 });
     return { status: 'search_failed', message: '쇼핑몰 검색이 지금 응답하지 않아 확인하지 못했다. 상품이 없다는 뜻이 아니다.' };
   }
   if (loaded.status === 'no_results') {
+    if (fetched) session.evidence.searchRawItems += Number(loaded.providerRawCount) || 0;
+    Object.assign(rec, { filtered: 0, validCandidates: 0, modelCandidates: 0 });
     return {
       status: 'no_results', query, searched: searchedMalls(),
       message: `이 검색어로 ${searchedMalls()} 검색에서 확인된 판매 상품이 없다. 시장에 없다는 뜻이 아니다 — 검색어를 바꿔 다시 찾거나, "이번에 확인한 상품 중에는 없다"고만 말하라.`
@@ -690,6 +718,17 @@ async function searchProducts(session, args, record) {
   }
   list = list.slice(0, LIMITS.resultsPerSearch);
   const fitsCondition = e => anyCondition || !nonNew(e);
+  const capForCandidates = session.budgetCap || cap;
+  const validCandidates = list.filter(e => e.raw && e.priceKnown && e.accessory === 'main'
+    && (/중고|리퍼|렌탈|전시|반품|개봉/.test(session.userText)
+      || e.condition === 'unspecified' || e.condition === 'new' || e.condition === 'sealed')
+    && (!capForCandidates || num(e.item.price) <= capForCandidates));
+  Object.assign(rec, { filtered: list.length, validCandidates: validCandidates.length, modelCandidates: 0 });
+  if (fetched) {
+    session.evidence.searchRawItems += Number(loaded.providerRawCount) || 0;
+    session.evidence.searchNormalizedItems += Number(loaded.normalizedCount) || 0;
+    session.evidence.searchValidItems += validCandidates.length;
+  }
   const within = cap ? list.filter(e => e.priceKnown && num(e.item.price) <= cap && e.accessory !== 'accessory' && fitsCondition(e)).length : null;
   const out = {
     status: 'ok',
@@ -918,7 +957,19 @@ async function execute(session, call) {
   }
   record.status = String((output && output.status) || 'ok');
   record.ms = Date.now() - started;
-  return fit(output || { status: 'error' });
+  const fitted = fit(output || { status: 'error' });
+  if (name === 'search_products') {
+    try {
+      const sent = JSON.parse(fitted);
+      const count = Array.isArray(sent.results) ? sent.results.length : 0;
+      record.detail.modelCandidates = count;
+      session.evidence.searchModelItems += count;
+    } catch (e) {
+      record.detail.modelCandidates = 0;
+      record.detail.modelPayloadInvalid = true;
+    }
+  }
+  return fitted;
 }
 
 module.exports = {

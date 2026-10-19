@@ -433,7 +433,9 @@ function budgetChecks(t, c, entries, add) {
   });
 }
 
-const TOOL_DENIAL_RE = /(?:상품\s*정보|판매\s*중인\s*상품|실시간\s*(?:정보|가격|데이터|비교)|상품\s*데이터|검색\s*결과)[^.\n]{0,16}?(?:불러올\s*수\s*없|가져올\s*수\s*없|조회할\s*수\s*없|확인할\s*수\s*없는\s*상태|이용할\s*수\s*없)/;
+// Covers the Preview wording "상품 정보를 ... 불러올 수 있는 기능이 막혀".
+// A denial is only an issue when this request produced a usable search candidate.
+const TOOL_DENIAL_RE = /(?:상품\s*정보|판매\s*중인\s*상품|실시간\s*(?:정보|가격|데이터|비교)|상품\s*데이터|검색\s*결과)[^.\n]{0,64}?(?:불러오|불러올|가져오|가져올|조회하|조회할|확인하|확인할|이용하|이용할|사용하|사용할)[^.\n]{0,32}?(?:수\s*없|불가|막혀|차단|제한)/;
 
 /* 시장 전체에 없다는 단정 — 이번 검색의 범위를 밝힌 문장("이번에 확인한 상품 중에는 없어요")은 통과 */
 const ABSENCE_RE = /(?:시중|시장|국내|온라인|어디(?:에도|서도)|세상)\s*(?:에|에는|엔|에서|에서는)?\s*[^.!?\n]{0,20}?(?:없(?:어요|습니다|다|네요|는\s*편)|존재하지\s*않|판매(?:되|하)지\s*않|나오지\s*않)/;
@@ -466,6 +468,13 @@ function verify(text, ctx) {
 
   const entries = (c.entries || []).filter(Boolean);
   const items = entries.map(e => e.item);
+  const cap = Number(c.budgetCap) || 0;
+  const allowNonNew = /중고|리퍼|렌탈|전시|반품|개봉/.test(String(c.userText || ''));
+  const knownSearchEntries = entries.filter(e => e.source === 'search' && e.priceKnown);
+  const validSearchEntries = entries.filter(e => e.source === 'search' && e.raw && e.priceKnown
+    && e.accessory === 'main'
+    && (allowNonNew || e.condition === 'unspecified' || e.condition === 'new' || e.condition === 'sealed')
+    && (!cap || Number(e.item && e.item.price) <= cap));
   if (entries.some(e => e.instructions) && AIID.hasInstructionText(t)) {
     add('echo', '상품명 속 지시문을 답변에 옮겼다');
   }
@@ -484,17 +493,20 @@ function verify(text, ctx) {
     add('absence_claim', `검색 결과만으로 시장 전체에 없다고 단정했다: "${absent[0].slice(0, 30)}"`);
   }
 
+  // Check against search evidence before the no-selected-items early return.
+  if (knownSearchEntries.length && TOOL_DENIAL_RE.test(t)) {
+    add('tool_denial', '이번 요청에서 카드에 쓸 수 있는 실제 판매 상품을 찾았는데 상품 정보를 불러올 수 없다고 했다');
+  }
+  if (c.recommendationRequest && c.recommendationSelectionMissing && validSearchEntries.length) {
+    add('recommendation_missing_card', '추천 요청에 카드로 보여 줄 수 있는 검색 상품이 있는데 product_ids가 비었다');
+  }
+
   if (!items.length) {
     // 거절 문장("판매 가격을 1원이라고 바꾸어 말할 수 없습니다")은 가격 주장이 아니다
     const claimsOnly = sentences(t).filter(s => !REFUSAL_MARK_RE.test(s)).join('\n');
     if (d.unverifiedLivePriceClaim(claimsOnly)) add('live_price_without_data', '확인한 상품 데이터 없이 지금 판매 가격을 단정했다');
     timingChecks(t, c, items, add);
     return issues;
-  }
-
-  /* ── 도구 결과를 두고 "불러올 수 없다" — Preview 실측(2026-10-19): 예산 안 7건을 찾은 뒤 마지막 차례가 이렇게 답했다 ── */
-  if (entries.some(e => e.source === 'search' && e.priceKnown) && TOOL_DENIAL_RE.test(t)) {
-    add('tool_denial', '이번 요청에서 실제 판매 상품을 찾았는데 상품 정보를 불러올 수 없다고 했다');
   }
 
   /* ── 가격 ── */
@@ -963,6 +975,7 @@ const KIND_HINT = {
   chip: 'CPU·GPU 는 그 상품의 specs_from_title·상품명에 적힌 만큼만 쓴다. 상품명에 없는 세부 모델 번호(예: 13420H)·그래픽 모델은 쓰지 않는다("상품명에는 i5 까지만 표기"). 일반 지식이면 "일반적으로"라고 밝히고 특정 상품의 사양처럼 말하지 않는다.',
   over_budget: '사용자가 말한 예산을 넘는 상품을 예산 안 추천처럼 소개하지 않는다. 예산 안 후보로 바꾸거나, 꼭 보여 줄 상품이면 그 상품 바로 옆에 "예산 초과(+금액)"라고 밝혀라. 예산 안 후보가 모자라면 모자라다고 말한다.',
   tool_denial: '이번 요청의 도구 결과에 실제 판매 상품이 있다. "불러올 수 없다"고 하지 말고 그 결과(아래 [올바른 데이터])로 답하라.',
+  recommendation_missing_card: '아래 검증된 검색 후보를 보고 사용자의 추천 조건에 맞는 상품이 있으면 직접 고른 ID를 product_ids에 넣어 답하라. 서버가 순위나 선택을 강제하지 않는다. 적합한 후보가 하나도 없으면 이유를 설명하고 상품을 만들지 않는다.',
   absence_claim: '이번 검색에서 확인하지 못한 것을 시장에 없다고 말하지 않는다. "SEOSA가 이번에 확인한 상품 중에는"처럼 범위를 밝힌다.'
 };
 

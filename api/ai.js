@@ -1302,15 +1302,18 @@ async function searchProducts(query, budgetMs, opts) {
     // not evidence for a current-price answer in this AI path.
     const currentItems = list.filter(it => currentSource((it && it._source) || from));
     if (!currentItems.length && (blocked || from === 'none')) {
-      return { ok: false, items: [], reason: 'blocked' };
+      return { ok: false, items: [], reason: 'blocked', rawCount: list.length, currentCount: 0 };
     }
     // A successful fresh search with zero matches is a confirmed empty result,
     // distinct from a failed search or a stale-only payload.
     if (!list.length && currentSource(from)) {
-      return { ok: true, items: [], reason: from };
+      return { ok: true, items: [], reason: from, rawCount: list.length, currentCount: 0 };
     }
     if (!currentItems.length) {
-      return { ok: false, items: [], reason: from === 'stale-cache' ? 'stale-cache' : 'unverified-source' };
+      return {
+        ok: false, items: [], reason: from === 'stale-cache' ? 'stale-cache' : 'unverified-source',
+        rawCount: list.length, currentCount: 0
+      };
     }
 
     const runOptional = async (label, task) => {
@@ -1354,7 +1357,7 @@ async function searchProducts(query, budgetMs, opts) {
       await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
     }
 
-    return { ok: true, items: currentItems, reason: from };
+    return { ok: true, items: currentItems, reason: from, rawCount: list.length, currentCount: currentItems.length };
   } catch (e) {
     console.warn(`[ai] 상품 검색 실패: ${e.message}`);
     return { ok: false, items: [], reason: 'error' };

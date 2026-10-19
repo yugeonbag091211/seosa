@@ -605,7 +605,8 @@ async function run(ctx) {
     v: AGENT_VERSION, engine: 'v2', rounds: 0, toolCalls: 0, calls: {}, inTok: 0, outTok: 0, cachedTok: 0, reasoningTok: 0, costUsd: 0,
     llmMs: [], model: '', firstIssues: [], finalIssues: [], rewrite: false, outcome: '', cards: 0,
     invalidIds: 0, droppedUnmentioned: 0, memIn: 0, memVerified: 0, memOut: 0, json: null, failReason: '',
-    supplemented: false, deferredSearches: 0, suppressedSearches: 0
+    supplemented: false, deferredSearches: 0, suppressedSearches: 0,
+    recommendationRepairCalls: 0, recommendationRepairMs: 0, recommendationRepairCostUsd: 0
   };
   /*
    * dbg — Preview 디버그 응답(_debug.trace)에만 싣는 상세 기록. 로그 줄(logObs)에는 들어가지 않는다
@@ -777,7 +778,9 @@ async function run(ctx) {
         input.push({
           role: 'developer',
           content: plan.kind === 'search'
-            ? '[서버 보완 검색] 사용자가 실제 상품 정보를 요청했지만 첫 답변에 검색이 없었다. 아래 도구 결과를 근거로 직접 추천 여부와 후보를 판단하라. 검색 실패·결과 없음이면 상품명이나 가격을 만들지 말고 확인하지 못했다고 답하라.'
+            ? (recommendationRequest(q)
+              ? '[서버 보완 검색] 아래 search_products 결과는 이번 요청에서 확인한 실제 후보와 각 후보의 ID·가격이다. status=ok이고 results가 비어 있지 않으면 상품 정보를 사용할 수 있다고 답하고, 사용자 조건에 맞는 상품이 있으면 그중에서 직접 판단해 1~4개 ID를 product_ids에 넣어라. 서버가 순위나 선택을 강제하지 않는다. 적합한 후보가 없으면 그 이유를 말하고 ID를 고르지 않아도 된다. 결과가 비었거나 실패한 경우에만 상품을 찾지 못했다고 말하며 상품명·가격을 만들지 않는다.'
+              : '[서버 보완 검색] 아래 search_products 결과는 이번 요청에서 확인한 실제 상품 정보다. 결과가 있으면 사용자의 가격·구매 정보 질문에 그 결과로 답하라. 결과가 비었거나 실패한 경우에만 확인하지 못했다고 답하고 상품명·가격을 만들지 않는다.')
             : '[서버 보완 조회] 사용자가 앞서 본 상품의 가격 정보를 물었다. 아래 도구 결과를 근거로 직접 답하라. 기록이나 현재가가 없으면 추측하지 말라.'
         });
         input.push({ type: 'function_call', call_id: callId, name: plan.name, arguments: JSON.stringify(plan.args) });
@@ -841,7 +844,9 @@ async function run(ctx) {
     const budgets = budgetValues(q, hist);
     const vctx = () => ({
       deps: I, entries: [...session.registry.values()], budgets, budgetCap: session.budgetCap, primary: pick.primary, shown: pick.shown,
-      history: session.evidence.history, compares: session.evidence.compares, userText: q
+      history: session.evidence.history, compares: session.evidence.compares, userText: q,
+      recommendationRequest: recommendationRequest(q),
+      recommendationSelectionMissing: recommendationRequest(q) && parsed.productIds.length === 0
     });
     let issues = text ? Verify.verify(text, vctx()) : [{ kind: 'empty', detail: '빈 답변' }];
     obs.firstIssues = issues.map(i => i.kind);
@@ -851,7 +856,9 @@ async function run(ctx) {
     let outcome = issues.length ? '' : 'ok';
     const fatal = issues.some(i => i.fatal);
 
-    if (issues.length && !fatal && budget.remaining() > REWRITE_MIN_MS) {
+    const recommendationRepair = issues.some(i => i.kind === 'tool_denial' || i.kind === 'recommendation_missing_card');
+    const minRewriteBudget = recommendationRepair ? 3500 : REWRITE_MIN_MS;
+    if (issues.length && !fatal && budget.remaining() > minRewriteBudget) {
       obs.rewrite = true;
       const allowTools = issues.some(i => i.kind === 'live_price_without_data' || i.kind === 'timing_unsupported')
         && session.calls.length < Tools.LIMITS.maxCalls && budget.remaining() > REWRITE_MIN_MS + 4000;
@@ -861,7 +868,9 @@ async function run(ctx) {
         content: Verify.feedbackFor(issues, {
           deps: I, history: session.evidence.history, allowTools, text, entries: [...session.registry.values()],
           budgetCap: session.budgetCap,
-          factEntries: pick.shown.length ? pick.shown : [...session.registry.values()].slice(0, 8)
+          factEntries: pick.shown.length ? pick.shown : (recommendationRepair
+            ? safeCandidates(session, [...session.registry.values()].filter(e => e.source === 'search'))
+            : [...session.registry.values()].slice(0, 8))
         })
       });
       let rewritten = null;
@@ -870,9 +879,15 @@ async function run(ctx) {
         if (remaining < 3500) break;
         const r = await llm.agentCall({
           instructions: INSTRUCTIONS, input, tools: Tools.TOOLS,
-          toolChoice: allowTools && k === 0 ? 'auto' : 'none', textFormat: FORMAT, maxTokens: MAX_OUTPUT_TOKENS
+          toolChoice: allowTools && k === 0 ? 'auto' : 'none', textFormat: FORMAT,
+          maxTokens: recommendationRepair ? Math.min(MAX_OUTPUT_TOKENS, 450) : MAX_OUTPUT_TOKENS
         }, Math.min(ROUND_TIMEOUT_MS, remaining - 1000));
-        account(r, `rewrite${k}`);
+        account(r, recommendationRepair ? `recommendation_repair${k}` : `rewrite${k}`);
+        if (recommendationRepair) {
+          obs.recommendationRepairCalls++;
+          obs.recommendationRepairMs += Number.isFinite(r.latencyMs) ? r.latencyMs : 0;
+          obs.recommendationRepairCostUsd += Number(r.costUsd) || 0;
+        }
         if (!r.ok) break;
         if (r.toolCalls.length && allowTools && k === 0) {
           input.push(...r.replay);
@@ -1046,6 +1061,19 @@ function issueDetail(issues) {
 }
 
 function finish(res, I, payload, obs, startedAt, req, dbg, session) {
+  const evidence = session && session.evidence || {};
+  const searchAttempted = !!(session && session.calls.some(c => c.name === 'search_products'));
+  obs.searchRawItems = Number(evidence.searchRawItems) || 0;
+  obs.searchNormalizedItems = Number(evidence.searchNormalizedItems) || 0;
+  obs.searchValidItems = Number(evidence.searchValidItems) || 0;
+  obs.searchModelItems = Number(evidence.searchModelItems) || 0;
+  obs.finalCardCount = Array.isArray(payload && payload.items) ? payload.items.length : 0;
+  obs.searchOutcome = !searchAttempted ? 'not_searched'
+    : obs.searchValidItems > 0 && obs.finalCardCount === 0 ? 'valid_candidates_no_cards'
+      : obs.finalCardCount > 0 ? 'cards_created'
+        : evidence.searchFailed ? 'search_failed'
+          : evidence.searchEmpty ? 'search_empty'
+            : evidence.searchOk ? 'search_succeeded_no_valid_candidates' : 'search_not_completed';
   logObs(obs, startedAt);
   if (debugAllowed(req)) {
     payload._debug = {
@@ -1056,6 +1084,12 @@ function finish(res, I, payload, obs, startedAt, req, dbg, session) {
       invalidIds: obs.invalidIds, memIn: obs.memIn, memVerified: obs.memVerified, failReason: obs.failReason,
       supplemented: obs.supplemented, deferredSearches: obs.deferredSearches,
       suppressedSearches: obs.suppressedSearches,
+      searchRawItems: obs.searchRawItems, searchNormalizedItems: obs.searchNormalizedItems,
+      searchValidItems: obs.searchValidItems, searchModelItems: obs.searchModelItems,
+      finalCardCount: obs.finalCardCount, searchOutcome: obs.searchOutcome,
+      recommendationRepairCalls: obs.recommendationRepairCalls,
+      recommendationRepairMs: obs.recommendationRepairMs,
+      recommendationRepairCostUsd: Math.round(obs.recommendationRepairCostUsd * 1e6) / 1e6,
       ms: Date.now() - startedAt
     };
     // 상세 기록(첫 답변 원문·도구 인자·레지스트리) — Production 이 아닌 곳 + 디버그 헤더일 때만.
