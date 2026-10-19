@@ -1179,6 +1179,39 @@ function laptopBrain(mode, opts) {
     void hp;
   }
 
+  console.log('\n[E12] 4차 실측 — 강조 표시·"초과 +금액"·절 단위 주인·짧은 영문 낱말·사양 코드');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '30만원 이하 헤드폰', budgetCap: 300000 });
+    const reg = (t, p) => Tools.register(ses, 'S', I.normItem({ productId: `G${ses.registry.size}`, title: t, mall: '쿠팡', price: p }), null, null, { source: 'search', query: '헤드폰' });
+    reg('소니 가벼운 노이즈 캔슬링 블루투스 헤드폰, WH-CH720N, 화이트, 50시간, 멀티단자', 139000);
+    reg('브리츠 ANC 블루투스 헤드폰, ANC1000XL3, 아이보리, 80시간', 49900);
+    reg('삼성 노트북플러스 i5 10세대, 블랙, NT551XCJ 15.6, 8GB, 256GB, WIN11 Pro', 399000);
+    const omni = reg('HP 2026 옴니북 3 AI 16 라이젠 AI 라이젠 400 시리즈, Glacier Silver, 16-bv0027AU', 1349000);
+    const dell = reg('DELL 레티튜드 노트북 7480 인텔i5 램16G SSD256G Win10 [RK]', 309000);
+    const gram = reg('LG 노트북 그램 14Z980 i5 16G M.2 SSD256 윈10 프로 슬림하게 가볍다', 598000);
+    const ctx = { deps: I, entries: [...ses.registry.values()], budgets: new Set([300000]), budgetCap: 300000, history: new Map(), compares: [], userText: '30만원 이하', primary: null, shown: [] };
+    const kinds = s => Verify.verify(s, ctx).map(i => i.kind);
+    const good = [
+      '먼저 말씀드리면, SEOSA에서 이번에 확인한 상품 중에서는 30만 원 **이내** 제품이 거의 없어요.',
+      '- **삼성 노트북플러스 NT551XCJ** — RAM 8GB / SSD 256GB / **399,000원 (예산 초과 +99,000원)**',
+      '보통은 **소니 WH-CH720N** 쪽을 가장 많이 고르시고, 5만원 전후로 아끼고 싶으시면 브리츠 ANC1000XL3를 보시면 좋겠습니다.'
+    ];
+    const fp = good.map(s => [s.slice(0, 30), kinds(s)]).filter(([, k]) => k.length);
+    ok(fp.length === 0, `★ 4차 실측 문장 ${good.length}개 오탐 0 (**이내**·초과 +금액·뒤 절의 상품)`, JSON.stringify(fp));
+    ok(!Verify.mentions('CPU Intel Core i5(11세대 계열, mainstream급)', omni.item), '★ "mainstream" 안의 "ai" 는 "옴니북 3 AI" 가 아니다');
+    ok(!Verify.mentions('램16G SSD256G Win10', gram.item) && Verify.mentions('DELL 레티튜드 7480', dell.item), '사양 코드(ssd256·m.2·윈10)는 이름이 아니다, 브랜드·라인은 이름이다');
+    const bad = [
+      ['보통은 소니 WH-CH720N을 많이 고르시고, 15만원 전후로 아끼고 싶으시면 브리츠 ANC1000XL3를 보세요.', 'price'],   // 뒤 절의 브리츠는 49,900원
+      ['- 삼성 노트북플러스 — 399,000원 (예산 초과 +49,000원)', 'price']
+    ];
+    const missed = bad.filter(([s, k]) => !kinds(s).includes(k)).map(([s, k]) => `${k}: ${s.slice(0, 40)}`);
+    ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
+    const g14 = Tools.pcSpecs('LG 그램 14 코어i5 FHD 윈도우11 화이트 (코어i5-1135G7/16G/SSD512G 듀얼 [SSD256G + SSD256G]/14" IPS FHD/윈11)');
+    ok(g14.ram_gb === 16 && g14.storage_gb === 512, '★ "16G/SSD512G" (B 를 뺀 표기) → 램 16GB · SSD 512GB', JSON.stringify(g14));
+    ok(gram.specs.ram_gb === 16 && gram.specs.storage_gb === 256 && gram.specs.screen_inch === 14, '"그램 14Z980 i5 16G M.2 SSD256" → 16GB · 256GB · 14인치', JSON.stringify(gram.specs));
+  }
+
   console.log('\n[E11] 도구를 더 부를 수 없는 차례에는 «위 도구 결과로 답하라» 는 말을 붙인다');
   reset();
   oa.brain = (body) => {

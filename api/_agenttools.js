@@ -210,6 +210,18 @@ function pcSpecs(title) {
     const n = Number(m[1] || m[3]);
     out.storage_gb = n * (String(m[2] || m[4]).toLowerCase() === 'tb' ? 1024 : 1);
   }
+  /*
+   * B 를 뺀 판매 표기 — "코어i5-1135G7/16G/SSD512G", "16G M.2 SSD256", "SSD 1T".
+   * Preview 실측(2026-10-19): 이 그램의 램·SSD 를 못 읽어 GPT 가 "RAM 상품명에 표기 없음(판매 페이지상 16GB)" 이라고 답했다.
+   */
+  if (!out.ram_gb && (m = /(?<![0-9a-z.])(\d{1,2})\s*g(?![a-z0-9])\s*[/,·+]?\s*(?:m\.?2\s*)?(?:ssd|nvme|emmc|hdd)/i.exec(t)) && RAM_SIZES.has(Number(m[1]))) {
+    out.ram_gb = Number(m[1]);
+  }
+  if (!out.storage_gb && (m = /(?:ssd|nvme|emmc|hdd)\s*(\d{2,4})\s*(g|t)?(?![a-z0-9])/i.exec(t))) {
+    const n = Number(m[1]);
+    const tb = String(m[2] || '').toLowerCase() === 't';
+    if (tb || n >= 32) out.storage_gb = n * (tb ? 1024 : 1);
+  }
   /* 순서가 뒤집힌 표기("512GB, 16GB")·떨어진 표기 — 용량 값이 정확히 둘이고 하나는 램 크기, 하나는 저장 크기일 때만 */
   if (!out.ram_gb || !out.storage_gb) {
     const sizes = [];

@@ -85,7 +85,7 @@ const DIFF_BEFORE_MASK_RE = /(?:차이|차액)\s*(?:는|은|이|가|:)?\s*(?:약
 /* 서버 가격 − 사용자 예산 꼴의 차액 표지 ("29,000원 초과", "예산보다 2만 9천 원", "예산을 약 3만 원 넘어요") */
 const BUDGET_DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:더\s*)?(?:초과|넘|오버|웃돌|비싸|비쌉|높|싸|쌉|저렴|낮|남|모자라|부족)/;
 const BUDGET_DIFF_BEFORE_RE = /예산\s*(?:\([^)]{0,14}\)\s*)?(?:을|를|보다|에서|대비|기준)\s*(?:약|대략|거의)?\s*$/;
-const PLUS_DIFF_BEFORE_RE = /(?:초과|넘|오버|웃돌)?\s*[(（]\s*[+＋]\s*(?:약\s*)?$/;
+const PLUS_DIFF_BEFORE_RE = /(?:(?:초과|넘|오버|웃돌)\s*[(（]?|[(（])\s*[+＋]\s*(?:약\s*)?$/;
 
 /**
  * 사용자 예산 되받기·서버 가격끼리의 차액을 가린 사본. 위치는 그대로다.
@@ -227,16 +227,18 @@ function verdictBucket(code) {
  * Preview 실측(2026-10-19): "RAM: 최소 16GB 권장", "CPU는 인텔 13·14세대 i5/i7, AMD 라이젠 5·7 최신 세대면 충분해요" 같은
  * 일반 조언 문장이 16gb·인텔·rtx 같은 낱말로 모든 노트북을 «가리킨» 것으로 읽혀, 그 상품들의 사양 오류로 잡혔다.
  */
-const NON_NAME_TOKEN_RE = /^(?:\d+(?:\.\d+)?(?:gb|tb|g|t|인치|inch|hz|w|mah|cm|mm|kg|세대|db|시간)?|\d+(?:\.\d+)?|i[3579]|코어i[3579]|core|코어|인텔|intel|amd|라이젠\d?|ryzen|ultra|울트라|셀러론|celeron|펜티엄|pentium|지포스|geforce|rtx|gtx|nvidia|엔비디아|라데온|radeon|ssd|hdd|nvme|emmc|ram|램|ddr\d|lpddr\d\w*|win\d*|windows|윈도우\d*|윈도우포함|home|pro|프로|freedos|dos|fhd|qhd|uhd|ips|oled|anc|노이즈캔슬링|하이브리드|게이밍|gaming|laptop|블랙|화이트|실버|그레이|아이보리|베이지|네이비|그라파이트|시리즈|가성비|사무용|업무용|학생용|인강용|대학생|초경량|경량|슬림|고사양|대용량)$/;
+const NON_NAME_TOKEN_RE = /^(?:\d+(?:\.\d+)?(?:gb|tb|g|t|인치|inch|hz|w|mah|cm|mm|kg|세대|db|시간)?|\d+(?:\.\d+)?|i[3579]|코어i[3579]|core|코어|인텔|intel|amd|ai|라이젠\d?|ryzen|ultra|울트라|셀러론|celeron|펜티엄|pentium|지포스|geforce|rtx|gtx|nvidia|엔비디아|라데온|radeon|ssd|hdd|nvme|emmc|ram|램|ddr\d|lpddr\d\w*|win\d*|windows|윈도우\d*|윈도우포함|home|pro|프로|freedos|dos|fhd|qhd|uhd|ips|oled|anc|노이즈캔슬링|하이브리드|게이밍|gaming|laptop|블랙|화이트|실버|그레이|아이보리|베이지|네이비|그라파이트|시리즈|가성비|사무용|업무용|학생용|인강용|대학생|초경량|경량|슬림|고사양|대용량)$/;
 /*
  * 이름 낱말 = 상품명 «앞부분»(브랜드·제품 라인, 앞 6낱말) + 어디에 있든 모델 코드(글자+숫자) + 라인 이름 줄기("그램15" → "그램").
  * 상품명 뒤쪽의 꾸밈말("얇고 가벼운 고사양", "사무용 학생용")은 이름이 아니다 — Preview 실측에서 "가벼운 게임" 이
  * "…얇고 가벼운 그램노트북" 을 가리킨 것으로 읽혀 엉뚱한 상품의 사양으로 검사됐다.
  */
 const GENERIC_WORD_RE = /^(?:무선|유선|블루투스|정품|노트북|마우스|헤드폰|이어폰|키보드|모니터|상품|제품|쿠팡|국내|공식|무료배송|당일발송)$/;
+/* 글자+숫자지만 모델 코드가 아닌 사양 표기 — "ssd256g", "램16g", "m.2", "win10", "윈10", "ddr4", "lpddr5x", "wifi6" */
+const SPEC_CODE_RE = /^(?:ssd|hdd|nvme|emmc|램|ram|메모리)\d+[a-z]*$|^m\.?2$|^(?:win|윈|윈도우)\d+[a-z가-힣]*$|^(?:lp)?ddr\d\w*$|^wi-?fi\d*\w*$|^usb\d\w*$|^\d+(?:g|gb|t|tb|hz|w|mah)\w*$/;
 function itemWords(item) {
   const raw = String(item && item.title || '').toLowerCase().split(/[\s,\[\]()/·|+]+/).filter(Boolean);
-  const keep = w => w.length >= 2 && !/^\d+$/.test(w) && !NON_NAME_TOKEN_RE.test(w) && !GENERIC_WORD_RE.test(w);
+  const keep = w => w.length >= 2 && !/^\d+$/.test(w) && !NON_NAME_TOKEN_RE.test(w) && !SPEC_CODE_RE.test(w) && !GENERIC_WORD_RE.test(w);
   const out = [];
   const push = w => { if (keep(w) && !out.includes(w)) out.push(w); };
   raw.slice(0, 6).forEach(push);
@@ -255,7 +257,13 @@ function unionItems(a, b) {
 function mentions(text, item) {
   const t = String(text || '').toLowerCase();
   if (item && item.ref && new RegExp(`(?:^|[^A-Za-z0-9])${item.ref}(?:$|[^A-Za-z0-9])`, 'i').test(text)) return true;
-  return itemWords(item).some(w => t.includes(w));
+  /*
+   * 짧은 영문 낱말(ai·lg·hp·rk)은 낱말 경계에서만 — "mainstream" 안의 "ai" 가 "옴니북 3 AI" 를 가리킨 것으로 읽혀
+   * 엉뚱한 상품 여섯 개가 그 절의 주인이 됐다(Preview 실측 답 재생). 한글 낱말은 붙여 써도 같은 이름이라 포함으로 본다.
+   */
+  return itemWords(item).some(w => (/^[a-z0-9.\-]{1,3}$/.test(w)
+    ? new RegExp(`(?<![a-z0-9])${w.replace(/[.\-]/g, '\\$&')}(?![a-z0-9])`).test(t)
+    : t.includes(w)));
 }
 
 function normalizeSpecClaim(s) {
@@ -433,7 +441,8 @@ const ABSENCE_SCOPE_RE = /(?:SEOSA|서사|이번|검색|확인한|확인된|찾�
 function verify(text, ctx) {
   const c = ctx || {};
   const d = c.deps;
-  const t = String(text || '');
+  // **강조** 표시는 주장의 일부가 아니다 — "30만 원 **이내**" 의 ** 때문에 예산 되받기를 못 알아봤다(Preview 실측).
+  const t = String(text || '').replace(/\*\*/g, '');
   const issues = [];
   const add = (kind, detail, values, fatal) => issues.push(Object.assign({ kind, detail }, values ? { values } : {}, fatal ? { fatal: true } : {}));
 
@@ -704,7 +713,15 @@ function priceAttribution(masked, items, d) {
      * (문장이 금액으로 시작하거나 주어가 생략됐으면) 직전 문장의 상품과 이 문장 뒤쪽의 상품 중에서 찾는다.
      */
     let pool = list;
-    if (si >= 0) {
+    /*
+     * 쉼표로 나뉜 «절» 안에 상품 이름이 있으면 그 절의 상품이 주인이다 — "소니를 가장 많이 고르시고, 5만원 전후로
+     * 아끼고 싶으시면 브리츠 …" 의 5만원은 뒤 절의 브리츠 것이다(Preview 실측: 앞 절의 소니 가격으로 검사해 오류로 잡았다).
+     * "A는 459,000원, B는 549,000원" 도 절마다 주인이 갈려 더 정확해진다. 천 단위 쉼표(49,900)는 절 경계가 아니다.
+     */
+    const clause = si >= 0 ? clauseAround(s, spans[si][0], spans[si][1], c.start, c.end) : null;
+    const clauseNamed = clause ? list.filter(it => mentions(s.slice(clause[0], clause[1]), it)) : [];
+    if (clauseNamed.length) pool = clauseNamed;
+    else if (si >= 0) {
       const [a, b] = spans[si];
       const before = named[si].filter(it => { const p = firstAt(a, b, it); return p >= 0 && p < c.start; });
       if (before.length) pool = before;
@@ -725,6 +742,16 @@ function priceAttribution(masked, items, d) {
     if (!ok) bad.push(c.value);
   });
   return [...new Set(bad)];
+}
+
+/* 문장 [a,b) 안에서 금액 [start,end) 를 감싸는 절 — 쉼표·세미콜론(숫자 사이 천 단위 쉼표는 제외)으로 자른다 */
+function clauseAround(s, a, b, start, end) {
+  const isSep = i => (s[i] === ',' || s[i] === ';' || s[i] === '，') && !(/\d/.test(s[i - 1] || '') && /\d/.test(s[i + 1] || ''));
+  let left = a;
+  for (let i = start - 1; i >= a; i--) if (isSep(i)) { left = i + 1; break; }
+  let right = b;
+  for (let i = end; i < b; i++) if (isSep(i)) { right = i; break; }
+  return [left, right];
 }
 
 function sentenceAround(t, at) {
