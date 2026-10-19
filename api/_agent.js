@@ -55,6 +55,13 @@ const ROUND_TIMEOUT_MS = boundedEnv('AI_V2_ROUND_TIMEOUT_MS', 12000, 200, 15000)
  * 검색을 한 번 더 한 요청은 마지막 답변이 시간 초과로 끊겼다.
  */
 const ANSWER_RESERVE_MS = boundedEnv('AI_V2_ANSWER_RESERVE_MS', 9000, 2000, 15000);
+/*
+ * 도구 결과가 실린 뒤의 차례(대개 최종 답변) 상한. gpt-5.1 최종 답변은 실측 4~10초였지만 같은 날 두 번 12초를 넘겼다
+ * (출력 675 토큰 — 공급자 쪽 지연). 첫 차례(도구 고르기, 출력 ~100 토큰)는 ROUND_TIMEOUT_MS 그대로.
+ */
+const FINAL_ROUND_TIMEOUT_MS = boundedEnv('AI_V2_FINAL_ROUND_TIMEOUT_MS', 16000, 200, 20000);
+/* 도구를 더 부를 수 없는 차례에 붙이는 말 — tool_choice:none 만 주면 gpt-5.1 이 도구 결과를 두고도 "상품 정보를 불러올 수 없다" 고 답했다(실측) */
+const FINAL_NOTE = '[서버] 이번 차례에는 도구를 더 부를 수 없다. 위의 도구 결과(search_products·get_price_history 등)만으로 바로 답하라. 결과에 상품이 있으면 "상품 정보를 불러올 수 없다"고 말하지 말고 그 상품들로 답한다.';
 /** 재작성 한 차례를 시도할 최소 남은 시간 — 모자라면 문제 문장만 걷어 낸다(redact). */
 const REWRITE_MIN_MS = boundedEnv('AI_V2_REWRITE_MIN_MS', 6500, 2000, 15000);
 const MIN_ROUND_MS = 2500;
@@ -545,16 +552,22 @@ async function run(ctx) {
     /* ── 도구 루프 ── */
     let final = null;
     let retried = false;
+    let finalNoted = false;
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const remaining = budget.remaining();
       if (remaining < MIN_ROUND_MS + 500) { obs.failReason = 'budget'; break; }
       // 도구를 한 번 더 부르면(라운드 + 검색) 최종 답변 몫이 남지 않는 시점부터는 답만 쓰게 한다.
       const lastRound = round === MAX_ROUNDS - 1 || session.calls.length >= Tools.LIMITS.maxCalls
         || remaining < ANSWER_RESERVE_MS + 2500;
+      if (lastRound && session.calls.length && !finalNoted) {
+        input.push({ role: 'developer', content: FINAL_NOTE });
+        finalNoted = true;
+      }
+      const cap = session.calls.length ? Math.max(ROUND_TIMEOUT_MS, FINAL_ROUND_TIMEOUT_MS) : ROUND_TIMEOUT_MS;
       const r = await llm.agentCall({
         instructions: INSTRUCTIONS, input, tools: Tools.TOOLS,
         toolChoice: lastRound ? 'none' : 'auto', textFormat: FORMAT, maxTokens: MAX_OUTPUT_TOKENS
-      }, Math.min(ROUND_TIMEOUT_MS, remaining - 1000));
+      }, Math.min(cap, remaining - 1000));
       account(r, `loop${round}`);
       if (!r.ok) {
         /*

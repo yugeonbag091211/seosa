@@ -78,7 +78,7 @@ function mask(text, spans) {
   return chars.join('');
 }
 
-const BUDGET_AFTER_RE = /^\s*(?:원\s*)?(?:이하|이내|미만|안쪽|아래|까지|선(?:에서|으로|이면)?|대(?:에서|로|의|\s)|정도|언더|예산|이상|초과|넘|짜리\s*예산|안에서|내에서|으로\s*(?:찾|맞|잡|정))/;
+const BUDGET_AFTER_RE = /^\s*(?:원\s*)?(?:을|를|은|는|이|가|의)?\s*(?:이하|이내|미만|안쪽|아래|까지|선(?:에서|으로|이면)?|대(?:에서|로|의|\s)|정도|언더|예산|이상|초과|넘|짜리\s*예산|안에서|내에서|으로\s*(?:찾|맞|잡|정))/;
 const BUDGET_BEFORE_RE = /(?:예산|최대|최소|상한|하한|한도)\s*(?:은|는|이|가|을|를|:)?\s*(?:약|대략)?\s*$/;
 const DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:의\s*)?(?:차이|차액|더\s*(?:비싸|싸|저렴|높|낮|들|써|드|주)|비싸|저렴|싸|아낄|아끼|절약|높|낮|올랐|내렸|떨어졌|오른|내린|오르|내려|비쌉|쌉|추가)/;
 const DIFF_BEFORE_MASK_RE = /(?:차이|차액)\s*(?:는|은|이|가|:)?\s*(?:약|대략)?\s*$/;
@@ -134,12 +134,14 @@ function maskAllowed(text, known) {
     if (!diffCue && !budgetCue) return;
     const approx = a.unit ? UNIT[a.unit] : (/(?:약|대략|거의)\s*$/.test(before) ? 1000 : 0);
     const tol = Math.max(approx ? approx / 2 : 0, 1);
+    // "약 45만 원" ← 457,680원: 어림은 반올림도 버림도 쓴다(그 자리 단위 안에서만).
+    const near = d => Math.abs(d - a.value) <= tol || (approx > 0 && Math.floor(d / approx) * approx === a.value);
     for (let i = 0; i < values.length; i++) {
       if (diffCue) {
         for (let j = 0; j < values.length; j++) {
           if (i === j) continue;
           const d = values[i] - values[j];
-          if (d > 0 && Math.abs(d - a.value) <= tol) { spans.push(a); return; }
+          if (d > 0 && near(d)) { spans.push(a); return; }
         }
       }
       // 서버 가격과 사용자 예산의 차이("예산보다 29,000원 비싸요", "예산을 2만 9천 원 넘어요").
@@ -148,7 +150,7 @@ function maskAllowed(text, known) {
       const down = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:더\s*)?(?:싸|쌉|저렴|낮|남)/.test(after);
       for (let k = 0; k < budgetList.length; k++) {
         const d = values[i] - budgetList[k];
-        if (!d || Math.abs(Math.abs(d) - a.value) > tol) continue;
+        if (!d || !near(Math.abs(d))) continue;
         if ((up && d < 0) || (down && d > 0)) continue;
         spans.push(a);
         return;
@@ -167,7 +169,7 @@ const TIMING_RE = /지금\s*(?:바로\s*)?(?:사(?:도|는|세요|시는|셔도|
 const HEDGE_RE = /(?:것도\s*(?:방법|좋|괜찮)|수도\s*있|수\s*있어|일\s*수\s*있|고려해\s*보|가능성|모르|장담|보장할\s*수\s*없|예측할\s*수\s*없|단정하기\s*(?:어렵|어려)|판단하기\s*(?:어렵|어려))/;
 const DISCLAIMER_RE = /(?:없어|없고|없으므로|없습니다|없어요|부족|어렵|어려(?:워|운|울)|못\s*(?:합|해|하)|수\s*(?:는\s*)?없|판단하지\s*않|확인되지\s*않|판단을\s*보류)/;
 /* 상품을 가리키지 않는 일반 지식 문장의 표시 — 프롬프트도 일반 지식은 이렇게 밝히라고 시킨다. */
-const GENERAL_RE = /(?:일반적으로|보통|대체로|흔히|통상|대개|일반적인)/;
+const GENERAL_RE = /(?:일반적으로|보통|대체로|흔히|통상|대개|일반적인|대부분|주로)/;
 const BUY_STANCE_RE = /(?:사도\s*(?:괜찮|좋|돼|될|무방)|사셔도|사세요|구매하셔도|구매하세요|구매해도\s*(?:괜찮|좋|돼)|살\s*(?:때|만한\s*때)|사기\s*좋|구매\s*적기)/;
 const WAIT_STANCE_RE = /(?:기다리|지켜보|미루|서두르지|조금\s*더\s*(?:보|기다))/;
 const NEGATED_BUY_RE = /(?:사지\s*(?:마|않)|안\s*사|구매하지\s*(?:마|않)|사기보다는|사기엔\s*(?:이르|비싸))/;
@@ -186,12 +188,12 @@ function stripQuoted(text) {
   return String(text || '').replace(QUOTED_RE, m => ' '.repeat(m.length));
 }
 /* "지금 사도 괜찮은지 확인해서" — 구매 시점을 단정한 것이 아니라 확인할 일을 말한 간접 의문 */
-const INDIRECT_TIMING_RE = /(?:사도|사셔도|구매해도|구매하셔도|사는\s*게|사기에)\s*(?:괜찮|좋|되|돼|나을|낫|맞)[가-힣]{0,3}지|(?:살|구매할)\s*(?:때|시점|타이밍)인지/;
+const INDIRECT_TIMING_RE = /(?:사도|사셔도|구매해도|구매하셔도|사는\s*게|사기에)\s*[가-힣]{1,5}지(?![가-힣])|(?:살|구매할)\s*(?:때|시점|타이밍)인지/;
 /* "당장 필요하다면 지금 사셔도 무리 없는 수준" — 필요에 따른 조건부 조언. 기록이 부족하다는 고지가 함께 있을 때만 통과 */
 const NEED_COND_RE = /(?:당장|바로|급하게|꼭)\s*(?:필요|쓰|써야|사용)|필요하(?:다면|시다면|시면|면)|급하(?:다면|시다면|시면|면)/;
 const RECORD_CAVEAT_RE = /(?:기록|데이터|근거|이력|관측)[^.\n]{0,16}?(?:부족|없|하루|1일|1건|적어|짧)|판단(?:하기|할)\s*(?:어렵|어려|근거가\s*없)|UNKNOWN|판정할\s*근거가\s*없/;
 /* 질문 문장은 사실 주장이 아니다 — "화면 크기(13~14인치 vs 15~16인치) 선호가 있으신가요?" (Preview 실측: 16인치 가 사양 오류로 잡혔다) */
-const QUESTION_RE = /(?:\?|？)\s*$|(?:인가요|일까요|으신가요|있으신가요|하실까요|드릴까요|할까요|원하세요|원하시나요|어떠세요)\s*[.!]?\s*$/;
+const QUESTION_RE = /(?:\?|？)\s*$|(?:인가요|일까요|으신가요|있으신가요|하실까요|드릴까요|할까요|원하세요|원하시나요|어떠세요|알려\s*주세요|말씀해\s*주세요|골라\s*주세요|중요하신지[^.]*)\s*[.!]?\s*$/;
 /* 가정·업그레이드 말 속의 사양 — "나중에 32GB로 업그레이드해야 한다면", "RAM 32GB가 필요하다면" */
 function hypotheticalSpec(sentence, claim) {
   const s = normalizeSpecClaim(sentence);
@@ -199,7 +201,18 @@ function hypotheticalSpec(sentence, claim) {
   const at = s.indexOf(c);
   if (at < 0) return false;
   const tail = s.slice(at + c.length, at + c.length + 14);
-  return /^(?:으로|로)(?:업그레이드|증설|늘리|늘려|확장|교체|올리|올려)|^(?:이|가)?(?:필요하|필요할|있으면|이상(?:이면|을|은)?|정도면|정도는|급이면)/.test(tail);
+  if (/^(?:으로|로)(?:업그레이드|증설|늘리|늘려|확장|교체|올리|올려)|^(?:이|가)?(?:필요하|필요할|있으면|이상(?:이면|을|은)?|정도면|정도는|급이면)/.test(tail)) return true;
+  // "코딩·디자인을 한다면 16GB를 권해요" — 조건에 따른 사양 수준 권유(특정 상품의 사양 주장이 아니다)
+  return /(?:한다면|하신다면|하시면|라면|이라면|경우(?:에는|엔)?)/.test(s.slice(0, at))
+    && /^(?:을|를|이|가|은|는)?(?:권|추천|고르|골라|선택|필요|좋|충분|넉넉)/.test(tail);
+}
+
+/* 사양이 놓인 «절» 이 일반 지식 표시를 달고 있는가 — "i3-1215U에 램 8GB라 충분하지만, 창을 많이 띄우면 일반적으로 16GB가 더 편해요" 의 16GB */
+function generalClause(sentence, claim) {
+  const parts = String(sentence || '').split(/[,，;]|(?:지만|하지만|다만|그런데|반면|그래도)\s/);
+  const c = normalizeSpecClaim(claim);
+  const clause = parts.find(p => normalizeSpecClaim(p).includes(c));
+  return !!clause && GENERAL_RE.test(clause);
 }
 
 function verdictBucket(code) {
@@ -209,9 +222,34 @@ function verdictBucket(code) {
   return 'unknown';
 }
 
+/*
+ * 상품을 «가리키는» 낱말만 — 사양·부품 계열 낱말은 상품 이름이 아니다.
+ * Preview 실측(2026-10-19): "RAM: 최소 16GB 권장", "CPU는 인텔 13·14세대 i5/i7, AMD 라이젠 5·7 최신 세대면 충분해요" 같은
+ * 일반 조언 문장이 16gb·인텔·rtx 같은 낱말로 모든 노트북을 «가리킨» 것으로 읽혀, 그 상품들의 사양 오류로 잡혔다.
+ */
+const NON_NAME_TOKEN_RE = /^(?:\d+(?:\.\d+)?(?:gb|tb|g|t|인치|inch|hz|w|mah|cm|mm|kg|세대|db|시간)?|\d+(?:\.\d+)?|i[3579]|코어i[3579]|core|코어|인텔|intel|amd|라이젠\d?|ryzen|ultra|울트라|셀러론|celeron|펜티엄|pentium|지포스|geforce|rtx|gtx|nvidia|엔비디아|라데온|radeon|ssd|hdd|nvme|emmc|ram|램|ddr\d|lpddr\d\w*|win\d*|windows|윈도우\d*|윈도우포함|home|pro|프로|freedos|dos|fhd|qhd|uhd|ips|oled|anc|노이즈캔슬링|하이브리드|게이밍|gaming|laptop|블랙|화이트|실버|그레이|아이보리|베이지|네이비|그라파이트|시리즈|가성비|사무용|업무용|학생용|인강용|대학생|초경량|경량|슬림|고사양|대용량)$/;
+/*
+ * 이름 낱말 = 상품명 «앞부분»(브랜드·제품 라인, 앞 6낱말) + 어디에 있든 모델 코드(글자+숫자) + 라인 이름 줄기("그램15" → "그램").
+ * 상품명 뒤쪽의 꾸밈말("얇고 가벼운 고사양", "사무용 학생용")은 이름이 아니다 — Preview 실측에서 "가벼운 게임" 이
+ * "…얇고 가벼운 그램노트북" 을 가리킨 것으로 읽혀 엉뚱한 상품의 사양으로 검사됐다.
+ */
+const GENERIC_WORD_RE = /^(?:무선|유선|블루투스|정품|노트북|마우스|헤드폰|이어폰|키보드|모니터|상품|제품|쿠팡|국내|공식|무료배송|당일발송)$/;
 function itemWords(item) {
-  return String(item && item.title || '').toLowerCase().split(/[\s,\[\]()/·|+]+/)
-    .filter(w => w.length >= 2 && !/^\d+$/.test(w) && !/^(?:무선|유선|블루투스|정품|노트북|마우스|헤드폰|이어폰|키보드|모니터|상품|제품|쿠팡|국내|공식|무료배송|당일발송)$/.test(w));
+  const raw = String(item && item.title || '').toLowerCase().split(/[\s,\[\]()/·|+]+/).filter(Boolean);
+  const keep = w => w.length >= 2 && !/^\d+$/.test(w) && !NON_NAME_TOKEN_RE.test(w) && !GENERIC_WORD_RE.test(w);
+  const out = [];
+  const push = w => { if (keep(w) && !out.includes(w)) out.push(w); };
+  raw.slice(0, 6).forEach(push);
+  raw.forEach(w => { if (/[a-z]/.test(w) && /\d/.test(w) && w.length >= 3) push(w); });   // 모델 코드: 15z95n, wh-ch720n, nt551xcj
+  out.slice().forEach(w => {
+    const stem = w.replace(/^[a-z]+(?=[가-힣])/, '').replace(/\d+$/, '');                // lg그램 → 그램, 그램15 → 그램, 베이직북14 → 베이직북
+    if (stem !== w && /^[가-힣]{2,}$/.test(stem)) push(stem);
+  });
+  return out;
+}
+
+function unionItems(a, b) {
+  return (a || []).concat((b || []).filter(x => !(a || []).includes(x)));
 }
 
 function mentions(text, item) {
@@ -282,7 +320,7 @@ const CHIP_PATTERNS = [
   ['gtx', /gtx\s*-?\s*(\d{3,4})(\s*ti)?(?![0-9])/gi]
 ];
 /* 조건·기준을 말하는 문장("RTX 4050 이상이면", "i5 정도면 충분")은 특정 상품의 사양 주장이 아니다 */
-const HYPOTHETICAL_CHIP_RE = /(?:이상(?:이|을|의|급|으로)?|이면|라면|필요|권장|정도면|수준이면|급이면|급으로)/;
+const HYPOTHETICAL_CHIP_RE = /(?:이상(?:이|을|의|급|으로)?|이면|라면|필요|권장|정도면|수준이면|급이면|급으로|(?:세대|급|정도|수준|시리즈)(?:이)?면|노리|으로\s*가|로\s*가실)/;
 
 function chipClaims(sentence) {
   const s = String(sentence || '').normalize('NFKC');
@@ -372,6 +410,8 @@ function budgetChecks(t, c, entries, add) {
   });
 }
 
+const TOOL_DENIAL_RE = /(?:상품\s*정보|판매\s*중인\s*상품|실시간\s*(?:정보|가격|데이터|비교)|상품\s*데이터|검색\s*결과)[^.\n]{0,16}?(?:불러올\s*수\s*없|가져올\s*수\s*없|조회할\s*수\s*없|확인할\s*수\s*없는\s*상태|이용할\s*수\s*없)/;
+
 /* 시장 전체에 없다는 단정 — 이번 검색의 범위를 밝힌 문장("이번에 확인한 상품 중에는 없어요")은 통과 */
 const ABSENCE_RE = /(?:시중|시장|국내|온라인|어디(?:에도|서도)|세상)\s*(?:에|에는|엔|에서|에서는)?\s*[^.!?\n]{0,20}?(?:없(?:어요|습니다|다|네요|는\s*편)|존재하지\s*않|판매(?:되|하)지\s*않|나오지\s*않)/;
 const ABSENCE_SCOPE_RE = /(?:SEOSA|서사|이번|검색|확인한|확인된|찾은|결과|조회|쿠팡|제휴|목록|후보|기록)/;
@@ -425,6 +465,11 @@ function verify(text, ctx) {
     return issues;
   }
 
+  /* ── 도구 결과를 두고 "불러올 수 없다" — Preview 실측(2026-10-19): 예산 안 7건을 찾은 뒤 마지막 차례가 이렇게 답했다 ── */
+  if (entries.some(e => e.source === 'search' && e.priceKnown) && TOOL_DENIAL_RE.test(t)) {
+    add('tool_denial', '이번 요청에서 실제 판매 상품을 찾았는데 상품 정보를 불러올 수 없다고 했다');
+  }
+
   /* ── 가격 ── */
   const values = [];
   items.forEach(it => {
@@ -456,23 +501,35 @@ function verify(text, ctx) {
   // 상품 이름은 앞 문장에, 주장은 다음 문장에 오는 것이 흔하다("M650 을 추천해요. 배터리는 24시간 가요").
   // 이름이 없는 문장은 직전에 가리킨 상품을 이어받는다. 일반 지식 표시가 있는 문장만 예외다.
   let lastRefs = [];
+  let blockRefs = [];
+  let lastNamed = [];
+  let prevNamed = [];
   sentences(t).forEach(sn => {
     let refs = items.filter(it => mentions(sn, it));
-    if (refs.length) lastRefs = refs;
-    else if (!GENERAL_RE.test(sn)) refs = lastRefs;
+    const named = refs.length > 0;
+    // 목록 줄("- CPU: …")은 바로 위에서 이름을 댄 상품의 문단을 잇는다. 이름 없는 산문 문장은 문단을 끊는다.
+    const listLine = /^\s*(?:[-•*·]|\d+[.)])\s*/.test(sn);
+    // 이름 없는 문장은 직전 «두» 문장에서 이름을 댄 상품들을 잇는다 — 주어 상품 뒤에 비교 상품이 지나가듯 나오는 일이 흔하다
+    // ("아이디어패드가 무난해요. 셀러론 N5100(298,000원)보다 비싸지만… / - 장점: 램 16GB").
+    if (named) { prevNamed = lastNamed; lastNamed = refs; lastRefs = unionItems(prevNamed, refs); blockRefs = refs; }
+    else if (!listLine) blockRefs = [];
+    if (!named && !GENERAL_RE.test(sn)) refs = lastRefs;
     if (!refs.length) return;
     const refEntries = refs.map(it => entryOfItem.get(it)).filter(Boolean);
+    // CPU·GPU 모델은 상품을 이름으로 댄 문장이나 그 상품 문단의 목록 줄에서만 그 상품의 사양으로 본다(일반 조언 산문은 빼고).
+    const chipEntries = named ? refEntries : (listLine ? blockRefs.map(it => entryOfItem.get(it)).filter(Boolean) : []);
     const titles = normalizeSpecClaim(refs.map(it => it.title).join(' '));
     const question = QUESTION_RE.test(sn.trim());
     if (!question) d.unverifiedSpecs(sn, refs).forEach(claim => {
       if (titles.includes(normalizeSpecClaim(claim))) return;
       if (specSupported(claim, refEntries)) return;
       if (hypotheticalSpec(sn, claim)) return;
+      if (generalClause(sn, claim)) return;
       badSpec.add(claim);
     });
     // CPU·GPU 모델 — 단위가 없어 위 검사가 못 본다. "i5" 만 적힌 상품을 "i5-13420H" 라고 하면 지어낸 것이다.
-    if (!question && !GENERAL_RE.test(sn) && !HYPOTHETICAL_CHIP_RE.test(sn)) {
-      chipClaims(sn).forEach(cl => { if (!chipSupported(cl, refEntries)) badChip.add(cl.label); });
+    if (!question && chipEntries.length && !GENERAL_RE.test(sn) && !HYPOTHETICAL_CHIP_RE.test(sn)) {
+      chipClaims(sn).forEach(cl => { if (!chipSupported(cl, chipEntries)) badChip.add(cl.label); });
     }
     d.unsupportedComparisons(sn, refs.length >= 2 ? refs : items).forEach(x => badCmp.add(x));
   });
@@ -503,7 +560,13 @@ function verify(text, ctx) {
   if (c.cardChecks !== false) {
     const p = c.primary;
     if (p) {
-      if (!mentions(t, p.item)) add('card_mismatch', `추천(primary_id ${p.handle})으로 고른 상품을 답변에서 말하지 않았다`);
+      /*
+       * 이어지는 질문("두 번째 제품 지금 사도 돼?")의 답은 상품을 "이 제품" 으로 부르는 일이 많다(Preview 실측).
+       * 이름이 없어도 다른 상품을 이름으로 대지 않고 가리킴말로 부르면 그 상품 이야기다. 다른 상품 이름만 나오면 여전히 어긋남.
+       */
+      const deictic = /(?:이|그|해당|두\s*번째|첫\s*번째|세\s*번째|방금|아까|추천(?:한|드린|해\s*드린))\s*(?:제품|상품|모델|노트북|거|것)/.test(t);
+      const others = entries.some(e => e !== p && mentions(t, e.item));
+      if (!mentions(t, p.item) && (others || !deictic)) add('card_mismatch', `추천(primary_id ${p.handle})으로 고른 상품을 답변에서 말하지 않았다`);
       const word = COND_WORD[p.condition];
       if (word && !word.test(t)) add('condition_undisclosed', `${p.handle} 은 ${({ used: '중고', refurbished: '리퍼', rental: '렌탈', display: '전시', opened: '개봉' })[p.condition]} 상품인데 그 사실을 밝히지 않았다`);
       const askedAcc = S.accessoryTerms(S.normalizeText(c.userText || ''), S.splitTokens(S.normalizeText(c.userText || ''))).length > 0;
@@ -537,7 +600,7 @@ function sentenceSpans(text) {
 }
 
 const APPROX_BEFORE_RE = /(?:약|대략|거의|얼추|한)\s*$/;
-const APPROX_AFTER_RE = /^\s*(?:원\s*)?(?:정도|쯤|가량|안팎|내외|남짓|선)/;
+const APPROX_AFTER_RE = /^\s*(?:원\s*)?(?:정도|쯤|가량|안팎|내외|남짓|선|전후)/;
 const MODIFIER_AFTER_RE = /^\s*(?:원\s*)?(?:인|짜리|의|대의|대)\s/;
 const PLURAL_RE = /(?:모두|전부|다들|둘\s*다|셋\s*다|모든|두\s*(?:제품|상품|개|모델)|세\s*(?:제품|상품|개|모델)|네\s*(?:제품|상품|개|모델)|각각|하나같이)/;
 /* 금액과 바로 뒤 상품 이름 사이 — 공백, 꾸밈 어미, 짧은 낱말 하나(브랜드 한글 표기 "델" 등)까지만 */
@@ -569,7 +632,8 @@ function priceAttribution(masked, items, d) {
   // 직전 문장들까지 마지막으로 가리킨 상품 (이 문장 자신은 빼고)
   const prevRefs = [];
   let last = [];
-  named.forEach((n, i) => { prevRefs[i] = general[i] ? [] : last; if (n.length) last = n; });
+  let prev = [];
+  named.forEach((n, i) => { prevRefs[i] = general[i] ? [] : unionItems(prev, last); if (n.length) { prev = last; last = n; } });
   /* 문장 안에서 상품 이름이 처음 나오는 위치 (금액보다 앞인가를 가른다) */
   const firstAt = (from, to, it) => {
     const seg = s.slice(from, to).toLowerCase();
@@ -736,6 +800,7 @@ function sentenceCarries(sn, issues, d, items) {
       case 'echo': return AIID.hasInstructionText(s);
       case 'chip': return chipClaims(s).some(cl => vals.includes(cl.label));
       case 'absence_claim': return ABSENCE_RE.test(s) && !ABSENCE_SCOPE_RE.test(s);
+      case 'tool_denial': return TOOL_DENIAL_RE.test(s);
       // 카드 고지 누락은 문장을 걷어 내도 고쳐지지 않는다(api/_agent.js 가 카드를 뺀다). 걷는 것은 «예산 안» 오언급뿐.
       case 'over_budget': return IN_BUDGET_CLAIM_RE.test(s) && !OVER_RE.test(s)
         && (items || []).some(it => it && vals.includes(it.ref) && mentions(s, it));
@@ -794,6 +859,7 @@ const KIND_HINT = {
   live_price_without_data: '확인한 상품 데이터 없이 현재 가격을 말하지 않는다. 가격이 필요하면 search_products 로 확인한다.',
   chip: 'CPU·GPU 는 그 상품의 specs_from_title·상품명에 적힌 만큼만 쓴다. 상품명에 없는 세부 모델 번호(예: 13420H)·그래픽 모델은 쓰지 않는다("상품명에는 i5 까지만 표기"). 일반 지식이면 "일반적으로"라고 밝히고 특정 상품의 사양처럼 말하지 않는다.',
   over_budget: '사용자가 말한 예산을 넘는 상품을 예산 안 추천처럼 소개하지 않는다. 예산 안 후보로 바꾸거나, 꼭 보여 줄 상품이면 그 상품 바로 옆에 "예산 초과(+금액)"라고 밝혀라. 예산 안 후보가 모자라면 모자라다고 말한다.',
+  tool_denial: '이번 요청의 도구 결과에 실제 판매 상품이 있다. "불러올 수 없다"고 하지 말고 그 결과(아래 [올바른 데이터])로 답하라.',
   absence_claim: '이번 검색에서 확인하지 못한 것을 시장에 없다고 말하지 않는다. "SEOSA가 이번에 확인한 상품 중에는"처럼 범위를 밝힌다.'
 };
 

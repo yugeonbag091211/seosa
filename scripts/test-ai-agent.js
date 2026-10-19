@@ -30,6 +30,7 @@ process.env.AI_SEARCH_TIMEOUT_MS = '400';
 process.env.AI_ENRICH_TIMEOUT_MS = '150';
 process.env.AI_CACHE_TTL_MS = '0';
 process.env.AI_V2_ROUND_TIMEOUT_MS = '1000';
+process.env.AI_V2_FINAL_ROUND_TIMEOUT_MS = '1000';
 process.env.AI_CONCIERGE_V2_ENABLED = '1';
 
 /* ── 경계 대역 (ai.js require 이전) ───────────────────────────── */
@@ -1142,6 +1143,57 @@ function laptopBrain(mode, opts) {
     const missed = bad.filter(([s, k]) => !kinds(s).includes(k)).map(([s, k]) => `${k}: ${s} → ${JSON.stringify(kinds(s))}`);
     ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
   }
+
+  console.log('\n[E10] 3차 실측 — 이름 낱말(꾸밈말·사양 낱말 제외, 라인 이름 줄기)·가리킴말·요청 문장');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '첫 번째 제품 단점 알려줘' });
+    const reg = (h, t, p) => Tools.register(ses, 'R', I.normItem({ productId: h, title: t, mall: '쿠팡', price: p }), null, null, { handle: h, source: 'memory', query: '노트북' });
+    const g15 = reg('R01', 'LG 그램15 인텔 i5 윈도우11프로 초경량 고해상도 NVME SSD, 15Z95N, WIN11 Pro, 16GB, 512GB', 798000);
+    reg('R02', '[풀박스패키지] LG그램 코어i5 +무상AS 1년(전시몰닷컴), 화이트, 15ZB995-NP, 512GB, 16GB, WIN11 Pro', 999000);
+    const g14 = reg('R03', 'LG전자 그램 14Z995 10세대 i7탑재 14인치 화면 정품 윈도우11 얇고 가벼운 고사양 그램노트북', 749000);
+    const hp = reg('R04', 'HP 15s 인텔 i3-1215U 8GB 256GB 노트북', 459000);
+    ok(!Verify.mentions('i5 + 내장그래픽 구성이라 가벼운 게임은 가능해요', g14.item), '★ 상품명 뒤쪽 꾸밈말("가벼운")은 그 상품을 가리키지 않는다');
+    ok(Verify.mentions('그램 라인은 RAM 온보드가 많아요', g15.item), '라인 이름 줄기: "그램15" 는 "그램" 으로도 가리킨다');
+    ok(!Verify.mentions('RAM 16GB, SSD 512GB 권장', g15.item), '사양 낱말(16GB·512GB)만으로는 상품을 가리키지 않는다');
+    const ctx = { deps: I, entries: [...ses.registry.values()], budgets: new Set([1500000]), budgetCap: 1500000, history: new Map(), compares: [], userText: '노트북', primary: null, shown: [] };
+    const kinds = (s, extra) => Verify.verify(s, Object.assign({}, ctx, extra || {})).map(i => i.kind);
+    const good = [
+      '말씀하신 첫 번째 제품(LG 그램15 인텔 i5, 15Z95N 기준)의 단점이에요.\n- **게이밍엔 아쉬움**: i5 + 내장그래픽 구성이라 가벼운 게임·간단 편집은 가능해요.\n- **확장성**: 그램 라인은 일반적으로 RAM 온보드인 경우가 많아서, 상품명만 보면 RAM 16GB 고정일 가능성이 커요.',
+      '추가로 원하시는 게 있다면 화면 크기(13~14 vs 15.6인치)나 무게 중에서 어떤 게 더 중요하신지 알려 주세요.',
+      '- 지금 사도 무난한지, 아니면 기록상 기다려볼 만한지',
+      '검색된 RTX 4060 노트북들은 모두 150만원을 넘어서요.'
+    ];
+    const fp = good.map(s => [s.slice(0, 40), kinds(s)]).filter(([, k]) => k.length);
+    ok(fp.length === 0, `★ 3차 실측 문장 ${good.length}개 오탐 0`, JSON.stringify(fp));
+    ok(!kinds('이 제품은 가격 기록이 하루치뿐이라 판단하기 어려워요.', { primary: g15, shown: [g15] }).includes('card_mismatch'), '★ "이 제품" 으로 부른 이어지는 답은 카드와 어긋난 것이 아니다');
+    ok(kinds('HP 15s가 가장 좋아요.', { primary: g15, shown: [g15] }).includes('card_mismatch'), '다른 상품 이름만 나오면 여전히 card_mismatch');
+    const bad = [
+      ['- LG 그램15: RAM 16GB / SSD 512GB\n- HP 15s: RAM 16GB / SSD 512GB', 'spec'],      // 바로 붙은 두 상품의 사양을 같게 — HP 는 8GB/256GB
+      ['- **HP 15s** — CPU i5-1235U / RAM 8GB', 'chip'],
+      ['지금은 판매 중인 상품 정보를 불러올 수 없는 상태라 기준만 알려 드릴게요.', 'tool_denial']
+    ];
+    const ctxSearch = Object.assign({}, ctx, { entries: ctx.entries.map(e => Object.assign({}, e, { source: 'search' })) });
+    const missed = bad.filter(([s, k]) => !Verify.verify(s, k === 'tool_denial' ? ctxSearch : ctx).map(i => i.kind).includes(k)).map(([s, k]) => `${k}: ${s.slice(0, 40)}`);
+    ok(missed.length === 0, `★ 틀린 값 ${bad.length}개 전부 잡음 (이웃 상품 사양 바꿔치기·지어낸 CPU·도구 결과 부정)`, missed.join(' | '));
+    void hp;
+  }
+
+  console.log('\n[E11] 도구를 더 부를 수 없는 차례에는 «위 도구 결과로 답하라» 는 말을 붙인다');
+  reset();
+  oa.brain = (body) => {
+    const outs = toolOutputs(body);
+    if (!outs.length) return { calls: [{ name: 'search_products', args: { query: '노트북', max_price: null, min_price: null, condition: 'new_only' } }] };
+    // 도구를 계속 부르려는 모델 — 마지막 차례(tool_choice:none)에서야 답한다
+    if (body.tool_choice !== 'none') return { calls: [{ name: 'get_product_details', args: { id: outs[0].results[0].id } }] };
+    const l2 = outs[0].results.find(x => /아이디어패드/.test(x.title));
+    return { final: { answer: `**아이디어패드 슬림1**을 추천해요. 현재가 ${won(l2.price)}원이에요.`, product_ids: [l2.id], primary_id: l2.id, followups: [] } };
+  };
+  r = await ask('성능 좋은 가성비 노트북 추천해줘', newState());
+  const e11last = oa.agentBodies[oa.agentBodies.length - 1] || {};
+  ok(e11last.tool_choice === 'none' && (e11last.input || []).filter(x => x.role === 'developer' && /도구를 더 부를 수 없다/.test(String(x.content))).length === 1,
+    '★ tool_choice:none 차례에 «위 도구 결과로 답하라» 가 한 번 실린다', `tool_choice=${e11last.tool_choice}`);
+  ok(r.body._debug.outcome === 'ok' && r.body.items[0].productId === 'L2', '그 차례의 답이 그대로 나간다');
 
   console.log('\n[E9] 한 차례가 출력 없이 시간 초과 → 시간이 남으면 한 번만 다시 부른다');
   reset();
