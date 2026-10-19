@@ -605,7 +605,7 @@ async function run(ctx) {
     v: AGENT_VERSION, engine: 'v2', rounds: 0, toolCalls: 0, calls: {}, inTok: 0, outTok: 0, cachedTok: 0, reasoningTok: 0, costUsd: 0,
     llmMs: [], model: '', firstIssues: [], finalIssues: [], rewrite: false, outcome: '', cards: 0,
     invalidIds: 0, droppedUnmentioned: 0, memIn: 0, memVerified: 0, memOut: 0, json: null, failReason: '',
-    supplemented: false, deferredSearches: 0, suppressedSearches: 0,
+    supplemented: false, prefetchedSearch: false, deferredSearches: 0, suppressedSearches: 0,
     recommendationRepairCalls: 0, recommendationRepairMs: 0, recommendationRepairCostUsd: 0
   };
   /*
@@ -682,15 +682,50 @@ async function run(ctx) {
     });
     input.push({ role: 'user', content: q });
 
+    /*
+     * A clear recommendation should not spend a GPT round asking whether to
+     * search and then another round answering after a server supplement. Search
+     * once up front, then let GPT choose from the verified candidates. This
+     * changes retrieval timing only; the model still selects every card.
+     * Set AI_V2_PREFETCH_RECOMMENDATIONS=0 to roll back the optimization.
+     */
+    const prefetchEnabled = String(process.env.AI_V2_PREFETCH_RECOMMENDATIONS || '1').trim() !== '0';
+    let prefetchedSearch = false;
+    let prefetchedSearchHasCandidates = false;
+    if (prefetchEnabled && searchAllowed && recommendationRequest(q) && !memoryLookupSlot(q, conv, view)
+      && budget.remaining() > ANSWER_RESERVE_MS + Tools.LIMITS.searchMinMs + MIN_ROUND_MS) {
+      const plan = supplementPlan(q, conv, view);
+      if (plan && plan.kind === 'search') {
+        const callId = 'server_prefetch_' + String(Date.now());
+        const output = await Tools.execute(session, { name: plan.name, arguments: JSON.stringify(plan.args) });
+        input.push({
+          role: 'developer',
+          content: '[사전 검색] 아래 결과는 이번 요청에서 확인한 실제 상품 후보와 각 후보의 ID·가격이다. status=ok이고 results가 비어 있지 않으면 상품 정보를 사용할 수 있다고 답하고, 사용자 조건에 맞는 상품이 있으면 그중에서 직접 판단해 1~4개 ID를 product_ids에 넣어라. 서버가 순위나 선택을 강제하지 않는다. 적합한 후보가 없으면 이유를 말하고 ID를 고르지 않아도 된다. 검색 결과가 비었거나 실패했다면 상품명·가격을 만들지 않는다.'
+        });
+        input.push({ type: 'function_call', call_id: callId, name: plan.name, arguments: JSON.stringify(plan.args) });
+        input.push({ type: 'function_call_output', call_id: callId, output });
+        prefetchedSearch = true;
+        prefetchedSearchHasCandidates = Number(session.evidence.searchModelItems) > 0;
+        obs.prefetchedSearch = true;
+        obs.supplemented = true;
+      }
+    }
+
     /* ── 도구 루프 ── */
     let final = null;
+    if (prefetchedSearch && !prefetchedSearchHasCandidates && session.evidence.searchOk > 0) {
+      const answer = session.evidence.searchEmpty
+        ? '이번 검색에서 조건에 맞는 판매 상품을 확인하지 못했어요. 다른 조건으로 다시 찾아볼 수 있습니다.'
+        : '이번 검색에서 확인된 판매 상품을 찾지 못해 추천 카드를 만들지 않았어요.';
+      final = { text: JSON.stringify({ answer, product_ids: [], primary_id: null, followups: [] }) };
+    }
     let retried = false;
     let finalNoted = false;
-    for (let round = 0; round < MAX_ROUNDS; round++) {
+    for (let round = 0; !final && round < MAX_ROUNDS; round++) {
       const remaining = budget.remaining();
       if (remaining < MIN_ROUND_MS + 500) { obs.failReason = 'budget'; break; }
       // 도구를 한 번 더 부르면(라운드 + 검색) 최종 답변 몫이 남지 않는 시점부터는 답만 쓰게 한다.
-      const lastRound = round === MAX_ROUNDS - 1 || session.calls.length >= Tools.LIMITS.maxCalls
+      const lastRound = prefetchedSearch || round === MAX_ROUNDS - 1 || session.calls.length >= Tools.LIMITS.maxCalls
         || remaining < ANSWER_RESERVE_MS + 2500;
       if (lastRound && session.calls.length && !finalNoted) {
         input.push({ role: 'developer', content: FINAL_NOTE });
@@ -1082,7 +1117,7 @@ function finish(res, I, payload, obs, startedAt, req, dbg, session) {
       costUsd: Math.round(obs.costUsd * 1e6) / 1e6, llmMs: obs.llmMs, model: obs.model,
       firstIssues: obs.firstIssues, finalIssues: obs.finalIssues, rewrite: obs.rewrite, outcome: obs.outcome,
       invalidIds: obs.invalidIds, memIn: obs.memIn, memVerified: obs.memVerified, failReason: obs.failReason,
-      supplemented: obs.supplemented, deferredSearches: obs.deferredSearches,
+      supplemented: obs.supplemented, prefetchedSearch: obs.prefetchedSearch, deferredSearches: obs.deferredSearches,
       suppressedSearches: obs.suppressedSearches,
       searchRawItems: obs.searchRawItems, searchNormalizedItems: obs.searchNormalizedItems,
       searchValidItems: obs.searchValidItems, searchModelItems: obs.searchModelItems,
