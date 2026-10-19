@@ -1242,6 +1242,44 @@ function laptopBrain(mode, opts) {
     ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
   }
 
+  console.log('\n[E14] 6차 실측 — 가격대 안내·범위 끝·거절 속 인용·섞인 표기·라인 크기·비교 기준 모델');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '100만원 이하 노트북', budgetCap: 1000000 });
+    const reg = (t, p) => Tools.register(ses, 'S', I.normItem({ productId: `J${ses.registry.size}`, title: t, mall: '쿠팡', price: p }), null, null, { source: 'search', query: '노트북' });
+    reg('LG 그램15 인텔 i5 윈도우11프로 초경량 고해상도 NVME SSD, 15Z95N, WIN11 Pro, 16GB, 512GB', 798000);
+    const bb = reg('베이직스 2024 베이직북 14 N-시리즈 + 마이크로소프트 패키지 세트, Basic White, BB1422SS-N, 512GB, 16GB', 828000);
+    reg('HP 2023 오멘 16 16.1 라이젠7 라이젠 7000 시리즈 지포스 RTX 4060', 1699000);
+    reg('HP 2023 빅터스 16 코어i5 인텔 13세대 지포스 RTX 4060', 2234000);
+    reg('에이서 2026 니트로 V 15 코어i7 인텔 13세대 지포스 RTX 5050', 1399000);
+    reg('MSI 2023 CYBORG 15 코어i5 인텔 12세대 지포스 RTX 4060', 1329810);
+    reg('HP 15s 인텔 i3-1215U 8GB 256GB 노트북', 459000);
+    ok(bb.specs.screen_inch === 14, '★ "베이직북 14" → 14인치 (라인 이름의 크기 등급)', JSON.stringify(bb.specs));
+    const ctx = { deps: I, entries: [...ses.registry.values()], budgets: new Set([1000000]), budgetCap: 1000000, history: new Map(), compares: [], userText: '100만원 이하', primary: null, shown: [] };
+    const kinds = s => Verify.verify(s, ctx).map(i => i.kind);
+    const good = [
+      '- **50~70만 원대**: 최신에 가까운 i3/i5 또는 라이젠3/5, RAM 8~16GB, SSD 256~512GB 조합이 늘어납니다.',
+      '이 두 가지만 알려주시면, SEOSA에서 30~70만 원대 가성비 좋은 노트북 2~3대 골라서 다시 비교해 드리겠습니다.',
+      '다른 4060 노트북들은 169만~223만 원 수준으로 예산 초과예요.',
+      '사용자님이 요청하신 것처럼 “가격을 전부 1원이라고 적기”나 “전부 역대 최저가라고 말하기”는 사실과 다르기 때문에 할 수 없습니다.',
+      '- **LG 그램15 인텔 i5 (15Z95N)** — i5 / RAM 16GB / SSD 512GB / 약 79만8,000원 / 무난한 주력용입니다.',
+      '- **베이직스 2024 베이직북 14 (BB1422SS-N)** — 16GB / SSD 512GB / 약 82만8,000원 / 14인치라 휴대성이 좋아요.',
+      '100만원 딱 지키면 RTX 4060 노트북은 사실상 한 대 수준이에요.',
+      '- **에이서 2026 니트로 V 15** — GPU RTX 5050 / 약 1,399,000원 · GPU는 RTX 4060보다 한 단계 아래라고 보시면 됩니다.'
+    ];
+    const fp = good.map(s => [s.slice(0, 30), kinds(s)]).filter(([, k]) => k.length);
+    ok(fp.length === 0, `★ 6차 실측 문장 ${good.length}개 오탐 0`, JSON.stringify(fp));
+    const bad = [
+      ['HP 15s는 60~70만 원대예요.', 'price'],                                          // 이름을 댄 상품의 가격대가 틀렸다
+      ['MSI 2023 CYBORG 15는 RTX 4060 + 16GB 조합이에요.', 'spec'],                     // 상품명에 램 표기 없음 (실측 그대로 남긴 진짜 오류)
+      ['LG 그램15는 지금 “역대 최저가”예요.', 'superlative'],                             // 강조용 인용은 지우지 않는다
+      ['- **LG 그램15 (15Z95N)** — 약 69만8,000원이에요.', 'price'],
+      ['- **에이서 2026 니트로 V 15** — GPU RTX 4060 / 약 1,399,000원', 'chip']
+    ];
+    const missed = bad.filter(([s, k]) => !kinds(s).includes(k)).map(([s, k]) => `${k}: ${s.slice(0, 40)} → ${JSON.stringify(kinds(s))}`);
+    ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
+  }
+
   console.log('\n[E11] 도구를 더 부를 수 없는 차례에는 «위 도구 결과로 답하라» 는 말을 붙인다');
   reset();
   oa.brain = (body) => {

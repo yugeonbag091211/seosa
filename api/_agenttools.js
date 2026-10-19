@@ -124,7 +124,7 @@ const TOOLS = [
  *  그렇게 밝힌다. 세대·전력 등급에 따라 같은 등급 안에서도 차이가 크다.
  * ================================================================== */
 
-const COMPUTER_CONTEXT_RE = /노트북|랩탑|laptop|notebook|데스크탑|desktop|미니\s*pc|mini\s*pc|본체|맥북|macbook|그램|gram|갤럭시북|galaxy\s*book|울트라북|크롬북|chromebook|씽크패드|thinkpad|아이디어패드|ideapad|비보북|vivobook|젠북|zenbook|레전드|legion|빅터스|victus|오멘|omen|tuf|rog|nitro|predator|swift|aspire|inspiron|xps|surface|서피스/i;
+const COMPUTER_CONTEXT_RE = /노트북|랩탑|베이직북|laptop|notebook|데스크탑|desktop|미니\s*pc|mini\s*pc|본체|맥북|macbook|그램|gram|갤럭시북|galaxy\s*book|울트라북|크롬북|chromebook|씽크패드|thinkpad|아이디어패드|ideapad|비보북|vivobook|젠북|zenbook|레전드|legion|빅터스|victus|오멘|omen|tuf|rog|nitro|predator|swift|aspire|inspiron|xps|surface|서피스/i;
 
 function pcSpecs(title) {
   const t = String(title || '').normalize('NFKC');
@@ -193,6 +193,11 @@ function pcSpecs(title) {
   if (/그램|gram/i.test(t)) {
     const gm = (/(?:LG|엘지)[^,]{0,12}?(?:그램|gram)\s*(1[4-7])(?![0-9.])/i.exec(t)) || (/(?<![0-9A-Za-z])(1[4-7])Z[A-Z]?\d{2,3}[A-Z]{0,2}(?![0-9])/.exec(t));
     if (gm) out.screen_inch_from_model = { 14: 14, 15: 15.6, 16: 16, 17: 17 }[gm[1]];
+  }
+  /* 제품 라인 이름 뒤의 크기 등급 — "베이직북 14", "갤럭시북4 프로 16", "비보북 16", "오멘 16" (그 라인의 화면 크기 표기) */
+  if (!out.screen_inch_from_model) {
+    const lm = /(?:베이직북|비보북|젠북|오멘|빅터스|갤럭시\s*북\s*\d?(?:\s*(?:프로|pro|360|프로\s*360|엣지|edge))?)\s*(1[3-7])(?![0-9.])/i.exec(t);
+    if (lm) out.screen_inch_from_model = { 13: 13.3, 14: 14, 15: 15.6, 16: 16, 17: 17.3 }[lm[1]];
   }
 
   const RAM_SIZES = new Set([2, 4, 6, 8, 12, 16, 18, 20, 24, 32, 36, 48, 64, 96, 128]);

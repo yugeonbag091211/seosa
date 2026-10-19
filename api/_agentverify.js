@@ -78,7 +78,7 @@ function mask(text, spans) {
   return chars.join('');
 }
 
-const BUDGET_AFTER_RE = /^\s*(?:원\s*)?(?:을|를|은|는|이|가|의)?\s*(?:이하|이내|미만|안쪽|아래|까지|선(?:에서|으로|이면)?|대(?:에서|로|의|\s)|정도|언더|예산|이상|초과|넘|짜리\s*예산|안에서|내에서|으로\s*(?:찾|맞|잡|정))/;
+const BUDGET_AFTER_RE = /^\s*(?:원\s*)?(?:을|를|은|는|이|가|의)?\s*(?:딱\s*)?(?:지키|맞추|맞춰|이하|이내|미만|안쪽|아래|까지|선(?:에서|으로|이면)?|대(?:에서|로|의|\s)|정도|언더|예산|이상|초과|넘|짜리\s*예산|안에서|내에서|으로\s*(?:찾|맞|잡|정))/;
 const BUDGET_BEFORE_RE = /(?:예산|최대|최소|상한|하한|한도)\s*(?:은|는|이|가|을|를|:)?\s*(?:약|대략)?\s*$/;
 const DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:의\s*)?(?:차이|차액|더\s*(?:비싸|비쌉|싸|쌉|저렴|높|낮|들|써|드|주)|비싸|저렴|싸|아낄|아끼|절약|높|낮|올랐|내렸|떨어졌|오른|내린|오르|내려|비쌉|쌉|추가)/;
 const DIFF_BEFORE_MASK_RE = /(?:차이|차액)\s*(?:는|은|이|가|:)?\s*(?:약|대략)?\s*$/;
@@ -187,6 +187,13 @@ const QUOTED_RE = /["“'‘「『][^"”'’」』\n]{1,80}["”'’」』]\s*(
 function stripQuoted(text) {
   return String(text || '').replace(QUOTED_RE, m => ' '.repeat(m.length));
 }
+const ANY_QUOTE_RE = /["“'‘「『][^"”'’」』\n]{1,80}["”'’」』]/g;
+const REFUSAL_MARK_RE = /(?:할\s*수(?:가)?\s*없|해\s*드릴\s*수\s*없|드릴\s*수\s*없|따를\s*수\s*없|지킬\s*수\s*없|말할\s*수\s*없|사실과\s*다르|규칙상|허위|지어낼\s*수\s*없)/;
+/* 거절 문장 안의 인용만 지운다 — 강조용 인용("“역대 최저가”예요")은 그대로 검사한다 */
+function stripRefusalQuotes(text) {
+  const s = String(text || '');
+  return s.replace(ANY_QUOTE_RE, (m, at) => (REFUSAL_MARK_RE.test(sentenceAround(s, at)) ? ' '.repeat(m.length) : m));
+}
 /* "지금 사도 괜찮은지 확인해서" — 구매 시점을 단정한 것이 아니라 확인할 일을 말한 간접 의문 */
 const INDIRECT_TIMING_RE = /(?:사도|사셔도|구매해도|구매하셔도|사는\s*게|사기에)\s*[가-힣]{1,5}지(?![가-힣])|(?:살|구매할)\s*(?:때|시점|타이밍)인지/;
 /* "당장 필요하다면 지금 사셔도 무리 없는 수준" — 필요에 따른 조건부 조언. 기록이 부족하다는 고지가 함께 있을 때만 통과 */
@@ -211,6 +218,8 @@ function hypotheticalSpec(sentence, claim) {
 function generalClause(sentence, claim) {
   const parts = String(sentence || '').split(/[,，;]|(?:지만|하지만|다만|그런데|반면|그래도)\s/);
   const c = normalizeSpecClaim(claim);
+  // 사양 «범위»("SSD 256~512GB", "RAM 8~16GB")는 가격대·용도별 안내다 — 특정 상품의 값이 아니다
+  if (new RegExp(`\\d+(?:\\.\\d+)?[~〜～\\-–]${c.replace(/[.]/g, '\\.')}`).test(normalizeSpecClaim(sentence))) return true;
   const clause = parts.find(p => normalizeSpecClaim(p).includes(c));
   return !!clause && GENERAL_RE.test(clause);
 }
@@ -333,6 +342,9 @@ const CHIP_PATTERNS = [
 /* 조건·기준을 말하는 문장("RTX 4050 이상이면", "i5 정도면 충분")은 특정 상품의 사양 주장이 아니다 */
 const HYPOTHETICAL_CHIP_RE = /(?:이상(?:이|을|의|급|으로)?|이면|라면|필요|권장|정도면|수준이면|급이면|급으로|(?:세대|급|정도|수준|시리즈)(?:이)?면|노리|으로\s*가|로\s*가실)/;
 
+/* 비교 기준만 — "과·와·랑" 은 "i5-1235U와 8GB" 처럼 «그리고» 도 되므로 넣지 않는다 */
+const CHIP_REFERENCE_AFTER_RE = /^\s*(?:보다|대비|에\s*비해|에\s*비하면|급(?:은|의|이)?\s|수준|이상|이하|정도)/;
+
 function chipClaims(sentence) {
   const s = String(sentence || '').normalize('NFKC');
   const out = [];
@@ -345,7 +357,7 @@ function chipClaims(sentence) {
       const tier = String(m[1] || '').toLowerCase();
       let label = m[0].trim();
       if (fam === 'rtx' || fam === 'gtx') { model = String(m[2] || '').trim().toLowerCase(); label = `${fam.toUpperCase()} ${m[1]}${model ? ' ' + model : ''}`; }
-      out.push({ fam, tier, model, label: label.slice(0, 30) });
+      out.push({ fam, tier, model, label: label.slice(0, 30), end: m.index + m[0].length });
     }
   });
   return out;
@@ -445,7 +457,8 @@ function verify(text, ctx) {
   const c = ctx || {};
   const d = c.deps;
   // **강조** 표시는 주장의 일부가 아니다 — "30만 원 **이내**" 의 ** 때문에 예산 되받기를 못 알아봤다(Preview 실측).
-  const t = String(text || '').replace(/\*\*/g, '');
+  // 거절 문장 속 인용("“전부 1원이라고 적기”는 할 수 없습니다")은 사용자의 요구를 옮긴 것이지 주장이 아니다.
+  const t = stripRefusalQuotes(String(text || '').replace(/\*\*/g, ''));
   const issues = [];
   const add = (kind, detail, values, fatal) => issues.push(Object.assign({ kind, detail }, values ? { values } : {}, fatal ? { fatal: true } : {}));
 
@@ -496,7 +509,8 @@ function verify(text, ctx) {
   budgets.forEach(v => known.add(v));
   const badPrice = new Set();
   // ① 어느 상품의 값으로도 설명되지 않는 금액(지어낸 숫자) — v1 과 같은 허용 집합(가격·기록·차액·반올림).
-  (d.unverifiedWon(masked, known) || []).forEach(v => badPrice.add(v));
+  // 만·천 단위가 섞인 금액("79만8,000원")은 priceAttribution 이 본다 — unverifiedWon 은 그 꼬리 "8,000원" 만 읽어 오류로 잡았다(Preview 실측).
+  (d.unverifiedWon(mask(masked, amountsIn(masked).filter(a => a.unit)), known) || []).forEach(v => badPrice.add(v));
   // ② 금액이 가리키는 상품의 값인가 — v2 귀속 규칙(priceAttribution 주석).
   priceAttribution(masked, items, d).forEach(v => badPrice.add(v));
   if (badPrice.size) add('price', '도구 결과로 확인되지 않거나 다른 상품의 가격', [...badPrice].slice(0, 6));
@@ -541,7 +555,12 @@ function verify(text, ctx) {
     });
     // CPU·GPU 모델 — 단위가 없어 위 검사가 못 본다. "i5" 만 적힌 상품을 "i5-13420H" 라고 하면 지어낸 것이다.
     if (!question && chipEntries.length && !GENERAL_RE.test(sn) && !HYPOTHETICAL_CHIP_RE.test(sn)) {
-      chipClaims(sn).forEach(cl => { if (!chipSupported(cl, chipEntries)) badChip.add(cl.label); });
+      // "GPU는 RTX 4060보다 한 단계 아래" — 비교 기준으로 든 모델은 그 상품의 사양 주장이 아니다
+      const sNorm = String(sn).normalize('NFKC');
+      chipClaims(sn).forEach(cl => {
+        if (CHIP_REFERENCE_AFTER_RE.test(sNorm.slice(cl.end, cl.end + 12))) return;
+        if (!chipSupported(cl, chipEntries)) badChip.add(cl.label);
+      });
     }
     d.unsupportedComparisons(sn, refs.length >= 2 ? refs : items).forEach(x => badCmp.add(x));
   });
@@ -674,8 +693,11 @@ function priceAttribution(masked, items, d) {
     const sentence = si >= 0 ? s.slice(spans[si][0], spans[si][1]) : s;
     const approx = APPROX_BEFORE_RE.test(before) || APPROX_AFTER_RE.test(after) || (c.unit === '만' && c.value % 10000 === 0);
     const step = c.unit === '만' || c.value % 10000 === 0 ? 10000 : (c.value % 1000 === 0 ? 1000 : 1);
-    const close = e => e > 0 && (e === c.value || (approx && Math.abs(e - c.value) <= step / 2));
+    // 어림은 반올림도 버림도 쓴다("169만 원" ← 1,699,000원) — 그 자리 단위 안에서만.
+    const close = e => e > 0 && (e === c.value || (approx && (Math.abs(e - c.value) <= step / 2 || Math.floor(e / step) * step === c.value)));
     const historical = kind === 'any' && HISTORY_WORD_RE.test(sentence);
+    // "169만~223만 원" 의 앞쪽 끝은 범위의 시작일 뿐이다 — 뒤쪽 끝에서 범위 전체로 본다.
+    if (/^\s*(?:원\s*)?[~〜～\-–]\s*[0-9]/.test(after)) return;
     /* "30만 원대" 는 30만~39만 원이라는 범위 주장이다. 근사치로 보지 않는다. */
     let range = null;
     if (/^\s*(?:원\s*)?대/.test(after) && !/^\s*(?:원\s*)?대(?:에서|로|의)/.test(after)) {
@@ -683,6 +705,21 @@ function priceAttribution(masked, items, d) {
       const zeros = (String(Math.round(base)).match(/0+$/) || [''])[0].length;
       const bucket = Math.pow(10, zeros) * (c.unit === '만' ? 10000 : 1);
       range = [c.value, c.value + bucket - 1];
+    }
+    /*
+     * "50~70만 원대", "169만~223만 원" — 앞쪽 끝까지 포함한 범위. 상품을 가리키지 않는 범위는 가격대 안내다
+     * ("**50~70만 원대**: 최신에 가까운 i3/i5…", "30~70만 원대 노트북을 골라 드릴게요" — Preview 실측). 아래에서 주인이 없으면 넘긴다.
+     */
+    const lowM = /([0-9][0-9,]*(?:\.[0-9]+)?)\s*(억|만|천)?\s*원?\s*[~〜～\-–]\s*$/.exec(s.slice(Math.max(0, c.start - 16), c.start));
+    let band = false;
+    if (lowM) {
+      const unit = UNIT[lowM[2] || c.unit] || 1;
+      const low = Math.round(Number(String(lowM[1]).replace(/,/g, '')) * unit);
+      if (low > 0 && low < c.value) {
+        band = true;
+        const high = range ? range[1] : (approx ? c.value + step - 1 : c.value);
+        range = [approx && !range ? low : low, high];
+      }
     }
     const evidence = it => {
       if (kind === 'compare-less' || kind === 'compare-more') {
@@ -745,6 +782,8 @@ function priceAttribution(masked, items, d) {
      * ("…10만 원대에 맞추고 싶을 때 선택지")는 다른 금액처럼 그 문장이 가리키는 상품 하나가 맞으면 된다 —
      * Preview 실측(2026-10-19)에서 "ANC" 같은 기능 낱말로 문장에 함께 걸린 다른 헤드폰들 때문에 참인 범위가 오류로 잡혔다.
      */
+    // 가격대 안내 — 같은 문장에서 이름을 댄 상품이 없으면 특정 상품의 가격 주장이 아니다(앞 문장 상품을 이어받지 않는다)
+    if (band && !(clauseNamed.length || (si >= 0 && named[si].length))) return;
     const plural = range && PLURAL_RE.test(sentence);
     const ok = plural ? pool.every(supports) : pool.some(supports);
     if (!ok) bad.push(c.value);
