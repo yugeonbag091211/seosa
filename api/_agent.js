@@ -469,7 +469,12 @@ function budgetValues(text, hist) {
 const PRODUCT_CATEGORY_RE = /노트북|랩톱|랩탑|마우스|키보드|모니터|태블릿|아이패드|맥북|아이폰|갤럭시|스마트폰|휴대폰|핸드폰|이어폰|헤드폰|헤드셋|청소기|공기청정기|냉장고|세탁기|텔레비전|\bTV\b|에어컨|선풍기|카메라|스피커|SSD|외장하드|그래픽카드|\bGPU\b|\bCPU\b|\bRAM\b|램|메모리|게임용\s*(?:PC|마우스|키보드|노트북)|게이밍\s*(?:PC|마우스|키보드|노트북|헤드셋)/i;
 const RECOMMEND_RE = /추천|골라\s*(?:줘|주세요|줄래|봐)|찾아\s*(?:줘|주세요|봐)|검색해|살\s*만한|사고\s*싶|구매하고\s*싶|보여\s*(?:줘|주세요)|비교해\s*(?:줘|주세요)/i;
 const PRODUCT_LOOKUP_RE = /최저가|현재가|판매가|얼마|가격|구매\s*(?:링크|주소)|살\s*수\s*있는\s*곳|어디서\s*사/i;
+const PRODUCT_SHOPPING_RE = /추천|골라|찾아|검색|살\s*만|사고\s*싶|구매|가격|얼마|최저가|현재가|판매가|보여|비교|가성비|저렴|싼|최고|최저|가장|제일|\d+\s*(?:개|대|종|가지)|\d[\d,]*\s*(?:만|천)?\s*원/i;
 const MEMORY_REFERENCE_RE = /이\s*(?:제품|상품|거|거의\s*가격)|이거|그\s*(?:제품|상품|거)|첫\s*번째|1\s*번째|첫째|두\s*번째|2\s*번째|둘째|아까|방금|추천한\s*(?:제품|상품|거)/i;
+const CONTEXT_SEARCH_RE = /더\s*(?:싼|저렴한|좋은)|다른\s*(?:상품|제품|모델|것)|비슷한|대안|추가\s*(?:상품|후보)|새로운|다시\s*(?:찾|검색)|추천|골라|검색|찾아/i;
+const GENERAL_INFO_RE = /뭐야|무엇|무슨\s*뜻|뜻|설명|종류|차이|원리|어떻게\s*작동|어떻게\s*써|충분해/i;
+const SMALLTALK_RE = /^(?:안녕(?:하세요)?|반가워요?|고마워요?|감사합니다|잘\s*지냈|좋은\s*(?:아침|저녁)|수고하세요?)[.!?\s]*$/i;
+const PRODUCT_COMPARE_RE = /이거랑|저거랑|같은\s*(?:모델|상품|제품)|동일\s*(?:모델|상품|제품)/i;
 
 /*
  * A small server-side intent check only repairs an omitted evidence lookup.
@@ -503,6 +508,27 @@ function recommendationRequest(text) {
 function productLookupRequest(text) {
   const safe = stripPromptInjection(text);
   return !!(PRODUCT_CATEGORY_RE.test(safe) && PRODUCT_LOOKUP_RE.test(safe));
+}
+
+function allowProductSearch(text, conv, view) {
+  const safe = stripPromptInjection(text);
+  const hasProducts = (conv && conv.slots || []).some(s => s && s.entry && s.entry.item);
+  // A remembered product price/detail request should use its existing ID.
+  if (memoryLookupSlot(safe, conv, view)) return false;
+  // If cards already identify both sides, use compare_products. Without any
+  // product context, a same-model question needs product candidates first.
+  if (PRODUCT_COMPARE_RE.test(safe)) return !hasProducts;
+  if (recommendationRequest(safe) || productLookupRequest(safe)) return true;
+  if (PRODUCT_SHOPPING_RE.test(safe) && PRODUCT_CATEGORY_RE.test(safe)) return true;
+  // A model/brand query may omit a generic category (for example, "MX Master
+  // 3S lowest price"). A lookup term plus a named Latin model is still explicit.
+  if (PRODUCT_LOOKUP_RE.test(safe) && /[A-Za-z][A-Za-z0-9-]*\s*(?:[A-Za-z0-9-]*\d[A-Za-z0-9-]*|[A-Za-z]{2,})/.test(safe)) return true;
+  // Do not let an injected tool instruction turn a definition, explanation,
+  // greeting, or ordinary knowledge question into a supplier lookup.
+  if (SMALLTALK_RE.test(safe) || GENERAL_INFO_RE.test(safe)) return false;
+  // Context-dependent requests such as "show me a cheaper one" can search the
+  // category already present in the conversation without repeating its name.
+  return hasProducts && CONTEXT_SEARCH_RE.test(safe);
 }
 
 function memoryLookupSlot(text, conv, view) {
@@ -579,7 +605,7 @@ async function run(ctx) {
     v: AGENT_VERSION, engine: 'v2', rounds: 0, toolCalls: 0, calls: {}, inTok: 0, outTok: 0, cachedTok: 0, reasoningTok: 0, costUsd: 0,
     llmMs: [], model: '', firstIssues: [], finalIssues: [], rewrite: false, outcome: '', cards: 0,
     invalidIds: 0, droppedUnmentioned: 0, memIn: 0, memVerified: 0, memOut: 0, json: null, failReason: '',
-    supplemented: false, deferredSearches: 0
+    supplemented: false, deferredSearches: 0, suppressedSearches: 0
   };
   /*
    * dbg — Preview 디버그 응답(_debug.trace)에만 싣는 상세 기록. 로그 줄(logObs)에는 들어가지 않는다
@@ -638,6 +664,7 @@ async function run(ctx) {
     });
     const conv = await resolveConversation(I, session, memory, screen, budget);
     obs.memVerified = conv.slots.filter(s => s.prefix !== 'V' && s.entry).length;
+    const searchAllowed = allowProductSearch(q, conv, view);
 
     const profile = !guest && body && body.profile ? I.safeText(JSON.stringify(body.profile), 300) : '';
     const input = [];
@@ -693,6 +720,13 @@ async function run(ctx) {
         let searchIssued = false;
         const outputs = await Promise.all(r.toolCalls.map(call => {
           if (call.name === 'search_products') {
+            if (!searchAllowed) {
+              obs.suppressedSearches++;
+              return JSON.stringify({
+                status: 'not_needed',
+                message: '사용자 질문은 상품 검색을 요청하지 않는다. 검색을 실행하지 말고 일반 질문에는 바로 답하라. 사용자가 검색을 명시적으로 요청했을 때만 검색한다.'
+              });
+            }
             if (searchIssued) {
               obs.deferredSearches++;
               return JSON.stringify({
@@ -1021,6 +1055,7 @@ function finish(res, I, payload, obs, startedAt, req, dbg, session) {
       firstIssues: obs.firstIssues, finalIssues: obs.finalIssues, rewrite: obs.rewrite, outcome: obs.outcome,
       invalidIds: obs.invalidIds, memIn: obs.memIn, memVerified: obs.memVerified, failReason: obs.failReason,
       supplemented: obs.supplemented, deferredSearches: obs.deferredSearches,
+      suppressedSearches: obs.suppressedSearches,
       ms: Date.now() - startedAt
     };
     // 상세 기록(첫 답변 원문·도구 인자·레지스트리) — Production 이 아닌 곳 + 디버그 헤더일 때만.
