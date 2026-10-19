@@ -1499,7 +1499,7 @@ function laptopBrain(mode, opts) {
   };
   r = await ask('마우스 추천해줘', newState());
   ok(stub.searches.length === 1 && oa.agentBodies.length === 1, '검색 1회 뒤 GPT 답변 1회로 명확한 추천의 중복 라운드 제거', `search=${stub.searches.length}, GPT=${oa.agentBodies.length}`);
-  ok(oa.agentBodies[0].tool_choice === 'none' && toolOutputs(oa.agentBodies[0]).some(x => x.results && x.results.some(p => p.id === 'M2')),
+  ok(oa.agentBodies[0].tool_choice === 'none' && toolOutputs(oa.agentBodies[0]).some(x => x.results && x.results.some(p => /MX Master/.test(p.title))),
     'GPT에 검증 후보를 전달하고 추가 검색은 막음');
   ok(r.body.items && r.body.items.length === 1 && r.body.items[0].productId === 'M2' && r.body.topRecommendation.productId === 'M2',
     'GPT가 첫 상품 M1 대신 실제 후보 M2를 선택해 카드 생성', r.body.items && r.body.items[0] && r.body.items[0].productId);
