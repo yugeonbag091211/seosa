@@ -465,6 +465,10 @@ function laptopBrain(mode, opts) {
       '★ 화면이 못 그리는 표·제목은 목록·강조로 바꾼다(Preview 실측)', flat.replace(/\n/g, ' ⏎ '));
     const plain = Agent._internal.parseFinal('그냥 문장으로 답했어요.');
     ok(!plain.json && plain.answer === '그냥 문장으로 답했어요.' && plain.productIds.length === 0, 'JSON 이 아니면 본문만 쓰고 카드는 없다');
+    const llmMetrics = require('../api/_llm');
+    const measuredCost = llmMetrics._internal.estimateOpenAICostUsd('gpt-5.1', { inputTokens: 4066, cachedTokens: 2688, outputTokens: 477 });
+    ok(Math.abs(measuredCost - 0.0068285) < 1e-10, 'gpt-5.1 비용은 캐시 입력 단가까지 반영', String(measuredCost));
+    ok(llmMetrics.estimateOpenAICostUsd('unpriced-model', { inputTokens: 10, outputTokens: 3 }) === null, '미등록 모델은 알 수 없는 비용으로 유지');
   }
 
   /* ---------------- 단위: 상품명 사양 ---------------- */

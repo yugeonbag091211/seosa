@@ -22,7 +22,8 @@ const OPENAI_FAILURE_COOLDOWN_MS = 60 * 1000;
 
 /* Standard short-context rates, USD / 1M tokens.  Unknown models stay null. */
 const OPENAI_PRICES_USD_PER_1M = Object.freeze({
-  'gpt-6-luna': { in: 0.10, out: 0.50 }
+  'gpt-6-luna': { in: 0.10, out: 0.50 },
+  'gpt-5.1': { in: 1.25, cachedIn: 0.125, out: 10.00 }
 });
 
 const state = {
@@ -86,8 +87,11 @@ function estimateOpenAICostUsd(model, usage) {
   if (!usage) return null;
   const price = OPENAI_PRICES_USD_PER_1M[model];
   if (!price) return null;
-  return (Number(usage.inputTokens || 0) / 1e6) * price.in +
-    (Number(usage.outputTokens || 0) / 1e6) * price.out;
+  const inputTokens = Math.max(0, Number(usage.inputTokens) || 0);
+  const cachedTokens = Math.min(inputTokens, Math.max(0, Number(usage.cachedTokens) || 0));
+  const outputTokens = Math.max(0, Number(usage.outputTokens) || 0);
+  const cachedInputPrice = Number.isFinite(Number(price.cachedIn)) ? Number(price.cachedIn) : price.in;
+  return ((inputTokens - cachedTokens) * price.in + cachedTokens * cachedInputPrice + outputTokens * price.out) / 1e6;
 }
 
 function classifyStatus(status) {
