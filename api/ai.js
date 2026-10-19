@@ -1246,7 +1246,16 @@ function aiSearchKeyword(query) {
  *   ok=true 에 items=[] 는 "찾아봤는데 없었다"이다. 둘을 뭉뚱그리면
  *   AI 가 "그런 상품은 없습니다"라고 단정하게 된다 — 확인하지 못한 것뿐인데.
  */
-async function searchProducts(query, budgetMs) {
+/**
+ * @param {object} [opts]  AI Concierge v2 (api/_agenttools.js) 만 넘긴다 — v1 은 넘기지 않아 예전과 같다.
+ *   coupangLimit  쿠팡 결과를 몇 건까지 받을지. 쿠팡 호출은 어차피 10건을 받아 캐시하므로
+ *                 (api/_coupang.js FETCH_LIMIT) 6 → 10 으로 늘려도 호출 수·쿼터는 같다.
+ *   background    관측 저장(saveProducts)을 기다리지 않고 이 함수에 promise 를 넘긴다.
+ *                 저장은 그대로 일어난다 — 호출부가 응답 전에 짧게 기다린다.
+ */
+async function searchProducts(query, budgetMs, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {};
+  const coupangLimit = Number.isInteger(o.coupangLimit) && o.coupangLimit >= 1 && o.coupangLimit <= 10 ? o.coupangLimit : AI_SEARCH_LIMIT;
   /*
    * 지연 require.
    *
@@ -1268,7 +1277,7 @@ async function searchProducts(query, budgetMs) {
     const deadline = Date.now() + Math.max(1, Number(budgetMs) || AI_SEARCH_TIMEOUT_MS);
     const searchCap = Math.min(AI_SEARCH_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
     const searched = await settleWithin(searchAll(aiSearchKeyword(query), {
-      coupangLimit: AI_SEARCH_LIMIT,
+      coupangLimit,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS },
       // 이름표뿐이다(/api/search 와 같다). maxWaitMs 를 넣지 않으므로 ADPICK 대기 정책은 그대로다.
       adpickOpts: { source: 'ai' },
@@ -1332,7 +1341,13 @@ async function searchProducts(query, budgetMs) {
      * 거치므로 stale-cache 판정·중복 방지·급변 보류가 그대로 적용된다.
      * 저장이 실패해도 사용자에게 답은 해야 하므로 삼킨다.
      */
-    await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
+    if (typeof o.background === 'function') {
+      // v2: 저장을 기다리는 동안 답변이 멈추지 않게 한다(Preview 실측: 저장이 1.2초 상한에 걸림).
+      o.background(Promise.resolve().then(() => saveProducts(query, allItems || list, { from, source: 'ai' }))
+        .catch(e => console.warn(`[ai] 검색 결과 저장 실패(답변은 계속): ${e.message}`)));
+    } else {
+      await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
+    }
 
     return { ok: true, items: currentItems, reason: from };
   } catch (e) {
