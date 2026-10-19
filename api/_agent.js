@@ -65,7 +65,12 @@ const MAX_HISTORY_MSGS = 8;
 const MAX_HISTORY_LEN = 500;
 const MAX_SCREEN = 6;
 const MAX_CARDS = 4;
-const MAX_OUTPUT_TOKENS = 1200;
+/*
+ * 답변 길이 상한. gpt-5.1 은 Preview 실측(2026-10-19)에서 초당 약 110 토큰을 썼다 — 1200 토큰짜리 설명형 답
+ * ("인텔이랑 AMD 차이")은 한 차례 상한(12초)을 넘겨 «답변을 만들지 못했어요» 로 끝났다. 900 토큰이면 9초 안쪽이고,
+ * 넘쳐서 잘려도 answer 는 건진다(parseFinal). 비교 답변 실측은 680 토큰.
+ */
+const MAX_OUTPUT_TOKENS = boundedEnv('AI_V2_MAX_OUTPUT_TOKENS', 900, 400, 1600);
 const CONTEXT_LOOKUP_MS = 3000;
 
 /* ================================================================== *
@@ -169,10 +174,11 @@ const INSTRUCTIONS = [
   '[답변 쓰기]',
   '- 자연스러운 한국어 존댓말. 결론부터, 짧고 분명하게(보통 3~8문장, 필요하면 "- " 목록과 **강조**). 매번 같은 틀을 되풀이하지 않는다.',
   '- 화면은 **강조**와 "- " 목록만 그린다. 표(| … |)·제목(#)·코드 블록은 쓰지 않는다.',
-  '- 여러 상품 비교는 상품마다 한 줄로: "- **이름** — CPU … / RAM … / SSD … / 가격 …원 · 한 줄 평". 같은 내용을 요약으로 다시 되풀이하지 않는다. 전체 600자 안팎, 길어도 900자.',
+  '- 여러 상품 비교는 상품마다 한 줄로: "- **이름** — CPU … / RAM … / SSD … / 가격 …원 · 한 줄 평". 같은 내용을 요약으로 다시 되풀이하지 않는다.',
+  '- 전체 답변은 600자 안팎, 길어도 900자. 개념 설명도 핵심 3~5가지만 짧게.',
   '- 상품은 이름으로 부른다. S01·R01 같은 ID 는 answer 에 쓰지 않는다.',
   '- 추천할 때는 왜 그 상품인지(사양·가격·가격 기록 근거)와 아쉬운 점을 함께 말한다.',
-  '- 되묻기는 꼭 필요할 때 하나만, 줄 수 있는 답을 먼저 준 뒤에 한다.',
+  '- 되묻기는 꼭 필요할 때 하나만, 줄 수 있는 답을 먼저 준 뒤에 한다. 상품 추천 요청은 조건이 덜 정해졌어도 먼저 검색해 무난한 후보를 보여 주고, 그다음 가장 중요한 조건 하나만 묻는다.',
   '',
   '[출력 — JSON]',
   '- answer: 사용자에게 보일 답변.',
@@ -538,6 +544,7 @@ async function run(ctx) {
 
     /* ── 도구 루프 ── */
     let final = null;
+    let retried = false;
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const remaining = budget.remaining();
       if (remaining < MIN_ROUND_MS + 500) { obs.failReason = 'budget'; break; }
@@ -549,7 +556,20 @@ async function run(ctx) {
         toolChoice: lastRound ? 'none' : 'auto', textFormat: FORMAT, maxTokens: MAX_OUTPUT_TOKENS
       }, Math.min(ROUND_TIMEOUT_MS, remaining - 1000));
       account(r, `loop${round}`);
-      if (!r.ok) { obs.failReason = r.reason || 'provider'; break; }
+      if (!r.ok) {
+        /*
+         * 한 차례가 아무 출력 없이 시간 초과로 끊겼다 — Preview 실측(2026-10-19) "더 싼 제품은 없어?" 의 첫 차례가 12초 상한에
+         * 걸려 «답변을 만들지 못했어요» 로 끝났다. 최종 답변 몫이 남아 있으면 한 번만 다시 부른다(쿨다운·키 오류는 다시 부르지 않는다).
+         */
+        if (r.reason === 'timeout' && !retried && budget.remaining() > ANSWER_RESERVE_MS + 1000) {
+          retried = true;
+          obs.retried = true;
+          round--;
+          continue;
+        }
+        obs.failReason = r.reason || 'provider';
+        break;
+      }
       if (r.toolCalls.length && !lastRound) {
         input.push(...r.replay);
         const outputs = await Promise.all(r.toolCalls.map(call => Tools.execute(session, call)));

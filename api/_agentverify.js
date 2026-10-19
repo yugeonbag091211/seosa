@@ -44,7 +44,8 @@ function sentences(text) {
 }
 
 /* ── 금액 읽기 (검증용 — 마스킹·차액 판정) ── */
-const AMOUNT_RE = /(?<![0-9A-Za-z])([0-9][0-9,]*(?:\.[0-9]+)?)\s*(억|만|천)?\s*(?:([0-9][0-9,]*)\s*(만|천)?\s*)?원?/g;
+/* 앞이 날짜·모델 구분자(-, ., /)이면 금액이 아니다 — "2026-10-19만 기록"(=그날만)의 19만 을 190,000원으로 읽었다(Preview 실측) */
+const AMOUNT_RE = /(?<![0-9A-Za-z\-./])([0-9][0-9,]*(?:\.[0-9]+)?)\s*(억|만|천)?\s*(?:([0-9][0-9,]*)\s*(만|천)?\s*)?원?/g;
 const UNIT = { 억: 100000000, 만: 10000, 천: 1000 };
 
 function amountsIn(text) {
@@ -84,6 +85,7 @@ const DIFF_BEFORE_MASK_RE = /(?:차이|차액)\s*(?:는|은|이|가|:)?\s*(?:약
 /* 서버 가격 − 사용자 예산 꼴의 차액 표지 ("29,000원 초과", "예산보다 2만 9천 원", "예산을 약 3만 원 넘어요") */
 const BUDGET_DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:더\s*)?(?:초과|넘|오버|웃돌|비싸|비쌉|높|싸|쌉|저렴|낮|남|모자라|부족)/;
 const BUDGET_DIFF_BEFORE_RE = /예산\s*(?:\([^)]{0,14}\)\s*)?(?:을|를|보다|에서|대비|기준)\s*(?:약|대략|거의)?\s*$/;
+const PLUS_DIFF_BEFORE_RE = /(?:초과|넘|오버|웃돌)?\s*[(（]\s*[+＋]\s*(?:약\s*)?$/;
 
 /**
  * 사용자 예산 되받기·서버 가격끼리의 차액을 가린 사본. 위치는 그대로다.
@@ -96,7 +98,12 @@ const BUDGET_DIFF_BEFORE_RE = /예산\s*(?:\([^)]{0,14}\)\s*)?(?:을|를|보다|
  * 결국 그 문장이 걷어졌다 — 재작성 한 차례 7.8초가 오탐 하나에 쓰였다).
  * 금액(또는 "A~B" 범위) 앞에 «예산» 이, 뒤에 «더 올리·늘리·추가» 가 붙은 꼴만 가린다.
  */
-const BUDGET_ADJUST_RE = /예산[^.\n!?]{0,16}?((?:[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*원?\s*[~〜～\-–]\s*)?[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*(?:[0-9][0-9,]*\s*(?:천)?\s*)?원?)\s*(?:정도|가량|쯤|안팎)?\s*(?:만\s*)?(?:더\s*)?(?:올리|올려|늘리|늘려|높이|높여|추가|여유|보태|쓰|써)/g;
+const BUDGET_ADJUST_RE = /예산[^.\n!?]{0,16}?((?:[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*원?\s*[~〜～\-–]\s*)?[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*(?:[0-9][0-9,]*\s*(?:천)?\s*)?원?)\s*(?:정도|가량|쯤|안팎|전후|선|수준)?\s*(?:까지|로|으로)?\s*(?:조금|좀|약간|살짝)?\s*(?:만\s*)?(?:더\s*)?(?:올리|올려|늘리|늘려|높이|높여|추가|여유|보태|쓰|써)/g;
+/*
+ * 지켜볼 «기준 가격» 제안 — "90만 원대 초반 이하로 내려오는지 체크", "85만 원 아래로 떨어지면" (Preview 실측).
+ * 상품의 현재·과거 가격 주장이 아니라 사용자가 정할 문턱이다. 금액 뒤에 «이하로 내려오는지·떨어지면» 이 붙은 꼴만.
+ */
+const WATCH_THRESHOLD_AFTER_RE = /^\s*(?:원\s*)?(?:대\s*)?(?:초반|중반|후반)?\s*(?:이하|아래|밑|미만|까지)?\s*(?:로|으로)?\s*(?:내려오|내려가|떨어지|떨어질|내려|되)(?:는지|면|기를|길|는\s*걸)/;
 
 function maskAllowed(text, known) {
   const s = String(text || '');
@@ -119,8 +126,11 @@ function maskAllowed(text, known) {
       spans.push(a);
       return;
     }
-    const diffCue = DIFF_AFTER_RE.test(after) || DIFF_BEFORE_MASK_RE.test(before);
-    const budgetCue = diffCue || BUDGET_DIFF_AFTER_RE.test(after) || BUDGET_DIFF_BEFORE_RE.test(s.slice(Math.max(0, a.start - 20), a.start));
+    if (WATCH_THRESHOLD_AFTER_RE.test(s.slice(a.end, a.end + 24))) { spans.push(a); return; }
+    // "예산 초과(+99,000원)" — 프롬프트·재작성 지시가 쓰라고 한 바로 그 꼴(Preview 실측에서 이것이 가격 오류로 잡혔다)
+    const plusBefore = PLUS_DIFF_BEFORE_RE.test(before);
+    const diffCue = plusBefore || DIFF_AFTER_RE.test(after) || DIFF_BEFORE_MASK_RE.test(before);
+    const budgetCue = diffCue || plusBefore || BUDGET_DIFF_AFTER_RE.test(after) || BUDGET_DIFF_BEFORE_RE.test(s.slice(Math.max(0, a.start - 20), a.start));
     if (!diffCue && !budgetCue) return;
     const approx = a.unit ? UNIT[a.unit] : (/(?:약|대략|거의)\s*$/.test(before) ? 1000 : 0);
     const tol = Math.max(approx ? approx / 2 : 0, 1);
@@ -134,7 +144,7 @@ function maskAllowed(text, known) {
       }
       // 서버 가격과 사용자 예산의 차이("예산보다 29,000원 비싸요", "예산을 2만 9천 원 넘어요").
       // 방향도 맞아야 한다 — 예산을 넘는 상품을 "예산보다 29,000원 싸요" 라고 하면 가리지 않는다.
-      const up = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:더\s*)?(?:초과|넘|오버|웃돌|비싸|비쌉|높)/.test(after);
+      const up = plusBefore || /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:더\s*)?(?:초과|넘|오버|웃돌|비싸|비쌉|높)/.test(after);
       const down = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:더\s*)?(?:싸|쌉|저렴|낮|남)/.test(after);
       for (let k = 0; k < budgetList.length; k++) {
         const d = values[i] - budgetList[k];
@@ -166,6 +176,31 @@ const GLOBAL_LOWEST_RE = /(?:인터넷|온라인|국내|업계|시중|전체|어
 const GLOBAL_NEG_RE = /(?:아니에요|아닙니다|아니라|은\s*아니|는\s*아니|수는\s*없|확인할\s*수\s*없|단정할\s*수\s*없|보장하지|알\s*수\s*없)/;
 const SAME_CLAIM_RE = /같은\s*(?:상품|모델|제품|물건)(?:이에요|입니다|이야|예요|이네요|으로\s*보|이라|이고|이니)/g;
 const COND_WORD = { used: /중고/, refurbished: /리퍼/, rental: /렌탈|대여|구독/, display: /전시/, opened: /개봉/ };
+
+/*
+ * 인용해서 부정하는 말 — '"곧 떨어질 거예요"라고 말하기도 어렵습니다' (Preview 실측: 이것이 미래 가격 단정으로 잡혔다).
+ * 따옴표 안 + 뒤에 «라고·라는» 이 붙은 구간은 주장이 아니라 남의 말을 옮긴 것이다. 위치를 지키려고 공백으로 바꾼다.
+ */
+const QUOTED_RE = /["“'‘「『][^"”'’」』\n]{1,80}["”'’」』]\s*(?:이?라고|이?라는|이?란|이라며)/g;
+function stripQuoted(text) {
+  return String(text || '').replace(QUOTED_RE, m => ' '.repeat(m.length));
+}
+/* "지금 사도 괜찮은지 확인해서" — 구매 시점을 단정한 것이 아니라 확인할 일을 말한 간접 의문 */
+const INDIRECT_TIMING_RE = /(?:사도|사셔도|구매해도|구매하셔도|사는\s*게|사기에)\s*(?:괜찮|좋|되|돼|나을|낫|맞)[가-힣]{0,3}지|(?:살|구매할)\s*(?:때|시점|타이밍)인지/;
+/* "당장 필요하다면 지금 사셔도 무리 없는 수준" — 필요에 따른 조건부 조언. 기록이 부족하다는 고지가 함께 있을 때만 통과 */
+const NEED_COND_RE = /(?:당장|바로|급하게|꼭)\s*(?:필요|쓰|써야|사용)|필요하(?:다면|시다면|시면|면)|급하(?:다면|시다면|시면|면)/;
+const RECORD_CAVEAT_RE = /(?:기록|데이터|근거|이력|관측)[^.\n]{0,16}?(?:부족|없|하루|1일|1건|적어|짧)|판단(?:하기|할)\s*(?:어렵|어려|근거가\s*없)|UNKNOWN|판정할\s*근거가\s*없/;
+/* 질문 문장은 사실 주장이 아니다 — "화면 크기(13~14인치 vs 15~16인치) 선호가 있으신가요?" (Preview 실측: 16인치 가 사양 오류로 잡혔다) */
+const QUESTION_RE = /(?:\?|？)\s*$|(?:인가요|일까요|으신가요|있으신가요|하실까요|드릴까요|할까요|원하세요|원하시나요|어떠세요)\s*[.!]?\s*$/;
+/* 가정·업그레이드 말 속의 사양 — "나중에 32GB로 업그레이드해야 한다면", "RAM 32GB가 필요하다면" */
+function hypotheticalSpec(sentence, claim) {
+  const s = normalizeSpecClaim(sentence);
+  const c = normalizeSpecClaim(claim);
+  const at = s.indexOf(c);
+  if (at < 0) return false;
+  const tail = s.slice(at + c.length, at + c.length + 14);
+  return /^(?:으로|로)(?:업그레이드|증설|늘리|늘려|확장|교체|올리|올려)|^(?:이|가)?(?:필요하|필요할|있으면|이상(?:이면|을|은)?|정도면|정도는|급이면)/.test(tail);
+}
 
 function verdictBucket(code) {
   if (code === 'BUY' || code === 'GOOD_BUY') return 'buy';
@@ -217,6 +252,8 @@ function specSupported(claim, entries) {
     }
     if (u === '인치') {
       if (Math.abs((Number(sp.screen_inch) || 0) - v) < 0.05) return true;
+      // "15인치 노트북" 은 15.6인치를 흔히 이렇게 부른다 — 정수 주장만, 같은 정수 부분일 때만
+      if (Number.isInteger(v) && Number(sp.screen_inch) > v && Number(sp.screen_inch) < v + 1) return true;
       return [...title.matchAll(/(\d+(?:\.\d+)?)\s*cm/g)].some(x => Math.abs(Number(x[1]) / 2.54 - v) <= 0.15);
     }
     if (u === 'cm') {
@@ -368,8 +405,9 @@ function verify(text, ctx) {
     add('echo', '상품명 속 지시문을 답변에 옮겼다');
   }
 
-  const forecast = FORECAST_RE.exec(t);
-  if (forecast && !HEDGE_RE.test(sentenceAround(t, forecast.index))) add('forecast', `미래 가격 단정: "${forecast[0].slice(0, 30)}"`);
+  const unquoted = stripQuoted(t);
+  const forecast = FORECAST_RE.exec(unquoted);
+  if (forecast && !HEDGE_RE.test(sentenceAround(unquoted, forecast.index))) add('forecast', `미래 가격 단정: "${forecast[0].slice(0, 30)}"`);
   const global = GLOBAL_LOWEST_RE.exec(t);
   if (global && !GLOBAL_NEG_RE.test(t.slice(global.index, global.index + global[0].length + 24))) {
     add('global_lowest', `근거 없는 전체 최저가 주장: "${global[0].slice(0, 30)}"`);
@@ -425,13 +463,15 @@ function verify(text, ctx) {
     if (!refs.length) return;
     const refEntries = refs.map(it => entryOfItem.get(it)).filter(Boolean);
     const titles = normalizeSpecClaim(refs.map(it => it.title).join(' '));
-    d.unverifiedSpecs(sn, refs).forEach(claim => {
+    const question = QUESTION_RE.test(sn.trim());
+    if (!question) d.unverifiedSpecs(sn, refs).forEach(claim => {
       if (titles.includes(normalizeSpecClaim(claim))) return;
       if (specSupported(claim, refEntries)) return;
+      if (hypotheticalSpec(sn, claim)) return;
       badSpec.add(claim);
     });
     // CPU·GPU 모델 — 단위가 없어 위 검사가 못 본다. "i5" 만 적힌 상품을 "i5-13420H" 라고 하면 지어낸 것이다.
-    if (!GENERAL_RE.test(sn) && !HYPOTHETICAL_CHIP_RE.test(sn)) {
+    if (!question && !GENERAL_RE.test(sn) && !HYPOTHETICAL_CHIP_RE.test(sn)) {
       chipClaims(sn).forEach(cl => { if (!chipSupported(cl, refEntries)) badChip.add(cl.label); });
     }
     d.unsupportedComparisons(sn, refs.length >= 2 ? refs : items).forEach(x => badCmp.add(x));
@@ -499,6 +539,7 @@ function sentenceSpans(text) {
 const APPROX_BEFORE_RE = /(?:약|대략|거의|얼추|한)\s*$/;
 const APPROX_AFTER_RE = /^\s*(?:원\s*)?(?:정도|쯤|가량|안팎|내외|남짓|선)/;
 const MODIFIER_AFTER_RE = /^\s*(?:원\s*)?(?:인|짜리|의|대의|대)\s/;
+const PLURAL_RE = /(?:모두|전부|다들|둘\s*다|셋\s*다|모든|두\s*(?:제품|상품|개|모델)|세\s*(?:제품|상품|개|모델)|네\s*(?:제품|상품|개|모델)|각각|하나같이)/;
 /* 금액과 바로 뒤 상품 이름 사이 — 공백, 꾸밈 어미, 짧은 낱말 하나(브랜드 한글 표기 "델" 등)까지만 */
 const GLUE_GAP_RE = /^\s*(?:원\s*)?(?:인|짜리|의|대의|대)?\s+(?:[가-힣a-z]{1,4}\s+)?$/;
 const HISTORY_WORD_RE = /(?:전에는|전엔|전보다|전에|지난|과거|기록|평균|최저|최고|이었|였어요|였습니다|였고|였는데|당시|그때|처음)/;
@@ -610,8 +651,13 @@ function priceAttribution(masked, items, d) {
         if (merged.length) pool = merged;
       }
     }
-    // 범위 주장은 그 범위에 들어야 할 상품 «전부» 가 맞아야 한다("세 제품 모두 30만 원대").
-    const ok = range ? pool.every(supports) : pool.some(supports);
+    /*
+     * 범위 주장은 «여럿 모두» 를 말할 때만 전부 맞아야 한다("세 제품 모두 30만 원대"). 한 상품을 말하는 범위
+     * ("…10만 원대에 맞추고 싶을 때 선택지")는 다른 금액처럼 그 문장이 가리키는 상품 하나가 맞으면 된다 —
+     * Preview 실측(2026-10-19)에서 "ANC" 같은 기능 낱말로 문장에 함께 걸린 다른 헤드폰들 때문에 참인 범위가 오류로 잡혔다.
+     */
+    const plural = range && PLURAL_RE.test(sentence);
+    const ok = plural ? pool.every(supports) : pool.some(supports);
     if (!ok) bad.push(c.value);
   });
   return [...new Set(bad)];
@@ -636,10 +682,14 @@ function timingChecks(t, c, items, add) {
   let unsupported = false;
   let conflict = '';
   let lastRefs = [];
-  sentences(t).forEach(sn => {
+  const caveat = RECORD_CAVEAT_RE.test(t);
+  sentences(stripQuoted(t)).forEach(sn => {
     const named = items.filter(it => mentions(sn, it));
     if (named.length) lastRefs = named;
     if (!TIMING_RE.test(sn)) return;
+    if (INDIRECT_TIMING_RE.test(sn)) return;
+    // 판정이 없을 때(기록 부족)의 «필요하면 지금 사도 무리 없다» 는, 기록이 부족하다는 고지가 함께 있으면 가격 시점 단정이 아니다.
+    if (!judged.length && caveat && NEED_COND_RE.test(sn)) return;
     // 상품을 가리키지 않는 일반 조언("보통 신학기 전 할인 시즌이 살 때예요")은 가격 기록 판정이 필요 없다.
     if (!named.length && GENERAL_RE.test(sn)) return;
     // 판단을 미루는 문장은 통과 — 단 금액·퍼센트가 함께 있으면 그 숫자 주장은 따로 본다(모델명 속 숫자는 상관없다).
@@ -678,8 +728,8 @@ function sentenceCarries(sn, issues, d, items) {
         || /(?:역대|사상)\s*최저/.test(s);
       case 'comparison': return d.unsupportedComparisons(s, items).length > 0;
       case 'timing_unsupported': case 'timing_conflict':
-        return TIMING_RE.test(s) && !HEDGE_RE.test(s);
-      case 'forecast': return FORECAST_RE.test(s);
+        return TIMING_RE.test(stripQuoted(s)) && !HEDGE_RE.test(s) && !INDIRECT_TIMING_RE.test(s);
+      case 'forecast': return FORECAST_RE.test(stripQuoted(s));
       case 'global_lowest': return GLOBAL_LOWEST_RE.test(s);
       case 'same_product_claim': SAME_CLAIM_RE.lastIndex = 0; return SAME_CLAIM_RE.test(s);
       case 'live_price_without_data': return d.unverifiedLivePriceClaim(s);

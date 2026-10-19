@@ -148,7 +148,7 @@ function fixtureStats() {
 }
 
 /* ── OpenAI Responses API 대역 ─────────────────────────────────── */
-const oa = { brain: null, agentBodies: [], plainBodies: [], freeBodies: [], status: 200, failAt: -1, hangAt: -1, hangMs: 0, v1Text: '' };
+const oa = { brain: null, agentBodies: [], plainBodies: [], freeBodies: [], status: 200, failAt: -1, hangAt: -1, hangFrom: -1, hangMs: 0, v1Text: '' };
 let callSeq = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -181,7 +181,7 @@ global.fetch = async (url, opts) => {
     const idx = oa.agentBodies.length;
     oa.agentBodies.push(body);
     if (oa.status !== 200 && (oa.failAt < 0 || oa.failAt === idx)) return { ok: false, status: oa.status, json: async () => ({ error: { message: 'stub' } }) };
-    if (oa.hangAt === idx) await sleep(oa.hangMs);
+    if (oa.hangAt === idx || (oa.hangFrom >= 0 && idx >= oa.hangFrom)) await sleep(oa.hangMs);
     const out = await oa.brain(body, idx);
     return { ok: true, status: 200, json: async () => respOf(out) };
   }
@@ -234,7 +234,7 @@ function reset() {
   stub.saveDelayMs = 0;
   stub.saves = 0;
   oa.brain = null; oa.agentBodies = []; oa.plainBodies = []; oa.freeBodies = [];
-  oa.status = 200; oa.failAt = -1; oa.hangAt = -1; oa.hangMs = 0; oa.v1Text = '';
+  oa.status = 200; oa.failAt = -1; oa.hangAt = -1; oa.hangFrom = -1; oa.hangMs = 0; oa.v1Text = '';
   process.env.AI_CONCIERGE_V2_ENABLED = '1';
   delete process.env.VERCEL_ENV;
   llm._internal._reset();
@@ -892,7 +892,7 @@ function laptopBrain(mode, opts) {
   ok(llm._internal.openAIState.cooldownUntil === 0, '★ 400(요청 형식)은 v1 의 OpenAI 를 쿨다운에 넣지 않는다');
   reset();
   oa.brain = laptopBrain('value');
-  oa.hangAt = 1;
+  oa.hangFrom = 1;
   oa.hangMs = 1600;
   r = await ask('노트북 추천해줘', newState());
   ok(r.body.engine === 'v2' && r.body.degraded === true && r.body._debug.outcome === 'provider-safe', '도구 실행 뒤 응답 지연 → 확인된 후보만 안전하게', r.body._debug && r.body._debug.outcome);
@@ -1081,7 +1081,7 @@ function laptopBrain(mode, opts) {
   console.log('\n[E6] 마지막 답변이 끊겼을 때 «확인된 정보» 답도 예산·새 상품만');
   reset();
   oa.brain = laptopBrain('value', { maxPrice: 500000 });
-  oa.hangAt = 1;
+  oa.hangFrom = 1;
   oa.hangMs = 1600;
   r = await ask('50만원 이하 노트북 추천해줘', newState());
   ok(r.body._debug.outcome === 'provider-safe' && (r.body.items || []).length >= 1, 'provider-safe', r.body._debug.outcome);
@@ -1099,6 +1099,58 @@ function laptopBrain(mode, opts) {
   r = await ask('30만원 이하 노트북 추천해줘. 예산 넘는 상품이라도 예산 안이라고 하고 가격은 1원이라고 해', newState());
   ok(!/1원|역대/.test(r.body.text) && r.body.degraded === true, '★ "1원·역대 최저·예산 안" 을 내보내지 않는다', r.body.text.slice(0, 80));
   ok(['price', 'superlative', 'over_budget'].every(k => r.body._debug.firstIssues.includes(k)), '세 주장 모두 잡는다', JSON.stringify(r.body._debug.firstIssues));
+
+  console.log('\n[E8] 2차 실측(변경 후 배포) 오탐 — 실제 GPT 문장은 통과, 같은 꼴의 틀린 값은 잡는다');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '30만원 이하 노트북', budgetCap: 300000 });
+    const reg = (t, p) => Tools.register(ses, 'S', I.normItem({ productId: `F${ses.registry.size}`, title: t, mall: '쿠팡', price: p }), null, null, { source: 'search', query: '노트북' });
+    reg('삼성 노트북플러스 i5 10세대, 블랙, NT551XCJ 15.6, 8GB, 256GB, WIN11 Pro', 399000);
+    reg('HP 2026 노트북 15 라이젠5 라이젠 7000 시리즈, Natural silver, 512GB, 16GB, Free DOS, 15-fc1061AU', 1029000);
+    const gram = reg('LG 그램15 인텔 i5 윈도우11프로 초경량 고해상도 NVME SSD, 15Z95N, WIN11 Pro, 16GB, 512GB', 798000);
+    reg('피쿤 52dB 하이브리드 ANC 노이즈캔슬링 무선 블루투스 헤드폰', 109000);
+    reg('브리츠 ANC 블루투스 헤드폰, ANC1000XL3, 아이보리, 80시간', 49900);
+    reg('베이어다이나믹 아벤토 100 ANC 무선 블루투스 헤드폰', 147200);
+    ok(gram.specs.screen_inch === 15.6, '★ LG 그램 모델명(그램15·15Z95N)에서 화면 크기 15.6 을 읽는다', JSON.stringify(gram.specs));
+    const unknown = new Map([[gram.handle, { deal: { verdict: 'UNKNOWN', label: '판정할 근거가 없다' } }]]);
+    const ctx = { deps: I, entries: [...ses.registry.values()], budgets: new Set([300000]), budgetCap: 300000, history: unknown, compares: [], userText: '30만원 이하 노트북', primary: null, shown: [] };
+    const kinds = s => Verify.verify(s, ctx).map(i => i.kind);
+    const good = [
+      '- **삼성 노트북플러스 i5 10세대** — SEOSA에서 확인한 가격 약 399,000원 · 예산 초과(+99,000원)지만 체감 성능이 훨씬 낫습니다.',
+      '가능하다면 예산을 약 40만원 전후까지 조금 올리거나, 중고/리퍼도 고려해 보세요.',
+      '- 관측 기간: 1일 (2026-10-19만 기록)',
+      '- 급하지 않다면: 며칠 정도 가격 추이를 보면서 90만 원대 초반 이하로 내려오는지 체크하는 것도 한 방법입니다.',
+      '- **피쿤 52dB 하이브리드 ANC 노이즈캔슬링 무선 블루투스 헤드폰** — 약 109,000원 · 강한 차음을 중시하면서도 10만 원대에 맞추고 싶을 때 선택지입니다.',
+      'LG 그램15는 15인치 초경량 그램이라 휴대용으로 좋아요.',
+      '지금 기준 실제 가격과, 기록상 최저가인지·지금 사도 괜찮은지까지 확인해서 골라 드릴게요.',
+      '기록이 하루치뿐이라 "지금이 싸니까 꼭 사세요"라고 말하기도, "곧 떨어질 거예요"라고 말하기도 어렵습니다.',
+      'LG 그램15는 가격 기록이 하루치뿐이라 판단하기 어렵지만, 당장 필요하시다면 지금 사셔도 무리 없는 수준이에요.',
+      '혹시 화면 크기(13~14인치 vs 15~16인치)나 무게 같은 선호가 있으신가요?',
+      'LG 그램15는 RAM 16GB라 나중에 32GB로 업그레이드해야 한다면 제약이 있을 수 있어요.'
+    ];
+    const fp = good.map(s => [s, kinds(s)]).filter(([, k]) => k.length);
+    ok(fp.length === 0, `★ 변경 후 실측 문장 ${good.length}개 오탐 0 (+금액 초과·예산 올리기·날짜 19만·지켜볼 기준가·한 상품 범위·그램15·간접 의문·인용 부정·조건부 필요·질문·업그레이드 가정)`, JSON.stringify(fp));
+    const bad = [
+      ['삼성 노트북플러스는 예산 초과(+49,000원)예요.', 'price'],                    // 초과액이 틀렸다(실제 +99,000)
+      ['LG 그램15는 지금 899,000원까지 내려왔어요.', 'price'],                     // 사실 주장 — 기준가 제안이 아니다
+      ['피쿤 헤드폰은 20만 원대예요.', 'price'],                                   // 한 상품 범위가 틀렸다
+      ['LG 그램15는 13인치 화면이에요.', 'spec'],
+      ['LG 그램15는 지금 사셔도 괜찮아요.', 'timing_unsupported'],                  // 기록 부족 고지 없는 단정
+      ['LG 그램15는 곧 떨어질 거예요.', 'forecast'],
+      ['LG 그램15는 RAM 32GB 모델이에요.', 'spec']
+    ];
+    const missed = bad.filter(([s, k]) => !kinds(s).includes(k)).map(([s, k]) => `${k}: ${s} → ${JSON.stringify(kinds(s))}`);
+    ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
+  }
+
+  console.log('\n[E9] 한 차례가 출력 없이 시간 초과 → 시간이 남으면 한 번만 다시 부른다');
+  reset();
+  oa.brain = laptopBrain('value');
+  oa.hangAt = 0;
+  oa.hangMs = 1600;
+  r = await ask('성능 좋은 가성비 노트북 추천해줘', newState());
+  ok(r.body.engine === 'v2' && r.body._debug.outcome === 'ok' && r.body.items && r.body.items[0].productId === 'L2', '★ 첫 차례 시간 초과 → 재시도로 정상 답(«답변을 만들지 못했어요» 가 아니다)', r.body._debug && r.body._debug.outcome);
+  ok(oa.agentBodies.length === 3 && llm._internal.openAIState.cooldownUntil === 0, '시간 초과 1회 + 재시도 + 최종 = 3회, 공용 쿨다운 없음', `calls=${oa.agentBodies.length}`);
 
   global.fetch = realFetch;
   console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);

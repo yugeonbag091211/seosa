@@ -185,6 +185,16 @@ function pcSpecs(title) {
   const computer = !!out.cpu || COMPUTER_CONTEXT_RE.test(t);
   if (!computer) return out;
 
+  /*
+   * LG 그램은 화면 크기를 모델 이름에 적는다 — "LG 그램15", "15Z95N", "14Z995", "16Z90R" (앞 두 자리 = 인치, 15 = 15.6).
+   * 상품명에 "인치" 가 없어도 크기는 상품명에 있다. Preview 실측(2026-10-19)에서 GPT 가 "15인치 그램" 이라고 한 것이
+   * 사양 오류로 잡혀 재작성 한 차례(약 5초)가 쓰였다.
+   */
+  if (/그램|gram/i.test(t)) {
+    const gm = (/(?:LG|엘지)[^,]{0,12}?(?:그램|gram)\s*(1[4-7])(?![0-9.])/i.exec(t)) || (/(?<![0-9A-Za-z])(1[4-7])Z[A-Z]?\d{2,3}[A-Z]{0,2}(?![0-9])/.exec(t));
+    if (gm) out.screen_inch_from_model = { 14: 14, 15: 15.6, 16: 16, 17: 17 }[gm[1]];
+  }
+
   const RAM_SIZES = new Set([2, 4, 6, 8, 12, 16, 18, 20, 24, 32, 36, 48, 64, 96, 128]);
   if ((m = /(?:램|ram|메모리)\s*(\d{1,3})\s*g(?:b)?(?![a-z])|(\d{1,3})\s*gb\s*(?:램|ram|메모리|lpddr\d\w*|ddr\d\w*)/i.exec(t))) {
     const v = Number(m[1] || m[2]);
@@ -387,6 +397,10 @@ function register(session, prefix, item, raw, stat, extra) {
   // _specs 의 «모델» 추출은 운영체제 표기(WIN11)를 모델로 집어 오는 일이 있다 — 그건 모델이 아니다.
   if (specs.model && /^(?:win(?:dows)?\d*|winos|home|pro)$/i.test(String(specs.model))) delete specs.model;
   Object.assign(specs, pcSpecs(title));
+  if (specs.screen_inch_from_model) {
+    if (!specs.screen_inch) specs.screen_inch = specs.screen_inch_from_model;
+    delete specs.screen_inch_from_model;
+  }
   const entry = {
     handle,
     source: x.source || prefix,
