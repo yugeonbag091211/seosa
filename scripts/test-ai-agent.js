@@ -1212,6 +1212,36 @@ function laptopBrain(mode, opts) {
     ok(gram.specs.ram_gb === 16 && gram.specs.storage_gb === 256 && gram.specs.screen_inch === 14, '"그램 14Z980 i5 16G M.2 SSD256" → 16GB · 256GB · 14인치', JSON.stringify(gram.specs));
   }
 
+  console.log('\n[E13] 5차 실측 — 괄호 속 예산 올리기·"더 비쌉니다"·특가 기준가·사양 낱말 gpu·한글 꼬리 붙은 모델 코드');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '150만원 이하 RTX 4060 노트북', budgetCap: 1500000 });
+    const reg = (t, p) => Tools.register(ses, 'S', I.normItem({ productId: `H${ses.registry.size}`, title: t, mall: '쿠팡', price: p }), null, null, { source: 'search', query: '노트북' });
+    reg('MSI 2023 CYBORG 15 코어i5 인텔 12세대 지포스 RTX 4060', 1329810);
+    const nt = reg('노트북 7 RTX3050Ti GPU 탑재 게이밍 노트북 NT751X시리즈 11세대 코어i7-11600H 램16GB SSD512GB NVIDIA RTX3050T 윈11 탑재', 1290000);
+    reg('LG 그램15 인텔 i5 윈도우11프로 초경량 고해상도 NVME SSD, 15Z95N, WIN11 Pro, 16GB, 512GB', 798000);
+    reg('LG전자 그램 14Z995 10세대 i7탑재 14인치 화면 정품 윈도우11 얇고 가벼운 고사양 그램노트북', 749000);
+    const ctx = { deps: I, entries: [...ses.registry.values()], budgets: new Set([1500000]), budgetCap: 1500000, history: new Map(), compares: [], userText: '150만원 이하', primary: null, shown: [] };
+    const kinds = s => Verify.verify(s, ctx).map(i => i.kind);
+    const good = [
+      '- **MSI 2023 CYBORG 15 코어i5 인텔 12세대 지포스 RTX 4060** — CPU Intel Core i5(12세대, 일반적으로 준수한 메인스트림급) / GPU RTX 4060(요즘 FHD 게이밍 메인급) / 가격 1,329,810원(SEOSA에서 확인한 현재가, 예산 내).',
+      '게임도 하면서 CPU를 많이 쓰는 작업까지 같이 한다면 **NT751X i7 + RTX 3050 Ti** 쪽이 균형이 좋습니다.',
+      '꼭 RTX 4060 두 대를 보고 싶으시면 예산을 조금(약 20만~30만원 정도) 올려도 되는지 알려 주실 수 있을까요?',
+      '- **LG 그램15 15Z95N** — 798,000원 · 가격은 약 5만 원 정도 더 비쌉니다.',
+      '급하지 않다면 며칠 정도 가격 변동을 지켜보면서 70만 원 초중반대 특가가 나오는지 살펴보시는 쪽을 권드릴게요.'
+    ];
+    const fp = good.map(s => [s.slice(0, 30), kinds(s)]).filter(([, k]) => k.length);
+    ok(fp.length === 0, `★ 5차 실측 문장 ${good.length}개 오탐 0`, JSON.stringify(fp));
+    ok(Verify.mentions('NT751X i7 + RTX 3050 Ti', nt.item), '"NT751X시리즈" 는 "NT751X" 로도 가리킨다');
+    const bad = [
+      ['**NT751X i5 + RTX 4050** 쪽이 균형이 좋습니다.', 'chip'],
+      ['- **LG 그램15 15Z95N** — 798,000원 · 가격은 약 15만 원 정도 더 비쌉니다.', 'price'],
+      ['- **MSI 2023 CYBORG 15** — 가격 1,239,810원(SEOSA에서 확인한 현재가, 예산 내).', 'price']
+    ];
+    const missed = bad.filter(([s, k]) => !kinds(s).includes(k)).map(([s, k]) => `${k}: ${s.slice(0, 40)}`);
+    ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
+  }
+
   console.log('\n[E11] 도구를 더 부를 수 없는 차례에는 «위 도구 결과로 답하라» 는 말을 붙인다');
   reset();
   oa.brain = (body) => {

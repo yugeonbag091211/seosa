@@ -80,7 +80,7 @@ function mask(text, spans) {
 
 const BUDGET_AFTER_RE = /^\s*(?:원\s*)?(?:을|를|은|는|이|가|의)?\s*(?:이하|이내|미만|안쪽|아래|까지|선(?:에서|으로|이면)?|대(?:에서|로|의|\s)|정도|언더|예산|이상|초과|넘|짜리\s*예산|안에서|내에서|으로\s*(?:찾|맞|잡|정))/;
 const BUDGET_BEFORE_RE = /(?:예산|최대|최소|상한|하한|한도)\s*(?:은|는|이|가|을|를|:)?\s*(?:약|대략)?\s*$/;
-const DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:의\s*)?(?:차이|차액|더\s*(?:비싸|싸|저렴|높|낮|들|써|드|주)|비싸|저렴|싸|아낄|아끼|절약|높|낮|올랐|내렸|떨어졌|오른|내린|오르|내려|비쌉|쌉|추가)/;
+const DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:의\s*)?(?:차이|차액|더\s*(?:비싸|비쌉|싸|쌉|저렴|높|낮|들|써|드|주)|비싸|저렴|싸|아낄|아끼|절약|높|낮|올랐|내렸|떨어졌|오른|내린|오르|내려|비쌉|쌉|추가)/;
 const DIFF_BEFORE_MASK_RE = /(?:차이|차액)\s*(?:는|은|이|가|:)?\s*(?:약|대략)?\s*$/;
 /* 서버 가격 − 사용자 예산 꼴의 차액 표지 ("29,000원 초과", "예산보다 2만 9천 원", "예산을 약 3만 원 넘어요") */
 const BUDGET_DIFF_AFTER_RE = /^\s*(?:원\s*)?(?:정도\s*|가량\s*|쯤\s*)?(?:더\s*)?(?:초과|넘|오버|웃돌|비싸|비쌉|높|싸|쌉|저렴|낮|남|모자라|부족)/;
@@ -98,12 +98,12 @@ const PLUS_DIFF_BEFORE_RE = /(?:(?:초과|넘|오버|웃돌)\s*[(（]?|[(（])\s
  * 결국 그 문장이 걷어졌다 — 재작성 한 차례 7.8초가 오탐 하나에 쓰였다).
  * 금액(또는 "A~B" 범위) 앞에 «예산» 이, 뒤에 «더 올리·늘리·추가» 가 붙은 꼴만 가린다.
  */
-const BUDGET_ADJUST_RE = /예산[^.\n!?]{0,16}?((?:[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*원?\s*[~〜～\-–]\s*)?[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*(?:[0-9][0-9,]*\s*(?:천)?\s*)?원?)\s*(?:정도|가량|쯤|안팎|전후|선|수준)?\s*(?:까지|로|으로)?\s*(?:조금|좀|약간|살짝)?\s*(?:만\s*)?(?:더\s*)?(?:올리|올려|늘리|늘려|높이|높여|추가|여유|보태|쓰|써)/g;
+const BUDGET_ADJUST_RE = /예산[^.\n!?]{0,16}?((?:[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*원?\s*[~〜～\-–]\s*)?[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:만|천)?\s*(?:[0-9][0-9,]*\s*(?:천)?\s*)?원?)\s*(?:정도|가량|쯤|안팎|전후|선|수준)?\s*[)）]?\s*(?:까지|로|으로)?\s*(?:조금|좀|약간|살짝)?\s*(?:만\s*)?(?:더\s*)?(?:올리|올려|늘리|늘려|높이|높여|추가|여유|보태|쓰|써)/g;
 /*
  * 지켜볼 «기준 가격» 제안 — "90만 원대 초반 이하로 내려오는지 체크", "85만 원 아래로 떨어지면" (Preview 실측).
  * 상품의 현재·과거 가격 주장이 아니라 사용자가 정할 문턱이다. 금액 뒤에 «이하로 내려오는지·떨어지면» 이 붙은 꼴만.
  */
-const WATCH_THRESHOLD_AFTER_RE = /^\s*(?:원\s*)?(?:대\s*)?(?:초반|중반|후반)?\s*(?:이하|아래|밑|미만|까지)?\s*(?:로|으로)?\s*(?:내려오|내려가|떨어지|떨어질|내려|되)(?:는지|면|기를|길|는\s*걸)/;
+const WATCH_THRESHOLD_AFTER_RE = /^\s*(?:원\s*)?(?:대\s*)?(?:초반|중반|후반|초중반|중후반)?\s*(?:대\s*)?(?:(?:이하|아래|밑|미만|까지)?\s*(?:로|으로)?\s*(?:내려오|내려가|떨어지|떨어질|내려|되)(?:는지|면|기를|길|는\s*걸)|(?:특가|할인가|할인|가격)?\s*(?:이|가)?\s*(?:나오|뜨|풀리)(?:는지|면|기를|길))/;
 
 function maskAllowed(text, known) {
   const s = String(text || '');
@@ -227,7 +227,7 @@ function verdictBucket(code) {
  * Preview 실측(2026-10-19): "RAM: 최소 16GB 권장", "CPU는 인텔 13·14세대 i5/i7, AMD 라이젠 5·7 최신 세대면 충분해요" 같은
  * 일반 조언 문장이 16gb·인텔·rtx 같은 낱말로 모든 노트북을 «가리킨» 것으로 읽혀, 그 상품들의 사양 오류로 잡혔다.
  */
-const NON_NAME_TOKEN_RE = /^(?:\d+(?:\.\d+)?(?:gb|tb|g|t|인치|inch|hz|w|mah|cm|mm|kg|세대|db|시간)?|\d+(?:\.\d+)?|i[3579]|코어i[3579]|core|코어|인텔|intel|amd|ai|라이젠\d?|ryzen|ultra|울트라|셀러론|celeron|펜티엄|pentium|지포스|geforce|rtx|gtx|nvidia|엔비디아|라데온|radeon|ssd|hdd|nvme|emmc|ram|램|ddr\d|lpddr\d\w*|win\d*|windows|윈도우\d*|윈도우포함|home|pro|프로|freedos|dos|fhd|qhd|uhd|ips|oled|anc|노이즈캔슬링|하이브리드|게이밍|gaming|laptop|블랙|화이트|실버|그레이|아이보리|베이지|네이비|그라파이트|시리즈|가성비|사무용|업무용|학생용|인강용|대학생|초경량|경량|슬림|고사양|대용량)$/;
+const NON_NAME_TOKEN_RE = /^(?:\d+(?:\.\d+)?(?:gb|tb|g|t|인치|inch|hz|w|mah|cm|mm|kg|세대|db|시간)?|\d+(?:\.\d+)?|i[3579]|코어i[3579]|core|코어|인텔|intel|amd|ai|라이젠\d?|ryzen|ultra|울트라|셀러론|celeron|펜티엄|pentium|지포스|geforce|rtx|gtx|nvidia|엔비디아|라데온|radeon|ssd|hdd|nvme|emmc|ram|램|ddr\d|lpddr\d\w*|win\d*|windows|윈도우\d*|윈도우포함|home|pro|프로|freedos|dos|fhd|qhd|uhd|ips|oled|anc|노이즈캔슬링|하이브리드|게이밍|gaming|laptop|gpu|cpu|탑재|그래픽|외장|내장|외장그래픽|내장그래픽|블랙|화이트|실버|그레이|아이보리|베이지|네이비|그라파이트|시리즈|가성비|사무용|업무용|학생용|인강용|대학생|초경량|경량|슬림|고사양|대용량)$/;
 /*
  * 이름 낱말 = 상품명 «앞부분»(브랜드·제품 라인, 앞 6낱말) + 어디에 있든 모델 코드(글자+숫자) + 라인 이름 줄기("그램15" → "그램").
  * 상품명 뒤쪽의 꾸밈말("얇고 가벼운 고사양", "사무용 학생용")은 이름이 아니다 — Preview 실측에서 "가벼운 게임" 이
@@ -246,6 +246,9 @@ function itemWords(item) {
   out.slice().forEach(w => {
     const stem = w.replace(/^[a-z]+(?=[가-힣])/, '').replace(/\d+$/, '');                // lg그램 → 그램, 그램15 → 그램, 베이직북14 → 베이직북
     if (stem !== w && /^[가-힣]{2,}$/.test(stem)) push(stem);
+    // 모델 코드에 붙은 한글 꼬리 — "nt751x시리즈" → "nt751x" (답변은 "NT751X i7" 처럼 코드만 쓴다)
+    const code = w.replace(/[가-힣]+$/, '');
+    if (code !== w && code.length >= 4 && /[a-z]/.test(code) && /\d/.test(code)) push(code);
   });
   return out;
 }
@@ -658,7 +661,12 @@ function priceAttribution(masked, items, d) {
   amountsIn(s).forEach(c => {
     const before = s.slice(Math.max(0, c.start - 14), c.start);
     const after = s.slice(c.end, c.end + 24);
-    if (DIFF_BEFORE_RE.test(before) || DIFF_AFTER_RE.test(after)) return;   // 차액은 maskAllowed·unverifiedWon 이 본다
+    /*
+     * 차액 꼴 — 맞는 차액은 maskAllowed 가 이미 가렸다. 여기까지 남았으면 어떤 두 값의 차이로도 설명되지 않는다.
+     * "12,000원 더 비싸요" 같은 숫자 표기는 unverifiedWon 이 잡지만 "약 15만 원 더 비쌉니다" 같은 한글 단위 표기는 그 검사가
+     * 읽지 못해 그대로 통과했다(2026-10-19 검사 추가 중 발견). 단위 표기는 여기서 잡는다.
+     */
+    if (DIFF_BEFORE_RE.test(before) || DIFF_AFTER_RE.test(after)) { if (c.unit) bad.push(c.value); return; }
     const kind = d.priceClaimKind(s, c.start, c.end);
     if (kind === 'budget' || kind === 'difference') return;
     if (kind === 'all-time') { bad.push(c.value); return; }
