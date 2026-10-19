@@ -774,7 +774,12 @@ function feedbackFor(issues, ctx) {
   issues.forEach(i => {
     const vals = (i.values || []).map(v => (i.kind === 'price' && Number(v) >= 100 ? `${wonText(v)}원` : String(v)));
     lines.push(`- ${i.detail}${vals.length ? `: ${vals.join(', ')}` : ''}`);
-    const hits = sents.filter(s => sentenceCarries(s, [i], c.deps, items)).slice(0, 2);
+    let hits = sents.filter(s => sentenceCarries(s, [i], c.deps, items)).slice(0, 2);
+    // 카드의 예산 초과 미고지 — 걸린 «문장» 이 없으니 그 상품을 다룬 문장을 짚는다.
+    if (!hits.length && i.kind === 'over_budget') {
+      const target = items.filter(it => it && (i.values || []).includes(it.ref));
+      hits = sents.filter(s => target.some(it => mentions(s, it))).slice(0, 2);
+    }
     hits.forEach(s => lines.push(`  문제 문장: "${String(s).trim().slice(0, 120)}"`));
     if (KIND_HINT[i.kind]) lines.push(`  → ${KIND_HINT[i.kind]}`);
   });

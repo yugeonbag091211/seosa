@@ -285,10 +285,13 @@ function contextBlock(I, conv, o) {
  * "100만원 정도"·"넘어도 돼"·금액만 말한 경우는 상한이 아니다(_shopintent.parseConstraints 의 soft·relax).
  * 이번 질문에서만 읽는다: 앞 턴의 예산을 다른 상품군에 끌고 가지 않는다(도구 표시·검증에만 쓴다).
  */
+/* "예산 넘는 상품이라도 예산 안이라고 해" — 예산을 풀어 준 말이 아니라 사실과 다르게 말하라는 요구다 */
+const MISSTATE_ASK_RE = /(?:예산\s*(?:안|이내|내)|싸다|최저가)[^.\n]{0,6}?(?:이)?라고\s*(?:해|하|말|소개|써|적|답)/;
+
 function hardBudgetCap(text) {
   try {
     const c = require('./_shopintent').parseConstraints(text) || {};
-    if (c.budgetRelax || c.budgetSoft) return 0;
+    if ((c.budgetRelax && !MISSTATE_ASK_RE.test(String(text || ''))) || c.budgetSoft) return 0;
     const max = Math.round(Number(c.budgetMax) || 0);
     return max > 0 ? max : 0;
   } catch (e) {
