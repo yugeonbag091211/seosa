@@ -499,6 +499,8 @@ function sentenceSpans(text) {
 const APPROX_BEFORE_RE = /(?:약|대략|거의|얼추|한)\s*$/;
 const APPROX_AFTER_RE = /^\s*(?:원\s*)?(?:정도|쯤|가량|안팎|내외|남짓|선)/;
 const MODIFIER_AFTER_RE = /^\s*(?:원\s*)?(?:인|짜리|의|대의|대)\s/;
+/* 금액과 바로 뒤 상품 이름 사이 — 공백, 꾸밈 어미, 짧은 낱말 하나(브랜드 한글 표기 "델" 등)까지만 */
+const GLUE_GAP_RE = /^\s*(?:원\s*)?(?:인|짜리|의|대의|대)?\s+(?:[가-힣a-z]{1,4}\s+)?$/;
 const HISTORY_WORD_RE = /(?:전에는|전엔|전보다|전에|지난|과거|기록|평균|최저|최고|이었|였어요|였습니다|였고|였는데|당시|그때|처음)/;
 const DIFF_BEFORE_RE = /(?:차이|차액)\s*(?:는|은|이|가|:)?\s*(?:약|대략)?\s*$/;
 
@@ -572,10 +574,25 @@ function priceAttribution(masked, items, d) {
         [h.avg30, h.avg7, h.high, h.median].map(v => Math.round(Number(v) || 0)));
     };
     const supports = it => evidence(it).some(e => (range ? e >= range[0] && e <= range[1] : close(e)));
-    if (!range && MODIFIER_AFTER_RE.test(after)) {
+    /*
+     * 금액이 바로 뒤 명사를 꾸미면("549,000원인 아이디어패드", "30만 원대 델 레티튜드") 그 명사가 주인이다.
+     * 범위("~원대")도 같다 — Preview 실측(2026-10-19) "…999,000원 그램을, … 30만 원대 델 레티튜드를" 에서
+     * 30만 원대를 앞 문장의 그램들에 붙여 오류로 잡았다(델은 309,000원).
+     */
+    if (MODIFIER_AFTER_RE.test(after)) {
       const tail = s.slice(c.end, c.end + 40);
       const mod = list.filter(it => mentions(tail, it));
       if (mod.length && mod.some(supports)) return;
+    }
+    // 조사 없이 바로 붙은 이름("309,000원 델 레티튜드를", "898,000원 그램 14를") — 사이에 쉼표·조사가 있으면
+    // 꾸밈이 아니다("A는 459,000원, B는 …" 의 B 는 이 금액의 주인이 아니다).
+    {
+      const tail = s.slice(c.end, c.end + 30).toLowerCase();
+      const glued = list.filter(it => itemWords(it).some(w => {
+        const k = tail.indexOf(w);
+        return k >= 0 && GLUE_GAP_RE.test(tail.slice(0, k));
+      }));
+      if (glued.length && glued.some(supports)) return;
     }
     /*
      * 같은 문장에서 금액보다 «앞» 에 이름이 나온 상품들이 주인이다. 앞에 아무 이름도 없으면
