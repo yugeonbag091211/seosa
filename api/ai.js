@@ -1181,6 +1181,10 @@ function positiveDuration(name, fallback) {
 }
 const AI_SEARCH_TIMEOUT_MS = positiveDuration('AI_SEARCH_TIMEOUT_MS', 17000);
 const AI_ENRICH_TIMEOUT_MS = positiveDuration('AI_ENRICH_TIMEOUT_MS', 1200);
+// The AI path must leave room for GPT's final answer. ADPICK keeps its normal
+// six-hour cache and global limiter, but a slow supplier cannot consume the
+// entire agent turn; the remaining supplier's verified results still survive.
+const AI_ADPICK_TIMEOUT_MS = positiveDuration('AI_ADPICK_TIMEOUT_MS', 8000);
 
 async function settleWithin(promise, timeoutMs) {
   const ms = Math.max(1, Math.floor(Number(timeoutMs) || 0));
@@ -1279,8 +1283,9 @@ async function searchProducts(query, budgetMs, opts) {
     const searched = await settleWithin(searchAll(aiSearchKeyword(query), {
       coupangLimit,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS },
-      // 이름표뿐이다(/api/search 와 같다). maxWaitMs 를 넣지 않으므로 ADPICK 대기 정책은 그대로다.
-      adpickOpts: { source: 'ai' },
+      // 검색 간격 제한에서는 기다리지 않고 캐시/다른 공급원 결과를 쓴다.
+      // 외부 응답은 AI 턴 예산 안에서만 기다리고, 느린 ADPICK 응답이 전체 검색을 막지 않게 한다.
+      adpickOpts: { source: 'ai', maxWaitMs: 0, timeoutMs: Math.min(AI_ADPICK_TIMEOUT_MS, searchCap) },
       // 후보 창 정렬(식별 등급)은 정규화 전 상품 구절로 — 모델 코드의 구분자를 보존한다.
       identityQuery: query
     }), searchCap);

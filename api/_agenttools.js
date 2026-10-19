@@ -348,6 +348,7 @@ function createSession(deps, o) {
     counters: { S: 0, R: 0, O: 0, V: 0 },
     searches: 0,
     searchCache: new Map(),
+    searchInFlight: new Map(),
     calls: [],
     background: [],
     evidence: { history: new Map(), compares: [], searchFailed: 0, searchEmpty: 0, searchOk: 0, queries: 0 }
@@ -611,18 +612,33 @@ async function searchProducts(session, args, record) {
   const maxPrice = priceArg(args && args.max_price);
   const minPrice = priceArg(args && args.min_price);
   const anyCondition = args && args.condition === 'any';
-  const key = query.toLowerCase();
+  // Normalize spacing and punctuation for this-request deduplication. The original
+  // query still goes to the supplier; this only coalesces equivalent in-flight work.
+  const key = query.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
   const rec = (record && record.detail) || {};
   Object.assign(rec, { query, maxPrice: maxPrice || null, condition: anyCondition ? 'any' : 'new_only' });
 
   let loaded = session.searchCache.get(key);
   if (loaded) rec.repeat = true;
   if (!loaded) {
-    if (session.searches >= LIMITS.maxSearches) {
+    const inFlight = session.searchInFlight.get(key);
+    if (inFlight) {
+      rec.repeat = true;
+      loaded = await inFlight;
+    } else if (session.searches >= LIMITS.maxSearches) {
       return { status: 'limit', message: '이번 질문에서는 더 검색할 수 없다. 이미 찾은 후보로 답하고, 부족하면 부족하다고 말하라.' };
+    } else {
+      const pending = loadSearch(session, query);
+      session.searchInFlight.set(key, pending);
+      try {
+        loaded = await pending;
+        // Cache failures too within a request: repeating an identical timeout or
+        // rate-limit denial cannot improve evidence and can consume another slot.
+        session.searchCache.set(key, loaded);
+      } finally {
+        session.searchInFlight.delete(key);
+      }
     }
-    loaded = await loadSearch(session, query);
-    if (loaded.status === 'ok') session.searchCache.set(key, loaded);
     if (loaded.timing) Object.assign(rec, loaded.timing);
     rec.from = loaded.from || '';
     rec.raw = loaded.rawCount || 0;

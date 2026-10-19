@@ -145,7 +145,7 @@ const INSTRUCTIONS = [
   '- 인사·잡담·일반 지식·개념 설명("CPU가 뭐야", "인텔과 AMD 차이", "대학생에게 램 8GB면 충분해?", "다시 쉽게 설명해줘")은 도구 없이 바로 답한다.',
   '- 실제 상품 추천, 지금 가격, 구매 링크, 특정 상품의 가격 기록·구매 시점, 상품끼리 비교가 필요할 때만 도구를 쓴다.',
   '- search_products 검색어는 상품 종류 + 꼭 필요한 핵심 조건만(2~6단어). 사용자가 예산을 말했으면 max_price 에 넣는다.',
-  '- 예산·사양 조건이 있거나 여러 개를 추천해야 하면 첫 차례에 서로 다른 검색어 2개를 함께(병렬로) 불러 후보를 넓힌다 — 하나는 핵심 사양을 넣고, 하나는 조건을 줄여서(예: "노트북 라이젠5 16GB" + "노트북 16GB 512GB"). 한 차례씩 이어 찾는 것보다 빠르다.',
+  '- 실제 상품 추천은 먼저 검색어 하나로 찾는다. 결과가 원하는 개수나 조건을 충분히 채우지 못할 때만, 첫 결과를 확인한 뒤 조건을 바꾼 검색어를 추가한다. 같은 차례에 search_products 여러 개를 병렬로 부르지 않는다 — ADPICK 호출 간격을 지키고 마지막 답변 시간을 확보한다.',
   '- 한 질문에 검색은 많아야 3번. 같은 검색을 되풀이하지 않는다. 결과의 within_budget_main_products·coverage 가 원하는 개수보다 적으면 조건 하나를 빼거나 바꾼 검색어로 한 번 더 찾고, 그래도 부족하면 부족하다고 솔직히 말한다.',
   '- [대화 상품]에 이미 있는 상품은 다시 검색하지 말고 그 ID 로 get_price_history·get_product_details·compare_products 를 쓴다.',
   '',
@@ -466,6 +466,110 @@ function budgetValues(text, hist) {
   return out;
 }
 
+const PRODUCT_CATEGORY_RE = /노트북|랩톱|랩탑|마우스|키보드|모니터|태블릿|아이패드|맥북|아이폰|갤럭시|스마트폰|휴대폰|핸드폰|이어폰|헤드폰|헤드셋|청소기|공기청정기|냉장고|세탁기|텔레비전|\bTV\b|에어컨|선풍기|카메라|스피커|SSD|외장하드|그래픽카드|\bGPU\b|\bCPU\b|\bRAM\b|램|메모리|게임용\s*(?:PC|마우스|키보드|노트북)|게이밍\s*(?:PC|마우스|키보드|노트북|헤드셋)/i;
+const RECOMMEND_RE = /추천|골라\s*(?:줘|주세요|줄래|봐)|찾아\s*(?:줘|주세요|봐)|검색해|살\s*만한|사고\s*싶|구매하고\s*싶|보여\s*(?:줘|주세요)|비교해\s*(?:줘|주세요)/i;
+const PRODUCT_LOOKUP_RE = /최저가|현재가|판매가|얼마|가격|구매\s*(?:링크|주소)|살\s*수\s*있는\s*곳|어디서\s*사/i;
+const MEMORY_REFERENCE_RE = /이\s*(?:제품|상품|거|거의\s*가격)|이거|그\s*(?:제품|상품|거)|첫\s*번째|1\s*번째|첫째|두\s*번째|2\s*번째|둘째|아까|방금|추천한\s*(?:제품|상품|거)/i;
+
+/*
+ * A small server-side intent check only repairs an omitted evidence lookup.
+ * It does not select or rank products. Remove explicit instruction-injection
+ * clauses before classifying so a request to force tools cannot turn a general
+ * question into a search, while a real recommendation followed by a bypass
+ * instruction still gets verified product data.
+ */
+function stripPromptInjection(text) {
+  return String(text || '').slice(0, 1200)
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/(?:이전|위|기존|시스템|개발자)\s*(?:의\s*)?(?:지시|규칙|프롬프트).{0,24}?(?:무시|우회|덮어|재정의|공개|무효)[^.!?\n]*/gi, ' ')
+    .replace(/(?:ignore|disregard|override|bypass).{0,55}?(?:instructions?|rules?|prompt|system)[^.!?\n]*/gi, ' ')
+    .replace(/(?:검색|search)\s*(?:하지\s*말고|없이|결과가?\s*없어도).{0,55}?(?:지어|만들|꾸며|발명|가짜|invent|fake|fabricat)[^.!?\n]*/gi, ' ')
+    .replace(/(?:상품|가격|카드).{0,22}?(?:지어|만들|꾸며|발명|가짜)[^.!?\n]*/gi, ' ')
+    .replace(/(?:도구|tool|검색).{0,24}?(?:무조건|반드시|강제로).{0,24}?(?:호출|실행|use|call)[^.!?\n]*/gi, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function explicitProductCategory(text) {
+  const s = String(text || '');
+  const match = PRODUCT_CATEGORY_RE.exec(s);
+  return match ? match[0] : '';
+}
+
+function recommendationRequest(text) {
+  const safe = stripPromptInjection(text);
+  return !!(PRODUCT_CATEGORY_RE.test(safe) && RECOMMEND_RE.test(safe));
+}
+
+function productLookupRequest(text) {
+  const safe = stripPromptInjection(text);
+  return !!(PRODUCT_CATEGORY_RE.test(safe) && PRODUCT_LOOKUP_RE.test(safe));
+}
+
+function memoryLookupSlot(text, conv, view) {
+  const safe = stripPromptInjection(text);
+  if (!PRODUCT_LOOKUP_RE.test(safe) || !MEMORY_REFERENCE_RE.test(safe)) return null;
+  const slots = (conv && conv.slots || []).filter(s => s && s.entry && s.entry.item);
+  if (!slots.length) return null;
+
+  const category = explicitProductCategory(safe);
+  if (category && !slots.some(s => categoryMatchesTitle(category, s.entry.item.title))) return null;
+
+  if (/(?:두|2|둘째)\s*번째/.test(safe)) return slots.find(s => /02$/.test(s.handle || '')) || null;
+  if (/(?:첫|1)\s*번째|첫째/.test(safe)) return slots.find(s => /01$/.test(s.handle || '')) || null;
+
+  const lower = safe.toLowerCase();
+  const named = slots.find(s => {
+    const title = String(s.entry.item.title || '');
+    const tokens = title.match(/[A-Za-z0-9가-힣]{3,}/g) || [];
+    return tokens.some(token => token.length >= 4 && lower.includes(token.toLowerCase()));
+  });
+  if (named) return named;
+  if (view && view.source === 'modal') {
+    const visible = slots.find(s => s.prefix === 'V');
+    if (visible) return visible;
+  }
+  return slots.find(s => s.star) || slots.find(s => s.prefix === 'R') || slots[0];
+}
+
+function categoryMatchesTitle(category, title) {
+  const c = String(category || '').toLowerCase();
+  const t = String(title || '').toLowerCase();
+  if (/노트북|랩톱|랩탑|맥북/.test(c)) return /노트북|랩톱|랩탑|맥북/.test(t);
+  if (/마우스/.test(c)) return /마우스/.test(t);
+  if (/키보드/.test(c)) return /키보드/.test(t);
+  if (/아이폰|갤럭시|스마트폰|휴대폰|핸드폰/.test(c)) return /아이폰|갤럭시|스마트폰|휴대폰|핸드폰/.test(t);
+  return t.includes(c);
+}
+
+function fallbackSearchArgs(question) {
+  const safe = stripPromptInjection(question);
+  const query = safe
+    .replace(/[\d,]+(?:\.\d+)?\s*(?:만|천)?\s*원\s*(?:이하|이내|미만|까지|정도|안팎)?/g, ' ')
+    .replace(/\d+\s*(?:개|대|종|가지)/g, ' ')
+    .replace(/(?:추천(?:해\s*)?(?:줘|주세요|줄래)?|골라\s*(?:줘|주세요)?|찾아\s*(?:줘|주세요)?|검색해\s*(?:줘|주세요)?|살\s*만한|사고\s*싶|구매하고\s*싶|보여\s*(?:줘|주세요)?|비교해\s*(?:줘|주세요)?|최저가|가성비|구매\s*(?:링크|주소)|현재가|판매가|얼마|가격|알려\s*(?:줘|주세요)?)/gi, ' ')
+    .replace(/[^A-Za-z0-9가-힣+./ -]/g, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, 60);
+  return {
+    query,
+    max_price: hardBudgetCap(question) || null,
+    min_price: null,
+    condition: 'new_only'
+  };
+}
+
+function supplementPlan(question, conv, view) {
+  const slot = memoryLookupSlot(question, conv, view);
+  if (slot) {
+    const history = /(?:최저가|가격\s*기록|지금\s*사도|기다릴|떨어질|비싸|싸졌|시세)/i.test(stripPromptInjection(question));
+    return { name: history ? 'get_price_history' : 'get_product_details', args: { id: slot.handle }, kind: 'memory' };
+  }
+  if (recommendationRequest(question) || productLookupRequest(question)) {
+    const args = fallbackSearchArgs(question);
+    if (args.query.length >= 2) return { name: 'search_products', args, kind: 'search' };
+  }
+  return null;
+}
+
 async function run(ctx) {
   const { req, res, body, q, guest } = ctx;
   const I = ctx.internals;
@@ -474,7 +578,8 @@ async function run(ctx) {
   const obs = {
     v: AGENT_VERSION, engine: 'v2', rounds: 0, toolCalls: 0, calls: {}, inTok: 0, outTok: 0, cachedTok: 0, reasoningTok: 0, costUsd: 0,
     llmMs: [], model: '', firstIssues: [], finalIssues: [], rewrite: false, outcome: '', cards: 0,
-    invalidIds: 0, droppedUnmentioned: 0, memIn: 0, memVerified: 0, memOut: 0, json: null, failReason: ''
+    invalidIds: 0, droppedUnmentioned: 0, memIn: 0, memVerified: 0, memOut: 0, json: null, failReason: '',
+    supplemented: false, deferredSearches: 0
   };
   /*
    * dbg — Preview 디버그 응답(_debug.trace)에만 싣는 상세 기록. 로그 줄(logObs)에는 들어가지 않는다
@@ -585,7 +690,20 @@ async function run(ctx) {
       }
       if (r.toolCalls.length && !lastRound) {
         input.push(...r.replay);
-        const outputs = await Promise.all(r.toolCalls.map(call => Tools.execute(session, call)));
+        let searchIssued = false;
+        const outputs = await Promise.all(r.toolCalls.map(call => {
+          if (call.name === 'search_products') {
+            if (searchIssued) {
+              obs.deferredSearches++;
+              return JSON.stringify({
+                status: 'deferred',
+                message: '같은 차례의 다른 search_products 하나를 먼저 실행했다. 그 결과를 확인한 뒤에도 다른 조건 검색이 필요할 때 다음 차례에 한 번 더 검색하라.'
+              });
+            }
+            searchIssued = true;
+          }
+          return Tools.execute(session, call);
+        }));
         r.toolCalls.forEach((call, i) => input.push({ type: 'function_call_output', call_id: call.callId, output: outputs[i] }));
         continue;
       }
@@ -593,6 +711,76 @@ async function run(ctx) {
       else obs.failReason = 'no_final';
       break;
     }
+    /*
+     * GPT can occasionally answer a clear shopping request without using a tool
+     * (the Preview regression was "마우스 추천해줘" → explanation, zero cards).
+     * In that case, make one verified lookup and let GPT make its own decision
+     * from the result. For an existing product price follow-up, resolve the
+     * remembered card first instead of searching the whole category again.
+     */
+    const supplementedSearchAlready = session.calls.some(c => c.name === 'search_products');
+    const supplementedMemoryAlready = session.calls.some(c => ['get_product_details', 'get_price_history'].includes(c.name));
+    let plan = null;
+    if (final && !supplementedMemoryAlready && memoryLookupSlot(q, conv, view)) {
+      plan = supplementPlan(q, conv, view);
+    } else if (final && !supplementedSearchAlready && (recommendationRequest(q) || productLookupRequest(q))) {
+      plan = supplementPlan(q, conv, view);
+    }
+    if (plan) {
+      obs.supplemented = true;
+      const minLeft = plan.kind === 'search'
+        ? ANSWER_RESERVE_MS + Tools.LIMITS.searchMinMs + 1000
+        : MIN_ROUND_MS + 1000;
+      if (budget.remaining() <= minLeft) {
+        obs.failReason = 'supplement_budget';
+        final = { text: JSON.stringify({
+          answer: '요청하신 상품 정보를 확인할 시간이 부족해 이번 답변에서는 추천이나 가격을 확정하지 않았어요. 잠시 후 다시 물어봐 주세요.',
+          product_ids: [], primary_id: null, followups: []
+        }) };
+      } else {
+        const callId = 'server_supplement_' + String(Date.now());
+        const output = await Tools.execute(session, { name: plan.name, arguments: JSON.stringify(plan.args) });
+        input.push({
+          role: 'developer',
+          content: plan.kind === 'search'
+            ? '[서버 보완 검색] 사용자가 실제 상품 정보를 요청했지만 첫 답변에 검색이 없었다. 아래 도구 결과를 근거로 직접 추천 여부와 후보를 판단하라. 검색 실패·결과 없음이면 상품명이나 가격을 만들지 말고 확인하지 못했다고 답하라.'
+            : '[서버 보완 조회] 사용자가 앞서 본 상품의 가격 정보를 물었다. 아래 도구 결과를 근거로 직접 답하라. 기록이나 현재가가 없으면 추측하지 말라.'
+        });
+        input.push({ type: 'function_call', call_id: callId, name: plan.name, arguments: JSON.stringify(plan.args) });
+        input.push({ type: 'function_call_output', call_id: callId, output });
+        const remaining = budget.remaining();
+        if (remaining >= MIN_ROUND_MS + 500) {
+          const r = await llm.agentCall({
+            instructions: INSTRUCTIONS, input, tools: Tools.TOOLS,
+            toolChoice: 'none', textFormat: FORMAT, maxTokens: MAX_OUTPUT_TOKENS
+          }, Math.min(FINAL_ROUND_TIMEOUT_MS, remaining - 500));
+          account(r, 'supplement');
+          if (r.ok && String(r.text || '').trim()) final = { text: r.text, finish: r.finish };
+          else {
+            final = null;
+            obs.failReason = r.reason || 'supplement_no_final';
+          }
+        } else {
+          final = null;
+          obs.failReason = 'supplement_answer_budget';
+        }
+      }
+
+    }
+
+    // Any attempted search without a successful result is not product evidence,
+    // whether GPT or the one-shot server repair initiated it. Never let a model
+    // turn a rate-limit denial, timeout, or empty result into an invented card.
+    const searchAttempted = session.calls.some(c => c.name === 'search_products');
+    if (searchAttempted && session.evidence.searchOk === 0) {
+      const answer = session.evidence.searchFailed
+        ? '상품 검색이 호출 간격 제한 또는 시간 초과로 완료되지 않아 이번에는 확인하지 못했어요. 확인되지 않은 상품이나 가격은 추천하지 않을게요. 잠시 후 다시 요청해 주세요.'
+        : session.evidence.searchEmpty
+          ? '이번 검색에서 조건에 맞는 판매 상품을 확인하지 못했어요. 다른 조건으로 다시 찾아볼 수 있습니다.'
+          : '요청하신 상품을 검색할 시간이 부족해 확인하지 못했어요. 확인되지 않은 상품이나 가격은 추천하지 않을게요. 잠시 후 다시 요청해 주세요.';
+      final = { text: JSON.stringify({ answer, product_ids: [], primary_id: null, followups: [] }) };
+    }
+
     countCalls(obs, session);
 
     if (!final) {
@@ -832,6 +1020,7 @@ function finish(res, I, payload, obs, startedAt, req, dbg, session) {
       costUsd: Math.round(obs.costUsd * 1e6) / 1e6, llmMs: obs.llmMs, model: obs.model,
       firstIssues: obs.firstIssues, finalIssues: obs.finalIssues, rewrite: obs.rewrite, outcome: obs.outcome,
       invalidIds: obs.invalidIds, memIn: obs.memIn, memVerified: obs.memVerified, failReason: obs.failReason,
+      supplemented: obs.supplemented, deferredSearches: obs.deferredSearches,
       ms: Date.now() - startedAt
     };
     // 상세 기록(첫 답변 원문·도구 인자·레지스트리) — Production 이 아닌 곳 + 디버그 헤더일 때만.
