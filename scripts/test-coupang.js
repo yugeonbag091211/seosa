@@ -12,7 +12,6 @@
  */
 'use strict';
 
-const http = require('http');
 const crypto = require('crypto');
 
 // ── 반드시 _coupang.js 를 require 하기 전에 잡아야 한다 (모듈 로드 시 읽는다) ──
@@ -70,7 +69,7 @@ const DISCOUNT_ROWS = [
     productUrl: 'https://link.coupang.com/re/H', productImage: '' }
 ];
 
-const server = http.createServer((req, res) => {
+const responseHandler = (req, res) => {
   lastRequest = { target: req.url, authorization: req.headers.authorization || '' };
   if (mode === 'options') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -108,7 +107,43 @@ const server = http.createServer((req, res) => {
       ]
     }
   }));
-});
+};
+
+const server = {
+  listen(_port, callback) { process.nextTick(callback); },
+  address() { return { port: 0 }; },
+  close() {}
+};
+
+// Use an in-process response adapter so this test cannot make a network request
+// and works in CI runners where loopback sockets are disabled.
+global.fetch = async (input, init = {}) => {
+  const url = new URL(String(input));
+  const headers = Object.fromEntries(Object.entries(init.headers || {})
+    .map(([name, value]) => [String(name).toLowerCase(), value]));
+  return new Promise(resolve => {
+    let status = 200;
+    const responseHeaders = {};
+    const res = {
+      writeHead(code, values) {
+        status = code;
+        Object.assign(responseHeaders, values || {});
+      },
+      end(body = '') {
+        resolve({
+          status,
+          ok: status >= 200 && status < 300,
+          headers: { get(name) {
+            const key = Object.keys(responseHeaders).find(k => k.toLowerCase() === String(name).toLowerCase());
+            return key ? responseHeaders[key] : null;
+          } },
+          text: async () => String(body)
+        });
+      }
+    };
+    responseHandler({ url: url.pathname + url.search, headers }, res);
+  });
+};
 
 let pass = 0, fail = 0;
 function check(ok, label, detail) {

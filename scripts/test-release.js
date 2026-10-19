@@ -1048,7 +1048,10 @@ async function runSAFE() {
     const usesSupabase = /require\((['"])\.\.\/api\/_supabase\1\)/.test(src);
     const mocksSupabase = /require\.cache\[[^\]]*_supabase/.test(src)
       || /supabasePath/.test(src)
-      || /inject\((['"])api\/_supabase\.js\1/.test(src);
+      || /inject\((['"])api\/_supabase\.js\1/.test(src)
+      // The Preview read-only test loads the production guard while injecting
+      // an in-memory Supabase client; no real credentials or network are used.
+      || (/Module\._load/.test(src) && /createClient:\s*\(\)\s*=>\s*fakeClient/.test(src));
     if (usesSupabase && !mocksSupabase) offenders.db.push(name);
 
     // 진짜 쿠팡 호스트를 그대로 두고 검색을 부르는가

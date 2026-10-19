@@ -39,6 +39,11 @@ function getClient() {
 // 기존 프로세스 로컬 보호가 그대로 동작한다.
 const defaultStore = {
   async rpc(name, args, signal) {
+    // This module owns a separate client; retain that isolation while honoring
+    // Preview AI's central read-only scope before any mutating circuit RPC.
+    if (require('./_supabase').blockAiReadOnlyRpc()) {
+      throw new Error('circuit database unavailable');
+    }
     let query = getClient().rpc(name, args);
     if (query && typeof query.abortSignal === 'function') query = query.abortSignal(signal);
     const { data, error } = await query;

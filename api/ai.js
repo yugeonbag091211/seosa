@@ -1343,14 +1343,14 @@ async function searchProducts(query, budgetMs, opts) {
     await runOptional('신뢰도 계산', () => attachTrust(currentItems, { source: from, guardPrice: true }));
 
     /*
-     * 관측 저장.
-     *
-     * 검색으로 받아온 값은 오늘의 실제 관측이다. /api/search 와 같은 함수를
-     * 거치므로 stale-cache 판정·중복 방지·급변 보류가 그대로 적용된다.
-     * 저장이 실패해도 사용자에게 답은 해야 하므로 삼킨다.
+     * Product observation persistence remains enabled for Production. Preview
+     * AI can share Production's Supabase project, so it must not write
+     * products/price_history regardless of whether the source was cache or API.
      */
-    if (typeof o.background === 'function') {
-      // v2: 저장을 기다리는 동안 답변이 멈추지 않게 한다(Preview 실측: 저장이 1.2초 상한에 걸림).
+    if (String(process.env.VERCEL_ENV || '').trim().toLowerCase() === 'preview') {
+      console.info('[ai] Preview GPT: 상품 검색 저장 생략(read-only)');
+    } else if (typeof o.background === 'function') {
+      // v2: persistence is background work so it does not delay the answer.
       o.background(Promise.resolve().then(() => saveProducts(query, allItems || list, { from, source: 'ai' }))
         .catch(e => console.warn(`[ai] 검색 결과 저장 실패(답변은 계속): ${e.message}`)));
     } else {
@@ -3572,7 +3572,7 @@ function disclosesNoExactMatch(text) {
     || /확인되지\s*않았|찾지\s*못했|없습니다|없어요/.test(s.split(/\n/)[0] || '');
 }
 
-module.exports = async function handler(req, res) {
+async function handleAiRequest(req, res) {
   // 호출 1회당 실제 비용이 나가는 엔드포인트다. 공개 CORS(*)를 붙이면
   // 남의 사이트가 우리 키로 무료 AI API를 쓸 수 있다. 허용 오리진만.
   if (!applyCors(req, res, 'private')) return;
@@ -5116,6 +5116,19 @@ module.exports = async function handler(req, res) {
  * 여기 있는 것들은 전부 외부 호출이 없는 순수 함수라, 테스트가 쿠팡·
  * OpenRouter 를 한 번도 부르지 않고 돌 수 있다.
  */
+/*
+ * Scope every Preview AI path (v2, fallback, details, and history reads) so
+ * database writes and RPC side effects are denied for the full async request.
+ * The deployment mode comes only from Vercel's server environment.
+ */
+module.exports = function handler(req, res) {
+  if (String(process.env.VERCEL_ENV || '').trim().toLowerCase() !== 'preview') {
+    return handleAiRequest(req, res);
+  }
+  const db = require('./_supabase');
+  return db.runAiReadOnly(() => handleAiRequest(req, res));
+};
+
 module.exports._internal = {
   cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, canonicalDisplayItem, attachDisplayHistory, aiSearchKeyword, stripRefs, stripUrls, derefRefs,
   needsShopContext, canonicalIntent, safeText, num, won, safeDate, normItem, describe,

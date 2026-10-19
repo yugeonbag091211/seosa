@@ -393,6 +393,13 @@ async function searchAdpick(keyword, opts = {}) {
     return { items: cached.items.slice(0, limit), error: null, from: 'cache', blocked: false };
   }
 
+  // Preview AI may read a warm cache, but a cache miss must not reserve a
+  // DB-backed quota slot, call ADPICK, or write the provider-call/cache tables.
+  if (String(process.env.VERCEL_ENV || '').trim().toLowerCase() === 'preview' && supabase.isAiReadOnly()) {
+    log(source, kw, 'READ-ONLY-MISS', 'cache-only');
+    return { items: [], error: 'preview-read-only-cache-miss', from: 'none', blocked: true };
+  }
+
   let apiCalled = false;
   const fallback = (reason, blocked) => {
     state.totalDenied++;
