@@ -1181,6 +1181,10 @@ function positiveDuration(name, fallback) {
 }
 const AI_SEARCH_TIMEOUT_MS = positiveDuration('AI_SEARCH_TIMEOUT_MS', 17000);
 const AI_ENRICH_TIMEOUT_MS = positiveDuration('AI_ENRICH_TIMEOUT_MS', 1200);
+// The AI path must leave room for GPT's final answer. ADPICK keeps its normal
+// six-hour cache and global limiter, but a slow supplier cannot consume the
+// entire agent turn; the remaining supplier's verified results still survive.
+const AI_ADPICK_TIMEOUT_MS = positiveDuration('AI_ADPICK_TIMEOUT_MS', 8000);
 
 async function settleWithin(promise, timeoutMs) {
   const ms = Math.max(1, Math.floor(Number(timeoutMs) || 0));
@@ -1246,7 +1250,16 @@ function aiSearchKeyword(query) {
  *   ok=true 에 items=[] 는 "찾아봤는데 없었다"이다. 둘을 뭉뚱그리면
  *   AI 가 "그런 상품은 없습니다"라고 단정하게 된다 — 확인하지 못한 것뿐인데.
  */
-async function searchProducts(query, budgetMs) {
+/**
+ * @param {object} [opts]  AI Concierge v2 (api/_agenttools.js) 만 넘긴다 — v1 은 넘기지 않아 예전과 같다.
+ *   coupangLimit  쿠팡 결과를 몇 건까지 받을지. 쿠팡 호출은 어차피 10건을 받아 캐시하므로
+ *                 (api/_coupang.js FETCH_LIMIT) 6 → 10 으로 늘려도 호출 수·쿼터는 같다.
+ *   background    관측 저장(saveProducts)을 기다리지 않고 이 함수에 promise 를 넘긴다.
+ *                 저장은 그대로 일어난다 — 호출부가 응답 전에 짧게 기다린다.
+ */
+async function searchProducts(query, budgetMs, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {};
+  const coupangLimit = Number.isInteger(o.coupangLimit) && o.coupangLimit >= 1 && o.coupangLimit <= 10 ? o.coupangLimit : AI_SEARCH_LIMIT;
   /*
    * 지연 require.
    *
@@ -1268,10 +1281,11 @@ async function searchProducts(query, budgetMs) {
     const deadline = Date.now() + Math.max(1, Number(budgetMs) || AI_SEARCH_TIMEOUT_MS);
     const searchCap = Math.min(AI_SEARCH_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
     const searched = await settleWithin(searchAll(aiSearchKeyword(query), {
-      coupangLimit: AI_SEARCH_LIMIT,
+      coupangLimit,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS },
-      // 이름표뿐이다(/api/search 와 같다). maxWaitMs 를 넣지 않으므로 ADPICK 대기 정책은 그대로다.
-      adpickOpts: { source: 'ai' },
+      // 검색 간격 제한에서는 기다리지 않고 캐시/다른 공급원 결과를 쓴다.
+      // 외부 응답은 AI 턴 예산 안에서만 기다리고, 느린 ADPICK 응답이 전체 검색을 막지 않게 한다.
+      adpickOpts: { source: 'ai', maxWaitMs: 0, timeoutMs: Math.min(AI_ADPICK_TIMEOUT_MS, searchCap) },
       // 후보 창 정렬(식별 등급)은 정규화 전 상품 구절로 — 모델 코드의 구분자를 보존한다.
       identityQuery: query
     }), searchCap);
@@ -1288,15 +1302,18 @@ async function searchProducts(query, budgetMs) {
     // not evidence for a current-price answer in this AI path.
     const currentItems = list.filter(it => currentSource((it && it._source) || from));
     if (!currentItems.length && (blocked || from === 'none')) {
-      return { ok: false, items: [], reason: 'blocked' };
+      return { ok: false, items: [], reason: 'blocked', rawCount: list.length, currentCount: 0 };
     }
     // A successful fresh search with zero matches is a confirmed empty result,
     // distinct from a failed search or a stale-only payload.
     if (!list.length && currentSource(from)) {
-      return { ok: true, items: [], reason: from };
+      return { ok: true, items: [], reason: from, rawCount: list.length, currentCount: 0 };
     }
     if (!currentItems.length) {
-      return { ok: false, items: [], reason: from === 'stale-cache' ? 'stale-cache' : 'unverified-source' };
+      return {
+        ok: false, items: [], reason: from === 'stale-cache' ? 'stale-cache' : 'unverified-source',
+        rawCount: list.length, currentCount: 0
+      };
     }
 
     const runOptional = async (label, task) => {
@@ -1326,15 +1343,21 @@ async function searchProducts(query, budgetMs) {
     await runOptional('신뢰도 계산', () => attachTrust(currentItems, { source: from, guardPrice: true }));
 
     /*
-     * 관측 저장.
-     *
-     * 검색으로 받아온 값은 오늘의 실제 관측이다. /api/search 와 같은 함수를
-     * 거치므로 stale-cache 판정·중복 방지·급변 보류가 그대로 적용된다.
-     * 저장이 실패해도 사용자에게 답은 해야 하므로 삼킨다.
+     * Product observation persistence remains enabled for Production. Preview
+     * AI can share Production's Supabase project, so it must not write
+     * products/price_history regardless of whether the source was cache or API.
      */
-    await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
+    if (String(process.env.VERCEL_ENV || '').trim().toLowerCase() === 'preview') {
+      console.info('[ai] Preview GPT: 상품 검색 저장 생략(read-only)');
+    } else if (typeof o.background === 'function') {
+      // v2: persistence is background work so it does not delay the answer.
+      o.background(Promise.resolve().then(() => saveProducts(query, allItems || list, { from, source: 'ai' }))
+        .catch(e => console.warn(`[ai] 검색 결과 저장 실패(답변은 계속): ${e.message}`)));
+    } else {
+      await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
+    }
 
-    return { ok: true, items: currentItems, reason: from };
+    return { ok: true, items: currentItems, reason: from, rawCount: list.length, currentCount: currentItems.length };
   } catch (e) {
     console.warn(`[ai] 상품 검색 실패: ${e.message}`);
     return { ok: false, items: [], reason: 'error' };
@@ -3549,7 +3572,7 @@ function disclosesNoExactMatch(text) {
     || /확인되지\s*않았|찾지\s*못했|없습니다|없어요/.test(s.split(/\n/)[0] || '');
 }
 
-module.exports = async function handler(req, res) {
+async function handleAiRequest(req, res) {
   // 호출 1회당 실제 비용이 나가는 엔드포인트다. 공개 CORS(*)를 붙이면
   // 남의 사이트가 우리 키로 무료 AI API를 쓸 수 있다. 허용 오리진만.
   if (!applyCors(req, res, 'private')) return;
@@ -3639,6 +3662,25 @@ module.exports = async function handler(req, res) {
   const prevTop = safeText(prevTopRaw, 60);
   const q = clip(question, MAX_QUESTION_LEN).trim();
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
+
+  /*
+   * AI Concierge v2 — GPT 중심 쇼핑 에이전트 (api/_agent.js 머리 주석).
+   *
+   * 기본값은 꺼짐이다. 꺼져 있으면 이 블록은 아무것도 하지 않고 아래 v1 이 예전과 똑같이 돈다.
+   * 켜져 있어도 OpenAI 키가 없거나·쿨다운 중이거나·뉴스 질문이거나·초반에 실패하면
+   * handled=false 로 돌아오고 v1 이 이어서 답한다. 인증·레이트리밋·입력 상한은 위에서 이미 끝났다.
+   */
+  try {
+    const V2 = require('./_agent');
+    if (V2.enabledFor(req)) {
+      const v2 = await V2.run({ req, res, body, q, guest, internals: module.exports._internal });
+      if (v2 && v2.handled) return;
+      if (res.headersSent) return;
+    }
+  } catch (e) {
+    console.error('[ai] v2 디스패치 실패 — v1 로 진행:', e && e.message);
+    if (res.headersSent) return;
+  }
 
   /*
    * 찾아낸 상품 카드.
@@ -5074,6 +5116,19 @@ module.exports = async function handler(req, res) {
  * 여기 있는 것들은 전부 외부 호출이 없는 순수 함수라, 테스트가 쿠팡·
  * OpenRouter 를 한 번도 부르지 않고 돌 수 있다.
  */
+/*
+ * Scope every Preview AI path (v2, fallback, details, and history reads) so
+ * database writes and RPC side effects are denied for the full async request.
+ * The deployment mode comes only from Vercel's server environment.
+ */
+module.exports = function handler(req, res) {
+  if (String(process.env.VERCEL_ENV || '').trim().toLowerCase() !== 'preview') {
+    return handleAiRequest(req, res);
+  }
+  const db = require('./_supabase');
+  return db.runAiReadOnly(() => handleAiRequest(req, res));
+};
+
 module.exports._internal = {
   cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, canonicalDisplayItem, attachDisplayHistory, aiSearchKeyword, stripRefs, stripUrls, derefRefs,
   needsShopContext, canonicalIntent, safeText, num, won, safeDate, normItem, describe,
@@ -5085,5 +5140,8 @@ module.exports._internal = {
   heuristicIntent, hasAuthHeader,
   historyMessage, normalizeHistory, resolveContext, contextNoteBlock, statFor, markFiction, P,
   unverifiedLivePriceClaim, wonMatches, hasConfirmedRecordLow, isCurrentPriceFresh,
-  PROMPT_VERSION
+  PROMPT_VERSION,
+  // AI Concierge v2 (api/_agent.js) 가 같은 검색·기록·카드·검증 경로를 다시 쓴다 — 두 벌로 두지 않는다.
+  searchProducts, attachHistory, settleWithin, withTurnSig, referencedItems, priceClaimKind, priceEvidenceValues,
+  searchTimeoutMs: AI_SEARCH_TIMEOUT_MS, enrichTimeoutMs: AI_ENRICH_TIMEOUT_MS
 };

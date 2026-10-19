@@ -570,6 +570,14 @@ async function searchCoupang(keyword, opts = {}) {
     return { items: cached.items.slice(0, limit), allItems: (cached.allItems || cached.items).slice(0, limit), error: null, from: 'cache', blocked: false };
   }
 
+  // AI requests in Vercel Preview may share Production's database credentials.
+  // Keep cache reads above, but fail closed before quota RPCs, provider calls,
+  // cache upserts, or call-ledger writes on a cache miss.
+  if (String(process.env.VERCEL_ENV || '').trim().toLowerCase() === 'preview' && supabase.isAiReadOnly()) {
+    log(source, kw, 'READ-ONLY-MISS', 'cache-only');
+    return { items: [], allItems: [], error: 'preview-read-only-cache-miss', from: 'none', blocked: true };
+  }
+
   // 호출을 못 하게 됐을 때의 최선 — 아직 쓸 만큼 최근인 캐시가 있으면 그걸 쓴다.
   //
   // "아직 쓸 만큼"에 상한이 없으면 몇 주 전 가격을 현재가 자리에 올리게 된다.

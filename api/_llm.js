@@ -22,7 +22,8 @@ const OPENAI_FAILURE_COOLDOWN_MS = 60 * 1000;
 
 /* Standard short-context rates, USD / 1M tokens.  Unknown models stay null. */
 const OPENAI_PRICES_USD_PER_1M = Object.freeze({
-  'gpt-6-luna': { in: 0.10, out: 0.50 }
+  'gpt-6-luna': { in: 0.10, out: 0.50 },
+  'gpt-5.1': { in: 1.25, cachedIn: 0.125, out: 10.00 }
 });
 
 const state = {
@@ -86,8 +87,11 @@ function estimateOpenAICostUsd(model, usage) {
   if (!usage) return null;
   const price = OPENAI_PRICES_USD_PER_1M[model];
   if (!price) return null;
-  return (Number(usage.inputTokens || 0) / 1e6) * price.in +
-    (Number(usage.outputTokens || 0) / 1e6) * price.out;
+  const inputTokens = Math.max(0, Number(usage.inputTokens) || 0);
+  const cachedTokens = Math.min(inputTokens, Math.max(0, Number(usage.cachedTokens) || 0));
+  const outputTokens = Math.max(0, Number(usage.outputTokens) || 0);
+  const cachedInputPrice = Number.isFinite(Number(price.cachedIn)) ? Number(price.cachedIn) : price.in;
+  return ((inputTokens - cachedTokens) * price.in + cachedTokens * cachedInputPrice + outputTokens * price.out) / 1e6;
 }
 
 function classifyStatus(status) {
@@ -191,6 +195,102 @@ async function attemptOpenAI(opts, timeoutMs) {
     setCooldown(reason, OPENAI_FAILURE_COOLDOWN_MS);
     console.warn(`[llm] openai/${model} ${reason}`);
     return { ok: false, reason, model };
+  } finally {
+    clearTimeout(timer);
+    state.inflight = Math.max(0, state.inflight - 1);
+  }
+}
+
+/*
+ * One round of the v2 shopping agent (api/_agent.js) — Responses API with tools.
+ *
+ * Shares this module's OpenAI state: the per-instance in-flight cap, token/cost
+ * accounting, and the cooldown for account-level failures (auth, quota, 5xx), so
+ * v1 and v2 never hammer a provider that is already refusing.  Two failures stay
+ * local on purpose and do NOT start the shared cooldown:
+ *   - 400/404: a request-shape problem specific to the agent body (tools, schema).
+ *   - timeout: an agent round carries tool results and is slower than v1's call;
+ *     one slow round does not mean OpenAI is down for v1.
+ * No free-router fallback here: the free chain has no function calling.  The
+ * caller falls back to the v1 pipeline instead.  No response cache: inputs carry
+ * live tool results.
+ */
+function agentAvailable() {
+  if (!enabled()) return { ok: false, reason: 'nokey' };
+  if (state.cooldownUntil > Date.now()) return { ok: false, reason: 'cooldown' };
+  return { ok: true, reason: '' };
+}
+
+async function agentCall(opts, timeoutMs) {
+  const avail = agentAvailable();
+  if (!avail.ok) return { ok: false, reason: avail.reason };
+  if (state.inflight >= OPENAI_MAX_INFLIGHT) return { ok: false, reason: 'busy' };
+
+  const model = openai.agentModelFromEnv();
+  const request = openai.agentRequest(model, opts);
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const deadline = startedAt + Math.max(1000, Number(timeoutMs) || OPENAI_ATTEMPT_MS);
+  state.inflight++;
+  state.attempts++;
+  let timer;
+  try {
+    const response = await Promise.race([
+      fetch(request.url, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: request.headers,
+        body: JSON.stringify(request.body)
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(Object.assign(new Error('deadline'), { name: 'AbortError' }));
+        }, Math.max(1, deadline - Date.now()));
+      })
+    ]).finally(() => clearTimeout(timer));
+
+    if (!response || !response.ok) {
+      state.failures++;
+      const status = (response && response.status) || 0;
+      const cls = classifyStatus(status);
+      if (cls.reason !== 'request') setCooldown(cls.reason, cls.cooldown);
+      console.warn(`[llm] openai-agent/${model} ${status} ${cls.reason}`);
+      return { ok: false, reason: cls.reason, status, model, latencyMs: Date.now() - startedAt };
+    }
+
+    const data = await responseJson(response, deadline, controller);
+    const parsed = openai.parseAgent(data);
+    if (parsed.usage) {
+      state.inTok += Number(parsed.usage.inputTokens) || 0;
+      state.outTok += Number(parsed.usage.outputTokens) || 0;
+    }
+    const costUsd = estimateOpenAICostUsd(model, parsed.usage);
+    if (Number.isFinite(costUsd)) state.costUsd += costUsd;
+    if (!parsed.toolCalls.length && !String(parsed.text || '').trim()) {
+      state.failures++;
+      return { ok: false, reason: 'empty', model, usage: parsed.usage || null, costUsd, latencyMs: Date.now() - startedAt };
+    }
+    state.successes++;
+    state.cooldownUntil = 0;
+    state.cooldownReason = '';
+    return {
+      ok: true,
+      text: parsed.text,
+      toolCalls: parsed.toolCalls,
+      replay: parsed.replay,
+      finish: parsed.finish,
+      usage: parsed.usage || null,
+      costUsd,
+      model,
+      latencyMs: Date.now() - startedAt
+    };
+  } catch (e) {
+    state.failures++;
+    const reason = e && e.name === 'AbortError' ? 'timeout' : 'network';
+    if (reason === 'network') setCooldown(reason, OPENAI_FAILURE_COOLDOWN_MS);
+    console.warn(`[llm] openai-agent/${model} ${reason}`);
+    return { ok: false, reason, model, latencyMs: Date.now() - startedAt };
   } finally {
     clearTimeout(timer);
     state.inflight = Math.max(0, state.inflight - 1);
@@ -353,6 +453,8 @@ const exportedInternal = Object.assign({}, free._internal || {}, {
 
 module.exports = Object.assign({}, free, {
   chat,
+  agentCall,
+  agentAvailable,
   allowPaid,
   stats,
   DEFAULT_OPENAI_MODEL: openai.DEFAULT_MODEL,
