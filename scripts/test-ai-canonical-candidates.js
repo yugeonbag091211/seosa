@@ -369,9 +369,9 @@ const coupangRow = i => mk('쿠팡', `c${i}`, `소니 가벼운 노이즈 캔슬
     ok(call.opts.adpickOpts && call.opts.adpickOpts.source === 'ai'
       && call.opts.adpickOpts.maxWaitMs === 0
       && Number.isFinite(call.opts.adpickOpts.timeoutMs)
-      && call.opts.adpickOpts.timeoutMs >= 1000
-      && call.opts.adpickOpts.timeoutMs <= 8000,
-      'AI 경로는 ADPICK 호출 간격 제한에서 대기하지 않고 timeout을 8초 이내로 둔다');
+      && call.opts.adpickOpts.timeoutMs > 0
+      && call.opts.adpickOpts.timeoutMs <= 400,
+      'AI 경로는 ADPICK 호출 간격 제한에서 대기하지 않고 검색 예산 안으로 timeout을 제한한다');
 
     const cards = r.body.items || [];
     const canon = cards.find(c => c.isCanonicalGroup === true);
