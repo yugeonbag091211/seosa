@@ -468,7 +468,7 @@ function laptopBrain(mode, opts) {
     const llmMetrics = require('../api/_llm');
     const measuredCost = llmMetrics._internal.estimateOpenAICostUsd('gpt-5.1', { inputTokens: 4066, cachedTokens: 2688, outputTokens: 477 });
     ok(Math.abs(measuredCost - 0.0068285) < 1e-10, 'gpt-5.1 비용은 캐시 입력 단가까지 반영', String(measuredCost));
-    ok(llmMetrics.estimateOpenAICostUsd('unpriced-model', { inputTokens: 10, outputTokens: 3 }) === null, '미등록 모델은 알 수 없는 비용으로 유지');
+    ok(llmMetrics._internal.estimateOpenAICostUsd('unpriced-model', { inputTokens: 10, outputTokens: 3 }) === null, '미등록 모델은 알 수 없는 비용으로 유지');
   }
 
   /* ---------------- 단위: 상품명 사양 ---------------- */
