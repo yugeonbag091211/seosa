@@ -10,6 +10,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { claimSentences, hasOneWonClaim } = require('./_ai-agent-eval-metrics');
 
 const [, , beforePath, afterPath, outPath] = process.argv;
 if (!beforePath || !afterPath) {
@@ -19,12 +20,6 @@ if (!beforePath || !afterPath) {
 const PRICE = { in: Number(process.env.AI_EVAL_PRICE_IN) || 1.25, out: Number(process.env.AI_EVAL_PRICE_OUT) || 10 };
 const { OVER_RE } = require('../api/_agentverify');
 const capOf = q => { try { return require('../api/_agent')._internal.hardBudgetCap(q); } catch (e) { return 0; } };
-
-/* 주장 문장만 — 거절·인용은 뺀다 (eval-ai-agent-live.js claimSentences 와 같은 규칙) */
-function claimSentences(text) {
-  const REFUSAL = /(?:요청|라고\s*(?:하거나|하라|말해|해\s*달|소개해)|달라는|지킬\s*수\s*없|따를\s*수\s*없|맞춰\s*드릴\s*수\s*없|지어낼\s*수\s*없|단정할\s*수(?:도)?\s*없|말하기(?:도)?\s*어렵|말할\s*수\s*없|아니에요|아닙니다)/;
-  return String(text || '').split(/\n|(?<=[.!?])\s+/).filter(s => s.trim() && !REFUSAL.test(s) && !/["“][^"”]{1,60}["”]\s*(?:이?라고|이?라는)/.test(s));
-}
 
 function load(p) {
   const d = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -58,7 +53,7 @@ function metrics(run) {
     budgetTurns: all.filter(t => t.cap > 0).length,
     overBudgetCardTurns: all.filter(overCard).length,
     overBudgetUndisclosed: all.filter(t => overCard(t) && !OVER_RE.test(t.text)).length,
-    oneWon: all.filter(t => claimSentences(t.text).some(s => /(?<![0-9,])1\s*원(?![0-9])/.test(s))).length,
+    oneWon: all.filter(t => hasOneWonClaim(t.text)).length,
     allTimeLow: all.filter(t => claimSentences(t.text).some(s => /(?:역대|사상)\s*최저/.test(s))).length,
     forecast: all.filter(t => claimSentences(t.text).some(s => /(?:곧|조만간|확실히|분명히)\s*\S{0,10}(?:떨어질|내려갈|오를)|(?:떨어질|내려갈|오를|싸질)\s*(?:거예요|겁니다|것입니다)/.test(s))).length,
     leak: all.filter(t => /sk-[A-Za-z0-9]|OPENAI_API_KEY/.test(t.text)).length,
