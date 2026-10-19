@@ -167,12 +167,18 @@ function parseAgent(data) {
   }
   if (toolCalls.length && base.text) replay.unshift({ role: 'assistant', content: base.text });
   const incomplete = data && data.incomplete_details && data.incomplete_details.reason;
+  // Latency accounting (api/_agent.js debug trace): cached prompt tokens and hidden reasoning tokens.
+  const u = data && data.usage;
+  const usage = base.usage ? Object.assign({}, base.usage, {
+    cachedTokens: Number(u && u.input_tokens_details && u.input_tokens_details.cached_tokens) || 0,
+    reasoningTokens: Number(u && u.output_tokens_details && u.output_tokens_details.reasoning_tokens) || 0
+  }) : null;
   return {
     text: base.text,
     toolCalls,
     replay,
     finish: incomplete ? `incomplete:${String(incomplete).slice(0, 40)}` : base.finish,
-    usage: base.usage
+    usage
   };
 }
 

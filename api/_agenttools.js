@@ -476,17 +476,20 @@ async function loadSearch(session, query) {
   const cap = Math.min(d.searchTimeoutMs || SEARCH_CAP_MS, SEARCH_CAP_MS, room);
   session.searches++;
   session.evidence.queries++;
+  const t0 = Date.now();
   const found = await d.searchProducts(query, cap);
+  const timing = { searchMs: Date.now() - t0, enrichMs: 0 };
   if (!found || !found.ok) {
     session.evidence.searchFailed++;
-    return { status: 'search_failed', reason: String((found && found.reason) || 'error').slice(0, 30) };
+    return { status: 'search_failed', reason: String((found && found.reason) || 'error').slice(0, 30), timing };
   }
   if (!found.items.length) {
     session.evidence.searchEmpty++;
-    return { status: 'no_results' };
+    return { status: 'no_results', timing, from: String(found.reason || '') };
   }
   session.evidence.searchOk++;
   const raw = found.items.slice(0, LIMITS.rawPerSearch);
+  const t1 = Date.now();
   const enrichCap = Math.min(d.enrichTimeoutMs || 2500, Math.max(0, session.remaining() - 4000));
   let stats = new Map();
   if (enrichCap > 0) {
@@ -518,24 +521,31 @@ async function loadSearch(session, query) {
   } catch (e) {
     console.warn(`[ai:v2] canonical 묶음 실패(묶지 않고 진행): ${e.message}`);
   }
-  return { status: 'ok', normed, stats };
+  timing.enrichMs = Date.now() - t1;
+  return { status: 'ok', normed, stats, timing, from: String(found.reason || ''), rawCount: raw.length };
 }
 
-async function searchProducts(session, args) {
+async function searchProducts(session, args, record) {
   const query = cleanQuery(session, args && args.query);
   if (query.length < 2) return { status: 'invalid', message: '검색어가 비었다. 상품 종류를 넣어 다시 검색하라.' };
   const maxPrice = priceArg(args && args.max_price);
   const minPrice = priceArg(args && args.min_price);
   const anyCondition = args && args.condition === 'any';
   const key = query.toLowerCase();
+  const rec = (record && record.detail) || {};
+  Object.assign(rec, { query, maxPrice: maxPrice || null, condition: anyCondition ? 'any' : 'new_only' });
 
   let loaded = session.searchCache.get(key);
+  if (loaded) rec.repeat = true;
   if (!loaded) {
     if (session.searches >= LIMITS.maxSearches) {
       return { status: 'limit', message: '이번 질문에서는 더 검색할 수 없다. 이미 찾은 후보로 답하고, 부족하면 부족하다고 말하라.' };
     }
     loaded = await loadSearch(session, query);
     if (loaded.status === 'ok') session.searchCache.set(key, loaded);
+    if (loaded.timing) Object.assign(rec, loaded.timing);
+    rec.from = loaded.from || '';
+    rec.raw = loaded.rawCount || 0;
   }
   if (loaded.status === 'no_time') return { status: 'no_time', message: '시간이 부족해 검색하지 못했다. 상품이 없다는 뜻이 아니다.' };
   if (loaded.status === 'search_failed') {
@@ -582,6 +592,8 @@ async function searchProducts(session, args) {
   if (list.length && list.every(e => e.accessory !== 'main')) {
     out.warning = '본품으로 보이는 상품이 없다(부속·액세서리 위주). 본품을 찾았다고 말하지 말 것.';
   }
+  rec.shown = list.length;
+  if (maxPrice) rec.inBudget = within;
   return out;
 }
 
@@ -754,7 +766,8 @@ const HANDLERS = {
 async function execute(session, call) {
   const started = Date.now();
   const name = String(call && call.name || '');
-  const record = { name, ms: 0, status: 'error' };
+  // record.detail 은 Preview 디버그 응답(_debug.trace)에만 실린다 — 로그 줄에는 쓰지 않는다.
+  const record = { name, ms: 0, status: 'error', detail: {} };
   session.calls.push(record);
   let output;
   try {
@@ -763,8 +776,10 @@ async function execute(session, call) {
     else {
       let args = {};
       try { args = JSON.parse(String(call.arguments || '{}')); } catch (e) { args = null; }
+      if (args && args.id) record.detail.id = String(args.id).slice(0, 8);
+      if (args && Array.isArray(args.ids)) record.detail.ids = args.ids.slice(0, 6).map(x => String(x).slice(0, 8));
       output = args && typeof args === 'object'
-        ? await HANDLERS[name](session, args)
+        ? await HANDLERS[name](session, args, record)
         : { status: 'invalid', message: '인자가 JSON 이 아니다.' };
     }
   } catch (e) {

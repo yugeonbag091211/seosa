@@ -394,15 +394,30 @@ async function run(ctx) {
   const startedAt = Date.now();
   const budget = { remaining: () => Math.max(0, startedAt + BUDGET_MS - Date.now()) };
   const obs = {
-    v: AGENT_VERSION, engine: 'v2', rounds: 0, toolCalls: 0, calls: {}, inTok: 0, outTok: 0, costUsd: 0,
+    v: AGENT_VERSION, engine: 'v2', rounds: 0, toolCalls: 0, calls: {}, inTok: 0, outTok: 0, cachedTok: 0, reasoningTok: 0, costUsd: 0,
     llmMs: [], model: '', firstIssues: [], finalIssues: [], rewrite: false, outcome: '', cards: 0,
     invalidIds: 0, droppedUnmentioned: 0, memIn: 0, memVerified: 0, memOut: 0, json: null, failReason: ''
   };
-  const account = r => {
+  /*
+   * dbg — Preview 디버그 응답(_debug.trace)에만 싣는 상세 기록. 로그 줄(logObs)에는 들어가지 않는다
+   * (첫 답변 원문·검색어가 있다). 병목·오탐을 실측으로 가르는 데 쓴다.
+   */
+  const dbg = { rounds: [], firstText: '', firstDetail: [], finalDetail: [], registry: [] };
+  const account = (r, phase) => {
     if (!r) return;
+    const u = r.usage || {};
+    dbg.rounds.push({
+      phase, ms: Number.isFinite(r.latencyMs) ? r.latencyMs : null, ok: !!r.ok, fail: r.ok ? '' : String(r.reason || ''),
+      inTok: Number(u.inputTokens) || 0, cachedTok: Number(u.cachedTokens) || 0, outTok: Number(u.outputTokens) || 0,
+      reasoningTok: Number(u.reasoningTokens) || 0, tools: (r.toolCalls || []).map(c => c.name), finish: String(r.finish || '')
+    });
+    if (!r.ok && !r.usage) return;
     obs.rounds++;
     if (r.model) obs.model = r.model;
-    if (r.usage) { obs.inTok += Number(r.usage.inputTokens) || 0; obs.outTok += Number(r.usage.outputTokens) || 0; }
+    if (r.usage) {
+      obs.inTok += Number(r.usage.inputTokens) || 0; obs.outTok += Number(r.usage.outputTokens) || 0;
+      obs.cachedTok += Number(r.usage.cachedTokens) || 0; obs.reasoningTok += Number(r.usage.reasoningTokens) || 0;
+    }
     if (Number.isFinite(r.costUsd)) obs.costUsd += r.costUsd;
     if (Number.isFinite(r.latencyMs)) obs.llmMs.push(r.latencyMs);
   };
@@ -461,7 +476,7 @@ async function run(ctx) {
         instructions: INSTRUCTIONS, input, tools: Tools.TOOLS,
         toolChoice: lastRound ? 'none' : 'auto', textFormat: FORMAT, maxTokens: MAX_OUTPUT_TOKENS
       }, Math.min(ROUND_TIMEOUT_MS, remaining - 1000));
-      if (r.ok || r.usage) account(r);
+      account(r, `loop${round}`);
       if (!r.ok) { obs.failReason = r.reason || 'provider'; break; }
       if (r.toolCalls.length && !lastRound) {
         input.push(...r.replay);
@@ -486,7 +501,7 @@ async function run(ctx) {
         memory, guest, req, obs
       });
       obs.outcome = 'provider-safe';
-      finish(res, I, payload, obs, startedAt, req);
+      finish(res, I, payload, obs, startedAt, req, dbg, session);
       return { handled: true };
     }
 
@@ -502,6 +517,9 @@ async function run(ctx) {
     });
     let issues = text ? Verify.verify(text, vctx()) : [{ kind: 'empty', detail: '빈 답변' }];
     obs.firstIssues = issues.map(i => i.kind);
+    dbg.firstText = String(text || '').slice(0, 2500);
+    dbg.firstDetail = issueDetail(issues);
+    dbg.firstPick = { ids: parsed.productIds.slice(0, 6), primary: parsed.primaryId };
     let outcome = issues.length ? '' : 'ok';
     const fatal = issues.some(i => i.fatal);
 
@@ -525,7 +543,7 @@ async function run(ctx) {
           instructions: INSTRUCTIONS, input, tools: Tools.TOOLS,
           toolChoice: allowTools && k === 0 ? 'auto' : 'none', textFormat: FORMAT, maxTokens: MAX_OUTPUT_TOKENS
         }, Math.min(ROUND_TIMEOUT_MS, remaining - 1000));
-        if (r.ok || r.usage) account(r);
+        account(r, `rewrite${k}`);
         if (!r.ok) break;
         if (r.toolCalls.length && allowTools && k === 0) {
           input.push(...r.replay);
@@ -545,6 +563,8 @@ async function run(ctx) {
           text = t2;
           pick = selectShown(session, parsed, text);
           issues = Verify.verify(text, vctx());
+          dbg.rewriteText = text.slice(0, 2500);
+          dbg.rewriteDetail = issueDetail(issues);
           if (!issues.length) outcome = 'rewritten';
         }
       }
@@ -571,6 +591,7 @@ async function run(ctx) {
       }
     }
     obs.finalIssues = issues.map(i => i.kind);
+    dbg.finalDetail = issueDetail(issues);
     obs.outcome = outcome;
     obs.invalidIds = pick.invalid;
     obs.droppedUnmentioned = pick.dropped;
@@ -583,7 +604,7 @@ async function run(ctx) {
     const payload = respond(I, session, {
       text, shown: pick.shown, primary: pick.primary, followups, degraded, memory, guest, req, obs
     });
-    finish(res, I, payload, obs, startedAt, req);
+    finish(res, I, payload, obs, startedAt, req, dbg, session);
     return { handled: true };
   } catch (e) {
     console.error('[ai:v2]', e && e.message);
@@ -596,7 +617,7 @@ async function run(ctx) {
     const payload = { text: '지금 AI 답변이 지연되고 있어요. 확인되지 않은 내용은 안내하지 않을게요. 잠시 후 다시 물어봐 주세요.', intent: 'GENERAL_QA', degraded: true, engine: 'v2' };
     if (guest) payload.guest = true;
     obs.outcome = 'exception-safe';
-    finish(res, I, payload, obs, startedAt, req);
+    finish(res, I, payload, obs, startedAt, req, dbg, session);
     return { handled: true };
   }
 }
@@ -671,15 +692,31 @@ function logObs(obs, startedAt, outcome) {
   console.log('[ai:v2] ' + JSON.stringify(line));
 }
 
-function finish(res, I, payload, obs, startedAt, req) {
+function issueDetail(issues) {
+  return (issues || []).map(i => ({ kind: i.kind, values: (i.values || []).slice(0, 6), detail: String(i.detail || '').slice(0, 120) }));
+}
+
+function finish(res, I, payload, obs, startedAt, req, dbg, session) {
   logObs(obs, startedAt);
   if (debugAllowed(req)) {
     payload._debug = {
       rounds: obs.rounds, toolCalls: obs.calls, inTok: obs.inTok, outTok: obs.outTok,
+      cachedTok: obs.cachedTok, reasoningTok: obs.reasoningTok,
       costUsd: Math.round(obs.costUsd * 1e6) / 1e6, llmMs: obs.llmMs, model: obs.model,
       firstIssues: obs.firstIssues, finalIssues: obs.finalIssues, rewrite: obs.rewrite, outcome: obs.outcome,
-      invalidIds: obs.invalidIds, memIn: obs.memIn, memVerified: obs.memVerified, ms: Date.now() - startedAt
+      invalidIds: obs.invalidIds, memIn: obs.memIn, memVerified: obs.memVerified, failReason: obs.failReason,
+      ms: Date.now() - startedAt
     };
+    // 상세 기록(첫 답변 원문·도구 인자·레지스트리) — Production 이 아닌 곳 + 디버그 헤더일 때만.
+    if (dbg) {
+      payload._debug.trace = Object.assign({}, dbg, {
+        tools: session ? session.calls.map(c => Object.assign({ name: c.name, ms: c.ms, status: c.status }, c.detail || {})) : [],
+        registry: session ? [...session.registry.values()].slice(0, 24).map(e => ({
+          id: e.handle, price: e.priceKnown ? Math.round(Number(e.item.price) || 0) : null, cond: e.condition, kind: e.accessory,
+          title: I.safeText(AIID.displayTitle(e.item.title), 70), specs: e.specs
+        })) : []
+      });
+    }
   }
   res.json(I.withTurnSig(payload));
 }
