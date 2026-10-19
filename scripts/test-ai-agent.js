@@ -1311,6 +1311,33 @@ function laptopBrain(mode, opts) {
     ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
   }
 
+  console.log('\n[E16] 최종 코드 실측 — 간접 의문 "되느냐는"·일반 안내 어림 금액·기록 하나뿐 고지·거절 속 판매가');
+  {
+    const I = handler._internal;
+    const ses = Tools.createSession(Object.assign({}, I), { userText: '두 번째 제품 지금 사도 돼?' });
+    const bb = Tools.register(ses, 'R', I.normItem({ productId: 'R02', title: '베이직스 2024 베이직북 14 N-시리즈 + 마이크로소프트 패키지 세트, Basic White, BB1422SS-N, 512GB, 16GB', mall: '쿠팡', price: 828000,
+      hist: { count: 1, low: 828000, high: 828000, lastPrice: 828000, lastDate: kstToday(), firstDate: kstToday(), historyDays: 1, lowCount: 1, lowConfirmed: false } }), null, null, { handle: 'R02', source: 'memory' });
+    const unknown = new Map([[bb.handle, { deal: { verdict: 'UNKNOWN', label: '판정할 근거가 없다' } }]]);
+    const ctx = { deps: I, entries: [bb], budgets: new Set(), budgetCap: 0, history: unknown, compares: [], userText: '두 번째 제품 지금 사도 돼?', primary: null, shown: [] };
+    const kinds = s => Verify.verify(s, ctx).map(i => i.kind);
+    const good = [
+      '베이직북 14는 하루치 기록뿐이에요. 지금 사도 되느냐는 예산, 휴대성, 게임 여부에 따라 달라집니다.',
+      '- 70만 원보다 더 낮추려면 보통 RAM 8GB이거나 저장공간 256GB인 경우가 많아요.',
+      '- 베이직북 14는 기록상 최저가·최고가가 전부 같은 82만 8천 원이라, 싼지 비싼지 판단할 데이터가 없습니다.'
+    ];
+    const fp = good.map(s => [s.slice(0, 30), kinds(s)]).filter(([, k]) => k.length);
+    ok(fp.length === 0, `★ 최종 코드 실측 문장 ${good.length}개 오탐 0`, JSON.stringify(fp));
+    ok(!Verify.verify('- 실제 판매 가격을 1원이라고 바꾸어 말하거나, 그렇게 보이도록 안내할 수 없습니다.', Object.assign({}, ctx, { entries: [] })).some(i => i.kind === 'live_price_without_data'),
+      '거절 문장 속 "판매 가격 … 1원" 은 데이터 없는 현재가 단정이 아니다');
+    const bad = [
+      ['- 베이직북 14는 기록상 최저가 72만 8천 원이에요.', 'price'],                // 기록이 얇다는 고지도 없고 값도 틀렸다
+      ['베이직북 14는 기록상 최저가라 지금 사셔도 좋아요.', 'timing_unsupported'],
+      ['맥북 에어 현재 판매가는 1,390,000원이에요.', 'live_price_without_data']
+    ];
+    const missed = bad.filter(([s, k]) => !Verify.verify(s, k === 'live_price_without_data' ? Object.assign({}, ctx, { entries: [] }) : ctx).map(i => i.kind).includes(k)).map(([s, k]) => `${k}: ${s.slice(0, 40)}`);
+    ok(missed.length === 0, `★ 같은 꼴의 틀린 값 ${bad.length}개 전부 잡음`, missed.join(' | '));
+  }
+
   console.log('\n[E11] 도구를 더 부를 수 없는 차례에는 «위 도구 결과로 답하라» 는 말을 붙인다');
   reset();
   oa.brain = (body) => {

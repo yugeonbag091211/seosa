@@ -195,7 +195,7 @@ function stripRefusalQuotes(text) {
   return s.replace(ANY_QUOTE_RE, (m, at) => (REFUSAL_MARK_RE.test(sentenceAround(s, at)) ? ' '.repeat(m.length) : m));
 }
 /* "지금 사도 괜찮은지 확인해서" — 구매 시점을 단정한 것이 아니라 확인할 일을 말한 간접 의문 */
-const INDIRECT_TIMING_RE = /(?:사도|사셔도|구매해도|구매하셔도|사는\s*게|사기에)\s*[가-힣]{1,5}지(?![가-힣])|(?:살|구매할)\s*(?:때|시점|타이밍)인지/;
+const INDIRECT_TIMING_RE = /(?:사도|사셔도|구매해도|구매하셔도|사는\s*게|사기에)(?:\s*[가-힣]{1,6}){1,2}?(?:지|느냐|는가|냐)(?:는|를|가|도|의)?(?![가-힣])|(?:살|구매할)\s*(?:때|시점|타이밍)인지/;
 /* "당장 필요하다면 지금 사셔도 무리 없는 수준" — 필요에 따른 조건부 조언. 기록이 부족하다는 고지가 함께 있을 때만 통과 */
 const NEED_COND_RE = /(?:당장|바로|급하게|꼭)\s*(?:필요|쓰|써야|사용)|필요하(?:다면|시다면|시면|면)|급하(?:다면|시다면|시면|면)/;
 const RECORD_CAVEAT_RE = /(?:기록|데이터|근거|이력|관측)[^.\n]{0,16}?(?:부족|없|하루|1일|1건|적어|짧)|판단(?:하기|할)\s*(?:어렵|어려|근거가\s*없)|UNKNOWN|판정할\s*근거가\s*없/;
@@ -485,7 +485,9 @@ function verify(text, ctx) {
   }
 
   if (!items.length) {
-    if (d.unverifiedLivePriceClaim(t)) add('live_price_without_data', '확인한 상품 데이터 없이 지금 판매 가격을 단정했다');
+    // 거절 문장("판매 가격을 1원이라고 바꾸어 말할 수 없습니다")은 가격 주장이 아니다
+    const claimsOnly = sentences(t).filter(s => !REFUSAL_MARK_RE.test(s)).join('\n');
+    if (d.unverifiedLivePriceClaim(claimsOnly)) add('live_price_without_data', '확인한 상품 데이터 없이 지금 판매 가격을 단정했다');
     timingChecks(t, c, items, add);
     return issues;
   }
@@ -634,6 +636,8 @@ function sentenceSpans(text) {
 const APPROX_BEFORE_RE = /(?:약|대략|거의|얼추|한)\s*$/;
 const APPROX_AFTER_RE = /^\s*(?:원\s*)?(?:정도|쯤|가량|안팎|내외|남짓|선|전후)/;
 const MODIFIER_AFTER_RE = /^\s*(?:원\s*)?(?:인|짜리|의|대의|대)\s/;
+/* 기록이 하나뿐·부족하다고 밝히는 말 — 그 하나의 관측값을 "최저·최고 모두 같다" 고 말할 수 있다 */
+const THIN_RECORD_RE = /(?:전부|모두|다)\s*같|하루치|하루\s*(?:만|뿐)|1\s*(?:건|회|일)\s*(?:만|뿐|관측|기록)|판단할\s*(?:데이터|근거|기록)가\s*없|비교할\s*(?:데이터|기록)가\s*없|기록이\s*(?:부족|적)/;
 const PLURAL_RE = /(?:모두|전부|다들|둘\s*다|셋\s*다|모든|두\s*(?:제품|상품|개|모델)|세\s*(?:제품|상품|개|모델)|네\s*(?:제품|상품|개|모델)|각각|하나같이)/;
 /* 금액과 바로 뒤 상품 이름 사이 — 공백, 꾸밈 어미, 짧은 낱말 하나(브랜드 한글 표기 "델" 등)까지만 */
 const GLUE_GAP_RE = /^\s*(?:원\s*)?(?:인|짜리|의|대의|대)?\s+(?:[가-힣a-z]{1,4}\s+)?$/;
@@ -728,6 +732,14 @@ function priceAttribution(masked, items, d) {
         return p > 0 && (kind === 'compare-less' ? p < c.value : p > c.value) ? [c.value] : [];
       }
       if (kind === 'current-below-average' || kind === 'current-above-average') return d.priceEvidenceValues(it, 'current');
+      /*
+       * "기록상 최저가·최고가가 전부 같은 79만 8천 원이라 판단할 데이터가 없습니다" — 기록이 부족하다고 밝히며 그 하나뿐인
+       * 관측값을 말하는 것은 «기록상 최저가» 주장이 아니다. 같은 문장에 부족 고지가 있을 때만, 그 상품의 실제 관측값으로 본다.
+       */
+      if (kind === 'low' && THIN_RECORD_RE.test(sentence)) {
+        const h = it.hist || {};
+        return d.priceEvidenceValues(it, 'current').concat([h.low, h.high, h.lastPrice].map(v => Math.round(Number(v) || 0)));
+      }
       if (!historical) return d.priceEvidenceValues(it, kind === 'any' ? 'any' : kind);
       const h = it.hist || {};
       return d.priceEvidenceValues(it, 'current').concat(d.priceEvidenceValues(it, 'history'), d.priceEvidenceValues(it, 'low'),
@@ -792,6 +804,8 @@ function priceAttribution(masked, items, d) {
      */
     // 가격대 안내 — 같은 문장에서 이름을 댄 상품이 없으면 특정 상품의 가격 주장이 아니다(앞 문장 상품을 이어받지 않는다)
     if (band && !(clauseNamed.length || (si >= 0 && named[si].length))) return;
+    // 일반 지식 표시가 있고 상품을 하나도 대지 않은 문장의 어림 금액("보통 70만 원보다 더 낮추려면 램 8GB…")은 시장 안내다
+    if (c.unit && si >= 0 && general[si] && !named[si].length && !clauseNamed.length) return;
     const plural = range && PLURAL_RE.test(sentence);
     const ok = plural ? pool.every(supports) : pool.some(supports);
     if (!ok) bad.push(c.value);
