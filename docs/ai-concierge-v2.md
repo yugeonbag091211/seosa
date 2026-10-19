@@ -61,7 +61,7 @@ v1 은 코드가 검색·랭킹·결정(`_decision`)을 끝내고 GPT 는 그 �
 | 20초, 마지막 차례 시간 초과 | 관측 저장(1.2초)이 검색 경로에, 검색 뒤 답변 몫 없음, 1200 토큰 답변 | 저장은 기다리지 않음(응답 전 짧게 drain) · 답변 몫 9초 확보 · 900 토큰 · 출력 없는 시간 초과는 1회 재시도 |
 | 시간 초과 시 «확인된 정보» 답이 예산 초과·중고를 나열 | safe 목록이 예산·상태를 안 봄 | 예산 안·새 상품만 |
 
-측정: `reports/ai-agent-v1-v2-live-2026-10-19-p0-{before,after,after2,after3,after4}.{md,json}`, 요약 `reports/ai-concierge-v2-p0-2026-10-19.md`, 비교 `node scripts/compare-ai-agent-live.js <before.json> <after.json>`.
+측정: `reports/ai-agent-v1-v2-live-2026-10-19-p0-{before,after,after2,after3,after4,after5,final,final2,final3}.{md,json}`, 요약 `reports/ai-concierge-v2-p0-2026-10-19.md`, 비교 `node scripts/compare-ai-agent-live.js <before.json> <after.json>`.
 
 ## Preview 에서 시험
 
@@ -95,6 +95,6 @@ Preview + `x-seosa-ai-debug: 1` 이면 `_debug.trace` 가 더 붙는다(로그�
 
 ## 테스트
 
-- `npm run test:agent` — 오프라인 191 검사(모델 역할은 스크립트, 그 밖은 production 코드). `npm test` 에 포함.
+- `npm run test:agent` — 오프라인 203 검사(모델 역할은 스크립트, 그 밖은 production 코드). `npm test` 에 포함.
 - `npm run eval:agent-live` — 실제 GPT 판단 품질·지연·비용. 비용 발생, Preview 대상.
   `AI_EVAL_SET=p0 AI_EVAL_ENGINES=v2` = 예산·사양 비교, 연속 대화 5문장, 공격 3종(14턴). 비용은 토큰 × 단가(기본 gpt-5.1 공개가).
