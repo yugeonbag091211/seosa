@@ -14,7 +14,7 @@
     "test:release": "node scripts/test-release.js",
     "test:all": "npm test && npm run test:regression && npm run test:release",
     "verify:migrations": "node scripts/verify-migrations.js",
-    "test:migration": "node scripts/migration/test-migration.js",
+    "test:migration": "node scripts/migration/test-migration.js && node scripts/migration/test-neon-adapter.js && node scripts/migration/test-r2-history.js",
     "migration:preflight": "node scripts/migration/preflight.js",
     "test:llm": "node scripts/test-llm-router.js",
     "test:openai-primary": "node scripts/test-openai-primary.js",
@@ -104,6 +104,7 @@
   },
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1153.0",
     "@neon/config": "^1.9.2",
     "@neon/env": "^1.6.3",
     "@supabase/supabase-js": "^2.110.8",

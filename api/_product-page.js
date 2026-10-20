@@ -152,9 +152,16 @@ async function loadPoints(pid, mall, vendorItemId) {
     .order('recorded_date', { ascending: false })
     .limit(MAX_ROWS);
   if (error) throw new Error(error.message);
+  // Preview-gated R2 archive plus current DB records. Keep option identity checks.
+  let historyRows = data || [];
+  if (process.env.SEOSA_R2_HISTORY_ENABLED === '1' ||
+      (process.env.VERCEL_ENV !== 'production' && process.env.SEOSA_R2_HISTORY_LOCAL_DIR)) {
+    const archive = require('./_r2history');
+    historyRows = archive.mergeHistory(historyRows, await archive.getHistory(pid, mall), { productId: pid, mall });
+  }
   const byDate = new Map();
   /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
-  acceptedObservations(sameVendorRows(data || [], vendorItemId)).forEach(r => {
+  acceptedObservations(sameVendorRows(historyRows, vendorItemId)).forEach(r => {
     const d = observedKstDate(r);
     if (!d) return;
     const cur = byDate.get(d);

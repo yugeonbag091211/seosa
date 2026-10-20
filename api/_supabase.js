@@ -5,6 +5,17 @@ let client = null;
 function getClient() {
   if (client) return client;
 
+  // Fully isolated Preview-only Neon integration; defaults to the original Supabase path.
+  // Never switch Production without explicit approval and end-to-end parity tests.
+  if (process.env.SEOSA_DB_BACKEND === 'neon') {
+    if (process.env.SEOSA_NEON_EXPERIMENTAL !== '1') throw new Error('Neon Preview flag missing');
+    if (process.env.VERCEL_ENV === 'production' && process.env.SEOSA_NEON_PRODUCTION_APPROVED !== '1') {
+      throw new Error('Neon Production cutover blocked pending explicit approval');
+    }
+    client = require('./_neonpg').client;
+    return client;
+  }
+
   const missing = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY'].filter(k => !process.env[k]);
   if (missing.length) {
     throw new Error(

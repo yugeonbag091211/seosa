@@ -163,7 +163,16 @@ async function singleHandler(req, res) {
        * 그대로 그렸다. 두 화면이 다른 말을 하고 있었다.
        */
       /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
-      const picked = acceptedObservations(sameVendorRows(data || [], vendorItemId));
+      // Archive is opt-in only. Combine older private R2 shards with online DB rows;
+      // never discard fresh observations or duplicate rows during the transition.
+      let historyRows = data || [];
+      if (process.env.SEOSA_R2_HISTORY_ENABLED === '1' ||
+          (process.env.VERCEL_ENV !== 'production' && process.env.SEOSA_R2_HISTORY_LOCAL_DIR)) {
+        const archive = require('./_r2history');
+        const offlineRows = await archive.getHistory(productId, mall);
+        historyRows = archive.mergeHistory(historyRows, offlineRows, { productId, mall });
+      }
+      const picked = acceptedObservations(sameVendorRows(historyRows, vendorItemId));
       if (picked.length) rows = picked;
     }
 
