@@ -14,6 +14,8 @@
     "test:release": "node scripts/test-release.js",
     "test:all": "npm test && npm run test:regression && npm run test:release",
     "verify:migrations": "node scripts/verify-migrations.js",
+    "test:migration": "node scripts/migration/test-migration.js",
+    "migration:preflight": "node scripts/migration/preflight.js",
     "test:llm": "node scripts/test-llm-router.js",
     "test:openai-primary": "node scripts/test-openai-primary.js",
     "test:concierge-compose": "node scripts/test-concierge.js",
@@ -102,6 +104,8 @@
   },
   "type": "commonjs",
   "dependencies": {
+    "@neon/config": "^1.9.2",
+    "@neon/env": "^1.6.3",
     "@supabase/supabase-js": "^2.110.8",
     "dotenv": "^17.4.2"
   },
