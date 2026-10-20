@@ -16,6 +16,11 @@ $version = (& pg_dump --version | Out-String).Trim()
 if ($version -notmatch '(\d+)(?:\.\d+)?\s*$') { throw "Cannot determine pg_dump version." }
 if ([int]$Matches[1] -lt 17) { throw "pg_dump version 17 or newer is required for Supabase PostgreSQL 17." }
 if ([string]::IsNullOrWhiteSpace($env:PGPORT)) { $env:PGPORT = '5432' }
+# Use the project CA downloaded from Supabase Dashboard > Database > Settings > SSL.
+# The shared Supavisor pooler does not chain to a public root CA.
+if ([string]::IsNullOrWhiteSpace($env:PGSSLROOTCERT) -or -not (Test-Path -LiteralPath $env:PGSSLROOTCERT -PathType Leaf)) {
+  throw 'Missing official Supabase CA certificate (PGSSLROOTCERT). Download it from Supabase Database Settings; refuse insecure TLS fallback.'
+}
 $env:PGSSLMODE = 'verify-full'
 $env:PGCONNECT_TIMEOUT = '20'
 $root = [IO.Path]::GetFullPath($BackupDir)
@@ -27,7 +32,7 @@ $manifestPath = $outPath + '.manifest.json'
 if (Test-Path -LiteralPath $outPath) { throw "Refusing to overwrite an existing backup" }
 if (Test-Path -LiteralPath $tempPath) { throw "Refusing to overwrite a partial backup" }
 if (Test-Path -LiteralPath $manifestPath) { throw "Refusing to overwrite a manifest" }
-Write-Output 'Creating PUBLIC schema-only custom-format backup using SSL. Credentials are not printed.'
+Write-Output 'Creating PUBLIC schema (structure AND data) custom-format backup with verified TLS. Credentials are not printed.'
 & pg_dump --no-password --format=custom --no-owner --no-acl --schema=public --file=$tempPath
 if ($LASTEXITCODE -ne 0) { throw "pg_dump failed. An incomplete .partial file may remain: $tempPath" }
 $contents = & pg_restore --list $tempPath 2>&1 | Out-String
