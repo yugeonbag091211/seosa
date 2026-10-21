@@ -496,6 +496,35 @@ async function loadPrevObservations(keys, today) {
     return prev;
   }
 
+  /* 한 행을 맵에 넣는다 — (상품|몰)마다 «가장 최근» 한 행. RPC 경로와 조각 조회가 같은 규칙을 쓴다. */
+  const note = r => {
+    const k = `${r.product_id}|${r.mall}`;
+    const cur = prev.get(k);
+    // 정렬도 비교도 절대 시각으로 한다 (라벨은 하루 어긋날 수 있다).
+    const at = String(r.recorded_at || r.recorded_date || '');
+    if (!cur || at > String(cur.observedAt)) {
+      prev.set(k, {
+        price: r.price,
+        recordedDate: r.recorded_date,
+        observedAt: r.recorded_at || r.recorded_date,
+        /*
+         * 이 가격이 어느 옵션의 값이었는지. 비교는 반드시 이 값으로 한다.
+         *
+         * '__LEGACY__' 는 마이그레이션이 "link 에서도 식별자를 못 뽑았다" 고
+         * 표시해 둔 값이라 옵션 비교의 근거가 될 수 없다. 빈 값으로 눕히고
+         * link 폴백에 맡긴다 (그쪽도 결국 빈 문자열이 나온다).
+         */
+        vendorItemId: vendorIdOf({
+          vendor_item_id: r.vendor_item_id === '__LEGACY__' ? '' : r.vendor_item_id,
+          link: r.link
+        })
+      });
+    }
+  };
+
+  // 계열당 한 행 RPC 가 되면 그것으로 끝. 중간에 실패하면 이미 넣은 행 위에 조각 조회를 더한다(최신이 이긴다).
+  if (await loadPrevViaRpc(pids, todayStart, note).catch(() => false)) return prev;
+
   /*
    * link 도 받는다. price_history 의 옛 행은 vendor_item_id 가 비어 있거나
    * '__LEGACY__' 인데, 같은 행의 link 에는 처음부터 식별자가 들어 있다.
@@ -535,32 +564,40 @@ async function loadPrevObservations(keys, today) {
       console.warn(`[save] 직전 관측 조회 실패(검증 생략): ${error.message}`);
       return prev;
     }
-    (data || []).forEach(r => {
-      const k = `${r.product_id}|${r.mall}`;
-      const cur = prev.get(k);
-      // 정렬도 비교도 절대 시각으로 한다 (라벨은 하루 어긋날 수 있다).
-      const at = String(r.recorded_at || r.recorded_date || '');
-      if (!cur || at > String(cur.observedAt)) {
-        prev.set(k, {
-          price: r.price,
-          recordedDate: r.recorded_date,
-          observedAt: r.recorded_at || r.recorded_date,
-          /*
-           * 이 가격이 어느 옵션의 값이었는지. 비교는 반드시 이 값으로 한다.
-           *
-           * '__LEGACY__' 는 마이그레이션이 "link 에서도 식별자를 못 뽑았다" 고
-           * 표시해 둔 값이라 옵션 비교의 근거가 될 수 없다. 빈 값으로 눕히고
-           * link 폴백에 맡긴다 (그쪽도 결국 빈 문자열이 나온다).
-           */
-          vendorItemId: vendorIdOf({
-            vendor_item_id: r.vendor_item_id === '__LEGACY__' ? '' : r.vendor_item_id,
-            link: r.link
-          })
-        });
-      }
-    });
+    (data || []).forEach(note);
   }
   return prev;
+}
+
+/*
+ * 직전 관측을 DB 안에서 «계열당 한 행» 으로 고른다 (2026-10-21).
+ *
+ * 위 조각 조회는 상품 100개마다 과거 행을 최대 2,000개(링크 포함)까지 받아 JS 에서 최신 한 행만 골랐다.
+ * 운영 Neon 실측(KST 10-21): 그날 저장된 4,456개 상품의 직전 관측에 과거 행 68,199개 · 18.5MB 가 필요했는데,
+ * 계열당 한 행이면 5,290행 · 1.4MB 다(Neon Free 공용망 전송 월 5GB). 기록이 매일 쌓여 차이는 계속 커진다.
+ * 2,000행 상한에 걸리면 오래 안 잡힌 상품의 직전 값을 놓치던 문제도 없어진다.
+ * price_history_prior_obs(supabase/2026-10-04-price-history-prior-obs.sql)는 계열(상품·몰·옵션)마다 p_before
+ * 이전 최신 한 행을 준다 — 그중 (상품|몰) 최신을 호출부의 note 가 고르므로 예전 규칙과 같다.
+ * 함수가 없거나 실패하거나 배열이 아니면 false → 호출부가 예전 조각 조회로 간다(동작 동일).
+ */
+const PRIOR_RPC_CHUNK = 400;   // 계열은 상품당 1~2개 — PostgREST·어댑터의 1,000행 상한 아래로
+let priorRpcMissing = false;
+async function loadPrevViaRpc(pids, todayStart, note) {
+  if (priorRpcMissing || process.env.SEOSA_PREV_OBS_RPC === '0') return false;
+  for (let i = 0; i < pids.length; i += PRIOR_RPC_CHUNK) {
+    const { data, error } = await supabase.rpc('price_history_prior_obs', {
+      p_ids: pids.slice(i, i + PRIOR_RPC_CHUNK), p_before: todayStart, p_since: '2000-01-01T00:00:00Z'
+    });
+    if (error) {
+      if (/could not find|does not exist|schema cache|PGRST202|42883/i.test(`${error.code || ''} ${error.message || ''}`)) {
+        priorRpcMissing = true;
+      }
+      return false;
+    }
+    if (!Array.isArray(data)) return false;
+    data.forEach(note);
+  }
+  return true;
 }
 
 /*
@@ -1242,5 +1279,7 @@ module.exports = {
   orderAiSearchCandidates,
   discountPct, searchPhraseFromTitle, MAX_DISPLAY_AGE_DAYS,
   // 컬럼 폴백 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
-  missingColumn
+  missingColumn,
+  // 직전 관측 — test-prev-obs-rpc 가 RPC 경로 = 예전 조각 조회 결과를 고정한다.
+  loadPrevObservations
 };
