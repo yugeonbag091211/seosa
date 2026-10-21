@@ -55,6 +55,21 @@ jobs:
       - name: Install dependencies
         run: npm ci --omit=dev || npm install --omit=dev
 
+      # ── 어제까지 기록의 하루 캐시 (2026-10-22, scripts/_daycache.js) ─────────
+      # 120일 기록(≈13MB/회) 중 «오늘 이전» 부분을 그날 첫 실행이 남기고 KST 날짜 키로 Actions cache 에 올린다.
+      # 같은 날 다음 실행은 어제까지를 캐시에서, 오늘 행만 DB 에서 받는다. 캐시가 없으면 예전과 같다.
+      - name: KST date for day caches
+        id: kst
+        run: echo "date=$(TZ=Asia/Seoul date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore today's hot-deal history cache
+        id: history_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: .day-cache/hotdeal-history.json.gz
+          key: hotdeal-history-v1-${{ steps.kst.outputs.date }}
+
       # ADPICK_AFFILIATE_ID는 공식 쇼핑메이트 핫딜 SDK용 회원 식별자다.
       # GitHub Secret이 없으면 빈 문자열이 전달되고 ADPICK source만 자동 비활성화된다.
       # 값 자체는 코드/로그에 남기지 않는다.
@@ -67,11 +82,22 @@ jobs:
           SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           ADPICK_AFFILIATE_ID: ${{ secrets.ADPICK_AFFILIATE_ID }}
+          # 어제까지 기록의 하루 캐시 파일 (위 «Restore …» · 아래 «Save …» 와 짝)
+          HOTDEAL_HISTORY_CACHE_FILE: ${{ github.workspace }}/.day-cache/hotdeal-history.json.gz
         run: |
           node scripts/collect-hotdeals.js \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
             2>&1 | tee /tmp/hotdeals.log
           exit ${PIPESTATUS[0]}
+
+      # 그날 첫 실행만 저장한다(같은 키는 Actions cache 가 덮어쓰지 않는다).
+      - name: Save today's hot-deal history cache
+        if: always() && steps.history_cache.outputs.cache-hit != 'true' && hashFiles('.day-cache/hotdeal-history.json.gz') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .day-cache/hotdeal-history.json.gz
+          key: hotdeal-history-v1-${{ steps.kst.outputs.date }}
 
       # External adapters only use verified official APIs/RSS/feeds.
       # Defaults: every live source OFF, shadow ON. Turn on with repository variables:

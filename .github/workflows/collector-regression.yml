@@ -15,6 +15,11 @@ on:
       - 'scripts/test-collector-hint-options.js'
       - 'scripts/test-coupang-rcode5xx.js'
       - 'scripts/test-collector-image-lazy.js'
+      - 'scripts/_daycache.js'
+      - 'scripts/collect-hotdeals.js'
+      - 'scripts/test-daycache.js'
+      - '.github/workflows/daily-prices.yml'
+      - '.github/workflows/hotdeals.yml'
       - 'scripts/check-alerts.js'
       - 'supabase/2026-09-22-collector-target-keyset.sql'
       - '.github/workflows/collector-regression.yml'
@@ -55,5 +60,8 @@ jobs:
       # 2026-10-21 Neon Free 전송량: 대상 행에서 사진 열을 빼고 저장할 행만 사진을 읽는다.
       - name: Collector lazy image regression
         run: node scripts/test-collector-image-lazy.js
+      # 2026-10-22 하루 캐시: 캐시 끔 = 캐시 생성 = 캐시 사용 결과, 실패 묶음은 캐시에 넣지 않는다.
+      - name: Day cache (collector targets, hot-deal history) regression
+        run: node scripts/test-daycache.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js
