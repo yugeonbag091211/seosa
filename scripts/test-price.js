@@ -923,6 +923,44 @@ function recordedPrice(productId) {
         sentMail.length ? JSON.stringify(sentMail[0].payload.product) : '발송 0건');
   check(db.updates.length === 0, 'sent 플래그도 건드리지 않는다 (나중에 식별자가 채워지면 발송 가능)');
 
+  /*
+   * 알림이 없으면 가격을 읽지 않는다 (2026-10-21). 이 스크립트는 수집 실행마다 돈다 — alerts 0행인
+   * 운영에서 실행마다 오늘·어제 가격 전체(하루 끝 ≈2MB)를 받아 월 1.5~2GB 를 썼다.
+   */
+  section('알림. 신청이 없으면 price_history 를 한 번도 읽지 않는다');
+  reset();
+  sentMail.length = 0;
+  {
+    db.price_history.push({ product_id: 'A-1111', mall: '쿠팡', title: '무선 이어폰', price: 80000,
+      recorded_date: TODAY, recorded_at: new Date().toISOString(), link: 'https://x' });
+    const touched = [];
+    const realFrom = fakeSupabase.from;
+    fakeSupabase.from = t => { touched.push(t); return realFrom.call(fakeSupabase, t); };
+    try { await runAlerts(); } finally { fakeSupabase.from = realFrom; }
+    check(touched.indexOf('price_history') === -1, '★ 알림 0건 → 가격 조회 0회', touched.join(','));
+    check(touched.join(',') === 'alerts', '읽은 표는 alerts 하나', touched.join(','));
+  }
+
+  section('알림. 알림 상품만 오늘 안 잡혔으면 «수집 0건» 경고를 내지 않는다');
+  reset();
+  sentMail.length = 0;
+  {
+    const prevExit = process.exitCode;
+    process.exitCode = 0;
+    db.price_history.push({ product_id: 'Z-0000', mall: '쿠팡', title: '다른 상품', price: 1000,
+      recorded_date: TODAY, recorded_at: new Date().toISOString(), link: '' });
+    db.alerts.push({ id: 41, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+      product_id: 'A-1111', target_price: 90000, sent: false, link: '', image: '' });
+    await runAlerts();
+    check(process.exitCode === 0, '다른 상품은 오늘 수집됐다 → 실패로 표시하지 않는다', String(process.exitCode));
+    reset();
+    db.alerts.push({ id: 42, email: 'u@example.com', title: '무선 이어폰', mall: '쿠팡',
+      product_id: 'A-1111', target_price: 90000, sent: false, link: '', image: '' });
+    await runAlerts();
+    check(process.exitCode === 1, '★ 오늘 수집이 0건이면 예전처럼 실패로 표시한다', String(process.exitCode));
+    process.exitCode = prevExit;
+  }
+
   section('알림. 정상 신청은 그대로 발송된다 (기능이 죽지 않았는지)');
   reset();
   sentMail.length = 0;
