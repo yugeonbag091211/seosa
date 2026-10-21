@@ -5,12 +5,19 @@ let client = null;
 function getClient() {
   if (client) return client;
 
-  // Fully isolated Preview-only Neon integration; defaults to the original Supabase path.
-  // Never switch Production without explicit approval and end-to-end parity tests.
+  /*
+   * Neon 전환 스위치 (docs/migration/neon-cutover-env.md).
+   *   SEOSA_DB_BACKEND=neon + SEOSA_NEON_EXPERIMENTAL=1 일 때만 Neon 호환 계층(_neonpg)을 쓴다.
+   *   Vercel Production 은 SEOSA_NEON_PRODUCTION_APPROVED=1 까지 있어야 한다 — 실수로 Preview 값이
+   *   Production 에 복사돼도 전환되지 않게.
+   *   셋 다 없으면 지금까지와 똑같이 Supabase 를 쓴다(기본값).
+   */
   if (process.env.SEOSA_DB_BACKEND === 'neon') {
-    if (process.env.SEOSA_NEON_EXPERIMENTAL !== '1') throw new Error('Neon Preview flag missing');
+    if (process.env.SEOSA_NEON_EXPERIMENTAL !== '1') {
+      throw new Error('Neon 환경변수 누락: SEOSA_NEON_EXPERIMENTAL=1 이 필요합니다.');
+    }
     if (process.env.VERCEL_ENV === 'production' && process.env.SEOSA_NEON_PRODUCTION_APPROVED !== '1') {
-      throw new Error('Neon Production cutover blocked pending explicit approval');
+      throw new Error('Neon 환경변수 누락: Production 전환은 SEOSA_NEON_PRODUCTION_APPROVED=1 이 필요합니다.');
     }
     client = require('./_neonpg').client;
     return client;
