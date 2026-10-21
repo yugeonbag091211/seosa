@@ -4261,8 +4261,18 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 가장 확실한 단서부터 쓴다 (cacheHintQueries 주석 참고). 상품당 최대
      * CACHE_HINT_MAX_PER_PRODUCT 개, 오늘 이미 부른 문구는 건너뛴다.
      * 같은 문구를 여러 상품이 공유하면 한 번만 부른다 — 교차 매칭이 나머지를 흡수한다.
+     *
+     * ★ 공급자가 이번 실행에서 더 부를 수 없다고 하면(하루 예산 소진 등) 건너뛴다 (2026-10-21).
+     *   운영(KST 10-21 19~21시, 실행 3회): 쿠팡 하루 예산 3,400/3,400 이 끝난 뒤에도 매 실행 hint 옵션 확인이
+     *   513쌍의 캐시 행(≈4.7MB)을 읽고 513쌍 전부를 «다른 옵션» 으로 제외했다 — API 0회 · 회수 0.
+     *   쿠팡 예산은 대개 아침에 끝나므로 하루 대부분의 실행이 이 읽기만 반복하게 된다(Neon Free 전송 월 5GB).
+     *   남는 길은 «오늘 캐시에 추적 옵션이 그대로 실린 응답» 뿐인데, 이날 측정에서 0/1,134 · 0/513 이었다.
      */
-    if (CACHE_HINT_ENABLED && canCall() && uncovered.size) {
+    const hintGateStop = laneStop || (laneGate && typeof laneGate.stopReason === 'function' ? laneGate.stopReason() : '');
+    if (CACHE_HINT_ENABLED && hintGateStop && uncovered.size) {
+      console.log(`  [${mallName}] 캐시 힌트 패스 생략 — 공급자 정지 사유: ${hintGateStop} (캐시 확인 읽기도 하지 않습니다)`);
+    }
+    if (CACHE_HINT_ENABLED && !hintGateStop && canCall() && uncovered.size) {
       const wantRows = [...uncovered.values()].filter(eligible);
       const want = new Set(wantRows.map(p => String(p.product_id)));
       // 대상 행을 같이 넘긴다 — 쿠팡은 캐시 응답에 추적 옵션이 있던 검색어만 받는다 (verifyHintOptions).
