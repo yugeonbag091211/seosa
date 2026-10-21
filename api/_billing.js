@@ -190,11 +190,26 @@ async function createPendingPayment({ email, orderId, amount, now = new Date() }
 async function findPaymentByOrderId(orderId) {
   const { data, error } = await supabase
     .from('payments')
-    .select('email, order_id, payment_key, amount, status, raw_status, created_at')
+    .select('email, order_id, payment_key, amount, status, raw_status, created_at, updated_at')
     .eq('order_id', orderId)
     .maybeSingle();
   if (error) return { row: null, error: error.message };
   return { row: data || null, error: '' };
+}
+
+/**
+ * 이 charging 주문은 «다른 요청이 지금 승인 중» 일 수 있는가 (2026-10-21).
+ *
+ * charging 은 «죽은 주문» 과 «승인 대기 중인 주문» 이 같은 모양이다. 선점 직후부터 승인이 끝날 때까지
+ * (빌링키 15초 + 승인 최대 60초) 토스 주문 조회는 404 를 준다 — 아직 청구가 없으니까. 그 404 를
+ * «청구 안 됨» 으로 읽어 failed 로 굳히면, 잠시 뒤 승인이 성공해도 charging→paid 확정이 0행이 되어
+ * 카드는 청구됐는데 PRO 는 없는 주문이 남는다(실 Neon 동시 확정 2건으로 재현).
+ * 스윕(findStaleCharging)과 같은 STALE_CHARGING_MS 를 기준으로, 그보다 젊은 charging 은 «진행 중» 이다.
+ * updated_at 을 읽을 수 없으면 예전처럼 죽은 주문으로 본다.
+ */
+function chargingInFlight(row, now = new Date()) {
+  const t = Date.parse(row && row.updated_at);
+  return Number.isFinite(t) && now.getTime() - t < STALE_CHARGING_MS;
 }
 
 /**
@@ -297,7 +312,7 @@ async function alreadyProcessed(paymentKey) {
 async function findChargingPayment(email) {
   const { data, error } = await supabase
     .from('payments')
-    .select('email, order_id, payment_key, amount, status, created_at')
+    .select('email, order_id, payment_key, amount, status, created_at, updated_at')
     .eq('email', email)
     .eq('status', PAYMENT_STATUS.CHARGING)
     .order('created_at', { ascending: false })
@@ -479,6 +494,15 @@ async function settleOutstandingCharge(email, tossApi, now) {
 
   const orderId = open.order_id;
   const looked = await tossApi.getPaymentByOrderId(orderId);
+
+  /*
+   * ★ 진행 중일 수 있는 승인 (chargingInFlight 주석). 여기서 404 를 «청구 안 됨» 으로 읽으면
+   *   failed 로 굳히고 «새 주문으로 다시 긁는다» — 겹친 실행이 같은 기간을 두 번 청구한다.
+   *   완료(DONE)가 아니면 이번엔 긁지 않고 다음 실행에 맡긴다.
+   */
+  if (chargingInFlight(open, now) && (!looked.ok || String(looked.data && looked.data.status) !== toss.STATUS_DONE)) {
+    return { proceed: false, result: { ok: false, orderId, reason: '진행 중인 승인이 있음 — 다음 실행에서 확인', expiresAt: '' } };
+  }
 
   if (!looked.ok) {
     // 404 = 그런 결제가 없다 = 청구되지 않았다. 정리하고 새로 긁어도 된다.
@@ -850,6 +874,6 @@ module.exports = {
   createPendingPayment, findPaymentByOrderId, claimForCharge, markPaid, markFailed,
   dueForRenewal, findChargingPayment, settleOutstandingCharge, recordRenewAttempt, renewOne, renewDueSubscriptions,
   STALE_CHARGING_MS, STALE_PENDING_MS, STALE_SWEEP_BATCH,
-  findStaleCharging, findStalePending, resolveStaleCharging, sweepStalePayments,
+  findStaleCharging, findStalePending, resolveStaleCharging, sweepStalePayments, chargingInFlight,
   activatePro, cancelSubscription, deactivate, publicSubscription
 };

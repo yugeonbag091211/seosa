@@ -753,11 +753,12 @@ async function prepared(email) {
     check(subOf(USER) && subOf(USER).plan === 'pro', 'PRO 활성화');
   }
 
-  section('R1-7. charging 인데 토스에 결제가 없으면 — 실패로 확정');
+  section('R1-7. 오래된 charging 인데 토스에 결제가 없으면 — 실패로 확정');
   reset(); resetToss();
   {
     const oid = await prepared(USER);
     await billing.claimForCharge(oid);   // 토스에는 아무것도 없다
+    age(oid, billing.STALE_CHARGING_MS + 1000);   // 승인 중일 수 없는 나이 (R1-7b 와 짝)
     res = mkRes();
     await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
     check(res.code === 409, '409 반환', String(res.code));
@@ -765,11 +766,40 @@ async function prepared(email) {
     check(!subOf(USER), 'PRO 없음');
   }
 
-  section('R1-8. charging 인데 토스 조회가 실패하면 — 상태를 굳히지 않는다');
+  section('R1-7b. 방금 선점된 charging(다른 요청이 승인 중) + 토스 404 — 실패로 굳히지 않는다 ★');
+  /*
+   * 2026-10-21 실 Neon 동시 확정 2건으로 재현한 결함: 두 번째 요청이 승인 대기 중인 주문을 «죽은 주문» 으로
+   * 보고 토스 조회(아직 404)로 failed 를 확정했고, 곧 승인이 성공해도 charging→paid 확정이 0행이 되어
+   * 카드 청구 + failed + PRO 없음이 남았다. 젊은 charging 은 상태를 건드리지 않고 409 로 답해야 한다.
+   */
+  reset(); resetToss();
+  {
+    const oid = await prepared(USER);
+    await billing.claimForCharge(oid);   // A 가 방금 선점하고 승인 중
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
+    check(res.code === 409 && res.payload.error === 'ORDER_IN_PROGRESS', '409 ORDER_IN_PROGRESS', `${res.code} ${res.payload && res.payload.error}`);
+    check(payOf(oid).status === 'charging', 'charging 유지 ★ (A 의 확정 자리를 남긴다)', payOf(oid).status);
+    check(toss.charges.length === 0, '재승인하지 않는다');
+    // A 의 승인이 이제 끝났다 → A 의 확정(charging→paid)이 그대로 성공해야 한다.
+    const paid = await billing.markPaid(oid, { paymentKey: 'pk_' + oid, amount: billing.PRO_PRICE, rawStatus: 'DONE' });
+    check(paid.updated === true, '★ 뒤이은 A 의 확정이 성공한다 (청구된 결제가 갈 곳을 잃지 않는다)');
+    // 진행 중이어도 토스가 이미 DONE 이면 바로 확정해도 된다 (확정은 조건부라 한 번만).
+    const oid2 = await prepared(USER);
+    await billing.claimForCharge(oid2);
+    toss.payments['pk_' + oid2] = { paymentKey: 'pk_' + oid2, orderId: oid2, totalAmount: billing.PRO_PRICE, status: 'DONE' };
+    res = mkRes();
+    await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid2 });
+    check(res.code === 200 && payOf(oid2).status === 'paid', '젊어도 토스가 DONE 이면 재승인 없이 확정', `${res.code} ${payOf(oid2).status}`);
+    check(toss.charges.length === 0, '재승인 0');
+  }
+
+  section('R1-8. 오래된 charging 인데 토스 조회가 실패하면 — 상태를 굳히지 않는다');
   reset(); resetToss();
   {
     const oid = await prepared(USER);
     await billing.claimForCharge(oid);
+    age(oid, billing.STALE_CHARGING_MS + 1000);
     toss.failLookup = true;
     res = mkRes();
     await payment.handleConfirm(reqFor(USER, {}, 'confirm'), res, USER, { authKey: 'ak', orderId: oid });
@@ -1025,6 +1055,28 @@ async function prepared(email) {
     const sweepAfter = await billing.sweepStalePayments();
     check(sweepAfter.checkedCharging === 0, '스윕이 이중으로 처리하지 않는다 ★', String(sweepAfter.checkedCharging));
     check(toss.charges.length === 0, '어느 쪽도 재승인하지 않았다 ★', String(toss.charges.length));
+  }
+
+  section('R2-9. 겹친 갱신 실행 — 다른 실행이 승인 중인 주문(젊은 charging)을 404 로 지우고 새로 긁지 않는다 ★');
+  /*
+   * settleOutstandingCharge 가 승인 대기 중인 주문의 404 를 «청구 안 됨» 으로 읽으면 failed 로 굳히고
+   * 새 orderId 로 다시 청구한다 — 앞 실행의 승인까지 성공하면 같은 기간 이중 청구다.
+   */
+  reset(); resetToss();
+  {
+    const soon = new Date(Date.now() + 86400000).toISOString();
+    db.subscriptions.push({
+      email: USER, plan: 'pro', status: 'active', expires_at: soon,
+      billing_key: 'bk_existing', customer_key: billing.customerKeyFor(USER), renew_failures: 0
+    });
+    const inflight = billing.createOrderId();
+    await billing.createPendingPayment({ email: USER, orderId: inflight, amount: billing.PRO_PRICE });
+    await billing.claimForCharge(inflight);   // 앞 실행이 방금 선점, 토스는 아직 404
+    const out = await billing.renewOne(subOf(USER));
+    check(out.ok === false, '이번 실행은 갱신하지 않는다', JSON.stringify(out));
+    check(toss.charges.length === 0, '★ 새 주문으로 다시 긁지 않는다 (이중 청구 없음)', String(toss.charges.length));
+    check(payOf(inflight).status === 'charging', '앞 실행의 주문은 charging 그대로', payOf(inflight).status);
+    check(db.payments.length === 1, '새 주문을 만들지 않는다', String(db.payments.length));
   }
 
   /* ================================================================ *
