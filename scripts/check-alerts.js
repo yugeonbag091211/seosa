@@ -158,10 +158,48 @@ async function run() {
   const todayStart = kstDayStartUtc(TODAY);
   const yestStart  = kstDayStartUtc(yesterday);
 
-  // 1. 오늘(KST) 수집된 가격. 오래된 행부터 넣어 가장 늦은 관측이 인덱스에 남는다.
-  const todayRows = await fetchAllRows('오늘 가격', () => supabase
+  /*
+   * 1. 알림 목록부터 (2026-10-21).
+   *
+   *   예전에는 오늘·어제 가격 «전체» 를 먼저 받고 알림 목록을 읽었다. 이 스크립트는 수집 실행마다
+   *   (잠금에 막힌 실행·그날 일이 끝난 실행까지) 돈다. 운영 실측(KST 10-21): alerts 0행인데 실행마다
+   *   오늘 가격 3,151행(1.1MB, 하루 끝엔 ≈6,557행 · 2MB)과 어제 가격을 내려받았다 — 하루 ≈32회면
+   *   월 ≈1.5~2GB, Neon Free 공용망 전송 한도(월 5GB)의 30~40% 를 «보낼 알림이 없음» 을 알아내는 데 썼다.
+   *   그래서 알림이 없으면 가격을 읽지 않고, 있으면 그 상품들의 가격만 읽는다. 판정 규칙은 그대로다.
+   *
+   *   테이블명은 alerts. /api/alerts 와 supabase/schema.sql 이 쓰는 이름과 반드시 같아야 한다.
+   *   id 오름차순 — 페이지 경계에서 행이 새거나 겹치지 않게 전순서를 준다.
+   */
+  const alertList = await fetchAllRows('알림 목록', () => supabase
+    .from('alerts')
+    .select('*')
+    .eq('sent', false)
+    .order('id', { ascending: true }));
+
+  if (!alertList.length) {
+    console.log('알림 대상: 0개 — 가격을 읽지 않습니다');
+    console.log('완료: 0건 발송 / 0건 스킵');
+    return;
+  }
+
+  // product_id 가 없는 옛 신청은 아래에서 건너뛴다 — 그 상품 가격은 읽을 필요가 없다.
+  const alertIds = [...new Set(alertList.map(a => String(a.product_id || '')).filter(Boolean))];
+  const ID_CHUNK = 100;   // PostgREST 경로의 URI 길이 여유 (ADPICK product_id 는 64자)
+  async function rowsForAlertProducts(label, build) {
+    const out = [];
+    for (let i = 0; i < alertIds.length; i += ID_CHUNK) {
+      const ids = alertIds.slice(i, i + ID_CHUNK);
+      out.push(...await fetchAllRows(label, () => build().in('product_id', ids)));
+    }
+    // 묶음마다 시각순이었으니 합친 뒤 다시 세운다 — indexPriceRows 는 «나중 행이 이긴다».
+    return out.sort((a, b) => (String(a.recorded_at) < String(b.recorded_at) ? -1
+      : String(a.recorded_at) > String(b.recorded_at) ? 1 : (Number(a.id) || 0) - (Number(b.id) || 0)));
+  }
+
+  // 2. 알림 상품의 오늘(KST) 가격. 오래된 행부터 넣어 가장 늦은 관측이 인덱스에 남는다.
+  const todayRows = await rowsForAlertProducts('오늘 가격', () => supabase
     .from('price_history')
-    .select('product_id, mall, title, price, link, recorded_at, vendor_item_id')
+    .select('id, product_id, mall, title, price, link, recorded_at, vendor_item_id')
     .gte('recorded_at', todayStart)
     .order('recorded_at', { ascending: true })
     .order('id', { ascending: true }));
@@ -169,7 +207,7 @@ async function run() {
   const todayPrices = [...todayIndex.byProductMall.values()];
 
   /*
-   * 2. 어제(KST) 가격 (drop 조건용)
+   * 3. 어제(KST) 가격 (drop 조건용)
    *
    * 새 옵션 고정 알림은 어제도 같은 vendor_item_id 만 고른다. 기존 알림은 예전처럼
    * product_id + mall 기준 최신 행을 고르고, 아래 옵션 불일치 방어로 다른 옵션이면
@@ -177,9 +215,9 @@ async function run() {
    */
   let yesterdayIndex = indexPriceRows([]);
   try {
-    const yesterdayRows = await fetchAllRows('어제 가격', () => supabase
+    const yesterdayRows = await rowsForAlertProducts('어제 가격', () => supabase
       .from('price_history')
-      .select('product_id, mall, price, recorded_at, vendor_item_id')
+      .select('id, product_id, mall, price, recorded_at, vendor_item_id')
       .gte('recorded_at', yestStart)
       .lt('recorded_at', todayStart)
       .order('recorded_at', { ascending: true })
@@ -189,25 +227,21 @@ async function run() {
     console.warn(`⚠️ 어제 가격을 읽지 못했습니다(하락 조건만 생략): ${e.message}`);
   }
 
-  // 3. 알림 목록
-  // 테이블명은 alerts. /api/alerts 와 supabase/schema.sql 이 쓰는 이름과 반드시 같아야 한다.
-  // id 오름차순 — 페이지 경계에서 행이 새거나 겹치지 않게 전순서를 준다.
-  const alertList = await fetchAllRows('알림 목록', () => supabase
-    .from('alerts')
-    .select('*')
-    .eq('sent', false)
-    .order('id', { ascending: true }));
-
-  console.log(`오늘 가격: ${todayPrices.length}개 / 알림 대상: ${alertList.length}개`);
+  console.log(`알림 상품의 오늘 가격: ${todayPrices.length}개 / 알림 대상: ${alertList.length}개`);
   /*
    * 알림 신청은 있는데 오늘 가격이 한 건도 없으면 조건 판정 자체가 불가능하다.
    * 조용히 "0건 발송"으로 끝나면 날짜 경계가 어긋났을 때 아무도 눈치채지 못한다
    * — 실제로 그렇게 한동안 알림이 멈춰 있었다.
+   * 알림 상품만 읽으므로 «그 상품들이 오늘 안 잡혔다» 와 «오늘 수집이 0건» 을 한 행 조회로 가른다.
    */
-  if (alertList.length && !todayPrices.length) {
-    console.error(`❌ 오늘(KST ${TODAY}, ${todayStart} 이후) 수집된 가격이 0건입니다.`
-      + ' 수집이 실패했거나 날짜 경계가 어긋났습니다 — 알림을 판정할 수 없습니다.');
-    process.exitCode = 1;
+  if (alertIds.length && !todayPrices.length) {
+    const { data: anyToday } = await supabase
+      .from('price_history').select('id').gte('recorded_at', todayStart).limit(1);
+    if (!anyToday || !anyToday.length) {
+      console.error(`❌ 오늘(KST ${TODAY}, ${todayStart} 이후) 수집된 가격이 0건입니다.`
+        + ' 수집이 실패했거나 날짜 경계가 어긋났습니다 — 알림을 판정할 수 없습니다.');
+      process.exitCode = 1;
+    }
   }
 
   let sent = 0, skipped = 0, skippedLegacy = 0;

@@ -14,6 +14,8 @@ on:
       - 'scripts/v3-canary-gate.js'
       - 'scripts/test-collector-hint-options.js'
       - 'scripts/test-coupang-rcode5xx.js'
+      - 'scripts/test-collector-image-lazy.js'
+      - 'scripts/check-alerts.js'
       - 'supabase/2026-09-22-collector-target-keyset.sql'
       - '.github/workflows/collector-regression.yml'
   workflow_dispatch:
@@ -50,5 +52,8 @@ jobs:
         run: node scripts/test-collector-hint-options.js
       - name: Coupang rCode 5xx regression
         run: node scripts/test-coupang-rcode5xx.js
+      # 2026-10-21 Neon Free 전송량: 대상 행에서 사진 열을 빼고 저장할 행만 사진을 읽는다.
+      - name: Collector lazy image regression
+        run: node scripts/test-collector-image-lazy.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js

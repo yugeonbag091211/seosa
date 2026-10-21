@@ -1165,8 +1165,13 @@ async function fetchAdpickAll(keyword, limit = ADPICK_LIMIT) {
  * ★ 상수로 뽑은 이유 — 전체 스캔(fetchAllProducts)과 대상만 읽기
  *   (fetchProductsByIds)가 반드시 «같은 모양»의 행을 돌려줘야 한다.
  *   두 경로의 컬럼이 갈리면 어느 경로를 탔느냐에 따라 매칭이 달라진다.
+ *
+ * ★ image 는 여기서 읽지 않는다 (2026-10-21). 매칭에 쓰지 않고, 저장할 때 «기존 사진 우선» 으로만
+ *   쓴다(addRow). 그런데 실행마다 대상 14,548개를 읽으면서 사진 주소(쿠팡 ≈550B)만 3.6MB 였다 —
+ *   대상 행 8.4MB 중 43%, 하루 작업 실행 ≈13회면 월 ≈1.4GB(Neon Free 공용망 전송 월 5GB).
+ *   이번 실행이 실제로 저장하는 행(수백 개)의 사진만 저장 직전에 읽는다 (fillStoredImages).
  */
-const PRODUCT_COLS = 'product_id, mall, title, keyword, link, image, vendor_item_id, item_id'
+const PRODUCT_COLS = 'product_id, mall, title, keyword, link, vendor_item_id, item_id'
   /*
    * V3 계획기는 «마지막 성공 경과» 를 collected_at 에서 읽는다 (추가 조회 0회).
    * addRow 는 대상 행에서 필드를 골라 담으므로 이 값이 저장 경로로 새지 않는다.
@@ -2633,6 +2638,53 @@ async function verifyHintOptions(hints, mallName, targetsById, loadRows = loadCo
   return out;
 }
 
+/*
+ * 저장할 행의 기존 사진 (2026-10-21, PRODUCT_COLS 주석).
+ *
+ * 규칙은 addRow 의 예전 식 그대로다: 카탈로그에 있던 사진 → 없으면 이번 응답의 사진.
+ * (ADPICK 응답 사진은 몇 시간 뒤 404 가 되는 임시 주소라 «기존 사진 우선» 이 중요하다.)
+ * 조회에 실패하면 응답 사진으로 둔다 — 카탈로그 사진이 비어 있던 상품과 같은 동작이고,
+ * 사진 하나 때문에 가격 저장을 막지 않는다.
+ */
+async function loadStoredImages(mall, ids) {
+  const out = new Map();
+  for (const chunk of chunkIdsByLength(ids)) {
+    const { data, error } = await DbError.withDbRetry(() => supabase
+      .from('products').select('product_id, image').eq('mall', mall).in('product_id', chunk), { attempts: 3 });
+    if (error) throw new Error(error.message);
+    for (const r of data || []) out.set(String(r.product_id), r.image || '');
+  }
+  return out;
+}
+
+async function fillStoredImages(rows, loadFn = loadStoredImages) {
+  const pending = (rows || []).filter(r => r && r.imagePending);
+  if (!pending.length) return { looked: 0, stored: 0, failed: false };
+  const byMall = new Map();
+  pending.forEach(r => {
+    if (!byMall.has(r.mall)) byMall.set(r.mall, new Set());
+    byMall.get(r.mall).add(String(r.productId));
+  });
+  let stored = 0, failed = false;
+  for (const [mall, ids] of byMall) {
+    let images = new Map();
+    try {
+      images = await loadFn(mall, [...ids]);
+    } catch (e) {
+      failed = true;
+      console.warn(`  [${mall}] 기존 사진 조회 실패 — 이번 응답 사진으로 저장합니다: ${e.message}`);
+    }
+    for (const r of pending) {
+      if (r.mall !== mall) continue;
+      const have = images.get(String(r.productId)) || '';
+      if (have) stored++;
+      r.image = have || r.freshImage || '';
+    }
+  }
+  pending.forEach(r => { delete r.imagePending; });
+  return { looked: pending.length, stored, failed };
+}
+
 /**
  * @param {Map<string, object>} [targetsById] product_id → 대상 행. 주면 쿠팡 힌트를 옵션까지 확인한다
  *   (verifyHintOptions). 없으면 예전과 같다.
@@ -2835,6 +2887,8 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
                                    collectedTodayFn = collectedTodayKeys,
                                    recordPricesFn = recordPrices,
                                    cacheHintFn = cacheHintQueries,
+                                   // 저장할 행의 기존 사진 (fillStoredImages). 테스트는 DB 없이 스텁을 넘긴다.
+                                   storedImageFn = loadStoredImages,
                                    isBlockedFn = null,
                                    /*
                                     * V3 (PRICE_COLLECTOR_V3). 셋 다 없으면 레거시 동작 그대로다.
@@ -3402,7 +3456,9 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       price,
       oprice: item.oprice || 0,
       link: item.link || target.link || '',
-      image: target.image || item.image || '',
+      // 대상 행에 사진 열이 없으면(PRODUCT_COLS 주석) 저장 직전에 같은 규칙으로 채운다 (fillStoredImages).
+      image: target.image === undefined ? '' : (target.image || item.image || ''),
+      imagePending: target.image === undefined,
       itemId: item.itemId || '',
       vendorItemId: item.vendorItemId || '',
       // 비어 있으면 recordPrices 가 기존 mall_label 을 건드리지 않는다.
@@ -3554,6 +3610,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
     if (savedRows.length === 0) return { saved: 0, recorded: 0, total: 0, rejected: 0, suspect: 0 };
     let recorded = 0, saved = 0, rejected = 0, suspect = 0;
     const errors = [];
+    await fillStoredImages(savedRows, storedImageFn);
     for (let i = 0; i < savedRows.length; i += UPSERT_CHUNK) {
       const r = await recordPricesFn(savedRows.slice(i, i + UPSERT_CHUNK), { label: `collect:${mallName}`, source: 'collect', cacheImages: true });
       recorded += r.recorded; saved += r.saved; rejected += r.rejected; suspect += r.suspect;
@@ -6089,7 +6146,7 @@ module.exports = {
   chunkIdsByLength, ID_BATCH_CHARS,
   // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
-  addCacheHints, cacheHintQueries, cacheHintsFromDb, verifyHintOptions,
+  addCacheHints, cacheHintQueries, cacheHintsFromDb, verifyHintOptions, fillStoredImages, loadStoredImages, PRODUCT_COLS,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   sameTargetSet, coverageOnlyResumeState,
