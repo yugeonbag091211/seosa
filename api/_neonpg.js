@@ -235,10 +235,33 @@ function getPool() {
   return pool;
 }
 
+/*
+ * 측정용 훅(기본 꺼짐) — 무료 전송량(5GB/월) 예산을 잴 때만 켠다. 값은 넘기지 않는다
+ * (이메일 같은 개인정보가 섞일 수 있다). SQL 앞부분 · 행 수 · 추정 바이트 · 걸린 시간만.
+ */
+let traceSink = null;
+function estimateWireBytes(result) {
+  // DataRow ≈ 행마다 7바이트 + 값마다 4바이트 + 값의 텍스트 길이(UTF-8). RowDescription 은 열마다 ~25바이트.
+  let bytes = (result.fields ? result.fields.length : 0) * 25;
+  for (const row of result.rows || []) {
+    bytes += 7;
+    for (const v of Object.values(row)) {
+      bytes += 4;
+      if (v == null) continue;
+      bytes += Buffer.byteLength(typeof v === 'object' ? JSON.stringify(v) : String(v));
+    }
+  }
+  return bytes;
+}
+
 function poolExecutor() {
   return {
-    query(text, values) {
-      return getPool().query({ text, values });
+    async query(text, values) {
+      if (!traceSink) return getPool().query({ text, values });
+      const t0 = Date.now();
+      const r = await getPool().query({ text, values });
+      try { traceSink({ sql: String(text).slice(0, 90), rows: r.rowCount || 0, bytes: estimateWireBytes(r), ms: Date.now() - t0 }); } catch (_) { /* 측정은 본 동작을 막지 않는다 */ }
+      return r;
     },
     async transaction(fn) {
       const client = await getPool().connect();
@@ -898,5 +921,8 @@ module.exports = {
       return typeof v === 'function' ? v.bind(c) : v;
     }
   }),
-  _internal: { isoTimestamp, toNumberish, likePattern, splitTopLevel, parseList, TEXT_PARSERS, MAX_ROWS, postgrestTypes }
+  _internal: {
+    isoTimestamp, toNumberish, likePattern, splitTopLevel, parseList, TEXT_PARSERS, MAX_ROWS, postgrestTypes, estimateWireBytes,
+    setTrace(fn) { traceSink = typeof fn === 'function' ? fn : null; }
+  }
 };
