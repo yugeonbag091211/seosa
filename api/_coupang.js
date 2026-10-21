@@ -703,6 +703,22 @@ async function searchCoupang(keyword, opts = {}) {
       await dbFinish(gate.callId, 'param_error', r.status, rCode, 0);
       return { items: [], error: `쿠팡 rCode=400: ${msg}`, from: 'none', blocked: false };
     }
+    /*
+     * rCode 5xx = 본문으로 알려 온 쿠팡 서버 오류 (2026-10-21). 거절이 아니라 HTTP 5xx 와 같은
+     * 일시 장애로 다룬다 — 쿨다운 5분(httpOther), blocked=false.
+     * 운영 실측(KST 10-21 11:1x): «rCode=500 Internal Server Error» 한 건이 rCode 차단 60분을 걸어
+     * 수집 실행의 쿠팡 레인을 끝까지 멈췄고(stop=blocked, 미시도 상품 4,606개를 남긴 채), 같은 60분
+     * 동안 DB 전역 차단으로 사이트 검색까지 쿠팡을 못 불렀다. 최근 9일 수집기 쪽 쿠팡 실패는 이 한 건 +
+     * 504 한 건 + 타임아웃 4건이 전부였다. 메시지에 «rCode» 를 넣지 않는 이유: _blockreason 이 그
+     * 낱말을 거절로 읽어 수집기가 실행 끝까지 래치한다(쿨다운 중 호출도 이 사유를 그대로 돌려준다).
+     * 반복되면 매번 5분씩 쉬고, 수집기의 대기 상한(PRICE_BLOCK_MAX_WAIT_MS, 실행당 10분)이 끝없는
+     * 재시도를 막는다.
+     */
+    if (/^5\d\d$/.test(String(rCode))) {
+      await tripForMs(COOLDOWN_MIN.httpOther * 60000, `API ${rCode} 서버 오류(본문 코드): ${msg}`);
+      await dbFinish(gate.callId, 'http_error', r.status, rCode, 0);
+      return fallback(`쿠팡 API ${rCode} (본문 서버 오류): ${msg}`, false);
+    }
     await trip(COOLDOWN_MIN.rcode, `rCode=${rCode}: ${msg}`);
     await dbFinish(gate.callId, 'blocked', r.status, rCode, 0);
     return fallback(`쿠팡 rCode=${rCode}: ${msg}`, true);

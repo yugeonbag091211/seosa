@@ -9,6 +9,11 @@ on:
       - 'scripts/test-collector-scale.js'
       - 'scripts/test-collector-coverage.js'
       - 'api/_blockreason.js'
+      - 'api/_coupang.js'
+      - 'api/_neonpg.js'
+      - 'scripts/v3-canary-gate.js'
+      - 'scripts/test-collector-hint-options.js'
+      - 'scripts/test-coupang-rcode5xx.js'
       - 'supabase/2026-09-22-collector-target-keyset.sql'
       - '.github/workflows/collector-regression.yml'
   workflow_dispatch:
@@ -37,5 +42,13 @@ jobs:
       # 일시 쿨다운 대기·거절 정지·예산 즉시 정지·체크포인트 이어받기·당일 캐시.
       - name: Collector coverage and priority regression
         run: node scripts/test-collector-coverage.js
+      # 2026-10-21 Neon 전환 뒤 수집률 17.5% 원인 회귀: V3 게이트의 JSON 경로 select,
+      # 쿠팡 hint 는 추적 옵션이 실린 검색어만, rCode 5xx 는 거절이 아니라 일시 장애(5분 · 래치 없음).
+      - name: Neon adapter (V3 gate JSON-path select)
+        run: node scripts/migration/test-neon-adapter.js
+      - name: Cache-hint option check regression
+        run: node scripts/test-collector-hint-options.js
+      - name: Coupang rCode 5xx regression
+        run: node scripts/test-coupang-rcode5xx.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js
