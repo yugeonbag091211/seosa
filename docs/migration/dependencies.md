@@ -1,5 +1,7 @@
 # Supabase 종속성 점검 (2026-10-20)
 
+> **2026-10-21 갱신**: 파일별 전수 표와 어댑터 대응은 [supabase-dependency-inventory.md](supabase-dependency-inventory.md)에 있습니다.
+
 소스는 Vercel Node 서버리스+정적 페이지 구조. api/_supabase.js가 @supabase/supabase-js를 통해 지연 생성한 클라이언트를 모든 API에 전달한다. 단순 문자열 바꾸기로는 Neon과 호환되지 않는다.
 
 ## 우선 이전 대상

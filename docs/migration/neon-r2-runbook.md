@@ -1,5 +1,7 @@
 # 서사 SEOSA: Supabase → Neon + Cloudflare R2 안전 이전
 
+> **2026-10-21 갱신**: 이 문서의 «Neon 비어 있음 · R2 미업로드 · 앱 미이전» 은 10-20 기준입니다. 지금 상태와 전환 절차는 [neon-cutover-env.md](neon-cutover-env.md), [2026-10-21-progress.md](2026-10-21-progress.md)를 보세요.
+
 ## 현황 (2026-10-20 확인값)
 - 이전 전 운영 DB: Supabase PostgreSQL 17, 약 490MiB. public.products 약 71,550건; public.price_history 약 320,413건. 서버에서 직접 읽은 수치이며, 이전 시점에 다시 확인해야 한다.
 - Supabase Free는 이미 Egress 5GB를 초과하여 REST API가 HTTP 402로 차단된 상태다. 오래된 행을 지워도 이미 사용한 네트워크 전송량은 줄지 않는다.
