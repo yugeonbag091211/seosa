@@ -2553,13 +2553,99 @@ async function cacheHintsFromDb(wantIds, mallName) {
   return out;
 }
 
-async function cacheHintQueries(wantIds, mallName = '쿠팡') {
+/*
+ * 쿠팡 힌트의 옵션 확인 (2026-10-21).
+ *
+ *   힌트는 «그 상품을 돌려준 검색어» 다. 그런데 돌려준 것이 «다른 옵션(vendorItemId)» 이면
+ *   다시 불러도 옵션 게이트(pickOption)가 또 거절한다. 오늘 받은 응답이면 캐시에서 «같은 응답»
+ *   이 와서 판정까지 같다.
+ *
+ *   실측(KST 2026-10-21, 운영 Neon 읽기 전용): 오늘 대상 중 미수집 쿠팡 3,663개가 검색 캐시에
+ *   나온 1,626쌍(상품·검색어)이 «전부» 다른 vendorItemId 였다. 같은 날 hint 패스는 419회를
+ *   불렀고(419회 전부 캐시) 회수 0개였다.
+ *
+ *   그래서 쿠팡은 캐시 응답 안에 «추적 옵션 그대로» 있었던 검색어만 남긴다(pickOption 의 VID_EXACT
+ *   와 같은 판정). 그런 응답은 대개 사이트 검색·AI 가 받아 둔 것이라 수집기가 아직 보지 않았다.
+ *   읽는 행은 hint 패스가 어차피 하나씩 읽던 바로 그 행들이다 — 묶어서 한 번에 읽을 뿐이라
+ *   전송량은 늘지 않고, 행마다 왕복하던 시간(실측 0.23초 × 419회 ≈ 96초)이 쿠팡 레인에 돌아간다.
+ *   ADPICK 은 옵션 개념이 없어(상품 ID = 판매 단위) 그대로 둔다.
+ *   조회가 실패하거나 행이 이미 정리됐으면 판단 근거가 없으므로 예전처럼 걸러내지 않는다.
+ */
+const HINT_VERIFY_URI_CHARS = 6000;
+async function loadCoupangCacheRows(keywords) {
+  const chunks = [];
+  let cur = [], len = 0;
+  for (const kw of keywords) {
+    const cost = encodeURIComponent(kw).length + 3;
+    if (cur.length && len + cost > HINT_VERIFY_URI_CHARS) { chunks.push(cur); cur = []; len = 0; }
+    cur.push(kw); len += cost;
+  }
+  if (cur.length) chunks.push(cur);
+  const rows = [];
+  for (const chunk of chunks) {
+    const { data, error } = await supabase.from('coupang_search_cache').select('keyword, items').in('keyword', chunk);
+    if (error) throw new Error(error.message);
+    rows.push(...(data || []));
+  }
+  return rows;
+}
+
+async function verifyHintOptions(hints, mallName, targetsById, loadRows = loadCoupangCacheRows) {
+  if (mallName !== '쿠팡' || !targetsById || !hints || hints.size === 0) return hints;
+  const keywords = [...new Set([].concat(...hints.values()))];
+  let rows;
+  try {
+    rows = await loadRows(keywords);
+  } catch (e) {
+    console.warn(`  [쿠팡 캐시 힌트] 옵션 확인 실패 — 걸러내지 않고 진행합니다: ${e.message}`);
+    return hints;
+  }
+  // 검색어(앞뒤 공백 제거) → product_id → 그 응답에 실린 vendorItemId 들
+  const vidsByKeyword = new Map();
+  for (const row of rows || []) {
+    const kw = String(row && row.keyword || '').trim();
+    if (!kw) continue;
+    if (!vidsByKeyword.has(kw)) vidsByKeyword.set(kw, new Map());
+    const byPid = vidsByKeyword.get(kw);
+    for (const it of Array.isArray(row.items) ? row.items : []) {
+      const pid = String(it && it.productId || '');
+      const vid = String(it && it.vendorItemId || '');
+      if (!pid || !vid) continue;
+      if (!byPid.has(pid)) byPid.set(pid, new Set());
+      byPid.get(pid).add(vid);
+    }
+  }
+  const out = new Map();
+  let kept = 0, dropped = 0, unknown = 0;
+  hints.forEach((queries, pid) => {
+    const want = vendorIdOf(targetsById.get(pid));
+    const keep = queries.filter(q => {
+      const byPid = vidsByKeyword.get(String(q || '').trim());
+      if (!byPid) { unknown++; return true; }
+      const ok = !!want && !!byPid.get(pid) && byPid.get(pid).has(want);
+      if (ok) kept++; else dropped++;
+      return ok;
+    });
+    if (keep.length) out.set(pid, keep);
+  });
+  console.log(`  [쿠팡 캐시 힌트] 옵션 확인 — ${kept + dropped + unknown}쌍 중 추적 옵션 그대로 ${kept}`
+    + ` · 다른 옵션뿐이라 제외 ${dropped} · 캐시 행 없음(그대로 둠) ${unknown}`);
+  return out;
+}
+
+/**
+ * @param {Map<string, object>} [targetsById] product_id → 대상 행. 주면 쿠팡 힌트를 옵션까지 확인한다
+ *   (verifyHintOptions). 없으면 예전과 같다.
+ */
+async function cacheHintQueries(wantIds, mallName = '쿠팡', targetsById = null) {
   const out = new Map();
   if (!wantIds || wantIds.size === 0) return out;
   if (mallName !== '쿠팡' && mallName !== 'ADPICK') return out;
   const fromDb = await cacheHintsFromDb(wantIds, mallName).catch(() => null);
-  if (fromDb) return fromDb;
+  if (fromDb) return verifyHintOptions(fromDb, mallName, targetsById);
   const table = mallName === 'ADPICK' ? 'adpick_search_cache' : 'coupang_search_cache';
+  // 전체 스캔은 행을 이미 들고 있다 — 옵션 확인에 다시 읽지 않고 그 행을 넘긴다.
+  const scanned = [];
   try {
     // 두 테이블 모두 keyword PK. keysetScan 이 PostgREST 페이지 제한을 넘겨 순회한다.
     await keysetScan({
@@ -2567,13 +2653,20 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡') {
       columns: 'keyword, items',
       cursor: 'keyword',
       label: table + ' 조회',
-      onPage: rows => addCacheHints(out, rows, wantIds, mallName)
+      onPage: rows => {
+        addCacheHints(out, rows, wantIds, mallName);
+        if (!targetsById || mallName !== '쿠팡') return;
+        for (const row of rows || []) {
+          const items = Array.isArray(row && row.items) ? row.items : [];
+          if (items.some(it => wantIds.has(String(it && it.productId || '')))) scanned.push(row);
+        }
+      }
     });
   } catch (e) {
     console.warn(`  [${mallName} 캐시 힌트] 조회 실패(무시하고 진행): ${e.message}`);
     return new Map();
   }
-  return out;
+  return verifyHintOptions(out, mallName, targetsById, async () => scanned);
 }
 
 /* ─── 상품 단위 최종 상태 (2026-09-22) ──────────────────────────
@@ -4113,8 +4206,10 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      * 같은 문구를 여러 상품이 공유하면 한 번만 부른다 — 교차 매칭이 나머지를 흡수한다.
      */
     if (CACHE_HINT_ENABLED && canCall() && uncovered.size) {
-      const want = new Set([...uncovered.values()].filter(eligible).map(p => String(p.product_id)));
-      const hints = await cacheHintFn(want, mallName);
+      const wantRows = [...uncovered.values()].filter(eligible);
+      const want = new Set(wantRows.map(p => String(p.product_id)));
+      // 대상 행을 같이 넘긴다 — 쿠팡은 캐시 응답에 추적 옵션이 있던 검색어만 받는다 (verifyHintOptions).
+      const hints = await cacheHintFn(want, mallName, new Map(wantRows.map(p => [String(p.product_id), p])));
       const byQuery = new Map();
       hints.forEach((queries, pid) => {
         queries.slice(0, CACHE_HINT_MAX_PER_PRODUCT).forEach(q => {
@@ -5994,7 +6089,7 @@ module.exports = {
   chunkIdsByLength, ID_BATCH_CHARS,
   // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
-  addCacheHints, cacheHintQueries, cacheHintsFromDb,
+  addCacheHints, cacheHintQueries, cacheHintsFromDb, verifyHintOptions,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   sameTargetSet, coverageOnlyResumeState,

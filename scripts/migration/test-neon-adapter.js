@@ -138,6 +138,28 @@ async function test(name, fn) {
     await db.from('products').select('pid:product_id,  mall');
     assert.match(seen[0].text, /SELECT "product_id" AS "pid", "mall" FROM/);
   });
+  await test('★ JSON 경로 투영 (V3 게이트 실사용 — 응답 키는 마지막 키, PostgREST 와 같다)', async () => {
+    respond = () => ({ rows: [{ job_date: '2026-10-21', v3Kill: { date: '2026-10-21' } }] });
+    const r = await db.from('price_job_state').select('job_date, last_result->v3Kill').eq('id', 1).maybeSingle();
+    assert.equal(r.error, null);
+    assert.deepEqual(r.data, { job_date: '2026-10-21', v3Kill: { date: '2026-10-21' } });
+    assert.match(seen[0].text, /SELECT "job_date", "last_result"->'v3Kill' AS "v3Kill" FROM public."price_job_state"/);
+    seen.length = 0;
+    await db.from('price_job_state').select('runId:last_result->lock->>runId, last_result->targetSignature');
+    assert.match(seen[0].text, /SELECT "last_result"->'lock'->>'runId' AS "runId", "last_result"->'targetSignature' AS "targetSignature" FROM/);
+  });
+  await test('JSON 경로: 위험한 키 · ->> 뒤 경로 · 텍스트가 아닌 필터는 SQL 없이 거절', async () => {
+    for (const bad of ["last_result->v3Kill';DROP", "last_result->>a->b", 'last_result->', '->a', "x:last_result->'a'"]) {
+      const r = await db.from('price_job_state').select(bad);
+      assert.ok(r.error, bad);
+    }
+    // jsonb(->) 경로를 텍스트 인자와 비교하면 Postgres 가 거절한다 — 보내기 전에 막는다.
+    const f = await db.from('price_job_state').select('id').eq('last_result->lock', 'x');
+    assert.ok(f.error);
+    const deep = await db.from('price_job_state').select('id').eq('a->b->c->d->e->f->g->h->i->>j', 'x');
+    assert.ok(deep.error, '깊이 상한');
+    assert.equal(seen.length, 0, '아무 SQL 도 보내지 않는다');
+  });
 
   console.log('\n[2) single · maybeSingle · count]');
   await test('★ single 0행 → PGRST116 · maybeSingle 0행 → data null', async () => {

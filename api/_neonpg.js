@@ -393,14 +393,31 @@ function splitTopLevel(text) {
   return parts;
 }
 
+/**
+ * PostgREST JSON 경로 'col->a->b' / 'col->a->>b' → SQL.
+ * 열과 키를 전부 식별자로만 받는다 — 키는 따옴표 리터럴로 들어가므로 식별자 문자만 허용해야
+ * 주입이 불가능하다. ->> 는 마지막 한 번만. 경로가 아니면 null.
+ * name 은 PostgREST 가 응답 키로 쓰는 «마지막 키» 다(select('last_result->v3Kill') → { v3Kill }).
+ */
+const JSON_PATH_RE = /^([A-Za-z_][A-Za-z0-9_]*)((?:->[A-Za-z_][A-Za-z0-9_]*)*)(?:->(>)?([A-Za-z_][A-Za-z0-9_]*))$/;
+const JSON_PATH_MAX_DEPTH = 8;
+function jsonPathSql(expr) {
+  const m = typeof expr === 'string' && JSON_PATH_RE.exec(expr);
+  if (!m) return null;
+  const middle = m[2] ? m[2].slice(2).split('->') : [];
+  if (middle.length + 1 > JSON_PATH_MAX_DEPTH) return null;
+  const sql = quoteIdent(m[1]) + middle.map(k => `->'${k}'`).join('') + `${m[3] ? '->>' : '->'}'${m[4]}'`;
+  return { sql, name: m[4], text: !!m[3] };
+}
+
 /** 하나의 조건을 SQL 로. value 는 PostgREST 문자열 또는 JS 값. */
 // PostgREST JSON-path equality for the collector's checkpoint lock.
-// Restrict both JSON keys to identifiers so SQL cannot be injected via filters.
+// Filters compare against bound text parameters, so only a final ->> (text) path is accepted.
 function quoteFilterColumn(column) {
   if (typeof column === 'string' && IDENT.test(column)) return quoteIdent(column);
-  const match = typeof column === 'string' && /^([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)->>([A-Za-z_][A-Za-z0-9_]*)$/.exec(column);
-  if (!match) throw new AdapterError(`Unsafe SQL identifier: ${String(column).slice(0, 60)}`, 'PGRST100');
-  return `${quoteIdent(match[1])}->'${match[2]}'->>'${match[3]}'`;
+  const path = jsonPathSql(column);
+  if (!path || !path.text) throw new AdapterError(`Unsafe SQL identifier: ${String(column).slice(0, 60)}`, 'PGRST100');
+  return path.sql;
 }
 
 function conditionSql(column, op, value, args) {
@@ -466,8 +483,12 @@ function projectionSql(columns) {
   if (tokens.length > 120) throw new AdapterError('Projection too long', 'PGRST100');
   return tokens.map(t => {
     const m = /^(?:([A-Za-z_][A-Za-z0-9_]*):)?([A-Za-z_][A-Za-z0-9_]*)$/.exec(t);
-    if (!m) throw new AdapterError(`Unsupported select expression: ${t.slice(0, 60)}`, 'PGRST100');
-    return m[1] ? `${quoteIdent(m[2])} AS ${quoteIdent(m[1])}` : quoteIdent(m[2]);
+    if (m) return m[1] ? `${quoteIdent(m[2])} AS ${quoteIdent(m[1])}` : quoteIdent(m[2]);
+    // JSON 경로 (V3 게이트 'last_result->v3Kill'). 응답 키는 별칭, 없으면 마지막 키 — PostgREST 와 같다.
+    const a = /^(?:([A-Za-z_][A-Za-z0-9_]*):)?(.+)$/.exec(t);
+    const path = a && jsonPathSql(a[2]);
+    if (!path) throw new AdapterError(`Unsupported select expression: ${t.slice(0, 60)}`, 'PGRST100');
+    return `${path.sql} AS ${quoteIdent(a[1] || path.name)}`;
   }).join(', ');
 }
 
