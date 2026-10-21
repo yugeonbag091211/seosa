@@ -149,6 +149,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           PRICE_V3_CANARY_DATES: '2026-09-24'
           PRICE_V3_ON_FROM: '2026-09-26'
           PRICE_V3_OFF: ${{ vars.PRICE_V3_OFF }}
@@ -159,6 +163,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
           ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
@@ -196,6 +204,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
         run: node scripts/check-alerts.js

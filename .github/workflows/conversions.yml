@@ -60,6 +60,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
           # whitelist 가 실제로 열린 뒤에만 '1' 로 둔다. 이 값이 커버리지
           # 판정(api/_funnel.conversionCoverage)에 그대로 쓰인다.

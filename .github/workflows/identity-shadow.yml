@@ -51,6 +51,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           # 없으면 워커가 아무것도 하지 않는다 (opt-in 관문)
           IDENTITY_SHADOW_ENABLED: ${{ vars.IDENTITY_SHADOW_ENABLED }}
           GITHUB_SHA: ${{ github.sha }}

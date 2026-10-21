@@ -895,5 +895,5 @@ module.exports = {
       return typeof v === 'function' ? v.bind(c) : v;
     }
   }),
-  _internal: { isoTimestamp, toNumberish, likePattern, splitTopLevel, parseList, TEXT_PARSERS, MAX_ROWS }
+  _internal: { isoTimestamp, toNumberish, likePattern, splitTopLevel, parseList, TEXT_PARSERS, MAX_ROWS, postgrestTypes }
 };
