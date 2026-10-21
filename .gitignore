@@ -29,3 +29,6 @@ supabase/.temp/
 *.wipbak
 .news-audit/
 .neon
+
+# GitHub Actions 하루 캐시 파일 (scripts/_daycache.js)
+.day-cache/

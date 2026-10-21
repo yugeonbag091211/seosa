@@ -47,6 +47,7 @@ const HS = require('../api/_hotsource');
 const HG = require('../api/_hotgroup');
 const { kstToday } = require('../api/_kst');
 const DD = require('../api/_dailydrop');
+const DayCache = require('./_daycache');
 
 const DRY = process.argv.indexOf('--dry-run') > -1;
 
@@ -297,77 +298,142 @@ async function loadProducts() {
 
 /* ── 2) 관측 이력 ──────────────────────────────────────────────────── */
 
+/*
+ * 어제까지의 기록은 하루 캐시로 (2026-10-22, scripts/_daycache.js).
+ *
+ *   이 작업은 하루 세 번(08:50 · 09:20 · 21:20 KST) 대상 상품의 120일 기록을 전부 받는다 — 운영 실측
+ *   2026-10-21: 109,512행 · 13.3MB/회, 하루 ≈40MB(Neon Free 공용망 전송 월 5GB). 그중 «오늘 이전» 행은
+ *   그날 안에 바뀌지 않는다(수집기·검색은 오늘 날짜로만 쓴다). 그날 첫 실행이 어제까지를 파일로 남기고
+ *   (HOTDEAL_HISTORY_CACHE_FILE), 워크플로가 KST 날짜 키로 Actions cache 에 올린다. 같은 날 다음 실행은
+ *   어제까지를 캐시에서, 오늘 행만 DB 에서 받는다. 캐시에 없는 상품(대상이 바뀐 경우)은 예전처럼 전부 받는다.
+ *   실패한 묶음·시간 예산으로 못 읽은 상품은 캐시에 «있다» 고 적지 않는다.
+ */
+const HISTORY_CACHE_FILE = process.env.HOTDEAL_HISTORY_CACHE_FILE || '';
+const HISTORY_CACHE_KIND = 'hotdeal-history';
+const HISTORY_COLS = 'product_id, mall, vendor_item_id, price, recorded_date, recorded_at';
+const historyRowKey = r => `${r.product_id}|${r.mall || ''}|${r.vendor_item_id || ''}`;
+const byProductThenDate = (a, b) => (String(a.product_id) < String(b.product_id) ? -1
+  : String(a.product_id) > String(b.product_id) ? 1
+    : String(a.recorded_date) < String(b.recorded_date) ? -1 : String(a.recorded_date) > String(b.recorded_date) ? 1 : 0);
+
+/** 한 묶음(상품 id 들)의 기록을 끝까지 읽는다 (fromDate ≤ recorded_date). */
+async function fetchHistoryChunk(slice, fromDate, at, stats) {
+  /*
+   * ★ 페이지로 끝까지 읽는다 — .limit() 하나로는 «못 읽는다» (2026-09-20 실측).
+   *
+   * ── 무슨 일이 있었나 ────────────────────────────────────────────
+   *
+   *   예전 코드는 .limit(20000) 을 걸고 `data.length >= 20000` 이면 잘렸다고
+   *   경고하려 했다. 그런데 Supabase PostgREST 는 db-max-rows = 1000 이라
+   *   요청한 limit 과 «무관하게» 한 응답에 1,000행만 준다. 그래서
+   *     · 실제로는 늘 1,000행에서 잘리고
+   *     · 잘림 경고는 20,000 과 비교하니 «단 한 번도» 울리지 않았다.
+   *
+   *   2026-09-20 운영 실측 (읽기 전용 재현, 대상 2,965 상품 / 30청크):
+   *     예전 방식   29,722행 / 계열 2,987   ← 모든 청크가 정확히 1,000행
+   *     범위 페이징 48,195행 / 계열 4,861
+   *     유실       18,473행 (38.3%) · 계열 1,874개 (38.6%)
+   *
+   *   정렬이 product_id ASC 이므로 잘리는 쪽은 늘 «청크 뒤쪽 상품» 이다.
+   *   그 상품들은 이력 0건으로 판정돼 근거 부족(REJECTED)이 되고, 경계에
+   *   걸친 상품은 «반쪽 이력» 으로 중앙값이 계산돼 없는 딜이 생기거나
+   *   있는 딜이 사라진다. 실측: 2,965개 후보 중 1,055개(35.6%)가 이력 0건으로
+   *   판정되고 있었다.
+   *
+   * ── 고침 ────────────────────────────────────────────────────────
+   *
+   *   .range(from, from+PAGE-1) 로 1,000행씩 끝까지 읽는다. 정렬은 그대로
+   *   두어야 페이지 경계가 흔들리지 않는다 (product_id, recorded_date).
+   *   안전판으로 청크당 최대 페이지 수를 두고, 거기 닿으면 «진짜로» 경고한다.
+   *
+   * ★ recorded_at 도 읽는다. 일일 하락 판정(api/_dailydrop.js)은 «KST 로
+   *   오늘/어제» 를 알아야 하는데, recorded_date 라벨은 2026-08-27 이전 행
+   *   9,040개가 UTC 로 잘려 있어 하루가 밀린다. 같은 날 여러 번 관측됐을 때
+   *   «어느 쪽이 나중인가» 도 라벨로는 알 수 없다.
+   *   (중앙값 기준선은 예전처럼 recorded_date 를 쓴다 — 회귀 없음)
+   */
+  const PAGE = 1000;
+  const MAX_PAGES = 40;                 // 청크(상품 100개)당 40,000행이면 충분하다
+  let rows = [];
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const { data, error } = await supabase
+      .from('price_history')
+      .select(HISTORY_COLS)
+      .in('product_id', slice)
+      .gte('recorded_date', fromDate)
+      .order('product_id', { ascending: true })
+      .order('recorded_date', { ascending: true })
+      .range(p * PAGE, p * PAGE + PAGE - 1);
+    if (error) { log('history_chunk_failed', { at, page: p, error: error.message }); return null; }
+    stats.pages++;
+    rows = rows.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    if (p === MAX_PAGES - 1) {
+      stats.truncated++;
+      log('history_chunk_truncated', { at, rows: rows.length, hint: 'CHUNK 를 줄이세요' });
+    }
+  }
+  return rows;
+}
+
 /** `${product_id}|${mall}|${vendor_item_id}` → [{date, price}] */
-async function loadHistory(products) {
+async function loadHistory(products, { cacheFile = HISTORY_CACHE_FILE } = {}) {
   const cut = kstToday(new Date(Date.now() - HISTORY_DAYS * 86400000));
+  const today = kstToday();
   const ids = [...new Set(products.map(p => String(p.product_id)))];
   const byKey = new Map();
+  const stats = { pages: 0, truncated: 0 };
+  let loadedRows = 0;
 
-  let loadedRows = 0, pages = 0, truncated = 0;
+  // 어제까지의 기록 캐시. 키가 날짜·기준일·열 목록과 정확히 같을 때만 쓴다.
+  const cacheKey = `${today}|${cut}|${HISTORY_COLS}`;
+  const cache = cacheFile ? DayCache.readDayCache(cacheFile, HISTORY_CACHE_KIND, cacheKey) : { hit: false, reason: 'off' };
+  const cached = cache.hit && cache.payload && Array.isArray(cache.payload.ids) && Array.isArray(cache.payload.rows) ? cache.payload : null;
+  const cachedIds = new Set(cached ? cached.ids : []);
+  const cachedRowsByPid = new Map();
+  if (cached) {
+    for (const r of cached.rows) {
+      const pid = String(r.product_id);
+      if (!cachedRowsByPid.has(pid)) cachedRowsByPid.set(pid, []);
+      cachedRowsByPid.get(pid).push(r);
+    }
+    log('history_cache', { hit: true, ids: cachedIds.size, rows: cached.rows.length, bytes: cache.bytes, createdAt: cache.createdAt });
+  } else if (cacheFile) {
+    log('history_cache', { hit: false, reason: cache.reason });
+  }
+  // 이번 실행이 캐시로 남길 «어제까지» — 실패·미완료 묶음의 상품은 넣지 않는다.
+  const closedIds = [];
+  const closedRows = [];
 
   for (let i = 0; i < ids.length; i += CHUNK) {
     if (overBudget()) { log('history_budget_stop', { at: i, of: ids.length }); break; }
-    /*
-     * ★ 페이지로 끝까지 읽는다 — .limit() 하나로는 «못 읽는다» (2026-09-20 실측).
-     *
-     * ── 무슨 일이 있었나 ────────────────────────────────────────────
-     *
-     *   예전 코드는 .limit(20000) 을 걸고 `data.length >= 20000` 이면 잘렸다고
-     *   경고하려 했다. 그런데 Supabase PostgREST 는 db-max-rows = 1000 이라
-     *   요청한 limit 과 «무관하게» 한 응답에 1,000행만 준다. 그래서
-     *     · 실제로는 늘 1,000행에서 잘리고
-     *     · 잘림 경고는 20,000 과 비교하니 «단 한 번도» 울리지 않았다.
-     *
-     *   2026-09-20 운영 실측 (읽기 전용 재현, 대상 2,965 상품 / 30청크):
-     *     예전 방식   29,722행 / 계열 2,987   ← 모든 청크가 정확히 1,000행
-     *     범위 페이징 48,195행 / 계열 4,861
-     *     유실       18,473행 (38.3%) · 계열 1,874개 (38.6%)
-     *
-     *   정렬이 product_id ASC 이므로 잘리는 쪽은 늘 «청크 뒤쪽 상품» 이다.
-     *   그 상품들은 이력 0건으로 판정돼 근거 부족(REJECTED)이 되고, 경계에
-     *   걸친 상품은 «반쪽 이력» 으로 중앙값이 계산돼 없는 딜이 생기거나
-     *   있는 딜이 사라진다. 실측: 2,965개 후보 중 1,055개(35.6%)가 이력 0건으로
-     *   판정되고 있었다.
-     *
-     * ── 고침 ────────────────────────────────────────────────────────
-     *
-     *   .range(from, from+PAGE-1) 로 1,000행씩 끝까지 읽는다. 정렬은 그대로
-     *   두어야 페이지 경계가 흔들리지 않는다 (product_id, recorded_date).
-     *   안전판으로 청크당 최대 페이지 수를 두고, 거기 닿으면 «진짜로» 경고한다.
-     *
-     * ★ recorded_at 도 읽는다. 일일 하락 판정(api/_dailydrop.js)은 «KST 로
-     *   오늘/어제» 를 알아야 하는데, recorded_date 라벨은 2026-08-27 이전 행
-     *   9,040개가 UTC 로 잘려 있어 하루가 밀린다. 같은 날 여러 번 관측됐을 때
-     *   «어느 쪽이 나중인가» 도 라벨로는 알 수 없다.
-     *   (중앙값 기준선은 예전처럼 recorded_date 를 쓴다 — 회귀 없음)
-     */
-    const PAGE = 1000;
-    const MAX_PAGES = 40;                 // 청크(상품 100개)당 40,000행이면 충분하다
     const slice = ids.slice(i, i + CHUNK);
+    const fromCache = slice.filter(id => cachedIds.has(id));
+    const fromDb = slice.filter(id => !cachedIds.has(id));
     let rows = [];
     let failed = false;
-    for (let p = 0; p < MAX_PAGES; p++) {
-      const { data, error } = await supabase
-        .from('price_history')
-        .select('product_id, mall, vendor_item_id, price, recorded_date, recorded_at')
-        .in('product_id', slice)
-        .gte('recorded_date', cut)
-        .order('product_id', { ascending: true })
-        .order('recorded_date', { ascending: true })
-        .range(p * PAGE, p * PAGE + PAGE - 1);
-      if (error) { log('history_chunk_failed', { at: i, page: p, error: error.message }); failed = true; break; }
-      pages++;
-      rows = rows.concat(data || []);
-      if (!data || data.length < PAGE) break;
-      if (p === MAX_PAGES - 1) {
-        truncated++;
-        log('history_chunk_truncated', { at: i, rows: rows.length, hint: 'CHUNK 를 줄이세요' });
+    if (fromCache.length) {
+      // 어제까지는 캐시, 오늘 행만 DB.
+      const todayRows = await fetchHistoryChunk(fromCache, today, i, stats);
+      if (!todayRows) failed = true;
+      else rows = rows.concat(...fromCache.map(id => cachedRowsByPid.get(id) || []), todayRows);
+    }
+    if (!failed && fromDb.length) {
+      const full = await fetchHistoryChunk(fromDb, cut, i, stats);
+      if (!full) failed = true;
+      else {
+        rows = rows.concat(full);
+        // 이 묶음은 끝까지 읽었다 — 어제까지 부분을 캐시 후보로.
+        fromDb.forEach(id => closedIds.push(id));
+        full.forEach(r => { if (String(r.recorded_date).slice(0, 10) < today) closedRows.push(r); });
       }
     }
     if (failed) continue;
+    // DB 한 번에 읽었을 때와 같은 순서(상품 → 날짜). 계열별 목록은 날짜 오름차순이어야 한다.
+    rows.sort(byProductThenDate);
     loadedRows += rows.length;
     rows.forEach(r => {
-      const key = `${r.product_id}|${r.mall || ''}|${r.vendor_item_id || ''}`;
+      const key = historyRowKey(r);
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key).push({
         date: String(r.recorded_date).slice(0, 10),
@@ -378,7 +444,13 @@ async function loadHistory(products) {
       });
     });
   }
-  log('history_pages', { requests: pages, rows: loadedRows, series: byKey.size, truncatedChunks: truncated });
+  log('history_pages', { requests: stats.pages, rows: loadedRows, series: byKey.size, truncatedChunks: stats.truncated });
+
+  // 오늘 첫 실행(캐시 없음)만 남긴다. 캐시를 쓴 실행이 다시 쓰면 같은 날 키라 Actions cache 가 받지 않는다.
+  if (cacheFile && !cached && closedIds.length) {
+    const w = DayCache.writeDayCache(cacheFile, HISTORY_CACHE_KIND, cacheKey, { ids: closedIds, rows: closedRows });
+    log('history_cache_saved', w.ok ? { ids: closedIds.length, rows: closedRows.length, bytes: w.bytes } : { error: w.reason });
+  }
   return byKey;
 }
 
@@ -949,5 +1021,7 @@ module.exports = {
   acquireLock, releaseLock, matchProduct, lifecycleFor, LOCK,
   offerKeyOf, applyGroup, CONFIDENCE_RANK,
   // 저장 묶음의 NOT NULL 계약과 실패 종료 — test-audit-regressions 가 고정한다.
-  withDetectedAt, writeOutcome
+  withDetectedAt, writeOutcome,
+  // 어제까지 기록의 하루 캐시 — test-daycache 가 캐시 끔/켬 결과가 같은지 고정한다.
+  loadHistory
 };

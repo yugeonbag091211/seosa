@@ -47,6 +47,7 @@ const { searchCoupang, isBlocked: isCoupangBlockedGlobal, localStats: coupangLoc
 const { searchAdpick, isBlocked: isAdpickBlockedGlobal, localStats: adpickLocalStats, hasKey: adpickHasKey } = require('../api/_adpick');
 const { recordPrices, searchPhraseFromTitle, adpickProductId } = require('../api/_shop');
 const { isTransientBlockReason } = require('../api/_blockreason');
+const DayCache = require('./_daycache');
 /*
  * 검색어 후보 생성 — 규칙과 그 근거(실측 적중률)는 api/_query.js 주석에 있다.
  * 수집 스크립트는 "어떤 검색어를 쓸까"를 직접 정하지 않는다. 규칙이 두 벌로
@@ -1650,6 +1651,62 @@ function collectorTargetMeta(date = TODAY) {
     rotationBucket,
     signature: `${COLLECTOR_TARGET_VERSION}:${date}:${BULK_ROTATION_DAYS}:${rotationBucket}`
   };
+}
+
+/*
+ * 오늘 대상의 하루 캐시 (2026-10-22, scripts/_daycache.js).
+ *
+ *   오늘 대상(키 + 상품 행)은 대상 서명(날짜·회전 버킷·계획기) 하나로 정해진다. 그런데 실행마다
+ *   키 페이지 0.8MB + 상시 추적 0.3MB + 상품 행 4.8MB 를 Neon 에서 다시 받았다(운영 2026-10-21 실측,
+ *   하루 작업 실행 ≈13회 → 하루 ≈75MB, Neon Free 공용망 전송 월 5GB 의 절반 가까이).
+ *   그날 처음 DB 에서 읽은 실행이 파일로 남기고(PRICE_TARGET_CACHE_FILE), 워크플로가 KST 날짜 키로
+ *   Actions cache 에 올린다. 같은 날 다음 실행은 그 파일을 읽는다.
+ *
+ *   ★ 같은 날에는 아침의 상품 행을 쓴다. 매칭에 쓰는 열(keyword·title·link·vendor_item_id)은
+ *     수집기 저장으로 바뀌지 않고(옵션이 같을 때만 저장한다), 하루 안에서 바뀌는 것은 사이트 검색이
+ *     덮어쓴 링크·추적 옵션 정도다 — 그날은 아침의 추적 옵션을 끝까지 따른다(다음 날 새로 읽는다).
+ *     «오늘 이미 수집됨» 판정(원장 일자 스캔)은 캐시와 무관하게 매 실행 DB 에서 새로 본다.
+ *   ★ 키에 PRODUCT_COLS 를 넣는다 — 열 목록이 바뀐 배포 뒤에는 옛 파일을 쓰지 않는다.
+ */
+const TARGET_CACHE_FILE = process.env.PRICE_TARGET_CACHE_FILE || '';
+const TARGET_CACHE_KIND = 'collector-targets';
+const targetCacheKey = meta => `${meta.signature}|${PRODUCT_COLS}`;
+const targetCacheable = meta => !!meta && (meta.mode === 'rotation' || meta.mode === 'daily');
+
+function loadTargetDayCache(meta, file = TARGET_CACHE_FILE) {
+  if (!file || !targetCacheable(meta)) return null;
+  const c = DayCache.readDayCache(file, TARGET_CACHE_KIND, targetCacheKey(meta));
+  if (!c.hit) {
+    if (c.reason !== 'none' && c.reason !== 'off') {
+      console.log(`[collector 대상] 하루 캐시를 쓰지 않습니다(${c.reason}) — DB 에서 읽습니다.`);
+    }
+    return null;
+  }
+  const p = c.payload || {};
+  const dailyKeys = new Set(Array.isArray(p.dailyKeys) ? p.dailyKeys : []);
+  const rotationKeys = new Set(Array.isArray(p.rotationKeys) ? p.rotationKeys : []);
+  const keys = new Set([...dailyKeys, ...rotationKeys]);
+  const products = Array.isArray(p.products) ? p.products : null;
+  if (!products || !keys.size || products.some(r => !r || !keys.has(`${r.product_id}|${r.mall}`))) {
+    console.warn('[collector 대상] 하루 캐시의 모양이 맞지 않습니다 — DB 에서 읽습니다.');
+    return null;
+  }
+  console.log(`[collector 대상] 하루 캐시에서 오늘 대상 ${keys.size}개 · 상품 행 ${products.length}개를 읽었습니다`
+    + ` (DB 대상 조회 0회 · 캐시 ${(c.bytes / 1048576).toFixed(1)}MB · ${c.createdAt} 작성).`);
+  return {
+    target: { keys, dailyKeys, rotationKeys, rotationDays: meta.rotationDays, rotationBucket: meta.rotationBucket, source: 'day-cache' },
+    products
+  };
+}
+
+function saveTargetDayCache(meta, target, products, file = TARGET_CACHE_FILE) {
+  if (!file || !target || !targetCacheable(meta)) return;
+  const w = DayCache.writeDayCache(file, TARGET_CACHE_KIND, targetCacheKey(meta), {
+    dailyKeys: [...target.dailyKeys], rotationKeys: [...target.rotationKeys], products
+  });
+  console.log(w.ok
+    ? `[collector 대상] 오늘 대상을 하루 캐시 파일로 남겼습니다 (${(w.bytes / 1048576).toFixed(1)}MB) — 같은 날 다음 실행은 DB 대신 이 파일을 읽습니다.`
+    : `[collector 대상] 하루 캐시 파일을 남기지 못했습니다(수집은 계속): ${w.reason}`);
 }
 
 /**
@@ -4960,7 +5017,10 @@ async function runLocked(state, lockToken) {
       + ' — 두 제공자 모두 하루 호출 예산을 다 썼습니다. 대상을 읽지 않고 끝냅니다 (외부 호출 0).');
     return;
   }
-  const target = SEED_ONLY ? null : await fetchCollectorTargetKeys(targetMeta);
+  // 같은 날 앞 실행이 남긴 대상 캐시가 있으면 DB 대상 조회를 건너뛴다 (loadTargetDayCache 주석).
+  const cachedTargets = SEED_ONLY ? null : loadTargetDayCache(targetMeta);
+  const target = SEED_ONLY ? null
+    : (cachedTargets ? cachedTargets.target : await fetchCollectorTargetKeys(targetMeta));
   const catalog = await countCatalog();
 
   let products;
@@ -4968,7 +5028,12 @@ async function runLocked(state, lockToken) {
   let rotationTargetProducts = 0;
 
   if (target) {
-    products = await fetchProductsByIds(target.keys, catalog ? catalog.total : 0);
+    if (cachedTargets) {
+      products = cachedTargets.products;
+    } else {
+      products = await fetchProductsByIds(target.keys, catalog ? catalog.total : 0);
+      saveTargetDayCache(targetMeta, target, products);
+    }
     dailyTargetProducts = target.dailyKeys.size;
     rotationTargetProducts = target.rotationKeys.size;
 
@@ -6157,6 +6222,8 @@ module.exports = {
   // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
   addCacheHints, cacheHintQueries, cacheHintsFromDb, verifyHintOptions, fillStoredImages, loadStoredImages, PRODUCT_COLS,
+  // 하루 대상 캐시 — test-daycache 가 DB 경로와 같은 대상을 돌려주는지 고정한다.
+  loadTargetDayCache, saveTargetDayCache, targetCacheKey, fetchProductsByIds,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   sameTargetSet, coverageOnlyResumeState,

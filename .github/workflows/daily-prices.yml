@@ -131,6 +131,22 @@ jobs:
 
       - run: npm ci
 
+      # ── 하루 대상 캐시 (2026-10-22, scripts/_daycache.js) ─────────────────
+      # 오늘 대상(키 + 상품 행 ≈5.9MB)을 그날 처음 DB 에서 읽은 실행이 파일로 남기고 여기서 KST 날짜 키로
+      # Actions cache 에 올린다. 같은 날 다음 실행은 DB 대신 이 파일을 읽는다(Neon 공용망 전송 절감).
+      # 캐시가 없거나 키·모양이 다르면 수집기는 예전처럼 DB 에서 읽는다 — 이 단계가 실패해도 수집은 같다.
+      - name: KST date for day caches
+        id: kst
+        run: echo "date=$(TZ=Asia/Seoul date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore today's collector target cache
+        id: target_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: .day-cache/collector-targets.json.gz
+          key: collector-targets-v1-${{ steps.kst.outputs.date }}
+
       # ── V3 카나리 게이트 (2026-09-23) ─────────────────────────────────
       # PRICE_V3_CANARY_DATES 에 적힌 KST 날짜에만 수집기 V3 를 켠다. 날짜가 지나면
       # 저절로 레거시다. 그날 수집기가 429·차단·집계 불변조건 위반·잠금 상실·저장 0행을
@@ -192,9 +208,20 @@ jobs:
           # 수집기가 «이어 붙일 가치가 있다» 고 판정했을 때만 이 파일을 쓴다
           # (collect-all-prices.js continuationDecision 주석 참고).
           PRICE_CONTINUE_FILE: /tmp/collector-continue.json
+          # 하루 대상 캐시 파일 (위 «Restore today's collector target cache» · 아래 «Save …» 와 짝)
+          PRICE_TARGET_CACHE_FILE: ${{ github.workspace }}/.day-cache/collector-targets.json.gz
         run: |
           node scripts/collect-all-prices.js 2>&1 | tee /tmp/collect.log
           exit ${PIPESTATUS[0]}
+
+      # 그날 처음 DB 에서 읽은 실행만 저장한다(같은 키는 Actions cache 가 덮어쓰지 않는다).
+      - name: Save today's collector target cache
+        if: always() && steps.target_cache.outputs.cache-hit != 'true' && hashFiles('.day-cache/collector-targets.json.gz') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .day-cache/collector-targets.json.gz
+          key: collector-targets-v1-${{ steps.kst.outputs.date }}
 
       # 수집이 실패해도 알림 확인은 돌린다.
       # 오늘 수집분이 없으면 check-alerts.js 가 알아서 0건으로 끝나므로 해가 없고,
