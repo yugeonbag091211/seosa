@@ -201,7 +201,7 @@ async function handleConfirm(req, res, email, body) {
    * orderId 로 물어본다. 이걸 건너뛰고 재승인하면 이중 청구가 된다.
    */
   if (order.status === billing.PAYMENT_STATUS.CHARGING) {
-    return await settleCharging(res, email, orderId, customerKey);
+    return await settleCharging(res, email, orderId, customerKey, order);
   }
 
   // 0-c) pending → charging 선점. 동시에 들어온 요청 중 하나만 통과한다.
@@ -265,8 +265,19 @@ async function handleConfirm(req, res, email, body) {
  *
  * 여기서 절대 재승인하지 않는다 — 조회만 한다. 조회 결과가 곧 사실이다.
  */
-async function settleCharging(res, email, orderId, customerKey) {
+async function settleCharging(res, email, orderId, customerKey, order = null) {
   const looked = await toss.getPaymentByOrderId(orderId);
+
+  /*
+   * ★ 다른 요청이 아직 승인 중일 수 있다 (2026-10-21, 실 Neon 동시 확정으로 재현).
+   *   승인이 끝나기 전의 조회는 404·미완료를 준다. 그걸 실패로 굳히면 곧 성공할 결제가 갈 곳을 잃는다
+   *   (카드 청구 + failed + PRO 없음). 젊은 charging 은 상태를 건드리지 않고 «처리 중» 으로 답한다.
+   *   완료(DONE)는 젊어도 아래에서 그대로 확정한다 — 확정은 charging→paid 조건부라 한 번만 반영된다.
+   */
+  const inFlight = !!order && billing.chargingInFlight(order);
+  if (inFlight && (!looked.ok || String(looked.data && looked.data.status) !== toss.STATUS_DONE)) {
+    return res.status(409).json({ error: 'ORDER_IN_PROGRESS', message: '결제를 처리하고 있어요. 잠시 후 다시 확인해 주세요.' });
+  }
 
   if (!looked.ok) {
     // 404 = 그런 결제가 없다 = 청구되지 않았다. 실패로 확정하고 새 주문을 유도한다.

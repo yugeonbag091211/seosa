@@ -20,6 +20,7 @@ const notify   = require('../api/_notify');
 const { firstSafeBuyLink } = require('../api/_affiliate');
 const { kstToday, kstDayStartUtc, observedKstDate, sameVendorRows } = require('../api/_price');
 const { cleanVendorItemId, indexPriceRows, priceRowForAlert } = require('../api/_alertidentity');
+const { LOW_CONFIRM_DAYS } = require('../api/_pricestat');
 
 const DROP_THRESHOLD = 0.05; // 5% 이상 하락 시 알림
 /*
@@ -315,14 +316,27 @@ async function run() {
       .eq('product_id', todayRow.product_id)
       .eq('mall', todayRow.mall);
 
-    // 역대 최저가 확인
-    const { data: allHistory } = await scoped()
+    /*
+     * 역대 최저가 확인.
+     *
+     * ★ «확인된» 최저가일 때만 보낸다 (2026-10-21) — 그 값을 서로 다른 날 LOW_CONFIRM_DAYS 번 이상 봤을 때.
+     *   화면·AI(_pricestat.lowConfirmed · _deal.unconfirmedLow)는 한 번 본 최저가를 «확인 중» 으로 두고
+     *   «가장 싸다» 고 단정하지 않는다. 메일만 단정하면 같은 상품을 두고 다른 말을 한다.
+     *   실 Neon 샌드박스 실측: 처음 관측된 날(기록 1건) 목표가 10,000원 알림이 12,000원에서
+     *   «역대 최저가» 메일로 나갔다 — 기록이 하나면 그 값이 곧 최저라서다.
+     *   목표가·급락·AI 판정 조건은 그대로다. 오늘이 새 최저면 같은 값이 다시 보이는 날 나간다.
+     *   (가격 오름차순으로 읽으므로 최저가 행은 상한 안에 전부 들어온다. 상한을 넘게 같은 값이면 이미 확정이다.)
+     */
+    const { data: allHistory } = await supabase
+      .from('price_history').select('price, vendor_item_id, recorded_at, recorded_date')
+      .eq('product_id', todayRow.product_id)
+      .eq('mall', todayRow.mall)
       .order('price', { ascending: true })
       .limit(HIST30_MAX_ROWS);
-    const allPrices = sameVendorRows(allHistory || [], curVid)
-      .map(r => Number(r.price)).filter(n => n > 0);
-    const allTimeMin = allPrices.length ? Math.min(...allPrices) : null;
-    if (allTimeMin !== null && cur <= allTimeMin)
+    const allRows = sameVendorRows(allHistory || [], curVid).filter(r => Number(r.price) > 0);
+    const allTimeMin = allRows.length ? Math.min(...allRows.map(r => Number(r.price))) : null;
+    const lowDays = new Set(allRows.filter(r => Number(r.price) === allTimeMin).map(observedKstDate).filter(Boolean));
+    if (allTimeMin !== null && cur <= allTimeMin && lowDays.size >= LOW_CONFIRM_DAYS)
       triggeredAlerts.push({ type: 'atl' });
 
     if (!triggeredAlerts.length) { skipped++; continue; }

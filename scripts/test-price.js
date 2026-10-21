@@ -946,6 +946,36 @@ function recordedPrice(productId) {
   check(db.updates.some(u => u.table === 'alerts' && u.patch.sent === true),
         '발송 후 sent 갱신 (중복 발송 방지)');
 
+  /*
+   * 역대 최저가는 «확인된» 최저가만 (2026-10-21). 화면·AI 는 한 번 본 최저가를 «확인 중» 으로 둔다
+   * (_pricestat.lowConfirmed). 실 Neon 샌드박스에서 첫 관측 하루치로 목표가 위의 값에 «역대 최저가»
+   * 메일이 나갔다 — 기록이 하나면 그 값이 곧 최저다.
+   */
+  section('알림. 처음 본 값 하나로는 «역대 최저가» 메일을 보내지 않는다');
+  reset();
+  sentMail.length = 0;
+  db.price_history.push({ product_id: 'C-3333', mall: '쿠팡', title: '새 상품', price: 120000,
+    recorded_date: TODAY, recorded_at: new Date().toISOString(), link: 'https://x' });
+  db.alerts.push({ id: 31, email: 'u@example.com', title: '새 상품', mall: '쿠팡',
+    product_id: 'C-3333', target_price: 100000, sent: false, link: '', image: '' });
+  await runAlerts();
+  check(sentMail.length === 0, '★ 기록 1건(목표가 100,000 위의 120,000)으로는 발송하지 않는다',
+        sentMail.length ? JSON.stringify(sentMail[0].payload.alerts) : '발송 0건');
+
+  section('알림. 같은 최저가를 다른 날 다시 보면 «역대 최저가» 로 보낸다');
+  reset();
+  sentMail.length = 0;
+  db.price_history.push(
+    { product_id: 'C-3333', mall: '쿠팡', title: '새 상품', price: 130000, recorded_date: daysAgo(2), recorded_at: isoDaysAgo(2), link: 'https://x' },
+    { product_id: 'C-3333', mall: '쿠팡', title: '새 상품', price: 120000, recorded_date: daysAgo(1), recorded_at: isoDaysAgo(1), link: 'https://x' },
+    { product_id: 'C-3333', mall: '쿠팡', title: '새 상품', price: 120000, recorded_date: TODAY, recorded_at: new Date().toISOString(), link: 'https://x' });
+  db.alerts.push({ id: 32, email: 'u@example.com', title: '새 상품', mall: '쿠팡',
+    product_id: 'C-3333', target_price: 100000, sent: false, link: '', image: '' });
+  await runAlerts();
+  check(sentMail.length === 1 && sentMail[0].payload.alerts.some(a => a.type === 'atl'),
+        '★ 이틀 본 120,000원 = 확인된 역대 최저가 → 1건', sentMail[0] && JSON.stringify(sentMail[0].payload.alerts));
+  check(sentMail[0] && !sentMail[0].payload.alerts.some(a => a.type === 'target'), '목표가(100,000)는 아직 아니다');
+
   /* ================================================================ *
    *  알림 조건 4 — "AI 가 사도 좋다고 하면 알려줘" (alerts.on_deal)
    *
