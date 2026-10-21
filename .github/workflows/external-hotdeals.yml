@@ -7,9 +7,9 @@ name: SEOSA External Hotdeals
 # 같은 글은 collector의 imageLookup 쿨다운 + 공급자 캐시를 이어받기 때문에
 # 매 실행마다 쿠팡/ADPICK API를 다시 소모하지 않는다.
 
+# Neon Free: do not schedule the bandwidth-heavy shadow job.
+# Keep manual execution available for controlled diagnostics.
 on:
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
