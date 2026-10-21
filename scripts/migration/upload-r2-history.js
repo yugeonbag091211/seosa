@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Private R2 uploader: no network unless BOTH --execute and --confirm-bucket=seosapricehistory.
+// Private R2 uploader: no network unless BOTH --execute and --confirm-bucket=seosa-price-history.
 // Credentials only from process environment; never logs keys or user data.
 const fs=require('node:fs');
 const path=require('node:path');
@@ -9,19 +9,19 @@ const {S3Client,HeadObjectCommand,PutObjectCommand}=require('@aws-sdk/client-s3'
 const opts=process.argv.slice(2);
 const rootFlag=opts.find(x=>x.startsWith('--dir='));
 const execute=opts.includes('--execute');
-const confirm=opts.includes('--confirm-bucket=seosapricehistory');
-if(!rootFlag){console.error('Usage: node scripts/migration/upload-r2-history.js --dir=DIR [--execute --confirm-bucket=seosapricehistory]');process.exit(2);}
+const confirm=opts.includes('--confirm-bucket=seosa-price-history');
+if(!rootFlag){console.error('Usage: node scripts/migration/upload-r2-history.js --dir=DIR [--execute --confirm-bucket=seosa-price-history]');process.exit(2);}
 const folder=path.resolve(rootFlag.slice('--dir='.length));
 async function run(){
   const good=await verify(folder);
   console.log('R2_PREUPLOAD_CHECKSUMS_OK rows='+good.rows+' shards='+good.shards+' bytes='+good.bytes);
   if(!execute){console.log('R2_DRY_RUN_COMPLETE: no network calls or writes.');return;}
-  if(!confirm)throw Error('Explicit --confirm-bucket=seosapricehistory required');
+  if(!confirm)throw Error('Explicit --confirm-bucket=seosa-price-history required');
   const bucket=process.env.R2_BUCKET;
   const account=process.env.R2_ACCOUNT_ID;
   const accessKeyId=process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey=process.env.R2_SECRET_ACCESS_KEY;
-  if(bucket!=='seosapricehistory'||!account||!accessKeyId||!secretAccessKey)throw Error('Missing restricted R2 env credentials or bucket mismatch');
+  if(bucket!=='seosa-price-history'||!account||!accessKeyId||!secretAccessKey)throw Error('Missing restricted R2 env credentials or bucket mismatch');
   if(!/^[a-f0-9]{32}$/i.test(account))throw Error('Invalid R2 account id');
   const manifest=JSON.parse(fs.readFileSync(path.join(folder,'manifest.json'),'utf8'));
   const client=new S3Client({

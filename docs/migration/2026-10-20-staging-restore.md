@@ -20,7 +20,7 @@
 
 ## 아직 필요한 작업
 1. Supabase PostgREST 사용 API(최소 30개)들을 Neon server-side SQL driver 또는 별도 안전한 API 계층으로 이관. 기존 응답 계약/SQL RPC/가입·수집·가격기록·결제 기능 회귀 검사.
-2. Cloudflare R2 seosapricehistory 버킷을 제한된 API 토큰으로 연결하고 과거 price_history의 일부만 안전하게 파일화. R2 직접 공개/PII 노출 금지.
+2. Cloudflare R2 seosa-price-history 버킷을 제한된 API 토큰으로 연결하고 과거 price_history의 일부만 안전하게 파일화. R2 직접 공개/PII 노출 금지.
 3. Vercel Preview에만 새 DB 설정 후 검색·상세·가격 그래프·AI 카드·제휴사 쿼터 제한·핫딜·가격 수집 E2E 테스트.
 4. 모든 회귀/비용/전송량 검증 및 cutover 시점 원본 증분 동기화 후에만 Neon Production을 준비, 명시적 배포 승인 필요.
 5. Supabase 원본 데이터는 삭제하지 말 것. 클라우드 R2 및 데이터 전송 무료 한도도 점검.

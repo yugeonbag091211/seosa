@@ -98,7 +98,7 @@ async function exportData(){
     sourceSHA256:await hashFile(sourcePath),count:parsed,shards:256,
     shardAlgorithm:'sha256(UTF8 product_id) first byte',
     columns:['product_id','mall','vendor_item_id','recorded_at','recorded_date','price','source'],
-    uploadBucket:'seosapricehistory',uploadPrefix:KEY_PREFIX,
+    uploadBucket:'seosa-price-history',uploadPrefix:KEY_PREFIX,
     rowsIndexedBy:'product_id',privateObjectsRequired:true,
     items:objects
   };

@@ -4,7 +4,7 @@
 - 이전 전 운영 DB: Supabase PostgreSQL 17, 약 490MiB. public.products 약 71,550건; public.price_history 약 320,413건. 서버에서 직접 읽은 수치이며, 이전 시점에 다시 확인해야 한다.
 - Supabase Free는 이미 Egress 5GB를 초과하여 REST API가 HTTP 402로 차단된 상태다. 오래된 행을 지워도 이미 사용한 네트워크 전송량은 줄지 않는다.
 - 새 DB: Neon 프로젝트 withered-dew-45175008, production 브랜치 br-withered-mud-aoxop0nr, 싱가포르, PostgreSQL 18, 빈 데이터베이스. neon init 및 neon deploy 성공, SELECT 1 접속 확인.
-- 파일 저장소: Cloudflare R2 버킷 seosapricehistory (사용자 생성). API 토큰/연결 및 실제 데이터 업로드는 미완료.
+- 파일 저장소: Cloudflare R2 버킷 seosa-price-history (사용자 생성). API 토큰/연결 및 실제 데이터 업로드는 미완료.
 - 별도 체크아웃: C:\Users\yugeo\seosa-neon-r2-migration-20261020. 운영 main / 배포 설정 변경 없음.
 - 로컬 백업: D:\SEOSA-Archive\supabase, D:\SEOSA-Archive\r2. 데이터를 담기 전까지 용량은 확보(예약)되지 않는다.
 

@@ -16,7 +16,7 @@ async function hashFile(filename){
 async function verify(folder){
   const root=fs.realpathSync(folder);
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
-  if(manifest.version!==1||manifest.shards!==256||manifest.uploadBucket!=='seosapricehistory'||!Array.isArray(manifest.items)||manifest.items.length!==256)throw Error('Invalid R2 manifest');
+  if(manifest.version!==1||manifest.shards!==256||manifest.uploadBucket!=='seosa-price-history'||!Array.isArray(manifest.items)||manifest.items.length!==256)throw Error('Invalid R2 manifest');
   const seen=new Set();let total=0,compressedBytes=0;
   for(const item of manifest.items){
     if(!/^[0-9a-f]{2}\.jsonl\.gz$/.test(item.file)||item.key!=='history/v1/shards/'+item.file||seen.has(item.file))throw Error('Invalid shard name or key');

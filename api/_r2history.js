@@ -19,7 +19,7 @@ function keyOf(pid){if(!PID.test(String(pid)))throw Error('Invalid product ID');
 function r2Client(){
   if(s3)return s3;
   const account=process.env.R2_ACCOUNT_ID,accessKeyId=process.env.R2_ACCESS_KEY_ID,secretAccessKey=process.env.R2_SECRET_ACCESS_KEY;
-  if(!account||!/^[0-9a-f]{32}$/i.test(account)||!accessKeyId||!secretAccessKey||process.env.R2_BUCKET!=='seosapricehistory')throw Error('Private R2 credentials missing');
+  if(!account||!/^[0-9a-f]{32}$/i.test(account)||!accessKeyId||!secretAccessKey||process.env.R2_BUCKET!=='seosa-price-history')throw Error('Private R2 credentials missing');
   s3=new S3Client({region:'auto',endpoint:'https://'+account+'.r2.cloudflarestorage.com',credentials:{accessKeyId,secretAccessKey},forcePathStyle:true,maxAttempts:2,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED'});
   return s3;
 }
@@ -31,7 +31,7 @@ async function readShard(name){
     compressed=fs.createReadStream(path.join(local,name+'.jsonl.gz'));
   }else{
     if(process.env.SEOSA_R2_HISTORY_ENABLED!=='1')throw Error('R2 price history not enabled');
-    const r=await r2Client().send(new GetObjectCommand({Bucket:'seosapricehistory',Key:'history/v1/shards/'+name+'.jsonl.gz'}));
+    const r=await r2Client().send(new GetObjectCommand({Bucket:'seosa-price-history',Key:'history/v1/shards/'+name+'.jsonl.gz'}));
     if(Number(r.ContentLength)>4*1024*1024)throw Error('Unexpectedly large R2 history shard');
     compressed=r.Body;
   }
