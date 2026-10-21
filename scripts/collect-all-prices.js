@@ -654,6 +654,9 @@ console.log('  COUPANG_SECRET_KEY :', COUP_SECRET  ? `설정됨 (${COUP_SECRET.l
 console.log('  ADPICK_API_KEY     :', adpickHasKey() ? '설정됨' : '❌ 없음 (ADPICK 수집을 건너뜁니다)');
 console.log('  SUPABASE_URL       :', process.env.SUPABASE_URL       ? '설정됨' : '❌ 없음');
 console.log('  SUPABASE_SECRET_KEY:', process.env.SUPABASE_SECRET_KEY ? '설정됨' : '❌ 없음');
+// Neon 전환 스위치(api/_supabase.js). 값은 찍지 않는다 — 켜졌는지와 URL 유무만.
+console.log('  DB 백엔드          :', process.env.SEOSA_DB_BACKEND === 'neon' ? 'Neon' : 'Supabase');
+if (process.env.SEOSA_DB_BACKEND === 'neon') console.log('  NEON_DATABASE_URL  :', process.env.NEON_DATABASE_URL ? '설정됨' : '❌ 없음');
 console.log('  RESEND_API_KEY     :', process.env.RESEND_API_KEY ? '설정됨' : '❌ 없음 (수집 결과 이메일을 보내지 않습니다)');
 console.log('');
 
@@ -2513,10 +2516,49 @@ function addCacheHints(out, rows, wantIds, mallName) {
   return out;
 }
 
+/*
+ * DB 안에서 고르는 캐시 힌트 (supabase/2026-10-21-search-cache-hints.sql).
+ *
+ * 아래 전체 스캔과 «같은 결과 · 같은 순서» 를 돌려주고, 내려받는 것은 찾는 상품의 (ID, 검색어) 뿐이다.
+ * 2026-10-21 실측 전체 스캔 크기: 쿠팡 35.0MB + ADPICK 16.6MB — Neon Free 전송 한도는 월 5GB.
+ * 함수가 없거나(미적용) 실패하면 null → 호출부가 예전 전체 스캔으로 간다(동작 동일).
+ */
+let cacheHintRpcMissing = false;
+async function cacheHintsFromDb(wantIds, mallName) {
+  if (cacheHintRpcMissing || process.env.PRICE_CACHE_HINT_RPC === '0') return null;
+  const { data, error } = await supabase.rpc('search_cache_hints', { p_mall: mallName, p_ids: [...wantIds] });
+  if (error) {
+    if (DbError.isMissingFunction(error)) {
+      cacheHintRpcMissing = true;
+      console.warn('  [캐시 힌트] search_cache_hints 함수 없음 — 검색 캐시 전체 스캔으로 대신합니다'
+        + ' (supabase/2026-10-21-search-cache-hints.sql 을 적용하면 전송량이 줄어듭니다).');
+    } else {
+      console.warn(`  [${mallName} 캐시 힌트] DB 계산 실패 — 전체 스캔으로 대신합니다: ${error.message}`);
+    }
+    return null;
+  }
+  if (!Array.isArray(data)) return null;
+  const out = new Map();
+  for (const pair of data) {
+    if (!Array.isArray(pair) || pair.length !== 2) continue;
+    const pid = String(pair[0] || '');
+    if (!pid || !wantIds.has(pid)) continue;
+    const list = [];
+    for (const k of Array.isArray(pair[1]) ? pair[1] : []) {
+      const kw = String(k || '').trim();
+      if (kw && !list.includes(kw)) list.push(kw);
+    }
+    if (list.length) out.set(pid, list);
+  }
+  return out;
+}
+
 async function cacheHintQueries(wantIds, mallName = '쿠팡') {
   const out = new Map();
   if (!wantIds || wantIds.size === 0) return out;
   if (mallName !== '쿠팡' && mallName !== 'ADPICK') return out;
+  const fromDb = await cacheHintsFromDb(wantIds, mallName).catch(() => null);
+  if (fromDb) return fromDb;
   const table = mallName === 'ADPICK' ? 'adpick_search_cache' : 'coupang_search_cache';
   try {
     // 두 테이블 모두 keyword PK. keysetScan 이 PostgREST 페이지 제한을 넘겨 순회한다.
@@ -5952,7 +5994,7 @@ module.exports = {
   chunkIdsByLength, ID_BATCH_CHARS,
   // 파생 캐시 보존/정리 — storage 회귀 테스트가 이 계약을 고정한다.
   pruneSearchCaches, cacheRetentionMs, CACHE_RETENTION_DEFAULT_MS,
-  addCacheHints, cacheHintQueries,
+  addCacheHints, cacheHintQueries, cacheHintsFromDb,
   // V3 — test-collector-v3 가 체크포인트 모양·잠금 조건·플래그 기본값을 고정한다.
   createCheckpointWriter, checkpointPayload, mallStateFromSnapshot, targetSignatureFor, resumeCompatible,
   sameTargetSet, coverageOnlyResumeState,

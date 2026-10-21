@@ -15,6 +15,14 @@ function rpcRow(data) { return Array.isArray(data) ? data[0] : data; }
 let circuitClient;
 function getClient() {
   if (circuitClient) return circuitClient;
+  /*
+   * Neon 모드(api/_supabase.js 와 같은 스위치)에서는 Neon 호환 계층의 «별도 클라이언트» 를 쓴다.
+   * Pool 은 공유하지만 옵션 상태가 없고, 재시도도 하지 않는다 — 아래 lease 주의와 같은 조건이다.
+   */
+  if (process.env.SEOSA_DB_BACKEND === 'neon') {
+    circuitClient = require('./_neonpg').createClient();
+    return circuitClient;
+  }
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
     throw new Error('circuit database unavailable');
   }

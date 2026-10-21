@@ -60,6 +60,14 @@ function kindOf(message, code) {
   if (/fetch failed|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|network ?error|\b50[023]\b|bad gateway|service unavailable|error code: 52\d|<html/i.test(m)) {
     return KIND.DB_UNAVAILABLE;
   }
+  /*
+   * Neon(api/_neonpg.js) 쪽 장애 문구. 무료 한도(연산 시간 · 전송량)를 다 쓰면 다음 결제 주기까지
+   * compute 가 멈춘다 — «표가 없다» 가 아니라 «지금 DB 가 안 된다» 다. 57P01 은 compute 재시작.
+   */
+  if (code === '57P01' || code === '57P03' || code === '08006' || code === '08001'
+    || /exceeded the (?:compute time|data transfer|written data) quota|endpoint is disabled|couldn'?t connect to compute node|compute (?:node )?(?:is )?(?:suspended|unavailable)|terminating connection due to administrator command|the database system is (?:starting up|shutting down)/i.test(m)) {
+    return KIND.DB_UNAVAILABLE;
+  }
   if (/환경변수 누락|SUPABASE_(?:URL|SECRET_KEY)/.test(m)) return KIND.CONFIG_MISSING;
 
   if (code === 'PGRST205' || code === '42P01'

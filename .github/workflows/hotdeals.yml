@@ -62,6 +62,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           ADPICK_AFFILIATE_ID: ${{ secrets.ADPICK_AFFILIATE_ID }}
         run: |
           node scripts/collect-hotdeals.js \
@@ -79,6 +83,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           # 외부 커뮤니티 글을 SEOSA 제휴 상품으로 안전하게 재탐색할 때만 쓴다.
           # 기존 _coupang/_adpick 리미터·캐시를 그대로 거치며 secret 값은 로그에 쓰지 않는다.
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
@@ -108,6 +116,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Neon 전환 스위치 — 저장소 Variables 가 비어 있으면 지금처럼 Supabase (docs/migration/neon-cutover-env.md)
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
           ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}

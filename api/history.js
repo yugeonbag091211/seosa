@@ -3,6 +3,7 @@ const { applyCors, cachePublic, noStore, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { observedKstDate, sameVendorRows, acceptedObservations } = require('./_price');
 const Canonical = require('./_canonicalconsumer');
+const R2History = require('./_r2history');
 
 /*
  * 차트의 가로축 날짜는 KST 달력으로 찍는다.
@@ -148,9 +149,16 @@ async function singleHandler(req, res) {
     let rows = null;
 
     if (productId) {
-      let query = baseQuery().eq('product_id', productId);
-      if (mall) query = query.eq('mall', mall);
-      const { data, error } = await query;
+      /*
+       * 과거 기록은 R2 아카이브, 신규 기록은 DB — _r2history.withArchive 주석 참고.
+       * 아카이브를 끈 환경(기본값)에서는 예전과 똑같이 DB 한 번만 읽는다.
+       */
+      const { data, error } = await R2History.withArchive(productId, mall, since => {
+        let query = baseQuery().eq('product_id', productId);
+        if (mall) query = query.eq('mall', mall);
+        if (since) query = query.gt('recorded_at', since);
+        return query;
+      });
       if (error) throw new Error(error.message);
       /*
        * 옵션(vendor_item_id) 을 가르는 일은 SQL 이 아니라 _price.sameVendorRows
