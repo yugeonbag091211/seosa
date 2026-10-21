@@ -105,6 +105,18 @@ async function test(name, fn) {
     assert.match(seen[0].text, /\(\("mall" = \$1 AND "lprice" < \$2\) OR NOT \("mall" IN \(\$3,\$4\)\) OR "title" = \$5\)/);
     assert.deepEqual(seen[0].values.slice(0, 5), ['쿠팡', '1000', 'ADPICK', 'a,b', 'x.y']);
   });
+  await test('collector JSON checkpoint lock uses safe parameterized path', async () => {
+    const q = await db.from('products').select('id')
+      .eq('id', 1).eq('last_result->lock->>runId', 'token-123');
+    assert.equal(q.error, null);
+    assert.match(seen[0].text, /"last_result"->'lock'->>'runId' = \$2/);
+    assert.ok(seen[0].values.includes('token-123'));
+    seen.length = 0;
+    const bad = await db.from('price_collection_progress').select('id')
+      .eq("last_result->lock->>runId';DROP", '1');
+    assert.ok(bad.error);
+    assert.equal(seen.length, 0);
+  });
   await test('not(col, is, null) (_billing 실사용)', async () => {
     await db.from('products').select('id').not('title', 'is', null);
     assert.match(seen[0].text, /WHERE NOT \("title" IS NULL\)/);

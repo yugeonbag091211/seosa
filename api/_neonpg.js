@@ -394,8 +394,17 @@ function splitTopLevel(text) {
 }
 
 /** 하나의 조건을 SQL 로. value 는 PostgREST 문자열 또는 JS 값. */
+// PostgREST JSON-path equality for the collector's checkpoint lock.
+// Restrict both JSON keys to identifiers so SQL cannot be injected via filters.
+function quoteFilterColumn(column) {
+  if (typeof column === 'string' && IDENT.test(column)) return quoteIdent(column);
+  const match = typeof column === 'string' && /^([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)->>([A-Za-z_][A-Za-z0-9_]*)$/.exec(column);
+  if (!match) throw new AdapterError(`Unsafe SQL identifier: ${String(column).slice(0, 60)}`, 'PGRST100');
+  return `${quoteIdent(match[1])}->'${match[2]}'->>'${match[3]}'`;
+}
+
 function conditionSql(column, op, value, args) {
-  const col = quoteIdent(column);
+  const col = quoteFilterColumn(column);
   if (op === 'is') {
     const v = value === null ? 'null' : String(value).toLowerCase();
     if (v === 'null') return `${col} IS NULL`;
@@ -561,7 +570,7 @@ class TableQuery extends Thenable {
   }
 
   _filter(column, op, value) {
-    return this._defer(() => { quoteIdent(column); this.filters.push({ column, op, value }); });
+    return this._defer(() => { quoteFilterColumn(column); this.filters.push({ column, op, value }); });
   }
   eq(c, v) { return this._filter(c, 'eq', v); }
   neq(c, v) { return this._filter(c, 'neq', v); }
