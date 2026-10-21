@@ -94,6 +94,12 @@ async function test(name, fn) {
     assert.match(seen[0].text, /\("title" LIKE \$1 OR "title" LIKE \$2\) AND "collected_at" >= \$3/);
     assert.deepEqual(seen[0].values.slice(0, 2), ['SONY%', 'Sony%']);
   });
+  await test('★ or() 조건 수백 개 (브랜드 허브 실사용 — PostgREST 는 개수 상한 없음)', async () => {
+    const ors = Array.from({ length: 600 }, (_, i) => `title.like.B${i}*`).join(',');
+    const r = await db.from('products').select('id').or(ors).gte('collected_at', '2026-01-01');
+    assert.equal(r.error, null);
+    assert.equal(seen[0].values.length, 600 + 2);
+  });
   await test('or(): and() 중첩 · not. · in.(…) · 큰따옴표 값', async () => {
     await db.from('products').select('id').or('and(mall.eq.쿠팡,lprice.lt.1000),mall.not.in.(ADPICK,"a,b"),title.eq."x.y"');
     assert.match(seen[0].text, /\(\("mall" = \$1 AND "lprice" < \$2\) OR NOT \("mall" IN \(\$3,\$4\)\) OR "title" = \$5\)/);

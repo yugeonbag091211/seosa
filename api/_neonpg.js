@@ -53,6 +53,9 @@ const MAX_ROWS = (() => {
   return Number.isInteger(n) && n > 0 ? n : 1000;
 })();
 const MAX_FILTERS = 80;
+// or() 안의 조건 수. PostgREST 에는 따로 상한이 없다(URL 길이만 있다) — 브랜드 허브·사이트맵이
+// 브랜드 접두 수백 개를 or() 하나로 보낸다(2026-10-21 /category 503 재현). 바인드 인자 상한 안쪽으로만 막는다.
+const MAX_OR_PARTS = 5000;
 // Postgres 바인드 인자 상한은 65,535. 한 문장에 그 절반만 쓴다(테스트는 작게 줄여 묶음 경로를 탄다).
 const MAX_PARAMS_PER_STATEMENT = (() => {
   const n = Number(process.env.SEOSA_NEON_MAX_PARAMS);
@@ -408,7 +411,7 @@ function logicSql(expr, args, depth) {
 
 function logicListSql(text, joiner, args, depth) {
   const parts = splitTopLevel(text);
-  if (!parts.length || parts.length > MAX_FILTERS) throw new AdapterError('Unsupported OR filter', 'PGRST100');
+  if (!parts.length || parts.length > MAX_OR_PARTS) throw new AdapterError('Unsupported OR filter', 'PGRST100');
   return '(' + parts.map(p => logicSql(p, args, depth)).join(joiner) + ')';
 }
 
