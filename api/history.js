@@ -3,6 +3,7 @@ const { applyCors, cachePublic, noStore, readStringList } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { observedKstDate, sameVendorRows, acceptedObservations } = require('./_price');
 const Canonical = require('./_canonicalconsumer');
+const R2History = require('./_r2history');
 
 /*
  * 차트의 가로축 날짜는 KST 달력으로 찍는다.
@@ -148,9 +149,16 @@ async function singleHandler(req, res) {
     let rows = null;
 
     if (productId) {
-      let query = baseQuery().eq('product_id', productId);
-      if (mall) query = query.eq('mall', mall);
-      const { data, error } = await query;
+      /*
+       * 과거 기록은 R2 아카이브, 신규 기록은 DB — _r2history.withArchive 주석 참고.
+       * 아카이브를 끈 환경(기본값)에서는 예전과 똑같이 DB 한 번만 읽는다.
+       */
+      const { data, error } = await R2History.withArchive(productId, mall, since => {
+        let query = baseQuery().eq('product_id', productId);
+        if (mall) query = query.eq('mall', mall);
+        if (since) query = query.gt('recorded_at', since);
+        return query;
+      });
       if (error) throw new Error(error.message);
       /*
        * 옵션(vendor_item_id) 을 가르는 일은 SQL 이 아니라 _price.sameVendorRows
@@ -163,16 +171,7 @@ async function singleHandler(req, res) {
        * 그대로 그렸다. 두 화면이 다른 말을 하고 있었다.
        */
       /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
-      // Archive is opt-in only. Combine older private R2 shards with online DB rows;
-      // never discard fresh observations or duplicate rows during the transition.
-      let historyRows = data || [];
-      if (process.env.SEOSA_R2_HISTORY_ENABLED === '1' ||
-          (process.env.VERCEL_ENV !== 'production' && process.env.SEOSA_R2_HISTORY_LOCAL_DIR)) {
-        const archive = require('./_r2history');
-        const offlineRows = await archive.getHistory(productId, mall);
-        historyRows = archive.mergeHistory(historyRows, offlineRows, { productId, mall });
-      }
-      const picked = acceptedObservations(sameVendorRows(historyRows, vendorItemId));
+      const picked = acceptedObservations(sameVendorRows(data || [], vendorItemId));
       if (picked.length) rows = picked;
     }
 

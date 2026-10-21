@@ -29,6 +29,7 @@
  */
 
 const supabase = require('./_supabase');
+const R2History = require('./_r2history');
 const SEO = require('./_seo');
 const { toClientProduct, freshRows, relevantRows, preferLive } = require('./_shop');
 const { safeBuyLink } = require('./_affiliate');
@@ -144,21 +145,18 @@ async function loadProduct(pid, mall) {
  * 있다). 이 경로만 다른 규칙을 쓰면 모달과 상품 페이지가 또 갈린다.
  */
 async function loadPoints(pid, mall, vendorItemId) {
-  const { data, error } = await supabase
-    .from('price_history')
-    // vendor_item_id 도 받는다 — 옵션 계열을 가르는 데 쓴다.
-    .select('recorded_date, recorded_at, price, vendor_item_id')
-    .eq('product_id', pid).eq('mall', mall)
-    .order('recorded_date', { ascending: false })
-    .limit(MAX_ROWS);
+  // 과거 기록은 R2 아카이브, 신규 기록은 DB — _r2history.withArchive 주석 참고(기본값은 DB 만).
+  const { data, error } = await R2History.withArchive(pid, mall, since => {
+    let q = supabase
+      .from('price_history')
+      // vendor_item_id 도 받는다 — 옵션 계열을 가르는 데 쓴다.
+      .select('recorded_date, recorded_at, price, vendor_item_id')
+      .eq('product_id', pid).eq('mall', mall);
+    if (since) q = q.gt('recorded_at', since);
+    return q.order('recorded_date', { ascending: false }).limit(MAX_ROWS);
+  });
   if (error) throw new Error(error.message);
-  // Preview-gated R2 archive plus current DB records. Keep option identity checks.
-  let historyRows = data || [];
-  if (process.env.SEOSA_R2_HISTORY_ENABLED === '1' ||
-      (process.env.VERCEL_ENV !== 'production' && process.env.SEOSA_R2_HISTORY_LOCAL_DIR)) {
-    const archive = require('./_r2history');
-    historyRows = archive.mergeHistory(historyRows, await archive.getHistory(pid, mall), { productId: pid, mall });
-  }
+  const historyRows = data || [];
   const byDate = new Map();
   /* 의심 관측(확인 전 급변)은 화면 근거에서 뺀다 — _price.acceptedObservations. */
   acceptedObservations(sameVendorRows(historyRows, vendorItemId)).forEach(r => {
