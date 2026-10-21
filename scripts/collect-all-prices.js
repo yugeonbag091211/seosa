@@ -654,6 +654,9 @@ console.log('  COUPANG_SECRET_KEY :', COUP_SECRET  ? `설정됨 (${COUP_SECRET.l
 console.log('  ADPICK_API_KEY     :', adpickHasKey() ? '설정됨' : '❌ 없음 (ADPICK 수집을 건너뜁니다)');
 console.log('  SUPABASE_URL       :', process.env.SUPABASE_URL       ? '설정됨' : '❌ 없음');
 console.log('  SUPABASE_SECRET_KEY:', process.env.SUPABASE_SECRET_KEY ? '설정됨' : '❌ 없음');
+// Neon 전환 스위치(api/_supabase.js). 값은 찍지 않는다 — 켜졌는지와 URL 유무만.
+console.log('  DB 백엔드          :', process.env.SEOSA_DB_BACKEND === 'neon' ? 'Neon' : 'Supabase');
+if (process.env.SEOSA_DB_BACKEND === 'neon') console.log('  NEON_DATABASE_URL  :', process.env.NEON_DATABASE_URL ? '설정됨' : '❌ 없음');
 console.log('  RESEND_API_KEY     :', process.env.RESEND_API_KEY ? '설정됨' : '❌ 없음 (수집 결과 이메일을 보내지 않습니다)');
 console.log('');
 

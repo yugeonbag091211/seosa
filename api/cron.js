@@ -295,6 +295,9 @@ async function diagnose(req, res) {
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? '설정됨' : '★없음 (AI Concierge 불가)',
       SUPABASE_URL:       process.env.SUPABASE_URL       ? '설정됨' : '★없음',
       SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY ? '설정됨' : '★없음',
+      // Neon 전환 스위치(api/_supabase.js). Neon 이어도 SUPABASE_SECRET_KEY 는 서명 키 재료라 지우면 안 된다.
+      DB_BACKEND:         process.env.SEOSA_DB_BACKEND === 'neon' ? 'neon' : 'supabase',
+      NEON_DATABASE_URL:  process.env.NEON_DATABASE_URL  ? '설정됨' : (process.env.SEOSA_DB_BACKEND === 'neon' ? '★없음' : '없음 (Supabase 사용 중)'),
       CRON_SECRET:        process.env.CRON_SECRET        ? '설정됨' : '없음',
       // 없으면 _auth 가 SUPABASE_SECRET_KEY 에서 파생한다 (동작은 한다).
       AUTH_SECRET:        process.env.AUTH_SECRET        ? '설정됨' : '없음 (SUPABASE_SECRET_KEY 에서 파생)'
