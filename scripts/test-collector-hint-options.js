@@ -132,6 +132,31 @@ const target = (pid, vid, link = '') => ({ product_id: pid, mall: '쿠팡', vend
       seenArgs && JSON.stringify([...seenArgs[2] || []]));
   }
 
+  console.log('\n[6] 공급자가 더 부를 수 없다고 하면(하루 예산 소진) hint 패스와 캐시 확인 읽기를 하지 않는다');
+  {
+    // 운영 10-21: 쿠팡 3,400/3,400 소진 뒤에도 실행마다 513쌍 캐시 확인(≈4.7MB) → 전부 제외, API 0회.
+    const rows = [{ product_id: 'P1', mall: '쿠팡', title: '상품 P1', keyword: '첫검색', link: '', image: '',
+      vendor_item_id: '11', item_id: '' }];
+    const runOnce = async stop => {
+      let hintCalls = 0;
+      await C.runMallCollection({
+        mallName: '쿠팡', rows, savedState: null, deadlineTs: Date.now() + 8000,
+        fetchAllFn: async () => ({ ok: true, reason: '', items: [item('P1', '22')] }),
+        recordPricesFn: async () => ({ saved: 0, recorded: 0, recordedKeys: [], rejected: 0, suspect: 0 }),
+        collectedTodayFn: async () => new Set(),
+        cacheHintFn: async () => { hintCalls++; return new Map(); },
+        laneGate: { stopReason: () => stop(), blockedUntilMs: () => 0 }
+      });
+      return hintCalls;
+    };
+    let callsSoFar = 0;
+    // 1차 검색은 하게 두고(예산 남음), 회수 단계에 들어설 때 예산이 끝난 상황.
+    const spent = await runOnce(() => (++callsSoFar > 1 ? 'budget' : ''));
+    eq('★ 예산 소진 → hint 함수(캐시 확인 읽기 포함) 0회', spent, 0);
+    const open = await runOnce(() => '');
+    eq('예산이 남아 있으면 예전처럼 hint 를 찾는다', open, 1);
+  }
+
   console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
