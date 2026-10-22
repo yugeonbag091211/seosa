@@ -225,7 +225,9 @@ function fixtureStats() {
     ok(calledModels.every(m => /:free$/.test(String(m))), '★ 게스트 요청은 :free 모델만 호출', calledModels.join(','));
     ok(reserveCalls === 0, '★ 쿼터 예약 0회', String(reserveCalls));
     ok(stub.searchCalls === 1, '검색은 1회 돈다', String(stub.searchCalls));
-    ok(Array.isArray(r.body.items) && r.body.items.length === 3, '카드 3장', String(r.body.items && r.body.items.length));
+    // 2026-10-22 레드팀 BUG-01: 예산(10만원 이하)을 넘는 289,000원 상품은 카드로 나가지 않는다 — 예산 안 2장.
+    ok(Array.isArray(r.body.items) && r.body.items.length === 2 && r.body.items.every(x => x.lprice <= 100000),
+      '카드 2장 (예산 초과 카드 없음)', String(r.body.items && r.body.items.map(x => x.lprice)));
     ok(/QCY T13/.test(r.body.text) && !r.body.degraded, '근거 있는 LLM 답변을 반환한다', r.body.text.slice(0, 60));
     ok(r.body.items[0].productId === '1001' || r.body.items[0].productId === '1003', '예산 안 상품이 1위 카드', r.body.items[0].productId);
     ok(Array.isArray(r.body.followups) && r.body.followups.length > 0, '후속 질문이 있다', String(r.body.followups && r.body.followups.length));
