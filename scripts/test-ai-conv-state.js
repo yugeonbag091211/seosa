@@ -329,6 +329,17 @@ const LONG = [
     ok(last.system.includes('제외 요청하신 상태(중고)'), '13턴: 중고 후보는 «제외 요청하신 상태» 로 판정된다');
     ok(last.cards.length > 0 && last.cards[0].lprice <= 300000 && !/중고/.test(last.cards[0].title),
       '13턴: 첫 카드는 예산 안의 새 상품', last.cards.map(c => `${c.title.slice(0, 16)} ${c.lprice}`));
+    /*
+     * 예산 관문(api/_shopintent budgetFilter · api/ai.js gateBudget)은 PR #179 에서 생긴다. 그 코드가 있으면
+     * «같은 상품을 이어 찾는 말» 에는 상태로 이어받은 예산도 관문으로 걸려야 한다 — 상태의 예산이 이번 발화의
+     * 예산이 아니어도 sameThread 이기 때문이다. 관문이 없는 코드에서는 위의 «첫 카드» 순서만 본다.
+     */
+    if (typeof require('../api/_shopintent').budgetFilter === 'function') {
+      ok(last.cards.length > 0 && last.cards.every(c => c.lprice <= 300000),
+        '13턴 (예산 관문 있음): 이어 찾기에는 이어받은 예산 관문이 걸린다 — 459,000원 후보 없음', last.cards.map(c => c.lprice));
+    } else {
+      console.log('  [SKIP] 예산 관문(_shopintent budgetFilter)이 없는 코드 — PR #179 가 들어오면 켜진다');
+    }
 
     const mid = withState.turns[10];   // "고마워" — 쇼핑이 아닌 턴
     ok(!!mid.system && mid.system.includes(BUDGET_LINE) && /빼 달라고 한 상태: 중고/.test(mid.system),
@@ -394,13 +405,16 @@ const LONG = [
     ok(v && v.constraints.budgetMax === 300000 && v.excludedConditions.join() === 'used',
       '예산·중고 제외는 사용자가 바꾸지 않았으므로 상태에 남는다 (거는지는 gateBudget 판단)', v);
 
+    // 250만원 — 맥북 하나(2,390,000원)는 그 안이다. 예산 관문(PR #179)이 있어도 모델까지 간다.
     const own = await ask({
-      question: '맥북 프로 200만원 이하로 찾아줘',
-      chatHistory: withState.history.concat([{ role: 'user', text: '맥북 프로 200만원 이하로 찾아줘' }]),
+      question: '맥북 프로 250만원 이하로 찾아줘',
+      chatHistory: withState.history.concat([{ role: 'user', text: '맥북 프로 250만원 이하로 찾아줘' }]),
       convState: withState.convState
     });
-    ok(own.system.includes('예산 2,000,000원 이하') && !own.system.includes(BUDGET_LINE),
+    ok(own.system.includes('예산 2,500,000원 이하') && !own.system.includes(BUDGET_LINE),
       '이번 발화가 예산을 말하면 그 예산이 상태의 예산을 덮는다', own.system.slice(0, 160));
+    ok(own.cards.some(c => c.lprice === 2390000), '덮은 예산(250만원) 안의 맥북이 나온다 — 옛 30만원으로 거르지 않는다',
+      own.cards.map(c => `${c.title.slice(0, 14)} ${c.lprice}`));
   }
 
   /* ================================================================== */
