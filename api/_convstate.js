@@ -251,7 +251,13 @@ function applyConditions(contract, excludedBefore) {
 function summaryLine(next, withBudget) {
   if (!next) return '';
   const parts = [];
-  if (next.product) parts.push(`찾던 상품: ${next.product}`);
+  /*
+   * 상품 구절은 사용자가 쓴 낱말이고 이 줄은 시스템 프롬프트에 들어간다. api/ai.js safeText 와 같은 규칙으로
+   * 한 줄로 누르고 꺾쇠를 없앤 뒤 따옴표로 묶는다 — 구절 안의 문장이 지시처럼 읽히지 않게.
+   */
+  const product = String(next.product || '').slice(0, 480).replace(/\p{C}/gu, ' ').replace(/[<>"]/g, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (product) parts.push(`찾던 상품(사용자가 쓴 말): "${product}"`);
   if (withBudget) {
     const c = next.constraints ? mergeConstraints(next.constraints, null) : null;
     const line = c ? constraintLine(c) : '';
