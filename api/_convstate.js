@@ -61,6 +61,85 @@ const TEXT_LEN = 500;
  */
 const BUDGET_RELEASE_RE = /(?:예산|가격|금액)\s*(?:은|는|이|도|을|를)?\s*(?:(?:조건|제한)\s*(?:은|을)?\s*)?(?:상관\s*(?:없|않|안\s*해)|무관|신경\s*(?:안\s*써|쓰지\s*(?:마|않))|제한\s*(?:없|두지\s*(?:마|않))|(?:빼|지워|없애)(?:줘|주세요|도\s*돼|도\s*괜찮)|취소(?!\s*하지)|해제(?!\s*하지))/;
 
+/*
+ * 예산의 «범위» — 이 예산이 그 상품의 예산인가, 앞으로 찾는 모든 상품의 예산인가.
+ *
+ * ── 왜 생겼나 (2026-10-23 Codex 감사 CO-03) ───────────────────────
+ *
+ *   [1]  "30만원 이하 노트북 추천해줘."
+ *   …    (상품 얘기가 없는 20턴)
+ *   [21] "청소기 추천해줘."
+ *
+ * 상태가 생기기 전에는 [1] 의 예산이 기록 창 밖으로 밀려나며 사라졌다. 이제는 남는다 —
+ * 그래서 [21] 의 청소기에 노트북 예산 30만원이 걸렸다. 사용자는 노트북 예산을 말했을 뿐
+ * 청소기 예산을 말한 적이 없다.
+ *
+ * 그래서 예산을 접을 때 그 예산이 «어느 상품의 말이었는지»(budgetProduct)와 사용자가
+ * «모든 상품» 이라고 말했는지(budgetScope)를 함께 서명해 둔다. 찾는 상품이 아주 다른
+ * 것으로 바뀌고 이번 발화에 새 예산이 없으면 상품 전용 예산은 거둔다(dropped). 그때
+ * api/ai.js 는 옛 상한 없이 찾고, 짧게 한 줄로 그 사실을 알린다 — 조용히 넓히지 않는다.
+ *
+ * ★ 전용/전역 구분만 한다. 사용자가 바꿔 말한 예산, 거두는 말("예산 상관없어")은 먼저 반영된다.
+ * ★ 빼 달라고 한 상태(중고·리퍼)는 거두지 않는다 — 상품이 바뀌어도 "중고는 싫다" 는 그대로
+ *   사실이고, 지우면 사용자가 싫다고 한 것을 다시 권하게 된다(넓히는 쪽의 실수).
+ */
+const GLOBAL_BUDGET_RE = /(모든\s*(?:상품|제품|물건|것|거)|어떤\s*(?:상품|제품|것|거)\s*(?:이?든)|뭐(?:든지|든)|무엇이?든|상품\s*(?:상관|관계)\s*없|앞으로\s*(?:는|도)?\s*(?:계속|쭉|전부|모두|다)|전부\s*(?:다\s*)?(?:같|동일))/;
+
+/** 상품 구절의 낱말 — 두 글자 이상이고 숫자만은 아닌 것. */
+function productTokens(text) {
+  return String(text || '').normalize('NFKC').toLowerCase()
+    .replace(/[^0-9a-z가-힣]+/g, ' ').split(' ')
+    .filter(t => t.length >= 2 && /[^0-9]/.test(t));
+}
+
+/**
+ * 두 상품 구절이 «같은 상품을 이어 찾는 말» 인가.
+ *
+ * 낱말 하나라도 겹치면 같은 줄기로 본다 — "노트북" → "게이밍 노트북" 은 좁히는 말이고,
+ * "맥북" → "맥북프로" 처럼 붙여 쓴 말도 한쪽이 다른 쪽을 품는다. 겹치는 낱말이 없을 때만
+ * 다른 상품으로 본다(예산을 거두는 쪽이 더 조심스러운 판정이므로 좁게 잡는다).
+ */
+function sameProductLine(a, b) {
+  const x = productTokens(a);
+  const y = productTokens(b);
+  if (!x.length || !y.length) return true;   // 한쪽을 모르면 바뀌었다고 하지 않는다
+  return x.some(t => y.some(u => t === u || t.includes(u) || u.includes(t)));
+}
+
+/**
+ * 구절 안의 «상품 종류» 낱말 (api/_aiidentity.js categoryNounOf — 노트북·청소기·이어폰…).
+ *
+ * ★ 종류명이 있는 쪽끼리만 비교한다 — 이것이 예산을 거두는 판정을 좁게 잡는 장치다.
+ *   · "조금 넘어도 괜찮아" 는 api/_intent.js extractQuery 가 상품 구절처럼 내놓지만(그 턴에는
+ *     앞 상품을 이어받으므로 그쪽에서는 문제가 없다) 종류명이 없다 → 상품이 바뀐 것이 아니다.
+ *   · "맥북 프로" 도 종류명이 없다(브랜드·모델명이다) → 노트북 예산을 거두지 않는다. 맥북은
+ *     실제로 노트북이고, 브랜드명에서 종류를 알아내는 표가 아직 없다.
+ *   그래서 거두는 것은 "노트북" → "청소기" 처럼 종류가 분명히 다른 전환뿐이다. 브랜드·모델명만으로
+ *   종류가 바뀌는 전환(아이폰 → 맥북)은 아직 못 본다 — 종류 표가 생기면 여기서 쓰면 된다.
+ */
+function categoryNounsOf(text) {
+  let catOf;
+  try { catOf = require('./_aiidentity').categoryNounOf; } catch (e) { catOf = null; }
+  if (!catOf) return [];
+  // "무선청소기" · "로봇청소기" 는 둘 다 청소기다 — 합성어는 종류명 부분까지 줄여서 본다.
+  return productTokens(text).filter(t => catOf(t)).map(t => {
+    for (let i = t.length - 2; i > 0; i--) {
+      const tail = t.slice(i);
+      if (catOf(tail) && tail.length >= 2) return tail;
+    }
+    return t;
+  });
+}
+
+/** 종류가 분명히 다른 상품으로 바뀌었는가 (양쪽에 종류명이 있고, 그 종류도 낱말도 겹치지 않는다). */
+function productKindChanged(from, to) {
+  const a = categoryNounsOf(from);
+  const b = categoryNounsOf(to);
+  if (!a.length || !b.length) return false;
+  if (a.some(x => b.includes(x))) return false;
+  return !sameProductLine(from, to);
+}
+
 /** 상태 이름 → 사람이 읽는 말 (api/_aiidentity.js KO_CONDITION 과 같다). */
 const KO_CONDITION = { rental: '렌탈', refurbished: '리퍼', used: '중고', display: '전시', opened: '개봉', sealed: '미개봉', new: '새상품' };
 
@@ -101,6 +180,45 @@ function foldConstraints(c, text, limit) {
   if (!t) return c;
   const parsed = parseConstraints(t);
   return mergeConstraints(releasesBudget(t, parsed) ? withoutBudget(c) : c, parsed);
+}
+
+/** 발화 하나가 스스로 말한 상품 구절 (앞 대화를 보지 않는다). */
+function productOf(text) {
+  try {
+    return require('./_intent').conversationProduct([{ role: 'user', text: String(text || '') }]) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/** 발화 하나의 예산 — 금액을 말했는가(모순인 금액은 세지 않는다, parseConstraints «모순» 주석). */
+function budgetOf(parsed) {
+  return !!(parsed && !parsed.conflict && (parsed.budgetMax || parsed.budgetMin));
+}
+
+/**
+ * 발화 하나를 «조건 + 예산 범위» 에 겹친다.
+ *
+ * @param {{c:object, scope:string, product:string, dropped:object|null}} acc
+ *   scope    'global' = 사용자가 모든 상품에 적용한다고 말한 예산, 'product' = 그 상품의 예산, '' = 예산 없음
+ *   product  'product' 범위 예산이 어느 상품의 말이었는지
+ *   dropped  상품이 바뀌어 거둔 예산 (api/ai.js 가 한 줄로 알린다)
+ */
+function foldTurn(acc, text, limit) {
+  const t = String(text || '').slice(0, limit || TEXT_LEN);
+  if (!t) return acc;
+  const parsed = parseConstraints(t);
+  const hasBudget = budgetOf(parsed);
+  let { c, scope, product } = acc;
+  c = foldConstraints(c, t, limit);
+  if (hasBudget) {
+    scope = GLOBAL_BUDGET_RE.test(t) ? 'global' : 'product';
+    product = productOf(t) || product || '';
+  } else if (releasesBudget(t, parsed)) {
+    scope = '';
+    product = '';
+  }
+  return { c, scope, product };
 }
 
 /*
@@ -161,6 +279,29 @@ function resolve(state, hist, q, opts) {
   let excluded = [];
   let absorbed = [];
   let folded;      // 이번에 상태로 접는 기록 칸
+  // 예산의 범위 — 상태에서 이어받는다. 상태가 없으면 기록 창을 훑으며 처음부터 센다.
+  const stateBudget = !!(state && state.constraints && (state.constraints.budgetMax || state.constraints.budgetMin));
+  let acc = {
+    c: null,
+    // 범위를 모르는 옛 상태(이 기능 전에 서명된 토큰)의 예산은 그 상품의 예산으로 본다.
+    scope: !state ? '' : state.budgetScope === 'global' ? 'global' : stateBudget ? 'product' : '',
+    product: state ? String(state.budgetProduct || state.product || '') : '',
+    dropped: null
+  };
+  let budgetDropped = null;
+  /*
+   * 예산을 말한 발화가 상품 이름을 함께 말하지 않는 일이 더 많다 ("노트북 추천해줘" → "30만원 이하로").
+   * 그래서 그때 찾고 있던 상품(thread)을 예산의 상품으로 적는다.
+   */
+  let thread = state ? String(state.product || '') : '';
+  let qParsed = null;
+  const fold = (text) => {
+    const own = productOf(text);
+    acc = foldTurn(acc, text, textLimit);
+    if (own) thread = own;
+    if (acc.scope === 'product' && !acc.product) acc.product = thread;
+    return acc.c;
+  };
 
   if (state) {
     absorbed = (state.absorbed || []).slice();
@@ -170,14 +311,17 @@ function resolve(state, hist, q, opts) {
     list.forEach((h, i) => { if (isUser(h) && known.has(digest(textOf(h)))) last = i; });
     folded = list.slice(last + 1).filter(h => isUser(h) && !known.has(digest(textOf(h)))).slice(-MAX_REPLAY);
 
-    let c = mergeConstraints(state.constraints, null);
+    acc.c = mergeConstraints(state.constraints, null);
     excluded = (state.excludedConditions || []).slice();
     folded.forEach(h => {
-      c = foldConstraints(c, textOf(h), textLimit);
+      fold(textOf(h));
       excluded = foldConditions(excluded, textOf(h));
     });
-    // 이번 질문이 예산을 거두면 base 에서 미리 걷는다 — api/ai.js 는 그 위에 이번 질문을 그대로 겹친다.
-    base = releasesBudget(q) ? withoutBudget(c) : c;
+    /*
+     * 이번 질문이 예산을 거두면 base 에서 미리 걷는다 — api/ai.js 는 그 위에 이번 질문을 그대로 겹친다.
+     * 상품이 바뀌어 거두는 예산도 같다. 이번 질문의 조건은 아직 겹치지 않는다(ai.js 가 turnCons 로 겹친다).
+     */
+    qParsed = parseConstraints(q);
     replay = [];
     // 상태의 상품 구절은 «마지막으로 접힌 발화» 자리에 끼운다. 그 뒤의 정정만 위에 누적된다.
     if (state.product) {
@@ -189,21 +333,42 @@ function resolve(state, hist, q, opts) {
     folded = replay.filter(isUser);
   }
 
-  // 다음 상태 — 이번 질문까지 접는다.
-  let before = base;
-  if (!before) {
-    before = emptyConstraints();
-    folded.forEach(h => { before = foldConstraints(before, textOf(h), textLimit); });
-    folded.forEach(h => { excluded = foldConditions(excluded, textOf(h)); });
-  }
-  const nextConstraints = foldConstraints(before, q);
-  const nextExcluded = foldConditions(excluded, q);
+  /*
+   * 이번 대화가 찾고 있는 상품 — 상태의 상품 구절 위에 정정을 누적한 것(ai.js 의 검색어와 같은 규칙).
+   * 예산의 범위를 판정하려면 «이 발화가 상품을 말했는가» 가 아니라 이 누적값이 필요하다.
+   * "조금 넘어도 괜찮아" 는 그 자체로는 상품처럼 읽히지만(extractQuery), 누적값은 여전히 노트북이다.
+   */
   let product = '';
   try {
     product = require('./_intent').conversationProduct(intentHist.concat([{ role: 'user', text: q }]));
   } catch (e) {
     product = state ? state.product : '';
   }
+
+  /*
+   * 상품이 아주 다른 것으로 바뀌었으면 상품 전용 예산을 거둔다 (GLOBAL_BUDGET_RE 주석, CO-03).
+   * 이번 질문의 조건은 아직 겹치지 않았다 — api/ai.js 가 turnCons 로 겹친다. 그래서 여기서 거두면
+   * 이번 발화의 새 예산·거두는 말이 그 위에 그대로 반영된다.
+   */
+  if (state && acc.scope === 'product' && acc.product && (acc.c.budgetMax || acc.c.budgetMin)
+      && !budgetOf(qParsed) && !releasesBudget(q, qParsed)
+      && productKindChanged(acc.product, product)) {
+    budgetDropped = { budget: acc.c.budgetMax || acc.c.budgetMin, from: acc.product, to: product };
+    acc.c = withoutBudget(acc.c);
+    acc.scope = '';
+    acc.product = '';
+  }
+  // 이번 질문이 예산을 거두면 base 에서 미리 걷는다 — api/ai.js 는 그 위에 이번 질문을 그대로 겹친다.
+  if (state) base = releasesBudget(q, qParsed) ? withoutBudget(acc.c) : acc.c;
+
+  // 다음 상태 — 이번 질문까지 접는다.
+  if (!base) {
+    acc.c = emptyConstraints();
+    folded.forEach(h => { fold(textOf(h)); });
+    folded.forEach(h => { excluded = foldConditions(excluded, textOf(h)); });
+  }
+  const nextConstraints = fold(q);
+  const nextExcluded = foldConditions(excluded, q);
   folded.concat([{ role: 'user', text: q }]).forEach(h => {
     const d = digest(textOf(h));
     if (!d) return;
@@ -218,12 +383,16 @@ function resolve(state, hist, q, opts) {
     replay,
     intentHist,
     excludedBefore: state ? excluded : [],
+    // 상품이 바뀌어 거둔 상품 전용 예산 (api/ai.js 가 한 줄로 알린다). 없으면 null.
+    budgetDropped,
     next: {
       product,
       // 모순(conflict)·완화 고지(budgetNotice)는 그 턴의 일이다. 다음 턴으로 넘기지 않는다.
       constraints: Object.assign({}, nextConstraints, { conflict: null, budgetNotice: '' }),
       excludedConditions: nextExcluded,
       absorbed: absorbed.slice(-MAX_ABSORBED),
+      budgetScope: acc.scope === 'global' ? 'global' : '',
+      budgetProduct: acc.scope === 'product' ? String(acc.product || '').slice(0, 120) : '',
       startedAt: state ? state.startedAt : undefined
     }
   };

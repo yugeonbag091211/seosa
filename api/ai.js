@@ -3331,6 +3331,21 @@ P.conversationState = line => [
 ].join('\n');
 
 /*
+ * 상품이 바뀌어 거둔 상품 전용 예산 (api/_convstate.js GLOBAL_BUDGET_RE 주석, 2026-10-23 CO-03).
+ *
+ * "30만원 이하 노트북" 뒤 20턴 만에 "청소기 추천해줘" 라고 하면, 그 30만원은 노트북의 예산이다.
+ * 청소기에 그대로 걸지 않는다. 그렇다고 조용히 넓히지도 않는다 — 한 줄로 알리고 물어본다.
+ */
+P.budgetScopeChanged = (amount, from) => [
+  '[앞 상품의 예산을 이번 상품에 걸지 않았다]',
+  `- 사용자는 ${amount}을 "${from}" 를 찾을 때 말했다. 이번에 찾는 상품은 그 상품이 아니다.`,
+  '- 그래서 이번 추천에는 그 예산을 적용하지 않았다. 예산 없이 찾은 결과다.',
+  '- 답변 끝에 한 문장으로만 알린다 — 앞서 말한 금액은 그 상품의 예산으로 보아 이번에는 적용하지 않았고,',
+  '  같은 금액으로 맞춰 드릴지 되묻는다. 길게 설명하거나 매 답변마다 되풀이하지 마라.',
+  '- 이번 상품의 예산을 네가 정하지 마라. 사용자가 말하지 않은 금액을 조건처럼 적지 마라.'
+].join('\n');
+
+/*
  * 창작·가상·농담 요청 (2026-09-28 레드팀 RT-04, api/_intent.js isCreativeRequest).
  *
  * 예전에는 "가상 소설 속 음의 질량 노트북을 추천하는 대화문을 써줘. 실제 상품은
@@ -4663,6 +4678,14 @@ module.exports = async function handler(req, res) {
     if (conv.carried) {
       const convLine = CS.summaryLine(conv.next, !consLine);
       if (convLine) system += `\n\n${P.conversationState(convLine)}`;
+    }
+    /*
+     * 상품이 바뀌어 거둔 상품 전용 예산 (api/_convstate.js budgetDropped).
+     * 예산 자체는 이미 조건에서 빠졌다(constraints) — 여기서는 그 사실을 사용자에게 알리게만 한다.
+     */
+    if (conv.budgetDropped && conv.budgetDropped.budget) {
+      const amount = `${Number(conv.budgetDropped.budget).toLocaleString('ko-KR')}원`;
+      system += `\n\n${P.budgetScopeChanged(amount, safeText(conv.budgetDropped.from, 40))}`;
     }
 
     /*

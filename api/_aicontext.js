@@ -445,6 +445,9 @@ function createConversationState(state, now) {
     p: clean(state.product, STATE_PRODUCT_LEN),
     c: stateFields(state.constraints),
     x: stateList(state.excludedConditions, STATE_WORD_RE),
+    // 예산의 범위 (api/_convstate.js GLOBAL_BUDGET_RE 주석) — 'global' 이거나, 그 예산을 말한 상품.
+    bs: state.budgetScope === 'global' ? 'global' : '',
+    bp: clean(state.budgetProduct, STATE_PRODUCT_LEN),
     a: stateList(state.absorbed, STATE_DIGEST_RE),
     s, iat, exp: Math.min(iat + STATE_TTL_MS, s + STATE_MAX_AGE_MS)
   };
@@ -481,6 +484,8 @@ function verifyConversationState(value, now) {
       product: clean(d.p, STATE_PRODUCT_LEN),
       constraints: stateFields(d.c),
       excludedConditions: stateList(d.x, STATE_WORD_RE),
+      budgetScope: d.bs === 'global' ? 'global' : '',
+      budgetProduct: clean(d.bp, STATE_PRODUCT_LEN),
       absorbed: stateList(d.a, STATE_DIGEST_RE),
       startedAt: s
     };
