@@ -101,3 +101,9 @@ test('AI answer keeps the signature and the signed recommendation ref', () => {
   assert.deepEqual(a.followups, ['더 싼 거']);
   assert.equal(parseAiAnswer({ error: 'x' }), null);
 });
+
+test('AI answer keeps the signed conversation state as received ("" when the server sent none)', () => {
+  assert.equal(parseAiAnswer({ text: '답', convState: 'acs1.abc.def' }).convState, 'acs1.abc.def');
+  assert.equal(parseAiAnswer({ text: '답' }).convState, '');
+  assert.equal(parseAiAnswer({ text: '답', convState: { budgetMax: 1 } }).convState, '');
+});
