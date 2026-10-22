@@ -446,10 +446,24 @@ function compose(ctx) {
   /*
    * 사용자가 말한 조건을 우리가 지켰다고 밝힌다.
    * 조용히 반영하면 사용자는 자기 말이 먹혔는지 알 수 없어 같은 말을 다시 한다.
+   *
+   * ★ 사용자가 말한 금액(budgetSaid)을 적는다 (2026-10-22 Codex live 레드팀 BUG-01·03).
+   *   예전에는 여유분이 섞인 내부 값(budgetMax)을 적어 "1만원" 이라고 한 사람에게 "말씀하신 예산
+   *   11,000원" 이, 예산을 말한 적 없는 사람에게 "1,150,000원" 이 나갔다. 그리고 1위가 예산을
+   *   넘는데도 "그대로 반영했습니다" 라고 했다. 반영했다는 말은 1위가 실제로 예산 안일 때만 한다.
    */
   if (c.constraints && c.constraints.budgetMax > 0) {
+    const cons = c.constraints;
+    const said = cons.budgetSaid || cons.budgetMax;
+    const p = priceOf(top);
+    // 같은 숫자를 «현재가» 로도 주장한 경우에는 금액을 되풀이하지 않는다 (_shopintent budgetQuoted 주석).
+    const amount = cons.budgetQuoted ? '' : ` ${won(said)}원`;
     L.push('');
-    L.push(`말씀하신 예산 ${won(c.constraints.budgetMax)}원은 그대로 반영했습니다.`);
+    if (p > 0 && p <= cons.budgetMax && (!cons.budgetMin || p >= cons.budgetMin)) {
+      L.push(`말씀하신 예산${amount}은 그대로 반영했습니다.`);
+    } else if (p > said && !cons.budgetQuoted) {
+      L.push(`이 상품은 말씀하신 예산 ${won(said)}원보다 ${won(p - said)}원 비싸요.`);
+    }
   }
 
   if (c.degraded && !c.safety) { L.push(''); L.push(DEGRADED_FOOT); }
@@ -632,7 +646,101 @@ function recommendationReason(ctx) {
   return { text: L.join('\n'), reasonCount: fit.length + priceFacts.length };
 }
 
+/* ==================================================================
+ *  7) 예산 안의 후보가 없을 때 · 조건이 서로 맞지 않을 때 (2026-10-22 Codex live 레드팀)
+ *
+ *  BUG-01 — 후보가 전부 예산을 넘으면 1위가 곧 초과 상품이었다(1만원 예산 → 19,999,000원 노트북).
+ *  BUG-03 — "100만원짜리 제품인데 가격이 500원인 것만" 에 말한 적 없는 예산 1,150,000원을 만들고
+ *           무관한 책을 권했다.
+ *
+ *  ★ 둘 다 모델을 부르지 않고 서버가 아는 사실만 말한다. 다른 상품·다른 예산으로 몰래 바꾸지 않고,
+ *    무엇을 바꾸면 되는지는 사용자가 정하게 한다.
+ * ================================================================== */
+
+/** 예산 범위를 사용자가 말한 금액으로. "3만원 이하" · "10만원 안팎" · "20만~30만원" · "5만원 이상" */
+function budgetRangeLabel(cons) {
+  const c = cons || {};
+  const said = c.budgetSaid || c.budgetMax || c.budgetMin;
+  if (c.budgetMin && c.budgetMax && c.budgetMin !== c.budgetMax) {
+    return `${budgetLabel(c.budgetMin)}~${budgetLabel(c.budgetMax)}`;
+  }
+  if (c.budgetMax) return `${budgetLabel(said)}${c.budgetSoft ? ' 안팎' : ' 이하'}`;
+  if (c.budgetMin) return `${budgetLabel(c.budgetMin)} 이상`;
+  return '';
+}
+
+/**
+ * @param {object} ctx
+ *   constraints  사용자 조건 (예산이 있어야 한다)
+ *   label        찾은 상품 구절 (api/_aiidentity requestLabel) — 없으면 생략
+ *   outside      예산을 벗어나 걸러진 후보 (가장 싼 가격만 사실로 말한다)
+ * @returns {{text:string, followups:string[]}}
+ */
+function budgetNoMatch(ctx) {
+  const c = ctx || {};
+  const cons = c.constraints || {};
+  const range = budgetRangeLabel(cons);
+  const label = String(c.label || '').trim();
+  const L = [];
+  L.push(label
+    ? `「${label}」 중에서 ${range}인 상품은 이번 검색 결과에 없었어요.`
+    : `${range}인 상품은 이번 검색 결과에 없었어요.`);
+  const prices = (Array.isArray(c.outside) ? c.outside : []).map(priceOf).filter(p => p > 0);
+  if (prices.length && cons.budgetMax) {
+    const cheapest = Math.min.apply(null, prices);
+    if (cheapest > cons.budgetMax) {
+      const said = cons.budgetSaid || cons.budgetMax;
+      L.push(`이번에 확인한 후보 중 가장 싼 것도 ${won(cheapest)}원이라, 말씀하신 ${budgetLabel(said)}보다 ${won(cheapest - said)}원 비싸요.`);
+    }
+  }
+  /*
+   * 무엇을 바꾸면 몇 개가 생기는지 (api/_noresult relaxations — 이번 검색 결과로 코드가 직접 센 값).
+   * 조건을 우리가 바꾸지는 않는다. 선택지를 알리고 고르는 것은 사용자다.
+   */
+  const opts = (Array.isArray(c.options) ? c.options : []).filter(o => o && o.label && o.total > 0).slice(0, 2);
+  if (opts.length) {
+    L.push('조건을 바꾸면 이렇게 돼요 (이번 검색 결과에서 직접 센 개수예요):');
+    opts.forEach(o => L.push(`- ${o.label} ${o.total}개`));
+  }
+  L.push('예산을 넘는 상품이나 다른 종류의 상품을 대신 권하지는 않을게요.');
+  L.push('예산을 바꾸셔도 괜찮다면 금액을 알려 주세요. 그 금액으로 다시 찾아 드릴게요.');
+  return { text: L.join('\n'), followups: [] };
+}
+
+/**
+ * 금액끼리 모순인 요청 (api/_shopintent findConflict) — 검색 없이 무엇이 맞는지 되묻는다.
+ * @param {object} conflict {kind, value?, price?, budget?, target?}
+ * @param {string} [label] 상품 구절
+ * @returns {{text:string, followups:string[]}}
+ */
+function constraintConflict(conflict, label) {
+  const k = conflict || {};
+  const what = String(label || '').trim();
+  const L = [];
+  if (k.kind === 'price-below-value') {
+    L.push(`말씀하신 조건이 서로 맞지 않아요. ${budgetLabel(k.value)}짜리${what ? ` ${what}` : ' 상품'}을(를) ${won(k.price)}원에 찾으시는 것으로 읽혔어요.`);
+    L.push(`그 가격에 팔리는 것으로 확인된 상품이 아니면 지어내지 않을게요. 예산도 따로 정하지 않았어요.`);
+    L.push('어느 쪽이 맞는지 알려 주세요.');
+    L.push(`- 쓰실 수 있는 예산이 ${won(k.price)}원인가요, ${budgetLabel(k.value)}인가요?`);
+    L.push('- 찾으시는 상품 이름이나 종류가 있으면 함께 알려 주세요.');
+  } else if (k.kind === 'implausible-price') {
+    L.push(`${won(k.price)}원에 파는${what ? ` ${what}` : ' 상품'}은(는) 실제 판매가로 확인할 수 없어, 그런 가격을 지어내지 않을게요.`);
+    L.push('그 조건 그대로라면 결과는 «없음» 이에요. 실제로 쓰실 수 있는 예산을 알려 주시면 그 안에서 확인된 가격으로만 찾아 드릴게요.');
+  } else if (k.kind === 'budget-too-low') {
+    L.push(`${won(k.budget)}원 예산으로 살 수 있는${what ? ` ${what}` : ' 상품'}은(는) 찾을 수 없어요.`);
+    L.push('다른 상품이나 더 비싼 상품을 대신 권하지는 않을게요. 쓰실 수 있는 예산을 알려 주시면 그 안에서 찾아 드릴게요.');
+  } else if (k.kind === 'budget-below-target') {
+    L.push(`예산 ${budgetLabel(k.budget)}으로 ${budgetLabel(k.target)}짜리${what ? ` ${what}` : ' 상품'}을(를) 찾으시는 건 조건이 서로 맞지 않아요.`);
+    L.push(`예산(${budgetLabel(k.budget)})과 찾으시는 가격대(${budgetLabel(k.target)}) 중 어느 쪽을 기준으로 할까요?`);
+    L.push('상품 이름도 함께 알려 주시면 확인된 가격으로만 보여 드릴게요.');
+  } else {
+    L.push('말씀하신 조건이 서로 맞지 않아 어느 쪽을 기준으로 찾을지 정하지 못했어요. 예산과 찾으시는 상품을 다시 알려 주세요.');
+  }
+  return { text: L.join('\n'), followups: [] };
+}
+
 module.exports = {
+  budgetNoMatch, constraintConflict, budgetRangeLabel,
   recommendationReason, REASON_REF_MISSING, REASON_PRICE_UNVERIFIED, politeFact, budgetLabel,
   compose, followups, looksLikeBlockDump, blockLabelCount,
   BLOCK_LABELS, BLOCK_DUMP_MIN,

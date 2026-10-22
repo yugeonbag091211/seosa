@@ -304,8 +304,14 @@ function reset() {
   ok(/\[P1\][^\n]*베타/.test(s1), '★ 예산에 맞는 상품이 P1(첫 번째)로 온다');
   ok(s1.includes('가격 수준 판정: 지금 사도 좋은 편'), '★ 구매 시점 판정(서버)이 실린다');
   ok(s1.includes('이번 후보 중 최저가'), '★ 후보 간 최저가 사실이 실린다');
-  ok(s1.includes('예산 초과'), '★ 예산 초과 상품도 숨기지 않고 초과로 표시된다');
-  ok((r.body.items || []).length === 3, '카드 3장', String((r.body.items || []).length));
+  /*
+   * 2026-10-22 Codex live 레드팀 BUG-01 — 정책 변경. 예전에는 예산 초과 상품도 «예산 초과» 로 표시해 남겼는데,
+   * 후보가 전부 초과일 때 그 상품이 1위 추천이 됐다(1만원 → 19,999,000원 노트북). 이제 예산 밖 후보는
+   * 프롬프트·카드 어디에도 남지 않는다(api/_shopintent budgetFilter).
+   */
+  ok(!s1.includes('알파 무선 이어폰') && !s1.includes('예산 초과'), '★ 예산 초과 상품(알파 250,000원)은 후보에서 빠진다');
+  ok((r.body.items || []).length === 2 && r.body.items.every(x => x.lprice <= 100000), '카드 2장 — 전부 예산 안',
+    String((r.body.items || []).map(x => x.lprice)));
   ok(r.body.items[0].productId === 'B2', '★ 카드 순서 = 프롬프트 랭킹 순서', r.body.items[0].productId);
   ok(!!r.body.items[0].note && /평균|최저가/.test(r.body.items[0].note),
     '★ 카드에 데이터 근거 한 줄이 붙는다', r.body.items[0].note);
@@ -320,7 +326,8 @@ function reset() {
   const enrichStarted = Date.now();
   r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   const enrichMs = Date.now() - enrichStarted;
-  ok(r.status === 200 && (r.body.items || []).length === 3,
+  // 예산 안 2장 (알파 250,000원은 예산 관문에서 빠진다 — 위 [1] 주석)
+  ok(r.status === 200 && (r.body.items || []).length === 2,
     '느린 trust/save/history여도 검색 상품으로 응답', `${enrichMs}ms`);
   ok(enrichMs < 800, '부가 조회 timeout이 전체 요청 지연을 차단', `${enrichMs}ms`);
 
@@ -774,12 +781,16 @@ function reset() {
   stub.llm.answer = '조건에 맞는 상품이 없습니다.';
   r = await call({ question: '80만원 이하 노트북, 방수 필요해', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   {
-    const s = sys();
-    ok(s.includes('[조건을 모두 만족하는 상품이 없다]'), '★ 완화 블록이 실린다');
-    ok(/가장 적게 포기하는 순서로/.test(s), '★ 완화안이 계산돼 실린다');
-    ok(/\d+개 생김/.test(s), '★ 실제 개수가 적힌다');
-    ok(/조건을 우리 마음대로 바꾸지 마라/.test(s), '★ 조건을 조용히 바꾸지 말라고 명시한다');
-    ok(r.status === 200 && (r.body.items || []).length === 3, '그래도 카드는 나간다', String(r.status));
+    /*
+     * 2026-10-22 레드팀 BUG-01 — 후보가 전부 예산(80만원 이하)을 넘으면 모델을 부르지 않고 서버가 답한다.
+     * 완화안은 그대로 코드가 세어 답변에 사실로 싣고(_noresult relaxations), 예산 밖 카드는 내보내지 않는다.
+     */
+    const t = String(r.body.text || '');
+    ok(/80만원 이하인 상품은 이번 검색 결과에 없었어요/.test(t), '★ 조건을 만족하는 상품이 없다고 밝힌다', t.split('\n')[0]);
+    ok(/조건을 바꾸면 이렇게 돼요/.test(t) && /늘리/.test(t), '★ 완화안이 계산돼 실린다', t);
+    ok(/\d+개$/m.test(t), '★ 실제 개수가 적힌다', t);
+    ok(/대신 권하지는 않을게요/.test(t) && /금액을 알려 주세요/.test(t), '★ 조건을 조용히 바꾸지 않고 사용자에게 묻는다', t);
+    ok(r.status === 200 && (r.body.items || []).length === 0, '예산 밖 카드는 나가지 않는다', String((r.body.items || []).length));
   }
 
   /* 27 ─ OMEGA: 조건을 만족하면 완화 블록이 없다 */

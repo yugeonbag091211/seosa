@@ -16,7 +16,7 @@ const { hasConfirmedRecordLow, isCurrentPriceFresh } = require('./_priceevidence
  * 가격 기록 조회(_pricestat)는 Supabase 를 타므로 필요할 때만 부른다.
  */
 const {
-  parseConstraints, mergeConstraints, hasConstraints, constraintLine, rankItems
+  parseConstraints, mergeConstraints, hasConstraints, constraintLine, rankItems, budgetFilter
 } = require('./_shopintent');
 /*
  * OpenRouter 호출은 전부 여기를 지난다 (api/_llm.js).
@@ -998,6 +998,29 @@ function heuristicIntent(q, hist, view) {
 }
 
 /*
+ * 쇼핑몰에 보낼 검색어가 상품을 가리키는가 (api/_intent.js isProductQuery).
+ * 모듈을 못 읽으면 예전처럼 통과시킨다 — 검색 자체를 막아 버리는 쪽이 더 큰 장애다.
+ */
+function isProductSearchQuery(q) {
+  try { return require('./_intent').isProductQuery(q); }
+  catch (e) { return !!q; }
+}
+
+/*
+ * LLM 이 만든 검색어가 사용자가 실제로 쓴 말에서 왔는가 (2026-10-22 레드팀 BUG-03 회귀 검증).
+ *
+ * 분류기 지시는 "사용자가 쓴 말을 그대로 쓴다" 인데, 모델이 문맥에 없는 상품 이름을 지어낼 수 있다
+ * ("100만원짜리 제품인데 …" → "100층짜리 집"). 검색어의 내용 낱말 가운데 하나도 사용자 발화(이번 말 +
+ * 앞의 사용자 말)에 들어 있지 않으면 지어낸 검색어로 본다. 붙여 쓰기·띄어 쓰기 차이는 같은 말로 본다.
+ */
+function queryGroundedInUserText(query, q, hist) {
+  const flat = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+  const said = flat([q].concat((hist || []).filter(h => h && h.role !== 'assistant').map(h => h.text || h.content)).join(' '));
+  const toks = String(query || '').normalize('NFKC').toLowerCase().split(/\s+/).map(flat).filter(t => t.length >= 2);
+  return !toks.length || toks.some(t => said.indexOf(t) > -1);
+}
+
+/*
  * ══════════════════════════════════════════════════════════════════
  *  의도 판정 — deterministic-first (2026-09-02 zero-cost 감사)
  *
@@ -1051,6 +1074,22 @@ async function resolveIntent(q, hist, view, budget, guest) {
    */
   if (viaLlm && needsShopContext(viaLlm.intent) && det && det.query && (det.stateQuery || !viaLlm.query)) {
     viaLlm.query = det.query;
+  }
+  /*
+   * LLM 이 만든 검색어도 상품을 가리켜야 한다 (2026-10-22 Codex live 레드팀 BUG-02).
+   * 운영에서 "기억해?" · "검색 결과 … 구분해줘" 가 쇼핑으로 분류되고 그 문장 조각이 그대로 검색어가 됐다.
+   * 상품 이름이 남지 않는 검색어는 버리고, 정규식 쪽에서 앞 상품을 이어받았으면 그것을 쓴다.
+   *
+   * 사용자 말에 없는 검색어(지어낸 상품명)는 정규식이 이번 말에서 상품을 하나도 못 찾았고 화면 상품 맥락도
+   * 없을 때만 버린다. 정규식이 상품 낱말을 찾았다면(오타 "아이뽄" → 모델 "아이폰") 모델의 교정이 맞을 수 있고,
+   * 가격 모달은 화면의 그 상품이 주제다.
+   */
+  const v = (view && typeof view === 'object') ? view : {};
+  const mustBeGrounded = !(det && det.query) && v.source !== 'modal';
+  if (viaLlm && needsShopContext(viaLlm.intent) && viaLlm.query
+      && (!isProductSearchQuery(viaLlm.query) || (mustBeGrounded && !queryGroundedInUserText(viaLlm.query, q, hist)))) {
+    console.warn('[ai] 분류기 검색어가 상품이 아니거나 사용자 말에 없음 — 검색어 폐기');
+    viaLlm.query = det && det.query && isProductSearchQuery(det.query) ? det.query : '';
   }
   // 같은 상품을 찾는 것이 확인되면(검색어가 같다) 식별은 사용자가 말한 전체 구절로 한다 (_intent identityText).
   if (viaLlm && det && det.identityText && viaLlm.query && viaLlm.query === det.query) {
@@ -2021,8 +2060,13 @@ function collectKnownWon(items, cards, question, hist, constraints) {
   };
 
   /* A budget is a constraint, not evidence that the user-suggested price is true. */
+  /*
+   * soft 예산의 budgetMax 는 여유분이 섞인 내부 값이다(1만원 → 11,000원). 사용자가 말한 적 없는 그 금액을
+   * "말씀하신 예산 11,000원" 으로 되받는 문장이 근거 있는 금액으로 통과하면 안 된다 (2026-10-22 레드팀 BUG-01·03).
+   */
   if (constraints) {
-    push(constraints.budgetSaid); push(constraints.budgetMax); push(constraints.budgetMin);
+    push(constraints.budgetSaid); push(constraints.budgetMin);
+    if (!constraints.budgetSoft) push(constraints.budgetMax);
   }
   // The handler creates cards only from its server-side search result.
   (cards || []).forEach(c => { if (c) push(c.lprice); });
@@ -2546,11 +2590,17 @@ function unverifiedDiscountPct(text, items) {
 }
 
 /** The deterministic rank may not be overridden with an out-of-budget pick. */
+/*
+ * 예산을 넘는 상품을 «권하는» 문장인가.
+ *
+ * ★ 후보가 전부 예산을 넘어도 검사한다 (2026-10-22 Codex live 레드팀 BUG-01). 예전에는 예산 안의 후보가
+ *   하나라도 있을 때만 봐서, 후보가 모두 초과일 때 — 정확히 가장 위험한 때 — 검사가 통째로 빠졌다.
+ *   soft 예산도 본다. budgetMax 가 이미 여유분(1.1~1.3배)을 담고 있어 그것마저 넘으면 조건 밖이다.
+ */
 function unsupportedOffBudgetRecommendation(text, items, constraints) {
-  if (!constraints || !constraints.budgetMax || constraints.budgetSoft) return false;
+  if (!constraints || !constraints.budgetMax) return false;
   const list = (items || []).filter(Boolean);
-  if (!list.some(it => Number(it.price) > constraints.budgetMax)
-      || !list.some(it => Number(it.price) > 0 && Number(it.price) <= constraints.budgetMax)) return false;
+  if (!list.some(it => Number(it.price) > constraints.budgetMax)) return false;
   const re = /(?:추천(?:합니다|해요|드려요)?|권합니다|권해요|고르세요|선택하세요)/g;
   const s = String(text || '');
   let m;
@@ -3621,6 +3671,21 @@ module.exports = async function handler(req, res) {
    * 특정할 수 없는 것으로 다룬다. 대화 기록의 상품명·금액으로 대신 고르지 않는다.
    */
   const previousRecommendation = AC.verifyRecommendationRef(body && body.prevTopRef);
+  /*
+   * 새 추천이 없는 글 답변에는 직전 추천 참조를 그대로 돌려준다 (2026-10-22 레드팀 CAND-10 · LONG 세션).
+   *
+   * 웹(public/index.html)·앱(apps/mobile)은 응답에 topRecommendationRef 가 없으면 직전 참조를 지운다.
+   * 그래서 "중고 제외 기억해?" 같은 대화 답 한 번 뒤에는 "아까 그거 가격" 이 무엇인지 알 수 없었다.
+   * 카드도 새 1위도 없는 답이면 직전 추천은 여전히 직전 추천이다 — 서버가 이미 검증한 그 서명값을
+   * 그대로 되돌려 줄 뿐 새로 서명하지 않는다(만료 시각도 그대로다).
+   */
+  const keepPrevRef = payload => {
+    if (previousRecommendation && payload && !payload.topRecommendationRef
+        && !(Array.isArray(payload.items) && payload.items.length)) {
+      payload.topRecommendationRef = String(body.prevTopRef);
+    }
+    return payload;
+  };
 
   /*
    * 직전 응답의 1위 상품 id.
@@ -3691,6 +3756,8 @@ module.exports = async function handler(req, res) {
   let followups = [];
   /* catch에서도 뉴스 요청을 상품 fallback과 분리하기 위한 요청 단위 상태. */
   let resolvedCanonicalIntent = 'GENERAL_QA';
+  /* "아까 그거" 를 서명 참조로 특정하지 못한 턴 — 모델이 실패해도 그 사실을 그대로 말한다. */
+  let refMissingTurn = false;
 
   const startedAt = Date.now();   // 관측 로그의 지연 측정용
 
@@ -3836,6 +3903,36 @@ module.exports = async function handler(req, res) {
      */
     searchState = 'none';
     let query = (cls && cls.query) || '';
+    // 쇼핑몰에 보내기 전 마지막 확인 — 상품이 남지 않는 검색어로는 찾지 않는다 (isProductSearchQuery 주석).
+    if (query && !isProductSearchQuery(query)) {
+      console.warn('[ai] 검색어에 상품이 없음 — 검색하지 않는다');
+      query = '';
+    }
+
+    /*
+     * 금액끼리 모순인 요청 — 검색하지 않고 무엇이 맞는지 되묻는다 (2026-10-22 Codex live 레드팀 BUG-03).
+     *
+     *   "100만원짜리 제품인데 가격이 500원인 것만 찾아줘"
+     *
+     * 예전에는 말하지 않은 예산 1,150,000원을 만들어 "그대로 반영했다" 며 37,800원짜리 책을 권했다
+     * (3개 독립 세션 재현). 이번 발화의 금액이 서로 맞지 않으면(api/_shopintent findConflict) 어느 쪽도
+     * 예산으로 고르지 않고, 다른 상품을 찾아 내놓지도 않는다. 이번 발화만 본다 — 앞에서 말한 예산과 지금
+     * 말한 예산이 다른 것은 «바꿔 말한 것» 이지 모순이 아니다.
+     */
+    const turnCons = parseConstraints(q);
+    if (needsShopContext(intent) && turnCons.conflict) {
+      // 되묻는 문장에 넣는 상품 이름은 사용자가 이번에 직접 쓴 말일 때만 쓴다 (queryGroundedInUserText 주석).
+      let conflictLabel = '';
+      try { conflictLabel = query && queryGroundedInUserText(query, q, []) ? AIID.buildContract({ query }).label : ''; } catch (e) { conflictLabel = ''; }
+      const conflictText = require('./_concierge').constraintConflict(turnCons.conflict, conflictLabel).text;
+      console.log('[ai:obs] ' + JSON.stringify({
+        v: PROMPT_VERSION, intent, search: 'none', items: 0, cards: 0,
+        conflict: turnCons.conflict.kind, model: 'none', ms: Date.now() - startedAt
+      }));
+      const conflictPayload = { text: conflictText, intent: resolvedCanonicalIntent };
+      if (guest) conflictPayload.guest = true;
+      return res.json(withTurnSig(keepPrevRef(conflictPayload)));
+    }
 
     /*
      * 무엇을 서버에서 확인할지 고른다 (2026-09-28 레드팀 RT-01·RT-02).
@@ -3854,6 +3951,8 @@ module.exports = async function handler(req, res) {
         refSelected = true;
       } else {
         contextNotes.refMissing = true;
+        // 모델이 실패해도 «특정할 수 없다» 를 말한다 (catch 의 refMissingTurn — 2026-10-22 레드팀 CAND-10).
+        refMissingTurn = !cls.recommendationReason;
       }
     } else if (!intent || needsShopContext(intent)) {
       selectors = AC.selectorsFrom(contextProducts);
@@ -3861,6 +3960,8 @@ module.exports = async function handler(req, res) {
 
     let contextStats = new Map();
     let contextRaw = [];
+    /* 예산 관문에서 걸러진 후보 (api/_shopintent budgetFilter). 전부 걸러졌을 때 «가장 싼 후보» 사실만 말한다. */
+    let budgetOutside = null;
     if (selectors.length) {
       /*
        * 카탈로그 조회 → 옵션 기록·신뢰도 순으로 DB 를 두 번 읽는다. 검색 경로의
@@ -3915,10 +4016,23 @@ module.exports = async function handler(req, res) {
         const t = clip(h.text || h.content, MAX_HISTORY_LEN);
         if (t) constraints = mergeConstraints(constraints, parseConstraints(t));
       });
-      constraints = mergeConstraints(constraints, parseConstraints(q));
+      constraints = mergeConstraints(constraints, turnCons);
       // LLM 이 뽑은 용도·브랜드·기피 조건(정규식으로는 못 잡는 것들)
       if (cls && cls.extra) constraints = mergeConstraints(constraints, cls.extra);
     }
+
+    /*
+     * 예산 관문을 어디에 거는가 (api/_shopintent budgetFilter 주석).
+     *
+     *   추천(C)                     — 언제나. 무엇을 살지 고르는 답이다.
+     *   이번 말에 예산이 있다          — 언제나. "1만원으로 아이폰 찾아줘" 는 가격 질문이어도 상한이 있다.
+     *   앞 상품을 이어 찾는 말          — 언제나. "그중에 배터리 오래가는 거" 는 같은 조건의 연장이다.
+     *   새 상품의 가격·이력만 묻는 말    — 걸지 않는다. 앞에서 "30만원 이하 노트북" 을 찾던 사람이 "맥북 프로
+     *                                  얼마야?" 라고 물으면 그 가격을 알려야 한다(예산 초과는 표시만 한다).
+     */
+    const turnBudget = !!(turnCons.budgetMax || turnCons.budgetMin);
+    const sameThread = !!(cls && (cls.stateQuery || cls.contextualFollowup || cls.refinement));
+    const gateBudget = !!constraints && (intent === 'C' || turnBudget || sameThread);
 
     /*
      * 사용자가 요구한 기능(통화·노캔·방수 …). 랭킹과 프롬프트 양쪽에서 쓴다.
@@ -4109,6 +4223,21 @@ module.exports = async function handler(req, res) {
         });
 
         /*
+         * 예산 관문 (2026-10-22 Codex live 레드팀 BUG-01, 3개 독립 세션 재현).
+         * 예산을 넘는 후보는 카드·추천·프롬프트 어디에도 남기지 않는다. 모델이 무엇을 고르든, 모델이 죽어
+         * 결정론 답변이 나가든, 사용자가 받는 후보는 전부 예산 안이다. 남는 것이 없으면 아래에서
+         * «예산 안의 상품이 없다» 고 답한다.
+         */
+        if (gateBudget) {
+          const bg = budgetFilter(items, constraints);
+          if (bg.applies && bg.outside.length) {
+            budgetOutside = bg.outside;
+            items = bg.within;
+            if (!items.length) identityState = 'BUDGET';
+          }
+        }
+
+        /*
          * 카드는 위 후보 그 자체에서, 같은 순서로 만든다.
          *
          * 예전에는 원본 검색 결과(raw)를 전부 카드로 내보내고 순서만 키 대조로 맞췄다.
@@ -4142,6 +4271,18 @@ module.exports = async function handler(req, res) {
       if ((constraints && hasConstraints(constraints)) || profileWeights || excludes.length) {
         items = rankItems(items, constraints, query, rankOpts());
       }
+      /*
+       * 화면 상품에도 같은 예산 관문을 건다 ("이 중에 3만원 이하인 거"). 단 직전 추천을 서명 참조로 다시
+       * 불러온 경우("아까 추천한 그거 지금 얼마야")는 그 상품 하나를 확인하는 말이라 거르지 않는다.
+       */
+      if (gateBudget && !refSelected) {
+        const bg = budgetFilter(items, constraints);
+        if (bg.applies && bg.outside.length) {
+          budgetOutside = bg.outside;
+          items = bg.within;
+          if (!items.length) identityState = 'BUDGET';
+        }
+      }
     }
 
     items.forEach((p, i) => { p.ref = 'P' + (i + 1); });
@@ -4168,7 +4309,28 @@ module.exports = async function handler(req, res) {
       }));
       const nonePayload = { text: noneText, intent: resolvedCanonicalIntent };
       if (guest) nonePayload.guest = true;
-      return res.json(withTurnSig(nonePayload));
+      return res.json(withTurnSig(keepPrevRef(nonePayload)));
+    }
+
+    /*
+     * 후보는 있었지만 전부 예산 밖이다 (위 예산 관문). 모델을 부르지 않는다 — 말할 수 있는 사실은
+     * «예산 안의 상품이 없었다» 와 «가장 싼 후보의 가격» 뿐이고, 초과 상품을 대신 권하지 않는다.
+     */
+    if (identityState === 'BUDGET') {
+      let options = [];
+      try { options = require('./_noresult').relaxations(budgetOutside || [], constraints, wanted); }
+      catch (e) { console.warn(`[ai] 완화 분석 실패(선택지 없이 안내): ${e.message}`); }
+      const budgetText = require('./_concierge').budgetNoMatch({
+        constraints, label: identityLabel, outside: budgetOutside || [], options
+      }).text;
+      console.log('[ai:obs] ' + JSON.stringify({
+        v: PROMPT_VERSION, intent: intent || 'none', search: searchState, items: 0, cards: 0,
+        identity: identityState, budget: true, filtered: (budgetOutside || []).length, model: 'none',
+        ms: Date.now() - startedAt
+      }));
+      const budgetPayload = { text: budgetText, intent: resolvedCanonicalIntent };
+      if (guest) budgetPayload.guest = true;
+      return res.json(withTurnSig(keepPrevRef(budgetPayload)));
     }
 
     /*
@@ -4749,7 +4911,11 @@ module.exports = async function handler(req, res) {
       const badProductPrice = unverifiedProductPrices(text, groundItems);
       const badCurrentPrice = unverifiedCurrentPrices(text, groundItems);
       const badDiscountPct = unverifiedDiscountPct(text, groundItems);
-      const badBudgetPick = unsupportedOffBudgetRecommendation(text, items, constraints);
+      /*
+       * 예산 관문이 걸러낸 후보도 대조에 넣는다 — 모델이 그 후보를 이름으로 권하면(«알파 무선 이어폰을 추천합니다»)
+       * 남은 후보 목록만으로는 그 문장이 무엇을 가리키는지 알 수 없어 그대로 통과한다.
+       */
+      const badBudgetPick = unsupportedOffBudgetRecommendation(text, items.concat(budgetOutside || []), constraints);
       const badSpec  = unverifiedSpecs(text, items);
       const badCmp   = unsupportedComparisons(text, items);
       const badSuper = unsupportedSuperlatives(text, items);
@@ -4958,7 +5124,7 @@ module.exports = async function handler(req, res) {
         cause: decision.change.cause
       };
     }
-    res.json(withTurnSig(payload));
+    res.json(withTurnSig(keepPrevRef(payload)));
   } catch (e) {
     /*
      * 업스트림 오류 원문을 그대로 내보내지 않는다.
@@ -5042,6 +5208,20 @@ module.exports = async function handler(req, res) {
         && (resolvedCanonicalIntent === 'PRODUCT_SEARCH' || resolvedCanonicalIntent === 'PRODUCT_DECISION')) {
       const body = {
         text: '현재 상품 검색이 지연되어 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        intent: resolvedCanonicalIntent,
+        degraded: true
+      };
+      if (guest) body.guest = true;
+      return res.json(withTurnSig(body));
+    }
+
+    /*
+     * "아까 그거 가격이 얼마였어?" 인데 직전 추천을 서명 참조로 특정하지 못했다 (2026-10-22 레드팀 CAND-10).
+     * 답은 정해져 있다 — 모델이 죽었다고 "지연되고 있다" 로 바꾸지 않고, 대화 기록으로 상품을 짐작하지도 않는다.
+     */
+    if (refMissingTurn) {
+      const body = {
+        text: require('./_concierge').contextLines({ refMissing: true }).join('\n'),
         intent: resolvedCanonicalIntent,
         degraded: true
       };
