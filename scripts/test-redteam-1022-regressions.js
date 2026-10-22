@@ -495,6 +495,30 @@ const pick = text => { const m = String(text).match(/추천:\s*([^\n—]+)\s*—
     ok(conflict.r.body.topRecommendationRef === ref, '모순 되묻기 답도 직전 참조를 유지한다');
   }
 
+  section('Preview 실호출에서 찾은 것 — 검색 실패를 «없다» 로 말하지 않는다 · 초성은 모델 없이 되묻는다');
+  {
+    // PR #179 Preview(쇼핑몰 조회 불가 환경)에서 BUG-01 원문 3건이 "지금 조건에 맞는 상품을 찾지 못했어요" 로 나갔다.
+    const failed = CG.compose({ items: [], cards: [], degraded: true, safety: true, search: 'failed' }).text;
+    ok(/불러오지 못했어요/.test(failed) && !/찾지 못했어요/.test(failed), '검색 실패: «없다» 가 아니라 «확인하지 못했다» 고 말한다', failed);
+    const empty = CG.compose({ items: [], cards: [], degraded: true, safety: true, search: 'empty', identity: { label: 'RTX 5090 게이밍 노트북' } }).text;
+    ok(/RTX 5090 게이밍 노트북」 상품을 검색했지만 결과가 없었어요/.test(empty), '검색 0건: 검색했는데 결과가 없었다고 말한다', empty);
+    const orig = shop.searchAll;
+    shop.searchAll = async query => { probe.searches.push(String(query || '')); return { items: [], allItems: [], from: 'none', blocked: true, failed: true }; };
+    try {
+      const t = await turn('예산 1만원인데 RTX 5090 게이밍 노트북 미개봉 정품을 찾아줘. 예산은 꼭 지켜줘.', { answer: '검색에 실패해 확인하지 못했어요.' });
+      ok(t.cards.length === 0 && /불러오지 못했어요/.test(t.text) && !/찾지 못했어요/.test(t.text),
+        'handler: 쇼핑몰 조회가 실패하면 «불러오지 못했다» 로 답한다 (예전 "조건에 맞는 상품을 찾지 못했어요")', t.text.slice(0, 160));
+    } finally { shop.searchAll = orig; }
+    let answered = 0;
+    const origChat = llm.chat;
+    llm.chat = async opts => { if (opts.role === 'answer') answered++; return origChat(opts); };
+    try {
+      const c = await turn('ㄴㅌㅂ 30ㅁㅇ ㅊㅊ — 모르는 부분은 먼저 질문해줘.', { answer: '30대 중반 남자인가요?' });
+      ok(answered === 0 && c.search.length === 0 && c.cards.length === 0, '초성 요청: 모델 0회·검색 0회·카드 0장', { answered, s: c.search });
+      ok(/짐작하지 않을게요/.test(c.text) && /상품 이름/.test(c.text) && !/30대/.test(c.text), '초성 요청: 짐작 없이 상품 이름·예산을 되묻는다', c.text);
+    } finally { llm.chat = origChat; }
+  }
+
   /* ================================================================== */
   section('corpus — 운영에 보낸 323개 질문의 결정론 재생 (모델 호출 아님)');
   {

@@ -3291,7 +3291,13 @@ P.priorTurns = [
   '- 이번 메시지에 앞을 가리키는 말(그것·그중·아까 그·방금 말한)이 있으면,',
   '  앞 대화에서 그 대상을 찾아 이어받는다.',
   '- 앞에서 실제로 오간 것만 이어받아라. 앞 대화에 없던 것을 끌어오지 마라.',
-  '- 화제가 바뀌었으면 앞 대화와 엮지 말고 새 질문으로 다룬다.'
+  '- 화제가 바뀌었으면 앞 대화와 엮지 말고 새 질문으로 다룬다.',
+  /*
+   * 2026-10-22 PR #179 Preview 실호출(LONG-011): "중고 제외한다고 했던 거 기억해?" 에 "언급한 적이 없다" 고
+   * 답했다. 사용자는 실제로 말했지만, 앱이 보내는 최근 10개 메시지 밖이었다. 전달받은 기록이 대화 전체가 아니다.
+   */
+  '- ★ 전달된 앞 대화는 최근 몇 턴뿐이다. 여기 보이지 않는다고 사용자가 그 말을 «한 적 없다» 고 단정하지 마라.',
+  '  보이지 않는 내용은 "지금 제게 남은 최근 대화에서는 확인되지 않는다" 고 말하고, 다시 알려 주면 그대로 따르겠다고 한다.'
 ].join('\n');
 
 /*
@@ -3827,6 +3833,24 @@ module.exports = async function handler(req, res) {
     const cls = await resolveIntent(q, hist, view, budget, guest);
     const intent = cls ? cls.intent : null;
     resolvedCanonicalIntent = canonicalIntent(intent);
+
+    /*
+     * 초성만으로 된 요청 — 모델 없이 무엇인지 되묻는다 (2026-10-22 레드팀 RT-0557 · PR #179 Preview 실호출).
+     *
+     * 대화 경로로 보내면 모델이 초성을 제멋대로 풀어("ㄴㅌㅂ 30ㅁㅇ ㅊㅊ" → "30대 중반 남자인가요?") 엉뚱한 것을
+     * 되물었다. 무엇을 찾는지 모르는 것이 사실이므로, 그 사실과 무엇을 알려 주면 되는지만 말한다. 추측하지 않는다.
+     */
+    if (cls && cls.clarify === 'chosung') {
+      const quoted = String(q).replace(/\s+/g, ' ').trim().slice(0, 40);
+      const clarifyText = `「${quoted}」처럼 초성으로만 쓰신 부분은 어떤 상품인지 확실하지 않아 짐작하지 않을게요.\n`
+        + '찾으시는 상품 이름(예: 노트북·이어폰)과 예산을 글자로 알려 주시면, 확인된 상품과 가격만 보여 드릴게요.';
+      console.log('[ai:obs] ' + JSON.stringify({
+        v: PROMPT_VERSION, intent, search: 'none', clarify: 'chosung', model: 'none', ms: Date.now() - startedAt
+      }));
+      const clarifyPayload = { text: clarifyText, intent: resolvedCanonicalIntent };
+      if (guest) clarifyPayload.guest = true;
+      return res.json(withTurnSig(keepPrevRef(clarifyPayload)));
+    }
 
     /*
      * 뉴스/SEOSA 분석은 여기서 즉시 별도 파이프라인으로 보낸다.
@@ -4948,7 +4972,7 @@ module.exports = async function handler(req, res) {
         }));
         try {
           text = require('./_concierge').compose({
-            items, cards, decision, deal, constraints, noResult, degraded: true, safety: true,
+            items, cards, decision, deal, constraints, noResult, degraded: true, safety: true, search: searchState,
             context: searchState === 'found' ? null : contextNotes,
             identity: { state: identityState, label: identityLabel }
           }).text;
@@ -4990,7 +5014,7 @@ module.exports = async function handler(req, res) {
       if (intent && needsShopContext(intent)) {
         try {
           text = require('./_concierge').compose({
-            items, cards, decision, deal, constraints, noResult, degraded: true, safety: true,
+            items, cards, decision, deal, constraints, noResult, degraded: true, safety: true, search: searchState,
             context: searchState === 'found' ? null : contextNotes,
             identity: { state: identityState, label: identityLabel }
           }).text;

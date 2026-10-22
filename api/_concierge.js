@@ -399,6 +399,25 @@ function compose(ctx) {
       return { text: L.join('\n'), followups: followups(c) };
     }
     /*
+     * 검색 자체를 못 했다 — «없다» 가 아니다 (2026-10-22 PR #179 Preview 실호출에서 발견).
+     *
+     * 쇼핑몰 조회가 실패하면 모델 프롬프트에는 "없다고 단정하지 마라"(P.searchFailed)가 실리는데, 후보가
+     * 0개라 근거 검증이 모델 답을 버리고 아래 "조건에 맞는 상품을 찾지 못했어요" 로 바꿨다. 확인하지 못한 것을
+     * 없다고 말한 셈이다. 검색 상태를 받아 실패와 «검색했는데 0건» 을 다르게 말한다.
+     */
+    if (!cards.length && c.search === 'failed') {
+      L.push('지금은 쇼핑몰 상품 정보를 불러오지 못했어요. 조건에 맞는 상품이 없다는 뜻이 아니라, 이번에는 확인하지 못한 거예요.');
+      L.push('확인되지 않은 상품이나 가격은 안내하지 않을게요. 잠시 후 다시 물어봐 주세요.');
+      return { text: L.join('\n'), followups: [] };
+    }
+    if (!cards.length && c.search === 'empty') {
+      L.push(request
+        ? `방금 「${request}」 상품을 검색했지만 결과가 없었어요.`
+        : '방금 검색했지만 결과가 없었어요.');
+      L.push('다르게 부르는 이름이나 모델명이 있으면 알려 주세요. 다른 종류의 상품을 대신 권하지는 않을게요.');
+      return { text: L.join('\n'), followups: [] };
+    }
+    /*
      * 상품이 없다. 있는 척하지 않는다.
      * 카드라도 있으면 그것만 가리킨다 (검색은 됐는데 랭킹에서 비었을 때).
      */
@@ -716,21 +735,26 @@ function budgetNoMatch(ctx) {
 function constraintConflict(conflict, label) {
   const k = conflict || {};
   const what = String(label || '').trim();
+  // 조사는 받침으로 고른다 ("상품을" · "노트북을") — "상품을(를)" 처럼 둘 다 적지 않는다.
+  const noun = what || '상품';
+  const er = eulReul(noun);
+  const obj = `${noun}${er}`;
+  const topic = `${noun}${er === '을' ? '은' : er === '를' ? '는' : '은(는)'}`;
   const L = [];
   if (k.kind === 'price-below-value') {
-    L.push(`말씀하신 조건이 서로 맞지 않아요. ${budgetLabel(k.value)}짜리${what ? ` ${what}` : ' 상품'}을(를) ${won(k.price)}원에 찾으시는 것으로 읽혔어요.`);
+    L.push(`말씀하신 조건이 서로 맞지 않아요. ${budgetLabel(k.value)}짜리 ${obj} ${won(k.price)}원에 찾으시는 것으로 읽혔어요.`);
     L.push(`그 가격에 팔리는 것으로 확인된 상품이 아니면 지어내지 않을게요. 예산도 따로 정하지 않았어요.`);
     L.push('어느 쪽이 맞는지 알려 주세요.');
     L.push(`- 쓰실 수 있는 예산이 ${won(k.price)}원인가요, ${budgetLabel(k.value)}인가요?`);
     L.push('- 찾으시는 상품 이름이나 종류가 있으면 함께 알려 주세요.');
   } else if (k.kind === 'implausible-price') {
-    L.push(`${won(k.price)}원에 파는${what ? ` ${what}` : ' 상품'}은(는) 실제 판매가로 확인할 수 없어, 그런 가격을 지어내지 않을게요.`);
+    L.push(`${won(k.price)}원에 파는 ${topic} 실제 판매가로 확인할 수 없어, 그런 가격을 지어내지 않을게요.`);
     L.push('그 조건 그대로라면 결과는 «없음» 이에요. 실제로 쓰실 수 있는 예산을 알려 주시면 그 안에서 확인된 가격으로만 찾아 드릴게요.');
   } else if (k.kind === 'budget-too-low') {
-    L.push(`${won(k.budget)}원 예산으로 살 수 있는${what ? ` ${what}` : ' 상품'}은(는) 찾을 수 없어요.`);
+    L.push(`${won(k.budget)}원 예산으로 살 수 있는 ${topic} 찾을 수 없어요.`);
     L.push('다른 상품이나 더 비싼 상품을 대신 권하지는 않을게요. 쓰실 수 있는 예산을 알려 주시면 그 안에서 찾아 드릴게요.');
   } else if (k.kind === 'budget-below-target') {
-    L.push(`예산 ${budgetLabel(k.budget)}으로 ${budgetLabel(k.target)}짜리${what ? ` ${what}` : ' 상품'}을(를) 찾으시는 건 조건이 서로 맞지 않아요.`);
+    L.push(`예산 ${budgetLabel(k.budget)}으로 ${budgetLabel(k.target)}짜리 ${obj} 찾으시는 건 조건이 서로 맞지 않아요.`);
     L.push(`예산(${budgetLabel(k.budget)})과 찾으시는 가격대(${budgetLabel(k.target)}) 중 어느 쪽을 기준으로 할까요?`);
     L.push('상품 이름도 함께 알려 주시면 확인된 가격으로만 보여 드릴게요.');
   } else {
