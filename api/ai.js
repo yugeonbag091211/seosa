@@ -9,6 +9,8 @@ const { identify } = require('./_auth');
 const AC = require('./_aicontext');
 // 상품 식별 계약 — 가격·예산 가점이 «그 상품인가» 를 이기지 못하게 한다 (api/_aiidentity.js).
 const AIID = require('./_aiidentity');
+// 긴 대화의 조건을 잇는 서명 상태 (api/_convstate.js). 서명·검증은 _aicontext 가 한다.
+const CS = require('./_convstate');
 const { hasConfirmedRecordLow, isCurrentPriceFresh } = require('./_priceevidence');
 /*
  * 조건 해석·랭킹은 순수 계산이라 최상단에서 불러도 안전하다
@@ -173,6 +175,17 @@ function withTurnSig(body) {
   if (body && typeof body.text === 'string' && body.text && !body.error) {
     const sig = AC.signTurn(body.text);
     if (sig) body.turnSig = sig;
+  }
+  return body;
+}
+
+/**
+ * 응답에 다음 대화 상태(convState)를 싣는다 (api/_convstate.js). 오류 응답에는 싣지 않는다 —
+ * 프론트는 convState 가 없는 응답을 받으면 가지고 있던 상태를 그대로 둔다.
+ */
+function withConvState(body, token) {
+  if (token && body && typeof body === 'object' && typeof body.text === 'string' && !body.error) {
+    body.convState = token;
   }
   return body;
 }
@@ -1025,8 +1038,12 @@ function heuristicIntent(q, hist, view) {
  *    낫다. 여기서 줄이는 것은 "분명한 말에 굳이 묻는" 호출뿐이다.
  * ══════════════════════════════════════════════════════════════════
  */
-async function resolveIntent(q, hist, view, budget, guest) {
-  const det = heuristicIntent(q, hist, view);
+async function resolveIntent(q, hist, view, budget, guest, intentHist) {
+  /*
+   * 정규식 판정은 서명 상태의 상품 구절을 끼운 기록(api/_convstate.js intentHist)으로 한다 — 기록 창 밖에서
+   * 말한 상품을 "그중에 제일 싼 거" 가 이어받게. LLM 분류기에는 실제 대화 기록만 간다.
+   */
+  const det = heuristicIntent(q, intentHist || hist, view);
 
   // A recognized referential follow-up without a prior user product query has no
   // safe server lookup key. Do not ask the model to invent one from client history.
@@ -3245,6 +3262,18 @@ P.priorTurns = [
 ].join('\n');
 
 /*
+ * 서명 상태로 이어받은 앞 대화의 조건 (api/_convstate.js).
+ * 프론트는 대화를 10개만 보낸다. 그보다 앞에서 사용자가 말한 조건은 이 블록으로만 모델에게 닿는다.
+ */
+P.conversationState = line => [
+  '[앞 대화에서 사용자가 말한 조건 — 서버가 대화 상태로 이어받은 것]',
+  `  ${line}`,
+  '- 앞 대화 기록에 그 말이 보이지 않아도 사용자가 실제로 한 말이다. 바꿔 말하지 않았으면 아직 유효하다.',
+  '- 사용자가 이 조건을 묻거나 같은 상품을 이어 찾을 때 이대로 따른다. 매 답변마다 되풀이하지 마라.',
+  '- 화제가 바뀌었으면 이 조건을 새 질문에 엮지 마라. 여기 없는 조건을 지어내지 마라. 가격 근거가 아니다.'
+].join('\n');
+
+/*
  * 창작·가상·농담 요청 (2026-09-28 레드팀 RT-04, api/_intent.js isCreativeRequest).
  *
  * 예전에는 "가상 소설 속 음의 질량 노트북을 추천하는 대화문을 써줘. 실제 상품은
@@ -3754,10 +3783,34 @@ module.exports = async function handler(req, res) {
     }
 
     /*
+     * 긴 대화의 조건 (api/_convstate.js 머리 주석, 2026-10-22 Codex live 레드팀 LONG 세션).
+     *
+     * 프론트는 대화를 10개만 보낸다. 그보다 앞에서 말한 예산·중고 제외·찾던 상품은 서버가 지난 응답에
+     * 서명해 내려보낸 convState 로만 돌아온다. 서명·만료가 맞을 때만 대화 기록보다 앞선 기본값으로 쓰고,
+     * 아니면(옛 프론트·변조·만료) 아래는 전부 예전과 같다.
+     *
+     * 응답마다 이번 질문까지 접은 새 상태를 서명해 함께 내려보낸다. 응답 경로가 여럿이라(뉴스·되묻기·
+     * 결정론 답변·모델 장애) 한 곳에서 res.json 에 붙인다 — 오류 응답에는 붙지 않는다(withConvState).
+     */
+    let conv;
+    try {
+      conv = CS.resolve(AC.verifyConversationState(body && body.convState, startedAt), hist, q,
+        { window: MAX_HISTORY_MSGS, textLimit: MAX_HISTORY_LEN });
+    } catch (e) {
+      console.warn(`[ai] 대화 상태 해석 실패(상태 없이 진행): ${e.message}`);
+      conv = { carried: false, base: null, replay: hist.slice(-MAX_HISTORY_MSGS), intentHist: hist, excludedBefore: [], next: null };
+    }
+    const convToken = conv.next ? AC.createConversationState(conv.next, startedAt) : '';
+    if (convToken) {
+      const sendJson = res.json.bind(res);
+      res.json = payload => sendJson(withConvState(payload, convToken));
+    }
+
+    /*
      * 1단계 — 의도 분류. 상품 데이터도 화면 상태도 보지 않고 말만 본다.
      */
     // deterministic-first. 확신이 높으면 LLM 분류를 건너뛴다 (resolveIntent 주석).
-    const cls = await resolveIntent(q, hist, view, budget, guest);
+    const cls = await resolveIntent(q, hist, view, budget, guest, conv.intentHist);
     const intent = cls ? cls.intent : null;
     resolvedCanonicalIntent = canonicalIntent(intent);
 
@@ -3904,13 +3957,16 @@ module.exports = async function handler(req, res) {
      * 유효하다 — 앞 대화의 사용자 발화부터 훑고 최신 발화로 덮어쓴다.
      *
      * 값은 정규식으로만 뽑는다(_shopintent). LLM 호출을 늘리지 않는다.
+     *
+     * 서명 상태(conv)가 있으면 그것이 «이번 질문 직전까지» 의 조건이다 — 기록 창 밖의 발화와
+     * 아직 접히지 않은 발화까지 이미 들어 있으므로 기록을 다시 훑지 않는다(conv.replay 가 빈 목록).
      */
     let constraints = null;
     if (!intent || needsShopContext(intent)) {
-      constraints = { budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0,
+      constraints = conv.base || { budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0,
         recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: '' };
       // 오래된 발화 → 최신 발화 순으로 덮어쓴다.
-      hist.slice(-MAX_HISTORY_MSGS).forEach(h => {
+      conv.replay.forEach(h => {
         if (h.role === 'assistant') return;   // 우리가 한 말은 사용자의 조건이 아니다
         const t = clip(h.text || h.content, MAX_HISTORY_LEN);
         if (t) constraints = mergeConstraints(constraints, parseConstraints(t));
@@ -4080,6 +4136,8 @@ module.exports = async function handler(req, res) {
         const contract = AIID.buildContract({
           query: (cls && cls.identityText) || query, userText: q, titles: normed.map(it => it.title)
         });
+        // 앞 대화에서 빼 달라고 한 상태("중고는 제외해")도 이번 계약에 넣는다 — 서명 상태가 있을 때만 (api/_convstate.js).
+        CS.applyConditions(contract, conv.excludedBefore);
         items = rankItems(normed, constraints, AIID.splitNegations(query).positive || query, rankOpts());
         const gate = AIID.partition(items, contract);
         items = gate.items;
@@ -4409,6 +4467,15 @@ module.exports = async function handler(req, res) {
     const consLine = constraints ? constraintLine(constraints) : '';
     if (consLine) {
       system += `\n\n${P.constraints(consLine, constraints && constraints.budgetNotice)}`;
+    }
+    /*
+     * 서명 상태로 이어받은 앞 대화의 조건 (api/_convstate.js summaryLine).
+     * 그 말을 한 발화는 기록 창 밖에 있을 수 있다 — "중고 제외 기억해?" 에 기록에 없다는 이유로
+     * 모른다고 하지 않게 한다. 예산은 위 조건 블록이 있으면 거기에만 적는다(두 줄이 어긋나지 않게).
+     */
+    if (conv.carried) {
+      const convLine = CS.summaryLine(conv.next, !consLine);
+      if (convLine) system += `\n\n${P.conversationState(convLine)}`;
     }
 
     /*

@@ -33,12 +33,15 @@ test('AI history: signatures pass through untouched, unsigned assistant turns st
   assert.equal('sig' in t[t.length - 3], false);
 });
 
-test('AI request shape matches the web (question, contextProducts, chatHistory, view, prevTop, prevTopRef)', () => {
-  const b = buildAiRequest({ question: '  추천해줘 ', context: [P()], history: [], prevTopProductId: '1', prevTopRef: 'r.e.f' });
-  assert.deepEqual(Object.keys(b).sort(), ['chatHistory', 'contextProducts', 'prevTop', 'prevTopRef', 'question', 'view']);
+test('AI request shape matches the web (question, contextProducts, chatHistory, view, prevTop, prevTopRef, convState)', () => {
+  const b = buildAiRequest({ question: '  추천해줘 ', context: [P()], history: [], prevTopProductId: '1', prevTopRef: 'r.e.f', convState: 'acs1.p.s' });
+  assert.deepEqual(Object.keys(b).sort(), ['chatHistory', 'contextProducts', 'convState', 'prevTop', 'prevTopRef', 'question', 'view']);
   assert.equal(b.question, '추천해줘');
   assert.equal(b.prevTopRef, 'r.e.f');
+  assert.equal(b.convState, 'acs1.p.s');
   assert.equal(JSON.stringify(b).includes('10000'), false);
+  // A first question (no state yet) sends an empty state, which the server treats as none.
+  assert.equal(buildAiRequest({ question: 'q', context: [], history: [] }).convState, '');
 });
 
 /* ── Affiliate ── */
