@@ -44,7 +44,8 @@
 - 대화 상태 서명 회귀: 66/66 통과.
 - 식별 검토 변이 테스트: 6/6 변이 탐지.
 - 라이브 데이터셋 검사: 825개 시나리오, 50개 다중 턴 사례, 반복 후보 구성 통과.
-- GitHub Mobile Check와 PR용 AI security workflow는 후속 PR 생성 뒤 결과를 확인한다.
+- PR #184의 GitHub `test`, `ai-validation`(AI security validation), `Mobile Check` 모두 통과했다. Mobile Check는 변경 경로 필터 때문에 자동 실행되지 않아 수동 dispatch했다.
+- Vercel Preview 상태도 통과했다. 이는 PR 미리보기이며 Production 배포는 하지 않았다. GitHub Actions가 Node 20 액션 런타임 전환과 `ubuntu-latest` 예정 변경 알림을 남겼지만 검사 결과에는 영향이 없었다.
 
 ## 배포 판단
 
