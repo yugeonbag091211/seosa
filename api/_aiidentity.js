@@ -167,7 +167,7 @@ function slotOf(rawTok) {
  *   «그 동작을 하지 말라» 는 말이라 상품 범위를 자르지 않는다.
  * ★ "MX Master 3와 구분하고 …" — «X와 구분» 은 X 를 빼 달라는 말이다 (2026-10-22 CAND-13).
  */
-const NEG_RE = /((?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
+const NEG_RE = /((?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|(?<!자가\s)아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
 const LIST_SPLIT_RE = /\s*(?:[·/,]|(?<=[가-힣a-z0-9])(?:와|과|랑|이나|나|및)(?=\s|$)|\s및\s)\s*/i;
 const IDENTITY_SLOTS = new Set(['anchor', 'variant', 'base']);
 /*
@@ -191,7 +191,9 @@ function tokensOf(text) {
   const out = [];
   norm(normalizeUnits(String(text == null ? '' : text).replace(MONEY_TEXT_RE, ' '))).split(' ').forEach(chunk => {
     if (!chunk) return;
-    S.splitTokens(/^[가-힣]+$/.test(chunk) ? stripJosa(chunk) : chunk).forEach(t => out.push(stripJosa(t)));
+    // Tokenize compact model names before stripping a possible trailing particle.
+    // Stripping “로” from “에어팟프로” first produced “에어팟프”, losing the product family.
+    S.splitTokens(chunk).forEach(t => out.push(stripJosa(t)));
   });
   const merged = [];
   for (let i = 0; i < out.length; i++) {
@@ -525,6 +527,30 @@ function anchorHit(anchor, tokens) {
   return false;
 }
 
+/*
+ * A shared umbrella brand is not enough to make a candidate a sibling model.
+ * “Galaxy S26” and “Galaxy Buds3” share Galaxy, but the unrequested product-line
+ * token between that umbrella and the candidate model number makes Buds a different type.
+ */
+function hasForeignFamilyToken(contract, info) {
+  const core = norm(contract && contract.core).toLowerCase();
+  if (!core || !Array.isArray(info && info.tokens)) return false;
+  const coreTokens = new Set([core, ...(S.SYNONYMS.get(core) || [])].map(x => String(x).toLowerCase()));
+  const coreAt = info.tokens.findIndex(t => coreTokens.has(String(t).toLowerCase()));
+  if (coreAt < 0) return false;
+  let anchorAt = -1;
+  for (let i = coreAt + 1; i < info.tokens.length; i++) {
+    if (slotOf(info.tokens[i]) === 'anchor') { anchorAt = i; break; }
+  }
+  if (anchorAt < 0) return false;
+  const wantedWords = new Set((contract.words || []).map(x => String(x).toLowerCase()));
+  wantedWords.add(core);
+  return info.tokens.slice(coreAt + 1, anchorAt).some(raw => {
+    const token = String(raw).toLowerCase();
+    return slotOf(token) === 'word' && S.SYNONYMS.has(token) && !categoryNounOf(token) && !wantedWords.has(token);
+  });
+}
+
 /** 상품명의 등급 표기. 숫자 앵커 곁의 것만 센다(_search.variantMarkers) — "pro camera" 같은 설명은 빼고. */
 function titleVariants(info) {
   return S.variantMarkers(info.raw, info.tokens);
@@ -587,7 +613,8 @@ function verdict(contract, item) {
     if (c.core ? !wordHit(c.core, info) : !c.anchors.some(a => anchorHit(a, info.tokens))) {
       bump(TIER.MISMATCH, 'family', '다른 종류의 상품');
     } else if (!c.anchors.every(a => anchorHit(a, info.tokens))) {
-      bump(TIER.SIBLING, 'model', '요청하신 모델 번호와 다름');
+      if (hasForeignFamilyToken(c, info)) bump(TIER.MISMATCH, 'product-family', '요청하신 상품 계열과 다름');
+      else bump(TIER.SIBLING, 'model', '요청하신 모델 번호와 다름');
     } else {
       /* 같은 번호의 다른 계열 — "G304 X SUPERLIGHT" ↔ "G304 LIGHTSPEED" (양쪽 다) */
       const q = c.lineQualifiers || [];

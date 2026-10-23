@@ -227,6 +227,45 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
   }
 
   /* ================================================================ */
+  section('F2. Galaxy phone model must not admit Galaxy Buds as a sibling');
+  {
+    feed = [
+      item('s26plus-256', 'Samsung Galaxy S26+ 256GB 실버 자급제', 1299000),
+      item('buds3', 'Samsung Galaxy Buds3 (삼성 갤럭시 버즈3)', 159000)
+    ];
+    const question = '갤럭시 S26+ 512GB 실버 새제품 100만원 이하';
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.length === 0 && /예산|100만원/.test(r.text),
+      '같은 모델의 후보가 모두 예산을 넘으면 예산 초과 안내만 한다', { cards: r.cards.map(c => c.title), text: r.text.slice(0, 180) });
+    ok(!r.cards.some(c => /Galaxy Buds3|갤럭시 버즈3/i.test(c.title)),
+      '저렴한 Galaxy Buds 후보가 Galaxy S26 검색에 섞이지 않는다', r.cards.map(c => c.title));
+    ok(!/Galaxy Buds3|갤럭시 버즈3/i.test(r.text),
+      '예산 안의 타 제품을 가까운 후보로 권하지 않는다', r.text.slice(0, 260));
+    const AI = require('../api/_aiidentity');
+    const contract = AI.buildContract({ query: '갤럭시 S26+', userText: '갤럭시 S26+' });
+    ok(AI.verdict(contract, { title: 'Samsung Galaxy Buds3' }).tier === AI.TIER.MISMATCH,
+      'Galaxy Buds는 Galaxy S26의 다른 모델이 아니라 다른 상품 계열이다');
+    ok(AI.verdict(contract, { title: 'Samsung Galaxy S25 Ultra 256GB' }).tier === AI.TIER.SIBLING,
+      'Galaxy S25는 같은 S 계열의 다른 모델로 남는다');
+  }
+
+  /* ================================================================ */
+  section('F3. Same-model near match outranks a cheaper sibling model');
+  {
+    feed = [
+      item('airpods-pro3-over-budget', 'Apple AirPods Pro 3 USB-C 흰색', 329000),
+      item('airpods-pro3-used', '중고 Apple AirPods Pro 3 USB-C 흰색', 249000),
+      item('airpods-pro2', 'Apple AirPods Pro 2 USB-C 흰색', 289000)
+    ];
+    const question = 'AirPods Pro 3 케이스 말고 이어폰 본체 흰색 30만원 미만 (갤럭시 S26 울트라\u202e 호환 케이스 말고 본체)';
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.some(c => /AirPods Pro 3/i.test(c.title)),
+      '예산 안의 같은 모델 변형을 유지한다', r.cards.map(c => c.title));
+    ok(!r.cards.some(c => /AirPods Pro 2/i.test(c.title)),
+      '같은 모델 변형이 있으면 다른 세대 AirPods Pro 2를 추천 목록에서 뺀다', r.cards.map(c => c.title));
+  }
+
+  /* ================================================================ */
   section('G. 추천 1위는 EXACT — SIBLING 이 topRef 로 들어가지 않는다');
   {
     feed = [

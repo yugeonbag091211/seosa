@@ -216,7 +216,7 @@ const STRIP_WORDS = [
   // 사람
   '나', '내', '내가', '저', '제', '제가', '우리', '엄마', '아빠', '아버지', '어머니', '부모님',
   '친구', '여친', '남친', '아내', '남편', '조카', '아이', '아들', '딸', '동생', '형', '누나', '언니', '오빠',
-  '한테', '에게', '위한', '위해', '드릴', '줄'
+  '한테', '에게', '위한', '위해', '드릴', '줄', '사용자', '판매자', '구매자', '묻는'
 ];
 const STRIP_SET = new Set(STRIP_WORDS);
 
@@ -456,6 +456,37 @@ function hasProductIdentity(text) {
     && AIID.productEvidence(text) > 0;
 }
 
+/*
+ * A parenthetical can carry an unrelated model into the identity contract even when
+ * the main query clearly names a different product (for example, a hostile compatibility
+ * string appended after the request). Keep option-only notes, but remove a distinct model
+ * signature unless the user explicitly asked to compare the parenthesized product.
+ */
+function removeConflictingModelParentheticals(text) {
+  const src = String(text == null ? '' : text);
+  const matches = [...src.matchAll(/\([^()]{1,240}\)|（[^（）]{1,240}）/g)];
+  if (!matches.length || /비교|차이|대비|\bvs\b|각각|둘\s*다/i.test(src)) return src;
+  let out = src;
+  for (const match of matches.reverse()) {
+    const start = match.index;
+    const outside = src.slice(0, start) + ' ' + src.slice(start + match[0].length);
+    const basePositive = AIID.splitNegations(outside).positive;
+    const nestedPositive = AIID.splitNegations(match[0].slice(1, -1)).positive;
+    const base = AIID.buildContract({ query: basePositive, userText: basePositive });
+    const nested = AIID.buildContract({ query: nestedPositive, userText: nestedPositive });
+    if (base.empty || nested.empty) continue;
+    const sharedAnchor = base.anchors.some(anchor => nested.anchors.includes(anchor));
+    const baseCore = String(base.core || '').toLowerCase();
+    const coreAliases = new Set([baseCore, ...(SEARCH.SYNONYMS.get(baseCore) || [])].map(x => String(x).toLowerCase()));
+    const nestedCore = String(nested.core || '').toLowerCase();
+    const sameCore = !!baseCore && coreAliases.has(nestedCore);
+    const distinctModel = (base.anchors.length > 0 && nested.anchors.length > 0 && !sharedAnchor)
+      || (!!baseCore && !!nestedCore && !sameCore);
+    if (distinctModel) out = out.slice(0, start) + ' ' + out.slice(start + match[0].length);
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
 /**
  * 문장에서 상품을 가리키는 말만 남긴다.
  *
@@ -504,8 +535,13 @@ function extractQuery(text) {
       const safeToStrip = AMBIGUOUS_JOSA.has(josa)
         ? stripped.length >= 3 && !KEEP_WHOLE_RE.test(t)
         : stripped.length >= 2;
+      // A compact family+tier spelling can end in a tier word that also looks like a particle:
+      // “에어팟프로” tokenizes as “에어팟 + 프로”, so preserve the whole search token.
+      const compactFamilyTier = /^[가-힣]+$/.test(t)
+        && SEARCH.splitTokens(t).some(part => SEARCH.SYNONYMS.has(part))
+        && SEARCH.splitTokens(t).some(part => SEARCH.VARIANT_KEYS.has(part));
       // 영문·숫자 토큰은 조사를 떼지 않는다 ("14ZD95U" 의 U 를 조사로 볼 위험).
-      if (/^[가-힣]+$/.test(t) && safeToStrip) t = stripped;
+      if (/^[가-힣]+$/.test(t) && safeToStrip && !compactFamilyTier) t = stripped;
     }
     // "노트북인데" · "모델이야" — 서술격 꼬리를 떼고 남은 명사로 다시 판단한다 (isJunkToken 주석).
     t = stripCopula(t);
@@ -827,6 +863,7 @@ function classify(text, hist) {
    * 걷어내고(api/_aiidentity.js splitNegations) 남은 구절로 검색어를 만든다.
    */
   const positiveSpan = AIID.splitNegations(itemText).positive;
+  const identityPositiveSpan = AIID.splitNegations(removeConflictingModelParentheticals(itemText)).positive;
   let query = extractQuery(positiveSpan);
 
   let intent;
@@ -901,7 +938,10 @@ function classify(text, hist) {
    * 이 메시지가 상품 이름(숫자 앵커 + 이름)을 직접 말했으면 앞 대화를 가리키는 후속 질문이 아니다 —
    * 예전에는 후속 질문으로 보고 검색어를 비워 검색 자체를 건너뛰었다.
    */
-  const contextualFollowup = CONTEXT_DEPENDENT_RE.test(spanText) && !hasProductIdentity(positiveSpan);
+  // “그중” is a follow-up only when the message has no product evidence of its own.
+  // Requiring a full model identity here drops category-plus-attribute searches such as
+  // “15인치 LG gram 노트북 ... 그중에 제일 싼 것”.
+  const contextualFollowup = CONTEXT_DEPENDENT_RE.test(spanText) && AIID.productEvidence(positiveSpan) === 0;
   let inheritedProductQuery = false;
   let stateQuery = false;
   /*
@@ -917,7 +957,7 @@ function classify(text, hist) {
    * 실제로 말한 상품 구절 전체로 한다. 잘린 검색어로 계약을 만들면 "MX Master 3S" 의 3S 가
    * 사라져 MX Master 3 가 «정확히 맞는 상품» 이 된다.
    */
-  let identityText = ownQuery ? positiveSpan : '';
+  let identityText = ownQuery ? identityPositiveSpan : '';
   let prior = '';
   if ((!query || contextualFollowup || refinement) && intent !== 'A' && intent !== 'B' && Array.isArray(hist)) {
     prior = conversationProduct(hist);
