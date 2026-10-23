@@ -41,10 +41,12 @@ const FETCH_LIMIT = 48;
  * /api/hotdeals 를 그 자리에서 호출한다 (네트워크 없이 핸들러를 직접).
  * 핸들러는 res.json 으로만 답한다 — 그 몸통을 받아 온다.
  */
-async function callHotdeals(query) {
+async function callHotdeals(query, view) {
   const handler = require('./hotdeals.js');
   let status = 200;
   let payload = null;
+  const params = Object.assign({}, query || {});
+  if (view) params.view = view;
   const res = {
     status(c) { status = c; return this; },
     setHeader() { return this; },
@@ -52,14 +54,28 @@ async function callHotdeals(query) {
     json(v) { payload = v; return this; },
     end() { payload = payload || {}; return this; }
   };
-  await handler({ method: 'GET', headers: {}, query: query || {}, socket: {}, connection: {} }, res);
+  await handler({ method: 'GET', headers: {}, query: params, socket: {}, connection: {} }, res);
   if (status >= 400) {
     const message = payload && (payload.error || payload.message) ? String(payload.error || payload.message) : `status ${status}`;
-    const e = new Error(`핫딜 목록을 읽지 못했습니다: ${message}`);
+    const source = view === 'external' ? '외부 핫딜 피드' : '내부 핫딜 피드';
+    const e = new Error(`${source}를 읽지 못했습니다: ${message}`);
     e.hotdealUnavailable = true;
     throw e;
   }
-  return payload || {};
+  if (!payload || !Array.isArray(payload.items)) {
+    const source = view === 'external' ? '외부 핫딜 피드' : '내부 핫딜 피드';
+    const e = new Error(`${source} 응답에 목록이 없습니다`);
+    e.hotdealUnavailable = true;
+    throw e;
+  }
+  if ((view === 'external' && (payload.externalPending || payload.pending))
+      || (!view && payload.pending)) {
+    const source = view === 'external' ? '외부 핫딜 피드' : '내부 핫딜 피드';
+    const e = new Error(`${source}가 준비되지 않았습니다`);
+    e.hotdealUnavailable = true;
+    throw e;
+  }
+  return payload;
 }
 
 function hoursSince(iso, now) {
@@ -121,22 +137,39 @@ async function searchHotdeals(o) {
   const limit = Math.max(1, Math.min(MAX_ITEMS, Number(opts.limit) || 5));
   const budgetMax = Number(opts.budgetMax) > 0 ? Number(opts.budgetMax) : 0;
   const budgetMin = Number(opts.budgetMin) > 0 ? Number(opts.budgetMin) : 0;
-  const counts = { fetched: 0, overBudget: 0, mismatch: 0, stale: 0, duplicate: 0, community: 0 };
+  const counts = { fetched: 0, overBudget: 0, mismatch: 0, stale: 0, duplicate: 0, community: 0, potential: 0 };
 
-  let body;
-  try {
-    body = await callHotdeals({ limit: String(FETCH_LIMIT) });
-  } catch (e) {
+  // 내부 이력 딜과 외부 레이더는 서로 다른 API view 다. 외부 view 에는
+  // SEOSA 가격으로 검증된 딜과 아직 확인하지 않은 커뮤니티 제보가 함께 온다.
+  // 둘 다 읽어야 검증된 외부 딜을 추천하고, 제보는 별도 목록으로 격리할 수 있다.
+  const [internalResult, externalResult] = await Promise.allSettled([
+    callHotdeals({ limit: String(FETCH_LIMIT) }),
+    callHotdeals({ limit: String(FETCH_LIMIT) }, 'external')
+  ]);
+  const sources = {
+    internal: internalResult.status === 'fulfilled' ? 'available' : 'unavailable',
+    external: externalResult.status === 'fulfilled'
+      ? (externalResult.value.externalEnabled === false ? 'disabled' : 'available')
+      : 'unavailable'
+  };
+  const errors = [internalResult, externalResult]
+    .filter(x => x.status === 'rejected')
+    .map(x => x.reason && x.reason.message ? x.reason.message : '핫딜 피드 조회 실패');
+  const internalRows = internalResult.status === 'fulfilled' ? internalResult.value.items : [];
+  const externalRows = externalResult.status === 'fulfilled' ? externalResult.value.items : [];
+  const rows = internalRows.concat(externalRows);
+  if (sources.internal === 'unavailable' && sources.external === 'unavailable') {
     // 공급 실패를 "핫딜이 없다" 로 바꾸지 않는다 (CO-05 와 같은 원칙).
-    return { verified: [], community: [], counts, state: 'unavailable', error: e.message };
+    return { verified: [], community: [], potential: [], counts, state: 'unavailable', sources, error: errors.join('; ') };
   }
+  const partial = sources.internal === 'unavailable' || sources.external === 'unavailable';
 
   const gate = identityGate(opts.product, opts.userText, opts.excludedConditions);
   const seen = new Set();
   const verified = [];
   const community = [];
+  const potential = [];
 
-  const rows = Array.isArray(body.items) ? body.items : [];
   counts.fetched = rows.length;
   rows.forEach(it => {
     if (!it) return;
@@ -152,6 +185,14 @@ async function searchHotdeals(o) {
     if (seen.has(key)) { counts.duplicate++; return; }
     seen.add(key);
 
+    const status = String(it.status || it.verificationStatus || '').toUpperCase();
+    // 내부 POTENTIAL_DEAL 은 가격 후보 판정 단계다. 외부 API 의 verified=true 는
+    // 별도로 가격 이력 검증을 통과했다는 뜻이므로 그대로 검증 목록에 둔다.
+    const isVerified = !isCommunity && (it.verified === true
+      || ['VERIFIED_HOT', 'GOOD_DEAL', 'STRONG_DEAL'].includes(status));
+    const isPotential = !isCommunity && !isVerified;
+    if (isPotential) counts.potential++;
+
     const out = {
       title: it.title,
       price: Number(it.price) || 0,
@@ -159,23 +200,29 @@ async function searchHotdeals(o) {
       url: it.url || it.productUrl || '',
       sourceUrl: it.sourceUrl || '',
       source: it.source || '',
-      // 내부 검증 딜만 verified 다. 커뮤니티 제보는 끝까지 아니다.
-      verified: !isCommunity,
-      label: isCommunity ? '커뮤니티 제보(미검증)' : '내부 검증 핫딜',
-      status: it.status || it.verificationStatus || '',
+      // 가격 검증된 딜만 verified 다. 제보·잠정 후보는 끝까지 false 다.
+      verified: isVerified,
+      label: isCommunity ? '커뮤니티 제보(미검증)'
+        : isVerified
+          ? (it.source === 'internal-history' ? '내부 가격 이력 검증 핫딜' : 'SEOSA 가격 검증 핫딜')
+          : '내부 잠정 후보(검증 필요)',
+      status,
       dropPercent: it.signals ? it.signals.priceDropPercent : null,
       referencePrice: it.signals ? it.signals.referencePrice : null,
       checkedAt: it.checkedAt || null,
       identityTier: g.tier
     };
-    (isCommunity ? community : verified).push(out);
+    (isCommunity ? community : isPotential ? potential : verified).push(out);
   });
 
   return {
     verified: verified.slice(0, limit),
     community: community.slice(0, limit),
+    potential: potential.slice(0, limit),
     counts,
-    state: verified.length || community.length ? 'found' : 'empty'
+    sources,
+    error: errors.length ? errors.join('; ') : '',
+    state: partial ? 'partial' : (verified.length || community.length || potential.length ? 'found' : 'empty')
   };
 }
 
@@ -195,12 +242,24 @@ function hotdealBlock(result) {
     ].join('\n');
   }
   const lines = ['[핫딜 목록 — 서버가 조건으로 걸러 확인한 것. 여기 없는 핫딜은 말하지 마라]'];
+  if (result.state === 'partial') {
+    lines.push(`- 일부 피드를 읽지 못했다 (${String(result.error || '원인 불명').slice(0, 180)}). 아래 결과만 확인됐으며, 읽지 못한 피드에 조건에 맞는 핫딜이 없는지는 알 수 없다.`);
+  }
+  if (result.sources && result.sources.external === 'disabled') {
+    lines.push('- 외부 핫딜 피드는 비활성화되어 확인하지 않았다.');
+  }
   if (!result.verified.length) {
-    lines.push('- 조건에 맞는 «내부 검증» 핫딜은 지금 없다. 억지로 비슷한 것을 핫딜이라고 하지 마라.');
+    lines.push('- 조건에 맞는 «가격 검증 핫딜»은 지금 없다. 잠정 후보를 검증된 딜처럼 추천하지 마라.');
   } else {
     result.verified.forEach((d, i) => {
       const drop = d.dropPercent == null ? '' : ` · 하락 ${Math.round(d.dropPercent)}%`;
-      lines.push(`  ${i + 1}. [내부 검증] ${String(d.title).slice(0, 60)} · ${won(d.price)} · ${d.mall}${drop}`);
+      lines.push(`  ${i + 1}. [${d.label}] ${String(d.title).slice(0, 60)} · ${won(d.price)} · ${d.mall}${drop}`);
+    });
+  }
+  if (result.potential && result.potential.length) {
+    lines.push('- 아래 후보는 내부 가격 기록에 잡혔지만 검증 핫딜 기준을 통과하지 않았다. 검증된 딜로 단정하지 말고 확인 필요 후보로만 소개하라.');
+    result.potential.forEach((d, i) => {
+      lines.push(`  P${i + 1}. [내부 잠정 후보·검증 필요] ${String(d.title).slice(0, 60)} · ${won(d.price)} · ${d.mall}`);
     });
   }
   if (result.community.length) {

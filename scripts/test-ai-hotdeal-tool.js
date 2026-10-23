@@ -24,11 +24,21 @@ const hoursAgo = h => new Date(NOW - h * 3600000).toISOString();
 
 /* ── 가짜 /api/hotdeals ───────────────────────────────────────────── */
 let feed = [];
+let externalFeed = [];
 let failWith = null;
+let externalFailWith = null;
+let internalPending = false;
 let lastQuery = null;
+let lastExternalQuery = null;
 const fakeHandler = async (req, res) => {
+  if (req.query && req.query.view === 'external') {
+    lastExternalQuery = req.query;
+    if (externalFailWith || failWith) return res.status(503).json({ error: externalFailWith || failWith });
+    return res.status(200).json({ items: externalFeed, external: true, externalEnabled: true });
+  }
   lastQuery = req.query;
   if (failWith) return res.status(503).json({ error: failWith });
+  if (internalPending) return res.status(200).json({ items: [], pending: true });
   return res.status(200).json({ items: feed });
 };
 const hotdealsPath = path.resolve(__dirname, '..', 'api', 'hotdeals.js');
@@ -126,24 +136,57 @@ function deal(o) {
   /* ================================================================ */
   section('E. 커뮤니티 제보는 승격되지 않는다');
   {
+    externalFeed = [
+      deal({ title: '외부 검증 SSD 1TB', price: 64000, productId: 'external-verified',
+        source: 'ppomppu', status: 'VERIFIED_HOT', verificationStatus: 'STRONG_DEAL' }),
+      deal({ title: '[제보] 외부 커뮤니티 특가', price: 32000, productId: '',
+        source: 'ppomppu', status: 'COMMUNITY', verificationStatus: 'UNMATCHED', communityOnly: true,
+        checkedAt: hoursAgo(2) })
+    ];
     feed = [
       deal({ title: '[제보] 노트북 특가', price: 200000, productId: 'f1', communityOnly: true, verificationStatus: 'UNMATCHED', source: 'ppomppu' }),
       deal({ title: '레노버 노트북', price: 250000, productId: 'f2' })
     ];
     const base = await HT.searchHotdeals({ now: NOW });
-    ok(base.verified.length === 1 && base.community.length === 0,
-      '기본값에서는 커뮤니티 제보가 아예 나오지 않는다', { v: base.verified.length, c: base.community.length });
-    ok(base.counts.community === 1, '몇 건이 커뮤니티였는지는 센다', base.counts);
+    ok(base.verified.length === 2 && base.community.length === 0
+      && base.verified.some(d => d.title === '외부 검증 SSD 1TB'),
+    '외부 검증 딜은 받고 커뮤니티 제보는 기본값에서 숨긴다', { v: base.verified, c: base.community.length });
+    ok(base.counts.community === 2, '내부·외부 커뮤니티 제보 수를 함께 센다', base.counts);
 
     const withC = await HT.searchHotdeals({ includeCommunity: true, now: NOW });
-    ok(withC.community.length === 1 && withC.community[0].verified === false
-      && /미검증/.test(withC.community[0].label), '넣어도 verified=false 와 미검증 라벨을 단다', withC.community);
+    ok(withC.community.length === 2 && withC.community.every(d => d.verified === false
+      && /미검증/.test(d.label)), '넣어도 verified=false 와 미검증 라벨을 단다', withC.community);
     ok(withC.verified.every(d => d.verified === true), '검증 목록에는 제보가 섞이지 않는다', withC.verified);
+    ok(withC.verified.some(d => d.title === '외부 검증 SSD 1TB')
+      && withC.community.some(d => d.title === '[제보] 외부 커뮤니티 특가'),
+    '외부 피드의 검증 딜과 미검증 제보를 각각 올바른 목록에 담는다', withC);
+    ok(withC.verified.find(d => d.title === '외부 검증 SSD 1TB').label === 'SEOSA 가격 검증 핫딜',
+      '외부 검증 핫딜의 검증 주체를 내부 이력과 구분한다', withC.verified);
+    ok(lastExternalQuery && lastExternalQuery.view === 'external',
+      '외부 피드 경로를 별도로 호출한다', lastExternalQuery);
 
     const block = HT.hotdealBlock(withC);
     ok(/검증되지 않았다/.test(block) && /커뮤니티 제보·미검증/.test(block),
       '프롬프트 블록이 미검증임을 분명히 적는다', block.slice(0, 200));
     ok(/여기 없는 핫딜은 말하지 마라/.test(block), '목록 밖의 핫딜을 지어내지 못하게 못 박는다');
+  }
+
+  /* ================================================================ */
+  section('E2. 잠정 내부 후보는 검증 핫딜로 승격하지 않는다');
+  {
+    feed = [deal({
+      title: '앱코 축교환 레인보우 무빙 LED 기계식 유선 일반형 키보드',
+      price: 27900, productId: '5065639056', vendorItemId: '74139260485',
+      status: 'POTENTIAL_DEAL', verificationStatus: 'POTENTIAL_DEAL'
+    })];
+    externalFeed = [];
+    const result = await HT.searchHotdeals({ now: NOW });
+    ok(result.verified.length === 0 && result.potential && result.potential.length === 1
+      && result.potential[0].verified === false,
+    'POTENTIAL_DEAL 은 검증 목록과 분리한다', result);
+    ok(/내부 잠정 후보/.test(HT.hotdealBlock(result))
+      && /검증된 딜로 단정하지 말고/.test(HT.hotdealBlock(result)),
+    '잠정 후보 프롬프트에 확인 필요 상태를 명시한다', HT.hotdealBlock(result));
   }
 
   /* ================================================================ */
@@ -156,6 +199,28 @@ function deal(o) {
     const block = HT.hotdealBlock(r);
     ok(/«없다» 는 뜻이 아니다/.test(block) && /지어내지 마라/.test(block),
       '확인 실패를 핫딜 없음으로 바꿔 말하지 않게 적는다', block);
+
+    failWith = null;
+    externalFailWith = '외부 DB down';
+    feed = [deal({ title: '내부 검증 마우스', productId: 'partial-internal' })];
+    const partial = await HT.searchHotdeals({ now: NOW });
+    externalFailWith = null;
+    ok(partial.state === 'partial' && partial.verified.length === 1
+      && partial.sources.external === 'unavailable',
+    '외부 피드 실패는 일부 결과로 구분하고 읽은 내부 딜은 보존한다', partial);
+    ok(/일부 피드를 읽지 못했다/.test(HT.hotdealBlock(partial))
+      && /외부 DB down/.test(HT.hotdealBlock(partial)),
+    '부분 조회 실패를 성공이나 핫딜 없음으로 말하지 않는다', HT.hotdealBlock(partial));
+
+    externalFailWith = null;
+    internalPending = true;
+    const pending = await HT.searchHotdeals({ now: NOW });
+    internalPending = false;
+    ok(pending.state === 'partial' && pending.sources.internal === 'unavailable'
+      && pending.sources.external === 'available',
+    'HTTP 200 pending 응답도 내부 피드 읽기 실패로 처리한다', pending);
+    ok(/내부 핫딜 피드가 준비되지 않았습니다/.test(pending.error),
+      'pending 상태를 빈 목록으로 위장하지 않고 원인을 남긴다', pending.error);
   }
 
   /* ================================================================ */
@@ -179,7 +244,9 @@ function deal(o) {
     ok(/핫딜 목록 블록 조립 실패\(없이 진행\)/.test(src), '실패해도 답변 경로를 멈추지 않는다');
   }
 
-  ok(lastQuery && lastQuery.limit === '48', '/api/hotdeals 를 목록 한도와 함께 읽는다 (새 SQL 을 쓰지 않는다)', lastQuery);
+  ok(lastQuery && lastQuery.limit === '48', '/api/hotdeals 내부 목록을 한도와 함께 읽는다 (새 SQL 을 쓰지 않는다)', lastQuery);
+  ok(lastExternalQuery && lastExternalQuery.view === 'external' && lastExternalQuery.limit === '48',
+    '커뮤니티·외부 검증 목록도 전용 view 에서 읽는다', lastExternalQuery);
 
   console.log(`\n=== 결과: ${pass}/${pass + fails.length} PASS ===`);
   if (fails.length) {
