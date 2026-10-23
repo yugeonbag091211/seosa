@@ -13,6 +13,8 @@ export function dropAsProduct(d: TodayDrop): Product {
     title: d.title, price: d.currentPrice, mallLabel: d.mallLabel, image: d.image, link: d.link,
     listPrice: 0, savePct: 0, collectedAt: d.recordedAt, isRocket: null, trust: null,
     priceChange: { prevPrice: d.previousPrice, dropAmount: d.dropAmount, dropPct: d.dropPct, isAllTimeLow: false },
+    // AI 가 서버에서 적어 주는 「다른 모델」 라벨만 쓰므로, 다른 자리에서 만든 Product 는 비워 둔다.
+    identityNote: '',
   };
 }
 
@@ -24,5 +26,6 @@ export function savedAsProduct(item: SavedItem, latest: PricePoint | null): Prod
     price: latest ? latest.price : item.savedPrice,
     collectedAt: latest ? latest.date : item.savedAt,
     listPrice: 0, savePct: 0, isRocket: null, trust: null, priceChange: null,
+    identityNote: '',
   };
 }
