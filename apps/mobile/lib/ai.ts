@@ -12,6 +12,10 @@ import type { AiTurn, Product } from './types.ts';
  * Past assistant turns are only accepted when they carry the server's signature (turnSig →
  * `sig`), and the previous top pick only through the server-signed topRecommendationRef.
  * Both are passed back unmodified.
+ *
+ * Only MAX_HISTORY turns are sent, so a budget or "no used items" said earlier than that comes
+ * back only through convState — the server's signed summary of the conversation so far
+ * (api/_convstate.js). It is also passed back unmodified; a changed token is ignored.
  */
 
 /** api/_aicontext.MAX_SELECTORS */
@@ -66,6 +70,8 @@ export type AiRequestInput = {
   history: readonly AiTurn[];
   prevTopProductId?: string;
   prevTopRef?: string;
+  /** The last answer's convState, as received. */
+  convState?: string;
   /** What the user is looking at, like the web's `view`. */
   view?: { source: string; keyword?: string };
 };
@@ -78,5 +84,6 @@ export function buildAiRequest(input: AiRequestInput) {
     view: input.view || { source: 'app' },
     prevTop: input.prevTopProductId || '',
     prevTopRef: input.prevTopRef || '',
+    convState: input.convState || '',
   };
 }
