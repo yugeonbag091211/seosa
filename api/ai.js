@@ -4371,8 +4371,50 @@ module.exports = async function handler(req, res) {
          * 정규화된 몰 이름이 어긋나면 키가 전부 빗나가 원본 순서 그대로 나갔다.
          * 답변이 말하는 상품과 카드가 다른 상품이면 안 된다. 순서는 한 곳에서 정한다.
          */
-        cardSources = items.map(it => it._raw).filter(Boolean);
-        cards = cardSources.map(it => toCard(it, statFor(stats, it)));
+        /*
+         * 요청한 상품만 카드로 — 다른 모델·형제 모델은 카드에서 뺀다 (CO-04, 2026-10-23 실호출 관측).
+         *
+         * ── 왜 ─────────────────────────────────────────────────────────
+         *
+         *   "로지텍 G304 마우스 최저가" 에서 1위는 정확한 G304 LIGHTSPEED 였고 답변 문장도 G304 만
+         *   들었지만, 카드 뒤쪽에 G304 X SUPERLIGHT·G102 LIGHTSPEED 가 섞였다. partition 은 둘 다
+         *   tier=SIBLING 으로 올바르게 판정하고 items[]._identity.label 에 "다른 모델 번호"·"다른 모델
+         *   계열(X)" 을 적어 두는데(위 forEach 가 notes 로 붙인다), 카드는 _raw 로만 만들어 그 라벨이
+         *   사용자에게 닿지 않았다.
+         *
+         * ── 어디까지 거르나 ───────────────────────────────────────────
+         *
+         *   SIBLING (모델 번호·계열·등급·브랜드 다름)  — 정말 다른 상품이다. EXACT 가 있으면 카드에서 뺀다.
+         *   NEAR    (용량·색상·상태·구성 다름)       — 같은 모델의 다른 변형이다. 카드에 두되 라벨만 붙인다.
+         *                                              사용자가 보고 판단할 여지를 둔다 ("색상이 다르지만 더 쌈").
+         *   EXCLUDED (사용자가 "삼성 빼줘" 라고 한 것) — 소프트 제외 정책 그대로. 카드에 남고 랭킹만 내려간다.
+         *
+         * NEAR 상태(정확한 후보가 하나도 없음)에서는 전부 카드에 두고 라벨을 붙인다 — _concierge 가
+         * "정확히 맞는 상품은 찾지 못했어요" 로 답하는 동안 사용자가 각 카드가 무엇이 다른지 바로 안다.
+         *
+         * ★ items[] 자체는 그대로 둔다 — 랭킹·결정·pareto·프롬프트 맥락은 다른 모델도 보고 판단한다.
+         *   오직 사용자가 보는 카드 목록만 좁힌다. partition 이 이미 MISMATCH 를 빼 두었다.
+         */
+        const cardItems = identityState === 'EXACT'
+          ? items.filter(it => !it._identity || it._identity.tier !== AIID.TIER.SIBLING)
+          : items;
+        const cardPairs = cardItems
+          .map(it => it && it._raw ? { item: it, raw: it._raw } : null)
+          .filter(Boolean);
+        cardSources = cardPairs.map(p => p.raw);
+        cards = cardPairs.map(p => toCard(p.raw, statFor(stats, p.raw)));
+        /*
+         * 다른 변형(용량·색상·상태…) 이 섞여 있으면 카드마다 무엇이 다른지 라벨을 붙인다.
+         *
+         *   EXACT 상태 — 남은 NEAR 카드에만 라벨 (SIBLING 은 이미 빠졌고, EXCLUDED 는 다른 자리에서 설명한다)
+         *   NEAR  상태 — 정확한 후보가 없다. 모든 비-EXACT 카드에 라벨
+         */
+        cards.forEach((card, i) => {
+          const id = cardPairs[i].item._identity;
+          if (!id || id.tier === AIID.TIER.EXACT || !id.label) return;
+          if (id.tier === AIID.TIER.EXCLUDED) return;
+          card.identityNote = `다른 모델: ${id.label}`;
+        });
       }
     } else if (items.length && (!intent || needsShopContext(intent))) {
       /*
