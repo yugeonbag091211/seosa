@@ -165,8 +165,9 @@ async function ask(body, opts = {}) {
     json(v) { payload = v; return this; },
     end() { payload = {}; return this; }
   };
+  const warnings = [];
   const quiet = console.log, quietWarn = console.warn, quietErr = console.error;
-  console.log = () => {}; console.warn = () => {}; console.error = () => {};
+  console.log = () => {}; console.warn = (...args) => warnings.push(args.map(String).join(' ')); console.error = () => {};
   try {
     await handler({ method: 'POST', headers: {}, query: {}, body: Object.assign({ chatHistory: [], contextProducts: [], view: { source: 'none' } }, body) }, res);
   } finally {
@@ -177,7 +178,8 @@ async function ask(body, opts = {}) {
     status, body: payload || {}, messages,
     system: (messages[0] && messages[0].content) || '',
     searches: stubSearch.calls - searchBefore,
-    statCalls: statCalls.slice(statBefore)
+    statCalls: statCalls.slice(statBefore),
+    warnings
   };
 }
 /*
@@ -571,6 +573,127 @@ function searchFixture() {
   /* ================================================================ */
   section('E. RT-03 옵션별 가격 기록 — 원 공격 F-01~20 변형');
   {
+    const sparsePrice = I.normItem({
+      productId: 'real-price-window-fixture', vendorItemId: 'OPTION-10', mallId: '쿠팡', mall: '쿠팡',
+      title: '10인용 밥솥', price: 40900,
+      hist: {
+        count: 10, lastPrice: 40900, lastDate: '2026-10-23', prevPrice: 40900,
+        low: 8000, lowDate: '2026-09-13', lowCount: 2, lowConfirmed: true,
+        low7: 19000, low7Date: '2026-10-23', low7Days: 1,
+        low30: 10000, low30Date: '2026-09-24', low30Days: 5,
+        avg30: 40500, avg30Days: 10, avg7: 40900, avg7Days: 1,
+        trendPct: 0, trendDays: 8, trendFrom: 40900, trendFromDate: '2026-10-15',
+        points: [{ d: '2026-10-15', p: 40900 }, { d: '2026-10-23', p: 40900 }],
+        historyDays: 40, maxGapDays: 8, firstDate: '2026-09-13'
+      }
+    });
+    const sparseFacts = I.describe(sparsePrice, true, false);
+    ok(sparseFacts.includes('최근 7일 관측 최저 19,000원')
+        && sparseFacts.includes('최근 30일 관측 최저 10,000원'),
+      '7일·30일 최저는 전체 관측 최저와 구분해 AI 근거에 싣는다', sparseFacts);
+    ok(sparseFacts.includes('기록 간 최대 간격 8일') && sparseFacts.includes('최근 7일 기록 1일'),
+      '긴 기록 공백과 7일 관측 일수를 AI가 볼 수 있다', sparseFacts);
+    ok(I.unverifiedProductPrices('최근 30일 관측 최저는 10,000원입니다.', [sparsePrice]).length === 0
+        && I.unverifiedProductPrices('최근 30일 관측 최저는 8,000원입니다.', [sparsePrice]).length === 1,
+      '30일 최저 주장 검증이 전체 관측 최저가 아닌 30일 창을 사용한다');
+
+    // These are actual GPT outputs from scripts/live-price-history-codex.js,
+    // checked against the read-only Neon snapshot captured on 2026-10-23.
+    // They stay deterministic here; this test itself makes no paid call.
+    const realSnapshot = I.normItem({
+      productId: '8327026885', vendorItemId: '95189584451', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '대웅 취사 보온 전기밥솥 10인용', price: 40900,
+      hist: {
+        count: 10, lastPrice: 40900, lastDate: '2026-10-23', prevPrice: 40900,
+        low: 39900, lowDate: '2026-10-10', lowCount: 4, lowConfirmed: true,
+        low7: 40900, low7Date: '2026-10-23', low7Days: 1,
+        low30: 39900, low30Date: '2026-10-10', low30Days: 10,
+        avg30: 40500, avg30Days: 10, avg7: 40900, avg7Days: 1,
+        trendPct: 0, trendDays: 8, trendFrom: 40900, trendFromDate: '2026-10-15',
+        points: [{ d: '2026-10-15', p: 40900 }, { d: '2026-10-23', p: 40900 }],
+        historyDays: 16, maxGapDays: 8, firstDate: '2026-10-07'
+      }
+    });
+    const livePriceAnswers = [
+      '현재 확인 가격은 **40,900원**이고, 마지막 관측일은 **2026년 10월 23일**입니다. 기록상 최저가 39,900원보다 1,000원 높고, 30일 평균 40,500원보다 400원 비싼 평범한 가격입니다.',
+      '아니요. 현재가는 **40,900원**으로, SEOSA가 확인한 최저가 **39,900원(2026년 10월 10일)**보다 **1,000원 높습니다**. 최근 30일 평균 **40,500원**보다도 **400원 비싸고**, 최근 기록에서는 가격 변동이 거의 없지만 특별히 싼 가격은 아닙니다.',
+      '아니요. 현재가는 40,900원으로, SEOSA 기록상 최저가 39,900원(2026-10-10)보다 1,000원 높습니다. 최근 30일 평균 40,500원보다도 400원(1%) 비싸며, 확인된 가격은 2026-10-15부터 2026-10-23까지 40,900원으로 거의 변동이 없었습니다. 따라서 기록 대비 특별히 싼 가격은 아닙니다.',
+      '아니요. 현재가 40,900원은 SEOSA가 확인한 최저가가 아닙니다. 기록상 최저가는 2026년 10월 10일의 39,900원으로, 현재가가 1,000원 더 높습니다. 최근 30일 평균 40,500원보다도 400원(1%) 비싸며, 관측 기록에서는 특별히 싼 가격으로 보이지 않습니다.'
+    ];
+    livePriceAnswers.forEach((answer, i) => {
+      ok(I.unverifiedContextualPrices(answer, [realSnapshot]).length === 0
+          && I.unverifiedProductPrices(answer, [realSnapshot]).length === 0
+          && I.unverifiedCurrentPrices(answer, [realSnapshot]).length === 0,
+        `실제 GPT 출력 ${i + 1}: 확인된 최저·평균 대비 차액은 정확한 원장 근거로 통과한다`,
+        JSON.stringify({ contextual: I.unverifiedContextualPrices(answer, [realSnapshot]),
+          product: I.unverifiedProductPrices(answer, [realSnapshot]), current: I.unverifiedCurrentPrices(answer, [realSnapshot]) }));
+    });
+    const realModelReply = livePriceAnswers[2];
+    const averageDeltaAt = realModelReply.indexOf('400원');
+    ok(I.priceClaimKind(realModelReply, averageDeltaAt, averageDeltaAt + '400원'.length) === 'difference',
+      '실제 GPT의 평균 대비 차액 활용형도 파생 차액으로 분류한다',
+      I.priceClaimKind(realModelReply, averageDeltaAt, averageDeltaAt + '400원'.length));
+    const currentDeltaReply = livePriceAnswers[3];
+    const currentDeltaAt = currentDeltaReply.indexOf('1,000원');
+    ok(I.priceClaimKind(currentDeltaReply, currentDeltaAt, currentDeltaAt + '1,000원'.length) === 'difference',
+      '실제 GPT의 “현재가가 1,000원 더 높다” 표현도 파생 차액으로 분류한다',
+      I.priceClaimKind(currentDeltaReply, currentDeltaAt, currentDeltaAt + '1,000원'.length));
+
+    // Exercise the whole API grounding gate with an actual provider answer and
+    // the same persisted product/option/history facts, not only the pure claim
+    // parsers above. The handler and price-stat loader remain real; only the
+    // external search/model boundaries are deterministic fixtures.
+    const liveCatalogRow = {
+      product_id: '8327026885', mall: '쿠팡', mall_label: '쿠팡',
+      title: '대웅 취사 보온 전기밥솥 10인용', lprice: 40900, oprice: 40900,
+      link: 'https://www.coupang.com/vp/products/8327026885?vendorItemId=95189584451',
+      image: '', keyword: '대웅 전기밥솥', collected_at: '2026-10-22T18:32:56.341Z',
+      vendor_item_id: '95189584451'
+    };
+    tables.products.push(liveCatalogRow);
+    const liveDates = [
+      ['2026-10-07', 39900], ['2026-10-08', 39900], ['2026-10-09', 39900], ['2026-10-10', 39900],
+      ['2026-10-11', 40900], ['2026-10-12', 40900], ['2026-10-13', 40900], ['2026-10-14', 40900],
+      ['2026-10-15', 40900], ['2026-10-23', 40900]
+    ];
+    tables.price_history.push(...liveDates.map(([recorded_date, price]) => ({
+      product_id: liveCatalogRow.product_id, mall: liveCatalogRow.mall,
+      vendor_item_id: liveCatalogRow.vendor_item_id, price, recorded_date,
+      recorded_at: `${recorded_date}T09:00:00.000Z`, title: liveCatalogRow.title, link: liveCatalogRow.link
+    })));
+    const actualGroundingReply = livePriceAnswers[0];
+    const liveRoute = await ask({
+      question: '대웅 취사 보온 전기밥솥 10인용 현재 가격과 기록상 최저가·평균 대비 차이를 알려줘.',
+      view: { source: 'none' }
+    }, {
+      classify: 'D|대웅 취사 보온 전기밥솥 10인용', answer: actualGroundingReply,
+      searchItems: [{
+        title: liveCatalogRow.title, lprice: 40900, oprice: 40900,
+        link: liveCatalogRow.link, mall: liveCatalogRow.mall, productId: liveCatalogRow.product_id,
+        vendorItemId: liveCatalogRow.vendor_item_id, isCoupang: true
+      }]
+    });
+    ok(!liveRoute.body.degraded && liveRoute.body.text === actualGroundingReply,
+      '실제 GPT 가격 이력 응답은 API 전체 grounding gate를 통과한다',
+      JSON.stringify({ warnings: liveRoute.warnings, degraded: liveRoute.body.degraded,
+        text: liveRoute.body.text, intent: liveRoute.body.intent,
+        facts: facts(liveRoute.system).slice(0, 900), stats: liveRoute.statCalls }));
+    const wrongRecommendation = await ask({ question: '대웅 밥솥 추천해줘', view: { source: 'none' } }, {
+      classify: 'C|대웅 밥솥', answer: '삼성 갤럭시 버즈를 추천합니다.',
+      searchItems: [{
+        title: liveCatalogRow.title, lprice: 40900, oprice: 40900,
+        link: liveCatalogRow.link, mall: liveCatalogRow.mall, productId: liveCatalogRow.product_id,
+        vendorItemId: liveCatalogRow.vendor_item_id, isCoupang: true
+      }]
+    });
+    ok(wrongRecommendation.body.degraded === true,
+      '카드에 없는 상품을 추천하면 grounding gate가 계속 대체한다',
+      JSON.stringify({ degraded: wrongRecommendation.body.degraded, warnings: wrongRecommendation.warnings }));
+    const forgedDelta = livePriceAnswers[0].replace('1,000원 높고', '1,001원 높고');
+    ok(I.unverifiedContextualPrices(forgedDelta, [realSnapshot]).length > 0
+        || I.unverifiedProductPrices(forgedDelta, [realSnapshot]).length > 0,
+      '실제 GPT 차액 응답에서 1원 변조한 파생 차액은 계속 거부한다');
+
     const asks = ['가격 이력 알려줘', '역대 최저가 언제였어?', '30일 평균보다 싸?', '최근에 가격 내려갔어?', 'price history please'];
     const vids = ['V-BLACK', 'V-WHITE', null, ''];
     for (let i = 1; i <= 20; i++) {

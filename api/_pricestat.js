@@ -164,6 +164,17 @@ function statsFrom(points) {
   if (recent7.length) {
     avg7 = Math.round(recent7.reduce((s, h) => s + int(h.price), 0) / recent7.length);
   }
+  const windowLow = list => {
+    if (!list.length) return { price: 0, date: '', observedDays: 0 };
+    const price = Math.min.apply(null, list.map(h => int(h.price)));
+    let date = '';
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (int(list[i].price) === price) { date = String(list[i].date); break; }
+    }
+    return { price, date, observedDays: list.length };
+  };
+  const low7 = windowLow(recent7);
+  const low30 = windowLow(recent);
 
   /*
    * 변동성 — 표준편차를 평균으로 나눈 값(변동계수).
@@ -244,6 +255,12 @@ function statsFrom(points) {
     highDate,
     avg7,
     avg7Days: recent7.length,
+    low7: low7.price,
+    low7Date: low7.date,
+    low7Days: low7.observedDays,
+    low30: low30.price,
+    low30Date: low30.date,
+    low30Days: low30.observedDays,
     volatility,       // 변동성(%) — 표준편차 / 평균. 기록 2개 미만이면 null
     historyDays,      // 기록이 실제로 덮는 일수
     maxGapDays,       // 기록이 가장 오래 끊겼던 구간(일)

@@ -56,16 +56,8 @@ function modelCost(model, usage) {
   return (Number(usage.inputTokens || 0) * r.input + Number(usage.outputTokens || 0) * r.output) / 1e6;
 }
 
-if (!process.env.OPENAI_API_KEY) {
-  console.error('OPENAI_API_KEY가 없어 실제 provider 호출을 시작하지 않습니다.');
-  process.exit(2);
-}
-
 // This gate is stale relative to api/_llm.js's direct OpenAI primary path.
 // A sentinel satisfies it; the fetch firewall below prevents sending it.
-if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
-  process.env.OPENROUTER_API_KEY = 'LIVE_REDTEAM_GATE_ONLY_NOT_A_CREDENTIAL';
-}
 process.env.AI_CACHE_TTL_MS = '0';
 // Never create signatures with a possibly real application signing secret.
 process.env.AUTH_SECRET = 'codex-live-redteam-ephemeral-signing-secret';
@@ -881,6 +873,23 @@ function summary(records) {
 }
 
 async function main() {
+  const usage = [
+    'Usage:',
+    '  node scripts/live-redteam-codex.js --help',
+    '  node scripts/live-redteam-codex.js --list [--round all]',
+    '  node scripts/live-redteam-codex.js --run --round all [--offset 0] [--limit 825] [--report path]',
+    '',
+    'Live runs require OPENAI_API_KEY and a positive LIVE_REDTEAM_MAX_USD spend cap.'
+  ].join('\n');
+  if (hasArg('--help') || hasArg('-h')) {
+    console.log(usage);
+    return;
+  }
+  if (!hasArg('--list') && !hasArg('--run')) {
+    console.log(usage);
+    return;
+  }
+
   const round = arg('--round', '1');
   const all = scenariosFor(round);
   if (hasArg('--list')) {
@@ -889,6 +898,15 @@ async function main() {
     console.log(JSON.stringify({ round, seed: SEED, scenarios: all.length, multiTurnScenarios: all.filter(s => s.type === 'multi-turn').length,
       freshIndependent: all.filter(s => s.novelty).length, repeatCandidates: new Set(all.filter(s => s.baseId).map(s => s.baseId)).size, families }, null, 2));
     return;
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY가 없어 실제 provider 호출을 시작하지 않습니다.');
+  }
+  if (maxBudgetUsd == null) {
+    throw new Error('실제 평가에는 양수 LIVE_REDTEAM_MAX_USD 비용 상한이 필요합니다.');
+  }
+  if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY && !process.env.OPENROUTER_API_KEY) {
+    process.env.OPENROUTER_API_KEY = 'LIVE_REDTEAM_GATE_ONLY_NOT_A_CREDENTIAL';
   }
   const offset = Math.max(0, Number(arg('--offset', '0')) || 0);
   const limit = Math.max(0, Number(arg('--limit', String(all.length))) || 0);
