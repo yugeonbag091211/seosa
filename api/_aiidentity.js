@@ -308,6 +308,10 @@ function splitNegations(text) {
         while (cut > 0 && IDENTITY_SLOTS.has(preSlots[cut - 1])) cut--;
         // "아이폰 17 프러맥스 말고 프로" — 오타 등급도 앵커 «뒤» 만 바꾼다(앵커·계열 이름은 이어받는다).
         if (cut === preToks.length) cut = lastAnchor >= 0 && lastAnchor < preToks.length - 1 ? lastAnchor + 1 : 0;
+      } else if (lastSlot === 'condition' && postSlots.includes('condition')) {
+        // "WH1000XM6 중고 말고 미개봉 ... 실제 검색 결과 기준으로" — 뒤에 조건 교체와
+        // 일반 문장이 함께 와도 앞 상품명 전체가 아니라 기존 상태만 제외한다.
+        while (cut > 0 && preSlots[cut - 1] === 'condition') cut--;
       } else if (postHasWord && (lastSlot === 'accessory' || lastSlot === 'bundle')) {
         // "MX Master 3S 패키지 말고 마우스" · "케이스 말고 이어폰" — 부속·구성만 바꾼다.
         while (cut > 0 && (preSlots[cut - 1] === 'accessory' || preSlots[cut - 1] === 'bundle')) cut--;

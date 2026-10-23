@@ -16,6 +16,8 @@ assert.equal(missingExpectedIdentity(expected, { intent: 'PRODUCT_SEARCH', items
 assert.equal(missingExpectedIdentity({}, { intent: 'CHAT', items: [] }), false);
 assert.equal(wrongTopIdentity(expected, { text: '정확히 맞는 상품은 찾지 못했어요. 가장 가까운 후보는 Pro 2이며 요청하신 일반형과 다른 프로 모델입니다.' }, { title: 'Apple AirPods Pro 2 USB-C' }), false,
   'a mismatched candidate explicitly disclosed as a different model after a no-match is not a false identity claim');
+assert.equal(wrongTopIdentity(expected, { text: '요청하신 AirPods 3 일반형 256GB와 정확히 맞는 상품은 없습니다. 가장 가까운 후보는 AirPods Pro 2 USB-C, 289,000원이지만 모델이 다르고 프로 등급입니다.' }, { title: 'Apple AirPods Pro 2 USB-C' }), false,
+  'a direct no-exact-match disclosure and an explicit Korean model difference must not be scored as a false identity claim');
 assert.equal(wrongTopIdentity(expected, { text: 'Apple AirPods Pro 2 USB-C 289,000원입니다.' }, { title: 'Apple AirPods Pro 2 USB-C' }), true,
   'an undisclosed mismatched top card remains a wrong identity');
 assert.equal(wrongTopIdentity(expected, { text: '정확히 맞는 상품을 찾지 못했어요. 다른 조건을 알려 주세요.' }, { title: 'Apple AirPods Pro 2 USB-C' }), true,

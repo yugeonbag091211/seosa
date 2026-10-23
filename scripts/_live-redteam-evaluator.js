@@ -16,8 +16,8 @@ function missingExpectedIdentity(scenario, body, searchCalls) {
   return true;
 }
 
-const EXPLICIT_NO_MATCH_RE = /(?:조건에 정확히 맞는 상품.{0,40}찾지 못|정확히 맞는 상품.{0,40}찾지 못|이번 검색 결과에 없|검색 결과에서 찾지 못|no exact match|no matching product)/is;
-const EXPLICIT_DIFFERENCE_RE = /(?:요청하신[^。\n]{0,60}(?:다른|다름|다릅)|(?:다른|different)\s*(?:프로\s*)?(?:모델|제품|등급)|(?:모델|제품|등급)[^\n]{0,24}(?:다름|다릅|different|not the same))/i;
+const EXPLICIT_NO_MATCH_RE = /(?:조건에 정확히 맞는 상품.{0,40}(?:찾지 못|없)|정확히 맞는 상품.{0,40}(?:찾지 못|없)|이번 검색 결과에 없|검색 결과에서 찾지 못|no exact match|no matching product)/is;
+const EXPLICIT_DIFFERENCE_RE = /(?:요청하신[^。\n]{0,60}(?:다른|다름|다릅|다르)|(?:다른|different)\s*(?:프로\s*)?(?:모델|제품|등급)|(?:모델|제품|등급)[^\n]{0,24}(?:다름|다르|다릅|different|not the same))/i;
 
 /** A mismatched top card is safe only when the visible answer says no exact match and identifies the difference. */
 function wrongTopIdentity(scenario, body, top) {
