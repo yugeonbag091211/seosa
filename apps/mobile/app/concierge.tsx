@@ -40,6 +40,8 @@ export default function Concierge() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [history, setHistory] = useState<AiTurn[]>([]);
   const [prevTop, setPrevTop] = useState({ id: '', ref: '' });
+  // Conditions said before the last MAX_HISTORY turns travel only in this signed token (lib/ai.ts).
+  const [convState, setConvState] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const abort = useRef<AbortController | null>(null);
@@ -68,6 +70,7 @@ export default function Concierge() {
       history,
       prevTopProductId: prevTop.id,
       prevTopRef: prevTop.ref,
+      convState,
       view: { source: ctx.source === 'none' ? 'app' : `app-${ctx.source}`, keyword: ctx.keyword },
     });
     abort.current = new AbortController();
@@ -76,6 +79,8 @@ export default function Concierge() {
       setMessages(m => [...m, { id: nextId(), role: 'ai', answer }]);
       setHistory(h => [...h, { role: 'user', text: question }, answer.turnSig ? { role: 'assistant', text: answer.text, sig: answer.turnSig } : { role: 'assistant', text: answer.text }]);
       setPrevTop({ id: answer.topProductId || prevTop.id, ref: answer.topRecommendationRef });
+      // An answer without one (older server) keeps the last state.
+      setConvState(s => answer.convState || s);
     } catch (error) {
       if (error instanceof ApiError && error.kind === 'aborted') return;
       const expired = error instanceof ApiError && error.kind === 'unauthorized';
@@ -88,7 +93,7 @@ export default function Concierge() {
     }
   };
 
-  const reset = () => { abort.current?.abort(); inFlight.current = false; setMessages([]); setHistory([]); setPrevTop({ id: '', ref: '' }); setSending(false); };
+  const reset = () => { abort.current?.abort(); inFlight.current = false; setMessages([]); setHistory([]); setPrevTop({ id: '', ref: '' }); setConvState(''); setSending(false); };
 
   const lastAi = [...messages].reverse().find((m): m is Extract<Message, { role: 'ai' }> => m.role === 'ai');
   const followups = lastAi?.answer.followups.length ? lastAi.answer.followups : messages.length ? [] : starters;
