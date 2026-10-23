@@ -345,11 +345,26 @@ const SAFETY_HEAD = '확인된 상품·가격 데이터만 기준으로 정리�
  */
 function compose(ctx) {
   const c = ctx || {};
-  const items = Array.isArray(c.items) ? c.items.filter(Boolean) : [];
+  const identity = c.identity || {};
+  /*
+   * 다른 모델·형제 모델(SIBLING tier)은 조립본 답변 어디에도 나오지 않게 한다 (CO-04, 2026-10-23).
+   *
+   * api/ai.js 는 EXACT 상태에서 SIBLING 을 카드에서 빼지만, items[] 자체에는 랭킹·결정·pareto·프롬프트
+   * 맥락을 위해 남겨 둔다. 이 조립본의 others() 는 items[1..3] 를 "다른 후보" 로 올리므로 그 자리에
+   * G304 X 같은 다른 모델이 섞여 나왔다 ("G304 X SUPERLIGHT (요청하신 모델 계열(X)과 다름)").
+   * 사용자가 보는 답변·카드·추천 1위가 하나같이 요청한 상품에만 머물도록, 조립본은 들어오자마자 좁힌다.
+   *
+   * ★ EXACT 상태에서만. NEAR 상태(정확한 후보가 없음)에서는 모든 근접 후보가 다른 모델이므로 그대로 둔다 —
+   *   어차피 _concierge 가 "정확히 맞는 상품은 찾지 못했어요" 로 답한다.
+   */
+  const AIID = require('./_aiidentity');
+  const rawItems = Array.isArray(c.items) ? c.items.filter(Boolean) : [];
+  const items = identity.state === 'EXACT'
+    ? rawItems.filter(it => !it._identity || it._identity.tier !== AIID.TIER.SIBLING)
+    : rawItems;
   const cards = Array.isArray(c.cards) ? c.cards.filter(Boolean) : [];
   const top = items[0] || null;
   const L = [];
-  const identity = c.identity || {};
   const request = String(identity.label || '').trim();
 
   if (c.safety) { L.push(SAFETY_HEAD); L.push(''); }
