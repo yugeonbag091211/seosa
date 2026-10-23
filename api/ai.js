@@ -4842,6 +4842,37 @@ module.exports = async function handler(req, res) {
     }
 
     /*
+     * 핫딜을 물었으면 검증된 핫딜 목록을 읽어 함께 싣는다 (api/_hotdealtool.js, 감사 CO-09).
+     *
+     * 새 SQL 이 아니라 /api/hotdeals 를 그 자리에서 불러 쓴다 — 노출 상태·만료·군집·제휴 링크
+     * 규칙이 한 벌로 유지된다. 예산·모델·제외 상태는 서버가 걸러서 넣는다. 실린 것이 답할 수 있는
+     * 전부이고, 미검증 커뮤니티 제보는 끝까지 «제보» 로 적힌다.
+     *
+     * ★ 기본 꺼짐(AI_HOTDEAL_TOOL=1 일 때만). 실호출 검증 전에는 기존 답변 경로를 바꾸지 않는다.
+     */
+    if (process.env.AI_HOTDEAL_TOOL === '1' && (!intent || needsShopContext(intent))) {
+      try {
+        const HT = require('./_hotdealtool');
+        if (HT.asksHotdeal(q)) {
+          const deals = await HT.searchHotdeals({
+            product: (conv.next && conv.next.product) || (cls && cls.query) || '',
+            userText: q,
+            budgetMax: constraints ? constraints.budgetMax : 0,
+            budgetMin: constraints ? constraints.budgetMin : 0,
+            excludedConditions: conv.excludedBefore,
+            includeCommunity: process.env.AI_HOTDEAL_TOOL_COMMUNITY === '1'
+          });
+          const block = HT.hotdealBlock(deals);
+          if (block) system += `\n\n${block}`;
+          console.log(`[ai:hotdeal] state=${deals.state} verified=${deals.verified.length}`
+            + ` community=${deals.community.length} counts=${JSON.stringify(deals.counts)}`);
+        }
+      } catch (e) {
+        console.warn(`[ai] 핫딜 목록 블록 조립 실패(없이 진행): ${e.message}`);
+      }
+    }
+
+    /*
      * 검색을 돌렸으면 그 결과가 무엇이었는지 프롬프트에 사실대로 적는다.
      *
      * 특히 'failed' 와 'empty' 를 구분해서 적는 것이 중요하다. 둘을 뭉뚱그리면
