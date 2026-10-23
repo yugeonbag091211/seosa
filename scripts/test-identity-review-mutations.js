@@ -19,9 +19,13 @@ const mutations = [
   {
     name: 'hard-conflict server gate', file: apiPath, env: 'IDENTITY_REVIEW_MODULE',
     extraEnv: { IDENTITY_REVIEW_FOCUS: 'api-hard-conflict' },
-    replace: source => source
-      .replace(/    if \(decision === 'APPROVE' && hard\.conflicts\.length\) \{[\s\S]*?\n    \}\n/, '')
-      .replace("  if (checked.conflicts.length) return { ok: false, error: 'HARD_CONFLICT', conflicts: checked.conflicts };", "  if (false && checked.conflicts.length) return { ok: false, error: 'HARD_CONFLICT', conflicts: checked.conflicts };"),
+    replace: source => {
+      const withoutApiGate = source.replace(/    if \(decision === 'APPROVE' && hard\.conflicts\.length\) \{[\s\S]*?\r?\n    \}\r?\n/, '');
+      if (withoutApiGate === source) throw new Error('mutation target not found: hard-conflict API gate');
+      const helperGate = "  if (checked.conflicts.length) return { ok: false, error: 'HARD_CONFLICT', conflicts: checked.conflicts };";
+      if (!withoutApiGate.includes(helperGate)) throw new Error('mutation target not found: makeApproval hard-conflict gate');
+      return withoutApiGate.replace(helperGate, helperGate.replace('if (checked.conflicts.length)', 'if (false && checked.conflicts.length)'));
+    },
     expected: 'direct API APPROVE is blocked for explicit storage conflict'
   },
   {
@@ -53,7 +57,8 @@ const mutations = [
 
 let killed = 0;
 for (const mutation of mutations) {
-  const original = fs.readFileSync(mutation.file, 'utf8');
+  // Keep literal and regex mutation targets stable across Windows and Unix checkouts.
+  const original = fs.readFileSync(mutation.file, 'utf8').replace(/\r\n/g, '\n');
   const mutant = mutation.replace(original);
   if (mutant === original) throw new Error(`mutation target did not apply: ${mutation.name}`);
   const temp = path.join(path.dirname(mutation.file), `.${path.basename(mutation.file, path.extname(mutation.file))}-mutant-${process.pid}${path.extname(mutation.file)}`);

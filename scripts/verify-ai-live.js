@@ -25,6 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { scopeDropPassed } = require('./_verify-ai-live-evaluator');
 
 /* ── 인자 ─────────────────────────────────────────────────────────── */
 const argv = process.argv.slice(2);
@@ -170,9 +171,9 @@ async function runTurns(c) {
     last.cards.slice(0, 3).forEach(x => console.log(`   · ${cardLine(x)}`));
   }
   if (c.scopeDrop) {
-    check(!!last.verify && !!last.verify.budgetDropped, '상품이 바뀐 마지막 턴에서 상품 전용 예산을 거뒀다', last.verify);
-    const over = last.cards.filter(x => Number(x.lprice) > 300000);
-    check(over.length > 0 || last.cards.length === 0 || true, `마지막 턴 카드 ${last.cards.length}장 (30만원 초과 ${over.length}장)`);
+    check(scopeDropPassed(last), '상품 전환 뒤 예산을 거두고 실제 가격이 있는 카드를 찾았다', {
+      budgetDropped: !!(last.verify && last.verify.budgetDropped), cards: last.cards.length
+    });
   }
   results.push({ turns: c.turns, verify: last && last.verify, text: last && last.text, cards: last ? last.cards.map(cardLine) : [] });
 }

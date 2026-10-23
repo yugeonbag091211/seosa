@@ -121,8 +121,12 @@ function stripJosa(token) {
 }
 
 function isAccessoryToken(tok) {
-  return S.accessoryTerms(tok, [tok]).length > 0;
+  const token = stripJosa(tok);
+  return ACCESSORY_CATEGORY_WORDS.has(token) || S.accessoryTerms(token, [token]).length > 0;
 }
+
+/* Generic accessory nouns are useful for negative lists even without naming a case/filter. */
+const ACCESSORY_CATEGORY_WORDS = new Set(['액세서리', '액세서리류', '부속품', 'accessory', 'accessories']);
 
 /** 토큰 하나가 식별의 어느 자리에 들어가는가. */
 function slotOf(rawTok) {
@@ -135,6 +139,7 @@ function slotOf(rawTok) {
   if (S.CAPACITY_RE.test(tok)) return 'storage';
   if (S.VARIANT_KEYS.has(tok)) return 'variant';
   if (BASE_WORDS.has(tok)) return 'base';
+  if (/^\d+(?:일|주|개월|달|년|시간|분|초)(?:간|동안)?$/.test(tok)) return 'generic';
   if (/\d/.test(tok) && !S.UNIT_RE.test(tok) && !S.YEAR_RE.test(tok)) {
     return STORAGE_SIZES.has(tok) ? 'storage' : 'anchor';
   }
@@ -162,8 +167,8 @@ function slotOf(rawTok) {
  *   «그 동작을 하지 말라» 는 말이라 상품 범위를 자르지 않는다.
  * ★ "MX Master 3와 구분하고 …" — «X와 구분» 은 X 를 빼 달라는 말이다 (2026-10-22 CAND-13).
  */
-const NEG_RE = /((?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
-const LIST_SPLIT_RE = /\s*(?:[·/,]|(?<=[가-힣a-z0-9])(?:와|과|랑|이나|및)(?=\s|$)|\s및\s)\s*/i;
+const NEG_RE = /((?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|(?<!자가\s)아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
+const LIST_SPLIT_RE = /\s*(?:[·/,]|(?<=[가-힣a-z0-9])(?:와|과|랑|이나|나|및)(?=\s|$)|\s및\s)\s*/i;
 const IDENTITY_SLOTS = new Set(['anchor', 'variant', 'base']);
 /*
  * 뒤에 대상이 없는 부정("… 중고 제외")이 지우는 것은 «마지막 낱말과 같은 종류» 의 꼬리뿐이다.
@@ -177,13 +182,18 @@ const MODIFIER_SLOTS = new Set(['accessory', 'condition', 'color', 'storage', 'b
 /* 금액은 식별이 아니라 예산이다 — 숫자가 모델 번호로 읽히지 않게 먼저 지운다. */
 const MONEY_TEXT_RE = /(\d[\d,]*(?:\.\d+)?\s*(?:[~\-–]|에서)\s*)?\d[\d,]*(?:\.\d+)?\s*(?:(?:억|만|천)\s*원?|원)/g;
 /* 숫자 뒤에 떨어져 나온 단위 — "15인치" 가 15 + 인치 로 갈라지면 15 를 모델 번호로 잘못 읽는다. */
-const UNIT_TOKENS = new Set(['인치', '형', 'kg', 'g', 'mg', 'cm', 'mm', 'm', 'ml', 'l', 'w', 'v', 'mah', 'hz', 'p']);
+const UNIT_TOKENS = new Set([
+  '인치', '형', 'kg', 'g', 'mg', 'cm', 'mm', 'm', 'ml', 'l', 'w', 'v', 'mah', 'hz', 'p',
+  '일', '주', '개월', '달', '년', '시간', '분', '초'
+]);
 
 function tokensOf(text) {
   const out = [];
   norm(normalizeUnits(String(text == null ? '' : text).replace(MONEY_TEXT_RE, ' '))).split(' ').forEach(chunk => {
     if (!chunk) return;
-    S.splitTokens(/^[가-힣]+$/.test(chunk) ? stripJosa(chunk) : chunk).forEach(t => out.push(stripJosa(t)));
+    // Tokenize compact model names before stripping a possible trailing particle.
+    // Stripping “로” from “에어팟프로” first produced “에어팟프”, losing the product family.
+    S.splitTokens(chunk).forEach(t => out.push(stripJosa(t)));
   });
   const merged = [];
   for (let i = 0; i < out.length; i++) {
@@ -193,11 +203,35 @@ function tokensOf(text) {
   return merged;
 }
 
+/*
+ * Red-team prompts may append quoted or injected instructions after a standalone
+ * horizontal rule. Keep those instructions out of product intent and identity
+ * parsing while leaving ordinary hyphenated product names untouched.
+ */
+function stripPromptBoundaryPayload(text) {
+  const lines = String(text == null ? '' : text).split(/\r?\n/);
+  const boundary = lines.findIndex(line => /^\s*-{3,}\s*$/.test(line));
+  return (boundary < 0 ? lines : lines.slice(0, boundary)).join('\n').trim();
+}
+
+const IDENTITY_SIGNATURE_SLOTS = new Set([...IDENTITY_SLOTS, 'word']);
+function identitySignature(text) {
+  return tokensOf(text)
+    .filter(token => IDENTITY_SIGNATURE_SLOTS.has(slotOf(token)))
+    .map(token => `${slotOf(token)}:${token.toLowerCase()}`)
+    .sort();
+}
+function sameIdentitySignature(a, b) {
+  const left = identitySignature(a);
+  const right = identitySignature(b);
+  return left.length > 0 && left.length === right.length && left.every((token, i) => token === right[i]);
+}
+
 /**
  * @returns {{positive:string, negated:Array<{text:string, slots:Set<string>}>}}
  */
 function splitNegations(text) {
-  const src = normalizeUnits(String(text == null ? '' : text).normalize('NFKC'));
+  const src = normalizeUnits(stripPromptBoundaryPayload(String(text == null ? '' : text).normalize('NFKC')));
   const positive = [];
   const negated = [];
   /*
@@ -346,7 +380,12 @@ function buildContract(o) {
     if (n.slots.has('condition')) S.conditionIntent(`${n.text} 제외`).excluded.forEach(c => condition.excluded.add(c));
     if (n.slots.has('color')) colorsOf(n.text).forEach(c => excludedColors.add(c));
     if (n.slots.has('accessory')) excludeAccessory = true;
-    if (n.slots.has('anchor') || n.slots.has('variant') || n.slots.has('word')) {
+    // "Galaxy Buds3 Pro 중고 말고 미개봉" excludes the used state. The
+    // negation parser can carry the whole model into that negated phrase when
+    // later instructions follow it; don't turn the requested exact model into
+    // an excluded product when the identity signature matches the positive query.
+    const selfConditionExclusion = n.slots.has('condition') && sameIdentitySignature(n.text, fromQuery.positive);
+    if (!selfConditionExclusion && (n.slots.has('anchor') || n.slots.has('variant') || n.slots.has('word'))) {
       const sub = subContract(n.text, n.plus);
       if (sub) excluded.push(sub);
     }
@@ -517,6 +556,30 @@ function anchorHit(anchor, tokens) {
   return false;
 }
 
+/*
+ * A shared umbrella brand is not enough to make a candidate a sibling model.
+ * “Galaxy S26” and “Galaxy Buds3” share Galaxy, but the unrequested product-line
+ * token between that umbrella and the candidate model number makes Buds a different type.
+ */
+function hasForeignFamilyToken(contract, info) {
+  const core = norm(contract && contract.core).toLowerCase();
+  if (!core || !Array.isArray(info && info.tokens)) return false;
+  const coreTokens = new Set([core, ...(S.SYNONYMS.get(core) || [])].map(x => String(x).toLowerCase()));
+  const coreAt = info.tokens.findIndex(t => coreTokens.has(String(t).toLowerCase()));
+  if (coreAt < 0) return false;
+  let anchorAt = -1;
+  for (let i = coreAt + 1; i < info.tokens.length; i++) {
+    if (slotOf(info.tokens[i]) === 'anchor') { anchorAt = i; break; }
+  }
+  if (anchorAt < 0) return false;
+  const wantedWords = new Set((contract.words || []).map(x => String(x).toLowerCase()));
+  wantedWords.add(core);
+  return info.tokens.slice(coreAt + 1, anchorAt).some(raw => {
+    const token = String(raw).toLowerCase();
+    return slotOf(token) === 'word' && S.SYNONYMS.has(token) && !categoryNounOf(token) && !wantedWords.has(token);
+  });
+}
+
 /** 상품명의 등급 표기. 숫자 앵커 곁의 것만 센다(_search.variantMarkers) — "pro camera" 같은 설명은 빼고. */
 function titleVariants(info) {
   return S.variantMarkers(info.raw, info.tokens);
@@ -579,7 +642,8 @@ function verdict(contract, item) {
     if (c.core ? !wordHit(c.core, info) : !c.anchors.some(a => anchorHit(a, info.tokens))) {
       bump(TIER.MISMATCH, 'family', '다른 종류의 상품');
     } else if (!c.anchors.every(a => anchorHit(a, info.tokens))) {
-      bump(TIER.SIBLING, 'model', '요청하신 모델 번호와 다름');
+      if (hasForeignFamilyToken(c, info)) bump(TIER.MISMATCH, 'product-family', '요청하신 상품 계열과 다름');
+      else bump(TIER.SIBLING, 'model', '요청하신 모델 번호와 다름');
     } else {
       /* 같은 번호의 다른 계열 — "G304 X SUPERLIGHT" ↔ "G304 LIGHTSPEED" (양쪽 다) */
       const q = c.lineQualifiers || [];
@@ -967,7 +1031,7 @@ function mentionedIn(name, text) {
 }
 
 module.exports = {
-  TIER, buildContract, verdict, partition, splitNegations, narrowByMention, mentionedIn,
+  TIER, buildContract, verdict, partition, splitNegations, narrowByMention, mentionedIn, stripPromptBoundaryPayload,
   hasInstructionText, cleanIdentityTitle, displayTitle, colorsOf, storageOf, slotOf,
   refinementOf, mergeRefinement, categoryNounOf, productEvidence
 };

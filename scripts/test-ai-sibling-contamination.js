@@ -227,6 +227,45 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
   }
 
   /* ================================================================ */
+  section('F2. Galaxy phone model must not admit Galaxy Buds as a sibling');
+  {
+    feed = [
+      item('s26plus-256', 'Samsung Galaxy S26+ 256GB 실버 자급제', 1299000),
+      item('buds3', 'Samsung Galaxy Buds3 (삼성 갤럭시 버즈3)', 159000)
+    ];
+    const question = '갤럭시 S26+ 512GB 실버 새제품 100만원 이하';
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.length === 0 && /예산|100만원/.test(r.text),
+      '같은 모델의 후보가 모두 예산을 넘으면 예산 초과 안내만 한다', { cards: r.cards.map(c => c.title), text: r.text.slice(0, 180) });
+    ok(!r.cards.some(c => /Galaxy Buds3|갤럭시 버즈3/i.test(c.title)),
+      '저렴한 Galaxy Buds 후보가 Galaxy S26 검색에 섞이지 않는다', r.cards.map(c => c.title));
+    ok(!/Galaxy Buds3|갤럭시 버즈3/i.test(r.text),
+      '예산 안의 타 제품을 가까운 후보로 권하지 않는다', r.text.slice(0, 260));
+    const AI = require('../api/_aiidentity');
+    const contract = AI.buildContract({ query: '갤럭시 S26+', userText: '갤럭시 S26+' });
+    ok(AI.verdict(contract, { title: 'Samsung Galaxy Buds3' }).tier === AI.TIER.MISMATCH,
+      'Galaxy Buds는 Galaxy S26의 다른 모델이 아니라 다른 상품 계열이다');
+    ok(AI.verdict(contract, { title: 'Samsung Galaxy S25 Ultra 256GB' }).tier === AI.TIER.SIBLING,
+      'Galaxy S25는 같은 S 계열의 다른 모델로 남는다');
+  }
+
+  /* ================================================================ */
+  section('F3. Same-model near match outranks a cheaper sibling model');
+  {
+    feed = [
+      item('airpods-pro3-over-budget', 'Apple AirPods Pro 3 USB-C 흰색', 329000),
+      item('airpods-pro3-used', '중고 Apple AirPods Pro 3 USB-C 흰색', 249000),
+      item('airpods-pro2', 'Apple AirPods Pro 2 USB-C 흰색', 289000)
+    ];
+    const question = 'AirPods Pro 3 케이스 말고 이어폰 본체 흰색 30만원 미만 (갤럭시 S26 울트라\u202e 호환 케이스 말고 본체)';
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.some(c => /AirPods Pro 3/i.test(c.title)),
+      '예산 안의 같은 모델 변형을 유지한다', r.cards.map(c => c.title));
+    ok(!r.cards.some(c => /AirPods Pro 2/i.test(c.title)),
+      '같은 모델 변형이 있으면 다른 세대 AirPods Pro 2를 추천 목록에서 뺀다', r.cards.map(c => c.title));
+  }
+
+  /* ================================================================ */
   section('G. 추천 1위는 EXACT — SIBLING 이 topRef 로 들어가지 않는다');
   {
     feed = [
@@ -238,6 +277,82 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
     ok(r.cards.length >= 1 && /G304/.test(r.cards[0].title) && !/G102/.test(r.cards[0].title),
       '더 싼 다른 모델(G102)이 있어도 요청한 G304 가 1위', r.cards.map(c => `${c.title}|${c.lprice}`));
     ok(!r.cards.some(c => /G102/.test(c.title)), 'G102 는 카드에서 빠진다', r.cards.map(c => c.title));
+  }
+
+  /* ================================================================ */
+  section('H. 본품·부속과 일반형 AirPods 3 모델 구별');
+  {
+    feed = [
+      item('a3-main', 'Apple AirPods 3세대 Lightning 본체', 219000),
+      item('a3-pro-case', 'AirPods Pro 3 전용 실리콘 케이스 2개입', 4900),
+      item('a3-pro', 'Apple AirPods Pro 3세대 USB-C 자급제', 329000),
+      item('a3-pro2', 'Apple AirPods Pro 2 USB-C', 289000)
+    ];
+    const question = '에어팟 3세대 본체만, 케이스나 액세서리는 빼고 찾아줘';
+    const contract = require('../api/_aiidentity').buildContract({ query: question, userText: question });
+    ok(contract.anchors.includes('3') && !contract.wantsAccessory && contract.excludeAccessory,
+      '부정 목록에서 케이스·액세서리를 분리하고 AirPods 3 본품 조건을 보존한다', {
+        anchors: contract.anchors, wantsAccessory: contract.wantsAccessory, excludeAccessory: contract.excludeAccessory
+      });
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.some(c => /AirPods 3세대|에어팟 3세대/i.test(c.title)
+      && !/Pro|프로/i.test(c.title)),
+    '일반 AirPods 3 본품이 후보에 있을 때 1개 이상 권한다', r.cards.map(c => c.title));
+    ok(r.cards.every(c => !/케이스|case|AirPods Pro|에어팟 프로/i.test(c.title)),
+      '케이스와 Pro 형제 모델은 카드에서 제외한다', r.cards.map(c => c.title));
+  }
+
+  {
+    feed = [
+      item('a3-main-option', 'Apple AirPods 3세대 Lightning 본체', 219000),
+      item('a3-pro2-option', 'Apple AirPods Pro 2 USB-C', 289000)
+    ];
+    const question = 'AirPods 3 일반형 256GB 있으면 그중에 제일 싼 것';
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.every(c => !/AirPods Pro|에어팟 프로/i.test(c.title)),
+      '저장 공간 조건이 맞지 않아도 Pro 형제 모델로 바꾸지 않는다', r.cards.map(c => c.title));
+  }
+
+  section('I. 가격 이력 기간 숫자는 상품 모델이 아니다');
+  {
+    feed = [
+      item('g304-history', 'Logitech G304 Lightspeed Wireless Gaming Mouse 910-005284', 59900),
+      item('g304x-history', 'Logitech G304 X Wireless Gaming Mouse', 62900)
+    ];
+    const question = '로지텍 G304 무선 마우스 현재가, 최근 30일 최저가와 가격 변동을 실제 가격 이력 기준으로 알려줘.';
+    const contract = require('../api/_aiidentity').buildContract({ query: question, userText: question });
+    ok(contract.anchors.includes('g304') && !contract.anchors.includes('30'),
+      '30일 이력 기간은 모델 식별 anchor로 처리하지 않는다', contract.anchors);
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.some(c => /G304/i.test(c.title) && !/G304\s*X|G304X/i.test(c.title)),
+      'G304 가격 질문은 G304 본품 후보를 남긴다', r.cards.map(c => c.title));
+    ok(r.cards.every(c => !/G304\s*X|G304X/i.test(c.title)),
+      'G304 가격 질문에서 G304 X 형제 모델을 제외한다', r.cards.map(c => c.title));
+  }
+
+  /* ================================================================ */
+  section('J. 상태 제외는 요청한 상품 모델 자체를 제외하지 않는다');
+  {
+    feed = [
+      item('buds3-pro-new', 'Samsung Galaxy Buds3 Pro (삼성 갤럭시 버즈3 프로)', 229000),
+      item('buds2-pro-new', 'Samsung Galaxy Buds2 Pro (삼성 갤럭시 버즈2 프로)', 179000)
+    ];
+    const question = 'GalaxyBuds3Pro 중고 말고 미개봉 신품으로 가격 지어내지 말고';
+    const cls = require('../api/_intent').classify(question);
+    const contract = require('../api/_aiidentity').buildContract({
+      query: cls.identityText, userText: question, titles: feed.map(x => x.title)
+    });
+    ok(!contract.excluded.length, '“중고 말고 미개봉” 부정 범위가 Galaxy Buds3 Pro 모델 자체를 제외하지 않는다', contract.excluded);
+    ok(contract.condition.excluded.has('used'), '중고 상태만 제외 조건으로 남는다', [...contract.condition.excluded]);
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.length > 0 && /Buds3 Pro/i.test(r.cards[0].title) && !/Buds2 Pro/i.test(r.cards[0].title),
+      '정확한 Buds3 Pro 후보가 더 싼 Buds2 Pro보다 먼저 나온다', r.cards.map(c => c.title));
+
+    const replacement = require('../api/_aiidentity').buildContract({
+      query: '아이폰 프로', userText: '아이폰 프로맥스 말고 프로',
+      titles: ['Apple iPhone 17 Pro', 'Apple iPhone 17 Pro Max']
+    });
+    ok(replacement.excluded.length === 1, '프로맥스에서 프로로 바꿀 때 프로맥스 제외를 유지한다', replacement.excluded);
   }
 
   console.log(`\n=== 결과: ${pass}/${pass + fails.length} PASS ===`);
