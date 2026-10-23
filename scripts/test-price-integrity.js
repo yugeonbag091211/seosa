@@ -314,6 +314,14 @@ function case5() {
     '7일 최저가와 관측 날짜·일수가 7일 창에서 계산된다', JSON.stringify({ low7: lows.low7, date: lows.low7Date, days: lows.low7Days }));
   check(lows.low30 === 10000 && lows.low30Date === daysAgo(29) && lows.low30Days === 5,
     '30일 최저가와 관측 날짜·일수가 30일 창에서 계산된다', JSON.stringify({ low30: lows.low30, date: lows.low30Date, days: lows.low30Days }));
+  const repeatedLow = statsFrom(pts([
+    [daysAgo(20), 15000], [daysAgo(10), 10000], [daysAgo(6), 12000],
+    [daysAgo(3), 10000], [daysAgo(1), 10000], [daysAgo(0), 12000]
+  ]));
+  check(repeatedLow.low7 === 10000 && repeatedLow.low7Days === 4 && repeatedLow.low7Count === 2,
+    '7일 창 전체 기록 날짜 수와 최저가 반복 관측 횟수를 따로 계산한다', JSON.stringify({ days: repeatedLow.low7Days, lowCount: repeatedLow.low7Count }));
+  check(repeatedLow.low30 === 10000 && repeatedLow.low30Days === 6 && repeatedLow.low30Count === 3,
+    '30일 창 전체 기록 날짜 수와 최저가 반복 관측 횟수를 따로 계산한다', JSON.stringify({ days: repeatedLow.low30Days, lowCount: repeatedLow.low30Count }));
   check(lows.low === 8000,
     '전체 관측 최저가가 7일·30일 최저가와 별도 유지된다', `low=${lows.low}`);
 

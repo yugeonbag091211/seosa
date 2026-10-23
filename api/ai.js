@@ -341,9 +341,11 @@ function normItem(raw) {
       low7:        num(h.low7),
       low7Date:    safeDate(h.low7Date),
       low7Days:    num(h.low7Days),
+      low7Count:   h.low7Count != null && Number.isFinite(Number(h.low7Count)) ? num(h.low7Count) : null,
       low30:       num(h.low30),
       low30Date:   safeDate(h.low30Date),
       low30Days:   num(h.low30Days),
+      low30Count:  h.low30Count != null && Number.isFinite(Number(h.low30Count)) ? num(h.low30Count) : null,
       /*
        * 중앙값이 없으면 이상치 방어가 통째로 꺼진다 (_deal.js OUTLIER_RATIO).
        * 실측으로 그렇게 됐다 — /api/history 는 고쳐진 판정을 내는데 AI 답변만
@@ -477,22 +479,52 @@ function describe(it, withPoints, compact) {
               : d < 0 ? `현재가가 ${won(-d)}원 낮음(기존 관측 최저보다 낮음)`
               : '현재가가 확인된 관측 최저와 같음';
     lines.push(`  SEOSA 보유 관측 기록 중 확인된 최저가 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''} → ${rel}`);
-  } else if (h.low > 0 && h.lowConfirmed === false && h.lowIsLatest === true) {
-    lines.push(`  관측 최저 후보 ${won(h.low)}원${h.lowDate ? `(${h.lowDate})` : ''} → 하루만 관측되어 최저 여부 확인 중`);
+  } else if (h.low > 0 && h.lowConfirmed === false) {
+    const observations = Number(h.lowCount);
+    const confirmation = observations === 1
+      ? '한 번만 관측되어 기록 최저 여부 확인 중'
+      : observations > 1
+        ? observations + '회 관측됐지만 확인 기준에 도달하지 않아 기록 최저 여부 확인 중'
+        : '재확인되지 않아 기록 최저 여부 확인 중';
+    lines.push('  관측 최저 후보 ' + won(h.low) + '원' + (h.lowDate ? '(' + h.lowDate + ')' : '') + ' → ' + confirmation);
   }
 
   if (h.low7 > 0) {
-    lines.push(`  최근 7일 관측 최저 ${won(h.low7)}원${h.low7Date ? `(${h.low7Date})` : ''} (기록 ${h.low7Days}일)`);
+    const count = h.low7Count == null ? '' : `, 최저가 관측 ${h.low7Count}회`;
+    lines.push(`  최근 7일 관측 최저 ${won(h.low7)}원${h.low7Date ? `(${h.low7Date})` : ''} (기록 ${h.low7Days}일${count})`);
   } else {
     lines.push('  최근 7일 관측 최저: 기록 없음 → 가격을 추정하지 말 것');
   }
   if (h.low30 > 0) {
-    lines.push(`  최근 30일 관측 최저 ${won(h.low30)}원${h.low30Date ? `(${h.low30Date})` : ''} (기록 ${h.low30Days}일)`);
+    const count = h.low30Count == null ? '' : `, 최저가 관측 ${h.low30Count}회`;
+    lines.push(`  최근 30일 관측 최저 ${won(h.low30)}원${h.low30Date ? `(${h.low30Date})` : ''} (기록 ${h.low30Days}일${count})`);
   } else {
     lines.push('  최근 30일 관측 최저: 기록 없음 → 가격을 추정하지 말 것');
   }
   if (h.maxGapDays > 1) {
-    lines.push(`  기록 간 최대 간격 ${h.maxGapDays}일 → 그 사이의 일별 가격·"어제 대비" 변동은 확인할 수 없음`);
+    const points = Array.isArray(h.points) ? h.points : [];
+    const previous = points.length >= 2 ? points[points.length - 2] : null;
+    const latest = points.length >= 1 ? points[points.length - 1] : null;
+    const dayNumber = value => {
+      const date = safeDate(value);
+      return date ? Date.parse(date + 'T00:00:00Z') / 86400000 : NaN;
+    };
+    const latestPairConsecutive = previous && latest
+      && latest.d === h.lastDate && latest.p === h.lastPrice
+      && dayNumber(latest.d) - dayNumber(previous.d) === 1;
+    if (latestPairConsecutive) {
+      const delta = Number(previous.p) - Number(latest.p);
+      const movement = delta > 0 ? `${won(delta)}원 하락`
+        : delta < 0 ? `${won(-delta)}원 상승` : '0원 변동';
+      const label = value => {
+        const parts = safeDate(value).split('-');
+        return `${Number(parts[1])}월 ${Number(parts[2])}일`;
+      };
+      lines.push(`  마지막 연속 관측: ${label(previous.d)} ${won(previous.p)}원 → ${label(latest.d)} ${won(latest.p)}원 (${movement}). 이 변화는 두 관측일 사이에서 계산됨`);
+      lines.push(`  다른 기록 공백은 최대 ${h.maxGapDays}일 → 그 공백 중의 일별 가격은 확인할 수 없음`);
+    } else {
+      lines.push(`  기록 간 최대 간격 ${h.maxGapDays}일 → 그 사이의 일별 가격·"어제 대비" 변동은 확인할 수 없음`);
+    }
   }
   if (h.avg7Days === 1) {
     lines.push('  최근 7일 기록 1일 → 7일 최저는 그 하루에 관측된 값이며, 이틀 간 가격 변동은 계산할 수 없음');
@@ -2267,16 +2299,54 @@ function priceClaimKind(text, start, end) {
   // otherwise it must not be accepted as a product price.
   if (/^\s*(?:변동|변화|차이|차액)(?:은|는|이|가|도)?/i.test(head)
       || /(?:변동|변화|차이|차액)(?:은|는|이|가|도)?\s*$/i.test(tail)) return 'difference';
-  if (/(?:역대|사상)\s*(?:최저|최저가|low(?:est)?\s+ever)/i.test(tail + head)) return 'all-time';
   if (/보다(?:도|는(?:도)?)?\s*$/.test(tail)
-      && /^\s*(?:더\s*)?(?:높|낮|비싸|비싼|싸|싼|저렴|내렸|내려|떨어|하락|올랐|올라|상승|증가|줄었)/i.test(comparisonHead)) return 'difference';
-  if (/^\s*(?:더\s*)?(?:높|낮|비싸|비싼|싸|싼|저렴)/i.test(comparisonHead)
+      && /^\s*(?:더\s*)?(?:높|낮|비싸|비쌉|비싼|싸|싼|저렴|내렸|내려|떨어|하락|올랐|올라|상승|증가|줄었)/i.test(comparisonHead)) return 'difference';
+  if (/^\s*(?:더\s*)?(?:높|낮|비싸|비쌉|비싼|싸|싼|저렴)/i.test(comparisonHead)
       && /(?:현재\s*(?:가|가격)|(?:판매)?가격)(?:는|은|이|가)?\s*$/i.test(tail)) return 'difference';
-  const lowWindow = (tail + ' ' + head).match(/(?:최근|지난)?\s*(7|30)\s*일(?:(?!평균|average).){0,24}(?:최저|가장\s*(?:낮|저렴|싼)|low)/i);
+  // An amount explicitly labelled as the current price remains a current-price
+  // claim even if the same sentence asks whether it is an all-time low. The
+  // separate superlative validator checks that additional assertion. Keep this
+  // after delta checks such as "현재가가 1,000원 더 높다".
+  if (/(?:현재(?:\s*(?:가|가격|판매가))?|오늘\s*(?:가격|판매가)|지금\s*(?:가격|판매가)|판매가)(?:는|은|이|을|가|:)?\s*(?:약|대략)?\s*$/i.test(tail)) return 'current';
+  // An average label immediately before an amount is stronger than a nearby
+  // later low-candidate clause in the same sentence.
+  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:인|은|이|가|:|\()?\s*$/i.test(tail)) return 'average';
+  // A single observed minimum may be shared only as an explicitly unconfirmed
+  // candidate. Korean responses may put "후보" after the amount, so inspect
+  // that sentence and one directly following sentence only when it repeats the
+  // same amount; a later unrelated disclaimer must not relabel it.
+  const afterSentence = s.slice(end, Math.min(s.length, end + 120)).split(/[.!?\n]/, 1)[0];
+  const afterFirstBreak = s.slice(end + afterSentence.length).match(/^[.!?\s]+/);
+  const nextSentenceStart = end + afterSentence.length + (afterFirstBreak ? afterFirstBreak[0].length : 0);
+  const nextSentence = s.slice(nextSentenceStart, Math.min(s.length, nextSentenceStart + 120)).split(/[.!?\n]/, 1)[0];
+  const amountDigits = String(s.slice(start, end)).match(/[0-9][0-9,]*/);
+  const amountValue = amountDigits ? Number(amountDigits[0].replace(/,/g, '')) : NaN;
+  const sameAmountContinuation = Number.isSafeInteger(amountValue)
+    && wonMatches(nextSentence).some(match => wonValue(match) === amountValue);
+  const lowAnaphorContinuation = /(?:그|해당)\s*(?:최저|가장\s*낮게\s*관측된)\s*(?:관측가|가격|가)/i.test(nextSentence);
+  const candidateQualifierText = sameAmountContinuation || lowAnaphorContinuation
+    ? `${afterSentence}. ${nextSentence}` : afterSentence;
+  const candidateBefore = /(?:관측\s*최저\s*후보|최저\s*관측\s*후보|(?:기록상|기록|보유\s*기록의?|확인된)?\s*최저\s*후보|(?:보유\s*기록에서\s*)?가장\s*낮게\s*관측된(?:\s*가격)?|미확정\s*(?:관측\s*)?최저)/i.test(before);
+  const observedOnceCandidate = /(?:단\s*)?한\s*번(?:만)?[^.!?\n]{0,32}(?:관측|기록)|(?:관측|기록)[^.!?\n]{0,24}(?:단\s*)?한\s*번/i.test(afterSentence)
+    && /(?:역대|사상|기록상)[^.!?\n]{0,24}최저(?:가)?[^.!?\n]{0,32}(?:확정|단정|확인)(?:할)?\s*수(?:는)?\s*없/i.test(afterSentence);
+  const unconfirmedAllTime = /(?:역대|사상)[^.!?\n]{0,24}최저(?:가)?/i.test(afterSentence)
+    && /(?:인지|여부)(?:는|가)?[^.!?\n]{0,24}(?:알\s*수(?:는)?\s*없|확인할\s*수(?:는)?\s*없|단정할\s*수(?:는)?\s*없)/i.test(afterSentence);
+  const candidateAfter = /(?:관측\s*최저\s*후보|최저\s*관측\s*후보|최저\s*후보)/i.test(candidateQualifierText)
+    || observedOnceCandidate || unconfirmedAllTime;
+  const explicitlyUnconfirmed = /(?:관측\s*최저\s*후보|최저\s*관측\s*후보|최저\s*후보|하루만|한\s*번(?:만)?|단\s*한\s*번|\b1\s*(?:회|번|일)|확정(?:할)?\s*수(?:는)?\s*없|확정되(?:지는)?\s*않|단정(?:할)?\s*수(?:는)?\s*없|알\s*수(?:는)?\s*없|미확정|확인 중|검증 중|확인되지 않|기록상 최저가로 확인되지|기록 최저가로 확인되지)/i.test(tail + ' ' + candidateQualifierText);
+  if ((candidateBefore || candidateAfter) && explicitlyUnconfirmed) return 'low-candidate';
+  // A dated price is first an exact observation, even when the prior sentence
+  // discussed all-time lows. The superlative validator separately checks any
+  // positive all-time claim in the answer.
+  if (adjacentObservationDate(s, start, end)) return 'history';
+  if (/(?:역대|사상)\s*(?:최저|최저가|low(?:est)?\s+ever)/i.test(tail + head)) return 'all-time';
+  // Do not read the final digit of a longer count (e.g. 17일치 history) as
+  // the seven-day window when another nearby amount is described as a low.
+  const lowWindow = (tail + ' ' + head).match(/(?:최근|지난)?\s*(?<!\d)(7|30)\s*일(?:(?!평균|average).){0,24}(?:최저|가장\s*(?:낮|저렴|싼)|low)/i);
   if (lowWindow) return `low${lowWindow[1]}`;
   if (/(?:기록(?:상|\s*내|\s*중|\s*전체(?:의)?)?|관측(?:한|된)?|최근(?:\s*\d+\s*일)?|지난\s*\d+\s*일|(?:SEOSA(?:가|의)?\s*)?확인(?:한|된)).{0,16}최저(?:가)?/i.test(tail)
       || /\b(?:record|historical|recent)\s+low\b/i.test(tail)) return 'low';
-  if (/(?:어제|전날)[^.!?\n]{0,40}(?:관측(?:가|가격)?|가격|기록)(?:은|는|이|가|:)?\s*$/i.test(before)) return 'history';
+  if (/(?:어제|전날)[^.!?\n]{0,40}(?:관측(?:된|가|가격)?|확인(?:된|가|가격)?|가격|기록(?:된|가|가격)?)(?:은|는|이|가|:)?\s*$/i.test(before)) return 'history';
   if (/(?:최근|지난(?:\s*\d+\s*일)?)[^.!?\n]{0,16}기록[^.!?\n]{0,40}$/i.test(before)) return 'history';
   // A window-labelled past price such as "최근 5일간 가격은 145,000원"
   // is historical evidence, not a claim that the current price is 145,000원.
@@ -2301,9 +2371,45 @@ function priceClaimKind(text, start, end) {
 function priceClaimDirection(text, start, end) {
   const after = String(text || '').slice(end, Math.min(String(text || '').length, end + 40))
     .replace(/^\s*\(\s*\d+(?:\.\d+)?\s*%\s*\)\s*/, '');
-  if (/^\s*(?:더\s*)?(?:높|비싸|상승|올랐|올라|증가|늘었)/i.test(after)) return 'up';
+  if (/^\s*(?:더\s*)?(?:높|비싸|비쌉|상승|올랐|올라|증가|늘었)/i.test(after)) return 'up';
   if (/^\s*(?:더\s*)?(?:낮|싸|저렴|하락|내렸|내려|떨어|감소|줄었)/i.test(after)) return 'down';
   return '';
+}
+
+/** The nearest explicit comparison base when a delta is phrased as "X보다 N원". */
+function priceComparisonBase(text, start) {
+  const s = String(text || '');
+  const before = s.slice(Math.max(0, start - 80), start);
+  if (!/보다(?:도|는(?:도)?)?\s*$/.test(before)) return 0;
+  // In “the recorded low is 3,250 won below the current price”, the low is
+  // mentioned between the explicit current-price anchor and the delta. Prefer
+  // the amount labelled as current over that nearer low observation.
+  if (/(?:현재\s*(?:가|가격|판매가))보다\s*$/.test(before)) {
+    const currentLabel = /현재\s*(?:가|가격|판매가)(?:는|은|이|가|:)?\s*(?:약|대략)?\s*([0-9][0-9,]*)\s*원/g;
+    let currentMatch, currentBase = 0;
+    while ((currentMatch = currentLabel.exec(before)) !== null) {
+      currentBase = Number(currentMatch[1].replace(/,/g, ''));
+    }
+    if (Number.isSafeInteger(currentBase) && currentBase > 0) return currentBase;
+  }
+  const matches = wonMatches(before);
+  if (!matches.length) return 0;
+  const nearest = matches[matches.length - 1];
+  const afterNearest = before.slice(nearest.index + nearest.text.length);
+  // In "current 1,749,000원 ... 30일 평균보다 8,333원 비싸다", the
+  // comparator is the persisted average, not the earlier current-price token.
+  // Leave the base implicit so the direction and stored deltas verify it.
+  if (/(?:평균(?:가)?|평균\s*가격)[^.!?\n]{0,16}보다\s*$/i.test(afterNearest)) return 0;
+  // In "current 128,250원으로 최저 관측가보다 3,250원 높다", the nearby
+  // current amount precedes the comparator label; the comparator is the prior
+  // low observation, not the current price.
+  if (matches.length > 1 && /(?:최저|저점|low)[^.!?\n]{0,18}보다\s*$/i.test(afterNearest)) {
+    const labelledLow = matches.slice(0, -1).reverse().find(match =>
+      /(?:최저|저점|low)/i.test(before.slice(Math.max(0, match.index - 64), match.index)));
+    if (labelledLow) return wonValue(labelledLow);
+    return wonValue(matches[matches.length - 2]);
+  }
+  return wonValue(nearest);
 }
 
 function priceEvidenceDeltas(item) {
@@ -2315,7 +2421,9 @@ function priceEvidenceDeltas(item) {
   };
   const history = priceEvidenceValues(item, 'history');
   const references = history.concat(h ? [h.avg30] : [])
-    .concat(hasConfirmedRecordLow(h) ? [h.low] : [])
+    // A once-observed low is not a confirmed record, but the exact difference
+    // from that observed candidate is still arithmetic over persisted facts.
+    .concat(hasConfirmedRecordLow(h) || (h && h.lowConfirmed === false && Number(h.lowCount) >= 1) ? [h.low] : [])
     .concat([item.listPrice])
     .map(positive).filter(Boolean);
   return Array.from(new Set(priceEvidenceValues(item, 'current').flatMap(now =>
@@ -2347,6 +2455,10 @@ function priceEvidenceValues(item, kind) {
   if (kind === 'average') return h ? [positive(h.avg30)].filter(Boolean) : [];
   if (kind === 'reference') return [positive(item.listPrice)].filter(Boolean);
   if (kind === 'history') return history;
+  if (kind === 'low-candidate') {
+    return h && h.lowConfirmed === false && Number(h.lowCount) >= 1
+      && h.lowDate ? [positive(h.low)].filter(Boolean) : [];
+  }
   if (kind === 'low7') return h && Number(h.low7Days) > 0 ? [positive(h.low7)].filter(Boolean) : [];
   if (kind === 'low30') return h && Number(h.low30Days) > 0 ? [positive(h.low30)].filter(Boolean) : [];
   if (kind === 'low') {
@@ -2366,6 +2478,17 @@ function supportsPriceClaim(claim, item) {
   if (claim.kind === 'difference') {
     if (claim.value === 0) return supportsObservedZeroChange(claim, item);
     const deltas = priceEvidenceDeltas(item);
+    if (claim.comparisonBase) {
+      const current = priceEvidenceValues(item, 'current');
+      const comparisonEvidence = ['history', 'average', 'reference', 'low-candidate', 'low7', 'low30', 'low']
+        .flatMap(kind => priceEvidenceValues(item, kind));
+      if (!current.includes(claim.comparisonBase) && !comparisonEvidence.includes(claim.comparisonBase)) return false;
+      const baseIsCurrent = current.includes(claim.comparisonBase);
+      const expectedSign = claim.direction === 'down'
+        ? (baseIsCurrent ? 1 : -1)
+        : claim.direction === 'up' ? (baseIsCurrent ? -1 : 1) : 0;
+      if (expectedSign) return deltas.some(delta => Math.sign(delta) === expectedSign && Math.abs(delta) === claim.value);
+    }
     if (claim.direction === 'down') return deltas.some(delta => delta < 0 && Math.abs(delta) === claim.value);
     if (claim.direction === 'up') return deltas.some(delta => delta > 0 && Math.abs(delta) === claim.value);
     return deltas.some(delta => Math.abs(delta) === claim.value);
@@ -2387,6 +2510,7 @@ function supportsPriceClaim(claim, item) {
     else if (claim.kind === 'average') evidenceKind = 'average';
     else if (claim.kind === 'reference') evidenceKind = 'reference';
     else if (claim.kind === 'history') evidenceKind = 'history';
+    else if (claim.kind === 'low-candidate') evidenceKind = 'low-candidate';
     else if (claim.kind === 'low7' || claim.kind === 'low30') evidenceKind = claim.kind;
     const values = priceEvidenceValues(item, evidenceKind);
     return values.some(v => v >= claim.low && v <= claim.high);
@@ -2457,6 +2581,11 @@ function adjacentObservationDate(text, start, end) {
         // belongs to the following observation, not the amount before it.
         if (/[.!?\n]/.test(between) || wonMatches(between).length) continue;
         if (side === 'after') {
+          // A later date may describe a different price in the same paragraph
+          // (for example "the current price was observed on 10/23"). Do not
+          // attach that date to an earlier historical low with no date of its
+          // own.
+          if (/(?:현재\s*(?:가|가격|판매가)|오늘\s*(?:가격|판매가)|지금\s*(?:가격|판매가))/.test(between)) continue;
           const afterDate = s.slice(absoluteEnd, Math.min(s.length, absoluteEnd + 40));
           const nextWon = wonMatches(afterDate)[0];
           if (nextWon && nextWon.index < 32) continue;
@@ -2513,6 +2642,9 @@ function unverifiedContextualPrices(text, items) {
   const claims = [];
   const occupied = [];
   const add = claim => {
+    if (claim.kind === 'difference' && !claim.comparisonBase) {
+      claim.comparisonBase = priceComparisonBase(s, claim.start);
+    }
     if (claim.kind === 'difference' && claim.value === 0) {
       const context = s.slice(Math.max(0, claim.start - 64), Math.min(s.length, claim.end + 64));
       claim.previousDay = /어제|전날/.test(context);
@@ -2627,11 +2759,74 @@ function unverifiedContextualPrices(text, items) {
   return invalid;
 }
 
+/** A stated number of times the low was observed must match that price window. */
+function unverifiedLowObservationCounts(text, items) {
+  const s = String(text || '');
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  const out = [];
+  const lowLabels = /최저(?:가|가격|관측가)?|해당\s*최저가|그\s*최저가/ig;
+  const countPattern = /(\d+|한|두|세|네)\s*(회|번|일)(?!\s*(?:원|치))/g;
+  const numberOf = value => ({ 한: 1, 두: 2, 세: 3, 네: 4 }[value] || Number(value));
+  const punct = /[.!?\n]/;
+  let label;
+  while ((label = lowLabels.exec(s)) !== null) {
+    let sentenceStart = Math.max(s.lastIndexOf('.', label.index), s.lastIndexOf('!', label.index), s.lastIndexOf('?', label.index), s.lastIndexOf('\n', label.index)) + 1;
+    let sentenceEnd = s.length;
+    for (let i = label.index; i < s.length; i++) if (punct.test(s[i])) { sentenceEnd = i; break; }
+    const afterLabel = s.slice(label.index + label[0].length, Math.min(sentenceEnd, label.index + label[0].length + 110));
+    countPattern.lastIndex = 0;
+    let countMatch;
+    while ((countMatch = countPattern.exec(afterLabel)) !== null) {
+      const value = numberOf(countMatch[1]);
+      if (!Number.isSafeInteger(value) || value < 0) continue;
+      const absoluteStart = label.index + label[0].length + countMatch.index;
+      const absoluteEnd = absoluteStart + countMatch[0].length;
+      const between = afterLabel.slice(0, countMatch.index);
+      const beforeCount = s.slice(Math.max(label.index, absoluteStart - 18), absoluteStart);
+      const afterCount = s.slice(absoluteEnd, Math.min(sentenceEnd, absoluteEnd + 16));
+      const datePrefix = s.slice(Math.max(sentenceStart, absoluteStart - 12), absoluteStart);
+      if (/\d{1,2}\s*월\s*$/.test(datePrefix)) continue;
+      // “최근 7일/30일” is the window length, not a repetition count.
+      if (/(?:최근|지난)\s*$/.test(s.slice(Math.max(sentenceStart, absoluteStart - 14), absoluteStart))) continue;
+      // Window coverage such as “가격 기록이 있는 날짜는 7일” is not a count
+      // of how often the minimum price itself appeared.
+      if (/(?:가격\s*)?기록(?:이\s*있는)?\s*(?:날짜|날|일)/i.test(between)) continue;
+      if (!/(?:관측|기록|확인|횟수)/.test(beforeCount + afterCount)) continue;
+
+      // GPT may state the window in one sentence and its low count in the
+      // next. Carry only a nearby window label forward to the low claim.
+      const windowContextStart = Math.max(0, label.index - 100);
+      const windowContext = s.slice(windowContextStart, label.index);
+      const recent7 = [...windowContext.matchAll(/(?:최근|지난)\s*7\s*일/g)].map(m => windowContextStart + m.index);
+      const recent30 = [...windowContext.matchAll(/(?:최근|지난)\s*30\s*일/g)].map(m => windowContextStart + m.index);
+      const latest7Match = recent7.filter(at => at <= label.index).at(-1);
+      const latest30Match = recent30.filter(at => at <= label.index).at(-1);
+      const latest7 = latest7Match == null ? -1 : latest7Match;
+      const latest30 = latest30Match == null ? -1 : latest30Match;
+      const field = latest7 > latest30 ? 'low7Count' : latest30 >= 0 ? 'low30Count' : 'lowCount';
+      const refs = referencedItems(s, absoluteStart, list);
+      const candidates = refs.length ? refs : list;
+      const knownCounts = candidates.filter(it => it && it.hist && it.hist[field] != null);
+      if (!knownCounts.length) continue;
+      const supported = candidates.length > 0 && candidates.every(it => {
+        const hist = it && it.hist;
+        const expected = hist && Number(hist[field]);
+        return Number.isSafeInteger(expected) && expected === value;
+      });
+      if (!supported && out.indexOf(value) < 0) out.push(value);
+    }
+  }
+  return out;
+}
+
 /** 답변에서 근거로 되짚어지지 않는 원화 금액을 찾는다. */
 function unverifiedWon(text, known) {
   const out = [];
   wonMatches(text).forEach(m => {
     const v = wonValue(m);
+    // Zero is not a product price. The contextual-claim validator below owns
+    // the narrower case of a zero change and verifies consecutive observations.
+    if (m.currency === 'KRW' && v === 0) return;
     if ((!Number.isFinite(v) || v <= 0 || m.currency !== 'KRW' || !known.has(v))
         && out.indexOf(v) < 0) out.push(v);
   });
@@ -2746,7 +2941,7 @@ function unverifiedCurrentPrices(text, items) {
     const after = source.slice(m.index + m.text.length, m.index + m.text.length + 20);
     const near = before + after;
     const kind = priceClaimKind(source, m.index, m.index + m.text.length);
-    if (['reference', 'average', 'history', 'low', 'low7', 'low30', 'all-time', 'budget', 'difference'].includes(kind)) continue;
+    if (['reference', 'average', 'history', 'low', 'low-candidate', 'low7', 'low30', 'all-time', 'budget', 'difference'].includes(kind)) continue;
     if (!current.test(near) || historical.test(before.slice(-18))) continue;
     // 정가·평균·최저가 문장은 각각의 별도 가격 근거로 검증한다.
     if (/정가|평균|최저가|쿠폰/.test(near)) continue;
@@ -2787,11 +2982,13 @@ function unverifiedProductPrices(text, items) {
       if (m.currency !== 'KRW' || value < 0 || (value === 0 && kind !== 'difference') || kind === 'all-time') return false;
       if (kind === 'difference') return supportsPriceClaim({
         kind, value, currency: m.currency, direction: priceClaimDirection(s, m.index, m.index + m.text.length),
+        comparisonBase: priceComparisonBase(s, m.index),
         previousDay: /어제|전날/.test(s.slice(Math.max(0, m.index - 64), m.index + m.text.length + 64))
       }, it);
       if (kind === 'reference') return priceEvidenceValues(it, 'reference').includes(value) && observedPriceMatchesDate(it, date, value);
       if (kind === 'average') return priceEvidenceValues(it, 'average').includes(value) && observedPriceMatchesDate(it, date, value);
       if (kind === 'low') return priceEvidenceValues(it, 'low').includes(value) && observedPriceMatchesDate(it, date, value);
+      if (kind === 'low-candidate') return priceEvidenceValues(it, 'low-candidate').includes(value) && observedPriceMatchesDate(it, date, value);
       if (kind === 'low7' || kind === 'low30') return priceEvidenceValues(it, kind).includes(value) && observedPriceMatchesDate(it, date, value);
       if (kind === 'history') return priceEvidenceValues(it, 'history').includes(value) && observedPriceMatchesDate(it, date, value);
       if (kind === 'compare-less' || kind === 'compare-more') {
@@ -2974,7 +3171,52 @@ function unverifiedSpecs(text, items) {
     if (!c) { if (out.indexOf(claim) < 0) out.push(claim); continue; }
     // 부동소수 오차만 허용한다. 반올림한 값("약 1TB")까지 봐주면 검사가 헐거워진다.
     const found = known.some(k => k.dim === c.dim && Math.abs(k.v - c.v) < 0.001);
-    if (!found && out.indexOf(claim) < 0) out.push(claim);
+    if (!found) {
+      const start = m.index, end = start + m[0].length;
+      const unavailablePattern = /(?:옵션|용량|가격|상품|검색\s*(?:결과|에서))[^.!?\n]{0,36}(?:확인되지|찾지\s*못|없(?:습니다|어요|어|는|음)|확인할\s*수\s*없|미확인|not\s*found|unavailable|not\s*available)|(?:확인되지|찾지\s*못|없(?:습니다|어요|어|는|음)|확인할\s*수\s*없|not\s*found|unavailable|not\s*available)[^.!?\n]{0,32}(?:옵션|용량|가격|상품)/i;
+      const isUnavailableMention = (mentionStart, mentionEnd) => {
+        const local = t.slice(Math.max(0, mentionStart - 24), Math.min(t.length, mentionEnd + 64));
+        return unavailablePattern.test(local);
+      };
+      const explicitlyUnavailable = isUnavailableMention(start, end);
+      const left = Math.max(t.lastIndexOf('.', start - 1), t.lastIndexOf('!', start - 1),
+        t.lastIndexOf('?', start - 1), t.lastIndexOf('\n', start - 1)) + 1;
+      const ends = ['.', '!', '?', '\n'].map(ch => t.indexOf(ch, end)).filter(i => i >= 0);
+      const right = ends.length ? Math.min(...ends) : t.length;
+      const sentence = t.slice(left, right);
+      const targetStart = start - left, targetEnd = end - left;
+      const sentenceSpecs = [];
+      const sentenceSpecRegex = new RegExp(SPEC_UNIT.source, SPEC_UNIT.flags);
+      let specMatch;
+      while ((specMatch = sentenceSpecRegex.exec(sentence)) !== null) {
+        const unit = canonUnit(specMatch[1], specMatch[2]);
+        sentenceSpecs.push({ start: specMatch.index, end: specMatch.index + specMatch[0].length, unit });
+      }
+      const repeatedUnavailable = sentenceSpecs.some(spec => spec.start < targetStart && spec.unit
+        && spec.unit.dim === c.dim && Math.abs(spec.unit.v - c.v) < 0.001
+        && isUnavailableMention(left + spec.start, left + spec.end));
+      const priorUnavailable = (() => {
+        const priorSpecRegex = new RegExp(SPEC_UNIT.source, SPEC_UNIT.flags);
+        let prior;
+        while ((prior = priorSpecRegex.exec(t)) !== null && prior.index < start) {
+          const unit = canonUnit(prior[1], prior[2]);
+          const priorEnd = prior.index + prior[0].length;
+          if (unit && unit.dim === c.dim && Math.abs(unit.v - c.v) < 0.001
+              && start - priorEnd <= 200 && isUnavailableMention(prior.index, priorEnd)) return true;
+        }
+        return false;
+      })();
+      const hasPriceAssignedToOption = wonMatches(sentence).some(price => {
+        if (price.index >= targetEnd) {
+          const intervening = sentenceSpecs.some(spec => spec.start >= targetEnd && spec.start < price.index);
+          return !intervening && price.index - targetEnd <= 48;
+        }
+        const gap = sentence.slice(price.index + price.text.length, targetStart);
+        return gap.length <= 16 && /(?:인|짜리|에|으로|옵션은|상품은)\s*$/.test(gap);
+      });
+      if ((explicitlyUnavailable || repeatedUnavailable || priorUnavailable) && !hasPriceAssignedToOption) continue;
+      if (out.indexOf(claim) < 0) out.push(claim);
+    }
   }
   SPEC_UNIT.lastIndex = 0;
   return out;
@@ -3066,8 +3308,18 @@ function unsupportedSuperlatives(text, items) {
 
   /* ── ① 가격 기록에 대한 주장 ── */
   // price_history 는 제한된 최근 관측 창이므로 '역대/사상' 최저를 증명할 수 없다.
-  const allTimeClaim = /(?:역대|사상)\s*최저(?:가)?/i.test(t);
-  if (allTimeClaim) out.push('역대 최저가');
+  const allTimePattern = /(?:역대|사상)\s*최저(?:가)?/ig;
+  let allTimeMatch;
+  while ((allTimeMatch = allTimePattern.exec(t)) !== null) {
+    const sentence = t.slice(allTimeMatch.index, Math.min(t.length, allTimeMatch.index + 120)).split(/[.!?\n]/, 1)[0];
+    // A response can mention the concept in order to deny or qualify it.
+    // Reject positive claims, but don't force safe answers into deterministic
+    // fallback merely because they say a candidate is not a confirmed record.
+    const negated = /(?:\s*(?:가|은|는|이)?\s*(?:아닙니다|아니에요|아니예요|아니(?:요|다|라|며|고|라는|라고|라고요|라고는|랍니다)?)|(?:라고|이라고)\s*(?:(?:할|볼|단정할|확정할|주장할|확인할|판단할|판정할)\s*)?수(?:는)?\s*없|(?:라고|이라고)\s*(?:단정|확정|판정|확인)되(?:지(?:는)?|는)\s*않|(?:로|라고|이라고)\s*(?:확인|확정|판정|판단)되(?:지(?:는)?|는)\s*않|(?:로|라고)\s*(?:확인|확정|판단)할\s*수\s*없|여부(?:는|가)?\s*(?:단정|확정|판정|판단|확인)(?:할)?\s*수(?:는)?\s*없|(?:인지|여부)(?:는|가)?\s*(?:아직\s*)?(?:알\s*수(?:는)?\s*없|확인할\s*수(?:는)?\s*없|단정할\s*수(?:는)?\s*없)|\b(?:is not|isn't|cannot be|can't be)\b)/i.test(sentence.slice(allTimeMatch[0].length));
+    const deniedBasis = /(?:라고|이라고)\s*(?:단정|확정|판단|판정)할\s*근거(?:가|는|은)?\s*없/i.test(sentence.slice(allTimeMatch[0].length));
+    if (!negated && !deniedBasis) { out.push('역대 최저가'); break; }
+  }
+  allTimePattern.lastIndex = 0;
 
   // 일반 기록 최저도 정확한 옵션의 충분한 관측 범위에서만 허용한다.
   SUPERLATIVE.lastIndex = 0;
@@ -5357,6 +5609,7 @@ module.exports = async function handler(req, res) {
       const groundItems = items.concat(searchState === 'found' ? [] : contextNotes.historyOnly);
       const badWon   = unverifiedWon(text, collectKnownWon(groundItems, cards, q, hist, constraints));
       const badContextualPrice = unverifiedContextualPrices(text, groundItems);
+      const badLowObservationCount = unverifiedLowObservationCounts(text, groundItems);
       const badProductPrice = unverifiedProductPrices(text, groundItems);
       const badCurrentPrice = unverifiedCurrentPrices(text, groundItems);
       const badDiscountPct = unverifiedDiscountPct(text, groundItems);
@@ -5390,10 +5643,10 @@ module.exports = async function handler(req, res) {
        * 서버 데이터로 되짚을 수 없는 가격·사양·상품·구매 판정이 하나라도
        * 있으면 전체 LLM 답변을 폐기하고 동일한 서버 계산값으로 다시 조립한다.
        */
-      if (badWon.length || badContextualPrice.length || badProductPrice.length || badCurrentPrice.length || badDiscountPct.length || badBudgetPick ||
+      if (badWon.length || badContextualPrice.length || badLowObservationCount.length || badProductPrice.length || badCurrentPrice.length || badDiscountPct.length || badBudgetPick ||
           badSpec.length || badCmp.length || badSuper.length || badDecision || badIdentity || noCatalog || badPick || badEcho) {
         console.warn('[ai] grounding 실패 — deterministic 답변으로 대체 ' + JSON.stringify({
-          won: badWon.length, contextualPrice: badContextualPrice.length, productPrice: badProductPrice.length, currentPrice: badCurrentPrice.length,
+          won: badWon.length, contextualPrice: badContextualPrice.length, lowObservationCount: badLowObservationCount.length, productPrice: badProductPrice.length, currentPrice: badCurrentPrice.length,
           discountPct: badDiscountPct.length, budgetPick: badBudgetPick,
           spec: badSpec.length, compare: badCmp.length,
           superlative: badSuper.length, decision: badDecision,
@@ -5712,13 +5965,13 @@ module.exports = async function handler(req, res) {
 module.exports._internal = {
   cleanQuery, parseClassification, shouldSearch, fromSearchResult, toCard, canonicalDisplayItem, attachDisplayHistory, aiSearchKeyword, stripRefs, stripUrls, derefRefs,
   needsShopContext, canonicalIntent, safeText, num, won, safeDate, normItem, describe,
-  trimToSentence, collectKnownWon, unverifiedWon, unverifiedContextualPrices, productIdentityMatches, unverifiedProductPrices, unverifiedCurrentPrices, topRecommendationCard,
+  trimToSentence, collectKnownWon, unverifiedWon, unverifiedContextualPrices, unverifiedLowObservationCounts, productIdentityMatches, unverifiedProductPrices, unverifiedCurrentPrices, topRecommendationCard,
   unverifiedDiscountPct, unsupportedOffBudgetRecommendation, looksLikeSensitiveDisclosure,
   unverifiedSpecs, unsupportedSuperlatives,
   unsupportedComparisons, mentionsAnyCard, unmatchedCardRecommendation, attachSpecs, collectWantedFeatures,
   CLASSIFY_SYSTEM, CLASSIFY_FORCE, fallbackAnswer,
   heuristicIntent, hasAuthHeader,
   historyMessage, normalizeHistory, resolveContext, contextNoteBlock, statFor, markFiction, P,
-  unverifiedLivePriceClaim, wonMatches, priceClaimKind, hasConfirmedRecordLow, isCurrentPriceFresh,
+  unverifiedLivePriceClaim, wonMatches, priceClaimKind, priceComparisonBase, hasConfirmedRecordLow, isCurrentPriceFresh,
   PROMPT_VERSION
 };
