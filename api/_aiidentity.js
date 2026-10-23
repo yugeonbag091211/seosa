@@ -121,8 +121,12 @@ function stripJosa(token) {
 }
 
 function isAccessoryToken(tok) {
-  return S.accessoryTerms(tok, [tok]).length > 0;
+  const token = stripJosa(tok);
+  return ACCESSORY_CATEGORY_WORDS.has(token) || S.accessoryTerms(token, [token]).length > 0;
 }
+
+/* Generic accessory nouns are useful for negative lists even without naming a case/filter. */
+const ACCESSORY_CATEGORY_WORDS = new Set(['액세서리', '액세서리류', '부속품', 'accessory', 'accessories']);
 
 /** 토큰 하나가 식별의 어느 자리에 들어가는가. */
 function slotOf(rawTok) {
@@ -135,6 +139,7 @@ function slotOf(rawTok) {
   if (S.CAPACITY_RE.test(tok)) return 'storage';
   if (S.VARIANT_KEYS.has(tok)) return 'variant';
   if (BASE_WORDS.has(tok)) return 'base';
+  if (/^\d+(?:일|주|개월|달|년|시간|분|초)(?:간|동안)?$/.test(tok)) return 'generic';
   if (/\d/.test(tok) && !S.UNIT_RE.test(tok) && !S.YEAR_RE.test(tok)) {
     return STORAGE_SIZES.has(tok) ? 'storage' : 'anchor';
   }
@@ -163,7 +168,7 @@ function slotOf(rawTok) {
  * ★ "MX Master 3와 구분하고 …" — «X와 구분» 은 X 를 빼 달라는 말이다 (2026-10-22 CAND-13).
  */
 const NEG_RE = /((?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
-const LIST_SPLIT_RE = /\s*(?:[·/,]|(?<=[가-힣a-z0-9])(?:와|과|랑|이나|및)(?=\s|$)|\s및\s)\s*/i;
+const LIST_SPLIT_RE = /\s*(?:[·/,]|(?<=[가-힣a-z0-9])(?:와|과|랑|이나|나|및)(?=\s|$)|\s및\s)\s*/i;
 const IDENTITY_SLOTS = new Set(['anchor', 'variant', 'base']);
 /*
  * 뒤에 대상이 없는 부정("… 중고 제외")이 지우는 것은 «마지막 낱말과 같은 종류» 의 꼬리뿐이다.
@@ -177,7 +182,10 @@ const MODIFIER_SLOTS = new Set(['accessory', 'condition', 'color', 'storage', 'b
 /* 금액은 식별이 아니라 예산이다 — 숫자가 모델 번호로 읽히지 않게 먼저 지운다. */
 const MONEY_TEXT_RE = /(\d[\d,]*(?:\.\d+)?\s*(?:[~\-–]|에서)\s*)?\d[\d,]*(?:\.\d+)?\s*(?:(?:억|만|천)\s*원?|원)/g;
 /* 숫자 뒤에 떨어져 나온 단위 — "15인치" 가 15 + 인치 로 갈라지면 15 를 모델 번호로 잘못 읽는다. */
-const UNIT_TOKENS = new Set(['인치', '형', 'kg', 'g', 'mg', 'cm', 'mm', 'm', 'ml', 'l', 'w', 'v', 'mah', 'hz', 'p']);
+const UNIT_TOKENS = new Set([
+  '인치', '형', 'kg', 'g', 'mg', 'cm', 'mm', 'm', 'ml', 'l', 'w', 'v', 'mah', 'hz', 'p',
+  '일', '주', '개월', '달', '년', '시간', '분', '초'
+]);
 
 function tokensOf(text) {
   const out = [];

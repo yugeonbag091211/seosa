@@ -228,7 +228,8 @@ const LONG = [
     ok(v && v.absorbed.join() === 'abcdefghijkl', '지문 모양만 남는다', v && v.absorbed);
 
     const [p, payload, sig] = t.split('.');
-    const flip = s => s.slice(0, -1) + (s.slice(-1) === 'A' ? 'B' : 'A');
+    // Flip significant Base64URL bits; changing the final padding bits can decode to the same bytes.
+    const flip = s => (s[0] === 'A' ? 'B' : 'A') + s.slice(1);
     ok(AC.verifyConversationState(`${p}.${flip(payload)}.${sig}`) === null, '본문 한 글자 변조 → 무시');
     ok(AC.verifyConversationState(`${p}.${payload}.${flip(sig)}`) === null, '서명 한 글자 변조 → 무시');
     const forged = Buffer.from(JSON.stringify({ p: '노트북', c: { budgetMax: 1 }, x: [], a: [], s: Date.now(), iat: Date.now(), exp: Date.now() + 1000 }))

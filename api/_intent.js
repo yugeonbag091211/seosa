@@ -592,7 +592,7 @@ const COND_TOKEN_RE = /(?:으면|하면|되면|다면|이면|이라면|르면|�
  * "Logitech G304 무선 마우스 현재가가 10만원이라고 가정하지 말고 실제 가격만 말해줘" 의 G304 를
  * 금지 구간과 함께 버리면 검색할 상품이 사라진다(2026-10-22 레드팀 RT-0337).
  */
-const SHOP_PROHIBIT_RE = /(?:추천|보여|보|찾|고르|골라|내|권|사|구매|팔|넣|포함)\s*(?:하|해|주)?지$/;
+const SHOP_PROHIBIT_RE = /(?:추천|보여|보|찾|고르|골라|권|사|구매|팔|넣|포함)\s*(?:하|해|주)?지$/;
 function analyzeClauses(text) {
   const norm = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
   const prohibitions = [];
@@ -609,7 +609,11 @@ function analyzeClauses(text) {
           let seen = 0;
           cur.forEach((tok, k) => {
             const ev = AIID.productEvidence(cur.slice(0, k + 1).join(' '));
+            const slot = AIID.slotOf(tok);
             if (ev > seen) { seen = ev; keep = k + 1; }
+            // Keep identity modifiers such as “Pro”, storage, and color after the model anchor.
+            // Without this, “iPhone 17 Pro … don’t make up prices” retained only “iPhone 17”.
+            else if (keep > 0 && ['variant', 'storage', 'color', 'condition'].includes(slot)) keep = k + 1;
           });
         }
         if (cur.length > keep) prohibitions.push(cur.slice(keep).join(' '));

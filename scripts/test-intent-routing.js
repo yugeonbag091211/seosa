@@ -123,6 +123,20 @@ async function test(name, fn) {
     });
   }
 
+  const groundedShoppingCases = [
+    ['아이폰 17 프로 제일 싼 거 찾아줘 실제 검색 결과 기준으로 가격 지어내지 말고', 'D', '프로'],
+    ['로지텍 MX Master 3S 무선 마우스 가격 알려줘 가격 지어내지 말고', 'D', 'MX Master 3S']
+  ];
+  for (const [q, want, identity] of groundedShoppingCases) {
+    await test(`"${q}" keeps its product search when refusing invented prices`, () => {
+      const result = Intent.classify(q);
+      assert.strictEqual(result.intent, want);
+      assert.ok(result.query, 'the product query must survive the grounding instruction');
+      assert.ok(Intent.isProductQuery(result.query), `expected a product query, got "${result.query}"`);
+      assert.ok(result.query.toLowerCase().includes(identity.toLowerCase()), `expected model detail "${identity}" in "${result.query}"`);
+    });
+  }
+
   const problem = '오늘 나온 AI 뉴스 중 SEOSA 같은 AI 쇼핑 서비스에 직접 영향 줄 만한 것만 골라줘. OpenAI, Anthropic, Google, Perplexity, 쇼핑 AI, 에이전트, 검색 API 중심으로 보고 출처랑 날짜도 붙여줘.';
   await test('실제 문제 입력 → SEOSA_ANALYSIS, 상품 검색 0회', async () => {
     productSearchCalls = 0;

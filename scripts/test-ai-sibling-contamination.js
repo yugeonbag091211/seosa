@@ -240,6 +240,58 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
     ok(!r.cards.some(c => /G102/.test(c.title)), 'G102 는 카드에서 빠진다', r.cards.map(c => c.title));
   }
 
+  /* ================================================================ */
+  section('H. 본품·부속과 일반형 AirPods 3 모델 구별');
+  {
+    feed = [
+      item('a3-main', 'Apple AirPods 3세대 Lightning 본체', 219000),
+      item('a3-pro-case', 'AirPods Pro 3 전용 실리콘 케이스 2개입', 4900),
+      item('a3-pro', 'Apple AirPods Pro 3세대 USB-C 자급제', 329000),
+      item('a3-pro2', 'Apple AirPods Pro 2 USB-C', 289000)
+    ];
+    const question = '에어팟 3세대 본체만, 케이스나 액세서리는 빼고 찾아줘';
+    const contract = require('../api/_aiidentity').buildContract({ query: question, userText: question });
+    ok(contract.anchors.includes('3') && !contract.wantsAccessory && contract.excludeAccessory,
+      '부정 목록에서 케이스·액세서리를 분리하고 AirPods 3 본품 조건을 보존한다', {
+        anchors: contract.anchors, wantsAccessory: contract.wantsAccessory, excludeAccessory: contract.excludeAccessory
+      });
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.some(c => /AirPods 3세대|에어팟 3세대/i.test(c.title)
+      && !/Pro|프로/i.test(c.title)),
+    '일반 AirPods 3 본품이 후보에 있을 때 1개 이상 권한다', r.cards.map(c => c.title));
+    ok(r.cards.every(c => !/케이스|case|AirPods Pro|에어팟 프로/i.test(c.title)),
+      '케이스와 Pro 형제 모델은 카드에서 제외한다', r.cards.map(c => c.title));
+  }
+
+  {
+    feed = [
+      item('a3-main-option', 'Apple AirPods 3세대 Lightning 본체', 219000),
+      item('a3-pro2-option', 'Apple AirPods Pro 2 USB-C', 289000)
+    ];
+    const question = 'AirPods 3 일반형 256GB 있으면 그중에 제일 싼 것';
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.every(c => !/AirPods Pro|에어팟 프로/i.test(c.title)),
+      '저장 공간 조건이 맞지 않아도 Pro 형제 모델로 바꾸지 않는다', r.cards.map(c => c.title));
+  }
+
+  /* ================================================================ */
+  section('I. 가격 이력 기간 숫자는 상품 모델이 아니다');
+  {
+    feed = [
+      item('g304-history', 'Logitech G304 Lightspeed Wireless Gaming Mouse 910-005284', 59900),
+      item('g304x-history', 'Logitech G304 X Wireless Gaming Mouse', 62900)
+    ];
+    const question = '로지텍 G304 무선 마우스 현재가, 최근 30일 최저가와 가격 변동을 실제 가격 이력 기준으로 알려줘.';
+    const contract = require('../api/_aiidentity').buildContract({ query: question, userText: question });
+    ok(contract.anchors.includes('g304') && !contract.anchors.includes('30'),
+      '30일 이력 기간은 모델 식별 anchor로 처리하지 않는다', contract.anchors);
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.some(c => /G304/i.test(c.title) && !/G304\s*X|G304X/i.test(c.title)),
+      'G304 가격 질문은 G304 본품 후보를 남긴다', r.cards.map(c => c.title));
+    ok(r.cards.every(c => !/G304\s*X|G304X/i.test(c.title)),
+      'G304 가격 질문에서 G304 X 형제 모델을 제외한다', r.cards.map(c => c.title));
+  }
+
   console.log(`\n=== 결과: ${pass}/${pass + fails.length} PASS ===`);
   if (fails.length) {
     console.log('\n실패:');
