@@ -24,7 +24,7 @@
 - 검색 후 명시적으로 “정확한 상품이 없다”고 하고 다른 모델이라고 구분한 후보를 오답으로 세던 평가기 결함을 재현 테스트와 함께 수정했다.
 - 전체 `npm test`: **종료 코드 0**. 내부 AI 보안 퍼즈 2,490/2,490 및 AI 레드팀 200/200 통과.
 - 최신 명시 실행: 의도 분류 32/32, 상품 형제 오염 36/36, 예산 scope 30/30, AI 핫딜 도구 29/29 통과.
-- GitHub `test`, `ai-validation`, `Mobile Check`의 이번 후속 브랜치 실행 결과는 push 뒤 확인해 반영한다.
+- GitHub Actions `test`, `ai-validation`과 수동 dispatch한 `Mobile Check`는 구현 commit `21e6ca1`에서 모두 성공했다. Vercel Preview 상태도 성공했으며 Production 배포는 하지 않았다.
 
 ## 실제 가격과 핫딜
 
