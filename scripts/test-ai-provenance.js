@@ -610,7 +610,13 @@ function searchFixture() {
         low30: 39900, low30Date: '2026-10-10', low30Days: 10,
         avg30: 40500, avg30Days: 10, avg7: 40900, avg7Days: 1,
         trendPct: 0, trendDays: 8, trendFrom: 40900, trendFromDate: '2026-10-15',
-        points: [{ d: '2026-10-15', p: 40900 }, { d: '2026-10-23', p: 40900 }],
+        points: [
+          { d: '2026-10-07', p: 39900 }, { d: '2026-10-08', p: 39900 },
+          { d: '2026-10-09', p: 39900 }, { d: '2026-10-10', p: 39900 },
+          { d: '2026-10-11', p: 40900 }, { d: '2026-10-12', p: 40900 },
+          { d: '2026-10-13', p: 40900 }, { d: '2026-10-14', p: 40900 },
+          { d: '2026-10-15', p: 40900 }, { d: '2026-10-23', p: 40900 }
+        ],
         historyDays: 16, maxGapDays: 8, firstDate: '2026-10-07'
       }
     });
@@ -628,6 +634,137 @@ function searchFixture() {
         JSON.stringify({ contextual: I.unverifiedContextualPrices(answer, [realSnapshot]),
           product: I.unverifiedProductPrices(answer, [realSnapshot]), current: I.unverifiedCurrentPrices(answer, [realSnapshot]) }));
     });
+
+    const notebookSnapshot = I.normItem({
+      productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
+      hist: {
+        count: 3, lastPrice: 1749000, lastDate: '2026-10-23', prevPrice: 1749000,
+        low: 1699000, lowDate: '2026-10-19', lowCount: 1, historyDays: 4, firstDate: '2026-10-19',
+        points: [
+          { d: '2026-10-19', p: 1699000 },
+          { d: '2026-10-22', p: 1749000 },
+          { d: '2026-10-23', p: 1749000 }
+        ]
+      }
+    });
+    const unchangedYesterday = '어제 1,749,000원, 오늘 1,749,000원으로 0원 변동입니다.';
+    ok(I.unverifiedContextualPrices(unchangedYesterday, [notebookSnapshot]).length === 0
+        && I.unverifiedProductPrices(unchangedYesterday, [notebookSnapshot]).length === 0,
+      '실제 노트북 기록의 연속된 동일 가격은 0원 변동으로 검증한다',
+      JSON.stringify({ contextual: I.unverifiedContextualPrices(unchangedYesterday, [notebookSnapshot]),
+        product: I.unverifiedProductPrices(unchangedYesterday, [notebookSnapshot]) }));
+    const changedPreviousObservation = I.normItem({
+      productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
+      hist: {
+        count: 3, lastPrice: 1749000, lastDate: '2026-10-23', prevPrice: 1700000,
+        low: 1699000, lowDate: '2026-10-19', lowCount: 1, historyDays: 4, firstDate: '2026-10-19',
+        points: [
+          { d: '2026-10-19', p: 1699000 },
+          { d: '2026-10-22', p: 1700000 },
+          { d: '2026-10-23', p: 1749000 }
+        ]
+      }
+    });
+    ok(I.unverifiedContextualPrices(unchangedYesterday, [changedPreviousObservation]).includes(0)
+        && I.unverifiedProductPrices(unchangedYesterday, [changedPreviousObservation]).includes(0),
+      '이전 관측가가 다른데 0원 변동이라고 답하면 거부한다');
+    const missingYesterdayObservation = I.normItem({
+      productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
+      hist: {
+        count: 3, lastPrice: 1749000, lastDate: '2026-10-23', prevPrice: 1749000,
+        low: 1699000, lowDate: '2026-10-19', lowCount: 1, historyDays: 4, firstDate: '2026-10-19',
+        points: [
+          { d: '2026-10-19', p: 1749000 },
+          { d: '2026-10-20', p: 1699000 },
+          { d: '2026-10-23', p: 1749000 }
+        ]
+      }
+    });
+    ok(I.unverifiedContextualPrices(unchangedYesterday, [missingYesterdayObservation]).includes(0),
+      '어제 관측이 없으면 이전 날짜 가격을 어제 가격으로 바꾸지 않는다');
+
+    const monitorSnapshot = I.normItem({
+      productId: 'monitor-fixture', vendorItemId: 'monitor-option', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '모니터 가격 이력 fixture', price: 128250, checkedAt: '2026-10-23',
+      hist: {
+        count: 4, lastPrice: 128250, lastDate: '2026-10-23', prevPrice: 135000,
+        low: 125000, lowDate: '2026-10-20', lowCount: 1, historyDays: 4, firstDate: '2026-10-19',
+        points: [
+          { d: '2026-10-19', p: 145000 },
+          { d: '2026-10-20', p: 125000 },
+          { d: '2026-10-22', p: 135000 },
+          { d: '2026-10-23', p: 128250 }
+        ]
+      }
+    });
+    const historicalWindowPrice = '최근 5일간 가격은 145,000원에서 128,250원으로 내려갔습니다.';
+    const historicalAmountAt = historicalWindowPrice.indexOf('145,000원');
+    ok(I.priceClaimKind(historicalWindowPrice, historicalAmountAt, historicalAmountAt + '145,000원'.length) === 'history'
+        && I.unverifiedContextualPrices(historicalWindowPrice, [monitorSnapshot]).length === 0,
+      '최근 N일 가격 문장에서 과거 가격을 현재가로 오인하지 않는다',
+      JSON.stringify({ kind: I.priceClaimKind(historicalWindowPrice, historicalAmountAt, historicalAmountAt + '145,000원'.length),
+        unsupported: I.unverifiedContextualPrices(historicalWindowPrice, [monitorSnapshot]) }));
+
+    // Actual gpt-6-luna output from the LG air-purifier Neon snapshot (2026-10-23).
+    // Korean comparison particles and an implicit yesterday delta must be checked
+    // against history, not mistaken for ungrounded current/average prices.
+    const airPurifierSnapshot = I.normItem({
+      productId: '8603929492', vendorItemId: '91960066542', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: 'LG전자 퓨리케어 360도 오브제컬렉션 플러스 공기청정기 100㎡ 방문설치', price: 688700,
+      hist: {
+        count: 21, lastPrice: 688700, lastDate: '2026-10-23', prevPrice: 703820,
+        firstDate: '2026-09-18', historyDays: 35,
+        low: 659600, lowDate: '2026-10-19', lowCount: 3, lowConfirmed: true,
+        low7: 659600, low7Date: '2026-10-19', low7Days: 6,
+        low30: 659600, low30Date: '2026-10-19', low30Days: 19,
+        avg30: 707688, avg30Days: 19,
+        points: [
+          { d: '2026-10-17', p: 659600 }, { d: '2026-10-18', p: 659600 }, { d: '2026-10-19', p: 659600 },
+          { d: '2026-10-20', p: 703820 }, { d: '2026-10-22', p: 703820 }, { d: '2026-10-23', p: 688700 }
+        ]
+      }
+    });
+    const airPurifierAllTime = '현재가는 **688,700원**이고, SEOSA 보유 가격 기록 전체의 최저 관측가는 **659,600원**입니다. 현재가는 최저가보다 **29,100원 높으며**, 기록상 특별히 싼 가격은 아닙니다. 다만 최근 30일 평균 **707,688원**보다는 **18,988원(2.7%) 낮습니다**. 기록된 가격은 10월 17~19일에 659,600원이었고, 이후 10월 20일 703,820원으로 올라 10월 23일 688,700원으로 확인됐습니다. 따라서 현재가는 평균보다 낮지만, 보유 기록의 최저가보다는 높은 수준입니다.';
+    const airPurifierYesterday = '2026년 10월 22일 관측가 703,820원에서 오늘 현재가 688,700원으로 15,120원 내렸습니다.';
+    const airPurifierYesterdayComparison = '확인된 관측가끼리 비교하면 오늘 현재가 688,700원은 10월 22일의 703,820원보다 15,120원 내렸습니다. 다만 기록 간격이 있어 어제와 오늘 사이의 일별 변동 전체를 확인할 수는 없습니다.';
+    for (const [name, answer] of [
+      ['30일 평균 대비 파생 금액', airPurifierAllTime],
+      ['어제 대비 하락 금액', airPurifierYesterday],
+      ['실제 GPT의 “이전 값보다 차액 하락” 문형', airPurifierYesterdayComparison]
+    ]) {
+      const unsupported = {
+        contextual: I.unverifiedContextualPrices(answer, [airPurifierSnapshot]),
+        product: I.unverifiedProductPrices(answer, [airPurifierSnapshot]),
+        current: I.unverifiedCurrentPrices(answer, [airPurifierSnapshot])
+      };
+      ok(!unsupported.contextual.length && !unsupported.product.length && !unsupported.current.length,
+        `실제 공기청정기 GPT ${name} 응답을 실제 기록 근거로 통과한다`, JSON.stringify(unsupported));
+    }
+    const wrongAverageDirection = airPurifierAllTime.replace('18,988원(2.7%) 낮습니다', '18,988원(2.7%) 높습니다');
+    ok(I.unverifiedContextualPrices(wrongAverageDirection, [airPurifierSnapshot]).includes(18988)
+        && I.unverifiedProductPrices(wrongAverageDirection, [airPurifierSnapshot]).includes(18988),
+      '실제 평균보다 낮은 가격을 높다고 반대로 말하면 차액을 거부한다');
+    const wrongYesterdayDirection = airPurifierYesterday.replace('15,120원 내렸습니다', '15,120원 올랐습니다');
+    ok(I.unverifiedContextualPrices(wrongYesterdayDirection, [airPurifierSnapshot]).includes(15120)
+        && I.unverifiedProductPrices(wrongYesterdayDirection, [airPurifierSnapshot]).includes(15120),
+      '실제 전날 대비 하락을 상승으로 바꾸면 차액을 거부한다');
+    const wrongYesterdayComparison = airPurifierYesterdayComparison.replace('15,120원 내렸습니다', '15,120원 올랐습니다');
+    ok(I.unverifiedContextualPrices(wrongYesterdayComparison, [airPurifierSnapshot]).includes(15120)
+        && I.unverifiedProductPrices(wrongYesterdayComparison, [airPurifierSnapshot]).includes(15120),
+      '이전 관측가보다 하락한 금액을 상승으로 바꾸면 차액을 거부한다');
+    const wrongDatedPrice = '10월 22일 관측가와 오늘 현재가는 모두 688,700원으로 같다고 답했지만, 실제 10월 22일 기록은 703,820원입니다.';
+    ok(I.unverifiedContextualPrices(wrongDatedPrice, [airPurifierSnapshot]).includes(688700)
+        && I.unverifiedProductPrices(wrongDatedPrice, [airPurifierSnapshot]).includes(688700),
+      '현재가와 같은 숫자라도 다른 날짜의 관측가로 귀속하면 거부한다');
+    const correctlyDatedPrices = '10월 22일 관측가는 703,820원이고 10월 23일 현재가는 688,700원입니다.';
+    ok(I.unverifiedContextualPrices(correctlyDatedPrices, [airPurifierSnapshot]).length === 0
+        && I.unverifiedProductPrices(correctlyDatedPrices, [airPurifierSnapshot]).length === 0
+        && I.unverifiedCurrentPrices(correctlyDatedPrices, [airPurifierSnapshot]).length === 0,
+      '실제 10월 22일·23일 관측가를 날짜에 맞게 귀속하면 통과한다');
+
     const realModelReply = livePriceAnswers[2];
     const averageDeltaAt = realModelReply.indexOf('400원');
     ok(I.priceClaimKind(realModelReply, averageDeltaAt, averageDeltaAt + '400원'.length) === 'difference',

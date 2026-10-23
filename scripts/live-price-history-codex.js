@@ -12,24 +12,27 @@
  * search or a Production endpoint.
  */
 require('./_env.js');
+const fs = require('node:fs');
+const path = require('node:path');
 const { statsFrom } = require('../api/_pricestat');
 const { modelFromEnv } = require('../api/_openai-provider');
+const { snapshotQuestionCheck } = require('./_live-price-check');
 
 const MAX_BUDGET_USD = 0.25;
 const PRICE = { input: 0.10, output: 0.50 }; // USD / 1M tokens; same rate used by api/_llm.js
-const PRODUCT = {
+const DEFAULT_PRODUCT = {
   productId: '8327026885', title: '대웅 취사 보온 전기밥솥 10인용', lprice: 40900,
   mall: '쿠팡', mallLabel: '쿠팡', vendorItemId: '95189584451', itemId: '21246706432',
   collectedAt: '2026-10-22T18:32:56.341Z'
 };
-const OBSERVATIONS = [
+const DEFAULT_OBSERVATIONS = [
   ['2026-10-07', 39900], ['2026-10-08', 39900], ['2026-10-09', 39900], ['2026-10-10', 39900],
   ['2026-10-11', 40900], ['2026-10-12', 40900], ['2026-10-13', 40900], ['2026-10-14', 40900],
   ['2026-10-15', 40900], ['2026-10-23', 40900]
 ].map(([date, price]) => ({ date, price }));
-const EXPECTED = { current: 40900, lastDate: '2026-10-23', low7: 40900, low7Days: 1,
+const DEFAULT_EXPECTED = { current: 40900, lastDate: '2026-10-23', low7: 40900, low7Days: 1,
   low30: 39900, low30Days: 10, allTimeLow: 39900, maxGapDays: 8 };
-const QUESTIONS = [
+const DEFAULT_QUESTIONS = [
   { id: 'current-last-observed', question: '대웅 취사 보온 전기밥솥 10인용의 현재 확인 가격과 마지막 관측일을 알려줘.',
     check: t => /40,?900\s*원/.test(t) && /10월\s*23일|2026[-/.]10[-/.]23|10\/23/.test(t) },
   { id: 'low-30d', question: '대웅 취사 보온 전기밥솥 10인용의 최근 30일 최저 관측가는 얼마야? 관측 기간과 횟수도 알려줘.',
@@ -41,6 +44,18 @@ const QUESTIONS = [
   { id: 'all-time-not-current-low', question: '현재가가 역대 최저가야? 실제 기록과 비교해서 근거를 알려줘.',
     check: t => /39,?900\s*원/.test(t) && /40,?900\s*원/.test(t) && /아니|아닙|더 높|높은/.test(t) }
 ];
+
+const snapshotFile = process.env.LIVE_PRICE_HISTORY_SNAPSHOT_FILE || '';
+const SNAPSHOT = snapshotFile
+  ? JSON.parse(fs.readFileSync(path.resolve(process.cwd(), snapshotFile), 'utf8'))
+  : null;
+const PRODUCT = SNAPSHOT && SNAPSHOT.product || DEFAULT_PRODUCT;
+const OBSERVATIONS = SNAPSHOT && SNAPSHOT.observations || DEFAULT_OBSERVATIONS;
+const EXPECTED = SNAPSHOT && SNAPSHOT.expected || DEFAULT_EXPECTED;
+
+const QUESTIONS = SNAPSHOT && Array.isArray(SNAPSHOT.questions)
+  ? SNAPSHOT.questions.map(q => ({ ...q, check: text => snapshotQuestionCheck(q, text) }))
+  : DEFAULT_QUESTIONS;
 
 if (!process.env.OPENAI_API_KEY) {
   console.error('LIVE_MODEL=not-run reason=OPENAI_API_KEY_missing');
@@ -58,11 +73,20 @@ process.env.OPENROUTER_API_KEY = 'LIVE_PRICE_CHECK_GATE_ONLY_NOT_A_CREDENTIAL';
 process.env.AI_HOTDEAL_TOOL = '0';
 
 const stats = statsFrom(OBSERVATIONS);
-for (const [key, value] of Object.entries({
+const statChecks = SNAPSHOT ? {
+  lastPrice: PRODUCT.lprice,
+  lastDate: EXPECTED.lastDate,
+  low: EXPECTED.low,
+  low7: EXPECTED.low7,
+  low7Days: EXPECTED.low7Days,
+  low30: EXPECTED.low30,
+  low30Days: EXPECTED.low30Days
+} : {
   count: 10, lastPrice: 40900, lastDate: '2026-10-23', low: 39900,
   lowCount: 4, lowConfirmed: true, low7: 40900, low7Days: 1,
   low30: 39900, low30Days: 10, avg30: 40500, maxGapDays: 8
-})) {
+};
+for (const [key, value] of Object.entries(statChecks)) {
   if (stats[key] !== value) throw new Error(`snapshot/stat mismatch ${key}: ${stats[key]} != ${value}`);
 }
 

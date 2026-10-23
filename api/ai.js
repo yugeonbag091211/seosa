@@ -2150,7 +2150,7 @@ function collectKnownWon(items, cards, question, hist, constraints) {
  * @returns {Array<{index:number, text:string, digits:string, currency:string, negative:boolean}>} 위치 순
  */
 const WON_BIG_RE = /(-?[0-9０-９][0-9０-９,，\s]{2,})\s*원/gi;
-const WON_SMALL_RE = /(?<![0-9０-９A-Za-z.,，])(-?[0-9０-９]{1,2})\s*원(?=\s*(?:짜리|입니다|이에요|예요|이야|이고|이라|으로|에|부터|까지|이면|인데|대|$)|[.,!?)\]」』~])/gi;
+const WON_SMALL_RE = /(?<![0-9０-９A-Za-z.,，])(-?[0-9０-９]{1,2})\s*원(?=\s*(?:짜리|입니다|이에요|예요|이야|이고|이라|으로|에|부터|까지|이면|인데|변동|변화|차이|차액|대|$)|[.,!?)\]」』~])/gi;
 /* Amount notation accepted outside the plain "12,900원" form. Foreign currency is
  * recognized too, but never accepted as evidence because SEOSA catalog prices are KRW. */
 const KRW_ALIAS_RE = /(?:[₩￦]|(?<![A-Za-z])KRW)\s*(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)|(-?[0-9０-９](?:[0-9０-９,，.\s]*[0-9０-９])?)\s*(?:KRW|won)(?![A-Za-z])/gi;
@@ -2247,6 +2247,7 @@ function productIdentityMatches(a, b) {
 function priceClaimKind(text, start, end) {
   const s = String(text || '');
   const before = s.slice(Math.max(0, start - 48), start);
+  const beforeWindow = s.slice(Math.max(0, start - 120), start);
   const after = s.slice(end, Math.min(s.length, end + 48));
   // Markdown emphasis around a model's price token is presentation only; it
   // must not break the nearby evidence label (e.g. **30일 평균 40,500원**).
@@ -2255,28 +2256,71 @@ function priceClaimKind(text, start, end) {
   // Models sometimes put the relative percentage between a won delta and its
   // comparison adjective: "평균보다 400원(1%) 비싸며".
   const comparisonHead = head.replace(/^\s*\(\s*\d+(?:\.\d+)?\s*%\s*\)\s*/, '');
+  // Korean often expresses a signed delta after the amount rather than with
+  // “보다”: “오늘가는 688,700원으로 15,120원 내렸습니다.”
+  if (/^\s*(?:더\s*)?(?:내렸|내려|떨어|하락|낮아졌|올랐|올라|상승|높아졌|증가|줄었)/i.test(comparisonHead)
+      && /[0-9][0-9,]*\s*원(?:으로|이라(?:서)?|여서|라서)\s*$/i.test(tail)) return 'difference';
   // A following 차이/차액 labels this number as a derived delta, even when
   // a historical-low claim appeared immediately before it in the same sentence.
   if (/^\s*(?:차이(?:가|는|도)?|차액(?:은|이|가)?|difference\b)/i.test(head)) return 'difference';
+  // Zero is meaningful only when explicitly labelled as a change/difference;
+  // otherwise it must not be accepted as a product price.
+  if (/^\s*(?:변동|변화|차이|차액)(?:은|는|이|가|도)?/i.test(head)
+      || /(?:변동|변화|차이|차액)(?:은|는|이|가|도)?\s*$/i.test(tail)) return 'difference';
   if (/(?:역대|사상)\s*(?:최저|최저가|low(?:est)?\s+ever)/i.test(tail + head)) return 'all-time';
-  if (/보다(?:도)?\s*$/.test(tail) && /^\s*(?:더\s*)?(?:높|낮|비싸|비싼|싸|싼|저렴)/i.test(comparisonHead)) return 'difference';
+  if (/보다(?:도|는(?:도)?)?\s*$/.test(tail)
+      && /^\s*(?:더\s*)?(?:높|낮|비싸|비싼|싸|싼|저렴|내렸|내려|떨어|하락|올랐|올라|상승|증가|줄었)/i.test(comparisonHead)) return 'difference';
   if (/^\s*(?:더\s*)?(?:높|낮|비싸|비싼|싸|싼|저렴)/i.test(comparisonHead)
       && /(?:현재\s*(?:가|가격)|(?:판매)?가격)(?:는|은|이|가)?\s*$/i.test(tail)) return 'difference';
   const lowWindow = (tail + ' ' + head).match(/(?:최근|지난)?\s*(7|30)\s*일(?:(?!평균|average).){0,24}(?:최저|가장\s*(?:낮|저렴|싼)|low)/i);
   if (lowWindow) return `low${lowWindow[1]}`;
-  if (/(?:기록(?:상|\s*내|\s*중)?|관측(?:한|된)?|최근(?:\s*\d+\s*일)?|지난\s*\d+\s*일|(?:SEOSA(?:가|의)?\s*)?확인(?:한|된)).{0,16}최저(?:가)?/i.test(tail)
+  if (/(?:기록(?:상|\s*내|\s*중|\s*전체(?:의)?)?|관측(?:한|된)?|최근(?:\s*\d+\s*일)?|지난\s*\d+\s*일|(?:SEOSA(?:가|의)?\s*)?확인(?:한|된)).{0,16}최저(?:가)?/i.test(tail)
       || /\b(?:record|historical|recent)\s+low\b/i.test(tail)) return 'low';
+  if (/(?:어제|전날)[^.!?\n]{0,40}(?:관측(?:가|가격)?|가격|기록)(?:은|는|이|가|:)?\s*$/i.test(before)) return 'history';
+  if (/(?:최근|지난(?:\s*\d+\s*일)?)[^.!?\n]{0,16}기록[^.!?\n]{0,40}$/i.test(before)) return 'history';
+  // A window-labelled past price such as "최근 5일간 가격은 145,000원"
+  // is historical evidence, not a claim that the current price is 145,000원.
+  if (/(?:최근|지난)\s*\d+\s*일(?:간)?[^.!?\n]{0,20}(?:관측가|기록가|가격)(?:은|는|이|가|:)?\s*$/i.test(tail)
+      && !/(?:평균|최저)/i.test(tail)) return 'history';
   if (/(?:예산|budget)\s*(?:은|이|을|상한|:)?\s*$/i.test(tail)) return 'budget';
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:낮|싸|저렴)/.test(head)) return 'current-below-average';
   if (/(?:으로|라서|여서)\s*(?:최근\s*)?평균(?:가)?\s*(?:보다|대비)\s*(?:더\s*)?(?:높|비싸)/.test(head)) return 'current-above-average';
   if (/(?:현재\s*(?:가|가격|판매가)|오늘\s*(?:가격|판매가)|지금\s*(?:가격|판매가)|판매가|가격|최저가|할인가|쿠폰가|금액|비용)(?:는|은|이|을|가|:)?\s*(?:약|대략)?\s*$/i.test(tail)) return 'current';
-  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:은|이|가|:|\()?\s*$/i.test(tail)) return 'average';
+  if (/(?:평균(?:가)?|평균\s*가격)\s*(?:인|은|이|가|:|\()?\s*$/i.test(tail)) return 'average';
+  const calendarDate = /(?:\d{4}\s*년\s*)?\d{1,2}\s*월\s*\d{1,2}(?:\s*[~〜–-]\s*\d{1,2})?\s*일/;
+  if (calendarDate.test(beforeWindow) && /(?:기록|관측)/i.test(beforeWindow)) return 'history';
   if (/(?:정가|정상가|소비자가|원래\s*(?:가격|는|가)?|list\s*price)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'reference';
   if (/(?:기록|최근|지난\s*\d+\s*일|어제|전날|당시|과거|이전|저점|최저가)\s*(?:은|이|가|:)?\s*$/i.test(tail)) return 'history';
   if (/^\s*보다\s*(?:더\s*)?(?:싸|저렴|낮)/.test(head)) return 'compare-less';
   if (/^\s*보다\s*(?:더\s*)?(?:비싸|높)/.test(head)) return 'compare-more';
   if (/(?:대비|비교해)\s*$/.test(tail)) return 'current';
   return 'any';
+}
+
+/** Direction asserted by a derived delta, if the Korean wording makes it explicit. */
+function priceClaimDirection(text, start, end) {
+  const after = String(text || '').slice(end, Math.min(String(text || '').length, end + 40))
+    .replace(/^\s*\(\s*\d+(?:\.\d+)?\s*%\s*\)\s*/, '');
+  if (/^\s*(?:더\s*)?(?:높|비싸|상승|올랐|올라|증가|늘었)/i.test(after)) return 'up';
+  if (/^\s*(?:더\s*)?(?:낮|싸|저렴|하락|내렸|내려|떨어|감소|줄었)/i.test(after)) return 'down';
+  return '';
+}
+
+function priceEvidenceDeltas(item) {
+  if (!item) return [];
+  const h = item.hist || null;
+  const positive = v => {
+    const n = Number(v);
+    return Number.isSafeInteger(n) && n > 0 ? n : 0;
+  };
+  const history = priceEvidenceValues(item, 'history');
+  const references = history.concat(h ? [h.avg30] : [])
+    .concat(hasConfirmedRecordLow(h) ? [h.low] : [])
+    .concat([item.listPrice])
+    .map(positive).filter(Boolean);
+  return Array.from(new Set(priceEvidenceValues(item, 'current').flatMap(now =>
+    references.map(reference => now - reference).filter(delta => delta !== 0)
+  )));
 }
 
 function priceEvidenceValues(item, kind) {
@@ -2297,13 +2341,7 @@ function priceEvidenceValues(item, kind) {
     ...(Array.isArray(h.points) ? h.points.map(pt => pt && (pt.p != null ? pt.p : pt.price)) : [])
   ].map(positive).filter(Boolean) : [];
   if (kind === 'difference') {
-    const references = history.concat(h ? [h.avg30] : [])
-      .concat(hasConfirmedRecordLow(h) ? [h.low] : [])
-      .concat([item.listPrice])
-      .map(positive).filter(Boolean);
-    return Array.from(new Set(current().flatMap(now =>
-      references.map(reference => Math.abs(now - reference)).filter(value => value > 0)
-    )));
+    return Array.from(new Set(priceEvidenceDeltas(item).map(Math.abs).filter(value => value > 0)));
   }
   if (kind === 'current' || kind === 'current-below-average' || kind === 'current-above-average') return current();
   if (kind === 'average') return h ? [positive(h.avg30)].filter(Boolean) : [];
@@ -2324,7 +2362,14 @@ function priceEvidenceValues(item, kind) {
 
 function supportsPriceClaim(claim, item) {
   if (claim.kind === 'budget') return true; // A user budget may be echoed, but it is not product-price evidence.
-  if (claim.kind === 'all-time' || claim.currency !== 'KRW' || !Number.isSafeInteger(claim.value) || claim.value <= 0) return false;
+  if (claim.kind === 'all-time' || claim.currency !== 'KRW' || !Number.isSafeInteger(claim.value) || claim.value < 0) return false;
+  if (claim.kind === 'difference') {
+    if (claim.value === 0) return supportsObservedZeroChange(claim, item);
+    const deltas = priceEvidenceDeltas(item);
+    if (claim.direction === 'down') return deltas.some(delta => delta < 0 && Math.abs(delta) === claim.value);
+    if (claim.direction === 'up') return deltas.some(delta => delta > 0 && Math.abs(delta) === claim.value);
+    return deltas.some(delta => Math.abs(delta) === claim.value);
+  }
   if (claim.kind === 'compare-less' || claim.kind === 'compare-more') {
     const p = priceEvidenceValues(item, 'current')[0] || 0;
     if (!p) return false;
@@ -2352,6 +2397,113 @@ function supportsPriceClaim(claim, item) {
     : v === claim.value);
 }
 
+/** A zero delta is supported only by two consecutive observations for this option. */
+function supportsObservedZeroChange(claim, item) {
+  const h = item && item.hist;
+  if (!h || !Array.isArray(h.points) || !h.lastDate || !Number(h.lastPrice)
+      || Number(h.lastPrice) !== Number(item.price) || !isCurrentPriceFresh(item)
+      || claim.direction) return false;
+  const observations = h.points.map(point => ({
+    date: String(point && (point.d || point.date) || ''),
+    price: Number(point && (point.p != null ? point.p : point.price))
+  })).filter(point => /^\d{4}-\d{2}-\d{2}$/.test(point.date)
+    && Number.isSafeInteger(point.price) && point.price > 0);
+  observations.push({ date: String(h.lastDate), price: Number(h.lastPrice) });
+  const byDate = new Map();
+  observations.forEach(point => byDate.set(point.date, point));
+  const ordered = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const latest = ordered[ordered.length - 1];
+  const previous = ordered.length > 1 ? ordered[ordered.length - 2] : null;
+  if (!latest || !previous || latest.date !== String(h.lastDate)
+      || latest.price !== Number(h.lastPrice) || previous.price !== latest.price) return false;
+  if (claim.previousDay) {
+    const priorDay = new Date(`${latest.date}T00:00:00.000Z`);
+    priorDay.setUTCDate(priorDay.getUTCDate() - 1);
+    return previous.date === priorDay.toISOString().slice(0, 10);
+  }
+  return true;
+}
+
+/**
+ * If an amount is attached to a calendar date, require that exact product
+ * option to have an observation with that value on the stated date. A value
+ * seen on another day (including today's current price) is not evidence.
+ */
+function adjacentObservationDate(text, start, end) {
+  const s = String(text || '');
+  const candidates = [];
+  const patterns = [
+    { re: /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/g, parse: m => ({
+      year: Number(m[1]), month: Number(m[2]), firstDay: Number(m[3]), lastDay: Number(m[3])
+    }) },
+    { re: /(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})(?:\s*[~〜–-]\s*(\d{1,2}))?\s*일/g, parse: m => ({
+      year: m[1] ? Number(m[1]) : 0, month: Number(m[2]),
+      firstDay: Number(m[3]), lastDay: Number(m[4] || m[3])
+    }) }
+  ];
+  const addFrom = (from, to, side) => {
+    const part = s.slice(from, to);
+    patterns.forEach(pattern => {
+      pattern.re.lastIndex = 0;
+      let m;
+      while ((m = pattern.re.exec(part)) !== null) {
+        const absoluteStart = from + m.index;
+        const absoluteEnd = absoluteStart + m[0].length;
+        const gap = side === 'before' ? start - absoluteEnd : absoluteStart - end;
+        if (gap < 0 || gap > 32) continue;
+        const between = side === 'before' ? s.slice(absoluteEnd, start) : s.slice(end, absoluteStart);
+        // A calendar date after the previous sentence is not evidence for this
+        // amount. Likewise, in "688,700원은 10월 22일의 703,820원", the date
+        // belongs to the following observation, not the amount before it.
+        if (/[.!?\n]/.test(between) || wonMatches(between).length) continue;
+        if (side === 'after') {
+          const afterDate = s.slice(absoluteEnd, Math.min(s.length, absoluteEnd + 40));
+          const nextWon = wonMatches(afterDate)[0];
+          if (nextWon && nextWon.index < 32) continue;
+        }
+        const date = pattern.parse(m);
+        if (date.month < 1 || date.month > 12 || date.firstDay < 1 || date.lastDay > 31
+            || date.firstDay > date.lastDay) continue;
+        candidates.push({ ...date, gap });
+      }
+    });
+  };
+  addFrom(Math.max(0, start - 64), start, 'before');
+  addFrom(end, Math.min(s.length, end + 48), 'after');
+  candidates.sort((a, b) => a.gap - b.gap);
+  return candidates[0] || null;
+}
+
+function observedPriceMatchesDate(item, date, value) {
+  if (!date || !item || !item.hist) return !date;
+  const h = item.hist;
+  const points = (Array.isArray(h.points) ? h.points : []).map(point => ({
+    date: String(point && (point.d || point.date) || ''),
+    price: Number(point && (point.p != null ? point.p : point.price))
+  }));
+  if (h.lastDate && Number(h.lastPrice) > 0) points.push({ date: String(h.lastDate), price: Number(h.lastPrice) });
+  // The prompt snapshot intentionally caps raw points. Keep the server-computed
+  // dated extrema as evidence too, so a genuine older low is not lost to that cap.
+  if (hasConfirmedRecordLow(h) && h.lowDate && Number(h.low) > 0) {
+    points.push({ date: String(h.lowDate), price: Number(h.low) });
+  }
+  if (Number(h.low7Days) > 0 && h.low7Date && Number(h.low7) > 0) {
+    points.push({ date: String(h.low7Date), price: Number(h.low7) });
+  }
+  if (Number(h.low30Days) > 0 && h.low30Date && Number(h.low30) > 0) {
+    points.push({ date: String(h.low30Date), price: Number(h.low30) });
+  }
+  const matchesRange = point => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(point.date);
+    if (!m) return false;
+    const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+    return month === date.month && (!date.year || year === date.year)
+      && day >= date.firstDay && day <= date.lastDay;
+  };
+  const observations = points.filter(matchesRange);
+  return observations.some(point => Number.isSafeInteger(point.price) && point.price === value);
+}
+
 /**
  * Catch Korean shorthand and context-only amounts, plus validate explicit amounts
  * in comparisons. A matching number in user text or another option is never evidence.
@@ -2361,7 +2513,16 @@ function unverifiedContextualPrices(text, items) {
   const claims = [];
   const occupied = [];
   const add = claim => {
+    if (claim.kind === 'difference' && claim.value === 0) {
+      const context = s.slice(Math.max(0, claim.start - 64), Math.min(s.length, claim.end + 64));
+      claim.previousDay = /어제|전날/.test(context);
+    }
     if (!Number.isSafeInteger(claim.value) || claim.value <= 0) {
+      if (claim.value === 0 && claim.kind === 'difference') {
+        const duplicate = claims.some(c => c.start === claim.start && c.end === claim.end && c.value === claim.value && c.kind === claim.kind);
+        if (!duplicate) claims.push(claim);
+        return;
+      }
       claims.push(claim);
       return;
     }
@@ -2381,7 +2542,8 @@ function unverifiedContextualPrices(text, items) {
     occupied.push({ start, end });
     add({ start, end, value: Number.isSafeInteger(high) ? high : low,
       low: Math.min(low, high), high: Math.max(low, high), range: true,
-      currency: 'KRW', kind: priceClaimKind(s, start, end) });
+      currency: 'KRW', kind: priceClaimKind(s, start, end),
+      direction: priceClaimDirection(s, start, end) });
   }
 
   // Korean 만/천/억 notation, including decimal 만원 and mixed 12만 9천원 forms.
@@ -2403,7 +2565,8 @@ function unverifiedContextualPrices(text, items) {
     }
     occupied.push({ start, end });
     add({ start, end, value, low, high, range, approxStep,
-      currency: 'KRW', kind: priceClaimKind(s, start, end) });
+      currency: 'KRW', kind: priceClaimKind(s, start, end),
+      direction: priceClaimDirection(s, start, end) });
   }
 
   // Explicit tokens are included here so comparison grammar is checked even if a
@@ -2415,7 +2578,7 @@ function unverifiedContextualPrices(text, items) {
     if (overlap(start, end, occupied)) return;
     occupied.push({ start, end });
     add({ start, end, value: wonValue(token), currency: token.currency,
-      kind: priceClaimKind(s, start, end) });
+      kind: priceClaimKind(s, start, end), direction: priceClaimDirection(s, start, end) });
   });
 
   // Bare integers are price claims only beside unambiguous price/buying language.
@@ -2446,7 +2609,8 @@ function unverifiedContextualPrices(text, items) {
     const clearAfter = /^\s*(?:에\s*(?:살|구매|결제)|으로\s*(?:살|구매|결제)|대에\s*(?:살|구매)|이면\s*(?:살|구매|가능)|을?\s*주고\s*(?:살|구매)|can\s+buy\s+for)(?=$|[\s,.!?])/i.test(after);
     if (!clearBefore && !clearAfter) continue;
     occupied.push({ start, end });
-    add({ start, end, value, currency: 'KRW', kind: priceClaimKind(s, start, end) });
+    add({ start, end, value, currency: 'KRW', kind: priceClaimKind(s, start, end),
+      direction: priceClaimDirection(s, start, end) });
   }
 
   const list = Array.isArray(items) ? items.filter(Boolean) : [];
@@ -2454,7 +2618,10 @@ function unverifiedContextualPrices(text, items) {
   claims.forEach(claim => {
     const candidates = referencedItems(s, claim.start + Math.floor((claim.end - claim.start) / 2), list);
     const matchedItems = candidates.length ? candidates : list;
-    const supported = matchedItems.length > 0 && matchedItems.every(it => supportsPriceClaim(claim, it));
+    const date = ['difference', 'budget'].includes(claim.kind)
+      ? null : adjacentObservationDate(s, claim.start, claim.end);
+    const supported = matchedItems.length > 0 && matchedItems.every(it =>
+      supportsPriceClaim(claim, it) && observedPriceMatchesDate(it, date, claim.value));
     if (!supported) invalid.push(claim.value);
   });
   return invalid;
@@ -2579,17 +2746,19 @@ function unverifiedCurrentPrices(text, items) {
     const after = source.slice(m.index + m.text.length, m.index + m.text.length + 20);
     const near = before + after;
     const kind = priceClaimKind(source, m.index, m.index + m.text.length);
-    if (['reference', 'average', 'history', 'low', 'low7', 'low30', 'all-time', 'budget'].includes(kind)) continue;
+    if (['reference', 'average', 'history', 'low', 'low7', 'low30', 'all-time', 'budget', 'difference'].includes(kind)) continue;
     if (!current.test(near) || historical.test(before.slice(-18))) continue;
     // 정가·평균·최저가 문장은 각각의 별도 가격 근거로 검증한다.
     if (/정가|평균|최저가|쿠폰/.test(near)) continue;
     const at = m.index + Math.floor(m.text.length / 2);
     const refs = referencedItems(text, at, items);
     const candidates = refs.length ? refs : (items || []);
+    const date = adjacentObservationDate(source, m.index, m.index + m.text.length);
     // 상품명이 특정되지 않았거나 같은 이름의 옵션이 여러 개라면, 일부 후보에서
     // 가격이 우연히 일치하는 것만으로 그 가격을 답변에 귀속시키지 않는다.
     if (m.currency !== 'KRW' || value <= 0 || !candidates.length
-        || !candidates.every(it => priceEvidenceValues(it, 'current').includes(value))) {
+        || !candidates.every(it => priceEvidenceValues(it, 'current').includes(value)
+          && observedPriceMatchesDate(it, date, value))) {
       if (out.indexOf(value) < 0) out.push(value);
     }
   }
@@ -2611,20 +2780,25 @@ function unverifiedProductPrices(text, items) {
     const refs = referencedItems(s, at, items);
     const candidates = refs.length ? refs : (items || []);
     const kind = priceClaimKind(s, m.index, m.index + m.text.length);
+    const date = kind === 'difference' || kind === 'budget'
+      ? null : adjacentObservationDate(s, m.index, m.index + m.text.length);
     if (derived.test(local) && kind !== 'difference') continue;
     const matchesClaim = it => {
-      if (m.currency !== 'KRW' || value <= 0 || kind === 'all-time') return false;
-      if (kind === 'difference') return priceEvidenceValues(it, 'difference').includes(value);
-      if (kind === 'reference') return priceEvidenceValues(it, 'reference').includes(value);
-      if (kind === 'average') return priceEvidenceValues(it, 'average').includes(value);
-      if (kind === 'low') return priceEvidenceValues(it, 'low').includes(value);
-      if (kind === 'low7' || kind === 'low30') return priceEvidenceValues(it, kind).includes(value);
-      if (kind === 'history') return priceEvidenceValues(it, 'history').includes(value);
+      if (m.currency !== 'KRW' || value < 0 || (value === 0 && kind !== 'difference') || kind === 'all-time') return false;
+      if (kind === 'difference') return supportsPriceClaim({
+        kind, value, currency: m.currency, direction: priceClaimDirection(s, m.index, m.index + m.text.length),
+        previousDay: /어제|전날/.test(s.slice(Math.max(0, m.index - 64), m.index + m.text.length + 64))
+      }, it);
+      if (kind === 'reference') return priceEvidenceValues(it, 'reference').includes(value) && observedPriceMatchesDate(it, date, value);
+      if (kind === 'average') return priceEvidenceValues(it, 'average').includes(value) && observedPriceMatchesDate(it, date, value);
+      if (kind === 'low') return priceEvidenceValues(it, 'low').includes(value) && observedPriceMatchesDate(it, date, value);
+      if (kind === 'low7' || kind === 'low30') return priceEvidenceValues(it, kind).includes(value) && observedPriceMatchesDate(it, date, value);
+      if (kind === 'history') return priceEvidenceValues(it, 'history').includes(value) && observedPriceMatchesDate(it, date, value);
       if (kind === 'compare-less' || kind === 'compare-more') {
         return supportsPriceClaim({ kind, value, currency: m.currency }, it);
       }
       if (kind === 'budget') return true;
-      return priceEvidenceValues(it, 'current').includes(value);
+      return priceEvidenceValues(it, 'current').includes(value) && observedPriceMatchesDate(it, date, value);
     };
     if (!candidates.length || !candidates.every(matchesClaim)) {
       if (out.indexOf(value) < 0) out.push(value);

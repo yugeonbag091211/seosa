@@ -67,7 +67,10 @@ const CASES = [
   ['iPhone 17 Pro Max 256GB', 'Apple iPhone 17 Pro Max 256GB 블랙 자급제', TIER.EXACT],
   ['소니 WH-CH730N', '소니 WH-CH730N 노이즈캔슬링 무선 헤드폰', TIER.EXACT],
   ['소니 WH-CH730N', '소니 WH-CH720N 노이즈캔슬링 무선 헤드폰', TIER.SIBLING],
-  ['소니 WH-CH720N', '소니 WH-CH720N 노이즈캔슬링 무선 헤드폰', TIER.EXACT]
+  ['소니 WH-CH720N', '소니 WH-CH720N 노이즈캔슬링 무선 헤드폰', TIER.EXACT],
+  // 마케팅 라인에 붙은 Plus는 숫자 모델 등급이 아니다. 동일 상품명이 스스로 sibling이 되면 안 된다.
+  ['LG전자 퓨리케어 360도 오브제컬렉션 플러스 공기청정기 100㎡ 방문설치',
+    'LG전자 퓨리케어 360도 오브제컬렉션 플러스 공기청정기 100㎡ 방문설치', TIER.EXACT]
 ];
 for (const [q, t, want] of CASES) {
   const got = tierOf(q, t);
@@ -101,6 +104,14 @@ for (const [q, t, want] of CASES) {
   ok(I.buildContract({ query: '아이폰 17 프로 256GB 블랙' }).lineQualifiers.length === 0, '아이폰 17 프로 256GB 블랙 은 꼬리 없음');
   ok(I.buildContract({ query: '로지텍 G304 무선 마우스' }).lineQualifiers.length === 0, 'G304 무선 마우스 는 꼬리 없음');
   ok(I.buildContract({ query: '로지텍 MX Master 3S' }).lineQualifiers.length === 0, 'MX Master 3S 는 꼬리 없음');
+}
+
+// Calendar dates in price-history questions are not model-number anchors.
+{
+  const title = 'LG전자 퓨리케어 360도 오브제컬렉션 플러스 공기청정기 100㎡ 방문설치';
+  const datedQuestion = `${title}의 어제(2026년 10월 22일) 관측가와 오늘 현재가를 비교해줘`;
+  const contract = I.buildContract({ query: datedQuestion, userText: datedQuestion, titles: [title] });
+  ok(I.verdict(contract, { title }).tier === TIER.EXACT, '가격 이력 질문의 달력 날짜를 상품 모델 번호로 보지 않는다', I.verdict(contract, { title }));
 }
 
 console.log(`test-ai-identity-model-line: ${pass} passed, ${fail} failed`);

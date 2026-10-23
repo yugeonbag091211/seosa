@@ -170,6 +170,15 @@ function slotOf(rawTok) {
 const NEG_RE = /((?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|(?<!자가\s)아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
 const LIST_SPLIT_RE = /\s*(?:[·/,]|(?<=[가-힣a-z0-9])(?:와|과|랑|이나|나|및)(?=\s|$)|\s및\s)\s*/i;
 const IDENTITY_SLOTS = new Set(['anchor', 'variant', 'base']);
+
+/** Remove explicit calendar dates before reading model-number anchors. */
+function stripCalendarDates(value) {
+  return String(value || '')
+    .replace(/(?:19|20)\d{2}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일/gi, ' ')
+    .replace(/(?<!\d)(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}(?!\d)/g, ' ')
+    .replace(/(?<!\d)\d{1,2}\s*월\s*\d{1,2}\s*일(?!\d)/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
 /*
  * 뒤에 대상이 없는 부정("… 중고 제외")이 지우는 것은 «마지막 낱말과 같은 종류» 의 꼬리뿐이다.
  *   "아이폰 17 프로 중고 제외"       → 중고만 (프로는 모델 이름이다)
@@ -340,9 +349,10 @@ function splitNegations(text) {
  */
 function buildContract(o) {
   const opts = o || {};
-  const query = String(opts.query || '');
+  const query = stripCalendarDates(opts.query);
   const fromQuery = splitNegations(query);
-  const fromUser = opts.userText ? splitNegations(opts.userText) : { positive: '', negated: [] };
+  const userText = stripCalendarDates(opts.userText);
+  const fromUser = userText ? splitNegations(userText) : { positive: '', negated: [] };
   const negatedAll = fromQuery.negated.concat(fromUser.negated);
   // 빼 달라고 한 부속 낱말이 검색어 쪽에 남아 있으면 걷어낸다 ("…본체 마우스패드·케이스" + "…제외").
   const excludeAcc0 = negatedAll.some(n => n.slots.has('accessory'));
@@ -357,7 +367,11 @@ function buildContract(o) {
   toks.forEach((t, i) => {
     if (slots[i] === 'anchor') anchors.push(t);
     else if (slots[i] === 'word') words.push(t);
-    else if (slots[i] === 'variant') variants.add(S.VARIANT_KEYS.get(t));
+    // With a numeric model anchor, only treat suffixes adjacent to that anchor
+    // as model grades. Marketing names can contain words such as "Plus" far
+    // from the model number (e.g. an appliance collection); interpreting those
+    // as a requested grade made an identical catalog title become SIBLING.
+    else if (slots[i] === 'variant' && !anchors.length) variants.add(S.VARIANT_KEYS.get(t));
     else if (slots[i] === 'base') strictBase = true;
   });
   // "S26+" 의 '+' 는 토큰화에서 사라진다 — _search.variantMarkers 가 읽는 방식 그대로.
@@ -370,7 +384,7 @@ function buildContract(o) {
   const accessoryWanted = toks.filter((t, i) => slots[i] === 'accessory');
   const bundleWanted = BUNDLE_RE.test(positive) && !anchors.length ? true : toks.some((t, i) => slots[i] === 'bundle');
 
-  const condition = S.conditionIntent(`${positive} ${opts.userText || ''}`);
+  const condition = S.conditionIntent(`${positive} ${userText}`);
   // 원한다고 말한 상태 — 부정 범위를 걷어낸 구절에서만 센다 ("중고 말고 미개봉" → sealed).
   condition.mentioned = conditionStates(`${positive} ${fromUser.positive}`);
   const excluded = [];
