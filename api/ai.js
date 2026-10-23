@@ -3896,6 +3896,33 @@ module.exports = async function handler(req, res) {
     }
 
     /*
+     * 격리 검증 환경에서만 실리는 관측 블록 (docs/ai-verification-preview.md, 감사 CO-10/CO-05).
+     *
+     * 검색이 «실패» 였는지 «정상 0건» 이었는지, 예산이 어떤 범위로 적용됐는지, DB 쓰기가 몇 번
+     * 막혔는지는 응답 문장만 봐서는 알 수 없다. 읽기 전용 검증 배포에서만 그것을 함께 내려보낸다.
+     * ★ 운영에서는 붙지 않는다(SEOSA_DB_READONLY 는 Production 에서 켜지지 않는다 — _supabase.js).
+     * ★ 사용자 발화·검색 원문은 싣지 않는다. 상태 이름과 수만 싣는다.
+     */
+    if (process.env.SEOSA_DB_READONLY === '1') {
+      const sendJson2 = res.json.bind(res);
+      res.json = payload => {
+        let dbGuard = null;
+        try { dbGuard = require('./_supabase').__readOnlyGuard; } catch (e) { dbGuard = null; }
+        const verify = {
+          search: searchState,
+          intent: resolvedCanonicalIntent || (payload && payload.intent) || 'none',
+          convCarried: !!conv.carried,
+          budgetScope: conv.next ? (conv.next.budgetScope || (conv.next.budgetProduct ? 'product' : '')) : '',
+          budgetDropped: conv.budgetDropped ? { budget: conv.budgetDropped.budget } : null,
+          dbWritesBlocked: dbGuard ? dbGuard.blockedWrites : null,
+          dbRpcBlocked: dbGuard ? dbGuard.blockedRpc : null
+        };
+        return sendJson2(payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? Object.assign({}, payload, { verify }) : payload);
+      };
+    }
+
+    /*
      * 1단계 — 의도 분류. 상품 데이터도 화면 상태도 보지 않고 말만 본다.
      */
     // deterministic-first. 확신이 높으면 LLM 분류를 건너뛴다 (resolveIntent 주석).
