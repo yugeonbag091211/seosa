@@ -356,6 +356,21 @@ function compose(ctx) {
   else if (c.degraded) { L.push(DEGRADED_HEAD); L.push(''); }
 
   /*
+   * 상품이 바뀌어 앞 상품 전용 예산을 거뒀다 (api/_convstate.js budgetDropped, 2026-10-23 감사 CO-03).
+   *
+   * 모델 프롬프트에는 그 사실이 실리지만(api/ai.js P.budgetScopeChanged), 이 조립본이 답할 때는
+   * 그 길로 닿지 않는다 — 실측(2026-10-23 실호출): "30만원 이하 노트북" 뒤 "청소기 추천" 에서
+   * 예산은 올바르게 거뒀는데 조립본 답에는 그 말이 없었다. 조용히 넓히지 않는다는 것이 정책이므로
+   * 머리에서 한 줄로 알린다. 새 예산을 우리가 정하지 않고, 같은 금액으로 맞출지만 묻는다.
+   */
+  if (c.budgetDropped && c.budgetDropped.budget > 0) {
+    const from = String(c.budgetDropped.from || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+    L.push(`앞서 말씀하신 예산 ${won(c.budgetDropped.budget)}원은${from ? ` 「${from}」` : ' 앞 상품'}의 예산으로 보아`
+      + ' 이번 상품에는 적용하지 않았어요. 같은 금액으로 맞춰 드릴까요?');
+    L.push('');
+  }
+
+  /*
    * 요청한 상품과 맞는 후보가 없을 때 (api/_aiidentity.js partition).
    *
    * ★ 다른 종류·다른 모델을 «추천» 으로 내보내지 않는다. 2026-10-12 live 레드팀에서

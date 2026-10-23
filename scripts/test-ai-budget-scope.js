@@ -186,6 +186,34 @@ section('G. api/ai.js 가 거둔 사실을 프롬프트에 싣는다');
   ok(/예산을 적용하지 않았다|적용하지 않았다/.test(block) && /되묻는다/.test(block),
     '적용하지 않았다는 사실과 되묻기를 지시한다');
   ok(/네가 정하지 마라|사용자가 말하지 않은 금액/.test(block), '모델이 새 예산을 지어내지 못하게 한다');
+  ok(/budgetDropped: conv\.budgetDropped/.test(src), '조립본(_concierge)에도 거둔 사실을 넘긴다');
+}
+
+/* ================================================================== */
+section('H. 조립본이 답할 때도 알린다 (_concierge)');
+{
+  /*
+   * 2026-10-23 실호출에서 발견: 예산은 올바르게 거뒀는데 답이 조립본 경로로 나가
+   * («확인된 상품·가격 데이터만 기준으로 정리했어요») 사용자에게 그 말이 닿지 않았다.
+   */
+  const CG = require('../api/_concierge');
+  const ctx = {
+    items: [{ title: '무선청소기 X10', lprice: 97895, mall: 'ADPICK' }],
+    cards: [{ title: '무선청소기 X10', lprice: 97895 }],
+    constraints: null, degraded: true, safety: true, search: 'found'
+  };
+  const withDrop = CG.compose(Object.assign({}, ctx, { budgetDropped: { budget: 300000, from: '노트북', to: '청소기' } })).text;
+  ok(/300,000원/.test(withDrop) && /적용하지 않았어요/.test(withDrop) && /노트북/.test(withDrop),
+    '거둔 금액과 그 상품을 밝히고 적용하지 않았다고 말한다', withDrop.split('\n').slice(0, 4));
+  ok(/맞춰 드릴까요/.test(withDrop), '같은 금액으로 맞출지 되묻는다');
+  ok(!/적용하지 않았어요/.test(CG.compose(ctx).text), '거두지 않은 턴에는 그 말이 없다');
+
+  // 상품을 찾지 못한 답(식별 NONE)에서도 머리에 붙는다 — 예산을 왜 빼고 찾았는지가 그때도 필요하다.
+  const none = CG.compose(Object.assign({}, ctx, {
+    items: [], cards: [], identity: { state: 'NONE', label: '청소기' },
+    budgetDropped: { budget: 300000, from: '노트북', to: '청소기' }
+  })).text;
+  ok(/적용하지 않았어요/.test(none), '상품을 못 찾은 답에도 붙는다', none.split('\n').slice(0, 4));
 }
 
 console.log(`\n=== 결과: ${pass}/${pass + fails.length} PASS ===`);

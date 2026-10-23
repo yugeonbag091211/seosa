@@ -5056,7 +5056,7 @@ module.exports = async function handler(req, res) {
         if (CG.looksLikeBlockDump(text)) {
           console.warn(`[ai] 모델이 결정 블록을 그대로 옮김 — Concierge 조립본으로 대체 (labels=${CG.blockLabelCount(text)}, model=${answerModel})`);
           text = CG.compose({
-            items, cards, decision, deal, constraints, noResult, degraded: false,
+            items, cards, decision, deal, constraints, noResult, degraded: false, budgetDropped: conv.budgetDropped,
             identity: { state: identityState, label: identityLabel }
           }).text;
         }
@@ -5122,6 +5122,7 @@ module.exports = async function handler(req, res) {
         try {
           text = require('./_concierge').compose({
             items, cards, decision, deal, constraints, noResult, degraded: true, safety: true, search: searchState,
+            budgetDropped: conv.budgetDropped,
             context: searchState === 'found' ? null : contextNotes,
             identity: { state: identityState, label: identityLabel }
           }).text;
@@ -5164,6 +5165,7 @@ module.exports = async function handler(req, res) {
         try {
           text = require('./_concierge').compose({
             items, cards, decision, deal, constraints, noResult, degraded: true, safety: true, search: searchState,
+            budgetDropped: conv.budgetDropped,
             context: searchState === 'found' ? null : contextNotes,
             identity: { state: identityState, label: identityLabel }
           }).text;
