@@ -64,7 +64,7 @@ API Preview 조회는 내부 13건과 외부 0건을 반환했다. 도구 회귀
 - AI security workflow 대상 테스트: 보안 퍼즈 2,490/2,490, red-team baseline 93/93, red-team 200 200/200, provenance 236/236, pipeline 386/386, intent routing 33/33, global circuit 29/29.
 - 가격 무결성 102/102, 핫딜 도구 39/39, 상품 identity shadow 119/119, sibling contamination 40/40, 레드팀 CLI/dataset 테스트 통과.
 - Mobile Check 동등 명령 `npm run check --prefix apps/mobile`: 타입 검사·린트 통과, 앱 테스트 170/170.
-- 새 통합 브랜치에서 GitHub Actions 결과는 PR 생성 뒤 확인할 항목이다. #185 head의 `Tests`, `AI security validation`, Vercel Preview는 성공 상태였다.
+- 통합 head `0cf148b3f2eaba4c3033202e683d87c37783020f`에서 GitHub Actions `Tests`, `AI security validation`, `Mobile Check`가 모두 성공했다. Vercel Preview status도 성공했다. Preview를 열거나 인증 우회하지 않았다.
 
 ## 미검증 및 남은 위험
 
