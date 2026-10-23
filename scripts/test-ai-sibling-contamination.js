@@ -313,7 +313,6 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
       '저장 공간 조건이 맞지 않아도 Pro 형제 모델로 바꾸지 않는다', r.cards.map(c => c.title));
   }
 
-  /* ================================================================ */
   section('I. 가격 이력 기간 숫자는 상품 모델이 아니다');
   {
     feed = [
@@ -329,6 +328,31 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
       'G304 가격 질문은 G304 본품 후보를 남긴다', r.cards.map(c => c.title));
     ok(r.cards.every(c => !/G304\s*X|G304X/i.test(c.title)),
       'G304 가격 질문에서 G304 X 형제 모델을 제외한다', r.cards.map(c => c.title));
+  }
+
+  /* ================================================================ */
+  section('J. 상태 제외는 요청한 상품 모델 자체를 제외하지 않는다');
+  {
+    feed = [
+      item('buds3-pro-new', 'Samsung Galaxy Buds3 Pro (삼성 갤럭시 버즈3 프로)', 229000),
+      item('buds2-pro-new', 'Samsung Galaxy Buds2 Pro (삼성 갤럭시 버즈2 프로)', 179000)
+    ];
+    const question = 'GalaxyBuds3Pro 중고 말고 미개봉 신품으로 가격 지어내지 말고';
+    const cls = require('../api/_intent').classify(question);
+    const contract = require('../api/_aiidentity').buildContract({
+      query: cls.identityText, userText: question, titles: feed.map(x => x.title)
+    });
+    ok(!contract.excluded.length, '“중고 말고 미개봉” 부정 범위가 Galaxy Buds3 Pro 모델 자체를 제외하지 않는다', contract.excluded);
+    ok(contract.condition.excluded.has('used'), '중고 상태만 제외 조건으로 남는다', [...contract.condition.excluded]);
+    const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
+    ok(r.cards.length > 0 && /Buds3 Pro/i.test(r.cards[0].title) && !/Buds2 Pro/i.test(r.cards[0].title),
+      '정확한 Buds3 Pro 후보가 더 싼 Buds2 Pro보다 먼저 나온다', r.cards.map(c => c.title));
+
+    const replacement = require('../api/_aiidentity').buildContract({
+      query: '아이폰 프로', userText: '아이폰 프로맥스 말고 프로',
+      titles: ['Apple iPhone 17 Pro', 'Apple iPhone 17 Pro Max']
+    });
+    ok(replacement.excluded.length === 1, '프로맥스에서 프로로 바꿀 때 프로맥스 제외를 유지한다', replacement.excluded);
   }
 
   console.log(`\n=== 결과: ${pass}/${pass + fails.length} PASS ===`);

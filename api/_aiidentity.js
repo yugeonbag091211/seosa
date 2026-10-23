@@ -203,11 +203,35 @@ function tokensOf(text) {
   return merged;
 }
 
+/*
+ * Red-team prompts may append quoted or injected instructions after a standalone
+ * horizontal rule. Keep those instructions out of product intent and identity
+ * parsing while leaving ordinary hyphenated product names untouched.
+ */
+function stripPromptBoundaryPayload(text) {
+  const lines = String(text == null ? '' : text).split(/\r?\n/);
+  const boundary = lines.findIndex(line => /^\s*-{3,}\s*$/.test(line));
+  return (boundary < 0 ? lines : lines.slice(0, boundary)).join('\n').trim();
+}
+
+const IDENTITY_SIGNATURE_SLOTS = new Set([...IDENTITY_SLOTS, 'word']);
+function identitySignature(text) {
+  return tokensOf(text)
+    .filter(token => IDENTITY_SIGNATURE_SLOTS.has(slotOf(token)))
+    .map(token => `${slotOf(token)}:${token.toLowerCase()}`)
+    .sort();
+}
+function sameIdentitySignature(a, b) {
+  const left = identitySignature(a);
+  const right = identitySignature(b);
+  return left.length > 0 && left.length === right.length && left.every((token, i) => token === right[i]);
+}
+
 /**
  * @returns {{positive:string, negated:Array<{text:string, slots:Set<string>}>}}
  */
 function splitNegations(text) {
-  const src = normalizeUnits(String(text == null ? '' : text).normalize('NFKC'));
+  const src = normalizeUnits(stripPromptBoundaryPayload(String(text == null ? '' : text).normalize('NFKC')));
   const positive = [];
   const negated = [];
   /*
@@ -356,7 +380,12 @@ function buildContract(o) {
     if (n.slots.has('condition')) S.conditionIntent(`${n.text} 제외`).excluded.forEach(c => condition.excluded.add(c));
     if (n.slots.has('color')) colorsOf(n.text).forEach(c => excludedColors.add(c));
     if (n.slots.has('accessory')) excludeAccessory = true;
-    if (n.slots.has('anchor') || n.slots.has('variant') || n.slots.has('word')) {
+    // "Galaxy Buds3 Pro 중고 말고 미개봉" excludes the used state. The
+    // negation parser can carry the whole model into that negated phrase when
+    // later instructions follow it; don't turn the requested exact model into
+    // an excluded product when the identity signature matches the positive query.
+    const selfConditionExclusion = n.slots.has('condition') && sameIdentitySignature(n.text, fromQuery.positive);
+    if (!selfConditionExclusion && (n.slots.has('anchor') || n.slots.has('variant') || n.slots.has('word'))) {
       const sub = subContract(n.text, n.plus);
       if (sub) excluded.push(sub);
     }
@@ -1002,7 +1031,7 @@ function mentionedIn(name, text) {
 }
 
 module.exports = {
-  TIER, buildContract, verdict, partition, splitNegations, narrowByMention, mentionedIn,
+  TIER, buildContract, verdict, partition, splitNegations, narrowByMention, mentionedIn, stripPromptBoundaryPayload,
   hasInstructionText, cleanIdentityTitle, displayTitle, colorsOf, storageOf, slotOf,
   refinementOf, mergeRefinement, categoryNounOf, productEvidence
 };

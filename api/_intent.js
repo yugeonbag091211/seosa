@@ -775,7 +775,7 @@ function isRecommendationReason(s) {
  *   그건 LLM 호출 한 번 아끼는 것보다 훨씬 비싸다.
  */
 function classify(text, hist) {
-  const s = String(text == null ? '' : text).trim();
+  const s = AIID.stripPromptBoundaryPayload(text).trim();
   if (!s) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
 
   if (GREETING_RE.test(s)) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
