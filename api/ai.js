@@ -5707,7 +5707,7 @@ module.exports = async function handler(req, res) {
         const onlyOfferPriceConflict = searchState === 'found' && items.length > 1
           && ['D', 'E'].includes(intent)
           && !badWon.length && !badLowObservationCount.length && !badDiscountPct.length
-          && !badBudgetPick && !badSpec.length && !badCmp.length && !badSuper.length
+          && !badBudgetPick && !badSpec.length && !badCmp.length
           && !badIdentity && !noCatalog && !badPick && !badEcho
           && (badContextualPrice.length || badProductPrice.length || badCurrentPrice.length);
         const rescued = onlyOfferPriceConflict ? salvagePriceFreeExplanation(text) : '';
