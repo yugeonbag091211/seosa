@@ -375,8 +375,8 @@ function reset() {
       && r.body.text.includes(Number(verifiedFirstCard.lprice).toLocaleString('en-US') + '원')
       && r.body.text.includes('배송과 보증 조건'),
     '★ 여러 판매처 가격 질문: 실제 첫 카드 가격 + AI의 비가격 설명을 함께 제공');
-  ok(sys().includes('[이번 검색에는 상품·옵션·판매처가 여러 개 있음]'),
-    '★ 여러 판매처에는 상품 옵션마다 가격이 다르다는 지침을 전달');
+  ok(!sys().includes('서사 서버가 이미 상품을 선택하고 가격을 검증했다'),
+    '★ 모델 식별이 모호한 일반 검색에서는 기존 답변 경로를 유지');
   reset();
   stub.llm.answer = '무선 이어폰은 현재 89,000원입니다. 상품명에 적힌 조건을 먼저 살펴봤고, 구성은 판매처에서 확인해야 합니다.';
   r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
@@ -405,6 +405,26 @@ function reset() {
       && !r.body.text.includes('역대 최저')
       && r.body.text.includes('배송 및 AS는 판매처에서 직접 확인해야 합니다'),
     '★ 증명되지 않은 역대 최저가 주장도 지우고 재검증한 설명만 남긴다');
+
+  /* 2-c ─ GPT가 가격을 만들지 않고 서버 카드의 가격만 쓰는 신규 구조 */
+  reset();
+  stub.searchItems = [
+    { title: '로지텍 G304 LIGHTSPEED 무선 마우스 블랙', lprice: 27500, link: 'https://l.c/g304-black', image: '', mall: '쿠팡', productId: 'G304-B', isCoupang: true, oprice: 27500, savePct: 0 },
+    { title: '로지텍 G304 LIGHTSPEED 무선 마우스 화이트', lprice: 32900, link: 'https://l.c/g304-white', image: '', mall: '쿠팡', productId: 'G304-W', isCoupang: true, oprice: 32900, savePct: 0 }
+  ];
+  stub.stats = new Map();
+  stub.llm.answer = '요청하신 모델과 일치하는 후보가 있습니다. 실제 구성과 선택 옵션은 상품 페이지에서 확인해 주세요.';
+  r = await call({ question: '로지텍 G304 최저가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const sOffer = sys();
+  ok(sOffer.includes('서사 서버가 이미 상품을 선택하고 가격을 검증했다')
+      && !sOffer.includes('<상품데이터>')
+      && (r.body.items || []).length > 0
+      && r.body.degraded !== true
+      && r.body.text.startsWith('첫 번째 추천 카드:'),
+    '★ 정확히 식별된 모델의 간단한 가격 질문은 GPT 설명과 서버 가격을 분리',
+    JSON.stringify({ compact: sOffer.includes('서사 서버가 이미 상품을 선택'), text: r.body.text.slice(0, 65) }));
+  ok((r.body.items || []).some(c => r.body.text.includes(Number(c.lprice).toLocaleString('en-US') + '원')),
+    '★ GPT 비가격 설명과 함께 검증된 상품 카드 가격을 표시');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
