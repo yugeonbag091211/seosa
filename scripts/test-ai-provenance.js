@@ -1277,6 +1277,7 @@ function searchFixture() {
       chatHistory: [{ role: 'user', text: '무선 이어폰 추천해줘' }, { role: 'assistant', text: rec.body.text, sig: rec.body.turnSig }] },
       { answer: '추천한 이유를 설명해 드릴게요.' });
     ok(reasonTurn.searches === 0 && (reasonTurn.body.items || []).length === 1
+        && reasonTurn.body.reusePreviousCard === true
         && !!reasonTurn.body.topRecommendationRef && /^at1\./.test(reasonTurn.body.turnSig || ''),
       '추천 이유를 말한 후에도 같은 상품·옵션의 서명 참조가 이어진다');
     const naturalFollowup = await ask({ question: '지금 사는 게 좋을까?', prevTopRef: reasonTurn.body.topRecommendationRef,

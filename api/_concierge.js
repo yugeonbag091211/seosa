@@ -468,6 +468,19 @@ function compose(ctx) {
     why.forEach(r => L.push(`- ${r}`));
   }
 
+  // GPT 설명이 근거 검사에서 교체된 경우에도 노트북 추천을 가격 한 줄로 끝내지 않는다.
+  // 검증하지 못한 CPU 성능·배터리를 좋다고 꾸미지 않고 실제 선택의 한계를 설명한다.
+  if (c.safety && !c.timingRequested
+      && /노트북|그램|맥북|laptop|thinkpad|vivobook/i.test(String(top.title || ''))) {
+    L.push('');
+    L.push('이건 지금 찾은 그램 후보 가운데 가격과 검색 조건을 기준으로 고른 상품이에요. 가격이 안정적이라는 사실만으로 성능까지 가장 좋은 노트북이라고 볼 수는 없어요.');
+    L.push('실제로 구매하기 전에는 CPU와 메모리가 작업에 충분한지, 중고·리퍼 등 제품 상태와 배터리·보증 조건이 어떤지 확인해야 해요.');
+    const cons = c.constraints || {};
+    if (!cons.budgetMax && !cons.useCase) {
+      L.push('아직 예산과 사용 목적을 듣지 못했어요. 학교 과제·문서 작업이 주목적인지, 영상 편집 같은 무거운 작업도 할지 알려주시면 다른 그램 모델과 함께 비교해드릴게요.');
+    }
+  }
+
   L.push('');
   if (priceOnly) {
     // 상품 가격만 물은 사람에게 별도의 구매 권유를 하지 않는다.

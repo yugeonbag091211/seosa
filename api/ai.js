@@ -5228,7 +5228,9 @@ module.exports = async function handler(req, res) {
         deal: verified ? deal : null,
         constraints
       });
-      const reasonPayload = verified && cards.length ? { text: reason.text, items: cards } : { text: reason.text };
+      const reasonPayload = verified && cards.length
+        ? { text: reason.text, items: cards, reusePreviousCard: true }
+        : { text: reason.text };
       reasonPayload.intent = resolvedCanonicalIntent;
       if (guest) reasonPayload.guest = true;
       if (verified) {
