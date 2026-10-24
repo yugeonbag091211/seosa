@@ -425,6 +425,16 @@ function reset() {
     JSON.stringify({ compact: sOffer.includes('서사 서버가 이미 상품을 선택'), text: r.body.text.slice(0, 65) }));
   ok((r.body.items || []).some(c => r.body.text.includes(Number(c.lprice).toLocaleString('en-US') + '원')),
     '★ GPT 비가격 설명과 함께 검증된 상품 카드 가격을 표시');
+  const offerInput = ((stub.captured.main || {}).messages || [])[1]?.content || '';
+  ok(offerInput.includes('개별 옵션은 추가 확인 필요')
+      && !offerInput.includes('요청 모델/옵션과 일치')
+      && sOffer.includes('사용자가 지정하지 않은 색상·구성·옵션'),
+    '★ 사용자에게 지정받지 않은 색상·구성 옵션을 일치한다고 단정하지 않는다');
+  try { require('../api/_llm')._internal._reset(); } catch (e) {}
+  stub.llm.answer = '로지텍 G304는 현재 10원입니다. 구매를 서두르세요.';
+  r = await call({ question: '로지텍 G304 최저가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && !r.body.text.includes('10원') && (r.body.items || []).length > 0,
+    '★ 새 GPT 가격 분리 경로에서도 지어낸 가격과 근거 없는 구매 권유를 차단한다');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
