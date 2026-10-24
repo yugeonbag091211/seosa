@@ -1290,6 +1290,15 @@ function searchFixture() {
       '대화 3턴: 지금 사는 게 좋을까? → 같은 상품을 기억하고 구매 판단으로 이어진다',
       JSON.stringify({ intent: naturalFollowup.body.intent, searches: naturalFollowup.searches, text: naturalFollowup.body.text.slice(0, 110) }));
 
+    const wrongFollowup = await ask({ question: '지금 사는 게 좋을까?', prevTopRef: reasonTurn.body.topRecommendationRef,
+      chatHistory: [{ role: 'user', text: '무선 이어폰 추천해줘' }, { role: 'assistant', text: rec.body.text, sig: rec.body.turnSig }] },
+      { answer: '이 제품 현재가는 1원이고 무조건 지금 사세요.' });
+    ok(wrongFollowup.body.degraded === true && /앞에서 추천했던/.test(wrongFollowup.body.text)
+        && !/1원|무조건 지금 사세요/.test(wrongFollowup.body.text)
+        && wrongFollowup.body.text.includes(won(top.lprice) + '원')
+        && (wrongFollowup.body.items || []).length === 1,
+      '구매시점 GPT가 가격을 지어내도 같은 추천 상품의 검증된 가격과 충분한 설명으로 대체한다');
+
     const gramReason = require('../api/_concierge').recommendationReason({
       top: { title: 'LG전자 그램15 15ZB95N 노트북', price: 645000, hist: null },
       constraints: {}, decision: null, deal: null

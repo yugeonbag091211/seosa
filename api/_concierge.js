@@ -631,6 +631,43 @@ function politeFact(s) {
 }
 
 /**
+ * 서명된 직전 추천으로 확인한 상품의 구매시점 대화 답변.
+ * LLM이 다른 판매처/옵션 가격을 섞어 말하면 이 검증된 계산 결과를 자연스럽게 전달한다.
+ */
+function conversationalTiming(ctx) {
+  const c = ctx || {};
+  const top = c.top || null;
+  if (!top) return { text: REASON_PRICE_UNVERIFIED };
+  const name = shortTitle(top.title || '상품', 42);
+  const p = priceOf(top);
+  const deal = c.deal || null;
+  const L = [`앞에서 추천했던 ${name} 말씀하시는 거죠?`];
+  if (p > 0) L.push(`서사가 확인한 해당 상품·옵션의 판매가는 ${won(p)}원이에요.`);
+  else L.push('지금은 이 상품·옵션의 판매가를 새로 확인하지 못해서 가격 수준을 단정하기 어려워요.');
+  if (p > 0 && deal && deal.verdict && deal.verdict !== 'UNKNOWN') {
+    const stance = deal.verdict === 'NORMAL'
+      ? '가격 기록만으로 보면 지금 꼭 서둘러 살 만큼 특별히 싼 구간은 아니에요. 그렇다고 기다리면 반드시 더 싸진다고 볼 근거도 없어요.'
+      : STANCE[deal.verdict];
+    if (stance) L.push(stance);
+    if (Array.isArray(deal.reasons)) deal.reasons.slice(0, 2).forEach(r => {
+      const fact = politeFact(r);
+      if (fact) L.push(fact);
+    });
+  } else {
+    L.push('가격 기록이 충분하지 않거나 마지막 확인 시점이 오래돼서, 지금 구매가 유리한지 확실하게 판단하기 어려워요.');
+  }
+  if (deal && deal.freshness && deal.freshness.label) {
+    L.push(`가격 확인 기준은 ${deal.freshness.label}입니다. 판매처에서 결제 전 금액을 다시 확인해 주세요.`);
+  }
+  if (/노트북|그램|맥북|laptop|thinkpad|vivobook/i.test(String(top.title || ''))) {
+    L.push('다만 노트북은 가격만으로 판단하기 어려워요. 사용 목적에 비해 CPU와 메모리가 충분한지, 배터리와 제품 상태가 어떤지도 확인해야 해요.');
+    const cons = c.constraints || {};
+    if (!cons.useCase && !cons.budgetMax) L.push('학교 과제나 문서 작업용인지, 영상 편집처럼 무거운 작업도 할 건지 알려주시면 지금 사는 편이 나을지 더 정확하게 비교해드릴게요.');
+  }
+  return { text: L.join('\n') };
+}
+
+/**
  * @param {object} ctx
  *   refMissing   서명된 직전 추천 참조가 없음·변조·만료
  *   top          서버가 그 참조로 다시 확인한 상품 (가격 확인 실패면 null)
@@ -817,7 +854,7 @@ function constraintConflict(conflict, label) {
 
 module.exports = {
   budgetNoMatch, constraintConflict, budgetRangeLabel,
-  recommendationReason, REASON_REF_MISSING, REASON_PRICE_UNVERIFIED, politeFact, budgetLabel,
+  recommendationReason, conversationalTiming, REASON_REF_MISSING, REASON_PRICE_UNVERIFIED, politeFact, budgetLabel,
   compose, followups, looksLikeBlockDump, blockLabelCount,
   BLOCK_LABELS, BLOCK_DUMP_MIN,
   // 테스트·다른 모듈이 같은 문구를 쓰도록 노출한다 (문구가 두 벌이 되면 어긋난다)

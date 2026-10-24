@@ -5789,6 +5789,13 @@ module.exports = async function handler(req, res) {
           priceOnlySalvaged = true;
           degradedByGrounding = true;
           console.warn('[ai] 복수 판매처 가격 충돌 — 문제 숫자 문장 제거 후 안전 설명 유지');
+        } else if (refSelected && intent === 'E' && items.length
+            && productIdentityMatches(items[0], previousRecommendation)) {
+          // GPT가 검증된 가격을 문장에 잘못 연결했어도, 사용자에게 다시 검색하라거나
+          // '상품 없음'이라고 하지 않는다. 확인된 바로 그 옵션의 기록으로 대화한다.
+          text = require('./_concierge').conversationalTiming({ top: items[0], deal, constraints }).text;
+          degradedByGrounding = true;
+          console.warn('[ai] 서명된 추천 구매시점 — 검증된 가격·판정으로 자연스러운 설명 조립');
         } else {
         try {
           text = require('./_concierge').compose({
