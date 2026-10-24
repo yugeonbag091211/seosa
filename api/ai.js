@@ -5525,6 +5525,8 @@ module.exports = async function handler(req, res) {
     const verifiedOfferExplanation = searchState === 'found' && items.length > 1
       && identityState === 'EXACT' && ['D', 'E'].includes(intent) && cards.length > 0
       && !(Array.isArray(contextProducts) && contextProducts.length)
+      // 여러 판매처를 하나로 묶은 canonical 상품은 오퍼별 가격·판매처 근거를 유지한다.
+      && !items.some(it => it && it.isCanonicalGroup === true)
       // 품목이 모호한 카테고리 질문은 모델별 옵션 분리 경로를 적용하지 않는다.
       && /\b[A-Za-z]{1,10}[-\s]?\d{1,5}[A-Za-z]?\b/.test(q)
       && /(?:최저가|현재\s*(?:가|가격)|얼마|가격)/.test(q)
