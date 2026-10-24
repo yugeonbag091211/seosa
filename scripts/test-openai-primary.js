@@ -76,6 +76,24 @@ function openRouterResponse(text) {
     ok(!otherReq.body.reasoning, 'Luna latency override is not applied to other models');
   }
 
+  // A live request on 2026-10-23 hit the fixed 8s OpenAI deadline and fell back
+  // before the upstream produced a response. Reproduce that latency boundary.
+  {
+    llm._internal._reset();
+    global.fetch = async (url) => {
+      if (String(url) === 'https://api.openai.com/v1/responses') {
+        await new Promise(resolve => setTimeout(resolve, 8200));
+        return openAIResponse('SLOW_OPENAI_OK');
+      }
+      if (String(url).includes('openrouter.ai')) return openRouterResponse('FALLBACK_TOO_EARLY');
+      throw new Error(`unexpected provider: ${url}`);
+    };
+    const r = await llm.chat({ role: 'answer', messages: [{ role: 'user', content: '가격 기록을 설명해줘' }],
+      maxTokens: 200, perCallMs: 16000, budgetMs: 16000 });
+    ok(r.ok && r.provider === 'openai' && r.text === 'SLOW_OPENAI_OK',
+      'OpenAI 응답이 8.2초 걸려도 설정된 요청 예산 안이면 조기 폴백하지 않는다', `${r.provider || 'none'} / ${r.reason || ''}`);
+  }
+
   // 2) Quota/rate failure: user still receives the old free OpenRouter answer.
   {
     llm._internal._reset();

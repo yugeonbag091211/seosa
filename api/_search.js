@@ -208,6 +208,26 @@ const VARIANT_GROUPS = [
 const VARIANT_KEYS = new Map();
 VARIANT_GROUPS.forEach(group => group.forEach(word => VARIANT_KEYS.set(word, group[0])));
 
+// Korean particles and sentence endings can attach to a model suffix in a
+// full user utterance (for example, "갤럭시 S26 플러스야"). Recognize the
+// suffix only when removing a known ending leaves an exact variant marker.
+const VARIANT_ENDINGS = [
+  '입니다', '이에요', '예요', '에요', '인데', '이고', '이며', '이라서', '라서',
+  '이야', '야', '은', '는', '이', '가', '을', '를', '의', '와', '과', '도',
+  '만', '랑', '으로', '로', '에서', '에', '요'
+].sort((a, b) => b.length - a.length);
+
+function variantKeyFromToken(token) {
+  const value = String(token || '').toLowerCase();
+  if (VARIANT_KEYS.has(value)) return VARIANT_KEYS.get(value);
+  for (const ending of VARIANT_ENDINGS) {
+    if (!value.endsWith(ending) || value.length <= ending.length) continue;
+    const stem = value.slice(0, -ending.length);
+    if (VARIANT_KEYS.has(stem)) return VARIANT_KEYS.get(stem);
+  }
+  return null;
+}
+
 /*
  * Split a compact title/query only when its full spelling is explainable by
  * known catalog words and model-number chunks. This keeps identifiers such as
@@ -684,7 +704,7 @@ function variantMarkers(raw, tokens) {
   anchors.forEach(anchor => {
     for (const direction of [-1, 1]) {
       for (let index = anchor + direction; index >= 0 && index < parts.length; index += direction) {
-        const key = VARIANT_KEYS.get(parts[index]);
+        const key = variantKeyFromToken(parts[index]);
         if (!key) break;
         markers.add(key);
       }

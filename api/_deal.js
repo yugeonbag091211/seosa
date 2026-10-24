@@ -468,10 +468,22 @@ function dealOf(stat, price, today) {
   }
 
   if (stat.low > 0 && p > stat.low) {
-    const over = (p - stat.low) / stat.low;
-    if (over > 0.02) {
-      cautions.push('SEOSA 보유 관측 기록의 최저가보다 높다(' + (lowDateLabel ? lowDateLabel + ' ' : '')
-        + won(stat.low) + '원, ' + pct(over) + '% 위)');
+    if (stat.lowConfirmed === false) {
+      const observations = Number(stat.lowCount);
+      const qualifier = observations === 1
+        ? '하루만 관측돼'
+        : observations > 1
+          ? observations + '회 관측됐지만 확인 기준에 못 미쳐'
+          : '재확인이 되지 않아';
+      cautions.push('최저 관측 후보 ' + won(stat.low) + '원'
+        + (lowDateLabel ? ' (' + lowDateLabel + ')' : '')
+        + '은 ' + qualifier + ' 기록 최저가로 확인되지 않았다');
+    } else {
+      const over = (p - stat.low) / stat.low;
+      if (over > 0.02) {
+        cautions.push('SEOSA 보유 관측 기록의 최저가보다 높다(' + (lowDateLabel ? lowDateLabel + ' ' : '')
+          + won(stat.low) + '원, ' + pct(over) + '% 위)');
+      }
     }
   } else if (stat.low > 0 && p < stat.low) {
     /*

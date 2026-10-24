@@ -302,6 +302,29 @@ function case5() {
   check(st.trendDays === 6, '추세 기간이 창 안 실제 간격이다', `trendDays=${st.trendDays}`);
   check(st.trendFromDate === daysAgo(6), '추세 시작 날짜가 창 시작이다', st.trendFromDate);
 
+  const lows = statsFrom(pts([
+    [daysAgo(40), 8000],   // 전체 관측 최저, 30일 창 밖
+    [daysAgo(29), 10000],  // 30일 최저, 7일 창 밖
+    [daysAgo(8), 50000],   // 30일 창 안, 7일 창 밖
+    [daysAgo(6), 20000],
+    [daysAgo(3), 20000],
+    [daysAgo(0), 19000]
+  ]));
+  check(lows.low7 === 19000 && lows.low7Date === TODAY && lows.low7Days === 3,
+    '7일 최저가와 관측 날짜·일수가 7일 창에서 계산된다', JSON.stringify({ low7: lows.low7, date: lows.low7Date, days: lows.low7Days }));
+  check(lows.low30 === 10000 && lows.low30Date === daysAgo(29) && lows.low30Days === 5,
+    '30일 최저가와 관측 날짜·일수가 30일 창에서 계산된다', JSON.stringify({ low30: lows.low30, date: lows.low30Date, days: lows.low30Days }));
+  const repeatedLow = statsFrom(pts([
+    [daysAgo(20), 15000], [daysAgo(10), 10000], [daysAgo(6), 12000],
+    [daysAgo(3), 10000], [daysAgo(1), 10000], [daysAgo(0), 12000]
+  ]));
+  check(repeatedLow.low7 === 10000 && repeatedLow.low7Days === 4 && repeatedLow.low7Count === 2,
+    '7일 창 전체 기록 날짜 수와 최저가 반복 관측 횟수를 따로 계산한다', JSON.stringify({ days: repeatedLow.low7Days, lowCount: repeatedLow.low7Count }));
+  check(repeatedLow.low30 === 10000 && repeatedLow.low30Days === 6 && repeatedLow.low30Count === 3,
+    '30일 창 전체 기록 날짜 수와 최저가 반복 관측 횟수를 따로 계산한다', JSON.stringify({ days: repeatedLow.low30Days, lowCount: repeatedLow.low30Count }));
+  check(lows.low === 8000,
+    '전체 관측 최저가가 7일·30일 최저가와 별도 유지된다', `low=${lows.low}`);
+
   // 창 안 점이 하나뿐이면 직전 점과 비교한다(기존 동작) — 그때도 더 옛 점을 쓰지 않는다.
   const one = statsFrom(pts([[daysAgo(40), 90000], [daysAgo(20), 30000], [daysAgo(0), 28000]]));
   check(one.trendFrom === 30000, '창 안 점이 하나면 바로 직전 점과 비교한다', `trendFrom=${one.trendFrom}`);
