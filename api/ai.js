@@ -3916,9 +3916,12 @@ function markFiction(text) {
 const STYLE_BASE = [
   '[답변 방식]',
   '- 한국어 존댓말. 결론을 첫 문장에 둔다. 배경 설명부터 시작하지 마라.',
-  '- 길이는 질문의 무게에 맞춘다. 늘리지 마라.',
-  '  · 단답형 질문 → 1~2문장.  · 조건 하나로 고르는 질문 → 3~5문장.',
-  '  · 조건이 여럿이라 비교가 필요한 질문 → 후보 2~3개를 짧은 목록으로 갈라 준 뒤 결론 한 줄.',
+  '- 인사·단순 확인은 짧게 답하되, 실제 쇼핑 고민에는 이유와 한계를 충분히 설명한다.',
+  '  · 단답형 질문 → 1~2문장.  · 추천·구매 여부·추천 이유 질문 → 근거가 있으면 4~7문장.',
+  '  · 조건이 여럿이라 비교가 필요한 질문 → 후보 2~3개의 차이를 설명하고 결론을 낸다.',
+  '- 먼저 상대가 방금 무엇을 물었는지 답하고, 앞 대화에서 확인된 같은 조건을 자연스럽게 이어받는다.',
+  '- 상품명과 가격만 읽거나 한 줄 판정만 반복하지 마라. 왜 그런지, 어떤 한계가 있는지 구체적으로 설명한다.',
+  '- 다만 충분한 근거가 없으면 문장 수를 채우려고 없는 스펙·가격이나 장점을 꾸며내지 마라.',
   '- 답을 거절로 시작하지 마라. 답할 수 있는 부분을 먼저 답한다.',
   '',
   '[하지 말아야 할 말투]',
@@ -4461,6 +4464,16 @@ module.exports = async function handler(req, res) {
      */
     // deterministic-first. 확신이 높으면 LLM 분류를 건너뛴다 (resolveIntent 주석).
     const cls = await resolveIntent(q, hist, view, budget, guest, conv.intentHist);
+    // "지금 사는 게 좋을까?"는 새 상품 검색이 아니라 직전 추천에 대한 후속 질문이다.
+    // 대화 원문에서 상품을 짐작하지 않고 서명된 추천 참조만 사용한다.
+    if (cls && cls.intent === 'E' && !cls.ownQuery && q.length <= 65
+        && !(view && view.source === 'modal')
+        && /^(?:(?:이거|그거|이\s*(?:제품|상품)|그\s*(?:제품|상품)|아까\s*(?:그거|그\s*제품))\s*)?(?:지금\s*)?(?:사는\s*(?:게|것이)\s*(?:좋|나을|괜찮)|사면\s*(?:좋|나을|괜찮)|구매해도\s*(?:좋|괜찮)|사도\s*(?:돼|될|괜찮)|살까|기다릴까)/.test(q)
+        && (previousRecommendation || hist.some(h => h && h.role === 'assistant'))) {
+      cls.requiresRecommendationIdentity = true;
+      cls.contextualFollowup = true;
+      cls.query = '';
+    }
     const intent = cls ? cls.intent : null;
     resolvedCanonicalIntent = canonicalIntent(intent);
 

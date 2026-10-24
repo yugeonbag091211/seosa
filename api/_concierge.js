@@ -700,6 +700,20 @@ function recommendationReason(ctx) {
   else if (fit.length && priceGood) L.push('그래서 후보 중 조건 적합도와 가격 시점을 함께 따져 1순위로 추천했습니다.');
   else if (fit.length || priceFacts.length) L.push('그래서 후보 중 이 상품을 1순위로 추천했습니다.');
 
+  // 가격이 안정적이라는 사실만으로 성능까지 좋은 노트북이라고 단정하면 안 된다.
+  // 사용자가 처음 물은 '왜?'에 가격 근거와 성능·용도 평가의 한계를 함께 풀어 설명한다.
+  if (/노트북|그램|맥북|laptop|thinkpad|vivobook/i.test(String(top.title || ''))) {
+    L.push('');
+    L.push('여기서 중요한 점은 가격이 안정적이라는 것과 좋은 노트북이라는 것은 다르다는 거예요. 성능, 메모리, 실제 제품 상태, 배터리, 보증 조건까지 확인해야 최종 구매를 권할 수 있어요.');
+    if (!cons.budgetMax && !cons.useCase && !cons.priority) {
+      L.push('아직 예산과 사용 목적을 듣지 못했기 때문에 이 모델이 여러 그램 중 가장 잘 맞는 선택이라고 확정할 수는 없어요.');
+      L.push('문서 작업이나 학교 공부용인지, 영상 편집 같은 무거운 작업도 할지 알려주시면 그 조건으로 다른 모델과 비교해드릴게요.');
+    }
+  } else if (!fit.length && priceFacts.length) {
+    L.push('');
+    L.push('이 추천은 주로 확인된 가격 기록을 근거로 한 것이고, 사용 목적에 맞는 성능까지 검증한 결과는 아니에요. 사용 목적과 예산을 알려주시면 후보를 다시 비교해드릴게요.');
+  }
+
   return { text: L.join('\n'), reasonCount: fit.length + priceFacts.length };
 }
 

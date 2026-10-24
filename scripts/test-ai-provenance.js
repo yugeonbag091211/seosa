@@ -1271,6 +1271,33 @@ function searchFixture() {
       '직전 추천(서명 참조) → 같은 상품·옵션을 서버에서 다시 확인해 답한다',
       JSON.stringify({ top: rec.body.topProductId, items: prior.body.items, text: prior.body.text }));
 
+    // 사용자가 실제로 쓴 대화: 추천 → 이유 질문 → '지금 사는 게 좋을까?'
+    // 이전에는 마지막 질문을 쇼핑 의도가 아닌 일반 지식(B)으로 분류해 맥락이 끊겼다.
+    const reasonTurn = await ask({ question: '이거 왜 추천했어?', prevTopRef: rec.body.topRecommendationRef,
+      chatHistory: [{ role: 'user', text: '무선 이어폰 추천해줘' }, { role: 'assistant', text: rec.body.text, sig: rec.body.turnSig }] },
+      { answer: '추천한 이유를 설명해 드릴게요.' });
+    ok(reasonTurn.searches === 0 && (reasonTurn.body.items || []).length === 1
+        && !!reasonTurn.body.topRecommendationRef && /^at1\./.test(reasonTurn.body.turnSig || ''),
+      '추천 이유를 말한 후에도 같은 상품·옵션의 서명 참조가 이어진다');
+    const naturalFollowup = await ask({ question: '지금 사는 게 좋을까?', prevTopRef: reasonTurn.body.topRecommendationRef,
+      chatHistory: [{ role: 'user', text: '무선 이어폰 추천해줘' }, { role: 'assistant', text: rec.body.text, sig: rec.body.turnSig },
+        { role: 'user', text: '이거 왜 추천했어?' }, { role: 'assistant', text: reasonTurn.body.text, sig: reasonTurn.body.turnSig }] },
+      { answer: `${top ? top.title : '?'} 현재가는 ${won(top ? top.lprice : 0)}원입니다.` });
+    ok(naturalFollowup.body.intent === 'PRODUCT_DECISION' && naturalFollowup.searches === 0
+        && (naturalFollowup.body.items || []).length === 1
+        && naturalFollowup.body.items[0].productId === top.productId
+        && !/조건에 맞는 상품을 찾지 못/.test(naturalFollowup.body.text),
+      '대화 3턴: 지금 사는 게 좋을까? → 같은 상품을 기억하고 구매 판단으로 이어진다',
+      JSON.stringify({ intent: naturalFollowup.body.intent, searches: naturalFollowup.searches, text: naturalFollowup.body.text.slice(0, 110) }));
+
+    const gramReason = require('../api/_concierge').recommendationReason({
+      top: { title: 'LG전자 그램15 15ZB95N 노트북', price: 645000, hist: null },
+      constraints: {}, decision: null, deal: null
+    }).text;
+    ok(/좋은 노트북이라는 것은 다르/.test(gramReason) && /예산과 사용 목적/.test(gramReason)
+        && /다른 모델과 비교/.test(gramReason),
+      '그램 추천 이유는 가격뿐 아니라 성능·용도·한계를 대화하듯 구체적으로 설명한다');
+
     // 참조 대상 옵션이 더는 카탈로그의 대표 옵션이 아니면 현재가를 고르지 않는다.
     const whiteRef = AC.createRecommendationRef({ productId: '7001', vendorItemId: 'V-WHITE', mallId: '쿠팡' });
     const moved = await ask({ question: '아까 추천한 그 제품 지금 사도 돼?', prevTopRef: whiteRef }, {

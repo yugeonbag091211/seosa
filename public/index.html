@@ -9812,7 +9812,10 @@ var Chat = {
            * 이 값이다. 탭을 닫으면 함께 사라진다 — 그거면 충분하다.
            */
           if (res.topProductId) AppState.lastTopProductId = String(res.topProductId);
-          AppState.lastTopRecommendationRef = String(res.topRecommendationRef || '');
+          // 추천과 무관한 답변 하나에 상품 기억이 사라지지 않도록 서명 참조를 보존한다.
+          // 새로운 추천에 서명이 없다면 이전 상품으로 오해하지 않도록 비운다.
+          if (res.topRecommendationRef) AppState.lastTopRecommendationRef = String(res.topRecommendationRef);
+          else if (res.topProductId && res.items && res.items.length) AppState.lastTopRecommendationRef = '';
           /*
            * 서버가 이번 질문까지 접은 대화 상태 (api/_convstate.js). 없는 응답(옛 서버)이면 가지고 있던
            * 것을 그대로 둔다 — 서버는 그 상태 뒤의 아직 안 접힌 질문을 기록에서 다시 읽는다.
