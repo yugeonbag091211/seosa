@@ -5708,7 +5708,7 @@ module.exports = async function handler(req, res) {
           && ['D', 'E'].includes(intent)
           && !badWon.length && !badLowObservationCount.length && !badDiscountPct.length
           && !badBudgetPick && !badSpec.length && !badCmp.length && !badSuper.length
-          && !badDecision && !badIdentity && !noCatalog && !badPick && !badEcho
+          && !badIdentity && !noCatalog && !badPick && !badEcho
           && (badContextualPrice.length || badProductPrice.length || badCurrentPrice.length);
         const rescued = onlyOfferPriceConflict ? salvagePriceFreeExplanation(text) : '';
         const rescueVerified = rescued.length >= 25
