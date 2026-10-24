@@ -365,6 +365,19 @@ function reset() {
   ok(r.body.degraded === true && /구매 시점:|지금 사도/.test(r.body.text),
     '★ 구매 시점을 직접 물은 경우에는 서버의 가격 판단을 유지한다');
 
+  /* 2-b ─ 여러 판매처 가격을 하나로 섞지 않고, 카드 검증 가격으로 먼저 알려준다 */
+  reset();
+  stub.llm.answer = '무선 이어폰 후보를 찾았습니다. 배송과 보증 조건은 상세 상품 페이지에서 확인해 주세요.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const verifiedFirstCard = (r.body.items || [])[0];
+  ok(!!verifiedFirstCard && r.body.degraded !== true
+      && r.body.text.startsWith('첫 번째 추천 카드:')
+      && r.body.text.includes(Number(verifiedFirstCard.lprice).toLocaleString('en-US') + '원')
+      && r.body.text.includes('배송과 보증 조건'),
+    '★ 여러 판매처 가격 질문: 실제 첫 카드 가격 + AI의 비가격 설명을 함께 제공');
+  ok(sys().includes('[이번 검색에는 상품·옵션·판매처가 여러 개 있음]'),
+    '★ 여러 판매처에는 상품 옵션마다 가격이 다르다는 지침을 전달');
+
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
   reset();

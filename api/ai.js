@@ -53,7 +53,7 @@ const CANONICAL_SOURCE = Symbol('server-verified-canonical-consumer');
  *   shopping-v12 화면 상품·대화 기록 출처 구분(서버 확인·서명 발화)·창작 요청 분리
  *                (2026-09-28 레드팀 RT-01~04)
  */
-const PROMPT_VERSION = 'shopping-v12-provenance';
+const PROMPT_VERSION = 'shopping-v13-multi-offer';
 
 /*
  * 입력 상한.
@@ -3528,6 +3528,18 @@ P.searchedFound = [
   '- "역대 최저"라고 단정하지 마라. 과거 기록이 있으면 "SEOSA가 확인한 기간의 기록"이라고 범위를 밝힌다.'
 ].join('\n');
 
+// 서로 다른 판매처와 옵션의 가격이 섞이는 실측 문제(G304)를 방지한다.
+// 가격 숫자는 서버가 검증된 첫 후보에서 따로 붙이므로 모델은 이유만 설명한다.
+P.multiOfferPrice = [
+  '[이번 검색에는 상품·옵션·판매처가 여러 개 있음]',
+  '- 금액은 화면 카드와 서버가 따로 출력한다. 네 답변에서는 원화 가격, 평균, 최저 기록, 금액 차이, 할인율 등 가격 숫자를 반복하지 마라.',
+  '- 모든 판매처·옵션에 동일한 현재가가 있는 것처럼 표현하지 마라.',
+  '- 먼저 추천 이유와 후보의 구별되는 조건을 쉬운 말로 설명하고, 확인되지 않은 사양은 확인되지 않았다고 밝혀라.',
+  '- 이번 검색의 후보 중 가격이 낮다는 사실과 과거 기록상 최저가라는 주장은 다르다. 후자를 단정하지 마라.',
+  '- 지금 살지 기다릴지를 묻지 않았다면 구매 시점까지 판단하지 마라.',
+  '- 상품을 찾았다는 사실을 먼저 답하고, 질문을 돌려보내지 마라.'
+].join('\n');
+
 /*
  * 요청 상품과의 대조 결과 (api/_aiidentity.js). 서버가 판정한 사실이다 — 모델이 다시
  * 고르지 않는다. 근접 후보를 요청한 그 상품인 것처럼 권하는 것을 막는다.
@@ -5421,6 +5433,9 @@ module.exports = async function handler(req, res) {
      * 것을 없다고 단정하는 것은 지어내기와 같은 종류의 잘못이다.
      */
     if (searchState === 'found')  system += `\n\n${P.searchedFound}`;
+    if (searchState === 'found' && items.length > 1 && ['D', 'E'].includes(intent)) {
+      system += `\n\n${P.multiOfferPrice}`;
+    }
     if (searchState === 'found' && identityState === 'EXACT') system += `\n\n${P.identityExact}`;
     if (searchState === 'found' && identityState === 'NEAR') system += `\n\n${P.identityNear(identityLabel)}`;
     if (searchState === 'empty')  system += `\n\n${P.searchedEmpty}`;
@@ -5734,6 +5749,19 @@ module.exports = async function handler(req, res) {
      * 채운다. 값은 전부 검색 결과에서 온 것이고 AI 가 만든 문자열은 섞지
      * 않는다 — 그래야 카드에 뜨는 이름·가격·링크가 실제와 어긋나지 않는다.
      */
+    // 같은 모델의 여러 판매처·옵션 가격을 LLM이 하나의 현재가로 섞지 않게 한다.
+    // 설명은 LLM이 담당하되 실제 가격 한 줄은 화면에 표시된 서버 검증 카드가 제공한다.
+    if (!degradedByGrounding && searchState === 'found' && items.length > 1
+        && ['D', 'E'].includes(intent) && cards.length) {
+      const card = cards[0];
+      const amount = Number(card.lprice);
+      const productName = AIID.displayTitle(card.title || '').slice(0, 65);
+      const merchant = safeText(card.mall || '판매처 미확인', 30);
+      if (productName && Number.isSafeInteger(amount) && amount > 0) {
+        text = `첫 번째 추천 카드: ${productName} — ${won(amount)}원 (${merchant}).\n\n${text}`;
+      }
+    }
+
     /*
      * 관측 로그 (지시 48항).
      *
