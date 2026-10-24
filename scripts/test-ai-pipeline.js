@@ -357,6 +357,13 @@ function reset() {
   ok(!r.body.text.includes('79,000원') && !r.body.text.includes('320,000원'), '★ 지어낸 금액 원문을 사용자에게 내보내지 않는다');
   ok(!/AI 응답이 실패|AI 설명을 만들지 못/.test(r.body.text) && /확인된 상품·가격 데이터/.test(r.body.text),
     '★ safety 교체를 provider 실패처럼 안내하지 않는다');
+  ok(/추천:/.test(r.body.text) && !/구매 시점:|지금 사도/.test(r.body.text),
+    '★ 최저가·추천 질문의 안전 답변에는 묻지 않은 구매 시점 권유가 붙지 않는다');
+  reset();
+  stub.llm.answer = '알파 이어폰은 현재 79,000원입니다.';
+  r = await call({ question: '무선 이어폰 지금 사도 될까?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && /구매 시점:|지금 사도/.test(r.body.text),
+    '★ 구매 시점을 직접 물은 경우에는 서버의 가격 판단을 유지한다');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');

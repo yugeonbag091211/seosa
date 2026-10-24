@@ -98,7 +98,7 @@ function hedgeFor(confidence) {
  *
  * @returns {string[]} 줄 목록 (비어 있을 수 있다)
  */
-function conclusion(top, deal, decision) {
+function conclusion(top, deal, decision, options = {}) {
   const L = [];
   if (!top) return L;
 
@@ -121,7 +121,7 @@ function conclusion(top, deal, decision) {
   }
 
   const stance = STANCE[(deal && deal.verdict) || 'UNKNOWN'];
-  if (stance) L.push(stance);
+  if (stance && !options.suppressTiming) L.push(stance);
   if (hedge.note && level !== 'weak') L.push(hedge.note);
 
   return L;
@@ -458,7 +458,8 @@ function compose(ctx) {
     return { text: L.join('\n'), followups: followups(c) };
   }
 
-  conclusion(top, c.deal, c.decision).forEach(x => L.push(x));
+  const priceOnly = c.safety && !c.timingRequested;
+  conclusion(top, c.deal, c.decision, { suppressTiming: priceOnly }).forEach(x => L.push(x));
 
   const why = reasons(top, c.decision);
   if (why.length) {
@@ -468,7 +469,14 @@ function compose(ctx) {
   }
 
   L.push('');
-  timing(c.deal).forEach(x => L.push(x));
+  if (priceOnly) {
+    // 상품 가격만 물은 사람에게 별도의 구매 권유를 하지 않는다.
+    // 이 경우에도 마지막 가격 확인 시점은 반드시 드러낸다.
+    const freshness = c.deal && c.deal.freshness && c.deal.freshness.label;
+    if (freshness) L.push(`가격 확인 시점: ${freshness}`);
+  } else {
+    timing(c.deal).forEach(x => L.push(x));
+  }
 
   const rest = others(items);
   if (rest.length) {

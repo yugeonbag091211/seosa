@@ -4251,6 +4251,9 @@ module.exports = async function handler(req, res) {
   const prevTop = safeText(prevTopRaw, 60);
   const q = clip(question, MAX_QUESTION_LEN).trim();
   if (!q) return res.status(400).json({ error: '질문 없음', text: '' });
+  // 단순 최저가 질문에는 별도 구매 시점 조언을 끼워 넣지 않는다.
+  // 구매 시점을 직접 물었다면 서버의 결정론 판정은 계속 안내한다.
+  const timingRequested = /(?:지금|오늘|바로|당장)\s*(?:사도|살까|구매)|구매\s*(?:시점|타이밍)|사도\s*(?:될|돼)|언제\s*(?:사|구매)|(?:기다릴|기다려|기다려야|기다렸다)/.test(q);
 
   /*
    * 찾아낸 상품 카드.
@@ -5667,6 +5670,7 @@ module.exports = async function handler(req, res) {
             items, cards, decision, deal, constraints, noResult, degraded: true, safety: true, search: searchState,
             budgetDropped: conv.budgetDropped,
             context: searchState === 'found' ? null : contextNotes,
+            timingRequested,
             identity: { state: identityState, label: identityLabel }
           }).text;
           degradedByGrounding = true;
@@ -5710,6 +5714,7 @@ module.exports = async function handler(req, res) {
             items, cards, decision, deal, constraints, noResult, degraded: true, safety: true, search: searchState,
             budgetDropped: conv.budgetDropped,
             context: searchState === 'found' ? null : contextNotes,
+            timingRequested,
             identity: { state: identityState, label: identityLabel }
           }).text;
         } catch (e) {
