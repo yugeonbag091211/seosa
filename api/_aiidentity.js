@@ -859,6 +859,17 @@ function partition(items, contract) {
   return { items: ordered.map(x => x.it), state, dropped: list.length - kept.length };
 }
 
+/**
+ * Prices quoted as the closest option for a budget miss must refer to the exact
+ * requested identity. A sibling model can remain in `items` for explanation and
+ * ranking, but it must not set the requested model's cheapest price or relaxation.
+ * Rows without an identity annotation come from server-verified catalog selectors
+ * and are already scoped to the selected product.
+ */
+function exactBudgetFacts(items) {
+  return (items || []).filter(it => it && (!it._identity || it._identity.tier === TIER.EXACT));
+}
+
 /*
  * 등급 안에서는 «덜 다른» 후보가 먼저다(브랜드만 다른 노트북 > 브랜드도 상태도 다른 렌탈).
  * 같은 차이라면 지시문을 단 판매 글은 깨끗한 판매 글 뒤로 (위 4) 주석). 정렬은 안정적이다.
@@ -1049,7 +1060,7 @@ function mentionedIn(name, text) {
 }
 
 module.exports = {
-  TIER, buildContract, verdict, partition, splitNegations, narrowByMention, mentionedIn, stripPromptBoundaryPayload,
+  TIER, buildContract, verdict, partition, exactBudgetFacts, splitNegations, narrowByMention, mentionedIn, stripPromptBoundaryPayload,
   hasInstructionText, cleanIdentityTitle, displayTitle, colorsOf, storageOf, slotOf,
   refinementOf, mergeRefinement, categoryNounOf, productEvidence
 };

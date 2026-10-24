@@ -4842,7 +4842,7 @@ module.exports = async function handler(req, res) {
         if (gateBudget) {
           const bg = budgetFilter(items, constraints);
           if (bg.applies && bg.outside.length) {
-            budgetOutside = bg.outside;
+            budgetOutside = AIID.exactBudgetFacts(bg.outside);
             items = bg.within;
             if (!items.length) identityState = 'BUDGET';
           }
@@ -4931,7 +4931,7 @@ module.exports = async function handler(req, res) {
       if (gateBudget && !refSelected) {
         const bg = budgetFilter(items, constraints);
         if (bg.applies && bg.outside.length) {
-          budgetOutside = bg.outside;
+          budgetOutside = AIID.exactBudgetFacts(bg.outside);
           items = bg.within;
           if (!items.length) identityState = 'BUDGET';
         }

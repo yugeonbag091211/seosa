@@ -114,5 +114,27 @@ for (const [q, t, want] of CASES) {
   ok(I.verdict(contract, { title }).tier === TIER.EXACT, '가격 이력 질문의 달력 날짜를 상품 모델 번호로 보지 않는다', I.verdict(contract, { title }));
 }
 
+// A different product grade must not set the requested product's budget floor.
+{
+  const query = '삼성 990 PRO NVMe SSD 2TB 30만원 이하 신품 추천해줘';
+  const exact = { productId: '990-pro-2tb', title: '삼성전자 990 PRO PCIe4.0 NVMe SSD 2TB MZ-V9P2T0BW', price: 941000 };
+  const sibling = { productId: '990-evo-plus-2tb', title: '삼성전자 SSD 990 EVO PLUS NVMe M.2 2TB MZ-V9S2T0BW', price: 865000 };
+  const contract = I.buildContract({ query, userText: query, titles: [exact.title, sibling.title] });
+  const gate = I.partition([sibling, exact], contract);
+  const constraints = { budgetMax: 300000, budgetSaid: 300000, budgetSoft: false };
+  const outside = require('../api/_shopintent').budgetFilter(gate.items, constraints).outside;
+  const facts = I.exactBudgetFacts(outside);
+  ok(gate.state === 'EXACT' && gate.items.find(x => x.productId === '990-evo-plus-2tb')._identity.tier === TIER.SIBLING,
+    '990 EVO Plus 는 정확한 990 PRO 후보와 분리된다', gate.items.map(x => [x.productId, x._identity]));
+  ok(facts.length === 1 && facts[0].productId === '990-pro-2tb',
+    '예산 초과 최저가 사실은 정확한 모델 후보만 센다', facts.map(x => [x.productId, x.price]));
+  const options = require('../api/_noresult').relaxations(facts, constraints, []);
+  const text = require('../api/_concierge').budgetNoMatch({ constraints, label: contract.label, outside: facts, options }).text;
+  ok(/941,000원/.test(text) && /641,000원/.test(text) && !/865,000원/.test(text),
+    '예산 안내가 990 EVO Plus 가격 865,000원을 990 PRO 가격으로 제시하지 않는다', text);
+  ok(I.exactBudgetFacts([{ title: '서버에서 선택한 상품', price: 100000 }]).length === 1,
+    '서버가 확인한 선택 상품은 identity 메타데이터가 없어도 유지한다');
+}
+
 console.log(`test-ai-identity-model-line: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
