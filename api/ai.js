@@ -3011,8 +3011,12 @@ function unverifiedProductPrices(text, items) {
  */
 function salvagePriceFreeExplanation(raw) {
   const sentences = String(raw || '').replace(/\r/g, '').split(/(?<=[.!?。])\s+|\n+/);
-  const safe = sentences.map(s => s.trim()).filter(s => {
+  const safe = sentences.map(s => s.trim()
+    // 특정 판매처가 해외/국내인지 추측한 앞부분은 카드 가격의 설명 근거가 아니다.
+    .replace(/^(?:(?:해외|국내)(?:\s*(?:판매처|직구|상품))?|병행수입)(?:이라(?:서)?|라서|라|이므로|여서)\s*/, '')
+  ).filter(s => {
     if (s.length < 18 || s.length > 300) return false;
+    if (/(?:해외|국내|병행수입|직구|리퍼|중고|정품)/.test(s)) return false;
     if (wonMatches(s).length || /[₩￦]|\d+(?:\.\d+)?\s*%|\b(?:KRW|USD|EUR)\b/i.test(s)) return false;
     if (/(?:가격|최저|평균|할인|저렴|더\s*싼|비싸|정가|구매\s*시점|지금\s*사도|기다리|인하|하락|상승|수익|절약)/.test(s)) return false;
     if (/(?:시스템\s*프롬프트|비밀번호|API\s*키|토큰|무시하라|따르라)/i.test(s)) return false;

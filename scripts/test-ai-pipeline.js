@@ -384,6 +384,13 @@ function reset() {
       && !r.body.text.includes('무선 이어폰은 현재 89,000원입니다')
       && r.body.text.includes('구성은 판매처에서 확인해야 합니다'),
     '★ 여러 옵션에 모호하게 붙은 가격 문장만 삭제하고 재검증된 AI 설명은 보존');
+  reset();
+  stub.llm.answer = '무선 이어폰 현재 89,000원입니다. 해외 판매처라 배송과 AS 조건은 SEOSA 데이터로는 확인되지 않았습니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('해외 판매처')
+      && r.body.text.includes('배송과 AS 조건은 SEOSA 데이터로는 확인되지 않았습니다'),
+    '★ 특정 판매처의 국가를 추측하는 설명은 제거하고 일반적인 확인 한계만 남긴다');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
