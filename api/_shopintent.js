@@ -844,8 +844,12 @@ function rankItems(items, c, query, opts) {
   const prices = list.map(it => Math.round(Number(it.price) || 0)).filter(p => p > 0);
   const min = prices.length ? Math.min.apply(null, prices) : 0;
   const max = prices.length ? Math.max.apply(null, prices) : 0;
+  // '성능·품질 중시'에서 비싼 상품에 점수를 주는 것은 근거 없는 판단이다.
+  // 노트북은 판매자 제목에 확인되는 CPU 세대·메모리만 약한 동점 해소 신호로 쓴다.
+  const laptopEvidence = cons.priority === 'quality'
+    ? require('./_laptop-evidence').compareLaptopEvidence(list) : null;
 
-  list.forEach(it => {
+  list.forEach((it, idx) => {
     const s = scoreItem(it, cons, tokens);
     it.fit = s.fit;
     it.notes = s.notes;
@@ -863,7 +867,13 @@ function rankItems(items, c, query, opts) {
     if (price > 0 && max > min) {
       const pos = (price - min) / (max - min);     // 0=가장 쌈, 1=가장 비쌈
       if (cons.priority === 'price') it._score += Math.round((1 - pos) * 14);
-      else if (cons.priority === 'quality') it._score += Math.round(pos * 8);
+      // quality는 가격에 비례하지 않는다. 아래의 상품명 근거만 사용한다.
+    }
+    if (laptopEvidence && laptopEvidence[idx]) {
+      const ev = laptopEvidence[idx];
+      it._score += ev.points;
+      it._sub.feature += ev.points;
+      ev.facts.forEach(fact => it.notes.push(fact));
     }
 
     /*
