@@ -3004,6 +3004,23 @@ function unverifiedProductPrices(text, items) {
   return out;
 }
 
+/**
+ * 쇼핑몰 옵션 가격을 잘못 묶은 답변에서 비가격 설명만 제한적으로 구조한다.
+ * 숫자·가격 판단 문장 전체를 버리며, 남은 설명도 기존 보안/사양 검사를 재통과해야 쓴다.
+ * 없는 근거를 통과시키거나 가격 검사의 판정 자체를 완화하지 않는다.
+ */
+function salvagePriceFreeExplanation(raw) {
+  const sentences = String(raw || '').replace(/\r/g, '').split(/(?<=[.!?。])\s+|\n+/);
+  const safe = sentences.map(s => s.trim()).filter(s => {
+    if (s.length < 18 || s.length > 300) return false;
+    if (wonMatches(s).length || /[₩￦]|\d+(?:\.\d+)?\s*%|\b(?:KRW|USD|EUR)\b/i.test(s)) return false;
+    if (/(?:가격|최저|평균|할인|저렴|더\s*싼|비싸|정가|구매\s*시점|지금\s*사도|기다리|인하|하락|상승|수익|절약)/.test(s)) return false;
+    if (/(?:시스템\s*프롬프트|비밀번호|API\s*키|토큰|무시하라|따르라)/i.test(s)) return false;
+    return /(?:상품|후보|모델|옵션|조건|판매처|확인|비교|검색|기록)/.test(s);
+  });
+  return safe.slice(0, 3).join(' ').slice(0, 500);
+}
+
 /** An explicit discount percentage must be present in a trusted product result. */
 function unverifiedDiscountPct(text, items) {
   const out = [];
@@ -4279,6 +4296,7 @@ module.exports = async function handler(req, res) {
   /* cards 와 같은 순서의 원본 행 — «추천 상품» 카드를 identity 로 찾는 데 쓴다 (topRecommendationCard). */
   let cardSources = [];
   let degradedByGrounding = false;
+  let priceOnlySalvaged = false;
   let searchState = 'none';   // none | found | empty | failed
 
   /*
@@ -5680,6 +5698,32 @@ module.exports = async function handler(req, res) {
           superlative: badSuper.length, decision: badDecision,
           identity: badIdentity, pick: badPick, echo: badEcho, catalog: items.length
         }));
+        // 불명확한 판매처별 숫자만 문제일 때는 숫자 문장을 전부 버리고
+        // 가격 없는 설명을 재검증해 보존한다. 그 외 오류는 예전 안전 답변 그대로.
+        const onlyOfferPriceConflict = searchState === 'found' && items.length > 1
+          && ['D', 'E'].includes(intent)
+          && !badWon.length && !badLowObservationCount.length && !badDiscountPct.length
+          && !badBudgetPick && !badSpec.length && !badCmp.length && !badSuper.length
+          && !badDecision && !badIdentity && !noCatalog && !badPick && !badEcho
+          && (badContextualPrice.length || badProductPrice.length || badCurrentPrice.length);
+        const rescued = onlyOfferPriceConflict ? salvagePriceFreeExplanation(text) : '';
+        const rescueVerified = rescued.length >= 25
+          && !unverifiedWon(rescued, collectKnownWon(groundItems, cards, q, hist, constraints)).length
+          && !unverifiedContextualPrices(rescued, groundItems).length
+          && !unverifiedProductPrices(rescued, groundItems).length
+          && !unverifiedCurrentPrices(rescued, groundItems).length
+          && !unverifiedSpecs(rescued, items).length
+          && !unsupportedComparisons(rescued, items).length
+          && !unsupportedSuperlatives(rescued, items).length
+          && !unsupportedPriceDecision(rescued, items, deal)
+          && !unmatchedCardRecommendation(rescued, cards)
+          && !looksLikeSensitiveDisclosure(rescued);
+        if (rescueVerified) {
+          text = rescued;
+          priceOnlySalvaged = true;
+          degradedByGrounding = true;
+          console.warn('[ai] 복수 판매처 가격 충돌 — 문제 숫자 문장 제거 후 안전 설명 유지');
+        } else {
         try {
           text = require('./_concierge').compose({
             items, cards, decision, deal, constraints, noResult, degraded: true, safety: true, search: searchState,
@@ -5692,6 +5736,7 @@ module.exports = async function handler(req, res) {
         } catch (e) {
           text = '지금은 확인된 상품·가격 근거가 부족해 구매 시점을 판단할 수 없어요.';
           degradedByGrounding = true;
+        }
         }
       } else if (identityState === 'NEAR' && !disclosesNoExactMatch(text)) {
         /*
@@ -5751,7 +5796,7 @@ module.exports = async function handler(req, res) {
      */
     // 같은 모델의 여러 판매처·옵션 가격을 LLM이 하나의 현재가로 섞지 않게 한다.
     // 설명은 LLM이 담당하되 실제 가격 한 줄은 화면에 표시된 서버 검증 카드가 제공한다.
-    if (!degradedByGrounding && searchState === 'found' && items.length > 1
+    if ((!degradedByGrounding || priceOnlySalvaged) && searchState === 'found' && items.length > 1
         && ['D', 'E'].includes(intent) && cards.length) {
       const card = cards[0];
       const amount = Number(card.lprice);

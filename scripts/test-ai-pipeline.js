@@ -377,6 +377,13 @@ function reset() {
     '★ 여러 판매처 가격 질문: 실제 첫 카드 가격 + AI의 비가격 설명을 함께 제공');
   ok(sys().includes('[이번 검색에는 상품·옵션·판매처가 여러 개 있음]'),
     '★ 여러 판매처에는 상품 옵션마다 가격이 다르다는 지침을 전달');
+  reset();
+  stub.llm.answer = '무선 이어폰은 현재 89,000원입니다. 상품명에 적힌 조건을 먼저 살펴봤고, 구성은 판매처에서 확인해야 합니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('무선 이어폰은 현재 89,000원입니다')
+      && r.body.text.includes('구성은 판매처에서 확인해야 합니다'),
+    '★ 여러 옵션에 모호하게 붙은 가격 문장만 삭제하고 재검증된 AI 설명은 보존');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
