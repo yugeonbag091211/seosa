@@ -886,9 +886,9 @@ function classify(text, hist) {
    */
   if (Array.isArray(hist) && hist.length) {
     const batteryLimit = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/;
-    const batteryNamed = /^배터리\s*오래가는\s*([가-힣]{2,8})(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/;
+    const batteryNamed = /^배터리\s*오래가는\s*([가-힣]{2,8}?)(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/;
     const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/;
-    const otherNamed = /^대신\s*다른\s*([가-힣]{2,8})(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/;
+    const otherNamed = /^대신\s*다른\s*([가-힣]{2,8}?)(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/;
     const namedCondition = batteryNamed.exec(s);
     const namedOther = otherNamed.exec(s);
     const isCondition = batteryLimit.test(s) || !!namedCondition;
