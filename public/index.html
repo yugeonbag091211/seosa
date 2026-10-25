@@ -9947,7 +9947,7 @@ var Chat = {
            */
           var drewCards = false;
           if (res.items && res.items.length) {
-            if (Chat.sameAsShownCards(res)) {
+            if (!res.forceShowCard && Chat.sameAsShownCards(res)) {
               html += '<div class="mini-same">위에서 보여 드린 상품과 같은 상품·옵션이에요.'
                 + '<button type="button" data-act="chat-show-cards">카드 다시 보기</button></div>';
             } else {

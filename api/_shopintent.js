@@ -498,6 +498,13 @@ function parseConstraints(text) {
     if (re.test(s)) { out.recipient = label; break; }
   }
   out.gift = GIFT_RE.test(s) || !!out.recipient;
+  // A stated non-gaming / everyday headset preference must survive
+  // subsequent budget-only turns through the signed conversation state.
+  // Do not infer this solely from the category word "헤드셋".
+  if (/(?:게이밍|게임용|게임\s*헤드셋|gaming)[^.!?\n]{0,35}(?:말고|제외|빼|싫|피해|아닌|아니)|(?:게임용|게이밍)\s*(?:아닌|말고)|(?:일상용|출퇴근용|음악감상용)[^.!?\n]{0,24}헤드셋/i.test(s)) {
+    out.avoid = '게이밍';
+  }
+
 
   /* ── 무엇을 중히 보는가 ── */
   for (const [re, key] of PRIORITY_RE) {
