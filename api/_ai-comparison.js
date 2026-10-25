@@ -22,7 +22,8 @@ function parseComparison(question) {
   // must never split an unrelated prompt into two shop searches.
   if (/[.!?。;:<>]/.test(left + right)) return null;
   const AIID = require('./_aiidentity');
-  if (AIID.productEvidence(left) < 1 || AIID.productEvidence(right) < 1) return null;
+  const named = term => AIID.productEvidence(term) > 0 || /[A-Za-z]{2,}|[0-9]/.test(term);
+  if (!named(left) || !named(right)) return null;
   return [left, right];
 }
 
