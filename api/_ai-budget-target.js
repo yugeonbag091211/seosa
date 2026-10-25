@@ -14,6 +14,9 @@ function targetWindow(c) {
   if (!c || !Number.isFinite(Number(c.budgetSaid))) return null;
   const stated=Math.round(Number(c.budgetSaid));
   if (stated<=LOW_BUDGET_CEILING || stated<=0) return null;
+  // An explicit "조금 넘어도 괜찮아" relaxes the previously strict ceiling.
+  // Honor that deliberate override rather than imposing the implicit target.
+  if (c.budgetRelax === true) return null;
   const max= Math.round(Number(c.budgetMax)||0);
   if (max<=0) return null; // pure minimum ("15만원 이상") has no ceiling
   const explicitMin=Math.max(0,Math.round(Number(c.budgetMin)||0));
