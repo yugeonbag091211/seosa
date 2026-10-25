@@ -38,6 +38,8 @@ export type Product = ProductIdentity & {
   trust: Trust | null;
   /** Server-judged recent drop (api/_facets.attachPriceChange). Only kept when it describes this exact price. */
   priceChange: PriceChange | null;
+  /** 「다른 모델: …」 라벨 — 요청과 다른 모델/옵션일 때만 서버가 적는다 (CO-04). 비어 있으면 요청과 일치. */
+  identityNote: string;
 };
 
 export type PriceChange = { prevPrice: number; dropAmount: number; dropPct: number; isAllTimeLow: boolean };

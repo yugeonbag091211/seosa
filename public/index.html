@@ -2354,6 +2354,11 @@ footer p{font-size:.75rem;color:var(--faint)}
 .mini .mnote{font-size:.58rem;color:#8a6d3b;margin-top:3px;line-height:1.25;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /*
+ * 「다른 모델」 라벨 — 요청한 모델이 아닌 근접 후보 카드에 붙는다 (CO-04).
+ * .mnote 와 같은 자리에 쓰므로 바탕을 공유하되, 가격 근거(.mnote)와 섞여 읽히지 않게 색을 분명히 다르게 한다.
+ */
+.mini .mnote.mnote-id{color:#b45309;font-weight:600}
+/*
  * 추천 변경 알림 — 서버가 1위가 실제로 바뀌었다고 판정했을 때만 그려진다.
  * 조용한 한 줄로 둔다. 눈에 띄는 배지로 만들면 매번 뭔가 일어난 것처럼 보인다.
  *
@@ -9501,6 +9506,14 @@ var Chat = {
     var note = !isCanonical && it.note
       ? '<div class="mnote">' + Fmt.esc(it.note) + '</div>'
       : '';
+    /*
+     * 다른 모델이면(요청한 모델 번호·계열·용량·색상·상태와 다름) 카드에 분명히 보여 준다.
+     * 서버 api/_aiidentity.js partition 이 판정하고, 정확한 후보가 하나라도 있으면 아예 카드에서 빠진다.
+     * 이 라벨은 정확한 후보가 없을 때(NEAR 상태)의 근접 후보에만 나온다.
+     */
+    var idNote = !isCanonical && it.identityNote
+      ? '<div class="mnote mnote-id">' + Fmt.esc(it.identityNote) + '</div>'
+      : '';
     var canonical = isCanonical && Array.isArray(it.offers) && it.offers.length > 1
       ? '<div class="mnote">같은 상품 ' + Fmt.int(it.offerCount) + '곳 · 현재 최저 ' + Fmt.won(it.lowestPrice) + '원 (' + Fmt.esc(it.lowestMerchant || '') + ')</div>'
       : '';
@@ -9514,7 +9527,7 @@ var Chat = {
       + (isTop === true ? '<span class="mtop">추천 상품</span>' : '') + img + '</div>'
       + '<div class="mb"><div class="mname">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mprice">' + (isCanonical ? '최저가 · ' + Fmt.esc(it.displayMerchant || it.canonicalLowestMerchant || '') + ' ' : '') + Fmt.won(displayPrice) + '원</div>'
-      + note + canonical + '</div>'
+      + idNote + note + canonical + '</div>'
       + '</div>';
   },
 
