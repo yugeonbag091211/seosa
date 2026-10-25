@@ -58,6 +58,10 @@ jobs:
           COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
           COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
           ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          # 기존 아침 가격 리포트와 같은 발신자·수신자·Resend 계정 사용.
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          PRICE_REPORT_EMAIL: ${{ vars.PRICE_REPORT_EMAIL }}
           ADPICK_MAX_PER_MIN: '5'
           ADPICK_MIN_GAP_MS: '12000'
           # Emergency kill switch: Settings -> Variables -> Actions PRICE_VOLATILE_OFF=1
