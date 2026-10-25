@@ -5440,7 +5440,7 @@ module.exports = async function handler(req, res) {
           if (intent === 'C' && items.length) {
             const near = BW.nearBudgetWindow(items, constraints, q);
             if (near.applies) {
-              items = near.within.sort((a,b) => Math.abs(Number(a.price)-Number(constraints.budgetSaid||constraints.budgetMax))-Math.abs(Number(b.price)-Number(constraints.budgetSaid||constraints.budgetMax)));
+              items = near.within;
               if (!items.length) { identityState = 'BUDGET_PREFERENCE'; preferredBudgetMiss = near; }
             }
           }
@@ -5542,7 +5542,7 @@ module.exports = async function handler(req, res) {
         if (intent === 'C' && items.length) {
           const near = BW.nearBudgetWindow(items, constraints, q);
           if (near.applies) {
-            items=near.within.sort((a,b)=>Math.abs(Number(a.price)-Number(constraints.budgetSaid||constraints.budgetMax))-Math.abs(Number(b.price)-Number(constraints.budgetSaid||constraints.budgetMax)));
+            items=near.within;
             if (!items.length) { identityState='BUDGET_PREFERENCE'; preferredBudgetMiss=near; }
           }
         }
