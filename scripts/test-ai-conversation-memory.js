@@ -285,6 +285,26 @@ const NOT_FOUND = /찾지 못했|결과가 없었|검색했지만/;
         && I.recommendsOtherThanSubject('그램 프로 17Z90SP를 추천했어요.', subj),
       '추천한 상품을 함께 말하는 비교 문장은 통과, 다른 모델만 권하는 문장은 대상 오류');
 
+    // ⑤ "다른 제품" — 같은 모델 번호를 단 다른 판매처 글은 «다른 제품» 이 아니다.
+    const alt = H.session();
+    await alt.say('오픈형 이어폰 추천해줘', { classify: 'C|오픈형 이어폰', answer: '아이리버 오픈형 무선 이어폰 IBO-OPENRING3 러닝 귀찌형 오픈링3를 권합니다.' });
+    const first = AC.verifyRecommendationRef(alt.prevTopRef);
+    const altR = await alt.say('다른 제품 추천해줘', { classify: 'C|오픈형 이어폰', answer: 'JBL 튠 비즈2를 추천해요. 노이즈캔슬링이 상품명에 있어요.' });
+    const second = AC.verifyRecommendationRef(altR.body.topRecommendationRef);
+    ok(first && first.productId === F.OPENRING_A.pid && second && second.productId !== F.OPENRING_A.pid && second.productId !== F.OPENRING_B.pid
+        && !cards(altR).some(c => /OPENRING3/i.test(c.title)),
+      '«다른 제품» 에서 같은 모델(IBO-OPENRING3)의 다른 판매처 글은 1위·카드에서 빠진다', JSON.stringify({ first, second, cards: cards(altR).map(c => c.title) }));
+
+    // ⑥ 추천 이유·구매 시점 턴에는 상품 하나로 다시 계산한 결정 블록(«유일한 후보»)을 싣지 않는다.
+    const one = H.session();
+    await one.say('노트북 그램으로 추천해줘', { classify: 'C|그램 노트북', answer: '그램15 15ZB95N을 추천드려요.' });
+    const why = await one.say('이거 왜 추천했어?', { answer: '그램15 15ZB95N은 i5와 16GB 구성이라 문서 작업에 충분해요.' });
+    ok(!/\[결정 데이터\]/.test(why.system) && /처음 추천할 때 후보가 이것뿐이었다는 뜻이 아니다/.test(why.system),
+      '추천 이유 턴: 단일 상품 결정 블록 없음 · «후보가 하나뿐» 이라고 말하지 말라는 지시', blockHeads(why).join(' | ').slice(0, 300));
+    const when = await one.say('지금 사는 게 좋을까?', { answer: '현재 645,000원은 30일 평균보다 낮은 편이에요.' });
+    ok(!/\[결정 데이터\]/.test(when.system) && /말하지 않았다면 "말했다"고 쓰지 말고/.test(when.system),
+      '구매 시점 턴: 단일 상품 결정 블록 없음 · 사용자가 말하지 않은 예산·용도를 말했다고 쓰지 않게 한다');
+
     // ④ 직전 추천을 다시 확인하지 못했을 때 «지금 보고 계신 상품» 이라고 부르지 않는다.
     const lines = CG.contextLines({ unverified: [{ productId: 'x' }], fromRecommendation: true }).join(' ');
     ok(/직전에 추천한 상품/.test(lines) && !/지금 보고 계신/.test(lines), '직전 추천 확인 실패 문구', lines);

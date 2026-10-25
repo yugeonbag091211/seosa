@@ -1199,6 +1199,12 @@ async function resolveIntent(q, hist, view, budget, guest, intentHist, opts) {
    * 모델이 뽑은 용도·브랜드·기피는 그대로 쓰고, 모델이 용도를 못 뽑았으면 정규식 값으로 채운다.
    */
   if (viaLlm && det && det.conditionFollowup && needsShopContext(viaLlm.intent)) {
+    /*
+     * 가격·시점 낱말이 없는 조건 말("근데 나는 영상 편집도 할 거야")은 추천을 다시 보는 말이다. 모델이 가격 질문(D)으로
+     * 읽으면 판매처 가격 규칙(P.multiOfferPrice)과 가격 문장 구조(salvagePriceFreeExplanation)로 가서 다시 평가하는 설명이
+     * 세 문장으로 잘렸다(2026-10-24 Preview 실호출). 이번 말에 가격·시점을 묻는 말이 있을 때만 모델의 D·E 를 따른다.
+     */
+    if (det.intent === 'C') viaLlm.intent = 'C';
     viaLlm.conditionFollowup = true;
     viaLlm.fitQuestion = !!det.fitQuestion;
     viaLlm.stateQuery = true;
@@ -3981,11 +3987,14 @@ P.reasonTurn = [
   '[이번 질문 — 방금 추천한 상품을 왜 골랐는지]',
   '- 대상은 <상품데이터>의 첫 상품 하나다. 서버가 직전 추천의 서명 참조로 같은 상품·옵션을 다시 확인한 것이다.',
   '  새 상품을 찾거나 다른 상품으로 바꾸지 마라. 앞 대화에 다른 상품 이야기가 있어도 이 상품만 말한다.',
+  '- <상품데이터>에는 이 상품 하나만 다시 확인해 실었다. 처음 추천할 때 후보가 이것뿐이었다는 뜻이 아니다 —',
+  '  "후보가 하나뿐이라" 같은 말을 하지 마라. 다른 후보와의 차이는 앞 대화에 나온 것만, 가격 없이 말한다.',
   '- 몇 마디로 끝내지 말고, 근거가 있는 만큼 2~4개의 짧은 문단으로 대화하듯 설명한다. 목록보다 문장을 쓴다.',
-  '  ① 왜 이 상품인가 — [결정 데이터]의 결정적 이유를 사용자가 앞 대화에서 말한 조건(예산·용도·취향)과 이어서 말한다.',
+  '  ① 왜 이 상품인가 — "조건 대조" 줄의 근거를 사용자가 앞 대화에서 실제로 말한 조건(예산·용도·취향)과 이어서 말한다.',
+  '     사용자가 말하지 않은 조건을 말한 것처럼 쓰지 마라.',
   '  ② 어떤 쓰임에 잘 맞고 어디에 한계가 있는가 — "상품명에서 확인된 사양" 과 제품군에 대해 일반적으로 알려진',
   '     특성을 근거로 한다. 일반적인 이야기는 "일반적으로 ~로 알려져 있어요" 처럼 일반론임을 드러낸다.',
-  '  ③ 확인된 장점과 포기하는 점, 다른 후보와 무엇이 다른가 — [결정 데이터]·<상품데이터>에 있는 것만.',
+  '  ③ 확인된 장점과 포기하는 점, 다른 후보와 무엇이 다른가 — <상품데이터>와 앞 대화에 실제로 나온 것만.',
   '  ④ 가격이 실제로 좋은 수준인가 — 가격 기록 줄이 있을 때만 수치로. 없으면 판단할 기록이 부족하다고 한 문장.',
   '  ⑤ 사기 전에 판매처 페이지에서 확인할 것 한두 가지 (정확한 구성·옵션·상태·보증 등).',
   '- 근거가 없는 항목은 건너뛴다. 문단을 채우려고 사양·성능 수치·평가를 지어내지 마라.',
@@ -3997,7 +4006,8 @@ P.timingTurn = [
   '- 대상은 <상품데이터>의 첫 상품 하나다(직전 추천을 서명 참조로 다시 확인한 상품·옵션). 새로 찾지 마라.',
   '- ★ "지금 사도 된다/기다려라" 같은 결론 문장은 쓰지 마라. 서버가 가격 기록으로 계산한 결론을 답 맨 앞에 따로 붙인다.',
   '- 너는 그 결론의 근거를 풀어 준다: 현재가와 기록(최저·평균·추세)이 어떤 관계인지 <상품데이터> 수치 그대로.',
-  '- 그리고 사용자가 앞 대화에서 말한 용도·예산에 비추어, 가격 말고도 사기 전에 따져 볼 점을 한두 가지 말한다.',
+  '- 그리고 가격 말고도 사기 전에 따져 볼 점을 한두 가지 말한다. 사용자가 앞 대화에서 용도·예산을 실제로',
+  '  말했다면 거기에 비추어 말하고, 말하지 않았다면 "말했다"고 쓰지 말고 알려 주면 더 정확히 볼 수 있다고 한 문장만.',
   '- 미래 가격은 예측하지 마라. 기록이 부족하면 부족하다고 한 문장으로 말한다.'
 ].join('\n');
 
@@ -4387,14 +4397,25 @@ function recommendsUnlistedProduct(text, items) {
  * 세 글자 이상 낱말(어반사운드)로 본다. «무선»·«이어폰»·«16GB» 같은 흔한 낱말·규격은 세지 않는다.
  * 답이 추천 상품의 이름을 잃었는지(repairUngrounded 뒤)와, 다른 후보와 «비교» 하는 문장인지를 가를 때 쓴다.
  */
-function namesProduct(text, item) {
+function modelCodes(item) {
+  return titleWords(item).filter(w => /[a-z]/.test(w) && /\d/.test(w) && w.length >= 4
+    && !/^\d+(?:gb|tb|mah|kg|mm|cm|hz|w)$/.test(w));
+}
+function namesProduct(text, item, others) {
   const t = String(text || '').toLowerCase();
   if (!t || !item || !item.title) return false;
-  const words = titleWords(item);
-  const codes = words.filter(w => /[a-z]/.test(w) && /\d/.test(w) && w.length >= 4
-    && !/^\d+(?:gb|tb|mah|kg|mm|cm|hz|w)$/.test(w));
-  const pool = codes.length ? codes : words.filter(w => w.length >= 3 && !/\d/.test(w));
+  const codes = modelCodes(item);
+  // 후보 목록이 주어지면 그 상품에만 있는 낱말로 본다 — «노이즈캔슬링» 처럼 여러 상품명에 있는 말은 이름이 아니다.
+  const elsewhere = new Set((others || []).filter(o => o && o !== item)
+    .flatMap(o => String(o.title || '').toLowerCase().split(/[^0-9a-z가-힣]+/)));
+  const pool = codes.length ? codes
+    : titleWords(item).filter(w => w.length >= (others ? 2 : 3) && !/\d/.test(w) && !elsewhere.has(w));
   return pool.some(w => t.includes(w));
+}
+/* 같은 모델 번호를 단 다른 판매 글인가 ("IBO-OPENRING3" 를 두 판매처가 판다). 모델 번호가 없으면 판정하지 않는다. */
+function sameModelListing(a, b) {
+  const codes = modelCodes(a);
+  return codes.length > 0 && codes.some(c => String(b && b.title || '').toLowerCase().includes(c));
 }
 
 function recommendsOtherThanSubject(text, subject) {
@@ -5297,6 +5318,7 @@ module.exports = async function handler(req, res) {
      */
     let prevRecItem = null;
     let prevRecOutside = false;
+    let wantsAlternativeTwins = [];   // "다른 제품" 에서 뺀 같은 모델의 다른 판매 글
     const sameThreadTurn = !!(cls && (cls.conditionFollowup || cls.wantsAlternative || cls.refinement || cls.stateQuery));
     if (previousRecommendation && !refSelected && sameThreadTurn && searchState === 'found'
         && (!intent || needsShopContext(intent))) {
@@ -5304,11 +5326,23 @@ module.exports = async function handler(req, res) {
       if (at > -1) {
         prevRecItem = items[at];
         if (cls.wantsAlternative && items.length > 1) {
-          // 다른 후보를 원한다 — 직전 추천은 맨 뒤로 보내고 카드에서도 뺀다(1위 후보가 되지 않는다).
-          items = items.filter((_, i) => i !== at).concat([prevRecItem]);
-          const keep = cardSources.map(raw => !productIdentityMatches(normItem(fromSearchResult(raw)), previousRecommendation));
-          cards = cards.filter((_, i) => keep[i]);
-          cardSources = cardSources.filter((_, i) => keep[i]);
+          /*
+           * 다른 후보를 원한다 — 직전 추천은 맨 뒤로 보내고 카드에서도 뺀다(1위 후보가 되지 않는다).
+           * 같은 모델 번호를 단 다른 판매처 글도 «같은 제품» 이다(Preview 실호출: "다른 제품 추천해줘" 에
+           * 다른 판매처의 IBO-OPENRING3 가 1위로 나왔다). 그런 글만 남으면 그대로 둔다 — 후보를 비우지 않는다.
+           */
+          const same = it => it === prevRecItem || sameModelListing(prevRecItem, it);
+          if (items.some(it => !same(it))) {
+            const twins = items.filter(same).filter(it => it !== prevRecItem);
+            items = items.filter(it => !same(it)).concat([prevRecItem], twins);
+            const keep = cardSources.map(raw => {
+              const n = normItem(fromSearchResult(raw));
+              return !productIdentityMatches(n, previousRecommendation) && !sameModelListing(prevRecItem, n);
+            });
+            cards = cards.filter((_, i) => keep[i]);
+            cardSources = cardSources.filter((_, i) => keep[i]);
+            wantsAlternativeTwins = twins;
+          }
         }
       } else if (!cls.wantsAlternative) {
         const cap = Math.min(2 * AI_ENRICH_TIMEOUT_MS, Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
@@ -5446,7 +5480,7 @@ module.exports = async function handler(req, res) {
           : items;
         // "다른 제품 추천해줘" — 직전 추천은 1위 후보가 아니다 (위 prevRecItem).
         const decidable = cls && cls.wantsAlternative && prevRecItem && decidableAll.length > 1
-          ? decidableAll.filter(it => it !== prevRecItem) : decidableAll;
+          ? decidableAll.filter(it => it !== prevRecItem && wantsAlternativeTwins.indexOf(it) < 0) : decidableAll;
         const candidateDecision = decidable.length
           ? decide(decidable, constraints, wanted, prevTop, { rank: rankItems, matchFeatures })
           : null;
@@ -5695,7 +5729,13 @@ module.exports = async function handler(req, res) {
      *   모델이 "무엇을 살까"를 스스로 고민하기 전에 결론을 먼저 읽게 한다.
      *   결론이 먼저 있으면 모델의 일은 설명이 되고, 결론이 없으면 추측이 된다.
      */
-    if (decision) {
+    /*
+     * 직전 추천 한 상품을 다시 확인한 턴(추천 이유·구매 시점)에서는 결정·확신도 블록을 싣지 않는다
+     * (2026-10-24 Preview 실호출). 후보가 그 상품 하나뿐인 목록으로 다시 계산한 «격차: 유일한 후보 ·
+     * 확신도 보통» 을 모델이 "확인된 후보가 이 상품 하나뿐이라 추천했다" 로 옮겼다 — 처음 추천할 때는
+     * 후보가 여럿이었다. 이유의 근거는 아래 조건 대조·사양·가격 기록 줄과 P.reasonTurn 이 준다.
+     */
+    if (decision && !singleSubject) {
       try {
         const { decisionBlock } = require('./_decision');
         const block = decisionBlock(decision);
@@ -5725,7 +5765,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    if (decision && decision.confidence) {
+    if (decision && decision.confidence && !singleSubject) {
       try {
         const DEC = require('./_decision');
         const conf = DEC.computeConfidence(
@@ -6164,6 +6204,8 @@ module.exports = async function handler(req, res) {
         // 가격 없는 설명을 재검증해 보존한다. 그 외 오류는 예전 안전 답변 그대로.
         const onlyOfferPriceConflict = searchState === 'found' && items.length > 1
           && ['D', 'E'].includes(intent)
+          // 직전 추천을 다시 평가하는 턴은 문장 단위 정리(아래)로 — 이 구조는 가격 없는 세 문장만 남긴다.
+          && !prevRecItem && !(cls && cls.conditionFollowup)
           && !badWon.length && !badLowObservationCount.length && !badDiscountPct.length
           && !badBudgetPick && !badSpec.length && !badCmp.length
           && !badIdentity && !noCatalog && !badPick && !badEcho
@@ -6265,7 +6307,9 @@ module.exports = async function handler(req, res) {
          * 서버가 고른 1위를 확인된 가격과 함께 한 문장으로 다시 밝힌다(설명은 GPT 것 그대로).
          */
         const pick = singleSubject || (decision && decision.top ? items.find(it => it && it.ref === decision.top.ref) : null);
-        if (groundingRepaired && pick && !leadAdded && !namesProduct(text, pick)) {
+        // 남은 글이 후보 중 어느 상품이든 이름으로 말하고 있으면 덧붙이지 않는다 — 서버 1위를 앞에 두면 모델이 고른
+        // 다른 후보와 엇갈려 읽힌다(Preview 실호출: "다른 제품" 답에서 두 상품을 각각 권하는 꼴이 됐다).
+        if (groundingRepaired && pick && !leadAdded && !items.some(it => namesProduct(text, it, items))) {
           const line = singleSubject ? CG.subjectLine(pick) : CG.pickLine(pick);
           if (line) text = `${line}\n\n${text}`;
         }
