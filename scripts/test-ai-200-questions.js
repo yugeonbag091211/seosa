@@ -143,7 +143,7 @@ async function doSay(s, group, question, opt, validate, label) {
       classify:'B',answer:'그 용도에서는 필요한 성능을 따로 확인해야 해요.'
     },r=>cards(r).length>0 && !badEmpty.test(seen(r)) && (r.searches>=1 || !!r.body.topRecommendationRef),
     '추가 사용 목적 질문이 검색 맥락을 잃음');
-    await doSay(s,'그램 추천·기억','그럼 마지막으로 추천한 노트북을 좀 더 설명해줘 '+(i+1),{
+    await doSay(s,'그램 추천·기억','그럼 마지막으로 추천한 노트북을 좀 더 설명해줘',{
       answer:'앞에서 안내한 노트북의 사양과 가격을 확인한 뒤 결정하시면 돼요.'
     },r=>r.status===200 && !!seen(r), '연속 후속 설명 불가');
   }
@@ -162,7 +162,7 @@ async function doSay(s, group, question, opt, validate, label) {
     await doSay(s,'이어폰 예산·조건',earAlt[i],{
       classify:'C|무선 이어폰',answer:'다른 제품의 특징과 판매 조건을 비교해 보세요.'
     },r=>cards(r).length>0 && cards(r).every(c=>c.lprice<=100000),'다른 후보 요청 실패');
-    await doSay(s,'이어폰 예산·조건','이 제품 지금 사는 게 좋을까? '+(i+1),{
+    await doSay(s,'이어폰 예산·조건','이 제품 지금 사는 게 좋을까?',{
       answer:'저장된 가격 기록으로 판단하되 구매 전에 확인해야 해요.'
     },r=>r.status===200 && !!seen(r),'구매 여부 후속 질문 응답 실패');
   }
@@ -177,14 +177,14 @@ async function doSay(s, group, question, opt, validate, label) {
       classify:'D|갤럭시 버즈3 프로 화이트',answer:'갤럭시 버즈3 프로 화이트는 99,000원이에요.'
     },r=>cards(r).length>0 && !!REF(r) && REF(r).vendorItemId===F.BUDS_WHITE.vid
       && !/화이트는 139,000/.test(seen(r)), '화이트 옵션 전환 실패');
-    await doSay(s,'버즈 옵션 분리','이거 지금 사도 돼? '+(i+1),{
+    await doSay(s,'버즈 옵션 분리','이거 지금 사도 돼?',{
       answer:'화이트의 판매 가격과 기록을 구분해 확인하세요.'
     },r=>cards(r).length===1 && cards(r)[0].vendorItemId===F.BUDS_WHITE.vid
       && !/139,000원/.test(seen(r)),'후속 구매 판단에 블랙 가격 혼입');
     await doSay(s,'버즈 옵션 분리',budsWhy[i],{
       answer:'같은 제품이라도 색상별 옵션 가격과 가격 기록은 다를 수 있어요.'
     },r=>r.status===200 && !!seen(r),'버즈 추천 이유 후속 질문 실패');
-    await doSay(s,'버즈 옵션 분리','에어팟 프로 2 가격도 알려줘 '+(i+1),{
+    await doSay(s,'버즈 옵션 분리','에어팟 프로 2 가격도 알려줘',{
       classify:'D|에어팟 프로 2',answer:'에어팟 프로 2세대의 가격을 비교해 드릴게요.'
     },r=>cards(r).length>0 && cards(r).every(c=>c.productId===F.AIRPODS.pid),
     '다른 카테고리 전환 시 버즈 혼입');
@@ -196,7 +196,7 @@ async function doSay(s, group, question, opt, validate, label) {
       classify:'D|에어팟 프로 2',answer:'에어팟 프로 2세대 USB-C는 329,000원이에요.'
     },r=>cards(r).length>0 && cards(r).every(c=>c.productId===F.AIRPODS.pid)
       && !!REF(r),'에어팟 상품 선택 실패');
-    await doSay(s,'에어팟 대화·전환','이거 왜 추천했어? '+(i+1),{
+    await doSay(s,'에어팟 대화·전환','이거 왜 추천했어?',{
       answer:'이 상품을 추천한 이유는 요청하신 모델이기 때문이에요. 가격 기록을 확인해 주세요.'
     },r=>cards(r).length===1 && cards(r)[0].productId===F.AIRPODS.pid,
     '에어팟 추천 이유 참조 실패');
@@ -204,10 +204,10 @@ async function doSay(s, group, question, opt, validate, label) {
       answer:'지금 살지 결정하기 전에 가격의 최신성을 확인해 주세요.'
     },r=>cards(r).length===1 && cards(r)[0].productId===F.AIRPODS.pid,
     '에어팟 구매 질문 참조 실패');
-    await doSay(s,'에어팟 대화·전환','이거랑 비슷한 무선 이어폰도 볼래 '+(i+1),{
+    await doSay(s,'에어팟 대화·전환','이거랑 비슷한 무선 이어폰도 볼래',{
       classify:'C|무선 이어폰',answer:'유사한 무선 이어폰도 비교해 볼 수 있어요.'
     },r=>r.status===200 && !!seen(r),'유사 후보 탐색 실패');
-    await doSay(s,'에어팟 대화·전환','LG 그램 노트북으로 바꿔서 추천해줘 '+(i+1),{
+    await doSay(s,'에어팟 대화·전환','LG 그램 노트북으로 바꿔서 추천해줘',{
       classify:'C|노트북 그램',answer:'그램 노트북 모델을 비교해 드릴게요.'
     },r=>cards(r).length>0 && cards(r).every(c=>/그램/.test(c.title)),'상품 종류 전환 실패');
   }
