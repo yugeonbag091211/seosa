@@ -109,6 +109,34 @@ const NOT_FOUND = /찾지 못했|결과가 없었|검색했지만/;
   }
 
   /* ================================================================ */
+  section('1-b. 실제 ADPICK 상품명 — 종류명 없이 계열만 적힌 노트북 (2026-10-24 Preview 실호출)');
+  {
+    const AIID = require('../api/_aiidentity');
+    // Preview 실호출에서 "노트북 그램으로 추천해줘" 가 받은 ADPICK 결과 그대로 (상품명만).
+    const titles = [
+      '[해외] LG 그램 노트북 충전기, AC 어댑터, 19V 전원 공급 장치, 2.37A, 45W, 14T90N',
+      '[기프트] 멀티 맥북 그램 노트북파우치 13인치 15인치 16인치',
+      '그램 피 언스 국립 공원 멜버른에서 소그룹 에코 투어',
+      'LG전자 LG그램 14ZD95U-GX5WK/AMD 라이젠 16GB 256GB OS 미탑재',
+      'LG전자 그램 14ZD95U-GX5WK AMD 라이젠 AI 5/16GB 256GB OS 미탑재',
+      'LG그램 프로 17Z90U 17ZD90U 키보드 보호필름',
+      '[보리보리] 오너클랜 커버 그램 LG 키보드 15Z960LR10K 덮개 키스킨',
+      '카스 전자저울 0.1g 500그램 주방저울',
+      '삼성 갤럭시북4 프로 NT960XGQ'
+    ];
+    const items = titles.map((t, i) => ({ title: t, price: 500000 + i, productId: `p${i}`, mall: 'ADPICK' }));
+    const gate = AIID.partition(items, AIID.buildContract({ query: '노트북 그램', userText: '노트북 그램으로 추천해줘', titles }));
+    const kept = gate.items.map(it => it.title);
+    ok(gate.state === 'EXACT' && kept.length === 2 && kept.every(t => /14ZD95U/.test(t)),
+      '«노트북» 이 상품명에 없어도 LG 그램 본품은 노트북으로 알아본다 (예전: 전부 «다른 종류» → "찾지 못했어요")', JSON.stringify(kept));
+    ok(!kept.some(t => /충전기|파우치|투어|보호필름|키스킨|저울|갤럭시북/.test(t)),
+      '부속(충전기·파우치·보호필름·키스킨)·여행 상품·주방저울(500그램)·다른 계열(갤럭시북)은 계속 빠진다');
+    const any = AIID.partition(items, AIID.buildContract({ query: '노트북', userText: '노트북 추천해줘', titles }));
+    ok(any.items.some(it => /갤럭시북4/.test(it.title)) && !any.items.some(it => /저울|보호필름/.test(it.title)),
+      '«노트북» 만 물으면 갤럭시북도 노트북으로 들어온다 (계열 이름 → 종류)');
+  }
+
+  /* ================================================================ */
   section('2. 이어폰 추천 → 예산 변경 → 배터리 중시 → 다른 제품');
   {
     const s = H.session();

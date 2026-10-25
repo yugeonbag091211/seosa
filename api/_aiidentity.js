@@ -80,6 +80,35 @@ function categoryNounOf(tok) {
   return /^[가-힣]{3,}$/.test(tok) && [...CATEGORY_NOUNS].some(n => /^[가-힣]{2,}$/.test(n) && tok.endsWith(n));
 }
 
+/*
+ * 종류명 없이 상품 계열만 적힌 상품명 (2026-10-24 Preview 실호출).
+ *
+ * "노트북 그램으로 추천해줘" 의 ADPICK 결과 "LG전자 그램 14ZD95U-GX5WK AMD 라이젠 16GB 256GB" 는 노트북인데
+ * 상품명에 «노트북» 이 없어서 «다른 종류의 상품» 으로 전부 빠졌고, 답은 "조건에 맞는 상품을 찾지 못했어요" 였다.
+ * 계열 이름이 그 종류를 확실히 가리킬 때만 종류명이 있는 것으로 본다 — «그램» 은 무게 단위이기도 해서
+ * LG·모델 코드(14ZD95U)·노트북 사양 낱말이 함께 있어야 한다. 부속·여행 상품 판정은 이보다 먼저 돈다.
+ */
+const FAMILY_KIND = [
+  ['노트북', /lg\s?그램|그램\s?(?:프로|스타일|360)|(?:^|[^0-9])\d{2}z[a-z]{0,2}\d{2,3}[a-z0-9-]*|그램(?=.*(?:인텔|라이젠|ryzen|intel|코어\s?i|울트라\s?[579]|ssd|윈도우|windows|os\s?미탑재|freedos))|맥북|macbook|갤럭시\s?북|galaxy\s?book|씽크패드|thinkpad|아이디어패드|ideapad|비보북|vivobook|젠북|zenbook/i],
+  ['이어폰', /에어팟|airpods|갤럭시\s?버즈|galaxy\s?buds|버즈\s?(?:\d|프로|라이브|fe\b)/i],
+  ['태블릿', /아이패드|ipad|갤럭시\s?탭|galaxy\s?tab/i],
+  ['스마트폰', /아이폰|iphone|갤럭시\s?(?:s|z|a)\s?\d{1,2}|갤럭시\s?(?:폴드|플립)/i],
+  ['스마트워치', /애플\s?워치|apple\s?watch|갤럭시\s?워치|galaxy\s?watch/i]
+];
+const HEAD_KIND = {
+  노트북: '노트북', 랩탑: '노트북', laptop: '노트북', notebook: '노트북',
+  이어폰: '이어폰', 이어버드: '이어폰', earbuds: '이어폰', earphone: '이어폰',
+  태블릿: '태블릿', tablet: '태블릿',
+  스마트폰: '스마트폰', 휴대폰: '스마트폰', 핸드폰: '스마트폰', smartphone: '스마트폰',
+  스마트워치: '스마트워치', 워치: '스마트워치'
+};
+function familyImpliesHead(head, title) {
+  const kind = HEAD_KIND[String(head || '').toLowerCase()];
+  if (!kind) return false;
+  const t = String(title || '');
+  return FAMILY_KIND.some(([k, re]) => k === kind && re.test(t));
+}
+
 /* "필요해 · 중요해 · 넘어도 · 좋아" 같은 서술어는 상품 이름이 아니다. */
 const PREDICATE_RE = /(?:해|해요|해줘|해주세요|하다|하고|하지|해서|하면|합니다|했어|돼|돼요|되나|될까|싶어|좋아|있어|없어|이야|예요|에요|어도|아도|여도|해도|잖아)$/;
 const BUNDLE_WORDS = new Set(['번들', '묶음', '세트', '패키지', '구성', 'bundle', 'package', 'set']);
@@ -672,7 +701,14 @@ function verdict(contract, item) {
       }
     }
   } else if (c.head && !wordHit(c.head, info)) {
-    bump(TIER.MISMATCH, 'category', '다른 종류의 상품');
+    /*
+     * 종류명 대신 계열 이름만 적힌 본품 (FAMILY_KIND 주석). 부속 낱말이 하나라도 있으면(보호필름·케이스·키스킨)
+     * 쓰지 않는다 — 예전에는 «종류명 없음» 이 그런 부속을 함께 걸러 주고 있었다. 사용자가 말한 다른 낱말
+     * ("노트북 그램" 의 그램)도 상품명에 있어야 한다 — 맥북이 «그램» 요청에 들어오지 않게.
+     */
+    const familyOk = !titleAcc.length && familyImpliesHead(c.head, title)
+      && (c.words || []).filter(w => w !== c.head).every(w => wordHit(w, info));
+    if (!familyOk) bump(TIER.MISMATCH, 'category', '다른 종류의 상품');
   }
 
   /* 등급 표기 (프로·맥스·울트라·플러스…) */
