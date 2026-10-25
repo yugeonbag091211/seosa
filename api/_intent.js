@@ -1255,6 +1255,12 @@ function conversationProduct(hist) {
     const positive = AIID.splitNegations(spText).positive;
     const q = extractQuery(positive);
     if (!q && !CONTEXT_DEPENDENT_RE.test(spText)) continue;
+    // A standalone budget change is not a new product. In the 200-question
+    // audit "예산을 10만원으로 할게" was stored as the product name and then
+    // "배터리 오래가는 이어폰이면 좋겠어" lost the earphone context.
+    const onlyBudget = parseConstraints(text);
+    if ((onlyBudget.budgetMax || onlyBudget.budgetMin)
+        && AIID.productEvidence(positive) === 0) continue;
     // 조건만 덧붙인 말("배터리 오래가는 게 중요해")·잡담("고마워 정말")은 찾던 상품이 아니다 — 그 앞의 상품을 계속 찾는다.
     if (isConditionOnly(spText) || isSmallTalk(text)) continue;
     // 상품 이름이 아닌 낱말("다르면"·"기억해")은 옵션 판정에서 뺀다 (classify 의 refineText 와 같다).
