@@ -18,6 +18,10 @@ on:
       - 'scripts/_daycache.js'
       - 'scripts/collect-hotdeals.js'
       - 'scripts/test-daycache.js'
+      - 'scripts/collect-volatile-prices.js'
+      - 'scripts/_price-volatility.js'
+      - 'scripts/test-price-volatility.js'
+      - '.github/workflows/volatile-prices.yml'
       - '.github/workflows/daily-prices.yml'
       - '.github/workflows/hotdeals.yml'
       - 'scripts/check-alerts.js'
@@ -63,5 +67,7 @@ jobs:
       # 2026-10-22 하루 캐시: 캐시 끔 = 캐시 생성 = 캐시 사용 결과, 실패 묶음은 캐시에 넣지 않는다.
       - name: Day cache (collector targets, hot-deal history) regression
         run: node scripts/test-daycache.js
+      - name: Adaptive price volatility regression
+        run: node scripts/test-price-volatility.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js
