@@ -876,6 +876,40 @@ function classify(text, hist) {
     };
   }
 
+  /*
+   * Short conversational conditions and alternatives that were missed by the
+   * generic residue tokenizer in the 200-question offline audit.
+   *
+   * Keep the known product category, never invent a new product name. A named
+   * category in the follow-up must also occur in the previous search phrase.
+   * Otherwise, let the normal new-product routing handle the switch.
+   */
+  if (Array.isArray(hist) && hist.length) {
+    const batteryLimit = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/;
+    const batteryNamed = /^배터리\s*오래가는\s*([가-힣]{2,8})(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/;
+    const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/;
+    const otherNamed = /^대신\s*다른\s*([가-힣]{2,8})(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/;
+    const namedCondition = batteryNamed.exec(s);
+    const namedOther = otherNamed.exec(s);
+    const isCondition = batteryLimit.test(s) || !!namedCondition;
+    const isAlternative = otherCandidate.test(s) || !!namedOther;
+    if (isCondition || isAlternative) {
+      const prior = conversationProduct(hist);
+      const noun = namedCondition && namedCondition[1] || namedOther && namedOther[1] || '';
+      if (prior && isProductQuery(prior) && (!noun || prior.indexOf(noun) >= 0)) {
+        return {
+          intent: 'C', query: prior.slice(0, MAX_QUERY_LEN),
+          identityText: prior.slice(0, 200),
+          source: 'heuristic', confidence: 'high', contextualFollowup: true,
+          stateQuery: true, ownQuery: false, refinement: false,
+          conditionFollowup: isCondition, wantsAlternative: isAlternative,
+          requiresRecommendationIdentity: false, fitQuestion: false,
+          extra: { useCase: '', brand: '', avoid: '' }
+        };
+      }
+    }
+  }
+
   /* 상품 조건 파싱보다 먼저 정보 목적을 본다. "골라줘"가 뉴스 선별에도 쓰이기 때문이다. */
   const informationIntent = classifyInformationIntent(s);
   if (informationIntent) {
