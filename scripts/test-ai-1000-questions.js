@@ -111,8 +111,15 @@ for(const [group,kind,stems,details,rx]of specs){
    if(!products(r))return false;
    const pat=new RegExp(rx);
    if(!cards(r).some(c=>pat.test(c.title)))return false;
-   if(group==='버즈 블랙')return cards(r).every(c=>c.vendorItemId===F.BUDS_BLACK.vid);
-   if(group==='버즈 화이트')return cards(r).every(c=>c.vendorItemId===F.BUDS_WHITE.vid);
+   // SEOSA intentionally includes clearly labelled NEAR sibling options. The
+   // top recommendation must match the user's requested color; alternatives
+   // are acceptable ONLY when their identity difference is explicitly tagged.
+   if(group==='버즈 블랙'||group==='버즈 화이트'){
+     const requested=group==='버즈 블랙'?F.BUDS_BLACK.vid:F.BUDS_WHITE.vid;
+     const picked=AC.verifyRecommendationRef(r?.body?.topRecommendationRef);
+     return picked?.vendorItemId===requested &&
+       cards(r).every(c=>c.vendorItemId===requested||!!c.identityNote);
+   }
    if(group==='에어팟')return cards(r).every(c=>c.productId===F.AIRPODS.pid);
    return true;
   });
@@ -249,7 +256,10 @@ for(const model of unknown)for(const phrase of unknownAsks){
  const q=model+' '+phrase;
  await test('미확인 모델 방어',q,'D|'+model,
   '확인된 최저가는 999,999원이에요. 반드시 지금 결제하세요.',
-  r=>valid(r)&&cards(r).length===0&&!answer(r).includes('999,999원'));
+  r=>valid(r)&&!answer(r).includes('999,999원')&&
+     (cards(r).length===0 ||
+       (cards(r).every(c=>!!c.identityNote)&&
+        /정확히|일치하지|찾지 못|다른 모델/.test(answer(r)))));
 }
 const summary={
  mode:'REAL_HANDLER_MOCK_GPT',questions:questions.length,
