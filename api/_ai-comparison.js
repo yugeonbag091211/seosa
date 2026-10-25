@@ -13,6 +13,12 @@ function parseComparison(question) {
   const m = /^(.{2,75}?)\s*(?:와|과|랑|하고|\s+vs\.?\s+|\s+versus\s+)\s*(.{2,75}?)\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천)|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이\s*(?:알려|설명|있|뭐)).*$/i.exec(s);
   if (!m) return null;
   let left = m[1].trim(), right = m[2].trim();
+  // Korean object particles before "비교해줘" are grammar, not part of
+  // the product family: "아이패드랑 갤럭시탭을 비교해줘".
+  // Restrict to a final particle on Hangul words to preserve model codes.
+  right = right.replace(/([가-힣]{2,})(?:을|를)$/, '$1');
+  // Common family names may be written without a numeric model anchor.
+  const knownFamily = /^(?:아이패드|갤럭시\\s*탭|갤럭시탭|ipad|galaxy\\s*tab)$/i;
   // "버즈3 프로 블랙과 화이트" explicitly names two color options of
   // the same series, not the generic product "화이트".
   const color = /^(?:블랙|검정|화이트|흰색)$/;
@@ -24,7 +30,7 @@ function parseComparison(question) {
   // must never split an unrelated prompt into two shop searches.
   if (/[.!?。;:<>]/.test(left + right)) return null;
   const AIID = require('./_aiidentity');
-  const named = term => AIID.productEvidence(term) > 0 || /[0-9]/.test(term);
+  const named = term => AIID.productEvidence(term) > 0 || /[0-9]/.test(term) || knownFamily.test(term);
   if (!named(left) || !named(right)) return null;
   return [left, right];
 }
