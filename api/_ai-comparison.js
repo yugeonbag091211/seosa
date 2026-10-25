@@ -27,6 +27,18 @@ function parseComparison(question) {
   return [left, right];
 }
 
+
+/**
+ * Contextual references to a pair are resolved ONLY with a valid signed
+ * conversation state. A bare "그거" is singular/ambiguous and must not
+ * silently pick one side.
+ */
+function isPairFollowup(question) {
+  const q = String(question || '').trim().slice(0, 240);
+  if (!q || q.length > 180) return false;
+  return /(?:둘\\s*중|두\\s*(?:제품|상품|모델)|이\\s*둘|그\\s*둘|둘\\s*다|둘\\s*의|둘\\s*을|둘\\s*이|각각|앞(?:에서)?\\s*비교한|아까\\s*비교한|방금\\s*비교한|비교했던|그\\s*중)/.test(q);
+}
+
 function pickExact(raw, query, AIID, normalize) {
   const candidates = (Array.isArray(raw) ? raw : [])
     .filter(x => x && x.productId && Number.isSafeInteger(Number(x.lprice)) && Number(x.lprice) > 0)
@@ -46,9 +58,11 @@ function pickExact(raw, query, AIID, normalize) {
   return exact[0] || null;
 }
 
-function formatComparison(requested, offers) {
+function formatComparison(requested, offers, source) {
   const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
-  const lines = ['두 상품을 각각 검색해서 확인한 결과예요.'];
+  const lines = [source === 'catalog'
+    ? '앞에서 비교한 두 상품을 서사 카탈로그에서 다시 확인했어요. 아래 가격은 마지막 수집 시점의 기록이며 현재 결제가는 아닐 수 있어요.'
+    : '두 상품을 각각 검색해 확인한 표시 가격을 비교했어요.'];
   offers.forEach((p,i) => {
     const name = requested[i];
     if (!p) { lines.push(`${i+1}. 「${name}」: 정확히 일치하는 판매 상품과 가격을 확인하지 못했어요.`); return; }
@@ -62,7 +76,7 @@ function formatComparison(requested, offers) {
   } else {
     lines.push('둘 다 확인되지 않아 가격 차이나 가성비 우열을 단정할 수 없어요.');
   }
-  lines.push('위 금액은 검색 시점의 표시 가격이며 실제 결제 금액은 판매처에서 옵션을 선택해 확인해야 해요.');
+  lines.push('실제 결제 금액과 옵션·배송 조건은 판매처에서 다시 확인해야 해요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, pickExact, formatComparison };
+module.exports = { parseComparison, isPairFollowup, pickExact, formatComparison };
