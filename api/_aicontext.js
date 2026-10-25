@@ -279,7 +279,7 @@ const REF_LABEL = 'seosa-ai-recommendation-ref-v2';
  * 쿠팡 상품은 옵션 ID 없이 발급하지 않는다 (옵션을 특정할 수 없는 참조는
  * 결국 "그중 아무 옵션"을 고르게 만든다).
  */
-function createRecommendationRef(item, now) {
+function createRecommendationRef(item, now, continuity) {
   const key = keyFor(REF_LABEL);
   const productId = clean(item && item.productId, ID_LEN);
   const vendorItemId = clean(item && item.vendorItemId, ID_LEN);
@@ -287,7 +287,30 @@ function createRecommendationRef(item, now) {
   if (!key || !productId || !mall) return '';
   if (isCoupangMall(mall) && !vendorItemId) return '';
   const iat = Number.isFinite(now) ? now : Date.now();
-  const payload = b64url(JSON.stringify({ p: productId, v: vendorItemId, m: mall, iat, exp: iat + REF_TTL_MS }));
+  const d = { p: productId, v: vendorItemId, m: mall, iat, exp: iat + REF_TTL_MS };
+  /*
+   * The price shown in an actual search is a signed past observation, NOT
+   * live checkout-price evidence. Preserve it across subsequent rechecks
+   * so an older catalogue row cannot silently rewrite conversation history.
+   * Only server-local callers mark an item as newly searched; browser
+   * contextProducts never supplies this flag.
+   */
+  const prior = continuity && continuity.previous;
+  const samePrior = prior && prior.productId === productId
+    && String(prior.vendorItemId || '') === vendorItemId
+    && String(prior.mallId || prior.mall || '') === mall;
+  const firstPrice = Math.round(Number(item && item.price) || 0);
+  if (continuity && continuity.fromSearch === true && !item.isCanonicalGroup
+      && Number.isSafeInteger(firstPrice) && firstPrice > 0 && firstPrice <= 1e10) {
+    d.sp = firstPrice;
+    d.sa = iat;
+  } else if (samePrior && Number.isSafeInteger(prior.searchPrice)
+      && prior.searchPrice > 0 && Number.isFinite(prior.searchAt)
+      && prior.searchAt <= iat + CLOCK_SKEW_MS && iat - prior.searchAt <= REF_TTL_MS) {
+    d.sp = prior.searchPrice;
+    d.sa = prior.searchAt;
+  }
+  const payload = b64url(JSON.stringify(d));
   const sig = b64url(crypto.createHmac('sha256', key).update(`${REF_PREFIX}.${payload}`).digest());
   return `${REF_PREFIX}.${payload}.${sig}`;
 }
@@ -318,7 +341,17 @@ function verifyRecommendationRef(value, now) {
     const mall = clean(d.m, 30);
     if (!productId || !mall) return null;
     if (isCoupangMall(mall) && !vendorItemId) return null;
-    return { productId, vendorItemId, mall, mallId: mall, title: '' };
+    const verified = { productId, vendorItemId, mall, mallId: mall, title: '' };
+    if (Object.prototype.hasOwnProperty.call(d, 'sp') || Object.prototype.hasOwnProperty.call(d, 'sa')) {
+      const sp = Number(d.sp);
+      const sa = Number(d.sa);
+      if (!Number.isSafeInteger(sp) || sp <= 0 || sp > 1e10
+          || !Number.isFinite(sa) || sa > iat + CLOCK_SKEW_MS
+          || sa > t + CLOCK_SKEW_MS || iat - sa > REF_TTL_MS) return null;
+      verified.searchPrice = sp;
+      verified.searchAt = sa;
+    }
+    return verified;
   } catch (e) {
     return null;
   }
