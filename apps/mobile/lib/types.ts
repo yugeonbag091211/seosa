@@ -142,5 +142,7 @@ export type AiAnswer = {
   topProductId: string;
   topRecommendationRef: string;
   turnSig: string;
+  /** Server-signed conversation state (api/_convstate.js). Opaque; '' when the server sent none. */
+  convState: string;
   recommendationChanged: string | null;
 };
