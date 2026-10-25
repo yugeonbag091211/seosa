@@ -24,6 +24,7 @@ const { searchAdpick } = require('../api/_adpick');
 const { recordPrices, adpickProductId } = require('../api/_shop');
 const { pickOption, acquireLock, loadState, releaseLock } = require('./collect-all-prices');
 const { keyOf, volatilityRanking, slotPlan, pickSearchGroups } = require('./_price-volatility');
+const { sendVolatileReport } = require('./_volatile-report');
 
 const HISTORY_DAYS = 30;
 const MAX_HISTORY_ROWS = 500000; // 이보다 많으면 편향된 일부 표본으로 실행하지 않는다.
@@ -113,7 +114,7 @@ async function catalogForRanking(ranking, minChanges, slotStartMs, mall) {
   const found = [];
   for (let i = 0; i < ids.length; i += 70) {
     const { data, error } = await db.from('products')
-      .select('product_id,mall,title,keyword,link,vendor_item_id,item_id,image,collected_at')
+      .select('product_id,mall,title,keyword,link,vendor_item_id,item_id,image,collected_at,lprice')
       .in('product_id', ids.slice(i, i + 70));
     if (error) throw new Error('가격 재확인 대상 조회 실패: ' + error.message);
     for (const p of data || []) {
@@ -154,84 +155,180 @@ async function fetchFresh(mall, keyword) {
   return mall === '쿠팡' ? searchCoupang(keyword, opts) : searchAdpick(keyword, opts);
 }
 
+/**
+ * 판매처에 실제로 저장된 현재가를 사후 조회하여 "실제 표시 가격 변경"만 센다.
+ * 확인·저장된 상품 수와 가격이 바뀐 상품 수는 같은 숫자가 아니다.
+ * 원래 가격과 다른 API 응답을 받더라도 suspect 보류면 0으로 계산한다.
+ */
+async function confirmAppliedChanges(differences, mall, client = db) {
+  const byProduct = new Map();
+  for (const d of differences || []) {
+    const id = String(d.productId || '');
+    if (!id || !Number.isSafeInteger(d.beforePrice) || !Number.isSafeInteger(d.afterPrice)) continue;
+    if (d.beforePrice === d.afterPrice) continue;
+    byProduct.set(id, d);
+  }
+  if (!byProduct.size) return 0;
+
+  let applied = 0;
+  const ids = [...byProduct.keys()];
+  for (let i = 0; i < ids.length; i += 70) {
+    const { data, error } = await client.from('products')
+      .select('product_id,mall,lprice').in('product_id', ids.slice(i, i + 70)).eq('mall', mall);
+    if (error) throw new Error(mall + ' 가격 반영 재검증 실패: ' + error.message);
+    for (const row of data || []) {
+      const expected = byProduct.get(String(row.product_id));
+      if (expected && Number(row.lprice) === expected.afterPrice) applied++;
+    }
+  }
+  return applied;
+}
+
+function emptyMallStats() {
+  return {
+    candidates: 0, groups: 0, spent: 0, checked: 0, saved: 0,
+    observedDifferences: 0, changedApplied: 0, suspect: 0,
+    rejected: 0, optionMiss: 0, cacheSkip: 0, failed: 0
+  };
+}
+
 async function run() {
   if (process.env.PRICE_VOLATILE_OFF === '1') {
     console.log('[adaptive] 긴급 중지 스위치 ON — 가격 재확인하지 않음');
     return;
   }
-  const plan = slotPlan(new Date(), process.env.PRICE_VOLATILE_SLOT || '');
-  if (!plan) { console.log('[adaptive] 점심/저녁 수집 시간대 밖 — 외부 호출 0'); return; }
-  const state = await loadState();
-  if (!state) throw new Error('공유 수집기 잠금 상태 없음(안전 중단)');
-  const lock = await acquireLock(state);
-  if (!lock.ok) { console.log('[adaptive] 공유 잠금 획득 실패 — 호출 0: ' + lock.reason); return; }
-  try {
-    // 누적 사용량을 먼저 검사하고 남은 예산에서만 쓴다. 데이터 확인 실패는 fail-closed.
-    const usage = {
-      '쿠팡': await getUsage('쿠팡', plan.day),
-      'ADPICK': await getUsage('ADPICK', plan.day)
-    };
-    const allowances = Object.fromEntries(Object.keys(DAY_CAP).map(mall => [
-      mall, Math.max(0, Math.min(SLOT_CAP, DAY_CAP[mall] - usage[mall]))
-    ]));
-    console.log(`[adaptive] ${plan.day} ${plan.slot}, 지난 30일 가격변동 최소 ${plan.minChanges}회`);
-    console.log(`[adaptive] API 사용량: 쿠팡 ${usage['쿠팡']}/${DAY_CAP['쿠팡']}, ADPICK ${usage.ADPICK}/${DAY_CAP.ADPICK}`);
-    if (!Object.values(allowances).some(Boolean)) return;
 
-    const ranking = await getRanking(plan.day);
-    const results = {};
-    for (const mall of ['쿠팡', 'ADPICK']) {
-      let spent = 0, checked = 0, updated = 0, optionMiss = 0, cacheSkip = 0, failed = 0;
-      if (!allowances[mall]) {
-        results[mall] = { spent, checked, updated, optionMiss, cacheSkip, failed, reason: 'quota' };
-        continue;
-      }
-      const candidates = await catalogForRanking(ranking, plan.minChanges, plan.startMs, mall);
-      const groups = pickSearchGroups(candidates, allowances[mall]);
-      console.log(`[adaptive] ${mall}: 후보 상품 ${candidates.length}, 검색어 그룹 ${groups.length}`);
-      for (const group of groups) {
-        if (spent >= allowances[mall]) break;
-        const r = await fetchFresh(mall, group.keyword);
-        if (r.apiCalled === true || r.from === 'api') spent++;
-        // stale-cache는 라이브 가격이 아니다. 채택하지 않는다.
-        if (r.from !== 'api' || r.blocked || r.error) {
-          cacheSkip++;
-          if (r.blocked) { console.warn(`[adaptive] ${mall} 차단 감지 — 중지: ${r.error}`); break; }
-          continue;
-        }
-        const sourceItems = mall === '쿠팡' ? (r.allItems || r.items || []) : (r.items || []);
-        const observations = [];
-        for (const p of group.targets) {
-          let match;
-          if (mall === '쿠팡') {
-            const picked = pickOption(p, sourceItems);
-            match = picked.item;
-            if (!match && picked.reason === 'OPTION_MISMATCH') optionMiss++;
-          } else {
-            match = sourceItems.find(it => adpickProductId(it.commissionlink) === String(p.product_id));
-            if (match) match = { lprice: match.price, oprice: match.price, link: match.commissionlink,
-              image: match.photo || '', itemId: '', vendorItemId: '', mallLabel: match.mallLabel || '' };
-          }
-          if (!match) continue;
-          const obs = observation(p, match, group.keyword);
-          if (obs) observations.push(obs);
-        }
-        if (!observations.length) continue;
-        checked += observations.length;
-        const saved = await recordPrices(observations, { source: 'collect', label: 'adaptive-' + plan.slot });
-        if (saved.errors?.length) throw new Error('재확인 가격 저장 실패: ' + saved.errors.join('; '));
-        updated += saved.saved || 0;
-        failed += (saved.rejected || 0) + (saved.optionMismatch || 0);
-      }
-      results[mall] = { spent, checked, updated, optionMiss, cacheSkip, failed };
+  const plan = slotPlan(new Date(), process.env.PRICE_VOLATILE_SLOT || '');
+  if (!plan) {
+    console.log('[adaptive] 점심/저녁 수집 시간대 밖 — 외부 호출 0');
+    return;
+  }
+
+  const report = {
+    day: plan.day, slot: plan.slot, status: 'failed',
+    startedAt: new Date().toISOString(), finishedAt: '',
+    reason: '', usage: {}, caps: DAY_CAP, results: {
+      '쿠팡': emptyMallStats(), 'ADPICK': emptyMallStats()
     }
-    console.log('[adaptive] RESULT ' + JSON.stringify({ day: plan.day, slot: plan.slot, minChanges: plan.minChanges, results }));
+  };
+
+  try {
+    const state = await loadState();
+    if (!state) throw new Error('공유 수집기 잠금 상태 없음(안전 중단)');
+    const lock = await acquireLock(state);
+    if (!lock.ok) {
+      report.status = 'skipped';
+      report.reason = '기존 정기 수집과 잠금 충돌: ' + lock.reason;
+      console.log('[adaptive] 재확인 건너뜀: ' + report.reason);
+      return;
+    }
+
+    try {
+      const usage = {
+        '쿠팡': await getUsage('쿠팡', plan.day),
+        'ADPICK': await getUsage('ADPICK', plan.day)
+      };
+      report.usage = usage;
+      const allowances = Object.fromEntries(Object.keys(DAY_CAP).map(mall => [
+        mall, Math.max(0, Math.min(SLOT_CAP, DAY_CAP[mall] - usage[mall]))
+      ]));
+      console.log(`[adaptive] ${plan.day} ${plan.slot}, 지난 30일 가격변동 최소 ${plan.minChanges}회`);
+      console.log(`[adaptive] API 사용량: 쿠팡 ${usage['쿠팡']}/${DAY_CAP['쿠팡']}, ADPICK ${usage.ADPICK}/${DAY_CAP.ADPICK}`);
+      if (!Object.values(allowances).some(Boolean)) {
+        report.status = 'skipped';
+        report.reason = '두 판매처 모두 추가 검증용 하루 API 호출 예산 소진';
+        console.log('[adaptive] ' + report.reason);
+        return;
+      }
+
+      const ranking = await getRanking(plan.day);
+      for (const mall of ['쿠팡', 'ADPICK']) {
+        const stats = report.results[mall];
+        if (!allowances[mall]) { stats.reason = 'quota'; continue; }
+
+        const candidates = await catalogForRanking(ranking, plan.minChanges, plan.startMs, mall);
+        const groups = pickSearchGroups(candidates, allowances[mall]);
+        stats.candidates = candidates.length;
+        stats.groups = groups.length;
+        const possibleChanges = [];
+        console.log(`[adaptive] ${mall}: 후보 상품 ${candidates.length}, 검색어 그룹 ${groups.length}`);
+
+        for (const group of groups) {
+          if (stats.spent >= allowances[mall]) break;
+          const r = await fetchFresh(mall, group.keyword);
+          if (r.apiCalled === true || r.from === 'api') stats.spent++;
+          // API 강제 갱신에 실패했다면 예전 캐시를 방금 확인한 가격으로 위장하지 않는다.
+          if (r.from !== 'api' || r.blocked || r.error) {
+            stats.cacheSkip++;
+            if (r.blocked) {
+              console.warn(`[adaptive] ${mall} 차단 감지 — 중지: ${r.error}`);
+              stats.reason = 'blocked';
+              break;
+            }
+            continue;
+          }
+
+          const sourceItems = mall === '쿠팡' ? (r.allItems || r.items || []) : (r.items || []);
+          const observations = [];
+          for (const p of group.targets) {
+            let match;
+            if (mall === '쿠팡') {
+              const picked = pickOption(p, sourceItems);
+              match = picked.item;
+              if (!match && picked.reason === 'OPTION_MISMATCH') stats.optionMiss++;
+            } else {
+              match = sourceItems.find(it => adpickProductId(it.commissionlink) === String(p.product_id));
+              if (match) match = {
+                lprice: match.price, oprice: match.price, link: match.commissionlink,
+                image: match.photo || '', itemId: '', vendorItemId: '', mallLabel: match.mallLabel || ''
+              };
+            }
+            if (!match) continue;
+            const obs = observation(p, match, group.keyword);
+            if (!obs) continue;
+            observations.push(obs);
+            const beforePrice = Number(p.lprice);
+            if (Number.isSafeInteger(beforePrice) && beforePrice > 0 && beforePrice !== obs.price) {
+              possibleChanges.push({ productId: String(p.product_id), beforePrice, afterPrice: obs.price });
+              stats.observedDifferences++;
+            }
+          }
+
+          if (!observations.length) continue;
+          stats.checked += observations.length;
+          const saved = await recordPrices(observations, { source: 'collect', label: 'adaptive-' + plan.slot });
+          if (saved.errors?.length) throw new Error('재확인 가격 저장 실패: ' + saved.errors.join('; '));
+          stats.saved += saved.saved || 0;
+          stats.suspect += saved.suspect || 0;
+          stats.rejected += saved.rejected || 0;
+          stats.failed += (saved.rejected || 0) + (saved.optionMismatch || 0);
+        }
+
+        stats.changedApplied = await confirmAppliedChanges(possibleChanges, mall);
+        console.log(`[adaptive] ${mall}: 실제 API ${stats.spent}회 / 확인 ${stats.checked}개 / 현재가 반영 ${stats.saved}개 / 가격 변경 ${stats.changedApplied}개 / 이상값 보류 ${stats.suspect}개`);
+      }
+
+      report.status = 'completed';
+      console.log('[adaptive] RESULT ' + JSON.stringify({
+        day: plan.day, slot: plan.slot, status: report.status, results: report.results
+      }));
+    } finally {
+      await releaseLock(lock.token);
+    }
+  } catch (error) {
+    report.status = 'failed';
+    report.reason = String(error.message || error).slice(0, 600);
+    console.error('[adaptive] 실패:', report.reason);
+    throw error;
   } finally {
-    await releaseLock(lock.token);
+    // 성공·예산 소진·잠금 충돌·오류 모두 결과를 발송한다.
+    // 메일 실패가 API/DB 수집 결과를 뒤집지는 않는다.
+    report.finishedAt = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false }) + ' KST';
+    await sendVolatileReport(report);
   }
 }
 
-module.exports = { observation, catalogForRanking, getUsage, getRanking };
+module.exports = { observation, catalogForRanking, getUsage, getRanking, confirmAppliedChanges, emptyMallStats };
 if (require.main === module) {
   run().catch(e => { console.error('[adaptive] 실패:', e.stack || e.message); process.exitCode = 1; });
 }
