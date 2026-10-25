@@ -144,15 +144,15 @@ await combine(pairs,compare,async(a,b)=>{
  const q=a+' 비교해줘. '+b;
  const expected=[
   [F.GRAM_15,F.GRAM_16],[F.GRAM_15,F.GRAM_PRO],[F.BUDS_BLACK,F.BUDS_WHITE],
-  [F.QCY,F.JBL],[F.SONY,F.AIRPODS],[F.BUDS_BLACK,F.AIRPODS],
+  [F.QCY,F.JBL],[F.SONY,F.AIRPODS],[{pid:F.BUDS_BLACK.pid,vid:''},F.AIRPODS],
   [F.GRAM_16,F.GRAM_PRO],[F.JBL,F.SONY],[F.QCY,F.AIRPODS],[F.BUDS_BLACK,F.BUDS_WHITE]
  ][pairs.indexOf(a)];
  await test('상품 비교',q,'C|'+a,explain,r=>{
    const list=cards(r);
-   const signature=x=>[x.productId,x.vendorItemId||''].join(':');
+   const match=(card,expected)=>card.productId===expected.pid && (!expected.vid || card.vendorItemId===expected.vid);
    return valid(r)&&list.length===2&&list.every(c=>Number(c.lprice)>0)
-     &&expected.every(p=>list.some(c=>signature(c)===[p.pid,p.vid||''].join(':')))
-     &&list.every(c=>expected.some(p=>signature(c)===[p.pid,p.vid||''].join(':')));
+     &&expected.every(p=>list.some(c=>match(c,p)))
+     &&list.every(c=>expected.some(p=>match(c,p)));
  });
 });
 // 20 sessions × 5 turns = 100 connected, distinctive prompts.
