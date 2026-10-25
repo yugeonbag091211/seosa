@@ -301,7 +301,7 @@ function reset() {
   ok(s1.includes('[사용자 조건 — 이미 들은 것]') && s1.includes('예산 100,000원'),
     '★ 예산이 프롬프트 조건 블록에 실린다');
   ok(s1.includes('조건 대조: 예산 적합'), '★ 예산 판정이 코드에서 계산돼 실린다');
-  ok(/\[P1\][^\n]*감마/.test(s1), '★ 예산 상한에 가까운 상품이 P1로 온다');
+  ok(/\[P1\][^\n]*베타/.test(s1), '★ 예산에 맞고 서버가 높게 평가한 상품이 P1로 온다');
   ok(s1.includes('가격 수준 판정: 지금 사도 좋은 편'), '★ 구매 시점 판정(서버)이 실린다');
   ok(s1.includes('이번 후보 중 최저가'), '★ 후보 간 최저가 사실이 실린다');
   ok(s1.includes('[가격을 설명할 때 지킬 순서 — 반드시 준수]')
@@ -317,7 +317,7 @@ function reset() {
   ok(!s1.includes('알파 무선 이어폰') && !s1.includes('예산 초과'), '★ 예산 초과 상품(알파 250,000원)은 후보에서 빠진다');
   ok((r.body.items || []).length === 2 && r.body.items.every(x => x.lprice <= 100000), '카드 2장 — 전부 예산 안',
     String((r.body.items || []).map(x => x.lprice)));
-  ok(r.body.items[0].productId === 'C3', '★ 카드 순서 = 예산 근접도 랭킹 순서', r.body.items[0].productId);
+  ok(r.body.items[0].productId === 'B2', '★ 카드 순서 = 조건을 반영한 랭킹 순서', r.body.items[0].productId);
   ok(r.body.items.some(c => c.note && /평균|최저가/.test(c.note)),
     '★ 검증 가능한 후보 카드에 데이터 근거가 붙는다', JSON.stringify(r.body.items.map(c=>c.note)));
   ok(!/확인되지 않았어요/.test(r.body.text), '정상 답변에는 firewall 경고가 붙지 않는다');
@@ -919,14 +919,14 @@ function reset() {
   console.log('\n[30] 브랜드 제외');
   reset();
   stub.searchItems = [
-    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 90000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '베타 무선 이어폰', lprice: 120000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 135000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
+    { title: '베타 무선 이어폰', lprice: 145000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.stats = new Map();
   stub.llm.classify = 'C|이어폰';
   stub.llm.answer = '삼성을 빼고 베타를 권합니다.';
   r = await call({ question: '삼성은 빼줘', contextProducts: [],
-    chatHistory: [{ role: 'user', text: '20만원 이하 이어폰 추천' }], view: { source: 'none' } });
+    chatHistory: [{ role: 'user', text: '15만원 이하 이어폰 추천' }], view: { source: 'none' } });
   {
     const s = sys();
     ok(/삼성을 크게 내렸다/.test(s), '★ 제외를 반영했다고 프롬프트에 적힌다');
