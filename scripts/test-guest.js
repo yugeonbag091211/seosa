@@ -309,7 +309,7 @@ function fixtureStats() {
   {
     failModels = true; calledModels.length = 0;
     stub.searchItems = fixtureItems(); stub.searchMode = 'ok'; stub.stats = fixtureStats();
-    const r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [] });
+    const r = await call({ question: '5만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [] });
     failModels = false;
     ok(r.status === 200 && r.body.guest === true && r.body.degraded === true, '게스트 fallback 정상 응답');
     ok(calledModels.length > 0 && calledModels.every(m => /:free$/.test(String(m))), '실패 체인도 :free 만 시도');
