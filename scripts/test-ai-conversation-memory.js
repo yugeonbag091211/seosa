@@ -265,6 +265,22 @@ const NOT_FOUND = /찾지 못했|결과가 없었|검색했지만/;
         && top && I.namesProduct(text(o), { title: top.title }) && !o.body.degraded,
       '가격을 어느 판매 글 것인지 가를 수 없는 이름+가격 문장은 빠지되, 서버가 고른 상품 이름을 다시 밝힌다', text(o));
 
+    // ①-b 남은 글이 다른 후보를 «설명으로만» 언급하면 1위를 밝히고, 다른 후보를 «지금 권하면» 덧붙이지 않는다.
+    const mention = await H.ask({ question: '오픈형 이어폰 추천해줘' }, { classify: 'C|오픈형 이어폰',
+      answer: '아이리버 오픈형 무선 이어폰 IBO-OPENRING3(41,900원)을 권합니다.\n\n'
+        + 'QCY T13 ANC도 무선이라 조건에는 맞지만, 귀에 넣지 않는 오픈형이라는 점에서 운동할 때는 이쪽이 더 편한 편으로 알려져 있어요.' });
+    ok(/^서사가 고른 상품은 아이리버/.test(text(mention)) && /QCY T13 ANC도 무선이라/.test(text(mention)),
+      '다른 후보를 설명으로만 언급하는 글에는 서버가 고른 1위를 밝힌다', text(mention));
+    const other = await H.ask({ question: '오픈형 이어폰 추천해줘' }, { classify: 'C|오픈형 이어폰',
+      answer: '가격을 생각하면 QCY T13 ANC를 추천해요. 무선이고 상품명에 ANC가 있어 소음이 있는 곳에서도 쓰기 편한 편으로 알려져 있어요.' });
+    ok(!/서사가 고른 상품은/.test(text(other)) && /QCY T13 ANC를 추천해요/.test(text(other)),
+      '모델이 다른 후보를 지금 권하는 글(근거 문제 없음)에는 서버 1위 문장을 덧붙여 엇갈리게 만들지 않는다', text(other));
+    const lost = await H.ask({ question: '오픈형 이어폰 추천해줘' }, { classify: 'C|오픈형 이어폰',
+      answer: '아이리버 오픈형 무선 이어폰 IBO-OPENRING3(41,900원)도 있지만, 가격을 생각하면 QCY T13 ANC를 추천해요. '
+        + '무선이고 상품명에 ANC가 있어 소음이 있는 곳에서도 쓰기 편한 편으로 알려져 있어요.' });
+    ok(lost.body.degraded === true && !/소음이 있는 곳에서도/.test(text(lost)),
+      '다른 후보를 권하던 문장이 근거 문제로 빠지면, 남은 설명을 서버 1위에 붙이지 않고 서버 답으로 바꾼다', text(lost));
+
     // ② 같은 되묻기를 연달아 하지 않는다.
     const s = H.session();
     const q1 = await s.say('무선 이어폰 추천해줘', { classify: 'C|무선 이어폰',

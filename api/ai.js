@@ -4381,6 +4381,8 @@ function recommendsNonExact(text, items) {
  * ("그램 프로는 RTX3050 이 있어 편집에 유리해요")은 권하는 말이 없으므로 걸리지 않는다.
  */
 const RECOMMEND_CLAIM_RE = /추천|권(?:합니다|해요|해\s|할|하는|했|드려)|골랐|고른|선택(?:했|한)/;
+/* 지금 이 답에서 권하는 말 (지난 추천을 가리키는 «추천한·추천인» 은 아니다). */
+const RECOMMEND_NOW_RE = /권(?:합니다|해요|해\s?드려요|해\s?드립니다|할\s?만해요)|추천(?:합니다|해요|드려요|드립니다)|고르세요|선택하세요/;
 
 /*
  * 이번 후보 목록에 없는 상품을 «권하는» 문장 (2026-10-24 오프라인 재현).
@@ -6241,7 +6243,15 @@ module.exports = async function handler(req, res) {
         if (!hardFailure && !rescueVerified) {
           const r = repairUngrounded(text, groundingFlags);
           const subject = singleSubject ? [singleSubject] : (cards.length ? cards : items);
-          const ok = r.text.length >= REPAIR_MIN_CHARS && r.removed.length > 0
+          /*
+           * 빠진 문장이 모델이 «다른 후보를 지금 권하던» 문장이면 남은 설명은 그 후보 이야기다 — 서버 1위 이름을 붙이면
+           * 설명과 이름이 엇갈린다(오프라인 재현: "가격을 생각하면 QCY 를 추천해요" 가 빠지고 QCY 의 ANC 설명만 남았다).
+           * 그럴 때는 문장 정리를 하지 않고 서버 답(1위·강조 카드와 같은 상품)으로 간다. 같은 모델의 다른 판매 글은 같은 상품이다.
+           */
+          const pickItem = singleSubject || (decision && decision.top ? items.find(it => it && it.ref === decision.top.ref) : null);
+          const lostOtherPick = !!pickItem && r.removed.some(x => RECOMMEND_NOW_RE.test(x.sentence)
+            && items.some(it => it !== pickItem && !sameModelListing(pickItem, it) && namesProduct(x.sentence, it, items)));
+          const ok = r.text.length >= REPAIR_MIN_CHARS && r.removed.length > 0 && !lostOtherPick
             && !groundingFlags(r.text).length
             && !unmatchedCardRecommendation(r.text, cards)
             && !(identityState === 'EXACT' && recommendsNonExact(r.text, items))
@@ -6321,9 +6331,12 @@ module.exports = async function handler(req, res) {
          * 서버가 고른 1위를 확인된 가격과 함께 한 문장으로 다시 밝힌다(설명은 GPT 것 그대로).
          */
         const pick = singleSubject || (decision && decision.top ? items.find(it => it && it.ref === decision.top.ref) : null);
-        // 남은 글이 후보 중 어느 상품이든 이름으로 말하고 있으면 덧붙이지 않는다 — 서버 1위를 앞에 두면 모델이 고른
-        // 다른 후보와 엇갈려 읽힌다(Preview 실호출: "다른 제품" 답에서 두 상품을 각각 권하는 꼴이 됐다).
-        if (groundingRepaired && pick && !leadAdded && !items.some(it => namesProduct(text, it, items))) {
+        // 남은 글이 1위를 이미 이름으로 말하거나, 다른 후보를 «지금» 권하고 있으면 덧붙이지 않는다 — 서버 1위를 앞에 두면
+        // 모델이 고른 후보와 엇갈려 읽힌다(Preview 실호출: "다른 제품" 답에서 두 상품을 각각 권하는 꼴이 됐다).
+        // 다른 후보를 설명으로만 언급하는 글("직전 추천인 춘식이 이어폰도 예산에는 맞지만")은 1위를 밝혀 준다.
+        const recommendsOther = String(text).split(/(?<=[.!?。])\s+|\n+/).some(s => RECOMMEND_NOW_RE.test(s)
+          && items.some(it => it !== pick && namesProduct(s, it, items)));
+        if (groundingRepaired && pick && !leadAdded && !namesProduct(text, pick, items) && !recommendsOther) {
           const line = singleSubject ? CG.subjectLine(pick) : CG.pickLine(pick);
           if (line) text = `${line}\n\n${text}`;
         }
