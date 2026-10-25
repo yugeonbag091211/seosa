@@ -10,7 +10,7 @@ function parseComparison(question) {
   // between attributes must continue to use the regular concierge route.
   // Natural shopping comparison forms. The right-hand description ends
   // before the comparison instruction; never search for the entire sentence.
-  const m = /^(.{2,75}?)\s*(?:와|과|랑|하고|\s+vs\.?\s+|\s+versus\s+)\s*(.{2,75}?)\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천)|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이\s*(?:알려|설명|있|뭐)).*$/i.exec(s);
+  const m = /^(.{2,75}?)\s*(?:와|과|랑|하고|\s+vs\.?\s+|\s+versus\s+)\s*(.{2,75}?)\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천)|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이\s*(?:알려|설명|있|뭐)).*$/i.exec(s);
   if (!m) return null;
   let left = m[1].trim(), right = m[2].trim();
   // "버즈3 프로 블랙과 화이트" explicitly names two color options of
