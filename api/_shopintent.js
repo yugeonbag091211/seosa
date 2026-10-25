@@ -354,7 +354,8 @@ function parseConstraints(text) {
   const out = {
     budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0, budgetRelax: false,
     budgetNotice: '', budgetStrict: false, conflict: null,
-    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: ''
+    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: '',
+    avoidGaming: false, allowGaming: false
   };
 
   /*
@@ -498,6 +499,9 @@ function parseConstraints(text) {
     if (re.test(s)) { out.recipient = label; break; }
   }
   out.gift = GIFT_RE.test(s) || !!out.recipient;
+  const gamingPref = require('./_ai-budget-window').gamingPreference(s);
+  if (gamingPref === true) out.avoidGaming = true;
+  if (gamingPref === false) out.allowGaming = true;
 
   /* ── 무엇을 중히 보는가 ── */
   for (const [re, key] of PRIORITY_RE) {
@@ -512,7 +516,8 @@ function mergeConstraints(a, b) {
   const out = Object.assign({
     budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0, budgetRelax: false,
     budgetNotice: '', budgetStrict: false,
-    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: ''
+    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: '',
+    avoidGaming: false
   }, a || {});
   // 모순은 그 발화에서만 다룬다(api/ai.js 가 되묻는다). 합친 조건에 남기지 않는다.
   out.conflict = null;
@@ -572,6 +577,9 @@ function mergeConstraints(a, b) {
     if (src[k]) out[k] = src[k];
   });
   if (src.gift) out.gift = true;
+  if (src.allowGaming === true) out.avoidGaming = false;
+  else if (src.avoidGaming === true) out.avoidGaming = true;
+  delete out.allowGaming;
   return out;
 }
 
@@ -579,7 +587,7 @@ function mergeConstraints(a, b) {
 function hasConstraints(c) {
   if (!c) return false;
   return !!(c.budgetMax || c.budgetMin || c.recipient || c.gift
-    || c.priority || c.brand || c.useCase || c.avoid);
+    || c.priority || c.brand || c.useCase || c.avoid || c.avoidGaming);
 }
 
 function won(v) {
