@@ -17,6 +17,12 @@ function parseComparison(question) {
   // the product family: "아이패드랑 갤럭시탭을 비교해줘".
   // Restrict to a final particle on Hangul words to preserve model codes.
   right = right.replace(/([가-힣]{2,})(?:을|를)$/, '$1');
+  // Broad family aliases: the marketplace title may be Korean even when
+  // the user asks for the family in English.
+  if (/^ipad$/i.test(left)) left = '아이패드';
+  if (/^ipad$/i.test(right)) right = '아이패드';
+  if (/^galaxy\\s*tab$/i.test(left)) left = '갤럭시탭';
+  if (/^galaxy\\s*tab$/i.test(right)) right = '갤럭시탭';
   // Common family names may be written without a numeric model anchor.
   const knownFamily = /^(?:아이패드|갤럭시\s*탭|갤럭시탭|ipad|galaxy\s*tab)$/i;
   // "버즈3 프로 블랙과 화이트" explicitly names two color options of
@@ -82,7 +88,7 @@ function formatComparison(requested, offers, source) {
     else lines.push(`표시 가격 차이는 ${won(difference)}이고, ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 더 저렴해요.`);
     lines.push('상품명에 없는 실제 성능·기능의 우열은 추측하지 않을게요. 용도와 사양을 추가로 확인해야 정확한 가성비를 판단할 수 있어요.');
   } else {
-    lines.push('둘 다 확인되지 않아 가격 차이나 가성비 우열을 단정할 수 없어요.');
+    lines.push('비교 대상 중 하나 이상을 확인하지 못해서 가격 차이나 가성비 우열을 단정할 수 없어요.');
   }
   lines.push('실제 결제 금액과 옵션·배송 조건은 판매처에서 다시 확인해야 해요.');
   return lines.join('\n\n');
