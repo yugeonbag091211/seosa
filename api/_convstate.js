@@ -122,13 +122,25 @@ function categoryNounsOf(text) {
   try { catOf = require('./_aiidentity').categoryNounOf; } catch (e) { catOf = null; }
   if (!catOf) return [];
   // "무선청소기" · "로봇청소기" 는 둘 다 청소기다 — 합성어는 종류명 부분까지 줄여서 본다.
-  return productTokens(text).filter(t => catOf(t)).map(t => {
+  const explicit = productTokens(text).filter(t => catOf(t)).map(t => {
     for (let i = t.length - 2; i > 0; i--) {
       const tail = t.slice(i);
       if (catOf(tail) && tail.length >= 2) return tail;
     }
     return t;
   });
+  // A bare model-family name can identify the *kind* of device even when
+  // the user omits "이어폰"/"노트북". Otherwise a prior laptop budget can
+  // silently leak into a new AirPods recommendation.
+  const t = String(text || '').normalize('NFKC').toLowerCase();
+  const aliases = [];
+  if (/(?:에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|버즈[2-9]\s*프로)/i.test(t)
+      && !/(?:케이스|파우치|보호필름|충전\s*케이블)/.test(t)) aliases.push('이어폰');
+  if (/(?:맥북|macbook|lg\s*그램|그램\s*(?:15|16|17|프로)|갤럭시북)/i.test(t)
+      && !/(?:충전기|파우치|키스킨|보호필름)/.test(t)) aliases.push('노트북');
+  if (/(?:아이패드|ipad|갤럭시\s*탭|galaxy\s*tab)/i.test(t)
+      && !/(?:케이스|파우치|보호필름)/.test(t)) aliases.push('태블릿');
+  return [...new Set(explicit.concat(aliases))];
 }
 
 /** 종류가 분명히 다른 상품으로 바뀌었는가 (양쪽에 종류명이 있고, 그 종류도 낱말도 겹치지 않는다). */
