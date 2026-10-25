@@ -5074,6 +5074,10 @@ module.exports = async function handler(req, res) {
     const turnBudget = !!(turnCons.budgetMax || turnCons.budgetMin);
     const sameThread = !!(cls && (cls.stateQuery || cls.contextualFollowup || cls.refinement));
     const gateBudget = !!constraints && (intent === 'C' || turnBudget || sameThread);
+    // Price preference is narrower than the absolute budget gate. It applies
+    // to recommendations, not factual prices or comparisons of named models.
+    const BT = require('./_ai-budget-target');
+    let preferredPriceWindow = null;
 
     /*
      * 사용자가 요구한 기능(통화·노캔·방수 …). 랭킹과 프롬프트 양쪽에서 쓴다.
@@ -5353,6 +5357,13 @@ module.exports = async function handler(req, res) {
         const gate = AIID.partition(items, contract);
         items = gate.items;
         identityState = gate.state;
+        // Explicit "not gaming" is a selection constraint, not a soft ranking
+        // hint. Enforce it before generating candidate cards or GPT facts.
+        if (intent === 'C' && constraints && constraints.avoid === '게이밍') {
+          const nongaming = BT.rejectGaming(items, constraints);
+          items = nongaming.items;
+          if (!items.length && nongaming.excluded.length) identityState = 'PREFERENCE';
+        }
         identityLabel = contract.label;
         /*
          * Explicit color + a second clause saying to exclude a different
@@ -5427,7 +5438,20 @@ module.exports = async function handler(req, res) {
           if (bg.applies && bg.outside.length) {
             budgetOutside = AIID.exactBudgetFacts(bg.outside);
             items = bg.within;
-            if (!items.length) identityState = 'BUDGET';
+            if (!items.length && identityState !== 'PREFERENCE') identityState = 'BUDGET';
+          }
+        }
+        // For user-facing recommendations priced above 50,000 won, only
+        // consider items within 30,000 won of the requested ceiling. On an
+        // explicit "이하" budget, anything above the cap remains forbidden.
+        // Keep the explicit range minimum when provided.
+        if (intent === 'C' && gateBudget && !refSelected && items.length
+            && identityState !== 'PREFERENCE') {
+          const narrowed = BT.narrowToTarget(items, constraints);
+          if (narrowed.applies) {
+            preferredPriceWindow = narrowed.range;
+            items = narrowed.within;
+            if (!items.length) identityState = 'TARGET_BUDGET';
           }
         }
 
@@ -5605,6 +5629,17 @@ module.exports = async function handler(req, res) {
      * 후보는 있었지만 전부 예산 밖이다 (위 예산 관문). 모델을 부르지 않는다 — 말할 수 있는 사실은
      * «예산 안의 상품이 없었다» 와 «가장 싼 후보의 가격» 뿐이고, 초과 상품을 대신 권하지 않는다.
      */
+    if (identityState === 'PREFERENCE' || identityState === 'TARGET_BUDGET') {
+      const formatWon = value => Math.round(value).toLocaleString('ko-KR') + '원';
+      const message = identityState === 'PREFERENCE'
+        ? '게이밍 제품을 제외하니 요청하신 용도에 맞는 헤드셋을 확인하지 못했어요. 게이밍 상품으로 대신 추천하지 않을게요.'
+        : '예산 상한에 가까운 ' + formatWon(preferredPriceWindow.min)
+          + '~' + formatWon(preferredPriceWindow.max)
+          + ' 범위에서 확인된 상품이 없어요. 더 저렴한 상품을 대신 추천하지 않을게요. 원하시면 가격 범위를 넓혀 다시 찾아볼 수 있어요.';
+      const response = { text: message, intent: resolvedCanonicalIntent };
+      if (guest) response.guest = true;
+      return res.json(withTurnSig(keepPrevRef(response)));
+    }
     if (identityState === 'BUDGET') {
       let options = [];
       try { options = require('./_noresult').relaxations(budgetOutside || [], constraints, wanted); }
@@ -6717,7 +6752,24 @@ module.exports = async function handler(req, res) {
       degradedByGrounding = true;
       console.warn('[ai] 가격 확인 시점 불일치 — 처음 검색가와 저장가를 구분하여 안내');
     }
+    // A refined recommendation needs one actionable card, not an old grid
+    // nor "show cards again". Named two-product comparisons use their own
+    // response path and continue to show two cards.
+    const recommendationFollowup = intent === 'C' && !!hist.some(h => h.role === 'user')
+      && !explicitPair && !pairFollowup;
+    if (recommendationFollowup && cards.length && items.length) {
+      const top = items[0];
+      const at = cards.findIndex(c => productIdentityMatches(c, top));
+      if (at >= 0) {
+        cards = [cards[at]];
+        cardSources = [cardSources[at]];
+      } else {
+        cards = [cards[0]];
+        cardSources = cardSources.slice(0, 1);
+      }
+    }
     const payload = cards.length ? { text, items: cards } : { text };
+    if (recommendationFollowup && cards.length) payload.forceShowCard = true;
     if (priceConflict) payload.priceConflict = {
       earlierSearchPrice: priceConflict.searchedPrice,
       storedPrice: priceConflict.storedPrice,
