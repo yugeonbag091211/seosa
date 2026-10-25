@@ -68,6 +68,9 @@ jobs:
       - name: Day cache (collector targets, hot-deal history) regression
         run: node scripts/test-daycache.js
       - name: Adaptive price volatility regression
-        run: node scripts/test-price-volatility.js
+        run: |
+          node --check scripts/_price-volatility.js
+          node --check scripts/collect-volatile-prices.js
+          node scripts/test-price-volatility.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js
