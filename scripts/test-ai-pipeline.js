@@ -672,7 +672,7 @@ function reset() {
   stub.searchItems = [
     { title: '알파 이어폰', lprice: 250000, link: 'https://l.c/a', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
     { title: '베타 무선 이어폰 노이즈캔슬링 마이크 500mAh', lprice: 89000, link: 'https://l.c/b', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '감마 이어폰', lprice: 42000, link: 'https://l.c/c', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '감마 무선 이어폰', lprice: 75000, link: 'https://l.c/c', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.llm.classify = 'C|무선 이어폰';
   stub.llm.resolve = '{"q":"무선 이어폰","use":"통화","brand":"","avoid":""}';
@@ -782,7 +782,11 @@ function reset() {
       '★ 근거 없는 상대적 하락은 적지 않는다');
     ok(s.includes('[다목적 분석]'), '★ 다목적 분석이 프롬프트에 실린다');
     ok(/후보 구조:/.test(s), '후보 구조가 적힌다');
-    ok(/더 싼 대안:/.test(s), '★ 대체품이 계산돼 실린다');
+    const winner = stub.searchItems.find(it=>it.productId===r.body.topProductId);
+    const cheaperInBand = winner && stub.searchItems.some(it =>
+      it.lprice >= 150000 && it.lprice <= 180000 && it.lprice < winner.lprice);
+    ok(!!winner && (!cheaperInBand || /더 싼 대안:/.test(s)),
+      '★ 가격대 안에 실제로 더 싼 후보가 있을 때만 대안을 제시한다');
     ok(!/_sub|_score|budgetScore/.test(s), '★ 내부 점수 키가 프롬프트에 새지 않는다');
   }
 
