@@ -21,6 +21,8 @@ on:
       - 'scripts/collect-volatile-prices.js'
       - 'scripts/_price-volatility.js'
       - 'scripts/test-price-volatility.js'
+      - 'scripts/_volatile-report.js'
+      - 'scripts/test-volatile-report.js'
       - '.github/workflows/volatile-prices.yml'
       - '.github/workflows/daily-prices.yml'
       - '.github/workflows/hotdeals.yml'
@@ -72,5 +74,7 @@ jobs:
           node --check scripts/_price-volatility.js
           node --check scripts/collect-volatile-prices.js
           node scripts/test-price-volatility.js
+          node --check scripts/_volatile-report.js
+          node scripts/test-volatile-report.js
       - name: Migration safety (static only, no DB credentials)
         run: node scripts/verify-migrations.js
