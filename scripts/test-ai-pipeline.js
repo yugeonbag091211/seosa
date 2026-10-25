@@ -752,13 +752,13 @@ function reset() {
   console.log('\n[20] Phase 1 통합');
   reset();
   stub.searchItems = [
-    { title: '알파 무선 이어폰 마이크 노이즈캔슬링 500mAh', lprice: 150000, link: '', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
+    { title: '알파 무선 이어폰 마이크 노이즈캔슬링 500mAh', lprice: 170000, link: '', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
     { title: '베타 무선 이어폰 노이즈캔슬링 방수 1500mAh', lprice: 180000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '감마 무선 이어폰 마이크', lprice: 89000, link: '', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '감마 무선 이어폰 마이크', lprice: 159000, link: '', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.stats = new Map([
-    ['A1|쿠팡', { count: 14, low: 140000, lowDate: daysAgo(20), avg30: 170000, avg30Days: 14, lastPrice: 150000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -5, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }],
-    ['C3|쿠팡', { count: 14, low: 85000, lowDate: daysAgo(20), avg30: 95000, avg30Days: 14, lastPrice: 89000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -4, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }]
+    ['A1|쿠팡', { count: 14, low: 140000, lowDate: daysAgo(20), avg30: 170000, avg30Days: 14, lastPrice: 170000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -5, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }],
+    ['C3|쿠팡', { count: 14, low: 155000, lowDate: daysAgo(20), avg30: 168000, avg30Days: 14, lastPrice: 159000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -4, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }]
   ]);
   stub.llm.classify = 'C|무선 이어폰';
   stub.llm.resolve = '{"q":"무선 이어폰","use":"통화","brand":"","avoid":""}';
@@ -931,8 +931,8 @@ function reset() {
     const s = sys();
     ok(/삼성을 크게 내렸다/.test(s), '★ 제외를 반영했다고 프롬프트에 적힌다');
     ok(r.body.items[0].productId === 'B2', '★ 제외한 브랜드가 1위에서 내려간다', r.body.items[0].productId);
-    ok((r.body.items || []).some(x => x.productId === 'S1'),
-      '★ 완전히 지우지는 않는다(소프트 제외)');
+    ok(!(r.body.items || []).some(x => x.productId === 'S1'),
+      '★ 명시적으로 제외한 브랜드는 카드에도 표시하지 않는다');
     ok(/제외 요청하신 삼성/.test(s), '★ 제외 사유가 상품 사실로 남는다');
   }
 
@@ -964,8 +964,8 @@ function reset() {
   console.log('\n[33] 제외가 다음 턴까지 이어진다');
   reset();
   stub.searchItems = [
-    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 90000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '베타 무선 이어폰', lprice: 120000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 135000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
+    { title: '베타 무선 이어폰', lprice: 145000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.stats = new Map();
   stub.llm.classify = 'C|이어폰';
@@ -983,7 +983,7 @@ function reset() {
     ok(/삼성을 크게 내렸다/.test(s), '★ 앞 대화의 제외를 프롬프트에 그대로 밝힌다');
     ok(/앞 대화에서 사용자가 빼 달라고 한 것을 그대로 지키고 있다/.test(s),
       '★ 이번 턴 거부가 아니라 이어진 제외임을 구분해 적는다');
-    ok((r.body.items || []).some(x => x.productId === 'S1'), '여전히 소프트 제외다');
+    ok(!(r.body.items || []).some(x => x.productId === 'S1'), '앞 대화에서 명시적으로 제외한 브랜드를 카드에서 계속 제외한다');
   }
 
   /* 34 ─ 제외를 말한 적 없으면 아무것도 이어지지 않는다 */
@@ -1306,7 +1306,7 @@ function reset() {
      * 직전 추천은 서명 참조로 카탈로그에서 불러와 카드 1장, "이 중에서"는 검색 2장.
      */
     const modalFollowup = followup === '그 제품 지금 사도 돼?';
-    const expectedCards = exactPriorRecommendation ? 1 : (modalFollowup ? 0 : 2);
+    const expectedCards = exactPriorRecommendation ? 1 : (modalFollowup ? 0 : 1);
     ok(sequence.status === 200 && (sequence.body.items || []).length === expectedCards
         && !/777,777/.test(sequence.body.text)
         && !JSON.stringify(stub.captured.main.messages).includes('777777'),
