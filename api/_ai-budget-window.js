@@ -16,7 +16,7 @@ function nearBudgetWindow(items,constraints,question){
  const list=Array.isArray(items)?items.filter(Boolean):[],c=constraints||{};
  const anchor=Math.round(Number(c.budgetSaid||c.budgetMax)||0);
  const max=Math.round(Number(c.budgetMax)||0),min=Math.max(0,Math.round(Number(c.budgetMin)||0));
- if(!max||anchor<=LOW_PRICE_CUTOFF||CHEAPEST.test(String(question||'')))return{applies:false,within:list,outside:[],lower:0,upper:max};
+ if(!max||anchor<=LOW_PRICE_CUTOFF||c.budgetSoft||c.budgetRelax||CHEAPEST.test(String(question||'')))return{applies:false,within:list,outside:[],lower:0,upper:max};
  const lower=Math.max(min,anchor-NEAR_BUDGET_WON),upper=Math.min(max,anchor+NEAR_BUDGET_WON);
  if(lower>upper)return{applies:true,within:[],outside:list,lower,upper};
  const within=[],outside=[];
