@@ -58,6 +58,19 @@ const AIRPODS = {
   history: flat(20, 339000, { 0: 329000 })
 };
 
-const ALL = [GRAM_15, GRAM_16, GRAM_PRO, BUDS_BLACK, BUDS_WHITE, QCY, JBL, SONY, AIRPODS];
+/*
+ * 이름이 거의 같은 두 판매 글 (2026-10-24 Preview 실호출의 ADPICK 결과 모양). 한 문장에 이름과 가격을 함께
+ * 적으면 그 금액이 어느 글의 것인지 가를 수 없다 — 그 문장이 빠져도 답이 추천 상품 이름을 잃지 않아야 한다.
+ */
+const OPENRING_A = {
+  pid: 'OR3A', vid: '', mall: 'ADPICK', mallLabel: '11번가', title: '아이리버 오픈형 무선 이어폰 IBO-OPENRING3 러닝 귀찌형 오픈링3',
+  price: 40410, oprice: 40410, keys: ['오픈형'], history: flat(10, 42000, { 0: 40410, 1: 40410 })
+};
+const OPENRING_B = {
+  pid: 'OR3B', vid: '', mall: 'ADPICK', mallLabel: 'G마켓', title: '아이리버 오픈형 무선 이어폰 IBO-OPENRING3',
+  price: 41900, oprice: 41900, keys: ['오픈형'], history: flat(10, 41900)
+};
 
-module.exports = { GRAM_15, GRAM_16, GRAM_PRO, BUDS_BLACK, BUDS_WHITE, QCY, JBL, SONY, AIRPODS, ALL };
+const ALL = [GRAM_15, GRAM_16, GRAM_PRO, BUDS_BLACK, BUDS_WHITE, QCY, JBL, SONY, AIRPODS, OPENRING_A, OPENRING_B];
+
+module.exports = { GRAM_15, GRAM_16, GRAM_PRO, BUDS_BLACK, BUDS_WHITE, QCY, JBL, SONY, AIRPODS, OPENRING_A, OPENRING_B, ALL };

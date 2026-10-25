@@ -320,8 +320,11 @@ function contextLines(ctx) {
     L.push('지금 가격은 상품 페이지에서 확인해 주세요.');
   });
   if (unverified.length && !history.length) {
-    L.push('지금 보고 계신 상품은 SEOSA 서버 기록에서 같은 상품·옵션을 확인하지 못해,'
-      + ' 가격·할인·구매 시점은 말씀드리기 어려워요.');
+    L.push(c.fromRecommendation
+      ? '직전에 추천한 상품을 SEOSA 서버 기록에서 다시 확인하지 못해, 지금 가격·구매 시점은 말씀드리기 어려워요.'
+        + ' 상품 카드를 눌러 판매처에서 확인하시거나, 상품 이름으로 다시 물어봐 주세요.'
+      : '지금 보고 계신 상품은 SEOSA 서버 기록에서 같은 상품·옵션을 확인하지 못해,'
+        + ' 가격·할인·구매 시점은 말씀드리기 어려워요.');
   }
   return L;
 }
@@ -687,6 +690,19 @@ function timingLead(ctx) {
   return `${head}${stance}${fact ? ` ${fact}` : ''}${stale}`;
 }
 
+/** GPT 설명에서 추천 상품의 이름이 빠졌을 때 앞에 두는 한 줄 (api/ai.js). 금액은 서버가 확인한 판매가. */
+function pickLine(top) {
+  if (!top || !top.title) return '';
+  const p = priceOf(top);
+  return `서사가 고른 상품은 ${nameOf(top, 46)}${p > 0 ? `(${won(p)}원)` : ''}이에요.`;
+}
+
+/** 직전 추천 한 상품을 두고 이어 묻는 턴에서 같은 경우 — 무엇에 대한 답인지 먼저 밝힌다. */
+function subjectLine(top) {
+  if (!top || !top.title) return '';
+  return `앞에서 추천한 ${nameOf(top, 46)} 기준으로 말씀드릴게요.`;
+}
+
 /** 근거 없는 금액 문장을 덜어냈을 때 붙이는 확인된 판매가 한 줄 (api/ai.js). 가격을 모르면 빈 문자열. */
 function verifiedPriceLine(top) {
   const p = priceOf(top);
@@ -930,7 +946,7 @@ function constraintConflict(conflict, label) {
 module.exports = {
   budgetNoMatch, constraintConflict, budgetRangeLabel,
   recommendationReason, conversationalTiming, REASON_REF_MISSING, REASON_PRICE_UNVERIFIED, politeFact, budgetLabel,
-  timingLead, verifiedPriceLine, withoutAsked, laptopFamily,
+  timingLead, verifiedPriceLine, withoutAsked, laptopFamily, pickLine, subjectLine,
   compose, followups, looksLikeBlockDump, blockLabelCount,
   BLOCK_LABELS, BLOCK_DUMP_MIN,
   // 테스트·다른 모듈이 같은 문구를 쓰도록 노출한다 (문구가 두 벌이 되면 어긋난다)

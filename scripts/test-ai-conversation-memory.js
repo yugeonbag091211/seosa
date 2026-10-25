@@ -254,6 +254,43 @@ const NOT_FOUND = /찾지 못했|결과가 없었|검색했지만/;
   }
 
   /* ================================================================ */
+  section('5-b. Preview 실호출에서 찾은 것 (실제 GPT 답의 모양)');
+  {
+    // ① 이름이 같은 두 판매 글 — 이름+가격 문장이 빠져도 답이 무엇을 권하는지 잃지 않는다.
+    const o = await H.ask({ question: '오픈형 이어폰 추천해줘' }, { classify: 'C|오픈형 이어폰',
+      answer: '아이리버 오픈형 무선 이어폰 IBO-OPENRING3(41,900원)을 권합니다.\n\n'
+        + '상품명에서 무선이 확인되고, 귀에 넣지 않는 오픈형이라 오래 착용해도 귀가 덜 답답한 편으로 알려져 있어요. 다만 노이즈캔슬링은 상품명에 없어요.' });
+    const top = (o.body.items || []).find((c, i) => o.body.topRecommendation && i === o.body.topRecommendation.index) || (o.body.items || [])[0];
+    ok(!/41,900원\)을 권합니다/.test(text(o)) && /오픈형이라 오래 착용해도/.test(text(o))
+        && top && I.namesProduct(text(o), { title: top.title }) && !o.body.degraded,
+      '가격을 어느 판매 글 것인지 가를 수 없는 이름+가격 문장은 빠지되, 서버가 고른 상품 이름을 다시 밝힌다', text(o));
+
+    // ② 같은 되묻기를 연달아 하지 않는다.
+    const s = H.session();
+    const q1 = await s.say('무선 이어폰 추천해줘', { classify: 'C|무선 이어폰',
+      answer: m => {
+        const block = (m[0].content.match(/\[되물을 값어치가 있는 질문 — 딱 하나\]\n\s+([^\n]+)/) || [])[1] || '';
+        return `소니 WF-1000XM5를 추천해요. 노이즈캔슬링이 상품명에 있어요. ${block}`;
+      } });
+    const asked = /\[되물을 값어치가 있는 질문 — 딱 하나\]/.test(q1.system);
+    const q2 = await s.say('예산은 10만원 이하로 해줘', { classify: 'C|무선 이어폰', answer: 'JBL 튠 비즈2를 추천해요.' });
+    const q1Question = (q1.system.match(/\[되물을 값어치가 있는 질문 — 딱 하나\]\n\s+([^\n?]+)/) || [])[1] || '';
+    const q2Question = (q2.system.match(/\[되물을 값어치가 있는 질문 — 딱 하나\]\n\s+([^\n?]+)/) || [])[1] || '';
+    ok(asked && q1Question && q2Question !== q1Question,
+      '바로 앞 답에서 한 되묻기(같은 질문)를 다음 답에서 되풀이하게 하지 않는다', JSON.stringify({ asked, q1Question, q2Question }));
+
+    // ③ 추천 이유 답이 다른 후보와 «비교» 하는 문장은 대상이 틀린 답이 아니다.
+    const subj = { title: 'LG전자 LG그램 14ZD95U-GX5WK/AMD 라이젠 16GB 256GB OS 미탑재' };
+    ok(!I.recommendsOtherThanSubject('라이젠 AI 5 모델보다 이 14ZD95U-GX5WK를 먼저 추천했어요.', subj)
+        && I.recommendsOtherThanSubject('그램 프로 17Z90SP를 추천했어요.', subj),
+      '추천한 상품을 함께 말하는 비교 문장은 통과, 다른 모델만 권하는 문장은 대상 오류');
+
+    // ④ 직전 추천을 다시 확인하지 못했을 때 «지금 보고 계신 상품» 이라고 부르지 않는다.
+    const lines = CG.contextLines({ unverified: [{ productId: 'x' }], fromRecommendation: true }).join(' ');
+    ok(/직전에 추천한 상품/.test(lines) && !/지금 보고 계신/.test(lines), '직전 추천 확인 실패 문구', lines);
+  }
+
+  /* ================================================================ */
   section('6. 긴 대화 · 새로고침 뒤 맥락 유지');
   {
     const s = H.session();
