@@ -304,8 +304,19 @@ function reset() {
   ok(/\[P1\][^\n]*베타/.test(s1), '★ 예산에 맞는 상품이 P1(첫 번째)로 온다');
   ok(s1.includes('가격 수준 판정: 지금 사도 좋은 편'), '★ 구매 시점 판정(서버)이 실린다');
   ok(s1.includes('이번 후보 중 최저가'), '★ 후보 간 최저가 사실이 실린다');
-  ok(s1.includes('예산 초과'), '★ 예산 초과 상품도 숨기지 않고 초과로 표시된다');
-  ok((r.body.items || []).length === 3, '카드 3장', String((r.body.items || []).length));
+  ok(s1.includes('[가격을 설명할 때 지킬 순서 — 반드시 준수]')
+      && s1.includes('같은 상품·옵션의 표시된 값만 쓰고')
+      && s1.includes('구매 시점을 직접 묻지 않았다면')
+      && s1.includes('임의로 계산하지 마라'),
+    '★ 실제 검색 기반 추천에서도 가격 출처·옵션·임의 계산·불필요한 구매 권유 금지 규칙 전달');
+  /*
+   * 2026-10-22 Codex live 레드팀 BUG-01 — 정책 변경. 예전에는 예산 초과 상품도 «예산 초과» 로 표시해 남겼는데,
+   * 후보가 전부 초과일 때 그 상품이 1위 추천이 됐다(1만원 → 19,999,000원 노트북). 이제 예산 밖 후보는
+   * 프롬프트·카드 어디에도 남지 않는다(api/_shopintent budgetFilter).
+   */
+  ok(!s1.includes('알파 무선 이어폰') && !s1.includes('예산 초과'), '★ 예산 초과 상품(알파 250,000원)은 후보에서 빠진다');
+  ok((r.body.items || []).length === 2 && r.body.items.every(x => x.lprice <= 100000), '카드 2장 — 전부 예산 안',
+    String((r.body.items || []).map(x => x.lprice)));
   ok(r.body.items[0].productId === 'B2', '★ 카드 순서 = 프롬프트 랭킹 순서', r.body.items[0].productId);
   ok(!!r.body.items[0].note && /평균|최저가/.test(r.body.items[0].note),
     '★ 카드에 데이터 근거 한 줄이 붙는다', r.body.items[0].note);
@@ -320,7 +331,8 @@ function reset() {
   const enrichStarted = Date.now();
   r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   const enrichMs = Date.now() - enrichStarted;
-  ok(r.status === 200 && (r.body.items || []).length === 3,
+  // 예산 안 2장 (알파 250,000원은 예산 관문에서 빠진다 — 위 [1] 주석)
+  ok(r.status === 200 && (r.body.items || []).length === 2,
     '느린 trust/save/history여도 검색 상품으로 응답', `${enrichMs}ms`);
   ok(enrichMs < 800, '부가 조회 timeout이 전체 요청 지연을 차단', `${enrichMs}ms`);
 
@@ -345,6 +357,84 @@ function reset() {
   ok(!r.body.text.includes('79,000원') && !r.body.text.includes('320,000원'), '★ 지어낸 금액 원문을 사용자에게 내보내지 않는다');
   ok(!/AI 응답이 실패|AI 설명을 만들지 못/.test(r.body.text) && /확인된 상품·가격 데이터/.test(r.body.text),
     '★ safety 교체를 provider 실패처럼 안내하지 않는다');
+  ok(/추천:/.test(r.body.text) && !/구매 시점:|지금 사도/.test(r.body.text),
+    '★ 최저가·추천 질문의 안전 답변에는 묻지 않은 구매 시점 권유가 붙지 않는다');
+  reset();
+  stub.llm.answer = '알파 이어폰은 현재 79,000원입니다.';
+  r = await call({ question: '무선 이어폰 지금 사도 될까?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && /구매 시점:|지금 사도/.test(r.body.text),
+    '★ 구매 시점을 직접 물은 경우에는 서버의 가격 판단을 유지한다');
+
+  /* 2-b ─ 여러 판매처 가격을 하나로 섞지 않고, 카드 검증 가격으로 먼저 알려준다 */
+  reset();
+  stub.llm.answer = '무선 이어폰 후보를 찾았습니다. 배송과 보증 조건은 상세 상품 페이지에서 확인해 주세요.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const verifiedFirstCard = (r.body.items || [])[0];
+  ok(!!verifiedFirstCard && r.body.degraded !== true
+      && r.body.text.startsWith('첫 번째 추천 카드:')
+      && r.body.text.includes(Number(verifiedFirstCard.lprice).toLocaleString('en-US') + '원')
+      && r.body.text.includes('배송과 보증 조건'),
+    '★ 여러 판매처 가격 질문: 실제 첫 카드 가격 + AI의 비가격 설명을 함께 제공');
+  ok(!sys().includes('서사 서버가 이미 상품을 선택하고 가격을 검증했다'),
+    '★ 모델 식별이 모호한 일반 검색에서는 기존 답변 경로를 유지');
+  reset();
+  stub.llm.answer = '무선 이어폰은 현재 89,000원입니다. 상품명에 적힌 조건을 먼저 살펴봤고, 구성은 판매처에서 확인해야 합니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('무선 이어폰은 현재 89,000원입니다')
+      && r.body.text.includes('구성은 판매처에서 확인해야 합니다'),
+    '★ 여러 옵션에 모호하게 붙은 가격 문장만 삭제하고 재검증된 AI 설명은 보존');
+  reset();
+  stub.llm.answer = '무선 이어폰 현재 89,000원입니다. 해외 판매처라 배송과 AS 조건은 SEOSA 데이터로는 확인되지 않았습니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('해외 판매처')
+      && r.body.text.includes('배송과 AS 조건은 SEOSA 데이터로는 확인되지 않았습니다'),
+    '★ 특정 판매처의 국가를 추측하는 설명은 제거하고 일반적인 확인 한계만 남긴다');
+  reset();
+  stub.llm.answer = '무선 이어폰 현재 89,000원입니다. 지금 사도 좋습니다. 배송 조건은 판매처 페이지에서 확인해야 합니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('지금 사도 좋습니다')
+      && r.body.text.includes('배송 조건은 판매처 페이지에서 확인해야 합니다'),
+    '★ 구매 시점을 묻지 않았으면 근거 없는 구매 권유를 버리고 안전한 문장만 유지');
+  reset();
+  stub.llm.answer = '무선 이어폰 89,000원으로 역대 최저입니다. 배송 및 AS는 판매처에서 직접 확인해야 합니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('역대 최저')
+      && r.body.text.includes('배송 및 AS는 판매처에서 직접 확인해야 합니다'),
+    '★ 증명되지 않은 역대 최저가 주장도 지우고 재검증한 설명만 남긴다');
+
+  /* 2-c ─ GPT가 가격을 만들지 않고 서버 카드의 가격만 쓰는 신규 구조 */
+  reset();
+  stub.searchItems = [
+    { title: '로지텍 G304 LIGHTSPEED 무선 마우스 블랙', lprice: 27500, link: 'https://l.c/g304-black', image: '', mall: '쿠팡', productId: 'G304-B', isCoupang: true, oprice: 27500, savePct: 0 },
+    { title: '로지텍 G304 LIGHTSPEED 무선 마우스 화이트', lprice: 32900, link: 'https://l.c/g304-white', image: '', mall: '쿠팡', productId: 'G304-W', isCoupang: true, oprice: 32900, savePct: 0 }
+  ];
+  stub.stats = new Map();
+  stub.llm.answer = '요청하신 모델과 일치하는 후보가 있습니다. 실제 구성과 선택 옵션은 상품 페이지에서 확인해 주세요.';
+  r = await call({ question: '로지텍 G304 최저가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const sOffer = sys();
+  ok(sOffer.includes('서사 서버가 이미 상품을 선택하고 가격을 검증했다')
+      && !sOffer.includes('<상품데이터>')
+      && (r.body.items || []).length > 0
+      && r.body.degraded !== true
+      && r.body.text.startsWith('첫 번째 추천 카드:'),
+    '★ 정확히 식별된 모델의 간단한 가격 질문은 GPT 설명과 서버 가격을 분리',
+    JSON.stringify({ compact: sOffer.includes('서사 서버가 이미 상품을 선택'), text: r.body.text.slice(0, 65) }));
+  ok((r.body.items || []).some(c => r.body.text.includes(Number(c.lprice).toLocaleString('en-US') + '원')),
+    '★ GPT 비가격 설명과 함께 검증된 상품 카드 가격을 표시');
+  const offerInput = ((stub.captured.main || {}).messages || [])[1]?.content || '';
+  ok(offerInput.includes('개별 옵션은 추가 확인 필요')
+      && !offerInput.includes('요청 모델/옵션과 일치')
+      && sOffer.includes('사용자가 지정하지 않은 색상·구성·옵션'),
+    '★ 사용자에게 지정받지 않은 색상·구성 옵션을 일치한다고 단정하지 않는다');
+  try { require('../api/_llm')._internal._reset(); } catch (e) {}
+  stub.llm.answer = '로지텍 G304는 현재 10원입니다. 구매를 서두르세요.';
+  r = await call({ question: '로지텍 G304 최저가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && !r.body.text.includes('10원') && (r.body.items || []).length > 0,
+    '★ 새 GPT 가격 분리 경로에서도 지어낸 가격과 근거 없는 구매 권유를 차단한다');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
@@ -774,12 +864,16 @@ function reset() {
   stub.llm.answer = '조건에 맞는 상품이 없습니다.';
   r = await call({ question: '80만원 이하 노트북, 방수 필요해', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   {
-    const s = sys();
-    ok(s.includes('[조건을 모두 만족하는 상품이 없다]'), '★ 완화 블록이 실린다');
-    ok(/가장 적게 포기하는 순서로/.test(s), '★ 완화안이 계산돼 실린다');
-    ok(/\d+개 생김/.test(s), '★ 실제 개수가 적힌다');
-    ok(/조건을 우리 마음대로 바꾸지 마라/.test(s), '★ 조건을 조용히 바꾸지 말라고 명시한다');
-    ok(r.status === 200 && (r.body.items || []).length === 3, '그래도 카드는 나간다', String(r.status));
+    /*
+     * 2026-10-22 레드팀 BUG-01 — 후보가 전부 예산(80만원 이하)을 넘으면 모델을 부르지 않고 서버가 답한다.
+     * 완화안은 그대로 코드가 세어 답변에 사실로 싣고(_noresult relaxations), 예산 밖 카드는 내보내지 않는다.
+     */
+    const t = String(r.body.text || '');
+    ok(/80만원 이하인 상품은 이번 검색 결과에 없었어요/.test(t), '★ 조건을 만족하는 상품이 없다고 밝힌다', t.split('\n')[0]);
+    ok(/조건을 바꾸면 이렇게 돼요/.test(t) && /늘리/.test(t), '★ 완화안이 계산돼 실린다', t);
+    ok(/\d+개$/m.test(t), '★ 실제 개수가 적힌다', t);
+    ok(/대신 권하지는 않을게요/.test(t) && /금액을 알려 주세요/.test(t), '★ 조건을 조용히 바꾸지 않고 사용자에게 묻는다', t);
+    ok(r.status === 200 && (r.body.items || []).length === 0, '예산 밖 카드는 나가지 않는다', String((r.body.items || []).length));
   }
 
   /* 27 ─ OMEGA: 조건을 만족하면 완화 블록이 없다 */

@@ -15,7 +15,10 @@ const openai = require('./_openai-provider');
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_MAX = 200;
 const OPENAI_MAX_INFLIGHT = 2;
-const OPENAI_ATTEMPT_MS = 8000;
+// Keep a little headroom for real Responses API latency. Live price-grounding
+// evaluation reproduced an 8s abort even though the upstream returned at 8.2s.
+// The per-request/function budgets still cap this attempt below its own limit.
+const OPENAI_ATTEMPT_MS = 12000;
 const OPENAI_AUTH_COOLDOWN_MS = 10 * 60 * 1000;
 const OPENAI_QUOTA_COOLDOWN_MS = 5 * 60 * 1000;
 const OPENAI_FAILURE_COOLDOWN_MS = 60 * 1000;
