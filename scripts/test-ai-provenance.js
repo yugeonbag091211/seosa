@@ -130,6 +130,7 @@ const handler = require('../api/ai.js');
 const I = handler._internal;
 const Intent = require('../api/_intent');
 const CG = require('../api/_concierge');
+const DEAL = require('../api/_deal');
 
 /* ── 검사 도구 ────────────────────────────────────────────────────── */
 let pass = 0, fail = 0;
@@ -165,8 +166,9 @@ async function ask(body, opts = {}) {
     json(v) { payload = v; return this; },
     end() { payload = {}; return this; }
   };
+  const warnings = [];
   const quiet = console.log, quietWarn = console.warn, quietErr = console.error;
-  console.log = () => {}; console.warn = () => {}; console.error = () => {};
+  console.log = () => {}; console.warn = (...args) => warnings.push(args.map(String).join(' ')); console.error = () => {};
   try {
     await handler({ method: 'POST', headers: {}, query: {}, body: Object.assign({ chatHistory: [], contextProducts: [], view: { source: 'none' } }, body) }, res);
   } finally {
@@ -177,7 +179,8 @@ async function ask(body, opts = {}) {
     status, body: payload || {}, messages,
     system: (messages[0] && messages[0].content) || '',
     searches: stubSearch.calls - searchBefore,
-    statCalls: statCalls.slice(statBefore)
+    statCalls: statCalls.slice(statBefore),
+    warnings
   };
 }
 /*
@@ -518,7 +521,9 @@ function searchFixture() {
         view: { source: 'modal' } }, { classify: 'D', answer: '현재가는 139,000원이고 기록상 최저가는 135,000원입니다.' });
       const assistantRoles = r.messages.filter(m => m.role === 'assistant').length;
       const good = r.status === 200 && r.body.degraded !== true && /139,000원/.test(r.body.text)
-        && !/999,999원/.test(r.body.text) && assistantRoles === Math.min(hist.filter(h => h.role === 'assistant').length, 3);
+        && !/999,999원/.test(r.body.text)
+        // 답변 모델이 읽는 앞 대화 창(MAX_PROMPT_HISTORY_MSGS) 안의 서명된 답변만 assistant 역할이다.
+        && assistantRoles === Math.min(hist.filter(h => h.role === 'assistant').length, I.MAX_PROMPT_HISTORY_MSGS / 2);
       if (good) turnOk++;
       ok(good, `12턴-${t}: 서버 가격 유지·이전 답변 문맥 유지`, JSON.stringify({ text: r.body.text, assistantRoles }));
       hist.push({ role: 'user', text: q }, { role: 'assistant', text: r.body.text, sig: r.body.turnSig });
@@ -571,6 +576,543 @@ function searchFixture() {
   /* ================================================================ */
   section('E. RT-03 옵션별 가격 기록 — 원 공격 F-01~20 변형');
   {
+    const sparsePrice = I.normItem({
+      productId: 'real-price-window-fixture', vendorItemId: 'OPTION-10', mallId: '쿠팡', mall: '쿠팡',
+      title: '10인용 밥솥', price: 40900,
+      hist: {
+        count: 10, lastPrice: 40900, lastDate: '2026-10-23', prevPrice: 40900,
+        low: 8000, lowDate: '2026-09-13', lowCount: 2, lowConfirmed: true,
+        low7: 19000, low7Date: '2026-10-23', low7Days: 1,
+        low30: 10000, low30Date: '2026-09-24', low30Days: 5,
+        avg30: 40500, avg30Days: 10, avg7: 40900, avg7Days: 1,
+        trendPct: 0, trendDays: 8, trendFrom: 40900, trendFromDate: '2026-10-15',
+        points: [{ d: '2026-10-15', p: 40900 }, { d: '2026-10-23', p: 40900 }],
+        historyDays: 40, maxGapDays: 8, firstDate: '2026-09-13'
+      }
+    });
+    const sparseFacts = I.describe(sparsePrice, true, false);
+    ok(sparseFacts.includes('최근 7일 관측 최저 19,000원')
+        && sparseFacts.includes('최근 30일 관측 최저 10,000원'),
+      '7일·30일 최저는 전체 관측 최저와 구분해 AI 근거에 싣는다', sparseFacts);
+    ok(sparseFacts.includes('기록 간 최대 간격 8일') && sparseFacts.includes('최근 7일 기록 1일'),
+      '긴 기록 공백과 7일 관측 일수를 AI가 볼 수 있다', sparseFacts);
+    ok(I.unverifiedProductPrices('최근 30일 관측 최저는 10,000원입니다.', [sparsePrice]).length === 0
+        && I.unverifiedProductPrices('최근 30일 관측 최저는 8,000원입니다.', [sparsePrice]).length === 1,
+      '30일 최저 주장 검증이 전체 관측 최저가 아닌 30일 창을 사용한다');
+
+    // These are actual GPT outputs from scripts/live-price-history-codex.js,
+    // checked against the read-only Neon snapshot captured on 2026-10-23.
+    // They stay deterministic here; this test itself makes no paid call.
+    const realSnapshot = I.normItem({
+      productId: '8327026885', vendorItemId: '95189584451', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '대웅 취사 보온 전기밥솥 10인용', price: 40900,
+      hist: {
+        count: 10, lastPrice: 40900, lastDate: '2026-10-23', prevPrice: 40900,
+        low: 39900, lowDate: '2026-10-10', lowCount: 4, lowConfirmed: true,
+        low7: 40900, low7Date: '2026-10-23', low7Days: 1,
+        low30: 39900, low30Date: '2026-10-10', low30Days: 10,
+        avg30: 40500, avg30Days: 10, avg7: 40900, avg7Days: 1,
+        trendPct: 0, trendDays: 8, trendFrom: 40900, trendFromDate: '2026-10-15',
+        points: [
+          { d: '2026-10-07', p: 39900 }, { d: '2026-10-08', p: 39900 },
+          { d: '2026-10-09', p: 39900 }, { d: '2026-10-10', p: 39900 },
+          { d: '2026-10-11', p: 40900 }, { d: '2026-10-12', p: 40900 },
+          { d: '2026-10-13', p: 40900 }, { d: '2026-10-14', p: 40900 },
+          { d: '2026-10-15', p: 40900 }, { d: '2026-10-23', p: 40900 }
+        ],
+        historyDays: 16, maxGapDays: 8, firstDate: '2026-10-07'
+      }
+    });
+    const livePriceAnswers = [
+      '현재 확인 가격은 **40,900원**이고, 마지막 관측일은 **2026년 10월 23일**입니다. 기록상 최저가 39,900원보다 1,000원 높고, 30일 평균 40,500원보다 400원 비싼 평범한 가격입니다.',
+      '아니요. 현재가는 **40,900원**으로, SEOSA가 확인한 최저가 **39,900원(2026년 10월 10일)**보다 **1,000원 높습니다**. 최근 30일 평균 **40,500원**보다도 **400원 비싸고**, 최근 기록에서는 가격 변동이 거의 없지만 특별히 싼 가격은 아닙니다.',
+      '아니요. 현재가는 40,900원으로, SEOSA 기록상 최저가 39,900원(2026-10-10)보다 1,000원 높습니다. 최근 30일 평균 40,500원보다도 400원(1%) 비싸며, 확인된 가격은 2026-10-15부터 2026-10-23까지 40,900원으로 거의 변동이 없었습니다. 따라서 기록 대비 특별히 싼 가격은 아닙니다.',
+      '아니요. 현재가 40,900원은 SEOSA가 확인한 최저가가 아닙니다. 기록상 최저가는 2026년 10월 10일의 39,900원으로, 현재가가 1,000원 더 높습니다. 최근 30일 평균 40,500원보다도 400원(1%) 비싸며, 관측 기록에서는 특별히 싼 가격으로 보이지 않습니다.'
+    ];
+    livePriceAnswers.forEach((answer, i) => {
+      ok(I.unverifiedContextualPrices(answer, [realSnapshot]).length === 0
+          && I.unverifiedProductPrices(answer, [realSnapshot]).length === 0
+          && I.unverifiedCurrentPrices(answer, [realSnapshot]).length === 0,
+        `실제 GPT 출력 ${i + 1}: 확인된 최저·평균 대비 차액은 정확한 원장 근거로 통과한다`,
+        JSON.stringify({ contextual: I.unverifiedContextualPrices(answer, [realSnapshot]),
+          product: I.unverifiedProductPrices(answer, [realSnapshot]), current: I.unverifiedCurrentPrices(answer, [realSnapshot]) }));
+    });
+
+    const notebookSnapshot = I.normItem({
+      productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
+      hist: {
+        count: 3, lastPrice: 1749000, lastDate: '2026-10-23', prevPrice: 1749000,
+        low: 1699000, lowDate: '2026-10-19', lowCount: 1, historyDays: 4, firstDate: '2026-10-19',
+        points: [
+          { d: '2026-10-19', p: 1699000 },
+          { d: '2026-10-22', p: 1749000 },
+          { d: '2026-10-23', p: 1749000 }
+        ]
+      }
+    });
+    const unchangedYesterday = '어제 1,749,000원, 오늘 1,749,000원으로 0원 변동입니다.';
+    ok(I.unverifiedContextualPrices(unchangedYesterday, [notebookSnapshot]).length === 0
+        && I.unverifiedProductPrices(unchangedYesterday, [notebookSnapshot]).length === 0,
+      '실제 노트북 기록의 연속된 동일 가격은 0원 변동으로 검증한다',
+      JSON.stringify({ contextual: I.unverifiedContextualPrices(unchangedYesterday, [notebookSnapshot]),
+        product: I.unverifiedProductPrices(unchangedYesterday, [notebookSnapshot]) }));
+    const changedPreviousObservation = I.normItem({
+      productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
+      hist: {
+        count: 3, lastPrice: 1749000, lastDate: '2026-10-23', prevPrice: 1700000,
+        low: 1699000, lowDate: '2026-10-19', lowCount: 1, historyDays: 4, firstDate: '2026-10-19',
+        points: [
+          { d: '2026-10-19', p: 1699000 },
+          { d: '2026-10-22', p: 1700000 },
+          { d: '2026-10-23', p: 1749000 }
+        ]
+      }
+    });
+    ok(I.unverifiedContextualPrices(unchangedYesterday, [changedPreviousObservation]).includes(0)
+        && I.unverifiedProductPrices(unchangedYesterday, [changedPreviousObservation]).includes(0),
+      '이전 관측가가 다른데 0원 변동이라고 답하면 거부한다');
+    const missingYesterdayObservation = I.normItem({
+      productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
+      hist: {
+        count: 3, lastPrice: 1749000, lastDate: '2026-10-23', prevPrice: 1749000,
+        low: 1699000, lowDate: '2026-10-19', lowCount: 1, historyDays: 4, firstDate: '2026-10-19',
+        points: [
+          { d: '2026-10-19', p: 1749000 },
+          { d: '2026-10-20', p: 1699000 },
+          { d: '2026-10-23', p: 1749000 }
+        ]
+      }
+    });
+    ok(I.unverifiedContextualPrices(unchangedYesterday, [missingYesterdayObservation]).includes(0),
+      '어제 관측이 없으면 이전 날짜 가격을 어제 가격으로 바꾸지 않는다');
+    const unchangedNotebook = '어제와 오늘 모두 1,749,000원으로 확인돼 0원 변동입니다.';
+    ok(I.unverifiedWon(unchangedNotebook, new Set([1749000])).length === 0
+        && I.unverifiedContextualPrices(unchangedNotebook, [notebookSnapshot]).length === 0
+        && I.unverifiedProductPrices(unchangedNotebook, [notebookSnapshot]).length === 0,
+      '연속 이력이 확인된 0원 변동은 일반 금액 검사도 통과한다');
+    ok(I.unverifiedContextualPrices('현재 확인 가격은 0원입니다.', [notebookSnapshot]).includes(0),
+      '0원 현재가를 말하면 가격 이력 검사가 계속 거부한다');
+
+    const monitorSnapshot = I.normItem({
+      productId: 'monitor-fixture', vendorItemId: 'monitor-option', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '모니터 가격 이력 fixture', price: 128250, checkedAt: '2026-10-23',
+      hist: {
+        count: 4, lastPrice: 128250, lastDate: '2026-10-23', prevPrice: 135000,
+        low: 125000, lowDate: '2026-10-20', lowCount: 1, lowConfirmed: false,
+        low7: 125000, low7Date: '2026-10-20', low7Days: 6, low30: 125000, low30Date: '2026-10-20', low30Days: 14,
+        avg30: 140946, historyDays: 35, maxGapDays: 12, firstDate: '2026-09-18',
+        points: [
+          { d: '2026-10-18', p: 145000 },
+          { d: '2026-10-19', p: 145000 },
+          { d: '2026-10-20', p: 125000 },
+          { d: '2026-10-21', p: 135000 },
+          { d: '2026-10-22', p: 135000 },
+          { d: '2026-10-23', p: 128250 }
+        ]
+      }
+    });
+    const monitorHistoryContext = I.describe(monitorSnapshot, false, false);
+    ok(monitorHistoryContext.includes('10월 22일') && monitorHistoryContext.includes('10월 23일')
+        && monitorHistoryContext.includes('6,750원') && /하락/.test(monitorHistoryContext),
+      '전체 기록에 긴 공백이 있어도 마지막 두 연속 관측일의 정확한 가격 변동을 GPT 근거에 제공한다',
+      monitorHistoryContext);
+    const monitorYesterdayReply = '어제 기록된 135,000원에서 오늘 128,250원으로 6,750원 떨어졌습니다.';
+    const monitorYesterdayAmountAt = monitorYesterdayReply.indexOf('135,000원');
+    ok(I.priceClaimKind(monitorYesterdayReply, monitorYesterdayAmountAt, monitorYesterdayAmountAt + '135,000원'.length) === 'history'
+        && I.unverifiedContextualPrices(monitorYesterdayReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorYesterdayReply, [monitorSnapshot]).length === 0
+        && I.unverifiedCurrentPrices(monitorYesterdayReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 어제 관측가 문구와 연속일 차액을 날짜 공백과 혼동하지 않는다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorYesterdayReply, monitorYesterdayAmountAt, monitorYesterdayAmountAt + '135,000원'.length),
+        contextual: I.unverifiedContextualPrices(monitorYesterdayReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorYesterdayReply, [monitorSnapshot]),
+        current: I.unverifiedCurrentPrices(monitorYesterdayReply, [monitorSnapshot]) }));
+    const monitorYesterdayConfirmedReply = '어제 확인된 135,000원에서 오늘 128,250원으로 6,750원 떨어졌습니다.';
+    const monitorConfirmedAmountAt = monitorYesterdayConfirmedReply.indexOf('135,000원');
+    ok(I.priceClaimKind(monitorYesterdayConfirmedReply, monitorConfirmedAmountAt, monitorConfirmedAmountAt + '135,000원'.length) === 'history'
+        && I.unverifiedContextualPrices(monitorYesterdayConfirmedReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorYesterdayConfirmedReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 어제 확인가 문구를 옵션 이력의 이전 관측가로 판별한다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorYesterdayConfirmedReply, monitorConfirmedAmountAt, monitorConfirmedAmountAt + '135,000원'.length),
+        contextual: I.unverifiedContextualPrices(monitorYesterdayConfirmedReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorYesterdayConfirmedReply, [monitorSnapshot]) }));
+    const monitorDatedYesterdayReply = '10월 22일 135,000원에서 10월 23일 128,250원으로 6,750원 떨어졌습니다.';
+    const monitorDatedAmountAt = monitorDatedYesterdayReply.indexOf('135,000원');
+    ok(I.priceClaimKind(monitorDatedYesterdayReply, monitorDatedAmountAt, monitorDatedAmountAt + '135,000원'.length) === 'history'
+        && I.unverifiedContextualPrices(monitorDatedYesterdayReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorDatedYesterdayReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 날짜에 바로 귀속된 어제 관측가를 기록 가격으로 검증한다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorDatedYesterdayReply, monitorDatedAmountAt, monitorDatedAmountAt + '135,000원'.length),
+        contextual: I.unverifiedContextualPrices(monitorDatedYesterdayReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorDatedYesterdayReply, [monitorSnapshot]) }));
+    const monitorLowSevenReply = '최근 7일 최저 관측가는 125,000원이며, 2026년 10월 20일에 확인됐습니다. 현재가 128,250원보다 3,250원 낮습니다.';
+    const monitorLowSevenDeltaAt = monitorLowSevenReply.indexOf('3,250원');
+    ok(I.priceClaimKind(monitorLowSevenReply, monitorLowSevenDeltaAt, monitorLowSevenDeltaAt + '3,250원'.length) === 'difference'
+        && I.unverifiedContextualPrices(monitorLowSevenReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorLowSevenReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 최저 관측가와 현재가 사이 차액은 비교 기준이 현재가일 때도 관측 값으로 검증한다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorLowSevenReply, monitorLowSevenDeltaAt, monitorLowSevenDeltaAt + '3,250원'.length),
+        contextual: I.unverifiedContextualPrices(monitorLowSevenReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorLowSevenReply, [monitorSnapshot]) }));
+    const monitorLowSevenCurrentReply = '최근 7일 최저 관측가는 125,000원이며, 2026년 10월 20일에 확인됐습니다. 현재가는 128,250원으로 최저 관측가보다 3,250원 높습니다.';
+    const monitorLowSevenCurrentDeltaAt = monitorLowSevenCurrentReply.indexOf('3,250원');
+    ok(I.unverifiedContextualPrices(monitorLowSevenCurrentReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorLowSevenCurrentReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 “현재가로, 최저 관측가보다 차액이 높다” 문형은 최저 관측값을 비교 기준으로 검증한다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorLowSevenCurrentReply, monitorLowSevenCurrentDeltaAt,
+          monitorLowSevenCurrentDeltaAt + '3,250원'.length),
+        contextual: I.unverifiedContextualPrices(monitorLowSevenCurrentReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorLowSevenCurrentReply, [monitorSnapshot]) }));
+    const monitorCurrentLowCandidateReply = '현재 확인 가격은 128,250원이며, 마지막 관측일은 2026년 10월 23일입니다. 기록된 30일 평균 140,946원보다 9% 낮고, 관측 최저 후보 125,000원과는 3,250원 차이지만, 최저가는 하루만 관측돼 기록 최저가로 확인되지는 않았습니다.';
+    const monitorCurrentAverageAt = monitorCurrentLowCandidateReply.indexOf('140,946원');
+    ok(I.priceClaimKind(monitorCurrentLowCandidateReply, monitorCurrentAverageAt,
+        monitorCurrentAverageAt + '140,946원'.length) === 'average'
+        && I.unverifiedContextualPrices(monitorCurrentLowCandidateReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorCurrentLowCandidateReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 뒤따르는 최저 후보 문구가 앞선 30일 평균 가격의 근거 유형을 오염시키지 않는다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorCurrentLowCandidateReply, monitorCurrentAverageAt,
+          monitorCurrentAverageAt + '140,946원'.length),
+        contextual: I.unverifiedContextualPrices(monitorCurrentLowCandidateReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorCurrentLowCandidateReply, [monitorSnapshot]) }));
+    const monitorUnconfirmedCandidateReply = '125,000원이 단 한 번 관측돼 역대 최저가라고 단정할 수는 없습니다.';
+    const monitorUnconfirmedCandidateAt = monitorUnconfirmedCandidateReply.indexOf('125,000원');
+    ok(I.priceClaimKind(monitorUnconfirmedCandidateReply, monitorUnconfirmedCandidateAt,
+        monitorUnconfirmedCandidateAt + '125,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(monitorUnconfirmedCandidateReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorUnconfirmedCandidateReply, [monitorSnapshot]).length === 0
+        && I.unsupportedSuperlatives(monitorUnconfirmedCandidateReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 한 번 관측된 최저 후보를 부정 문장 안의 가격 기록으로 검증한다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorUnconfirmedCandidateReply, monitorUnconfirmedCandidateAt,
+          monitorUnconfirmedCandidateAt + '125,000원'.length),
+        contextual: I.unverifiedContextualPrices(monitorUnconfirmedCandidateReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorUnconfirmedCandidateReply, [monitorSnapshot]),
+        superlative: I.unsupportedSuperlatives(monitorUnconfirmedCandidateReply, [monitorSnapshot]) }));
+    const monitorLatestAllTimeReply = '아니요. 현재가는 128,250원은 확인된 최저가가 아닙니다. 기록상 2026년 10월 20일에 125,000원이 한 번만 관측됐지만, 하루만 확인돼 최저가로 확정할 수는 없습니다.\n\n가격 기록은 17일치이며, 최근 30일 최저 관측가도 125,000원입니다. 따라서 현재가는 확인된 최저 관측가보다 3,250원 높고, 125,000원이 반복적으로 확인된 역대 최저가인지는 아직 알 수 없습니다.';
+    const monitorLatestAllTimeAmountAt = monitorLatestAllTimeReply.lastIndexOf('125,000원');
+    ok(I.priceClaimKind(monitorLatestAllTimeReply, monitorLatestAllTimeAmountAt,
+        monitorLatestAllTimeAmountAt + '125,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(monitorLatestAllTimeReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorLatestAllTimeReply, [monitorSnapshot]).length === 0
+        && I.unsupportedSuperlatives(monitorLatestAllTimeReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 “역대 최저 여부는 알 수 없다”는 후보 가격을 안전 답변으로 통과시킨다',
+      JSON.stringify({ kind: I.priceClaimKind(monitorLatestAllTimeReply, monitorLatestAllTimeAmountAt,
+          monitorLatestAllTimeAmountAt + '125,000원'.length),
+        contextual: I.unverifiedContextualPrices(monitorLatestAllTimeReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorLatestAllTimeReply, [monitorSnapshot]),
+        superlative: I.unsupportedSuperlatives(monitorLatestAllTimeReply, [monitorSnapshot]) }));
+    const monitorActualAllTimeReply = '아니요. 현재가는 **128,250원**이며, 확인된 관측 기록만으로는 역대 최저가라고 할 수 없습니다. **125,000원**이 2026년 10월 20일 한 번 관측됐지만, 단 한 번이라 기록 최저인지 확인 중입니다. 현재 가격은 그보다 **3,250원 높습니다**.\n\nSEOSA 가격 기록은 **17일치**이고, 최근 30일 기록에서는 125,000원이 최저로 관측됐습니다. 다만 기록 사이에 최대 12일의 공백이 있어 그 기간의 가격은 확인할 수 없습니다.';
+    const monitorLastThirtyLowAt = monitorActualAllTimeReply.lastIndexOf('125,000원');
+    ok(I.unverifiedContextualPrices(monitorActualAllTimeReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(monitorActualAllTimeReply, [monitorSnapshot]).length === 0
+        && I.unsupportedSuperlatives(monitorActualAllTimeReply, [monitorSnapshot]).length === 0
+        && I.priceClaimKind(monitorActualAllTimeReply, monitorLastThirtyLowAt, monitorLastThirtyLowAt + '125,000원'.length) === 'low30',
+      '실제 GPT의 반복된 30일 최저 및 다른 문장의 최신일자가 가격에 잘못 붙지 않는다',
+      JSON.stringify({ contextual: I.unverifiedContextualPrices(monitorActualAllTimeReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(monitorActualAllTimeReply, [monitorSnapshot]),
+        superlative: I.unsupportedSuperlatives(monitorActualAllTimeReply, [monitorSnapshot]),
+        lastLowKind: I.priceClaimKind(monitorActualAllTimeReply, monitorLastThirtyLowAt, monitorLastThirtyLowAt + '125,000원'.length) }));
+    const actualMonitorLiveReply = '아니요. 현재가는 128,250원이며, 보유 기록에서 가장 낮게 관측된 가격은 125,000원으로 현재가보다 3,250원 낮습니다. 다만 125,000원은 2026년 10월 20일 한 번만 관측돼, 기록상 최저가로 확정되지는 않았습니다.\n\n관측 기록은 17일치이고, 최근 30일 기록에서는 14일 중 최저가가 한 번 관측됐습니다. 따라서 현재가를 역대 최저가라고 할 수는 없고, 확인된 기록 범위에서 최저 후보보다 조금 높은 가격입니다.';
+    const actualMonitorCandidateAt = actualMonitorLiveReply.indexOf('125,000원');
+    ok(I.priceClaimKind(actualMonitorLiveReply, actualMonitorCandidateAt, actualMonitorCandidateAt + '125,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(actualMonitorLiveReply, [monitorSnapshot]).length === 0
+        && I.unverifiedProductPrices(actualMonitorLiveReply, [monitorSnapshot]).length === 0
+        && I.unverifiedCurrentPrices(actualMonitorLiveReply, [monitorSnapshot]).length === 0
+        && I.unverifiedLowObservationCounts(actualMonitorLiveReply, [monitorSnapshot]).length === 0
+        && I.unsupportedSuperlatives(actualMonitorLiveReply, [monitorSnapshot]).length === 0,
+      '실제 GPT의 보유 기록 최저 후보와 날짜·기록 수를 현재가로 오분류하지 않는다',
+      JSON.stringify({ kind: I.priceClaimKind(actualMonitorLiveReply, actualMonitorCandidateAt, actualMonitorCandidateAt + '125,000원'.length),
+        contextual: I.unverifiedContextualPrices(actualMonitorLiveReply, [monitorSnapshot]),
+        product: I.unverifiedProductPrices(actualMonitorLiveReply, [monitorSnapshot]),
+        current: I.unverifiedCurrentPrices(actualMonitorLiveReply, [monitorSnapshot]),
+        lowCount: I.unverifiedLowObservationCounts(actualMonitorLiveReply, [monitorSnapshot]),
+        superlative: I.unsupportedSuperlatives(actualMonitorLiveReply, [monitorSnapshot]) }));
+    const actualMonitorDeltaAt = actualMonitorLiveReply.indexOf('3,250원');
+    ok(I.priceComparisonBase(actualMonitorLiveReply, actualMonitorDeltaAt) === 128250
+        && I.unverifiedContextualPrices(actualMonitorLiveReply, [monitorSnapshot]).length === 0,
+      '최저 관측가를 거쳐 “현재가보다 N원 낮다”는 문장에서 비교 기준을 현재가로 찾는다',
+      JSON.stringify({ base: I.priceComparisonBase(actualMonitorLiveReply, actualMonitorDeltaAt),
+        contextual: I.unverifiedContextualPrices(actualMonitorLiveReply, [monitorSnapshot]) }));
+    const historicalWindowPrice = '최근 5일간 가격은 145,000원에서 128,250원으로 내려갔습니다.';
+    const historicalAmountAt = historicalWindowPrice.indexOf('145,000원');
+    ok(I.priceClaimKind(historicalWindowPrice, historicalAmountAt, historicalAmountAt + '145,000원'.length) === 'history'
+        && I.unverifiedContextualPrices(historicalWindowPrice, [monitorSnapshot]).length === 0,
+      '최근 N일 가격 문장에서 과거 가격을 현재가로 오인하지 않는다',
+      JSON.stringify({ kind: I.priceClaimKind(historicalWindowPrice, historicalAmountAt, historicalAmountAt + '145,000원'.length),
+        unsupported: I.unverifiedContextualPrices(historicalWindowPrice, [monitorSnapshot]) }));
+
+    const unconfirmedLowestObservation = I.normItem({
+      productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
+      hist: {
+        count: 9, lastPrice: 1749000, lastDate: '2026-10-23', prevPrice: 1749000,
+        low: 1699000, lowDate: '2026-10-19', lowCount: 1, lowConfirmed: false, avg30: 1740667,
+        historyDays: 35, firstDate: '2026-09-18', low7: 1699000, low7Date: '2026-10-19', low7Days: 3,
+        low30: 1699000, low30Date: '2026-10-19', low30Days: 6,
+        points: [
+          { d: '2026-09-28', p: 1749000 }, { d: '2026-10-05', p: 1749000 },
+          { d: '2026-10-12', p: 1749000 }, { d: '2026-10-19', p: 1699000 },
+          { d: '2026-10-22', p: 1749000 }, { d: '2026-10-23', p: 1749000 }
+        ]
+      }
+    });
+    const candidateLowReply = '현재가는 1,749,000원입니다. 관측 최저 후보 1,699,000원(2026-10-19)은 하루만 관측되어 기록상 최저가로 확정할 수 없습니다.';
+    const candidateLowAt = candidateLowReply.indexOf('1,699,000원');
+    ok(I.priceClaimKind(candidateLowReply, candidateLowAt, candidateLowAt + '1,699,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(candidateLowReply, [unconfirmedLowestObservation]).length === 0
+        && I.unverifiedProductPrices(candidateLowReply, [unconfirmedLowestObservation]).length === 0,
+      '단일 최저 관측 후보는 확인 중이라는 범위를 붙였을 때 해당 날짜 기록으로 검증한다',
+      JSON.stringify({ kind: I.priceClaimKind(candidateLowReply, candidateLowAt, candidateLowAt + '1,699,000원'.length),
+        contextual: I.unverifiedContextualPrices(candidateLowReply, [unconfirmedLowestObservation]),
+        product: I.unverifiedProductPrices(candidateLowReply, [unconfirmedLowestObservation]) }));
+    const unqualifiedSingleLow = '현재가 1,749,000원은 기록상 최저가 1,699,000원보다 높습니다.';
+    ok(I.unverifiedContextualPrices(unqualifiedSingleLow, [unconfirmedLowestObservation]).includes(1699000),
+      '단일 관측 최저를 확인된 기록 최저처럼 표현하면 계속 거부한다');
+    const namedCandidateOnly = '현재가는 1,749,000원이고 관측 최저 후보 1,699,000원과는 50,000원 차이입니다.';
+    const namedCandidateOnlyAt = namedCandidateOnly.indexOf('1,699,000원');
+    ok(I.priceClaimKind(namedCandidateOnly, namedCandidateOnlyAt, namedCandidateOnlyAt + '1,699,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(namedCandidateOnly, [unconfirmedLowestObservation]).length === 0
+        && I.unverifiedProductPrices(namedCandidateOnly, [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 명시적인 “관측 최저 후보”는 확정 기록 최저가가 아닌 후보 근거로 검증한다',
+      JSON.stringify({ kind: I.priceClaimKind(namedCandidateOnly, namedCandidateOnlyAt, namedCandidateOnlyAt + '1,699,000원'.length),
+        contextual: I.unverifiedContextualPrices(namedCandidateOnly, [unconfirmedLowestObservation]),
+        product: I.unverifiedProductPrices(namedCandidateOnly, [unconfirmedLowestObservation]) }));
+    const actualModelCandidateReply = '아니요. 현재가는 1,749,000원이며, 확인된 기록만으로 역대 최저가라고 할 수 없습니다. 가격 기록은 9일치이고, 현재가를 포함해 1,749,000원이 여러 차례 관측됐습니다. 더 낮은 1,699,000원은 2026-10-19에 한 번만 관측된 최저 후보라, 기록상 최저가로 확인되지 않았습니다. 최근 30일 최저 관측가도 1,699,000원(6일 기록)이지만, 이 역시 확인된 최저가로 단정할 수는 없습니다.';
+    const currentClaimAt = actualModelCandidateReply.indexOf('1,749,000원');
+    const modelCandidateAt = actualModelCandidateReply.indexOf('1,699,000원');
+    ok(I.priceClaimKind(actualModelCandidateReply, currentClaimAt, currentClaimAt + '1,749,000원'.length) === 'current'
+        && I.priceClaimKind(actualModelCandidateReply, modelCandidateAt, modelCandidateAt + '1,699,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(actualModelCandidateReply, [unconfirmedLowestObservation]).length === 0
+        && I.unverifiedProductPrices(actualModelCandidateReply, [unconfirmedLowestObservation]).length === 0
+        && I.unsupportedSuperlatives(actualModelCandidateReply, [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 현재가 부정 및 단일 최저 후보 문장을 올바른 근거 유형으로 판별한다',
+      JSON.stringify({ currentKind: I.priceClaimKind(actualModelCandidateReply, currentClaimAt, currentClaimAt + '1,749,000원'.length),
+        candidateKind: I.priceClaimKind(actualModelCandidateReply, modelCandidateAt, modelCandidateAt + '1,699,000원'.length),
+        contextual: I.unverifiedContextualPrices(actualModelCandidateReply, [unconfirmedLowestObservation]),
+        product: I.unverifiedProductPrices(actualModelCandidateReply, [unconfirmedLowestObservation]),
+        superlative: I.unsupportedSuperlatives(actualModelCandidateReply, [unconfirmedLowestObservation]) }));
+    ok(I.unsupportedSuperlatives('현재가는 1,749,000원이고, 기록상 역대 최저가입니다.', [unconfirmedLowestObservation]).length > 0,
+      '단일 관측 최저를 긍정적인 역대 최저 주장으로 말하면 계속 차단한다');
+    ok(I.unsupportedSuperlatives('아니요. 현재 128,250원이고, 역대 최저가로 확인되지는 않았습니다.', [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 “역대 최저가로 확인되지는 않았다”는 부정 답변은 최저가 단정으로 오인하지 않는다');
+    ok(I.unsupportedSuperlatives('아니요. 현재가는 128,250원이고, 확인된 역대 최저가라고 단정할 수는 없습니다.', [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 “역대 최저가라고 단정할 수는 없다”는 부정 답변을 최저가 단정으로 오인하지 않는다');
+    ok(I.unsupportedSuperlatives('보유 기록만으로 역대 최저가라고 확인할 수는 없습니다.', [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 “역대 최저가라고 확인할 수는 없다”는 부정형을 근거 없는 단정으로 오인하지 않는다');
+    ok(I.unsupportedSuperlatives('따라서 현재가가 역대 최저가라고 단정할 근거는 없습니다.', [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 “역대 최저가라고 단정할 근거는 없다”는 부정형을 최저가 주장으로 오인하지 않는다');
+    ok(I.unsupportedSuperlatives('현재 1,749,000원은 확인된 역대 최저가가 아닙니다.', [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 “확인된 역대 최저가가 아닙니다”라는 부정형을 최저가 주장으로 오인하지 않는다');
+    ok(I.unsupportedSuperlatives('현재가는 128,250원입니다. ‘역대 최저가’ 여부는 단정할 수 없습니다.', [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 “역대 최저가 여부는 단정할 수 없다”는 문장을 긍정 최저가 주장으로 오인하지 않는다');
+    const actualNotebookLiveReply = '아니요. 현재 1,749,000원은 역대 최저가로 확인되지 않습니다. SEOSA의 9일치 기록에서 확인된 최저 후보는 2026년 10월 19일의 1,699,000원이지만, 한 번만 관측돼 기록 최저가인지 확인 중입니다. 현재가는 그보다 50,000원 높고, 최근 30일 평균 1,740,667원보다도 8,333원 비쌉니다.';
+    const notebookCurrentAt = actualNotebookLiveReply.indexOf('1,749,000원');
+    const notebookLowAt = actualNotebookLiveReply.indexOf('1,699,000원');
+    ok(I.priceClaimKind(actualNotebookLiveReply, notebookCurrentAt, notebookCurrentAt + '1,749,000원'.length) === 'current'
+        && I.priceClaimKind(actualNotebookLiveReply, notebookLowAt, notebookLowAt + '1,699,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(actualNotebookLiveReply, [unconfirmedLowestObservation]).length === 0
+        && I.unverifiedProductPrices(actualNotebookLiveReply, [unconfirmedLowestObservation]).length === 0
+        && I.unsupportedSuperlatives(actualNotebookLiveReply, [unconfirmedLowestObservation]).length === 0,
+      '실제 노트북 GPT의 현재가 부정·후보 최저·후보 대비 차액은 실제 관측으로 검증한다',
+      JSON.stringify({ currentKind: I.priceClaimKind(actualNotebookLiveReply, notebookCurrentAt, notebookCurrentAt + '1,749,000원'.length),
+        lowKind: I.priceClaimKind(actualNotebookLiveReply, notebookLowAt, notebookLowAt + '1,699,000원'.length),
+        contextual: I.unverifiedContextualPrices(actualNotebookLiveReply, [unconfirmedLowestObservation]),
+        product: I.unverifiedProductPrices(actualNotebookLiveReply, [unconfirmedLowestObservation]),
+        superlative: I.unsupportedSuperlatives(actualNotebookLiveReply, [unconfirmedLowestObservation]) }));
+    const actualNotebookSeparatedCandidate = '아니요. 현재가 1,749,000원은 관측 기록상 최저가가 아닙니다.\n\n- 관측 기록은 9일치이며, 보유 기록에서 가장 낮게 관측된 가격은 1,699,000원입니다.\n- 그 최저 관측가는 2026년 10월 19일에 한 번만 확인돼, 기록상 최저가로 확정할 수는 없습니다.';
+    const actualNotebookSeparatedCandidateAt = actualNotebookSeparatedCandidate.indexOf('1,699,000원');
+    ok(I.priceClaimKind(actualNotebookSeparatedCandidate, actualNotebookSeparatedCandidateAt,
+        actualNotebookSeparatedCandidateAt + '1,699,000원'.length) === 'low-candidate'
+        && I.unverifiedContextualPrices(actualNotebookSeparatedCandidate, [unconfirmedLowestObservation]).length === 0
+        && I.unverifiedProductPrices(actualNotebookSeparatedCandidate, [unconfirmedLowestObservation]).length === 0,
+      '실제 GPT의 줄바꿈된 “그 최저 관측가” 후속 설명도 같은 단일 관측 후보를 검증한다',
+      JSON.stringify({ kind: I.priceClaimKind(actualNotebookSeparatedCandidate, actualNotebookSeparatedCandidateAt,
+          actualNotebookSeparatedCandidateAt + '1,699,000원'.length),
+        contextual: I.unverifiedContextualPrices(actualNotebookSeparatedCandidate, [unconfirmedLowestObservation]),
+        product: I.unverifiedProductPrices(actualNotebookSeparatedCandidate, [unconfirmedLowestObservation]) }));
+    const unavailableNotebookLiveReply = '이번 검색 결과에는 요청하신 삼성 갤럭시북4 프로 NT940XGQ-A51AG 512GB 옵션과 정확히 맞는 상품이 없습니다. 가까운 상품은 같은 모델명의 256GB 옵션으로 1,749,000원이며, 512GB 가격은 확인되지 않습니다.';
+    ok(I.unverifiedSpecs(unavailableNotebookLiveReply, [notebookSnapshot]).length === 0,
+      '실제 GPT가 512GB 옵션을 찾지 못했다고 밝히고 확인된 256GB 대안을 별도 표기하면 옵션 검사를 통과한다',
+      JSON.stringify({ specs: I.unverifiedSpecs(unavailableNotebookLiveReply, [notebookSnapshot]) }));
+    const unavailableNotebookNoPriceReply = '이번 검색 결과에는 삼성 갤럭시북4 프로 NT940XGQ-A51AG의 512GB 옵션이 없어 가격을 확인하지 못했습니다. 확인된 같은 모델은 256GB 옵션뿐이라 512GB 가격으로 대신 안내할 수는 없습니다.';
+    ok(I.unverifiedSpecs(unavailableNotebookNoPriceReply, [notebookSnapshot]).length === 0,
+      '실제 GPT의 “512GB 옵션이 없어 가격을 확인하지 못했다”는 무가격 답변은 스펙 오탐으로 차단하지 않는다',
+      JSON.stringify({ specs: I.unverifiedSpecs(unavailableNotebookNoPriceReply, [notebookSnapshot]) }));
+    const repeatedUnavailableNotebookReply = '같은 NT940XGQ-A51AG 모델의 512GB 옵션은 이번 검색 결과에서 확인되지 않았습니다. 확인된 근접 상품은 256GB 옵션으로 현재 1,749,000원이며, 요청하신 512GB와는 용량이 다릅니다.';
+    ok(I.unverifiedSpecs(repeatedUnavailableNotebookReply, [notebookSnapshot]).length === 0,
+      '실제 GPT가 미확인 옵션을 반복 언급해도 대안 가격을 다른 옵션에 귀속하면 스펙 검사를 통과한다',
+      JSON.stringify({ specs: I.unverifiedSpecs(repeatedUnavailableNotebookReply, [notebookSnapshot]) }));
+    const fabricatedUnavailableNotebookLiveReply = '이번 검색 결과에서 512GB 옵션은 확인되지 않습니다. 하지만 512GB 옵션 가격은 1,749,000원입니다.';
+    ok(I.unverifiedSpecs(fabricatedUnavailableNotebookLiveReply, [notebookSnapshot]).includes('512GB'),
+      '찾지 못한 512GB 옵션에 가격을 붙이면 옵션 검사는 계속 차단한다',
+      JSON.stringify({ specs: I.unverifiedSpecs(fabricatedUnavailableNotebookLiveReply, [notebookSnapshot]) }));
+    const singleLowDeal = DEAL.dealOf({
+      count: 9, historyDays: 35, firstDate: '2026-09-18', lastDate: '2026-10-23',
+      low: 1699000, lowDate: '2026-10-19', lowCount: 1, lowConfirmed: false, lowIsLatest: false,
+      high: 1749000, highDate: '2026-10-23', avg30: 1740667, avg7: 1732333,
+      avg7Days: 3, trendPct: 2.9, trendDays: 4, volatility: 0.9
+    }, 1749000, '2026-10-23');
+    const singleLowDealBlock = DEAL.dealBlock(singleLowDeal);
+    ok(singleLowDealBlock.includes('최저 관측 후보 1,699,000원')
+        && singleLowDealBlock.includes('하루만 관측')
+        && !singleLowDealBlock.includes('보유 관측 기록의 최저가보다 높다'),
+      '안전 fallback은 미확정 단일 최저의 차액을 만들지 않고 후보·관측 횟수를 명시한다', singleLowDealBlock);
+
+    // Actual gpt-6-luna output from the LG air-purifier Neon snapshot (2026-10-23).
+    // Korean comparison particles and an implicit yesterday delta must be checked
+    // against history, not mistaken for ungrounded current/average prices.
+    const airPurifierSnapshot = I.normItem({
+      productId: '8603929492', vendorItemId: '91960066542', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
+      title: 'LG전자 퓨리케어 360도 오브제컬렉션 플러스 공기청정기 100㎡ 방문설치', price: 688700,
+      hist: {
+        count: 21, lastPrice: 688700, lastDate: '2026-10-23', prevPrice: 703820,
+        firstDate: '2026-09-18', historyDays: 35,
+        low: 659600, lowDate: '2026-10-19', lowCount: 3, lowConfirmed: true,
+        low7: 659600, low7Date: '2026-10-19', low7Days: 6,
+        low30: 659600, low30Date: '2026-10-19', low30Days: 19,
+        avg30: 707688, avg30Days: 19,
+        points: [
+          { d: '2026-10-17', p: 659600 }, { d: '2026-10-18', p: 659600 }, { d: '2026-10-19', p: 659600 },
+          { d: '2026-10-20', p: 703820 }, { d: '2026-10-22', p: 703820 }, { d: '2026-10-23', p: 688700 }
+        ]
+      }
+    });
+    const airPurifierAllTime = '현재가는 **688,700원**이고, SEOSA 보유 가격 기록 전체의 최저 관측가는 **659,600원**입니다. 현재가는 최저가보다 **29,100원 높으며**, 기록상 특별히 싼 가격은 아닙니다. 다만 최근 30일 평균 **707,688원**보다는 **18,988원(2.7%) 낮습니다**. 기록된 가격은 10월 17~19일에 659,600원이었고, 이후 10월 20일 703,820원으로 올라 10월 23일 688,700원으로 확인됐습니다. 따라서 현재가는 평균보다 낮지만, 보유 기록의 최저가보다는 높은 수준입니다.';
+    const airPurifierYesterday = '2026년 10월 22일 관측가 703,820원에서 오늘 현재가 688,700원으로 15,120원 내렸습니다.';
+    const airPurifierYesterdayComparison = '확인된 관측가끼리 비교하면 오늘 현재가 688,700원은 10월 22일의 703,820원보다 15,120원 내렸습니다. 다만 기록 간격이 있어 어제와 오늘 사이의 일별 변동 전체를 확인할 수는 없습니다.';
+    for (const [name, answer] of [
+      ['30일 평균 대비 파생 금액', airPurifierAllTime],
+      ['어제 대비 하락 금액', airPurifierYesterday],
+      ['실제 GPT의 “이전 값보다 차액 하락” 문형', airPurifierYesterdayComparison]
+    ]) {
+      const unsupported = {
+        contextual: I.unverifiedContextualPrices(answer, [airPurifierSnapshot]),
+        product: I.unverifiedProductPrices(answer, [airPurifierSnapshot]),
+        current: I.unverifiedCurrentPrices(answer, [airPurifierSnapshot])
+      };
+      ok(!unsupported.contextual.length && !unsupported.product.length && !unsupported.current.length,
+        `실제 공기청정기 GPT ${name} 응답을 실제 기록 근거로 통과한다`, JSON.stringify(unsupported));
+    }
+    const averageDeltaWithoutBaseAmount = '현재 확인 가격은 688,700원이며, 30일 평균보다 18,988원 낮습니다.';
+    const averageDeltaWithoutBaseAt = averageDeltaWithoutBaseAmount.indexOf('18,988원');
+    ok(I.priceClaimKind(averageDeltaWithoutBaseAmount, averageDeltaWithoutBaseAt,
+      averageDeltaWithoutBaseAt + '18,988원'.length) === 'difference'
+        && I.unverifiedContextualPrices(averageDeltaWithoutBaseAmount, [airPurifierSnapshot]).length === 0
+        && I.unverifiedProductPrices(averageDeltaWithoutBaseAmount, [airPurifierSnapshot]).length === 0,
+      '실제 GPT처럼 평균 금액을 생략해도 앞선 현재가를 평균 비교 기준으로 오인하지 않는다', JSON.stringify({
+        contextual: I.unverifiedContextualPrices(averageDeltaWithoutBaseAmount, [airPurifierSnapshot]),
+        product: I.unverifiedProductPrices(averageDeltaWithoutBaseAmount, [airPurifierSnapshot])
+      }));
+    const lowFrequencySnapshot = {
+      ...airPurifierSnapshot,
+      hist: { ...airPurifierSnapshot.hist, low: 332100, lowCount: 1, low30: 332100, low30Count: 1,
+        low30Date: '2026-10-15', low30Days: 22, low7: 343330, low7Count: 2, low7Date: '2026-10-20', low7Days: 7 }
+    };
+    const wrongLowFrequency = '최근 7일 관측 최저가는 343,330원이며, 이 최저가는 1회 관측됐습니다.';
+    ok(I.unverifiedLowObservationCounts(wrongLowFrequency, [lowFrequencySnapshot]).includes(1),
+      '최근 7일 최저가가 두 번 관측됐는데 실제 GPT가 한 번이라고 하면 차단한다',
+      I.unverifiedLowObservationCounts(wrongLowFrequency, [lowFrequencySnapshot]));
+    const correctLowFrequency = wrongLowFrequency.replace('1회', '2회');
+    ok(I.unverifiedLowObservationCounts(correctLowFrequency, [lowFrequencySnapshot]).length === 0,
+      '최근 7일 최저가의 실제 반복 관측 횟수는 통과한다');
+    const actualAirLow7 = '최근 7일 최저 관측가는 343,330원이며, 2026년 10월 22일에 확인됐습니다. 가격 기록이 있는 날은 7일, 이 최저가가 관측된 횟수는 2회입니다.';
+    ok(I.unverifiedLowObservationCounts(actualAirLow7, [lowFrequencySnapshot]).length === 0,
+      '실제 GPT의 “최근 7일” 창 길이를 최저가 반복 관측 횟수로 오인하지 않는다',
+      I.unverifiedLowObservationCounts(actualAirLow7, [lowFrequencySnapshot]));
+    const actualAirAllTimeWindowCount = '현재가는 345,580원이고, 확인된 최저 후보 332,100원보다 13,480원 높아 역대 최저가라고 확인되지는 않습니다. 332,100원은 2026년 10월 15일 한 번만 관측돼 기록 최저 여부를 확인 중입니다. 전체 가격 기록은 25일치이며, 해당 최저 후보는 최근 30일 관측 중에도 1회 확인됐습니다.';
+    ok(I.unverifiedLowObservationCounts(actualAirAllTimeWindowCount, [lowFrequencySnapshot]).length === 0,
+      '실제 GPT의 최근 30일 창 길이와 전체 기록 일수를 최저가 횟수로 오인하지 않는다',
+      I.unverifiedLowObservationCounts(actualAirAllTimeWindowCount, [lowFrequencySnapshot]));
+    const wrongAverageDirection = airPurifierAllTime.replace('18,988원(2.7%) 낮습니다', '18,988원(2.7%) 높습니다');
+    ok(I.unverifiedContextualPrices(wrongAverageDirection, [airPurifierSnapshot]).includes(18988)
+        && I.unverifiedProductPrices(wrongAverageDirection, [airPurifierSnapshot]).includes(18988),
+      '실제 평균보다 낮은 가격을 높다고 반대로 말하면 차액을 거부한다');
+    const wrongYesterdayDirection = airPurifierYesterday.replace('15,120원 내렸습니다', '15,120원 올랐습니다');
+    ok(I.unverifiedContextualPrices(wrongYesterdayDirection, [airPurifierSnapshot]).includes(15120)
+        && I.unverifiedProductPrices(wrongYesterdayDirection, [airPurifierSnapshot]).includes(15120),
+      '실제 전날 대비 하락을 상승으로 바꾸면 차액을 거부한다');
+    const wrongYesterdayComparison = airPurifierYesterdayComparison.replace('15,120원 내렸습니다', '15,120원 올랐습니다');
+    ok(I.unverifiedContextualPrices(wrongYesterdayComparison, [airPurifierSnapshot]).includes(15120)
+        && I.unverifiedProductPrices(wrongYesterdayComparison, [airPurifierSnapshot]).includes(15120),
+      '이전 관측가보다 하락한 금액을 상승으로 바꾸면 차액을 거부한다');
+    const wrongDatedPrice = '10월 22일 관측가와 오늘 현재가는 모두 688,700원으로 같다고 답했지만, 실제 10월 22일 기록은 703,820원입니다.';
+    ok(I.unverifiedContextualPrices(wrongDatedPrice, [airPurifierSnapshot]).includes(688700)
+        && I.unverifiedProductPrices(wrongDatedPrice, [airPurifierSnapshot]).includes(688700),
+      '현재가와 같은 숫자라도 다른 날짜의 관측가로 귀속하면 거부한다');
+    const correctlyDatedPrices = '10월 22일 관측가는 703,820원이고 10월 23일 현재가는 688,700원입니다.';
+    ok(I.unverifiedContextualPrices(correctlyDatedPrices, [airPurifierSnapshot]).length === 0
+        && I.unverifiedProductPrices(correctlyDatedPrices, [airPurifierSnapshot]).length === 0
+        && I.unverifiedCurrentPrices(correctlyDatedPrices, [airPurifierSnapshot]).length === 0,
+      '실제 10월 22일·23일 관측가를 날짜에 맞게 귀속하면 통과한다');
+
+    const realModelReply = livePriceAnswers[2];
+    const averageDeltaAt = realModelReply.indexOf('400원');
+    ok(I.priceClaimKind(realModelReply, averageDeltaAt, averageDeltaAt + '400원'.length) === 'difference',
+      '실제 GPT의 평균 대비 차액 활용형도 파생 차액으로 분류한다',
+      I.priceClaimKind(realModelReply, averageDeltaAt, averageDeltaAt + '400원'.length));
+    const currentDeltaReply = livePriceAnswers[3];
+    const currentDeltaAt = currentDeltaReply.indexOf('1,000원');
+    ok(I.priceClaimKind(currentDeltaReply, currentDeltaAt, currentDeltaAt + '1,000원'.length) === 'difference',
+      '실제 GPT의 “현재가가 1,000원 더 높다” 표현도 파생 차액으로 분류한다',
+      I.priceClaimKind(currentDeltaReply, currentDeltaAt, currentDeltaAt + '1,000원'.length));
+
+    // Exercise the whole API grounding gate with an actual provider answer and
+    // the same persisted product/option/history facts, not only the pure claim
+    // parsers above. The handler and price-stat loader remain real; only the
+    // external search/model boundaries are deterministic fixtures.
+    const liveCatalogRow = {
+      product_id: '8327026885', mall: '쿠팡', mall_label: '쿠팡',
+      title: '대웅 취사 보온 전기밥솥 10인용', lprice: 40900, oprice: 40900,
+      link: 'https://www.coupang.com/vp/products/8327026885?vendorItemId=95189584451',
+      image: '', keyword: '대웅 전기밥솥', collected_at: '2026-10-22T18:32:56.341Z',
+      vendor_item_id: '95189584451'
+    };
+    tables.products.push(liveCatalogRow);
+    const liveDates = [
+      ['2026-10-07', 39900], ['2026-10-08', 39900], ['2026-10-09', 39900], ['2026-10-10', 39900],
+      ['2026-10-11', 40900], ['2026-10-12', 40900], ['2026-10-13', 40900], ['2026-10-14', 40900],
+      ['2026-10-15', 40900], ['2026-10-23', 40900]
+    ];
+    tables.price_history.push(...liveDates.map(([recorded_date, price]) => ({
+      product_id: liveCatalogRow.product_id, mall: liveCatalogRow.mall,
+      vendor_item_id: liveCatalogRow.vendor_item_id, price, recorded_date,
+      recorded_at: `${recorded_date}T09:00:00.000Z`, title: liveCatalogRow.title, link: liveCatalogRow.link
+    })));
+    const actualGroundingReply = livePriceAnswers[0];
+    const liveRoute = await ask({
+      question: '대웅 취사 보온 전기밥솥 10인용 현재 가격과 기록상 최저가·평균 대비 차이를 알려줘.',
+      view: { source: 'none' }
+    }, {
+      classify: 'D|대웅 취사 보온 전기밥솥 10인용', answer: actualGroundingReply,
+      searchItems: [{
+        title: liveCatalogRow.title, lprice: 40900, oprice: 40900,
+        link: liveCatalogRow.link, mall: liveCatalogRow.mall, productId: liveCatalogRow.product_id,
+        vendorItemId: liveCatalogRow.vendor_item_id, isCoupang: true
+      }]
+    });
+    ok(!liveRoute.body.degraded && liveRoute.body.text === actualGroundingReply,
+      '실제 GPT 가격 이력 응답은 API 전체 grounding gate를 통과한다',
+      JSON.stringify({ warnings: liveRoute.warnings, degraded: liveRoute.body.degraded,
+        text: liveRoute.body.text, intent: liveRoute.body.intent,
+        facts: facts(liveRoute.system).slice(0, 900), stats: liveRoute.statCalls }));
+    const wrongRecommendation = await ask({ question: '대웅 밥솥 추천해줘', view: { source: 'none' } }, {
+      classify: 'C|대웅 밥솥', answer: '삼성 갤럭시 버즈를 추천합니다.',
+      searchItems: [{
+        title: liveCatalogRow.title, lprice: 40900, oprice: 40900,
+        link: liveCatalogRow.link, mall: liveCatalogRow.mall, productId: liveCatalogRow.product_id,
+        vendorItemId: liveCatalogRow.vendor_item_id, isCoupang: true
+      }]
+    });
+    ok(wrongRecommendation.body.degraded === true,
+      '카드에 없는 상품을 추천하면 grounding gate가 계속 대체한다',
+      JSON.stringify({ degraded: wrongRecommendation.body.degraded, warnings: wrongRecommendation.warnings }));
+    const forgedDelta = livePriceAnswers[0].replace('1,000원 높고', '1,001원 높고');
+    ok(I.unverifiedContextualPrices(forgedDelta, [realSnapshot]).length > 0
+        || I.unverifiedProductPrices(forgedDelta, [realSnapshot]).length > 0,
+      '실제 GPT 차액 응답에서 1원 변조한 파생 차액은 계속 거부한다');
+
     const asks = ['가격 이력 알려줘', '역대 최저가 언제였어?', '30일 평균보다 싸?', '최근에 가격 내려갔어?', 'price history please'];
     const vids = ['V-BLACK', 'V-WHITE', null, ''];
     for (let i = 1; i <= 20; i++) {
@@ -710,15 +1252,15 @@ function searchFixture() {
     ok(know.body.text.includes('LDAC') && know.searches === 0, '지식 질문: 검색 없이 일반 답변');
 
     // 다중 턴: 예산 조건과 이전 답변 문맥이 이어진다.
-    const t1 = await ask({ question: '20만원 이하 무선 이어폰 추천해줘' }, {
+    const t1 = await ask({ question: '15만원 이하 무선 이어폰 추천해줘' }, {
       classify: 'C|무선 이어폰', searchItems: searchFixture(), answer: '삼성 갤럭시 버즈3 프로 블랙을 권합니다. 현재가는 139,000원입니다.'
     });
-    const h2 = [{ role: 'user', text: '20만원 이하 무선 이어폰 추천해줘' }, { role: 'assistant', text: t1.body.text, sig: t1.body.turnSig }];
+    const h2 = [{ role: 'user', text: '15만원 이하 무선 이어폰 추천해줘' }, { role: 'assistant', text: t1.body.text, sig: t1.body.turnSig }];
     const t2 = await ask({ question: '통화 품질도 중요해', chatHistory: h2.concat([{ role: 'user', text: '통화 품질도 중요해' }]) }, {
       classify: 'C', resolve: '{"q":"무선 이어폰","use":"","brand":"","avoid":""}', searchItems: searchFixture(),
       answer: '통화까지 보면 삼성 갤럭시 버즈3 프로 블랙이 맞습니다.'
     });
-    ok(/200,000원|20만/.test(t2.system) && t2.messages.some(m => m.role === 'assistant' && m.content === t1.body.text),
+    ok(/150,000원|15만/.test(t2.system) && t2.messages.some(m => m.role === 'assistant' && m.content === t1.body.text),
       '다중 턴: 앞 턴 예산이 이어지고, 서명된 이전 답변은 assistant 문맥으로 남는다');
 
     // 직전 추천 이어받기: 유효한 참조 → 서버가 골랐던 그 상품·옵션을 카탈로그로 확인해 카드 1장.
@@ -730,6 +1272,43 @@ function searchFixture() {
         && prior.body.degraded !== true && productData(prior.system).includes(`현재가 ${won(top.lprice)}원`),
       '직전 추천(서명 참조) → 같은 상품·옵션을 서버에서 다시 확인해 답한다',
       JSON.stringify({ top: rec.body.topProductId, items: prior.body.items, text: prior.body.text }));
+
+    // 사용자가 실제로 쓴 대화: 추천 → 이유 질문 → '지금 사는 게 좋을까?'
+    // 이전에는 마지막 질문을 쇼핑 의도가 아닌 일반 지식(B)으로 분류해 맥락이 끊겼다.
+    const reasonTurn = await ask({ question: '이거 왜 추천했어?', prevTopRef: rec.body.topRecommendationRef,
+      chatHistory: [{ role: 'user', text: '무선 이어폰 추천해줘' }, { role: 'assistant', text: rec.body.text, sig: rec.body.turnSig }] },
+      { answer: '추천한 이유를 설명해 드릴게요.' });
+    ok(reasonTurn.searches === 0 && (reasonTurn.body.items || []).length === 1
+        && reasonTurn.body.reusePreviousCard === true
+        && !!reasonTurn.body.topRecommendationRef && /^at1\./.test(reasonTurn.body.turnSig || ''),
+      '추천 이유를 말한 후에도 같은 상품·옵션의 서명 참조가 이어진다');
+    const naturalFollowup = await ask({ question: '지금 사는 게 좋을까?', prevTopRef: reasonTurn.body.topRecommendationRef,
+      chatHistory: [{ role: 'user', text: '무선 이어폰 추천해줘' }, { role: 'assistant', text: rec.body.text, sig: rec.body.turnSig },
+        { role: 'user', text: '이거 왜 추천했어?' }, { role: 'assistant', text: reasonTurn.body.text, sig: reasonTurn.body.turnSig }] },
+      { answer: `${top ? top.title : '?'} 현재가는 ${won(top ? top.lprice : 0)}원입니다.` });
+    ok(naturalFollowup.body.intent === 'PRODUCT_DECISION' && naturalFollowup.searches === 0
+        && (naturalFollowup.body.items || []).length === 1
+        && naturalFollowup.body.items[0].productId === top.productId
+        && !/조건에 맞는 상품을 찾지 못/.test(naturalFollowup.body.text),
+      '대화 3턴: 지금 사는 게 좋을까? → 같은 상품을 기억하고 구매 판단으로 이어진다',
+      JSON.stringify({ intent: naturalFollowup.body.intent, searches: naturalFollowup.searches, text: naturalFollowup.body.text.slice(0, 110) }));
+
+    const wrongFollowup = await ask({ question: '지금 사는 게 좋을까?', prevTopRef: reasonTurn.body.topRecommendationRef,
+      chatHistory: [{ role: 'user', text: '무선 이어폰 추천해줘' }, { role: 'assistant', text: rec.body.text, sig: rec.body.turnSig }] },
+      { answer: '이 제품 현재가는 1원이고 무조건 지금 사세요.' });
+    ok(wrongFollowup.body.degraded === true && /앞에서 추천했던/.test(wrongFollowup.body.text)
+        && !/1원|무조건 지금 사세요/.test(wrongFollowup.body.text)
+        && wrongFollowup.body.text.includes(won(top.lprice) + '원')
+        && (wrongFollowup.body.items || []).length === 1,
+      '구매시점 GPT가 가격을 지어내도 같은 추천 상품의 검증된 가격과 충분한 설명으로 대체한다');
+
+    const gramReason = require('../api/_concierge').recommendationReason({
+      top: { title: 'LG전자 그램15 15ZB95N 노트북', price: 645000, hist: null },
+      constraints: {}, decision: null, deal: null
+    }).text;
+    ok(/좋은 노트북이라는 것은 다르/.test(gramReason) && /예산과 사용 목적/.test(gramReason)
+        && /다른 모델과 비교/.test(gramReason),
+      '그램 추천 이유는 가격뿐 아니라 성능·용도·한계를 대화하듯 구체적으로 설명한다');
 
     // 참조 대상 옵션이 더는 카탈로그의 대표 옵션이 아니면 현재가를 고르지 않는다.
     const whiteRef = AC.createRecommendationRef({ productId: '7001', vendorItemId: 'V-WHITE', mallId: '쿠팡' });

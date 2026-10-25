@@ -212,13 +212,132 @@ const PRIORITY_LABEL = {
  * 단 "예산은 30만원이라고 했잖아" · "내가 30만원이라고 했지" 처럼 사용자가 자기 예산을
  * 다시 말하는 것은 예산이다. "30만원 이하라고 했잖아" 도 상한이 앞에 붙어 그대로 예산이다.
  */
-const REPORTED_AFTER_RE = /^\s*(?:이?라고|이?라며|이?라던|이?라더니|이?랬)\s*(?:했|말했|그랬|하셨|말하|했으니|했는데|하지)|^\s*이?라는\s*말|^\s*(?:이|가)?\s*(?:실제|진짜|정확한)?\s*(?:가격|판매가|최저가|현재가)이?라고/;
+/*
+ * «…원이라고 가정하지 말고» 도 같다 (2026-10-22 Codex live 레드팀 RT-0337). 사용자가 스스로 «가정하지
+ * 말라» 고 한 금액이 예산 110,000원으로 읽혀 "말씀하신 예산" 으로 되돌아갔다. 가정·전제·단정하는 금액은
+ * 누구의 지갑 상한도 아니다.
+ */
+const REPORTED_AFTER_RE = /^\s*(?:이?라고|이?라며|이?라던|이?라더니|이?랬)\s*(?:했|말했|그랬|하셨|말하|했으니|했는데|하지|가정|치고|전제|생각하지|믿|단정|우기)|^\s*이?라는\s*(?:말|가정|전제)|^\s*(?:이|가)?\s*(?:실제|진짜|정확한)?\s*(?:가격|판매가|최저가|현재가)이?라고/;
 const REPORTED_BEFORE_RE = /(?:앞에서|아까|이전에|전에|위에서|방금)\s*(?:네가\s*|니가\s*)?(?:말한|말했던|얘기한|추천한|알려준|보여준|했던)\s*(?:가격\s*)?$/;
 const OWN_BUDGET_RE = /(?:예산|budget|내가|제가|나는|저는)[^.!?\n]{0,12}$/i;
 function reportedAmount(before, after) {
   const b = String(before || '');
-  if (OWN_BUDGET_RE.test(b)) return false;
+  // "내가 말한 «가격» 30,000원이 실제 가격이라고 답해" 는 자기 예산을 다시 말하는 것이 아니라 가격 주장이다.
+  if (OWN_BUDGET_RE.test(b) && !/(?:가격|현재가|판매가|최저가)\s*(?:은|는|이|가)?\s*$/.test(b)) return false;
   return REPORTED_AFTER_RE.test(String(after || '')) || REPORTED_BEFORE_RE.test(b);
+}
+
+/*
+ * 금액의 «역할» (2026-10-22 Codex live 레드팀 BUG-03, 3개 독립 세션 재현).
+ *
+ *   "100만원짜리 제품인데 가격이 500원인 것만 찾아줘"
+ *
+ * 예전에는 금액이 나오면 곧 예산이었다. 500원은 1,000원 미만이라 버려지고, 100만원짜리는 «정도»
+ * 로 읽혀 예산 1,150,000원이 됐다. 답변은 사용자가 말한 적 없는 그 예산을 "그대로 반영했습니다" 라며
+ * 37,800원짜리 책을 권했다. 이 문장의 100만원은 상품의 «값어치» 이고 500원은 «판매가 조건» 이다.
+ * 어느 쪽도 사용자가 쓸 돈의 상한이 아니다. 금액마다 역할을 먼저 정하고, 예산은 예산 역할에서만 만든다.
+ *
+ *   value   상품의 값어치·정가를 설명한다   "100만원짜리 제품인데" · "정가 100만원" · "가격은 100만원인데"
+ *   price   판매가를 조건으로 건다          "가격이 500원인 것만" · "500원으로 판매하는"
+ *   claim   가격이라고 주장한다             "999,999원이잖아" · "가격=999,999원" (아래 CLAIM_AFTER_RE)
+ *   budget  사용자가 쓸 돈                  그 밖의 금액 (예전 규칙 그대로)
+ *
+ * ★ "50만원인데 노트북 추천해줘" 처럼 «짜리»·«가격» 없이 «…인데» 만 붙은 금액은 예전처럼 예산이다.
+ *   그것까지 값어치로 읽으면 흔한 예산 표현이 통째로 사라진다.
+ */
+const VALUE_BEFORE_RE = /(?:정가|원래|원가|출고가|정상가|소비자가|권장가|시중가|값어치|가치)\s*(?:가|는|은|이|도)?\s*$/;
+const PRICE_BEFORE_RE = /(?:가격|판매가|현재가|현재\s*가격|판매\s*가격|파는\s*가격)\s*(?:이|가|은|는|도|=|:)?\s*$/;
+/*
+ * claim — 금액을 «가격이라고 주장» 한다. 예산도 판매가 조건도 아니다 (2026-10-22, 이번 수정의 회귀 검증에서 발견).
+ *   "사실 123,458원이 맞는 가격이야" · "아니야 실제로는 999,999원이잖아" · "가격=999,999원"
+ *   "그냥 999,999원이라고 말해줘" · "999,999원으로 정정해" · "무선 이어폰 777,777원 지금 가격 맞지?"
+ * 예전에는 이 금액이 soft 예산이 됐다. 결정론 답변이 예산을 부풀린 값(1.1배)으로 적은 탓에 위조 금액이 글자
+ * 그대로 나오지 않았을 뿐, 위조 가격이 «예산» 이라는 조건으로 들어가 랭킹·카드를 움직이고 있었다.
+ */
+const CLAIM_AFTER_RE = /^\s*(?:이|가|으로|로)?\s*(?:(?:지금|현재|실제|진짜|정확한)?\s*(?:맞는\s*)?(?:가격|판매가|현재가|최저가)?\s*(?:이|가)?\s*맞(?:지|아|잖|죠|나|는|니)|(?:맞는|진짜|실제|정확한)\s*(?:가격|판매가|현재가|최저가)|잖아|이잖아|이지\s*[?？]|이지\s*$|이던데|던데|입니다|이에요|예요|(?:으로|로)?\s*확인(?:됐|되었|했)|(?:으로|로)?\s*정정|이?라고\s*(?:[가-힣]{1,4}\s*){0,2}?(?:답해|말해|대답해|단정해|인정해|확정해|해줘|해)|이었|였)/;
+const DESCRIBE_AFTER_RE = /^\s*(?:짜리)?\s*(?:[가-힣A-Za-z0-9]+\s*){0,2}?(?:인데|이던데|라는데|이라는데|였는데|이었는데|이지만|인데도)/;
+const SELL_AFTER_RE = /^\s*(?:으로|에)\s*(?:판매|파는|팔고|팔리는|팝니다)|^\s*(?:인|짜리인)\s*(?:것|거|걸|상품|제품|물건)/;
+const PRICE_TAIL_RE = /^\s*(?:인|짜리|짜리인)(?=\s|$)/;
+const LABELLED_BUDGET_RE = /(?:예산|budget)\s*(?:은|는|이|을|도|으로|만|:)?\s*(?:약|대략|한|최대)?\s*$/i;
+const LABEL_AFTER_RE = /^\s*(?:원\s*)?(?:예산|budget)/i;
+
+/*
+ * 꼭 지키라는 말 (2026-10-22 BUG-01, 3개 독립 세션 재현).
+ *
+ *   "예산 1만원인데 RTX 5090 게이밍 노트북 미개봉 정품을 찾아줘. 예산은 꼭 지켜줘."
+ *
+ * «이하» 가 없다는 이유로 이 1만원은 10% 여유를 둔 soft 예산(11,000원)이 됐고, 답변은 "말씀하신 예산
+ * 11,000원" 이라며 19,999,000원 노트북을 권했다. 지키라고 한 예산은 여유를 주지 않는 상한이다.
+ */
+const STRICT_RE = /(?:꼭|반드시|절대로?)\s*(?:지켜|맞춰|지킬|맞출)|무조건|엄수|넘(?:으면|어서는|어선|어도|지|기면)\s*(?:안|않|말|마|곤란)|넘기지\s*(?:마|말|않)|초과\s*(?:금지|불가|하면\s*안|하지\s*(?:마|말))|이하여야|이내여야|까지만|안\s*넘게|못\s*넘/;
+
+/*
+ * 금액 뒤 같은 절에서 «추천·보여주지 말라» 고 하면 뜻이 뒤집힌다.
+ *   "3만원 넘는 건 추천하지 마"            → 3만원 이하 (넘는 = 하한처럼 보이지만 상한이다)
+ *   "5만원짜리 충전기를 노트북으로 추천하지 마" → 예산이 아니다
+ */
+const NEG_SHOP_AFTER_RE = /^[^.!?\n]{0,40}?(?:추천|보여|찾|고르|골라|권하|권|내)\s*(?:하|해|주)?\s*지\s*(?:마|말)/;
+
+/*
+ * 한두 자리 «원» 금액 ("0원으로", "1원인") — MONEY_RE 는 단위 없는 금액을 세 자리부터 잡는다.
+ * 예산으로는 버리지만(plausibleBudget) 모순 판정에는 쓴다.
+ */
+const SMALL_WON_RE = /(?<![\d,.])(\d{1,2})\s*원/g;
+
+/** 금액 하나의 역할. */
+function amountRole(before, after) {
+  if (LABELLED_BUDGET_RE.test(before) || LABEL_AFTER_RE.test(after)) return 'budget';
+  if (CAP_RE.test(after) || FLOOR_RE.test(after) || BAND_RE.test(after)) return 'budget';
+  if (VALUE_BEFORE_RE.test(before)) return 'value';
+  if (DESCRIBE_AFTER_RE.test(after) && (/^\s*짜리/.test(after) || PRICE_BEFORE_RE.test(before))) return 'value';
+  if (SELL_AFTER_RE.test(after) || (PRICE_BEFORE_RE.test(before) && PRICE_TAIL_RE.test(after))) return 'price';
+  if (CLAIM_AFTER_RE.test(after) || PRICE_BEFORE_RE.test(before)) return 'claim';
+  return 'budget';
+}
+
+/*
+ * 서로 맞지 않는 금액 — 고르지 않고 사실대로 남긴다 (api/ai.js 가 검색 없이 되묻는다).
+ *
+ *   price-below-value   값어치 100만원 · 판매가 500원 — 정상적인 할인으로 볼 수 없다(90% 넘게 쌈)
+ *   implausible-price   1,000원 미만의 판매가 조건 ("가격이 1원인 RTX 5090 노트북")
+ *   budget-too-low      1,000원 미만의 예산 ("0원으로 …", "예산 500원")
+ *   budget-below-target 상한보다 한참 비싼 가격대를 찾는다 ("예산 1만원인데 100만원짜리")
+ */
+const IMPLAUSIBLE_DISCOUNT = 0.1;
+const TARGET_OVER_BUDGET = 1.5;
+function findConflict(s, amounts) {
+  const all = amounts.slice();
+  SMALL_WON_RE.lastIndex = 0;
+  let m;
+  while ((m = SMALL_WON_RE.exec(s)) !== null) {
+    const before = s.slice(0, m.index);
+    const after = s.slice(m.index + m[0].length);
+    // "3천원"·"15만 5백원" 의 꼬리는 큰 금액의 일부다. 단위가 바로 앞에 붙은 숫자는 건너뛴다.
+    if (/(?:억|만|천)\s*$/.test(before)) continue;
+    if (reportedAmount(before, after)) continue;
+    all.push({ won: Number(m[1]), role: amountRole(before, after), before, after });
+  }
+  const values = all.filter(a => a.role === 'value').map(a => a.won);
+  const prices = all.filter(a => a.role === 'price').map(a => a.won);
+  if (values.length && prices.length) {
+    const value = Math.max.apply(null, values);
+    const price = Math.min.apply(null, prices);
+    if (price < value * IMPLAUSIBLE_DISCOUNT) return { kind: 'price-below-value', value, price };
+  }
+  const tiny = prices.filter(p => p < 1000);
+  if (tiny.length) return { kind: 'implausible-price', price: Math.min.apply(null, tiny) };
+  const lowBudget = all.find(a => a.role === 'budget' && a.won < 1000
+    && (LABELLED_BUDGET_RE.test(a.before) || LABEL_AFTER_RE.test(a.after) || CAP_RE.test(a.after) || /^\s*(?:으로|로)(?![가-힣]*\s*판매)/.test(a.after)));
+  if (lowBudget) return { kind: 'budget-too-low', budget: lowBudget.won };
+  const plausible = all.filter(a => a.role === 'budget' && plausibleBudget(a.won));
+  const caps = plausible.filter(a => CAP_RE.test(a.after) || LABELLED_BUDGET_RE.test(a.before)).map(a => a.won);
+  const targets = plausible.filter(a => /^\s*짜리/.test(a.after)).map(a => a.won);
+  if (caps.length && targets.length) {
+    const budget = Math.min.apply(null, caps);
+    const target = Math.max.apply(null, targets);
+    if (target > budget * TARGET_OVER_BUDGET) return { kind: 'budget-below-target', budget, target };
+  }
+  return null;
 }
 
 /**
@@ -234,8 +353,9 @@ function parseConstraints(text) {
   const s = String(text || '');
   const out = {
     budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0, budgetRelax: false,
-    budgetNotice: '',
-    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: ''
+    budgetNotice: '', budgetStrict: false, conflict: null,
+    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: '',
+    avoidGaming: false, allowGaming: false
   };
 
   /*
@@ -246,6 +366,7 @@ function parseConstraints(text) {
     const m = s.match(RELAX_RE);
     out.budgetRelax = !!m && !RELAX_NEG_RE.test(s.slice(m.index, m.index + 16));
   }
+  out.budgetStrict = !out.budgetRelax && STRICT_RE.test(s);
 
   /* ── 금액 ── */
   // 구간 표현이 먼저다. "10~20만원" 을 상한 하나로 읽지 않기 위해서.
@@ -262,16 +383,29 @@ function parseConstraints(text) {
   }
 
   const found = [];
+  const amounts = [];
   MONEY_RE.lastIndex = 0;
   let m;
   while ((m = MONEY_RE.exec(s)) !== null) {
     const won = m[5] != null
       ? toWon(m[5], '', '', '')
       : toWon(m[1], m[2], m[3], m[4]);
-    if (!plausibleBudget(won)) continue;
     const after = s.slice(m.index + m[0].length);
     const before = s.slice(0, m.index);
     if (reportedAmount(before, after)) continue;
+    const role = amountRole(before, after);
+    amounts.push({ won, after, before, role });
+    // 값어치·판매가 조건은 사용자가 쓸 돈이 아니다 (amountRole 주석).
+    if (role !== 'budget' || !plausibleBudget(won)) continue;
+    /*
+     * 같은 절에서 «추천·보여주지 말라» 고 했으면 뜻이 뒤집힌다 (NEG_SHOP_AFTER_RE 주석).
+     * "3만원 넘는 건 추천하지 마" 는 3만원 상한이고, "5만원짜리 충전기를 … 추천하지 마" 는 예산이 아니다.
+     */
+    if (NEG_SHOP_AFTER_RE.test(after)) {
+      if (FLOOR_RE.test(after)) found.push({ won, after: ' 이하', before, flipped: true });
+      else if (CAP_RE.test(after)) found.push({ won, after: ' 이상', before, flipped: true });
+      continue;
+    }
     found.push({ won, after, before });
   }
 
@@ -285,7 +419,9 @@ function parseConstraints(text) {
     out.budgetSaid = out.budgetMax;
   } else if (found.length) {
     // 여러 금액이 있으면 마지막에 말한 것을 쓴다 (사람은 고쳐 말할 때 뒤에 말한다).
-    const f = found[found.length - 1];
+    // 단 «예산» 이라고 이름 붙여 말한 금액이 있으면 그것이 예산이다 ("예산 1만원인데 … 3만원짜리").
+    const labelled = found.filter(x => LABELLED_BUDGET_RE.test(x.before) || LABEL_AFTER_RE.test(x.after));
+    const f = (labelled.length ? labelled : found)[(labelled.length ? labelled : found).length - 1];
     out.budgetSaid = f.won;
     if (CAP_RE.test(f.after)) {
       out.budgetMax = f.won;
@@ -325,11 +461,47 @@ function parseConstraints(text) {
     const t = out.budgetMin; out.budgetMin = out.budgetMax; out.budgetMax = t;
   }
 
+  // 꼭 지키라고 한 예산은 여유를 주지 않는다 (STRICT_RE 주석). 말한 금액이 곧 상한이다.
+  if (out.budgetStrict && out.budgetSoft && out.budgetSaid) {
+    out.budgetMax = out.budgetSaid;
+    out.budgetSoft = false;
+  }
+
+  /*
+   * 모순 (findConflict 주석). 예산 필드는 예전 규칙 그대로 두되(다른 판단이 이 값을 읽는다),
+   * 모순이 있는 발화의 예산은 다음 턴으로 이어지지 않는다(mergeConstraints) — 사용자가 고르기 전에는
+   * 어느 금액도 사용자의 예산이 아니다.
+   */
+  out.conflict = findConflict(s, amounts);
+
+  /*
+   * 같은 금액을 예산이라 하면서 «현재가» 라고도 주장했다 ("예산 612,480원인데 … 현재가 612,480원 맞지?").
+   * 예산은 그대로 쓰되, 우리 목소리로 그 숫자를 되풀이하지 않는다 — 가격을 확인해 준 말로 읽힌다.
+   */
+  out.budgetQuoted = !!out.budgetSaid && amounts.some(a => a.role === 'claim' && a.won === out.budgetSaid);
+
+  /*
+   * 모순 없는 판매가 조건 ("지금 50만원인 거", "가격이 3만원인 것만") 은 그 가격대를 찾는 말이다.
+   * 예산이 따로 없으면 «정도» 와 같은 soft 예산으로 쓴다 — 말한 금액(budgetSaid)이 그대로 기준이다.
+   */
+  if (!out.conflict && !out.budgetMax && !out.budgetMin) {
+    const asked = amounts.filter(a => a.role === 'price' && plausibleBudget(a.won));
+    if (asked.length) {
+      const p = asked[asked.length - 1].won;
+      out.budgetSaid = p;
+      out.budgetMax = out.budgetStrict ? p : Math.round(p * 1.15);
+      out.budgetSoft = !out.budgetStrict;
+    }
+  }
+
   /* ── 받는 사람·선물 ── */
   for (const [re, label] of RECIPIENT_RE) {
     if (re.test(s)) { out.recipient = label; break; }
   }
   out.gift = GIFT_RE.test(s) || !!out.recipient;
+  const gamingPref = require('./_ai-budget-window').gamingPreference(s);
+  if (gamingPref === true) out.avoidGaming = true;
+  if (gamingPref === false) out.allowGaming = true;
 
   /* ── 무엇을 중히 보는가 ── */
   for (const [re, key] of PRIORITY_RE) {
@@ -343,21 +515,40 @@ function parseConstraints(text) {
 function mergeConstraints(a, b) {
   const out = Object.assign({
     budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0, budgetRelax: false,
-    budgetNotice: '',
-    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: ''
+    budgetNotice: '', budgetStrict: false,
+    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: '',
+    avoidGaming: false
   }, a || {});
+  // 모순은 그 발화에서만 다룬다(api/ai.js 가 되묻는다). 합친 조건에 남기지 않는다.
+  out.conflict = null;
   const src = b || {};
+  // 금액끼리 모순인 발화의 예산은 이어받지 않는다 (parseConstraints «모순» 주석).
+  const srcBudget = !src.conflict && (src.budgetMax || src.budgetMin);
 
   // 예산은 한 덩어리로 갈아탄다. 상한만 새로 말했는데 옛 하한이 남으면
   // 있지도 않은 구간이 만들어진다.
-  if (src.budgetMax || src.budgetMin) {
+  if (srcBudget) {
     out.budgetMax = src.budgetMax || 0;
     out.budgetMin = src.budgetMin || 0;
     out.budgetSoft = !!src.budgetSoft;
     out.budgetSaid = src.budgetSaid || src.budgetMax || src.budgetMin || 0;
     out.budgetRelax = !!src.budgetRelax;
+    out.budgetStrict = !!src.budgetStrict;
+    out.budgetQuoted = !!src.budgetQuoted;
     // 새 금액을 말했으면 옛 완화 고지는 더 이상 사실이 아니다.
     out.budgetNotice = '';
+  } else if (src.budgetStrict && out.budgetMax) {
+    /*
+     * 금액 없이 "예산은 꼭 지켜줘" 라고만 했다 — 앞에서 말한 금액을 여유 없는 상한으로 굳힌다.
+     * 완화(RELAX)의 반대 방향이다. 말한 금액(budgetSaid)이 그대로 상한이 된다.
+     */
+    if (out.budgetSoft || out.budgetRelax) {
+      out.budgetMax = out.budgetSaid || out.budgetMax;
+      out.budgetSoft = false;
+      out.budgetRelax = false;
+      out.budgetNotice = '';
+    }
+    out.budgetStrict = true;
   } else if (src.budgetRelax && out.budgetMax) {
     /*
      * 새 금액 없이 "조금 넘어도 괜찮다"고만 했다 (RELAX_RE 주석 참고).
@@ -370,6 +561,7 @@ function mergeConstraints(a, b) {
     out.budgetMax = Math.round(out.budgetMax * RELAX_FACTOR);
     out.budgetSoft = true;
     out.budgetRelax = true;
+    out.budgetStrict = false;
     /*
      * ★ 조건을 조용히 바꾸지 않는다.
      *
@@ -385,6 +577,9 @@ function mergeConstraints(a, b) {
     if (src[k]) out[k] = src[k];
   });
   if (src.gift) out.gift = true;
+  if (src.allowGaming === true) out.avoidGaming = false;
+  else if (src.avoidGaming === true) out.avoidGaming = true;
+  delete out.allowGaming;
   return out;
 }
 
@@ -392,7 +587,7 @@ function mergeConstraints(a, b) {
 function hasConstraints(c) {
   if (!c) return false;
   return !!(c.budgetMax || c.budgetMin || c.recipient || c.gift
-    || c.priority || c.brand || c.useCase || c.avoid);
+    || c.priority || c.brand || c.useCase || c.avoid || c.avoidGaming);
 }
 
 function won(v) {
@@ -798,7 +993,40 @@ function rankItems(items, c, query, opts) {
   return ranked;
 }
 
+/*
+ * 예산 관문 — 추천·카드로 나갈 후보를 예산 안의 것으로 줄인다 (2026-10-22 Codex live 레드팀 BUG-01).
+ *
+ * rankItems 는 예산을 넘는 상품도 지우지 않고 «예산 초과» 로 표시만 한다(머리 주석). 그 설계는
+ * 후보 중 하나라도 예산 안에 있을 때는 무해했지만, 후보가 «전부» 예산을 넘으면 1위가 곧 초과 상품이
+ * 됐다. 운영에서 1만원 예산에 19,999,000원 노트북, 3만원 상한에 35,000원 촬영 서비스가 «추천» 으로
+ * 나갔고, 답변은 예산을 반영했다고 말했다. 모델이 고르든 결정론 답변이 고르든 서버가 마지막에
+ * 예산을 확인하지 않았기 때문이다.
+ *
+ * 그래서 랭킹은 그대로 두고(순서·표시는 같은 규칙) 응답 직전에 후보를 예산 안의 것으로 줄인다.
+ *   · budgetMax 는 이미 여유를 담은 값이다 — soft 예산(«10만원 무선 이어폰»)은 1.1배, «정도» 는
+ *     1.15배, «조금 넘어도 괜찮아» 는 1.3배까지 남는다. hard 예산·«꼭 지켜» 는 말한 금액 그대로다.
+ *   · 가격을 모르는 후보(0원)는 예산 안이라고 확인할 수 없으므로 남기지 않는다.
+ *   · 남는 것이 없으면 호출부가 «예산 안의 상품이 없다» 고 말한다. 다른 상품으로 바꿔 권하지 않는다.
+ *
+ * @returns {{applies:boolean, within:Array, outside:Array}}
+ */
+function withinBudget(item, c) {
+  const p = Math.round(Number(item && item.price) || 0);
+  if (!(p > 0)) return false;
+  if (c.budgetMax && p > c.budgetMax) return false;
+  if (c.budgetMin && p < c.budgetMin) return false;
+  return true;
+}
+function budgetFilter(items, c) {
+  const list = (items || []).filter(Boolean);
+  if (!c || !(c.budgetMax > 0 || c.budgetMin > 0)) return { applies: false, within: list, outside: [] };
+  const within = [];
+  const outside = [];
+  list.forEach(it => (withinBudget(it, c) ? within : outside).push(it));
+  return { applies: true, within, outside };
+}
+
 module.exports = {
   parseConstraints, mergeConstraints, hasConstraints, constraintLine,
-  rankItems, scoreItem, PRIORITY_LABEL
+  rankItems, scoreItem, budgetFilter, withinBudget, PRIORITY_LABEL
 };

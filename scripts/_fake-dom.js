@@ -61,7 +61,7 @@ class FakeEl {
   append() { [].slice.call(arguments).forEach(c => this.appendChild(c)); }
   remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(x => x !== this); }
   addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); }
-  removeEventListener() {}
+  removeEventListener(t, fn) { this.listeners[t] = (this.listeners[t] || []).filter(f => f !== fn); }
   focus() {} blur() {} scrollIntoView() {} click() {}
   getBoundingClientRect() { return { top: 0, left: 0, width: 0, height: 0, bottom: 0, right: 0 }; }
   matches(sel) {
@@ -112,7 +112,8 @@ function loadApp(opts) {
   const opened = [];
   const pings = [];
   const toasts = [];
-  const storage = new Map();
+  // o.storage — 페이지를 띄우기 전에 들어 있는 localStorage 값 (새로고침 복원 시험용). 없으면 빈 저장소.
+  const storage = new Map(Object.entries(o.storage || {}).map(([k, v]) => [k, String(v)]));
   const document = {
     readyState: 'complete',
     documentElement: new FakeEl('html'),

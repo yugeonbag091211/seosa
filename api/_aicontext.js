@@ -279,7 +279,7 @@ const REF_LABEL = 'seosa-ai-recommendation-ref-v2';
  * 쿠팡 상품은 옵션 ID 없이 발급하지 않는다 (옵션을 특정할 수 없는 참조는
  * 결국 "그중 아무 옵션"을 고르게 만든다).
  */
-function createRecommendationRef(item, now) {
+function createRecommendationRef(item, now, continuity) {
   const key = keyFor(REF_LABEL);
   const productId = clean(item && item.productId, ID_LEN);
   const vendorItemId = clean(item && item.vendorItemId, ID_LEN);
@@ -287,7 +287,30 @@ function createRecommendationRef(item, now) {
   if (!key || !productId || !mall) return '';
   if (isCoupangMall(mall) && !vendorItemId) return '';
   const iat = Number.isFinite(now) ? now : Date.now();
-  const payload = b64url(JSON.stringify({ p: productId, v: vendorItemId, m: mall, iat, exp: iat + REF_TTL_MS }));
+  const d = { p: productId, v: vendorItemId, m: mall, iat, exp: iat + REF_TTL_MS };
+  /*
+   * The price shown in an actual search is a signed past observation, NOT
+   * live checkout-price evidence. Preserve it across subsequent rechecks
+   * so an older catalogue row cannot silently rewrite conversation history.
+   * Only server-local callers mark an item as newly searched; browser
+   * contextProducts never supplies this flag.
+   */
+  const prior = continuity && continuity.previous;
+  const samePrior = prior && prior.productId === productId
+    && String(prior.vendorItemId || '') === vendorItemId
+    && String(prior.mallId || prior.mall || '') === mall;
+  const firstPrice = Math.round(Number(item && item.price) || 0);
+  if (continuity && continuity.fromSearch === true && !item.isCanonicalGroup
+      && Number.isSafeInteger(firstPrice) && firstPrice > 0 && firstPrice <= 1e10) {
+    d.sp = firstPrice;
+    d.sa = iat;
+  } else if (samePrior && Number.isSafeInteger(prior.searchPrice)
+      && prior.searchPrice > 0 && Number.isFinite(prior.searchAt)
+      && prior.searchAt <= iat + CLOCK_SKEW_MS && iat - prior.searchAt <= REF_TTL_MS) {
+    d.sp = prior.searchPrice;
+    d.sa = prior.searchAt;
+  }
+  const payload = b64url(JSON.stringify(d));
   const sig = b64url(crypto.createHmac('sha256', key).update(`${REF_PREFIX}.${payload}`).digest());
   return `${REF_PREFIX}.${payload}.${sig}`;
 }
@@ -318,7 +341,17 @@ function verifyRecommendationRef(value, now) {
     const mall = clean(d.m, 30);
     if (!productId || !mall) return null;
     if (isCoupangMall(mall) && !vendorItemId) return null;
-    return { productId, vendorItemId, mall, mallId: mall, title: '' };
+    const verified = { productId, vendorItemId, mall, mallId: mall, title: '' };
+    if (Object.prototype.hasOwnProperty.call(d, 'sp') || Object.prototype.hasOwnProperty.call(d, 'sa')) {
+      const sp = Number(d.sp);
+      const sa = Number(d.sa);
+      if (!Number.isSafeInteger(sp) || sp <= 0 || sp > 1e10
+          || !Number.isFinite(sa) || sa > iat + CLOCK_SKEW_MS
+          || sa > t + CLOCK_SKEW_MS || iat - sa > REF_TTL_MS) return null;
+      verified.searchPrice = sp;
+      verified.searchAt = sa;
+    }
+    return verified;
   } catch (e) {
     return null;
   }
@@ -371,9 +404,158 @@ function verifyTurn(h, now) {
   }
 }
 
+/* ================================================================== *
+ *  4) 서명 — 대화 상태 (convState)
+ * ================================================================== */
+
+/*
+ * 긴 대화의 조건을 이어 주는 서명 상태 (api/_convstate.js 머리 주석).
+ *
+ * 프론트는 대화 기록을 10개(사용자 5턴)만 보낸다. 그보다 앞에서 말한 예산·중고 제외·찾던 상품은
+ * 서버에 도착하지 않았다(2026-10-22 Codex live 레드팀 LONG 세션 — 30턴 뒤 "30만원 예산" 을 잊음).
+ * 서버가 매 응답마다 지금까지의 조건을 접어 서명해 내려보내고, 프론트는 받은 그대로 다음 요청에
+ * 돌려준다. 서버에 사용자별 상태를 쌓지 않는다 — 이번 요청에 필요한 만큼만 오간다.
+ *
+ * ★ 상태에 실리는 값은 전부 사용자 발화에서 서버가 정규식으로 뽑은 것이다(LLM 추출·가격은 없다).
+ *   서명은 «서버가 뽑은 그대로인가» 만 보증한다. 한 글자라도 바꾸면 통째로 버린다.
+ * ★ 수명은 두 겹이다. 응답마다 새로 서명하므로 STATE_TTL_MS 는 «마지막 질문 뒤 쉬는 시간» 이고,
+ *   STATE_MAX_AGE_MS 는 대화가 끊기지 않아도 조건을 이어받는 전체 상한이다.
+ */
+const STATE_PREFIX = 'acs1';
+const STATE_LABEL = 'seosa-ai-conversation-state-v1';
+const STATE_TTL_MS = 2 * 60 * 60 * 1000;
+const STATE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const STATE_TOKEN_LEN = 2048;
+/** 찾던 상품 구절 (api/_intent.js MAX_QUERY_LEN 보다 넉넉하게 — 정정이 누적된 구절이다). */
+const STATE_PRODUCT_LEN = 120;
+const STATE_MAX_FIELDS = 24;
+const STATE_MAX_LIST = 8;
+const STATE_FIELD_RE = /^[A-Za-z]{1,24}$/;
+const STATE_WORD_RE = /^[a-z]{2,16}$/;
+const STATE_DIGEST_RE = /^[A-Za-z0-9_-]{8,16}$/;
+
+/*
+ * Two model+option identities for comparison follow-ups. This is part of
+ * server-signed convState, NEVER trusted from client chat text or prices.
+ * Short server-confirmed names are for UI reference only; every follow-up
+ * must look up each option again in the catalogue.
+ */
+function stateComparison(value) {
+  if (!Array.isArray(value) || value.length !== 2) return [];
+  const normalized = value.map(x => {
+    if (!x || typeof x !== 'object') return null;
+    const productId = clean(x.productId, ID_LEN);
+    const vendorItemId = clean(x.vendorItemId, ID_LEN);
+    const mallId = clean(x.mallId || x.mall, 30);
+    const title = clean(x.title, TITLE_LEN);
+    if (!productId || !mallId || !title || (isCoupangMall(mallId) && !vendorItemId)) return null;
+    return { productId, vendorItemId, mallId, mall: mallId, title };
+  });
+  if (normalized.some(x => !x)) return [];
+  const key = x => [x.mallId, x.productId, x.vendorItemId].join('|');
+  return key(normalized[0]) === key(normalized[1]) ? [] : normalized;
+}
+
+
+/*
+ * 조건 객체 (_shopintent.mergeConstraints 결과) → 서명할 모양.
+ * 값이 있는 단순 값(유한한 수·true·짧은 문자열)만 남긴다. 필드 이름을 박아 두지 않는 것은
+ * _shopintent 가 조건 필드를 늘려도(예산 «꼭 지켜» 같은) 상태가 그대로 따라가게 하기 위해서다.
+ */
+function stateFields(c) {
+  const out = {};
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return out;
+  Object.keys(c).slice(0, STATE_MAX_FIELDS * 2).forEach(k => {
+    if (!STATE_FIELD_RE.test(k) || Object.keys(out).length >= STATE_MAX_FIELDS) return;
+    const v = c[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v !== 0 && Math.abs(v) <= 1e11) out[k] = Math.round(v);
+    else if (v === true) out[k] = true;
+    else if (typeof v === 'string' && v) {
+      const s = clean(v, 60);
+      if (s) out[k] = s;
+    }
+  });
+  return out;
+}
+
+function stateList(list, re) {
+  return (Array.isArray(list) ? list : [])
+    .map(v => String(v == null ? '' : v))
+    .filter(v => re.test(v))
+    .slice(-STATE_MAX_LIST);
+}
+
+/**
+ * 대화 상태의 서명 토큰.
+ *
+ * @param {{product?:string, constraints?:object, excludedConditions?:string[], absorbed?:string[], startedAt?:number}} state
+ * @returns {string} 비밀값이 없으면 '' (그때는 상태를 주고받지 않는다)
+ */
+function createConversationState(state, now) {
+  const key = keyFor(STATE_LABEL);
+  if (!key || !state || typeof state !== 'object') return '';
+  const iat = Number.isFinite(now) ? now : Date.now();
+  const started = Number(state.startedAt);
+  const s = Number.isFinite(started) && started <= iat && iat - started <= STATE_MAX_AGE_MS ? started : iat;
+  const body = {
+    p: clean(state.product, STATE_PRODUCT_LEN),
+    c: stateFields(state.constraints),
+    x: stateList(state.excludedConditions, STATE_WORD_RE),
+    // 예산의 범위 (api/_convstate.js GLOBAL_BUDGET_RE 주석) — 'global' 이거나, 그 예산을 말한 상품.
+    bs: state.budgetScope === 'global' ? 'global' : '',
+    bp: clean(state.budgetProduct, STATE_PRODUCT_LEN),
+    a: stateList(state.absorbed, STATE_DIGEST_RE),
+    co: stateComparison(state.comparison),
+    s, iat, exp: Math.min(iat + STATE_TTL_MS, s + STATE_MAX_AGE_MS)
+  };
+  const payload = b64url(JSON.stringify(body));
+  const sig = b64url(crypto.createHmac('sha256', key).update(`${STATE_PREFIX}.${payload}`).digest());
+  const token = `${STATE_PREFIX}.${payload}.${sig}`;
+  return token.length <= STATE_TOKEN_LEN ? token : '';
+}
+
+/**
+ * @returns {{product:string, constraints:object, excludedConditions:string[], absorbed:string[], startedAt:number}|null}
+ *   서명이 없거나·형식이 틀리거나·변조됐거나·만료됐으면 null — 그때는 상태가 없는 옛 요청과 같다.
+ */
+function verifyConversationState(value, now) {
+  if (typeof value !== 'string' || !value || value.length > STATE_TOKEN_LEN) return null;
+  const parts = value.split('.');
+  if (parts.length !== 3 || parts[0] !== STATE_PREFIX
+      || !/^[A-Za-z0-9_-]+$/.test(parts[1]) || !/^[A-Za-z0-9_-]+$/.test(parts[2])) return null;
+  const key = keyFor(STATE_LABEL);
+  if (!key) return null;
+  try {
+    const expected = crypto.createHmac('sha256', key).update(`${STATE_PREFIX}.${parts[1]}`).digest();
+    if (!sameMac(unb64url(parts[2]), expected)) return null;
+    const d = JSON.parse(unb64url(parts[1]).toString('utf8'));
+    if (!d || typeof d !== 'object') return null;
+    const t = Number.isFinite(now) ? now : Date.now();
+    const iat = Number(d.iat);
+    const exp = Number(d.exp);
+    const s = Number(d.s);
+    if (![iat, exp, s].every(Number.isFinite)) return null;
+    if (iat > t + CLOCK_SKEW_MS || exp < t || exp - iat > STATE_TTL_MS) return null;
+    if (s > iat || t - s > STATE_MAX_AGE_MS) return null;
+    return {
+      product: clean(d.p, STATE_PRODUCT_LEN),
+      constraints: stateFields(d.c),
+      excludedConditions: stateList(d.x, STATE_WORD_RE),
+      budgetScope: d.bs === 'global' ? 'global' : '',
+      budgetProduct: clean(d.bp, STATE_PRODUCT_LEN),
+      absorbed: stateList(d.a, STATE_DIGEST_RE),
+      comparison: stateComparison(d.co),
+      startedAt: s
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 module.exports = {
   selectorsFrom, matchCatalog, rowToItem, rowVendorId, isCoupangMall,
   loadCatalogRows,
   createRecommendationRef, verifyRecommendationRef, signTurn, verifyTurn,
-  REF_TTL_MS, TURN_TTL_MS, MAX_SELECTORS
+  createConversationState, verifyConversationState,
+  REF_TTL_MS, TURN_TTL_MS, STATE_TTL_MS, STATE_MAX_AGE_MS, MAX_SELECTORS
 };

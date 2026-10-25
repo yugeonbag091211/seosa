@@ -301,14 +301,25 @@ function reset() {
   ok(s1.includes('[사용자 조건 — 이미 들은 것]') && s1.includes('예산 100,000원'),
     '★ 예산이 프롬프트 조건 블록에 실린다');
   ok(s1.includes('조건 대조: 예산 적합'), '★ 예산 판정이 코드에서 계산돼 실린다');
-  ok(/\[P1\][^\n]*베타/.test(s1), '★ 예산에 맞는 상품이 P1(첫 번째)로 온다');
+  ok(/\[P1\][^\n]*베타/.test(s1), '★ 예산에 맞고 서버가 높게 평가한 상품이 P1로 온다');
   ok(s1.includes('가격 수준 판정: 지금 사도 좋은 편'), '★ 구매 시점 판정(서버)이 실린다');
   ok(s1.includes('이번 후보 중 최저가'), '★ 후보 간 최저가 사실이 실린다');
-  ok(s1.includes('예산 초과'), '★ 예산 초과 상품도 숨기지 않고 초과로 표시된다');
-  ok((r.body.items || []).length === 3, '카드 3장', String((r.body.items || []).length));
-  ok(r.body.items[0].productId === 'B2', '★ 카드 순서 = 프롬프트 랭킹 순서', r.body.items[0].productId);
-  ok(!!r.body.items[0].note && /평균|최저가/.test(r.body.items[0].note),
-    '★ 카드에 데이터 근거 한 줄이 붙는다', r.body.items[0].note);
+  ok(s1.includes('[가격을 설명할 때 지킬 순서 — 반드시 준수]')
+      && s1.includes('같은 상품·옵션의 표시된 값만 쓰고')
+      && s1.includes('구매 시점을 직접 묻지 않았다면')
+      && s1.includes('임의로 계산하지 마라'),
+    '★ 실제 검색 기반 추천에서도 가격 출처·옵션·임의 계산·불필요한 구매 권유 금지 규칙 전달');
+  /*
+   * 2026-10-22 Codex live 레드팀 BUG-01 — 정책 변경. 예전에는 예산 초과 상품도 «예산 초과» 로 표시해 남겼는데,
+   * 후보가 전부 초과일 때 그 상품이 1위 추천이 됐다(1만원 → 19,999,000원 노트북). 이제 예산 밖 후보는
+   * 프롬프트·카드 어디에도 남지 않는다(api/_shopintent budgetFilter).
+   */
+  ok(!s1.includes('알파 무선 이어폰') && !s1.includes('예산 초과'), '★ 예산 초과 상품(알파 250,000원)은 후보에서 빠진다');
+  ok((r.body.items || []).length === 2 && r.body.items.every(x => x.lprice <= 100000), '카드 2장 — 전부 예산 안',
+    String((r.body.items || []).map(x => x.lprice)));
+  ok(r.body.items[0].productId === 'B2', '★ 카드 순서 = 조건을 반영한 랭킹 순서', r.body.items[0].productId);
+  ok(r.body.items.some(c => c.note && /평균|최저가/.test(c.note)),
+    '★ 검증 가능한 후보 카드에 데이터 근거가 붙는다', JSON.stringify(r.body.items.map(c=>c.note)));
   ok(!/확인되지 않았어요/.test(r.body.text), '정상 답변에는 firewall 경고가 붙지 않는다');
   ok(r.body.degraded !== true && /베타 무선 이어폰/.test(r.body.text),
     '★ 정상 상품·가격 근거가 있는 좋은 AI 답변은 유지한다');
@@ -320,7 +331,8 @@ function reset() {
   const enrichStarted = Date.now();
   r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   const enrichMs = Date.now() - enrichStarted;
-  ok(r.status === 200 && (r.body.items || []).length === 3,
+  // 예산 안 2장 (알파 250,000원은 예산 관문에서 빠진다 — 위 [1] 주석)
+  ok(r.status === 200 && (r.body.items || []).length === 2,
     '느린 trust/save/history여도 검색 상품으로 응답', `${enrichMs}ms`);
   ok(enrichMs < 800, '부가 조회 timeout이 전체 요청 지연을 차단', `${enrichMs}ms`);
 
@@ -345,6 +357,84 @@ function reset() {
   ok(!r.body.text.includes('79,000원') && !r.body.text.includes('320,000원'), '★ 지어낸 금액 원문을 사용자에게 내보내지 않는다');
   ok(!/AI 응답이 실패|AI 설명을 만들지 못/.test(r.body.text) && /확인된 상품·가격 데이터/.test(r.body.text),
     '★ safety 교체를 provider 실패처럼 안내하지 않는다');
+  ok(/추천:/.test(r.body.text) && !/구매 시점:|지금 사도/.test(r.body.text),
+    '★ 최저가·추천 질문의 안전 답변에는 묻지 않은 구매 시점 권유가 붙지 않는다');
+  reset();
+  stub.llm.answer = '알파 이어폰은 현재 79,000원입니다.';
+  r = await call({ question: '무선 이어폰 지금 사도 될까?', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && /구매 시점:|지금 사도/.test(r.body.text),
+    '★ 구매 시점을 직접 물은 경우에는 서버의 가격 판단을 유지한다');
+
+  /* 2-b ─ 여러 판매처 가격을 하나로 섞지 않고, 카드 검증 가격으로 먼저 알려준다 */
+  reset();
+  stub.llm.answer = '무선 이어폰 후보를 찾았습니다. 배송과 보증 조건은 상세 상품 페이지에서 확인해 주세요.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const verifiedFirstCard = (r.body.items || [])[0];
+  ok(!!verifiedFirstCard && r.body.degraded !== true
+      && r.body.text.startsWith('첫 번째 추천 카드:')
+      && r.body.text.includes(Number(verifiedFirstCard.lprice).toLocaleString('en-US') + '원')
+      && r.body.text.includes('배송과 보증 조건'),
+    '★ 여러 판매처 가격 질문: 실제 첫 카드 가격 + AI의 비가격 설명을 함께 제공');
+  ok(!sys().includes('서사 서버가 이미 상품을 선택하고 가격을 검증했다'),
+    '★ 모델 식별이 모호한 일반 검색에서는 기존 답변 경로를 유지');
+  reset();
+  stub.llm.answer = '무선 이어폰은 현재 89,000원입니다. 상품명에 적힌 조건을 먼저 살펴봤고, 구성은 판매처에서 확인해야 합니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('무선 이어폰은 현재 89,000원입니다')
+      && r.body.text.includes('구성은 판매처에서 확인해야 합니다'),
+    '★ 여러 옵션에 모호하게 붙은 가격 문장만 삭제하고 재검증된 AI 설명은 보존');
+  reset();
+  stub.llm.answer = '무선 이어폰 현재 89,000원입니다. 해외 판매처라 배송과 AS 조건은 SEOSA 데이터로는 확인되지 않았습니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('해외 판매처')
+      && r.body.text.includes('배송과 AS 조건은 SEOSA 데이터로는 확인되지 않았습니다'),
+    '★ 특정 판매처의 국가를 추측하는 설명은 제거하고 일반적인 확인 한계만 남긴다');
+  reset();
+  stub.llm.answer = '무선 이어폰 현재 89,000원입니다. 지금 사도 좋습니다. 배송 조건은 판매처 페이지에서 확인해야 합니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('지금 사도 좋습니다')
+      && r.body.text.includes('배송 조건은 판매처 페이지에서 확인해야 합니다'),
+    '★ 구매 시점을 묻지 않았으면 근거 없는 구매 권유를 버리고 안전한 문장만 유지');
+  reset();
+  stub.llm.answer = '무선 이어폰 89,000원으로 역대 최저입니다. 배송 및 AS는 판매처에서 직접 확인해야 합니다.';
+  r = await call({ question: '무선 이어폰 현재 가격 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && r.body.text.startsWith('첫 번째 추천 카드:')
+      && !r.body.text.includes('역대 최저')
+      && r.body.text.includes('배송 및 AS는 판매처에서 직접 확인해야 합니다'),
+    '★ 증명되지 않은 역대 최저가 주장도 지우고 재검증한 설명만 남긴다');
+
+  /* 2-c ─ GPT가 가격을 만들지 않고 서버 카드의 가격만 쓰는 신규 구조 */
+  reset();
+  stub.searchItems = [
+    { title: '로지텍 G304 LIGHTSPEED 무선 마우스 블랙', lprice: 27500, link: 'https://l.c/g304-black', image: '', mall: '쿠팡', productId: 'G304-B', isCoupang: true, oprice: 27500, savePct: 0 },
+    { title: '로지텍 G304 LIGHTSPEED 무선 마우스 화이트', lprice: 32900, link: 'https://l.c/g304-white', image: '', mall: '쿠팡', productId: 'G304-W', isCoupang: true, oprice: 32900, savePct: 0 }
+  ];
+  stub.stats = new Map();
+  stub.llm.answer = '요청하신 모델과 일치하는 후보가 있습니다. 실제 구성과 선택 옵션은 상품 페이지에서 확인해 주세요.';
+  r = await call({ question: '로지텍 G304 최저가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  const sOffer = sys();
+  ok(sOffer.includes('서사 서버가 이미 상품을 선택하고 가격을 검증했다')
+      && !sOffer.includes('<상품데이터>')
+      && (r.body.items || []).length > 0
+      && r.body.degraded !== true
+      && r.body.text.startsWith('첫 번째 추천 카드:'),
+    '★ 정확히 식별된 모델의 간단한 가격 질문은 GPT 설명과 서버 가격을 분리',
+    JSON.stringify({ compact: sOffer.includes('서사 서버가 이미 상품을 선택'), text: r.body.text.slice(0, 65) }));
+  ok((r.body.items || []).some(c => r.body.text.includes(Number(c.lprice).toLocaleString('en-US') + '원')),
+    '★ GPT 비가격 설명과 함께 검증된 상품 카드 가격을 표시');
+  const offerInput = ((stub.captured.main || {}).messages || [])[1]?.content || '';
+  ok(offerInput.includes('개별 옵션은 추가 확인 필요')
+      && !offerInput.includes('요청 모델/옵션과 일치')
+      && sOffer.includes('사용자가 지정하지 않은 색상·구성·옵션'),
+    '★ 사용자에게 지정받지 않은 색상·구성 옵션을 일치한다고 단정하지 않는다');
+  try { require('../api/_llm')._internal._reset(); } catch (e) {}
+  stub.llm.answer = '로지텍 G304는 현재 10원입니다. 구매를 서두르세요.';
+  r = await call({ question: '로지텍 G304 최저가 알려줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+  ok(r.body.degraded === true && !r.body.text.includes('10원') && (r.body.items || []).length > 0,
+    '★ 새 GPT 가격 분리 경로에서도 지어낸 가격과 근거 없는 구매 권유를 차단한다');
 
   /* 3 ─ 내부 꼬리표·URL 제거 */
   console.log('\n[3] 내부 표기·URL 정리');
@@ -405,13 +495,13 @@ function reset() {
     question: '통화 품질도 중요해',
     contextProducts: [],
     chatHistory: [
-      { role: 'user', text: '20만원 이하 무선 이어폰 추천해줘' },
+      { role: 'user', text: '10만원 이하 무선 이어폰 추천해줘' },
       { role: 'assistant', text: '베타 무선 이어폰(89,000원)을 권합니다.' }
     ],
     view: { source: 'none' }
   });
   const s7 = sys();
-  ok(s7.includes('예산 200,000원'), '★ 앞 턴의 예산이 이번 프롬프트에 살아 있다');
+  ok(s7.includes('예산 100,000원'), '★ 앞 턴의 예산이 이번 프롬프트에 살아 있다');
   ok(s7.includes('용도: 통화'), '★ 이번 턴의 용도가 함께 실린다');
 
   /* 8 ─ 멈춘 가격 기록: 단정 금지 표시 */
@@ -582,7 +672,7 @@ function reset() {
   stub.searchItems = [
     { title: '알파 이어폰', lprice: 250000, link: 'https://l.c/a', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
     { title: '베타 무선 이어폰 노이즈캔슬링 마이크 500mAh', lprice: 89000, link: 'https://l.c/b', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '감마 이어폰', lprice: 42000, link: 'https://l.c/c', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '감마 무선 이어폰', lprice: 75000, link: 'https://l.c/c', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.llm.classify = 'C|무선 이어폰';
   stub.llm.resolve = '{"q":"무선 이어폰","use":"통화","brand":"","avoid":""}';
@@ -662,13 +752,13 @@ function reset() {
   console.log('\n[20] Phase 1 통합');
   reset();
   stub.searchItems = [
-    { title: '알파 무선 이어폰 마이크 노이즈캔슬링 500mAh', lprice: 150000, link: '', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
+    { title: '알파 무선 이어폰 마이크 노이즈캔슬링 500mAh', lprice: 170000, link: '', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
     { title: '베타 무선 이어폰 노이즈캔슬링 방수 1500mAh', lprice: 180000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '감마 무선 이어폰 마이크', lprice: 89000, link: '', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '감마 무선 이어폰 마이크', lprice: 159000, link: '', image: '', mall: '쿠팡', productId: 'C3', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.stats = new Map([
-    ['A1|쿠팡', { count: 14, low: 140000, lowDate: daysAgo(20), avg30: 170000, avg30Days: 14, lastPrice: 150000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -5, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }],
-    ['C3|쿠팡', { count: 14, low: 85000, lowDate: daysAgo(20), avg30: 95000, avg30Days: 14, lastPrice: 89000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -4, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }]
+    ['A1|쿠팡', { count: 14, low: 140000, lowDate: daysAgo(20), avg30: 170000, avg30Days: 14, lastPrice: 170000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -5, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }],
+    ['C3|쿠팡', { count: 14, low: 155000, lowDate: daysAgo(20), avg30: 168000, avg30Days: 14, lastPrice: 159000, lastDate: daysAgo(1), prevPrice: 0, trendPct: -4, trendDays: 7, trendFrom: 0, trendFromDate: daysAgo(7), points: [] }]
   ]);
   stub.llm.classify = 'C|무선 이어폰';
   stub.llm.resolve = '{"q":"무선 이어폰","use":"통화","brand":"","avoid":""}';
@@ -677,7 +767,7 @@ function reset() {
     question: '가벼운 걸로, 성능도 중요해',
     contextProducts: [],
     chatHistory: [
-      { role: 'user', text: '20만원 이하 무선 이어폰 추천해줘' },
+      { role: 'user', text: '18만원 이하 무선 이어폰 추천해줘' },
       { role: 'assistant', text: '알파를 권합니다.' },
       { role: 'user', text: '통화도 중요해' }
     ],
@@ -692,7 +782,11 @@ function reset() {
       '★ 근거 없는 상대적 하락은 적지 않는다');
     ok(s.includes('[다목적 분석]'), '★ 다목적 분석이 프롬프트에 실린다');
     ok(/후보 구조:/.test(s), '후보 구조가 적힌다');
-    ok(/더 싼 대안:/.test(s), '★ 대체품이 계산돼 실린다');
+    const winner = stub.searchItems.find(it=>it.productId===r.body.topProductId);
+    const cheaperInBand = winner && stub.searchItems.some(it =>
+      it.lprice >= 150000 && it.lprice <= 180000 && it.lprice < winner.lprice);
+    ok(!!winner && (!cheaperInBand || /더 싼 대안:/.test(s)),
+      '★ 가격대 안에 실제로 더 싼 후보가 있을 때만 대안을 제시한다');
     ok(!/_sub|_score|budgetScore/.test(s), '★ 내부 점수 키가 프롬프트에 새지 않는다');
   }
 
@@ -774,12 +868,16 @@ function reset() {
   stub.llm.answer = '조건에 맞는 상품이 없습니다.';
   r = await call({ question: '80만원 이하 노트북, 방수 필요해', contextProducts: [], chatHistory: [], view: { source: 'none' } });
   {
-    const s = sys();
-    ok(s.includes('[조건을 모두 만족하는 상품이 없다]'), '★ 완화 블록이 실린다');
-    ok(/가장 적게 포기하는 순서로/.test(s), '★ 완화안이 계산돼 실린다');
-    ok(/\d+개 생김/.test(s), '★ 실제 개수가 적힌다');
-    ok(/조건을 우리 마음대로 바꾸지 마라/.test(s), '★ 조건을 조용히 바꾸지 말라고 명시한다');
-    ok(r.status === 200 && (r.body.items || []).length === 3, '그래도 카드는 나간다', String(r.status));
+    /*
+     * 2026-10-22 레드팀 BUG-01 — 후보가 전부 예산(80만원 이하)을 넘으면 모델을 부르지 않고 서버가 답한다.
+     * 완화안은 그대로 코드가 세어 답변에 사실로 싣고(_noresult relaxations), 예산 밖 카드는 내보내지 않는다.
+     */
+    const t = String(r.body.text || '');
+    ok(/80만원 이하인 상품은 이번 검색 결과에 없었어요/.test(t), '★ 조건을 만족하는 상품이 없다고 밝힌다', t.split('\n')[0]);
+    ok(/조건을 바꾸면 이렇게 돼요/.test(t) && /늘리/.test(t), '★ 완화안이 계산돼 실린다', t);
+    ok(/\d+개$/m.test(t), '★ 실제 개수가 적힌다', t);
+    ok(/대신 권하지는 않을게요/.test(t) && /금액을 알려 주세요/.test(t), '★ 조건을 조용히 바꾸지 않고 사용자에게 묻는다', t);
+    ok(r.status === 200 && (r.body.items || []).length === 0, '예산 밖 카드는 나가지 않는다', String((r.body.items || []).length));
   }
 
   /* 27 ─ OMEGA: 조건을 만족하면 완화 블록이 없다 */
@@ -803,7 +901,7 @@ function reset() {
   console.log('\n[29] 피드백 → 재랭킹');
   reset();
   stub.searchItems = [
-    { title: '알파 이어폰 노이즈캔슬링 마이크 방수 500mAh', lprice: 150000, link: '', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
+    { title: '알파 이어폰 노이즈캔슬링 마이크 방수 500mAh', lprice: 95000, link: '', image: '', mall: '쿠팡', productId: 'A1', isCoupang: true, oprice: 0, savePct: 0 },
     { title: '베타 경량 휴대용 이어폰', lprice: 80000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.stats = new Map();
@@ -811,7 +909,7 @@ function reset() {
   stub.llm.resolve = '{"q":"이어폰","use":"","brand":"","avoid":""}';
   stub.llm.answer = '무게를 반영해 베타를 권합니다.';
   r = await call({ question: '이거 너무 무거운데', contextProducts: [],
-    chatHistory: [{ role: 'user', text: '20만원 이하 이어폰 추천' }], view: { source: 'none' } });
+    chatHistory: [{ role: 'user', text: '10만원 이하 이어폰 추천' }], view: { source: 'none' } });
   {
     const s = sys();
     ok(s.includes('[사용자가 방금 거부했다'), '★ 피드백 블록이 프롬프트에 실린다');
@@ -825,20 +923,20 @@ function reset() {
   console.log('\n[30] 브랜드 제외');
   reset();
   stub.searchItems = [
-    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 90000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '베타 무선 이어폰', lprice: 120000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 135000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
+    { title: '베타 무선 이어폰', lprice: 145000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.stats = new Map();
   stub.llm.classify = 'C|이어폰';
   stub.llm.answer = '삼성을 빼고 베타를 권합니다.';
   r = await call({ question: '삼성은 빼줘', contextProducts: [],
-    chatHistory: [{ role: 'user', text: '20만원 이하 이어폰 추천' }], view: { source: 'none' } });
+    chatHistory: [{ role: 'user', text: '15만원 이하 이어폰 추천' }], view: { source: 'none' } });
   {
     const s = sys();
     ok(/삼성을 크게 내렸다/.test(s), '★ 제외를 반영했다고 프롬프트에 적힌다');
     ok(r.body.items[0].productId === 'B2', '★ 제외한 브랜드가 1위에서 내려간다', r.body.items[0].productId);
-    ok((r.body.items || []).some(x => x.productId === 'S1'),
-      '★ 완전히 지우지는 않는다(소프트 제외)');
+    ok(!(r.body.items || []).some(x => x.productId === 'S1'),
+      '★ 명시적으로 제외한 브랜드는 카드에도 표시하지 않는다');
     ok(/제외 요청하신 삼성/.test(s), '★ 제외 사유가 상품 사실로 남는다');
   }
 
@@ -870,8 +968,8 @@ function reset() {
   console.log('\n[33] 제외가 다음 턴까지 이어진다');
   reset();
   stub.searchItems = [
-    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 90000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
-    { title: '베타 무선 이어폰', lprice: 120000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
+    { title: '삼성 갤럭시 버즈 노이즈캔슬링 마이크 방수', lprice: 135000, link: '', image: '', mall: '쿠팡', productId: 'S1', isCoupang: true, oprice: 0, savePct: 0 },
+    { title: '베타 무선 이어폰', lprice: 145000, link: '', image: '', mall: '쿠팡', productId: 'B2', isCoupang: true, oprice: 0, savePct: 0 }
   ];
   stub.stats = new Map();
   stub.llm.classify = 'C|이어폰';
@@ -889,7 +987,7 @@ function reset() {
     ok(/삼성을 크게 내렸다/.test(s), '★ 앞 대화의 제외를 프롬프트에 그대로 밝힌다');
     ok(/앞 대화에서 사용자가 빼 달라고 한 것을 그대로 지키고 있다/.test(s),
       '★ 이번 턴 거부가 아니라 이어진 제외임을 구분해 적는다');
-    ok((r.body.items || []).some(x => x.productId === 'S1'), '여전히 소프트 제외다');
+    ok(!(r.body.items || []).some(x => x.productId === 'S1'), '앞 대화에서 명시적으로 제외한 브랜드를 카드에서 계속 제외한다');
   }
 
   /* 34 ─ 제외를 말한 적 없으면 아무것도 이어지지 않는다 */
@@ -1212,7 +1310,7 @@ function reset() {
      * 직전 추천은 서명 참조로 카탈로그에서 불러와 카드 1장, "이 중에서"는 검색 2장.
      */
     const modalFollowup = followup === '그 제품 지금 사도 돼?';
-    const expectedCards = exactPriorRecommendation ? 1 : (modalFollowup ? 0 : 2);
+    const expectedCards = exactPriorRecommendation ? 1 : (modalFollowup ? 0 : 1);
     ok(sequence.status === 200 && (sequence.body.items || []).length === expectedCards
         && !/777,777/.test(sequence.body.text)
         && !JSON.stringify(stub.captured.main.messages).includes('777777'),

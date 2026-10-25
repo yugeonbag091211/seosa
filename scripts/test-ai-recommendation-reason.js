@@ -13,7 +13,9 @@
  *
  * ── 무엇을 지키는가 ────────────────────────────────────────────────
  *   A. 1턴 추천 A → 2턴 "이거 왜 추천했어?" 가 A 를 가리키고 A 의 실제 근거만 말한다
- *   B. 같은 뜻의 표현 (최소 7개) — 정규식에서 확정, LLM 분류·답변 호출 0회
+ *   B. 같은 뜻의 표현 (최소 7개) — 정규식에서 확정, LLM 분류 0회 · 새 검색 0회
+ *      (2026-10-24 부터 확인된 상품의 설명은 GPT 가 한 번 쓴다. 이 시험의 가짜 GPT 는 일부러 «다른 상품»
+ *       을 권하므로, 서버가 그 답을 버리고 근거 답으로 바꾸는지까지 함께 본다 — api/ai.js recommendsOtherThanSubject)
  *   C. 화면에 B·C 가 떠 있어도 A 에서 바뀌지 않는다
  *   D. 참조 없음·변조·만료·다른 키 서명 → 상품을 추측하지 않고 «참조 없음» 안내
  *   E. 같은 productId 의 다른 vendorItemId 옵션 → 추천한 옵션을 그대로 유지
@@ -236,7 +238,7 @@ const A_STAT = pricestat.statsFrom(tables.price_history
   .sort((a, b) => (a.date < b.date ? -1 : 1)));
 const A_DEAL = dealOf(A_STAT, A.lprice, kstDate(0));
 
-const T1_Q = '10만원 이하 무선 이어폰';
+const T1_Q = '5만원 이하 무선 이어폰';
 const WRONG_LLM = '사운드코어 라이프 노이즈캔슬링 무선 이어폰을 추천했어요. 45,000원입니다.';
 
 /** 1턴: 검색 → 추천 A. 2턴에 쓸 서명 참조·대화 기록을 돌려준다. */
@@ -264,7 +266,7 @@ function numbersGrounded(text, allowedText) {
   return nums.filter(n => !allowed.includes(n));
 }
 const A_AVG_PCT = Math.round((1 - A.lprice / A_STAT.avg30) * 1000) / 10;
-const A_ALLOWED = [won(A.lprice), '10만원', '100,000', won(A_STAT.avg30), String(A_AVG_PCT), '30일'].concat(A_DEAL.reasons).join(' | ');
+const A_ALLOWED = [won(A.lprice), '5만원', '50,000', won(A_STAT.avg30), String(A_AVG_PCT), '30일'].concat(A_DEAL.reasons).join(' | ');
 
 function isAboutA(r) {
   const t = String(r.body.text || '');
@@ -294,11 +296,11 @@ function isAboutA(r) {
     const r2 = await turn2(t1, '이거 왜 추천했어?');
     const text = String(r2.body.text || '');
     ok(isAboutA(r2), '2턴: 답과 카드가 A(9101/A-BLK) 하나만 가리킨다', text);
-    ok(r2.searches === 0 && r2.llmClassify === 0 && r2.llmAnswer === 0 && r2.llmResolve === 0,
-      '2턴: 새 검색 0회 · LLM 분류/답변 0회 (서버 결정론)', JSON.stringify(r2));
+    ok(r2.searches === 0 && r2.llmClassify === 0 && r2.llmResolve === 0 && r2.llmAnswer === 1,
+      '2턴: 새 검색 0회 · LLM 분류 0회 · 설명 생성 1회 (다른 상품을 권한 GPT 답은 서버 근거 답으로 대체)', JSON.stringify(r2));
     ok(!/같은 상품·옵션을 확인하지 못해/.test(text) && !text.includes('45,000원'),
       '2턴: «같은 상품·옵션을 확인하지 못해» 오답이 나오지 않는다', text);
-    ok(text.includes('예산 10만원 이하') && text.includes('무선'), '2턴: 조건 근거 — 예산 10만원 · 무선', text);
+    ok(text.includes('예산 5만원 이하') && text.includes('무선'), '2턴: 조건 근거 — 예산 10만원 · 무선', text);
     const dealHits = A_DEAL.reasons.filter(r => text.includes(politeFact(r).replace(/\.$/, '')));
     ok(dealHits.length === Math.min(3, A_DEAL.reasons.length), '2턴: 가격 근거는 결정 엔진(_deal)의 실제 근거 문장 그대로',
       JSON.stringify({ expect: A_DEAL.reasons, text }));
@@ -329,8 +331,8 @@ function isAboutA(r) {
       ok(c.recommendationReason === true && c.requiresRecommendationIdentity === true && c.confidence === 'high' && c.query === '',
         `분류 "${p}" → recommendationReason · identity 필수 · 검색어 없음`, JSON.stringify(c));
       const r = await turn2(t1, p);
-      ok(isAboutA(r) && r.searches === 0 && r.llmClassify === 0 && r.llmAnswer === 0,
-        `멀티턴 "${p}" → A 의 근거, 검색·LLM 0회`, JSON.stringify({ text: r.body.text, s: r.searches, c: r.llmClassify, a: r.llmAnswer }));
+      ok(isAboutA(r) && r.searches === 0 && r.llmClassify === 0 && r.llmAnswer <= 1,
+        `멀티턴 "${p}" → A 의 근거, 검색·LLM 분류 0회`, JSON.stringify({ text: r.body.text, s: r.searches, c: r.llmClassify, a: r.llmAnswer }));
     }
     // 대조군 — 새 추천 요청·변경 질문은 이 경로로 빨려 들어가지 않는다.
     for (const p of ['무선 이어폰 추천해줘', '노트북 추천해주고 추천 이유도 알려줘', '추천이 왜 바뀌었어?', '가성비 이어폰 골라줘']) {
@@ -422,7 +424,16 @@ function isAboutA(r) {
   {
     // B 는 가격 기록이 없다 — 가격 근거(%·관측일)를 지어내면 안 된다.
     const bRef = AC.createRecommendationRef({ productId: '9102', vendorItemId: 'B-1', mallId: '쿠팡' });
-    const r = await turn2(t1, '이거 왜 추천했어?', { prevTopRef: bRef, prevTop: '9102' });
+    /*
+     * 직전 추천이 B 면 가짜 GPT 의 «사운드코어 … 45,000원» 은 맞는 말이다 — 그대로 나가되 숫자는 서버 사실뿐이어야 한다.
+     * 조립본(서버 근거만으로 쓴 답)의 모양은 GPT 가 응답하지 못한 경우로 따로 본다(빈 응답 = 공급자 실패).
+     */
+    const viaGpt = await turn2(t1, '이거 왜 추천했어?', { prevTopRef: bRef, prevTop: '9102' });
+    const tg = String(viaGpt.body.text || '');
+    ok(tg.includes('사운드코어') && viaGpt.llmAnswer === 1 && !/%/.test(tg)
+        && !numbersGrounded(tg, [won(B.lprice), '10만원'].join(' | ')).length,
+      '가격 기록 없는 상품: GPT 설명이 나가도 그 상품의 확인된 가격만 말한다', tg);
+    const r = await turn2(t1, '이거 왜 추천했어?', { prevTopRef: bRef, prevTop: '9102' }, { answer: '' });
     const t = String(r.body.text || '');
     const bullets = t.split('\n').filter(l => l.startsWith('- '));
     ok(t.includes('사운드코어') && !/%/.test(t) && !/관측한/.test(t) && /가격 기록이 충분하지 않아/.test(t)
