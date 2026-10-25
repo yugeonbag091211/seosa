@@ -1109,6 +1109,15 @@ async function recordPrices(observations, opts = {}) {
 async function saveProducts(keyword, items, opts = {}) {
   if (!items || !items.length) return { saved: 0, errors: [] };
 
+  /*
+   * 격리 검증 환경에서는 원장에 쓰지 않는다 (api/_supabase.js 읽기 전용 모드 주석).
+   * 가드만으로도 쓰기는 막히지만, 여기서 먼저 돌려보내 «저장 실패» 로그로 검증 결과를 어지럽히지 않는다.
+   */
+  if (process.env.SEOSA_DB_READONLY === '1') {
+    console.log(`[save:${keyword}] 읽기 전용 검증 환경 — ${items.length}건 저장 생략`);
+    return { saved: 0, errors: [], readOnly: true, skipped: true };
+  }
+
   const batchFrom = opts.from || 'api';
   const recordable = items.filter(it => isRecordableSource(it._source || batchFrom));
   const skipped = items.length - recordable.length;

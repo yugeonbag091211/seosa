@@ -70,6 +70,9 @@ export function parseProduct(value: unknown): Product | null {
     isRocket: typeof value.isRocket === 'boolean' ? value.isRocket : null,
     trust: parseTrust(value.trust),
     priceChange: parsePriceChange(value.priceChange, price),
+    // 서버가 정확한 모델이 아니라고 판정한 근접 후보 카드에 붙이는 라벨 (api/_aiidentity.js, CO-04).
+    // 정확한 후보가 하나라도 있으면 서버가 아예 카드에서 빼므로 이 값은 비어 있다.
+    identityNote: decodeHtmlEntities(str(value.identityNote).trim()),
   };
 }
 
@@ -230,6 +233,7 @@ export function parseAiAnswer(value: unknown): AiAnswer | null {
     topProductId: str(value.topProductId),
     topRecommendationRef: str(value.topRecommendationRef),
     turnSig: str(value.turnSig),
+    convState: str(value.convState),
     recommendationChanged: change,
   };
 }
