@@ -6504,7 +6504,26 @@ module.exports = async function handler(req, res) {
     // 창작·가상 요청의 답은 실제 판매 정보와 섞여 읽히지 않게 표시한다 (markFiction 주석).
     if (cls && cls.creative) text = markFiction(text);
 
+    /*
+     * An initial shopping search and a catalogue recheck can legitimately have
+     * different prices for the exact same option. In that case neither may be
+     * relabelled as the *current* checkout price, and an old-price BUY verdict
+     * must not leak through from the model or fallback.
+     */
+    const priceConflict = singleSubject && previousRecommendation
+      ? require('./_ai-price-continuity').priceConflict(previousRecommendation, singleSubject) : null;
+    if (priceConflict) {
+      const safeTitle = AIID.displayTitle(singleSubject.title || '').slice(0, 70);
+      text = require('./_ai-price-continuity').conflictMessage(priceConflict, safeTitle);
+      degradedByGrounding = true;
+      console.warn('[ai] 가격 확인 시점 불일치 — 처음 검색가와 저장가를 구분하여 안내');
+    }
     const payload = cards.length ? { text, items: cards } : { text };
+    if (priceConflict) payload.priceConflict = {
+      earlierSearchPrice: priceConflict.searchedPrice,
+      storedPrice: priceConflict.storedPrice,
+      storedCheckedAt: priceConflict.checkedAt
+    };
     payload.intent = resolvedCanonicalIntent;
     if (guest) payload.guest = true;
     if (degradedByGrounding) payload.degraded = true;
@@ -6520,12 +6539,17 @@ module.exports = async function handler(req, res) {
       // _decision intentionally exposes a minimal display contract ({ref, productId}).
       // Resolve its ref back to the ranked server item so vendorItemId is preserved.
       const selectedTop = items.find(it => it && it.ref === decision.top.ref);
-      const recommendationRef = AC.createRecommendationRef(selectedTop);
+      const recommendationRef = AC.createRecommendationRef(selectedTop, undefined, {
+        fromSearch: searchState === 'found' && !refSelected,
+        previous: previousRecommendation
+      });
       if (recommendationRef) payload.topRecommendationRef = recommendationRef;
     }
     // 같은 상품을 이어 묻는 턴은 결정이 약해도 그 상품이 여전히 «직전 추천» 이다 — 참조를 다시 서명해 이어 준다.
     if (singleSubject && !payload.topRecommendationRef) {
-      const recommendationRef = AC.createRecommendationRef(singleSubject);
+      const recommendationRef = AC.createRecommendationRef(singleSubject, undefined, {
+        fromSearch: false, previous: previousRecommendation
+      });
       if (recommendationRef) {
         payload.topRecommendationRef = recommendationRef;
         payload.topProductId = singleSubject.productId;
