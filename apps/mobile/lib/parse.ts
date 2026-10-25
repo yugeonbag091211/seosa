@@ -230,6 +230,7 @@ export function parseAiAnswer(value: unknown): AiAnswer | null {
     topProductId: str(value.topProductId),
     topRecommendationRef: str(value.topRecommendationRef),
     turnSig: str(value.turnSig),
+    convState: str(value.convState),
     recommendationChanged: change,
   };
 }

@@ -79,7 +79,7 @@ test('FLOW B: 검색 → 자동완성 → 결과 → 상품 → 가격 그래프
 
 test('FLOW C: AI 컨시어지 → 질문 → 추천 상품 → 상세 → 구매 이동', async () => {
   const { api, calls } = server({
-    '/api/ai': () => ({ body: { text: '**버즈3 프로**가 30일 최저가예요.', items: [row], followups: ['다른 색상은?'], guest: true, topProductId: row.productId, topRecommendationRef: 'r1.sig', turnSig: 't1.sig' } }),
+    '/api/ai': () => ({ body: { text: '**버즈3 프로**가 30일 최저가예요.', items: [row], followups: ['다른 색상은?'], guest: true, topProductId: row.productId, topRecommendationRef: 'r1.sig', turnSig: 't1.sig', convState: 'acs1.state.sig' } }),
   });
   const body = buildAiRequest({ question: '20만원 이하 노이즈캔슬링 이어폰', context: [], history: [], view: { source: 'app' } });
   const answer = await api.ask(body, undefined);
@@ -89,9 +89,11 @@ test('FLOW C: AI 컨시어지 → 질문 → 추천 상품 → 상세 → 구매
   assert.equal(productKey(pick), `${row.productId}|쿠팡|${row.vendorItemId}`);
   assert.equal(purchaseTarget(pick.link, pick.mallLabel).url, COUPANG_LINK);
   // The follow-up replays the signed turn and the signed previous pick, untouched.
-  const next = buildAiRequest({ question: '다른 색상은?', context: [], history: [{ role: 'user', text: body.question }, { role: 'assistant', text: answer.text, sig: answer.turnSig }], prevTopProductId: answer.topProductId, prevTopRef: answer.topRecommendationRef });
+  const next = buildAiRequest({ question: '다른 색상은?', context: [], history: [{ role: 'user', text: body.question }, { role: 'assistant', text: answer.text, sig: answer.turnSig }], prevTopProductId: answer.topProductId, prevTopRef: answer.topRecommendationRef, convState: answer.convState });
   assert.equal(next.chatHistory[1].sig, 't1.sig');
   assert.equal(next.prevTopRef, 'r1.sig');
+  // The signed conversation state goes back untouched — it carries the budget past the 10-turn history.
+  assert.equal(next.convState, 'acs1.state.sig');
 });
 
 test('FLOW C (failure): AI 429 / 401 / 500 / timeout-like errors end in readable text, never a stack or JSON', async () => {
