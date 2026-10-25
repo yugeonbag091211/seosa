@@ -981,8 +981,21 @@ function classify(text, hist) {
    * 걷어내고(api/_aiidentity.js splitNegations) 남은 구절로 검색어를 만든다.
    */
   const positiveSpan = AIID.splitNegations(itemText).positive;
-  const identityPositiveSpan = AIID.splitNegations(removeConflictingModelParentheticals(itemText)).positive;
-  let query = extractQuery(positiveSpan);
+  /*
+   * The suffix describes a requested attribute, NOT the product identity.
+   * 1000-question audit: "그램 노트북 추천해줘 배터리 사용 시간이 중요해"
+   * was searched as model "그램 노트북 배터리 사용 시간이" and discarded as NONE.
+   * Only strip these narrow, complete conversational tails when a concrete
+   * product subject remains. A request FOR a laptop battery stays unchanged.
+   */
+  const batteryRequirementTail = /\s+배터리\s*(?:사용\s*시간(?:이)?\s*중요해|가\s*오래가야\s*해)(?:[.!?？]+)?$/;
+  function withoutTrailingBatteryNeed(subject) {
+    const trimmed = String(subject || '').replace(batteryRequirementTail, '').trim();
+    return trimmed && AIID.productEvidence(trimmed) > 0 ? trimmed : subject;
+  }
+  const identityPositiveSpan = withoutTrailingBatteryNeed(
+    AIID.splitNegations(removeConflictingModelParentheticals(itemText)).positive);
+  let query = extractQuery(withoutTrailingBatteryNeed(positiveSpan));
 
   let intent;
   /*
