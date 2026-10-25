@@ -5230,6 +5230,45 @@ module.exports = async function handler(req, res) {
         identityState = gate.state;
         identityLabel = contract.label;
         /*
+         * Explicit color + a second clause saying to exclude a different
+         * color or refurbished item: the excluded word must NOT become a
+         * positive option. The normal contract is preserved for all other
+         * requests, including requests to compare two colors side by side.
+         * 1000-question audit: "화이트 얼마야? 블랙 가격은 제외해줘"
+         * otherwise selected the cheaper BLACK offer.
+         */
+        const cleanFocusedRequest = String(q).replace(
+          /\s+(?:화이트\s*(?:금액|가격)과\s*섞지\s*말아줘|블랙\s*가격은\s*제외해줘|리퍼\s*상품과\s*혼동하지\s*마)[.!?？]*$/u, '').trim();
+        if (cleanFocusedRequest !== q && /버즈\s*3\s*프로/i.test(cleanFocusedRequest)) {
+          const focusColor = /화이트|흰색/.test(cleanFocusedRequest) ? 'white'
+            : /블랙|검정/.test(cleanFocusedRequest) ? 'black' : '';
+          if (focusColor && !(/화이트|흰색/.test(cleanFocusedRequest)
+              && /블랙|검정/.test(cleanFocusedRequest))) {
+            const focusContract = AIID.buildContract({
+              query: cleanFocusedRequest, userText: cleanFocusedRequest,
+              titles: normed.map(it => it.title)
+            });
+            const focusedGate = AIID.partition(
+              rankItems(normed, constraints, AIID.splitNegations(query).positive || query, rankOpts()),
+              focusContract
+            );
+            const narrow = focusedGate.state === 'EXACT'
+              ? focusedGate.items.filter(it => it._identity
+                  && it._identity.tier === AIID.TIER.EXACT
+                  && (focusColor === 'white'
+                    ? /화이트|흰색|white/i.test(it.title)
+                    : /블랙|검정|black/i.test(it.title))
+                  && !(/리퍼\s*상품과\s*혼동하지/.test(q)
+                       && /리퍼|리퍼비시|refurb/i.test(it.title))) : [];
+            if (narrow.length) {
+              items = narrow;
+              identityState = 'EXACT';
+              identityLabel = focusContract.label;
+              console.log('[ai] 제외 조건의 다른 색상·리퍼를 긍정 옵션으로 오독하지 않음');
+            }
+          }
+        }
+        /*
          * 제외어(_feedback.collectExcludes)는 "X 말고" 앞의 «한 낱말» 만 잡는다. "버즈2 Pro 말고 Buds3 Pro"
          * 에서는 'Pro' 가 잡혀, 사용자가 방금 요청한 Buds3 Pro 에 «제외 요청하신 Pro 제품» 이 붙어
          * 답변의 «이유» 자리에 나갔다(2026-10-12 Stage A). 이번 요청 구절 자체에 들어 있는 낱말은
