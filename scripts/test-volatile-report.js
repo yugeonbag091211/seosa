@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('assert');
+const { confirmAppliedChanges } = require('./collect-volatile-prices');
 const { totals, subjectFor, buildVolatileReportHtml, sendVolatileReport } = require('./_volatile-report');
 
 const base = {
@@ -44,5 +45,43 @@ assert(malicious.includes('&lt;img'));
   assert.strictEqual(sent, 1);
   const b = await sendVolatileReport(base, { to: 'test@example.com', send: async () => ({ ok: false, error: 'SMTP disabled' }) });
   assert.strictEqual(b.ok, false);
+  // 메일의 '실제 가격 변경'은 관측과 별도로 DB 현재가 확인을 거쳐야 한다.
+  let pages = 0;
+  const fakeDb = {
+    from(name) {
+      assert.strictEqual(name, 'products');
+      return {
+        select(columns) {
+          assert.match(columns, /lprice/);
+          return {
+            in(field, ids) {
+              assert.strictEqual(field, 'product_id');
+              pages++;
+              return {
+                async eq(key, mall) {
+                  assert.strictEqual(key, 'mall');
+                  assert.strictEqual(mall, '쿠팡');
+                  return { data: ids.map(id => ({
+                    product_id: id, mall: '쿠팡', lprice: id === 'held' ? 100 : 120
+                  })), error: null };
+                }
+              };
+            }
+          };
+        }
+      };
+    }
+  };
+  const differences = Array.from({length:75}, (_, i) =>
+    ({productId:String(i),beforePrice:100,afterPrice:120}));
+  differences.push({productId:'held',beforePrice:100,afterPrice:130});
+  const changed = await confirmAppliedChanges(differences, '쿠팡', fakeDb);
+  assert.strictEqual(changed, 75);
+  assert.strictEqual(pages, 2);
+  const wrongDb = { from: () => ({ select: () => ({ in: () => ({
+    eq: async () => ({ data: null, error: { message: 'database unavailable' } })
+  }) }) }) };
+  await assert.rejects(confirmAppliedChanges(differences,'쿠팡',wrongDb), /재검증 실패/);
+  assert.strictEqual(await confirmAppliedChanges([],'쿠팡',wrongDb), 0);
   console.log('Volatile price email report regression PASS');
 })().catch(e => { console.error(e); process.exitCode=1; });
