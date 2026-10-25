@@ -1252,15 +1252,15 @@ function searchFixture() {
     ok(know.body.text.includes('LDAC') && know.searches === 0, '지식 질문: 검색 없이 일반 답변');
 
     // 다중 턴: 예산 조건과 이전 답변 문맥이 이어진다.
-    const t1 = await ask({ question: '20만원 이하 무선 이어폰 추천해줘' }, {
+    const t1 = await ask({ question: '15만원 이하 무선 이어폰 추천해줘' }, {
       classify: 'C|무선 이어폰', searchItems: searchFixture(), answer: '삼성 갤럭시 버즈3 프로 블랙을 권합니다. 현재가는 139,000원입니다.'
     });
-    const h2 = [{ role: 'user', text: '20만원 이하 무선 이어폰 추천해줘' }, { role: 'assistant', text: t1.body.text, sig: t1.body.turnSig }];
+    const h2 = [{ role: 'user', text: '15만원 이하 무선 이어폰 추천해줘' }, { role: 'assistant', text: t1.body.text, sig: t1.body.turnSig }];
     const t2 = await ask({ question: '통화 품질도 중요해', chatHistory: h2.concat([{ role: 'user', text: '통화 품질도 중요해' }]) }, {
       classify: 'C', resolve: '{"q":"무선 이어폰","use":"","brand":"","avoid":""}', searchItems: searchFixture(),
       answer: '통화까지 보면 삼성 갤럭시 버즈3 프로 블랙이 맞습니다.'
     });
-    ok(/200,000원|20만/.test(t2.system) && t2.messages.some(m => m.role === 'assistant' && m.content === t1.body.text),
+    ok(/150,000원|15만/.test(t2.system) && t2.messages.some(m => m.role === 'assistant' && m.content === t1.body.text),
       '다중 턴: 앞 턴 예산이 이어지고, 서명된 이전 답변은 assistant 문맥으로 남는다');
 
     // 직전 추천 이어받기: 유효한 참조 → 서버가 골랐던 그 상품·옵션을 카탈로그로 확인해 카드 1장.
