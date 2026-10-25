@@ -393,6 +393,8 @@ function resolve(state, hist, q, opts) {
       absorbed: absorbed.slice(-MAX_ABSORBED),
       budgetScope: acc.scope === 'global' ? 'global' : '',
       budgetProduct: acc.scope === 'product' ? String(acc.product || '').slice(0, 120) : '',
+      // Prior pair identity is already signed. The handler clears it on new topics.
+      comparison: state && Array.isArray(state.comparison) ? state.comparison : [],
       startedAt: state ? state.startedAt : undefined
     }
   };
