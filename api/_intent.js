@@ -1016,7 +1016,15 @@ function classify(text, hist) {
    * "… 대신 추천하지 마" 의 '추천', "… 하루뿐이면 역대 최저가라고 단정하지 마" 의 '가격 기록' 은 요구가 아니다.
    */
   let explicit = false;
+  // "가격은 6만원 이하로 해줘" sets a shopping-selection budget; it
+  // does not ask for the current price of a named product. PRICE_RE alone
+  // used to classify these as D, skipping the near-ceiling recommendation
+  // window and sending unfiltered cheap cards.
+  const priceCapSelection = !!parseConstraints(s).budgetMax
+    && /(?:가격|예산|금액)\s*(?:은|는)?[^.!?]{0,45}(?:원|만원)\s*(?:이하|이내)\s*로?\s*(?:해\s*줘|해주세요)/.test(act)
+    && !/(?:최저가|현재가|얼마|가격\s*이력|가격\s*비교)/.test(act);
   if (TIMING_RE.test(act)) { intent = 'E'; explicit = true; }
+  else if (priceCapSelection) { intent = 'C'; explicit = true; }
   else if (PRICE_RE.test(act)) { intent = 'D'; explicit = true; }
   // "어떻게 골라야 해" 는 고르는 방법을 묻는 지식 질문이다 — 추천 요청보다 먼저 본다
   // (api/ai.js CLASSIFY_SYSTEM: "어떻게 고르나"는 B, "골라 줘"는 C).
