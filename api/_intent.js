@@ -292,6 +292,8 @@ function isJunkToken(tok) {
   }
   // "확인한"·"깨끗한"·"가능한" 같은 관형형. 두 글자 명사("무한")는 건드리지 않는다.
   if (/^[가-힣]{3,}$/.test(t) && /(?:한|해)$/.test(t)) return true;
+  // "괜찮은 편이야?" 의 «편이야» — 정도를 묻는 꼬리다. 앞 상품 이름에 붙이면 "노트북 그램 편이" 가 된다.
+  if (/^편(?:이|인|일)[가-힣]*$/.test(t)) return true;
   return false;
 }
 
@@ -381,6 +383,54 @@ function extractUseCase(text) {
   }
   return '';
 }
+
+/*
+ * 조건만 덧붙이는 후속 말 (2026-10-24 대화 품질 개선).
+ *
+ *   "노트북 그램으로 추천해줘" → … → "근데 나는 영상 편집도 할 거야."
+ *   "무선 이어폰 추천해줘" → "예산은 10만원 이하로" → "배터리 오래가는 게 중요해"
+ *
+ * 마지막 말에는 상품 이름이 없다. 그런데 extractQuery 는 "근데 영상 편집도" · "배터리 오래가" 를 검색어로
+ * 내놓았고, 쇼핑몰은 0건을 돌려줬다 — 방금 상품을 추천해 놓고 "검색 결과가 없었어요" 로 답한 원인이다.
+ * 이런 말은 새 상품을 찾는 말이 아니라 찾던 상품에 조건(용도·속성·취향·예산)을 더하는 말이다.
+ *
+ * 판정은 좁게 한다 — 아래 셋이 모두 맞을 때만이다.
+ *   1) 조건 단서가 있다 (용도·속성·취향·예산)
+ *   2) 상품 근거가 없다 (AIID.productEvidence — 종류명·모델 번호·알려진 상품 이름)
+ *   3) 조건 낱말과 대화용 군말을 걷어내면 검색어 재료가 하나도 남지 않는다
+ * "캠핑용 빔프로젝터 추천해줘" 는 3) 에서 «빔프로젝터» 가 남으므로 새 상품 요청 그대로다.
+ */
+const CONDITION_CUE_RE = /배터리|충전|오래\s*(?:가|갔|버티|쓰|쓸|사용)|무게|가볍|가벼|무거|휴대|들고\s*다|음질|소리|노이즈|노캔|통화|마이크|방수|화면|디스플레이|밝기|발열|소음|조용|성능|사양|스펙|속도|빠르|느리|램|메모리|저장\s*공간|용량|디자인|색감|내구|튼튼|가성비|저렴|싼\s*(?:거|게|걸|것)|보증|그래픽|cpu|gpu|프로세서|키감|해상도|주사율/i;
+const CONDITION_FILLER_RE = /^(?:근데|그런데|그리고|그럼|그러면|그래서|그치만|하지만|아니면|그리구|또|나|난|나는|내가|저|저는|제가|우리|우리는|혹시|주로|보통|같이|함께|자주|가끔|많이|조금|좀|약간|정도|위주|위주로|용|용도|용도로|목적|목적으로|거|거야|거예요|거에요|건데|건가|건가요|거라|거라서|거니까|걸로|거로|게|것|걸|건|예정|예정이야|생각|생각이야|계획|계획이야|할|쓸|하려고|쓰려고|싶어|싶은데|중요|중요해|중요해요|중요하고|중요한데|필요|필요해|필요하고|필요한데|괜찮아|괜찮아요|괜찮을까|괜찮을까요|괜찮나|괜찮은지|가능|가능해|가능할까|가능한지|어때|어때요|어떨까|어떨까요|될까|될까요|되나|되나요|있어|있어요|있을까|있을까요|있나|있나요|충분해|충분할까|충분한지|부족해|부족할까|부족하지|더|역시|특히|무엇보다|제일|가장|우선|최우선|하는|쓰는|쓰기|하기|에도|에서도|에는|도)$/;
+
+function conditionCue(text) {
+  const s = String(text || '');
+  if (extractUseCase(s) || CONDITION_CUE_RE.test(s)) return true;
+  const c = parseConstraints(s);
+  return !!(c.budgetMax || c.budgetMin || c.priority);
+}
+
+/** 조건 낱말·용도·금액·군말을 걷어내고 남는 검색어 재료 (없으면 빈 문자열). */
+function conditionResidue(text) {
+  let s = String(text || '');
+  USECASE_RE.forEach(([, re]) => { s = s.replace(new RegExp(re.source, 'g'), ' '); });
+  s = s.replace(new RegExp(CONDITION_CUE_RE.source, 'gi'), ' ');
+  return extractQuery(s).split(/\s+/).filter(Boolean)
+    .filter(t => !CONDITION_FILLER_RE.test(t) && !CONDITION_FILLER_RE.test(t.replace(JOSA_RE, '')))
+    .join(' ');
+}
+
+/** 상품 이름 없이 조건만 말한 문장인가 (위 주석의 세 조건). 앞 대화는 보지 않는다. */
+function isConditionOnly(text) {
+  const s = String(text || '').trim();
+  if (!s || s.length > 80 || !conditionCue(s)) return false;
+  const positive = AIID.splitNegations(s).positive;
+  if (AIID.productEvidence(positive) > 0) return false;
+  return !conditionResidue(positive);
+}
+
+/* 이 조건이 맞는지 묻는 말 ("영상 편집용으로도 괜찮아?" · "게임도 할 수 있어?") — 직전 추천의 적합성 질문이다. */
+const FIT_QUESTION_RE = /괜찮(?:아|을까|나|은지|겠)|가능(?:해|할까|한지)?|할\s*수\s*있|쓸\s*수\s*있|충분(?:해|할까|한지)|부족(?:해|할까|하지)|어때|어떨까|될까|되나|맞(?:아|을까|나)|[?？]\s*$/;
 
 /*
  * 쇼핑 구절과 지시 구절 가르기 (2026-10-12 Codex live 레드팀 C4).
@@ -717,7 +767,19 @@ function isChosungOnly(text) {
  * 이런 말에는 확신을 높음으로 주지 않는다 — 검색어를 문맥에서 풀어야 하고,
  * 그 일은 LLM 이 우리보다 낫다 (api/ai.js resolveQuery).
  */
-const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|이\s*(?:제품|상품|모델)|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|앞(?:의|에서)\s|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|상품))/;
+const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|이\s*(?:제품|상품|모델)|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|앞(?:의|에서)\s|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|걸|상품|제품|모델))/;
+/*
+ * 직전 추천 «말고 다른 것» 을 달라는 말 — "다른 제품 추천해줘" · "그거 말고 다른 거" (2026-10-24).
+ * api/ai.js 가 서명된 직전 추천을 후보 맨 뒤로 내리고 1위 후보에서 뺀다. 같은 상품을 다시 권하지 않는다.
+ */
+const ALTERNATIVE_RE = /다른\s*(?:거|건|것|걸|상품|제품|모델|후보)|(?:그거|그것|이거|이것|그\s*(?:제품|상품|모델))\s*말고|대신\s*(?:다른|추천|골라)/;
+/*
+ * 직전 추천에 대한 가격·구매 시점 질문 — 상품 이름이 없고 목록을 가리키는 말도 없다.
+ *   "지금 사는 게 좋을까?" · "가격 괜찮은 편이야?" · "얼마야?" · "더 기다릴까?"
+ * api/ai.js 는 서명된 직전 추천이 있을 때만 그 상품·옵션 하나를 대상으로 삼는다(없으면 예전처럼 이어받은 검색).
+ * "그중에 제일 싼 거" · "다른 거는 얼마야" · "화이트는 얼마야" 는 목록·옵션을 바꾸는 말이라 여기 들지 않는다.
+ */
+const LIST_REFERENCE_RE = /그중|그\s*중|이\s*중|중에|다른|말고|대신|비슷한|더\s*(?:싼|저렴|비싼|좋은|나은)|비교|둘\s*다|두\s*개|세\s*개|모두|전부|각각|후보/;
 /* 좁게 확인된 후속 문구만 LLM 분류를 생략한다. "좀 더 싼 거"처럼
  * 의미가 넓은 표현은 기존의 문맥 분류 경로를 유지한다. */
 const DETERMINISTIC_CONTEXT_FOLLOWUP_RE = /(?:이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|아까\s*(?:추천한|말한|보여준)\s*(?:그\s*)?(?:상품|제품|것|거)?|그\s*(?:제품|상품|모델)\s*(?:지금\s*)?(?:사도\s*(?:돼|될|괜찮)|살까|가격|현재가))/;
@@ -733,6 +795,21 @@ const PRIOR_RECOMMENDATION_RE = /(?:아까|방금)\s*(?:추천한|말한|보여�
  */
 const PRIOR_ITEM_PRICE_RE = /(?:아까|방금|앞에서|이전에)\s*(?:그거|그것|그\s*(?:상품|제품|모델))\s*(?:의|이|가|는|은)?\s*(?:가격|얼마|현재가|최저가|사도|살까)/;
 const PRIOR_SWITCH_RE = /말고|다른|대신|비슷한/;
+/*
+ * "아까 추천한 그 노트북" · "방금 골라 준 이어폰" — 직전 추천을 종류명으로 가리키는 말 (2026-10-24).
+ * PRIOR_RECOMMENDATION_RE 는 «상품·제품·것·거» 만 알아봐서 이 말은 "노트북" 새 검색이 됐고, 직전 추천과
+ * 다른 1위를 말했다. 뒤의 낱말이 종류명·모델일 때만, 대상을 바꾸는 말(말고·다른)이 없을 때만 잡는다.
+ */
+const PRIOR_RECOMMENDED_NOUN_RE = /(?:아까|방금|앞에서|이전에)\s*(?:추천한|추천해\s*준|말한|보여\s*준|골라\s*준|고른)\s*(?:그\s*)?([가-힣A-Za-z]{2,10}?)(?:이|가|은|는|을|를|의|도)?(?=\s|$|[?!.,])/;
+/** 가리킨 종류명·계열명 ("노트북"·"그램"·"이어폰"). 없거나 대상을 바꾸는 말이면 빈 문자열. */
+function priorRecommendedNoun(s) {
+  const m = PRIOR_RECOMMENDED_NOUN_RE.exec(String(s || ''));
+  if (!m || PRIOR_SWITCH_RE.test(s)) return '';
+  const noun = String(m[1] || '').toLowerCase();
+  let kind = '';
+  try { kind = require('./_specs').detectCategory(noun) || ''; } catch (e) { kind = ''; }
+  return AIID.categoryNounOf(noun) || kind || /^(?:모델|물건)$/.test(noun) ? noun : '';
+}
 
 /*
  * "이거 왜 추천했어?" — 직전 추천 1위를 고른 이유를 묻는 말 (2026-10-09 실측 사고).
@@ -923,6 +1000,36 @@ function classify(text, hist) {
   }
 
   /*
+   * 조건만 덧붙이는 후속 말 — 찾던 상품을 그대로 이어받는다 (isConditionOnly 주석).
+   *
+   * 이번 말의 낱말("영상 편집"·"배터리")로 검색하지 않는다. 용도·속성은 검색 뒤에 거르고 설명할 조건이다.
+   * 앞 대화에 찾던 상품이 없으면 이 규칙을 쓰지 않는다 — 무엇을 찾는지 모르면 아래 예전 경로가 판단한다.
+   *
+   * ★ 검색어(찾던 상품)는 여기서 정한다. 그래도 확신은 낮음으로 둔다 — 용도·브랜드·기피 조건은 앞뒤를 읽는
+   *   LLM 이 정규식보다 잘 뽑는다("통화 품질도 중요해" → 용도: 통화). api/ai.js resolveIntent 가 이 검색어를
+   *   지키고(stateQuery), 모델이 잡담(A·B)으로 판정해도 이 결과로 되돌린다.
+   * ★ «…하지 마» 같은 지시("저장공간이 다르면 합쳐 비교하지 마")와 목록을 가리키는 말("이 중에서 가장 싼 것")은
+   *   여기 들지 않는다 — 앞의 것은 대화 방식에 대한 말이고, 뒤의 것은 아래 문맥 후속 경로가 맡는다.
+   */
+  const directiveTurn = clauses.prohibitions.length > 0 || META_ANSWER_RE.test(act);
+  if (Array.isArray(hist) && hist.length && !directiveTurn && !CONTEXT_DEPENDENT_RE.test(spanText)
+      && isConditionOnly(itemText || s)) {
+    const prior = conversationProduct(hist);
+    if (prior && isProductQuery(prior)) {
+      const carried = prior.slice(0, MAX_QUERY_LEN).trim();
+      return {
+        intent: ['C', 'D', 'E'].includes(intent) ? intent : 'C',
+        query: carried, source: 'heuristic', confidence: 'low',
+        contextualFollowup: false, ownQuery: false, stateQuery: true, refinement: false,
+        conditionFollowup: true, fitQuestion: FIT_QUESTION_RE.test(s),
+        identityText: prior.slice(0, 200),
+        requiresRecommendationIdentity: false,
+        extra: { useCase: extractUseCase(s), brand: '', avoid: '' }
+      };
+    }
+  }
+
+  /*
    * 검색어가 비었으면 앞 대화의 사용자 발화에서 이어받는다.
    *   "무선 이어폰 추천해줘" → "10만원 이하로" ← 여기서 물건 이름이 없다.
    * 이어받을 것이 없으면 빈 검색어로 둔다(호출부가 품목을 되묻는다).
@@ -1036,13 +1143,25 @@ function classify(text, hist) {
    */
   if (query && !isProductQuery(query)) query = '';
 
+  /*
+   * 직전 추천에 대한 가격·구매 시점 질문인가 (LIST_REFERENCE_RE 주석).
+   * 상품 근거가 이번 말에 없고, 옵션을 바꾸는 말(refinement)도 아니어야 한다 — "화이트는 얼마야" 는 다른 옵션이다.
+   */
+  const aboutPrevious = (intent === 'D' || intent === 'E') && explicit && s.length <= 60
+    && !refinement && AIID.productEvidence(positiveSpan) === 0 && !LIST_REFERENCE_RE.test(s)
+    && !CONDITION_WORD_RE.test(itemText);
+
   return {
     intent, query, source: 'heuristic', confidence, contextualFollowup,
     // 검색어가 이번 발화만으로 나왔는가 / 앞 대화 상태(누적 옵션 포함)에서 나왔는가 — api/ai.js resolveIntent 가 쓴다.
     ownQuery: ownQuery && !stateQuery, stateQuery, refinement: !!refinement,
+    aboutPrevious,
+    wantsAlternative: ['C', 'D'].includes(intent) && ALTERNATIVE_RE.test(s) && AIID.productEvidence(positiveSpan) === 0,
     identityText: query ? String(identityText || '').slice(0, 200) : '',
     requiresRecommendationIdentity: PRIOR_RECOMMENDATION_RE.test(s)
-      || (PRIOR_ITEM_PRICE_RE.test(s) && !PRIOR_SWITCH_RE.test(s)),
+      || (PRIOR_ITEM_PRICE_RE.test(s) && !PRIOR_SWITCH_RE.test(s)) || !!priorRecommendedNoun(s),
+    // "아까 추천한 그 노트북" 의 «노트북» — api/ai.js 가 서명 참조로 다시 확인한 상품의 종류와 맞는지 본다.
+    priorNoun: priorRecommendedNoun(s),
     /*
      * LLM 이 뽑던 조건 중 정규식으로 확실한 것만 채운다 (extractUseCase 주석).
      * brand·avoid 는 표현이 너무 열려 있어 만들지 않는다 — 지어내느니 비운다.
@@ -1050,6 +1169,24 @@ function classify(text, hist) {
      */
     extra: { useCase: extractUseCase(s), brand: '', avoid: '' }
   };
+}
+
+/*
+ * 상품 이야기가 아닌 잡담 ("고마워 정말" · "오늘 날씨 좋다" · "요즘 좀 피곤하네") — 2026-10-24.
+ *
+ * classify 는 짧은 말을 품목으로 보고(「query && 30자 이하 → C」) "고마워" 를 검색어로 뽑는다. 그 말이
+ * conversationProduct 의 «마지막으로 찾던 상품» 이 되어 대화 상태(convState)에까지 저장됐고, 몇 턴 뒤
+ * "근데 게임도 할 거야" 가 "고마워" 로 검색됐다(오프라인 재현). 상품 근거도 쇼핑 동사도 없고 서술어로
+ * 끝나는 말은 찾던 상품이 아니다. "빔프로젝터" 처럼 서술어 없는 낱말은 그대로 품목으로 본다.
+ */
+const SMALLTALK_TAIL_RE = /(?:워|워요|와요|네요|군요|구나|거든|잖아|더라|더라고|겠다|싶다)$/;
+function isSmallTalk(text) {
+  const s = String(text || '').trim();
+  if (!s) return true;
+  if (AIID.productEvidence(s) > 0 || TIMING_RE.test(s) || PRICE_RE.test(s) || RECOMMEND_RE.test(s)) return false;
+  const toks = s.replace(/[?!.~,ㅋㅎ]+/g, ' ').split(/\s+/).filter(Boolean);
+  if (toks.length && GREETING_RE.test(toks[0])) return true;
+  return toks.some(t => /^[가-힣]{2,}$/.test(t) && (VERB_TAIL_RE.test(t) || SMALLTALK_TAIL_RE.test(t)));
 }
 
 /*
@@ -1071,6 +1208,8 @@ function conversationProduct(hist) {
     const positive = AIID.splitNegations(spText).positive;
     const q = extractQuery(positive);
     if (!q && !CONTEXT_DEPENDENT_RE.test(spText)) continue;
+    // 조건만 덧붙인 말("배터리 오래가는 게 중요해")·잡담("고마워 정말")은 찾던 상품이 아니다 — 그 앞의 상품을 계속 찾는다.
+    if (isConditionOnly(spText) || isSmallTalk(text)) continue;
     // 상품 이름이 아닌 낱말("다르면"·"기억해")은 옵션 판정에서 뺀다 (classify 의 refineText 와 같다).
     const refine = contentText(positive);
     if (CONTEXT_DEPENDENT_RE.test(spText) || AIID.refinementOf(refine).refinement) {
@@ -1088,6 +1227,6 @@ function conversationProduct(hist) {
 
 module.exports = {
   classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, isRecommendationReason,
-  shoppingSpan, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly,
+  shoppingSpan, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };

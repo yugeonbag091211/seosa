@@ -470,14 +470,14 @@ function compose(ctx) {
 
   // GPT 설명이 근거 검사에서 교체된 경우에도 노트북 추천을 가격 한 줄로 끝내지 않는다.
   // 검증하지 못한 CPU 성능·배터리를 좋다고 꾸미지 않고 실제 선택의 한계를 설명한다.
-  if (c.safety && !c.timingRequested
-      && /노트북|그램|맥북|laptop|thinkpad|vivobook/i.test(String(top.title || ''))) {
+  if (c.safety && !c.timingRequested && LAPTOP_RE.test(String(top.title || ''))) {
+    const family = laptopFamily(top.title);
     L.push('');
-    L.push('이건 지금 찾은 그램 후보 가운데 가격과 검색 조건을 기준으로 고른 상품이에요. 가격이 안정적이라는 사실만으로 성능까지 가장 좋은 노트북이라고 볼 수는 없어요.');
+    L.push(`이건 지금 찾은 ${family} 후보 가운데 가격과 검색 조건을 기준으로 고른 상품이에요. 가격이 안정적이라는 사실만으로 성능까지 가장 좋은 노트북이라고 볼 수는 없어요.`);
     L.push('실제로 구매하기 전에는 CPU와 메모리가 작업에 충분한지, 중고·리퍼 등 제품 상태와 배터리·보증 조건이 어떤지 확인해야 해요.');
     const cons = c.constraints || {};
     if (!cons.budgetMax && !cons.useCase) {
-      L.push('아직 예산과 사용 목적을 듣지 못했어요. 학교 과제·문서 작업이 주목적인지, 영상 편집 같은 무거운 작업도 할지 알려주시면 다른 그램 모델과 함께 비교해드릴게요.');
+      L.push(`아직 예산과 사용 목적을 듣지 못했어요. 학교 과제·문서 작업이 주목적인지, 영상 편집 같은 무거운 작업도 할지 알려주시면 다른 ${family} 모델과 함께 비교해드릴게요.`);
     }
   }
 
@@ -643,6 +643,68 @@ function politeFact(s) {
   return `${t}.`;
 }
 
+/*
+ * 노트북 계열 — 조립본이 «그램 후보 가운데» 처럼 말할 때 실제 상품 계열을 쓴다.
+ * 예전에는 맥북·씽크패드에도 "그램" 이라고 적었다 (2026-10-24 PR #186 후속 점검).
+ */
+const LAPTOP_RE = /노트북|그램|맥북|laptop|thinkpad|vivobook|macbook|씽크패드|갤럭시\s?북/i;
+function laptopFamily(title) {
+  const t = String(title || '');
+  if (/그램|\bgram\b/i.test(t)) return '그램';
+  if (/맥북|macbook/i.test(t)) return '맥북';
+  if (/갤럭시\s?북/i.test(t)) return '갤럭시북';
+  if (/씽크패드|thinkpad/i.test(t)) return '씽크패드';
+  return '노트북';
+}
+
+/**
+ * 구매 시점을 물었을 때 답 맨 앞에 두는 서버 결론 (api/ai.js — GPT 설명을 살린 답에만 붙는다).
+ *
+ * 모델의 «지금 사도 괜찮아요» 는 근거 검사에서 빠진다(같은 결론처럼 보여도 강도·부정어가 달라질 수 있다).
+ * 결론은 _deal 판정 그대로, 근거 한 줄은 _deal 의 첫 문장 그대로다. 판정이 없으면 판단하지 않는다고 말한다.
+ *
+ * @param {{top:object, deal:object|null, named?:boolean}} ctx  named — 답 본문에 상품 이름이 없어 여기서 밝힌다
+ * @returns {string}
+ */
+function timingLead(ctx) {
+  const c = ctx || {};
+  const top = c.top || null;
+  if (!top) return '';
+  const p = priceOf(top);
+  const deal = c.deal || null;
+  const who = c.named ? `${nameOf(top, 40)}의 ` : '';
+  const head = p > 0 ? `서사가 확인한 ${who}판매가 ${won(p)}원 기준으로 보면, ` : '';
+  if (!deal || !deal.verdict || deal.verdict === 'UNKNOWN') {
+    return `${head}가격 기록이 아직 충분하지 않아서 지금이 특별히 좋은 때인지는 판단하기 어려워요.`;
+  }
+  const stance = deal.verdict === 'NORMAL'
+    ? '지금 가격은 평범한 수준이에요. 꼭 서두를 이유도, 기다리면 반드시 싸진다고 볼 근거도 없어요.'
+    : STANCE[deal.verdict];
+  if (!stance) return '';
+  const fact = Array.isArray(deal.reasons) && deal.reasons[0] ? politeFact(deal.reasons[0]) : '';
+  const stale = deal.freshness && deal.freshness.level === 'stale' && deal.freshness.label
+    ? ` 다만 ${deal.freshness.label} 기준이라 결제 전에 판매처 금액을 꼭 다시 확인해 주세요.` : '';
+  return `${head}${stance}${fact ? ` ${fact}` : ''}${stale}`;
+}
+
+/** 근거 없는 금액 문장을 덜어냈을 때 붙이는 확인된 판매가 한 줄 (api/ai.js). 가격을 모르면 빈 문자열. */
+function verifiedPriceLine(top) {
+  const p = priceOf(top);
+  if (!top || p <= 0) return '';
+  const mall = String(top.mallLabel || top.mall || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+  return `서사가 확인한 ${nameOf(top, 40)}의 판매가는 ${won(p)}원${mall ? `(${mall})` : ''}이에요.`;
+}
+
+/*
+ * 방금 물은 것을 다음 질문 칩으로 다시 권하지 않는다 (2026-10-24).
+ * "이거 왜 추천했어?" 에 답하고 나서 또 "이거 왜 추천했어?" 칩을 띄우면 대화가 제자리를 돈다.
+ */
+function withoutAsked(list, asked) {
+  const a = asked || {};
+  return (Array.isArray(list) ? list : []).filter(q => !(a.reason && /왜\s*추천/.test(q))
+    && !(a.timing && /지금\s*사는\s*게/.test(q)));
+}
+
 /**
  * 서명된 직전 추천으로 확인한 상품의 구매시점 대화 답변.
  * LLM이 다른 판매처/옵션 가격을 섞어 말하면 이 검증된 계산 결과를 자연스럽게 전달한다.
@@ -672,7 +734,7 @@ function conversationalTiming(ctx) {
   if (deal && deal.freshness && deal.freshness.label) {
     L.push(`가격 확인 기준은 ${deal.freshness.label}입니다. 판매처에서 결제 전 금액을 다시 확인해 주세요.`);
   }
-  if (/노트북|그램|맥북|laptop|thinkpad|vivobook/i.test(String(top.title || ''))) {
+  if (LAPTOP_RE.test(String(top.title || ''))) {
     L.push('다만 노트북은 가격만으로 판단하기 어려워요. 사용 목적에 비해 CPU와 메모리가 충분한지, 배터리와 제품 상태가 어떤지도 확인해야 해요.');
     const cons = c.constraints || {};
     if (!cons.useCase && !cons.budgetMax) L.push('학교 과제나 문서 작업용인지, 영상 편집처럼 무거운 작업도 할 건지 알려주시면 지금 사는 편이 나을지 더 정확하게 비교해드릴게요.');
@@ -752,11 +814,11 @@ function recommendationReason(ctx) {
 
   // 가격이 안정적이라는 사실만으로 성능까지 좋은 노트북이라고 단정하면 안 된다.
   // 사용자가 처음 물은 '왜?'에 가격 근거와 성능·용도 평가의 한계를 함께 풀어 설명한다.
-  if (/노트북|그램|맥북|laptop|thinkpad|vivobook/i.test(String(top.title || ''))) {
+  if (LAPTOP_RE.test(String(top.title || ''))) {
     L.push('');
     L.push('여기서 중요한 점은 가격이 안정적이라는 것과 좋은 노트북이라는 것은 다르다는 거예요. 성능, 메모리, 실제 제품 상태, 배터리, 보증 조건까지 확인해야 최종 구매를 권할 수 있어요.');
     if (!cons.budgetMax && !cons.useCase && !cons.priority) {
-      L.push('아직 예산과 사용 목적을 듣지 못했기 때문에 이 모델이 여러 그램 중 가장 잘 맞는 선택이라고 확정할 수는 없어요.');
+      L.push(`아직 예산과 사용 목적을 듣지 못했기 때문에 이 모델이 여러 ${laptopFamily(top.title)} 중 가장 잘 맞는 선택이라고 확정할 수는 없어요.`);
       L.push('문서 작업이나 학교 공부용인지, 영상 편집 같은 무거운 작업도 할지 알려주시면 그 조건으로 다른 모델과 비교해드릴게요.');
     }
   } else if (!fit.length && priceFacts.length) {
@@ -868,6 +930,7 @@ function constraintConflict(conflict, label) {
 module.exports = {
   budgetNoMatch, constraintConflict, budgetRangeLabel,
   recommendationReason, conversationalTiming, REASON_REF_MISSING, REASON_PRICE_UNVERIFIED, politeFact, budgetLabel,
+  timingLead, verifiedPriceLine, withoutAsked, laptopFamily,
   compose, followups, looksLikeBlockDump, blockLabelCount,
   BLOCK_LABELS, BLOCK_DUMP_MIN,
   // 테스트·다른 모듈이 같은 문구를 쓰도록 노출한다 (문구가 두 벌이 되면 어긋난다)

@@ -521,7 +521,9 @@ function searchFixture() {
         view: { source: 'modal' } }, { classify: 'D', answer: '현재가는 139,000원이고 기록상 최저가는 135,000원입니다.' });
       const assistantRoles = r.messages.filter(m => m.role === 'assistant').length;
       const good = r.status === 200 && r.body.degraded !== true && /139,000원/.test(r.body.text)
-        && !/999,999원/.test(r.body.text) && assistantRoles === Math.min(hist.filter(h => h.role === 'assistant').length, 3);
+        && !/999,999원/.test(r.body.text)
+        // 답변 모델이 읽는 앞 대화 창(MAX_PROMPT_HISTORY_MSGS) 안의 서명된 답변만 assistant 역할이다.
+        && assistantRoles === Math.min(hist.filter(h => h.role === 'assistant').length, I.MAX_PROMPT_HISTORY_MSGS / 2);
       if (good) turnOk++;
       ok(good, `12턴-${t}: 서버 가격 유지·이전 답변 문맥 유지`, JSON.stringify({ text: r.body.text, assistantRoles }));
       hist.push({ role: 'user', text: q }, { role: 'assistant', text: r.body.text, sig: r.body.turnSig });
