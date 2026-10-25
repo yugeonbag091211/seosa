@@ -435,6 +435,29 @@ const STATE_WORD_RE = /^[a-z]{2,16}$/;
 const STATE_DIGEST_RE = /^[A-Za-z0-9_-]{8,16}$/;
 
 /*
+ * Two model+option identities for comparison follow-ups. This is part of
+ * server-signed convState, NEVER trusted from client chat text or prices.
+ * Short server-confirmed names are for UI reference only; every follow-up
+ * must look up each option again in the catalogue.
+ */
+function stateComparison(value) {
+  if (!Array.isArray(value) || value.length !== 2) return [];
+  const normalized = value.map(x => {
+    if (!x || typeof x !== 'object') return null;
+    const productId = clean(x.productId, ID_LEN);
+    const vendorItemId = clean(x.vendorItemId, ID_LEN);
+    const mallId = clean(x.mallId || x.mall, 30);
+    const title = clean(x.title, TITLE_LEN);
+    if (!productId || !mallId || !title || (isCoupangMall(mallId) && !vendorItemId)) return null;
+    return { productId, vendorItemId, mallId, mall: mallId, title };
+  });
+  if (normalized.some(x => !x)) return [];
+  const key = x => [x.mallId, x.productId, x.vendorItemId].join('|');
+  return key(normalized[0]) === key(normalized[1]) ? [] : normalized;
+}
+
+
+/*
  * 조건 객체 (_shopintent.mergeConstraints 결과) → 서명할 모양.
  * 값이 있는 단순 값(유한한 수·true·짧은 문자열)만 남긴다. 필드 이름을 박아 두지 않는 것은
  * _shopintent 가 조건 필드를 늘려도(예산 «꼭 지켜» 같은) 상태가 그대로 따라가게 하기 위해서다.
@@ -482,6 +505,7 @@ function createConversationState(state, now) {
     bs: state.budgetScope === 'global' ? 'global' : '',
     bp: clean(state.budgetProduct, STATE_PRODUCT_LEN),
     a: stateList(state.absorbed, STATE_DIGEST_RE),
+    co: stateComparison(state.comparison),
     s, iat, exp: Math.min(iat + STATE_TTL_MS, s + STATE_MAX_AGE_MS)
   };
   const payload = b64url(JSON.stringify(body));
@@ -520,6 +544,7 @@ function verifyConversationState(value, now) {
       budgetScope: d.bs === 'global' ? 'global' : '',
       budgetProduct: clean(d.bp, STATE_PRODUCT_LEN),
       absorbed: stateList(d.a, STATE_DIGEST_RE),
+      comparison: stateComparison(d.co),
       startedAt: s
     };
   } catch (e) {
