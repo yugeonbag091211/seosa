@@ -21,8 +21,8 @@ function parseComparison(question) {
   // the user asks for the family in English.
   if (/^ipad$/i.test(left)) left = '아이패드';
   if (/^ipad$/i.test(right)) right = '아이패드';
-  if (/^galaxy\\s*tab$/i.test(left)) left = '갤럭시탭';
-  if (/^galaxy\\s*tab$/i.test(right)) right = '갤럭시탭';
+  if (/^galaxy\s*tab$/i.test(left)) left = '갤럭시탭';
+  if (/^galaxy\s*tab$/i.test(right)) right = '갤럭시탭';
   // Common family names may be written without a numeric model anchor.
   const knownFamily = /^(?:아이패드|갤럭시\s*탭|갤럭시탭|ipad|galaxy\s*tab)$/i;
   // "버즈3 프로 블랙과 화이트" explicitly names two color options of
