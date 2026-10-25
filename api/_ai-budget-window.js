@@ -9,7 +9,7 @@ const NEAR_BUDGET_WON=30000;
 const GAMING_TITLE=/(?:게이밍|게임\s*전용|게임\s*헤드셋|gaming|gamer|e-sport|esports)/i;
 const EXCLUDE_GAMING=/(?:게임|게이밍)[^.!?\n]{0,30}(?:말고|빼|제외|아니|싫|원치|안\s*돼)|(?:일상용|데일리용|통학용|출퇴근용)(?![^.!?\n]{0,20}(?:게임도|게임용도))/;
 const ALLOW_GAMING=/(?:게임용|게이밍)(?:도|을|은|는)?\s*(?:괜찮|가능|상관\s*없|추천|필요|원해|찾아)|게임(?:도|을)\s*(?:할|해|하니까)/;
-const CHEAPEST=/최저가|가장\s*싼|제일\s*싼|무조건\s*(?:싸|저렴)|가격\s*최저|최소\s*비용/i;
+const CHEAPEST=/최저가|가장\s*싼|제일\s*싼|더\s*저렴한|무조건\s*(?:싸|저렴)|가격\s*최저|최소\s*비용/i;
 const MULTIPLE=/(?:여러\s*(?:개|가지|모델|제품)|\d+\s*(?:개|가지)|다\s*보여|모두\s*보여|전부\s*보여|순위|목록|(?:서로|둘\s*중)\s*비교|(?:와|과|랑|vs)\s*[^\n]+\s*비교)/i;
 function positivePrice(i){const p=Math.round(Number(i&&(i.price||i.lprice))||0);return Number.isSafeInteger(p)&&p>0?p:0;}
 function nearBudgetWindow(items,constraints,question){
