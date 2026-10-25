@@ -85,7 +85,7 @@ const ids=r=>(r.body.items||[]).map(c=>c.productId);
   ok('명시하지 않은 메타 문장은 비교로 오인하지 않음',
     !CMP.parseComparison('검색 결과 중 가격이 가장 작은 행을 골라. 그리고 소니 WH-1000XM6 노이즈캔슬링 헤드폰 옵션 가격을 비교해줘.'),'parser');
   ok('외부 API·DB 쓰기 없음',H.counters.external===0&&H.counters.dbWrites===0,H.counters);
-  console.log('AI_PAIR_MEMORY_AUDIT '+JSON.stringify({pass,fail,questions:H.counters.llmMain,
+  console.log('AI_PAIR_MEMORY_AUDIT '+JSON.stringify({pass,fail,mockGptAnswerCalls:H.counters.llmMain,
     checks:checks.length,providerCalls:H.counters.searches,realGptCalls:0,dbWrites:H.counters.dbWrites}));
   if(fail)process.exitCode=1;
 })().catch(e=>{console.error('AI_PAIR_MEMORY_FATAL',e.stack||e);process.exitCode=1;});
