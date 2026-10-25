@@ -136,7 +136,7 @@ function categoryNounsOf(text) {
   const aliases = [];
   if (/(?:에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|버즈[2-9]\s*프로)/i.test(t)
       && !/(?:케이스|파우치|보호필름|충전\s*케이블)/.test(t)) aliases.push('이어폰');
-  if (/(?:맥북|macbook|lg\s*그램|그램\s*(?:15|16|17|프로)|갤럭시북)/i.test(t)
+  if (/(?:맥북|macbook|lg\s*그램|(?:^|[^0-9가-힣])그램(?=\s|$|[0-9]|프로)|갤럭시북)/i.test(t)
       && !/(?:충전기|파우치|키스킨|보호필름)/.test(t)) aliases.push('노트북');
   if (/(?:아이패드|ipad|갤럭시\s*탭|galaxy\s*tab)/i.test(t)
       && !/(?:케이스|파우치|보호필름)/.test(t)) aliases.push('태블릿');
