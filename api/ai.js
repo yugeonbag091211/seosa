@@ -4705,10 +4705,12 @@ module.exports = async function handler(req, res) {
       console.warn(`[ai] 대화 상태 해석 실패(상태 없이 진행): ${e.message}`);
       conv = { carried: false, base: null, replay: hist.slice(-MAX_HISTORY_MSGS), intentHist: hist, excludedBefore: [], next: null };
     }
-    const convToken = conv.next ? AC.createConversationState(conv.next, startedAt) : '';
-    if (convToken) {
+    // Compute the token when sending the response, not before product search:
+    // the verified comparison pair is known only after both searches finish.
+    if (conv.next) {
       const sendJson = res.json.bind(res);
-      res.json = payload => sendJson(withConvState(payload, convToken));
+      res.json = payload => sendJson(withConvState(payload,
+        AC.createConversationState(conv.next, startedAt)));
     }
 
     /*
@@ -4741,8 +4743,19 @@ module.exports = async function handler(req, res) {
     /*
      * 1단계 — 의도 분류. 상품 데이터도 화면 상태도 보지 않고 말만 본다.
      */
+    // Recognize explicit pair and pair-only follow-ups before LLM intent
+    // classification. The latter MUST have two identities inside a verified,
+    // server-signed conversation state; untrusted chat text alone is not enough.
+    const CMP = require('./_ai-comparison');
+    const explicitPair = CMP.parseComparison(q);
+    const signedPair = conv.next && Array.isArray(conv.next.comparison) ? conv.next.comparison : [];
+    const pairFollowup = !explicitPair && signedPair.length === 2 && CMP.isPairFollowup(q);
+    if (conv.next && !explicitPair && !pairFollowup) conv.next.comparison = [];
     // deterministic-first. 확신이 높으면 LLM 분류를 건너뛴다 (resolveIntent 주석).
-    const cls = await resolveIntent(q, hist, view, budget, guest, conv.intentHist,
+    const cls = (explicitPair || pairFollowup) ? {
+      intent: 'C', query: '', source: 'signed-pair', confidence: 'high',
+      extra: { useCase: '', brand: '', avoid: '' }
+    } : await resolveIntent(q, hist, view, budget, guest, conv.intentHist,
       { prevRecommendation: !!previousRecommendation });
     /*
      * Previous product can be outside the short message window. For concise
@@ -5101,15 +5114,39 @@ module.exports = async function handler(req, res) {
      * This path uses the same server-side search/trust gate and the regular
      * answer LLM; the verified price comparison itself is deterministic.
      */
-    const comparison = ['C', 'D', 'E'].includes(intent)
-      ? require('./_ai-comparison').parseComparison(q) : null;
+    const comparison = explicitPair || (pairFollowup ? signedPair.map(s => s.title) : null);
     if (comparison && !refSelected) {
-      const CMP = require('./_ai-comparison');
-      const eachBudget = Math.max(1, Math.min(AI_SEARCH_TIMEOUT_MS, budget.remaining() - ANSWER_RESERVE_MS));
-      const responses = await Promise.all(comparison.map(term => searchProducts(term, eachBudget)));
-      const selected = responses.map((result, i) => result.ok
-        ? CMP.pickExact(result.items, comparison[i], AIID, x => normItem(fromSearchResult(x)))
-        : null);
+      let responses = [];
+      let selected = [];
+      if (pairFollowup) {
+        // Revalidate both signed product+option selectors against the catalogue;
+        // never trust prices stored in earlier chat messages. This also avoids
+        // spending two shopping-provider calls on every follow-up.
+        const cap = Math.min(2 * AI_ENRICH_TIMEOUT_MS,
+          Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
+        const fetched = cap > 0
+          ? await settleWithin(resolveContext(signedPair), cap)
+          : { timedOut: true };
+        const verified = !fetched.timedOut && fetched.value ? fetched.value.verified : [];
+        const key = p => [p.productId, p.mallId || p.mall, p.vendorItemId || ''].join('|');
+        selected = signedPair.map(sel => {
+          const raw = verified.find(x => key(x) === key(sel));
+          if (!raw) return null;
+          const normalized = normItem(fromSearchResult(raw));
+          Object.defineProperty(normalized, '_compareRaw', { value: raw });
+          return normalized;
+        });
+        responses = signedPair.map((_, i) => ({
+          ok: !fetched.timedOut, items: selected[i] ? [selected[i]._compareRaw] : []
+        }));
+      } else {
+        const eachBudget = Math.max(1, Math.min(AI_SEARCH_TIMEOUT_MS,
+          budget.remaining() - ANSWER_RESERVE_MS));
+        responses = await Promise.all(comparison.map(term => searchProducts(term, eachBudget)));
+        selected = responses.map((result, i) => result.ok
+          ? CMP.pickExact(result.items, comparison[i], AIID, x => normItem(fromSearchResult(x)))
+          : null);
+      }
       // A comparison of two variants is valid when the option identity differs.
       const identityKey = p => p && [p.productId, p.mallId || p.mall, p.vendorItemId || ''].join('|');
       if (selected[0] && selected[1] && identityKey(selected[0]) === identityKey(selected[1])) selected[1] = null;
@@ -5125,7 +5162,14 @@ module.exports = async function handler(req, res) {
       cards = selectedRaw.map(raw => toCard(raw, statFor(stats, raw)));
       const verifiedCards = cards.filter(c => c.productId && Number(c.lprice) > 0);
       const twoExact = selected.every(Boolean) && verifiedCards.length === 2;
-      let responseText = CMP.formatComparison(comparison, selected);
+      // Invalidate rather than carrying a stale pair when either option fails
+      // the recheck. A new successful comparison replaces the old pair.
+      if (conv.next) conv.next.comparison = twoExact
+        ? selected.map(p => ({
+          productId: p.productId, vendorItemId: p.vendorItemId || '',
+          mallId: p.mallId || p.mall, title: p.title
+        })) : [];
+      let responseText = CMP.formatComparison(comparison, selected, pairFollowup ? 'catalog' : 'search');
       /*
        * GPT writes additional conversational guidance from verified names
        * only. No generated amount, specification, discount or purchase verdict
