@@ -36,7 +36,7 @@ function parseComparison(question) {
 function isPairFollowup(question) {
   const q = String(question || '').trim().slice(0, 240);
   if (!q || q.length > 180) return false;
-  return /(?:둘\\s*중|두\\s*(?:제품|상품|모델)|이\\s*둘|그\\s*둘|둘\\s*다|둘\\s*의|둘\\s*을|둘\\s*이|각각|앞(?:에서)?\\s*비교한|아까\\s*비교한|방금\\s*비교한|비교했던|그\\s*중)/.test(q);
+  return /(?:둘\s*중|두\s*(?:제품|상품|모델)|이\s*둘|그\s*둘|둘\s*다|둘\s*의|둘\s*을|둘\s*이|각각|앞(?:에서)?\s*비교한|아까\s*비교한|방금\s*비교한|비교했던|그\s*중)/.test(q);
 }
 
 function pickExact(raw, query, AIID, normalize) {
