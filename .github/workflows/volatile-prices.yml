@@ -99,6 +99,6 @@ jobs:
         run: |
           echo "## Adaptive price recheck" >> "$GITHUB_STEP_SUMMARY"
           echo "Run at $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_STEP_SUMMARY"
-          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
-          grep -E '^\\[adaptive\\]' /tmp/volatile.log 2>/dev/null | tail -25 >> "$GITHUB_STEP_SUMMARY" || true
-          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -F '[adaptive]' /tmp/volatile.log 2>/dev/null | tail -25 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
