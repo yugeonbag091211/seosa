@@ -1,0 +1,104 @@
+name: Volatile Price Rechecks
+
+on:
+  schedule:
+    # GitHub cron uses UTC. KST 12:05 and 19:05.
+    - cron: '5 3 * * *'
+    - cron: '5 10 * * *'
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: '재확인 시간대 (실제 실행 시각도 해당 KST 시간대여야 함)'
+        type: choice
+        required: true
+        default: noon
+        options:
+          - noon
+          - evening
+
+concurrency:
+  group: volatile-prices-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  recheck:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      # 오후에도 30일 이력을 다시 다운로드하지 않도록 KST 날짜별 결과 캐시.
+      - name: KST date
+        id: kst
+        run: echo "date=$(TZ=Asia/Seoul date +%F)" >> "$GITHUB_OUTPUT"
+      - name: Restore daily volatility ranking
+        id: rank_cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: .day-cache/volatile-price-rank.json.gz
+          key: volatile-price-rank-v1-${{ steps.kst.outputs.date }}
+
+      - name: Recheck volatile prices
+        id: recheck
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          COUPANG_ACCESS_KEY: ${{ secrets.COUPANG_ACCESS_KEY }}
+          COUPANG_SECRET_KEY: ${{ secrets.COUPANG_SECRET_KEY }}
+          ADPICK_API_KEY: ${{ secrets.ADPICK_API_KEY }}
+          ADPICK_MAX_PER_MIN: '5'
+          ADPICK_MIN_GAP_MS: '12000'
+          # Emergency kill switch: Settings -> Variables -> Actions PRICE_VOLATILE_OFF=1
+          PRICE_VOLATILE_OFF: ${{ vars.PRICE_VOLATILE_OFF }}
+          PRICE_VOLATILE_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot || (github.event.schedule == '5 3 * * *' && 'noon' || 'evening') }}
+          PRICE_VOLATILE_CACHE_FILE: ${{ github.workspace }}/.day-cache/volatile-price-rank.json.gz
+          # 기존 일일 수집: 쿠팡 3300/ADPICK 2900; 여기서만 3400/3000까지 허용.
+          # 매 실행은 45호출 이내, 실시간 DB 사용량 조회 실패 시 안전 중단.
+          PRICE_VOLATILE_COUPANG_DAY_CAP: '3400'
+          PRICE_VOLATILE_ADPICK_DAY_CAP: '3000'
+          PRICE_VOLATILE_SLOT_CALLS: '45'
+        run: |
+          node scripts/collect-volatile-prices.js 2>&1 | tee /tmp/volatile.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Cache today's volatility ranking
+        if: always() && steps.rank_cache.outputs.cache-hit != 'true' && hashFiles('.day-cache/volatile-price-rank.json.gz') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .day-cache/volatile-price-rank.json.gz
+          key: volatile-price-rank-v1-${{ steps.kst.outputs.date }}
+
+      # 기존 알림 경로를 사용하므로 중복 발송 안전장치는 check-alerts.js 그대로.
+      - name: Check price alerts
+        if: steps.recheck.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+        run: node scripts/check-alerts.js
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Adaptive price recheck" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run at $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_STEP_SUMMARY"
+          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^\\[adaptive\\]' /tmp/volatile.log 2>/dev/null | tail -25 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
