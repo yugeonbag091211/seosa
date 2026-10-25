@@ -4744,6 +4744,41 @@ module.exports = async function handler(req, res) {
     // deterministic-first. 확신이 높으면 LLM 분류를 건너뛴다 (resolveIntent 주석).
     const cls = await resolveIntent(q, hist, view, budget, guest, conv.intentHist,
       { prevRecommendation: !!previousRecommendation });
+    /*
+     * Previous product can be outside the short message window. For concise
+     * battery constraints and "other candidate" follow-ups, recover it ONLY
+     * from the server-signed conversation state and the server-signed last
+     * recommendation. Never rebuild an identity from arbitrary chat prices.
+     *
+     * 200-question regression: these common phrasings were being routed to
+     * GENERAL_QA or searched as "다른 후보", ignoring the user's 10만원 budget.
+     */
+    if (cls && previousRecommendation && !(view && view.source === 'modal')) {
+      const verifiedThread = AC.verifyConversationState(body && body.convState, startedAt);
+      const product = verifiedThread && String(verifiedThread.product || '').slice(0, 120).trim();
+      const batteryNoun = /^배터리\s*오래가는\s*([가-힣]{2,8})(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/.exec(q);
+      const otherNoun = /^대신\s*다른\s*([가-힣]{2,8})(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/.exec(q);
+      const batteryLife = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/.test(q);
+      const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/.test(q);
+      const isCondition = batteryLife || !!batteryNoun;
+      const isAlternative = otherCandidate || !!otherNoun;
+      const explicitKind = batteryNoun && batteryNoun[1] || otherNoun && otherNoun[1] || '';
+      if (product && (isCondition || isAlternative)
+          && (!explicitKind || product.includes(explicitKind))) {
+        cls.intent = 'C';
+        cls.query = product;
+        cls.identityText = product;
+        cls.stateQuery = true;
+        cls.ownQuery = false;
+        cls.contextualFollowup = true;
+        cls.refinement = false;
+        cls.requiresRecommendationIdentity = false;
+        cls.conditionFollowup = isCondition;
+        cls.wantsAlternative = isAlternative;
+        cls.extra = Object.assign({ useCase: '', brand: '', avoid: '' }, cls.extra || {});
+        console.log('[ai] 서명된 이전 검색 대상 유지 — 배터리 조건/다른 후보 후속 질문');
+      }
+    }
     // "지금 사는 게 좋을까?"는 새 상품 검색이 아니라 직전 추천에 대한 후속 질문이다.
     // 대화 원문에서 상품을 짐작하지 않고 서명된 추천 참조만 사용한다.
     if (cls && cls.intent === 'E' && !cls.ownQuery && q.length <= 65
