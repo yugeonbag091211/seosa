@@ -16,6 +16,10 @@ F.ALL.forEach(H.addProduct);
 
 async function main() {
   const gram = F.GRAM_15;
+  // Isolate this same-offer price contract. Other gram models are covered by
+  // ranking tests and must not unexpectedly win this price provenance test.
+  H.catalog.filter(it => it.productId !== gram.pid && /그램/.test(it.title))
+    .forEach(it => { it._keys = []; });
   const listing = H.catalog.find(it => it.productId === gram.pid);
   const stored = H.tables.products.find(it => it.product_id === gram.pid);
   assert.ok(listing && stored, 'fixture product exists');
