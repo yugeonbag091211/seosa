@@ -4756,8 +4756,8 @@ module.exports = async function handler(req, res) {
     if (cls && previousRecommendation && !(view && view.source === 'modal')) {
       const verifiedThread = AC.verifyConversationState(body && body.convState, startedAt);
       const product = verifiedThread && String(verifiedThread.product || '').slice(0, 120).trim();
-      const batteryNoun = /^배터리\s*오래가는\s*([가-힣]{2,8})(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/.exec(q);
-      const otherNoun = /^대신\s*다른\s*([가-힣]{2,8})(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/.exec(q);
+      const batteryNoun = /^배터리\s*오래가는\s*([가-힣]{2,8}?)(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/.exec(q);
+      const otherNoun = /^대신\s*다른\s*([가-힣]{2,8}?)(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/.exec(q);
       const batteryLife = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/.test(q);
       const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/.test(q);
       const isCondition = batteryLife || !!batteryNoun;
