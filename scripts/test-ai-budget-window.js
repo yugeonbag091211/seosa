@@ -1,0 +1,19 @@
+'use strict';
+const assert=require('node:assert/strict'),B=require('../api/_ai-budget-window');
+const x=[18900,23900,49900,79000,109000,119999,120000,137700,150000,155000].map(price=>({price,title:'일반 헤드셋'}));
+function got(c,q='헤드셋 추천해줘'){return B.nearBudgetWindow(x.filter(i=>(!c.budgetMax||i.price<=c.budgetMax)&&(!c.budgetMin||i.price>=c.budgetMin)),c,q).within.map(i=>i.price);}
+assert.deepEqual(got({budgetMax:150000,budgetSaid:150000}),[120000,137700,150000]);
+assert.deepEqual(got({budgetMax:150000,budgetSaid:150000,budgetMin:100000}),[120000,137700,150000]);
+assert.deepEqual(got({budgetMax:100000,budgetSaid:100000}),[79000]);
+assert.deepEqual(got({budgetMax:50000,budgetSaid:50000}),[18900,23900,49900]);
+assert.deepEqual(got({budgetMax:30000,budgetSaid:30000}),[18900,23900]);
+assert.deepEqual(got({budgetMax:150000,budgetSaid:150000},'15만원 이하 가장 싼 거'),x.filter(i=>i.price<=150000).map(i=>i.price));
+assert.deepEqual(got({budgetMax:150000,budgetSaid:150000,budgetMin:130000}),[137700,150000]);
+assert.equal(B.gamingPreference('흠 일상용으로 쓸 헤드셋, 게임 헤드셋같은거 말고'),true);
+assert.equal(B.gamingPreference('게이밍도 괜찮으니 다시 추천해줘'),false);
+assert.equal(B.gamingPreference('헤드셋 15만원 이하'),null);
+assert.equal(B.avoidsGaming({title:'위세리 무선 게이밍 헤드셋 WG1'}),true);
+assert.equal(B.avoidsGaming({title:'스카이 핏 H2 블루투스 무선 헤드셋'}),false);
+assert.equal(B.oneCardFollowup('10만원에서 15만원대로 해줘',[{role:'user',text:'헤드셋'}],'C'),true);
+assert.equal(B.oneCardFollowup('3개 후보 보여줘',[{role:'user',text:'헤드셋'}],'C'),false);
+console.log('AI_BUDGET_WINDOW_AUDIT 14 PASS / 0 FAIL');
