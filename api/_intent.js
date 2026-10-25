@@ -1017,9 +1017,15 @@ function classify(text, hist) {
     const prior = conversationProduct(hist);
     if (prior && isProductQuery(prior)) {
       const carried = prior.slice(0, MAX_QUERY_LEN).trim();
+      /*
+       * 용도·예산처럼 정규식이 조건까지 확실히 뽑은 말이면 분류 LLM 을 부르지 않는다 (2026-10-24 Preview 실호출).
+       * 분류 호출 한 번이 8초 제한에 걸리면 공급자 전체가 60초 쉬는 상태가 되어(api/_llm.js), 정작 답변이
+       * 무료 대체 모델로 나갔다. "통화 품질도 중요해" 처럼 정규식이 조건을 못 뽑는 말만 LLM 이 읽는다.
+       */
+      const known = !!(extractUseCase(s) || hasBudget);
       return {
         intent: ['C', 'D', 'E'].includes(intent) ? intent : 'C',
-        query: carried, source: 'heuristic', confidence: 'low',
+        query: carried, source: 'heuristic', confidence: known ? 'high' : 'low',
         contextualFollowup: false, ownQuery: false, stateQuery: true, refinement: false,
         conditionFollowup: true, fitQuestion: FIT_QUESTION_RE.test(s),
         identityText: prior.slice(0, 200),

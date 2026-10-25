@@ -305,6 +305,13 @@ const NOT_FOUND = /찾지 못했|결과가 없었|검색했지만/;
     ok(!/\[결정 데이터\]/.test(when.system) && /말하지 않았다면 "말했다"고 쓰지 말고/.test(when.system),
       '구매 시점 턴: 단일 상품 결정 블록 없음 · 사용자가 말하지 않은 예산·용도를 말했다고 쓰지 않게 한다');
 
+    // ⑦ 대체 모델이 쓴 구분선·# 제목은 말풍선에 기호로 남지 않는다. **굵게**·"- " 목록은 화면이 알아보므로 둔다.
+    const md = I.tidyMarkdown('### 이유\n**가볍습니다**\n\n---\n\n- 16GB 메모리\n***\n끝');
+    ok(md === '이유\n**가볍습니다**\n\n- 16GB 메모리\n\n끝', '마크다운 구분선·제목 정리', JSON.stringify(md));
+    const cond = Intent.classify('근데 나는 영상 편집도 할 거야.', [{ role: 'user', text: '노트북 그램으로 추천해줘' }, { role: 'assistant', text: '…' }]);
+    ok(cond.conditionFollowup && cond.confidence === 'high' && cond.query === '노트북 그램',
+      '정규식이 조건(용도)까지 뽑은 후속 말은 분류 LLM 을 부르지 않는다 (분류 시간 초과 → 공급자 60초 쉼 방지)', JSON.stringify(cond));
+
     // ④ 직전 추천을 다시 확인하지 못했을 때 «지금 보고 계신 상품» 이라고 부르지 않는다.
     const lines = CG.contextLines({ unverified: [{ productId: 'x' }], fromRecommendation: true }).join(' ');
     ok(/직전에 추천한 상품/.test(lines) && !/지금 보고 계신/.test(lines), '직전 추천 확인 실패 문구', lines);

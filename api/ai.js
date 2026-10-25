@@ -3097,6 +3097,18 @@ function salvagePriceFreeExplanation(raw) {
  * @param {(t:string)=>string[]} flagsOf  걸린 검사 이름 목록 (없으면 빈 배열)
  * @returns {{text:string, removed:Array<{sentence:string, flags:string[]}>}}
  */
+/*
+ * 채팅 말풍선에서 그대로 기호로 보이는 마크다운을 걷어낸다 (2026-10-24 Preview 실호출 — 대체 모델이 "---" 구분선과
+ * "### 이유" 제목을 썼다). 화면(Chat.fmtText)은 **굵게** 와 "- " 목록만 알아본다. 구분선 줄은 빼고, # 제목은 글만 남긴다.
+ */
+function tidyMarkdown(text) {
+  return String(text || '')
+    .replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, '')
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /* 덜어내고 남은 글이 이보다 짧으면 답이 아니다 — 서버 조립본을 쓴다. */
 const REPAIR_MIN_CHARS = 40;
 function repairUngrounded(text, flagsOf) {
@@ -4110,7 +4122,9 @@ const STYLE_BASE = [
   '[하지 말아야 할 말투]',
   '- 다음 상투어를 쓰지 마라. 뜻이 없는 자리를 채울 뿐이다.',
   '  "도와드리겠습니다" "좋은 질문입니다" "물론입니다" "다양한 옵션이 있습니다"',
-  '  "고객님의 니즈에 맞춰" "궁금한 점이 있으시면 말씀해 주세요"',
+  '  "고객님의 니즈에 맞춰" "궁금한 점이 있으시면 말씀해 주세요" "결론부터 말씀드리겠습니다"',
+  '- 데이터 블록의 이름(결정적 이유·포기하는 것·다른 기준이라면·되물을 값어치가 있는 질문 등)을 제목이나',
+  '  굵은 글씨 꼬리표로 옮기지 마라. 사람에게 말하듯 문장과 짧은 문단으로 이어서 쓴다. 구분선(---)·# 제목은 쓰지 마라.',
   '- 인사말·자기소개로 답을 시작하지 마라. 바로 본론으로 들어간다.',
   '- 사과를 반복하지 마라. 못 하는 것이 있으면 한 문장으로 밝히고 넘어간다.',
   '- 답 끝에 "더 궁금한 게 있으면…" 류의 맺음말을 붙이지 마라.'
@@ -6070,7 +6084,7 @@ module.exports = async function handler(req, res) {
     // 사용자에게 보일 글에서 내부 꼬리표와 지어낸 URL 을 걷어낸다
     // (stripRefs / stripUrls 주석 참고).
     // derefRefs 가 먼저다 — 조사 붙은 꼬리표를 이름으로 바꾼 뒤 남은 것을 stripRefs 가 지운다.
-    let text = stripUrls(stripRefs(derefRefs(truncated ? trimToSentence(raw) : raw, items)));
+    let text = tidyMarkdown(stripUrls(stripRefs(derefRefs(truncated ? trimToSentence(raw) : raw, items))));
 
     /*
      * 빈 응답.
@@ -6656,5 +6670,5 @@ module.exports._internal = {
   historyMessage, normalizeHistory, resolveContext, contextNoteBlock, statFor, markFiction, P,
   unverifiedLivePriceClaim, wonMatches, priceClaimKind, priceComparisonBase, hasConfirmedRecordLow, isCurrentPriceFresh,
   PROMPT_VERSION, MAX_HISTORY_MSGS, MAX_PROMPT_HISTORY_MSGS, repairUngrounded, recommendsOtherThanSubject,
-  unverifiedHardware, recommendsUnlistedProduct, namesProduct
+  unverifiedHardware, recommendsUnlistedProduct, namesProduct, tidyMarkdown
 };
