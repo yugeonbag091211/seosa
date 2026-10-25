@@ -18,6 +18,11 @@ function parseComparison(question) {
     right = left.replace(/블랙|검정|화이트|흰색/, right);
   }
   if (!left || !right || left === right || left.length > 75 || right.length > 75) return null;
+  // Reject sentence fragments and meta-instructions: a particle in "검색 결과"
+  // must never split an unrelated prompt into two shop searches.
+  if (/[.!?。;:<>]/.test(left + right)) return null;
+  const AIID = require('./_aiidentity');
+  if (AIID.productEvidence(left) < 1 || AIID.productEvidence(right) < 1) return null;
   return [left, right];
 }
 
