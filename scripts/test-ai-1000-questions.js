@@ -142,7 +142,7 @@ const compare=[
 ];
 await combine(pairs,compare,async(a,b)=>{
  const q=a+' 비교해줘. '+b;
- await test('상품 비교',q,'C|'+a,explain,r=>valid(r)&&cards(r).every(c=>Number(c.lprice)>0));
+ await test('상품 비교',q,'C|'+a,explain,r=>valid(r)&&cards(r).length>=2&&cards(r).every(c=>Number(c.lprice)>0));
 });
 // 20 sessions × 5 turns = 100 connected, distinctive prompts.
 const starts=[
