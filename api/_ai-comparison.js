@@ -18,7 +18,7 @@ function parseComparison(question) {
   // Restrict to a final particle on Hangul words to preserve model codes.
   right = right.replace(/([가-힣]{2,})(?:을|를)$/, '$1');
   // Common family names may be written without a numeric model anchor.
-  const knownFamily = /^(?:아이패드|갤럭시\\s*탭|갤럭시탭|ipad|galaxy\\s*tab)$/i;
+  const knownFamily = /^(?:아이패드|갤럭시\s*탭|갤럭시탭|ipad|galaxy\s*tab)$/i;
   // "버즈3 프로 블랙과 화이트" explicitly names two color options of
   // the same series, not the generic product "화이트".
   const color = /^(?:블랙|검정|화이트|흰색)$/;
