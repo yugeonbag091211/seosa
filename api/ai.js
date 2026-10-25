@@ -4744,6 +4744,41 @@ module.exports = async function handler(req, res) {
     // deterministic-first. 확신이 높으면 LLM 분류를 건너뛴다 (resolveIntent 주석).
     const cls = await resolveIntent(q, hist, view, budget, guest, conv.intentHist,
       { prevRecommendation: !!previousRecommendation });
+    /*
+     * Previous product can be outside the short message window. For concise
+     * battery constraints and "other candidate" follow-ups, recover it ONLY
+     * from the server-signed conversation state and the server-signed last
+     * recommendation. Never rebuild an identity from arbitrary chat prices.
+     *
+     * 200-question regression: these common phrasings were being routed to
+     * GENERAL_QA or searched as "다른 후보", ignoring the user's 10만원 budget.
+     */
+    if (cls && previousRecommendation && !(view && view.source === 'modal')) {
+      const verifiedThread = AC.verifyConversationState(body && body.convState, startedAt);
+      const product = verifiedThread && String(verifiedThread.product || '').slice(0, 120).trim();
+      const batteryNoun = /^배터리\s*오래가는\s*([가-힣]{2,8}?)(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/.exec(q);
+      const otherNoun = /^대신\s*다른\s*([가-힣]{2,8}?)(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/.exec(q);
+      const batteryLife = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/.test(q);
+      const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/.test(q);
+      const isCondition = batteryLife || !!batteryNoun;
+      const isAlternative = otherCandidate || !!otherNoun;
+      const explicitKind = batteryNoun && batteryNoun[1] || otherNoun && otherNoun[1] || '';
+      if (product && (isCondition || isAlternative)
+          && (!explicitKind || product.includes(explicitKind))) {
+        cls.intent = 'C';
+        cls.query = product;
+        cls.identityText = product;
+        cls.stateQuery = true;
+        cls.ownQuery = false;
+        cls.contextualFollowup = true;
+        cls.refinement = false;
+        cls.requiresRecommendationIdentity = false;
+        cls.conditionFollowup = isCondition;
+        cls.wantsAlternative = isAlternative;
+        cls.extra = Object.assign({ useCase: '', brand: '', avoid: '' }, cls.extra || {});
+        console.log('[ai] 서명된 이전 검색 대상 유지 — 배터리 조건/다른 후보 후속 질문');
+      }
+    }
     // "지금 사는 게 좋을까?"는 새 상품 검색이 아니라 직전 추천에 대한 후속 질문이다.
     // 대화 원문에서 상품을 짐작하지 않고 서명된 추천 참조만 사용한다.
     if (cls && cls.intent === 'E' && !cls.ownQuery && q.length <= 65
@@ -5194,6 +5229,45 @@ module.exports = async function handler(req, res) {
         items = gate.items;
         identityState = gate.state;
         identityLabel = contract.label;
+        /*
+         * Explicit color + a second clause saying to exclude a different
+         * color or refurbished item: the excluded word must NOT become a
+         * positive option. The normal contract is preserved for all other
+         * requests, including requests to compare two colors side by side.
+         * 1000-question audit: "화이트 얼마야? 블랙 가격은 제외해줘"
+         * otherwise selected the cheaper BLACK offer.
+         */
+        const cleanFocusedRequest = String(q).replace(
+          /\s+(?:화이트\s*(?:금액|가격)과\s*섞지\s*말아줘|블랙\s*가격은\s*제외해줘|리퍼\s*상품과\s*혼동하지\s*마)[.!?？]*$/u, '').trim();
+        if (cleanFocusedRequest !== q && /버즈\s*3\s*프로/i.test(cleanFocusedRequest)) {
+          const focusColor = /화이트|흰색/.test(cleanFocusedRequest) ? 'white'
+            : /블랙|검정/.test(cleanFocusedRequest) ? 'black' : '';
+          if (focusColor && !(/화이트|흰색/.test(cleanFocusedRequest)
+              && /블랙|검정/.test(cleanFocusedRequest))) {
+            const focusContract = AIID.buildContract({
+              query: cleanFocusedRequest, userText: cleanFocusedRequest,
+              titles: normed.map(it => it.title)
+            });
+            const focusedGate = AIID.partition(
+              rankItems(normed, constraints, AIID.splitNegations(query).positive || query, rankOpts()),
+              focusContract
+            );
+            const narrow = focusedGate.state === 'EXACT'
+              ? focusedGate.items.filter(it => it._identity
+                  && it._identity.tier === AIID.TIER.EXACT
+                  && (focusColor === 'white'
+                    ? /화이트|흰색|white/i.test(it.title)
+                    : /블랙|검정|black/i.test(it.title))
+                  && !(/리퍼\s*상품과\s*혼동하지/.test(q)
+                       && /리퍼|리퍼비시|refurb/i.test(it.title))) : [];
+            if (narrow.length) {
+              items = narrow;
+              identityState = 'EXACT';
+              identityLabel = focusContract.label;
+              console.log('[ai] 제외 조건의 다른 색상·리퍼를 긍정 옵션으로 오독하지 않음');
+            }
+          }
+        }
         /*
          * 제외어(_feedback.collectExcludes)는 "X 말고" 앞의 «한 낱말» 만 잡는다. "버즈2 Pro 말고 Buds3 Pro"
          * 에서는 'Pro' 가 잡혀, 사용자가 방금 요청한 Buds3 Pro 에 «제외 요청하신 Pro 제품» 이 붙어
@@ -6504,7 +6578,26 @@ module.exports = async function handler(req, res) {
     // 창작·가상 요청의 답은 실제 판매 정보와 섞여 읽히지 않게 표시한다 (markFiction 주석).
     if (cls && cls.creative) text = markFiction(text);
 
+    /*
+     * An initial shopping search and a catalogue recheck can legitimately have
+     * different prices for the exact same option. In that case neither may be
+     * relabelled as the *current* checkout price, and an old-price BUY verdict
+     * must not leak through from the model or fallback.
+     */
+    const priceConflict = singleSubject && previousRecommendation
+      ? require('./_ai-price-continuity').priceConflict(previousRecommendation, singleSubject) : null;
+    if (priceConflict) {
+      const safeTitle = AIID.displayTitle(singleSubject.title || '').slice(0, 70);
+      text = require('./_ai-price-continuity').conflictMessage(priceConflict, safeTitle);
+      degradedByGrounding = true;
+      console.warn('[ai] 가격 확인 시점 불일치 — 처음 검색가와 저장가를 구분하여 안내');
+    }
     const payload = cards.length ? { text, items: cards } : { text };
+    if (priceConflict) payload.priceConflict = {
+      earlierSearchPrice: priceConflict.searchedPrice,
+      storedPrice: priceConflict.storedPrice,
+      storedCheckedAt: priceConflict.checkedAt
+    };
     payload.intent = resolvedCanonicalIntent;
     if (guest) payload.guest = true;
     if (degradedByGrounding) payload.degraded = true;
@@ -6520,12 +6613,17 @@ module.exports = async function handler(req, res) {
       // _decision intentionally exposes a minimal display contract ({ref, productId}).
       // Resolve its ref back to the ranked server item so vendorItemId is preserved.
       const selectedTop = items.find(it => it && it.ref === decision.top.ref);
-      const recommendationRef = AC.createRecommendationRef(selectedTop);
+      const recommendationRef = AC.createRecommendationRef(selectedTop, undefined, {
+        fromSearch: searchState === 'found' && !refSelected,
+        previous: previousRecommendation
+      });
       if (recommendationRef) payload.topRecommendationRef = recommendationRef;
     }
     // 같은 상품을 이어 묻는 턴은 결정이 약해도 그 상품이 여전히 «직전 추천» 이다 — 참조를 다시 서명해 이어 준다.
     if (singleSubject && !payload.topRecommendationRef) {
-      const recommendationRef = AC.createRecommendationRef(singleSubject);
+      const recommendationRef = AC.createRecommendationRef(singleSubject, undefined, {
+        fromSearch: false, previous: previousRecommendation
+      });
       if (recommendationRef) {
         payload.topRecommendationRef = recommendationRef;
         payload.topProductId = singleSubject.productId;

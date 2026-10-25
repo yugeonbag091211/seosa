@@ -400,8 +400,8 @@ function extractUseCase(text) {
  *   3) 조건 낱말과 대화용 군말을 걷어내면 검색어 재료가 하나도 남지 않는다
  * "캠핑용 빔프로젝터 추천해줘" 는 3) 에서 «빔프로젝터» 가 남으므로 새 상품 요청 그대로다.
  */
-const CONDITION_CUE_RE = /배터리|충전|오래\s*(?:가|갔|버티|쓰|쓸|사용)|무게|가볍|가벼|무거|휴대|들고\s*다|음질|소리|노이즈|노캔|통화|마이크|방수|화면|디스플레이|밝기|발열|소음|조용|성능|사양|스펙|속도|빠르|느리|램|메모리|저장\s*공간|용량|디자인|색감|내구|튼튼|가성비|저렴|싼\s*(?:거|게|걸|것)|보증|그래픽|cpu|gpu|프로세서|키감|해상도|주사율/i;
-const CONDITION_FILLER_RE = /^(?:근데|그런데|그리고|그럼|그러면|그래서|그치만|하지만|아니면|그리구|또|나|난|나는|내가|저|저는|제가|우리|우리는|혹시|주로|보통|같이|함께|자주|가끔|많이|조금|좀|약간|정도|위주|위주로|용|용도|용도로|목적|목적으로|거|거야|거예요|거에요|건데|건가|건가요|거라|거라서|거니까|걸로|거로|게|것|걸|건|예정|예정이야|생각|생각이야|계획|계획이야|할|쓸|하려고|쓰려고|싶어|싶은데|중요|중요해|중요해요|중요하고|중요한데|필요|필요해|필요하고|필요한데|괜찮아|괜찮아요|괜찮을까|괜찮을까요|괜찮나|괜찮은지|가능|가능해|가능할까|가능한지|어때|어때요|어떨까|어떨까요|될까|될까요|되나|되나요|있어|있어요|있을까|있을까요|있나|있나요|충분해|충분할까|충분한지|부족해|부족할까|부족하지|더|역시|특히|무엇보다|제일|가장|우선|최우선|하는|쓰는|쓰기|하기|에도|에서도|에는|도)$/;
+const CONDITION_CUE_RE = /배터리|수명|지속\s*시간|충전|오래\s*(?:가|갔|버티|쓰|쓸|사용)|무게|가볍|가벼|무거|휴대|들고\s*다|음질|소리|노이즈|노캔|통화|마이크|방수|화면|디스플레이|밝기|발열|소음|조용|성능|사양|스펙|속도|빠르|느리|램|메모리|저장\s*공간|용량|디자인|색감|내구|튼튼|가성비|저렴|싼\s*(?:거|게|걸|것)|보증|그래픽|cpu|gpu|프로세서|키감|해상도|주사율/i;
+const CONDITION_FILLER_RE = /^(?:근데|그런데|그리고|그럼|그러면|그래서|그치만|하지만|아니면|그리구|또|나|난|나는|내가|저|저는|제가|우리|우리는|혹시|주로|보통|같이|함께|자주|가끔|많이|조금|좀|약간|정도|위주|위주로|용|용도|용도로|목적|목적으로|거|거야|거예요|거에요|건데|건가|건가요|거라|거라서|거니까|걸로|거로|해보려고|해보려|해야|해|하고|할거야|하고싶어|할예정이야|학교|랑|이랑|가|이|게|것|걸|건|예정|예정이야|생각|생각이야|계획|계획이야|할|쓸|하려고|쓰려고|싶어|싶은데|중요|중요해|중요해요|중요하고|중요한데|필요|필요해|필요하고|필요한데|괜찮아|괜찮아요|괜찮을까|괜찮을까요|괜찮나|괜찮은지|가능|가능해|가능할까|가능한지|어때|어때요|어떨까|어떨까요|될까|될까요|되나|되나요|있어|있어요|있을까|있을까요|있나|있나요|충분해|충분할까|충분한지|부족해|부족할까|부족하지|더|역시|특히|무엇보다|제일|가장|우선|최우선|하는|쓰는|쓰기|하기|에도|에서도|에는|도)$/;
 
 function conditionCue(text) {
   const s = String(text || '');
@@ -413,6 +413,10 @@ function conditionCue(text) {
 /** 조건 낱말·용도·금액·군말을 걷어내고 남는 검색어 재료 (없으면 빈 문자열). */
 function conditionResidue(text) {
   let s = String(text || '');
+  // Natural follow-ups often combine two activities. Do not leave bare
+  // conjunctions ("과제랑") behind as supposed product search terms.
+  s = s.replace(/(?:학교\s*)?과제(?:랑|도)?|문서\s*작업(?:이랑|과|도)?/g, ' ');
+  s = s.replace(/(?:배터리\s*)?(?:지속\s*시간|수명)(?:이|가|은|는)?/g, ' ');
   USECASE_RE.forEach(([, re]) => { s = s.replace(new RegExp(re.source, 'g'), ' '); });
   s = s.replace(new RegExp(CONDITION_CUE_RE.source, 'gi'), ' ');
   return extractQuery(s).split(/\s+/).filter(Boolean)
@@ -767,7 +771,7 @@ function isChosungOnly(text) {
  * 이런 말에는 확신을 높음으로 주지 않는다 — 검색어를 문맥에서 풀어야 하고,
  * 그 일은 LLM 이 우리보다 낫다 (api/ai.js resolveQuery).
  */
-const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|이\s*(?:제품|상품|모델)|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|앞(?:의|에서)\s|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|걸|상품|제품|모델))/;
+const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|이\s*(?:제품|상품|모델)|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|앞(?:의|에서)\s|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|걸|후보|상품|제품|모델))/;
 /*
  * 직전 추천 «말고 다른 것» 을 달라는 말 — "다른 제품 추천해줘" · "그거 말고 다른 거" (2026-10-24).
  * api/ai.js 가 서명된 직전 추천을 후보 맨 뒤로 내리고 1위 후보에서 뺀다. 같은 상품을 다시 권하지 않는다.
@@ -795,6 +799,9 @@ const PRIOR_RECOMMENDATION_RE = /(?:아까|방금)\s*(?:추천한|말한|보여�
  */
 const PRIOR_ITEM_PRICE_RE = /(?:아까|방금|앞에서|이전에)\s*(?:그거|그것|그\s*(?:상품|제품|모델))\s*(?:의|이|가|는|은)?\s*(?:가격|얼마|현재가|최저가|사도|살까)/;
 const PRIOR_SWITCH_RE = /말고|다른|대신|비슷한/;
+// "아까 그 노트북 지금 사도 돼?" also targets the signed previous
+// recommendation. Category is checked against the verified selected offer.
+const PRIOR_PLAIN_NOUN_RE = /(?:아까|방금|앞에서|이전에)\s*그\s*([가-힣A-Za-z]{2,10})(?=\s|$|[?!.,])/;
 /*
  * "아까 추천한 그 노트북" · "방금 골라 준 이어폰" — 직전 추천을 종류명으로 가리키는 말 (2026-10-24).
  * PRIOR_RECOMMENDATION_RE 는 «상품·제품·것·거» 만 알아봐서 이 말은 "노트북" 새 검색이 됐고, 직전 추천과
@@ -803,7 +810,7 @@ const PRIOR_SWITCH_RE = /말고|다른|대신|비슷한/;
 const PRIOR_RECOMMENDED_NOUN_RE = /(?:아까|방금|앞에서|이전에)\s*(?:추천한|추천해\s*준|말한|보여\s*준|골라\s*준|고른)\s*(?:그\s*)?([가-힣A-Za-z]{2,10}?)(?:이|가|은|는|을|를|의|도)?(?=\s|$|[?!.,])/;
 /** 가리킨 종류명·계열명 ("노트북"·"그램"·"이어폰"). 없거나 대상을 바꾸는 말이면 빈 문자열. */
 function priorRecommendedNoun(s) {
-  const m = PRIOR_RECOMMENDED_NOUN_RE.exec(String(s || ''));
+  const m = PRIOR_RECOMMENDED_NOUN_RE.exec(String(s || '')) || PRIOR_PLAIN_NOUN_RE.exec(String(s || ''));
   if (!m || PRIOR_SWITCH_RE.test(s)) return '';
   const noun = String(m[1] || '').toLowerCase();
   let kind = '';
@@ -867,6 +874,40 @@ function classify(text, hist) {
       contextualFollowup: true, requiresRecommendationIdentity: true, recommendationReason: true,
       extra: { useCase: '', brand: '', avoid: '' }
     };
+  }
+
+  /*
+   * Short conversational conditions and alternatives that were missed by the
+   * generic residue tokenizer in the 200-question offline audit.
+   *
+   * Keep the known product category, never invent a new product name. A named
+   * category in the follow-up must also occur in the previous search phrase.
+   * Otherwise, let the normal new-product routing handle the switch.
+   */
+  if (Array.isArray(hist) && hist.length) {
+    const batteryLimit = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/;
+    const batteryNamed = /^배터리\s*오래가는\s*([가-힣]{2,8}?)(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/;
+    const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/;
+    const otherNamed = /^대신\s*다른\s*([가-힣]{2,8}?)(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/;
+    const namedCondition = batteryNamed.exec(s);
+    const namedOther = otherNamed.exec(s);
+    const isCondition = batteryLimit.test(s) || !!namedCondition;
+    const isAlternative = otherCandidate.test(s) || !!namedOther;
+    if (isCondition || isAlternative) {
+      const prior = conversationProduct(hist);
+      const noun = namedCondition && namedCondition[1] || namedOther && namedOther[1] || '';
+      if (prior && isProductQuery(prior) && (!noun || prior.indexOf(noun) >= 0)) {
+        return {
+          intent: 'C', query: prior.slice(0, MAX_QUERY_LEN),
+          identityText: prior.slice(0, 200),
+          source: 'heuristic', confidence: 'high', contextualFollowup: true,
+          stateQuery: true, ownQuery: false, refinement: false,
+          conditionFollowup: isCondition, wantsAlternative: isAlternative,
+          requiresRecommendationIdentity: false, fitQuestion: false,
+          extra: { useCase: '', brand: '', avoid: '' }
+        };
+      }
+    }
   }
 
   /* 상품 조건 파싱보다 먼저 정보 목적을 본다. "골라줘"가 뉴스 선별에도 쓰이기 때문이다. */
@@ -940,8 +981,21 @@ function classify(text, hist) {
    * 걷어내고(api/_aiidentity.js splitNegations) 남은 구절로 검색어를 만든다.
    */
   const positiveSpan = AIID.splitNegations(itemText).positive;
-  const identityPositiveSpan = AIID.splitNegations(removeConflictingModelParentheticals(itemText)).positive;
-  let query = extractQuery(positiveSpan);
+  /*
+   * The suffix describes a requested attribute, NOT the product identity.
+   * 1000-question audit: "그램 노트북 추천해줘 배터리 사용 시간이 중요해"
+   * was searched as model "그램 노트북 배터리 사용 시간이" and discarded as NONE.
+   * Only strip these narrow, complete conversational tails when a concrete
+   * product subject remains. A request FOR a laptop battery stays unchanged.
+   */
+  const batteryRequirementTail = /\s+배터리\s*(?:사용\s*시간(?:이)?\s*중요해|가\s*오래가야\s*해)(?:[.!?？]+)?$/;
+  function withoutTrailingBatteryNeed(subject) {
+    const trimmed = String(subject || '').replace(batteryRequirementTail, '').trim();
+    return trimmed && AIID.productEvidence(trimmed) > 0 ? trimmed : subject;
+  }
+  const identityPositiveSpan = withoutTrailingBatteryNeed(
+    AIID.splitNegations(removeConflictingModelParentheticals(itemText)).positive);
+  let query = extractQuery(withoutTrailingBatteryNeed(positiveSpan));
 
   let intent;
   /*
@@ -1214,6 +1268,12 @@ function conversationProduct(hist) {
     const positive = AIID.splitNegations(spText).positive;
     const q = extractQuery(positive);
     if (!q && !CONTEXT_DEPENDENT_RE.test(spText)) continue;
+    // A standalone budget change is not a new product. In the 200-question
+    // audit "예산을 10만원으로 할게" was stored as the product name and then
+    // "배터리 오래가는 이어폰이면 좋겠어" lost the earphone context.
+    const onlyBudget = parseConstraints(text);
+    if ((onlyBudget.budgetMax || onlyBudget.budgetMin)
+        && AIID.productEvidence(positive) === 0) continue;
     // 조건만 덧붙인 말("배터리 오래가는 게 중요해")·잡담("고마워 정말")은 찾던 상품이 아니다 — 그 앞의 상품을 계속 찾는다.
     if (isConditionOnly(spText) || isSmallTalk(text)) continue;
     // 상품 이름이 아닌 낱말("다르면"·"기억해")은 옵션 판정에서 뺀다 (classify 의 refineText 와 같다).
