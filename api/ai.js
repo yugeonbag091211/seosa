@@ -5087,6 +5087,9 @@ module.exports = async function handler(req, res) {
      * 성향과 제외 조건으로 옮겨 실제 재랭킹까지 잇는다.
      */
     const FB = require('./_feedback');
+    const BW = require('./_ai-budget-window');
+    let preferredBudgetMiss = null;
+    let preferredCategoryMiss = false;
     const feedback = (!intent || needsShopContext(intent))
       ? FB.readFeedback(q)
       : { isReject: false, reasons: [], excludes: [], evidence: '' };
@@ -5335,6 +5338,11 @@ module.exports = async function handler(req, res) {
         attachSpecs(normed, wanted);
         // 제외 지시("삼성은 빼줘")를 랭킹 전에 반영한다.
         normed = FB.applyExcludes(normed, excludes);
+        if (constraints && constraints.avoidGaming) {
+          const oldLen = normed.length;
+          normed = normed.filter(it => !BW.avoidsGaming(it));
+          preferredCategoryMiss = oldLen > 0 && !normed.length;
+        }
 
         /*
          * 상품 식별 계약 (api/_aiidentity.js 머리 주석).
@@ -5429,7 +5437,15 @@ module.exports = async function handler(req, res) {
             items = bg.within;
             if (!items.length) identityState = 'BUDGET';
           }
+          if (intent === 'C' && items.length) {
+            const near = BW.nearBudgetWindow(items, constraints, q);
+            if (near.applies) {
+              items = near.within.sort((a,b) => Math.abs(Number(a.price)-Number(constraints.budgetSaid||constraints.budgetMax))-Math.abs(Number(b.price)-Number(constraints.budgetSaid||constraints.budgetMax)));
+              if (!items.length) { identityState = 'BUDGET_PREFERENCE'; preferredBudgetMiss = near; }
+            }
+          }
         }
+        if (preferredCategoryMiss && !items.length && identityState !== 'BUDGET') identityState = 'CATEGORY_PREFERENCE';
 
         /*
          * 카드는 위 후보 그 자체에서, 같은 순서로 만든다.
@@ -5504,6 +5520,11 @@ module.exports = async function handler(req, res) {
       //    ("이 중에 20만원 이하인 거"에 답하려면 누가 맞는지 알아야 한다)
       attachSpecs(items, wanted);
       items = FB.applyExcludes(items, excludes);
+      if (constraints && constraints.avoidGaming) {
+        const oldLen=items.length;
+        items=items.filter(it=>!BW.avoidsGaming(it));
+        preferredCategoryMiss=oldLen>0&&!items.length;
+      }
       if ((constraints && hasConstraints(constraints)) || profileWeights || excludes.length) {
         items = rankItems(items, constraints, query, rankOpts());
       }
@@ -5518,7 +5539,18 @@ module.exports = async function handler(req, res) {
           items = bg.within;
           if (!items.length) identityState = 'BUDGET';
         }
+        if (intent === 'C' && items.length) {
+          const near = BW.nearBudgetWindow(items, constraints, q);
+          if (near.applies) {
+            items=near.within.sort((a,b)=>Math.abs(Number(a.price)-Number(constraints.budgetSaid||constraints.budgetMax))-Math.abs(Number(b.price)-Number(constraints.budgetSaid||constraints.budgetMax)));
+            if (!items.length) { identityState='BUDGET_PREFERENCE'; preferredBudgetMiss=near; }
+          }
+        }
+        const allowed=raw=>items.some(it=>productIdentityMatches(it,normItem(fromSearchResult(raw))));
+        cardSources=cardSources.filter(allowed);
+        cards=cardSources.map(raw=>toCard(raw,statFor(contextStats,raw)));
       }
+      if (preferredCategoryMiss && !items.length && identityState !== 'BUDGET') identityState='CATEGORY_PREFERENCE';
     }
 
     /*
@@ -5588,6 +5620,16 @@ module.exports = async function handler(req, res) {
      * 결정론 문장으로 바꾼다. 그래서 모델을 부르지 않고 바로 답한다. 다른 종류의
      * 가장 싼 상품을 대신 내보내던 경로(“노트북 없음 → 버즈3 추천”)가 여기서 끊긴다.
      */
+    if (identityState === 'BUDGET_PREFERENCE' && preferredBudgetMiss) {
+      const payload={text: BW.noNearMatchMessage(preferredBudgetMiss),intent:resolvedCanonicalIntent};
+      if (guest) payload.guest=true;
+      return res.json(withTurnSig(keepPrevRef(payload)));
+    }
+    if (identityState === 'CATEGORY_PREFERENCE') {
+      const payload={text:'게이밍용을 제외하면 확인된 추천 후보가 없습니다. 다른 가격대나 제품을 찾아볼까요?',intent:resolvedCanonicalIntent};
+      if (guest) payload.guest=true;
+      return res.json(withTurnSig(keepPrevRef(payload)));
+    }
     if (identityState === 'NONE') {
       const noneText = require('./_concierge').compose({
         items: [], cards: [], constraints, identity: { state: 'NONE', label: identityLabel }
@@ -6717,7 +6759,15 @@ module.exports = async function handler(req, res) {
       degradedByGrounding = true;
       console.warn('[ai] 가격 확인 시점 불일치 — 처음 검색가와 저장가를 구분하여 안내');
     }
-    const payload = cards.length ? { text, items: cards } : { text };
+    let replyCards=cards;
+    if (BW.oneCardFollowup(q,hist,intent) && cards.length) {
+      const chosen=decision&&decision.top?items.find(it=>it&&it.ref===decision.top.ref):items[0];
+      if (chosen) {
+        const matched=cardSources.map((raw,i)=>productIdentityMatches(chosen,normItem(fromSearchResult(raw)))?cards[i]:null).filter(Boolean);
+        replyCards=matched.length===1?matched:[];
+      } else if (cards.length===1) replyCards=cards;
+    }
+    const payload = replyCards.length ? { text, items: replyCards } : { text };
     if (priceConflict) payload.priceConflict = {
       earlierSearchPrice: priceConflict.searchedPrice,
       storedPrice: priceConflict.storedPrice,
