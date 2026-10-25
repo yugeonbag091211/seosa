@@ -72,3 +72,12 @@ main 직접 푸시·병합·Production 배포·운영 DB 쓰기 없음. 실제 G
 - 검증용 Preview(읽기 전용, 최종): https://seosa-6kklczkwv-seosa.vercel.app — Vercel 로그인 필요(배포 보호)
 - 비교용 Preview(PR #186 head, 읽기 전용): https://seosa-h3zs1frpy-seosa.vercel.app
 - Git 연동 Preview(브랜치 푸시로 자동 생성, 기본 Preview 환경 — 읽기 전용 아님): https://vercel.com/seosa/seosa/9mZAUUn8M53wFhpWTNeSD8b1ypNK
+
+
+## 2026-10-26 운영 통합 확인 (릴리스 게이트)
+
+- PR #188의 base를 이미 변경된 main으로 전환하여, #186(#183~#185 통합)과 이 PR의 AI 대화·채팅창 변경을 하나의 diff에서 다시 검사한다.
+- 기존 가격 수집 PR #194와 이메일 PR #195는 main에 병합되어 있다. 채팅 PR에는 두 워크플로를 수정하거나 재수집을 삭제하는 변경을 넣지 않는다.
+- 리뷰 당시 이 PR의 통합 전 테스트는 모두 PASS였지만, 새 main을 대상으로 GitHub Actions를 다시 실행해 결과를 확인해야 한다.
+- #186가 기록한 미확인 항목(운영 Neon 분기 매핑·실제 판매처 연계 실호출·광범위 GPT 테스트·Expo 빌드 의존성 권고)은 이 기록으로 자동 해소되지 않는다.
+- Production 적용 뒤에는 해당 커밋과 Vercel Ready, live AI API의 응답·오류를 별도로 확인해야 한다. 모델 품질 100% 보장은 하지 않는다.
