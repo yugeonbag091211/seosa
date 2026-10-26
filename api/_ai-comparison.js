@@ -5,15 +5,27 @@
  * one model identity. No client-supplied price or product is an input.
  */
 function parseComparison(question) {
-  const s = String(question || '').trim().slice(0, 240);
+  let s = String(question || '').trim().slice(0, 240);
+  // A short conversational lead-in may precede a fully named comparison.
+  // Keep the whitelist narrow so arbitrary prose is not converted into a pair.
+  s = s.replace(/^둘\s*중\s*고르기\s*어렵네[.!?。]\s*/i, '');
+  // Question marks inside a two-clause comparison are punctuation, not part of
+  // the product name: "A / B 중 어느 쪽? 두 제품만 비교해 줘".
+  s = s.replace(/[?!。;]/g, ' ').replace(/\s+/g, ' ').trim();
   // Keep this intentionally narrow. Ordinary recommendations and comparisons
   // between attributes must continue to use the regular concierge route.
   // Natural shopping comparison forms. The right-hand description ends
   // before the comparison instruction; never search for the entire sentence.
   // "A 아니면 B?" · "A 대 B" · "A, B 중에 하나만" · "A하고 B 차이가 뭐야" 도 두 상품 비교다 (2026-10-26 홀드아웃).
-  const m = /^(.{2,75}?)\s*(?:와|과|랑|하고|\s+vs\.?\s+|\s+versus\s+|\s+아니면\s+|\s+대\s+|\s+또는\s+|\s+혹은\s+|\s*,\s*)\s*(.{2,75}?)\??\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천|하나)|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이(?:가|는|점)?\s*(?:알려|설명|있|뭐|어때|궁금)).*$/i.exec(s);
+  const m = /^(.{2,75}?)(?:\s*(?:와|과|랑|하고)\s+|\s+vs\.?\s+|\s+versus\s+|\s+아니면\s+|\s+대\s+|\s+또는\s+|\s+혹은\s+|\s*\/\s*|\s*,\s+)(.{2,75}?)\??\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천|하나)(?:\s*쪽)?|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이(?:가|는|점|를)?\s*(?:알려|설명|정리|있|뭐|어때|궁금)|(?:함께\s*)?(?:골라|선택)(?:\s*(?:줘|주세요|줄래|봐))?).*$/i.exec(s);
   if (!m) return null;
   let left = m[1].trim(), right = m[2].trim().replace(/\?+$/, '');
+  // The user can put the operation description before "비교":
+  // "A와 B를 가격 포함해서 나란히 비교해 줘". It is not part of the product.
+  right = right.replace(/(?:을|를)\s*(?:(?:확인된\s*)?가격(?:을|과)?\s*(?:포함(?:해서|하여)?|함께)?\s*)?(?:나란히\s*)?$/i, '').trim();
+  right = right.replace(/\s+중\s*(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천|하나)(?:\s*쪽)?(?:\s+[\s\S]*)?$/i, '').trim();
+  right = right.replace(/,?\s*(?:확인된\s*)?(?:가격|성능|사양)(?:을|를|과)?\s*(?:포함(?:해서|하여)?|함께)?\s*$/i, '').trim();
+  right = right.replace(/\s+두\s*(?:모델|제품|상품)(?:의)?\s*(?:장단점|차이|가격|성능)?\s*$/i, '').trim();
   // "그램16이랑" · "갤럭시탭이랑" — '이랑' 의 '이' 는 받침 있는 말 뒤에만 붙는다. 받침 없는 말 뒤의 '이' 는
   // 이름의 일부다("스페이스그레이랑" · "와이파이랑"). 그대로 두면 "그램16이" 로 검색됐다 (2026-10-26).
   if (/이$/.test(left) && left.length > 2 && hasBatchim(left[left.length - 2])) left = left.slice(0, -1);

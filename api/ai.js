@@ -5168,7 +5168,8 @@ module.exports = async function handler(req, res) {
      *                                  얼마야?" 라고 물으면 그 가격을 알려야 한다(예산 초과는 표시만 한다).
      */
     const turnBudget = !!(turnCons.budgetMax || turnCons.budgetMin);
-    const sameThread = !!(cls && (cls.stateQuery || cls.contextualFollowup || cls.refinement));
+    const sameThread = !!(cls && (cls.stateQuery || cls.contextualFollowup || cls.refinement))
+      || /(?:예산|가격|금액)\s*(?:은|는)?\s*(?:그대로|같은\s*조건|유지(?:해|하고)?|변경\s*없이)/.test(q);
     const gateBudget = !!constraints && (intent === 'C' || turnBudget || sameThread);
 
     /*
