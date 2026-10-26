@@ -45,8 +45,8 @@ const TIER = Object.freeze({ EXACT: 0, NEAR: 1, SIBLING: 2, EXCLUDED: 3, MISMATC
  * ★ 이 파일은 «질의 ↔ 후보» 계약만 다룬다. 표기 읽기를 여기서 다시 만들지 않는다.
  */
 const {
-  STORAGE_SIZES, NEW_STATES, normalizeUnits, colorsOf, colorLabel, storageOf, conditionStates,
-  hasInstructionText, cleanIdentityTitle
+  STORAGE_SIZES, NEW_STATES, normalizeUnits, colorsOf, colorLabel, storageOf, quantityOf, sizesOf, yearsOf, conditionStates,
+  hasInstructionText, cleanIdentityTitle, displaySafeTitle
 } = require('./_identitycore');
 
 /* "일반형 / 기본 모델" — 등급 표기가 «없는» 것을 콕 집어 원한다는 말. */
@@ -90,17 +90,23 @@ function categoryNounOf(tok) {
  */
 const FAMILY_KIND = [
   ['노트북', /lg\s?그램|그램\s?(?:프로|스타일|360)|(?:^|[^0-9])\d{2}z[a-z]{0,2}\d{2,3}[a-z0-9-]*|그램(?=.*(?:인텔|라이젠|ryzen|intel|코어\s?i|울트라\s?[579]|ssd|윈도우|windows|os\s?미탑재|freedos))|맥북|macbook|갤럭시\s?북|galaxy\s?book|씽크패드|thinkpad|아이디어패드|ideapad|비보북|vivobook|젠북|zenbook/i],
-  ['이어폰', /에어팟|airpods|갤럭시\s?버즈|galaxy\s?buds|버즈\s?(?:\d|프로|라이브|fe\b)/i],
+  // 에어팟 맥스는 헤드폰이다 — "이어폰" 요청에 들어오지 않게 (2026-10-26 1,000문항 평가).
+  ['이어폰', /에어팟(?!\s?맥스)|airpods(?!\s?max)|갤럭시\s?버즈|galaxy\s?buds|버즈\s?(?:\d|프로|라이브|fe\b)/i],
+  ['헤드폰', /에어팟\s?맥스|airpods\s?max|wh-?1000x|qc\s?(?:울트라|ultra|45|35)/i],
   ['태블릿', /아이패드|ipad|갤럭시\s?탭|galaxy\s?tab/i],
   ['스마트폰', /아이폰|iphone|갤럭시\s?(?:s|z|a)\s?\d{1,2}|갤럭시\s?(?:폴드|플립)/i],
-  ['스마트워치', /애플\s?워치|apple\s?watch|갤럭시\s?워치|galaxy\s?watch/i]
+  ['스마트워치', /애플\s?워치|apple\s?watch|갤럭시\s?워치|galaxy\s?watch/i],
+  // 운동화 판매 글은 종류명 없이 모델명만 적는 일이 흔하다 ("나이키 에어포스1 07 화이트 270").
+  ['운동화', /에어\s?포스|에어\s?맥스|조던|덩크|삼바|가젤|스탠스미스|뉴발란스|컨버스|척\s?테일러|반스\s?올드스쿨|스니커즈|러닝화/i]
 ];
 const HEAD_KIND = {
   노트북: '노트북', 랩탑: '노트북', laptop: '노트북', notebook: '노트북',
   이어폰: '이어폰', 이어버드: '이어폰', earbuds: '이어폰', earphone: '이어폰',
+  헤드폰: '헤드폰', 헤드셋: '헤드폰', headphone: '헤드폰', headset: '헤드폰',
   태블릿: '태블릿', tablet: '태블릿',
   스마트폰: '스마트폰', 휴대폰: '스마트폰', 핸드폰: '스마트폰', smartphone: '스마트폰',
-  스마트워치: '스마트워치', 워치: '스마트워치'
+  스마트워치: '스마트워치', 워치: '스마트워치',
+  운동화: '운동화', 신발: '운동화', 스니커즈: '운동화'
 };
 function familyImpliesHead(head, title) {
   const kind = HEAD_KIND[String(head || '').toLowerCase()];
@@ -108,9 +114,33 @@ function familyImpliesHead(head, title) {
   const t = String(title || '');
   return FAMILY_KIND.some(([k, re]) => k === kind && re.test(t));
 }
+/*
+ * 종류를 꾸밀 뿐 계열을 가리키지 않는 말 — 계열 이름만 적힌 상품명(FAMILY_KIND)에 없어도 된다.
+ * "무선 이어폰" 의 «무선» 이 "Apple 에어팟 4세대" 상품명에 없다고 에어팟을 빼면 안 된다 (2026-10-26).
+ */
+const KIND_MODIFIER_WORDS = new Set(['무선', '블루투스', 'wireless', 'bluetooth', '노이즈캔슬링', '노캔', '일상용', '데일리',
+  '사무용', '학생용', '휴대용', '가벼운', '자급제', '정품', '새', '새것',
+  // 받는 사람 — "부모님 선물용 스마트폰" 의 부모님은 상품명에 없다.
+  '부모님', '엄마', '아빠', '어머니', '아버지', '친구', '여친', '남친', '여자친구', '남자친구', '아이', '아기', '학생', '선물']);
 
-/* "필요해 · 중요해 · 넘어도 · 좋아" 같은 서술어는 상품 이름이 아니다. */
-const PREDICATE_RE = /(?:해|해요|해줘|해주세요|하다|하고|하지|해서|하면|합니다|했어|돼|돼요|되나|될까|싶어|좋아|있어|없어|이야|예요|에요|어도|아도|여도|해도|잖아)$/;
+/*
+ * "필요해 · 중요해 · 넘어도 · 좋아" 같은 서술어는 상품 이름이 아니다.
+ * "사려는데 · 있는데 · 필요한데 · 인데 · 정도면 · 좋겠어" 도 (2026-10-26) — 식별 낱말로 남아 «종류명 없는
+ * 휴대폰 상품명» 에서 "스마트폰 사려는데" 를 찾다가 자급제 아이폰·갤럭시를 전부 다른 종류로 뺐다.
+ */
+const PREDICATE_RE = /(?:해|해요|해줘|해주세요|하다|하고|하지|해서|하면|합니다|했어|돼|돼요|되나|될까|싶어|좋아|있어|없어|이야|예요|에요|어도|아도|여도|해도|잖아|는데|은데|인데|한데|던데|겠어|겠어요|려고|려는|려면|정도면|이면|으면|할까|살까|볼까|부탁해|부탁해요)$/;
+/*
+ * 브랜드·제품 계열 이름 (2026-10-26) — 숫자 모델 번호 없이도 «특정 상품» 을 가리키는 말.
+ * "비스포크 제트랑 다이슨 V15" · "하림 닭가슴살이랑 아임닭" 의 비교 대상, 상품을 지목한 사양 질문(api/ai.js)에 쓴다.
+ * 목록에 없는 브랜드는 지목으로 보지 않을 뿐이다(모델 번호가 있으면 그것으로 지목이 된다).
+ */
+const BRAND_NAME_RE = /(?:^|[^가-힣A-Za-z])(?:애플|apple|아이폰|iphone|아이패드|ipad|맥북|macbook|에어팟|airpods|삼성|samsung|갤럭시|galaxy|버즈|비스포크|그램|gram|LG|엘지|코드제로|퓨리케어|다이슨|dyson|소니|sony|보스|bose|젠하이저|JBL|QCY|샤오미|레드미|로보락|코웨이|블루스카이|필립스|코소리|쿠쿠|쿠첸|레노버|lenovo|ASUS|에이수스|HP|로지텍|logitech|브리츠|나이키|아디다스|뉴발란스|노스페이스|유니클로|하림|아임닭|스타벅스|카누|농심|삼다수)/i;
+function namesBrand(text) {
+  return BRAND_NAME_RE.test(String(text || ''));
+}
+
+/* 한 글자로 된 상품 이름 (2026-10-26) — 한 글자 토큰은 보통 식별에 쓰지 않지만 «쌀 10kg» 의 쌀은 상품이다. */
+const ONE_CHAR_PRODUCTS = new Set(['쌀', '김', '귤', '꿀', '떡', '잼', '빵', '컵', '펜', '책', '옷', '콩', '팥', '굴']);
 const BUNDLE_WORDS = new Set(['번들', '묶음', '세트', '패키지', '구성', 'bundle', 'package', 'set']);
 
 /*
@@ -128,6 +158,10 @@ const GENERIC_WORDS = new Set([
   // 대화 이음말 — "아니 프로맥스 말고 프로" 의 '아니' 는 상품이 아니다.
   '아니', '아니요', '응', '네', '그럼', '그래', '그냥', '다시', '바꿔', '바꿔줘', '변경', '유지', '앞', '아까',
   '방금', '보여', '보여줘', '있어', '있나', '어때', '질문', '답', '것도', '거도', '중', '기준', '조건',
+  // 예산·처지를 말하는 군말 (2026-10-26) — "최대 130만원까지 쓸 수 있는데" · "처음 사는"
+  '최대', '최소', '처음', '사는', '쓸', '뭐', '뭐가', '예산', '부탁', '오래',
+  // 값을 묻는 말 — "실버 말고 스페이스그레이 얼마야" 의 «얼마야» 를 상품 낱말로 읽어 앞 상품 전체를 뺐다.
+  '얼마', '얼마야', '얼마예요', '얼마에요', '얼마임', '얼마지', '얼마나', '얼만지',
   '네가', '니가', '너가', '이라고', '라고', '앞의', '앞에서',
   // 예산·규격의 범위 말 — "100만원 이하", "15인치 이하"
   '이하', '이상', '미만', '이내', '까지', '정도', '쯤', '안팎', '내외', '넘는', '아래', '초과', '짜리', '대'
@@ -182,11 +216,13 @@ function slotOf(rawTok) {
   if (S.VARIANT_KEYS.has(tok)) return 'variant';
   if (BASE_WORDS.has(tok)) return 'base';
   if (/^\d+(?:일|주|개월|달|년|시간|분|초)(?:간|동안)?$/.test(tok)) return 'generic';
+  // 수량 표기 — "신라면 40봉" · "카누 100T" 의 숫자는 모델 번호가 아니다 (2026-10-26).
+  if (/^\d+(?:개입|봉|롤|t)$/i.test(tok)) return 'generic';
   if (/\d/.test(tok) && !S.UNIT_RE.test(tok) && !S.YEAR_RE.test(tok)) {
     return STORAGE_SIZES.has(tok) ? 'storage' : 'anchor';
   }
   if (/\d/.test(tok)) return 'generic';            // 15인치 · 2026 같은 규격·연식
-  if (GENERIC_WORDS.has(tok) || S.COMMON_WORDS.has(tok) || tok.length < 2) return 'generic';
+  if (GENERIC_WORDS.has(tok) || S.COMMON_WORDS.has(tok) || (tok.length < 2 && !ONE_CHAR_PRODUCTS.has(tok))) return 'generic';
   if (/^[가-힣]+$/.test(tok) && PREDICATE_RE.test(tok) && !categoryNounOf(tok)) return 'generic';
   return 'word';
 }
@@ -244,7 +280,9 @@ const MONEY_TEXT_RE = /(\d[\d,]*(?:\.\d+)?\s*(?:[~\-–]|에서)\s*)?\d[\d,]*(?:
 /* 숫자 뒤에 떨어져 나온 단위 — "15인치" 가 15 + 인치 로 갈라지면 15 를 모델 번호로 잘못 읽는다. */
 const UNIT_TOKENS = new Set([
   '인치', '형', 'kg', 'g', 'mg', 'cm', 'mm', 'm', 'ml', 'l', 'w', 'v', 'mah', 'hz', 'p',
-  '일', '주', '개월', '달', '년', '시간', '분', '초'
+  '일', '주', '개월', '달', '년', '시간', '분', '초',
+  // 수량 — "하림 닭가슴살 30팩" 의 30 을 모델 번호로 읽어 같은 상품을 «다른 모델» 로 뺐다 (2026-10-26).
+  '개입', '개', '팩', '매', '입', '봉', '병', '캔', '롤'
 ]);
 
 function tokensOf(text) {
@@ -440,6 +478,9 @@ function buildContract(o) {
   const storage = storageOf(positive);
   toks.forEach((t, i) => { if (slots[i] === 'storage' && STORAGE_SIZES.has(t)) storage.add(`${t}gb`); });
   const colors = colorsOf(positive);
+  const quantity = quantityOf(positive);
+  const sizes = sizesOf(positive, true);
+  const years = yearsOf(positive);
   const accessoryWanted = toks.filter((t, i) => slots[i] === 'accessory');
   const bundleWanted = BUNDLE_RE.test(positive) && !anchors.length ? true : toks.some((t, i) => slots[i] === 'bundle');
 
@@ -484,7 +525,9 @@ function buildContract(o) {
       const known = words.filter(categoryNounOf);
       if (known.length) head = known[known.length - 1];
       else {
-        const last = words[words.length - 1] || '';
+        // «사이즈» 는 옵션을 말하는 낱말이라 종류가 아니다 — "눕시 패딩 M 사이즈" 의 종류는 패딩이다.
+        const named = words.filter(w => !/^(?:사이즈|치수|size)$/i.test(w));
+        const last = named[named.length - 1] || '';
         if (last && (opts.titles || []).some(t => wordHit(last, S.analyzeTitle(cleanIdentityTitle(t))))) head = last;
       }
     }
@@ -495,10 +538,10 @@ function buildContract(o) {
   const contract = {
     query, positive, label: requestLabel(positive || query),
     anchors, core, head, brand, words, variants, strictBase, lineQualifiers,
-    storage, colors, wantsAccessory, accessoryWanted, bundleWanted,
+    storage, colors, quantity, sizes, years, wantsAccessory, accessoryWanted, bundleWanted,
     condition, excluded, excludedColors, excludeAccessory
   };
-  contract.empty = !anchors.length && !head && !variants.size && !storage.size && !colors.size
+  contract.empty = !anchors.length && !head && !variants.size && !storage.size && !colors.size && !quantity.size && !sizes.size && !years.size
     && !excluded.length && !excludedColors.size && !condition.excluded.size && !condition.mentioned.size;
   return contract;
 }
@@ -574,6 +617,12 @@ function subContract(text, plus) {
 /** 첫 낱말이 브랜드인가 — 후보 중 하나라도 그 이름(동의어 포함)으로 시작하는가. */
 function brandEvidence(word, titles) {
   if (!word || !Array.isArray(titles) || !titles.length) return false;
+  /*
+   * «무선 · 블루투스 · 일상용» 같은 꾸밈말은 브랜드가 아니다 (2026-10-26 1,000문항 평가). 브랜드 없이 "무선 이어폰 …" 으로
+   * 시작하는 판매 글이 하나라도 있으면 «무선» 이 브랜드가 되어, 상품명에 «무선» 이 없는 에어팟·버즈가 «요청하신 브랜드가
+   * 아님» 으로 빠졌다.
+   */
+  if (KIND_MODIFIER_WORDS.has(word) || /^[가-힣]{2,}용$/.test(word) || categoryNounOf(word)) return false;
   const a = S.analyzeQuery(word);
   return titles.some(t => {
     const info = S.analyzeTitle(t);
@@ -721,7 +770,9 @@ function verdict(contract, item) {
       /* 같은 번호의 다른 계열 — "G304 X SUPERLIGHT" ↔ "G304 LIGHTSPEED" (양쪽 다) */
       const q = c.lineQualifiers || [];
       const missing = q.filter(w => (/^[a-z]$/.test(w) ? info.tokens.indexOf(w) < 0 : !wordHit(w, info)));
-      const extra = [...titleLineSuffixes(c.anchors, info.tokens)].filter(l => q.indexOf(l) < 0);
+      // 요청한 등급 표기(FE·SE…)는 모델 계열 차이가 아니다 — "갤럭시탭 S10 FE" 가 «계열(FE) 다름» 으로 빠졌다 (2026-10-26).
+      const extra = [...titleLineSuffixes(c.anchors, info.tokens)]
+        .filter(l => q.indexOf(l) < 0 && !c.variants.has(S.VARIANT_KEYS.get(l) || l));
       if (missing.length || extra.length) {
         bump(TIER.SIBLING, 'model-line', `요청하신 모델 계열(${missing.concat(extra).map(x => x.toUpperCase()).join(' ')})과 다름`);
       }
@@ -733,8 +784,18 @@ function verdict(contract, item) {
      * ("노트북 그램" 의 그램)도 상품명에 있어야 한다 — 맥북이 «그램» 요청에 들어오지 않게.
      */
     const familyOk = !titleAcc.length && familyImpliesHead(c.head, title)
-      && (c.words || []).filter(w => w !== c.head).every(w => wordHit(w, info));
+      // «출퇴근용 · 선물용» 처럼 용도를 말하는 낱말도 계열이 아니다.
+      && (c.words || []).filter(w => w !== c.head && !KIND_MODIFIER_WORDS.has(w) && !/^[가-힣]{2,}용$/.test(w))
+        .every(w => wordHit(w, info));
     if (!familyOk) bump(TIER.MISMATCH, 'category', '다른 종류의 상품');
+  }
+  /*
+   * 청소기의 하위 종류 (2026-10-26 1,000문항 평가). "무선청소기" 는 «무선 + 청소기» 로 읽혀 로봇청소기도 통과했고,
+   * 예산 안에 스틱 청소기가 없으면 로봇청소기만 추천했다. 무선·스틱·핸디를 말하고 로봇은 말하지 않았으면 로봇청소기는 다른 물건이다.
+   */
+  if (c.head === '청소기' && /무선|스틱|핸디/.test(String(c.positive || c.query || ''))
+      && !/로봇/.test(String(c.positive || c.query || '')) && /로봇\s?청소기/.test(title)) {
+    bump(TIER.MISMATCH, 'category', '다른 종류의 청소기(로봇청소기)');
   }
 
   /* 등급 표기 (프로·맥스·울트라·플러스…) */
@@ -781,6 +842,22 @@ function verdict(contract, item) {
   if (c.storage.size) {
     const ts = storageOf(title);
     if (ts.size && ![...ts].some(x => c.storage.has(x))) bump(TIER.NEAR, 'storage', `용량 다름(${[...ts].map(x => x.toUpperCase()).join('/')})`);
+  }
+  // 중량·부피·개수 — 요청한 차원의 값이 상품명에 있는데 다르면 다른 옵션이다 ("이천쌀 20kg" ↔ 10kg).
+  if (c.quantity && c.quantity.size) {
+    const tq = quantityOf(title);
+    new Set([...c.quantity].map(x => x.split(':')[0])).forEach(dim => {
+      const have = [...tq].filter(x => x.startsWith(dim + ':'));
+      if (have.length && !have.some(x => c.quantity.has(x))) bump(TIER.NEAR, 'quantity', '용량·수량 다름');
+    });
+  }
+  if (c.years && c.years.size) {
+    const ty = yearsOf(title);
+    if (ty.size && ![...ty].some(x => c.years.has(x))) bump(TIER.NEAR, 'year', `연식·에디션 다름(${[...ty].join('/')})`);
+  }
+  if (c.sizes && c.sizes.size) {
+    const ts = sizesOf(title, false);
+    if (ts.size && ![...ts].some(x => c.sizes.has(x))) bump(TIER.NEAR, 'size', `사이즈 다름(${[...ts].join('/')})`);
   }
   if (c.colors.size && tColors.size && ![...tColors].some(x => c.colors.has(x))) {
     bump(TIER.NEAR, 'color', `색상 다름(${[...tColors].map(colorLabel).join('/')})`);
@@ -880,7 +957,7 @@ function isAccessoryListing(c, title) {
 
 /** 사용자에게 보이는 문장에 넣을 상품명 — 지시문 구간은 옮기지 않는다. */
 function displayTitle(title) {
-  return hasInstructionText(title) ? cleanIdentityTitle(title).replace(/\s+/g, ' ').trim() : String(title || '');
+  return hasInstructionText(title) ? displaySafeTitle(title).replace(/\s+/g, ' ').trim() : String(title || '');
 }
 
 /* ==================================================================
@@ -912,6 +989,22 @@ function partition(items, contract) {
       if (x.v.tier < TIER.SIBLING) x.v.tier = TIER.SIBLING;
     }
   });
+  /*
+   * 묶음으로만 파는 상품 (2026-10-26 1,000문항 평가). "하림 닭가슴살 100g 30팩" 처럼 후보가 모두 «N팩» 이면
+   * 그 묶음이 곧 그 상품이다 — 정확한 후보가 하나도 없고 «구성 다름» 하나만 걸린 후보는 정확한 후보로 본다.
+   * 낱개 판매 글이 하나라도 있으면(EXACT 가 있으면) 예전처럼 묶음을 근접 후보로 둔다.
+   */
+  if (!judged.some(x => x.v.tier === TIER.EXACT)) {
+    judged.forEach(x => {
+      // 수량 묶음(N팩·N개입)만 — 번들·세트·패키지는 구성품이 달라 가격을 그 상품 값으로 읽으면 안 된다.
+      const title = String((x.it && x.it.title) || '');
+      const countPack = /\d+\s*(?:팩|개입)/.test(title) && !/번들|세트|패키지|bundle|package|(?:^|\s)\+\s*[가-힣a-z]/i.test(title);
+      if (countPack && x.v.tier === TIER.NEAR && x.v.reasons.length && x.v.reasons.every(r => r.kind === 'bundle')) {
+        x.v.tier = TIER.EXACT;
+        x.v.reasons = [];
+      }
+    });
+  }
   const kept = judged.filter(x => x.v.tier < TIER.MISMATCH);
   const ordered = demoteInstructionTitles(kept.map(x => ({ it: x.it, tier: x.v.tier, i: x.i, v: x.v })));
   ordered.forEach(x => {
@@ -1035,7 +1128,16 @@ function mergeRefinement(base, refinementText, opts) {
   if (!add.length) return baseToks.join(' ');
   // 낱말 하나가 붙여 쓴 여러 토큰일 수 있다 ("프로맥스" = 프로+맥스, "3세대" = 3+세대).
   const SLOT_PRIORITY = ['anchor', 'storage', 'color', 'condition', 'accessory', 'bundle', 'word', 'variant', 'base', 'generic'];
+  /*
+   * 사이즈·중량/수량도 옵션 자리다 (2026-10-26) — "눕시 L 사이즈" 뒤 "M 사이즈로", "이천쌀 10kg" 뒤 "20kg으로" 가
+   * 앞 옵션을 바꾸지 않고 덧붙어 둘 다 «정확히 맞는 상품» 이 됐다. 사이즈는 «사이즈» 라는 말이 함께 있을 때만.
+   */
+  const sizeCue = /사이즈|size/i.test(`${base} ${refinementText}`) || sizesOf(`${base}`, true).size > 0
+    || /패딩|자켓|재킷|점퍼|코트|티셔츠|셔츠|바지|청바지|후드|맨투맨|니트|원피스|레깅스|눕시/.test(String(base || ''));
   const slotOfRaw = w => {
+    const bareWord = String(w).replace(/(?:으로|로)$/, '');
+    if (sizeCue && /^(?:xxxl|xxl|xl|[2-4]xl|xs|s|m|l)(?:사이즈)?$/i.test(bareWord)) return 'size';
+    if (quantityOf(w).size) return 'quantity';
     const ts = tokensOf(w);
     if (!ts.length) return 'generic';
     const ss = ts.map(slotOf);
@@ -1064,6 +1166,8 @@ function mergeRefinement(base, refinementText, opts) {
   replaceSlot('storage', pick('storage'));
   replaceSlot('color', pick('color'));
   replaceSlot('condition', pick('condition'));
+  replaceSlot('size', pick('size'));
+  replaceSlot('quantity', pick('quantity'));
   // 앵커만 바꾼 말("3S로")은 앞 상품의 앵커를 바꾼다.
   const anchors = pick('anchor');
   if (anchors.length && !add.some((w, i) => addSlots[i] === 'word')) {
@@ -1082,7 +1186,7 @@ function mergeRefinement(base, refinementText, opts) {
   // 그 밖(기능·규격 등)은 덧붙인다.
   if (optionsOnly) return out.join(' ').replace(/\s+/g, ' ').trim();
   add.forEach((w, i) => {
-    if (['variant', 'base', 'storage', 'color', 'condition', 'anchor', 'generic'].indexOf(addSlots[i]) > -1) return;
+    if (['variant', 'base', 'storage', 'color', 'condition', 'anchor', 'generic', 'size', 'quantity'].indexOf(addSlots[i]) > -1) return;
     const n = stripJosa(norm(w));
     if (info.brands.indexOf(n) > -1 || info.brands.some(b => n.indexOf(b) === 0)) return;
     if (!out.some(x => stripJosa(norm(x)) === n)) out.push(w);
@@ -1124,5 +1228,5 @@ function mentionedIn(name, text) {
 module.exports = {
   TIER, buildContract, verdict, partition, exactBudgetFacts, splitNegations, narrowByMention, mentionedIn, stripPromptBoundaryPayload,
   hasInstructionText, cleanIdentityTitle, displayTitle, colorsOf, storageOf, slotOf,
-  refinementOf, mergeRefinement, categoryNounOf, productEvidence
+  refinementOf, mergeRefinement, categoryNounOf, productEvidence, ONE_CHAR_PRODUCTS, namesBrand
 };

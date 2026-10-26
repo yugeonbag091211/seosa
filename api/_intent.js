@@ -288,7 +288,8 @@ function isJunkToken(tok) {
   if (/^\d+개(?:만)?$/.test(t)) return true;
   if (/^[가-힣]{2,}$/.test(t) && VERB_TAIL_RE.test(t)) return true;
   // "바꿀게"·"볼게" — ㄹ 받침 뒤의 «게» 는 약속하는 어미다 ("족집게"·"빨래집게" 의 집은 ㅂ 받침이라 남는다).
-  if (/^[가-힣]{2,}게(?:요)?$/.test(t)) {
+  // 두 글자 "할게"·"볼게" 도 (2026-10-26) — 예전 정규식은 세 글자 이상만 봐서 주석의 «볼게» 조차 잡지 못했다.
+  if (/^[가-힣]{1,}게(?:요)?$/.test(t)) {
     const ch = t.charCodeAt(t.length - (t.endsWith('요') ? 3 : 2)) - 0xAC00;
     if (ch >= 0 && ch < 11172 && ch % 28 === 8) return true;
   }
@@ -616,7 +617,9 @@ function extractQuery(text) {
     if (keepsColors(t, stripCopula(t))) t = stripCopula(t);
     if (STRIP_SET.has(t) || isJunkToken(t)) return;
     if (!t || t.length < 1) return;
-    if (/^[가-힣]$/.test(t)) return;          // 한 글자 한글은 아무 데나 걸린다
+    // 한 글자 한글은 아무 데나 걸린다 — 다만 한 글자 상품 이름("쌀 10kg" · "김 선물세트")은 남긴다 (2026-10-26).
+    // 예전에는 "쌀 4만원 이하로 추천해줘" 의 검색어가 비어 검색 자체를 하지 않았다.
+    if (/^[가-힣]$/.test(t) && !AIID.ONE_CHAR_PRODUCTS.has(t)) return;
     if (!/[0-9A-Za-z가-힣]/.test(t)) return;
     out.push(t);
   });
@@ -630,12 +633,21 @@ function extractQuery(text) {
    * 들어간 게이밍 노트북" 이 "으로 RTX 5090 들어간 게이밍" 으로 잘려 노트북이 빠졌고, 데스크톱이
    * 대신 나왔다.
    */
+  /*
+   * 용량·크기·수량(16GB·512GB·15인치·30팩)은 모델 번호가 아니다 (2026-10-26 1,000문항 평가). 그것까지 세면
+   * "맥북 에어 13 M3 메모리 16GB 512GB 모델" 이 "13 M3 메모리 16gb 512gb" 로 잘려 «맥북» 없이 검색됐다.
+   * 모델 번호가 같으면 브랜드·계열 이름을 담은 구간이 먼저다 — 옵션은 식별 계약이 전체 구절로 다시 본다.
+   */
+  const OPTION_NUMBER_RE = /^\d+(?:\.\d+)?(?:gb|tb|kg|g|ml|l|mm|cm|인치|팩|개|개입|봉|병|매|입|w|mah|hz|t)$/i;
   let start = 0;
   if (out.length > MAX_QUERY_TOKENS) {
     let best = -1;
     for (let i = 0; i + MAX_QUERY_TOKENS <= out.length; i++) {
       const win = out.slice(i, i + MAX_QUERY_TOKENS);
-      const n = win.filter(t => /\d/.test(t)).length * 2 + (win.some(t => AIID.categoryNounOf(String(t).toLowerCase())) ? 1 : 0);
+      const n = win.filter(t => /\d/.test(t) && !OPTION_NUMBER_RE.test(t)).length * 10
+        + win.filter(t => OPTION_NUMBER_RE.test(t)).length
+        + (win.some(t => AIID.categoryNounOf(String(t).toLowerCase())) ? 2 : 0)
+        + (win.some(t => AIID.namesBrand(t)) ? 3 : 0);
       if (n > best) { best = n; start = i; }
     }
   }
@@ -791,7 +803,8 @@ const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|
  * 직전 추천 «말고 다른 것» 을 달라는 말 — "다른 제품 추천해줘" · "그거 말고 다른 거" (2026-10-24).
  * api/ai.js 가 서명된 직전 추천을 후보 맨 뒤로 내리고 1위 후보에서 뺀다. 같은 상품을 다시 권하지 않는다.
  */
-const ALTERNATIVE_RE = /다른\s*(?:거|건|것|걸|상품|제품|모델|후보)|(?:그거|그것|이거|이것|그\s*(?:제품|상품|모델))\s*말고|대신\s*(?:다른|추천|골라)/;
+// "비슷한 다른 폰 보여줘" · "비슷한 거 있어?" 도 (2026-10-26 홀드아웃).
+const ALTERNATIVE_RE = /다른\s*(?:거|건|것|걸|상품|제품|모델|후보|폰)|비슷한\s*(?:다른\s*)?(?:거|건|것|걸|상품|제품|모델|폰)|(?:그거|그것|이거|이것|그\s*(?:제품|상품|모델))\s*말고|대신\s*(?:다른|추천|골라)/;
 /*
  * 직전 추천에 대한 가격·구매 시점 질문 — 상품 이름이 없고 목록을 가리키는 말도 없다.
  *   "지금 사는 게 좋을까?" · "가격 괜찮은 편이야?" · "얼마야?" · "더 기다릴까?"
@@ -1294,9 +1307,11 @@ function conversationProduct(hist) {
     // A standalone budget change is not a new product. In the 200-question
     // audit "예산을 10만원으로 할게" was stored as the product name and then
     // "배터리 오래가는 이어폰이면 좋겠어" lost the earphone context.
+    // 상품 낱말은 검색어와 같은 기준(isProductQuery)으로 본다 — productEvidence 는 종류명·동의어 사전에 있는 말만
+    // 세서 "닭가슴살 4만원 이하로 추천해줘" 의 닭가슴살까지 «예산만 말한 발화» 로 지웠다 (2026-10-26).
     const onlyBudget = parseConstraints(text);
     if ((onlyBudget.budgetMax || onlyBudget.budgetMin)
-        && AIID.productEvidence(positive) === 0) continue;
+        && AIID.productEvidence(positive) === 0 && !isProductQuery(positive)) continue;
     // 조건만 덧붙인 말("배터리 오래가는 게 중요해")·잡담("고마워 정말")은 찾던 상품이 아니다 — 그 앞의 상품을 계속 찾는다.
     if (isConditionOnly(spText) || isSmallTalk(text)) continue;
     // 상품 이름이 아닌 낱말("다르면"·"기억해")은 옵션 판정에서 뺀다 (classify 의 refineText 와 같다).

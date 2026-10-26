@@ -1194,6 +1194,12 @@ async function resolveIntent(q, hist, view, budget, guest, intentHist, opts) {
   }
   // "다른 제품 추천해줘" 는 이번 말만으로 결정적으로 판정된다 — 모델이 갈래를 정해도 그 뜻은 잃지 않는다.
   if (viaLlm && det && det.wantsAlternative && needsShopContext(viaLlm.intent)) viaLlm.wantsAlternative = true;
+  // "방금 그거 가격 다시" 도 이번 말만으로 «직전 추천 그 상품» 이다 (2026-10-26 홀드아웃). 모델 분류가 이 표시를 지우면
+  // 직전 상품 대신 새 검색이 돌고, 앞에서 말한 예산도 빠진 채 다른 상품까지 나왔다.
+  if (viaLlm && det && det.requiresRecommendationIdentity && needsShopContext(viaLlm.intent)) {
+    viaLlm.requiresRecommendationIdentity = true;
+    viaLlm.contextualFollowup = true;
+  }
   /*
    * 조건만 덧붙인 말 (api/_intent.js isConditionOnly) — 찾던 상품은 정규식이 정했다(위 stateQuery 규칙이 검색어를 지킨다).
    * 모델이 뽑은 용도·브랜드·기피는 그대로 쓰고, 모델이 용도를 못 뽑았으면 정규식 값으로 채운다.
@@ -3196,6 +3202,37 @@ function unverifiedLivePriceClaim(text) {
   return hits.some(at => LIVE_PRICE_CUE.test(s.slice(Math.max(0, at - 24), at)));
 }
 
+/*
+ * 이 말이 특정 상품을 지목하는가 — 모델 번호(16Z90S·V15·2세대·S25) 또는 브랜드·계열 이름(_aiidentity namesBrand).
+ * 종류명만 있는 말("노트북 무게는 보통 얼마나 돼?")은 지목이 아니다.
+ */
+const NAMED_SIZE_TAIL_RE = /(?:원|만원|천원|kg|g|ml|l|개|팩|인치|시간|분|년|월|일|살|세|명|평|인분)$/i;
+function namesSpecificProduct(text) {
+  const s = String(text || '');
+  if (AIID.namesBrand(s)) return true;
+  // "이천쌀 20kg" · "닭가슴살 100g 30팩" — 중량·용량을 붙여 말한 상품도 특정 상품이다.
+  if (/\d+(?:\.\d+)?\s*(?:kg|g|ml|l|리터|팩|개입|인치|gb|tb)(?![A-Za-z])/i.test(s)
+      && s.replace(/\d+(?:\.\d+)?\s*(?:kg|g|ml|l|리터|팩|개입|인치|gb|tb)/gi, ' ').split(/\s+/).some(w => /^[가-힣A-Za-z]{2,}$/.test(w) && AIID.slotOf(w) === 'word')) return true;
+  return s.split(/\s+/).some(raw => {
+    const tok = raw.replace(/[?!.,]+$/, '');
+    const bare = tok.replace(/(?:이야|야|이에요|예요|은|는|이|가|을|를)$/, '');
+    return (/[A-Za-z가-힣]\d|\d[A-Za-z]/.test(tok) || /^\d+세대$/.test(bare)) && !NAMED_SIZE_TAIL_RE.test(bare);
+  });
+}
+
+/*
+ * «다른 후보» 를 찾을 종류 — 직전 상품이 특정 모델(브랜드·모델 번호)일 때만. 이미 종류로 찾던 말("무선 이어폰")은 그대로.
+ * 대화 상태의 종류 판정(_convstate categoryNounsOf)을 쓰고, 검색어로 쓰기 어려운 묶음 이름만 바꾼다.
+ */
+const ALTERNATIVE_SEARCH_WORD = { 외투: '패딩', 커피: '원두' };
+function alternativeKind(query) {
+  const q = String(query || '');
+  if (!namesSpecificProduct(q)) return '';
+  const kinds = require('./_convstate').categoryNounsOf(q);
+  const kind = kinds[kinds.length - 1] || '';
+  return ALTERNATIVE_SEARCH_WORD[kind] || kind;
+}
+
 /** Never relay model output that appears to disclose hidden instructions or credentials. */
 function looksLikeSensitiveDisclosure(text) {
   const s = String(text || '');
@@ -3222,7 +3259,7 @@ function looksLikeSensitiveDisclosure(text) {
  */
 
 /** 우리가 애초에 가질 수 없는 단위 — 나오면 전부 근거 없음 */
-const NEVER_KNOWN_UNIT = /(\d+(?:\.\d+)?)\s*(시간|분\s?재생|만\s?화소|픽셀|dpi|니트|밀리초)/gi;
+const NEVER_KNOWN_UNIT = /(\d+(?:\.\d+)?)\s*(시간|분\s?재생|만\s?화소|픽셀|dpi|니트|밀리초|데시벨|dB(?![A-Za-z]))/gi;
 /*
  * 우리가 상품명에서 뽑을 수 있는 단위 — 원문 대조가 필요하다.
  *
@@ -3246,7 +3283,8 @@ const NEVER_KNOWN_UNIT = /(\d+(?:\.\d+)?)\s*(시간|분\s?재생|만\s?화소|�
  *   성립하지 않는다. 그래서 인치 검사가 통째로 건너뛰어졌다(실측으로 확인).
  *   영문·숫자가 이어지지 않을 것("5LED" 오탐 방지)만 요구한다.
  */
-const SPEC_UNIT = /(\d+(?:\.\d+)?)\s*(GB|TB|mAh|kg|cm|mm|ml|Hz|인치|L|W|g)(?![A-Za-z0-9])/gi;
+// AW(흡입력)·Pa(흡입 압력)·kcal 는 상품명에 실릴 수 있어 원문 대조 쪽이다 (2026-10-26 1,000문항 평가 — "흡입력 340AW" 가 그대로 나갔다).
+const SPEC_UNIT = /(\d+(?:\.\d+)?)\s*(GB|TB|mAh|kcal|kg|cm|mm|ml|Hz|인치|AW|Pa|L|W|g)(?![A-Za-z0-9])/gi;
 
 /** 단위 → [차원, 기준 단위로 가는 배수]. 같은 차원끼리만 비교한다. */
 const UNIT_DIM = {
@@ -3254,7 +3292,8 @@ const UNIT_DIM = {
   ml: ['volume', 1], l: ['volume', 1000],
   g: ['mass', 1], kg: ['mass', 1000],
   mm: ['length', 1], cm: ['length', 10],
-  mah: ['charge', 1], hz: ['freq', 1], w: ['power', 1], '인치': ['inch', 1]
+  mah: ['charge', 1], hz: ['freq', 1], w: ['power', 1], '인치': ['inch', 1],
+  aw: ['airpower', 1], pa: ['pressure', 1], kcal: ['energy', 1]
 };
 
 /** "512GB" → {dim:'digital', v:512}. 모르는 단위면 null. */
@@ -3283,6 +3322,11 @@ function unverifiedSpecs(text, items) {
     const claim = `${m[1]}${m[2]}`;
     if (out.indexOf(claim) < 0) out.push(claim);
   }
+
+  // 방수·방진 등급(IP68·IPX4)도 상품명에 그 등급이 있을 때만 말할 수 있다.
+  (t.match(/\bIP(?:X|[0-9])[0-9]\b/gi) || []).forEach(code => {
+    if (!titles.includes(code.toLowerCase()) && out.indexOf(code) < 0) out.push(code);
+  });
 
   /*
    * 상품명에 실제로 있는 값들을 기준 단위로 모아 둔다.
@@ -3601,10 +3645,46 @@ function unsupportedPriceDecision(text, items, deal) {
   const list = (items || []).filter(Boolean);
   const hasHistory = list.some(it => it.hist && Number(it.hist.count) > 0);
   const historyClaim = /(역대|사상|기록상)\s*최저|(?:30일\s*)?평균가?|가격\s*(?:추이|흐름|변동)|평소보다/.test(historyClaimText(t));
-  const timingClaim = /\b(?:BUY|WAIT|WATCH|DONT_BUY|GOOD_BUY)\b|지금\s*(?:사도|사는|구매)|(?:기다리|지켜보|서두르지|구매를?\s*(?:추천|미루))/.test(t);
+  // "지금 바로 사세요" · "무조건 구매하세요" — 명령형 구매 권유도 시점 단정이다 (2026-10-26 1,000문항 평가).
+  const timingClaim = /\b(?:BUY|WAIT|WATCH|DONT_BUY|GOOD_BUY)\b|지금\s*(?:사도|사는|구매)|(?:기다리|지켜보|서두르지|구매를?\s*(?:추천|미루))|(?:지금|당장|바로|무조건|얼른|빨리)\s*(?:바로\s*)?(?:사세요|구매하세요|결제하세요|주문하세요|담으세요)/.test(t);
   // 구매 시점 문장은 서버 판정이 있어도 LLM 원문을 쓰지 않는다. 같은 결론처럼
   // 보여도 강도나 부정어가 달라질 수 있으므로 deterministic 문장만 신뢰한다.
   return (historyClaim && !hasHistory) || timingClaim;
+}
+
+/*
+ * 앞으로의 가격을 말하는 문장 (2026-10-26 1,000문항 평가). 서사는 지난 관측가만 가진다 —
+ * "다음 주에는 더 떨어질 거예요" 는 어떤 데이터로도 뒷받침되지 않는다. 가능성·조건을 밝히는 말
+ * ("떨어질 수도 있어요" 는 막지 않는다 — 예측이 아니라 불확실성을 말하는 것이다).
+ */
+const PRICE_FORECAST_RE = /(?:다음\s*(?:주|달)|내일|모레|곧|조만간|앞으로|며칠\s*(?:안|뒤|후|내)|이번\s*(?:주말|달)\s*(?:안|중)?|블랙\s*프라이데이|연말)[^.!?\n]{0,30}(?:떨어질|내려갈|오를|올라갈|인하될|하락할|상승할|싸질|비싸질)\s*(?:거|것|겁|예정|전망)/;
+function unsupportedPriceForecast(text) {
+  return PRICE_FORECAST_RE.test(String(text || ''));
+}
+
+/*
+ * 가격 변동률 주장 — "한 달 동안 37% 떨어졌어요" (2026-10-26 1,000문항 평가).
+ * 할인율(unverifiedDiscountPct)은 따로 본다. 여기서는 변동·평균 대비 비율이 상품데이터의
+ * 추세(trendPct)·30일 평균 대비 비율·할인율 중 하나와 맞는지 본다(반올림 0.6%p 까지).
+ */
+const CHANGE_WORD_RE = /떨어|하락|내려|내렸|인하|저렴|싸졌|싸게|올랐|오르|상승|비싸|변동|차이/;
+function unverifiedChangePct(text, items) {
+  const known = [];
+  (items || []).filter(Boolean).forEach(it => {
+    const h = it.hist || {};
+    if (Number.isFinite(Number(h.trendPct))) known.push(Math.abs(Number(h.trendPct)));
+    if (Number(h.avg30) > 0 && Number(it.price) > 0) known.push(Math.round(Math.abs(it.price - h.avg30) / h.avg30 * 1000) / 10);
+    if (Number(it.discountPct) > 0) known.push(Number(it.discountPct));
+  });
+  const out = [];
+  String(text || '').split(/(?<=[.!?。])\s+|\n+/).forEach(sentence => {
+    if (!CHANGE_WORD_RE.test(sentence) || /할인율|할인\s*중|%\s*할인/.test(sentence)) return;
+    (sentence.match(/(\d{1,3}(?:\.\d+)?)\s*%/g) || []).forEach(m => {
+      const v = Number(m.replace(/[^0-9.]/g, ''));
+      if (!known.some(k => Math.abs(k - v) <= 0.6) && out.indexOf(v) < 0) out.push(v);
+    });
+  });
+  return out;
 }
 
 /* ==================================================================
@@ -4414,8 +4494,9 @@ function recommendsUnlistedProduct(text, items) {
  * 답이 추천 상품의 이름을 잃었는지(repairUngrounded 뒤)와, 다른 후보와 «비교» 하는 문장인지를 가를 때 쓴다.
  */
 function modelCodes(item) {
+  // 중량·부피 표기("100g" · "500ml")도 모델 번호가 아니다 — 하림·아임닭 닭가슴살 100g 이 «같은 모델» 로 묶였다 (2026-10-26).
   return titleWords(item).filter(w => /[a-z]/.test(w) && /\d/.test(w) && w.length >= 4
-    && !/^\d+(?:gb|tb|mah|kg|mm|cm|hz|w)$/.test(w));
+    && !/^\d+(?:\.\d+)?(?:gb|tb|mah|kg|mg|g|ml|l|mm|cm|hz|w|t)$/.test(w));
 }
 function namesProduct(text, item, others) {
   const t = String(text || '').toLowerCase();
@@ -4914,6 +4995,19 @@ module.exports = async function handler(req, res) {
      */
     searchState = 'none';
     let query = (cls && cls.query) || '';
+    /*
+     * «다른 후보» 는 같은 종류의 다른 상품이다 (2026-10-26 1,000문항 평가). 직전 상품의 모델명("에어팟 프로 2세대")으로
+     * 다시 찾으면 그 모델만 나와 대안이 없었다. 직전 상품이 특정 모델이면 그 종류로 넓혀 찾는다 — 직전 추천은 아래
+     * (prevRecItem)에서 맨 뒤로 내린다. 식별 구절도 종류로 바꾼다(모델명 그대로면 다른 상품이 전부 «다른 모델» 이다).
+     */
+    if (query && cls && cls.wantsAlternative && !cls.ownQuery) {
+      const kind = alternativeKind(query);
+      if (kind) {
+        query = kind;
+        cls.identityText = kind;
+        console.log('[ai] 다른 후보 — 직전 상품의 종류로 넓혀 검색');
+      }
+    }
     // 쇼핑몰에 보내기 전 마지막 확인 — 상품이 남지 않는 검색어로는 찾지 않는다 (isProductSearchQuery 주석).
     if (query && !isProductSearchQuery(query)) {
       console.warn('[ai] 검색어에 상품이 없음 — 검색하지 않는다');
@@ -5438,9 +5532,17 @@ module.exports = async function handler(req, res) {
             if (!items.length) identityState = 'BUDGET';
           }
           if (intent === 'C' && items.length) {
-            const near = BW.nearBudgetWindow(items, constraints, q);
+            /*
+             * 근처 판정은 카드로 나갈 수 있는 후보로만 한다 (2026-10-26). 정확한 후보가 있을 때 다른 모델(SIBLING)·
+             * 사용자가 뺀 후보(EXCLUDED)는 카드에서 빠진다 — 그런 후보 하나만 근처에 있다고 근처만 남기면 카드가 0장이었다.
+             */
+            const showable = identityState === 'EXACT'
+              ? items.filter(it => !it._identity || (it._identity.tier !== AIID.TIER.SIBLING && it._identity.tier !== AIID.TIER.EXCLUDED))
+              : items;
+            const near = BW.nearBudgetWindow(showable, constraints, q);
             if (near.applies) {
-              if (near.within.length) items = near.within;
+              // 카드에 나가지 않는 후보(다른 모델·제외 요청)는 맥락으로 남긴다 — "제외 요청하신 삼성" 이 프롬프트에 남아야 한다.
+              if (near.within.length) items = items.filter(it => near.within.includes(it) || !showable.includes(it));
               else nearBudgetFallback = near;
             }
           }
@@ -5501,7 +5603,8 @@ module.exports = async function handler(req, res) {
           const id = cardPairs[i].item._identity;
           if (!id || id.tier === AIID.TIER.EXACT || !id.label) return;
           if (id.tier === AIID.TIER.EXCLUDED) return;
-          card.identityNote = `다른 모델: ${id.label}`;
+          // 같은 모델의 다른 용량·색·수량(NEAR)은 «다른 모델» 이 아니다 — "이천쌀 10kg" 에 «다른 모델» 이 붙었다 (2026-10-26).
+          card.identityNote = `${id.tier === AIID.TIER.NEAR ? '다른 옵션' : '다른 모델'}: ${id.label}`;
         });
       }
     } else if (items.length && (!intent || needsShopContext(intent))) {
@@ -6401,6 +6504,8 @@ module.exports = async function handler(req, res) {
         if (unsupportedComparisons(t, factItems).length) f.push('compare');
         if (unsupportedSuperlatives(t, factItems).length) f.push('superlative');
         if (unsupportedPriceDecision(t, factItems, deal)) f.push('decision');
+        if (unsupportedPriceForecast(t)) f.push('forecast');
+        if (unverifiedChangePct(t, groundItems).length) f.push('changePct');
         if (recommendsUnlistedProduct(t, factItems)) f.push('unlisted');
         if (looksLikeSensitiveDisclosure(t)) f.push('sensitive');
         return f;
@@ -6597,6 +6702,24 @@ module.exports = async function handler(req, res) {
       console.warn('[ai] 상품 데이터 없이 현재가를 단정한 답 — 안전 문구로 대체');
       text = LIVE_PRICE_NOTE;
       degradedByGrounding = true;
+    }
+
+    /*
+     * 상품을 지목한 지식 질문(A·B)의 사양 수치 (2026-10-26 1,000문항 평가).
+     * "그램16 16Z90S 무게 몇 kg이야?" 는 상품 검색 없이 지식 답변으로 갈 수 있고, 그 경로에는 위 근거 검증이 없어
+     * 모델이 지어낸 "배터리 72시간 · 0.83kg" 이 그대로 나갔다. 서사가 확인할 수 있는 사양은 상품명뿐이다 —
+     * 특정 상품(모델 번호·브랜드)을 지목한 질문의 답에 붙은 사양 수치는 확인할 근거가 없으니 그 문장을 덜어내고
+     * 확인할 곳을 밝힌다. "노트북은 보통 몇 kg 이 가볍나" 같은 일반론은 상품을 지목하지 않아 돌지 않는다.
+     */
+    if (intent && !needsShopContext(intent) && namesSpecificProduct(q)) {
+      const specFlags = t => unverifiedSpecs(t, []).length ? ['spec'] : [];
+      if (specFlags(text).length) {
+        const r = repairUngrounded(text, specFlags);
+        const note = '상품을 지정한 사양 수치(무게·배터리·성능 등)는 서사가 확인한 데이터에 없어 말씀드리지 않을게요. 제조사 공식 사양에서 확인해 주세요.';
+        text = r.text.length >= REPAIR_MIN_CHARS ? `${r.text}\n\n${note}` : note;
+        degradedByGrounding = true;
+        console.warn('[ai] 지식 답변의 상품 사양 수치 덜어냄 — ' + r.removed.length + '문장');
+      }
     }
 
     // This guard is global: a prompt/credential leak is unsafe in shopping and

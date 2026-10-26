@@ -10,9 +10,10 @@ function parseComparison(question) {
   // between attributes must continue to use the regular concierge route.
   // Natural shopping comparison forms. The right-hand description ends
   // before the comparison instruction; never search for the entire sentence.
-  const m = /^(.{2,75}?)\s*(?:와|과|랑|하고|\s+vs\.?\s+|\s+versus\s+)\s*(.{2,75}?)\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천)|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이\s*(?:알려|설명|있|뭐)).*$/i.exec(s);
+  // "A 아니면 B?" · "A 대 B" · "A, B 중에 하나만" · "A하고 B 차이가 뭐야" 도 두 상품 비교다 (2026-10-26 홀드아웃).
+  const m = /^(.{2,75}?)\s*(?:와|과|랑|하고|\s+vs\.?\s+|\s+versus\s+|\s+아니면\s+|\s+대\s+|\s+또는\s+|\s+혹은\s+|\s*,\s*)\s*(.{2,75}?)\??\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천|하나)|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이(?:가|는|점)?\s*(?:알려|설명|있|뭐|어때|궁금)).*$/i.exec(s);
   if (!m) return null;
-  let left = m[1].trim(), right = m[2].trim();
+  let left = m[1].trim(), right = m[2].trim().replace(/\?+$/, '');
   // "그램16이랑" · "갤럭시탭이랑" — '이랑' 의 '이' 는 받침 있는 말 뒤에만 붙는다. 받침 없는 말 뒤의 '이' 는
   // 이름의 일부다("스페이스그레이랑" · "와이파이랑"). 그대로 두면 "그램16이" 로 검색됐다 (2026-10-26).
   if (/이$/.test(left) && left.length > 2 && hasBatchim(left[left.length - 2])) left = left.slice(0, -1);
@@ -26,6 +27,8 @@ function parseComparison(question) {
   // the product family: "아이패드랑 갤럭시탭을 비교해줘".
   // Restrict to a final particle on Hangul words to preserve model codes.
   right = right.replace(/([가-힣]{2,})(?:을|를)$/, '$1');
+  // "A랑 B 둘 중 가성비" 의 «둘» 은 비교 대상을 세는 말이다 — «아디다스 삼바 둘» 로 검색됐다 (2026-10-26).
+  right = right.replace(/\s+(?:둘|두\s*(?:개|제품|상품|모델))(?:\s*다)?$/, '').trim();
   // Broad family aliases: the marketplace title may be Korean even when
   // the user asks for the family in English.
   if (/^ipad$/i.test(left)) left = '아이패드';
@@ -46,7 +49,8 @@ function parseComparison(question) {
   // must never split an unrelated prompt into two shop searches.
   if (/[.!?。;:<>]/.test(left + right)) return null;
   const AIID = require('./_aiidentity');
-  const named = term => AIID.productEvidence(term) > 0 || /[0-9]/.test(term) || knownFamily.test(term);
+  // 브랜드·계열 이름도 상품 지목이다 — "다이슨 V15랑 비스포크 제트" · "에어포스1이랑 아디다스 삼바" (2026-10-26).
+  const named = term => AIID.productEvidence(term) > 0 || /[0-9]/.test(term) || knownFamily.test(term) || AIID.namesBrand(term);
   if (!named(left) || !named(right)) return null;
   // "노트북과 태블릿 차이 알려줘" · "무선 이어폰이랑 유선 이어폰 비교" 는 종류를 묻는 지식 질문이다 —
   // 각 종류의 가장 싼 판매 글 두 개의 가격 차이로 답하면 질문에 답하지 않은 것이다. 일반 경로로 보낸다.
