@@ -4698,8 +4698,10 @@ module.exports = async function handler(req, res) {
      * 결정론 답변·모델 장애) 한 곳에서 res.json 에 붙인다 — 오류 응답에는 붙지 않는다(withConvState).
      */
     let conv;
+    let priorConvState = null;   // 지난 응답에 서명한 상태 그대로 — 이번 턴이 같은 상품을 이어 묻는지 판정에 쓴다
     try {
-      conv = CS.resolve(AC.verifyConversationState(body && body.convState, startedAt), hist, q,
+      priorConvState = AC.verifyConversationState(body && body.convState, startedAt);
+      conv = CS.resolve(priorConvState, hist, q,
         { window: MAX_HISTORY_MSGS, textLimit: MAX_HISTORY_LEN });
     } catch (e) {
       console.warn(`[ai] 대화 상태 해석 실패(상태 없이 진행): ${e.message}`);
@@ -5088,7 +5090,8 @@ module.exports = async function handler(req, res) {
      */
     const FB = require('./_feedback');
     const BW = require('./_ai-budget-window');
-    let preferredBudgetMiss = null;
+    // 상한 근처(_ai-budget-window)에 확인된 상품이 없어 예산 안의 더 싼 상품으로 안내하는 턴 — 답 앞에 그 사실을 밝힌다.
+    let nearBudgetFallback = null;
     let preferredCategoryMiss = false;
     const feedback = (!intent || needsShopContext(intent))
       ? FB.readFeedback(q)
@@ -5121,6 +5124,17 @@ module.exports = async function handler(req, res) {
     if (comparison && !refSelected) {
       let responses = [];
       let selected = [];
+      /*
+       * 비교에도 예산 상한을 건다 (2026-10-26). "50만원 이하로 아이패드랑 갤럭시탭 비교해줘" 가 예산을 통째로
+       * 버리고 각 계열의 가장 싼 판매 글을 비교했다. 이번 말에 예산이 있으면 예산 안의 정확한 옵션만 고르고,
+       * 앞 대화에서 이어진 예산이면 고르는 것은 그대로 두고 넘는 쪽을 밝힌다 — 사용자가 이름을 대고 비교해
+       * 달라고 한 상품은 그 가격을 알려야 한다(위 예산 관문 주석의 «새 상품의 가격» 과 같은 이유).
+       */
+      const { withinBudget } = require('./_shopintent');
+      const hasBudget = !!(gateBudget && constraints && (constraints.budgetMax > 0 || constraints.budgetMin > 0));
+      const hardBudget = hasBudget && turnBudget;
+      const inBudget = it => !hasBudget || withinBudget(it, constraints);
+      const missingByBudget = [false, false];
       if (pairFollowup) {
         // Revalidate both signed product+option selectors against the catalogue;
         // never trust prices stored in earlier chat messages. This also avoids
@@ -5132,11 +5146,12 @@ module.exports = async function handler(req, res) {
           : { timedOut: true };
         const verified = !fetched.timedOut && fetched.value ? fetched.value.verified : [];
         const key = p => [p.productId, p.mallId || p.mall, p.vendorItemId || ''].join('|');
-        selected = signedPair.map(sel => {
+        selected = signedPair.map((sel, i) => {
           const raw = verified.find(x => key(x) === key(sel));
           if (!raw) return null;
           const normalized = normItem(fromSearchResult(raw));
           Object.defineProperty(normalized, '_compareRaw', { value: raw });
+          if (hardBudget && !inBudget(normalized)) { missingByBudget[i] = true; return null; }
           return normalized;
         });
         responses = signedPair.map((_, i) => ({
@@ -5146,9 +5161,15 @@ module.exports = async function handler(req, res) {
         const eachBudget = Math.max(1, Math.min(AI_SEARCH_TIMEOUT_MS,
           budget.remaining() - ANSWER_RESERVE_MS));
         responses = await Promise.all(comparison.map(term => searchProducts(term, eachBudget)));
-        selected = responses.map((result, i) => result.ok
-          ? CMP.pickExact(result.items, comparison[i], AIID, x => normItem(fromSearchResult(x)))
-          : null);
+        const toNorm = x => normItem(fromSearchResult(x));
+        selected = responses.map((result, i) => {
+          if (!result.ok) return null;
+          const any = CMP.pickExact(result.items, comparison[i], AIID, toNorm);
+          if (!any || !hardBudget || inBudget(any)) return any;
+          const fit = CMP.pickExact(result.items, comparison[i], AIID, toNorm, inBudget);
+          if (!fit) missingByBudget[i] = true;
+          return fit;
+        });
       }
       // A comparison of two variants is valid when the option identity differs.
       const identityKey = p => p && [p.productId, p.mallId || p.mall, p.vendorItemId || ''].join('|');
@@ -5172,7 +5193,11 @@ module.exports = async function handler(req, res) {
           productId: p.productId, vendorItemId: p.vendorItemId || '',
           mallId: p.mallId || p.mall, title: p.title
         })) : [];
-      let responseText = CMP.formatComparison(comparison, selected, pairFollowup ? 'catalog' : 'search');
+      let responseText = CMP.formatComparison(comparison, selected, pairFollowup ? 'catalog' : 'search', {
+        budgetLabel: hasBudget ? CMP.budgetLabel(constraints) : '',
+        missingByBudget,
+        overBudget: selected.map(p => !!(p && hasBudget && !inBudget(p)))
+      });
       /*
        * GPT writes additional conversational guidance from verified names
        * only. No generated amount, specification, discount or purchase verdict
@@ -5286,7 +5311,21 @@ module.exports = async function handler(req, res) {
          * "현재가가 30일 평균보다 싼가"를 판단할 근거가 없고, 답변도
          * 현재가만 읽는 수준에 머문다. (attachHistory 주석 참고)
          */
-        const raw = found.items.slice(0, MAX_CTX_ITEMS);
+        /*
+         * 예산이 있는 추천은 후보 8개를 자르기 «전에» 예산 안 → 상한 근처 순으로 세운다 (2026-10-26).
+         * 검색 순서대로 앞 8개만 보고 예산을 거르면 9번째 이후의 상한 근처 상품은 보지도 못한다 —
+         * «무선 이어폰 15만원 이하» 에 12.9만·14.5만원이 있는데 7.9만원 이하만 남았다. 순서만 바꾼다:
+         * 같은 묶음 안에서는 검색 순서 그대로이고, 예산 밖 후보도 뒤에 남아 «전부 예산 밖» 안내는 같다.
+         */
+        let pool = found.items;
+        if (gateBudget && intent === 'C' && constraints && constraints.budgetMax > 0) {
+          const { withinBudget } = require('./_shopintent');
+          const inBudget = [], overBudget = [];
+          pool.forEach(it => (withinBudget({ price: Number(it && it.lprice) }, constraints) ? inBudget : overBudget).push(it));
+          const near = BW.nearBudgetWindow(inBudget, constraints, q);
+          pool = (near.applies ? near.within.concat(near.outside) : inBudget).concat(overBudget);
+        }
+        const raw = pool.slice(0, MAX_CTX_ITEMS);
         const historyCap = Math.min(AI_ENRICH_TIMEOUT_MS,
           Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
         let stats = new Map();
@@ -5363,45 +5402,6 @@ module.exports = async function handler(req, res) {
         identityState = gate.state;
         identityLabel = contract.label;
         /*
-         * Explicit color + a second clause saying to exclude a different
-         * color or refurbished item: the excluded word must NOT become a
-         * positive option. The normal contract is preserved for all other
-         * requests, including requests to compare two colors side by side.
-         * 1000-question audit: "화이트 얼마야? 블랙 가격은 제외해줘"
-         * otherwise selected the cheaper BLACK offer.
-         */
-        const cleanFocusedRequest = String(q).replace(
-          /\s+(?:화이트\s*(?:금액|가격)과\s*섞지\s*말아줘|블랙\s*가격은\s*제외해줘|리퍼\s*상품과\s*혼동하지\s*마)[.!?？]*$/u, '').trim();
-        if (cleanFocusedRequest !== q && /버즈\s*3\s*프로/i.test(cleanFocusedRequest)) {
-          const focusColor = /화이트|흰색/.test(cleanFocusedRequest) ? 'white'
-            : /블랙|검정/.test(cleanFocusedRequest) ? 'black' : '';
-          if (focusColor && !(/화이트|흰색/.test(cleanFocusedRequest)
-              && /블랙|검정/.test(cleanFocusedRequest))) {
-            const focusContract = AIID.buildContract({
-              query: cleanFocusedRequest, userText: cleanFocusedRequest,
-              titles: normed.map(it => it.title)
-            });
-            const focusedGate = AIID.partition(
-              rankItems(normed, constraints, AIID.splitNegations(query).positive || query, rankOpts()),
-              focusContract
-            );
-            const narrow = focusedGate.state === 'EXACT'
-              ? focusedGate.items.filter(it => it._identity
-                  && it._identity.tier === AIID.TIER.EXACT
-                  && (focusColor === 'white'
-                    ? /화이트|흰색|white/i.test(it.title)
-                    : /블랙|검정|black/i.test(it.title))
-                  && !(/리퍼\s*상품과\s*혼동하지/.test(q)
-                       && /리퍼|리퍼비시|refurb/i.test(it.title))) : [];
-            if (narrow.length) {
-              items = narrow;
-              identityState = 'EXACT';
-              identityLabel = focusContract.label;
-              console.log('[ai] 제외 조건의 다른 색상·리퍼를 긍정 옵션으로 오독하지 않음');
-            }
-          }
-        }
-        /*
          * 제외어(_feedback.collectExcludes)는 "X 말고" 앞의 «한 낱말» 만 잡는다. "버즈2 Pro 말고 Buds3 Pro"
          * 에서는 'Pro' 가 잡혀, 사용자가 방금 요청한 Buds3 Pro 에 «제외 요청하신 Pro 제품» 이 붙어
          * 답변의 «이유» 자리에 나갔다(2026-10-12 Stage A). 이번 요청 구절 자체에 들어 있는 낱말은
@@ -5440,8 +5440,8 @@ module.exports = async function handler(req, res) {
           if (intent === 'C' && items.length) {
             const near = BW.nearBudgetWindow(items, constraints, q);
             if (near.applies) {
-              items = near.within;
-              if (!items.length) { identityState = 'BUDGET_PREFERENCE'; preferredBudgetMiss = near; }
+              if (near.within.length) items = near.within;
+              else nearBudgetFallback = near;
             }
           }
         }
@@ -5472,7 +5472,10 @@ module.exports = async function handler(req, res) {
          *   SIBLING (모델 번호·계열·등급·브랜드 다름)  — 정말 다른 상품이다. EXACT 가 있으면 카드에서 뺀다.
          *   NEAR    (용량·색상·상태·구성 다름)       — 같은 모델의 다른 변형이다. 카드에 두되 라벨만 붙인다.
          *                                              사용자가 보고 판단할 여지를 둔다 ("색상이 다르지만 더 쌈").
-         *   EXCLUDED (사용자가 "삼성 빼줘" 라고 한 것) — 소프트 제외 정책 그대로. 카드에 남고 랭킹만 내려간다.
+         *   EXCLUDED (사용자가 "삼성 빼줘" · "블랙 가격은 제외해줘" 라고 한 것) — EXACT 가 있으면 카드에서 뺀다
+         *            (2026-10-26). 예전에는 카드에 남기고 랭킹만 내렸는데, "실버 얼마야? 스페이스그레이 가격은
+         *            제외해줘" 에 뺀 색의 카드가 나란히 나가 같은 모델의 다른 옵션 가격을 섞어 보였다.
+         *            items[] 에는 남는다 — 랭킹·맥락은 그대로 본다. 정확한 후보가 없을 때(NEAR)는 아래처럼 다 둔다.
          *
          * NEAR 상태(정확한 후보가 하나도 없음)에서는 전부 카드에 두고 라벨을 붙인다 — _concierge 가
          * "정확히 맞는 상품은 찾지 못했어요" 로 답하는 동안 사용자가 각 카드가 무엇이 다른지 바로 안다.
@@ -5481,7 +5484,7 @@ module.exports = async function handler(req, res) {
          *   오직 사용자가 보는 카드 목록만 좁힌다. partition 이 이미 MISMATCH 를 빼 두었다.
          */
         const cardItems = identityState === 'EXACT'
-          ? items.filter(it => !it._identity || it._identity.tier !== AIID.TIER.SIBLING)
+          ? items.filter(it => !it._identity || (it._identity.tier !== AIID.TIER.SIBLING && it._identity.tier !== AIID.TIER.EXCLUDED))
           : items;
         const cardPairs = cardItems
           .map(it => it && it._raw ? { item: it, raw: it._raw } : null)
@@ -5542,8 +5545,8 @@ module.exports = async function handler(req, res) {
         if (intent === 'C' && items.length) {
           const near = BW.nearBudgetWindow(items, constraints, q);
           if (near.applies) {
-            items=near.within;
-            if (!items.length) { identityState='BUDGET_PREFERENCE'; preferredBudgetMiss=near; }
+            if (near.within.length) items = near.within;
+            else nearBudgetFallback = near;
           }
         }
         const allowed=raw=>items.some(it=>productIdentityMatches(it,normItem(fromSearchResult(raw))));
@@ -5620,11 +5623,6 @@ module.exports = async function handler(req, res) {
      * 결정론 문장으로 바꾼다. 그래서 모델을 부르지 않고 바로 답한다. 다른 종류의
      * 가장 싼 상품을 대신 내보내던 경로(“노트북 없음 → 버즈3 추천”)가 여기서 끊긴다.
      */
-    if (identityState === 'BUDGET_PREFERENCE' && preferredBudgetMiss) {
-      const payload={text: BW.noNearMatchMessage(preferredBudgetMiss),intent:resolvedCanonicalIntent};
-      if (guest) payload.guest=true;
-      return res.json(withTurnSig(keepPrevRef(payload)));
-    }
     if (identityState === 'CATEGORY_PREFERENCE') {
       const payload={text:'게이밍용을 제외하면 확인된 추천 후보가 없습니다. 다른 가격대나 제품을 찾아볼까요?',intent:resolvedCanonicalIntent};
       if (guest) payload.guest=true;
@@ -6759,8 +6757,25 @@ module.exports = async function handler(req, res) {
       degradedByGrounding = true;
       console.warn('[ai] 가격 확인 시점 불일치 — 처음 검색가와 저장가를 구분하여 안내');
     }
+    /*
+     * 상한 근처에 확인된 상품이 없어 예산 안의 더 싼 상품을 보여 주는 턴 — 그 사실을 답 맨 앞에 밝힌다.
+     * 모델 답이 «예산에 딱 맞는» 처럼 읽혀도 사용자는 근처 가격대가 비었다는 것을 먼저 본다.
+     */
+    if (nearBudgetFallback && !priceConflict && items.length && !text.includes(BW.fallbackNotice(nearBudgetFallback))) {
+      text = `${BW.fallbackNotice(nearBudgetFallback)}\n\n${text}`;
+    }
+    /*
+     * 후속 질문의 카드 한 장은 같은 상품을 이어 묻는 턴에만 (2026-10-26). "헤드셋 추천" 뒤의 "그럼 그램 노트북도
+     * 추천해줘" 는 새 검색이다 — 이 메시지 자체가 다른 종류의 상품을 말했으면 후보 카드를 그대로 보여 준다.
+     */
+    let priorProduct = String((priorConvState && priorConvState.product) || '');
+    if (!priorProduct) {
+      try { priorProduct = String(require('./_intent').conversationProduct(hist) || ''); } catch (e) { priorProduct = ''; }
+    }
+    const newTopic = !!(cls && cls.ownQuery && !cls.refinement && priorProduct
+      && CS.productKindChanged(priorProduct, cls.identityText || cls.query || ''));
     let replyCards=cards;
-    if (BW.oneCardFollowup(q,hist,intent) && cards.length) {
+    if (BW.oneCardFollowup(q,hist,intent,{ newTopic }) && cards.length) {
       const chosen=decision&&decision.top?items.find(it=>it&&it.ref===decision.top.ref):items[0];
       if (chosen) {
         const matched=cardSources.map((raw,i)=>productIdentityMatches(chosen,normItem(fromSearchResult(raw)))?cards[i]:null).filter(Boolean);

@@ -136,7 +136,8 @@ function categoryNounsOf(text) {
   const aliases = [];
   if (/(?:에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|버즈[2-9]\s*프로)/i.test(t)
       && !/(?:케이스|파우치|보호필름|충전\s*케이블)/.test(t)) aliases.push('이어폰');
-  if (/(?:맥북|macbook|lg\s*그램|(?:^|[^0-9가-힣])그램(?=\s|$|[0-9]|프로)|갤럭시북)/i.test(t)
+  // "닭가슴살 100 그램" 의 그램은 무게 단위다 — 숫자 바로 뒤(띄어 써도)의 그램은 노트북이 아니다.
+  if (/(?:맥북|macbook|lg\s*그램|(?:^|[^0-9가-힣])(?<![0-9]\s{0,2})그램(?=\s|$|[0-9]|프로)|갤럭시북)/i.test(t)
       && !/(?:충전기|파우치|키스킨|보호필름)/.test(t)) aliases.push('노트북');
   if (/(?:아이패드|ipad|갤럭시\s*탭|galaxy\s*tab)/i.test(t)
       && !/(?:케이스|파우치|보호필름)/.test(t)) aliases.push('태블릿');
@@ -453,6 +454,6 @@ function summaryLine(next, withBudget) {
 
 module.exports = {
   resolve, applyConditions, summaryLine,
-  digest, releasesBudget, conditionsOf,
+  digest, releasesBudget, conditionsOf, productKindChanged, categoryNounsOf,
   MAX_ABSORBED, MAX_REPLAY
 };

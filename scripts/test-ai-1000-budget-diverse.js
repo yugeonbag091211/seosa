@@ -39,10 +39,23 @@ const seen=new Set(),groups={},failureCases=[];
   const items=r?.body?.items||[];
   const window=BW.nearBudgetWindow([{price:ceiling}],{budgetMax:ceiling,budgetSaid:ceiling},q);
   const lower=window.applies?window.lower:0;
+  /*
+   * The fixture catalogue is known, so "no result" is only a valid answer when it is true
+   * (2026-10-26). Before this, 400/1000 answers were "12만~15만원에서 못 찾음" refusals while
+   * 12.9만·14.5만원 offers existed, and the loose text match below counted them as passes.
+   *   near-ceiling offer exists → cards, all inside [lower, ceiling]
+   *   only cheaper in-budget offers → cards inside the budget AND the fallback notice
+   *   nothing inside the budget → a no-result answer is legitimate
+   */
+  const nearExists=prices.some(p=>p>=lower&&p<=ceiling);
+  const inBudgetExists=prices.some(p=>p<=ceiling);
+  const text=r?.body?.text||'';
   const valid=r?.status===200&&typeof r.body?.text==='string'&&r.body.text.length>0&&!err
-   &&items.every(i=>Number(i.lprice)>0&&Number(i.lprice)<=ceiling&&Number(i.lprice)>=lower&&!!i.productId)
-   &&items.every(i=>!BW.avoidsGaming(i))&&!r.body?.comparison?.complete;
-  const acceptedEmpty=items.length===0&&/(?:찾|없|확인|조건|검색|후보|결과|범위|추천)/.test(r?.body?.text||'');
+   &&items.every(i=>Number(i.lprice)>0&&Number(i.lprice)<=ceiling&&!!i.productId)
+   &&items.every(i=>!BW.avoidsGaming(i))&&!r.body?.comparison?.complete
+   &&(nearExists?items.length>0&&items.every(i=>Number(i.lprice)>=lower)
+     :inBudgetExists?items.length>0&&/가까운[^\n]*확인된 상품이 없어/.test(text):true);
+  const acceptedEmpty=!inBudgetExists&&items.length===0&&/(?:찾|없|확인|조건|검색|후보|결과|범위|추천)/.test(text);
   const success=valid&&(items.length>0||acceptedEmpty);
   if(items.length>0)positive++;else if(acceptedEmpty)legitEmpty++;
   if(success){pass++;groups[cat].pass++;}else{

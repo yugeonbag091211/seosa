@@ -189,6 +189,8 @@ const STRIP_WORDS = [
   // 조건을 덧붙이는 말. 남으면 "통화 품질 중요해" 같은 문장이 검색어가 된다.
   '중요해', '중요한', '중요하고', '중요', '필요하고', '위주로', '위주',
   '하나', '하나만', '것', '거', '걸', '게', '좀', '제발', '빨리', '진짜', '정말', '그냥',
+  // 화제를 바꾸는 이음말 — "그럼 그램 노트북도 추천해줘" 가 «그럼 그램 노트북» 으로 검색됐다 (2026-10-26).
+  '그럼', '그러면', '이번엔', '이번에는',
   // 조건 (금액은 정규식으로 따로 지운다)
   '이하', '이하로', '이하의', '이내', '미만', '까지', '이상', '넘는', '정도', '쯤', '안팎', '내외',
   '아래', '아래로', '밑', '밑으로', '언더',
@@ -320,6 +322,14 @@ function stripCopula(tok) {
   if (!/^[가-힣]{3,}$/.test(t)) return t;
   const s = t.replace(COPULA_TAIL_RE, '');
   return s && s.length >= 2 ? s : t;
+}
+
+/** 꼬리를 떼도 낱말 안의 색 이름이 그대로인가 ("스페이스그레이" → "스페이스그레" 는 그레이를 잃는다). */
+function keepsColors(before, after) {
+  const a = AIID.colorsOf(before);
+  if (!a.size) return true;
+  const b = AIID.colorsOf(after);
+  return [...a].every(c => b.has(c));
 }
 
 /*
@@ -595,10 +605,15 @@ function extractQuery(text) {
         && SEARCH.splitTokens(t).some(part => SEARCH.SYNONYMS.has(part))
         && SEARCH.splitTokens(t).some(part => SEARCH.VARIANT_KEYS.has(part));
       // 영문·숫자 토큰은 조사를 떼지 않는다 ("14ZD95U" 의 U 를 조사로 볼 위험).
-      if (/^[가-힣]+$/.test(t) && safeToStrip && !compactFamilyTier) t = stripped;
+      if (/^[가-힣]+$/.test(t) && safeToStrip && !compactFamilyTier) {
+        // 색 이름의 끝 글자 '이' 는 조사가 아니다 — "스페이스그레이" 가 "스페이스그레" 로 검색되면 색 옵션을 잃는다.
+        // "스페이스그레이랑" 은 '이랑' 대신 마지막 한 글자 조사만 뗀다 (_aiidentity stripJosa 와 같은 규칙).
+        if (keepsColors(t, stripped)) t = stripped;
+        else if (/[은는가을를도와과의만로랑]$/.test(t) && keepsColors(t, t.slice(0, -1))) t = t.slice(0, -1);
+      }
     }
     // "노트북인데" · "모델이야" — 서술격 꼬리를 떼고 남은 명사로 다시 판단한다 (isJunkToken 주석).
-    t = stripCopula(t);
+    if (keepsColors(t, stripCopula(t))) t = stripCopula(t);
     if (STRIP_SET.has(t) || isJunkToken(t)) return;
     if (!t || t.length < 1) return;
     if (/^[가-힣]$/.test(t)) return;          // 한 글자 한글은 아무 데나 걸린다

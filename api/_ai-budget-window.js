@@ -3,9 +3,18 @@
  * Near-ceiling recommendations never expand the user's hard budget.
  * Product type / option verification remains the responsibility of the
  * existing AI identity gate.
+ *
+ * "15만원 이하" prefers 12~15만원 offers. It is a preference, not a second
+ * budget: when nothing verified sits near the ceiling, the cheaper offers that
+ * are still inside the budget are shown with a notice (fallbackNotice) instead
+ * of refusing — "그램 200만원 이하" used to end with "197만~200만원에서 못 찾음"
+ * while 159만원 and 64.5만원 gram laptops were inside the budget (2026-10-26).
+ * The window scales with the ceiling (20%, at least 3만원): a 3만원 window is
+ * "near" for 15만원 but meaningless for 200만원.
  */
 const LOW_PRICE_CUTOFF=50000;
 const NEAR_BUDGET_WON=30000;
+const NEAR_BUDGET_RATIO=0.2;
 const GAMING_TITLE=/(?:게이밍|게임\s*전용|게임\s*헤드셋|gaming|gamer|e-sport|esports)/i;
 const EXCLUDE_GAMING=/(?:게임|게이밍)[^.!?\n]{0,30}(?:말고|빼|제외|아니|싫|원치|안\s*돼)|(?:일상용|데일리용|통학용|출퇴근용)(?![^.!?\n]{0,20}(?:게임도|게임용도))/;
 const ALLOW_GAMING=/(?:게임용|게이밍)(?:도|을|은|는)?\s*(?:괜찮|가능|상관\s*없|추천|필요|원해|찾아)|게임(?:도|을)\s*(?:할|해|하니까)/;
@@ -17,7 +26,8 @@ function nearBudgetWindow(items,constraints,question){
  const anchor=Math.round(Number(c.budgetSaid||c.budgetMax)||0);
  const max=Math.round(Number(c.budgetMax)||0),min=Math.max(0,Math.round(Number(c.budgetMin)||0));
  if(!max||anchor<=LOW_PRICE_CUTOFF||c.budgetSoft||c.budgetRelax||CHEAPEST.test(String(question||'')))return{applies:false,within:list,outside:[],lower:0,upper:max};
- const lower=Math.max(min,anchor-NEAR_BUDGET_WON),upper=Math.min(max,anchor+NEAR_BUDGET_WON);
+ const width=Math.max(NEAR_BUDGET_WON,Math.round(anchor*NEAR_BUDGET_RATIO));
+ const lower=Math.max(min,anchor-width),upper=Math.min(max,anchor+width);
  if(lower>upper)return{applies:true,within:[],outside:list,lower,upper};
  const within=[],outside=[];
  for(const it of list)(positivePrice(it)>=lower&&positivePrice(it)<=upper?within:outside).push(it);
@@ -25,8 +35,18 @@ function nearBudgetWindow(items,constraints,question){
 }
 function gamingPreference(text){const q=String(text||'');if(ALLOW_GAMING.test(q))return false;if(EXCLUDE_GAMING.test(q))return true;return null;}
 function avoidsGaming(item){return GAMING_TITLE.test(String(item&&item.title||''));}
-function oneCardFollowup(question,history,intent){
+/**
+ * One selected card for a follow-up about the product already being discussed.
+ * A request for a different kind of product in the same chat (headset → laptop)
+ * is a new search and keeps its candidate cards (opts.newTopic).
+ */
+function oneCardFollowup(question,history,intent,opts){
+ if(opts&&opts.newTopic)return false;
  return intent==='C'&&Array.isArray(history)&&history.some(h=>h&&h.role==='user')&&!MULTIPLE.test(String(question||''));
 }
-function noNearMatchMessage(result){const won=n=>Math.round(n).toLocaleString('ko-KR')+'원';return won(result.lower)+'~'+won(result.upper)+'에서 요청하신 조건에 맞는 상품을 확인하지 못했어요. 더 저렴한 상품이나 제외하신 유형을 대신 추천하지 않을게요. 가격 범위를 넓혀 볼까요?';}
-module.exports={LOW_PRICE_CUTOFF,NEAR_BUDGET_WON,nearBudgetWindow,gamingPreference,avoidsGaming,oneCardFollowup,noNearMatchMessage};
+function won(n){const v=Math.round(n);return v%10000===0?(v/10000).toLocaleString('ko-KR')+'만원':v.toLocaleString('ko-KR')+'원';}
+/** Shown above the answer when no verified offer sat near the ceiling and cheaper in-budget offers are listed instead. */
+function fallbackNotice(result){
+ return '요청하신 예산 상한('+won(result.upper)+')에 가까운 '+won(result.lower)+'~'+won(result.upper)+' 가격대에서는 확인된 상품이 없어, 예산 안의 더 저렴한 상품으로 안내드려요.';
+}
+module.exports={LOW_PRICE_CUTOFF,NEAR_BUDGET_WON,NEAR_BUDGET_RATIO,nearBudgetWindow,gamingPreference,avoidsGaming,oneCardFollowup,fallbackNotice};

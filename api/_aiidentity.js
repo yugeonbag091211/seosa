@@ -144,9 +144,22 @@ function stripJosa(token) {
   if (GENERIC_WORDS.has(t) || CATEGORY_NOUNS.has(t) || S.SYNONYMS.has(t) || S.VARIANT_KEYS.has(t)) return t;
   if (/^[가-힣]{3,}$/.test(t) && JOSA_TAIL_RE.test(t)) {
     const s = t.replace(JOSA_TAIL_RE, '');
-    if (s.length >= 2) return s;
+    if (s.length >= 2 && keepsColors(t, s)) return s;
+    /*
+     * 색 이름의 끝 글자 '이' 는 조사가 아니다 (2026-10-26) — "스페이스그레이" 를 "스페이스그레" 로 자르면
+     * 그레이가 사라져 색 옵션을 못 가른다. "스페이스그레이랑" 처럼 '이랑' 으로 읽힌 꼬리는 한 글자 조사만 뗀다.
+     */
+    const one = t.slice(0, -1);
+    if (s.length >= 2 && /[은는가을를도와과의만로랑야]$/.test(t) && keepsColors(t, one)) return one;
   }
   return t;
+}
+/** 조사를 떼도 낱말 안의 색 이름이 그대로인가. */
+function keepsColors(before, after) {
+  const a = colorsOf(before);
+  if (!a.size) return true;
+  const b = colorsOf(after);
+  return [...a].every(c => b.has(c));
 }
 
 function isAccessoryToken(tok) {
@@ -195,8 +208,17 @@ function slotOf(rawTok) {
  *   앞의 G304 를 통째로 빼 버렸고, 남은 "없다고" 로 검색해 책이 나왔다. 동사 뒤 '-지 말고' 는
  *   «그 동작을 하지 말라» 는 말이라 상품 범위를 자르지 않는다.
  * ★ "MX Master 3와 구분하고 …" — «X와 구분» 은 X 를 빼 달라는 말이다 (2026-10-22 CAND-13).
+ * ★ «X(와) 섞지 말아줘 · 헷갈리지 말고 · 혼동하지 마» 도 X 를 빼 달라는 말이다 (2026-10-26). '-지 말고'
+ *   중에서 이 세 동사만 — 대상과 섞이거나 헷갈리는 것을 막는 말이라 앞의 명사가 곧 뺄 대상이다.
+ *   조사(와·랑)는 앞 낱말에 붙여 둔다 — 떼는 일은 stripJosa 가 한다("스페이스그레이랑" 의 '이' 보존).
  */
-const NEG_RE = /((?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|(?<!자가\s)아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
+const NEG_RE = /((?<=[가-힣a-z0-9])\s*(?:섞지|혼동하지|헷갈리지|헛갈리지)\s*(?:말|마|않)[가-힣]*|(?<!지\s?)말고|(?<!지\s?)말구|제외(?:하고|한|하면|해서|해)?|빼고|빼줘|빼|(?<!자가\s)아니라|아닌|아니고|없이|(?<=[가-힣a-z0-9])(?:와|과)\s*(?:구분|구별)(?:하고|해서|하여|해)?|(?:^|\s)(?:excluding|except|not)(?=\s|$))/gi;
+/*
+ * 뺄 대상 뒤에 붙는 틀 낱말 — "블랙 가격은 제외해줘" · "중고 상품은 빼줘" · "삼성 제품은 말고" (2026-10-26).
+ * 빼 달라는 것은 블랙·중고·삼성이지 «가격»·«상품» 이 아니다. 예전에는 마지막 낱말인 틀 낱말을 빼고
+ * 정작 블랙은 원하는 옵션으로 남겨, 사용자가 제외한 색의 카드만 보여 줬다(에어팟 맥스 실버/스페이스그레이).
+ */
+const NEG_FRAME_WORDS = new Set(['가격', '금액', '가격대', '값', '상품', '제품', '모델', '옵션', '쪽', '거', '것', '건', '매물', '판매처', '판매가']);
 const LIST_SPLIT_RE = /\s*(?:[·/,]|(?<=[가-힣a-z0-9])(?:와|과|랑|이나|나|및)(?=\s|$)|\s및\s)\s*/i;
 const IDENTITY_SLOTS = new Set(['anchor', 'variant', 'base']);
 
@@ -303,7 +325,11 @@ function splitNegations(text) {
     marks.forEach((mk, i) => {
       const pre = clause.slice(cursor, mk.start);
       const post = clause.slice(mk.end, i + 1 < marks.length ? marks[i + 1].start : clause.length);
-      const preToks = tokensOf(pre);
+      // 뺄 대상 뒤의 틀 낱말("블랙 가격은")은 범위에서 뺀다 (NEG_FRAME_WORDS). 틀 낱말뿐이면("가격은 빼고") 그대로.
+      const rawPreToks = tokensOf(pre);
+      let frameCut = rawPreToks.length;
+      while (frameCut > 0 && NEG_FRAME_WORDS.has(rawPreToks[frameCut - 1])) frameCut--;
+      const preToks = frameCut > 0 ? rawPreToks.slice(0, frameCut) : rawPreToks;
       const postSlots = tokensOf(post).map(slotOf);
       const postHasIdentity = postSlots.some(s => IDENTITY_SLOTS.has(s));
       const postHasWord = postSlots.includes('word');
