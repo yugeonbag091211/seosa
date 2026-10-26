@@ -25,6 +25,7 @@ export const palette = {
     upBg: '#FBECEA',        // --up-bg
     brand: '#8A6D1C',       // --brand
     brandBg: '#FAF5E7',     // --brand-bg
+    caution: '#B45309',     // web .mini .mnote-id — "다른 옵션·다른 모델" card label
     coupang: '#C81B25', adpick: '#3D6BE0', ali: '#E0560C',
     control: '#15171B',     // primary button (ink, like the web .buy)
     onControl: '#FFFFFF',
@@ -36,7 +37,7 @@ export const palette = {
     ink: '#EAEDF1', soft: '#98A0AB', faint: '#848B96',
     line: '#292E35', line2: '#3B414B',
     down: '#3ECF8E', downBg: '#0F2A1E', up: '#F0685B', upBg: '#2B1512',
-    brand: '#CBAA4B', brandBg: '#251F10',
+    brand: '#CBAA4B', brandBg: '#251F10', caution: '#F59E4B',
     coupang: '#E8555F', adpick: '#6E8EF0', ali: '#F0803C',
     control: '#EAEDF1', onControl: '#16181C',
     chartLine: '#EAEDF1',

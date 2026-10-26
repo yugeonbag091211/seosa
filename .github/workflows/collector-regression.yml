@@ -8,6 +8,11 @@ on:
       - 'scripts/test-price-mall-collection.js'
       - 'scripts/test-collector-scale.js'
       - 'scripts/test-collector-coverage.js'
+      # Shared option identity parser is used by both AI and offer grouping.
+      - 'api/_identitycore.js'
+      - 'api/_offeridentity.js'
+      - 'api/_aiidentity.js'
+      - 'scripts/test-offer-identity.js'
       - 'api/_blockreason.js'
       - 'api/_coupang.js'
       - 'api/_neonpg.js'
@@ -42,6 +47,12 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      # A previous AI display-title normalization change caused a false-positive
+      # product match. Keep the shared identity gate under collector CI too.
+      - name: Shared product/option identity regression
+        run: |
+          node scripts/test-offer-identity.js
+          node scripts/test-identity.js
       - name: Second-pass and budget regression
         run: node scripts/test-second-pass.js
       - name: Mall collection/report regression
