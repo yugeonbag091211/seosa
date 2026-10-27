@@ -82,9 +82,16 @@ const SITEMAP_CACHE_S = 12 * 60 * 60; // 12시간
  * 그래서 아는 것만 적는다: 어디서 받은 값인지, 그리고 실제 결제 금액은
  * 판매처에서 확인해야 한다는 것. 모르는 것을 아는 척하지 않는다.
  */
-const PRICE_SOURCE_NOTE = 'SEOSA 가 쿠팡 파트너스 검색 API 로 매일 받아 기록한 값이에요. '
-  + '이 값에 어떤 할인이 반영돼 있는지는 API 가 알려주지 않아서, 판매처에서 보이는 '
-  + '금액과 다를 수 있어요. 실제 결제 금액은 판매처에서 확인해 주세요.';
+/** 실제 수집 경로와 일치하는 출처 설명. ADPICK 상품에 쿠팡 API 출처를 붙이지 않는다. */
+function priceSourceNote(mall) {
+  const raw = String(mall || '');
+  const source = /^ADPICK$/i.test(raw)
+    ? 'ADPICK 제휴몰 상품 정보'
+    : /쿠팡|COUPANG/i.test(raw) ? '쿠팡 파트너스 검색 API' : '연동 판매처 상품 정보';
+  return `SEOSA 가 ${source}를 통해 확인해 기록한 가격이에요. `
+    + '이 가격에 할인·쿠폰·배송비가 어떻게 반영됐는지는 제공 정보만으로 확인할 수 없어요. '
+    + '실제 결제 금액은 판매처에서 확인해 주세요.';
+}
 
 /* ── 안전한 문자열 ──────────────────────────────────────────────── */
 function esc(v) {
@@ -643,7 +650,7 @@ ${SEO.jsonLdScript(jsonLd)}
 
   ${summaryHtml(summary)}
   ${statsHtml}
-  ${spark ? `<div class="spark">${spark}</div><div class="note">${PRICE_SOURCE_NOTE}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${PRICE_SOURCE_NOTE}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
+  ${spark ? `<div class="spark">${spark}</div><div class="note">${esc(priceSourceNote(row.mall || product.mall))}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${esc(priceSourceNote(row.mall || product.mall))}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
   ${storyHtml}
   ${canonicalGraphHtml}
 
@@ -858,5 +865,5 @@ module.exports = {
   productHandler, pageHandler, sitemapHandler,
   // 테스트용 순수 함수
   _internal: { esc, safeUrl, cleanPid, pageUrl, sparkSvg, renderPage, render404, describeForMeta, buildView, indexableProducts,
-    observedDays, isIndexableProduct, INDEX_MIN_DAYS, SITE }
+    observedDays, isIndexableProduct, priceSourceNote, INDEX_MIN_DAYS, SITE }
 };

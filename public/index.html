@@ -1007,6 +1007,14 @@ html[data-theme="dark"] .bs-tip{background:rgba(30,32,36,.76);
   .catnav .chip{padding:10px 10px;font-size:.8rem}
   .catnav .chip:first-child{padding-left:0}
 }
+/* JS가 실행되기 전에도 검색봇과 방문자가 카테고리 본문에 도달하는 실제 링크.
+ * 단순 키워드 나열 대신 검색 의도를 드러내고, 화면을 차지하지 않는 보조 내비게이션으로 둔다. */
+.seo-quicklinks{display:flex;align-items:center;flex-wrap:wrap;gap:5px 13px;
+  margin:8px 0 2px;color:var(--soft);font-size:.76rem;line-height:1.7}
+.seo-quicklinks .ql-label{font-weight:600;color:var(--ink);margin-right:2px}
+.seo-quicklinks a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+.seo-quicklinks a:hover,.seo-quicklinks a:focus-visible{color:var(--ink)}
+@media(max-width:640px){.seo-quicklinks{font-size:.72rem;gap:4px 10px}}
 
 /* 검색 필드 기본형 (헤더 밖에서도 같은 모양을 쓰는 곳이 있다) */
 .search-box{position:relative}
@@ -3813,6 +3821,18 @@ select:focus-visible,textarea:focus-visible,
     -->
     <nav class="catnav" aria-label="카테고리">
       <div class="chips" id="chips"></div>
+    </nav>
+    <!-- 순수 HTML 내부 링크: 홈 → 실제 가격 기록 카테고리 → 상품 상세.
+         JS로 만드는 #chips와 달리 검색봇이 검색창을 제출하지 않아도 탐색 가능. -->
+    <nav class="seo-quicklinks" aria-label="가격 기록 카테고리 바로가기">
+      <span class="ql-label">가격 기록 보기</span>
+      <a href="/category/laptop">노트북 가격 추이</a>
+      <a href="/category/wireless-earbuds">무선 이어폰 가격비교</a>
+      <a href="/category/mouse">마우스 가격 추이</a>
+      <a href="/category/suitcase">캐리어 가격비교</a>
+      <a href="/brand/samsung">삼성전자 상품</a>
+      <a href="/brand/lg">LG전자 상품</a>
+      <a href="/category">전체 카테고리</a>
     </nav>
     <div class="recent-search" id="recentSearch"></div>
     <!--
