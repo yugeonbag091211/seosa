@@ -374,7 +374,7 @@ let KST_LASTMOD_AT = 0;
     const mixed = [{ recorded_at: iso(base), vendor_item_id: 'A' }, { recorded_at: iso(base + 86400e3), vendor_item_id: 'B' }, { recorded_at: iso(base + 2 * 86400e3), vendor_item_id: 'B' }];
     ok(PP.observedDays(mixed, 'A') === 1 && PP.observedDays(mixed, 'B') === 2 && PP.observedDays(mixed, 'C') === 0, '★ 관측일은 현재 옵션(sameVendorRows)만 센다 — 다른 옵션의 날짜를 섞지 않는다');
     const live = { product_id: '1', mall: '쿠팡', lprice: 1000, link: 'https://x.y/z', collected_at: new Date().toISOString(), title: 'x' };
-    ok(!PP.isIndexableProduct(live, 6) && PP.isIndexableProduct(live, 7) && PP.isIndexableProduct(live, 8), '★ 색인 문턱: 6일 ✗ · 7일 ✓ · 8일 ✓');
+    ok(!PP.isIndexableProduct(live, 4) && PP.isIndexableProduct(live, 5) && PP.isIndexableProduct(live, 6), '★ 색인 문턱: 4일 ✗ · 5일 ✓ · 6일 ✓');
   }
 
   section('3. title · description · shortName');
