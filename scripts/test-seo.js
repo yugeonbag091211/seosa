@@ -504,6 +504,12 @@ let KST_LASTMOD_AT = 0;
     ok(/href="\/category\/laptop">노트북 최저가 전체 보기/.test(t) && /href="\/brand\/lg">LG전자 제품 가격비교/.test(t), '내부 링크: 카테고리 · 브랜드');
     ok(/<img src="[^"]+" alt="LG전자 2026 그램 16[^"]*"/.test(t), '이미지 alt = 상품명 (키워드 나열 아님)');
     ok(/<a rel="nofollow" href="\/\?q=/.test(t), '검색 URL 링크는 nofollow');
+    const sourceNote = productPage._internal.priceSourceNote;
+    ok(sourceNote('쿠팡').includes('쿠팡 파트너스 검색 API')
+      && !sourceNote('쿠팡').includes('ADPICK'), '★ 쿠팡 상품은 쿠팡 가격 출처를 설명한다');
+    ok(sourceNote('ADPICK').includes('ADPICK 제휴몰 상품 정보')
+      && !sourceNote('ADPICK').includes('쿠팡 파트너스'), '★ 제휴몰 상품은 쿠팡 API 출처로 잘못 설명하지 않는다');
+    ok(sourceNote('ADPICK').includes('실제 결제 금액은 판매처에서 확인'), '★ 외부 가격과 결제 금액의 차이를 숨기지 않는다');
     ok(!/google-site-verification|naver-site-verification/.test(t), '환경변수 없으면 확인 메타 없음');
 
     const variant = await call({ __route: 'page', pid: '2001', mall: '쿠팡', utm_source: 'x', m: '쿠팡' });
@@ -881,6 +887,22 @@ let KST_LASTMOD_AT = 0;
     const wrong = cases.filter(([q, want]) => runHead(q) !== want).map(([q]) => q || '(없음)');
     ok(!!headScript && !wrong.length, '★ 열린 주소별 행동: ?q·?p(값 없음 포함) → canonical 제거 + noindex · 그 밖은 그대로', wrong.join(','));
     ok(/<a href="\/category"[^>]*>카테고리·브랜드별 최저가<\/a>/.test(body), '홈 → /category 진짜 링크');
+    const quick = body.match(/<nav class="seo-quicklinks"[\s\S]*?<\/nav>/);
+    const featured = [
+      ['/category/laptop', '노트북 가격 추이'],
+      ['/category/wireless-earbuds', '무선 이어폰 가격비교'],
+      ['/category/mouse', '마우스 가격 추이'],
+      ['/category/suitcase', '캐리어 가격비교'],
+      ['/brand/samsung', '삼성전자 상품'],
+      ['/brand/lg', 'LG전자 상품']
+    ];
+    ok(quick && featured.every(([href, label]) => quick[0].includes(`href="${href}">${label}</a>`)),
+      '★ 홈 HTML에 실제 상품 카테고리·브랜드로 연결되는 설명형 링크 6개');
+    ok(quick && body.indexOf('<main class="wrap">') < body.indexOf(quick[0])
+      && body.indexOf(quick[0]) < body.indexOf('<section id="priceDrop"'),
+      '★ 카테고리 링크는 JS 없이 메인 상단에서 보이며 숨긴 상품 섹션 안에 있지 않다');
+    ok(quick && !/data-act|onclick|<button/.test(quick[0]) && /href="\/category">전체 카테고리/.test(quick[0]),
+      '★ 카테고리 탐색은 JS 이벤트가 아닌 직접 href 링크');
     ok(!/naver-site-verification" content="[^여]/.test(body), '네이버 확인 값을 지어내지 않는다 (주석 자리만)');
     const radar = fs.readFileSync(path.join(ROOT, 'public', 'radar.html'), 'utf8');
     ok(/<meta name="robots" content="noindex,follow">/.test(radar), '개인 레이더 페이지 noindex');
