@@ -669,6 +669,41 @@ let KST_LASTMOD_AT = 0;
     const hub = await pages._internal.hubData();
     const mouse = hub.categories.find(e => e.def.slug === 'mouse');
     ok(mouse && mouse.count === count, '★ 허브와 카테고리 페이지가 같은 수를 센다', mouse && `${mouse.count}`);
+
+    const firstUrls = [...r.text.matchAll(/<li><a href="\/p\/(\d+)">/g)].map(m => m[1]);
+    const second = await call({ __route: 'category', slug: 'mouse', page: '2' });
+    const secondUrls = [...second.text.matchAll(/<li><a href="\/p\/(\d+)">/g)].map(m => m[1]);
+    const third = await call({ __route: 'category', slug: 'mouse', page: '3' });
+    const thirdUrls = [...third.text.matchAll(/<li><a href="\/p\/(\d+)">/g)].map(m => m[1]);
+    ok(firstUrls.length === 60 && secondUrls.length === 60 && thirdUrls.length === 60
+      && !secondUrls.some(pid => firstUrls.includes(pid))
+      && !thirdUrls.some(pid => secondUrls.includes(pid)),
+      '★ 다음 목록은 다른 60개 상품으로 이어진다 (중복 없는 페이지별 HTML 링크)');
+    ok(/href="https:\/\/seosa\.ai\.kr\/category\/mouse\?page=2"/.test(r.text)
+      && /href="https:\/\/seosa\.ai\.kr\/category\/mouse\?page=3"/.test(second.text)
+      && /href="https:\/\/seosa\.ai\.kr\/category\/mouse"/.test(second.text),
+      '★ 페이지 1→2→3 및 2→1 HTML 링크가 서버 렌더로 제공된다');
+    ok(second.status === 200 && /<title>마우스 최저가·가격비교 2페이지 \| SEOSA<\/title>/.test(second.text)
+      && /rel="canonical" href="https:\/\/seosa\.ai\.kr\/category\/mouse\?page=2"/.test(second.text)
+      && /content="index,follow"/.test(second.text),
+      '★ 2페이지는 자체 title·canonical·index 정책을 가진다');
+    const secondCollection = ldNodes(second.text).find(n => n['@type'] === 'CollectionPage');
+    ok(secondCollection && secondCollection.url === 'https://seosa.ai.kr/category/mouse?page=2'
+      && secondCollection.mainEntity.itemListElement.length === 60
+      && secondCollection.mainEntity.itemListElement[0].url.endsWith('/p/' + secondUrls[0]),
+      '★ 2페이지 CollectionPage/ItemList도 2페이지의 상품만 가리킨다');
+    const last = await call({ __route: 'category', slug: 'mouse', page: String(Math.ceil(count / 60)) });
+    ok(last.status === 200 && !/다음 상품 →/.test(last.text)
+      && /이전 상품/.test(last.text),
+      '★ 마지막 페이지에서는 범위 밖 다음 페이지 링크를 만들지 않는다');
+    const invalid = await Promise.all(['0', 'invalid', '999', '01'].map(page => call({ __route: 'category', slug: 'mouse', page })));
+    ok(invalid.every(x => x.status === 404 && !/rel="canonical"/.test(x.text)
+      && /content="noindex,follow"/.test(x.text)),
+      '★ 존재하지 않는 페이지는 404/noindex/비canonical로 끝낸다');
+    const alias = await call({ __route: 'category', slug: 'mouse', page: '1' });
+    ok(alias.status === 200 && /rel="canonical" href="https:\/\/seosa\.ai\.kr\/category\/mouse"/.test(alias.text),
+      '★ ?page=1 은 중복 색인 없이 원래 주소를 canonical 로 쓴다');
+
     db.products = saved;
     pages._internal.resetMemo();
   }
