@@ -43,8 +43,8 @@ const Canonical = require('./_canonicalconsumer');
 /** 절대 URL 의 기준. 배포 도메인이 바뀌면 환경변수로 덮는다. */
 const SITE = String(process.env.SITE_ORIGIN || 'https://seosa.ai.kr').replace(/\/+$/, '');
 
-/** 이 일수 미만의 기록은 색인하지 않는다 — 카드의 ATL_MIN_POINTS 와 같은 문턱. */
-const INDEX_MIN_DAYS = 7;
+/** 색인에 필요한 서로 다른 관측일 수(현재 옵션 기준). 가격 판정과 독립된 SEO 기준. */
+const INDEX_MIN_DAYS = 5;
 /** 사이트맵 상한. 그 이상은 "많이" 가 아니라 "얕게" 가 된다. */
 const SITEMAP_MAX = 5000;
 /** 가격 기록 조회 상한 (api/history.js SINGLE_MAX_ROWS 와 같다). */
