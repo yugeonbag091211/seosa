@@ -1,0 +1,35 @@
+name: SEO indexability regression
+
+on:
+  pull_request:
+    paths:
+      - 'api/_product-page.js'
+      - 'api/_seo-pages.js'
+      - 'scripts/test-seo.js'
+      - 'scripts/test-product-page.js'
+      - 'scripts/test-p2-resilience.js'
+      - 'supabase/2026-10-02-seo-sitemap.sql'
+      - 'supabase/2026-10-02-seo-sitemap.VERIFY.sql'
+      - '.github/workflows/seo-indexability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seo-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Product page and sitemap
+        run: node scripts/test-product-page.js
+      - name: SEO metadata, robots, category, sitemap
+        run: node scripts/test-seo.js
+      - name: Resilient sitemap pagination
+        run: node scripts/test-p2-resilience.js
