@@ -534,18 +534,30 @@ function orderProducts(products, order) {
   return products.slice().sort((a, b) => sign * ((Number(a.lprice) || 0) - (Number(b.lprice) || 0)));
 }
 
+/** 페이지 1은 주소를 생략한다. 범위 밖·형식 오류 페이지는 404로 처리한다. */
+function listingPage(raw, count) {
+  if (raw === undefined) return 1;
+  if (typeof raw !== 'string' || !/^[1-9][0-9]{0,3}$/.test(raw)) return null;
+  const page = Number(raw);
+  return page <= Math.ceil(count / LIST_SHOW) ? page : null;
+}
+function listingPageUrl(base, page) { return page === 1 ? base : `${base}?page=${page}`; }
+
 /** 카테고리·브랜드 페이지 공통. */
 function renderListing(o) {
   const { name, products, hist, stats, canonical, indexable, crumbTrail, searchQuery } = o;
+  const page = o.page || 1;
+  const pages = Math.ceil(products.length / LIST_SHOW);
+  const baseCanonical = o.baseCanonical || canonical;
   const order = o.order === 'desc' ? 'desc' : 'asc';
-  const shown = orderProducts(products, order).slice(0, LIST_SHOW);
+  const shown = orderProducts(products, order).slice((page - 1) * LIST_SHOW, page * LIST_SHOW);
   // 가격 기록은 화면에 그린 목록(shown)에만 붙어 있다 — 그래서 문구도 «목록 중» 이라고 말한다.
   const drops = [...hist.values()].filter(h => h.prevDate && h.diff < 0).length;
   const tracked = [...hist.values()].filter(h => h.days >= 7).length;
 
-  const title = `${name} 최저가·가격비교 | SEOSA`;
+  const title = `${name} 최저가·가격비교${page > 1 ? ` ${page}페이지` : ''} | SEOSA`;
   const description = stats
-    ? `${name} 목록 ${stats.count}개 상품의 현재가 범위 ${won(stats.low)}원~${won(stats.high)}원. ${stats.malls.map(m => m[0]).slice(0, 3).join('·')} 가격을 SEOSA가 매일 기록해 비교합니다.`.slice(0, 160)
+    ? `${page > 1 ? `${page}페이지 · ` : ''}${name} 목록 ${stats.count}개 상품의 현재가 범위 ${won(stats.low)}원~${won(stats.high)}원. ${stats.malls.map(m => m[0]).slice(0, 3).join('·')} 가격을 SEOSA가 매일 기록해 비교합니다.`.slice(0, 160)
     : `${name} 가격을 SEOSA가 매일 기록해 비교합니다.`;
 
   const facts = stats ? `
@@ -565,15 +577,25 @@ function renderListing(o) {
    */
   const lead = tracked ? `<p class="lead">목록의 상품 중 가격 기록이 7일 이상 쌓인 것은 ${tracked}개입니다.</p>` : '';
   const urls = shown.map(p => pageUrl(p.product_id));
+  // Googlebot은 검색창을 제출하지 않는다. 다음 목록도 일반 HTML <a>로 발견 가능하게 한다.
+  // 모든 페이지는 서로 다른 상품 목록·self-canonical을 갖고, 마지막 페이지 뒤로는 연결하지 않는다.
+  const pagination = pages > 1
+    ? `<nav class="more" aria-label="상품 목록 페이지">
+      ${page > 1 ? `<a href="${esc(listingPageUrl(baseCanonical, page - 1))}">← 이전 상품</a> · ` : ''}
+      ${page} / ${pages}페이지
+      ${page < pages ? ` · <a href="${esc(listingPageUrl(baseCanonical, page + 1))}">다음 상품 →</a>` : ''}
+    </nav>`
+    : '';
 
   const body = `
   ${crumbs(crumbTrail)}
-  <h1>${esc(name)} 최저가·가격 추이</h1>
+  <h1>${esc(name)} 최저가·가격 추이${page > 1 ? ` · ${page}페이지` : ''}</h1>
   <p class="meta">SEOSA 가 가격을 기록 중인 ${esc(name)} ${stats ? won(stats.count) : 0}개${stats ? ` · ${stats.malls.slice(0, 3).map(m => `${esc(m[0])} ${m[1]}`).join(' · ')}${stats.malls.length > 3 ? ` 외 ${stats.malls.length - 3}곳` : ''}` : ''}${stats && stats.updated ? ` · ${esc(stats.updated)} 업데이트` : ''}</p>
   ${facts}
   ${lead}
   <h2>현재가 ${order === 'desc' ? '높은' : '낮은'} 순</h2>
   ${productList(shown, hist)}
+  ${pagination}
   <p class="more"><a rel="nofollow" href="/?q=${encodeURIComponent(searchQuery || name)}">SEOSA 검색에서 ${esc(name)} 더 보기 →</a> · <a href="/category">카테고리·브랜드 전체 →</a></p>`;
 
   return layout({
@@ -628,13 +650,18 @@ async function categoryHandler(req, res) {
   const products = categoryProducts(cat, await loadCategoryRows(cat));
   if (!products.length) { cachePublic(res, 300); return sendHtml(res, 404, render404(cat.name), false); }
 
+  // 페이지별 실제 상품 링크를 내보낸다. 범위 밖 페이지는 404로 남겨 중복/무한 크롤링을 피한다.
+  const page = listingPage((req.query || {}).page, products.length);
+  if (!page) { cachePublic(res, 300); return sendHtml(res, 404, render404(cat.name), false); }
+  const visible = orderProducts(products, 'asc').slice((page - 1) * LIST_SHOW, page * LIST_SHOW);
   // 색인 판정은 허브·pages.xml 과 같은 함수·같은 목록으로 (categoryGate 주석).
-  const [hist, eligible] = await Promise.all([loadHistory(orderProducts(products, 'asc')), eligibleProductIds()]);
+  const [hist, eligible] = await Promise.all([loadHistory(visible), eligibleProductIds()]);
   const indexable = categoryGate(products, eligible).indexable;
   cachePublic(res, PAGE_CACHE_S);
   return sendHtml(res, 200, renderListing({
     name: cat.name, products, hist, stats: listStats(products), indexable,
-    canonical: SEO.categoryUrl(cat), searchQuery: cat.keywords[0],
+    canonical: listingPageUrl(SEO.categoryUrl(cat), page), baseCanonical: SEO.categoryUrl(cat),
+    page, searchQuery: cat.keywords[0],
     crumbTrail: [{ name: '홈', href: '/' }, { name: '카테고리', href: '/category' }, { name: cat.name }]
   }), indexable);
 }
@@ -649,12 +676,16 @@ async function brandHandler(req, res) {
   const products = brandProducts(brand, rows, await memberKeysFor(rows.filter(r => SEO.brandOfTitle(r.title) === brand)));
   if (!products.length) { cachePublic(res, 300); return sendHtml(res, 404, render404(brand.name), false); }
 
-  const [hist, eligible] = await Promise.all([loadHistory(orderProducts(products, 'desc')), eligibleProductIds()]);
+  const page = listingPage((req.query || {}).page, products.length);
+  if (!page) { cachePublic(res, 300); return sendHtml(res, 404, render404(brand.name), false); }
+  const visible = orderProducts(products, 'desc').slice((page - 1) * LIST_SHOW, page * LIST_SHOW);
+  const [hist, eligible] = await Promise.all([loadHistory(visible), eligibleProductIds()]);
   const indexable = brandGate(products, eligible).indexable;
   cachePublic(res, PAGE_CACHE_S);
   return sendHtml(res, 200, renderListing({
     name: brand.name, products, hist, stats: listStats(products), indexable,
-    canonical: SEO.brandUrl(brand), searchQuery: brand.aliases[0], order: 'desc',
+    canonical: listingPageUrl(SEO.brandUrl(brand), page), baseCanonical: SEO.brandUrl(brand),
+    page, searchQuery: brand.aliases[0], order: 'desc',
     crumbTrail: [{ name: '홈', href: '/' }, { name: '브랜드', href: '/category' }, { name: brand.name }]
   }), indexable);
 }
@@ -908,7 +939,7 @@ module.exports = {
   _internal: {
     categoryProducts, brandProducts, brandPrefixes, listStats, loadHistory, hubData, renderListing,
     rpcRange, productFileCount, pagesEntries, productSitemap, eligibleProductIds, categoryGate, brandGate,
-    reconcile, PRODUCT_ID_RANGE, LIST_SHOW, DROP_RATIO, DROP_MIN,
+    reconcile, listingPage, listingPageUrl, PRODUCT_ID_RANGE, LIST_SHOW, DROP_RATIO, DROP_MIN,
     resetMemo() { hubMemo = null; hubInflight = null; smLastGood = null; smInflight = null; categoryMembersMemo.clear(); },
     expireMemo() {
       if (hubMemo) hubMemo.at = Date.now() - HUB_MEMO_MS - 1;
