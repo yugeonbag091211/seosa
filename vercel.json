@@ -26,6 +26,14 @@
       "destination": "/api/history?__route=batch"
     },
     {
+      "source": "/api/volatile-noon",
+      "destination": "/api/cron?volatile=noon"
+    },
+    {
+      "source": "/api/volatile-evening",
+      "destination": "/api/cron?volatile=evening"
+    },
+    {
       "source": "/api/alternatives",
       "destination": "/api/history?__route=alternatives"
     },
@@ -218,6 +226,14 @@
     {
       "path": "/api/cron",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/volatile-noon",
+      "schedule": "5 3 * * *"
+    },
+    {
+      "path": "/api/volatile-evening",
+      "schedule": "5 10 * * *"
     }
   ]
 }

@@ -59,6 +59,21 @@ const CRON_ADPICK = { source: 'cron', forceRefresh: true };
  */
 const CRON_LIMIT = 10;
 
+/*
+ * 점심/저녁 가격 재확인 트리거의 상수.
+ *
+ * ★ 왜 파일 위쪽에 있는가 — 아래 module.exports = Object.assign(...) 이
+ *   이 값들을 테스트용으로 같이 내보낸다. const 는 호이스팅되지 않으므로
+ *   선언이 그 아래 있으면 모듈 로드 자체가 TDZ 로 터진다(/api/cron 전체가
+ *   500). 함수(volatileSlotFor·dispatchVolatile)는 호이스팅되어 괜찮지만
+ *   상수는 반드시 먼저 와야 한다.
+ */
+const VOLATILE_SLOTS = ['noon', 'evening'];
+/** vercel.json 의 crons 와 같은 값이어야 한다. 바꾸면 양쪽을 같이 바꾼다. */
+const VOLATILE_SCHEDULES = { '5 3 * * *': 'noon', '5 10 * * *': 'evening' };
+const DISPATCH_REPO = process.env.GITHUB_DISPATCH_REPO || 'yugeonbag091211/seosa';
+const DISPATCH_WORKFLOW = 'volatile-prices.yml';
+
 /**
  * 오늘 수집할 키워드.
  *
@@ -145,6 +160,18 @@ module.exports = Object.assign(async function handler(req, res) {
 
   // 진단 모드 — 수집을 돌리지 않는다.
   if (req.query && req.query.diag === '1') return diagnose(req, res);
+
+  /*
+   * 점심/저녁 가격 재확인 트리거 — 수집은 GitHub Actions 에서 돈다.
+   *
+   * 평소에는 rewrite 가 넣어 주는 ?volatile= 로 갈린다. 그런데 그 한 글자가
+   * 사라지면 이 요청이 «아침 전체 수집» 으로 떨어져 쿠팡 하루 쿼터를 하루
+   * 세 번 태운다. 그래서 Vercel 이 직접 붙여 주는 x-vercel-cron-schedule
+   * 헤더(공식 문서: 같은 path 를 쓰는 크론을 구분하라고 있는 헤더)로 한 번 더
+   * 가른다. 둘 중 하나만 맞아도 재확인 트리거로 간다.
+   */
+  const slot = volatileSlotFor(req);
+  if (slot) return dispatchVolatile(slot, res);
 
   const started = Date.now();
 
@@ -272,7 +299,86 @@ module.exports = Object.assign(async function handler(req, res) {
     staleSweep,
     results
   });
-}, { collectTargets, demandKeywords });
+}, { collectTargets, demandKeywords, volatileSlotFor, dispatchVolatile, VOLATILE_SCHEDULES });
+
+/* ------------------------------------------------------------------ *
+ *  점심/저녁 가격 재확인 트리거  (?volatile=noon|evening)
+ *
+ *  ── 왜 Vercel Cron 이 필요한가 (2026-10-26 장애) ──────────────────
+ *
+ *  점심·저녁 재확인은 GitHub Actions 의 schedule 로만 돌았고, 그 이벤트가
+ *  5시간 42분 / 6시간 33분 늦게 «생성» 되어 두 슬롯 다 창 밖에서 깨어났다.
+ *  실측(291개 실행/14일)으로 시간대별 발화율을 재 보면 KST 19~22시 창에
+ *  하루 한 번이라도 실행이 들어온 날은 4/14 (29%) 뿐이다. 점심 창은 93%.
+ *
+ *  그래서 저녁의 1차 트리거를 «다른 스케줄러» 로 옮긴다. Vercel Cron 은
+ *  Hobby 에서 하루 1회·정밀도 ±59분인데(공식 문서), 19:05 예약이면
+ *  19:00~20:00 안에 들어오고 그 범위는 저녁 창 안이다. 점심도 같은 이유로
+ *  한 칸 둔다 — 두 스케줄러가 서로의 백업이 된다.
+ *
+ *  ★ 여기서 수집을 돌리지 않는다. Vercel 함수 상한은 60초이고 재확인은
+ *    판매처 최소 호출 간격(쿠팡 6초/ADPICK 12초) 때문에 수 분이 걸린다.
+ *    그래서 GitHub Actions 에 workflow_dispatch 만 보낸다 — dispatch 는
+ *    schedule 과 달리 큐에 앉지 않고 즉시 실행된다.
+ *
+ *  ★ 창 판정은 여기서 하지 않는다. 수집 스크립트가 KST 창을 직접 보고
+ *    창 밖이면 MISSED 로 남긴다 — 창의 정의가 두 곳에 생기지 않게 한다.
+ *
+ *  ★ 중복 걱정은 없다. GitHub cron 칸과 이 트리거가 겹쳐도 같은
+ *    (KST 날짜, 슬롯) 은 price_job_state 의 슬롯 원장이 한 번만 통과시킨다.
+ *
+ *  설정 (1회): GitHub 에서 fine-grained PAT 발급 — 이 저장소, Actions:
+ *  Read and write — 후 Vercel > Settings > Environment Variables 에
+ *  GITHUB_DISPATCH_TOKEN 으로 넣는다. 없으면 이 경로는 조용히 비활성이고
+ *  GitHub cron 칸만 남는다(점심 93% / 저녁 29%).
+ * ------------------------------------------------------------------ */
+/** 이 요청이 가격 재확인 트리거인가. 아니면 '' (= 아침 전체 수집 경로). */
+function volatileSlotFor(req) {
+  const q = String((req.query && req.query.volatile) || '').toLowerCase();
+  if (VOLATILE_SLOTS.includes(q)) return q;
+  const schedule = String((req.headers && req.headers['x-vercel-cron-schedule']) || '').trim();
+  return VOLATILE_SCHEDULES[schedule] || '';
+}
+
+async function dispatchVolatile(slot, res) {
+  if (!VOLATILE_SLOTS.includes(slot)) {
+    return res.status(400).json({ error: 'volatile 은 noon 또는 evening 이어야 합니다.' });
+  }
+  const token = process.env.GITHUB_DISPATCH_TOKEN;
+  if (!token) {
+    // 200 으로 답한다 — Vercel 이 실패로 보고 재시도 폭주를 일으키지 않게.
+    console.error('[cron] GITHUB_DISPATCH_TOKEN 미설정 — 가격 재확인 트리거를 보내지 못했습니다.'
+      + ' Vercel > Settings > Environment Variables 에 추가하세요.');
+    return res.status(200).json({ ok: false, slot, reason: 'GITHUB_DISPATCH_TOKEN 미설정' });
+  }
+  const url = `https://api.github.com/repos/${DISPATCH_REPO}`
+    + `/actions/workflows/${DISPATCH_WORKFLOW}/dispatches`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2022-11-28',
+        'content-type': 'application/json',
+        'user-agent': 'seosa-cron'
+      },
+      body: JSON.stringify({ ref: 'main', inputs: { slot } }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (r.status === 204) {
+      console.log(`[cron] 가격 재확인 트리거 전송 완료 (slot=${slot})`);
+      return res.status(200).json({ ok: true, slot, dispatched: true });
+    }
+    // 본문에 토큰이 섞일 일은 없지만, 그대로 흘리지 않고 길이를 자른다.
+    const body = String(await r.text().catch(() => '')).slice(0, 300);
+    console.error(`[cron] 가격 재확인 트리거 실패 (slot=${slot}, http=${r.status}): ${body}`);
+    return res.status(200).json({ ok: false, slot, http: r.status });
+  } catch (e) {
+    console.error(`[cron] 가격 재확인 트리거 오류 (slot=${slot}): ${e.message}`);
+    return res.status(200).json({ ok: false, slot, error: e.message });
+  }
+}
 
 /* ------------------------------------------------------------------ *
  *  쿠팡 진단 (구 /api/coupang-diag)

@@ -16,8 +16,31 @@ const esc = v => String(v == null ? '' : v)
 function slotName(slot) {
   return slot === 'noon' ? '점심' : slot === 'evening' ? '저녁' : '추가';
 }
+
+/*
+ * 운영 상태 이름. 2026-10-27 안정화로 상태가 7가지로 갈렸다 —
+ * «수집 0건» 과 «예약을 잃었다» 를 같은 말로 쓰면 또 조용히 지나간다.
+ * 옛 소문자 값('completed'/'skipped'/'failed')도 그대로 받는다.
+ */
+const STATUS_NAME = {
+  COMPLETED: '완료',
+  NO_CHANGE: '가격 변경 없음',
+  SKIPPED: '건너뜀',
+  MISSED: '예약 실행 누락',
+  LOCKED: '잠금 충돌',
+  QUOTA_EXHAUSTED: 'API 예산 소진',
+  FAILED: '실패'
+};
 function statusName(status) {
-  return status === 'completed' ? '완료' : status === 'skipped' ? '건너뜀' : '실패';
+  return STATUS_NAME[String(status || '').toUpperCase()] || '실패';
+}
+/** 상태별 강조색. MISSED 는 눈에 띄어야 한다. */
+function statusTone(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'COMPLETED') return { bg: '#0f5132', fg: '#ffffff' };
+  if (s === 'NO_CHANGE') return { bg: '#1f3a5f', fg: '#ffffff' };
+  if (s === 'MISSED' || s === 'FAILED') return { bg: '#842029', fg: '#ffffff' };
+  return { bg: '#68431c', fg: '#ffffff' };
 }
 
 function totals(results = {}) {
@@ -30,10 +53,14 @@ function totals(results = {}) {
   return sum;
 }
 function subjectFor(report) {
-  const prefix = `[SEOSA] ${report.day || '-'} ${slotName(report.slot)} 가격 재확인 ${statusName(report.status)}`;
-  if (report.status !== 'completed') return prefix;
+  const s = String(report.status || '').toUpperCase();
+  const mark = (s === 'MISSED' || s === 'FAILED') ? '⚠️ ' : '';
+  const prefix = `[SEOSA] ${mark}${report.day || '-'} ${slotName(report.slot)} 가격 재확인 ${statusName(report.status)}`;
   const t = totals(report.results);
-  return `${prefix} — 실제 가격 변경 ${t.changedApplied}건 / 확인 ${t.checked}건`;
+  if (s === 'COMPLETED') return `${prefix} — 실제 가격 변경 ${t.changedApplied}건 / 확인 ${t.checked}건`;
+  if (s === 'NO_CHANGE') return `${prefix} — 확인 ${t.checked}건 / 가격 변경 0건`;
+  if (s === 'MISSED') return `${prefix} — 예정 ${report.scheduledAt || '-'}, 수집 0건`;
+  return prefix;
 }
 
 function buildVolatileReportHtml(report) {
@@ -43,6 +70,21 @@ function buildVolatileReportHtml(report) {
   const reason = report.reason
     ? `<div style="margin-top:16px;padding:12px 16px;border-radius:8px;background:#faf4ed;color:#68431c;font-size:13px">사유: ${esc(String(report.reason).slice(0, 600))}</div>`
     : '';
+
+  /*
+   * 실행 자체의 사실관계. 2026-10-26 사고의 교훈 — «몇 건 수집했는가» 보다
+   * «예정대로 돌았는가» 가 먼저다. 지연 분이 창을 넘기면 그 슬롯은 MISSED 다.
+   */
+  const tone = statusTone(report.status);
+  const scheduleRows = [
+    ['예정 시각 (KST)', esc(report.scheduledAt || '-')],
+    ['실제 시작 시각 (KST)', esc(report.startedAt || '-')],
+    ['지연', `${won(report.delayMinutes)}분`],
+    ['완료 시각 (KST)', esc(report.finishedAt || '-')],
+    ['쿠팡 API 실제 호출', `${won(report.results?.['쿠팡']?.spent)}회`],
+    ['ADPICK API 실제 호출', `${won(report.results?.ADPICK?.spent)}회`]
+  ].map(([name, val]) => `<tr><td style="padding:9px 0;border-bottom:1px solid #eee;color:#666">${name}</td>
+    <td style="text-align:right;padding:9px 0;border-bottom:1px solid #eee;font-weight:700">${val}</td></tr>`).join('');
 
   const infoRows = [
     ['매칭되어 가격을 확인한 상품', won(t.checked)],
@@ -92,9 +134,12 @@ function buildVolatileReportHtml(report) {
   <tr><td style="padding:26px 28px 12px">
     <div style="font-size:12px;color:#777">기준 날짜(KST)</div>
     <div style="font-size:26px;font-weight:800">${esc(report.day || '-')}</div>
-    <div style="margin-top:6px;font-size:13px;color:#666">${esc(slot)} 가격 재확인 — ${esc(state)}</div>
-    <div style="margin-top:4px;font-size:11px;color:#999">완료 시각(KST): ${esc(report.finishedAt || '-')}</div>
+    <div style="margin-top:8px"><span style="display:inline-block;padding:5px 12px;border-radius:999px;
+      background:${tone.bg};color:${tone.fg};font-size:12px;font-weight:700;letter-spacing:.04em">${esc(slot)} · ${esc(state)}</span></div>
     ${reason}
+  </td></tr>
+  <tr><td style="padding:12px 28px"><div style="font-size:15px;font-weight:700;margin-bottom:8px">실행 기록</div>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">${scheduleRows}</table>
   </td></tr>
   <tr><td style="padding:12px 28px"><div style="font-size:15px;font-weight:700;margin-bottom:8px">수집 결과</div>
     <table style="border-collapse:collapse;width:100%;font-size:13px">${infoRows}</table>
@@ -149,4 +194,4 @@ async function sendVolatileReport(report, opts = {}) {
     return { ok: false, error: error.message };
   }
 }
-module.exports = { totals, slotName, statusName, subjectFor, buildVolatileReportHtml, sendVolatileReport };
+module.exports = { totals, slotName, statusName, statusTone, subjectFor, buildVolatileReportHtml, sendVolatileReport };
