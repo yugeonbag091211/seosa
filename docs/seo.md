@@ -25,7 +25,7 @@
 | 페이지 | 색인 | 조건 |
 |---|---|---|
 | 홈 `/` | index | — |
-| 상품 `/p/{id}` | index | `isIndexableProduct`: live(수집 10일 이내 · 쿠팡/ADPICK · 가격>0) · 판매처 링크 · 구매 가격(렌탈·구독·100원 미만 아님) · **현재 옵션(vendor_item_id) 관측 7일 이상** |
+| 상품 `/p/{id}` | index | `isIndexableProduct`: live(수집 10일 이내 · 쿠팡/ADPICK · 가격>0) · 판매처 링크 · 구매 가격(렌탈·구독·100원 미만 아님) · **현재 옵션(vendor_item_id) 관측 5일 이상** |
 | 상품 (위 조건 미달) | **noindex,follow** | 페이지는 열린다 (사용자·공유용) |
 | 카테고리·브랜드 | index | **본품 8개 이상 AND 그중 상품 페이지가 index 인 것 3개 이상** (둘 다) |
 | 카테고리·브랜드 (미달) | **noindex,follow** | 데이터가 쌓이면 자동으로 index. 본품 0개면 404 |
@@ -34,6 +34,7 @@
 | 내 레이더 `/radar.html` | **noindex,follow** | 개인 저장 목록 |
 | `/api/*` | robots.txt 차단 | 크롤러가 쿠팡 호출 한도를 태우지 않게 |
 
+* **2026-10-27 조정:** 상품 색인 최소 관측기간을 7일에서 5일로 낮추되, 옵션 구분·유효 구매 링크·10일 최신성·비구매 상품 제외는 유지한다. Google 색인과 검색 노출은 보장되지 않으므로 재크롤링 후 확인한다.
 * **상품 색인 규칙은 한 곳이다.** `api/_product-page.js` 의 `observedDays`(현재 옵션의 KST 관측일 수 —
   `_price.sameVendorRows`) 와 `isIndexableProduct` 를 상품 페이지와 폴백 사이트맵이 같이 쓰고,
   `supabase/2026-10-02-seo-sitemap.sql` 이 같은 규칙을 SQL 로 옮긴다. 한쪽을 고치면 셋 다 고친다.
