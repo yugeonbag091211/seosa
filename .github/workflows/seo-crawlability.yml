@@ -1,5 +1,17 @@
 name: SEO crawlability regression
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/_product-page.js'
+      - 'api/_seo-pages.js'
+      - 'scripts/test-seo.js'
+      - 'scripts/test-product-page.js'
+      - 'scripts/test-p2-resilience.js'
+      - 'supabase/2026-10-02-seo-sitemap.sql'
+      - 'supabase/2026-10-02-seo-sitemap.VERIFY.sql'
+      - '.github/workflows/seo-indexability.yml'
+      - '.github/workflows/seo-crawlability.yml'
   pull_request:
     paths:
       - 'api/_seo-pages.js'
