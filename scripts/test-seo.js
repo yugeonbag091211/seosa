@@ -685,8 +685,9 @@ let KST_LASTMOD_AT = 0;
       '★ 페이지 1→2→3 및 2→1 HTML 링크가 서버 렌더로 제공된다');
     ok(second.status === 200 && /<title>마우스 최저가·가격비교 2페이지 \| SEOSA<\/title>/.test(second.text)
       && /rel="canonical" href="https:\/\/seosa\.ai\.kr\/category\/mouse\?page=2"/.test(second.text)
-      && /content="index,follow"/.test(second.text),
-      '★ 2페이지는 자체 title·canonical·index 정책을 가진다');
+      && /<meta name="robots" content="(index|noindex),follow">/.test(second.text)
+      && second.headers['x-robots-tag'] === r.headers['x-robots-tag'],
+      '★ 2페이지는 자체 title·canonical·같은 색인 문턱을 가진다');
     const secondCollection = ldNodes(second.text).find(n => n['@type'] === 'CollectionPage');
     ok(secondCollection && secondCollection.url === 'https://seosa.ai.kr/category/mouse?page=2'
       && secondCollection.mainEntity.itemListElement.length === 60
