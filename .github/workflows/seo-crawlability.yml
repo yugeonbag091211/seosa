@@ -1,0 +1,26 @@
+name: SEO crawlability regression
+on:
+  pull_request:
+    paths:
+      - 'api/_seo-pages.js'
+      - 'scripts/test-seo.js'
+      - 'docs/seo.md'
+      - '.github/workflows/seo-crawlability.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  seo-crawlability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: SEO structure and HTML navigation
+        run: node scripts/test-seo.js
+      - name: Product pages and their indexability
+        run: node scripts/test-product-page.js
