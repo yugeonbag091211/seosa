@@ -260,8 +260,8 @@ function seed() {
     series(pid, Array(8).fill(10000), { endAgo: d });
   });
 
-  // 7일 색인 경계 — 관측 6 · 7 · 8일
-  [6, 7, 8].forEach(n => {
+  // 5일 색인 경계 — 관측 4 · 5 · 6일
+  [4, 5, 6].forEach(n => {
     const pid = String(7300 + n);
     db.products.push(product({ product_id: pid, keyword: '경계 테스트', title: `관측 ${n}일 경계 상품`, lprice: 15000 }));
     series(pid, Array(n).fill(15000));
@@ -571,11 +571,11 @@ let KST_LASTMOD_AT = 0;
     }
   }
 
-  section('9-4. 상품 페이지 색인 경계 — 관측 6 · 7 · 8일');
+  section('9-4. 상품 페이지 색인 경계 — 관측 4 · 5 · 6일');
   {
-    for (const n of [6, 7, 8]) {
+    for (const n of [4, 5, 6]) {
       const r = await call({ __route: 'page', pid: String(7300 + n) });
-      const want = n >= 7 ? 'index,follow' : 'noindex,follow';
+      const want = n >= 5 ? 'index,follow' : 'noindex,follow';
       ok(r.text.indexOf(`<meta name="robots" content="${want}">`) > -1, `★ 관측 ${n}일 → ${want}`);
     }
   }
@@ -684,8 +684,8 @@ let KST_LASTMOD_AT = 0;
     ok(p1.status === 200 && wellFormed(p1.text, 'urlset') === '', 'products-1 형식');
     const urls = locs(p1.text);
     const has = pid => urls.indexOf(`https://seosa.ai.kr/p/${pid}`) > -1;
-    ok(['2001', '2003', '2004', '5002', '7307', '7308', '8002', '8003'].every(has), '관측 7일 이상 · live · 구매 가격 상품이 오른다');
-    ok(!['2002', '4011', '7306', '5001'].some(has), '★ 기록 부족·렌탈·가격 없음은 오르지 않는다');
+    ok(['2001', '2003', '2004', '5002', '7305', '7306', '8002', '8003'].every(has), '관측 5일 이상 · live · 구매 가격 상품이 오른다');
+    ok(!['2002', '4011', '7304', '5001'].some(has), '★ 기록 부족·렌탈·가격 없음은 오르지 않는다');
     ok(!has('8001'), '★ 다른 옵션의 8일을 세지 않는다 — 현재 옵션 2일인 8001 은 사이트맵에 없다 (sameVendorRows)');
     const lm = (p1.text.match(/<loc>https:\/\/seosa\.ai\.kr\/p\/8101<\/loc><lastmod>([^<]+)</) || [])[1];
     ok(lm === kstToday(KST_LASTMOD_AT) && lm !== new Date(KST_LASTMOD_AT).toISOString().slice(0, 10), '★ lastmod 는 KST 날짜 (UTC 16:00 수집 = KST 다음 날)', `${lm}`);
