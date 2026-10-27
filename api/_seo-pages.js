@@ -541,7 +541,8 @@ function renderListing(o) {
   const shown = orderProducts(products, order).slice(0, LIST_SHOW);
   // 가격 기록은 화면에 그린 목록(shown)에만 붙어 있다 — 그래서 문구도 «목록 중» 이라고 말한다.
   const drops = [...hist.values()].filter(h => h.prevDate && h.diff < 0).length;
-  const tracked = [...hist.values()].filter(h => h.days >= 7).length;
+  const { INDEX_MIN_DAYS } = require('./_product-page')._internal;
+  const tracked = [...hist.values()].filter(h => h.days >= INDEX_MIN_DAYS).length;
 
   const title = `${name} 최저가·가격비교 | SEOSA`;
   const description = stats
@@ -563,7 +564,7 @@ function renderListing(o) {
    * 바디로션» 이라고 부르면 거짓 문장이다. 목록은 «현재가 낮은 순» 으로 보여 주기만 하고,
    * 어떤 행이 최저가 본품이라고 단정하지 않는다.
    */
-  const lead = tracked ? `<p class="lead">목록의 상품 중 가격 기록이 7일 이상 쌓인 것은 ${tracked}개입니다.</p>` : '';
+  const lead = tracked ? `<p class="lead">목록의 상품 중 가격 기록이 ${INDEX_MIN_DAYS}일 이상 쌓인 것은 ${tracked}개입니다.</p>` : '';
   const urls = shown.map(p => pageUrl(p.product_id));
 
   const body = `
