@@ -11,6 +11,26 @@
  * - 기존 daily collector와 같은 CAS 잠금. 충돌하면 호출 0회로 건너뛴다.
  * - 하루 상한과 추가 실행별 상한을 확인. 카운터 조회에 실패하면 호출 0회.
  * - DB에 새 테이블이나 컬럼을 만들지 않는다.
+ *
+ * ── 2026-10-27 안정화 ───────────────────────────────────────────────
+ *
+ * 2026-10-26 에 점심·저녁이 둘 다 «수집 0건 + GitHub SUCCESS + 메일 없음» 으로
+ * 끝났다. 원인은 둘이다 (scripts/_price-volatility.js 머리말에 실측 수치).
+ *
+ *   ① GitHub schedule 이벤트가 5시간 42분 / 6시간 33분 늦게 «생성» 됐다.
+ *      창 밖이라 수집을 건너뛴 것은 설계대로다.
+ *   ② 그런데 그 건너뛰기가 report 객체를 만들기 «전에» return 해서, 메일도
+ *      GitHub Summary 도 아무 것도 남지 않았다. 침묵이 성공처럼 보였다.
+ *
+ * 그래서 이 파일의 구조를 바꿨다.
+ *   · report 는 어떤 경로로 끝나도 반드시 만들어지고 상태가 찍힌다
+ *   · 상태는 7가지로 갈린다 (COMPLETED/NO_CHANGE/SKIPPED/MISSED/LOCKED/
+ *     QUOTA_EXHAUSTED/FAILED) — «호출 0회로 끝났다» 와 «예약을 잃었다» 가
+ *     더 이상 같은 초록색이 아니다
+ *   · 같은 (KST 날짜, 슬롯) 은 슬롯 원장으로 한 번만 수집한다. 트리거를
+ *     이중화해도 중복 호출·중복 기록이 생기지 않는다
+ *   · 창이 닫혔는데 아무도 수집하지 않은 슬롯은 어느 실행이든 발견하면
+ *     MISSED 로 메일 + 종료코드 1 (빨간 X)
  */
 
 require('./_env');
@@ -23,8 +43,12 @@ const { searchCoupang } = require('../api/_coupang');
 const { searchAdpick } = require('../api/_adpick');
 const { recordPrices, adpickProductId } = require('../api/_shop');
 const { pickOption, acquireLock, loadState, releaseLock } = require('./collect-all-prices');
-const { keyOf, volatilityRanking, slotPlan, pickSearchGroups } = require('./_price-volatility');
-const { sendVolatileReport } = require('./_volatile-report');
+const {
+  keyOf, volatilityRanking, slotPlan, pickSearchGroups,
+  STATUS, kstDay, slotWindow, delayMinutes,
+  isServed, ledgerGet, ledgerPut, missedSlots, decideStatus, exitCodeFor
+} = require('./_price-volatility');
+const { sendVolatileReport, totals } = require('./_volatile-report');
 
 const HISTORY_DAYS = 30;
 const MAX_HISTORY_ROWS = 500000; // 이보다 많으면 편향된 일부 표본으로 실행하지 않는다.
@@ -35,6 +59,17 @@ const DAY_CAP = {
   'ADPICK': Number(process.env.PRICE_VOLATILE_ADPICK_DAY_CAP) || 3000
 };
 const SLOT_CAP = Math.max(1, Math.min(50, Number(process.env.PRICE_VOLATILE_SLOT_CALLS) || 45));
+
+/*
+ * KST 시각 표기 — 'YYYY-MM-DD HH:MM KST'.
+ *
+ * toLocaleString('ko-KR') 을 쓰지 않는다. 러너의 ICU 에 따라
+ * '2026. 10. 26. 12시 5분 0초' 처럼 나와 메일마다 모양이 달라지고,
+ * 예정 시각과 실제 시각을 눈으로 비교할 수 없다. UTC+9 는 서머타임이
+ * 없으므로 9시간을 더해 자르면 항상 정확하다 (api/_kst.js 와 같은 기준).
+ */
+const kstText = ms => new Date(Number(ms) + 9 * 3600000)
+  .toISOString().replace('T', ' ').slice(0, 16) + ' KST';
 
 function cacheRead(day) {
   if (!CACHE_PATH) return null;
@@ -103,6 +138,43 @@ async function getUsage(mall, day) {
     throw new Error(mall + ' 하루 API 호출량 확인 불가(안전 중단): ' + (error?.message || 'count=null'));
   }
   return Number(count);
+}
+
+/* ─── 슬롯 원장 입출력 ───────────────────────────────────────────────
+ *
+ * price_job_state.last_result.volatileSlots 에 얹는다. 새 테이블·새 컬럼 없음.
+ * 쓰기는 반드시 «잠금이 우리 것일 때만» (markV3Kill 과 같은 CAS 조건).
+ * ------------------------------------------------------------------ */
+
+async function readLedger(client = db) {
+  const { data, error } = await client.from('price_job_state')
+    .select('last_result').eq('id', 1).maybeSingle();
+  if (error) throw new Error('슬롯 원장 조회 실패(안전 중단): ' + error.message);
+  return (data && data.last_result && data.last_result.volatileSlots) || {};
+}
+
+/**
+ * 슬롯 한 칸을 원장에 기록한다. 잠금을 잃었으면 false (던지지 않는다).
+ * 원장을 못 써도 가격은 이미 저장돼 있다 — 다음 실행이 중복으로 보는 쪽이
+ * 가격을 잃는 쪽보다 낫고, 그 중복도 products.collected_at 게이트가 막는다.
+ */
+async function writeSlot(lockToken, day, slot, patch, client = db) {
+  try {
+    const { data, error } = await client.from('price_job_state')
+      .select('last_result').eq('id', 1).maybeSingle();
+    if (error) throw new Error(error.message);
+    const lr = (data && data.last_result) || {};
+    const next = ledgerPut(lr.volatileSlots, day, slot, patch);
+    const u = await client.from('price_job_state')
+      .update({ last_result: { ...lr, volatileSlots: next } })
+      .eq('id', 1).eq('last_result->lock->>runId', lockToken).select('id');
+    if (u.error) throw new Error(u.error.message);
+    if (!u.data || !u.data.length) throw new Error('잠금이 우리 것이 아니다');
+    return true;
+  } catch (e) {
+    console.warn(`[adaptive] 슬롯 원장 기록 실패(${day} ${slot}): ${e.message}`);
+    return false;
+  }
 }
 
 async function catalogForRanking(ranking, minChanges, slotStartMs, mall) {
@@ -192,38 +264,192 @@ function emptyMallStats() {
   };
 }
 
-async function run() {
-  if (process.env.PRICE_VOLATILE_OFF === '1') {
-    console.log('[adaptive] 긴급 중지 스위치 ON — 가격 재확인하지 않음');
-    return;
-  }
-
-  const plan = slotPlan(new Date(), process.env.PRICE_VOLATILE_SLOT || '');
-  if (!plan) {
-    console.log('[adaptive] 점심/저녁 수집 시간대 밖 — 외부 호출 0');
-    return;
-  }
-
-  const report = {
-    day: plan.day, slot: plan.slot, status: 'failed',
-    startedAt: new Date().toISOString(), finishedAt: '',
-    reason: '', usage: {}, caps: DAY_CAP, results: {
-      '쿠팡': emptyMallStats(), 'ADPICK': emptyMallStats()
-    }
+/** 어떤 경로로 끝나도 같은 모양의 보고서를 만든다. */
+function newReport(now, window, wantedSlot) {
+  const ms = now.getTime();
+  return {
+    day: window ? window.day : kstDay(ms),
+    slot: window ? window.slot : (wantedSlot || ''),
+    status: STATUS.SKIPPED,
+    reason: '',
+    scheduledAt: window ? kstText(window.targetMs) : '',
+    startedAt: kstText(ms),
+    startedAtIso: new Date(ms).toISOString(),
+    delayMinutes: delayMinutes(window, ms),
+    finishedAt: '',
+    usage: {}, caps: DAY_CAP,
+    results: { '쿠팡': emptyMallStats(), 'ADPICK': emptyMallStats() }
   };
+}
+
+/**
+ * GitHub Actions 가 결과를 그대로 읽을 수 있게 남긴다.
+ * Summary 단계가 status 를 보고 초록/노랑/빨강을 가른다.
+ */
+function publishOutputs(report) {
+  const t = totals(report.results);
+  const line = `status=${report.status} slot=${report.slot || '-'} day=${report.day}`
+    + ` delayMin=${report.delayMinutes} coupangCalls=${report.results['쿠팡'].spent}`
+    + ` adpickCalls=${report.results.ADPICK.spent} checked=${t.checked}`
+    + ` saved=${t.saved} changed=${t.changedApplied} optionMiss=${t.optionMiss}`
+    + (report.reason ? ` reason=${JSON.stringify(report.reason)}` : '');
+  console.log('[adaptive] RESULT ' + line);
+  const out = process.env.GITHUB_OUTPUT;
+  if (!out) return;
+  try {
+    fs.appendFileSync(out, [
+      `status=${report.status}`,
+      `slot=${report.slot || ''}`,
+      `day=${report.day}`,
+      `delay_minutes=${report.delayMinutes}`,
+      `coupang_calls=${report.results['쿠팡'].spent}`,
+      `adpick_calls=${report.results.ADPICK.spent}`,
+      `checked=${t.checked}`,
+      `saved=${t.saved}`,
+      `changed=${t.changedApplied}`,
+      `reason=${String(report.reason || '').replace(/[\r\n]+/g, ' ').slice(0, 300)}`
+    ].join('\n') + '\n');
+  } catch (e) {
+    console.warn('[adaptive] GITHUB_OUTPUT 기록 실패:', e.message);
+  }
+}
+
+/**
+ * 창이 닫혔는데 수집 기록이 없는 슬롯을 MISSED 로 보고한다.
+ * 예약 자체가 발화하지 않은 날은 워크플로 내부 코드로 알 수 없으므로,
+ * «다음에 깨어난 실행» 이 원장을 보고 대신 발견한다.
+ *
+ * 경고 표식을 원장에 남기지 못하면 메일을 보내지 않는다 — 표식이 없으면
+ * 다음 실행이 또 보내 하루에 열 통이 된다.
+ */
+async function sweepMissed(now, ledger, lockToken, opts = {}) {
+  const client = opts.client || db;
+  const send = opts.send || sendVolatileReport;
+  const sent = [];
+  for (const w of missedSlots(now, ledger)) {
+    const marked = await writeSlot(lockToken, w.day, w.slot,
+      { status: STATUS.MISSED, notifiedMissAt: new Date().toISOString() }, client);
+    if (!marked) {
+      console.warn(`[adaptive] ${w.day} ${w.slot} 누락을 발견했지만 원장에 표시하지 못해 경고를 보류합니다.`);
+      continue;
+    }
+    const missReport = newReport(new Date(now), w, w.slot);
+    missReport.status = STATUS.MISSED;
+    missReport.delayMinutes = Math.round((now.getTime() - w.targetMs) / 60000);
+    missReport.reason = `예약 시각 ${kstText(w.targetMs)} 의 재확인이 창(${kstText(w.startMs)}~${kstText(w.endMs)})`
+      + ' 안에 한 번도 실행되지 않았습니다. GitHub Actions 예약 지연 또는 미발화로 추정됩니다.';
+    missReport.finishedAt = kstText(now.getTime());
+    console.error(`[adaptive] MISSED ${w.day} ${w.slot} — 창 안에 실행 없음`);
+    await send(missReport);
+    sent.push(w);
+  }
+  return sent;
+}
+
+/*
+ * 메일을 보낼 상태인가 — 침묵도 스팸도 둘 다 사고다.
+ *
+ *   보낸다:   실제로 슬롯을 맡아 처리한 실행(COMPLETED/NO_CHANGE/
+ *             QUOTA_EXHAUSTED/FAILED), 그리고 MISSED
+ *   안 보낸다: 중복분(SKIPPED) · 잠금 충돌(LOCKED) · 창 밖 감시 실행
+ *             — 창을 끝내 놓치면 sweepMissed 가 MISSED 로 보낸다.
+ *             칸이 23개인데 전부 보내면 창마다 메일이 여덟 통이 된다.
+ *   suppressed: sweepMissed 가 이미 슬롯별로 보냈다는 뜻.
+ */
+const EMAIL_STATUSES = [STATUS.COMPLETED, STATUS.NO_CHANGE,
+  STATUS.QUOTA_EXHAUSTED, STATUS.FAILED, STATUS.MISSED];
+function shouldEmail(status, suppressed) {
+  return !suppressed && EMAIL_STATUSES.includes(status);
+}
+
+async function run() {
+  const now = new Date();
+  const wantedSlot = process.env.PRICE_VOLATILE_SLOT || '';
+  const plan = slotPlan(now, wantedSlot);
+  const report = newReport(now, plan, wantedSlot);
+  let suppressEmail = false;
+  let claimed = false;
+  let missed = [];
 
   try {
+    if (process.env.PRICE_VOLATILE_OFF === '1') {
+      /*
+       * 사용자가 직접 내린 스위치다. 이 스위치는 저장소 변수라 그날의 모든
+       * 실행에 똑같이 걸린다 — 누락 감시(sweepMissed)도 여기서 함께 멈추므로
+       * 스위치를 내린 동안 MISSED 경고가 울지 않는다. 의도된 침묵이다.
+       */
+      report.status = STATUS.SKIPPED;
+      report.reason = '긴급 중지 스위치(PRICE_VOLATILE_OFF=1) — 가격 재확인하지 않음';
+      console.log('[adaptive] ' + report.reason);
+      return;
+    }
+
     const state = await loadState();
     if (!state) throw new Error('공유 수집기 잠금 상태 없음(안전 중단)');
     const lock = await acquireLock(state);
     if (!lock.ok) {
-      report.status = 'skipped';
+      // 호출 0회. 같은 창의 다음 칸이 다시 시도하고, 창이 닫히면 MISSED 가 된다.
+      report.status = STATUS.LOCKED;
       report.reason = '기존 정기 수집과 잠금 충돌: ' + lock.reason;
-      console.log('[adaptive] 재확인 건너뜀: ' + report.reason);
+      console.log('[adaptive] 재확인 보류(LOCKED): ' + report.reason);
       return;
     }
 
     try {
+      const ledger = (state.last_result && state.last_result.volatileSlots) || {};
+
+      // ① 창 밖이다 — 수집할 슬롯이 없다. 놓친 슬롯이 있는지만 본다.
+      if (!plan) {
+        missed = await sweepMissed(now, ledger, lock.token);
+        const ownSwept = wantedSlot && missed.some(w => w.slot === wantedSlot);
+        const ownWindow = wantedSlot ? slotWindow(kstDay(now), wantedSlot) : null;
+        // ★ 창이 «닫혔을» 때만 누락이다. 아직 열리지 않은 창을 MISSED 로
+        //   부르면(예: 수동 dispatch 를 새벽에 돌림) 거짓 경보에 빨간 X 다.
+        const ownClosed = ownWindow && now.getTime() >= ownWindow.endMs;
+        if (wantedSlot && !ownSwept && ownClosed) {
+          // 특정 슬롯을 하라고 지시받았는데 그 창이 이미 닫혔다.
+          // 2026-10-26 에 일어난 바로 그 경우다 (예약 +5h42m / +6h33m).
+          report.status = STATUS.MISSED;
+          report.reason = `${wantedSlot} 슬롯을 지시받았지만 실행 시각이 창 밖입니다`
+            + ' — 예약 지연으로 이 슬롯의 수집 기회를 잃었습니다.';
+          console.error('[adaptive] ' + report.reason);
+        } else if (wantedSlot && !ownSwept) {
+          // 창이 아직 열리지 않았다 — 너무 이른 실행. 누락이 아니다.
+          report.status = STATUS.SKIPPED;
+          report.reason = `${wantedSlot} 창이 아직 열리지 않았습니다`
+            + ` (${ownWindow ? kstText(ownWindow.startMs) : '-'} 부터) — 외부 호출 0회`;
+          console.log('[adaptive] ' + report.reason);
+        } else if (missed.length) {
+          // sweepMissed 가 슬롯별로 이미 메일을 보냈다. 여기서 또 보내지 않는다.
+          report.status = STATUS.MISSED;
+          report.reason = missed.map(w => `${w.day} ${w.slot} 누락 감지`).join(', ');
+          suppressEmail = true;
+        } else {
+          report.status = STATUS.SKIPPED;
+          report.reason = '점심/저녁 수집 창 밖 — 외부 호출 0회(정상 감시 실행)';
+          console.log('[adaptive] ' + report.reason);
+        }
+        return;
+      }
+
+      // ② 같은 (KST 날짜, 슬롯) 을 이미 처리했다 — 트리거 이중화의 중복분.
+      const prior = ledgerGet(ledger, plan.day, plan.slot);
+      if (prior && isServed(prior)) {
+        report.status = STATUS.SKIPPED;
+        report.reason = `${plan.day} ${plan.slot} 슬롯은 이미 처리됨(${prior.status}`
+          + `${prior.at ? ' @' + prior.at : ''}) — 중복 수집하지 않음`;
+        console.log('[adaptive] ' + report.reason);
+        return;
+      }
+
+      // ③ 이제부터가 이 슬롯의 담당자다. 외부 호출 전에 시도 횟수를 먼저 남긴다.
+      const attempts = Number(prior && prior.attempts) || 0;
+      await writeSlot(lock.token, plan.day, plan.slot, {
+        status: 'RUNNING', attempts: attempts + 1, at: new Date().toISOString(),
+        runId: process.env.GITHUB_RUN_ID || 'local'
+      });
+      claimed = true;
+
       const usage = {
         '쿠팡': await getUsage('쿠팡', plan.day),
         'ADPICK': await getUsage('ADPICK', plan.day)
@@ -232,10 +458,13 @@ async function run() {
       const allowances = Object.fromEntries(Object.keys(DAY_CAP).map(mall => [
         mall, Math.max(0, Math.min(SLOT_CAP, DAY_CAP[mall] - usage[mall]))
       ]));
-      console.log(`[adaptive] ${plan.day} ${plan.slot}, 지난 30일 가격변동 최소 ${plan.minChanges}회`);
+      console.log(`[adaptive] ${plan.day} ${plan.slot}, 예정 ${report.scheduledAt},`
+        + ` 실제 ${report.startedAt}, 지연 ${report.delayMinutes}분,`
+        + ` 지난 30일 가격변동 최소 ${plan.minChanges}회`);
       console.log(`[adaptive] API 사용량: 쿠팡 ${usage['쿠팡']}/${DAY_CAP['쿠팡']}, ADPICK ${usage.ADPICK}/${DAY_CAP.ADPICK}`);
+
       if (!Object.values(allowances).some(Boolean)) {
-        report.status = 'skipped';
+        report.status = STATUS.QUOTA_EXHAUSTED;
         report.reason = '두 판매처 모두 추가 검증용 하루 API 호출 예산 소진';
         console.log('[adaptive] ' + report.reason);
         return;
@@ -308,27 +537,69 @@ async function run() {
         console.log(`[adaptive] ${mall}: 실제 API ${stats.spent}회 / 확인 ${stats.checked}개 / 현재가 반영 ${stats.saved}개 / 가격 변경 ${stats.changedApplied}개 / 이상값 보류 ${stats.suspect}개`);
       }
 
-      report.status = 'completed';
-      console.log('[adaptive] RESULT ' + JSON.stringify({
-        day: plan.day, slot: plan.slot, status: report.status, results: report.results
-      }));
+      const t = totals(report.results);
+      const blocked = Object.values(report.results).some(s => s.reason === 'blocked');
+      if (blocked && t.checked === 0) {
+        // 판매처 차단은 일시적이다. FAILED 로 남겨 같은 창의 다음 칸이
+        // (MAX_SLOT_ATTEMPTS 안에서) 다시 시도할 수 있게 한다.
+        report.status = STATUS.FAILED;
+        report.reason = '판매처 검색이 차단되어 재확인하지 못했습니다 — 같은 창에서 재시도합니다';
+      } else {
+        report.status = decideStatus(t);
+        if (report.status === STATUS.SKIPPED) {
+          report.reason = '재확인 대상 후보가 없었습니다 — 외부 호출 0회';
+        } else if (t.checked === 0) {
+          report.reason = '검색 응답에서 동일 상품·옵션이 매칭되지 않아 기록한 가격이 없습니다';
+        }
+      }
+
+      // 창이 닫힌 다른 슬롯(어제 저녁 등)이 남아 있으면 같이 보고한다.
+      missed = await sweepMissed(now, ledger, lock.token);
+    } catch (inner) {
+      // 안쪽에서 상태를 확정해야 한다 — 바깥 catch 는 아래 finally 보다 늦게 돈다.
+      // 그대로 두면 실패한 실행이 원장에 SKIPPED 로 적혀 재시도가 막힌다.
+      report.status = STATUS.FAILED;
+      report.reason = String(inner.message || inner).slice(0, 600);
+      throw inner;
     } finally {
+      // 상태를 원장에 확정한 뒤에 잠금을 놓는다. 순서가 바뀌면 다음 러너가
+      // 「아직 아무도 안 했다」로 보고 같은 슬롯을 한 번 더 수집한다.
+      // claimed 가 아니면(중복분·창 밖) 남의 기록을 덮어쓰지 않는다.
+      if (claimed) {
+        await writeSlot(lock.token, plan.day, plan.slot, {
+          status: report.status, at: new Date().toISOString(),
+          reason: String(report.reason || '').slice(0, 300),
+          checked: totals(report.results).checked,
+          changed: totals(report.results).changedApplied
+        });
+      }
       await releaseLock(lock.token);
     }
   } catch (error) {
-    report.status = 'failed';
+    report.status = STATUS.FAILED;
     report.reason = String(error.message || error).slice(0, 600);
     console.error('[adaptive] 실패:', report.reason);
-    throw error;
   } finally {
-    // 성공·예산 소진·잠금 충돌·오류 모두 결과를 발송한다.
-    // 메일 실패가 API/DB 수집 결과를 뒤집지는 않는다.
-    report.finishedAt = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false }) + ' KST';
-    await sendVolatileReport(report);
+    report.finishedAt = kstText(Date.now());
+    publishOutputs(report);
+    /*
+     * 메일 정책 — 침묵도 스팸도 둘 다 사고다.
+     *   보낸다:  실제로 슬롯을 맡아 처리한 실행(COMPLETED/NO_CHANGE/
+     *            QUOTA_EXHAUSTED/FAILED), 그리고 MISSED
+     *   안 보낸다: 중복분(SKIPPED) · 잠금 충돌(LOCKED) · 창 밖 감시 실행
+     *            — 창을 끝내 놓치면 sweepMissed 가 MISSED 로 보낸다.
+     */
+    if (shouldEmail(report.status, suppressEmail)) await sendVolatileReport(report);
+    process.exitCode = exitCodeFor(report.status);
   }
+  return report;
 }
 
-module.exports = { observation, catalogForRanking, getUsage, getRanking, confirmAppliedChanges, emptyMallStats };
+module.exports = {
+  observation, catalogForRanking, getUsage, getRanking, confirmAppliedChanges,
+  emptyMallStats, newReport, publishOutputs, sweepMissed, readLedger, writeSlot,
+  shouldEmail, EMAIL_STATUSES, run
+};
 if (require.main === module) {
   run().catch(e => { console.error('[adaptive] 실패:', e.stack || e.message); process.exitCode = 1; });
 }

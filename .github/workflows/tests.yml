@@ -61,3 +61,13 @@ jobs:
         run: npm test
       - name: Alert option identity safety
         run: node scripts/test-alert-option-identity.js
+
+      # ★ npm test 와 «따로» 돈다. npm test 는 && 사슬이라 앞에서 하나만
+      #   붉어도 뒤쪽 전부가 실행되지 않는다 — 실제로 2026-10-27 현재
+      #   test-ai-provenance.js 가 main 에서 18/289 붉어서(이 PR 와 무관한
+      #   기존 실패) 사슬 끝의 재확인 테스트가 돌지 않았다. 점심·저녁 수집은
+      #   조용히 실패하면 아무도 모르는 종류라, 그 테스트만은 앞의 실패와
+      #   무관하게 항상 돌게 둔다.
+      - name: Volatile price recheck stability
+        if: always()
+        run: npm run test:volatile

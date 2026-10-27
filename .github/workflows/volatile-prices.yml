@@ -1,18 +1,75 @@
 name: Volatile Price Rechecks
 
+# ── 왜 칸이 2개에서 23개로 늘었는가 (2026-10-27 장애) ─────────────────
+#
+# 2026-10-26, 점심·저녁 재확인이 둘 다 가격을 한 건도 기록하지 못했는데
+# GitHub 은 두 번 다 SUCCESS 를 찍었다. 실측(gh run list --json createdAt):
+#
+#   점심 run 40294712378  예약 03:05Z → 생성 08:47:21Z  (+5시간 42분)
+#   저녁 run 40361090304  예약 10:05Z → 생성 16:38:42Z  (+6시간 33분)
+#
+# createdAt == startedAt 이다. 러너 대기가 아니라 GitHub 이 schedule 이벤트를
+# 만들어 주지 않은 시간이다. 워크플로는 비활성화된 적이 없고(state=active),
+# default branch 는 main 이며, concurrency 는 cancel 하지 않는다. 즉 외부
+# 스케줄러 지연 하나가 원인이다.
+#
+# ── 지연은 칸 밀도의 함수다 (실측) ───────────────────────────────────
+#
+# 같은 저장소의 두 워크플로를 비교하면 규칙이 보인다.
+#
+#   hotdeals.yml     칸 3개   → 각 칸이 1시간 50분 ~ 6시간 20분 늦게 발화
+#   daily-prices.yml 칸 48개  → 어떤 칸 기준으로도 중위 17분, 최대 30분
+#
+# 칸이 드물면 그 이벤트 하나가 큐에서 몇 시간을 앉아 있는다. 칸이 촘촘하면
+# «방금 들어온 칸» 이 항상 있어서 뭔가는 자주 돈다. 그래서 칸을 깐다.
+#
+# ── 그런데 시간대별로 발화율이 다르다 (실측, 291개 실행 / 14일) ────────
+#
+# daily-prices.yml(모든 시간에 30분 간격)의 KST 시간대별 발화:
+#
+#   KST 01~08 (UTC 16~23)  약 91%        ← GitHub 이 한가한 시간
+#   KST 09~24 (UTC 00~15)  약 17%
+#
+# «하루에 한 번이라도 그 창 안에 실행이 있었는가»:
+#
+#   KST 12:00~15:00 (점심 창)  13/14일  93%
+#   KST 19:00~22:00 (저녁 창)   4/14일  29%   ← GitHub 만으로는 구멍
+#   KST 18:00~22:00            13/14일  93%
+#   KST 00:00~08:00            14/14일 100%   ← 누락 감시를 여기 둔다
+#
+# 결론: 점심은 칸을 촘촘히 깔면 GitHub cron 으로 93% 가 된다. 저녁은 29% 라
+# GitHub cron 을 1차 경로로 쓸 수 없다. 그래서 저녁의 1차 트리거는
+# «다른 스케줄러» 인 Vercel Cron 이다 (vercel.json + api/cron.js 의 volatile
+# 분기 → workflow_dispatch). Vercel Hobby 는 하루 1회·±59분이라 19:05 예약이
+# 19:00~20:00 안에 들어오고, 그 범위는 저녁 창(19:00~22:00) 안이다.
+#
+# ── 늦게 실행하는 것은 해결이 아니다 ─────────────────────────────────
+#
+# 칸을 창 밖으로 넓히지 않는다. 점심 재확인을 저녁 6시에 돌리면 그건 점심
+# 가격이 아니다. 창을 놓친 날은 MISSED 로 남기고 메일로 알린다.
+# 같은 (KST 날짜, 슬롯) 은 슬롯 원장이 한 번만 통과시키므로, 칸을 23개로
+# 늘려도 외부 API 호출은 슬롯당 한 번분이다.
+
 on:
   schedule:
-    # GitHub cron uses UTC. KST 12:05 and 19:05.
-    - cron: '5 3 * * *'
-    - cron: '5 10 * * *'
+    # GitHub cron 은 UTC. 창 안에만, 20분 간격으로 촘촘히.
+    # 점심 창 KST 12:00~15:00 = UTC 03:00~06:00 (목표 12:05 = UTC 03:05)
+    - cron: '5,25,45 3-5 * * *'
+    # 저녁 창 KST 19:00~22:00 = UTC 10:00~13:00 (목표 19:05 = UTC 10:05)
+    - cron: '5,25,45 10-12 * * *'
+    # 누락 감시 — 수집은 하지 않고 원장만 본다. 창이 닫혔는데 아무도 수집하지
+    # 않은 슬롯을 MISSED 로 메일 + 빨간 X. KST 18:10 은 그날 점심 누락을 저녁
+    # 창 전에 알리고, 나머지는 발화율 100% 구간(KST 01/03/05/07)에 둔다.
+    - cron: '10 9,16,18,20,22 * * *'
   workflow_dispatch:
     inputs:
       slot:
-        description: '재확인 시간대 (실제 실행 시각도 해당 KST 시간대여야 함)'
+        description: '재확인 시간대 (auto = 실행 시각의 KST 창으로 판단)'
         type: choice
-        required: true
-        default: noon
+        required: false
+        default: auto
         options:
+          - auto
           - noon
           - evening
 
@@ -66,7 +123,11 @@ jobs:
           ADPICK_MIN_GAP_MS: '12000'
           # Emergency kill switch: Settings -> Variables -> Actions PRICE_VOLATILE_OFF=1
           PRICE_VOLATILE_OFF: ${{ vars.PRICE_VOLATILE_OFF }}
-          PRICE_VOLATILE_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.slot || (github.event.schedule == '5 3 * * *' && 'noon' || 'evening') }}
+          # ★ schedule 에서는 슬롯을 지정하지 않는다 — 칸이 23개이고 어느 칸이
+          #   몇 시에 발화할지 모르므로, 실행 시각의 KST 창으로 스크립트가
+          #   직접 판단하는 쪽이 정확하다. 창 밖이면 수집 없이 감시만 한다.
+          #   workflow_dispatch(= Vercel Cron 포함)만 슬롯을 명시한다.
+          PRICE_VOLATILE_SLOT: ${{ (github.event_name == 'workflow_dispatch' && inputs.slot != 'auto') && inputs.slot || '' }}
           PRICE_VOLATILE_CACHE_FILE: ${{ github.workspace }}/.day-cache/volatile-price-rank.json.gz
           # 기존 일일 수집: 쿠팡 3300/ADPICK 2900; 여기서만 3400/3000까지 허용.
           # 매 실행은 45호출 이내, 실시간 DB 사용량 조회 실패 시 안전 중단.
@@ -87,7 +148,7 @@ jobs:
 
       # 기존 알림 경로를 사용하므로 중복 발송 안전장치는 check-alerts.js 그대로.
       - name: Check price alerts
-        if: steps.recheck.outcome == 'success'
+        if: steps.recheck.outputs.status == 'COMPLETED'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -98,11 +159,47 @@ jobs:
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
         run: node scripts/check-alerts.js
 
+      # ★ «수집 0건 + SUCCESS» 를 더는 만들지 않는다. 실제 상태를 Summary 맨
+      #   위에 쓰고, MISSED 는 ::error:: 로 띄운다(스크립트가 종료코드 1).
       - name: Summary
         if: always()
+        env:
+          STATUS: ${{ steps.recheck.outputs.status }}
+          SLOT: ${{ steps.recheck.outputs.slot }}
+          DAY: ${{ steps.recheck.outputs.day }}
+          DELAY: ${{ steps.recheck.outputs.delay_minutes }}
+          COUPANG: ${{ steps.recheck.outputs.coupang_calls }}
+          ADPICK: ${{ steps.recheck.outputs.adpick_calls }}
+          CHECKED: ${{ steps.recheck.outputs.checked }}
+          SAVED: ${{ steps.recheck.outputs.saved }}
+          CHANGED: ${{ steps.recheck.outputs.changed }}
+          REASON: ${{ steps.recheck.outputs.reason }}
         run: |
-          echo "## Adaptive price recheck" >> "$GITHUB_STEP_SUMMARY"
-          echo "Run at $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -F '[adaptive]' /tmp/volatile.log 2>/dev/null | tail -25 >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          STATUS="${STATUS:-NO_OUTPUT}"
+          {
+            echo "## 가격 재확인 — ${STATUS}"
+            echo ""
+            echo "| 항목 | 값 |"
+            echo "| --- | --- |"
+            echo "| 상태 | **${STATUS}** |"
+            echo "| KST 날짜 / 슬롯 | ${DAY:--} / ${SLOT:--} |"
+            echo "| 예정 시각 대비 지연 | ${DELAY:-0}분 |"
+            echo "| 실제 시작 (UTC) | $(date -u '+%Y-%m-%d %H:%M') |"
+            echo "| 쿠팡 API 호출 | ${COUPANG:-0}회 |"
+            echo "| ADPICK API 호출 | ${ADPICK:-0}회 |"
+            echo "| 확인한 상품 | ${CHECKED:-0}개 |"
+            echo "| 현재가 저장 | ${SAVED:-0}개 |"
+            echo "| 실제 가격 변경 | ${CHANGED:-0}개 |"
+            echo "| 사유 | ${REASON:--} |"
+            echo ""
+            echo '```'
+            grep -F '[adaptive]' /tmp/volatile.log 2>/dev/null | tail -25 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$STATUS" in
+            MISSED)   echo "::error title=예약 수집 누락::${DAY} ${SLOT} 슬롯이 창 안에 실행되지 않았습니다 (${REASON})" ;;
+            FAILED)   echo "::error title=가격 재확인 실패::${REASON}" ;;
+            LOCKED)   echo "::warning title=잠금 충돌::${REASON} — 같은 창의 다음 칸이 다시 시도합니다" ;;
+            QUOTA_EXHAUSTED) echo "::warning title=API 예산 소진::${REASON}" ;;
+            NO_OUTPUT) echo "::error title=상태 없음::스크립트가 상태를 남기지 못했습니다" ;;
+          esac
