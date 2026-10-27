@@ -47,7 +47,7 @@
 create or replace function public.seo_sitemap_products(
   p_id_from       bigint,
   p_id_to         bigint,
-  p_min_days      integer default 7,
+  p_min_days      integer default 5,
   p_max_age_days  numeric default 10
 )
 returns jsonb
@@ -108,7 +108,7 @@ as $$
             when mine_rows > 0 then mine_days
             when attributed    then 0
             else all_days
-          end) >= greatest(coalesce(p_min_days, 7), 1)
+          end) >= greatest(coalesce(p_min_days, 5), 1)
 $$;
 
 revoke execute on function public.seo_sitemap_products(bigint, bigint, integer, numeric)

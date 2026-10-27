@@ -64,7 +64,7 @@ select count(*) filter (where p.lprice < 100)                                   
   join public.products p on p.product_id = s.product_id;
 
 -- V-6. 옵션(vendor_item_id) 규칙이 실제로 적용되는가.
---      «옵션 구분 없이 세면 7일 이상» 인데 «현재 옵션으로 세면 7일 미만» 이라 빠진 상품 수.
+--      «옵션 구분 없이 세면 5일 이상» 인데 «현재 옵션으로 세면 5일 미만» 이라 빠진 상품 수.
 --      0 보다 크면 규칙이 동작하는 것이다 (옵션이 바뀐 상품이 없으면 0 일 수도 있다 —
 --      그때는 V-6b 표본이 비어 있다). 이 상품들의 /p/ 페이지는 noindex 여야 한다.
 with cand as (
@@ -80,7 +80,7 @@ naive as (
     from cand c
     join public.price_history h on h.product_id = c.product_id and h.mall = c.mall
    group by c.product_id, c.vid
-  having count(distinct coalesce((h.recorded_at at time zone 'Asia/Seoul')::date, left(h.recorded_date::text, 10)::date)) >= 7
+  having count(distinct coalesce((h.recorded_at at time zone 'Asia/Seoul')::date, left(h.recorded_date::text, 10)::date)) >= 5
 ),
 s as (
   select e ->> 0 as product_id
@@ -108,7 +108,7 @@ select p.product_id, p.vendor_item_id,
    and nullif(btrim(coalesce(p.vendor_item_id, '')), '') is not null
    and not exists (select 1 from s where s.product_id = p.product_id)
  group by p.product_id, p.vendor_item_id
-having count(distinct coalesce((h.recorded_at at time zone 'Asia/Seoul')::date, left(h.recorded_date::text, 10)::date)) >= 7
+having count(distinct coalesce((h.recorded_at at time zone 'Asia/Seoul')::date, left(h.recorded_date::text, 10)::date)) >= 5
  limit 5;
 
 -- V-7. 결과 표본 5개 — 각 https://seosa.ai.kr/p/{product_id} 가 «index,follow» 인지 눈으로 확인.
