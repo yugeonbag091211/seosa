@@ -260,7 +260,7 @@ function callHandler(handler, req) {
   }));
   const history = [];
   products.forEach((p, i) => {
-    const days = i < 150 ? 10 : 5;   // 앞 150개만 색인 문턱(7일)을 넘는다
+    const days = i < 150 ? 11 : 4;   // 18,000행 유지; 앞 150개만 색인 문턱(5일)을 넘는다
     for (let d = 0; d < days; d++) {
       for (let k = 0; k < 8; k++) {
         const at = new Date(Date.now() - d * 86400000 - k * 60000).toISOString();
@@ -272,7 +272,7 @@ function callHandler(handler, req) {
   await check('전제: 가짜 상품은 전부 live 다', () => {
     assert(products.every(p => productLifecycle(p).state === LIFECYCLE.LIVE), productLifecycle(products[0]).state);
   });
-  await check('18,000행(18페이지)을 동시에 읽고, 7일 이상 기록된 150개만 정확히 한 번씩 담는다', async () => {
+  await check('18,000행(18페이지)을 동시에 읽고, 5일 이상 기록된 150개만 정확히 한 번씩 담는다', async () => {
     db = sitemapDb(history, products, 25);
     const list = await page._internal.indexableProducts();
     const got = list.map(x => x.pid).sort();
