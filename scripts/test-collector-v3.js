@@ -104,8 +104,8 @@ function rng(seed) {
     const stale = { product_id: 'stale', mall: 'ADPICK', collected_at: ago(45) };
     eq('ADPICK 회전 stale 가중치 보정', Planner.PRIOR.ADPICK.rotation.stale, 0.02);
     eq('ADPICK 회전 lapsed 가중치 보정', Planner.PRIOR.ADPICK.rotation.lapsed, 0.10);
-    check('최근 기록 1개 > 2주 전 기록 1개 가치', Planner.scoreProduct(fresh, rotationCtx).value > Planner.scoreProduct(lapsed, rotationCtx).value);
-    check('최근 기록 1개 > 45일 전 기록 1개 가치', Planner.scoreProduct(fresh, rotationCtx).value > Planner.scoreProduct(stale, rotationCtx).value);
+    check('최근 기록 1개 > 2주 전 기록 1개 가치', Planner.scoreProduct(fresh, { ...rotationCtx, tier: 'rotation' }).value > Planner.scoreProduct(lapsed, { ...rotationCtx, tier: 'rotation' }).value);
+    check('최근 기록 1개 > 45일 전 기록 1개 가치', Planner.scoreProduct(fresh, { ...rotationCtx, tier: 'rotation' }).value > Planner.scoreProduct(stale, { ...rotationCtx, tier: 'rotation' }).value);
     const groups = [
       { kw: 'old', rows: [lapsed] }, { kw: 'stale', rows: [stale] }, { kw: 'recent', rows: [fresh] }
     ];
