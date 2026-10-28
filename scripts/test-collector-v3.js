@@ -97,6 +97,26 @@ function rng(seed) {
   }
   console.log('');
 
+  {
+    const rotationCtx = { mall: 'ADPICK', dayStartMs: DAY_START, tierOf: () => 'rotation', limit: 20 };
+    const fresh = { product_id: 'recent', mall: 'ADPICK', collected_at: ago(6) };
+    const lapsed = { product_id: 'older', mall: 'ADPICK', collected_at: ago(14) };
+    const stale = { product_id: 'stale', mall: 'ADPICK', collected_at: ago(45) };
+    eq('ADPICK 회전 stale 가중치 보정', Planner.PRIOR.ADPICK.rotation.stale, 0.02);
+    eq('ADPICK 회전 lapsed 가중치 보정', Planner.PRIOR.ADPICK.rotation.lapsed, 0.10);
+    check('최근 기록 1개 > 2주 전 기록 1개 가치', Planner.scoreProduct(fresh, rotationCtx).value > Planner.scoreProduct(lapsed, rotationCtx).value);
+    check('최근 기록 1개 > 45일 전 기록 1개 가치', Planner.scoreProduct(fresh, rotationCtx).value > Planner.scoreProduct(stale, rotationCtx).value);
+    const groups = [
+      { kw: 'old', rows: [lapsed] }, { kw: 'stale', rows: [stale] }, { kw: 'recent', rows: [fresh] }
+    ];
+    const ordered = Planner.orderGroups(groups, { ...rotationCtx, date: '2026-10-29' });
+    eq('1차 ADPICK 회전 그룹: 최근 이력을 먼저 검색', ordered[0].kw, 'recent');
+    eq('1차 ADPICK 회전 그룹: 오래된 그룹 보존', ordered.length, groups.length);
+    eq('ADPICK daily 계획값은 불변', Planner.PRIOR.ADPICK.daily.lapsed, 0.635);
+    eq('쿠팡 회전 계획값은 불변', Planner.PRIOR['쿠팡'].rotation.stale, 0.15);
+  }
+  console.log('');
+
   /* ── 2. 속성 테스트 ─────────────────────────────────────────── */
   console.log('[2] 속성 — 순열 보존 · 결정성 · 기아 예약');
   {
