@@ -219,14 +219,20 @@ function expectedWithin(ordered, n) {
 }
 
 /*
- * Recovery ladder preference from 2026-10-03 offline replay.
- * The primary collector planner already handles starvation separately. This ordering only
- * applies within a recovery round and NEVER drops stale products or increases API calls.
- * These are dated calibration priors, not forecasts or claims of current conversion rates.
+ * Recovery ladder ordering weights, not guaranteed recovery probabilities.
+ * Coupang: retained 2026-10-03 offline-replay calibration.
+ * ADPICK: 2026-10-29 read-only sample of 600 actually attempted products:
+ *   prior 7-day observation 172/218 collected today
+ *   prior 8-30-day observation 9/252; older than 30 days 1/130.
+ * These are collector outcomes, NOT recovery-only success rates. The deliberately
+ * conservative ADPICK weights below express ordering preference, not a forecast.
+ * This affects only ordering within a recovery round: no stale item is dropped,
+ * and no limit, matching identity, API call budget or price write logic changes.
+ * Evaluate on a live shadow replay before merging to production.
  */
 const RECOVERY_PRIOR = Object.freeze({
   '쿠팡': Object.freeze({ recent: 0.587, stale: 0.071 }),
-  'ADPICK': Object.freeze({ recent: 0.16, stale: 0.16 }),
+  'ADPICK': Object.freeze({ recent: 0.48, stale: 0.06 }),
 });
 const RECOVERY_RECENT_DAYS = 7;
 
