@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'scripts/collect-all-prices.js'
+      - 'api/_collectplan.js'
+      - 'scripts/test-collector-recovery-order.js'
       - 'scripts/test-second-pass.js'
       - 'scripts/test-price-mall-collection.js'
       - 'scripts/test-collector-scale.js'
@@ -46,6 +48,10 @@ jobs:
         run: node scripts/test-second-pass.js
       - name: Mall collection/report regression
         run: node scripts/test-price-mall-collection.js
+      - name: Recovery order and stale fairness (offline)
+        run: node scripts/test-collector-recovery-order.js
+      - name: V3 primary planner and starvation safety (offline)
+        run: node scripts/test-collector-v3.js
       # 2026-09-22 collector_target_products statement timeout 사고 회귀.
       # 100 / 1,000 / 10,000 / 60,000 규모에서 대상 조회·재개·중복 방지·
       # 상품별 최종 상태 합계를 고정한다. DB/외부 API 를 부르지 않는다.

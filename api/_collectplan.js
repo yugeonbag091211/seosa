@@ -55,11 +55,14 @@
  *   쿠팡   rotation fresh .490 (n=3,053)
  *   ADPICK rotation fresh .725 (n=552)
  *
- * ★ rotation 의 lapsed/stale/never 는 «측정값이 아니다». 회전 수집이 2026-09-21
- *   에 시작돼 아직 한 바퀴도 돌지 않았다. lapsed 는 daily 의 fresh→lapsed 비율
- *   (0.53~0.66)을 곱한 값, stale/never 는 보수적 가정이다. 회전 상품의
- *   stale 에는 «시도했는데 없는» 상품과 «차례가 안 온» 상품이 섞여 있어 daily
- *   stale(0.01~0.08)보다 높게 둔다. 두 바퀴 뒤 다시 보정할 것.
+ * 2026-10-29 ADPICK rotation 재보정 (Neon 기본 브랜치 읽기 전용):
+ *  29일 이전의 price_history로 마지막 성공을 분류하고, 당일 attempted/covered를 교차.
+ *  최근 7일 847/1,054 (80.4%), 이전 8~30일 131/1,915 (6.8%),
+ *  30일 초과 5/1,102 (0.45%). 당일 중간 시점·기존 정렬에 따른 선택 편향이
+ *  있으므로 이를 직접 적중 확률로 쓰지 않고 보수적 정렬 가중치만 적용.
+ *  기존 2026-09 rotation lapsed=.43/stale=.15/never=.10 은 추정치였고,
+ *  10월 자료에서 오래된 제품에 대해 과대평가임이 드러났다.
+ *  daily·쿠팡 가중치와 기아 예약 레인(STARVE_EVERY=8)은 불변.
  */
 const PRIOR = Object.freeze({
   '쿠팡': Object.freeze({
@@ -68,7 +71,7 @@ const PRIOR = Object.freeze({
   }),
   'ADPICK': Object.freeze({
     daily:    Object.freeze({ fresh: 0.955, lapsed: 0.635, stale: 0.01, never: 0.031 }),
-    rotation: Object.freeze({ fresh: 0.725, lapsed: 0.43,  stale: 0.15, never: 0.10 })
+    rotation: Object.freeze({ fresh: 0.725, lapsed: 0.10,  stale: 0.02, never: 0.03 })
   })
 });
 
@@ -219,14 +222,20 @@ function expectedWithin(ordered, n) {
 }
 
 /*
- * Recovery ladder preference from 2026-10-03 offline replay.
- * The primary collector planner already handles starvation separately. This ordering only
- * applies within a recovery round and NEVER drops stale products or increases API calls.
- * These are dated calibration priors, not forecasts or claims of current conversion rates.
+ * Recovery ladder ordering weights, not guaranteed recovery probabilities.
+ * Coupang: retained 2026-10-03 offline-replay calibration.
+ * ADPICK: 2026-10-29 read-only sample of 600 actually attempted products:
+ *   prior 7-day observation 172/218 collected today
+ *   prior 8-30-day observation 9/252; older than 30 days 1/130.
+ * These are collector outcomes, NOT recovery-only success rates. The deliberately
+ * conservative ADPICK weights below express ordering preference, not a forecast.
+ * This affects only ordering within a recovery round: no stale item is dropped,
+ * and no limit, matching identity, API call budget or price write logic changes.
+ * Evaluate on a live shadow replay before merging to production.
  */
 const RECOVERY_PRIOR = Object.freeze({
   '쿠팡': Object.freeze({ recent: 0.587, stale: 0.071 }),
-  'ADPICK': Object.freeze({ recent: 0.16, stale: 0.16 }),
+  'ADPICK': Object.freeze({ recent: 0.48, stale: 0.06 }),
 });
 const RECOVERY_RECENT_DAYS = 7;
 
