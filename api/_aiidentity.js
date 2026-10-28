@@ -899,12 +899,45 @@ const WANTS_LAPTOP_RE = /노트북|랩탑|laptop|notebook/i;
 const LAPTOP_TITLE_RE = /노트북|랩탑|laptop|notebook|게이밍북|갤럭시북|그램|맥북|thinkpad|씽크패드/i;
 const DESKTOP_TITLE_RE = /데스크탑|데스크톱|desktop|조립\s*(?:pc|컴퓨터)|조립컴|게이밍\s*pc|컴퓨터\s*본체|미니\s*pc|올인원\s*pc|\d{2}l(?:\s|$)/i;
 const GPU_TITLE_RE = /그래픽\s*카드|graphics\s*card|(?:^|\s)d7(?:\s|$)|gddr\d|windforce|비디오\s*카드/i;
+/*
+ * Production guest E2E (2026-10-29, issue #204):
+ * A shopping listing may contain the requested category as a *use-case*, not as
+ * the item being sold.  These deliberately narrow guards reject unmistakable
+ * instructional content, tablet styluses and in-ear buds masquerading as
+ * over-ear headset listings.  Bare category keyword presence is not identity.
+ * Keep valid tablet + included-pen bundles and actual laptops/headsets intact.
+ */
+const LAPTOP_CONTENT_RE = /(?:노트북|랩탑|laptop)\s*(?:하나|한\s*대|한\s*개)\s*로[^,\n]{0,65}(?:사업|수익|부업|강의|강좌|배우기|비법|하는\s*법|모든\s*것|모든것|가이드|교재|전략)/i;
+const TABLET_DEVICE_RE = /아이패드|ipad|태블릿|tablet|갤럭시\s*탭|갤럭시탭|galaxy\s*tab/i;
+const TABLET_PEN_RE = /터치\s*(?:펜|팬)|스마트\s*펜|스타일러스|stylus|정전식\s*펜|태블릿\s*펜|아이폰\s*펜|핸드폰\s*펜/i;
+const TABLET_PEN_FOR_RE = /(?:아이패드|ipad|갤럭시\s*탭|갤럭시탭|태블릿|tablet)\s*(?:전용|호환|용)\s*[^,\n]{0,30}(?:펜|팬|stylus)/i;
+const HEADSET_EARBUD_RE = /이어버드|이어폰|earbuds?|earphones?|\btws\b|트루\s*와이어리스|in[-\s]?ear/i;
 
 /** 요청과 다른 유형이면 그 이유(라벨), 아니면 ''. */
 function productTypeGap(c, item, title) {
   const want = String(c.positive || c.query || '').normalize('NFKC');
   const t = String(title || '').normalize('NFKC');
   const mall = String((item && (item.mallLabel || item.mall)) || '').trim();
+
+  // "노트북 하나로 부업·강의/사업" 은 노트북 *판매*가 아니라 노트북 활용 콘텐츠다.
+  if (WANTS_LAPTOP_RE.test(want) && !WANTS_BOOK_RE.test(want)
+    && !WANTS_SERVICE_RE.test(want) && LAPTOP_CONTENT_RE.test(t)) {
+    return '노트북 본품이 아닌 교육·사업 콘텐츠';
+  }
+  // 펜이 품목인 제목에 "갤럭시탭 아이패드" 가 호환 대상이라도 본체로 취급하지 않는다.
+  if (TABLET_DEVICE_RE.test(want) && !/(?:펜|팬|스타일러스|stylus|pencil)/i.test(want)) {
+    const pen = TABLET_PEN_RE.exec(t);
+    const device = TABLET_DEVICE_RE.exec(t);
+    if (pen && ((!device || pen.index <= device.index) || TABLET_PEN_FOR_RE.test(t))) {
+      return '태블릿 본체가 아닌 터치펜·스타일러스';
+    }
+  }
+  // "완전 무선 스테레오 이어버드 ... 헤드셋" 같은 검색어 끼워넣기를 막는다.
+  if (/(?:헤드셋|headset)/i.test(want) && !/(?:이어폰|이어버드|earbuds?|earphones?|tws)/i.test(want)
+    && HEADSET_EARBUD_RE.test(t)) {
+    return '헤드셋이 아닌 이어버드·이어폰';
+  }
+
   if (BOOK_TITLE_RE.test(t) && !WANTS_BOOK_RE.test(want)) return '요청하신 상품이 아닌 도서';
   if ((SERVICE_TITLE_RE.test(t) || SERVICE_MALL_RE.test(mall)) && !WANTS_SERVICE_RE.test(want)) return '요청하신 상품이 아닌 여행·강의·서비스 상품';
   if (WANTS_LAPTOP_RE.test(want) && !LAPTOP_TITLE_RE.test(t)) {
