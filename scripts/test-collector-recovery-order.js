@@ -8,11 +8,11 @@ function check(name, fn) { fn(); passed++; console.log('  PASS', name); }
 const dayStartMs = Date.parse('2026-10-18T00:00:00+09:00');
 const product = days => ({ collected_at: new Date(dayStartMs - days * 86400000).toISOString() });
 
-check('recent exact recovery prior matches measured calibration', () => {
+check('provider recovery ordering uses dated weights', () => {
   assert.equal(Planner.recoveryProbability('쿠팡', 1), 0.587);
   assert.equal(Planner.recoveryProbability('쿠팡', 8), 0.071);
-  assert.equal(Planner.recoveryProbability('ADPICK', 1), 0.16);
-  assert.equal(Planner.recoveryProbability('ADPICK', 30), 0.16);
+  assert.equal(Planner.recoveryProbability('ADPICK', 1), 0.48);
+  assert.equal(Planner.recoveryProbability('ADPICK', 30), 0.06);
 });
 check('one recent target beats up to eight stale targets only when expected value is higher', () => {
   const recent = { q: 'recent', rows: [product(2)] };
@@ -25,10 +25,21 @@ check('enough stale targets can still win — not a hard discard', () => {
   const b = { q: 'stale', rows: Array.from({ length: 10 }, () => product(40)) };
   assert.deepEqual(Planner.orderRecoveryQueue([a,b], { mall:'쿠팡',dayStartMs }).map(x=>x.q), ['stale','recent']);
 });
-check('ADPICK remains size-first because its prior is flat', () => {
-  const a = { q:'a', rows:[product(4)] };
-  const b = { q:'b', rows:[product(50), product(50)] };
-  assert.deepEqual(Planner.orderRecoveryQueue([a,b],{mall:'ADPICK',dayStartMs}).map(x=>x.q),['b','a']);
+check('ADPICK now prioritizes a recent target over three stale targets', () => {
+  const recent = { q:'recent', rows:[product(4)] };
+  const stale = { q:'stale', rows:[product(50), product(50), product(50)] };
+  assert.deepEqual(Planner.orderRecoveryQueue([stale,recent],{mall:'ADPICK',dayStartMs}).map(x=>x.q),['recent','stale']);
+});
+check('ADPICK still considers stale groups when their aggregate expected yield is larger', () => {
+  const recent = { q:'recent', rows:[product(4)] };
+  const stale = { q:'stale', rows:Array.from({length:9}, () => product(50)) };
+  assert.deepEqual(Planner.orderRecoveryQueue([recent,stale],{mall:'ADPICK',dayStartMs}).map(x=>x.q),['stale','recent']);
+});
+check('ADPICK missing / invalid observation dates are never treated as recent', () => {
+  assert.equal(Planner.recoveryProbability('ADPICK',null),0.06);
+  assert.equal(Planner.recoveryProbability('ADPICK',NaN),0.06);
+  assert.equal(Planner.recoveryProbability('ADPICK',7),0.48);
+  assert.equal(Planner.recoveryProbability('ADPICK',7.01),0.06);
 });
 check('stable tie-break keeps original round order', () => {
   const a={q:'a',rows:[product(1)]},b={q:'b',rows:[product(1)]};
