@@ -6803,7 +6803,7 @@ module.exports = async function handler(req, res) {
       text = '질문하신 모델·옵션의 사양은 현재 확인된 자료만으로 검증할 수 없어요. 해당 사양은 제조사 공식 사양표나 판매처에서 확인해 주세요.';
       degradedByGrounding = true;
     } else if (!verifiedGroundedSubject && ['B', 'C', 'D', 'E'].includes(intent)
-        && namesSpecificProduct(q) && vagueFactReply
+        && (intent === 'E' || namesSpecificProduct(q)) && vagueFactReply
         && groundedAnswer.isPriceHistoryQuestion(q)) {
       text = '질문하신 모델·옵션의 가격 기록과 확인 시점을 정확하게 연결하지 못했어요. 따라서 최근 가격 흐름이나 할인 여부를 단정할 수 없고, 다음 주 가격도 예측할 수 없어요. 정확한 옵션과 기록이 확인되면 다시 판단할 수 있어요.';
       degradedByGrounding = true;
