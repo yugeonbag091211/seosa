@@ -7185,7 +7185,27 @@ module.exports = async function handler(req, res) {
         cause: decision.change.cause
       };
     }
-    res.json(withTurnSig(keepPrevRef(payload)));
+    // FINAL_FACT_GATE_20261030 — independently reject an emitted product
+    // that has drifted from the server's eligible candidates, option, price,
+    // budget or exclusion gate.  Never rely on the model's confidence here.
+    const FACT = require('./_ai-fact-gate');
+    const factResult = FACT.applyFactGate(payload, {
+      trustedCards: cards,
+      eligibleItems: items,
+      enforceBudget: gateBudget,
+      maxPrice: constraints && constraints.budgetMax,
+      minPrice: constraints && constraints.budgetMin,
+      avoidGaming: constraints && constraints.avoidGaming,
+      excludedTier: AIID.TIER.EXCLUDED,
+      historyQuestion: groundedAnswer.isPriceHistoryQuestion(q),
+      historyVerified: !!(verifiedGroundedSubject
+        && deal && deal.evidence && Number(deal.evidence.count) > 0
+        && Number(deal.evidence.low) > 0)
+    });
+    if (factResult.failures.length) {
+      console.warn('[ai] final fact gate blocked unsafe output', JSON.stringify(factResult.failures));
+    }
+    res.json(withTurnSig(keepPrevRef(factResult.payload)));
   } catch (e) {
     /*
      * 업스트림 오류 원문을 그대로 내보내지 않는다.
