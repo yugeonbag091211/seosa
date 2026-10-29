@@ -298,6 +298,20 @@ const cases = [
   }, []);
   assert.equal(borrowedSpec.quality.priceSpecEvidence.verdict, 'FAIL',
     'a different search candidate must not authenticate the selected option specification');
+
+  // BUDGET_RELAXATION_PROVENANCE_20261029: an explicitly unselected over-cap
+  // candidate may be quoted in a budget relaxation, but is not an option price.
+  const budgetRow = {
+    question: '스마트폰 40만원 이하 추천해줘', category: 'budget',
+    text: '40만원 이하 상품은 이번 검색 결과에 없었어요. 예산을 499,000원까지(99,000원 더) 늘리면 후보가 있어요.',
+    cards: [], searchEvidence: [{ productId: 'QA-PHONE', vendorItemId: 'QA-PHONE-V1',
+      title: '검증용 스마트폰', lprice: 499000 }], priceHistoryEvidence: []
+  };
+  assert.equal(ANSWER_QUALITY(budgetRow, []).quality.priceSpecEvidence.verdict, 'PASS',
+    'a genuine unmatched over-budget search offer may support a clearly labeled relaxation');
+  assert.equal(ANSWER_QUALITY({ ...budgetRow, text: budgetRow.text + ' 또는 777,000원이면 확실해요.' }, []).quality.priceSpecEvidence.verdict, 'FAIL',
+    'unverified relaxation amount must still fail even in no-result guidance');
+
   const validPrice = ANSWER_QUALITY({
     question: '검증용 노트북 A 판매가 얼마야?', category: 'search',
     text: '검증용 노트북 A의 표시 판매가는 500,000원이에요. 실제 결제 금액은 판매처에서 확인해 주세요.',
