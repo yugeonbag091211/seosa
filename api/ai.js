@@ -7067,6 +7067,16 @@ module.exports = async function handler(req, res) {
         && !/(?:실제 결제 금액|실제 결제가는|쿠폰·카드|쿠폰|배송비)/.test(text)) {
       text = `${text.trim()}\n\n검색 결과 가격은 판매 페이지에 표시된 판매가예요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.`;
     }
+    // FINAL_HISTORY_QUALITY_GATE_20261029 — the last server-side check runs
+    // after all model sanitizers and safe fallbacks. Never answer a price-trend
+    // question with nothing but a product recommendation/listing price.
+    if (searchState === 'found' && cards.length
+        && groundedAnswer.isPriceHistoryQuestion(q)
+        && /(?:먼저 추천드려요|먼저 권해요)/u.test(String(text || ''))
+        && !/(?:가격 기록|가격 이력|가격 흐름|관측|기록상|평균보다|정가 대비|예측할 수 없|단정할 수 없|확인할 수 없|확인하지 못)/u.test(String(text || ''))) {
+      text = '이 상품의 최근 가격 하락 여부와 현재 가격이 싼 편인지는 검증된 가격 기록을 충분히 확인하지 못해 단정할 수 없어요. 검색 결과의 표시 판매가만으로 하락 추세를 판단하지 않으며, 미래 가격도 예측할 수 없어요.';
+      degradedByGrounding = true;
+    }
     text = groundedAnswer.repairProductParticles(text, items.concat(cards));
     let replyCards=cards;
     if (BW.oneCardFollowup(q,hist,intent) && cards.length) {
