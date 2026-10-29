@@ -4855,7 +4855,7 @@ module.exports = async function handler(req, res) {
       const batteryNoun = /^배터리\s*오래가는\s*([가-힣]{2,8}?)(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/.exec(q);
       const otherNoun = /^대신\s*다른\s*([가-힣]{2,8}?)(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/.exec(q);
       const batteryLife = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/.test(q);
-      const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/.test(q);
+      const otherCandidate = /^(?:비슷한\s*)?다른\s*(?:후보|제품|상품|선택지|대안|옵션)(?:도|은|는)?\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘|찾아줘|없어|없을까)(?:[.!?])?$/.test(q);
       const isCondition = batteryLife || !!batteryNoun;
       const isAlternative = otherCandidate || !!otherNoun;
       const explicitKind = batteryNoun && batteryNoun[1] || otherNoun && otherNoun[1] || '';
@@ -4896,6 +4896,17 @@ module.exports = async function handler(req, res) {
       cls.requiresRecommendationIdentity = true;
       cls.contextualFollowup = true;
       cls.query = '';
+    }
+    // An explicit reference to the selected option must resolve through the
+    // signed product+vendorItemId selector, never a fresh generic search.
+    if (cls && previousRecommendation && !(view && view.source === 'modal')
+        && /^그\s*옵션(?:의|은|는|이|가)?\s*(?:(?:지금|현재)\s*)?(?:현재가|가격|판매가)(?:는|가|이|를|을)?\s*(?:얼마|알려|확인|다시)/.test(q)) {
+      cls.intent = 'D';
+      cls.query = '';
+      cls.ownQuery = false;
+      cls.refinement = false;
+      cls.requiresRecommendationIdentity = true;
+      cls.contextualFollowup = true;
     }
     /* 구매 시점을 물었는가 — 그렇다면 결론 한 문장은 서버 판정으로 답 머리에 둔다 (repairUngrounded 뒤). */
     const timingAsked = timingRequested || !!(cls && cls.intent === 'E' && /사는\s*(?:게|것이)\s*(?:좋|나을|괜찮)|사면\s*(?:좋|나을|괜찮|손해)|구매해도|사도\s*(?:돼|될|괜찮|되나)|살까|기다릴|기다려|살\s*때|타이밍|구매\s*시점|괜찮은\s*(?:가격|편)|가격\s*(?:괜찮|좋은\s*편|비싼\s*편|싼\s*편)/.test(q));
@@ -5187,6 +5198,7 @@ module.exports = async function handler(req, res) {
     const BW = require('./_ai-budget-window');
     // 상한 근처(_ai-budget-window)에 확인된 상품이 없어 예산 안의 더 싼 상품으로 안내하는 턴 — 답 앞에 그 사실을 밝힌다.
     let nearBudgetFallback = null;
+    let budgetFeatureAlternatives = [];
     let preferredCategoryMiss = false;
     const feedback = (!intent || needsShopContext(intent))
       ? FB.readFeedback(q)
@@ -5542,8 +5554,9 @@ module.exports = async function handler(req, res) {
               : items;
             const near = BW.nearBudgetWindow(showable, constraints, q);
             if (near.applies) {
+              budgetFeatureAlternatives = BW.verifiedFeatureAlternatives(near, wanted);
               // 카드에 나가지 않는 후보(다른 모델·제외 요청)는 맥락으로 남긴다 — "제외 요청하신 삼성" 이 프롬프트에 남아야 한다.
-              if (near.within.length) items = items.filter(it => near.within.includes(it) || !showable.includes(it));
+              if (near.within.length) items = items.filter(it => near.within.includes(it) || budgetFeatureAlternatives.includes(it) || !showable.includes(it));
               else nearBudgetFallback = near;
             }
           }
@@ -5649,7 +5662,8 @@ module.exports = async function handler(req, res) {
         if (intent === 'C' && items.length) {
           const near = BW.nearBudgetWindow(items, constraints, q);
           if (near.applies) {
-            if (near.within.length) items = near.within;
+            budgetFeatureAlternatives = BW.verifiedFeatureAlternatives(near, wanted);
+            if (near.within.length) items = items.filter(it => near.within.includes(it) || budgetFeatureAlternatives.includes(it));
             else nearBudgetFallback = near;
           }
         }
@@ -6887,6 +6901,9 @@ module.exports = async function handler(req, res) {
      */
     if (nearBudgetFallback && !priceConflict && items.length && !text.includes(BW.fallbackNotice(nearBudgetFallback))) {
       text = `${BW.fallbackNotice(nearBudgetFallback)}\n\n${text}`;
+    }
+    if (budgetFeatureAlternatives.length && !priceConflict) {
+      text = `${BW.featureAlternativeNotice(wanted)}\n\n${text}`;
     }
     /*
      * 후속 질문의 카드 한 장은 같은 상품을 이어 묻는 턴에만 (2026-10-26). "헤드셋 추천" 뒤의 "그럼 그램 노트북도

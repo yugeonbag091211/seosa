@@ -638,6 +638,12 @@ function searchFixture() {
           product: I.unverifiedProductPrices(answer, [realSnapshot]), current: I.unverifiedCurrentPrices(answer, [realSnapshot]) }));
     });
 
+    // These historical transcripts were recorded on 2026-10-23. Keep their
+    // current-price assertions anchored to that day, without changing the
+    // clock used by the other live-relative fixtures in this suite.
+    const realNow = Date.now;
+    Date.now = () => Date.parse('2026-10-23T03:00:00Z');
+    try {
     const notebookSnapshot = I.normItem({
       productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
       title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
@@ -959,6 +965,20 @@ function searchFixture() {
         && singleLowDealBlock.includes('하루만 관측')
         && !singleLowDealBlock.includes('보유 관측 기록의 최저가보다 높다'),
       '안전 fallback은 미확정 단일 최저의 차액을 만들지 않고 후보·관측 횟수를 명시한다', singleLowDealBlock);
+
+    const freshness = require('../api/_priceevidence').isCurrentPriceFresh;
+    ok(freshness(notebookSnapshot, Date.parse('2026-10-26T14:59:59Z'))
+        && !freshness(notebookSnapshot, Date.parse('2026-10-26T15:00:00Z'))
+        && !freshness(notebookSnapshot, Date.parse('2026-10-22T03:00:00Z')),
+      'KST 경계에서 확인일 기준 3일은 허용하되 4일 전과 미래 가격은 현재가로 거부한다');
+    ok(!freshness({ checkedAt: '2026-10-32' }, Date.parse('2026-10-26T03:00:00Z')),
+      '유효하지 않은 확인일은 현재가 근거로 쓰지 않는다');
+    Date.now = () => Date.parse('2026-10-27T03:00:00Z');
+    ok(I.unverifiedCurrentPrices('현재가는 1,749,000원입니다.', [notebookSnapshot]).includes(1749000),
+      '오래된 실제 이력은 현재가 주장에 사용할 수 없다');
+    } finally {
+      Date.now = realNow;
+    }
 
     // Actual gpt-6-luna output from the LG air-purifier Neon snapshot (2026-10-23).
     // Korean comparison particles and an implicit yesterday delta must be checked

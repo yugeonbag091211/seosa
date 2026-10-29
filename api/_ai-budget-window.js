@@ -33,6 +33,24 @@ function nearBudgetWindow(items,constraints,question){
  for(const it of list)(positivePrice(it)>=lower&&positivePrice(it)<=upper?within:outside).push(it);
  return{applies:true,within,outside,lower,upper};
 }
+/**
+ * An exception requires explicit, non-conflicting support and non-support
+ * statements for the same requested feature in the respective titles.
+ * Mere absence of a feature from a title is never evidence of non-support.
+ * Only the narrowly defined ANC wording below is currently supported.
+ */
+function verifiedFeatureAlternatives(window, wanted) {
+ const near=window&&window.within||[],outside=window&&window.outside||[];
+ if(!window||!window.applies||!near.length||!Array.isArray(wanted)||!wanted.includes('노이즈캔슬링'))return[];
+ const supported=it=>/(?:노이즈\s*캔슬링|\bANC\b)\s*(?:기능\s*)?(?:지원|탑재)/i.test(String(it&&it.title||''));
+ const unsupported=it=>/(?:노이즈\s*캔슬링|\bANC\b)\s*(?:기능\s*)?(?:미지원|미탑재|없음)/i.test(String(it&&it.title||''));
+ if(!near.every(it=>unsupported(it)&&!supported(it)))return[];
+ return outside.filter(it=>positivePrice(it)>0&&positivePrice(it)<window.lower
+   && supported(it)&&!unsupported(it));
+}
+function featureAlternativeNotice(){
+ return '예산에 가까운 후보는 상품명에 노이즈캔슬링 미지원으로 표시되어 있고, 더 저렴한 후보는 노이즈캔슬링 지원으로 표시되어 있어 함께 평가했어요. 판매처에서 실제 기능과 옵션을 다시 확인해 주세요.';
+}
 function gamingPreference(text){const q=String(text||'');if(ALLOW_GAMING.test(q))return false;if(EXCLUDE_GAMING.test(q))return true;return null;}
 function avoidsGaming(item){return GAMING_TITLE.test(String(item&&item.title||''));}
 /**
@@ -49,4 +67,4 @@ function won(n){const v=Math.round(n);return v%10000===0?(v/10000).toLocaleStrin
 function fallbackNotice(result){
  return '요청하신 예산 상한('+won(result.upper)+')에 가까운 '+won(result.lower)+'~'+won(result.upper)+' 가격대에서는 확인된 상품이 없어, 예산 안의 더 저렴한 상품으로 안내드려요.';
 }
-module.exports={LOW_PRICE_CUTOFF,NEAR_BUDGET_WON,NEAR_BUDGET_RATIO,nearBudgetWindow,gamingPreference,avoidsGaming,oneCardFollowup,fallbackNotice};
+module.exports={LOW_PRICE_CUTOFF,NEAR_BUDGET_WON,NEAR_BUDGET_RATIO,nearBudgetWindow,verifiedFeatureAlternatives,featureAlternativeNotice,gamingPreference,avoidsGaming,oneCardFollowup,fallbackNotice};

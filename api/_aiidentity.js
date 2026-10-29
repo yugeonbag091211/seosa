@@ -157,6 +157,7 @@ const GENERIC_WORDS = new Set([
   '말고', '제외', '빼고', '아닌', '아니라', '없이', 'only', 'new',
   // 대화 이음말 — "아니 프로맥스 말고 프로" 의 '아니' 는 상품이 아니다.
   '아니', '아니요', '응', '네', '그럼', '그래', '그냥', '다시', '바꿔', '바꿔줘', '변경', '유지', '앞', '아까',
+  '혹시', '한번', '이번에는', '이번엔', '그러면',
   '방금', '보여', '보여줘', '있어', '있나', '어때', '질문', '답', '것도', '거도', '중', '기준', '조건',
   // 예산·처지를 말하는 군말 (2026-10-26) — "최대 130만원까지 쓸 수 있는데" · "처음 사는"
   '최대', '최소', '처음', '사는', '쓸', '뭐', '뭐가', '예산', '부탁', '오래',
@@ -907,10 +908,11 @@ const GPU_TITLE_RE = /그래픽\s*카드|graphics\s*card|(?:^|\s)d7(?:\s|$)|gddr
  * over-ear headset listings.  Bare category keyword presence is not identity.
  * Keep valid tablet + included-pen bundles and actual laptops/headsets intact.
  */
-const LAPTOP_CONTENT_RE = /(?:노트북|랩탑|laptop)\s*(?:하나|한\s*대|한\s*개)\s*로[^,\n]{0,65}(?:사업|수익|부업|강의|강좌|배우기|비법|하는\s*법|모든\s*것|모든것|가이드|교재|전략)/i;
+const LAPTOP_CONTENT_RE = /(?:노트북|랩탑|laptop)\s*(?:(?:하나|한\s*대|한\s*개)\s*)?(?:으?로)[^,\n]{0,65}(?:사업|수익|부업|돈\s*버는|강의|강좌|교육|배우기|비법|하는\s*법|모든\s*것|모든것|가이드|교재|전략)|(?:노트북|랩탑|laptop)[^,\n]{0,65}(?:온라인\s*교육|입문자[^,\n]{0,30}클래스)/i;
 const TABLET_DEVICE_RE = /아이패드|ipad|태블릿|tablet|갤럭시\s*탭|갤럭시탭|galaxy\s*tab/i;
-const TABLET_PEN_RE = /터치\s*(?:펜|팬)|스마트\s*펜|스타일러스|stylus|정전식\s*펜|태블릿\s*펜|아이폰\s*펜|핸드폰\s*펜/i;
-const TABLET_PEN_FOR_RE = /(?:아이패드|ipad|갤럭시\s*탭|갤럭시탭|태블릿|tablet)\s*(?:전용|호환|용)\s*[^,\n]{0,30}(?:펜|팬|stylus)/i;
+const TABLET_PEN_RE = /터치\s*(?:펜|팬)|스마트\s*펜|스타일러스|stylus|정전식\s*펜|태블릿\s*펜|아이폰\s*펜|핸드폰\s*펜|애플\s*펜슬|apple\s*pencil|(?:^|\s)s\s*펜|\bs\s*pen\b/i;
+const TABLET_PEN_FOR_RE = /(?:아이패드|ipad|갤럭시\s*탭|갤럭시탭|태블릿|tablet)\s*(?:전용|호환|용)\s*[^,\n]{0,30}(?:펜|팬|펜슬|stylus|pencil)/i;
+const TABLET_PART_RE = /매직\s*키보드|magic\s*keyboard|(?:호환|교체|수리)[^,\n]{0,35}(?:액정|디스플레이|패널|배터리|충전\s*포트|부품)/i;
 const HEADSET_EARBUD_RE = /이어버드|이어폰|earbuds?|earphones?|\btws\b|트루\s*와이어리스|in[-\s]?ear/i;
 
 /** 요청과 다른 유형이면 그 이유(라벨), 아니면 ''. */
@@ -925,15 +927,24 @@ function productTypeGap(c, item, title) {
     return '노트북 본품이 아닌 교육·사업 콘텐츠';
   }
   // 펜이 품목인 제목에 "갤럭시탭 아이패드" 가 호환 대상이라도 본체로 취급하지 않는다.
-  if (TABLET_DEVICE_RE.test(want) && !/(?:펜|팬|스타일러스|stylus|pencil)/i.test(want)) {
+  if (TABLET_DEVICE_RE.test(want) && (!/(?:펜|팬|스타일러스|stylus|pencil)/i.test(want)
+    || /(?:펜|팬|스타일러스|stylus|pencil)\s*(?:포함|동봉)/i.test(want))) {
     const pen = TABLET_PEN_RE.exec(t);
     const device = TABLET_DEVICE_RE.exec(t);
-    if (pen && ((!device || pen.index <= device.index) || TABLET_PEN_FOR_RE.test(t))) {
+    // '펜촉 포함' is a pen accessory bundle, not proof of a tablet bundle.
+    // Only a device followed by an explicitly included pen (or an explicitly
+    // identified device body) can establish a bundle; compatibility indicates
+    // the named tablet is the accessory's target, not the item being sold.
+    const compatible = /호환|compatible\s+with|\bfor\b/i.test(t);
+    const penIncluded = pen && /^\s*(?:포함|증정|동봉|제공)/i.test(t.slice(pen.index + pen[0].length));
+    const explicitBundle = !compatible && (/(?:본체)/i.test(t) || !!penIncluded);
+    if (pen && ((!device || pen.index <= device.index) || TABLET_PEN_FOR_RE.test(t) || !explicitBundle)) {
       return '태블릿 본체가 아닌 터치펜·스타일러스';
     }
+    if (TABLET_PART_RE.test(t) && (compatible || !/본체/i.test(t))) return '태블릿 본체가 아닌 호환 부품';
   }
   // "완전 무선 스테레오 이어버드 ... 헤드셋" 같은 검색어 끼워넣기를 막는다.
-  if (/(?:헤드셋|headset)/i.test(want) && !/(?:이어폰|이어버드|earbuds?|earphones?|tws)/i.test(want)
+  if (/(?:헤드셋|헤드폰|headset|headphones?)/i.test(want) && !/(?:이어폰|이어버드|earbuds?|earphones?|tws)/i.test(want)
     && HEADSET_EARBUD_RE.test(t)) {
     return '헤드셋이 아닌 이어버드·이어폰';
   }

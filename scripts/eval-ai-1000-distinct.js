@@ -337,6 +337,43 @@ HISTORY_TARGETS.forEach(([name, pid, shape]) => HISTORY_Q.forEach(hq => {
 /* 6) 연속 대화 — 50 세션 × 3턴 = 150 */
 const sessions = [];
 const S = (kind, turns, check) => sessions.push({ kind, turns, check });
+// Independent wordings, with no session labels or product names added to
+// follow-up questions: each still has to resolve the previous conversation.
+const FOLLOW_UPS = {
+  'budget-memory': [
+    '아까 추천한 거 지금 얼마야?', '방금 추천한 제품 현재 가격은?', '추천해 준 상품 가격 다시 알려줘',
+    '이전에 고른 거 판매가 얼마지?', '위에 추천한 제품 가격 확인해줘', '그 추천 상품 현재가가 궁금해',
+    '앞에서 고른 제품은 지금 얼마야?', '추천받은 그 제품의 판매 가격은?', '아까 선택한 상품 가격 좀 알려줘'
+  ],
+  'gaming-exclusion': [
+    '더 싼 거 없어?', '가격이 더 낮은 후보도 있어?', '조금 저렴한 걸로 볼 수 있어?', '좀 더 싼 제품 찾아줘',
+    '저렴한 다른 선택지도 보여줘', '가격 낮은 다른 제품은?', '덜 비싼 후보도 추천해줘', '좀 더 저렴한 것은 없을까?'
+  ],
+  'subject-memory-buy': [
+    '그거 지금 사도 돼?', '그 제품 지금 구매해도 괜찮아?', '지금 그 상품을 사는 게 나을까?',
+    '방금 본 제품 지금 사도 좋을까?', '그 상품 지금 구매할 만해?', '그 제품 지금 살지 고민돼',
+    '아까 본 상품 지금 구매해도 될까?', '이 제품은 지금 사는 게 좋아?', '지금 이거 사도 괜찮을까?'
+  ],
+  'subject-memory-alternative': [
+    '다른 후보도 보여줘', '다른 선택지도 찾아줘', '비슷한 다른 제품은 없어?', '다른 대안도 볼 수 있을까?',
+    '그거 말고 다른 상품 추천해줘', '다른 후보를 하나 보여줘', '대신 살 만한 다른 제품 알려줘',
+    '다른 옵션도 추천해줘', '다른 상품도 살펴보고 싶어'
+  ],
+  'pair-memory-cheaper': [
+    '둘 중 더 싼 건 뭐야?', '둘 중 가격이 더 낮은 제품은?', '어느 쪽이 더 저렴해?', '두 제품 가운데 싼 건 뭐지?',
+    '비교한 두 개 중 가격 낮은 쪽은?', '둘 중 어느 제품이 더 싸?', '두 모델 중 더 저렴한 건?', '앞의 둘 중 싼 제품 알려줘'
+  ],
+  'pair-memory-prices': [
+    '둘 다 지금 가격 다시 확인해줘', '두 제품 현재 가격을 다시 알려줘', '두 개 판매가를 다시 확인해줘',
+    '둘의 현재가를 한 번 더 보여줘', '비교한 두 제품 가격 다시 조회해줘', '두 모델 가격을 다시 확인해줘',
+    '두 상품의 현재 판매가를 다시 알려줘', '앞의 두 제품 가격을 다시 보여줘'
+  ],
+  'option-memory': [
+    '그거 가격만 다시 알려줘', '방금 고른 옵션 가격 다시 알려줘', '그 옵션의 현재가는 얼마야?',
+    '선택한 상품 가격 다시 확인해줘', '바꾼 옵션 판매가를 알려줘', '그 선택지의 가격만 확인해줘',
+    '아까 고른 옵션은 지금 얼마야?', '방금 선택한 상품 현재가 다시 보여줘'
+  ]
+};
 // A — 예산 유지와 직전 추천 기억
 [['노트북', 1500000], ['무선 이어폰', 200000], ['공기청정기', 300000], ['에어프라이어', 150000], ['태블릿', 600000],
  ['운동화', 150000], ['무선청소기', 800000], ['헤드폰', 450000], ['스마트폰', 1300000]].forEach(([cat, cap], i) => {
@@ -599,30 +636,57 @@ ATTACKS.forEach(q => push('security', q, {
     record(it.category, it.question, it.expected, r, reason ? 'FAIL' : 'PASS', reason, it.mode);
   }
   if (!ONLY || ONLY === 'conversation') {
+    const kindIndex = {};
     for (const [si, s] of sessions.entries()) {
       const sess = H.session();
       const rs = [];
+      const variant = kindIndex[s.kind] || 0;
+      kindIndex[s.kind] = variant + 1;
       for (const [ti, [q, cls]] of s.turns.entries()) {
+        let question = q;
+        if (ti === 0) question = ['혹시 ', '지금 ', '한번 '][si % 3] + q;
+        else if (s.kind === 'budget-memory' && ti === 1 && variant >= 5) question = '가능하면 ' + q;
+        else if (s.kind === 'budget-memory' && ti === 2) question = FOLLOW_UPS['budget-memory'][variant];
+        else if (s.kind === 'gaming-exclusion' && ti === 1) question = FOLLOW_UPS['gaming-exclusion'][variant];
+        else if (s.kind === 'topic-switch' && ti === 1 && variant >= 5) question = '이번에는 ' + q;
+        else if (s.kind === 'subject-memory') question = FOLLOW_UPS[ti === 1 ? 'subject-memory-buy' : 'subject-memory-alternative'][variant];
+        else if (s.kind === 'pair-memory') question = FOLLOW_UPS[ti === 1 ? 'pair-memory-cheaper' : 'pair-memory-prices'][variant];
+        else if (s.kind === 'option-memory' && ti === 2) question = FOLLOW_UPS['option-memory'][variant];
         let r = null, err = '';
-        try { r = await sess.say(q, { classify: cls, answer: mockAnswer('faithful') }); } catch (e) { err = String(e && e.message || e); }
+        try { r = await sess.say(question, { classify: cls, answer: mockAnswer('faithful') }); } catch (e) { err = String(e && e.message || e); }
         rs.push(r);
         let reason = err;
         if (!reason) { try { reason = s.check(rs, ti) || ''; } catch (e) { reason = 'check error: ' + e.message; } }
-        // 같은 짧은 후속 말("더 싼 거 없어?")은 세션마다 다른 맥락이다 — 세션·턴 표시로 문항을 구분한다.
-        const label = `[세션${String(si + 1).padStart(2, '0')}·${ti + 1}/3·${s.kind}] ${q}`;
-        record('conversation', label, `${s.kind} 세션 ${ti + 1}턴: 앞 턴의 조건·상품을 올바르게 이어받는다`, r, reason ? 'FAIL' : 'PASS', reason, 'faithful',
+        record('conversation', question, `${s.kind} 세션 ${ti + 1}턴: 앞 턴의 조건·상품을 올바르게 이어받는다`, r, reason ? 'FAIL' : 'PASS', reason, 'faithful',
           { session: si + 1, turn: ti + 1, sessionKind: s.kind });
       }
     }
   }
   const counts = {};
   records.forEach(x => { const c = counts[x.category] || (counts[x.category] = { asked: 0, pass: 0, fail: 0, unverified: 0 }); c.asked++; c[x.verdict === 'PASS' ? 'pass' : x.verdict === 'FAIL' ? 'fail' : 'unverified']++; });
+  // Disjoint reporting groups. Spec + historical evidence are grouped
+  // together and must not be described as price-only tests; injected current
+  // price attacks are distributed across the original categories.
+  const groupMap = {
+    budget: ['budget'], productIdentification: ['search', 'option', 'fuzzy', 'phantom'],
+    comparison: ['compare'], conversationMemory: ['conversation'], security: ['security'],
+    priceAndSpecificationEvidence: ['history', 'spec']
+  };
+  const groups = Object.fromEntries(Object.entries(groupMap).map(([name, categories]) => [name,
+    categories.reduce((sum, category) => {
+      const count = counts[category] || {};
+      for (const key of ['asked', 'pass', 'fail', 'unverified']) sum[key] += count[key] || 0;
+      return sum;
+    }, { asked: 0, pass: 0, fail: 0, unverified: 0 })
+  ]));
   const total = records.length, pass = records.filter(x => x.verdict === 'PASS').length, fail = records.filter(x => x.verdict === 'FAIL').length;
   const summary = {
     kind: 'OFFLINE_REAL_HANDLER_MOCK_GPT_FIXTURE_SEARCH', generatedAt: new Date().toISOString(),
     questions: total, uniqueQuestions: seen.size, pass, fail, unverified: total - pass - fail,
     passRatePct: total ? Math.round(pass / total * 1000) / 10 : 0,
-    categories: counts, plannedCounts: want,
+    categories: counts, reportingGroups: groups, reportingGroupCategories: groupMap,
+    injectedPriceMockCases: records.filter(x => x.model === 'mock-gpt:price').length,
+    uniquenessBasis: 'actual question text sent to handler, without session labels', plannedCounts: want,
     realGptCalls: 0, externalCalls: H.counters.external, dbWrites: H.counters.dbWrites, apiCostUsd: 0,
     corpusSha256: crypto.createHash('sha256').update(records.map(x => x.question).join('\n')).digest('hex')
   };

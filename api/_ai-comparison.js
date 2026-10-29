@@ -9,6 +9,7 @@ function parseComparison(question) {
   // A short conversational lead-in may precede a fully named comparison.
   // Keep the whitelist narrow so arbitrary prose is not converted into a pair.
   s = s.replace(/^둘\s*중\s*고르기\s*어렵네[.!?。]\s*/i, '');
+  s = s.replace(/^(?:(?:혹시|한번|이번에는|이번엔|그럼|그러면)\s+)+/, '');
   // Question marks inside a two-clause comparison are punctuation, not part of
   // the product name: "A / B 중 어느 쪽? 두 제품만 비교해 줘".
   s = s.replace(/[?!。;]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -100,7 +101,9 @@ function hasBatchim(ch) {
 function isPairFollowup(question) {
   const q = String(question || '').trim().slice(0, 240);
   if (!q || q.length > 180) return false;
-  return /(?:둘\s*중|두\s*(?:제품|상품|모델)|이\s*둘|그\s*둘|둘\s*다|둘\s*의|둘\s*을|둘\s*이|각각|앞(?:에서)?\s*비교한|아까\s*비교한|방금\s*비교한|비교했던|그\s*중)/.test(q);
+  // A new explicitly named product is not a reference to the signed pair.
+  if (require('./_aiidentity').productEvidence(q) > 0) return false;
+  return /(?:둘\s*중|두\s*(?:개|제품|상품|모델)|이\s*둘|그\s*둘|둘\s*다|둘\s*의|둘\s*을|둘\s*이|각각|앞(?:에서)?\s*비교한|아까\s*비교한|방금\s*비교한|비교했던|그\s*중|어느\s*쪽(?:이|은)?\s*(?:더\s*)?(?:저렴|싸|싼|비싸|가격))/.test(q);
 }
 
 /** The cheapest exact offer for one side. `accept` narrows the exact offers (budget gate in api/ai.js). */
@@ -111,6 +114,12 @@ function pickExact(raw, query, AIID, normalize, accept) {
       const n = normalize(x);
       Object.defineProperty(n, '_compareRaw', { value: x });
       return n;
+    }).filter(n => {
+      // A Coupang product page is not a saleable option. Without the exact
+      // vendorItemId, neither the price nor the card can represent that option
+      // in a comparison. Other providers do not have Coupang option IDs.
+      const coupang = n.isCoupang === true || require('./_aicontext').isCoupangMall(n.mallId || n.mall);
+      return !!n.productId && (!coupang || !!n.vendorItemId);
     });
   if (!candidates.length) return null;
   const contract = AIID.buildContract({

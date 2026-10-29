@@ -216,7 +216,7 @@ async function case2() {
 /* ================================================================== *
  *  CASE 3. 가격 종류를 모르면 모른다고 말한다
  * ================================================================== */
-function case3() {
+async function case3() {
   section('CASE 3. 가격 종류(정가/쿠폰가/회원가)를 추측하지 않는다');
 
   const src = fs.readFileSync(path.join(__dirname, '..', 'api', '_product-page.js'), 'utf8');
@@ -234,12 +234,25 @@ function case3() {
   check(front.indexOf('가격은 <b>상품가 기준</b>') < 0,
     '비교표가 "상품가 기준" 이라고 단정하지 않는다');
 
-  check(/PRICE_SOURCE_NOTE/.test(src), '가격 출처 문구가 한 상수로 모여 있다');
-  const note = (src.match(/const PRICE_SOURCE_NOTE = ([\s\S]*?);\r?\n/) || [])[1] || '';
-  check(/알려주지 않아/.test(note),
-    '문구가 "가격 종류를 모른다" 는 사실을 밝힌다');
-  check(/실제 결제 금액은 판매처에서 확인/.test(note),
-    '문구가 실제 결제 금액 확인을 안내한다');
+  const sourceNote = productPage._internal.priceSourceNote;
+  const cases = [
+    ['쿠팡', '쿠팡 파트너스 검색 API'],
+    ['ADPICK', 'ADPICK 제휴몰 상품 정보'],
+    ['기타', '연동 판매처 상품 정보']
+  ];
+  const v = await productPage._internal.buildView('700000001', '쿠팡');
+  for (const [mall, expectedSource] of cases) {
+    const note = sourceNote(mall);
+    const page = productPage._internal.renderPage({ ...v, product: { ...v.product, mall }, row: { ...v.row, mall } }, []);
+    check(note.includes(expectedSource) && page.includes(expectedSource),
+      `${mall}: 실제 페이지에 해당 판매처의 가격 출처가 표시된다`);
+    check(/할인·쿠폰·배송비가 어떻게 반영됐는지는 제공 정보만으로 확인할 수 없어요/.test(note)
+        && page.includes('제공 정보만으로 확인할 수 없어요'),
+      `${mall}: 가격 종류와 할인·배송비 반영 여부를 모른다고 밝힌다`);
+    check(note.includes('실제 결제 금액은 판매처에서 확인')
+        && page.includes('실제 결제 금액은 판매처에서 확인'),
+      `${mall}: 실제 결제 금액 확인을 안내한다`);
+  }
 
   // 코드가 응답에 없는 가격 필드를 지어내지 않는지.
   const coupang = fs.readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
@@ -690,7 +703,7 @@ function case12() {
   console.log('\nSEOSA 가격 데이터 신뢰성 회귀 테스트 (DB 접근 0회)\n');
   await case1();
   await case2();
-  case3();
+  await case3();
   case4();
   case5();
   case6();
