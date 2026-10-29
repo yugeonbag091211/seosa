@@ -5541,6 +5541,17 @@ module.exports = async function handler(req, res) {
             budgetOutside = AIID.exactBudgetFacts(bg.outside);
             items = bg.within;
             if (!items.length) identityState = 'BUDGET';
+            // RELEASE_15_EXACT_BUDGET_20261029:
+            // An exact requested brand/model may be over budget while
+            // lower-priced, different-brand (tier 2) candidates remain.
+            // Never report those unrelated candidates as if they matched.
+            const exactExcludedByBudget = budgetOutside.some(it =>
+              it && it._identity && it._identity.tier === AIID.TIER.EXACT);
+            if (identityState === 'EXACT' && exactExcludedByBudget
+                && !items.some(it => it && it._identity && it._identity.tier === AIID.TIER.EXACT)) {
+              items = [];
+              identityState = 'BUDGET';
+            }
           }
           if (intent === 'C' && items.length) {
             /*
@@ -5656,6 +5667,13 @@ module.exports = async function handler(req, res) {
           budgetOutside = AIID.exactBudgetFacts(bg.outside);
           items = bg.within;
           if (!items.length) identityState = 'BUDGET';
+          const exactExcludedByBudget = budgetOutside.some(it =>
+            it && it._identity && it._identity.tier === AIID.TIER.EXACT);
+          if (identityState === 'EXACT' && exactExcludedByBudget
+              && !items.some(it => it && it._identity && it._identity.tier === AIID.TIER.EXACT)) {
+            items = [];
+            identityState = 'BUDGET';
+          }
         }
         if (intent === 'C' && items.length) {
           const near = BW.nearBudgetWindow(items, constraints, q);
