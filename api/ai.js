@@ -6887,11 +6887,24 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    /*
+     * UNANSWERED_HISTORY_FALLBACK_20261029 — in some provider-fallback paths,
+     * unsupported trend claims are removed but the remaining answer is just a
+     * recommendation and listing price. Never present that as a price-history
+     * answer; explicitly acknowledge the absent trustworthy history conclusion.
+     */
+    if (intent === 'E' && groundedAnswer.isPriceHistoryQuestion(q)
+        && /(?:먼저 추천드려요|먼저 권해요)/u.test(String(text || ''))
+        && !/(?:가격 기록|가격 이력|가격 흐름|관측|기록상|예측할 수 없|단정할 수 없|확인할 수 없|확인하지 못|평균보다)/u.test(String(text || ''))) {
+      text = '이 상품·옵션의 가격 흐름을 판단할 검증된 기록 근거가 답변에 부족해요. 현재 표시 판매가만으로 최근 가격이 떨어졌는지, 지금 싼 편인지 단정할 수 없어요. 실제 결제 금액은 판매처에서 확인해 주세요.';
+      degradedByGrounding = true;
+    }
     // Future prices are never predictable from observed listings alone, even
     // when a grounded history explanation covers today's recorded observations.
     if (groundedAnswer.isPriceHistoryQuestion(q) && /다음\s*(?:주|달)/u.test(q)
         && !/(?:예측할 수 없|단정할 수 없|알 수 없|예측은 어렵)/u.test(String(text || ''))) {
       text = `${String(text || '').trim()}\n\n다음 주·다음 달의 실제 판매가는 관측 기록만으로 예측할 수 없어요.`.trim();
+      degradedByGrounding = true;
     }
 
     /*
