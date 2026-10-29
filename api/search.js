@@ -55,7 +55,11 @@ function encodeList(list) {
  * 쿠팡 검색 API 의 limit 상한은 10 이다. 더 올리려면 쿠팡이 상한을 바꾼 뒤에.
  * 이 값만 올리면 소용없다 — 실제 요청 크기는 FETCH_LIMIT 이 정한다.
  */
+// Coupang still caps a *single request* at 10. ADPICK already fetches
+// 20 per request by default; use all of those verified search hits without
+// increasing the number of external search requests.
 const RESULT_LIMIT = 10;
+const ADPICK_RESULT_LIMIT = 20;
 
 module.exports = async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
@@ -104,6 +108,7 @@ module.exports = async function handler(req, res) {
     // 캐시 결과로 응답한다. 사용자를 무한정 세워두지 않는다.
     const { items, allItems, from, blocked, failed, errors } = await searchAll(keyword, {
       coupangLimit: RESULT_LIMIT,
+      adpickLimit: ADPICK_RESULT_LIMIT,
       coupangOpts: { source: 'search', maxWaitMs: 1500 },
       /*
        * ADPICK 쪽에도 호출 주체를 붙인다 — 이름표뿐이고 동작은 그대로다.
