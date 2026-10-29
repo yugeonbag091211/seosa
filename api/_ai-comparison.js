@@ -13,6 +13,11 @@ function parseComparison(question) {
   // Question marks inside a two-clause comparison are punctuation, not part of
   // the product name: "A / B 중 어느 쪽? 두 제품만 비교해 줘".
   s = s.replace(/[?!。;]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Negated alternatives such as a gaming exclusion plus a budget comma are
+  // one recommendation, not two named products. Require an explicit compare
+  // cue before interpreting a negated phrase as a pair.
+  if (/(?:말고|빼고|제외하고)/.test(s)
+      && !/(?:비교|차이|둘\s*중|두\s*(?:제품|모델|상품))/.test(s)) return null;
   // Keep this intentionally narrow. Ordinary recommendations and comparisons
   // between attributes must continue to use the regular concierge route.
   // Natural shopping comparison forms. The right-hand description ends
@@ -144,6 +149,25 @@ function budgetLabel(c) {
   return '';
 }
 
+// Compare only attributes explicitly printed in both verified listing titles.
+// Keep them as listing text; do not infer RAM, performance, quality, or compatibility.
+function listedTitleDifferences(first, second) {
+  const patterns = [
+    /\b\d+(?:\.\d+)?\s?(?:GB|TB|L|인치|형|mAh|W)\b/gi,
+    /\b(?:i[3579]|M[1-9](?:\s?Pro)?|A\d{1,2}|S\d{1,2}|[A-Z]{2,}\d{2,}[A-Z0-9]*)\b/g,
+    /울트라\s?[3579]|Wi-?Fi|LTE|5G/gi
+  ];
+  const tokens = title => {
+    const source = String(title || '');
+    return [...new Set(patterns.flatMap(re => [...source.matchAll(new RegExp(re.source, re.flags))].map(m => m[0].replace(/\s+/g, ' ').trim())))];
+  };
+  const a = tokens(first), b = tokens(second);
+  const differs = (left, right) => left.some(x => !right.some(y => y.toLowerCase() === x.toLowerCase()));
+  if (!differs(a, b) && !differs(b, a)) return '';
+  const fmt = xs => xs.length ? xs.join(', ') : '상품명에 구분 표기 없음';
+  return `검색 결과 상품명에 표기된 차이(사양 우열을 뜻하지 않음): 1번에는 ${fmt(a)}; 2번에는 ${fmt(b)}.`;
+}
+
 /**
  * opts.budgetLabel     — 비교에 건 예산 ("50만원 이하")
  * opts.missingByBudget — [bool,bool] 정확한 옵션은 있었지만 이번 말의 예산 안에는 없었다
@@ -170,6 +194,12 @@ function formatComparison(requested, offers, source, opts) {
     const difference = Math.abs(offers[0].price - offers[1].price);
     if (difference === 0) lines.push('두 상품의 확인된 표시 가격은 같아요.');
     else lines.push(`표시 가격 차이는 ${won(difference)}이고, ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 더 저렴해요.`);
+    const titleDifferences = listedTitleDifferences(offers[0].title, offers[1].title);
+    if (titleDifferences) lines.push(titleDifferences);
+    if (difference > 0) {
+      const cheaperIndex = offers[0].price < offers[1].price ? 0 : 1;
+      lines.push(`가격만 기준으로 고르면 ${offers[cheaperIndex].title}이(가) 표시 가격이 ${won(difference)} 낮아요. 전체 적합성은 사용 목적과 확인된 사양을 함께 봐야 해요.`);
+    }
     lines.push('상품명에 없는 실제 성능·기능의 우열은 추측하지 않을게요. 용도와 사양을 추가로 확인해야 정확한 가성비를 판단할 수 있어요.');
   } else {
     lines.push('비교 대상 중 하나 이상을 확인하지 못해서 가격 차이나 가성비 우열을 단정할 수 없어요.');
@@ -177,4 +207,4 @@ function formatComparison(requested, offers, source, opts) {
   lines.push('실제 결제 금액과 옵션·배송 조건은 판매처에서 다시 확인해야 해요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, isPairFollowup, pickExact, formatComparison, budgetLabel };
+module.exports = { parseComparison, isPairFollowup, pickExact, formatComparison, budgetLabel, listedTitleDifferences };

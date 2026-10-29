@@ -490,6 +490,8 @@ function compose(ctx) {
     // 이 경우에도 마지막 가격 확인 시점은 반드시 드러낸다.
     const freshness = c.deal && c.deal.freshness && c.deal.freshness.label;
     if (freshness) L.push(`가격 확인 시점: ${freshness}`);
+    L.push('위 금액은 검색 결과에 표시된 판매가이며 실제 결제 금액으로 확정된 값은 아니에요. 쿠폰·카드·회원 혜택과 배송비에 따라 달라질 수 있으니 결제 전에 판매처에서 확인해 주세요.');
+    if (c.inventoryRequested) L.push('재고 보유 여부는 이 검색으로 확인하지 않았으니 판매처에서 함께 확인해 주세요.');
   } else {
     timing(c.deal).forEach(x => L.push(x));
   }

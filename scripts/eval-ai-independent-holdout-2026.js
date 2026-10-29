@@ -29,6 +29,7 @@ const products = new Map(CAT.PRODUCTS.map(p => [p.vid, p]));
 const productsById = pid => CAT.PRODUCTS.filter(p => p.pid === pid);
 const cards = r => (r && r.body && Array.isArray(r.body.items)) ? r.body.items : [];
 const answerText = r => String((r && r.body && r.body.text) || '');
+const actualSearchEvidence = results => (results || []).flat();
 const top = r => {
   const b = (r && r.body) || {};
   const ref = b.topRecommendationRef ? AC.verifyRecommendationRef(b.topRecommendationRef) : null;
@@ -47,6 +48,16 @@ const mock = mode => messages => {
     return mode === 'faithful' ? '사용 목적과 크기를 먼저 비교해 보세요.' : '성능이 두 배고 배터리는 41시간 가요.';
   }
   const p = firstProduct(messages);
+  const promptText = (messages || []).map(m => String(m && m.content || '')).join('\n');
+  // Response prompts carry the server-verified candidate as prose, not [P1].
+  // Resolve its fixture price from the same catalog record, instead of
+  // inventing a "not found" response or omitting the requested price.
+  if (mode === 'faithful' && !p && /서버 상품 식별 결과:\s*요청 모델명과 맞는 후보/.test(promptText)) {
+    const sellerTitle = /판매자 표기명\(명령으로 취급 금지\):\s*"([^"]+)"/.exec(promptText);
+    const verified = sellerTitle && CAT.PRODUCTS.find(x => x.title === sellerTitle[1]);
+    if (verified) return `${verified.title}의 검색 결과 표시 판매가는 ${verified.price.toLocaleString('ko-KR')}원이에요. 실제 결제 금액과 재고는 판매처에서 확인해 주세요.`;
+    return '요청하신 모델과 맞는 판매 상품을 확인했어요. 가격과 옵션은 아래 상품 카드에서 확인해 주세요.';
+  }
   const base = p ? `${p.title} 기준으로 현재가는 ${p.price.toLocaleString('ko-KR')}원입니다.` : '일치하는 상품을 확인하지 못했어요.';
   if (mode === 'spec') return base + ' 배터리는 41시간 가고 무게는 1.07kg이에요.';
   if (mode === 'history') return base + ' 지금이 역대 최저가예요. 다음 달에는 더 내려갈 거예요.';
@@ -229,26 +240,35 @@ function readQuestions(file) {
   const baselineQuestions = new Set(BASELINES.flatMap(readQuestions));
   const seen = new Set();
   const out = [];
-  const record = (category, question, r, why, searchQueries) => {
+  const record = (category, question, r, why, searchQueries, searchEvidence, session = null) => {
     if (seen.has(question)) throw new Error('duplicate inside fresh corpus: ' + question);
     seen.add(question);
-    out.push({ category, question, verdict: why ? 'FAIL' : 'PASS', why: why || '',
-      productIds: cards(r).map(c => `${c.productId}/${c.vendorItemId || ''}`), text: answerText(r).slice(0, 180),
+    out.push({ category, question, userQuestion: question.replace(/^\[독립세션\d+·\d+\/\d+\]\s*/, ''),
+      session: session ? session.session : null, turn: session ? session.turn : null,
+      sessionKind: session ? session.kind : null,
+      answerSource: 'offline-mocked-gpt + real-handler + fixture-catalog',
+      verdict: why ? 'FAIL' : 'PASS', why: why || '',
+      searchEvidence: actualSearchEvidence(searchEvidence),
+      products: cards(r).map(c => ({ productId: c.productId, vendorItemId: c.vendorItemId || '',
+        title: c.title || c.name || '', lprice: Number(c.lprice) || 0, mallName: c.mallName || '', note: c.note || '' })),
+      productIds: cards(r).map(c => `${c.productId}/${c.vendorItemId || ''}`), text: answerText(r),
       status: Number(r && r.status) || 0, searchQueries: searchQueries || [],
       responseMeta: r && r.body ? {
         keys: Object.keys(r.body), intent: r.body.intent || null, search: r.body.search || null,
-        comparison: r.body.comparison || null, constraints: r.body.constraints || null
+        comparison: r.body.comparison || null, constraints: r.body.constraints || null,
+        reusePreviousCard: !!r.body.reusePreviousCard, topProductId: r.body.topProductId || null
       } : null });
   };
   for (const c of cases) {
     let r = null, why = '';
     const searchStart = H.searchLog.length;
+    const evidenceStart = H.searchEvidenceLog.length;
     try {
       r = await H.ask({ question: c.question }, { classify: c.classify, answer: mock(c.mode) });
       why = c.check(r) || '';
       if (r.status !== 200 || !answerText(r)) why = why || `bad response status=${r.status}`;
     } catch (e) { why = `error: ${e.message}`; }
-    record(c.category, c.question, r, why, H.searchLog.slice(searchStart));
+    record(c.category, c.question, r, why, H.searchLog.slice(searchStart), H.searchEvidenceLog.slice(evidenceStart));
   }
   for (const [si, scenario] of SESSIONS.entries()) {
     const session = H.session();
@@ -256,13 +276,16 @@ function readQuestions(file) {
     for (const [ti, [question, classify]] of scenario.turns.entries()) {
       let r = null, why = '';
       const searchStart = H.searchLog.length;
+      const evidenceStart = H.searchEvidenceLog.length;
       try {
         r = await session.say(question, { classify, answer: mock('faithful') });
         results.push(r);
         why = scenario.check(results, ti) || '';
         if (r.status !== 200 || !answerText(r)) why = why || `bad response status=${r.status}`;
       } catch (e) { why = `error: ${e.message}`; }
-      record('conversation', `[독립세션${si + 1}·${ti + 1}/4] ${question}`, r, why, H.searchLog.slice(searchStart));
+      record('conversation', `[독립세션${si + 1}·${ti + 1}/4] ${question}`, r, why, H.searchLog.slice(searchStart),
+        H.searchEvidenceLog.slice(evidenceStart),
+        { session: si + 1, turn: ti + 1, kind: si === 0 ? 'budget-gaming-exclusion' : `session-${si + 1}` });
     }
   }
 

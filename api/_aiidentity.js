@@ -151,7 +151,8 @@ const GENERIC_WORDS = new Set([
   '본체', '본품', '단품', '본체만', '본품만', '새상품', '새제품', '신품', '정품', '자급제', '공기계',
   '모델', '옵션', '세대', '색상', '색', '버전', '신형', '국내', '정발', '출시', '용량',
   '가격', '최저가', '판매', '구매', '비교', '추천', '찾아줘', '찾아', '알려줘', '알려', '보여줘',
-  '확인', '제일', '가장', '싼', '싼거', '저렴한', '최신', '지금', '현재', '실제', '상품', '제품',
+  '추천해', '추천해줘', '추천해주세요', '찾아주세요', '보여', '알려주세요', '골라', '골라줘', '골라주세요',
+  '확인해', '확인해줘', '확인', '제일', '가장', '싼', '싼거', '저렴한', '최신', '지금', '현재', '실제', '상품', '제품',
   '것', '거', '걸', '만', '좀', '해줘', '주세요', '줘', '있어', '있으면', '그중', '중에', '중에서',
   '와', '과', '및', '랑', '이랑', '은', '는', '이', '가', '을', '를', '도', '의', '로', '으로', '에',
   '말고', '제외', '빼고', '아닌', '아니라', '없이', 'only', 'new',
@@ -160,7 +161,8 @@ const GENERIC_WORDS = new Set([
   '혹시', '한번', '이번에는', '이번엔', '그러면',
   '방금', '보여', '보여줘', '있어', '있나', '어때', '질문', '답', '것도', '거도', '중', '기준', '조건',
   // 예산·처지를 말하는 군말 (2026-10-26) — "최대 130만원까지 쓸 수 있는데" · "처음 사는"
-  '최대', '최소', '처음', '사는', '쓸', '뭐', '뭐가', '예산', '부탁', '오래',
+  '최대', '최소', '처음', '사는', '쓸', '뭐', '뭐가', '예산', '상한', '한도', '부탁', '오래',
+  '후보', '검색', '결제', '결제액', '넘기지', '놓고', '안에서',
   // 값을 묻는 말 — "실버 말고 스페이스그레이 얼마야" 의 «얼마야» 를 상품 낱말로 읽어 앞 상품 전체를 뺐다.
   '얼마', '얼마야', '얼마예요', '얼마에요', '얼마임', '얼마지', '얼마나', '얼만지',
   '네가', '니가', '너가', '이라고', '라고', '앞의', '앞에서',
@@ -513,6 +515,7 @@ function buildContract(o) {
   if (anchors.length) {
     const first = slots.indexOf('anchor');
     for (let i = first - 1; i >= 0 && !core; i--) if (slots[i] === 'word') core = toks[i];
+    for (let i = first + 1; i < toks.length && !core; i++) if (slots[i] === 'word' && categoryNounOf(toks[i])) core = toks[i];
     for (let i = first + 1; i < toks.length && !core; i++) if (slots[i] === 'word') core = toks[i];
   }
   // 앵커가 없는 질의 — 맨 끝 이름 낱말이 상품 종류다(한국어는 핵심 명사가 뒤에 온다).
@@ -537,7 +540,7 @@ function buildContract(o) {
   }
 
   const contract = {
-    query, positive, label: requestLabel(positive || query),
+    query, userText, positive, label: requestLabel(positive || query),
     anchors, core, head, brand, words, variants, strictBase, lineQualifiers,
     storage, colors, quantity, sizes, years, wantsAccessory, accessoryWanted, bundleWanted,
     condition, excluded, excludedColors, excludeAccessory
@@ -603,7 +606,12 @@ function titleLineSuffixes(anchors, tokens) {
 
 /** 빼 달라고 한 대상 하나 ("S26+", "AirPods Pro 2", "프로맥스", "삼성"). */
 function subContract(text, plus) {
-  const toks = tokensOf(text);
+  const allToks = tokensOf(text);
+  // When an accessory phrase is excluded, its tablet/device noun supplies
+  // context; it is not itself the excluded product. "아이패드 케이스 말고
+  // 아이패드 11" excludes cases, not the iPad body.
+  const accessoryOnly = allToks.some(t => slotOf(t) === 'accessory');
+  const toks = accessoryOnly ? allToks.filter(t => slotOf(t) === 'accessory') : allToks;
   const slots = toks.map(slotOf);
   const anchors = toks.filter((t, i) => slots[i] === 'anchor');
   const words = toks.filter((t, i) => slots[i] === 'word');
@@ -659,7 +667,18 @@ function requestLabel(text) {
 const WORD_HIT_MIN = 0.5;
 function wordHit(word, info) {
   if (!word) return true;
-  return S.scoreTitle(S.analyzeQuery(word), info).score >= WORD_HIT_MIN;
+  const key = norm(word).toLowerCase();
+  const equivalents = {
+    '이어버드': ['이어폰', 'earbuds', 'earphones'],
+    '이어폰': ['이어버드', 'earbuds', 'earphones'],
+    earbuds: ['이어폰', '이어버드', 'earphones'],
+    earbud: ['이어폰', '이어버드', 'earphone'],
+    earphones: ['이어폰', '이어버드', 'earbuds'],
+    earphone: ['이어폰', '이어버드', 'earbud'],
+    tws: ['이어폰', '이어버드', 'earbuds', 'earphones']
+  };
+  return [word].concat(equivalents[key] || []).some(term =>
+    S.scoreTitle(S.analyzeQuery(term), info).score >= WORD_HIT_MIN);
 }
 
 /* 수량 단위 — "2개입" 의 2 는 모델 번호가 아니다. */
@@ -673,6 +692,12 @@ function anchorHit(anchor, tokens) {
     for (let j = i; j < Math.min(tokens.length, i + 3); j++) {
       s += tokens[j];
       if (s === anchor) return true;
+      // Some manufacturers prepend a family prefix to a printed SKU. Treat a
+      // requested alphanumeric suffix (XM5) as the same anchor when the title
+      // token ends with it (WH-1000XM5 / WF-1000XM5); product type and family
+      // checks still distinguish the headphone from the earbud.
+      if (/^(?=.*[a-z])(?=.*\d)[a-z0-9]{3,}$/i.test(anchor)
+          && s.length > anchor.length && s.endsWith(anchor)) return true;
       if (s.length >= anchor.length) break;
     }
   }
@@ -914,6 +939,7 @@ const TABLET_PEN_RE = /터치\s*(?:펜|팬)|스마트\s*펜|스타일러스|styl
 const TABLET_PEN_FOR_RE = /(?:아이패드|ipad|갤럭시\s*탭|갤럭시탭|태블릿|tablet)\s*(?:전용|호환|용)\s*[^,\n]{0,30}(?:펜|팬|펜슬|stylus|pencil)/i;
 const TABLET_PART_RE = /매직\s*키보드|magic\s*keyboard|(?:호환|교체|수리)[^,\n]{0,35}(?:액정|디스플레이|패널|배터리|충전\s*포트|부품)/i;
 const HEADSET_EARBUD_RE = /이어버드|이어폰|earbuds?|earphones?|\btws\b|트루\s*와이어리스|in[-\s]?ear/i;
+const HEADPHONE_TITLE_RE = /헤드폰|헤드셋|headphones?|headsets?|에어팟\s*맥스|airpods?\s*max|wh-?1000x|qc\s*(?:울트라|ultra|45|35)/i;
 
 /** 요청과 다른 유형이면 그 이유(라벨), 아니면 ''. */
 function productTypeGap(c, item, title) {
@@ -927,8 +953,9 @@ function productTypeGap(c, item, title) {
     return '노트북 본품이 아닌 교육·사업 콘텐츠';
   }
   // 펜이 품목인 제목에 "갤럭시탭 아이패드" 가 호환 대상이라도 본체로 취급하지 않는다.
-  if (TABLET_DEVICE_RE.test(want) && (!/(?:펜|팬|스타일러스|stylus|pencil)/i.test(want)
-    || /(?:펜|팬|스타일러스|stylus|pencil)\s*(?:포함|동봉)/i.test(want))) {
+  const accessoryNegated = /(?:펜|팬|스타일러스|stylus|pencil)[^.!?\n]{0,16}(?:필요\s*없|말고|제외|빼|원치|원하(?:지\s*)?않|안\s*필요)/i.test(String(c.userText || c.query || ''));
+  const explicitlyAsksAccessory = c.wantsAccessory && !accessoryNegated;
+  if (TABLET_DEVICE_RE.test(want) && !explicitlyAsksAccessory) {
     const pen = TABLET_PEN_RE.exec(t);
     const device = TABLET_DEVICE_RE.exec(t);
     // '펜촉 포함' is a pen accessory bundle, not proof of a tablet bundle.
@@ -947,6 +974,13 @@ function productTypeGap(c, item, title) {
   if (/(?:헤드셋|헤드폰|headset|headphones?)/i.test(want) && !/(?:이어폰|이어버드|earbuds?|earphones?|tws)/i.test(want)
     && HEADSET_EARBUD_RE.test(t)) {
     return '헤드셋이 아닌 이어버드·이어폰';
+  }
+  // The inverse mismatch matters too: "in-ear XM5" must not return the
+  // over-ear WH model just because both share the XM5 family anchor.
+  if (/(?:이어폰|이어버드|earbuds?|earphones?|\btws\b|커널형)/i.test(want)
+    && !/(?:헤드셋|헤드폰|headset|headphones?)/i.test(want)
+    && HEADPHONE_TITLE_RE.test(t)) {
+    return '이어폰·이어버드가 아닌 헤드폰';
   }
 
   if (BOOK_TITLE_RE.test(t) && !WANTS_BOOK_RE.test(want)) return '요청하신 상품이 아닌 도서';

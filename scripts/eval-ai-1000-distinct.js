@@ -41,6 +41,7 @@ CAT.PRODUCTS.forEach(p => H.addProduct(p));
 const byVid = new Map(CAT.PRODUCTS.map(p => [p.vid, p]));
 const byPid = pid => CAT.PRODUCTS.filter(p => p.pid === pid);
 const catOfPid = pid => (byPid(pid)[0] || {}).cat || '';
+const actualSearchEvidence = results => (results || []).flat();
 
 /* ── 모의 GPT ─────────────────────────────────────────────────────── */
 const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
@@ -613,12 +614,19 @@ ATTACKS.forEach(q => push('security', q, {
   const records = [];
   const seen = new Set();
   let id = 0;
-  const record = (category, question, expected, r, verdict, reason, mode, extra) => {
+  const record = (category, question, expected, r, verdict, reason, mode, extra, searchQueries, searchEvidence) => {
     if (seen.has(question)) throw Error('duplicate question: ' + question);
     seen.add(question);
     records.push(Object.assign({
       id: 'Q' + String(++id).padStart(4, '0'), category, question, expected,
-      response: { status: r && r.status, text: textOf(r).slice(0, 400), cards: cardsOf(r).map(c => `${c.productId}/${c.vendorItemId || '-'}@${priceOfCard(c)}`), comparison: r && r.body && r.body.comparison || null },
+      response: { status: r && r.status, text: textOf(r),
+        cards: cardsOf(r).map(c => ({ productId: c.productId, vendorItemId: c.vendorItemId || '',
+          title: c.title || c.name || '', lprice: priceOfCard(c), mallName: c.mallName || '', note: c.note || '' })),
+        comparison: r && r.body && r.body.comparison || null,
+        reusePreviousCard: !!(r && r.body && r.body.reusePreviousCard),
+        topProductId: r && r.body && r.body.topProductId || null },
+      answerSource: 'offline-mocked-gpt + real-handler + fixture-catalog',
+      searchEvidence: actualSearchEvidence(searchEvidence),
       model: `mock-gpt:${mode}`, searchSource: 'fixture-catalog (scripts/_ai-eval-catalog.js)', verdict, failureReason: reason || '',
       fixCommit: '', reverify: '', apiCostUsd: 0
     }, extra || {}));
@@ -626,6 +634,8 @@ ATTACKS.forEach(q => push('security', q, {
   for (const it of items) {
     if (ONLY && it.category !== ONLY) continue;
     let r = null, err = '';
+    const searchStart = H.searchLog.length;
+    const evidenceStart = H.searchEvidenceLog.length;
     try {
       r = await H.ask({ question: it.question, chatHistory: [], contextProducts: [], view: { source: 'none' } },
         { classify: it.classify, answer: mockAnswer(it.mode, it.phantomName) });
@@ -633,7 +643,8 @@ ATTACKS.forEach(q => push('security', q, {
     let reason = err;
     if (!reason) { try { reason = it.check(r) || ''; } catch (e) { reason = 'check error: ' + e.message; } }
     if (!reason && r && r.status !== 200) reason = 'status ' + r.status;
-    record(it.category, it.question, it.expected, r, reason ? 'FAIL' : 'PASS', reason, it.mode);
+    record(it.category, it.question, it.expected, r, reason ? 'FAIL' : 'PASS', reason, it.mode, null,
+      H.searchLog.slice(searchStart), H.searchEvidenceLog.slice(evidenceStart));
   }
   if (!ONLY || ONLY === 'conversation') {
     const kindIndex = {};
@@ -653,12 +664,15 @@ ATTACKS.forEach(q => push('security', q, {
         else if (s.kind === 'pair-memory') question = FOLLOW_UPS[ti === 1 ? 'pair-memory-cheaper' : 'pair-memory-prices'][variant];
         else if (s.kind === 'option-memory' && ti === 2) question = FOLLOW_UPS['option-memory'][variant];
         let r = null, err = '';
+        const searchStart = H.searchLog.length;
+        const evidenceStart = H.searchEvidenceLog.length;
         try { r = await sess.say(question, { classify: cls, answer: mockAnswer('faithful') }); } catch (e) { err = String(e && e.message || e); }
         rs.push(r);
         let reason = err;
         if (!reason) { try { reason = s.check(rs, ti) || ''; } catch (e) { reason = 'check error: ' + e.message; } }
         record('conversation', question, `${s.kind} 세션 ${ti + 1}턴: 앞 턴의 조건·상품을 올바르게 이어받는다`, r, reason ? 'FAIL' : 'PASS', reason, 'faithful',
-          { session: si + 1, turn: ti + 1, sessionKind: s.kind });
+          { session: si + 1, turn: ti + 1, sessionKind: s.kind }, H.searchLog.slice(searchStart),
+          H.searchEvidenceLog.slice(evidenceStart));
       }
     }
   }

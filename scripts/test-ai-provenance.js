@@ -1112,8 +1112,9 @@ function searchFixture() {
         vendorItemId: liveCatalogRow.vendor_item_id, isCoupang: true
       }]
     });
-    ok(!liveRoute.body.degraded && liveRoute.body.text === actualGroundingReply,
-      '실제 GPT 가격 이력 응답은 API 전체 grounding gate를 통과한다',
+    const checkoutCaveat = '\n\n검색 결과 가격은 판매 페이지에 표시된 판매가예요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.';
+    ok(!liveRoute.body.degraded && liveRoute.body.text === actualGroundingReply + checkoutCaveat,
+      '실제 GPT 가격 이력 응답은 grounding을 통과하고 표시가·결제가 구분 안내를 덧붙인다',
       JSON.stringify({ warnings: liveRoute.warnings, degraded: liveRoute.body.degraded,
         text: liveRoute.body.text, intent: liveRoute.body.intent,
         facts: facts(liveRoute.system).slice(0, 900), stats: liveRoute.statCalls }));

@@ -255,7 +255,7 @@ const DISCOURSE_WORDS = new Set([
   '전부', '전체', '나머지', '엉뚱한', '다른', '같은', '비슷한', '실제', '실제로', '진짜로', '가짜', '역대',
   '어제', '내일', '과거', '부분', '모르', '그중', '그중에', '그중에서', '이중', '이중에', '이중에서', '방금', '아까',
   '앞에서', '지금까지', '들어간', '들어있는', '포함된', '탑재', '탑재된', '달린', '장착된', '개만', '한개', '한개만',
-  '때문에', '대비', '항목', '초과', '두고', '놓고', '원해', '원함', '원합니다', '바꾼', '고른', '말한', '찾은',
+  '때문에', '대비', '항목', '초과', '상한', '한도', '두고', '놓고', '원해', '원함', '원합니다', '바꾼', '고른', '말한', '찾은',
   '받은', '보낸', '알려준', '보여준', '추천한', '무거운', '가벼운', '예쁜', '이쁜', '빠른', '느린', '작은',
   '높은', '낮은', '많은', '적은', '나온', '못한', '객관적', '객관적인', '구체적인', '고성능인', '충족', '서버',
   '마지막', '관측값', '하락률', '상승률', '텍스트', '문자열', 'text', '뜻', '뜻은', '뜻이', '의미', '인치보다',
@@ -714,7 +714,13 @@ function analyzeClauses(text) {
   const norm = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
   const prohibitions = [];
   const conditions = [];
-  norm.split(/[.!?\n。;,，]+|\s[-—–]{1,2}\s|[:：]/).forEach(sentence => {
+  // Thousands separators are part of a price, never clause boundaries.
+  // Without protection "1,800,000원을 넘기지 말고 스마트폰" became the
+  // phantom model anchor "1,800" plus a detached prohibition, and the exact
+  // smartphone candidates were all rejected by identity validation.
+  const clauseSafe = norm.replace(/(?<=\d),(?=\d)/g, '\uE000');
+  clauseSafe.split(/[.!?\n。;,，]+|\s[-—–]{1,2}\s|[:：]/).forEach(rawSentence => {
+    const sentence = rawSentence.replace(/\uE000/g, ',');
     const toks = sentence.split(/\s+/).filter(Boolean);
     let cur = [];
     const flush = (kind, verb) => {

@@ -4426,6 +4426,7 @@ function fallbackAnswer(top, deal, cons, cards, extra) {
     constraints: cons || null,
     noResult: e.noResult || null,
     identity: e.identity || null,
+    inventoryRequested: !!e.inventoryRequested,
     degraded: true
   }).text;
 }
@@ -4644,6 +4645,8 @@ module.exports = async function handler(req, res) {
   // 단순 최저가 질문에는 별도 구매 시점 조언을 끼워 넣지 않는다.
   // 구매 시점을 직접 물었다면 서버의 결정론 판정은 계속 안내한다.
   const timingRequested = /(?:지금|오늘|바로|당장)\s*(?:사도|살까|구매)|구매\s*(?:시점|타이밍)|사도\s*(?:될|돼)|언제\s*(?:사|구매)|(?:기다릴|기다려|기다려야|기다렸다)/.test(q);
+  const inventoryRequested = /재고|품절|재고\s*여부|구매\s*가능/.test(q);
+  const listingPriceRequested = /가격|얼마|판매가|현재가|결제가|결제액|가격만/.test(q);
 
   /*
    * 찾아낸 상품 카드.
@@ -5432,7 +5435,34 @@ module.exports = async function handler(req, res) {
           const near = BW.nearBudgetWindow(inBudget, constraints, q);
           pool = (near.applies ? near.within.concat(near.outside) : inBudget).concat(overBudget);
         }
-        const raw = pool.slice(0, MAX_CTX_ITEMS);
+        /*
+         * Do not discard an exact model match just because noisy search hits
+         * placed it ninth. The identity gate runs after normalization, so a
+         * top-N cut before that gate could turn a product present in the
+         * provider response into a false "not found" answer. Keep exact
+         * identity candidates first (in provider/budget order), then fill the
+         * remaining context slots with the original ranked pool. This keeps
+         * the context bounded and leaves accessories/books out because their
+         * identity verdict is MISMATCH.
+         */
+        const identityContractForPool = AIID.buildContract({
+          query: (cls && cls.identityText) || query,
+          userText: q,
+          titles: pool.map(it => String(it && it.title || ''))
+        });
+        const raw = [];
+        const rawSet = new Set();
+        const addRaw = it => {
+          if (raw.length >= MAX_CTX_ITEMS || rawSet.has(it)) return;
+          rawSet.add(it);
+          raw.push(it);
+        };
+        pool.forEach(it => {
+          if (raw.length >= MAX_CTX_ITEMS) return;
+          const normalized = normItem(fromSearchResult(it));
+          if (AIID.verdict(identityContractForPool, normalized).tier === AIID.TIER.EXACT) addRaw(it);
+        });
+        pool.forEach(addRaw);
         const historyCap = Math.min(AI_ENRICH_TIMEOUT_MS,
           Math.max(0, budget.remaining() - ANSWER_RESERVE_MS));
         let stats = new Map();
@@ -6544,6 +6574,20 @@ module.exports = async function handler(req, res) {
       // caused correct, option-grounded answers to be discarded.
       const badIdentity = unmatchedCardRecommendation(text, cards);
       const noCatalog = groundItems.length === 0;
+      // A model cannot say the requested product was not found when an exact,
+      // server-validated product card is being returned in this same answer.
+      // This is a semantic contradiction, separate from price/spec grounding.
+      const exactCardReturned = cards.some((card, cardIndex) => {
+        const source = cardSources[cardIndex];
+        const raw = source ? normItem(fromSearchResult(source)) : null;
+        const matched = raw && items.find(item => productIdentityMatches(item, raw));
+        return !!(matched && matched._identity && matched._identity.tier === AIID.TIER.EXACT);
+      });
+      const badNoResult = searchState === 'found' && (identityState === 'EXACT' || exactCardReturned) && cards.length > 0
+        && ['C', 'D', 'E'].includes(intent) && disclosesNoExactMatch(text);
+      // Search records establish a listing price, never live stock/availability.
+      const badStock = inventoryRequested
+        && /재고(?:가|는|를)?\s*(?:있(?:어요|습니다|음)|없(?:어요|습니다|음)|확보)|품절\s*(?:이에요|입니다|이\s*아니|이\s*아닙)|판매\s*중(?:이에요|입니다)|구매\s*가능(?:해요|합니다)/.test(text);
       // 정확히 맞는 상품이 있는데 모델이 근접 후보(다른 등급·용량·모델)를 권했다.
       const badPick = identityState === 'EXACT' && recommendsNonExact(text, items);
       /*
@@ -6566,15 +6610,16 @@ module.exports = async function handler(req, res) {
        */
       if (badWon.length || badContextualPrice.length || badLowObservationCount.length || badProductPrice.length || badCurrentPrice.length || badDiscountPct.length || badBudgetPick ||
           badSpec.length || badCmp.length || badSuper.length || badDecision || badIdentity || noCatalog || badPick || badEcho
-          || badSubject || flagged.length) {
+          || badSubject || badNoResult || badStock || flagged.length) {
         console.warn('[ai] grounding 실패 — 근거 없는 주장 정리 ' + JSON.stringify({
           won: badWon.length, contextualPrice: badContextualPrice.length, lowObservationCount: badLowObservationCount.length, productPrice: badProductPrice.length, currentPrice: badCurrentPrice.length,
           discountPct: badDiscountPct.length, budgetPick: badBudgetPick,
           spec: badSpec.length, compare: badCmp.length,
           superlative: badSuper.length, decision: badDecision,
-          identity: badIdentity, pick: badPick, echo: badEcho, subject: badSubject, catalog: items.length
+          identity: badIdentity, pick: badPick, echo: badEcho, subject: badSubject, noResult: badNoResult,
+          stock: badStock, catalog: items.length
         }));
-        const hardFailure = badIdentity || noCatalog || badPick || badEcho || badSubject || flagged.includes('sensitive');
+        const hardFailure = badIdentity || noCatalog || badPick || badEcho || badSubject || badNoResult || badStock || flagged.includes('sensitive');
         // 불명확한 판매처별 숫자만 문제일 때는 숫자 문장을 전부 버리고
         // 가격 없는 설명을 재검증해 보존한다. 그 외 오류는 예전 안전 답변 그대로.
         const onlyOfferPriceConflict = searchState === 'found' && items.length > 1
@@ -6646,6 +6691,7 @@ module.exports = async function handler(req, res) {
             budgetDropped: conv.budgetDropped,
             context: searchState === 'found' ? null : contextNotes,
             timingRequested,
+            inventoryRequested,
             identity: { state: identityState, label: identityLabel }
           }).text;
           degradedByGrounding = true;
@@ -6748,6 +6794,7 @@ module.exports = async function handler(req, res) {
             budgetDropped: conv.budgetDropped,
             context: searchState === 'found' ? null : contextNotes,
             timingRequested,
+            inventoryRequested,
             identity: { state: identityState, label: identityLabel }
           }).text;
         } catch (e) {
@@ -6905,18 +6952,15 @@ module.exports = async function handler(req, res) {
     if (budgetFeatureAlternatives.length && !priceConflict) {
       text = `${BW.featureAlternativeNotice(wanted)}\n\n${text}`;
     }
-    /*
-     * 후속 질문의 카드 한 장은 같은 상품을 이어 묻는 턴에만 (2026-10-26). "헤드셋 추천" 뒤의 "그럼 그램 노트북도
-     * 추천해줘" 는 새 검색이다 — 이 메시지 자체가 다른 종류의 상품을 말했으면 후보 카드를 그대로 보여 준다.
-     */
-    let priorProduct = String((priorConvState && priorConvState.product) || '');
-    if (!priorProduct) {
-      try { priorProduct = String(require('./_intent').conversationProduct(hist) || ''); } catch (e) { priorProduct = ''; }
+    if (cards.length && inventoryRequested
+        && !/재고\s*(?:보유 )?여부는 이 검색으로 확인하지 않았/.test(text)) {
+      text = `${text.trim()}\n\n재고 보유 여부는 이 검색으로 확인하지 않았으니 판매처에서 함께 확인해 주세요.`;
     }
-    const newTopic = !!(cls && cls.ownQuery && !cls.refinement && priorProduct
-      && CS.productKindChanged(priorProduct, cls.identityText || cls.query || ''));
+    if (cards.length && listingPriceRequested && !/(?:실제 결제 금액|실제 결제가는|쿠폰·카드|쿠폰|배송비)/.test(text)) {
+      text = `${text.trim()}\n\n검색 결과 가격은 판매 페이지에 표시된 판매가예요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.`;
+    }
     let replyCards=cards;
-    if (BW.oneCardFollowup(q,hist,intent,{ newTopic }) && cards.length) {
+    if (BW.oneCardFollowup(q,hist,intent) && cards.length) {
       const chosen=decision&&decision.top?items.find(it=>it&&it.ref===decision.top.ref):items[0];
       if (chosen) {
         const matched=cardSources.map((raw,i)=>productIdentityMatches(chosen,normItem(fromSearchResult(raw)))?cards[i]:null).filter(Boolean);
@@ -7032,7 +7076,7 @@ module.exports = async function handler(req, res) {
         // "왜 추천했어?" 는 서버 근거로 만든 그 답으로 — 모델이 죽었다고 엉뚱한 추천 조립본으로 바꾸지 않는다.
         text: reasonFallbackText || fallbackAnswer(fallbackTop, fallbackDeal, fallbackCons, cards, {
           items: fallbackItems, decision: fallbackDecision, noResult: fallbackNoResult,
-          identity: { state: identityState, label: identityLabel }
+          identity: { state: identityState, label: identityLabel }, inventoryRequested
         }),
         items: cards,
         degraded: true

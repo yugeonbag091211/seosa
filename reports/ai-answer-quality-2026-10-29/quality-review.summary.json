@@ -1,0 +1,171 @@
+{
+  "kind": "ANSWER_QUALITY_AUDIT_STATIC_RUBRIC_MOCK_GPT",
+  "totalQuestions": 1250,
+  "priorQuestionsEvaluated": 1200,
+  "functionPass": 1250,
+  "answerQualityPass": 1250,
+  "answerQualityFail": 0,
+  "answerQualityUnverified": 0,
+  "beforeQualityFail": 89,
+  "beforeCauseCounts": {
+    "표시 판매가와 실제 결제 금액의 차이를 밝히지 않음": 44,
+    "질문·카드·비교 차이 근거에 없는 금액 115000, 215000원": 1,
+    "정확한 상품 카드가 있는데 본문은 상품을 찾지 못했다고 말함": 11,
+    "대화 본문과 반환된 정확 상품 카드가 서로 모순됨": 11,
+    "비교가 아닌 후속 질문에 상품 카드가 여러 개 반환됨": 20,
+    "재고 질문에 재고를 확인하지 않았다는 설명이 없음": 14,
+    "검색 증거에 예산 안 후보가 있는데 추천 카드나 그 이유가 없음": 4
+  },
+  "criteria": {
+    "accuracy": {
+      "pass": 1250,
+      "fail": 0,
+      "unverified": 0
+    },
+    "questionSatisfaction": {
+      "pass": 1250,
+      "fail": 0,
+      "unverified": 0
+    },
+    "priceSpecEvidence": {
+      "pass": 1250,
+      "fail": 0,
+      "unverified": 0
+    },
+    "conversationConsistency": {
+      "pass": 1250,
+      "fail": 0,
+      "unverified": 0
+    },
+    "naturalness": {
+      "pass": 1250,
+      "fail": 0,
+      "unverified": 0
+    }
+  },
+  "categories": {
+    "search": {
+      "questions": 190,
+      "functionPass": 190,
+      "qualityPass": 190,
+      "qualityFail": 0
+    },
+    "budget": {
+      "questions": 190,
+      "functionPass": 190,
+      "qualityPass": 190,
+      "qualityFail": 0
+    },
+    "spec": {
+      "questions": 100,
+      "functionPass": 100,
+      "qualityPass": 100,
+      "qualityFail": 0
+    },
+    "compare": {
+      "questions": 130,
+      "functionPass": 130,
+      "qualityPass": 130,
+      "qualityFail": 0
+    },
+    "history": {
+      "questions": 100,
+      "functionPass": 100,
+      "qualityPass": 100,
+      "qualityFail": 0
+    },
+    "option": {
+      "questions": 130,
+      "functionPass": 130,
+      "qualityPass": 130,
+      "qualityFail": 0
+    },
+    "fuzzy": {
+      "questions": 50,
+      "functionPass": 50,
+      "qualityPass": 50,
+      "qualityFail": 0
+    },
+    "phantom": {
+      "questions": 60,
+      "functionPass": 60,
+      "qualityPass": 60,
+      "qualityFail": 0
+    },
+    "security": {
+      "questions": 60,
+      "functionPass": 60,
+      "qualityPass": 60,
+      "qualityFail": 0
+    },
+    "conversation": {
+      "questions": 170,
+      "functionPass": 170,
+      "qualityPass": 170,
+      "qualityFail": 0
+    },
+    "unsupported_spec": {
+      "questions": 10,
+      "functionPass": 10,
+      "qualityPass": 10,
+      "qualityFail": 0
+    },
+    "unsupported_history": {
+      "questions": 10,
+      "functionPass": 10,
+      "qualityPass": 10,
+      "qualityFail": 0
+    },
+    "notebook-body": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "qualityFail": 0
+    },
+    "tablet-body": {
+      "questions": 10,
+      "functionPass": 10,
+      "qualityPass": 10,
+      "qualityFail": 0
+    },
+    "headphone-vs-tws": {
+      "questions": 10,
+      "functionPass": 10,
+      "qualityPass": 10,
+      "qualityFail": 0
+    },
+    "comparison": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "qualityFail": 0
+    },
+    "budget-priority": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "qualityFail": 0
+    },
+    "price-checkout-stock": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "qualityFail": 0
+    },
+    "conversation-memory": {
+      "questions": 10,
+      "functionPass": 10,
+      "qualityPass": 10,
+      "qualityFail": 0
+    }
+  },
+  "actualGptCalls": 0,
+  "mockedAnswerRuns": 1250,
+  "marketplaceCalls": 0,
+  "apiCostUsd": 0,
+  "beforeArtifactLimits": {
+    "originalReports": "truncated source reports were reconstructed at full length from base commit f20cb76 using its real handler and deterministic mock GPT/fixture search"
+  },
+  "naturalnessScope": "rule-based surface screen; not a human or independent LLM judge",
+  "deployment": "not deployed"
+}
