@@ -7091,8 +7091,8 @@ module.exports = async function handler(req, res) {
     // Reuse the same evidence-grounded renderer as other history questions,
     // NEVER another search hit's or the previous chat product's observations.
     const historyEvidenceQuestion = groundedAnswer.isPriceHistoryQuestion(q)
-      && /(?:가격\\s*떨어진|이\\s*가격이면\\s*싼\\s*편)/u.test(q);
-    const historyEvidenceInAnswer = /(?:가격\\s*(?:기록|이력|흐름)|관측|기록상|평균보다|기록을\\s*확인|기록이\\s*없|기록은\\s*없|기록이\\s*부족)/u.test(String(text || ''));
+      && /(?:가격\s*떨어진|이\s*가격이면\s*싼\s*편)/u.test(q);
+    const historyEvidenceInAnswer = /(?:가격\s*(?:기록|이력|흐름)|관측|기록상|평균보다|기록을\s*확인|기록이\s*없|기록은\s*없|기록이\s*부족)/u.test(String(text || ''));
     if (historyEvidenceQuestion && !historyEvidenceInAnswer) {
       const matchingVerifiedOption = verifiedGroundedSubject && cards.length
         && String(verifiedGroundedSubject.productId || '') !== ''
@@ -7102,8 +7102,8 @@ module.exports = async function handler(req, res) {
       if (matchingVerifiedOption) {
         const evidenceForCard = Object.assign({}, verifiedGroundedSubject, cards[0]);
         text = groundedAnswer.groundedPriceHistoryAnswer(q, evidenceForCard, deal);
-        if (/이\\s*가격이면\\s*싼\\s*편/.test(q)
-            && !/(?:싼\\s*편|저렴한\\s*편)/.test(text)) {
+        if (/이\s*가격이면\s*싼\s*편/.test(q)
+            && !/(?:싼\s*편|저렴한\s*편)/.test(text)) {
           text += ' 이 기록만으로 다른 모든 판매처와 비교해 싼 편인지까지 확정할 수는 없어요.';
         }
       } else {
