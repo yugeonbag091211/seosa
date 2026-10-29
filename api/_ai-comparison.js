@@ -26,6 +26,13 @@ function parseComparison(question) {
   const m = /^(.{2,75}?)(?:\s*(?:와|과|랑|하고)\s+|\s+vs\.?\s+|\s+versus\s+|\s+아니면\s+|\s+대\s+|\s+또는\s+|\s+혹은\s+|\s*\/\s*|\s*,\s+)(.{2,75}?)\??\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천|하나)(?:\s*쪽)?|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이(?:가|는|점|를)?\s*(?:알려|설명|정리|있|뭐|어때|궁금)|(?:함께\s*)?(?:골라|선택)(?:\s*(?:줘|주세요|줄래|봐))?).*$/i.exec(s);
   if (!m) return null;
   let left = m[1].trim(), right = m[2].trim().replace(/\?+$/, '');
+  // Sony WH-1000XM is an over-ear headphone family. A bare WH model anchor is
+  // sufficient to identify that type; it must not be treated as an unknown
+  // generic token (or conflated with the similarly named WF earbuds).
+  const expandSonyHeadphone = term => /^wh\s*[- ]?\s*1000xm\d+[a-z0-9-]*$/i.test(term)
+    ? `소니 헤드폰 ${term}` : term;
+  left = expandSonyHeadphone(left);
+  right = expandSonyHeadphone(right);
   // The user can put the operation description before "비교":
   // "A와 B를 가격 포함해서 나란히 비교해 줘". It is not part of the product.
   right = right.replace(/(?:을|를)\s*(?:(?:확인된\s*)?가격(?:을|과)?\s*(?:포함(?:해서|하여)?|함께)?\s*)?(?:나란히\s*)?$/i, '').trim();
@@ -177,8 +184,8 @@ function formatComparison(requested, offers, source, opts) {
   const o = opts || {};
   const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
   const lines = [source === 'catalog'
-    ? '앞에서 비교한 두 상품을 서사 카탈로그에서 다시 확인했어요. 아래 가격은 마지막 수집 시점의 기록이며 현재 결제가는 아닐 수 있어요.'
-    : '두 상품을 각각 검색해 확인한 표시 가격을 비교했어요.'];
+    ? '앞에서 비교한 두 상품을 다시 확인했어요. 아래는 마지막 수집 시점의 표시 가격이에요.'
+    : '두 상품을 각각 검색해 확인했어요. 아래는 검색 결과의 표시 가격이에요.'];
   offers.forEach((p,i) => {
     const name = requested[i];
     if (!p) {
@@ -197,14 +204,14 @@ function formatComparison(requested, offers, source, opts) {
     const titleDifferences = listedTitleDifferences(offers[0].title, offers[1].title);
     if (titleDifferences) lines.push(titleDifferences);
     if (difference > 0) {
-      const cheaperIndex = offers[0].price < offers[1].price ? 0 : 1;
-      lines.push(`가격만 기준으로 고르면 ${offers[cheaperIndex].title}이(가) 표시 가격이 ${won(difference)} 낮아요. 전체 적합성은 사용 목적과 확인된 사양을 함께 봐야 해요.`);
+      lines.push(`선택 기준: 가격을 우선하면 ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 유리해요. 사양은 위 상품명에 적힌 차이가 용도에 맞는지 확인해 고르고, 실제 성능 우열은 이 정보만으로 판단하기 어려워요.`);
+    } else {
+      lines.push('선택 기준: 표시 가격이 같으므로 상품명에 적힌 차이가 용도에 맞는지 확인해 고르세요. 실제 성능 우열은 이 정보만으로 판단하기 어려워요.');
     }
-    lines.push('상품명에 없는 실제 성능·기능의 우열은 추측하지 않을게요. 용도와 사양을 추가로 확인해야 정확한 가성비를 판단할 수 있어요.');
   } else {
     lines.push('비교 대상 중 하나 이상을 확인하지 못해서 가격 차이나 가성비 우열을 단정할 수 없어요.');
   }
-  lines.push('실제 결제 금액과 옵션·배송 조건은 판매처에서 다시 확인해야 해요.');
+  lines.push('표시 가격은 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비를 결제 화면에서 확인해 주세요.');
   return lines.join('\n\n');
 }
 module.exports = { parseComparison, isPairFollowup, pickExact, formatComparison, budgetLabel, listedTitleDifferences };

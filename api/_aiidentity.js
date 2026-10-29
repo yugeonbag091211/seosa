@@ -70,7 +70,7 @@ const CATEGORY_NOUNS = new Set([
   '공기청정기', '가습기', '제습기', '선풍기', '서큘레이터', '에어컨', '냉장고', '세탁기', '건조기',
   '전자레인지', '에어프라이어', '밥솥', '커피머신', '전기포트', '텀블러', '캐리어', '카메라', '액션캠',
   '프린터', '공유기', '보조배터리', '의자', '책상', '매트리스', '운동화', '신발', '가방', '백팩', '지갑',
-  '향수', '면도기', '드라이기', '게임기', '드론', '자전거', '킥보드', 'tv', '티비', '텔레비전',
+  '향수', '면도기', '드라이기', '게임기', '드론', '자전거', '킥보드', '원두', '커피', '닭가슴살', 'tv', '티비', '텔레비전',
   'laptop', 'notebook', 'earbuds', 'earphone', 'headphone', 'headset', 'tablet', 'smartphone',
   'monitor', 'keyboard', 'mouse', 'vacuum', 'camera', 'speaker'
 ]);
@@ -118,7 +118,7 @@ function familyImpliesHead(head, title) {
  * 종류를 꾸밀 뿐 계열을 가리키지 않는 말 — 계열 이름만 적힌 상품명(FAMILY_KIND)에 없어도 된다.
  * "무선 이어폰" 의 «무선» 이 "Apple 에어팟 4세대" 상품명에 없다고 에어팟을 빼면 안 된다 (2026-10-26).
  */
-const KIND_MODIFIER_WORDS = new Set(['무선', '블루투스', 'wireless', 'bluetooth', '노이즈캔슬링', '노캔', '일상용', '데일리',
+const KIND_MODIFIER_WORDS = new Set(['무선', '블루투스', 'wireless', 'bluetooth', '노이즈캔슬링', '노캔', '일상용', '데일리', '음악', '음악용',
   '사무용', '학생용', '휴대용', '가벼운', '자급제', '정품', '새', '새것',
   // 받는 사람 — "부모님 선물용 스마트폰" 의 부모님은 상품명에 없다.
   '부모님', '엄마', '아빠', '어머니', '아버지', '친구', '여친', '남친', '여자친구', '남자친구', '아이', '아기', '학생', '선물']);
@@ -167,7 +167,9 @@ const GENERIC_WORDS = new Set([
   '얼마', '얼마야', '얼마예요', '얼마에요', '얼마임', '얼마지', '얼마나', '얼만지',
   '네가', '니가', '너가', '이라고', '라고', '앞의', '앞에서',
   // 예산·규격의 범위 말 — "100만원 이하", "15인치 이하"
-  '이하', '이상', '미만', '이내', '까지', '정도', '쯤', '안팎', '내외', '넘는', '아래', '초과', '짜리', '대'
+  '이하', '이상', '미만', '이내', '까지', '정도', '쯤', '안팎', '내외', '넘는', '아래', '초과', '짜리', '대',
+  // Price-history wording describes the question, not the product identity.
+  '최근', '최근에', '흐름', '떨어진', '떨어졌', '기다릴', '기다려', '한달', '달'
 ]);
 
 const JOSA_TAIL_RE = /(으로|로는|에서|이랑|이야|입니다|이에요|예요|은|는|이|가|을|를|도|와|과|의|만|로|랑|야)$/;
@@ -340,7 +342,10 @@ function splitNegations(text) {
    * 짧은 조각 뒤에 부정이 오는 목록은 하나로 묶는다(앞 조각 둘 이하 토큰).
    */
   const clauses = [];
-  src.split(/[.;!?\n]+/).forEach(sentence => {
+  // A decimal point inside a listed capacity/model value is not a sentence
+  // boundary (for example, 5.5L). Split periods only when they are not between
+  // two digits; keep the existing boundaries for semicolons and sentence marks.
+  src.split(/(?<!\d)\.|(?<=\d)\.(?!\d)|[;!?\n]+/).forEach(sentence => {
     const segs = sentence.split(/,(?=\s|[가-힣a-z])/i);
     let carry = '';
     segs.forEach((seg, i) => {

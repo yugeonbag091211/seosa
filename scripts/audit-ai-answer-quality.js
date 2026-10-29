@@ -14,8 +14,8 @@ const arg = (name, fallback) => {
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
 };
 const files = {
-  old1000: arg('before-1000', 'reports/ai-integration-2026-10-29/offline-results.jsonl'),
-  old200: arg('before-200', 'reports/ai-integration-2026-10-29/holdout-200.jsonl'),
+  old1000: arg('before-1000', 'reports/ai-answer-quality-2026-10-29/offline-1000-before-full/offline-results.jsonl'),
+  old200: arg('before-200', 'reports/ai-answer-quality-2026-10-29/holdout-200-before-full.jsonl'),
   new1000: arg('after-1000', 'reports/ai-answer-quality-2026-10-29/offline-1000-after/offline-results.jsonl'),
   new200: arg('after-200', 'reports/ai-answer-quality-2026-10-29/holdout-200-after.jsonl'),
   new50: arg('after-new-50', 'reports/ai-answer-quality-2026-10-29/new-independent-50.jsonl'),
@@ -40,6 +40,7 @@ const flatten = (source, rows) => rows.map(row => {
       return m ? { productId: m[1], vendorItemId: m[2], lprice: 0, title: '' } : { productId: String(s), vendorItemId: '', lprice: 0, title: '' };
     }) : [],
     searchEvidence: Array.isArray(row.searchEvidence) ? row.searchEvidence : [],
+    priceHistoryEvidence: Array.isArray(row.priceHistoryEvidence) ? row.priceHistoryEvidence : [],
     comparison: row.responseMeta && row.responseMeta.comparison || row.comparison || response.comparison || null,
     constraints: row.responseMeta && row.responseMeta.constraints || null,
     reusePreviousCard: !!(row.responseMeta && row.responseMeta.reusePreviousCard || response.reusePreviousCard),
@@ -74,6 +75,11 @@ function exactRequestedCard(row) {
   return modelTokens.some(token => titleText.includes(token));
 }
 const status = reasons => reasons.length ? 'FAIL' : 'PASS';
+const formatWon = value => Math.round(Number(value) || 0).toLocaleString('en-US');
+const distinctTitleSpecs = cards => {
+  const re = /\b\d+(?:\.\d+)?\s?(?:GB|TB|L|인치|형|mAh|W)\b|\b(?:i[3579]|M[1-9](?:\s?Pro)?|울트라\s?[3579]|Wi-?Fi|LTE|5G)\b/gi;
+  return cards.slice(0, 2).map(card => [...new Set([...String(card.title || '').matchAll(re)].map(m => m[0].replace(/\s+/g, '').toLowerCase()))]);
+};
 
 function grade(row, previousSessionPrices) {
   const { question: q, text, cards } = row;
@@ -91,15 +97,42 @@ function grade(row, previousSessionPrices) {
     if (cards.length < 2 && !explicitMissing) issues.questionSatisfaction.push('비교 질문에 확인된 두 제품 카드가 없음');
     if (cards.length >= 2 && !complete) issues.questionSatisfaction.push('두 제품 독립 확인 완료 표시가 없음');
     if (cards.length >= 2 && !/(?:차이|더 저렴|가격만 기준|표시 가격)/.test(text)) issues.questionSatisfaction.push('두 제품의 차이와 선택 기준을 설명하지 않음');
-  } else if (priceAsk(q) && cards.length && !won(text).some(n => cards.some(c => Number(c.lprice) === n))) {
+    if (cards.length >= 2 && !/(?:선택 기준|가격을 우선|가격만 보면|가격 우선|용도에 맞|사양에 맞|필요한 사양)/.test(text)) {
+      issues.questionSatisfaction.push('비교 결과를 어떻게 선택에 적용할지 설명하지 않음');
+    }
+    if (cards.length >= 2) {
+      const [a, b] = distinctTitleSpecs(cards);
+      const differs = a.some(x => !b.includes(x)) || b.some(x => !a.includes(x));
+      if (differs && (!/상품명|상품명 표기/.test(text) || [...a, ...b].filter(x => !text.replace(/\s+/g, '').toLowerCase().includes(x)).length > Math.ceil((a.length + b.length) / 2))) {
+        issues.questionSatisfaction.push('상품 카드에 확인된 사양 차이를 비교 본문에서 설명하지 않음');
+      }
+      const priceDifference = Math.abs(Number(cards[0].lprice) - Number(cards[1].lprice));
+      if (priceDifference > 0) {
+        const deltaMentions = [...text.matchAll(new RegExp(`(?<!\\d)${formatWon(priceDifference)}\\s*원`, 'g'))].length;
+        if (deltaMentions > 1) issues.naturalness.push('같은 표시 가격 차이를 본문에서 반복함');
+      }
+    }
+  } else if (row.category !== 'spec' && priceAsk(q) && cards.length && !won(text).some(n => cards.some(c => Number(c.lprice) === n))) {
     issues.questionSatisfaction.push('가격 질문인데 확인된 카드 가격을 본문에 답하지 않음');
   }
   if (/재고|품절|구매\s*가능/.test(q) && cards.length
       && !/재고.*(?:확인하지 않았|확인할 수 없|판매처)|판매처.*재고/.test(text)) {
     issues.questionSatisfaction.push('재고 질문에 재고를 확인하지 않았다는 설명이 없음');
   }
-  if (/결제|현재가|판매가|가격만/.test(q) && cards.length && !/(?:실제 결제 금액|실제 결제가는|쿠폰·카드|쿠폰)/.test(text)) {
+  if (row.category !== 'spec' && /결제|현재가|판매가|가격만/.test(q) && cards.length && !/(?:실제 결제 금액|실제 결제가는|쿠폰·카드|쿠폰)/.test(text)) {
     issues.questionSatisfaction.push('표시 판매가와 실제 결제 금액의 차이를 밝히지 않음');
+  }
+  if (row.category === 'spec' && /(?:무게|배터리|램|메모리|저장\s*공간|용량|사양|스펙|노이즈\s*캔슬링|노캔|방수|흡입력|소음|소재|사이즈|화소|카메라|성능|칼로리|단백질|유통기한|원산지|전기세|몇\s*(?:kg|g|시간|그램|기가|mAh|Hz|인치))/i.test(q)) {
+    const explicitlyUnavailable = /(?:확인할 수 없|확인되지 않|자료가 없어|정보가 없어|등록돼 있지|제공되지 않|판단하기 어렵|말씀드릴 수 없|확인하지 못)/.test(text);
+    const answersRequestedFact = /(?:상품명|검색된 상품|등록된 상품|표시돼|표기|사양|스펙|무게|배터리|램|메모리|저장\s*공간|용량|노이즈\s*캔슬링|방수|흡입력|소음|소재|사이즈|화소|카메라|성능|칼로리|단백질|유통기한|원산지|전력)/i.test(text);
+    if (!explicitlyUnavailable && !answersRequestedFact) issues.questionSatisfaction.push('상품 사양 질문에 답하지 않고 일반 추천·가격 안내만 함');
+  }
+  if (row.category === 'history' && /(?:지금\s*사도|역대\s*최저|최저가\s*(?:기록|언제)|가격\s*(?:떨어|흐름|기록|이력|변동)|최근\s*한\s*달|할인\s*중|더\s*기다|싼\s*편|좋은\s*편|다음\s*(?:주|달)|얼마였)/i.test(q)) {
+    const addressesHistory = /(?:가격\s*기록|관측\s*기록|SEOSA.*기록|기록은|기록이|기록상|관측|가격\s*흐름|가격\s*이력|할인|표시\s*정가|정가\s*대비|판단할 수 없|확인할 수 없|예측할 수 없)/.test(text);
+    if (!addressesHistory) issues.questionSatisfaction.push('가격 이력·할인 질문에 현재 판매가만 답하고 기록 근거를 설명하지 않음');
+    if (/다음\s*(?:주|달)/i.test(q) && !/(?:예측할 수 없|단정할 수 없|알 수 없|예측은 어렵)/.test(text)) {
+      issues.questionSatisfaction.push('미래 가격 질문에 예측 불가 또는 불확실성을 밝히지 않음');
+    }
   }
   if (/노트북/.test(q) && !/책|강의|교육|콘텐츠|클래스/.test(q)
       && cards.some(c => /책|강의|교육|콘텐츠|클래스/.test(String(c.title || '')))) {
@@ -137,14 +170,20 @@ function grade(row, previousSessionPrices) {
   if (row.category !== 'security' && /(?:추천|찾아|보여|검색)/.test(q) && !cards.length && !noResult.test(text)) issues.questionSatisfaction.push('상품 탐색 요청에 카드도 검색 결과 부재 안내도 없음');
 
   const evidencePrices = row.searchEvidence.map(c => Number(c.lprice)).filter(Boolean);
-  const allowedWon = new Set([...won(q), ...(budgetMax(q) ? [budgetMax(q)] : []), ...cards.map(c => Number(c.lprice)).filter(Boolean), ...evidencePrices, ...previousSessionPrices]);
-  const allPrices = [...new Set([...cards.map(c => Number(c.lprice)), ...evidencePrices].filter(Boolean))];
+  const observedHistoryPrices = (row.priceHistoryEvidence || []).map(c => Number(c.price)).filter(Boolean);
+  const allowedWon = new Set([...won(q), ...(budgetMax(q) ? [budgetMax(q)] : []), ...cards.map(c => Number(c.lprice)).filter(Boolean), ...evidencePrices, ...observedHistoryPrices, ...previousSessionPrices]);
+  const allPrices = [...new Set([...cards.map(c => Number(c.lprice)), ...evidencePrices, ...observedHistoryPrices].filter(Boolean))];
   for (let i = 0; i < allPrices.length; i++) for (let j = i + 1; j < allPrices.length; j++) allowedWon.add(Math.abs(allPrices[i] - allPrices[j]));
   const cap = budgetMax(q);
   if (cap) allPrices.forEach(price => allowedWon.add(Math.abs(price - cap)));
   const badWon = won(text).filter(n => !allowedWon.has(n));
   if (badWon.length) issues.priceSpecEvidence.push(`질문·카드·비교 차이 근거에 없는 금액 ${[...new Set(badWon)].join(', ')}원`);
-  const specRe = /\b(\d+(?:\.\d+)?\s?(?:GB|TB|L|인치|형|mAh|kg|W|시간|Hz|mm|cm|년|개월|%))\b/gi;
+  if (/(?:실제\s*)?(?:결제|구매)(?:\s*할\s*때)?\s*(?:금액|가격|액|가는)?\s*(?:은|는|이|가|:)?\s*[\d,]+\s*원/.test(text)) {
+    issues.priceSpecEvidence.push('검색 결과에 없는 실제 결제 금액을 확정적으로 제시함');
+  }
+  // \b does not recognize Hangul as a word character in JavaScript, so it
+  // silently missed Korean units such as "72시간" and "15인치".
+  const specRe = /(?<![A-Z0-9])(\d+(?:\.\d+)?\s?(?:GB|TB|L|인치|형|mAh|kg|W|시간|Hz|mm|cm|년|개월))(?![A-Z0-9])/gi;
   const evidenceText = `${q} ${cards.concat(row.searchEvidence).map(c => `${c.title || ''} ${c.note || ''}`).join(' ')}`;
   const specKey = token => {
     const m = /^(\d+(?:\.\d+)?)(gb|tb)$/i.exec(String(token).replace(/\s+/g, ''));
@@ -154,6 +193,59 @@ function grade(row, previousSessionPrices) {
   const evidenceSpecs = new Set([...evidenceText.matchAll(specRe)].map(m => specKey(m[0])));
   const unsupportedSpecs = [...text.matchAll(specRe)].map(m => m[0]).filter(token => !evidenceSpecs.has(specKey(token)));
   if (unsupportedSpecs.length) issues.priceSpecEvidence.push(`질문·상품명·카드 메모에 없는 사양/수치 ${[...new Set(unsupportedSpecs)].join(', ')}`);
+  const dateMs = value => {
+    const n = Date.parse(String(value || ''));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const historyPctClaimSupported = (value, sentence) => {
+    const reported = Number(value);
+    const near = n => Number.isFinite(n) && Math.abs(Math.round(n * 10) / 10 - reported) <= 0.05;
+    const noteEvidence = cards.concat(row.searchEvidence).some(c =>
+      [...String(c.note || '').matchAll(/(\d+(?:\.\d+)?)\s*%/g)].some(m => near(Number(m[1]))));
+    if (noteEvidence) return true;
+    if (!row.priceHistoryEvidence.length) return false;
+    const saysLower = /(?:저렴|낮|하락|내렸|떨어졌)/.test(sentence);
+    const saysHigher = /(?:비싸|높|상승|올랐)/.test(sentence);
+    const historyForCard = cards.flatMap(card => {
+      const points = row.priceHistoryEvidence.filter(h => String(h.productId) === String(card.productId)
+        && (!card.vendorItemId || String(h.vendorItemId || '') === String(card.vendorItemId))
+        && Number(h.price) > 0 && dateMs(h.observedDate) > 0)
+        .map(h => ({ price: Number(h.price), date: dateMs(h.observedDate) }))
+        .sort((a, b) => a.date - b.date);
+      return points.length ? [{ card, points }] : [];
+    });
+    for (const { card, points } of historyForCard) {
+      if (/평균/.test(sentence)) {
+        const latest = points[points.length - 1].date;
+        const month = points.filter(p => p.date >= latest - 30 * 86400000);
+        const average = month.reduce((sum, p) => sum + p.price, 0) / month.length;
+        const current = Number(card.lprice) || points[points.length - 1].price;
+        const signed = (average - current) / average * 100;
+        if ((!saysLower || signed > 0) && (!saysHigher || signed < 0) && near(Math.abs(signed))) return true;
+      }
+      const window = /최근\s*(\d+)\s*일/.exec(sentence);
+      if (window) {
+        const days = Number(window[1]);
+        const latest = points[points.length - 1];
+        for (const earlier of points.slice(0, -1)) {
+          const span = (latest.date - earlier.date) / 86400000;
+          const signed = (latest.price - earlier.price) / earlier.price * 100;
+          if (span > 0 && span <= days + 0.01 && (!saysLower || signed < 0)
+              && (!saysHigher || signed > 0) && near(Math.abs(signed))) return true;
+        }
+      }
+    }
+    return false;
+  };
+  const percentageClaims = [...text.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
+  const unsupportedPercentages = percentageClaims.filter(match => {
+    const start = text.lastIndexOf('\n', match.index) + 1;
+    const stops = ['\n', '.', '。', '!', '?'].map(char => text.indexOf(char, match.index)).filter(n => n >= 0);
+    const end = stops.length ? Math.min(...stops) : text.length;
+    const sentence = text.slice(start, end);
+    return !historyPctClaimSupported(match[1], sentence);
+  }).map(match => `${match[1]}%`);
+  if (unsupportedPercentages.length) issues.priceSpecEvidence.push(`카드 메모·관측 가격 이력으로 확인할 수 없는 비율 ${[...new Set(unsupportedPercentages)].join(', ')}`);
   if (/(?:재고가\s*있(?:어요|습니다)|품절이\s*아니|할인율\s*\d+%)/.test(text)
       && !cards.some(c => String(c.note || '').includes(text.match(/\d+%/)?.[0] || '재고'))) {
     issues.priceSpecEvidence.push('재고 또는 할인율 근거가 카드에 없음');
@@ -181,9 +273,32 @@ function grade(row, previousSessionPrices) {
 
   const internal = /\[P\d\]|서버 상품 식별 결과|<상품데이터>|OPENAI_API_KEY|OPENROUTER_API_KEY|시스템 프롬프트:|\[독립세션\d+·\d+/.test(text);
   const sentences = text.split(/(?<=[.!?。])\s+|\n+/).map(s => s.trim()).filter(Boolean);
-  const repeated = sentences.some((s, i) => sentences.indexOf(s) !== i);
-  if (text.trim().length < 12 || !/[가-힣]/.test(text) || internal || repeated) {
-    issues.naturalness.push(internal ? '내부 라벨/시스템 문자열 노출' : repeated ? '같은 문장 반복' : '응답이 비어 있거나 한국어 답변으로 너무 짧음');
+  const normalizeSentence = sentence => sentence.replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
+  const normalizedSentences = sentences.map(normalizeSentence);
+  const repeated = normalizedSentences.some((s, i) => normalizedSentences.indexOf(s) !== i);
+  const particlePlaceholder = /(?:이\(가\)|을\(를\)|은\(는\)|와\(과\)|로\(으로\))/u.test(text);
+  const firstTitle = cards[0] && String(cards[0].title || '').trim();
+  const firstPrice = Number(cards[0] && cards[0].lprice) || 0;
+  const particlePairs = [['을', '를'], ['이', '가'], ['은', '는'], ['과', '와']];
+  const wrongProductParticle = cards.some(card => {
+    const title = String(card.title || '').trim();
+    const last = title.slice(-1);
+    const code = last.charCodeAt(0) - 0xAC00;
+    if (!title || code < 0 || code >= 11172) return false;
+    const hasBatchim = code % 28 !== 0;
+    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`${escaped}\\s*(을|를|이|가|은|는|과|와)(?=[\\s,.!?。]|$)`, 'g');
+    return [...text.matchAll(re)].some(match => {
+      const pair = particlePairs.find(values => values.includes(match[1]));
+      return !!(pair && match[1] !== pair[hasBatchim ? 0 : 1]);
+    });
+  });
+  const titleRepeated = firstTitle && text.indexOf(firstTitle) >= 0
+    && text.indexOf(firstTitle, text.indexOf(firstTitle) + firstTitle.length) >= 0;
+  const priceRepeated = firstPrice > 0 && won(text).filter(n => n === firstPrice).length > 1;
+  const repeatedCardFact = !compareAsk(row) && titleRepeated && priceRepeated;
+  if (text.trim().length < 12 || !/[가-힣]/.test(text) || internal || repeated || particlePlaceholder || wrongProductParticle || repeatedCardFact) {
+    issues.naturalness.push(internal ? '내부 라벨/시스템 문자열 노출' : particlePlaceholder ? '조사 선택용 문자열이 사용자 답변에 노출됨' : wrongProductParticle ? '상품명 끝소리와 맞지 않는 조사를 사용함' : repeated ? '같은 문장 반복' : repeatedCardFact ? '첫 상품 카드의 상품명과 가격을 본문에서 다시 반복함' : '응답이 비어 있거나 한국어 답변으로 너무 짧음');
   }
   const quality = Object.fromEntries(Object.entries(issues).map(([k, v]) => [k, { verdict: status(v), reasons: v }]));
   return { quality, errorCause: Object.values(issues).flat().join('; ') };
@@ -232,6 +347,7 @@ function main() {
         : prior.source.includes('truncated') ? 'truncated in source report' : 'recorded',
       cards: prior.cards.map(c => ({ productId: c.productId, vendorItemId: c.vendorItemId || '', lprice: Number(c.lprice) || 0, title: c.title || '', mall: c.mallName || c.mall || '', priceNote: c.note || '' })),
       searchEvidence: prior.searchEvidence,
+      priceHistoryEvidence: prior.priceHistoryEvidence || [],
       comparison: prior.comparison,
       expected: prior.expected,
       session: prior.session,
@@ -243,7 +359,7 @@ function main() {
       answerSource: 'mock GPT; actual GPT calls 0; fixture catalog; real handler',
       functionCheck: { before: before && before.verdict || 'UNVERIFIED', after: row.functionVerdict },
       before: before && Object.assign({}, before, { quality: priorGrade && priorGrade.quality, errorCause: priorGrade && priorGrade.errorCause }),
-      after: { answer: row.text, expected: row.expected, cards: row.cards.map(c => ({ productId: c.productId, vendorItemId: c.vendorItemId || '', title: c.title || '', lprice: Number(c.lprice) || 0, mall: c.mallName || '', priceNote: c.note || '' })), searchEvidence: row.searchEvidence, comparison: row.comparison, responseStatus: row.status || null, source: row.source, session: row.session, turn: row.turn, sessionKind: row.sessionKind, reusePreviousCard: row.reusePreviousCard, topProductId: row.topProductId },
+      after: { answer: row.text, expected: row.expected, cards: row.cards.map(c => ({ productId: c.productId, vendorItemId: c.vendorItemId || '', title: c.title || '', lprice: Number(c.lprice) || 0, mall: c.mallName || '', priceNote: c.note || '' })), searchEvidence: row.searchEvidence, priceHistoryEvidence: row.priceHistoryEvidence, comparison: row.comparison, responseStatus: row.status || null, source: row.source, session: row.session, turn: row.turn, sessionKind: row.sessionKind, reusePreviousCard: row.reusePreviousCard, topProductId: row.topProductId },
       quality: graded.quality, errorCause: graded.errorCause,
       fix: graded.errorCause ? '' : 'No static quality defect detected; naturalness verdict is a rule-based screen.'
     });
@@ -288,4 +404,5 @@ function main() {
   console.log(JSON.stringify(summary));
 }
 
-main();
+if (require.main === module) main();
+module.exports = { grade, flatten, compareAsk, exactRequestedCard };

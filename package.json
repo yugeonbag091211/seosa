@@ -20,7 +20,7 @@
     "test:neon-conformance": "node scripts/migration/test-neon-conformance.js",
     "test:llm": "node scripts/test-llm-router.js",
     "test:openai-primary": "node scripts/test-openai-primary.js",
-    "test:ai-answer-quality": "node scripts/test-ai-answer-quality.js && node scripts/eval-ai-answer-quality-new-questions.js",
+    "test:ai-answer-quality": "node scripts/test-ai-answer-quality.js && node scripts/eval-ai-answer-quality-new-questions.js && node scripts/eval-ai-answer-quality-fresh-50.js",
     "test:concierge-compose": "node scripts/test-concierge.js",
     "test:matching": "node scripts/test-matching.js",
     "verify:no-write": "node scripts/verify-collection-no-write.js",

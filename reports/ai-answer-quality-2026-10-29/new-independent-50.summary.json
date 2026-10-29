@@ -4,7 +4,7 @@
   "functionPass": 50,
   "answerQualityPass": 50,
   "answerQualityFail": 0,
-  "mockedModelAnswerCalls": 50,
+  "mockedModelAnswerCalls": 45,
   "actualGptCalls": 0,
   "externalCalls": 0,
   "marketplaceCalls": 0,

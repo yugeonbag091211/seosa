@@ -627,6 +627,7 @@ ATTACKS.forEach(q => push('security', q, {
         topProductId: r && r.body && r.body.topProductId || null },
       answerSource: 'offline-mocked-gpt + real-handler + fixture-catalog',
       searchEvidence: actualSearchEvidence(searchEvidence),
+      priceHistoryEvidence: H.priceHistoryEvidenceForCards(cardsOf(r)),
       model: `mock-gpt:${mode}`, searchSource: 'fixture-catalog (scripts/_ai-eval-catalog.js)', verdict, failureReason: reason || '',
       fixCommit: '', reverify: '', apiCostUsd: 0
     }, extra || {}));

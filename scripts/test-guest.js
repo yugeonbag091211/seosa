@@ -57,7 +57,7 @@ global.fetch = async (_url, opts) => {
   const prompt = (body.messages || []).map(m => m.content || '').join('\n');
   if (body.max_tokens >= 700) lastAnswerSystem = ((body.messages || [])[0] || {}).content || '';
   const content = prompt.includes('QCY T13')
-    ? 'QCY T13 무선 이어폰을 추천합니다.'
+    ? 'QCY T13 무선 이어폰은 현재 검색 표시가 29,900원이고 SEOSA 가격 기록의 최저가도 29,900원이에요. 실제 결제가는 쿠폰과 배송비에 따라 달라질 수 있어요.'
     : '무료 AI 테스트 답변입니다.';
   return {
     ok: true,
@@ -296,8 +296,9 @@ function fixtureStats() {
     const r = await call({ question: '이거 지금 사도 괜찮은 가격인가요?', contextProducts: ctx, chatHistory: [], view: { source: 'modal' } });
     ok(r.status === 200 && r.body.guest === true, '200 게스트');
     ok(stub.searchCalls === 0, '★ 모달 맥락에서는 검색하지 않는다', String(stub.searchCalls));
-    ok(/무료 AI 테스트|QCY T13 무선 이어폰을 추천합니다/.test(r.body.text) && r.body.degraded !== true,
-      '모달 맥락도 LLM 답변', r.body.text.slice(0, 80));
+    ok(/QCY T13/.test(r.body.text) && /29,900원/.test(r.body.text)
+        && /실제 결제/.test(r.body.text) && r.body.degraded !== true,
+      '모달 가격 질문에 LLM이 근거 있는 현재가와 결제 안내를 답한다', r.body.text);
     ok(!/1,111원/.test(r.body.text) && !lastAnswerSystem.includes('1,111')
         && lastAnswerSystem.includes('현재가 29,900원'),
       '위조 가능한 모달 가격 대신 서버 카탈로그 가격으로 판정한다', r.body.text.slice(0, 80));

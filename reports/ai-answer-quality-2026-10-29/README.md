@@ -1,12 +1,12 @@
 # AI answer quality review — 2026-10-29
 
-## Scope and method
+## Scope and evidence
 
-- PR #206 is based on current `main` at `120efe41` and includes merged collector PR #203. No collector code was changed here.
-- PR #197 is 84 commits ahead and 6 behind current `main`, and GitHub reports it as conflicted. PR #205 adds the three Production product-type guards and their handler tests; those guards were already present in the PR #206 base. The fixes in this task extend them.
-- The previous 1,000-question and 200-question reports were truncated. Full baseline responses were reconstructed from PR #206 base `f20cb76` by running its real handler, deterministic mock GPT, and fixture catalog. These reconstructed responses are explicitly labeled in the JSONL; they are not actual GPT transcripts.
-- The final static rubric evaluates accuracy, question satisfaction, price/spec evidence, conversation consistency, and a rule-based naturalness screen independently for every question. Naturalness is not a human or independent-model judgment.
-- The 50-question corpus is new and text-disjoint from both original corpora. All model answers and shopping data in these runs are mocks/fixtures.
+- The review is for PR #206 on `codex/ai-integration-release`, whose starting head is `2297cfd`. Current `main` includes collector PR #203; no collector source file was changed, and no Production deployment or database write was made.
+- The existing 1,250-question set consists of the original 1,000, the independent 200-question holdout, and 50 independent new questions. A further 50 fully disjoint questions were run after the fixes. Each generated report stores question text, answer text, cards, product and vendor item IDs, search/price-history evidence, rubric verdicts, and cause details where applicable.
+- The original 1,000- and 200-question reports truncated answers. Their full before-fix answers were reconstructed from PR #206 base `f20cb76` by running that handler with deterministic mock GPT and fixture shopping. They are explicitly labeled as reconstructed mock answers, not live GPT transcripts.
+- Five independent static criteria evaluate accuracy, question satisfaction, price/spec evidence, conversation consistency, and naturalness. Naturalness is a strict rule-based surface screen, not a human or independent-model judgment. Injected defective answers are tested to ensure the rubric returns FAIL.
+- All shopping data in these runs are fixtures. Actual GPT calls, real shopping requests, and database writes were zero.
 
 ## Results
 
@@ -14,42 +14,40 @@
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Existing distinct questions | 1,000 | 1,000 | 1,000 | 0 | 0 | 0 | $0 |
 | Existing independent holdout | 200 | 200 | 200 | 0 | 0 | 0 | $0 |
-| New independent questions | 50 | 50 | 50 | 0 | 0 | 0 | $0 |
-| **Combined static answer review** | **1,250** | **1,250** | **1,250** | **0** | **0** | **0** | **$0** |
+| Independent set included in the 1,250 | 50 | 50 | 50 | 0 | 0 | 0 | $0 |
+| **Existing set reviewed** | **1,250** | **1,250** | **1,250** | **0** | **0** | **0** | **$0** |
+| Additional fully disjoint fresh set | 50 | 50 | 50 | 0 | 0 | 0 | $0 |
+| **Total offline unique questions** | **1,300** | **1,300** | **1,300** | **0** | **0** | **0** | **$0** |
 
-Each of the five static criteria passed 1,250/1,250. This is offline evidence only and does not establish live-model answer quality.
+Each of the five criteria passed 1,250/1,250 existing questions and 50/50 fresh questions. Functional and quality verdicts are tracked separately; a functional pass cannot override an answer-quality failure.
 
-## Baseline issues found
+## Baseline defects and fixes
 
-The review found 89 distinct baseline questions with at least one static quality failure. Failure reasons overlap:
+The static review found at least one quality defect in 559 of the 1,200 reconstructed prior answers; one answer can have several reasons:
 
-- 11 answers contradicted an exact product card by saying no matching product was found.
-- 44 price answers did not distinguish listing price from checkout total.
-- 14 stock questions omitted that live stock was not checked.
-- 20 non-comparison follow-up turns returned multiple product cards.
-- 4 budget answers omitted an in-budget candidate or the reason for not choosing it.
-- 1 answer included amounts unsupported by the question, cards, or price evidence.
+- 11 answers contradicted an exact product card by saying no matching product was found. They are pinned in handler-level regressions, and all 11 before/after records are in `no-match-contradictions-before-after.jsonl`.
+- 44 price answers did not distinguish listing price from checkout total; the response now labels the observed listing price and explains that coupons, card benefits, and shipping can change the actual amount.
+- 142 Korean particle mismatches, 151 repeated card/title-price banners, and 153 comparisons without an actionable selection basis were detected and fixed or blocked by output checks.
+- Other baseline defects included unsupported price-history claims, missing stock-check caveats, unaddressed specs/history questions, and multiple cards on non-comparison follow-ups. Exact causes and evidence are recorded per question.
 
-The required six checkout-price contradictions are pinned in `scripts/test-ai-answer-quality.js`. The complete before/after answers, cards, price notes, search evidence, separate criterion verdicts, and failure causes are in `quality-review.jsonl`.
+The answer-quality test injects deliberately contradictory, unsupported, repetitive, ungrammatical, and incomplete answers and requires FAIL. The evaluator does not relax thresholds to make a run pass.
 
-## Existing 21 test failures
+## Existing 21 price/security failures
 
-The repository report identified the original 3 price-source test failures as a test that still expected a constant removed by PR #202. It now checks the actual rendered source by seller, the unknown discount/shipping treatment, and checkout guidance. The original 18 AI price-evidence failures were date-dependent historical fixtures that had aged out of the current-price freshness window. Their fixture clock is scoped to the recorded date; the freshness boundary, invalid-date, and stale-price rejection assertions remain.
+The three price-source failures came from a test expecting a constant removed by PR #202. The tests now check the rendered source by seller, unknown discount/shipping treatment, and checkout guidance. The 18 AI price-evidence failures used historical fixtures whose dates had aged beyond the current-price window. Their fixture clock is scoped to the recorded date; freshness boundaries and invalid/stale-price rejection remain enforced.
 
-The price-provenance answer assertion also now expects the verified listing/checkout caveat to be appended while requiring the captured answer itself to remain intact. No grounding assertion was removed.
+## Verification and limitations
 
-## Verification and artifacts
+- `npm test`: PASS (exit 0), including the answer-quality pretest and full repository regression suite. Product/vendor ID exact matching and price freshness checks remain in the suite.
+- `node scripts/audit-ai-answer-quality.js`: 1,250/1,250 function and answer-quality pass; all five criteria 1,250/1,250. The 50 fresh questions separately pass function and quality 50/50 and each criterion 50/50.
+- Targeted contradiction/evaluator-injection, comparison, tablet/headset type, budget, memory, price/spec-provenance, and intent regressions pass.
+- No safely authenticated, isolated Preview environment was available: the Preview is SSO protected and the branch has no safe Preview credentials. We did not bypass authentication. Live GPT and actual shopping E2E are **unverified**; the requested minimum of 50 real GPT calls was not run. Actual external cost: **$0**.
+- PR #206 remains Draft. Production has not been deployed. Live answer quality cannot be claimed from mock results, so Production deployment is not cleared by this report.
 
-- `npm test`: passed with GPT, marketplace, and database credentials cleared for the local run; answer-quality pretest included.
-- `node scripts/eval-ai-1000-distinct.js`: 1,000/1,000.
-- `node scripts/eval-ai-independent-holdout-2026.js`: 200/200.
-- New independent questions: 50/50; mocked model calls 50, actual GPT 0, external shopping 0, DB writes 0, cost $0.
-- Preview is SSO protected and no safe Preview credentials are configured. Actual GPT and shopping E2E remain unverified; the protection was not bypassed.
-- Production was not deployed. PR #206 remains a Draft deployment candidate pending safe live verification and review.
+## Artifacts
 
-Artifacts:
-
-- `quality-review.jsonl` and `quality-review.summary.json`: 1,250 full question-level records and rubric summary.
-- `offline-1000-after/`: latest 1,000-question handler run and summary.
-- `holdout-200-after.jsonl` and summary: latest 200-question holdout.
-- `new-independent-50.jsonl` and summary: new disjoint questions and results.
+- `quality-review.jsonl` and `.summary.json`: the existing 1,250-question before/after review, all five criterion verdicts, cards, search evidence, price history, and failure causes.
+- `no-match-contradictions-before-after.jsonl`: all 11 product-card/no-result contradictions with original and corrected answers.
+- `offline-1000-after/` and `holdout-200-after.jsonl`: the 1,000-question and 200-question handler runs.
+- `new-independent-50.jsonl` and `.summary.json`: the 50 new questions included in the existing 1,250 set.
+- `fresh-independent-50.jsonl` and `.summary.json`: the additional 50 fully disjoint questions and their per-question five-criterion results.

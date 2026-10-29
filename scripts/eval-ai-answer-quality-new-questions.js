@@ -186,6 +186,7 @@ function qcheck(question, rows) {
     const snap = { group: c.group, question: c.question, status: response.status || 0, answer: String(body.text || ''),
       cards: (body.items || []).map(x => ({ productId: x.productId, vendorItemId: x.vendorItemId || '', title: x.title || '', lprice: Number(x.lprice) || 0, mall: x.mallName || '', note: x.note || '' })),
       topProductId: body.topProductId || null,
+      priceHistoryEvidence: H.priceHistoryEvidenceForCards(body.items || []),
       searchEvidence: H.searchEvidenceLog.slice(evidenceStart).flat(), comparison: body.comparison || null, expected: Object.assign({}, c.expected), error };
     if (session) snap.cards = snap.cards;
     const contextRows = [...rows.filter(x => c.expected.session && x.expected.session === c.expected.session), snap];

@@ -150,6 +150,22 @@ function addProduct(p) {
   });
 }
 
+/** Exact fixture history for the product options actually returned as cards. */
+function priceHistoryEvidenceForCards(cards) {
+  const out = [];
+  for (const card of Array.isArray(cards) ? cards : []) {
+    const rows = tables.price_history.filter(row => String(row.product_id) === String(card.productId || '')
+      && (!card.vendorItemId || String(row.vendor_item_id || '') === String(card.vendorItemId))
+      && (!card.mall || String(row.mall || '') === String(card.mall)));
+    for (const row of rows) out.push({
+      productId: String(row.product_id || ''), vendorItemId: String(row.vendor_item_id || ''),
+      mall: String(row.mall || ''), price: Number(row.price) || 0,
+      observedDate: String(row.recorded_date || row.recorded_at || '')
+    });
+  }
+  return out;
+}
+
 /** 한 번의 질문. opts.answer — GPT 답변(문자열·함수·null=공급자 장애). */
 async function ask(body, opts = {}) {
   try { llm._internal._reset(); } catch (e) { /* 없으면 그만 */ }
@@ -223,6 +239,6 @@ function session(opts = {}) {
 const productData = system => (String(system).match(/\n<상품데이터>\n[\s\S]*?\n<\/상품데이터>/) || [''])[0];
 
 module.exports = {
-  tables, counters, catalog, searchLog, searchEvidenceLog, llmStub, addProduct, ask, session, productData, kstDate, isoAgo, DAY,
+  tables, counters, catalog, searchLog, searchEvidenceLog, llmStub, addProduct, priceHistoryEvidenceForCards, ask, session, productData, kstDate, isoAgo, DAY,
   handler, I: handler._internal
 };

@@ -1,0 +1,66 @@
+{
+  "kind": "FRESH_50_OFFLINE_MOCK_GPT_QUALITY_AUDIT",
+  "questions": 50,
+  "uniqueQuestions": 50,
+  "overlapQuestions": 0,
+  "functionPass": 50,
+  "answerQualityPass": 50,
+  "failed": 0,
+  "groups": {
+    "notebook-body": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "fail": 0
+    },
+    "tablet-body": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "fail": 0
+    },
+    "headphone-type": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "fail": 0
+    },
+    "earbud-type": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "fail": 0
+    },
+    "comparison": {
+      "questions": 10,
+      "functionPass": 10,
+      "qualityPass": 10,
+      "fail": 0
+    },
+    "budget": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "fail": 0
+    },
+    "price-checkout": {
+      "questions": 5,
+      "functionPass": 5,
+      "qualityPass": 5,
+      "fail": 0
+    },
+    "conversation-memory": {
+      "questions": 10,
+      "functionPass": 10,
+      "qualityPass": 10,
+      "fail": 0
+    }
+  },
+  "mockedModelAnswerCalls": 40,
+  "actualGptCalls": 0,
+  "marketplaceCalls": 0,
+  "dbWrites": 0,
+  "apiCostUsd": 0,
+  "corpusSha256": "3d7aeea18b7a22e6fb56273e036ad7d9e4c303a5ef5fcfb01282189ef11e1729",
+  "naturalnessScope": "five independent rubric dimensions; naturalness uses a strict rule-based screen, not a human or model judge"
+}

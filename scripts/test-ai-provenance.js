@@ -143,7 +143,7 @@ function ok(cond, name, detail) {
   if (cond) { pass++; if (g) g.pass++; console.log(`  [PASS] ${name}`); }
   else {
     fail++; if (g) g.fail++; failures.push(`${currentGroup} :: ${name}`);
-    console.log(`  [FAIL] ${name}${detail ? ` — ${String(detail).slice(0, 300)}` : ''}`);
+    console.log(`  [FAIL] ${name}${detail ? ` — ${String(detail).slice(0, 1500)}` : ''}`);
   }
 }
 const won = n => Number(n).toLocaleString('en-US');
@@ -1292,7 +1292,8 @@ function searchFixture() {
     ok(!!top && prior.searches === 0 && (prior.body.items || []).length === 1 && prior.body.items[0].productId === top.productId
         && prior.body.degraded !== true && productData(prior.system).includes(`현재가 ${won(top.lprice)}원`),
       '직전 추천(서명 참조) → 같은 상품·옵션을 서버에서 다시 확인해 답한다',
-      JSON.stringify({ top: rec.body.topProductId, items: prior.body.items, text: prior.body.text }));
+      JSON.stringify({ degraded: prior.body.degraded, warnings: prior.warnings,
+        top: rec.body.topProductId, items: prior.body.items, text: prior.body.text }));
 
     // 사용자가 실제로 쓴 대화: 추천 → 이유 질문 → '지금 사는 게 좋을까?'
     // 이전에는 마지막 질문을 쇼핑 의도가 아닌 일반 지식(B)으로 분류해 맥락이 끊겼다.

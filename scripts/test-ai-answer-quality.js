@@ -7,6 +7,8 @@ const CAT = require('./_ai-eval-catalog');
 const COMP = require('../api/_ai-comparison');
 const AIID = require('../api/_aiidentity');
 const INTENT = require('../api/_intent');
+const ANSWER_QUALITY = require('./audit-ai-answer-quality').grade;
+const GROUNDED_ANSWER = require('../api/_ai-grounded-answer');
 
 CAT.PRODUCTS.forEach(p => H.addProduct(p));
 const cases = [
@@ -72,6 +74,33 @@ const cases = [
     'TWS feature token must not override the product type after a model-first query');
   assert.equal(COMP.parseComparison('게임용 말고 출퇴근용 헤드폰, 150,000원 이하로 골라 줘'), null,
     'an exclusion plus a budget comma is a single recommendation, not a comparison');
+  assert.deepEqual(COMP.parseComparison('WH-1000XM5와 보스 QC 울트라 헤드폰 두 모델을 비교해 줘'),
+    ['소니 헤드폰 WH-1000XM5', '보스 QC 울트라 헤드폰'],
+    'a WH-1000XM5 anchor identifies the over-ear model family, not WF/TWS earbuds');
+  assert.equal(INTENT.extractUseCase('업무용 헤드폰, 게임용 제품은 보여 주지 마'), '업무',
+    'a negative gaming clause must not override the positive work use case');
+  assert.equal(require('../api/_ai-budget-window').gamingPreference('게임용 제품은 보여 주지 마'), true,
+    '"게임용 제품은 보여 주지 마" must establish a persistent gaming exclusion');
+  assert.equal(INTENT.extractUseCase('게이밍 말고 음악용 무선 이어폰 추천'), '음악 감상',
+    'a negated gaming mention must not become the requested use case');
+  assert.equal(GROUNDED_ANSWER.isProductSpecQuestion('그램16 16Z90S 얼마야?'), false,
+    'the "그램" laptop family name must not be mistaken for a RAM specification request');
+  assert.equal(GROUNDED_ANSWER.isProductSpecQuestion('갤럭시탭 S10 FE 무게 얼마나 나가?'), true,
+    'the word "얼마나" in a weight question must not be mistaken for a price question');
+  assert.equal(GROUNDED_ANSWER.isProductSpecQuestion('노스페이스 눕시 M 사이즈 얼마야?'), false,
+    'an option-size query asking "얼마야" is a product-price request, not a clothing measurement question');
+  assert.equal(GROUNDED_ANSWER.isProductSpecQuestion('스타벅스 하우스블렌드 원두 칼로리 얼마야?'), true,
+    'an amount question about calories is a nutrition request, not a product-price request');
+  const particleTitle = 'Apple 맥북 에어 13 M3 16GB 512GB 미드나이트';
+  assert.equal(GROUNDED_ANSWER.repairProductParticles(`${particleTitle}을 먼저 안내해요.`, [{ title: particleTitle }]),
+    `${particleTitle}를 먼저 안내해요.`, 'product particles should agree with the final Hangul syllable');
+  assert.equal(INTENT.classify('코소리 에어프라이어 5.5L 가격 떨어진 거 맞아?', []).query.includes('5.5L'), true,
+    'decimal liter capacity is part of the exact product identity and must remain intact in history searches');
+  const coffeeHistoryIntent = INTENT.classify('스타벅스 하우스블렌드 원두 최근 한 달 가격 흐름 알려줘', []);
+  assert.equal(coffeeHistoryIntent.intent, 'E');
+  assert.equal(AIID.verdict(AIID.buildContract({ query: coffeeHistoryIntent.query, userText: '스타벅스 하우스블렌드 원두 최근 한 달 가격 흐름 알려줘' }),
+    { title: '스타벅스 하우스블렌드 원두 1.13kg' }).tier, AIID.TIER.EXACT,
+  'history wording must not break an exact coffee-bean product identity');
 
   const budgetIdentityQuestions = [
     '가격 상한 1,800,000원으로 스마트폰 후보를 찾아 줘',
@@ -87,6 +116,14 @@ const cases = [
     assert.ok((r.body.items || []).every(x => Number(x.lprice) <= 1800000), `${question}: candidate exceeded stated ceiling`);
     assert.doesNotMatch(r.body.text, /(?:조건에 맞는 상품을 찾지 못|이번 검색 결과에서 찾지 못)/);
   }
+
+  const musicEarbuds = await H.ask({ question: '25만원 이하 무선 이어폰 중 게이밍 말고 음악용 추천해 줘' }, {
+    classify: 'C|무선 이어폰', answer: '확인된 상품 정보를 안내할게요.'
+  });
+  assert.ok((musicEarbuds.body.items || []).length > 0,
+    'music use-case wording must retain the explicit wireless-earbud category in the search');
+  assert.ok((musicEarbuds.body.items || []).every(x => !/게이밍|gaming/i.test(x.title)),
+    'the gaming exclusion must filter product cards');
 
   const relaxation = require('../api/_noresult').relaxations(
     [{ price: 690000, title: '실제 검색 후보' }, { price: 790000, title: '두 번째 실제 후보' }],
@@ -124,8 +161,11 @@ const cases = [
   assert.match(priceComparison, /상품명에 표기된 차이/);
   assert.match(priceComparison, /16GB.*512GB/);
   assert.match(priceComparison, /32GB.*1TB/);
-  assert.match(priceComparison, /실제 결제 금액.*판매처/);
-  assert.match(priceComparison, /가격만 기준으로 고르면.*그램15/);
+  assert.match(priceComparison, /실제 결제 금액.*결제 화면/);
+  assert.match(priceComparison, /가격을 우선하면 첫 번째 상품이 유리/);
+  assert.doesNotMatch(priceComparison, /이\(가\)|을\(를\)/);
+  assert.equal((priceComparison.match(/300,000원/g) || []).length, 1,
+    'the confirmed price difference must be stated once, without repeating the same rationale');
 
   const capacityComparison = COMP.formatComparison(
     ['필립스 HD9252', '코소리 CAF-L501'],
@@ -137,7 +177,106 @@ const cases = [
   assert.match(capacityComparison, /4\.1L/);
   assert.match(capacityComparison, /5\.5L/);
 
+  // The answer-quality evaluator must reject deliberately injected defects,
+  // independently of function/card success. This prevents the rubric from
+  // passing the exact classes of errors found in the recorded answers.
+  const title1 = 'LG전자 그램15 15ZD90S 인텔 i5 16GB 512GB 노트북';
+  const title2 = 'LG전자 그램16 16Z90S 인텔 울트라7 32GB 1TB 노트북';
+  const compareCards = [
+    { productId: 'LT-GRAM15', vendorItemId: 'LT-GRAM15-V1', title: title1, lprice: 1290000 },
+    { productId: 'LT-GRAM16', vendorItemId: 'LT-GRAM16-V1', title: title2, lprice: 1590000 }
+  ];
+  const goodCompare = {
+    question: '그램15랑 그램16 비교해줘', category: 'compare',
+    text: `두 상품을 각각 검색해 확인했어요.\n1. ${title1} — 1,290,000원\n2. ${title2} — 1,590,000원\n표시 가격 차이는 300,000원이고, 첫 번째 상품이 더 저렴해요.\n상품명 표기 차이: 첫 번째 16GB, 512GB, i5; 두 번째 32GB, 1TB, 울트라7.\n선택 기준: 가격을 우선하면 첫 번째 상품이 유리해요. 실제 성능 우열은 이 정보만으로 판단하기 어려워요.\n표시 가격은 실제 결제 금액과 다를 수 있으니 쿠폰과 배송비를 결제 화면에서 확인해 주세요.`,
+    cards: compareCards, searchEvidence: [], comparison: { complete: true },
+    session: null, turn: null, sessionKind: null, reusePreviousCard: false
+  };
+  assert.deepEqual(Object.values(ANSWER_QUALITY(goodCompare, []).quality).map(x => x.verdict),
+    ['PASS', 'PASS', 'PASS', 'PASS', 'PASS'], 'grounded concise comparison should pass all five independent criteria');
+  const gradeBad = (row, text) => ANSWER_QUALITY(Object.assign({}, row, { text }), []).quality;
+  assert.equal(gradeBad(goodCompare, goodCompare.text.replace('더 저렴해요', '더 저렴해요. 표시 가격 차이는 300,000원')).naturalness.verdict, 'FAIL',
+    'duplicate price rationale must fail naturalness');
+  assert.equal(gradeBad(goodCompare, goodCompare.text.replace('선택 기준: 가격을 우선하면 첫 번째 상품이 유리해요. ', '')).questionSatisfaction.verdict, 'FAIL',
+    'comparison without an actionable selection basis must fail satisfaction');
+  assert.equal(gradeBad(goodCompare, goodCompare.text.replace('첫 번째 상품이 더 저렴해요', '첫 번째 상품이 더 저렴해요. 그 상품이(가) 최고예요')).naturalness.verdict, 'FAIL',
+    'exposed Korean particle placeholders must fail naturalness');
+  assert.equal(gradeBad({ ...goodCompare, category: 'search', question: `${particleTitle} 얼마야?`, cards: [{ productId: 'LT-MBA-16', title: particleTitle, lprice: 1890000 }] },
+    `${particleTitle}을 추천해요. 현재가는 1,890,000원이에요.`).naturalness.verdict, 'FAIL',
+    'a grammatically mismatched particle after an exact product title must fail naturalness');
+  assert.equal(gradeBad(goodCompare, goodCompare.text + ' 실제 결제 금액은 1,290,000원입니다.').priceSpecEvidence.verdict, 'FAIL',
+    'an unsupported checkout amount must fail price evidence even when it matches a listing price');
+  assert.equal(gradeBad(goodCompare, goodCompare.text + ' 배터리는 72시간 사용할 수 있어요.').priceSpecEvidence.verdict, 'FAIL',
+    'an unsupported specification must fail evidence');
+  const contradictory = ANSWER_QUALITY({
+    question: '아이패드 11 A16 현재가 알려줘', category: 'search',
+    expected: '요청 모델 TB-IPAD11 판매 상품 확인', text: '일치하는 상품을 확인하지 못했어요.',
+    cards: [{ productId: 'TB-IPAD11', vendorItemId: 'TB-IPAD11-V1', title: 'Apple 아이패드 11 A16 128GB', lprice: 499000 }],
+    searchEvidence: [], comparison: null
+  }, []);
+  assert.equal(contradictory.quality.accuracy.verdict, 'FAIL',
+    'the evaluator must fail a no-result answer that contradicts its exact product card');
+  assert.equal(gradeBad(goodCompare, goodCompare.text.replace('상품명 표기 차이: 첫 번째 16GB, 512GB, i5; 두 번째 32GB, 1TB, 울트라7.', '')).questionSatisfaction.verdict, 'FAIL',
+    'the evaluator must require verified listed-spec differences when they are available');
+  const repeatedCardFact = ANSWER_QUALITY({
+    question: '갤럭시 A35 128GB 가격 알려 줘', category: 'search',
+    text: '첫 번째 추천 카드: 삼성전자 갤럭시 A35 128GB 자급제 — 499,000원. 삼성전자 갤럭시 A35 128GB 자급제의 표시 가격은 499,000원이에요. 실제 결제액은 쿠폰과 배송비에 따라 달라질 수 있어요.',
+    cards: [{ productId: 'PH-A35', vendorItemId: 'PH-A35-V1', title: '삼성전자 갤럭시 A35 128GB 자급제', lprice: 499000 }],
+    searchEvidence: [], comparison: null
+  }, []);
+  assert.equal(repeatedCardFact.quality.naturalness.verdict, 'FAIL',
+    'the evaluator must flag a card title and exact card price repeated in the body');
+
+  const unresponsiveSpec = ANSWER_QUALITY({
+    question: '맥북 에어 M3 16GB 512GB 무게 몇 kg이야?', category: 'spec',
+    text: 'Apple 맥북 에어를 먼저 추천드려요. 현재가는 1,890,000원이에요.',
+    cards: [{ productId: 'LT-MBA-16', vendorItemId: 'LT-MBA-16-V1', title: 'Apple 맥북 에어 13 M3 16GB 512GB', lprice: 1890000 }],
+    searchEvidence: [], priceHistoryEvidence: [], comparison: null
+  }, []);
+  assert.equal(unresponsiveSpec.quality.questionSatisfaction.verdict, 'FAIL',
+    'a correct card and price cannot pass a spec question that never answers or discloses missing weight data');
+
+  const unresponsiveHistory = ANSWER_QUALITY({
+    question: '갤럭시탭 S10 FE 최저가 기록은 언제였어?', category: 'history',
+    text: '갤럭시탭 S10 FE를 추천드려요. 현재가는 629,000원이에요.',
+    cards: [{ productId: 'TB-S10FE', vendorItemId: 'TB-S10FE-V1', title: '삼성전자 갤럭시탭 S10 FE 128GB', lprice: 629000 }],
+    searchEvidence: [], priceHistoryEvidence: [{ productId: 'TB-S10FE', vendorItemId: 'TB-S10FE-V1', mall: '쿠팡', price: 629000, observedDate: '2026-10-29' }],
+    comparison: null
+  }, []);
+  assert.equal(unresponsiveHistory.quality.questionSatisfaction.verdict, 'FAIL',
+    'a current price cannot pass a historical-low date question without addressing the available record');
+
+  // These real-handler regressions reproduce answers that passed card checks
+  // while ignoring the requested spec or price-history question.
+  const targetedAnswerCases = [
+    ['맥북 에어 M3 16GB 512GB 무게 몇 kg이야?', 'D|맥북 에어 M3 16GB 512GB', /무게|확인할 수 없|확인되지 않/],
+    ['맥북 에어 M3 16GB 512GB 영상 편집할 만한 성능이야?', 'D|맥북 에어 M3 16GB 512GB', /영상 편집|성능|확인할 수 없|판단하기 어렵/],
+    ['갤럭시탭 S10 FE 지금 할인 중이야?', 'E|갤럭시탭 S10 FE', /할인|정가|표시 가격/],
+    ['갤럭시탭 S10 FE 더 기다리는 게 나아?', 'E|갤럭시탭 S10 FE', /가격 기록|기록이|판단하기 어렵/],
+    ['갤럭시탭 S10 FE 최저가 기록은 언제였어?', 'E|갤럭시탭 S10 FE', /기록|관측|최저가/],
+    ['코소리 에어프라이어 5.5L 최근 한 달 가격 흐름 알려줘', 'E|코소리 에어프라이어 5.5L', /기록|관측|가격 흐름/],
+    ['스타벅스 하우스블렌드 원두 최근 한 달 가격 흐름 알려줘', 'E|스타벅스 하우스블렌드 원두', /기록|관측|가격 흐름/],
+    ['스타벅스 하우스블렌드 원두 칼로리 얼마야?', 'D|스타벅스 하우스블렌드 원두', /칼로리|확인할 수 없|확인되지 않/]
+  ];
+  for (const [question, classify, topic] of targetedAnswerCases) {
+    const r = await H.ask({ question }, { classify, answer: '삼성전자 갤럭시탭 S10 FE를 먼저 추천드려요. 현재가는 629,000원으로 확인돼요.' });
+    assert.match(r.body.text, topic, `${question}: answer must address the requested fact\n${r.body.text}`);
+    assert.doesNotMatch(r.body.text, /먼저 추천드려요/, `${question}: do not replace a fact question with an unsolicited recommendation`);
+  }
+  const cosoriHistory = await H.ask({ question: '코소리 에어프라이어 5.5L 최근 한 달 가격 흐름 알려줘' }, {
+    classify: 'E|코소리 에어프라이어 5.5L', answer: '검색된 상품을 추천드려요.'
+  });
+  assert.ok((cosoriHistory.body.items || []).some(x => x.productId === 'AP-COSORI' && x.vendorItemId === 'AP-COSORI-V1'),
+    'decimal capacity history question must retain the exact product and vendorItemId');
+  assert.match(cosoriHistory.body.text, /가격 기록|관측/);
+  const northfaceSizePrice = await H.ask({ question: '노스페이스 눕시 M 사이즈 얼마야?' }, {
+    classify: 'D|노스페이스 눕시 M', answer: 'M 옵션 가격을 확인했어요.'
+  });
+  assert.match(northfaceSizePrice.body.text, /379,000원/,
+    'an M-size option-price question must include its verified card price');
+  assert.doesNotMatch(northfaceSizePrice.body.text, /사이즈 자료가 없어/);
+
   assert.equal(H.counters.external, 0);
   assert.equal(H.counters.dbWrites, 0);
-  console.log(`AI_ANSWER_QUALITY ${cases.length} original contradiction cases + tablet/headphone/TWS identity and exclusion cases + 4 budget-identity cases + relaxation evidence + 2 comparisons PASS; real GPT 0, external 0, DB writes 0`);
+  console.log(`AI_ANSWER_QUALITY ${cases.length} original contradiction cases + tablet/headphone/TWS identity and exclusion cases + 4 budget-identity cases + relaxation evidence + 2 comparisons + injected evaluator defects PASS; real GPT 0, external 0, DB writes 0`);
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

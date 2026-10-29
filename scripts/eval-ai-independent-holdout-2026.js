@@ -249,6 +249,7 @@ function readQuestions(file) {
       answerSource: 'offline-mocked-gpt + real-handler + fixture-catalog',
       verdict: why ? 'FAIL' : 'PASS', why: why || '',
       searchEvidence: actualSearchEvidence(searchEvidence),
+      priceHistoryEvidence: H.priceHistoryEvidenceForCards(cards(r)),
       products: cards(r).map(c => ({ productId: c.productId, vendorItemId: c.vendorItemId || '',
         title: c.title || c.name || '', lprice: Number(c.lprice) || 0, mallName: c.mallName || '', note: c.note || '' })),
       productIds: cards(r).map(c => `${c.productId}/${c.vendorItemId || ''}`), text: answerText(r),
