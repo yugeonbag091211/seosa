@@ -7197,7 +7197,10 @@ module.exports = async function handler(req, res) {
       minPrice: constraints && constraints.budgetMin,
       avoidGaming: constraints && constraints.avoidGaming,
       excludedTier: AIID.TIER.EXCLUDED,
-      historyQuestion: groundedAnswer.isPriceHistoryQuestion(q),
+      // When no current card is shown, the existing signed-option history
+      // fallback already enforces provenance and can truthfully quote a past
+      // recorded price even though it cannot verify today's listing price.
+      historyQuestion: cards.length > 0 && groundedAnswer.isPriceHistoryQuestion(q),
       historyVerified: !!(verifiedGroundedSubject
         && deal && deal.evidence && Number(deal.evidence.count) > 0
         && Number(deal.evidence.low) > 0)
