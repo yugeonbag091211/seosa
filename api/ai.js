@@ -6790,6 +6790,24 @@ module.exports = async function handler(req, res) {
     const verifiedGroundedSubject = singleSubject
       || (identityState === 'EXACT' ? items[0] : null)
       || (contextRaw.length === 1 && items.length === 1 ? items[0] : null);
+    /*
+     * FACT_QUESTION_UNVERIFIED_20261029
+     * An unverified model name is not grounds for a generic recommendation
+     * when the user actually asked for a specification or historical fact.
+     * Do not infer any spec, recorded low or future price from a nearby item.
+     */
+    const vagueFactReply = /(?:먼저 추천드려요|확인된 상품이 없어 지금은 추천하기 어려워요|지금 조건에서는 .*권할 만해요|지금 조건에서는 .*권해요)/u.test(String(text || ''));
+    if (!verifiedGroundedSubject && ['B', 'C', 'D', 'E'].includes(intent)
+        && namesSpecificProduct(q) && vagueFactReply
+        && groundedAnswer.isProductSpecQuestion(q)) {
+      text = '질문하신 모델·옵션의 사양은 현재 확인된 자료만으로 검증할 수 없어요. 해당 사양은 제조사 공식 사양표나 판매처에서 확인해 주세요.';
+      degradedByGrounding = true;
+    } else if (!verifiedGroundedSubject && ['B', 'C', 'D', 'E'].includes(intent)
+        && namesSpecificProduct(q) && vagueFactReply
+        && groundedAnswer.isPriceHistoryQuestion(q)) {
+      text = '질문하신 모델·옵션의 가격 기록과 확인 시점을 정확하게 연결하지 못했어요. 따라서 최근 가격 흐름이나 할인 여부를 단정할 수 없고, 다음 주 가격도 예측할 수 없어요. 정확한 옵션과 기록이 확인되면 다시 판단할 수 있어요.';
+      degradedByGrounding = true;
+    }
     if (productLookupIntent && verifiedGroundedSubject && groundedAnswer.isProductSpecQuestion(q)) {
       const exactSubject = verifiedGroundedSubject;
       text = groundedAnswer.groundedSpecificationAnswer(q, exactSubject);
@@ -6867,6 +6885,13 @@ module.exports = async function handler(req, res) {
         text = `${verifiedTitle}의 검색 결과 표시 판매가는 ${won(verifiedPrice)}원이에요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 선택 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.`;
         degradedByGrounding = true;
       }
+    }
+
+    // Future prices are never predictable from observed listings alone, even
+    // when a grounded history explanation covers today's recorded observations.
+    if (groundedAnswer.isPriceHistoryQuestion(q) && /다음\\s*(?:주|달)/u.test(q)
+        && !/(?:예측할 수 없|단정할 수 없|알 수 없|예측은 어렵)/u.test(String(text || ''))) {
+      text = `${String(text || '').trim()}\\n\\n다음 주·다음 달의 실제 판매가는 관측 기록만으로 예측할 수 없어요.`.trim();
     }
 
     /*
