@@ -7085,14 +7085,30 @@ module.exports = async function handler(req, res) {
         && !/(?:실제 결제 금액|실제 결제가는|쿠폰·카드|쿠폰|배송비)/.test(text)) {
       text = `${text.trim()}\n\n검색 결과 가격은 판매 페이지에 표시된 판매가예요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.`;
     }
-    // FINAL_HISTORY_QUALITY_GATE_20261029 — the last server-side check runs
-    // after all model sanitizers and safe fallbacks. Never answer a price-trend
-    // question with nothing but a product recommendation/listing price.
-    if (searchState === 'found' && cards.length
-        && groundedAnswer.isPriceHistoryQuestion(q)
-        && /(?:먼저 추천드려요|먼저 권해요)/u.test(String(text || ''))
-        && !/(?:가격 기록|가격 이력|가격 흐름|관측|기록상|평균보다|정가 대비|예측할 수 없|단정할 수 없|확인할 수 없|확인하지 못)/u.test(String(text || ''))) {
-      text = '이 상품의 최근 가격 하락 여부와 현재 가격이 싼 편인지는 검증된 가격 기록을 충분히 확인하지 못해 단정할 수 없어요. 검색 결과의 표시 판매가만으로 과거보다 가격이 내려갔는지 판단할 수 없고, 미래 가격도 예측할 수 없어요.';
+    // FINAL_HISTORY_QUALITY_GATE_20261029
+    // Direct price-history/cheapness questions require option-scoped history
+    // evidence. A listing price plus "recommend" is not a history answer.
+    // Reuse the same evidence-grounded renderer as other history questions,
+    // NEVER another search hit's or the previous chat product's observations.
+    const historyEvidenceQuestion = groundedAnswer.isPriceHistoryQuestion(q)
+      && /(?:가격\\s*떨어진|이\\s*가격이면\\s*싼\\s*편)/u.test(q);
+    const historyEvidenceInAnswer = /(?:가격\\s*(?:기록|이력|흐름)|관측|기록상|평균보다|기록을\\s*확인|기록이\\s*없|기록은\\s*없|기록이\\s*부족)/u.test(String(text || ''));
+    if (historyEvidenceQuestion && !historyEvidenceInAnswer) {
+      const matchingVerifiedOption = verifiedGroundedSubject && cards.length
+        && String(verifiedGroundedSubject.productId || '') !== ''
+        && String(verifiedGroundedSubject.productId) === String(cards[0].productId)
+        && String(verifiedGroundedSubject.vendorItemId || '') !== ''
+        && String(verifiedGroundedSubject.vendorItemId) === String(cards[0].vendorItemId || '');
+      if (matchingVerifiedOption) {
+        const evidenceForCard = Object.assign({}, verifiedGroundedSubject, cards[0]);
+        text = groundedAnswer.groundedPriceHistoryAnswer(q, evidenceForCard, deal);
+        if (/이\\s*가격이면\\s*싼\\s*편/.test(q)
+            && !/(?:싼\\s*편|저렴한\\s*편)/.test(text)) {
+          text += ' 이 기록만으로 다른 모든 판매처와 비교해 싼 편인지까지 확정할 수는 없어요.';
+        }
+      } else {
+        text = '요청하신 상품·옵션의 검증된 가격 기록을 확인하지 못해 최근 가격이 내려갔는지, 현재 싼 편인지 판단할 수 없어요. 다른 상품의 기록을 대신 사용하지 않겠습니다.';
+      }
       degradedByGrounding = true;
     }
     text = groundedAnswer.repairProductParticles(text, items.concat(cards));
