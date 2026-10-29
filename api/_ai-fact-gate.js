@@ -67,7 +67,17 @@ function applyFactGate(payload, options = {}) {
 
   for (const card of offered) {
     const authoritative = trusted.find(t => isSameOffer(card, t));
-    const ranked = eligible.find(it => isSameOffer(card, it));
+    // Non-Coupang cards intentionally omit internal vendorItemId. Permit
+    // only a unique merchant/product/price match to a verified ranked row.
+    const matches = eligible.filter(it => {
+      if (isSameOffer(card, it)) return true;
+      if (!card || !it || !id(card.productId) || id(card.productId) !== id(it.productId)) return false;
+      const mall = id(card.mall), ownerMall = id(it.mallId || it.mall);
+      if (!mall || mall.toLowerCase() !== ownerMall.toLowerCase()) return false;
+      if (card.isCoupang || /쿠팡|coupang/i.test(mall) || id(card.vendorItemId)) return false;
+      return price(card) > 0 && price(card) === price(it);
+    });
+    const ranked = matches.length === 1 ? matches[0] : null;
     if (!authoritative || !ranked) {
       failures.push('UNKNOWN_PRODUCT_ID');
       continue;
