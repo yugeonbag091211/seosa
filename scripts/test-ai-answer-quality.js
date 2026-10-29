@@ -394,6 +394,27 @@ const cases = [
   assert.match(philipsReply.body.text, /필립스|예산|조건|확인|찾지 못/,
     'the response must explain the missing requested offer rather than silently switching products');
 
+
+  // A previous signed-session user budget is the only acceptable numeric
+  // provenance for "예산은 그대로"; other brands' prices cannot authorize it.
+  const inheritedBudgetState = [];
+  inheritedBudgetState.__budgetMax = 120000;
+  const philipsBudgetEvidence = {
+    question: '예산은 그대로 두고 필립스 모델만', category: 'conversation', session: 'qa:5', turn: 4,
+    cards: [], searchEvidence: [
+      { productId: 'QA-PHILIPS', vendorItemId: 'QA-PHILIPS-V1', title: '필립스 에어프라이어 4.1L', lprice: 139000 },
+      { productId: 'QA-COSORI', vendorItemId: 'QA-COSORI-V1', title: '코소리 에어프라이어 5.5L', lprice: 99000 }
+    ], priceHistoryEvidence: [],
+    text: '필립스 모델은 예산 12만원 이하 상품이 이번 검색 결과에 없었어요. 예산을 139,000원까지(19,000원 더) 늘리면 선택할 수 있어요.'
+  };
+  assert.equal(ANSWER_QUALITY(philipsBudgetEvidence, inheritedBudgetState).quality.priceSpecEvidence.verdict, 'PASS',
+    'verified exact-brand budget relaxation must pass with signed previous user budget');
+  assert.equal(ANSWER_QUALITY({ ...philipsBudgetEvidence,
+    text: philipsBudgetEvidence.text + ' 코소리 가격은 99,000원입니다.' }, inheritedBudgetState).quality.priceSpecEvidence.verdict, 'FAIL',
+    'an unrelated brand must not be allowed as a Philips offer price');
+  assert.equal(ANSWER_QUALITY(philipsBudgetEvidence, []).quality.priceSpecEvidence.verdict, 'FAIL',
+    'a prior signed user budget is mandatory for inherited-budget arithmetic');
+
   assert.equal(H.counters.external, 0);
   assert.equal(H.counters.dbWrites, 0);
   console.log(`AI_ANSWER_QUALITY ${cases.length} original contradiction cases + tablet/headphone/TWS identity and exclusion cases + 4 budget-identity cases + relaxation evidence + 2 comparisons + injected evaluator defects PASS; real GPT 0, external 0, DB writes 0`);
