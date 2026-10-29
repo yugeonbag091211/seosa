@@ -40,3 +40,35 @@ Quality failure breakdown:
 - Rerun all original 1,250 plus new unseen holdout and inspect full answers.
 - Establish Preview authorization and a verified isolated read-only/test DB before any live GPT/real shopping E2E. Run at least 50 diverse real GPT questions within $5 only after safe setup.
 - Obtain green GitHub checks for the latest head and review the answer text before merge. Do **not** deploy Production without separate approval.
+
+
+## Resolution addendum — 2026-10-29, follow-up 15/15 repaired
+
+**Current code head at reproduction time:** `7e7d863` (all changes stayed on Draft PR #206; no production deployment). This addendum supersedes the **1,235/1,250** count above for the *regenerated latest-code results*.
+
+### Root causes and corrections
+
+- The 14 history-answer failures were caused by model/fallback prose giving only a recommendation or listing price, without answering whether a price had fallen or was cheap. The final server answer gate also had incorrectly escaped `\\s` regular expressions, so several phrasings were not detected. Corrected the regex, required evidence-backed history text from a verified exact offer (productId + vendorItemId), and kept explicit uncertainty when observation data is insufficient. When a verified listing price is displayed but history inference is unsupported, the answer includes that observed listing price without treating it as a checkout total or proven trend.
+- The 15th failure involved a 120,000 KRW Philips-only follow-up. The correct Philips offer at 139,000 KRW was removed by the budget filter, but the remaining Cosori/Cuckoo tier-2 mismatched offers were retained as candidate `items` (even with `cards=[]`). The model could then reuse Cosori's 5.5L/99,000 KRW. New budget handling converts an all-over-budget exact-brand/model request into an explicit `BUDGET` no-result answer instead of treating the cheaper other-brand products as matches. No product/card identity was relaxed.
+- The independent rubric previously evaluated the inherited-budget follow-up with no `budgetMax` because the user said "예산은 그대로" rather than repeating 120,000 KRW. The rubric now retrieves only the **last explicit user budget from the same test conversation** and permits only explicitly described, product/vendor-verified over-budget candidate prices and correct arithmetic, with exact-brand matching for "필립스 모델만". Added negative controls that reject a different brand's 99,000 KRW and unsupported budget arithmetic.
+
+### Latest isolated mock/fixture QA
+
+| Area | Questions | Function pass | Answer-quality pass | Fail |
+| --- | ---: | ---: | ---: | ---: |
+| Original distinct handler questions | 1,000 | 1,000 | 1,000 | 0 |
+| Independent holdout | 200 | 200 | 200 | 0 |
+| Additional independent questions | 50 | 50 | 50 | 0 |
+| **Total** | **1,250** | **1,250** | **1,250** | **0** |
+
+The 14 exact history questions and the 4-turn Philips conversation are now dedicated handler-level regression tests. Additional negative controls cover incorrectly borrowed catalog prices/specs and inherited-budget claims. Tests were run against `api/ai.js` with mock GPT, fixture shopping and an in-memory DB, not the real GPT/shopping environment. **Actual GPT calls: 0; real shopping API calls: 0; external API cost: $0; Production deployments: 0.** Latest QA reports were regenerated in an isolated Vercel sandbox using:
+
+```bash
+node scripts/test-ai-answer-quality.js
+node scripts/eval-ai-1000-distinct.js --out reports/ai-answer-quality-2026-10-29/offline-1000-after
+node scripts/eval-ai-independent-holdout-2026.js --out reports/ai-answer-quality-2026-10-29/holdout-200-after.jsonl
+node scripts/eval-ai-answer-quality-new-questions.js
+node scripts/audit-ai-answer-quality.js --out /tmp/qa-final.jsonl
+```
+
+**Important artifact qualification:** These refreshed answer-level JSONL outputs were generated in the sandbox and are reproducible with the commands above; the older JSONL files already committed to the branch were not overwritten via GitHub's file API by this QA addendum. Reviewers must regenerate them before citing individual current-answer transcripts. A 100% rule-based score still does not establish human-level quality or live GPT correctness. PR #206 remains Draft; production deployment is not authorized.
