@@ -85,7 +85,8 @@ const MAX_HISTORY_LEN  = 450;    // 히스토리 메시지 1건당 — 상품명
  * 때 이미 창 밖이었다. 웹·앱이 보내는 만큼(10칸 = 5턴) 싣는다. 가격 근거가 아닌 것은 그대로다(P.priorTurns).
  */
 const MAX_PROMPT_HISTORY_MSGS = 10;
-const MAX_CTX_ITEMS    = 8;
+// Expand only the verified first-search candidate window; follow-up card limit unchanged.
+const MAX_CTX_ITEMS    = 12;
 const MAX_TITLE_LEN    = 120;
 // ADPICK product_id is a full SHA-256 hex string (64 chars). Keep headroom for future source IDs.
 const MAX_PRODUCT_ID_LEN = 128;
@@ -1306,7 +1307,8 @@ async function classifyIntent(q, hist, budget) {
  * 한 번의 대화에서 여러 번 검색하면 실제 검색창을 쓰는 사용자의 몫을 먹는다.
  * 무한 호출 방지는 이 상수 하나로 충분하다 — 루프를 돌 구조 자체를 만들지 않는다.
  */
-const AI_SEARCH_LIMIT = 6;
+const AI_SEARCH_LIMIT = 10;
+const AI_ADPICK_LIMIT = 20;
 
 /*
  * 검색에 쓸 수 있는 시간.
@@ -1417,6 +1419,7 @@ async function searchProducts(query, budgetMs) {
     const searchCap = Math.min(AI_SEARCH_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
     const searched = await settleWithin(searchAll(aiSearchKeyword(query), {
       coupangLimit: AI_SEARCH_LIMIT,
+      adpickLimit: AI_ADPICK_LIMIT,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS },
       // 이름표뿐이다(/api/search 와 같다). maxWaitMs 를 넣지 않으므로 ADPICK 대기 정책은 그대로다.
       adpickOpts: { source: 'ai' },
@@ -5202,12 +5205,13 @@ module.exports = async function handler(req, res) {
          */
         items.forEach(it => {
           if (!Array.isArray(it._excludeNames) || !it._excludeNames.length) return;
-          if (it._identity && it._identity.tier >= AIID.TIER.EXCLUDED) return;
+          // Clear misleading broad-token exclusion notes without undoing the
+          // independent exact identity exclusion gate (e.g. Buds2 vs Buds3 Pro).
           const keep = it._excludeNames.filter(n => !AIID.mentionedIn(n, contract.positive));
           if (keep.length === it._excludeNames.length) return;
           it.notes = (it.notes || []).filter(n => !/^제외 요청하신 /.test(n));
           if (keep.length) it.notes.push(`제외 요청하신 ${keep.join('·')} 제품`);
-          else it._excludePenalty = 0;
+          else if (!it._identity || it._identity.tier < AIID.TIER.EXCLUDED) it._excludePenalty = 0;
           it._excludeNames = keep;
         });
         // 근접 후보가 무엇이 다른지는 사실로 남긴다 — "조건 대조:" 줄의 맨 앞(간추린 형태는 notes[0] 만 싣는다).
