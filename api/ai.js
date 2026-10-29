@@ -5548,7 +5548,7 @@ module.exports = async function handler(req, res) {
             const exactExcludedByBudget = budgetOutside.some(it =>
               it && it._identity && it._identity.tier === AIID.TIER.EXACT);
             if (identityState === 'EXACT' && exactExcludedByBudget
-                && !items.some(it => it && it._identity && it._identity.tier === AIID.TIER.EXACT)) {
+                && !items.some(it => it && it._identity && it._identity.tier <= AIID.TIER.NEAR)) {
               items = [];
               identityState = 'BUDGET';
             }
@@ -5670,7 +5670,7 @@ module.exports = async function handler(req, res) {
           const exactExcludedByBudget = budgetOutside.some(it =>
             it && it._identity && it._identity.tier === AIID.TIER.EXACT);
           if (identityState === 'EXACT' && exactExcludedByBudget
-              && !items.some(it => it && it._identity && it._identity.tier === AIID.TIER.EXACT)) {
+              && !items.some(it => it && it._identity && it._identity.tier <= AIID.TIER.NEAR)) {
             items = [];
             identityState = 'BUDGET';
           }
