@@ -184,6 +184,21 @@ function grade(row, previousSessionPrices) {
   const evidencePrices = selectedSearchEvidence.map(c => Number(c.lprice)).filter(Boolean);
   const observedHistoryPrices = selectedHistoryEvidence.map(c => Number(c.price)).filter(Boolean);
   const allowedWon = new Set([...won(q), ...(budgetMax(q) ? [budgetMax(q)] : []), ...cards.map(c => Number(c.lprice)).filter(Boolean), ...evidencePrices, ...observedHistoryPrices, ...previousSessionPrices]);
+  // No-card budget relaxation is a different evidence role from pricing a
+  // selected item. Permit only verified search-hit prices explicitly described
+  // as *over-budget alternatives* and their arithmetic deltas, never as a
+  // purchase price for the requested/selected option.
+  const budgetRelaxation = !cards.length && budgetMax(q) > 0
+    && /이번 검색 결과에 없었/.test(text)
+    && /예산을\s*[\d,]+원까지\s*\([\d,]+원 더\)\s*늘리면/.test(text);
+  if (budgetRelaxation) {
+    budgetEvidence.filter(c => !!(c.productId && c.vendorItemId) && Number(c.lprice) > budgetMax(q))
+      .forEach(c => {
+        const candidatePrice = Number(c.lprice);
+        allowedWon.add(candidatePrice);
+        allowedWon.add(candidatePrice - budgetMax(q));
+      });
+  }
   const allPrices = [...new Set([...cards.map(c => Number(c.lprice)), ...evidencePrices, ...observedHistoryPrices].filter(Boolean))];
   for (let i = 0; i < allPrices.length; i++) for (let j = i + 1; j < allPrices.length; j++) allowedWon.add(Math.abs(allPrices[i] - allPrices[j]));
   const cap = budgetMax(q);
