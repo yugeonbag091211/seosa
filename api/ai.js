@@ -6847,6 +6847,29 @@ module.exports = async function handler(req, res) {
     }
 
     /*
+     * CARD_ONLY_PRICE_FALLBACK_20261029
+     * A model may say only "read the card" even when the server has a verified
+     * exact option and a listing price. Answer that narrow question directly
+     * from the verified card, never from a model-generated amount or an
+     * unrelated search candidate. Do not turn a listing into a checkout price.
+     */
+    const cardOnlyPriceAnswer = /^\s*확인된 상품 카드에서 상품명과 (?:표시 )?가격을 확인해 주세요\.\s*$/u;
+    if (searchState === 'found' && identityState === 'EXACT' && cards.length
+        && ['C', 'D', 'E'].includes(intent)
+        && /(?:가격|판매가|현재가|결제액|결제가|얼마)/u.test(q)
+        && !groundedAnswer.isPriceHistoryQuestion(q)
+        && !groundedAnswer.isProductSpecQuestion(q)
+        && cardOnlyPriceAnswer.test(String(text || ''))) {
+      const verifiedCard = cards[0];
+      const verifiedPrice = Number(verifiedCard.lprice);
+      const verifiedTitle = safeText(AIID.displayTitle(verifiedCard.title || ''), 90);
+      if (verifiedTitle && Number.isSafeInteger(verifiedPrice) && verifiedPrice > 0) {
+        text = `${verifiedTitle}의 검색 결과 표시 판매가는 ${won(verifiedPrice)}원이에요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 선택 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.`;
+        degradedByGrounding = true;
+      }
+    }
+
+    /*
      * 찾아낸 상품은 카드로 함께 내려보낸다.
      *
      * 프론트(Chat.miniCard)는 예전부터 res.items 를 받아 카드를 그릴 준비가
