@@ -234,12 +234,22 @@ function case3() {
   check(front.indexOf('가격은 <b>상품가 기준</b>') < 0,
     '비교표가 "상품가 기준" 이라고 단정하지 않는다');
 
-  check(/PRICE_SOURCE_NOTE/.test(src), '가격 출처 문구가 한 상수로 모여 있다');
-  const note = (src.match(/const PRICE_SOURCE_NOTE = ([\s\S]*?);\r?\n/) || [])[1] || '';
-  check(/알려주지 않아/.test(note),
-    '문구가 "가격 종류를 모른다" 는 사실을 밝힌다');
-  check(/실제 결제 금액은 판매처에서 확인/.test(note),
-    '문구가 실제 결제 금액 확인을 안내한다');
+  // The renderer now uses a mall-specific priceSourceNote function rather
+  // than the removed PRICE_SOURCE_NOTE constant. Validate runtime output.
+  const sourceNote = productPage._internal.priceSourceNote;
+  check(typeof sourceNote === 'function',
+    '가격 출처 안내가 실제 렌더러의 단일 순수 함수로 제공된다');
+  const coupangNote = sourceNote('쿠팡');
+  const adpickNote = sourceNote('ADPICK');
+  check(/확인할 수 없/.test(coupangNote) && /확인할 수 없/.test(adpickNote),
+    '모든 판매처의 가격 종류를 모른다고 명확히 밝힌다');
+  check(/실제 결제 금액은 판매처에서 확인/.test(coupangNote)
+      && /실제 결제 금액은 판매처에서 확인/.test(adpickNote),
+    '모든 판매처가 실제 결제 금액 확인을 안내한다');
+  check(/쿠팡 파트너스 검색 API/.test(coupangNote)
+      && /ADPICK 제휴몰 상품 정보/.test(adpickNote)
+      && !/쿠팡 파트너스/.test(adpickNote),
+    '가격 출처를 판매처별로 사실대로 설명한다');
 
   // 코드가 응답에 없는 가격 필드를 지어내지 않는지.
   const coupang = fs.readFileSync(path.join(__dirname, '..', 'api', '_coupang.js'), 'utf8');
