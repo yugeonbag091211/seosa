@@ -227,7 +227,12 @@ function identityNote(it) {
 
 /** 나머지 후보. 2·3위만 — 그 아래는 사용자가 카드로 본다. */
 function others(items) {
-  const list = (items || []).slice(1, 3).filter(Boolean);
+  // Excluded product states are not fallback recommendations. In particular,
+  // do not quote a refused refurbished item (or its price) as a valid option
+  // immediately after the user explicitly asked for a new product.
+  const list = (items || []).slice(1)
+    .filter(it => it && !/(?:제외 요청하신|제외한 상태|제외된 상태)/.test(identityNote(it)))
+    .slice(0, 2);
   return list.map((it, i) => {
     const p = priceOf(it);
     return `${i + 2}. ${nameOf(it, 40)}${p > 0 ? ` — ${won(p)}원` : ''}${identityNote(it)}`;
