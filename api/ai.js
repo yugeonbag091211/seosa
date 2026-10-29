@@ -5519,12 +5519,15 @@ module.exports = async function handler(req, res) {
          */
         items.forEach(it => {
           if (!Array.isArray(it._excludeNames) || !it._excludeNames.length) return;
-          if (it._identity && it._identity.tier >= AIID.TIER.EXCLUDED) return;
+          // More candidates can expose an excluded *other model* in the GPT
+          // context. Remove false broad-token excludes ("Pro") from its
+          // explanatory notes as well, but keep the independently verified
+          // _identity.tier=EXCLUDED decision intact.
           const keep = it._excludeNames.filter(n => !AIID.mentionedIn(n, contract.positive));
           if (keep.length === it._excludeNames.length) return;
           it.notes = (it.notes || []).filter(n => !/^제외 요청하신 /.test(n));
           if (keep.length) it.notes.push(`제외 요청하신 ${keep.join('·')} 제품`);
-          else it._excludePenalty = 0;
+          else if (!it._identity || it._identity.tier < AIID.TIER.EXCLUDED) it._excludePenalty = 0;
           it._excludeNames = keep;
         });
         // 근접 후보가 무엇이 다른지는 사실로 남긴다 — "조건 대조:" 줄의 맨 앞(간추린 형태는 notes[0] 만 싣는다).
