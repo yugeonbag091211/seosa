@@ -7111,6 +7111,18 @@ module.exports = async function handler(req, res) {
       }
       degradedByGrounding = true;
     }
+    // If history data is insufficient but a current *listing* card was
+    // independently verified, still answer the observed listing-price part
+    // of the question. This is not checkout-price or price-trend evidence.
+    if (groundedAnswer.isPriceHistoryQuestion(q) && cards.length
+        && /^이 상품·옵션의 가격 흐름을 판단할 검증된 기록 근거가/.test(String(text || ''))) {
+      const shown = cards[0];
+      const amount = Number(shown.lprice);
+      if (shown.productId && shown.vendorItemId && Number.isSafeInteger(amount) && amount > 0) {
+        text = `검색 결과에 표시된 판매가는 ${won(amount)}원이에요. ${text}`;
+        degradedByGrounding = true;
+      }
+    }
     text = groundedAnswer.repairProductParticles(text, items.concat(cards));
     let replyCards=cards;
     if (BW.oneCardFollowup(q,hist,intent) && cards.length) {
