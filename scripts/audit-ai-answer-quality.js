@@ -188,15 +188,23 @@ function grade(row, previousSessionPrices) {
   // selected item. Permit only verified search-hit prices explicitly described
   // as *over-budget alternatives* and their arithmetic deltas, never as a
   // purchase price for the requested/selected option.
-  const budgetRelaxation = !cards.length && budgetMax(q) > 0
+  // Follow-up "예산은 그대로" inherits only the budget explicitly supplied
+  // by the user earlier in the SAME signed test session, never a model value.
+  const inheritedLimit = row.session && /예산.{0,8}(?:그대로|유지)/u.test(q)
+    ? Number(previousSessionPrices.__budgetMax) || 0 : 0;
+  const scopedBudget = budgetMax(q) || inheritedLimit;
+  const requestedModel = /([가-힣A-Za-z0-9-]{2,})\s*모델만/u.exec(q);
+  const budgetRelaxation = !cards.length && scopedBudget > 0
     && /이번 검색 결과에 없었/.test(text)
     && /예산을\s*[\d,]+원까지\s*\([\d,]+원 더\)\s*늘리면/.test(text);
   if (budgetRelaxation) {
-    budgetEvidence.filter(c => !!(c.productId && c.vendorItemId) && Number(c.lprice) > budgetMax(q))
+    budgetEvidence.filter(c =>
+      c.productId && c.vendorItemId && Number(c.lprice) > scopedBudget
+      && (!requestedModel || String(c.title || '').includes(requestedModel[1])))
       .forEach(c => {
         const candidatePrice = Number(c.lprice);
         allowedWon.add(candidatePrice);
-        allowedWon.add(candidatePrice - budgetMax(q));
+        allowedWon.add(candidatePrice - scopedBudget);
       });
   }
   const allPrices = [...new Set([...cards.map(c => Number(c.lprice)), ...evidencePrices, ...observedHistoryPrices].filter(Boolean))];
@@ -357,8 +365,12 @@ function main() {
     const state = row.session ? sessionState.get(row.session) || { prices: [], top: '' } : { prices: [], top: '' };
     const contextPrices = state.prices.slice();
     contextPrices.__topProductId = state.top;
+    contextPrices.__budgetMax = Number(state.budgetMax) || 0;
     const graded = grade(row, contextPrices);
     if (row.session) {
+      // Last explicitly supplied user budget supersedes the prior topic's
+      // budget; do not learn budgets from assistant responses or search hits.
+      if (budgetMax(row.question) > 0) state.budgetMax = budgetMax(row.question);
       state.prices.push(...row.cards.map(c => Number(c.lprice)).filter(Boolean));
       state.top = row.topProductId || row.cards[0] && row.cards[0].productId || state.top;
       sessionState.set(row.session, state);
