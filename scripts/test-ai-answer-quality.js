@@ -276,6 +276,52 @@ const cases = [
     'an M-size option-price question must include its verified card price');
   assert.doesNotMatch(northfaceSizePrice.body.text, /사이즈 자료가 없어/);
 
+
+  // CROSS_PRODUCT_EVIDENCE_20261029 — negative controls must fail the rubric,
+  // even when a different search hit actually has the claimed price/spec.
+  const matchedOffer = { productId: 'QA-A', vendorItemId: 'QA-A-V1',
+    title: '검증용 노트북 A 8GB 256GB', lprice: 500000 };
+  const unrelatedOffer = { productId: 'QA-B', vendorItemId: 'QA-B-V1',
+    title: '검증용 노트북 B 32GB 1TB', lprice: 690000 };
+  const unrelatedEvidence = [matchedOffer, unrelatedOffer];
+  const borrowedPrice = ANSWER_QUALITY({
+    question: '검증용 노트북 A 판매가 얼마야?', category: 'search',
+    text: '검증용 노트북 A의 현재가는 690,000원이에요. 실제 결제 금액은 판매처에서 확인해 주세요.',
+    cards: [matchedOffer], searchEvidence: unrelatedEvidence, priceHistoryEvidence: []
+  }, []);
+  assert.equal(borrowedPrice.quality.priceSpecEvidence.verdict, 'FAIL',
+    'a different search candidate must not authenticate the selected option price');
+  const borrowedSpec = ANSWER_QUALITY({
+    question: '검증용 노트북 A 램 사양 알려줘', category: 'spec',
+    text: '검증용 노트북 A는 32GB 램을 장착했어요.',
+    cards: [matchedOffer], searchEvidence: unrelatedEvidence, priceHistoryEvidence: []
+  }, []);
+  assert.equal(borrowedSpec.quality.priceSpecEvidence.verdict, 'FAIL',
+    'a different search candidate must not authenticate the selected option specification');
+  const validPrice = ANSWER_QUALITY({
+    question: '검증용 노트북 A 판매가 얼마야?', category: 'search',
+    text: '검증용 노트북 A의 표시 판매가는 500,000원이에요. 실제 결제 금액은 판매처에서 확인해 주세요.',
+    cards: [matchedOffer], searchEvidence: unrelatedEvidence, priceHistoryEvidence: []
+  }, []);
+  assert.equal(validPrice.quality.priceSpecEvidence.verdict, 'PASS',
+    'matching option price remains supported');
+
+  // A vague model fallback may not send the user away to read a price card.
+  for (const [question, classify, productId, price] of [
+    ['갤럭시탭 S9 FE의 검색 표시 가격과 결제액을 구분해서 알려 줘', 'D|갤럭시탭 S9 FE', 'TB-S9FE', 479000],
+    ['레노버 탭 P12 태블릿 단말 자체의 가격을 확인해 줘', 'D|레노버 탭 P12', 'TB-P12', 329000]
+  ]) {
+    const reply = await H.ask({ question }, { classify,
+      answer: '확인된 상품 카드에서 상품명과 표시 가격을 확인해 주세요.' });
+    const matched = (reply.body.items || []).find(c => c.productId === productId);
+    assert.ok(matched && Number(matched.lprice) === price, question + ': exact priced card missing');
+    assert.match(reply.body.text, new RegExp('표시 판매가는 ' + price.toLocaleString('en-US') + '원'),
+      question + ': server must answer the verified listing price directly');
+    assert.doesNotMatch(reply.body.text, /확인된 상품 카드에서 상품명과 (?:표시 )?가격을 확인해 주세요/,
+      question + ': vague card-only model fallback escaped to the user');
+    assert.match(reply.body.text, /실제 결제 금액/, question + ': checkout price is distinct');
+  }
+
   assert.equal(H.counters.external, 0);
   assert.equal(H.counters.dbWrites, 0);
   console.log(`AI_ANSWER_QUALITY ${cases.length} original contradiction cases + tablet/headphone/TWS identity and exclusion cases + 4 budget-identity cases + relaxation evidence + 2 comparisons + injected evaluator defects PASS; real GPT 0, external 0, DB writes 0`);
