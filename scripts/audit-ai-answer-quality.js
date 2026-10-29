@@ -169,8 +169,20 @@ function grade(row, previousSessionPrices) {
   }
   if (row.category !== 'security' && /(?:추천|찾아|보여|검색)/.test(q) && !cards.length && !noResult.test(text)) issues.questionSatisfaction.push('상품 탐색 요청에 카드도 검색 결과 부재 안내도 없음');
 
-  const evidencePrices = row.searchEvidence.map(c => Number(c.lprice)).filter(Boolean);
-  const observedHistoryPrices = (row.priceHistoryEvidence || []).map(c => Number(c.price)).filter(Boolean);
+  // EVIDENCE_PER_EXACT_OPTION_20261029: search hits are not interchangeable.
+  // Only source facts that match a displayed product AND its vendor option ID
+  // may validate an assertion about that product. Nearby/cheaper search hits
+  // must not launder their prices, specifications, or discounts into its answer.
+  const sameVerifiedOption = (candidate, card) => !!(candidate && card
+    && card.productId && candidate.productId
+    && String(candidate.productId) === String(card.productId)
+    && String(candidate.vendorItemId || '') === String(card.vendorItemId || ''));
+  const selectedSearchEvidence = row.searchEvidence.filter(candidate =>
+    cards.some(card => sameVerifiedOption(candidate, card)));
+  const selectedHistoryEvidence = (row.priceHistoryEvidence || []).filter(entry =>
+    cards.some(card => sameVerifiedOption(entry, card)));
+  const evidencePrices = selectedSearchEvidence.map(c => Number(c.lprice)).filter(Boolean);
+  const observedHistoryPrices = selectedHistoryEvidence.map(c => Number(c.price)).filter(Boolean);
   const allowedWon = new Set([...won(q), ...(budgetMax(q) ? [budgetMax(q)] : []), ...cards.map(c => Number(c.lprice)).filter(Boolean), ...evidencePrices, ...observedHistoryPrices, ...previousSessionPrices]);
   const allPrices = [...new Set([...cards.map(c => Number(c.lprice)), ...evidencePrices, ...observedHistoryPrices].filter(Boolean))];
   for (let i = 0; i < allPrices.length; i++) for (let j = i + 1; j < allPrices.length; j++) allowedWon.add(Math.abs(allPrices[i] - allPrices[j]));
@@ -184,7 +196,7 @@ function grade(row, previousSessionPrices) {
   // \b does not recognize Hangul as a word character in JavaScript, so it
   // silently missed Korean units such as "72시간" and "15인치".
   const specRe = /(?<![A-Z0-9])(\d+(?:\.\d+)?\s?(?:GB|TB|L|인치|형|mAh|kg|W|시간|Hz|mm|cm|년|개월))(?![A-Z0-9])/gi;
-  const evidenceText = `${q} ${cards.concat(row.searchEvidence).map(c => `${c.title || ''} ${c.note || ''}`).join(' ')}`;
+  const evidenceText = `${q} ${cards.concat(selectedSearchEvidence).map(c => `${c.title || ''} ${c.note || ''}`).join(' ')}`;
   const specKey = token => {
     const m = /^(\d+(?:\.\d+)?)(gb|tb)$/i.exec(String(token).replace(/\s+/g, ''));
     if (m) return `${Number(m[1]) * (m[2].toLowerCase() === 'tb' ? 1024 : 1)}gb`;
@@ -200,7 +212,7 @@ function grade(row, previousSessionPrices) {
   const historyPctClaimSupported = (value, sentence) => {
     const reported = Number(value);
     const near = n => Number.isFinite(n) && Math.abs(Math.round(n * 10) / 10 - reported) <= 0.05;
-    const noteEvidence = cards.concat(row.searchEvidence).some(c =>
+    const noteEvidence = cards.concat(selectedSearchEvidence).some(c =>
       [...String(c.note || '').matchAll(/(\d+(?:\.\d+)?)\s*%/g)].some(m => near(Number(m[1]))));
     if (noteEvidence) return true;
     if (!row.priceHistoryEvidence.length) return false;
