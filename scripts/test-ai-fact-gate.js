@@ -24,5 +24,16 @@ check('unsupported history',{text:'지난달 최저가 기록했습니다',items
 check('honest unknown history',{text:'지난달 최저가 자료가 부족해 확인할 수 없어요',items:[a]},{historyQuestion:true,historyVerified:false},'PASS');
 check('verified history',{text:'지난달 최저가 95000원',items:[a]},{historyQuestion:true,historyVerified:true},'PASS');
 check('wrong highlighted card',{text:'추천',items:[a],topRecommendation:{...b}},null,'CROSS_PRODUCT_EVIDENCE');
+const adpickCard={productId:'AD1',mall:'ADPICK',title:'일상용 무선 헤드셋',lprice:99000};
+const adpickInternal={...adpickCard,vendorItemId:'INTERNAL-OPTION'};
+check('non-Coupang private option ID is not required on public card',
+ {text:'추천',items:[adpickCard]}, {trustedCards:[adpickCard],eligibleItems:[adpickInternal]}, 'PASS');
+check('ambiguous non-Coupang option match must be rejected',
+ {text:'추천',items:[adpickCard]}, {trustedCards:[adpickCard],
+ eligibleItems:[adpickInternal,{...adpickInternal,vendorItemId:'OTHER'}]}, 'UNKNOWN_PRODUCT_ID');
+check('non-Coupang price mismatch must be rejected',
+ {text:'추천',items:[adpickCard]}, {trustedCards:[adpickCard],
+ eligibleItems:[{...adpickInternal,lprice:100000}]}, 'UNKNOWN_PRODUCT_ID');
+
 console.log('FACT_GATE_SUMMARY',JSON.stringify({asked:pass+fail,pass,fail,external:0,dbWrites:0}));
 if(fail)process.exitCode=1;
