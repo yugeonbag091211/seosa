@@ -6889,9 +6889,9 @@ module.exports = async function handler(req, res) {
 
     // Future prices are never predictable from observed listings alone, even
     // when a grounded history explanation covers today's recorded observations.
-    if (groundedAnswer.isPriceHistoryQuestion(q) && /다음\\s*(?:주|달)/u.test(q)
+    if (groundedAnswer.isPriceHistoryQuestion(q) && /다음\s*(?:주|달)/u.test(q)
         && !/(?:예측할 수 없|단정할 수 없|알 수 없|예측은 어렵)/u.test(String(text || ''))) {
-      text = `${String(text || '').trim()}\\n\\n다음 주·다음 달의 실제 판매가는 관측 기록만으로 예측할 수 없어요.`.trim();
+      text = `${String(text || '').trim()}\n\n다음 주·다음 달의 실제 판매가는 관측 기록만으로 예측할 수 없어요.`.trim();
     }
 
     /*
