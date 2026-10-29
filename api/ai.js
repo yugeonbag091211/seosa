@@ -85,7 +85,10 @@ const MAX_HISTORY_LEN  = 450;    // 히스토리 메시지 1건당 — 상품명
  * 때 이미 창 밖이었다. 웹·앱이 보내는 만큼(10칸 = 5턴) 싣는다. 가격 근거가 아닌 것은 그대로다(P.priorTurns).
  */
 const MAX_PROMPT_HISTORY_MSGS = 10;
-const MAX_CTX_ITEMS    = 8;
+// Up to 12 *verified and identity-gated* product candidates may be checked
+// for a fresh search. Follow-up card count remains governed separately by
+// oneCardFollowup; this does not increase external API call count.
+const MAX_CTX_ITEMS    = 12;
 const MAX_TITLE_LEN    = 120;
 // ADPICK product_id is a full SHA-256 hex string (64 chars). Keep headroom for future source IDs.
 const MAX_PRODUCT_ID_LEN = 128;
@@ -1312,7 +1315,8 @@ async function classifyIntent(q, hist, budget) {
  * 한 번의 대화에서 여러 번 검색하면 실제 검색창을 쓰는 사용자의 몫을 먹는다.
  * 무한 호출 방지는 이 상수 하나로 충분하다 — 루프를 돌 구조 자체를 만들지 않는다.
  */
-const AI_SEARCH_LIMIT = 6;
+const AI_SEARCH_LIMIT = 10; // Coupang API max per call, no extra request
+const AI_ADPICK_LIMIT = 20; // ADPICK max per call, same external request count
 
 /*
  * 검색에 쓸 수 있는 시간.
@@ -1423,6 +1427,7 @@ async function searchProducts(query, budgetMs) {
     const searchCap = Math.min(AI_SEARCH_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
     const searched = await settleWithin(searchAll(aiSearchKeyword(query), {
       coupangLimit: AI_SEARCH_LIMIT,
+      adpickLimit: AI_ADPICK_LIMIT,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS },
       // 이름표뿐이다(/api/search 와 같다). maxWaitMs 를 넣지 않으므로 ADPICK 대기 정책은 그대로다.
       adpickOpts: { source: 'ai' },
