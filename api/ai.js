@@ -7074,7 +7074,7 @@ module.exports = async function handler(req, res) {
         && groundedAnswer.isPriceHistoryQuestion(q)
         && /(?:먼저 추천드려요|먼저 권해요)/u.test(String(text || ''))
         && !/(?:가격 기록|가격 이력|가격 흐름|관측|기록상|평균보다|정가 대비|예측할 수 없|단정할 수 없|확인할 수 없|확인하지 못)/u.test(String(text || ''))) {
-      text = '이 상품의 최근 가격 하락 여부와 현재 가격이 싼 편인지는 검증된 가격 기록을 충분히 확인하지 못해 단정할 수 없어요. 검색 결과의 표시 판매가만으로 하락 추세를 판단하지 않으며, 미래 가격도 예측할 수 없어요.';
+      text = '이 상품의 최근 가격 하락 여부와 현재 가격이 싼 편인지는 검증된 가격 기록을 충분히 확인하지 못해 단정할 수 없어요. 검색 결과의 표시 판매가만으로 과거보다 가격이 내려갔는지 판단할 수 없고, 미래 가격도 예측할 수 없어요.';
       degradedByGrounding = true;
     }
     text = groundedAnswer.repairProductParticles(text, items.concat(cards));
