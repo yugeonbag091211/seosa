@@ -336,6 +336,64 @@ const cases = [
     assert.match(reply.body.text, /실제 결제 금액/, question + ': checkout price is distinct');
   }
 
+
+  // RELEASE_15_REPRO_20261029: seven distinct price-history products, two
+  // user intents each.  A correct listing price alone is not the answer.
+  const historyQualityTargets = [
+    ['에어팟 프로 2세대', 'EA-APP2'],
+    ['코웨이 공기청정기 AP-1019C', 'AP-COWAY'],
+    ['소니 WH-1000XM5 블랙', 'HP-XM5-BK'],
+    ['코소리 에어프라이어 5.5L', 'AP-COSORI'],
+    ['그램16 16Z90S', 'LT-GRAM16'],
+    ['나이키 에어포스1 화이트 270', 'CL-AF1-WH'],
+    ['스타벅스 하우스블렌드 원두', 'FD-SBUX']
+  ];
+  for (const [model, id] of historyQualityTargets) {
+    for (const suffix of ['가격 떨어진 거 맞아?', '이 가격이면 싼 편이야?']) {
+      const question = model + ' ' + suffix;
+      const start = H.searchEvidenceLog.length;
+      const reply = await H.ask({ question }, {
+        classify: 'E|' + model,
+        answer: () => '먼저 추천드려요. 현재가는 검색 결과에 나온 금액이에요. 실제 결제가는 판매처에서 확인해 주세요.'
+      });
+      const cards = (reply.body.items || []).map(c => ({
+        productId: c.productId, vendorItemId: c.vendorItemId, title: c.title,
+        lprice: Number(c.lprice), note: c.note || ''
+      }));
+      assert.ok(cards.some(c => c.productId === id), question + ': expected verified model');
+      const graded = ANSWER_QUALITY({
+        question, category: 'history', text: reply.body.text, cards,
+        searchEvidence: H.searchEvidenceLog.slice(start).flat(),
+        priceHistoryEvidence: H.priceHistoryEvidenceForCards(reply.body.items || [])
+      }, []);
+      assert.equal(graded.quality.questionSatisfaction.verdict, 'PASS',
+        question + ': price history/cheapness answer must directly address the question: ' + reply.body.text);
+      assert.doesNotMatch(reply.body.text,
+        /(?:무조건 최저가|반드시 내려|확실히 더 싸질)/,
+        question + ': do not invent a price-history verdict');
+    }
+  }
+
+  const explicitPhilipsSession = H.session();
+  const forPhilips = [
+    ['공기청정기 35만원 아래 제품 찾아 줘', 'C|공기청정기'],
+    ['소음 적은 가정용이면 좋겠어', 'C|공기청정기'],
+    ['이번엔 에어프라이어 12만원 이하로 검색', 'C|에어프라이어'],
+    ['예산은 그대로 두고 필립스 모델만', 'D|필립스 에어프라이어']
+  ];
+  let philipsReply;
+  for (const [question, classify] of forPhilips) {
+    philipsReply = await explicitPhilipsSession.say(question, {
+      classify, answer: () => '코소리 에어프라이어 5.5L CAF-L501 기준으로 현재가는 99,000원입니다.'
+    });
+  }
+  assert.equal((philipsReply.body.items || []).length, 0,
+    'the 120,000-won ceiling must continue to exclude the 139,000-won Philips option');
+  assert.doesNotMatch(philipsReply.body.text, /코소리|5\\.5L|99,000원/,
+    'a Philips-only follow-up may not reuse the previously selected Cosori model/spec/price');
+  assert.match(philipsReply.body.text, /필립스|예산|조건|확인|찾지 못/,
+    'the response must explain the missing requested offer rather than silently switching products');
+
   assert.equal(H.counters.external, 0);
   assert.equal(H.counters.dbWrites, 0);
   console.log(`AI_ANSWER_QUALITY ${cases.length} original contradiction cases + tablet/headphone/TWS identity and exclusion cases + 4 budget-identity cases + relaxation evidence + 2 comparisons + injected evaluator defects PASS; real GPT 0, external 0, DB writes 0`);
