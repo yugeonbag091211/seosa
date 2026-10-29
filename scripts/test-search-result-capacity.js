@@ -10,6 +10,15 @@ const assert = require('node:assert/strict');
 const H = require('./_ai-chat-harness');
 const shop = require('../api/_shop');
 
+const SI = require('../api/_shopintent');
+for (const phrase of ['가격 상한 350,000원으로 무선 이어폰 찾아 줘', '예산 상한 350,000원인 무선 이어폰']) {
+  const budget = SI.parseConstraints(phrase);
+  assert.equal(budget.budgetMax, 350000, phrase + ': hard ceiling must be preserved');
+  assert.equal(budget.budgetSoft, false, phrase + ': explicit ceiling is not soft');
+}
+const softBudget = SI.parseConstraints('무선 이어폰 35만원 정도로 추천해 줘');
+assert.equal(softBudget.budgetSoft, true, 'approximate budget remains flexible');
+
 const KEYWORD = '무선 이어폰';
 for (let i = 0; i < 30; i++) {
   H.addProduct({
