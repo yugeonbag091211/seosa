@@ -35,5 +35,18 @@ check('non-Coupang price mismatch must be rejected',
  {text:'추천',items:[adpickCard]}, {trustedCards:[adpickCard],
  eligibleItems:[{...adpickInternal,lprice:100000}]}, 'UNKNOWN_PRODUCT_ID');
 
+const group={productId:'GROUP',mall:'대표판매처',title:'소니 헤드셋 묶음',lprice:199000,
+ isCanonicalGroup:true,displayPrice:189000,canonicalLowestMerchant:'최저판매처'};
+const groupRanked={productId:'GROUP',mall:'최저판매처',price:189000,isCanonicalGroup:true};
+check('canonical bundle price uses verified cheapest offer',
+ {text:'최저가 추천',items:[group]}, {trustedCards:[group],eligibleItems:[groupRanked],
+ maxPrice:190000},'PASS');
+check('canonical bundle must still respect budget at shown price',
+ {text:'최저가 추천',items:[group]}, {trustedCards:[group],eligibleItems:[groupRanked],
+ maxPrice:180000},'BUDGET_VIOLATION');
+check('canonical display price cannot be tampered',
+ {text:'최저가 추천',items:[{...group,displayPrice:100000}]},
+ {trustedCards:[group],eligibleItems:[groupRanked]},'PRICE_MISMATCH');
+
 console.log('FACT_GATE_SUMMARY',JSON.stringify({asked:pass+fail,pass,fail,external:0,dbWrites:0}));
 if(fail)process.exitCode=1;
