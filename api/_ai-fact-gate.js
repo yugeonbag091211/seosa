@@ -93,7 +93,10 @@ function applyFactGate(payload, options = {}) {
     });
     const ranked = matches.length === 1 ? matches[0] : null;
     if (!authoritative || !ranked) {
-      failures.push('UNKNOWN_PRODUCT_ID');
+      const group = card && card.isCanonicalGroup === true && authoritative
+        && eligible.some(it => it && it.isCanonicalGroup === true
+          && id(it.productId) === id(card.productId));
+      failures.push(group ? 'PRICE_MISMATCH' : 'UNKNOWN_PRODUCT_ID');
       continue;
     }
     if (!price(card) || price(card) !== price(authoritative)
