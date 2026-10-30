@@ -366,8 +366,12 @@ const coupangRow = i => mk('쿠팡', `c${i}`, `소니 가벼운 노이즈 캔슬
     const call = stubSearch.calls[0] || { opts: {} };
     ok(call.keyword === '소니 wh ch730n', `공급원 검색어가 /api/search 캐시 키와 같다 («${call.keyword}»)`);
     ok(call.opts.identityQuery === '소니 WH-CH730N', '후보 창 정렬은 원문 상품 구절로 한다');
-    ok(call.opts.adpickOpts && call.opts.adpickOpts.source === 'ai' && call.opts.adpickOpts.maxWaitMs === undefined,
-      'ADPICK 호출 주체 이름표만 붙이고 대기 정책은 바꾸지 않는다');
+    const pacing = call.opts.adpickOpts || {};
+    ok(pacing.source === 'ai'
+       && Number.isFinite(pacing.maxWaitMs) && pacing.maxWaitMs >= 0 && pacing.maxWaitMs <= 3500
+       && Number.isFinite(pacing.timeoutMs) && pacing.timeoutMs > 0 && pacing.timeoutMs <= 10000
+       && pacing.maxWaitMs + pacing.timeoutMs <= 17000,
+       'ADPICK 호출은 AI 전용 리미터 대기·HTTP 시간 상한을 지킨다');
 
     const cards = r.body.items || [];
     const canon = cards.find(c => c.isCanonicalGroup === true);
