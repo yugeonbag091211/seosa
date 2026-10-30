@@ -235,6 +235,5 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ],
-  "buildCommand": "node scripts/verify-ai-live.js --only coalescingLive4 --require-live-search --max-usd 0.50 --delay 20000 --out reports/ai-coalescing-live4.json"
+  ]
 }
