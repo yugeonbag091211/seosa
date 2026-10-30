@@ -235,5 +235,6 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ]
+  ],
+  "buildCommand": "node scripts/diagnose-ai-boundary-20261030.js"
 }
