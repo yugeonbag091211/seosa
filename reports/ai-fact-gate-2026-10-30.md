@@ -95,3 +95,64 @@ Collector Regression / Mobile Check 모두 성공으로 확인.
   그러나 실제 인증된 Preview 요청에서 쓰기 차단을 실측하지 않았으므로
   **가드의 런타임 적용까지 검증됐다고 주장하지 않음**.
 - 실 GPT·쇼핑 API 호출은 아직 0건. 공급자 쿼터와 비용은 소비하지 않았음.
+
+## 2026-10-30 추가 진행: Preview 설정과 실호출 안전관문
+
+- PR #206 Preview 배포 최신 코드는 Vercel READY, Production은 미변경.
+- Vercel 브랜치 전용 `SEOSA_DB_READONLY=1` 등록 유지 확인.
+- DB 읽기 전용 오프라인 계약 검사: **16/16 PASS**.
+- 실제 Preview에서 운영 DB 쓰기 차단을 강제로 검증한 것은 아님. 자격이 필요한 실제 요청 전까지 별도 확인 필요.
+- 연결된 Desktop Commander 장치가 **offline**; 안전한 격리 실행기에 OpenAI/쇼핑 API 자격 증명은 주어지지 않음. Vercel에 저장된 `OPENAI_API_KEY`는 민감 변수라 API로 원문을 반환하지 않음. 따라서 실제 GPT·쇼핑 공급자 종단 호출은 **0건**. 임의로 실제 테스트 성공을 주장하지 않음.
+
+### 실호출 검증 스크립트 안전성 보강
+
+`scripts/verify-ai-live.js`는 이제 반드시 다음을 사전 확인:
+
+1. `VERCEL_ENV=production` 실행 거부. 원래의 `delete process.env.VERCEL_ENV` 우회 제거.
+2. 양수이며 5달러 이하인 `--max-usd` 비용 한도 필수.
+3. LLM 키, 쿠팡 또는 ADPICK API 키, DB 읽기용 연결 정보가 없으면 검증을 시작하지 않음.
+4. `SEOSA_DB_READONLY=1` 설정 및 DB Guard 활성화 확인.
+5. 가격을 모르는 OpenAI 모델이면 비용 보증 불가로 중지.
+6. 계산 가능한 모델 추정 사용료가 상한에 도달하면 남은 질문 실행 중단.
+
+사전 거부 및 오프라인 회귀 **7/7 PASS**, 외부 호출 및 DB 쓰기 **0**. 비용은 실제 청구액이 아닌 모델별 추정치이며 실제 사용 전에 가격표 확인 필요.
+
+실행 예 (자격 정보를 코드·로그·보고서에 기록하지 않음):
+
+```bash
+node scripts/verify-ai-live.js --ask "15만원 이하 무선 헤드셋 추천해줘" --max-usd 1
+# 실제 GPT만, 저장된 시험용 상품 데이터와 오프라인 서비스 경계 사용:
+LIVE_REDTEAM_MAX_USD=5 node scripts/live-redteam-codex.js --run --round all --limit 50 --concurrency 1
+```
+
+### 자동 오류 분류 — 역사적 기준선과 수정 후 비교
+
+`scripts/report-ai-eval-clusters.js`에 `--phase before|after`를 추가.
+불확실한 판정이나 `functionCheck=PASS`만으로 답변 품질 PASS를 만들지 않음.
+테스트 **12/12 PASS**.
+
+기존 1,250개 오프라인 품질 검토 기록:
+
+| 평가 시점 | 평가 | PASS | FAIL | UNVERIFIED |
+|---|---:|---:|---:|---:|
+| 수정 전(before) | 1,250 | 641 | 559 | 50 |
+| 수정 후(after) | 1,250 | 1,250 | 0 | 0 |
+
+수정 전 오류 유형별 발생 건수(한 실패가 여러 유형에 포함될 수 있음):
+질문 충족 319, 문장 자연스러움 293, 가격/사양 근거 95, 가격 이력 94,
+대화 상태 31, 답변 정확성 11, 예산 조건 4.
+
+위 숫자는 **과거 모의 GPT·고정 상품 데이터에 대한 평가**, 현재 실사용 성능 증명이 아님.
+
+명령:
+```bash
+node scripts/report-ai-eval-clusters.js --input reports/ai-answer-quality-2026-10-29/quality-review.jsonl --phase before
+node scripts/report-ai-eval-clusters.js --input reports/ai-answer-quality-2026-10-29/quality-review.jsonl --phase after
+```
+
+### 최종 상태
+
+최신 변경 전체 `npm test` **PASS**. GitHub Tests / Collector Regression / Mobile Check / AI security validation 모두 성공.
+PR #206은 **Draft, 미병합, Production 미배포** 상태를 유지.
+
+다음 완료 조건은 민감키를 로그/파일에 노출하지 않는 승인된 실행 환경에서 비용 한도를 걸고 **실제 GPT 50개 응답**을 얻어 코드 기반 사실 검사와 실패 자동 분류에 연결한 다음, 최소 일부 **실제 쇼핑 공급자 응답**으로 종단 검증을 수행하는 것. 사용자의 실제 만족도는 별도 동의 데이터로 추후 측정.
