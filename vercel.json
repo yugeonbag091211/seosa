@@ -235,5 +235,6 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ]
+  ],
+  "buildCommand": "node scripts/verify-ai-live.js --only pilot100 --limit 3 --max-usd 0.15 --delay 8000"
 }
