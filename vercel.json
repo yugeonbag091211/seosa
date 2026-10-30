@@ -235,6 +235,5 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ],
-  "buildCommand": "node scripts/verify-ai-live.js --only adpickSteady10 --require-live-search --max-usd 1 --delay 20000 --out reports/adpick-steady-10-qa.json"
+  ]
 }
