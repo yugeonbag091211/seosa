@@ -85,3 +85,13 @@ Collector Regression / Mobile Check 모두 성공으로 확인.
    이후 새 질문을 통해 자동 분류 결과 및 평가기 오판까지 확인.
 3. 사용자 동의를 받은 실제 평가로 추천 만족도와 오추천율을 측정.
 4. 위 실측이 완료되어 승인되기 전에는 PR #206 병합/Production 배포 금지.
+
+## Preview 접근 제한 및 환경 설정 (추가 확인)
+
+- Vercel Preview 브랜치 `codex/ai-integration-release` 전용으로
+  `SEOSA_DB_READONLY=1` 환경변수 등록 확인.
+- Production에는 이 변수 설정을 추가하지 않았음.
+- 이 변경으로 새로 빌드되는 Preview에서 DB 쓰기를 차단하도록 의도됨.
+  그러나 실제 인증된 Preview 요청에서 쓰기 차단을 실측하지 않았으므로
+  **가드의 런타임 적용까지 검증됐다고 주장하지 않음**.
+- 실 GPT·쇼핑 API 호출은 아직 0건. 공급자 쿼터와 비용은 소비하지 않았음.
