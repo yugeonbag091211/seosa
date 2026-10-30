@@ -9967,15 +9967,11 @@ var Chat = {
            */
           var drewCards = false;
           if (res.items && res.items.length) {
-            if (Chat.sameAsShownCards(res)) {
-              html += '<div class="mini-same">위에서 보여 드린 상품과 같은 상품·옵션이에요.'
-                + '<button type="button" data-act="chat-show-cards">카드 다시 보기</button></div>';
-            } else {
-              // 제휴 고지 — 카드(외부 판매처 링크)보다 먼저 읽힌다. .aff-note 주석 참고.
-              if (res.items.some(function(it) { return it && Fmt.buyUrl(it.link, it); })) html += AFF_NOTE_HTML;
-              html += Chat.miniGrid(res);
-              drewCards = true;
-            }
+            // The follow-up server response contains only the chosen option:
+            // render it again instead of recalling a previous multi-card grid.
+            if (res.items.some(function(it) { return it && Fmt.buyUrl(it.link, it); })) html += AFF_NOTE_HTML;
+            html += Chat.miniGrid(res);
+            drewCards = true;
           }
           var aiBubble = Chat.bubble(html, 'ai');
           if (drewCards && aiBubble) {

@@ -406,15 +406,15 @@ const LONG = [
     ok(v && v.constraints.budgetMax === 300000 && v.excludedConditions.join() === 'used',
       '예산·중고 제외는 사용자가 바꾸지 않았으므로 상태에 남는다 (거는지는 gateBudget 판단)', v);
 
-    // 250만원 — 맥북 하나(2,390,000원)는 그 안이다. 예산 관문(PR #179)이 있어도 모델까지 간다.
+    // 240만원 — 맥북 하나(2,390,000원)는 그 안이다. 예산 관문(PR #179)이 있어도 모델까지 간다.
     const own = await ask({
-      question: '맥북 프로 250만원 이하로 찾아줘',
-      chatHistory: withState.history.concat([{ role: 'user', text: '맥북 프로 250만원 이하로 찾아줘' }]),
+      question: '맥북 프로 240만원 이하로 찾아줘',
+      chatHistory: withState.history.concat([{ role: 'user', text: '맥북 프로 240만원 이하로 찾아줘' }]),
       convState: withState.convState
     });
-    ok(own.system.includes('예산 2,500,000원 이하') && !own.system.includes(BUDGET_LINE),
+    ok(own.system.includes('예산 2,400,000원 이하') && !own.system.includes(BUDGET_LINE),
       '이번 발화가 예산을 말하면 그 예산이 상태의 예산을 덮는다', own.system.slice(0, 160));
-    ok(own.cards.some(c => c.lprice === 2390000), '덮은 예산(250만원) 안의 맥북이 나온다 — 옛 30만원으로 거르지 않는다',
+    ok(own.cards.some(c => c.lprice === 2390000), '덮은 예산(240만원) 안의 맥북이 나온다 — 옛 30만원으로 거르지 않는다',
       own.cards.map(c => `${c.title.slice(0, 14)} ${c.lprice}`));
   }
 

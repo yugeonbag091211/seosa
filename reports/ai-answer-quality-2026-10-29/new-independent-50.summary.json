@@ -1,0 +1,59 @@
+{
+  "questions": 50,
+  "uniqueQuestions": 50,
+  "functionPass": 50,
+  "answerQualityPass": 50,
+  "answerQualityFail": 0,
+  "mockedModelAnswerCalls": 45,
+  "actualGptCalls": 0,
+  "externalCalls": 0,
+  "marketplaceCalls": 0,
+  "dbWrites": 0,
+  "apiCostUsd": 0,
+  "groups": {
+    "notebook-body": {
+      "questions": 5,
+      "functionPass": 5,
+      "answerQualityPass": 5,
+      "fail": 0
+    },
+    "tablet-body": {
+      "questions": 10,
+      "functionPass": 10,
+      "answerQualityPass": 10,
+      "fail": 0
+    },
+    "headphone-vs-tws": {
+      "questions": 10,
+      "functionPass": 10,
+      "answerQualityPass": 10,
+      "fail": 0
+    },
+    "comparison": {
+      "questions": 5,
+      "functionPass": 5,
+      "answerQualityPass": 5,
+      "fail": 0
+    },
+    "budget-priority": {
+      "questions": 5,
+      "functionPass": 5,
+      "answerQualityPass": 5,
+      "fail": 0
+    },
+    "price-checkout-stock": {
+      "questions": 5,
+      "functionPass": 5,
+      "answerQualityPass": 5,
+      "fail": 0
+    },
+    "conversation-memory": {
+      "questions": 10,
+      "functionPass": 10,
+      "answerQualityPass": 10,
+      "fail": 0
+    }
+  },
+  "corpusSha256": "4591c08bd6e800f0d65b85dede0a70d03e31c1ca6f60109f52f2456fbfcc26e8",
+  "naturalnessScope": "rule-based surface check; not a human or independent model judge"
+}

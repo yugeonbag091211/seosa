@@ -40,7 +40,7 @@ const SEARCH = require('./_search');
 const GREETING_RE = /^(안녕|안녕하세요|하이|헬로|반가워|고마워|감사|땡큐|잘가|바이|ㅎㅇ|ㅋㅋ|ㅎㅎ|ok|okay|응|넵|네|아니|좋아|굿)[!~.?ㅋㅎ\s]*$/i;
 
 /** 가격 시점·이력 — "지금 사도 돼?" "기다릴까?" "추이" */
-const TIMING_RE = /((?:지금\s*)?사는\s*(?:게|것이)\s*(?:좋|나을|괜찮)|(?:지금\s*)?사면\s*(?:좋|나을|괜찮)|(?:지금\s*)?구매해도\s*(?:좋|괜찮)|지금\s*사도|지금\s*살|살까|사도\s*(돼|될|괜찮|되나)|가격\s*(?:괜찮|좋은\s*편|비싼\s*편|싼\s*편)|기다릴|기다려|더\s*떨어|떨어질|내려갈|오를까|추이|흐름|변동|최저가였|얼마였|역대\s*최저|기록상|평소보다|살\s*때|살\s*만한\s*때|타이밍|가격\s*(?:이력|기록|히스토리)|price\s*history)/i;
+const TIMING_RE = /((?:지금\s*)?사는\s*(?:게|것이)\s*(?:좋|나을|괜찮)|(?:지금\s*)?사면\s*(?:좋|나을|괜찮)|(?:지금\s*)?구매해도\s*(?:좋|괜찮)|지금\s*사도|지금\s*살|살까|사도\s*(돼|될|괜찮|되나)|가격\s*(?:괜찮|좋은\s*편|비싼\s*편|싼\s*편)|기다릴|기다려|기다리는|기다리면|더\s*떨어|떨어질|내려갈|오를까|추이|흐름|변동|최저가였|얼마였|역대\s*최저|기록상|평소보다|살\s*때|살\s*만한\s*때|타이밍|가격\s*(?:이력|기록|히스토리)|price\s*history)/i;
 
 /** 특정 상품의 가격·판매처 — "얼마야" "최저가 찾아줘" "어디서 사" */
 /*
@@ -53,7 +53,7 @@ const TIMING_RE = /((?:지금\s*)?사는\s*(?:게|것이)\s*(?:좋|나을|괜찮
  * 금액을 예산으로 잘못 읽은 덕에 우연히 쇼핑 의도가 됐다 — 그 금액을 예산에서 빼자 지식 질문으로
  * 떨어져 화면 상품 확인을 건너뛰었다. 가격을 확인해 달라는 말 자체로 가격 의도로 본다.
  */
-const PRICE_RE = /(얼마|현재\s*가|현재\s*가격|지금\s*가격(?!\s*대비)|판매\s*가|시세|정가|쿠폰\s*가|할인율|최저가|가격\s*(?:만|도|은|을)?\s*(?:(?:다시|좀|한\s*번\s*더)\s*)?(?:알려|찾아|비교|어때|좀|확인|말해)|(?:가격|금액|판매가|현재가)\s*(?:이|은|가)?\s*(?:맞지|맞아|맞나|맞죠|맞니|맞는지)|어디서\s*(사|살|사는|구매)|판매처|링크\s*(줘|주세요|알려)|살\s*수\s*있|파는\s*곳|얼마나\s*해)/;
+const PRICE_RE = /(얼마|구매\s*가|구입\s*가|현재\s*가|현재\s*가격|지금\s*가격(?!\s*대비)|판매\s*가|시세|정가|쿠폰\s*가|할인율|최저가|가격\s*(?:만|도|은|을)?\s*(?:(?:다시|좀|한\s*번\s*더)\s*)?(?:알려|찾아|비교|어때|좀|확인|말해)|(?:가격|금액|판매가|현재가)\s*(?:이|은|가)?\s*(?:맞지|맞아|맞나|맞죠|맞니|맞는지)|어디서\s*(사|살|사는|구매)|판매처|링크\s*(줘|주세요|알려)|살\s*수\s*있|파는\s*곳|얼마나\s*해)/;
 
 /** 추천·선택 — "추천해줘" "골라줘" "뭐가 좋아" */
 const RECOMMEND_RE = /(추천|골라|찾아\s*(줘|주세요|봐|줄래)|보여\s*(줘|주세요)|뭐\s*(가|를|사|살)|어떤\s*(게|걸|것|거)|괜찮은\s*(거|게|것)|살\s*만한|사고\s*싶|사려고|사려는|구매하려|필요해|필요한데|살\s*건데|고민|비교해|vs|중에\s*(뭐|어떤)|이\s*중(?:에서)?\s*(?:제일|가장)?\s*(?:싼|저렴한|좋은|나은)|가장\s*싼\s*(?:것|거|상품|제품)?|원해|원합니다|찾고\s*있)/;
@@ -189,16 +189,22 @@ const STRIP_WORDS = [
   // 조건을 덧붙이는 말. 남으면 "통화 품질 중요해" 같은 문장이 검색어가 된다.
   '중요해', '중요한', '중요하고', '중요', '필요하고', '위주로', '위주',
   '하나', '하나만', '것', '거', '걸', '게', '좀', '제발', '빨리', '진짜', '정말', '그냥',
+  // 화제를 바꾸는 이음말 — "그럼 그램 노트북도 추천해줘" 가 «그럼 그램 노트북» 으로 검색됐다 (2026-10-26).
+  '그럼', '그러면', '이번엔', '이번에는',
   // 조건 (금액은 정규식으로 따로 지운다)
   '이하', '이하로', '이하의', '이내', '미만', '까지', '이상', '넘는', '정도', '쯤', '안팎', '내외',
   '아래', '아래로', '밑', '밑으로', '언더',
-  '현재', '현재가', '현재가격', '판매가', '시세', '정가', '쿠폰가', '할인율',
+  '현재', '현재가', '현재가격', '판매가', '구매가', '구입가', '시세', '정가', '쿠폰가', '할인율',
   /*
    * 가격을 다시 묻는 말·가격 기록을 묻는 말 (2026-09-28). PRICE_RE·TIMING_RE 가 이 말들을
    * 가격 의도로 받게 되면서, 남은 낱말이 검색어가 되어 쿠팡에 "다시"·"확인해줘"·"이력"을
    * 검색할 뻔했다. 물건 이름이 아니므로 걷어낸다 — 비면 앞 대화의 상품을 이어받는다.
    */
   '다시', '한번', '확인', '확인해', '확인해줘', '확인해주세요', '말해', '말해줘', '말해주세요',
+  // Listening preference is a use case, not a shop-search identity. Leaving
+  // "음악용" as the only residual turned "무선 이어폰 ... 음악용 추천" into
+  // a literal music search and discarded the requested product category.
+  '음악', '음악용', '음악감상', '음원', '노래', 'music',
   '이력', '히스토리', 'price', 'history', 'please',
   // "질문은 아이폰 17 프로 제일 싼 거야" 의 틀 낱말 — 물건 이름이 아니다.
   '질문', '질문은', '거야', '거예요', '건데',
@@ -251,9 +257,9 @@ const DISCOURSE_WORDS = new Set([
   '처음', '처음에', '번째', '여전히', '정확히', '억지', '억지로', '임의', '임의로', '마음대로', '먼저', '무조건',
   '계속', '아직', '이제', '그대로', '따로', '각각', '혹시', '절대', '반드시', '꼭', '항상', '언제나', '모두',
   '전부', '전체', '나머지', '엉뚱한', '다른', '같은', '비슷한', '실제', '실제로', '진짜로', '가짜', '역대',
-  '어제', '내일', '과거', '부분', '모르', '그중', '그중에', '그중에서', '이중', '이중에', '이중에서', '방금', '아까',
+  '어제', '오늘', '내일', '과거', '최근', '흐름', '한달', '달', '떨어진', '떨어졌', '기다린', '기다려', '부분', '모르', '그중', '그중에', '그중에서', '이중', '이중에', '이중에서', '방금', '아까',
   '앞에서', '지금까지', '들어간', '들어있는', '포함된', '탑재', '탑재된', '달린', '장착된', '개만', '한개', '한개만',
-  '때문에', '대비', '항목', '초과', '두고', '놓고', '원해', '원함', '원합니다', '바꾼', '고른', '말한', '찾은',
+  '때문에', '대비', '항목', '초과', '상한', '한도', '두고', '놓고', '원해', '원함', '원합니다', '바꾼', '고른', '말한', '찾은',
   '받은', '보낸', '알려준', '보여준', '추천한', '무거운', '가벼운', '예쁜', '이쁜', '빠른', '느린', '작은',
   '높은', '낮은', '많은', '적은', '나온', '못한', '객관적', '객관적인', '구체적인', '고성능인', '충족', '서버',
   '마지막', '관측값', '하락률', '상승률', '텍스트', '문자열', 'text', '뜻', '뜻은', '뜻이', '의미', '인치보다',
@@ -286,7 +292,8 @@ function isJunkToken(tok) {
   if (/^\d+개(?:만)?$/.test(t)) return true;
   if (/^[가-힣]{2,}$/.test(t) && VERB_TAIL_RE.test(t)) return true;
   // "바꿀게"·"볼게" — ㄹ 받침 뒤의 «게» 는 약속하는 어미다 ("족집게"·"빨래집게" 의 집은 ㅂ 받침이라 남는다).
-  if (/^[가-힣]{2,}게(?:요)?$/.test(t)) {
+  // 두 글자 "할게"·"볼게" 도 (2026-10-26) — 예전 정규식은 세 글자 이상만 봐서 주석의 «볼게» 조차 잡지 못했다.
+  if (/^[가-힣]{1,}게(?:요)?$/.test(t)) {
     const ch = t.charCodeAt(t.length - (t.endsWith('요') ? 3 : 2)) - 0xAC00;
     if (ch >= 0 && ch < 11172 && ch % 28 === 8) return true;
   }
@@ -320,6 +327,14 @@ function stripCopula(tok) {
   if (!/^[가-힣]{3,}$/.test(t)) return t;
   const s = t.replace(COPULA_TAIL_RE, '');
   return s && s.length >= 2 ? s : t;
+}
+
+/** 꼬리를 떼도 낱말 안의 색 이름이 그대로인가 ("스페이스그레이" → "스페이스그레" 는 그레이를 잃는다). */
+function keepsColors(before, after) {
+  const a = AIID.colorsOf(before);
+  if (!a.size) return true;
+  const b = AIID.colorsOf(after);
+  return [...a].every(c => b.has(c));
 }
 
 /*
@@ -364,6 +379,7 @@ const MAX_QUERY_TOKENS = 5;
  *   "이것이 전부"라는 목록이 아니다.
  */
 const USECASE_RE = [
+  ['음악 감상', /음악|음원|노래|music/i],
   ['러닝',      /러닝|달리기|조깅|마라톤|뛸\s*때|뛰면서/],
   ['운동',      /운동|헬스|짐에서|피트니스|웨이트|등산|자전거\s*탈/],
   ['게임',      /게임|게이밍|겜용|겜할|롤\s*할|배그|피시방/],
@@ -377,7 +393,13 @@ const USECASE_RE = [
 
 /** 발화에서 용도 한 가지. 없으면 빈 문자열. */
 function extractUseCase(text) {
-  const s = String(text == null ? '' : text);
+  const source = String(text == null ? '' : text);
+  // A negated activity is an exclusion, not the user's intended use case:
+  // "게이밍 말고 음악용" must not become a gaming recommendation.
+  let s = AIID.splitNegations(source).positive || source;
+  if (require('./_ai-budget-window').gamingPreference(source) === true) {
+    s = s.replace(/게임|게이밍|겜용|겜할|롤\s*할|배그|피시방/gi, ' ');
+  }
   for (const [label, re] of USECASE_RE) {
     if (re.test(s)) return label;
   }
@@ -400,8 +422,8 @@ function extractUseCase(text) {
  *   3) 조건 낱말과 대화용 군말을 걷어내면 검색어 재료가 하나도 남지 않는다
  * "캠핑용 빔프로젝터 추천해줘" 는 3) 에서 «빔프로젝터» 가 남으므로 새 상품 요청 그대로다.
  */
-const CONDITION_CUE_RE = /배터리|충전|오래\s*(?:가|갔|버티|쓰|쓸|사용)|무게|가볍|가벼|무거|휴대|들고\s*다|음질|소리|노이즈|노캔|통화|마이크|방수|화면|디스플레이|밝기|발열|소음|조용|성능|사양|스펙|속도|빠르|느리|램|메모리|저장\s*공간|용량|디자인|색감|내구|튼튼|가성비|저렴|싼\s*(?:거|게|걸|것)|보증|그래픽|cpu|gpu|프로세서|키감|해상도|주사율/i;
-const CONDITION_FILLER_RE = /^(?:근데|그런데|그리고|그럼|그러면|그래서|그치만|하지만|아니면|그리구|또|나|난|나는|내가|저|저는|제가|우리|우리는|혹시|주로|보통|같이|함께|자주|가끔|많이|조금|좀|약간|정도|위주|위주로|용|용도|용도로|목적|목적으로|거|거야|거예요|거에요|건데|건가|건가요|거라|거라서|거니까|걸로|거로|게|것|걸|건|예정|예정이야|생각|생각이야|계획|계획이야|할|쓸|하려고|쓰려고|싶어|싶은데|중요|중요해|중요해요|중요하고|중요한데|필요|필요해|필요하고|필요한데|괜찮아|괜찮아요|괜찮을까|괜찮을까요|괜찮나|괜찮은지|가능|가능해|가능할까|가능한지|어때|어때요|어떨까|어떨까요|될까|될까요|되나|되나요|있어|있어요|있을까|있을까요|있나|있나요|충분해|충분할까|충분한지|부족해|부족할까|부족하지|더|역시|특히|무엇보다|제일|가장|우선|최우선|하는|쓰는|쓰기|하기|에도|에서도|에는|도)$/;
+const CONDITION_CUE_RE = /배터리|수명|지속\s*시간|충전|오래\s*(?:가|갔|버티|쓰|쓸|사용)|무게|가볍|가벼|무거|휴대|들고\s*다|음질|소리|노이즈|노캔|통화|마이크|방수|화면|디스플레이|밝기|발열|소음|조용|성능|사양|스펙|속도|빠르|느리|램|메모리|저장\s*공간|용량|디자인|색감|내구|튼튼|가성비|저렴|싼\s*(?:거|게|걸|것)|보증|그래픽|cpu|gpu|프로세서|키감|해상도|주사율/i;
+const CONDITION_FILLER_RE = /^(?:근데|그런데|그리고|그럼|그러면|그래서|그치만|하지만|아니면|그리구|또|나|난|나는|내가|저|저는|제가|우리|우리는|혹시|주로|보통|같이|함께|자주|가끔|많이|조금|좀|약간|정도|위주|위주로|용|용도|용도로|목적|목적으로|거|거야|거예요|거에요|건데|건가|건가요|거라|거라서|거니까|걸로|거로|해보려고|해보려|해야|해|하고|할거야|하고싶어|할예정이야|학교|랑|이랑|가|이|게|것|걸|건|예정|예정이야|생각|생각이야|계획|계획이야|할|쓸|하려고|쓰려고|싶어|싶은데|중요|중요해|중요해요|중요하고|중요한데|필요|필요해|필요하고|필요한데|괜찮아|괜찮아요|괜찮을까|괜찮을까요|괜찮나|괜찮은지|가능|가능해|가능할까|가능한지|어때|어때요|어떨까|어떨까요|될까|될까요|되나|되나요|있어|있어요|있을까|있을까요|있나|있나요|충분해|충분할까|충분한지|부족해|부족할까|부족하지|더|역시|특히|무엇보다|제일|가장|우선|최우선|하는|쓰는|쓰기|하기|에도|에서도|에는|도)$/;
 
 function conditionCue(text) {
   const s = String(text || '');
@@ -413,6 +435,10 @@ function conditionCue(text) {
 /** 조건 낱말·용도·금액·군말을 걷어내고 남는 검색어 재료 (없으면 빈 문자열). */
 function conditionResidue(text) {
   let s = String(text || '');
+  // Natural follow-ups often combine two activities. Do not leave bare
+  // conjunctions ("과제랑") behind as supposed product search terms.
+  s = s.replace(/(?:학교\s*)?과제(?:랑|도)?|문서\s*작업(?:이랑|과|도)?/g, ' ');
+  s = s.replace(/(?:배터리\s*)?(?:지속\s*시간|수명)(?:이|가|은|는)?/g, ' ');
   USECASE_RE.forEach(([, re]) => { s = s.replace(new RegExp(re.source, 'g'), ' '); });
   s = s.replace(new RegExp(CONDITION_CUE_RE.source, 'gi'), ' ');
   return extractQuery(s).split(/\s+/).filter(Boolean)
@@ -475,6 +501,73 @@ const CLAUSE_SPLIT_RE = /[.!?\n。]+|[“”"「」『』]+|\s-{2,}\s|\s\/\s|[:�
 /**
  * @returns {{text:string, meta:boolean}}  text — 검색어 재료가 될 구절. 메타 지시만 있으면 빈 문자열.
  */
+
+/*
+ * A user can append URLs, fake role JSON, repeated noise, emoji, or HTML to a
+ * genuine product request. Those bytes are not shopping identity evidence.
+ * This is ONLY for deterministic intent/search extraction: the original user
+ * message remains available to the answer pipeline and safety checks.
+ * Do not strip ordinary model names, options, comparison, or negative clauses.
+ */
+function cleanUntrustedShoppingInput(text) {
+  const original = AIID.stripPromptBoundaryPayload(text).trim();
+  if (!original) return '';
+  if (!/[\p{C}<>]|\bhttps?:\/\/|["']role["']\s*:|\b([a-z]{2,32})(?:\s+\1){3,}\b|\p{Extended_Pictographic}/iu.test(original)) {
+    return original;
+  }
+  const repeated = /\b([a-z]{2,32})(?:\s+\1){3,}\b/i.exec(original);
+  let cleaned = original.normalize('NFKC')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<script\b[^>]*>[\s\S]*$/gi, ' ')
+    .replace(/<[^>]{0,200}>/g, ' ')
+    .replace(/\{\s*["']role["']\s*:\s*["'](?:system|developer|assistant)["'][\s\S]*$/i, ' ')
+    .replace(/\bhttps?:\/\/[^\s<>"']+/gi, ' ')
+    .replace(/\b([a-z]{2,32})(?:\s+\1){3,}\b/gi, ' ')
+    .replace(/[\p{C}\p{Extended_Pictographic}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // The endpoint clips to 500 chars. A long repeated suffix can end halfway
+  // through the final word ("noise noise noise noi"). Drop only that prefix,
+  // and only if an actual repeated English run was present in the clipped text.
+  if (repeated && original.length >= 500) {
+    const tail = cleaned.match(/\b([a-z]{1,32})$/i);
+    if (tail && repeated[1].toLowerCase().startsWith(tail[1].toLowerCase())) {
+      cleaned = cleaned.slice(0, -tail[1].length).trim();
+    }
+  }
+  return cleaned;
+}
+
+/*
+ * Only recover a positive, own-product recommendation from adversarial wrapper
+ * syntax that our trusted parser has already removed. This guard never
+ * invents product names or reverses a knowledge/non-shopping intent, and
+ * it is NOT a license to follow instructions inside the removed payload.
+ */
+function recoverSafeShoppingIntent(raw, parsed) {
+  if (!parsed || parsed.intent !== 'C' || !parsed.ownQuery || !parsed.query ||
+      !isProductQuery(parsed.query)) return false;
+  const original = String(raw == null ? '' : raw).trim();
+  const cleaned = cleanUntrustedShoppingInput(original);
+  return !!cleaned && cleaned !== original && AIID.productEvidence(cleaned) > 0;
+}
+
+
+/*
+ * A genuine product subject may precede an instruction to fabricate a price
+ * not present in evidence. Retain only the already-spoken product prefix for
+ * product lookup, not the instruction. No model/name is invented here.
+ */
+function productPrefixBeforeUnsupportedPriceInstruction(text) {
+  const original = AIID.stripPromptBoundaryPayload(text).normalize('NFKC');
+  const command = /가격표에\s*없는\s*(?:숫자|값|가격)|근거(?:가)?\s*없는\s*(?:가격|금액|수치)|확인\s*안\s*된\s*가격/gi;
+  const m = command.exec(original);
+  if (!m || m.index < 2) return '';
+  const prefix = original.slice(0, m.index).trim();
+  if (!prefix || prefix.length > 100 || AIID.productEvidence(prefix) < 2 || !isProductQuery(prefix)) return '';
+  return prefix;
+}
+
 function shoppingSpan(text) {
   const s = String(text == null ? '' : text);
   if (!META_INSTRUCTION_RE.test(s)) return { text: s, meta: false };
@@ -559,7 +652,9 @@ function extractQuery(text) {
     // "가격 기록" 은 무엇을 묻는지이지 물건 이름이 아니다. "기록" 만 따로 지우면
     // "수면 기록 밴드" 같은 상품명이 깨지므로 붙어 있는 꼴만 걷어낸다.
     .replace(/가격\s*(?:이력|기록|히스토리)/g, ' ')
-    .replace(/[?!.,;:"'`<>|()\[\]{}·*]/g, ' ')
+    // Keep decimal product specifications such as 5.5L intact; discard other punctuation.
+    .replace(/(?<!\d)\.(?!\d)/g, ' ')
+    .replace(/[?!,;:"'`<>|()\[\]{}·*]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (!src) return '';
@@ -591,13 +686,20 @@ function extractQuery(text) {
         && SEARCH.splitTokens(t).some(part => SEARCH.SYNONYMS.has(part))
         && SEARCH.splitTokens(t).some(part => SEARCH.VARIANT_KEYS.has(part));
       // 영문·숫자 토큰은 조사를 떼지 않는다 ("14ZD95U" 의 U 를 조사로 볼 위험).
-      if (/^[가-힣]+$/.test(t) && safeToStrip && !compactFamilyTier) t = stripped;
+      if (/^[가-힣]+$/.test(t) && safeToStrip && !compactFamilyTier) {
+        // 색 이름의 끝 글자 '이' 는 조사가 아니다 — "스페이스그레이" 가 "스페이스그레" 로 검색되면 색 옵션을 잃는다.
+        // "스페이스그레이랑" 은 '이랑' 대신 마지막 한 글자 조사만 뗀다 (_aiidentity stripJosa 와 같은 규칙).
+        if (keepsColors(t, stripped)) t = stripped;
+        else if (/[은는가을를도와과의만로랑]$/.test(t) && keepsColors(t, t.slice(0, -1))) t = t.slice(0, -1);
+      }
     }
     // "노트북인데" · "모델이야" — 서술격 꼬리를 떼고 남은 명사로 다시 판단한다 (isJunkToken 주석).
-    t = stripCopula(t);
+    if (keepsColors(t, stripCopula(t))) t = stripCopula(t);
     if (STRIP_SET.has(t) || isJunkToken(t)) return;
     if (!t || t.length < 1) return;
-    if (/^[가-힣]$/.test(t)) return;          // 한 글자 한글은 아무 데나 걸린다
+    // 한 글자 한글은 아무 데나 걸린다 — 다만 한 글자 상품 이름("쌀 10kg" · "김 선물세트")은 남긴다 (2026-10-26).
+    // 예전에는 "쌀 4만원 이하로 추천해줘" 의 검색어가 비어 검색 자체를 하지 않았다.
+    if (/^[가-힣]$/.test(t) && !AIID.ONE_CHAR_PRODUCTS.has(t)) return;
     if (!/[0-9A-Za-z가-힣]/.test(t)) return;
     out.push(t);
   });
@@ -611,12 +713,21 @@ function extractQuery(text) {
    * 들어간 게이밍 노트북" 이 "으로 RTX 5090 들어간 게이밍" 으로 잘려 노트북이 빠졌고, 데스크톱이
    * 대신 나왔다.
    */
+  /*
+   * 용량·크기·수량(16GB·512GB·15인치·30팩)은 모델 번호가 아니다 (2026-10-26 1,000문항 평가). 그것까지 세면
+   * "맥북 에어 13 M3 메모리 16GB 512GB 모델" 이 "13 M3 메모리 16gb 512gb" 로 잘려 «맥북» 없이 검색됐다.
+   * 모델 번호가 같으면 브랜드·계열 이름을 담은 구간이 먼저다 — 옵션은 식별 계약이 전체 구절로 다시 본다.
+   */
+  const OPTION_NUMBER_RE = /^\d+(?:\.\d+)?(?:gb|tb|kg|g|ml|l|mm|cm|인치|팩|개|개입|봉|병|매|입|w|mah|hz|t)$/i;
   let start = 0;
   if (out.length > MAX_QUERY_TOKENS) {
     let best = -1;
     for (let i = 0; i + MAX_QUERY_TOKENS <= out.length; i++) {
       const win = out.slice(i, i + MAX_QUERY_TOKENS);
-      const n = win.filter(t => /\d/.test(t)).length * 2 + (win.some(t => AIID.categoryNounOf(String(t).toLowerCase())) ? 1 : 0);
+      const n = win.filter(t => /\d/.test(t) && !OPTION_NUMBER_RE.test(t)).length * 10
+        + win.filter(t => OPTION_NUMBER_RE.test(t)).length
+        + (win.some(t => AIID.categoryNounOf(String(t).toLowerCase())) ? 2 : 0)
+        + (win.some(t => AIID.namesBrand(t)) ? 3 : 0);
       if (n > best) { best = n; start = i; }
     }
   }
@@ -683,7 +794,13 @@ function analyzeClauses(text) {
   const norm = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
   const prohibitions = [];
   const conditions = [];
-  norm.split(/[.!?\n。;,，]+|\s[-—–]{1,2}\s|[:：]/).forEach(sentence => {
+  // Thousands separators are part of a price, never clause boundaries.
+  // Without protection "1,800,000원을 넘기지 말고 스마트폰" became the
+  // phantom model anchor "1,800" plus a detached prohibition, and the exact
+  // smartphone candidates were all rejected by identity validation.
+  const clauseSafe = norm.replace(/(?<=\d),(?=\d)/g, '\uE000');
+  clauseSafe.split(/[.!?\n。;,，]+|\s[-—–]{1,2}\s|[:：]/).forEach(rawSentence => {
+    const sentence = rawSentence.replace(/\uE000/g, ',');
     const toks = sentence.split(/\s+/).filter(Boolean);
     let cur = [];
     const flush = (kind, verb) => {
@@ -767,12 +884,13 @@ function isChosungOnly(text) {
  * 이런 말에는 확신을 높음으로 주지 않는다 — 검색어를 문맥에서 풀어야 하고,
  * 그 일은 LLM 이 우리보다 낫다 (api/ai.js resolveQuery).
  */
-const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|이\s*(?:제품|상품|모델)|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|앞(?:의|에서)\s|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|걸|상품|제품|모델))/;
+const CONTEXT_DEPENDENT_RE = /(그거|그것|이거|이것|저거|저것|그건|이건|저건|이\s*(?:제품|상품|모델)|그\s*(?:제품|상품|모델|것|거)|이\s*중(?:에서)?|그중|그\s*중|아까|방금|위에|말한|앞(?:의|에서)\s|같은\s*거|비슷한\s*거|더\s*(싼|비싼|좋은|나은)|다른\s*(거|건|것|걸|후보|상품|제품|모델))/;
 /*
  * 직전 추천 «말고 다른 것» 을 달라는 말 — "다른 제품 추천해줘" · "그거 말고 다른 거" (2026-10-24).
  * api/ai.js 가 서명된 직전 추천을 후보 맨 뒤로 내리고 1위 후보에서 뺀다. 같은 상품을 다시 권하지 않는다.
  */
-const ALTERNATIVE_RE = /다른\s*(?:거|건|것|걸|상품|제품|모델|후보)|(?:그거|그것|이거|이것|그\s*(?:제품|상품|모델))\s*말고|대신\s*(?:다른|추천|골라)/;
+// "비슷한 다른 폰 보여줘" · "비슷한 거 있어?" 도 (2026-10-26 홀드아웃).
+const ALTERNATIVE_RE = /다른\s*(?:거|건|것|걸|상품|제품|모델|후보|폰)|비슷한\s*(?:다른\s*)?(?:거|건|것|걸|상품|제품|모델|폰)|(?:그거|그것|이거|이것|그\s*(?:제품|상품|모델))\s*말고|대신\s*(?:다른|추천|골라)/;
 /*
  * 직전 추천에 대한 가격·구매 시점 질문 — 상품 이름이 없고 목록을 가리키는 말도 없다.
  *   "지금 사는 게 좋을까?" · "가격 괜찮은 편이야?" · "얼마야?" · "더 기다릴까?"
@@ -795,6 +913,9 @@ const PRIOR_RECOMMENDATION_RE = /(?:아까|방금)\s*(?:추천한|말한|보여�
  */
 const PRIOR_ITEM_PRICE_RE = /(?:아까|방금|앞에서|이전에)\s*(?:그거|그것|그\s*(?:상품|제품|모델))\s*(?:의|이|가|는|은)?\s*(?:가격|얼마|현재가|최저가|사도|살까)/;
 const PRIOR_SWITCH_RE = /말고|다른|대신|비슷한/;
+// "아까 그 노트북 지금 사도 돼?" also targets the signed previous
+// recommendation. Category is checked against the verified selected offer.
+const PRIOR_PLAIN_NOUN_RE = /(?:아까|방금|앞에서|이전에)\s*그\s*([가-힣A-Za-z]{2,10})(?=\s|$|[?!.,])/;
 /*
  * "아까 추천한 그 노트북" · "방금 골라 준 이어폰" — 직전 추천을 종류명으로 가리키는 말 (2026-10-24).
  * PRIOR_RECOMMENDATION_RE 는 «상품·제품·것·거» 만 알아봐서 이 말은 "노트북" 새 검색이 됐고, 직전 추천과
@@ -803,7 +924,7 @@ const PRIOR_SWITCH_RE = /말고|다른|대신|비슷한/;
 const PRIOR_RECOMMENDED_NOUN_RE = /(?:아까|방금|앞에서|이전에)\s*(?:추천한|추천해\s*준|말한|보여\s*준|골라\s*준|고른)\s*(?:그\s*)?([가-힣A-Za-z]{2,10}?)(?:이|가|은|는|을|를|의|도)?(?=\s|$|[?!.,])/;
 /** 가리킨 종류명·계열명 ("노트북"·"그램"·"이어폰"). 없거나 대상을 바꾸는 말이면 빈 문자열. */
 function priorRecommendedNoun(s) {
-  const m = PRIOR_RECOMMENDED_NOUN_RE.exec(String(s || ''));
+  const m = PRIOR_RECOMMENDED_NOUN_RE.exec(String(s || '')) || PRIOR_PLAIN_NOUN_RE.exec(String(s || ''));
   if (!m || PRIOR_SWITCH_RE.test(s)) return '';
   const noun = String(m[1] || '').toLowerCase();
   let kind = '';
@@ -852,7 +973,7 @@ function isRecommendationReason(s) {
  *   그건 LLM 호출 한 번 아끼는 것보다 훨씬 비싸다.
  */
 function classify(text, hist) {
-  const s = AIID.stripPromptBoundaryPayload(text).trim();
+  const s = cleanUntrustedShoppingInput(text);
   if (!s) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
 
   if (GREETING_RE.test(s)) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
@@ -867,6 +988,40 @@ function classify(text, hist) {
       contextualFollowup: true, requiresRecommendationIdentity: true, recommendationReason: true,
       extra: { useCase: '', brand: '', avoid: '' }
     };
+  }
+
+  /*
+   * Short conversational conditions and alternatives that were missed by the
+   * generic residue tokenizer in the 200-question offline audit.
+   *
+   * Keep the known product category, never invent a new product name. A named
+   * category in the follow-up must also occur in the previous search phrase.
+   * Otherwise, let the normal new-product routing handle the switch.
+   */
+  if (Array.isArray(hist) && hist.length) {
+    const batteryLimit = /^배터리\s*(?:수명|지속\s*시간)(?:이|가)?\s*(?:중요해|중요해요|중요하거든|중요하니까|중요한데)(?:[.!?])?$/;
+    const batteryNamed = /^배터리\s*오래가는\s*([가-힣]{2,8}?)(?:이면|이라면)\s*(?:좋겠어|좋겠어요|좋아|좋아요)(?:[.!?])?$/;
+    const otherCandidate = /^다른\s*(?:후보|제품|상품)\s*(?:좀\s*)?(?:추천해줘|추천해\s*줘|보여줘)(?:[.!?])?$/;
+    const otherNamed = /^대신\s*다른\s*([가-힣]{2,8}?)(?:도)?\s*(?:알려줘|추천해줘|보여줘)(?:[.!?])?$/;
+    const namedCondition = batteryNamed.exec(s);
+    const namedOther = otherNamed.exec(s);
+    const isCondition = batteryLimit.test(s) || !!namedCondition;
+    const isAlternative = otherCandidate.test(s) || !!namedOther;
+    if (isCondition || isAlternative) {
+      const prior = conversationProduct(hist);
+      const noun = namedCondition && namedCondition[1] || namedOther && namedOther[1] || '';
+      if (prior && isProductQuery(prior) && (!noun || prior.indexOf(noun) >= 0)) {
+        return {
+          intent: 'C', query: prior.slice(0, MAX_QUERY_LEN),
+          identityText: prior.slice(0, 200),
+          source: 'heuristic', confidence: 'high', contextualFollowup: true,
+          stateQuery: true, ownQuery: false, refinement: false,
+          conditionFollowup: isCondition, wantsAlternative: isAlternative,
+          requiresRecommendationIdentity: false, fitQuestion: false,
+          extra: { useCase: '', brand: '', avoid: '' }
+        };
+      }
+    }
   }
 
   /* 상품 조건 파싱보다 먼저 정보 목적을 본다. "골라줘"가 뉴스 선별에도 쓰이기 때문이다. */
@@ -940,8 +1095,21 @@ function classify(text, hist) {
    * 걷어내고(api/_aiidentity.js splitNegations) 남은 구절로 검색어를 만든다.
    */
   const positiveSpan = AIID.splitNegations(itemText).positive;
-  const identityPositiveSpan = AIID.splitNegations(removeConflictingModelParentheticals(itemText)).positive;
-  let query = extractQuery(positiveSpan);
+  /*
+   * The suffix describes a requested attribute, NOT the product identity.
+   * 1000-question audit: "그램 노트북 추천해줘 배터리 사용 시간이 중요해"
+   * was searched as model "그램 노트북 배터리 사용 시간이" and discarded as NONE.
+   * Only strip these narrow, complete conversational tails when a concrete
+   * product subject remains. A request FOR a laptop battery stays unchanged.
+   */
+  const batteryRequirementTail = /\s+배터리\s*(?:사용\s*시간(?:이)?\s*중요해|가\s*오래가야\s*해)(?:[.!?？]+)?$/;
+  function withoutTrailingBatteryNeed(subject) {
+    const trimmed = String(subject || '').replace(batteryRequirementTail, '').trim();
+    return trimmed && AIID.productEvidence(trimmed) > 0 ? trimmed : subject;
+  }
+  const identityPositiveSpan = withoutTrailingBatteryNeed(
+    AIID.splitNegations(removeConflictingModelParentheticals(itemText)).positive);
+  let query = extractQuery(withoutTrailingBatteryNeed(positiveSpan));
 
   let intent;
   /*
@@ -962,7 +1130,15 @@ function classify(text, hist) {
    * "… 대신 추천하지 마" 의 '추천', "… 하루뿐이면 역대 최저가라고 단정하지 마" 의 '가격 기록' 은 요구가 아니다.
    */
   let explicit = false;
+  // "가격은 6만원 이하로 해줘" sets a shopping-selection budget; it
+  // does not ask for the current price of a named product. PRICE_RE alone
+  // used to classify these as D, skipping the near-ceiling recommendation
+  // window and sending unfiltered cheap cards.
+  const priceCapSelection = !!parseConstraints(s).budgetMax
+    && /(?:가격|예산|금액)\s*(?:은|는)?[^.!?]{0,45}(?:원|만원)\s*(?:이하|이내)\s*로?\s*(?:해\s*줘|해주세요)/.test(act)
+    && !/(?:최저가|현재가|얼마|가격\s*이력|가격\s*비교)/.test(act);
   if (TIMING_RE.test(act)) { intent = 'E'; explicit = true; }
+  else if (priceCapSelection) { intent = 'C'; explicit = true; }
   else if (PRICE_RE.test(act)) { intent = 'D'; explicit = true; }
   // "어떻게 골라야 해" 는 고르는 방법을 묻는 지식 질문이다 — 추천 요청보다 먼저 본다
   // (api/ai.js CLASSIFY_SYSTEM: "어떻게 고르나"는 B, "골라 줘"는 C).
@@ -1214,6 +1390,14 @@ function conversationProduct(hist) {
     const positive = AIID.splitNegations(spText).positive;
     const q = extractQuery(positive);
     if (!q && !CONTEXT_DEPENDENT_RE.test(spText)) continue;
+    // A standalone budget change is not a new product. In the 200-question
+    // audit "예산을 10만원으로 할게" was stored as the product name and then
+    // "배터리 오래가는 이어폰이면 좋겠어" lost the earphone context.
+    // 상품 낱말은 검색어와 같은 기준(isProductQuery)으로 본다 — productEvidence 는 종류명·동의어 사전에 있는 말만
+    // 세서 "닭가슴살 4만원 이하로 추천해줘" 의 닭가슴살까지 «예산만 말한 발화» 로 지웠다 (2026-10-26).
+    const onlyBudget = parseConstraints(text);
+    if ((onlyBudget.budgetMax || onlyBudget.budgetMin)
+        && AIID.productEvidence(positive) === 0 && !isProductQuery(positive)) continue;
     // 조건만 덧붙인 말("배터리 오래가는 게 중요해")·잡담("고마워 정말")은 찾던 상품이 아니다 — 그 앞의 상품을 계속 찾는다.
     if (isConditionOnly(spText) || isSmallTalk(text)) continue;
     // 상품 이름이 아닌 낱말("다르면"·"기억해")은 옵션 판정에서 뺀다 (classify 의 refineText 와 같다).
@@ -1233,6 +1417,6 @@ function conversationProduct(hist) {
 
 module.exports = {
   classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, isRecommendationReason,
-  shoppingSpan, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
+  shoppingSpan, cleanUntrustedShoppingInput, recoverSafeShoppingIntent, productPrefixBeforeUnsupportedPriceInstruction, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };

@@ -25,13 +25,17 @@ export const ProductRow = memo(function ProductRow({ product, trailing }: { prod
       onPress={() => openProduct(product)}
       style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
       accessibilityRole="button"
-      accessibilityLabel={`${product.title}, ${product.mallLabel}, ${product.price.toLocaleString('ko-KR')}원`}
+      accessibilityLabel={`${product.title}, ${product.mallLabel}, ${product.price.toLocaleString('ko-KR')}원${product.identityNote ? `, ${product.identityNote}` : ''}`}
     >
       <Thumb uri={product.image} title={product.title} size={76} />
       <View style={styles.body}>
         <Price value={product.price} />
         {change ? <DropLabel amount={change.dropAmount} pct={change.dropPct} /> : null}
         <AppText style={[t.callout, styles.title]} numberOfLines={2}>{product.title}</AppText>
+        {/* AI 카드의 «다른 옵션: 용량 다름(512GB)» 라벨 (web .mnote-id). 없으면 256GB 를 물은 사람에게 512GB 카드가 요청 상품처럼 보인다. */}
+        {product.identityNote ? (
+          <AppText style={[t.caption, { color: theme.caution, fontWeight: '600' }]} numberOfLines={2}>{product.identityNote}</AppText>
+        ) : null}
         <AppText style={[t.caption, { color: mallColor(theme, product.mall), fontWeight: '600' }]} numberOfLines={1}>
           {product.mallLabel}
           {product.isRocket ? <AppText tone="faint" style={t.caption}>  ·  로켓배송</AppText> : null}

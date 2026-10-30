@@ -363,6 +363,10 @@ async function searchAll(keyword, {
     ? orderAiSearchCandidates(identityQuery || keyword, coupang.items, adpick.items)
     : [...coupang.items, ...adpick.items];
   const errors = [coupang.error, adpick.error].filter(Boolean);
+  // Coupang may be unavailable while ADPICK has successfully searched and
+  // returned zero relevant items. Provider-local success must not be lost by
+  // the historical Coupang-only "from" response field.
+  const freshAnswered = [coupang, adpick].some(r => r.from === 'api' || r.from === 'cache');
 
   /*
    * ★ 어느 공급원도 응답하지 못했는가 (2026-09-13 감사 후속 P2).
@@ -381,6 +385,7 @@ async function searchAll(keyword, {
     from: coupang.from || 'none',
     blocked: !!coupang.blocked,
     mismatch: !items.length && !!(coupang.mismatch || adpick.mismatch),
+    freshAnswered,
     failed
   };
 }

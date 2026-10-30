@@ -102,6 +102,7 @@ const state = {
   blockReason: '',
   totalCalls: 0,
   totalCacheHits: 0,
+  totalCoalesced: 0,
   totalDenied: 0,
   consecutiveTransient: 0
 };
@@ -364,12 +365,15 @@ function normalize(raw) {
  * @returns {{items: Array, error: string|null, from: string, blocked: boolean}}
  *   from: 'cache' | 'stale-cache' | 'api' | 'none'
  */
-async function searchAdpick(keyword, opts = {}) {
+async function searchAdpickOnce(keyword, opts = {}) {
   const {
     limit = 10,
     source = 'unknown',
     maxWaitMs = 0,
     minGapMs = MIN_GAP_MS,
+    // AI can shorten the HTTP deadline to fit its overall search budget;
+    // no caller may lengthen the default provider timeout.
+    timeoutMs = TIMEOUT_MS,
     useCache = true,
     cacheTtlMs = CACHE_TTL_MS,
     forceRefresh = false
@@ -445,7 +449,8 @@ async function searchAdpick(keyword, opts = {}) {
 
   let r, text;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const requestTimeoutMs = Math.max(1, Math.min(TIMEOUT_MS, Math.floor(Number(timeoutMs) || TIMEOUT_MS)));
+  const timer = setTimeout(() => ac.abort(), requestTimeoutMs);
   try {
     r = await fetch(url, {
       signal: ac.signal,
@@ -458,7 +463,7 @@ async function searchAdpick(keyword, opts = {}) {
   } catch (e) {
     const timedOut = e.name === 'AbortError';
     const why = timedOut
-      ? `네트워크 응답 시간 초과 (${TIMEOUT_MS}ms)`
+      ? `네트워크 응답 시간 초과 (${requestTimeoutMs}ms)`
       : `네트워크 오류: ${e.message}`;
     // 응답이 아예 오지 않았다 — http_status 는 0 으로 둔다.
     await finish(timedOut ? 'timeout' : 'network_error', 0, 0, why);
@@ -513,6 +518,37 @@ async function searchAdpick(keyword, opts = {}) {
   return { items: items.slice(0, limit), error: null, from: 'api', blocked: false, apiCalled: true };
 }
 
+/*
+ * A burst of identical queries may arrive before the shared DB cache is written.
+ * Share ONE in-progress search (including its quota reservation) within this
+ * instance; do not share refresh/no-cache requests or requests with different
+ * source, deadline or limit. The result is never retained after settlement.
+ */
+const pendingSearches = new Map();
+async function searchAdpick(keyword, opts = {}) {
+  const kw = String(keyword || '').trim().slice(0, 80);
+  if (!kw || opts.useCache === false || opts.forceRefresh) {
+    return searchAdpickOnce(keyword, opts);
+  }
+  const key = JSON.stringify([
+    kw, opts.source ?? 'unknown', opts.limit ?? 10,
+    opts.maxWaitMs ?? 0, opts.minGapMs ?? MIN_GAP_MS,
+    opts.timeoutMs ?? TIMEOUT_MS, opts.cacheTtlMs ?? CACHE_TTL_MS
+  ]);
+  const existing = pendingSearches.get(key);
+  if (existing) {
+    state.totalCoalesced++;
+    return existing;
+  }
+  const task = searchAdpickOnce(keyword, opts);
+  pendingSearches.set(key, task);
+  try {
+    return await task;
+  } finally {
+    if (pendingSearches.get(key) === task) pendingSearches.delete(key);
+  }
+}
+
 function isBlocked() {
   return state.blockedUntil > Date.now();
 }
@@ -527,6 +563,7 @@ function localStats() {
     globalMaxPerMin: globalAcquire ? GLOBAL_MAX_PER_MIN : 0,
     calls: state.totalCalls,
     cacheHits: state.totalCacheHits,
+    coalesced: state.totalCoalesced,
     denied: state.totalDenied,
     blocked: isBlocked(),
     blockReason: state.blockReason,

@@ -227,7 +227,12 @@ function identityNote(it) {
 
 /** 나머지 후보. 2·3위만 — 그 아래는 사용자가 카드로 본다. */
 function others(items) {
-  const list = (items || []).slice(1, 3).filter(Boolean);
+  // Excluded product states are not fallback recommendations. In particular,
+  // do not quote a refused refurbished item (or its price) as a valid option
+  // immediately after the user explicitly asked for a new product.
+  const list = (items || []).slice(1)
+    .filter(it => it && !/(?:제외 요청하신|제외한 상태|제외된 상태)/.test(identityNote(it)))
+    .slice(0, 2);
   return list.map((it, i) => {
     const p = priceOf(it);
     return `${i + 2}. ${nameOf(it, 40)}${p > 0 ? ` — ${won(p)}원` : ''}${identityNote(it)}`;
@@ -490,6 +495,8 @@ function compose(ctx) {
     // 이 경우에도 마지막 가격 확인 시점은 반드시 드러낸다.
     const freshness = c.deal && c.deal.freshness && c.deal.freshness.label;
     if (freshness) L.push(`가격 확인 시점: ${freshness}`);
+    L.push('위 금액은 검색 결과에 표시된 판매가이며 실제 결제 금액으로 확정된 값은 아니에요. 쿠폰·카드·회원 혜택과 배송비에 따라 달라질 수 있으니 결제 전에 판매처에서 확인해 주세요.');
+    if (c.inventoryRequested) L.push('재고 보유 여부는 이 검색으로 확인하지 않았으니 판매처에서 함께 확인해 주세요.');
   } else {
     timing(c.deal).forEach(x => L.push(x));
   }

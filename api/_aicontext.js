@@ -279,7 +279,7 @@ const REF_LABEL = 'seosa-ai-recommendation-ref-v2';
  * 쿠팡 상품은 옵션 ID 없이 발급하지 않는다 (옵션을 특정할 수 없는 참조는
  * 결국 "그중 아무 옵션"을 고르게 만든다).
  */
-function createRecommendationRef(item, now) {
+function createRecommendationRef(item, now, continuity) {
   const key = keyFor(REF_LABEL);
   const productId = clean(item && item.productId, ID_LEN);
   const vendorItemId = clean(item && item.vendorItemId, ID_LEN);
@@ -287,7 +287,30 @@ function createRecommendationRef(item, now) {
   if (!key || !productId || !mall) return '';
   if (isCoupangMall(mall) && !vendorItemId) return '';
   const iat = Number.isFinite(now) ? now : Date.now();
-  const payload = b64url(JSON.stringify({ p: productId, v: vendorItemId, m: mall, iat, exp: iat + REF_TTL_MS }));
+  const d = { p: productId, v: vendorItemId, m: mall, iat, exp: iat + REF_TTL_MS };
+  /*
+   * The price shown in an actual search is a signed past observation, NOT
+   * live checkout-price evidence. Preserve it across subsequent rechecks
+   * so an older catalogue row cannot silently rewrite conversation history.
+   * Only server-local callers mark an item as newly searched; browser
+   * contextProducts never supplies this flag.
+   */
+  const prior = continuity && continuity.previous;
+  const samePrior = prior && prior.productId === productId
+    && String(prior.vendorItemId || '') === vendorItemId
+    && String(prior.mallId || prior.mall || '') === mall;
+  const firstPrice = Math.round(Number(item && item.price) || 0);
+  if (continuity && continuity.fromSearch === true && !item.isCanonicalGroup
+      && Number.isSafeInteger(firstPrice) && firstPrice > 0 && firstPrice <= 1e10) {
+    d.sp = firstPrice;
+    d.sa = iat;
+  } else if (samePrior && Number.isSafeInteger(prior.searchPrice)
+      && prior.searchPrice > 0 && Number.isFinite(prior.searchAt)
+      && prior.searchAt <= iat + CLOCK_SKEW_MS && iat - prior.searchAt <= REF_TTL_MS) {
+    d.sp = prior.searchPrice;
+    d.sa = prior.searchAt;
+  }
+  const payload = b64url(JSON.stringify(d));
   const sig = b64url(crypto.createHmac('sha256', key).update(`${REF_PREFIX}.${payload}`).digest());
   return `${REF_PREFIX}.${payload}.${sig}`;
 }
@@ -318,7 +341,17 @@ function verifyRecommendationRef(value, now) {
     const mall = clean(d.m, 30);
     if (!productId || !mall) return null;
     if (isCoupangMall(mall) && !vendorItemId) return null;
-    return { productId, vendorItemId, mall, mallId: mall, title: '' };
+    const verified = { productId, vendorItemId, mall, mallId: mall, title: '' };
+    if (Object.prototype.hasOwnProperty.call(d, 'sp') || Object.prototype.hasOwnProperty.call(d, 'sa')) {
+      const sp = Number(d.sp);
+      const sa = Number(d.sa);
+      if (!Number.isSafeInteger(sp) || sp <= 0 || sp > 1e10
+          || !Number.isFinite(sa) || sa > iat + CLOCK_SKEW_MS
+          || sa > t + CLOCK_SKEW_MS || iat - sa > REF_TTL_MS) return null;
+      verified.searchPrice = sp;
+      verified.searchAt = sa;
+    }
+    return verified;
   } catch (e) {
     return null;
   }
@@ -402,6 +435,29 @@ const STATE_WORD_RE = /^[a-z]{2,16}$/;
 const STATE_DIGEST_RE = /^[A-Za-z0-9_-]{8,16}$/;
 
 /*
+ * Two model+option identities for comparison follow-ups. This is part of
+ * server-signed convState, NEVER trusted from client chat text or prices.
+ * Short server-confirmed names are for UI reference only; every follow-up
+ * must look up each option again in the catalogue.
+ */
+function stateComparison(value) {
+  if (!Array.isArray(value) || value.length !== 2) return [];
+  const normalized = value.map(x => {
+    if (!x || typeof x !== 'object') return null;
+    const productId = clean(x.productId, ID_LEN);
+    const vendorItemId = clean(x.vendorItemId, ID_LEN);
+    const mallId = clean(x.mallId || x.mall, 30);
+    const title = clean(x.title, TITLE_LEN);
+    if (!productId || !mallId || !title || (isCoupangMall(mallId) && !vendorItemId)) return null;
+    return { productId, vendorItemId, mallId, mall: mallId, title };
+  });
+  if (normalized.some(x => !x)) return [];
+  const key = x => [x.mallId, x.productId, x.vendorItemId].join('|');
+  return key(normalized[0]) === key(normalized[1]) ? [] : normalized;
+}
+
+
+/*
  * 조건 객체 (_shopintent.mergeConstraints 결과) → 서명할 모양.
  * 값이 있는 단순 값(유한한 수·true·짧은 문자열)만 남긴다. 필드 이름을 박아 두지 않는 것은
  * _shopintent 가 조건 필드를 늘려도(예산 «꼭 지켜» 같은) 상태가 그대로 따라가게 하기 위해서다.
@@ -449,6 +505,7 @@ function createConversationState(state, now) {
     bs: state.budgetScope === 'global' ? 'global' : '',
     bp: clean(state.budgetProduct, STATE_PRODUCT_LEN),
     a: stateList(state.absorbed, STATE_DIGEST_RE),
+    co: stateComparison(state.comparison),
     s, iat, exp: Math.min(iat + STATE_TTL_MS, s + STATE_MAX_AGE_MS)
   };
   const payload = b64url(JSON.stringify(body));
@@ -487,6 +544,7 @@ function verifyConversationState(value, now) {
       budgetScope: d.bs === 'global' ? 'global' : '',
       budgetProduct: clean(d.bp, STATE_PRODUCT_LEN),
       absorbed: stateList(d.a, STATE_DIGEST_RE),
+      comparison: stateComparison(d.co),
       startedAt: s
     };
   } catch (e) {

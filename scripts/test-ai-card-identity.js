@@ -259,6 +259,38 @@ function item(id, title, price, mall) {
       'EXCLUDED tier 는 「다른 모델」 라벨을 받지 않는다 (제외 설명은 다른 자리)', notes);
   }
 
+  /* ================================================================ */
+  section('I. Production 실사용 오추천 차단 (2026-10-29 Issue #204)');
+  {
+    feed = [
+      item('prod-content', '노트북 하나로 3억 번 AI 바이브코딩 사업의 모든것', 199000),
+      item('prod-device', 'LG 울트라PC 15U50R 인텔 i5 8GB 256GB 노트북', 289000)
+    ];
+    const r = await ask({ question: '30만원 이하 가성비 노트북 추천해줘', chatHistory: [] });
+    ok(r.cards.some(x => x.productId === 'prod-device'), '실제 노트북은 카드에 남는다', r.cards.map(x => x.title));
+    ok(!r.cards.some(x => x.productId === 'prod-content'), '교육 콘텐츠가 노트북 추천 카드로 나오지 않는다', r.cards.map(x => x.title));
+  }
+  {
+    feed = [
+      item('prod-stylus', '터치팬 스마트펜 아이폰펜 갤럭시탭 아이패드 핸드폰펜', 2700),
+      item('prod-ipad', 'Apple 아이패드 에어 M2 11인치 128GB 태블릿 본체', 689000),
+      item('prod-bundle', 'Apple 아이패드 에어 M2 11인치 128GB 본체 스마트펜 포함', 730000)
+    ];
+    const r = await ask({ question: '아이패드 추천해줘', chatHistory: [] });
+    ok(r.cards.some(x => x.productId === 'prod-ipad'), '아이패드 본체 카드 유지', r.cards.map(x => x.title));
+    ok(r.cards.some(x => x.productId === 'prod-bundle'), '본체에 펜 포함한 묶음은 유지', r.cards.map(x => x.title));
+    ok(!r.cards.some(x => x.productId === 'prod-stylus'), '태블릿 호환 터치펜만 파는 상품 카드 차단', r.cards.map(x => x.title));
+  }
+  {
+    feed = [
+      item('prod-earbud', '[해외] JBL 웨이브 300 TWS 완전 무선 스테레오 이어버드 일상 음악 감상용 헤드셋', 48600),
+      item('prod-headset', '소니 WH-CH520 블루투스 무선 헤드셋', 105000)
+    ];
+    const r = await ask({ question: '일상용 헤드셋 15만원 이하로 추천해줘', chatHistory: [] });
+    ok(r.cards.some(x => x.productId === 'prod-headset'), '진짜 헤드셋은 카드에 남는다', r.cards.map(x => x.title));
+    ok(!r.cards.some(x => x.productId === 'prod-earbud'), 'TWS 이어버드를 헤드셋으로 추천하지 않는다', r.cards.map(x => x.title));
+  }
+
   console.log(`\n=== 결과: ${pass}/${pass + fails.length} PASS ===`);
   if (fails.length) {
     console.log('\n실패:');
