@@ -107,6 +107,12 @@ function underLimit() { return estimatedSpend() < maxUsd; }
  * cap: 서버가 지켜야 하는 하드 상한. 카드가 그 위면 FAIL.
  */
 const SUITES = {
+  coalescingLive4: [
+    { q: '15만원 이하 무선 이어폰 추천해줘', cap: 150000 },
+    { q: '5만원 이하 무선 마우스 추천해줘', cap: 50000 },
+    { q: '50만원 이하 무선 청소기 추천해줘', cap: 500000 },
+    { q: '12만원 이하 에어프라이어 추천해줘', cap: 120000 }
+  ],
   budget: [
     { q: '30만원 이하 노트북 추천해줘', cap: 300000 },
     { q: '10만원 이하 게이밍 노트북 추천해줘', cap: 100000 },
