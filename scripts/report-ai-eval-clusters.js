@@ -30,14 +30,31 @@ function checksum(row) {
   const stable = String(row.id || row.eval_id || row.question || row.userQuestion || row.user_question || row.index || '');
   return crypto.createHash('sha256').update(stable).digest('hex').slice(0, 14);
 }
-function result(row) {
-  if (!row || typeof row !== 'object') return 'UNVERIFIED';
-  const errors = Array.isArray(row.failures) ? row.failures : Array.isArray(row.ruleFailures) ? row.ruleFailures : [];
-  const qs = Object.values(row.quality || {}).filter(x => x && x.verdict);
-  if (errors.length || row.verdict === 'FAIL' || row.functionCheck?.after === 'FAIL'
+function selectPhase(row, phase) {
+  if (phase !== 'before') return row;
+  if (!row || !row.before) return null;
+  return {
+    ...row, quality: row.before.quality || {},
+    verdict: row.before.verdict,
+    errorCause: row.before.errorCause || '',
+    functionCheck: { after: row.functionCheck && row.functionCheck.before },
+    failures: row.before.failures || [], ruleFailures: row.before.ruleFailures || []
+  };
+}
+function result(row, phase = 'after') {
+  const r = selectPhase(row, phase);
+  if (!r || typeof r !== 'object') return 'UNVERIFIED';
+  const errors = Array.isArray(r.failures) ? r.failures : Array.isArray(r.ruleFailures) ? r.ruleFailures : [];
+  const qs = Object.values(r.quality || {}).filter(x => x && x.verdict);
+  if (errors.length || r.verdict === 'FAIL' || r.functionCheck?.after === 'FAIL'
       || qs.some(x => x.verdict === 'FAIL')) return 'FAIL';
-  if (row.verdict === 'PASS' || row.functionCheck?.after === 'PASS'
-      || qs.length && qs.every(x => x.verdict === 'PASS')) return 'PASS';
+  // A function PASS is not equivalent to an answer-quality PASS. Never
+  // promote an unverified or partially scored answer to a verified PASS.
+  if (qs.length) {
+    if (qs.some(x => x.verdict !== 'PASS')) return 'UNVERIFIED';
+    return 'PASS';
+  }
+  if (r.verdict === 'PASS') return 'PASS';
   return 'UNVERIFIED';
 }
 function categories(row) {
@@ -63,14 +80,14 @@ function categories(row) {
   if (!labels.size) labels.add('unclassified');
   return [...labels].sort();
 }
-function summarize(records) {
+function summarize(records, phase = 'after') {
   const counts = { asked: records.length, pass: 0, fail: 0, unverified: 0 };
   const clusters = {};
   for (const row of records) {
-    const status = result(row);
+    const status = result(row, phase);
     counts[status.toLowerCase()]++;
     if (status !== 'FAIL') continue;
-    for (const group of categories(row)) {
+    for (const group of categories(selectPhase(row, phase))) {
       const slot = clusters[group] || (clusters[group] = { failures: 0, caseHashes: [] });
       slot.failures++;
       if (slot.caseHashes.length < LIMIT) slot.caseHashes.push(checksum(row));
@@ -78,6 +95,7 @@ function summarize(records) {
   }
   return {
     kind: 'SEOSA_OFFLINE_EVAL_FAILURE_CLUSTER_SUMMARY',
+    phase,
     ...counts,
     clusters: Object.fromEntries(Object.entries(clusters)
       .sort((a,b) => b[1].failures-a[1].failures || a[0].localeCompare(b[0]))),
@@ -92,12 +110,15 @@ function parseJsonl(text) {
 }
 function main(args=process.argv.slice(2)) {
   const pick=flag=>{ const i=args.indexOf(flag);return i>=0?args[i+1]:null; };
-  const input=pick('--input'),output=pick('--out');
-  if (!input) { console.error('Usage: node scripts/report-ai-eval-clusters.js --input path.jsonl [--out path.json]');process.exitCode=2;return; }
-  const summary=summarize(parseJsonl(fs.readFileSync(path.resolve(input),'utf8')));
+  const input=pick('--input'),output=pick('--out'),phase=pick('--phase') || 'after';
+  if (!input || !['before','after'].includes(phase)) {
+    console.error('Usage: node scripts/report-ai-eval-clusters.js --input path.jsonl [--phase before|after] [--out path.json]');
+    process.exitCode=2;return;
+  }
+  const summary=summarize(parseJsonl(fs.readFileSync(path.resolve(input),'utf8')),phase);
   if(output) { fs.mkdirSync(path.dirname(path.resolve(output)),{recursive:true});fs.writeFileSync(path.resolve(output),JSON.stringify(summary,null,2)+'\n'); }
   console.log(JSON.stringify(summary));
   if(summary.unverified>0) process.exitCode=1;
 }
 if(require.main===module)main();
-module.exports={summarize,categories,result,parseJsonl,FACT};
+module.exports={summarize,categories,result,parseJsonl,selectPhase,FACT};
