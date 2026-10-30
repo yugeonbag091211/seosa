@@ -368,8 +368,8 @@ const coupangRow = i => mk('쿠팡', `c${i}`, `소니 가벼운 노이즈 캔슬
     ok(call.opts.identityQuery === '소니 WH-CH730N', '후보 창 정렬은 원문 상품 구절로 한다');
     const pacing = call.opts.adpickOpts || {};
     ok(pacing.source === 'ai'
-       && Number.isFinite(pacing.maxWaitMs) && pacing.maxWaitMs >= 0 && pacing.maxWaitMs <= 3500
-       && Number.isFinite(pacing.timeoutMs) && pacing.timeoutMs > 0 && pacing.timeoutMs <= 10000
+       && Number.isFinite(pacing.maxWaitMs) && pacing.maxWaitMs >= 0 && pacing.maxWaitMs <= 8500
+       && Number.isFinite(pacing.timeoutMs) && pacing.timeoutMs > 0 && pacing.timeoutMs <= 6500
        && pacing.maxWaitMs + pacing.timeoutMs <= 17000,
        'ADPICK 호출은 AI 전용 리미터 대기·HTTP 시간 상한을 지킨다');
 
