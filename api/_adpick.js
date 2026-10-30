@@ -370,6 +370,9 @@ async function searchAdpick(keyword, opts = {}) {
     source = 'unknown',
     maxWaitMs = 0,
     minGapMs = MIN_GAP_MS,
+    // AI can shorten the HTTP deadline to fit its overall search budget;
+    // no caller may lengthen the default provider timeout.
+    timeoutMs = TIMEOUT_MS,
     useCache = true,
     cacheTtlMs = CACHE_TTL_MS,
     forceRefresh = false
@@ -445,7 +448,8 @@ async function searchAdpick(keyword, opts = {}) {
 
   let r, text;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const requestTimeoutMs = Math.max(1, Math.min(TIMEOUT_MS, Math.floor(Number(timeoutMs) || TIMEOUT_MS)));
+  const timer = setTimeout(() => ac.abort(), requestTimeoutMs);
   try {
     r = await fetch(url, {
       signal: ac.signal,
@@ -458,7 +462,7 @@ async function searchAdpick(keyword, opts = {}) {
   } catch (e) {
     const timedOut = e.name === 'AbortError';
     const why = timedOut
-      ? `네트워크 응답 시간 초과 (${TIMEOUT_MS}ms)`
+      ? `네트워크 응답 시간 초과 (${requestTimeoutMs}ms)`
       : `네트워크 오류: ${e.message}`;
     // 응답이 아예 오지 않았다 — http_status 는 0 으로 둔다.
     await finish(timedOut ? 'timeout' : 'network_error', 0, 0, why);

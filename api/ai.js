@@ -1450,12 +1450,17 @@ async function searchProducts(query, budgetMs) {
   try {
     const deadline = Date.now() + Math.max(1, Number(budgetMs) || AI_SEARCH_TIMEOUT_MS);
     const searchCap = Math.min(AI_SEARCH_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
+    // One bounded wait for the existing ADPICK limiter avoids avoidable
+    // "search failed" results when a local window frees in a few seconds.
+    // Budget the HTTP timeout as well: wait + HTTP + reserve <= searchCap.
+    const adpickPacing = require('./_ai-search-pacing').pacingForSearchCap(searchCap);
     const searched = await settleWithin(searchAll(aiSearchKeyword(query), {
       coupangLimit: AI_SEARCH_LIMIT,
       adpickLimit: AI_ADPICK_LIMIT,
       coupangOpts: { source: 'ai', maxWaitMs: AI_SEARCH_MAX_WAIT_MS },
-      // 이름표뿐이다(/api/search 와 같다). maxWaitMs 를 넣지 않으므로 ADPICK 대기 정책은 그대로다.
-      adpickOpts: { source: 'ai' },
+      // Do not increase 3/min local or 8/min global quotas. The existing
+      // ADPICK limiter alone grants a slot (or rejects us) within this bound.
+      adpickOpts: { source: 'ai', ...adpickPacing },
       // 후보 창 정렬(식별 등급)은 정규화 전 상품 구절로 — 모델 코드의 구분자를 보존한다.
       identityQuery: query
     }), searchCap);
