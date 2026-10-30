@@ -54,9 +54,32 @@ if (envFile) {
     if (process.env[key] === undefined) process.env[key] = v;
   });
 }
-// 운영 원장 쓰기 금지 — 가드 없이는 돌지 않는다.
+// The user explicitly requires zero production writes and a capped live
+// evaluation. Refuse to run in Production; never erase VERCEL_ENV in order to
+// bypass the read-only guard's own production safety check.
+if (process.env.VERCEL_ENV === 'production') {
+  console.error('LIVE_PREFLIGHT_FAIL production_environment: 실제 평가를 Production에서 실행할 수 없습니다.');
+  process.exit(2);
+}
+const maxUsd = Number(arg('max-usd', process.env.SEOSA_LIVE_MAX_USD || ''));
+if (!(Number.isFinite(maxUsd) && maxUsd > 0 && maxUsd <= 5)) {
+  console.error('LIVE_PREFLIGHT_FAIL max_usd: --max-usd 5 이하의 양수 비용 상한을 지정해 주세요.');
+  process.exit(2);
+}
+if (!process.env.OPENAI_API_KEY && !process.env.OPENROUTER_API_KEY) {
+  console.error('LIVE_PREFLIGHT_FAIL llm_credentials: 모델 공급자 키가 없어 실호출 검증을 실행하지 않습니다.');
+  process.exit(2);
+}
+if (!(process.env.COUPANG_ACCESS_KEY && process.env.COUPANG_SECRET_KEY) && !process.env.ADPICK_API_KEY) {
+  console.error('LIVE_PREFLIGHT_FAIL marketplace_credentials: 실제 상품 API 키가 없어 실호출 검증을 실행하지 않습니다.');
+  process.exit(2);
+}
+if (!((process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY) || process.env.NEON_DATABASE_URL)) {
+  console.error('LIVE_PREFLIGHT_FAIL database_credentials: 읽기 전용 데이터 조회 환경이 구성되지 않았습니다.');
+  process.exit(2);
+}
+// Readonly is mandatory; no save or RPC-write path can proceed.
 process.env.SEOSA_DB_READONLY = '1';
-delete process.env.VERCEL_ENV;        // 가드는 Production 에서 켜지지 않는다
 // 읽기 전용 rpc 허용 목록 — 가격 이력 읽기에 쓰는 함수들.
 if (!process.env.SEOSA_DB_READONLY_RPC) {
   process.env.SEOSA_DB_READONLY_RPC = 'price_history_prior_obs,price_history_latest,price_history_series';
@@ -64,6 +87,19 @@ if (!process.env.SEOSA_DB_READONLY_RPC) {
 
 const handler = require('../api/ai.js');
 const db = require('../api/_supabase');
+if (!db.__readOnlyGuard.enabled) {
+  console.error('LIVE_PREFLIGHT_FAIL db_guard: 데이터베이스 읽기 전용 보호가 비활성화되어 있습니다.');
+  process.exit(2);
+}
+const llm = require('../api/_llm');
+const knownRates = llm.OPENAI_PRICES_USD_PER_1M || {};
+const model = require('../api/_openai-provider').modelFromEnv();
+if (process.env.OPENAI_API_KEY && !knownRates[model]) {
+  console.error('LIVE_PREFLIGHT_FAIL unpriced_model: 모르는 모델의 사용료를 5달러 이하로 보증할 수 없습니다.');
+  process.exit(2);
+}
+function estimatedSpend() { return Number(llm.stats().estimatedCostUsd || 0); }
+function underLimit() { return estimatedSpend() < maxUsd; }
 
 /* ── 질문 묶음 ──────────────────────────────────────────────────────
  * 감사 작업지시서의 재현 질문에서 가져왔다 (CO-01 예산, CO-03 범위, CO-04 모델/옵션, CO-05 비쇼핑).
@@ -197,6 +233,11 @@ async function runTurns(c) {
    */
   let first = true;
   for (const c of cases) {
+    if (!underLimit()) {
+      fails.push('비용 상한 도달 — 남은 시나리오를 실행하지 않음');
+      console.log('[STOP] estimated LLM spend limit reached');
+      break;
+    }
     if (!first && DELAY > 0) await sleep(DELAY);
     first = false;
     try {
@@ -208,6 +249,8 @@ async function runTurns(c) {
   }
 
   const guard = db.__readOnlyGuard;
+  if (estimatedSpend() > maxUsd) fails.push('추정 실제 비용이 상한을 초과함');
+  console.log('LLM 추정 사용료(USD): ' + estimatedSpend().toFixed(6) + ' / 상한 ' + maxUsd.toFixed(2));
   console.log(`\n=== 결과: ${pass} PASS / ${fails.length} FAIL ===`);
   console.log(`DB 가드 최종: ${JSON.stringify(guard)}`);
   if (fails.length) fails.forEach(f => console.log(`  - ${f}`));
