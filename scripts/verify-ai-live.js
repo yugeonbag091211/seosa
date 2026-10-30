@@ -107,6 +107,10 @@ function underLimit() { return estimatedSpend() < maxUsd; }
  * cap: 서버가 지켜야 하는 하드 상한. 카드가 그 위면 FAIL.
  */
 const SUITES = {
+  merchantGuard2: [
+    { q: '15만원 이하 무선 이어폰 추천해줘', cap: 150000 },
+    { q: '7만원 이하 보조배터리 추천해줘', cap: 70000 }
+  ],
   budget: [
     { q: '30만원 이하 노트북 추천해줘', cap: 300000 },
     { q: '10만원 이하 게이밍 노트북 추천해줘', cap: 100000 },

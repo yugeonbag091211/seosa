@@ -235,5 +235,6 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ]
+  ],
+  "buildCommand": "node scripts/verify-ai-live.js --only merchantGuard2 --require-live-search --max-usd 1 --delay 22000 --out reports/merchant-guard-2-qa.json"
 }
