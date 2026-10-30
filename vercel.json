@@ -235,5 +235,6 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ]
+  ],
+  "buildCommand": "node scripts/verify-ai-live.js --only pilot10 --max-usd 1 --delay 8500 --out reports/merchant-pilot-10-qa.json"
 }
