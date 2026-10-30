@@ -1134,6 +1134,19 @@ async function resolveIntent(q, hist, view, budget, guest, intentHist, opts) {
    * 말한 상품을 "그중에 제일 싼 거" 가 이어받게. LLM 분류기에는 실제 대화 기록만 간다.
    */
   const det = heuristicIntent(q, intentHist || hist, view);
+  /*
+   * Adversarial wrappers may trick the LLM classifier into treating a product
+   * request as general Q&A (live QA R2-230..233, R3-004). The deterministic
+   * parser has already isolated the user's actual product before the wrapper.
+   * Preserve that safe product identity rather than asking the LLM to
+   * re-interpret the attack text. Non-shopping and ambiguous follow-ups are
+   * not promoted by this rule.
+   */
+  if ((!view || view.source !== 'modal') &&
+      require('./_intent').recoverSafeShoppingIntent(q, det)) {
+    console.log('[ai] 격리된 입력에서 원래 상품 검색 의도 유지');
+    return det;
+  }
 
   // A recognized referential follow-up without a prior user product query has no
   // safe server lookup key. Do not ask the model to invent one from client history.

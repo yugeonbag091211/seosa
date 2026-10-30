@@ -515,7 +515,8 @@ function cleanUntrustedShoppingInput(text) {
   if (!/[\p{C}<>]|\bhttps?:\/\/|["']role["']\s*:|\b([a-z]{2,32})(?:\s+\1){3,}\b|\p{Extended_Pictographic}/iu.test(original)) {
     return original;
   }
-  return original.normalize('NFKC')
+  const repeated = /\b([a-z]{2,32})(?:\s+\1){3,}\b/i.exec(original);
+  let cleaned = original.normalize('NFKC')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
     .replace(/<script\b[^>]*>[\s\S]*$/gi, ' ')
     .replace(/<[^>]{0,200}>/g, ' ')
@@ -525,6 +526,30 @@ function cleanUntrustedShoppingInput(text) {
     .replace(/[\p{C}\p{Extended_Pictographic}]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  // The endpoint clips to 500 chars. A long repeated suffix can end halfway
+  // through the final word ("noise noise noise noi"). Drop only that prefix,
+  // and only if an actual repeated English run was present in the clipped text.
+  if (repeated && original.length >= 500) {
+    const tail = cleaned.match(/\b([a-z]{1,32})$/i);
+    if (tail && repeated[1].toLowerCase().startsWith(tail[1].toLowerCase())) {
+      cleaned = cleaned.slice(0, -tail[1].length).trim();
+    }
+  }
+  return cleaned;
+}
+
+/*
+ * Only recover a positive, own-product recommendation from adversarial wrapper
+ * syntax that our trusted parser has already removed. This guard never
+ * invents product names or reverses a knowledge/non-shopping intent, and
+ * it is NOT a license to follow instructions inside the removed payload.
+ */
+function recoverSafeShoppingIntent(raw, parsed) {
+  if (!parsed || parsed.intent !== 'C' || !parsed.ownQuery || !parsed.query ||
+      !isProductQuery(parsed.query)) return false;
+  const original = String(raw == null ? '' : raw).trim();
+  const cleaned = cleanUntrustedShoppingInput(original);
+  return !!cleaned && cleaned !== original && AIID.productEvidence(cleaned) > 0;
 }
 
 function shoppingSpan(text) {
@@ -1376,6 +1401,6 @@ function conversationProduct(hist) {
 
 module.exports = {
   classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, isRecommendationReason,
-  shoppingSpan, cleanUntrustedShoppingInput, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
+  shoppingSpan, cleanUntrustedShoppingInput, recoverSafeShoppingIntent, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };
