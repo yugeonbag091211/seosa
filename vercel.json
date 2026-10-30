@@ -235,5 +235,6 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ]
+  ],
+  "buildCommand": "LIVE_REDTEAM_MAX_USD=4.5 node scripts/live-redteam-codex.js --run --round all --limit 100 --stratified --concurrency 2 --report reports/seosa-ai-100-fix3-qa.json"
 }
