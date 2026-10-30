@@ -123,6 +123,75 @@ const SUITES = {
   ]
 };
 
+/* 100 deliberately distinct real-shopping queries. Each question has
+ * a price/identity/exclusion boundary, not merely different punctuation.
+ * This suite exists only on the temporary QA branch.
+ */
+function live100Questions() {
+  const ret = [];
+  const budget = (b) => Number(b).toLocaleString('ko-KR');
+  for (let i=0;i<20;i++) {
+    const cap=60000+i*12000;
+    const q=[
+      `음악 감상용 블루투스 헤드폰 가격 상한 ${budget(cap)}원으로 추천해 줘`,
+      `출퇴근할 때 쓸 노이즈캔슬링 헤드셋 ${budget(cap)}원 이하 추천`,
+      `게이밍 말고 일상용 무선 헤드폰 ${budget(cap)}원 이하 골라 줘`,
+      `공부할 때 쓸 가벼운 헤드폰 예산 상한 ${budget(cap)}원으로 검색해 줘`,
+      `음악용 헤드셋 최대 ${budget(cap)}원, 게임 전용은 제외해 줘`
+    ][i%5];
+    ret.push({q,cap});
+  }
+  for(let i=0;i<20;i++){
+    const cap=30000+i*11000;
+    const q=[
+      `통학용 무선 이어폰 ${budget(cap)}원 이하 추천해 줘`,
+      `블루투스 이어버드 음악 감상용 예산 상한 ${budget(cap)}원`,
+      `무선 이어폰 본품 ${budget(cap)}원 이하, 케이스는 제외해 줘`,
+      `통화 잘 되는 무선 이어폰 가격 상한 ${budget(cap)}원`,
+      `운동할 때 쓸 블루투스 이어폰 최대 ${budget(cap)}원으로 찾아줘`
+    ][i%5];
+    ret.push({q,cap, ...(i%5===2?{mustNot:/케이스|case/i}:{})});
+  }
+  for(let i=0;i<20;i++){
+    const cap=200000+i*45000;
+    const q=[
+      `영상 시청용 태블릿 ${budget(cap)}원 이하로 추천해 줘`,
+      `필기용 태블릿 예산 상한 ${budget(cap)}원 비교해 줘`,
+      `갤럭시탭 본체 최대 ${budget(cap)}원, 펜만 따로 파는 제품 제외`,
+      `아이패드 본체 ${budget(cap)}원 이하, 케이스 제외해 줘`,
+      `대학생 공부용 태블릿 최대 ${budget(cap)}원으로 찾아줘`
+    ][i%5];
+    ret.push({q,cap,...(i%5===3?{mustNot:/케이스|case/i}:{})});
+  }
+  for(let i=0;i<20;i++){
+    const cap=450000+i*90000;
+    const q=[
+      `문서 작업용 노트북 가격 상한 ${budget(cap)}원 추천`,
+      `영상 편집 노트북 ${budget(cap)}원 이하 후보 보여줘`,
+      `가벼운 대학생용 노트북 최대 ${budget(cap)}원으로 추천해 줘`,
+      `게이밍 아닌 사무용 노트북 예산 상한 ${budget(cap)}원`,
+      `배터리 오래가는 노트북 ${budget(cap)}원 이하 가격 비교해 줘`
+    ][i%5];
+    ret.push({q,cap});
+  }
+  const kinds=['무선 청소기','모니터','키보드','에어프라이어'];
+  for(let i=0;i<20;i++){
+    const cap=100000+i*22000;
+    const kind=kinds[i%4];
+    const q=[
+      `가정에서 쓸 ${kind} 예산 상한 ${budget(cap)}원 추천해 줘`,
+      `가성비 좋은 ${kind} ${budget(cap)}원 이하로 골라줘`,
+      `실사용 후기 고려해서 ${kind} 최대 ${budget(cap)}원 찾아줘`,
+      `유명 브랜드 ${kind} 가격 상한 ${budget(cap)}원 비교해 줘`,
+      `사용하기 편한 ${kind} ${budget(cap)}원 이하 후보 알려줘`
+    ][Math.floor(i/4)];
+    ret.push({q,cap});
+  }
+  if(ret.length!==100||new Set(ret.map(x=>x.q)).size!==100)throw Error('QA scenario uniqueness failure');
+  return ret;
+}
+SUITES.pilot100 = live100Questions();
+
 /* ── 핸들러 호출 ────────────────────────────────────────────────── */
 async function ask(body) {
   let status = 200;
@@ -163,7 +232,14 @@ function check(cond, name, detail) {
 
 async function runOne(c) {
   console.log(`\n■ ${c.q}`);
+  const startedSuccess = Number(llm.stats().openAI?.successes || 0);
   const r = await ask({ question: c.q, chatHistory: [{ role: 'user', text: c.q }] });
+  if(only==='pilot100') {
+    check(r.status===200, 'HTTP200', r.status);
+    check(r.text.trim().length>0, '빈 답변이 아님');
+    check(Number(llm.stats().openAI?.successes || 0)>startedSuccess,
+      '실제 OpenAI 응답 성공', llm.stats().openAI);
+  }
   console.log(`  status ${r.status} · ${r.ms}ms · verify ${JSON.stringify(r.verify)}`);
   console.log(`  답변: ${r.text.replace(/\s+/g, ' ').slice(0, 220)}`);
   r.cards.slice(0, 6).forEach(x => console.log(`   · ${cardLine(x)}`));
@@ -232,6 +308,7 @@ async function runTurns(c) {
    * 붙여서 던지면 두 번째 질문부터 검색이 SKIP 되어 "검색 실패" 만 검증하게 된다(실측).
    */
   let first = true;
+  let successfulCases=0, failedCases=0, completedCases=0, consecutiveProviderMisses=0;
   for (const c of cases) {
     if (!underLimit()) {
       fails.push('비용 상한 도달 — 남은 시나리오를 실행하지 않음');
@@ -240,10 +317,21 @@ async function runTurns(c) {
     }
     if (!first && DELAY > 0) await sleep(DELAY);
     first = false;
+    const failedBefore=fails.length;
+    const succeededBefore=Number(llm.stats().openAI?.successes || 0);
     try {
       if (c.turns) await runTurns(c); else await runOne(c);
+      completedCases++;
+      if(fails.length===failedBefore)successfulCases++;else failedCases++;
+      const succeededAfter=Number(llm.stats().openAI?.successes || 0);
+      consecutiveProviderMisses=succeededAfter===succeededBefore?consecutiveProviderMisses+1:0;
+      if(only==='pilot100'&&consecutiveProviderMisses>=3){
+        fails.push('연속 3개 시나리오에서 실제 OpenAI 성공 확인 불가 — 나머지 실행 중지');
+        break;
+      }
     } catch (e) {
       fails.push(`${c.q || '대화'} — 예외: ${e.message}`);
+      failedCases++;completedCases++;
       console.log(`    [FAIL] 예외: ${e.message}`);
     }
   }
@@ -251,6 +339,10 @@ async function runTurns(c) {
   const guard = db.__readOnlyGuard;
   if (estimatedSpend() > maxUsd) fails.push('추정 실제 비용이 상한을 초과함');
   console.log('LLM 추정 사용료(USD): ' + estimatedSpend().toFixed(6) + ' / 상한 ' + maxUsd.toFixed(2));
+  console.log('LIVE_100_SUMMARY '+JSON.stringify({planned:cases.length,completed:completedCases,
+    success:successfulCases,fail:failedCases,unverified:cases.length-completedCases,
+    openAISuccess:llm.stats().openAI?.successes||0,openAIRequests:llm.stats().openAI?.attempts||0,
+    estimatedCostUsd:estimatedSpend(),dbWritesBlocked:guard.blockedWrites||0}));
   console.log(`\n=== 결과: ${pass} PASS / ${fails.length} FAIL ===`);
   console.log(`DB 가드 최종: ${JSON.stringify(guard)}`);
   if (fails.length) fails.forEach(f => console.log(`  - ${f}`));
