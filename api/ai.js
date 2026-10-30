@@ -1468,25 +1468,12 @@ async function searchProducts(query, budgetMs) {
       console.warn(`[ai] 상품 검색 시간 초과(${searchCap}ms) — 빠른 fallback으로 전환`);
       return { ok: false, items: [], reason: 'timeout' };
     }
-    const { items, allItems, from, blocked } = searched.value || {};
-
+    const { items, allItems, from } = searched.value || {};
     const list = Array.isArray(items) ? items : [];
-    const currentSource = source => source === 'api' || source === 'cache';
-    // searchAll combines independent suppliers. Trust each server-authored _source
-    // separately; stale-cache is useful for historical display elsewhere, but it is
-    // not evidence for a current-price answer in this AI path.
-    const currentItems = list.filter(it => currentSource((it && it._source) || from));
-    if (!currentItems.length && (blocked || from === 'none')) {
-      return { ok: false, items: [], reason: 'blocked' };
-    }
-    // A successful fresh search with zero matches is a confirmed empty result,
-    // distinct from a failed search or a stale-only payload.
-    if (!list.length && currentSource(from)) {
-      return { ok: true, items: [], reason: from };
-    }
-    if (!currentItems.length) {
-      return { ok: false, items: [], reason: from === 'stale-cache' ? 'stale-cache' : 'unverified-source' };
-    }
+    const evidence = require('./_ai-search-evidence').selectFreshEvidence(searched.value || {});
+    if (!evidence.ok) return { ok: false, items: [], reason: evidence.reason };
+    if (!evidence.items.length) return { ok: true, items: [], reason: evidence.reason };
+    const currentItems = evidence.items;
 
     const runOptional = async (label, task) => {
       const cap = Math.min(AI_ENRICH_TIMEOUT_MS, Math.max(0, deadline - Date.now()));
