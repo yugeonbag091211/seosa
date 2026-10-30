@@ -72,6 +72,16 @@ function applyFactGate(payload, options = {}) {
     const matches = eligible.filter(it => {
       if (isSameOffer(card, it)) return true;
       if (!card || !it || !id(card.productId) || id(card.productId) !== id(it.productId)) return false;
+      // A canonical card has a representative offer plus a separately
+      // verified lowest *display* offer. The ranked item intentionally keeps
+      // its stable group product ID while moving price and mall to that offer.
+      // Verify both prices/merchant instead of comparing the group shell
+      // against the display offer as if they were the same listing.
+      if (card.isCanonicalGroup === true && it.isCanonicalGroup === true) {
+        return money(card.displayPrice) > 0
+          && money(card.displayPrice) === price(it)
+          && id(card.canonicalLowestMerchant) === id(it.mall);
+      }
       const mall = id(card.mall), ownerMall = id(it.mallId || it.mall);
       if (!mall || mall.toLowerCase() !== ownerMall.toLowerCase()) return false;
       if (card.isCoupang || /쿠팡|coupang/i.test(mall) || id(card.vendorItemId)) return false;
