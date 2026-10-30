@@ -36,6 +36,10 @@ function isSameOffer(a, b) {
   return true;
 }
 function price(x) { return money(x && (x.lprice ?? x.price)); }
+function purchaseOfferPrice(x) {
+  return x && x.isCanonicalGroup === true && money(x.displayPrice)
+    ? money(x.displayPrice) : price(x);
+}
 function unsafeHistoryClaim(text) {
   // Match affirmative recorded trends, not statements disclosing uncertainty.
   const lines = String(text || '').split(/[\n.!?。]+/);
@@ -97,8 +101,8 @@ function applyFactGate(payload, options = {}) {
         && money(card.displayPrice) !== money(authoritative.displayPrice))) {
       failures.push('PRICE_MISMATCH');
     }
-    if (hardBudget && price(card) > hardBudget) failures.push('BUDGET_VIOLATION');
-    if (minBudget && price(card) < minBudget) failures.push('BUDGET_VIOLATION');
+    if (hardBudget && purchaseOfferPrice(card) > hardBudget) failures.push('BUDGET_VIOLATION');
+    if (minBudget && purchaseOfferPrice(card) < minBudget) failures.push('BUDGET_VIOLATION');
     if (options.avoidGaming && /(?:게임\s*전용|게이밍|gaming|e-?sports)/i.test(id(card.title))) {
       failures.push('EXCLUDED_BRAND_VIOLATION');
     }
@@ -116,7 +120,7 @@ function applyFactGate(payload, options = {}) {
       if (ev && ev.product_id && id(ev.product_id) !== id(card.productId)) {
         failures.push('CROSS_PRODUCT_EVIDENCE');
       }
-      if (ev && ev.field === 'price' && money(ev.value) !== price(authoritative)) {
+      if (ev && ev.field === 'price' && money(ev.value) !== purchaseOfferPrice(authoritative)) {
         failures.push('PRICE_MISMATCH');
       }
     }
