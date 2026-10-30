@@ -756,6 +756,12 @@ async function runSingle(s) {
   const calls = providerEvents.filter(c => c.scenarioId === s.id && c.turn === 1);
   const searches = searchMetrics.events.filter(c => c.scenarioId === s.id && c.turn === 1);
   const assessed = evaluate(s, response, calls, searches);
+  if (!calls.some(c => c.status >= 200 && c.status < 300)) {
+    // Preserve the safety verdict, but do not count a deterministic fallback
+    // as a successful *real-model* evaluation.
+    assessed.failures.push('no_successful_real_model_call');
+    assessed.pass = false;
+  }
   const safeBody = {
     text: redact(response.body && response.body.text || ''),
     intent: response.body && response.body.intent || null,
@@ -920,7 +926,33 @@ async function main() {
   }
   const offset = Math.max(0, Number(arg('--offset', '0')) || 0);
   const limit = Math.max(0, Number(arg('--limit', String(all.length))) || 0);
-  const selected = all.slice(offset, offset + limit);
+  let selected = all.slice(offset, offset + limit);
+  if (hasArg('--stratified')) {
+    // Distribute new tests across attack families; exclude repeated and
+    // multi-turn questions from the distinct single-question model cohort.
+    const buckets = new Map();
+    const seen = new Set();
+    for (const scenario of all) {
+      if (scenario.type === 'multi-turn' || !scenario.query) continue;
+      const normalized = String(scenario.query).trim().replace(/\s+/g, ' ').toLowerCase();
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      if (!buckets.has(scenario.family)) buckets.set(scenario.family, []);
+      buckets.get(scenario.family).push(scenario);
+    }
+    selected = [];
+    while (selected.length < limit) {
+      let added = false;
+      for (const list of buckets.values()) {
+        if (selected.length >= limit) break;
+        if (list.length) { selected.push(list.shift()); added = true; }
+      }
+      if (!added) break;
+    }
+    if (selected.length !== limit || new Set(selected.map(x => x.query.trim())).size !== limit) {
+      throw new Error('distinct questions could not be selected for the requested limit');
+    }
+  }
   if (!selected.length) throw new Error('선택된 scenario가 없습니다. --offset/--limit을 확인하세요.');
   const reportPath = path.resolve(ROOT, arg('--report', path.relative(ROOT, DEFAULT_REPORT)));
   const maxUsd = maxBudgetUsd;
