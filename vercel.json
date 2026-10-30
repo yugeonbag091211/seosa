@@ -236,5 +236,5 @@
       "schedule": "5 10 * * *"
     }
   ],
-  "buildCommand": "node scripts/verify-ai-live.js --only pilot100 --limit 3 --max-usd 0.15 --delay 8000"
+  "buildCommand": "LIVE_REDTEAM_MAX_USD=4.5 node scripts/live-redteam-codex.js --run --round all --limit 100 --stratified --concurrency 2 --report reports/seosa-ai-100-live-qa.json"
 }
