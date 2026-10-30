@@ -302,6 +302,11 @@ async function runTurns(c) {
     if (!SUITES[only]) { console.error(`묶음을 찾을 수 없습니다: ${only} (${Object.keys(SUITES).join(', ')})`); process.exit(2); }
     cases = SUITES[only];
   } else cases = Object.keys(SUITES).reduce((all, k) => all.concat(SUITES[k]), []);
+  if(only==='pilot100'){
+    const count=Number(arg('limit','100'));
+    if(!Number.isInteger(count)||count<1||count>100)throw Error('pilot100 --limit must be 1..100');
+    cases=cases.slice(0,count);
+  }
 
   /*
    * 호출 사이를 띄운다 — ADPICK 은 분당 간격 제한이 있고(api/_adpick.js), 쿠팡은 분당 창이 있다.
