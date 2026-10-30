@@ -23,5 +23,23 @@ check('no raw questions or answers in output',()=>assert.ok(!JSON.stringify(s).i
 check('unknown status never becomes PASS',()=>assert.equal(result({id:'unknown'}),'UNVERIFIED'));
 check('false positive label maps to human review',()=>assert.deepEqual(categories({verdict:'FAIL',errorCause:'해석 불가'}),['unclassified']));
 check('invalid JSONL fails',()=>assert.throws(()=>parseJsonl('{bad json}'),/Invalid JSONL/));
+check('function PASS with missing quality cannot certify answer quality',
+ ()=>assert.equal(result({functionCheck:{after:'PASS'},quality:{accuracy:{verdict:'UNVERIFIED'}}}),'UNVERIFIED'));
+check('full rubric PASS is accepted',()=>assert.equal(result({
+ functionCheck:{after:'PASS'},quality:{accuracy:{verdict:'PASS'},naturalness:{verdict:'PASS'}}
+}),'PASS'));
+check('baseline before reports its independent quality failures',()=>{
+ const rows=[{question:'Q1',functionCheck:{before:'PASS',after:'PASS'},
+  before:{quality:{accuracy:{verdict:'FAIL',reasons:['wrong identity']}},errorCause:'상품 식별 오류'},
+  quality:{accuracy:{verdict:'PASS'}}},
+ {question:'Q2',functionCheck:{before:'PASS',after:'PASS'},
+  before:{quality:{accuracy:{verdict:'PASS'}}},quality:{accuracy:{verdict:'PASS'}}}];
+ const before=summarize(rows,'before'),after=summarize(rows,'after');
+ assert.equal(before.fail,1);assert.equal(before.pass,1);
+ assert.equal(after.fail,0);assert.equal(after.pass,2);
+ assert.equal(before.clusters.product_identity.failures,1);
+});
+check('baseline without before evidence is UNVERIFIED',()=>assert.equal(result({quality:{accuracy:{verdict:'PASS'}}},'before'),'UNVERIFIED'));
+
 console.log('CLUSTER_TEST_SUMMARY',JSON.stringify({asked:pass+fail,pass,fail,externalCalls:0,dbWrites:0}));
 if(fail)process.exitCode=1;
