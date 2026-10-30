@@ -920,6 +920,16 @@ const SERVICE_TITLE_RE = /투어|스냅\s*촬영|전문\s*스냅|아이폰\s*스
 const SERVICE_MALL_RE = /^(?:마이리얼트립|kkday|클룩|klook|트립닷컴|야놀자|여기어때|하나투어|모두투어|인프런|클래스101|탈잉)$/i;
 const WANTS_BOOK_RE = /책|도서|book|소설|만화|교재|문제집|에세이|잡지|전자책/i;
 const WANTS_SERVICE_RE = /투어|여행|숙박|호텔|리조트|티켓|입장권|강의|클래스|수업|레슨|유심|요금제|esim|수리|렌트|렌터카|체험|촬영|스냅|크루즈/i;
+
+/* Marketplace titles can be promotional landing pages listing multiple
+ * unrelated categories, not an offer for the requested SKU. Reject only
+ * when two different product category names are slash-separated AND the
+ * seller clearly labels the listing a roundup / campaign / assortment.
+ * Model variant separators (USB-C/3.5mm, Pro/Pro Max) must remain valid.
+ */
+const MIXED_CATEGORY_PAIR_RE = /(?:이어폰|이어버드|헤드폰|헤드셋|스피커|음성증폭기|드라이기|헤어드라이기|청소기|키보드|마우스|보조배터리|모니터|노트북|태블릿|공기청정기|에어프라이어|선풍기|냉장고|세탁기)\s*[/／]\s*(?:이어폰|이어버드|헤드폰|헤드셋|스피커|음성증폭기|드라이기|헤어드라이기|청소기|키보드|마우스|보조배터리|모니터|노트북|태블릿|공기청정기|에어프라이어|선풍기|냉장고|세탁기)/i;
+const MULTI_ITEM_PROMO_RE = /(?:外|외)\s*(?:인기템|인기\s*상품|상품|제품)|(?:인기템|상품|제품)\s*(?:모음|특집|기획전)|모음전|기획전/i;
+
 const CARRIER_RE = /가방|백팩|숄더백|에코백|토트백|크로스백|캐리어백|슬리브|파우치|쿨러|쿨링\s*팬|히트\s*싱크|조명|램프|수신기|리시버|동글|기판|로직\s*보드|메인\s*보드|하우징|프레임|마이크로\s*스위치|피트|키스킨|보호\s*필름|충전기|어댑터/g;
 /* 가방 종류끼리는 같은 요청이다 — "노트북 가방" 을 찾는 사람에게 "노트북 백팩" 은 다른 상품이 아니다. */
 const BAG_WORD_RE = /^(?:가방|백팩|숄더백|에코백|토트백|크로스백|캐리어백|슬리브|파우치)$/;
@@ -950,6 +960,9 @@ const HEADPHONE_TITLE_RE = /헤드폰|헤드셋|headphones?|headsets?|에어팟\
 function productTypeGap(c, item, title) {
   const want = String(c.positive || c.query || '').normalize('NFKC');
   const t = String(title || '').normalize('NFKC');
+  if (MIXED_CATEGORY_PAIR_RE.test(t) && MULTI_ITEM_PROMO_RE.test(t)) {
+    return '단일 상품이 아닌 여러 제품 종류의 프로모션 모음';
+  }
   const mall = String((item && (item.mallLabel || item.mall)) || '').trim();
 
   // "노트북 하나로 부업·강의/사업" 은 노트북 *판매*가 아니라 노트북 활용 콘텐츠다.
