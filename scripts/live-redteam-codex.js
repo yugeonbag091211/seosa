@@ -824,6 +824,12 @@ function summary(records) {
   const allCalls = flat.flatMap(x => x.providerCalls || []);
   const latencies = allCalls.map(c => Number(c.latencyMs)).filter(Number.isFinite).sort((a, b) => a - b);
   const countMetric = field => flat.filter(x => x.evaluation && x.evaluation.failures.includes(field)).length;
+  // A safe deterministic no-result response can have zero paid model calls.
+  // Preserve it as an unverified LLM case, separate from scored model failures.
+  const modelRows = flat.filter(x => x.evaluation
+    && !(x.evaluation.failures || []).includes('no_successful_real_model_call'));
+  const modelPass = modelRows.filter(x => x.evaluation.pass).length;
+  const modelFail = modelRows.length - modelPass;
   const family = {};
   flat.forEach(x => {
     const k = x.scenario.family || 'other';
@@ -851,6 +857,10 @@ function summary(records) {
     p95ProviderLatencyMs: latencies.length ? latencies[Math.floor((latencies.length - 1) * 0.95)] : null,
     pass: flat.filter(x => x.evaluation.pass).length,
     fail: flat.filter(x => !x.evaluation.pass).length,
+    modelEvaluated: modelRows.length,
+    modelNotRun: flat.length - modelRows.length,
+    modelPass, modelFail,
+    modelPassRate: modelRows.length ? modelPass / modelRows.length : null,
     passRate: flat.length ? flat.filter(x => x.evaluation.pass).length / flat.length : null,
     emptyResponses: countMetric('empty_response'), httpErrors: countMetric('http_error'),
     wrongIdentityTop1: countMetric('top1_wrong_identity'), wrongVariantTop1: countMetric('wrong_variant_top1'),

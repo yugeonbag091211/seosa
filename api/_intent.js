@@ -501,6 +501,32 @@ const CLAUSE_SPLIT_RE = /[.!?\n。]+|[“”"「」『』]+|\s-{2,}\s|\s\/\s|[:�
 /**
  * @returns {{text:string, meta:boolean}}  text — 검색어 재료가 될 구절. 메타 지시만 있으면 빈 문자열.
  */
+
+/*
+ * A user can append URLs, fake role JSON, repeated noise, emoji, or HTML to a
+ * genuine product request. Those bytes are not shopping identity evidence.
+ * This is ONLY for deterministic intent/search extraction: the original user
+ * message remains available to the answer pipeline and safety checks.
+ * Do not strip ordinary model names, options, comparison, or negative clauses.
+ */
+function cleanUntrustedShoppingInput(text) {
+  const original = AIID.stripPromptBoundaryPayload(text).trim();
+  if (!original) return '';
+  if (!/[\p{C}<>]|\bhttps?:\/\/|["']role["']\s*:|\b([a-z]{2,32})(?:\s+\1){3,}\b|\p{Extended_Pictographic}/iu.test(original)) {
+    return original;
+  }
+  return original.normalize('NFKC')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<script\b[^>]*>[\s\S]*$/gi, ' ')
+    .replace(/<[^>]{0,200}>/g, ' ')
+    .replace(/\{\s*["']role["']\s*:\s*["'](?:system|developer|assistant)["'][\s\S]*$/i, ' ')
+    .replace(/\bhttps?:\/\/[^\s<>"']+/gi, ' ')
+    .replace(/\b([a-z]{2,32})(?:\s+\1){3,}\b/gi, ' ')
+    .replace(/[\p{C}\p{Extended_Pictographic}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function shoppingSpan(text) {
   const s = String(text == null ? '' : text);
   if (!META_INSTRUCTION_RE.test(s)) return { text: s, meta: false };
@@ -906,7 +932,7 @@ function isRecommendationReason(s) {
  *   그건 LLM 호출 한 번 아끼는 것보다 훨씬 비싸다.
  */
 function classify(text, hist) {
-  const s = AIID.stripPromptBoundaryPayload(text).trim();
+  const s = cleanUntrustedShoppingInput(text);
   if (!s) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
 
   if (GREETING_RE.test(s)) return { intent: 'A', query: '', source: 'heuristic', confidence: 'high' };
@@ -1350,6 +1376,6 @@ function conversationProduct(hist) {
 
 module.exports = {
   classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, isRecommendationReason,
-  shoppingSpan, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
+  shoppingSpan, cleanUntrustedShoppingInput, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };
