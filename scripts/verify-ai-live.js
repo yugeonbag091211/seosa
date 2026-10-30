@@ -25,7 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { scopeDropPassed } = require('./_verify-ai-live-evaluator');
+const { scopeDropPassed, confirmedMerchantResult } = require('./_verify-ai-live-evaluator');
 
 /* ── 인자 ─────────────────────────────────────────────────────────── */
 const argv = process.argv.slice(2);
@@ -35,6 +35,7 @@ function arg(name, def) {
 }
 const envFile = arg('env', '');
 const only = arg('only', '');
+const requireLiveSearch = argv.includes('--require-live-search');
 const askOne = arg('ask', '');
 const outFile = arg('out', '');
 /* 호출 사이 간격(ms) — ADPICK·쿠팡 분당 제한 때문에 붙여 던지면 두 번째부터 검색이 SKIP 된다(실측). */
@@ -165,6 +166,7 @@ async function runOne(c) {
   console.log(`\n■ ${c.q}`);
   const r = await ask({ question: c.q, chatHistory: [{ role: 'user', text: c.q }] });
   console.log(`  status ${r.status} · ${r.ms}ms · verify ${JSON.stringify(r.verify)}`);
+  if (requireLiveSearch) check(confirmedMerchantResult(r), '실제 판매처 검색·상품 카드 확인', r.verify && r.verify.search);
   console.log(`  답변: ${r.text.replace(/\s+/g, ' ').slice(0, 220)}`);
   r.cards.slice(0, 6).forEach(x => console.log(`   · ${cardLine(x)}`));
   if (c.cap) {

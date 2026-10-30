@@ -964,6 +964,17 @@ function productTypeGap(c, item, title) {
     return '단일 상품이 아닌 여러 제품 종류의 프로모션 모음';
   }
   const mall = String((item && (item.mallLabel || item.mall)) || '').trim();
+  // A USB-powered vest, winter heating pack, or made-to-order design service
+  // is not evidence of a standalone rechargeable power bank for sale.
+  if (/보조\s*배터리|power\s*bank/i.test(want) &&
+      /발열\s*(?:조끼|의류|자켓|재킷)|난방팩|동결방지/i.test(t)) {
+    return '보조배터리 본품이 아닌 발열·방한 제품';
+  }
+  if (/보조\s*배터리|power\s*bank/i.test(want) &&
+      /(?:나만의\s*보조배터리\s*만들어|보조배터리[^.!?]{0,25}제작해\s*드립니다|보조배터리[^.!?]{0,25}만들어\s*드립니다)/i.test(t) &&
+      !/맞춤\s*제작|커스텀|주문\s*제작/i.test(want)) {
+    return '보조배터리 단일 완제품이 아닌 주문 제작 서비스';
+  }
 
   // "노트북 하나로 부업·강의/사업" 은 노트북 *판매*가 아니라 노트북 활용 콘텐츠다.
   if (WANTS_LAPTOP_RE.test(want) && !WANTS_BOOK_RE.test(want)

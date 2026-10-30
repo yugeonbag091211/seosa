@@ -16,4 +16,18 @@ for (const accepted of [
   const v=AIID.verdict(c,{title:accepted});
   assert.ok(!v.reasons.some(x=>x.label.includes('프로모션 모음')),'not a multi-category roundup: '+accepted);
 }
-console.log('PASS mixed-category merchant promotions are not treated as a verified SKU: 5 cases');
+const batteryContract = AIID.buildContract({
+  query:'보조배터리',userText:'7만원 이하 보조배터리 추천해줘',
+  titles:['TCG모바일 도킹형 고속 충전 보조배터리 5000mAh']
+});
+for(const candidate of [
+ '나만의 보조배터리 만들어 드립니다.',
+ '[해외] 휴대폰용 난방팩 내한성 눈길 방지 동결방지 보조배터리',
+ '[해외] EU 사이즈 11존 듀얼 컨트롤 발열 조끼 보조배터리'
+]) {
+ const v=AIID.verdict(batteryContract,{title:candidate});
+ assert.equal(v.tier,AIID.TIER.MISMATCH,'do not recommend a non-battery sale as a standalone power bank: '+candidate);
+}
+const valid=AIID.verdict(batteryContract,{title:'TCG모바일 도킹형 고속 충전 보조배터리 5000mAh'});
+assert.notEqual(valid.tier,AIID.TIER.MISMATCH,'do not block actual power bank SKU');
+console.log('PASS mixed-category promotions and unrelated power-bank goods: 9 cases');
