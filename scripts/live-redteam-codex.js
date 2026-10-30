@@ -756,6 +756,10 @@ async function runSingle(s) {
   const calls = providerEvents.filter(c => c.scenarioId === s.id && c.turn === 1);
   const searches = searchMetrics.events.filter(c => c.scenarioId === s.id && c.turn === 1);
   const assessed = evaluate(s, response, calls, searches);
+  if (!calls.some(c=>c.status>=200&&c.status<300)) {
+    assessed.failures.push('no_successful_real_model_call');
+    assessed.pass=false;
+  }
   const safeBody = {
     text: redact(response.body && response.body.text || ''),
     intent: response.body && response.body.intent || null,
@@ -910,7 +914,33 @@ async function main() {
   }
   const offset = Math.max(0, Number(arg('--offset', '0')) || 0);
   const limit = Math.max(0, Number(arg('--limit', String(all.length))) || 0);
-  const selected = all.slice(offset, offset + limit);
+  let selected = all.slice(offset, offset + limit);
+  if(hasArg('--stratified')) {
+    // Round-robin across failure families; avoid multi-turn and repeated
+    // variants so this is exactly N distinct *real-model* questions.
+    const buckets=new Map();
+    const seen=new Set();
+    for(const q of all) {
+      if(q.type==='multi-turn'||!q.query)continue;
+      const normalized=String(q.query).trim().replace(/\\s+/g,' ').toLowerCase();
+      if(seen.has(normalized))continue;
+      seen.add(normalized);
+      if(!buckets.has(q.family))buckets.set(q.family,[]);
+      buckets.get(q.family).push(q);
+    }
+    selected=[];
+    while(selected.length<limit) {
+      let added=false;
+      for(const list of buckets.values()){
+        if(selected.length>=limit)break;
+        if(list.length){selected.push(list.shift());added=true}
+      }
+      if(!added)break;
+    }
+    if(selected.length!==limit || new Set(selected.map(x=>x.query.trim())).size!==limit) {
+      throw Error('100 distinct questions could not be selected');
+    }
+  }
   if (!selected.length) throw new Error('선택된 scenario가 없습니다. --offset/--limit을 확인하세요.');
   const reportPath = path.resolve(ROOT, arg('--report', path.relative(ROOT, DEFAULT_REPORT)));
   const maxUsd = maxBudgetUsd;
