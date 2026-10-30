@@ -1134,6 +1134,18 @@ async function resolveIntent(q, hist, view, budget, guest, intentHist, opts) {
    * 말한 상품을 "그중에 제일 싼 거" 가 이어받게. LLM 분류기에는 실제 대화 기록만 간다.
    */
   const det = heuristicIntent(q, intentHist || hist, view);
+  // Even when the user asks us to invent an unsupported price, first search
+  // the named product. The server grounding gate still rejects invented prices.
+  if ((!view || view.source !== 'modal') && det.intent === 'B') {
+    const namedPrefix = require('./_intent').productPrefixBeforeUnsupportedPriceInstruction(q);
+    if (namedPrefix) {
+      const verified = heuristicIntent(namedPrefix + ' 현재 가격 확인해줘', [], view);
+      if (verified && needsShopContext(verified.intent) && isProductSearchQuery(verified.query)) {
+        console.log('[ai] 미확인 가격 지시와 분리된 상품 검색어 보존');
+        return verified;
+      }
+    }
+  }
   /*
    * Adversarial wrappers may trick the LLM classifier into treating a product
    * request as general Q&A (live QA R2-230..233, R3-004). The deterministic
@@ -5413,7 +5425,7 @@ module.exports = async function handler(req, res) {
          * «무선 이어폰 15만원 이하» 에 12.9만·14.5만원이 있는데 7.9만원 이하만 남았다. 순서만 바꾼다:
          * 같은 묶음 안에서는 검색 순서 그대로이고, 예산 밖 후보도 뒤에 남아 «전부 예산 밖» 안내는 같다.
          */
-        let pool = found.items;
+        let pool = require('./_ai-laptop-hard-constraints').filterVerifiedLaptopSpecs(found.items, q);
         if (gateBudget && intent === 'C' && constraints && constraints.budgetMax > 0) {
           const { withinBudget } = require('./_shopintent');
           const inBudget = [], overBudget = [];

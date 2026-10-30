@@ -552,6 +552,22 @@ function recoverSafeShoppingIntent(raw, parsed) {
   return !!cleaned && cleaned !== original && AIID.productEvidence(cleaned) > 0;
 }
 
+
+/*
+ * A genuine product subject may precede an instruction to fabricate a price
+ * not present in evidence. Retain only the already-spoken product prefix for
+ * product lookup, not the instruction. No model/name is invented here.
+ */
+function productPrefixBeforeUnsupportedPriceInstruction(text) {
+  const original = AIID.stripPromptBoundaryPayload(text).normalize('NFKC');
+  const command = /가격표에\s*없는\s*(?:숫자|값|가격)|근거(?:가)?\s*없는\s*(?:가격|금액|수치)|확인\s*안\s*된\s*가격/gi;
+  const m = command.exec(original);
+  if (!m || m.index < 2) return '';
+  const prefix = original.slice(0, m.index).trim();
+  if (!prefix || prefix.length > 100 || AIID.productEvidence(prefix) < 2 || !isProductQuery(prefix)) return '';
+  return prefix;
+}
+
 function shoppingSpan(text) {
   const s = String(text == null ? '' : text);
   if (!META_INSTRUCTION_RE.test(s)) return { text: s, meta: false };
@@ -1401,6 +1417,6 @@ function conversationProduct(hist) {
 
 module.exports = {
   classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, isRecommendationReason,
-  shoppingSpan, cleanUntrustedShoppingInput, recoverSafeShoppingIntent, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
+  shoppingSpan, cleanUntrustedShoppingInput, recoverSafeShoppingIntent, productPrefixBeforeUnsupportedPriceInstruction, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };
