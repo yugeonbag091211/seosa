@@ -31,7 +31,19 @@ test('search: same endpoint and parameter as the web, headers decoded', async ()
   assert.equal(f.calls[0].init.headers.Authorization, undefined);
   assert.equal(r.source, 'cache');
   assert.equal(r.blocked, true);
+  assert.equal(r.partialResults, false);
+  assert.equal(r.partialStale, false);
   assert.equal(r.items[0].link, product.link);
+});
+
+test('search: partial supplier coverage is visible to mobile (no false full-price claim)', async () => {
+  const f = fake(() => ({ body: [product], headers: {
+    'X-Seosa-Source': 'cache', 'X-Seosa-Partial-Results': '1', 'X-Seosa-Partial-Stale': '1',
+  } }));
+  const result = await createApi({ baseUrl: 'https://seosa.ai.kr', fetchImpl: f.impl }).search('이어폰');
+  assert.equal(result.partialResults, true);
+  assert.equal(result.partialStale, true);
+  assert.equal(result.source, 'cache');
 });
 
 test('search: zero results carry the server corrections', async () => {

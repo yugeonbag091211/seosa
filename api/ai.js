@@ -5301,7 +5301,11 @@ module.exports = async function handler(req, res) {
           budget.remaining() - ANSWER_RESERVE_MS));
         responses = await Promise.all(comparison.map(term => searchProducts(term, eachBudget)));
         const toNorm = x => normItem(fromSearchResult(x));
+        const aligned = !hardBudget && responses.every(result => result.ok)
+          ? CMP.pickAlignedPair(responses.map(result => result.items), comparison, AIID, toNorm)
+          : null;
         selected = responses.map((result, i) => {
+          if (aligned) return aligned[i];
           if (!result.ok) return null;
           const any = CMP.pickExact(result.items, comparison[i], AIID, toNorm);
           if (!any || !hardBudget || inBudget(any)) return any;

@@ -158,30 +158,71 @@ function isComparableOffer(query, title) {
 }
 
 /** The cheapest exact offer for one side. `accept` narrows the exact offers (budget gate in api/ai.js). */
-function pickExact(raw, query, AIID, normalize, accept) {
+function isCashPriceListing(title) {
+  const t=String(title||'');
+  // A monthly rental installment or deposit is not the full product price.
+  // "무이자 할부 가능" without a monthly amount is only a financing feature.
+  return !/(?:월\s*\d[\d,]*\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|월\s*구독료)/i.test(t);
+}
+function listExact(raw, query, AIID, normalize, accept) {
   const candidates = (Array.isArray(raw) ? raw : [])
     .filter(x => x && x.productId && Number.isSafeInteger(Number(x.lprice)) && Number(x.lprice) > 0)
     .slice(0, 40).map(x => {
       const n = normalize(x);
       Object.defineProperty(n, '_compareRaw', { value: x });
       return n;
-    }).filter(n => isComparableOffer(query, n.title)).filter(n => {
+    }).filter(n => isComparableOffer(query, n.title) && isCashPriceListing(n.title)).filter(n => {
       // A Coupang product page is not a saleable option. Without the exact
       // vendorItemId, neither the price nor the card can represent that option
       // in a comparison. Other providers do not have Coupang option IDs.
       const coupang = n.isCoupang === true || require('./_aicontext').isCoupangMall(n.mallId || n.mall);
       return !!n.productId && (!coupang || !!n.vendorItemId);
     });
-  if (!candidates.length) return null;
+  if (!candidates.length) return [];
   const contract = AIID.buildContract({
     query, userText: query, titles: candidates.map(x => x.title)
   });
   const gate = AIID.partition(candidates, contract);
-  if (gate.state !== 'EXACT') return null;
+  if (gate.state !== 'EXACT') return [];
   const exact = gate.items.filter(x => x._identity && x._identity.tier === AIID.TIER.EXACT
     && (typeof accept !== 'function' || accept(x)));
   exact.sort((a,b) => a.price - b.price);
-  return exact[0] || null;
+  return exact;
+}
+function pickExact(raw, query, AIID, normalize, accept) {
+  return listExact(raw, query, AIID, normalize, accept)[0] || null;
+}
+
+// Broad *families* are not a specific model. A cheapest-offer-vs-cheapest-offer
+// comparison often pairs an old used entry model against a new flagship.
+// Choose offers with similar observed price and listing condition instead.
+// Similar *prices* cannot establish equivalent performance or specifications.
+function isBroadTabletPair(pair) {
+  const aliases = new Set(['아이패드','ipad','갤럭시탭','galaxytab']);
+  return Array.isArray(pair) && pair.length === 2
+    && pair.every(n => aliases.has(String(n || '').toLowerCase().replace(/\s+/g,'')))
+    && String(pair[0]).toLowerCase() !== String(pair[1]).toLowerCase();
+}
+function pickAlignedPair(raws, queries, AIID, normalize, accept) {
+  if (!isBroadTabletPair(queries) || !Array.isArray(raws) || raws.length !== 2) return null;
+  const left=listExact(raws[0],queries[0],AIID,normalize,accept).slice(0,16);
+  const right=listExact(raws[1],queries[1],AIID,normalize,accept).slice(0,16);
+  if (!left.length || !right.length) return null;
+  const all=left.concat(right).map(x=>x.price).sort((a,b)=>a-b);
+  const median=all[Math.floor((all.length-1)/2)];
+  const condition=t=> /(?:중고|리퍼|재생|렌탈|할부\s*개통|공기계\s*S등급)/i.test(String(t||''))?'used':'unspecified';
+  const imported=t=>/(?:\[해외\]|해외판|아랍어\s*버전|일본판|글로벌\s*버전)/i.test(String(t||''));
+  let best=null,bestScore=Infinity;
+  for(const a of left)for(const b of right){
+    // Compare prices from the same observed purchasing conditions.
+    const ratio=Math.abs(Math.log(a.price/b.price));
+    const level=Math.abs(Math.log(Math.sqrt(a.price*b.price)/median));
+    const mismatch=condition(a.title)===condition(b.title)?0:0.7;
+    const importedPenalty=imported(a.title)!==imported(b.title)?0.35:0;
+    const score=ratio+0.35*level+mismatch+importedPenalty;
+    if(score<bestScore){bestScore=score;best=[a,b];}
+  }
+  return best;
 }
 
 /** 조건 객체의 예산을 사람이 읽는 말로 ("50만원 이하" · "10만~20만원"). */
@@ -221,11 +262,7 @@ function listedTitleDifferences(first, second) {
  */
 function formatComparison(requested, offers, source, opts) {
   const o = opts || {};
-  const familyKey = n => String(n || '').toLowerCase().replace(/\s+/g,'');
-  const pair = (requested || []).map(familyKey);
-  const broadTabletFamilies = pair.length === 2
-    && pair.every(p => ['아이패드','ipad','갤럭시탭','galaxytab'].includes(p))
-    && pair[0] !== pair[1];
+  const broadTabletFamilies = isBroadTabletPair(requested);
   const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
   const lines = [source === 'catalog'
     ? '앞에서 비교한 두 상품을 다시 확인했어요. 아래는 마지막 수집 시점의 표시 가격이에요.'
@@ -242,7 +279,7 @@ function formatComparison(requested, offers, source, opts) {
     lines.push(`${i+1}. ${p.title} — ${won(p.price)} (${p.mall || '판매처 미확인'})${over}`);
   });
   if (offers[0] && offers[1]) {
-    if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 아래는 서로 다른 개별 판매 상품의 표시 가격일 뿐, 동급 모델이나 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
+    if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 두 판매처에서 가격과 판매 조건이 비교적 가까운 상품을 골랐지만, 동급 모델인지, 성능이나 사양이 비슷한지 검증한 것은 아니에요. 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
     const difference = Math.abs(offers[0].price - offers[1].price);
     if (difference === 0) lines.push('두 상품의 확인된 표시 가격은 같아요.');
     else lines.push(`표시 가격 차이는 ${won(difference)}이고, ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 더 저렴해요.`);
@@ -258,7 +295,7 @@ function formatComparison(requested, offers, source, opts) {
   } else {
     lines.push('비교 대상 중 하나 이상을 확인하지 못해서 가격 차이나 가성비 우열을 단정할 수 없어요.');
   }
-  lines.push('표시 가격은 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비를 결제 화면에서 확인해 주세요.');
+  lines.push('표시 가격은 최종 결제가가 아니며 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비, 해외판 여부 및 판매 조건을 결제 화면에서 확인해 주세요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, isPairFollowup, pickExact, isComparableOffer, formatComparison, budgetLabel, listedTitleDifferences };
+module.exports = { parseComparison, isPairFollowup, pickExact, pickAlignedPair, isBroadTabletPair, isComparableOffer, isCashPriceListing, formatComparison, budgetLabel, listedTitleDifferences };

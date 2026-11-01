@@ -137,7 +137,12 @@ export default function Search() {
       ) : search.isError ? (
         <ErrorState error={search.error} onRetry={() => search.refetch()} />
       ) : search.data.items.length === 0 ? (
-        <EmptyState title={`'${query}' 검색 결과가 없어요`} detail="띄어쓰기나 모델명을 바꿔 보세요.">
+        <EmptyState
+          title={search.data.partialResults || search.data.blocked || search.data.source === 'none'
+            ? '일부 판매처 가격을 확인하지 못했어요' : `'${query}' 검색 결과가 없어요`}
+          detail={search.data.partialResults || search.data.blocked || search.data.source === 'none'
+            ? '연속 검색 시 공급자 호출 한도로 지연될 수 있어요. 잠시 후 다시 시도해 주세요.'
+            : '띄어쓰기나 모델명을 바꿔 보세요.'}>
           <View style={[styles.chips, { marginTop: space.lg, justifyContent: 'center' }]}>
             {search.data.corrected ? <Chip label={`${search.data.corrected} 검색`} onPress={() => submit(search.data.corrected)} selected /> : null}
             {search.data.suggestions.map(s => <Chip key={s} label={s} onPress={() => submit(s)} />)}
@@ -153,9 +158,13 @@ export default function Search() {
           keyboardDismissMode="on-drag"
           ListHeaderComponent={
             <View>
-              {search.data.source === 'stale-cache' || search.data.blocked ? (
+              {search.data.source === 'stale-cache' || search.data.blocked || search.data.partialResults ? (
                 <View style={[styles.notice, { backgroundColor: theme.surface }]}>
-                  <AppText tone="soft" style={t.footnote}>판매처 응답이 늦어 저장된 가격을 보여 드려요. 실제 가격과 다를 수 있어요.</AppText>
+                  <AppText tone="soft" style={t.footnote}>
+                    {search.data.source === 'stale-cache' || search.data.partialStale
+                      ? '일부 가격은 이전에 저장된 값이에요. 실제 판매가와 다를 수 있어요.'
+                      : '일부 판매처는 지금 확인하지 못했어요. 표시된 상품이 전체 최저가를 뜻하지 않아요.'}
+                  </AppText>
                 </View>
               ) : null}
               <AppText tone="faint" style={[t.footnote, styles.count]}>{search.data.items.length}개 상품 · 서버가 찾은 결과 안에서 정렬</AppText>
@@ -172,6 +181,9 @@ export default function Search() {
                 <Icon name="sparkle" size={18} color={theme.ink} />
                 <AppText style={[t.callout, { fontWeight: '600' }]}>이 중에서 AI에게 골라 달라고 하기</AppText>
               </Pressable>
+              <View style={[styles.notice, { backgroundColor: theme.surface }]}>
+                <AppText tone="faint" style={t.footnote}>표시된 가격은 최종 결제가가 아니에요. 쿠폰·옵션·배송비는 판매처에서 확인해 주세요.</AppText>
+              </View>
               <AffiliateNote />
             </View>
           }

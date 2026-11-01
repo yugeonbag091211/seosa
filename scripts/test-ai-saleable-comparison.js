@@ -75,4 +75,26 @@ const exactText=C.formatComparison(['아이패드 에어 M3','갤럭시탭 S9 FE
   {title:good[3],price:699000,mall:'쿠팡'},
   {title:good[0],price:429000,mall:'쿠팡'}],'search',{});
 assert.match(exactText,/선택 기준: 가격을 우선하면/);
-console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+9,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
+const namesA=[
+ mk('Apple 아이패드 7세대 공기계 A2197',114374,'IPAD7'),
+ mk('Apple 2025 아이패드 (A16 모델) 128GB',621300,'IPAD16'),
+ mk('Apple 2026 아이패드 에어 11(M4 모델)',1071600,'IPAD-M4'),
+ mk('아이패드 A16 월 59,000원 24개월 렌탈',59000,'RENT')
+];
+const namesB=[
+ mk('삼성 갤럭시탭 A6 태블릿PC SM-P580',89000,'TAB-A6'),
+ mk('삼성 갤럭시 탭 S10 FE 태블릿 8GB SM-X520',588050,'TAB-S10'),
+ mk('삼성 갤럭시탭 S11 Wi-Fi 128GB SM-X730',1066030,'TAB-S11'),
+ mk('갤럭시탭 S10 계약금 10,000원',10000,'DEPOSIT')
+];
+const aligned=C.pickAlignedPair([namesA,namesB],['아이패드','갤럭시탭'],AIID,normalize);
+assert.ok(aligned,'broad pair present');
+assert.equal(aligned[0].productId,'IPAD16','prefer aligned midrange over unrelated old or flagship');
+assert.equal(aligned[1].productId,'TAB-S10','choose comparable price/condition candidate');
+assert.equal(C.pickAlignedPair([namesA,namesB],['아이패드 A16','갤럭시탭 S10 FE'],AIID,normalize),null,'explicit model selection is unchanged');
+assert.equal(C.isCashPriceListing('갤럭시탭 S10 월 59,000원 24개월'),false);
+assert.equal(C.isCashPriceListing('갤럭시탭 S10 예약금 19,000원'),false);
+assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 무이자 할부 가능 정품'),true);
+const broadSelectionText=C.formatComparison(['아이패드','갤럭시탭'],aligned,'search',{});
+assert.match(broadSelectionText,/최종 결제가가 아니며/);
+console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+16,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));

@@ -192,6 +192,8 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
         items,
         source,
         blocked: r.headers.get('X-Seosa-Blocked') === '1',
+        partialResults: r.headers.get('X-Seosa-Partial-Results') === '1',
+        partialStale: r.headers.get('X-Seosa-Partial-Stale') === '1',
         corrected,
         suggestions: decodeHeaderList(r.headers.get('X-Seosa-Suggest')),
       };
