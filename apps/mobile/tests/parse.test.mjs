@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseProduct, parseProducts, parseTodayDrop, parsePoints, parseDeal, parseAiAnswer, safeUrl } from '../lib/parse.ts';
 
 const COUPANG_LINK = 'https://link.coupang.com/re/AFFSDP?lptag=AF1234567&pageKey=8082654809&itemId=2000&vendorItemId=95768196637&traceid=V0-153';
@@ -106,4 +109,12 @@ test('AI answer keeps the signed conversation state as received ("" when the ser
   assert.equal(parseAiAnswer({ text: '답', convState: 'acs1.abc.def' }).convState, 'acs1.abc.def');
   assert.equal(parseAiAnswer({ text: '답' }).convState, '');
   assert.equal(parseAiAnswer({ text: '답', convState: { budgetMax: 1 } }).convState, '');
+});
+
+test('AI card keeps the server option/model label and the list row shows it (web .mnote-id parity, 2026-10-26)', () => {
+  const answer = parseAiAnswer({ text: '답', items: [row({ identityNote: '다른 옵션: 용량 다름(512GB)' }), row({ productId: '2', identityNote: '' })] });
+  assert.equal(answer.items[0].identityNote, '다른 옵션: 용량 다름(512GB)');
+  assert.equal(answer.items[1].identityNote, '');
+  const rowSource = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'components', 'ProductRow.tsx'), 'utf8');
+  assert.match(rowSource, /product\.identityNote \?/, 'ProductRow renders identityNote when present');
 });

@@ -102,6 +102,8 @@ const state = {
   blockReason: '',
   totalCalls: 0,
   totalCacheHits: 0,
+  totalHotCacheHits: 0,
+  totalCoalesced: 0,
   totalDenied: 0,
   consecutiveTransient: 0
 };
@@ -177,7 +179,20 @@ const limiter = Limit.createLimiter({
  * 전역 리미터는 첫 호출 때 만든다. _supabase 는 지연 프록시라 모듈 로드 시점에
  * 건드리면 Supabase 설정이 없는 환경(단위 테스트·로컬 도구)에서 require 자체가 죽는다.
  */
-const globalAcquire = process.env.ADPICK_GLOBAL_LIMIT === '0' ? null : Limit.createGlobalAcquire({
+/*
+ * Disabling the shared limiter is permitted ONLY against an actual loopback
+ * mock server. A misconfigured Production/Preview flag must never disable the
+ * real ADPICK key's shared quota, including when a DB write guard is active.
+ */
+function shouldDisableGlobalGateForTest(flag, host = HOST) {
+  if (flag !== '0') return false;
+  try {
+    const url = new URL(host);
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && ['localhost','127.0.0.1','[::1]'].includes(url.hostname.toLowerCase());
+  } catch (_) { return false; }
+}
+const globalAcquire = shouldDisableGlobalGateForTest(process.env.ADPICK_GLOBAL_LIMIT) ? null : Limit.createGlobalAcquire({
   rpc: (fn, args) => supabase.rpc(fn, args),
   bucket: 'search',
   maxPerMin: GLOBAL_MAX_PER_MIN,
@@ -364,12 +379,15 @@ function normalize(raw) {
  * @returns {{items: Array, error: string|null, from: string, blocked: boolean}}
  *   from: 'cache' | 'stale-cache' | 'api' | 'none'
  */
-async function searchAdpick(keyword, opts = {}) {
+async function searchAdpickOnce(keyword, opts = {}) {
   const {
     limit = 10,
     source = 'unknown',
     maxWaitMs = 0,
     minGapMs = MIN_GAP_MS,
+    // AI can shorten the HTTP deadline to fit its overall search budget;
+    // no caller may lengthen the default provider timeout.
+    timeoutMs = TIMEOUT_MS,
     useCache = true,
     cacheTtlMs = CACHE_TTL_MS,
     forceRefresh = false
@@ -445,7 +463,8 @@ async function searchAdpick(keyword, opts = {}) {
 
   let r, text;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const requestTimeoutMs = Math.max(1, Math.min(TIMEOUT_MS, Math.floor(Number(timeoutMs) || TIMEOUT_MS)));
+  const timer = setTimeout(() => ac.abort(), requestTimeoutMs);
   try {
     r = await fetch(url, {
       signal: ac.signal,
@@ -458,7 +477,7 @@ async function searchAdpick(keyword, opts = {}) {
   } catch (e) {
     const timedOut = e.name === 'AbortError';
     const why = timedOut
-      ? `네트워크 응답 시간 초과 (${TIMEOUT_MS}ms)`
+      ? `네트워크 응답 시간 초과 (${requestTimeoutMs}ms)`
       : `네트워크 오류: ${e.message}`;
     // 응답이 아예 오지 않았다 — http_status 는 0 으로 둔다.
     await finish(timedOut ? 'timeout' : 'network_error', 0, 0, why);
@@ -513,6 +532,47 @@ async function searchAdpick(keyword, opts = {}) {
   return { items: items.slice(0, limit), error: null, from: 'api', blocked: false, apiCalled: true };
 }
 
+/*
+ * A burst of identical queries may arrive before the shared DB cache is written.
+ * Share ONE in-progress search (including its quota reservation) within this
+ * instance; do not share refresh/no-cache requests or requests with different
+ * source, deadline or limit. The result is never retained after settlement.
+ */
+const pendingSearches = new Map();
+const hotCache = require('./_adpick-hot-cache').createHotCache();
+async function searchAdpick(keyword, opts = {}) {
+  const kw = String(keyword || '').trim().slice(0, 80);
+  if (!kw || opts.useCache === false || opts.forceRefresh) {
+    return searchAdpickOnce(keyword, opts);
+  }
+  const warm = hotCache.get(kw, opts);
+  if (warm) {
+    state.totalCacheHits++;
+    state.totalHotCacheHits++;
+    log(opts.source || 'unknown', kw, 'HOT-CACHE', 'ttl<=20s');
+    return warm;
+  }
+  const key = JSON.stringify([
+    kw, opts.source ?? 'unknown', opts.limit ?? 10,
+    opts.maxWaitMs ?? 0, opts.minGapMs ?? MIN_GAP_MS,
+    opts.timeoutMs ?? TIMEOUT_MS, opts.cacheTtlMs ?? CACHE_TTL_MS
+  ]);
+  const existing = pendingSearches.get(key);
+  if (existing) {
+    state.totalCoalesced++;
+    return existing;
+  }
+  const task = searchAdpickOnce(keyword, opts);
+  pendingSearches.set(key, task);
+  try {
+    const result = await task;
+    hotCache.put(kw, opts, result);
+    return result;
+  } finally {
+    if (pendingSearches.get(key) === task) pendingSearches.delete(key);
+  }
+}
+
 function isBlocked() {
   return state.blockedUntil > Date.now();
 }
@@ -527,6 +587,8 @@ function localStats() {
     globalMaxPerMin: globalAcquire ? GLOBAL_MAX_PER_MIN : 0,
     calls: state.totalCalls,
     cacheHits: state.totalCacheHits,
+    hotCacheHits: state.totalHotCacheHits,
+    coalesced: state.totalCoalesced,
     denied: state.totalDenied,
     blocked: isBlocked(),
     blockReason: state.blockReason,
@@ -536,6 +598,6 @@ function localStats() {
 
 module.exports = {
   searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName, redact, recordExternalCall,
-  isTerminalApiError,
+  isTerminalApiError, shouldDisableGlobalGateForTest,
   MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };

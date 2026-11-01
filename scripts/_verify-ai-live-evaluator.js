@@ -11,4 +11,13 @@ function scopeDropPassed(result) {
   });
 }
 
-module.exports = { scopeDropPassed };
+function confirmedMerchantResult(result) {
+  if (!result || result.status !== 200 || !result.verify ||
+      result.verify.search !== 'found') return false;
+  const cards = Array.isArray(result.cards) ? result.cards : [];
+  return cards.length > 0 && cards.every(x => {
+    const price = Number(x && x.lprice);
+    return Number.isFinite(price) && price > 0;
+  });
+}
+module.exports = { scopeDropPassed, confirmedMerchantResult };

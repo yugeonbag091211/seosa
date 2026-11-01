@@ -283,9 +283,11 @@ function dealOf(stat, price, today) {
   const evidence = {
     price: p,
     low: stat.low, lowDate: stat.lowDate,
+    lowCount: stat.lowCount, lowConfirmed: stat.lowConfirmed,
     high: stat.high, highDate: stat.highDate,
     avg7: stat.avg7, avg30: stat.avg30,
     trendPct: stat.trendPct, trendDays: stat.trendDays,
+    trendFrom: stat.trendFrom, trendFromDate: stat.trendFromDate,
     volatility: stat.volatility,
     historyDays: stat.historyDays, count: stat.count,
     staleDays

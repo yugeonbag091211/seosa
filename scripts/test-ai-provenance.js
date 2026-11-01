@@ -143,7 +143,7 @@ function ok(cond, name, detail) {
   if (cond) { pass++; if (g) g.pass++; console.log(`  [PASS] ${name}`); }
   else {
     fail++; if (g) g.fail++; failures.push(`${currentGroup} :: ${name}`);
-    console.log(`  [FAIL] ${name}${detail ? ` — ${String(detail).slice(0, 300)}` : ''}`);
+    console.log(`  [FAIL] ${name}${detail ? ` — ${String(detail).slice(0, 1500)}` : ''}`);
   }
 }
 const won = n => Number(n).toLocaleString('en-US');
@@ -638,6 +638,12 @@ function searchFixture() {
           product: I.unverifiedProductPrices(answer, [realSnapshot]), current: I.unverifiedCurrentPrices(answer, [realSnapshot]) }));
     });
 
+    // These historical transcripts were recorded on 2026-10-23. Keep their
+    // current-price assertions anchored to that day, without changing the
+    // clock used by the other live-relative fixtures in this suite.
+    const realNow = Date.now;
+    Date.now = () => Date.parse('2026-10-23T03:00:00Z');
+    try {
     const notebookSnapshot = I.normItem({
       productId: 'notebook-fixture', vendorItemId: 'notebook-option-256', mallId: '쿠팡', mall: '쿠팡', isCoupang: true,
       title: '노트북 256GB 옵션', price: 1749000, checkedAt: '2026-10-23',
@@ -960,6 +966,20 @@ function searchFixture() {
         && !singleLowDealBlock.includes('보유 관측 기록의 최저가보다 높다'),
       '안전 fallback은 미확정 단일 최저의 차액을 만들지 않고 후보·관측 횟수를 명시한다', singleLowDealBlock);
 
+    const freshness = require('../api/_priceevidence').isCurrentPriceFresh;
+    ok(freshness(notebookSnapshot, Date.parse('2026-10-26T14:59:59Z'))
+        && !freshness(notebookSnapshot, Date.parse('2026-10-26T15:00:00Z'))
+        && !freshness(notebookSnapshot, Date.parse('2026-10-22T03:00:00Z')),
+      'KST 경계에서 확인일 기준 3일은 허용하되 4일 전과 미래 가격은 현재가로 거부한다');
+    ok(!freshness({ checkedAt: '2026-10-32' }, Date.parse('2026-10-26T03:00:00Z')),
+      '유효하지 않은 확인일은 현재가 근거로 쓰지 않는다');
+    Date.now = () => Date.parse('2026-10-27T03:00:00Z');
+    ok(I.unverifiedCurrentPrices('현재가는 1,749,000원입니다.', [notebookSnapshot]).includes(1749000),
+      '오래된 실제 이력은 현재가 주장에 사용할 수 없다');
+    } finally {
+      Date.now = realNow;
+    }
+
     // Actual gpt-6-luna output from the LG air-purifier Neon snapshot (2026-10-23).
     // Korean comparison particles and an implicit yesterday delta must be checked
     // against history, not mistaken for ungrounded current/average prices.
@@ -1092,8 +1112,9 @@ function searchFixture() {
         vendorItemId: liveCatalogRow.vendor_item_id, isCoupang: true
       }]
     });
-    ok(!liveRoute.body.degraded && liveRoute.body.text === actualGroundingReply,
-      '실제 GPT 가격 이력 응답은 API 전체 grounding gate를 통과한다',
+    const checkoutCaveat = '\n\n검색 결과 가격은 판매 페이지에 표시된 판매가예요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.';
+    ok(!liveRoute.body.degraded && liveRoute.body.text === actualGroundingReply + checkoutCaveat,
+      '실제 GPT 가격 이력 응답은 grounding을 통과하고 표시가·결제가 구분 안내를 덧붙인다',
       JSON.stringify({ warnings: liveRoute.warnings, degraded: liveRoute.body.degraded,
         text: liveRoute.body.text, intent: liveRoute.body.intent,
         facts: facts(liveRoute.system).slice(0, 900), stats: liveRoute.statCalls }));
@@ -1252,15 +1273,15 @@ function searchFixture() {
     ok(know.body.text.includes('LDAC') && know.searches === 0, '지식 질문: 검색 없이 일반 답변');
 
     // 다중 턴: 예산 조건과 이전 답변 문맥이 이어진다.
-    const t1 = await ask({ question: '20만원 이하 무선 이어폰 추천해줘' }, {
+    const t1 = await ask({ question: '15만원 이하 무선 이어폰 추천해줘' }, {
       classify: 'C|무선 이어폰', searchItems: searchFixture(), answer: '삼성 갤럭시 버즈3 프로 블랙을 권합니다. 현재가는 139,000원입니다.'
     });
-    const h2 = [{ role: 'user', text: '20만원 이하 무선 이어폰 추천해줘' }, { role: 'assistant', text: t1.body.text, sig: t1.body.turnSig }];
+    const h2 = [{ role: 'user', text: '15만원 이하 무선 이어폰 추천해줘' }, { role: 'assistant', text: t1.body.text, sig: t1.body.turnSig }];
     const t2 = await ask({ question: '통화 품질도 중요해', chatHistory: h2.concat([{ role: 'user', text: '통화 품질도 중요해' }]) }, {
       classify: 'C', resolve: '{"q":"무선 이어폰","use":"","brand":"","avoid":""}', searchItems: searchFixture(),
       answer: '통화까지 보면 삼성 갤럭시 버즈3 프로 블랙이 맞습니다.'
     });
-    ok(/200,000원|20만/.test(t2.system) && t2.messages.some(m => m.role === 'assistant' && m.content === t1.body.text),
+    ok(/150,000원|15만/.test(t2.system) && t2.messages.some(m => m.role === 'assistant' && m.content === t1.body.text),
       '다중 턴: 앞 턴 예산이 이어지고, 서명된 이전 답변은 assistant 문맥으로 남는다');
 
     // 직전 추천 이어받기: 유효한 참조 → 서버가 골랐던 그 상품·옵션을 카탈로그로 확인해 카드 1장.
@@ -1271,7 +1292,8 @@ function searchFixture() {
     ok(!!top && prior.searches === 0 && (prior.body.items || []).length === 1 && prior.body.items[0].productId === top.productId
         && prior.body.degraded !== true && productData(prior.system).includes(`현재가 ${won(top.lprice)}원`),
       '직전 추천(서명 참조) → 같은 상품·옵션을 서버에서 다시 확인해 답한다',
-      JSON.stringify({ top: rec.body.topProductId, items: prior.body.items, text: prior.body.text }));
+      JSON.stringify({ degraded: prior.body.degraded, warnings: prior.warnings,
+        top: rec.body.topProductId, items: prior.body.items, text: prior.body.text }));
 
     // 사용자가 실제로 쓴 대화: 추천 → 이유 질문 → '지금 사는 게 좋을까?'
     // 이전에는 마지막 질문을 쇼핑 의도가 아닌 일반 지식(B)으로 분류해 맥락이 끊겼다.

@@ -421,8 +421,14 @@ console.log('\n[14] 프롬프트 조립');
 {
   const card = toCard({ productId: '1', title: 'A', lprice: 50000, mall: '쿠팡', isCoupang: true },
     { count: 10, low: 45000, avg30: 60000, trendPct: null });
-  eq(card.note, '30일 평균보다 17% 저렴',
+  eq(card.note, '30일 평균보다 16.7% 저렴',
     '★ 카드 근거는 가격 기록에서 계산한다 (AI 가 쓴 문장이 아니다)');
+}
+{
+  const avgCard = toCard({ productId: '2', title: 'B', lprice: 329000, mall: '쿠팡', isCoupang: true },
+    { count: 6, low: 335000, avg30: 340000, trendPct: null });
+  eq(avgCard.note, '30일 평균보다 3.2% 저렴',
+    '★ 카드 가격 근거 keeps one-decimal precision consistent with answer text');
 }
 {
   const card = toCard({ productId: '1', title: 'A', lprice: 50000, mall: '쿠팡' }, null);

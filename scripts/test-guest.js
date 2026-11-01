@@ -57,7 +57,7 @@ global.fetch = async (_url, opts) => {
   const prompt = (body.messages || []).map(m => m.content || '').join('\n');
   if (body.max_tokens >= 700) lastAnswerSystem = ((body.messages || [])[0] || {}).content || '';
   const content = prompt.includes('QCY T13')
-    ? 'QCY T13 무선 이어폰을 추천합니다.'
+    ? 'QCY T13 무선 이어폰은 현재 검색 표시가 29,900원이고 SEOSA 가격 기록의 최저가도 29,900원이에요. 실제 결제가는 쿠폰과 배송비에 따라 달라질 수 있어요.'
     : '무료 AI 테스트 답변입니다.';
   return {
     ok: true,
@@ -217,7 +217,7 @@ function fixtureStats() {
   section('4. 게스트 — 토큰 없음 → 무료 LLM + 카드');
   {
     stub.searchItems = fixtureItems(); stub.searchMode = 'ok'; stub.stats = fixtureStats(); stub.searchCalls = 0; fetchCalls = 0; reserveCalls = 0;
-    const r = await call({ question: '10만원 이하 통화 되는 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
+    const r = await call({ question: '5만원 이하 통화 되는 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [], view: { source: 'none' } });
     ok(r.status === 200, '200', String(r.status));
     ok(r.body.guest === true, 'guest:true');
     ok(!r.body.needsAuthForFull, '로그인을 강제하지 않는다');
@@ -225,8 +225,8 @@ function fixtureStats() {
     ok(calledModels.every(m => /:free$/.test(String(m))), '★ 게스트 요청은 :free 모델만 호출', calledModels.join(','));
     ok(reserveCalls === 0, '★ 쿼터 예약 0회', String(reserveCalls));
     ok(stub.searchCalls === 1, '검색은 1회 돈다', String(stub.searchCalls));
-    // 2026-10-22 레드팀 BUG-01: 예산(10만원 이하)을 넘는 289,000원 상품은 카드로 나가지 않는다 — 예산 안 2장.
-    ok(Array.isArray(r.body.items) && r.body.items.length === 2 && r.body.items.every(x => x.lprice <= 100000),
+    // 2026-10-22 레드팀 BUG-01: 예산(5만원 이하)을 넘는 289,000원 상품은 카드로 나가지 않는다 — 예산 안 2장.
+    ok(Array.isArray(r.body.items) && r.body.items.length === 2 && r.body.items.every(x => x.lprice <= 50000),
       '카드 2장 (예산 초과 카드 없음)', String(r.body.items && r.body.items.map(x => x.lprice)));
     ok(/QCY T13/.test(r.body.text) && !r.body.degraded, '근거 있는 LLM 답변을 반환한다', r.body.text.slice(0, 60));
     ok(r.body.items[0].productId === '1001' || r.body.items[0].productId === '1003', '예산 안 상품이 1위 카드', r.body.items[0].productId);
@@ -296,8 +296,9 @@ function fixtureStats() {
     const r = await call({ question: '이거 지금 사도 괜찮은 가격인가요?', contextProducts: ctx, chatHistory: [], view: { source: 'modal' } });
     ok(r.status === 200 && r.body.guest === true, '200 게스트');
     ok(stub.searchCalls === 0, '★ 모달 맥락에서는 검색하지 않는다', String(stub.searchCalls));
-    ok(/무료 AI 테스트|QCY T13 무선 이어폰을 추천합니다/.test(r.body.text) && r.body.degraded !== true,
-      '모달 맥락도 LLM 답변', r.body.text.slice(0, 80));
+    ok(/QCY T13/.test(r.body.text) && /29,900원/.test(r.body.text)
+        && /실제 결제/.test(r.body.text) && r.body.degraded !== true,
+      '모달 가격 질문에 LLM이 근거 있는 현재가와 결제 안내를 답한다', r.body.text);
     ok(!/1,111원/.test(r.body.text) && !lastAnswerSystem.includes('1,111')
         && lastAnswerSystem.includes('현재가 29,900원'),
       '위조 가능한 모달 가격 대신 서버 카탈로그 가격으로 판정한다', r.body.text.slice(0, 80));
@@ -309,7 +310,7 @@ function fixtureStats() {
   {
     failModels = true; calledModels.length = 0;
     stub.searchItems = fixtureItems(); stub.searchMode = 'ok'; stub.stats = fixtureStats();
-    const r = await call({ question: '10만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [] });
+    const r = await call({ question: '5만원 이하 무선 이어폰 추천해줘', contextProducts: [], chatHistory: [] });
     failModels = false;
     ok(r.status === 200 && r.body.guest === true && r.body.degraded === true, '게스트 fallback 정상 응답');
     ok(calledModels.length > 0 && calledModels.every(m => /:free$/.test(String(m))), '실패 체인도 :free 만 시도');

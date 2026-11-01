@@ -752,7 +752,8 @@ function substituteRelation(query, title) {
 
 const CONDITION_PATTERNS = [
   ['rental', /렌탈|대여|\brental\b|\blease\b|월\s*구독/i],
-  ['refurbished', /리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|리퍼(?![가-힣])|\brefurbished\b|\brenewed\b/i],
+  // "리퍼나 중고 말고" · "리퍼는 빼고" — 조사가 붙은 리퍼도 읽는다(리퍼블릭 같은 낱말은 여전히 아니다).
+  ['refurbished', /리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|리퍼(?=(?:나|이나|랑|와|는|도|를|가|만)?(?![가-힣]))|\brefurbished\b|\brenewed\b/i],
   ['used', /중고(?!\s*등\s*학생)|\bused\b(?!\s+(?:for|to|by|with|as|in|on)\b)|pre[ -]?owned|second[ -]?hand/i],
   ['display', /전시\s*상품|전시품|진열\s*상품|\bdisplay\s*unit\b/i],
   ['opened', /단순\s*개봉|박스\s*개봉|개봉\s*상품|open[ -]?box|opened\s*(?:box|item)/i],
@@ -780,13 +781,27 @@ function conditionIntent(text) {
 
   const excluded = new Set();
   const wanted = [];
-  matches.forEach((match, index) => {
+  const NEGATED_TAIL_RE = /^\s*(?:(?:은|는|이|가|을|를|도)\s*)?(?:말고|제외(?:하고|한)?|아닌|아니라|아님|빼고|필요\s*없(?:음|고)?|없(?:이|고)?|rather\s+than|excluding|except|not)/i;
+  /*
+   * "리퍼나 중고 말고" — 목록으로 이은 상태는 뒤의 부정을 함께 받는다 (2026-10-26 1,000문항 평가).
+   * 예전에는 «리퍼» 뒤가 «나» 라 부정이 아니었고, 리퍼를 «원하는» 상태로 읽어 리퍼 판매 글이 카드에 남았다.
+   */
+  const LIST_TAIL_RE = /^\s*(?:이나|나|랑|이랑|와|과|하고|및|또는|혹은|or|[,·/])\s*$/i;
+  const negatedAt = matches.map(() => false);
+  for (let index = matches.length - 1; index >= 0; index--) {
+    const match = matches[index];
     let nextIndex = index + 1;
     while (nextIndex < matches.length && matches[nextIndex].start < match.end) nextIndex++;
     const next = matches[nextIndex];
     const tail = source.slice(match.end, next ? next.start : match.end + 24);
-    const negated = /^\s*(?:(?:은|는|이|가|을|를|도)\s*)?(?:말고|제외(?:하고|한)?|아닌|아니라|아님|빼고|필요\s*없(?:음|고)?|없(?:이|고)?|rather\s+than|excluding|except|not)/i.test(tail);
-    if (negated) excluded.add(match.state);
+    // 정규화가 쉼표를 지우므로 «중고 리퍼 제외» 처럼 띄어쓰기만 남은 목록도 본다 — 새 상품 표기는 그렇게 묶지 않는다.
+    const bareList = !!next && /^\s+$/.test(tail) && match.state !== 'new' && match.state !== 'sealed'
+      && next.state !== 'new' && next.state !== 'sealed';
+    negatedAt[index] = NEGATED_TAIL_RE.test(tail)
+      || (!!next && (LIST_TAIL_RE.test(tail) || bareList) && negatedAt[nextIndex]);
+  }
+  matches.forEach((match, index) => {
+    if (negatedAt[index]) excluded.add(match.state);
     else wanted.push(match.state);
   });
   return { wanted: wanted.length ? wanted[wanted.length - 1] : '', excluded };
@@ -957,7 +972,7 @@ const DEVICE_NOUNS = [
   '노트북', '랩탑', '태블릿', '모니터', '프린터', '복합기', '카메라', '캠코더',
   '스마트워치', '냉장고', '세탁기', '건조기', '에어컨', '공기청정기', '가습기', '제습기',
   '선풍기', '서큘레이터', '드라이어', '고데기', '면도기', '전동칫솔', '전자레인지',
-  '에어프라이어', '밥솥', '커피머신', '블렌더', '믹서기', '정수기', '프로젝터', '공유기',
+  '에어프라이어', '밥솥', '커피머신', '원두', '커피', '닭가슴살', '블렌더', '믹서기', '정수기', '프로젝터', '공유기',
   'earphones', 'earbuds', 'headphones', 'headset', 'speaker', 'vacuum', 'laptop', 'tablet', 'monitor', 'smartphone'
 ];
 

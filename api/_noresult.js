@@ -138,17 +138,20 @@ function relaxations(items, c, wanted) {
 
       const droppedFeatures = want.filter(f => fs.indexOf(f) < 0);
       const budgetAdd = target === null ? 0 : target - cons.budgetMax;
+      // Explain a relaxation from the amount the user stated, never from the
+      // internal soft ceiling (which may include an unspoken tolerance).
+      const statedBudgetAdd = target === null ? 0 : target - (cons.budgetSaid || cons.budgetMax);
       const cost = (cons.budgetMax > 0 && budgetAdd > 0 ? budgetAdd / cons.budgetMax : 0)
         + droppedFeatures.length * FEATURE_COST;
 
       /* 사람이 읽는 설명 — 무엇을 얼마나 포기하는지 */
       const parts = [];
-      if (budgetAdd > 0) parts.push(`예산을 ${won(target)}원까지(${won(budgetAdd)}원 더) 늘리고`);
+      if (budgetAdd > 0) parts.push(`예산을 ${won(target)}원까지(${won(Math.max(0, statedBudgetAdd))}원 더) 늘리고`);
       if (droppedFeatures.length) parts.push(`${eulr(droppedFeatures.join('·'))} 조건에서 빼면`);
       // 하나뿐이면 "~고"로 끝나지 않게 다듬는다.
       let label = parts.join(' ');
       if (parts.length === 1 && budgetAdd > 0) {
-        label = `예산을 ${won(target)}원까지(${won(budgetAdd)}원 더) 늘리면`;
+        label = `예산을 ${won(target)}원까지(${won(Math.max(0, statedBudgetAdd))}원 더) 늘리면`;
       }
 
       out.push({

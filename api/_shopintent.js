@@ -94,6 +94,8 @@ const RANGE_RE = /(\d[\d,]*)\s*(?:[~\-–]|에서)\s*(\d[\d,]*)\s*(억|만|천)\
 
 /** 금액 앞에 붙는 말 */
 const PRE_ABOUT_RE = /(약|대략|한)\s*$/;
+/* 금액 앞의 상한 표현 — "많아야 45만원인데" · "최대 30만원" (2026-10-26 홀드아웃: «많아야» 를 여유 예산으로 읽었다). */
+const PRE_CAP_RE = /(?:많아야|기껏해야|최대|최고|아무리\s*많아도|비싸도)\s*$/;
 
 function toWon(numText, unit, subText, subUnit) {
   const base = Number(String(numText).replace(/,/g, ''));
@@ -354,7 +356,8 @@ function parseConstraints(text) {
   const out = {
     budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0, budgetRelax: false,
     budgetNotice: '', budgetStrict: false, conflict: null,
-    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: ''
+    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: '',
+    avoidGaming: false, allowGaming: false
   };
 
   /*
@@ -422,8 +425,9 @@ function parseConstraints(text) {
     const labelled = found.filter(x => LABELLED_BUDGET_RE.test(x.before) || LABEL_AFTER_RE.test(x.after));
     const f = (labelled.length ? labelled : found)[(labelled.length ? labelled : found).length - 1];
     out.budgetSaid = f.won;
-    if (CAP_RE.test(f.after)) {
-      out.budgetMax = f.won;
+    if (CAP_RE.test(f.after) || (PRE_CAP_RE.test(f.before) && !FLOOR_RE.test(f.after) && !BAND_RE.test(f.after))) {
+      // "70만원 미만" 은 70만원짜리를 넣지 않는다 (2026-10-26). 이하·이내·까지는 그 금액까지.
+      out.budgetMax = /^\s*미만/.test(f.after) ? f.won - 1 : f.won;
     } else if (FLOOR_RE.test(f.after)) {
       out.budgetMin = f.won;
     } else if (BAND_RE.test(f.after)) {
@@ -498,6 +502,9 @@ function parseConstraints(text) {
     if (re.test(s)) { out.recipient = label; break; }
   }
   out.gift = GIFT_RE.test(s) || !!out.recipient;
+  const gamingPref = require('./_ai-budget-window').gamingPreference(s);
+  if (gamingPref === true) out.avoidGaming = true;
+  if (gamingPref === false) out.allowGaming = true;
 
   /* ── 무엇을 중히 보는가 ── */
   for (const [re, key] of PRIORITY_RE) {
@@ -512,7 +519,8 @@ function mergeConstraints(a, b) {
   const out = Object.assign({
     budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0, budgetRelax: false,
     budgetNotice: '', budgetStrict: false,
-    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: ''
+    recipient: '', gift: false, priority: '', brand: '', useCase: '', avoid: '',
+    avoidGaming: false
   }, a || {});
   // 모순은 그 발화에서만 다룬다(api/ai.js 가 되묻는다). 합친 조건에 남기지 않는다.
   out.conflict = null;
@@ -572,6 +580,9 @@ function mergeConstraints(a, b) {
     if (src[k]) out[k] = src[k];
   });
   if (src.gift) out.gift = true;
+  if (src.allowGaming === true) out.avoidGaming = false;
+  else if (src.avoidGaming === true) out.avoidGaming = true;
+  delete out.allowGaming;
   return out;
 }
 
@@ -579,7 +590,7 @@ function mergeConstraints(a, b) {
 function hasConstraints(c) {
   if (!c) return false;
   return !!(c.budgetMax || c.budgetMin || c.recipient || c.gift
-    || c.priority || c.brand || c.useCase || c.avoid);
+    || c.priority || c.brand || c.useCase || c.avoid || c.avoidGaming);
 }
 
 function won(v) {

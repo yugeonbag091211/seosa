@@ -1,0 +1,64 @@
+{
+  "kind": "OFFLINE_REAL_HANDLER_MOCK_GPT_FIXTURE_SEARCH_INDEPENDENT_HOLDOUT",
+  "generatedAt": "2026-10-26T01:44:59.183Z",
+  "questions": 200,
+  "uniqueQuestions": 200,
+  "baselineQuestions": 1185,
+  "overlapQuestions": 0,
+  "pass": 164,
+  "fail": 36,
+  "unverified": 0,
+  "passRatePct": 82,
+  "categories": {
+    "search": {
+      "asked": 40,
+      "pass": 32,
+      "fail": 8
+    },
+    "budget": {
+      "asked": 40,
+      "pass": 40,
+      "fail": 0
+    },
+    "option": {
+      "asked": 30,
+      "pass": 25,
+      "fail": 5
+    },
+    "compare": {
+      "asked": 30,
+      "pass": 8,
+      "fail": 22
+    },
+    "unsupported_spec": {
+      "asked": 10,
+      "pass": 10,
+      "fail": 0
+    },
+    "unsupported_history": {
+      "asked": 10,
+      "pass": 10,
+      "fail": 0
+    },
+    "phantom": {
+      "asked": 10,
+      "pass": 10,
+      "fail": 0
+    },
+    "security": {
+      "asked": 10,
+      "pass": 10,
+      "fail": 0
+    },
+    "conversation": {
+      "asked": 20,
+      "pass": 19,
+      "fail": 1
+    }
+  },
+  "realGptCalls": 0,
+  "externalCalls": 0,
+  "dbWrites": 0,
+  "apiCostUsd": 0,
+  "corpusSha256": "77706773c1bfdc3299a8ef796c7512718b831ac684e1f98a219ac0bb30308439"
+}

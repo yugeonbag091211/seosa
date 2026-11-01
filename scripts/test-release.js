@@ -538,7 +538,15 @@ async function runO4() {
     check(subOf(USER).renew_failures === 0, '실패 카운터가 정리된다', String(subOf(USER).renew_failures));
   }
 
-  /* O4-20. 타임아웃이었지만 토스에 결제가 없던 경우 — 정상적으로 새로 긁는다 */
+  /* O4-20. 진행 중일 수 있는 404는 보류하고, 오래된 404만 새로 청구한다. */
+  {
+    const now = new Date();
+    const row = age => ({ updated_at: new Date(now.getTime() - age).toISOString() });
+    check(billing.chargingInFlight(row(billing.STALE_CHARGING_MS - 1), now),
+      'charging 유예 시간 직전은 진행 중으로 보호한다');
+    check(!billing.chargingInFlight(row(billing.STALE_CHARGING_MS), now),
+      'charging 유예 시간 경계 이후에만 복구할 수 있다');
+  }
   resetDb(); resetExt();
   db.subscriptions.push(subRow({ expires_at: daysFromNow(1) }));
   {
@@ -548,8 +556,14 @@ async function runO4() {
       amount: billing.PRO_PRICE, currency: 'KRW', status: 'charging', provider: 'toss',
       raw_status: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
     });
-    const r = await billing.renewDueSubscriptions({}, new Date());
+    const inFlight = await billing.renewOne(subOf(USER), {}, new Date());
     const lost = db.payments.find(p => p.order_id === 'seosa_lost_order');
+    check(!inFlight.ok && /진행 중/.test(inFlight.reason) && ext.charges.length === 0 && lost.status === 'charging',
+      '진행 중인 주문의 404는 정리하거나 새로 청구하지 않는다 ★');
+    // 장애로 남은 오래된 주문을 별도로 재현한다. 새 주문과 구분해야
+    // 404를 청구되지 않았다는 근거로 사용할 수 있다.
+    lost.updated_at = new Date(Date.now() - billing.STALE_CHARGING_MS - 1000).toISOString();
+    const r = await billing.renewDueSubscriptions({}, new Date());
     check(lost && lost.status === 'failed', '토스에 없는 주문(404)은 failed 로 정리한다', lost && lost.status);
     check(r.renewed === 1, '그 뒤 정상적으로 새로 긁어 갱신한다', JSON.stringify({ renewed: r.renewed }));
     check(ext.charges.length === 1, '청구는 정확히 1회', String(ext.charges.length));
@@ -562,7 +576,8 @@ async function runO4() {
     db.payments.push({
       email: USER, order_id: 'seosa_unknown_order', payment_key: 'pending_seosa_unknown_order',
       amount: billing.PRO_PRICE, currency: 'KRW', status: 'charging', provider: 'toss',
-      raw_status: '', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+      raw_status: '', created_at: new Date().toISOString(),
+      updated_at: new Date(Date.now() - billing.STALE_CHARGING_MS - 1000).toISOString()
     });
     const flakyToss = {
       getPaymentByOrderId: async () => ({ ok: false, status: 500, data: {}, error: 'TOSS_DOWN: 일시 오류' }),

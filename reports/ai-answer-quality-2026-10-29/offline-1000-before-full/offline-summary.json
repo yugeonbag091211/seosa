@@ -1,0 +1,153 @@
+{
+  "kind": "OFFLINE_REAL_HANDLER_MOCK_GPT_FIXTURE_SEARCH",
+  "generatedAt": "2026-10-29T00:51:10.723Z",
+  "questions": 1000,
+  "uniqueQuestions": 1000,
+  "pass": 1000,
+  "fail": 0,
+  "unverified": 0,
+  "passRatePct": 100,
+  "categories": {
+    "search": {
+      "asked": 150,
+      "pass": 150,
+      "fail": 0,
+      "unverified": 0
+    },
+    "budget": {
+      "asked": 150,
+      "pass": 150,
+      "fail": 0,
+      "unverified": 0
+    },
+    "spec": {
+      "asked": 100,
+      "pass": 100,
+      "fail": 0,
+      "unverified": 0
+    },
+    "compare": {
+      "asked": 100,
+      "pass": 100,
+      "fail": 0,
+      "unverified": 0
+    },
+    "history": {
+      "asked": 100,
+      "pass": 100,
+      "fail": 0,
+      "unverified": 0
+    },
+    "option": {
+      "asked": 100,
+      "pass": 100,
+      "fail": 0,
+      "unverified": 0
+    },
+    "fuzzy": {
+      "asked": 50,
+      "pass": 50,
+      "fail": 0,
+      "unverified": 0
+    },
+    "phantom": {
+      "asked": 50,
+      "pass": 50,
+      "fail": 0,
+      "unverified": 0
+    },
+    "security": {
+      "asked": 50,
+      "pass": 50,
+      "fail": 0,
+      "unverified": 0
+    },
+    "conversation": {
+      "asked": 150,
+      "pass": 150,
+      "fail": 0,
+      "unverified": 0
+    }
+  },
+  "reportingGroups": {
+    "budget": {
+      "asked": 150,
+      "pass": 150,
+      "fail": 0,
+      "unverified": 0
+    },
+    "productIdentification": {
+      "asked": 350,
+      "pass": 350,
+      "fail": 0,
+      "unverified": 0
+    },
+    "comparison": {
+      "asked": 100,
+      "pass": 100,
+      "fail": 0,
+      "unverified": 0
+    },
+    "conversationMemory": {
+      "asked": 150,
+      "pass": 150,
+      "fail": 0,
+      "unverified": 0
+    },
+    "security": {
+      "asked": 50,
+      "pass": 50,
+      "fail": 0,
+      "unverified": 0
+    },
+    "priceAndSpecificationEvidence": {
+      "asked": 200,
+      "pass": 200,
+      "fail": 0,
+      "unverified": 0
+    }
+  },
+  "reportingGroupCategories": {
+    "budget": [
+      "budget"
+    ],
+    "productIdentification": [
+      "search",
+      "option",
+      "fuzzy",
+      "phantom"
+    ],
+    "comparison": [
+      "compare"
+    ],
+    "conversationMemory": [
+      "conversation"
+    ],
+    "security": [
+      "security"
+    ],
+    "priceAndSpecificationEvidence": [
+      "history",
+      "spec"
+    ]
+  },
+  "injectedPriceMockCases": 100,
+  "uniquenessBasis": "actual question text sent to handler, without session labels",
+  "plannedCounts": {
+    "search": 150,
+    "budget": 150,
+    "spec": 100,
+    "compare": 100,
+    "history": 100,
+    "conversation": 150,
+    "option": 100,
+    "fuzzy": 50,
+    "phantom": 50,
+    "security": 50
+  },
+  "realGptCalls": 0,
+  "externalCalls": 0,
+  "dbWrites": 0,
+  "apiCostUsd": 0,
+  "corpusSha256": "f2b360e23cac427e3fb374cc40992a2d4d882165b82ccab1784244f7bbfbe201"
+}

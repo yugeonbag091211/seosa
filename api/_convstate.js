@@ -89,8 +89,12 @@ const GLOBAL_BUDGET_RE = /(모든\s*(?:상품|제품|물건|것|거)|어떤\s*(?
 function productTokens(text) {
   return String(text || '').normalize('NFKC').toLowerCase()
     .replace(/[^0-9a-z가-힣]+/g, ' ').split(' ')
-    .filter(t => t.length >= 2 && /[^0-9]/.test(t));
+    // 한 글자 상품 이름("쌀")도 상품 낱말이다 — 빼면 "쌀 → 노트북" 전환을 «모름» 으로 봤다 (2026-10-26).
+    .filter(t => (t.length >= 2 || ONE_CHAR_PRODUCTS.has(t)) && /[^0-9]/.test(t));
 }
+const ONE_CHAR_PRODUCTS = (() => {
+  try { return require('./_aiidentity').ONE_CHAR_PRODUCTS || new Set(); } catch (e) { return new Set(); }
+})();
 
 /**
  * 두 상품 구절이 «같은 상품을 이어 찾는 말» 인가.
@@ -122,13 +126,41 @@ function categoryNounsOf(text) {
   try { catOf = require('./_aiidentity').categoryNounOf; } catch (e) { catOf = null; }
   if (!catOf) return [];
   // "무선청소기" · "로봇청소기" 는 둘 다 청소기다 — 합성어는 종류명 부분까지 줄여서 본다.
-  return productTokens(text).filter(t => catOf(t)).map(t => {
+  // "그럼 공기청정기도 추천해줘" 의 «공기청정기도» — 조사를 떼고 본다 (2026-10-26, 예전에는 종류 전환을 못 봤다).
+  const bare = t => (catOf(t) ? t : t.replace(/(?:으로|이랑|로|랑|도|은|는|이|가|을|를|와|과|만)$/, ''));
+  const explicit = productTokens(text).map(bare).filter(t => t.length >= 2 && catOf(t)).map(t => {
     for (let i = t.length - 2; i > 0; i--) {
       const tail = t.slice(i);
       if (catOf(tail) && tail.length >= 2) return tail;
     }
     return t;
   });
+  // A bare model-family name can identify the *kind* of device even when
+  // the user omits "이어폰"/"노트북". Otherwise a prior laptop budget can
+  // silently leak into a new AirPods recommendation.
+  const t = String(text || '').normalize('NFKC').toLowerCase();
+  const aliases = [];
+  if (/(?:에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|버즈[2-9]\s*프로)/i.test(t)
+      && !/(?:케이스|파우치|보호필름|충전\s*케이블)/.test(t)) aliases.push('이어폰');
+  // "닭가슴살 100 그램" 의 그램은 무게 단위다 — 숫자 바로 뒤(띄어 써도)의 그램은 노트북이 아니다.
+  if (/(?:맥북|macbook|lg\s*그램|(?:^|[^0-9가-힣])(?<![0-9]\s{0,2})그램(?=\s|$|[0-9]|프로)|갤럭시북)/i.test(t)
+      && !/(?:충전기|파우치|키스킨|보호필름)/.test(t)) aliases.push('노트북');
+  if (/(?:아이패드|ipad|갤럭시\s*탭|galaxy\s*tab)/i.test(t)
+      && !/(?:케이스|파우치|보호필름)/.test(t)) aliases.push('태블릿');
+  // 휴대폰·청소기 계열 이름 (2026-10-26) — "갤럭시 S25 울트라" · "다이슨 V15" 의 «다른 후보» 를 같은 종류에서 찾으려면 종류가 필요하다.
+  if (/(?:아이폰|iphone|갤럭시\s*(?:s|z|a)\s*\d|갤럭시\s*(?:폴드|플립)|z\s*(?:폴드|플립))/i.test(t)
+      && !/(?:케이스|보호필름|필름|충전기|거치대)/.test(t)) aliases.push('스마트폰');
+  if (/(?:다이슨\s*v\s*\d+|비스포크\s*제트|코드제로|로보락|로봇\s*청소기)/i.test(t)
+      && !/(?:필터|배터리|브러시|헤드|거치대)/.test(t)) aliases.push('청소기');
+  /*
+   * 식품·의류 종류 (2026-10-26 1,000문항 평가). 상품 식별의 종류명 목록에는 없어서 "닭가슴살 4만원 이하" 뒤
+   * "그럼 공기청정기도 추천해줘" 를 종류 전환으로 보지 못했고, 4만원 예산이 공기청정기에 걸렸다.
+   * 여기서는 «주제가 바뀌었나» 만 본다 — 식별 계약(_aiidentity)의 종류 판정은 바꾸지 않는다.
+   */
+  [['닭가슴살', /닭가슴살/], ['쌀', /(?:^|\s|[가-힣])쌀(?=\s|$|\d)/], ['커피', /원두|커피|아메리카노|캡슐/],
+    ['라면', /라면/], ['생수', /생수|삼다수/], ['외투', /패딩|점퍼|자켓|재킷|코트|눕시/],
+    ['운동화', /운동화|스니커즈|에어\s*포스|삼바/]].forEach(([kind, re]) => { if (re.test(t)) aliases.push(kind); });
+  return [...new Set(explicit.concat(aliases))];
 }
 
 /** 종류가 분명히 다른 상품으로 바뀌었는가 (양쪽에 종류명이 있고, 그 종류도 낱말도 겹치지 않는다). */
@@ -393,6 +425,8 @@ function resolve(state, hist, q, opts) {
       absorbed: absorbed.slice(-MAX_ABSORBED),
       budgetScope: acc.scope === 'global' ? 'global' : '',
       budgetProduct: acc.scope === 'product' ? String(acc.product || '').slice(0, 120) : '',
+      // Prior pair identity is already signed. The handler clears it on new topics.
+      comparison: state && Array.isArray(state.comparison) ? state.comparison : [],
       startedAt: state ? state.startedAt : undefined
     }
   };
@@ -439,6 +473,6 @@ function summaryLine(next, withBudget) {
 
 module.exports = {
   resolve, applyConditions, summaryLine,
-  digest, releasesBudget, conditionsOf,
+  digest, releasesBudget, conditionsOf, productKindChanged, categoryNounsOf,
   MAX_ABSORBED, MAX_REPLAY
 };

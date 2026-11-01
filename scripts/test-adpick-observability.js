@@ -140,6 +140,7 @@ const rows = () => db.adpick_api_calls;
 
   process.env.ADPICK_API_KEY = API_KEY;
   process.env.ADPICK_API_HOST = `http://127.0.0.1:${port}`;
+  process.env.ADPICK_GLOBAL_LIMIT = '0'; // Loopback fake server only
   process.env.ADPICK_MIN_GAP_MS = '1';
   process.env.ADPICK_TIMEOUT_MS = '400';
 

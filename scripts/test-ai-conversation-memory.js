@@ -99,7 +99,7 @@ const NOT_FOUND = /찾지 못했|결과가 없었|검색했지만/;
       answer: '영상 편집까지 하신다면 앞에서 추천한 그램15는 외장 그래픽이 없어 무거운 편집에는 부족할 수 있어요. '
         + '그램 프로 17Z90SP는 RTX3050과 32GB 메모리가 상품명에 있어 편집 작업에 더 여유가 있어요. 가격은 2,190,000원으로 훨씬 비싸요.'
     });
-    ok(H.searchLog[H.searchLog.length - 1] === '노트북 그램' && !NOT_FOUND.test(text(t4)) && cards(t4).length >= 2,
+    ok(H.searchLog[H.searchLog.length - 1] === '노트북 그램' && !NOT_FOUND.test(text(t4)) && cards(t4).length === 1,
       '4턴: «영상 편집» 을 검색어로 쓰지 않고 찾던 그램을 다시 본다 (예전: "근데 영상 편집도" → 0건)', JSON.stringify({ q: H.searchLog.slice(-1), text: text(t4) }));
     ok(blockHeads(t4).includes('[직전에 추천한 상품 — 서버가 서명 참조로 다시 확인한 바로 그 상품·옵션]')
         && /용도: 영상 편집/.test(t4.system),
@@ -150,7 +150,7 @@ const NOT_FOUND = /찾지 못했|결과가 없었|검색했지만/;
       '3턴: «배터리 오래가» 를 검색하지 않고, 앞 예산(10만원)도 그대로 이어받는다', JSON.stringify({ q: H.searchLog.slice(-2), cards: cards(e3).map(c => c.lprice) }));
     ok(!NOT_FOUND.test(text(e3)), '3턴: «검색 결과가 없었어요» 로 끝나지 않는다', text(e3));
     const before = AC.verifyRecommendationRef(s.prevTopRef);
-    const e4 = await s.say('다른 제품 추천해줘', {
+    const e4 = await s.say('더 저렴한 다른 제품 추천해줘', {
       classify: 'C|무선 이어폰',
       answer: msgs => /사용자는 이 상품 «말고» 다른 후보를 원한다/.test(msgs[0].content)
         ? 'QCY T13 ANC를 추천해요. 앞에서 권한 상품보다 가격 부담이 적어요.' : '같은 상품을 다시 권합니다.'

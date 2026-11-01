@@ -98,12 +98,19 @@ require('../api/_ratelimit').guard = () => true;
 
 const catalog = [];   // 검색 대역이 고르는 상품 (검색 결과 모양)
 const searchLog = [];
+const searchEvidenceLog = []; // Exact fixture records returned by each search call.
 const shop = require('../api/_shop');
 shop.searchAll = async q => {
   counters.searches++;
   const s = String(q || '').toLowerCase();
   searchLog.push(s);
   const hits = catalog.filter(it => (it._keys || []).some(k => s.includes(k)));
+  searchEvidenceLog.push(hits.map(it => ({
+    productId: it.productId, vendorItemId: it.vendorItemId || '', title: it.title,
+    lprice: Number(it.lprice) || 0, oprice: Number(it.oprice) || 0,
+    mall: it.mall || '', note: it.oprice > it.lprice
+      ? `정가 ${it.oprice}원 · 할인율 ${it.savePct || Math.round((1 - it.lprice / it.oprice) * 100)}%` : ''
+  })));
   return { items: hits.map(it => { const o = { ...it, _source: 'api' }; delete o._keys; return o; }), from: 'api', blocked: false };
 };
 shop.saveProducts = async () => ({ saved: 0 });
@@ -141,6 +148,22 @@ function addProduct(p) {
     link, image: '', mall, mallLabel: p.mallLabel || '', productId: p.pid, vendorItemId: p.vid || '',
     isCoupang, _keys: (p.keys || []).map(k => k.toLowerCase())
   });
+}
+
+/** Exact fixture history for the product options actually returned as cards. */
+function priceHistoryEvidenceForCards(cards) {
+  const out = [];
+  for (const card of Array.isArray(cards) ? cards : []) {
+    const rows = tables.price_history.filter(row => String(row.product_id) === String(card.productId || '')
+      && (!card.vendorItemId || String(row.vendor_item_id || '') === String(card.vendorItemId))
+      && (!card.mall || String(row.mall || '') === String(card.mall)));
+    for (const row of rows) out.push({
+      productId: String(row.product_id || ''), vendorItemId: String(row.vendor_item_id || ''),
+      mall: String(row.mall || ''), price: Number(row.price) || 0,
+      observedDate: String(row.recorded_date || row.recorded_at || '')
+    });
+  }
+  return out;
 }
 
 /** 한 번의 질문. opts.answer — GPT 답변(문자열·함수·null=공급자 장애). */
@@ -216,6 +239,6 @@ function session(opts = {}) {
 const productData = system => (String(system).match(/\n<상품데이터>\n[\s\S]*?\n<\/상품데이터>/) || [''])[0];
 
 module.exports = {
-  tables, counters, catalog, searchLog, llmStub, addProduct, ask, session, productData, kstDate, isoAgo, DAY,
+  tables, counters, catalog, searchLog, searchEvidenceLog, llmStub, addProduct, priceHistoryEvidenceForCards, ask, session, productData, kstDate, isoAgo, DAY,
   handler, I: handler._internal
 };
