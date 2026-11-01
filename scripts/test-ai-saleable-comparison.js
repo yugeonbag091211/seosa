@@ -14,7 +14,18 @@ const bad=[
   '라이노핏/(갤럭시탭 S11) 클리어쉴드 북커버 케이스/모바일 액세서리 태블릿케이스',
   '갤럭시탭 액티브5 프로 10.1 슈페리어 저반사 액정보호필름',
   '미국구매 노트북 케이스 아이패드, 갤럭시탭 등',
-  '[보리보리] 아트박스 POOM 아트박스/삼성전자 삼성 갤럭시탭S10+ S9+ AI 키보드 북커버 케이스 EF-DX825'
+  '[보리보리] 아트박스 POOM 아트박스/삼성전자 삼성 갤럭시탭S10+ S9+ AI 키보드 북커버 케이스 EF-DX825',
+  '굿노트 깍두기 색칠 가계부 아이패드 가로형 PDF',
+  '왕초보 아이패드 수채화를 기초부터 탄탄하게 배우기',
+  '뉴욕: 아이패드와 크리스마스 영화와 함께하는 크리스마스 투어 | 미국',
+  '굿노트 데일리 플래너 5컬러 세트 _아이패드 굿노트 속지',
+  '[서울/서초] 아이패드 드로잉 원데이 클래스',
+  'JAMJAKE 아이패드 호환 무선충전 스타일러스 펜슬 P11pro',
+  '갤럭시탭 아이패드 태블릿 파우치 가방 11인치 방수',
+  'iPad Pro 11 M4 digital planner PDF template',
+  '아이패드 기초 입문 교재 2026',
+  'iPad mini 2026용 충전 케이블',
+  '아이패드 전용 애플펜슬 수납 홀더'
 ];
 const good=[
   '삼성전자 갤럭시탭 S9 FE 128GB Wi-Fi 태블릿',
@@ -24,7 +35,13 @@ const good=[
   '삼성 갤럭시탭 S10 FE 128GB 터치스크린 지원 태블릿',
   '삼성 갤럭시탭A6 10.1 With s-pen 태블릿PC SM-P580 화이트 32GB Wi-Fi',
   '삼성전자 갤럭시탭 A9 플러스 태블릿PC',
-  '갤럭시 탭 A11+_WIFI_128GB_그레이 - [SM-X230NZALKOO]'
+  '갤럭시 탭 A11+_WIFI_128GB_그레이 - [SM-X230NZALKOO]',
+  'Apple 2026 아이패드 에어 11(M4 모델)',
+  'Apple 2025 아이패드 프로 11(M5 모델) 스탠다드 글래스',
+  '아이패드 에어 11 M4 Wi-Fi 128GB 스타라이트',
+  '[APPLE] 애플 아이패드 7세대 공기계 [A2197]',
+  '삼성전자 갤럭시탭 S10 FE',
+  '삼성전자 갤럭시 탭 A8 WiFi전용 64GB SM-X200'
 ];
 for(const title of bad)assert.equal(C.isComparableOffer(/아이패드|ipad/i.test(title)?'아이패드':'갤럭시탭',title),false,title);
 for(const title of good)assert.equal(C.isComparableOffer(/아이패드|ipad/i.test(title)?'아이패드':'갤럭시탭',title),true,title);
@@ -34,6 +51,16 @@ const polluted=[
  mk(bad[0],15700,'GLASS'),mk(good[0],429000,'TABLET'),
  mk('갤럭시탭 S9 케이스',9900,'CASE')
 ];
+const ipadPolluted=[
+ mk('굿노트 깍두기 색칠 가계부 아이패드 가로형 PDF',13000,'PDF'),
+ mk('왕초보 아이패드 수채화를 기초부터 탄탄하게 배우기',75900,'CLASS'),
+ mk('뉴욕: 아이패드와 크리스마스 영화와 함께하는 크리스마스 투어 | 미국',50669,'TOUR'),
+ mk('Apple 2025 아이패드 (A16 모델)',621300,'IPAD-DEVICE')
+];
+const ipadSelected=C.pickExact(ipadPolluted,'아이패드',AIID,normalize);
+assert.equal(ipadSelected?.productId,'IPAD-DEVICE','real iPad must beat lower-priced digital content');
+assert.equal(C.pickExact(ipadPolluted.slice(0,3),'아이패드',AIID,normalize),null,'no genuine device means no comparable iPad');
+
 const selected=C.pickExact(polluted,'갤럭시탭',AIID,normalize);
 assert.equal(selected&&selected.productId,'TABLET','real device must be selected ahead of cheap glass');
 assert.equal(C.pickExact([polluted[0]],'갤럭시탭',AIID,normalize),null,'glass-only must return no confirmed tablet');
@@ -48,4 +75,4 @@ const exactText=C.formatComparison(['아이패드 에어 M3','갤럭시탭 S9 FE
   {title:good[3],price:699000,mall:'쿠팡'},
   {title:good[0],price:429000,mall:'쿠팡'}],'search',{});
 assert.match(exactText,/선택 기준: 가격을 우선하면/);
-console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+7,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
+console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+9,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
