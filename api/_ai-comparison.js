@@ -158,6 +158,12 @@ function isComparableOffer(query, title) {
 }
 
 /** The cheapest exact offer for one side. `accept` narrows the exact offers (budget gate in api/ai.js). */
+function isCashPriceListing(title) {
+  const t=String(title||'');
+  // A monthly rental installment or deposit is not the full product price.
+  // "무이자 할부 가능" without a monthly amount is only a financing feature.
+  return !/(?:월\s*\d[\d,]*\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|월\s*구독료)/i.test(t);
+}
 function listExact(raw, query, AIID, normalize, accept) {
   const candidates = (Array.isArray(raw) ? raw : [])
     .filter(x => x && x.productId && Number.isSafeInteger(Number(x.lprice)) && Number(x.lprice) > 0)
@@ -165,7 +171,7 @@ function listExact(raw, query, AIID, normalize, accept) {
       const n = normalize(x);
       Object.defineProperty(n, '_compareRaw', { value: x });
       return n;
-    }).filter(n => isComparableOffer(query, n.title)).filter(n => {
+    }).filter(n => isComparableOffer(query, n.title) && isCashPriceListing(n.title)).filter(n => {
       // A Coupang product page is not a saleable option. Without the exact
       // vendorItemId, neither the price nor the card can represent that option
       // in a comparison. Other providers do not have Coupang option IDs.
@@ -273,7 +279,7 @@ function formatComparison(requested, offers, source, opts) {
     lines.push(`${i+1}. ${p.title} — ${won(p.price)} (${p.mall || '판매처 미확인'})${over}`);
   });
   if (offers[0] && offers[1]) {
-    if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 두 판매처에서 가격과 판매 조건이 비교적 가까운 상품을 골랐지만, 동급 성능이나 사양을 검증한 것은 아니에요. 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
+    if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 두 판매처에서 가격과 판매 조건이 비교적 가까운 상품을 골랐지만, 동급 모델인지, 성능이나 사양이 비슷한지 검증한 것은 아니에요. 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
     const difference = Math.abs(offers[0].price - offers[1].price);
     if (difference === 0) lines.push('두 상품의 확인된 표시 가격은 같아요.');
     else lines.push(`표시 가격 차이는 ${won(difference)}이고, ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 더 저렴해요.`);
@@ -292,4 +298,4 @@ function formatComparison(requested, offers, source, opts) {
   lines.push('표시 가격은 최종 결제가가 아니며 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비, 해외판 여부 및 판매 조건을 결제 화면에서 확인해 주세요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, isPairFollowup, pickExact, pickAlignedPair, isBroadTabletPair, isComparableOffer, formatComparison, budgetLabel, listedTitleDifferences };
+module.exports = { parseComparison, isPairFollowup, pickExact, pickAlignedPair, isBroadTabletPair, isComparableOffer, isCashPriceListing, formatComparison, budgetLabel, listedTitleDifferences };
