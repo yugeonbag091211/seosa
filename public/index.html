@@ -5699,12 +5699,13 @@ var Api = {
 
     // 응답 헤더로 오는 부가 정보(가격 출처 등). onOk의 두 번째 인자로 넘긴다.
     // 기존 콜백은 인자를 하나만 받으므로 그대로 두어도 아무 영향이 없다.
-    var meta = { source: '', blocked: false, correct: '', correctKind: '', suggest: [] };
+    var meta = { source: '', blocked: false, partialStale: false, correct: '', correctKind: '', suggest: [] };
     fetch(queryUrl, fetchOpts)
       .then(function(r) {
         try {
           meta.source = r.headers.get('X-Seosa-Source') || '';
           meta.blocked = r.headers.get('X-Seosa-Blocked') === '1';
+          meta.partialStale = r.headers.get('X-Seosa-Partial-Stale') === '1';
 
           /*
            * 검색어 보정 / 대체 검색어.
@@ -7687,8 +7688,11 @@ var Search = {
 
     // 쿠팡을 못 불러와 오래된 캐시를 꺼내 쓴 경우. 현재가인 척하지 않는다.
     var staleNote = (meta.source === 'stale-cache')
-      ? '<div class="stale-note">⚠ 지금은 쇼핑몰에서 최신 가격을 받아오지 못해, '
-        + '마지막으로 저장된 가격을 보여드리고 있어요. 실제 판매가와 다를 수 있습니다.</div>'
+      ? (meta.partialStale
+        ? '<div class="stale-note">⚠ 일부 쇼핑몰의 최신 가격을 확인하지 못했어요. '
+          + '목록에 이전에 저장한 가격이 섞여 있으며 실제 판매가와 다를 수 있습니다.</div>'
+        : '<div class="stale-note">⚠ 지금은 쇼핑몰에서 최신 가격을 받아오지 못해, '
+          + '마지막으로 저장된 가격을 보여드리고 있어요. 실제 판매가와 다를 수 있습니다.</div>')
       : '';
 
     var prices = items.map(function(i) { return Fmt.int(i.lprice); }).filter(function(p) { return p > 0; });

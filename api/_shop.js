@@ -386,6 +386,8 @@ async function searchAll(keyword, {
     blocked: !!coupang.blocked,
     mismatch: !items.length && !!(coupang.mismatch || adpick.mismatch),
     freshAnswered,
+    providerSources: { coupang: coupang.from || 'none', adpick: adpick.from || 'none' },
+    providerBlocked: { coupang: !!coupang.blocked, adpick: !!adpick.blocked },
     failed
   };
 }

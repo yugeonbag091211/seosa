@@ -7,6 +7,7 @@ const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
+const { summarizeSearchProvenance } = require('./_search-provenance');
 
 const MAX_KEYWORD_LEN = 80;
 
@@ -106,7 +107,7 @@ module.exports = async function handler(req, res) {
     // 두 번 들어오기만 해도 뒤쪽은 쿠팡 결과를 통째로 잃는다. 한 칸(약 1.2초)은
     // 기다리고, 그보다 더 밀리면(=앞에 여러 건이 쌓였으면) 기다리지 않고
     // 캐시 결과로 응답한다. 사용자를 무한정 세워두지 않는다.
-    const { items, allItems, from, blocked, failed, errors } = await searchAll(keyword, {
+    const result = await searchAll(keyword, {
       coupangLimit: RESULT_LIMIT,
       adpickLimit: ADPICK_RESULT_LIMIT,
       coupangOpts: { source: 'search', maxWaitMs: 1500 },
@@ -130,6 +131,7 @@ module.exports = async function handler(req, res) {
      *   503 이면 프론트 Api.call 이 오류 경로(«검색 중 오류가 났어요 · 다시 시도»)로 간다.
      *   캐시하지 않는다 — 복구된 뒤에도 장애 응답이 남으면 안 된다.
      */
+    const {items, allItems, from, failed, errors} = result;
     if (failed) {
       noStore(res);
       res.setHeader('Retry-After', '30');
@@ -240,15 +242,20 @@ module.exports = async function handler(req, res) {
      * 본문 형태(배열)를 바꾸면 프론트 전체를 같이 고쳐야 하므로 헤더로 내보낸다.
      * stale-cache 를 아무 표시 없이 보여주면 사용자는 클릭해서야 다른 가격을 본다.
      */
-    res.setHeader('X-Seosa-Source', from);
-    if (blocked) res.setHeader('X-Seosa-Blocked', '1');
+    const provenance = summarizeSearchProvenance(result, ranked);
+    res.setHeader('X-Seosa-Source', provenance.source);
+    if (provenance.blocked) res.setHeader('X-Seosa-Blocked', '1');
+    if (provenance.partialStale) res.setHeader('X-Seosa-Partial-Stale', '1');
     res.setHeader('Access-Control-Expose-Headers',
-      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest');
+      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Partial-Stale, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest');
 
-    // 쿠팡 응답 자체가 이미 6시간 캐시된다. 같은 검색어가 몰릴 때 함수 실행과
-    // DB 쓰기까지 줄이려고 Edge 에도 짧게 세워둔다. 결과가 달라지지는 않는다.
-    // 단 stale-cache 는 캐시하지 않는다 — 차단이 풀린 직후에도 옛 값이 5분 더 남는다.
-    if (ranked.length && from !== 'stale-cache' && !(canonicalConfig.enabled && canonicalConfig.percent > 0)) cachePublic(res, 300);
+    // A single old-price listing or temporarily unavailable merchant is
+    // enough to make the complete response ineligible for 5-minute Edge cache.
+    if (provenance.edgeCacheSafe && !(canonicalConfig.enabled && canonicalConfig.percent > 0)) {
+      cachePublic(res, 300);
+    } else {
+      noStore(res);
+    }
     // 구매 링크는 공통 관문(_affiliate)을 지난 값만 내보낸다. 저장(saveProducts)은 위에서 원본으로 끝났다.
     res.json(sanitizeItemLinks(ranked));
   } catch (e) {
