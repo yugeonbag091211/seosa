@@ -102,6 +102,7 @@ const state = {
   blockReason: '',
   totalCalls: 0,
   totalCacheHits: 0,
+  totalHotCacheHits: 0,
   totalCoalesced: 0,
   totalDenied: 0,
   consecutiveTransient: 0
@@ -525,10 +526,18 @@ async function searchAdpickOnce(keyword, opts = {}) {
  * source, deadline or limit. The result is never retained after settlement.
  */
 const pendingSearches = new Map();
+const hotCache = require('./_adpick-hot-cache').createHotCache();
 async function searchAdpick(keyword, opts = {}) {
   const kw = String(keyword || '').trim().slice(0, 80);
   if (!kw || opts.useCache === false || opts.forceRefresh) {
     return searchAdpickOnce(keyword, opts);
+  }
+  const warm = hotCache.get(kw, opts);
+  if (warm) {
+    state.totalCacheHits++;
+    state.totalHotCacheHits++;
+    log(opts.source || 'unknown', kw, 'HOT-CACHE', 'ttl<=20s');
+    return warm;
   }
   const key = JSON.stringify([
     kw, opts.source ?? 'unknown', opts.limit ?? 10,
@@ -543,7 +552,9 @@ async function searchAdpick(keyword, opts = {}) {
   const task = searchAdpickOnce(keyword, opts);
   pendingSearches.set(key, task);
   try {
-    return await task;
+    const result = await task;
+    hotCache.put(kw, opts, result);
+    return result;
   } finally {
     if (pendingSearches.get(key) === task) pendingSearches.delete(key);
   }
@@ -563,6 +574,7 @@ function localStats() {
     globalMaxPerMin: globalAcquire ? GLOBAL_MAX_PER_MIN : 0,
     calls: state.totalCalls,
     cacheHits: state.totalCacheHits,
+    hotCacheHits: state.totalHotCacheHits,
     coalesced: state.totalCoalesced,
     denied: state.totalDenied,
     blocked: isBlocked(),

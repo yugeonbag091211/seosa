@@ -49,7 +49,8 @@ const tick=()=>new Promise(r=>setImmediate(r));
   assert.equal(a.items.length,1);
   assert.deepEqual(a.items,b.items);
   const cached=await searchAdpick('무선 마우스',opts);
-  assert.equal(cached.from,'cache','sequential repeat must use fresh shared DB cache');
+  assert.equal(cached.from,'cache','sequential repeat must use a verified fresh cache');
+  assert.equal(localStats().hotCacheHits,1,'AI request reuses the local verified 20s hot cache');
   assert.equal(calls,1,'repeat must not hit supplier');
   // Force-refresh is a real verification request and must NOT be coalesced
   // with other in-progress standard queries.
@@ -59,5 +60,5 @@ const tick=()=>new Promise(r=>setImmediate(r));
   releaseFetch();
   assert.equal((await fresh).from,'api');
   assert.equal(localStats().calls,2);
-  console.log('ADPICK_COALESCING_SUMMARY',JSON.stringify({pass:10,fail:0,externalCalls:2,coalesced:1,cacheHits:1,dbWrites:0}));
+  console.log('ADPICK_COALESCING_SUMMARY',JSON.stringify({pass:11,fail:0,externalCalls:2,coalesced:1,hotCacheHits:1,dbWrites:0}));
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{global.fetch=originalFetch;});
