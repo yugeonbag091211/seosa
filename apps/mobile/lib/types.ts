@@ -106,6 +106,10 @@ export type SearchResult = {
   source: SearchSource;
   /** Coupang was rate-limited or unavailable; the results may be older. */
   blocked: boolean;
+  /** At least one merchant was unavailable or returned an expired cache. */
+  partialResults: boolean;
+  /** Some returned product prices came from an expired cache. */
+  partialStale: boolean;
   /** Only filled when there are no results. */
   corrected: string;
   suggestions: string[];

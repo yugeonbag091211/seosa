@@ -41,7 +41,11 @@ export function useSearch(keyword: string) {
     queryKey: ['search', q],
     queryFn: ({ signal }) => api.search(q, signal),
     enabled: q.length > 0,
-    staleTime: 5 * MIN,
+    // Never serve an incomplete supplier response as fresh for 5 more minutes.
+    // Avoid automatic background refetch; the user may retry explicitly.
+    staleTime: query => (query.state.data?.partialResults || query.state.data?.blocked
+      || query.state.data?.source === 'stale-cache') ? 0 : 5 * MIN,
+    refetchOnWindowFocus: false,
     // Each search can cost a Coupang call server-side; never retry a search automatically.
     retry: false,
   });
