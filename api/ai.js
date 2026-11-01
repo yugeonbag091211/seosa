@@ -5286,6 +5286,9 @@ module.exports = async function handler(req, res) {
           const raw = verified.find(x => key(x) === key(sel));
           if (!raw) return null;
           const normalized = normItem(fromSearchResult(raw));
+          // Previously signed pairs must not carry a misclassified replacement
+          // part across the deploy boundary.
+          if (!CMP.isComparableOffer(comparison[i], normalized.title)) return null;
           Object.defineProperty(normalized, '_compareRaw', { value: raw });
           if (hardBudget && !inBudget(normalized)) { missingByBudget[i] = true; return null; }
           return normalized;

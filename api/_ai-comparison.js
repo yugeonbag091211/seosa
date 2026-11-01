@@ -118,6 +118,34 @@ function isPairFollowup(question) {
   return /(?:둘\s*중|두\s*(?:개|제품|상품|모델)|이\s*둘|그\s*둘|둘\s*다|둘\s*의|둘\s*을|둘\s*이|각각|앞(?:에서)?\s*비교한|아까\s*비교한|방금\s*비교한|비교했던|그\s*중|어느\s*쪽(?:이|은)?\s*(?:더\s*)?(?:저렴|싸|싼|비싸|가격))/.test(q);
 }
 
+/*
+ * A matching family name in a third-party listing does not establish that the
+ * merchant sells the device itself. Live Production regression (2026-11-01):
+ * "[해외] 삼성 갤럭시 탭 A 8.0 T380 T385 터치 스크린 ...용 8인치 유리"
+ * at 15,700 KRW passed exact-family identity and was compared against an
+ * actual 621,300 KRW iPad. The cheap listing sold replacement glass.
+ *
+ * Apply this after the independent family query and before exact-price
+ * selection, including signed-pair rechecks. Only reject unambiguous sale-of-
+ * replacement-part wording: "touchscreen tablet" alone is a device feature,
+ * not a reason to reject an otherwise genuine tablet.
+ */
+function isComparableOffer(query, title) {
+  const q = String(query || '');
+  const s = String(title || '').normalize('NFKC');
+  const tablet = /아이패드|ipad|갤럭시\s*탭|갤럭시탭|galaxy\s*tab/i.test(q);
+  if (!tablet) return true;
+  // These are descriptions of an independently sold part, not the tablet.
+  const replacement = /(?:교체용|수리용|교체\s*부품|액정\s*교체|스크린\s*교체|디스플레이\s*교체|호환\s*(?:부품|액정|터치\s*패널)|보호\s*(?:필름|유리)|강화\s*유리\s*(?:필름|보호)|(?:lcd|oled)\s*(?:screen|replacement)|replacement\s*(?:screen|glass|digitizer)|touch\s*screen.{0,95}\bglass\b|터치\s*(?:스크린|패널|액정).{0,95}(?:유리|글라스)|(?:디지타이저|digitizer).{0,95}(?:유리|glass)|(?:유리|glass).{0,30}(?:터치\s*스크린|액정))/i;
+  // A marketplace offer may carry the requested family name merely to say
+  // that a case, keyboard, charger or screen protector fits that tablet.
+  // Such prices are never comparable to a device's sale price. Be deliberately
+  // conservative for pair comparisons; a bundled accessory listing is less
+  // useful than a verifiable standalone tablet.
+  const soldAccessory = /(?:키보드|keyboard|북\s*커버|북커버|\bcover\b|케이스|\bcase\b|보호\s*필름|보호필름|액정\s*보호|액정보호|스크린\s*프로텍터|screen\s*protector|태블릿\s*거치대|태블릿케이스|tablet\s*case|전용\s*스탠드|충전\s*케이블|charging\s*cable|펜촉|터치\s*펜\s*(?:전용|호환)|터치패드\s*DeX키)/i;
+  return !replacement.test(s) && !soldAccessory.test(s);
+}
+
 /** The cheapest exact offer for one side. `accept` narrows the exact offers (budget gate in api/ai.js). */
 function pickExact(raw, query, AIID, normalize, accept) {
   const candidates = (Array.isArray(raw) ? raw : [])
@@ -126,7 +154,7 @@ function pickExact(raw, query, AIID, normalize, accept) {
       const n = normalize(x);
       Object.defineProperty(n, '_compareRaw', { value: x });
       return n;
-    }).filter(n => {
+    }).filter(n => isComparableOffer(query, n.title)).filter(n => {
       // A Coupang product page is not a saleable option. Without the exact
       // vendorItemId, neither the price nor the card can represent that option
       // in a comparison. Other providers do not have Coupang option IDs.
@@ -182,6 +210,11 @@ function listedTitleDifferences(first, second) {
  */
 function formatComparison(requested, offers, source, opts) {
   const o = opts || {};
+  const familyKey = n => String(n || '').toLowerCase().replace(/\s+/g,'');
+  const pair = (requested || []).map(familyKey);
+  const broadTabletFamilies = pair.length === 2
+    && pair.every(p => ['아이패드','ipad','갤럭시탭','galaxytab'].includes(p))
+    && pair[0] !== pair[1];
   const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
   const lines = [source === 'catalog'
     ? '앞에서 비교한 두 상품을 다시 확인했어요. 아래는 마지막 수집 시점의 표시 가격이에요.'
@@ -198,12 +231,15 @@ function formatComparison(requested, offers, source, opts) {
     lines.push(`${i+1}. ${p.title} — ${won(p.price)} (${p.mall || '판매처 미확인'})${over}`);
   });
   if (offers[0] && offers[1]) {
+    if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 아래는 서로 다른 개별 판매 상품의 표시 가격일 뿐, 동급 모델이나 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
     const difference = Math.abs(offers[0].price - offers[1].price);
     if (difference === 0) lines.push('두 상품의 확인된 표시 가격은 같아요.');
     else lines.push(`표시 가격 차이는 ${won(difference)}이고, ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 더 저렴해요.`);
     const titleDifferences = listedTitleDifferences(offers[0].title, offers[1].title);
     if (titleDifferences) lines.push(titleDifferences);
-    if (difference > 0) {
+    if (broadTabletFamilies) {
+      lines.push('정확한 구매 비교를 하려면 사용할 용도와 예산을 정한 뒤 비슷한 연식·사양의 모델끼리 비교해야 해요. 현재 확인한 두 판매글만으로 어느 브랜드가 더 저렴하거나 가성비가 높다고 단정할 수 없어요.');
+    } else if (difference > 0) {
       lines.push(`선택 기준: 가격을 우선하면 ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 유리해요. 사양은 위 상품명에 적힌 차이가 용도에 맞는지 확인해 고르고, 실제 성능 우열은 이 정보만으로 판단하기 어려워요.`);
     } else {
       lines.push('선택 기준: 표시 가격이 같으므로 상품명에 적힌 차이가 용도에 맞는지 확인해 고르세요. 실제 성능 우열은 이 정보만으로 판단하기 어려워요.');
@@ -214,4 +250,4 @@ function formatComparison(requested, offers, source, opts) {
   lines.push('표시 가격은 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비를 결제 화면에서 확인해 주세요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, isPairFollowup, pickExact, formatComparison, budgetLabel, listedTitleDifferences };
+module.exports = { parseComparison, isPairFollowup, pickExact, isComparableOffer, formatComparison, budgetLabel, listedTitleDifferences };

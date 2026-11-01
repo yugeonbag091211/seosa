@@ -1,0 +1,51 @@
+'use strict';
+const assert=require('node:assert/strict');
+const C=require('../api/_ai-comparison');
+const AIID=require('../api/_aiidentity');
+const bad=[
+  '[해외] 삼성 갤럭시 탭 A 8.0 T380 T385 터치 스크린 SM T380 SM-T385용 8인치 유리',
+  '갤럭시탭 S9 FE 보호 필름 2매',
+  '갤럭시 탭 S10 터치 패널 교체용 부품',
+  'Galaxy Tab S9 replacement screen glass',
+  '아이패드 에어 11 액정 교체 부품',
+  'iPad mini LCD screen replacement',
+  // Titles seen in the actual 2026-11-01 Production /api/search payload:
+  '삼성 정품 갤럭시 탭S11 울트라 프로 키보드 터치패드 DeX키 EF-DX935',
+  '라이노핏/(갤럭시탭 S11) 클리어쉴드 북커버 케이스/모바일 액세서리 태블릿케이스',
+  '갤럭시탭 액티브5 프로 10.1 슈페리어 저반사 액정보호필름',
+  '미국구매 노트북 케이스 아이패드, 갤럭시탭 등',
+  '[보리보리] 아트박스 POOM 아트박스/삼성전자 삼성 갤럭시탭S10+ S9+ AI 키보드 북커버 케이스 EF-DX825'
+];
+const good=[
+  '삼성전자 갤럭시탭 S9 FE 128GB Wi-Fi 태블릿',
+  '삼성 갤럭시 탭 A 8.0 32GB WiFi 태블릿 본체',
+  'Apple 2025 아이패드 (A16 모델) 128GB Wi-Fi',
+  'Apple iPad Air 11 M3 256GB Wi-Fi 태블릿',
+  '삼성 갤럭시탭 S10 FE 128GB 터치스크린 지원 태블릿',
+  '삼성 갤럭시탭A6 10.1 With s-pen 태블릿PC SM-P580 화이트 32GB Wi-Fi',
+  '삼성전자 갤럭시탭 A9 플러스 태블릿PC',
+  '갤럭시 탭 A11+_WIFI_128GB_그레이 - [SM-X230NZALKOO]'
+];
+for(const title of bad)assert.equal(C.isComparableOffer(/아이패드|ipad/i.test(title)?'아이패드':'갤럭시탭',title),false,title);
+for(const title of good)assert.equal(C.isComparableOffer(/아이패드|ipad/i.test(title)?'아이패드':'갤럭시탭',title),true,title);
+const mk=(title,price,id)=>({title,lprice:price,productId:id,mall:'ADPICK',isCoupang:false,link:'https://merchant.example/'+id});
+const normalize=x=>({...x,price:x.lprice,mallId:x.mall});
+const polluted=[
+ mk(bad[0],15700,'GLASS'),mk(good[0],429000,'TABLET'),
+ mk('갤럭시탭 S9 케이스',9900,'CASE')
+];
+const selected=C.pickExact(polluted,'갤럭시탭',AIID,normalize);
+assert.equal(selected&&selected.productId,'TABLET','real device must be selected ahead of cheap glass');
+assert.equal(C.pickExact([polluted[0]],'갤럭시탭',AIID,normalize),null,'glass-only must return no confirmed tablet');
+assert.equal(C.pickExact([mk(good[2],621300,'IPAD')],'아이패드',AIID,normalize)?.productId,'IPAD');
+const broadText=C.formatComparison(['아이패드','갤럭시탭'],[
+  {title:good[2],price:621300,mall:'쿠팡'},
+  {title:good[0],price:429000,mall:'쿠팡'}],'search',{});
+assert.match(broadText,/동급 모델|동급 사양/);
+assert.match(broadText,/가성비가 높다고 단정할 수 없어요/);
+assert.doesNotMatch(broadText,/선택 기준: 가격을 우선하면/);
+const exactText=C.formatComparison(['아이패드 에어 M3','갤럭시탭 S9 FE'],[
+  {title:good[3],price:699000,mall:'쿠팡'},
+  {title:good[0],price:429000,mall:'쿠팡'}],'search',{});
+assert.match(exactText,/선택 기준: 가격을 우선하면/);
+console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+7,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
