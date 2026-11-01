@@ -15,7 +15,7 @@ for(const c of states)for(const a of states){
  const bothFresh=[c,a].every(s=>s==='api'||s==='cache');
  check('empty '+c+'/'+a,obj,[],{
  source:c==='api'||a==='api'?'api':c==='cache'||a==='cache'?'cache':'none',
- blocked:!obj.freshAnswered,edgeCacheSafe:false});
+ blocked:!obj.freshAnswered&&(obj.providerBlocked.coupang||obj.providerBlocked.adpick),edgeCacheSafe:false});
  const all=[{_source:c==='none'?'stale-cache':c},{_source:a==='none'?'stale-cache':a}];
  check('mixed '+c+'/'+a,obj,all,{
  source:all.some(i=>i._source==='stale-cache')?'stale-cache':all.every(i=>i._source==='api')?'api':'cache',
