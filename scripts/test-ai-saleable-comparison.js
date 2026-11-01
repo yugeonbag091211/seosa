@@ -97,4 +97,29 @@ assert.equal(C.isCashPriceListing('갤럭시탭 S10 예약금 19,000원'),false)
 assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 무이자 할부 가능 정품'),true);
 const broadSelectionText=C.formatComparison(['아이패드','갤럭시탭'],aligned,'search',{});
 assert.match(broadSelectionText,/최종 결제가가 아니며/);
-console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+16,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
+
+const caseFlags=C.purchaseConditionFlags('삼성 갤럭시 탭 S10 FE 태블릿 10.9인치 아랍어 버전 8GB SM-X520');
+assert.equal(caseFlags.imported,true,'actual production Arabic-version listing is explicitly nonstandard');
+assert.equal(C.purchaseConditionFlags('[예약판매]삼성전자 갤럭시탭 S10 FE WiFi SM-X520').preorder,true);
+assert.equal(C.purchaseConditionFlags('아이패드 7세대 중고 공기계 A2197').used,true);
+assert.equal(C.purchaseConditionFlags('삼성전자 갤럭시탭 S10 FE 정품 SM-X520').imported,false,'unknown market is not proved domestic');
+const domestic=mk('삼성전자 갤럭시탭 S10 FE WiFi 128GB SM-X520',620000,'REGULAR');
+const foreign=mk('삼성 갤럭시 탭 S10 FE 아랍어 버전 8GB SM-X520',588050,'ARABIC');
+assert.equal(C.pickExact([foreign,domestic],'갤럭시탭 S10 FE',AIID,normalize)?.productId,'REGULAR','prefer unflagged device over cheaper overseas variant');
+assert.equal(C.pickExact([foreign],'갤럭시탭 S10 FE',AIID,normalize)?.productId,'ARABIC','do not fabricate domestic offer when only import listing exists');
+const importText=C.formatComparison(['아이패드 A16','갤럭시탭 S10 FE'],[
+  {title:'Apple 2025 아이패드 (A16 모델)',price:621300,mall:'쿠팡'},
+  {title:foreign.title,price:588050,mall:'쿠팡'}],'search',{});
+assert.match(importText,/아랍어 버전/);
+assert.match(importText,/국내 제품과 구성·보증·언어 설정/);
+const preorderText=C.formatComparison(['아이패드','갤럭시탭'],[
+ {title:'Apple 2025 아이패드 (A16 모델)',price:621300,mall:'쿠팡'},
+ {title:'[예약판매]삼성 갤럭시탭 S10 FE SM-X520',price:695520,mall:'11번가'}],'search',{});
+assert.match(preorderText,/수령 일정이 다를 수 있어요/);
+const safeAligned=C.pickAlignedPair([
+  [mk('Apple 아이패드 A16 128GB',621300,'IPAD')],
+  [foreign,domestic,mk('[예약판매]삼성 갤럭시탭 S10 FE 128GB SM-X520',615000,'PREORDER')]
+],['아이패드','갤럭시탭'],AIID,normalize);
+assert.equal(safeAligned?.[1].productId,'REGULAR','broad comparison should prefer regular sale');
+
+console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+26,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
