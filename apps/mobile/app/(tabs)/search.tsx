@@ -146,6 +146,8 @@ export default function Search() {
           <View style={[styles.chips, { marginTop: space.lg, justifyContent: 'center' }]}>
             {search.data.corrected ? <Chip label={`${search.data.corrected} 검색`} onPress={() => submit(search.data.corrected)} selected /> : null}
             {search.data.suggestions.map(s => <Chip key={s} label={s} onPress={() => submit(s)} />)}
+            {(search.data.partialResults || search.data.blocked || search.data.source === 'none') && !search.isFetching
+              ? <Chip label="판매처 다시 확인" onPress={() => search.refetch()} /> : null}
           </View>
         </EmptyState>
       ) : (
@@ -167,6 +169,9 @@ export default function Search() {
                   </AppText>
                 </View>
               ) : null}
+              {(search.data.partialResults || search.data.blocked || search.data.source === 'stale-cache') && !search.isFetching
+                ? <View style={[styles.chips, { paddingTop: space.sm }]}><Chip label="판매처 다시 확인" onPress={() => search.refetch()} /></View>
+                : null}
               <AppText tone="faint" style={[t.footnote, styles.count]}>{search.data.items.length}개 상품 · 서버가 찾은 결과 안에서 정렬</AppText>
               <View style={styles.sorts}>
                 {SORTS.map(option => (

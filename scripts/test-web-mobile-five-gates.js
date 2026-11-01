@@ -14,6 +14,7 @@ for(const [label,cond] of [
  ['mobile checkout display price caveat',screen.includes("쿠폰·옵션·배송비는 판매처에서 확인해 주세요")],
  ['mobile partial cache not considered fresh',query.includes("query.state.data?.partialResults")&&query.includes("staleTime: query =>")],
  ['mobile does not automatically retry supplier requests',query.includes("retry: false")&&query.includes("refetchOnWindowFocus: false")],
+ ['mobile partial search offers explicit guarded retry',screen.includes('label="판매처 다시 확인"')&&screen.includes("!search.isFetching")],
  ['web marks supplier partial',web.includes("X-Seosa-Partial-Results")],
  ['web warns when one provider unavailable',web.includes("일부 쇼핑몰 상품을 지금 확인하지 못했어요")],
  ['web warns final paid amount may differ',web.includes("표시 가격은 최종 결제가가 아니에요")],
