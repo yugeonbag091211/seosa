@@ -1510,7 +1510,7 @@ async function searchProducts(query, budgetMs) {
      */
     await runOptional('검색 결과 저장', () => saveProducts(query, allItems || list, { from, source: 'ai' }));
 
-    return { ok: true, items: currentItems, reason: from };
+    return { ok: true, items: currentItems, reason: from, partial: !!evidence.partial };
   } catch (e) {
     console.warn(`[ai] 상품 검색 실패: ${e.message}`);
     return { ok: false, items: [], reason: 'error' };
@@ -4694,6 +4694,7 @@ module.exports = async function handler(req, res) {
    */
   let reasonFallbackText = '';
   let searchState = 'none';   // none | found | empty | failed
+  let searchPartial = false; // one marketplace lacked fresh confirmation
 
   /*
    * 결정 데이터도 try 밖에 둔다.
@@ -5405,6 +5406,7 @@ module.exports = async function handler(req, res) {
         searchState = 'empty';
       } else {
         searchState = 'found';
+        searchPartial = !!found.partial;
 
         /*
          * 검색한 상품에 가격 기록을 붙인다. 이것이 없으면 아래 랭킹도
@@ -6276,6 +6278,7 @@ module.exports = async function handler(req, res) {
      * 것을 없다고 단정하는 것은 지어내기와 같은 종류의 잘못이다.
      */
     if (searchState === 'found')  system += `\n\n${P.searchedFound}`;
+    if (searchState === 'found' && searchPartial) system += '\n\n이번 검색은 일부 쇼핑몰만 최신 조회했습니다. 확인되지 않은 다른 쇼핑몰까지 포함해 최저가·전체 최저 상품·최적 구매처라고 단정하지 마세요. 제공된 카드의 실제 표시가만 설명하세요.';
     if (searchState === 'found' && items.length > 1 && ['D', 'E'].includes(intent)) {
       system += `\n\n${P.multiOfferPrice}`;
     }
@@ -7158,6 +7161,11 @@ module.exports = async function handler(req, res) {
       } else if (cards.length===1) replyCards=cards;
     }
     const payload = replyCards.length ? { text, items: replyCards } : { text };
+    // Enforce a visible qualification regardless of the LLM's wording.
+    if (searchPartial && searchState === 'found' && replyCards.length) {
+      payload.text = '일부 쇼핑몰은 지금 확인하지 못했어요. 아래 가격은 조회된 판매처의 표시가이며 전체 쇼핑몰 최저가로 확정한 것은 아니에요.\n\n' + payload.text;
+      payload.partialSearch = true;
+    }
     if (priceConflict) payload.priceConflict = {
       earlierSearchPrice: priceConflict.searchedPrice,
       storedPrice: priceConflict.storedPrice,

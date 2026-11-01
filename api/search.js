@@ -246,8 +246,9 @@ module.exports = async function handler(req, res) {
     res.setHeader('X-Seosa-Source', provenance.source);
     if (provenance.blocked) res.setHeader('X-Seosa-Blocked', '1');
     if (provenance.partialStale) res.setHeader('X-Seosa-Partial-Stale', '1');
+    if (provenance.partialResults) res.setHeader('X-Seosa-Partial-Results', '1');
     res.setHeader('Access-Control-Expose-Headers',
-      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Partial-Stale, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest');
+      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Partial-Stale, X-Seosa-Partial-Results, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest');
 
     // A single old-price listing or temporarily unavailable merchant is
     // enough to make the complete response ineligible for 5-minute Edge cache.

@@ -38,6 +38,7 @@ const cases=[
   assert.equal(status,200,label);
   assert.equal(headers['X-Seosa-Source'],wantSource,label);
   assert.equal(headers['X-Seosa-Partial-Stale']==='1',partial,label);
+  assert.equal(headers['X-Seosa-Partial-Results']==='1',sources.some(s=>!['api','cache'].includes(s)),label);
   assert.equal(/^public/.test(headers['Cache-Control']||''),edge,label);
   assert.ok(Array.isArray(body)&&body.length===items.length,label+' body');
   assert.ok(headers['Access-Control-Expose-Headers'].includes('X-Seosa-Partial-Stale'));
@@ -46,5 +47,6 @@ const cases=[
  const front=require('node:fs').readFileSync(require('node:path').join(__dirname,'..','public','index.html'),'utf8');
  assert.ok(front.includes("meta.partialStale = r.headers.get('X-Seosa-Partial-Stale') === '1'"));pass++;
  assert.ok(front.includes('일부 쇼핑몰의 최신 가격을 확인하지 못했어요'));pass++;
+ assert.ok(front.includes("meta.partialResults = r.headers.get('X-Seosa-Partial-Results') === '1'"));pass++;
  console.log('SEARCH_PROVENANCE_HANDLER',JSON.stringify({asked:pass,pass,fail:0,externalCalls:0,dbWrites:0}));
 })().catch(e=>{console.error(e);process.exitCode=1;});

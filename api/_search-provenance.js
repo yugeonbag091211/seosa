@@ -32,6 +32,7 @@ function summarizeSearchProvenance(search={},visibleItems=search.items||[]){
  return {
    source:summary,
    partialStale:hasStale&&hasFresh,
+   partialResults:providers.length===2 && !complete,
    blocked:!rows.length&&!answered&&!!(search.blocked||Object.values(search.providerBlocked||{}).some(Boolean)),
    edgeCacheSafe:rows.length>0&&complete&&summary!=='stale-cache'&&summary!=='none'
  };

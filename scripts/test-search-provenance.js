@@ -28,5 +28,7 @@ check('legacy',{from:'api'},[{title:'legacy'}],{source:'api',edgeCacheSafe:true}
 check('untrusted item',{from:'none',providerSources:{coupang:'api',adpick:'api'}},[{}],{source:'none',edgeCacheSafe:false});
 check('partial outage',{from:'api',providerSources:{coupang:'api',adpick:'none'}},[{_source:'api'}],{source:'api',edgeCacheSafe:false});
 check('ADPICK verified 0-hit',{from:'none',providerSources:{coupang:'none',adpick:'api'},freshAnswered:true,blocked:true},[],{source:'api',blocked:false});
-check('old-only',{from:'stale-cache',providerSources:{coupang:'stale-cache',adpick:'none'}},[{_source:'stale-cache'}],{source:'stale-cache',edgeCacheSafe:false});
+check('old-only',{from:'stale-cache',providerSources:{coupang:'stale-cache',adpick:'none'}},[{_source:'stale-cache'}],{source:'stale-cache',edgeCacheSafe:false,partialResults:true});
+check('both complete',{from:'api',providerSources:{coupang:'api',adpick:'cache'}},[{_source:'api'}],{partialResults:false});
+check('one unavailable',{from:'none',providerSources:{coupang:'none',adpick:'api'}},[{_source:'api'}],{partialResults:true});
 console.log('SEARCH_PROVENANCE_MATRIX',JSON.stringify({asked:pass,pass,fail:0,actualGptCalls:0,externalCalls:0,dbWrites:0}));
