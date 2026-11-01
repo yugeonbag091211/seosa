@@ -235,6 +235,5 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ],
-  "buildCommand": "LIVE_REDTEAM_MAX_USD=0.15 node scripts/live-redteam-codex.js --run --round all --stratified --limit 100 --concurrency 2 --report reports/ai-five-gates-gpt100-20261102.json"
+  ]
 }
