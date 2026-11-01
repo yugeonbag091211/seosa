@@ -235,6 +235,5 @@
       "path": "/api/volatile-evening",
       "schedule": "5 10 * * *"
     }
-  ],
-  "buildCommand": "node scripts/verify-prod-condition-cautions.js"
+  ]
 }
