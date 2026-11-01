@@ -9,7 +9,7 @@ const checks={
  partialRetry:ui.includes('label="다시 조회"') && ui.includes('void search.refetch()'),
  loadedPartialRetry:ui.includes('판매처 다시 조회'),
  loadingGuard:ui.includes('if (!search.isFetching)'),
- noAutoRefetch:queries.includes('refetchOnWindowFocus: false'),
+ noAutoRefetch:queries.includes('refetchOnWindowFocus: false') && queries.includes('refetchOnMount: false'),
  limitedNoAutoRetry:queries.includes('retry: false'),
  freshnessAware:queries.includes('query.state.data?.partialResults'),
  sourceGrounded:api.includes("r.headers.get('X-Seosa-Partial-Results') === '1'")
