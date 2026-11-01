@@ -21,10 +21,12 @@ function createHotCache({ now = Date.now, ttlMs = 20000, maxEntries = 128 } = {}
     const k = keyword(kw), entry = entries.get(k);
     if (!k || !entry) return null;
     const t = now();
-    if (t < entry.at || t - entry.at >= Math.min(duration, entry.ttl, requestedTtl(opts)) || dayKey(t) !== entry.day) {
+    const age = t - entry.at;
+    if (age < 0 || age >= Math.min(duration, entry.ttl) || dayKey(t) !== entry.day) {
       entries.delete(k); return null;
     }
-    if (limit(opts) > entry.coverage) return null;
+    // A stricter reader must not evict another caller's still-valid entry.
+    if (age >= requestedTtl(opts) || limit(opts) > entry.coverage) return null;
     return {items: entry.items.slice(0,limit(opts)).map(it=>({...it})),
       from:'cache', error:null, blocked:false, apiCalled:false, hotCache:true};
   }
