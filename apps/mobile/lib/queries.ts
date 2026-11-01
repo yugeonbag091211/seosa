@@ -46,6 +46,9 @@ export function useSearch(keyword: string) {
     staleTime: query => (query.state.data?.partialResults || query.state.data?.blocked
       || query.state.data?.source === 'stale-cache') ? 0 : 5 * MIN,
     refetchOnWindowFocus: false,
+    // A partial response is expired for freshness but must not auto-spend
+    // another merchant API call every time the user reopens the search tab.
+    refetchOnMount: false,
     // Each search can cost a Coupang call server-side; never retry a search automatically.
     retry: false,
   });

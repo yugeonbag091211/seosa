@@ -97,4 +97,24 @@ assert.equal(C.isCashPriceListing('갤럭시탭 S10 예약금 19,000원'),false)
 assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 무이자 할부 가능 정품'),true);
 const broadSelectionText=C.formatComparison(['아이패드','갤럭시탭'],aligned,'search',{});
 assert.match(broadSelectionText,/최종 결제가가 아니며/);
-console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+16,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
+const offers=[
+ mk('삼성전자 갤럭시 탭 S10 FE 태블릿 10.9인치 아랍어 버전 8GB SM-X520',588050,'ARABIC'),
+ mk('[예약판매]삼성전자 갤럭시탭 S10 FE WiFi SM-X520',695520,'PREORDER'),
+ mk('삼성 갤럭시탭 S10 FE 태블릿 SM-X520 128GB Wi-Fi',650000,'ORDINARY')
+];
+assert.equal(C.pickExact(offers,'갤럭시탭 S10 FE',AIID,normalize)?.productId,'ORDINARY','normal distribution listing preferred over cheaper Arabic-version');
+assert.equal(C.pickExact(offers.slice(0,2),'갤럭시탭 S10 FE',AIID,normalize)?.productId,'ARABIC','never invent standard distribution if no normal titles');
+const warning=C.formatComparison(['아이패드 A16','갤럭시탭 S10 FE'],[
+ {title:'Apple 2025 아이패드 (A16 모델)',price:621300,mall:'쿠팡'},
+ {title:offers[0].title,price:588050,mall:'쿠팡'}],'search',{});
+assert.match(warning,/아랍어 버전/);
+assert.match(warning,/A\/S/);
+const preorder=C.formatComparison(['아이패드','갤럭시탭'],[
+ {title:'Apple 2025 아이패드 (A16 모델)',price:621300,mall:'쿠팡'},
+ {title:offers[1].title,price:695520,mall:'11번가'}],'search',{});
+assert.match(preorder,/예약판매 상품/);
+assert.equal(C.offerTerms('갤럭시탭 S10 FE WiFi SM-X520').overseas,false);
+assert.equal(C.offerTerms('갤럭시탭 S10 FE 아랍어 버전 8GB').overseas,true);
+assert.equal(C.offerTerms('예약판매 갤럭시탭 S11').preorder,true);
+assert.equal(C.offerTerms('갤럭시탭 S11 중고').used,true);
+console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+25,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));

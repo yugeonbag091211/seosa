@@ -164,6 +164,35 @@ function isCashPriceListing(title) {
   // "무이자 할부 가능" without a monthly amount is only a financing feature.
   return !/(?:월\s*\d[\d,]*\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|월\s*구독료)/i.test(t);
 }
+/*
+ * Imported, language-specific and pre-order listings are legitimate offers,
+ * but should not silently outrank an ordinary listing solely due to price.
+ * Unknown distribution is NOT proof of Korean domestic warranty; it simply
+ * means the title does not explicitly state this extra purchase condition.
+ */
+function offerTerms(title) {
+  const text=String(title||'').normalize('NFKC');
+  return {
+    overseas: /(?:\[해외\]|해외\s*(?:구매|직구|배송|판)|직구|아랍어\s*버전|일본판|중국판|홍콩판|미국판|영국판|글로벌\s*버전|(?:global|international|arabic|japanese|chinese|us|uk)\s*version)/i.test(text),
+    preorder: /(?:\[예약판매\]|예약\s*판매|사전\s*예약|프리\s*오더|pre[- ]?order)/i.test(text),
+    used: /(?:중고|리퍼\s*(?:비시)?|리퍼비시|재생\s*제품|refurbished)/i.test(text)
+  };
+}
+function userAskedSpecialTerms(query) {
+  return /(?:해외\s*(?:구매|직구|판)|직구|글로벌\s*버전|아랍어\s*버전|일본판|중고|리퍼|예약\s*판매|사전\s*예약|프리\s*오더|pre[- ]?order)/i.test(String(query||''));
+}
+function hasExtraPurchaseTerms(title) {
+  const o=offerTerms(title);
+  return o.overseas || o.preorder || o.used;
+}
+function conditionWarnings(title) {
+  const t=offerTerms(title);
+  const notes=[];
+  if(t.overseas) notes.push('해외판·해외구매 또는 외국어 버전 표기가 있어, 국내 정식 유통·A/S·언어 설정을 구매처에서 확인해야 해요');
+  if(t.preorder) notes.push('예약판매 상품으로 배송·출시 일정과 실제 판매 가능 여부를 확인해야 해요');
+  if(t.used) notes.push('중고·리퍼 상품 표기가 있어 신품 가격과 직접 비교하기 전에 상태·보증 조건을 확인해야 해요');
+  return notes;
+}
 function listExact(raw, query, AIID, normalize, accept) {
   const candidates = (Array.isArray(raw) ? raw : [])
     .filter(x => x && x.productId && Number.isSafeInteger(Number(x.lprice)) && Number(x.lprice) > 0)
@@ -187,6 +216,14 @@ function listExact(raw, query, AIID, normalize, accept) {
   const exact = gate.items.filter(x => x._identity && x._identity.tier === AIID.TIER.EXACT
     && (typeof accept !== 'function' || accept(x)));
   exact.sort((a,b) => a.price - b.price);
+  // A Korean-language generic model query does not grant permission to turn
+  // Arabic-version, preorder or refurbished prices into "normal" price picks.
+  // Prefer standard-condition offers if they exist; if not, keep the real
+  // special-condition offer rather than inventing a better listing.
+  if (!userAskedSpecialTerms(query)) {
+    const standard=exact.filter(x => !hasExtraPurchaseTerms(x.title));
+    if (standard.length) return standard;
+  }
   return exact;
 }
 function pickExact(raw, query, AIID, normalize, accept) {
@@ -277,6 +314,7 @@ function formatComparison(requested, offers, source, opts) {
     }
     const over = o.overBudget && o.overBudget[i] && o.budgetLabel ? ` — 앞에서 말씀하신 예산(${o.budgetLabel})을 넘어요` : '';
     lines.push(`${i+1}. ${p.title} — ${won(p.price)} (${p.mall || '판매처 미확인'})${over}`);
+    for (const warning of conditionWarnings(p.title)) lines.push(`※ ${i+1}번 구매 조건: ${warning}.`);
   });
   if (offers[0] && offers[1]) {
     if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 두 판매처에서 가격과 판매 조건이 비교적 가까운 상품을 골랐지만, 동급 모델인지, 성능이나 사양이 비슷한지 검증한 것은 아니에요. 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
@@ -298,4 +336,4 @@ function formatComparison(requested, offers, source, opts) {
   lines.push('표시 가격은 최종 결제가가 아니며 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비, 해외판 여부 및 판매 조건을 결제 화면에서 확인해 주세요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, isPairFollowup, pickExact, pickAlignedPair, isBroadTabletPair, isComparableOffer, isCashPriceListing, formatComparison, budgetLabel, listedTitleDifferences };
+module.exports = { parseComparison, isPairFollowup, pickExact, pickAlignedPair, isBroadTabletPair, isComparableOffer, isCashPriceListing, offerTerms, conditionWarnings, formatComparison, budgetLabel, listedTitleDifferences };
