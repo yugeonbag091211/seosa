@@ -143,7 +143,18 @@ function isComparableOffer(query, title) {
   // conservative for pair comparisons; a bundled accessory listing is less
   // useful than a verifiable standalone tablet.
   const soldAccessory = /(?:키보드|keyboard|북\s*커버|북커버|\bcover\b|케이스|\bcase\b|보호\s*필름|보호필름|액정\s*보호|액정보호|스크린\s*프로텍터|screen\s*protector|태블릿\s*거치대|태블릿케이스|tablet\s*case|전용\s*스탠드|충전\s*케이블|charging\s*cable|펜촉|터치\s*펜\s*(?:전용|호환)|터치패드\s*DeX키)/i;
-  return !replacement.test(s) && !soldAccessory.test(s);
+  // Real Production QA (2026-11-01): an iPad PDF budget template priced at
+  // 13,000 KRW became the "iPad" in a comparison. A product-family name
+  // does not prove that the listing actually sells that device. Reject
+  // standalone digital goods, instruction, services and carrying accessories.
+  const nonDevice = /(?:\bpdf\b|\be-?book\b|전자책|굿노트|goodnotes|디지털\s*(?:파일|상품|다운로드)|다운로드\s*파일|가계부|플래너|속지|템플릿|배경화면|스티커|폰트|글꼴|아이패드\s*(?:드로잉|수채화).{0,45}(?:배우기|클래스|강의)|(?:기초부터|왕초보).{0,50}배우기|원데이\s*클래스|온라인\s*(?:강의|클래스)|강의\s*(?:수강권|영상)|(?:가이드|입문)\s*(?:북|책)|(?:교재|강좌|클래스|수업|투어|여행\s*상품)|스타일러스|펜슬|pencil|펜촉|파우치|수납\s*가방|태블릿\s*가방|태블릿\s*파우치|이북\s*리더기\s*파우치|\b(?:stylus|pouch|sleeve|handbag)\b|\b(?:for\s+ipad|for\s+galaxy\s+tab)\b)/i;
+  if (replacement.test(s) || soldAccessory.test(s) || nonDevice.test(s)) return false;
+
+  // Positive evidence as well as negative exclusions: do not equate a title
+  // that merely mentions a tablet family with an actual saleable device.
+  // A bare family mention without a hardware/model identifier is uncertain.
+  const deviceEvidence = /(?:태블릿\s*(?:pc)?|\btablet\s*(?:pc)?\b|(?:공기계|본체)|\b\d{2,4}\s*(?:gb|tb)\b|\bsm[-_\s]?[a-z]\d{3,4}\b|\b(?:m[1-9]|a\d{2,4})\s*(?:모델|칩|프로|pro|\b)|(?:아이패드|ipad)\s*(?:프로|pro|에어|air|미니|mini)?\s*\d{1,2}\b|(?:갤럭시\s*탭|갤럭시탭|galaxy\s*tab)\s*[sa]\d{1,2}\b|\d{1,2}\s*세대\b)/i;
+  return deviceEvidence.test(s);
 }
 
 /** The cheapest exact offer for one side. `accept` narrows the exact offers (budget gate in api/ai.js). */
