@@ -210,6 +210,11 @@ function listedTitleDifferences(first, second) {
  */
 function formatComparison(requested, offers, source, opts) {
   const o = opts || {};
+  const familyKey = n => String(n || '').toLowerCase().replace(/\s+/g,'');
+  const pair = (requested || []).map(familyKey);
+  const broadTabletFamilies = pair.length === 2
+    && pair.every(p => ['아이패드','ipad','갤럭시탭','galaxytab'].includes(p))
+    && pair[0] !== pair[1];
   const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
   const lines = [source === 'catalog'
     ? '앞에서 비교한 두 상품을 다시 확인했어요. 아래는 마지막 수집 시점의 표시 가격이에요.'
@@ -226,12 +231,15 @@ function formatComparison(requested, offers, source, opts) {
     lines.push(`${i+1}. ${p.title} — ${won(p.price)} (${p.mall || '판매처 미확인'})${over}`);
   });
   if (offers[0] && offers[1]) {
+    if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 아래는 서로 다른 개별 판매 상품의 표시 가격일 뿐, 동급 모델이나 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
     const difference = Math.abs(offers[0].price - offers[1].price);
     if (difference === 0) lines.push('두 상품의 확인된 표시 가격은 같아요.');
     else lines.push(`표시 가격 차이는 ${won(difference)}이고, ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 더 저렴해요.`);
     const titleDifferences = listedTitleDifferences(offers[0].title, offers[1].title);
     if (titleDifferences) lines.push(titleDifferences);
-    if (difference > 0) {
+    if (broadTabletFamilies) {
+      lines.push('정확한 구매 비교를 하려면 사용할 용도와 예산을 정한 뒤 비슷한 연식·사양의 모델끼리 비교해야 해요. 현재 확인한 두 판매글만으로 어느 브랜드가 더 저렴하거나 가성비가 높다고 단정할 수 없어요.');
+    } else if (difference > 0) {
       lines.push(`선택 기준: 가격을 우선하면 ${offers[0].price < offers[1].price ? '첫 번째' : '두 번째'} 상품이 유리해요. 사양은 위 상품명에 적힌 차이가 용도에 맞는지 확인해 고르고, 실제 성능 우열은 이 정보만으로 판단하기 어려워요.`);
     } else {
       lines.push('선택 기준: 표시 가격이 같으므로 상품명에 적힌 차이가 용도에 맞는지 확인해 고르세요. 실제 성능 우열은 이 정보만으로 판단하기 어려워요.');

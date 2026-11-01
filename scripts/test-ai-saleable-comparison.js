@@ -38,4 +38,14 @@ const selected=C.pickExact(polluted,'갤럭시탭',AIID,normalize);
 assert.equal(selected&&selected.productId,'TABLET','real device must be selected ahead of cheap glass');
 assert.equal(C.pickExact([polluted[0]],'갤럭시탭',AIID,normalize),null,'glass-only must return no confirmed tablet');
 assert.equal(C.pickExact([mk(good[2],621300,'IPAD')],'아이패드',AIID,normalize)?.productId,'IPAD');
-console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+3,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
+const broadText=C.formatComparison(['아이패드','갤럭시탭'],[
+  {title:good[2],price:621300,mall:'쿠팡'},
+  {title:good[0],price:429000,mall:'쿠팡'}],'search',{});
+assert.match(broadText,/동급 모델|동급 사양/);
+assert.match(broadText,/가성비가 높다고 단정할 수 없어요/);
+assert.doesNotMatch(broadText,/선택 기준: 가격을 우선하면/);
+const exactText=C.formatComparison(['아이패드 에어 M3','갤럭시탭 S9 FE'],[
+  {title:good[3],price:699000,mall:'쿠팡'},
+  {title:good[0],price:429000,mall:'쿠팡'}],'search',{});
+assert.match(exactText,/선택 기준: 가격을 우선하면/);
+console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+7,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
