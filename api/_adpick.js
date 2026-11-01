@@ -179,7 +179,20 @@ const limiter = Limit.createLimiter({
  * 전역 리미터는 첫 호출 때 만든다. _supabase 는 지연 프록시라 모듈 로드 시점에
  * 건드리면 Supabase 설정이 없는 환경(단위 테스트·로컬 도구)에서 require 자체가 죽는다.
  */
-const globalAcquire = process.env.ADPICK_GLOBAL_LIMIT === '0' ? null : Limit.createGlobalAcquire({
+/*
+ * Disabling the shared limiter is permitted ONLY against an actual loopback
+ * mock server. A misconfigured Production/Preview flag must never disable the
+ * real ADPICK key's shared quota, including when a DB write guard is active.
+ */
+function shouldDisableGlobalGateForTest(flag, host = HOST) {
+  if (flag !== '0') return false;
+  try {
+    const url = new URL(host);
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && ['localhost','127.0.0.1','[::1]'].includes(url.hostname.toLowerCase());
+  } catch (_) { return false; }
+}
+const globalAcquire = shouldDisableGlobalGateForTest(process.env.ADPICK_GLOBAL_LIMIT) ? null : Limit.createGlobalAcquire({
   rpc: (fn, args) => supabase.rpc(fn, args),
   bucket: 'search',
   maxPerMin: GLOBAL_MAX_PER_MIN,
@@ -585,6 +598,6 @@ function localStats() {
 
 module.exports = {
   searchAdpick, isBlocked, localStats, hasKey, mallLabelFromCpName, redact, recordExternalCall,
-  isTerminalApiError,
+  isTerminalApiError, shouldDisableGlobalGateForTest,
   MAX_PER_MIN, MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };

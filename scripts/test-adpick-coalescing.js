@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const Module = require('node:module');
 const path = require('node:path');
 process.env.ADPICK_API_KEY = 'offline-unit-test-key';
+process.env.ADPICK_API_HOST = 'http://127.0.0.1';
 process.env.ADPICK_GLOBAL_LIMIT = '0';
 process.env.ADPICK_MIN_GAP_MS = '1';
 let calls = 0, releaseFetch;

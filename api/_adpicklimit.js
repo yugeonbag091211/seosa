@@ -178,15 +178,16 @@ function createLimiter(o) {
 
 /**
  * 프로세스 사이 예약 (adpick_acquire RPC).
- *   함수가 없으면 skipped — 마이그레이션 전에도 수집·검색은 그대로 돈다.
- *   함수는 있는데 DB 가 답하지 못하면 «거절» — 전역 합을 확인할 수 없을 때 부르지 않는다.
+ *   전역 함수가 없거나 DB 가 오류를 반환하면 반드시 거절한다(fail closed).
+ *   전역 호출 총량을 증명하지 못한 요청은 공식 제공자 API 를 부를 수 없다.
  */
 function createGlobalAcquire(o) {
   const isMissing = o.isMissingObject || (() => false);
   let missing = false;
   let warned = false;
   return async ({ notBeforeMs, maxWaitMs, source }) => {
-    if (missing || o.disabled) return { ok: true, skipped: true };
+    if (o.disabled) return { ok: true, skipped: true };
+    if (missing) return { ok: false, reason: '전역 리미터 누락 — 마이그레이션 확인 필요' };
     let res;
     let call;
     try {
@@ -199,13 +200,10 @@ function createGlobalAcquire(o) {
         p_source: String(source || o.source || '').slice(0, 40)
       });
     } catch (e) {
-      /*
-       * rpc() 가 «요청을 보내기도 전에» 던졌다 — DB 설정이 없는 환경(단위 테스트·
-       * 로컬 도구)이다. DB 가 답을 준 오류와 다르므로 리미터가 없는 것으로 본다.
-       */
+      // Even a synchronous rpc() error must never bypass cross-instance quota.
       missing = true;
-      if (!warned) { warned = true; console.warn(`[adpick] 전역 리미터를 쓸 수 없는 환경 — 프로세스 안 한도만 적용: ${e.message}`); }
-      return { ok: true, skipped: true };
+      if (!warned) { warned = true; console.warn('[adpick] 전역 리미터를 초기화할 수 없어 외부 호출 거절'); }
+      return { ok: false, reason: '전역 리미터 초기화 실패 — 안전을 위해 호출 중단' };
     }
     try {
       res = await call;
@@ -219,18 +217,14 @@ function createGlobalAcquire(o) {
         missing = true;
         if (!warned) {
           warned = true;
-          console.warn('[adpick] 전역 리미터 없음 — supabase/2026-09-23-adpick-rate-limiter.sql 을 적용하면'
-            + ' 모든 경로의 분당 합이 묶인다. 지금은 프로세스 안 한도만 적용한다.');
+          console.warn('[adpick] 전역 리미터 없음 — SQL 마이그레이션 확인 필요. 외부 호출 거절');
         }
-        return { ok: true, skipped: true };
+        return { ok: false, reason: '전역 리미터 함수 누락 — 안전을 위해 호출 중단' };
       }
       return { ok: false, reason: `전역 리미터 응답 실패 — 이번 호출은 건너뛴다: ${msg.slice(0, 120)}` };
     }
-    /*
-     * 실제 함수는 테이블을 돌려주므로 data 는 언제나 배열이다. null 은 «이 클라이언트에
-     * 그런 함수가 없다» (테스트 가짜·구형 클라이언트) — 없는 것으로 보고 건너뛴다.
-     */
-    if (res.data == null) { missing = true; return { ok: true, skipped: true }; }
+    // Empty RPC result is not a quota grant; keep the provider uncalled.
+    if (res.data == null) { missing = true; return { ok: false, reason: '전역 리미터 응답 없음 — 안전을 위해 호출 중단' }; }
     const row = Array.isArray(res.data) ? res.data[0] : res.data;
     if (!row) return { ok: false, reason: '전역 리미터 응답 없음' };
     if (!row.allowed) {

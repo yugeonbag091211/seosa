@@ -29,6 +29,8 @@
 const path = require('path');
 const Module = require('module');
 const crypto = require('crypto');
+process.env.ADPICK_API_HOST = 'http://127.0.0.1'; // All later fetches are stubs
+process.env.ADPICK_GLOBAL_LIMIT = '0'; // Loopback-only mock bypass
 
 /* ------------------------------------------------------------------ *
  *  가짜 Supabase — api/_shop.js / api/_trust.js 가 쓰는 것만 흉내 낸다.

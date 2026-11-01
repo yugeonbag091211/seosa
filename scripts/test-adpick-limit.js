@@ -199,7 +199,7 @@ async function drive(clock, acquire, { workers, total, maxWaitMs, minGapMs, rand
       bucket: 'search', maxPerMin: 8, marginMs: 1000, isMissingObject: m => /could not find the function/i.test(m) });
     const a = await missing({ notBeforeMs: 0, maxWaitMs: 0 });
     const b = await missing({ notBeforeMs: 0, maxWaitMs: 0 });
-    check('함수 없음(마이그레이션 전) → 건너뛰고 프로세스 안 한도만', a.ok && a.skipped && b.skipped);
+    check('함수 누락 → 전역 한도 우회 금지', !a.ok && !b.ok && /리미터/.test(a.reason));
     const dbErr = L.createGlobalAcquire({ rpc: async () => ({ data: null, error: { message: 'canceling statement due to statement timeout' } }),
       bucket: 'search', maxPerMin: 8, marginMs: 1000, isMissingObject: () => false });
     const c = await dbErr({ notBeforeMs: 0, maxWaitMs: 0 });
@@ -207,7 +207,11 @@ async function drive(clock, acquire, { workers, total, maxWaitMs, minGapMs, rand
     const throws = L.createGlobalAcquire({ rpc: () => { throw new Error('Supabase 환경변수 누락'); },
       bucket: 'search', maxPerMin: 8, marginMs: 1000, isMissingObject: () => false });
     const d = await throws({ notBeforeMs: 0, maxWaitMs: 0 });
-    check('rpc 가 요청 전에 던짐(설정 없는 환경) → 건너뜀', d.ok && d.skipped);
+    check('rpc 가 요청 전에 던져도 API 호출 거절', !d.ok && /리미터/.test(d.reason));
+    const nullRow = L.createGlobalAcquire({ rpc: async () => ({ data: null, error: null }),
+      bucket: 'search', maxPerMin: 8, marginMs: 1000, isMissingObject: () => false });
+    const absent = await nullRow({ notBeforeMs: 0, maxWaitMs: 0 });
+    check('빈 RPC 응답도 허가가 아니라 차단', !absent.ok && /리미터/.test(absent.reason));
     const denyRow = L.createGlobalAcquire({ rpc: async () => ({ data: [{ allowed: false, wait_ms: 9000, used: 8, reason: 'global' }], error: null }),
       bucket: 'search', maxPerMin: 8, marginMs: 1000, isMissingObject: () => false });
     const e = await denyRow({ notBeforeMs: 0, maxWaitMs: 0 });
