@@ -20,7 +20,9 @@ assert.equal(cache.get(query(0),{source:'ai',limit:6}),null,'cannot claim 6 resu
 assert.equal(cache.get(query(0),{source:'collect',limit:5}),null,'collector never uses hot cache');pass++;
 assert.equal(cache.get(query(0),{source:'ai',limit:5,forceRefresh:true}),null,'forced refresh bypass');pass++;
 assert.equal(cache.get(query(0),{source:'ai',limit:5,useCache:false}),null,'no-cache bypass');pass++;
+assert.equal(cache.get(query(0),{source:'ai',limit:5,cacheTtlMs:0}),null,'explicit zero TTL bypass');pass++;
 assert.equal(cache.put('error',opts,{from:'none',items:[{title:'false'}],error:'quota'}),false);pass++;
+assert.equal(cache.put('zero',{...opts,cacheTtlMs:0},{from:'api',items:[]}),false,'zero TTL cannot populate hot cache');pass++;
 assert.equal(cache.put('old',opts,{from:'stale-cache',items:[{title:'stale'}]}),false);pass++;
 assert.equal(cache.put('network',opts,{from:'api',items:[{title:'bad'}],blocked:true}),false);pass++;
 const cached=cache.get(query(0),opts);
@@ -33,6 +35,11 @@ for(let n=0;n<100;n++)bounded.put(query(n),opts,{from:'api',items:[{title:query(
 assert.equal(bounded.size(),8);pass++;
 assert.equal(bounded.get(query(0),opts),null,'oldest was evicted');pass++;
 assert.equal(bounded.get(query(99),opts).items[0].title,query(99));pass++;
+let restrictedNow=t;
+const short=createHotCache({now:()=>restrictedNow,ttlMs:20000});
+short.put('short',{...opts,cacheTtlMs:1000},{from:'api',items:[{title:'valid'}]});
+restrictedNow+=1001;
+assert.equal(short.get('short',opts),null,'writer-specific shorter TTL is respected');pass++;
 let midnight=Date.parse('2026-11-01T14:59:59.000Z');
 const day=createHotCache({now:()=>midnight,ttlMs:20000});
 day.put('day',opts,{from:'api',items:[{title:'before midnight'}]});
