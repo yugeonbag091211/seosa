@@ -146,6 +146,9 @@ export default function Search() {
           <View style={[styles.chips, { marginTop: space.lg, justifyContent: 'center' }]}>
             {search.data.corrected ? <Chip label={`${search.data.corrected} 검색`} onPress={() => submit(search.data.corrected)} selected /> : null}
             {search.data.suggestions.map(s => <Chip key={s} label={s} onPress={() => submit(s)} />)}
+            {search.data.partialResults || search.data.blocked || search.data.source === 'none' ? (
+              <Chip label="다시 조회" onPress={() => { if (!search.isFetching) void search.refetch(); }} />
+            ) : null}
           </View>
         </EmptyState>
       ) : (
@@ -165,6 +168,12 @@ export default function Search() {
                       ? '일부 가격은 이전에 저장된 값이에요. 실제 판매가와 다를 수 있어요.'
                       : '일부 판매처는 지금 확인하지 못했어요. 표시된 상품이 전체 최저가를 뜻하지 않아요.'}
                   </AppText>
+                </View>
+              ) : null}
+              {search.data.partialResults || search.data.blocked || search.data.source === 'stale-cache' ? (
+                <View style={[styles.chips, { marginTop: space.sm }]}>
+                  <Chip label={search.isFetching ? '다시 확인 중' : '판매처 다시 조회'}
+                    onPress={() => { if (!search.isFetching) void search.refetch(); }} />
                 </View>
               ) : null}
               <AppText tone="faint" style={[t.footnote, styles.count]}>{search.data.items.length}개 상품 · 서버가 찾은 결과 안에서 정렬</AppText>

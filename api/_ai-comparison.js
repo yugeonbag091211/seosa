@@ -164,6 +164,39 @@ function isCashPriceListing(title) {
   // "무이자 할부 가능" without a monthly amount is only a financing feature.
   return !/(?:월\s*\d[\d,]*\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|월\s*구독료)/i.test(t);
 }
+/*
+ * Read only conditions literally stated in the offer title. No title proves
+ * domestic certification, delivery lead time or the actual checkout amount.
+ * Unknown conditions remain unknown; do not describe them as domestic/new.
+ */
+function purchaseConditionFlags(title) {
+  const t=String(title || '').normalize('NFKC');
+  return {
+    imported: /(?:\[해외\]|해외판|해외직구|해외\s*구매|병행수입|글로벌\s*버전|글로벌판|일본판|미국판|아랍어\s*(?:버전|판)|영문\s*버전|international\s*version|global\s*version)/i.test(t),
+    preorder: /(?:예약\s*판매|사전\s*예약|프리오더|pre[- ]?order)/i.test(t),
+    used: /(?:중고|리퍼|리퍼비시|재생\s*제품|refurbished|refurb\b)/i.test(t)
+  };
+}
+
+function conditionCaveat(title, position) {
+  const flags=purchaseConditionFlags(title);
+  const reasons=[];
+  if (flags.imported) reasons.push('해외판·언어 버전·병행수입 표기가 있어 국내 제품과 구성·보증·언어 설정이 다를 수 있어요');
+  if (flags.preorder) reasons.push('예약판매 상품이라 일반 재고상품과 수령 일정이 다를 수 있어요');
+  if (flags.used) reasons.push('중고·리퍼 표시가 있어 새 상품과 상태·보증을 구분해야 해요');
+  return reasons.length ? position+'번 상품 확인 사항: '+reasons.join('. ')+'.' : '';
+}
+function isTabletRequest(q) {
+  return /(?:아이패드|ipad|갤럭시\s*탭|갤럭시탭|galaxy\s*tab)/i.test(String(q||''));
+}
+function specificallyAskedForNonstandard(q) {
+  return /(?:해외판|해외직구|병행수입|글로벌\s*버전|일본판|미국판|아랍어\s*(?:버전|판)|예약\s*판매|사전\s*예약|중고|리퍼)/i.test(String(q||''));
+}
+function titleConditionRisk(title) {
+  const f=purchaseConditionFlags(title);
+  return (f.imported ? 2 : 0)+(f.preorder ? 1 : 0)+(f.used ? 2 : 0);
+}
+
 function listExact(raw, query, AIID, normalize, accept) {
   const candidates = (Array.isArray(raw) ? raw : [])
     .filter(x => x && x.productId && Number.isSafeInteger(Number(x.lprice)) && Number(x.lprice) > 0)
@@ -186,7 +219,14 @@ function listExact(raw, query, AIID, normalize, accept) {
   if (gate.state !== 'EXACT') return [];
   const exact = gate.items.filter(x => x._identity && x._identity.tier === AIID.TIER.EXACT
     && (typeof accept !== 'function' || accept(x)));
-  exact.sort((a,b) => a.price - b.price);
+  // When the user did not request an overseas, pre-order or used variant,
+  // avoid presenting its cheaper displayed amount as the regular device
+  // price if an otherwise exact offer without such flags is available.
+  // The explicit request is the sole exception, and normal prices are still
+  // sorted within each risk tier.
+  const ordinaryTablet=isTabletRequest(query)&&!specificallyAskedForNonstandard(query);
+  exact.sort((a,b) => (ordinaryTablet ? titleConditionRisk(a.title)-titleConditionRisk(b.title) : 0)
+    || a.price-b.price);
   return exact;
 }
 function pickExact(raw, query, AIID, normalize, accept) {
@@ -210,16 +250,18 @@ function pickAlignedPair(raws, queries, AIID, normalize, accept) {
   if (!left.length || !right.length) return null;
   const all=left.concat(right).map(x=>x.price).sort((a,b)=>a-b);
   const median=all[Math.floor((all.length-1)/2)];
-  const condition=t=> /(?:중고|리퍼|재생|렌탈|할부\s*개통|공기계\s*S등급)/i.test(String(t||''))?'used':'unspecified';
-  const imported=t=>/(?:\[해외\]|해외판|아랍어\s*버전|일본판|글로벌\s*버전)/i.test(String(t||''));
+  const condition=t=> purchaseConditionFlags(t).used?'used':'unspecified';
   let best=null,bestScore=Infinity;
   for(const a of left)for(const b of right){
     // Compare prices from the same observed purchasing conditions.
     const ratio=Math.abs(Math.log(a.price/b.price));
     const level=Math.abs(Math.log(Math.sqrt(a.price*b.price)/median));
     const mismatch=condition(a.title)===condition(b.title)?0:0.7;
-    const importedPenalty=imported(a.title)!==imported(b.title)?0.35:0;
-    const score=ratio+0.35*level+mismatch+importedPenalty;
+    // A close amount alone is not a fair comparison if it is an import,
+    // preorder or used unit. Prefer standard listings when present, but
+    // never invent a domestic guarantee for an unmarked listing.
+    const risk=titleConditionRisk(a.title)+titleConditionRisk(b.title);
+    const score=ratio+0.35*level+mismatch+0.55*risk;
     if(score<bestScore){bestScore=score;best=[a,b];}
   }
   return best;
@@ -277,6 +319,8 @@ function formatComparison(requested, offers, source, opts) {
     }
     const over = o.overBudget && o.overBudget[i] && o.budgetLabel ? ` — 앞에서 말씀하신 예산(${o.budgetLabel})을 넘어요` : '';
     lines.push(`${i+1}. ${p.title} — ${won(p.price)} (${p.mall || '판매처 미확인'})${over}`);
+    const note=conditionCaveat(p.title,i+1);
+    if (note) lines.push(note);
   });
   if (offers[0] && offers[1]) {
     if (broadTabletFamilies) lines.push('아이패드와 갤럭시탭은 각각 여러 세대·가격대가 있는 제품군이에요. 두 판매처에서 가격과 판매 조건이 비교적 가까운 상품을 골랐지만, 동급 모델인지, 성능이나 사양이 비슷한지 검증한 것은 아니에요. 브랜드 전체의 가격·성능 차이를 뜻하지 않아요.');
@@ -298,4 +342,4 @@ function formatComparison(requested, offers, source, opts) {
   lines.push('표시 가격은 최종 결제가가 아니며 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비, 해외판 여부 및 판매 조건을 결제 화면에서 확인해 주세요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, isPairFollowup, pickExact, pickAlignedPair, isBroadTabletPair, isComparableOffer, isCashPriceListing, formatComparison, budgetLabel, listedTitleDifferences };
+module.exports = { parseComparison, isPairFollowup, pickExact, pickAlignedPair, isBroadTabletPair, isComparableOffer, isCashPriceListing, purchaseConditionFlags, conditionCaveat, formatComparison, budgetLabel, listedTitleDifferences };
