@@ -11,6 +11,7 @@ function createHotCache({ now = Date.now, ttlMs = 20000, maxEntries = 128 } = {}
   const entries = new Map();
   const duration = Math.min(30000, Math.max(1, Number(ttlMs) || 20000));
   const capacity = Math.min(256, Math.max(1, Math.floor(Number(maxEntries) || 128)));
+  const requestedTtl = opts => opts.cacheTtlMs == null ? duration : Math.max(0, Number(opts.cacheTtlMs) || 0);
   const permitted = opts => !!opts && opts.useCache !== false && opts.forceRefresh !== true
     && (opts.source === 'search' || opts.source === 'ai');
   const keyword = kw => String(kw || '').trim().slice(0, 80);
@@ -20,7 +21,7 @@ function createHotCache({ now = Date.now, ttlMs = 20000, maxEntries = 128 } = {}
     const k = keyword(kw), entry = entries.get(k);
     if (!k || !entry) return null;
     const t = now();
-    if (t < entry.at || t - entry.at >= duration || dayKey(t) !== entry.day) {
+    if (t < entry.at || t - entry.at >= Math.min(duration, entry.ttl, requestedTtl(opts)) || dayKey(t) !== entry.day) {
       entries.delete(k); return null;
     }
     if (limit(opts) > entry.coverage) return null;
@@ -28,7 +29,7 @@ function createHotCache({ now = Date.now, ttlMs = 20000, maxEntries = 128 } = {}
       from:'cache', error:null, blocked:false, apiCalled:false, hotCache:true};
   }
   function put(kw, opts, result) {
-    if (!permitted(opts) || !result || result.from !== 'api' ||
+    if (!permitted(opts) || requestedTtl(opts) <= 0 || !result || result.from !== 'api' ||
         result.blocked || result.error || !Array.isArray(result.items)) return false;
     const k = keyword(kw);
     if (!k) return false;
@@ -36,7 +37,7 @@ function createHotCache({ now = Date.now, ttlMs = 20000, maxEntries = 128 } = {}
     const coverage = limit(opts);
     if (entries.has(k)) entries.delete(k);
     while (entries.size >= capacity) entries.delete(entries.keys().next().value);
-    entries.set(k,{at:t,day:dayKey(t),coverage,items:result.items.map(it=>({...it}))});
+    entries.set(k,{at:t,day:dayKey(t),ttl:Math.min(duration,requestedTtl(opts)),coverage,items:result.items.map(it=>({...it}))});
     return true;
   }
   return {get, put, size:()=>entries.size};
