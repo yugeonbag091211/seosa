@@ -137,7 +137,13 @@ function isComparableOffer(query, title) {
   if (!tablet) return true;
   // These are descriptions of an independently sold part, not the tablet.
   const replacement = /(?:교체용|수리용|교체\s*부품|액정\s*교체|스크린\s*교체|디스플레이\s*교체|호환\s*(?:부품|액정|터치\s*패널)|보호\s*(?:필름|유리)|강화\s*유리\s*(?:필름|보호)|(?:lcd|oled)\s*(?:screen|replacement)|replacement\s*(?:screen|glass|digitizer)|touch\s*screen.{0,95}\bglass\b|터치\s*(?:스크린|패널|액정).{0,95}(?:유리|글라스)|(?:디지타이저|digitizer).{0,95}(?:유리|glass)|(?:유리|glass).{0,30}(?:터치\s*스크린|액정))/i;
-  return !replacement.test(s);
+  // A marketplace offer may carry the requested family name merely to say
+  // that a case, keyboard, charger or screen protector fits that tablet.
+  // Such prices are never comparable to a device's sale price. Be deliberately
+  // conservative for pair comparisons; a bundled accessory listing is less
+  // useful than a verifiable standalone tablet.
+  const soldAccessory = /(?:키보드|keyboard|북\s*커버|북커버|\bcover\b|케이스|\bcase\b|보호\s*필름|보호필름|액정\s*보호|액정보호|스크린\s*프로텍터|screen\s*protector|태블릿\s*거치대|태블릿케이스|tablet\s*case|전용\s*스탠드|충전\s*케이블|charging\s*cable|펜촉|터치\s*펜\s*(?:전용|호환)|터치패드\s*DeX키)/i;
+  return !replacement.test(s) && !soldAccessory.test(s);
 }
 
 /** The cheapest exact offer for one side. `accept` narrows the exact offers (budget gate in api/ai.js). */

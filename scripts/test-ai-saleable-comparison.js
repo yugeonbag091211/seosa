@@ -8,14 +8,23 @@ const bad=[
   '갤럭시 탭 S10 터치 패널 교체용 부품',
   'Galaxy Tab S9 replacement screen glass',
   '아이패드 에어 11 액정 교체 부품',
-  'iPad mini LCD screen replacement'
+  'iPad mini LCD screen replacement',
+  // Titles seen in the actual 2026-11-01 Production /api/search payload:
+  '삼성 정품 갤럭시 탭S11 울트라 프로 키보드 터치패드 DeX키 EF-DX935',
+  '라이노핏/(갤럭시탭 S11) 클리어쉴드 북커버 케이스/모바일 액세서리 태블릿케이스',
+  '갤럭시탭 액티브5 프로 10.1 슈페리어 저반사 액정보호필름',
+  '미국구매 노트북 케이스 아이패드, 갤럭시탭 등',
+  '[보리보리] 아트박스 POOM 아트박스/삼성전자 삼성 갤럭시탭S10+ S9+ AI 키보드 북커버 케이스 EF-DX825'
 ];
 const good=[
   '삼성전자 갤럭시탭 S9 FE 128GB Wi-Fi 태블릿',
   '삼성 갤럭시 탭 A 8.0 32GB WiFi 태블릿 본체',
   'Apple 2025 아이패드 (A16 모델) 128GB Wi-Fi',
   'Apple iPad Air 11 M3 256GB Wi-Fi 태블릿',
-  '삼성 갤럭시탭 S10 FE 128GB 터치스크린 지원 태블릿'
+  '삼성 갤럭시탭 S10 FE 128GB 터치스크린 지원 태블릿',
+  '삼성 갤럭시탭A6 10.1 With s-pen 태블릿PC SM-P580 화이트 32GB Wi-Fi',
+  '삼성전자 갤럭시탭 A9 플러스 태블릿PC',
+  '갤럭시 탭 A11+_WIFI_128GB_그레이 - [SM-X230NZALKOO]'
 ];
 for(const title of bad)assert.equal(C.isComparableOffer(/아이패드|ipad/i.test(title)?'아이패드':'갤럭시탭',title),false,title);
 for(const title of good)assert.equal(C.isComparableOffer(/아이패드|ipad/i.test(title)?'아이패드':'갤럭시탭',title),true,title);
