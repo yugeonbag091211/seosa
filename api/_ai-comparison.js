@@ -118,6 +118,28 @@ function isPairFollowup(question) {
   return /(?:둘\s*중|두\s*(?:개|제품|상품|모델)|이\s*둘|그\s*둘|둘\s*다|둘\s*의|둘\s*을|둘\s*이|각각|앞(?:에서)?\s*비교한|아까\s*비교한|방금\s*비교한|비교했던|그\s*중|어느\s*쪽(?:이|은)?\s*(?:더\s*)?(?:저렴|싸|싼|비싸|가격))/.test(q);
 }
 
+/*
+ * A matching family name in a third-party listing does not establish that the
+ * merchant sells the device itself. Live Production regression (2026-11-01):
+ * "[해외] 삼성 갤럭시 탭 A 8.0 T380 T385 터치 스크린 ...용 8인치 유리"
+ * at 15,700 KRW passed exact-family identity and was compared against an
+ * actual 621,300 KRW iPad. The cheap listing sold replacement glass.
+ *
+ * Apply this after the independent family query and before exact-price
+ * selection, including signed-pair rechecks. Only reject unambiguous sale-of-
+ * replacement-part wording: "touchscreen tablet" alone is a device feature,
+ * not a reason to reject an otherwise genuine tablet.
+ */
+function isComparableOffer(query, title) {
+  const q = String(query || '');
+  const s = String(title || '').normalize('NFKC');
+  const tablet = /아이패드|ipad|갤럭시\s*탭|갤럭시탭|galaxy\s*tab/i.test(q);
+  if (!tablet) return true;
+  // These are descriptions of an independently sold part, not the tablet.
+  const replacement = /(?:교체용|수리용|교체\s*부품|액정\s*교체|스크린\s*교체|디스플레이\s*교체|호환\s*(?:부품|액정|터치\s*패널)|보호\s*(?:필름|유리)|강화\s*유리\s*(?:필름|보호)|(?:lcd|oled)\s*(?:screen|replacement)|replacement\s*(?:screen|glass|digitizer)|touch\s*screen.{0,95}\bglass\b|터치\s*(?:스크린|패널|액정).{0,95}(?:유리|글라스)|(?:디지타이저|digitizer).{0,95}(?:유리|glass)|(?:유리|glass).{0,30}(?:터치\s*스크린|액정))/i;
+  return !replacement.test(s);
+}
+
 /** The cheapest exact offer for one side. `accept` narrows the exact offers (budget gate in api/ai.js). */
 function pickExact(raw, query, AIID, normalize, accept) {
   const candidates = (Array.isArray(raw) ? raw : [])
@@ -126,7 +148,7 @@ function pickExact(raw, query, AIID, normalize, accept) {
       const n = normalize(x);
       Object.defineProperty(n, '_compareRaw', { value: x });
       return n;
-    }).filter(n => {
+    }).filter(n => isComparableOffer(query, n.title)).filter(n => {
       // A Coupang product page is not a saleable option. Without the exact
       // vendorItemId, neither the price nor the card can represent that option
       // in a comparison. Other providers do not have Coupang option IDs.
@@ -214,4 +236,4 @@ function formatComparison(requested, offers, source, opts) {
   lines.push('표시 가격은 실제 결제 금액과 다를 수 있어요. 쿠폰·카드 혜택, 옵션과 배송비를 결제 화면에서 확인해 주세요.');
   return lines.join('\n\n');
 }
-module.exports = { parseComparison, isPairFollowup, pickExact, formatComparison, budgetLabel, listedTitleDifferences };
+module.exports = { parseComparison, isPairFollowup, pickExact, isComparableOffer, formatComparison, budgetLabel, listedTitleDifferences };
