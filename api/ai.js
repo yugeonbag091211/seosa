@@ -5542,7 +5542,8 @@ module.exports = async function handler(req, res) {
         // AirPods 2/5 for AirPods 4, and S9 Ultra cases for S10 FE+ cases,
         // even while the text admitted neither was a match.
         // Keep genuine NEAR options (same model, different storage/colour).
-        const onlyOtherModels = (intent === 'C' || contract.strictBase) && contract.anchors.length > 0 && gate.items.length > 0
+        const explicitlyOnlyAccessory = /(?:케이스|커버|보호\s*필름|펜슬|이어\s*후크)\s*만(?!\s*(?:파는|판매하는|판매된|파는\s*상품))/.test(q);
+        const onlyOtherModels = (intent === 'C' || contract.strictBase || explicitlyOnlyAccessory) && contract.anchors.length > 0 && gate.items.length > 0
           && gate.items.every(it => it._identity && it._identity.tier >= AIID.TIER.SIBLING);
         items = onlyOtherModels ? [] : gate.items;
         identityState = onlyOtherModels ? 'NONE' : gate.state;
