@@ -411,6 +411,24 @@ function parseConstraints(text) {
     found.push({ won, after, before });
   }
 
+  // Two explicit bounds such as "12만원 이상 15만원 이하" form one hard
+  // interval even without a ~, dash, "에서" or "부터" connector.
+  // Previously only the last amount survived: [0,150000] instead of
+  // [120000,150000], allowing unrelated cheap goods into the shortlist.
+  if (!out.budgetMax && found.length >= 2) {
+    const floors = found.filter(x => FLOOR_RE.test(x.after));
+    const ceilings = found.filter(x => CAP_RE.test(x.after));
+    if (floors.length && ceilings.length) {
+      const floor = floors[floors.length - 1].won;
+      const ceiling = ceilings[ceilings.length - 1].won;
+      if (floor <= ceiling) {
+        out.budgetMin = floor;
+        out.budgetMax = ceiling;
+        out.budgetSaid = ceiling;
+      }
+    }
+  }
+
   if (out.budgetMax) {
     // 구간에서 이미 정해졌다.
   } else if (found.length >= 2 && /[~\-–]|에서|부터/.test(s.slice(0, 200))) {
