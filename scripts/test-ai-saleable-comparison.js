@@ -140,6 +140,12 @@ assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 매월 3만원 렌탈'),f
 assert.equal(C.isCashPriceListing('아이패드 A16 1개월 4만원 구독 상품'),false,'subscription rate is not cash purchase price');
 assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 선납금 19,000원'),false,'up-front payment is not full purchase price');
 assert.equal(C.isCashPriceListing('Apple 아이패드 A16 Wi-Fi 128GB 무이자 할부 가능'),true,'financing option alone must not hide saleable item');
+// Captured from real 2026-11-02 Production search: carrier activation
+// offers cannot be priced as unconditional unlocked/cash tablets.
+assert.equal(C.isCashPriceListing('[삼성] 갤럭시 탭 S11 통신사 신규가입 할부 개통'),false);
+assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 번호이동 조건 할인'),false);
+assert.equal(C.isCashPriceListing('갤럭시탭 S11 요금제 유지 약정 상품'),false);
+assert.equal(C.isCashPriceListing('삼성 갤럭시탭 S10 FE 자급제 무약정 Wi-Fi 128GB'),true);
 
 // Verify an exact S10 FE still appears after 46 fully saleable but wrong-model tablets.
 const competingModels=Array.from({length:46},(_,i)=>
