@@ -5536,8 +5536,17 @@ module.exports = async function handler(req, res) {
         CS.applyConditions(contract, conv.excludedBefore);
         items = rankItems(normed, constraints, AIID.splitNegations(query).positive || query, rankOpts());
         const gate = AIID.partition(items, contract);
-        items = gate.items;
-        identityState = gate.state;
+        // Hard model/SKU requests must never turn a different-generation or
+        // different-size sibling into a purchase card merely because the
+        // requested model was unavailable. The previous NEAR fallback showed
+        // AirPods 2/5 for AirPods 4, and S9 Ultra cases for S10 FE+ cases,
+        // even while the text admitted neither was a match.
+        // Keep genuine NEAR options (same model, different storage/colour).
+        const explicitlyOnlyAccessory = /(?:케이스|커버|보호\s*필름|펜슬|이어\s*후크)\s*만(?!\s*(?:파는|판매하는|판매된|파는\s*상품))/.test(q);
+        const onlyOtherModels = (intent === 'C' || contract.strictBase || explicitlyOnlyAccessory) && contract.anchors.length > 0 && gate.items.length > 0
+          && gate.items.every(it => it._identity && it._identity.tier >= AIID.TIER.SIBLING);
+        items = onlyOtherModels ? [] : gate.items;
+        identityState = onlyOtherModels ? 'NONE' : gate.state;
         identityLabel = contract.label;
         /*
          * 제외어(_feedback.collectExcludes)는 "X 말고" 앞의 «한 낱말» 만 잡는다. "버즈2 Pro 말고 Buds3 Pro"

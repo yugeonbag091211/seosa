@@ -1038,6 +1038,16 @@ function productTypeGap(c, item, title) {
     && /(?:반팔|긴팔|티셔츠|t-?shirt|라운드넥|맨투맨|후드티|후드집업|의류|스웨트셔츠|원피스|청바지|레깅스)/i.test(t)) {
     return '헤드셋이 아닌 의류·패션 상품';
   }
+  // In live merchant results, a "갤럭시 버즈3 호환 유닛 분실방지
+  // 실리콘 이어 후크" was rated EXACT and shown as earbuds. Standalone
+  // ear hooks, retainers, and anti-loss straps are wearable accessories,
+  // not the actual wireless earbuds. Preserve actual included bundles.
+  if (/(?:버즈\s*\d|galaxy\s*buds?|에어팟|airpods?|이어폰|이어버드|earphones?|earbuds?)/i.test(want)
+      && !c.wantsAccessory
+      && /(?:이어\s*후크|이어\s*훅|이어훅|귀걸이\s*후크|분실\s*방지\s*(?:고리|스트랩|홀더)|ear\s*hooks?|anti[-\s]?loss\s*(?:strap|hook))/i.test(t)
+      && !/(?:이어폰|이어버드|에어팟|버즈)[^\n]{0,18}(?:본체|본품)(?:\s|$|\+)/i.test(t)) {
+    return '이어폰 본체가 아닌 이어 후크·분실방지 액세서리';
+  }
   // "완전 무선 스테레오 이어버드 ... 헤드셋" 같은 검색어 끼워넣기를 막는다.
   if (/(?:헤드셋|헤드폰|headset|headphones?)/i.test(want) && !/(?:이어폰|이어버드|earbuds?|earphones?|tws)/i.test(want)
     && HEADSET_EARBUD_RE.test(t)) {
