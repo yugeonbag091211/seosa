@@ -1011,6 +1011,18 @@ function productTypeGap(c, item, title) {
     return '보조배터리 단일 완제품이 아닌 주문 제작 서비스';
   }
 
+  // Model-specific Galaxy Buds N (standard/base) cannot be satisfied by
+  // Galaxy Buds N Pro or N FE even if the side and generation both match.
+  // 2026-11-02 live: "버즈3 오른쪽 유닛만" returned the Pro SM-R630
+  // unit as an EXACT card despite it not fitting standard Buds3.
+  // A request for the entire series is different and keeps alternatives.
+  const userBuds=/(?:갤럭시\s*)?버즈\s*(\d+)|(?:galaxy\s*)?buds\s*(\d+)/i.exec(want);
+  if (userBuds && !/(?:시리즈|라인업|전체\s*모델|모델별|series|lineup)/i.test(want)) {
+    const generation=userBuds[1]||userBuds[2];
+    const modelRe=new RegExp('(?:갤럭시\\s*)?버즈\\s*'+generation+'\\s*(?:프로|pro|FE)|(?:galaxy\\s*)?buds\\s*'+generation+'\\s*(?:프로|pro|FE)','i');
+    if (!modelRe.test(want) && modelRe.test(t))
+      return '요청한 갤럭시 버즈 일반형이 아닌 프로·FE 모델';
+  }
   // AirPods 4 standard and AirPods 4 ANC are distinct purchase options.
   // An explicit base/standard request must not silently show the ANC SKU.
   if (c.strictBase && /(?:에어팟|airpods?)\s*4(?:\s*세대)?/i.test(want)
