@@ -1048,6 +1048,17 @@ function productTypeGap(c, item, title) {
     && /(?:반팔|긴팔|티셔츠|t-?shirt|라운드넥|맨투맨|후드티|후드집업|의류|스웨트셔츠|원피스|청바지|레깅스)/i.test(t)) {
     return '헤드셋이 아닌 의류·패션 상품';
   }
+  // A single left/right earbud unit is NOT the price of a complete pair.
+  // 2026-11-02 live: AirPods Pro 2 generic request showed a 125,000원
+  // left-only replacement unit alongside complete 400,000원+ earbuds.
+  // Allow separately sold units only when the user explicitly asks for one.
+  const explicitlySingleEarbud = /(?:왼\s*쪽|오른\s*쪽|좌\s*측|우\s*측|한\s*쪽|낱개|한\s*개|유닛\s*만|single\s*unit)/i
+    .test(String(c.userText || c.query || ''));
+  if (/(?:버즈\s*\d|galaxy\s*buds?|에어팟|airpods?|이어폰|이어버드|earphones?|earbuds?)/i.test(want)
+      && !explicitlySingleEarbud && !c.wantsAccessory
+      && /(?:한\s*쪽\s*(?:단품|판매|유닛|이어폰)|낱개\s*(?:본체|단품|유닛|이어폰)?|(?:왼|오른)\s*쪽\s*(?:이어폰|유닛)|(?:좌|우)\s*측\s*(?:이어폰|유닛)|(?:이어폰|유닛)\s*(?:왼|오른)\s*쪽|left[-\s]?only|right[-\s]?only)/i.test(t)) {
+    return '완전한 이어폰 세트가 아닌 한쪽 유닛 낱개';
+  }
   // In live merchant results, a "갤럭시 버즈3 호환 유닛 분실방지
   // 실리콘 이어 후크" was rated EXACT and shown as earbuds. Standalone
   // ear hooks, retainers, and anti-loss straps are wearable accessories,
