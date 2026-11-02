@@ -1,0 +1,1 @@
+{"singles":{"before":{"n":3150,"ok":1890,"why":{"noise":664,"empty":511,"lost_kind":76,"lost_model":9}},"after":{"n":3150,"ok":2816,"why":{"empty":255,"lost_kind":27,"noise":51,"lost_model":1}}},"sessions":{"before":{"n":720,"ok":346},"after":{"n":720,"ok":672}},"compare":{"before":130,"after":550,"n":550},"budget":{"n":650,"before":382,"after":552}}
