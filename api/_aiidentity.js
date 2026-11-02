@@ -1054,14 +1054,14 @@ function productTypeGap(c, item, title) {
   // purchase option/price is known. This gate is independent of the
   // full-pair-vs-single protection below.
   const unitRequest = String(c.userText || c.positive || c.query || '').normalize('NFKC');
-  const wantsSingleUnit = /(?:왼\\s*쪽|오른\\s*쪽|좌\\s*측|우\\s*측|\\bleft\\b|\\bright\\b|한\\s*쪽|낱개|유닛\\s*만|single\\s*(?:earbud|unit))/i.test(unitRequest);
-  if (/(?:버즈\\s*\\d|galaxy\\s*buds?|에어팟|airpods?|이어폰|이어버드|earphones?|earbuds?)/i.test(want)
+  const wantsSingleUnit = /(?:왼\s*쪽|오른\s*쪽|좌\s*측|우\s*측|\bleft\b|\bright\b|한\s*쪽|낱개|유닛\s*만|single\s*(?:earbud|unit))/i.test(unitRequest);
+  if (/(?:버즈\s*\d|galaxy\s*buds?|에어팟|airpods?|이어폰|이어버드|earphones?|earbuds?)/i.test(want)
       && wantsSingleUnit) {
-    const left = /(?:왼\\s*쪽|좌\\s*측|\\bleft\\b)/i;
-    const right = /(?:오른\\s*쪽|우\\s*측|\\bright\\b)/i;
+    const left = /(?:왼\s*쪽|좌\s*측|\bleft\b)/i;
+    const right = /(?:오른\s*쪽|우\s*측|\bright\b)/i;
     const requestedLeft = left.test(unitRequest), requestedRight = right.test(unitRequest);
     const titleLeft = left.test(t), titleRight = right.test(t);
-    const provesSingle = /(?:낱개|한\\s*쪽|(?:왼|오른)\\s*쪽|좌\\s*측|우\\s*측|\\bleft\\b|\\bright\\b|(?:이어폰|이어버드|에어팟|버즈)[^,\\n]{0,22}유닛\\s*(?:단품|만|1개|1\\s*개)|single\\s*(?:earbud|unit))/i.test(t);
+    const provesSingle = /(?:낱개|한\s*쪽|(?:왼|오른)\s*쪽|좌\s*측|우\s*측|\bleft\b|\bright\b|(?:이어폰|이어버드|에어팟|버즈)[^,\n]{0,22}유닛\s*(?:단품|만|1개|1\s*개)|single\s*(?:earbud|unit))/i.test(t);
     // No side or single sale proof = full set or unspecified option.
     // Multiple sides in one title = unverified side-dependent variant.
     if (!provesSingle || (titleLeft && titleRight)
