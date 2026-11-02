@@ -6765,7 +6765,8 @@ module.exports = async function handler(req, res) {
         const subject = singleSubject || items[0];
         let leadAdded = false;
         if (timingAsked && subject && identityState !== 'NEAR') {
-          const lead = CG.timingLead({ top: subject, deal, named: !mentionsAnyCard(text, [subject]) });
+          const lead = CG.timingLead({ top: subject, deal, named: !mentionsAnyCard(text, [subject]),
+            confidence: decision && decision.confidence && decision.confidence.confidence || 'low' });
           if (lead) { text = `${lead}\n\n${text}`; leadAdded = true; }
         }
         const removedPrice = (groundingRepaired || []).some(r => r.flags.some(f => /won|price|Price/.test(f)));
