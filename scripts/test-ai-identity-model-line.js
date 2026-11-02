@@ -77,10 +77,19 @@ for (const [q, t, want] of CASES) {
   ok(got === want, `"${q}" ↔ "${t}" 는 ${NAME[want]}`, NAME[got]);
 }
 
-// 기존 판정: 꼬리 없는 질의에서 등급 표기만 더 붙은 상품은 extraVariant 로 남는다(partition 이 판단)
+// 버즈3 일반형의 오른쪽 유닛에는 버즈3 프로 유닛을 대신 추천할 수 없다.
+// 기존 extraVariant 로직은 검색어에 "프로" 가 없으면 Pro 를 같은 모델로 허용했다.
+// 2026-11-02 Production에서 실제로 호환되지 않는 부품을 구매 카드에 노출했다.
 {
-  const v = I.verdict(I.buildContract({ query: '갤럭시 버즈3' }), { title: 'Samsung Galaxy Buds3 Pro (삼성 갤럭시 버즈3 프로)' });
-  ok(v.tier === TIER.EXACT && v.extraVariant && v.extraVariant.has('pro'), '버즈3 ↔ 버즈3 Pro 는 extraVariant(partition 몫)', v);
+  const title = 'Samsung Galaxy Buds3 Pro (삼성 갤럭시 버즈3 프로)';
+  const v = I.verdict(I.buildContract({ query: '갤럭시 버즈3' }), { title });
+  ok(v.tier === TIER.MISMATCH,
+    '버즈3 일반형 요청에 Buds3 Pro 는 구매 불가능한 다른 모델', v);
+  const series = I.verdict(I.buildContract({ query: '갤럭시 버즈3 시리즈' }), { title });
+  ok(series.tier !== TIER.MISMATCH,
+    '버즈3 시리즈 전체를 요청하면 Pro 를 계열 후보로 살릴 수 있다', series);
+  const exact = I.verdict(I.buildContract({ query: '갤럭시 버즈3 프로' }), { title });
+  ok(exact.tier === TIER.EXACT, '버즈3 프로 요청에는 동일 모델을 유지한다', exact);
 }
 
 // 운영 재생 형태: 최저가 LIGHTSPEED 가 1위가 되지 않는다
