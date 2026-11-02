@@ -162,7 +162,7 @@ function isCashPriceListing(title) {
   const t=String(title||'');
   // A monthly rental installment or deposit is not the full product price.
   // "무이자 할부 가능" without a monthly amount is only a financing feature.
-  return !/(?:월\s*\d[\d,]*\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|월\s*구독료)/i.test(t);
+  return !/(?:월\s*\d[\d,]*(?:\.\d+)?\s*(?:만|천)?\s*원|매월\s*\d[\d,]*(?:\.\d+)?\s*(?:만|천)?\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|선납금\s*\d|월\s*구독료|(?:렌탈|대여|임대|구독\s*상품))/i.test(t);
 }
 /*
  * Read only conditions literally stated in the offer title. No title proves
@@ -200,17 +200,20 @@ function titleConditionRisk(title) {
 function listExact(raw, query, AIID, normalize, accept) {
   const candidates = (Array.isArray(raw) ? raw : [])
     .filter(x => x && x.productId && Number.isSafeInteger(Number(x.lprice)) && Number(x.lprice) > 0)
-    .slice(0, 40).map(x => {
+    // Reject non-devices and non-cash offers BEFORE limiting candidates.
+    // Otherwise 40 cheap accessories can hide a real tablet further down.
+    .filter(x => isComparableOffer(query, x.title) && isCashPriceListing(x.title))
+    .map(x => {
       const n = normalize(x);
       Object.defineProperty(n, '_compareRaw', { value: x });
       return n;
-    }).filter(n => isComparableOffer(query, n.title) && isCashPriceListing(n.title)).filter(n => {
+    }).filter(n => {
       // A Coupang product page is not a saleable option. Without the exact
       // vendorItemId, neither the price nor the card can represent that option
       // in a comparison. Other providers do not have Coupang option IDs.
       const coupang = n.isCoupang === true || require('./_aicontext').isCoupangMall(n.mallId || n.mall);
       return !!n.productId && (!coupang || !!n.vendorItemId);
-    });
+    }).slice(0, 40);
   if (!candidates.length) return [];
   const contract = AIID.buildContract({
     query, userText: query, titles: candidates.map(x => x.title)
