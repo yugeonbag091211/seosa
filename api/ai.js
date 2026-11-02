@@ -5336,10 +5336,12 @@ module.exports = async function handler(req, res) {
           productId: p.productId, vendorItemId: p.vendorItemId || '',
           mallId: p.mallId || p.mall, title: p.title
         })) : [];
+      const supplierPartial = responses.some(result => result.partial === true || !result.ok);
       let responseText = CMP.formatComparison(comparison, selected, pairFollowup ? 'catalog' : 'search', {
         budgetLabel: hasBudget ? CMP.budgetLabel(constraints) : '',
         missingByBudget,
-        overBudget: selected.map(p => !!(p && hasBudget && !inBudget(p)))
+        overBudget: selected.map(p => !!(p && hasBudget && !inBudget(p))),
+        partialResults: supplierPartial
       });
       searchState = responses.some(x => !x.ok) ? 'failed' : twoExact ? 'found' : 'empty';
       console.log('[ai:obs] ' + JSON.stringify({
@@ -5350,7 +5352,7 @@ module.exports = async function handler(req, res) {
       const payload = verifiedCards.length ? { text: responseText, items: verifiedCards } : { text: responseText };
       payload.intent = resolvedCanonicalIntent;
       if (guest) payload.guest = true;
-      payload.comparison = { requested: comparison, complete: twoExact };
+      payload.comparison = { requested: comparison, complete: twoExact, partialResults: supplierPartial };
       return res.json(withTurnSig(payload));
     }
 
