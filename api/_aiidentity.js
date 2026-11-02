@@ -460,7 +460,11 @@ function buildContract(o) {
   const fromUser = userText ? splitNegations(userText) : { positive: '', negated: [] };
   const negatedAll = fromQuery.negated.concat(fromUser.negated);
   // 빼 달라고 한 부속 낱말이 검색어 쪽에 남아 있으면 걷어낸다 ("…본체 마우스패드·케이스" + "…제외").
-  const excludeAcc0 = negatedAll.some(n => n.slots.has('accessory'));
+  // "케이스만 파는 상품은 제외해줘" means EXCLUDE case-only offers.
+  // The generic negation tokenizer may capture only "파는" as the
+  // negative token and leave "케이스" in the positive model query.
+  const excludesAccessoryOnlyOffer = /(?:케이스|커버|필름|키링|이어\s*후크)\s*만\s*(?:파는|판매하는|판매된|취급하는)\s*(?:상품|제품|것)?\s*(?:은|는|을|를)?\s*(?:제외|빼|보여\s*주지)/i.test(userText);
+  const excludeAcc0 = excludesAccessoryOnlyOffer || negatedAll.some(n => n.slots.has('accessory'));
   const positive = excludeAcc0
     ? fromQuery.positive.split(/\s+/).filter(w => !tokensOf(w).some(t => slotOf(t) === 'accessory' || slotOf(t) === 'bundle')).join(' ')
     : fromQuery.positive;
@@ -497,7 +501,7 @@ function buildContract(o) {
   condition.mentioned = conditionStates(`${positive} ${fromUser.positive}`);
   const excluded = [];
   const excludedColors = new Set();
-  let excludeAccessory = false;
+  let excludeAccessory = excludesAccessoryOnlyOffer;
   negatedAll.forEach(n => {
     if (n.slots.has('condition')) S.conditionIntent(`${n.text} 제외`).excluded.forEach(c => condition.excluded.add(c));
     if (n.slots.has('color')) colorsOf(n.text).forEach(c => excludedColors.add(c));
@@ -1007,6 +1011,12 @@ function productTypeGap(c, item, title) {
     return '보조배터리 단일 완제품이 아닌 주문 제작 서비스';
   }
 
+  // AirPods 4 standard and AirPods 4 ANC are distinct purchase options.
+  // An explicit base/standard request must not silently show the ANC SKU.
+  if (c.strictBase && /(?:에어팟|airpods?)\s*4(?:\s*세대)?/i.test(want)
+      && /(?:액티브\s*노이즈\s*캔슬링|노이즈\s*캔슬링|\bANC\b|active\s*noise\s*cancell?ing)/i.test(t)) {
+    return '에어팟 4세대 일반형이 아닌 ANC 모델';
+  }
   // "노트북 하나로 부업·강의/사업" 은 노트북 *판매*가 아니라 노트북 활용 콘텐츠다.
   if (WANTS_LAPTOP_RE.test(want) && !WANTS_BOOK_RE.test(want)
     && !WANTS_SERVICE_RE.test(want) && LAPTOP_CONTENT_RE.test(t)) {

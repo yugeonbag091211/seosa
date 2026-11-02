@@ -5035,6 +5035,18 @@ module.exports = async function handler(req, res) {
      */
     searchState = 'none';
     let query = (cls && cls.query) || '';
+    // The customer asked to EXCLUDE listings selling only a case/cover.
+    // A classifier can incorrectly append "케이스" to the product search
+    // phrase. Remove this excluded merchandise noun before merchant search
+    // and before building the product identity contract. Do not alter actual
+    // accessory-shopping requests ("에어팟 케이스만 추천").
+    const onlyAccessoryOfferExcluded = /(?:케이스|커버|필름|키링|이어\s*후크)\s*만\s*(?:파는|판매하는|판매된|취급하는)\s*(?:상품|제품|것)?\s*(?:은|는|을|를)?\s*(?:제외|빼|보여\s*주지)/i.test(q);
+    if (onlyAccessoryOfferExcluded) {
+      const stripOnlyAccessory = s => String(s || '')
+        .replace(/(?:케이스|커버|필름|키링|이어\s*후크)/gi, ' ').replace(/\s+/g, ' ').trim();
+      query = stripOnlyAccessory(query);
+      if (cls && cls.identityText) cls.identityText = stripOnlyAccessory(cls.identityText);
+    }
     /*
      * «다른 후보» 는 같은 종류의 다른 상품이다 (2026-10-26 1,000문항 평가). 직전 상품의 모델명("에어팟 프로 2세대")으로
      * 다시 찾으면 그 모델만 나와 대안이 없었다. 직전 상품이 특정 모델이면 그 종류로 넓혀 찾는다 — 직전 추천은 아래
