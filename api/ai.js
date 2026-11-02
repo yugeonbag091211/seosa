@@ -124,6 +124,8 @@ const TIMEOUT_MS       = 25000;  // 프론트 대기(30초)보다 짧게 — 함
  * 사용자가 30초 뒤에 빈 화면을 보는 것보다, 20초에 결정론 답변을 받는 편이 낫다.
  */
 const REQUEST_BUDGET_MS = 27000;
+const MEDIA_TITLE_RE = /\[(?:국내도서|외국도서|중고도서|eBook|전자책|학술논문|오디오북)\]|스테디셀러|웅진북센/i;
+const MEDIA_REQUEST_RE = /책|도서|ebook|e북|논문|소설|만화|참고서|문제집|교재|그림책|오디오북/i;
 /** 답변에 최소한 남겨 둘 시간. 분류가 이만큼은 남기고 물러난다. */
 const ANSWER_RESERVE_MS = 9000;
 /** 분류 단계 전체(1차·2차·검색어 해석)에 허용하는 시간. */
@@ -5256,8 +5258,20 @@ module.exports = async function handler(req, res) {
      * 출처가 남는다. 우리가 지어낸 제외는 없다.
      */
     const excludes = (!intent || needsShopContext(intent))
-      ? FB.collectExcludes(q, hist)
+      /*
+       * 사용자가 거둔 제외("애플도 괜찮아")와, 상품 종류가 바뀌어 거둔 상품 전용 제외는 기록에서 다시
+       * 읽어도 적용하지 않는다 (api/_convstate.js). 그러지 않으면 태블릿에서 뺀 애플이 이어폰 추천에도 걸린다.
+       * «앞으로 모든 상품» 으로 말한 제외(excludedGlobalNames)는 종류가 바뀌어도 그대로 남는다.
+       */
+      ? FB.collectExcludes(q, hist).filter(e => !(conv.releasedNames || []).includes(e.name)
+          && !(conv.droppedNames || []).includes(e.name))
       : [];
+    // 기록 창 밖에서 빼 달라고 한 이름은 서명 상태에서 이어받는다 (api/_convstate.js foldExcludedNames).
+    if (!intent || needsShopContext(intent)) {
+      (conv.excludedNames || []).forEach(name => {
+        if (!excludes.some(e => e.name === name)) excludes.push({ name, hard: false, evidence: name, source: 'state' });
+      });
+    }
 
     const wanted = (!intent || needsShopContext(intent)) ? collectWantedFeatures(q, hist) : [];
 
@@ -5527,6 +5541,8 @@ module.exports = async function handler(req, res) {
         attachSpecs(normed, wanted);
         // 제외 지시("삼성은 빼줘")를 랭킹 전에 반영한다.
         normed = FB.applyExcludes(normed, excludes);
+        // 책·논문·전자책은 그 낱말을 달라고 하지 않은 한 상품 후보가 아니다 (제목의 낱말만 겹친 결과다).
+        if (!MEDIA_REQUEST_RE.test(q)) normed = normed.filter(it => !MEDIA_TITLE_RE.test(String(it.title || '')));
         if (constraints && constraints.avoidGaming) {
           const oldLen = normed.length;
           normed = normed.filter(it => !BW.avoidsGaming(it));
@@ -6999,7 +7015,8 @@ module.exports = async function handler(req, res) {
       const card = cards[0];
       const amount = Number(card.lprice);
       const productName = AIID.displayTitle(card.title || '').slice(0, 65);
-      const merchant = safeText(card.mall || '판매처 미확인', 30);
+      // card.mall 은 내부 식별자다('ADPICK'). 사용자에게는 표시 이름만 보여 준다.
+      const merchant = safeText(card.mallLabel || (card.mall === 'ADPICK' ? '판매처' : card.mall) || '판매처 미확인', 30);
       // The product card is already rendered beside the answer. If grounded
       // prose already repeats that exact verified price, a second title/price
       // banner makes the answer redundant; reserve this line for answers that

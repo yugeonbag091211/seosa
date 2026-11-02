@@ -69,8 +69,8 @@ const UNIT = { 억: 100000000, 만: 10000, 천: 1000 };
 const MONEY_RE = /(\d[\d,]*(?:\.\d+)?)\s*(억|만|천)\s*(?:(\d[\d,]*)\s*(만|천))?\s*원?|(\d[\d,]{2,})\s*원/g;
 
 /** 금액 뒤에 붙는 말 → 어떤 조건인가 */
-const CAP_RE   = /^\s*(이하|이내|미만|까지|안으로|안쪽|밑|아래|이내로|언더)/;
-const FLOOR_RE = /^\s*(이상|넘는|넘게|부터|초과|위로)/;
+const CAP_RE   = /^\s*(?:은|는|을|를|이|가)?\s*(이하|이내|미만|까지|안으로|안쪽|밑|아래|이내로|언더|안\s*넘|넘지\s*않|넘기지\s*(?:않|말|마)|넘으면\s*안|밖에)/;
+const FLOOR_RE = /^\s*(?:은|는|을|를|이|가)?\s*(이상|넘는|넘게|넘되|넘고|넘어야|부터|초과|위로)/;
 /*
  * "20만원대" — 뒤에 조사가 붙어도 같은 뜻이다.
  *
@@ -96,6 +96,17 @@ const RANGE_RE = /(\d[\d,]*)\s*(?:[~\-–]|에서)\s*(\d[\d,]*)\s*(억|만|천)\
 const PRE_ABOUT_RE = /(약|대략|한)\s*$/;
 /* 금액 앞의 상한 표현 — "많아야 45만원인데" · "최대 30만원" (2026-10-26 홀드아웃: «많아야» 를 여유 예산으로 읽었다). */
 const PRE_CAP_RE = /(?:많아야|기껏해야|최대|최고|아무리\s*많아도|비싸도)\s*$/;
+/* "최소 12만원" · "적어도 5만원" — 앞에 붙은 하한 표시 (2026-11-02 Production 실측: 상한으로 읽어 싼 상품만 나왔다). */
+const PRE_FLOOR_RE = /(?:최소(?:한)?|적어도|못해도)\s*$/;
+/* 한글 금액 — "십삼만원". 숫자로 바꿔 아래 규칙을 그대로 쓴다. */
+const KO_DIGIT = { 일: 1, 이: 2, 삼: 3, 사: 4, 오: 5, 육: 6, 칠: 7, 팔: 8, 구: 9 };
+function koreanMoneyToDigits(text) {
+  return String(text || '').replace(/(^|[^가-힣])([일이삼사오육칠팔구]?십[일이삼사오육칠팔구]?|[이삼사오육칠팔구])\s*만\s*원/g, (m, pre, n) => {
+    const at = n.indexOf('십');
+    const v = at < 0 ? KO_DIGIT[n] : (at ? KO_DIGIT[n[0]] : 1) * 10 + (KO_DIGIT[n[at + 1]] || 0);
+    return `${pre}${v}만원`;
+  });
+}
 
 function toWon(numText, unit, subText, subUnit) {
   const base = Number(String(numText).replace(/,/g, ''));
@@ -352,7 +363,7 @@ function findConflict(s, amounts) {
  * @returns {object} 조건. 못 찾은 항목은 0 또는 ''.
  */
 function parseConstraints(text) {
-  const s = String(text || '');
+  const s = koreanMoneyToDigits(text);
   const out = {
     budgetMax: 0, budgetMin: 0, budgetSoft: false, budgetSaid: 0, budgetRelax: false,
     budgetNotice: '', budgetStrict: false, conflict: null,
@@ -429,6 +440,19 @@ function parseConstraints(text) {
     }
   }
 
+  // "최소 5만원, 최대 15만원" · "12만은 넘되 15만은 안 넘는" — 앞뒤 표시로 양쪽이 다 정해진 구간.
+  if (!out.budgetMax && !out.budgetMin && found.length >= 2) {
+    const isFloor = x => FLOOR_RE.test(x.after) || PRE_FLOOR_RE.test(x.before);
+    const isCap = x => CAP_RE.test(x.after) || PRE_CAP_RE.test(x.before);
+    const floors = found.filter(x => isFloor(x) && !isCap(x));
+    const ceilings = found.filter(x => isCap(x) && !isFloor(x));
+    if (floors.length && ceilings.length && floors[floors.length - 1].won <= ceilings[ceilings.length - 1].won) {
+      out.budgetMin = floors[floors.length - 1].won;
+      out.budgetMax = ceilings[ceilings.length - 1].won;
+      out.budgetSaid = out.budgetMax;
+    }
+  }
+
   if (out.budgetMax) {
     // 구간에서 이미 정해졌다.
   } else if (found.length >= 2 && /[~\-–]|에서|부터/.test(s.slice(0, 200))) {
@@ -443,7 +467,9 @@ function parseConstraints(text) {
     const labelled = found.filter(x => LABELLED_BUDGET_RE.test(x.before) || LABEL_AFTER_RE.test(x.after));
     const f = (labelled.length ? labelled : found)[(labelled.length ? labelled : found).length - 1];
     out.budgetSaid = f.won;
-    if (CAP_RE.test(f.after) || (PRE_CAP_RE.test(f.before) && !FLOOR_RE.test(f.after) && !BAND_RE.test(f.after))) {
+    if (PRE_FLOOR_RE.test(f.before) && !CAP_RE.test(f.after)) {
+      out.budgetMin = f.won;
+    } else if (CAP_RE.test(f.after) || (PRE_CAP_RE.test(f.before) && !FLOOR_RE.test(f.after) && !BAND_RE.test(f.after))) {
       // "70만원 미만" 은 70만원짜리를 넣지 않는다 (2026-10-26). 이하·이내·까지는 그 금액까지.
       out.budgetMax = /^\s*미만/.test(f.after) ? f.won - 1 : f.won;
     } else if (FLOOR_RE.test(f.after)) {
@@ -810,7 +836,8 @@ function scoreItem(it, c, tokens) {
     }
 
     if (h.low > 0 && price > 0) {
-      if (price <= h.low) notes.push('기록상 최저가 수준');
+      if (h.count < 3) { /* 관측 3회 미만의 «최저» 는 근거가 아니다 (_decision MIN_LOW_OBSERVATIONS) */ }
+      else if (price <= h.low) notes.push('기록상 최저가 수준');
       else if (price <= Math.round(h.low * 1.03)) { score += 8; sub.timing += 8; notes.push('기록상 최저가에 근접'); }
     }
 
