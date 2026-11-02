@@ -162,7 +162,7 @@ function isCashPriceListing(title) {
   const t=String(title||'');
   // A monthly rental installment or deposit is not the full product price.
   // "무이자 할부 가능" without a monthly amount is only a financing feature.
-  return !/(?:월\s*\d[\d,]*(?:\.\d+)?\s*(?:만|천)?\s*원|매월\s*\d[\d,]*(?:\.\d+)?\s*(?:만|천)?\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|선납금\s*\d|월\s*구독료|(?:렌탈|대여|임대|구독\s*상품))/i.test(t);
+  return !/(?:월\s*\d[\d,]*(?:\.\d+)?\s*(?:만|천)?\s*원|매월\s*\d[\d,]*(?:\.\d+)?\s*(?:만|천)?\s*원|월납\s*\d|월요금\s*\d|월렌탈료|렌탈료\s*\d|예약금\s*\d|계약금\s*\d|보증금\s*\d|선납금\s*\d|월\s*구독료|(?:렌탈|대여|임대|구독\s*상품)|통신사\s*(?:신규\s*가입|개통)|신규\s*가입\s*할부\s*개통|번호\s*이동\s*(?:조건|시|개통)|요금제\s*(?:가입|유지|약정)|공시\s*지원금|약정\s*시\s*\d)/i.test(t);
 }
 /*
  * Read only conditions literally stated in the offer title. No title proves
