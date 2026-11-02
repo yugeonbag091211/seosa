@@ -681,11 +681,26 @@ function brandOnlyEvidence(text) {
 }
 const isNewProductRequest = text => NEW_REQUEST_RE.test(text)
   && /추천\s*(?:해|좀|부탁)|찾아\s*(?:줘|주세요)|보여\s*(?:줘|주세요)/.test(text);
-/* 후속·가격 낱말과 서술 낱말을 걷고도 남는 낱말 — 사전에 없는 상품 이름의 유일한 근거다. */
+/*
+ * 후속·가격 낱말과 서술 낱말을 걷고도 남는 낱말 — 사전에 없는 상품 이름의 유일한 근거다("비보북").
+ *
+ * ★ 사도 될지 묻는 말의 동사 어간은 상품이 아니다. "조금 기다리는 게 나을까?" 의 '기다리'·'나을까' 를
+ *   상품으로 세면 그 말로 새로 검색하게 되고, 찾던 상품의 구매 시점 질문이 사라진다.
+ */
+/*
+ * 앞에서 고른 것을 가리키는 낱말 — 상품 이름이 아니다("그 선택지의 가격만 확인해줘").
+ * 상품·제품·후보·옵션은 isProductQuery 가 generic 으로 걸러 주지만, 선택지·선택은 걸리지 않는다.
+ */
+const REFERENCE_NOUN_RE = /^(?:선택지|선택|고른\S*|택한\S*|그것|거기)/;
+const JUDGMENT_STEM_RE = /^(?:기다|사도|사는|살까|살지|팔|나을|나은|낫|좋을|좋은지|할까|해야|될까|되나|괜찮|어떨|어때|비쌀|싸질|오를|내릴|떨어질|참을|미룰)/;
 function residualProductWords(positive) {
   return extractQuery(dropPredicateTokens(positive)).split(/\s+/)
     .filter(t => (t.length >= 2 || AIID.ONE_CHAR_PRODUCTS.has(t)) && !FOLLOWUP_CUE_RE.test(t)
-      && !/얼마|가격|판매가|현재|지금|금액|만원|조회|확인|최신/.test(t));
+      && !/얼마|가격|판매가|현재|지금|금액|만원|조회|확인|최신/.test(t)
+      && !JUDGMENT_STEM_RE.test(t) && !REFERENCE_NOUN_RE.test(t)
+      && !CONDITION_FILLER_RE.test(t) && !CONDITION_FILLER_RE.test(t.replace(JOSA_RE, ''))
+      // 쇼핑몰에 보낼 수 없는 낱말(옵션·상품·후보 같은 총칭)은 상품 이름의 근거가 아니다.
+      && isProductQuery(t));
 }
 /** 찾던 상품이 있을 때 이 발화가 새 상품 없이 그 대화를 잇는가. @returns {''|'recap'|'name'|'why'|'condition'} */
 function followupKind(text, prior) {
@@ -1385,6 +1400,14 @@ function classify(text, hist) {
    *   덮어쓰기·덧붙이기 규칙은 api/_aiidentity.js mergeRefinement 에 한 곳으로 둔다.
    */
   if (query && query.split(/\s+/).every(isPredicateToken)) query = '';
+  /*
+   * 가격·구매 시점을 묻는데 상품 낱말이 하나도 남지 않으면("가격이 얼마였죠?") 찾던 상품을 묻는 말이다.
+   * 예전에는 '얼마였죠' 가 그대로 검색어가 됐다. 상품 낱말이 남으면("비보북 얼마야") 그 상품을 찾는다 —
+   * 사전에 없는 이름도 상품이다(residualProductWords 주석).
+   */
+  if (query && (PRICE_RE.test(s) || TIMING_RE.test(s)) && AIID.productEvidence(positiveSpan) === 0
+      && !residualProductWords(positiveSpan).length
+      && !AIID.refinementOf(contentText(positiveSpan)).refinement) query = '';
   const ownQuery = !!query;   // 이 메시지 자체에서 뽑은 검색어인가
   /*
    * "아이폰 17 프로 256GB 있으면 그중에 제일 싼 것" 의 '그중' 은 같은 문장 안의 상품을 가리킨다.
@@ -1495,6 +1518,8 @@ function classify(text, hist) {
    */
   const aboutPrevious = (intent === 'D' || intent === 'E') && explicit && s.length <= 60
     && !refinement && AIID.productEvidence(positiveSpan) === 0 && !LIST_REFERENCE_RE.test(s)
+    // 사전에 없는 상품 이름("비보북 얼마야")은 «직전 추천의 가격» 이 아니라 그 상품을 묻는 말이다.
+    && !residualProductWords(positiveSpan).length
     && !CONDITION_WORD_RE.test(itemText);
 
   return {
@@ -1602,6 +1627,6 @@ function conversationProduct(hist) {
 
 module.exports = {
   classify, classifyInformationIntent, extractQuery, extractUseCase, isCreativeRequest, isRecommendationReason,
-  shoppingSpan, productPhrase, followupKind, cleanUntrustedShoppingInput, recoverSafeShoppingIntent, productPrefixBeforeUnsupportedPriceInstruction, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
+  shoppingSpan, productPhrase, followupKind, residualProductWords, cleanUntrustedShoppingInput, recoverSafeShoppingIntent, productPrefixBeforeUnsupportedPriceInstruction, conversationProduct, isProductQuery, analyzeClauses, isChosungOnly, isConditionOnly,
   MAX_QUERY_TOKENS, MAX_QUERY_LEN
 };

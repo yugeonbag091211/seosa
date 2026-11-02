@@ -5258,7 +5258,13 @@ module.exports = async function handler(req, res) {
      * 출처가 남는다. 우리가 지어낸 제외는 없다.
      */
     const excludes = (!intent || needsShopContext(intent))
-      ? FB.collectExcludes(q, hist).filter(e => !(conv.releasedNames || []).includes(e.name))
+      /*
+       * 사용자가 거둔 제외("애플도 괜찮아")와, 상품 종류가 바뀌어 거둔 상품 전용 제외는 기록에서 다시
+       * 읽어도 적용하지 않는다 (api/_convstate.js). 그러지 않으면 태블릿에서 뺀 애플이 이어폰 추천에도 걸린다.
+       * «앞으로 모든 상품» 으로 말한 제외(excludedGlobalNames)는 종류가 바뀌어도 그대로 남는다.
+       */
+      ? FB.collectExcludes(q, hist).filter(e => !(conv.releasedNames || []).includes(e.name)
+          && !(conv.droppedNames || []).includes(e.name))
       : [];
     // 기록 창 밖에서 빼 달라고 한 이름은 서명 상태에서 이어받는다 (api/_convstate.js foldExcludedNames).
     if (!intent || needsShopContext(intent)) {
