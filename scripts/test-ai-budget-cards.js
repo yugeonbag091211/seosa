@@ -6,7 +6,8 @@ const assert=require('node:assert/strict'),H=require('./_ai-chat-harness'),AC=re
  ['CLOSE','쿠팡','일상용 블루투스 무선 헤드셋 H5',145000],
  ['GAMER','쿠팡','위세리 WG1 무선 게이밍 헤드셋',137700],
  ['CLOSE2','쿠팡','무선 블루투스 통화 헤드셋 Y2',121000],
- ['CHEAP50','쿠팡','일반 블루투스 무선 헤드셋 3',49900]
+ ['CHEAP50','쿠팡','일반 블루투스 무선 헤드셋 3',49900],
+ ['SHIRT','ADPICK','[하프클럽/에이치플러스몰]남자 헤드셋 산뜻한 빅 프린팅 일상룩 스트릿 패션 라운드넥 반팔 티셔츠',55080]
 ].forEach(([pid,mall,title,price])=>H.addProduct({pid:'BUDGET-'+pid,vid:'OPT-'+pid,mall,title,price,keys:['헤드셋'],history:[[0,price]]}));
 const opts={classify:'C|헤드셋',answer:'서사 가격 기록을 확인해 안내합니다.'};
 const n=r=>(r.body.items||[]).map(c=>Number(c.lprice));
@@ -27,6 +28,16 @@ const n=r=>(r.body.items||[]).map(c=>Number(c.lprice));
  const low=await H.session().say('헤드셋 5만원 이하로 추천해줘',opts);
  assert.equal(low.status,200);assert.ok(n(low).includes(23900)&&n(low).includes(49900));
  assert.ok(n(low).every(p=>p<=50000));
- console.log('AI_BUDGET_CARDS_AUDIT '+JSON.stringify({turns:4,checks:14,failed:0,realGptCalls:0,externalCalls:H.counters.external,dbWrites:H.counters.dbWrites}));
+ const direct=await H.session().say('일상용 헤드셋 12만원 이상 15만원 이하 게이밍 제외',opts);
+ assert.equal(direct.status,200);
+ assert.ok(n(direct).length>=1,'should have verified offers in explicit 12-15만원 interval');
+ assert.ok(n(direct).every(p=>p>=120000&&p<=150000),'explicit floor and cap: '+JSON.stringify(n(direct)));
+ assert.ok((direct.body.items||[]).every(z=>!/반팔|티셔츠|게임|게이밍|gaming/i.test(z.title)),
+   'reject apparel and gaming listings');
+ const directState=AC.verifyConversationState(direct.body.convState);
+ assert.equal(directState.constraints.budgetMin,120000,'hard budget floor survives signed state');
+ assert.equal(directState.constraints.budgetMax,150000,'hard budget cap survives signed state');
+ assert.equal(directState.constraints.avoidGaming,true,'avoid gaming is retained');
+ console.log('AI_BUDGET_CARDS_AUDIT '+JSON.stringify({turns:5,checks:20,failed:0,realGptCalls:0,externalCalls:H.counters.external,dbWrites:H.counters.dbWrites}));
  if(H.counters.external||H.counters.dbWrites)process.exitCode=1;
 })().catch(e=>{console.error('AI_BUDGET_CARDS_FATAL',e.stack||e);process.exitCode=1;});

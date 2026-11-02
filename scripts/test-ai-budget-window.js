@@ -23,4 +23,17 @@ assert.equal(B.oneCardFollowup('이번에는 노트북도 추천해줘',[{role:'
 assert.equal(B.oneCardFollowup('둘 다 현재 가격 알려줘',[{role:'user',text:'아이패드와 갤럭시탭 비교'}],'D'),false);
 assert.equal(B.oneCardFollowup('두 모델 중 더 싼 건?',[{role:'user',text:'아이패드와 갤럭시탭 비교'}],'E'),false);
 assert.equal(B.oneCardFollowup('두 개 판매가를 다시 확인해줘',[{role:'user',text:'아이패드와 갤럭시탭 비교'}],'D'),false);
-console.log('AI_BUDGET_WINDOW_AUDIT 21 PASS / 0 FAIL');
+const SI=require('../api/_shopintent');
+for (const [q,lo,hi] of [
+ ['일상용 헤드셋 12만원 이상 15만원 이하 게이밍 제외',120000,150000],
+ ['헤드셋 12만원 이상 15만원 이하',120000,150000],
+ ['헤드셋 15만원 이하 12만원 이상',120000,150000],
+ ['헤드폰 10만원 이상 20만원 이하로',100000,200000],
+ ['헤드폰 20만원 이하 10만원 이상',100000,200000],
+ ['헤드셋 12만원~15만원',120000,150000]
+]) {
+ const c=SI.parseConstraints(q);
+ assert.equal(c.budgetMin,lo,q+' lower');
+ assert.equal(c.budgetMax,hi,q+' upper');
+}
+console.log('AI_BUDGET_WINDOW_AUDIT 27 PASS / 0 FAIL');
