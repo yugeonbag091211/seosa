@@ -4,8 +4,38 @@
  * are split into independent server searches; do not treat a joint phrase as
  * one model identity. No client-supplied price or product is an input.
  */
+/*
+ * 비교 문형 앞뒤의 사람 말을 걷고, 표준 꼴 "A와 B 비교" 로 맞춘다 (2026-11-02 Production 실측).
+ *   "주변에서 다들 좋다길래 아이폰 17이랑 아이폰 17 프로 중에 가성비 좋은 쪽은?" → 왼쪽에 상황 설명이 붙었다
+ *   "갤럭시 버즈 FE 살까 에어팟 4 살까" · "A vs B 뭐가 더 나아?" · "B 대신 A 사도 후회 안 할까" → 문형을 몰라 한 검색어가 됐다
+ */
+function normalizeComparisonForm(raw) {
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  const P = '(.{2,60}?)';
+  const forms = [
+    new RegExp(`^${P}\\s*살까\\s*,?\\s*${P}\\s*살까`),
+    new RegExp(`^${P}\\s+대신\\s+${P}\\s*(?:사도|살까|사면|골라|고르|어때)`),
+    new RegExp(`^${P}\\s*에서\\s+${P}\\s*로\\s*(?:넘어|바꿀|갈아)`),
+    new RegExp(`^${P}\\s*(?:vs\\.?|versus)\\s*${P}\\s*(?:뭐|어느|어떤|나아|좋|비교|$)`, 'i'),
+    new RegExp(`^${P}\\s*,\\s*${P}\\s+(?:둘\\s*다|어느|중\\s|뭐가)`),
+    new RegExp(`^${P}(?:이랑|랑|와|과|하고)\\s+${P}\\s*(?:뭐가|어느|어떤|나란히|판매가|가격\\s*차이)`),
+    new RegExp(`^${P}\\s*,\\s*${P}\\s*(?:얼마\\s*차이|가격\\s*차이|판매가)`),
+    new RegExp(`^${P}(?:와|과|랑|이랑)\\s+${P}\\s*(?:의|이|가)?\\s*가격\\s*차이`)
+  ];
+  for (const re of forms) {
+    const m = re.exec(s);
+    if (m) return `${m[1].trim()} 와 ${m[2].replace(/\s*(?:의|중|중에|중에서)$/, '').trim()} 비교해줘`;
+  }
+  return s;
+}
+const COMPARE_LEAD_RE = /^(?:[^.!?,]{0,40}?(?:길래요?|는데요?|인데요?)[.,!]?\s+|[^.!?,]{0,40}?[요다][.,!]\s+|(?:가격만\s*놓고\s*보면|대학생\s*입장에서|선물용이면|솔직히|둘\s*다\s*\S+\s*맞췄을\s*때|\S+\s*기준으로)\s+)+/;
+
 function parseComparison(question) {
   let s = String(question || '').trim().slice(0, 240);
+  // 비교 요구가 앞 문장에 있으면 그 문장이 본론이다 ("A하고 B 비교해주세요. 장단점도 알려줘.").
+  const lead = COMPARE_LEAD_RE.exec(s);
+  if (lead && !/비교|vs|살까|차이|대신/i.test(lead[0])) s = s.slice(lead[0].length);
+  s = normalizeComparisonForm(s);
   // A short conversational lead-in may precede a fully named comparison.
   // Keep the whitelist narrow so arbitrary prose is not converted into a pair.
   s = s.replace(/^둘\s*중\s*고르기\s*어렵네[.!?。]\s*/i, '');
@@ -25,7 +55,7 @@ function parseComparison(question) {
   // "A 아니면 B?" · "A 대 B" · "A, B 중에 하나만" · "A하고 B 차이가 뭐야" 도 두 상품 비교다 (2026-10-26 홀드아웃).
   const m = /^(.{2,75}?)(?:\s*(?:와|과|랑|하고)\s+|\s+vs\.?\s+|\s+versus\s+|\s+아니면\s+|\s+대\s+|\s+또는\s+|\s+혹은\s+|\s*\/\s*|\s*,\s+)(.{2,75}?)\??\s+(?:비교(?:해\s*(?:줘|주세요|줄래|볼래|봐|보자)|해|해볼래|해주세요|해줘)?|중(?:에서|에)?\s*(?:뭐|뭘|무엇|어떤|어느|가성비|가격|더|살|고를|좋|낫|추천|하나)(?:\s*쪽)?|(?:가격|성능|가성비|장단점|기능)\s*(?:차이|비교)|차이(?:가|는|점|를)?\s*(?:알려|설명|정리|있|뭐|어때|궁금)|(?:함께\s*)?(?:골라|선택)(?:\s*(?:줘|주세요|줄래|봐))?).*$/i.exec(s);
   if (!m) return null;
-  let left = m[1].trim(), right = m[2].trim().replace(/\?+$/, '');
+  let left = m[1].trim(), right = m[2].trim().replace(/\?+$/, '').replace(/\s+중$/, '').replace(/(?<=[0-9A-Za-z가-힣]{2})의$/, '');
   // Sony WH-1000XM is an over-ear headphone family. A bare WH model anchor is
   // sufficient to identify that type; it must not be treated as an unknown
   // generic token (or conflated with the similarly named WF earbuds).
@@ -75,8 +105,14 @@ function parseComparison(question) {
   if (/[.!?。;:<>]/.test(left + right)) return null;
   const AIID = require('./_aiidentity');
   // 브랜드·계열 이름도 상품 지목이다 — "다이슨 V15랑 비스포크 제트" · "에어포스1이랑 아디다스 삼바" (2026-10-26).
-  const named = term => AIID.productEvidence(term) > 0 || /[0-9]/.test(term) || knownFamily.test(term) || AIID.namesBrand(term);
-  if (!named(left) || !named(right)) return null;
+  const named = term => AIID.productEvidence(term) > 0 || /[0-9]/.test(term) || /[A-Za-z]{2,}/.test(term) || knownFamily.test(term) || AIID.namesBrand(term);
+  // 한쪽이 분명한 상품이면 다른 쪽은 사전에 없는 이름이어도 된다("다이슨 슈퍼소닉이랑 에어랩") — 서술어가 섞인 조각만 거른다.
+  const plainName = term => /^[가-힣A-Za-z0-9\s+-]{2,30}$/.test(term) && term.trim().split(/\s+/).length <= 4
+    && !/(?:하고|해서|있는|없는|좋은|가격|결과|추천|검색|조건|상품|제품|옵션|성능|사양|기능|장단점|디자인|용량|색상|품질)/.test(term);
+  const compareCue = /비교|\bvs\b|versus|살까|중(?:에|에서)?\s|차이|나아|대신|넘어갈|판매가/i.test(String(question));
+  const accepted = (named(left) && named(right))
+    || (compareCue && ((named(left) && plainName(right)) || (named(right) && plainName(left))));
+  if (!accepted) return null;
   // "노트북과 태블릿 차이 알려줘" · "무선 이어폰이랑 유선 이어폰 비교" 는 종류를 묻는 지식 질문이다 —
   // 각 종류의 가장 싼 판매 글 두 개의 가격 차이로 답하면 질문에 답하지 않은 것이다. 일반 경로로 보낸다.
   if (bareCategory(left, AIID) || bareCategory(right, AIID)) return null;

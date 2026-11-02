@@ -65,6 +65,8 @@ const MARGIN_LABEL = {
  * @param {Array} ranked 랭킹된 상품 (it._score 를 가진다)
  * @returns {{margin:string, points:number, label:string}}
  */
+const MIN_LOW_OBSERVATIONS = 3;
+
 function computeMargin(ranked) {
   const list = (ranked || []).filter(Boolean);
   if (!list.length) return { margin: 'none', points: 0, label: MARGIN_LABEL.none };
@@ -207,7 +209,9 @@ function priceOpportunity(it) {
   }
 
   if (h.low > 0) {
-    if (price <= h.low) out.reasons.push('기록상 최저가 수준');
+    // 관측 하루치의 «최저» 는 현재가와 같다는 뜻뿐이다 (실제 이력 대조: 47건 중 39건이 1일치). 근거로 쓰지 않는다.
+    if (h.count < MIN_LOW_OBSERVATIONS) { /* 근거 부족 — 말하지 않는다 */ }
+    else if (price <= h.low) out.reasons.push('기록상 최저가 수준');
     else if (price <= Math.round(h.low * 1.03)) out.reasons.push('기록상 최저가에 근접');
     else out.caution = `기록상 ${h.low.toLocaleString('en-US')}원까지 내려간 적 있음`;
   }

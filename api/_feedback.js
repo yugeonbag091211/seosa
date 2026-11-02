@@ -71,7 +71,19 @@ const REASONS = [
  * 브랜드 이름은 목록으로 알아보지 않는다(목록에 없는 브랜드를 영원히 못
  * 알아보게 되므로). "빼줘/제외/말고" 앞에 오는 낱말을 이름으로 본다.
  */
-const EXCLUDE_RE = /([가-힣A-Za-z0-9]{2,20})\s*(?:절대|무조건|아예|전부|다|좀|이제)?\s*(?:빼|제외|말고|싫어|안\s*볼래|보지\s*마)/;
+const EXCLUDE_RE = /([가-힣A-Za-z0-9]{2,20})\s*(?:(?:제품|상품|브랜드|쪽|거|건)(?:은|는|을|를|이|가)?\s*)?(?:절대|무조건|아예|전부|다|좀|이제|앞으로)?\s*(?:빼|제외|말고|싫어|안\s*볼래|보지\s*마|만\s*아니면|안\s*좋아해)/;
+/* "X 제품은 앞으로 추천하지 마" — 이름 뒤에 틀 낱말이 있을 때만이다. "가방을 대신 추천하지 마" 는 INSTEAD_EXCLUDE_RE 가 맡는다. */
+const FRAMED_NO_RECOMMEND_RE = /([가-힣A-Za-z0-9]{2,20})\s*(?:제품|상품|브랜드)(?:은|는|을|를)?\s*(?:앞으로|다시)?\s*추천하지\s*마/;
+/* 브랜드 낱말과 그 브랜드 상품 제목에만 나오는 이름 — "애플 빼줘" 는 «아이패드» 도 뺀다. */
+const BRAND_ALIASES = {
+  애플: ['애플', 'apple', '아이패드', 'ipad', '아이폰', 'iphone', '맥북', 'macbook', '에어팟', 'airpods', '애플워치'],
+  삼성: ['삼성', 'samsung', '갤럭시', 'galaxy', '비스포크', '오디세이'],
+  lg: ['lg', '엘지', '그램', 'gram', '울트라기어', '코드제로', '트롬', '디오스', '퓨리케어', '휘센'],
+  소니: ['소니', 'sony'], 샤오미: ['샤오미', 'xiaomi', '레드미', 'redmi', '미지아'], 나이키: ['나이키', 'nike'], 아디다스: ['아디다스', 'adidas'],
+  뉴발란스: ['뉴발란스', 'new balance', '뉴발'], 레노버: ['레노버', 'lenovo'], hp: ['hp ', 'hp)', '휴렛', '빅터스', '오멘'], 다이슨: ['다이슨', 'dyson'],
+  보스: ['bose', '보스 '], 로지텍: ['로지텍', 'logitech'], 레이저: ['razer', '레이저 '], 앱코: ['앱코', 'abko'], 에이서: ['에이서', 'acer'], jbl: ['jbl'], asus: ['asus', '에이수스', '아수스']
+};
+const brandTerms = name => BRAND_ALIASES[String(name).toLowerCase()] || null;
 /*
  * "가방을 대신 추천하지 마" · "중고는 추천하지 마" — 추천하지 말라는 대상도 제외다 (2026-10-22 레드팀 CAND-14).
  * 사용자가 가방을 빼라고 두 번 말했는데 22,410원 노트북 가방이 다시 1위로 나갔다. 다만
@@ -112,6 +124,10 @@ function cleanExcludeName(raw) {
 /** 제외를 강한 감점으로 다룰지, 아예 지울지 가르는 말 */
 const HARD_EXCLUDE_RE = /절대|무조건|아예|전부\s*빼/;
 
+/* "애플 빼달라는 거 취소" · "HP도 이제 괜찮아" · "제외는 풀게요" — 제외를 거두는 말이다. 제외로 읽으면 정반대가 된다. */
+const EXCLUDE_RELEASE_RE = /취소|풀(?:게|어|자|래)|다시\s*넣|넣어|도\s*(?:이제\s*)?(?:괜찮|봐도|추천해도|후보)/;
+function isExcludeRelease(text) { return EXCLUDE_RELEASE_RE.test(String(text || '')); }
+
 /**
  * 이번 발화가 거부인가, 그렇다면 무엇에 대한 거부인가.
  *
@@ -135,8 +151,8 @@ function readFeedback(text) {
   });
 
   /* ── 제외 지시 ── */
-  {
-    const m = s.match(EXCLUDE_RE) || s.match(INSTEAD_EXCLUDE_RE) || s.match(MODIFIER_EXCLUDE_RE);
+  if (!isExcludeRelease(s)) {
+    const m = s.match(EXCLUDE_RE) || s.match(FRAMED_NO_RECOMMEND_RE) || s.match(INSTEAD_EXCLUDE_RE) || s.match(MODIFIER_EXCLUDE_RE);
     if (m) {
       /*
        * 조사를 떼고 부사·지시어를 걸러낸다 (cleanExcludeName 주석 참고).
@@ -216,6 +232,7 @@ function applyExcludes(items, excludes) {
   list.forEach(it => {
     const title = String(it.title || '').toLowerCase();
     const hit = ex.filter(e => title.includes(String(e.name).toLowerCase())
+      || (brandTerms(e.name) || []).some(t => `${title} `.includes(t))
       || SEARCH.isIdentityMatch(e.name, it.title));
     if (!hit.length) { out.push(it); return; }
 
@@ -316,6 +333,6 @@ const KIND_LABEL = {
 };
 
 module.exports = {
-  readFeedback, collectExcludes, toProfileSignals, applyExcludes, feedbackBlock,
+  isExcludeRelease, readFeedback, collectExcludes, toProfileSignals, applyExcludes, feedbackBlock,
   REASONS, KIND_LABEL, FEEDBACK_DELTA, EXCLUDE_PENALTY
 };

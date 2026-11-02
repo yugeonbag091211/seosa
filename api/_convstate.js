@@ -276,6 +276,26 @@ function foldConditions(list, text) {
   return [...set];
 }
 
+/*
+ * 빼 달라고 한 브랜드·이름도 상태로 잇는다 (2026-11-02 Production 실측).
+ * 제외는 최근 발화 6개에서만 읽어서, 3턴째 «HP 빼줘» 가 13턴째에는 사라지고 HP 노트북이 1위로 나왔다.
+ * 거두는 말("HP도 괜찮아")에 이름이 있으면 그 이름만, 이름 없이 "제외 취소" 면 전부 거둔다.
+ */
+const CONDITION_NAME_RE = /^(?:중고|리퍼|렌탈|대여|직구|병행|전시|반품|미개봉|가방|케이스|액세서리|호환품|부품|번들|묶음)/;
+function foldExcludedNames(list, text) {
+  const FB = require('./_feedback');
+  const set = new Set(list || []);
+  const t = String(text || '');
+  if (FB.isExcludeRelease(t)) {
+    const named = [...set].filter(n => t.includes(n));
+    (named.length ? named : [...set]).forEach(n => set.delete(n));
+    return [...set];
+  }
+  // 상태 낱말(중고·리퍼)은 excludedConditions 가 맡는다 — 여기서 함께 지우면 «제외 요청하신 상태» 판정 전에 사라진다.
+  FB.readFeedback(t).excludes.filter(e => !CONDITION_NAME_RE.test(e.name)).forEach(e => set.add(e.name));
+  return [...set];
+}
+
 function emptyConstraints() {
   return mergeConstraints(null, null);
 }
@@ -401,6 +421,10 @@ function resolve(state, hist, q, opts) {
   }
   const nextConstraints = fold(q);
   const nextExcluded = foldConditions(excluded, q);
+  let namesBefore = state && Array.isArray(state.excludedNames) ? state.excludedNames.slice() : [];
+  if (!state) folded.forEach(h => { namesBefore = foldExcludedNames(namesBefore, textOf(h)); });
+  const nextExcludedNames = foldExcludedNames(namesBefore, q);
+  const releasedNames = namesBefore.filter(n => !nextExcludedNames.includes(n));
   folded.concat([{ role: 'user', text: q }]).forEach(h => {
     const d = digest(textOf(h));
     if (!d) return;
@@ -415,6 +439,8 @@ function resolve(state, hist, q, opts) {
     replay,
     intentHist,
     excludedBefore: state ? excluded : [],
+    excludedNames: nextExcludedNames,
+    releasedNames: releasedNames,
     // 상품이 바뀌어 거둔 상품 전용 예산 (api/ai.js 가 한 줄로 알린다). 없으면 null.
     budgetDropped,
     next: {
@@ -422,6 +448,7 @@ function resolve(state, hist, q, opts) {
       // 모순(conflict)·완화 고지(budgetNotice)는 그 턴의 일이다. 다음 턴으로 넘기지 않는다.
       constraints: Object.assign({}, nextConstraints, { conflict: null, budgetNotice: '' }),
       excludedConditions: nextExcluded,
+      excludedNames: nextExcludedNames,
       absorbed: absorbed.slice(-MAX_ABSORBED),
       budgetScope: acc.scope === 'global' ? 'global' : '',
       budgetProduct: acc.scope === 'product' ? String(acc.product || '').slice(0, 120) : '',
@@ -468,6 +495,7 @@ function summaryLine(next, withBudget) {
   }
   const ex = (next.excludedConditions || []).map(x => KO_CONDITION[x] || x);
   if (ex.length) parts.push(`빼 달라고 한 상태: ${ex.join('·')}`);
+  if ((next.excludedNames || []).length) parts.push(`빼 달라고 한 브랜드·이름: ${next.excludedNames.join('·')}`);
   return parts.join(' · ');
 }
 
