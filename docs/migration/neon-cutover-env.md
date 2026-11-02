@@ -46,7 +46,7 @@ neon branches set-default migration-test-20261020 --project-id withered-dew-4517
 | `SEOSA_DB_BACKEND` | `neon` | ✅ | ✅(전환 시) | 비우면 Supabase(지금 동작) |
 | `SEOSA_NEON_EXPERIMENTAL` | `1` | ✅ | ✅ | |
 | `SEOSA_NEON_PRODUCTION_APPROVED` | `1` | — | ✅ | Preview 값이 실수로 Production에 복사돼도 전환되지 않게 하는 두 번째 열쇠 |
-| `NEON_DATABASE_URL` | **pooled** 연결 문자열(호스트에 `-pooler`), `sslmode=require` | ✅(preview 브랜치) | ✅(기본 브랜치) | 비밀값 |
+| `NEON_DATABASE_URL` | **pooled** 연결 문자열(호스트에 `-pooler`), `sslmode=verify-full` 권장 (구형 `require`는 실행 시 동일한 엄격 검증으로 정규화) | ✅(preview 브랜치) | ✅(기본 브랜치) | 비밀값 |
 | `SEOSA_NEON_POOL_MAX` | (선택) 기본 5 | | | 함수 인스턴스당 연결 수 |
 | `SEOSA_R2_HISTORY_ENABLED` | `1` | ✅ | (선택) | 가격 그래프 과거분을 R2에서 |
 | `R2_ACCOUNT_ID` · `R2_BUCKET`=`seosa-price-history` · `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` | **읽기 전용** 토큰 권장 | ✅ | (선택) | 업로드용 읽기·쓰기 토큰을 Vercel에 넣지 않습니다 |
