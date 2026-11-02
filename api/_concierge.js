@@ -64,7 +64,7 @@ function priceOf(it) {
 const STANCE = {
   BUY:      '지금 사도 좋은 값이에요.',
   GOOD_BUY: '지금 값은 싼 편이에요.',
-  NORMAL:   '가격은 평범해요. 필요하시면 지금 사도 손해는 아니에요.',
+  NORMAL:   '현재 확인된 기록에서는 평범한 가격이에요. 지금 구매가 유리하다고 단정할 근거는 아니에요.',
   WATCH:    '지금 정하기보다 며칠 지켜보시는 편을 권해요.',
   /*
    * ★ 이 두 줄이 SEOSA 가 판매를 밀지 않는다는 약속의 실체다.
@@ -74,6 +74,21 @@ const STANCE = {
   DONT_BUY: '지금 사는 건 권하지 않아요. 기록 대비 확연히 비쌉니다.',
   UNKNOWN:  ''
 };
+
+/**
+ * A low-confidence recommendation must never also give a confident
+ * BUY/GOOD_BUY/NORMAL purchase-timing assurance. The evidence may have a
+ * price verdict, but the overall selection may be weak because of seller,
+ * exact model, specifications, freshness, or limited comparable offers.
+ * Treat those as two different claims, not as contradictory sales advice.
+ */
+function cautiousPurchaseStance(deal, confidence) {
+  const verdict = String(deal && deal.verdict || 'UNKNOWN');
+  if (confidence === 'low' && /^(?:BUY|GOOD_BUY|NORMAL)$/.test(verdict)) {
+    return '가격 기록에는 긍정적이거나 평범한 신호가 있지만, 전체 추천 근거의 확신도가 낮아 지금 구매가 유리하다고 단정할 수 없어요.';
+  }
+  return STANCE[verdict] || '';
+}
 
 /**
  * 확신도에 따라 문장의 세기를 정한다.
@@ -120,7 +135,7 @@ function conclusion(top, deal, decision, options = {}) {
     L.push(`지금 조건에서는 ${hedge.clause}`);
   }
 
-  const stance = STANCE[(deal && deal.verdict) || 'UNKNOWN'];
+  const stance = cautiousPurchaseStance(deal, conf);
   if (stance && !options.suppressTiming) L.push(stance);
   if (hedge.note && level !== 'weak') L.push(hedge.note);
 
@@ -687,9 +702,11 @@ function timingLead(ctx) {
   if (!deal || !deal.verdict || deal.verdict === 'UNKNOWN') {
     return `${head}가격 기록이 아직 충분하지 않아서 지금이 특별히 좋은 때인지는 판단하기 어려워요.`;
   }
-  const stance = deal.verdict === 'NORMAL'
-    ? '지금 가격은 평범한 수준이에요. 꼭 서두를 이유도, 기다리면 반드시 싸진다고 볼 근거도 없어요.'
-    : STANCE[deal.verdict];
+  const stance = c.confidence === 'low'
+    ? cautiousPurchaseStance(deal, 'low')
+    : deal.verdict === 'NORMAL'
+      ? '지금 가격은 평범한 수준이에요. 꼭 서두를 이유도, 기다리면 반드시 싸진다고 볼 근거도 없어요.'
+      : cautiousPurchaseStance(deal, c.confidence);
   if (!stance) return '';
   const fact = Array.isArray(deal.reasons) && deal.reasons[0] ? politeFact(deal.reasons[0]) : '';
   const stale = deal.freshness && deal.freshness.level === 'stale' && deal.freshness.label

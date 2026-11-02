@@ -118,6 +118,34 @@ function wonsIn(t) { return (t.match(/[0-9][0-9,]*(?=\s*원)/g) || []).map(s => 
       /자신 있게 권하기는 어려워요/.test(w) && !/이 상품을 권해요/.test(w), w.split('\n')[1]);
   }
 
+  /* Production 2026-11-02: "low confidence" accompanied by "지금 사도 손해는 아니에요". */
+  {
+    const lowNormal = CG.compose({ items: items(), cards: [1], deal: deal('NORMAL'),
+      decision: decision({ confidence: { confidence: 'low' } }) }).text;
+    check('★ 확신도 낮음 + NORMAL 에서 손해 없다는 단정 금지',
+      /확신도가 낮아/.test(lowNormal) && !/손해는 아니|지금 사도 손해/.test(lowNormal));
+    const lowBuy = CG.compose({ items: items(), cards: [1], deal: deal('BUY'),
+      decision: decision({ confidence: { confidence: 'low' } }) }).text;
+    check('★ 확신도 낮음 + BUY 에서 강한 구매 권유 금지',
+      /단정할 수 없어요/.test(lowBuy) && !/지금 사도 좋은 값/.test(lowBuy));
+    const highBuy = CG.compose({ items: items(), cards: [1], deal: deal('BUY'),
+      decision: decision({ confidence: { confidence: 'high' } }) }).text;
+    check('확신도 높음 + BUY 는 기존의 검증된 가격 판정을 유지',
+      /지금 사도 좋은 값/.test(highBuy));
+    const normal = CG.compose({ items: items(), cards: [1], deal: deal('NORMAL'),
+      decision: decision({ confidence: { confidence: 'high' } }) }).text;
+    check('NORMAL 은 구매해도 손해 없다는 보증이 아님',
+      /평범한 가격/.test(normal) && !/손해는 아니/.test(normal));
+    const leadLow = CG.timingLead({ top: items()[0], deal: deal('BUY'), confidence: 'low' });
+    check('실제 GPT 설명에 붙는 구매시점 머리말도 낮은 확신도를 반영',
+      /확신도가 낮아/.test(leadLow) && !/지금 사도 좋은 값/.test(leadLow));
+    const leadHigh = CG.timingLead({ top: items()[0], deal: deal('BUY'), confidence: 'high' });
+    check('근거 있는 구매시점 머리말은 가격 판단 유지', /지금 사도 좋은 값/.test(leadHigh));
+    const unknown = CG.timingLead({ top: items()[0], deal: deal('UNKNOWN'), confidence: 'low' });
+    check('가격 기록 없으면 구매시점 판정하지 않음',
+      /판단하기 어려워요/.test(unknown) && !/지금 사도 좋은 값/.test(unknown));
+  }
+
   /* ── 4. 팔려고 밀지 않는다 ──────────────────────────────────── */
   console.log('\n[4] "안 사도 됩니다" (지시 6항)');
   for (const [v, want] of [['WAIT', /서두르지 않는/], ['DONT_BUY', /권하지 않아요/]]) {
