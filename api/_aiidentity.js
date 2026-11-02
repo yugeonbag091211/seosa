@@ -1048,6 +1048,27 @@ function productTypeGap(c, item, title) {
     && /(?:반팔|긴팔|티셔츠|t-?shirt|라운드넥|맨투맨|후드티|후드집업|의류|스웨트셔츠|원피스|청바지|레깅스)/i.test(t)) {
     return '헤드셋이 아닌 의류·패션 상품';
   }
+  // A request for ONE replacement unit cannot be fulfilled by the price
+  // of a full pair. Verify the side AND the single-unit sale format:
+  // a product that offers "왼쪽/오른쪽 옵션 선택" is unverified until its
+  // purchase option/price is known. This gate is independent of the
+  // full-pair-vs-single protection below.
+  const unitRequest = String(c.userText || c.positive || c.query || '').normalize('NFKC');
+  const wantsSingleUnit = /(?:왼\s*쪽|오른\s*쪽|좌\s*측|우\s*측|\bleft\b|\bright\b|한\s*쪽|낱개|유닛\s*만|single\s*(?:earbud|unit))/i.test(unitRequest);
+  if (/(?:버즈\s*\d|galaxy\s*buds?|에어팟|airpods?|이어폰|이어버드|earphones?|earbuds?)/i.test(want)
+      && wantsSingleUnit) {
+    const left = /(?:왼\s*쪽|좌\s*측|\bleft\b)/i;
+    const right = /(?:오른\s*쪽|우\s*측|\bright\b)/i;
+    const requestedLeft = left.test(unitRequest), requestedRight = right.test(unitRequest);
+    const titleLeft = left.test(t), titleRight = right.test(t);
+    const provesSingle = /(?:낱개|한\s*쪽|(?:왼|오른)\s*쪽|좌\s*측|우\s*측|\bleft\b|\bright\b|(?:이어폰|이어버드|에어팟|버즈)[^,\n]{0,22}유닛\s*(?:단품|만|1개|1\s*개)|single\s*(?:earbud|unit))/i.test(t);
+    // No side or single sale proof = full set or unspecified option.
+    // Multiple sides in one title = unverified side-dependent variant.
+    if (!provesSingle || (titleLeft && titleRight)
+        || (requestedLeft !== requestedRight && (titleLeft !== requestedLeft || titleRight !== requestedRight))) {
+      return '요청한 한쪽 이어폰 유닛의 방향·단품 판매 여부가 확인되지 않음';
+    }
+  }
   // A single left/right earbud unit is NOT the price of a complete pair.
   // 2026-11-02 live: AirPods Pro 2 generic request showed a 125,000원
   // left-only replacement unit alongside complete 400,000원+ earbuds.
