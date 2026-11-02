@@ -7,6 +7,13 @@ const samples=[
  ['에어팟 프로 2 얼마야?','에어팟 프로2세대 새상품 유닛 왼쪽 오른쪽 낱개 본체',false],
  ['에어팟 프로 2 얼마야?','Apple 에어팟 프로 2세대 USB-C 타입 무선 이어폰',true],
  ['에어팟 프로 2 왼쪽 유닛만 찾아줘','(새제품) 에어팟 프로 2세대 C타입 왼쪽 이어폰 유닛 프로2 한쪽 단품',true],
+ ['에어팟 프로 2 왼쪽 유닛만 찾아줘','Apple 에어팟 프로 2세대 USB-C 타입 무선 이어폰 본품',false],
+ ['에어팟 프로 2 왼쪽 유닛만 찾아줘','에어팟 프로 2세대 라이트닝 오른쪽 낱개 중고',false],
+ ['에어팟 프로 2 왼쪽 유닛만 찾아줘','에어팟 프로 2 왼쪽 오른쪽 옵션 선택 유닛',false],
+ ['에어팟 프로 2 오른쪽 유닛만 찾아줘','에어팟 프로 2세대 라이트닝 왼쪽 낱개',false],
+ ['에어팟 프로 2 오른쪽 유닛만 찾아줘','에어팟 프로 2세대 라이트닝 오른쪽 낱개',true],
+ ['에어팟 프로 2 한쪽 낱개만 구매','에어팟 프로 2 왼쪽 이어폰 낱개',true],
+ ['에어팟 프로 2 한쪽 낱개만 구매','Apple 에어팟 프로 2세대 USB-C 타입 무선 이어폰 본품',false],
  ['갤럭시 버즈3 얼마야?','삼성 갤럭시 버즈3 오른쪽 이어폰 한쪽 단품',false],
  ['갤럭시 버즈3 얼마야?','삼성 갤럭시 버즈3 블루투스 양쪽 무선 이어폰',true]
 ];
@@ -17,7 +24,8 @@ for(const [q,title,ok]of samples){
 }
 for(const [pid,title,price]of [
  ['FULL','Apple 에어팟 프로 2세대 USB-C 무선 이어폰 본품',429000],
- ['LEFT','(새제품) 에어팟 프로 2세대 C타입 왼쪽 이어폰 유닛 프로2 한쪽 단품',125000]])H.addProduct({
+ ['LEFT','(새제품) 에어팟 프로 2세대 C타입 왼쪽 이어폰 유닛 프로2 한쪽 단품',125000],
+ ['RIGHT','(새제품) 에어팟 프로 2세대 C타입 오른쪽 이어폰 유닛 프로2 한쪽 단품',120000]])H.addProduct({
  pid:'SINGLE-'+pid,vid:'SINGLE-'+pid,mall:'ADPICK',title,price,
  keys:['에어팟 프로 2'],history:[[0,price]]});
 (async()=>{
@@ -27,8 +35,19 @@ for(const [pid,title,price]of [
  const cards=r.body.items||[];
  assert.ok(cards.some(c=>c.productId==='SINGLE-FULL'),JSON.stringify(cards));
  assert.ok(cards.every(c=>c.productId!=='SINGLE-LEFT'),JSON.stringify(cards));
+ assert.ok(cards.every(c=>c.productId!=='SINGLE-RIGHT'),JSON.stringify(cards));
+ const left=await H.ask({question:'에어팟 프로 2 왼쪽 유닛만 찾아줘'},
+   {classify:'C|에어팟 프로 2 왼쪽 유닛',answer:'확인된 왼쪽 유닛만 추천합니다.'});
+ assert.equal(left.status,200);
+ assert.ok((left.body.items||[]).some(c=>c.productId==='SINGLE-LEFT'),JSON.stringify(left.body));
+ assert.ok((left.body.items||[]).every(c=>c.productId==='SINGLE-LEFT'),'full pair or right unit contaminates left request');
+ const right=await H.ask({question:'에어팟 프로 2 오른쪽 유닛만 찾아줘'},
+   {classify:'C|에어팟 프로 2 오른쪽 유닛',answer:'확인된 오른쪽 유닛만 추천합니다.'});
+ assert.equal(right.status,200);
+ assert.ok((right.body.items||[]).some(c=>c.productId==='SINGLE-RIGHT'),JSON.stringify(right.body));
+ assert.ok((right.body.items||[]).every(c=>c.productId==='SINGLE-RIGHT'),'full pair or left unit contaminates right request');
  assert.equal(H.counters.external,0);
  assert.equal(H.counters.dbWrites,0);
  console.log('AI_SINGLE_EARBUD_GUARD '+JSON.stringify({
-  assertions:10,passed:10,failed:0,realGptCalls:0,merchantCalls:0,dbWrites:0}));
+  assertions:24,passed:24,failed:0,realGptCalls:0,merchantCalls:0,dbWrites:0}));
 })().catch(e=>{console.error('AI_SINGLE_EARBUD_GUARD_FATAL',e.stack||e);process.exitCode=1});
