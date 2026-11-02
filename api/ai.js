@@ -7191,6 +7191,14 @@ module.exports = async function handler(req, res) {
         replyCards=matched.length===1?matched:[];
       } else if (cards.length===1) replyCards=cards;
     }
+    // Final response-card consistency: model text must not claim it excluded
+    // secondhand items when a returned card plainly advertises "중고".
+    // Run AFTER one-card followup selection, against the exact cards sent.
+    const cardClaimCheck = require('./_ai-card-claims').filterClaims(text, replyCards);
+    if (cardClaimCheck.changed) {
+      text = cardClaimCheck.text;
+      console.warn('[ai] 카드 상태와 모순된 제외 주장 제거');
+    }
     const payload = replyCards.length ? { text, items: replyCards } : { text };
     // Enforce a visible qualification regardless of the LLM's wording.
     if (searchPartial && searchState === 'found' && replyCards.length) {
