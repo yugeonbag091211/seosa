@@ -122,4 +122,23 @@ const safeAligned=C.pickAlignedPair([
 ],['아이패드','갤럭시탭'],AIID,normalize);
 assert.equal(safeAligned?.[1].productId,'REGULAR','broad comparison should prefer regular sale');
 
+
+/*
+ * Previously, listExact truncated the first 40 provider rows before applying
+ * the hardware and saleable-price gates. Accessory-heavy search pages then
+ * reported no tablet even when an exact device was present after those rows.
+ */
+const accessoryCrowd=Array.from({length:48},(_,i)=>mk('갤럭시탭 S10 FE 보호 필름 '+(i+1)+'매',9900+i,'CASE-'+i));
+const lateDevice=mk('삼성전자 갤럭시탭 S10 FE Wi-Fi 128GB SM-X520',589000,'REAL-LATE');
+assert.equal(C.pickExact([...accessoryCrowd,lateDevice],'갤럭시탭 S10 FE',AIID,normalize)?.productId,
+  'REAL-LATE','accessories must not consume the exact-device candidate window');
+
+const optionless=Array.from({length:45},(_,i)=>({...mk('삼성전자 갤럭시탭 S10 FE Wi-Fi 128GB SM-X520',578000+i,'NO-OPTION-'+i),mall:'쿠팡',isCoupang:true}));
+assert.equal(C.pickExact([...optionless,lateDevice],'갤럭시탭 S10 FE',AIID,normalize)?.productId,
+  'REAL-LATE','Coupang pages without vendorItemId must not consume the candidate window');
+assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 매월 3만원 렌탈'),false,'monthly man-won rate is not purchase price');
+assert.equal(C.isCashPriceListing('아이패드 A16 1개월 4만원 구독 상품'),false,'subscription rate is not cash purchase price');
+assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 선납금 19,000원'),false,'up-front payment is not full purchase price');
+assert.equal(C.isCashPriceListing('Apple 아이패드 A16 Wi-Fi 128GB 무이자 할부 가능'),true,'financing option alone must not hide saleable item');
+
 console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+26,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
