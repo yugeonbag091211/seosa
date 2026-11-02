@@ -43,6 +43,28 @@ const questions=[
    }));
   }
  }
+ // The real /api/ai handler must disclose a partial supplier response even
+ // when both selected device cards remain correct and fully identified.
+ const shop=require('../api/_shop');
+ const originalSearch=shop.searchAll;
+ try{
+  shop.searchAll=async (...args)=>{
+   const result=await originalSearch(...args);
+   return {...result,from:'api',freshAnswered:true,providerSources:{coupang:'api',adpick:'none'}};
+  };
+  const partial=await H.ask({question:'아이패드 vs 갤럭시탭 가격 비교해줘'},
+    {classify:'B',answer:'확인한 범위에서 두 기기를 비교했어요.'});
+  const ok=partial.status===200&&partial.body.comparison?.complete===true
+    &&partial.body.comparison?.partialResults===true
+    &&/일부 판매처의 응답을 받지 못했어요/.test(partial.body.text)
+    &&(partial.body.items||[]).length===2;
+  if(ok)passed++;else{
+   failed++;
+   console.log('AI_TABLET_PARTIAL_FAIL '+JSON.stringify({
+    comparison:partial.body.comparison,excerpt:String(partial.body.text||'').slice(0,260)
+   }));
+  }
+ }finally{shop.searchAll=originalSearch;}
  console.log('AI_TABLET_COMPARISON_AUDIT '+JSON.stringify({
   questions:questions.length,passed,failed,
   gptApiCalls:0,externalApiCalls:H.counters.external,dbWrites:H.counters.dbWrites
