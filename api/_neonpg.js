@@ -210,13 +210,25 @@ function assertEnabled() {
   }
 }
 
+// pg 8 currently treats sslmode=require/prefer/verify-ca as verify-full,
+// but warns that pg 9 will weaken those aliases. Freeze the present
+// hostname+certificate verification semantics without changing stored env
+// secrets, and avoid treating every cold start as a runtime error.
+function normalizeNeonSslMode(connectionString) {
+  const s = String(connectionString || '');
+  // Explicit libpq compatibility is an intentional opt-in; do not override it.
+  if (/(?:[?&])uselibpqcompat=true(?:&|$)/i.test(s)) return s;
+  return s.replace(/([?&]sslmode=)(?:prefer|require|verify-ca)(?=&|$)/gi, '$1verify-full');
+}
+
 function getPool() {
   if (pool) return pool;
   assertEnabled();
-  const connectionString = process.env.NEON_DATABASE_URL;
-  if (!connectionString || !/^postgres(ql)?:\/\//.test(connectionString)) {
+  const rawConnectionString = process.env.NEON_DATABASE_URL;
+  if (!rawConnectionString || !/^postgres(ql)?:\/\//.test(rawConnectionString)) {
     throw new AdapterError('NEON_DATABASE_URL 환경변수 누락 또는 형식 오류', 'CONFIG');
   }
+  const connectionString = normalizeNeonSslMode(rawConnectionString);
   const max = Number(process.env.SEOSA_NEON_POOL_MAX);
   pool = new pg.Pool({
     connectionString,
@@ -952,7 +964,7 @@ module.exports = {
     }
   }),
   _internal: {
-    isoTimestamp, toNumberish, likePattern, splitTopLevel, parseList, TEXT_PARSERS, MAX_ROWS, postgrestTypes, estimateWireBytes,
+    isoTimestamp, toNumberish, likePattern, splitTopLevel, parseList, TEXT_PARSERS, MAX_ROWS, postgrestTypes, estimateWireBytes, normalizeNeonSslMode,
     setTrace(fn) { traceSink = typeof fn === 'function' ? fn : null; }
   }
 };

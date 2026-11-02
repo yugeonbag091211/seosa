@@ -12,6 +12,18 @@
 
 const assert = require('node:assert/strict');
 const { createClient, _internal } = require('../../api/_neonpg');
+// Pin pg 8's current strict TLS semantics before pg 9 changes sslmode aliases.
+for (const mode of ['require', 'prefer', 'verify-ca']) {
+  const url='postgresql://user:pass@db.example.test/db?sslmode='+mode+'&application_name=seosa';
+  assert.equal(_internal.normalizeNeonSslMode(url),
+    'postgresql://user:pass@db.example.test/db?sslmode=verify-full&application_name=seosa');
+}
+const verified='postgresql://user:pass@db.example.test/db?sslmode=verify-full';
+assert.equal(_internal.normalizeNeonSslMode(verified),verified);
+assert.equal(_internal.normalizeNeonSslMode(verified.replace('verify-full','disable')),verified.replace('verify-full','disable'));
+const compat='postgresql://user:pass@db.example.test/db?uselibpqcompat=true&sslmode=require';
+assert.equal(_internal.normalizeNeonSslMode(compat),compat);
+assert.equal(_internal.normalizeNeonSslMode('postgresql://user:p%40ss@db.example.test/db?sslmode=require').includes('p%40ss@'),true);
 
 const seen = [];
 let respond = () => ({ rows: [], rowCount: 0 });
