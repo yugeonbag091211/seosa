@@ -15,6 +15,11 @@ const samples=[
  ['에어팟 프로 2 한쪽 낱개만 구매','에어팟 프로 2 왼쪽 이어폰 낱개',true],
  ['에어팟 프로 2 한쪽 낱개만 구매','Apple 에어팟 프로 2세대 USB-C 타입 무선 이어폰 본품',false],
  ['갤럭시 버즈3 얼마야?','삼성 갤럭시 버즈3 오른쪽 이어폰 한쪽 단품',false],
+ ['갤럭시 버즈3 오른쪽 유닛만 추천해줘','[해외직구] Galaxy Buds3 Pro 버즈3 프로 오른쪽 한쪽 낱개 유닛 SM-R630',false],
+ ['갤럭시 버즈3 오른쪽 유닛만 추천해줘','삼성 갤럭시 버즈3 오른쪽 유닛 SM-R530 낱개 단품',true],
+ ['갤럭시 버즈3 프로 오른쪽 유닛만 추천해줘','[해외직구] Galaxy Buds3 Pro 버즈3 프로 오른쪽 한쪽 낱개 유닛 SM-R630',true],
+ ['Galaxy Buds3 오른쪽 유닛만','Samsung Galaxy Buds3 Pro right-only single earbud unit',false],
+ ['갤럭시 버즈3 시리즈 오른쪽 유닛','Galaxy Buds3 Pro 오른쪽 한쪽 낱개 유닛 SM-R630',true],
  ['갤럭시 버즈3 얼마야?','삼성 갤럭시 버즈3 블루투스 양쪽 무선 이어폰',true]
 ];
 for(const [q,title,ok]of samples){
@@ -49,5 +54,5 @@ for(const [pid,title,price]of [
  assert.equal(H.counters.external,0);
  assert.equal(H.counters.dbWrites,0);
  console.log('AI_SINGLE_EARBUD_GUARD '+JSON.stringify({
-  assertions:24,passed:24,failed:0,realGptCalls:0,merchantCalls:0,dbWrites:0}));
+  assertions:29,passed:29,failed:0,realGptCalls:0,merchantCalls:0,dbWrites:0}));
 })().catch(e=>{console.error('AI_SINGLE_EARBUD_GUARD_FATAL',e.stack||e);process.exitCode=1});
