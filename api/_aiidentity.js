@@ -999,6 +999,14 @@ function productTypeGap(c, item, title) {
     }
     if (TABLET_PART_RE.test(t) && (compatible || !/본체/i.test(t))) return '태블릿 본체가 아닌 호환 부품';
   }
+  // Production 2026-11-02: a fashion T-shirt titled "남자 헤드셋 ...
+  // 라운드넥 반팔 티셔츠" ranked above real headphones, simply because it
+  // contained the search term. Clothing descriptions prove the sold item is
+  // apparel, not a headset, even when the title also mentions "헤드셋".
+  if (/(?:헤드셋|헤드폰|headsets?|headphones?)/i.test(want)
+    && /(?:반팔|긴팔|티셔츠|t-?shirt|라운드넥|맨투맨|후드티|후드집업|의류|스웨트셔츠|원피스|청바지|레깅스)/i.test(t)) {
+    return '헤드셋이 아닌 의류·패션 상품';
+  }
   // "완전 무선 스테레오 이어버드 ... 헤드셋" 같은 검색어 끼워넣기를 막는다.
   if (/(?:헤드셋|헤드폰|headset|headphones?)/i.test(want) && !/(?:이어폰|이어버드|earbuds?|earphones?|tws)/i.test(want)
     && HEADSET_EARBUD_RE.test(t)) {
