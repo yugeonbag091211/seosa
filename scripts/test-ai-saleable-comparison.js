@@ -141,4 +141,15 @@ assert.equal(C.isCashPriceListing('아이패드 A16 1개월 4만원 구독 상�
 assert.equal(C.isCashPriceListing('갤럭시탭 S10 FE 선납금 19,000원'),false,'up-front payment is not full purchase price');
 assert.equal(C.isCashPriceListing('Apple 아이패드 A16 Wi-Fi 128GB 무이자 할부 가능'),true,'financing option alone must not hide saleable item');
 
+// Verify an exact S10 FE still appears after 46 fully saleable but wrong-model tablets.
+const competingModels=Array.from({length:46},(_,i)=>
+  mk('삼성전자 갤럭시탭 A9 플러스 태블릿PC Wi-Fi 64GB',100000+i,'OTHER-MODEL-'+i));
+assert.equal(C.pickExact([...competingModels,lateDevice],'갤럭시탭 S10 FE',AIID,normalize)?.productId,
+  'REAL-LATE','model identity must be checked before the final candidate cap');
+const partialText=C.formatComparison(['아이패드','갤럭시탭'],[
+ {title:good[2],price:621300,mall:'쿠팡'},
+ {title:good[0],price:429000,mall:'ADPICK'}],'search',{partialResults:true});
+assert.match(partialText,/일부 판매처의 응답을 받지 못했어요/);
+assert.match(partialText,/전체 판매처의 최저가나 최종 결제금액이라고 볼 수 없어요/);
+
 console.log('AI_TABLET_SALEABLE_COMPARISON '+JSON.stringify({pass:bad.length+good.length+26,fail:0,realGptCalls:0,realMerchantCalls:0,dbWrites:0}));
