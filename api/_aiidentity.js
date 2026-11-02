@@ -762,6 +762,34 @@ function matchesExcluded(sub, info) {
   return sub.words.length > 0;
 }
 
+/*
+ * "S10 FE" and "S10 FE+" are NOT equivalent device sizes. This applies to
+ * the base tablet and even more critically to size-dependent cases and
+ * keyboards. 2026-11-02 production regression: "S10 FE 케이스만" returned
+ * an S10 FE+ keyboard case as an EXACT recommendation.
+ *
+ * Look for the *device* marker, not a generic "+" in marketing copy, and
+ * compare the explicit FE/FE+ signature independent of whitespace or Unicode
+ * fullwidth plus. A multi-model listing is ambiguous until option-verified,
+ * so it cannot serve as a confirmed purchase card.
+ */
+function galaxyFeModels(text) {
+  const s=String(text||'').normalize('NFKC');
+  const re=/\bs(\d{1,2})\s*fe(\s*(?:\+|plus|플러스))?(?![a-z0-9])/gi;
+  const seen=new Set();let m;
+  while((m=re.exec(s))!==null)seen.add('s'+m[1]+'-fe'+(m[2]?'+':''));
+  return [...seen];
+}
+function mismatchedGalaxyFeVariant(c,title) {
+  const q=String(c&&((c.positive||c.query))||'');
+  if(!/갤럭시\s*탭|galaxy\s*tab/i.test(q))return false;
+  const wanted=galaxyFeModels(q),listed=galaxyFeModels(title);
+  if(wanted.length!==1||!listed.length)return false;
+  const base=wanted[0].replace(/\+$/,'');
+  const sameModel=listed.filter(x=>x.replace(/\+$/,'')===base);
+  return sameModel.length>0 && (sameModel.length!==1||sameModel[0]!==wanted[0]);
+}
+
 /**
  * 후보 하나의 등급.
  * @returns {{tier:number, reasons:Array<{kind:string, label:string}>, extraVariant:Set|null}}
@@ -774,6 +802,9 @@ function verdict(contract, item) {
   let tier = TIER.EXACT;
   const bump = (t, kind, label) => { reasons.push({ kind, label }); if (t > tier) tier = t; };
   if (!c || c.empty) return { tier, reasons, extraVariant: null };
+  if (mismatchedGalaxyFeVariant(c, title)) {
+    bump(TIER.MISMATCH, 'model-compatibility', '갤럭시탭 FE와 FE+는 서로 다른 모델·크기입니다');
+  }
 
   /* 종류: 본품을 찾는데 부속이면 다른 상품이다. 부속을 찾으면 그 부속이어야 한다. */
   const titleAcc = S.accessoryTerms(info.normalized, info.tokens);
