@@ -213,7 +213,7 @@ function listExact(raw, query, AIID, normalize, accept) {
       // in a comparison. Other providers do not have Coupang option IDs.
       const coupang = n.isCoupang === true || require('./_aicontext').isCoupangMall(n.mallId || n.mall);
       return !!n.productId && (!coupang || !!n.vendorItemId);
-    }).slice(0, 40);
+    });
   if (!candidates.length) return [];
   const contract = AIID.buildContract({
     query, userText: query, titles: candidates.map(x => x.title)
@@ -230,7 +230,9 @@ function listExact(raw, query, AIID, normalize, accept) {
   const ordinaryTablet=isTabletRequest(query)&&!specificallyAskedForNonstandard(query);
   exact.sort((a,b) => (ordinaryTablet ? titleConditionRisk(a.title)-titleConditionRisk(b.title) : 0)
     || a.price-b.price);
-  return exact;
+  // Apply exact-model verification before the candidate limit. Ranking still
+  // bounds the final selection to 40 without hiding a later exact model.
+  return exact.slice(0, 40);
 }
 function pickExact(raw, query, AIID, normalize, accept) {
   return listExact(raw, query, AIID, normalize, accept)[0] || null;
@@ -312,6 +314,7 @@ function formatComparison(requested, offers, source, opts) {
   const lines = [source === 'catalog'
     ? '앞에서 비교한 두 상품을 다시 확인했어요. 아래는 마지막 수집 시점의 표시 가격이에요.'
     : '두 상품을 각각 검색해 확인했어요. 아래는 검색 결과의 표시 가격이에요.'];
+  if (o.partialResults) lines.push('일부 판매처의 응답을 받지 못했어요. 아래 가격은 확인 가능한 판매글에 한정되며 전체 판매처의 최저가나 최종 결제금액이라고 볼 수 없어요.');
   offers.forEach((p,i) => {
     const name = requested[i];
     if (!p) {
