@@ -24,6 +24,23 @@ const caught = moved('UNVERIFIED', ['FAIL']);
 const passToFail = moved('PASS', ['FAIL']);
 const idList = list => list.map(e => e.id).join(', ') || '없음';
 const BA = JSON.parse(fs.readFileSync(path.join(DIR, 'offline-before-after.json'), 'utf8'));
+/* 수정된 Preview 에서 다시 보낸 대표 오류 (replay-preview.js). 없으면 그 절을 싣지 않는다. */
+const RP_PATH = path.join(DIR, 'preview-replay.jsonl');
+const RP = fs.existsSync(RP_PATH) ? rd('preview-replay.jsonl') : [];
+const RPREP = new Map(RP.filter(r => r.representative).map(r => [r.id, r]));
+const MEDIA_RE = /\[(?:국내도서|외국도서|중고도서|eBook|전자책|학술논문|오디오북)\]|스테디셀러|웅진북센|그림책|핵심요약 pdf/i;
+function rpScan(get) {
+  let leak = 0, media = 0, thin = 0;
+  for (const id of RPREP.keys()) {
+    const r = get(id);
+    if (!r || !r.response) continue;
+    const t = String(r.response.text || ''), c = r.response.items || [];
+    if (/\(ADPICK\)/.test(t)) leak++;
+    if (c.some(i => MEDIA_RE.test(String(i.title)))) media++;
+    if (/기록상\s*최저가?\s*수준/.test(t) && c[0] && (!Array.isArray(c[0].spark) || c[0].spark.length < 2)) thin++;
+  }
+  return { leak, media, thin };
+}
 const pct = n => (n * 100).toFixed(1) + '%';
 const quant = (a, q) => a.slice().sort((x, y) => x - y)[Math.floor(a.length * q)];
 
@@ -86,6 +103,66 @@ const topMd = TOP.map(([id, type, why], i) => {
   const kw = l && (l.kwSeen || []).length ? `\n- **서버 로그 검색어:** ${[...new Set(l.kwSeen)].join(', ')}` : '';
   return `### ${i + 1}. ${type} — ${why} (${id})\n\n- **질문:** ${q.text}${prev}${kw}\n- **실제 답변:**\n\n> ${String(r.response.text).replace(/\n+/g, '\n> ')}\n\n- **카드:**\n${cards}\n- **판정 근거:** ${(f ? f.fails : []).slice(0, 3).map(x => `\`${x.type}\` ${x.evidence}`).join(' / ').replace(/\n/g, ' ')}`;
 }).join('\n\n');
+
+/* 대표 20건의 수정 전·후 (수정 후는 Preview 실호출). 판정은 사람이 읽고 적은 것이다. */
+const RP_VERDICT = {
+  Q00049: ['고침', '종교 서적 → 레노버 태블릿. 태블릿 대화를 유지한다'],
+  Q00045: ['고침', '전동칫솔 → 태블릿, 두 후보를 비교하는 답'],
+  Q00027: ['고침', '책 → 삼성 갤럭시탭A6'],
+  Q00157: ['고침', '원피스 → 무선 이어폰'],
+  Q00158: ['고침', '낚싯대 카드가 사라지고 조건만 요약한다'],
+  Q00165: ['고침', 'LP → 무선 이어폰'],
+  Q00193: ['고침', '이어폰 → 노트북(대화 중인 종류)'],
+  Q00188: ['부분', '«HP 제외를 놓쳤다» 고 밝히지만 카드에는 여전히 HP 1장. 후보가 HP뿐일 때 빈 결과 대신 보여 주는 soft 제외의 결과다'],
+  Q00062: ['고침', 'LG 1위 → 포첸 제습기. LG 카드 0/11'],
+  Q00087: ['고침', '아디다스 1위 → 까발로 운동화. 아디다스 카드 0/12'],
+  Q00018: ['고침', '《제발 넘기지 마!》 → WD 2TB 외장하드 175,000원'],
+  Q00056: ['고침', '안내 팻말 → 오아 음파 전동칫솔 34,020원'],
+  Q00105: ['고침', '그림책 → 다이슨 V12 오리진'],
+  Q00124: ['고침', '하한을 상한으로 읽던 오류가 사라져, 억지 추천 대신 «120만원 이상 없음» 을 밝힌다'],
+  Q00118: ['고침', '4.3만 토이 카메라 → 소니 A6700K 1,665,850원(요청 범위 안)'],
+  Q00007: ['부분', '두 모델을 각각 검색해 카드 2장. 다만 «버즈 FE» 요청에 버즈3 FE 가 왔다 — 모델 정밀도는 그대로다'],
+  Q00077: ['부분', '두 모델이 답변에 모두 나오지만 카드는 그램17 한 장(맥북 쪽 미확인)'],
+  Q00005: ['그대로', '침실용 질문에 384만원 산업용이 그대로 1위. 이 PR 이 고치지 않은 순위 문제다'],
+  Q00030: ['고침', 'PDF 문서의 추천 이유 → 갤럭시탭A6 의 추천 이유. 예산 오기(88만원)도 사라졌다'],
+  Q00109: ['고침', '삼성제약 알부민 → 삼성전자 T7 외장 SSD. 내부명 «(ADPICK)» 도 사라졌다']
+};
+function previewSection() {
+  const before = rpScan(id => RM.get(id));
+  const after = rpScan(id => RPREP.get(id));
+  const dep = (RP[0] && RP[0].deployment) || '';
+  const ms = RP.map(r => r.ms);
+  const n = { 고침: 0, 부분: 0, 그대로: 0 };
+  Object.values(RP_VERDICT).forEach(([v]) => { n[v]++; });
+  const rows = Object.keys(RP_VERDICT).map(id => {
+    const q = Q.get(id), b = RM.get(id), a = RPREP.get(id);
+    const card = r => { const c = (r && r.response && r.response.items) || []; return c[0] ? `${Number(c[0].lprice).toLocaleString('en-US')}원 ${String(c[0].title).slice(0, 34)}` : '카드 없음'; };
+    return `| ${id}${q.session ? ' ' + q.session + '#' + q.turn : ''} | ${q.text.slice(0, 30)} | ${card(b)} | ${card(a)} | **${RP_VERDICT[id][0]}** |`;
+  }).join('\n');
+  return `## 7. 수정된 Preview 에서 대표 오류 재현
+
+PR #227 의 \`0a63396\` Preview 배포(${dep})에 **실제 GPT·실제 판매처로** 다시 보냈다. 세션 오류는 1턴부터 순서대로 보내야 재현되므로 ${RP.length}건을 보냈고(대표 ${RPREP.size}건), 전부 HTTP 200 이었다. 응답 시간 p50 ${quant(ms, 0.5)}ms · p95 ${quant(ms, 0.95)}ms.
+
+| 판정 | 건수 |
+|---|---:|
+| 고침 | ${n['고침']} |
+| 부분 | ${n['부분']} |
+| 그대로 | ${n['그대로']} |
+
+| 지표(대표 20건) | 수정 전 | 수정 후 |
+|---|---:|---:|
+| 내부 공급자명 «(ADPICK)» 노출 | ${before.leak} | ${after.leak} |
+| 책·논문이 상품 카드에 섞임 | ${before.media} | ${after.media} |
+| 관측 부족한데 «기록상 최저가 수준» | ${before.thin} | ${after.thin} |
+
+| ID | 질문 | 수정 전 1위 | 수정 후 1위 | 판정 |
+|---|---|---|---|---|
+${rows}
+
+판매처 결과는 시점에 따라 달라지므로 같은 상품이 다시 나온다는 보장은 없다. 위 표는 «엉뚱한 종류가 아닌 상품이 나왔는가» 를 사람이 읽고 판정한 것이다. 원본은 \`preview-replay.jsonl\` 에 있다.
+
+`;
+}
 
 const md = `# SEOSA Production AI 실검증 — 200문항 중간 보고
 
@@ -200,7 +277,7 @@ ${topMd}
 
 3차 800문항은 시작하지 않았다. 실행할 때는 배포 SHA 를 기록하고 \`718fe7f\` 결과와 합산하지 않는다.
 
-## 7. 한계
+${RP.length ? previewSection() : ''}## 8. 한계
 
 - 규칙 평가기다. 문맥을 사람처럼 읽지 못하며, 사람 검토는 200건 한 번뿐이다. 미검증 ${T.UNVERIFIED}건은 정답 여부를 확정하지 못했다.
 - 코퍼스는 상품·사용 장면·문형 조합으로 생성했다(문형 골격 4,100종, 같은 골격 최대 8회). 일부 끝말(«답변 고마워요», «말이야») 은 실제 소비자보다 어색할 수 있고, 이 때문에 파서 실패가 더 많이 드러났을 수 있다.
