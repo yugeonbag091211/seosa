@@ -9,7 +9,7 @@
 ## Design
 
 1. OpenAI Responses API strict `search_products` function call extracts category, keyword, budget and merchant rules.
-2. Server reads the existing `products` DB table first through the Supabase/Neon adapter (`select` only). When no catalog rows match, it falls back to `searchAll` on Coupang/ADPICK (without calling saveProducts).
+2. Server reads the `products` DB table (`select` only). Exact-title queries are followed by bounded, partial-keyword/title retrieval when word order differs. Relevance favors matching title evidence. When `SEOSA_DB_READONLY=1`, a DB miss returns no items rather than calling remote merchants whose global quota leases require write RPCs. Outside read-only mode, a DB miss may use the existing seller-search adapters.
 3. The server sanitizes listings and checks type, merchant, used/accessory status, exclusions, and budget. Where delivery is unknown, a listing-price-under-budget candidate is **provisional**, never called a verified all-in purchase price.
 4. For comparisons, each named product is checked separately and receives an equal share of candidates. The model can select only IDs provided by the server.
 5. The server builds all factual card claims from product records. It can summarize actual displayed-price differences, but must warn when shipping is unknown or generations/options differ. No model-generated price or model name reaches the UI.

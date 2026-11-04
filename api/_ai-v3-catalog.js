@@ -1,34 +1,79 @@
 'use strict';
 
-// Read-only catalog search. The storefront's existing DB adapter selects Supabase or Neon.
-// No upsert, price-history mutation, or legacy recommendation decision code is used.
+// Read-only DB-first catalog lookup. Preview must never bypass DB-write safety
+// merely to acquire a remote seller-provider rate-limit lease.
+const { extractTitleEvidence } = require('./_ai-v3-identity');
 const safeTerm = value => String(value || '').normalize('NFKC')
-  .replace(/[^0-9a-zA-Z가-힣\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
-
+  .replace(/[^0-9a-zA-Z가-힣\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,70);
+const flat = x => String(x || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+function primaryAnchor(term) {
+  const words = safeTerm(term).split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  return words[0].replace(/\d+$/,'').trim() || words[0];
+}
+function evidenceScore(row, query) {
+  const requested=extractTitleEvidence(query);
+  const evidence=extractTitleEvidence(row.title || '');
+  const fields=['family','series','variant','generation','storageGb','ramGb','chip','screenInches','network'];
+  let score=0;
+  for(const field of fields) {
+    if (requested[field] == null) continue;
+    if(evidence[field] == null) continue;
+    score += String(requested[field])===String(evidence[field]) ? 10 : -12;
+  }
+  for(const part of safeTerm(query).split(/\s+/)) {
+    if(part.length>=2 && flat(row.title).includes(flat(part))) score += 2;
+  }
+  const updated=Date.parse(row.collected_at||'');
+  if(Number.isFinite(updated)) score += Math.min(2,Math.max(0,updated/1e13));
+  return score;
+}
 async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
-  const term = safeTerm(query);
-  if (!term) return [];
-  const source = db || require('./_supabase');
-  const select = async (column, comparator) => {
-    const builder = source.from('products').select('*');
-    const response = await (comparator === 'eq'
-      ? builder.eq(column, term).limit(40)
-      : builder.ilike(column, '%' + term + '%').limit(40));
-    if (response.error) throw new Error('Catalog read failed');
+  const term=safeTerm(query);
+  if(!term) return [];
+  const source=db || require('./_supabase');
+  const lookup=async(column,method,fragment)=>{
+    const builder=source.from('products').select('*');
+    const condition=method==='eq'
+      ? builder.eq(column,fragment) : builder.ilike(column,'%'+fragment+'%');
+    const response=await condition.limit(40);
+    if(response.error) throw new Error('Catalog read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
-  // Keep DB-first retrieval bounded. A product title query takes priority,
-  // followed by indexed collection keyword when titles don't contain the query.
-  let rows = await select('title', 'ilike');
-  if (!rows.length) rows = await select('keyword', 'eq');
-  if (rows.length) return rows.map(row => {
-    const mapper = mapRow || require('./_shop').toClientProduct;
-    const out = mapper(row);
-    return { ...out, category: row.keyword || '', _source: 'db', shippingFee: null };
-  });
-  if (typeof liveSearch !== 'function') return [];
-  const result = await liveSearch(term);
-  if (!result || result.failed) throw new Error('Product search provider unavailable');
+  const rows=[], seen=new Set();
+  const add=group=>{
+    for(const row of group) {
+      if(!row || !row.product_id || !row.title) continue;
+      const key=String(row.mall||'')+':'+String(row.product_id)+':'+String(row.vendor_item_id||'');
+      if(seen.has(key))continue;
+      seen.add(key);rows.push(row);
+    }
+  };
+  add(await lookup('title','ilike',term));
+  if(!rows.length) {
+    add(await lookup('keyword','eq',term));
+  }
+  if(!rows.length) {
+    const anchor=primaryAnchor(term);
+    if(anchor.length>=2) {
+      // A multi-word exact LIKE rarely matches seller-title word order.
+      // Search the keyword index and the title with a bounded anchor.
+      add(await lookup('keyword','ilike',anchor));
+      add(await lookup('title','ilike',anchor));
+    }
+  }
+  if(rows.length) {
+    const mapper=mapRow || require('./_shop').toClientProduct;
+    return rows.sort((a,b)=>evidenceScore(b,term)-evidenceScore(a,term))
+      .slice(0,80).map(row=>({
+        ...mapper(row), category: row.keyword||'', _source:'db', shippingFee:null
+      }));
+  }
+  // The Preview safety flag forbids remote quota-acquire RPCs. Never disable
+  // it just to get a product result; return an honest empty shortlist instead.
+  if(process.env.SEOSA_DB_READONLY === '1' || typeof liveSearch !== 'function') return [];
+  const result=await liveSearch(term);
+  if(!result || result.failed) throw new Error('Product search provider unavailable');
   return Array.isArray(result.items) ? result.items : [];
 }
-module.exports = { searchCatalog, safeTerm };
+module.exports={searchCatalog,safeTerm,primaryAnchor,evidenceScore};
