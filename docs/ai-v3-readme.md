@@ -40,3 +40,14 @@ For a current model selection, confirm compatibility and price on the official O
 ## Release gates
 
 Offline unit tests → mock end-to-end → protected Preview GPT + provider real requests → independent holdout set (not just historical FAILs) → old-v3 online A/B against the same questions → user-approved rollout only. Preserve all original 5,000-question baseline records.
+
+## Product identity and evidence gate (v3 iteration)
+
+- A separate pure module `api/_ai-v3-identity.js` now extracts **explicitly user-specified** model family, number/series, variant, generation, storage, RAM, screen size, chip and network type.
+- Only attributes present in the customer's utterance or the bounded conversation state become mandatory. The LLM-generated query itself does **not** create a new model requirement.
+- Candidates with conflicting or absent evidence are excluded, with separate `identity_mismatch` and `identity_unverified` counts. No product ID can be introduced by the LLM.
+- Seller-title evidence is exposed as `titleEvidence`, with `specEvidenceSource=seller_listing_title_only`; this is **not a verified manufacturer specification database**.
+- Comparison text can cite fields common to both seller titles, and expressly declines ungrounded performance claims.
+- `scripts/test-ai-v3-identity.js` tests independent examples including user model changes and unknown/mismatched attributes.
+
+**Important limitations:** Filter precision is intentionally prioritized over recall. Short or incomplete seller titles can yield no recommendation even when the merchandise is actually compatible. No authoritative technical-spec verification or availability confirmation exists yet; customer-facing language must not claim otherwise. Before release, strengthen manufacturer/GTIN/vendor-item identity and review seller-title parsing across many unseen categories.

@@ -17,7 +17,11 @@ const tests = [
   { id: 'budget', message: '80만원 이하 사무용 노트북 추천해줘. 게이밍 제외' },
   { id: 'compare', message: '아이패드와 갤럭시탭 비교해줘' },
   { id: 'ipad', message: '아이패드 추천해줘' },
-  { id: 'followup', message: '그중에서 70만원 이하로 골라줘', stateFrom: 'budget' }
+  { id: 'followup', message: '그중에서 70만원 이하로 골라줘', stateFrom: 'budget' },
+  { id: 'ipad_exact', message: '아이패드 에어 M4 256GB 추천해줘' },
+  { id: 'galaxy_fe', message: '갤럭시탭 S9 FE 128GB 추천해줘' },
+  { id: 'iphone16', message: '아이폰 16 128GB 추천해줘' },
+  { id: 'ipad_change', message: '아이패드 128GB 말고 256GB 추천해줘' }
 ];
 const seen = {};
 let allOk = true;
@@ -50,7 +54,8 @@ try {
       listingPrice: c.price,
       shippingKnown: c.shippingFee !== null,
       budgetStatus: c.budgetStatus,
-      used: c.condition === 'used_or_refurbished'
+      used: c.condition === 'used_or_refurbished',
+      titleEvidence: c.titleEvidence || {}, specEvidenceSource: c.specEvidenceSource || null
     }));
     const s = reply.stats || {};
     const flags = {
