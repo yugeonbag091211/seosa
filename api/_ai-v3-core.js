@@ -257,7 +257,10 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   const groups = [], reasonCounts = {};
   let fetched = 0, inspected = 0, accepted = 0, provisional = 0, rejected = 0;
   for (const query of queries) {
-    const raw = await searchProducts(query);
+    // Carry the user's verified model/option constraints into catalog retrieval.
+    // GPT may shorten a search keyword, but it cannot erase user-specified capacity.
+    const groupIdentity = plan.mode === 'compare' ? requestedIdentity(query) : plan.identity;
+    const raw = await searchProducts(query, { identity: groupIdentity });
     if (!Array.isArray(raw)) throw new Error('Invalid search result');
     fetched += raw.length;
     // A comparison's two sides cannot borrow each other's similar-category products.
@@ -266,7 +269,6 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     const excludedBySubject = raw.length - matched.length;
     if (excludedBySubject) reasonCounts.wrong_comparison_subject =
       (reasonCounts.wrong_comparison_subject || 0) + excludedBySubject;
-    const groupIdentity = plan.mode === 'compare' ? requestedIdentity(query) : plan.identity;
     const evaluated = validateCandidates(
       { ...plan, identity: groupIdentity, exactModel: plan.mode === 'compare' ? '' : plan.exactModel }, matched);
     inspected += evaluated.checked;

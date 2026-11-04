@@ -140,7 +140,9 @@ const mapper=r=>({productId:r.product_id,title:r.title,lprice:r.lprice,mall:r.ma
      };
      return builder;
    }})};
-   const result=await searchCatalog('갤럭시탭 S9 FE 128GB',{db:source,mapRow:mapper});
+   const { requestedIdentity }=require('../api/_ai-v3-identity');
+   const result=await searchCatalog('갤럭시탭 S9 FE',{
+     identity:requestedIdentity('갤럭시탭 S9 FE 128GB'),db:source,mapRow:mapper});
    assert.equal(result[0]?.productId,'base');
    assert(requests.some(fs=>fs.some(([c,p])=>c==='title'&&p==='%s9fe%')));
  });

@@ -11,8 +11,8 @@ function primaryAnchor(term) {
   if (!words.length) return '';
   return words[0].replace(/\d+$/,'').trim() || words[0];
 }
-function evidenceScore(row, query) {
-  const requested=extractTitleEvidence(query);
+function evidenceScore(row, query, identity) {
+  const requested=identity && identity.family ? identity : extractTitleEvidence(query);
   const evidence=extractTitleEvidence(row.title || '');
   const fields=['family','series','variant','generation','storageGb','ramGb','chip','screenInches','network'];
   let score=0;
@@ -52,7 +52,7 @@ function preciseIdentityProbes(target) {
   }
   return [];
 }
-async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
+async function searchCatalog(query, { db, liveSearch, mapRow, identity } = {}) {
   const term=safeTerm(query);
   if(!term) return [];
   const source=db || require('./_supabase');
@@ -93,7 +93,8 @@ async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
       add(await lookup('title','ilike',anchor));
     }
   }
-  const target=extractTitleEvidence(term);
+  // Exact intent comes from user conversation, never from a shortened GPT keyword.
+  const target=identity && identity.family ? identity : extractTitleEvidence(term);
   // A used listing or an accessory is not a suitable reason to stop searching
   // for a new device that matches the requested exact variant.
   const hasVerifiedNew=()=>rows.some(r=>!NON_DEVICE.test(r.title) && checkListingIdentity(r.title,target).ok);
@@ -120,7 +121,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
   }
   if(rows.length) {
     const mapper=mapRow || require('./_shop').toClientProduct;
-    return rows.sort((a,b)=>evidenceScore(b,term)-evidenceScore(a,term))
+    return rows.sort((a,b)=>evidenceScore(b,term,target)-evidenceScore(a,term,target))
       .slice(0,80).map(row=>({
         ...mapper(row), category: row.keyword||'', _source:'db', shippingFee:null
       }));

@@ -279,6 +279,21 @@ function row(id,title,price=490000,other={}){
     assert.equal(checkListingIdentity(
       '삼성전자 갤럭시탭S9FE 11인치 Wi-Fi 128GB SM-X510',requested).ok,true);
   });
+  await test('search receives exact user capacity even when model plan omits it',async()=>{
+    let observed;
+    const result=await createEngine({
+      planModel:async()=>({mode:'recommend',query:'갤럭시탭 S9 FE',category:'태블릿',maxPrice:null}),
+      searchProducts:async(query,hints)=>{
+        observed={query,hints};
+        return [row('fe','삼성전자 갤럭시탭S9FE 11인치 Wi-Fi 128GB SM-X510')];
+      },
+      decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+    },{message:'갤럭시탭 S9 FE 128GB 추천해줘'});
+    assert.equal(observed.query,'갤럭시탭 S9 FE');
+    assert.equal(observed.hints.identity.storageGb,128);
+    assert.equal(observed.hints.identity.variant,'fe');
+    assert.equal(result.cards.length,1);
+  });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected:',e);process.exitCode=1});
