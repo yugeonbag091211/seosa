@@ -307,6 +307,34 @@ function makeRes(){
       {lastQuery:'아이패드',category:'태블릿',allowUsed:true},'중고 제외하고 추천해줘');
     assert.equal(next.allowUsed,false);
   });
+  await test('four model picks cannot make compare explain two same-side cards',async()=>{
+    const ipad=(id,price)=>({productId:id,title:'아이패드 태블릿 '+id,lprice:price,
+      mall:'쿠팡',link:'https://example.com/'+id,shippingFee:0,_source:'api'});
+    const galaxy=(id,price)=>({productId:id,title:'갤럭시탭 태블릿 '+id,lprice:price,
+      mall:'쿠팡',link:'https://example.com/'+id,shippingFee:0,_source:'api'});
+    const out=await core.createEngine({
+      planModel:async()=>({mode:'compare',query:'아이패드',compareQuery:'갤럭시탭',category:'태블릿'}),
+      searchProducts:async q=>q==='아이패드'?[ipad('i1',400000),ipad('i2',401000)]:
+        [galaxy('g1',350000),galaxy('g2',351000)],
+      decideModel:async()=>({productIds:['쿠팡:i1','쿠팡:i2','쿠팡:g1','쿠팡:g2']})
+    },{message:'아이패드와 갤럭시탭 비교'});
+    assert.equal(out.cards.length,2);
+    assert.deepEqual(out.cards.map(c=>c.productId),['쿠팡:i1','쿠팡:g1']);
+    assert.match(out.answer,/50,000원/);
+    assert(out.answer.includes(out.cards[0].title) && out.answer.includes(out.cards[1].title));
+    assert(!out.answer.includes('i2'));
+  });
+  await test('comparison price uses delivery totals only if both verified',()=>{
+    const a=core.normalize({...items[0],shippingFee:60000});
+    const b=core.normalize({...items[3],shippingFee:0});
+    const got=core.resultFromSelection({mode:'compare'},[a,b],
+      {productIds:[a.id,b.id]});
+    assert.equal(got.cards.length,2);
+    assert.equal(got.cards[0].totalPrice,780000);
+    assert.equal(got.cards[1].totalPrice,760000);
+    assert.match(got.answer,/20,000원/);
+    assert.match(got.answer,/배송비 포함 합계/);
+  });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed) process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure:',e);process.exitCode=1});

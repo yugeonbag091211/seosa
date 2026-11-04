@@ -148,16 +148,21 @@ function hasUnverifiedShipping(cards) {
 }
 function comparisonAnswer(cards) {
   const [a, b] = cards;
-  const diff = Math.abs(a.price - b.price);
-  const cheaper = a.price === b.price ? null : a.price < b.price ? a : b;
+  // Only compare prices actually provided by the listing; never invent delivery totals.
+  const hasTotals = [a, b].every(c => Number.isSafeInteger(c.totalPrice));
+  const aAmount = hasTotals ? a.totalPrice : a.price;
+  const bAmount = hasTotals ? b.totalPrice : b.price;
+  const diff = Math.abs(aAmount - bAmount);
+  const cheaper = aAmount === bAmount ? null : aAmount < bAmount ? a : b;
   const summary = [a, b].map(c => c.title + ' ' + c.priceText).join(' / ');
+  const basis = hasTotals ? '확인된 배송비를 포함한 기록상 금액' : '상품 표시 가격';
   const priceDifference = cheaper
-    ? '상품 표시 가격은 ' + cheaper.title + ' 쪽이 ' + money(diff) + ' 낮습니다.'
-    : '두 상품의 표시 가격은 같습니다.';
-  const shipping = cards.some(c => c.shippingFee === null)
-    ? '배송비가 확인되지 않은 상품이 있어 최종 결제 금액 비교는 불가능합니다.'
-    : '표시된 합계는 확인된 배송비를 포함합니다.';
-  return '확인된 상품 기준 비교: ' + summary + '. ' + priceDifference + ' ' + shipping
+    ? basis + ' 기준 ' + cheaper.title + ' 쪽이 ' + money(diff) + ' 낮습니다.'
+    : basis + '은 두 상품이 같습니다.';
+  const shipping = hasTotals
+    ? '확인된 배송비 포함 합계는 각각 ' + money(aAmount) + ', ' + money(bAmount) + '입니다.'
+    : '배송비가 확인되지 않은 상품이 있어 최종 결제 금액 비교는 불가능합니다.';
+  return '선택된 실제 판매 상품 기준 비교: ' + summary + '. ' + priceDifference + ' ' + shipping
     + ' 세대·용량·구성이 다를 수 있으니 같은 조건인지 상품 상세에서 확인해 주세요.';
 }
 function resultFromSelection(plan, candidates, choice) {
@@ -240,12 +245,16 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   if (compare) {
     const first = new Set((groups[0] || []).map(x => x.id));
     const second = new Set((groups[1] || []).map(x => x.id));
-    const bothSides = selection.cards.some(x => first.has(x.productId))
-      && selection.cards.some(x => second.has(x.productId))
-      && selection.cards.length >= 2;
-    if (!complete || !bothSides) {
+    const firstCard = selection.cards.find(x => first.has(x.productId));
+    const secondCard = selection.cards.find(x => second.has(x.productId) && x.productId !== firstCard?.productId);
+    if (!complete || !firstCard || !secondCard) {
       selection.answer = '두 비교 대상을 모두 확인하지 못했어요. 정확한 이름이나 모델을 다시 알려주세요.';
       selection.cards = [];
+    } else {
+      // Present exactly one verified listing per comparison side; the text and cards
+      // must refer to the same two product IDs, even when the model selected 4.
+      selection.cards = [firstCard, secondCard];
+      selection.answer = comparisonAnswer(selection.cards);
     }
   }
   return {
