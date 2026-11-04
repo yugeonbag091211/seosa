@@ -266,6 +266,19 @@ function row(id,title,price=490000,other={}){
     const r=requestedIdentity('아이폰 15 프로 아니고 아이폰 16 프로 추천해줘');
     assert.equal(r.family,'iphone');assert.equal(r.series,'16');assert.equal(r.variant,'pro');
   });
+  await test('Galaxy Tab S9 FE+ is not the base S9 FE',()=>{
+    const requested=requestedIdentity('갤럭시탭 S9 FE 128GB');
+    for(const listing of [
+      '삼성 갤럭시탭 S9 FE 플러스 128GB',
+      '삼성 갤럭시탭S9FE+ 128GB',
+      'Galaxy Tab S9 FE Plus 128GB'
+    ]) {
+      assert.equal(extractTitleEvidence(listing).variant,'fe-plus');
+      assert.equal(checkListingIdentity(listing,requested).ok,false);
+    }
+    assert.equal(checkListingIdentity(
+      '삼성전자 갤럭시탭S9FE 11인치 Wi-Fi 128GB SM-X510',requested).ok,true);
+  });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected:',e);process.exitCode=1});

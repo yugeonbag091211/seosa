@@ -79,6 +79,7 @@ const mapper=r=>({productId:r.product_id,title:r.title,lprice:r.lprice,mall:r.ma
  await test('sanitized query strips unsafe wildcard syntax before ILIKE',()=>{
   assert.equal(safeTerm('%아이패드_에어! 256GB'), '아이패드 에어 256GB');
   assert.equal(primaryAnchor('아이폰16 128GB'),'아이폰');
+  assert.equal(safeTerm('갤럭시탭 S9 FE+ 128GB'),'갤럭시탭 S9 FE+ 128GB');
  });
  await test('title evidence scoring favors matching requested capacity not a claimed benefit',()=>{
   assert(evidenceScore(row('1','iPad Air M4 256GB'),'아이패드 에어 M4 256GB')
@@ -119,6 +120,29 @@ const mapper=r=>({productId:r.product_id,title:r.title,lprice:r.lprice,mall:r.ma
       liveSearch:async()=>{called=true;return {items:[]}}});
     assert.equal(out.length,0);assert.equal(called,false);
   }finally{if(saved===undefined)delete process.env.SEOSA_DB_READONLY;else process.env.SEOSA_DB_READONLY=saved}
+ });
+ await test('targeted compact S9FE search rescues base model behind FE Plus listings',async()=>{
+   const wrong=Array.from({length:40},(_,i)=>row('plus'+i,'삼성 갤럭시탭 S9 FE 플러스 128GB','갤럭시탭 S9 FE'));
+   const good=row('base','삼성전자 갤럭시탭S9FE 11인치 Wi-Fi 128GB SM-X510','갤럭시탭 S9 FE');
+   const requests=[];
+   const source={from:()=>({select:()=>{
+     const filters=[];
+     const builder={
+       eq(c,v){filters.push([c,v,false]);return builder;},
+       ilike(c,v){filters.push([c,v,true]);return builder;},
+       async limit(n) {
+         requests.push(filters.slice());
+         const matched=[...wrong,good].filter(r=>filters.every(([column,pattern,isLike])=>
+           isLike ? String(r[column]).toLowerCase().includes(pattern.slice(1,-1).toLowerCase())
+                  : String(r[column])===pattern));
+         return {data:matched.slice(0,n),error:null};
+       }
+     };
+     return builder;
+   }})};
+   const result=await searchCatalog('갤럭시탭 S9 FE 128GB',{db:source,mapRow:mapper});
+   assert.equal(result[0]?.productId,'base');
+   assert(requests.some(fs=>fs.some(([c,p])=>c==='title'&&p==='%s9fe%')));
  });
  console.log(JSON.stringify({passed,failed,total:passed+failed}));
  if(failed)process.exitCode=1;

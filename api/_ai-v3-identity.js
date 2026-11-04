@@ -101,6 +101,9 @@ function namedVariant(text, family) {
   const segment = text.slice(m.index + m[0].length, m.index + m[0].length + 26)
     .split(/[|,()[\]\\/]/)[0];
   const afterSeries = segment.replace(/^\s*(?:s?\d{1,3})(?!\d)\s*/i, '').trim();
+  // Galaxy Tab FE+ (FE Plus) is a distinct model from the base FE.
+  // Detect it before the generic FE suffix, including compact S9FE+ titles.
+  if (family === 'galaxytab' && /^fe\s*(?:\+|플러스|plus)(?![a-z가-힣])/i.test(afterSeries)) return 'fe-plus';
   if (family === 'iphone' && /^e(?![a-z가-힣])/.test(afterSeries)) return 'e';
   if (family === 'iphone' && /^se(?![a-z가-힣])/.test(afterSeries)) return 'se';
   for (const [variant, pattern] of VARIANT_MAP) {

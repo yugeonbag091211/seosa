@@ -4,7 +4,7 @@
 // merely to acquire a remote seller-provider rate-limit lease.
 const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
 const safeTerm = value => String(value || '').normalize('NFKC')
-  .replace(/[^0-9a-zA-Z가-힣\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,70);
+  .replace(/[^0-9a-zA-Z가-힣+\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,70);
 const flat = x => String(x || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 function primaryAnchor(term) {
   const words = safeTerm(term).split(/\s+/).filter(Boolean);
@@ -27,6 +27,30 @@ function evidenceScore(row, query) {
   const updated=Date.parse(row.collected_at||'');
   if(Number.isFinite(updated)) score += Math.min(2,Math.max(0,updated/1e13));
   return score;
+}
+// Targeted, read-only probes bypass the first 40 broad/irrelevant results.
+// Only evidence explicitly present in the request is used as a DB filter.
+const NON_DEVICE = /중고|리퍼|리퍼비시|전시품|케이스|보호필름|커버|파우치|충전기|거치대|\b(?:used|refurbished)\b/i;
+function preciseIdentityProbes(target) {
+  if (!target.family || !target.storageGb || !target.series) return [];
+  const capacity=String(target.storageGb);
+  if (target.family==='galaxytab' && target.variant) {
+    const model='s'+target.series;
+    const suffix=target.variant==='fe-plus' ? 'fe+' : target.variant;
+    return [
+      [['title',model+suffix],['title',capacity]],
+      [['title',model+' '+suffix],['title',capacity]],
+      [['keyword',model+' '+suffix],['title',capacity]]
+    ];
+  }
+  if (target.family==='iphone') {
+    return [
+      [['title','아이폰'+target.series],['title',capacity]],
+      [['title','iphone '+target.series],['title',capacity]],
+      [['title','iphone'+target.series],['title',capacity]]
+    ];
+  }
+  return [];
 }
 async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
   const term=safeTerm(query);
@@ -70,8 +94,11 @@ async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
     }
   }
   const target=extractTitleEvidence(term);
+  // A used listing or an accessory is not a suitable reason to stop searching
+  // for a new device that matches the requested exact variant.
+  const hasVerifiedNew=()=>rows.some(r=>!NON_DEVICE.test(r.title) && checkListingIdentity(r.title,target).ok);
   const detail=target.storageGb || target.chip || target.series || target.generation;
-  if(target.family && detail && !rows.some(r=>checkListingIdentity(r.title,target).ok)) {
+  if(target.family && detail && !hasVerifiedNew()) {
     const anchor=primaryAnchor(term);
     const primary=target.storageGb ? String(target.storageGb) : String(detail);
     // A conjunctive DB filter searches known identity details BEFORE the
@@ -82,6 +109,14 @@ async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
     const secondary=target.chip || target.series || '';
     if(secondary && secondary!==primary)
       add(await lookupConjunction([['title',primary],['title',String(secondary)]]));
+  }
+  // Prefer exact model/variant + capacity fragments over broad category hits.
+  // At most three extra read-only queries, stopping on a verified new listing.
+  if(target.family && target.storageGb && !hasVerifiedNew()) {
+    for(const filters of preciseIdentityProbes(target)) {
+      add(await lookupConjunction(filters));
+      if(hasVerifiedNew()) break;
+    }
   }
   if(rows.length) {
     const mapper=mapRow || require('./_shop').toClientProduct;
