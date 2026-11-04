@@ -32,6 +32,7 @@ const INSTRUCTIONS = [
 ].join('\n');
 function makeOpenAiAdapter({ apiKey = process.env.OPENAI_API_KEY, model = process.env.AI_V3_MODEL, fetchImpl = fetch } = {}) {
   if (!apiKey || !model) throw new Error('AI v3 requires OPENAI_API_KEY and AI_V3_MODEL');
+  const usage = { model, calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   const post = async payload => {
     const res = await fetchImpl('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -42,10 +43,16 @@ function makeOpenAiAdapter({ apiKey = process.env.OPENAI_API_KEY, model = proces
     if (!res.ok) throw new Error('Model request failed (HTTP ' + res.status + ')');
     const body = await res.json();
     if (body.status && body.status !== 'completed') throw new Error('Incomplete model response');
+    const count = v => Number.isSafeInteger(Number(v)) && Number(v) >= 0 ? Number(v) : 0;
+    usage.calls++;
+    usage.inputTokens += count(body.usage && body.usage.input_tokens);
+    usage.outputTokens += count(body.usage && body.usage.output_tokens);
+    usage.totalTokens += count(body.usage && body.usage.total_tokens);
     return body;
   };
   let context;
   return {
+    getUsage: () => ({ ...usage }),
     async planModel({ message, history, state }) {
       const input = [
         ...history.map(x => ({ role: x.role, content: x.content })),

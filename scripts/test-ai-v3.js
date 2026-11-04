@@ -109,7 +109,7 @@ function makeRes(){
       const content=calls.length===1?
         {status:'completed',output:[{type:'function_call',name:'search_products',call_id:'call_1',arguments:JSON.stringify({mode:'recommend',query:'노트북',compareQuery:'',category:'노트북',maxPrice:800000,exclusions:[],mallOnly:'',exactModel:''})}]}:
         {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({productIds:['쿠팡:lap1']})}]}]};
-      return {ok:true,json:async()=>content};
+      return {ok:true,json:async()=>({...content,usage:{input_tokens:100+calls.length,output_tokens:20,total_tokens:120+calls.length}})};
     }});
     const out=await core.createEngine({...adapter,searchProducts:async()=>[items[0]]},{message:'80만원 이하 노트북 추천'});
     assert.equal(out.cards.length,1);
@@ -118,6 +118,9 @@ function makeRes(){
     assert.equal(calls[0].tools[0].strict,true);
     assert.equal(calls[1].input.at(-1).type,'function_call_output');
     assert.equal(calls[1].text.format.type,'json_schema');
+    assert.equal(out.stats.modelUsage.calls,2);
+    assert.equal(out.stats.modelUsage.inputTokens,203);
+    assert.equal(out.stats.modelUsage.outputTokens,40);
   });
   await test('accessory cannot masquerade as a laptop',()=>{
     const plan=core.sanitizePlan({query:'노트북',category:'노트북',maxPrice:800000}, {}, '노트북');
@@ -198,6 +201,111 @@ function makeRes(){
     const result=await searchCatalog('노트북',{db:database,
       liveSearch:async()=>({items:[items[0]],failed:false})});
     assert.equal(result.length,1);assert.equal(result[0].productId,'lap1');
+  });
+  await test('price under budget but missing delivery becomes provisional, not confirmed',()=>{
+    const plan=core.sanitizePlan({query:'노트북',category:'노트북',maxPrice:800000}, {}, '노트북');
+    const p={...items[0],shippingFee:undefined};
+    const found=core.validateCandidates(plan,[p]);
+    assert.equal(found.accepted.length,0);
+    assert.equal(found.provisional.length,1);
+    assert.equal(found.provisional[0].budgetTier,'listing_only_shipping_unverified');
+    assert.equal(found.provisional[0].shipping,null);
+  });
+  await test('explicit free shipping evidence verifies total budget',()=>{
+    const plan=core.sanitizePlan({query:'노트북',category:'노트북',maxPrice:800000}, {}, '노트북');
+    const p={...items[0],shippingFee:null,isFreeShipping:true};
+    const found=core.validateCandidates(plan,[p]);
+    assert.equal(found.accepted.length,1);
+    assert.equal(found.accepted[0].budgetTier,'total_verified');
+  });
+  await test('price above budget is never offered even provisionally',()=>{
+    const plan=core.sanitizePlan({query:'노트북',category:'노트북',maxPrice:800000}, {}, '노트북');
+    const found=core.validateCandidates(plan,[{...items[2],shippingFee:null}]);
+    assert.equal(found.provisional.length,0);
+    assert.equal(found.reasons.over_budget,1);
+  });
+  await test('second-hand listing is rejected unless user asks for used',()=>{
+    const row={...items[4],title:'중고 아이패드 태블릿'};
+    const def=core.sanitizePlan({query:'아이패드',category:'태블릿'}, {}, '아이패드 추천');
+    assert.equal(core.validateCandidates(def,[row]).reasons.used_not_requested,1);
+    const used=core.sanitizePlan({query:'아이패드',category:'태블릿'}, {}, '중고 아이패드 추천');
+    assert.equal(core.validateCandidates(used,[row]).accepted.length,1);
+  });
+  await test('no invented zero shipping or fake total in card',()=>{
+    const card=core.resultFromSelection(
+      {mode:'recommend'},
+      core.validateCandidates({category:'노트북',maxPrice:800000},[{...items[0],shippingFee:null}]).provisional,
+      {productIds:['쿠팡:lap1']});
+    assert.equal(card.cards.length,1);
+    assert.equal(card.cards[0].shippingFee,null);
+    assert.equal(card.cards[0].totalPrice,null);
+    assert.equal(card.cards[0].budgetStatus,'listing_only_shipping_unverified');
+    assert.match(card.answer,/배송비/);
+    assert.match(card.answer,/보장할 수 없/);
+  });
+  await test('full offline v3 recommends provisional with transparent warning',async()=>{
+    const out=await core.createEngine({
+      planModel:async()=>({mode:'recommend',query:'노트북',category:'노트북',maxPrice:800000}),
+      searchProducts:async()=>[{...items[0],shippingFee:undefined}],
+      decideModel:async()=>({productIds:['쿠팡:lap1']})
+    },{message:'80만원 이하 노트북 추천'});
+    assert.equal(out.cards.length,1);
+    assert.equal(out.stats.accepted,0);
+    assert.equal(out.stats.provisional,1);
+    assert.match(out.answer,/배송비/);
+  });
+  await test('comparison explanation uses only selected actual prices and titles',()=>{
+    const a=core.normalize(items[4]);
+    const b=core.normalize({productId:'tab2',title:'삼성 갤럭시탭 태블릿',lprice:420000,
+      mall:'쿠팡',link:'https://example.com/tab2',_source:'cache'});
+    const out=core.resultFromSelection({mode:'compare'},[a,b],
+      {productIds:[a.id,b.id,'쿠팡:nonexistent']});
+    assert.equal(out.cards.length,2);
+    assert.match(out.answer,/60,000원/);
+    assert.match(out.answer,/갤럭시탭/);
+    assert(out.answer.includes(a.title));
+    assert.match(out.answer,/배송비/);
+    assert(!out.answer.includes('nonexistent'));
+  });
+  await test('comparison balances both 40-product pools and checks all searched items',async()=>{
+    const make=(prefix,label,count)=>Array.from({length:count},(_,i)=>({
+      productId:prefix+i,title:label+' 태블릿 '+i,lprice:300000+i*100,
+      mall:'쿠팡',link:'https://example.com/'+prefix+i,shippingFee:0,_source:'api'
+    }));
+    const left=make('ipad','아이패드',40), right=make('galaxy','갤럭시탭',40);
+    let seen;
+    const out=await core.createEngine({
+      planModel:async()=>({mode:'compare',query:'아이패드',compareQuery:'갤럭시탭',category:'태블릿'}),
+      searchProducts:async q=>q==='아이패드'?left:right,
+      decideModel:async ({candidates})=>{
+        seen=candidates.map(x=>x.id);
+        return {productIds:['쿠팡:ipad0','쿠팡:galaxy0']};
+      }
+    },{message:'아이패드 vs 갤럭시탭'});
+    assert.equal(out.stats.inspected,80);
+    assert.equal(out.cards.length,2);
+    assert(seen.includes('쿠팡:ipad0') && seen.includes('쿠팡:galaxy0'));
+    assert.equal(seen.filter(x=>x.startsWith('쿠팡:ipad')).length,8);
+    assert.equal(seen.filter(x=>x.startsWith('쿠팡:galaxy')).length,8);
+  });
+  await test('comparison with an unsupported second target does not show one-sided cards',async()=>{
+    const out=await core.createEngine({
+      planModel:async()=>({mode:'compare',query:'아이패드',compareQuery:'갤럭시탭',category:'태블릿'}),
+      searchProducts:async q=>q==='아이패드'?[items[4]]:[items[4]],
+      decideModel:async()=>{throw new Error('should not decide')}
+    },{message:'아이패드와 갤럭시탭'});
+    assert.equal(out.cards.length,0);
+  });
+  await test('follow-up comparison keeps both original product queries',async()=>{
+    const next=core.sanitizePlan({mode:'compare',query:'',compareQuery:'',category:'태블릿'},
+      {lastQuery:'아이패드',compareQuery:'갤럭시탭',category:'태블릿'},'위 둘 중 뭐가 좋아?');
+    assert.equal(next.query,'아이패드');
+    assert.equal(next.compareQuery,'갤럭시탭');
+  });
+  await test('user may revoke previously permitted second-hand items',()=>{
+    const next=core.sanitizePlan({mode:'recommend',query:'',category:'태블릿'},
+      {lastQuery:'아이패드',category:'태블릿',allowUsed:true},'중고 제외하고 추천해줘');
+    assert.equal(next.allowUsed,false);
   });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed) process.exitCode=1;
