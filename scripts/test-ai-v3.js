@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const core = require('../api/_ai-v3-core');
 const { PLAN_SCHEMA, DECIDE_SCHEMA, makeOpenAiAdapter } = require('../api/_ai-v3-openai');
-const { _handler } = require('../api/ai-v3');
+const { _handler } = require('../api/_ai-v3-route');
 const items = [
   { productId: 'lap1', title: 'LG 그램 노트북 15인치', lprice: 720000, shippingFee: 0, mall: '쿠팡', link: 'https://example.com/lap1', _source: 'api' },
   { productId: 'lap2', title: 'LG 그램 노트북 충전기', lprice: 25000, shippingFee: 0, mall: '쿠팡', link: 'https://example.com/lap2', _source: 'api' },

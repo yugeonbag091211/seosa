@@ -1,7 +1,7 @@
 # 서사 AI v3 — independent proof-of-concept
 
 - Branch: `feat/ai-v3-clean-20261104` (based on Production baseline 718fe7f).
-- Endpoint: `POST /api/ai-v3`. Not connected to the storefront UI or the existing `/api/ai`.
+- Endpoint: `POST /api/ai?v=3`, dispatched to `api/_ai-v3-route.js` in Preview only. Normal `/api/ai` is unchanged. This reuses the existing function slot to respect the Vercel Hobby 12-function limit.
 - Default: **OFF**, even on Vercel. Explicitly set `ENABLE_AI_V3=1` in a protected Preview environment only.
 - No changes to collectors, databases, affiliate-link builders, 5,000-question runner or existing AI.
 - Network tests were NOT executed; use `node scripts/test-ai-v3.js` for isolated mock tests.

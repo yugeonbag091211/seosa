@@ -4563,6 +4563,10 @@ function disclosesNoExactMatch(text) {
 }
 
 module.exports = async function handler(req, res) {
+  // Independent AI v3 Preview-only route. Does not alter the legacy AI path.
+  if (req && req.query && req.query.v === '3') {
+    return require('./_ai-v3-route')._handler(req, res);
+  }
   // 호출 1회당 실제 비용이 나가는 엔드포인트다. 공개 CORS(*)를 붙이면
   // 남의 사이트가 우리 키로 무료 AI API를 쓸 수 있다. 허용 오리진만.
   if (!applyCors(req, res, 'private')) return;
