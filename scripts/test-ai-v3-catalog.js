@@ -84,6 +84,42 @@ const mapper=r=>({productId:r.product_id,title:r.title,lprice:r.lprice,mall:r.ma
   assert(evidenceScore(row('1','iPad Air M4 256GB'),'아이패드 에어 M4 256GB')
     > evidenceScore(row('2','iPad Air M4 128GB'),'아이패드 에어 M4 256GB'));
  });
+ await test('conjunctive catalog lookup rescues exact variant after 40 accessories',async()=>{
+  const requests=[];
+  const wrong=Array.from({length:40},(_,i)=>row('case'+i,'아이패드 에어 케이스 128GB'));
+  const good=row('exact','아이패드 에어 M4 256GB 태블릿');
+  const source={from:()=>({select:()=>{
+    const filters=[];const builder={
+      ilike(column,pattern){filters.push(['ilike',column,pattern]);return builder;},
+      eq(column,value){filters.push(['eq',column,value]);return builder;},
+      async limit(){requests.push(filters.slice());
+        if(filters.some(f=>f[1]==='keyword'&&f[2]==='%아이패드%')
+          &&filters.some(f=>f[1]==='title'&&f[2]==='%256%'))
+          return {data:[good],error:null};
+        if(filters.length===1 && filters[0][1]==='keyword' && filters[0][2]==='%아이패드%')
+          return {data:wrong,error:null};
+        return {data:[],error:null};
+      }
+    };return builder;
+  }})};
+  const out=await searchCatalog('아이패드 에어 M4 256GB',{db:source,mapRow:mapper});
+  assert(out.some(x=>x.productId==='exact'));
+  assert.equal(out[0].productId,'exact');
+  assert(requests.some(fs=>fs.length===2 && fs.some(f=>f[1]==='title'&&f[2]==='%256%')));
+ });
+ await test('conjunctive lookup still forbids seller-provider RPC in read-only Preview',async()=>{
+  const saved=process.env.SEOSA_DB_READONLY;process.env.SEOSA_DB_READONLY='1';
+  try{
+    let called=false;
+    const source={from:()=>({select:()=>{
+      const builder={ilike(){return builder},eq(){return builder},limit:async()=>({data:[],error:null})};
+      return builder;
+    }})};
+    const out=await searchCatalog('아이패드 에어 M4 256GB',{db:source,mapRow:mapper,
+      liveSearch:async()=>{called=true;return {items:[]}}});
+    assert.equal(out.length,0);assert.equal(called,false);
+  }finally{if(saved===undefined)delete process.env.SEOSA_DB_READONLY;else process.env.SEOSA_DB_READONLY=saved}
+ });
  console.log(JSON.stringify({passed,failed,total:passed+failed}));
  if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected',e);process.exitCode=1});

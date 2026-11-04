@@ -2,7 +2,7 @@
 
 // Read-only DB-first catalog lookup. Preview must never bypass DB-write safety
 // merely to acquire a remote seller-provider rate-limit lease.
-const { extractTitleEvidence } = require('./_ai-v3-identity');
+const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
 const safeTerm = value => String(value || '').normalize('NFKC')
   .replace(/[^0-9a-zA-Z가-힣\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,70);
 const flat = x => String(x || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
@@ -40,6 +40,13 @@ async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
     if(response.error) throw new Error('Catalog read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
+  const lookupConjunction=async filters=>{
+    let builder=source.from('products').select('*');
+    for(const [column,fragment] of filters) builder=builder.ilike(column,'%'+fragment+'%');
+    const response=await builder.limit(40);
+    if(response.error) throw new Error('Catalog constrained read failed');
+    return Array.isArray(response.data) ? response.data : [];
+  };
   const rows=[], seen=new Set();
   const add=group=>{
     for(const row of group) {
@@ -61,6 +68,20 @@ async function searchCatalog(query, { db, liveSearch, mapRow } = {}) {
       add(await lookup('keyword','ilike',anchor));
       add(await lookup('title','ilike',anchor));
     }
+  }
+  const target=extractTitleEvidence(term);
+  const detail=target.storageGb || target.chip || target.series || target.generation;
+  if(target.family && detail && !rows.some(r=>checkListingIdentity(r.title,target).ok)) {
+    const anchor=primaryAnchor(term);
+    const primary=target.storageGb ? String(target.storageGb) : String(detail);
+    // A conjunctive DB filter searches known identity details BEFORE the
+    // 40-row cap, instead of letting 40 accessories crowd out exact devices.
+    if(anchor.length>=2) {
+      add(await lookupConjunction([['keyword',anchor],['title',primary]]));
+    }
+    const secondary=target.chip || target.series || '';
+    if(secondary && secondary!==primary)
+      add(await lookupConjunction([['title',primary],['title',String(secondary)]]));
   }
   if(rows.length) {
     const mapper=mapRow || require('./_shop').toClientProduct;
