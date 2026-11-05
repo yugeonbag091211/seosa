@@ -56,6 +56,27 @@ function comparisonFromUtterance(message) {
   if(unique.length<2)return null;
   return {query:unique[0].token,compareQuery:unique[1].token,category:unique[0].type};
 }
+// Persist user-confirmed device features across budget and follow-up turns.
+function mergeFeatures(previous={},utterance='',changedProduct=false) {
+  const value=changedProduct?{}:{wireless:previous.wireless===true,
+    anc:previous.anc===true,externalSsd:previous.externalSsd===true};
+  const s=String(utterance||'');
+  const wireless=[...s.matchAll(/무선|블루투스|wireless|유선|wired/gi)];
+  if(wireless.length)value.wireless=!/유선|wired/i.test(wireless.at(-1)[0]);
+  if(/(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|노캔)/i.test(s)){
+    value.anc=!/(?:ANC|노캔|노이즈\s*캔슬링).{0,7}(?:제외|빼고|없어도|말고)/i.test(s);
+  }
+  if(/(?:외장\s*SSD|포터블\s*SSD|portable\s*SSD)/i.test(s))value.externalSsd=true;
+  else if(/(?:외장\s*HDD|외장하드\s*HDD)/i.test(s))value.externalSsd=false;
+  return value;
+}
+function featureContext(message='',features={}) {
+  const flags=[];
+  if(features.wireless)flags.push('무선');
+  if(features.anc)flags.push('ANC');
+  if(features.externalSsd)flags.push('외장 SSD');
+  return [message,...flags].join(' ');
+}
 function stripTaxonomy(title) {
   return String(title||'').split(/\/(?:디지털기기|pc\/주변기기|생활\/가전)/i)[0];
 }
@@ -88,8 +109,14 @@ function productTypeMatches(title,category,requestedText='') {
   // A requested feature must be evidenced by the actual seller listing.
   // Category words alone are never evidence of ANC functionality.
   if((type==='헤드폰'||type==='이어폰') &&
-    /(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|노캔)/i.test(requestedText) &&
-    !/(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|액티브\s*노이즈)/i.test(t))return false;
+    /(?:무선|블루투스|wireless)/i.test(requestedText) &&
+    !/(?:무선|블루투스|wireless|bluetooth|\bBT\d|TWS|에어팟|airpods|갤럭시\s*버즈)/i.test(t))return false;
+  if((type==='헤드폰'||type==='이어폰') &&
+    /(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|노캔)/i.test(requestedText)){
+    if(/(?:패시브|passive|\bPNC\b)/i.test(t) &&
+      !/(?:\bANC\b|액티브\s*노이즈|active\s*noise)/i.test(t))return false;
+    if(!/(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|액티브\s*노이즈)/i.test(t))return false;
+  }
   if(type==='헤드폰') {
     if(!HEADPHONE.test(t))return false;
     // Ear-clip, bone-conduction, in-ear and TWS products are not over-ear headphones.
@@ -126,4 +153,5 @@ function searchAnchors(category) {
   return entry?entry.anchors.slice():[];
 }
 module.exports={TYPES,allTypes,explicitType,canonicalCategory,comparisonFromUtterance,
-  stripTaxonomy,ambiguousOptions,isPart,productTypeMatches,searchAnchors};
+  stripTaxonomy,ambiguousOptions,isPart,productTypeMatches,searchAnchors,
+  mergeFeatures,featureContext};

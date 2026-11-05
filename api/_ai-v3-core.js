@@ -4,7 +4,8 @@
 const MAX_RESULTS = 16;
 const MAX_CARDS = 4;
 const { extractTitleEvidence, requestedIdentity, mergeRequested, checkListingIdentity } = require('./_ai-v3-identity');
-const { canonicalCategory, comparisonFromUtterance, explicitType, productTypeMatches, isPart } = require('./_ai-v31-taxonomy');
+const { canonicalCategory, comparisonFromUtterance, explicitType, productTypeMatches,
+  isPart, mergeFeatures, featureContext } = require('./_ai-v31-taxonomy');
 const MAX_CANDIDATE_SCAN = 200;
 const clean = (x, n = 120) => String(x == null ? '' : x).normalize('NFKC')
   .replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
@@ -118,6 +119,10 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   const category = canonicalCategory({
     message:utterance, query, planCategory:o.category, priorCategory:prev.category
   });
+  const priorCategory=canonicalCategory({planCategory:prev.category});
+  const spokenCategory=explicitType(utterance);
+  const features=mergeFeatures(prev.features,utterance,
+    !!(spokenCategory&&priorCategory&&spokenCategory!==priorCategory));
   const exclusions = [...new Set([
     ...(Array.isArray(prev.exclusions) ? prev.exclusions : []),
     ...(Array.isArray(o.exclusions) ? o.exclusions : [])
@@ -133,7 +138,7 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   const newOnly = /중고.{0,9}(?:제외|빼|싫|말고|아닌|아니)|(?:새상품|새제품|신품)/i.test(utterance);
   const usedRequested = /중고|리퍼|리퍼비시|전시품|전시상품/i.test(utterance) && !newOnly;
   return {
-    query, compareQuery, category, maxPrice, minPrice, exclusions, mallOnly,
+    query, compareQuery, category, features, maxPrice, minPrice, exclusions, mallOnly,
     exactModel: anchoredModel, allowUsed: newOnly ? false : usedRequested || !!prev.allowUsed,
     mode: o.mode === 'none' ? 'none' : o.mode === 'compare' ? 'compare' : 'recommend'
   };
@@ -267,6 +272,10 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   const prior = {
     lastQuery: clean(saved.lastQuery, 80), compareQuery: clean(saved.compareQuery, 80),
     category: clean(saved.category, 36),
+    features:saved.features&&typeof saved.features==='object'?{
+      wireless:saved.features.wireless===true,anc:saved.features.anc===true,
+      externalSsd:saved.features.externalSsd===true
+    }: {},
     maxPrice: nprice(saved.maxPrice), minPrice: nprice(saved.minPrice),
     exclusions: Array.isArray(saved.exclusions) ? saved.exclusions.map(x => clean(x, 55)).filter(Boolean).slice(0, 8) : [],
     mallOnly: clean(saved.mallOnly, 35), exactModel: clean(saved.exactModel, 80), allowUsed: !!saved.allowUsed,
@@ -281,7 +290,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   // Compare different product kinds even if the model omitted compareQuery.
   const twoKinds=comparisonFromUtterance(message);
   if(twoKinds)Object.assign(plan,{mode:'compare',query:twoKinds.query,
-    compareQuery:twoKinds.compareQuery,category:twoKinds.category});
+    compareQuery:twoKinds.compareQuery,category:twoKinds.category,
+    features:mergeFeatures({},message,true)});
   if(plan.mode==='none' && explicitType(message) &&
     /추천|비교|차이|찾아|골라|보여|구매|살까/i.test(message))plan.mode='recommend';
   const explicitIdentity = requestedIdentity(message);
@@ -307,9 +317,10 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     const groupIdentity = plan.mode === 'compare' ? requestedIdentity(query) : plan.identity;
     const groupCategory = plan.mode === 'compare'
       ? canonicalCategory({message:query,query,planCategory:plan.category}) : plan.category;
+    const subject=featureContext(message,plan.features);
     const raw = await searchProducts(query, { identity: groupIdentity,
       minPrice: plan.minPrice,maxPrice: plan.maxPrice,category:groupCategory,
-      userText:message });
+      userText:subject });
     if (!Array.isArray(raw)) throw new Error('Invalid search result');
     fetched += raw.length;
     // A comparison's two sides cannot borrow each other's similar-category products.
@@ -319,8 +330,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     if (excludedBySubject) reasonCounts.wrong_comparison_subject =
       (reasonCounts.wrong_comparison_subject || 0) + excludedBySubject;
     const evaluated = validateCandidates(
-      { ...plan,category:groupCategory,subject:message,identity:groupIdentity,
-        exactModel:plan.mode==='compare'?'':plan.exactModel },matched);
+      { ...plan,category:groupCategory,subject:featureContext(message,plan.features),
+        identity:groupIdentity,exactModel:plan.mode==='compare'?'':plan.exactModel },matched);
     inspected += evaluated.checked;
     accepted += evaluated.acceptedCount;
     provisional += evaluated.provisionalCount;
@@ -358,7 +369,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     status: 200, ...selection,
     state: {
       lastQuery: plan.query, compareQuery: plan.compareQuery,
-      category: plan.category, maxPrice: plan.maxPrice, minPrice: plan.minPrice,
+      category: plan.category, features:plan.features,
+      maxPrice: plan.maxPrice, minPrice: plan.minPrice,
       exclusions: plan.exclusions, mallOnly: plan.mallOnly,
       exactModel: plan.exactModel, allowUsed: plan.allowUsed,
       identity: plan.mode === 'compare' ? {} : plan.identity

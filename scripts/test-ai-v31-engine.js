@@ -127,6 +127,26 @@ await test('headset accessory and ear-clip listing fail closed before ranking',a
  },{message:'15만원 이하 오디오 헤드셋 추천'});
  assert.deepEqual(out.cards.map(x=>x.title),['소니 WH-CH720N 무선 헤드폰']);
 });
+await test('wireless headset constraint persists in budget follow-up',async()=>{
+ const wired=row('wired','소니 스튜디오 모니터링 헤드폰 MDR-7506 패시브노이즈캔슬링 3.5mm단자',122540);
+ const wireless=row('wireless','소니 WH-CH720N 블루투스 무선 헤드폰',139000);
+ const deps={
+  planModel:async()=>({mode:'recommend',query:'헤드셋',category:'헤드셋',maxPrice:150000,exclusions:['게이밍']}),
+  searchProducts:async()=>[wired,wireless],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ };
+ const first=await createEngine(deps,{message:'15만원 이하 무선 헤드셋 추천해줘. 게이밍 제외'});
+ assert.equal(first.state.features.wireless,true);
+ assert.equal(first.cards.length,1);
+ const next=await createEngine(deps,{message:'그중 12만원 이상으로만 골라줘',state:first.state});
+ assert.equal(next.cards.length,1);
+ assert.equal(next.cards[0].title,wireless.title);
+ assert.equal(next.state.features.wireless,true);
+});
+await test('noise cancelling requirement is backed by title, not passive marketing',()=>{
+ assert.equal(taxonomy.productTypeMatches('소니 MDR-7506 패시브노이즈캔슬링 PNC 헤드폰','헤드폰','ANC'),false);
+ assert.equal(taxonomy.productTypeMatches('소니 WH-CH720N ANC 무선 블루투스 헤드폰','헤드폰','무선 ANC'),true);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});
