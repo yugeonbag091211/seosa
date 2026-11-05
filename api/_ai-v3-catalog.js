@@ -3,6 +3,8 @@
 // Read-only DB-first catalog lookup. Preview must never bypass DB-write safety
 // merely to acquire a remote seller-provider rate-limit lease.
 const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
+const { productTypeMatches } = require('./_ai-v31-taxonomy');
+const { buildProbes } = require('./_ai-v31-retrieval');
 const safeTerm = value => String(value || '').normalize('NFKC')
   .replace(/[^0-9a-zA-Z가-힣+\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,70);
 const flat = x => String(x || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
@@ -52,7 +54,7 @@ function preciseIdentityProbes(target) {
   }
   return [];
 }
-async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category } = {}) {
+async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category, userText } = {}) {
   const term=safeTerm(query);
   if(!term) return [];
   const source=db || require('./_supabase');
@@ -138,11 +140,36 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       if(anchor.length>=2) add(await lookupPriced(anchor));
     }
   }
+  // v3.1: query distinct, bounded category/model facets rather than treating
+  // the first 40 broad keyword matches as complete inventory. Every query is
+  // read-only; never acquire a merchant quota or modify product records.
+  if(category){
+    const probes=buildProbes({query:term,category,userText,identity:target,
+      minPrice:boundedMin,maxPrice:boundedMax});
+    const viable=()=>rows.filter(row=>
+      productTypeMatches(row.title,category,userText||term) &&
+      (!target.family || checkListingIdentity(row.title,target).ok) &&
+      (boundedMin==null || Number(row.lprice)>=boundedMin) &&
+      (boundedMax==null || Number(row.lprice)<=boundedMax)).length;
+    for(const spec of probes){
+      // A small verified candidate pool is sufficient for a four-card answer.
+      if(viable()>=5)break;
+      let builder=source.from('products').select('*');
+      for(const [column,fragment] of spec)builder=builder.ilike(column,'%'+fragment+'%');
+      if(boundedMin!=null)builder=builder.gte('lprice',boundedMin);
+      if(boundedMax!=null)builder=builder.lte('lprice',boundedMax);
+      const found=await builder.limit(40);
+      if(found.error)throw new Error('Catalog facet lookup failed');
+      add(Array.isArray(found.data)?found.data:[]);
+    }
+  }
   if(rows.length) {
     const mapper=mapRow || require('./_shop').toClientProduct;
     const budgetPriority=r=>boundedMin != null &&
       Number(r.lprice)>=boundedMin && (boundedMax==null || Number(r.lprice)<=boundedMax) ? 100 : 0;
-    return rows.sort((a,b)=>(budgetPriority(b)-budgetPriority(a))
+    const eligible=category?rows.filter(row=>productTypeMatches(row.title,category,userText||term)):rows;
+    return eligible.sort((a,b)=>(budgetPriority(b)-budgetPriority(a))
+      || evidenceScore(b,userText||term,target)-evidenceScore(a,userText||term,target)
       || evidenceScore(b,term,target)-evidenceScore(a,term,target))
       .slice(0,80).map(row=>({
         ...mapper(row), category: row.keyword||'', _source:'db', shippingFee:null

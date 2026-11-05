@@ -4,6 +4,7 @@
 const MAX_RESULTS = 16;
 const MAX_CARDS = 4;
 const { extractTitleEvidence, requestedIdentity, mergeRequested, checkListingIdentity } = require('./_ai-v3-identity');
+const { canonicalCategory, comparisonFromUtterance, explicitType, productTypeMatches, isPart } = require('./_ai-v31-taxonomy');
 const MAX_CANDIDATE_SCAN = 200;
 const clean = (x, n = 120) => String(x == null ? '' : x).normalize('NFKC')
   .replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
@@ -60,8 +61,11 @@ function matchesComparisonSubject(title, subject) {
   return terms.length > 1 && terms.every(x => t.includes(x));
 }
 
-function categoryOk(item, requested) {
+function categoryOk(item, requested, userMessage='') {
   if (!requested) return false;
+  // Never trust a seller's keyword/category tail as proof of product type.
+  const canonical=canonicalCategory({planCategory:requested});
+  if(canonical)return productTypeMatches(item.title,canonical,userMessage);
   const type = flat(requested);
   const title = flat(item.title);
   const cats = flat([item.category, item.productCategory, item.categoryName].filter(Boolean).join(' '));
@@ -111,7 +115,9 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   const query = clean(o.query, 80) || historyQuery;
   const compareQuery = clean(o.compareQuery, 80)
     || (o.mode === 'compare' ? clean(prev.compareQuery, 80) : '');
-  const category = clean(o.category || prev.category, 36);
+  const category = canonicalCategory({
+    message:utterance, query, planCategory:o.category, priorCategory:prev.category
+  });
   const exclusions = [...new Set([
     ...(Array.isArray(prev.exclusions) ? prev.exclusions : []),
     ...(Array.isArray(o.exclusions) ? o.exclusions : [])
@@ -139,8 +145,9 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
   for (const source of (Array.isArray(raw) ? raw : []).slice(0, MAX_CANDIDATE_SCAN)) {
     const item = normalize(source);
     let reason = !item ? 'invalid_listing' : '';
-    if (!reason && !categoryOk(item, plan.category)) reason = 'wrong_category';
-    if (!reason && ACCESSORY.test(item.title) && !ACCESSORY.test(plan.category)) reason = 'accessory_not_requested';
+    if (!reason && (ACCESSORY.test(item.title) || isPart(item.title,plan.category)) &&
+      !ACCESSORY.test(plan.category)) reason = 'accessory_not_requested';
+    if (!reason && !categoryOk(item,plan.category,plan.subject||'')) reason = 'wrong_category';
     if (!reason && item.used && !plan.allowUsed) reason = 'used_not_requested';
     if (!reason && plan.identity && Object.keys(plan.identity).length) {
       const evidence = checkListingIdentity(item.title, plan.identity);
@@ -271,6 +278,12 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   };
   const rawPlan = await planModel({ message, history, state: prior });
   const plan = sanitizePlan(rawPlan, prior, message);
+  // Compare different product kinds even if the model omitted compareQuery.
+  const twoKinds=comparisonFromUtterance(message);
+  if(twoKinds)Object.assign(plan,{mode:'compare',query:twoKinds.query,
+    compareQuery:twoKinds.compareQuery,category:twoKinds.category});
+  if(plan.mode==='none' && explicitType(message) &&
+    /추천|비교|차이|찾아|골라|보여|구매|살까/i.test(message))plan.mode='recommend';
   const explicitIdentity = requestedIdentity(message);
   const changedSubject = !!(explicitIdentity.family && prior.identity.family
     && explicitIdentity.family !== prior.identity.family);
@@ -292,8 +305,11 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     // Carry the user's verified model/option constraints into catalog retrieval.
     // GPT may shorten a search keyword, but it cannot erase user-specified capacity.
     const groupIdentity = plan.mode === 'compare' ? requestedIdentity(query) : plan.identity;
+    const groupCategory = plan.mode === 'compare'
+      ? canonicalCategory({message:query,query,planCategory:plan.category}) : plan.category;
     const raw = await searchProducts(query, { identity: groupIdentity,
-      minPrice: plan.minPrice, maxPrice: plan.maxPrice, category: plan.category });
+      minPrice: plan.minPrice,maxPrice: plan.maxPrice,category:groupCategory,
+      userText:message });
     if (!Array.isArray(raw)) throw new Error('Invalid search result');
     fetched += raw.length;
     // A comparison's two sides cannot borrow each other's similar-category products.
@@ -303,7 +319,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     if (excludedBySubject) reasonCounts.wrong_comparison_subject =
       (reasonCounts.wrong_comparison_subject || 0) + excludedBySubject;
     const evaluated = validateCandidates(
-      { ...plan, identity: groupIdentity, exactModel: plan.mode === 'compare' ? '' : plan.exactModel }, matched);
+      { ...plan,category:groupCategory,subject:message,identity:groupIdentity,
+        exactModel:plan.mode==='compare'?'':plan.exactModel },matched);
     inspected += evaluated.checked;
     accepted += evaluated.acceptedCount;
     provisional += evaluated.provisionalCount;
