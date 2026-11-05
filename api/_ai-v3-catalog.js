@@ -52,10 +52,12 @@ function preciseIdentityProbes(target) {
   }
   return [];
 }
-async function searchCatalog(query, { db, liveSearch, mapRow, identity } = {}) {
+async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category } = {}) {
   const term=safeTerm(query);
   if(!term) return [];
   const source=db || require('./_supabase');
+  const boundedMin=Number.isSafeInteger(Number(minPrice)) && Number(minPrice)>0 ? Number(minPrice) : null;
+  const boundedMax=Number.isSafeInteger(Number(maxPrice)) && Number(maxPrice)>0 ? Number(maxPrice) : null;
   const lookup=async(column,method,fragment)=>{
     const builder=source.from('products').select('*');
     const condition=method==='eq'
@@ -69,6 +71,14 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity } = {}) {
     for(const [column,fragment] of filters) builder=builder.ilike(column,'%'+fragment+'%');
     const response=await builder.limit(40);
     if(response.error) throw new Error('Catalog constrained read failed');
+    return Array.isArray(response.data) ? response.data : [];
+  };
+  const lookupPriced=async fragment=>{
+    let builder=source.from('products').select('*').ilike('title','%'+fragment+'%');
+    builder=builder.gte('lprice',boundedMin);
+    if(boundedMax != null) builder=builder.lte('lprice',boundedMax);
+    const response=await builder.limit(40);
+    if(response.error) throw new Error('Catalog bounded-price read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
   const rows=[], seen=new Set();
@@ -119,9 +129,21 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity } = {}) {
       if(hasVerifiedNew()) break;
     }
   }
+  // A follow-up like "12-15만원" must search the price band before a 40-row
+  // generic lookup can crowd out valid products. Two read-only probes maximum.
+  if(boundedMin != null && (boundedMax == null || boundedMin <= boundedMax)) {
+    const anchors=(flat(category)==='헤드셋'||flat(category)==='헤드폰')
+      ? ['헤드셋','헤드폰'] : [primaryAnchor(category||term)];
+    for(const anchor of [...new Set(anchors)].slice(0,2)) {
+      if(anchor.length>=2) add(await lookupPriced(anchor));
+    }
+  }
   if(rows.length) {
     const mapper=mapRow || require('./_shop').toClientProduct;
-    return rows.sort((a,b)=>evidenceScore(b,term,target)-evidenceScore(a,term,target))
+    const budgetPriority=r=>boundedMin != null &&
+      Number(r.lprice)>=boundedMin && (boundedMax==null || Number(r.lprice)<=boundedMax) ? 100 : 0;
+    return rows.sort((a,b)=>(budgetPriority(b)-budgetPriority(a))
+      || evidenceScore(b,term,target)-evidenceScore(a,term,target))
       .slice(0,80).map(row=>({
         ...mapper(row), category: row.keyword||'', _source:'db', shippingFee:null
       }));

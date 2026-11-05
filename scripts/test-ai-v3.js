@@ -371,6 +371,17 @@ function makeRes(){
       {minPrice:120000,maxPrice:150000},'10만원 이하로 바꿔줘');
     assert.equal(changed.minPrice,null);
   });
+  await test('single replacement AirPod is not a complete ANC product',()=>{
+    const plan={category:'이어폰',identity:require('../api/_ai-v3-identity').requestedIdentity('에어팟 4 ANC')};
+    const p=(id,title)=>({productId:id,title,lprice:160000,shippingFee:0,
+      mall:'쿠팡',link:'https://example.com/'+id});
+    const got=core.validateCandidates(plan,[
+      p('unit','Apple 에어팟 4세대 노이즈 캔슬링 오른쪽 단품'),
+      p('whole','Apple 에어팟 4세대 ANC 무선 이어폰')
+    ]);
+    assert.deepEqual(got.accepted.map(c=>c.id),['쿠팡:whole']);
+    assert.equal(got.reasons.accessory_not_requested,1);
+  });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed) process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure:',e);process.exitCode=1});

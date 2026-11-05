@@ -146,6 +146,28 @@ const mapper=r=>({productId:r.product_id,title:r.title,lprice:r.lprice,mall:r.ma
    assert.equal(result[0]?.productId,'base');
    assert(requests.some(fs=>fs.some(([c,p])=>c==='title'&&p==='%s9fe%')));
  });
+ await test('price-band lookup rescues 12-15 manwon headsets outside first broad 40',async()=>{
+   const requests=[];
+   const low=row('low','브리츠 블루투스 헤드셋');low.lprice=109000;
+   const good=row('sony','소니 WH-CH720N 블루투스 헤드폰');good.lprice=139000;
+   const source={from:()=>({select:()=>{
+     const filters=[];const builder={
+       ilike(c,v){filters.push([c,'ilike',v]);return builder},
+       eq(c,v){filters.push([c,'eq',v]);return builder},
+       gte(c,v){filters.push([c,'gte',v]);return builder},
+       lte(c,v){filters.push([c,'lte',v]);return builder},
+       async limit(){requests.push(filters.slice());
+         return {data:filters.some(([c])=>c==='lprice') &&
+           filters.some(([c,op,v])=>c==='title'&&v==='%헤드폰%')?[good]:[low],error:null};
+       }
+     };return builder;
+   }})};
+   const found=await searchCatalog('헤드셋',{db:source,mapRow:mapper,
+     minPrice:120000,maxPrice:150000,category:'헤드셋'});
+   assert.equal(found[0].productId,'sony');
+   assert(requests.some(fs=>fs.some(x=>x[0]==='lprice'&&x[1]==='gte'&&x[2]===120000)));
+   assert(requests.some(fs=>fs.some(x=>x[0]==='lprice'&&x[1]==='lte'&&x[2]===150000)));
+ });
  console.log(JSON.stringify({passed,failed,total:passed+failed}));
  if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected',e);process.exitCode=1});

@@ -43,7 +43,7 @@ const ALIASES = {
   '시계': ['시계','스마트워치','watch','애플워치'],
   '기타': ['일렉기타','어쿠스틱기타','electric guitar','acoustic guitar']
 };
-const ACCESSORY = /충전기|보호필름|케이스|커버|파우치|거치대|어댑터|스트랩|충전케이블|키캡|리필|펜촉|(?:헤드셋|헤드폰|해드폰)\s*(?:걸이|스탠드|홀더)|(?:걸이|스탠드)\s*(?:헤드셋|헤드폰)/i;
+const ACCESSORY = /충전기|보호필름|케이스|커버|파우치|거치대|어댑터|스트랩|충전케이블|키캡|리필|펜촉|(?:헤드셋|헤드폰|해드폰)\s*(?:걸이|스탠드|홀더)|(?:걸이|스탠드)\s*(?:헤드셋|헤드폰)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰)|(?:단품|유닛|이어버드|이어폰)\s*(?:왼쪽|오른쪽|좌측|우측|한쪽)/i;
 const USED = /중고|리퍼|리퍼비시|전시품|전시상품|\b(?:used|refurbished|renewed)\b/i;
 const TRANSLITERATIONS = [
   ['아이패드', 'ipad'], ['갤럭시탭', 'galaxytab'],
@@ -281,7 +281,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     // Carry the user's verified model/option constraints into catalog retrieval.
     // GPT may shorten a search keyword, but it cannot erase user-specified capacity.
     const groupIdentity = plan.mode === 'compare' ? requestedIdentity(query) : plan.identity;
-    const raw = await searchProducts(query, { identity: groupIdentity });
+    const raw = await searchProducts(query, { identity: groupIdentity,
+      minPrice: plan.minPrice, maxPrice: plan.maxPrice, category: plan.category });
     if (!Array.isArray(raw)) throw new Error('Invalid search result');
     fetched += raw.length;
     // A comparison's two sides cannot borrow each other's similar-category products.

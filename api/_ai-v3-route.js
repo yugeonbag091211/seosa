@@ -17,9 +17,9 @@ async function handler(req, res, deps = {}) {
     return res.status(400).json({ error: 'Invalid message' });
   try {
     const adapter = deps.adapter || makeOpenAiAdapter();
-    const searchProducts = deps.searchProducts || (async (query, { identity } = {}) => {
+    const searchProducts = deps.searchProducts || (async (query, { identity, minPrice, maxPrice, category } = {}) => {
       const { searchCatalog } = require('./_ai-v3-catalog');
-      return searchCatalog(query, { identity, liveSearch: async keyword => {
+      return searchCatalog(query, { identity, minPrice, maxPrice, category, liveSearch: async keyword => {
         const { searchAll } = require('./_shop');
         return searchAll(keyword, {
           coupangLimit: 6, adpickLimit: 8,
