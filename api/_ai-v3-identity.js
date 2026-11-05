@@ -101,6 +101,11 @@ function namedVariant(text, family) {
   const segment = text.slice(m.index + m[0].length, m.index + m[0].length + 26)
     .split(/[|,()[\]\\/]/)[0];
   const afterSeries = segment.replace(/^\s*(?:s?\d{1,3})(?!\d)\s*/i, '').trim();
+  // A Pro/Max AirPods title is not the ordinary AirPods 4 ANC model.
+  if (family === 'airpods' && /(?:^|\s)(?:프로|pro|맥스|max)(?:\s*\d|\s|$)/i.test(afterSeries))
+    return /(?:맥스|max)/i.test(afterSeries) ? 'max' : 'pro';
+  if (family === 'airpods' &&
+    /(?:\banc\b|액티브\s*노이즈\s*캔슬링|active\s*noise\s*cancell?ation|노이즈\s*캔슬링)/i.test(afterSeries)) return 'anc';
   // Galaxy Tab FE+ (FE Plus) is a distinct model from the base FE.
   // Detect it before the generic FE suffix, including compact S9FE+ titles.
   if (family === 'galaxytab' && /^fe\s*(?:\+|플러스|plus)(?![a-z가-힣])/i.test(afterSeries)) return 'fe-plus';
@@ -112,12 +117,14 @@ function namedVariant(text, family) {
   return null;
 }
 function namedSeries(text, family) {
-  if (!['iphone','galaxytab','galaxys'].includes(family)) return null;
+  if (!['iphone','galaxytab','galaxys','airpods'].includes(family)) return null;
   const prefix = FAMILY_PREFIX[family];
   const match = new RegExp(prefix.source, 'i').exec(text);
   if (!match) return null;
   const after = text.slice(match.index + match[0].length);
-  const series = after.match(/^\s*(s?\d{1,3})(?!\d)/i);
+  const series = family === 'airpods'
+    ? after.match(/^\s*(?:프로|pro|맥스|max)?\s*(\d{1,2})(?!\d)/i)
+    : after.match(/^\s*(s?\d{1,3})(?!\d)/i);
   return series ? series[1].toLowerCase().replace(/^s(?=\d)/,'') : null;
 }
 function namedNetwork(text) {

@@ -335,6 +335,42 @@ function makeRes(){
     assert.match(got.answer,/20,000원/);
     assert.match(got.answer,/배송비 포함 합계/);
   });
+  await test('explicit 12-15 manwon lower bound survives follow-up and removes hangers',()=>{
+    const prev={lastQuery:'헤드셋',category:'헤드셋',maxPrice:150000,exclusions:['게이밍']};
+    const plan=core.sanitizePlan({mode:'recommend',query:'헤드셋',category:'헤드셋',maxPrice:150000},prev,
+      '그중에서 12만원 이상 15만원 이하로 골라줘');
+    assert.equal(plan.minPrice,120000);
+    const row=(id,title,lprice)=>({productId:id,title,lprice,mall:'쿠팡',
+      link:'https://example.com/'+id,shippingFee:0});
+    const check=core.validateCandidates(plan,[
+      row('low','브리츠 무선 블루투스 헤드셋',111692),
+      row('hanger','게임 헤드폰 탁상용 스탠드 헤드셋걸이',128000),
+      row('good','브리츠 ANC 헤드셋',139000),
+      row('high','브리츠 블루투스 헤드셋',160000)
+    ]);
+    assert.deepEqual(check.accepted.map(x=>x.id),['쿠팡:good']);
+    assert.equal(check.reasons.below_min_price,1);
+    assert.equal(check.reasons.accessory_not_requested,1);
+    assert.equal(check.reasons.over_budget,1);
+  });
+  await test('12 to 15 manwon price range sets lower bound without GPT guessing',()=>{
+    for (const text of ['12~15만원 헤드셋 추천','12만~15만원 헤드셋 추천',
+      '12만원에서 15만원 헤드셋 추천']) {
+      const plan=core.sanitizePlan({query:'헤드셋',category:'헤드셋',maxPrice:150000},{},text);
+      assert.equal(plan.minPrice,120000,text);
+    }
+    const noFloor=core.sanitizePlan({query:'헤드셋',category:'헤드셋',maxPrice:150000},{},
+      '15만원 이하 헤드셋 추천');
+    assert.equal(noFloor.minPrice,null);
+  });
+  await test('lower price bound is carried until user explicitly changes incompatible budget',()=>{
+    const same=core.sanitizePlan({query:'헤드셋',category:'헤드셋',maxPrice:150000},
+      {minPrice:120000,maxPrice:150000},'그중에 하나 골라줘');
+    assert.equal(same.minPrice,120000);
+    const changed=core.sanitizePlan({query:'헤드셋',category:'헤드셋',maxPrice:100000},
+      {minPrice:120000,maxPrice:150000},'10만원 이하로 바꿔줘');
+    assert.equal(changed.minPrice,null);
+  });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed) process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure:',e);process.exitCode=1});

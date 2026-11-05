@@ -11,6 +11,23 @@ const flat = x => clean(x, 200).toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 const nprice = v => v == null || v === '' ? null
   : Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : null;
 const money = n => Number(n).toLocaleString('ko-KR') + '원';
+// Price floors come only from explicit user language, never an LLM's guess.
+function explicitMinPrice(utterance) {
+  const s = clean(utterance, 800).replace(/,/g, '');
+  const amount = (number, unit) => {
+    const multiplier = /만/.test(unit) ? 10000 : /천/.test(unit) ? 1000 : 1;
+    const value = Math.round(Number(number) * multiplier);
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  };
+  const direct = [...s.matchAll(/(\d+(?:\.\d+)?)\s*(만원|만\s*원|만|천원|원)\s*(?:이상|부터|초과)/g)];
+  if (direct.length) return amount(direct.at(-1)[1], direct.at(-1)[2]);
+  // "12~15만원", "12만~15만" and "12만원에서 15만원" set a lower bound.
+  const range = [...s.matchAll(/(\d+(?:\.\d+)?)\s*(만원|만\s*원|만|천원|원)?\s*(?:~|∼|–|-|에서)\s*(\d+(?:\.\d+)?)\s*(만원|만\s*원|만|천원|원)/g)];
+  if (!range.length) return null;
+  const m = range.at(-1);
+  const lo = amount(m[1], m[2] || m[4]), hi = amount(m[3], m[4]);
+  return lo != null && hi != null && lo <= hi ? lo : null;
+}
 const ALIASES = {
   '노트북': ['노트북','랩탑','laptop','그램','맥북','thinkpad','ideapad','vivobook','갤럭시북'],
   '태블릿': ['태블릿','아이패드','ipad','갤럭시탭','galaxy tab'],
@@ -26,7 +43,7 @@ const ALIASES = {
   '시계': ['시계','스마트워치','watch','애플워치'],
   '기타': ['일렉기타','어쿠스틱기타','electric guitar','acoustic guitar']
 };
-const ACCESSORY = /충전기|보호필름|케이스|커버|파우치|거치대|어댑터|스트랩|충전케이블|키캡|리필|펜촉/i;
+const ACCESSORY = /충전기|보호필름|케이스|커버|파우치|거치대|어댑터|스트랩|충전케이블|키캡|리필|펜촉|(?:헤드셋|헤드폰|해드폰)\s*(?:걸이|스탠드|홀더)|(?:걸이|스탠드)\s*(?:헤드셋|헤드폰)/i;
 const USED = /중고|리퍼|리퍼비시|전시품|전시상품|\b(?:used|refurbished|renewed)\b/i;
 const TRANSLITERATIONS = [
   ['아이패드', 'ipad'], ['갤럭시탭', 'galaxytab'],
@@ -89,6 +106,9 @@ function sanitizePlan(input, prev = {}, utterance = '') {
     ...(Array.isArray(o.exclusions) ? o.exclusions : [])
   ].map(x => clean(x, 55)).filter(Boolean))].slice(0, 8);
   const maxPrice = o.maxPrice == null ? nprice(prev.maxPrice) : nprice(o.maxPrice);
+  const askedMinPrice = explicitMinPrice(utterance);
+  let minPrice = askedMinPrice != null ? askedMinPrice : nprice(prev.minPrice);
+  if (minPrice != null && maxPrice != null && minPrice > maxPrice) minPrice = null;
   const mallOnly = clean(o.mallOnly || prev.mallOnly, 35);
   const exactModel = clean(o.exactModel, 80);
   const anchoredModel = exactModel && flat(utterance + ' ' + historyQuery).includes(flat(exactModel))
@@ -96,7 +116,7 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   const newOnly = /중고.{0,9}(?:제외|빼|싫|말고|아닌|아니)|(?:새상품|새제품|신품)/i.test(utterance);
   const usedRequested = /중고|리퍼|리퍼비시|전시품|전시상품/i.test(utterance) && !newOnly;
   return {
-    query, compareQuery, category, maxPrice, exclusions, mallOnly,
+    query, compareQuery, category, maxPrice, minPrice, exclusions, mallOnly,
     exactModel: anchoredModel, allowUsed: newOnly ? false : usedRequested || !!prev.allowUsed,
     mode: o.mode === 'none' ? 'none' : o.mode === 'compare' ? 'compare' : 'recommend'
   };
@@ -121,6 +141,7 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
       reason = 'wrong_model';
     if (!reason && Array.isArray(plan.exclusions) && plan.exclusions.some(word =>
       flat(word) && flat(item.title).includes(flat(word)))) reason = 'excluded';
+    if (!reason && plan.minPrice != null && item.price < plan.minPrice) reason = 'below_min_price';
     if (!reason && plan.maxPrice != null && item.price > plan.maxPrice) reason = 'over_budget';
     if (!reason && plan.maxPrice != null && item.shipping != null &&
       item.price + item.shipping > plan.maxPrice) reason = 'over_budget';
@@ -228,7 +249,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   const prior = {
     lastQuery: clean(saved.lastQuery, 80), compareQuery: clean(saved.compareQuery, 80),
     category: clean(saved.category, 36),
-    maxPrice: nprice(saved.maxPrice),
+    maxPrice: nprice(saved.maxPrice), minPrice: nprice(saved.minPrice),
     exclusions: Array.isArray(saved.exclusions) ? saved.exclusions.map(x => clean(x, 55)).filter(Boolean).slice(0, 8) : [],
     mallOnly: clean(saved.mallOnly, 35), exactModel: clean(saved.exactModel, 80), allowUsed: !!saved.allowUsed,
     identity: saved.identity && typeof saved.identity === 'object' ? Object.fromEntries(
@@ -308,7 +329,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     status: 200, ...selection,
     state: {
       lastQuery: plan.query, compareQuery: plan.compareQuery,
-      category: plan.category, maxPrice: plan.maxPrice,
+      category: plan.category, maxPrice: plan.maxPrice, minPrice: plan.minPrice,
       exclusions: plan.exclusions, mallOnly: plan.mallOnly,
       exactModel: plan.exactModel, allowUsed: plan.allowUsed,
       identity: plan.mode === 'compare' ? {} : plan.identity

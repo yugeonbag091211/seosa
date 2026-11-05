@@ -294,6 +294,22 @@ function row(id,title,price=490000,other={}){
     assert.equal(observed.hints.identity.variant,'fe');
     assert.equal(result.cards.length,1);
   });
+  await test('AirPods 4 ANC model must not get AirPods Pro 2 or plain AirPods 4',()=>{
+    const requested=requestedIdentity('에어팟 4 ANC 추천해줘');
+    assert.equal(requested.family,'airpods');
+    assert.equal(requested.series,'4');
+    assert.equal(requested.variant,'anc');
+    const good='Apple 2024 에어팟 4 액티브 노이즈 캔슬링 블루투스 이어폰';
+    assert.equal(checkListingIdentity(good,requested).ok,true);
+    assert.equal(checkListingIdentity('Apple 에어팟 프로 2세대 USB-C 무선 이어폰',requested).ok,false);
+    assert.equal(checkListingIdentity('Apple 에어팟 4 블루투스 이어폰',requested).ok,false);
+    assert.equal(checkListingIdentity('에어팟프로3 / 맥스2 / 에어팟4 선택',requested).ok,false);
+  });
+  await test('AirPods Pro title and AirPods 4 model year are distinct',()=>{
+    assert.equal(extractTitleEvidence('에어팟 프로 2세대').variant,'pro');
+    assert.equal(extractTitleEvidence('에어팟 4 ANC').series,'4');
+    assert.equal(extractTitleEvidence('에어팟 4 ANC').variant,'anc');
+  });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected:',e);process.exitCode=1});
