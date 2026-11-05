@@ -382,6 +382,18 @@ function makeRes(){
     assert.deepEqual(got.accepted.map(c=>c.id),['쿠팡:whole']);
     assert.equal(got.reasons.accessory_not_requested,1);
   });
+  await test('wireless earbud adjective maps to earbud category without admitting headphones',()=>{
+    assert.equal(core.categoryOk({title:'Apple 에어팟 4세대 ANC 블루투스 이어폰'},'무선 이어폰'),true);
+    assert.equal(core.categoryOk({title:'삼성 갤럭시 버즈3 무선 이어폰'},'무선 이어폰'),true);
+  });
+  await test('merchant category suffix does not turn earbud into headset',()=>{
+    assert.equal(core.categoryOk({
+      title:'소니/소니 WF-C710N 나의 첫 번째 노이즈 캔슬링 이어폰/디지털기기 헤드셋/이어폰'
+    },'헤드셋'),false);
+    assert.equal(core.categoryOk({
+      title:'소니 가벼운 노이즈 캔슬링 블루투스 헤드폰, WH-CH720N, 화이트'
+    },'헤드셋'),true);
+  });
   console.log(JSON.stringify({passed,failed,total:passed+failed}));
   if(failed) process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure:',e);process.exitCode=1});

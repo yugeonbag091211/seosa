@@ -65,9 +65,20 @@ function categoryOk(item, requested) {
   const type = flat(requested);
   const title = flat(item.title);
   const cats = flat([item.category, item.productCategory, item.categoryName].filter(Boolean).join(' '));
+  // Merchant taxonomy tails ("/디지털기기 헤드셋/이어폰") cannot turn
+  // a clearly named earbud into an over-ear headset.
+  const primaryTitle = String(item.title || '').split(/\/디지털기기/i)[0];
+  const headphoneRequest = type.includes('헤드셋') || type.includes('헤드폰') ||
+    type === 'headset' || type === 'headphone';
+  if (headphoneRequest &&
+    /이어폰|이어버드|earbuds|에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds/i.test(primaryTitle) &&
+    !/헤드셋|헤드폰|headset|headphone/i.test(primaryTitle)) return false;
   if (cats.includes(type) || title.includes(type)) return true;
+  // "무선 이어폰" is still the earbuds category; adjectives may not
+  // erase the product type before seller titles are evaluated.
   const entry = Object.entries(ALIASES).find(([name, words]) =>
-    type === flat(name) || words.some(w => flat(w) === type));
+    type === flat(name) || type.includes(flat(name)) ||
+    words.some(w => flat(w) === type));
   return !!(entry && entry[1].some(w => title.includes(flat(w)) || cats.includes(flat(w))));
 }
 function normalize(item) {
