@@ -209,6 +209,15 @@ await test('ebooks and mixed-model promotions never become verified device cards
  assert.equal(taxonomy.productTypeMatches('2027 나의하루 다이어리 헤드셋','헤드폰'),false);
  assert.equal(taxonomy.productTypeMatches('무선 게이밍 마우스 Astro A10 헤드셋 오버이어 헤드폰','헤드폰'),false);
 });
+await test('free gift keyboard attached to an iPad does not count as keyboard listing',()=>{
+ assert.equal(taxonomy.productTypeMatches('[블루투스 키보드/무료증정]애플 아이패드 8세대 32GB WiFi전용','키보드','아이패드용 블루투스 키보드'),false);
+ assert.equal(taxonomy.productTypeMatches('[사은품 키보드 무료증정] 삼성 갤럭시탭 S9 태블릿','키보드','무선 키보드'),false);
+ assert.equal(taxonomy.productTypeMatches('아이패드 호환 블루투스 키보드 한글각인','키보드','아이패드용 블루투스 키보드'),true);
+});
+await test('wrist-rest and internal notebook replacement keyboard not sold as full keyboard',()=>{
+ assert.equal(taxonomy.productTypeMatches('키보드손목받침대 아이리버 무선키보드마우스 블랙','키보드','사무용 키보드'),false);
+ assert.equal(taxonomy.productTypeMatches('백라이트 키보드 갤럭시북 950QED 시리즈용 교체형','키보드','사무용 키보드'),false);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

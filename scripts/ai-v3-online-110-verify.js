@@ -3,9 +3,10 @@ const {appendFileSync,writeFileSync,mkdirSync}=require('node:fs');
 const path=require('node:path');
 const {requestedIdentity,checkListingIdentity,extractTitleEvidence}=require('../api/_ai-v3-identity');
 const {categoryOk}=require('../api/_ai-v3-core');
-const {comparisonFromUtterance,ambiguousOptions}=require('../api/_ai-v31-taxonomy');
+const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory}=require('../api/_ai-v31-taxonomy');
+const {brandMatches}=require('../api/_ai-v31-retrieval');
 const mode=process.argv[2],share=process.argv[3];
-if(!['gate','full'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||''))throw Error('Require approved Preview share link and gate/full phase');
+if(!['gate','full','focus'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||''))throw Error('Require approved Preview share link and gate/full phase');
 const base=new URL(share).origin;
 const outdir=path.resolve(__dirname,'../reports/ai-v3-online-20261105');
 mkdirSync(outdir,{recursive:true});
@@ -73,7 +74,10 @@ const follow=[
 ];
 for(let i=0;i<10;i++)full.push({id:'Q'+String(i+91).padStart(3,'0'),...follow[i]});
 if(full.length!==100||new Set(full.map(x=>x.p)).size!==100)throw Error('100 unique questions required, got '+full.length+' unique '+new Set(full.map(x=>x.p)).size);
-const cases=mode==='gate'?gate:full;
+const focusIds=new Set(['Q001','Q005','Q010','Q014','Q015','Q028','Q029',
+ 'Q053','Q054','Q055','Q056','Q078','Q079','Q090','Q091','Q100']);
+const cases=mode==='gate'?gate:mode==='focus'?
+  [...gate.filter(x=>['G01','G02','G03','G10'].includes(x.id)),...full.filter(x=>focusIds.has(x.id))]:full;
 const sleep=ms=>new Promise(res=>setTimeout(res,ms));
 function amount(text){
  const s=text.replace(/,/g,'');
@@ -118,8 +122,15 @@ function verdict(test,data,previous){
   if(max!=null&&Number(c.price)>max)errors.push(pre+'above_max_budget');
   if(min!=null&&Number(c.price)<min)errors.push(pre+'below_min_budget');
   if(test.exclude?.some(w=>title.includes(w)))errors.push(pre+'excluded_term');
-  if(!expectedCompare&&!subjectOk(title,test.cat))errors.push(pre+'wrong_category');
-  if(!expectedCompare&&checkIdentity.family){
+  if(!expectedCompare&&test.cat&&!productTypeMatches(title,test.cat,test.p))
+    errors.push(pre+'wrong_category');
+  if(!expectedCompare&&!brandMatches(title,test.p))errors.push(pre+'wrong_brand');
+  const excludedWords=[...test.p.matchAll(/([가-힣a-z0-9+]{2,20})\s*(?:말고|제외|빼고|아닌)/gi)].map(x=>x[1]);
+  if(excludedWords.some(word=>title.toLowerCase().includes(word.toLowerCase())))
+    errors.push(pre+'explicit_exclusion_violated');
+  if(!expectedCompare&&checkIdentity.family &&
+    !( /(?:용|호환|연결)/.test(test.p) &&
+       familyCategory(checkIdentity.family)!==canonicalCategory({message:test.p,planCategory:test.cat}))){
     const res=checkListingIdentity(title,checkIdentity);
     if(!res.ok)errors.push(pre+'identity_'+res.reason+'_'+res.field);
   }

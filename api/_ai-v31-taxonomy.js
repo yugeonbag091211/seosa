@@ -115,6 +115,13 @@ function productTypeMatches(title,category,requestedText='') {
     ((type==='헤드폰'&&mentions[0].type==='마우스')||
      (type==='태블릿'&&mentions[0].type==='노트북')))return false;
   if(isPart(t,type)||ambiguousOptions(t,type))return false;
+  // Seller headline may advertise a free accessory ahead of the actual device:
+  // "[블루투스 키보드/무료증정]애플 아이패드 ..." sells an iPad, not a keyboard.
+  const promotion=t.match(/^\[[^\]]{0,90}(?:무료\s*증정|사은품|덤\s*증정)[^\]]*\]/i);
+  if(promotion){
+    const actual=explicitType(t.slice(promotion[0].length));
+    if(actual && actual!==type)return false;
+  }
   // A requested feature must be evidenced by the actual seller listing.
   // Category words alone are never evidence of ANC functionality.
   if((type==='헤드폰'||type==='이어폰') &&
@@ -138,6 +145,11 @@ function productTypeMatches(title,category,requestedText='') {
     if(/\b(?:프로\s*헤드폰|헤드폰\s*스탠드)\b/i.test(t))return false;
     return true;
   }
+  if(type==='키보드' &&
+    /(?:손목\s*받침|손목받침|팜레스트|키보드\s*스킨|키보드\s*필름|keycap|키캡|손목\s*패드)/i.test(t))return false;
+  if(type==='키보드' &&
+    /(?:시리즈용|교체형|교체용|replacement)/i.test(t) &&
+    /(?:갤럭시\s*북|노트북|macbook|thinkpad|laptop)/i.test(t))return false;
   if(type==='키보드' && /(?:블루투스|bluetooth)/i.test(requestedText) &&
     !/(?:블루투스|bluetooth)/i.test(t))return false;
   if(type==='키보드' && /(?:아이패드\s*용|ipad\s*용)/i.test(requestedText) &&
