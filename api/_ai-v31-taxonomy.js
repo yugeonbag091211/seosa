@@ -197,7 +197,8 @@ function productTypeMatches(title,category,requestedText='') {
     /(?:갤럭시\s*북|노트북|macbook|thinkpad|laptop)/i.test(t))return false;
   if(type==='키보드' && /(?:블루투스|bluetooth)/i.test(requestedText) &&
     !/(?:블루투스|bluetooth)/i.test(t))return false;
-  if(type==='키보드' && /(?:아이패드\s*용|ipad\s*용)/i.test(requestedText) &&
+  if(type==='키보드' &&
+    /(?:아이패드|ipad).{0,24}?(?:용|호환|쓸|쓰는|사용할)/i.test(requestedText) &&
     !/(?:아이패드|ipad|ipados)/i.test(t))return false;
   if(type==='스마트폰' &&
     // Contract/subsidy offers cannot use the displayed listing price as the

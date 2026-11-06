@@ -518,6 +518,13 @@ await test('drawing pen display not returned as standalone tablet PC',async()=>{
  },{message:'80만원 안쪽으로 태블릿 하나 골라줘'});
  assert.deepEqual(out.cards.map(x=>x.title),[tablet]);
 });
+await test('iPad Air compatibility phrase requires evidence in keyboard listing',()=>{
+ const request='아이패드 에어에 쓸 블루투스 키보드 케이스 5만원 이하';
+ const vague='아이노트 블루투스 접이식키보드 X-Folding Touch Plus';
+ const linked='DUNNO 아이패드 에어 M4 M3 블루투스 키보드 케이스';
+ assert.equal(taxonomy.productTypeMatches(vague,'키보드',request),false);
+ assert.equal(taxonomy.productTypeMatches(linked,'키보드',request),true);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});
