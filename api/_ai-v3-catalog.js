@@ -4,7 +4,19 @@
 // merely to acquire a remote seller-provider rate-limit lease.
 const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
 const { productTypeMatches } = require('./_ai-v31-taxonomy');
-const { buildProbes,brandMatches } = require('./_ai-v31-retrieval');
+const { buildProbes,brandMatches,modelEvidence } = require('./_ai-v31-retrieval');
+// v3.2: a multi-word fragment becomes one ILIKE per token (AND). Sellers write
+// "외장SSD", "외장 SSD", "SSD 외장"; "WF-C700N" / "WFC700N". One '%a b%'
+// pattern misses all but one spelling.
+function likeTokens(fragment) {
+  return String(fragment || '').normalize('NFKC').replace(/[^0-9a-zA-Z가-힣+\s-]/g, ' ')
+    .split(/[\s-]+/).map(x => x.trim()).filter(Boolean).slice(0, 4);
+}
+// Deterministic recency order when the builder supports it. Without ORDER BY,
+// "LIMIT 40" returns whatever 40 rows the heap scan meets first.
+function ordered(builder) {
+  return typeof builder.order === 'function' ? builder.order('collected_at', { ascending: false }) : builder;
+}
 const safeTerm = value => String(value || '').normalize('NFKC')
   .replace(/[^0-9a-zA-Z가-힣+\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,70);
 const flat = x => String(x || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
@@ -60,10 +72,12 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
   const source=db || require('./_supabase');
   const boundedMin=Number.isSafeInteger(Number(minPrice)) && Number(minPrice)>0 ? Number(minPrice) : null;
   const boundedMax=Number.isSafeInteger(Number(maxPrice)) && Number(maxPrice)>0 ? Number(maxPrice) : null;
+  let queries=0;
   const lookup=async(column,method,fragment)=>{
     const builder=source.from('products').select('*');
     const condition=method==='eq'
       ? builder.eq(column,fragment) : builder.ilike(column,'%'+fragment+'%');
+    queries++;
     const response=await condition.limit(40);
     if(response.error) throw new Error('Catalog read failed');
     return Array.isArray(response.data) ? response.data : [];
@@ -71,6 +85,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
   const lookupConjunction=async filters=>{
     let builder=source.from('products').select('*');
     for(const [column,fragment] of filters) builder=builder.ilike(column,'%'+fragment+'%');
+    queries++;
     const response=await builder.limit(40);
     if(response.error) throw new Error('Catalog constrained read failed');
     return Array.isArray(response.data) ? response.data : [];
@@ -79,6 +94,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     let builder=source.from('products').select('*').ilike('title','%'+fragment+'%');
     builder=builder.gte('lprice',boundedMin);
     if(boundedMax != null) builder=builder.lte('lprice',boundedMax);
+    queries++;
     const response=await builder.limit(40);
     if(response.error) throw new Error('Catalog bounded-price read failed');
     return Array.isArray(response.data) ? response.data : [];
@@ -96,7 +112,9 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
   if(!rows.length) {
     add(await lookup('keyword','eq',term));
   }
-  if(!rows.length) {
+  // v3.2: with a known category the facet probes below are far better than a
+  // first-word anchor ("중고", "무선") that only fills 80 rows with noise.
+  if(!rows.length && !category) {
     const anchor=primaryAnchor(term);
     if(anchor.length>=2) {
       // A multi-word exact LIKE rarely matches seller-title word order.
@@ -150,34 +168,57 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       minPrice:boundedMin,maxPrice:boundedMax});
     const viable=()=>rows.filter(row=>
       productTypeMatches(row.title,category,userText||term) &&
-      brandMatches(row.title,userText||term) &&
-      (!target.family || checkListingIdentity(row.title,target).ok) &&
+      brandMatches(row.title,userText||term,category) &&
+      modelEvidence(row.title,userText||term).ok &&
+      (!target.family || checkListingIdentity(row.title,target,{category}).ok) &&
       (boundedMin==null || Number(row.lprice)>=boundedMin) &&
       (boundedMax==null || Number(row.lprice)<=boundedMax)).length;
     for(const spec of probes){
-      // A small verified candidate pool is sufficient for a four-card answer.
-      if(viable()>=5)break;
+      // A verified candidate pool of 8 leaves GPT a real choice for 4 cards.
+      if(viable()>=8)break;
       let builder=source.from('products').select('*');
-      for(const [column,fragment] of spec)builder=builder.ilike(column,'%'+fragment+'%');
+      const used=new Set();
+      for(const [column,fragment] of spec){
+        // '!word' = NOT ILIKE (only where the client supports it).
+        if(String(fragment).startsWith('!')){
+          const word=String(fragment).slice(1).replace(/[^0-9a-zA-Z가-힣+\s-]/g,'').trim();
+          if(word&&typeof builder.not==='function')builder=builder.not(column,'ilike','%'+word+'%');
+          continue;
+        }
+        for(const token of likeTokens(fragment)){
+          const k=column+':'+token.toLowerCase();
+          if(used.has(k))continue;
+          used.add(k);
+          builder=builder.ilike(column,'%'+token+'%');
+        }
+      }
+      if(!used.size)continue;
       if(boundedMin!=null)builder=builder.gte('lprice',boundedMin);
       if(boundedMax!=null)builder=builder.lte('lprice',boundedMax);
-      const found=await builder.limit(40);
+      queries++;
+      const found=await ordered(builder).limit(40);
       if(found.error)throw new Error('Catalog facet lookup failed');
       add(Array.isArray(found.data)?found.data:[]);
     }
   }
   if(rows.length) {
     const mapper=mapRow || require('./_shop').toClientProduct;
-    const budgetPriority=r=>boundedMin != null &&
-      Number(r.lprice)>=boundedMin && (boundedMax==null || Number(r.lprice)<=boundedMax) ? 100 : 0;
+    // In-budget rows first whenever the user stated ANY bound (v3.1 only did
+    // this for a lower bound, so over-budget rows took the 16 shortlist slots).
+    const budgetPriority=r=>(boundedMin!=null||boundedMax!=null) &&
+      (boundedMin==null || Number(r.lprice)>=boundedMin) &&
+      (boundedMax==null || Number(r.lprice)<=boundedMax) ? 100 : 0;
+    const modelPriority=r=>modelEvidence(r.title,userText||term).ok ? 50 : 0;
     const eligible=category?rows.filter(row=>
-      productTypeMatches(row.title,category,userText||term) && brandMatches(row.title,userText||term)):rows;
-    return eligible.sort((a,b)=>(budgetPriority(b)-budgetPriority(a))
+      productTypeMatches(row.title,category,userText||term) && brandMatches(row.title,userText||term,category)):rows;
+    const out=eligible.sort((a,b)=>(budgetPriority(b)+modelPriority(b)-budgetPriority(a)-modelPriority(a))
       || evidenceScore(b,userText||term,target)-evidenceScore(a,userText||term,target)
       || evidenceScore(b,term,target)-evidenceScore(a,term,target))
       .slice(0,80).map(row=>({
         ...mapper(row), category: row.keyword||'', _source:'db', shippingFee:null
       }));
+    Object.defineProperty(out,'_queries',{value:queries,enumerable:false});
+    return out;
   }
   // The Preview safety flag forbids remote quota-acquire RPCs. Never disable
   // it just to get a product result; return an honest empty shortlist instead.
@@ -186,4 +227,34 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
   if(!result || result.failed) throw new Error('Product search provider unavailable');
   return Array.isArray(result.items) ? result.items : [];
 }
-module.exports={searchCatalog,safeTerm,primaryAnchor,evidenceScore};
+// v3.2: re-load the cards shown last turn by their IDs ("mall:product_id"),
+// read-only, so "그중 …" follow-ups re-validate the SAME products against the
+// new constraints instead of re-searching and hoping they come back.
+async function loadProductsByIds(ids, { db, mapRow } = {}) {
+  const wanted = [...new Set((Array.isArray(ids) ? ids : []).filter(x => typeof x === 'string' && x.includes(':')))].slice(0, 8);
+  if (!wanted.length) return [];
+  const source = db || require('./_supabase');
+  const byMall = new Map();
+  for (const id of wanted) {
+    const at = id.indexOf(':');
+    const mall = id.slice(0, at), pid = id.slice(at + 1);
+    if (!mall || !pid) continue;
+    if (!byMall.has(mall)) byMall.set(mall, []);
+    byMall.get(mall).push(pid);
+  }
+  const rows = [];
+  for (const [mall, pids] of byMall) {
+    let builder = source.from('products').select('*').eq('mall', mall);
+    if (typeof builder.in === 'function') builder = builder.in('product_id', pids);
+    const response = await builder.limit(Math.max(4, pids.length * 3));
+    if (response.error) throw new Error('Catalog id lookup failed');
+    for (const row of response.data || []) if (pids.includes(String(row.product_id))) rows.push(row);
+  }
+  const mapper = mapRow || require('./_shop').toClientProduct;
+  const index = new Map(rows.map(r => [String(r.mall) + ':' + String(r.product_id), r]));
+  return wanted.filter(id => index.has(id)).map(id => {
+    const row = index.get(id);
+    return { ...mapper(row), category: row.keyword || '', _source: 'db', shippingFee: null };
+  });
+}
+module.exports={searchCatalog,safeTerm,primaryAnchor,evidenceScore,loadProductsByIds,likeTokens};

@@ -28,7 +28,10 @@ async function handler(req, res, deps = {}) {
         });
       } });
     });
-    const result = await createEngine({ ...adapter, searchProducts }, body);
+    // v3.2: "그중 …" follow-ups re-load the displayed cards by ID (read-only).
+    const loadDisplayed = deps.loadDisplayed || (async ids =>
+      require('./_ai-v3-catalog').loadProductsByIds(ids));
+    const result = await createEngine({ ...adapter, searchProducts, loadDisplayed }, body);
     return res.status(result.status).json(result);
   } catch (e) {
     // Never return provider errors, model outputs, stack traces, or secrets.
