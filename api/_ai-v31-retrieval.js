@@ -64,6 +64,16 @@ function buildProbes({query='',category='',userText='',identity={},minPrice,maxP
     if(seen.has(k))return;
     seen.add(k);sets.push(filters);
   }
+  // Device-compatible accessories: "아이패드용 블루투스 키보드"
+  // needs a two- or three-facet lookup, not the first 40 generic keyboards.
+  // The device noun is a compatibility target, not the item being sold.
+  if(category==='키보드' && /(?:아이패드|ipad)/i.test(userText+' '+query)) {
+    for(const device of ['아이패드','iPad']) {
+      if(/(?:블루투스|bluetooth)/i.test(userText+' '+query))
+        push([['title',device],['title','블루투스'],['title','키보드']]);
+      push([['title',device],['title','키보드']]);
+    }
+  }
   // A full model number or named brand is stronger than a broad category hit.
   for(const model of clues.models) {
     for(const categoryAnchor of types.slice(0,2))push([['title',categoryAnchor],['title',model]]);

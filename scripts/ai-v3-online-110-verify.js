@@ -3,7 +3,7 @@ const {appendFileSync,writeFileSync,mkdirSync}=require('node:fs');
 const path=require('node:path');
 const {requestedIdentity,checkListingIdentity,extractTitleEvidence}=require('../api/_ai-v3-identity');
 const {categoryOk}=require('../api/_ai-v3-core');
-const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory}=require('../api/_ai-v31-taxonomy');
+const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory,isPart}=require('../api/_ai-v31-taxonomy');
 const {brandMatches}=require('../api/_ai-v31-retrieval');
 const mode=process.argv[2],share=process.argv[3];
 if(!['gate','full','focus'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||''))throw Error('Require approved Preview share link and gate/full phase');
@@ -114,7 +114,8 @@ function verdict(test,data,previous){
   const title=String(c.title||''),pre='card'+(j+1)+':';
   if(!title||!Number.isFinite(Number(c.price))||Number(c.price)<=0||!/^https?:\/\//.test(String(c.link||'')))errors.push(pre+'invalid_listing_fields');
   if(c.condition==='used_or_refurbished'&&!/(?:중고|리퍼)\s*(?:상품)?\s*(?:추천|찾아|보여)/.test(test.p))errors.push(pre+'used_or_refurbished');
-  if(accessory.test(title))errors.push(pre+'accessory_or_part');
+  // A device bundled with a free pouch is not the pouch itself.
+  if(isPart(title,test.cat))errors.push(pre+'accessory_or_part');
   if(ambiguousOptions(title,test.cat))errors.push(pre+'ambiguous_options');
   if(wantWireless && ['헤드셋','헤드폰'].includes(test.cat) &&
      !/(?:무선|블루투스|wireless|bluetooth|\bBT\d|TWS)/i.test(title))

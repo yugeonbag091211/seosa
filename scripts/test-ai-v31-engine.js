@@ -271,6 +271,28 @@ await test('read-only faceted lookup rescues genuine SSD after cheap cases',asyn
  assert(found.some(x=>x.productId==='trueSSD'));
  assert(filtersSeen.some(f=>f.some(([c,,v])=>c==='title'&&v==='%480GB%')));
 });
+await test('iPad-compatible Bluetooth keyboard is found behind generic 40 keyboards',async()=>{
+ const title='DUNNO 아이패드 에어 13 M4 M3 M2 블루투스 키보드 케이스';
+ const good=row('ipadkb',title,34900,'키보드');
+ const generic=Array.from({length:40},(_,i)=>row('generic'+i,'사무용 유선 키보드 '+i,45000,'키보드'));
+ const calls=[];
+ const db={from:()=>({select:()=>{
+  const conditions=[],b={
+   ilike(c,v){conditions.push([c,'ilike',v]);return b},
+   eq(c,v){conditions.push([c,'eq',v]);return b},
+   async limit(n){calls.push(conditions.slice());
+    const set=[...generic,good].filter(r=>conditions.every(([c,op,v])=>
+      op==='ilike'?String(r[c]||'').toLowerCase().includes(v.slice(1,-1).toLowerCase()):
+      r[c]===v));
+    return {data:set.slice(0,n),error:null};
+   }
+  };return b;
+ }})};
+ const output=await searchCatalog('블루투스 키보드',{db,mapRow:mapper,identity:{},
+   category:'키보드',userText:'아이패드용 블루투스 키보드 추천'});
+ assert(output.some(x=>x.productId==='ipadkb'));
+ assert(calls.some(spec=>spec.filter(([c])=>c==='title').length===3));
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});
