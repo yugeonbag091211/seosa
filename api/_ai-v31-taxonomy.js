@@ -35,9 +35,13 @@ function explicitType(text) {
   const t=String(text||'');
   // The device may be a *compatibility target*, not the item being sold:
   // "아이패드용 키보드" / "아이패드 에어에 쓸 블루투스 키보드".
-  const accessory=t.match(/(?:아이패드|ipad|태블릿|갤럭시\s*탭|galaxy\s*tab|맥북|macbook|노트북).{0,40}?(?:용|호환|쓸|쓰는|사용할|연결|키보드\s*케이스).{0,40}?(키보드|마우스)/i) ||
+  const accessory=t.match(/(?:아이패드|ipad|태블릿|갤럭시\s*탭|galaxy\s*tab|맥북|macbook|노트북).{0,40}?(?:용|호환|쓸|쓰는|사용할|연결|맞는|맞게|전용|위한|키보드\s*케이스).{0,40}?(키보드|마우스)/i) ||
     t.match(/(?:아이패드|ipad|태블릿|갤럭시\s*탭|galaxy\s*tab|맥북|macbook|노트북).{0,40}?(키보드|마우스)\s*케이스/i);
   if(accessory)return accessory[1]==='마우스'?'마우스':'키보드';
+  // The referenced laptop or tablet is a host device, not the requested
+  // external-storage product. Recognize the target object after "연결할".
+  if(/(?:맥북|macbook|노트북|아이패드|ipad).{0,55}?(?:연결할|연결|호환|쓸|맞는|위한|용).{0,35}?(?:외장\s*(?:ssd|hdd|하드)|포터블\s*ssd)/i.test(t))
+    return '외장하드';
   // In "earbuds, not that; headphones" the last explicit target wins.
   const corrections=t.split(/(?:말고|아니고|대신)/i);
   if(corrections.length>1){
@@ -101,7 +105,7 @@ function featureContext(message='',features={}) {
 function stripTaxonomy(title) {
   return String(title||'').split(/\/(?:디지털기기|pc\/주변기기|생활\/가전)/i)[0];
 }
-const PARTS=/(?:케이스|보호필름|보호\s*유리|충전기|거치대|스탠드|브라켓|어댑터|파우치|커버|스트랩|리필|펜촉|키캡|호환\s*케이스|스티커|교체용|이어팁|이어패드|필름\s*세트|필터\s*(?:세트|호환|교체)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰))/i;
+const PARTS=/(?:케이스|보호필름|보호\s*유리|충전기|거치대|스탠드|브라켓|어댑터|파우치|커버|스트랩|리필|펜촉|키캡|호환\s*케이스|스티커|교체용|이어팁|이어패드|필름\s*세트|필터\s*(?:세트|호환|교체)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰|낱개)|낱개\s*(?:유닛|이어버드|이어폰)|유닛\s*단품)/i;
 const EARPIECE=/(?:이어폰|이어버드|earbuds|in[\s-]?ear|에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|이어\s*클립|이어클립|골전도|넥밴드)/i;
 const HEADPHONE=/(?:헤드폰|헤드셋|headphone|headset|\bWH-CH\d)/i;
 function ambiguousOptions(title,category) {
@@ -139,7 +143,7 @@ function isPart(title,type) {
   if(type==='외장하드'&&/(?:ssd\s*케이스|hdd\s*케이스|외장하드\s*(?:케이스|파우치|독|도킹)|외장\s*하드\s*케이스|NAS\s*서버|클로닝|하드카피|디스크\s*복제|동시\s*복제|스토리지\s*도킹)/i.test(t))return true;
   if(type==='모니터'&&/(?:모니터\s*(?:암|받침대|홀더|스탠드|거치)|monitor\s*(?:arm|stand|mount))/i.test(t))return true;
   if(type==='청소기' &&
-    /(?:먼지\s*봉투|집진백|먼지백|교체\s*브러시|모터\s*필터|청소기\s*필터\s*(?:세트|교체|호환)|소모품|액세서리|청소기\s*부품)/i.test(t))return true;
+    /(?:먼지\s*봉투|집진백|먼지백|교체\s*브러시|모터\s*필터|청소기\s*필터\s*(?:세트|교체|호환)|소모품|액세서리|청소기\s*부품|(?:로봇\s*청소기|청소기).{0,18}(?:수납장|수납선반|수납대|가구|장식장|수납가구))/i.test(t))return true;
   return false;
 }
 function productTypeMatches(title,category,requestedText='') {
@@ -151,7 +155,7 @@ function productTypeMatches(title,category,requestedText='') {
     !/(?:렌탈|대여|구독)/i.test(requestedText))return false;
   // Listings that advertise multiple models/option choices cannot evidence
   // one priced, verified product configuration.
-  if(/(?:모아보기|상품\s*모음|모델\s*선택|옵션\s*선택|옵션별|골라담기)/i.test(t))return false;
+  if(/(?:모아보기|상품\s*모음|모델\s*선택|옵션\s*선택|옵션별|골라담기|랜덤\s*발송|랜덤\s*모델|[1-9]\s*[~\-]\s*[1-9]\s*세대\s*모음)/i.test(t))return false;
   // Seller texts may mention multiple categories; trust the principal item.
   const mentions=allTypes(t);
   if(mentions[0]&&mentions[0].type!==type&&
@@ -177,6 +181,9 @@ function productTypeMatches(title,category,requestedText='') {
     if(!/(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|액티브\s*노이즈)/i.test(t))return false;
   }
   if(type==='헤드폰') {
+    // Audio headset head-worn microphones and single-ear call earpieces
+    // are not over-ear music headphones.
+    if(/(?:헤드셋\s*마이크|마이크\s*헤드셋|UHF\s*(?:무선)?\s*헤드셋\s*마이크|모노\s*헤드셋|핸즈프리\s*헤드셋)/i.test(t))return false;
     if(/(?:다이어리|문구용|노트\s*꾸미기|필통|지우개|만화책)/i.test(t))return false;
     if(!HEADPHONE.test(t))return false;
     // Ear-clip, bone-conduction, in-ear and TWS products are not over-ear headphones.
@@ -188,6 +195,8 @@ function productTypeMatches(title,category,requestedText='') {
     if(/\b(?:프로\s*헤드폰|헤드폰\s*스탠드)\b/i.test(t))return false;
     return true;
   }
+  if(type==='청소기'&&/(?:로봇\s*청소기|로봇청소기|robot\s*vacuum)/i.test(requestedText) &&
+    !/(?:로봇\s*청소기|로봇청소기|robot\s*vacuum|로보락|roborock)/i.test(t))return false;
   if(type==='마우스' &&
     /(?:키보드\s*(?:및|와|\+|&|마우스).*?세트|키보드\s*마우스\s*세트|키보드\s*및\s*마우스\s*세트)/i.test(t))return false;
   if(type==='키보드' &&

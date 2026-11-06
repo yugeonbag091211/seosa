@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {verdict,holdout}=require('./ai-v3-online-110-verify');
+const {verdict,holdout,blind}=require('./ai-v3-online-110-verify');
 let pass=0,fail=0;
 const test=async(label,fn)=>{try{await fn();pass++;console.log('PASS '+label)}catch(e){fail++;console.log('FAIL '+label+' '+String(e.message).slice(0,300))}};
 const h=n=>holdout.find(x=>x.id===n);
@@ -50,6 +50,33 @@ await test('valid same-brand supported wireless mouse is accepted',()=>{
 });
 await test('transport status 200 without actual search is FAIL for shopping',()=>{
  assert.equal(verdict(h('H01'),{...response([]),stats:{searched:false}},null).verdict,'FAIL');
+});
+await test('explicitly requested used laptop is accepted, never false-flagged as refurbished',()=>{
+ const t=blind.find(x=>x.id==='B026');
+ const used=card('laptop','HP Elite X2 1012 G2 중고 노트북 i5 8G 256GB',258000);
+ used.condition='used_or_refurbished';
+ assert.equal(verdict(t,response([used],{category:'노트북',maxPrice:300000}),null).verdict,'PASS');
+});
+await test('new laptop prompt must still reject secondhand listing',()=>{
+ const t=blind.find(x=>x.id==='B025');
+ const used=card('laptop','HP 중고 노트북 i5',258000);
+ used.condition='used_or_refurbished';
+ const v=verdict(t,response([used],{category:'노트북',maxPrice:1000000}),null);
+ assert.equal(v.verdict,'FAIL');
+ assert(v.errors.includes('card1:used_or_refurbished'));
+});
+await test('bundle exclusion is grounded in set, not every mention of a mouse',()=>{
+ const t=blind.find(x=>x.id==='B016');
+ const good=card('kb','로지텍 무선 키보드 K580 정품',99000);
+ const s=response([good],{category:'키보드',exclusions:['세트','마우스 결합 세트'],features:{wireless:true}});
+ assert.equal(verdict(t,s,null).verdict,'PASS');
+});
+await test('brand-less Buds3 Pro short query rejects third-party buds and spare unit',()=>{
+ const t=blind.find(x=>x.id==='B006');
+ const wrong=card('buds','리얼미 버즈 8 프로 블루투스 이어폰',99800);
+ const spare=card('unit','삼성 갤럭시 버즈3 프로 오른쪽 한쪽 낱개 유닛 단품 이어폰',83000);
+ assert.equal(verdict(t,response([wrong],{category:'이어폰'}),null).verdict,'FAIL');
+ assert.equal(verdict(t,response([spare],{category:'이어폰'}),null).verdict,'FAIL');
 });
 console.log(JSON.stringify({passed:pass,failed:fail,total:pass+fail}));
 if(fail)process.exitCode=1;

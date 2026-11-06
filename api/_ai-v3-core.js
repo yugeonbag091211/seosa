@@ -357,8 +357,16 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   // Named laptop/tablet in "MacBook-compatible external SSD" is the target
   // device, not the product for sale. Never force laptop identity on an SSD.
   if(plan.identity.family && familyCategory(plan.identity.family)!==plan.category &&
-    /(?:용|호환|연결|쓸|쓰는|사용할)/i.test(message)) {
-    plan.compatibilityFamily=plan.identity.family;plan.identity={};
+    /(?:용|호환|연결|쓸|쓰는|사용할|맞는|맞게|위한|전용)/i.test(message)) {
+    plan.compatibilityFamily=plan.identity.family;
+    // Discard host-device identity. Keep an explicitly named capacity only
+    // when it appears after the actually requested storage-device noun.
+    const storageStart=plan.category==='외장하드'
+      ? message.search(/(?:외장\s*(?:ssd|hdd|하드)|포터블\s*ssd)/i):-1;
+    const storageEvidence=storageStart>=0
+      ? extractTitleEvidence(message.slice(storageStart)):{};
+    plan.identity=storageEvidence.storageGb?
+      {storageGb:storageEvidence.storageGb}:{};
   }
   if (plan.mode === 'none') return {
     status: 200, answer: '찾고 싶은 상품이나 쇼핑 관련 질문을 알려주세요.',

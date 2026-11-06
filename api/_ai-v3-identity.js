@@ -151,7 +151,10 @@ function requestedIdentity(text) {
   // A user may change a model/option in the same utterance:
   // "128GB 말고 256GB", "아이패드 대신 갤럭시탭".
   // Only user-supplied language can override prior search constraints.
-  const input=normalize(text);
+  let input=normalize(text);
+  // A standalone Korean "버즈3 프로" names Samsung's Galaxy Buds family.
+  // Do not apply this alias to other brands' "Redmi Buds" products.
+  input=input.replace(/^\s*(?:(?:삼성|삼성전자)\s*)?버즈\s*(?=\d|fe\b|프로\b)/i,'갤럭시 버즈');
   const segments=input.split(/(?:말고|아니고|대신)/);
   if (segments.length < 2) return extractTitleEvidence(input);
   const before=extractTitleEvidence(segments.slice(0,-1).join(' '));

@@ -537,6 +537,73 @@ await test('explicitly exclude mixed-capacity listings with unknown capacity pri
  assert.equal(taxonomy.productTypeMatches('샌디스크 외장 SSD E31 대용량 포터블 스토리지','외장하드',req),false);
  assert.equal(taxonomy.productTypeMatches('트랜센드 외장SSD ESD310 + 파우치 세트 256GB','외장하드',req),true);
 });
+await test('short Galaxy Buds 3 Pro user name enforces exact Samsung product',async()=>{
+ const {requestedIdentity,checkListingIdentity}=require('../api/_ai-v3-identity');
+ const want=requestedIdentity('버즈3 프로 정품 이어폰');
+ assert.equal(want.family,'galaxybuds');
+ assert.equal(want.series,'3');
+ assert.equal(want.variant,'pro');
+ assert.equal(checkListingIdentity('삼성 갤럭시 버즈3 프로 무선 이어폰',want).ok,true);
+ assert.equal(checkListingIdentity('리얼미 버즈 에어8 프로 이어폰',want).ok,false);
+ const promo='갤럭시 버즈3 프로 오른쪽 한쪽 낱개 유닛 정품 단품 이어폰';
+ assert.equal(taxonomy.productTypeMatches(promo,'이어폰'),false);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'버즈3 프로',category:'이어폰',maxPrice:120000}),
+  searchProducts:async()=>[row('unit',promo,81000,'이어폰'),row('realme','리얼미 버즈 에어8 프로 이어폰',90000,'이어폰')],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'버즈3 프로 정품 이어폰 12만원 이하로 찾아줘'});
+ assert.equal(out.cards.length,0);
+});
+await test('iPad Air 11 M4 is compatibility target not a Bluetooth keyboard identity',async()=>{
+ const prompt='아이패드 에어 11인치 M4에 맞는 블루투스 키보드 6만원 이하';
+ assert.equal(taxonomy.explicitType(prompt),'키보드');
+ const good=row('keyboard','아이패드 에어 11 M4 호환 블루투스 키보드',55000,'키보드');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'아이패드 에어 M4 키보드',category:'태블릿',maxPrice:60000}),
+  searchProducts:async()=>[good],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:prompt});
+ assert.equal(out.state.category,'키보드');
+ assert.deepEqual(out.state.identity,{});
+ assert.equal(out.cards.length,1);
+});
+await test('MacBook target does not erase requested SSD storage capacity',async()=>{
+ const prompt='맥북에 연결할 외장 SSD 512기가 15만원 이하로 추천';
+ assert.equal(taxonomy.explicitType(prompt),'외장하드');
+ const good=row('ssd','삼성 외장 SSD 512GB 맥북 호환',120000,'외장하드');
+ const laptop=row('book','맥북 M4 512GB 노트북',100000,'노트북');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'맥북 SSD',category:'노트북',maxPrice:150000}),
+  searchProducts:async()=>[good,laptop],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:prompt});
+ assert.equal(out.state.category,'외장하드');
+ assert.deepEqual(out.state.identity,{storageGb:512});
+ assert.deepEqual(out.cards.map(c=>c.title),[good.title]);
+});
+await test('over-ear headphone excludes wireless stage microphone and mono headset',()=>{
+ assert.equal(taxonomy.productTypeMatches('UHF 무선 헤드셋 마이크 무대 공연 강의용','헤드폰','오버이어 헤드셋'),false);
+ assert.equal(taxonomy.productTypeMatches('브리츠 블루투스 모노 헤드셋 핸즈프리','헤드폰','오버이어 헤드셋'),false);
+ assert.equal(taxonomy.productTypeMatches('브리츠 무선 블루투스 오버이어 헤드폰','헤드폰','오버이어 헤드셋'),true);
+});
+await test('robot vacuum furniture not counted as a vacuum',()=>{
+ assert.equal(taxonomy.productTypeMatches('로봇청소기 팬트리 거실 수납장 800','청소기','로봇청소기'),false);
+ assert.equal(taxonomy.productTypeMatches('스마트 로봇청소기 자동충전','청소기','로봇청소기'),true);
+});
+await test('used laptop random assortment is not a priced exact item',()=>{
+ assert.equal(taxonomy.productTypeMatches('LG HP 레노버 중고 노트북 1~3세대모음 랜덤발송','노트북','중고 노트북'),false);
+ assert.equal(taxonomy.productTypeMatches('HP Elite X2 1012 G2 중고 노트북 8GB 256GB','노트북','중고 노트북'),true);
+});
+await test('standalone Logitech keyboard excludes bundled mouse sets',async()=>{
+ const good=row('single','로지텍 무선 키보드 K580 정품',89000,'키보드');
+ const bad=row('bundle','로지텍 무선 키보드 마우스 세트 MK275',39000,'키보드');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'로지텍 무선 키보드',category:'키보드'}),
+  searchProducts:async()=>[good,bad],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'로지텍 무선 키보드 단품만 추천, 마우스 결합 세트 제외'});
+ assert.deepEqual(out.cards.map(x=>x.title),[good.title]);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});
