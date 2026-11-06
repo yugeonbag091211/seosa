@@ -457,6 +457,43 @@ await test('mouse request does not include keyboard and mouse bundle as pure mou
  assert.equal(taxonomy.productTypeMatches('로지텍 무선 키보드 마우스 세트 MK275','마우스','무선 마우스'),false);
  assert.equal(taxonomy.productTypeMatches('로지텍 G304 무선 마우스','마우스','무선 마우스'),true);
 });
+await test('그중 filters ONLY previously displayed card IDs, not newly searched listings',async()=>{
+ const original=row('old','브리츠 무선 블루투스 헤드폰',135000,'헤드폰');
+ const newOne=row('new','소니 무선 블루투스 헤드폰',139000,'헤드폰');
+ let call=0;
+ const deps={
+  planModel:async()=>({mode:'recommend',query:'무선 헤드폰',category:'헤드폰',maxPrice:150000}),
+  searchProducts:async()=>{call++;return call===1?[original]:[original,newOne];},
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ };
+ const first=await createEngine(deps,{message:'15만원 이하 무선 헤드폰 추천해줘'});
+ assert.equal(first.cards.length,1);
+ assert.equal(first.state.presentedProductIds.length,1);
+ const next=await createEngine(deps,{message:'그중에서 12만원 이상 골라줘',state:first.state});
+ assert.equal(next.state.minPrice,120000);
+ assert.deepEqual(next.cards.map(x=>x.title),[original.title]);
+ assert.equal(next.state.presentedProductIds.length,1);
+});
+await test('그중 with no matching shown cards does not invent new products',async()=>{
+ const shown=row('old','브리츠 블루투스 무선 헤드폰',110000,'헤드폰');
+ const unrelated=row('new','소니 블루투스 무선 헤드폰',135000,'헤드폰');
+ let call=0;
+ const deps={
+  planModel:async()=>({mode:'none',query:'',category:''}),
+  searchProducts:async()=>++call===1?[shown]:[shown,unrelated],
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ };
+ const first=await createEngine(deps,{message:'15만원 이하 무선 헤드폰 추천'});
+ assert.equal(first.cards.length,1);
+ const next=await createEngine(deps,{message:'그중 12만원 이상으로 골라줘',state:first.state});
+ assert.equal(next.stats.searched,true);
+ assert.equal(next.state.minPrice,120000);
+ assert.equal(next.cards.length,0);
+ assert.deepEqual(next.state.presentedProductIds,[]);
+ assert.match(next.answer,/앞서 보여드린 상품/);
+ const third=await createEngine(deps,{message:'그중에서 한 개만 추천해줘',state:next.state});
+ assert.equal(third.cards.length,0);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

@@ -6,8 +6,8 @@ const {categoryOk}=require('../api/_ai-v3-core');
 const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory,isPart}=require('../api/_ai-v31-taxonomy');
 const {brandMatches}=require('../api/_ai-v31-retrieval');
 const mode=process.argv[2],share=process.argv[3];
-if(!['gate','full','focus','holdout'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||''))throw Error('Require approved Preview share link and permitted test mode');
-const base=new URL(share).origin;
+if(require.main===module && (!['gate','full','focus','holdout'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||'')))throw Error('Require approved Preview share link and permitted test mode');
+const base=typeof share==='string'?new URL(share).origin:'';
 const outdir=path.resolve(__dirname,'../reports/ai-v3-online-20261105');
 mkdirSync(outdir,{recursive:true});
 const outfile=path.join(outdir,mode+'.jsonl'),summaryfile=path.join(outdir,mode+'-summary.json');
@@ -129,6 +129,12 @@ function verdict(test,data,previous){
  if(test.expectNoSearch){if(cards.length||data.stats?.searched)errors.push('nonshopping_triggered_search');return{verdict:errors.length?'FAIL':'PASS',errors,unverified};}
  if(data.stats?.searched===false)errors.push('shopping_request_not_searched');
  if(cards.length>4)errors.push('too_many_cards');
+ const refersToPrevious=/그\s*중|이\s*중|위\s*(?:상품|제품)|앞서\s*추천한/i.test(test.p);
+ if(refersToPrevious && previous && Array.isArray(previous.state?.presentedProductIds)){
+   const previousShown=new Set(previous.state.presentedProductIds);
+   if(cards.some(c=>!previousShown.has(c.productId)))
+     errors.push('recommendation_not_among_previously_shown');
+ }
  const checkIdentity=!test.compare&&test.model?requestedIdentity(test.model):(!test.compare?requestedIdentity(test.p):{});
  const max=test.max??amount(test.p)??(test.from?previous?.state?.maxPrice:null);
  const min=test.min??(test.from?previous?.state?.minPrice:null);
@@ -174,7 +180,17 @@ function verdict(test,data,previous){
      errors.push('comparison_sides_mismatch');
  }else if(cards.length>0)errors.push('comparison_one_sided');
  }
- if(!cards.length&&!test.allowEmpty&&!test.expectNoSearch)unverified.push('no_suitable_cards_or_inventory');
+ if(!cards.length&&!test.expectNoSearch){
+   // Lack of a product is not an accuracy PASS. One defensible exception:
+   // "그중" narrowed the PREVIOUSLY displayed list by price and all its
+   // shown candidates are provably outside the new price band.
+   const shown=Array.isArray(previous?.cards)?previous.cards:[];
+   const exhausted=refersToPrevious&&shown.length>0 &&
+     Array.isArray(previous?.state?.presentedProductIds) &&
+     shown.every(c=>(min!=null&&Number(c.price)<min)||
+                    (max!=null&&Number(c.price)>max));
+   if(!exhausted)unverified.push('no_suitable_cards_or_inventory');
+ }
  return{verdict:errors.length?'FAIL':unverified.length?'UNVERIFIED':'PASS',errors,unverified};
 }
 async function main(){
@@ -216,10 +232,10 @@ async function main(){
   tokens.calls+=(u.calls||0);tokens.input+=(u.inputTokens||0);tokens.output+=(u.outputTokens||0);
   const record={id:test.id,question:test.p,from:test.from??null,http:data.http,apiStatus:data.apiStatus,elapsedMs:responseTime,
     verdict:v.verdict,errors:v.errors,unverified:v.unverified,
-    cards:(Array.isArray(data.cards)?data.cards:[]).map(c=>({title:c.title,price:c.price,condition:c.condition,link:c.link})),
+    cards:(Array.isArray(data.cards)?data.cards:[]).map(c=>({productId:c.productId,title:c.title,price:c.price,condition:c.condition,link:c.link})),
     answer:String(data.answer||data.error||'').slice(0,650),
     stats:{searched:data.stats?.searched,inspected:data.stats?.inspected,accepted:data.stats?.accepted,rejectedReasons:data.stats?.rejectedReasons||{},modelUsage:data.stats?.modelUsage||null},
-    state:{lastQuery:data.state?.lastQuery,category:data.state?.category,maxPrice:data.state?.maxPrice,minPrice:data.state?.minPrice,exclusions:data.state?.exclusions,identity:data.state?.identity,features:data.state?.features}};
+    state:{lastQuery:data.state?.lastQuery,category:data.state?.category,maxPrice:data.state?.maxPrice,minPrice:data.state?.minPrice,exclusions:data.state?.exclusions,identity:data.state?.identity,features:data.state?.features,presentedProductIds:data.state?.presentedProductIds}};
   appendFileSync(outfile,JSON.stringify(record)+'\n');
   results.push(record);
   console.log(JSON.stringify({id:test.id,verdict:v.verdict,http:data.http,cards:record.cards.length,errors:v.errors,unverified:v.unverified,
@@ -234,4 +250,5 @@ async function main(){
  writeFileSync(summaryfile,JSON.stringify(summary,null,2));
  console.log(JSON.stringify({stage:'DONE',...summary,failures:summary.failures.slice(0,30),unresolved:summary.unresolved.slice(0,20)}));
 }
-main().catch(e=>{console.error(JSON.stringify({stage:'FATAL',errorType:e.name,message:String(e.message)}));process.exitCode=1;});
+if(require.main===module)main().catch(e=>{console.error(JSON.stringify({stage:'FATAL',errorType:e.name,message:String(e.message)}));process.exitCode=1;});
+module.exports={verdict,holdout,full,gate};

@@ -311,6 +311,10 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     maxPrice: nprice(saved.maxPrice), minPrice: nprice(saved.minPrice),
     exclusions: Array.isArray(saved.exclusions) ? saved.exclusions.map(x => clean(x, 55)).filter(Boolean).slice(0, 8) : [],
     mallOnly: clean(saved.mallOnly, 35), exactModel: clean(saved.exactModel, 80), allowUsed: !!saved.allowUsed,
+    // A bounded list of server-presented IDs; an empty array means the last
+    // answer actually displayed zero products. Missing means legacy state.
+    presentedProductIds:Array.isArray(saved.presentedProductIds)?
+      [...new Set(saved.presentedProductIds.filter(v=>typeof v==='string'&&v.length>0&&v.length<=160))].slice(0,4):null,
     identity: saved.identity && typeof saved.identity === 'object' ? Object.fromEntries(
       Object.entries(saved.identity).filter(([k,v]) =>
         ['family','series','variant','generation','storageGb','ramGb','screenInches','chip','network'].includes(k)
@@ -402,13 +406,22 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   }
   const compare = plan.mode === 'compare';
   const complete = !compare || (groups.length === 2 && groups.every(g => g.length > 0));
-  const candidates = compare
+  const candidatesAll = compare
     ? [...groups[0].slice(0, 8), ...groups[1].slice(0, 8)]
       .filter((x, index, list) => list.findIndex(y => y.id === x.id) === index)
     : groups[0].slice(0, MAX_RESULTS);
+  // "그중" means among the cards ACTUALLY displayed previously, not another
+  // search of unrelated products. Never let GPT redefine that set.
+  const refersToDisplayed=/그\s*중|이\s*중|앞서\s*추천한|위\s*(?:상품|제품)|추천한\s*것\s*중/i.test(message);
+  const constrainToDisplayed=!compare&&refersToDisplayed&&Array.isArray(prior.presentedProductIds);
+  const allowedDisplayed=new Set(prior.presentedProductIds||[]);
+  const candidates=constrainToDisplayed?
+    candidatesAll.filter(x=>allowedDisplayed.has(x.id)):candidatesAll;
   const choice = complete && candidates.length
     ? await decideModel({ message, history, plan, candidates }) : { productIds: [] };
   const selection = resultFromSelection(plan, candidates, choice);
+  if(constrainToDisplayed && !selection.cards.length)
+    selection.answer='앞서 보여드린 상품 중에는 새 조건에 맞는 상품이 없어요. 다른 상품까지 새로 찾으려면 그렇게 말씀해 주세요.';
   if (compare) {
     const first = new Set((groups[0] || []).map(x => x.id));
     const second = new Set((groups[1] || []).map(x => x.id));
@@ -432,7 +445,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
       maxPrice: plan.maxPrice, minPrice: plan.minPrice,
       exclusions: plan.exclusions, mallOnly: plan.mallOnly,
       exactModel: plan.exactModel, allowUsed: plan.allowUsed,
-      identity: plan.mode === 'compare' ? {} : plan.identity
+      identity: plan.mode === 'compare' ? {} : plan.identity,
+      presentedProductIds:selection.cards.map(c=>c.productId)
     },
     stats: { searched: true, fetched, inspected, accepted, provisional, rejected,
       rejectedReasons: reasonCounts, chosen: selection.cards.length,
