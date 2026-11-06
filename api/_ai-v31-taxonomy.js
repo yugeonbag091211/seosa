@@ -166,7 +166,13 @@ function productTypeMatches(title,category,requestedText='') {
     !/(?:블루투스|bluetooth)/i.test(t))return false;
   if(type==='키보드' && /(?:아이패드\s*용|ipad\s*용)/i.test(requestedText) &&
     !/(?:아이패드|ipad|ipados)/i.test(t))return false;
-  if(type==='태블릿'&&/(?:전자책|이북\s*리더기|e-?book\s*reader|킨들|kindle)/i.test(t))return false;
+  if(type==='태블릿'){
+    // A purported Apple iPad running Android is a contradictory seller claim.
+    // Do not treat it as a verified tablet (or a genuine Apple product).
+    if(/(?:아이패드|\bipad\b)/i.test(t) &&
+      /(?:안드로이드\s*\d|android\s*\d)/i.test(t))return false;
+    if(/(?:전자책|이북\s*리더기|e-?book\s*reader|킨들|kindle)/i.test(t))return false;
+  }
   if(type==='외장하드') {
     if(!/(?:외장\s*(?:하드|ssd|hdd|디스크)|portable\s*(?:ssd|hdd|hard)|external\s*(?:ssd|hdd|hard|drive)|포터블\s*ssd|my\s*passport|ssd\s*t7\b|하드디스크)/i.test(t))return false;
     if(/(?:외장\s*ssd|포터블\s*ssd|portable\s*ssd)/i.test(requestedText) && !/(?:ssd|솔리드\s*스테이트)/i.test(t))return false;

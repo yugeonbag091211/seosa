@@ -293,6 +293,13 @@ await test('iPad-compatible Bluetooth keyboard is found behind generic 40 keyboa
  assert(output.some(x=>x.productId==='ipadkb'));
  assert(calls.some(spec=>spec.filter(([c])=>c==='title').length===3));
 });
+await test('contradictory Apple iPad Android tablet seller title is rejected',()=>{
+ assert.equal(taxonomy.productTypeMatches(
+   '[해외] 2026 오리지널 12인치 아이패드 에어 프로 5G 태블릿 안드로이드 15 24GB 램',
+   '태블릿'),false);
+ assert.equal(taxonomy.productTypeMatches('Apple 아이패드 에어 11 M4 WiFi 128GB','태블릿'),true);
+ assert.equal(taxonomy.productTypeMatches('레노버 Idea Tab Pro Gen2 안드로이드 15 태블릿','태블릿'),true);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});
