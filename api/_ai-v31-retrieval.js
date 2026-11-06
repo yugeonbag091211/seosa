@@ -10,7 +10,8 @@ const brandLexicon=[
   ['로지텍',['로지텍','Logitech']],['씨게이트',['씨게이트','Seagate']],
   ['WD',['WD','Western Digital']],['젠하이저',['젠하이저','Sennheiser']],
   ['LG',['LG','엘지']],['브리츠',['브리츠','Britz']],['JBL',['JBL']],
-  ['샤오미',['샤오미','Xiaomi']],['레노버',['레노버','Lenovo']]
+  ['샤오미',['샤오미','Xiaomi']],['레노버',['레노버','Lenovo']],
+  ['로보락',['로보락','Roborock']]
 ];
 function brandsFromUser(text) {
   const s=safe(text);

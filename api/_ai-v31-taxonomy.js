@@ -138,6 +138,8 @@ function isPart(title,type) {
   if(type==='헤드폰'&&/(?:스템\s*캡|스템|탑캡|헤드셋\s*베어링|자전거|바이크\s*헤드셋|bike\s*headset)/i.test(t))return true;
   if(type==='외장하드'&&/(?:ssd\s*케이스|hdd\s*케이스|외장하드\s*(?:케이스|파우치|독|도킹)|외장\s*하드\s*케이스|NAS\s*서버|클로닝|하드카피|디스크\s*복제|동시\s*복제|스토리지\s*도킹)/i.test(t))return true;
   if(type==='모니터'&&/(?:모니터\s*(?:암|받침대|홀더|스탠드|거치)|monitor\s*(?:arm|stand|mount))/i.test(t))return true;
+  if(type==='청소기' &&
+    /(?:먼지\s*봉투|집진백|먼지백|교체\s*브러시|모터\s*필터|청소기\s*필터\s*(?:세트|교체|호환)|소모품|액세서리|청소기\s*부품)/i.test(t))return true;
   return false;
 }
 function productTypeMatches(title,category,requestedText='') {
@@ -186,6 +188,8 @@ function productTypeMatches(title,category,requestedText='') {
     if(/\b(?:프로\s*헤드폰|헤드폰\s*스탠드)\b/i.test(t))return false;
     return true;
   }
+  if(type==='마우스' &&
+    /(?:키보드\s*(?:및|와|\+|&|마우스).*?세트|키보드\s*마우스\s*세트|키보드\s*및\s*마우스\s*세트)/i.test(t))return false;
   if(type==='키보드' &&
     /(?:손목\s*받침|손목받침|팜레스트|키보드\s*스킨|키보드\s*필름|keycap|키캡|손목\s*패드)/i.test(t))return false;
   if(type==='키보드' &&

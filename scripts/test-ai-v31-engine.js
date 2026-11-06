@@ -436,6 +436,27 @@ await test('same-category comparison separates robot and stick vacuums',async()=
  assert(out.cards.some(x=>x.title===robot.title));
  assert(out.cards.some(x=>x.title===stick.title));
 });
+await test('robot-vacuum comparison rejects branded dust bags and picks actual appliances',async()=>{
+ const prompt='로보락이랑 일반 무선청소기 비교해줘';
+ const dust=row('dust','로보락 Q레보 S8 맥스V 울트라 로봇청소기 먼지봉투 액세서리',71100,'청소기');
+ const robot=row('real','로보락 Qrevo 로봇청소기',529000,'청소기');
+ const stick=row('stick','캐치웰 무선청소기 초경량 스틱 진공청소기',129000,'청소기');
+ assert.equal(taxonomy.productTypeMatches(dust.title,'청소기',prompt),false);
+ assert.equal(taxonomy.productTypeMatches(robot.title,'청소기',prompt),true);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'청소기',category:'청소기'}),
+  searchProducts:async()=>[dust,robot,stick],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:prompt});
+ assert.equal(out.cards.length,2);
+ assert(out.cards.some(x=>x.title===robot.title));
+ assert(out.cards.some(x=>x.title===stick.title));
+ assert(!out.cards.some(x=>x.title===dust.title));
+});
+await test('mouse request does not include keyboard and mouse bundle as pure mouse',()=>{
+ assert.equal(taxonomy.productTypeMatches('로지텍 무선 키보드 마우스 세트 MK275','마우스','무선 마우스'),false);
+ assert.equal(taxonomy.productTypeMatches('로지텍 G304 무선 마우스','마우스','무선 마우스'),true);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});
