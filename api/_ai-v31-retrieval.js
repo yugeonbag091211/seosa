@@ -22,6 +22,11 @@ function brandsFromUser(text) {
   }
   return [...new Set(found)].slice(0,2);
 }
+function brandMatches(title,requestText) {
+  const brands=brandsFromUser(requestText);
+  return !brands.length||brands.some(word=>
+    String(title||'').toLowerCase().includes(word.toLowerCase()));
+}
 function deviceAnchors(category,identity={}) {
   if(identity?.family==='ipad')return ['아이패드','iPad'];
   if(identity?.family==='galaxytab')return ['갤럭시탭','Galaxy Tab'];
@@ -86,4 +91,4 @@ function buildProbes({query='',category='',userText='',identity={},minPrice,maxP
     push([['title',categoryAnchor]]);
   return sets.slice(0,9);
 }
-module.exports={buildProbes,deriveClues,brandsFromUser,deviceAnchors};
+module.exports={buildProbes,deriveClues,brandsFromUser,brandMatches,deviceAnchors};

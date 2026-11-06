@@ -5,7 +5,8 @@ const MAX_RESULTS = 16;
 const MAX_CARDS = 4;
 const { extractTitleEvidence, requestedIdentity, mergeRequested, checkListingIdentity } = require('./_ai-v3-identity');
 const { canonicalCategory, comparisonFromUtterance, explicitType, productTypeMatches,
-  isPart, mergeFeatures, featureContext } = require('./_ai-v31-taxonomy');
+  isPart, mergeFeatures, featureContext, familyCategory } = require('./_ai-v31-taxonomy');
+const { brandMatches, brandsFromUser } = require('./_ai-v31-retrieval');
 const MAX_CANDIDATE_SCAN = 200;
 const clean = (x, n = 120) => String(x == null ? '' : x).normalize('NFKC')
   .replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
@@ -121,9 +122,16 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   });
   const priorCategory=canonicalCategory({planCategory:prev.category});
   const spokenCategory=explicitType(utterance);
-  const features=mergeFeatures(prev.features,utterance,
-    !!(spokenCategory&&priorCategory&&spokenCategory!==priorCategory));
+  const changedType=!!(spokenCategory&&priorCategory&&spokenCategory!==priorCategory);
+  const features=mergeFeatures(prev.features,utterance,changedType);
+  const mentionedBrand=brandsFromUser(utterance)[0]||'';
+  const brandTerm=mentionedBrand && !new RegExp(mentionedBrand+'\\s*(?:제외|말고|빼고)','i').test(utterance)
+    ? mentionedBrand : changedType ? '' : clean(prev.brandTerm,35);
+  // Ground explicit exclusions in user language, independent of model choices.
+  const directlyExcluded=[...String(utterance||'').matchAll(/([가-힣a-z0-9+]{2,20})\s*(?:제외|말고|빼고|아닌)/gi)]
+    .map(m=>m[1]).filter(x=>x.length>1);
   const exclusions = [...new Set([
+    ...directlyExcluded,
     ...(Array.isArray(prev.exclusions) ? prev.exclusions : []),
     ...(Array.isArray(o.exclusions) ? o.exclusions : [])
   ].map(x => clean(x, 55)).filter(Boolean))].slice(0, 8);
@@ -138,7 +146,8 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   const newOnly = /중고.{0,9}(?:제외|빼|싫|말고|아닌|아니)|(?:새상품|새제품|신품)/i.test(utterance);
   const usedRequested = /중고|리퍼|리퍼비시|전시품|전시상품/i.test(utterance) && !newOnly;
   return {
-    query, compareQuery, category, features, maxPrice, minPrice, exclusions, mallOnly,
+    query, compareQuery, category, features, brandTerm,
+    maxPrice, minPrice, exclusions, mallOnly,
     exactModel: anchoredModel, allowUsed: newOnly ? false : usedRequested || !!prev.allowUsed,
     mode: o.mode === 'none' ? 'none' : o.mode === 'compare' ? 'compare' : 'recommend'
   };
@@ -158,6 +167,7 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
       const evidence = checkListingIdentity(item.title, plan.identity);
       if (!evidence.ok) reason = evidence.reason;
     }
+    if(!reason && plan.brandTerm && !brandMatches(item.title,plan.brandTerm))reason='wrong_brand';
     if (!reason && plan.mallOnly && !flat(item.mall).includes(flat(plan.mallOnly))) reason = 'wrong_merchant';
     const hasSpecificIdentity = plan.identity && Object.keys(plan.identity).some(k => k !== 'family');
     if (!reason && plan.exactModel && !hasSpecificIdentity && !flat(item.title).includes(flat(plan.exactModel)))
@@ -271,7 +281,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   const saved = request && request.state && typeof request.state === 'object' ? request.state : {};
   const prior = {
     lastQuery: clean(saved.lastQuery, 80), compareQuery: clean(saved.compareQuery, 80),
-    category: clean(saved.category, 36),
+    category: clean(saved.category, 36),brandTerm:clean(saved.brandTerm,35),
     features:saved.features&&typeof saved.features==='object'?{
       wireless:saved.features.wireless===true,anc:saved.features.anc===true,
       externalSsd:saved.features.externalSsd===true
@@ -300,6 +310,12 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   // An LLM-made search keyword is NOT evidence of user intent.
   // Only the user's utterance and carried conversation constraints may impose exact model requirements.
   plan.identity = mergeRequested(prior.identity, message, changedSubject);
+  // Named laptop/tablet in "MacBook-compatible external SSD" is the target
+  // device, not the product for sale. Never force laptop identity on an SSD.
+  if(plan.identity.family && familyCategory(plan.identity.family)!==plan.category &&
+    /(?:용|호환|연결)/i.test(message)) {
+    plan.compatibilityFamily=plan.identity.family;plan.identity={};
+  }
   if (plan.mode === 'none') return {
     status: 200, answer: '찾고 싶은 상품이나 쇼핑 관련 질문을 알려주세요.',
     cards: [], state: prior, stats: { searched: false, accepted: 0, provisional: 0 }
@@ -317,7 +333,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     const groupIdentity = plan.mode === 'compare' ? requestedIdentity(query) : plan.identity;
     const groupCategory = plan.mode === 'compare'
       ? canonicalCategory({message:query,query,planCategory:plan.category}) : plan.category;
-    const subject=featureContext(message,plan.features);
+    const subject=featureContext(plan.mode==='compare'?query:message,plan.features)
+      +(plan.mode==='compare'||!plan.brandTerm?'':' '+plan.brandTerm);
     const raw = await searchProducts(query, { identity: groupIdentity,
       minPrice: plan.minPrice,maxPrice: plan.maxPrice,category:groupCategory,
       userText:subject });
@@ -330,7 +347,9 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     if (excludedBySubject) reasonCounts.wrong_comparison_subject =
       (reasonCounts.wrong_comparison_subject || 0) + excludedBySubject;
     const evaluated = validateCandidates(
-      { ...plan,category:groupCategory,subject:featureContext(message,plan.features),
+      { ...plan,category:groupCategory,subject:featureContext(
+          plan.mode==='compare'?query:message,plan.features),
+        brandTerm:plan.mode==='compare'?(brandsFromUser(query)[0]||''):plan.brandTerm,
         identity:groupIdentity,exactModel:plan.mode==='compare'?'':plan.exactModel },matched);
     inspected += evaluated.checked;
     accepted += evaluated.acceptedCount;
@@ -369,7 +388,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     status: 200, ...selection,
     state: {
       lastQuery: plan.query, compareQuery: plan.compareQuery,
-      category: plan.category, features:plan.features,
+      category: plan.category, features:plan.features,brandTerm:plan.brandTerm,
       maxPrice: plan.maxPrice, minPrice: plan.minPrice,
       exclusions: plan.exclusions, mallOnly: plan.mallOnly,
       exactModel: plan.exactModel, allowUsed: plan.allowUsed,

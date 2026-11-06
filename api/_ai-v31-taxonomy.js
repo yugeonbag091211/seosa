@@ -22,6 +22,7 @@ const TYPES = [
 const TYPEMAP = new Map(TYPES.map(([type,regex,anchors])=>[type,{regex,anchors}]));
 const FAMILY = {ipad:'태블릿',galaxytab:'태블릿',iphone:'스마트폰',galaxys:'스마트폰',
   airpods:'이어폰',galaxybuds:'이어폰',macbook:'노트북'};
+function familyCategory(family){return FAMILY[family]||''}
 function allTypes(text) {
   const matches=[];
   for(const [type,re] of TYPES) {
@@ -80,7 +81,7 @@ function featureContext(message='',features={}) {
 function stripTaxonomy(title) {
   return String(title||'').split(/\/(?:디지털기기|pc\/주변기기|생활\/가전)/i)[0];
 }
-const PARTS=/(?:케이스|보호필름|보호\s*유리|충전기|거치대|스탠드|브라켓|어댑터|파우치|커버|스트랩|리필|펜촉|키캡|호환\s*케이스|스티커|교체용|필터\s*(?:세트|호환|교체)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰))/i;
+const PARTS=/(?:케이스|보호필름|보호\s*유리|충전기|거치대|스탠드|브라켓|어댑터|파우치|커버|스트랩|리필|펜촉|키캡|호환\s*케이스|스티커|교체용|이어팁|이어패드|필름\s*세트|필터\s*(?:세트|호환|교체)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰))/i;
 const EARPIECE=/(?:이어폰|이어버드|earbuds|in[\s-]?ear|에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|이어\s*클립|이어클립|골전도|넥밴드)/i;
 const HEADPHONE=/(?:헤드폰|헤드셋|headphone|headset|\bWH-CH\d)/i;
 function ambiguousOptions(title,category) {
@@ -105,6 +106,14 @@ function isPart(title,type) {
 function productTypeMatches(title,category,requestedText='') {
   const t=stripTaxonomy(title),type=canonicalCategory({planCategory:category});
   if(!type||!t.trim())return false;
+  // Listings that advertise multiple models/option choices cannot evidence
+  // one priced, verified product configuration.
+  if(/(?:모아보기|상품\s*모음|모델\s*선택|옵션\s*선택|옵션별|골라담기)/i.test(t))return false;
+  // Seller texts may mention multiple categories; trust the principal item.
+  const mentions=allTypes(t);
+  if(mentions[0]&&mentions[0].type!==type&&
+    ((type==='헤드폰'&&mentions[0].type==='마우스')||
+     (type==='태블릿'&&mentions[0].type==='노트북')))return false;
   if(isPart(t,type)||ambiguousOptions(t,type))return false;
   // A requested feature must be evidenced by the actual seller listing.
   // Category words alone are never evidence of ANC functionality.
@@ -118,6 +127,7 @@ function productTypeMatches(title,category,requestedText='') {
     if(!/(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|액티브\s*노이즈)/i.test(t))return false;
   }
   if(type==='헤드폰') {
+    if(/(?:다이어리|문구용|노트\s*꾸미기|필통|지우개|만화책)/i.test(t))return false;
     if(!HEADPHONE.test(t))return false;
     // Ear-clip, bone-conduction, in-ear and TWS products are not over-ear headphones.
     if(EARPIECE.test(t))return false;
@@ -128,6 +138,11 @@ function productTypeMatches(title,category,requestedText='') {
     if(/\b(?:프로\s*헤드폰|헤드폰\s*스탠드)\b/i.test(t))return false;
     return true;
   }
+  if(type==='키보드' && /(?:블루투스|bluetooth)/i.test(requestedText) &&
+    !/(?:블루투스|bluetooth)/i.test(t))return false;
+  if(type==='키보드' && /(?:아이패드\s*용|ipad\s*용)/i.test(requestedText) &&
+    !/(?:아이패드|ipad|ipados)/i.test(t))return false;
+  if(type==='태블릿'&&/(?:전자책|이북\s*리더기|e-?book\s*reader|킨들|kindle)/i.test(t))return false;
   if(type==='외장하드') {
     if(!/(?:외장\s*(?:하드|ssd|hdd|디스크)|portable\s*(?:ssd|hdd|hard)|external\s*(?:ssd|hdd|hard|drive)|포터블\s*ssd|my\s*passport|ssd\s*t7\b|하드디스크)/i.test(t))return false;
     if(/(?:외장\s*ssd|포터블\s*ssd|portable\s*ssd)/i.test(requestedText) && !/(?:ssd|솔리드\s*스테이트)/i.test(t))return false;
@@ -154,4 +169,4 @@ function searchAnchors(category) {
 }
 module.exports={TYPES,allTypes,explicitType,canonicalCategory,comparisonFromUtterance,
   stripTaxonomy,ambiguousOptions,isPart,productTypeMatches,searchAnchors,
-  mergeFeatures,featureContext};
+  mergeFeatures,featureContext,familyCategory};

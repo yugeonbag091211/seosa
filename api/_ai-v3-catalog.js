@@ -4,7 +4,7 @@
 // merely to acquire a remote seller-provider rate-limit lease.
 const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
 const { productTypeMatches } = require('./_ai-v31-taxonomy');
-const { buildProbes } = require('./_ai-v31-retrieval');
+const { buildProbes,brandMatches } = require('./_ai-v31-retrieval');
 const safeTerm = value => String(value || '').normalize('NFKC')
   .replace(/[^0-9a-zA-Z가-힣+\s-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0,70);
 const flat = x => String(x || '').normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
@@ -106,7 +106,9 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     }
   }
   // Exact intent comes from user conversation, never from a shortened GPT keyword.
-  const target=identity && identity.family ? identity : extractTitleEvidence(term);
+  // The caller supplies user-grounded identity (even when empty).
+  // GPT's search keyword cannot create new required product identity.
+  const target=identity&&typeof identity==='object' ? identity : extractTitleEvidence(term);
   // A used listing or an accessory is not a suitable reason to stop searching
   // for a new device that matches the requested exact variant.
   const hasVerifiedNew=()=>rows.some(r=>!NON_DEVICE.test(r.title) && checkListingIdentity(r.title,target).ok);
@@ -148,6 +150,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       minPrice:boundedMin,maxPrice:boundedMax});
     const viable=()=>rows.filter(row=>
       productTypeMatches(row.title,category,userText||term) &&
+      brandMatches(row.title,userText||term) &&
       (!target.family || checkListingIdentity(row.title,target).ok) &&
       (boundedMin==null || Number(row.lprice)>=boundedMin) &&
       (boundedMax==null || Number(row.lprice)<=boundedMax)).length;
@@ -167,7 +170,8 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     const mapper=mapRow || require('./_shop').toClientProduct;
     const budgetPriority=r=>boundedMin != null &&
       Number(r.lprice)>=boundedMin && (boundedMax==null || Number(r.lprice)<=boundedMax) ? 100 : 0;
-    const eligible=category?rows.filter(row=>productTypeMatches(row.title,category,userText||term)):rows;
+    const eligible=category?rows.filter(row=>
+      productTypeMatches(row.title,category,userText||term) && brandMatches(row.title,userText||term)):rows;
     return eligible.sort((a,b)=>(budgetPriority(b)-budgetPriority(a))
       || evidenceScore(b,userText||term,target)-evidenceScore(a,userText||term,target)
       || evidenceScore(b,term,target)-evidenceScore(a,term,target))

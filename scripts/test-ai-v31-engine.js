@@ -147,6 +147,68 @@ await test('noise cancelling requirement is backed by title, not passive marketi
  assert.equal(taxonomy.productTypeMatches('소니 MDR-7506 패시브노이즈캔슬링 PNC 헤드폰','헤드폰','ANC'),false);
  assert.equal(taxonomy.productTypeMatches('소니 WH-CH720N ANC 무선 블루투스 헤드폰','헤드폰','무선 ANC'),true);
 });
+await test('Buds FE is not Buds3 FE',()=>{
+ const {requestedIdentity,checkListingIdentity,extractTitleEvidence}=require('../api/_ai-v3-identity');
+ const want=requestedIdentity('갤럭시 버즈 FE');
+ assert.equal(checkListingIdentity('갤럭시버즈3FE 무선 블루투스 이어폰',want).ok,false);
+ assert.equal(checkListingIdentity('삼성 갤럭시 버즈 FE 무선 이어폰',want).ok,true);
+ assert.equal(extractTitleEvidence('삼성 갤럭시 버즈3 프로').series,'3');
+});
+await test('brand named by user is never replaced by another brand',async()=>{
+ const wd=row('wd','WD My Passport 2TB 외장하드',179000);
+ const seagate=row('sea','씨게이트 Expansion 2TB 외장하드',199000);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'씨게이트 외장하드 2TB',category:'외장하드'}),
+  searchProducts:async()=>[wd,seagate],
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ },{message:'씨게이트 외장하드 2TB 추천'});
+ assert.equal(out.cards.length,1);
+ assert.equal(out.cards[0].title,seagate.title);
+});
+await test('iPad accessory compatibility does not require keyboard to be an iPad',async()=>{
+ const wrong=row('pc','무선 게이밍 키보드 마우스 세트',25000,'키보드');
+ const right=row('ipadkb','아이패드 호환 블루투스 키보드',89000,'키보드');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'아이패드용 키보드',category:'태블릿'}),
+  searchProducts:async()=>[wrong,right],
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ },{message:'아이패드용 블루투스 키보드 추천'});
+ assert.equal(out.state.category,'키보드');
+ assert.equal(out.cards.length,1);assert.equal(out.cards[0].title,right.title);
+});
+await test('MacBook-compatible storage searches SSD rather than laptop',async()=>{
+ const good=row('ssd','삼성 외장 SSD T7 USB-C 1TB 맥북 호환',150000,'외장하드');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'맥북 연결용 외장 SSD',category:'노트북'}),
+  searchProducts:async()=>[good],
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ },{message:'맥북 연결용 외장 SSD 추천'});
+ assert.equal(out.state.category,'외장하드');
+ assert.equal(out.cards.length,1);
+});
+await test('explicit gaming exclusion does not rely on model generation',async()=>{
+ const bad=row('gaming','게이밍 키보드 마우스 세트',49000,'키보드');
+ const good=row('office','로지텍 무선 사무용 키보드',99000,'키보드');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'사무용 키보드',category:'키보드',exclusions:[]}),
+  searchProducts:async()=>[bad,good],
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ },{message:'게이밍 말고 사무용 키보드 추천'});
+ assert.deepEqual(out.cards.map(x=>x.title),[good.title]);
+ assert(out.state.exclusions.includes('게이밍'));
+});
+await test('named iPad 11 M4 screen is not silently unverified',()=>{
+ const {requestedIdentity,checkListingIdentity}=require('../api/_ai-v3-identity');
+ const need=requestedIdentity('11인치 아이패드 에어 M4');
+ assert.equal(checkListingIdentity('Apple 아이패드 에어 11 M4 WiFi 128GB',need).ok,true);
+ assert.equal(checkListingIdentity('Apple 아이패드 에어 13 M4 WiFi 128GB',need).ok,false);
+});
+await test('ebooks and mixed-model promotions never become verified device cards',()=>{
+ assert.equal(taxonomy.productTypeMatches('아마존 킨들 이북 리더기 전자책 태블릿 11세대','태블릿'),false);
+ assert.equal(taxonomy.productTypeMatches('로보락 ULTRA 청소기 Qrevo 초특가 모아보기!','청소기'),false);
+ assert.equal(taxonomy.productTypeMatches('2027 나의하루 다이어리 헤드셋','헤드폰'),false);
+ assert.equal(taxonomy.productTypeMatches('무선 게이밍 마우스 Astro A10 헤드셋 오버이어 헤드폰','헤드폰'),false);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

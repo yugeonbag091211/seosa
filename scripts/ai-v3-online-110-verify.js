@@ -3,6 +3,7 @@ const {appendFileSync,writeFileSync,mkdirSync}=require('node:fs');
 const path=require('node:path');
 const {requestedIdentity,checkListingIdentity,extractTitleEvidence}=require('../api/_ai-v3-identity');
 const {categoryOk}=require('../api/_ai-v3-core');
+const {comparisonFromUtterance,ambiguousOptions}=require('../api/_ai-v31-taxonomy');
 const mode=process.argv[2],share=process.argv[3];
 if(!['gate','full'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||''))throw Error('Require approved Preview share link and gate/full phase');
 const base=new URL(share).origin;
@@ -90,6 +91,12 @@ function verdict(test,data,previous){
  const errors=[];let unverified=[];
  if(!data||data.http!==200||data.apiStatus!==200||!Array.isArray(data.cards)){errors.push('HTTP_or_JSON_failure');return{verdict:'FAIL',errors,unverified};}
  const cards=data.cards;
+ const literalCompare=comparisonFromUtterance(test.p);
+ const expectedCompare=test.compare||(literalCompare?[literalCompare.category,
+   require('../api/_ai-v31-taxonomy').explicitType(literalCompare.compareQuery)]:null);
+ const wantWireless=/(?:무선|블루투스|wireless)/i.test(test.p) ||
+   (test.from && previous?.state?.features?.wireless===true);
+ if(wantWireless && data.state?.features?.wireless!==true)errors.push('wireless_constraint_not_preserved');
  if(test.expectNoSearch){if(cards.length||data.stats?.searched)errors.push('nonshopping_triggered_search');return{verdict:errors.length?'FAIL':'PASS',errors,unverified};}
  if(data.stats?.searched===false)errors.push('shopping_request_not_searched');
  if(cards.length>4)errors.push('too_many_cards');
@@ -104,20 +111,27 @@ function verdict(test,data,previous){
   if(!title||!Number.isFinite(Number(c.price))||Number(c.price)<=0||!/^https?:\/\//.test(String(c.link||'')))errors.push(pre+'invalid_listing_fields');
   if(c.condition==='used_or_refurbished'&&!/(?:중고|리퍼)\s*(?:상품)?\s*(?:추천|찾아|보여)/.test(test.p))errors.push(pre+'used_or_refurbished');
   if(accessory.test(title))errors.push(pre+'accessory_or_part');
+  if(ambiguousOptions(title,test.cat))errors.push(pre+'ambiguous_options');
+  if(wantWireless && ['헤드셋','헤드폰'].includes(test.cat) &&
+     !/(?:무선|블루투스|wireless|bluetooth|\bBT\d|TWS)/i.test(title))
+     errors.push(pre+'wireless_evidence_missing');
   if(max!=null&&Number(c.price)>max)errors.push(pre+'above_max_budget');
   if(min!=null&&Number(c.price)<min)errors.push(pre+'below_min_budget');
   if(test.exclude?.some(w=>title.includes(w)))errors.push(pre+'excluded_term');
-  if(!test.compare&&!subjectOk(title,test.cat))errors.push(pre+'wrong_category');
-  if(!test.compare&&checkIdentity.family){
+  if(!expectedCompare&&!subjectOk(title,test.cat))errors.push(pre+'wrong_category');
+  if(!expectedCompare&&checkIdentity.family){
     const res=checkListingIdentity(title,checkIdentity);
     if(!res.ok)errors.push(pre+'identity_'+res.reason+'_'+res.field);
   }
   if(test.noWords?.some(w=>title.includes(w)))errors.push(pre+'forbidden_subject');
   if(test.containsAny&&!test.containsAny.some(w=>title.toLowerCase().includes(w.toLowerCase())))errors.push(pre+'missing_subject');
  }
- if(test.compare?.length){if(cards.length===2){
+ if(expectedCompare?.length){if(cards.length===2){
    const fs=cards.map(c=>extractTitleEvidence(c.title).family);
-   if(!test.compare.every(f=>fs.includes(f)))errors.push('comparison_sides_mismatch');
+   if(!expectedCompare.every(f=>fs.includes(f)||(
+      (f==='청소기'||f==='공기청정기')&&
+      cards.some(c=>require('../api/_ai-v31-taxonomy').productTypeMatches(c.title,f)))))
+     errors.push('comparison_sides_mismatch');
  }else if(cards.length>0)errors.push('comparison_one_sided');
  }
  if(!cards.length&&!test.allowEmpty&&!test.expectNoSearch)unverified.push('no_suitable_cards_or_inventory');
@@ -165,7 +179,7 @@ async function main(){
     cards:(Array.isArray(data.cards)?data.cards:[]).map(c=>({title:c.title,price:c.price,condition:c.condition,link:c.link})),
     answer:String(data.answer||data.error||'').slice(0,650),
     stats:{searched:data.stats?.searched,inspected:data.stats?.inspected,accepted:data.stats?.accepted,rejectedReasons:data.stats?.rejectedReasons||{},modelUsage:data.stats?.modelUsage||null},
-    state:{lastQuery:data.state?.lastQuery,category:data.state?.category,maxPrice:data.state?.maxPrice,minPrice:data.state?.minPrice,exclusions:data.state?.exclusions,identity:data.state?.identity}};
+    state:{lastQuery:data.state?.lastQuery,category:data.state?.category,maxPrice:data.state?.maxPrice,minPrice:data.state?.minPrice,exclusions:data.state?.exclusions,identity:data.state?.identity,features:data.state?.features}};
   appendFileSync(outfile,JSON.stringify(record)+'\n');
   results.push(record);
   console.log(JSON.stringify({id:test.id,verdict:v.verdict,http:data.http,cards:record.cards.length,errors:v.errors,unverified:v.unverified,

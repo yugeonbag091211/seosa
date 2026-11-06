@@ -74,6 +74,10 @@ function namedRam(text) {
 function namedScreen(text) {
   const values = [...text.matchAll(/(?<!\d)(\d{1,2}(?:\.\d)?)\s*(?:인치|inch|형|["″])(?![a-z])/gi)]
     .map(x => Number(x[1])).filter(x => x >= 5 && x <= 70);
+  // Apple seller shorthand "iPad Air 11 M4" uses 11 as screen size;
+  // do not mistake an "iPad 11세대" generation number for inches.
+  const ipadSize=String(text).match(/(?:아이패드|ipad)\s*(?:에어|air|프로|pro)?\s*(11|13)\s*(?=m[1-9]|wifi|wi-?fi)/i);
+  if(ipadSize)values.push(Number(ipadSize[1]));
   return distinct(values);
 }
 function namedGeneration(text) {
@@ -117,7 +121,7 @@ function namedVariant(text, family) {
   return null;
 }
 function namedSeries(text, family) {
-  if (!['iphone','galaxytab','galaxys','airpods'].includes(family)) return null;
+  if (!['iphone','galaxytab','galaxys','airpods','galaxybuds'].includes(family)) return null;
   const prefix = FAMILY_PREFIX[family];
   const match = new RegExp(prefix.source, 'i').exec(text);
   if (!match) return null;
@@ -161,6 +165,10 @@ function mergeRequested(previous, current, isNewSubject) {
 function checkListingIdentity(listingTitle, requested) {
   const e=extractTitleEvidence(listingTitle);
   const requestedKeys = Object.keys(requested || {}).filter(k => requested[k] != null);
+  // "Buds FE" is an exact unnumbered model; "Buds3 FE" is a different generation.
+  if(requested?.family==='galaxybuds'&&requested.variant==='fe'&&
+    requested.series==null&&e.series!=null)
+    return {ok:false,reason:'identity_mismatch',field:'series',evidence:e};
   // A named numbered model without a suffix is the base model, not an FE/Pro/Ultra variant.
   if (requested && requested.series && !requested.variant && e.variant)
     return { ok:false, reason:'identity_mismatch', field:'variant', evidence:e };
