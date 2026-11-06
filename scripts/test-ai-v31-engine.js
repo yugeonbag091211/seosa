@@ -300,6 +300,56 @@ await test('contradictory Apple iPad Android tablet seller title is rejected',()
  assert.equal(taxonomy.productTypeMatches('Apple 아이패드 에어 11 M4 WiFi 128GB','태블릿'),true);
  assert.equal(taxonomy.productTypeMatches('레노버 Idea Tab Pro Gen2 안드로이드 15 태블릿','태블릿'),true);
 });
+await test('compatible microSD memory card never satisfies tablet listing request',async()=>{
+ const title='태블릿 호환용 Extreme 256GB MicroSDXC 카드 Galaxy Tab S9 FE 번들';
+ assert.equal(taxonomy.productTypeMatches(title,'태블릿'),false);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'갤럭시탭 S9 FE 256GB',category:'태블릿'}),
+  searchProducts:async()=>[row('sd',title,146900,'태블릿')],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'갤럭시탭 S9 FE 256GB 제품 추천'});
+ assert.equal(out.cards.length,0);
+});
+await test('USB cable mentioning external SSD is not a storage drive',async()=>{
+ const title='USB A to C 케이블 10피트 10Gbps 데이터 전송 Galaxy S22 iPad Pro 외장 SSD 기기';
+ assert.equal(taxonomy.productTypeMatches(title,'외장하드','5만원 이하 외장 SSD 추천'),false);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'외장 SSD',category:'외장하드',maxPrice:50000}),
+  searchProducts:async()=>[row('cable',title,43100,'외장하드')],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'5만원 이하 외장 SSD 추천'});
+ assert.equal(out.cards.length,0);
+});
+await test('carrier-subsidized smartphone listing is never treated as outright retail',async()=>{
+ const contract='[애플] [공통지원금] 아이폰16e 128G SK 통신사이동 완납개통 제휴카드X';
+ assert.equal(taxonomy.productTypeMatches(contract,'스마트폰'),false);
+ assert.equal(taxonomy.productTypeMatches('Apple 정품 아이폰 16e 128GB 자급제','스마트폰'),true);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'아이폰16e 128GB',category:'스마트폰'}),
+  searchProducts:async()=>[row('offer',contract,605000,'스마트폰')],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'아이폰 16e 128GB 추천'});
+ assert.equal(out.cards.length,0);
+});
+await test('natural Korean what-is-good shopping intent is not treated as small talk',async()=>{
+ const out=await createEngine({
+  planModel:async()=>({mode:'none',query:'태블릿',category:'태블릿',maxPrice:1000000}),
+  searchProducts:async()=>[row('tab','샤오미 레드미 패드 2 태블릿PC WiFi 128GB',400000,'태블릿')],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'100만원 이하 태블릿 뭐가 좋아?'});
+ assert.equal(out.cards.length,1);
+ assert.equal(out.stats.searched,true);
+});
+await test('ordinary question asking what a tablet is remains nonshopping',async()=>{
+ let searched=false;
+ const out=await createEngine({
+  planModel:async()=>({mode:'none',query:'태블릿',category:'태블릿'}),
+  searchProducts:async()=>{searched=true;return []},
+  decideModel:async()=>({productIds:[]})
+ },{message:'태블릿이 뭐야?'});
+ assert.equal(searched,false);
+ assert.equal(out.stats.searched,false);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

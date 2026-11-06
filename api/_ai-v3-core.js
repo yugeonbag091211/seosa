@@ -305,7 +305,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
     compareQuery:twoKinds.compareQuery,category:twoKinds.category,
     features:mergeFeatures({},message,true)});
   if(plan.mode==='none' && explicitType(message) &&
-    /추천|비교|차이|찾아|골라|보여|구매|살까/i.test(message))plan.mode='recommend';
+    /추천|비교|차이|찾아|골라|보여|구매|살까|뭐가\s*(?:좋아|좋을|낫|괜찮)|뭘\s*(?:살|고를)|어떤\s*(?:게|것|제품)|좋을까/i.test(message))
+    plan.mode='recommend';
   const explicitIdentity = requestedIdentity(message);
   const changedSubject = !!(explicitIdentity.family && prior.identity.family
     && explicitIdentity.family !== prior.identity.family);

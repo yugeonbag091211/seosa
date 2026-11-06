@@ -110,6 +110,12 @@ function isPart(title,type) {
   const accessoryCheck=integratedKeyboard?
     primary.replace(/키보드\s*케이스/gi,'키보드'):primary;
   if(PARTS.test(accessoryCheck))return true;
+  if(type==='태블릿' &&
+    /(?:micro\s*sd|sdxc|메모리\s*카드|tf\s*카드|sd\s*카드)/i.test(t) &&
+    /(?:카드|card|sdxc)/i.test(t))return true;
+  if(type==='외장하드' &&
+    (/(?:케이블|cable|도킹\s*스테이션|도킹스테이션|enclosure)/i.test(t)) &&
+    !/(?:케이블|cable)\s*(?:증정|포함|동봉|세트)/i.test(t))return true;
   if(type==='헤드폰'&&/(?:스템\s*캡|스템|탑캡|헤드셋\s*베어링|자전거|바이크\s*헤드셋|bike\s*headset)/i.test(t))return true;
   if(type==='외장하드'&&/(?:ssd\s*케이스|hdd\s*케이스|외장하드\s*(?:케이스|파우치|독|도킹)|외장\s*하드\s*케이스)/i.test(t))return true;
   if(type==='모니터'&&/(?:모니터\s*(?:암|받침대|홀더|스탠드|거치)|monitor\s*(?:arm|stand|mount))/i.test(t))return true;
@@ -166,6 +172,10 @@ function productTypeMatches(title,category,requestedText='') {
     !/(?:블루투스|bluetooth)/i.test(t))return false;
   if(type==='키보드' && /(?:아이패드\s*용|ipad\s*용)/i.test(requestedText) &&
     !/(?:아이패드|ipad|ipados)/i.test(t))return false;
+  if(type==='스마트폰' &&
+    // Contract/subsidy offers cannot use the displayed listing price as the
+    // outright price without independent carrier-plan verification.
+    /(?:공통지원금|통신사이동|번호이동|선택약정|완납개통|약정\s*가입|할부원금|통신사\s*지원금)/i.test(t))return false;
   if(type==='태블릿'){
     // A purported Apple iPad running Android is a contradictory seller claim.
     // Do not treat it as a verified tablet (or a genuine Apple product).
