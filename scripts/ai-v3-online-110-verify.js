@@ -1,17 +1,17 @@
 'use strict';
-const {appendFileSync,writeFileSync,mkdirSync}=require('node:fs');
+const {appendFileSync,writeFileSync,mkdirSync,existsSync,readFileSync}=require('node:fs');
 const path=require('node:path');
 const {requestedIdentity,checkListingIdentity,extractTitleEvidence}=require('../api/_ai-v3-identity');
 const {categoryOk}=require('../api/_ai-v3-core');
 const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory,isPart}=require('../api/_ai-v31-taxonomy');
 const {brandMatches}=require('../api/_ai-v31-retrieval');
 const mode=process.argv[2],share=process.argv[3];
-if(require.main===module && (!['gate','full','focus','holdout','keyboard','critical','blind'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||'')))throw Error('Require approved Preview share link and permitted test mode');
+if(require.main===module && (!['gate','full','focus','holdout','keyboard','critical','blind','online200'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||'')))throw Error('Require approved Preview share link and permitted test mode');
 const base=typeof share==='string'?new URL(share).origin:'';
 const outdir=path.resolve(__dirname,'../reports/ai-v3-online-20261105');
 mkdirSync(outdir,{recursive:true});
 const outfile=path.join(outdir,mode+'.jsonl'),summaryfile=path.join(outdir,mode+'-summary.json');
-writeFileSync(outfile,'');
+if(mode!=='online200')writeFileSync(outfile,'');
 const gate=[
 {id:'G01',p:'15만원 이하 무선 헤드셋 추천해줘. 게이밍은 제외',cat:'헤드셋',max:150000,exclude:['게이밍']},
 {id:'G02',p:'그중에서 12만원 이상 15만원 이하로 골라줘',from:'G01',cat:'헤드셋',min:120000,max:150000,exclude:['게이밍']},
@@ -134,9 +134,18 @@ const blind=[
 ];
 if(blind.length!==30||new Set(blind.map(x=>x.p)).size!==30 ||
  blind.some(x=>[...full,...holdout].some(y=>x.p===y.p)))throw Error('Blind cases must be 30 unique and distinct');
-const cases=mode==='gate'?gate:mode==='focus'?
+const cases=mode==='online200'?require('./ai-v31-online-200-cases').cases:mode==='gate'?gate:mode==='focus'?
   [...gate.filter(x=>['G01','G02','G03','G10'].includes(x.id)),...full.filter(x=>focusIds.has(x.id))]:
   mode==='holdout'?holdout:mode==='blind'?blind:mode==='keyboard'?holdout.filter(x=>x.id==='H10'):mode==='critical'?holdout.filter(x=>['H10','H20'].includes(x.id)):full;
+let priorOnline200=[];
+if(mode==='online200'){
+  const all=existsSync(outfile)?readFileSync(outfile,'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse):[];
+  const stop=all.findIndex(r=>r.http===429||r.http===503);
+  priorOnline200=(stop<0?all:all.slice(0,stop));
+  if(priorOnline200.length>200||priorOnline200.some((r,i)=>r.id!==cases[i]?.id||r.question!==cases[i]?.p))
+    throw Error('Cannot resume: existing output does not match this test corpus');
+  writeFileSync(outfile,priorOnline200.map(r=>JSON.stringify(r)).join('\n')+(priorOnline200.length?'\n':''));
+}
 const sleep=ms=>new Promise(res=>setTimeout(res,ms));
 function amount(text){
  const s=text.replace(/,/g,'');
@@ -240,7 +249,22 @@ async function main(){
  if(!authed)throw Error('Preview authentication unavailable');
  console.log(JSON.stringify({stage:'authenticated',mode,questions:cases.length,deploy:base}));
  const saved={},scores={PASS:0,FAIL:0,UNVERIFIED:0},t0=Date.now(),tokens={calls:0,input:0,output:0},results=[];
- for(let i=0;i<cases.length;i++){
+ for(const old of priorOnline200){
+   saved[old.id]=old;
+   scores[old.verdict]++;
+   const usage=old.stats?.modelUsage||{};
+   tokens.calls+=(usage.calls||0);tokens.input+=(usage.inputTokens||0);tokens.output+=(usage.outputTokens||0);
+   results.push(old);
+ }
+ if(priorOnline200.length)console.log(JSON.stringify({stage:'resuming',completed:priorOnline200.length,remaining:cases.length-priorOnline200.length,scores,tokens}));
+ let lastRequestStartedAt=0;
+ for(let i=priorOnline200.length;i<cases.length;i++){
+   // Respect the Preview server's 12 requests / 60 s limit, with a buffer.
+   if(mode==='online200'&&lastRequestStartedAt){
+     const remain=6800-(Date.now()-lastRequestStartedAt);
+     if(remain>0)await sleep(remain);
+   }
+   lastRequestStartedAt=Date.now();
   const test=cases[i],previous=test.from?saved[test.from]:null,fromState=previous?.state||{};
   let data=null,responseTime=0,apiError=null;
   for(let attempt=0;attempt<2;attempt++){
@@ -275,8 +299,8 @@ async function main(){
   console.log(JSON.stringify({id:test.id,verdict:v.verdict,http:data.http,cards:record.cards.length,errors:v.errors,unverified:v.unverified,
     firstTitle:record.cards[0]?.title?.slice(0,85),firstPrice:record.cards[0]?.price,elapsedMs:responseTime,counts:{...scores}}));
   if(data.http===429){console.log(JSON.stringify({stage:'rate_limited_stop',at:test.id}));break;}
-  if(tokens.calls>235||tokens.input+tokens.output>220000){console.log(JSON.stringify({stage:'usage_guard_stop',at:test.id,tokens}));break;}
-  if(i+1<cases.length)await sleep(2800);
+  if(tokens.calls>(mode==='online200'?650:235)||tokens.input+tokens.output>(mode==='online200'?950000:220000)){console.log(JSON.stringify({stage:'usage_guard_stop',at:test.id,tokens}));break;}
+  if(i+1<cases.length && mode!=='online200')await sleep(2800);
  }
  const summary={mode,deploy:base,ran:results.length,expected:cases.length,scores,tokens,elapsedSeconds:Math.round((Date.now()-t0)/1000),
     failures:results.filter(x=>x.verdict==='FAIL').map(x=>({id:x.id,question:x.question,reasons:x.errors})),
