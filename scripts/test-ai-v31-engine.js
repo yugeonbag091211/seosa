@@ -218,6 +218,59 @@ await test('wrist-rest and internal notebook replacement keyboard not sold as fu
  assert.equal(taxonomy.productTypeMatches('키보드손목받침대 아이리버 무선키보드마우스 블랙','키보드','사무용 키보드'),false);
  assert.equal(taxonomy.productTypeMatches('백라이트 키보드 갤럭시북 950QED 시리즈용 교체형','키보드','사무용 키보드'),false);
 });
+await test('Seagate 2TB device with bundled pouch is accepted, not misclassified as pouch',async()=>{
+ const title='[씨게이트] 씨게이트 외장하드 2TB OneTouch 외장HDD 스페이스그레이 데이터복구+암호화+파우치 증정';
+ assert.equal(taxonomy.isPart(title,'외장하드'),false);
+ assert.equal(taxonomy.productTypeMatches(title,'외장하드','씨게이트 외장하드 2TB'),true);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'씨게이트 외장하드 2TB',category:'외장하드'}),
+  searchProducts:async()=>[row('seagate',title,189000,'외장하드')],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'씨게이트 외장하드 2TB 추천'});
+ assert.equal(out.cards.length,1);
+});
+await test('Bluetooth keyboard case is real keyboard but iPad gift-only listing is not',async()=>{
+ const title='DUNNO 아이패드 에어 13 M4 M3 M2 블루투스 키보드 케이스';
+ assert.equal(taxonomy.isPart(title,'키보드'),false);
+ assert.equal(taxonomy.productTypeMatches(title,'키보드','아이패드용 블루투스 키보드'),true);
+ assert.equal(taxonomy.productTypeMatches('[블루투스 키보드/무료증정]애플 아이패드 8세대 32GB WIFI','키보드','아이패드용 블루투스 키보드'),false);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'아이패드용 블루투스 키보드',category:'태블릿'}),
+  searchProducts:async()=>[row('keyboard',title,34900,'키보드')],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:'아이패드용 블루투스 키보드 추천'});
+ assert.equal(out.cards.length,1);
+});
+await test('SSD-only external HDD wording persists the SSD type constraint',()=>{
+ const flags=taxonomy.mergeFeatures({},'15만원 이하 외장하드 중에 SSD 추천',true);
+ assert.equal(flags.externalSsd,true);
+ const strictText=taxonomy.featureContext('15만원 이하 외장하드 중에 SSD 추천',flags);
+ assert.equal(taxonomy.productTypeMatches('WD My Passport 2TB 외장하드','외장하드',strictText),false);
+ assert.equal(taxonomy.productTypeMatches('트랜센드 휴대용 슬림 외장SSD M2 480GB','외장하드',strictText),true);
+});
+await test('read-only faceted lookup rescues genuine SSD after cheap cases',async()=>{
+ const good=row('trueSSD','트랜센드 휴대용 슬림 외장SSD M2 480GB',126000,'외장하드');
+ const decoys=Array.from({length:40},(_,i)=>row('case'+i,'외장SSD 케이스 '+i,19000,'외장하드'));
+ const filtersSeen=[];
+ const db={from:()=>({select:()=>{
+  const filters=[],b={
+   ilike(c,v){filters.push([c,'ilike',v]);return b;},
+   eq(c,v){filters.push([c,'eq',v]);return b;},
+   gte(c,v){filters.push([c,'gte',v]);return b;},
+   lte(c,v){filters.push([c,'lte',v]);return b;},
+   async limit(n){filtersSeen.push(filters.slice());
+    const items=[...decoys,good].filter(r=>filters.every(([c,op,v])=>
+     op==='ilike'?String(r[c]||'').toLowerCase().includes(v.slice(1,-1).toLowerCase()):
+     op==='eq'?r[c]===v:op==='gte'?r[c]>=v:r[c]<=v));
+    return {data:items.slice(0,n),error:null};
+   }
+  };return b;
+ }})};
+ const found=await searchCatalog('SSD 외장하드',{db,mapRow:mapper,maxPrice:150000,
+   category:'외장하드',identity:{},userText:'15만원 이하 외장하드 중에 SSD 추천 외장 SSD'});
+ assert(found.some(x=>x.productId==='trueSSD'));
+ assert(filtersSeen.some(f=>f.some(([c,,v])=>c==='title'&&v==='%480GB%')));
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

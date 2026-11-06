@@ -159,8 +159,10 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
   for (const source of (Array.isArray(raw) ? raw : []).slice(0, MAX_CANDIDATE_SCAN)) {
     const item = normalize(source);
     let reason = !item ? 'invalid_listing' : '';
-    if (!reason && (ACCESSORY.test(item.title) || isPart(item.title,plan.category)) &&
-      !ACCESSORY.test(plan.category)) reason = 'accessory_not_requested';
+    // Validate what is actually being sold, not every incidental accessory
+    // word in a seller's gift/promotion copy.
+    if(!reason && isPart(item.title,plan.category))
+      reason='accessory_not_requested';
     if (!reason && !categoryOk(item,plan.category,plan.subject||'')) reason = 'wrong_category';
     if (!reason && item.used && !plan.allowUsed) reason = 'used_not_requested';
     if (!reason && plan.identity && Object.keys(plan.identity).length) {

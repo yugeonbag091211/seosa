@@ -79,6 +79,16 @@ function buildProbes({query='',category='',userText='',identity={},minPrice,maxP
     for(const categoryAnchor of types.slice(0,2))
       push([['title',categoryAnchor],['title',clues.storeAlternatives[0]]]);
   }
+  // Bare "external SSD" with only a budget is not a model-specific request.
+  // Facet several *candidate* capacities to avoid a 40-row accessory page;
+  // never treat these as user-imposed capacity restrictions.
+  if(category==='외장하드' && /(?:외장\s*ssd|포터블\s*ssd|portable\s*ssd)/i.test(userText+' '+query) &&
+    !clues.storeAlternatives.length && !clues.models.length) {
+    for(const anchor of ['외장SSD','외장 SSD']) {
+      for(const capacity of ['480GB','512GB','256GB'])
+        push([['title',anchor],['title',capacity]]);
+    }
+  }
   for(const brand of clues.brands.slice(0,2))
     for(const categoryAnchor of types.slice(0,2))
       push([['title',brand],['title',categoryAnchor]]);

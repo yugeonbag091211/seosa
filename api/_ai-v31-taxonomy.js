@@ -67,7 +67,8 @@ function mergeFeatures(previous={},utterance='',changedProduct=false) {
   if(/(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|노캔)/i.test(s)){
     value.anc=!/(?:ANC|노캔|노이즈\s*캔슬링).{0,7}(?:제외|빼고|없어도|말고)/i.test(s);
   }
-  if(/(?:외장\s*SSD|포터블\s*SSD|portable\s*SSD)/i.test(s))value.externalSsd=true;
+  if(/(?:외장\s*SSD|포터블\s*SSD|portable\s*SSD|외장하드.{0,20}\bSSD\b|\bSSD\b.{0,16}외장)/i.test(s))
+    value.externalSsd=true;
   else if(/(?:외장\s*HDD|외장하드\s*HDD)/i.test(s))value.externalSsd=false;
   return value;
 }
@@ -97,7 +98,18 @@ function ambiguousOptions(title,category) {
 }
 function isPart(title,type) {
   const t=stripTaxonomy(title);
-  if(PARTS.test(t))return true;
+  // A free pouch or film bundled WITH a real device is not the primary
+  // merchandise. Preserve the device, but never allow a free keyboard
+  // bundled WITH an iPad to masquerade as a standalone keyboard.
+  const primary=t
+    .replace(/(?:\+|\s)\s*(?:전용\s*)?(?:파우치|케이스|보호필름|스트랩)\s*(?:증정|제공|포함|세트)/gi,' ')
+    .replace(/(?:\+|\s)\s*(?:사은품\s*)?(?:파우치|케이스|보호필름|스트랩)\s*증정/gi,' ');
+  const integratedKeyboard=type==='키보드' &&
+    /(?:블루투스|bluetooth)/i.test(primary) &&
+    /키보드\s*케이스/i.test(primary);
+  const accessoryCheck=integratedKeyboard?
+    primary.replace(/키보드\s*케이스/gi,'키보드'):primary;
+  if(PARTS.test(accessoryCheck))return true;
   if(type==='헤드폰'&&/(?:스템\s*캡|스템|탑캡|헤드셋\s*베어링|자전거|바이크\s*헤드셋|bike\s*headset)/i.test(t))return true;
   if(type==='외장하드'&&/(?:ssd\s*케이스|hdd\s*케이스|외장하드\s*(?:케이스|파우치|독|도킹)|외장\s*하드\s*케이스)/i.test(t))return true;
   if(type==='모니터'&&/(?:모니터\s*(?:암|받침대|홀더|스탠드|거치)|monitor\s*(?:arm|stand|mount))/i.test(t))return true;
