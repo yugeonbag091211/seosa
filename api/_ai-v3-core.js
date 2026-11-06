@@ -230,7 +230,10 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
 function priceOutliers(plan, rawItems) {
   const id = plan.identity || {};
   const strongKeys = ['family', 'series', 'variant', 'storageGb', 'chip'].filter(k => id[k] != null);
-  if (!strongKeys.length && !plan.modelText) return new Set();
+  // A low-price listing for a *generic category* (e.g. a beginner classical
+  // guitar) can be genuine. Only compare market prices for grounded exact
+  // identity attributes, never just a model-generated search phrase.
+  if (!strongKeys.length) return new Set();
   const refs = [];
   for (const source of (rawItems || []).slice(0, MAX_CANDIDATE_SCAN)) {
     const item = normalize(source);
@@ -401,9 +404,14 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
   if(plan.mode==='recommend' && !plan.query && groundedShoppingType && shoppingIntent)
     plan.query=groundedShoppingType;
   // Follow-up filters are shopping actions even without a product noun.
-  if(plan.mode==='none' && intent.referencesDisplayed && prior.lastQuery && !intent.informational){
-    plan.mode='recommend';
+  // A reference to previously displayed products is a filtering request,
+  // even when GPT mistakenly selects "compare" without a second subject.
+  // Preserve the actual displayed set and re-validate it deterministically.
+  if(intent.referencesDisplayed && prior.lastQuery && !intent.informational &&
+    !twoKinds && !/(?:비교|차이|\bvs\b)/i.test(message)){
+    plan.mode='recommend';plan.compareQuery='';
     if(!plan.query)plan.query=clean(prior.lastQuery,80);
+    if(!plan.category)plan.category=canonicalName(prior.category);
   }
   // An explanation question ("OLED와 LCD 차이가 있니?", "aptX 원리") or thanks
   // never triggers a product search, whatever the planner said.
@@ -444,7 +452,9 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
   if (!plan.query || !plan.category || (plan.mode === 'compare' && !plan.compareQuery)) return {
     status: 200, answer: '찾으시는 상품 종류나 비교할 모델을 구체적으로 알려주세요.',
     // Keep what the user just stated (budget, exclusions) for the next turn.
-    cards: [], state: { ...stateFrom(plan), presentedProductIds: prior.presentedProductIds || [] },
+    // No cards were presented in this turn: never silently reuse cards from
+    // an older answer in a later "그중" instruction.
+    cards: [], state: { ...stateFrom(plan), presentedProductIds: [] },
     stats: { searched: false, accepted: 0, provisional: 0, intent: intentStats(), ...usage() }
   };
   const subjectText=featureContext(message,plan.features);

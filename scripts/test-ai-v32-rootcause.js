@@ -235,6 +235,48 @@ const acceptAll = async ({ candidates }) => ({ productIds: candidates.map(c => c
     assert.equal(core.compatibilityEvidence('아이패드 에어 11 M4 M2 M3 프로11 2세대 3세대 4세대 슬림형 키보드 케이스', host).ok, true);
     assert.equal(core.compatibilityEvidence('한국형 아이패드 에어 13인치 (M4/M3/M2) & 프로 12.9인치 한글각인 키보드 케이스, 11색 백라이트', host).ok, false);
   });
+  await test('GPT compare hallucination cannot disable a displayed-card budget follow-up (N182)', async()=>{
+    const shown=[
+      row('one','쿠루이 24인치 FHD 144Hz 게이밍 모니터',139800),
+      row('two','알파스캔 AOC 24인치 FHD 모니터',119000),
+      row('three','저가 휴대용 모니터 15인치',80000)
+    ];
+    const ids=shown.map(x=>'쿠팡:'+x.productId);
+    let ordinarySearch=0;
+    const out=await core.createEngine({
+      planModel:async()=>({mode:'compare',query:'모니터',category:'모니터',compareQuery:''}),
+      searchProducts:async()=>{ordinarySearch++;return [];},
+      decideModel:acceptAll,
+      loadDisplayed:async want=>shown.filter(x=>want.includes('쿠팡:'+x.productId))
+    },{message:'그중 10만원 이상인 것만 골라줘',
+      state:{lastQuery:'모니터',category:'모니터',maxPrice:200000,presentedProductIds:ids}});
+    assert.equal(ordinarySearch,0);
+    assert.equal(out.stats.searched,true);
+    assert.deepEqual(out.cards.map(x=>x.price),[139800,119000]);
+    assert.deepEqual(out.state.presentedProductIds,ids.slice(0,2));
+  });
+  await test('generic low-price classical guitar is not falsely excluded as an identity outlier (N162)',async()=>{
+    const cheap=row('classical','Chard 차드 입문용 초보자용 클래식 기타 39인치 구성품 포함 EC3921C',55000);
+    const market=[row('exp1','야마하 클래식 기타 C70 정품',211000),
+      row('exp2','코르도바 C1M 클래식 기타',225000),
+      row('exp3','야마하 클래식 기타 C40',190000)];
+    const out=await core.createEngine({
+      planModel:async()=>({mode:'recommend',query:'클래식 기타',category:'기타',maxPrice:150000}),
+      searchProducts:async()=>[cheap,...market],
+      decideModel:acceptAll
+    },{message:'클래식 기타 15만원 이하 추천해'});
+    assert.equal(out.stats.searched,true);
+    assert(out.cards.some(x=>x.price===55000));
+    assert.equal(out.stats.rejectedReasons.price_outlier_low||0,0);
+  });
+  await test('invalid comparison without displayed cards clears last presentation',async()=>{
+    const out=await core.createEngine({
+      planModel:async()=>({mode:'compare',query:'모니터',category:'모니터',compareQuery:''}),
+      searchProducts:async()=>{throw Error('no search');},decideModel:acceptAll
+    },{message:'가격 좀 알려줘',state:{lastQuery:'모니터',category:'모니터',presentedProductIds:['쿠팡:previous']}});
+    assert.equal(out.stats.searched,false);
+    assert.deepEqual(out.state.presentedProductIds,[]);
+  });
   console.log(JSON.stringify({ passed, failed, total: passed + failed }));
   if (failed) process.exitCode = 1;
 })().catch(e => { console.error('Unexpected test failure:', e); process.exitCode = 1; });
