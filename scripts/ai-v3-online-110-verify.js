@@ -198,7 +198,7 @@ function verdict(test,data,previous){
   if(excludedWords.some(word=>title.toLowerCase().includes(word.toLowerCase())))
     errors.push(pre+'explicit_exclusion_violated');
   if(!expectedCompare&&checkIdentity.family &&
-    !( /(?:용|호환|연결|쓸|쓰는|사용할)/.test(test.p) &&
+    !( /(?:용|호환|연결|쓸|쓰는|사용할|맞는|전용|위한)/.test(test.p) &&
        familyCategory(checkIdentity.family)!==canonicalCategory({message:test.p,planCategory:test.cat}))){
     const res=checkListingIdentity(title,checkIdentity);
     if(!res.ok)errors.push(pre+'identity_'+res.reason+'_'+res.field);

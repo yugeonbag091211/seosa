@@ -604,6 +604,22 @@ await test('standalone Logitech keyboard excludes bundled mouse sets',async()=>{
  },{message:'로지텍 무선 키보드 단품만 추천, 마우스 결합 세트 제외'});
  assert.deepEqual(out.cards.map(x=>x.title),[good.title]);
 });
+await test('matched iPad Air 11 M4 keyboard case not replaced with Pro 11 or Air 13',()=>{
+ const prompt='아이패드 에어 11인치 M4에 맞는 블루투스 키보드 6만원 이하';
+ assert.equal(taxonomy.productTypeMatches(
+  '아이패드 프로 M5 8세대 M4 7세대 11인치 호환 블루투스 키보드 케이스','키보드',prompt),false);
+ assert.equal(taxonomy.productTypeMatches(
+  'DUNNO 아이패드 에어 13 M4 M3 M2 블루투스 키보드 케이스','키보드',prompt),false);
+ assert.equal(taxonomy.productTypeMatches(
+  '아이패드 에어 프로 펜슬 수납 블루투스 키보드 케이스','키보드',prompt),false);
+ assert.equal(taxonomy.productTypeMatches(
+  '아이패드 에어 11 M4 블루투스 키보드 케이스','키보드',prompt),true);
+});
+await test('AirPods and Galaxy Buds separate spare single units from two-ear set',()=>{
+ assert.equal(taxonomy.productTypeMatches('삼성전자 갤럭시 버즈3프로 유닛 정품 낱개 단품','이어폰'),false);
+ assert.equal(taxonomy.productTypeMatches('삼성전자 갤럭시 버즈3프로 개별 낱개 단품','이어폰'),false);
+ assert.equal(taxonomy.productTypeMatches('삼성전자 갤럭시 버즈3프로 블루투스 이어폰 본체 세트','이어폰'),true);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

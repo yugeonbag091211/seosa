@@ -133,6 +133,7 @@ function isPart(title,type) {
   const accessoryCheck=integratedKeyboard?
     primary.replace(/키보드\s*케이스/gi,'키보드'):primary;
   if(PARTS.test(accessoryCheck))return true;
+  if(type==='이어폰' && /(?:낱개|한쪽\s*유닛|개별\s*유닛|유닛\s*(?:정품|개별|낱개|단품)|좌우\s*중\s*택1)/i.test(t))return true;
   if(type==='태블릿' &&
     /(?:micro\s*sd|sdxc|메모리\s*카드|tf\s*카드|sd\s*카드)/i.test(t) &&
     /(?:카드|card|sdxc)/i.test(t))return true;
@@ -207,12 +208,23 @@ function productTypeMatches(title,category,requestedText='') {
   if(type==='키보드' && /(?:블루투스|bluetooth)/i.test(requestedText) &&
     !/(?:블루투스|bluetooth)/i.test(t))return false;
   if(type==='키보드' &&
-    /(?:아이패드|ipad).{0,24}?(?:용|호환|쓸|쓰는|사용할)/i.test(requestedText) &&
+    /(?:아이패드|ipad).{0,38}?(?:용|호환|쓸|쓰는|사용할|맞는|전용|위한)/i.test(requestedText) &&
     !/(?:아이패드|ipad|ipados)/i.test(t))return false;
   // A case sold for iPad Pro is not evidence it fits an iPad Air.
   if(type==='키보드' && /(?:아이패드|ipad)\s*(?:에어|air)/i.test(requestedText) &&
-    /키보드\s*케이스/i.test(requestedText) &&
-    !/(?:아이패드|ipad).{0,14}(?:에어|air)/i.test(t))return false;
+    /키보드\s*케이스/i.test(t)){
+    if(!/(?:아이패드|ipad).{0,16}(?:에어|air)/i.test(t))return false;
+    // A fitted tablet-keyboard case is model-size-specific; do not use an
+    // "iPad Pro 11" or "Air 13" case for an Air 11 request.
+    const requestedSize=requestedText.match(/(?:아이패드|ipad).{0,35}?\b(11|13)\s*(?:인치|inch)/i);
+    if(requestedSize){
+      const actualSizes=[...t.matchAll(/(?<!\d)(11|13|12\.9)\s*(?:인치|inch)?(?!\d)/gi)]
+        .map(m=>Number(m[1]));
+      if(!actualSizes.includes(Number(requestedSize[1])))return false;
+    }
+    const needChip=requestedText.match(/\bM([1-9])\b/i);
+    if(needChip && !new RegExp('\\bM'+needChip[1]+'\\b','i').test(t))return false;
+  }
   if(type==='스마트폰' &&
     // Contract/subsidy offers cannot use the displayed listing price as the
     // outright price without independent carrier-plan verification.
