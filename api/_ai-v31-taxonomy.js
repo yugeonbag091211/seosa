@@ -203,9 +203,17 @@ function productTypeMatches(title,category,requestedText='') {
     // Contract/subsidy offers cannot use the displayed listing price as the
     // outright price without independent carrier-plan verification.
     /(?:공통지원금|통신사이동|번호이동|선택약정|완납개통|약정\s*가입|할부원금|통신사\s*지원금)/i.test(t))return false;
+  // Carrier-free status cannot be inferred merely from "sealed" or "new".
+  if(type==='스마트폰'&&/(?:자급제|unlocked)/i.test(requestedText) &&
+    !/(?:자급제|공기계|unlocked)/i.test(t))return false;
   if(type==='공기청정기' &&
     /(?:호환\s*.*(?:공기\s*청정기|퓨리케어)|(?:공기\s*청정기|퓨리케어).*?(?:호환|교체용)|(?:공기\s*청정기|퓨리케어).*?교체\s*필터)/i.test(t))return false;
   if(type==='태블릿'){
+    // Pen displays are peripherals requiring a host computer, not general
+    // standalone Android/iPad tablets. Seller uses similar Korean nouns.
+    if(/(?:액정\s*타블렛|액정\s*태블릿|드로잉\s*(?:타블렛|태블릿)|펜\s*디스플레이|pen\s*display|XPPEN|XP-PEN|와콤|wacom)/i.test(t) &&
+      !/(?:액정\s*타블렛|액정\s*태블릿|드로잉\s*(?:타블렛|태블릿)|펜\s*디스플레이)/i.test(requestedText))
+      return false;
     // A purported Apple iPad running Android is a contradictory seller claim.
     // Do not treat it as a verified tablet (or a genuine Apple product).
     if(/(?:아이패드|\bipad\b)/i.test(t) &&

@@ -494,6 +494,30 @@ await test('그중 with no matching shown cards does not invent new products',as
  const third=await createEngine(deps,{message:'그중에서 한 개만 추천해줘',state:next.state});
  assert.equal(third.cards.length,0);
 });
+await test('user requires unlocked phone; cheap non-carrier-verified listing must fail closed',async()=>{
+ const title='[삼성] 갤럭시S25 256G 정품 미개봉 새상품[이마트몰] [갤럭시S25]';
+ assert.equal(taxonomy.productTypeMatches(title,'스마트폰','갤럭시 S25 256기가 자급제로 추천해줘'),false);
+ const genuine='삼성전자 갤럭시 S25 256GB 자급제';
+ assert.equal(taxonomy.productTypeMatches(genuine,'스마트폰','갤럭시 S25 256기가 자급제로 추천해줘'),true);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'갤럭시 S25',category:'스마트폰'}),
+  searchProducts:async()=>[row('offer',title,180420,'스마트폰'),row('unlocked',genuine,959000,'스마트폰')],
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ },{message:'갤럭시 S25 256기가 자급제로 추천해줘'});
+ assert.deepEqual(out.cards.map(x=>x.title),[genuine]);
+});
+await test('drawing pen display not returned as standalone tablet PC',async()=>{
+ const pen='[공식 충청점] XPPEN 엑스피펜 ARTIST 12 3rd Pink 액정타블렛 아티스트 12 3세대 핑크 드로잉 태블릿';
+ const tablet='레노버 Idea Tab Pro Gen 2 태블릿PC RAM 8GB 128GB';
+ assert.equal(taxonomy.productTypeMatches(pen,'태블릿','80만원 안쪽 태블릿 하나'),false);
+ assert.equal(taxonomy.productTypeMatches(tablet,'태블릿','80만원 안쪽 태블릿 하나'),true);
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'태블릿',category:'태블릿',maxPrice:800000}),
+  searchProducts:async()=>[row('pen',pen,341050,'태블릿'),row('tab',tablet,559000,'태블릿')],
+  decideModel:async({candidates})=>({productIds:candidates.map(x=>x.id)})
+ },{message:'80만원 안쪽으로 태블릿 하나 골라줘'});
+ assert.deepEqual(out.cards.map(x=>x.title),[tablet]);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});
