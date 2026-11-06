@@ -200,6 +200,10 @@ function productTypeMatches(title,category,requestedText='') {
   if(type==='키보드' &&
     /(?:아이패드|ipad).{0,24}?(?:용|호환|쓸|쓰는|사용할)/i.test(requestedText) &&
     !/(?:아이패드|ipad|ipados)/i.test(t))return false;
+  // A case sold for iPad Pro is not evidence it fits an iPad Air.
+  if(type==='키보드' && /(?:아이패드|ipad)\s*(?:에어|air)/i.test(requestedText) &&
+    /키보드\s*케이스/i.test(requestedText) &&
+    !/(?:아이패드|ipad).{0,14}(?:에어|air)/i.test(t))return false;
   if(type==='스마트폰' &&
     // Contract/subsidy offers cannot use the displayed listing price as the
     // outright price without independent carrier-plan verification.
@@ -223,6 +227,11 @@ function productTypeMatches(title,category,requestedText='') {
   }
   if(type==='외장하드') {
     if(!/(?:외장\s*(?:하드|ssd|hdd|디스크)|portable\s*(?:ssd|hdd|hard)|external\s*(?:ssd|hdd|hard|drive)|포터블\s*ssd|my\s*passport|ssd\s*t7\b|하드디스크)/i.test(t))return false;
+    // When the user excludes mixed-capacity listings, require one explicit
+    // capacity in the item title. Otherwise the displayed price has no
+    // verified configuration to attach to.
+    if(/(?:용량.{0,15}(?:여러|섞|옵션)|여러.{0,12}용량)/i.test(requestedText) &&
+      !/(?:\d{2,4})\s*(?:gb|기가|tb|테라)/i.test(t))return false;
     if(/(?:외장\s*ssd|포터블\s*ssd|portable\s*ssd)/i.test(requestedText) && !/(?:ssd|솔리드\s*스테이트)/i.test(t))return false;
     return true;
   }

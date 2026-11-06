@@ -525,6 +525,18 @@ await test('iPad Air compatibility phrase requires evidence in keyboard listing'
  assert.equal(taxonomy.productTypeMatches(vague,'키보드',request),false);
  assert.equal(taxonomy.productTypeMatches(linked,'키보드',request),true);
 });
+await test('iPad Air keyboard case does not assume iPad Pro-only fit',()=>{
+ const req='아이패드 에어에 쓸 블루투스 키보드 케이스 5만원 이하';
+ const pro='아이패드 프로 M5 8세대 M4 7세대 11인치 공용 호환 블루투스 키보드 케이스';
+ const air='DUNNO 아이패드 에어 13 M4 M3 M2 블루투스 키보드 케이스';
+ assert.equal(taxonomy.productTypeMatches(pro,'키보드',req),false);
+ assert.equal(taxonomy.productTypeMatches(air,'키보드',req),true);
+});
+await test('explicitly exclude mixed-capacity listings with unknown capacity price',()=>{
+ const req='15만원 이하 포터블 SSD, 용량 여러개 섞인 판매글 빼고';
+ assert.equal(taxonomy.productTypeMatches('샌디스크 외장 SSD E31 대용량 포터블 스토리지','외장하드',req),false);
+ assert.equal(taxonomy.productTypeMatches('트랜센드 외장SSD ESD310 + 파우치 세트 256GB','외장하드',req),true);
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

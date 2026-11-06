@@ -6,7 +6,7 @@ const {categoryOk}=require('../api/_ai-v3-core');
 const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory,isPart}=require('../api/_ai-v31-taxonomy');
 const {brandMatches}=require('../api/_ai-v31-retrieval');
 const mode=process.argv[2],share=process.argv[3];
-if(require.main===module && (!['gate','full','focus','holdout'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||'')))throw Error('Require approved Preview share link and permitted test mode');
+if(require.main===module && (!['gate','full','focus','holdout','keyboard'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||'')))throw Error('Require approved Preview share link and permitted test mode');
 const base=typeof share==='string'?new URL(share).origin:'';
 const outdir=path.resolve(__dirname,'../reports/ai-v3-online-20261105');
 mkdirSync(outdir,{recursive:true});
@@ -102,7 +102,7 @@ if(new Set(holdout.map(x=>x.p)).size!==holdout.length ||
   holdout.some(x=>full.some(y=>y.p===x.p)))throw Error('Holdout must be distinct from baseline 100');
 const cases=mode==='gate'?gate:mode==='focus'?
   [...gate.filter(x=>['G01','G02','G03','G10'].includes(x.id)),...full.filter(x=>focusIds.has(x.id))]:
-  mode==='holdout'?holdout:full;
+  mode==='holdout'?holdout:mode==='keyboard'?holdout.filter(x=>x.id==='H10'):full;
 const sleep=ms=>new Promise(res=>setTimeout(res,ms));
 function amount(text){
  const s=text.replace(/,/g,'');
