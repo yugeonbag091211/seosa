@@ -6,7 +6,7 @@ const {categoryOk}=require('../api/_ai-v3-core');
 const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory,isPart}=require('../api/_ai-v31-taxonomy');
 const {brandMatches}=require('../api/_ai-v31-retrieval');
 const mode=process.argv[2],share=process.argv[3];
-if(!['gate','full','focus'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||''))throw Error('Require approved Preview share link and gate/full phase');
+if(!['gate','full','focus','holdout'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||''))throw Error('Require approved Preview share link and permitted test mode');
 const base=new URL(share).origin;
 const outdir=path.resolve(__dirname,'../reports/ai-v3-online-20261105');
 mkdirSync(outdir,{recursive:true});
@@ -76,8 +76,33 @@ for(let i=0;i<10;i++)full.push({id:'Q'+String(i+91).padStart(3,'0'),...follow[i]
 if(full.length!==100||new Set(full.map(x=>x.p)).size!==100)throw Error('100 unique questions required, got '+full.length+' unique '+new Set(full.map(x=>x.p)).size);
 const focusIds=new Set(['Q001','Q005','Q010','Q014','Q015','Q023','Q028','Q029','Q032','Q033','Q035',
  'Q053','Q054','Q055','Q056','Q078','Q079','Q090','Q091','Q092','Q093','Q100']);
+const holdout=[
+ {id:'H01',p:'14만원까지 블루투스 오버이어 헤드폰 추천해 줘',cat:'헤드셋',max:140000},
+ {id:'H02',p:'그중 12만원 이상 제품으로만 다시 골라줘',from:'H01',cat:'헤드셋',min:120000,max:140000},
+ {id:'H03',p:'그중에서 하나만 추천해줘',from:'H02',cat:'헤드셋',min:120000,max:140000},
+ {id:'H04',p:'아이폰 16e 128기가 자급제 신품을 찾아줘',cat:'스마트폰',model:'아이폰16e 128GB',allowEmpty:true},
+ {id:'H05',p:'갤럭시 S25 256기가 자급제로 추천해줘',cat:'스마트폰',model:'갤럭시 S25 256GB',allowEmpty:true},
+ {id:'H06',p:'갤럭시탭 S9 FE 플러스 256기가 완제품 추천',cat:'태블릿',model:'갤럭시탭 S9 FE+ 256GB',allowEmpty:true},
+ {id:'H07',p:'80만원 안쪽으로 태블릿 하나 골라줘',cat:'태블릿',max:800000},
+ {id:'H08',p:'20만원 아래 씨게이트 2테라 외장하드 찾아봐',cat:'외장하드'},
+ {id:'H09',p:'10만원 미만 외장 SSD를 추천해줘',cat:'외장하드',allowEmpty:true},
+ {id:'H10',p:'아이패드 에어에 쓸 블루투스 키보드 케이스 5만원 이하',cat:'키보드',max:50000,allowEmpty:true},
+ {id:'H11',p:'5만원 이하 로지텍 무선 마우스 골라줘',cat:'마우스',max:50000},
+ {id:'H12',p:'갤럭시 버즈3 FE 이어폰 완제품 추천',cat:'이어폰',model:'갤럭시 버즈3 FE'},
+ {id:'H13',p:'갤럭시 버즈 FE 원래 모델을 찾아줘',cat:'이어폰',model:'갤럭시 버즈 FE',allowEmpty:true},
+ {id:'H14',p:'원룸에 둘 공기청정기 15만원 이하',cat:'공기청정기',max:150000},
+ {id:'H15',p:'사무실용 27인치 모니터 20만원 이하 찾아줘',cat:'모니터',max:200000},
+ {id:'H16',p:'게이밍 제외하고 80만원 이하 사무용 노트북 추천',cat:'노트북',max:800000,exclude:['게이밍']},
+ {id:'H17',p:'로보락이랑 일반 무선청소기 비교해줘',cat:'청소기',allowEmpty:true},
+ {id:'H18',p:'LG 27인치 모니터 30만원부터 40만원까지 골라줘',cat:'모니터',min:300000,max:400000,allowEmpty:true},
+ {id:'H19',p:'이어폰 말고 10만원 이하 오버이어 헤드폰으로 추천',cat:'헤드셋',max:100000},
+ {id:'H20',p:'15만원 이하 포터블 SSD, 용량 여러개 섞인 판매글 빼고',cat:'외장하드',max:150000}
+];
+if(new Set(holdout.map(x=>x.p)).size!==holdout.length ||
+  holdout.some(x=>full.some(y=>y.p===x.p)))throw Error('Holdout must be distinct from baseline 100');
 const cases=mode==='gate'?gate:mode==='focus'?
-  [...gate.filter(x=>['G01','G02','G03','G10'].includes(x.id)),...full.filter(x=>focusIds.has(x.id))]:full;
+  [...gate.filter(x=>['G01','G02','G03','G10'].includes(x.id)),...full.filter(x=>focusIds.has(x.id))]:
+  mode==='holdout'?holdout:full;
 const sleep=ms=>new Promise(res=>setTimeout(res,ms));
 function amount(text){
  const s=text.replace(/,/g,'');

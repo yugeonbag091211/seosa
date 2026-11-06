@@ -33,9 +33,17 @@ function allTypes(text) {
 }
 function explicitType(text) {
   const t=String(text||'');
-  // "아이패드용 키보드" is a keyboard, not a tablet.
-  const accessory=t.match(/(?:아이패드|ipad|태블릿|맥북|macbook)\s*용\s*(?:무선\s*|블루투스\s*)?(키보드|마우스)/i);
+  // The device may be a *compatibility target*, not the item being sold:
+  // "아이패드용 키보드" / "아이패드 에어에 쓸 블루투스 키보드".
+  const accessory=t.match(/(?:아이패드|ipad|태블릿|갤럭시\s*탭|galaxy\s*tab|맥북|macbook|노트북).{0,40}?(?:용|호환|쓸|쓰는|사용할|연결|키보드\s*케이스).{0,40}?(키보드|마우스)/i) ||
+    t.match(/(?:아이패드|ipad|태블릿|갤럭시\s*탭|galaxy\s*tab|맥북|macbook|노트북).{0,40}?(키보드|마우스)\s*케이스/i);
   if(accessory)return accessory[1]==='마우스'?'마우스':'키보드';
+  // In "earbuds, not that; headphones" the last explicit target wins.
+  const corrections=t.split(/(?:말고|아니고|대신)/i);
+  if(corrections.length>1){
+    const later=allTypes(corrections.at(-1));
+    if(later.length)return later[0].type;
+  }
   const identity=requestedIdentity(t);
   if(identity.family&&FAMILY[identity.family]) {
     const named=allTypes(t);
@@ -54,6 +62,17 @@ function comparisonFromUtterance(message) {
   if(!/(비교|차이|vs\b|대\s*결)/i.test(message))return null;
   const mentions=allTypes(message),unique=[];
   for(const m of mentions)if(!unique.some(x=>x.type===m.type))unique.push(m);
+  // Named products within the same category are still two distinct
+  // comparison subjects: "Roborock vs cordless vacuum", "iPhone 16 vs 16e".
+  // Only emit grounded phrases taken directly from the user's request.
+  const pair=String(message||'').match(/^(.{2,100}?)\s*(?:vs\.?|이랑|랑|하고|와|과)\s*(.{2,100}?)\s*(?:가격\s*|성능\s*|사양\s*)?(?:비교|차이)/i);
+  if(pair){
+    const lhs=pair[1].trim().replace(/^(?:집에서\s*쓸|가정용\s*)/,'').trim();
+    const rhs=pair[2].trim().replace(/^일반\s+/,'').replace(/\s*(?:가격|성능|사양)\s*$/,'');
+    const leftType=explicitType(lhs),rightType=explicitType(rhs);
+    if(leftType&&rightType&&lhs!==rhs)
+      return {query:lhs,compareQuery:rhs,category:leftType};
+  }
   if(unique.length<2)return null;
   return {query:unique[0].token,compareQuery:unique[1].token,category:unique[0].type};
 }
@@ -117,13 +136,17 @@ function isPart(title,type) {
     (/(?:케이블|cable|도킹\s*스테이션|도킹스테이션|enclosure)/i.test(t)) &&
     !/(?:케이블|cable)\s*(?:증정|포함|동봉|세트)/i.test(t))return true;
   if(type==='헤드폰'&&/(?:스템\s*캡|스템|탑캡|헤드셋\s*베어링|자전거|바이크\s*헤드셋|bike\s*headset)/i.test(t))return true;
-  if(type==='외장하드'&&/(?:ssd\s*케이스|hdd\s*케이스|외장하드\s*(?:케이스|파우치|독|도킹)|외장\s*하드\s*케이스)/i.test(t))return true;
+  if(type==='외장하드'&&/(?:ssd\s*케이스|hdd\s*케이스|외장하드\s*(?:케이스|파우치|독|도킹)|외장\s*하드\s*케이스|NAS\s*서버|클로닝|하드카피|디스크\s*복제|동시\s*복제|스토리지\s*도킹)/i.test(t))return true;
   if(type==='모니터'&&/(?:모니터\s*(?:암|받침대|홀더|스탠드|거치)|monitor\s*(?:arm|stand|mount))/i.test(t))return true;
   return false;
 }
 function productTypeMatches(title,category,requestedText='') {
   const t=stripTaxonomy(title),type=canonicalCategory({planCategory:category});
   if(!type||!t.trim())return false;
+  // Monthly installment, lease and rental offers do not carry a verifiable
+  // outright merchandise price. Only show them for explicit rental intent.
+  if(/(?:\[렌탈\]|렌탈\s*(?:상품|가격|약정)?|월\s*렌탈|월정액|(?:\d{2,3})\s*개월\s*(?:약정|렌탈)?|대여료)/i.test(t) &&
+    !/(?:렌탈|대여|구독)/i.test(requestedText))return false;
   // Listings that advertise multiple models/option choices cannot evidence
   // one priced, verified product configuration.
   if(/(?:모아보기|상품\s*모음|모델\s*선택|옵션\s*선택|옵션별|골라담기)/i.test(t))return false;
@@ -176,6 +199,8 @@ function productTypeMatches(title,category,requestedText='') {
     // Contract/subsidy offers cannot use the displayed listing price as the
     // outright price without independent carrier-plan verification.
     /(?:공통지원금|통신사이동|번호이동|선택약정|완납개통|약정\s*가입|할부원금|통신사\s*지원금)/i.test(t))return false;
+  if(type==='공기청정기' &&
+    /(?:호환\s*.*(?:공기\s*청정기|퓨리케어)|(?:공기\s*청정기|퓨리케어).*?(?:호환|교체용)|(?:공기\s*청정기|퓨리케어).*?교체\s*필터)/i.test(t))return false;
   if(type==='태블릿'){
     // A purported Apple iPad running Android is a contradictory seller claim.
     // Do not treat it as a verified tablet (or a genuine Apple product).

@@ -375,6 +375,67 @@ await test('shopping follow-up price floor survives GPT mode none and carries in
  assert.equal(third.cards.length,1);
  assert.equal(third.cards[0].title,desired.title);
 });
+await test('base Galaxy S25 is never substituted with S25 Edge',()=>{
+ const {requestedIdentity,checkListingIdentity}=require('../api/_ai-v3-identity');
+ const wanted=requestedIdentity('갤럭시 S25 256기가 자급제');
+ assert.equal(checkListingIdentity('삼성전자 갤럭시 S25 Edge 자급제 SM-S937N, 256GB',wanted).ok,false);
+ assert.equal(checkListingIdentity('삼성전자 갤럭시 S25 자급제 256GB',wanted).ok,true);
+});
+await test('named device compatibility is not mistaken for actual keyboard category',async()=>{
+ const prompt='아이패드 에어에 쓸 블루투스 키보드 케이스 5만원 이하';
+ assert.equal(taxonomy.canonicalCategory({message:prompt,planCategory:'태블릿'}),'키보드');
+ const good=row('ipadkeyboard','DUNNO 아이패드 에어 M4 M3 블루투스 키보드 케이스',34900,'키보드');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'아이패드 키보드',category:'태블릿',maxPrice:50000}),
+  searchProducts:async()=>[good],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:prompt});
+ assert.equal(out.state.category,'키보드');
+ assert.equal(out.cards.length,1);
+ assert.equal(out.cards[0].title,good.title);
+ assert.deepEqual(out.state.identity,{});
+});
+await test('negated product type yields the desired replacement category',async()=>{
+ const prompt='이어폰 말고 10만원 이하 오버이어 헤드폰으로 추천';
+ assert.equal(taxonomy.explicitType(prompt),'헤드폰');
+ const headphone=row('hp','필립스 SHP9500 유선 헤드폰',99000,'헤드폰');
+ const earbud=row('buds','갤럭시 버즈 블루투스 이어폰',70000,'이어폰');
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'이어폰 헤드폰',category:'이어폰'}),
+  searchProducts:async()=>[headphone,earbud],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:prompt});
+ assert.equal(out.state.category,'헤드폰');
+ assert.equal(out.cards.length,1);
+ assert.equal(out.cards[0].title,headphone.title);
+});
+await test('rental and compatible replacement parts cannot be sold as air purifier',()=>{
+ assert.equal(taxonomy.productTypeMatches('[렌탈] 삼성 공기청정기렌탈 60개월 52100','공기청정기','원룸 공기청정기'),false);
+ assert.equal(taxonomy.productTypeMatches('고효율 LG호환 퓨리케어1단형 AS181DAW 공기청정기호','공기청정기','원룸 공기청정기'),false);
+ assert.equal(taxonomy.productTypeMatches('샤오미 미지아 공기청정기 5','공기청정기','원룸 공기청정기'),true);
+});
+await test('NAS cloning devices are not verified portable SSDs',()=>{
+ assert.equal(taxonomy.productTypeMatches('NAS서버 동시 복제 HDD SSD 외장하드 스토리지 SATA3 3Bay','외장하드','외장 SSD'),false);
+ assert.equal(taxonomy.productTypeMatches('트랜센드 초소형 외장SSD ESD310 256GB','외장하드','외장 SSD'),true);
+});
+await test('same-category comparison separates robot and stick vacuums',async()=>{
+ const sentence='로보락이랑 일반 무선청소기 비교해줘';
+ assert.deepEqual(taxonomy.comparisonFromUtterance(sentence),{
+  query:'로보락',compareQuery:'무선청소기',category:'청소기'
+ });
+ const robot=row('robot','로보락 Qrevo S 로봇청소기',589000,'청소기');
+ const stick=row('stick','삼성 제트 무선청소기',239000,'청소기');
+ const calls=[];
+ const out=await createEngine({
+  planModel:async()=>({mode:'recommend',query:'청소기',category:'청소기'}),
+  searchProducts:async(query)=>{calls.push(query);return [robot,stick]},
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ },{message:sentence});
+ assert.deepEqual(calls,['로보락','무선청소기']);
+ assert.equal(out.cards.length,2);
+ assert(out.cards.some(x=>x.title===robot.title));
+ assert(out.cards.some(x=>x.title===stick.title));
+});
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;
 })().catch(e=>{console.error('Unexpected test failure',e);process.exitCode=1});

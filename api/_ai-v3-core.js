@@ -353,7 +353,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   // Named laptop/tablet in "MacBook-compatible external SSD" is the target
   // device, not the product for sale. Never force laptop identity on an SSD.
   if(plan.identity.family && familyCategory(plan.identity.family)!==plan.category &&
-    /(?:용|호환|연결)/i.test(message)) {
+    /(?:용|호환|연결|쓸|쓰는|사용할)/i.test(message)) {
     plan.compatibilityFamily=plan.identity.family;plan.identity={};
   }
   if (plan.mode === 'none') return {

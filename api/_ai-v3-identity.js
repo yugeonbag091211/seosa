@@ -26,6 +26,7 @@ const FAMILY_PREFIX = {
   macbook: /(?:맥북|macbook)/ig
 };
 const VARIANT_MAP = [
+  ['edge', /(?<![a-z가-힣])(?:엣지|edge)(?![a-z가-힣])/i],
   ['pro-max', /(?<![a-z가-힣])(?:프로\s*맥스|pro\s*max)(?![a-z가-힣])/i],
   ['ultra', /(?<![a-z가-힣])(?:울트라|ultra)(?![a-z가-힣])/i],
   ['pro', /(?<![a-z가-힣])(?:프로|pro)(?![a-z가-힣])/i],
