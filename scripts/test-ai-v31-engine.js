@@ -333,7 +333,7 @@ await test('carrier-subsidized smartphone listing is never treated as outright r
 });
 await test('natural Korean what-is-good shopping intent is not treated as small talk',async()=>{
  const out=await createEngine({
-  planModel:async()=>({mode:'none',query:'태블릿',category:'태블릿',maxPrice:1000000}),
+  planModel:async()=>({mode:'none',query:'',category:'',maxPrice:1000000}),
   searchProducts:async()=>[row('tab','샤오미 레드미 패드 2 태블릿PC WiFi 128GB',400000,'태블릿')],
   decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
  },{message:'100만원 이하 태블릿 뭐가 좋아?'});
@@ -349,6 +349,31 @@ await test('ordinary question asking what a tablet is remains nonshopping',async
  },{message:'태블릿이 뭐야?'});
  assert.equal(searched,false);
  assert.equal(out.stats.searched,false);
+});
+await test('shopping follow-up price floor survives GPT mode none and carries into final pick',async()=>{
+ const cheap=row('cheap','스튜디오 유선 헤드폰 A1',110000,'헤드폰');
+ const desired=row('desired','스튜디오 유선 헤드폰 B1',132000,'헤드폰');
+ const gameplay=row('gaming','게이밍 블루투스 헤드폰 G1',135000,'헤드폰');
+ const opts={
+  planModel:async()=>({mode:'none',query:'',category:'',maxPrice:null}),
+  searchProducts:async()=>[cheap,desired,gameplay],
+  decideModel:async({candidates})=>({productIds:candidates.map(c=>c.id)})
+ };
+ const first=await createEngine(opts,{message:'15만원 이하 헤드폰 추천해줘, 게이밍 제외'});
+ assert.equal(first.stats.searched,true);
+ assert.equal(first.state.category,'헤드폰');
+ assert.equal(first.state.maxPrice,150000);
+ assert(first.state.exclusions.includes('게이밍'));
+ const second=await createEngine(opts,{message:'그중 12만원 이상으로만 골라줘',state:first.state});
+ assert.equal(second.stats.searched,true);
+ assert.equal(second.state.minPrice,120000);
+ assert.equal(second.state.maxPrice,150000);
+ assert.deepEqual(second.cards.map(x=>x.title),[desired.title]);
+ const third=await createEngine(opts,{message:'그중에서 한 개만 추천해줘',state:second.state});
+ assert.equal(third.stats.searched,true);
+ assert.equal(third.state.minPrice,120000);
+ assert.equal(third.cards.length,1);
+ assert.equal(third.cards[0].title,desired.title);
 });
 console.log(JSON.stringify({passed,failed,total:passed+failed}));
 if(failed)process.exitCode=1;

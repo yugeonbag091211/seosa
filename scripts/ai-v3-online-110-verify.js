@@ -74,8 +74,8 @@ const follow=[
 ];
 for(let i=0;i<10;i++)full.push({id:'Q'+String(i+91).padStart(3,'0'),...follow[i]});
 if(full.length!==100||new Set(full.map(x=>x.p)).size!==100)throw Error('100 unique questions required, got '+full.length+' unique '+new Set(full.map(x=>x.p)).size);
-const focusIds=new Set(['Q001','Q005','Q010','Q014','Q015','Q028','Q029',
- 'Q053','Q054','Q055','Q056','Q078','Q079','Q090','Q091','Q100']);
+const focusIds=new Set(['Q001','Q005','Q010','Q014','Q015','Q023','Q028','Q029','Q032','Q033','Q035',
+ 'Q053','Q054','Q055','Q056','Q078','Q079','Q090','Q091','Q092','Q093','Q100']);
 const cases=mode==='gate'?gate:mode==='focus'?
   [...gate.filter(x=>['G01','G02','G03','G10'].includes(x.id)),...full.filter(x=>focusIds.has(x.id))]:full;
 const sleep=ms=>new Promise(res=>setTimeout(res,ms));
@@ -116,6 +116,9 @@ function verdict(test,data,previous){
   if(c.condition==='used_or_refurbished'&&!/(?:중고|리퍼)\s*(?:상품)?\s*(?:추천|찾아|보여)/.test(test.p))errors.push(pre+'used_or_refurbished');
   // A device bundled with a free pouch is not the pouch itself.
   if(isPart(title,test.cat))errors.push(pre+'accessory_or_part');
+  if(test.cat==='스마트폰' &&
+    /(?:공통지원금|통신사이동|번호이동|선택약정|완납개통|약정\s*가입|할부원금)/i.test(title))
+    errors.push(pre+'carrier_conditional_price');
   if(ambiguousOptions(title,test.cat))errors.push(pre+'ambiguous_options');
   if(wantWireless && ['헤드셋','헤드폰'].includes(test.cat) &&
      !/(?:무선|블루투스|wireless|bluetooth|\bBT\d|TWS)/i.test(title))

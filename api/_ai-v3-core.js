@@ -14,6 +14,24 @@ const flat = x => clean(x, 200).toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
 const nprice = v => v == null || v === '' ? null
   : Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : null;
 const money = n => Number(n).toLocaleString('ko-KR') + '원';
+// A ceiling stated by the user overrides GPT's output, and a missing ceiling
+// on a follow-up cannot silently erase the existing budget.
+function explicitMaxPrice(utterance) {
+  const s=clean(utterance,800).replace(/,/g,'');
+  const amount=(n,u)=>{
+    const factor=/만/.test(u)?10000:/천/.test(u)?1000:1;
+    const value=Math.round(Number(n)*factor);
+    return Number.isSafeInteger(value)&&value>0?value:null;
+  };
+  const ceilings=[...s.matchAll(/(\d+(?:\.\d+)?)\s*(만원|만\s*원|만|천원|원)\s*(?:이하|미만|까지|안쪽|내외?로|밖에)/g)];
+  if(ceilings.length)return amount(ceilings.at(-1)[1],ceilings.at(-1)[2]);
+  const ranges=[...s.matchAll(/(\d+(?:\.\d+)?)\s*(만원|만\s*원|만|천원|원)?\s*(?:~|∼|–|-|에서)\s*(\d+(?:\.\d+)?)\s*(만원|만\s*원|만|천원|원)/g)];
+  if(ranges.length){
+    const m=ranges.at(-1),low=amount(m[1],m[2]||m[4]),high=amount(m[3],m[4]);
+    return low!=null&&high!=null&&low<=high?high:null;
+  }
+  return null;
+}
 // Price floors come only from explicit user language, never an LLM's guess.
 function explicitMinPrice(utterance) {
   const s = clean(utterance, 800).replace(/,/g, '');
@@ -135,7 +153,9 @@ function sanitizePlan(input, prev = {}, utterance = '') {
     ...(Array.isArray(prev.exclusions) ? prev.exclusions : []),
     ...(Array.isArray(o.exclusions) ? o.exclusions : [])
   ].map(x => clean(x, 55)).filter(Boolean))].slice(0, 8);
-  const maxPrice = o.maxPrice == null ? nprice(prev.maxPrice) : nprice(o.maxPrice);
+  const statedMaxPrice=explicitMaxPrice(utterance);
+  const maxPrice=statedMaxPrice!=null?statedMaxPrice:
+    o.maxPrice==null?nprice(prev.maxPrice):nprice(o.maxPrice);
   const askedMinPrice = explicitMinPrice(utterance);
   let minPrice = askedMinPrice != null ? askedMinPrice : nprice(prev.minPrice);
   if (minPrice != null && maxPrice != null && minPrice > maxPrice) minPrice = null;
@@ -304,9 +324,26 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage }
   if(twoKinds)Object.assign(plan,{mode:'compare',query:twoKinds.query,
     compareQuery:twoKinds.compareQuery,category:twoKinds.category,
     features:mergeFeatures({},message,true)});
-  if(plan.mode==='none' && explicitType(message) &&
-    /추천|비교|차이|찾아|골라|보여|구매|살까|뭐가\s*(?:좋아|좋을|낫|괜찮)|뭘\s*(?:살|고를)|어떤\s*(?:게|것|제품)|좋을까/i.test(message))
+  const groundedShoppingType=explicitType(message);
+  const userShoppingIntent=/추천|비교|차이|찾아|골라|보여|구매|살까|뭐가\s*(?:좋아|좋을|낫|괜찮)|뭘\s*(?:살|고를)|어떤\s*(?:게|것|제품)|좋을까/i.test(message);
+  if(plan.mode==='none' && groundedShoppingType && userShoppingIntent)
     plan.mode='recommend';
+  // If GPT emptied the search keyword but the user named a product and
+  // explicitly requested shopping, rebuild a bounded grounded query.
+  // Do not infer a new model/brand from LLM text.
+  if(plan.mode==='recommend' && !plan.query && groundedShoppingType && userShoppingIntent)
+    plan.query=groundedShoppingType;
+  // Follow-up filters are shopping actions too, even when the utterance
+  // contains no product noun. The prior state supplies the product subject.
+  const priceFloor=explicitMinPrice(message);
+  const anchoredFollowup=!!prior.lastQuery && (
+    /(?:그중|그중에서|그중에|그거|거기서|여기서|이중|이 중)/i.test(message) &&
+    (priceFloor!=null || /하나(?:만)?\s*(?:추천|골라)|추천해|골라줘|보여줘/i.test(message))
+  );
+  if(plan.mode==='none' && anchoredFollowup){
+    plan.mode='recommend';
+    if(!plan.query)plan.query=clean(prior.lastQuery,80);
+  }
   const explicitIdentity = requestedIdentity(message);
   const changedSubject = !!(explicitIdentity.family && prior.identity.family
     && explicitIdentity.family !== prior.identity.family);
