@@ -192,6 +192,19 @@ function judgeCards(test, data, previous) {
       /(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i.test(t);
     if (part && !(compatHost && cat === '키보드') && !(combo && part==='액세서리'))
       errs.push('accessory_or_part:' + part);
+    // Independent, user-grounded attributes absent from generic category
+    // checks. Never count an unrelated product line or adult model as a hit.
+    if(cat==='공기청정기' && /(?:퓨어\s*쿨|pure\s*cool)/i.test(q) &&
+      !/(?:퓨어\s*쿨|pure\s*cool)/i.test(t)) errs.push('named_product_line_missing');
+    if(cat==='시계' && /(?:어린이|키즈|아동|유아|초등|주니어|kids?)/i.test(q) &&
+      !/(?:어린이|키즈|아동|유아|초등|주니어|kids?|child(?:ren)?)/i.test(t))
+      errs.push('kids_watch_evidence_missing');
+    if(cat==='마우스' && /(?:왼손(?:잡이|용)?|left[ -]?hand(?:ed)?)/i.test(q) &&
+      !/(?:왼손(?:잡이|용)?|양손(?:잡이|용|형)?|좌우\s*대칭|left[ -]?hand(?:ed)?|ambidextrous)/i.test(t))
+      errs.push('left_handed_evidence_missing');
+    if(cat==='마우스' && /유선\s*[/,·]?\s*무선(?:\s*블루투스)?/i.test(t) &&
+      !/(?:유무선|겸용|듀얼\s*모드|dual[ -]?mode)/i.test(t))
+      errs.push('connection_variant_price_unverified');
     if ((c.condition === 'used_or_refurbished' || USED_TITLE.test(t)) && !usedOk) errs.push('used_not_requested');
     for (const names of brands) if (!hasBrand(t, names)) errs.push('brand_missing:' + names[0]);
     for (const code of codes) if (!flat(t).includes(code)) errs.push('model_missing:' + code);
