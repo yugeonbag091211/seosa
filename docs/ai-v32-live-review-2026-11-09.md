@@ -34,3 +34,10 @@ H08 independent evaluator initially misread `프렌즈샵` as camera lens access
 
 ## Local tests
 - New targeted regression 8/8 PASS; v3.2 root-cause 26/26; existing engine 62/62, v3 core 40/40, v3.1 verdict 12/12, catalog 13/13, identity 48/48. Total explicitly observed: 209/209, some suites overlap in behavioral coverage. All are offline and cannot substitute for Preview.
+
+## Post-patch first Preview (commit a522a39)
+- Preview `seosa-ojuksmu58-seosa.vercel.app` READY; six cases (H08, H11, H37, H38, H47, H51) all HTTP 200.
+- Independent evaluator after correcting the combo accessory-tail false positive: PASS 4, FAIL 2 (H11 shopping not searched; H47 disputed FIND oracle), no verified wrong cards in 12 shown.
+- H38 successfully returned real keyboard/mouse bundles, but original independent evaluator had called the descriptive phrase `PC 액세서리` a principal part; fixed separately without relaxing hard rejection of stand-alone replacement parts.
+- H11 remained no-search under a model-planned comparison with an empty second subject. Follow-on fix routes only a **specific user-named SKU** without comparison language to ordinary search; preserve older regression for vague `가격 좀 알려줘` with invalid compare state.
+- Do not claim these follow-on fixes are deployed until the next Preview check.

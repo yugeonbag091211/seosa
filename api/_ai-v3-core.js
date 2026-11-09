@@ -395,6 +395,14 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
      canonicalName(explicitType(plan.compareQuery))===plan.category)){
     plan.mode='recommend';plan.compareQuery='';plan.priceLookup=true;
   } else if(!twoKinds && intent.priceLookup && plan.mode==='recommend') plan.priceLookup=true;
+  // The model sometimes invents a two-product compare for a bare exact SKU.
+  // A compare request must be grounded in the user's own comparison words;
+  // otherwise it is an ordinary product lookup, even if GPT omitted side B.
+  if(plan.mode==='compare'&&!twoKinds&&
+    /(?:\d{2,4}\s*(?:GB|TB|기가|테라|mm|인치)|\b[A-Z]{1,5}[-]?\d{1,3}\b)/i.test(message)&&
+    !/(?:비교|차이|\bvs\b|대\s*결)/i.test(message)){
+    plan.mode='recommend';plan.compareQuery='';
+  }
   const groundedShoppingType=explicitType(message);
   const shoppingIntent=(intent.purchase||intent.hasBudget)&&!intent.informational&&!intent.thanks;
   // In a shopping-only interface, a *specific* product specification by itself

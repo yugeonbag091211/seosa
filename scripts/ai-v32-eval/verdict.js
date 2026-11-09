@@ -186,7 +186,12 @@ function judgeCards(test, data, previous) {
     if (min != null && Number(c.price) < min) errs.push('below_min_budget');
     if (CAT_WORDS[cat] && !CAT_WORDS[cat].test(t) && !codes.some(x => flat(t).includes(x))) errs.push('category_noun_missing'); else ok.push('category');
     const part = partWord(t, cat);
-    if (part && !(compatHost && cat === '키보드')) errs.push('accessory_or_part:' + part);
+    // 'PC 액세서리' in the descriptive tail of a clearly sold keyboard+
+    // mouse combo does not turn the bundle into a replacement accessory.
+    const combo=(cat==='키보드'||cat==='마우스') &&
+      /(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i.test(t);
+    if (part && !(compatHost && cat === '키보드') && !(combo && part==='액세서리'))
+      errs.push('accessory_or_part:' + part);
     if ((c.condition === 'used_or_refurbished' || USED_TITLE.test(t)) && !usedOk) errs.push('used_not_requested');
     for (const names of brands) if (!hasBrand(t, names)) errs.push('brand_missing:' + names[0]);
     for (const code of codes) if (!flat(t).includes(code)) errs.push('model_missing:' + code);

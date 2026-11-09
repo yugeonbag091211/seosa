@@ -22,6 +22,17 @@ async function mock(message,planned={mode:'none',query:'',category:''}) {
   assert.equal(out.stats.searched,true);
   assert.equal(out.state.category,'태블릿');
  });
+ await test('H11 GPT invented a compare mode and missing second subject: search must still execute',async()=>{
+  const q='갤럭시탭 S10 FE 플러스 256GB 와이파이';
+  const {out,called}=await mock(q,{mode:'compare',query:q,category:'태블릿',compareQuery:''});
+  assert.equal(called,1);assert.equal(out.stats.searched,true);
+ });
+ await test('H38 independent checker accepts explicit bundle when accessory is only a tail descriptor',()=>{
+  const c=cases.find(x=>x.id==='H38');
+  const item={productId:'mock:set',title:'[해외] Shipadoo 게이밍 무선 키보드 및 마우스 콤보 세트, 컴퓨터 무선 노트북 데스크탑 사무실 PC 액세서리 무료 무선 마우스',price:14350};
+  const v=verdict(c,{http:200,cards:[item],stats:{searched:true},state:{maxPrice:30000,minPrice:null}},null,labelFor(c));
+  assert.equal(v.verdict,'PASS',JSON.stringify(v.causes));
+ });
  await test('generic product noun alone does not trigger unsolicited catalog search',async()=>{
   const {out,called}=await mock('태블릿',{mode:'none',query:'태블릿',category:'태블릿'});
   assert.equal(called,0);assert.equal(out.stats.searched,false);
