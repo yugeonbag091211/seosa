@@ -1,0 +1,39 @@
+name: AI v3.2 niche guardrail regression
+
+on:
+  push:
+    branches:
+      - 'fix/ai-v32-catalog-guardrails-20261110'
+  pull_request:
+    branches:
+      - 'feat/ai-v31-engine-20261106'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out reviewed branch
+        uses: actions/checkout@11bd71901bbe5b163ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Syntax verification
+        run: |
+          node --check api/_ai-v31-taxonomy.js
+          node --check scripts/ai-v32-eval/verdict.js
+          node --check scripts/test-ai-v32-niche-guardrails-20261110.js
+      - name: New user-grounded guardrail regression
+        run: node scripts/test-ai-v32-niche-guardrails-20261110.js
+      - name: Existing AI v3.2 root-cause regression
+        run: node scripts/test-ai-v32-rootcause.js
+      - name: Existing AI v3.1 engine regression
+        run: node scripts/test-ai-v31-engine.js
