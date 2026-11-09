@@ -41,3 +41,20 @@ H08 independent evaluator initially misread `프렌즈샵` as camera lens access
 - H38 successfully returned real keyboard/mouse bundles, but original independent evaluator had called the descriptive phrase `PC 액세서리` a principal part; fixed separately without relaxing hard rejection of stand-alone replacement parts.
 - H11 remained no-search under a model-planned comparison with an empty second subject. Follow-on fix routes only a **specific user-named SKU** without comparison language to ordinary search; preserve older regression for vague `가격 좀 알려줘` with invalid compare state.
 - Do not claim these follow-on fixes are deployed until the next Preview check.
+
+
+## 2026-11-10 secondary audit — previously undetected violations
+The 70-question **retest of ca13e10** completed: HTTP 200 70/70, original registered-oracle evaluator PASS 49 / FAIL 1 / UNVERIFIED 20, zero per-card errors under the *old checker*. This score is **not proof that all cards met user requirements**.
+
+A targeted raw-card review found the following *additional* issues missed by the previous independent evaluator:
+- **H40** (“왼손잡이용 무선 마우스 3만원 이하”): the initial v3.2 Preview returned generic right/unknown-handed mouse titles without left-handed support evidence, misleadingly receiving PASS. In the newer ca13e10 run the model abstained, resulting in UNVERIFIED; this is safer but the server's 21 provisional candidates still required deterministic filtering.
+- **H46** (“다이슨 공기청정기 퓨어쿨 정품”): the ca13e10 Preview returned four *other* Dyson lines (Hot+Cool HP2, PC3, HushJet), not a verified Pure Cool. Originally counted as CARDS_CONTRADICT_ORACLE and UNVERIFIED; should be investigated as a **product-line mismatch**, not a harmless unresolved outcome.
+- **H56** (“어린이 키즈폰 스마트워치 10만원 이하”): the ca13e10 Preview returned four generic Bluetooth watches with no children/kids attribute in the titles. Originally counted as CARDS_CONTRADICT_ORACLE and UNVERIFIED; potential **audience mismatch**.
+- **H47** remains a pre-registered FIND-label dispute: only S8 family variants were cited in the oracle note, but the user specified S8 without a suffix. Do not silently reclassify the historic benchmark or recommend another variant without disclosure.
+
+2026-11-10 read-only Neon checks:
+- No title-confirmed Dyson Pure Cool row was returned from a targeted search; this is not proof of absolute market non-availability.
+- Query for child/kids + smartwatch/watch titles under 100,000 KRW returned only unrelated timers/alarms, not an evidenced kids calling watch in the inspected result set.
+- Left-hand/ambidextrous mouse rows included a *wired* left-friendly model, a wireless Logitech M170 explicitly labelled ambidextrous, and a multi-option wired/wireless/Bluetooth left-hand listing. Only single-priced, unambiguous compatible offers should qualify.
+
+New guardrails were staged separately on branch \`fix/ai-v32-catalog-guardrails-20261110\`: deterministic product-line, target-audience, handedness and connection-option evidence; independent evaluator checks; and a targeted regression suite. **No suite execution or POST Preview verification can be claimed for these new changes** until an authorized test device responds. The user desktop was shown as online but stopped responding to remote terminal commands on 2026-11-10. Do not merge or release this draft until tests and Preview validation pass.
