@@ -25,11 +25,21 @@ const delayMs = Number(arg('delay-ms', '5600'));
 const vc = arg('vc', 'C:/nvm4w/nodejs/node_modules/vercel/dist/vc.js');
 const shim = arg('shim');
 const cwd = arg('cwd', 'C:/Users/yugeo/seosa');
+const share = arg('share'); // Optional ephemeral Vercel share link; NEVER print or persist it.
 if (!deployment || !/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app$/.test(deployment)) throw new Error('--deployment must be a seosa Preview URL');
+if (share) {
+  const u=new URL(share);
+  if (u.origin!==deployment || !/^[A-Za-z0-9_-]+$/.test(u.searchParams.get('_vercel_share')||''))
+    throw new Error('--share must be an authorized share link for the same Preview');
+}
 if (!out) throw new Error('--out required');
 
 function cases() {
   if (kind === 'holdout') return require('./holdout-cases').cases;
+  if (kind === 'repair') {
+    const ids=new Set(['H08','H11','H37','H38','H47','H51']);
+    return require('./holdout-cases').cases.filter(x=>ids.has(x.id));
+  }
   const all = require('../ai-v31-online-200-cases').cases;
   if (kind === 'smoke') {
     // 10 questions covering every fixed mechanism (intent, guitar, compare,
@@ -40,7 +50,33 @@ function cases() {
   return all;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const cookies={};
+const cookieHeader=()=>Object.entries(cookies).map(([k,v])=>k+'='+v).join('; ');
+async function authShare(){
+  let at=share;
+  for(let i=0;i<5;i++){
+    const r=await fetch(at,{redirect:'manual',signal:AbortSignal.timeout(20000),headers:{cookie:cookieHeader()}});
+    for(const h of r.headers.getSetCookie?.()||[]){const m=h.match(/^([^=;]+)=([^;]*)/);if(m)cookies[m[1]]=m[2];}
+    if(r.status===200 && cookieHeader())return;
+    const loc=r.headers.get('location');
+    if(!loc || r.status<300 || r.status>=400)break;
+    at=new URL(loc,at).toString();
+    if(!at.startsWith(deployment+'/'))throw new Error('Cross-origin Preview share redirect');
+  }
+  throw new Error('Preview share authentication failed');
+}
+async function callViaShare(body){
+  const started=Date.now();
+  try{
+    const r=await fetch(deployment+'/api/ai?v=3',{method:'POST',headers:{'content-type':'application/json',cookie:cookieHeader()},
+      body:JSON.stringify(body),signal:AbortSignal.timeout(75000)});
+    const raw=await r.text(); let json;
+    try{json=JSON.parse(raw)}catch{json=null}
+    return {http:r.status,json,elapsedMs:Date.now()-started,error:json?null:'non_json_response'};
+  }catch(e){return {http:0,json:null,elapsedMs:Date.now()-started,error:String(e.message).slice(0,120)};}
+}
 function call(body) {
+  if(share)return callViaShare(body);
   const tmp = path.join(os.tmpdir(), 'seosa-ai-body-' + process.pid + '.json');
   fs.writeFileSync(tmp, JSON.stringify(body));
   const args = [...(shim ? ['--require', shim] : []), vc, 'curl', '/api/ai?v=3', '--deployment', deployment, '--yes', '--',
@@ -61,6 +97,7 @@ function call(body) {
   });
 }
 async function main() {
+  if(share)await authShare();
   const list = cases();
   const done = fs.existsSync(out) ? fs.readFileSync(out, 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse) : [];
   const keep = [];

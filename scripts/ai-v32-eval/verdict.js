@@ -53,7 +53,7 @@ const CAT_WORDS = {
 };
 // Words that make a listing an accessory/part/non-device, unless they appear
 // in an inclusion or spec context. Independent list.
-const PART = /(케이스|커버|필름|강화\s*유리|보호대|거치대|스탠드|받침|지지대|파우치|가방|백팩|스트랩|충전기|충전\s*독|어댑터|케이블|젠더|이어\s*팁|이어\s*패드|키캡|키\s*스킨|팜\s*레스트|필터|먼지\s*봉투|브러시|브러쉬|노즐|걸레|리필|부품|교체용|호환용|교체품|호환품|소모품|액세서리|악세사리|카포|(?<![가-힣])피크(?![가-힣])|교본|페달|이펙터|앰프|리모컨|리시버|동글|유심|렌즈|펜슬|s\s*펜|정리대|경사대|세제|매트|마우스\s*패드|헤드\s*(?:교체|단품))/i;
+const PART = /(케이스|커버|필름|강화\s*유리|보호대|거치대|스탠드|받침|지지대|파우치|가방|백팩|스트랩|충전기|충전\s*독|어댑터|케이블|젠더|이어\s*팁|이어\s*패드|키캡|키\s*스킨|팜\s*레스트|필터|먼지\s*봉투|브러시|브러쉬|노즐|걸레|리필|부품|교체용|호환용|교체품|호환품|소모품|액세서리|악세사리|카포|(?<![가-힣])피크(?![가-힣])|교본|페달|이펙터|앰프|리모컨|리시버|동글|유심|(?<![가-힣])렌즈(?![가-힣])|펜슬|s\s*펜|정리대|경사대|세제|매트|마우스\s*패드|헤드\s*(?:교체|단품))/i;
 // inclusion within 20 chars ("+ 보관가방 포함"), or a spec/feature right after
 const PART_OK_AFTER = /^.{0,20}?(포함|증정|사은품|동봉|세트\s*구성)|^\s*(?:\S{0,6}\s*)?(내장|탑재|장착|별매|지원|h1[0-4]|일체형|겸용|기능|물\s*세척|세척|교체\s*가능)|^\s*(?:로봇|청소기)/i;
 const PART_OK_BEFORE = /(mah|대용량|헤파|hepa|h1[0-4]|카본|\d\s*m|\+|2\.4g?)\s*$/i;
@@ -148,6 +148,22 @@ function storageOf(text) {
   return [...new Set(vals)];
 }
 
+// A fitted keyboard case can list several *compatible* tablet models with
+// the manufacturer name appearing only once: "Galaxy Tab S10 FE / S9 FE / S9".
+// Match the requested model token as a distinct compatibility member rather
+// than requiring "Galaxy Tab" to repeat before every member.
+function compatibleTabletSet(question, title, category) {
+  if (category !== '키보드' || !/(?:키보드|keyboard)/i.test(title)) return false;
+  const m = norm(question).match(/(?:갤럭시\s*탭|galaxy\s*tab)\s*(s\d{1,2})\s*(fe\s*(?:\+|플러스|plus)?|프로|pro|울트라|ultra)?/i);
+  if (!m) return false;
+  const model = m[1];
+  const variant = (m[2] || '').toLowerCase().replace(/\s/g, '');
+  const root = '(?<![a-z0-9])' + model + '\\s*';
+  const variants = variant.startsWith('fe')
+    ? (/(?:\+|플러스|plus)/.test(variant) ? 'fe\\s*(?:\\+|플러스|plus)' : 'fe(?!\\s*(?:\\+|플러스|plus))')
+    : (variant ? '(?:' + variant + ')' : '(?!fe|\\+|플러스|plus|pro|ultra)');
+  return new RegExp(root + variants, 'i').test(title);
+}
 function judgeCards(test, data, previous) {
   const q = test.p, cat = test.cat;
   const cards = Array.isArray(data.cards) ? data.cards : [];
@@ -174,7 +190,8 @@ function judgeCards(test, data, previous) {
     if ((c.condition === 'used_or_refurbished' || USED_TITLE.test(t)) && !usedOk) errs.push('used_not_requested');
     for (const names of brands) if (!hasBrand(t, names)) errs.push('brand_missing:' + names[0]);
     for (const code of codes) if (!flat(t).includes(code)) errs.push('model_missing:' + code);
-    const id = identityCheck(t, terms); if (id) errs.push(id);
+    const id = identityCheck(t, terms);
+    if (id && !compatibleTabletSet(q,t,cat)) errs.push(id);
     if (reqStorage.length && cat !== '키보드') {
       const s = storageOf(t);
       if (!s.length) errs.push('storage_unverified'); else if (!reqStorage.some(v => s.includes(v)) || s.length > 1) errs.push('storage_mismatch_or_options');

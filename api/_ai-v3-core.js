@@ -397,11 +397,16 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
   } else if(!twoKinds && intent.priceLookup && plan.mode==='recommend') plan.priceLookup=true;
   const groundedShoppingType=explicitType(message);
   const shoppingIntent=(intent.purchase||intent.hasBudget)&&!intent.informational&&!intent.thanks;
-  if(plan.mode==='none' && groundedShoppingType && shoppingIntent)
+  // In a shopping-only interface, a *specific* product specification by itself
+  // ("갤럭시탭 S10 FE 플러스 256GB 와이파이") is a search request even if
+  // the planner chooses 'none'. Generic nouns and explanations do not qualify.
+  const specificBareProduct=!!groundedShoppingType && !intent.informational && !intent.thanks &&
+    /(?:\d{2,4}\s*(?:GB|TB|기가|테라|mm|인치)|\b[A-Z]{1,5}[-]?\d{1,3}\b)/i.test(message);
+  if(plan.mode==='none' && groundedShoppingType && (shoppingIntent||specificBareProduct))
     plan.mode='recommend';
   // If GPT emptied the search keyword but the user named a product and
   // explicitly requested shopping, rebuild a bounded grounded query.
-  if(plan.mode==='recommend' && !plan.query && groundedShoppingType && shoppingIntent)
+  if(plan.mode==='recommend' && !plan.query && groundedShoppingType && (shoppingIntent||specificBareProduct))
     plan.query=groundedShoppingType;
   // Follow-up filters are shopping actions even without a product noun.
   // A reference to previously displayed products is a filtering request,

@@ -77,6 +77,10 @@ function headType(text) {
 }
 function explicitType(text) {
   const t=String(text||'');
+  // A positively requested keyboard+mouse COMBO is sold as one set. Use
+  // keyboard as the retrieval category, but validate that both are supplied.
+  const combo=/(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i;
+  if(mentionedPositively(t,combo))return '키보드';
   // The device may be a *compatibility target*, not the item being sold:
   // "아이패드용 키보드" / "아이패드 에어에 쓸 블루투스 키보드".
   const accessory=t.match(/(?:아이패드|ipad|태블릿|갤럭시\s*탭|galaxy\s*tab|맥북|macbook|노트북).{0,40}?(?:용|호환|쓸|쓰는|사용할|연결|맞는|맞게|전용|위한|키보드\s*케이스).{0,40}?(키보드|마우스)/i) ||
@@ -253,10 +257,14 @@ function productTypeMatches(title,category,requestedText='') {
   const t=stripTaxonomy(title),type=canonicalName(category);
   if(!type||!t.trim())return false;
   const req=String(requestedText||'');
+  const comboRequested=(type==='키보드'||type==='마우스')&&mentionedPositively(req,
+    /(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i);
   // v3.2 principal item: the head of the title's main phrase is what is sold.
   const principal=principalItem(title);
   if(principal.kind==='accessory')return false;
-  if(principal.kind==='device'&&principal.type&&principal.type!==type)return false;
+  // A set's head noun may be either keyboard OR mouse; both are the sale.
+  if(principal.kind==='device'&&principal.type&&principal.type!==type &&
+    !(comboRequested&&['키보드','마우스'].includes(principal.type)))return false;
   // No identifiable item in the main phrase: only a model code the user
   // typed (e.g. "WH-1000XM5" with no "헤드폰" word) can still identify it.
   if(principal.kind===null&&(DEVICE_TYPES.has(type)||type==='마우스'||type==='키보드')){
@@ -265,6 +273,13 @@ function productTypeMatches(title,category,requestedText='') {
     if(!codes.some(c=>c.length>=4&&flatTitle.includes(c)))return false;
   }
   if(!requiredAttributesOk(t,type,req))return false;
+  const keyboardMouseBundle=/(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i;
+  if((type==='키보드'||type==='마우스') && mentionedPositively(req,keyboardMouseBundle) &&
+    !keyboardMouseBundle.test(t))return false;
+  // A Bluetooth speaker needs an explicit wireless claim from the listing;
+  // a bare model name or 'portable' alone does not verify that feature.
+  if(type==='스피커' && mentionedPositively(req,/(?:블루투스|무선|bluetooth|wireless)/i) &&
+    !/(?:블루투스|무선|bluetooth|wireless|\bBT\s*\d)/i.test(t))return false;
   // A listing with display-panel specs (QLED, 144hz, 4K) is a TV/monitor
   // that has speakers, not a speaker.
   if(type==='스피커'&&/(?:\bq?led\b|\boled\b|qled|\b4k\b|\d{2,3}\s*hz\s*주사율|\d{2,3}\s*인치\s*(?:tv|티비))/i.test(t))return false;
