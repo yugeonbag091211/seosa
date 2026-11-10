@@ -257,6 +257,17 @@ function productTypeMatches(title,category,requestedText='') {
   const t=stripTaxonomy(title),type=canonicalName(category);
   if(!type||!t.trim())return false;
   const req=String(requestedText||'');
+  // Deterministic model/line guards for the exact USER-named merchandise.
+  // A different Winix family or S8 Pro Plus is not the same offered SKU.
+  if(type==='공기청정기' && /(?:위닉스|winix).*?제로\s*s/i.test(req) &&
+    !/제로\s*s|zero\s*s/i.test(t))return false;
+  if(type==='청소기' && /(?:로보락|roborock)\s*s8\s*pro(?!\s*(?:plus|ultra|max|\+))/i.test(req) &&
+    (!/s8\s*pro\b/i.test(t)||/s8\s*pro\s*(?:plus|ultra|max|\+)/i.test(t)))return false;
+  // Keyboard cases and carrying bags are accessories unless the user
+  // positively requested a keyboard case rather than the keyboard itself.
+  if(type==='키보드'&&!mentionedPositively(req,/(?:키보드\s*(?:케이스|가방|파우치)|keyboard\s*case)/i) &&
+    /(?:키보드\s*(?:케이스|가방|파우치)|keyboard\s*case)/i.test(t) &&
+    !/(?:블루투스|bluetooth|무선|터치패드|트랙패드|백라이트|키보드\s*내장)/i.test(t))return false;
   const comboRequested=(type==='키보드'||type==='마우스')&&mentionedPositively(req,
     /(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i);
   // v3.2 principal item: the head of the title's main phrase is what is sold.

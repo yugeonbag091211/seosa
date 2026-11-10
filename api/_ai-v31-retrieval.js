@@ -45,6 +45,10 @@ function brandMatches(title,requestText,category='') {
     let m;
     while((m=g.exec(t))!==null){
       const after=t.slice(m.index+m[0].length,m.index+m[0].length+14);
+      // '제논 입문용 일렉기타' describes the branded instrument, not an
+      // accessory compatible with the brand. A generic '...용' detector
+      // otherwise mistakes the suffix of '입문용' for a host-device marker.
+      if(/^\s*(?:입문|연습|학생|초보(?:자)?)\s*용(?:\s|$)/i.test(after))return true;
       if(!/^[\s0-9a-z가-힣.]{0,10}?(?:호환|전용|용(?![a-z가-힣])|지원|대응)/i.test(after))return true;
     }
     return false;
@@ -220,6 +224,16 @@ function buildProbes({query='',category='',userText='',identity={},minPrice,maxP
     const k=key(filters);
     if(seen.has(k))return;
     seen.add(k);sets.push(filters);
+  }
+  // Bass guitars are not indexed under the usual electric/acoustic guitar
+  // anchors. Probe the user-requested instrument and brand before a broad
+  // 40-row page; the normal SKU/type/price guards still apply.
+  if(category==='기타' && /(?:베이스\s*기타|bass\s*guitar)/i.test(userText||query)) {
+    const requestedBrand=clues.brands[0]||'';
+    for(const term of ['베이스','bass']) {
+      if(requestedBrand)push([['title',requestedBrand],['title',term]]);
+      push([['title',term],['title','기타']]);
+    }
   }
   // Device-compatible accessories: "아이패드용 블루투스 키보드"
   // needs a two- or three-facet lookup, not the first 40 generic keyboards.
