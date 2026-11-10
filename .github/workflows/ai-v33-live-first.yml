@@ -45,6 +45,10 @@ jobs:
           node scripts/test-ai-v32-niche-guardrails-20261110.js
           node scripts/test-ai-v32-niche-engine-20261110.js
           node scripts/test-ai-v32-fresh50-repairs-20261110.js
+      - name: Frozen 20 no-result cases — catalog evidence must never assert all sellers are out of stock
+        run: |
+          node scripts/test-ai-v33-no-result-evidence-20261110.js
+          node scripts/ai-v33-eval/audit-no-result.js
       - name: Pass-only launch gate and frozen labels
         run: |
           node scripts/test-ai-v32-launch-gate-20261110.js
