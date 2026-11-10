@@ -33,6 +33,8 @@ jobs:
           node --check scripts/test-ai-v32-niche-guardrails-20261110.js
       - name: New user-grounded guardrail regression
         run: node scripts/test-ai-v32-niche-guardrails-20261110.js
+      - name: New full-engine candidate filtering regression
+        run: node scripts/test-ai-v32-niche-engine-20261110.js
       - name: Existing AI v3.2 root-cause regression
         run: node scripts/test-ai-v32-rootcause.js
       - name: Existing AI v3.1 engine regression
