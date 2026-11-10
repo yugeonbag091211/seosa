@@ -1,0 +1,202 @@
+{
+  "F01": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 로지텍 G304 무선 마우스; listed 16350 KRW; sale/checkout not independently verified"
+  },
+  "F02": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 로지텍 G502 X LIGHTSPEED 무선 마우스; listed 129700 KRW; sale/checkout not independently verified"
+  },
+  "F03": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 삼성 오디세이 G5 27인치 QHD 180Hz; listed 259000 KRW; sale/checkout not independently verified"
+  },
+  "F04": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 삼성 오디세이 G5 32인치 QHD 165Hz; listed 273000 KRW; sale/checkout not independently verified"
+  },
+  "F05": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 위닉스 제로S 공기청정기; listed 159000 KRW; sale/checkout not independently verified"
+  },
+  "F06": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: LG 퓨리케어 에어로미니 공기청정기; listed 234220 KRW; sale/checkout not independently verified"
+  },
+  "F07": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 마샬 엠버튼3 블루투스 스피커; listed 244810 KRW; sale/checkout not independently verified"
+  },
+  "F08": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 로보락 S8 Pro 로봇청소기; listed 419000 KRW; sale/checkout not independently verified"
+  },
+  "F09": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 아이플렉스 RK-2000 무선 키보드 마우스 세트; listed 13090 KRW; sale/checkout not independently verified"
+  },
+  "F10": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 브리츠 BT20ANC 무선 블루투스 헤드폰; listed 49900 KRW; sale/checkout not independently verified"
+  },
+  "F11": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: JBL TUNE 770NC 무선 헤드폰; listed 50100 KRW; sale/checkout not independently verified"
+  },
+  "F12": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 케이투엠 입문용 일렉기타; listed 119800 KRW; sale/checkout not independently verified"
+  },
+  "F13": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 제논 입문용 일렉기타; listed 198000 KRW; sale/checkout not independently verified"
+  },
+  "F14": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 콜트 일렉트릭 베이스 기타; listed 249000 KRW; sale/checkout not independently verified"
+  },
+  "F15": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 삼성 갤럭시 A56 스마트폰 128GB; listed 555250 KRW; sale/checkout not independently verified"
+  },
+  "F16": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 삼성 갤럭시 버즈3 FE 블루투스 이어폰; listed 128000 KRW; sale/checkout not independently verified"
+  },
+  "F17": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 애플 아이폰 16e 자급제; listed 769900 KRW; sale/checkout not independently verified"
+  },
+  "F18": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 키크론 K2 HE 키보드; listed 308250 KRW; sale/checkout not independently verified"
+  },
+  "F19": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 위닉스 제로4.0 공기청정기; listed 129000 KRW; sale/checkout not independently verified"
+  },
+  "F20": {
+    "expect": "FIND",
+    "note": "Read-only Neon products title/price evidence before execution: 샤오미 레드미 패드2 Wi-Fi 64GB; listed 279600 KRW; sale/checkout not independently verified"
+  },
+  "D01": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: G304 lexical min 2,900 KRW (accessories may exist); no verified mouse <=1,000"
+  },
+  "D02": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: G502 X mouse lexical min 99,000; cap 20,000"
+  },
+  "D03": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Odyssey G5 27-inch lexical min 239,000; cap 40,000"
+  },
+  "D04": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Odyssey G5 32-inch lexical min 273,000; cap 50,000"
+  },
+  "D05": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Winix Zero S purifier lexical min 159,000; cap 30,000"
+  },
+  "D06": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Puricare AeroMini lexical min 234,220; cap 50,000"
+  },
+  "D07": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Marshall Emberton3 lexical min 244,810; cap 50,000"
+  },
+  "D08": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Roborock S8 Pro lexical min 419,000; cap 100,000"
+  },
+  "D09": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Keychron K2 HE lexical min 308,250; cap 50,000"
+  },
+  "D10": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Britz BT20ANC lexical min 49,900; cap 10,000"
+  },
+  "D11": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: JBL Tune 770NC lexical min 50,100; cap 10,000"
+  },
+  "D12": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Xenon electric guitar lexical min 198,000; cap 30,000"
+  },
+  "D13": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Cort bass guitar lexical min 249,000; cap 50,000"
+  },
+  "D14": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Samsung A56 128GB lexical min 555,250; cap 100,000"
+  },
+  "D15": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Galaxy Buds3 FE lexical min 105,550; cap 20,000"
+  },
+  "D16": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Apple iPhone16e lexical min 330,000 (option/used unverified), no verified unlocked unit <=150,000"
+  },
+  "D17": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Winix Zero4.0 lexical min 129,000; cap 30,000"
+  },
+  "D18": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Redmi Pad2 lexical min 279,600; cap 50,000"
+  },
+  "D19": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: Logitech M170 wireless mouse priced 12,900/15,650; cap 1,000"
+  },
+  "D20": {
+    "expect": "NO_RESULT",
+    "note": "Frozen pre-run lexical catalog check: No title-confirmed Dyson Pure Cool purifier in catalog; cap 400,000"
+  },
+  "I01": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I02": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I03": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I04": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I05": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I06": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I07": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I08": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I09": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  },
+  "I10": {
+    "expect": "NON_SHOPPING",
+    "note": "Conceptual explanation; no product search requested"
+  }
+}

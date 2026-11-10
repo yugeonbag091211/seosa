@@ -37,6 +37,8 @@ jobs:
         run: node scripts/test-ai-v32-niche-engine-20261110.js
       - name: Read-only retrieval and Korean price-band regression
         run: node scripts/test-ai-v32-h40-retrieval-20261110.js
+      - name: Freeze and check unused 50-case benchmark labels before online run
+        run: node scripts/test-ai-v32-fresh50-freeze-20261110.js
       - name: Existing AI v3.2 root-cause regression
         run: node scripts/test-ai-v32-rootcause.js
       - name: Existing AI v3.1 engine regression

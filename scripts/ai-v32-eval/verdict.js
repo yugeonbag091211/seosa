@@ -185,6 +185,19 @@ function judgeCards(test, data, previous) {
     if (max != null && (b.exclusive ? Number(c.price) >= max : Number(c.price) > max)) errs.push('over_budget'); else if (max != null) ok.push('budget');
     if (min != null && Number(c.price) < min) errs.push('below_min_budget');
     if (CAT_WORDS[cat] && !CAT_WORDS[cat].test(t) && !codes.some(x => flat(t).includes(x))) errs.push('category_noun_missing'); else ok.push('category');
+    // Fresh 2026-11-10 catalog-grounded diagnostic includes literal facet
+    // evidence groups preregistered BEFORE the live run. This independent
+    // checker does not infer eligibility from the model's selected category.
+    if(test.spec?.strict===true || /^[FD]\d{2}$/.test(test.id||'')){
+      for(const group of test.spec.all||[]){
+        if(!Array.isArray(group)||!group.some(word=>flat(t).includes(flat(word))))
+          errs.push('oracle_required_missing:'+String(group?.[0]||'?').slice(0,30));
+      }
+      for(const prohibited of test.spec.not||[]){
+        if(flat(prohibited).length>=3&&flat(t).includes(flat(prohibited)))
+          errs.push('oracle_prohibited:'+String(prohibited).slice(0,30));
+      }
+    }
     const part = partWord(t, cat);
     // 'PC 액세서리' in the descriptive tail of a clearly sold keyboard+
     // mouse combo does not turn the bundle into a replacement accessory.

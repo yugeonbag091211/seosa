@@ -10,10 +10,12 @@ function load(file) {
   return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse);
 }
 function casesFor(kind) {
+  if (kind === 'fresh50') return require('./fresh50-cases-20261110').cases;
   if (kind === 'holdout') return require('./holdout-cases').cases;
   return require('../ai-v31-online-200-cases').cases;
 }
 function labelsFor(kind) {
+  if (kind === 'fresh50') return require('./fresh50-cases-20261110').labelFor;
   if (kind === 'holdout') return require('./holdout-cases').labelFor;
   return require('./labels-200').labelFor;
 }
