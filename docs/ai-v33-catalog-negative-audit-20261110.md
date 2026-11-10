@@ -64,6 +64,15 @@
 
 ## 테스트 및 원본 보존
 
-`node scripts/test-ai-v33-no-result-evidence-20261110.js` (10/10 통과). 각 케이스 예산/쿼리 변조, 후보 누락, 새 완제품 출현, 기존 평가 레이블 보존을 강제한다. `node scripts/ai-v33-eval/audit-no-result.js`는 별도 감사 요약을 만든다. 이전 50문항 원본 로그/성적은 수정하지 않았다.
+`node scripts/test-ai-v33-no-result-evidence-20261110.js` (12/12 통과). 각 케이스 예산/쿼리 변조, 후보 누락, 새 완제품 출현, 기존 평가 레이블 보존을 강제한다. `node scripts/ai-v33-eval/audit-no-result.js`는 별도 감사 요약을 만든다. 이전 50문항 원본 로그/성적은 수정하지 않았다.
+
+## 수정 코드 독립 Preview의 F11 실제 API 재확인
+
+- 코드: `1c72b16`, Vercel Preview `seosa-muilzyipi-seosa.vercel.app` **READY**, 별도 `--cases f11` 1문항.
+- **HTTP 200**, 실제 GPT-4.1-mini 호출 1회 / 478토큰, 응답 4,141ms, Neon 읽기 11번.
+- **추천 카드 0개, 원래 F11 평가기 판정 FAIL/MISSED_AVAILABLE 유지.**
+- 해당 Preview는 DB read-only이므로 파트너 API 호출 0번. 오래된 50,100원 JBL 판매 기록을 본체 현재가로 추천하지 않는지 확인한 **안전성 회귀 테스트**로만 인정한다.
+- 한 문항의 정리된 증거: `reports/ai-v33-negative-proof-20261110/jbl-f11-1c72b16-sanitized.json`. 완전한 원본은 사용자 PC의 같은 보고서 폴더에 보존.
+- **실제 판매처 최신 검색에서 F11을 PASS로 만드는지 아직 확인되지 않음.**
 
 **Production 배포·PR 병합 없음.**
