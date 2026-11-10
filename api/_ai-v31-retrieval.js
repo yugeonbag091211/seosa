@@ -273,6 +273,15 @@ function buildProbes({query='',category='',userText='',identity={},minPrice,maxP
   for(const alias of clues.brands.slice(0,3))
     for(const categoryAnchor of types.slice(0,2))
       push([['title',alias],['title',categoryAnchor]]);
+  // Left-handed wireless mouse requests can be fulfilled by ambidextrous
+  // (양손잡이/좌우대칭) devices. Search those *seller-stated* ergonomic aliases
+  // before the broad 40-row mouse page, which otherwise buries eligible M170.
+  // Probes expand retrieval only: the user-grounded validator still checks
+  // wireless support, handedness, budget and variant price independently.
+  if(category==='마우스' && /(?:왼손(?:잡이|용)?|left[ -]?hand(?:ed)?)/i.test(userText+' '+query)) {
+    for(const ergonomic of ['왼손','양손잡이','좌우대칭','양손','ambidextrous'])
+      push([['title','마우스'],['title',ergonomic]]);
+  }
   // v3.2: a feature the user requires is probed together with the category
   // so the first 40 rows are not all listings that cannot show it.
   for(const [cats,asked,terms] of FEATURE_PROBES){
