@@ -36,6 +36,8 @@ jobs:
         run: node scripts/test-ai-v33-live-first-20261110.js
       - name: Complete AI engine with simulated external providers
         run: node scripts/test-ai-v33-full-engine-20261110.js
+      - name: Manufacturer-confirmed JBL 770NC identity only for fresh seller listings
+        run: node scripts/test-ai-v33-f11-live-only-20261110.js
       - name: Existing AI v3.1 engine regressions
         run: node scripts/test-ai-v31-engine.js
       - name: Existing AI v3.2 root-cause regressions

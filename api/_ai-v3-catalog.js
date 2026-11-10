@@ -5,6 +5,7 @@
 const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
 const { productTypeMatches } = require('./_ai-v31-taxonomy');
 const { safeBuyLink } = require('./_affiliate');
+const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
 const { buildProbes,brandMatches,brandsFromUser,modelClues,modelEvidence } = require('./_ai-v31-retrieval');
 // v3.2: a multi-word fragment becomes one ILIKE per token (AND). Sellers write
 // "외장SSD", "외장 SSD", "SSD 외장"; "WF-C700N" / "WFC700N". One '%a b%'
@@ -96,7 +97,8 @@ function matchRequested(item, { category, userText, term, target, boundedMin, bo
       price+Number(fee)>boundedMax)return false;
   if(!/(?:중고|리퍼|refurbished|used)/i.test(userText||term) &&
      /(?:중고|리퍼|리퍼비시|전시품|전시상품|\b(?:used|refurbished|renewed|open[ -]?box)\b)/i.test(name))return false;
-  if (category && !productTypeMatches(name,category,userText||term)) return false;
+  if (category && !productTypeMatches(name,category,userText||term) &&
+    !freshOfficialHeadphone({title:name,requestedText:userText||term,category,source:item._source}))return false;
   // The catalog can contain generic wired mice next to wireless listings.
   // Do not count a wired item as a verified live hit just to skip the DB.
   if(['마우스','키보드'].includes(category)){

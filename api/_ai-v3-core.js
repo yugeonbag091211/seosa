@@ -17,6 +17,7 @@ const { extractTitleEvidence, requestedIdentity, mergeRequested, checkListingIde
 const { canonicalCategory, canonicalName, comparisonFromUtterance, explicitType, productTypeMatches,
   isPart, mergeFeatures, featureContext, familyCategory } = require('./_ai-v31-taxonomy');
 const { brandMatches, brandsFromUser, modelEvidence, modelClues, linesFromUser } = require('./_ai-v31-retrieval');
+const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
 const { parseBudget, analyzeUtterance, userExclusions, groundExclusions, excludedBy, LOOKS_LIKE_ID } = require('./_ai-v32-intent');
 const MAX_CANDIDATE_SCAN = 200;
 const clean = (x, n = 120) => String(x == null ? '' : x).normalize('NFKC')
@@ -61,7 +62,8 @@ function categoryOk(item, requested, userMessage='') {
   if (!requested) return false;
   // Never trust a seller's keyword/category tail as proof of product type.
   const canonical=canonicalName(requested);
-  if(canonical)return productTypeMatches(item.title,canonical,userMessage);
+  if(canonical)return productTypeMatches(item.title,canonical,userMessage)||
+    freshOfficialHeadphone({title:item.title,requestedText:userMessage,category:canonical,source:item.source});
   const type = flat(requested);
   const title = flat(item.title);
   const cats = flat([item.category, item.productCategory, item.categoryName].filter(Boolean).join(' '));
