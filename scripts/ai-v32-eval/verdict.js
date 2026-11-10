@@ -185,6 +185,19 @@ function judgeCards(test, data, previous) {
     if (max != null && (b.exclusive ? Number(c.price) >= max : Number(c.price) > max)) errs.push('over_budget'); else if (max != null) ok.push('budget');
     if (min != null && Number(c.price) < min) errs.push('below_min_budget');
     if (CAT_WORDS[cat] && !CAT_WORDS[cat].test(t) && !codes.some(x => flat(t).includes(x))) errs.push('category_noun_missing'); else ok.push('category');
+    // Fresh 2026-11-10 catalog-grounded diagnostic includes literal facet
+    // evidence groups preregistered BEFORE the live run. This independent
+    // checker does not infer eligibility from the model's selected category.
+    if(test.spec?.strict===true || /^[FD]\d{2}$/.test(test.id||'')){
+      for(const group of test.spec.all||[]){
+        if(!Array.isArray(group)||!group.some(word=>flat(t).includes(flat(word))))
+          errs.push('oracle_required_missing:'+String(group?.[0]||'?').slice(0,30));
+      }
+      for(const prohibited of test.spec.not||[]){
+        if(flat(prohibited).length>=3&&flat(t).includes(flat(prohibited)))
+          errs.push('oracle_prohibited:'+String(prohibited).slice(0,30));
+      }
+    }
     const part = partWord(t, cat);
     // 'PC 액세서리' in the descriptive tail of a clearly sold keyboard+
     // mouse combo does not turn the bundle into a replacement accessory.
@@ -192,6 +205,19 @@ function judgeCards(test, data, previous) {
       /(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i.test(t);
     if (part && !(compatHost && cat === '키보드') && !(combo && part==='액세서리'))
       errs.push('accessory_or_part:' + part);
+    // Independent, user-grounded attributes absent from generic category
+    // checks. Never count an unrelated product line or adult model as a hit.
+    if(cat==='공기청정기' && /(?:퓨어\s*쿨|pure\s*cool)/i.test(q) &&
+      !/(?:퓨어\s*쿨|pure\s*cool)/i.test(t)) errs.push('named_product_line_missing');
+    if(cat==='시계' && /(?:어린이|키즈|아동|유아|초등|주니어|kids?)/i.test(q) &&
+      !/(?:어린이|키즈|아동|유아|초등|주니어|kids?|child(?:ren)?)/i.test(t))
+      errs.push('kids_watch_evidence_missing');
+    if(cat==='마우스' && /(?:왼손(?:잡이|용)?|left[ -]?hand(?:ed)?)/i.test(q) &&
+      !/(?:왼손(?:잡이|용)?|양손(?:잡이|용|형)?|좌우\s*대칭|left[ -]?hand(?:ed)?|ambidextrous)/i.test(t))
+      errs.push('left_handed_evidence_missing');
+    if(cat==='마우스' && /유선\s*[/,·]?\s*무선(?:\s*블루투스)?/i.test(t) &&
+      !/(?:유무선|겸용|듀얼\s*모드|dual[ -]?mode)/i.test(t))
+      errs.push('connection_variant_price_unverified');
     if ((c.condition === 'used_or_refurbished' || USED_TITLE.test(t)) && !usedOk) errs.push('used_not_requested');
     for (const names of brands) if (!hasBrand(t, names)) errs.push('brand_missing:' + names[0]);
     for (const code of codes) if (!flat(t).includes(code)) errs.push('model_missing:' + code);

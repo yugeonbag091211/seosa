@@ -45,6 +45,10 @@ function brandMatches(title,requestText,category='') {
     let m;
     while((m=g.exec(t))!==null){
       const after=t.slice(m.index+m[0].length,m.index+m[0].length+14);
+      // '제논 입문용 일렉기타' describes the branded instrument, not an
+      // accessory compatible with the brand. A generic '...용' detector
+      // otherwise mistakes the suffix of '입문용' for a host-device marker.
+      if(/^\s*(?:입문|연습|학생|초보(?:자)?)\s*용(?:\s|$)/i.test(after))return true;
       if(!/^[\s0-9a-z가-힣.]{0,10}?(?:호환|전용|용(?![a-z가-힣])|지원|대응)/i.test(after))return true;
     }
     return false;
@@ -221,6 +225,16 @@ function buildProbes({query='',category='',userText='',identity={},minPrice,maxP
     if(seen.has(k))return;
     seen.add(k);sets.push(filters);
   }
+  // Bass guitars are not indexed under the usual electric/acoustic guitar
+  // anchors. Probe the user-requested instrument and brand before a broad
+  // 40-row page; the normal SKU/type/price guards still apply.
+  if(category==='기타' && /(?:베이스\s*기타|bass\s*guitar)/i.test(userText||query)) {
+    const requestedBrand=clues.brands[0]||'';
+    for(const term of ['베이스','bass']) {
+      if(requestedBrand)push([['title',requestedBrand],['title',term]]);
+      push([['title',term],['title','기타']]);
+    }
+  }
   // Device-compatible accessories: "아이패드용 블루투스 키보드"
   // needs a two- or three-facet lookup, not the first 40 generic keyboards.
   // The device noun is a compatibility target, not the item being sold.
@@ -273,6 +287,15 @@ function buildProbes({query='',category='',userText='',identity={},minPrice,maxP
   for(const alias of clues.brands.slice(0,3))
     for(const categoryAnchor of types.slice(0,2))
       push([['title',alias],['title',categoryAnchor]]);
+  // Left-handed wireless mouse requests can be fulfilled by ambidextrous
+  // (양손잡이/좌우대칭) devices. Search those *seller-stated* ergonomic aliases
+  // before the broad 40-row mouse page, which otherwise buries eligible M170.
+  // Probes expand retrieval only: the user-grounded validator still checks
+  // wireless support, handedness, budget and variant price independently.
+  if(category==='마우스' && /(?:왼손(?:잡이|용)?|left[ -]?hand(?:ed)?)/i.test(userText+' '+query)) {
+    for(const ergonomic of ['왼손','양손잡이','좌우대칭','양손','ambidextrous'])
+      push([['title','마우스'],['title',ergonomic]]);
+  }
   // v3.2: a feature the user requires is probed together with the category
   // so the first 40 rows are not all listings that cannot show it.
   for(const [cats,asked,terms] of FEATURE_PROBES){

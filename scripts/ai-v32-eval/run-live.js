@@ -35,6 +35,8 @@ if (share) {
 if (!out) throw new Error('--out required');
 
 function cases() {
+  if (kind === 'fresh50') return require('./fresh50-cases-20261110').cases;
+  if (kind === 'h40') return require('./holdout-cases').cases.filter(x => x.id === 'H40');
   if (kind === 'holdout') return require('./holdout-cases').cases;
   if (kind === 'repair') {
     const ids=new Set(['H08','H11','H37','H38','H47','H51']);

@@ -40,7 +40,12 @@ function parseBudget(text) {
   const band = [...s.matchAll(/(\d{1,4})\s*만\s*원?\s*대(?!\s*(?:이하|미만|이상|초반|중반|후반))/g)];
   if (band.length) {
     const n = Number(band[band.length - 1][1]);
-    out.min = n * 10000; out.max = (n + 1) * 10000 - 1; out.band = true;
+    // Korean round bands preserve the last *significant* place: '7만원대'
+    // = 70–79k, but '30만원대' = 300–399k, not just 300–309k.
+    // '15만원대' remains 150–159k; '100만원대' spans 1–1.99M.
+    const trailingZeroes = (String(n).match(/0+$/) || [''])[0].length;
+    const step = 10 ** trailingZeroes;
+    out.min = n * 10000; out.max = (n + step) * 10000 - 1; out.band = true;
   }
   // 3) ceilings
   const ceil = [...s.matchAll(new RegExp(NUM + '\\s*' + UNIT + '\\s*(이하|미만|이내|아래|까지|안쪽|안에서|안으로|내외로|내로|밖에|넘지\\s*않|선에서|이하로)', 'g'))];

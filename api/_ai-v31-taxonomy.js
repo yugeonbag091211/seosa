@@ -257,6 +257,17 @@ function productTypeMatches(title,category,requestedText='') {
   const t=stripTaxonomy(title),type=canonicalName(category);
   if(!type||!t.trim())return false;
   const req=String(requestedText||'');
+  // Deterministic model/line guards for the exact USER-named merchandise.
+  // A different Winix family or S8 Pro Plus is not the same offered SKU.
+  if(type==='공기청정기' && /(?:위닉스|winix).*?제로\s*s/i.test(req) &&
+    !/제로\s*s|zero\s*s/i.test(t))return false;
+  if(type==='청소기' && /(?:로보락|roborock)\s*s8\s*pro(?!\s*(?:plus|ultra|max|\+))/i.test(req) &&
+    (!/s8\s*pro\b/i.test(t)||/s8\s*pro\s*(?:plus|ultra|max|\+)/i.test(t)))return false;
+  // Keyboard cases and carrying bags are accessories unless the user
+  // positively requested a keyboard case rather than the keyboard itself.
+  if(type==='키보드'&&!mentionedPositively(req,/(?:키보드\s*(?:케이스|가방|파우치)|keyboard\s*case)/i) &&
+    /(?:키보드\s*(?:케이스|가방|파우치)|keyboard\s*case)/i.test(t) &&
+    !/(?:블루투스|bluetooth|무선|터치패드|트랙패드|백라이트|키보드\s*내장)/i.test(t))return false;
   const comboRequested=(type==='키보드'||type==='마우스')&&mentionedPositively(req,
     /(?:키보드\s*(?:및|와|\+|&)?\s*마우스|마우스\s*(?:및|와|\+|&)?\s*키보드)\s*(?:세트|콤보|combo|set)/i);
   // v3.2 principal item: the head of the title's main phrase is what is sold.
@@ -280,6 +291,24 @@ function productTypeMatches(title,category,requestedText='') {
   // a bare model name or 'portable' alone does not verify that feature.
   if(type==='스피커' && mentionedPositively(req,/(?:블루투스|무선|bluetooth|wireless)/i) &&
     !/(?:블루투스|무선|bluetooth|wireless|\bBT\s*\d)/i.test(t))return false;
+  // v3.2: verify narrowly named USER requirements independently of GPT.
+  // A related Dyson model is not evidence for the Pure Cool product line.
+  if(type==='공기청정기' &&
+    mentionedPositively(req,/(?:퓨어\s*쿨|pure\s*cool)/i) &&
+    !/(?:퓨어\s*쿨|pure\s*cool)/i.test(t))return false;
+  // A general adult smartwatch is not a children's/kids calling watch.
+  if(type==='시계' &&
+    mentionedPositively(req,/(?:어린이|키즈|아동|유아|초등|주니어|kids?)/i) &&
+    !/(?:어린이|키즈|아동|유아|초등|주니어|kids?|child(?:ren)?)/i.test(t))return false;
+  // Left-handed ergonomics must be stated; no assumption from a generic mouse.
+  if(type==='마우스' &&
+    mentionedPositively(req,/(?:왼손(?:잡이|용)?|left[ -]?hand(?:ed)?)/i) &&
+    !/(?:왼손(?:잡이|용)?|양손(?:잡이|용|형)?|좌우\s*대칭|left[ -]?hand(?:ed)?|ambidextrous)/i.test(t))return false;
+  // A listing advertising wired / wireless / Bluetooth variants is not proof
+  // that the displayed price buys the requested wireless variant.
+  if(type==='마우스' &&
+    /유선\s*[/,·]?\s*무선(?:\s*블루투스)?/i.test(t) &&
+    !/(?:유무선|겸용|듀얼\s*모드|dual[ -]?mode)/i.test(t))return false;
   // A listing with display-panel specs (QLED, 144hz, 4K) is a TV/monitor
   // that has speakers, not a speaker.
   if(type==='스피커'&&/(?:\bq?led\b|\boled\b|qled|\b4k\b|\d{2,3}\s*hz\s*주사율|\d{2,3}\s*인치\s*(?:tv|티비))/i.test(t))return false;
