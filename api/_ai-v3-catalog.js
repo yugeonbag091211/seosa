@@ -4,6 +4,7 @@
 // merely to acquire a remote seller-provider rate-limit lease.
 const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
 const { productTypeMatches } = require('./_ai-v31-taxonomy');
+const { safeBuyLink } = require('./_affiliate');
 const { buildProbes,brandMatches,brandsFromUser,modelClues,modelEvidence } = require('./_ai-v31-retrieval');
 // v3.2: a multi-word fragment becomes one ILIKE per token (AND). Sellers write
 // "외장SSD", "외장 SSD", "SSD 외장"; "WF-C700N" / "WFC700N". One '%a b%'
@@ -162,7 +163,9 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       const response=await liveSearch(liveSearchKeyword(term,userText,category));
       if (!response || response.failed || !Array.isArray(response.items)) providerFailed=true;
       else {
-        const verified=response.items.filter(item=>{
+        const verified=response.items.map(item=>item?{
+          ...item,link:safeBuyLink(item.link,item)
+        }:null).filter(item=>{
           if(!item || !LIVE_SOURCES.has(item._source))return false;
           if(!item.productId || !item.mall || !item.link)return false;
           try {

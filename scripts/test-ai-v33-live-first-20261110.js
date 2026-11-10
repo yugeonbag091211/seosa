@@ -189,6 +189,13 @@ function four(){
    assert(after.some(x=>x.title.includes('G304')));
    assert(!after.some(x=>x.title.includes('G502')));
  });
+ await test('20 foreign/invalid Coupang affiliate links cannot reach buyer cards',async()=>{
+   const source=fakeDB([db('fallback','무선 마우스 정상',18000)]);
+   const fake={...live('fake','무선 마우스 유혹',17000),
+     link:'https://link.coupang.com/re/AFF?lptag=NOT_SEOSA'};
+   const out=await searchCatalog('무선 마우스',opts(source,async()=>({items:[fake]})));
+   assert.deepEqual(out.map(x=>x.productId),['fallback']);
+ });
  console.log(JSON.stringify({passed,failed,total:passed+failed}));
  if(failed)process.exitCode=1;
 })().catch(e=>{console.error(e);process.exitCode=1});
