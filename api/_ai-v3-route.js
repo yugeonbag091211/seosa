@@ -19,7 +19,9 @@ async function handler(req, res, deps = {}) {
     const adapter = deps.adapter || makeOpenAiAdapter();
     const searchProducts = deps.searchProducts || (async (query, { identity, minPrice, maxPrice, category, userText } = {}) => {
       const { searchCatalog } = require('./_ai-v3-catalog');
-      return searchCatalog(query, { identity, minPrice, maxPrice, category, userText, liveSearch: async keyword => {
+      return searchCatalog(query, { identity, minPrice, maxPrice, category, userText,
+        searchStrategy: process.env.AI_V3_SEARCH_STRATEGY === 'live-first' ? 'live-first' : 'db-first',
+        liveSearch: async keyword => {
         const { searchAll } = require('./_shop');
         return searchAll(keyword, {
           coupangLimit: 6, adpickLimit: 8,

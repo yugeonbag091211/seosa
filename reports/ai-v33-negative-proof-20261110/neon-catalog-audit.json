@@ -1,0 +1,381 @@
+{
+  "project_id": "withered-dew-45175008",
+  "method": "Neon read-only SELECT on products, full-table title regex probes",
+  "scope": "catalog-only; NOT evidence of live seller or checkout inventory",
+  "queryFile": "scripts/ai-v33-eval/catalog-no-result-scan.sql",
+  "scannedRows": 77820,
+  "latestCollectedAt": "2026-11-10T11:04:51.375Z",
+  "queriedAt": "2026-11-10T11:46:06.945Z",
+  "results": [
+    {
+      "id": "D01",
+      "cap": 1000,
+      "brandRegex": "로지텍|logitech",
+      "modelRegex": "g[[:space:]_-]*304",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D02",
+      "cap": 20000,
+      "brandRegex": "로지텍|logitech",
+      "modelRegex": "g[[:space:]_-]*502[[:space:]_-]*x|g502x",
+      "otherRegex": "",
+      "roughHits": 3,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 14550,
+          "title": "[해외] 로지텍 G502 X LIGHTSPEED 게이밍 마우스용 무선 USB 수신기 2.4GHz 나노 동글 교체용 어댑터 마우스 수신기",
+          "productId": "dff9ca6452640c39a1c396cc2d8662b9b0256df18f5b1993a8edd650fcf95b63",
+          "collectedAt": "2026-10-13T20:59:25.895+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 14750,
+          "title": "[해외] 로지텍 G304X G705 G309 G502 X Plus G303 PRO 2 LIGHTSPEED PRO X Superlight 2 교체용 USB 무선 마우스 수신기 동글",
+          "productId": "c19157f596e9d93ebdbba16731f7b4ae54fe36063e2e29d81f2623249165c19d",
+          "collectedAt": "2026-11-10T11:01:00.612+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 16800,
+          "title": "[해외] 로지텍 G304 X / G309 LIGHTSPEED / G705 / G502X / PRO X SUPERLIGHT 2 마우스용 USB 어댑터 2.4G 수신기 무선 동글",
+          "productId": "b78d8da5b5bcb4b1eb1577ecf797f04893926a18b0b82e2d664a8e99e69e4b48",
+          "collectedAt": "2026-11-10T11:00:12.577+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D03",
+      "cap": 40000,
+      "brandRegex": "삼성|samsung",
+      "modelRegex": "g[[:space:]_-]*5|오디세이|odyssey",
+      "otherRegex": "27|180",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D04",
+      "cap": 50000,
+      "brandRegex": "삼성|samsung",
+      "modelRegex": "g[[:space:]_-]*5|오디세이|odyssey",
+      "otherRegex": "32|165",
+      "roughHits": 2,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 36700,
+          "title": "[해외] A4819_KSML 19V 2.53A 48W BN44-00886D 삼성 V32F390SEXXXU ODYSSEY HW-M360 사운드바 전원 공급 장치 충전기용 AC 어댑터",
+          "productId": "7005c66359175b6da9cf2fa00b6139d08418c5ade81a2c7d6fd362ea4d37620d",
+          "collectedAt": "2026-09-30T19:55:37.04+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 39500,
+          "title": "[해외] HW-M360 전원 공급 장치 충전기, BN44-00886D AC 어댑터, 삼성 V32F390SEXXXU ODYSSEY G5, A4819_KSML, 19V, 2.53A, 48W, 6.5x4.4mm",
+          "productId": "eafbf331b5bdf9aba7a558d1fe46084d9a3a8b1bed39c659dad5da54f44434d3",
+          "collectedAt": "2026-11-09T17:01:31.538+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D05",
+      "cap": 30000,
+      "brandRegex": "위닉스|winix",
+      "modelRegex": "제로[[:space:]_-]*s|zero[[:space:]_-]*s",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D06",
+      "cap": 50000,
+      "brandRegex": "lg|엘지",
+      "modelRegex": "에어로[[:space:]_-]*미니|aeromini",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D07",
+      "cap": 50000,
+      "brandRegex": "마샬|marshall",
+      "modelRegex": "엠버튼[[:space:]_-]*3|emberton[[:space:]_-]*3",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D08",
+      "cap": 100000,
+      "brandRegex": "로보락|roborock",
+      "modelRegex": "s[[:space:]_-]*8[[:space:]_-]*pro",
+      "otherRegex": "",
+      "roughHits": 7,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 3600,
+          "title": "[해외] 로보락 S7/S7+/S7 MaxV/S7 MaxV Plus/Ultra/T7S/G20/G10/S8/S8+/S8 Pro Ultra 로봇 청소기용 HEPA 필터 (교체용)",
+          "productId": "6a5fc6a891caf0fb5530b28c787ee88503c76af4df12943feab492151b1c37f8",
+          "collectedAt": "2026-11-09T17:10:12.674+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 3980,
+          "title": "[해외] Roborock S7/S7 MaxV Ultra/S8/S8 Pro Ultra/T7S/G10/G10S PRO/G10S Pure/G20/S70/S75 로봇 진공 청소기 액세서리용 HEPA 필터",
+          "productId": "b99532462ec536fc72f8ce9909d54c40379e3098bc3c320ed50145bd33033fbd",
+          "collectedAt": "2026-09-18T07:32:33.674+00:00"
+        },
+        {
+          "mall": "쿠팡",
+          "price": 7600,
+          "title": "로보락 S7 / S8 / S9 Max V Ultra S8 Pro Ultra 호환용",
+          "productId": "8512799159",
+          "collectedAt": "2026-11-09T17:29:17.247+00:00"
+        },
+        {
+          "mall": "쿠팡",
+          "price": 12100,
+          "title": "퓨어퍼스트 로보락 S8 Pro Ultra 물걸레 호환 듀얼음파진동 전용 10매, 10개, s8 pro ultra 호환",
+          "productId": "7432652427",
+          "collectedAt": "2026-11-09T16:58:40.683+00:00"
+        },
+        {
+          "mall": "쿠팡",
+          "price": 13200,
+          "title": "로보락 S7 Max Ultra S8 Pro Max Ultra 세척 브러쉬 호환, 4개, 세척브러쉬",
+          "productId": "8384758356",
+          "collectedAt": "2026-11-05T00:34:03.036+00:00"
+        },
+        {
+          "mall": "쿠팡",
+          "price": 23100,
+          "title": "퓨어퍼스트 로보락 S8 Pro Ultra 소모품 더스트백 브러시 필터 호환 블랙 기프트팩, 1개",
+          "productId": "7751006920",
+          "collectedAt": "2026-11-04T21:24:01.933+00:00"
+        },
+        {
+          "mall": "쿠팡",
+          "price": 51900,
+          "title": "퓨어퍼스트 로보락 S8 Pro Ultra 소모품 브러시 필터 호환 먼지봉투 기프트팩, 1개, 1년풀패키지40pcs",
+          "productId": "8416376321",
+          "collectedAt": "2026-11-04T00:59:04.767+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D09",
+      "cap": 50000,
+      "brandRegex": "키크론|keychron",
+      "modelRegex": "k[[:space:]_-]*2[[:space:]_-]*he",
+      "otherRegex": "",
+      "roughHits": 1,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 32400,
+          "title": "[해외] 긱크리아 75% 84키 키보드 케이스, 키크론 K2 HE, 에포메이커 F75, ASUS ROG 아조스 75와 호환되는 견고한 휴대용 가방 (짙은 회색)",
+          "productId": "d5c368be33931ac5636ee224ef3c24c77f8fa2781bdc47f2b7eb4a34c6240799",
+          "collectedAt": "2026-11-09T17:55:51.998+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D10",
+      "cap": 10000,
+      "brandRegex": "브리츠|britz",
+      "modelRegex": "bt[[:space:]_-]*20[[:space:]_-]*anc",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D11",
+      "cap": 10000,
+      "brandRegex": "jbl",
+      "modelRegex": "770[[:space:]_-]*nc",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D12",
+      "cap": 30000,
+      "brandRegex": "제논",
+      "modelRegex": "기타|guitar",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D13",
+      "cap": 50000,
+      "brandRegex": "콜트|cort",
+      "modelRegex": "베이스|bass",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D14",
+      "cap": 100000,
+      "brandRegex": "삼성|samsung",
+      "modelRegex": "a[[:space:]_-]*56",
+      "otherRegex": "",
+      "roughHits": 1,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 7670,
+          "title": "[해외] 삼성 A23 A36 A42 A52 A52S A56 A60 A70 A70S A71 A72 A73 A80 A90 M40 A60 M51 M52 충전 플렉스 케이블 USB 충전 포트",
+          "productId": "9bf217c8109f852171c785f7e23154b8559d08d66f928bfeba1368b84373aa9e",
+          "collectedAt": "2026-09-18T02:04:20.943+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D15",
+      "cap": 20000,
+      "brandRegex": "삼성|samsung",
+      "modelRegex": "버즈[[:space:]_-]*3[[:space:]_-]*fe|buds[[:space:]_-]*3[[:space:]_-]*fe",
+      "otherRegex": "",
+      "roughHits": 5,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 5920,
+          "title": "[해외] 삼성 갤럭시 버즈3 FE 이어팁에 맞는 실리콘 이어팁 2개, 이어컵 슬리브 S/M/L 인이어 버즈용",
+          "productId": "d3e02e44b28ba49201f5f579bca4fe35e12354d8a7e6dfc83b41e6698526443e",
+          "collectedAt": "2026-10-18T19:59:23.744+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 14200,
+          "title": "[해외] 삼성 갤럭시 버즈 3 FE/3 프로/3 케이스용 독창적인 레트로 게임 콘솔 디자인 실리콘 소프트 케이스 버즈 3 FE/3 커버 푼다",
+          "productId": "c0b48932988ed259127a446b7ab72c37c247e226f4fe1a38e37ff814095f4a80",
+          "collectedAt": "2026-09-18T08:44:35.545+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 17100,
+          "title": "[보리보리] 아트박스 POOM 아트박스/삼성전자 갤럭시 버즈3 FE 키캡 케이스 GP-FPR420",
+          "productId": "446159437a26e8bb4f8b00d0af1c9f3fe70cc6895f70bdf03f9e92851bee4297",
+          "collectedAt": "2026-11-09T17:11:25.224+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 18050,
+          "title": "아트박스/삼성전자 갤럭시 버즈3 FE 키캡 케이스 GP-FPR420 +할인쿠폰",
+          "productId": "c0375d8bd4bde8a35464b0c9c09780d87d764412688894d1858c2a3e2ddf92bb",
+          "collectedAt": "2026-10-19T19:05:20.473+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 19000,
+          "title": "아트박스/삼성전자 갤럭시 버즈3 FE 키캡 케이스 GP-FPR420",
+          "productId": "6cf0d779333fa12a1293887041afa526f2d54ebcec8a44e858031178057dfc0a",
+          "collectedAt": "2026-09-18T08:44:35.545+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D16",
+      "cap": 150000,
+      "brandRegex": "애플|apple|아이폰|iphone",
+      "modelRegex": "16[[:space:]_-]*e",
+      "otherRegex": "",
+      "roughHits": 3,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 9800,
+          "title": "[액체실리콘으로 부드러운 촉감]아이폰 16 16프로 16플러스 16프로맥스 16e 리퀴드 실리콘 케이스 마그네틱 링 스탠드 핸드폰 커버",
+          "productId": "37211a65a0fa1ae6ef957a06688e75fa038fcdf56aad159683c93d848e304b2a",
+          "collectedAt": "2026-10-05T21:00:19.931+00:00"
+        },
+        {
+          "mall": "쿠팡",
+          "price": 47900,
+          "title": "갤럭시 버즈 충전기 본체 크래들 삼성 S25 울트라/S24/Plus/Z 폴드7/플립 7 6 아이폰 16e/16/15 프로 맥스 픽셀 9a/9/9 XL/폴드/8a/8 프로용 무선",
+          "productId": "8897835164",
+          "collectedAt": "2026-11-07T00:15:28.135+00:00"
+        },
+        {
+          "mall": "쿠팡",
+          "price": 61500,
+          "title": "갤럭시 버즈 충전기 본체 크래들 삼성 S25 울트라/S24/Plus/Z 폴드7/플립 7 6 아이폰 16e/16/15 프로 맥스 픽셀 9a/9/9 XL/폴드/8a/8 프로용 무선",
+          "productId": "9716266111",
+          "collectedAt": "2026-11-09T20:31:17.396+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D17",
+      "cap": 30000,
+      "brandRegex": "위닉스|winix",
+      "modelRegex": "제로[[:space:]_-]*4|zero[[:space:]_-]*4",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D18",
+      "cap": 50000,
+      "brandRegex": "샤오미|xiaomi|레드미|redmi",
+      "modelRegex": "패드[[:space:]_-]*2|pad[[:space:]_-]*2",
+      "otherRegex": "",
+      "roughHits": 4,
+      "matches": [
+        {
+          "mall": "ADPICK",
+          "price": 5916,
+          "title": "라이노핏/샤오미 2025 레드미 패드2 프로 12.1/포코 패드 M1 12.1 TPU 젤리 케이스/모바일 액세서리 태블릿케이스",
+          "productId": "00b98f9fa340231830c54e42e17e9560233d82bd18b2728fef68cbddd6274278",
+          "collectedAt": "2026-11-10T10:59:10.182+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 9000,
+          "title": "샤오미 레드미 패드2 프로 올레포빅 액정보호필름",
+          "productId": "c061a3e99cb0871f1aef6e856ca299b89ec2d3edbe0e31f30fbff6102c66583f",
+          "collectedAt": "2026-09-23T19:00:36.51+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 28000,
+          "title": "샤오미 레드미 패드2 프로 초고화질 트루컬러 AR 액정보호필름",
+          "productId": "6a3616727f541db161977e4eb43b757e067d91606b959216f636afeff8ef7425",
+          "collectedAt": "2026-10-25T03:11:32.947+00:00"
+        },
+        {
+          "mall": "ADPICK",
+          "price": 28000,
+          "title": "샤오미 레드미 패드2 프로 초고화질 트루컬러 AR 액정보호필름",
+          "productId": "330df55b01d82b9581a0f19699810cfbc59f2de46641ac77549d9bd8d4e2a992",
+          "collectedAt": "2026-11-09T04:00:35.728+00:00"
+        }
+      ]
+    },
+    {
+      "id": "D19",
+      "cap": 1000,
+      "brandRegex": "로지텍|logitech",
+      "modelRegex": "m[[:space:]_-]*170",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    },
+    {
+      "id": "D20",
+      "cap": 400000,
+      "brandRegex": "다이슨|dyson",
+      "modelRegex": "퓨어[[:space:]_-]*쿨|pure[[:space:]_-]*cool",
+      "otherRegex": "",
+      "roughHits": 0,
+      "matches": []
+    }
+  ]
+}

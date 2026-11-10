@@ -36,6 +36,7 @@ if (!out) throw new Error('--out required');
 
 function cases() {
   if (kind === 'fresh50') return require('./fresh50-cases-20261110').cases;
+  if (kind === 'f11') return require('./fresh50-cases-20261110').cases.filter(x => x.id === 'F11');
   if (kind === 'h40') return require('./holdout-cases').cases.filter(x => x.id === 'H40');
   if (kind === 'holdout') return require('./holdout-cases').cases;
   if (kind === 'repair') {

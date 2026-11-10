@@ -4,7 +4,9 @@
 // merely to acquire a remote seller-provider rate-limit lease.
 const { extractTitleEvidence, checkListingIdentity } = require('./_ai-v3-identity');
 const { productTypeMatches } = require('./_ai-v31-taxonomy');
-const { buildProbes,brandMatches,modelEvidence } = require('./_ai-v31-retrieval');
+const { safeBuyLink } = require('./_affiliate');
+const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
+const { buildProbes,brandMatches,brandsFromUser,modelClues,modelEvidence } = require('./_ai-v31-retrieval');
 // v3.2: a multi-word fragment becomes one ILIKE per token (AND). Sellers write
 // "외장SSD", "외장 SSD", "SSD 외장"; "WF-C700N" / "WFC700N". One '%a b%'
 // pattern misses all but one spelling.
@@ -66,13 +68,125 @@ function preciseIdentityProbes(target) {
   }
   return [];
 }
-async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category, userText } = {}) {
+// Live-first is opt-in. Existing DB-first remains the default until an
+// isolated deployment validates provider rate limits and seller freshness.
+// Only an API response or a within-TTL provider cache is trusted as 'live'.
+const LIVE_POOL_TARGET = 4;
+const LIVE_SOURCES = new Set(['api', 'cache']);
+const livePrice = item => Number(item && (item.lprice == null ? item.price : item.lprice));
+// Rebuild the provider term using only BRAND/MODEL clues from the actual user's
+// request. GPT may shorten a query but must not drop 'G304' or '로지텍'.
+// Never add a brand or a model from seller titles.
+function liveSearchKeyword(term,userText,category){
+  const user=String(userText||'');
+  if(!user)return term;
+  const b=brandsFromUser(user,category).find(alias=>flat(alias)&&flat(user).includes(flat(alias)));
+  const m=modelClues(user)[0]?.raw||'';
+  const prefix=[];
+  if(b && !flat(term).includes(flat(b)))prefix.push(b);
+  if(m && !flat(term).includes(flat(m)))prefix.push(m);
+  return safeTerm([...prefix,term].join(' '))||term;
+}
+function matchRequested(item, { category, userText, term, target, boundedMin, boundedMax }) {
+  if (!item || typeof item.title !== 'string' || !item.title.trim()) return false;
+  const name=item.title, price=livePrice(item);
+  if (!Number.isSafeInteger(price) || price<=0) return false;
+  if (boundedMin!=null && price<boundedMin || boundedMax!=null && price>boundedMax) return false;
+  const fee=item.shippingFee;
+  if (boundedMax!=null && fee!=null && fee!=='' && Number.isSafeInteger(Number(fee)) && Number(fee)>=0 &&
+      price+Number(fee)>boundedMax)return false;
+  if(!/(?:중고|리퍼|refurbished|used)/i.test(userText||term) &&
+     /(?:중고|리퍼|리퍼비시|전시품|전시상품|\b(?:used|refurbished|renewed|open[ -]?box)\b)/i.test(name))return false;
+  if (category && !productTypeMatches(name,category,userText||term) &&
+    !freshOfficialHeadphone({title:name,requestedText:userText||term,category,source:item._source}))return false;
+  // The catalog can contain generic wired mice next to wireless listings.
+  // Do not count a wired item as a verified live hit just to skip the DB.
+  if(['마우스','키보드'].includes(category)){
+    const asked=userText||term;
+    if(/(?:블루투스|bluetooth)/i.test(asked) && !/(?:블루투스|bluetooth)/i.test(name))return false;
+    if(/(?:무선|wireless)/i.test(asked) &&
+       !/(?:무선|wireless|블루투스|bluetooth|\b2[.]4\s*ghz\b|lightspeed)/i.test(name))return false;
+  }
+  if (!brandMatches(name,userText||term,category)) return false;
+  if (!modelEvidence(name,userText||term).ok) return false;
+  if (target.family && !checkListingIdentity(name,target,{category}).ok) return false;
+  return true;
+}
+function identityKey(item) {
+  const pid=String(item.productId||item.product_id||'');
+  const mall=String(item.mall||'');
+  return mall&&pid ? mall+':'+pid : '';
+}
+function mergeCandidatePools(fresh, stored, max=80) {
+  const result=[], seenIds=new Set(), seenTitles=new Set();
+  for(const item of [...fresh,...stored]) {
+    const id=identityKey(item), signature=flat(item.title)+'|'+String(item.mall||'');
+    if(id && seenIds.has(id) || signature && seenTitles.has(signature))continue;
+    if(id)seenIds.add(id);
+    if(signature)seenTitles.add(signature);
+    result.push(item);
+    if(result.length>=max)break;
+  }
+  return result;
+}
+async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category, userText, searchStrategy } = {}) {
   const term=safeTerm(query);
   if(!term) return [];
   const source=db || require('./_supabase');
   const boundedMin=Number.isSafeInteger(Number(minPrice)) && Number(minPrice)>0 ? Number(minPrice) : null;
   const boundedMax=Number.isSafeInteger(Number(maxPrice)) && Number(maxPrice)>0 ? Number(maxPrice) : null;
+  const liveFirst=searchStrategy==='live-first';
+  // Provider rate-limit leases use DB writes/RPC; never try them in read-only
+  // Previews. A read-only Preview remains a DB-only safety regression target.
+  const liveAllowed=liveFirst && process.env.SEOSA_DB_READONLY!=='1' && typeof liveSearch==='function';
+  const constraints={category,userText,term,target:identity&&typeof identity==='object'?identity:extractTitleEvidence(term),boundedMin,boundedMax};
+  let fresh=[], providerFailed=false;
+  const finalLive=(items,dbQueries=0)=>{
+    Object.defineProperty(items,'_queries',{value:dbQueries,enumerable:false});
+    Object.defineProperty(items,'_retrieval',{value:{
+      strategy:'live-first',
+      providerSearchBatches:liveAllowed?1:0,
+      providerFailed,
+      liveEligible:fresh.length,
+      dbEligible:Math.max(0,items.length-fresh.length),
+      dbQueries,
+      bySource:items.reduce((counts,x)=>{
+        const source=x._source||'unknown';
+        counts[source]=(counts[source]||0)+1;
+        return counts;
+      },{})
+    },enumerable:false});
+    return items;
+  };
+  if(liveAllowed){
+    // Exactly one external searchAll() call per query. Its existing shared
+    // Coupang/ADPICK limiters and cache own all provider quotas.
+    try {
+      const response=await liveSearch(liveSearchKeyword(term,userText,category));
+      if (!response || response.failed || !Array.isArray(response.items)) providerFailed=true;
+      else {
+        const verified=response.items.map(item=>item?{
+          ...item,link:safeBuyLink(item.link,item)
+        }:null).filter(item=>{
+          if(!item || !LIVE_SOURCES.has(item._source))return false;
+          if(!item.productId || !item.mall || !item.link)return false;
+          try {
+            const url=new URL(item.link);
+            if(!['https:','http:'].includes(url.protocol)||url.username||url.password)return false;
+          }catch{return false;}
+          return matchRequested(item,constraints);
+        });
+        fresh=mergeCandidatePools(verified,[],16);
+        // Stale-only provider cache is not a fresh empty search. If the DB
+        // also has no suitable row, report unavailable rather than absent.
+        if(response.items.length>0 && response.items.every(x=>x && x._source==='stale-cache'))
+          providerFailed=true;
+      }
+    }catch{providerFailed=true;}
+    if(fresh.length>=LIVE_POOL_TARGET)return finalLive(fresh,0);
+  }
   let queries=0;
+  const lookupDb = async () => {
   const lookup=async(column,method,fragment)=>{
     const builder=source.from('products').select('*');
     const condition=method==='eq'
@@ -217,8 +331,22 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       .slice(0,80).map(row=>({
         ...mapper(row), category: row.keyword||'', _source:'db', shippingFee:null
       }));
+    if(liveFirst){
+      // DB snapshots supplement only verified, in-range matches. Do not let a
+      // stale catalog row replace a provider-observed price for the same SKU.
+      const stored=out.filter(item=>matchRequested(item,constraints));
+      const merged=mergeCandidatePools(fresh,stored);
+      return finalLive(merged,queries);
+    }
     Object.defineProperty(out,'_queries',{value:queries,enumerable:false});
     return out;
+  }
+  // In live-first mode do not consume a second provider request after the DB
+  // fallback. If both sources fail, surface an outage, not fabricated absence.
+  if(liveFirst){
+    if(fresh.length)return finalLive(fresh,queries);
+    if(providerFailed)throw new Error('Live search unavailable and catalog fallback empty');
+    return finalLive([],queries);
   }
   // The Preview safety flag forbids remote quota-acquire RPCs. Never disable
   // it just to get a product result; return an honest empty shortlist instead.
@@ -226,6 +354,15 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
   const result=await liveSearch(term);
   if(!result || result.failed) throw new Error('Product search provider unavailable');
   return Array.isArray(result.items) ? result.items : [];
+  };
+  try { return await lookupDb(); }
+  catch(error) {
+    // When live seller data is valid but the DB fallback is unavailable,
+    // preserve the verified live cards rather than turn a partial success
+    // into a 503. Never fabricate a success on a complete outage.
+    if(liveFirst && fresh.length)return finalLive(fresh,queries);
+    throw error;
+  }
 }
 // v3.2: re-load the cards shown last turn by their IDs ("mall:product_id"),
 // read-only, so "그중 …" follow-ups re-validate the SAME products against the
