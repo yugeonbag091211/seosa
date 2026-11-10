@@ -51,8 +51,20 @@ function summarize(graded) {
   const tokens = graded.reduce((m, x) => { const u = x.modelUsage || {}; m.calls += u.calls || 0; m.input += u.inputTokens || 0; m.output += u.outputTokens || 0; return m; }, { calls: 0, input: 0, output: 0 });
   const times = graded.map(x => x.elapsedMs).filter(Number.isFinite).sort((a, b) => a - b);
   const pct = p => times.length ? times[Math.max(0, Math.ceil(p * times.length) - 1)] : null;
+  // Launch approval is stricter than diagnostic grading: only PASS is
+  // successful. Both FAIL and UNVERIFIED count as failures in the launch KPI,
+  // while the original verdicts remain available for root-cause diagnosis.
+  const launchPassed = graded.filter(x => x.verdict === 'PASS').length;
+  const launchFailed = graded.length - launchPassed;
   return {
     questions: graded.length, verdicts: count('verdict'), outcomes: count('outcome'), expectations: count('expect'),
+    launchGate: {
+      policy: 'PASS_ONLY',
+      passed: launchPassed,
+      failed: launchFailed,
+      unverifiedCountedAsFail: graded.filter(x => x.verdict === 'UNVERIFIED').length,
+      successRatePercent: graded.length ? +(100 * launchPassed / graded.length).toFixed(2) : null
+    },
     findableQuestions: graded.filter(x => x.expect === 'FIND').length,
     findableAnsweredCorrectly: graded.filter(x => x.expect === 'FIND' && x.outcome === 'CORRECT_CARDS').length,
     missedAvailable: graded.filter(x => x.outcome === 'MISSED_AVAILABLE').length,

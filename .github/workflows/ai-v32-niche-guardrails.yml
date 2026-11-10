@@ -39,6 +39,8 @@ jobs:
         run: node scripts/test-ai-v32-h40-retrieval-20261110.js
       - name: Verify independent fresh50 failures are fixed without breaking iPad keyboard cases
         run: node scripts/test-ai-v32-fresh50-repairs-20261110.js
+      - name: Strict launch KPI counts UNVERIFIED as failure (preserving diagnostic labels)
+        run: node scripts/test-ai-v32-launch-gate-20261110.js
       - name: Verify frozen fresh50 benchmark labels are unchanged
         run: node scripts/test-ai-v32-fresh50-freeze-20261110.js
       - name: Existing AI v3.2 root-cause regression
