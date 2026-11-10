@@ -1,0 +1,51 @@
+name: AI v3.3 live-first strategy validation
+
+on:
+  push:
+    branches:
+      - 'feat/ai-v33-live-first-20261110'
+  pull_request:
+    branches:
+      - 'fix/ai-v32-catalog-guardrails-20261110'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-live-first:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Syntax checks
+        run: |
+          node --check api/_ai-v3-catalog.js
+          node --check api/_ai-v3-route.js
+          node --check scripts/test-ai-v33-live-first-20261110.js
+          node --check scripts/test-ai-v33-full-engine-20261110.js
+      - name: Live-first supplier contract / fallback / readonly regression
+        run: node scripts/test-ai-v33-live-first-20261110.js
+      - name: Complete AI engine with simulated external providers
+        run: node scripts/test-ai-v33-full-engine-20261110.js
+      - name: Existing AI v3.1 engine regressions
+        run: node scripts/test-ai-v31-engine.js
+      - name: Existing AI v3.2 root-cause regressions
+        run: node scripts/test-ai-v32-rootcause.js
+      - name: Existing AI v3.2 product guardrail regressions
+        run: |
+          node scripts/test-ai-v32-niche-guardrails-20261110.js
+          node scripts/test-ai-v32-niche-engine-20261110.js
+          node scripts/test-ai-v32-fresh50-repairs-20261110.js
+      - name: Pass-only launch gate and frozen labels
+        run: |
+          node scripts/test-ai-v32-launch-gate-20261110.js
+          node scripts/test-ai-v32-fresh50-freeze-20261110.js

@@ -505,6 +505,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
   const queries = [...new Set([plan.query, ...(plan.mode === 'compare' ? [plan.compareQuery] : [])])].slice(0, 2);
   const groups = [], reasonCounts = {};
   let fetched = 0, inspected = 0, accepted = 0, provisional = 0, rejected = 0, dbQueries = 0;
+  const retrievalRuns=[];
   for (const query of queries) {
     // Carry the user's verified model/option constraints into catalog retrieval.
     // GPT may shorten a search keyword, but it cannot erase user-specified capacity.
@@ -517,6 +518,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       minPrice: plan.minPrice,maxPrice: plan.maxPrice,category:groupCategory,
       userText:subject });
     if (!Array.isArray(raw)) throw new Error('Invalid search result');
+    if(raw._retrieval && raw._retrieval.strategy==='live-first')retrievalRuns.push(raw._retrieval);
     dbQueries += Number(raw._queries) || 0;
     fetched += raw.length;
     // A comparison's two sides cannot borrow each other's similar-category products.
@@ -599,11 +601,24 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       selection.answer = comparisonAnswer(selection.cards);
     }
   }
+  const retrieval=retrievalRuns.length ? {
+    strategy:'live-first',groups:retrievalRuns.length,
+    providerSearchBatches:retrievalRuns.reduce((s,x)=>s+x.providerSearchBatches,0),
+    providerFailedBatches:retrievalRuns.filter(x=>x.providerFailed).length,
+    liveEligible:retrievalRuns.reduce((s,x)=>s+x.liveEligible,0),
+    dbEligible:retrievalRuns.reduce((s,x)=>s+x.dbEligible,0),
+    bySource:retrievalRuns.reduce((totals,x)=>{
+      for(const [source,n] of Object.entries(x.bySource||{}))
+        totals[source]=(totals[source]||0)+n;
+      return totals;
+    },{})
+  } : null;
   return {
     status: 200, ...selection,
     state: stateFrom(plan, selection.cards.map(c=>c.productId)),
     stats: { searched: true, fetched, inspected, accepted, provisional, rejected,
       rejectedReasons: reasonCounts, chosen: selection.cards.length, dbQueries,
+      ...(retrieval?{retrieval}:{}),
       intent: intentStats(), ...usage() }
   };
 }
