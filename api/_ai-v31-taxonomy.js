@@ -139,8 +139,11 @@ function comparisonFromUtterance(message) {
 // Persist user-confirmed device features across budget and follow-up turns.
 function mergeFeatures(previous={},utterance='',changedProduct=false) {
   const value=changedProduct?{}:{wireless:previous.wireless===true,
-    anc:previous.anc===true,externalSsd:previous.externalSsd===true};
+    anc:previous.anc===true,externalSsd:previous.externalSsd===true,gaming:previous.gaming===true};
   const s=String(utterance||'');
+  // v3.4: «게이밍» is carried like «무선» (V057 lost it two turns later).
+  if(/(?:게이밍|게임용|gaming)/i.test(s))
+    value.gaming=!/(?:게이밍|게임용|gaming).{0,7}(?:제외|빼고|말고|아닌|필요\s*없)/i.test(s);
   const wireless=[...s.matchAll(/무선|블루투스|wireless|유선|wired/gi)];
   if(wireless.length)value.wireless=!/유선|wired/i.test(wireless.at(-1)[0]);
   if(/(?:\bANC\b|노이즈\s*캔슬링|노이즈캔슬링|노캔)/i.test(s)){
@@ -156,14 +159,17 @@ function featureContext(message='',features={}) {
   if(features.wireless)flags.push('무선');
   if(features.anc)flags.push('ANC');
   if(features.externalSsd)flags.push('외장 SSD');
+  if(features.gaming)flags.push('게이밍');
   return [message,...flags].join(' ');
 }
 function stripTaxonomy(title) {
   return String(title||'').split(/\/(?:디지털기기|pc\/주변기기|생활\/가전)/i)[0];
 }
 const PARTS=/(?:케이스|보호필름|보호\s*유리|충전기|거치대|스탠드|브라켓|어댑터|파우치|커버|스트랩|리필|펜촉|키캡|호환\s*케이스|스티커|교체용|이어팁|이어패드|필름\s*세트|필터\s*(?:세트|호환|교체)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰|낱개)|낱개\s*(?:유닛|이어버드|이어폰)|유닛\s*단품)/i;
-const EARPIECE=/(?:이어폰|이어버드|earbuds|in[\s-]?ear|에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|이어\s*클립|이어클립|골전도|넥밴드)/i;
-const HEADPHONE=/(?:헤드폰|헤드셋|headphone|headset|\bWH-CH\d)/i;
+// v3.4: AirPods Max is an over-ear headphone, not an earphone (hybrid run
+// showed «애플 에어팟 맥스» as an «애플 이어폰» card).
+const EARPIECE=/(?:이어폰|이어버드|earbuds|in[\s-]?ear|에어팟(?!\s*(?:맥스|max))|airpods(?!\s*max)|갤럭시\s*버즈|galaxy\s*buds|이어\s*클립|이어클립|골전도|넥밴드)/i;
+const HEADPHONE=/(?:헤드폰|헤드셋|headphone|headset|\bWH-CH\d|에어팟\s*(?:맥스|max)|airpods\s*max)/i;
 function ambiguousOptions(title,category) {
   if(category!=='외장하드'&&category!=='태블릿'&&category!=='스마트폰'&&category!=='노트북')return false;
   const t=stripTaxonomy(title),capacities=new Set();
@@ -221,6 +227,22 @@ const REQUIRED_ATTRIBUTES=[
   // wired request: a wireless-only listing does not satisfy it
   [['헤드폰','이어폰','마우스','키보드','스피커'],/(?:유선|wired)/i,null,
     t=>/(?:무선|블루투스|wireless|bluetooth|\bTWS\b)/i.test(t)&&!/(?:유선|유무선|wired|3\.5\s*mm|aux|usb\s*(?:전원|유선))/i.test(t)],
+  // v3.4 (fast-check property 8, seed 20261120): the WIRELESS direction was
+  // missing, so a DB listing "로지텍 유선 마우스" passed a "무선 마우스" request.
+  // The listing must claim wireless, or be a line that only exists wireless.
+  [['헤드폰','이어폰','마우스','키보드'],/(?:무선|블루투스|wireless|bluetooth)/i,
+    /(?:무선|블루투스|wireless|bluetooth|\bTWS\b|유무선|2\.4\s*g(?:hz)?\b|라이트\s*스피드|lightspeed|logi\s*bolt|로지\s*볼트|unifying|\bBT\s*\d|에어팟|airpods|갤럭시\s*버즈|galaxy\s*buds|버즈\s*\d|\bbuds\d?\b|\bWF-|\bWH-(?:1000|CH|ULT)|\bWI-|quiet\s*comfort|\bQC\s*(?:울트라|ultra|\d)|mx\s*(?:master|keys|anywhere)|페블|pebble)/i],
+  // v3.4 (V036): «조용한 마우스» is a stated requirement — silent-click evidence.
+  [['마우스','키보드'],/(?:조용한|조용히|저소음|무소음|소음\s*(?:없|적)|silent|사일런트)/i,
+    /(?:저소음|무소음|silent|사일런트|조용|noiseless|노이즈\s*리스)/i],
+  // v3.4 (V057): «게이밍» stated earlier must still hold after «로지텍 제품만».
+  [['마우스','키보드','헤드폰'],/(?:게이밍|게임용|gaming)/i,
+    /(?:게이밍|게임|gaming|e\s*스포츠|esports|lightspeed|라이트\s*스피드|\bG\s?\d{3}\b|\bG\s*PRO\b|hero\s*\d|레이저|razer|스틸시리즈|steelseries|커세어|corsair|하이퍼\s*x|hyperx)/i],
+  [['모니터'],/(?:게이밍|게임용|gaming)/i,
+    /(?:게이밍|게임|gaming|(?:1[4-9]\d|2[0-9]\d|3[0-6]\d)\s*hz|프리\s*싱크|freesync|g-?sync|울트라\s*기어|ultragear|오디세이|odyssey)/i],
+  // v3.4: a living-room purifier request excludes desk/portable/car minis.
+  [['공기청정기'],/(?:거실|집\s*전체|대형|넓은\s*(?:공간|집|방))/i,null,
+    t=>/(?:미니|초소형|탁상|휴대용|차량용|usb\s*(?:전원|충전))/i.test(t)],
   [['외장하드'],/(?:\bhdd\b|하드\s*디스크)/i,null,t=>/\bssd\b/i.test(t)&&!/(?:\bhdd\b|하드\s*디스크)/i.test(t)],
   [['모니터'],/(?:\bfhd\b|풀\s*hd|1920\s*[x×*]\s*1080)/i,/(?:\bfhd\b|풀\s*hd|full\s*hd|1920\s*[x×*]\s*1080|1080p)/i],
   [['모니터'],/(?:\bqhd\b|wqhd|2560\s*[x×*]\s*1440|\b2k\b)/i,/(?:\bqhd\b|wqhd|2560\s*[x×*]\s*14[04]0|\b2k\b|3440\s*[x×*]\s*1440)/i],

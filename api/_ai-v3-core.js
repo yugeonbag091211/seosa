@@ -16,9 +16,12 @@ const MAX_CARDS = 4;
 const { extractTitleEvidence, requestedIdentity, mergeRequested, checkListingIdentity } = require('./_ai-v3-identity');
 const { canonicalCategory, canonicalName, comparisonFromUtterance, explicitType, productTypeMatches,
   isPart, mergeFeatures, featureContext, familyCategory } = require('./_ai-v31-taxonomy');
-const { brandMatches, brandsFromUser, modelEvidence, modelClues, linesFromUser } = require('./_ai-v31-retrieval');
+const { brandMatches, brandsFromUser, modelEvidence, modelClues, linesFromUser, brandConflict } = require('./_ai-v31-retrieval');
 const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
 const { parseBudget, analyzeUtterance, userExclusions, groundExclusions, excludedBy, LOOKS_LIKE_ID } = require('./_ai-v32-intent');
+// v3.4: the site's single «may this price be shown as current?» rule.
+const { priceFreshness, isRecommendable, maxPriceAgeDays, clockOf } = require('./_ai-v34-freshness');
+const { listingGuard } = require('./_ai-v34-listing-guards');
 const MAX_CANDIDATE_SCAN = 200;
 const clean = (x, n = 120) => String(x == null ? '' : x).normalize('NFKC')
   .replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
@@ -99,6 +102,8 @@ function normalize(item) {
     id: mall + ':' + id, title, price, mall, url,
     image: clean(item.image, 1000), category: clean(item.category || item.categoryName, 70),
     source: clean(item._source || item.source, 30), shipping,
+    // When this price was observed (DB rows); provider API/cache rows are «now».
+    collectedAt: clean(item.collectedAt || item.collected_at, 40),
     used: USED.test(title), budgetTier: 'not_applicable',
     identityEvidence: extractTitleEvidence(title)
   };
@@ -156,6 +161,9 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   let maxExclusive=budget.max!=null?budget.maxExclusive:o.maxPrice==null?!!prev.maxExclusive:false;
   let minPrice=budget.min!=null?budget.min:nprice(prev.minPrice);
   if(budget.band){minPrice=budget.min;maxPrice=budget.max;maxExclusive=false;}
+  // v3.4 (V078): a floor above the ceiling stated IN THE SAME utterance is a
+  // contradiction to ask about — never silently drop one side and search.
+  const budgetConflict=!budget.band&&budget.min!=null&&budget.max!=null&&budget.min>budget.max;
   if (minPrice != null && maxPrice != null && minPrice > maxPrice) minPrice = null;
   const mallOnly = clean(o.mallOnly || prev.mallOnly, 35);
   const exactModel = clean(o.exactModel, 80);
@@ -174,10 +182,11 @@ function sanitizePlan(input, prev = {}, utterance = '') {
     // filter — many used listings carry no condition label).
     usedPreferred: newOnly ? false : usedRequested || (!changedType && !!prev.usedPreferred),
     mode: o.mode === 'none' ? 'none' : o.mode === 'compare' ? 'compare' : 'recommend',
-    budgetSource: budget.max!=null||budget.min!=null ? 'user' : o.maxPrice!=null ? 'model' : prev.maxPrice!=null ? 'prior' : 'none'
+    budgetSource: budget.max!=null||budget.min!=null ? 'user' : o.maxPrice!=null ? 'model' : prev.maxPrice!=null ? 'prior' : 'none',
+    ...(budgetConflict ? { conflict: { kind: 'budget', min: budget.min, max: budget.max } } : {})
   };
 }
-function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
+function validateCandidates(plan, raw, { limit = MAX_RESULTS, now, maxAgeDays } = {}) {
   const accepted = [], provisional = [], rejected = [], reasons = {};
   const seen = new Set();
   const inspected = Math.min(Array.isArray(raw) ? raw.length : 0, MAX_CANDIDATE_SCAN);
@@ -190,6 +199,9 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
       reason='accessory_not_requested';
     if (!reason && !categoryOk(item,plan.category,plan.subject||'')) reason = 'wrong_category';
     if (!reason && item.used && !plan.allowUsed) reason = 'used_not_requested';
+    // v3.4 listing integrity: implausible device price, carrier-contract
+    // price, bundle/store page, publication, unconfirmed requested colour.
+    if (!reason) reason = listingGuard(item, { category: plan.category, userText: plan.subject || '' });
     if (!reason && plan.identity && Object.keys(plan.identity).length) {
       const evidence = checkListingIdentity(item.title, plan.identity, { category: plan.category });
       if (!evidence.ok) reason = evidence.reason;
@@ -205,6 +217,13 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
     if (!reason && plan.maxPrice != null && (plan.maxExclusive ? item.price >= plan.maxPrice : item.price > plan.maxPrice)) reason = 'over_budget';
     if (!reason && plan.maxPrice != null && item.shipping != null &&
       item.price + item.shipping > plan.maxPrice) reason = 'over_budget';
+    // v3.4: checked LAST among the product checks, so 'stale_price' counts
+    // listings that satisfied every other condition but whose price is too
+    // old to present as current (the answer can then say so honestly).
+    const freshness = item ? priceFreshness({ _source: item.source, collectedAt: item.collectedAt,
+      mall: item.mall, price: item.price, productId: item.id }, { now, maxAgeDays }) : null;
+    if (!reason && freshness && !isRecommendable(freshness))
+      reason = freshness.state === 'unknown' ? 'price_time_unknown' : 'stale_price';
     // Same listing re-posted under another ID (identical title and price).
     const twin = item && flat(item.title).slice(0, 60) + '|' + item.price;
     if (!reason && (seen.has(item.id) || seen.has(twin))) reason = 'duplicate';
@@ -214,6 +233,7 @@ function validateCandidates(plan, raw, { limit = MAX_RESULTS } = {}) {
       continue;
     }
     seen.add(item.id); seen.add(twin);
+    item.freshness = freshness;
     if (plan.maxPrice != null && item.shipping == null) {
       item.budgetTier = 'listing_only_shipping_unverified';
       provisional.push(item);
@@ -262,6 +282,11 @@ function toCard(item) {
     productId: item.id, title: item.title, price: item.price, priceText: money(item.price),
     mall: item.mall, link: item.url, image: item.image,
     priceStatus: item.source === 'api' ? 'observed' : 'cached_or_unverified',
+    // v3.4: when the shown price was collected, so a DB price is never
+    // mistaken for a live quote ('fresh' = within the site display limit).
+    priceFreshness: item.freshness ? item.freshness.state : 'not_applicable',
+    priceObservedAt: item.freshness && item.freshness.observedAt ? item.freshness.observedAt : null,
+    priceAgeDays: item.freshness && item.freshness.ageDays != null ? item.freshness.ageDays : null,
     shippingFee: item.shipping, budgetStatus: item.budgetTier,
     totalPrice: item.shipping != null ? item.price + item.shipping : null,
     condition: item.used ? 'used_or_refurbished' : 'unknown',
@@ -348,9 +373,48 @@ function stateFrom(plan, presented) {
     ...(presented ? { presentedProductIds: presented } : {})
   };
 }
-async function createEngine({ planModel, decideModel, searchProducts, getUsage, loadDisplayed }, request) {
+// v3.4: one sentence that keeps a DB snapshot price from reading as a live quote.
+function priceBasisNote(cards) {
+  const stored = cards.filter(c => c.priceFreshness === 'fresh' && c.priceAgeDays != null);
+  if (!stored.length) return '';
+  const oldest = Math.max(...stored.map(c => c.priceAgeDays));
+  const when = oldest < 1 ? '하루 안에' : Math.ceil(oldest) + '일 안에';
+  return ' 표시 가격은 실시간 조회가 아니라 서사가 최근 ' + when + ' 수집한 가격이라 지금 판매가와 다를 수 있어요.';
+}
+// v3.4: «no card» has different causes; never present an outage or an
+// out-of-date price record as «the product does not exist».
+function noResultReason(reasonCounts, retrieval) {
+  if ((reasonCounts.stale_price || 0) + (reasonCounts.price_time_unknown || 0) > 0) return 'stale_price_only';
+  if (retrieval && retrieval.providerFailedBatches > 0) return 'provider_unavailable_db_checked';
+  return 'no_verified_match';
+}
+function sumRetrieval(runs) {
+  const numeric = ['providerSearchBatches', 'liveEligible', 'dbEligible', 'keywordEligible', 'vectorCandidates',
+    'vectorEligible', 'vectorOnlyEligible', 'vectorRejected', 'vectorMs'];
+  const strategies = [...new Set(runs.map(x => x.strategy))];
+  const out = {
+    strategy: strategies.length === 1 ? strategies[0] : 'mixed',
+    groups: runs.length,
+    providerFailedBatches: runs.filter(x => x.providerFailed).length,
+    bySource: runs.reduce((totals, x) => {
+      for (const [source, n] of Object.entries(x.bySource || {})) totals[source] = (totals[source] || 0) + n;
+      return totals;
+    }, {})
+  };
+  for (const key of numeric) {
+    if (runs.some(x => typeof x[key] === 'number')) out[key] = runs.reduce((s, x) => s + (Number(x[key]) || 0), 0);
+  }
+  const vectorStatus = [...new Set(runs.map(x => x.vectorStatus).filter(Boolean))];
+  if (vectorStatus.length) out.vectorStatus = vectorStatus.length === 1 ? vectorStatus[0] : 'mixed';
+  return out;
+}
+async function createEngine({ planModel, decideModel, searchProducts, getUsage, loadDisplayed,
+  now: engineNow, maxPriceAgeDays: ageLimit }, request) {
   if (typeof planModel !== 'function' || typeof decideModel !== 'function' ||
     typeof searchProducts !== 'function') throw new Error('Missing dependency');
+  // One clock per request: replays pass the snapshot time, production uses now.
+  const asOf = clockOf(engineNow);
+  const ageDaysLimit = Number(ageLimit) > 0 ? Number(ageLimit) : maxPriceAgeDays();
   const message = clean(request && request.message, 800);
   if (!message) return { status: 400, error: 'message required' };
   const history = Array.isArray(request.history) ? request.history.slice(-8)
@@ -362,7 +426,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
     category: clean(saved.category, 36),brandTerm:clean(saved.brandTerm,35),
     features:saved.features&&typeof saved.features==='object'?{
       wireless:saved.features.wireless===true,anc:saved.features.anc===true,
-      externalSsd:saved.features.externalSsd===true
+      externalSsd:saved.features.externalSsd===true,gaming:saved.features.gaming===true
     }: {},
     maxPrice: nprice(saved.maxPrice), maxExclusive: saved.maxExclusive === true, minPrice: nprice(saved.minPrice),
     exclusions: Array.isArray(saved.exclusions) ? saved.exclusions.map(x => clean(x, 55)).filter(Boolean).slice(0, 8) : [],
@@ -457,6 +521,21 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
     const hostOnly=c=>/^m\d{1,2}(?:pro|max)?$/.test(c.token)||/^(?:air|pro|mini)\d{1,2}$/.test(c.token);
     if(plan.modelText&&modelClues(plan.modelText).every(hostOnly))plan.modelText='';
   }
+  // v3.4: contradictory user conditions are asked about, never resolved
+  // silently by dropping one of them (V074/V075 brand, V078 budget).
+  if (plan.mode !== 'none' && plan.mode !== 'compare' && !twoKinds && !plan.conflict) {
+    const clash = brandConflict(message, plan.category);
+    if (clash) plan.conflict = { kind: 'brand', maker: clash.maker, lineOwner: clash.lineOwner };
+  }
+  if (plan.mode !== 'none' && plan.conflict) return {
+    status: 200,
+    answer: plan.conflict.kind === 'budget'
+      ? money(plan.conflict.min) + ' 이상이면서 ' + money(plan.conflict.max) + ' 이하인 조건은 동시에 만족할 수 없어요. 예산 범위를 다시 알려주시면 찾아볼게요.'
+      : '요청에 ' + plan.conflict.maker + ' 제품과 ' + plan.conflict.lineOwner + ' 제품 라인이 함께 들어 있어 조건이 서로 맞지 않아요. 어느 브랜드의 상품을 찾으시는지 알려주세요.',
+    cards: [], state: { ...stateFrom(plan), presentedProductIds: [] },
+    stats: { searched: false, accepted: 0, provisional: 0, noResult: 'conflicting_conditions', conflict: plan.conflict.kind,
+      intent: intentStats(), ...usage() }
+  };
   if (plan.mode === 'none') return {
     status: 200,
     answer: intent.informational
@@ -481,7 +560,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
     if(prior.presentedProductIds.length){
       const raw=await loadDisplayed(prior.presentedProductIds);
       if(!Array.isArray(raw))throw new Error('Invalid displayed lookup');
-      const evaluated=validateCandidates({...plan,subject:subjectText},raw,{limit:MAX_CARDS});
+      const evaluated=validateCandidates({...plan,subject:subjectText},raw,{limit:MAX_CARDS,now:asOf,maxAgeDays:ageDaysLimit});
       const order=new Map(prior.presentedProductIds.map((id,i)=>[id,i]));
       pool=[...evaluated.accepted,...evaluated.provisional].sort((a,b)=>(order.get(a.id)??9)-(order.get(b.id)??9));
       checked=evaluated.checked;reasons=evaluated.reasons;rejected=evaluated.rejected.length;
@@ -492,16 +571,22 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       const picked=resultFromSelection(plan,pool,choice).cards.slice(0,1);
       cards=picked.length?picked:cards.slice(0,1);
     } else if(intent.wantsSingle) cards=cards.slice(0,1);
+    const staleOnly=!cards.length&&prior.presentedProductIds.length&&noResultReason(reasons,null)==='stale_price_only';
     const answer=!prior.presentedProductIds.length
       ? '앞서 보여드린 상품이 없어 그중에서 고를 수 없어요. 조건을 말씀해 주시면 새로 찾아볼게요.'
+      : staleOnly
+        ? '앞서 보여드린 상품은 가격이 최근 '+ageDaysLimit+'일 안에 다시 확인되지 않아 지금 추천할 수 없어요. 새로 찾아보려면 그렇게 말씀해 주세요.'
       : !cards.length
         ? '앞서 보여드린 상품 중에는 새 조건에 맞는 상품이 없어요. 다른 상품까지 새로 찾으려면 그렇게 말씀해 주세요.'
         : '앞서 보여드린 상품 중 조건에 맞는 ' + cards.length + '개입니다. '
-          + (hasUnverifiedShipping(cards) ? '배송비가 확인되지 않아 최종 결제 금액은 판매처에서 확인해 주세요.' : '가격과 옵션은 판매처에서 최종 확인해 주세요.');
+          + (hasUnverifiedShipping(cards) ? '배송비가 확인되지 않아 최종 결제 금액은 판매처에서 확인해 주세요.' : '가격과 옵션은 판매처에서 최종 확인해 주세요.')
+          + priceBasisNote(cards);
     return { status:200, answer, cards,
       state: stateFrom(plan, cards.map(c=>c.productId)),
       stats: { searched:true, fetched:prior.presentedProductIds.length, inspected:checked, accepted:pool.length,
         provisional:0, rejected, rejectedReasons:reasons, chosen:cards.length, dbQueries: prior.presentedProductIds.length?1:0,
+        ...(cards.length?{}:{noResult:prior.presentedProductIds.length?noResultReason(reasons,null):'nothing_displayed'}),
+        priceAgeLimitDays: ageDaysLimit,
         intent: intentStats(), ...usage() } };
   }
   const queries = [...new Set([plan.query, ...(plan.mode === 'compare' ? [plan.compareQuery] : [])])].slice(0, 2);
@@ -518,7 +603,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       +(plan.mode==='compare'?'':[plan.brandTerm,plan.modelText&&plan.modelText!==message?plan.modelText:''].filter(Boolean).map(x=>' '+x).join(''));
     const raw = await searchProducts(query, { identity: groupIdentity,
       minPrice: plan.minPrice,maxPrice: plan.maxPrice,category:groupCategory,
-      userText:subject });
+      userText:subject, exclusions: plan.exclusions });
     if (!Array.isArray(raw)) throw new Error('Invalid search result');
     if(raw._retrieval)retrievalRuns.push(raw._retrieval);
     dbQueries += Number(raw._queries) || 0;
@@ -534,7 +619,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
           plan.mode==='compare'?query:message,plan.features),
         brandTerm:plan.mode==='compare'?(brandsFromUser(query,groupCategory)[0]||''):plan.brandTerm,
         modelText:plan.mode==='compare'?(modelClues(query).length?query:''):plan.modelText,
-        identity:groupIdentity,exactModel:plan.mode==='compare'?'':plan.exactModel },matched);
+        identity:groupIdentity,exactModel:plan.mode==='compare'?'':plan.exactModel },matched,
+      { now: asOf, maxAgeDays: ageDaysLimit });
     inspected += evaluated.checked;
     accepted += evaluated.acceptedCount;
     provisional += evaluated.provisionalCount;
@@ -603,25 +689,25 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       selection.answer = comparisonAnswer(selection.cards);
     }
   }
-  const retrieval=retrievalRuns.length ? {
-    strategy:retrievalRuns.every(x=>x.strategy==='live-first')?'live-first'
-      :retrievalRuns.every(x=>x.strategy==='db-first')?'db-first':'mixed',
-    groups:retrievalRuns.length,
-    providerSearchBatches:retrievalRuns.reduce((s,x)=>s+x.providerSearchBatches,0),
-    providerFailedBatches:retrievalRuns.filter(x=>x.providerFailed).length,
-    liveEligible:retrievalRuns.reduce((s,x)=>s+x.liveEligible,0),
-    dbEligible:retrievalRuns.reduce((s,x)=>s+x.dbEligible,0),
-    bySource:retrievalRuns.reduce((totals,x)=>{
-      for(const [source,n] of Object.entries(x.bySource||{}))
-        totals[source]=(totals[source]||0)+n;
-      return totals;
-    },{})
-  } : null;
+  const retrieval=retrievalRuns.length ? sumRetrieval(retrievalRuns) : null;
+  let noResult=null;
+  if(!selection.cards.length){
+    noResult=noResultReason(reasonCounts,retrieval);
+    // Only the generic «nothing matched» text is replaced; comparison and
+    // «그중» answers above already explain their own situation.
+    if(!compare&&!constrainToDisplayed){
+      if(noResult==='stale_price_only')
+        selection.answer='조건에 맞는 상품 기록은 있지만 최근 '+ageDaysLimit+'일 안에 확인된 가격이 없어 추천하지 않았어요. 오래된 가격을 현재가처럼 안내하지 않기 위해서예요. 판매처 실시간 가격이 확인되면 다시 안내할게요.';
+      else if(noResult==='provider_unavailable_db_checked')
+        selection.answer='실시간 판매처 조회에 실패해 서사에 저장된 상품만 확인했는데, 그중에는 조건에 맞는 후보가 없어요. 상품이 없다는 뜻은 아니니 잠시 후 다시 시도해 주세요.';
+    }
+  } else selection.answer+=priceBasisNote(selection.cards);
   return {
     status: 200, ...selection,
     state: stateFrom(plan, selection.cards.map(c=>c.productId)),
     stats: { searched: true, fetched, inspected, accepted, provisional, rejected,
       rejectedReasons: reasonCounts, chosen: selection.cards.length, dbQueries,
+      ...(noResult?{noResult}:{}), priceAgeLimitDays: ageDaysLimit,
       ...(retrieval?{retrieval}:{}),
       intent: intentStats(), ...usage() }
   };

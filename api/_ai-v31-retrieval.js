@@ -10,7 +10,10 @@ const key=spec=>spec.map(f=>f.join(':')).join('|');
 // v3.2 brand lexicon lives in _ai-v32-brands (shared, dependency-free).
 const {BRANDS,LINES,aliasRegex,aliasesFor}=require('./_ai-v32-brands');
 const {requestedIdentity}=require('./_ai-v3-identity');
-const REJECTS=/^\s*(?:은|는|이|가|을|를)?\s*(?:제외|말고|빼고|아닌|없이|싫)/;
+// v3.4 (V060): a generic noun may sit between the brand and the rejection —
+// «삼성 제품은 제외해줘» was read as «삼성 wanted», so the engine required AND
+// excluded Samsung at once and returned nothing.
+const REJECTS=/^\s*(?:(?:제품|상품|모델|것|거|쪽|류|계열|브랜드|라인)\s*)?(?:은|는|이|가|을|를|도)?\s*(?:제외|말고|빼고|빼|아닌|없이|싫)/;
 const HOST_AFTER=/^[\s0-9a-z가-힣.]{0,12}?(?:용(?![a-z가-힣])|전용|호환|연결|에\s*(?:쓸|쓰는|맞는|연결|꽂))/i;
 // Brands the USER named (aliases for the category), excluding brands named
 // only to reject them ("삼성 제외") or as a host device ("아이폰 호환",
@@ -140,15 +143,17 @@ function modelEvidence(title,userText){
 }
 function deviceAnchors(category,identity={}) {
   if(identity?.family==='ipad')return ['아이패드','iPad'];
-  if(identity?.family==='galaxytab')return ['갤럭시탭','Galaxy Tab'];
+  // v3.4 (V068): spaced anchors are AND-tokenized ('%애플%' AND '%워치%'),
+  // so «애플 워치» and «애플워치» both match; a glued anchor missed the spaced one.
+  if(identity?.family==='galaxytab')return ['갤럭시 탭','Galaxy Tab'];
   if(identity?.family==='airpods')return ['에어팟','AirPods'];
   if(identity?.family==='galaxybuds')return ['버즈','Galaxy Buds'];
   if(identity?.family==='iphone')return ['아이폰','iPhone'];
   if(identity?.family==='galaxys')return ['갤럭시 S','Galaxy S'];
   if(identity?.family==='macbook')return ['맥북','MacBook'];
   if(identity?.family==='galaxywatch')return ['갤럭시 워치','Galaxy Watch'];
-  if(identity?.family==='applewatch')return ['애플워치','Apple Watch'];
-  if(identity?.family==='galaxybook')return ['갤럭시북','Galaxy Book'];
+  if(identity?.family==='applewatch')return ['애플 워치','Apple Watch'];
+  if(identity?.family==='galaxybook')return ['갤럭시 북','Galaxy Book'];
   if(category==='헤드폰')return ['헤드폰','헤드셋'];
   if(category==='이어폰')return ['이어폰','이어버드','버즈'];
   if(category==='외장하드')return ['외장하드','외장 SSD','외장 HDD'];
@@ -332,4 +337,30 @@ const ACCESSORY_PUSHDOWN={
   시계:['스트랩','밴드','필름','케이스','충전'],
   기타:['카포','교본','피크','스트링','케이스','페달']
 };
-module.exports={buildProbes,deriveClues,brandsFromUser,brandMatches,deviceAnchors,modelClues,modelEvidence,linesFromUser,canonModel,aliasRegex,BRANDS};
+// v3.4 (V075/V074): a maker named for another maker's product line —
+// «애플이 만든 갤럭시 버즈3», «삼성에서 나온 아이폰 17» — is a contradiction
+// to ask about, not a brand to pick silently. Two COMPANY names («삼성이나
+// LG») are alternatives, not a conflict.
+function brandConflict(text,category=''){
+  const s=String(text||'').normalize('NFKC');
+  const positive=alias=>{
+    const g=new RegExp(aliasRegex(alias).source,'gi');let m;
+    while((m=g.exec(s))!==null){
+      const after=s.slice(m.index+m[0].length,m.index+m[0].length+18);
+      if(REJECTS.test(after))continue;
+      if(HOST_AFTER.test(after))continue;
+      return true;
+    }
+    return false;
+  };
+  const makers=new Set(),lines=new Set();
+  for(const [canonical,company,lineMap] of BRANDS){
+    if(company.some(positive))makers.add(canonical);
+    for(const [alias,cats] of Object.entries(lineMap||{})){
+      if((!category||cats.includes(category))&&positive(alias))lines.add(canonical);
+    }
+  }
+  for(const maker of makers)for(const owner of lines)if(maker!==owner)return {maker,lineOwner:owner};
+  return null;
+}
+module.exports={buildProbes,deriveClues,brandsFromUser,brandMatches,deviceAnchors,modelClues,modelEvidence,linesFromUser,canonModel,aliasRegex,BRANDS,brandConflict};

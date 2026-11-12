@@ -17,10 +17,17 @@ async function handler(req, res, deps = {}) {
     return res.status(400).json({ error: 'Invalid message' });
   try {
     const adapter = deps.adapter || makeOpenAiAdapter();
-    const searchProducts = deps.searchProducts || (async (query, { identity, minPrice, maxPrice, category, userText } = {}) => {
+    // v3.4 feature flag: db-first (default) | live-first | hybrid. The vector
+    // channel exists only for hybrid with an isolated vector DB configured.
+    const { parseStrategy, vectorRuntime } = require('./_ai-v34-strategy');
+    const searchStrategy = parseStrategy(process.env.AI_V3_SEARCH_STRATEGY);
+    const vector = searchStrategy === 'hybrid' ? vectorRuntime() : { vectorSearch: undefined };
+    const searchProducts = deps.searchProducts || (async (query, { identity, minPrice, maxPrice, category, userText, exclusions } = {}) => {
       const { searchCatalog } = require('./_ai-v3-catalog');
-      return searchCatalog(query, { identity, minPrice, maxPrice, category, userText,
-        searchStrategy: process.env.AI_V3_SEARCH_STRATEGY === 'live-first' ? 'live-first' : 'db-first',
+      return searchCatalog(query, { identity, minPrice, maxPrice, category, userText, exclusions,
+        searchStrategy, vectorSearch: vector.vectorSearch,
+        hybridMode: process.env.AI_V34_HYBRID_MODE === 'fuse' ? 'fuse' : 'expand',
+        vectorWeight: Number(process.env.AI_V34_VECTOR_WEIGHT) > 0 ? Number(process.env.AI_V34_VECTOR_WEIGHT) : 1,
         liveSearch: async keyword => {
         const { searchAll } = require('./_shop');
         return searchAll(keyword, {

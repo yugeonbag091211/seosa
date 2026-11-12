@@ -8,7 +8,9 @@ let passed=0,failed=0;
 async function test(name,fn){try{await fn();passed++;console.log('PASS '+name)}catch(e){failed++;console.log('FAIL '+name+': '+String(e.message).slice(0,400))}}
 const row=(id,title,lprice=133510,keyword='헤드폰')=>({
   product_id:id,productId:id,title,lprice,mall:'쿠팡',keyword,link:'https://example.org/item/'+id,
-  shippingFee:0,collected_at:'2026-11-05T04:00:00Z'
+  // v3.4: relative date (was '2026-11-05'). The engine now applies the site's
+  // price-age limit, so a fixed date would turn this fixture stale over time.
+  shippingFee:0,collected_at:new Date(Date.now()-2*86400000).toISOString()
 });
 const mapper=r=>({productId:r.product_id,title:r.title,lprice:r.lprice,
   mall:r.mall,link:r.link,shippingFee:0,category:r.keyword});

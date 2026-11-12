@@ -146,8 +146,10 @@ function mentionedPositively(text, wordRe) {
   const g = new RegExp(wordRe.source, 'gi');
   let m;
   while ((m = g.exec(t)) !== null) {
-    const after = t.slice(m.index + m[0].length, m.index + m[0].length + 10);
-    if (!/^\s*(?:은|는|이|가|을|를)?\s*(?:안\s*하|말고|제외|없이|빼|아닌|아니|싫|필요\s*없)/.test(after)) return true;
+    const after = t.slice(m.index + m[0].length, m.index + m[0].length + 14);
+    // v3.4: a generic noun may sit between the word and the negation
+    // ("게이밍 제품은 제외", "중고 상품은 빼고", "로지텍 것은 말고").
+    if (!/^\s*(?:(?:제품|상품|모델|것|거|쪽|류|계열|브랜드|라인)\s*)?(?:은|는|이|가|을|를|도)?\s*(?:안\s*하|말고|제외|없이|빼|아닌|아니|싫|필요\s*없)/.test(after)) return true;
   }
   return false;
 }

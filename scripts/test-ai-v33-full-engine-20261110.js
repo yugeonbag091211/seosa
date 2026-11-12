@@ -8,7 +8,9 @@ const item=(id,title,price,source='api')=>({
 });
 const stored=(id,title,price)=>({
   product_id:id,title,lprice:price,mall:'쿠팡',keyword:'마우스',
-  collected_at:'2026-11-10T03:00:00Z',link:'https://example.org/item/'+id
+  // v3.4: relative date (was '2026-11-10'); the engine's price-age gate
+  // would otherwise turn this fixture stale ten days later.
+  collected_at:new Date(Date.now()-86400000).toISOString(),link:'https://example.org/item/'+id
 });
 function catalog(rows,log){
  return {from(){

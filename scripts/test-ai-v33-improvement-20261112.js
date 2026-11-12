@@ -77,6 +77,9 @@ async function test(name,fn){
          checks++;
          assert.equal(calls,1);
          if(price>maxPrice)assert.equal(found.length,0);
+         // v3.4: a «mouse» below the plausible device floor (2,000 won) is an
+         // accessory/junk listing and must not pass either.
+         else if(price<require('../api/_ai-v34-listing-guards').DEVICE_PRICE_FLOOR['마우스'])assert.equal(found.length,0);
          else {
            assert.equal(found.length,1);
            assert(found[0].lprice<=maxPrice);

@@ -7,6 +7,11 @@ const { productTypeMatches } = require('./_ai-v31-taxonomy');
 const { safeBuyLink } = require('./_affiliate');
 const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
 const { buildProbes,brandMatches,brandsFromUser,modelClues,modelEvidence } = require('./_ai-v31-retrieval');
+// v3.4 hybrid retrieval: rank fusion + a deadline-bounded vector channel.
+const { rrfFuse } = require('./_ai-v34-fusion');
+const { runVectorSearch } = require('./_ai-v34-vector');
+const { listingGuard } = require('./_ai-v34-listing-guards');
+const { excludedBy } = require('./_ai-v32-intent');
 // v3.2: a multi-word fragment becomes one ILIKE per token (AND). Sellers write
 // "외장SSD", "외장 SSD", "SSD 외장"; "WF-C700N" / "WFC700N". One '%a b%'
 // pattern misses all but one spelling.
@@ -87,9 +92,10 @@ function liveSearchKeyword(term,userText,category){
   if(m && !flat(term).includes(flat(m)))prefix.push(m);
   return safeTerm([...prefix,term].join(' '))||term;
 }
-function matchRequested(item, { category, userText, term, target, boundedMin, boundedMax }) {
+function matchRequested(item, { category, userText, term, target, boundedMin, boundedMax, exclusions = [] }) {
   if (!item || typeof item.title !== 'string' || !item.title.trim()) return false;
   const name=item.title, price=livePrice(item);
+  if (exclusions.length && excludedBy(name, exclusions)) return false;
   if (!Number.isSafeInteger(price) || price<=0) return false;
   if (boundedMin!=null && price<boundedMin || boundedMax!=null && price>boundedMax) return false;
   const fee=item.shippingFee;
@@ -110,7 +116,17 @@ function matchRequested(item, { category, userText, term, target, boundedMin, bo
   if (!brandMatches(name,userText||term,category)) return false;
   if (!modelEvidence(name,userText||term).ok) return false;
   if (target.family && !checkListingIdentity(name,target,{category}).ok) return false;
+  // v3.4: same listing-integrity guards as the engine's final validator.
+  if (category && listingGuard({title:name,price},{category,userText:userText||term})) return false;
   return true;
+}
+// One DB-row → candidate mapping for every path (keyword, vector, follow-up).
+// v3.4: the observation time travels with the row itself, never via the
+// injected mapper, so the engine's price-age gate cannot be bypassed by a
+// mapper that forgets collected_at.
+function dbItem(row, mapper) {
+  return { ...mapper(row), category: row.keyword || '', _source: 'db', shippingFee: null,
+    collectedAt: row.collected_at ? String(row.collected_at instanceof Date ? row.collected_at.toISOString() : row.collected_at) : '' };
 }
 function identityKey(item) {
   const pid=String(item.productId||item.product_id||'');
@@ -129,17 +145,37 @@ function mergeCandidatePools(fresh, stored, max=80) {
   }
   return result;
 }
-async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category, userText, searchStrategy } = {}) {
+// v3.4 (V060): the user's exclusions narrow RETRIEVAL too. Before, «삼성 제품은
+// 제외» was applied only by the final validator, so 40-row pages full of the
+// excluded brand left nothing. NOT ILIKE only makes room; validation decides.
+function exclusionWords(list) {
+  return [...new Set((Array.isArray(list) ? list : []).map(x => safeTerm(x)).filter(x =>
+    x.length >= 2 && x.length <= 20 && !/[:]/.test(x) && !/^\d+$/.test(x)))].slice(0, 3);
+}
+function withExclusions(builder, words) {
+  if (!words.length || typeof builder.not !== 'function') return builder;
+  for (const w of words) builder = builder.not('title', 'ilike', '%' + w + '%');
+  return builder;
+}
+// hybridMode: 'expand' (default) keeps the tuned keyword order and appends
+//   vector-only verified candidates (recall expansion); 'fuse' = weighted RRF
+//   over live/keyword/vector (vectorWeight scales the vector list).
+async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category, userText, searchStrategy,
+  vectorSearch, vectorTimeoutMs = 1500, rrfK = 60, exclusions, hybridMode = 'expand', vectorWeight = 1 } = {}) {
   const term=safeTerm(query);
   if(!term) return [];
   const source=db || require('./_supabase');
+  const notWords=exclusionWords(exclusions);
   const boundedMin=Number.isSafeInteger(Number(minPrice)) && Number(minPrice)>0 ? Number(minPrice) : null;
   const boundedMax=Number.isSafeInteger(Number(maxPrice)) && Number(maxPrice)>0 ? Number(maxPrice) : null;
   const liveFirst=searchStrategy==='live-first';
+  // v3.4 hybrid = verified live offers + DB keyword + vector candidates, fused.
+  const hybrid=searchStrategy==='hybrid';
   // Provider rate-limit leases use DB writes/RPC; never try them in read-only
   // Previews. A read-only Preview remains a DB-only safety regression target.
-  const liveAllowed=liveFirst && process.env.SEOSA_DB_READONLY!=='1' && typeof liveSearch==='function';
-  const constraints={category,userText,term,target:identity&&typeof identity==='object'?identity:extractTitleEvidence(term),boundedMin,boundedMax};
+  const liveAllowed=(liveFirst||hybrid) && process.env.SEOSA_DB_READONLY!=='1' && typeof liveSearch==='function';
+  const constraints={category,userText,term,target:identity&&typeof identity==='object'?identity:extractTitleEvidence(term),boundedMin,boundedMax,
+    exclusions:Array.isArray(exclusions)?exclusions:[]};
   let fresh=[], providerFailed=false;
   const finalLive=(items,dbQueries=0)=>{
     Object.defineProperty(items,'_queries',{value:dbQueries,enumerable:false});
@@ -183,7 +219,8 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
           providerFailed=true;
       }
     }catch{providerFailed=true;}
-    if(fresh.length>=LIVE_POOL_TARGET)return finalLive(fresh,0);
+    // Hybrid always fuses all channels; only live-first may stop here.
+    if(!hybrid && fresh.length>=LIVE_POOL_TARGET)return finalLive(fresh,0);
   }
   let queries=0;
   // Stable, privacy-safe provenance for DB-first as well as live-first.
@@ -203,7 +240,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     const condition=method==='eq'
       ? builder.eq(column,fragment) : builder.ilike(column,'%'+fragment+'%');
     queries++;
-    const response=await ordered(condition).limit(40);
+    const response=await ordered(withExclusions(condition,notWords)).limit(40);
     if(response.error) throw new Error('Catalog read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
@@ -211,7 +248,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     let builder=source.from('products').select('*');
     for(const [column,fragment] of filters) builder=builder.ilike(column,'%'+fragment+'%');
     queries++;
-    const response=await ordered(builder).limit(40);
+    const response=await ordered(withExclusions(builder,notWords)).limit(40);
     if(response.error) throw new Error('Catalog constrained read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
@@ -220,7 +257,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     builder=builder.gte('lprice',boundedMin);
     if(boundedMax != null) builder=builder.lte('lprice',boundedMax);
     queries++;
-    const response=await ordered(builder).limit(40);
+    const response=await ordered(withExclusions(builder,notWords)).limit(40);
     if(response.error) throw new Error('Catalog bounded-price read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
@@ -321,7 +358,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       if(boundedMin!=null)builder=builder.gte('lprice',boundedMin);
       if(boundedMax!=null)builder=builder.lte('lprice',boundedMax);
       queries++;
-      const found=await ordered(builder).limit(40);
+      const found=await ordered(withExclusions(builder,notWords)).limit(40);
       if(found.error)throw new Error('Catalog facet lookup failed');
       add(Array.isArray(found.data)?found.data:[]);
     }
@@ -334,14 +371,17 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       (boundedMin==null || Number(r.lprice)>=boundedMin) &&
       (boundedMax==null || Number(r.lprice)<=boundedMax) ? 100 : 0;
     const modelPriority=r=>modelEvidence(r.title,userText||term).ok ? 50 : 0;
+    // v3.4: listing guards here too, so cables, bags, carrier deals and store
+    // pages cannot occupy the 80-row shortlist ahead of real devices.
     const eligible=category?rows.filter(row=>
-      productTypeMatches(row.title,category,userText||term) && brandMatches(row.title,userText||term,category)):rows;
+      productTypeMatches(row.title,category,userText||term) && brandMatches(row.title,userText||term,category) &&
+      !listingGuard({title:row.title,price:Number(row.lprice)},{category,userText:userText||term})):rows;
     const out=eligible.sort((a,b)=>(budgetPriority(b)+modelPriority(b)-budgetPriority(a)-modelPriority(a))
       || evidenceScore(b,userText||term,target)-evidenceScore(a,userText||term,target)
       || evidenceScore(b,term,target)-evidenceScore(a,term,target))
-      .slice(0,80).map(row=>({
-        ...mapper(row), category: row.keyword||'', _source:'db', shippingFee:null
-      }));
+      .slice(0,80).map(row=>dbItem(row,mapper));
+    // Hybrid keeps the exact DB-first keyword list (same order) as one channel.
+    if(hybrid)return out;
     if(liveFirst){
       // DB snapshots supplement only verified, in-range matches. Do not let a
       // stale catalog row replace a provider-observed price for the same SKU.
@@ -351,6 +391,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     }
     return finalDb(out);
   }
+  if(hybrid)return [];
   // In live-first mode do not consume a second provider request after the DB
   // fallback. If both sources fail, surface an outage, not fabricated absence.
   if(liveFirst){
@@ -365,6 +406,68 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
   if(!result || result.failed) throw new Error('Product search provider unavailable');
   return Array.isArray(result.items) ? result.items : [];
   };
+  if(hybrid){
+    // Keyword and vector channels run concurrently; the vector channel has a
+    // deadline and never throws (status disabled|ok|empty|error|timeout).
+    const [kw,vr]=await Promise.all([
+      lookupDb().then(items=>({ok:true,items}),error=>({ok:false,error,items:[]})),
+      runVectorSearch(vectorSearch,{term,userText,category,identity:constraints.target,
+        minPrice:boundedMin,maxPrice:boundedMax},{timeoutMs:vectorTimeoutMs})
+    ]);
+    const mapper=mapRow || require('./_shop').toClientProduct;
+    const vectorItems=(vr.rows||[]).filter(r=>r&&r.product_id&&r.title).map(r=>dbItem(r,mapper));
+    // SAME filters as a keyword hit (type + brand) PLUS the strict request
+    // match (price bounds, used, model codes, exact identity, wireless): a
+    // similar-but-different model (S25 Edge for S25) cannot enter here.
+    const vectorEligible=vectorItems.filter(item=>
+      (!category || (productTypeMatches(item.title,category,userText||term) && brandMatches(item.title,userText||term,category))) &&
+      matchRequested(item,constraints));
+    // (matchRequested already applies listingGuard for categorized requests)
+    const keyword=kw.items||[];
+    const keywordKeys=new Set(keyword.map(identityKey).filter(Boolean));
+    const vectorOnly=vectorEligible.filter(x=>!keywordKeys.has(identityKey(x)));
+    // The DB keyword channel failed and nothing else produced a candidate:
+    // an outage (503), never a fabricated «no such product».
+    if(!kw.ok && !fresh.length && !vectorEligible.length) throw kw.error;
+    let fused;
+    if(hybridMode==='fuse'){
+      fused=rrfFuse([['live',fresh],['keyword',keyword],['vector',vectorEligible]],{k:rrfK,weights:{vector:vectorWeight}});
+    }else{
+      // Expansion: keyword/live order untouched, vector-only candidates after.
+      fused=rrfFuse([['live',fresh],['keyword',keyword]],{k:rrfK});
+      const have=new Set(fused.map(identityKey));
+      for(const item of vectorEligible){
+        const key=identityKey(item);
+        if(!key||have.has(key))continue;
+        have.add(key);
+        const copy={...item};
+        Object.defineProperty(copy,'_via',{value:['vector'],enumerable:false});
+        fused.push(copy);
+      }
+      // a keyword hit the vector channel also found keeps its place but is tagged
+      const vectorKeys=new Set(vectorEligible.map(identityKey));
+      for(const item of fused)if(vectorKeys.has(identityKey(item))&&item._via&&!item._via.includes('vector'))item._via.push('vector');
+    }
+    const merged=mergeCandidatePools(fused,[],80);
+    const channel={live:0,keyword:0,vector:0,multi:0};
+    for(const x of fused){
+      const via=x._via||[];
+      if(via.length>1)channel.multi++;
+      for(const name of via)channel[name]=(channel[name]||0)+1;
+    }
+    Object.defineProperty(merged,'_queries',{value:queries+vr.queries,enumerable:false});
+    Object.defineProperty(merged,'_retrieval',{value:{
+      strategy:'hybrid',
+      providerSearchBatches:liveAllowed?1:0, providerFailed,
+      liveEligible:fresh.length, keywordEligible:keyword.length, keywordStatus:kw.ok?'ok':'error',
+      vectorStatus:vr.status, vectorCandidates:vectorItems.length, vectorEligible:vectorEligible.length,
+      vectorOnlyEligible:vectorOnly.length, vectorRejected:vectorItems.length-vectorEligible.length, vectorMs:vr.ms,
+      dbEligible:merged.filter(x=>x._source==='db').length, dbQueries:queries, vectorQueries:vr.queries,
+      fusion:hybridMode==='fuse'?'rrf':'expand', rrfK, vectorWeight:hybridMode==='fuse'?vectorWeight:null, byChannel:channel,
+      bySource:merged.reduce((counts,x)=>{const s=x._source||'unknown';counts[s]=(counts[s]||0)+1;return counts;},{})
+    },enumerable:false});
+    return merged;
+  }
   try { return await lookupDb(); }
   catch(error) {
     // When live seller data is valid but the DB fallback is unavailable,
@@ -404,9 +507,6 @@ async function loadProductsByIds(ids, { db, mapRow } = {}) {
     const key=String(row.mall)+':'+String(row.product_id);
     if(!index.has(key))index.set(key,row);
   }
-  return wanted.filter(id => index.has(id)).map(id => {
-    const row = index.get(id);
-    return { ...mapper(row), category: row.keyword || '', _source: 'db', shippingFee: null };
-  });
+  return wanted.filter(id => index.has(id)).map(id => dbItem(index.get(id), mapper));
 }
 module.exports={searchCatalog,safeTerm,primaryAnchor,evidenceScore,loadProductsByIds,likeTokens};
