@@ -54,9 +54,12 @@ jobs:
       - name: Security — production dependency audit (fail on high)
         run: npm audit --omit=dev --audit-level=high
       - name: Security — no credentials in the v3.4 tree
+        # Real secret shapes only (placeholders such as 'postgres://u:p@…' in
+        # tests and older 'sk-or-v1-OFFLINE-…' fixtures are not secrets).
         run: |
-          ! git grep -nE "(sk-[A-Za-z0-9_-]{20,}|postgres(ql)?://[^\s'\"]+:[^\s'\"@]+@|AKIA[0-9A-Z]{16})" -- api scripts tools db docs reports .github \
-            ':!*.lock' ':!package-lock.json' ':!tools/ai-eval/package-lock.json'
+          ! git grep -nE "(sk-(proj-)?[A-Za-z0-9_-]{40,}|npg_[A-Za-z0-9]{8,}|postgres(ql)?://[^[:space:]'\"]+:[^[:space:]'\"@]{12,}@|AKIA[0-9A-Z]{16})" -- \
+            'api/_ai-v34-*' 'scripts/ai-v34' 'scripts/test-ai-v34-*' 'tools/ai-eval/*.js' 'tools/ai-eval/*.cjs' 'tools/ai-eval/*.yaml' \
+            'tools/ai-eval/providers' 'tools/ai-eval/assertions' 'tools/ai-eval/tests' 'db/isolated' 'docs/ai-v34-*' 'reports/ai-v34-evaluation' .github/workflows
       - name: Regression — AI v3 / v3.1 / v3.2 / v3.3 suites
         run: |
           set -e
