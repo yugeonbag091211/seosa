@@ -1,0 +1,99 @@
+# SEOSA AI v3.4 quality gate. Offline only: no secrets, no seller API, no
+# GPT, no Neon. It does NOT deploy anything. To block deploys on failure,
+# mark the "ai-v34-gate" job as a REQUIRED status check in the branch
+# protection of main (repository setting — not changed by this file).
+name: ai-v34-eval
+
+on:
+  pull_request:
+    paths:
+      - 'api/_ai-v3*.js'
+      - 'api/_ai-v31-*.js'
+      - 'api/_ai-v32-*.js'
+      - 'api/_ai-v33-*.js'
+      - 'api/_ai-v34-*.js'
+      - 'api/_price.js'
+      - 'scripts/test-ai-v3*.js'
+      - 'scripts/ai-v34/**'
+      - 'tools/ai-eval/**'
+      - 'db/isolated/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ai-v34-eval.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-v34-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-v34-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Belt and braces: nothing here may reach a paid or production service.
+      SEOSA_DB_READONLY: '1'
+      OPENAI_API_KEY: ''
+      COUPANG_ACCESS_KEY: ''
+      ADPICK_API_KEY: ''
+      PROMPTFOO_DISABLE_TELEMETRY: '1'
+      PROMPTFOO_DISABLE_UPDATE: '1'
+      PROMPTFOO_DISABLE_SHARING: '1'
+      PROMPTFOO_DISABLE_REMOTE_GENERATION: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install app dependencies (lockfile)
+        run: npm ci --no-audit --no-fund
+      - name: Security — production dependency audit (fail on high)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Security — no credentials in the v3.4 tree
+        run: |
+          ! git grep -nE "(sk-[A-Za-z0-9_-]{20,}|postgres(ql)?://[^\s'\"]+:[^\s'\"@]+@|AKIA[0-9A-Z]{16})" -- api scripts tools db docs reports .github \
+            ':!*.lock' ':!package-lock.json' ':!tools/ai-eval/package-lock.json'
+      - name: Regression — AI v3 / v3.1 / v3.2 / v3.3 suites
+        run: |
+          set -e
+          for t in test-ai-v3 test-ai-v3-identity test-ai-v3-catalog test-ai-v31-engine test-ai-v31-verdict test-ai-v32-rootcause \
+            test-ai-v32-fresh50-repairs-20261110 test-ai-v32-h40-retrieval-20261110 test-ai-v32-holdout-fixes-20261109 \
+            test-ai-v32-launch-gate-20261110 test-ai-v32-niche-engine-20261110 test-ai-v32-niche-guardrails-20261110 \
+            test-ai-v33-f11-live-only-20261110 test-ai-v33-feedback-20261112 test-ai-v33-full-engine-20261110 \
+            test-ai-v33-improvement-20261112 test-ai-v33-live-first-20261110 test-ai-v33-no-result-evidence-20261110; do
+            echo "::group::$t"; node scripts/$t.js; echo "::endgroup::"
+          done
+      - name: fast-check — properties (fixed seed, >= 3,500 generated inputs)
+        run: node scripts/test-ai-v34-properties.js --record
+      - name: Model accuracy, judges, hybrid/pgvector, feedback privacy
+        run: |
+          set -e
+          node scripts/test-ai-v34-oracle.js
+          node scripts/test-ai-v34-hybrid.js
+          node scripts/test-ai-v34-feedback.js
+      - name: Time-bomb check — same suites with the clock moved +30 days
+        run: |
+          set -e
+          for t in test-ai-v31-engine test-ai-v33-full-engine-20261110 test-ai-v34-properties test-ai-v34-hybrid; do
+            SEOSA_TEST_CLOCK_SHIFT_DAYS=30 node --require ./scripts/ai-v34/clock-shift.js scripts/$t.js
+          done
+      - name: Promptfoo — offline smoke on the committed fixture (no network)
+        run: |
+          npm ci --prefix tools/ai-eval --no-audit --no-fund
+          node tools/ai-eval/run-eval.js --config promptfooconfig.fixture.yaml --out "$RUNNER_TEMP/promptfoo-fixture.json"
+          node -e "const s=require(process.env.RUNNER_TEMP+'/promptfoo-fixture.summary.json'); for(const [p,t] of Object.entries(s.byProvider)){ if(t.ERROR){console.error(p,'errors');process.exit(1)} } console.log(JSON.stringify(s.byProvider))"
+      - name: Cost/privacy guard — offline runs reach no model, seller or other API
+        run: |
+          node -e "const s=require(process.env.RUNNER_TEMP+'/promptfoo-fixture.summary.json'); if(s.nonTelemetryAttempts.length){console.error('blocked non-telemetry egress:',s.nonTelemetryAttempts);process.exit(1)} console.log('paid/model/seller calls: 0; blocked promptfoo telemetry attempts:',s.networkBlockedAttempts)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-v34-eval
+          path: |
+            reports/ai-v34-evaluation/fastcheck-failures.json
+            ${{ runner.temp }}/promptfoo-fixture*.json
+          retention-days: 14

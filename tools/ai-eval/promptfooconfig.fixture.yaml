@@ -1,0 +1,21 @@
+# CI smoke: committed synthetic fixture (26 rows, 8 questions). Wiring check
+# of provider + both judges; NOT a quality number. Run via run-eval.js.
+description: SEOSA AI v3.4 CI fixture smoke (offline)
+prompts:
+  - '{{question}}'
+providers:
+  - id: file://providers/seosa-engine.js
+    label: v34-db-first
+    config: { engine: v34, strategy: db-first }
+  - id: file://providers/seosa-engine.js
+    label: v34-hybrid
+    config: { engine: v34, strategy: hybrid }
+tests: file://tests/v34-tests.js
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://assertions/judges.js:v34Oracle
+      metric: v34_oracle
+    - type: javascript
+      value: file://assertions/judges.js:v2Evaluator
+      metric: v2_evaluator

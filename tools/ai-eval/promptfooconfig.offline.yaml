@@ -1,0 +1,26 @@
+# SEOSA AI v3.4 — Promptfoo OFFLINE evaluation (frozen V001-V100).
+# No network: run through tools/ai-eval/run-eval.js, which disables Promptfoo
+# telemetry/sharing/update checks and preloads network-guard.cjs (every
+# non-loopback connection is blocked and counted).
+description: SEOSA AI v3.4 offline - frozen 100 questions, scripted planner, snapshot catalog
+prompts:
+  - '{{question}}'
+providers:
+  - id: file://providers/seosa-engine.js
+    label: v33-db-first
+    config: { engine: v33, strategy: db-first }
+  - id: file://providers/seosa-engine.js
+    label: v34-db-first
+    config: { engine: v34, strategy: db-first }
+  - id: file://providers/seosa-engine.js
+    label: v34-hybrid
+    config: { engine: v34, strategy: hybrid }
+tests: file://tests/v34-tests.js
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://assertions/judges.js:v34Oracle
+      metric: v34_oracle
+    - type: javascript
+      value: file://assertions/judges.js:v2Evaluator
+      metric: v2_evaluator

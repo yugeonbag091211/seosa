@@ -1,0 +1,23 @@
+# SEOSA AI v3.4 — isolated Preview E2E (real GPT). NOT executed in the
+# 2026-11-12 session (NOT_MEASURED): it needs an isolated Preview deployment
+# (own DB branch + quota store, SEOSA_DB_READONLY semantics respected) and
+# the user's go-ahead. The provider refuses Production and missing caps.
+# Note: the GRADING is the same frozen offline judges; the Preview's catalog
+# differs from the frozen snapshot, so card existence/price checks against
+# the snapshot will mark newly-collected products as «not in corpus» — use
+# this config only with a corpus snapshot taken from that Preview's DB branch.
+description: SEOSA AI v3.4 isolated Preview E2E (guarded)
+prompts:
+  - '{{question}}'
+providers:
+  - id: file://providers/seosa-preview-http.js
+    label: preview-e2e
+tests: file://tests/v34-tests.js
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://assertions/judges.js:v34Oracle
+      metric: v34_oracle
+    - type: javascript
+      value: file://assertions/judges.js:v2Evaluator
+      metric: v2_evaluator
