@@ -107,7 +107,9 @@
     "test:volatile": "node scripts/test-price-volatility.js && node scripts/test-volatile-report.js && node scripts/test-volatile-schedule.js",
     "eval:clusters": "node scripts/report-ai-eval-clusters.js",
     "eval:experience": "node scripts/report-ai-experience.js",
-    "test:ai-holdout-3600": "node scripts/eval-ai-holdout-3600.js"
+    "test:ai-holdout-3600": "node scripts/eval-ai-holdout-3600.js",
+    "test:ai-v34": "node scripts/test-ai-v34-oracle.js && node scripts/test-ai-v34-regressions.js && node scripts/test-ai-v34-properties.js && node scripts/test-ai-v34-hybrid.js && node scripts/test-ai-v34-feedback.js",
+    "eval:ai-v34": "node scripts/ai-v34/eval/run-offline.js"
   },
   "keywords": [],
   "author": "",

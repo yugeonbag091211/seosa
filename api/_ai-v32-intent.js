@@ -64,7 +64,9 @@ function parseBudget(text) {
     const m = floor[floor.length - 1];
     out.min = won(m[1], m[2]);
   }
-  if (out.min != null && out.max != null && out.min > out.max) out.min = null;
+  // v3.4 (V078): keep the old output (min dropped) but report the contradiction
+  // so the engine can ask instead of searching with half of the condition.
+  if (out.min != null && out.max != null && out.min > out.max) { out.conflict = { min: out.min, max: out.max }; out.min = null; }
   return out;
 }
 
@@ -97,7 +99,7 @@ function analyzeUtterance(text) {
 // ── exclusions ────────────────────────────────────────────────────────
 const GENERIC = new Set(['제품', '상품', '것', '거', '모델', '판매글', '글', '조건', '건', '종류', '물건', '본체', '판매', '옵션', '구성', '파는', '파는건']);
 const PARTICLE = /(?:은|는|이|가|을|를|도|만|의|으로|로|이나|나|이랑|랑|과|와)$/;
-const { brandOfWord } = require('./_ai-v32-brands');
+const { brandOfWord, BRANDS } = require('./_ai-v32-brands');
 const { isAccessoryWord } = require('./_ai-v32-listing');
 const CATEGORY_NOUN = /^(?:pc|컴퓨터|스피커|헤드폰|헤드셋|이어폰|노트북|모니터|키보드|마우스|청소기|공기청정기|태블릿|스마트폰|휴대폰|시계|스마트워치|외장하드|기타)$/i;
 const SYNONYMS = [
@@ -166,7 +168,12 @@ function groundExclusions(proposed, utterance, prior = []) {
 function exclusionVariants(term) {
   const f = flat(term);
   const group = SYNONYMS.find(g => g.some(w => flat(w) === f));
-  return group ? [...new Set(group.map(flat))] : [f];
+  // v3.4 (V079): an excluded BRAND covers its company aliases — «로지텍은 빼고»
+  // must also exclude a title that only says «Logitech».
+  const brand = brandOfWord(term);
+  const entry = brand ? BRANDS.find(e => e[0] === brand) : null;
+  const aliases = entry ? entry[1].map(flat) : [];
+  return [...new Set([...(group ? group.map(flat) : [f]), ...aliases])];
 }
 function excludedBy(title, exclusions) {
   const t = flat(title);

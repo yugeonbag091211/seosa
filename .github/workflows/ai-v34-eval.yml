@@ -73,12 +73,13 @@ jobs:
         run: |
           set -e
           node scripts/test-ai-v34-oracle.js
+          node scripts/test-ai-v34-regressions.js
           node scripts/test-ai-v34-hybrid.js
           node scripts/test-ai-v34-feedback.js
       - name: Time-bomb check — same suites with the clock moved +30 days
         run: |
           set -e
-          for t in test-ai-v31-engine test-ai-v33-full-engine-20261110 test-ai-v34-properties test-ai-v34-hybrid; do
+          for t in test-ai-v31-engine test-ai-v33-full-engine-20261110 test-ai-v34-properties test-ai-v34-hybrid test-ai-v34-regressions; do
             SEOSA_TEST_CLOCK_SHIFT_DAYS=30 node --require ./scripts/ai-v34/clock-shift.js scripts/$t.js
           done
       - name: Promptfoo — offline smoke on the committed fixture (no network)

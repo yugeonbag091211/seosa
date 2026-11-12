@@ -165,7 +165,9 @@ function featureContext(message='',features={}) {
 function stripTaxonomy(title) {
   return String(title||'').split(/\/(?:디지털기기|pc\/주변기기|생활\/가전)/i)[0];
 }
-const PARTS=/(?:케이스|보호필름|보호\s*유리|충전기|거치대|스탠드|브라켓|어댑터|파우치|커버|스트랩|리필|펜촉|키캡|호환\s*케이스|스티커|교체용|이어팁|이어패드|필름\s*세트|필터\s*(?:세트|호환|교체)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰|낱개)|낱개\s*(?:유닛|이어버드|이어폰)|유닛\s*단품)/i;
+// v3.4 (V096): mouse feet/skates/bungees/pads and grip tape are accessories
+// even when the title lists the mouse models they fit («… G102 G304»).
+const PARTS=/(?:마우스\s*(?:피트|스케이트|번지|패드)|그립\s*테이프|미끄럼\s*방지\s*테이프|케이스|보호필름|보호\s*유리|충전기|거치대|스탠드|브라켓|어댑터|파우치|커버|스트랩|리필|펜촉|키캡|호환\s*케이스|스티커|교체용|이어팁|이어패드|필름\s*세트|필터\s*(?:세트|호환|교체)|(?:왼쪽|오른쪽|좌측|우측|한쪽)\s*(?:단품|유닛|이어버드|이어폰|낱개)|낱개\s*(?:유닛|이어버드|이어폰)|유닛\s*단품)/i;
 // v3.4: AirPods Max is an over-ear headphone, not an earphone (hybrid run
 // showed «애플 에어팟 맥스» as an «애플 이어폰» card).
 const EARPIECE=/(?:이어폰|이어버드|earbuds|in[\s-]?ear|에어팟(?!\s*(?:맥스|max))|airpods(?!\s*max)|갤럭시\s*버즈|galaxy\s*buds|이어\s*클립|이어클립|골전도|넥밴드)/i;

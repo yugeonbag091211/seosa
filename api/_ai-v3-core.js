@@ -22,6 +22,7 @@ const { parseBudget, analyzeUtterance, userExclusions, groundExclusions, exclude
 // v3.4: the site's single «may this price be shown as current?» rule.
 const { priceFreshness, isRecommendable, maxPriceAgeDays, clockOf } = require('./_ai-v34-freshness');
 const { listingGuard } = require('./_ai-v34-listing-guards');
+const { brandOfWord } = require('./_ai-v32-brands');
 const MAX_CANDIDATE_SCAN = 200;
 const clean = (x, n = 120) => String(x == null ? '' : x).normalize('NFKC')
   .replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
@@ -145,7 +146,14 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   // "그중 SSD 제품만" in an external-storage conversation means external SSD.
   if(category==='외장하드'&&/\bssd\b/i.test(utterance)&&!/\bhdd\b/i.test(utterance))features.externalSsd=true;
   const mentionedBrand=brandsFromUser(utterance,category)[0]||'';
-  const brandTerm=mentionedBrand ? mentionedBrand : changedType ? '' : clean(prev.brandTerm,35);
+  // v3.4 (V079): the same brand asked for AND excluded in one utterance is a
+  // contradiction; a CARRIED brand that the user now excludes is dropped
+  // (they changed their mind) instead of being required and excluded at once.
+  const excludedNow=userExclusions(utterance);
+  const sameBrand=(a,b)=>!!a&&!!b&&(flat(a)===flat(b)||(brandOfWord(a)&&brandOfWord(a)===brandOfWord(b)));
+  const brandExcludedConflict=!!mentionedBrand&&excludedNow.some(x=>sameBrand(x,mentionedBrand));
+  let brandTerm=mentionedBrand ? mentionedBrand : changedType ? '' : clean(prev.brandTerm,35);
+  if(!mentionedBrand&&brandTerm&&excludedNow.some(x=>sameBrand(x,brandTerm)))brandTerm='';
   // Exclusions are grounded in the user's words; GPT may only restate them.
   const priorExclusions=(Array.isArray(prev.exclusions)?prev.exclusions:[])
     .map(x=>clean(x,55)).filter(x=>x&&!LOOKS_LIKE_ID.test(x));
@@ -163,7 +171,7 @@ function sanitizePlan(input, prev = {}, utterance = '') {
   if(budget.band){minPrice=budget.min;maxPrice=budget.max;maxExclusive=false;}
   // v3.4 (V078): a floor above the ceiling stated IN THE SAME utterance is a
   // contradiction to ask about — never silently drop one side and search.
-  const budgetConflict=!budget.band&&budget.min!=null&&budget.max!=null&&budget.min>budget.max;
+  const budgetConflict=!budget.band&&budget.conflict?budget.conflict:null;
   if (minPrice != null && maxPrice != null && minPrice > maxPrice) minPrice = null;
   const mallOnly = clean(o.mallOnly || prev.mallOnly, 35);
   const exactModel = clean(o.exactModel, 80);
@@ -183,7 +191,8 @@ function sanitizePlan(input, prev = {}, utterance = '') {
     usedPreferred: newOnly ? false : usedRequested || (!changedType && !!prev.usedPreferred),
     mode: o.mode === 'none' ? 'none' : o.mode === 'compare' ? 'compare' : 'recommend',
     budgetSource: budget.max!=null||budget.min!=null ? 'user' : o.maxPrice!=null ? 'model' : prev.maxPrice!=null ? 'prior' : 'none',
-    ...(budgetConflict ? { conflict: { kind: 'budget', min: budget.min, max: budget.max } } : {})
+    ...(budgetConflict ? { conflict: { kind: 'budget', min: budgetConflict.min, max: budgetConflict.max } }
+      : brandExcludedConflict ? { conflict: { kind: 'brand_excluded', brand: mentionedBrand } } : {})
   };
 }
 function validateCandidates(plan, raw, { limit = MAX_RESULTS, now, maxAgeDays } = {}) {
@@ -373,6 +382,11 @@ function stateFrom(plan, presented) {
     ...(presented ? { presentedProductIds: presented } : {})
   };
 }
+// 을/를 by the final syllable's batchim (Latin names: 를).
+function objectParticle(word) {
+  const c = String(word || '').trim().slice(-1).charCodeAt(0);
+  return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 !== 0 ? '을' : '를';
+}
 // v3.4: one sentence that keeps a DB snapshot price from reading as a live quote.
 function priceBasisNote(cards) {
   const stored = cards.filter(c => c.priceFreshness === 'fresh' && c.priceAgeDays != null);
@@ -531,6 +545,8 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
     status: 200,
     answer: plan.conflict.kind === 'budget'
       ? money(plan.conflict.min) + ' 이상이면서 ' + money(plan.conflict.max) + ' 이하인 조건은 동시에 만족할 수 없어요. 예산 범위를 다시 알려주시면 찾아볼게요.'
+      : plan.conflict.kind === 'brand_excluded'
+      ? plan.conflict.brand + ' 제품을 찾으면서 ' + plan.conflict.brand + objectParticle(plan.conflict.brand) + ' 제외해 달라고 하셔서 조건이 서로 맞지 않아요. ' + plan.conflict.brand + ' 제품을 볼지, 다른 브랜드를 볼지 알려주세요.'
       : '요청에 ' + plan.conflict.maker + ' 제품과 ' + plan.conflict.lineOwner + ' 제품 라인이 함께 들어 있어 조건이 서로 맞지 않아요. 어느 브랜드의 상품을 찾으시는지 알려주세요.',
     cards: [], state: { ...stateFrom(plan), presentedProductIds: [] },
     stats: { searched: false, accepted: 0, provisional: 0, noResult: 'conflicting_conditions', conflict: plan.conflict.kind,

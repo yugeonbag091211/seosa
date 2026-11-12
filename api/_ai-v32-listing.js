@@ -24,8 +24,9 @@ const DEVICE_NOUNS = [
   ['스마트폰', /(?:스마트폰|휴대폰|핸드폰|자급제폰|(?:아이폰|iphone)\s*(?:\d{1,2}|se)(?:\s*(?:프로\s*맥스|pro\s*max|프로|pro|플러스|plus|미니|mini|e))?|갤럭시\s*(?:s|a|m|z|퀀텀|와이드|점프|버디)\s*\d{1,2}|갤럭시\s*(?:z\s*)?(?:폴드|플립)\s*\d|(?:픽셀|pixel)\s*\d{1,2}a?|sm-[saf]\d{3}[a-z]?)/gi],
   ['태블릿', /(?:태블릿(?:\s*pc)?|아이패드|ipad|갤럭시\s*탭|galaxy\s*tab|아이디어\s*탭|idea\s*tab|리전\s*탭|(?:레노버|샤오미|레드미|아이뮤즈|엠피지오)\s*(?:패드|탭|tab|pad)|redmi\s*pad|xiaomi\s*pad|뮤패드|엠탭)/gi],
   ['노트북', /(?:노트북|랩탑|laptop|맥북|macbook|(?<!\d\s?)그램(?!\s*(?:당|수))|갤럭시\s*북\s*\d?|galaxy\s*book|비보북|vivobook|젠북|zenbook|아이디어\s*패드|ideapad|씽크\s*패드|thinkpad|크롬북|chromebook|인스피론|inspiron|파빌리온|pavilion|엘리트북|elitebook|프로북|probook|울트라\s*pc)/gi],
-  ['헤드폰', /(?:헤드폰|헤드셋|headphones?|headset)/gi],
-  ['이어폰', /(?:이어폰|이어버드|earbuds?|에어팟|airpods|버즈(?=\s*\d|\s*(?:프로|pro|fe|라이브|live|플러스|\+|$|\s))|buds(?=\s*\d|\s*(?:pro|fe|live|\+)|\b)|\btws\b|넥밴드|골전도|이어\s*커프|이어\s*클립)/gi],
+  // v3.4: AirPods Max is an over-ear headphone (listed before the earphone row).
+  ['헤드폰', /(?:헤드폰|헤드셋|headphones?|headset|에어팟\s*(?:맥스|max)|airpods\s*max)/gi],
+  ['이어폰', /(?:이어폰|이어버드|earbuds?|에어팟(?!\s*(?:맥스|max))|airpods(?!\s*max)|버즈(?=\s*\d|\s*(?:프로|pro|fe|라이브|live|플러스|\+|$|\s))|buds(?=\s*\d|\s*(?:pro|fe|live|\+)|\b)|\btws\b|넥밴드|골전도|이어\s*커프|이어\s*클립)/gi],
   ['모니터', /(?:모니터(?!링)|monitor(?!ing))/gi],
   ['키보드', /(?:키보드|keyboard)/gi],
   ['마우스', /(?:마우스|mouse)/gi],
