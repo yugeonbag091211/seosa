@@ -12,6 +12,8 @@
 //   colour option             — «버즈3 프로 화이트» must not show another colour
 // They only REJECT candidates; they never add one.
 const { explicitType } = require('./_ai-v31-taxonomy');
+const { BRANDS, aliasRegex } = require('./_ai-v32-brands');
+const { brandsFromUser } = require('./_ai-v31-retrieval');
 
 // Minimum plausible price (KRW) of the DEVICE itself — far below real retail
 // so that genuine cheap/old models pass; only accessories and junk fail.
@@ -41,6 +43,20 @@ function mixedListing(title, category, userText = '') {
     // keyboard+mouse sets are handled by the taxonomy's own combo rules
     if (types.size >= 2 && !(types.size === 2 && types.has('키보드') && types.has('마우스'))) return true;
   }
+  // A slash joining two different manufacturer names describes a choice,
+  // collection or promotion, not one verifiable SKU. Do not treat the
+  // price of '삼성핏3/마샬 블루투스 스피커' as the price of either product.
+  const chunks=t.split(/\s*\/\s*/).map(x=>x.trim()).filter(Boolean);
+  // A compatibility tail ("Sony headphones / Samsung phone compatible")
+  // is not evidence of two products being sold together.
+  if(chunks.length>=2 && chunks.length<=5 &&
+      !chunks.slice(1).some(part=>/(?:호환|전용|연결|지원|compatible|for\s+)/i.test(part))){
+    const manufacturers=new Set(chunks.map(part=>{
+      const match=BRANDS.find(([,aliases])=>aliases.some(alias=>aliasRegex(alias).test(part)));
+      return match ? match[0] : '';
+    }).filter(Boolean));
+    if(manufacturers.size>=2)return true;
+  }
   // «공기청정기/가습기/건조기 믿고사는 …»: three short category words in a row
   const m = t.match(/([가-힣]{2,6})\s*\/\s*([가-힣]{2,6})\s*\/\s*([가-힣]{2,6})/);
   if (m && ![m[1], m[2], m[3]].every(w => COLOR_WORD.test(w)) && [m[1], m[2], m[3]].some(w => explicitType(w) === category))
@@ -49,6 +65,20 @@ function mixedListing(title, category, userText = '') {
 }
 const PUBLICATION = /(?:도서|서적|교재|교본|입문서|가이드북|안내서|매거진|잡지|e-?book|이북|고릅니다|하는\s*법|의\s*모든\s*것|완벽\s*가이드|따라\s*하기|체험\s*(?:키트|클래스)|원데이\s*클래스)/i;
 function publication(title) { return PUBLICATION.test(SOLD(title)); }
+// A seller can keyword-stuff an unrelated device with a sought-after brand:
+// '스마트헤드셋 V1000 ... 1위 헤드셋 소니 블루투스 헤드셋'.
+// Only reject when an actual device+model is named BEFORE the promotional
+// separator, while the requested maker appears ONLY in the keyword tail.
+function promotionalKeywordStuffing(title, category, userText='') {
+  const t=SOLD(title);
+  const marker=/(?:\b\d+\s*위(?=\s|$)|최저\s*가|추천\s*키워드|인기\s*검색어|태그\s*:)/i.exec(t);
+  if(!marker || marker.index<8)return false;
+  const head=t.slice(0,marker.index),tail=t.slice(marker.index+marker[0].length);
+  if(!explicitType(head)||!/(?<![a-z0-9])[a-z]{1,5}\d{2,5}(?![a-z0-9])/i.test(head))return false;
+  const brands=brandsFromUser(userText,category);
+  return brands.length>0 && brands.some(a=>aliasRegex(a).test(tail)) &&
+    !brands.some(a=>aliasRegex(a).test(head));
+}
 
 // Colour the user asked for (positively). Synonym groups.
 const COLORS = [
@@ -81,8 +111,9 @@ function listingGuard(item, { category, userText = '', checkColor = true } = {})
   if (publication(title)) return 'publication_not_device';
   if (carrierContract(title, category, userText)) return 'carrier_contract_price';
   if (mixedListing(title, category, userText)) return 'mixed_or_bundle_listing';
+  if (promotionalKeywordStuffing(title, category, userText)) return 'promotional_keyword_stuffing';
   if (implausiblyCheap(price, category)) return 'implausible_device_price';
   if (checkColor && colorMismatch(title, requestedColors(userText))) return 'color_unverified';
   return '';
 }
-module.exports = { listingGuard, implausiblyCheap, carrierContract, mixedListing, publication, requestedColors, colorMismatch, DEVICE_PRICE_FLOOR };
+module.exports = { listingGuard, implausiblyCheap, carrierContract, mixedListing, promotionalKeywordStuffing, publication, requestedColors, colorMismatch, DEVICE_PRICE_FLOOR };

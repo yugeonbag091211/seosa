@@ -363,6 +363,35 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       add(Array.isArray(found.data)?found.data:[]);
     }
   }
+  // Root cause V100: a broad recency-ordered LIMIT 40 can contain newer
+  // products with the right family/model OR capacity but no exact SKU. A
+  // stale-yet-exact product then never reaches priceFreshness(), so the engine
+  // incorrectly says "not found" instead of "price not recently checked".
+  // Run at most THREE narrower, read-only probes when the USER supplied a
+  // brand, a model code AND a storage capacity, and no eligible exact row was
+  // found. Price freshness is still enforced later by the final validator.
+  if (target.storageGb && modelClues(userText||term).length) {
+    const namedBrands=brandsFromUser(userText||term,category).slice(0,2);
+    const namedModel=modelClues(userText||term)[0]?.raw || '';
+    const capacity=Number(target.storageGb);
+    const capacities=capacity>=1024 && capacity%1024===0
+      ? [String(capacity/1024)+'TB',String(capacity/1024)+'테라']
+      : [String(capacity)+'GB',String(capacity)+'기가'];
+    const exactAlready=()=>rows.some(r=>
+      brandMatches(r.title,userText||term,category) &&
+      modelEvidence(r.title,userText||term).ok &&
+      checkListingIdentity(r.title,target,{category}).ok &&
+      !NON_DEVICE.test(r.title) &&
+      (!category || productTypeMatches(r.title,category,userText||term)));
+    if(namedBrands.length && namedModel && !exactAlready()){
+      let extra=0;
+      for(const alias of namedBrands)for(const size of capacities){
+        if(extra>=3 || exactAlready())break;
+        add(await lookupConjunction([['title',alias],['title',namedModel],['title',size]]));
+        extra++;
+      }
+    }
+  }
   if(rows.length) {
     const mapper=mapRow || require('./_shop').toClientProduct;
     // In-budget rows first whenever the user stated ANY bound (v3.1 only did

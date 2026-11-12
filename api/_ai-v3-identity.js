@@ -90,6 +90,11 @@ function namedScreen(text) {
   const ipadSize=String(text).match(/(?:아이패드|ipad)\s*(?:에어|air|프로|pro)?\s*(11|13)\s*(?=m[1-9]|wifi|wi-?fi)/i);
   if(ipadSize)values.push(Number(ipadSize[1]));
   if (values.length) return distinct(values);
+  // LG Gram shorthand: '그램 16' or '그램16 16Z90' identifies a
+  // 16-inch laptop, even when the seller omits the word '인치'.
+  // Do not infer a display size from arbitrary bare numbers or model codes.
+  const gram = String(text).match(/(?:그램|gram)\s*(1[4-9])(?=\s|$|[,./])/i);
+  if (gram) return Number(gram[1]);
   // v3.2: Korean listings often give the diagonal only in cm ("86.7cm",
   // "68.4cm"). Convert when no inch value is stated (one decimal).
   const cm = [...text.matchAll(/(?<![\d.])(\d{2,3}(?:\.\d{1,2})?)\s*cm(?![a-z])/gi)]
@@ -235,8 +240,15 @@ function requestedIdentity(text) {
   return trimFields({...before,...after});
 }
 function mergeRequested(previous, current, isNewSubject) {
-  return trimFields({...(!isNewSubject && previous && typeof previous==='object' ? previous : {}),
-    ...requestedIdentity(current)});
+  let next = requestedIdentity(current);
+  // A follow-up can omit the product family while changing a named model:
+  // '갤럭시탭 S10 FE+' -> 'S10 FE로' means the *base* FE, not FE+.
+  // Bind this shorthand only to the already established Galaxy Tab family.
+  if (!isNewSubject && previous?.family === 'galaxytab' && !next.family &&
+      /(?<![a-z0-9])s\s*\d{1,2}\s*fe(?:\s*\+|\s*plus|\s*플러스)?(?=\s|$|[가-힣,.])/i.test(String(current))) {
+    next = extractTitleEvidence('갤럭시 탭 ' + String(current));
+  }
+  return trimFields({...(!isNewSubject && previous && typeof previous==='object' ? previous : {}), ...next});
 }
 const IDENTITY_KEYS = ['family','series','variant','generation','storageGb','ramGb','screenInches','chip','network','caseMm'];
 function checkListingIdentity(listingTitle, requested, options = {}) {
