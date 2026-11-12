@@ -218,22 +218,27 @@ export function parseDeal(value: unknown): Deal | null {
 }
 
 export function parseAiAnswer(value: unknown): AiAnswer | null {
-  if (!isObj(value) || typeof value.text !== 'string') return null;
-  const change = isObj(value.recommendationChange) && value.recommendationChange.changed === true
-    ? str(value.recommendationChange.cause)
+  if (!isObj(value)) return null;
+  const normalized = typeof value.answer === 'string'
+    ? { ...value, text: value.answer, items: Array.isArray(value.cards) ? value.cards.filter(isObj).map(c => ({ ...c, lprice: c.price, collectedAt: c.priceObservedAt })) : [] }
+    : value;
+  if (typeof normalized.text !== 'string') return null;
+  const change = isObj(normalized.recommendationChange) && normalized.recommendationChange.changed === true
+    ? str(normalized.recommendationChange.cause)
     : null;
   return {
-    text: value.text,
-    items: parseProducts(value.items),
+    text: normalized.text,
+    items: parseProducts(normalized.items),
     // Plain strings, as the web renders them (public/index.html Chat.renderFollowups).
-    followups: Array.isArray(value.followups)
-      ? value.followups.map(f => str(f).slice(0, 60)).filter(Boolean).slice(0, 4)
+    followups: Array.isArray(normalized.followups)
+      ? normalized.followups.map(f => str(f).slice(0, 60)).filter(Boolean).slice(0, 4)
       : [],
-    guest: value.guest === true,
-    topProductId: str(value.topProductId),
-    topRecommendationRef: str(value.topRecommendationRef),
-    turnSig: str(value.turnSig),
-    convState: str(value.convState),
+    guest: normalized.guest === true,
+    topProductId: str(normalized.topProductId),
+    topRecommendationRef: str(normalized.topRecommendationRef),
+    turnSig: str(normalized.turnSig),
+    convState: str(normalized.convState),
+    v3State: isObj(normalized.state) ? str(normalized.state.token) : str(normalized.state),
     recommendationChanged: change,
   };
 }

@@ -150,5 +150,6 @@ export type AiAnswer = {
   turnSig: string;
   /** Server-signed conversation state (api/_convstate.js). Opaque; '' when the server sent none. */
   convState: string;
+  v3State: string;
   recommendationChanged: string | null;
 };

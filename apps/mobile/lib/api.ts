@@ -308,7 +308,7 @@ export function createApi(options: { baseUrl: string; fetchImpl?: typeof fetch }
      * The body comes from lib/ai.ts buildAiRequest, which carries selectors only.
      */
     async ask(body: unknown, token: string | undefined, signal?: AbortSignal): Promise<AiAnswer> {
-      const r = await request('/api/ai', { method: 'POST', body, token, timeoutMs: TIMEOUTS.ai, signal });
+      const r = await request('/api/ai?v=3', { method: 'POST', body, token, timeoutMs: TIMEOUTS.ai, signal });
       const answer = parseAiAnswer(r.body);
       if (!answer) throw new ApiError('invalid_response', '', r.status);
       return answer;

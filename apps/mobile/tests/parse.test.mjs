@@ -118,3 +118,15 @@ test('AI card keeps the server option/model label and the list row shows it (web
   const rowSource = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'components', 'ProductRow.tsx'), 'utf8');
   assert.match(rowSource, /product\.identityNote \?/, 'ProductRow renders identityNote when present');
 });
+
+test('v3 answer renders cards and carries the opaque state into the next request', async () => {
+  const { parseAiAnswer } = await import('../lib/parse.ts');
+  const { buildAiRequest } = await import('../lib/ai.ts');
+  const answer = parseAiAnswer({ answer: '상품을 찾았어요', cards: [{ productId: 'p1', mall: '쿠팡', title: '이어폰', price: 19000, link: 'https://example.com/item' }], state: { lastQuery: '이어폰', token: 'signed-state' } });
+  assert.equal(answer.text, '상품을 찾았어요');
+  assert.equal(answer.items[0].price, 19000);
+  assert.equal(answer.v3State, 'signed-state');
+  const next = buildAiRequest({ question: '그거 더 싸게', context: [], history: [], v3State: answer.v3State, sessionId: 'abcdefghijklmnop' });
+  assert.equal(next.state, 'signed-state');
+  assert.equal(next.sessionId, 'abcdefghijklmnop');
+});

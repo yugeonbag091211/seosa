@@ -72,6 +72,8 @@ export type AiRequestInput = {
   prevTopRef?: string;
   /** The last answer's convState, as received. */
   convState?: string;
+  v3State?: string;
+  sessionId?: string;
   /** What the user is looking at, like the web's `view`. */
   view?: { source: string; keyword?: string };
 };
@@ -85,5 +87,7 @@ export function buildAiRequest(input: AiRequestInput) {
     prevTop: input.prevTopProductId || '',
     prevTopRef: input.prevTopRef || '',
     convState: input.convState || '',
+    ...(input.v3State ? { state: input.v3State } : {}),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
   };
 }

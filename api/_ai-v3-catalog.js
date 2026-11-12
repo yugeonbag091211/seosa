@@ -160,7 +160,7 @@ function withExclusions(builder, words) {
 // hybridMode: 'expand' (default) keeps the tuned keyword order and appends
 //   vector-only verified candidates (recall expansion); 'fuse' = weighted RRF
 //   over live/keyword/vector (vectorWeight scales the vector list).
-async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category, userText, searchStrategy,
+async function searchCatalogRaw(query, { db, liveSearch, mapRow, identity, minPrice, maxPrice, category, userText, searchStrategy,
   vectorSearch, vectorTimeoutMs = 1500, rrfK = 60, exclusions, hybridMode = 'expand', vectorWeight = 1 } = {}) {
   const term=safeTerm(query);
   if(!term) return [];
@@ -506,6 +506,45 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     throw error;
   }
 }
+// One bounded batch for at most five exact seller options. Failures do not
+// affect the catalog: missing history is not evidence of a deal.
+async function attachPriceStats(items, db) {
+  const top = items.slice(0, 5).filter(x => x && x.productId && x.mall);
+  if (!top.length) return items;
+  let timer;
+  try {
+    const source = db || require('./_supabase');
+    const { exactOptionRows, statsFrom } = require('./_pricestat');
+    const { acceptedObservations, observedKstDate, kstToday } = require('./_price');
+    const ids = [...new Set(top.map(x => String(x.productId)))];
+    const cutoff = kstToday(new Date(Date.now() - 180 * 86400000));
+    const request = source.from('price_history')
+      .select('product_id,mall,vendor_item_id,price,recorded_date,recorded_at')
+      .in('product_id', ids).gte('recorded_date', cutoff)
+      .order('recorded_date', { ascending: false }).limit(1000);
+    const response = await Promise.race([request, new Promise(resolve => { timer = setTimeout(() => resolve(null), 1000); })]);
+    if (!response || response.error || !Array.isArray(response.data)) return items;
+    const today = kstToday(new Date());
+    for (const item of top) {
+      const rows = response.data.filter(r => String(r.product_id) === String(item.productId) && String(r.mall) === String(item.mall));
+      const chosen = acceptedObservations(exactOptionRows(rows, item.vendorItemId, item.mall === '쿠팡'));
+      const days = new Map();
+      for (const row of chosen) {
+        const date = observedKstDate(row), price = Number(row.price);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today || !Number.isSafeInteger(price) || price <= 0) continue;
+        if (!days.has(date) || price < days.get(date)) days.set(date, price);
+      }
+      const points = [...days].sort((a,b) => a[0].localeCompare(b[0])).map(([date, price]) => ({ date, price }));
+      const stat = statsFrom(points);
+      if (stat) item.stat = stat;
+    }
+  } catch (_) { /* Skip timing when evidence is unavailable. */ }
+  finally { clearTimeout(timer); }
+  return items;
+}
+async function searchCatalog(query, options = {}) {
+  return attachPriceStats(await searchCatalogRaw(query, options), options.db);
+}
 // v3.2: re-load the cards shown last turn by their IDs ("mall:product_id"),
 // read-only, so "그중 …" follow-ups re-validate the SAME products against the
 // new constraints instead of re-searching and hoping they come back.
@@ -538,4 +577,4 @@ async function loadProductsByIds(ids, { db, mapRow } = {}) {
   }
   return wanted.filter(id => index.has(id)).map(id => dbItem(index.get(id), mapper));
 }
-module.exports={searchCatalog,safeTerm,primaryAnchor,evidenceScore,loadProductsByIds,likeTokens};
+module.exports={searchCatalog,attachPriceStats,safeTerm,primaryAnchor,evidenceScore,loadProductsByIds,likeTokens};

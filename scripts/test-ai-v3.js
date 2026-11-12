@@ -84,12 +84,13 @@ function makeRes(){
     },{message:'이거 추천해줘'});
     assert.equal(out.cards.length,0);assert.equal(out.stats.searched,false);
   });
-  await test('feature flag defaults to OFF at endpoint',async()=>{
+  await test('feature flag defaults to legacy at endpoint',async()=>{
     const old=process.env.ENABLE_AI_V3;delete process.env.ENABLE_AI_V3;
     try{
       const res=makeRes();
-      await _handler({method:'POST',headers:{},socket:{remoteAddress:'127.0.0.1'},body:{message:'노트북'}},res);
-      assert.equal(res.code,404);
+      await _handler({method:'POST',headers:{},socket:{remoteAddress:'127.0.0.1'},body:{message:'노트북'}},res,
+        { legacyHandler: async (_req, response) => response.status(200).json({text:'legacy'}) });
+      assert.equal(res.code,200); assert.equal(res.payload.text,'legacy');
     }finally{if(old!==undefined)process.env.ENABLE_AI_V3=old}
   });
   await test('can run test endpoint with mocks but no network',async()=>{

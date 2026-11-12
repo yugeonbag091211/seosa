@@ -42,6 +42,8 @@ export default function Concierge() {
   const [prevTop, setPrevTop] = useState({ id: '', ref: '' });
   // Conditions said before the last MAX_HISTORY turns travel only in this signed token (lib/ai.ts).
   const [convState, setConvState] = useState('');
+  const [v3State, setV3State] = useState('');
+  const sessionId = useRef('s' + Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const abort = useRef<AbortController | null>(null);
@@ -71,6 +73,8 @@ export default function Concierge() {
       prevTopProductId: prevTop.id,
       prevTopRef: prevTop.ref,
       convState,
+      v3State,
+      sessionId: sessionId.current,
       view: { source: ctx.source === 'none' ? 'app' : `app-${ctx.source}`, keyword: ctx.keyword },
     });
     abort.current = new AbortController();
@@ -81,6 +85,7 @@ export default function Concierge() {
       setPrevTop({ id: answer.topProductId || prevTop.id, ref: answer.topRecommendationRef });
       // An answer without one (older server) keeps the last state.
       setConvState(s => answer.convState || s);
+      setV3State(s => answer.v3State || s);
     } catch (error) {
       if (error instanceof ApiError && error.kind === 'aborted') return;
       const expired = error instanceof ApiError && error.kind === 'unauthorized';
@@ -93,7 +98,7 @@ export default function Concierge() {
     }
   };
 
-  const reset = () => { abort.current?.abort(); inFlight.current = false; setMessages([]); setHistory([]); setPrevTop({ id: '', ref: '' }); setConvState(''); setSending(false); };
+  const reset = () => { abort.current?.abort(); inFlight.current = false; setMessages([]); setHistory([]); setPrevTop({ id: '', ref: '' }); setConvState(''); setV3State(''); setSending(false); };
 
   const lastAi = [...messages].reverse().find((m): m is Extract<Message, { role: 'ai' }> => m.role === 'ai');
   const followups = lastAi?.answer.followups.length ? lastAi.answer.followups : messages.length ? [] : starters;

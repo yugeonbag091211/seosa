@@ -18,7 +18,11 @@ const { canonicalCategory, canonicalName, comparisonFromUtterance, explicitType,
   isPart, mergeFeatures, featureContext, familyCategory } = require('./_ai-v31-taxonomy');
 const { brandMatches, brandsFromUser, modelEvidence, modelClues, linesFromUser, brandConflict } = require('./_ai-v31-retrieval');
 const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
-const { parseBudget, analyzeUtterance, userExclusions, groundExclusions, excludedBy, LOOKS_LIKE_ID } = require('./_ai-v32-intent');
+const { parseBudget, userExclusions, groundExclusions, excludedBy, LOOKS_LIKE_ID } = require('./_ai-v32-intent');
+const { classifyIntent } = require('./_ai-v3-classify');
+const { encodeState, decodeState, updateState } = require('./_ai-v3-state');
+const { loadProfile, updateProfile, applyProfile } = require('./_ai-v3-profile');
+const { kstToday } = require('./_price');
 // v3.4: the site's single «may this price be shown as current?» rule.
 const { priceFreshness, isRecommendable, maxPriceAgeDays, clockOf } = require('./_ai-v34-freshness');
 const { listingGuard } = require('./_ai-v34-listing-guards');
@@ -103,6 +107,7 @@ function normalize(item) {
     id: mall + ':' + id, title, price, mall, url,
     image: clean(item.image, 1000), category: clean(item.category || item.categoryName, 70),
     source: clean(item._source || item.source, 30), shipping,
+    stat: item.stat || null,
     // When this price was observed (DB rows); provider API/cache rows are «now».
     collectedAt: clean(item.collectedAt || item.collected_at, 40),
     used: USED.test(title), budgetTier: 'not_applicable',
@@ -373,7 +378,7 @@ function resultFromSelection(plan, candidates, choice) {
 }
 function stateFrom(plan, presented) {
   return {
-    lastQuery: plan.query, compareQuery: plan.compareQuery,
+    mode: plan.mode, lastQuery: plan.query, compareQuery: plan.compareQuery,
     category: plan.category, features: plan.features, brandTerm: plan.brandTerm,
     maxPrice: plan.maxPrice, maxExclusive: !!plan.maxExclusive, minPrice: plan.minPrice,
     exclusions: plan.exclusions, mallOnly: plan.mallOnly,
@@ -422,7 +427,7 @@ function sumRetrieval(runs) {
   if (vectorStatus.length) out.vectorStatus = vectorStatus.length === 1 ? vectorStatus[0] : 'mixed';
   return out;
 }
-async function createEngine({ planModel, decideModel, searchProducts, getUsage, loadDisplayed,
+async function runEngine({ planModel, decideModel, searchProducts, getUsage, loadDisplayed, classifyModel, chatResponse, profile,
   now: engineNow, maxPriceAgeDays: ageLimit }, request) {
   if (typeof planModel !== 'function' || typeof decideModel !== 'function' ||
     typeof searchProducts !== 'function') throw new Error('Missing dependency');
@@ -456,16 +461,24 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
         && (typeof v === 'string' || typeof v === 'number')
         && String(v).length <= 30)) : {}
   };
-  const intent = analyzeUtterance(message);
+  const intent = await classifyIntent(message, { ...prior, shownProducts: request._shownProducts }, classifyModel);
+  if (request._referenceTarget && !request._referenceMaxPrice && !intent.informational && !intent.thanks)
+    intent.referencesDisplayed = true;
   const usage = () => (typeof getUsage === 'function' ? { modelUsage: getUsage() } : {});
   const intentStats = () => ({ informational: intent.informational, thanks: intent.thanks,
     priceLookup: !!plan.priceLookup, followup: followupKind, wantsSingle: intent.wantsSingle,
     budgetSource: plan.budgetSource });
   let followupKind = null;
-  const rawPlan = await planModel({ message, history, state: prior });
+  const rawPlan = intent.mode === 'none' ? { mode: 'none' } : await planModel({ message, history, state: prior });
   const plan = sanitizePlan(rawPlan, prior, message);
+  if (request._referenceMaxPrice) {
+    plan.maxPrice = Math.min(plan.maxPrice || request._referenceMaxPrice, request._referenceMaxPrice);
+    plan.maxExclusive = false;
+    if (plan.minPrice && plan.minPrice > plan.maxPrice) plan.minPrice = null;
+  }
+  if (intent.mode === 'search' && plan.mode === 'none') plan.mode = 'recommend';
   // Compare different product kinds even if the model omitted compareQuery.
-  const twoKinds=comparisonFromUtterance(message);
+  const twoKinds=intent.mode === 'none' ? null : comparisonFromUtterance(message);
   if(twoKinds)Object.assign(plan,{mode:'compare',query:twoKinds.query,
     compareQuery:twoKinds.compareQuery,category:twoKinds.category,
     features:mergeFeatures({},message,true)});
@@ -509,6 +522,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
   // An explanation question ("OLED와 LCD 차이가 있니?", "aptX 원리") or thanks
   // never triggers a product search, whatever the planner said.
   if(!twoKinds && (intent.informational || intent.thanks) && !intent.referencesDisplayed) plan.mode='none';
+  Object.assign(plan, applyProfile(profile, plan));
   const explicitIdentity = requestedIdentity(message);
   const changedSubject = !!(explicitIdentity.family && prior.identity.family
     && explicitIdentity.family !== prior.identity.family);
@@ -552,13 +566,22 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
     stats: { searched: false, accepted: 0, provisional: 0, noResult: 'conflicting_conditions', conflict: plan.conflict.kind,
       intent: intentStats(), ...usage() }
   };
-  if (plan.mode === 'none') return {
-    status: 200,
-    answer: intent.informational
+  if (plan.mode === 'none') {
+    let answer = intent.informational
       ? '이 대화창은 상품 검색·가격 비교 전용이라 설명형 질문에는 상품을 추천하지 않아요. 원하시는 상품이나 예산을 알려주시면 찾아드릴게요.'
-      : '찾고 싶은 상품이나 쇼핑 관련 질문을 알려주세요.',
+      : '찾고 싶은 상품이나 쇼핑 관련 질문을 알려주세요.';
+    if (intent.systemInfo) answer = '저는 상품을 찾고 가격을 비교하는 서사 쇼핑 도우미예요. 찾으시는 상품을 말씀해 주세요.';
+    if (intent.clarification) answer = '어떤 도움이 필요하신지 조금 더 자세히 알려주세요.';
+    const productQuestion = !!explicitType(message) || !!requestedIdentity(message).family || /상품|제품|쇼핑|구매|가격|브랜드/.test(message);
+    if (intent.informational && !intent.thanks && !productQuestion && typeof chatResponse === 'function') {
+      try { const reply = await chatResponse(message); if (typeof reply === 'string' && reply.trim()) answer = reply.trim(); } catch (_) { /* Keep the static fallback. */ }
+    }
+    return {
+    status: 200,
+    answer,
     cards: [], state: prior, stats: { searched: false, accepted: 0, provisional: 0, intent: intentStats(), ...usage() }
-  };
+    };
+  }
   if (!plan.query || !plan.category || (plan.mode === 'compare' && !plan.compareQuery)) return {
     status: 200, answer: '찾으시는 상품 종류나 비교할 모델을 구체적으로 알려주세요.',
     // Keep what the user just stated (budget, exclusions) for the next turn.
@@ -663,6 +686,10 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
     : groups[0].slice(0, MAX_RESULTS);
   if(plan.priceLookup)candidatesAll=candidatesAll.slice().sort((a,b)=>a.price-b.price);
   else if(plan.usedPreferred&&!compare)candidatesAll=candidatesAll.slice().sort((a,b)=>Number(b.used)-Number(a.used));
+  else if(!compare && plan.preferredBrands && plan.preferredBrands.length)
+    candidatesAll=candidatesAll.slice().sort((a,b)=>
+      Number(plan.preferredBrands.some(brand=>brandMatches(b.title,brand,plan.category))) -
+      Number(plan.preferredBrands.some(brand=>brandMatches(a.title,brand,plan.category))));
   // Legacy state without displayed IDs (or no loader): "그중" means among the
   // cards ACTUALLY displayed previously; never let GPT redefine that set.
   const constrainToDisplayed=refersToDisplayed;
@@ -717,7 +744,19 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       else if(noResult==='provider_unavailable_db_checked')
         selection.answer='실시간 판매처 조회에 실패해 서사에 저장된 상품만 확인했는데, 그중에는 조건에 맞는 후보가 없어요. 상품이 없다는 뜻은 아니니 잠시 후 다시 시도해 주세요.';
     }
-  } else selection.answer+=priceBasisNote(selection.cards);
+  } else {
+    selection.answer+=priceBasisNote(selection.cards);
+    const byId = new Map(candidates.map(item => [item.id, item]));
+    const card = selection.cards.find(c => byId.get(c.productId)?.stat);
+    if (card) {
+      try {
+        const { assessTiming, timingMessage } = require('./_ai-v3-timing');
+        const item = byId.get(card.productId);
+        const advice = timingMessage(assessTiming(item, item.stat, kstToday(asOf)));
+        if (advice) selection.answer += ' ' + card.title + ': ' + advice;
+      } catch (_) { /* Timing is optional; never invent a conclusion. */ }
+    }
+  }
   return {
     status: 200, ...selection,
     state: stateFrom(plan, selection.cards.map(c=>c.productId)),
@@ -727,6 +766,60 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       ...(retrieval?{retrieval}:{}),
       intent: intentStats(), ...usage() }
   };
+}
+
+async function createEngine(deps, request = {}) {
+  // Only the route may supply userId, after verifying the session server-side.
+  const profile = deps.userId ? await loadProfile(deps.userId) : null;
+  const supplied = request.state == null ? request.prior : request.state;
+  const token = typeof supplied === 'string' ? supplied : supplied && supplied.token;
+  const decoded = token ? decodeState(token) : null;
+  // Never trust the cleartext fields beside an invalid or valid signed token.
+  const signingEnabled = !!(process.env.AI_V3_STATE_SECRET || process.env.AUTH_SECRET || process.env.SUPABASE_SECRET_KEY);
+  let saved = token ? (decoded && decoded.lastPlan || {}) :
+    !signingEnabled && supplied && typeof supplied === 'object' ? supplied : {};
+  const shown = decoded ? decoded.shownProducts : [];
+  const msg = clean(request.message, 800);
+  const reference = /그거|그것|이거|첫\s*번째|두\s*번째|세\s*번째|네\s*번째|1\s*번째|2\s*번째|3\s*번째|4\s*번째/.test(msg);
+  const ordinal = /(?:첫\s*번째|1\s*번째)/.test(msg) ? 0 : /(?:두\s*번째|2\s*번째)/.test(msg) ? 1 :
+    /(?:세\s*번째|3\s*번째)/.test(msg) ? 2 : /(?:네\s*번째|4\s*번째)/.test(msg) ? 3 : null;
+  const target = reference ? (ordinal != null ? shown[ordinal] : shown.length === 1 ? shown[0] : null) : null;
+  if (reference && shown.length && !target) {
+    const priorState = decoded || {};
+    const next = updateState(priorState, {});
+    const nextToken = encodeState(next);
+    return { status: 200, answer: '어떤 상품을 말씀하시는지 첫 번째나 두 번째처럼 알려주세요.', cards: [],
+      state: nextToken ? { ...saved, token: nextToken } : saved, stats: { searched: false } };
+  }
+  let referenceMaxPrice = null;
+  if (target && target.price > 1 && /(?:더\s*싸|저렴|싼\s*(?:것|거|상품|제품))/.test(msg)) {
+    referenceMaxPrice = target.price - 1;
+    saved = { ...saved, maxPrice: Math.min(saved.maxPrice || referenceMaxPrice, referenceMaxPrice), minPrice: null };
+  } else if (target && reference) {
+    saved = { ...saved, presentedProductIds: [target.id] };
+  }
+  const result = await runEngine({ ...deps, profile }, { ...request, state: saved, _shownProducts: shown,
+    _referenceTarget: !!target, _referenceMaxPrice: referenceMaxPrice });
+  if (result.status !== 200) return result;
+  const lastPlan = result.state || saved;
+  const budget = parseBudget(msg);
+  if (deps.userId && result.stats && result.stats.searched && result.cards && result.cards.length) {
+    await updateProfile(deps.userId, { brandTerm: brandsFromUser(msg, lastPlan.category)[0], category: lastPlan.category,
+      minPrice: budget.min, maxPrice: budget.max, explicitBudget: budget.min != null || budget.max != null });
+  }
+  const next = updateState(decoded, {
+    lastQuery: lastPlan.lastQuery, lastPlan, cards: result.cards,
+    userPreferences: {
+      budgetRange: { ...(budget.min != null ? { min: budget.min } : {}), ...(budget.max != null ? { max: budget.max } : {}) },
+      preferredBrands: brandsFromUser(msg, lastPlan.category), excludedItems: userExclusions(msg)
+    }
+  });
+  const nextToken = encodeState(next);
+  if (nextToken) {
+    const compatible = { ...lastPlan, token: nextToken };
+    result.state = Buffer.byteLength(JSON.stringify(compatible)) < 4096 ? compatible : { token: nextToken };
+  }
+  return result;
 }
 module.exports = { createEngine, sanitizePlan, validateCandidates, resultFromSelection,
   normalize, categoryOk, comparisonAnswer, compatibilityEvidence, priceLookupAnswer, USED };
