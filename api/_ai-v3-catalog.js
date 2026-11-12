@@ -186,13 +186,24 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     if(fresh.length>=LIVE_POOL_TARGET)return finalLive(fresh,0);
   }
   let queries=0;
+  // Stable, privacy-safe provenance for DB-first as well as live-first.
+  // Counts never imply a price or inventory freshness guarantee.
+  const finalDb=items=>{
+    Object.defineProperty(items,'_queries',{value:queries,enumerable:false});
+    Object.defineProperty(items,'_retrieval',{value:{
+      strategy:'db-first',providerSearchBatches:0,providerFailed:false,
+      liveEligible:0,dbEligible:items.length,dbQueries:queries,
+      bySource:{db:items.length}
+    },enumerable:false});
+    return items;
+  };
   const lookupDb = async () => {
   const lookup=async(column,method,fragment)=>{
     const builder=source.from('products').select('*');
     const condition=method==='eq'
       ? builder.eq(column,fragment) : builder.ilike(column,'%'+fragment+'%');
     queries++;
-    const response=await condition.limit(40);
+    const response=await ordered(condition).limit(40);
     if(response.error) throw new Error('Catalog read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
@@ -200,7 +211,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     let builder=source.from('products').select('*');
     for(const [column,fragment] of filters) builder=builder.ilike(column,'%'+fragment+'%');
     queries++;
-    const response=await builder.limit(40);
+    const response=await ordered(builder).limit(40);
     if(response.error) throw new Error('Catalog constrained read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
@@ -209,7 +220,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
     builder=builder.gte('lprice',boundedMin);
     if(boundedMax != null) builder=builder.lte('lprice',boundedMax);
     queries++;
-    const response=await builder.limit(40);
+    const response=await ordered(builder).limit(40);
     if(response.error) throw new Error('Catalog bounded-price read failed');
     return Array.isArray(response.data) ? response.data : [];
   };
@@ -338,8 +349,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
       const merged=mergeCandidatePools(fresh,stored);
       return finalLive(merged,queries);
     }
-    Object.defineProperty(out,'_queries',{value:queries,enumerable:false});
-    return out;
+    return finalDb(out);
   }
   // In live-first mode do not consume a second provider request after the DB
   // fallback. If both sources fail, surface an outage, not fabricated absence.
@@ -350,7 +360,7 @@ async function searchCatalog(query, { db, liveSearch, mapRow, identity, minPrice
   }
   // The Preview safety flag forbids remote quota-acquire RPCs. Never disable
   // it just to get a product result; return an honest empty shortlist instead.
-  if(process.env.SEOSA_DB_READONLY === '1' || typeof liveSearch !== 'function') return [];
+  if(process.env.SEOSA_DB_READONLY === '1' || typeof liveSearch !== 'function') return finalDb([]);
   const result=await liveSearch(term);
   if(!result || result.failed) throw new Error('Product search provider unavailable');
   return Array.isArray(result.items) ? result.items : [];
@@ -383,12 +393,17 @@ async function loadProductsByIds(ids, { db, mapRow } = {}) {
   for (const [mall, pids] of byMall) {
     let builder = source.from('products').select('*').eq('mall', mall);
     if (typeof builder.in === 'function') builder = builder.in('product_id', pids);
-    const response = await builder.limit(Math.max(4, pids.length * 3));
+    const response = await ordered(builder).limit(Math.max(4, pids.length * 3));
     if (response.error) throw new Error('Catalog id lookup failed');
     for (const row of response.data || []) if (pids.includes(String(row.product_id))) rows.push(row);
   }
   const mapper = mapRow || require('./_shop').toClientProduct;
-  const index = new Map(rows.map(r => [String(r.mall) + ':' + String(r.product_id), r]));
+  // Results are ordered newest-first; retain the newest row for duplicate SKU IDs.
+  const index = new Map();
+  for (const row of rows) {
+    const key=String(row.mall)+':'+String(row.product_id);
+    if(!index.has(key))index.set(key,row);
+  }
   return wanted.filter(id => index.has(id)).map(id => {
     const row = index.get(id);
     return { ...mapper(row), category: row.keyword || '', _source: 'db', shippingFee: null };

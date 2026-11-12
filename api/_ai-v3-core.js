@@ -520,7 +520,7 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
       minPrice: plan.minPrice,maxPrice: plan.maxPrice,category:groupCategory,
       userText:subject });
     if (!Array.isArray(raw)) throw new Error('Invalid search result');
-    if(raw._retrieval && raw._retrieval.strategy==='live-first')retrievalRuns.push(raw._retrieval);
+    if(raw._retrieval)retrievalRuns.push(raw._retrieval);
     dbQueries += Number(raw._queries) || 0;
     fetched += raw.length;
     // A comparison's two sides cannot borrow each other's similar-category products.
@@ -604,7 +604,9 @@ async function createEngine({ planModel, decideModel, searchProducts, getUsage, 
     }
   }
   const retrieval=retrievalRuns.length ? {
-    strategy:'live-first',groups:retrievalRuns.length,
+    strategy:retrievalRuns.every(x=>x.strategy==='live-first')?'live-first'
+      :retrievalRuns.every(x=>x.strategy==='db-first')?'db-first':'mixed',
+    groups:retrievalRuns.length,
     providerSearchBatches:retrievalRuns.reduce((s,x)=>s+x.providerSearchBatches,0),
     providerFailedBatches:retrievalRuns.filter(x=>x.providerFailed).length,
     liveEligible:retrievalRuns.reduce((s,x)=>s+x.liveEligible,0),
