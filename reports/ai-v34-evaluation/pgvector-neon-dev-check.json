@@ -1,0 +1,39 @@
+{
+ "target": "neon-dev",
+ "host": "ep-autumn-union-aom3gbyf.c-2.ap-southeast-1.aws.neon.tech",
+ "generatedAt": "2026-11-12T04:07:13.658Z",
+ "extension": {
+  "extversion": "0.8.6"
+ },
+ "embeddings": {
+  "n": 2001,
+  "bytes": "5775360"
+ },
+ "index": {
+  "indexdef": "CREATE INDEX product_embeddings_hnsw ON ai_v34.product_embeddings USING hnsw (embedding vector_cosine_ops) WITH (m='16', ef_construction='64')"
+ },
+ "queries": 20,
+ "hnswRecallAt10": 1,
+ "exactMs": {
+  "p50": 71,
+  "p95": 76
+ },
+ "hnswMs": {
+  "p50": 71,
+  "p95": 72
+ },
+ "plan": [
+  "Limit (actual time=1.145..1.147 rows=10.00 loops=1)",
+  "  Buffers: shared hit=334",
+  "  ->  Sort (actual time=1.144..1.144 rows=10.00 loops=1)",
+  "        Sort Key: ((embedding <=> '<query vector>'::vector))",
+  "        Sort Method: top-N heapsort  Memory: 26kB",
+  "        Buffers: shared hit=334",
+  "        ->  Seq Scan on product_embeddings (actual time=0.011..0.728 rows=2001.00 loops=1)",
+  "              Buffers: shared hit=334",
+  "Planning:",
+  "  Buffers: shared hit=1",
+  "Planning Time: 0.075 ms",
+  "Execution Time: 1.176 ms"
+ ]
+}

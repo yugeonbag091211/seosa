@@ -1,0 +1,39 @@
+{
+ "scope": "NEEDS_REVIEW items of offline-final/v34-db-first (development set V001-V100). Manual review by the implementing session, written AFTER the run. It does NOT change the frozen labels, the judges, or the headline PASS_ONLY (55%). It records why the judges disagreed, so evaluator errors are not mistaken for engine failures and vice versa.",
+ "reviewedAt": "2026-11-12",
+ "categories": {
+  "evaluator_error_v34": "The v3.4 oracle's frozen spec is wrong for this card; the engine's card is correct.",
+  "evaluator_error_v2": "The v2 evaluator has no rubric for this behaviour or mis-parses the question; the engine is correct.",
+  "unverifiable_condition": "Neither judge can confirm the listing's condition/price plausibility from the title (old models at clearance prices).",
+  "oracle_floor_borderline": "Only the oracle's own plausibility floor (a heuristic) rejects the card, by a few hundred won.",
+  "engine_defect_remaining": "A real engine defect that is not fixed in v3.4."
+ },
+ "items": [
+  { "id": "V001", "category": "evaluator_error_v34", "note": "Card is a real laptop («…IPS FHD 디스플레이, 지문인식 지원, 백라이트 키보드»). LAPTOP_X prohibits the word 키보드." },
+  { "id": "V003", "category": "evaluator_error_v2", "note": "v2 budgetOf parses «30만원대» as 300,000–309,999; Korean usage and the engine use 300,000–399,999. All four cards are 309,000–378,400." },
+  { "id": "V021", "category": "evaluator_error_v34", "note": "«LG전자 그램15 … NVMe 512G» is a laptop; LAPTOP_X prohibits nvme (meant for SSD listings)." },
+  { "id": "V022", "category": "unverifiable_condition", "note": "Galaxy Tab 4 (2014) 79,000 / Tab A6 89,000: real tablets below the oracle floor (150,000); condition (new/refurbished/old stock) unverifiable from titles." },
+  { "id": "V023", "category": "engine_defect_remaining", "note": "«스마트헤드셋 V1000 … 1위 헤드셋 소니 블루투스 헤드셋 …» 45,410: brand keyword stuffing accepted as Sony. Other three cards are genuine Sony." },
+  { "id": "V028", "category": "evaluator_error_v34", "note": "«제이비엘 CHARGE5 … JBLCHARGE5»: spec lacks 제이비엘 and the glued «JBLCHARGE5» defeats the short-word boundary." },
+  { "id": "V030", "category": "engine_defect_remaining", "note": "«삼성핏3/마샬 블루투스 스피커 최저가» 61,910: multi-product promo page; the store-page guard only catches lists of category nouns." },
+  { "id": "V031", "category": "evaluator_error_v34", "note": "Backlit-keyboard laptop (same as V001)." },
+  { "id": "V032", "category": "unverifiable_condition", "note": "Same old Galaxy Tab 4 / A6 listings (oracle floor 100,000)." },
+  { "id": "V033", "category": "oracle_floor_borderline", "note": "«맨큐 무선 블루투스 이어폰 X08» 9,800 vs oracle floor 10,000." },
+  { "id": "V040", "category": "oracle_floor_borderline", "note": "«오피스큐 노이즈캔슬링 ANC 블루투스 무선 헤드폰 HP-1400» 49,770 vs oracle floor 50,000." },
+  { "id": "V046", "category": "evaluator_error_v34", "note": "Side A «LG전자 그램15 15ZB95N … NVMe» is a gram 15; nvme prohibited by LAPTOP_X." },
+  { "id": "V052", "category": "evaluator_error_v34", "note": "T1 backlit-keyboard laptop; T2/T3 «그램15 … NVMe». LG/budget/turn state all respected." },
+  { "id": "V053", "category": "unverifiable_condition", "note": "Old Galaxy Tab 4/A6 below floor; plus «Wi-Fi» with a hyphen not matched by the oracle's short-word rule (evaluator error)." },
+  { "id": "V069", "category": "evaluator_error_v34", "note": "«삼성/포터블 외장SSD T7실드 2TB»: Korean spelling 실드 (not 쉴드) missing from the spec; the second card «T7 Shield 2TB» matched." },
+  { "id": "V074", "category": "evaluator_error_v2", "note": "Engine now asks back on «삼성에서 나온 아이폰 17» (maker/line contradiction). v2 requires every shopping request to be searched. Not a PASS: UNVERIFIED by the v3.4 rubric." },
+  { "id": "V075", "category": "evaluator_error_v2", "note": "Same as V074 for «애플이 만든 갤럭시 버즈3 프로» (v3.3 showed Samsung cards = FAIL by both judges)." },
+  { "id": "V078", "category": "evaluator_error_v2", "note": "Engine asks back on «50만원 이상이면서 3만원 이하» (v3.3 showed mice under 30,000 = FAIL by both)." },
+  { "id": "V079", "category": "evaluator_error_v2", "note": "Engine asks back on «로지텍 … 근데 로지텍은 빼고»." },
+  { "id": "V091", "category": "evaluator_error_v2", "note": "Injected DB outage → HTTP 503. v2 has no outage rubric (any non-200 is FAIL); the v3.4 rubric counts an honest outage as correct." },
+  { "id": "V092", "category": "evaluator_error_v2", "note": "Injected DB timeout → HTTP 503 (same as V091)." },
+  { "id": "V094", "category": "unverifiable_condition", "note": "Injected vector timeout: hybrid degraded correctly to keyword results; cards 3–4 are the old Galaxy Tab 4/A6 listings (same as V022). In DB-first the vector fault does not apply." },
+  { "id": "V099", "category": "evaluator_error_v2", "note": "Injected stale DB: engine explained «최근 10일 안에 확인된 가격이 없어 추천하지 않았어요» (stale_price_only). v2 has no stale rubric." },
+  { "id": "V100", "category": "engine_defect_remaining", "note": "Injected stale DB for «삼성 T7 1TB»: the stale-but-matching rows were never retrieved (recency-ordered LIMIT 40 filled with fresher T7/1TB rows of other identities), so the engine said «no verified match» instead of «prices out of date». rejectedReasons {identity_unverified:5, identity_mismatch:9}." }
+ ],
+ "summary": { "evaluator_error_v34": 8, "evaluator_error_v2": 8, "unverifiable_condition": 4, "oracle_floor_borderline": 2, "engine_defect_remaining": 3 },
+ "headlineUnchanged": "PASS_ONLY stays 55/100. If every evaluator_error_v34/v2 item were credited to the engine (NOT done), the reviewed upper bound would be 55 + 8 (v34 errors whose v2 verdict is PASS) + 2 (outage) + 1 (stale explained) = 66; conflict questions (V074/V075/V078/V079) stay UNVERIFIED by policy."
+}

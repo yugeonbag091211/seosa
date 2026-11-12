@@ -1,0 +1,119 @@
+{
+ "engine": "v34",
+ "strategy": "hybrid",
+ "frozen": true,
+ "corpusSha256": "8868b5ff3c89dd9aba62f9c335edca9f9cd87ca377e6d3a4945457047f10744c",
+ "asOf": "2026-11-06T05:16:02.218Z",
+ "judged": {
+  "total": 100,
+  "final": {
+   "PASS": 38,
+   "FAIL": 7,
+   "UNVERIFIED": 21,
+   "NEEDS_REVIEW": 34,
+   "PASS_ONLY": 38
+  },
+  "v34": {
+   "PASS": 41,
+   "FAIL": 38,
+   "UNVERIFIED": 21,
+   "PASS_ONLY": 41
+  },
+  "v2": {
+   "PASS": 65,
+   "FAIL": 9,
+   "UNVERIFIED": 26,
+   "PASS_ONLY": 65
+  },
+  "agreement": 66,
+  "byType": {
+   "budget": {
+    "PASS": 4,
+    "FAIL": 1,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 5
+   },
+   "model": {
+    "PASS": 7,
+    "FAIL": 0,
+    "UNVERIFIED": 1,
+    "NEEDS_REVIEW": 2
+   },
+   "brand": {
+    "PASS": 4,
+    "FAIL": 1,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 5
+   },
+   "category": {
+    "PASS": 4,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 6
+   },
+   "compare": {
+    "PASS": 8,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 2
+   },
+   "followup": {
+    "PASS": 5,
+    "FAIL": 1,
+    "UNVERIFIED": 1,
+    "NEEDS_REVIEW": 3
+   },
+   "option": {
+    "PASS": 3,
+    "FAIL": 2,
+    "UNVERIFIED": 2,
+    "NEEDS_REVIEW": 3
+   },
+   "conflict": {
+    "PASS": 0,
+    "FAIL": 2,
+    "UNVERIFIED": 7,
+    "NEEDS_REVIEW": 1
+   },
+   "absent": {
+    "PASS": 0,
+    "FAIL": 0,
+    "UNVERIFIED": 10,
+    "NEEDS_REVIEW": 0
+   },
+   "outage": {
+    "PASS": 3,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 7
+   }
+  }
+ },
+ "cards": {
+  "shown": 314,
+  "wrong": 59
+ },
+ "retrieval": {
+  "questions": 64,
+  "hitRate10": 1,
+  "hitRate20": 1,
+  "recall10": 0.77,
+  "recall20": 0.736,
+  "mrr20": 0.879
+ },
+ "perf": {
+  "turns": 120,
+  "avgMs": 94,
+  "p50Ms": 61,
+  "p95Ms": 180,
+  "dbQueries": 719,
+  "avgDbQueriesPerTurn": 6,
+  "vectorQueries": 635,
+  "vectorP50Ms": 39,
+  "vectorP95Ms": 161,
+  "gptCallsSimulated": 213,
+  "realGptCalls": 0,
+  "sellerApiCalls": 0,
+  "costUsd": 0
+ }
+}

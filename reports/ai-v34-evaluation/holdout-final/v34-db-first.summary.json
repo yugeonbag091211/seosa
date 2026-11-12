@@ -1,0 +1,123 @@
+{
+ "set": "holdout",
+ "engine": "v34",
+ "strategy": "db-first",
+ "engineFingerprint": "0d6d850a4c834b95",
+ "hybridMode": null,
+ "vectorWeight": null,
+ "frozen": true,
+ "corpusSha256": "8868b5ff3c89dd9aba62f9c335edca9f9cd87ca377e6d3a4945457047f10744c",
+ "asOf": "2026-11-06T05:16:02.218Z",
+ "judged": {
+  "total": 40,
+  "final": {
+   "PASS": 19,
+   "FAIL": 1,
+   "UNVERIFIED": 7,
+   "NEEDS_REVIEW": 13,
+   "PASS_ONLY": 47.5
+  },
+  "v34": {
+   "PASS": 23,
+   "FAIL": 7,
+   "UNVERIFIED": 10,
+   "PASS_ONLY": 57.5
+  },
+  "v2": {
+   "PASS": 25,
+   "FAIL": 7,
+   "UNVERIFIED": 8,
+   "PASS_ONLY": 62.5
+  },
+  "agreement": 27,
+  "byType": {
+   "budget": {
+    "PASS": 2,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 2
+   },
+   "model": {
+    "PASS": 3,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 1
+   },
+   "brand": {
+    "PASS": 3,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 1
+   },
+   "category": {
+    "PASS": 2,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 2
+   },
+   "compare": {
+    "PASS": 4,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 0
+   },
+   "followup": {
+    "PASS": 3,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 1
+   },
+   "option": {
+    "PASS": 1,
+    "FAIL": 1,
+    "UNVERIFIED": 2,
+    "NEEDS_REVIEW": 0
+   },
+   "conflict": {
+    "PASS": 0,
+    "FAIL": 0,
+    "UNVERIFIED": 1,
+    "NEEDS_REVIEW": 3
+   },
+   "absent": {
+    "PASS": 0,
+    "FAIL": 0,
+    "UNVERIFIED": 4,
+    "NEEDS_REVIEW": 0
+   },
+   "outage": {
+    "PASS": 1,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 3
+   }
+  }
+ },
+ "cards": {
+  "shown": 115,
+  "wrong": 15
+ },
+ "retrieval": {
+  "questions": 23,
+  "hitRate10": 1,
+  "hitRate20": 1,
+  "recall10": 0.742,
+  "recall20": 0.653,
+  "mrr20": 0.783
+ },
+ "perf": {
+  "turns": 48,
+  "avgMs": 54,
+  "p50Ms": 30,
+  "p95Ms": 144,
+  "dbQueries": 264,
+  "avgDbQueriesPerTurn": 5.5,
+  "vectorQueries": 0,
+  "vectorP50Ms": null,
+  "vectorP95Ms": null,
+  "gptCallsSimulated": 82,
+  "realGptCalls": 0,
+  "sellerApiCalls": 0,
+  "costUsd": 0
+ }
+}
