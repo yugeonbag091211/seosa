@@ -1,0 +1,170 @@
+{
+ "set": "ai-v34-sealed-holdout-40",
+ "frozenAt": "2026-11-12T03:18:55.843Z",
+ "gitHeadAtFreeze": "26ea250d0ed0ff8cd08b98f563bbb7bf4d8913ff",
+ "note": "Frozen before the first engine run on this set. Any later change to these files invalidates graded runs.",
+ "asOf": "2026-11-06T05:16:02.218Z",
+ "priceAgeLimitDays": 10,
+ "questions": 40,
+ "turns": 48,
+ "files": {
+  "scripts/ai-v34/eval/questions-v34-holdout.js": "2a5a1625cc255d0d1141fdf2fb5290257d0204a0e3eb6f18eb5a0c3afb04c480",
+  "scripts/ai-v34/eval/oracle.js": "d095cdaaa786d231aadcb42e3fde082ae0a7c957465fad86f4bbb2114e393bb4",
+  "scripts/ai-v34/eval/gold.js": "ef86425d0f51a4100b8de949c2d9feb92e8c1964bda6c0b917a3ece31bac40bb",
+  "scripts/ai-v34/eval/judge.js": "645398f231aad199bb44f529945337a8c2a0d791548c7292a5ce5b905329d1ca",
+  "scripts/ai-v32-eval/verdict.js": "b750e063f83c8cc530142bf4a9cabb9d68aca0e2747a7d51ffa4f7b1ae2fdfe6"
+ },
+ "corpus": {
+  "sha256": "8868b5ff3c89dd9aba62f9c335edca9f9cd87ca377e6d3a4945457047f10744c",
+  "rows": 77737
+ },
+ "goldSha256": "d174f91b9cd852acd0c829c6f9208bbbd8509119bba25a565af8ac78924619dc",
+ "goldCounts": {
+  "H001": [
+   81
+  ],
+  "H002": [
+   22
+  ],
+  "H003": [
+   4
+  ],
+  "H004": [
+   14
+  ],
+  "H005": [
+   3
+  ],
+  "H006": [
+   8
+  ],
+  "H007": [
+   5
+  ],
+  "H008": [
+   5
+  ],
+  "H009": [
+   75
+  ],
+  "H010": [
+   1
+  ],
+  "H011": [
+   3
+  ],
+  "H012": [
+   31
+  ],
+  "H013": [
+   55
+  ],
+  "H014": [
+   203
+  ],
+  "H015": [
+   75
+  ],
+  "H016": [
+   54
+  ],
+  "H017": [
+   [
+    1,
+    10
+   ]
+  ],
+  "H018": [
+   [
+    2,
+    3
+   ]
+  ],
+  "H019": [
+   [
+    29,
+    3
+   ]
+  ],
+  "H020": [
+   [
+    9,
+    50
+   ]
+  ],
+  "H021": [
+   123,
+   39,
+   14
+  ],
+  "H022": [
+   63,
+   15,
+   "dynamic"
+  ],
+  "H023": [
+   86,
+   29,
+   16
+  ],
+  "H024": [
+   75,
+   66,
+   36
+  ],
+  "H025": [
+   0
+  ],
+  "H026": [
+   0
+  ],
+  "H027": [
+   2
+  ],
+  "H028": [
+   13
+  ],
+  "H029": [
+   0
+  ],
+  "H030": [
+   0
+  ],
+  "H031": [
+   0
+  ],
+  "H032": [
+   0
+  ],
+  "H033": [
+   0
+  ],
+  "H034": [
+   0
+  ],
+  "H035": [
+   0
+  ],
+  "H036": [
+   0
+  ],
+  "H037": [
+   138
+  ],
+  "H038": [
+   210
+  ],
+  "H039": [
+   0
+  ],
+  "H040": [
+   186
+  ]
+ },
+ "policy": {
+  "pass": "both judges PASS",
+  "disagreement": "NEEDS_REVIEW (non-PASS)",
+  "unverified": "non-PASS",
+  "passOnly": "PASS / total"
+ }
+}

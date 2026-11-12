@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "summary": {
+    "total": 10,
+    "pass": 0,
+    "fail": 0,
+    "unverified": 10,
+    "reviewed": 0,
+    "strictPassOnlyPercent": 0,
+    "p95Ms": 6808,
+    "measuredCostUsd": null,
+    "costMeasuredCases": 0,
+    "costUnmeasuredCases": 10,
+    "failureReasons": {
+      "needs_oracle_review": 10
+    },
+    "reviewQueue": [
+      {
+        "id": "N011",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N022",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N048",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N070",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N157",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N162",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N181",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N182",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N183",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      },
+      {
+        "id": "N194",
+        "verdict": "UNVERIFIED",
+        "reason": "needs_oracle_review"
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "id": "N011",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 6472,
+      "displayedCards": 4,
+      "dbQueries": 4,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 1881,
+      "outputTokens": 199,
+      "costUsd": null
+    },
+    {
+      "id": "N022",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 3474,
+      "displayedCards": 2,
+      "dbQueries": 14,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 1013,
+      "outputTokens": 128,
+      "costUsd": null
+    },
+    {
+      "id": "N048",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 6808,
+      "displayedCards": 2,
+      "dbQueries": 28,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 1348,
+      "outputTokens": 86,
+      "costUsd": null
+    },
+    {
+      "id": "N070",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 5405,
+      "displayedCards": 4,
+      "dbQueries": 14,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 1286,
+      "outputTokens": 195,
+      "costUsd": null
+    },
+    {
+      "id": "N157",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 2609,
+      "displayedCards": 4,
+      "dbQueries": 4,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 1153,
+      "outputTokens": 83,
+      "costUsd": null
+    },
+    {
+      "id": "N162",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 3016,
+      "displayedCards": 1,
+      "dbQueries": 5,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 857,
+      "outputTokens": 56,
+      "costUsd": null
+    },
+    {
+      "id": "N181",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 2472,
+      "displayedCards": 4,
+      "dbQueries": 1,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 1799,
+      "outputTokens": 80,
+      "costUsd": null
+    },
+    {
+      "id": "N182",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 1039,
+      "displayedCards": 4,
+      "dbQueries": 1,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 1,
+      "inputTokens": 481,
+      "outputTokens": 39,
+      "costUsd": null
+    },
+    {
+      "id": "N183",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 2406,
+      "displayedCards": 1,
+      "dbQueries": 1,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 2,
+      "inputTokens": 1172,
+      "outputTokens": 80,
+      "costUsd": null
+    },
+    {
+      "id": "N194",
+      "verdict": "UNVERIFIED",
+      "reviewed": false,
+      "reason": null,
+      "category": null,
+      "http": 200,
+      "elapsedMs": 1070,
+      "displayedCards": 0,
+      "dbQueries": null,
+      "providerSearchBatches": 0,
+      "bySource": {},
+      "rejectedReasons": {},
+      "modelCalls": 1,
+      "inputTokens": 425,
+      "outputTokens": 44,
+      "costUsd": null
+    }
+  ]
+}

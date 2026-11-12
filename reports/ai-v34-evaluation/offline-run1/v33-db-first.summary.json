@@ -1,0 +1,119 @@
+{
+ "engine": "v33",
+ "strategy": "db-first",
+ "frozen": true,
+ "corpusSha256": "8868b5ff3c89dd9aba62f9c335edca9f9cd87ca377e6d3a4945457047f10744c",
+ "asOf": "2026-11-06T05:16:02.218Z",
+ "judged": {
+  "total": 100,
+  "final": {
+   "PASS": 33,
+   "FAIL": 7,
+   "UNVERIFIED": 19,
+   "NEEDS_REVIEW": 41,
+   "PASS_ONLY": 33
+  },
+  "v34": {
+   "PASS": 36,
+   "FAIL": 45,
+   "UNVERIFIED": 19,
+   "PASS_ONLY": 36
+  },
+  "v2": {
+   "PASS": 66,
+   "FAIL": 10,
+   "UNVERIFIED": 24,
+   "PASS_ONLY": 66
+  },
+  "agreement": 59,
+  "byType": {
+   "budget": {
+    "PASS": 8,
+    "FAIL": 1,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 1
+   },
+   "model": {
+    "PASS": 3,
+    "FAIL": 0,
+    "UNVERIFIED": 1,
+    "NEEDS_REVIEW": 6
+   },
+   "brand": {
+    "PASS": 1,
+    "FAIL": 1,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 8
+   },
+   "category": {
+    "PASS": 4,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 6
+   },
+   "compare": {
+    "PASS": 9,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 1
+   },
+   "followup": {
+    "PASS": 3,
+    "FAIL": 1,
+    "UNVERIFIED": 1,
+    "NEEDS_REVIEW": 5
+   },
+   "option": {
+    "PASS": 3,
+    "FAIL": 2,
+    "UNVERIFIED": 1,
+    "NEEDS_REVIEW": 4
+   },
+   "conflict": {
+    "PASS": 0,
+    "FAIL": 2,
+    "UNVERIFIED": 6,
+    "NEEDS_REVIEW": 2
+   },
+   "absent": {
+    "PASS": 0,
+    "FAIL": 0,
+    "UNVERIFIED": 10,
+    "NEEDS_REVIEW": 0
+   },
+   "outage": {
+    "PASS": 2,
+    "FAIL": 0,
+    "UNVERIFIED": 0,
+    "NEEDS_REVIEW": 8
+   }
+  }
+ },
+ "cards": {
+  "shown": 332,
+  "wrong": 79
+ },
+ "retrieval": {
+  "questions": 62,
+  "hitRate10": 0.968,
+  "hitRate20": 0.968,
+  "recall10": 0.791,
+  "recall20": 0.738,
+  "mrr20": 0.833
+ },
+ "perf": {
+  "turns": 120,
+  "avgMs": 72,
+  "p50Ms": 50,
+  "p95Ms": 183,
+  "dbQueries": 718,
+  "avgDbQueriesPerTurn": 6,
+  "vectorQueries": 0,
+  "vectorP50Ms": null,
+  "vectorP95Ms": null,
+  "gptCallsSimulated": 216,
+  "realGptCalls": 0,
+  "sellerApiCalls": 0,
+  "costUsd": 0
+ }
+}

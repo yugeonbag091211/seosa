@@ -1,0 +1,10 @@
+{
+  "name": "seosa-ai-eval-tools",
+  "private": true,
+  "description": "Isolated evaluation toolchain for SEOSA AI v3.4 (Promptfoo). Kept out of the app dependency tree so eval-only packages never re-resolve production dependencies.",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.22.0" },
+  "devDependencies": {
+    "promptfoo": "0.125.1"
+  }
+}

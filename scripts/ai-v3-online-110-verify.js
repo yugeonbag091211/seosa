@@ -1,0 +1,312 @@
+'use strict';
+const {appendFileSync,writeFileSync,mkdirSync,existsSync,readFileSync}=require('node:fs');
+const path=require('node:path');
+const {requestedIdentity,checkListingIdentity,extractTitleEvidence}=require('../api/_ai-v3-identity');
+const {categoryOk}=require('../api/_ai-v3-core');
+const {comparisonFromUtterance,ambiguousOptions,productTypeMatches,canonicalCategory,familyCategory,isPart}=require('../api/_ai-v31-taxonomy');
+const {brandMatches}=require('../api/_ai-v31-retrieval');
+const mode=process.argv[2],share=process.argv[3];
+if(require.main===module && (!['gate','full','focus','holdout','keyboard','critical','blind','online200'].includes(mode)||!/^https:\/\/seosa-[a-z0-9-]+-seosa\.vercel\.app\/\?_vercel_share=[A-Za-z0-9_-]+/.test(share||'')))throw Error('Require approved Preview share link and permitted test mode');
+const base=typeof share==='string'?new URL(share).origin:'';
+const outdir=path.resolve(__dirname,'../reports/ai-v3-online-20261105');
+mkdirSync(outdir,{recursive:true});
+const outfile=path.join(outdir,mode+'.jsonl'),summaryfile=path.join(outdir,mode+'-summary.json');
+if(mode!=='online200')writeFileSync(outfile,'');
+const gate=[
+{id:'G01',p:'15만원 이하 무선 헤드셋 추천해줘. 게이밍은 제외',cat:'헤드셋',max:150000,exclude:['게이밍']},
+{id:'G02',p:'그중에서 12만원 이상 15만원 이하로 골라줘',from:'G01',cat:'헤드셋',min:120000,max:150000,exclude:['게이밍']},
+{id:'G03',p:'에어팟 4 ANC 완제품 추천해줘',cat:'이어폰',model:'에어팟 4 ANC'},
+{id:'G04',p:'갤럭시탭 S9 FE 128GB 추천해줘',cat:'태블릿',model:'갤럭시탭 S9 FE 128GB'},
+{id:'G05',p:'갤럭시탭 S9 FE+ 128GB 추천해줘',cat:'태블릿',model:'갤럭시탭 S9 FE+ 128GB'},
+{id:'G06',p:'아이패드 에어 M4 256GB 추천해줘',cat:'태블릿',model:'아이패드 에어 M4 256GB'},
+{id:'G07',p:'돈은 80만원밖에 못 써요',from:'G06',cat:'태블릿',max:800000,model:'아이패드 에어 M4 256GB',allowEmpty:true},
+{id:'G08',p:'아이패드 에어 M4와 갤럭시탭 S9 FE 비교해줘',cat:'태블릿',compare:['ipad','galaxytab']},
+{id:'G09',p:'일반 아이폰 16 128GB 신품 추천해줘',cat:'스마트폰',model:'아이폰 16 128GB',allowEmpty:true},
+{id:'G10',p:'1TB 외장하드 하나 추천해줘. 책 말고 저장장치',cat:'외장하드',containsAny:['외장하드','외장 ssd','외장ssd','외장 hdd','외장hdd'],noWords:['도서','책']}
+];
+const groups=[
+['헤드셋',[
+'15만원 이하 헤드셋 추천해줘','12만원에서 15만원 사이의 무선 헤드폰 찾아줘','게이밍 제외하고 블루투스 헤드셋 골라줘','10만원 미만 헤드폰 있을까?','15만원 안에서 ANC 헤드폰 추천','20만원 이하 노이즈캔슬링 헤드폰 추천','가성비 무선 헤드셋 추천해줘','게임용 아닌 공부할 때 쓸 헤드폰 추천','12만~15만원 헤드셋 추천','소니 블루투스 헤드폰 15만원 이하로 골라줘'
+]],
+['이어폰',[
+'에어팟 4 ANC 추천해줘','에어팟 프로 2세대 추천해줘','에어팟 4 일반 모델 찾아줘','에어팟 4세대 노이즈 캔슬링 버전 추천','갤럭시 버즈 FE 추천해줘','삼성 갤럭시 버즈3 프로 추천해줘','10만원 이하 무선 이어폰 추천','5만원대 가성비 블루투스 이어폰','운동할 때 쓸 이어버드 추천해줘','이어폰 본체만 추천해줘 케이스 말고'
+]],
+['태블릿',[
+'갤럭시탭 S9 FE 128GB 찾아줘','갤럭시탭 S9 FE+ 128GB 추천','갤럭시탭 S9 FE 256GB 제품 추천','아이패드 에어 M4 256GB 추천해줘','아이패드 에어 M4 128GB 추천해줘','아이패드 10세대 64GB 추천','갤럭시탭 S10 256GB 추천','11인치 아이패드 에어 M4 추천','100만원 이하 태블릿 뭐가 좋아?','아이패드 vs 갤럭시탭 가격 비교해줘'
+]],
+['스마트폰',[
+'아이폰 16 128GB 신품 추천','아이폰 16e 128GB 찾아줘','아이폰 16 프로 128GB 추천','아이폰 15 128GB 추천해줘','아이폰 16 프로 맥스 256GB 추천','갤럭시 S24 256GB 추천해줘','삼성 갤럭시 S25 256GB 신품 추천','100만원 이하 스마트폰 추천해줘','중고 빼고 휴대폰 80만원 이하로 골라줘','아이폰 16과 갤럭시 S25 가격 비교해줘'
+]],
+['노트북',[
+'80만원 이하 가벼운 노트북 추천','100만원 이하 대학생용 노트북','LG 그램 노트북 추천해줘','맥북 에어 M4 256GB 추천','맥북 프로 M4 512GB 추천','게임용 제외하고 사무용 노트북 추천','삼성 갤럭시북 15인치 찾아줘','70만원부터 90만원까지 노트북 추천','휴대성 좋은 윈도우 노트북 추천','노트북 추천 하나만 해줘'
+]],
+['외장하드',[
+'1TB 외장하드 추천해줘','2TB 외장하드 추천해줘','5만원 이하 외장 SSD 추천','삼성 외장 SSD T7 1TB 추천','씨게이트 외장하드 2TB 추천','맥북 연결용 외장 SSD 추천','휴대용 외장 하드디스크 추천','10만원 이하 USB 외장하드','500GB 외장하드 추천해줘','2테라 데이터 백업용 외장하드 찾아줘'
+]],
+['모니터',[
+'20만원 이하 모니터 추천','27인치 모니터 추천','32인치 4K 모니터 찾아줘','사무용 모니터 15만원 이하','게이밍 아닌 눈 편한 모니터 추천','LG 27인치 모니터 추천','삼성 모니터 24인치 찾아줘','30만원 이하 144Hz 모니터','작업용 듀얼 모니터 추천','20만~30만원 모니터 추천'
+]],
+['주변기기',[
+'10만원 이하 무선 키보드 추천','로지텍 기계식 키보드 추천','블루투스 키보드 찾아줘','5만원 이하 마우스 추천','로지텍 MX Master 마우스 추천','사무용 무소음 마우스 추천','15만원 이하 기계식 키보드','아이패드용 블루투스 키보드 추천','게이밍 말고 사무용 키보드 추천','손목 편한 무선 마우스 찾아줘'
+]],
+['가전',[
+'20만원 이하 공기청정기 추천','침실용 소형 공기청정기 추천','산업용 말고 집에서 쓸 공기청정기','30만원 이하 공기청정기 찾아줘','50만원 이하 로봇청소기 추천','무선청소기 20만원 이하 추천','작은 원룸용 청소기 찾아줘','로보락 로봇청소기 추천','부담 없는 가격의 공기청정기 하나','집에서 쓸 청소기와 공기청정기 비교'
+]]
+];
+const full=[];
+for(let g=0;g<groups.length;g++)for(let j=0;j<10;j++){
+ const group=groups[g][0],p=groups[g][1][j],id='Q'+String(full.length+1).padStart(3,'0');
+ const cat=group==='주변기기'?(p.includes('마우스')?'마우스':'키보드'):group==='가전'?(p.includes('공기청정기')?'공기청정기':'청소기'):group;
+ const compare=p.includes('비교')?null:undefined;
+ full.push({id,p,cat,compare,model:!p.includes('비교')?p:undefined});
+}
+const follow=[
+ {p:'15만원 이하 비게이밍 헤드셋 추천해줘',cat:'헤드셋',max:150000,exclude:['게이밍']},
+ {p:'그중 12만원 이상으로만 골라줘',cat:'헤드셋',from:'Q091',min:120000,max:150000,exclude:['게이밍']},
+ {p:'그중에서 한 개만 추천해줘',cat:'헤드셋',from:'Q092',min:120000,max:150000,exclude:['게이밍']},
+ {p:'아이패드 에어 M4 256GB 보여줘',cat:'태블릿',model:'아이패드 에어 M4 256GB'},
+ {p:'예산은 80만원이야',cat:'태블릿',from:'Q094',max:800000,model:'아이패드 에어 M4 256GB',allowEmpty:true},
+ {p:'128GB 말고 256GB로 골라줘',cat:'태블릿',from:'Q094',model:'아이패드 에어 M4 256GB'},
+ {p:'갤럭시탭 S9 FE와 아이패드 에어 M4 비교해줘',cat:'태블릿',compare:['galaxytab','ipad']},
+ {p:'고마워!',expectNoSearch:true},
+ {p:'에어팟 4 ANC 중고 말고 신품 추천',cat:'이어폰',model:'에어팟 4 ANC'},
+ {p:'15만원 이하 외장하드 중에 SSD 추천',cat:'외장하드',max:150000}
+];
+for(let i=0;i<10;i++)full.push({id:'Q'+String(i+91).padStart(3,'0'),...follow[i]});
+if(full.length!==100||new Set(full.map(x=>x.p)).size!==100)throw Error('100 unique questions required, got '+full.length+' unique '+new Set(full.map(x=>x.p)).size);
+const focusIds=new Set(['Q001','Q005','Q010','Q014','Q015','Q023','Q028','Q029','Q032','Q033','Q035',
+ 'Q053','Q054','Q055','Q056','Q078','Q079','Q090','Q091','Q092','Q093','Q100']);
+const holdout=[
+ {id:'H01',p:'14만원까지 블루투스 오버이어 헤드폰 추천해 줘',cat:'헤드셋',max:140000},
+ {id:'H02',p:'그중 12만원 이상 제품으로만 다시 골라줘',from:'H01',cat:'헤드셋',min:120000,max:140000},
+ {id:'H03',p:'그중에서 하나만 추천해줘',from:'H02',cat:'헤드셋',min:120000,max:140000},
+ {id:'H04',p:'아이폰 16e 128기가 자급제 신품을 찾아줘',cat:'스마트폰',model:'아이폰16e 128GB',allowEmpty:true},
+ {id:'H05',p:'갤럭시 S25 256기가 자급제로 추천해줘',cat:'스마트폰',model:'갤럭시 S25 256GB',allowEmpty:true},
+ {id:'H06',p:'갤럭시탭 S9 FE 플러스 256기가 완제품 추천',cat:'태블릿',model:'갤럭시탭 S9 FE+ 256GB',allowEmpty:true},
+ {id:'H07',p:'80만원 안쪽으로 태블릿 하나 골라줘',cat:'태블릿',max:800000},
+ {id:'H08',p:'20만원 아래 씨게이트 2테라 외장하드 찾아봐',cat:'외장하드'},
+ {id:'H09',p:'10만원 미만 외장 SSD를 추천해줘',cat:'외장하드',allowEmpty:true},
+ {id:'H10',p:'아이패드 에어에 쓸 블루투스 키보드 케이스 5만원 이하',cat:'키보드',max:50000,allowEmpty:true},
+ {id:'H11',p:'5만원 이하 로지텍 무선 마우스 골라줘',cat:'마우스',max:50000},
+ {id:'H12',p:'갤럭시 버즈3 FE 이어폰 완제품 추천',cat:'이어폰',model:'갤럭시 버즈3 FE'},
+ {id:'H13',p:'갤럭시 버즈 FE 원래 모델을 찾아줘',cat:'이어폰',model:'갤럭시 버즈 FE',allowEmpty:true},
+ {id:'H14',p:'원룸에 둘 공기청정기 15만원 이하',cat:'공기청정기',max:150000},
+ {id:'H15',p:'사무실용 27인치 모니터 20만원 이하 찾아줘',cat:'모니터',max:200000},
+ {id:'H16',p:'게이밍 제외하고 80만원 이하 사무용 노트북 추천',cat:'노트북',max:800000,exclude:['게이밍']},
+ {id:'H17',p:'로보락이랑 일반 무선청소기 비교해줘',cat:'청소기',allowEmpty:true},
+ {id:'H18',p:'LG 27인치 모니터 30만원부터 40만원까지 골라줘',cat:'모니터',min:300000,max:400000,allowEmpty:true},
+ {id:'H19',p:'이어폰 말고 10만원 이하 오버이어 헤드폰으로 추천',cat:'헤드셋',max:100000},
+ {id:'H20',p:'15만원 이하 포터블 SSD, 용량 여러개 섞인 판매글 빼고',cat:'외장하드',max:150000}
+];
+if(new Set(holdout.map(x=>x.p)).size!==holdout.length ||
+  holdout.some(x=>full.some(y=>y.p===x.p)))throw Error('Holdout must be distinct from baseline 100');
+const blind=[
+ {id:'B001',p:'9만원 안으로 노이즈캔슬링 헤드폰 하나 찾아줘',cat:'헤드셋',max:90000},
+ {id:'B002',p:'그중 7만원 이상인 것으로만 남겨줘',from:'B001',cat:'헤드셋',min:70000,max:90000},
+ {id:'B003',p:'그중 한 제품만 골라 줘',from:'B002',cat:'헤드셋',min:70000,max:90000},
+ {id:'B004',p:'6만원 이내 무선 이어버드 완제품 추천, 충전 케이스만 파는 건 빼줘',cat:'이어폰',max:60000},
+ {id:'B005',p:'11만원 이하 무선 오버이어 헤드셋 추천해',cat:'헤드셋',max:110000},
+ {id:'B006',p:'버즈3 프로 정품 이어폰 12만원 이하로 찾아줘',cat:'이어폰',max:120000,allowEmpty:true},
+ {id:'B007',p:'아이폰 16e 128GB 새 자급제폰만 보여줘',cat:'스마트폰',model:'아이폰 16e 128GB',allowEmpty:true},
+ {id:'B008',p:'삼성 갤럭시 S25 기본 256기가, 엣지 말고 자급제로',cat:'스마트폰',model:'갤럭시 S25 256GB',allowEmpty:true},
+ {id:'B009',p:'삼성 갤럭시탭 S9 FE 256GB 와이파이 모델을 찾아줘',cat:'태블릿',model:'갤럭시탭 S9 FE 256GB',allowEmpty:true},
+ {id:'B010',p:'아이패드 Air M4 13인치 256기가 WiFi로 추천해줘',cat:'태블릿',model:'아이패드 에어 M4 13인치 256GB',allowEmpty:true},
+ {id:'B011',p:'아이패드 에어 11인치 M4에 맞는 블루투스 키보드 6만원 이하',cat:'키보드',max:60000,allowEmpty:true},
+ {id:'B012',p:'맥북에 연결할 외장 SSD 512기가 15만원 이하로 추천',cat:'외장하드',max:150000,allowEmpty:true},
+ {id:'B013',p:'씨게이트 2테라 외장 HDD 20만원 이내로, 파우치 사은품은 괜찮아',cat:'외장하드',max:200000},
+ {id:'B014',p:'1TB 외장 SSD 신품 10만원 미만으로 골라줘',cat:'외장하드',max:100000,allowEmpty:true},
+ {id:'B015',p:'사무용 블루투스 마우스 5만원 미만 추천',cat:'마우스',max:50000},
+ {id:'B016',p:'로지텍 무선 키보드 단품만 추천, 마우스 결합 세트 제외',cat:'키보드',exclude:['세트'],allowEmpty:true},
+ {id:'B017',p:'6만원 이하 무선 게이밍 마우스 추천해 줘',cat:'마우스',max:60000},
+ {id:'B018',p:'24인치 삼성 사무실 모니터 20만원 이하로 부탁해',cat:'모니터',max:200000,allowEmpty:true},
+ {id:'B019',p:'LG 27인치 144Hz 모니터 30만원 이하로 추천',cat:'모니터',max:300000,allowEmpty:true},
+ {id:'B020',p:'30만원 이내 로봇청소기 추천, 먼지봉투만 파는 상품 제외',cat:'청소기',max:300000},
+ {id:'B021',p:'로보락 로봇청소기랑 다이슨 무선청소기 비교해줘',cat:'청소기',allowEmpty:true},
+ {id:'B022',p:'원룸에 둘 17만원 이하 공기청정기를 사고 싶어, 렌탈 말고',cat:'공기청정기',max:170000},
+ {id:'B023',p:'30만원 이하 블루에어 공기청정기 추천해줘',cat:'공기청정기',max:300000,allowEmpty:true},
+ {id:'B024',p:'공기청정기 필터를 얼마나 자주 갈아야 해?',expectNoSearch:true},
+ {id:'B025',p:'100만원 안으로 HP 신품 사무용 노트북 골라줘',cat:'노트북',max:1000000},
+ {id:'B026',p:'중고 노트북 30만원 이하로 추천해 줘',cat:'노트북',max:300000,allowEmpty:true},
+ {id:'B027',p:'갤럭시 S24와 아이폰 16 일반형 가격 비교',cat:'스마트폰',compare:['galaxys','iphone'],allowEmpty:true},
+ {id:'B028',p:'15만원 이하 어린이용 안드로이드 태블릿PC 골라줘',cat:'태블릿',max:150000,allowEmpty:true},
+ {id:'B029',p:'스마트워치가 어떻게 심박수를 재는지 설명해줘',expectNoSearch:true},
+ {id:'B030',p:'고마워, 다음에 다시 물어볼게',expectNoSearch:true}
+];
+if(blind.length!==30||new Set(blind.map(x=>x.p)).size!==30 ||
+ blind.some(x=>[...full,...holdout].some(y=>x.p===y.p)))throw Error('Blind cases must be 30 unique and distinct');
+const cases=mode==='online200'?require('./ai-v31-online-200-cases').cases:mode==='gate'?gate:mode==='focus'?
+  [...gate.filter(x=>['G01','G02','G03','G10'].includes(x.id)),...full.filter(x=>focusIds.has(x.id))]:
+  mode==='holdout'?holdout:mode==='blind'?blind:mode==='keyboard'?holdout.filter(x=>x.id==='H10'):mode==='critical'?holdout.filter(x=>['H10','H20'].includes(x.id)):full;
+let priorOnline200=[];
+if(mode==='online200'){
+  const all=existsSync(outfile)?readFileSync(outfile,'utf8').split(/\r?\n/).filter(Boolean).map(JSON.parse):[];
+  const stop=all.findIndex(r=>r.http===429||r.http===503);
+  priorOnline200=(stop<0?all:all.slice(0,stop));
+  if(priorOnline200.length>200||priorOnline200.some((r,i)=>r.id!==cases[i]?.id||r.question!==cases[i]?.p))
+    throw Error('Cannot resume: existing output does not match this test corpus');
+  writeFileSync(outfile,priorOnline200.map(r=>JSON.stringify(r)).join('\n')+(priorOnline200.length?'\n':''));
+}
+const sleep=ms=>new Promise(res=>setTimeout(res,ms));
+function amount(text){
+ const s=text.replace(/,/g,'');
+ const a=s.match(/(\d+(?:\.\d+)?)\s*(?:만원|만\s*원|만)\s*(?:이하|미만|안에서)/);
+ return a?Math.round(Number(a[1])*10000):null;
+}
+function subjectOk(title,cat){
+ if(!cat)return true;
+ const primary=String(title||'').split(/\/디지털기기/i)[0];
+ if(['헤드셋','헤드폰'].includes(cat)&&/(?:이어폰|이어버드|earbuds|에어팟|airpods|갤럭시\s*버즈)/i.test(primary)&&!/(?:헤드셋|헤드폰|headset|headphone)/i.test(primary))return false;
+ return categoryOk({title:primary,category:''},cat);
+}
+const accessory=/충전기|보호필름|케이스|커버|파우치|거치대|어댑터|스트랩|충전케이블|키캡|펜촉|(?:헤드셋|헤드폰)\s*걸이|오른쪽\s*단품|왼쪽\s*단품|우측\s*단품|좌측\s*단품/i;
+function verdict(test,data,previous){
+ const errors=[];let unverified=[];
+ if(!data||data.http!==200||data.apiStatus!==200||!Array.isArray(data.cards)){errors.push('HTTP_or_JSON_failure');return{verdict:'FAIL',errors,unverified};}
+ const cards=data.cards;
+ const literalCompare=comparisonFromUtterance(test.p);
+ const expectedCompare=test.compare||(literalCompare?[literalCompare.category,
+   require('../api/_ai-v31-taxonomy').explicitType(literalCompare.compareQuery)]:null);
+ const wantWireless=/(?:무선|블루투스|wireless)/i.test(test.p) ||
+   (test.from && previous?.state?.features?.wireless===true);
+ if(wantWireless && data.state?.features?.wireless!==true)errors.push('wireless_constraint_not_preserved');
+ if(test.expectNoSearch){if(cards.length||data.stats?.searched)errors.push('nonshopping_triggered_search');return{verdict:errors.length?'FAIL':'PASS',errors,unverified};}
+ if(data.stats?.searched===false)errors.push('shopping_request_not_searched');
+ if(cards.length>4)errors.push('too_many_cards');
+ const refersToPrevious=/그\s*중|이\s*중|위\s*(?:상품|제품)|앞서\s*추천한/i.test(test.p);
+ if(refersToPrevious && previous && Array.isArray(previous.state?.presentedProductIds)){
+   const previousShown=new Set(previous.state.presentedProductIds);
+   if(cards.some(c=>!previousShown.has(c.productId)))
+     errors.push('recommendation_not_among_previously_shown');
+ }
+ const checkIdentity=!test.compare&&test.model?requestedIdentity(test.model):(!test.compare?requestedIdentity(test.p):{});
+ const max=test.max??amount(test.p)??(test.from?previous?.state?.maxPrice:null);
+ const min=test.min??(test.from?previous?.state?.minPrice:null);
+ if(test.min!=null&&data.state?.minPrice!==test.min)errors.push('min_budget_state_wrong');
+ if(test.max!=null&&data.state?.maxPrice!==test.max)errors.push('max_budget_state_wrong');
+ if(test.exclude?.length&&!test.exclude.every(w=>data.state?.exclusions?.includes(w)))errors.push('exclusion_state_lost');
+ for(const [j,c] of cards.entries()){
+  const title=String(c.title||''),pre='card'+(j+1)+':';
+  if(!title||!Number.isFinite(Number(c.price))||Number(c.price)<=0||!/^https?:\/\//.test(String(c.link||'')))errors.push(pre+'invalid_listing_fields');
+  if(c.condition==='used_or_refurbished' && !(/(?:중고|리퍼|리퍼비시|전시품)/i.test(test.p) && !/(?:중고|리퍼|리퍼비시).{0,12}(?:제외|말고|빼고|아닌|싫어)/i.test(test.p)))errors.push(pre+'used_or_refurbished');
+  // A device bundled with a free pouch is not the pouch itself.
+  if(isPart(title,test.cat))errors.push(pre+'accessory_or_part');
+  if(test.cat==='스마트폰' &&
+    /(?:공통지원금|통신사이동|번호이동|선택약정|완납개통|약정\s*가입|할부원금)/i.test(title))
+    errors.push(pre+'carrier_conditional_price');
+  if(ambiguousOptions(title,test.cat))errors.push(pre+'ambiguous_options');
+  if(wantWireless && ['헤드셋','헤드폰'].includes(test.cat) &&
+     !/(?:무선|블루투스|wireless|bluetooth|\bBT\d|TWS)/i.test(title))
+     errors.push(pre+'wireless_evidence_missing');
+  if(max!=null&&Number(c.price)>max)errors.push(pre+'above_max_budget');
+  if(min!=null&&Number(c.price)<min)errors.push(pre+'below_min_budget');
+  if(test.exclude?.some(w=>title.includes(w)))errors.push(pre+'excluded_term');
+  if(!expectedCompare&&test.cat&&!productTypeMatches(title,test.cat,test.p))
+    errors.push(pre+'wrong_category');
+  if(!expectedCompare&&!brandMatches(title,test.p))errors.push(pre+'wrong_brand');
+  const excludedWords=[...test.p.matchAll(/([가-힣a-z0-9+]{2,20})\s*(?:말고|제외|빼고|아닌)/gi)].map(x=>x[1]);
+  if(excludedWords.some(word=>title.toLowerCase().includes(word.toLowerCase())))
+    errors.push(pre+'explicit_exclusion_violated');
+  if(!expectedCompare&&checkIdentity.family &&
+    !( /(?:용|호환|연결|쓸|쓰는|사용할|맞는|전용|위한)/.test(test.p) &&
+       familyCategory(checkIdentity.family)!==canonicalCategory({message:test.p,planCategory:test.cat}))){
+    const res=checkListingIdentity(title,checkIdentity);
+    if(!res.ok)errors.push(pre+'identity_'+res.reason+'_'+res.field);
+  }
+  if(test.noWords?.some(w=>title.includes(w)))errors.push(pre+'forbidden_subject');
+  if(test.containsAny&&!test.containsAny.some(w=>title.toLowerCase().includes(w.toLowerCase())))errors.push(pre+'missing_subject');
+ }
+ if(expectedCompare?.length){if(cards.length===2){
+   const fs=cards.map(c=>extractTitleEvidence(c.title).family);
+   if(!expectedCompare.every(f=>fs.includes(f)||(
+      (f==='청소기'||f==='공기청정기')&&
+      cards.some(c=>require('../api/_ai-v31-taxonomy').productTypeMatches(c.title,f)))))
+     errors.push('comparison_sides_mismatch');
+ }else if(cards.length>0)errors.push('comparison_one_sided');
+ }
+ if(!cards.length&&!test.expectNoSearch){
+   // Lack of a product is not an accuracy PASS. One defensible exception:
+   // "그중" narrowed the PREVIOUSLY displayed list by price and all its
+   // shown candidates are provably outside the new price band.
+   const shown=Array.isArray(previous?.cards)?previous.cards:[];
+   const exhausted=refersToPrevious&&shown.length>0 &&
+     Array.isArray(previous?.state?.presentedProductIds) &&
+     shown.every(c=>(min!=null&&Number(c.price)<min)||
+                    (max!=null&&Number(c.price)>max));
+   if(!exhausted)unverified.push('no_suitable_cards_or_inventory');
+ }
+ return{verdict:errors.length?'FAIL':unverified.length?'UNVERIFIED':'PASS',errors,unverified};
+}
+async function main(){
+ const cookies={};let at=share,authed=false;
+ for(let k=0;k<4;k++){
+  const r=await fetch(at,{redirect:'manual',signal:AbortSignal.timeout(18000),
+   headers:{cookie:Object.entries(cookies).map(([a,b])=>a+'='+b).join('; ')}});
+  for(const v of r.headers.getSetCookie?.()||[]){const m=v.match(/^([^=;]+)=([^;]*)/);if(m)cookies[m[1]]=m[2];}
+  if(r.status===200){authed=true;break;}
+  const loc=r.headers.get('location');if(!loc||r.status<300||r.status>=400)break;
+  at=new URL(loc,at).toString();if(!at.startsWith(base+'/'))throw Error('Auth redirect cross-origin');
+ }
+ if(!authed)throw Error('Preview authentication unavailable');
+ console.log(JSON.stringify({stage:'authenticated',mode,questions:cases.length,deploy:base}));
+ const saved={},scores={PASS:0,FAIL:0,UNVERIFIED:0},t0=Date.now(),tokens={calls:0,input:0,output:0},results=[];
+ for(const old of priorOnline200){
+   saved[old.id]=old;
+   scores[old.verdict]++;
+   const usage=old.stats?.modelUsage||{};
+   tokens.calls+=(usage.calls||0);tokens.input+=(usage.inputTokens||0);tokens.output+=(usage.outputTokens||0);
+   results.push(old);
+ }
+ if(priorOnline200.length)console.log(JSON.stringify({stage:'resuming',completed:priorOnline200.length,remaining:cases.length-priorOnline200.length,scores,tokens}));
+ let lastRequestStartedAt=0;
+ for(let i=priorOnline200.length;i<cases.length;i++){
+   // Respect the Preview server's 12 requests / 60 s limit, with a buffer.
+   if(mode==='online200'&&lastRequestStartedAt){
+     const remain=6800-(Date.now()-lastRequestStartedAt);
+     if(remain>0)await sleep(remain);
+   }
+   lastRequestStartedAt=Date.now();
+  const test=cases[i],previous=test.from?saved[test.from]:null,fromState=previous?.state||{};
+  let data=null,responseTime=0,apiError=null;
+  for(let attempt=0;attempt<2;attempt++){
+   const started=Date.now();
+   try{
+    const r=await fetch(base+'/api/ai?v=3',{method:'POST',
+      headers:{'content-type':'application/json',cookie:Object.entries(cookies).map(([a,b])=>a+'='+b).join('; ')},
+      body:JSON.stringify({message:test.p,history:[],state:fromState}),signal:AbortSignal.timeout(65000)});
+    const raw=await r.text();let d;try{d=JSON.parse(raw)}catch{d={error:'non_json_response'}}
+    data={...d,http:r.status,apiStatus:d.status??null};
+    responseTime=Date.now()-started;
+    if([429,503].includes(r.status)&&attempt===0){await sleep(12000);continue}
+    break;
+   }catch(e){apiError=String(e.name)+':'+String(e.message).slice(0,100);responseTime=Date.now()-started;
+    if(attempt===0){await sleep(6000);continue}
+   }
+  }
+  if(!data)data={http:0,apiStatus:0,error:apiError,cards:null};
+  saved[test.id]=data;
+  const v=verdict(test,data,previous);
+  scores[v.verdict]++;
+  const u=data.stats?.modelUsage||{};
+  tokens.calls+=(u.calls||0);tokens.input+=(u.inputTokens||0);tokens.output+=(u.outputTokens||0);
+  const record={id:test.id,question:test.p,from:test.from??null,http:data.http,apiStatus:data.apiStatus,elapsedMs:responseTime,
+    verdict:v.verdict,errors:v.errors,unverified:v.unverified,
+    cards:(Array.isArray(data.cards)?data.cards:[]).map(c=>({productId:c.productId,title:c.title,price:c.price,condition:c.condition,link:c.link})),
+    answer:String(data.answer||data.error||'').slice(0,650),
+    stats:{searched:data.stats?.searched,inspected:data.stats?.inspected,accepted:data.stats?.accepted,rejectedReasons:data.stats?.rejectedReasons||{},modelUsage:data.stats?.modelUsage||null},
+    state:{lastQuery:data.state?.lastQuery,category:data.state?.category,maxPrice:data.state?.maxPrice,minPrice:data.state?.minPrice,exclusions:data.state?.exclusions,identity:data.state?.identity,features:data.state?.features,presentedProductIds:data.state?.presentedProductIds}};
+  appendFileSync(outfile,JSON.stringify(record)+'\n');
+  results.push(record);
+  console.log(JSON.stringify({id:test.id,verdict:v.verdict,http:data.http,cards:record.cards.length,errors:v.errors,unverified:v.unverified,
+    firstTitle:record.cards[0]?.title?.slice(0,85),firstPrice:record.cards[0]?.price,elapsedMs:responseTime,counts:{...scores}}));
+  if(data.http===429){console.log(JSON.stringify({stage:'rate_limited_stop',at:test.id}));break;}
+  if(tokens.calls>(mode==='online200'?650:235)||tokens.input+tokens.output>(mode==='online200'?950000:220000)){console.log(JSON.stringify({stage:'usage_guard_stop',at:test.id,tokens}));break;}
+  if(i+1<cases.length && mode!=='online200')await sleep(2800);
+ }
+ const summary={mode,deploy:base,ran:results.length,expected:cases.length,scores,tokens,elapsedSeconds:Math.round((Date.now()-t0)/1000),
+    failures:results.filter(x=>x.verdict==='FAIL').map(x=>({id:x.id,question:x.question,reasons:x.errors})),
+    unresolved:results.filter(x=>x.verdict==='UNVERIFIED').map(x=>({id:x.id,question:x.question}))};
+ writeFileSync(summaryfile,JSON.stringify(summary,null,2));
+ console.log(JSON.stringify({stage:'DONE',...summary,failures:summary.failures.slice(0,30),unresolved:summary.unresolved.slice(0,20)}));
+}
+if(require.main===module)main().catch(e=>{console.error(JSON.stringify({stage:'FATAL',errorType:e.name,message:String(e.message)}));process.exitCode=1;});
+module.exports={verdict,holdout,full,gate,blind};

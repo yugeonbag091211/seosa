@@ -681,7 +681,8 @@ const MAX_DISPLAY_AGE_DAYS = Number(process.env.PRICE_MAX_DISPLAY_AGE_DAYS) || 1
  */
 function productLifecycle(row, opts = {}) {
   const maxAge = opts.maxAgeDays || MAX_DISPLAY_AGE_DAYS;
-  const age = ageDays(row && row.collected_at);
+  // opts.now: 재생·평가처럼 «그 시점의 현재» 로 판정해야 할 때만 넘긴다(없으면 지금).
+  const age = ageDays(row && row.collected_at, opts.now);
   // 수집기가 다시 찾아갈 수 있는가 — 노출 판정과 별개다.
   const reachable = !!(row && isRefreshableMall(row.mall) && row.keyword);
   const out = (state, reason) => ({ state, reason, ageDays: age, reachable });

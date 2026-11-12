@@ -1,0 +1,145 @@
+{
+  "description": "Fixed broad title-regex probes for frozen D01-D20. Only Neon products catalog, not all merchant inventory. Inconclusive catalog results do not prove online unavailability.",
+  "criteria": [
+    {
+      "id": "D01",
+      "cap": 1000,
+      "brandPattern": "로지텍|logitech",
+      "modelPattern": "g[[:space:]_-]*304",
+      "otherPattern": ""
+    },
+    {
+      "id": "D02",
+      "cap": 20000,
+      "brandPattern": "로지텍|logitech",
+      "modelPattern": "g[[:space:]_-]*502[[:space:]_-]*x|g502x",
+      "otherPattern": ""
+    },
+    {
+      "id": "D03",
+      "cap": 40000,
+      "brandPattern": "삼성|samsung",
+      "modelPattern": "g[[:space:]_-]*5|오디세이|odyssey",
+      "otherPattern": "27|180"
+    },
+    {
+      "id": "D04",
+      "cap": 50000,
+      "brandPattern": "삼성|samsung",
+      "modelPattern": "g[[:space:]_-]*5|오디세이|odyssey",
+      "otherPattern": "32|165"
+    },
+    {
+      "id": "D05",
+      "cap": 30000,
+      "brandPattern": "위닉스|winix",
+      "modelPattern": "제로[[:space:]_-]*s|zero[[:space:]_-]*s",
+      "otherPattern": ""
+    },
+    {
+      "id": "D06",
+      "cap": 50000,
+      "brandPattern": "lg|엘지",
+      "modelPattern": "에어로[[:space:]_-]*미니|aeromini",
+      "otherPattern": ""
+    },
+    {
+      "id": "D07",
+      "cap": 50000,
+      "brandPattern": "마샬|marshall",
+      "modelPattern": "엠버튼[[:space:]_-]*3|emberton[[:space:]_-]*3",
+      "otherPattern": ""
+    },
+    {
+      "id": "D08",
+      "cap": 100000,
+      "brandPattern": "로보락|roborock",
+      "modelPattern": "s[[:space:]_-]*8[[:space:]_-]*pro",
+      "otherPattern": ""
+    },
+    {
+      "id": "D09",
+      "cap": 50000,
+      "brandPattern": "키크론|keychron",
+      "modelPattern": "k[[:space:]_-]*2[[:space:]_-]*he",
+      "otherPattern": ""
+    },
+    {
+      "id": "D10",
+      "cap": 10000,
+      "brandPattern": "브리츠|britz",
+      "modelPattern": "bt[[:space:]_-]*20[[:space:]_-]*anc",
+      "otherPattern": ""
+    },
+    {
+      "id": "D11",
+      "cap": 10000,
+      "brandPattern": "jbl",
+      "modelPattern": "770[[:space:]_-]*nc",
+      "otherPattern": ""
+    },
+    {
+      "id": "D12",
+      "cap": 30000,
+      "brandPattern": "제논",
+      "modelPattern": "기타|guitar",
+      "otherPattern": ""
+    },
+    {
+      "id": "D13",
+      "cap": 50000,
+      "brandPattern": "콜트|cort",
+      "modelPattern": "베이스|bass",
+      "otherPattern": ""
+    },
+    {
+      "id": "D14",
+      "cap": 100000,
+      "brandPattern": "삼성|samsung",
+      "modelPattern": "a[[:space:]_-]*56",
+      "otherPattern": ""
+    },
+    {
+      "id": "D15",
+      "cap": 20000,
+      "brandPattern": "삼성|samsung",
+      "modelPattern": "버즈[[:space:]_-]*3[[:space:]_-]*fe|buds[[:space:]_-]*3[[:space:]_-]*fe",
+      "otherPattern": ""
+    },
+    {
+      "id": "D16",
+      "cap": 150000,
+      "brandPattern": "애플|apple|아이폰|iphone",
+      "modelPattern": "16[[:space:]_-]*e",
+      "otherPattern": ""
+    },
+    {
+      "id": "D17",
+      "cap": 30000,
+      "brandPattern": "위닉스|winix",
+      "modelPattern": "제로[[:space:]_-]*4|zero[[:space:]_-]*4",
+      "otherPattern": ""
+    },
+    {
+      "id": "D18",
+      "cap": 50000,
+      "brandPattern": "샤오미|xiaomi|레드미|redmi",
+      "modelPattern": "패드[[:space:]_-]*2|pad[[:space:]_-]*2",
+      "otherPattern": ""
+    },
+    {
+      "id": "D19",
+      "cap": 1000,
+      "brandPattern": "로지텍|logitech",
+      "modelPattern": "m[[:space:]_-]*170",
+      "otherPattern": ""
+    },
+    {
+      "id": "D20",
+      "cap": 400000,
+      "brandPattern": "다이슨|dyson",
+      "modelPattern": "퓨어[[:space:]_-]*쿨|pure[[:space:]_-]*cool",
+      "otherPattern": ""
+    }
+  ]
+}

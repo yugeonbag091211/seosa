@@ -1,0 +1,31 @@
+name: AI v3.3 evidence and retrieval regression
+on:
+  push:
+    branches:
+      - 'audit/ai-v33-20261112'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies without postinstall scripts
+        run: npm ci --ignore-scripts
+      - name: Syntax
+        run: |
+          node --check api/_ai-v3-catalog.js
+          node --check api/_ai-v3-core.js
+          node --check scripts/ai-v33-eval/feedback-evidence.js
+          node --check scripts/ai-v33-eval/feedback-report.js
+          node --check scripts/test-ai-v33-improvement-20261112.js
+          node --check scripts/test-ai-v33-feedback-20261112.js
+      - name: Offline integration, fast-check properties and source provenance
+        run: npm run test:ai-v33-improvement

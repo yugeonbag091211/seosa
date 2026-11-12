@@ -1101,7 +1101,14 @@ function searchFixture() {
       recorded_at: `${recorded_date}T09:00:00.000Z`, title: liveCatalogRow.title, link: liveCatalogRow.link
     })));
     const actualGroundingReply = livePriceAnswers[0];
-    const liveRoute = await ask({
+    // This archived October 23 provider reply must be judged as of its
+    // observation date. At today's date, correctly enforced price freshness
+    // would reject the fixture, unrelated to the provenance parser.
+    const archivedRouteClock = Date.now;
+    Date.now = () => Date.parse('2026-10-23T18:00:00Z');
+    let liveRoute;
+    try {
+      liveRoute = await ask({
       question: '대웅 취사 보온 전기밥솥 10인용 현재 가격과 기록상 최저가·평균 대비 차이를 알려줘.',
       view: { source: 'none' }
     }, {
@@ -1112,12 +1119,34 @@ function searchFixture() {
         vendorItemId: liveCatalogRow.vendor_item_id, isCoupang: true
       }]
     });
+    } finally { Date.now = archivedRouteClock; }
     const checkoutCaveat = '\n\n검색 결과 가격은 판매 페이지에 표시된 판매가예요. 실제 결제 금액은 쿠폰·카드 혜택과 배송비, 옵션에 따라 달라질 수 있으니 판매처에서 확인해 주세요.';
     ok(!liveRoute.body.degraded && liveRoute.body.text === actualGroundingReply + checkoutCaveat,
       '실제 GPT 가격 이력 응답은 grounding을 통과하고 표시가·결제가 구분 안내를 덧붙인다',
       JSON.stringify({ warnings: liveRoute.warnings, degraded: liveRoute.body.degraded,
         text: liveRoute.body.text, intent: liveRoute.body.intent,
         facts: facts(liveRoute.system).slice(0, 900), stats: liveRoute.statCalls }));
+    // The same October 23 transcript must NOT be advertised as verified
+    // current pricing on November 10. Keep the fail-closed behavior tested.
+    const staleClock = Date.now;
+    Date.now = () => Date.parse('2026-11-10T12:00:00Z');
+    let staleRoute;
+    try {
+      staleRoute = await ask({
+        question: '대웅 취사 보온 전기밥솥 10인용 현재 가격과 기록상 최저가·평균 대비 차이를 알려줘.',
+        view: { source: 'none' }
+      }, {
+        classify: 'D|대웅 취사 보온 전기밥솥 10인용', answer: actualGroundingReply,
+        searchItems: [{ title: liveCatalogRow.title, lprice: 40900, oprice: 40900,
+          link: liveCatalogRow.link, mall: liveCatalogRow.mall,
+          productId: liveCatalogRow.product_id, vendorItemId: liveCatalogRow.vendor_item_id,
+          isCoupang: true }]
+      });
+    } finally { Date.now = staleClock; }
+    ok(staleRoute.body.degraded === true &&
+       staleRoute.warnings.some(w => String(w).includes('grounding 실패')),
+      '18일 지난 가격 이력은 확인된 현재 가격으로 재사용하지 않고 차단한다',
+      JSON.stringify({ degraded: staleRoute.body.degraded, warnings: staleRoute.warnings }));
     const wrongRecommendation = await ask({ question: '대웅 밥솥 추천해줘', view: { source: 'none' } }, {
       classify: 'C|대웅 밥솥', answer: '삼성 갤럭시 버즈를 추천합니다.',
       searchItems: [{

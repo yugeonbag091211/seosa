@@ -1,0 +1,20 @@
+{
+  "id": "F11",
+  "question": "JBL TUNE 770NC 무선 헤드폰 8만원 이하",
+  "source": "Vercel Preview: real OpenAI and Neon DB read-only; seller partner API disabled",
+  "url": "https://seosa-muilzyipi-seosa.vercel.app",
+  "deploymentId": "dpl_5oR3yKeNd18ui1N7PGmwqU7SYnHf",
+  "codeSha": "1c72b163c70c18f415dabfc6cf908555c9022670",
+  "http": 200,
+  "elapsedMs": 4141,
+  "model": "gpt-4.1-mini",
+  "gptCalls": 1,
+  "inputTokens": 429,
+  "outputTokens": 49,
+  "totalTokens": 478,
+  "dbQueries": 11,
+  "recommendedCards": 0,
+  "verdict": "FAIL",
+  "outcome": "MISSED_AVAILABLE",
+  "note": "Frozen historical FIND label preserved; stale 2026-09-17 seller candidate deliberately not shown. Live seller inventory/price remains unverified."
+}
