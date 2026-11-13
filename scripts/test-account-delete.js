@@ -119,6 +119,20 @@ const rowsOf = (db, t, email) => db.tables[t].filter(r => r.email === email).len
   console.log('\napi/_account.js 계정 삭제\n');
   const token = issueToken(TARGET);
 
+  // v3 profiles use a server-derived opaque ID and must be deleted with the account.
+  {
+    const { profileUserId } = require('../api/_ai-v3-user-id');
+    const initial = seed();
+    initial.user_profiles = [{ user_id: profileUserId(TARGET) }, { user_id: profileUserId(OTHER) }];
+    const db = makeDb(initial);
+    const r = await run(req({ token, body: { confirm: 'delete-account' } }), db);
+    check(r.statusCode === 200 && db.tables.user_profiles.length === 1 &&
+      db.tables.user_profiles[0].user_id === profileUserId(OTHER), 'v3 preference profile deleted only for account owner');
+    const failDb = makeDb(initial, { failDelete: ['user_profiles'] });
+    const failed = await run(req({ token, body: { confirm: 'delete-account' } }), failDb);
+    check(failed.statusCode === 503 && failDb.tables.user_profiles.length === 2, 'v3 profile deletion failure is reported');
+  }
+
   // 1. 방식·인증
   {
     const db = makeDb(seed());

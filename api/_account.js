@@ -55,6 +55,7 @@ const { readBody, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { identify } = require('./_auth');
 const { isMissingObject } = require('./_dberror');
+const { profileUserId } = require('./_ai-v3-user-id');
 
 const CONFIRM = 'delete-account';
 
@@ -128,6 +129,13 @@ async function deleteAccount(email, deps = {}) {
     const { error, count } = await db.from(table).delete({ count: 'exact' }).in('email', list);
     if (error) throw new Error(`${table} 삭제 실패: ${dbMessage(error)}`);
     deleted[table] = count || 0;
+  }
+  // v3 profiles are keyed by the opaque server-derived ID, never by client input.
+  const userId = profileUserId(base);
+  if (userId) {
+    const { error, count } = await db.from('ai_v3_profiles').delete({ count: 'exact' }).eq('user_id', userId);
+    if (error && !isMissingObject(error)) throw new Error('user_profiles 삭제 실패: ' + dbMessage(error));
+    if (!error) deleted.user_profiles = count || 0;
   }
   return { ok: true, deleted, retained: RETAINED_TABLES.slice() };
 }

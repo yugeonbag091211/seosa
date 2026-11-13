@@ -1,4 +1,5 @@
 'use strict';
+const { CLASSIFY_SYSTEM, CLASSIFY_SCHEMA } = require('./_ai-v3-classify');
 
 // OpenAI Responses API. One strict function-call plan followed by a structured ID choice.
 // No model-generated product titles, links or prices are ever returned to customers.
@@ -53,6 +54,40 @@ function makeOpenAiAdapter({ apiKey = process.env.OPENAI_API_KEY, model = proces
   let context;
   return {
     getUsage: () => ({ ...usage }),
+    async classifyModel({ message, prior }) {
+      const response = await post({
+        instructions: CLASSIFY_SYSTEM,
+        input: [{ role: 'user', content: JSON.stringify({ message, prior }) }],
+        max_output_tokens: 80,
+        text: { format: { type: 'json_schema', name: 'seosa_intent', strict: true,
+          schema: CLASSIFY_SCHEMA } }
+      });
+      const content = (response.output || []).flatMap(x => x && x.type === 'message' ? (x.content || []) : [])
+        .filter(x => x.type === 'output_text').map(x => x.text).join('');
+      return JSON.parse(content);
+    },
+    async chatResponse(message) {
+      const res = await fetchImpl('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, store: false, max_tokens: 300, temperature: 0.7,
+          messages: [
+            { role: 'system', content: 'You are a friendly Korean shopping assistant. The user asked a general question. Answer briefly and naturally in Korean, then gently remind them you can help find products.' },
+            { role: 'user', content: message }
+          ] }),
+        signal: AbortSignal.timeout(12000)
+      });
+      if (!res.ok) throw new Error('Chat request failed (HTTP ' + res.status + ')');
+      const body = await res.json();
+      const answer = body.choices && body.choices[0] && body.choices[0].message && body.choices[0].message.content;
+      if (typeof answer !== 'string' || !answer.trim()) throw new Error('Empty chat response');
+      const count = v => Number.isSafeInteger(Number(v)) && Number(v) >= 0 ? Number(v) : 0;
+      usage.calls++;
+      usage.inputTokens += count(body.usage && body.usage.prompt_tokens);
+      usage.outputTokens += count(body.usage && body.usage.completion_tokens);
+      usage.totalTokens += count(body.usage && body.usage.total_tokens);
+      return answer.trim();
+    },
     async planModel({ message, history, state }) {
       const input = [
         ...history.map(x => ({ role: x.role, content: x.content })),
