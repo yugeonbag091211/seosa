@@ -374,8 +374,27 @@ function resultFromSelection(plan, candidates, choice) {
   else if (plan.mode === 'compare' && cards.length >= 2) answer = comparisonAnswer(cards);
   else if (hasUnverifiedShipping(cards)) answer =
     '상품 표시 가격이 예산 이내인 후보입니다. 다만 배송비가 확인되지 않아 최종 결제 금액이 예산 이내인지는 보장할 수 없어요. 구매 전 배송비를 확인해 주세요.';
-  else answer = '요청한 상품 조건에 맞는 후보를 찾았어요. 가격과 옵션은 판매처에서 최종 확인해 주세요.';
+  else answer = recommendAnswer(cards, plan);
   return { answer, cards };
+}
+// v3.5: explain WHY these products were selected, using only verified facts.
+function recommendAnswer(cards, plan) {
+  const parts = [];
+  if (cards.length === 1) {
+    const c = cards[0];
+    parts.push(`${c.title} ${c.priceText}에 확인됐어요.`);
+  } else {
+    const lowest = cards.reduce((a, b) => a.price < b.price ? a : b);
+    parts.push(`조건에 맞는 후보 ${cards.length}개를 찾았어요.`);
+    parts.push(`가장 낮은 표시 가격은 ${lowest.title} ${lowest.priceText}입니다.`);
+  }
+  // Budget context
+  if (plan.maxPrice && cards.every(c => c.price <= plan.maxPrice))
+    parts.push(`모두 예산 ${money(plan.maxPrice)} 이내입니다.`);
+  else if (plan.maxPrice && cards.some(c => c.price > plan.maxPrice))
+    parts.push(`일부 상품이 예산 ${money(plan.maxPrice)}을 초과하지만, 조건에 가장 가까운 후보로 포함했어요.`);
+  parts.push('가격과 옵션은 판매처에서 최종 확인해 주세요.');
+  return parts.join(' ');
 }
 function stateFrom(plan, presented) {
   return {
@@ -568,7 +587,9 @@ async function runEngine({ planModel, decideModel, searchProducts, getUsage, loa
       intent: intentStats(), ...usage() }
   };
   if (plan.mode === 'none') {
-    let answer = intent.informational
+    let answer = intent.thanks
+      ? '도움이 됐다면 다행이에요! 다른 상품이 궁금하시면 언제든 말씀해 주세요.'
+      : intent.informational
       ? '이 대화창은 상품 검색·가격 비교 전용이라 설명형 질문에는 상품을 추천하지 않아요. 원하시는 상품이나 예산을 알려주시면 찾아드릴게요.'
       : '찾고 싶은 상품이나 쇼핑 관련 질문을 알려주세요.';
     if (intent.systemInfo) answer = '저는 상품을 찾고 가격을 비교하는 서사 쇼핑 도우미예요. 찾으시는 상품을 말씀해 주세요.';
@@ -744,6 +765,17 @@ async function runEngine({ planModel, decideModel, searchProducts, getUsage, loa
         selection.answer='조건에 맞는 상품 기록은 있지만 최근 '+ageDaysLimit+'일 안에 확인된 가격이 없어 추천하지 않았어요. 오래된 가격을 현재가처럼 안내하지 않기 위해서예요. 판매처 실시간 가격이 확인되면 다시 안내할게요.';
       else if(noResult==='provider_unavailable_db_checked')
         selection.answer='실시간 판매처 조회에 실패해 서사에 저장된 상품만 확인했는데, 그중에는 조건에 맞는 후보가 없어요. 상품이 없다는 뜻은 아니니 잠시 후 다시 시도해 주세요.';
+      else {
+        // v3.5: context-aware no-result message with actionable suggestions.
+        const hints = [];
+        if (plan.maxPrice) hints.push('예산을 조금 높여 보시거나');
+        if (plan.exclusions && plan.exclusions.length) hints.push('제외 조건을 줄여 보시거나');
+        if (plan.exactModel) hints.push('정확한 모델명 대신 상품 종류로 검색해 보시거나');
+        const suggestion = hints.length
+          ? ' ' + hints.join(', ') + ' 다른 키워드로 다시 검색해 보세요.'
+          : ' 검색어를 바꾸거나 조건을 조정해 보세요.';
+        selection.answer = '「' + (plan.query || '요청하신 상품') + '」 조건에 맞는 상품을 찾지 못했어요.' + suggestion;
+      }
     }
   } else {
     selection.answer+=priceBasisNote(selection.cards);
@@ -756,6 +788,22 @@ async function runEngine({ planModel, decideModel, searchProducts, getUsage, loa
         const advice = timingMessage(assessTiming(item, item.stat, kstToday(asOf)));
         if (advice) selection.answer += ' ' + card.title + ': ' + advice;
       } catch (_) { /* Timing is optional; never invent a conclusion. */ }
+    }
+    // v3.5: grounded specification / price-history answers — code-only, no LLM.
+    if (selection.cards.length && !compare) {
+      try {
+        const grounded = require('./_ai-grounded-answer');
+        const topProduct = selection.cards[0];
+        if (grounded.isProductSpecQuestion(message)) {
+          const specAnswer = grounded.groundedSpecificationAnswer(message, topProduct);
+          if (specAnswer) selection.answer = specAnswer;
+        } else if (grounded.isPriceHistoryQuestion(message)) {
+          const topCandidate = candidates.find(c => c.id === topProduct.productId);
+          const deal = topCandidate && topCandidate.deal ? topCandidate.deal : null;
+          const historyAnswer = grounded.groundedPriceHistoryAnswer(message, topProduct, deal);
+          if (historyAnswer) selection.answer = historyAnswer;
+        }
+      } catch (e) { /* grounded answer module unavailable — keep default */ }
     }
   }
   return {
