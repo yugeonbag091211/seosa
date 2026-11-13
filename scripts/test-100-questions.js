@@ -132,10 +132,11 @@ async function testOne(q, i) {
     const elapsed = Date.now() - start;
     const data = await res.json();
     const version = res.headers.get('x-ai-version') || 'unknown';
-    const hasAnswer = !!(data.answer && data.answer.trim());
+    const answerText = data.text || data.answer || '';
+    const hasAnswer = !!(answerText && answerText.trim());
     const hasCards = Array.isArray(data.cards) && data.cards.length > 0;
     const ok = res.status === 200 && hasAnswer;
-    return { i: i + 1, q, ok, status: res.status, version, hasAnswer, hasCards, cardCount: hasCards ? data.cards.length : 0, elapsed, answer: (data.answer || '').slice(0, 80), error: data.error || null };
+    return { i: i + 1, q, ok, status: res.status, version, hasAnswer, hasCards, cardCount: hasCards ? data.cards.length : 0, elapsed, answer: answerText.slice(0, 80), error: data.error || null };
   } catch (e) {
     return { i: i + 1, q, ok: false, status: 0, version: 'error', hasAnswer: false, hasCards: false, cardCount: 0, elapsed: Date.now() - start, answer: '', error: e.message };
   }
@@ -179,6 +180,18 @@ async function run() {
 
   console.log(`\n📦 카드 포함 응답: ${results.filter(r => r.hasCards).length}회`);
   console.log(`💬 텍스트만 응답: ${results.filter(r => r.ok && !r.hasCards).length}회`);
+
+  // 결과를 JSON 파일로 저장
+  const fs = require('fs');
+  const report = {
+    timestamp: new Date().toISOString(),
+    base: BASE,
+    summary: { total: results.length, success: success.length, fail: fail.length, v3: v3Count, legacy: legacyCount, avgTime },
+    results: results.map(r => ({ i: r.i, q: r.q, ok: r.ok, version: r.version, elapsed: r.elapsed, cards: r.cardCount, answer: r.answer, error: r.error })),
+  };
+  const filename = `test-results-${new Date().toISOString().slice(0,16).replace(/:/g,'-')}.json`;
+  fs.writeFileSync(filename, JSON.stringify(report, null, 2), 'utf8');
+  console.log(`\n💾 결과 저장: ${filename}`);
 }
 
 run().catch(console.error);
