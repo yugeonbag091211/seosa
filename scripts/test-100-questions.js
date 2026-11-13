@@ -127,7 +127,7 @@ async function testOne(q, i) {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: q }),
+      body: JSON.stringify({ question: q }),
     });
     const elapsed = Date.now() - start;
     const data = await res.json();
