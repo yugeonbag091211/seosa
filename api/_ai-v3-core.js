@@ -293,7 +293,8 @@ function compatibilityRequired(plan) {
 }
 function toCard(item) {
   return {
-    productId: item.id, title: item.title, price: item.price, priceText: money(item.price),
+    productId: item.id, vendorItemId: item.vendorItemId || undefined,
+    title: item.title, price: item.price, priceText: money(item.price),
     mall: item.mall, link: item.url, image: item.image,
     priceStatus: item.source === 'api' ? 'observed' : 'cached_or_unverified',
     // v3.4: when the shown price was collected, so a DB price is never

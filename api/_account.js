@@ -133,7 +133,7 @@ async function deleteAccount(email, deps = {}) {
   // v3 profiles are keyed by the opaque server-derived ID, never by client input.
   const userId = profileUserId(base);
   if (userId) {
-    const { error, count } = await db.from('user_profiles').delete({ count: 'exact' }).eq('user_id', userId);
+    const { error, count } = await db.from('ai_v3_profiles').delete({ count: 'exact' }).eq('user_id', userId);
     if (error && !isMissingObject(error)) throw new Error('user_profiles 삭제 실패: ' + dbMessage(error));
     if (!error) deleted.user_profiles = count || 0;
   }

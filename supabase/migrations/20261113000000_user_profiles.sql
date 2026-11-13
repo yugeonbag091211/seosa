@@ -1,6 +1,6 @@
 -- Private, shopping-only preferences. The server uses a hash of the verified
 -- identity as user_id; request-supplied identities are never trusted.
-create table if not exists public.user_profiles (
+create table if not exists public.ai_v3_profiles (
   user_id text primary key check (user_id ~ '^[a-f0-9]{64}$'),
   preferred_brands text[] not null default '{}',
   budget_min bigint check (budget_min > 0),
@@ -11,15 +11,15 @@ create table if not exists public.user_profiles (
   updated_at timestamptz not null default now(),
   check (budget_min is null or budget_max is null or budget_min <= budget_max)
 );
-alter table public.user_profiles enable row level security;
-revoke all on public.user_profiles from public, anon, authenticated;
-grant select, insert, update, delete on public.user_profiles to service_role;
+alter table public.ai_v3_profiles enable row level security;
+revoke all on public.ai_v3_profiles from public, anon, authenticated;
+grant select, insert, update, delete on public.ai_v3_profiles to service_role;
 
 -- Merge in one atomic upsert, so concurrent searches do not lose preferences.
 create or replace function public.merge_ai_v3_user_profile(
   p_user_id text, p_brand text, p_category text, p_budget_min bigint, p_budget_max bigint
 ) returns void language sql security invoker set search_path = '' as $$
-  insert into public.user_profiles as u
+  insert into public.ai_v3_profiles as u
     (user_id, preferred_brands, budget_min, budget_max, category_interests, recent_searches)
   values (p_user_id, case when p_brand is null then '{}'::text[] else array[p_brand] end,
     p_budget_min, p_budget_max,

@@ -24,7 +24,7 @@ async function loadProfile(userId, { db, timeoutMs = 350 } = {}) {
   if (!cleanId(userId)) return null;
   try {
     const source = db || require('./_supabase');
-    const response = await bounded(source.from('user_profiles').select('*').eq('user_id', userId).maybeSingle(), timeoutMs);
+    const response = await bounded(source.from('ai_v3_profiles').select('*').eq('user_id', userId).maybeSingle(), timeoutMs);
     return response && !response.error ? readRow(response.data) : null;
   } catch (_) { return null; }
 }
