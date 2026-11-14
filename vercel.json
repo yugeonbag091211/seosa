@@ -222,18 +222,5 @@
   "regions": [
     "sin1"
   ],
-  "crons": [
-    {
-      "path": "/api/cron",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/volatile-noon",
-      "schedule": "5 3 * * *"
-    },
-    {
-      "path": "/api/volatile-evening",
-      "schedule": "5 10 * * *"
-    }
-  ]
+  "crons": []
 }
