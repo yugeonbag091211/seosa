@@ -124,6 +124,18 @@ node scripts/test-100-questions.js --live --base=https://seosa.ai.kr --require-v
 - 수정 전(`8f3c3d2`, LF 체크아웃): `npm test` **exit 1** — `test-ai-conv-state` 2건에서 사슬이 멈춰 이후 ~70 스위트가 돌지 않음(main 동일, #233 부터).
   이어서 `test-account-delete`(ai_v3_profiles 개명), `test-seo`(cc300da 새 문구), CI 전용 `test-ai-v3`(SEOSA_DB_READONLY)도 실패 상태였다.
 - 수정 후: 아래 «최종 테스트» 절 참고.
+
+### 최종 테스트 (LF 체크아웃, pretest + test 를 명령별로 끝까지 실행)
+
+| 시점 | 명령 수 | 실패 | 비고 |
+|---|---|---|---|
+| 수정 전 `8f3c3d2` | 169 | 2 | `test-ai-conv-state`(64/66) · `test-account-delete`(37/39) — main 과 같은 원인. `npm test` 는 첫 실패에서 멈춰 exit 1 |
+| 수정 후 `f7dd99e` | 177 (+8 새 테스트) | 0 | `npm test` exit 0 |
+| 최종 `daef309` | 177 | 미확정 | 문서·리포트·CI 전용 테스트 수정만 추가 — 로컬 재실행이 끝나기 전에 마감, PR #236 CI `test` 로 확인 필요 |
+
+- `ai-v34-eval` 의 v3 회귀 루프 22개 스위트: `SEOSA_DB_READONLY=1`(CI 조건) · 미설정 · 시계 +30일 모두 통과.
+- Windows CRLF 작업 사본에서는 `test-identity-promotion-mutations`·`test-identity-review-mutations` 가 «mutation target not found» 로 실패한다 —
+  LF 체크아웃에서는 수정 전후 모두 6/6 killed(기존 현상, npm test 사슬 밖).
 - 재현:
 
 ```bash
