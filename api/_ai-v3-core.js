@@ -20,7 +20,7 @@ const { brandMatches, brandsFromUser, modelEvidence, modelClues, linesFromUser, 
 const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
 const { parseBudget, userExclusions, groundExclusions, excludedBy, LOOKS_LIKE_ID } = require('./_ai-v32-intent');
 const { classifyIntent } = require('./_ai-v3-classify');
-const { encodeState, decodeState, updateState } = require('./_ai-v3-state');
+const { encodeState, inspectState, updateState } = require('./_ai-v3-state');
 const { loadProfile, updateProfile, applyProfile } = require('./_ai-v3-profile');
 const { kstToday } = require('./_price');
 // v3.4: the site's single «may this price be shown as current?» rule.
@@ -822,7 +822,14 @@ async function createEngine(deps, request = {}) {
   const profile = deps.userId ? await loadProfile(deps.userId) : null;
   const supplied = request.state == null ? request.prior : request.state;
   const token = typeof supplied === 'string' ? supplied : supplied && supplied.token;
-  const decoded = token ? decodeState(token) : null;
+  // 받은 상태 토큰의 판정(absent | valid | invalid | expired)을 응답 stats 에 남긴다 — 하네스·운영이
+  // «후속 질문에 조건이 실제로 이어졌는가» 를 답 문장이 아니라 계약으로 확인한다.
+  const inspected = inspectState(token);
+  const decoded = inspected.state;
+  const stateStats = r => {
+    if (r && typeof r === 'object') r.stats = { ...(r.stats || {}), state: inspected.status };
+    return r;
+  };
   // Never trust the cleartext fields beside an invalid or valid signed token.
   const signingEnabled = !!(process.env.AI_V3_STATE_SECRET || process.env.AUTH_SECRET || process.env.SUPABASE_SECRET_KEY);
   let saved = token ? (decoded && decoded.lastPlan || {}) :
@@ -837,8 +844,8 @@ async function createEngine(deps, request = {}) {
     const priorState = decoded || {};
     const next = updateState(priorState, {});
     const nextToken = encodeState(next);
-    return { status: 200, answer: '어떤 상품을 말씀하시는지 첫 번째나 두 번째처럼 알려주세요.', cards: [],
-      state: nextToken ? { ...saved, token: nextToken } : saved, stats: { searched: false } };
+    return stateStats({ status: 200, answer: '어떤 상품을 말씀하시는지 첫 번째나 두 번째처럼 알려주세요.', cards: [],
+      state: nextToken ? { ...saved, token: nextToken } : saved, stats: { searched: false } });
   }
   let referenceMaxPrice = null;
   if (target && target.price > 1 && /(?:더\s*싸|저렴|싼\s*(?:것|거|상품|제품))/.test(msg)) {
@@ -849,7 +856,8 @@ async function createEngine(deps, request = {}) {
   }
   const result = await runEngine({ ...deps, profile }, { ...request, state: saved, _shownProducts: shown,
     _referenceTarget: !!target, _referenceMaxPrice: referenceMaxPrice });
-  if (result.status !== 200) return result;
+  if (result.status !== 200) return stateStats(result);
+  stateStats(result);
   const lastPlan = result.state || saved;
   const budget = parseBudget(msg);
   if (deps.userId && result.stats && result.stats.searched && result.cards && result.cards.length) {

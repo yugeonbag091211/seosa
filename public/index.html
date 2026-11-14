@@ -4969,11 +4969,13 @@ function loadChatRef(field) {
   return typeof v === 'string' ? v : '';
 }
 
-// v3 answers carry structured conversation state, not a signed string token.
-// Restore it only from the current chat record, capped to prevent large requests.
+// v3 answers carry { ...plan, token } — the server trusts only the signed token inside (api/_ai-v3-state.js).
+// Restore it only from the current chat record (same 30-minute expiry), capped to prevent large requests.
+// An older build stored the bare token string; keep it as { token } instead of dropping the conversation.
 function loadV3State() {
   var raw = Store.get(CONST.LS.CHAT, null);
   var v = raw && typeof raw === 'object' ? raw.v3State : null;
+  if (typeof v === 'string' && v && v.length <= 4096) return { token: v };
   if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
   try { return JSON.stringify(v).length <= 8000 ? v : {}; } catch (e) { return {}; }
 }
@@ -5685,7 +5687,10 @@ var Api = {
           try { sessionStorage.setItem('seosa_ai_session', AppState.aiSessionId); } catch (e) {}
         }
       }
-      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4], prevTop: args[5] || '', prevTopRef: args[6] || '', convState: args[7] || '', state: AppState.v3State || {}, history: (Array.isArray(args[2]) ? args[2].slice(-8).filter(function(t) { return t && typeof t.text === 'string' && t.text; }).map(function(t) { return { role: t.role === 'assistant' ? 'assistant' : 'user', content: t.text.slice(0, 500) }; }) : []), sessionId: AppState.aiSessionId });
+      // chatHistory 하나만 보낸다 — v3 서버가 여기서 대화 기록을 만든다(api/_ai-v3-history.js).
+      // 잘라서 따로 보내던 history 는 서명(sig)이 빠지고 이번 질문이 두 번 실려 v3 가 이전 답변을 믿을 수 없었다.
+      // state 는 받은 그대로 돌려준다 — 서버는 그 안의 서명 토큰(state.token)만 믿는다.
+      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4], prevTop: args[5] || '', prevTopRef: args[6] || '', convState: args[7] || '', state: AppState.v3State || {}, sessionId: AppState.aiSessionId });
     } else if (fnName === 'saveAlert') {
       method = 'POST';
       fetchOpts.body = JSON.stringify({ email: args[0], title: args[1], targetPrice: args[2], currentPrice: args[3], link: args[4], image: args[5], mall: args[6], productId: args[7], onDeal: !!args[8] });
