@@ -530,6 +530,89 @@ function dropDuplicateGroups(rows) {
 
 /** 원장에서 읽는 컬럼. 필요한 것만 읽는다 — 2,000행이 넘게 오는 질의다. */
 const LEDGER_COLS = 'product_id, mall, title, price, link, recorded_at, recorded_date, vendor_item_id, item_id';
+/*
+ * ★ 판정용 원장 스캔은 이 열만 읽는다 (2026-11-14 Neon 전송량 감사).
+ *
+ *   운영 실측(11-14): 홈 핫딜 한 번에 오늘치 8,374행(JSON 3.5MB) + 직전 관측 RPC 7,753행
+ *   (SETOF price_history 전 열, 3.5MB). 운영은 canonical 읽기 때문에 이 응답이 no-store 라
+ *   방문마다 이만큼을 Neon 에서 내려받았다. 그중 title(행당 ≈90B)·link(쿠팡 ≈230B)·
+ *   recorded_date·source 는 판정에 쓰이지 않는다:
+ *     · 판정(_todaydrop) 은 product_id · mall · price · recorded_at · 옵션 열만 본다.
+ *     · link 는 옵션 열이 둘 다 빈 행에서만 옵션 키의 마지막 수단이다 — 최근 9일 72,000행 중
+ *       0행이었다. 그런 행이 있으면 그 행만 id 로 link 를 다시 읽는다(attachOptionLinks).
+ *     · 카드의 title · historyLink 는 화면에 실릴 카드(≤limit)만 id 로 읽는다(attachCardText).
+ *   결과(카드·순서·판정)는 예전과 같아야 한다 — test-today-drop 이 같은 원장으로 고정한다.
+ */
+const LEDGER_SCAN_COLS = 'id, product_id, mall, price, recorded_at, vendor_item_id, item_id';
+/** 옵션 열이 둘 다 비어 있으면 옵션 키가 link 에서 나온다 (_todaydrop.optionIdOf). */
+function needsLinkForOption(row) {
+  const v = String((row && row.vendor_item_id) == null ? '' : row.vendor_item_id).trim();
+  const i = String((row && row.item_id) == null ? '' : row.item_id).trim();
+  return !(v && v !== '__LEGACY__') && !i;
+}
+/**
+ * id 로 원장 행의 몇 열만 다시 읽는다 (≤ PRODUCT_LOOKUP_CHUNK 개씩). id → 행 배열.
+ * 받은 행은 product_id·mall 이 같은지 호출부가 한 번 더 본다(sameLedgerRow) — id 가 PK 라
+ * 운영에서는 늘 같지만, 다른 행의 값을 카드에 붙이는 일은 어떤 경우에도 없어야 한다.
+ */
+async function ledgerColumnsById(ids, cols, signal) {
+  const out = new Map();
+  const list = Array.from(new Set((ids || []).filter(id => id != null && id !== ''))).map(String);
+  for (let i = 0; i < list.length; i += PRODUCT_LOOKUP_CHUNK) {
+    const { data, error } = await supabase.from('price_history').select(cols)
+      .in('id', list.slice(i, i + PRODUCT_LOOKUP_CHUNK))
+      .abortSignal(signal || new AbortController().signal);
+    if (error) throw new Error(error.message);
+    for (const row of data || []) {
+      const key = String(row.id);
+      if (!out.has(key)) out.set(key, []);
+      out.get(key).push(row);
+    }
+  }
+  return out;
+}
+function sameLedgerRow(found, want) {
+  return !!found && String(found.product_id || '') === String(want.product_id || '')
+    && String(found.mall || '') === String(want.mall || '');
+}
+/** 옵션 열이 빈 행에만 link 를 붙인다. 보통 0행이라 질의도 0회다. */
+async function attachOptionLinks(rows, signal) {
+  const need = (rows || []).filter(r => r && r.link == null && needsLinkForOption(r));
+  if (!need.length) return 0;
+  const found = await ledgerColumnsById(need.map(r => r.id), 'id, product_id, mall, link', signal);
+  need.forEach(r => {
+    const f = (found.get(String(r.id)) || []).find(x => sameLedgerRow(x, r));
+    if (f) r.link = f.link;
+  });
+  return need.length;
+}
+/**
+ * 화면에 실릴 카드의 원장 title · link (historyLink) 를 채운다 — buildDrops 가 todayPoint 에서
+ * 꺼내던 값과 같다. 카드 수만큼만 읽는다.
+ */
+async function attachCardText(cards, todayRows, signal) {
+  const want = new Map();   // todayPoint id → [{ card, point }]
+  const byKeyAt = new Map();
+  for (const row of todayRows || []) byKeyAt.set(TD.seriesKeyOf(row) + '@' + String(row.recorded_at || ''), row);
+  for (const card of cards || []) {
+    if (card.title && card.historyLink) continue;
+    const point = byKeyAt.get(card.key + '@' + String(card.recordedAt || ''));
+    if (!point || point.id == null) continue;
+    const list = want.get(String(point.id)) || [];
+    list.push({ card, point }); want.set(String(point.id), list);
+  }
+  if (!want.size) return 0;
+  const found = await ledgerColumnsById([...want.keys()], 'id, product_id, mall, title, link', signal);
+  for (const [id, list] of want) {
+    list.forEach(({ card, point }) => {
+      const row = (found.get(id) || []).find(x => sameLedgerRow(x, point));
+      if (!row) return;
+      if (!card.title) card.title = String(row.title || '');
+      if (!card.historyLink) card.historyLink = String(row.link || '');
+    });
+  }
+  return want.size;
+}
 /** PostgREST 한 장의 최대 행 수. 서버가 정한 값이라 더 크게 요청해도 1,000행만 온다(실측). */
 const LEDGER_PAGE = 1000;
 /**
@@ -657,7 +740,7 @@ async function fetchTodayRows(dayStartIso, deadlineMs) {
     const r = await runBounded(Array.from({ length: TODAY_MAX_PAGES }, (_, i) => async signal => {
       const from = (base + i) * LEDGER_PAGE;
       const data = await fetchLedgerPage(
-        supabase.from('price_history').select(LEDGER_COLS)
+        supabase.from('price_history').select(LEDGER_SCAN_COLS)
           .gte('recorded_at', dayStartIso)
           .order('recorded_at', { ascending: true })
           .range(from, from + LEDGER_PAGE - 1)
@@ -731,8 +814,9 @@ async function fetchPriorRows(dayStartIso, todayRows, deadlineMs) {
     for (let i = 0; i < ids.length; i += PRIOR_RPC_CHUNK) chunks.push(ids.slice(i, i + PRIOR_RPC_CHUNK));
     let missing = false;
     const r = await runBounded(chunks.map(c => async signal => {
-      const { data, error } = await supabase
-        .rpc(PRIOR_RPC, { p_ids: c, p_before: dayStartIso, p_since: since })
+      // SETOF price_history 의 전 열 대신 판정에 쓰는 열만 받는다 (LEDGER_SCAN_COLS 주석).
+      const call = supabase.rpc(PRIOR_RPC, { p_ids: c, p_before: dayStartIso, p_since: since });
+      const { data, error } = await (typeof call.select === 'function' ? call.select(LEDGER_SCAN_COLS) : call)
         .abortSignal(signal);
       if (error) {
         if (DbError.isMissingFunction(error.message)) missing = true;
@@ -754,7 +838,7 @@ async function fetchPriorRows(dayStartIso, todayRows, deadlineMs) {
   });
   if (cur.length) chunks.push(cur);
   const r = await runBounded(chunks.map(chunk => signal => fetchLedgerPage(
-    supabase.from('price_history').select(LEDGER_COLS)
+    supabase.from('price_history').select(LEDGER_SCAN_COLS)
       .in('product_id', chunk)
       .lt('recorded_at', dayStartIso)
       .gte('recorded_at', since)
@@ -921,19 +1005,32 @@ async function loadTodayDrops(limit, opts) {
     const prior = await fetchPriorRows(dayStart, today_.rows, deadline - reserve);
     const deals = await dealsP;
 
-    const todayRows = today_.rows;
+    /*
+     * 옵션 열이 빈 행은 link 로 옵션 키를 만든다 (LEDGER_SCAN_COLS 주석). 그 link 를 못 읽으면
+     * 그 행은 계열을 확정할 수 없으므로 판정에서 뺀다 — 다른 옵션끼리 비교하지 않는다(fail-closed).
+     */
+    let optionLinkRows = 0, optionLinkFailed = false;
+    try { optionLinkRows = await attachOptionLinks(today_.rows.concat(prior.rows), endCtrl.signal); }
+    catch (_) { optionLinkFailed = true; }
+    const resolved = row => !(row.link == null && needsLinkForOption(row));
+    const todayRows = optionLinkFailed ? today_.rows.filter(resolved) : today_.rows;
+    const priorScan = optionLinkFailed ? prior.rows.filter(resolved) : prior.rows;
     const wanted = new Set(todayRows.map(TD.seriesKeyOf));
-    const priorRows = Array.from(pickPriorRows(prior.rows, wanted).values());
+    const priorRows = Array.from(pickPriorRows(priorScan, wanted).values());
 
     const built = TD.buildDrops(todayRows.concat(priorRows), { today });
     const merged = TD.applyVerified(built.items, deals, { now: Date.now() });
 
     const page = merged.slice(0, limit);
     // 이미지·링크 보강. 시간이 모자라 취소되면 원장 링크(historyLink)로만 그린다.
-    const products = await fetchProducts(page, endCtrl.signal).catch(e => {
-      if (endCtrl.signal.aborted) return new Map();
-      throw e;
-    });
+    // 원장 title·link 는 화면에 실릴 카드만 따로 읽는다 — 실패해도 카탈로그 제목으로 그린다.
+    const [products, cardText] = await Promise.all([
+      fetchProducts(page, endCtrl.signal).catch(e => {
+        if (endCtrl.signal.aborted) return new Map();
+        throw e;
+      }),
+      attachCardText(page, todayRows, endCtrl.signal).catch(() => -1)
+    ]);
     const items = page.map(c => toTodayDropItem(c, products.get(`${c.productId}|${c.mall}`)));
 
     return {
@@ -964,11 +1061,69 @@ async function loadTodayDrops(limit, opts) {
         cards: built.stats.cards,
         verified: merged.filter(c => c.verified).length,
         todayDrop: merged.filter(c => !c.verified).length,
-        reasons: built.stats.reasons
+        reasons: built.stats.reasons,
+        // 슬림 스캔 보강 (LEDGER_SCAN_COLS) — 옵션 link 를 다시 읽은 행 · 카드 원장 문구 조회 수(-1 = 실패)
+        optionLinkRows,
+        optionLinkFailed,
+        cardTextRows: cardText
       }
     };
   } finally {
     clearTimeout(endTimer);
+  }
+}
+
+/*
+ * ★ 같은 인스턴스 안의 짧은 메모 (2026-11-14 Neon 전송량 감사).
+ *
+ *   canonical 읽기가 켜진 운영에서는 이 응답이 no-store 다(롤백이 즉시 보이게 — 그 결정은
+ *   그대로 둔다). 그래서 방문마다 오늘치 원장을 처음부터 다시 읽었다. 원장은 수집기가 도는
+ *   주기로만 바뀌므로, 원장에서 만든 목록(canonical 묶기 «전») 만 짧게 재사용한다.
+ *   canonical 묶기는 요청마다 그대로 다시 한다 — 롤백 스위치는 즉시 듣는다.
+ *   동시에 온 요청은 진행 중인 한 번을 같이 기다린다(single-flight). 일부만 읽은(partial)
+ *   목록은 짧게만 둔다. HOME_DROP_MEMO_MS=0 이면 끈다.
+ */
+const DROPS_MEMO_MS = (() => {
+  const n = Number(process.env.HOME_DROP_MEMO_MS);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 300000) : 60000;
+})();
+const DROPS_MEMO_PARTIAL_MS = 10000;
+const DROPS_MEMO_MAX_KEYS = 6;
+const dropsMemo = new Map();
+
+function cloneDrops(value, ageMs, how) {
+  return {
+    ...value,
+    items: value.items.map(it => ({ ...it })),
+    stats: { ...value.stats, memo: how, memoAgeMs: Math.max(0, Math.round(ageMs)) }
+  };
+}
+
+async function loadTodayDropsMemo(limit, opts) {
+  if (!DROPS_MEMO_MS) return loadTodayDrops(limit, opts);
+  const key = `${kstToday()}|${limit}`;
+  const now = Date.now();
+  const hit = dropsMemo.get(key);
+  if (hit && hit.value) {
+    const ttl = hit.value.partial ? DROPS_MEMO_PARTIAL_MS : DROPS_MEMO_MS;
+    if (now - hit.at < ttl) return cloneDrops(hit.value, now - hit.at, 'hit');
+  }
+  if (hit && hit.promise) {
+    const value = await hit.promise;
+    return cloneDrops(value, Date.now() - (hit.startedAt || now), 'shared');
+  }
+  const entry = { promise: null, startedAt: now };
+  entry.promise = loadTodayDrops(limit, opts);
+  dropsMemo.set(key, entry);
+  try {
+    const value = await entry.promise;
+    dropsMemo.set(key, { at: Date.now(), value });
+    // 날짜·limit 별 키가 쌓이지 않게 가장 오래된 것부터 버린다.
+    while (dropsMemo.size > DROPS_MEMO_MAX_KEYS) dropsMemo.delete(dropsMemo.keys().next().value);
+    return cloneDrops(value, 0, 'miss');
+  } catch (e) {
+    if (dropsMemo.get(key) === entry) dropsMemo.delete(key);
+    throw e;
   }
 }
 
@@ -1042,7 +1197,7 @@ module.exports = async function handler(req, res) {
      *   바뀌지 않았으므로 /api/hotdeals, ?id=, view=external 소비자는 그대로다.
      */
     if (String(q.view || '') === 'today-drop') {
-      const drops = await loadTodayDrops(canonicalReadEnabled ? Math.min(MAX_LIMIT, limit * 2) : limit);
+      const drops = await loadTodayDropsMemo(canonicalReadEnabled ? Math.min(MAX_LIMIT, limit * 2) : limit);
       if (canonicalReadEnabled) {
         const grouped = await Canonical.collapseItems(drops.items, { db: supabase, config: canonicalConfig });
         drops.items = grouped.slice(0, limit);
@@ -1193,6 +1348,9 @@ module.exports._internal = {
   byDailyDrop, dropAmountOf,
   loadTodayDrops, toTodayDropItem, linkFor, imageFor, fetchTodayRows, fetchPriorRows,
   fetchVerifiedDeals, fetchProducts, pickPriorRows, LEDGER_COLS, TODAY_MAX_PAGES, PRIOR_LOOKBACK_DAYS,
+  // 2026-11-14 Neon 전송량 — 슬림 스캔·카드 문구 보강·인스턴스 메모
+  LEDGER_SCAN_COLS, needsLinkForOption, attachOptionLinks, attachCardText, loadTodayDropsMemo, DROPS_MEMO_MS,
+  _resetDropsMemo() { dropsMemo.clear(); },
   runBounded, PRIOR_CONCURRENCY, PRIOR_RPC_CONCURRENCY, PRIOR_RPC, PRIOR_MAX_IDS, PRIOR_URL_BUDGET, DROP_TOTAL_BUDGET_MS,
   _resetPriorRpc() { priorRpcMissing = false; }
 };

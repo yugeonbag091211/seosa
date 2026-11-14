@@ -120,17 +120,18 @@ const rowsOf = (db, t, email) => db.tables[t].filter(r => r.email === email).len
   const token = issueToken(TARGET);
 
   // v3 profiles use a server-derived opaque ID and must be deleted with the account.
+  // 표 이름은 ai_v3_profiles 다(6ed67d6 이 기존 user_profiles 와 겹치지 않게 바꿨다 — 테스트만 옛 이름이었다).
   {
     const { profileUserId } = require('../api/_ai-v3-user-id');
     const initial = seed();
-    initial.user_profiles = [{ user_id: profileUserId(TARGET) }, { user_id: profileUserId(OTHER) }];
+    initial.ai_v3_profiles = [{ user_id: profileUserId(TARGET) }, { user_id: profileUserId(OTHER) }];
     const db = makeDb(initial);
     const r = await run(req({ token, body: { confirm: 'delete-account' } }), db);
-    check(r.statusCode === 200 && db.tables.user_profiles.length === 1 &&
-      db.tables.user_profiles[0].user_id === profileUserId(OTHER), 'v3 preference profile deleted only for account owner');
-    const failDb = makeDb(initial, { failDelete: ['user_profiles'] });
+    check(r.statusCode === 200 && db.tables.ai_v3_profiles.length === 1 &&
+      db.tables.ai_v3_profiles[0].user_id === profileUserId(OTHER), 'v3 preference profile deleted only for account owner');
+    const failDb = makeDb(initial, { failDelete: ['ai_v3_profiles'] });
     const failed = await run(req({ token, body: { confirm: 'delete-account' } }), failDb);
-    check(failed.statusCode === 503 && failDb.tables.user_profiles.length === 2, 'v3 profile deletion failure is reported');
+    check(failed.statusCode === 503 && failDb.tables.ai_v3_profiles.length === 2, 'v3 profile deletion failure is reported');
   }
 
   // 1. 방식·인증

@@ -870,7 +870,10 @@ let KST_LASTMOD_AT = 0;
     ok((body.match(/<h1[\s>]/g) || []).length === 1, '★ 홈 H1 은 하나', String((body.match(/<h1[\s>]/g) || []).length));
     ok((body.match(/<h2 class="hero-title">/g) || []).length === 3, '나머지 슬라이드 제목은 같은 class 의 h2 (모양 그대로)');
     ok(/<title>SEOSA · 최저가·가격비교·가격 추이<\/title>/.test(body), '홈 title');
-    ok(/<meta property="og:title" content="SEOSA · 최저가도 고급스럽게">/.test(body), '공유 카드 브랜드 문구는 그대로');
+    // cc300da(2026-11-14) 가 첫 화면 가치 문구를 바꿨다 — 공유 카드도 같은 문구여야 한다.
+    ok(/<meta property="og:title" content="SEOSA · 쇼핑하기 전에, 가격부터 확인하세요">/.test(body)
+      && /<meta name="twitter:title" content="SEOSA · 쇼핑하기 전에, 가격부터 확인하세요">/.test(body),
+    '공유 카드(og·twitter) 제목은 첫 화면 가치 문구와 같다');
     ok(/<link rel="canonical" href="https:\/\/seosa\.ai\.kr\/">/.test(body), '홈 원본 HTML 은 canonical = 홈');
     // 머리의 인라인 스크립트를 실제로 돌려 «행동» 을 본다 (정규식 모양을 단언하지 않는다).
     const headScript = [...body.split('</head>')[0].matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).find(src => /canonical/.test(src));

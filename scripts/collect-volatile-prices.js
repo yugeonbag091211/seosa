@@ -42,7 +42,7 @@ const { kstDayStartUtc, vendorIdOf } = require('../api/_price');
 const { searchCoupang } = require('../api/_coupang');
 const { searchAdpick } = require('../api/_adpick');
 const { recordPrices, adpickProductId } = require('../api/_shop');
-const { pickOption, acquireLock, loadState, releaseLock } = require('./collect-all-prices');
+const { pickOption, acquireLock, loadState, releaseLock, loadStateHead, lockHeldReason } = require('./collect-all-prices');
 const {
   keyOf, volatilityRanking, slotPlan, pickSearchGroups,
   STATUS, kstDay, slotWindow, delayMinutes,
@@ -362,6 +362,43 @@ function shouldEmail(status, suppressed) {
   return !suppressed && EMAIL_STATUSES.includes(status);
 }
 
+/*
+ * ★ 할 일이 없는 재확인 실행은 공유 상태 전체(≈1.7MB)를 읽지 않는다 (2026-11-14 Neon 전송량).
+ *
+ *   하루 23칸 중 실제로 슬롯을 맡는 실행은 2번이다. 나머지는 잠금 충돌 · 이미 처리된 슬롯 ·
+ *   창 밖 감시(놓친 슬롯 없음)로, 외부 호출도 원장 쓰기도 없이 끝난다. 그런데도 잠금을 잡느라
+ *   상태를 통째로 두 번(loadState · releaseLock) 읽었다. 판정에 필요한 원장·잠금만 가볍게
+ *   읽고(loadStateHead), 쓰기가 필요한 경우(슬롯을 맡는다 · 놓친 슬롯을 표시한다)만 예전 경로로
+ *   간다. 판정 문장과 상태는 아래 run() 의 예전 분기와 같다. 순수 함수 — 테스트가 고정한다.
+ */
+function volatileFastPath({ now, plan, wantedSlot, head }) {
+  if (!head || typeof head !== 'object') return null;
+  const nowMs = now.getTime();
+  const held = lockHeldReason(head.lock, nowMs);
+  if (held) return { status: STATUS.LOCKED, reason: '기존 정기 수집과 잠금 충돌: ' + held };
+  const ledger = head.volatileSlots && typeof head.volatileSlots === 'object' ? head.volatileSlots : {};
+  if (!plan) {
+    if (missedSlots(now, ledger).length) return null;   // 표시(쓰기)가 필요하다 → 예전 경로
+    const ownWindow = wantedSlot ? slotWindow(kstDay(now), wantedSlot) : null;
+    const ownClosed = ownWindow && nowMs >= ownWindow.endMs;
+    if (wantedSlot && ownClosed) {
+      return { status: STATUS.MISSED, reason: `${wantedSlot} 슬롯을 지시받았지만 실행 시각이 창 밖입니다`
+        + ' — 예약 지연으로 이 슬롯의 수집 기회를 잃었습니다.' };
+    }
+    if (wantedSlot) {
+      return { status: STATUS.SKIPPED, reason: `${wantedSlot} 창이 아직 열리지 않았습니다`
+        + ` (${ownWindow ? kstText(ownWindow.startMs) : '-'} 부터) — 외부 호출 0회` };
+    }
+    return { status: STATUS.SKIPPED, reason: '점심/저녁 수집 창 밖 — 외부 호출 0회(정상 감시 실행)' };
+  }
+  const prior = ledgerGet(ledger, plan.day, plan.slot);
+  if (prior && isServed(prior)) {
+    return { status: STATUS.SKIPPED, reason: `${plan.day} ${plan.slot} 슬롯은 이미 처리됨(${prior.status}`
+      + `${prior.at ? ' @' + prior.at : ''}) — 중복 수집하지 않음` };
+  }
+  return null;
+}
+
 async function run() {
   const now = new Date();
   const wantedSlot = process.env.PRICE_VOLATILE_SLOT || '';
@@ -381,6 +418,16 @@ async function run() {
       report.status = STATUS.SKIPPED;
       report.reason = '긴급 중지 스위치(PRICE_VOLATILE_OFF=1) — 가격 재확인하지 않음';
       console.log('[adaptive] ' + report.reason);
+      return;
+    }
+
+    const fast = volatileFastPath({ now, plan, wantedSlot, head: await loadStateHead() });
+    if (fast) {
+      report.status = fast.status;
+      report.reason = fast.reason;
+      const line = '[adaptive] ' + (fast.status === STATUS.LOCKED ? '재확인 보류(LOCKED): ' : '')
+        + fast.reason + ' (상태 요약만 읽음)';
+      if (fast.status === STATUS.MISSED) console.error(line); else console.log(line);
       return;
     }
 
@@ -598,7 +645,7 @@ async function run() {
 module.exports = {
   observation, catalogForRanking, getUsage, getRanking, confirmAppliedChanges,
   emptyMallStats, newReport, publishOutputs, sweepMissed, readLedger, writeSlot,
-  shouldEmail, EMAIL_STATUSES, run
+  shouldEmail, EMAIL_STATUSES, volatileFastPath, run
 };
 if (require.main === module) {
   run().catch(e => { console.error('[adaptive] 실패:', e.stack || e.message); process.exitCode = 1; });
