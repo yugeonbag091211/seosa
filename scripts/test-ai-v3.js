@@ -199,9 +199,16 @@ function makeRes(){
     const {searchCatalog} = require('../api/_ai-v3-catalog');
     const empty=()=>({limit:async()=>({data:[],error:null})});
     const database={from:()=>({select:()=>({ilike:empty,eq:empty})})};
-    const result=await searchCatalog('노트북',{db:database,
-      liveSearch:async()=>({items:[items[0]],failed:false})});
-    assert.equal(result.length,1);assert.equal(result[0].productId,'lap1');
+    // This case is about the NON-read-only path. CI (ai-v34-eval.yml) sets
+    // SEOSA_DB_READONLY=1 for the whole job, which deliberately disables live
+    // search — the test failed only in CI since 2026-11-12. Scope it here.
+    const saved=process.env.SEOSA_DB_READONLY;
+    delete process.env.SEOSA_DB_READONLY;
+    try {
+      const result=await searchCatalog('노트북',{db:database,
+        liveSearch:async()=>({items:[items[0]],failed:false})});
+      assert.equal(result.length,1);assert.equal(result[0].productId,'lap1');
+    } finally { if(saved===undefined)delete process.env.SEOSA_DB_READONLY; else process.env.SEOSA_DB_READONLY=saved; }
   });
   await test('price under budget but missing delivery becomes provisional, not confirmed',()=>{
     const plan=core.sanitizePlan({query:'노트북',category:'노트북',maxPrice:800000}, {}, '노트북');
