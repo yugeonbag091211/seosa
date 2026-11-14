@@ -197,6 +197,9 @@ function deal(over) {
 }
 
 function call(query) {
+  // 섹션마다 원장(db)을 바꿔 가며 부른다 — 인스턴스 메모(loadTodayDropsMemo)가 앞 섹션 결과를
+  // 돌려주지 않게 매번 비운다. 메모 자체는 test-neon-transfer-guards 가 따로 고정한다.
+  if (handler._internal && handler._internal._resetDropsMemo) handler._internal._resetDropsMemo();
   return new Promise((resolve, reject) => {
     let code = 200; const headers = {};
     const res = {

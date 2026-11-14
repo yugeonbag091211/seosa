@@ -314,6 +314,24 @@ async function test(name, fn) {
     assert.deepEqual(seen[0].values[0], ['a', 'b']);
     assert.match(seen[0].text, /"p_ids" => \$1::text\[\], "p_before" => \$2::timestamp with time zone/);
   });
+  await test('★ rpc(...).select(열) — 집합 반환 함수의 결과 열을 서버에서 고른다 (2026-11-14 전송량)', async () => {
+    respond = () => ({ rows: [{ product_id: 'a', price: 1 }] });
+    const r = await db.rpc('price_history_prior_obs', { p_ids: ['a'], p_before: '2026-10-21T00:00:00Z' })
+      .select('id, product_id, mall, price, recorded_at, vendor_item_id, item_id');
+    assert.equal(r.error, null); assert.deepEqual(r.data, [{ product_id: 'a', price: 1 }]);
+    assert.match(seen[0].text, /^SELECT "id", "product_id", "mall", "price", "recorded_at", "vendor_item_id", "item_id" FROM public\."price_history_prior_obs"\(/);
+    assert.match(seen[0].text, /LIMIT \$3$/);
+  });
+  await test('★ rpc(...).select(열) — 스칼라 함수에는 무시, 위험한 식은 거절', async () => {
+    respond = () => ({ rows: [{ value: 4 }] });
+    const r = await db.rpc('coupang_prune', { keep_days: 3 }).select('id');
+    assert.equal(r.data, 4);
+    assert.match(seen[0].text, /^SELECT public\."coupang_prune"\("keep_days" => \$1::integer\) AS value$/);
+    seen.length = 0;
+    const bad = await db.rpc('price_history_prior_obs', { p_ids: ['a'], p_before: '2026-10-21T00:00:00Z' })
+      .select('id; drop table x');
+    assert.ok(bad.error, '식별자가 아닌 열은 오류'); assert.equal(seen.length, 0, 'SQL 을 보내지 않는다');
+  });
   await test('jsonb 인자는 JSON 텍스트', async () => {
     await db.rpc('identity_review_resolve', { p_queue_id: 1, p_canonical_members: [{ a: 1 }] });
     assert.equal(seen[0].values[1], '[{"a":1}]');

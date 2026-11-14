@@ -422,7 +422,8 @@ const LONG = [
   section('F. 웹·앱 — 보내고, 바꾸고, 지운다');
   {
     const html = fs.readFileSync(path.resolve(__dirname, '..', 'public', 'index.html'), 'utf8');
-    ok(/fnName === 'askAI'[\s\S]{0,400}convState:\s*args\[7\]\s*\|\|\s*''/.test(html), '웹 Api.call askAI 본문에 convState 를 싣는다');
+    // askAI 분기에는 v3 세션 id 준비(#233)가 앞에 붙어 길어졌다 — 분기 안에서만 찾는다(2026-11-14).
+    ok(/fnName === 'askAI'\)\s*\{[\s\S]{0,2000}?convState:\s*args\[7\]\s*\|\|\s*''/.test(html), '웹 Api.call askAI 본문에 convState 를 싣는다');
     ok(/Api\.call\('askAI',\s*\[[^\]]*AppState\.convState\s*\|\|\s*''\]/.test(html), '웹 Chat.send 가 AppState.convState 를 넘긴다');
     ok(/if\s*\(res\.convState\)\s*AppState\.convState\s*=\s*String\(res\.convState\)/.test(html), '웹: 받은 convState 로 바꾼다 (없으면 그대로)');
     const clearFn = (html.match(/clear:\s*function\(\)\s*\{[\s\S]*?toast\('대화 기록을 지웠어요'\)/) || [''])[0];
@@ -432,7 +433,8 @@ const LONG = [
 
     const mobile = p => fs.readFileSync(path.resolve(__dirname, '..', 'apps', 'mobile', p), 'utf8');
     ok(/convState:\s*input\.convState\s*\|\|\s*''/.test(mobile('lib/ai.ts')), '앱 buildAiRequest 가 convState 를 싣는다');
-    ok(/convState:\s*str\(value\.convState\)/.test(mobile('lib/parse.ts')), '앱 parseAiAnswer 가 convState 를 읽는다');
+    // v3 응답을 먼저 정규화(normalized)한 뒤 읽는다(#233) — 둘 다 같은 필드를 읽는 것이다.
+    ok(/convState:\s*str\((?:value|normalized)\.convState\)/.test(mobile('lib/parse.ts')), '앱 parseAiAnswer 가 convState 를 읽는다');
     const screen = mobile('app/concierge.tsx');
     ok(/setConvState\(s\s*=>\s*answer\.convState\s*\|\|\s*s\)/.test(screen) && /convState,/.test(screen), '앱 화면: 받은 상태로 바꾸고 다음 요청에 넘긴다');
     ok(/const reset = \(\) => \{[^\n]*setConvState\(''\)/.test(screen), '앱 화면: 새 대화(reset)가 상태를 비운다');
