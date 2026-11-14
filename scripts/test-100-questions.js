@@ -2,8 +2,8 @@
 // 브라우저 콘솔에서 실행하거나 Node.js로 실행
 // Usage: node scripts/test-100-questions.js https://seosa.ai.kr
 
-const BASE = process.argv[2] || 'https://seosa.ai.kr';
-const ENDPOINT = `${BASE}/api/ai`;
+const BASE = (process.argv.slice(2).find(a => /^https:\/\//.test(a)) || 'https://seosa.ai.kr').replace(/\/+$/, '');
+const ENDPOINT = BASE + '/api/ai?v=3';
 
 const questions = [
   // 기본 추천 (1-15)
@@ -119,79 +119,186 @@ const questions = [
   'ㅁㄴㅇㄹ',
 ];
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function testOne(q, i) {
-  const start = Date.now();
+
+// Strict QA: HTTP 200 is transport success, not a verified shopping recommendation.
+// Follow-up cases 46-55 are preceded by real (unscored) seed turns.
+const fs = require('fs');
+const crypto = require('crypto');
+const argv = process.argv.slice(2);
+const live = argv.includes('--live');
+const requireV3 = argv.includes('--require-v3');
+function option(name, fallback) {
+  const arg = argv.find(x => x.startsWith('--' + name + '='));
+  return arg ? arg.slice(name.length + 3) : fallback;
+}
+const maxQuestions = Math.max(1, Math.min(100, Number(option('max', '100')) || 100));
+const delayMs = Math.max(5500, Number(option('delay-ms', '5500')) || 5500);
+const reviewPath = option('review-file', '');
+const review = reviewPath ? JSON.parse(fs.readFileSync(reviewPath, 'utf8')) : {};
+const budgetLimits = { 16: 50000, 17: 300000, 18: 200000, 19: 1000000,
+  20: 30000, 22: 150000, 23: 100000, 24: 2000000, 25: 20000 };
+const seedQuestions = {
+  46: '5만원 이하 무선 이어폰 추천해줘',
+  47: '아이패드 에어 추천해줘',
+  48: '100만원 이하 노트북 추천해줘',
+  49: '에어팟 프로와 갤럭시 버즈 비교해줘',
+  50: '유선 헤드폰 추천해줘',
+  51: '20만원 이하 기계식 키보드 추천해줘',
+  52: '삼성 모니터 추천해줘',
+  53: '5만원 이하 무선 마우스 추천해줘',
+  54: '게이밍 마우스 추천해줘',
+  55: '기계식 키보드 추천해줘'
+};
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const session = () => 'test_' + crypto.randomBytes(16).toString('hex');
+const percentile = (values, p) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.ceil(p * sorted.length) - 1];
+};
+const nextHistory = (history, question, data) => [
+  ...history, { role: 'user', content: question },
+  { role: 'assistant', content: String(data.answer || data.text || '').slice(0, 500) }
+].slice(-8);
+const nextLegacyHistory = (history, question, data) => [
+  ...history, { role: 'user', text: question },
+  { role: 'assistant', text: String(data.text || data.answer || '').slice(0, 450),
+    ...(typeof data.turnSig === 'string' ? { sig: data.turnSig } : {}) }
+].slice(-6);
+const qualityChecks = (number, data) => {
+  const reasons = [];
+  const cards = Array.isArray(data.cards) ? data.cards
+    : Array.isArray(data.items) ? data.items : [];
+  for (const [index, card] of cards.entries()) {
+    const price = Number(card.price == null ? card.lprice : card.price);
+    if (!Number.isFinite(price) || price <= 0) reasons.push('card_' + index + '_invalid_price');
+    const cap = budgetLimits[number];
+    if (cap && price > cap) reasons.push('card_' + index + '_over_budget');
+    const link = String(card.url || card.link || card.productUrl || '');
+    if (link && !/^https:\/\//i.test(link)) reasons.push('card_' + index + '_non_https_link');
+  }
+  return reasons;
+};
+async function send(question, context) {
+  const started = Date.now();
   try {
+    const payload = {
+      question, message: question, sessionId: context.sessionId,
+      state: context.state, history: context.history,
+      chatHistory: context.chatHistory
+    };
     const res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q }),
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(40000)
     });
-    const elapsed = Date.now() - start;
-    const data = await res.json();
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch (_) { data = { error: 'non_json_response' }; }
     const version = res.headers.get('x-ai-version') || 'unknown';
-    const answerText = data.text || data.answer || '';
-    const hasAnswer = !!(answerText && answerText.trim());
-    const hasCards = Array.isArray(data.cards) && data.cards.length > 0;
-    const ok = res.status === 200 && hasAnswer;
-    return { i: i + 1, q, ok, status: res.status, version, hasAnswer, hasCards, cardCount: hasCards ? data.cards.length : 0, elapsed, answer: answerText.slice(0, 80), error: data.error || null };
+    const answer = typeof data.answer === 'string' ? data.answer
+      : typeof data.text === 'string' ? data.text : '';
+    return { status: res.status, version, elapsedMs: Date.now() - started,
+      data, answer, transportOk: res.status === 200 && !!answer.trim() && !data.error,
+      error: data.error || null };
   } catch (e) {
-    return { i: i + 1, q, ok: false, status: 0, version: 'error', hasAnswer: false, hasCards: false, cardCount: 0, elapsed: Date.now() - start, answer: '', error: e.message };
+    return { status: 0, version: 'network-error', elapsedMs: Date.now() - started,
+      data: {}, answer: '', transportOk: false, error: String(e.message || e) };
   }
 }
-
+function classify(number, result, notes) {
+  // No automatic PASS: only a reviewed verdict with a written reason can PASS.
+  const failures = [...notes];
+  if (!result.transportOk) failures.push('transport_or_empty_answer');
+  if (requireV3 && result.version !== 'v3') failures.push('unexpected_version');
+  failures.push(...qualityChecks(number, result.data));
+  if (failures.length) return { verdict: 'FAIL', reasons: failures };
+  const human = review[String(number)] || review['Q' + String(number).padStart(3, '0')];
+  if (human && human.verdict === 'FAIL' && typeof human.evidence === 'string' && human.evidence.trim())
+    return { verdict: 'FAIL', reasons: ['human_review: ' + human.evidence] };
+  if (human && human.verdict === 'PASS' && typeof human.evidence === 'string' && human.evidence.trim())
+    return { verdict: 'PASS', reasons: ['human_review: ' + human.evidence] };
+  return { verdict: 'UNVERIFIED', reasons: ['answer_quality_not_independently_reviewed'] };
+}
+function projection(n, q, res, verdict, reasons, seed) {
+  const cards = Array.isArray(res.data.cards) ? res.data.cards
+    : Array.isArray(res.data.items) ? res.data.items : [];
+  return { id: 'Q' + String(n).padStart(3, '0'), question: q, seedQuestion: seed || null,
+    status: res.status, version: res.version, elapsedMs: res.elapsedMs,
+    transportOk: res.transportOk, verdict, reasons, answer: res.answer,
+    cardCount: cards.length,
+    cards: cards.map(c => ({ title: String(c.title || '').slice(0, 200),
+      price: c.price == null ? c.lprice : c.price, mall: c.mall || null,
+      url: c.url || c.link || null })),
+    stats: res.data.stats || null, error: res.error };
+}
 async function run() {
-  console.log(`\n🧪 SEOSA AI 100-Question Test — ${BASE}\n`);
+  const plannedSeeds = Object.keys(seedQuestions).filter(n => Number(n) <= maxQuestions).length;
+  console.log('SEOSA AI strict QA | ' + ENDPOINT + ' | ' + maxQuestions
+    + ' scored questions + ' + plannedSeeds + ' live seed turns');
+  if (!live) {
+    console.log('DRY RUN ONLY. Use --live to make billable production API requests.');
+    console.log('HTTP 200 never counts as a quality PASS. No calls made.');
+    return;
+  }
   const results = [];
-  for (let i = 0; i < questions.length; i++) {
-    const r = await testOne(questions[i], i);
-    const icon = r.ok ? '✅' : '❌';
-    const cards = r.hasCards ? ` 📦${r.cardCount}` : '';
-    console.log(`${icon} #${String(r.i).padStart(3)} [${r.version}] ${r.elapsed}ms${cards} — ${r.q}`);
-    if (!r.ok) console.log(`     ↳ ${r.error || r.answer || `HTTP ${r.status}`}`);
-    results.push(r);
-    // Rate limit: 300ms between requests
-    if (i < questions.length - 1) await sleep(300);
+  let requests = 0, knownCostUsd = 0, unpricedRequests = 0;
+  for (let i = 0; i < maxQuestions; i++) {
+    const number = i + 1, q = questions[i], seed = seedQuestions[number];
+    const ctx = { sessionId: session(), state: {}, history: [], chatHistory: [] };
+    let seedError = '';
+    if (seed) {
+      const before = await send(seed, ctx);
+      requests++;
+      if (!before.transportOk || (requireV3 && before.version !== 'v3')) {
+        seedError = 'followup_seed_failed_or_wrong_version';
+      } else {
+        ctx.state = before.data.state && typeof before.data.state === 'object' ? before.data.state : {};
+        ctx.history = nextHistory(ctx.history, seed, before.data);
+        ctx.chatHistory = nextLegacyHistory(ctx.chatHistory, seed, before.data);
+      }
+      await sleep(delayMs);
+    }
+    if (seedError) {
+      results.push(projection(number, q, { status: 0, version: 'not-run',
+        elapsedMs: 0, data: {}, answer: '', transportOk: false, error: seedError },
+        'UNVERIFIED', [seedError], seed));
+      continue;
+    }
+    const actual = await send(q, ctx);
+    requests++;
+    const assessment = classify(number, actual, []);
+    const item = projection(number, q, actual, assessment.verdict, assessment.reasons, seed);
+    results.push(item);
+    const price = actual.data.stats && Number(actual.data.stats.costUsd);
+    if (Number.isFinite(price) && price > 0) knownCostUsd += price;
+    else unpricedRequests++;
+    console.log(item.id + ' ' + item.verdict + ' HTTP ' + item.status
+      + ' [' + item.version + '] ' + item.elapsedMs + 'ms ' + q);
+    if (i !== maxQuestions - 1) await sleep(delayMs);
   }
-
-  const success = results.filter(r => r.ok);
-  const fail = results.filter(r => !r.ok);
-  const v3Count = results.filter(r => r.version === 'v3').length;
-  const legacyCount = results.filter(r => r.version === 'legacy').length;
-  const avgTime = Math.round(results.reduce((s, r) => s + r.elapsed, 0) / results.length);
-
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`📊 결과 요약`);
-  console.log(`${'='.repeat(60)}`);
-  console.log(`✅ 성공: ${success.length}/100`);
-  console.log(`❌ 실패: ${fail.length}/100`);
-  console.log(`🤖 v3 응답: ${v3Count}회 / legacy 응답: ${legacyCount}회`);
-  console.log(`⏱  평균 응답시간: ${avgTime}ms`);
-
-  if (fail.length) {
-    console.log(`\n❌ 실패 목록:`);
-    fail.forEach(r => {
-      console.log(`  #${r.i} — ${r.q}`);
-      console.log(`     ${r.error || r.answer || `HTTP ${r.status}`}`);
-    });
-  }
-
-  console.log(`\n📦 카드 포함 응답: ${results.filter(r => r.hasCards).length}회`);
-  console.log(`💬 텍스트만 응답: ${results.filter(r => r.ok && !r.hasCards).length}회`);
-
-  // 결과를 JSON 파일로 저장
-  const fs = require('fs');
-  const report = {
-    timestamp: new Date().toISOString(),
-    base: BASE,
-    summary: { total: results.length, success: success.length, fail: fail.length, v3: v3Count, legacy: legacyCount, avgTime },
-    results: results.map(r => ({ i: r.i, q: r.q, ok: r.ok, version: r.version, elapsed: r.elapsed, cards: r.cardCount, answer: r.answer, error: r.error })),
+  const latencies = results.filter(r => r.status > 0).map(r => r.elapsedMs);
+  const summary = {
+    evaluated: results.length, actualHttpRequests: requests,
+    pass: results.filter(r => r.verdict === 'PASS').length,
+    fail: results.filter(r => r.verdict === 'FAIL').length,
+    unverified: results.filter(r => r.verdict === 'UNVERIFIED').length,
+    http200: results.filter(r => r.status === 200).length,
+    v3: results.filter(r => r.version === 'v3').length,
+    legacy: results.filter(r => r.version === 'legacy').length,
+    p95Ms: percentile(latencies, 0.95),
+    avgMs: latencies.length ? Math.round(latencies.reduce((s, n) => s + n, 0) / latencies.length) : null,
+    knownCostUsd: Number(knownCostUsd.toFixed(6)), unpricedRequests,
+    costVerified: unpricedRequests === 0
   };
-  const filename = `test-results-${new Date().toISOString().slice(0,16).replace(/:/g,'-')}.json`;
-  fs.writeFileSync(filename, JSON.stringify(report, null, 2), 'utf8');
-  console.log(`\n💾 결과 저장: ${filename}`);
+  const filename = 'test-100-questions-strict-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+  fs.writeFileSync(filename, JSON.stringify({
+    createdAt: new Date().toISOString(), endpoint: ENDPOINT, requireV3, summary, results,
+    caveat: 'HTTP success is not recommendation correctness. Cost is unverified when telemetry is missing.'
+  }, null, 2), 'utf8');
+  console.log(JSON.stringify(summary, null, 2));
+  console.log('Report: ' + filename);
 }
-
-run().catch(console.error);
+run().catch(err => { console.error(err); process.exitCode = 1; });
