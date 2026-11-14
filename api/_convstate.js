@@ -276,6 +276,37 @@ function foldConditions(list, text) {
   return [...set];
 }
 
+/*
+ * 빼 달라고 한 브랜드·이름도 상태로 잇는다 (2026-11-02 Production 실측).
+ * 제외는 최근 발화 6개에서만 읽어서, 3턴째 «HP 빼줘» 가 13턴째에는 사라지고 HP 노트북이 1위로 나왔다.
+ * 거두는 말("HP도 괜찮아")에 이름이 있으면 그 이름만, 이름 없이 "제외 취소" 면 전부 거둔다.
+ */
+/*
+ * 제외한 브랜드·이름이 «그 상품을 찾는 동안» 인지 «앞으로 모든 상품» 인지 (2026-11-02 회귀검사).
+ * 범위를 두지 않으면 태블릿에서 뺀 애플이 이어폰 추천에도 걸리고, "앞으로 전부 빼줘" 는 종류가 바뀌며 사라졌다.
+ * 예산의 GLOBAL_BUDGET_RE 와 같은 말로 가른다 — 두 조건이 다른 규칙으로 움직이면 사용자가 예측할 수 없다.
+ */
+const GLOBAL_EXCLUDE_RE = new RegExp(GLOBAL_BUDGET_RE.source + '|앞으로\\s*(?:는|도)?\\s*(?:전부|모두|다|계속)|항상|무조건\\s*(?:다|전부)');
+const CONDITION_NAME_RE = /^(?:중고|리퍼|렌탈|대여|직구|병행|전시|반품|미개봉|가방|케이스|액세서리|호환품|부품|번들|묶음)/;
+function foldExcludedNames(acc, text) {
+  const FB = require('./_feedback');
+  const set = new Set((acc && acc.names) || []);
+  const global = new Set((acc && acc.global) || []);
+  const t = String(text || '');
+  if (FB.isExcludeRelease(t)) {
+    const named = [...set].filter(n => t.includes(n));
+    (named.length ? named : [...set]).forEach(n => { set.delete(n); global.delete(n); });
+    return { names: [...set], global: [...global] };
+  }
+  // 상태 낱말(중고·리퍼)은 excludedConditions 가 맡는다 — 여기서 함께 지우면 «제외 요청하신 상태» 판정 전에 사라진다.
+  const isGlobal = GLOBAL_EXCLUDE_RE.test(t);
+  FB.readFeedback(t).excludes.filter(e => !CONDITION_NAME_RE.test(e.name)).forEach(e => {
+    set.add(e.name);
+    if (isGlobal) global.add(e.name);
+  });
+  return { names: [...set], global: [...global] };
+}
+
 function emptyConstraints() {
   return mergeConstraints(null, null);
 }
@@ -321,6 +352,7 @@ function resolve(state, hist, q, opts) {
     dropped: null
   };
   let budgetDropped = null;
+  let namesDropped = [];
   /*
    * 예산을 말한 발화가 상품 이름을 함께 말하지 않는 일이 더 많다 ("노트북 추천해줘" → "30만원 이하로").
    * 그래서 그때 찾고 있던 상품(thread)을 예산의 상품으로 적는다.
@@ -390,6 +422,13 @@ function resolve(state, hist, q, opts) {
     acc.scope = '';
     acc.product = '';
   }
+  /*
+   * 상품 종류가 바뀌면 그 상품에만 걸린 브랜드 제외를 거둔다. "앞으로 모든 상품에서 빼 줘" 로 말한 것은 남긴다.
+   * 이번 발화가 다시 빼 달라고 하면 아래 fold 가 그 위에 다시 올린다.
+   */
+  if (state && productKindChanged(String(state.excludeProduct || ''), product)) {
+    namesDropped = (state.excludedNames || []).filter(n => !(state.excludedGlobalNames || []).includes(n));
+  }
   // 이번 질문이 예산을 거두면 base 에서 미리 걷는다 — api/ai.js 는 그 위에 이번 질문을 그대로 겹친다.
   if (state) base = releasesBudget(q, qParsed) ? withoutBudget(acc.c) : acc.c;
 
@@ -401,6 +440,13 @@ function resolve(state, hist, q, opts) {
   }
   const nextConstraints = fold(q);
   const nextExcluded = foldConditions(excluded, q);
+  let namesAcc = state
+    ? { names: (state.excludedNames || []).filter(n => !namesDropped.includes(n)), global: (state.excludedGlobalNames || []).slice() }
+    : { names: [], global: [] };
+  if (!state) folded.forEach(h => { namesAcc = foldExcludedNames(namesAcc, textOf(h)); });
+  const nextNames = foldExcludedNames(namesAcc, q);
+  const nextExcludedNames = nextNames.names;
+  const releasedNames = (state ? (state.excludedNames || []) : namesAcc.names).filter(n => !nextExcludedNames.includes(n));
   folded.concat([{ role: 'user', text: q }]).forEach(h => {
     const d = digest(textOf(h));
     if (!d) return;
@@ -415,6 +461,10 @@ function resolve(state, hist, q, opts) {
     replay,
     intentHist,
     excludedBefore: state ? excluded : [],
+    excludedNames: nextExcludedNames,
+    releasedNames: releasedNames,
+    // 상품 종류가 바뀌어 거둔 상품 전용 제외 — 이번 발화가 다시 말한 이름은 거두지 않는다.
+    droppedNames: namesDropped.filter(n => !nextExcludedNames.includes(n)),
     // 상품이 바뀌어 거둔 상품 전용 예산 (api/ai.js 가 한 줄로 알린다). 없으면 null.
     budgetDropped,
     next: {
@@ -422,6 +472,10 @@ function resolve(state, hist, q, opts) {
       // 모순(conflict)·완화 고지(budgetNotice)는 그 턴의 일이다. 다음 턴으로 넘기지 않는다.
       constraints: Object.assign({}, nextConstraints, { conflict: null, budgetNotice: '' }),
       excludedConditions: nextExcluded,
+      excludedNames: nextExcludedNames,
+      excludedGlobalNames: nextNames.global,
+      // 이 제외를 말한 상품 — 종류가 바뀌면 상품 전용 제외만 거둔다.
+      excludeProduct: nextExcludedNames.length ? (product || String((state && state.excludeProduct) || '')) : '',
       absorbed: absorbed.slice(-MAX_ABSORBED),
       budgetScope: acc.scope === 'global' ? 'global' : '',
       budgetProduct: acc.scope === 'product' ? String(acc.product || '').slice(0, 120) : '',
@@ -468,6 +522,7 @@ function summaryLine(next, withBudget) {
   }
   const ex = (next.excludedConditions || []).map(x => KO_CONDITION[x] || x);
   if (ex.length) parts.push(`빼 달라고 한 상태: ${ex.join('·')}`);
+  if ((next.excludedNames || []).length) parts.push(`빼 달라고 한 브랜드·이름: ${next.excludedNames.join('·')}`);
   return parts.join(' · ');
 }
 
