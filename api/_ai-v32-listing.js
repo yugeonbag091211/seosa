@@ -76,6 +76,10 @@ const OTHER_DEVICE = /(?:스마트\s*tv|(?<![a-z])tv(?![a-z])|티비|텔레비�
 // ("다이슨 v10 튜브 호환 교체품 ... 청소기").
 const MEDIA = /(?:교본|악보|도서|\[?e-?book\]?|e북|레슨\s*북|강습\s*책|수록곡|라디오|mp3)(?!\s*(?:증정|포함|제공|동봉))/i;
 const REPLACEMENT_PART = /(?:교체품|호환품|교체용|호환용|리필용|대체품)(?!\s*(?:증정|포함|제공|동봉))/;
+// v3.5 (2026-11-14, 100-question offline Q020): tickets, passes and vouchers are not
+// goods. «크라이스트처치-그레이마우스 TranzAlpine 열차 티켓» passed as a MOUSE because the
+// place name contains «마우스». A bundled voucher («상품권 증정») is still an extra.
+const NON_GOODS = /(?:티켓|입장권|항공권|승차권|탑승권|(?:열차|기차|버스)\s*(?:표|패스)|숙박권|이용권|관람권|패키지\s*여행|여행\s*상품|투어(?!링)|기프티콘|모바일\s*(?:쿠폰|교환권)|상품권|교환권)(?!\s*(?:증정|포함|제공|동봉|추가))/i;
 
 const INCLUDED = /(?:포함|증정|사은품|동봉|구성품|무료\s*제공|제공|증정품|덤)/i;
 // Devices that other products are made FOR (compatibility hosts).
@@ -158,6 +162,7 @@ function principalItem(title) {
   const phrase = mainPhrase(title);
   const whole = stripTaxonomy(String(title || '').normalize('NFKC'));
   if (MEDIA.test(whole)) return { kind: 'accessory', type: null, noun: 'media', phrase };
+  if (NON_GOODS.test(whole)) return { kind: 'accessory', type: null, noun: 'non_goods', phrase };
   if (REPLACEMENT_PART.test(whole)) return { kind: 'accessory', type: null, noun: 'replacement_part', phrase };
   if (FITS_SENTENCE.test(whole)) return { kind: 'accessory', type: null, noun: 'fits_sentence', phrase };
   const nouns = collectNouns(phrase);

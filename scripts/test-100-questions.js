@@ -1,197 +1,227 @@
-// SEOSA AI v3 100-question automated test
-// 브라우저 콘솔에서 실행하거나 Node.js로 실행
-// Usage: node scripts/test-100-questions.js https://seosa.ai.kr
+#!/usr/bin/env node
+/*
+ * SEOSA AI 100문항 평가 하네스 (2026-11-14 개편).
+ *
+ *   node scripts/test-100-questions.js                          드라이런: 계획·호출량·비용 추정만 (호출 0회)
+ *   node scripts/test-100-questions.js --offline --snapshot=<catalog.jsonl>
+ *        실제 v3 라우트·엔진(createEngine + searchCatalog)을 동결 카탈로그 위에서 돌린다.
+ *        GPT 는 결정적 대역(scripts/ai-100/planner.js), 판매처 API·DB·네트워크 0회.
+ *   node scripts/test-100-questions.js --live [--base=https://seosa.ai.kr] [--require-v3]
+ *        실서버에 실제 요청(유료 AI·판매처 검색·Neon 전송 발생) — 사용자 승인 뒤에만.
+ *
+ * 옵션: --max=N  --only=Q001,Q046  --delay-ms=7000  --timeout-ms=40000  --review-file=<json>
+ *       --price-in=<$/1M>  --price-out=<$/1M>  --label=before|after  --out=<file.json>
+ *
+ * 판정(scripts/ai-100/grade.js): HTTP 200 은 전송 성공일 뿐이다. 카드 유형·예산·브랜드·모델·
+ * 중고·낡은 가격·링크·후속 문맥을 hard 로 보고(FAIL), 판단이 필요한 문항은 UNVERIFIED 로 남긴다.
+ * 후속 질문(Q046–Q055)은 seed 질문과 «같은 세션» 에서 웹과 같은 요청 모양으로 순서대로 보낸다:
+ * chatHistory(이번 질문을 끝에 넣고, 받은 답은 turnSig 와 함께) · state(받은 그대로) · convState.
+ */
+'use strict';
 
-const BASE = process.argv[2] || 'https://seosa.ai.kr';
-const ENDPOINT = `${BASE}/api/ai`;
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { CASES, CATEGORY_LABELS } = require('./ai-100/cases');
+const { gradeCase, summarize, cardsOf, answerOf } = require('./ai-100/grade');
 
-const questions = [
-  // 기본 추천 (1-15)
-  '에어팟 추천해줘',
-  '10만원대 블루투스 이어폰 뭐가 좋아?',
-  '게이밍 키보드 추천',
-  '가성비 좋은 무선 마우스 알려줘',
-  '노트북 거치대 하나 찾아줘',
-  '외장 SSD 1TB 추천해줘',
-  '공부할 때 쓸 노이즈캔슬링 헤드폰 추천',
-  '아이패드 케이스 추천해줘',
-  'USB-C 허브 좋은 거 있어?',
-  '모니터 암 추천',
-  '전동 킥보드 추천해줘',
-  '캠핑 의자 좋은 거 알려줘',
-  '공기청정기 추천',
-  '로봇청소기 뭐가 좋아?',
-  '전자책 리더기 추천해줘',
-  // 예산 지정 (16-25)
-  '5만원 이하 이어폰 추천',
-  '30만원 이하 태블릿 있어?',
-  '예산 20만원으로 기계식 키보드 찾아줘',
-  '100만원 이하 노트북 추천해줘',
-  '3만원짜리 마우스 추천',
-  '50만원대 안마의자 있어?',
-  '15만원 이하 스마트워치',
-  '10만원 이하 블렌더 추천해줘',
-  '200만원 이하 세탁기',
-  '2만원 이하 충전 케이블 추천',
-  // 가격 비교 (26-35)
-  '삼성 T7 1TB 최저가 알려줘',
-  '에어팟 프로 2 가격 비교해줘',
-  '갤럭시 버즈3 프로 어디가 제일 싸?',
-  '다이슨 에어랩 최저가',
-  '맥북 에어 M3 가격 비교',
-  '닌텐도 스위치 어디서 사는 게 제일 싸?',
-  '소니 WH-1000XM5 최저가 찾아줘',
-  'LG 그램 17인치 가격 비교',
-  '아이패드 미니 7 최저가',
-  '삼성 오디세이 G5 모니터 가격 비교해줘',
-  // 비교 질문 (36-45)
-  '에어팟 프로 vs 갤럭시 버즈 뭐가 나아?',
-  '맥북이랑 갤럭시북 비교해줘',
-  '다이슨이랑 LG 무선청소기 뭐가 좋아?',
-  '기계식 키보드랑 멤브레인 차이가 뭐야?',
-  '아이패드 에어랑 프로 뭐가 나을까?',
-  'SSD랑 HDD 뭐 사야 돼?',
-  '로지텍이랑 라울 마우스 비교',
-  '샤오미 공기청정기 vs 삼성 비스포크',
-  'OLED TV랑 QLED 뭐가 좋아?',
-  '보스 헤드폰이랑 소니 헤드폰 비교해줘',
-  // 후속 질문 — 독립 테스트 (46-55)
-  '더 싼 거 없어?',
-  '다른 색상도 있어?',
-  '첫 번째 거 좀 더 알려줘',
-  '두 번째 거 어디서 사?',
-  '무선으로 된 건 없어?',
-  '좀 더 비싼 거 보여줘',
-  '삼성 말고 다른 브랜드로',
-  '이거 말고 다른 거 추천해줘',
-  '쿠팡에서 파는 거만 보여줘',
-  '배송 빠른 거 있어?',
-  // 구매 타이밍 (56-62)
-  '에어팟 지금 사도 돼?',
-  '블랙프라이데이까지 기다려야 해?',
-  '이 가격이면 괜찮은 거야?',
-  '요즘 가격이 많이 올랐어?',
-  '최근에 가격 변동 있었어?',
-  '지금이 최저가야?',
-  '좀 더 기다리면 싸질까?',
-  // 스펙 질문 (63-70)
-  '에어팟 프로 배터리 얼마나 가?',
-  '이 모니터 주사율이 몇이야?',
-  '갤럭시 S24 울트라 무게 알려줘',
-  '이 SSD 읽기 속도 얼마야?',
-  '아이패드 에어 저장 용량 옵션 뭐 있어?',
-  '이 키보드 스위치 종류가 뭐야?',
-  '이 이어폰 방수 돼?',
-  '이 노트북 램 업그레이드 되나?',
-  // 비쇼핑 질문 (71-80)
-  '너 이름이 뭐야?',
-  '오늘 날씨 어때?',
-  'USB-C가 뭐야?',
-  '블루투스 5.3이랑 5.0 차이가 뭐야?',
-  'OLED가 뭔지 설명해줘',
-  '노이즈캔슬링 원리가 뭐야?',
-  '와이파이 6E가 뭐야?',
-  'MagSafe가 뭐야?',
-  '환율이 상품 가격에 영향을 미쳐?',
-  '쿠팡 로켓배송이 뭐야?',
-  // 감사/인사 (81-85)
-  '고마워!',
-  '잘 알겠어 감사해',
-  '도움 많이 됐어',
-  '오 딱 이거야 고마워',
-  '안녕하세요',
-  // 브랜드 지정 (86-92)
-  '소니 이어폰 추천해줘',
-  '삼성 모니터 중에 괜찮은 거',
-  '애플 제품만 보여줘',
-  '로지텍 마우스 추천',
-  '다이슨 제품 뭐가 있어?',
-  '샤오미 가성비 제품 추천',
-  'LG 노트북 추천해줘',
-  // 복합/엣지 (93-100)
-  '중고 에어팟도 괜찮아?',
-  '남자친구 선물로 10만원대 추천해줘',
-  '자취 시작하는데 필요한 가전 추천',
-  '코딩할 때 쓸 모니터 추천해줘',
-  '아이 학습용 태블릿 추천',
-  '운동할 때 쓸 이어폰 뭐가 좋아?',
-  '가격 많이 떨어진 제품 있어?',
-  'ㅁㄴㅇㄹ',
-];
+const argv = process.argv.slice(2);
+const has = f => argv.includes('--' + f);
+const opt = (name, fallback) => {
+  const a = argv.find(x => x.startsWith('--' + name + '='));
+  return a ? a.slice(name.length + 3) : fallback;
+};
+const MODE = has('live') ? 'live' : has('offline') ? 'offline' : 'dry-run';
+const BASE = String(opt('base', argv.find(a => /^https:\/\//.test(a)) || 'https://seosa.ai.kr')).replace(/\/+$/, '');
+const ENDPOINT = BASE + '/api/ai?v=3';
+const REQUIRE_V3 = has('require-v3');
+const DELAY_MS = Math.max(MODE === 'live' ? 5500 : 0, Number(opt('delay-ms', MODE === 'live' ? 7000 : 0)) || 0);
+const TIMEOUT_MS = Math.max(5000, Number(opt('timeout-ms', 40000)) || 40000);
+const ONLY = opt('only', '') ? new Set(opt('only', '').split(',').map(s => s.trim()).filter(Boolean)) : null;
+const MAX = Math.max(1, Math.min(100, Number(opt('max', 100)) || 100));
+const LABEL = String(opt('label', 'run')).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'run';
+const PRICES = opt('price-in') && opt('price-out') ? { input: Number(opt('price-in')), output: Number(opt('price-out')) } : null;
+const REVIEW = opt('review-file') ? JSON.parse(fs.readFileSync(opt('review-file'), 'utf8')) : null;
 
+const selected = CASES.filter(c => (!ONLY || ONLY.has(c.id)) && c.n <= MAX);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sessionId = () => 'h100_' + crypto.randomBytes(12).toString('hex');
+const gitSha = () => { try { return require('child_process').execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (_) { return null; } };
 
-async function testOne(q, i) {
-  const start = Date.now();
-  try {
-    const res = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q }),
-    });
-    const elapsed = Date.now() - start;
-    const data = await res.json();
-    const version = res.headers.get('x-ai-version') || 'unknown';
-    const answerText = data.text || data.answer || '';
-    const hasAnswer = !!(answerText && answerText.trim());
-    const hasCards = Array.isArray(data.cards) && data.cards.length > 0;
-    const ok = res.status === 200 && hasAnswer;
-    return { i: i + 1, q, ok, status: res.status, version, hasAnswer, hasCards, cardCount: hasCards ? data.cards.length : 0, elapsed, answer: answerText.slice(0, 80), error: data.error || null };
-  } catch (e) {
-    return { i: i + 1, q, ok: false, status: 0, version: 'error', hasAnswer: false, hasCards: false, cardCount: 0, elapsed: Date.now() - start, answer: '', error: e.message };
+/* ── 전송: live(HTTP) · offline(라우트 직접) 같은 모양 { status, version, gate, elapsedMs, error, data } ── */
+function liveClient() {
+  return async body => {
+    const t0 = Date.now();
+    try {
+      const res = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', 'User-Agent': 'seosa-ai-100-harness/2026-11-14' },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const raw = await res.text();
+      let data, error = null;
+      try { data = JSON.parse(raw); } catch (_) { data = {}; error = 'non_json_response'; }
+      return { status: res.status, version: res.headers.get('x-ai-version') || 'unknown', gate: res.headers.get('x-ai-v3-gate') || null,
+        elapsedMs: Date.now() - t0, error: error || (data && data.error) || null, data };
+    } catch (e) {
+      return { status: 0, version: 'network-error', gate: null, elapsedMs: Date.now() - t0, error: String(e && e.name === 'TimeoutError' ? 'timeout' : (e.message || e)).slice(0, 200), data: {} };
+    }
+  };
+}
+
+function offlineClient(snapshotPath) {
+  // 오프라인은 네트워크를 쓰지 않는다 — 쓰려는 순간 실패시킨다.
+  global.fetch = async url => { throw new Error('offline harness: network call blocked: ' + String(url).slice(0, 80)); };
+  process.env.AUTH_SECRET = process.env.AUTH_SECRET || 'offline-harness-turn-secret';
+  process.env.AI_V3_STATE_SECRET = process.env.AI_V3_STATE_SECRET || 'offline-harness-state-secret';
+  delete process.env.SEOSA_DB_READONLY;
+  const { loadSnapshot, createSnapshotDb } = require('./ai-v31-rootcause/snapshot-db');
+  const rows = loadSnapshot(snapshotPath);
+  const asOfMs = Math.max(...rows.map(r => Date.parse(r.collected_at)).filter(Number.isFinite));
+  const db = createSnapshotDb(rows);
+  const catalog = require('../api/_ai-v3-catalog');
+  const route = require('../api/_ai-v3-route');
+  const { planFor } = require('./ai-100/planner');
+  const mapRow = r => ({ productId: r.product_id, title: r.title, lprice: r.lprice, mall: r.mall, link: r.link, image: '',
+    vendorItemId: r.vendor_item_id || '', collectedAt: r.collected_at });
+  let ip = 0;
+  const send = body => new Promise((resolve, reject) => {
+    const usage = { model: 'offline-scripted', calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    const adapter = {
+      now: asOfMs,   // 엔진 시계 = 스냅숏 시각(가격 신선도 판정이 스냅숏 기준이 된다)
+      getUsage: () => ({ ...usage }),
+      planModel: async ({ message }) => { usage.calls++; return planFor(message); },
+      decideModel: async ({ candidates, message }) => {
+        usage.calls++;
+        return { productIds: candidates.slice(0, /하나만|한\s*개만|딱\s*하나/.test(message) ? 1 : 4).map(c => c.id) };
+      },
+      chatResponse: async () => { usage.calls++; return '(오프라인 대역) 일반 질문에 대한 답 자리입니다. 상품이 필요하면 말씀해 주세요.'; }
+    };
+    const deps = { testMode: true, adapter,
+      searchProducts: (query, o) => catalog.searchCatalog(query, { ...o, db, mapRow, liveSearch: null, searchStrategy: 'db-first' }),
+      loadDisplayed: ids => catalog.loadProductsByIds(ids, { db, mapRow }) };
+    ip++;
+    const req = { method: 'POST', headers: {}, query: { v: '3' }, body, socket: { remoteAddress: `10.100.${(ip >> 8) & 255}.${ip & 255}` } };
+    const t0 = Date.now();
+    const headers = {};
+    const res = {
+      statusCode: 200,
+      setHeader(k, v) { headers[String(k).toLowerCase()] = v; },
+      getHeader(k) { return headers[String(k).toLowerCase()]; },
+      status(n) { this.statusCode = n; return this; },
+      json(data) { resolve({ status: this.statusCode, version: headers['x-ai-version'] || 'unknown', gate: headers['x-ai-v3-gate'] || null,
+        elapsedMs: Date.now() - t0, error: (data && data.error) || null, data }); return this; },
+      end() { resolve({ status: this.statusCode, version: headers['x-ai-version'] || 'unknown', gate: headers['x-ai-v3-gate'] || null,
+        elapsedMs: Date.now() - t0, error: 'empty_body', data: {} }); return this; }
+    };
+    Promise.resolve(route._handler(req, res, deps)).catch(reject);
+  });
+  send.meta = { snapshot: path.basename(snapshotPath), rows: rows.length, asOf: new Date(asOfMs).toISOString(),
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(snapshotPath)).digest('hex') };
+  send.nowMs = asOfMs;
+  return send;
+}
+
+/* ── 웹과 같은 대화 한 칸 ── */
+function newConversation() {
+  return { sessionId: sessionId(), chatHistory: [], state: {}, convState: '', prevTop: '', prevTopRef: '' };
+}
+async function ask(send, conv, question) {
+  conv.chatHistory.push({ role: 'user', text: question });   // 웹 Chat.send 처럼 보내기 전에 넣는다
+  const body = { question, contextProducts: [], chatHistory: conv.chatHistory.slice(-10), profile: {}, view: { source: 'home' },
+    prevTop: conv.prevTop, prevTopRef: conv.prevTopRef, convState: conv.convState, state: conv.state, sessionId: conv.sessionId };
+  const r = await send(body);
+  const d = r.data || {};
+  if (r.status === 200 && !d.error) {
+    if (typeof d.answer === 'string' && d.state && typeof d.state === 'object' && !Array.isArray(d.state)) conv.state = d.state;
+    if (typeof d.convState === 'string' && d.convState) conv.convState = d.convState;
+    if (d.topProductId) conv.prevTop = String(d.topProductId);
+    if (d.topRecommendationRef) conv.prevTopRef = String(d.topRecommendationRef);
+    const turn = { role: 'assistant', text: answerOf(d) };
+    if (typeof d.turnSig === 'string' && d.turnSig) turn.sig = d.turnSig;
+    conv.chatHistory.push(turn);
   }
+  return r;
+}
+
+function projectTurn(t) {
+  if (!t) return null;
+  const d = t.data || {};
+  const st = d.stats || {};
+  return { status: t.status, version: t.version, gate: t.gate, elapsedMs: t.elapsedMs, error: t.error,
+    answer: answerOf(d).slice(0, 600),
+    cards: cardsOf(d).map(c => ({ id: c.id, title: c.title.slice(0, 160), price: c.price, mall: c.mall, url: c.url.slice(0, 200),
+      observedAt: c.observedAt || null, freshness: c.freshness })),
+    stats: { state: st.state, conversation: st.conversation, searched: st.searched, accepted: st.accepted,
+      noResult: st.noResult, rejectedReasons: st.rejectedReasons, modelUsage: st.modelUsage, intent: st.intent } };
+}
+
+function dryRun() {
+  const seeds = selected.filter(c => c.expect.seed).length;
+  const requests = selected.length + seeds;
+  const shopping = selected.filter(c => !['knowledge', 'smalltalk'].includes(c.category)).length + seeds;
+  console.log('SEOSA AI 100문항 — 드라이런 (요청 0회)');
+  console.log(`  대상: ${ENDPOINT}`);
+  console.log(`  채점 문항 ${selected.length} + 후속 seed ${seeds} = 요청 ${requests}회 (같은 세션 순서 실행)`);
+  console.log(`  예상 시간: 요청 간격 ${DELAY_MS || 7000}ms + 응답 5~20초 → 약 ${Math.round(requests * ((DELAY_MS || 7000) + 10000) / 60000)}분`);
+  console.log(`  v3 가 답하면 OpenAI 호출 ≈ 쇼핑 질문당 2~3회(분류·계획·선택) → 최대 ≈ ${shopping * 3 + (requests - shopping)}회`);
+  console.log(`  판매처 검색(쿠팡·ADPICK) 상한 ≈ 쇼핑 질문당 각 1회 → 각 ≤ ${shopping}회 (분당 ≈ ${Math.round(60000 / ((DELAY_MS || 7000) + 5000))}회 — ADPICK 공식 10회/분 이하)`);
+  console.log('  Neon 전송: 요청마다 카탈로그·가격 이력 조회 발생(수십~수백 KB) — 무료 한도 소진 임박 시 실행 금지');
+  console.log('  비용: 응답 stats.modelUsage 토큰으로 계산 — --price-in/--price-out($/1M 토큰)을 주면 달러로 환산');
+  console.log('\n실행하려면: --offline --snapshot=<catalog.jsonl> (비용 0) 또는 --live (사용자 승인 뒤)');
 }
 
 async function run() {
-  console.log(`\n🧪 SEOSA AI 100-Question Test — ${BASE}\n`);
-  const results = [];
-  for (let i = 0; i < questions.length; i++) {
-    const r = await testOne(questions[i], i);
-    const icon = r.ok ? '✅' : '❌';
-    const cards = r.hasCards ? ` 📦${r.cardCount}` : '';
-    console.log(`${icon} #${String(r.i).padStart(3)} [${r.version}] ${r.elapsed}ms${cards} — ${r.q}`);
-    if (!r.ok) console.log(`     ↳ ${r.error || r.answer || `HTTP ${r.status}`}`);
-    results.push(r);
-    // Rate limit: 300ms between requests
-    if (i < questions.length - 1) await sleep(300);
+  if (MODE === 'dry-run') return dryRun();
+  if (MODE === 'offline' && !opt('snapshot')) throw new Error('--offline 에는 --snapshot=<catalog.jsonl> 이 필요합니다');
+  const send = MODE === 'live' ? liveClient() : offlineClient(opt('snapshot'));
+  const nowMs = () => (MODE === 'offline' ? send.nowMs : Date.now());
+  console.log(`SEOSA AI 100문항 — ${MODE} | ${MODE === 'live' ? ENDPOINT : 'in-process v3 route + frozen catalog ' + send.meta.snapshot}`
+    + ` | ${selected.length}문항${REQUIRE_V3 ? ' | require-v3' : ''}`);
+  const rows = [];
+  const t0 = Date.now();
+  for (let i = 0; i < selected.length; i++) {
+    const c = selected[i];
+    const conv = newConversation();
+    let seedTurn = null;
+    if (c.expect.seed) {
+      seedTurn = await ask(send, conv, c.expect.seed);
+      if (DELAY_MS) await sleep(DELAY_MS);
+    }
+    const seedOk = !c.expect.seed || (seedTurn && seedTurn.status === 200 && !(seedTurn.data || {}).error);
+    const turn = seedOk ? await ask(send, conv, c.question) : null;
+    const g = gradeCase(c, turn, { seed: c.expect.seed ? seedTurn : undefined, requireV3: REQUIRE_V3, nowMs: nowMs(), review: REVIEW });
+    const row = { id: c.id, n: c.n, category: c.category, categoryLabel: CATEGORY_LABELS[c.category], question: c.question,
+      seedQuestion: c.expect.seed || null, expectCards: c.expect.cards || 'optional', ...g,
+      turn: projectTurn(turn), seedTurn: projectTurn(seedTurn) };
+    rows.push(row);
+    const t = row.turn || {};
+    console.log(`${c.id} ${row.verdict.padEnd(10)} ${String(t.status || '-').padEnd(3)} [${t.version || '-'}${t.gate ? '/' + t.gate : ''}] `
+      + `${t.elapsedMs != null ? t.elapsedMs + 'ms' : '-'} cards=${row.cardCount} ${row.reasons.concat(row.soft).slice(0, 4).join(',')}  ${c.question}`);
+    if (DELAY_MS && i !== selected.length - 1) await sleep(DELAY_MS);
   }
-
-  const success = results.filter(r => r.ok);
-  const fail = results.filter(r => !r.ok);
-  const v3Count = results.filter(r => r.version === 'v3').length;
-  const legacyCount = results.filter(r => r.version === 'legacy').length;
-  const avgTime = Math.round(results.reduce((s, r) => s + r.elapsed, 0) / results.length);
-
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`📊 결과 요약`);
-  console.log(`${'='.repeat(60)}`);
-  console.log(`✅ 성공: ${success.length}/100`);
-  console.log(`❌ 실패: ${fail.length}/100`);
-  console.log(`🤖 v3 응답: ${v3Count}회 / legacy 응답: ${legacyCount}회`);
-  console.log(`⏱  평균 응답시간: ${avgTime}ms`);
-
-  if (fail.length) {
-    console.log(`\n❌ 실패 목록:`);
-    fail.forEach(r => {
-      console.log(`  #${r.i} — ${r.q}`);
-      console.log(`     ${r.error || r.answer || `HTTP ${r.status}`}`);
-    });
-  }
-
-  console.log(`\n📦 카드 포함 응답: ${results.filter(r => r.hasCards).length}회`);
-  console.log(`💬 텍스트만 응답: ${results.filter(r => r.ok && !r.hasCards).length}회`);
-
-  // 결과를 JSON 파일로 저장
-  const fs = require('fs');
+  const summary = summarize(rows, { prices: PRICES });
   const report = {
-    timestamp: new Date().toISOString(),
-    base: BASE,
-    summary: { total: results.length, success: success.length, fail: fail.length, v3: v3Count, legacy: legacyCount, avgTime },
-    results: results.map(r => ({ i: r.i, q: r.q, ok: r.ok, version: r.version, elapsed: r.elapsed, cards: r.cardCount, answer: r.answer, error: r.error })),
+    meta: { harness: 'scripts/test-100-questions.js@2026-11-14', mode: MODE, label: LABEL, createdAt: new Date().toISOString(),
+      gitSha: gitSha(), endpoint: MODE === 'live' ? ENDPOINT : null, offline: MODE === 'offline' ? send.meta : null,
+      requireV3: REQUIRE_V3, delayMs: DELAY_MS, timeoutMs: TIMEOUT_MS, runMs: Date.now() - t0, prices: PRICES,
+      caveats: [
+        'HTTP 200 은 전송 성공이지 추천 정확도가 아니다 — verdict 를 본다.',
+        MODE === 'offline' ? '오프라인: 실제 v3 서버 파이프라인 + 동결 카탈로그, GPT 는 결정적 대역(분류는 정규식·폴백만). GPT 계획 품질·실시간 재고·오늘 가격은 재지 않는다.' : '라이브: 실제 응답. x-ai-v3-gate 로 v3/legacy 를 가른다.',
+        'UNVERIFIED 는 사람이 근거를 적어 --review-file 로 확정하기 전까지 통과가 아니다.'
+      ] },
+    summary, results: rows
   };
-  const filename = `test-results-${new Date().toISOString().slice(0,16).replace(/:/g,'-')}.json`;
-  fs.writeFileSync(filename, JSON.stringify(report, null, 2), 'utf8');
-  console.log(`\n💾 결과 저장: ${filename}`);
+  const out = opt('out') || path.join(__dirname, '..', 'reports', 'ai-100',
+    `${LABEL}-${MODE}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, JSON.stringify(report, null, 1) + '\n', 'utf8');
+  const s = summary;
+  console.log(`\nPASS ${s.verdicts.PASS} · FAIL ${s.verdicts.FAIL} · UNVERIFIED ${s.verdicts.UNVERIFIED}  (HTTP 200 ${s.transport.http200}/${s.transport.requests}, 오류율 ${s.transport.errorRate}%)`);
+  console.log(`추천률 ${s.accuracy.recommendationRate}% · 카드 정확도 ${s.accuracy.cardPrecision}% (${s.accuracy.cardsShown}장 중 위반 ${s.accuracy.cardsViolatingConstraints})`);
+  console.log(`지연 avg ${s.latencyMs.scored.avg}ms · p50 ${s.latencyMs.scored.p50}ms · p95 ${s.latencyMs.scored.p95}ms · 버전 ${JSON.stringify(s.versions)} · 게이트 ${JSON.stringify(s.v3Gates)}`);
+  console.log(`비용: 모델 호출 ${s.cost.modelCalls} · 토큰 in ${s.cost.inputTokens}/out ${s.cost.outputTokens} · USD ${s.cost.usd == null ? '미산정' : s.cost.usd}`);
+  console.log(`FAIL 사유: ${JSON.stringify(s.failReasons)}`);
+  console.log('결과: ' + path.relative(process.cwd(), out));
+  return report;
 }
 
-run().catch(console.error);
+if (require.main === module) run().catch(err => { console.error(err && err.stack || err); process.exitCode = 1; });
+module.exports = { run, ask, newConversation, projectTurn };
