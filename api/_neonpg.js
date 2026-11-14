@@ -862,7 +862,14 @@ class RpcQuery extends Thenable {
     this.limitRows = null;
     this.offsetRows = 0;
     this.singleMode = null;
+    this.columns = null;
   }
+  /*
+   * rpc(...).select('a, b') — PostgREST 와 같이 행(집합)을 돌려주는 함수의 결과 열을 서버에서 고른다.
+   * 2026-11-14 Neon 전송량: price_history_prior_obs 가 SETOF price_history 의 전 열을 보내던 것을
+   * 홈 핫딜이 쓰는 열만 받게 한다. 스칼라·void 함수에는 뜻이 없어 무시한다(PostgREST 와 같다).
+   */
+  select(columns) { this.columns = columns == null ? null : columns; return this; }
   range(from, to) { this.offsetRows = Number(from); this.limitRows = Number(to) - Number(from) + 1; return this; }
   limit(n) { this.limitRows = Number(n); return this; }
   single() { this.singleMode = 'single'; return this; }
@@ -890,9 +897,11 @@ class RpcQuery extends Thenable {
       return `${quoteIdent(k)} => $${args.length}::${decl.type}`;
     }).join(', ');
     const call = `public.${quoteIdent(this.name)}(${argSql})`;
+    const projection = this.columns != null && (fn.returns === 'rows' || fn.returns === 'row')
+      ? projectionSql(this.columns) : '*';
     let text = fn.returns === 'scalar' || fn.returns === 'void'
       ? `SELECT ${call} AS value`
-      : `SELECT * FROM ${call}`;
+      : `SELECT ${projection} FROM ${call}`;
     if (fn.retset) {
       const limit = this.limitRows == null ? MAX_ROWS : Math.min(this.limitRows, MAX_ROWS);
       if (!Number.isInteger(limit) || limit < 0 || !Number.isInteger(this.offsetRows) || this.offsetRows < 0) {

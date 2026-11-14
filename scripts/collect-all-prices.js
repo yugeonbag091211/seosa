@@ -1937,6 +1937,60 @@ async function saveState(patch) {
  */
 const LOCK_TTL_MS = Number(process.env.PRICE_LOCK_TTL_MS) || 80 * 60 * 1000;
 
+/** 살아 있는 잠금이면 건너뛸 이유, 아니면 ''. acquireLock 과 가벼운 사전 판정이 같은 문장을 쓴다. */
+function lockHeldReason(lock, nowMs) {
+  if (!lock || !lock.until) return '';
+  const until = Date.parse(lock.until);
+  if (!(until > nowMs)) return '';
+  const left = Math.round((until - nowMs) / 60000);
+  return `다른 실행이 진행 중입니다 (${lock.runId || '?'}, 만료까지 ${left}분)`;
+}
+
+/*
+ * ★ 가벼운 상태 읽기 (2026-11-14 Neon 전송량 감사).
+ *
+ *   last_result 는 몰별 collectorAttempted/Covered 목록 때문에 커진다 — 11-14 운영 실측 1.69MB
+ *   (ADPICK 시도 12,835개만 0.96MB). 하루 48칸 + 이어 붙이기 + 점심·저녁 재확인 23칸이 실행마다
+ *   loadState·releaseLock 으로 이걸 통째로 두 번씩 읽었다: 운영 통계로 하루 ≈90회 × 1.69MB
+ *   ≈ 150MB, Neon Free 공용망 전송(월 5GB)을 혼자 다 쓰는 속도다. 그런데 그 실행 대부분은
+ *   «할 일이 없다» — 다른 실행이 잠금을 쥐었거나, 오늘 두 몰이 끝났거나, 두 제공자의 하루
+ *   예산이 다 찼다. 그 판정에 필요한 몇 바이트만 먼저 읽는다(JSON 경로 = 서버에서 잘라 보낸다).
+ *   읽기에 실패하면 null — 예전 전체 경로(재시도·오류 분류 포함)로 간다. 쓰기는 하나도 바뀌지 않는다.
+ */
+const STATE_HEAD_COLS = 'job_date, status, last_run_at, lock:last_result->lock, '
+  + 'targetSignature:last_result->targetSignature, adpickStatus:last_result->malls->ADPICK->>status, '
+  + 'volatileSlots:last_result->volatileSlots';
+
+async function loadStateHead(opts) {
+  const db = (opts && opts.db) || supabase;
+  try {
+    const { data, error } = await db.from('price_job_state').select(STATE_HEAD_COLS).eq('id', 1).maybeSingle();
+    return error || !data ? null : data;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * 전체 상태를 읽지 않아도 «이번 실행은 아무것도 하지 않는다» 가 확실한가.
+ * 확실할 때만 { kind, reason } — run()/runLocked 의 기존 조기 종료 조건 그대로다:
+ *   locked  acquireLock 이 살아 있는 잠금을 보고 건너뛰는 경우
+ *   done    runLocked 의 «두 몰 모두 이미 완료» (대상 서명이 이어받기 가능한 경우만 —
+ *           V3→레거시 전환처럼 쿠팡 몰 상태를 따로 봐야 하는 경우는 판정하지 않는다)
+ * 순수 함수 — test-collector-lock 이 고정한다.
+ */
+function idleRunReason(head, { today, nowMs, targetMeta, v3Planner = V3_PLANNER } = {}) {
+  if (!head || typeof head !== 'object') return null;
+  const held = lockHeldReason(head.lock, nowMs);
+  if (held) return { kind: 'locked', reason: held };
+  if (today && targetMeta && head.job_date === today && head.status === 'completed'
+      && head.adpickStatus === 'completed'
+      && resumeCompatible(head.targetSignature, targetMeta, v3Planner)) {
+    return { kind: 'done', reason: `${today} (KST) 작업은 두 몰 모두 이미 완료되었습니다` };
+  }
+  return null;
+}
+
 /**
  * 잠금을 잡는다.
  * @returns {{ok:true, token:string} | {ok:false, reason:string}}
@@ -1949,10 +2003,8 @@ async function acquireLock(state, opts) {
   const prev = (state && state.last_run_at) || null;
   const lock = (state && state.last_result && state.last_result.lock) || null;
 
-  if (lock && lock.until && Date.parse(lock.until) > Date.now()) {
-    const left = Math.round((Date.parse(lock.until) - Date.now()) / 60000);
-    return { ok: false, reason: `다른 실행이 진행 중입니다 (${lock.runId || '?'}, 만료까지 ${left}분)` };
-  }
+  const held = lockHeldReason(lock, Date.now());
+  if (held) return { ok: false, reason: held };
   if (lock && lock.until) {
     console.warn(`[잠금] 만료된 잠금을 회수합니다 (이전 실행 ${lock.runId || '?'} 가 정상 종료하지 못했습니다).`);
   }
@@ -4864,6 +4916,34 @@ async function pruneSearchCaches() {
 }
 
 async function run() {
+  /*
+   * ★ 할 일이 없는 실행은 전체 상태(≈1.7MB)를 읽지 않고 끝낸다 (loadStateHead 주석).
+   *   세 경우 모두 예전에도 외부 호출·상태 변경 없이 끝나던 실행이다 — 달라지는 것은
+   *   잠금을 잡았다 푸느라 큰 행을 두 번 읽고 두 번 쓰던 일이 없어지는 것뿐이다.
+   */
+  const head = await loadStateHead();
+  const idle = idleRunReason(head, { today: TODAY, nowMs: Date.now(), targetMeta: collectorTargetMeta(TODAY) });
+  if (idle && idle.kind === 'locked') {
+    console.log(`[잠금] 이번 실행은 건너뜁니다 — ${idle.reason} (상태 요약만 읽음)`);
+    return;
+  }
+  if (idle && idle.kind === 'done') {
+    console.log(`\n[진행] ${idle.reason} — 이번 실행은 아무 상품도 처리하지 않습니다 (상태 요약만 읽음, 잠금 없음).`);
+    return;
+  }
+  if (head && !SEED_ONLY) {
+    await loadCoupangDayUsage();
+    await loadAdpickDayUsage();
+    if (nothingLeftToCall({
+      coupangUsed: _coupangDayUsed, coupangBudget: COUPANG_DAY_BUDGET, coupangKeys: !!(COUP_ACCESS && COUP_SECRET),
+      adpickUsed: _adpickDayUsed, adpickBudget: ADPICK_DAY_BUDGET, adpickKey: adpickHasKey()
+    })) {
+      console.log(`\n[진행] 오늘(${TODAY}) 쿠팡 ${_coupangDayUsed}/${COUPANG_DAY_BUDGET} · ADPICK ${_adpickDayUsed}/${ADPICK_DAY_BUDGET}`
+        + ' — 두 제공자 모두 하루 호출 예산을 다 썼습니다. 상태·대상을 읽지 않고 끝냅니다 (외부 호출 0, 잠금 없음).');
+      return;
+    }
+  }
+
   const state = await loadState();
 
   /*
@@ -6215,6 +6295,8 @@ module.exports = {
   TODAY_SCAN_THRESHOLD, collectedTodayByDayScan, historyRowMatchesTargetOption,
   // 동시 실행 방지 — test-price-mall-collection 이 CAS/만료/보존을 고정한다.
   acquireLock, releaseLock, LOCK_TTL_MS,
+  // 가벼운 상태 읽기·할 일 없는 실행 판정 — test-collector-lock 이 고정한다 (2026-11-14 Neon 전송량).
+  lockHeldReason, loadStateHead, idleRunReason, STATE_HEAD_COLS, run,
   // 상태 읽기의 오류 분류 — test-audit-regressions 가 일시 장애 재시도/표 없음 안내를 고정한다.
   loadState, STATE_MISSING_HINT,
   // .in() URI 상한 회귀 — test-price-mall-collection 이 이 계약을 고정한다.
