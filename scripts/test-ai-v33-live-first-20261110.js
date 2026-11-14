@@ -1,4 +1,8 @@
 'use strict';
+// These cases exercise the NON-read-only live path with injected fake suppliers (no network).
+// CI (ai-v34-eval.yml) sets SEOSA_DB_READONLY=1 for the whole job, which disables live search, so
+// they failed only in CI since 2026-11-12. Cases about read-only mode set the flag themselves.
+delete process.env.SEOSA_DB_READONLY;
 const assert=require('node:assert/strict');
 const {searchCatalog}=require('../api/_ai-v3-catalog');
 let passed=0,failed=0;
