@@ -4969,6 +4969,15 @@ function loadChatRef(field) {
   return typeof v === 'string' ? v : '';
 }
 
+// v3 answers carry structured conversation state, not a signed string token.
+// Restore it only from the current chat record, capped to prevent large requests.
+function loadV3State() {
+  var raw = Store.get(CONST.LS.CHAT, null);
+  var v = raw && typeof raw === 'object' ? raw.v3State : null;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  try { return JSON.stringify(v).length <= 8000 ? v : {}; } catch (e) { return {}; }
+}
+
 
 /* ============================================================
  *  [4] AppState — 흩어져 있던 전역변수를 한 곳으로
@@ -5027,7 +5036,7 @@ var AppState = {
    * 받은 그대로 다음 질문에 돌려준다. 읽거나 고치지 않는다(고치면 서명이 맞지 않아 서버가 버린다).
    */
   convState: loadConvState(),
-  v3State: loadChatRef('v3State'),
+  v3State: loadV3State(),
 
   // 모달
   modalHist: [],
@@ -5676,7 +5685,7 @@ var Api = {
           try { sessionStorage.setItem('seosa_ai_session', AppState.aiSessionId); } catch (e) {}
         }
       }
-      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4], prevTop: args[5] || '', prevTopRef: args[6] || '', convState: args[7] || '', state: AppState.v3State || '', sessionId: AppState.aiSessionId });
+      fetchOpts.body = JSON.stringify({ question: args[0], contextProducts: args[1], chatHistory: args[2], profile: args[3], view: args[4], prevTop: args[5] || '', prevTopRef: args[6] || '', convState: args[7] || '', state: AppState.v3State || {}, history: (Array.isArray(args[2]) ? args[2].slice(-8).filter(function(t) { return t && typeof t.text === 'string' && t.text; }).map(function(t) { return { role: t.role === 'assistant' ? 'assistant' : 'user', content: t.text.slice(0, 500) }; }) : []), sessionId: AppState.aiSessionId });
     } else if (fnName === 'saveAlert') {
       method = 'POST';
       fetchOpts.body = JSON.stringify({ email: args[0], title: args[1], targetPrice: args[2], currentPrice: args[3], link: args[4], image: args[5], mall: args[6], productId: args[7], onDeal: !!args[8] });
@@ -5764,8 +5773,9 @@ var Api = {
             body.items = Array.isArray(body.cards) ? body.cards.map(function(c) {
               return Object.assign({}, c, { lprice: c.price, collectedAt: c.priceObservedAt });
             }) : [];
-            var stateToken = typeof body.state === 'string' ? body.state : body.state && body.state.token;
-            if (typeof stateToken === 'string') AppState.v3State = stateToken;
+            if (body.state && typeof body.state === 'object' && !Array.isArray(body.state)) {
+              try { if (JSON.stringify(body.state).length <= 8000) AppState.v3State = body.state; } catch (e) {}
+            }
           }
           return body;
         });
@@ -9375,7 +9385,7 @@ var Chat = {
     // 이어지는 동안에는 계속 새로 찍히므로 중간에 만료되지 않는다.
     // 대화 상태(convState)도 같은 기록에 둔다 — 새로고침해도 기록 10개 밖의 조건이 이어지고, 함께 만료된다.
     Store.set(CONST.LS.CHAT, {
-      savedAt: Date.now(), turns: slice, convState: AppState.convState || '', v3State: AppState.v3State || '',
+      savedAt: Date.now(), turns: slice, convState: AppState.convState || '', v3State: AppState.v3State || {},
       // 직전 추천의 서명 참조 — 새로고침 뒤에도 "이거 왜 추천했어?" 가 그 상품을 가리킨다 (loadChatRef 주석).
       topRef: AppState.lastTopRecommendationRef || '', topId: AppState.lastTopProductId || ''
     });
@@ -9413,7 +9423,7 @@ var Chat = {
     AppState.lastTopProductId = '';
     AppState.lastTopRecommendationRef = '';
     AppState.convState = '';
-    AppState.v3State = '';
+    AppState.v3State = {};
     Chat.lastCards = null;
     // [대화 세션 만료] 빈 배열을 써 두면 옛 형식으로 남는다. 지우는 게 뜻에 맞다.
     Store.del(CONST.LS.CHAT);
