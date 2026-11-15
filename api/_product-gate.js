@@ -339,7 +339,9 @@ function parseQuery(text, opts = {}) {
     const first = tokens[0];
     if (a.brandHead && first !== head && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first)) looseBrand = first;
   }
-  const lines = tokens.filter(t => lineKey(t) && t.length >= 2 && !NOT_HEAD.has(t));
+  // «맥북 백업용 외장 SSD», «아이패드용 키보드» 의 제품군은 «무엇에 쓰는가» 다 — 상품명에 있어야 할 이름이 아니다.
+  const lines = tokens.filter((t, i) => lineKey(t) && t.length >= 2 && !NOT_HEAD.has(t)
+    && !/(?:용|전용|호환)$/.test(tokens[i + 1] || '') && !/^(?:용|전용|호환|백업용)$/.test(tokens[i + 1] || ''));
   const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand });
   // 한글 이름에 영문 한 글자가 붙은 이름 («제로S», «타워X») 은 한 덩어리다.
   for (const m of idText.matchAll(/([가-힣]{2,})([a-z])(?![a-z0-9])/gi)) {
@@ -698,7 +700,9 @@ function judge(spec, item, opts = {}) {
     if (principal.kind === 'accessory' && !nounIsHead && !headAfter && !bookWanted) {
       if (UNIVERSAL_ACCESSORY.test(noun)) hard.push(`accessory:${noun}`);
       else if (AMBIGUOUS_ACCESSORY.test(noun)) {
-        const at = T.main.search(new RegExp(noun.replace(/\s+/g, '\\s*'), 'i'));
+        // 판매 대상은 머리(끝) 쪽이다 — 마지막으로 나온 자리를 본다(«물걸레청소기 … 물걸레 전동»).
+        const matches = [...T.main.matchAll(new RegExp(noun.replace(/\s+/g, '\\s*'), 'gi'))];
+        const at = matches.length ? matches[matches.length - 1].index : -1;
         const tail = at >= 0 ? T.main.slice(at, at + noun.length + 14) : '';
         const typedPart = spec.type && TAX.isPart(unbundled, spec.type);
         // 찾는 기기 명사가 «앞» 에 있고 부품 표시(호환·교체·N개…)가 없으면 기능 설명이다
