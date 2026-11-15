@@ -125,6 +125,8 @@ const CHAT_STOP = new Set(['얼마', '얼마야', '얼마예요', '얼마에요'
   '제일', '가장', '싼거', '싼것', '비싼', '좋은', '좋은거', '넘어도', '넘으면', '조금', '좀더', '질문은', '질문', '혹시', '이거', '그거',
   '저거', '이건', '그건', '일반형', '기본형', '기본', '일반', '새거', '알려줘', '보여줘', '찾아줘', '추천', '해줘', '바꿔줘', '말고는',
   '본체', '본체만', '본품만', '단품만', '자체', '정품만', '신품만',
+  // 범주의 윗말·수량 단위 — 상품명에 그대로 적히지 않는다 («자외선 차단 의류» ↔ «… 가디건», «퍼즐 100피스»)
+  '의류', '식품', '가전', '가구', '생활용품', '주방용품', '욕실용품', '캠핑용품', '차량용품', '사무용품', '피스', '개입', '구성',
   '어때', '어떄', '뭐야', '뭐가', '나아', '괜찮아', '살까', '사도', '돼', '될까', '다시', '그럼', '아니', '네', '응', '음']);
 NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 
@@ -143,7 +145,7 @@ const RELATION_NEXT = /^(?:전용|호환|용|위한|입을때|입을|입는|쓸|
 // 머리 명사 «뒤 어디든» 마지막 물건 명사로 오면 그것을 판다고 볼 낱말 (상품명은 머리 명사가 끝에 온다)
 const TAIL_OBJECT_WORDS = ['네임택', '자물쇠', '키링', '이어후크', '이어훅', '냉각팬', '쿨링팬', '쿨러', '선반', '덮개', '세척솔',
   '세정제', '클리너', '디스펜서', '정리함', '보관함', '걸이', '꽂이', '거치대', '받침대', '파우치', '케이스', '커버', '필름', '스티커',
-  '가방', '드라이백', '망', '부품', '모터', '펌프', '린스', '세제'];
+  '가방', '드라이백', '망', '부품', '린스', '세제'];
 const TAIL_OBJECT = new RegExp(`^(?:${TAIL_OBJECT_WORDS.join('|')})$`);
 const endsWithTailObject = t => TAIL_OBJECT.test(t) || TAIL_OBJECT_WORDS.some(w => w.length >= 2 && t.length > w.length && t.endsWith(w));
 // 한 낱말 안에 붙은 대상 표시 ("수영복용", "텀블러전용")
@@ -601,9 +603,28 @@ function present(word, T, strict = false) {
 }
 
 /** 머리 명사가 상품명에서 «대상» 으로만 쓰였는가 ("수영복 건조 망 가방", "텀블러 세척솔", "캐리어 … 네임택"). */
+/*
+ * 머리 명사가 상품명 주 구절의 «마지막 내용 명사» 인가. 뒤에 오는 것이 꾸밈말·색·코드·같은 끝말뿐이면 그렇다.
+ *   «홈플래닛 풋터치 리모컨 서큘레이터»            → 예 (리모컨은 기능)
+ *   «쿨슬리브 자외선차단 쿨토시 팔토시»            → 예 (팔토시 = 같은 끝말)
+ *   «… 원통비치 수영복 물놀이 +할인쿠폰»           → 아니오 (키워드를 끼워 넣은 가방)
+ */
+const DESCRIPTOR_END = /(?:형|용|식|성|감|색|디자인|스타일|타입|세트|에디션|버전|모델|컬러|사이즈|무료배송|할인쿠폰|쿠폰|정품|국내|해외|증정|포함)$/;
+function headIsLastNoun(head, tokens) {
+  let last = -1;
+  tokens.forEach((t, i) => { if (t === head || t.endsWith(head) || (HEAD_SYN.get(head) || []).includes(t)) last = i; });
+  if (last < 0) return false;
+  const suffix = head.slice(-2);
+  return tokens.slice(last + 1).every(t => /\d/.test(t) || /^[a-z]+$/.test(t) || t.length <= 1 || S.TAIL_NOISE.has(t)
+    || NOT_HEAD.has(t) || COLOR_WORDS.test(t) || DESCRIPTOR_END.test(t) || (suffix.length === 2 && t.endsWith(suffix)));
+}
+
+// 활동·용도 낱말 — 머리 명사가 이것이면 «X용 Y» 의 Y 가 바로 찾는 물건이다(«별자리 관측» ↔ «관측용 망원경»).
+const ACTIVITY = new Set(['관측', '입문', '수납', '세탁', '청소', '보관', '정리', '운동', '캠핑', '여행', '낚시', '등산', '수영',
+  '요리', '공부', '학습', '독서', '촬영', '녹음', '게임', '사무', '육아', '산책', '연습', '훈련', '명상', '취미', '선물', '교육']);
 function headIsTarget(spec, T) {
   const head = spec.head;
-  if (!head) return '';
+  if (!head || ACTIVITY.has(head)) return '';
   const tokens = T.mainTokens;
   let last = -1;
   tokens.forEach((t, i) => { if (t === head || (t.startsWith(head) && t.length <= head.length + 4)) last = i; });
@@ -652,7 +673,8 @@ function judge(spec, item, opts = {}) {
   const hard = [];
   const soft = [];
   const price = Number(item && (item.lprice != null ? item.lprice : item.price)) || 0;
-  const principal = LST.principalItem(title);
+  // 판매 대상은 딸려 오는 구성품(«충전 거치대 포함», «케이스 증정»)을 지운 상품명으로 본다.
+  const principal = LST.principalItem(title.replace(BUNDLE_PHRASE, ' '));
 
   if (!title.trim()) return { ok: false, hard: ['empty_title'], soft, principal };
   const codeInTitle = spec.models.some(c => T.flat.includes(c));
@@ -666,7 +688,14 @@ function judge(spec, item, opts = {}) {
       || spec.head.endsWith(nounFlat) || nounFlat.endsWith(spec.head));
     const unbundled = title.replace(BUNDLE_PHRASE, ' ');
     const deviceNouns = LST.collectNouns(T.main).filter(n => n.kind === 'device' && n.type === spec.type);
-    if (principal.kind === 'accessory' && !nounIsHead) {
+    // 범주가 정해지지 않은 검색에서 머리 명사가 부속 명사 «뒤» 에 오면 머리 명사가 판매 대상이다
+    // («여권 지갑 … 카드 홀더 동전 지갑», «상판분리 바베큐 전기그릴 … 생선구이기»). 상품명은 머리가 끝에 온다.
+    const nounAt = noun ? T.main.search(new RegExp(noun.replace(/\s+/g, '\\s*'), 'i')) : -1;
+    const headAfter = !spec.type && !!spec.head && nounAt >= 0
+      && normalize(T.main.slice(nounAt + noun.length)).replace(/\s+/g, '').includes(spec.head)
+      && headIsLastNoun(spec.head, T.mainTokens);
+    const bookWanted = spec.wantsBook && /^(?:media|도서|교본|교재)$/.test(noun);
+    if (principal.kind === 'accessory' && !nounIsHead && !headAfter && !bookWanted) {
       if (UNIVERSAL_ACCESSORY.test(noun)) hard.push(`accessory:${noun}`);
       else if (AMBIGUOUS_ACCESSORY.test(noun)) {
         const at = T.main.search(new RegExp(noun.replace(/\s+/g, '\\s*'), 'i'));
@@ -815,7 +844,8 @@ function judge(spec, item, opts = {}) {
     const gens = [...T.normalized.matchAll(/(?<!\d)(\d{1,2})\s*세대/g)].map(m => Number(m[1]));
     if (fam.gen && gens.length && !gens.includes(want[0])) { hard.push(`generation:${want[0]}≠${gens[0]}`); continue; }
     const rawN = T.raw.normalize('NFKC');
-    const standalone = new RegExp(`(?<![0-9a-z가-힣.])${want[0]}(?![0-9])(?!\\s*(?:인치|형|gb|tb|mm|cm|w|개|매|입|세트|팩|종|단|인|l\\b|ml|kg|g\\b))`, 'i').test(rawN);
+    // 무게·부피 단위(g·kg·l·ml)는 숫자에 붙어 있을 때만 단위다 — «에어 맥스 270 G(…)» 의 G 는 모델 표기다.
+    const standalone = new RegExp(`(?<![0-9a-z가-힣.])${want[0]}(?![0-9])(?!\\s*(?:인치|형|gb|tb|mm|cm|개|매|입|세트|팩|종|단|인))(?!(?:w|l|ml|kg|g)\\b)`, 'i').test(rawN);
     // 기준 낱말(또는 그 표기 쌍)에 바로 붙은 번호(«스마트밴드9», «갤럭시북5»)만 같은 번호다 — «월드2» 는 아니다.
     const anchorToks = T.tokens.filter(t => anchorMatches(t, fam.anchorKey, fam.anchor));
     const flatRaw = normalize(rawN);
@@ -975,6 +1005,18 @@ function saveFilter(query, items, opts = {}) {
 }
 
 const rowCache = new Map();
+/*
+ * 기록 행 분류에서 «다른 상품» 으로 단정할 사유 — 표본 수작업 검토로 정밀도가 높은 것만 (2026-11-15).
+ *
+ * 저장된 keyword 는 그 상품을 처음 찾은 «검색 문장» 이라 느슨하다(«자외선 차단 의류», «여행 지갑»).
+ * 검색 화면에서는 느슨한 근거로도 뒤로 미루면 되지만, 기록 행을 «오염» 으로 세거나 정정 후보로
+ * 올리려면 틀렸다는 근거가 분명해야 한다. 그 밖의 사유는 unknown(정정하지 않음)이다.
+ */
+// category_absent 는 표본에서 정밀도 ≈60% 였다(«혈관 건강 영양제» ↔ 오메가3, «CJ 햇반 즉석밥» ↔ 햇반 12곡밥 — 같은 물건의 다른 이름) → 단정하지 않는다.
+const STORED_MISMATCH = /^(?:keyword_absent|keyword_coverage|other_device|not_type|accessory|part|line_number(?!_unverified)|generation|model_conflict|variant_extra|variant_missing|capacity_mismatch|publication_not_device|rental_not_purchase|head_is_target|compatible_part|target_of|line_absent|pc_component)/;
+// 기기 키워드일 때만 단정하는 사유 — 범주가 정해지지 않은 키워드(«카약 패들», «여행 지갑»)에서는 부속 사전이 틀리기 쉽다.
+const DEVICE_ONLY = /^(?:accessory|part|head_is_target|target_of)/;
+
 /**
  * 저장된 (keyword, title) 의 분류 판정. 가격·예산은 보지 않는다.
  * @returns {{verdict:'match'|'mismatch'|'unknown', reasons:string[]}}
@@ -990,12 +1032,21 @@ function classifyStoredRow(keyword, title) {
   if (!spec.tokens.length) out = { verdict: 'unknown', reasons: ['no_tokens'] };
   else {
     const v = judge(spec, { title }, { stored: true });
-    // 키워드 토큰이 하나도 안 맞으면 그 자체로 다른 상품이다 (옛 matchesKeyword 의 하한).
-    const coverage = S.scoreTitle(spec.analysis, title).score;
+    // 키워드의 «낱말» 이 하나도 상품명에 없으면 그 자체로 다른 상품이다 (옛 matchesKeyword 의 하한 — 콜라 ↔ 수영복).
+    // 한 글자 키워드(«귤»)는 점수기가 한 글자 토큰을 보지 않으므로 글자 포함으로 본다.
+    const flatTitle = normalize(title).replace(/\s+/g, '');
+    // 단위 낱말은 숫자 뒤에 올 때만 단위다(«1박스»). «수납 박스» 의 «박스» 는 물건 이름이다.
+    const words = spec.tokens.filter((t, i) => !NOT_HEAD.has(t) && !(UNIT_AFTER.has(t) && /\d/.test(spec.tokens[i - 1] || '')));
+    const anyWord = !words.length || words.some(t => flatTitle.includes(t) || present(t, titleInfoOf(title)));
     const hard = v.hard.slice();
-    if (coverage < S.MIN_SCORE && !hard.some(h => h.startsWith('category_absent'))) hard.push(`keyword_coverage:${coverage}`);
-    if (hard.length) out = { verdict: 'mismatch', reasons: hard };
-    else if (v.soft.some(w => IDENTITY_SOFT.test(w))) out = { verdict: 'unknown', reasons: v.soft };
+    if (!anyWord) hard.unshift('keyword_absent');
+    else if (words.every(t => t.length >= 2)) {
+      const coverage = S.scoreTitle(spec.analysis, title).score;
+      if (coverage < 0.2) hard.push(`keyword_coverage:${coverage}`);
+    }
+    const decisive = hard.filter(h => STORED_MISMATCH.test(h) && (!DEVICE_ONLY.test(h) || !!spec.type));
+    if (decisive.length) out = { verdict: 'mismatch', reasons: decisive.concat(hard.filter(h => !decisive.includes(h))) };
+    else if (hard.length || v.soft.some(w => IDENTITY_SOFT.test(w))) out = { verdict: 'unknown', reasons: hard.concat(v.soft) };
     else out = { verdict: 'match', reasons: [] };
   }
   if (rowCache.size > 20000) rowCache.clear();

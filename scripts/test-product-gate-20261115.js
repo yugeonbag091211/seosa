@@ -177,11 +177,15 @@ const titles = r => r.shown;
     check(!cat.includes('h1') && cat.includes('h2'), '분류가 틀린 행은 카탈로그(products)를 다시 쓰지 않는다 — 홈에 «방금 수집한 상품» 으로 되살아나지 않는다', cat);
     check(rec.recordedKeys.includes('h1|쿠팡'), '수집 성공 판정(recordedKeys)은 그대로다', rec.recordedKeys);
     const rows = shop.relevantRows([
-      { keyword: '수영복', title: '수영복 입을때 필요한 방수 선크림 로션' },
+      { keyword: '수영복', title: '쌜모네키친 노르웨이산 생연어 횟감용 200g' },
       { keyword: '수영복', title: '나이키 여성 원피스 수영복' },
-      { keyword: '아이패드 10세대', title: '아이패드 10세대 케이스 스마트커버' }
+      { keyword: '아이패드 10세대', title: '아이패드 10세대 케이스 스마트커버' },
+      { keyword: '혈관 건강 영양제', title: '블랙모어스 오메가3 & 비타민D 혈관 뼈 면역 케어' }
     ]);
-    check(rows.length === 1 && /원피스/.test(rows[0].title), '홈 표시(relevantRows)도 같은 판정으로 걸러 지우지 않고 숨긴다', rows.map(r => r.title));
+    check(rows.length === 2 && rows.some(r => /원피스/.test(r.title)) && rows.some(r => /오메가3/.test(r.title)),
+      '홈 표시(relevantRows)는 확실한 오염(연어 ↔ 수영복, 케이스 ↔ 아이패드)만 숨기고 동의어 표기(영양제 ↔ 오메가3)는 남긴다', rows.map(r => r.title));
+    check(Gate.classifyStoredRow('수영복', '수영복 입을때 필요한 방수 선크림 로션').verdict !== 'match',
+      '기록 행에서 근거가 약한 사유(범주 미정 키워드의 «X 입을때 Y»)는 match 로 세지 않는다 — 검색·저장 관문은 hard 로 막는다');
     const collector = fs.readFileSync(path.join(__dirname, 'collect-all-prices.js'), 'utf8');
     check(/catalogHold/.test(collector) && /classificationAudit/.test(collector), '수집기가 분류 점검 결과(classificationAudit)를 남기고 catalogHold 를 싣는다');
   }
