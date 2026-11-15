@@ -158,7 +158,7 @@ const titles = r => r.shown;
   }
 
   /* ── E ─────────────────────────────────────────────────────────── */
-  section('E — 수집기: 가격은 갱신하고, 틀린 분류의 카탈로그 행은 다시 쓰지 않는다');
+  section('E — 수집기: 가격 갱신과 분류 판정을 따로 본다 (판정은 세기만, 조치는 승인 절차로)');
   {
     check(Gate.classifyStoredRow('수영복', '코카콜라 오리지널').verdict === 'mismatch', '기록 행 분류: 수영복 ↔ 콜라 = mismatch');
     check(Gate.classifyStoredRow('수영복', '아레나 여성 탄탄이 원피스 수영복').verdict === 'match', '기록 행 분류: 수영복 ↔ 수영복 = match');
@@ -167,14 +167,17 @@ const titles = r => r.shown;
     writes.length = 0;
     const quiet = [console.log, console.warn]; console.log = () => {}; console.warn = () => {};
     const rec = await shop.recordPrices([
-      { productId: 'h1', mall: '쿠팡', keyword: '수영복', title: '코카콜라 오리지널', price: 13180, link: '', catalogHold: true },
+      { productId: 'h1', mall: '쿠팡', keyword: '수영복', title: '코카콜라 오리지널', price: 13180, link: '' },
       { productId: 'h2', mall: '쿠팡', keyword: '수영복', title: '아레나 원피스 수영복', price: 99000, link: '' }
     ], { source: 'collect', label: 'test' });
     [console.log, console.warn] = quiet;
     const hist = writes.filter(w => w.table === 'price_history').flatMap(w => w.rows.map(x => x.product_id));
     const cat = writes.filter(w => w.table === 'products').flatMap(w => w.rows.map(x => x.product_id));
     check(hist.includes('h1') && hist.includes('h2'), '가격 관측은 두 행 모두 원장에 남는다 (가격 갱신은 성공)', hist);
-    check(!cat.includes('h1') && cat.includes('h2'), '분류가 틀린 행은 카탈로그(products)를 다시 쓰지 않는다 — 홈에 «방금 수집한 상품» 으로 되살아나지 않는다', cat);
+    // 판정 정밀도가 70% 남짓이라 수집기는 카탈로그 갱신을 멈추지 않는다 — 바르게 분류된 상품의 현재가까지 멈추지 않게.
+    check(cat.includes('h1') && cat.includes('h2'), '수집기는 분류 판정으로 카탈로그 갱신을 멈추지 않는다 (현재가 정체 방지)', cat);
+    const h1row = writes.filter(w => w.table === 'products').flatMap(w => w.rows).find(x => x.product_id === 'h1');
+    check(h1row && h1row.keyword === '수영복', '수집기는 keyword 를 바꾸지 않는다 — 정정은 scripts/db-quality 승인 절차로만', h1row && h1row.keyword);
     check(rec.recordedKeys.includes('h1|쿠팡'), '수집 성공 판정(recordedKeys)은 그대로다', rec.recordedKeys);
     const rows = shop.relevantRows([
       { keyword: '수영복', title: '쌜모네키친 노르웨이산 생연어 횟감용 200g' },
@@ -187,7 +190,8 @@ const titles = r => r.shown;
     check(Gate.classifyStoredRow('수영복', '수영복 입을때 필요한 방수 선크림 로션').verdict !== 'match',
       '기록 행에서 근거가 약한 사유(범주 미정 키워드의 «X 입을때 Y»)는 match 로 세지 않는다 — 검색·저장 관문은 hard 로 막는다');
     const collector = fs.readFileSync(path.join(__dirname, 'collect-all-prices.js'), 'utf8');
-    check(/catalogHold/.test(collector) && /classificationAudit/.test(collector), '수집기가 분류 점검 결과(classificationAudit)를 남기고 catalogHold 를 싣는다');
+    check(/classificationAudit/.test(collector) && /classifyStoredRow/.test(collector) && !/catalogHold/.test(collector),
+      '수집기가 분류 점검 결과(classificationAudit)를 가격 성공 지표와 따로 남긴다');
   }
 
   /* ── 일반 범주 ─────────────────────────────────────────────────── */
@@ -205,6 +209,30 @@ const titles = r => r.shown;
     check(pack.length === 1 && /JanSport/.test(pack[0]), '패션: 부속 사전에 있는 말(백팩)도 그 자체를 찾으면 본품이다', pack);
     const rash = Gate.gateItems('남성 래쉬가드', [{ title: '남성 반팔 래쉬가드 UV차단' }, { title: '물놀이대장 남아 래쉬가드 상하복' }, { title: '여성 래쉬가드 집업' }]).kept.map(x => x.title);
     check(rash.length === 1 && /남성 반팔/.test(rash[0]), '패션: 성인 남성 검색에 아동(남아)·여성 상품 제외', rash);
+  }
+
+  /* ── AI 경로·대화체 (전체 회귀에서 찾은 과잉 차단, 2026-11-16) ───────── */
+  section('AI 경로 — 대화 말은 상품 이름이 아니고, 상품을 가르는 낱말은 그대로 지킨다');
+  {
+    const keptOf = (q, titles, opts) => Gate.gateItems(q, titles.map(t => ({ title: t, lprice: 300000 })), opts).kept.map(x => x.title);
+    const unit = keptOf('에어팟 프로 2 왼쪽 유닛만', ['(새제품) 에어팟 프로 2세대 C타입 왼쪽 이어폰 유닛 프로2 한쪽 단품', 'Apple 에어팟 프로 2세대 USB-C 무선 이어폰 본품'], { identityOnly: true });
+    check(unit.length === 1 && /왼쪽/.test(unit[0]), '조사 «만» 을 뗀다 (유닛만 → 유닛) — 찾는 낱개 유닛만 남는다', unit);
+    check(keptOf('파파야 1kg', ['태국산 파파야 1kg']).length === 1, '상품명이 낱말 그대로 품으면(파파야) 조사로 떼지 않는다');
+    const s25 = keptOf('갤럭시 S25 512gb로', ['삼성전자 갤럭시 S25 512GB 아이시블루 자급제'], { identityOnly: true });
+    check(s25.length === 1, '영문·숫자 표기 뒤 조사(512gb로)는 표기의 일부가 아니다', s25);
+    const buds = keptOf('버즈3 프로 블랙 팔아', ['삼성 갤럭시 버즈3 프로 블랙'], { identityOnly: true });
+    check(buds.length === 1, '거래 말(팔아·결제·링크)은 상품 이름으로 요구하지 않는다', buds);
+    const xm5 = keptOf('소니 헤드폰 xm5', ['소니 WH-1000XM5 노이즈캔슬링 헤드폰 블랙', '소니 WH-1000XM4 노이즈캔슬링 헤드폰', '소니 WF-1000XM5 무선 이어폰'], { identityOnly: true });
+    check(xm5.length === 1 && /WH-1000XM5/.test(xm5[0]), '«XM5» 는 «1000XM5» 의 줄임 — XM4·이어폰(WF)은 빠진다', xm5);
+    check(keptOf('맥북 m3', ['애플 맥북 프로 MW1M3KH/A'], { identityOnly: true }).length === 0, '2글자 코드(M3)는 부품 번호 안에서 찾지 않는다');
+    const fryer = keptOf('필립스 3000 시리즈 에어프라이어', ['필립스 3000 시리즈 보이는 에어프라이어 7.2L', '필립스 3000 시리즈 전기면도기', '필립스 블렌더 3000 시리즈'], { identityOnly: true });
+    check(fryer.length === 1 && /에어프라이어/.test(fryer[0]), '이번 결과에 실제로 쓰인 범주 낱말(에어프라이어)이 없는 상품명은 다른 상품이다', fryer);
+    const shoes = keptOf('운동화', ['나이키 에어포스1 07 화이트 270'], { identityOnly: true });
+    check(shoes.length === 1, '결과 어디에도 없는 범주 낱말은 AI 경로에서 확인 불가(soft)일 뿐 다른 상품이 아니다', shoes);
+    const gram = keptOf('그램15 15zb95n 배터리 상태도', ['LG전자 그램15 15ZB95N 인텔 i5 16GB 512GB 노트북', 'LG 그램 노트북 배터리 교체용 정품'], { identityOnly: true });
+    check(gram.length === 1 && /15ZB95N/.test(gram[0]), '«배터리 상태» 는 기기의 상태를 묻는 말 — 배터리를 찾는 말이 아니다', gram);
+    const laptops = keptOf('노트북', ['가성비 16.1인치 대화면 노트북 인텔 코어 i3-6006U 16GB RAM 512GB SSD FHD IPS 한글 키보드', '로지텍 K380 블루투스 키보드 한글 각인', 'LG 그램 노트북 호환 한글 키보드 교체용 15Z90']);
+    check(laptops.length === 1 && /대화면 노트북/.test(laptops[0]), '노트북 상품명 끝의 «한글 키보드» 는 사양 — 키보드 단품·교체용 자판은 빠진다', laptops);
   }
 
   console.log(`\nPRODUCT_GATE_${failures.length ? 'FAIL' : 'PASS'} ${pass} passed, ${failures.length} failed — external calls 0, DB fake only`);

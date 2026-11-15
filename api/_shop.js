@@ -945,13 +945,6 @@ async function recordPrices(observations, opts = {}) {
     }
 
     if (!updateCatalog) continue;
-    /*
-     * 분류 보류 (2026-11-15). 수집기는 상품 ID·옵션으로 같은 상품의 가격을 찾았지만, 그 행의
-     * keyword 가 상품과 맞지 않으면(«수영복» 키워드의 콜라) 카탈로그 행을 다시 쓰지 않는다.
-     * 다시 쓰면 collected_at 이 새로워져 틀린 분류의 행이 홈 섹션에 «방금 확인한 상품» 으로
-     * 계속 남는다. 가격 관측(price_history)은 위에서 이미 기록했다 — 가격 갱신과 분류는 따로 본다.
-     */
-    if (it.catalogHold) continue;
 
     // 정가와 할인율은 넘어온 값을 그대로 믿지 않고 확정된 판매가에서 다시 만든다.
     // (호출부마다 계산 시점이 달라 lprice 와 어긋난 savePct 가 저장될 수 있다)

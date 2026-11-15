@@ -202,20 +202,10 @@ async function catalogForRanking(ranking, minChanges, slotStartMs, mall) {
   return found.sort((a, b) => b.changes - a.changes);
 }
 
-// 분류 점검 — scripts/collect-all-prices.js classificationFor 와 같은 규칙(api/_product-gate).
-let classifyStoredRow = null;
-try { ({ classifyStoredRow } = require('../api/_product-gate')); } catch (_) { classifyStoredRow = null; }
-
 function observation(target, match, query) {
   const price = Number(match.lprice);
   if (!Number.isSafeInteger(price) || price <= 0) return null;
-  let catalogHold = false;
-  if (classifyStoredRow && target.keyword) {
-    try { catalogHold = classifyStoredRow(target.keyword, target.title || '').verdict === 'mismatch'; } catch (_) { catalogHold = false; }
-  }
   return {
-    // 분류가 틀린 행은 가격만 원장에 남기고 카탈로그 행은 다시 쓰지 않는다 (api/_shop.recordPrices).
-    catalogHold,
     productId: target.product_id,
     mall: target.mall,
     title: target.title,

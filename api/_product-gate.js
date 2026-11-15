@@ -47,6 +47,7 @@ const { BRANDS, aliasRegex } = require('./_ai-v32-brands');
 const { listsManyModels } = require('./_ai-v3-identity');
 
 const normalize = s => S.normalizeText(s);
+const flatWord = s => normalize(String(s || '')).replace(/[^0-9a-z가-힣]/g, '');
 
 /* ------------------------------------------------------------------ *
  *  어휘 — 상품 고유 이름이 아니라 «구조» 를 읽기 위한 말들
@@ -127,7 +128,10 @@ const CHAT_STOP = new Set(['얼마', '얼마야', '얼마예요', '얼마에요'
   '본체', '본체만', '본품만', '단품만', '자체', '정품만', '신품만',
   // 범주의 윗말·수량 단위 — 상품명에 그대로 적히지 않는다 («자외선 차단 의류» ↔ «… 가디건», «퍼즐 100피스»)
   '의류', '식품', '가전', '가구', '생활용품', '주방용품', '욕실용품', '캠핑용품', '차량용품', '사무용품', '피스', '개입', '구성',
-  '어때', '어떄', '뭐야', '뭐가', '나아', '괜찮아', '살까', '사도', '돼', '될까', '다시', '그럼', '아니', '네', '응', '음']);
+  '어때', '어떄', '뭐야', '뭐가', '나아', '괜찮아', '살까', '사도', '돼', '될까', '다시', '그럼', '아니', '네', '응', '음',
+  // 거래·속성을 묻는 말 — 상품 이름이 아니다 («버즈3 프로 블랙 얼마에 팔아», «결제 금액», «파는 링크», «색상·사이즈»)
+  '결제', '결제가', '결제액', '금액', '판매', '판매처', '판매가', '구매', '구매처', '주문', '링크', '파는', '팔아', '파는곳',
+  '색상', '컬러', '색깔', '사이즈', '옵션', '실물', '상품명', '여부']);
 NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
@@ -286,11 +290,24 @@ function parseQuery(text, opts = {}) {
   negated.forEach(word => brandsIn(word).forEach(b => excludedBrands.push(b.canon)));
 
   let idText = raw.replace(BUDGET_PHRASE, ' ').replace(REQUEST_FILLER, ' ');
+  // 이번 후보 상품명(정규화). 조사 한 글자를 뗄지 판단하는 데만 쓴다.
+  const titleText = Array.isArray(opts.titles) && opts.titles.length
+    ? opts.titles.map(t => normalize(String(t || ''))).join(' | ') : '';
+  const inTitles = w => !!titleText && titleText.includes(normalize(w));
   // 대화체 조사 — «제품만», «칩으로», «모델로», «걸로». 남는 말이 아는 낱말일 때만 뗀다(«프로» 의 «로» 는 떼지 않는다).
   idText = idText.replace(/([가-힣]{1,8}?)(으로|로|만|은|는|도|이요|요|이야|야|예요|이에요|인데|이면|면)(?=\s|$)/g, (whole, stem, josa) => {
     const known = NOT_HEAD.has(stem) || VARIANT.has(stem) || LINE.has(stem) || isBrandToken(stem) || ['칩', '것', '거', '제품', '모델', '버전'].includes(stem);
-    return known || (josa.length >= 2 && stem.length >= 2) ? stem : whole;
+    if (known || (josa.length >= 2 && stem.length >= 2)) return stem;
+    // 한 글자 조사(«유닛만», «마우스는», «텀블러도»): 후보 상품명이 뗀 말은 품고 붙인 말은 하나도 품지 않을 때만 뗀다.
+    // 상품명이 낱말 그대로 품으면(«파파야», «아보카도») 이름이다. 조건·수단의 «면»·«로» 는 이 규칙에서 뺀다
+    // («비빔면» 을 떼어 «비빔밥» 에 붙이지 않는다).
+    if (/^(?:만|은|는|도|요|야)$/.test(josa) && stem.length >= 2 && inTitles(stem) && !inTitles(whole)) return stem;
+    return whole;
   });
+  // 영문·숫자 표기 뒤의 조사(«512gb로», «s25는», «m3만»)는 표기의 일부가 아니다.
+  idText = idText.replace(/([0-9a-z])(으로|로|만|은|는|도|이요|요|이야|야|이랑|랑|까지|부터|보다|처럼)(?=\s|$)/gi, '$1');
+  // «배터리 상태도», «배터리가 오래가는», «필터 수명» 은 기기의 상태·성질을 묻는 말이다 — 그 부속을 찾는 말이 아니다.
+  idText = idText.replace(/(?<![가-힣a-z])(?:배터리|밧데리|필터|브러시|브러쉬|노즐|헤드|렌즈|마이크|스크린|충전)(?:가|이|는|은|도)?\s*(?:상태|수명|성능|잔량|효율|사이클|지속\s*시간|사용\s*시간|교체\s*주기|오래\s*가는|오래\s*가|좋은|긴|큰|넉넉한|빵빵한|짱짱한|센|강한|많은)(?:도|는|은|가|이|를|을|만)?(?=\s|$)/g, ' ');
   idText = S.stripConditionTerms(idText);
   negated.forEach(word => { if (brandsIn(word).length) idText = idText.replace(word, ' '); });
   idText = idText.replace(/\s*(?:말고|빼고|제외(?:하고)?|아닌|아니고)\s*/g, ' ').replace(/\s+/g, ' ').trim();
@@ -357,7 +374,10 @@ function parseQuery(text, opts = {}) {
     year, budget, condition, wantsBook, wantsCar, looseBrand, lines, identityWords,
     // 관련도 점수에 쓸 검색어 — 예산·요청 말("50만원 이하", "보여줘")이 커버리지를 깎지 않게 뺀다.
     rankText: idText || raw,
-    analysis: S.analyzeQuery(idText, { titles: Array.isArray(opts.titles) ? opts.titles : [] })
+    analysis: S.analyzeQuery(idText, { titles: Array.isArray(opts.titles) ? opts.titles : [] }),
+    // 이번 후보 상품명(영문·숫자·한글만, 상품명끼리는 «|» 로 나눔) — AI 경로에서 «이 낱말이 이번 결과에 실제로
+    // 쓰이는 상품 낱말인가» 를 본다(judge 의 identityOnly 단락).
+    titleFlat: Array.isArray(opts.titles) ? opts.titles.map(flatWord).join('|') : ''
   };
   if (!opts.titles) {
     if (specCache.size >= SPEC_CACHE_MAX) specCache.clear();
@@ -721,7 +741,13 @@ function judge(spec, item, opts = {}) {
       const storageSpec = principal.type === '외장하드' && spec.type !== '외장하드'
         && /(?:ssd|hdd)\s*(?:\d|탑재|장착|내장|업그레이드)|\d+\s*(?:gb|tb)\s*(?:ssd|hdd)/i.test(title)
         && (deviceNouns.length > 0 || TAX.productTypeMatches(title.replace(/\b(?:ssd|hdd)\b/gi, ' '), spec.type, spec.raw));
-      if (principal.kind === 'device' && principal.type && principal.type !== spec.type && principal.type !== '기타기기' && !storageSpec) {
+      // «… 노트북 … FHD IPS 한글 키보드» 의 키보드는 본체에 달린 자판(사양)이다 — 자판 언어·조명을 꾸미는 말이 붙고
+      // 노트북 명사가 그보다 앞에 있으며, 교체·호환 같은 부품 표시가 없을 때만.
+      const keyboardAt = title.search(/(?:한글|영문|한영|백라이트|led|rgb|풀\s*사이즈|텐키(?:리스)?|숫자\s*키패드)\s*(?:키보드|자판)/i);
+      const laptopAt = title.search(/노트북|랩탑|laptop|notebook|맥북|macbook|그램|갤럭시\s*북/i);
+      const keyboardSpec = spec.type === '노트북' && keyboardAt > 0 && laptopAt >= 0 && laptopAt < keyboardAt
+        && !PART_MARK.test(title);
+      if (principal.kind === 'device' && principal.type && principal.type !== spec.type && principal.type !== '기타기기' && !storageSpec && !keyboardSpec) {
         hard.push(`other_device:${principal.type}`);
       }
       if (principal.kind === 'device' && principal.type === '기타기기') hard.push('other_device:기타기기');
@@ -809,7 +835,9 @@ function judge(spec, item, opts = {}) {
   for (const code of spec.models) {
     // 짧은 코드(M3, S9, G5)는 낱말 그대로여야 한다 — 부품 번호 «MW1M3KH/A» 안의 m3 는 M3 가 아니다.
     const short = code.length <= 3;
-    const hit = short ? T.tokens.some(t => t === code || new RegExp(`^${escapeRe(code)}(?:칩|chip)?$`).test(t))
+    // 3글자 코드는 숫자 뒤의 꼬리로도 쓴다 — «XM5» 는 «1000XM5»(WH-1000XM5) 의 줄임이다. 2글자(M3)는 낱말 그대로만.
+    const hit = short ? T.tokens.some(t => t === code || new RegExp(`^${escapeRe(code)}(?:칩|chip)?$`).test(t)
+        || (code.length === 3 && /^[a-z]{2}\d$/.test(code) && new RegExp(`^\\d{3,}${escapeRe(code)}$`).test(t)))
       : T.flat.includes(code);
     if (short && hit) {
       // 같은 꼴의 다른 코드가 함께 있으면(«M3 … M4») 어느 쪽 상품인지 모른다
@@ -952,7 +980,21 @@ function judge(spec, item, opts = {}) {
   if (opts.identityOnly) {
     const attribute = hard.splice(hardBeforeAttributes);
     hard.push(...attribute.filter(h => /^(?:capacity_unverified|capacity_ambiguous|size_ambiguous|color_unverified)/.test(h)));
-    return { ok: hard.length === 0, hard: [...new Set(hard)], soft: [...new Set(soft)], principal };
+    // 근거가 «모자란» 사유(낱말·범주·라인·모델 표기가 상품명에 없다)와 가격 하한 추정은 AI 경로에서 확인 불가(soft)다.
+    // AI 검색어는 대화에서 뽑은 구절이라 남는 낱말이 상품 이름이 아닐 수 있고(«결제 금액 차이»), 식별 계약(AIID)이
+    // 모델 표기 없는 후보를 근접 후보로 따로 다룬다. 상품명이 «다른 것» 이라고 말하는 사유만 여기서 뺀다.
+    // 다만 그 낱말이 이번 후보 상품명 어딘가에 실제로 쓰였다면(«카본», «제로S», «에어프라이어», «디스크») 대화 말이
+    // 아니라 상품을 가르는 낱말이다 — 그 낱말이 없는 상품명은 다른 상품이므로 hard 로 둔다.
+    const attested = h => {
+      const m = /^(?:identity_word_absent|category_absent|line_absent|model_missing):(.+)$/.exec(h);
+      const w = m ? flatWord(m[1]) : '';
+      return !!(w && spec.titleFlat && spec.titleFlat.includes(w));
+    };
+    const soften = h => AI_EVIDENCE_ONLY.test(h) && !attested(h);
+    const evidenceOnly = hard.filter(soften);
+    const contradiction = hard.filter(h => !soften(h));
+    soft.push(...evidenceOnly);
+    return { ok: contradiction.length === 0, hard: [...new Set(contradiction)], soft: [...new Set(soft)], principal };
   }
 
   /* 11. 상태(중고·리퍼·렌탈)·예산 */
@@ -975,6 +1017,9 @@ function judge(spec, item, opts = {}) {
 /* ------------------------------------------------------------------ *
  *  묶음 판정 — 검색 결과·저장·기록 행
  * ------------------------------------------------------------------ */
+
+// AI 경로(identityOnly)에서 hard 가 아니라 soft 인 사유 — «다르다» 가 아니라 «확인할 근거가 없다» 이거나 가격만 본 추정.
+const AI_EVIDENCE_ONLY = /^(?:identity_word_absent|category_absent|line_absent|model_missing|line_number_unverified|line_number_missing|implausible_device_price)/;
 
 // 저장(분류)을 막는 soft — «이 키워드의 상품» 이라고 기록할 근거가 모자란 경우.
 const IDENTITY_SOFT = /^(?:principal_unverified|brand_unverified|accessory_possible|identity_word_unverified|model_option_suffix|category_absent)/;
