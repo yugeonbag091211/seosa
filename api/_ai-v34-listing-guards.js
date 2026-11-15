@@ -63,8 +63,12 @@ function mixedListing(title, category, userText = '') {
     return new Set([m[1], m[2], m[3]].map(w => explicitType(w) || w)).size >= 3;
   return false;
 }
-const PUBLICATION = /(?:도서|서적|교재|교본|입문서|가이드북|안내서|매거진|잡지|e-?book|이북|고릅니다|하는\s*법|의\s*모든\s*것|완벽\s*가이드|따라\s*하기|체험\s*(?:키트|클래스)|원데이\s*클래스)/i;
-function publication(title) { return PUBLICATION.test(SOLD(title)); }
+const PUBLICATION = /(?:도서|서적|교재|교본|입문서|가이드북|안내서|매거진|잡지|e-?book|이북|고릅니다|하는\s*법|의\s*모든\s*것|완벽\s*가이드|사용\s*설명서|사용\s*매뉴얼|user\s*manual|따라\s*하기|체험\s*(?:키트|클래스)|원데이\s*클래스)/i;
+function publication(title) {
+  // A manual supplied WITH a device is not itself the sold item.
+  const text = SOLD(title).replace(/(?:사용\s*설명서|사용\s*매뉴얼|user\s*manual)\s*(?:포함|동봉|증정|제공)/gi, ' ');
+  return PUBLICATION.test(text);
+}
 // A seller can keyword-stuff an unrelated device with a sought-after brand:
 // '스마트헤드셋 V1000 ... 1위 헤드셋 소니 블루투스 헤드셋'.
 // Only reject when an actual device+model is named BEFORE the promotional
