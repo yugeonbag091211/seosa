@@ -5,6 +5,14 @@ const zlib = require('zlib');
 const MAX_TOKEN = 4096;
 const MAX_JSON = 16384;
 const PREFIX = 'v3s1';
+/*
+ * 토큰 수명 (2026-11-14). 서명만으로는 «옛 토큰 재사용» 을 막지 못한다 — 서명된 상태는 영원히
+ * 유효했다. 답변 서명(turnSig, api/_aicontext TURN_TTL_MS)과 같은 6시간으로 묶는다. 웹 대화는
+ * 30분 쉬면 지워지므로 실제 대화가 이 만료에 걸리는 일은 없다. iat 없는(옛) 토큰은 받지 않는다 —
+ * v3 는 운영에서 아직 켜진 적이 없어 들고 있는 사용자가 없다.
+ */
+const STATE_TTL_MS = 6 * 60 * 60 * 1000;
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 function key() {
   const base = process.env.AI_V3_STATE_SECRET || process.env.AUTH_SECRET || process.env.SUPABASE_SECRET_KEY;
@@ -42,10 +50,10 @@ function normalize(state = {}) {
   };
 }
 function sign(k, payload) { return crypto.createHmac('sha256', k).update(PREFIX + '.' + payload).digest(); }
-function encodeState(state) {
+function encodeState(state, now = Date.now()) {
   const k = key();
   if (!k) return null; // No secret means no authenticated client-side state.
-  const safe = normalize(state);
+  const safe = { ...normalize(state), iat: Math.floor(Number(now) || Date.now()) };
   let payload = zlib.deflateRawSync(Buffer.from(JSON.stringify(safe))).toString('base64url');
   let token = PREFIX + '.' + payload + '.' + sign(k, payload).toString('base64url');
   // Drop optional plan detail rather than ever emitting an oversized token.
@@ -56,19 +64,31 @@ function encodeState(state) {
   }
   return Buffer.byteLength(token) <= MAX_TOKEN ? token : null;
 }
-function decodeState(encoded) {
+/**
+ * 서명·모양·수명을 모두 통과한 토큰만 상태로 돌려준다. 그 밖은 null.
+ * inspectState 는 같은 판정의 «이유» 를 준다(응답 stats·하네스가 쓴다): absent | valid | invalid | expired.
+ */
+function inspectState(encoded, now = Date.now()) {
+  if (encoded == null || encoded === '') return { status: 'absent', state: null };
   const k = key();
-  if (!k || typeof encoded !== 'string' || Buffer.byteLength(encoded) > MAX_TOKEN) return null;
+  if (!k || typeof encoded !== 'string' || Buffer.byteLength(encoded) > MAX_TOKEN) return { status: 'invalid', state: null };
   const parts = encoded.split('.');
-  if (parts.length !== 3 || parts[0] !== PREFIX || !/^[A-Za-z0-9_-]+$/.test(parts[1]) || !/^[A-Za-z0-9_-]+$/.test(parts[2])) return null;
+  if (parts.length !== 3 || parts[0] !== PREFIX || !/^[A-Za-z0-9_-]+$/.test(parts[1]) || !/^[A-Za-z0-9_-]+$/.test(parts[2])) return { status: 'invalid', state: null };
   const actual = Buffer.from(parts[2], 'base64url'), expected = sign(k, parts[1]);
-  if (actual.toString('base64url') !== parts[2] || actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
+  if (actual.toString('base64url') !== parts[2] || actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return { status: 'invalid', state: null };
   try {
     const raw = zlib.inflateRawSync(Buffer.from(parts[1], 'base64url'), { maxOutputLength: MAX_JSON });
     const parsed = JSON.parse(raw.toString('utf8'));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return { ...normalize(parsed), signature: parts[2] };
-  } catch (_) { return null; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { status: 'invalid', state: null };
+    const t = Number(now);
+    if (!Number.isSafeInteger(parsed.iat) || parsed.iat > t + CLOCK_SKEW_MS || t - parsed.iat > STATE_TTL_MS) {
+      return { status: 'expired', state: null };
+    }
+    return { status: 'valid', state: { ...normalize(parsed), signature: parts[2], iat: parsed.iat } };
+  } catch (_) { return { status: 'invalid', state: null }; }
+}
+function decodeState(encoded, now = Date.now()) {
+  return inspectState(encoded, now).state;
 }
 function updateState(oldState, newTurn = {}) {
   const prev = normalize(oldState || {});
@@ -90,4 +110,4 @@ function updateState(oldState, newTurn = {}) {
   };
   return normalize(next);
 }
-module.exports = { encodeState, decodeState, updateState };
+module.exports = { encodeState, decodeState, inspectState, updateState, STATE_TTL_MS };

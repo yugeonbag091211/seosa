@@ -64,6 +64,19 @@ function parseBudget(text) {
     const m = floor[floor.length - 1];
     out.min = won(m[1], m[2]);
   }
+  // 5) approximate price (2026-11-14, 100-question offline run Q020): "3만원짜리",
+  //    "3만원 정도/쯤/내외/안팎/전후/언저리/가량" means ABOUT that price. It used
+  //    to set no budget at all, so "3만원짜리 마우스" showed 145,000–219,000원
+  //    mice. Read it as a ceiling 15% above the named price (cheaper is fine;
+  //    a shopper who names a price does not want several times that price).
+  if (out.max == null && out.min == null && !out.band) {
+    const approx = [...s.matchAll(new RegExp(NUM + '\\s*' + UNIT + '\\s*(?:짜리|정도|쯤|내외|안팎|전후|언저리|가량)', 'g'))];
+    if (approx.length) {
+      const m = approx[approx.length - 1];
+      const v = won(m[1], m[2]);
+      if (v != null && /만|천|원/.test(m[2] || '')) { out.max = Math.round(v * 1.15); out.approximate = true; }
+    }
+  }
   // v3.4 (V078): keep the old output (min dropped) but report the contradiction
   // so the engine can ask instead of searching with half of the condition.
   if (out.min != null && out.max != null && out.min > out.max) { out.conflict = { min: out.min, max: out.max }; out.min = null; }

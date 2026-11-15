@@ -57,6 +57,37 @@ function typeMentions(text) {
   return kept;
 }
 const NEGATOR=/(?:말고|아니고|아닌|아니라|제외|빼고|뺀|없이|대신|싫)/;
+/*
+ * v3.5 (2026-11-14): accessory head nouns.
+ * Korean noun phrases are head-final: "노트북 거치대" asks for a STAND, "아이패드 케이스"
+ * for a CASE, "모니터 암" for an ARM — the device named first is only what it fits.
+ * The closed taxonomy has no accessory types, so the host won and the engine searched,
+ * validated and SHOWED laptops for a laptop-stand request (100-question offline run
+ * Q005/Q008/Q010). An accessory request now resolves to no supported type; the engine
+ * says so instead of recommending the host device.
+ * Exempt: a keyboard sold with a case ("키보드 케이스/폴리오") is a keyboard product —
+ * explicitType's accessory branch and isPart already treat it so.
+ */
+const ACCESSORY_NOUN=/^(거치대|스탠드|받침대|받침|암|케이스|커버|폴리오|파우치|슬리브|가방|백팩|보호\s*필름|필름|보호\s*유리|강화\s*유리|충전기|충전\s*독|어댑터|케이블|젠더|허브|도킹(?:\s*스테이션)?|독|스트랩|이어\s*팁|폼\s*팁|이어\s*패드|패드|펜슬|스타일러스|키\s*스킨|쿨러|쿨링\s*패드|필터|브러시|물?걸레|소모품|리필|마운트|홀더|브라켓)(?=$|[^가-힣]|(?:도|는|은|를|을|가|이|만|랑|이랑|하고|좀|로|으로|에|의|들)(?![가-힣]))/i;
+// Words that may stand between the device and the accessory noun: model words,
+// numbers, generations, and compatibility particles ("아이패드 에어 11 M3 케이스",
+// "아이패드용 케이스", "갤럭시 탭 S9 FE 커버").
+const ACCESSORY_GAP=/^(?:용|전용|호환(?:용)?|에|쓸|쓰는|맞는|[0-9a-z][0-9a-z.+\-]*|에어|프로|미니|울트라|플러스|맥스|라이트|\d+(?:세대|인치|형|mm)?|세대|인치|형)$/i;
+function accessoryAfter(type, after) {
+  let s=String(after||'');
+  for(let guard=0;guard<8;guard++){   // token by token — no nested-quantifier backtracking
+    s=s.replace(/^\s+/,'');
+    const m=ACCESSORY_NOUN.exec(s);
+    if(m)return type==='키보드'&&/^(?:케이스|폴리오)$/.test(m[1].replace(/\s+/g,''))?'':m[1];
+    const tok=/^\S+/.exec(s);
+    if(!tok)return '';
+    const glued=/^(?:용|전용|호환용?)(?=\S)/.exec(tok[0]);   // "용케이스"
+    if(glued){s=s.slice(glued[0].length);continue;}
+    if(!ACCESSORY_GAP.test(tok[0]))return '';
+    s=s.slice(tok[0].length);
+  }
+  return '';
+}
 const MODIFIER_AFTER=/^[\s0-9a-z가-힣.]{0,16}?(?:용(?![a-z가-힣])|전용|호환|에\s*(?:쓸|쓰는|맞는|연결|호환)|연결|앱|어플|달린|겸용)/i;
 // Korean noun phrases are head-final: the product the user wants is the LAST
 // type mention that is neither negated ("이어폰 말고", "마우스 번들 아닌") nor a
@@ -69,8 +100,12 @@ function headType(text) {
     const next=i+1<mentions.length?mentions[i+1].index:t.length;
     const after=t.slice(m.end,Math.min(next,m.end+16));
     const neg=after.search(NEGATOR);
-    return {...m,negated:neg>=0&&neg<=12,modifier:MODIFIER_AFTER.test(t.slice(m.end,next))};
+    return {...m,negated:neg>=0&&neg<=12,modifier:MODIFIER_AFTER.test(t.slice(m.end,next)),
+      accessory:accessoryAfter(m.type,t.slice(m.end,Math.min(next,m.end+28)))};
   });
+  // The wanted item is an accessory OF the last positively named device.
+  const lastPositive=[...info].reverse().find(x=>!x.negated);
+  if(lastPositive&&lastPositive.accessory)return '';
   const pick=[...info].reverse().find(x=>!x.negated&&!x.modifier)||
     [...info].reverse().find(x=>!x.negated)||info[0];
   return pick.type;
@@ -93,6 +128,9 @@ function explicitType(text) {
   // v3.2: head-noun resolution replaces "first mention wins".
   const head=headType(t);
   if(head)return head;
+  // v3.5: "아이패드 케이스" names an iPad only as the host — the identity family
+  // must not turn an accessory request back into a tablet request.
+  if(accessoryRequest(t))return '';
   const identity=requestedIdentity(t);
   if(identity.family&&FAMILY[identity.family])return FAMILY[identity.family];
   return '';
@@ -103,7 +141,30 @@ function canonicalName(category) {
   const c=String(category||'').trim();
   return TYPEMAP.has(c)?c:explicitType(c);
 }
+/**
+ * v3.5: is the user asking for an accessory of a named device? → { host, accessory, phrase } | null.
+ * Same rule as headType: the LAST positively named device followed by an accessory head noun.
+ */
+function accessoryRequest(text) {
+  const t=String(text||''),mentions=typeMentions(t);
+  for(let i=mentions.length-1;i>=0;i--){
+    const m=mentions[i];
+    const next=i+1<mentions.length?mentions[i+1].index:t.length;
+    const after=t.slice(m.end,Math.min(next,m.end+16));
+    const neg=after.search(NEGATOR);
+    if(neg>=0&&neg<=12)continue;
+    const accessory=accessoryAfter(m.type,t.slice(m.end,Math.min(next,m.end+28)));
+    if(!accessory)return null;
+    const end=t.indexOf(accessory,m.end);
+    return {host:m.type,hostToken:m.token,accessory,
+      phrase:t.slice(m.index,end>=0?end+accessory.length:m.end).replace(/\s+/g,' ').trim().slice(0,40)};
+  }
+  return null;
+}
 function canonicalCategory({message='',query='',planCategory='',priorCategory=''}={}) {
+  // v3.5: an accessory request has no supported type, whatever the prior turn
+  // or GPT said ("노트북 추천" → "노트북 거치대도 보여줘" is not a laptop search).
+  if(accessoryRequest(message))return '';
   // An explicit user noun dominates GPT's "완제품", "저장장치", "제품" or "무선".
   const fromUser=explicitType(message)||explicitType(query);
   if(fromUser)return fromUser;
@@ -287,6 +348,10 @@ function productTypeMatches(title,category,requestedText='') {
     !/제로\s*s|zero\s*s/i.test(t))return false;
   if(type==='청소기' && /(?:로보락|roborock)\s*s8\s*pro(?!\s*(?:plus|ultra|max|\+))/i.test(req) &&
     (!/s8\s*pro\b/i.test(t)||/s8\s*pro\s*(?:plus|ultra|max|\+)/i.test(t)))return false;
+  // v3.5 (2026-11-14, offline Q051): a musical keyboard is not a computer keyboard
+  // («야마하 전자키보드 PSR-F52» was shown for «기계식 키보드 → 좀 더 비싼 거»).
+  if(type==='키보드'&&/(?:전자\s*키보드|디지털\s*피아노|전자\s*피아노|신디사이저|신스|건반|midi\s*키보드|마스터\s*키보드|\bpsr-?[a-z]?\d|야마하\s*(?:p|psr|np)-?\d)/i.test(t)&&
+    !mentionedPositively(req,/(?:전자\s*키보드|디지털\s*피아노|전자\s*피아노|신디|건반|피아노|midi|악기)/i))return false;
   // Keyboard cases and carrying bags are accessories unless the user
   // positively requested a keyboard case rather than the keyboard itself.
   if(type==='키보드'&&!mentionedPositively(req,/(?:키보드\s*(?:케이스|가방|파우치)|keyboard\s*case)/i) &&
@@ -531,6 +596,6 @@ function searchAnchors(category) {
   const entry=TYPEMAP.get(category);
   return entry?entry.anchors.slice():[];
 }
-module.exports={TYPES,allTypes,explicitType,canonicalCategory,canonicalName,comparisonFromUtterance,
+module.exports={TYPES,allTypes,explicitType,canonicalCategory,canonicalName,comparisonFromUtterance,accessoryRequest,
   stripTaxonomy,ambiguousOptions,isPart,productTypeMatches,searchAnchors,
   mergeFeatures,featureContext,familyCategory,headType,typeMentions,coverageM2};

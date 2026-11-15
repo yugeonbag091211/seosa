@@ -214,12 +214,30 @@ function namedNetwork(text, family) {
   return cellular ? 'cellular' : wifi ? 'wifi' : null;
 }
 
+/*
+ * iPad mini 의 세대 (2026-11-14, 100문항 오프라인 Q034).
+ * 사용자는 «아이패드 미니 7» 처럼 «세대» 없이 말하고, 판매처는 «미니 7» · «A17 Pro» 로 적는다.
+ * 예전에는 둘 다 세대로 읽지 않아 «미니 7» 요청에 «mini(A20 Pro 모델)» 신형이 같은 모델로 통과했다.
+ * 칩 → 세대는 Apple 이 정한 것만: A12 = 5세대, A15 = 6세대, A17 Pro = 7세대. 모르는 칩은 세대를
+ * 지어내지 않는다(그러면 세대를 요구한 요청에서 «확인 불가» 로 빠진다 — checkListingIdentity).
+ */
+function miniGeneration(text, family, variant) {
+  if (family !== 'ipad' || variant !== 'mini') return null;
+  const spoken = /(?:미니|mini)\s*(\d)(?![\d.]|\s*(?:인치|inch|형|세대|gb|tb|기가|테라))/i.exec(text);
+  if (spoken) return Number(spoken[1]);
+  if (/(?<![a-z0-9])a17\s*pro(?![a-z0-9])/i.test(text)) return 7;
+  if (/(?<![a-z0-9])a15(?![0-9])/i.test(text)) return 6;
+  if (/(?<![a-z0-9])a12(?![0-9])/i.test(text)) return 5;
+  return null;
+}
 function extractTitleEvidence(text) {
   const t=normalize(text);
   const family=namedFamily(t);
+  const variant=namedVariant(t,family);
+  const generation=namedGeneration(t);
   return trimFields({
-    family, series:namedSeries(t,family), variant:namedVariant(t,family),
-    generation:namedGeneration(t), storageGb:namedStorage(t), ramGb:namedRam(t),
+    family, series:namedSeries(t,family), variant,
+    generation:generation != null ? generation : miniGeneration(t,family,variant), storageGb:namedStorage(t), ramGb:namedRam(t),
     screenInches:namedScreen(t), chip:namedChip(t), network:namedNetwork(t,family),
     caseMm:namedCaseMm(t,family)
   });
