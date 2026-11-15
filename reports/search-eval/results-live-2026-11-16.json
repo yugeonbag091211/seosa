@@ -1,0 +1,892 @@
+{
+ "exportedAt": "2026-11-15T23:54:16.498Z",
+ "note": "Provider titles/prices/links removed (ADPICK terms). Verdicts and metrics only.",
+ "runs": {
+  "live:main-e3d8efb": {
+   "summary": {
+    "label": "live-main",
+    "set": "replay:questions-replay.js",
+    "questions": 12,
+    "PASS": 7,
+    "FAIL": 5,
+    "UNVERIFIED": 0,
+    "accuracyVerifiable": 58.3,
+    "precisionAt5": 0.8,
+    "recallAt10": 0.915,
+    "accessoryConfusionRate": 33.3,
+    "modelMismatchRate": 25,
+    "budgetViolations": 0,
+    "usedViolations": 0,
+    "noResultRate": 0,
+    "unverifiedRate": 0,
+    "latencyMsAvg": 3.5,
+    "latencyMsP95": 16,
+    "externalCalls": 0,
+    "dbReadsMocked": 12,
+    "savedRows": 260,
+    "savedWrongRows": 117,
+    "savedWrongRate": 45,
+    "byCategory": {
+     "phone_tablet": {
+      "PASS": 0,
+      "FAIL": 3,
+      "UNVERIFIED": 0
+     },
+     "laptop_pc": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     },
+     "audio": {
+      "PASS": 1,
+      "FAIL": 1,
+      "UNVERIFIED": 0
+     },
+     "appliance": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     },
+     "living": {
+      "PASS": 0,
+      "FAIL": 1,
+      "UNVERIFIED": 0
+     },
+     "fashion": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     }
+    }
+   },
+   "results": [
+    {
+     "id": "R002",
+     "cat": "phone_tablet",
+     "q": "아이폰 16 프로 256gb",
+     "verdict": "FAIL",
+     "reason": "wrong:capacity_unstated+forbidden:맥스|max+identity:16\\s*(?:프로|pro)+accessory",
+     "metrics": {
+      "precision5": 0.2,
+      "recall10": 1,
+      "relevantInPool": 1,
+      "shown": 22,
+      "wrongReasons": [
+       "capacity_unstated",
+       "forbidden:맥스|max",
+       "identity:16\\s*(?:프로|pro)",
+       "accessory"
+      ],
+      "accessoryConfusion": true,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R006",
+     "cat": "phone_tablet",
+     "q": "갤럭시 S25 울트라",
+     "verdict": "FAIL",
+     "reason": "wrong:accessory",
+     "metrics": {
+      "precision5": 0.6,
+      "recall10": 0.42857142857142855,
+      "relevantInPool": 7,
+      "shown": 19,
+      "wrongReasons": [
+       "accessory",
+       "accessory"
+      ],
+      "accessoryConfusion": true,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R017",
+     "cat": "phone_tablet",
+     "q": "아이패드 10세대",
+     "verdict": "FAIL",
+     "reason": "wrong:accessory",
+     "metrics": {
+      "precision5": 0.8,
+      "recall10": 0.8571428571428571,
+      "relevantInPool": 7,
+      "shown": 24,
+      "wrongReasons": [
+       "accessory"
+      ],
+      "accessoryConfusion": true,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R024",
+     "cat": "laptop_pc",
+     "q": "LG 그램 17",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.9,
+      "relevantInPool": 13,
+      "shown": 28,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R036",
+     "cat": "laptop_pc",
+     "q": "로지텍 G304",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 14,
+      "shown": 18,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R042",
+     "cat": "audio",
+     "q": "에어팟 프로 2",
+     "verdict": "FAIL",
+     "reason": "wrong:accessory+identity:(?:프로|pro)\\s*\\(?\\s*2|2\\s",
+     "metrics": {
+      "precision5": 0.2,
+      "recall10": 1,
+      "relevantInPool": 3,
+      "shown": 21,
+      "wrongReasons": [
+       "accessory",
+       "accessory",
+       "identity:(?:프로|pro)\\s*\\(?\\s*2|2\\s",
+       "identity:(?:프로|pro)\\s*\\(?\\s*2|2\\s"
+      ],
+      "accessoryConfusion": true,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R047",
+     "cat": "audio",
+     "q": "소니 WH-1000XM5",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 13,
+      "shown": 20,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R054",
+     "cat": "appliance",
+     "q": "로봇청소기",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 22,
+      "shown": 23,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R063",
+     "cat": "appliance",
+     "q": "에어프라이어",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 25,
+      "shown": 23,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R070",
+     "cat": "living",
+     "q": "텀블러",
+     "verdict": "FAIL",
+     "reason": "wrong:forbidden:세척\\s*솔|뚜껑\\s*(?:단품|교체)|패킹",
+     "metrics": {
+      "precision5": 0.8,
+      "recall10": 0.9,
+      "relevantInPool": 19,
+      "shown": 27,
+      "wrongReasons": [
+       "forbidden:세척\\s*솔|뚜껑\\s*(?:단품|교체)|패킹"
+      ],
+      "accessoryConfusion": false,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R080",
+     "cat": "fashion",
+     "q": "수영복",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.9,
+      "relevantInPool": 11,
+      "shown": 12,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R084",
+     "cat": "fashion",
+     "q": "뉴발란스 530",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 17,
+      "shown": 23,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    }
+   ]
+  },
+  "live:pr238-1e4460c": {
+   "summary": {
+    "label": "live-pr238",
+    "set": "replay:questions-replay.js",
+    "questions": 12,
+    "PASS": 8,
+    "FAIL": 4,
+    "UNVERIFIED": 0,
+    "accuracyVerifiable": 66.7,
+    "precisionAt5": 0.854,
+    "recallAt10": 0.817,
+    "accessoryConfusionRate": 8.3,
+    "modelMismatchRate": 33.3,
+    "budgetViolations": 0,
+    "usedViolations": 0,
+    "noResultRate": 0,
+    "unverifiedRate": 0,
+    "latencyMsAvg": 7.4,
+    "latencyMsP95": 35.8,
+    "externalCalls": 0,
+    "dbReadsMocked": 12,
+    "savedRows": 152,
+    "savedWrongRows": 26,
+    "savedWrongRate": 17.1,
+    "byCategory": {
+     "phone_tablet": {
+      "PASS": 1,
+      "FAIL": 2,
+      "UNVERIFIED": 0
+     },
+     "laptop_pc": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     },
+     "audio": {
+      "PASS": 1,
+      "FAIL": 1,
+      "UNVERIFIED": 0
+     },
+     "appliance": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     },
+     "living": {
+      "PASS": 0,
+      "FAIL": 1,
+      "UNVERIFIED": 0
+     },
+     "fashion": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     }
+    }
+   },
+   "results": [
+    {
+     "id": "R002",
+     "cat": "phone_tablet",
+     "q": "아이폰 16 프로 256gb",
+     "verdict": "FAIL",
+     "reason": "wrong:capacity_unstated",
+     "metrics": {
+      "precision5": 0.5,
+      "recall10": 1,
+      "relevantInPool": 1,
+      "shown": 2,
+      "wrongReasons": [
+       "capacity_unstated"
+      ],
+      "accessoryConfusion": false,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R006",
+     "cat": "phone_tablet",
+     "q": "갤럭시 S25 울트라",
+     "verdict": "FAIL",
+     "reason": "wrong:forbidden:엣지|edge|플러스|plus",
+     "metrics": {
+      "precision5": 0.75,
+      "recall10": 0.42857142857142855,
+      "relevantInPool": 7,
+      "shown": 4,
+      "wrongReasons": [
+       "forbidden:엣지|edge|플러스|plus"
+      ],
+      "accessoryConfusion": false,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R017",
+     "cat": "phone_tablet",
+     "q": "아이패드 10세대",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.7142857142857143,
+      "relevantInPool": 7,
+      "shown": 6,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R024",
+     "cat": "laptop_pc",
+     "q": "LG 그램 17",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.2,
+      "relevantInPool": 13,
+      "shown": 2,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R036",
+     "cat": "laptop_pc",
+     "q": "로지텍 G304",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 14,
+      "shown": 14,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R042",
+     "cat": "audio",
+     "q": "에어팟 프로 2",
+     "verdict": "FAIL",
+     "reason": "wrong:accessory+identity:(?:프로|pro)\\s*\\(?\\s*2|2\\s",
+     "metrics": {
+      "precision5": 0.2,
+      "recall10": 0.6666666666666666,
+      "relevantInPool": 3,
+      "shown": 7,
+      "wrongReasons": [
+       "accessory",
+       "accessory",
+       "identity:(?:프로|pro)\\s*\\(?\\s*2|2\\s",
+       "identity:(?:프로|pro)\\s*\\(?\\s*2|2\\s"
+      ],
+      "accessoryConfusion": true,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R047",
+     "cat": "audio",
+     "q": "소니 WH-1000XM5",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 13,
+      "shown": 15,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R054",
+     "cat": "appliance",
+     "q": "로봇청소기",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 22,
+      "shown": 19,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R063",
+     "cat": "appliance",
+     "q": "에어프라이어",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 25,
+      "shown": 23,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R070",
+     "cat": "living",
+     "q": "텀블러",
+     "verdict": "FAIL",
+     "reason": "wrong:forbidden:세척\\s*솔|뚜껑\\s*(?:단품|교체)|패킹",
+     "metrics": {
+      "precision5": 0.8,
+      "recall10": 0.9,
+      "relevantInPool": 19,
+      "shown": 27,
+      "wrongReasons": [
+       "forbidden:세척\\s*솔|뚜껑\\s*(?:단품|교체)|패킹"
+      ],
+      "accessoryConfusion": false,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R080",
+     "cat": "fashion",
+     "q": "수영복",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.9,
+      "relevantInPool": 11,
+      "shown": 12,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R084",
+     "cat": "fashion",
+     "q": "뉴발란스 530",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 17,
+      "shown": 21,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    }
+   ]
+  },
+  "live:branch": {
+   "summary": {
+    "label": "live-branch",
+    "set": "replay:questions-replay.js",
+    "questions": 12,
+    "PASS": 10,
+    "FAIL": 2,
+    "UNVERIFIED": 0,
+    "accuracyVerifiable": 83.3,
+    "precisionAt5": 0.942,
+    "recallAt10": 0.829,
+    "accessoryConfusionRate": 8.3,
+    "modelMismatchRate": 8.3,
+    "budgetViolations": 0,
+    "usedViolations": 0,
+    "noResultRate": 0,
+    "unverifiedRate": 0,
+    "latencyMsAvg": 13.9,
+    "latencyMsP95": 62.6,
+    "externalCalls": 0,
+    "dbReadsMocked": 12,
+    "savedRows": 132,
+    "savedWrongRows": 9,
+    "savedWrongRate": 6.8,
+    "byCategory": {
+     "phone_tablet": {
+      "PASS": 3,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     },
+     "laptop_pc": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     },
+     "audio": {
+      "PASS": 1,
+      "FAIL": 1,
+      "UNVERIFIED": 0
+     },
+     "appliance": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     },
+     "living": {
+      "PASS": 0,
+      "FAIL": 1,
+      "UNVERIFIED": 0
+     },
+     "fashion": {
+      "PASS": 2,
+      "FAIL": 0,
+      "UNVERIFIED": 0
+     }
+    }
+   },
+   "results": [
+    {
+     "id": "R002",
+     "cat": "phone_tablet",
+     "q": "아이폰 16 프로 256gb",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 1,
+      "shown": 1,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R006",
+     "cat": "phone_tablet",
+     "q": "갤럭시 S25 울트라",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.42857142857142855,
+      "relevantInPool": 7,
+      "shown": 3,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R017",
+     "cat": "phone_tablet",
+     "q": "아이패드 10세대",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.8571428571428571,
+      "relevantInPool": 7,
+      "shown": 6,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R024",
+     "cat": "laptop_pc",
+     "q": "LG 그램 17",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.6,
+      "relevantInPool": 13,
+      "shown": 6,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R036",
+     "cat": "laptop_pc",
+     "q": "로지텍 G304",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 14,
+      "shown": 14,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R042",
+     "cat": "audio",
+     "q": "에어팟 프로 2",
+     "verdict": "FAIL",
+     "reason": "wrong:accessory",
+     "metrics": {
+      "precision5": 0.5,
+      "recall10": 0.6666666666666666,
+      "relevantInPool": 3,
+      "shown": 4,
+      "wrongReasons": [
+       "accessory",
+       "accessory"
+      ],
+      "accessoryConfusion": true,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R047",
+     "cat": "audio",
+     "q": "소니 WH-1000XM5",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.9,
+      "relevantInPool": 13,
+      "shown": 12,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R054",
+     "cat": "appliance",
+     "q": "로봇청소기",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 22,
+      "shown": 21,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R063",
+     "cat": "appliance",
+     "q": "에어프라이어",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 25,
+      "shown": 22,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R070",
+     "cat": "living",
+     "q": "텀블러",
+     "verdict": "FAIL",
+     "reason": "wrong:forbidden:세척\\s*솔|뚜껑\\s*(?:단품|교체)|패킹",
+     "metrics": {
+      "precision5": 0.8,
+      "recall10": 0.8,
+      "relevantInPool": 19,
+      "shown": 23,
+      "wrongReasons": [
+       "forbidden:세척\\s*솔|뚜껑\\s*(?:단품|교체)|패킹"
+      ],
+      "accessoryConfusion": false,
+      "modelMismatch": true,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R080",
+     "cat": "fashion",
+     "q": "수영복",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 0.7,
+      "relevantInPool": 11,
+      "shown": 7,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    },
+    {
+     "id": "R084",
+     "cat": "fashion",
+     "q": "뉴발란스 530",
+     "verdict": "PASS",
+     "reason": "",
+     "metrics": {
+      "precision5": 1,
+      "recall10": 1,
+      "relevantInPool": 17,
+      "shown": 15,
+      "wrongReasons": [],
+      "accessoryConfusion": false,
+      "modelMismatch": false,
+      "budgetViolation": false,
+      "usedViolation": false
+     }
+    }
+   ]
+  }
+ },
+ "capture": {
+  "when": "2026-11-16 (KST)",
+  "approvedBy": "owner, in session",
+  "providerCalls": {
+   "coupang": 12,
+   "adpick": 12,
+   "allHttp200": true
+  },
+  "limiterRefusals": {
+   "adpick": 5,
+   "note": "refused before any request (per-instance 3/min x4, global 7/8 per min x1); retried ADPICK-only 25s apart"
+  },
+  "productionDbWrites": {
+   "limiterRpc": 37,
+   "other": 0
+  },
+  "blockedWrites": {
+   "adpick_api_calls_insert": 12
+  },
+  "items": {
+   "coupang": 120,
+   "adpick": 239
+  },
+  "questions": "12 from the replay set (used during development; not an unbiased holdout)"
+ }
+}
