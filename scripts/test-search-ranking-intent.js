@@ -262,6 +262,8 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_ai-v31-taxonomy': require('../api/_ai-v31-taxonomy'),
     './_ai-v32-listing': require('../api/_ai-v32-listing'),
     './_ai-v34-listing-guards': require('../api/_ai-v34-listing-guards'),
+    // 2026-11-15: 표시·저장 판정은 상품 정체성 관문 한 곳 — 순수 함수라 진짜 모듈을 쓴다.
+    './_product-gate': require('../api/_product-gate'),
     './_search-provenance': require('../api/_search-provenance'),
     './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(items) { return items; } },
     // 구매 링크 관문 — 순수 함수라 진짜 모듈을 쓴다.

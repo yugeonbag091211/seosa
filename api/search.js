@@ -4,10 +4,8 @@ const { attachTrust } = require('./_trust');
 const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords, filterMainProductCandidates, MIN_SCORE } = require('./_search');
-const { explicitType, productTypeMatches } = require('./_ai-v31-taxonomy');
-const { principalItem } = require('./_ai-v32-listing');
-const { listingGuard } = require('./_ai-v34-listing-guards');
+const { normalizeText, splitTokens, rankItems, suggestKeywords, MIN_SCORE } = require('./_search');
+const Gate = require('./_product-gate');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -168,35 +166,39 @@ module.exports = async function handler(req, res) {
      * minScore: 0 은 낮은 관련도의 상품을 결과에 남겨 저가 액세서리·책이
      * 본품 검색에서 노출되게 했다. 기본 MIN_SCORE 를 적용한 뒤 판매 대상과
      * 검색 의도를 검증한다. 검증 전 결과는 가격 DB에도 저장하지 않는다.
+     *
+     * ── 2026-11-15 재구축 ────────────────────────────────────────
+     *
+     * 점수는 «순서» 만 정하고, «이 상품이 그 상품인가» 는 상품 정체성 관문
+     * (api/_product-gate.js) 한 곳이 정한다. 같은 관문을 저장(saveProducts)·
+     * 홈 표시(relevantRows)·수집기 분류 점검이 함께 쓴다.
+     *   hard  다른 상품(부속·도서·다른 모델 번호·세대·변형·용량·브랜드·예산 밖·제외한 상태)
+     *         → 보여 주지도 저장하지도 않는다
+     *   soft  상품명만으로 조건을 확인 못 함(세대·용량이 안 적힘 등)
+     *         → 보여 주되 identity:'unverified' 로 «확인된» 상품 뒤에 둔다
+     * 가격 정렬보다 정체성 판정이 먼저다 — 화면의 «최저가순» 도 확인된 상품끼리 먼저 겨룬다.
      */
     // rankItems normalizes text itself; retain original model separators so
     // SM-S942N is checked as a complete code, not only the S942N fragment.
-    const relevance = rankItems(rawKeyword, items);
-    // General device searches must return merchandise, not compatible parts or books.
-    // Accessory-intent searches (e.g. '아이패드 케이스') keep their own results.
-    const intent = principalItem(rawKeyword);
-    const requestedType = intent.kind === 'device' ? explicitType(rawKeyword) : '';
+    // Coverage is scored against the product phrase only: "50만원 이하" or "보여줘"
+    // must not dilute every title below MIN_SCORE (the budget is a gate rule).
+    const gateSpec = Gate.parseQuery(rawKeyword, { titles: items.map(it => String((it && it.title) || '')) });
+    const relevance = rankItems(gateSpec.rankText, items);
     // rankItems' internal threshold uses token coverage; the final score also
     // includes identity, accessory, and variant penalties. Enforce the floor
     // after those penalties so a 0.293 final match is not treated as relevant.
     const scored = relevance.items.filter(item => Number(item.relevance) >= MIN_SCORE);
-    const focused = requestedType
-      ? filterMainProductCandidates(rawKeyword, scored)
-      : { items: scored };
-    const verified = requestedType ? focused.items.filter(item => {
-      // Preserve a genuine device sold WITH a charger/case. The AI taxonomy's
-      // conservative PARTS check may otherwise reject a confirmed main device.
-      const head = principalItem(item.title);
-      const bundledDevice = head.kind === 'device' && head.type === requestedType &&
-        /(?:케이스|커버|충전기|필름|파우치|스트랩)\s*(?:포함|동봉|증정|제공)/i.test(item.title);
-      return (productTypeMatches(item.title, requestedType, rawKeyword) || bundledDevice) &&
-        !listingGuard({ title: item.title, price: Number(item.lprice) }, { category: requestedType, userText: rawKeyword });
-    }) : focused.items;
+    const gated = Gate.gateItems(gateSpec, scored);
+    const verified = gated.kept;
+    if (gated.rejected.length) {
+      console.log(`[search:${keyword}] 정체성 관문 제외 ${gated.rejected.length}건 — `
+        + gated.rejected.slice(0, 4).map(r => `${String(r.item.title).slice(0, 24)}[${r.hard[0]}]`).join(' · '));
+    }
 
     /*
      * 순서.
      *
-     * 관련도 → 가격 신뢰도 → (몰 우선순위를 반영한) 가격 순이다.
+     * 확인된 상품 → 확인 못 한 상품, 그 안에서 관련도 → 가격 신뢰도 → (몰 우선순위를 반영한) 가격 순이다.
      * 신뢰도가 붙은 다음에 세워야 한다 — 그 전에 세우면 신뢰도는 아직 없다.
      *
      * 관련도가 다르면 가격은 아예 보지 않는다. "싸지만 내가 찾던 게 아닌
@@ -204,16 +206,17 @@ module.exports = async function handler(req, res) {
      * (_search.sortByRelevance 주석 참고).
      */
     // Only validated rows may enter the price catalog from a public search.
-    // Keep the price ledger in sync before computing trust/price-change labels.
-    await saveProducts(keyword, verified, { from, source: 'search' });
+    // saveProducts runs the same gate again (identityQuery keeps model separators)
+    // and also holds back rows whose identity is only partly evidenced.
+    await saveProducts(keyword, verified, { from, source: 'search', identityQuery: rawKeyword });
     await attachTrust(verified, { source: from, guardPrice: true });
     await attachPriceChange(verified);
-    let ranked = sortByRelevance(verified);
+    let ranked = Gate.orderByIdentity(verified);
     const canonicalConfig = Canonical.config();
     if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
       // The active group state is read on every request so a suspension is immediate.
       noStore(res);
-      ranked = await Canonical.collapseItems(ranked, { db: supabase, config: canonicalConfig });
+      ranked = Gate.orderByIdentity(await Canonical.collapseItems(ranked, { db: supabase, config: canonicalConfig }));
     }
 
     /*

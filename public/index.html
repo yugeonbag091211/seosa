@@ -7875,9 +7875,17 @@ var Search = {
     var trust = function(x) { return (x.trust && Number(x.trust.score)) || 0; };
     var drop = function(x) { return (x.priceChange && Number(x.priceChange.dropPct)) || 0; };
 
+    /*
+     * 정체성 등급 (2026-11-15, api/_product-gate.js).
+     * 서버는 다른 상품(부속·다른 모델·다른 용량 …)을 이미 뺐고, 남은 것 중 상품명만으로
+     * 조건을 확인하지 못한 상품에 identity:'unverified' 를 붙인다. 가격순이어도 확인된
+     * 상품끼리 먼저 겨룬다 — «최저가 1위» 가 확인 못 한 상품이 되지 않게.
+     */
+    var tier = function(x) { return x && x.identity === 'unverified' ? 1 : 0; };
     // 가격을 못 읽는 상품은 가격 정렬에서 맨 뒤로 보낸다 (0원으로 취급하면 1위가 된다).
     var byPrice = function(dir) {
       return function(a, b) {
+        if (tier(a) !== tier(b)) return tier(a) - tier(b);
         var pa = price(a), pb = price(b);
         if (pa == null && pb == null) return rel(b) - rel(a);
         if (pa == null) return 1;

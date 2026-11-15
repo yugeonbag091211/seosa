@@ -945,6 +945,13 @@ async function recordPrices(observations, opts = {}) {
     }
 
     if (!updateCatalog) continue;
+    /*
+     * 분류 보류 (2026-11-15). 수집기는 상품 ID·옵션으로 같은 상품의 가격을 찾았지만, 그 행의
+     * keyword 가 상품과 맞지 않으면(«수영복» 키워드의 콜라) 카탈로그 행을 다시 쓰지 않는다.
+     * 다시 쓰면 collected_at 이 새로워져 틀린 분류의 행이 홈 섹션에 «방금 확인한 상품» 으로
+     * 계속 남는다. 가격 관측(price_history)은 위에서 이미 기록했다 — 가격 갱신과 분류는 따로 본다.
+     */
+    if (it.catalogHold) continue;
 
     // 정가와 할인율은 넘어온 값을 그대로 믿지 않고 확정된 판매가에서 다시 만든다.
     // (호출부마다 계산 시점이 달라 lprice 와 어긋난 savePct 가 저장될 수 있다)
@@ -1126,16 +1133,49 @@ async function saveProducts(keyword, items, opts = {}) {
   }
 
   const batchFrom = opts.from || 'api';
-  const recordable = items.filter(it => isRecordableSource(it._source || batchFrom));
-  const skipped = items.length - recordable.length;
+  const sourced = items.filter(it => isRecordableSource(it._source || batchFrom));
+  const skipped = items.length - sourced.length;
 
-  if (!recordable.length) {
+  if (!sourced.length) {
     console.warn(`[save:${keyword}] 저장 가능한 출처가 없어 ${items.length}건 전부 제외합니다`);
     return { saved: 0, errors: [], skipped: true };
   }
   if (skipped) {
-    console.log(`[save:${keyword}] 출처가 오래돼 ${skipped}건 제외, ${recordable.length}건 저장 시도`);
+    console.log(`[save:${keyword}] 출처가 오래돼 ${skipped}건 제외, ${sourced.length}건 저장 시도`);
   }
+
+  /*
+   * ★ 분류 관문 (2026-11-15) — 이 키워드의 상품이라고 확인된 것만 products.keyword 로 기록한다.
+   *
+   *   예전에는 공급원이 준 목록(토큰 하나만 맞으면 통과)을 그대로 저장했다. 그래서
+   *   «수영복» 으로 콜라·물티슈가, «아이패드 10세대» 로 매직키보드가 그 키워드의 상품으로
+   *   기록됐고, 수집기는 그 행을 매일 다시 갱신해 홈 섹션에 계속 띄웠다(운영 스냅숏 실측).
+   *
+   *   검색(api/search)·AI(api/ai)·크론(api/cron) 저장이 전부 이 함수를 지나므로 한 곳에서 막는다.
+   *   판정은 api/_product-gate.js — 화면 표시와 같은 관문이다. 다른 상품(hard)과, 정체를 확인할
+   *   근거가 모자란 상품(번호·브랜드·용량이 안 적힘)은 이 키워드로 저장하지 않는다.
+   *   opts.skipGate 는 이미 상품 식별자로 대조한 호출부(테스트·이관)만 쓴다.
+   */
+  let recordable = sourced;
+  let gateRejected = 0;
+  if (!opts.skipGate) {
+    try {
+      const Gate = require('./_product-gate');
+      const r = Gate.saveFilter(opts.identityQuery || keyword, sourced, { stored: false });
+      recordable = r.save;
+      gateRejected = sourced.length - recordable.length;
+      if (gateRejected) {
+        console.log(`[save:${keyword}] 분류 관문 — ${gateRejected}건은 이 키워드의 상품으로 확인되지 않아 저장하지 않습니다`
+          + ` (예: ${r.rejected.concat(r.held.map(it => ({ item: it, hard: [it.identityWhy || 'unverified'] })))
+            .slice(0, 3).map(x => `${String(x.item.title).slice(0, 20)}[${x.hard[0]}]`).join(' · ')})`);
+      }
+    } catch (e) {
+      // 관문이 실패하면 저장하지 않는다 — 확인 못 한 분류를 원장에 남기지 않는 쪽이 안전하다.
+      console.warn(`[save:${keyword}] 분류 관문 실패(저장 생략): ${e.message}`);
+      return { saved: 0, errors: [], gateError: true };
+    }
+  }
+  if (!recordable.length) return { saved: 0, errors: [], gateRejected };
 
   const r = await recordPrices(recordable.map(it => ({
     productId: it.productId,
@@ -1153,7 +1193,7 @@ async function saveProducts(keyword, items, opts = {}) {
     mallLabel: it.mallLabel
   })), { label: keyword, now: opts.now, source: opts.source || '' });
 
-  return { saved: r.saved, errors: r.errors, rejected: r.rejected, suspect: r.suspect };
+  return { saved: r.saved, errors: r.errors, rejected: r.rejected, suspect: r.suspect, gateRejected };
 }
 
 /**
@@ -1244,12 +1284,21 @@ function freshRows(rows, opts = {}) {
  * 홈 화면이 지금 당장 정상으로 보인다. 행을 지우지는 않는다.
  */
 function relevantRows(rows) {
+  /*
+   * 2026-11-15: 토큰 하나 규칙(matchesKeyword)만으로는 «수영복 입을때 필요한 선크림» 이
+   * 수영복으로, «아이패드 10세대 케이스» 가 아이패드로 통과한다. 저장 관문과 같은 판정
+   * (api/_product-gate.classifyStoredRow)으로 «다른 상품» 이 확실한 행만 뺀다. 판정이
+   * 'unknown'(근거 부족)인 행은 예전처럼 남긴다 — 지우지 않고 보여 주지만 않는다.
+   */
+  let classify = null;
+  try { classify = require('./_product-gate').classifyStoredRow; } catch (_) { classify = null; }
   const out = [];
   let dropped = 0;
   (rows || []).forEach(r => {
     if (!r) return;
-    if (matchesKeyword(keywordTokens(r.keyword), r.title)) out.push(r);
-    else dropped++;
+    if (!matchesKeyword(keywordTokens(r.keyword), r.title)) { dropped++; return; }
+    if (classify && r.keyword && classify(r.keyword, r.title).verdict === 'mismatch') { dropped++; return; }
+    out.push(r);
   });
   if (dropped) console.log(`[rec] keyword 와 무관한 저장분 ${dropped}행 노출 제외`);
   return out;
