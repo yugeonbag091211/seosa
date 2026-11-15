@@ -211,6 +211,19 @@ const titles = r => r.shown;
     check(rash.length === 1 && /남성 반팔/.test(rash[0]), '패션: 성인 남성 검색에 아동(남아)·여성 상품 제외', rash);
   }
 
+  /* ── 관문 고장 시 검색이 오류로 끝나지 않는다 ───────────────────────── */
+  section('관문 예외 — 검색은 «확인 안 됨» 으로 보여 주고, 아무것도 저장하지 않는다');
+  {
+    const real = { gateItems: Gate.gateItems, saveFilter: Gate.saveFilter };
+    Gate.gateItems = () => { throw new Error('test: gate broken'); };
+    Gate.saveFilter = () => { throw new Error('test: gate broken'); };
+    let r;
+    try { r = await search('스탠리 텀블러', [['스탠리 퀜처 진공 텀블러 887ml', 45000], ['스탠리 아이스플로우 텀블러 650ml', 39000]]); }
+    finally { Object.assign(Gate, real); }
+    check(r.shown.length === 2 && r.body.every(x => x.identity === 'unverified'), '관문이 던져도 200 — 결과는 모두 identity:unverified', r.body.map(x => x.identity));
+    check(r.savedTitles.length === 0, '관문 오류면 가격 DB 에 아무것도 저장하지 않는다', r.savedTitles);
+  }
+
   /* ── AI 경로·대화체 (전체 회귀에서 찾은 과잉 차단, 2026-11-16) ───────── */
   section('AI 경로 — 대화 말은 상품 이름이 아니고, 상품을 가르는 낱말은 그대로 지킨다');
   {

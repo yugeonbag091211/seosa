@@ -182,13 +182,28 @@ module.exports = async function handler(req, res) {
     // SM-S942N is checked as a complete code, not only the S942N fragment.
     // Coverage is scored against the product phrase only: "50만원 이하" or "보여줘"
     // must not dilute every title below MIN_SCORE (the budget is a gate rule).
-    const gateSpec = Gate.parseQuery(rawKeyword, { titles: items.map(it => String((it && it.title) || '')) });
-    const relevance = rankItems(gateSpec.rankText, items);
+    // 관문 자체가 예외를 던지면(관문 버그) 검색을 오류로 끝내지 않는다 — 점수 하한까지만 거른 결과를
+    // 모두 «확인 안 됨» 으로 보여 주고, 저장은 saveProducts 가 같은 관문 오류로 막는다(아무것도 저장 안 함).
+    let gateSpec = null;
+    try {
+      gateSpec = Gate.parseQuery(rawKeyword, { titles: items.map(it => String((it && it.title) || '')) });
+    } catch (e) {
+      console.warn(`[search:${keyword}] 정체성 관문 해석 실패 — 확인 안 된 결과로 표시합니다: ${e.message}`);
+    }
+    const relevance = rankItems(gateSpec ? gateSpec.rankText : rawKeyword, items);
     // rankItems' internal threshold uses token coverage; the final score also
     // includes identity, accessory, and variant penalties. Enforce the floor
     // after those penalties so a 0.293 final match is not treated as relevant.
     const scored = relevance.items.filter(item => Number(item.relevance) >= MIN_SCORE);
-    const gated = Gate.gateItems(gateSpec, scored);
+    let gated;
+    try {
+      if (!gateSpec) throw new Error('관문 해석 없음');
+      gated = Gate.gateItems(gateSpec, scored);
+    } catch (e) {
+      if (gateSpec) console.warn(`[search:${keyword}] 정체성 관문 판정 실패 — 확인 안 된 결과로 표시합니다: ${e.message}`);
+      scored.forEach(it => { it.identity = 'unverified'; it.identityWhy = 'gate_error'; });
+      gated = { kept: scored, rejected: [] };
+    }
     const verified = gated.kept;
     if (gated.rejected.length) {
       console.log(`[search:${keyword}] 정체성 관문 제외 ${gated.rejected.length}건 — `
