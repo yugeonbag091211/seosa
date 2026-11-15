@@ -120,6 +120,13 @@ const NOT_HEAD = new Set(['추천', '제품', '상품', '용품', '소품', '선
   '아동', '키즈', '유아', '성인', '공용', '남녀공용', '대용량', '소형', '대형', '초경량', '경량', '고급', '프리미엄',
   '노이즈캔슬링', '저소음', '무소음', '가열식', '초음파식', '스탠드형', '접이식', '자동', '미니', '롱', '숏', '오버핏']);
 const ADJECTIVE_END = /(?:운|한|은|는|던|된|진|인|할|일|울)$/;
+// 대화체 낱말 — 상품 이름이 아니다 (AI 대화의 «맥북 프로 얼마야», «그중에 제일 싼 것», «가격 조금 넘어도»).
+const CHAT_STOP = new Set(['얼마', '얼마야', '얼마예요', '얼마에요', '얼마인지', '있으면', '있나요', '있을까', '그중', '그중에', '그중에서',
+  '제일', '가장', '싼거', '싼것', '비싼', '좋은', '좋은거', '넘어도', '넘으면', '조금', '좀더', '질문은', '질문', '혹시', '이거', '그거',
+  '저거', '이건', '그건', '일반형', '기본형', '기본', '일반', '새거', '알려줘', '보여줘', '찾아줘', '추천', '해줘', '바꿔줘', '말고는',
+  '본체', '본체만', '본품만', '단품만', '자체', '정품만', '신품만',
+  '어때', '어떄', '뭐야', '뭐가', '나아', '괜찮아', '살까', '사도', '돼', '될까', '다시', '그럼', '아니', '네', '응', '음']);
+NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
 const UNIVERSAL_ACCESSORY = /^(?:케이스|커버|필름|보호\s*필름|강화\s*유리|보안기|키\s*스킨|스킨|파우치|슬리브|거치대|받침(?:대)?|지지대|충전기|충전\s*독|충전\s*케이블|케이블|어댑터|젠더|스트랩|(?:워치|시계|watch)\s*(?:밴드|줄|스트랩)|이어\s*팁|이어\s*패드|이어\s*캡|키캡|팜\s*레스트|손목\s*받침|마우스\s*패드|펜촉|리필|교체품|호환품|media|replacement_part|fits_sentence|브라켓|브래킷|마운트|홀더|리모컨|리시버|동글|도킹\s*스테이션|도킹|허브|소모품|부품|수리|액정|lcd|어셈블리|프레임|힌지|하판|상판|정리대|보관대|수납장|장식장|악세(?:서|사)리|액세서리|쿨러|쿨링\s*팬|s\s*펜|펜슬|터치\s*펜|스타일러스)$/i;
@@ -277,6 +284,11 @@ function parseQuery(text, opts = {}) {
   negated.forEach(word => brandsIn(word).forEach(b => excludedBrands.push(b.canon)));
 
   let idText = raw.replace(BUDGET_PHRASE, ' ').replace(REQUEST_FILLER, ' ');
+  // 대화체 조사 — «제품만», «칩으로», «모델로», «걸로». 남는 말이 아는 낱말일 때만 뗀다(«프로» 의 «로» 는 떼지 않는다).
+  idText = idText.replace(/([가-힣]{1,8}?)(으로|로|만|은|는|도|이요|요|이야|야|예요|이에요|인데|이면|면)(?=\s|$)/g, (whole, stem, josa) => {
+    const known = NOT_HEAD.has(stem) || VARIANT.has(stem) || LINE.has(stem) || isBrandToken(stem) || ['칩', '것', '거', '제품', '모델', '버전'].includes(stem);
+    return known || (josa.length >= 2 && stem.length >= 2) ? stem : whole;
+  });
   idText = S.stripConditionTerms(idText);
   negated.forEach(word => { if (brandsIn(word).length) idText = idText.replace(word, ' '); });
   idText = idText.replace(/\s*(?:말고|빼고|제외(?:하고)?|아닌|아니고)\s*/g, ' ').replace(/\s+/g, ' ').trim();
@@ -831,7 +843,7 @@ function judge(spec, item, opts = {}) {
 
   /* 8. 브랜드 */
   const titleHead = title.slice(0, 48);
-  for (const canon of spec.excludedBrands) {
+  for (const canon of opts.identityOnly ? [] : spec.excludedBrands) {
     if (brandAliases(canon).some(a => aliasRe(a).test(title))) hard.push(`excluded_brand:${canon}`);
   }
   if (spec.brands.length) {
@@ -850,8 +862,18 @@ function judge(spec, item, opts = {}) {
     }
   }
 
+  /*
+   * AI 경로(opts.identityOnly)는 여기까지만 본다 — «무엇을 파는가·어느 모델인가» 의 구조 판정.
+   * 용량·색상·예산·상태·성별은 AI 가 직접 다룬다: 다른 용량은 «용량 다름» 라벨의 근접 후보(NEAR)로,
+   * 예산 밖 후보는 «예산 안에는 없다» 안내와 완화안 계산에 쓴다(api/ai.js 예산 관문·_noresult).
+   */
+  // 다만 «옵션이 안 적혔다»·«옵션 여러 개를 한 글에» 는 AI 의 근접 후보가 아니라 확인 불가다 — 그것만은 여기서 뺀다.
+  const hardBeforeAttributes = hard.length;
+
   /* 9. 저장 용량·화면 크기·인원·연식 */
-  if (spec.caps.length) {
+  // 저장 용량은 저장 장치가 있는 종류에만 묻는다 — «AirPods 3 256GB» 같은 말에 이어폰을 버리지 않는다.
+  const capacityApplies = !spec.type || ['스마트폰', '태블릿', '노트북', '외장하드'].includes(spec.type);
+  if (spec.caps.length && capacityApplies) {
     const storageWant = spec.caps.filter(c => c >= 64);
     const caps = listingCapacities(title);
     const storage = [...new Set(caps.filter(c => !c.ram && c.n >= 64).map(c => c.n))];
@@ -892,6 +914,12 @@ function judge(spec, item, opts = {}) {
   if (spec.gender === 'f' && /(?:남성|남자|맨즈|\bmen'?s?\b)/i.test(title) && !/(?:여성|여자|공용|남녀|unisex|우먼|women)/i.test(title)) hard.push('gender_mismatch');
   if (spec.gender === 'm' && /(?:여성|여자|우먼|women|레이디)/i.test(title) && !/(?:남성|남자|공용|남녀|unisex|맨즈|\bmen\b)/i.test(title)) hard.push('gender_mismatch');
   if (spec.gender && !spec.kids && KIDS.test(title) && !/(?:성인|어른|남녀|공용|패밀리|가족)/.test(title)) hard.push('age_mismatch');
+
+  if (opts.identityOnly) {
+    const attribute = hard.splice(hardBeforeAttributes);
+    hard.push(...attribute.filter(h => /^(?:capacity_unverified|capacity_ambiguous|size_ambiguous|color_unverified)/.test(h)));
+    return { ok: hard.length === 0, hard: [...new Set(hard)], soft: [...new Set(soft)], principal };
+  }
 
   /* 11. 상태(중고·리퍼·렌탈)·예산 */
   const state = S.conditionState(title, item && item.condition);
