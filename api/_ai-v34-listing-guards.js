@@ -59,7 +59,9 @@ function mixedListing(title, category, userText = '') {
   }
   // «공기청정기/가습기/건조기 믿고사는 …»: three short category words in a row
   const m = t.match(/([가-힣]{2,6})\s*\/\s*([가-힣]{2,6})\s*\/\s*([가-힣]{2,6})/);
-  if (m && ![m[1], m[2], m[3]].every(w => COLOR_WORD.test(w)) && [m[1], m[2], m[3]].some(w => explicitType(w) === category))
+  // (2026-11-15) Without a category, explicitType('경량') === '' made every
+  // slash-formatted title («… / 블랙 / 무선 헤드폰 / 경량 / …») a store page.
+  if (m && category && ![m[1], m[2], m[3]].every(w => COLOR_WORD.test(w)) && [m[1], m[2], m[3]].some(w => explicitType(w) === category))
     return new Set([m[1], m[2], m[3]].map(w => explicitType(w) || w)).size >= 3;
   return false;
 }

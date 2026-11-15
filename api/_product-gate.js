@@ -79,6 +79,12 @@ const LINE = new Map(Object.entries({
 }));
 // «노트북»·«넷북» 은 범주 낱말이지 «북» 제품군이 아니다.
 const NOT_LINE_COMPOUND = /^(?:노트북|넷북|이북|e북|전자책|페이스북|스케치북|가이드북|핸드북|워크북|레슨북|헤어밴드|고무밴드|머리밴드|손목밴드|요가밴드|스마트밴드)$/;
+// 같은 제품군 키를 갖는 표기들 («galaxy» ↔ «갤럭시») — 엄격 비교에서도 서로 같은 이름이다.
+const LINE_WORDS_BY_KEY = (() => {
+  const m = new Map();
+  for (const [word, key] of LINE) { if (!m.has(key)) m.set(key, []); m.get(key).push(word); }
+  return m;
+})();
 const lineKey = t => LINE.get(t) || (NOT_LINE_COMPOUND.test(t) ? '' : /(?:탭|tab)$/.test(t) && t.length > 2 ? 'tab'
   : /(?:북|book)$/.test(t) && t.length > 2 ? 'book' : /(?:워치|watch)$/.test(t) && t.length > 2 ? 'watch'
   : /(?:밴드|band)$/.test(t) && t.length > 2 ? 'band' : '');
@@ -116,7 +122,7 @@ const NOT_HEAD = new Set(['추천', '제품', '상품', '용품', '소품', '선
 const ADJECTIVE_END = /(?:운|한|은|는|던|된|진|인|할|일|울)$/;
 
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
-const UNIVERSAL_ACCESSORY = /^(?:케이스|커버|필름|보호\s*필름|강화\s*유리|보안기|키\s*스킨|스킨|파우치|슬리브|거치대|받침(?:대)?|지지대|충전기|충전\s*독|충전\s*케이블|케이블|어댑터|젠더|스트랩|(?:워치|시계|watch)\s*(?:밴드|줄|스트랩)|이어\s*팁|이어\s*패드|이어\s*캡|키캡|팜\s*레스트|손목\s*받침|마우스\s*패드|펜촉|리필|교체품|호환품|media|replacement_part|fits_sentence|브라켓|브래킷|마운트|홀더|리모컨|리시버|동글|도킹\s*스테이션|도킹|허브|소모품|부품|수리|액정|lcd|어셈블리|프레임|힌지|하판|상판|정리대|보관대|수납장|장식장|악세(?:서|사)리|액세서리|쿨러|쿨링\s*팬)$/i;
+const UNIVERSAL_ACCESSORY = /^(?:케이스|커버|필름|보호\s*필름|강화\s*유리|보안기|키\s*스킨|스킨|파우치|슬리브|거치대|받침(?:대)?|지지대|충전기|충전\s*독|충전\s*케이블|케이블|어댑터|젠더|스트랩|(?:워치|시계|watch)\s*(?:밴드|줄|스트랩)|이어\s*팁|이어\s*패드|이어\s*캡|키캡|팜\s*레스트|손목\s*받침|마우스\s*패드|펜촉|리필|교체품|호환품|media|replacement_part|fits_sentence|브라켓|브래킷|마운트|홀더|리모컨|리시버|동글|도킹\s*스테이션|도킹|허브|소모품|부품|수리|액정|lcd|어셈블리|프레임|힌지|하판|상판|정리대|보관대|수납장|장식장|악세(?:서|사)리|액세서리|쿨러|쿨링\s*팬|s\s*펜|펜슬|터치\s*펜|스타일러스)$/i;
 // 범주에 따라 본품의 기능 표기일 수도 있는 부속 명사 — 두 번째 근거가 있어야 hard.
 const AMBIGUOUS_ACCESSORY = /^(?:필터|배터리|브러시|브러쉬|노즐|롤러|걸레|물걸레\s*패드|먼지\s*봉투|더스트\s*백|헤드|모듈|스크린|튜브|호스|연장관|매트|스탠드|팁|플러그|마이크|렌즈)$/i;
 // 범주가 정해지지 않은 검색에서도 «다른 물건을 판다» 고 볼 머리 명사(_ai-v32-listing STRONG_ACCESSORY 와 같은 계열)
@@ -324,6 +330,9 @@ function parseQuery(text, opts = {}) {
   // 한글 이름에 영문 한 글자가 붙은 이름 («제로S», «타워X») 은 한 덩어리다.
   for (const m of idText.matchAll(/([가-힣]{2,})([a-z])(?![a-z0-9])/gi)) {
     const compound = (m[1] + m[2]).toLowerCase();
+    // 변형 낱말 + 글자(«맥스V» = MaxV)는 영문 표기도 같은 이름이다
+    const v = VARIANT.get(m[1]);
+    if (v && !ALIASES.has(compound)) ALIASES.set(compound, [v + m[2].toLowerCase()]);
     if (!identityWords.includes(compound)) identityWords.push(compound);
   }
   const spec = {
@@ -399,6 +408,8 @@ function modelCodesOf(tokens, rawText) {
     .filter(c => !NOT_MODEL.test(c) && c.length >= 2);
   // 하이픈으로 붙은 영문 머리(WH-1000XM5, SM-S931N)는 한 코드다 — 머리를 잃으면 WF-1000XM5 도 통과한다.
   for (const m of String(rawText || '').matchAll(/(?<![a-z0-9])([a-z]{1,4})[-\s]?(\d{2,5}[a-z0-9]*)(?![a-z0-9])/gi)) {
+    // «plus 512gb», «pro 14» 는 모델 코드가 아니다 — 변형 낱말 + 용량·번호다.
+    if (VARIANT.has(m[1].toLowerCase()) || /^\d+(?:gb|tb|mb|mm|인치|hz|w)$/i.test(m[2])) continue;
     const full = (m[1] + m[2]).toLowerCase();
     if (/^(?:rtx|gtx|rx|i[3579]|ps|xm|ddr|usb|gen|ver|no|vol)$/i.test(m[1]) && !/\d[a-z]/i.test(m[2])) {
       // RTX 4060 · i7 13700 같은 계열 번호는 아래 제품군 번호 규칙이 본다
@@ -483,7 +494,7 @@ function queryVariants(tokens) {
 }
 
 // 노트북 CPU 이름(코어 울트라 7) · 칩셋 표기를 제품 변형으로 읽지 않게 지운다.
-const CPU_PHRASE = /(?:(?:인텔|intel)\s*)?(?:코어|core)\s*(?:울트라|ultra)\s*[3579](?:\s*\d{3}[a-z]{0,2})?|(?:울트라|ultra)\s*[579]\s+\d{3}[a-z]{0,2}|(?:라이젠|ryzen)\s*[3579](?:\s*pro)?|스냅\s*드래곤\s*x\s*(?:엘리트|plus|플러스)?|snapdragon\s*x\s*(?:elite|plus)?|a\d{2}\s*(?:pro|bionic|프로)|\bm[1-4]\s*(?:pro|max|프로|맥스)\s*칩/gi;
+const CPU_PHRASE = /(?:(?:인텔|intel)\s*)?(?:코어|core)\s*(?:울트라|ultra)\s*[3579](?:\s*\d{3}[a-z]{0,2})?|(?:울트라|ultra)\s*[579]\s+\d{3}[a-z]{0,2}|\d{1,2}\s*세대\s*(?:울트라|ultra)\s*[3579](?![0-9a-z])|(?:울트라|ultra)\s*[3579](?=\s*(?:ram|램|\d+\s*gb|프로세서|cpu))|(?:라이젠|ryzen)\s*[3579](?:\s*pro)?|스냅\s*드래곤\s*x\s*(?:엘리트|plus|플러스)?|snapdragon\s*x\s*(?:elite|plus)?|a\d{2}\s*(?:pro|bionic|프로)|\bm[1-4]\s*(?:pro|max|프로|맥스)\s*칩/gi;
 function listingVariants(title) {
   const cleaned = String(title || '').replace(CPU_PHRASE, ' ');
   const tokens = S.splitTokens(normalize(cleaned));
@@ -492,6 +503,9 @@ function listingVariants(title) {
   tokens.forEach((t, i) => {
     const compound = VARIANT_COMPOUND.get(t);
     if (compound) { compound.forEach(v => set.add(v)); counted[i] = true; }
+    // «MaxV», «ProX» — 변형 낱말에 한 글자가 붙은 표기도 그 변형이다
+    const glued = t.match(/^(pro|max|ultra|plus|air|mini|lite|neo)[a-z]$/);
+    if (glued) { set.add(VARIANT.get(glued[1])); counted[i] = true; }
   });
   let changed = true;
   while (changed) {
@@ -561,6 +575,7 @@ function present(word, T, strict = false) {
   }
   const key = LINE.get(word);
   if (key && T.tokens.some(t => lineKey(t) === key)) return true;
+  if (key && (LINE_WORDS_BY_KEY.get(key) || []).some(w => w.length >= 2 && flat.includes(w))) return true;
   const aliases = ALIASES.get(word);
   if (aliases && aliases.some(a => flat.includes(normalize(a).replace(/\s+/g, '')))) return true;
   // 합성 명사 «전기밥솥» ↔ «전기압력밥솥»: 두 조각이 모두 있으면 같은 말이다(_search.splitCompound 규칙).
@@ -657,7 +672,11 @@ function judge(spec, item, opts = {}) {
       }
     }
     if (spec.type) {
-      if (principal.kind === 'device' && principal.type && principal.type !== spec.type && principal.type !== '기타기기') {
+      // «… 노트북 SSD 512GB» · «SSD탑재» 의 SSD 는 사양이다 — 찾는 기기 명사가 함께 있으면 외장하드로 읽지 않는다.
+      const storageSpec = principal.type === '외장하드' && spec.type !== '외장하드'
+        && /(?:ssd|hdd)\s*(?:\d|탑재|장착|내장|업그레이드)|\d+\s*(?:gb|tb)\s*(?:ssd|hdd)/i.test(title)
+        && (deviceNouns.length > 0 || TAX.productTypeMatches(title.replace(/\b(?:ssd|hdd)\b/gi, ' '), spec.type, spec.raw));
+      if (principal.kind === 'device' && principal.type && principal.type !== spec.type && principal.type !== '기타기기' && !storageSpec) {
         hard.push(`other_device:${principal.type}`);
       }
       if (principal.kind === 'device' && principal.type === '기타기기') hard.push('other_device:기타기기');
@@ -743,7 +762,23 @@ function judge(spec, item, opts = {}) {
 
   /* 5. 모델 코드 — 사용자가 친 코드는 상품명에 그대로 있어야 한다 */
   for (const code of spec.models) {
-    if (T.flat.includes(code)) continue;
+    // 짧은 코드(M3, S9, G5)는 낱말 그대로여야 한다 — 부품 번호 «MW1M3KH/A» 안의 m3 는 M3 가 아니다.
+    const short = code.length <= 3;
+    const hit = short ? T.tokens.some(t => t === code || new RegExp(`^${escapeRe(code)}(?:칩|chip)?$`).test(t))
+      : T.flat.includes(code);
+    if (short && hit) {
+      // 같은 꼴의 다른 코드가 함께 있으면(«M3 … M4») 어느 쪽 상품인지 모른다
+      const shape = code.match(/^([a-z]+)(\d+)$/);
+      if (shape && T.tokens.some(t => new RegExp(`^${shape[1]}\\d{${shape[2].length}}$`).test(t) && t !== code)
+        && !spec.wantsAccessory) { hard.push(`model_conflict:${code}`); continue; }
+    }
+    if (hit) continue;
+    if (short) {
+      const shape = code.match(/^([a-z]+)(\d+)$/);
+      const other = shape && T.tokens.find(t => new RegExp(`^${shape[1]}\\d{${shape[2].length}}(?:칩)?$`).test(t));
+      hard.push(other ? `model_conflict:${code}≠${other}` : `model_missing:${code}`);
+      continue;
+    }
     // 끝의 두 글자 이상 영문은 색상·판매처 옵션 코드인 경우가 많다 (CRP-LHTR0610FW ↔ …0610FGIM)
     const stem = code.match(/^(.*\d)([a-z]{2,})$/);
     if (stem && stem[1].length >= 4 && new RegExp(`${escapeRe(stem[1])}[a-z]`).test(T.flat)) { soft.push(`model_option_suffix:${code}`); continue; }
@@ -788,7 +823,9 @@ function judge(spec, item, opts = {}) {
     const LV = listingVariants(title).set;
     const extra = [...LV].filter(v => !spec.variants.has(v));
     const missing = [...spec.variants].filter(v => !LV.has(v));
-    if (extra.length) hard.push(`variant_extra:${extra.join(',')}`);
+    // 모델 코드만 친 검색(«SM-S938N»)에서 상품명의 «울트라» 는 그 코드의 이름이다 — 다른 변형이 아니다.
+    const codeOnly = spec.models.length > 0 && !spec.lines.length && !spec.families.length && !spec.variants.size;
+    if (extra.length && !codeOnly) hard.push(`variant_extra:${extra.join(',')}`);
     if (missing.length) hard.push(`variant_missing:${missing.join(',')}`);
   }
 
