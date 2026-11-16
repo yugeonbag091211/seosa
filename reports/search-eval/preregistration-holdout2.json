@@ -1,0 +1,25 @@
+{
+ "sealedAt": "2026-11-16T00:04:51.661Z",
+ "gitHeadAtSeal": "bad1a48b7bbcda055c716065ba6ba5e6c0acbd35",
+ "note": "Second sealed holdout, written before the search-path over-blocking fix. The first holdout (H001-H110) was graded once on 8d451c1 and has been used for diagnosis since, so it is no longer an independent measure. This set is graded once on the final code for: main e3d8efb, PR 238 1e4460c, before-fix bad1a48, and after-fix. Hashes are over LF-normalized UTF-8 text; any later edit to these files or to spec.js voids the claim.",
+ "files": {
+  "scripts/search-eval/questions-holdout2.js": "4c253b072022bb945bd5e6697a770ed46b21a23b99157a92eb1dc4e077b565bd",
+  "scripts/search-eval/spec.js": "2191108f617883880acb43ae438744c69fa8af4146123f198806aba291ec22f6"
+ },
+ "counts": {
+  "holdout2": 110,
+  "byCategory": {
+   "phone_tablet": 16,
+   "laptop_pc": 13,
+   "audio": 12,
+   "appliance": 18,
+   "living": 17,
+   "fashion": 13,
+   "brand_model": 11,
+   "price_option": 10
+  },
+  "conversationalSearchBoxQueries": 10
+ },
+ "criteria": "spec.js gradeQuestion (unchanged): PASS = top-5 all satisfy the question and at least one relevant item is shown when the pool has one; FAIL = any top-5 violation or zero relevant shown although the pool had one; UNVERIFIED = no relevant item in the pool and nothing wrong shown (never counted as PASS).",
+ "overlapWithEarlierSets": "none (whitespace-insensitive exact match against dev, holdout and replay questions)"
+}

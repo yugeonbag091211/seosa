@@ -118,7 +118,7 @@ function percentile(values, p) {
   } else {
     if (!SNAPSHOT) throw new Error('--snapshot 이 필요합니다');
     const retriever = new CatalogRetriever(SNAPSHOT);
-    questions = require(SET === 'holdout' ? './questions-holdout' : './questions-dev');
+    questions = require({ holdout: './questions-holdout', holdout2: './questions-holdout2' }[SET] || './questions-dev');
     poolFor = q => retriever.search(q.retrieval || q.q, 30);
   }
   questions = questions.filter(q => q.cat !== 'followup');

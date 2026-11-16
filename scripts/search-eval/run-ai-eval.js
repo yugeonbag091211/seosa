@@ -133,7 +133,7 @@ function percentile(values, p) {
 
 (async () => {
   retriever = new CatalogRetriever(SNAPSHOT);
-  let questions = require(SET === 'holdout' ? './questions-holdout' : './questions-dev');
+  let questions = require({ holdout: './questions-holdout', holdout2: './questions-holdout2' }[SET] || './questions-dev');
   if (CATS) questions = questions.filter(q => CATS.split(',').includes(q.cat));
   if (ONLY) questions = questions.filter(q => ONLY.split(',').includes(q.id));
   const results = [];
