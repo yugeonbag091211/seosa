@@ -559,9 +559,11 @@ function queryVariants(tokens) {
   const set = new Set();
   const hasLine = tokens.some(t => lineKey(t));
   // 모델 코드(«S8», «G304»)를 친 질의의 변형 낱말은 상품 이름이다 — «로보락 S8 맥스V 울트라» 의 울트라.
-  const hasCode = tokens.some(t => /^(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{2,}$/.test(t));
-  // 변형 낱말로 시작하는 붙임 표기(«맥스V»)도 이웃 변형으로 센다.
-  const variantLike = n => VARIANT.has(n) || [...VARIANT.keys()].some(k => k.length >= 2 && n.startsWith(k) && n.length <= k.length + 2);
+  // 단위 붙은 수(«512gb», «16000dpi», «5000mah»)는 모델 코드가 아니다.
+  const hasCode = tokens.some(t => /^(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{2,}$/.test(t)
+    && !/^\d+(?:gb|tb|mb|mah|hz|mm|cm|w|g|dpi|ml|l|kg|k|p|fps)$/.test(t));
+  // 변형 낱말 뒤에 영문·숫자 한두 자가 붙은 표기(«맥스V», «프로X»)만 이웃 변형으로 센다 — «프로젝터»·«에어컨» 은 아니다.
+  const variantLike = n => VARIANT.has(n) || [...VARIANT.keys()].some(k => k.length >= 2 && n.startsWith(k) && /^[a-z0-9]{1,2}$/.test(n.slice(k.length)));
   tokens.forEach((t, i) => {
     const compound = VARIANT_COMPOUND.get(t);
     if (compound) { compound.forEach(v => set.add(v)); return; }
