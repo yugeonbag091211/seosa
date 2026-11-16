@@ -156,7 +156,7 @@ const STRONG_OTHER = /^(?:필름|보호\s*필름|강화\s*유리|보안기|키\s
 const PART_MARK = /(?:호환|교체|교체용|리필|단품|\d+\s*(?:개|입|매|팩|세트|p|ea)\b|\d+\s*(?:개|입|매|팩|세트)(?=\s|,|$)|\(\s*\d+\s*(?:개|입|매)\s*\))/i;
 // 본품에 딸려 오는 구성품 표기. 지우고 나서 부품 규칙을 본다.
 // 딸려 오는 구성품이 여럿이면 «s펜+북커버포함» 처럼 +·/·, 로 이어 적는다 — 이어진 것 전체가 구성품이다.
-const BUNDLE_ITEM = '(?:정품\\s*)?(?:s\\s*펜|북\\s*커버|케이스|커버|필름|보호\\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드|방석|서랍|뚜껑)';
+const BUNDLE_ITEM = '(?:정품\\s*)?(?:s\\s*펜|북\\s*커버|케이스|커버|필름|보호\\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드|방석|서랍|뚜껑|조절기|바스켓|폴대|깔창|호스)';
 const BUNDLE_PHRASE = new RegExp(`(?:\\+\\s*)?${BUNDLE_ITEM}(?:\\s*[+/,&]\\s*${BUNDLE_ITEM})*\\s*(?:포함|증정|동봉|제공|구성|탑재|내장|장착|무료\\s*증정|기본\\s*제공)`, 'gi');
 // "케이스 + 필름 증정"에서는 필름만 사은품이고 케이스가 판매 대상일 수 있다.
 // 본품 사양이나 명시적 + 가 확인되지 않을 때 첫 대상 명사를 보존한다.
@@ -368,7 +368,7 @@ function parseQuery(text, opts = {}) {
     // "가격을 동시에 충족하는 것" restates previously given constraints;
     // "식탁 의자에서 원목 조건과..." names a chair, not the word "동시에".
     .replace(/(?:조건(?:과|을|은|이)?\s*)?가격(?:을|과|은|이)?\s*동시에\s*충족하는\s*(?:것|상품|제품)?\s*$/u, ' ')
-    .replace(/([가-힣]{2,10})에서(?=\s+(?:원목|조건|기모|접이식))/gu, '$1');
+    .replace(/([가-힣]{2,10})에서(?=\s+(?:원목|조건|기모|접이식|사이즈|폭|길이|높이|너비|크기|주사율|\d+\s*인용))/gu, '$1');
   if (filterGrade) {
     idText = idText.replace(/필터\s*등급\s*[a-z]\s*\d{1,3}\s*(?:사양(?:으로|만)?|조건(?:과|을|은|이)?)/i, ' ')
       .replace(/([가-힣]{2,12})에서(?=\s|$)/g, (whole, stem) => TAX.explicitType(stem) ? stem : whole)
@@ -382,7 +382,10 @@ function parseQuery(text, opts = {}) {
   // title word '손목시계에' or the verb '쓸'. Keep the target noun for compatibility.
   // Require an explicit accessory term, or the existing known-brand host phrase,
   // so generic product descriptions are not rewritten indiscriminately.
-  if (S.accessoryTerms(normalize(idText)).length > 0 ||
+  // "식탁 의자에 쓸 방석" clearly names a host and a separately requested
+  // item, even when the accessory is absent from our word dictionary.
+  const explicitTargetUse = /[가-힣]{2,12}에\s*(?:쓸|쓰는|사용할|사용하는)\s+[가-힣a-z0-9]{2,}/i.test(raw);
+  if (explicitTargetUse || S.accessoryTerms(normalize(idText)).length > 0 ||
       (brandsIn(raw).length && /(?:전용|호환)/.test(idText)))
     idText = idText.replace(/([가-힣]{2,12})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s|$)/g, '$1 ');
   // 지름은 크기 조건으로 따로 보존해 상품명 판정에서 대화어만 제거한다.
