@@ -141,6 +141,8 @@ const CHAT_STOP = new Set(['얼마', '얼마야', '얼마예요', '얼마에요'
   '얼마예', '얼마에', '얼만지', '어디', '어디서', '어디야', '곳', '파는곳', '좋아', '좋아요', '좋은거', '좋은것',
   '이쁜거', '예쁜거', '싼거', '괜찮은거', '있어', '있나', '있어요', '있을까요']);
 NOT_HEAD.add('원목'); // solid wood is a material requirement, not the product being sold
+NOT_HEAD.add('사양'); // 'H13 사양' describes a specification, not a merchandise category
+NOT_HEAD.add('조건');
 NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
@@ -376,7 +378,12 @@ function parseQuery(text, opts = {}) {
   idText = idText.replace(/(?:물통|먼지통|주사율|용량|수량)?\s*\d+(?:\.\d+)?\s*(?:밀리리터|리터|ml|l|hz|헤르츠|매|켤레)\s*사양(?:으로|만)?|방수\s*사양(?:으로|만)?/gi, ' ');
   // 알려진 브랜드와 전용·호환 대상이 명시된 경우에만 조사와 용도 동사를 정리한다.
   // 다른 브랜드 및 판매 대상 판정은 그대로 남는다.
-  if (brandsIn(raw).length && /(?:전용|호환)/.test(idText))
+  // '손목시계에 쓸 스트랩' expresses the item's target, not a mandatory
+  // title word '손목시계에' or the verb '쓸'. Keep the target noun for compatibility.
+  // Require an explicit accessory term, or the existing known-brand host phrase,
+  // so generic product descriptions are not rewritten indiscriminately.
+  if (S.accessoryTerms(normalize(idText)).length > 0 ||
+      (brandsIn(raw).length && /(?:전용|호환)/.test(idText)))
     idText = idText.replace(/([가-힣]{2,12})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s|$)/g, '$1 ');
   // 지름은 크기 조건으로 따로 보존해 상품명 판정에서 대화어만 제거한다.
   const dm = brandsIn(raw).length && raw.match(/(?:지름|직경)\s*(\d+(?:\.\d+)?)\s*(mm|cm)\s*사양(?:으로|만)?/i);
