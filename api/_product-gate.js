@@ -140,6 +140,7 @@ const CHAT_STOP = new Set(['얼마', '얼마야', '얼마예요', '얼마에요'
   // 검색창에 묻듯이 친 말 («얼마예요», «어디서 사», «파는 곳», «이쁜거», «있어?»)
   '얼마예', '얼마에', '얼만지', '어디', '어디서', '어디야', '곳', '파는곳', '좋아', '좋아요', '좋은거', '좋은것',
   '이쁜거', '예쁜거', '싼거', '괜찮은거', '있어', '있나', '있어요', '있을까요']);
+NOT_HEAD.add('원목'); // solid wood is a material requirement, not the product being sold
 NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
@@ -173,7 +174,7 @@ function stripBundleItems(title) {
 // «X 전용 Y» · «X 입을 때 Y» — X 는 대상이고 Y 를 판다. 머리 명사 바로 뒤 낱말로 본다.
 const RELATION_NEXT = /^(?:전용|호환|용|위한|입을때|입을|입는|쓸|쓰는|넣는|담는|걸이|꽂이|거치|거치대|받침|받침대|보관|보관함|수납|수납함|정리|정리함|정리대|세척|세척솔|세척기|청소용|청소|건조|건조대|살균|살균기|커버|케이스|파우치|가방|망|디스펜서|리필|교체|교체용|필터|패드|스티커|밴드|스트랩|끈|선반|랙|트레이|덮개|세제|린스|세정제|클리너|네임택|자물쇠|키링|이어후크|이어훅|냉각팬|쿨러|쿨링팬|부품|모터|펌프)$/;
 // 머리 명사 «뒤 어디든» 마지막 물건 명사로 오면 그것을 판다고 볼 낱말 (상품명은 머리 명사가 끝에 온다)
-const TAIL_OBJECT_WORDS = ['네임택', '자물쇠', '키링', '이어후크', '이어훅', '냉각팬', '쿨링팬', '쿨러', '선반', '덮개', '세척솔',
+const TAIL_OBJECT_WORDS = ['네임택', '자물쇠', '키링', '손잡이', '이어후크', '이어훅', '냉각팬', '쿨링팬', '쿨러', '선반', '덮개', '세척솔',
   '세정제', '클리너', '디스펜서', '정리함', '보관함', '걸이', '꽂이', '거치대', '받침대', '파우치', '케이스', '커버', '필름', '스티커',
   '가방', '드라이백', '망', '부품', '린스', '세제', '조절기', '바스켓', '폴대', '방석', '서랍', '뚜껑'];
 const TAIL_OBJECT = new RegExp(`^(?:${TAIL_OBJECT_WORDS.join('|')})$`);
@@ -353,7 +354,19 @@ function parseQuery(text, opts = {}) {
   const gm = raw.match(/필터\s*등급\s*([a-z]\s*\d{1,3})\s*(?:사양(?:으로|만)?|조건(?:과|을|은|이)?)/i);
   const filterGrade = gm && TAX.typeMentions(raw).length > 0 && !/(?:교체용|리필|필터만|필터\s*단품)/.test(raw)
     ? gm[1].replace(/\s+/g, '').toLowerCase() : '';
-  let idText = raw.replace(BUDGET_PHRASE, ' ').replace(REQUEST_FILLER, ' ');
+  // A complete acceptance clause is not product identity:
+  // "프라이팬 본품을 사고 싶어. 사은품이 같이 와도 돼" still asks for a frying pan.
+  // Do not erase an actual accessory request ("사은품용 케이스") or required bundle.
+  const selectionText = raw.replace(
+    /(?:[.!?]\s*|\s+)(?:사은품(?:은|는|이|가|도)?\s*)?(?:같이|함께)\s*와도\s*(?:돼|괜찮아|상관\s*없어|좋아)(?:[.!?]+)?$/u,
+    ' '
+  );
+  let idText = selectionText.replace(BUDGET_PHRASE, ' ').replace(REQUEST_FILLER, ' ')
+    .replace(/(본품|본체|단품)(?:을|를|은|는)(?=\s|$)/g, '$1')
+    // "가격을 동시에 충족하는 것" restates previously given constraints;
+    // "식탁 의자에서 원목 조건과..." names a chair, not the word "동시에".
+    .replace(/(?:조건(?:과|을|은|이)?\s*)?가격(?:을|과|은|이)?\s*동시에\s*충족하는\s*(?:것|상품|제품)?\s*$/u, ' ')
+    .replace(/([가-힣]{2,10})에서(?=\s+(?:원목|조건|기모|접이식))/gu, '$1');
   if (filterGrade) {
     idText = idText.replace(/필터\s*등급\s*[a-z]\s*\d{1,3}\s*(?:사양(?:으로|만)?|조건(?:과|을|은|이)?)/i, ' ')
       .replace(/([가-힣]{2,12})에서(?=\s|$)/g, (whole, stem) => TAX.explicitType(stem) ? stem : whole)
@@ -427,6 +440,7 @@ function parseQuery(text, opts = {}) {
   const wireless = /(?:무선|블루투스|wireless|bluetooth)/i.test(idText) ? true : /(?:유선|wired)/i.test(idText) ? false : null;
   const gender = /(?:여성|여자|우먼|women|레이디)/i.test(raw) ? 'f' : /(?:남성|남자|맨즈|\bmen\b)/i.test(raw) ? 'm' : '';
   const kids = KIDS.test(raw);
+  const solidWood = /(?:원목|천연\s*목재|solid\s*wood)/i.test(raw);
   const year = (idText.match(/(?<!\d)(20[12]\d)(?!\d)/) || [])[1] || '';
   const wantsBook = /(?:책|도서|교재|설명서|가이드\s*북|교본|매뉴얼)/.test(raw);
   const wantsCar = /(?:차량|자동차|차\s*안|차에서|운전)/.test(raw);
@@ -452,7 +466,7 @@ function parseQuery(text, opts = {}) {
   const spec = {
     raw, idText, normalized, tokens, type, wantsAccessory, accessoryWords, head, models, brands: brandReq,
     excludedBrands, families, variants, caps, measures, filterGrade, diameterMm, sizes, people: people ? Number(people) : 0, colors, wireless, gender, kids,
-    year, budget, condition, wantsBook, wantsCar, looseBrand, lines, identityWords,
+    year, budget, condition, wantsBook, wantsCar, solidWood, looseBrand, lines, identityWords,
     // 관련도 점수에 쓸 검색어 — 예산·요청 말("50만원 이하", "보여줘")이 커버리지를 깎지 않게 뺀다.
     rankText: idText || raw,
     analysis: S.analyzeQuery(idText, { titles: Array.isArray(opts.titles) ? opts.titles : [] }),
@@ -1130,6 +1144,15 @@ function judge(spec, item, opts = {}) {
     if (/(?:비방수|방수\s*(?:불가|안됨|아님)|not\s+waterproof)/i.test(title)) hard.push('waterproof_mismatch');
     else if (!/(?:방수|waterproof)/i.test(title)) soft.push('waterproof_unverified');
   }
+  // Material requirements are not a product name; verify them separately.
+  if (spec.solidWood) {
+    const woodPattern = /(?:원목|천연\s*목재|solid\s*wood)/i;
+    const surfaceImitation = /(?:원목\s*(?:무늬|시트|필름|패턴|스타일)|wood\s*look|wood\s*effect)/i;
+    const genuineWood = woodPattern.test(title) && !surfaceImitation.test(title);
+    if (!genuineWood && /(?:mdf|합판|파티클\s*보드|철제|스틸|플라스틱|plastic)/i.test(title))
+      hard.push('material_mismatch:solid_wood');
+    else if (!genuineWood) soft.push('material_unverified:solid_wood');
+  }
   if (spec.sizes.length) {
     const sizes = listingSizes(title);
     for (const want of spec.sizes) {
@@ -1208,7 +1231,7 @@ function judge(spec, item, opts = {}) {
 const AI_EVIDENCE_ONLY = /^(?:identity_word_absent|category_absent|line_absent|model_missing|line_number_unverified|line_number_missing|implausible_device_price)/;
 
 // 저장(분류)을 막는 soft — «이 키워드의 상품» 이라고 기록할 근거가 모자란 경우.
-const IDENTITY_SOFT = /^(?:principal_unverified|brand_unverified|accessory_possible|identity_word_unverified|model_option_suffix|category_absent|measure_unverified|waterproof_unverified|condition_unverified|excluded_brand_unverified|price_unverified|wireless_unverified|filter_grade_unverified|diameter_unverified)/;
+const IDENTITY_SOFT = /^(?:principal_unverified|brand_unverified|accessory_possible|identity_word_unverified|model_option_suffix|category_absent|measure_unverified|waterproof_unverified|condition_unverified|excluded_brand_unverified|price_unverified|wireless_unverified|filter_grade_unverified|diameter_unverified|material_unverified)/;
 
 /**
  * 검색 결과 판정. relevance 는 _search.rankItems 가 붙인 값을 쓴다(정렬 근거).
