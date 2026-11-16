@@ -165,7 +165,12 @@ function stripBundleItems(title) {
   // A clearly gifted extra after "+" is not the sold product, even when
   // the extra's noun is not yet in BUNDLE_ITEM ("의자 전용 가방 증정").
   // Only remove explicit gifts; "+ 케이스" without 증정 remains ambiguous.
-  const withoutExplicitGifts = raw.replace(/\s*\+\s*[^+]{1,60}?\s*(?:증정|동봉|무료\s*제공)(?=$|[\s,)\]])/gi,' ');
+  // In an ambiguous "iPad 10 + case + film giveaway" listing the
+  // apparent device name may only indicate compatibility; do not assume it
+  // is the sold body. An explicit "본품/본체" provides the necessary evidence.
+  const withoutExplicitGifts = /(?:본품|본체)(?:을|를|은|는|만)?(?=\s|$|\+)/.test(raw)
+    ? raw.replace(/\s*\+\s*[^+]{1,60}?\s*(?:증정|동봉|무료\s*제공)(?=$|[\s,)\]])/gi,' ')
+    : raw;
   return withoutExplicitGifts.replace(BUNDLE_PHRASE, (match, offset) => {
     const before = withoutExplicitGifts.slice(0, offset);
     if (!/^\s*\+/.test(match) && /[+/,&]/.test(match)
