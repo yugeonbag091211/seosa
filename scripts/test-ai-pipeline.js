@@ -933,11 +933,11 @@ function reset() {
     chatHistory: [{ role: 'user', text: '15만원 이하 이어폰 추천' }], view: { source: 'none' } });
   {
     const s = sys();
-    ok(/삼성을 크게 내렸다/.test(s), '★ 제외를 반영했다고 프롬프트에 적힌다');
+    ok(/삼성을 후보에서 완전히 제외했다/.test(s), '★ 제외를 반영했다고 프롬프트에 적힌다');
     ok(r.body.items[0].productId === 'B2', '★ 제외한 브랜드가 1위에서 내려간다', r.body.items[0].productId);
     ok(!(r.body.items || []).some(x => x.productId === 'S1'),
       '★ 명시적으로 제외한 브랜드는 카드에도 표시하지 않는다');
-    ok(/제외 요청하신 삼성/.test(s), '★ 제외 사유가 상품 사실로 남는다');
+    ok(!/제외 요청하신 삼성 제품/.test(s), '★ 제외된 상품을 모델의 후보 사실에 싣지 않는다');
   }
 
   /* 31 ─ SINGULARITY: 취향이 없으면 개인화가 아무 일도 하지 않는다 */
@@ -984,7 +984,7 @@ function reset() {
     const s = sys();
     ok(r.body.items[0].productId === 'B2',
       '★★ 3턴 전에 빼 달라고 한 브랜드가 다시 1위로 올라오지 않는다', r.body.items[0].productId);
-    ok(/삼성을 크게 내렸다/.test(s), '★ 앞 대화의 제외를 프롬프트에 그대로 밝힌다');
+    ok(/삼성을 후보에서 완전히 제외했다/.test(s), '★ 앞 대화의 제외를 프롬프트에 그대로 밝힌다');
     ok(/앞 대화에서 사용자가 빼 달라고 한 것을 그대로 지키고 있다/.test(s),
       '★ 이번 턴 거부가 아니라 이어진 제외임을 구분해 적는다');
     ok(!(r.body.items || []).some(x => x.productId === 'S1'), '앞 대화에서 명시적으로 제외한 브랜드를 카드에서 계속 제외한다');

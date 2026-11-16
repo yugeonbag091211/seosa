@@ -153,15 +153,29 @@ const STRONG_OTHER = /^(?:필름|보호\s*필름|강화\s*유리|보안기|키\s
 const PART_MARK = /(?:호환|교체|교체용|리필|단품|\d+\s*(?:개|입|매|팩|세트|p|ea)\b|\d+\s*(?:개|입|매|팩|세트)(?=\s|,|$)|\(\s*\d+\s*(?:개|입|매)\s*\))/i;
 // 본품에 딸려 오는 구성품 표기. 지우고 나서 부품 규칙을 본다.
 // 딸려 오는 구성품이 여럿이면 «s펜+북커버포함» 처럼 +·/·, 로 이어 적는다 — 이어진 것 전체가 구성품이다.
-const BUNDLE_ITEM = '(?:정품\\s*)?(?:s\\s*펜|북\\s*커버|케이스|커버|필름|보호\\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드)';
+const BUNDLE_ITEM = '(?:정품\\s*)?(?:s\\s*펜|북\\s*커버|케이스|커버|필름|보호\\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드|방석|서랍|뚜껑)';
 const BUNDLE_PHRASE = new RegExp(`(?:\\+\\s*)?${BUNDLE_ITEM}(?:\\s*[+/,&]\\s*${BUNDLE_ITEM})*\\s*(?:포함|증정|동봉|제공|구성|탑재|내장|장착|무료\\s*증정|기본\\s*제공)`, 'gi');
+// "케이스 + 필름 증정"에서는 필름만 사은품이고 케이스가 판매 대상일 수 있다.
+// 본품 사양이나 명시적 + 가 확인되지 않을 때 첫 대상 명사를 보존한다.
+function stripBundleItems(title) {
+  const raw = String(title || '');
+  return raw.replace(BUNDLE_PHRASE, (match, offset) => {
+    const before = raw.slice(0, offset);
+    if (!/^\s*\+/.test(match) && /[+/,&]/.test(match)
+      && (/증정/.test(match) || !/(?:\d+\s*(?:gb|tb|기가|테라)|본품|본체|태블릿|노트북|스마트폰|이어폰|청소기)/i.test(before))) {
+      const first = match.match(new RegExp('^(' + BUNDLE_ITEM + ')', 'i'));
+      if (first) return first[1] + ' ';
+    }
+    return ' ';
+  });
+}
 
 // «X 전용 Y» · «X 입을 때 Y» — X 는 대상이고 Y 를 판다. 머리 명사 바로 뒤 낱말로 본다.
 const RELATION_NEXT = /^(?:전용|호환|용|위한|입을때|입을|입는|쓸|쓰는|넣는|담는|걸이|꽂이|거치|거치대|받침|받침대|보관|보관함|수납|수납함|정리|정리함|정리대|세척|세척솔|세척기|청소용|청소|건조|건조대|살균|살균기|커버|케이스|파우치|가방|망|디스펜서|리필|교체|교체용|필터|패드|스티커|밴드|스트랩|끈|선반|랙|트레이|덮개|세제|린스|세정제|클리너|네임택|자물쇠|키링|이어후크|이어훅|냉각팬|쿨러|쿨링팬|부품|모터|펌프)$/;
 // 머리 명사 «뒤 어디든» 마지막 물건 명사로 오면 그것을 판다고 볼 낱말 (상품명은 머리 명사가 끝에 온다)
 const TAIL_OBJECT_WORDS = ['네임택', '자물쇠', '키링', '이어후크', '이어훅', '냉각팬', '쿨링팬', '쿨러', '선반', '덮개', '세척솔',
   '세정제', '클리너', '디스펜서', '정리함', '보관함', '걸이', '꽂이', '거치대', '받침대', '파우치', '케이스', '커버', '필름', '스티커',
-  '가방', '드라이백', '망', '부품', '린스', '세제'];
+  '가방', '드라이백', '망', '부품', '린스', '세제', '조절기', '바스켓', '폴대', '방석', '서랍', '뚜껑'];
 const TAIL_OBJECT = new RegExp(`^(?:${TAIL_OBJECT_WORDS.join('|')})$`);
 const endsWithTailObject = t => TAIL_OBJECT.test(t) || TAIL_OBJECT_WORDS.some(w => w.length >= 2 && t.length > w.length && t.endsWith(w));
 // 한 낱말 안에 붙은 대상 표시 ("수영복용", "텀블러전용")
@@ -203,6 +217,7 @@ const CAR_ONLY = /(?:차량용|자동차용|차량\s*전용|차량\s*거치)/;
 
 // 소비재 브랜드(전자기기 브랜드는 _ai-v32-brands.BRANDS). 표기 쌍만 둔다 — 상품 예외가 아니다.
 const EXTRA_BRANDS = [
+  ['카시오', ['카시오', 'casio']], ['세이코', ['세이코', 'seiko']], ['시티즌', ['시티즌', 'citizen']], ['티쏘', ['티쏘', 'tissot']],
   ['나이키', ['나이키', 'nike']], ['아디다스', ['아디다스', 'adidas']], ['뉴발란스', ['뉴발란스', 'new balance', 'newbalance']],
   ['컨버스', ['컨버스', 'converse']], ['크록스', ['크록스', 'crocs']], ['반스', ['반스', 'vans']], ['퓨마', ['퓨마', 'puma']],
   ['아식스', ['아식스', 'asics']], ['휠라', ['휠라', 'fila']], ['노스페이스', ['노스페이스', 'north face', 'northface']],
@@ -301,7 +316,7 @@ const HEAD_SYN = (() => {
  * ------------------------------------------------------------------ */
 
 const BUDGET_PHRASE = /(?:\d[\d,.]*\s*(?:억|천|백)?\s*만?\s*원\s*(?:대|이하|이상|미만|초과|까지|안쪽|내외|정도|선|짜리|안팎|내로|이내|넘지\s*않는)?|\d[\d,.]*\s*만\s*(?:원)?\s*(?:대|이하|이상|미만|까지|이내|짜리|정도)?)/g;
-const REQUEST_FILLER = /(?:추천\s*해\s*줘|추천해줘|추천|찾아\s*줘|찾아줘|보여\s*줘|보여줘|알려\s*줘|알려줘|골라\s*줘|골라줘|있어\??|없어\??|사고\s*싶어|살래|주세요|해\s*줘|좀|요$)/g;
+const REQUEST_FILLER = /(?:추천\s*하되|추천\s*해\s*줘|추천해줘|추천|찾아\s*줘|찾아줘|보여\s*줘|보여줘|알려\s*줘|알려줘|골라\s*줘|골라줘|있어\??|없어\??|사고\s*싶어|살래|주세요|해\s*줘|좀|요$)/g;
 
 const specCache = new Map();
 const SPEC_CACHE_MAX = 2000;
@@ -324,10 +339,36 @@ function parseQuery(text, opts = {}) {
 
   // 부정된 브랜드 ("로지텍 말고") 는 요구가 아니라 제외다.
   const excludedBrands = [];
+  const namedBrandExclusions = [...raw.matchAll(/([^\s,]{2,20})\s*브랜드(?:은|는|이|가)?\s*(?:말고|빼고|제외(?:해줘|해주세요|하고)?|아닌|아니고)/g)];
   const negated = [...raw.matchAll(/([^\s,]{2,20})\s*(?:은|는|이|가)?\s*(?:말고|빼고|제외(?:하고)?|아닌|아니고)/g)].map(m => m[1]);
+  for (const m of namedBrandExclusions) {
+    const known = brandsIn(m[1]);
+    if (!known.length) excludedBrands.push(m[1]);
+    else known.forEach(b => excludedBrands.push(b.canon));
+  }
   negated.forEach(word => brandsIn(word).forEach(b => excludedBrands.push(b.canon)));
 
+  // "필터 등급 H13 사양"은 기기의 필터 등급 조건이며 필터 단품 요청이 아니다.
+  // 교체·리필·단품 요청은 기존 부속 검색 경로를 그대로 따른다.
+  const gm = raw.match(/필터\s*등급\s*([a-z]\s*\d{1,3})\s*(?:사양(?:으로|만)?|조건(?:과|을|은|이)?)/i);
+  const filterGrade = gm && TAX.typeMentions(raw).length > 0 && !/(?:교체용|리필|필터만|필터\s*단품)/.test(raw)
+    ? gm[1].replace(/\s+/g, '').toLowerCase() : '';
   let idText = raw.replace(BUDGET_PHRASE, ' ').replace(REQUEST_FILLER, ' ');
+  if (filterGrade) {
+    idText = idText.replace(/필터\s*등급\s*[a-z]\s*\d{1,3}\s*(?:사양(?:으로|만)?|조건(?:과|을|은|이)?)/i, ' ')
+      .replace(/([가-힣]{2,12})에서(?=\s|$)/g, (whole, stem) => TAX.explicitType(stem) ? stem : whole)
+      .replace(/가격을\s*동시에\s*충족하는\s*것/g, ' ');
+  }
+  namedBrandExclusions.forEach(m => { idText = idText.replace(m[0].replace(REQUEST_FILLER, ' '), ' '); });
+  idText = idText.replace(/(?:물통|먼지통|주사율|용량|수량)?\s*\d+(?:\.\d+)?\s*(?:밀리리터|리터|ml|l|hz|헤르츠|매|켤레)\s*사양(?:으로|만)?|방수\s*사양(?:으로|만)?/gi, ' ');
+  // 알려진 브랜드와 전용·호환 대상이 명시된 경우에만 조사와 용도 동사를 정리한다.
+  // 다른 브랜드 및 판매 대상 판정은 그대로 남는다.
+  if (brandsIn(raw).length && /(?:전용|호환)/.test(idText))
+    idText = idText.replace(/([가-힣]{2,12})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s|$)/g, '$1 ');
+  // 지름은 크기 조건으로 따로 보존해 상품명 판정에서 대화어만 제거한다.
+  const dm = brandsIn(raw).length && raw.match(/(?:지름|직경)\s*(\d+(?:\.\d+)?)\s*(mm|cm)\s*사양(?:으로|만)?/i);
+  const diameterMm = dm ? Number(dm[1]) * (/^cm$/i.test(dm[2]) ? 10 : 1) : 0;
+  if (diameterMm) idText = idText.replace(/(?:지름|직경)\s*\d+(?:\.\d+)?\s*(?:mm|cm)\s*사양(?:으로|만)?/i, ' ');
   // 이번 후보 상품명(정규화). 조사 한 글자를 뗄지 판단하는 데만 쓴다.
   const titleText = Array.isArray(opts.titles) && opts.titles.length
     ? opts.titles.map(t => normalize(String(t || ''))).join(' | ') : '';
@@ -346,7 +387,7 @@ function parseQuery(text, opts = {}) {
   idText = idText.replace(/([0-9a-z])(으로|로|만|은|는|도|이요|요|이야|야|이랑|랑|까지|부터|보다|처럼)(?=\s|$)/gi, '$1');
   // «배터리 상태도», «배터리가 오래가는», «필터 수명» 은 기기의 상태·성질을 묻는 말이다 — 그 부속을 찾는 말이 아니다.
   idText = idText.replace(/(?<![가-힣a-z])(?:배터리|밧데리|필터|브러시|브러쉬|노즐|헤드|렌즈|마이크|스크린|충전)(?:가|이|는|은|도)?\s*(?:상태|수명|성능|잔량|효율|사이클|지속\s*시간|사용\s*시간|교체\s*주기|오래\s*가는|오래\s*가|좋은|긴|큰|넉넉한|빵빵한|짱짱한|센|강한|많은)(?:도|는|은|가|이|를|을|만)?(?=\s|$)/g, ' ');
-  idText = S.stripConditionTerms(idText);
+  idText = S.stripConditionTerms(idText).replace(/(?:^|\s)만(?=\s|,|$)/g, ' ');
   negated.forEach(word => { if (brandsIn(word).length) idText = idText.replace(word, ' '); });
   idText = idText.replace(/\s*(?:말고|빼고|제외(?:하고)?|아닌|아니고)\s*/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -369,16 +410,17 @@ function parseQuery(text, opts = {}) {
   // 찾는 물건이 부속 사전의 명사(방수팩·쿨링패드)면 앞의 기기(휴대폰·노트북)는 «무엇에 쓰는가» 다.
   const type = wantsAccessory || principal.kind === 'accessory' ? '' : type0;
   // «할로윈 의상 및 소품» 처럼 범주를 나열한 키워드는 머리 명사 하나로 판정하지 않는다.
-  const coordinated = /(?:\s및\s|[,/·]|\s(?:와|과|랑)\s)/.test(idText);
+  const coordinated = /(?:\s및\s|\S\s*[,/·]\s*\S|\s(?:와|과|랑)\s)/.test(idText);
   const head = coordinated ? '' : headNoun(tokens);
   const models = modelCodesOf(tokens, idText);
   const brands = brandsIn(idText).filter(b => !excludedBrands.includes(b.canon));
   // 부속 검색에서 제품군 이름(아이패드·갤럭시)은 «무엇에 쓰는가» 다 — 브랜드 요구가 아니다.
   const brandReq = brands.filter(b => !(wantsAccessory && b.viaLine)
     && !(b.viaLine && type && !lineCovers(b, type)));
-  const families = familyRuns(tokens);
+  const families = familyRuns(S.splitTokens(normalize(idText.replace(MEASURE_RE, ' '))));
   const variants = queryVariants(tokens);
   const caps = queryCapacities(idText);
+  const measures = measureValues(raw);
   const sizes = querySizes(tokens);
   const people = (idText.match(/(\d{1,2})\s*인\s*(?:용|분)?/) || [])[1];
   const colors = colorsIn(raw.replace(/블루투스|bluetooth/gi, ' '));
@@ -409,7 +451,7 @@ function parseQuery(text, opts = {}) {
   }
   const spec = {
     raw, idText, normalized, tokens, type, wantsAccessory, accessoryWords, head, models, brands: brandReq,
-    excludedBrands, families, variants, caps, sizes, people: people ? Number(people) : 0, colors, wireless, gender, kids,
+    excludedBrands, families, variants, caps, measures, filterGrade, diameterMm, sizes, people: people ? Number(people) : 0, colors, wireless, gender, kids,
     year, budget, condition, wantsBook, wantsCar, looseBrand, lines, identityWords,
     // 관련도 점수에 쓸 검색어 — 예산·요청 말("50만원 이하", "보여줘")이 커버리지를 깎지 않게 뺀다.
     rankText: idText || raw,
@@ -616,22 +658,54 @@ function listingVariants(title) {
   return { set, tokens };
 }
 
-function queryCapacities(text) {
-  const out = [];
-  for (const m of String(text || '').matchAll(/(?<![0-9a-z])(\d{1,4})\s*(tb|gb|기가|테라)(?![a-z0-9])/gi)) {
-    out.push(Number(m[1]) * (/tb|테라/i.test(m[2]) ? 1024 : 1));
+// RAM과 저장 용량은 크기가 아니라 명시된 역할로 판별한다.
+function capacityDetails(text, allowShortG) {
+  const t = String(text || '');
+  const re = allowShortG
+    ? /(?<![0-9a-z])(\d{1,4})\s*(tb|gb|기가|테라|g)(?![a-z0-9])/gi
+    : /(?<![0-9a-z])(\d{1,4})\s*(tb|gb|기가|테라)(?![a-z0-9])/gi;
+  const matches = [...t.matchAll(re)];
+  const label = '(ram|램|메모리|ssd|hdd|저장용량|저장장치)';
+  const prefix = new RegExp(label + '\\s*[:=-]?\\s*$', 'i');
+  const suffix = new RegExp('^\\s*[:=-]?\\s*' + label, 'i');
+  let orientation = '';
+  for (const m of matches) {
+    const left = t.slice(0, m.index).match(prefix);
+    const right = t.slice(m.index + m[0].length).match(suffix);
+    if (left || right) { orientation = left ? 'prefix' : 'suffix'; break; }
   }
-  return out;
+  // 한 레이블을 앞뒤 두 숫자에 중복 배정하지 않는다. 레이블 순서가 섞여도
+  // 한쪽에만 붙은 레이블은 그 숫자에 배정하고, 양쪽이 모호하면 첫 표기 형식을 따른다.
+  const usedLabels = new Set();
+  return matches.map(m => {
+    const left = t.slice(0, m.index).match(prefix);
+    const right = t.slice(m.index + m[0].length).match(suffix);
+    const leftAt = left ? left.index : -1;
+    const rightAt = right ? m.index + m[0].length + right[0].toLowerCase().lastIndexOf(right[1].toLowerCase()) : -1;
+    const availableLeft = left && !usedLabels.has(leftAt) ? left : null;
+    const availableRight = right && !usedLabels.has(rightAt) ? right : null;
+    const useLeft = !!availableLeft && (!availableRight || orientation === 'prefix');
+    const hit = useLeft ? availableLeft : availableRight;
+    if (hit) usedLabels.add(useLeft ? leftAt : rightAt);
+    const name = hit && hit[1].toLowerCase();
+    return {
+      n: Number(m[1]) * (/tb|테라/i.test(m[2]) ? 1024 : 1),
+      ram: name ? /^(?:ram|램|메모리)$/i.test(name) : null
+    };
+  });
 }
-function listingCapacities(title) {
-  const caps = [];
-  const t = String(title || '');
-  for (const m of t.matchAll(/(?<![0-9a-z])(\d{1,4})\s*(tb|gb|기가|테라|g)(?![a-z0-9])/gi)) {
-    const n = Number(m[1]) * (/tb|테라/i.test(m[2]) ? 1024 : 1);
-    const around = t.slice(Math.max(0, m.index - 10), m.index + m[0].length + 6);
-    caps.push({ n, ram: /(?:ram|램|메모리)/i.test(around) || (n <= 32 && /\b\d{3,4}\s*(?:gb|tb)\b/i.test(t.slice(m.index + m[0].length))) });
-  }
-  return caps;
+function queryCapacities(text) { return capacityDetails(text, false); }
+function listingCapacities(title) { return capacityDetails(title, true); }
+// 비교 가능한 단위만 정규화한다. 복수 용량은 옵션·구성 혼동이므로 확정하지 않는다.
+const MEASURE_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(밀리리터|리터|ml|l|hz|헤르츠|매|켤레)(?![a-z])/gi;
+function measureValues(text) {
+  return [...String(text || '').matchAll(MEASURE_RE)].map(m => {
+    const unit = m[2].toLowerCase();
+    const volume = /^(?:밀리리터|리터|ml|l)$/.test(unit);
+    const hz = /^(?:hz|헤르츠)$/.test(unit);
+    return { kind: volume ? 'volume_ml' : hz ? 'hz' : unit,
+      n: Number(m[1]) * (/^(?:리터|l)$/.test(unit) ? 1000 : 1) };
+  });
 }
 function querySizes(tokens) {
   const out = [];
@@ -719,13 +793,13 @@ function headIsTarget(spec, T) {
   // 머리 명사 뒤의 마지막 «물건» 명사 ("여행용 캐리어 가죽 네임택 2p")
   const after = tokens.slice(last + 1).filter(t => !/\d/.test(t) && !S.TAIL_NOISE.has(t) && !COLOR_WORDS.test(t) && t.length >= 1);
   const lastObj = after.reverse().find(endsWithTailObject);
-  if (lastObj && !(HEAD_SYN.get(head) || []).includes(lastObj)) return `${head}…${lastObj}`;
+  if (lastObj && !(HEAD_SYN.get(head) || []).includes(lastObj) && !(lastObj === '뚜껑' && /(?:일체형|일체|내장)/.test(T.main))) return `${head}…${lastObj}`;
   return '';
 }
 
 function titleInfoOf(title) {
   const raw = String(title || '');
-  const main = LST.mainPhrase(raw).replace(BUNDLE_PHRASE, ' ');
+  const main = stripBundleItems(LST.mainPhrase(raw));
   const normalized = normalize(raw);
   return {
     raw, main,
@@ -747,12 +821,15 @@ const escapeRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  */
 function judge(spec, item, opts = {}) {
   const title = String((item && item.title) || '');
-  const T = titleInfoOf(title);
+  // 등급 구절은 사양으로 지우고, 그 앞에 남은 "필터"는 판매 대상으로 판정한다.
+  const principalTitle = spec.filterGrade && !spec.wantsAccessory
+    ? title.replace(/필터\s*등급\s*[a-z]\s*\d{1,3}/gi, ' ') : title;
+  const T = titleInfoOf(principalTitle);
   const hard = [];
   const soft = [];
   const price = Number(item && (item.lprice != null ? item.lprice : item.price)) || 0;
   // 판매 대상은 딸려 오는 구성품(«충전 거치대 포함», «케이스 증정»)을 지운 상품명으로 본다.
-  const principal = LST.principalItem(earbudCaseFree(title.replace(BUNDLE_PHRASE, ' ')));
+  const principal = LST.principalItem(earbudCaseFree(stripBundleItems(principalTitle)));
 
   if (!title.trim()) return { ok: false, hard: ['empty_title'], soft, principal };
   const codeInTitle = spec.models.some(c => T.flat.includes(c));
@@ -764,7 +841,7 @@ function judge(spec, item, opts = {}) {
     const headGroup = HEAD_SYN.get(spec.head) || [];
     const nounIsHead = !!spec.head && (nounFlat === spec.head || headGroup.includes(nounFlat)
       || spec.head.endsWith(nounFlat) || nounFlat.endsWith(spec.head));
-    const unbundled = earbudCaseFree(title.replace(BUNDLE_PHRASE, ' '));
+    const unbundled = earbudCaseFree(stripBundleItems(principalTitle));
     const deviceNouns = LST.collectNouns(T.main).filter(n => n.kind === 'device' && n.type === spec.type);
     // 범주가 정해지지 않은 검색에서 머리 명사가 부속 명사 «뒤» 에 오면 머리 명사가 판매 대상이다
     // («여권 지갑 … 카드 홀더 동전 지갑», «상판분리 바베큐 전기그릴 … 생선구이기»). 상품명은 머리가 끝에 온다.
@@ -982,6 +1059,9 @@ function judge(spec, item, opts = {}) {
   for (const canon of opts.identityOnly ? [] : spec.excludedBrands) {
     if (brandAliases(canon).some(a => aliasRe(a).test(title))) hard.push(`excluded_brand:${canon}`);
   }
+  if (!opts.identityOnly && spec.excludedBrands.length && !brandsIn(titleHead, { includeLines: false }).length
+    && !spec.excludedBrands.some(b => brandAliases(b).some(a => aliasRe(a).test(title))))
+    soft.push('excluded_brand_unverified');
   if (spec.brands.length) {
     const hit = spec.brands.some(b => brandAliases(b.canon).some(a => aliasRe(a).test(title)));
     if (!hit) {
@@ -1010,17 +1090,45 @@ function judge(spec, item, opts = {}) {
   // 저장 용량은 저장 장치가 있는 종류에만 묻는다 — «AirPods 3 256GB» 같은 말에 이어폰을 버리지 않는다.
   const capacityApplies = !spec.type || ['스마트폰', '태블릿', '노트북', '외장하드'].includes(spec.type);
   if (spec.caps.length && capacityApplies) {
-    const storageWant = spec.caps.filter(c => c >= 64);
+    const storageWant = spec.caps.filter(c => c.ram === false || (c.ram === null && c.n >= 64)).map(c => c.n);
+    const memoryWant = spec.caps.filter(c => c.ram === true || (c.ram === null && c.n < 64)).map(c => c.n);
     const caps = listingCapacities(title);
-    const storage = [...new Set(caps.filter(c => !c.ram && c.n >= 64).map(c => c.n))];
+    const explicitStorage = caps.filter(c => c.ram === false).map(c => c.n);
+    const storage = [...new Set(explicitStorage.length ? explicitStorage : caps.filter(c => c.ram === null && c.n >= 64).map(c => c.n))];
     for (const want of storageWant) {
       if (!storage.length) { hard.push(`capacity_unverified:${want}`); continue; }
       if (!storage.includes(want)) hard.push(`capacity_mismatch:${want}≠${storage[0]}`);
       else if (storage.length > 1) hard.push(`capacity_ambiguous:${storage.join('/')}`);
     }
-    for (const ram of spec.caps.filter(c => c < 64)) {
-      if (!caps.some(c => c.n === ram)) hard.push(`memory_unverified:${ram}`);
+    for (const want of memoryWant) {
+      const explicitMemory = caps.filter(c => c.ram === true).map(c => c.n);
+      const memory = explicitMemory.length ? explicitMemory : caps.filter(c => c.ram === null && c.n < 64).map(c => c.n);
+      if (!memory.includes(want)) {
+        if (memory.length) hard.push(`memory_mismatch:${want}≠${memory[0]}`);
+        else hard.push(`memory_unverified:${want}`);
+      }
     }
+  }
+  if (spec.diameterMm) {
+    const dm = title.match(/(?:지름|직경)\s*(\d+(?:\.\d+)?)\s*(mm|cm)/i);
+    if (!dm) soft.push('diameter_unverified');
+    else if (Math.abs(Number(dm[1]) * (/^cm$/i.test(dm[2]) ? 10 : 1) - spec.diameterMm) > 0.0001)
+      hard.push('diameter_mismatch');
+  }
+  if (spec.filterGrade) {
+    const grade = title.match(/필터\s*등급\s*([a-z]\s*\d{1,3})/i);
+    if (!grade) soft.push('filter_grade_unverified');
+    else if (grade[1].replace(/\s+/g, '').toLowerCase() !== spec.filterGrade) hard.push('filter_grade_mismatch');
+  }
+  for (const wanted of spec.measures || []) {
+    const values = [...new Set(measureValues(title).filter(m => m.kind === wanted.kind).map(m => m.n))];
+    if (values.length === 1 && Math.abs(values[0] - wanted.n) > 0.0001)
+      hard.push(`measure_mismatch:${wanted.kind}:${wanted.n}≠${values[0]}`);
+    else if (!values.length || values.length > 1) soft.push(`measure_unverified:${wanted.kind}`);
+  }
+  if (/(?:방수|waterproof)/i.test(spec.raw) && !/(?:비방수|방수\s*(?:불가|안됨|아님)|not\s+waterproof)/i.test(spec.raw)) {
+    if (/(?:비방수|방수\s*(?:불가|안됨|아님)|not\s+waterproof)/i.test(title)) hard.push('waterproof_mismatch');
+    else if (!/(?:방수|waterproof)/i.test(title)) soft.push('waterproof_unverified');
   }
   if (spec.sizes.length) {
     const sizes = listingSizes(title);
@@ -1047,12 +1155,14 @@ function judge(spec, item, opts = {}) {
   }
   if (spec.wireless === true && /(?:유선)/.test(title) && !/(?:무선|블루투스|wireless|bluetooth|유무선|2\.4\s*g)/i.test(title)) hard.push('wired_only');
   if (spec.wireless === false && /(?:무선|블루투스|wireless|bluetooth|tws)/i.test(title) && !/(?:유선|유무선|wired|3\.5|aux)/i.test(title)) hard.push('wireless_only');
+  if (spec.wireless !== null && !/(?:무선|유선|유무선|블루투스|wireless|wired|bluetooth|tws|3\.5|aux)/i.test(title)) soft.push('wireless_unverified');
   if (spec.gender === 'f' && /(?:남성|남자|맨즈|\bmen'?s?\b)/i.test(title) && !/(?:여성|여자|공용|남녀|unisex|우먼|women)/i.test(title)) hard.push('gender_mismatch');
   if (spec.gender === 'm' && /(?:여성|여자|우먼|women|레이디)/i.test(title) && !/(?:남성|남자|공용|남녀|unisex|맨즈|\bmen\b)/i.test(title)) hard.push('gender_mismatch');
   if (spec.gender && !spec.kids && KIDS.test(title) && !/(?:성인|어른|남녀|공용|패밀리|가족)/.test(title)) hard.push('age_mismatch');
 
   if (opts.identityOnly) {
     const attribute = hard.splice(hardBeforeAttributes);
+    soft.push(...attribute.filter(h => /^memory_unverified/.test(h)));
     hard.push(...attribute.filter(h => /^(?:capacity_unverified|capacity_ambiguous|size_ambiguous|color_unverified)/.test(h)));
     // 근거가 «모자란» 사유(낱말·범주·라인·모델 표기가 상품명에 없다)와 가격 하한 추정은 AI 경로에서 확인 불가(soft)다.
     // AI 검색어는 대화에서 뽑은 구절이라 남는 낱말이 상품 이름이 아닐 수 있고(«결제 금액 차이»), 식별 계약(AIID)이
@@ -1078,8 +1188,10 @@ function judge(spec, item, opts = {}) {
     if (!state || state === 'new' || state === 'sealed') hard.push(`condition_not_${spec.condition.wanted}`);
   } else if (spec.condition.wanted === 'new' || spec.condition.wanted === 'sealed') {
     if (state && state !== 'new' && state !== 'sealed') hard.push(`condition_excluded:${state}`);
+    else if (!state) soft.push('condition_unverified');
   } else if (state === 'rental') hard.push('rental_not_purchase');
   else if (state === 'used' || state === 'refurbished' || state === 'display' || state === 'opened') soft.push(`condition:${state}`);
+  if (!opts.stored && !(price > 0) && (spec.budget.max || spec.budget.min)) soft.push('price_unverified');
   if (!opts.stored && price > 0) {
     if (spec.budget.max && price > spec.budget.max) hard.push('over_budget');
     if (spec.budget.min && price < spec.budget.min) hard.push('under_budget');
@@ -1096,7 +1208,7 @@ function judge(spec, item, opts = {}) {
 const AI_EVIDENCE_ONLY = /^(?:identity_word_absent|category_absent|line_absent|model_missing|line_number_unverified|line_number_missing|implausible_device_price)/;
 
 // 저장(분류)을 막는 soft — «이 키워드의 상품» 이라고 기록할 근거가 모자란 경우.
-const IDENTITY_SOFT = /^(?:principal_unverified|brand_unverified|accessory_possible|identity_word_unverified|model_option_suffix|category_absent)/;
+const IDENTITY_SOFT = /^(?:principal_unverified|brand_unverified|accessory_possible|identity_word_unverified|model_option_suffix|category_absent|measure_unverified|waterproof_unverified|condition_unverified|excluded_brand_unverified|price_unverified|wireless_unverified|filter_grade_unverified|diameter_unverified)/;
 
 /**
  * 검색 결과 판정. relevance 는 _search.rankItems 가 붙인 값을 쓴다(정렬 근거).

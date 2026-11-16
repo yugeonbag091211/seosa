@@ -1,0 +1,4922 @@
+[
+  {
+    "id": "C19-1",
+    "query": "브라운 전기면도기 찾아줘",
+    "candidates": [
+      {
+        "id": "C19-1-P1",
+        "title": "브라운 전기면도기 방수",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-1-P2",
+        "title": "전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-1-P3",
+        "title": "브라운 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-1-P4",
+        "title": "브라운 면도기 교체날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-1-P5",
+        "title": "필립스 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C19-2",
+    "query": "브라운 전기면도기 중 방수 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C19-2-P1",
+        "title": "브라운 면도기 교체날 방수",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-2-P2",
+        "title": "브라운 전기면도기 방수",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-2-P3",
+        "title": "브라운 전기면도기 비방수",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-2-P4",
+        "title": "브라운 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-2-P5",
+        "title": "필립스 전기면도기 방수",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C19-3",
+    "query": "브라운 전기면도기에 쓸 면도기 교체날만 보여줘",
+    "candidates": [
+      {
+        "id": "C19-3-P1",
+        "title": "브라운 전기면도기용 면도기 교체날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-3-P2",
+        "title": "브라운 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-3-P3",
+        "title": "필립스 전기면도기 전용 면도기 교체날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-3-P4",
+        "title": "전기면도기용 면도기 교체날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-3-P5",
+        "title": "브라운 전기면도기용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C19-4",
+    "query": "전기면도기 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C19-4-P1",
+        "title": "브라운 전기면도기",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-4-P2",
+        "title": "브라운 전기면도기",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-4-P3",
+        "title": "필립스 전기면도기",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-4-P4",
+        "title": "브라운 면도기 교체날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-4-P5",
+        "title": "브라운 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C19-5",
+    "query": "전기면도기 추천하되 브라운 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C19-5-P1",
+        "title": "전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-5-P2",
+        "title": "필립스 전기면도기 방수",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-5-P3",
+        "title": "필립스 면도기 교체날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-5-P4",
+        "title": "필립스 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-5-P5",
+        "title": "브라운 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C19-6",
+    "query": "브라운 전기면도기 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C19-6-P1",
+        "title": "브라운 전기면도기",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-6-P2",
+        "title": "브라운 면도기 교체날 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-6-P3",
+        "title": "브라운 전기면도기 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-6-P4",
+        "title": "브라운 전기면도기 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-6-P5",
+        "title": "브라운 전기면도기 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C19-7",
+    "query": "브라운 전기면도기 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C19-7-P1",
+        "title": "전기면도기 본품 + 면도기 교체날 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-7-P2",
+        "title": "브라운 전기면도기 본품 + 면도기 교체날 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-7-P3",
+        "title": "브라운 전기면도기용 면도기 교체날 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-7-P4",
+        "title": "브라운 전기면도기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-7-P5",
+        "title": "필립스 전기면도기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C19-8",
+    "query": "전기면도기에서 방수 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C19-8-P1",
+        "title": "브라운 전기면도기 방수",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-8-P2",
+        "title": "브라운 전기면도기 비방수",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-8-P3",
+        "title": "필립스 전기면도기 방수",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-8-P4",
+        "title": "필립스 전기면도기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C19-8-P5",
+        "title": "브라운 면도기 교체날 방수",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-1",
+    "query": "신일 선풍기 찾아줘",
+    "candidates": [
+      {
+        "id": "C37-1-P1",
+        "title": "신일 선풍기 날개",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-1-P2",
+        "title": "한일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-1-P3",
+        "title": "신일 선풍기 날개 지름 35cm",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-1-P4",
+        "title": "선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-1-P5",
+        "title": "신일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-2",
+    "query": "신일 선풍기 중 날개 지름 35cm 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C37-2-P1",
+        "title": "신일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-2-P2",
+        "title": "한일 선풍기 날개 지름 35cm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-2-P3",
+        "title": "신일 선풍기 날개 날개 지름 35cm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-2-P4",
+        "title": "신일 선풍기 날개 지름 35cm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-2-P5",
+        "title": "신일 선풍기 날개 지름 25cm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-3",
+    "query": "신일 선풍기에 쓸 선풍기 날개만 보여줘",
+    "candidates": [
+      {
+        "id": "C37-3-P1",
+        "title": "선풍기용 선풍기 날개",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-3-P2",
+        "title": "신일 선풍기용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-3-P3",
+        "title": "신일 선풍기용 선풍기 날개",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-3-P4",
+        "title": "신일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-3-P5",
+        "title": "한일 선풍기 전용 선풍기 날개",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-4",
+    "query": "선풍기 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C37-4-P1",
+        "title": "신일 선풍기 날개",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-4-P2",
+        "title": "신일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-4-P3",
+        "title": "신일 선풍기",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-4-P4",
+        "title": "신일 선풍기",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-4-P5",
+        "title": "한일 선풍기",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-5",
+    "query": "선풍기 추천하되 신일 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C37-5-P1",
+        "title": "한일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-5-P2",
+        "title": "신일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-5-P3",
+        "title": "선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-5-P4",
+        "title": "한일 선풍기 날개 지름 35cm",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-5-P5",
+        "title": "한일 선풍기 날개",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-6",
+    "query": "신일 선풍기 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C37-6-P1",
+        "title": "신일 선풍기 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-6-P2",
+        "title": "신일 선풍기 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-6-P3",
+        "title": "신일 선풍기",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-6-P4",
+        "title": "신일 선풍기 날개 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-6-P5",
+        "title": "신일 선풍기 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-7",
+    "query": "신일 선풍기 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C37-7-P1",
+        "title": "신일 선풍기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-7-P2",
+        "title": "한일 선풍기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-7-P3",
+        "title": "선풍기 본품 + 선풍기 날개 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-7-P4",
+        "title": "신일 선풍기 본품 + 선풍기 날개 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-7-P5",
+        "title": "신일 선풍기용 선풍기 날개 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C37-8",
+    "query": "선풍기에서 날개 지름 35cm 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C37-8-P1",
+        "title": "한일 선풍기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-8-P2",
+        "title": "신일 선풍기 날개 날개 지름 35cm",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-8-P3",
+        "title": "신일 선풍기 날개 지름 35cm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-8-P4",
+        "title": "신일 선풍기 날개 지름 25cm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C37-8-P5",
+        "title": "한일 선풍기 날개 지름 35cm",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-1",
+    "query": "노스페이스 등산 배낭 찾아줘",
+    "candidates": [
+      {
+        "id": "C32-1-P1",
+        "title": "노스페이스 배낭 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-1-P2",
+        "title": "블랙야크 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-1-P3",
+        "title": "노스페이스 등산 배낭 용량 30L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-1-P4",
+        "title": "등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-1-P5",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-2",
+    "query": "노스페이스 등산 배낭 중 용량 30L 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C32-2-P1",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-2-P2",
+        "title": "블랙야크 등산 배낭 용량 30L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-2-P3",
+        "title": "노스페이스 배낭 레인커버 용량 30L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-2-P4",
+        "title": "노스페이스 등산 배낭 용량 30L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-2-P5",
+        "title": "노스페이스 등산 배낭 용량 20L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-3",
+    "query": "노스페이스 등산 배낭에 쓸 배낭 레인커버만 보여줘",
+    "candidates": [
+      {
+        "id": "C32-3-P1",
+        "title": "등산 배낭용 배낭 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-3-P2",
+        "title": "노스페이스 등산 배낭용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-3-P3",
+        "title": "노스페이스 등산 배낭용 배낭 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-3-P4",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-3-P5",
+        "title": "블랙야크 등산 배낭 전용 배낭 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-4",
+    "query": "등산 배낭 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C32-4-P1",
+        "title": "노스페이스 배낭 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-4-P2",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-4-P3",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-4-P4",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-4-P5",
+        "title": "블랙야크 등산 배낭",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-5",
+    "query": "등산 배낭 추천하되 노스페이스 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C32-5-P1",
+        "title": "블랙야크 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-5-P2",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-5-P3",
+        "title": "등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-5-P4",
+        "title": "블랙야크 등산 배낭 용량 30L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-5-P5",
+        "title": "블랙야크 배낭 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-6",
+    "query": "노스페이스 등산 배낭 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C32-6-P1",
+        "title": "노스페이스 등산 배낭 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-6-P2",
+        "title": "노스페이스 등산 배낭 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-6-P3",
+        "title": "노스페이스 등산 배낭",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-6-P4",
+        "title": "노스페이스 배낭 레인커버 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-6-P5",
+        "title": "노스페이스 등산 배낭 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-7",
+    "query": "노스페이스 등산 배낭 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C32-7-P1",
+        "title": "노스페이스 등산 배낭 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-7-P2",
+        "title": "블랙야크 등산 배낭 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-7-P3",
+        "title": "등산 배낭 본품 + 배낭 레인커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-7-P4",
+        "title": "노스페이스 등산 배낭 본품 + 배낭 레인커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-7-P5",
+        "title": "노스페이스 등산 배낭용 배낭 레인커버 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C32-8",
+    "query": "등산 배낭에서 용량 30L 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C32-8-P1",
+        "title": "블랙야크 등산 배낭",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-8-P2",
+        "title": "노스페이스 배낭 레인커버 용량 30L",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-8-P3",
+        "title": "노스페이스 등산 배낭 용량 30L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-8-P4",
+        "title": "노스페이스 등산 배낭 용량 20L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C32-8-P5",
+        "title": "블랙야크 등산 배낭 용량 30L",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-1",
+    "query": "소니 무선 이어폰 찾아줘",
+    "candidates": [
+      {
+        "id": "C08-1-P1",
+        "title": "젠하이저 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-1-P2",
+        "title": "소니 무선 이어폰 블랙",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-1-P3",
+        "title": "무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-1-P4",
+        "title": "소니 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-1-P5",
+        "title": "소니 이어폰 케이스",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-2",
+    "query": "소니 무선 이어폰 중 블랙 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C08-2-P1",
+        "title": "젠하이저 무선 이어폰 블랙",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-2-P2",
+        "title": "소니 이어폰 케이스 블랙",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-2-P3",
+        "title": "소니 무선 이어폰 블랙",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-2-P4",
+        "title": "소니 무선 이어폰 화이트",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-2-P5",
+        "title": "소니 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-3",
+    "query": "소니 무선 이어폰에 쓸 이어폰 케이스만 보여줘",
+    "candidates": [
+      {
+        "id": "C08-3-P1",
+        "title": "소니 무선 이어폰용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-3-P2",
+        "title": "소니 무선 이어폰용 이어폰 케이스",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-3-P3",
+        "title": "소니 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-3-P4",
+        "title": "젠하이저 무선 이어폰 전용 이어폰 케이스",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-3-P5",
+        "title": "무선 이어폰용 이어폰 케이스",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-4",
+    "query": "무선 이어폰 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C08-4-P1",
+        "title": "소니 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-4-P2",
+        "title": "소니 무선 이어폰",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-4-P3",
+        "title": "소니 무선 이어폰",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-4-P4",
+        "title": "젠하이저 무선 이어폰",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-4-P5",
+        "title": "소니 이어폰 케이스",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-5",
+    "query": "무선 이어폰 추천하되 소니 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C08-5-P1",
+        "title": "소니 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-5-P2",
+        "title": "무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-5-P3",
+        "title": "젠하이저 무선 이어폰 블랙",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-5-P4",
+        "title": "젠하이저 이어폰 케이스",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-5-P5",
+        "title": "젠하이저 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-6",
+    "query": "소니 무선 이어폰 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C08-6-P1",
+        "title": "소니 무선 이어폰 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-6-P2",
+        "title": "소니 무선 이어폰",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-6-P3",
+        "title": "소니 이어폰 케이스 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-6-P4",
+        "title": "소니 무선 이어폰 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-6-P5",
+        "title": "소니 무선 이어폰 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-7",
+    "query": "소니 무선 이어폰 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C08-7-P1",
+        "title": "젠하이저 무선 이어폰 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-7-P2",
+        "title": "무선 이어폰 본품 + 이어폰 케이스 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-7-P3",
+        "title": "소니 무선 이어폰 본품 + 이어폰 케이스 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-7-P4",
+        "title": "소니 무선 이어폰용 이어폰 케이스 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-7-P5",
+        "title": "소니 무선 이어폰 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C08-8",
+    "query": "무선 이어폰에서 블랙 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C08-8-P1",
+        "title": "소니 이어폰 케이스 블랙",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-8-P2",
+        "title": "소니 무선 이어폰 블랙",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-8-P3",
+        "title": "소니 무선 이어폰 화이트",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-8-P4",
+        "title": "젠하이저 무선 이어폰 블랙",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C08-8-P5",
+        "title": "젠하이저 무선 이어폰",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-1",
+    "query": "한일 가습기 찾아줘",
+    "candidates": [
+      {
+        "id": "C38-1-P1",
+        "title": "위닉스 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-1-P2",
+        "title": "한일 가습기 물통 4L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-1-P3",
+        "title": "가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-1-P4",
+        "title": "한일 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-1-P5",
+        "title": "한일 가습기 필터",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-2",
+    "query": "한일 가습기 중 물통 4L 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C38-2-P1",
+        "title": "위닉스 가습기 물통 4L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-2-P2",
+        "title": "한일 가습기 필터 물통 4L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-2-P3",
+        "title": "한일 가습기 물통 4L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-2-P4",
+        "title": "한일 가습기 물통 2L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-2-P5",
+        "title": "한일 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-3",
+    "query": "한일 가습기에 쓸 가습기 필터만 보여줘",
+    "candidates": [
+      {
+        "id": "C38-3-P1",
+        "title": "한일 가습기용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-3-P2",
+        "title": "한일 가습기용 가습기 필터",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-3-P3",
+        "title": "한일 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-3-P4",
+        "title": "위닉스 가습기 전용 가습기 필터",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-3-P5",
+        "title": "가습기용 가습기 필터",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-4",
+    "query": "가습기 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C38-4-P1",
+        "title": "한일 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-4-P2",
+        "title": "한일 가습기",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-4-P3",
+        "title": "한일 가습기",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-4-P4",
+        "title": "위닉스 가습기",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-4-P5",
+        "title": "한일 가습기 필터",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-5",
+    "query": "가습기 추천하되 한일 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C38-5-P1",
+        "title": "한일 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-5-P2",
+        "title": "가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-5-P3",
+        "title": "위닉스 가습기 물통 4L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-5-P4",
+        "title": "위닉스 가습기 필터",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-5-P5",
+        "title": "위닉스 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-6",
+    "query": "한일 가습기 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C38-6-P1",
+        "title": "한일 가습기 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-6-P2",
+        "title": "한일 가습기",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-6-P3",
+        "title": "한일 가습기 필터 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-6-P4",
+        "title": "한일 가습기 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-6-P5",
+        "title": "한일 가습기 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-7",
+    "query": "한일 가습기 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C38-7-P1",
+        "title": "위닉스 가습기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-7-P2",
+        "title": "가습기 본품 + 가습기 필터 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-7-P3",
+        "title": "한일 가습기 본품 + 가습기 필터 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-7-P4",
+        "title": "한일 가습기용 가습기 필터 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-7-P5",
+        "title": "한일 가습기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C38-8",
+    "query": "가습기에서 물통 4L 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C38-8-P1",
+        "title": "한일 가습기 필터 물통 4L",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-8-P2",
+        "title": "한일 가습기 물통 4L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-8-P3",
+        "title": "한일 가습기 물통 2L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-8-P4",
+        "title": "위닉스 가습기 물통 4L",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C38-8-P5",
+        "title": "위닉스 가습기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-1",
+    "query": "템퍼 베개 찾아줘",
+    "candidates": [
+      {
+        "id": "C24-1-P1",
+        "title": "템퍼 베개 메모리폼",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-1-P2",
+        "title": "베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-1-P3",
+        "title": "템퍼 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-1-P4",
+        "title": "템퍼 베개 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-1-P5",
+        "title": "가누다 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-2",
+    "query": "템퍼 베개 중 메모리폼 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C24-2-P1",
+        "title": "템퍼 베개 커버 메모리폼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-2-P2",
+        "title": "템퍼 베개 메모리폼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-2-P3",
+        "title": "템퍼 베개 라텍스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-2-P4",
+        "title": "템퍼 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-2-P5",
+        "title": "가누다 베개 메모리폼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-3",
+    "query": "템퍼 베개에 쓸 베개 커버만 보여줘",
+    "candidates": [
+      {
+        "id": "C24-3-P1",
+        "title": "템퍼 베개용 베개 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-3-P2",
+        "title": "템퍼 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-3-P3",
+        "title": "가누다 베개 전용 베개 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-3-P4",
+        "title": "베개용 베개 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-3-P5",
+        "title": "템퍼 베개용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-4",
+    "query": "베개 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C24-4-P1",
+        "title": "템퍼 베개",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-4-P2",
+        "title": "템퍼 베개",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-4-P3",
+        "title": "가누다 베개",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-4-P4",
+        "title": "템퍼 베개 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-4-P5",
+        "title": "템퍼 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-5",
+    "query": "베개 추천하되 템퍼 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C24-5-P1",
+        "title": "베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-5-P2",
+        "title": "가누다 베개 메모리폼",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-5-P3",
+        "title": "가누다 베개 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-5-P4",
+        "title": "가누다 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-5-P5",
+        "title": "템퍼 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-6",
+    "query": "템퍼 베개 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C24-6-P1",
+        "title": "템퍼 베개",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-6-P2",
+        "title": "템퍼 베개 커버 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-6-P3",
+        "title": "템퍼 베개 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-6-P4",
+        "title": "템퍼 베개 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-6-P5",
+        "title": "템퍼 베개 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-7",
+    "query": "템퍼 베개 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C24-7-P1",
+        "title": "베개 본품 + 베개 커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-7-P2",
+        "title": "템퍼 베개 본품 + 베개 커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-7-P3",
+        "title": "템퍼 베개용 베개 커버 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-7-P4",
+        "title": "템퍼 베개 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-7-P5",
+        "title": "가누다 베개 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C24-8",
+    "query": "베개에서 메모리폼 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C24-8-P1",
+        "title": "템퍼 베개 메모리폼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-8-P2",
+        "title": "템퍼 베개 라텍스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-8-P3",
+        "title": "가누다 베개 메모리폼",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-8-P4",
+        "title": "가누다 베개",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C24-8-P5",
+        "title": "템퍼 베개 커버 메모리폼",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-1",
+    "query": "에이스 매트리스 찾아줘",
+    "candidates": [
+      {
+        "id": "C23-1-P1",
+        "title": "시몬스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-1-P2",
+        "title": "에이스 매트리스 퀸",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-1-P3",
+        "title": "매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-1-P4",
+        "title": "에이스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-1-P5",
+        "title": "에이스 매트리스 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-2",
+    "query": "에이스 매트리스 중 퀸 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C23-2-P1",
+        "title": "시몬스 매트리스 퀸",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-2-P2",
+        "title": "에이스 매트리스 커버 퀸",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-2-P3",
+        "title": "에이스 매트리스 퀸",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-2-P4",
+        "title": "에이스 매트리스 싱글",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-2-P5",
+        "title": "에이스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-3",
+    "query": "에이스 매트리스에 쓸 매트리스 커버만 보여줘",
+    "candidates": [
+      {
+        "id": "C23-3-P1",
+        "title": "에이스 매트리스용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-3-P2",
+        "title": "에이스 매트리스용 매트리스 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-3-P3",
+        "title": "에이스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-3-P4",
+        "title": "시몬스 매트리스 전용 매트리스 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-3-P5",
+        "title": "매트리스용 매트리스 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-4",
+    "query": "매트리스 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C23-4-P1",
+        "title": "에이스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-4-P2",
+        "title": "에이스 매트리스",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-4-P3",
+        "title": "에이스 매트리스",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-4-P4",
+        "title": "시몬스 매트리스",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-4-P5",
+        "title": "에이스 매트리스 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-5",
+    "query": "매트리스 추천하되 에이스 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C23-5-P1",
+        "title": "에이스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-5-P2",
+        "title": "매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-5-P3",
+        "title": "시몬스 매트리스 퀸",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-5-P4",
+        "title": "시몬스 매트리스 커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-5-P5",
+        "title": "시몬스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-6",
+    "query": "에이스 매트리스 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C23-6-P1",
+        "title": "에이스 매트리스 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-6-P2",
+        "title": "에이스 매트리스",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-6-P3",
+        "title": "에이스 매트리스 커버 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-6-P4",
+        "title": "에이스 매트리스 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-6-P5",
+        "title": "에이스 매트리스 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-7",
+    "query": "에이스 매트리스 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C23-7-P1",
+        "title": "시몬스 매트리스 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-7-P2",
+        "title": "매트리스 본품 + 매트리스 커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-7-P3",
+        "title": "에이스 매트리스 본품 + 매트리스 커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-7-P4",
+        "title": "에이스 매트리스용 매트리스 커버 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-7-P5",
+        "title": "에이스 매트리스 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C23-8",
+    "query": "매트리스에서 퀸 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C23-8-P1",
+        "title": "에이스 매트리스 커버 퀸",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-8-P2",
+        "title": "에이스 매트리스 퀸",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-8-P3",
+        "title": "에이스 매트리스 싱글",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-8-P4",
+        "title": "시몬스 매트리스 퀸",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C23-8-P5",
+        "title": "시몬스 매트리스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-1",
+    "query": "로지텍 키보드 찾아줘",
+    "candidates": [
+      {
+        "id": "C10-1-P1",
+        "title": "키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-1-P2",
+        "title": "로지텍 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-1-P3",
+        "title": "로지텍 키보드 키캡",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-1-P4",
+        "title": "한성 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-1-P5",
+        "title": "로지텍 키보드 무선",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-2",
+    "query": "로지텍 키보드 중 무선 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C10-2-P1",
+        "title": "로지텍 키보드 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-2-P2",
+        "title": "로지텍 키보드 유선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-2-P3",
+        "title": "로지텍 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-2-P4",
+        "title": "한성 키보드 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-2-P5",
+        "title": "로지텍 키보드 키캡 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-3",
+    "query": "로지텍 키보드에 쓸 키보드 키캡만 보여줘",
+    "candidates": [
+      {
+        "id": "C10-3-P1",
+        "title": "로지텍 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-3-P2",
+        "title": "한성 키보드 전용 키보드 키캡",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-3-P3",
+        "title": "키보드용 키보드 키캡",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-3-P4",
+        "title": "로지텍 키보드용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-3-P5",
+        "title": "로지텍 키보드용 키보드 키캡",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-4",
+    "query": "키보드 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C10-4-P1",
+        "title": "로지텍 키보드",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-4-P2",
+        "title": "한성 키보드",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-4-P3",
+        "title": "로지텍 키보드 키캡",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-4-P4",
+        "title": "로지텍 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-4-P5",
+        "title": "로지텍 키보드",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-5",
+    "query": "키보드 추천하되 로지텍 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C10-5-P1",
+        "title": "한성 키보드 무선",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-5-P2",
+        "title": "한성 키보드 키캡",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-5-P3",
+        "title": "한성 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-5-P4",
+        "title": "로지텍 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-5-P5",
+        "title": "키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-6",
+    "query": "로지텍 키보드 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C10-6-P1",
+        "title": "로지텍 키보드 키캡 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-6-P2",
+        "title": "로지텍 키보드 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-6-P3",
+        "title": "로지텍 키보드 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-6-P4",
+        "title": "로지텍 키보드 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-6-P5",
+        "title": "로지텍 키보드",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-7",
+    "query": "로지텍 키보드 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C10-7-P1",
+        "title": "로지텍 키보드 본품 + 키보드 키캡 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-7-P2",
+        "title": "로지텍 키보드용 키보드 키캡 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-7-P3",
+        "title": "로지텍 키보드 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-7-P4",
+        "title": "한성 키보드 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-7-P5",
+        "title": "키보드 본품 + 키보드 키캡 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C10-8",
+    "query": "키보드에서 무선 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C10-8-P1",
+        "title": "로지텍 키보드 유선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-8-P2",
+        "title": "한성 키보드 무선",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-8-P3",
+        "title": "한성 키보드",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-8-P4",
+        "title": "로지텍 키보드 키캡 무선",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C10-8-P5",
+        "title": "로지텍 키보드 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-1",
+    "query": "쿠쿠 전기밥솥 찾아줘",
+    "candidates": [
+      {
+        "id": "C15-1-P1",
+        "title": "전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-1-P2",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-1-P3",
+        "title": "쿠쿠 밥솥 내솥",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-1-P4",
+        "title": "쿠첸 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-1-P5",
+        "title": "쿠쿠 전기밥솥 6인용",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-2",
+    "query": "쿠쿠 전기밥솥 중 6인용 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C15-2-P1",
+        "title": "쿠쿠 전기밥솥 6인용",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-2-P2",
+        "title": "쿠쿠 전기밥솥 3인용",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-2-P3",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-2-P4",
+        "title": "쿠첸 전기밥솥 6인용",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-2-P5",
+        "title": "쿠쿠 밥솥 내솥 6인용",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-3",
+    "query": "쿠쿠 전기밥솥에 쓸 밥솥 내솥만 보여줘",
+    "candidates": [
+      {
+        "id": "C15-3-P1",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-3-P2",
+        "title": "쿠첸 전기밥솥 전용 밥솥 내솥",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-3-P3",
+        "title": "전기밥솥용 밥솥 내솥",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-3-P4",
+        "title": "쿠쿠 전기밥솥용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-3-P5",
+        "title": "쿠쿠 전기밥솥용 밥솥 내솥",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-4",
+    "query": "전기밥솥 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C15-4-P1",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-4-P2",
+        "title": "쿠첸 전기밥솥",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-4-P3",
+        "title": "쿠쿠 밥솥 내솥",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-4-P4",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-4-P5",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-5",
+    "query": "전기밥솥 추천하되 쿠쿠 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C15-5-P1",
+        "title": "쿠첸 전기밥솥 6인용",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-5-P2",
+        "title": "쿠첸 밥솥 내솥",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-5-P3",
+        "title": "쿠첸 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-5-P4",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-5-P5",
+        "title": "전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-6",
+    "query": "쿠쿠 전기밥솥 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C15-6-P1",
+        "title": "쿠쿠 밥솥 내솥 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-6-P2",
+        "title": "쿠쿠 전기밥솥 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-6-P3",
+        "title": "쿠쿠 전기밥솥 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-6-P4",
+        "title": "쿠쿠 전기밥솥 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-6-P5",
+        "title": "쿠쿠 전기밥솥",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-7",
+    "query": "쿠쿠 전기밥솥 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C15-7-P1",
+        "title": "쿠쿠 전기밥솥 본품 + 밥솥 내솥 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-7-P2",
+        "title": "쿠쿠 전기밥솥용 밥솥 내솥 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-7-P3",
+        "title": "쿠쿠 전기밥솥 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-7-P4",
+        "title": "쿠첸 전기밥솥 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-7-P5",
+        "title": "전기밥솥 본품 + 밥솥 내솥 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C15-8",
+    "query": "전기밥솥에서 6인용 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C15-8-P1",
+        "title": "쿠쿠 전기밥솥 3인용",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-8-P2",
+        "title": "쿠첸 전기밥솥 6인용",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-8-P3",
+        "title": "쿠첸 전기밥솥",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-8-P4",
+        "title": "쿠쿠 밥솥 내솥 6인용",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C15-8-P5",
+        "title": "쿠쿠 전기밥솥 6인용",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-1",
+    "query": "샘소나이트 백팩 찾아줘",
+    "candidates": [
+      {
+        "id": "C36-1-P1",
+        "title": "샘소나이트 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-1-P2",
+        "title": "샘소나이트 백팩 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-1-P3",
+        "title": "투미 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-1-P4",
+        "title": "샘소나이트 백팩 용량 20L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-1-P5",
+        "title": "백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-2",
+    "query": "샘소나이트 백팩 중 용량 20L 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C36-2-P1",
+        "title": "샘소나이트 백팩 용량 10L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-2-P2",
+        "title": "샘소나이트 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-2-P3",
+        "title": "투미 백팩 용량 20L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-2-P4",
+        "title": "샘소나이트 백팩 레인커버 용량 20L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-2-P5",
+        "title": "샘소나이트 백팩 용량 20L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-3",
+    "query": "샘소나이트 백팩에 쓸 백팩 레인커버만 보여줘",
+    "candidates": [
+      {
+        "id": "C36-3-P1",
+        "title": "투미 백팩 전용 백팩 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-3-P2",
+        "title": "백팩용 백팩 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-3-P3",
+        "title": "샘소나이트 백팩용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-3-P4",
+        "title": "샘소나이트 백팩용 백팩 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-3-P5",
+        "title": "샘소나이트 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-4",
+    "query": "백팩 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C36-4-P1",
+        "title": "투미 백팩",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-4-P2",
+        "title": "샘소나이트 백팩 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-4-P3",
+        "title": "샘소나이트 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-4-P4",
+        "title": "샘소나이트 백팩",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-4-P5",
+        "title": "샘소나이트 백팩",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-5",
+    "query": "백팩 추천하되 샘소나이트 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C36-5-P1",
+        "title": "투미 백팩 레인커버",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-5-P2",
+        "title": "투미 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-5-P3",
+        "title": "샘소나이트 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-5-P4",
+        "title": "백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-5-P5",
+        "title": "투미 백팩 용량 20L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-6",
+    "query": "샘소나이트 백팩 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C36-6-P1",
+        "title": "샘소나이트 백팩 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-6-P2",
+        "title": "샘소나이트 백팩 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-6-P3",
+        "title": "샘소나이트 백팩 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-6-P4",
+        "title": "샘소나이트 백팩",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-6-P5",
+        "title": "샘소나이트 백팩 레인커버 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-7",
+    "query": "샘소나이트 백팩 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C36-7-P1",
+        "title": "샘소나이트 백팩용 백팩 레인커버 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-7-P2",
+        "title": "샘소나이트 백팩 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-7-P3",
+        "title": "투미 백팩 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-7-P4",
+        "title": "백팩 본품 + 백팩 레인커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-7-P5",
+        "title": "샘소나이트 백팩 본품 + 백팩 레인커버 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C36-8",
+    "query": "백팩에서 용량 20L 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C36-8-P1",
+        "title": "투미 백팩 용량 20L",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-8-P2",
+        "title": "투미 백팩",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-8-P3",
+        "title": "샘소나이트 백팩 레인커버 용량 20L",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-8-P4",
+        "title": "샘소나이트 백팩 용량 20L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C36-8-P5",
+        "title": "샘소나이트 백팩 용량 10L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-1",
+    "query": "코베아 가스버너 찾아줘",
+    "candidates": [
+      {
+        "id": "C40-1-P1",
+        "title": "가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-1-P2",
+        "title": "코베아 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-1-P3",
+        "title": "코베아 버너 전용 가방",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-1-P4",
+        "title": "썬터치 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-1-P5",
+        "title": "코베아 가스버너 점화장치 포함",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-2",
+    "query": "코베아 가스버너 중 점화장치 포함 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C40-2-P1",
+        "title": "코베아 가스버너 점화장치 포함",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-2-P2",
+        "title": "코베아 가스버너 점화장치 미포함",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-2-P3",
+        "title": "코베아 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-2-P4",
+        "title": "썬터치 가스버너 점화장치 포함",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-2-P5",
+        "title": "코베아 버너 전용 가방 점화장치 포함",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-3",
+    "query": "코베아 가스버너에 쓸 버너 전용 가방만 보여줘",
+    "candidates": [
+      {
+        "id": "C40-3-P1",
+        "title": "코베아 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-3-P2",
+        "title": "썬터치 가스버너 전용 버너 전용 가방",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-3-P3",
+        "title": "가스버너용 버너 전용 가방",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-3-P4",
+        "title": "코베아 가스버너용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-3-P5",
+        "title": "코베아 가스버너용 버너 전용 가방",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-4",
+    "query": "가스버너 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C40-4-P1",
+        "title": "코베아 가스버너",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-4-P2",
+        "title": "썬터치 가스버너",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-4-P3",
+        "title": "코베아 버너 전용 가방",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-4-P4",
+        "title": "코베아 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-4-P5",
+        "title": "코베아 가스버너",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-5",
+    "query": "가스버너 추천하되 코베아 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C40-5-P1",
+        "title": "썬터치 가스버너 점화장치 포함",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-5-P2",
+        "title": "썬터치 버너 전용 가방",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-5-P3",
+        "title": "썬터치 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-5-P4",
+        "title": "코베아 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-5-P5",
+        "title": "가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-6",
+    "query": "코베아 가스버너 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C40-6-P1",
+        "title": "코베아 버너 전용 가방 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-6-P2",
+        "title": "코베아 가스버너 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-6-P3",
+        "title": "코베아 가스버너 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-6-P4",
+        "title": "코베아 가스버너 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-6-P5",
+        "title": "코베아 가스버너",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-7",
+    "query": "코베아 가스버너 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C40-7-P1",
+        "title": "코베아 가스버너 본품 + 버너 전용 가방 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-7-P2",
+        "title": "코베아 가스버너용 버너 전용 가방 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-7-P3",
+        "title": "코베아 가스버너 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-7-P4",
+        "title": "썬터치 가스버너 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-7-P5",
+        "title": "가스버너 본품 + 버너 전용 가방 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C40-8",
+    "query": "가스버너에서 점화장치 포함 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C40-8-P1",
+        "title": "코베아 가스버너 점화장치 미포함",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-8-P2",
+        "title": "썬터치 가스버너 점화장치 포함",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-8-P3",
+        "title": "썬터치 가스버너",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-8-P4",
+        "title": "코베아 버너 전용 가방 점화장치 포함",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C40-8-P5",
+        "title": "코베아 가스버너 점화장치 포함",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-1",
+    "query": "필립스 믹서기 찾아줘",
+    "candidates": [
+      {
+        "id": "C17-1-P1",
+        "title": "필립스 믹서기 칼날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-1-P2",
+        "title": "테팔 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-1-P3",
+        "title": "필립스 믹서기 용기 2L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-1-P4",
+        "title": "믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-1-P5",
+        "title": "필립스 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-2",
+    "query": "필립스 믹서기 중 용기 2L 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C17-2-P1",
+        "title": "필립스 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-2-P2",
+        "title": "테팔 믹서기 용기 2L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-2-P3",
+        "title": "필립스 믹서기 칼날 용기 2L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-2-P4",
+        "title": "필립스 믹서기 용기 2L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-2-P5",
+        "title": "필립스 믹서기 용기 1L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-3",
+    "query": "필립스 믹서기에 쓸 믹서기 칼날만 보여줘",
+    "candidates": [
+      {
+        "id": "C17-3-P1",
+        "title": "믹서기용 믹서기 칼날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-3-P2",
+        "title": "필립스 믹서기용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-3-P3",
+        "title": "필립스 믹서기용 믹서기 칼날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-3-P4",
+        "title": "필립스 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-3-P5",
+        "title": "테팔 믹서기 전용 믹서기 칼날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-4",
+    "query": "믹서기 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C17-4-P1",
+        "title": "필립스 믹서기 칼날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-4-P2",
+        "title": "필립스 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-4-P3",
+        "title": "필립스 믹서기",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-4-P4",
+        "title": "필립스 믹서기",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-4-P5",
+        "title": "테팔 믹서기",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-5",
+    "query": "믹서기 추천하되 필립스 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C17-5-P1",
+        "title": "테팔 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-5-P2",
+        "title": "필립스 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-5-P3",
+        "title": "믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-5-P4",
+        "title": "테팔 믹서기 용기 2L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-5-P5",
+        "title": "테팔 믹서기 칼날",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-6",
+    "query": "필립스 믹서기 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C17-6-P1",
+        "title": "필립스 믹서기 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-6-P2",
+        "title": "필립스 믹서기 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-6-P3",
+        "title": "필립스 믹서기",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-6-P4",
+        "title": "필립스 믹서기 칼날 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-6-P5",
+        "title": "필립스 믹서기 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-7",
+    "query": "필립스 믹서기 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C17-7-P1",
+        "title": "필립스 믹서기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-7-P2",
+        "title": "테팔 믹서기 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-7-P3",
+        "title": "믹서기 본품 + 믹서기 칼날 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-7-P4",
+        "title": "필립스 믹서기 본품 + 믹서기 칼날 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-7-P5",
+        "title": "필립스 믹서기용 믹서기 칼날 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C17-8",
+    "query": "믹서기에서 용기 2L 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C17-8-P1",
+        "title": "테팔 믹서기",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-8-P2",
+        "title": "필립스 믹서기 칼날 용기 2L",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-8-P3",
+        "title": "필립스 믹서기 용기 2L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-8-P4",
+        "title": "필립스 믹서기 용기 1L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C17-8-P5",
+        "title": "테팔 믹서기 용기 2L",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-1",
+    "query": "해피콜 냄비 찾아줘",
+    "candidates": [
+      {
+        "id": "C27-1-P1",
+        "title": "해피콜 냄비 손잡이",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-1-P2",
+        "title": "테팔 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-1-P3",
+        "title": "해피콜 냄비 용량 3L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-1-P4",
+        "title": "냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-1-P5",
+        "title": "해피콜 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-2",
+    "query": "해피콜 냄비 중 용량 3L 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C27-2-P1",
+        "title": "해피콜 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-2-P2",
+        "title": "테팔 냄비 용량 3L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-2-P3",
+        "title": "해피콜 냄비 손잡이 용량 3L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-2-P4",
+        "title": "해피콜 냄비 용량 3L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-2-P5",
+        "title": "해피콜 냄비 용량 1L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-3",
+    "query": "해피콜 냄비에 쓸 냄비 손잡이만 보여줘",
+    "candidates": [
+      {
+        "id": "C27-3-P1",
+        "title": "냄비용 냄비 손잡이",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-3-P2",
+        "title": "해피콜 냄비용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-3-P3",
+        "title": "해피콜 냄비용 냄비 손잡이",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-3-P4",
+        "title": "해피콜 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-3-P5",
+        "title": "테팔 냄비 전용 냄비 손잡이",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-4",
+    "query": "냄비 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C27-4-P1",
+        "title": "해피콜 냄비 손잡이",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-4-P2",
+        "title": "해피콜 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-4-P3",
+        "title": "해피콜 냄비",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-4-P4",
+        "title": "해피콜 냄비",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-4-P5",
+        "title": "테팔 냄비",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-5",
+    "query": "냄비 추천하되 해피콜 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C27-5-P1",
+        "title": "테팔 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-5-P2",
+        "title": "해피콜 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-5-P3",
+        "title": "냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-5-P4",
+        "title": "테팔 냄비 용량 3L",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-5-P5",
+        "title": "테팔 냄비 손잡이",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-6",
+    "query": "해피콜 냄비 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C27-6-P1",
+        "title": "해피콜 냄비 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-6-P2",
+        "title": "해피콜 냄비 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-6-P3",
+        "title": "해피콜 냄비",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-6-P4",
+        "title": "해피콜 냄비 손잡이 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-6-P5",
+        "title": "해피콜 냄비 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-7",
+    "query": "해피콜 냄비 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C27-7-P1",
+        "title": "해피콜 냄비 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-7-P2",
+        "title": "테팔 냄비 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-7-P3",
+        "title": "냄비 본품 + 냄비 손잡이 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-7-P4",
+        "title": "해피콜 냄비 본품 + 냄비 손잡이 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-7-P5",
+        "title": "해피콜 냄비용 냄비 손잡이 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C27-8",
+    "query": "냄비에서 용량 3L 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C27-8-P1",
+        "title": "테팔 냄비",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-8-P2",
+        "title": "해피콜 냄비 손잡이 용량 3L",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-8-P3",
+        "title": "해피콜 냄비 용량 3L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-8-P4",
+        "title": "해피콜 냄비 용량 1L",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C27-8-P5",
+        "title": "테팔 냄비 용량 3L",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-1",
+    "query": "로지텍 마우스 찾아줘",
+    "candidates": [
+      {
+        "id": "C11-1-P1",
+        "title": "로지텍 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-1-P2",
+        "title": "로지텍 마우스 충전 케이블",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-1-P3",
+        "title": "레이저 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-1-P4",
+        "title": "로지텍 마우스 무선",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-1-P5",
+        "title": "마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-2",
+    "query": "로지텍 마우스 중 무선 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C11-2-P1",
+        "title": "로지텍 마우스 유선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-2-P2",
+        "title": "로지텍 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-2-P3",
+        "title": "레이저 마우스 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-2-P4",
+        "title": "로지텍 마우스 충전 케이블 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-2-P5",
+        "title": "로지텍 마우스 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-3",
+    "query": "로지텍 마우스에 쓸 마우스 충전 케이블만 보여줘",
+    "candidates": [
+      {
+        "id": "C11-3-P1",
+        "title": "레이저 마우스 전용 마우스 충전 케이블",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-3-P2",
+        "title": "마우스용 마우스 충전 케이블",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-3-P3",
+        "title": "로지텍 마우스용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-3-P4",
+        "title": "로지텍 마우스용 마우스 충전 케이블",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-3-P5",
+        "title": "로지텍 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-4",
+    "query": "마우스 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C11-4-P1",
+        "title": "레이저 마우스",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-4-P2",
+        "title": "로지텍 마우스 충전 케이블",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-4-P3",
+        "title": "로지텍 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-4-P4",
+        "title": "로지텍 마우스",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-4-P5",
+        "title": "로지텍 마우스",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-5",
+    "query": "마우스 추천하되 로지텍 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C11-5-P1",
+        "title": "레이저 마우스 충전 케이블",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-5-P2",
+        "title": "레이저 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-5-P3",
+        "title": "로지텍 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-5-P4",
+        "title": "마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-5-P5",
+        "title": "레이저 마우스 무선",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-6",
+    "query": "로지텍 마우스 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C11-6-P1",
+        "title": "로지텍 마우스 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-6-P2",
+        "title": "로지텍 마우스 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-6-P3",
+        "title": "로지텍 마우스 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-6-P4",
+        "title": "로지텍 마우스",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-6-P5",
+        "title": "로지텍 마우스 충전 케이블 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-7",
+    "query": "로지텍 마우스 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C11-7-P1",
+        "title": "로지텍 마우스용 마우스 충전 케이블 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-7-P2",
+        "title": "로지텍 마우스 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-7-P3",
+        "title": "레이저 마우스 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-7-P4",
+        "title": "마우스 본품 + 마우스 충전 케이블 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-7-P5",
+        "title": "로지텍 마우스 본품 + 마우스 충전 케이블 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C11-8",
+    "query": "마우스에서 무선 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C11-8-P1",
+        "title": "레이저 마우스 무선",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-8-P2",
+        "title": "레이저 마우스",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-8-P3",
+        "title": "로지텍 마우스 충전 케이블 무선",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-8-P4",
+        "title": "로지텍 마우스 무선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C11-8-P5",
+        "title": "로지텍 마우스 유선",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-1",
+    "query": "크록스 슬리퍼 찾아줘",
+    "candidates": [
+      {
+        "id": "C31-1-P1",
+        "title": "크록스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-1-P2",
+        "title": "크록스 슬리퍼 장식",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-1-P3",
+        "title": "아디다스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-1-P4",
+        "title": "크록스 슬리퍼 사이즈 260mm",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-1-P5",
+        "title": "슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-2",
+    "query": "크록스 슬리퍼 중 사이즈 260mm 사양으로 골라줘",
+    "candidates": [
+      {
+        "id": "C31-2-P1",
+        "title": "크록스 슬리퍼 사이즈 240mm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-2-P2",
+        "title": "크록스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-2-P3",
+        "title": "아디다스 슬리퍼 사이즈 260mm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-2-P4",
+        "title": "크록스 슬리퍼 장식 사이즈 260mm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-2-P5",
+        "title": "크록스 슬리퍼 사이즈 260mm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-3",
+    "query": "크록스 슬리퍼에 쓸 슬리퍼 장식만 보여줘",
+    "candidates": [
+      {
+        "id": "C31-3-P1",
+        "title": "아디다스 슬리퍼 전용 슬리퍼 장식",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-3-P2",
+        "title": "슬리퍼용 슬리퍼 장식",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-3-P3",
+        "title": "크록스 슬리퍼용 무관한 부품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-3-P4",
+        "title": "크록스 슬리퍼용 슬리퍼 장식",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-3-P5",
+        "title": "크록스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-4",
+    "query": "슬리퍼 10만원 이하로 찾아줘",
+    "candidates": [
+      {
+        "id": "C31-4-P1",
+        "title": "아디다스 슬리퍼",
+        "price_krw": 90000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-4-P2",
+        "title": "크록스 슬리퍼 장식",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-4-P3",
+        "title": "크록스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-4-P4",
+        "title": "크록스 슬리퍼",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-4-P5",
+        "title": "크록스 슬리퍼",
+        "price_krw": null,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-5",
+    "query": "슬리퍼 추천하되 크록스 브랜드는 제외해줘",
+    "candidates": [
+      {
+        "id": "C31-5-P1",
+        "title": "아디다스 슬리퍼 장식",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-5-P2",
+        "title": "아디다스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-5-P3",
+        "title": "크록스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-5-P4",
+        "title": "슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-5-P5",
+        "title": "아디다스 슬리퍼 사이즈 260mm",
+        "price_krw": 70000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-6",
+    "query": "크록스 슬리퍼 신품만, 중고는 제외해줘",
+    "candidates": [
+      {
+        "id": "C31-6-P1",
+        "title": "크록스 슬리퍼 신품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-6-P2",
+        "title": "크록스 슬리퍼 중고",
+        "price_krw": 30000,
+        "condition": "used",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-6-P3",
+        "title": "크록스 슬리퍼 리퍼",
+        "price_krw": 40000,
+        "condition": "refurbished",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-6-P4",
+        "title": "크록스 슬리퍼",
+        "price_krw": 60000,
+        "condition": null,
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-6-P5",
+        "title": "크록스 슬리퍼 장식 신품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-7",
+    "query": "크록스 슬리퍼 본품을 사고 싶어. 사은품이 같이 와도 돼",
+    "candidates": [
+      {
+        "id": "C31-7-P1",
+        "title": "크록스 슬리퍼용 슬리퍼 장식 단품",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-7-P2",
+        "title": "크록스 슬리퍼 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-7-P3",
+        "title": "아디다스 슬리퍼 본품",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-7-P4",
+        "title": "슬리퍼 본품 + 슬리퍼 장식 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-7-P5",
+        "title": "크록스 슬리퍼 본품 + 슬리퍼 장식 증정",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  },
+  {
+    "id": "C31-8",
+    "query": "슬리퍼에서 사이즈 260mm 조건과 10만원 이하 가격을 동시에 충족하는 것",
+    "candidates": [
+      {
+        "id": "C31-8-P1",
+        "title": "아디다스 슬리퍼 사이즈 260mm",
+        "price_krw": 120000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-8-P2",
+        "title": "아디다스 슬리퍼",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-8-P3",
+        "title": "크록스 슬리퍼 장식 사이즈 260mm",
+        "price_krw": 10000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-8-P4",
+        "title": "크록스 슬리퍼 사이즈 260mm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      },
+      {
+        "id": "C31-8-P5",
+        "title": "크록스 슬리퍼 사이즈 240mm",
+        "price_krw": 60000,
+        "condition": "new",
+        "source": "synthetic_fixture"
+      }
+    ]
+  }
+]

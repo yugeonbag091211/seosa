@@ -195,19 +195,17 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
   });
 
   /* ================================================================ */
-  section('E. 용량 (256GB — 다른 용량은 NEAR, 유지되지만 라벨)');
+  section('E. 명시한 용량과 다른 후보는 제외');
   {
-    // 용량은 NEAR tier 라서 SIBLING 필터에 걸리지 않는다 — 라벨은 붙는다.
+    // 용량이 명시되면 다른 용량은 NEAR 대안 카드로 내지 않는다.
     feed = [
       item('s1', 'Apple MacBook Air M4 13 256GB 스페이스블랙', 1690000),
       item('s2', 'Apple MacBook Air M4 13 512GB 미드나이트', 1990000)
     ];
     const r = await ask({ question: '맥북 에어 M4 256GB 추천', chatHistory: [{ role: 'user', text: '맥북 에어 M4 256GB 추천' }] });
     const by = Object.fromEntries(r.cards.map(c => [c.productId, c]));
-    ok(by.s1 && by.s2, '256GB·512GB 둘 다 카드에 있다 (NEAR 는 카드에 유지)', Object.keys(by));
-    ok(by.s1 && !by.s1.identityNote && by.s2 && /용량/.test(String(by.s2.identityNote || '')),
-      '요청한 용량은 라벨 없음, 다른 용량(512GB)에 「용량 다름」 라벨',
-      { s1: by.s1 && by.s1.identityNote, s2: by.s2 && by.s2.identityNote });
+    ok(by.s1 && !by.s2, '요청한 256GB만 카드에 있고 다른 용량은 제외한다', Object.keys(by));
+    ok(by.s1 && !by.s1.identityNote, '요청한 용량의 카드에는 불일치 라벨이 없다', by.s1 && by.s1.identityNote);
   }
 
   /* ================================================================ */
@@ -235,8 +233,8 @@ async function auditNoContamination({ question, feedItems, siblingPattern, exact
     ];
     const question = '갤럭시 S26+ 512GB 실버 새제품 100만원 이하';
     const r = await ask({ question, chatHistory: [{ role: 'user', text: question }] });
-    ok(r.cards.length === 0 && /예산|100만원/.test(r.text),
-      '같은 모델의 후보가 모두 예산을 넘으면 예산 초과 안내만 한다', { cards: r.cards.map(c => c.title), text: r.text.slice(0, 180) });
+    ok(r.cards.length === 0 && /조건.*찾지 못/.test(r.text),
+      '요청한 512GB가 없으면 다른 용량을 근거로 예산을 단정하지 않는다', { cards: r.cards.map(c => c.title), text: r.text.slice(0, 180) });
     ok(!r.cards.some(c => /Galaxy Buds3|갤럭시 버즈3/i.test(c.title)),
       '저렴한 Galaxy Buds 후보가 Galaxy S26 검색에 섞이지 않는다', r.cards.map(c => c.title));
     ok(!/Galaxy Buds3|갤럭시 버즈3/i.test(r.text),

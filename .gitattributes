@@ -1,0 +1,3 @@
+# Preregistered evaluation hashes cover exact file bytes.
+/reports/codex-independent-20261116/*-questions.json -text
+/reports/codex-independent-20261116/*-answers.json -text

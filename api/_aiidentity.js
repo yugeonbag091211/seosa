@@ -1350,7 +1350,7 @@ function brandOf(word, compound) {
  */
 const PICK_FRAME_WORDS = new Set(['제품', '상품', '물건', '모델', '버전', '에디션', '시리즈', '라인', '브랜드', '메이커', '제조사', '회사',
   '거', '것', '걸', '꺼', '껄', '쪽']);
-const SPEC_HEAD_WORDS = new Set(['칩', '칩셋', '프로세서', 'cpu', '램', 'ram', '메모리', '저장공간', '스토리지', '용량',
+const SPEC_HEAD_WORDS = new Set(['칩', '칩셋', '프로세서', 'cpu', '램', 'ram', '메모리', 'ssd', 'hdd', '저장공간', '스토리지', '용량',
   '색', '색상', '색깔', '컬러', '화면', '디스플레이']);
 
 /*
@@ -1469,7 +1469,8 @@ function refinementOf(text) {
    */
   const pickedSpec = new Set(posWords.map(splitPickParticle).filter(x => x.particle).map(x => stripJosa(norm(x.stem)))
     .filter(n => SPEC_HEAD_WORDS.has(n)));
-  const specWord = i => pickedSpec.has(toks[i]) || pickedSpec.has(toks[i + 1] || '');
+  const specWord = i => pickedSpec.has(toks[i]) || pickedSpec.has(toks[i + 1] || '')
+    || (SPEC_HEAD_WORDS.has(toks[i]) && (slots[i - 1] === 'storage' || slots[i + 1] === 'storage'));
   const nameWord = (t, i) => slots[i] === 'word' && !(/^[a-z]{1,2}$/.test(t)) && !PICK_FRAME_WORDS.has(t) && !specWord(i);
   const product = toks.some((t, i) => (nameWord(t, i) && !brands.has(t) && !picked.has(t) && !featureHit(t)) || categoryNounOf(t))
     || (slots.includes('anchor') && toks.some((t, i) => nameWord(t, i) && !picked.has(t)));
@@ -1484,6 +1485,14 @@ function mergeRefinement(base, refinementText, opts) {
   const optionsOnly = !!(opts && opts.optionsOnly);
   const baseToks = String(base || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   const info = refinementOf(refinementText);
+  // Independently fold explicitly typed memory and storage in a combined turn.
+  const pairRe = /(\d+(?:\.\d+)?\s*(?:gb|tb|기가|테라))\s*(ram|램|메모리|ssd|hdd|저장공간|스토리지)(?:으로|로|만)?/gi;
+  const pairs = [...info.positive.matchAll(pairRe)];
+  const remainder = info.positive.replace(pairRe, '').replace(/[\s,·+]/g, '');
+  if (pairs.length === 2 && !remainder && pairs.some(p => /^(?:ram|램|메모리)$/i.test(p[2]))
+      && pairs.some(p => /^(?:ssd|hdd|저장공간|스토리지)$/i.test(p[2]))) {
+    return pairs.reduce((current, pair) => mergeRefinement(current, pair[1] + ' ' + pair[2] + '로', opts), baseToks.join(' '));
+  }
   // 붙은 조사·물음 꼬리는 뗀다 ("3세대는?" → 3세대, "3S로" → 3S, "블랙으로" → 블랙, "칩으로" → 칩, "삼성으로만" → 삼성).
   const add = info.positive.replace(MONEY_TEXT_RE, ' ').replace(/[?？!.,]/g, ' ').replace(/\s+/g, ' ').trim().split(' ')
     .map(w => {
@@ -1532,7 +1541,34 @@ function mergeRefinement(base, refinementText, opts) {
   };
   const pick = slot => add.filter((w, i) => addSlots[i] === slot);
   replaceSlot('variant', pick('variant').concat(pick('base')));
-  replaceSlot('storage', pick('storage'));
+  // RAM and storage can coexist and both use GB. Replace only the named
+  // specification, retaining the other one and its cue across future turns.
+  const memoryCue = /^(?:ram|램|메모리)$/i;
+  const diskCue = /^(?:ssd|hdd|저장공간|스토리지|용량)$/i;
+  const incomingMemory = /(?:\bram\b|램|메모리)/i.test(info.positive);
+  const incomingDisk = /(?:\bssd\b|\bhdd\b|저장공간|스토리지)/i.test(info.positive);
+  const incomingCapacity = pick('storage');
+  if (incomingCapacity.length && incomingMemory !== incomingDisk) {
+    const target = incomingMemory ? 'memory' : 'disk';
+    const remove = new Set();
+    out.forEach((w, i) => {
+      if (slotOfRaw(w) !== 'storage') return;
+      const next = out[i + 1] || '';
+      const prev = out[i - 1] || '';
+      const amount = /^(\d+(?:\.\d+)?)\s*(gb|tb|기가|테라)/i.exec(w);
+      const priorCueIsOurs = i < 2 || slotOfRaw(out[i - 2]) !== 'storage';
+      const kind = memoryCue.test(next) ? 'memory' : diskCue.test(next) ? 'disk'
+        : priorCueIsOurs && memoryCue.test(prev) ? 'memory'
+        : priorCueIsOurs && diskCue.test(prev) ? 'disk'
+        : amount && (amount[2].toLowerCase() === 'tb' || Number(amount[1]) >= 64) ? 'disk' : 'memory';
+      if (kind !== target) return;
+      remove.add(i);
+      if ((kind === 'memory' ? memoryCue : diskCue).test(next)) remove.add(i + 1);
+      if (priorCueIsOurs && (kind === 'memory' ? memoryCue : diskCue).test(prev)) remove.add(i - 1);
+    });
+    out = out.filter((_, i) => !remove.has(i));
+    out.push(...incomingCapacity, incomingMemory ? 'RAM' : 'SSD');
+  } else replaceSlot('storage', incomingCapacity);
   replaceSlot('color', pick('color'));
   replaceSlot('condition', pick('condition'));
   replaceSlot('size', pick('size'));

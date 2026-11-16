@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "registered_at_utc": "2026-11-16T04:01:28.569Z",
+  "purpose": "Synthetic fixture evaluation, not production catalog or provider measurement.",
+  "split": "25 disjoint categories development, 15 holdout, eight scenarios each; deterministic split.",
+  "counts": {
+    "development": 200,
+    "holdout": 120,
+    "total": 320,
+    "candidates_per_question": 5
+  },
+  "files": {
+    "development-questions.json": {
+      "sha256": "52c0eedc4ab0a83adf0cb130c64d436672dce0f801500e0111507d1c42d3f305",
+      "count": 200
+    },
+    "development-answers.json": {
+      "sha256": "44794f1b0dd20bcc6a9395634d9fd491b18f972442471318ed8eb054b08e6db3",
+      "count": 200
+    },
+    "holdout-questions.json": {
+      "sha256": "82a314dac0d69823aff672f6bf1b68ecb56e3e8e76b7608832c6a33b31907ae4",
+      "count": 120
+    },
+    "holdout-answers.json": {
+      "sha256": "a810905ebb7641646413a6cd5c7623294d5981d86e0144c39ce4837ffe3b60a9",
+      "count": 120
+    }
+  },
+  "scoring": {
+    "pass": "Candidate evidence establishes all stated requirements.",
+    "fail": "Evidence contradicts at least one requirement.",
+    "unverified": "Required evidence absent.",
+    "precision_at_5": "Report PASS / displayed candidates with UNVERIFIED separately; never count unknown as correct.",
+    "recall_at_10": "Only computable against fixture pool; never claim catalog or production recall.",
+    "zero_results": "Only measure while exercising actual retrieval, not preselected pools."
+  },
+  "rules": [
+    "Freeze all four files and record hashes before modifying implementation.",
+    "Do not inspect holdout answers during development.",
+    "Fix implementation and record commit before opening holdout answers.",
+    "After holdout-driven changes use a fresh independent holdout.",
+    "Synthetic titles and prices are not real inventory or price evidence."
+  ]
+}

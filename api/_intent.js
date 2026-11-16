@@ -1261,7 +1261,7 @@ function classify(text, hist) {
     intent = 'C';
   const refinement = ownQuery && !contextualFollowup && intent !== 'A' && intent !== 'B'
     && Array.isArray(hist) && hist.length > 0 && refineProbe.refinement
-    && (!excludesBrand || choosesBrand);
+    && (!excludesBrand || choosesBrand || refineProbe.brands.length === 0);
   /*
    * 식별 구절 — 검색어는 다섯 낱말·40자로 잘리지만, 상품 식별(api/_aiidentity.js)은 사용자가
    * 실제로 말한 상품 구절 전체로 한다. 잘린 검색어로 계약을 만들면 "MX Master 3S" 의 3S 가
@@ -1358,6 +1358,7 @@ function classify(text, hist) {
     intent, query, source: 'heuristic', confidence, contextualFollowup,
     // 검색어가 이번 발화만으로 나왔는가 / 앞 대화 상태(누적 옵션 포함)에서 나왔는가 — api/ai.js resolveIntent 가 쓴다.
     ownQuery: ownQuery && !stateQuery, stateQuery, refinement: !!refinement,
+    brandExclusionFollowup: !!(excludesBrand && stateQuery),
     aboutPrevious,
     wantsAlternative: ['C', 'D'].includes(intent) && ALTERNATIVE_RE.test(s) && AIID.productEvidence(positiveSpan) === 0,
     identityText: query ? String(identityText || '').slice(0, 200) : '',

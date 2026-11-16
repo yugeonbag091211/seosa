@@ -1216,7 +1216,7 @@ async function resolveIntent(q, hist, view, budget, guest, intentHist, opts) {
    * 분류하면 검색 없이 말로만 답하고 카드가 사라졌다(2026-10-12 Stage A 실측). 앞 대화에 상품이
    * 있고 이번 말이 그 상품의 정정일 뿐이라는 것은 결정적으로 판정된다 — 쇼핑 경로를 유지한다.
    */
-  if (viaLlm && (viaLlm.intent === 'A' || viaLlm.intent === 'B') && det && (det.refinement || det.conditionFollowup)
+  if (viaLlm && (viaLlm.intent === 'A' || viaLlm.intent === 'B') && det && (det.refinement || det.conditionFollowup || det.brandExclusionFollowup)
       && det.stateQuery && det.query && needsShopContext(det.intent)) {
     return det;
   }
@@ -1544,7 +1544,13 @@ function gateAiCandidates(identityQuery, items) {
   if (!list.length) return list;
   try {
     // identityOnly — 부속·다른 기기·다른 모델 번호/세대/변형 같은 구조 판정만. 용량·색·예산·상태는 AI 가 직접 다룬다.
-    const gate = require('./_product-gate').gateItems(String(identityQuery || ''), list, { identityOnly: true });
+    const productGate = require('./_product-gate');
+    // Preserve potentially useful alternatives, but never present a known RAM
+    // or storage contradiction as a match. Missing memory remains unknown.
+    const full = productGate.gateItems(String(identityQuery || ''), list);
+    const ramConflict = new Set(full.rejected.filter(r => r.hard.some(h =>
+      /^(?:memory_mismatch|capacity_mismatch):/.test(h))).map(r => r.item));
+    const gate = productGate.gateItems(String(identityQuery || ''), list.filter(item => !ramConflict.has(item)), { identityOnly: true });
     if (gate.rejected.length) {
       console.log(`[ai] 정체성 관문 제외 ${gate.rejected.length}/${list.length}건 — `
         + gate.rejected.slice(0, 3).map(r => `${String(r.item.title).slice(0, 20)}[${r.hard[0]}]`).join(' · '));
@@ -5303,6 +5309,19 @@ module.exports = async function handler(req, res) {
       ? FB.collectExcludes(q, hist)
       : [];
 
+    // The signed state is authoritative for recognized brand exclusions:
+    // it also records explicit reversal and a change of product kind.
+    const activeBrands = (conv.next && conv.next.excludedBrands) || [];
+    for (let i = excludes.length - 1; i >= 0; i--) {
+      const e = excludes[i];
+      if (!AIID.namesBrand(e.name)) continue;
+      if (!activeBrands.some(name => name.toLowerCase() === e.name.toLowerCase())) excludes.splice(i, 1);
+      else e.hard = true;
+    }
+    for (const name of activeBrands) {
+      if (!excludes.some(e => e.name.toLowerCase() === name.toLowerCase()))
+        excludes.push({ name, hard: true, source: 'conversation', evidence: name + ' 제외' });
+    }
     const wanted = (!intent || needsShopContext(intent)) ? collectWantedFeatures(q, hist) : [];
 
     /*
@@ -7430,6 +7449,13 @@ module.exports = async function handler(req, res) {
       };
       if (guest) body.guest = true;
       return res.json(withTurnSig(body));
+    }
+
+    if (searchState === 'empty' && !cards.length) {
+      const body = { text: '조회한 상품 중 요청하신 조건에 맞는 상품을 찾지 못했어요.',
+        intent: resolvedCanonicalIntent, degraded: true };
+      if (guest) body.guest = true;
+      return res.json(withTurnSig(keepPrevRef(body)));
     }
 
     if (providerExhausted) {

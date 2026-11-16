@@ -353,22 +353,13 @@ check('아침 전체 수집 크론은 재확인으로 새지 않는다 (쿼터 �
   assert.strictEqual(volatileSlotFor({ query: { volatile: 'morning' }, headers: {} }), '');
 });
 
-check('크론 표현식이 vercel.json 과 일치한다', () => {
+check('Vercel 예약은 운영 중단 상태이고 재확인 경로는 보존된다', () => {
+  // 2026-11-14 운영 정책: 예약을 의도적으로 모두 중단했다. 재활성화는 별도 승인 사항이다.
   const crons = require('../vercel.json').crons;
-  const paths = Object.fromEntries(crons.map(c => [c.path, c.schedule]));
-  assert.strictEqual(paths['/api/volatile-noon'], '5 3 * * *', '점심 12:05 KST');
-  assert.strictEqual(paths['/api/volatile-evening'], '5 10 * * *', '저녁 19:05 KST');
-  assert.strictEqual(paths['/api/cron'], '0 18 * * *', '아침 수집은 그대로');
-  for (const [schedule, slot] of Object.entries(VOLATILE_SCHEDULES)) {
-    assert.ok(Object.values(paths).includes(schedule),
-      `핸들러가 아는 ${slot} 예약(${schedule}) 이 vercel.json 에 없다`);
-  }
-  // Hobby 플랜은 하루 1회만 허용한다 — 분/시가 * 이면 배포가 실패한다.
-  for (const c of crons) {
-    const [min, hour] = c.schedule.split(' ');
-    assert.ok(!min.includes('*') && !hour.includes('*') && !min.includes(',') && !hour.includes(','),
-      `Vercel Hobby 는 하루 1회만 허용한다: ${c.path} ${c.schedule}`);
-  }
+  assert.deepStrictEqual(crons, [], '중단된 Vercel 예약을 임의로 재활성화하지 않는다');
+  // 재개시 쓰는 슬롯의 의미는 스케줄 설정이 없어도 핸들러에서 유지한다.
+  assert.strictEqual(VOLATILE_SCHEDULES['5 3 * * *'], 'noon');
+  assert.strictEqual(VOLATILE_SCHEDULES['5 10 * * *'], 'evening');
   // 재확인 트리거는 rewrite 를 거쳐 /api/cron 으로 간다 (새 함수를 만들지 않는다).
   const rewrites = require('../vercel.json').rewrites;
   for (const slot of ['noon', 'evening']) {

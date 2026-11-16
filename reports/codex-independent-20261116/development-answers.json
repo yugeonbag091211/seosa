@@ -1,0 +1,6002 @@
+[
+  {
+    "id": "C02-1",
+    "judgments": [
+      {
+        "candidate_id": "C02-1-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C02-1-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C02-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C02-1-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C02-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C02-2",
+    "judgments": [
+      {
+        "candidate_id": "C02-2-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C02-2-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C02-2-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C02-2-P4",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C02-2-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C02-3",
+    "judgments": [
+      {
+        "candidate_id": "C02-3-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C02-3-P2",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C02-3-P3",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C02-3-P4",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C02-3-P5",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      }
+    ]
+  },
+  {
+    "id": "C02-4",
+    "judgments": [
+      {
+        "candidate_id": "C02-4-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C02-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C02-4-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C02-4-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C02-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C02-5",
+    "judgments": [
+      {
+        "candidate_id": "C02-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C02-5-P2",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C02-5-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C02-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C02-5-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C02-6",
+    "judgments": [
+      {
+        "candidate_id": "C02-6-P1",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C02-6-P2",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C02-6-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C02-6-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C02-6-P5",
+        "verdict": "PASS",
+        "reason": "new condition"
+      }
+    ]
+  },
+  {
+    "id": "C02-7",
+    "judgments": [
+      {
+        "candidate_id": "C02-7-P1",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C02-7-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C02-7-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C02-7-P4",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C02-7-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C02-8",
+    "judgments": [
+      {
+        "candidate_id": "C02-8-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C02-8-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C02-8-P3",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C02-8-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C02-8-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C35-1",
+    "judgments": [
+      {
+        "candidate_id": "C35-1-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C35-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C35-1-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C35-1-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C35-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C35-2",
+    "judgments": [
+      {
+        "candidate_id": "C35-2-P1",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C35-2-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C35-2-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C35-2-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C35-2-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C35-3",
+    "judgments": [
+      {
+        "candidate_id": "C35-3-P1",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C35-3-P2",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C35-3-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C35-3-P4",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C35-3-P5",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      }
+    ]
+  },
+  {
+    "id": "C35-4",
+    "judgments": [
+      {
+        "candidate_id": "C35-4-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C35-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C35-4-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C35-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C35-4-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C35-5",
+    "judgments": [
+      {
+        "candidate_id": "C35-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C35-5-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C35-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C35-5-P4",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C35-5-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C35-6",
+    "judgments": [
+      {
+        "candidate_id": "C35-6-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C35-6-P2",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C35-6-P3",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C35-6-P4",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C35-6-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      }
+    ]
+  },
+  {
+    "id": "C35-7",
+    "judgments": [
+      {
+        "candidate_id": "C35-7-P1",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C35-7-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C35-7-P3",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C35-7-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C35-7-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C35-8",
+    "judgments": [
+      {
+        "candidate_id": "C35-8-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C35-8-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C35-8-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C35-8-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C35-8-P5",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      }
+    ]
+  },
+  {
+    "id": "C04-1",
+    "judgments": [
+      {
+        "candidate_id": "C04-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C04-1-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C04-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C04-1-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C04-1-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C04-2",
+    "judgments": [
+      {
+        "candidate_id": "C04-2-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C04-2-P2",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C04-2-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C04-2-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C04-2-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C04-3",
+    "judgments": [
+      {
+        "candidate_id": "C04-3-P1",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C04-3-P2",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C04-3-P3",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C04-3-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C04-3-P5",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      }
+    ]
+  },
+  {
+    "id": "C04-4",
+    "judgments": [
+      {
+        "candidate_id": "C04-4-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C04-4-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C04-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C04-4-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C04-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C04-5",
+    "judgments": [
+      {
+        "candidate_id": "C04-5-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C04-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C04-5-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C04-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C04-5-P5",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      }
+    ]
+  },
+  {
+    "id": "C04-6",
+    "judgments": [
+      {
+        "candidate_id": "C04-6-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C04-6-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C04-6-P3",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C04-6-P4",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C04-6-P5",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      }
+    ]
+  },
+  {
+    "id": "C04-7",
+    "judgments": [
+      {
+        "candidate_id": "C04-7-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C04-7-P2",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C04-7-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C04-7-P4",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C04-7-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C04-8",
+    "judgments": [
+      {
+        "candidate_id": "C04-8-P1",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C04-8-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C04-8-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C04-8-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C04-8-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C05-1",
+    "judgments": [
+      {
+        "candidate_id": "C05-1-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C05-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C05-1-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C05-1-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C05-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C05-2",
+    "judgments": [
+      {
+        "candidate_id": "C05-2-P1",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C05-2-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C05-2-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C05-2-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C05-2-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C05-3",
+    "judgments": [
+      {
+        "candidate_id": "C05-3-P1",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C05-3-P2",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C05-3-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C05-3-P4",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C05-3-P5",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      }
+    ]
+  },
+  {
+    "id": "C05-4",
+    "judgments": [
+      {
+        "candidate_id": "C05-4-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C05-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C05-4-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C05-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C05-4-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C05-5",
+    "judgments": [
+      {
+        "candidate_id": "C05-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C05-5-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C05-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C05-5-P4",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C05-5-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C05-6",
+    "judgments": [
+      {
+        "candidate_id": "C05-6-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C05-6-P2",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C05-6-P3",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C05-6-P4",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C05-6-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      }
+    ]
+  },
+  {
+    "id": "C05-7",
+    "judgments": [
+      {
+        "candidate_id": "C05-7-P1",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C05-7-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C05-7-P3",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C05-7-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C05-7-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C05-8",
+    "judgments": [
+      {
+        "candidate_id": "C05-8-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C05-8-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C05-8-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C05-8-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C05-8-P5",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      }
+    ]
+  },
+  {
+    "id": "C26-1",
+    "judgments": [
+      {
+        "candidate_id": "C26-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C26-1-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C26-1-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C26-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C26-1-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C26-2",
+    "judgments": [
+      {
+        "candidate_id": "C26-2-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C26-2-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C26-2-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C26-2-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C26-2-P5",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      }
+    ]
+  },
+  {
+    "id": "C26-3",
+    "judgments": [
+      {
+        "candidate_id": "C26-3-P1",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C26-3-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C26-3-P3",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C26-3-P4",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C26-3-P5",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      }
+    ]
+  },
+  {
+    "id": "C26-4",
+    "judgments": [
+      {
+        "candidate_id": "C26-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C26-4-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C26-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C26-4-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C26-4-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      }
+    ]
+  },
+  {
+    "id": "C26-5",
+    "judgments": [
+      {
+        "candidate_id": "C26-5-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C26-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C26-5-P3",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C26-5-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C26-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C26-6",
+    "judgments": [
+      {
+        "candidate_id": "C26-6-P1",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C26-6-P2",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C26-6-P3",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C26-6-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C26-6-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C26-7",
+    "judgments": [
+      {
+        "candidate_id": "C26-7-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C26-7-P2",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C26-7-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C26-7-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C26-7-P5",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      }
+    ]
+  },
+  {
+    "id": "C26-8",
+    "judgments": [
+      {
+        "candidate_id": "C26-8-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C26-8-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C26-8-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C26-8-P4",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C26-8-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C29-1",
+    "judgments": [
+      {
+        "candidate_id": "C29-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C29-1-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C29-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C29-1-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C29-1-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C29-2",
+    "judgments": [
+      {
+        "candidate_id": "C29-2-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C29-2-P2",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C29-2-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C29-2-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C29-2-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C29-3",
+    "judgments": [
+      {
+        "candidate_id": "C29-3-P1",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C29-3-P2",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C29-3-P3",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C29-3-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C29-3-P5",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      }
+    ]
+  },
+  {
+    "id": "C29-4",
+    "judgments": [
+      {
+        "candidate_id": "C29-4-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C29-4-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C29-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C29-4-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C29-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C29-5",
+    "judgments": [
+      {
+        "candidate_id": "C29-5-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C29-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C29-5-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C29-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C29-5-P5",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      }
+    ]
+  },
+  {
+    "id": "C29-6",
+    "judgments": [
+      {
+        "candidate_id": "C29-6-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C29-6-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C29-6-P3",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C29-6-P4",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C29-6-P5",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      }
+    ]
+  },
+  {
+    "id": "C29-7",
+    "judgments": [
+      {
+        "candidate_id": "C29-7-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C29-7-P2",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C29-7-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C29-7-P4",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C29-7-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C29-8",
+    "judgments": [
+      {
+        "candidate_id": "C29-8-P1",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C29-8-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C29-8-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C29-8-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C29-8-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C28-1",
+    "judgments": [
+      {
+        "candidate_id": "C28-1-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C28-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C28-1-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C28-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C28-1-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C28-2",
+    "judgments": [
+      {
+        "candidate_id": "C28-2-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C28-2-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C28-2-P3",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C28-2-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C28-2-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C28-3",
+    "judgments": [
+      {
+        "candidate_id": "C28-3-P1",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C28-3-P2",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C28-3-P3",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C28-3-P4",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C28-3-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C28-4",
+    "judgments": [
+      {
+        "candidate_id": "C28-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C28-4-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C28-4-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C28-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C28-4-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C28-5",
+    "judgments": [
+      {
+        "candidate_id": "C28-5-P1",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C28-5-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C28-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C28-5-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C28-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C28-6",
+    "judgments": [
+      {
+        "candidate_id": "C28-6-P1",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C28-6-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C28-6-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C28-6-P4",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C28-6-P5",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      }
+    ]
+  },
+  {
+    "id": "C28-7",
+    "judgments": [
+      {
+        "candidate_id": "C28-7-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C28-7-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C28-7-P3",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C28-7-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C28-7-P5",
+        "verdict": "PASS",
+        "reason": "main product"
+      }
+    ]
+  },
+  {
+    "id": "C28-8",
+    "judgments": [
+      {
+        "candidate_id": "C28-8-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C28-8-P2",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C28-8-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C28-8-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C28-8-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C21-1",
+    "judgments": [
+      {
+        "candidate_id": "C21-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C21-1-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C21-1-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C21-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C21-1-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C21-2",
+    "judgments": [
+      {
+        "candidate_id": "C21-2-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C21-2-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C21-2-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C21-2-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C21-2-P5",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      }
+    ]
+  },
+  {
+    "id": "C21-3",
+    "judgments": [
+      {
+        "candidate_id": "C21-3-P1",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C21-3-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C21-3-P3",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C21-3-P4",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C21-3-P5",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      }
+    ]
+  },
+  {
+    "id": "C21-4",
+    "judgments": [
+      {
+        "candidate_id": "C21-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C21-4-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C21-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C21-4-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C21-4-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      }
+    ]
+  },
+  {
+    "id": "C21-5",
+    "judgments": [
+      {
+        "candidate_id": "C21-5-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C21-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C21-5-P3",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C21-5-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C21-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C21-6",
+    "judgments": [
+      {
+        "candidate_id": "C21-6-P1",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C21-6-P2",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C21-6-P3",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C21-6-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C21-6-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C21-7",
+    "judgments": [
+      {
+        "candidate_id": "C21-7-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C21-7-P2",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C21-7-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C21-7-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C21-7-P5",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      }
+    ]
+  },
+  {
+    "id": "C21-8",
+    "judgments": [
+      {
+        "candidate_id": "C21-8-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C21-8-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C21-8-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C21-8-P4",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C21-8-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C25-1",
+    "judgments": [
+      {
+        "candidate_id": "C25-1-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C25-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C25-1-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C25-1-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C25-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C25-2",
+    "judgments": [
+      {
+        "candidate_id": "C25-2-P1",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C25-2-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C25-2-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C25-2-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C25-2-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C25-3",
+    "judgments": [
+      {
+        "candidate_id": "C25-3-P1",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C25-3-P2",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C25-3-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C25-3-P4",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C25-3-P5",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      }
+    ]
+  },
+  {
+    "id": "C25-4",
+    "judgments": [
+      {
+        "candidate_id": "C25-4-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C25-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C25-4-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C25-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C25-4-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C25-5",
+    "judgments": [
+      {
+        "candidate_id": "C25-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C25-5-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C25-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C25-5-P4",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C25-5-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C25-6",
+    "judgments": [
+      {
+        "candidate_id": "C25-6-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C25-6-P2",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C25-6-P3",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C25-6-P4",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C25-6-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      }
+    ]
+  },
+  {
+    "id": "C25-7",
+    "judgments": [
+      {
+        "candidate_id": "C25-7-P1",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C25-7-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C25-7-P3",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C25-7-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C25-7-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C25-8",
+    "judgments": [
+      {
+        "candidate_id": "C25-8-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C25-8-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C25-8-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C25-8-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C25-8-P5",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      }
+    ]
+  },
+  {
+    "id": "C09-1",
+    "judgments": [
+      {
+        "candidate_id": "C09-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C09-1-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C09-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C09-1-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C09-1-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C09-2",
+    "judgments": [
+      {
+        "candidate_id": "C09-2-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C09-2-P2",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C09-2-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C09-2-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C09-2-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C09-3",
+    "judgments": [
+      {
+        "candidate_id": "C09-3-P1",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C09-3-P2",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C09-3-P3",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C09-3-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C09-3-P5",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      }
+    ]
+  },
+  {
+    "id": "C09-4",
+    "judgments": [
+      {
+        "candidate_id": "C09-4-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C09-4-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C09-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C09-4-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C09-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C09-5",
+    "judgments": [
+      {
+        "candidate_id": "C09-5-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C09-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C09-5-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C09-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C09-5-P5",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      }
+    ]
+  },
+  {
+    "id": "C09-6",
+    "judgments": [
+      {
+        "candidate_id": "C09-6-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C09-6-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C09-6-P3",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C09-6-P4",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C09-6-P5",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      }
+    ]
+  },
+  {
+    "id": "C09-7",
+    "judgments": [
+      {
+        "candidate_id": "C09-7-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C09-7-P2",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C09-7-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C09-7-P4",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C09-7-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C09-8",
+    "judgments": [
+      {
+        "candidate_id": "C09-8-P1",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C09-8-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C09-8-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C09-8-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C09-8-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C30-1",
+    "judgments": [
+      {
+        "candidate_id": "C30-1-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C30-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C30-1-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C30-1-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C30-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C30-2",
+    "judgments": [
+      {
+        "candidate_id": "C30-2-P1",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C30-2-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C30-2-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C30-2-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C30-2-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C30-3",
+    "judgments": [
+      {
+        "candidate_id": "C30-3-P1",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C30-3-P2",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C30-3-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C30-3-P4",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C30-3-P5",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      }
+    ]
+  },
+  {
+    "id": "C30-4",
+    "judgments": [
+      {
+        "candidate_id": "C30-4-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C30-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C30-4-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C30-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C30-4-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C30-5",
+    "judgments": [
+      {
+        "candidate_id": "C30-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C30-5-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C30-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C30-5-P4",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C30-5-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C30-6",
+    "judgments": [
+      {
+        "candidate_id": "C30-6-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C30-6-P2",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C30-6-P3",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C30-6-P4",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C30-6-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      }
+    ]
+  },
+  {
+    "id": "C30-7",
+    "judgments": [
+      {
+        "candidate_id": "C30-7-P1",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C30-7-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C30-7-P3",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C30-7-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C30-7-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C30-8",
+    "judgments": [
+      {
+        "candidate_id": "C30-8-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C30-8-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C30-8-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C30-8-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C30-8-P5",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      }
+    ]
+  },
+  {
+    "id": "C39-1",
+    "judgments": [
+      {
+        "candidate_id": "C39-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C39-1-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C39-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C39-1-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C39-1-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C39-2",
+    "judgments": [
+      {
+        "candidate_id": "C39-2-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C39-2-P2",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C39-2-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C39-2-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C39-2-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C39-3",
+    "judgments": [
+      {
+        "candidate_id": "C39-3-P1",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C39-3-P2",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C39-3-P3",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C39-3-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C39-3-P5",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      }
+    ]
+  },
+  {
+    "id": "C39-4",
+    "judgments": [
+      {
+        "candidate_id": "C39-4-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C39-4-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C39-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C39-4-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C39-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C39-5",
+    "judgments": [
+      {
+        "candidate_id": "C39-5-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C39-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C39-5-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C39-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C39-5-P5",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      }
+    ]
+  },
+  {
+    "id": "C39-6",
+    "judgments": [
+      {
+        "candidate_id": "C39-6-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C39-6-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C39-6-P3",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C39-6-P4",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C39-6-P5",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      }
+    ]
+  },
+  {
+    "id": "C39-7",
+    "judgments": [
+      {
+        "candidate_id": "C39-7-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C39-7-P2",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C39-7-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C39-7-P4",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C39-7-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C39-8",
+    "judgments": [
+      {
+        "candidate_id": "C39-8-P1",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C39-8-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C39-8-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C39-8-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C39-8-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C14-1",
+    "judgments": [
+      {
+        "candidate_id": "C14-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C14-1-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C14-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C14-1-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C14-1-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C14-2",
+    "judgments": [
+      {
+        "candidate_id": "C14-2-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C14-2-P2",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C14-2-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C14-2-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C14-2-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C14-3",
+    "judgments": [
+      {
+        "candidate_id": "C14-3-P1",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C14-3-P2",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C14-3-P3",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C14-3-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C14-3-P5",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      }
+    ]
+  },
+  {
+    "id": "C14-4",
+    "judgments": [
+      {
+        "candidate_id": "C14-4-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C14-4-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C14-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C14-4-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C14-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C14-5",
+    "judgments": [
+      {
+        "candidate_id": "C14-5-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C14-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C14-5-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C14-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C14-5-P5",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      }
+    ]
+  },
+  {
+    "id": "C14-6",
+    "judgments": [
+      {
+        "candidate_id": "C14-6-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C14-6-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C14-6-P3",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C14-6-P4",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C14-6-P5",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      }
+    ]
+  },
+  {
+    "id": "C14-7",
+    "judgments": [
+      {
+        "candidate_id": "C14-7-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C14-7-P2",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C14-7-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C14-7-P4",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C14-7-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C14-8",
+    "judgments": [
+      {
+        "candidate_id": "C14-8-P1",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C14-8-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C14-8-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C14-8-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C14-8-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C13-1",
+    "judgments": [
+      {
+        "candidate_id": "C13-1-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C13-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C13-1-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C13-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C13-1-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C13-2",
+    "judgments": [
+      {
+        "candidate_id": "C13-2-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C13-2-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C13-2-P3",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C13-2-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C13-2-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C13-3",
+    "judgments": [
+      {
+        "candidate_id": "C13-3-P1",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C13-3-P2",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C13-3-P3",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C13-3-P4",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C13-3-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C13-4",
+    "judgments": [
+      {
+        "candidate_id": "C13-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C13-4-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C13-4-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C13-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C13-4-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C13-5",
+    "judgments": [
+      {
+        "candidate_id": "C13-5-P1",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C13-5-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C13-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C13-5-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C13-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C13-6",
+    "judgments": [
+      {
+        "candidate_id": "C13-6-P1",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C13-6-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C13-6-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C13-6-P4",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C13-6-P5",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      }
+    ]
+  },
+  {
+    "id": "C13-7",
+    "judgments": [
+      {
+        "candidate_id": "C13-7-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C13-7-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C13-7-P3",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C13-7-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C13-7-P5",
+        "verdict": "PASS",
+        "reason": "main product"
+      }
+    ]
+  },
+  {
+    "id": "C13-8",
+    "judgments": [
+      {
+        "candidate_id": "C13-8-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C13-8-P2",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C13-8-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C13-8-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C13-8-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C06-1",
+    "judgments": [
+      {
+        "candidate_id": "C06-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C06-1-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C06-1-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C06-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C06-1-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C06-2",
+    "judgments": [
+      {
+        "candidate_id": "C06-2-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C06-2-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C06-2-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C06-2-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C06-2-P5",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      }
+    ]
+  },
+  {
+    "id": "C06-3",
+    "judgments": [
+      {
+        "candidate_id": "C06-3-P1",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C06-3-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C06-3-P3",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C06-3-P4",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C06-3-P5",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      }
+    ]
+  },
+  {
+    "id": "C06-4",
+    "judgments": [
+      {
+        "candidate_id": "C06-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C06-4-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C06-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C06-4-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C06-4-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      }
+    ]
+  },
+  {
+    "id": "C06-5",
+    "judgments": [
+      {
+        "candidate_id": "C06-5-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C06-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C06-5-P3",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C06-5-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C06-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C06-6",
+    "judgments": [
+      {
+        "candidate_id": "C06-6-P1",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C06-6-P2",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C06-6-P3",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C06-6-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C06-6-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C06-7",
+    "judgments": [
+      {
+        "candidate_id": "C06-7-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C06-7-P2",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C06-7-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C06-7-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C06-7-P5",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      }
+    ]
+  },
+  {
+    "id": "C06-8",
+    "judgments": [
+      {
+        "candidate_id": "C06-8-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C06-8-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C06-8-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C06-8-P4",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C06-8-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C20-1",
+    "judgments": [
+      {
+        "candidate_id": "C20-1-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C20-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C20-1-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C20-1-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C20-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C20-2",
+    "judgments": [
+      {
+        "candidate_id": "C20-2-P1",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C20-2-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C20-2-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C20-2-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C20-2-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C20-3",
+    "judgments": [
+      {
+        "candidate_id": "C20-3-P1",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C20-3-P2",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C20-3-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C20-3-P4",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C20-3-P5",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      }
+    ]
+  },
+  {
+    "id": "C20-4",
+    "judgments": [
+      {
+        "candidate_id": "C20-4-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C20-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C20-4-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C20-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C20-4-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C20-5",
+    "judgments": [
+      {
+        "candidate_id": "C20-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C20-5-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C20-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C20-5-P4",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C20-5-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C20-6",
+    "judgments": [
+      {
+        "candidate_id": "C20-6-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C20-6-P2",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C20-6-P3",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C20-6-P4",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C20-6-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      }
+    ]
+  },
+  {
+    "id": "C20-7",
+    "judgments": [
+      {
+        "candidate_id": "C20-7-P1",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C20-7-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C20-7-P3",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C20-7-P4",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C20-7-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C20-8",
+    "judgments": [
+      {
+        "candidate_id": "C20-8-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C20-8-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C20-8-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C20-8-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C20-8-P5",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      }
+    ]
+  },
+  {
+    "id": "C16-1",
+    "judgments": [
+      {
+        "candidate_id": "C16-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C16-1-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C16-1-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C16-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C16-1-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C16-2",
+    "judgments": [
+      {
+        "candidate_id": "C16-2-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C16-2-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C16-2-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C16-2-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C16-2-P5",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      }
+    ]
+  },
+  {
+    "id": "C16-3",
+    "judgments": [
+      {
+        "candidate_id": "C16-3-P1",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C16-3-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C16-3-P3",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C16-3-P4",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C16-3-P5",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      }
+    ]
+  },
+  {
+    "id": "C16-4",
+    "judgments": [
+      {
+        "candidate_id": "C16-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C16-4-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C16-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C16-4-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C16-4-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      }
+    ]
+  },
+  {
+    "id": "C16-5",
+    "judgments": [
+      {
+        "candidate_id": "C16-5-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C16-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C16-5-P3",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C16-5-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C16-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C16-6",
+    "judgments": [
+      {
+        "candidate_id": "C16-6-P1",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C16-6-P2",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C16-6-P3",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C16-6-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C16-6-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C16-7",
+    "judgments": [
+      {
+        "candidate_id": "C16-7-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C16-7-P2",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C16-7-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C16-7-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C16-7-P5",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      }
+    ]
+  },
+  {
+    "id": "C16-8",
+    "judgments": [
+      {
+        "candidate_id": "C16-8-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C16-8-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C16-8-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C16-8-P4",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C16-8-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C01-1",
+    "judgments": [
+      {
+        "candidate_id": "C01-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C01-1-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C01-1-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C01-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C01-1-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C01-2",
+    "judgments": [
+      {
+        "candidate_id": "C01-2-P1",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C01-2-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C01-2-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C01-2-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C01-2-P5",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      }
+    ]
+  },
+  {
+    "id": "C01-3",
+    "judgments": [
+      {
+        "candidate_id": "C01-3-P1",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C01-3-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C01-3-P3",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C01-3-P4",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C01-3-P5",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      }
+    ]
+  },
+  {
+    "id": "C01-4",
+    "judgments": [
+      {
+        "candidate_id": "C01-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C01-4-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C01-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C01-4-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C01-4-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      }
+    ]
+  },
+  {
+    "id": "C01-5",
+    "judgments": [
+      {
+        "candidate_id": "C01-5-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C01-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C01-5-P3",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C01-5-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C01-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C01-6",
+    "judgments": [
+      {
+        "candidate_id": "C01-6-P1",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C01-6-P2",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C01-6-P3",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C01-6-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C01-6-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C01-7",
+    "judgments": [
+      {
+        "candidate_id": "C01-7-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C01-7-P2",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C01-7-P3",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C01-7-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C01-7-P5",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      }
+    ]
+  },
+  {
+    "id": "C01-8",
+    "judgments": [
+      {
+        "candidate_id": "C01-8-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C01-8-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C01-8-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C01-8-P4",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C01-8-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C22-1",
+    "judgments": [
+      {
+        "candidate_id": "C22-1-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C22-1-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C22-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C22-1-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C22-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C22-2",
+    "judgments": [
+      {
+        "candidate_id": "C22-2-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C22-2-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C22-2-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C22-2-P4",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C22-2-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C22-3",
+    "judgments": [
+      {
+        "candidate_id": "C22-3-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C22-3-P2",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C22-3-P3",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C22-3-P4",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C22-3-P5",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      }
+    ]
+  },
+  {
+    "id": "C22-4",
+    "judgments": [
+      {
+        "candidate_id": "C22-4-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C22-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C22-4-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C22-4-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C22-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C22-5",
+    "judgments": [
+      {
+        "candidate_id": "C22-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C22-5-P2",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C22-5-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C22-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C22-5-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C22-6",
+    "judgments": [
+      {
+        "candidate_id": "C22-6-P1",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C22-6-P2",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C22-6-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C22-6-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C22-6-P5",
+        "verdict": "PASS",
+        "reason": "new condition"
+      }
+    ]
+  },
+  {
+    "id": "C22-7",
+    "judgments": [
+      {
+        "candidate_id": "C22-7-P1",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C22-7-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C22-7-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C22-7-P4",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C22-7-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C22-8",
+    "judgments": [
+      {
+        "candidate_id": "C22-8-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C22-8-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C22-8-P3",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C22-8-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C22-8-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C07-1",
+    "judgments": [
+      {
+        "candidate_id": "C07-1-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C07-1-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C07-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C07-1-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C07-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C07-2",
+    "judgments": [
+      {
+        "candidate_id": "C07-2-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C07-2-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C07-2-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C07-2-P4",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C07-2-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C07-3",
+    "judgments": [
+      {
+        "candidate_id": "C07-3-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C07-3-P2",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C07-3-P3",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C07-3-P4",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C07-3-P5",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      }
+    ]
+  },
+  {
+    "id": "C07-4",
+    "judgments": [
+      {
+        "candidate_id": "C07-4-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C07-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C07-4-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C07-4-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C07-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C07-5",
+    "judgments": [
+      {
+        "candidate_id": "C07-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C07-5-P2",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C07-5-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C07-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C07-5-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C07-6",
+    "judgments": [
+      {
+        "candidate_id": "C07-6-P1",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C07-6-P2",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C07-6-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C07-6-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C07-6-P5",
+        "verdict": "PASS",
+        "reason": "new condition"
+      }
+    ]
+  },
+  {
+    "id": "C07-7",
+    "judgments": [
+      {
+        "candidate_id": "C07-7-P1",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C07-7-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C07-7-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C07-7-P4",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C07-7-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C07-8",
+    "judgments": [
+      {
+        "candidate_id": "C07-8-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C07-8-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C07-8-P3",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C07-8-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C07-8-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  },
+  {
+    "id": "C33-1",
+    "judgments": [
+      {
+        "candidate_id": "C33-1-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C33-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C33-1-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C33-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C33-1-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C33-2",
+    "judgments": [
+      {
+        "candidate_id": "C33-2-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C33-2-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C33-2-P3",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C33-2-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C33-2-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C33-3",
+    "judgments": [
+      {
+        "candidate_id": "C33-3-P1",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C33-3-P2",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C33-3-P3",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C33-3-P4",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C33-3-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C33-4",
+    "judgments": [
+      {
+        "candidate_id": "C33-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C33-4-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C33-4-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C33-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C33-4-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C33-5",
+    "judgments": [
+      {
+        "candidate_id": "C33-5-P1",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C33-5-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C33-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C33-5-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C33-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C33-6",
+    "judgments": [
+      {
+        "candidate_id": "C33-6-P1",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C33-6-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C33-6-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C33-6-P4",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C33-6-P5",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      }
+    ]
+  },
+  {
+    "id": "C33-7",
+    "judgments": [
+      {
+        "candidate_id": "C33-7-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C33-7-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C33-7-P3",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C33-7-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C33-7-P5",
+        "verdict": "PASS",
+        "reason": "main product"
+      }
+    ]
+  },
+  {
+    "id": "C33-8",
+    "judgments": [
+      {
+        "candidate_id": "C33-8-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C33-8-P2",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C33-8-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C33-8-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C33-8-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C03-1",
+    "judgments": [
+      {
+        "candidate_id": "C03-1-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C03-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C03-1-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C03-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C03-1-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C03-2",
+    "judgments": [
+      {
+        "candidate_id": "C03-2-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C03-2-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C03-2-P3",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C03-2-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C03-2-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C03-3",
+    "judgments": [
+      {
+        "candidate_id": "C03-3-P1",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C03-3-P2",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C03-3-P3",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C03-3-P4",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C03-3-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C03-4",
+    "judgments": [
+      {
+        "candidate_id": "C03-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C03-4-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C03-4-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C03-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C03-4-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C03-5",
+    "judgments": [
+      {
+        "candidate_id": "C03-5-P1",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C03-5-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C03-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C03-5-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C03-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C03-6",
+    "judgments": [
+      {
+        "candidate_id": "C03-6-P1",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C03-6-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C03-6-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C03-6-P4",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C03-6-P5",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      }
+    ]
+  },
+  {
+    "id": "C03-7",
+    "judgments": [
+      {
+        "candidate_id": "C03-7-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C03-7-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C03-7-P3",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C03-7-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C03-7-P5",
+        "verdict": "PASS",
+        "reason": "main product"
+      }
+    ]
+  },
+  {
+    "id": "C03-8",
+    "judgments": [
+      {
+        "candidate_id": "C03-8-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C03-8-P2",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C03-8-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C03-8-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C03-8-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C18-1",
+    "judgments": [
+      {
+        "candidate_id": "C18-1-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C18-1-P2",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C18-1-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C18-1-P4",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C18-1-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C18-2",
+    "judgments": [
+      {
+        "candidate_id": "C18-2-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C18-2-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C18-2-P3",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C18-2-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C18-2-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C18-3",
+    "judgments": [
+      {
+        "candidate_id": "C18-3-P1",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C18-3-P2",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C18-3-P3",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C18-3-P4",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C18-3-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      }
+    ]
+  },
+  {
+    "id": "C18-4",
+    "judgments": [
+      {
+        "candidate_id": "C18-4-P1",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C18-4-P2",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C18-4-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C18-4-P4",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C18-4-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C18-5",
+    "judgments": [
+      {
+        "candidate_id": "C18-5-P1",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C18-5-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C18-5-P3",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C18-5-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C18-5-P5",
+        "verdict": "PASS",
+        "reason": "different brand"
+      }
+    ]
+  },
+  {
+    "id": "C18-6",
+    "judgments": [
+      {
+        "candidate_id": "C18-6-P1",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C18-6-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C18-6-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C18-6-P4",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C18-6-P5",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      }
+    ]
+  },
+  {
+    "id": "C18-7",
+    "judgments": [
+      {
+        "candidate_id": "C18-7-P1",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C18-7-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C18-7-P3",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C18-7-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C18-7-P5",
+        "verdict": "PASS",
+        "reason": "main product"
+      }
+    ]
+  },
+  {
+    "id": "C18-8",
+    "judgments": [
+      {
+        "candidate_id": "C18-8-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C18-8-P2",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C18-8-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C18-8-P4",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C18-8-P5",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      }
+    ]
+  },
+  {
+    "id": "C34-1",
+    "judgments": [
+      {
+        "candidate_id": "C34-1-P1",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C34-1-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C34-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C34-1-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C34-1-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C34-2",
+    "judgments": [
+      {
+        "candidate_id": "C34-2-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C34-2-P2",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C34-2-P3",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C34-2-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C34-2-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C34-3",
+    "judgments": [
+      {
+        "candidate_id": "C34-3-P1",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C34-3-P2",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C34-3-P3",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      },
+      {
+        "candidate_id": "C34-3-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C34-3-P5",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      }
+    ]
+  },
+  {
+    "id": "C34-4",
+    "judgments": [
+      {
+        "candidate_id": "C34-4-P1",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C34-4-P2",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C34-4-P3",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C34-4-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C34-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C34-5",
+    "judgments": [
+      {
+        "candidate_id": "C34-5-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C34-5-P2",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C34-5-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C34-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C34-5-P5",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      }
+    ]
+  },
+  {
+    "id": "C34-6",
+    "judgments": [
+      {
+        "candidate_id": "C34-6-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C34-6-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C34-6-P3",
+        "verdict": "PASS",
+        "reason": "new condition"
+      },
+      {
+        "candidate_id": "C34-6-P4",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C34-6-P5",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      }
+    ]
+  },
+  {
+    "id": "C34-7",
+    "judgments": [
+      {
+        "candidate_id": "C34-7-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C34-7-P2",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C34-7-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C34-7-P4",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C34-7-P5",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      }
+    ]
+  },
+  {
+    "id": "C34-8",
+    "judgments": [
+      {
+        "candidate_id": "C34-8-P1",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C34-8-P2",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C34-8-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C34-8-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C34-8-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C12-1",
+    "judgments": [
+      {
+        "candidate_id": "C12-1-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C12-1-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C12-1-P3",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      },
+      {
+        "candidate_id": "C12-1-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C12-1-P5",
+        "verdict": "PASS",
+        "reason": "requested brand and type"
+      }
+    ]
+  },
+  {
+    "id": "C12-2",
+    "judgments": [
+      {
+        "candidate_id": "C12-2-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C12-2-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C12-2-P3",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C12-2-P4",
+        "verdict": "PASS",
+        "reason": "attributes match"
+      },
+      {
+        "candidate_id": "C12-2-P5",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      }
+    ]
+  },
+  {
+    "id": "C12-3",
+    "judgments": [
+      {
+        "candidate_id": "C12-3-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "compatibility brand absent"
+      },
+      {
+        "candidate_id": "C12-3-P2",
+        "verdict": "FAIL",
+        "reason": "different accessory"
+      },
+      {
+        "candidate_id": "C12-3-P3",
+        "verdict": "PASS",
+        "reason": "requested accessory"
+      },
+      {
+        "candidate_id": "C12-3-P4",
+        "verdict": "FAIL",
+        "reason": "main product only"
+      },
+      {
+        "candidate_id": "C12-3-P5",
+        "verdict": "FAIL",
+        "reason": "compatibility conflict"
+      }
+    ]
+  },
+  {
+    "id": "C12-4",
+    "judgments": [
+      {
+        "candidate_id": "C12-4-P1",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C12-4-P2",
+        "verdict": "PASS",
+        "reason": "within budget"
+      },
+      {
+        "candidate_id": "C12-4-P3",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      },
+      {
+        "candidate_id": "C12-4-P4",
+        "verdict": "UNVERIFIED",
+        "reason": "price absent"
+      },
+      {
+        "candidate_id": "C12-4-P5",
+        "verdict": "PASS",
+        "reason": "within budget"
+      }
+    ]
+  },
+  {
+    "id": "C12-5",
+    "judgments": [
+      {
+        "candidate_id": "C12-5-P1",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C12-5-P2",
+        "verdict": "FAIL",
+        "reason": "excluded brand"
+      },
+      {
+        "candidate_id": "C12-5-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C12-5-P4",
+        "verdict": "PASS",
+        "reason": "different brand"
+      },
+      {
+        "candidate_id": "C12-5-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C12-6",
+    "judgments": [
+      {
+        "candidate_id": "C12-6-P1",
+        "verdict": "FAIL",
+        "reason": "used condition"
+      },
+      {
+        "candidate_id": "C12-6-P2",
+        "verdict": "FAIL",
+        "reason": "refurbished condition"
+      },
+      {
+        "candidate_id": "C12-6-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "condition absent"
+      },
+      {
+        "candidate_id": "C12-6-P4",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C12-6-P5",
+        "verdict": "PASS",
+        "reason": "new condition"
+      }
+    ]
+  },
+  {
+    "id": "C12-7",
+    "judgments": [
+      {
+        "candidate_id": "C12-7-P1",
+        "verdict": "PASS",
+        "reason": "main product"
+      },
+      {
+        "candidate_id": "C12-7-P2",
+        "verdict": "FAIL",
+        "reason": "brand conflict"
+      },
+      {
+        "candidate_id": "C12-7-P3",
+        "verdict": "UNVERIFIED",
+        "reason": "brand absent"
+      },
+      {
+        "candidate_id": "C12-7-P4",
+        "verdict": "PASS",
+        "reason": "main product with gift"
+      },
+      {
+        "candidate_id": "C12-7-P5",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      }
+    ]
+  },
+  {
+    "id": "C12-8",
+    "judgments": [
+      {
+        "candidate_id": "C12-8-P1",
+        "verdict": "UNVERIFIED",
+        "reason": "attribute absent"
+      },
+      {
+        "candidate_id": "C12-8-P2",
+        "verdict": "FAIL",
+        "reason": "accessory only"
+      },
+      {
+        "candidate_id": "C12-8-P3",
+        "verdict": "PASS",
+        "reason": "attribute and budget match"
+      },
+      {
+        "candidate_id": "C12-8-P4",
+        "verdict": "FAIL",
+        "reason": "attribute conflict"
+      },
+      {
+        "candidate_id": "C12-8-P5",
+        "verdict": "FAIL",
+        "reason": "above budget"
+      }
+    ]
+  }
+]
