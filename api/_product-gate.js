@@ -867,16 +867,12 @@ function judge(spec, item, opts = {}) {
   }
 
   /* 4. 범주 낱말·제품군 이름·고유 이름이 있어야 한다 */
-  // 범주 머리 낱말이 이번 후보 상품명 어디에도 없으면(«여름 원피스 이쁜거» 의 «이쁜거») 상품을 가르는 범주가 아니다 —
-  // 그 낱말 하나로 모든 후보를 버리지 않고 «확인 안 됨» 으로 둔다(저장하지 않고 확인된 상품 뒤에 둔다).
-  // 고유 이름 낱말(identityWords)에는 이 규칙을 쓰지 않는다 — 아래 주석.
-  const unattested = w => !!spec.titleFlat && !spec.titleFlat.includes(flatWord(w))
-    && !(ALIASES.get(w) || []).some(a => spec.titleFlat.includes(flatWord(a)));
+  // ※ «후보 누구도 쓰지 않는 머리 낱말은 확인 불가(soft)» 규칙을 시험했다가 뺐다(2026-11-16). 두 번째 봉인 세트에서
+  //   후보에 그 상품이 아예 없을 때 «음식물 처리기» 에 쌀통을, «필립스 원블레이드» 에 정수기를 보여 줬다 — 정직한
+  //   «없음» 을 틀린 상품으로 바꾼다. 검색창의 묻는 말(«이쁜거», «어디»)은 CHAT_STOP 이 미리 뺀다.
   if (spec.head && !spec.type && !spec.wantsAccessory) {
     // 범주 낱말(HEAD_SYN)은 모델 코드가 맞으면 생략될 수 있다. 고유 이름(«데스애더», «디스크»)은 생략될 수 없다.
-    // 머리 낱말이 고유 이름(«데스애더» — 영문 표기 쌍이 있거나 영문·숫자를 품은 말)이면 후보 누구도 안 써도 hard 다.
-    const nameLike = ALIASES.has(spec.head) || /[a-z0-9]/i.test(spec.head);
-    if (!present(spec.head, T)) ((codeInTitle && HEAD_SYN.has(spec.head)) || (unattested(spec.head) && !nameLike) ? soft : hard).push(`category_absent:${spec.head}`);
+    if (!present(spec.head, T)) (codeInTitle && HEAD_SYN.has(spec.head) ? soft : hard).push(`category_absent:${spec.head}`);
   } else if (spec.type && !spec.wantsAccessory && opts.stored) {
     const sameType = principal.kind === 'device' && principal.type === spec.type;
     if (!sameType && !(spec.head && present(spec.head, T)) && !TAX.productTypeMatches(title, spec.type, spec.raw)) {
