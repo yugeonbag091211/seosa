@@ -378,7 +378,11 @@ function splitNegations(text) {
     if (!marks.length) { positive.push(clause); return; }
     let cursor = 0;
     marks.forEach((mk, i) => {
-      const pre = clause.slice(cursor, mk.start);
+      // Negation intensifiers are not the item to exclude:
+      // "삼성 절대 빼줘" and "절대 삼성 빼줘" both exclude 삼성.
+      const pre = clause.slice(cursor, mk.start)
+        .replace(/^\s*(?:절대|반드시|꼭)\s+/u, '')
+        .replace(/(?:^|\s)(?:절대|반드시|꼭)\s*$/u, '');
       const post = clause.slice(mk.end, i + 1 < marks.length ? marks[i + 1].start : clause.length);
       // 뺄 대상 뒤의 틀 낱말("블랙 가격은")은 범위에서 뺀다 (NEG_FRAME_WORDS). 틀 낱말뿐이면("가격은 빼고") 그대로.
       const rawPreToks = tokensOf(pre);
