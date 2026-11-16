@@ -1,0 +1,6630 @@
+{
+  "summary": {
+    "generated_at_utc": "2026-11-16T04:30:25.875Z",
+    "scope": "frozen-code holdout; synthetic supplied fixtures; mocked provider and DB",
+    "question_count": 120,
+    "PASS": 15,
+    "FAIL": 72,
+    "UNVERIFIED": 33,
+    "verifiable_accuracy_percent": 17.24,
+    "top5_candidates": 174,
+    "top5_verified_correct": 108,
+    "top5_confirmed_wrong": 20,
+    "top5_unverified": 46,
+    "precision_at_5_lower_bound_percent": 62.07,
+    "fixture_target_recall_at_10_percent": 60,
+    "zero_result_questions": 53,
+    "missing_targets_by_stage": {
+      "product_gate": 51,
+      "ranking_or_score_floor": 20,
+      "provider_relevance_filter": 1
+    },
+    "saved_rows": 111,
+    "saved_confirmed_wrong": 15,
+    "saved_unverified": 0,
+    "latency_ms_mean": 3.21,
+    "latency_ms_p95": 5.452,
+    "external_fetch_attempts": 0,
+    "mocked_db_reads": 168,
+    "fixed_commit": "e7349ef2db59f27e80b398e63a7cd3671e8d637a",
+    "node_version": "v22.23.2",
+    "lockfile_sha256": "4b881e794b84a6ea7b2fd40965868e14628c1a9595b149c93364a69c84fe7b3e",
+    "evaluator_sha256": "45fc70540ea58ea5e2ecf607f5a290463d177ec6d49f417039cbce306b28d930",
+    "independence_notice": "This score is independent only for the fixed commit and preregistered rules; after holdout-informed code or grader changes, a fresh holdout is required.",
+    "source_hashes": {
+      "api/search.js": "953de0d25e58aae2e6552241e593965997d69534ed8f37311216e65f3bfcb5e2",
+      "api/_shop.js": "b19810ff234dcc61f8fc6d772c96e544ee94597fc470462a6c06605238b74f32",
+      "api/_search.js": "d634be2b8629999e074032d9082b37152dbe7f243a76b8d3c4fabfe60b21be1f",
+      "api/_product-gate.js": "a11ecc6c8d677acd479a08e30ef88f3cd3372b9c24e92cb883e25d555c363497"
+    },
+    "api_js_count": 133,
+    "api_js_fingerprint": "61b2d336de33da25405a6ada8e61d455a81801e982d128739e128f498c954c9a",
+    "input_hashes": {
+      "questions": "82a314dac0d69823aff672f6bf1b68ecb56e3e8e76b7608832c6a33b31907ae4",
+      "answers": "a810905ebb7641646413a6cd5c7623294d5981d86e0144c39ce4837ffe3b60a9"
+    },
+    "limitations": [
+      "The provider is stubbed with five supplied synthetic candidates, then the real relevantItems filter runs; no Coupang or ADPICK HTTP or production rate limiter is exercised.",
+      "Search handler, relevance ranking, product gate, and real saveProducts logic run against a mocked DB.",
+      "Fixture target recall is limited to known synthetic candidates, not catalog or service recall.",
+      "Synthetic titles and prices are artificial; latency excludes real providers and databases.",
+      "Questions reuse eight templates across 15 holdout categories; scores are not population estimates.",
+      "Missing evidence is UNVERIFIED; a displayed unknown never counts as correct."
+    ]
+  },
+  "results": [
+    {
+      "id": "C19-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 55.038,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C19-1-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C19-1-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C19-1-P1",
+          "C19-1-P3",
+          "C19-1-P4"
+        ],
+        "kept": [
+          "C19-1-P1",
+          "C19-1-P3"
+        ],
+        "rejected": [
+          {
+            "id": "C19-1-P4",
+            "hard": [
+              "category_absent:전기면도기"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C19-1-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C19-1-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C19-2",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 7.345,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C19-2-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C19-2-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C19-2-P1",
+          "C19-2-P2",
+          "C19-2-P3",
+          "C19-2-P4"
+        ],
+        "kept": [
+          "C19-2-P2",
+          "C19-2-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C19-2-P1",
+            "hard": [
+              "category_absent:전기면도기"
+            ]
+          },
+          {
+            "id": "C19-2-P3",
+            "hard": [
+              "waterproof_mismatch"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C19-2-P2",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C19-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 7.736,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C19-3-P1",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C19-3-P1",
+          "C19-3-P2"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C19-3-P1",
+            "hard": [
+              "identity_word_absent:전기면도기에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C19-3-P2",
+            "hard": [
+              "category_absent:교체날",
+              "identity_word_absent:전기면도기에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C19-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 5.617,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C19-4-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C19-4-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C19-4-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C19-4-P1",
+          "C19-4-P2",
+          "C19-4-P3",
+          "C19-4-P5"
+        ],
+        "kept": [
+          "C19-4-P2",
+          "C19-4-P3",
+          "C19-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C19-4-P1",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C19-4-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C19-4-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C19-5",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 4.674,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C19-5-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C19-5-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C19-5-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C19-5-P5",
+          "verdict": "FAIL",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C19-5-P1",
+          "C19-5-P2",
+          "C19-5-P4",
+          "C19-5-P5"
+        ],
+        "kept": [
+          "C19-5-P1",
+          "C19-5-P2",
+          "C19-5-P4",
+          "C19-5-P5"
+        ],
+        "rejected": []
+      },
+      "productWrites": [
+        {
+          "id": "C19-5-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C19-5-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C19-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 5.267,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C19-6-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C19-6-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C19-6-P1",
+          "C19-6-P2",
+          "C19-6-P3",
+          "C19-6-P4",
+          "C19-6-P5"
+        ],
+        "kept": [
+          "C19-6-P1",
+          "C19-6-P3"
+        ],
+        "rejected": [
+          {
+            "id": "C19-6-P2",
+            "hard": [
+              "category_absent:전기면도기"
+            ]
+          },
+          {
+            "id": "C19-6-P4",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C19-6-P5",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C19-6-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C19-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 4.995,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C19-7-P2",
+          "where": "product_gate"
+        },
+        {
+          "id": "C19-7-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C19-7-P2",
+          "C19-7-P3",
+          "C19-7-P4"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C19-7-P2",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C19-7-P3",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C19-7-P4",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C19-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.876,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C19-8-P1",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C37-1",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 4.149,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C37-1-P1",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-1-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-1-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C37-1-P1",
+          "C37-1-P3",
+          "C37-1-P5"
+        ],
+        "kept": [
+          "C37-1-P1",
+          "C37-1-P3",
+          "C37-1-P5"
+        ],
+        "rejected": []
+      },
+      "productWrites": [
+        {
+          "id": "C37-1-P1",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C37-1-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C37-1-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C37-2",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 3.088,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C37-2-P3",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-2-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-2-P2",
+          "verdict": "FAIL",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C37-2-P1",
+          "C37-2-P2",
+          "C37-2-P3",
+          "C37-2-P4",
+          "C37-2-P5"
+        ],
+        "kept": [
+          "C37-2-P2",
+          "C37-2-P3",
+          "C37-2-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C37-2-P1",
+            "hard": [
+              "category_absent:날개"
+            ]
+          },
+          {
+            "id": "C37-2-P5",
+            "hard": [
+              "diameter_mismatch"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C37-2-P3",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C37-2-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C37-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.338,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C37-3-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C37-3-P3",
+          "C37-3-P4"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C37-3-P3",
+            "hard": [
+              "identity_word_absent:선풍기에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C37-3-P4",
+            "hard": [
+              "category_absent:날개",
+              "identity_word_absent:선풍기에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C37-4",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.509,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C37-4-P1",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-4-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-4-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-4-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C37-4-P1",
+          "C37-4-P2",
+          "C37-4-P3",
+          "C37-4-P4",
+          "C37-4-P5"
+        ],
+        "kept": [
+          "C37-4-P1",
+          "C37-4-P2",
+          "C37-4-P4",
+          "C37-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C37-4-P3",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C37-4-P1",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C37-4-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C37-4-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C37-5",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.889,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C37-5-P5",
+          "verdict": "FAIL",
+          "identity": "unverified"
+        },
+        {
+          "id": "C37-5-P1",
+          "verdict": "PASS",
+          "identity": "unverified"
+        },
+        {
+          "id": "C37-5-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C37-5-P4",
+          "verdict": "PASS",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C37-5-P1",
+          "C37-5-P2",
+          "C37-5-P3",
+          "C37-5-P4",
+          "C37-5-P5"
+        ],
+        "kept": [
+          "C37-5-P1",
+          "C37-5-P3",
+          "C37-5-P4",
+          "C37-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C37-5-P2",
+            "hard": [
+              "excluded_brand:신일"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C37-6",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.592,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C37-6-P4",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-6-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C37-6-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C37-6-P1",
+          "C37-6-P2",
+          "C37-6-P3",
+          "C37-6-P4",
+          "C37-6-P5"
+        ],
+        "kept": [
+          "C37-6-P3",
+          "C37-6-P4",
+          "C37-6-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C37-6-P1",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C37-6-P2",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C37-6-P4",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C37-6-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C37-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.44,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C37-7-P1",
+          "where": "product_gate"
+        },
+        {
+          "id": "C37-7-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C37-7-P1",
+          "C37-7-P4",
+          "C37-7-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C37-7-P1",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C37-7-P4",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C37-7-P5",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C37-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.568,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C37-8-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C37-8-P2",
+          "C37-8-P3",
+          "C37-8-P4",
+          "C37-8-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C37-8-P2",
+            "hard": [
+              "category_absent:동시에"
+            ]
+          },
+          {
+            "id": "C37-8-P3",
+            "hard": [
+              "category_absent:동시에"
+            ]
+          },
+          {
+            "id": "C37-8-P4",
+            "hard": [
+              "category_absent:동시에"
+            ]
+          },
+          {
+            "id": "C37-8-P5",
+            "hard": [
+              "category_absent:동시에",
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C32-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 3.766,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C32-1-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C32-1-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-1-P1",
+          "C32-1-P3",
+          "C32-1-P5"
+        ],
+        "kept": [
+          "C32-1-P3",
+          "C32-1-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C32-1-P1",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:배낭…레인커버",
+              "identity_word_absent:등산"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C32-1-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C32-1-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C32-2",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 4.645,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C32-2-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C32-2-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C32-2-P2",
+          "verdict": "FAIL",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-2-P1",
+          "C32-2-P2",
+          "C32-2-P3",
+          "C32-2-P4",
+          "C32-2-P5"
+        ],
+        "kept": [
+          "C32-2-P1",
+          "C32-2-P2",
+          "C32-2-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C32-2-P3",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:배낭…레인커버",
+              "identity_word_absent:등산"
+            ]
+          },
+          {
+            "id": "C32-2-P5",
+            "hard": [
+              "measure_mismatch:volume_ml:30000≠20000"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C32-2-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C32-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 3.144,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C32-3-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-3-P2",
+          "C32-3-P3",
+          "C32-3-P4"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C32-3-P2",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:배낭에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C32-3-P3",
+            "hard": [
+              "identity_word_absent:배낭에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C32-3-P4",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:배낭에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C32-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.308,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C32-4-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C32-4-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C32-4-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-4-P2",
+          "C32-4-P3",
+          "C32-4-P4",
+          "C32-4-P5"
+        ],
+        "kept": [
+          "C32-4-P2",
+          "C32-4-P4",
+          "C32-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C32-4-P3",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C32-4-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C32-4-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C32-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.253,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C32-5-P1",
+          "verdict": "PASS",
+          "identity": "unverified"
+        },
+        {
+          "id": "C32-5-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C32-5-P4",
+          "verdict": "PASS",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-5-P1",
+          "C32-5-P2",
+          "C32-5-P3",
+          "C32-5-P4"
+        ],
+        "kept": [
+          "C32-5-P1",
+          "C32-5-P3",
+          "C32-5-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C32-5-P2",
+            "hard": [
+              "excluded_brand:노스페이스"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C32-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.273,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C32-6-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C32-6-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-6-P1",
+          "C32-6-P2",
+          "C32-6-P3",
+          "C32-6-P4",
+          "C32-6-P5"
+        ],
+        "kept": [
+          "C32-6-P3",
+          "C32-6-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C32-6-P1",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C32-6-P2",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C32-6-P4",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:배낭…레인커버",
+              "identity_word_absent:등산"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C32-6-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C32-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 3.455,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C32-7-P1",
+          "where": "product_gate"
+        },
+        {
+          "id": "C32-7-P4",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-7-P1"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C32-7-P1",
+            "hard": [
+              "category_absent:와도"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C32-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 3.798,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C32-8-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C32-8-P3",
+          "C32-8-P4",
+          "C32-8-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C32-8-P3",
+            "hard": [
+              "category_absent:동시에"
+            ]
+          },
+          {
+            "id": "C32-8-P4",
+            "hard": [
+              "category_absent:동시에",
+              "measure_mismatch:volume_ml:30000≠20000"
+            ]
+          },
+          {
+            "id": "C32-8-P5",
+            "hard": [
+              "category_absent:동시에",
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C08-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 6.769,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C08-1-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C08-1-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-1-P2",
+          "C08-1-P4",
+          "C08-1-P5"
+        ],
+        "kept": [
+          "C08-1-P2",
+          "C08-1-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C08-1-P5",
+            "hard": [
+              "accessory:케이스",
+              "part",
+              "head_is_target:이어폰→케이스"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C08-1-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C08-1-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C08-2",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 5.33,
+      "fixtureCount": 5,
+      "shownCount": 1,
+      "top": [
+        {
+          "id": "C08-2-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-2-P1",
+          "C08-2-P2",
+          "C08-2-P3",
+          "C08-2-P4",
+          "C08-2-P5"
+        ],
+        "kept": [
+          "C08-2-P3"
+        ],
+        "rejected": [
+          {
+            "id": "C08-2-P1",
+            "hard": [
+              "brand_mismatch:젠하이저"
+            ]
+          },
+          {
+            "id": "C08-2-P2",
+            "hard": [
+              "accessory:케이스",
+              "part"
+            ]
+          },
+          {
+            "id": "C08-2-P4",
+            "hard": [
+              "color_mismatch:white"
+            ]
+          },
+          {
+            "id": "C08-2-P5",
+            "hard": [
+              "color_unverified"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C08-2-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C08-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.513,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C08-3-P2",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-3-P1",
+          "C08-3-P2",
+          "C08-3-P3"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C08-3-P1",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:이어폰에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C08-3-P2",
+            "hard": [
+              "identity_word_absent:이어폰에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C08-3-P3",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:이어폰에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C08-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 2.825,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C08-4-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C08-4-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C08-4-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-4-P1",
+          "C08-4-P2",
+          "C08-4-P3",
+          "C08-4-P4"
+        ],
+        "kept": [
+          "C08-4-P1",
+          "C08-4-P3",
+          "C08-4-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C08-4-P2",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C08-4-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C08-4-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C08-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.549,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C08-5-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C08-5-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C08-5-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-5-P1",
+          "C08-5-P2",
+          "C08-5-P3",
+          "C08-5-P5"
+        ],
+        "kept": [
+          "C08-5-P2",
+          "C08-5-P3",
+          "C08-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C08-5-P1",
+            "hard": [
+              "excluded_brand:소니"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C08-5-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C08-5-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C08-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.202,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C08-6-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C08-6-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-6-P1",
+          "C08-6-P2",
+          "C08-6-P3",
+          "C08-6-P4",
+          "C08-6-P5"
+        ],
+        "kept": [
+          "C08-6-P2",
+          "C08-6-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C08-6-P1",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C08-6-P3",
+            "hard": [
+              "accessory:케이스",
+              "part",
+              "head_is_target:이어폰→케이스"
+            ]
+          },
+          {
+            "id": "C08-6-P5",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C08-6-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C08-7",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 4.332,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C08-7-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C08-7-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-7-P3",
+          "C08-7-P5"
+        ],
+        "kept": [
+          "C08-7-P3",
+          "C08-7-P5"
+        ],
+        "rejected": []
+      },
+      "productWrites": [
+        {
+          "id": "C08-7-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C08-7-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C08-8",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 2.278,
+      "fixtureCount": 5,
+      "shownCount": 1,
+      "top": [
+        {
+          "id": "C08-8-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C08-8-P2",
+          "C08-8-P4"
+        ],
+        "kept": [
+          "C08-8-P2"
+        ],
+        "rejected": [
+          {
+            "id": "C08-8-P4",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C08-8-P2",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C38-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 3.008,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C38-1-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C38-1-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C38-1-P2",
+          "C38-1-P4",
+          "C38-1-P5"
+        ],
+        "kept": [
+          "C38-1-P2",
+          "C38-1-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C38-1-P5",
+            "hard": [
+              "accessory:필터",
+              "head_is_target:가습기→필터"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C38-1-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C38-1-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C38-2",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.186,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C38-2-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C38-2-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C38-2-P2",
+          "C38-2-P3",
+          "C38-2-P4",
+          "C38-2-P5"
+        ],
+        "kept": [
+          "C38-2-P3",
+          "C38-2-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C38-2-P2",
+            "hard": [
+              "accessory:필터",
+              "head_is_target:가습기→필터"
+            ]
+          },
+          {
+            "id": "C38-2-P4",
+            "hard": [
+              "measure_mismatch:volume_ml:4000≠2000"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C38-2-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C38-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.353,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C38-3-P2",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C38-3-P1",
+          "C38-3-P2",
+          "C38-3-P3"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C38-3-P1",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:가습기에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C38-3-P2",
+            "hard": [
+              "identity_word_absent:가습기에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C38-3-P3",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:가습기에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C38-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.773,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C38-4-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C38-4-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C38-4-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C38-4-P1",
+          "C38-4-P2",
+          "C38-4-P3",
+          "C38-4-P4",
+          "C38-4-P5"
+        ],
+        "kept": [
+          "C38-4-P1",
+          "C38-4-P3",
+          "C38-4-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C38-4-P2",
+            "hard": [
+              "over_budget"
+            ]
+          },
+          {
+            "id": "C38-4-P5",
+            "hard": [
+              "accessory:필터",
+              "head_is_target:가습기→필터"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C38-4-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C38-4-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C38-5",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.616,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C38-5-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C38-5-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C38-5-P1",
+          "verdict": "FAIL",
+          "identity": "unverified"
+        },
+        {
+          "id": "C38-5-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C38-5-P1",
+          "C38-5-P2",
+          "C38-5-P3",
+          "C38-5-P4",
+          "C38-5-P5"
+        ],
+        "kept": [
+          "C38-5-P1",
+          "C38-5-P2",
+          "C38-5-P3",
+          "C38-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C38-5-P4",
+            "hard": [
+              "accessory:필터",
+              "head_is_target:가습기→필터"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C38-5-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C38-5-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C38-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 1.481,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C38-6-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C38-6-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C38-6-P1",
+          "C38-6-P2",
+          "C38-6-P3",
+          "C38-6-P4",
+          "C38-6-P5"
+        ],
+        "kept": [
+          "C38-6-P2",
+          "C38-6-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C38-6-P1",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C38-6-P3",
+            "hard": [
+              "accessory:필터",
+              "head_is_target:가습기→필터"
+            ]
+          },
+          {
+            "id": "C38-6-P5",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C38-6-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C38-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 3.01,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C38-7-P3",
+          "where": "product_gate"
+        },
+        {
+          "id": "C38-7-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C38-7-P3",
+          "C38-7-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C38-7-P3",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C38-7-P5",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C38-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.422,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C38-8-P2",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C24-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 2.723,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C24-1-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C24-1-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C24-1-P1",
+          "C24-1-P3",
+          "C24-1-P4"
+        ],
+        "kept": [
+          "C24-1-P1",
+          "C24-1-P3"
+        ],
+        "rejected": [
+          {
+            "id": "C24-1-P4",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:베개→커버"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C24-1-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C24-1-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C24-2",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.57,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C24-2-P2",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C24-2-P1",
+          "C24-2-P2",
+          "C24-2-P3",
+          "C24-2-P4",
+          "C24-2-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C24-2-P1",
+            "hard": [
+              "accessory:커버",
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C24-2-P2",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C24-2-P3",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C24-2-P4",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C24-2-P5",
+            "hard": [
+              "category_absent:사양"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C24-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.494,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C24-3-P1",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C24-3-P1",
+          "C24-3-P2",
+          "C24-3-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C24-3-P1",
+            "hard": [
+              "identity_word_absent:베개에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C24-3-P2",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:베개에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C24-3-P5",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:베개에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C24-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 1.892,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C24-4-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C24-4-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C24-4-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C24-4-P1",
+          "C24-4-P2",
+          "C24-4-P3",
+          "C24-4-P4",
+          "C24-4-P5"
+        ],
+        "kept": [
+          "C24-4-P2",
+          "C24-4-P3",
+          "C24-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C24-4-P1",
+            "hard": [
+              "over_budget"
+            ]
+          },
+          {
+            "id": "C24-4-P4",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:베개→커버"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C24-4-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C24-4-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C24-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 2.842,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C24-5-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C24-5-P4",
+          "verdict": "PASS",
+          "identity": "unverified"
+        },
+        {
+          "id": "C24-5-P2",
+          "verdict": "PASS",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C24-5-P1",
+          "C24-5-P2",
+          "C24-5-P3",
+          "C24-5-P4",
+          "C24-5-P5"
+        ],
+        "kept": [
+          "C24-5-P1",
+          "C24-5-P2",
+          "C24-5-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C24-5-P3",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:베개→커버"
+            ]
+          },
+          {
+            "id": "C24-5-P5",
+            "hard": [
+              "excluded_brand:템퍼"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C24-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 1.972,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C24-6-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C24-6-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C24-6-P1",
+          "C24-6-P2",
+          "C24-6-P3",
+          "C24-6-P4",
+          "C24-6-P5"
+        ],
+        "kept": [
+          "C24-6-P1",
+          "C24-6-P3"
+        ],
+        "rejected": [
+          {
+            "id": "C24-6-P2",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:베개→커버"
+            ]
+          },
+          {
+            "id": "C24-6-P4",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C24-6-P5",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C24-6-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C24-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.906,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C24-7-P2",
+          "where": "ranking_or_score_floor"
+        },
+        {
+          "id": "C24-7-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C24-7-P4"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C24-7-P4",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C24-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.323,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C24-8-P1",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 3,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-1",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.973,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-1-P2",
+          "where": "product_gate"
+        },
+        {
+          "id": "C23-1-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C23-1-P2",
+          "C23-1-P4",
+          "C23-1-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C23-1-P2",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-1-P4",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-1-P5",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:매트리스→커버"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-2",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.57,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-2-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C23-2-P1",
+          "C23-2-P2",
+          "C23-2-P3",
+          "C23-2-P4",
+          "C23-2-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C23-2-P1",
+            "hard": [
+              "accessory:매트",
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C23-2-P2",
+            "hard": [
+              "accessory:커버",
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C23-2-P3",
+            "hard": [
+              "accessory:매트",
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C23-2-P4",
+            "hard": [
+              "accessory:매트",
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C23-2-P5",
+            "hard": [
+              "accessory:매트",
+              "category_absent:사양"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.257,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-3-P2",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C23-3-P1",
+          "C23-3-P2",
+          "C23-3-P3"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C23-3-P1",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:매트리스에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C23-3-P2",
+            "hard": [
+              "identity_word_absent:매트리스에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C23-3-P3",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:매트리스에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-4",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.211,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-4-P1",
+          "where": "product_gate"
+        },
+        {
+          "id": "C23-4-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C23-4-P1",
+          "C23-4-P2",
+          "C23-4-P3",
+          "C23-4-P4",
+          "C23-4-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C23-4-P1",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-4-P2",
+            "hard": [
+              "accessory:매트",
+              "over_budget"
+            ]
+          },
+          {
+            "id": "C23-4-P3",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-4-P4",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-4-P5",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:매트리스→커버"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-5",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.531,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-5-P3",
+          "where": "product_gate"
+        },
+        {
+          "id": "C23-5-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C23-5-P1",
+          "C23-5-P2",
+          "C23-5-P3",
+          "C23-5-P4",
+          "C23-5-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C23-5-P1",
+            "hard": [
+              "accessory:매트",
+              "excluded_brand:에이스"
+            ]
+          },
+          {
+            "id": "C23-5-P2",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-5-P3",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-5-P4",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:매트리스→커버"
+            ]
+          },
+          {
+            "id": "C23-5-P5",
+            "hard": [
+              "accessory:매트"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-6",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.691,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-6-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C23-6-P1",
+          "C23-6-P2",
+          "C23-6-P3",
+          "C23-6-P4",
+          "C23-6-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C23-6-P1",
+            "hard": [
+              "accessory:매트",
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C23-6-P2",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-6-P3",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:매트리스→커버"
+            ]
+          },
+          {
+            "id": "C23-6-P4",
+            "hard": [
+              "accessory:매트"
+            ]
+          },
+          {
+            "id": "C23-6-P5",
+            "hard": [
+              "accessory:매트",
+              "condition_excluded:used"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.395,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-7-P3",
+          "where": "ranking_or_score_floor"
+        },
+        {
+          "id": "C23-7-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C23-7-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C23-7-P5",
+            "hard": [
+              "accessory:매트",
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C23-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.675,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C23-8-P2",
+          "where": "provider_relevance_filter"
+        }
+      ],
+      "providerReturned": 0,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C10-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 1.677,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C10-1-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C10-1-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C10-1-P2",
+          "C10-1-P3",
+          "C10-1-P5"
+        ],
+        "kept": [
+          "C10-1-P2",
+          "C10-1-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C10-1-P3",
+            "hard": [
+              "accessory:키캡",
+              "part"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C10-1-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C10-1-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C10-2",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 2.515,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C10-2-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C10-2-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C10-2-P1",
+          "C10-2-P2",
+          "C10-2-P3",
+          "C10-2-P4",
+          "C10-2-P5"
+        ],
+        "kept": [
+          "C10-2-P1",
+          "C10-2-P3"
+        ],
+        "rejected": [
+          {
+            "id": "C10-2-P2",
+            "hard": [
+              "wired_only"
+            ]
+          },
+          {
+            "id": "C10-2-P4",
+            "hard": [
+              "brand_mismatch:한성"
+            ]
+          },
+          {
+            "id": "C10-2-P5",
+            "hard": [
+              "accessory:키캡",
+              "part"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C10-2-P1",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C10-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.152,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C10-3-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C10-3-P1",
+          "C10-3-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C10-3-P1",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:키보드에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C10-3-P5",
+            "hard": [
+              "identity_word_absent:키보드에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C10-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.179,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C10-4-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C10-4-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C10-4-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C10-4-P1",
+          "C10-4-P2",
+          "C10-4-P3",
+          "C10-4-P4",
+          "C10-4-P5"
+        ],
+        "kept": [
+          "C10-4-P1",
+          "C10-4-P2",
+          "C10-4-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C10-4-P3",
+            "hard": [
+              "accessory:키캡",
+              "part"
+            ]
+          },
+          {
+            "id": "C10-4-P5",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C10-4-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C10-4-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C10-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 2.694,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C10-5-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C10-5-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C10-5-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C10-5-P1",
+          "C10-5-P2",
+          "C10-5-P3",
+          "C10-5-P4",
+          "C10-5-P5"
+        ],
+        "kept": [
+          "C10-5-P1",
+          "C10-5-P3",
+          "C10-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C10-5-P2",
+            "hard": [
+              "accessory:키캡",
+              "part"
+            ]
+          },
+          {
+            "id": "C10-5-P4",
+            "hard": [
+              "excluded_brand:로지텍"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C10-5-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C10-5-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C10-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 1.748,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C10-6-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C10-6-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C10-6-P1",
+          "C10-6-P2",
+          "C10-6-P3",
+          "C10-6-P4",
+          "C10-6-P5"
+        ],
+        "kept": [
+          "C10-6-P2",
+          "C10-6-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C10-6-P1",
+            "hard": [
+              "accessory:키캡",
+              "part"
+            ]
+          },
+          {
+            "id": "C10-6-P3",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C10-6-P4",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C10-6-P2",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C10-7",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 4.275,
+      "fixtureCount": 5,
+      "shownCount": 1,
+      "top": [
+        {
+          "id": "C10-7-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 1,
+      "missedTargets": [
+        {
+          "id": "C10-7-P1",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C10-7-P1",
+          "C10-7-P2",
+          "C10-7-P3"
+        ],
+        "kept": [
+          "C10-7-P3"
+        ],
+        "rejected": [
+          {
+            "id": "C10-7-P1",
+            "hard": [
+              "part"
+            ]
+          },
+          {
+            "id": "C10-7-P2",
+            "hard": [
+              "accessory:키캡",
+              "part"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C10-7-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C10-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.019,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C10-8-P5",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 3,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C15-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 2.582,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C15-1-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C15-1-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C15-1-P2",
+          "C15-1-P3",
+          "C15-1-P5"
+        ],
+        "kept": [
+          "C15-1-P2",
+          "C15-1-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C15-1-P3",
+            "hard": [
+              "category_absent:전기밥솥"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C15-1-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C15-1-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C15-2",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 3.934,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C15-2-P1",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C15-2-P1",
+          "C15-2-P2",
+          "C15-2-P3",
+          "C15-2-P4",
+          "C15-2-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C15-2-P1",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C15-2-P2",
+            "hard": [
+              "category_absent:사양",
+              "people_mismatch:6≠3"
+            ]
+          },
+          {
+            "id": "C15-2-P3",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C15-2-P4",
+            "hard": [
+              "category_absent:사양",
+              "brand_mismatch:쿠첸"
+            ]
+          },
+          {
+            "id": "C15-2-P5",
+            "hard": [
+              "category_absent:사양",
+              "identity_word_absent:전기밥솥"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C15-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 3.126,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C15-3-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C15-3-P1",
+          "C15-3-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C15-3-P1",
+            "hard": [
+              "category_absent:내솥",
+              "identity_word_absent:전기밥솥에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C15-3-P5",
+            "hard": [
+              "identity_word_absent:전기밥솥에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C15-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.86,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C15-4-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C15-4-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C15-4-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C15-4-P1",
+          "C15-4-P2",
+          "C15-4-P4",
+          "C15-4-P5"
+        ],
+        "kept": [
+          "C15-4-P1",
+          "C15-4-P2",
+          "C15-4-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C15-4-P5",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C15-4-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C15-4-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C15-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.146,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C15-5-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C15-5-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C15-5-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C15-5-P1",
+          "C15-5-P3",
+          "C15-5-P4",
+          "C15-5-P5"
+        ],
+        "kept": [
+          "C15-5-P1",
+          "C15-5-P3",
+          "C15-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C15-5-P4",
+            "hard": [
+              "excluded_brand:쿠쿠"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C15-5-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C15-5-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C15-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.655,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C15-6-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C15-6-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C15-6-P1",
+          "C15-6-P2",
+          "C15-6-P3",
+          "C15-6-P4",
+          "C15-6-P5"
+        ],
+        "kept": [
+          "C15-6-P2",
+          "C15-6-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C15-6-P1",
+            "hard": [
+              "category_absent:전기밥솥"
+            ]
+          },
+          {
+            "id": "C15-6-P3",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C15-6-P4",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C15-6-P2",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C15-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.634,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C15-7-P1",
+          "where": "product_gate"
+        },
+        {
+          "id": "C15-7-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C15-7-P1",
+          "C15-7-P2",
+          "C15-7-P3"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C15-7-P1",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C15-7-P2",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C15-7-P3",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C15-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.938,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C15-8-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 3,
+      "gate": {
+        "input": [
+          "C15-8-P2",
+          "C15-8-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C15-8-P2",
+            "hard": [
+              "category_absent:동시에",
+              "over_budget"
+            ]
+          },
+          {
+            "id": "C15-8-P5",
+            "hard": [
+              "category_absent:동시에"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C36-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 2.288,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C36-1-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C36-1-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C36-1-P1",
+          "C36-1-P2",
+          "C36-1-P4"
+        ],
+        "kept": [
+          "C36-1-P1",
+          "C36-1-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C36-1-P2",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:백팩…레인커버"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C36-1-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C36-1-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C36-2",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.921,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C36-2-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C36-2-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C36-2-P1",
+          "C36-2-P2",
+          "C36-2-P4",
+          "C36-2-P5"
+        ],
+        "kept": [
+          "C36-2-P2",
+          "C36-2-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C36-2-P1",
+            "hard": [
+              "measure_mismatch:volume_ml:20000≠10000"
+            ]
+          },
+          {
+            "id": "C36-2-P4",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:백팩…레인커버"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C36-2-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C36-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.822,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C36-3-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C36-3-P3",
+          "C36-3-P4",
+          "C36-3-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C36-3-P3",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:백팩에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C36-3-P4",
+            "hard": [
+              "identity_word_absent:백팩에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C36-3-P5",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:백팩에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C36-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 1.779,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C36-4-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C36-4-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C36-4-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C36-4-P1",
+          "C36-4-P2",
+          "C36-4-P3",
+          "C36-4-P4",
+          "C36-4-P5"
+        ],
+        "kept": [
+          "C36-4-P1",
+          "C36-4-P3",
+          "C36-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C36-4-P2",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:백팩…레인커버"
+            ]
+          },
+          {
+            "id": "C36-4-P4",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C36-4-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C36-4-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C36-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.208,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C36-5-P2",
+          "verdict": "PASS",
+          "identity": "unverified"
+        },
+        {
+          "id": "C36-5-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C36-5-P5",
+          "verdict": "PASS",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C36-5-P1",
+          "C36-5-P2",
+          "C36-5-P3",
+          "C36-5-P4",
+          "C36-5-P5"
+        ],
+        "kept": [
+          "C36-5-P2",
+          "C36-5-P4",
+          "C36-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C36-5-P1",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:백팩…레인커버"
+            ]
+          },
+          {
+            "id": "C36-5-P3",
+            "hard": [
+              "excluded_brand:샘소나이트"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C36-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.792,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C36-6-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C36-6-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C36-6-P1",
+          "C36-6-P2",
+          "C36-6-P3",
+          "C36-6-P4",
+          "C36-6-P5"
+        ],
+        "kept": [
+          "C36-6-P1",
+          "C36-6-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C36-6-P2",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C36-6-P3",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C36-6-P5",
+            "hard": [
+              "accessory:커버",
+              "head_is_target:백팩…레인커버"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C36-6-P1",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C36-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.798,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C36-7-P2",
+          "where": "product_gate"
+        },
+        {
+          "id": "C36-7-P5",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C36-7-P2"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C36-7-P2",
+            "hard": [
+              "other_object:백팩",
+              "category_absent:와도"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C36-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 3.355,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C36-8-P4",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C40-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 5.8,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C40-1-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C40-1-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C40-1-P2",
+          "C40-1-P3",
+          "C40-1-P5"
+        ],
+        "kept": [
+          "C40-1-P2",
+          "C40-1-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C40-1-P3",
+            "hard": [
+              "other_object:가방",
+              "category_absent:가스버너"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C40-1-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C40-1-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C40-2",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 5.452,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C40-2-P1",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C40-2-P1",
+          "C40-2-P2",
+          "C40-2-P3",
+          "C40-2-P4",
+          "C40-2-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C40-2-P1",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C40-2-P2",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C40-2-P3",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C40-2-P4",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C40-2-P5",
+            "hard": [
+              "other_object:가방",
+              "category_absent:사양"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C40-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 5.093,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C40-3-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C40-3-P1",
+          "C40-3-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C40-3-P1",
+            "hard": [
+              "category_absent:가방",
+              "identity_word_absent:가스버너에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C40-3-P5",
+            "hard": [
+              "identity_word_absent:가스버너에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C40-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.454,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C40-4-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C40-4-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C40-4-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C40-4-P1",
+          "C40-4-P2",
+          "C40-4-P4",
+          "C40-4-P5"
+        ],
+        "kept": [
+          "C40-4-P1",
+          "C40-4-P2",
+          "C40-4-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C40-4-P5",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C40-4-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C40-4-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C40-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.919,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C40-5-P3",
+          "verdict": "PASS",
+          "identity": "unverified"
+        },
+        {
+          "id": "C40-5-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C40-5-P1",
+          "verdict": "PASS",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C40-5-P1",
+          "C40-5-P3",
+          "C40-5-P4",
+          "C40-5-P5"
+        ],
+        "kept": [
+          "C40-5-P1",
+          "C40-5-P3",
+          "C40-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C40-5-P4",
+            "hard": [
+              "excluded_brand:코베아"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C40-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.286,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C40-6-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C40-6-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C40-6-P1",
+          "C40-6-P2",
+          "C40-6-P3",
+          "C40-6-P4",
+          "C40-6-P5"
+        ],
+        "kept": [
+          "C40-6-P2",
+          "C40-6-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C40-6-P1",
+            "hard": [
+              "other_object:가방",
+              "category_absent:가스버너"
+            ]
+          },
+          {
+            "id": "C40-6-P3",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C40-6-P4",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C40-6-P2",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C40-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.132,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C40-7-P1",
+          "where": "product_gate"
+        },
+        {
+          "id": "C40-7-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C40-7-P1",
+          "C40-7-P2",
+          "C40-7-P3"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C40-7-P1",
+            "hard": [
+              "other_object:가방",
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C40-7-P2",
+            "hard": [
+              "other_object:가방",
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C40-7-P3",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C40-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.345,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C40-8-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [
+          "C40-8-P1",
+          "C40-8-P2",
+          "C40-8-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C40-8-P1",
+            "hard": [
+              "category_absent:동시에"
+            ]
+          },
+          {
+            "id": "C40-8-P2",
+            "hard": [
+              "category_absent:동시에",
+              "over_budget"
+            ]
+          },
+          {
+            "id": "C40-8-P5",
+            "hard": [
+              "category_absent:동시에"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C17-1",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 2.165,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C17-1-P1",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-1-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-1-P3",
+          "verdict": "PASS",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C17-1-P1",
+          "C17-1-P3",
+          "C17-1-P5"
+        ],
+        "kept": [
+          "C17-1-P1",
+          "C17-1-P3",
+          "C17-1-P5"
+        ],
+        "rejected": []
+      },
+      "productWrites": [
+        {
+          "id": "C17-1-P1",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C17-1-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C17-2",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 3.349,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C17-2-P3",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-2-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C17-2-P1",
+          "C17-2-P2",
+          "C17-2-P3",
+          "C17-2-P4",
+          "C17-2-P5"
+        ],
+        "kept": [
+          "C17-2-P3",
+          "C17-2-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C17-2-P1",
+            "hard": [
+              "not_requested_accessory"
+            ]
+          },
+          {
+            "id": "C17-2-P2",
+            "hard": [
+              "brand_mismatch:테팔"
+            ]
+          },
+          {
+            "id": "C17-2-P5",
+            "hard": [
+              "measure_mismatch:volume_ml:2000≠1000"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C17-2-P3",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C17-2-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C17-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.816,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C17-3-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C17-3-P3",
+          "C17-3-P4"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C17-3-P3",
+            "hard": [
+              "identity_word_absent:믹서기에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C17-3-P4",
+            "hard": [
+              "category_absent:칼날",
+              "identity_word_absent:믹서기에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C17-4",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 2.25,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C17-4-P1",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-4-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-4-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-4-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C17-4-P1",
+          "C17-4-P2",
+          "C17-4-P3",
+          "C17-4-P4",
+          "C17-4-P5"
+        ],
+        "kept": [
+          "C17-4-P1",
+          "C17-4-P2",
+          "C17-4-P4",
+          "C17-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C17-4-P3",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C17-4-P1",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C17-4-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C17-4-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C17-5",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 3.016,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C17-5-P5",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-5-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-5-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        },
+        {
+          "id": "C17-5-P4",
+          "verdict": "PASS",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C17-5-P1",
+          "C17-5-P2",
+          "C17-5-P3",
+          "C17-5-P4",
+          "C17-5-P5"
+        ],
+        "kept": [
+          "C17-5-P1",
+          "C17-5-P3",
+          "C17-5-P4",
+          "C17-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C17-5-P2",
+            "hard": [
+              "excluded_brand:필립스"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C17-5-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C17-5-P5",
+          "verdict": "FAIL"
+        }
+      ]
+    },
+    {
+      "id": "C17-6",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 2.518,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C17-6-P4",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-6-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C17-6-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C17-6-P1",
+          "C17-6-P2",
+          "C17-6-P3",
+          "C17-6-P4",
+          "C17-6-P5"
+        ],
+        "kept": [
+          "C17-6-P3",
+          "C17-6-P4",
+          "C17-6-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C17-6-P1",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C17-6-P2",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C17-6-P4",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C17-6-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C17-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.986,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C17-7-P1",
+          "where": "product_gate"
+        },
+        {
+          "id": "C17-7-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C17-7-P1",
+          "C17-7-P4",
+          "C17-7-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C17-7-P1",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C17-7-P4",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C17-7-P5",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C17-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.771,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C17-8-P3",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C27-1",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.62,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C27-1-P1",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-1-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-1-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C27-1-P1",
+          "C27-1-P3",
+          "C27-1-P5"
+        ],
+        "kept": [
+          "C27-1-P1",
+          "C27-1-P3",
+          "C27-1-P5"
+        ],
+        "rejected": []
+      },
+      "productWrites": [
+        {
+          "id": "C27-1-P1",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C27-1-P3",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C27-1-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C27-2",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.522,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C27-2-P3",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-2-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-2-P1",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C27-2-P1",
+          "C27-2-P3",
+          "C27-2-P4",
+          "C27-2-P5"
+        ],
+        "kept": [
+          "C27-2-P1",
+          "C27-2-P3",
+          "C27-2-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C27-2-P5",
+            "hard": [
+              "measure_mismatch:volume_ml:3000≠1000"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C27-2-P3",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C27-2-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C27-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.236,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C27-3-P3",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C27-3-P3",
+          "C27-3-P4"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C27-3-P3",
+            "hard": [
+              "identity_word_absent:냄비에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C27-3-P4",
+            "hard": [
+              "category_absent:손잡이",
+              "identity_word_absent:냄비에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C27-4",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.538,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C27-4-P1",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-4-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-4-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-4-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C27-4-P1",
+          "C27-4-P2",
+          "C27-4-P3",
+          "C27-4-P4",
+          "C27-4-P5"
+        ],
+        "kept": [
+          "C27-4-P1",
+          "C27-4-P2",
+          "C27-4-P4",
+          "C27-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C27-4-P3",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C27-4-P1",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C27-4-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C27-4-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C27-5",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.362,
+      "fixtureCount": 5,
+      "shownCount": 4,
+      "top": [
+        {
+          "id": "C27-5-P5",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-5-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-5-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-5-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C27-5-P1",
+          "C27-5-P2",
+          "C27-5-P3",
+          "C27-5-P4",
+          "C27-5-P5"
+        ],
+        "kept": [
+          "C27-5-P1",
+          "C27-5-P3",
+          "C27-5-P4",
+          "C27-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C27-5-P2",
+            "hard": [
+              "excluded_brand:해피콜"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C27-5-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C27-5-P4",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C27-5-P5",
+          "verdict": "FAIL"
+        }
+      ]
+    },
+    {
+      "id": "C27-6",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.399,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C27-6-P4",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-6-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C27-6-P3",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C27-6-P1",
+          "C27-6-P2",
+          "C27-6-P3",
+          "C27-6-P4",
+          "C27-6-P5"
+        ],
+        "kept": [
+          "C27-6-P3",
+          "C27-6-P4",
+          "C27-6-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C27-6-P1",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C27-6-P2",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C27-6-P4",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C27-6-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C27-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.433,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C27-7-P1",
+          "where": "product_gate"
+        },
+        {
+          "id": "C27-7-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C27-7-P1",
+          "C27-7-P4",
+          "C27-7-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C27-7-P1",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C27-7-P4",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          },
+          {
+            "id": "C27-7-P5",
+            "hard": [
+              "category_absent:와도",
+              "identity_word_absent:본품을",
+              "identity_word_absent:사은품이",
+              "identity_word_absent:같이"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C27-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.175,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C27-8-P3",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C11-1",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 1.488,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C11-1-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C11-1-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C11-1-P1",
+          "C11-1-P2",
+          "C11-1-P4"
+        ],
+        "kept": [
+          "C11-1-P1",
+          "C11-1-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C11-1-P2",
+            "hard": [
+              "accessory:충전 케이블",
+              "accessory:케이블"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C11-1-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C11-1-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C11-2",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 2.01,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C11-2-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C11-2-P2",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C11-2-P1",
+          "C11-2-P2",
+          "C11-2-P3",
+          "C11-2-P4",
+          "C11-2-P5"
+        ],
+        "kept": [
+          "C11-2-P2",
+          "C11-2-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C11-2-P1",
+            "hard": [
+              "wired_only"
+            ]
+          },
+          {
+            "id": "C11-2-P3",
+            "hard": [
+              "brand_mismatch:레이저"
+            ]
+          },
+          {
+            "id": "C11-2-P4",
+            "hard": [
+              "accessory:충전 케이블",
+              "accessory:케이블"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C11-2-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C11-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.131,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C11-3-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C11-3-P3",
+          "C11-3-P4",
+          "C11-3-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C11-3-P3",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:마우스에",
+              "identity_word_absent:쓸",
+              "identity_word_absent:충전"
+            ]
+          },
+          {
+            "id": "C11-3-P4",
+            "hard": [
+              "identity_word_absent:마우스에",
+              "identity_word_absent:쓸"
+            ]
+          },
+          {
+            "id": "C11-3-P5",
+            "hard": [
+              "not_requested_accessory",
+              "identity_word_absent:마우스에",
+              "identity_word_absent:쓸",
+              "identity_word_absent:충전"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C11-4",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.19,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C11-4-P3",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C11-4-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C11-4-P5",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C11-4-P1",
+          "C11-4-P2",
+          "C11-4-P3",
+          "C11-4-P4",
+          "C11-4-P5"
+        ],
+        "kept": [
+          "C11-4-P1",
+          "C11-4-P3",
+          "C11-4-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C11-4-P2",
+            "hard": [
+              "accessory:충전 케이블",
+              "accessory:케이블"
+            ]
+          },
+          {
+            "id": "C11-4-P4",
+            "hard": [
+              "over_budget"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C11-4-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C11-4-P3",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C11-5",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 2.458,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C11-5-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C11-5-P5",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C11-5-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C11-5-P1",
+          "C11-5-P2",
+          "C11-5-P3",
+          "C11-5-P4",
+          "C11-5-P5"
+        ],
+        "kept": [
+          "C11-5-P2",
+          "C11-5-P4",
+          "C11-5-P5"
+        ],
+        "rejected": [
+          {
+            "id": "C11-5-P1",
+            "hard": [
+              "accessory:충전 케이블",
+              "accessory:케이블"
+            ]
+          },
+          {
+            "id": "C11-5-P3",
+            "hard": [
+              "excluded_brand:로지텍"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C11-5-P2",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C11-5-P5",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C11-6",
+      "verdict": "UNVERIFIED",
+      "reason": "candidate_evidence_incomplete",
+      "status": 200,
+      "ms": 3.218,
+      "fixtureCount": 5,
+      "shownCount": 2,
+      "top": [
+        {
+          "id": "C11-6-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C11-6-P4",
+          "verdict": "UNVERIFIED",
+          "identity": "unverified"
+        }
+      ],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 1,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C11-6-P1",
+          "C11-6-P2",
+          "C11-6-P3",
+          "C11-6-P4",
+          "C11-6-P5"
+        ],
+        "kept": [
+          "C11-6-P1",
+          "C11-6-P4"
+        ],
+        "rejected": [
+          {
+            "id": "C11-6-P2",
+            "hard": [
+              "condition_excluded:used"
+            ]
+          },
+          {
+            "id": "C11-6-P3",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C11-6-P5",
+            "hard": [
+              "accessory:충전 케이블",
+              "accessory:케이블"
+            ]
+          }
+        ]
+      },
+      "productWrites": [
+        {
+          "id": "C11-6-P1",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C11-7",
+      "verdict": "PASS",
+      "reason": "",
+      "status": 200,
+      "ms": 3.705,
+      "fixtureCount": 5,
+      "shownCount": 1,
+      "top": [
+        {
+          "id": "C11-7-P2",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 1,
+      "missedTargets": [
+        {
+          "id": "C11-7-P5",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C11-7-P2"
+        ],
+        "kept": [
+          "C11-7-P2"
+        ],
+        "rejected": []
+      },
+      "productWrites": [
+        {
+          "id": "C11-7-P2",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C11-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.697,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C11-8-P4",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 3,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C31-1",
+      "verdict": "FAIL",
+      "reason": "contradictory_candidate_shown",
+      "status": 200,
+      "ms": 1.982,
+      "fixtureCount": 5,
+      "shownCount": 3,
+      "top": [
+        {
+          "id": "C31-1-P2",
+          "verdict": "FAIL",
+          "identity": "verified"
+        },
+        {
+          "id": "C31-1-P1",
+          "verdict": "PASS",
+          "identity": "verified"
+        },
+        {
+          "id": "C31-1-P4",
+          "verdict": "PASS",
+          "identity": "verified"
+        }
+      ],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 2,
+      "missedTargets": [],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C31-1-P1",
+          "C31-1-P2",
+          "C31-1-P4"
+        ],
+        "kept": [
+          "C31-1-P1",
+          "C31-1-P2",
+          "C31-1-P4"
+        ],
+        "rejected": []
+      },
+      "productWrites": [
+        {
+          "id": "C31-1-P1",
+          "verdict": "PASS"
+        },
+        {
+          "id": "C31-1-P2",
+          "verdict": "FAIL"
+        },
+        {
+          "id": "C31-1-P4",
+          "verdict": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "C31-2",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.182,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C31-2-P5",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C31-2-P1",
+          "C31-2-P4",
+          "C31-2-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C31-2-P1",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C31-2-P4",
+            "hard": [
+              "category_absent:사양"
+            ]
+          },
+          {
+            "id": "C31-2-P5",
+            "hard": [
+              "category_absent:사양"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C31-3",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C31-3-P4",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C31-3-P4"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C31-3-P4",
+            "hard": [
+              "identity_word_absent:슬리퍼에",
+              "identity_word_absent:쓸"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C31-4",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 0.923,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C31-4-P1",
+          "where": "ranking_or_score_floor"
+        },
+        {
+          "id": "C31-4-P3",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C31-5",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.014,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C31-5-P2",
+          "where": "ranking_or_score_floor"
+        },
+        {
+          "id": "C31-5-P5",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C31-6",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.381,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C31-6-P1",
+          "where": "product_gate"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [
+          "C31-6-P1",
+          "C31-6-P2",
+          "C31-6-P3",
+          "C31-6-P4",
+          "C31-6-P5"
+        ],
+        "kept": [],
+        "rejected": [
+          {
+            "id": "C31-6-P1",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C31-6-P2",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C31-6-P3",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C31-6-P4",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          },
+          {
+            "id": "C31-6-P5",
+            "hard": [
+              "condition_excluded:refurbished"
+            ]
+          }
+        ]
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C31-7",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 1.589,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 2,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C31-7-P2",
+          "where": "ranking_or_score_floor"
+        },
+        {
+          "id": "C31-7-P5",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 5,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    },
+    {
+      "id": "C31-8",
+      "verdict": "FAIL",
+      "reason": "all_fixture_targets_missed",
+      "status": 200,
+      "ms": 2.086,
+      "fixtureCount": 5,
+      "shownCount": 0,
+      "top": [],
+      "fixtureTargets": 1,
+      "targetsShownTop10": 0,
+      "missedTargets": [
+        {
+          "id": "C31-8-P4",
+          "where": "ranking_or_score_floor"
+        }
+      ],
+      "providerReturned": 4,
+      "gate": {
+        "input": [],
+        "kept": [],
+        "rejected": []
+      },
+      "productWrites": []
+    }
+  ]
+}
