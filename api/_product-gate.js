@@ -928,10 +928,11 @@ function judge(spec, item, opts = {}) {
     // 범주 낱말 정렬(_search.productFocus) — 강한 부속(케이스·세척솔·패킹·공병…)은 hard.
     // 상품명 머리가 찾는 종류의 기기라고 이미 확인됐으면(principalItem) 이 어순 규칙은 쓰지 않는다.
     const sameDevice = principal.kind === 'device' && !!spec.type && principal.type === spec.type;
-    // The focus scorer must see the same sold-object phrase as the
-  // principal classifier; otherwise "+ 깔창 증정" is re-read as a standalone
-  // accessory after stripBundleItems has already removed the gift.
-  const focus = sameDevice ? null : S.productFocus(spec.analysis, principalTitle);
+    // The focus scorer must receive the *unbundled* sold-object phrase,
+  // not principalTitle (which still contains "+ 깔창 증정" for most queries).
+  // stripBundleItems keeps the primary sold accessory for
+  // "아이패드 케이스 + 필름 증정", but removes extras for real main devices.
+  const focus = sameDevice ? null : S.productFocus(spec.analysis, unbundled);
     if (focus && focus.factor < 1 && focus.accessory) {
       const acc = focus.accessory;
       const accIsHead = spec.head && (acc === spec.head || spec.head.endsWith(acc));
