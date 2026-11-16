@@ -248,6 +248,44 @@ const titles = r => r.shown;
     check(laptops.length === 1 && /대화면 노트북/.test(laptops[0]), '노트북 상품명 끝의 «한글 키보드» 는 사양 — 키보드 단품·교체용 자판은 빠진다', laptops);
   }
 
+  /* ── 검색 경로 과잉 차단 (2026-11-16, 맞는 상품을 버린 사유 실측 후) ─────── */
+  section('과잉 차단 — 사양 낱말·제품군 번호·옵션 고르기는 다른 상품이 아니다');
+  {
+    const keptOf = (q, titles, opts) => Gate.gateItems(q, titles.map(t => ({ title: t, lprice: 1500000 })), opts).kept.map(x => x.title);
+    const book = keptOf('갤럭시북5 프로', ['삼성전자 갤럭시북5 프로 NT960XHA-K51A 인텔 울트라5 16인치', '갤럭시북5 프로 14인치 인텔 Ultra 5 터치스크린', '삼성 갤럭시북5 울트라 16인치']);
+    check(book.length === 2 && book.every(t => /프로/.test(t)), 'CPU 이름(인텔 울트라5·Ultra 5)은 «울트라» 변형이 아니다 — 갤럭시북5 울트라는 빠진다', book);
+    const s25 = keptOf('갤럭시 S25 울트라 5G', ['삼성 갤럭시 S25 울트라 5G 256GB 자급제', '삼성 갤럭시 S25 5G 256GB']);
+    check(s25.length === 1 && /울트라/.test(s25[0]), '«울트라 5G» 는 CPU 가 아니다', s25);
+    const gram = keptOf('LG 그램 16', ['LG전자 2026 그램 16 코어 Ultra5, 256GB, 16GB, Free DOS, 16ZD90S-GX5VK']);
+    check(gram.length === 1, 'CPU·운영체제·메모리 표기를 «여러 모델» 로 세지 않는다', gram);
+    const flip = keptOf('갤럭시 Z 플립6 케이스', ['플립7FE 곡면 3D 패턴 갤럭시Z플립7 플립6 스티치 하드 플립5 케이스', '갤럭시 Z 플립6 하드 케이스']);
+    check(flip.length === 1 && !/플립5/.test(flip[0]), '같은 제품군 번호가 셋 이상인 부속 글(플립7·6·5)은 여러 모델이다', flip);
+    const fold = keptOf('갤럭시 Z 폴드6 512GB', ['갤럭시 삼성전자 Z폴드6 512GB 미개봉 새제품', '삼성 갤럭시 Z Fold6 512GB 자급제', '갤럭시 Z 폴드5 512GB', '갤럭시 Z 플립6 512GB']);
+    check(fold.length === 2 && fold.every(t => /폴드6|fold6/i.test(t)), '«Z 폴드6» 의 6 은 폴드의 번호다 (갤럭시가 아니다)', fold);
+    const maxv = keptOf('로보락 S8 MaxV 울트라', ['로보락 S8 MaxV Ultra 로봇청소기', '로보락 S8 Pro Ultra 로봇청소기', '로보락 S8 MaxV 로봇청소기']);
+    check(maxv.length === 1 && /MaxV Ultra/.test(maxv[0]), '«MaxV» 는 max 변형 — 질의의 울트라도 지킨다', maxv);
+    const mac = keptOf('맥북 에어 M3 13', ['애플 2024 맥북 에어 M3 칩 13인치 16GB 256GB', '애플 맥북 에어 M3 15인치']);
+    check(mac.length === 1 && /13인치/.test(mac[0]), '노트북 제품군 번호는 화면 크기다 (13 = 13인치, 15인치는 다른 모델)', mac);
+    const slim = keptOf('레노버 아이디어패드 슬림3', ['[레노버] 아이디어패드 Slim3 16ARP10 R5-7533HS 8G 256G OLED', '레노버 아이디어패드 슬림5 14 노트북']);
+    check(slim.length === 1 && /Slim3/.test(slim[0]), '«Slim3» 는 슬림 변형 — 노트북의 OLED 는 다른 모델이 아니다(확인 불가)', slim);
+    const tab = keptOf('갤럭시탭 S10 FE+ 128GB', ['갤럭시탭 s10 fe+ 128GB wifi SM-X620 s펜+북커버포함-그레이']);
+    check(tab.length === 1, '«s펜+북커버포함» 은 딸려 오는 구성품이다', tab);
+    const rice = keptOf('쿠쿠 IH 압력밥솥', ['쿠쿠 10인용 IH압력밥솥 (색상 택1)', '쿠쿠 IH압력밥솥 블랙/화이트 택1', '쿠쿠 밥솥 6인용/10인용 택1']);
+    check(rice.length === 2 && rice.every(t => !/6인용\/10인용/.test(t)), '색·크기 «택1» 은 옵션 고르기, 다른 상품 «택1» 은 모음', rice);
+    const pad = keptOf('노트북 쿨링패드', ['지클릭커 콜드마스터 NC25 쿨링패드 게이밍 RGB 노트북 쿨러 거치대', '투데이리빙 마그네틱 스마트폰 쿨러', 'LG 그램 16 노트북']);
+    check(pad.length === 1 && /쿨링패드/.test(pad[0]), '«쿨링패드» 는 부속 검색 — 거치대 겸용 쿨링패드를 받고 노트북·폰쿨러는 뺀다', pad);
+    const pods = keptOf('에어팟 프로 2', ['Apple 에어팟 프로 2세대 USB-C 맥세이프 충전 케이스', '에어팟 프로 2세대 충전 케이스 단품', '에어팟 프로 2 실리콘 케이스']);
+    check(pods.length === 1 && /USB-C 맥세이프/.test(pods[0]), '이어폰 상품명의 «맥세이프 충전 케이스» 는 상품 이름 — 케이스 단품·실리콘 케이스는 빠진다', pods);
+    const chat = keptOf('갤럭시 버즈3 화이트 최저가 어디', ['삼성 갤럭시 버즈3 화이트 SM-R530']);
+    check(chat.length === 1, '검색창의 묻는 말(«어디», «파는 곳», «얼마예요»)은 상품 이름이 아니다', chat);
+    const dress = Gate.gateItems('여름 원피스 이쁜거', [{ title: '여성 린넨 여름 원피스 롱', lprice: 39000 }]).kept;
+    check(dress.length === 1, '후보 누구도 쓰지 않는 범주 머리 낱말(«이쁜거»)은 확인 불가 — 다 버리지 않는다', dress.map(x => x.identity));
+    check(keptOf('JBL 튠 이어폰', ['JBL T215BT 넥밴드 블루투스 이어폰', 'JBL Live Beam 3 무선 이어폰']).length === 0,
+      '고유 이름(«튠»)은 후보 누구도 안 써도 hard — 다른 JBL 을 보여 주지 않는다');
+    check(keptOf('레이저 데스애더 V3', ['레이저 Razer Hammerhead V3 X HyperSpeed', 'RAZER BlackShark V3 X HyperSpeed']).length === 0,
+      '«데스애더» 가 없으면 같은 브랜드의 V3 라도 다른 상품이다');
+  }
+
   console.log(`\nPRODUCT_GATE_${failures.length ? 'FAIL' : 'PASS'} ${pass} passed, ${failures.length} failed — external calls 0, DB fake only`);
   if (failures.length) process.exitCode = 1;
 })().catch(e => { console.error('PRODUCT_GATE_FAIL', e.stack); process.exitCode = 1; });

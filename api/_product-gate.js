@@ -76,8 +76,13 @@ const LINE = new Map(Object.entries({
   레드미: 'redmi', redmi: 'redmi', 요가: 'yoga', yoga: 'yoga', 인스피론: 'inspiron', inspiron: 'inspiron',
   파빌리온: 'pavilion', pavilion: 'pavilion', 플레이스테이션: 'playstation', playstation: 'playstation',
   버디: 'buddy', buddy: 'buddy', 퓨리케어: 'puricare', puricare: 'puricare', 울트라기어: 'ultragear', ultragear: 'ultragear',
-  비스포크: 'bespoke', bespoke: 'bespoke', 오즈모: 'osmo', osmo: 'osmo', 포켓: 'pocket', pocket: 'pocket'
+  비스포크: 'bespoke', bespoke: 'bespoke', 오즈모: 'osmo', osmo: 'osmo', 포켓: 'pocket', pocket: 'pocket',
+  // «Z 폴드6»·«Z 플립6» 의 번호는 폴드·플립에 붙는다 — 갤럭시에 붙이면 «갤럭시 6» 을 찾다가 못 찾는다.
+  폴드: 'fold', fold: 'fold', 플립: 'flip', flip: 'flip'
 }));
+// 번호가 화면 크기인 제품군 (노트북·태블릿·모니터) — «맥북 에어 13» = 13인치.
+const SIZE_LINE_KEYS = new Set(['macbook', 'gram', 'ipad', 'book', 'tab', 'ideapad', 'vivobook', 'zenbook', 'thinkpad',
+  'surface', 'legion', 'yoga', 'inspiron', 'pavilion', 'odyssey', 'ultragear']);
 // «노트북»·«넷북» 은 범주 낱말이지 «북» 제품군이 아니다.
 const NOT_LINE_COMPOUND = /^(?:노트북|넷북|이북|e북|전자책|페이스북|스케치북|가이드북|핸드북|워크북|레슨북|헤어밴드|고무밴드|머리밴드|손목밴드|요가밴드|스마트밴드)$/;
 // 같은 제품군 키를 갖는 표기들 («galaxy» ↔ «갤럭시») — 엄격 비교에서도 서로 같은 이름이다.
@@ -131,18 +136,25 @@ const CHAT_STOP = new Set(['얼마', '얼마야', '얼마예요', '얼마에요'
   '어때', '어떄', '뭐야', '뭐가', '나아', '괜찮아', '살까', '사도', '돼', '될까', '다시', '그럼', '아니', '네', '응', '음',
   // 거래·속성을 묻는 말 — 상품 이름이 아니다 («버즈3 프로 블랙 얼마에 팔아», «결제 금액», «파는 링크», «색상·사이즈»)
   '결제', '결제가', '결제액', '금액', '판매', '판매처', '판매가', '구매', '구매처', '주문', '링크', '파는', '팔아', '파는곳',
-  '색상', '컬러', '색깔', '사이즈', '옵션', '실물', '상품명', '여부']);
+  '색상', '컬러', '색깔', '사이즈', '옵션', '실물', '상품명', '여부',
+  // 검색창에 묻듯이 친 말 («얼마예요», «어디서 사», «파는 곳», «이쁜거», «있어?»)
+  '얼마예', '얼마에', '얼만지', '어디', '어디서', '어디야', '곳', '파는곳', '좋아', '좋아요', '좋은거', '좋은것',
+  '이쁜거', '예쁜거', '싼거', '괜찮은거', '있어', '있나', '있어요', '있을까요']);
 NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
-const UNIVERSAL_ACCESSORY = /^(?:케이스|커버|필름|보호\s*필름|강화\s*유리|보안기|키\s*스킨|스킨|파우치|슬리브|거치대|받침(?:대)?|지지대|충전기|충전\s*독|충전\s*케이블|케이블|어댑터|젠더|스트랩|(?:워치|시계|watch)\s*(?:밴드|줄|스트랩)|이어\s*팁|이어\s*패드|이어\s*캡|키캡|팜\s*레스트|손목\s*받침|마우스\s*패드|펜촉|리필|교체품|호환품|media|replacement_part|fits_sentence|브라켓|브래킷|마운트|홀더|리모컨|리시버|동글|도킹\s*스테이션|도킹|허브|소모품|부품|수리|액정|lcd|어셈블리|프레임|힌지|하판|상판|정리대|보관대|수납장|장식장|악세(?:서|사)리|액세서리|쿨러|쿨링\s*팬|s\s*펜|펜슬|터치\s*펜|스타일러스)$/i;
+const UNIVERSAL_ACCESSORY = /^(?:케이스|커버|필름|보호\s*필름|강화\s*유리|보안기|키\s*스킨|스킨|파우치|슬리브|거치대|받침(?:대)?|지지대|충전기|충전\s*독|충전\s*케이블|케이블|어댑터|젠더|스트랩|(?:워치|시계|watch)\s*(?:밴드|줄|스트랩)|이어\s*팁|이어\s*패드|이어\s*캡|키캡|팜\s*레스트|손목\s*받침|마우스\s*패드|펜촉|리필|교체품|호환품|media|replacement_part|fits_sentence|브라켓|브래킷|마운트|홀더|리모컨|리시버|동글|도킹\s*스테이션|도킹|허브|소모품|부품|수리|액정|lcd|어셈블리|프레임|힌지|하판|상판|정리대|보관대|수납장|장식장|악세(?:서|사)리|액세서리|쿨러|쿨링\s*팬|쿨링\s*패드|s\s*펜|펜슬|터치\s*펜|스타일러스)$/i;
+// 질의에 이 말이 있으면 부속을 찾는 것이다 (_search 부속 사전에 없는 것).
+const EXTRA_ACCESSORY_QUERY = /쿨링\s*패드|노트북\s*쿨러|쿨링\s*거치대/;
 // 범주에 따라 본품의 기능 표기일 수도 있는 부속 명사 — 두 번째 근거가 있어야 hard.
 const AMBIGUOUS_ACCESSORY = /^(?:필터|배터리|브러시|브러쉬|노즐|롤러|걸레|물걸레\s*패드|먼지\s*봉투|더스트\s*백|헤드|모듈|스크린|튜브|호스|연장관|매트|스탠드|팁|플러그|마이크|렌즈)$/i;
 // 범주가 정해지지 않은 검색에서도 «다른 물건을 판다» 고 볼 머리 명사(_ai-v32-listing STRONG_ACCESSORY 와 같은 계열)
 const STRONG_OTHER = /^(?:필름|보호\s*필름|강화\s*유리|보안기|키\s*스킨|가방|백팩|파우치|슬리브|크로스\s*백|메신저\s*백|충전기|어댑터|거치대|받침(?:대)?|지지대|스트랩|리시버|세제|세정제|경사대|정리대|화분|수납장|허브|악세(?:서|사)리|액세서리)$/i;
 const PART_MARK = /(?:호환|교체|교체용|리필|단품|\d+\s*(?:개|입|매|팩|세트|p|ea)\b|\d+\s*(?:개|입|매|팩|세트)(?=\s|,|$)|\(\s*\d+\s*(?:개|입|매)\s*\))/i;
 // 본품에 딸려 오는 구성품 표기. 지우고 나서 부품 규칙을 본다.
-const BUNDLE_PHRASE = /(?:\+\s*)?(?:정품\s*)?(?:케이스|커버|필름|보호\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드)\s*(?:포함|증정|동봉|제공|구성|탑재|내장|장착|무료\s*증정|기본\s*제공)/gi;
+// 딸려 오는 구성품이 여럿이면 «s펜+북커버포함» 처럼 +·/·, 로 이어 적는다 — 이어진 것 전체가 구성품이다.
+const BUNDLE_ITEM = '(?:정품\\s*)?(?:s\\s*펜|북\\s*커버|케이스|커버|필름|보호\\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드)';
+const BUNDLE_PHRASE = new RegExp(`(?:\\+\\s*)?${BUNDLE_ITEM}(?:\\s*[+/,&]\\s*${BUNDLE_ITEM})*\\s*(?:포함|증정|동봉|제공|구성|탑재|내장|장착|무료\\s*증정|기본\\s*제공)`, 'gi');
 
 // «X 전용 Y» · «X 입을 때 Y» — X 는 대상이고 Y 를 판다. 머리 명사 바로 뒤 낱말로 본다.
 const RELATION_NEXT = /^(?:전용|호환|용|위한|입을때|입을|입는|쓸|쓰는|넣는|담는|걸이|꽂이|거치|거치대|받침|받침대|보관|보관함|수납|수납함|정리|정리함|정리대|세척|세척솔|세척기|청소용|청소|건조|건조대|살균|살균기|커버|케이스|파우치|가방|망|디스펜서|리필|교체|교체용|필터|패드|스티커|밴드|스트랩|끈|선반|랙|트레이|덮개|세제|린스|세정제|클리너|네임택|자물쇠|키링|이어후크|이어훅|냉각팬|쿨러|쿨링팬|부품|모터|펌프)$/;
@@ -156,6 +168,32 @@ const endsWithTailObject = t => TAIL_OBJECT.test(t) || TAIL_OBJECT_WORDS.some(w 
 const RELATION_SUFFIX = /(?:용|전용|호환)$/;
 // 여러 모델·상품을 한 글에서 고르게 하는 판매 글 — 가격이 어느 상품의 것인지 알 수 없다.
 const COLLECTION = /(?:총\s*모음|모음전|모음\s*(?:특가|기획)|(?<![가-힣])모음(?=$|\s|[\])])|모아\s*보기|기획전|골라\s*담기|택\s*1(?!\d)|택일|옵션\s*선택|모델\s*선택|색상\s*선택\s*(?:가능)?\s*모델|랜덤\s*(?:발송|모델)|\d+\s*종\s*(?:중\s*)?택|외\s*(?:최대\s*)?(?:혜택가?|특가|할인|\d+\s*종))/;
+/**
+ * 무선 이어폰 상품명의 «(맥세이프) 충전 케이스» 는 상품 이름의 일부다(«에어팟 프로 2세대 USB-C 맥세이프 충전 케이스»).
+ * 케이스만 파는 글은 «단품»·«본체»·«케이스만»·«교체»·«호환»·«왼쪽/오른쪽/한쪽»·«유닛» 같은 표시가 붙는다 — 그때는 지우지 않는다.
+ */
+const EARBUD_LINE = /(?:에어팟|airpods|버즈|buds|이어폰|이어버드|earbuds|tws)/i;
+const EARBUD_CASE = /(?:맥세이프|magsafe|무선|유선|usb-?\s*c\s*)?\s*충전\s*케이스(?:\s*(?:모델|포함))?/gi;
+const CASE_ONLY_MARK = /(?:단품|본체|케이스\s*만|교체|호환|리필|왼쪽|오른쪽|한쪽|유닛|낱개|실리콘|하드\s*케이스|키링|커버)/i;
+function earbudCaseFree(title) {
+  const t = String(title || '');
+  if (!EARBUD_LINE.test(t) || CASE_ONLY_MARK.test(t)) return t;
+  return t.replace(EARBUD_CASE, ' ');
+}
+
+/**
+ * «(색상 택1)», «블랙/화이트 택1» 은 같은 상품의 색·크기를 고르는 것이다 — 여러 상품을 한 글에 모은 것이 아니다.
+ * 목록 표시가 «택1» 하나뿐이고, 바로 앞이 색·크기·옵션 낱말이거나 색 이름 나열일 때만.
+ */
+function optionChoiceOnly(title) {
+  const t = String(title || '');
+  const m = COLLECTION.exec(t);
+  if (!m || !/^택\s*1$/.test(m[0].trim())) return false;
+  if (COLLECTION.test(t.slice(0, m.index) + ' ' + t.slice(m.index + m[0].length))) return false;   // 다른 목록 표시가 또 있다
+  const before = t.slice(Math.max(0, m.index - 24), m.index);
+  if (/(?:색상|컬러|색깔|사이즈|옵션|색)\s*[:\-]?\s*$/.test(before)) return true;
+  return colorsIn(before).length >= 1 && /[\/,·]/.test(before);
+}
 const COMPATIBLE_PART = /(?:호환\s*(?:제품|상품|부품|소모품)|호환용|호환품|교체용\s*(?:헤드|모|필터|브러시|배터리)|정품\s*아님|비정품)/;
 const KIDS = /(?:아동|키즈|유아|주니어|남아|여아|토들러|베이비|아기|어린이|kids?|junior|toddler|baby)/i;
 // 노트북 검색에서 노트북이 아닌 PC 부품
@@ -325,6 +363,7 @@ function parseQuery(text, opts = {}) {
   // (#236 이후 explicitType 은 «노트북 거치대» 같은 부속 구절에 종류를 돌려주지 않는다 — 언급 자체를 본다)
   const typeMentioned = !!TAX.explicitType(idText) || TAX.typeMentions(idText).length > 0;
   const wantsAccessory = accessoryWords.length > 0
+    || EXTRA_ACCESSORY_QUERY.test(idText)
     || (principal.kind === 'accessory' && (UNIVERSAL_ACCESSORY.test(String(principal.noun || '')) || typeMentioned))
     || (!!type0 && TAX.isPart(idText, type0));
   // 찾는 물건이 부속 사전의 명사(방수팩·쿨링패드)면 앞의 기기(휴대폰·노트북)는 «무엇에 쓰는가» 다.
@@ -473,7 +512,8 @@ function familyRuns(tokens) {
     if (UNIT_AFTER.has(next)) continue;
     if (S.YEAR_RE.test(t) && Number(t) >= 2000 && Number(t) <= 2035) continue;
     let j = i - 1;
-    while (j >= 0 && (VARIANT.has(tokens[j]) || /^\d{1,4}$/.test(tokens[j]) || RUN_SKIP.has(tokens[j])
+    // 제품군 낱말이면 변형 낱말이기도 해도(«폴드»·«플립») 거기서 멈춘다 — «Z 폴드6» 의 6 은 폴드의 번호다.
+    while (j >= 0 && !lineKey(tokens[j]) && (VARIANT.has(tokens[j]) || /^\d{1,4}$/.test(tokens[j]) || RUN_SKIP.has(tokens[j])
       || (/\d/.test(tokens[j]) && /[a-z]/.test(tokens[j])) || /^[a-z]$/.test(tokens[j]))) j--;
     if (j < 0) continue;
     const anchor = tokens[j];
@@ -518,19 +558,30 @@ function listingRunsAfter(tokens, anchorKey, { skipYears = true, anchor = '' } =
 function queryVariants(tokens) {
   const set = new Set();
   const hasLine = tokens.some(t => lineKey(t));
+  // 모델 코드(«S8», «G304»)를 친 질의의 변형 낱말은 상품 이름이다 — «로보락 S8 맥스V 울트라» 의 울트라.
+  const hasCode = tokens.some(t => /^(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{2,}$/.test(t));
+  // 변형 낱말로 시작하는 붙임 표기(«맥스V»)도 이웃 변형으로 센다.
+  const variantLike = n => VARIANT.has(n) || [...VARIANT.keys()].some(k => k.length >= 2 && n.startsWith(k) && n.length <= k.length + 2);
   tokens.forEach((t, i) => {
     const compound = VARIANT_COMPOUND.get(t);
     if (compound) { compound.forEach(v => set.add(v)); return; }
+    // «MaxV»·«맥스V» — 변형 낱말에 한 글자가 붙은 표기는 그 변형이다 (상품명 쪽 listingVariants 와 같은 규칙)
+    const glued = t.match(/^(pro|max|ultra|plus|air|mini|lite|neo|프로|맥스|울트라|플러스|에어|미니|라이트)[a-z]$/);
+    if (glued && VARIANT.has(glued[1])) { set.add(VARIANT.get(glued[1])); return; }
     const v = VARIANT.get(t);
     if (!v) return;
     const near = [tokens[i - 1], tokens[i + 1]].filter(Boolean);
-    if (hasLine || near.some(n => /\d/.test(n) || VARIANT.has(n) || brandsIn(n).length)) set.add(v);
+    if (hasLine || hasCode || near.some(n => /\d/.test(n) || variantLike(n) || brandsIn(n).length)) set.add(v);
   });
   return set;
 }
 
 // 노트북 CPU 이름(코어 울트라 7) · 칩셋 표기를 제품 변형으로 읽지 않게 지운다.
-const CPU_PHRASE = /(?:(?:인텔|intel)\s*)?(?:코어|core)\s*(?:울트라|ultra)\s*[3579](?:\s*\d{3}[a-z]{0,2})?|(?:울트라|ultra)\s*[579]\s+\d{3}[a-z]{0,2}|\d{1,2}\s*세대\s*(?:울트라|ultra)\s*[3579](?![0-9a-z])|(?:울트라|ultra)\s*[3579](?=\s*(?:ram|램|\d+\s*gb|프로세서|cpu))|(?:라이젠|ryzen)\s*[3579](?:\s*pro)?|스냅\s*드래곤\s*x\s*(?:엘리트|plus|플러스)?|snapdragon\s*x\s*(?:elite|plus)?|a\d{2}\s*(?:pro|bionic|프로)|\bm[1-4]\s*(?:pro|max|프로|맥스)\s*칩/gi;
+const CPU_PHRASE = /(?:(?:인텔|intel)\s*)?(?:코어|core)\s*(?:울트라|ultra)\s*[3579](?:\s*\d{3}[a-z]{0,2})?|(?:울트라|ultra)\s*[579]\s+\d{3}[a-z]{0,2}|\d{1,2}\s*세대\s*(?:울트라|ultra)\s*[3579](?![0-9a-z])|(?:울트라|ultra)\s*[3579](?=\s*(?:ram|램|\d+\s*gb|프로세서|cpu))|(?:라이젠|ryzen)\s*[3579](?:\s*pro)?|스냅\s*드래곤\s*x\s*(?:엘리트|plus|플러스)?|snapdragon\s*x\s*(?:elite|plus)?|a\d{2}\s*(?:pro|bionic|프로)|\bm[1-4]\s*(?:pro|max|프로|맥스)\s*칩|(?<![a-z0-9가-힣])(?:울트라|ultra)\s*[579](?![0-9a-z])(?!\s*g\b)/gi;
+// 사양 낱말(CPU 모델·운영체제·화면·메모리) — «한 글에 여러 모델» 을 셀 때 모델 코드로 세지 않는다.
+// «16ZD90S-GX5VK … Ultra5 … Free DOS», «16ARP10 R5-7533HS 8G 256G», «X1607CA-MB081W 인텔 U5-225H 300nits» 는 한 상품이다.
+const SPEC_NOISE = /(?<![a-z0-9])(?:[iu]|r|n)\s*[3579]\s*-?\s*\d{3,5}[a-z]{0,2}(?![a-z0-9])|(?<![a-z0-9])win(?:dows)?\s*1[01](?:\s*(?:home|pro|홈|프로|[ph]))?(?![a-z0-9])|free\s*dos|freedos|\d{2,4}\s*nits|(?<![a-z0-9])\d(?:\.\d)?\s*k(?![a-z0-9])|\d{2,3}\s*hz|\d+\s*(?:gb|tb|g|기가|테라)(?![a-z0-9])|l?pddr\d+x?|ddr\d+/gi;
+const specFree = title => String(title || '').replace(CPU_PHRASE, ' ').replace(SPEC_NOISE, ' ');
 function listingVariants(title) {
   const cleaned = String(title || '').replace(CPU_PHRASE, ' ');
   const tokens = S.splitTokens(normalize(cleaned));
@@ -542,6 +593,9 @@ function listingVariants(title) {
     // «MaxV», «ProX» — 변형 낱말에 한 글자가 붙은 표기도 그 변형이다
     const glued = t.match(/^(pro|max|ultra|plus|air|mini|lite|neo)[a-z]$/);
     if (glued) { set.add(VARIANT.get(glued[1])); counted[i] = true; }
+    // «Slim3», «Pro14» — 변형 낱말에 번호가 붙은 표기도 그 변형이다
+    const numbered = t.match(/^(slim|pro|max|ultra|plus|air|mini|lite|edge|neo|fold|flip)(\d{1,2})$/);
+    if (numbered && VARIANT.has(numbered[1])) { set.add(VARIANT.get(numbered[1])); counted[i] = true; }
   });
   let changed = true;
   while (changed) {
@@ -696,7 +750,7 @@ function judge(spec, item, opts = {}) {
   const soft = [];
   const price = Number(item && (item.lprice != null ? item.lprice : item.price)) || 0;
   // 판매 대상은 딸려 오는 구성품(«충전 거치대 포함», «케이스 증정»)을 지운 상품명으로 본다.
-  const principal = LST.principalItem(title.replace(BUNDLE_PHRASE, ' '));
+  const principal = LST.principalItem(earbudCaseFree(title.replace(BUNDLE_PHRASE, ' ')));
 
   if (!title.trim()) return { ok: false, hard: ['empty_title'], soft, principal };
   const codeInTitle = spec.models.some(c => T.flat.includes(c));
@@ -708,7 +762,7 @@ function judge(spec, item, opts = {}) {
     const headGroup = HEAD_SYN.get(spec.head) || [];
     const nounIsHead = !!spec.head && (nounFlat === spec.head || headGroup.includes(nounFlat)
       || spec.head.endsWith(nounFlat) || nounFlat.endsWith(spec.head));
-    const unbundled = title.replace(BUNDLE_PHRASE, ' ');
+    const unbundled = earbudCaseFree(title.replace(BUNDLE_PHRASE, ' '));
     const deviceNouns = LST.collectNouns(T.main).filter(n => n.kind === 'device' && n.type === spec.type);
     // 범주가 정해지지 않은 검색에서 머리 명사가 부속 명사 «뒤» 에 오면 머리 명사가 판매 대상이다
     // («여권 지갑 … 카드 홀더 동전 지갑», «상판분리 바베큐 전기그릴 … 생선구이기»). 상품명은 머리가 끝에 온다.
@@ -790,9 +844,10 @@ function judge(spec, item, opts = {}) {
   }
 
   /* 2. 한 글에 여러 모델·상품 — 가격이 어느 것의 것인지 알 수 없다 */
-  if (COLLECTION.test(title)) hard.push('collection_listing');
-  if (spec.type && ['스마트폰', '태블릿', '노트북', '이어폰', '시계', '청소기'].includes(spec.type) && listsManyModels(title)) hard.push('many_models');
-  if (spec.wantsAccessory && listsManyModels(title)) hard.push('many_models');
+  if (COLLECTION.test(title) && !optionChoiceOnly(title)) hard.push('collection_listing');
+  const manyModels = listsManyModels(specFree(title));
+  if (spec.type && ['스마트폰', '태블릿', '노트북', '이어폰', '시계', '청소기'].includes(spec.type) && manyModels) hard.push('many_models');
+  if (spec.wantsAccessory && manyModels) hard.push('many_models');
   for (const code of spec.models) {
     const shape = code.match(/^([a-z]+)(\d+)$/);
     if (!shape) continue;
@@ -810,9 +865,16 @@ function judge(spec, item, opts = {}) {
   }
 
   /* 4. 범주 낱말·제품군 이름·고유 이름이 있어야 한다 */
+  // 범주 머리 낱말이 이번 후보 상품명 어디에도 없으면(«여름 원피스 이쁜거» 의 «이쁜거») 상품을 가르는 범주가 아니다 —
+  // 그 낱말 하나로 모든 후보를 버리지 않고 «확인 안 됨» 으로 둔다(저장하지 않고 확인된 상품 뒤에 둔다).
+  // 고유 이름 낱말(identityWords)에는 이 규칙을 쓰지 않는다 — 아래 주석.
+  const unattested = w => !!spec.titleFlat && !spec.titleFlat.includes(flatWord(w))
+    && !(ALIASES.get(w) || []).some(a => spec.titleFlat.includes(flatWord(a)));
   if (spec.head && !spec.type && !spec.wantsAccessory) {
     // 범주 낱말(HEAD_SYN)은 모델 코드가 맞으면 생략될 수 있다. 고유 이름(«데스애더», «디스크»)은 생략될 수 없다.
-    if (!present(spec.head, T)) (codeInTitle && HEAD_SYN.has(spec.head) ? soft : hard).push(`category_absent:${spec.head}`);
+    // 머리 낱말이 고유 이름(«데스애더» — 영문 표기 쌍이 있거나 영문·숫자를 품은 말)이면 후보 누구도 안 써도 hard 다.
+    const nameLike = ALIASES.has(spec.head) || /[a-z0-9]/i.test(spec.head);
+    if (!present(spec.head, T)) ((codeInTitle && HEAD_SYN.has(spec.head)) || (unattested(spec.head) && !nameLike) ? soft : hard).push(`category_absent:${spec.head}`);
   } else if (spec.type && !spec.wantsAccessory && opts.stored) {
     const sameType = principal.kind === 'device' && principal.type === spec.type;
     if (!sameType && !(spec.head && present(spec.head, T)) && !TAX.productTypeMatches(title, spec.type, spec.raw)) {
@@ -828,6 +890,8 @@ function judge(spec, item, opts = {}) {
     if (present(w, T, true)) continue;
     // 한글로 친 고유 이름의 영문 표기는 ALIASES 표로 찾는다(«데스애더» ↔ DeathAdder). 표에도 없으면
     // 그 이름을 상품명이 증명하지 못한다 — 다른 상품을 그 이름으로 보여 주지 않는다.
+    // 고유 이름은 후보 누구도 쓰지 않아도 hard 다 — «JBL 튠», «데스애더 V3» 에 다른 JBL·레이저 상품을 보여 주면 안 된다
+    // (dev 실측: soft 로 두자 D075·D149 가 틀린 상품을 보였다). 대화 말은 CHAT_STOP 이 미리 뺀다.
     hard.push(`identity_word_absent:${w}`);
   }
 
@@ -862,6 +926,10 @@ function judge(spec, item, opts = {}) {
   for (const fam of spec.families) {
     const want = fam.nums;
     const runs = listingRunsAfter(T.tokens, fam.anchorKey, { skipYears: want[0] < 1000, anchor: fam.anchor }).filter(r => r.length);
+    // 같은 제품군 낱말 뒤에 서로 다른 번호가 여럿(«플립7 플립6 플립5 케이스», «그램 15 16 17») — 여러 모델을 한 글에 적었다.
+    // 본품 검색은 둘, 부속 검색은 셋부터 (부속은 «15/16 겸용» 정도는 흔하다).
+    const firstNums = new Set(runs.map(r => r[0]));
+    if (firstNums.size >= 3 || (firstNums.size >= 2 && !spec.wantsAccessory)) { hard.push('many_models'); continue; }
     if (runs.length) {
       if (runs.some(r => r[0] === want[0])) {
         const best = runs.find(r => r[0] === want[0]);
@@ -883,7 +951,10 @@ function judge(spec, item, opts = {}) {
     const flatRaw = normalize(rawN);
     const glued = anchorToks.some(t => new RegExp(`${escapeRe(t)}\\s?${want[0]}(?![0-9])`).test(flatRaw));
     const inCode = T.tokens.some(t => /[a-z]/.test(t) && new RegExp(`(?<!\\d)${want[0]}(?!\\d)`).test(t));
-    if (standalone || glued || inCode) continue;
+    // 노트북·태블릿·모니터 제품군의 번호는 화면 크기다 — «맥북 에어 13» 은 «13인치», «그램 16» 은 «16형».
+    const sizeLine = !fam.gen && (['노트북', '태블릿', '모니터'].includes(spec.type) || SIZE_LINE_KEYS.has(fam.anchorKey));
+    const sizeEvidence = sizeLine && new RegExp(`(?<![0-9.])${want[0]}(?:\\.\\d)?\\s*(?:인치|형|"|inch)`, 'i').test(rawN);
+    if (standalone || glued || inCode || sizeEvidence) continue;
     // 같은 자리에 다른 번호가 보이면(«스마트미밴드 11», «8시리즈») 다른 상품이다. 번호가 아예 없으면 확인 못 함.
     const other = T.tokens.filter((t, i) => /^\d{1,2}$/.test(t) && Number(t) !== want[0] && !UNIT_AFTER.has(T.tokens[i + 1] || ''));
     hard.push(other.length ? `line_number:${fam.anchor} ${want[0]}≠${other[0]}` : `line_number_unverified:${fam.anchor} ${want[0]}`);
@@ -899,7 +970,12 @@ function judge(spec, item, opts = {}) {
     const missing = [...spec.variants].filter(v => !LV.has(v));
     // 모델 코드만 친 검색(«SM-S938N»)에서 상품명의 «울트라» 는 그 코드의 이름이다 — 다른 변형이 아니다.
     const codeOnly = spec.models.length > 0 && !spec.lines.length && !spec.families.length && !spec.variants.size;
-    if (extra.length && !codeOnly) hard.push(`variant_extra:${extra.join(',')}`);
+    // 노트북·태블릿·모니터의 OLED 는 같은 모델의 화면 옵션이다(«젠북 14 OLED», «아이디어패드 슬림3 … OLED»).
+    // 다른 모델이라고 단정하지 않고 확인 불가로 둔다 — 콘솔(«스위치 OLED»)에서는 다른 모델이므로 그대로 hard.
+    const panelOption = ['노트북', '태블릿', '모니터'].includes(spec.type) ? extra.filter(v => v === 'oled') : [];
+    const extraHard = extra.filter(v => !panelOption.includes(v));
+    if (panelOption.length && !codeOnly) soft.push('variant_panel_unverified:oled');
+    if (extraHard.length && !codeOnly) hard.push(`variant_extra:${extraHard.join(',')}`);
     if (missing.length) hard.push(`variant_missing:${missing.join(',')}`);
   }
 
