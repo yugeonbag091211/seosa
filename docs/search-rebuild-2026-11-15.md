@@ -193,7 +193,7 @@ AI 110문항: main 53/51/6 (51.0%) · 수정 전 58/41/11 (58.6%) · 수정 후 
 
 - 브랜치: `claude/seosa-search-rebuild-ai-153f1c`
 - 커밋 (main 기준 위로): `a24385e` #238 병합 → `9c1d959` #236 병합(package.json 충돌: pretest 는 #238, test 는 #236 합집합) → `2230a2b` 질문 310개 사전 등록 → `5ad245f` 관문 → `7ff1b55` 재생 90개 사전 등록 → `4acae45` 재생에서 찾은 오탐 → `76aec78` AI 관문 → `b8a1960` 기록 행 판정 보수화 → `463d25b` 용도 구절·부속 마지막 위치 → `d48fcdf` AI v3 Neon 마이그레이션 → `e1bb9f2` DB 품질 진단·가역 정정 → `4a1956c` 전체 회귀 과잉 차단 수정 → `8d451c1` 띄어쓰기 견고성 측정 → `d4f914a` 결과 기록(holdout 1회) → `7739d79` 관문 예외 시 검색 유지 → `6bcdc3e` 이 보고서 → `bad1a48` 실시간 확인 기록 → `f7f47a0` 두 번째 holdout 봉인 → `fcba3c2`·`b8bdd16` 과잉 차단 수정 → `a192065` 범주 머리 규칙 되돌림 → 두 번째 holdout 결과 기록
-- 이 브랜치 고유 변경(병합 제외) 39개 파일(보고서 포함), 핵심:
+- 이 브랜치 고유 변경(병합 제외) 44개 파일(보고서·결과 포함), 핵심:
   - `api/_product-gate.js` (새 관문), `api/search.js`, `api/ai.js`, `api/_shop.js`, `public/index.html`, `scripts/collect-all-prices.js`
   - `api/_ai-v32-listing.js` (연식 뒤 «그램» 을 무게로 읽지 않음), `api/_ai-v34-listing-guards.js` (범주가 빈 슬래시 상품명을 상점 페이지로 오판하지 않음), `api/_search.js` (`stripConditionTerms` 공개)
   - `scripts/db-quality/` (진단·정정·확인·되돌리기 SQL, 분류 스크립트, README)
