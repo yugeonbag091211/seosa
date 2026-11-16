@@ -167,7 +167,7 @@ function stripBundleItems(title) {
   // Only remove explicit gifts; "+ 케이스" without 증정 remains ambiguous.
   const withoutExplicitGifts = raw.replace(/\s*\+\s*[^+]{1,60}?\s*(?:증정|동봉|무료\s*제공)(?=$|[\s,)\]])/gi,' ');
   return withoutExplicitGifts.replace(BUNDLE_PHRASE, (match, offset) => {
-    const before = raw.slice(0, offset);
+    const before = withoutExplicitGifts.slice(0, offset);
     if (!/^\s*\+/.test(match) && /[+/,&]/.test(match)
       && (/증정/.test(match) || !/(?:\d+\s*(?:gb|tb|기가|테라)|본품|본체|태블릿|노트북|스마트폰|이어폰|청소기)/i.test(before))) {
       const first = match.match(new RegExp('^(' + BUNDLE_ITEM + ')', 'i'));
