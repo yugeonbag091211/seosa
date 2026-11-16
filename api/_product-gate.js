@@ -162,7 +162,11 @@ const BUNDLE_PHRASE = new RegExp(`(?:\\+\\s*)?${BUNDLE_ITEM}(?:\\s*[+/,&]\\s*${B
 // 본품 사양이나 명시적 + 가 확인되지 않을 때 첫 대상 명사를 보존한다.
 function stripBundleItems(title) {
   const raw = String(title || '');
-  return raw.replace(BUNDLE_PHRASE, (match, offset) => {
+  // A clearly gifted extra after "+" is not the sold product, even when
+  // the extra's noun is not yet in BUNDLE_ITEM ("의자 전용 가방 증정").
+  // Only remove explicit gifts; "+ 케이스" without 증정 remains ambiguous.
+  const withoutExplicitGifts = raw.replace(/\s*\+\s*[^+]{1,60}?\s*(?:증정|동봉|무료\s*제공)(?=$|[\s,)\]])/gi,' ');
+  return withoutExplicitGifts.replace(BUNDLE_PHRASE, (match, offset) => {
     const before = raw.slice(0, offset);
     if (!/^\s*\+/.test(match) && /[+/,&]/.test(match)
       && (/증정/.test(match) || !/(?:\d+\s*(?:gb|tb|기가|테라)|본품|본체|태블릿|노트북|스마트폰|이어폰|청소기)/i.test(before))) {
@@ -919,7 +923,10 @@ function judge(spec, item, opts = {}) {
     // 범주 낱말 정렬(_search.productFocus) — 강한 부속(케이스·세척솔·패킹·공병…)은 hard.
     // 상품명 머리가 찾는 종류의 기기라고 이미 확인됐으면(principalItem) 이 어순 규칙은 쓰지 않는다.
     const sameDevice = principal.kind === 'device' && !!spec.type && principal.type === spec.type;
-    const focus = sameDevice ? null : S.productFocus(spec.analysis, title);
+    // The focus scorer must see the same sold-object phrase as the
+  // principal classifier; otherwise "+ 깔창 증정" is re-read as a standalone
+  // accessory after stripBundleItems has already removed the gift.
+  const focus = sameDevice ? null : S.productFocus(spec.analysis, principalTitle);
     if (focus && focus.factor < 1 && focus.accessory) {
       const acc = focus.accessory;
       const accIsHead = spec.head && (acc === spec.head || spec.head.endsWith(acc));
