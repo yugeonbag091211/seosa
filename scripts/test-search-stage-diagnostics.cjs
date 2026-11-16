@@ -53,7 +53,8 @@ try {
   const report=JSON.parse(fs.readFileSync(outfile,'utf8'));
   assert.equal(report.summary.question_count,200);
   assert.equal(report.summary.external_fetch_attempts,0);
-  const actual=analyzeSearchFailures(report);
+  const questions=JSON.parse(fs.readFileSync(path.join(root,'reports/codex-independent-20261116/development-questions.json'),'utf8'));
+  const actual=analyzeSearchFailures(report,questions);
   assert.equal(actual.questions,200);
   assert.equal(actual.missedTargets,Object.values(actual.missingTargetsByStage).reduce((a,b)=>a+b,0));
   assert.ok(actual.missedTargets>0,'existing synthetic failures must remain visible, not hidden');
@@ -63,6 +64,11 @@ try {
   console.log('STAGE_TRACE_PASS: 200 offline synthetic queries, '+actual.missedTargets+
     ' missing targets; stage='+JSON.stringify(actual.missingTargetsByStage)+
     '; leading gate reasons: '+leading+'; external calls=0');
+  // Synthetic, pre-registered samples only; never include production search logs.
+  // This is diagnostic evidence, not a hidden change to the ground-truth grader.
+  for (const reason of actual.topGateReasons.slice(0,6)) {
+    console.log('STAGE_TRACE_EXAMPLE '+reason.reason+' '+JSON.stringify(reason.examples));
+  }
 } finally {
   fs.rmSync(tmp,{recursive:true,force:true});
 }
