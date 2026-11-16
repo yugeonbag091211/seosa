@@ -753,7 +753,7 @@ function substituteRelation(query, title) {
 const CONDITION_PATTERNS = [
   ['rental', /렌탈|대여|\brental\b|\blease\b|월\s*구독/i],
   // "리퍼나 중고 말고" · "리퍼는 빼고" — 조사가 붙은 리퍼도 읽는다(리퍼블릭 같은 낱말은 여전히 아니다).
-  ['refurbished', /리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|리퍼(?=(?:나|이나|랑|와|는|도|를|가|만)?(?![가-힣]))|\brefurbished\b|\brenewed\b/i],
+  ['refurbished', /리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|(?<![가-힣])리퍼(?=(?:나|이나|랑|와|는|도|를|가|만)?(?![가-힣]))|\brefurbished\b|\brenewed\b/i],
   ['used', /중고(?!\s*등\s*학생)|\bused\b(?!\s+(?:for|to|by|with|as|in|on)\b)|pre[ -]?owned|second[ -]?hand/i],
   ['display', /전시\s*상품|전시품|진열\s*상품|\bdisplay\s*unit\b/i],
   ['opened', /단순\s*개봉|박스\s*개봉|개봉\s*상품|open[ -]?box|opened\s*(?:box|item)/i],
