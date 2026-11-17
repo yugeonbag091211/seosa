@@ -1069,6 +1069,12 @@ function judge(spec, item, opts = {}) {
       if (m && !/(?:사용|활용|이용|겸용|다용|업무용|가정용|휴대용|게임용|사무용|학생용|대용량)$/.test(m[0])) { hard.push(`target_of:${w}`); break; }
     }
   } else {
+    // Even a product that is normally called an "accessory" (a charger)
+    // cannot be substituted by a part whose listing only says
+    // "충전기용 충전 케이블". The requested noun is the host, not the sale.
+    const primaryName = earbudCaseFree(stripBundleItems(principalTitle));
+    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|[가-힣]|$)', 'i').test(primaryName))
+      hard.push(`category_is_compatibility_host:${spec.head}`);
     // 부속을 찾았다 — 그 부속 낱말(또는 같은 뜻)이 상품명에 있어야 한다.
     const words = spec.accessoryWords.length ? spec.accessoryWords : (spec.head ? [spec.head] : []);
     const has = words.some(w => present(w, T)
