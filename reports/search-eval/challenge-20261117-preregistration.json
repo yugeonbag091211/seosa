@@ -1,0 +1,26 @@
+{
+  "version": "2026-11-17",
+  "status": "FROZEN_BEFORE_FIRST_RUN",
+  "base_code_commit": "0e8d7d60f12827966c7d1b85e5b45ff09cb521b1",
+  "source": "new synthetic contrast candidates only; no live supplier data",
+  "questions_path": "reports/search-eval/challenge-20261117-questions.json",
+  "questions_git_blob_sha1": "733eecca6c728b19feb2149b17ce372a35a00092",
+  "question_count": 120,
+  "candidates_per_question": 5,
+  "distinct_product_families": 24,
+  "scenarios": [
+    "exact_body",
+    "budget_constraint",
+    "bundled_body",
+    "explicit_accessory",
+    "brand_exclusion"
+  ],
+  "hard_rules": [
+    "Do not modify the challenge items after any first execution",
+    "Do not edit the grader after seeing failures without retiring this corpus as independent",
+    "Evaluate real GET /api/search handler, real relevantItems, rankItems and product gate with mocked providers and DB",
+    "Unknown or contradictory cards are never PASS",
+    "Never use results as production accuracy or real-catalog recall",
+    "Preserve every failure, including questions where zero appropriate products are shown"
+  ]
+}
