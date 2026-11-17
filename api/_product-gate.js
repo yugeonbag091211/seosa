@@ -536,6 +536,8 @@ function parseQuery(text, opts = {}) {
     const first = tokens[0];
     if (a.brandHead && first !== head && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first)) looseBrand = first;
   }
+  // A type in "복합기에 쓸 잉크 카트리지" is the compatibility host.
+  const hostNoun = (raw.match(/(?:^|\s)([가-힣]{2,18})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s)/u) || [])[1] || '';
   // «맥북 백업용 외장 SSD», «아이패드용 키보드» 의 제품군은 «무엇에 쓰는가» 다 — 상품명에 있어야 할 이름이 아니다.
   const lines = tokens.filter((t, i) => lineKey(t) && t.length >= 2 && !NOT_HEAD.has(t)
     && !(wantsAccessory && hostNoun === t && /^(?:스마트워치|손목시계)$/u.test(t))
@@ -544,7 +546,7 @@ function parseQuery(text, opts = {}) {
   // The seller may simply say "9010e용 카트리지" without restating 복합기.
   // An explicit Korean "X에 쓸" host noun can be outside the 16 closed
   // device taxonomy types; it is still not the name of the sold part.
-  const hostNoun = (raw.match(/(?:^|\s)([가-힣]{2,18})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s)/u) || [])[1] || '';
+
   // Keep named SKU model/line and the specifically requested part strict.
   const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand }).filter(w =>
     !(wantsAccessory && w !== head && (w === hostNoun || TAX.explicitType(w)
