@@ -1,0 +1,39 @@
+name: Search development comparison (NOT independent)
+
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'scripts/test-search-negative-brand-intent-20261117.cjs'
+      - 'scripts/search-eval/run-challenge-20261117.cjs'
+      - '.github/workflows/search-development-comparison.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Direct brand and buyer-intent regressions
+        run: node scripts/test-search-negative-brand-intent-20261117.cjs
+      - name: Development-only replay of previously disclosed 120 synthetic questions
+        run: |
+          echo "DEVELOPMENT REPLAY, NOT AN INDEPENDENT HOLDOUT. Original 120-question score stays 48/72/0."
+          node scripts/search-eval/run-challenge-20261117.cjs --out development-after-negative-brands.json
+      - name: Save unedited development evaluation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-development-after-negative-brand
+          path: development-after-negative-brands.json
+          if-no-files-found: warn
+          retention-days: 14
