@@ -329,6 +329,16 @@ const HEAD_SYN = (() => {
 
 const BUDGET_PHRASE = /(?:\d[\d,.]*\s*(?:억|천|백)?\s*만?\s*원\s*(?:대|이하|이상|미만|초과|까지|안쪽|내외|정도|선|짜리|안팎|내로|이내|넘지\s*않는)?|\d[\d,.]*\s*만\s*(?:원)?\s*(?:대|이하|이상|미만|까지|이내|짜리|정도)?)/g;
 const REQUEST_FILLER = /(?:추천\s*하되|추천\s*해\s*줘|추천해줘|추천|찾아\s*줘|찾아줘|보여\s*줘|보여줘|알려\s*줘|알려줘|골라\s*줘|골라줘|있어\??|없어\??|사고\s*싶어|살래|주세요|해\s*줘|좀|요$)/g;
+// Buyer instructions affect sorting and presentation, not the identity of the sold item.
+// Keep the phrase-specific boundaries: don't strip model words that happen to
+// contain "가격" or "구매" as a substring.
+const PURCHASE_DIRECTIVE = /(?:구매하려는데|구매하려고|구매할래|구매하고\s*싶어|사려는데|사려고|살\s*생각인데|가격\s*순(?:서)?(?:으로|으로만)?|최저가\s*순(?:으로)?|저렴한\s*순(?:으로)?)/g;
+const OPTIONAL_GIFT_PERMISSION = /(?:[.!?]\s*|\s+)사은품(?:은|는|이|가|도)?\s*(?:받아도|줘도|같이\s*와도|함께\s*와도|포함돼도|포함되어도)\s*(?:괜찮아|상관\s*없어|상관이\s*없어|돼|좋아)(?:[.!?]+)?$/u;
+// "마우스 중 로지텍 브랜드는 절대 제외" must exclude 로지텍, not
+// demand that product titles contain "로지텍", "브랜드" or "절대".
+// Only brand-like clauses are taken here; used/refurbished exclusions remain
+// the responsibility of conditionIntent.
+const BRAND_EXCLUSION_CLAUSE = /(?:^|[\s,])([^\s,]{2,24})\s*(?:브랜드(?:은|는|이|가|를|도)?\s*)?(?:은|는|이|가|를)?\s*(?:절대\s*|반드시\s*|꼭\s*)?(?:말고|빼고|제외(?:하고|해줘|해주세요)?|아닌|아니고)(?=\s|$|[.,!?])/g;
 
 const specCache = new Map();
 const SPEC_CACHE_MAX = 2000;
@@ -349,16 +359,18 @@ function parseQuery(text, opts = {}) {
   } catch (_) { /* 예산 해석 실패는 예산 없음 */ }
   const condition = S.conditionIntent(raw);
 
-  // 부정된 브랜드 ("로지텍 말고") 는 요구가 아니라 제외다.
+  // Exclusion clauses are parsed *before* the merchandise phrase so the
+  // rejected brand is never considered a positive identity requirement.
+  const brandExclusionPhrases = [];
   const excludedBrands = [];
-  const namedBrandExclusions = [...raw.matchAll(/([^\s,]{2,20})\s*브랜드(?:은|는|이|가)?\s*(?:말고|빼고|제외(?:해줘|해주세요|하고)?|아닌|아니고)/g)];
-  const negated = [...raw.matchAll(/([^\s,]{2,20})\s*(?:은|는|이|가)?\s*(?:말고|빼고|제외(?:하고)?|아닌|아니고)/g)].map(m => m[1]);
-  for (const m of namedBrandExclusions) {
-    const known = brandsIn(m[1]);
-    if (!known.length) excludedBrands.push(m[1]);
-    else known.forEach(b => excludedBrands.push(b.canon));
+  for (const match of raw.matchAll(BRAND_EXCLUSION_CLAUSE)) {
+    const name = match[1];
+    const brands = brandsIn(name, { includeLines: false });
+    if (!brands.length && !/브랜드/.test(match[0])) continue;
+    brandExclusionPhrases.push(match[0]);
+    if (brands.length) brands.forEach(b => excludedBrands.push(b.canon));
+    else excludedBrands.push(name); // explicitly stated unlisted brand, e.g. QCY
   }
-  negated.forEach(word => brandsIn(word).forEach(b => excludedBrands.push(b.canon)));
 
   // "필터 등급 H13 사양"은 기기의 필터 등급 조건이며 필터 단품 요청이 아니다.
   // 교체·리필·단품 요청은 기존 부속 검색 경로를 그대로 따른다.
@@ -371,8 +383,9 @@ function parseQuery(text, opts = {}) {
   const selectionText = raw.replace(
     /(?:[.!?]\s*|\s+)(?:사은품(?:은|는|이|가|도)?\s*)?(?:같이|함께)\s*와도\s*(?:돼|괜찮아|상관\s*없어|좋아)(?:[.!?]+)?$/u,
     ' '
-  );
-  let idText = selectionText.replace(BUDGET_PHRASE, ' ').replace(REQUEST_FILLER, ' ')
+  ).replace(OPTIONAL_GIFT_PERMISSION, ' ');
+  let idText = selectionText.replace(BUDGET_PHRASE, ' ')
+    .replace(PURCHASE_DIRECTIVE, ' ').replace(REQUEST_FILLER, ' ')
     .replace(/(본품|본체|단품)(?:을|를|은|는)(?=\s|$)/g, '$1')
     // "가격을 동시에 충족하는 것" restates previously given constraints;
     // "식탁 의자에서 원목 조건과..." names a chair, not the word "동시에".
@@ -383,7 +396,7 @@ function parseQuery(text, opts = {}) {
       .replace(/([가-힣]{2,12})에서(?=\s|$)/g, (whole, stem) => TAX.explicitType(stem) ? stem : whole)
       .replace(/가격을\s*동시에\s*충족하는\s*것/g, ' ');
   }
-  namedBrandExclusions.forEach(m => { idText = idText.replace(m[0].replace(REQUEST_FILLER, ' '), ' '); });
+  brandExclusionPhrases.forEach(phrase => { idText = idText.replace(phrase, ' '); });
   idText = idText.replace(/(?:물통|먼지통|주사율|용량|수량)?\s*\d+(?:\.\d+)?\s*(?:밀리리터|리터|ml|l|hz|헤르츠|매|켤레)\s*사양(?:으로|만)?|방수\s*사양(?:으로|만)?/gi, ' ');
   // 알려진 브랜드와 전용·호환 대상이 명시된 경우에만 조사와 용도 동사를 정리한다.
   // 다른 브랜드 및 판매 대상 판정은 그대로 남는다.
@@ -420,7 +433,6 @@ function parseQuery(text, opts = {}) {
   // «배터리 상태도», «배터리가 오래가는», «필터 수명» 은 기기의 상태·성질을 묻는 말이다 — 그 부속을 찾는 말이 아니다.
   idText = idText.replace(/(?<![가-힣a-z])(?:배터리|밧데리|필터|브러시|브러쉬|노즐|헤드|렌즈|마이크|스크린|충전)(?:가|이|는|은|도)?\s*(?:상태|수명|성능|잔량|효율|사이클|지속\s*시간|사용\s*시간|교체\s*주기|오래\s*가는|오래\s*가|좋은|긴|큰|넉넉한|빵빵한|짱짱한|센|강한|많은)(?:도|는|은|가|이|를|을|만)?(?=\s|$)/g, ' ');
   idText = S.stripConditionTerms(idText).replace(/(?:^|\s)만(?=\s|,|$)/g, ' ');
-  negated.forEach(word => { if (brandsIn(word).length) idText = idText.replace(word, ' '); });
   idText = idText.replace(/\s*(?:말고|빼고|제외(?:하고)?|아닌|아니고)\s*/g, ' ').replace(/\s+/g, ' ').trim();
 
   const normalized = normalize(idText);
