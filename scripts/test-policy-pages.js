@@ -38,6 +38,7 @@ console.log('\n정책·고객지원 페이지 (/privacy · /terms · /support)\n
 const privacyHtml = read('public/privacy.html');
 const termsHtml = read('public/terms.html');
 const supportHtml = read('public/support.html');
+const sharedTokens = read('public/css/tokens.css');
 const privacy = text(privacyHtml);
 const terms = text(termsHtml);
 const support = text(supportHtml);
@@ -57,7 +58,7 @@ check(/'\/api\/account\/delete':\s*\{\s*path:\s*'\/api\/auth'/.test(dev), '로�
 
 // ── 2. 페이지 자체 ─────────────────────────────────────────────────
 for (const [name, html] of [['privacy', privacyHtml], ['terms', termsHtml], ['support', supportHtml]]) {
-  check(!/<script/i.test(html), `${name}: 스크립트 없음 (분석 태그·외부 JS 없이 읽힌다)`);
+  check(/<script>window\.va=window\.va\|\|function\(\)/.test(html) && /<script defer src="\/_vercel\/insights\/script\.js"><\/script>/.test(html), `${name}: 기존 Vercel 분석 호출 유지`);
   const external = [...html.matchAll(/<(?:link|img|iframe|source)[^>]+(?:href|src)="(https?:\/\/[^"]+)"/gi)].map(m => m[1])
     .filter(u => !/^https:\/\/seosa\.ai\.kr\//.test(u));
   check(external.length === 0, `${name}: 외부 리소스를 불러오지 않는다`, external.join(', '));
@@ -69,11 +70,12 @@ check(privacyHtml.includes('href="/terms"') && termsHtml.includes('href="/privac
 check(privacyHtml.includes('href="/support"') && termsHtml.includes('href="/support"') && supportHtml.includes('href="/privacy"') && supportHtml.includes('href="/terms"'), '정책 문서와 고객지원 페이지가 서로 연결된다');
 check(/support@seosa\.ai\.kr/.test(privacy) && /support@seosa\.ai\.kr/.test(terms) && /support@seosa\.ai\.kr/.test(support), '공식 고객지원 이메일이 세 페이지에 동일하다');
 check(/고객지원 문의/.test(privacy) && /이메일 주소/.test(privacy) && /문의 내용/.test(privacy), '고객지원 문의의 개인정보 처리가 방침에 기재됨');
+check((privacyHtml.match(/class="tablewrap" role="region" aria-label="가로로 밀어 표 보기" tabindex="0"/g) || []).length === 3 && /\.tablewrap:focus-visible/.test(read('public/css/content.css')), 'privacy: 가로 스크롤 표는 키보드로 도달하고 초점이 보인다');
 
 // 고객지원 페이지는 스토어의 Support URL 로 쓴다 — 혼자서 문의·삭제 안내가 끝나야 한다.
 check(/href="mailto:support@seosa\.ai\.kr/.test(supportHtml), 'support: 이메일을 누르면 메일 앱이 열린다 (mailto)');
 check(/<link rel="canonical" href="https:\/\/seosa\.ai\.kr\/support">/.test(supportHtml), 'support: canonical https://seosa.ai.kr/support');
-check(/prefers-color-scheme:\s*dark/.test(supportHtml), 'support: 다크 모드');
+check(/@media\s*\(prefers-color-scheme:\s*dark\)/.test(sharedTokens) && /html:not\(\[data-theme\]\)/.test(sharedTokens), 'support: 공유 토큰이 운영체제 다크 모드를 지원한다');
 check(/계정 삭제/.test(support) && supportHtml.includes('href="/privacy#delete-account"') && /id="delete-account"/.test(privacyHtml), 'support: 계정 삭제 안내 → 방침의 #delete-account 로 연결된다');
 check(/href="\/"/.test(supportHtml) && /홈으로/.test(support), 'support: 홈으로 돌아가기');
 check(/판매자가 아닙니다/.test(support), 'support: 거래(배송·환불) 문의는 판매처로 — SEOSA 가 판매자가 아님을 밝힌다');

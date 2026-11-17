@@ -33,6 +33,8 @@ function section(t) { console.log(`\n── ${t} ──`); }
 const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
 const radarHtml = fs.readFileSync(path.join(ROOT, 'public', 'radar.html'), 'utf8');
 const radarCss = fs.readFileSync(path.join(ROOT, 'public', 'radar.css'), 'utf8');
+const appCss = fs.readFileSync(path.join(ROOT, 'public', 'css', 'app.css'), 'utf8');
+const contentCss = fs.readFileSync(path.join(ROOT, 'public', 'css', 'content.css'), 'utf8');
 
 /** 이 고지 id 의 위치(없으면 -1). */
 function noteAt(src, id) { return src.indexOf(`data-aff-note="${id}"`); }
@@ -120,12 +122,12 @@ const PLACEMENTS = [
      '기존 쿠팡 파트너스 문구 2곳(푸터·사업자 정보) 유지');
 
   section('5. 가독성 — 숨기지 않는다');
-  const css = (html.match(/\.aff-note\{[^}]*\}/) || [''])[0];
-  const fs_ = parseFloat((css.match(/font-size:([\d.]+)rem/) || [])[1]);
+  const css = (appCss.match(/(?:^|\n)\.aff-note\s*\{[^}]*\}/) || [''])[0];
+  const fs_ = parseFloat((css.match(/font-size:\s*([\d.]+)rem/) || [])[1]);
   ok(fs_ >= 0.75, `글자 크기 ${fs_}rem ≥ .75rem`);
-  ok(/color:var\(--soft\)/.test(css), '글자색 --soft (--faint 아님)');
+  ok(/color:\s*var\(--color-muted\)/.test(css) && /\.hero-copy \.aff-note\s*\{[^}]*color:\s*color-mix/.test(appCss), '본문 토큰과 히어로 대비 색을 쓴다');
   ok(!/display:none|visibility:hidden|opacity:0/.test(css), '감추는 규칙 없음');
-  ok(!/@media[^{]*\{[^}]*\.aff-note\{[^}]*display:none/.test(html), '모바일에서 감추는 미디어쿼리 없음');
+  ok(!/@media[^{]*\{[^}]*\.aff-note\s*\{[^}]*display:\s*none/.test(appCss), '모바일에서 감추는 미디어쿼리 없음');
   // 고지는 팝업 안에만 있지 않다 — 첫 화면(히어로)·목록 섹션에 직접 있다
   ok(noteAt(html, 'hero-shelf') > -1 && noteAt(html, 'today') > -1, '팝업을 열지 않아도 보이는 자리에 있다');
 
@@ -150,7 +152,7 @@ const PLACEMENTS = [
   const rn = noteAt(radarHtml, 'radar');
   ok(rn > -1 && noteHtml(radarHtml, 'radar').includes(TEXT), 'radar: 고지 존재·전체 문구');
   ok(rn < radarHtml.indexOf('id="sections"'), 'radar: 구매처 확인 버튼이 그려지는 #sections 보다 앞');
-  ok(/\.aff-note\{[^}]*font-size:1[3-9]px/.test(radarCss), 'radar.css: 13px 이상');
+  ok(radarHtml.includes('href="/css/content.css"') && /\.aff-note\s*\{[^}]*font-size:\s*\.9rem/.test(contentCss), '레이더가 공유 제휴 고지 스타일(14px)을 쓴다');
 
   section('9. 서버 렌더 상품 페이지(/p/:pid)');
   delete process.env.SUPABASE_URL;

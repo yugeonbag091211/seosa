@@ -24,6 +24,7 @@ const read=p=>fs.readFileSync(path.join(root,p),'utf8');
 // 주석 속 설명(«예전에는 …였다»)이 단언을 흔들지 않게 주석을 걷어 낸 «사용자가 받는 코드»
 const code=s=>s.replace(/<!--[\s\S]*?-->/g,'').replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'');
 const html=read('public/index.html'), live=code(html), radar=code(read('public/radar.html'));
+const appCss=read('public/css/app.css');
 
 /* ── 1) 옛 Hot Deal UI 는 없다 ─────────────────────────────────────── */
 for(const f of ['hotdeals.html','hotdeals.js','hotdeals.css','hot-view.js','hot-cards.css'])
@@ -81,7 +82,7 @@ assert(live.includes('Drop.fromTodayDrop'),'오늘 하락 응답을 기존 카�
 assert(!live.includes('fromHotdeal'),'부르는 곳이 없어진 옛 변환 함수는 남기지 않는다');
 /* 배지 — 검증분과 하락분을 카드가 스스로 구분해 말한다. */
 assert(live.includes('class="dbadge')&&live.includes('is-verified'),'카드에 검증 / 하락 배지가 있다');
-assert(live.includes('.dmall .dbadge{'),'배지 스타일은 기존 판매처 줄 안에 얹는다 (카드 구조 유지)');
+assert(/\.dbadge,\s*\.radar-badge\s*\{/.test(appCss)&&/\.dbadge\.is-verified/.test(appCss),'공유 스타일시트가 카드 배지와 검증 상태를 꾸민다');
 assert(live.includes("badge: it.badge || '오늘 가격 하락'"),'배지 문구는 서버가 정하고 화면은 기본값만 갖는다');
 const td=read('api/_todaydrop.js');
 assert(td.includes("BADGE_VERIFIED = 'SEOSA 검증'")&&td.includes("BADGE_TODAY = '오늘 가격 하락'"),'배지 두 문구는 한 곳에서만 정해진다');
@@ -156,7 +157,7 @@ assert(live.includes("it.source !== 'internal-history'"),'내부 price-drop과 �
 assert(hd.includes('toCommunityListItem')&&hd.includes("row.verification_status !== 'SUSPICIOUS_PRICE'"),
   '커뮤니티 항목은 검증 완료로 위장하지 않고 의심 가격은 제외한다');
 assert(hd.includes("process.env.EXTERNAL_HOTDEAL_PUBLIC !== '0'"),'외부 피드는 기본 ON, 명시적 0 kill switch 유지');
-assert(live.includes('@media(max-width:560px){.radar-deals{grid-template-columns:1fr}'),'모바일 1열');
+assert(/@media\s*\(max-width:\s*35rem\)\s*\{[\s\S]*?\.radar-deals\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(appCss),'좁은 모바일에서 외부 핫딜은 1열로 읽힌다');
 
 assert(live.includes("'?view=external&limit=60&minScore=60'"),'외부 카드는 전용 view 로 최대 60개를 미리 읽는다(내부 목록과 섞지 않는다)');
 assert(live.includes('id="externalHotMore"')&&live.includes('data-act="external-hot-more"'),'외부 핫딜 더보기 버튼');
