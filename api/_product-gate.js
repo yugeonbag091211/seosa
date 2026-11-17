@@ -349,7 +349,7 @@ function accessoryNounAfterHost(text) {
   const raw = String(text || '').normalize('NFKC');
   const m = raw.match(/(?:[a-z0-9+\-]*\d[a-z0-9+\-]*용|[가-힣]{2,18}에\s*(?:쓸|쓰는|사용할|사용하는))\s+([^.!?]{2,70})/iu);
   if (!m) return '';
-  const phrase = m[1].split(/\s+(?:찾는|찾아|구매|사고|보여|추천|원해|살래)(?:\s|$)/u)[0];
+  const phrase = m[1].split(/\s+(?:찾는|찾고|찾아|구매하고|구매하려고|구매할래|구매|사고|보여|추천|원해|살래|주문|사려)(?=\s|$)/u)[0];
   const words = (phrase.match(/[가-힣]{2,}/gu) || []).filter(w =>
     !/^(?:전용|호환|정품|제품|상품|부품)$/.test(w));
   return (words.at(-1) || '').replace(/(?:만|을|를)$/u, '');
