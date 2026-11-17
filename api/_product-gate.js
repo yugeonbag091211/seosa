@@ -990,7 +990,7 @@ function judge(spec, item, opts = {}) {
     const unbundled = earbudCaseFree(stripBundleItems(principalTitle));
     // "수납장용 손잡이" explicitly sells something FOR a cabinet, not
     // the cabinet itself. No catalog of accessory names is required.
-    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|[가-힣]|$)', 'i').test(unbundled))
+    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|$|[+,.([{])', 'i').test(unbundled))
       hard.push(`category_is_compatibility_host:${spec.head}`);
     // The sold target (not an included gift) is a replacement part, even when
     // a broad classifier does not know the household object's product type.
@@ -1076,7 +1076,7 @@ function judge(spec, item, opts = {}) {
     // cannot be substituted by a part whose listing only says
     // "충전기용 충전 케이블". The requested noun is the host, not the sale.
     const primaryName = earbudCaseFree(stripBundleItems(principalTitle));
-    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|[가-힣]|$)', 'i').test(primaryName))
+    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|$|[+,.([{])', 'i').test(primaryName))
       hard.push(`category_is_compatibility_host:${spec.head}`);
     // 부속을 찾았다 — 그 부속 낱말(또는 같은 뜻)이 상품명에 있어야 한다.
     const words = spec.accessoryWords.length ? spec.accessoryWords : (spec.head ? [spec.head] : []);
