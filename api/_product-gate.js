@@ -496,8 +496,11 @@ function parseQuery(text, opts = {}) {
   // 기기 이름과 함께 부속 명사를 말했으면(«로봇청소기 물걸레 패드», «휴대폰 방수팩») 그 부속을 찾는 것이다.
   // (#236 이후 explicitType 은 «노트북 거치대» 같은 부속 구절에 종류를 돌려주지 않는다 — 언급 자체를 본다)
   const typeMentioned = !!TAX.explicitType(idText) || TAX.typeMentions(idText).length > 0;
+  const modelHostAccessoryUse = explicitTargetUse
+    && /(?:^|\s)(?:[a-z][a-z0-9+\-]*\d[a-z0-9+\-]*|\d+x\d+)(?=\s)/i.test(idText);
   let wantsAccessory = accessoryWords.length > 0
     || MODEL_COMPATIBILITY_REQUEST.test(idText)
+    || modelHostAccessoryUse
     || EXTRA_ACCESSORY_QUERY.test(idText)
     || (principal.kind === 'accessory' && (UNIVERSAL_ACCESSORY.test(String(principal.noun || '')) || typeMentioned))
     || (!!type0 && TAX.isPart(idText, type0));
@@ -1059,6 +1062,14 @@ function judge(spec, item, opts = {}) {
       || (/필름|강화유리|보호/.test(w) && /(?:필름|강화\s*유리|보호|film|glass)/i.test(title))
       || (/충전기|어댑터|charger/.test(w) && /(?:충전기|어댑터|charger|adapter|충전\s*케이블)/i.test(title)));
     if (words.length && !has) hard.push('not_requested_accessory');
+    // Generic words such as "교체/부품" are not proof of the specific
+    // requested item. "X-S20용 다른 부품" is not an X-S20 battery.
+    const headWord = spec.head && !NOT_HEAD.has(spec.head) ? spec.head : '';
+    const headMatch = headWord && (present(headWord, T)
+      || (/^(?:케이스|커버)$/u.test(headWord) && /(?:케이스|커버|case|cover|폴리오|folio)/i.test(title))
+      || (/^(?:스트랩|밴드|시계줄)$/u.test(headWord) && /(?:스트랩|밴드|시계줄|watch\s*band|strap)/i.test(title))
+      || (/^(?:충전기|어댑터)$/u.test(headWord) && /(?:충전기|어댑터|charger|adapter)/i.test(title)));
+    if (headWord && !headMatch) hard.push(`accessory_head_absent:${headWord}`);
   }
 
   /* 2. 한 글에 여러 모델·상품 — 가격이 어느 것의 것인지 알 수 없다 */
