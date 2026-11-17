@@ -3247,6 +3247,230 @@ select:focus-visible,textarea:focus-visible,
   /* 성별 선택 두 칸(42.6px). 가로도 44px 을 넘겨 둔다. */
   #profileGender .tbtn{min-width:44px}
 }
+
+/* ==================================================================
+ *  SEOSA 디자인 시스템 v6 — 「원장(Ledger)」 정제 (2026-11-17)
+ *
+ *  이 블록은 스타일 시트의 맨 끝에 있고, 위의 규칙을 지우지 않고 덮는다.
+ *  되돌리려면 이 블록 하나만 지우면 된다. JS 가 읽는 클래스·data-act·id 는
+ *  하나도 바꾸지 않았다.
+ *
+ *  유지한 것 (브랜드 정체성)
+ *    · 순백 표면 + 쿨 뉴트럴, 의미색은 하락(초록)·상승(빨강) 둘뿐
+ *    · 황동(--brand)은 「기록」 자리에만, 관측일 스탬프만 모노
+ *    · 채운 면을 갖는 버튼은 화면당 하나(검정)
+ *    · 제휴 고지(.aff-note) — 위치·문구 그대로, 모양만 다듬음
+ *
+ *  바꾼 것과 이유
+ *    1) 읽는 글자를 키웠다. 카드 제목 13.4px → 15px, 카드 동작 11.5px → 13px,
+ *       섹션 설명 13.8px → 15px. 화면의 절반이 상품명과 가격인데 본문이
+ *       14px 아래였다. 13px 미만 글자는 없앤다.
+ *    2) 모서리 체계를 하나로 묶었다. 조작 요소(정렬·필터·기간·칩·CTA)는
+ *       전부 알약, 면(카드 사진·핫딜·모달·통계)은 14~20px. 예전에는 3·4·8·
+ *       14·30px 이 섞여 있어 같은 종류의 조작이 서로 다른 물건처럼 보였다.
+ *    3) 회색 상자를 줄였다. 핫딜 카드·통계 칸·신뢰 상자는 회색 면 대신
+ *       흰 면 + 1px 선으로 바꿨다 — 회색 위 흰 누끼 사진이 얼룩지던 문제와
+ *       같은 이유다.
+ *    4) 위계를 크기와 굵기로만 만든다. 섹션 제목은 하나의 크기(--v6-h2),
+ *       「11월 추천」 머리도 같은 크기로 맞췄다.
+ *    5) 카드가 스크롤에 맞춰 떠오르지 않는다. 처음부터 보인다.
+ * ================================================================== */
+:root{
+  --page:#F5F5F7; --surface:#F5F5F7; --surface-2:#E8E8ED;
+  --line:#E4E5E9; --line-2:#CDD0D6;
+  --r:10px; --r-sm:8px; --r-lg:14px; --r-xl:20px; --r-pill:999px;
+  --v6-h1:clamp(2.25rem,1.6rem + 2.6vw,3.6rem);
+  --v6-h2:clamp(1.5rem,1.2rem + 1.1vw,2.125rem);
+  --t-body:.9375rem; --t-meta:.8125rem;
+  --shadow:0 1px 2px rgba(21,23,27,.04),0 1px 1px rgba(21,23,27,.03);
+  --shadow-lg:0 24px 48px -20px rgba(21,23,27,.22),0 2px 6px rgba(21,23,27,.05);
+}
+html[data-theme="dark"]{--page:#0F1114;--surface:#1E2127;--surface-2:#282C33}
+body{font-feature-settings:"ss01" 0;text-rendering:optimizeLegibility}
+h1,h2,h3,.hero-title,.sec-title,.mb-title,.mb-month,.result-banner h3,.modal-head .mt{
+  word-break:keep-all;overflow-wrap:break-word;text-wrap:balance}
+.p-title,.dname,.sec-sub,.hero-sub{word-break:keep-all;overflow-wrap:anywhere}
+
+/* ── 헤더 ── */
+header{border-bottom:1px solid var(--line)}
+.nav-link{font-size:.875rem;font-weight:500;color:var(--soft)}
+.nav-link:hover{color:var(--ink)}
+.hsearch .search-field{border-radius:var(--r-pill);background:var(--surface);border:1px solid transparent}
+.hsearch .search-field:hover{border-color:var(--line)}
+.hsearch .search-field:focus-within{background:var(--bg);border-color:var(--ink);
+  box-shadow:0 0 0 4px rgba(21,23,27,.06)}
+.hsearch .search-field input{font-size:.9375rem}
+.autocomplete{border-radius:var(--r-lg);box-shadow:var(--shadow-lg);border:1px solid var(--line)}
+
+/* ── 히어로 ── */
+.hero-title{font-size:var(--v6-h1);letter-spacing:-.05em;line-height:1.12}
+.hero-sub{font-size:1.0625rem;line-height:1.6;max-width:34em}
+.hero-cta{border-radius:var(--r-pill);min-height:48px;padding:0 26px;font-size:.9375rem;
+  transition:background .2s var(--ease),transform .15s var(--ease)}
+.hero-cta:hover{opacity:1;background:#2A2D33;transform:translateY(-1px)}
+html[data-theme="dark"] .hero-cta:hover{background:#FFFFFF}
+.hero-cta:active{transform:translateY(0) scale(.98)}
+.hero-copy .aff-note{background:transparent;padding-left:0}
+.hc-arrow{width:44px;height:44px;border-color:var(--line);box-shadow:var(--shadow)}
+.hc-dot{background:var(--line-2)}
+@media(max-width:640px){
+  /* 화살표가 제목·고지 글자 위에 겹쳤다 → 아래 점 줄의 양 끝으로 내린다. 스와이프는 그대로. */
+  .hc-arrow{top:auto;bottom:4px;transform:none;width:44px;height:44px;opacity:1}
+  .hc-arrow:active{transform:scale(.94)}
+  .hc-prev{left:16px}.hc-next{right:16px}
+  .hc-dots{bottom:22px}
+  .hero-carousel .hero-inner{padding-bottom:64px}
+  .hero-title{font-size:clamp(2rem,8.6vw,2.5rem);letter-spacing:-.045em}
+  .hero-sub{font-size:1rem}
+  .hero-cta{width:100%;justify-content:center}
+}
+
+/* ── 카테고리 줄 · 빠른 링크 ── */
+.catnav .chip{font-size:.9375rem;color:var(--soft)}
+.catnav .chip:hover{color:var(--ink)}
+.seo-quicklinks{font-size:.8125rem}
+.seo-quicklinks a{text-decoration-color:var(--line-2);text-underline-offset:4px}
+
+/* ── 섹션 머리 ── */
+.sec-head{margin-bottom:28px}
+.sec-title,.mb-title,.mb-month{font-size:var(--v6-h2);font-weight:700;letter-spacing:-.035em;line-height:1.18}
+.mb-month small{font-size:.7em}
+.sec-count{font-size:1rem}
+.sec-sub{font-size:var(--t-body);line-height:1.6;color:var(--soft);margin-top:10px}
+.sec-more{font-size:.875rem;font-weight:500;color:var(--ink);min-height:44px;
+  padding:0 16px;border:1px solid var(--line);border-radius:var(--r-pill);
+  transition:border-color .15s,background .15s}
+.sec-more:hover{border-color:var(--ink);background:var(--bg)}
+.month-banner{margin-bottom:18px}
+/* 「11月」 장식 숫자는 바로 옆 제목 「11월 추천」과 같은 말을 두 번 한다 — 머리를 다른 섹션과 같게. */
+.mb-left{display:none}
+
+/* ── 제휴 고지 — 문구·위치는 그대로, 읽히는 크기로 ── */
+.aff-note{font-size:.8125rem;padding:10px 14px;border-radius:var(--r);background:var(--surface);color:var(--soft)}
+.aff-note b{font-weight:600}
+
+/* ── 상품 카드 ── */
+.card{opacity:1;transform:none}
+.grid{gap:48px 24px}
+.card .thumb{border-radius:var(--r-lg);background:var(--surface)}
+.card .thumb img{max-width:78%;max-height:78%;mix-blend-mode:multiply}
+html[data-theme="dark"] .card .thumb img{mix-blend-mode:normal}
+.card:hover .thumb img{transform:scale(1.03)}
+.card .info{padding-top:14px}
+.p-title{font-size:.9375rem;line-height:1.5;min-height:2.85rem;margin-bottom:8px;letter-spacing:-.01em}
+.price{font-size:1.1875rem;font-weight:700;letter-spacing:-.03em}
+.price .w{font-size:.8125rem}
+.save,.pchg,.card .pchg{font-size:.8125rem}
+.mall-line{margin-top:10px}
+.as-of{font-size:.8125rem;letter-spacing:0}
+.mall-brand{font-size:.8125rem}
+.card-actions{padding-top:6px;gap:0 4px;border-top:1px solid var(--line);margin-top:12px}
+.alert-btn{font-size:.8125rem;color:var(--soft);min-height:36px;border-radius:var(--r-pill);padding:0 10px}
+.alert-btn:first-child{padding-left:0}
+.alert-btn:hover{background:transparent;color:var(--ink)}
+.buy{font-size:.8125rem;font-weight:600;min-height:36px;padding:0 0 0 10px}
+.buy::after{bottom:7px;left:10px}
+.heart,.share-btn{border-radius:var(--r-pill)}
+
+/* ── 핫딜(오늘 가격 하락) ── */
+/* 5칸에서 가로 배치(사진 옆 글)는 글 폭이 90px 남짓이라 몰 이름이 세로로 깨졌다 → 사진 위, 글 아래. */
+.drop-cards{gap:16px}
+.dcard{flex-direction:column;align-items:stretch}
+.dthumb{width:100%;height:auto;aspect-ratio:4/3}
+.dthumb img{max-width:72%;max-height:72%;margin:auto}
+.dmall{white-space:nowrap;flex-wrap:wrap;row-gap:2px}
+.dmall > *{white-space:nowrap}
+.dcard{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;gap:12px;
+  transition:border-color .2s var(--ease),transform .2s var(--ease),box-shadow .2s var(--ease)}
+.dcard:hover{background:var(--bg);border-color:var(--line-2);transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.dthumb{border-radius:var(--r);background:var(--surface)}
+@media(max-width:430px){
+  /* 한 줄 한 장일 때는 다시 가로 배치 — 세로 사진이 화면을 다 먹는다. */
+  .dcard{flex-direction:row;align-items:center}
+  .dthumb{width:76px;height:76px;aspect-ratio:auto;flex:0 0 auto}
+}
+.dthumb img{mix-blend-mode:multiply}
+html[data-theme="dark"] .dthumb img{mix-blend-mode:normal}
+.dname{font-size:.875rem;line-height:1.45}
+.dprice{font-size:1.0625rem}
+.dmall,.dchg{font-size:.8125rem}
+.dacts .lact{font-size:.8125rem;min-height:36px}
+
+/* ── 「왜 SEOSA」 네 칸 ── */
+.val h4{font-size:.9375rem}
+.val p{font-size:.8125rem;line-height:1.55}
+
+/* ── 검색 결과 ── */
+.result-banner{padding-bottom:20px;margin-bottom:20px}
+.result-banner h3{font-size:clamp(1.375rem,1.2rem + .6vw,1.75rem);letter-spacing:-.035em}
+.result-banner .meta div span{font-size:.8125rem}
+.stale-note{border-radius:var(--r);font-size:.8125rem;color:var(--soft);background:var(--surface);border:0;
+  padding:10px 14px}
+html[data-theme="dark"] .stale-note{background:var(--surface);border:0}
+.sort-bar .sort-label,.filter-bar .filter-label{font-size:.8125rem;color:var(--soft);min-width:44px}
+.rec-chip-btn,.mb-chip{font-size:.875rem;min-height:40px}
+.sort-btn,.filter-btn,.facet-btn,.facet-toggle,.range-tabs button,.tbtn{
+  border-radius:var(--r-pill);font-size:.8125rem;min-height:36px;padding:0 14px;
+  display:inline-flex;align-items:center;justify-content:center;border-color:var(--line)}
+.sort-btn:hover,.filter-btn:hover,.facet-btn:hover,.range-tabs button:hover{border-color:var(--ink);color:var(--ink)}
+.filter-btn .fcount,.facet-btn .fcount{font-size:.75rem}
+.price-input{border-radius:var(--r-pill)}
+.empty-chip{border-radius:var(--r-pill)}
+
+/* ── 가격 모달 ── */
+.modal{border-radius:var(--r-xl)}
+.modal-head{padding:22px 24px 18px}
+.modal-head .mt{font-size:1.1875rem;letter-spacing:-.03em}
+.modal-head .ms{font-size:.8125rem;color:var(--soft)}
+.modal-close{border-radius:var(--r-pill)}
+.modal-body{padding-left:24px;padding-right:24px}
+.verdict{border-radius:var(--r-lg)}
+.stat{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px}
+.stat span{font-size:.8125rem;color:var(--soft)}
+.stat b{font-size:1.25rem;font-weight:700}
+.trend-summary{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px;font-size:.875rem}
+.trend-summary .ts-head{font-size:.8125rem;color:var(--soft);font-weight:600}
+.cmp-modal{border-radius:var(--r-xl)}
+.alert-box{border-radius:var(--r-xl)}
+.panel,.wish-panel{border-top-left-radius:var(--r-xl);border-bottom-left-radius:var(--r-xl)}
+@media(max-width:640px){
+  .modal-head{padding:18px 16px 14px}
+  .modal-body{padding-left:16px;padding-right:16px}
+  .stat{padding:12px}
+  .stat b{font-size:1.0625rem}
+  .panel,.wish-panel{border-radius:0}
+}
+
+/* ── 서사 AI 버튼 · 맨 위로 ── */
+.fab{height:44px;padding:0 18px;border-radius:var(--r-pill);font-size:.875rem;
+  border-color:var(--line);box-shadow:var(--shadow-lg)}
+.fab:hover{border-color:var(--ink)}
+.top-btn{border-radius:var(--r-pill)}
+.toast{border-radius:var(--r-pill)}
+
+/* ── 푸터 ── */
+footer{padding:40px 0 48px}
+footer p{font-size:.8125rem;line-height:1.65}
+
+/* ── 모바일 ── */
+@media(max-width:760px){
+  .grid{gap:36px 14px}
+  .sec-head{margin-bottom:20px}
+  .p-title{font-size:.875rem;min-height:2.6rem}
+  .price{font-size:1.0625rem}
+  .card-actions{gap:0;border-top:0;margin-top:4px;padding-top:2px}
+  .grid{gap:28px 14px}
+  .alert-btn{padding:0 6px}
+  .buy{padding-left:6px}.buy::after{left:6px}
+}
+@media(hover:none){
+  /* 손가락 기준 44px 은 위(접근성 블록)에서 정한 값을 그대로 지킨다. */
+  .alert-btn,.buy,.dacts .lact{min-height:44px}
+  .buy::after{bottom:11px}
+}
+@media(prefers-reduced-motion:reduce){
+  .dcard:hover,.hero-cta:hover{transform:none}
+}
 </style>
 </head>
 <body>
@@ -4061,7 +4285,7 @@ select:focus-visible,textarea:focus-visible,
     -->
     <button class="ctx-ai" id="resultsAi" data-act="ai-entry" data-ctx="search" style="display:none">이 결과를 더 좁혀볼까요? 서사 AI에게 묻기 →</button>
     <div class="sort-bar" id="sortBar" style="display:none">
-      <span class="sort-label">Sort</span>
+      <span class="sort-label">정렬</span>
       <!--
         "할인율순" 을 뺐다. 근거인 save_pct 가 products 1404행 전부 0 이라
         (oprice > lprice 인 행이 0개) 눌러도 순서가 바뀌지 않는 죽은 버튼이었다.
@@ -4076,7 +4300,7 @@ select:focus-visible,textarea:focus-visible,
       <button class="sort-btn" data-act="sort" data-sort="drop" id="sbDrop">가격하락순</button>
     </div>
     <div class="filter-bar" id="filterBar" style="display:none">
-      <span class="filter-label">Mall</span>
+      <span class="filter-label">쇼핑몰</span>
       <button class="filter-btn act" data-act="filter" data-mall="all">전체</button>
       <button class="filter-btn" data-act="filter" data-mall="네이버쇼핑" id="fbNaver">네이버<span class="fcount" id="fcNaver"></span></button>
       <button class="filter-btn" data-act="filter" data-mall="쿠팡">쿠팡<span class="fcount" id="fcCoupang"></span></button>
@@ -10656,16 +10880,16 @@ var Modal = {
       var spread = st.min > 0 ? (st.range / st.min) : 0;
       var pos = st.range > 0 ? (cur - st.min) / st.range : 0;
 
-      if (spread < CONST.VERDICT.STABLE_SPREAD) posLabel = '⚖️ 가격이 안정적';
+      if (spread < CONST.VERDICT.STABLE_SPREAD) posLabel = '가격이 안정적';
       else if (pos <= CONST.VERDICT.LOW)  posLabel = '✦ 현재가가 역대 최저 수준';
       else if (pos >= CONST.VERDICT.HIGH) posLabel = '↗ 현재가는 높은 편';
       else if (cur <= st.avg)             posLabel = '↘ 현재가는 평균 이하';
       else                                posLabel = '↗ 현재가는 평균 이상';
     }
 
-    box.innerHTML = '<div class="ts-head">PRICE TREND</div>'
+    box.innerHTML = '<div class="ts-head">가격 흐름</div>'
       + '<div class="ts-line">'
-      + '<span>📊 <span class="num">' + data.length + '</span>일간 <b class="' + trendClass + '">' + trendLabel + '</b></span>'
+      + '<span><span class="num">' + data.length + '</span>일간 <b class="' + trendClass + '">' + trendLabel + '</b></span>'
       + (recentLabel ? '<span class="ts-dot"></span><span>' + recentLabel + '</span>' : '')
       + (posLabel ? '<span class="ts-dot"></span><span><b>' + posLabel + '</b></span>' : '')
       + '</div>';
