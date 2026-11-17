@@ -95,7 +95,7 @@ for(const [query,excluded,allowed] of [
 {
  const q='로보락 로봇 청소기에 쓸 전용 브러시만 보여줘';
  const title='로보락 로봇 청소기용 전용 브러시';
- const p=Gate.parseQuery(q,{titles:[title]});
+ const p=Gate.parseQuery(q);
  const judged=Gate.judge(p,{title,lprice:16000});
  assert.equal(judged.ok,true,JSON.stringify({
    q,idText:p.idText,head:p.head,wantsAccessory:p.wantsAccessory,
