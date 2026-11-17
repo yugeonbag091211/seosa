@@ -500,6 +500,7 @@ function parseQuery(text, opts = {}) {
     && /(?:^|\s)(?:[a-z][a-z0-9+\-]*\d[a-z0-9+\-]*|\d+x\d+)(?=\s)/i.test(idText);
   let wantsAccessory = accessoryWords.length > 0
     || MODEL_COMPATIBILITY_REQUEST.test(idText)
+    || explicitTargetUse
     || modelHostAccessoryUse
     || EXTRA_ACCESSORY_QUERY.test(idText)
     || (principal.kind === 'accessory' && (UNIVERSAL_ACCESSORY.test(String(principal.noun || '')) || typeMentioned))
