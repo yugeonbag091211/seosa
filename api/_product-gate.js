@@ -141,6 +141,8 @@ const CHAT_STOP = new Set(['얼마', '얼마야', '얼마예요', '얼마에요'
   '얼마예', '얼마에', '얼만지', '어디', '어디서', '어디야', '곳', '파는곳', '좋아', '좋아요', '좋은거', '좋은것',
   '이쁜거', '예쁜거', '싼거', '괜찮은거', '있어', '있나', '있어요', '있을까요']);
 NOT_HEAD.add('원목'); // solid wood is a material requirement, not the product being sold
+NOT_HEAD.add('사양'); // 'H13 사양' describes a specification, not a merchandise category
+NOT_HEAD.add('조건');
 NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
@@ -154,14 +156,23 @@ const STRONG_OTHER = /^(?:필름|보호\s*필름|강화\s*유리|보안기|키\s
 const PART_MARK = /(?:호환|교체|교체용|리필|단품|\d+\s*(?:개|입|매|팩|세트|p|ea)\b|\d+\s*(?:개|입|매|팩|세트)(?=\s|,|$)|\(\s*\d+\s*(?:개|입|매)\s*\))/i;
 // 본품에 딸려 오는 구성품 표기. 지우고 나서 부품 규칙을 본다.
 // 딸려 오는 구성품이 여럿이면 «s펜+북커버포함» 처럼 +·/·, 로 이어 적는다 — 이어진 것 전체가 구성품이다.
-const BUNDLE_ITEM = '(?:정품\\s*)?(?:s\\s*펜|북\\s*커버|케이스|커버|필름|보호\\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드|방석|서랍|뚜껑)';
+const BUNDLE_ITEM = '(?:정품\\s*)?(?:s\\s*펜|북\\s*커버|케이스|커버|필름|보호\\s*필름|충전기|어댑터|케이블|파우치|스트랩|이어\\s*팁|펜슬|키보드|마우스|거치대|스탠드|리모컨|사은품|자물쇠|빨대|패드|필터|브러시|노즐|헤드|방석|서랍|뚜껑|조절기|바스켓|폴대|깔창|호스)';
 const BUNDLE_PHRASE = new RegExp(`(?:\\+\\s*)?${BUNDLE_ITEM}(?:\\s*[+/,&]\\s*${BUNDLE_ITEM})*\\s*(?:포함|증정|동봉|제공|구성|탑재|내장|장착|무료\\s*증정|기본\\s*제공)`, 'gi');
 // "케이스 + 필름 증정"에서는 필름만 사은품이고 케이스가 판매 대상일 수 있다.
 // 본품 사양이나 명시적 + 가 확인되지 않을 때 첫 대상 명사를 보존한다.
 function stripBundleItems(title) {
   const raw = String(title || '');
-  return raw.replace(BUNDLE_PHRASE, (match, offset) => {
-    const before = raw.slice(0, offset);
+  // A clearly gifted extra after "+" is not the sold product, even when
+  // the extra's noun is not yet in BUNDLE_ITEM ("의자 전용 가방 증정").
+  // Only remove explicit gifts; "+ 케이스" without 증정 remains ambiguous.
+  // In an ambiguous "iPad 10 + case + film giveaway" listing the
+  // apparent device name may only indicate compatibility; do not assume it
+  // is the sold body. An explicit "본품/본체" provides the necessary evidence.
+  const withoutExplicitGifts = /(?:본품|본체)(?:을|를|은|는|만)?(?=\s|$|\+)/.test(raw)
+    ? raw.replace(/\s*\+\s*[^+]{1,60}?\s*(?:증정|동봉|무료\s*제공)(?=$|[\s,)\]])/gi,' ')
+    : raw;
+  return withoutExplicitGifts.replace(BUNDLE_PHRASE, (match, offset) => {
+    const before = withoutExplicitGifts.slice(0, offset);
     if (!/^\s*\+/.test(match) && /[+/,&]/.test(match)
       && (/증정/.test(match) || !/(?:\d+\s*(?:gb|tb|기가|테라)|본품|본체|태블릿|노트북|스마트폰|이어폰|청소기)/i.test(before))) {
       const first = match.match(new RegExp('^(' + BUNDLE_ITEM + ')', 'i'));
@@ -366,7 +377,7 @@ function parseQuery(text, opts = {}) {
     // "가격을 동시에 충족하는 것" restates previously given constraints;
     // "식탁 의자에서 원목 조건과..." names a chair, not the word "동시에".
     .replace(/(?:조건(?:과|을|은|이)?\s*)?가격(?:을|과|은|이)?\s*동시에\s*충족하는\s*(?:것|상품|제품)?\s*$/u, ' ')
-    .replace(/([가-힣]{2,10})에서(?=\s+(?:원목|조건|기모|접이식))/gu, '$1');
+    .replace(/([가-힣]{2,10})에서(?=\s+(?:원목|조건|기모|접이식|사이즈|폭|길이|높이|너비|크기|주사율|\d+\s*인용))/gu, '$1');
   if (filterGrade) {
     idText = idText.replace(/필터\s*등급\s*[a-z]\s*\d{1,3}\s*(?:사양(?:으로|만)?|조건(?:과|을|은|이)?)/i, ' ')
       .replace(/([가-힣]{2,12})에서(?=\s|$)/g, (whole, stem) => TAX.explicitType(stem) ? stem : whole)
@@ -376,7 +387,15 @@ function parseQuery(text, opts = {}) {
   idText = idText.replace(/(?:물통|먼지통|주사율|용량|수량)?\s*\d+(?:\.\d+)?\s*(?:밀리리터|리터|ml|l|hz|헤르츠|매|켤레)\s*사양(?:으로|만)?|방수\s*사양(?:으로|만)?/gi, ' ');
   // 알려진 브랜드와 전용·호환 대상이 명시된 경우에만 조사와 용도 동사를 정리한다.
   // 다른 브랜드 및 판매 대상 판정은 그대로 남는다.
-  if (brandsIn(raw).length && /(?:전용|호환)/.test(idText))
+  // '손목시계에 쓸 스트랩' expresses the item's target, not a mandatory
+  // title word '손목시계에' or the verb '쓸'. Keep the target noun for compatibility.
+  // Require an explicit accessory term, or the existing known-brand host phrase,
+  // so generic product descriptions are not rewritten indiscriminately.
+  // "식탁 의자에 쓸 방석" clearly names a host and a separately requested
+  // item, even when the accessory is absent from our word dictionary.
+  const explicitTargetUse = /[가-힣]{2,12}에\s*(?:쓸|쓰는|사용할|사용하는)\s+[가-힣a-z0-9]{2,}/i.test(raw);
+  if (explicitTargetUse || S.accessoryTerms(normalize(idText)).length > 0 ||
+      (brandsIn(raw).length && /(?:전용|호환)/.test(idText)))
     idText = idText.replace(/([가-힣]{2,12})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s|$)/g, '$1 ');
   // 지름은 크기 조건으로 따로 보존해 상품명 판정에서 대화어만 제거한다.
   const dm = brandsIn(raw).length && raw.match(/(?:지름|직경)\s*(\d+(?:\.\d+)?)\s*(mm|cm)\s*사양(?:으로|만)?/i);
@@ -909,7 +928,11 @@ function judge(spec, item, opts = {}) {
     // 범주 낱말 정렬(_search.productFocus) — 강한 부속(케이스·세척솔·패킹·공병…)은 hard.
     // 상품명 머리가 찾는 종류의 기기라고 이미 확인됐으면(principalItem) 이 어순 규칙은 쓰지 않는다.
     const sameDevice = principal.kind === 'device' && !!spec.type && principal.type === spec.type;
-    const focus = sameDevice ? null : S.productFocus(spec.analysis, title);
+    // The focus scorer must receive the *unbundled* sold-object phrase,
+  // not principalTitle (which still contains "+ 깔창 증정" for most queries).
+  // stripBundleItems keeps the primary sold accessory for
+  // "아이패드 케이스 + 필름 증정", but removes extras for real main devices.
+  const focus = sameDevice ? null : S.productFocus(spec.analysis, unbundled);
     if (focus && focus.factor < 1 && focus.accessory) {
       const acc = focus.accessory;
       const accIsHead = spec.head && (acc === spec.head || spec.head.endsWith(acc));

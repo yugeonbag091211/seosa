@@ -1,0 +1,42 @@
+name: Frozen search challenge (synthetic, independent from prior fixtures)
+
+on:
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'scripts/search-eval/run-challenge-20261117.cjs'
+      - 'reports/search-eval/challenge-20261117-questions.json'
+      - 'reports/search-eval/challenge-20261117-preregistration.json'
+      - '.github/workflows/search-frozen-challenge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-challenge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Assert tested API code is the preregistered base
+        run: |
+          git diff --exit-code 0e8d7d60f12827966c7d1b85e5b45ff09cb521b1 HEAD -- api
+      - name: Evaluate 120 unused synthetic challenges with the real search handler
+        run: |
+          node scripts/search-eval/run-challenge-20261117.cjs --out challenge-20261117-results.json --enforce
+      - name: Preserve results even on failed quality gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frozen-challenge-20261117-results
+          path: challenge-20261117-results.json
+          if-no-files-found: warn
+          retention-days: 14
