@@ -4,7 +4,10 @@ const { attachTrust } = require('./_trust');
 const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
+const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords, filterMainProductCandidates, MIN_SCORE } = require('./_search');
+const { explicitType, productTypeMatches } = require('./_ai-v31-taxonomy');
+const { principalItem } = require('./_ai-v32-listing');
+const { listingGuard } = require('./_ai-v34-listing-guards');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -131,7 +134,7 @@ module.exports = async function handler(req, res) {
      *   503 이면 프론트 Api.call 이 오류 경로(«검색 중 오류가 났어요 · 다시 시도»)로 간다.
      *   캐시하지 않는다 — 복구된 뒤에도 장애 응답이 남으면 안 된다.
      */
-    const {items, allItems, from, failed, errors} = result;
+    const {items, from, failed, errors} = result;
     if (failed) {
       noStore(res);
       res.setHeader('Retry-After', '30');
@@ -141,27 +144,6 @@ module.exports = async function handler(req, res) {
         message: '지금은 상품 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'
       });
     }
-
-    await saveProducts(keyword, allItems || items, { from, source: 'search' });
-
-    /*
-     * 가격 신뢰도.
-     *
-     * 저장이 끝난 뒤에 붙인다 — 방금 저장한 오늘 관측까지 포함해서
-     * 교차 확인 여부를 판단해야 화면과 DB 가 어긋나지 않는다.
-     * from 을 넘기면 '방금 확인'과 '오래된 캐시'를 구분한다.
-     */
-    // guardPrice: 확인 전 급변(suspect)은 현재가로 내보내지 않는다 (_trust.attachTrust 주석).
-    await attachTrust(items, { source: from, guardPrice: true });
-
-    /*
-     * "최근 가격 하락" 정보.
-     *
-     * 홈 시세판과 같은 뷰(price_drop_top) · 같은 기준(_price.plausibleDrop)이다.
-     * 쿠팡 API 는 부르지 않는다 — Supabase 조회 1회만 늘어난다.
-     * 실패해도 검색은 그대로 진행된다(하락 필터 버튼이 안 뜰 뿐이다).
-     */
-    await attachPriceChange(items);
 
     /*
      * 관련도 점수.
@@ -181,16 +163,35 @@ module.exports = async function handler(req, res) {
      * "LG전자" 나 "그램" 토큰 하나만 걸려도 통과하는 _shop.matchesKeyword 를
      * 지나온 것들이다.
      *
-     * ── 왜 버리지 않고 점수만 매기는가 ──────────────────────────────
+     * ── 2026-11-15 수정 ──────────────────────────────────────────
      *
-     * minScore: 0 이라 한 건도 떨어지지 않는다. 지금까지 보이던 상품이 갑자기
-     * 사라지는 쪽이 섞여 보이는 쪽보다 나쁘고, 이 변경의 목적은 "무엇을 지울까"
-     * 가 아니라 "무엇을 먼저 볼까" 이기 때문이다. 관련도가 낮은 것은 아래로
-     * 내려갈 뿐 목록에는 남는다.
+     * minScore: 0 은 낮은 관련도의 상품을 결과에 남겨 저가 액세서리·책이
+     * 본품 검색에서 노출되게 했다. 기본 MIN_SCORE 를 적용한 뒤 판매 대상과
+     * 검색 의도를 검증한다. 검증 전 결과는 가격 DB에도 저장하지 않는다.
      */
     // rankItems normalizes text itself; retain original model separators so
     // SM-S942N is checked as a complete code, not only the S942N fragment.
-    const relevance = rankItems(rawKeyword, items, { minScore: 0 });
+    const relevance = rankItems(rawKeyword, items);
+    // General device searches must return merchandise, not compatible parts or books.
+    // Accessory-intent searches (e.g. '아이패드 케이스') keep their own results.
+    const intent = principalItem(rawKeyword);
+    const requestedType = intent.kind === 'device' ? explicitType(rawKeyword) : '';
+    // rankItems' internal threshold uses token coverage; the final score also
+    // includes identity, accessory, and variant penalties. Enforce the floor
+    // after those penalties so a 0.293 final match is not treated as relevant.
+    const scored = relevance.items.filter(item => Number(item.relevance) >= MIN_SCORE);
+    const focused = requestedType
+      ? filterMainProductCandidates(rawKeyword, scored)
+      : { items: scored };
+    const verified = requestedType ? focused.items.filter(item => {
+      // Preserve a genuine device sold WITH a charger/case. The AI taxonomy's
+      // conservative PARTS check may otherwise reject a confirmed main device.
+      const head = principalItem(item.title);
+      const bundledDevice = head.kind === 'device' && head.type === requestedType &&
+        /(?:케이스|커버|충전기|필름|파우치|스트랩)\s*(?:포함|동봉|증정|제공)/i.test(item.title);
+      return (productTypeMatches(item.title, requestedType, rawKeyword) || bundledDevice) &&
+        !listingGuard({ title: item.title, price: Number(item.lprice) }, { category: requestedType, userText: rawKeyword });
+    }) : focused.items;
 
     /*
      * 순서.
@@ -202,7 +203,12 @@ module.exports = async function handler(req, res) {
      * 상품"이 1위인 것은 최저가 비교 서비스에서 가장 하기 쉬운 실수다
      * (_search.sortByRelevance 주석 참고).
      */
-    let ranked = sortByRelevance(relevance.items);
+    // Only validated rows may enter the price catalog from a public search.
+    // Keep the price ledger in sync before computing trust/price-change labels.
+    await saveProducts(keyword, verified, { from, source: 'search' });
+    await attachTrust(verified, { source: from, guardPrice: true });
+    await attachPriceChange(verified);
+    let ranked = sortByRelevance(verified);
     const canonicalConfig = Canonical.config();
     if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
       // The active group state is read on every request so a suspension is immediate.
