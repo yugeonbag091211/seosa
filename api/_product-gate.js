@@ -975,6 +975,10 @@ function judge(spec, item, opts = {}) {
     const nounIsHead = !!spec.head && (nounFlat === spec.head || headGroup.includes(nounFlat)
       || spec.head.endsWith(nounFlat) || nounFlat.endsWith(spec.head));
     const unbundled = earbudCaseFree(stripBundleItems(principalTitle));
+    // "수납장용 손잡이" explicitly sells something FOR a cabinet, not
+    // the cabinet itself. No catalog of accessory names is required.
+    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|[가-힣]|$)', 'i').test(unbundled))
+      hard.push(`category_is_compatibility_host:${spec.head}`);
     // The sold target (not an included gift) is a replacement part, even when
     // a broad classifier does not know the household object's product type.
     // Actual accessory searches are handled by the wantsAccessory branch.
@@ -1259,6 +1263,11 @@ function judge(spec, item, opts = {}) {
       }
     }
   }
+  // XL can be a product/volume variant ("마렐라 XL"), not an apparel size.
+  // Preserve an explicitly requested non-clothing XL SKU even if no
+  // recognized electronic product line was present.
+  if (spec.variants.has('xl') && !spec.apparelSize && /\bxl\b/i.test(spec.raw)
+    && !/\bxl\b|extra\s*large/i.test(title)) hard.push('variant_missing:xl');
   if (spec.diameterMm) {
     const dm = title.match(/(?:지름|직경)\s*(\d+(?:\.\d+)?)\s*(mm|cm)/i);
     if (!dm) soft.push('diameter_unverified');
