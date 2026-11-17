@@ -537,7 +537,17 @@ function parseQuery(text, opts = {}) {
   if (Array.isArray(opts.titles) && opts.titles.length && tokens.length > 1 && !brands.length) {
     const a = S.analyzeQuery(idText, { titles: opts.titles });
     const first = tokens[0];
-    if (a.brandHead && first !== head && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first)) looseBrand = first;
+    // Product families with a concrete model or capacity right after
+    // their seller's name can have brands omitted from the vendor table.
+    // "캐리어 16L 제습기" means Carrier HVAC, not generic luggage.
+    // Only infer a brand if supplier candidates independently show the
+    // same first token as the start of a listing.
+    const firstCandidateMatches = opts.titles.some(t =>
+      normalize(String(t || '')).startsWith(first + ' '));
+    const modelOrUnitNext = /\d/.test(tokens[1] || '');
+    const implicitBrand = modelOrUnitNext && firstCandidateMatches && first !== head
+      && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first);
+    if ((a.brandHead || implicitBrand) && first !== head && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first)) looseBrand = first;
   }
   // A type in "복합기에 쓸 잉크 카트리지" is the compatibility host.
   const hostNoun = (raw.match(/(?:^|\s)([가-힣]{2,18})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s)/u) || [])[1] || '';
