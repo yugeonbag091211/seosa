@@ -45,16 +45,16 @@
 | 4. 디자인 시스템 | 완료 | 100% | 토큰, 공통 기반, 홈·공용 페이지 스타일, 다크/반응형 규칙 연결 및 검토 |
 | 5–7. 화면 구현·통합 | 완료 | 100% | 홈, 상품/카테고리 템플릿, 레이더, 정책·지원 페이지 연결 |
 | 8–10. 반응형/기능/시각 검증 | 완료(실상품/전체 폭 캡처 한계 기록) | 90% | 6개 폭 로컬 목업, 검색/메뉴/레이더·정책, 콘솔, 회귀 및 2회 이상 시각 확인 |
-| 11. Preview 배포 | 안전 설정 선행 필요 | 0% | Preview 전역에 Production과 같은 DB/API 자격 증명 키가 있어 브랜치 전용 격리 필요 |
-| 12. 커밋·Push | 진행 중 | 0% | 작업 브랜치에서 단계별 커밋 후 Push 예정 |
+| 11. Preview 배포 | 격리 설정 적용, 새 Preview 확인 중 | 50% | 이 브랜치 Preview에만 격리 변수 17개를 적용했다. 설정 이후 새 배포를 만들고 확인해야 한다. |
+| 12. 커밋·Push | 완료 | 100% | 단계별 커밋 3개를 작업 브랜치에 Push했다. |
 
-**현재 전체 진행률: 약 88%** — 구현과 로컬 검증을 마쳤다. 남은 작업은 단계별 커밋/Push와 격리 Preview 재배포·확인이다.
+**현재 전체 진행률: 약 92%** — 구현, 로컬 검증, 세 단계 커밋/Push와 브랜치 Preview 격리 설정을 마쳤다. 남은 작업은 새 Preview 재배포·확인이다.
 
 ## Preview 검증 안전 경계
 
 `npm run dev`는 `.env`를 자동으로 로드하고 서버리스 API를 직접 실행하므로 사용하지 않았다. 로컬 시각 검증은 `.hallmark/local-preview.cjs`로만 실행했다. 이 fixture 서버는 `.env`를 읽지 않고, `/api/*`는 합성 응답을 돌려주며, CSP로 외부 자산·API 연결을 막는다. 시험 상품은 상단 배너와 페이지 본문에 목업/시험값이라고 표시했다.
 
-Vercel `seosa` 프로젝트의 Preview에는 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`와 결제·검색·AI·제휴 자격 증명이 등록되어 있다. 값을 열람하지 않고 키와 대상 환경만 확인했으며 Production과 Preview가 같은 키 이름을 공유하는 것을 확인했다. 현재 로컬 브랜치는 연결된 Git 원격에 아직 없어 Vercel이 브랜치 전용 변수를 거부했다. Vercel은 Preview 변수를 Git 브랜치별로 덮어쓸 수 있으므로, 첫 Push 직후 이 브랜치에만 무효 자격 증명, loopback Supabase URL, `SEOSA_DB_READONLY=1`을 설정하고 새 Preview가 그 설정을 적용한 뒤에만 URL을 확인한다. Production 환경변수는 변경하지 않는다. 프로젝트의 Preview 배포는 SSO 보호가 켜져 있다.
+Vercel `seosa` 프로젝트의 Preview에는 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`와 결제·검색·AI·제휴 자격 증명이 등록되어 있다. Production과 Preview가 같은 키 이름을 공유함을 확인했고, 실제 Production 값은 조회하지 않았다. 작업 브랜치를 Push한 뒤 `codex/hallmark-full-redesign-20261117` 브랜치의 Preview에만 자격 증명 15개를 무효 문자열로 덮어쓰고, `SUPABASE_URL`을 loopback 주소로, `SEOSA_DB_READONLY=1`로 설정했다. 각 변수의 대상은 Preview뿐이며 브랜치 한정이다. Production 환경변수는 변경하지 않았다. 변수 설정을 적용하려면 새 배포가 필요하다. 프로젝트의 Preview 배포는 SSO 보호가 켜져 있다.
 
 ## 최종 검증
 
@@ -90,4 +90,4 @@ Vercel `seosa` 프로젝트의 Preview에는 `SUPABASE_URL`, `SUPABASE_SECRET_KE
 - 핫딜 카드의 좁은 모바일 1열, 레이더의 44px 테마 버튼, 모바일 정책 표의 키보드 스크롤 초점을 추가했다.
 - 뒤로 가기 버튼이 처음부터 보이던 top 버튼 상태를 수정했다. 캐러셀 자동 넘김 멈춤/시작 버튼도 보이도록 추가했다.
 
-Preview URL은 브랜치 Push 및 격리 설정 적용 후 갱신한다. 현재 Preview는 테스트하지 않았다.
+Preview URL은 격리 변수를 적용하기 전에 생성된 배포에는 접속하지 않는다. 설정 이후 생성된 브랜치 Preview에서만 마지막 확인을 진행한다.
