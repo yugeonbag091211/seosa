@@ -1,0 +1,31 @@
+{
+  "version": "2026-11-17",
+  "status": "FROZEN_BEFORE_FIRST_RUN",
+  "source": "synthetic seller-style items, no live API",
+  "base_code_commit": "5d6e7664a3b45f6268515c9d25f87b6cc4abb71e",
+  "dataset_path": "reports/search-eval/fresh-holdout-100-20261117.json",
+  "dataset_git_blob_sha1": "a24b56845e95aa9db22795c27464193a0782b998",
+  "question_count": 100,
+  "product_families": 20,
+  "independent_of": "First 300-query set in PR #247 (different 20 product families; no exact query repeats)",
+  "negative_control_questions": 4,
+  "checks": [
+    "100 unique ids and normalized text",
+    "20 disjoint product families",
+    "5 labeled candidates per question",
+    "0 or 2 PASS candidates per question",
+    "PASS price at or below explicit price cap",
+    "FAIL over-budget label strictly above price cap"
+  ],
+  "judgment": [
+    "No incorrect cards or saved rows",
+    "At least one correct matching candidate among top ten for questions with valid choices",
+    "Return no candidates and save none for no-target fixtures",
+    "Do not reuse after exposing failure labels"
+  ],
+  "limits": [
+    "Product names are familiar, but seller titles and listed prices are fabricated",
+    "Script run exercises real search handler with fake supplier and DB",
+    "Cannot claim production, real vendor, or random sample accuracy"
+  ]
+}

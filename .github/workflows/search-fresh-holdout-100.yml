@@ -1,0 +1,40 @@
+name: New unseen 100 product-family search holdout (synthetic only)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/search-fresh-holdout-100.yml'
+      - 'reports/search-eval/fresh-holdout-100-20261117.json'
+      - 'reports/search-eval/fresh-holdout-100-preregistration.json'
+      - 'scripts/search-eval/run-fresh-holdout-100-20261117.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-holdout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify tested production code is exactly frozen
+        run: git diff --exit-code 5d6e7664a3b45f6268515c9d25f87b6cc4abb71e HEAD -- api
+      - name: Evaluate 100 new product families once; no live calls or database writes
+        run: |
+          node scripts/search-eval/run-fresh-holdout-100-20261117.cjs --out fresh-holdout-100-20261117-results.json --enforce
+      - name: Preserve first-run result even if it fails quality gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-unseen-100-first-run
+          path: fresh-holdout-100-20261117-results.json
+          if-no-files-found: warn
+          retention-days: 30
