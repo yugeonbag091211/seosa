@@ -1266,8 +1266,8 @@ function judge(spec, item, opts = {}) {
   // XL can be a product/volume variant ("마렐라 XL"), not an apparel size.
   // Preserve an explicitly requested non-clothing XL SKU even if no
   // recognized electronic product line was present.
-  if (spec.variants.has('xl') && !spec.apparelSize && /\bxl\b/i.test(spec.raw)
-    && !/\bxl\b|extra\s*large/i.test(title)) hard.push('variant_missing:xl');
+  if (!spec.apparelSize && /(?:^|\s)xl(?=\s|$)/i.test(spec.idText)
+    && !/(?:^|\s)xl(?=\s|$)|extra\s*large/i.test(title)) hard.push('variant_missing:xl');
   if (spec.diameterMm) {
     const dm = title.match(/(?:지름|직경)\s*(\d+(?:\.\d+)?)\s*(mm|cm)/i);
     if (!dm) soft.push('diameter_unverified');
