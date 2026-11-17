@@ -32,3 +32,7 @@ supabase/.temp/
 
 # GitHub Actions 하루 캐시 파일 (scripts/_daycache.js)
 .day-cache/
+
+# production-ai-5000 진행 중 세션의 서명값·중단 표식
+reports/production-ai-5000/.state/
+reports/production-ai-5000/STOP
