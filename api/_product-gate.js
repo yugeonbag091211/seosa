@@ -401,7 +401,14 @@ function parseQuery(text, opts = {}) {
     /(?:[.!?]\s*|\s+)(?:사은품(?:은|는|이|가|도)?\s*)?(?:같이|함께)\s*와도\s*(?:돼|괜찮아|상관\s*없어|좋아)(?:[.!?]+)?$/u,
     ' '
   ).replace(OPTIONAL_GIFT_PERMISSION, ' ');
-  let idText = selectionText.replace(BUDGET_PHRASE, ' ')
+  // Strip exclusion clauses before REQUEST_FILLER. Otherwise its "해줘"
+  // alternative truncates "제외해줘" and makes the original matched clause
+  // impossible to remove ("한샘 브랜드는 제외해줘" leaked as a product name).
+  let withoutExcluded = selectionText;
+  brandExclusionPhrases.forEach(phrase => {
+    withoutExcluded = withoutExcluded.replace(phrase.text, phrase.replacement);
+  });
+  let idText = withoutExcluded.replace(BUDGET_PHRASE, ' ')
     .replace(PURCHASE_DIRECTIVE, ' ').replace(REQUEST_FILLER, ' ')
     .replace(/(본품|본체|단품)(?:을|를|은|는)(?=\s|$)/g, '$1')
     // "가격을 동시에 충족하는 것" restates previously given constraints;
@@ -413,7 +420,7 @@ function parseQuery(text, opts = {}) {
       .replace(/([가-힣]{2,12})에서(?=\s|$)/g, (whole, stem) => TAX.explicitType(stem) ? stem : whole)
       .replace(/가격을\s*동시에\s*충족하는\s*것/g, ' ');
   }
-  brandExclusionPhrases.forEach(phrase => { idText = idText.replace(phrase.text, phrase.replacement); });
+  // All brand exclusions were removed before conversational filler processing.
   idText = idText.replace(/(?:물통|먼지통|주사율|용량|수량)?\s*\d+(?:\.\d+)?\s*(?:밀리리터|리터|ml|l|hz|헤르츠|매|켤레)\s*사양(?:으로|만)?|방수\s*사양(?:으로|만)?/gi, ' ');
   // 알려진 브랜드와 전용·호환 대상이 명시된 경우에만 조사와 용도 동사를 정리한다.
   // 다른 브랜드 및 판매 대상 판정은 그대로 남는다.
