@@ -76,4 +76,18 @@ assert.equal(noUsedSpec.condition.excluded.has('refurbished'),true,'refurbished 
 assert.equal(Gate.judge(noUsedSpec,{title:'고프로 HERO12 액션캠 중고',lprice:200000}).ok,false);count++;
 assert.equal(Gate.judge(noUsedSpec,{title:'고프로 HERO12 액션캠 리퍼',lprice:200000}).ok,false);count++;
 assert.equal(Gate.saveFilter(noUsed,[{title:'고프로 HERO12 액션캠 리퍼',lprice:200000}]).save.length,0);count++;
+
+// A named manufacturer that is not in the closed brand table must still be
+// excluded when "other company" is explicit. Never require the rejected name.
+for(const [query,excluded,allowed] of [
+ ['브라더 말고 다른 회사의 레이저 프린터 추천해줘','브라더 레이저 프린터','삼성전자 레이저 프린터'],
+ ['키크론 말고 다른 회사의 기계식 키보드 추천해줘','키크론 기계식 키보드','삼성전자 기계식 키보드']
+]){
+ const spec=Gate.parseQuery(query,{titles:[excluded,allowed]});
+ assert.ok(!spec.idText.includes(excluded.split(' ')[0]),JSON.stringify({query,idText:spec.idText})); count++;
+ assert.ok(spec.excludedBrands.length>0,'missing rejected brand: '+query);count++;
+ assert.ok(!Gate.judge(spec,{title:excluded,lprice:110000}).ok,'rejected brand shown');count++;
+ const ok=Gate.judge(spec,{title:allowed,lprice:110000});
+ assert.equal(ok.ok,true,JSON.stringify({query,hard:ok.hard,idText:spec.idText}));count++;
+}
 console.log('SEARCH_DIALOGUE_AND_COMPAT '+count+' PASS');
