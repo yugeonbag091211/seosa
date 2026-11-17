@@ -318,49 +318,6 @@ function sparkSvg(points) {
 }
 
 /* ── HTML ───────────────────────────────────────────────────────── */
-const CSS = [
-  ':root{--ink:#111;--soft:#5b616b;--line:#e6e8eb;--bg:#fff;--brass:#8A6D1C;--down:#0b7a4b;--up:#c9362b}',
-  '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);',
-  'font-family:Pretendard,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}',
-  'a{color:inherit}.wrap{max-width:760px;margin:0 auto;padding:0 20px}',
-  'header{border-bottom:1px solid var(--line)}header .wrap{display:flex;align-items:center;justify-content:space-between;height:56px}',
-  '.logo{font-weight:800;letter-spacing:.14em;text-decoration:none;font-size:.95rem}.logo b{color:var(--brass)}',
-  '.crumb{font-size:.78rem;color:var(--soft);margin:20px 0 8px}.crumb a{text-decoration:none;color:var(--soft)}.crumb a:hover{color:var(--ink)}',
-  'h1{font-size:1.28rem;line-height:1.4;margin:0 0 6px;letter-spacing:-.01em}',
-  '.meta{font-size:.8rem;color:var(--soft);margin-bottom:22px}.meta span+span:before{content:" · ";color:var(--line)}',
-  '.hero{display:grid;grid-template-columns:200px 1fr;gap:24px;align-items:start}@media(max-width:560px){.hero{grid-template-columns:1fr}}',
-  '.thumb{border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#fff;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center}',
-  '.thumb img{max-width:100%;max-height:100%;object-fit:contain}',
-  '.price{font-size:2rem;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.price small{font-size:1rem;font-weight:400;color:var(--soft)}',
-  '.verdict{margin:12px 0 0;padding:14px 16px;border-left:3px solid var(--brass);background:#faf8f3;border-radius:0 6px 6px 0}',
-  '.verdict b{display:block;font-size:1rem;margin-bottom:6px}.verdict ul{margin:0;padding-left:18px;font-size:.86rem;color:var(--soft)}.verdict li+li{margin-top:3px}',
-  '.verdict .warn{color:var(--up)}',
-  '.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0 10px}@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}',
-  '.stat{border:1px solid var(--line);border-radius:6px;padding:10px 12px}.stat span{display:block;font-size:.7rem;color:var(--soft)}.stat b{font-size:1rem;font-variant-numeric:tabular-nums}',
-  '.spark{border:1px solid var(--line);border-radius:6px;padding:10px;margin:8px 0 6px}.note{font-size:.74rem;color:var(--soft)}',
-  '.cta{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0}',
-  '.btn{display:inline-block;padding:12px 18px;border-radius:6px;text-decoration:none;font-size:.9rem;font-weight:700;border:1px solid var(--ink)}',
-  '.btn.primary{background:var(--ink);color:#fff}.btn.off{opacity:.45;pointer-events:none}',
-  'button.btn{font-family:inherit;background:var(--bg);color:var(--ink);cursor:pointer}.btn[aria-pressed=true]{background:#f3f4f6}.journey{margin:18px 0;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.journey ol{list-style:none;padding:0;margin:12px 0 0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.journey span{display:block;font-size:.72rem;color:var(--soft)}.journey b{font-variant-numeric:tabular-nums}',
-  '.unitprice{color:var(--soft);font-size:.82rem;margin:-6px 0 10px}',
-  '.goodbuy{margin:14px 0;padding:12px 14px;background:var(--surface,#f4f5f7);border-radius:6px;font-size:.86rem}.goodbuy b{display:block;font-size:.95rem}.goodbuy span{display:block;color:var(--soft);font-size:.78rem;margin-top:3px}',
-  'h2{font-size:1rem;margin:34px 0 10px}.sib{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}',
-  '@media(max-width:560px){.sib{grid-template-columns:repeat(2,1fr)}}',
-  '.sib li a{display:block;text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:.8rem;min-height:100%}',
-  '.sib .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--soft);margin-bottom:6px}.sib .p{font-weight:700;font-variant-numeric:tabular-nums}',
-  'footer{margin:48px 0 32px;font-size:.74rem;color:var(--soft);border-top:1px solid var(--line);padding-top:16px}',
-  '.trust{font-size:.78rem;color:var(--soft);margin-top:10px}',
-  // 제휴 고지 — public/index.html .aff-note 와 같은 모양·문구 (그 주석 참고)
-  '.aff-note{display:flex;align-items:baseline;gap:8px;margin:22px 0 -10px;padding:8px 12px;background:var(--surface,#f4f5f7);border-radius:6px;font-size:.8rem;line-height:1.55;color:var(--soft);word-break:keep-all;overflow-wrap:anywhere}.aff-note b{flex:none;color:var(--ink)}',
-  // 가격 요약 (2026-10-02) — .stats 와 같은 칸 모양을 쓴다
-  '.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 10px}@media(max-width:560px){.facts{grid-template-columns:repeat(2,1fr)}}',
-  '.facts div{border:1px solid var(--line);border-radius:6px;padding:10px 12px}.facts dt{font-size:.7rem;color:var(--soft)}.facts dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums}',
-  '.facts .dn{color:var(--down)}.facts .upc{color:var(--up)}.lead{font-size:.88rem;color:var(--soft);margin:0}.lead b{color:var(--ink);font-weight:600}',
-  '.thumb.noimg:after{content:"이미지 없음";color:var(--soft);font-size:.8rem}',
-  '.canonical-offers{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:6px}.canonical-offers ul{list-style:none;margin:8px 0 0;padding:0}.canonical-offers li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:.84rem}.canonical-offers a{font-weight:700}.canonical-offers small{display:block;color:var(--soft)}',
-  '.explore p{margin:0;font-size:.86rem}.explore a{color:var(--ink)}'
-].join('');
-
 /**
  * 제휴 링크 경제적 이해관계 고지 (2026-09-29, ADPICK 승인 요청).
  * 판매처 링크가 있을 때만 그 버튼 «바로 위» 에 붙는다. 문구를 줄이지 마라 —
@@ -619,7 +576,9 @@ ${SEO.verificationMeta()}
 <meta name="twitter:title" content="${esc(name)}${displayPrice > 0 ? ` · ${won(displayPrice)}원` : ''}">
 <meta name="twitter:description" content="${esc(desc)}">
 ${SEO.jsonLdScript(jsonLd)}
-<style>${CSS}</style>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/content.css">
 </head>
 <body>
 <header><div class="wrap">
@@ -692,7 +651,9 @@ track('buy_wait_watch_view');sync()})();</script>
 
 function render404(pid) {
   return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>상품을 찾을 수 없어요 · SEOSA</title><meta name="robots" content="noindex"><style>${CSS}</style></head>
+<title>상품을 찾을 수 없어요 · SEOSA</title><meta name="robots" content="noindex"><link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/content.css"></head>
 <body><header><div class="wrap"><a class="logo" href="/">SEO<b>SA</b></a></div></header>
 <main class="wrap"><h1 style="margin-top:40px">이 상품의 가격 기록을 찾을 수 없어요</h1>
 <p class="note">주소가 바뀌었거나 아직 수집되지 않은 상품이에요.${pid ? '' : ' 상품 식별자가 비어 있어요.'}</p>

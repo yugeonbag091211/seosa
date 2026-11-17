@@ -16,35 +16,9 @@
   · 내용은 저장소의 실제 데이터 흐름(api/*, supabase/*.sql, apps/mobile)과 대조했다.
     scripts/test-policy-pages.js 가 핵심 항목이 코드와 어긋나지 않는지 확인한다.
 -->
-<style>
-  :root { --bg:#fff; --ink:#15171B; --soft:#585E68; --faint:#68707A; --line:#E2E5E9; --surface:#F4F5F7; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#16181C; --ink:#EAEDF1; --soft:#98A0AB; --faint:#848B96; --line:#292E35; --surface:#1E2127; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
-    font-size:15px; line-height:1.72; letter-spacing:-.01em; word-break:keep-all; }
-  .wrap { max-width:760px; margin:0 auto; padding:28px 20px 80px; }
-  .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:40px; }
-  .logo { font-weight:800; letter-spacing:.2em; color:var(--ink); text-decoration:none; }
-  .top nav a { color:var(--soft); font-size:13px; margin-left:14px; }
-  h1 { font-size:28px; line-height:1.25; margin:0 0 8px; letter-spacing:-.02em; }
-  .meta { color:var(--faint); font-size:13px; margin:0 0 32px; }
-  h2 { font-size:18px; margin:40px 0 10px; padding-top:18px; border-top:1px solid var(--line); }
-  h3 { font-size:15px; margin:22px 0 6px; }
-  p, li { color:var(--ink); }
-  .soft { color:var(--soft); }
-  ul { padding-left:20px; margin:8px 0; }
-  li { margin:3px 0; }
-  table { width:100%; border-collapse:collapse; font-size:14px; margin:10px 0 4px; }
-  th, td { text-align:left; vertical-align:top; padding:9px 10px; border-bottom:1px solid var(--line); }
-  th { color:var(--soft); font-weight:600; background:var(--surface); }
-  .tablewrap { overflow-x:auto; }
-  .note { background:var(--surface); border-radius:8px; padding:12px 14px; font-size:14px; color:var(--soft); }
-  a { color:inherit; }
-  footer { margin-top:56px; color:var(--faint); font-size:13px; }
-</style>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/content.css">
 </head>
 <body>
 <div class="wrap">
@@ -59,7 +33,7 @@
   <p>서사(이하 “SEOSA”)는 웹사이트(seosa.ai.kr)와 SEOSA 모바일 앱(iOS·Android, 이하 “서비스”)을 운영하면서 아래와 같이 개인정보를 처리합니다. 로그인하지 않아도 상품 검색·가격 기록·가격 하락 정보와 AI 답변을 이용할 수 있으며, 이메일은 로그인을 선택한 경우에만 받습니다.</p>
 
   <h2>1. 처리하는 개인정보와 목적</h2>
-  <div class="tablewrap"><table>
+  <div class="tablewrap" role="region" aria-label="가로로 밀어 표 보기" tabindex="0"><table>
     <tr><th>기능</th><th>처리 항목</th><th>목적</th></tr>
     <tr><td>로그인 (선택)</td><td>이메일 주소, 인증 코드(해시값으로만 저장)</td><td>본인 확인용 인증 코드 발송, 로그인 상태 유지</td></tr>
     <tr><td>가격 알림 (웹·앱, 선택)</td><td>이메일 주소, 상품명·상품 링크·이미지·판매처·상품 ID·옵션 ID, 목표 가격, 신청 당시 가격, 발송 여부</td><td>목표 가격에 도달했을 때 알림 메일 발송</td></tr>
@@ -86,7 +60,7 @@
   <p>SEOSA는 법정대리인 동의 절차를 두지 않으므로 만 14세 미만 아동의 로그인(계정)을 받지 않습니다. 로그인할 때 만 14세 이상임을 확인하며, 확인하지 않으면 인증 코드를 보내지 않고 이메일 주소도 저장하지 않습니다. 이메일 주소가 필요한 가격 알림, 찜·기록 동기화, 취향 프로필, PRO 구독은 로그인한 경우에만 이용할 수 있습니다. 로그인하지 않고 이용하는 상품 검색·가격 확인에는 나이 확인이 필요하지 않습니다. 만 14세 미만 아동의 계정이 확인되면 삭제하며, 법정대리인은 9항의 이메일로 삭제를 요청할 수 있습니다.</p>
 
   <h2>2. 보유 기간과 파기</h2>
-  <div class="tablewrap"><table>
+  <div class="tablewrap" role="region" aria-label="가로로 밀어 표 보기" tabindex="0"><table>
     <tr><th>항목</th><th>보유 기간</th></tr>
     <tr><td>인증 코드</td><td>발급 후 최대 10분. 확인하면 바로 삭제합니다.</td></tr>
     <tr><td>로그인 토큰</td><td>서버에 저장하지 않습니다. 이용자의 브라우저·기기에 최대 30일 보관되며, 로그아웃하거나 계정을 삭제하면 기기에서 지워집니다.</td></tr>
@@ -103,7 +77,7 @@
 
   <h2>4. 처리 위탁과 국외 이전</h2>
   <p>서비스 운영을 위해 아래 사업자에게 처리를 맡기며, 이 중 일부는 국외에서 처리됩니다. 정보는 각 기능을 이용할 때 암호화된 통신(HTTPS)으로 전송됩니다.</p>
-  <div class="tablewrap"><table>
+  <div class="tablewrap" role="region" aria-label="가로로 밀어 표 보기" tabindex="0"><table>
     <tr><th>받는 자 (국가)</th><th>맡기는 업무</th><th>전송되는 정보</th></tr>
     <tr><td>Vercel Inc. (미국)</td><td>웹사이트·API 호스팅</td><td>서비스 이용 중 주고받는 모든 요청, 접속 기록</td></tr>
     <tr><td>Supabase Inc. (인도)</td><td>데이터베이스 운영</td><td>1항에서 “저장”하는 항목</td></tr>

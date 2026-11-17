@@ -424,36 +424,6 @@ async function hubData() {
  * ══════════════════════════════════════════════════════════════════ */
 
 /* 상품 페이지(api/_product-page.js)와 같은 색·글꼴·폭이다. */
-const CSS = [
-  ':root{--ink:#111;--soft:#5b616b;--line:#e6e8eb;--bg:#fff;--brass:#8A6D1C;--down:#0b7a4b;--up:#c9362b}',
-  '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);',
-  'font-family:Pretendard,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}',
-  'a{color:inherit}.wrap{max-width:760px;margin:0 auto;padding:0 20px}',
-  'header{border-bottom:1px solid var(--line)}header .wrap{display:flex;align-items:center;justify-content:space-between;height:56px}',
-  '.logo{font-weight:800;letter-spacing:.14em;text-decoration:none;font-size:.95rem}.logo b{color:var(--brass)}',
-  '.hlink{font-size:.82rem;color:var(--soft);text-decoration:none}',
-  '.crumb{font-size:.78rem;color:var(--soft);margin:20px 0 8px}.crumb a{text-decoration:none;color:var(--soft)}.crumb a:hover{color:var(--ink)}',
-  'h1{font-size:1.28rem;line-height:1.4;margin:0 0 6px;letter-spacing:-.01em}',
-  '.meta{font-size:.8rem;color:var(--soft);margin:0 0 18px}',
-  '.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 12px}@media(max-width:560px){.facts{grid-template-columns:repeat(2,1fr)}}',
-  '.facts div{border:1px solid var(--line);border-radius:6px;padding:10px 12px}.facts dt{font-size:.7rem;color:var(--soft)}.facts dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums}',
-  '.lead{font-size:.88rem;color:var(--soft);margin:0 0 6px}',
-  'h2{font-size:1rem;margin:30px 0 10px}',
-  '.plist{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}',
-  '.plist li{border-bottom:1px solid var(--line)}.plist a{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;padding:10px 0;text-decoration:none}',
-  '.plist .th{width:56px;height:56px;border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#fff}',
-  '.plist .th img{max-width:100%;max-height:100%;object-fit:contain}',
-  '.plist .t{font-size:.84rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.plist a>span:nth-child(2){min-width:0}',
-  '@media(max-width:560px){.plist a{grid-template-columns:48px 1fr auto;gap:10px}.plist .th{width:48px;height:48px}}',
-  '.plist .s{display:block;font-size:.72rem;color:var(--soft);margin-top:2px}',
-  '.plist .p{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}',
-  '.plist .d{display:block;font-size:.72rem;font-weight:400}.plist .d.down{color:var(--down)}.plist .d.up{color:var(--up)}',
-  '.more{margin:16px 0 0;font-size:.86rem}',
-  '.tiles{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}@media(max-width:560px){.tiles{grid-template-columns:repeat(2,1fr)}}',
-  '.tiles a{display:block;border:1px solid var(--line);border-radius:6px;padding:12px;text-decoration:none}.tiles b{display:block}.tiles span{font-size:.74rem;color:var(--soft)}',
-  'footer{margin:48px 0 32px;font-size:.74rem;color:var(--soft);border-top:1px solid var(--line);padding-top:16px}'
-].join('');
-
 function layout(o) {
   const graph = (o.jsonLd || []).filter(Boolean);
   return `<!DOCTYPE html>
@@ -476,7 +446,9 @@ ${o.canonical ? `<meta property="og:url" content="${esc(o.canonical)}">` : ''}
 <meta property="og:image" content="${SITE}/og.png">
 <meta name="twitter:card" content="summary">
 ${graph.length ? SEO.jsonLdScript({ '@context': 'https://schema.org', '@graph': graph }) : ''}
-<style>${CSS}</style>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/content.css">
 </head>
 <body>
 <header><div class="wrap">
