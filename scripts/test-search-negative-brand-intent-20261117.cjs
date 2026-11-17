@@ -32,7 +32,7 @@ for(const x of exclusions){
   });
   check('other brand eligible: '+x.query,()=>{
     const spec=info(x.query,[x.rejected,x.accepted]);
-    const result=verdict(spec,x.accepted);
+    const result=verdict(spec,x.accepted,/노트북/.test(x.type)?700000:65000);
     assert.equal(result.ok,true,
       JSON.stringify({query:x.query,idText:spec.idText,hard:result.hard,soft:result.soft}));
   });
