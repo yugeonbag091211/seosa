@@ -3353,7 +3353,8 @@ html[data-theme="dark"] .hero-cta:hover{background:#FFFFFF}
 .card{opacity:1;transform:none}
 .grid{gap:48px 24px}
 .card .thumb{border-radius:var(--r-lg);background:var(--surface)}
-.card .thumb img{max-width:78%;max-height:78%;mix-blend-mode:multiply}
+/* 사진 크기는 예전(82%) 그대로 — 실데이터로 보니 78% 는 상품이 작아 보였다. */
+.card .thumb img{mix-blend-mode:multiply}
 html[data-theme="dark"] .card .thumb img{mix-blend-mode:normal}
 .card:hover .thumb img{transform:scale(1.03)}
 .card .info{padding-top:14px}
@@ -3377,7 +3378,7 @@ html[data-theme="dark"] .card .thumb img{mix-blend-mode:normal}
 .drop-cards{gap:16px}
 .dcard{flex-direction:column;align-items:stretch}
 .dthumb{width:100%;height:auto;aspect-ratio:4/3}
-.dthumb img{max-width:72%;max-height:72%;margin:auto}
+.dthumb img{max-width:88%;max-height:88%;margin:auto}
 .dmall{white-space:nowrap;flex-wrap:wrap;row-gap:2px}
 .dmall > *{white-space:nowrap}
 .dcard{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;gap:12px;
@@ -3459,6 +3460,8 @@ footer p{font-size:.8125rem;line-height:1.65}
   .p-title{font-size:.875rem;min-height:2.6rem}
   .price{font-size:1.0625rem}
   .card-actions{gap:0;border-top:0;margin-top:4px;padding-top:2px}
+  /* 키워드 탭이 3줄로 늘지 않게 — 예전 크기(12.8px)로 */
+  .rec-chip-btn,.mb-chip{font-size:.8rem;padding-left:8px;padding-right:8px}
   .grid{gap:28px 14px}
   .alert-btn{padding:0 6px}
   .buy{padding-left:6px}.buy::after{left:6px}
