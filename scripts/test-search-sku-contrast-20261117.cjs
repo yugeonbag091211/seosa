@@ -29,6 +29,7 @@ for(const [q,correct,wrong,price] of contrasts){
    '무인양품 3단 원목 서랍장 60cm 서랍장 본품',
    '무인양품 3단 원목 서랍장 60cm용 다른 부품 교체용'];
  const spec=Gate.parseQuery(query,{titles});
+ assert.equal(spec.requestedAccessoryNoun,'레일',JSON.stringify({q:query,part:spec.requestedAccessoryNoun,idText:spec.idText}));passed++;
  console.log('DRAWER_RAIL_PARSE '+JSON.stringify({idText:spec.idText,head:spec.head,
    wantsAccessory:spec.wantsAccessory,accessoryWords:spec.accessoryWords,
    identityWords:spec.identityWords,models:spec.models,
