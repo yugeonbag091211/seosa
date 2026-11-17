@@ -230,6 +230,7 @@ const CAR_ONLY = /(?:차량용|자동차용|차량\s*전용|차량\s*거치)/;
 // 소비재 브랜드(전자기기 브랜드는 _ai-v32-brands.BRANDS). 표기 쌍만 둔다 — 상품 예외가 아니다.
 const EXTRA_BRANDS = [
   ['카시오', ['카시오', 'casio']], ['세이코', ['세이코', 'seiko']], ['시티즌', ['시티즌', 'citizen']], ['티쏘', ['티쏘', 'tissot']],
+  ['이케아', ['이케아', 'ikea']], ['QCY', ['qcy']],
   ['나이키', ['나이키', 'nike']], ['아디다스', ['아디다스', 'adidas']], ['뉴발란스', ['뉴발란스', 'new balance', 'newbalance']],
   ['컨버스', ['컨버스', 'converse']], ['크록스', ['크록스', 'crocs']], ['반스', ['반스', 'vans']], ['퓨마', ['퓨마', 'puma']],
   ['아식스', ['아식스', 'asics']], ['휠라', ['휠라', 'fila']], ['노스페이스', ['노스페이스', 'north face', 'northface']],
@@ -454,7 +455,13 @@ function parseQuery(text, opts = {}) {
 
   const normalized = normalize(idText);
   const tokens = S.splitTokens(normalized);
-  const accessoryWords = S.accessoryTerms(normalized, tokens);
+  // Substring-oriented component lexicons must not turn a legitimate
+  // compound sold item into an accessory request: 밀폐용기 is a container,
+  // 보조배터리 is a power bank. A separately requested lid/cable still wins.
+  const compoundMainCategory = /(?:밀폐\s*용기|보조\s*배터리)/.test(idText);
+  const accessoryWords = S.accessoryTerms(normalized, tokens).filter(w =>
+    !((w === '용기' && /밀폐\s*용기/.test(idText))
+      || (w === '배터리' && /보조\s*배터리/.test(idText))));
   const principal = LST.principalItem(idText);
   // 기기 종류는 상품명 규칙(principalItem — 머리 명사)이 먼저다. «에어팟 맥스» 는 이어폰이 아니라 헤드폰이다.
   const type0 = principal.kind === 'device' && principal.type && principal.type !== '기타기기'
@@ -464,10 +471,14 @@ function parseQuery(text, opts = {}) {
   // 기기 이름과 함께 부속 명사를 말했으면(«로봇청소기 물걸레 패드», «휴대폰 방수팩») 그 부속을 찾는 것이다.
   // (#236 이후 explicitType 은 «노트북 거치대» 같은 부속 구절에 종류를 돌려주지 않는다 — 언급 자체를 본다)
   const typeMentioned = !!TAX.explicitType(idText) || TAX.typeMentions(idText).length > 0;
-  const wantsAccessory = accessoryWords.length > 0
+  let wantsAccessory = accessoryWords.length > 0
     || EXTRA_ACCESSORY_QUERY.test(idText)
     || (principal.kind === 'accessory' && (UNIVERSAL_ACCESSORY.test(String(principal.noun || '')) || typeMentioned))
     || (!!type0 && TAX.isPart(idText, type0));
+  // For those exact compound categories, the classifier's generic
+  // "용기"/"배터리" substring is not evidence of an accessory.
+  if (compoundMainCategory && !accessoryWords.length && !EXTRA_ACCESSORY_QUERY.test(idText))
+    wantsAccessory = false;
   // 찾는 물건이 부속 사전의 명사(방수팩·쿨링패드)면 앞의 기기(휴대폰·노트북)는 «무엇에 쓰는가» 다.
   const type = wantsAccessory || principal.kind === 'accessory' ? '' : type0;
   // «할로윈 의상 및 소품» 처럼 범주를 나열한 키워드는 머리 명사 하나로 판정하지 않는다.
