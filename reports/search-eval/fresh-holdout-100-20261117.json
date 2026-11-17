@@ -1,0 +1,5123 @@
+{
+  "metadata": {
+    "title": "SEOSA SECOND fresh 100 synthetic holdout after 200-query development fixes",
+    "first_execution": true,
+    "question_count": 100,
+    "distinct_brand_count": 20,
+    "distinct_product_families": 20,
+    "source": "invented seller listings based on 20 novel product families; never real supplier API",
+    "family_overlap_with_previous_60": false,
+    "prior_development_question_overlap": false,
+    "code_anchor": "5d6e7664a3b45f6268515c9d25f87b6cc4abb71e",
+    "scenario_counts": {
+      "exact_sku": 20,
+      "strict_budget": 20,
+      "free_gift": 20,
+      "requested_part": 20,
+      "brand_exclusion": 16,
+      "no_eligible_new_product": 4
+    }
+  },
+  "questions": [
+    {
+      "id": "U01-1",
+      "split": "holdout",
+      "family_id": "UH01",
+      "scenario": "exact_sku",
+      "category": "충전 드릴",
+      "query": "보쉬 GSB 18V-55 충전 드릴 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴",
+          "price_krw": 260000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U01-1-S1"
+        },
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴 새상품",
+          "price_krw": 265200,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U01-1-S2"
+        },
+        {
+          "title": "보쉬 GSB 18V-45 충전 드릴",
+          "price_krw": 208000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U01-1-S3"
+        },
+        {
+          "title": "보쉬 GSB 18V-55용 드릴 척 단품",
+          "price_krw": 26000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U01-1-S4"
+        },
+        {
+          "title": "마끼다 충전 드릴",
+          "price_krw": 249600,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U01-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U01-2",
+      "split": "holdout",
+      "family_id": "UH01",
+      "scenario": "strict_budget",
+      "category": "충전 드릴",
+      "query": "보쉬 GSB 18V-55 충전 드릴 가격이 304200원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 304200,
+      "items": [
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴",
+          "price_krw": 260000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U01-2-S1"
+        },
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴 정품",
+          "price_krw": 283400,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U01-2-S2"
+        },
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴 신제품",
+          "price_krw": 307200,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U01-2-S3"
+        },
+        {
+          "title": "보쉬 GSB 18V-45 충전 드릴",
+          "price_krw": 195000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U01-2-S4"
+        },
+        {
+          "title": "보쉬 GSB 18V-55용 드릴 척",
+          "price_krw": 28600,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U01-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U01-3",
+      "split": "holdout",
+      "family_id": "UH01",
+      "scenario": "free_gift",
+      "category": "충전 드릴",
+      "query": "보쉬 GSB 18V-55 충전 드릴 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴 본품 + 드릴 척 사은품 증정",
+          "price_krw": 260000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U01-3-S1"
+        },
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴 본품",
+          "price_krw": 267800,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U01-3-S2"
+        },
+        {
+          "title": "보쉬 GSB 18V-45 충전 드릴 본품 + 사은품 증정",
+          "price_krw": 221000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U01-3-S3"
+        },
+        {
+          "title": "보쉬 GSB 18V-55용 드릴 척 단품 + 사은품 증정",
+          "price_krw": 26000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U01-3-S4"
+        },
+        {
+          "title": "마끼다 충전 드릴 본품",
+          "price_krw": 234000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U01-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U01-4",
+      "split": "holdout",
+      "family_id": "UH01",
+      "scenario": "requested_part",
+      "category": "충전 드릴",
+      "query": "보쉬 GSB 18V-55 제품에 쓸 드릴 척만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "보쉬 GSB 18V-55용 드릴 척 정품",
+          "price_krw": 36400,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U01-4-S1"
+        },
+        {
+          "title": "보쉬 GSB 18V-55용 드릴 척 1개입",
+          "price_krw": 44200,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U01-4-S2"
+        },
+        {
+          "title": "보쉬 GSB 18V-55 충전 드릴 본품",
+          "price_krw": 260000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U01-4-S3"
+        },
+        {
+          "title": "마끼다 다른 모델용 드릴 척",
+          "price_krw": 28600,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U01-4-S4"
+        },
+        {
+          "title": "보쉬 GSB 18V-55용 다른 부품 교체용",
+          "price_krw": 26000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U01-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U01-5",
+      "split": "holdout",
+      "family_id": "UH01",
+      "scenario": "brand_exclusion",
+      "category": "충전 드릴",
+      "query": "충전 드릴 고를 건데 보쉬 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "마끼다 충전 드릴 정품",
+          "price_krw": 247000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U01-5-S1"
+        },
+        {
+          "title": "마끼다 충전 드릴 새상품",
+          "price_krw": 252200,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U01-5-S2"
+        },
+        {
+          "title": "보쉬 충전 드릴 정품",
+          "price_krw": 228800,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U01-5-S3"
+        },
+        {
+          "title": "보쉬 충전 드릴 중고",
+          "price_krw": 143000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U01-5-S4"
+        },
+        {
+          "title": "마끼다 충전 드릴용 드릴 척 단품",
+          "price_krw": 31200,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U01-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U02-1",
+      "split": "holdout",
+      "family_id": "UH02",
+      "scenario": "exact_sku",
+      "category": "임팩트 드라이버",
+      "query": "마끼다 DTD173 임팩트 드라이버 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버",
+          "price_krw": 300000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U02-1-S1"
+        },
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버 새상품",
+          "price_krw": 306000,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U02-1-S2"
+        },
+        {
+          "title": "마끼다 DTD172 임팩트 드라이버",
+          "price_krw": 240000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U02-1-S3"
+        },
+        {
+          "title": "마끼다 DTD173용 배터리 팩 단품",
+          "price_krw": 30000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U02-1-S4"
+        },
+        {
+          "title": "보쉬 임팩트 드라이버",
+          "price_krw": 288000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U02-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U02-2",
+      "split": "holdout",
+      "family_id": "UH02",
+      "scenario": "strict_budget",
+      "category": "임팩트 드라이버",
+      "query": "마끼다 DTD173 임팩트 드라이버 가격이 351000원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 351000,
+      "items": [
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버",
+          "price_krw": 300000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U02-2-S1"
+        },
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버 정품",
+          "price_krw": 327000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U02-2-S2"
+        },
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버 신제품",
+          "price_krw": 354000,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U02-2-S3"
+        },
+        {
+          "title": "마끼다 DTD172 임팩트 드라이버",
+          "price_krw": 225000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U02-2-S4"
+        },
+        {
+          "title": "마끼다 DTD173용 배터리 팩",
+          "price_krw": 33000,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U02-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U02-3",
+      "split": "holdout",
+      "family_id": "UH02",
+      "scenario": "free_gift",
+      "category": "임팩트 드라이버",
+      "query": "마끼다 DTD173 임팩트 드라이버 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버 본품 + 배터리 팩 사은품 증정",
+          "price_krw": 300000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U02-3-S1"
+        },
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버 본품",
+          "price_krw": 309000,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U02-3-S2"
+        },
+        {
+          "title": "마끼다 DTD172 임팩트 드라이버 본품 + 사은품 증정",
+          "price_krw": 255000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U02-3-S3"
+        },
+        {
+          "title": "마끼다 DTD173용 배터리 팩 단품 + 사은품 증정",
+          "price_krw": 30000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U02-3-S4"
+        },
+        {
+          "title": "보쉬 임팩트 드라이버 본품",
+          "price_krw": 270000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U02-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U02-4",
+      "split": "holdout",
+      "family_id": "UH02",
+      "scenario": "requested_part",
+      "category": "임팩트 드라이버",
+      "query": "마끼다 DTD173 제품에 쓸 배터리 팩만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "마끼다 DTD173용 배터리 팩 정품",
+          "price_krw": 42000,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U02-4-S1"
+        },
+        {
+          "title": "마끼다 DTD173용 배터리 팩 1개입",
+          "price_krw": 51000,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U02-4-S2"
+        },
+        {
+          "title": "마끼다 DTD173 임팩트 드라이버 본품",
+          "price_krw": 300000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U02-4-S3"
+        },
+        {
+          "title": "보쉬 다른 모델용 배터리 팩",
+          "price_krw": 33000,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U02-4-S4"
+        },
+        {
+          "title": "마끼다 DTD173용 다른 부품 교체용",
+          "price_krw": 30000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U02-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U02-5",
+      "split": "holdout",
+      "family_id": "UH02",
+      "scenario": "brand_exclusion",
+      "category": "임팩트 드라이버",
+      "query": "임팩트 드라이버 고를 건데 마끼다 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "보쉬 임팩트 드라이버 정품",
+          "price_krw": 285000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U02-5-S1"
+        },
+        {
+          "title": "보쉬 임팩트 드라이버 새상품",
+          "price_krw": 291000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U02-5-S2"
+        },
+        {
+          "title": "마끼다 임팩트 드라이버 정품",
+          "price_krw": 264000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U02-5-S3"
+        },
+        {
+          "title": "마끼다 임팩트 드라이버 중고",
+          "price_krw": 165000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U02-5-S4"
+        },
+        {
+          "title": "보쉬 임팩트 드라이버용 배터리 팩 단품",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U02-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U03-1",
+      "split": "holdout",
+      "family_id": "UH03",
+      "scenario": "exact_sku",
+      "category": "라벨 프린터",
+      "query": "다이모 LabelWriter 550 라벨 프린터 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터",
+          "price_krw": 190000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U03-1-S1"
+        },
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터 새상품",
+          "price_krw": 193800,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U03-1-S2"
+        },
+        {
+          "title": "다이모 LabelWriter 450 라벨 프린터",
+          "price_krw": 152000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U03-1-S3"
+        },
+        {
+          "title": "다이모 LabelWriter 550용 라벨 롤 단품",
+          "price_krw": 19000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U03-1-S4"
+        },
+        {
+          "title": "브라더 라벨 프린터",
+          "price_krw": 182400,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U03-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U03-2",
+      "split": "holdout",
+      "family_id": "UH03",
+      "scenario": "strict_budget",
+      "category": "라벨 프린터",
+      "query": "다이모 LabelWriter 550 라벨 프린터 가격이 222300원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 222300,
+      "items": [
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터",
+          "price_krw": 190000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U03-2-S1"
+        },
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터 정품",
+          "price_krw": 207100,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U03-2-S2"
+        },
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터 신제품",
+          "price_krw": 225300,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U03-2-S3"
+        },
+        {
+          "title": "다이모 LabelWriter 450 라벨 프린터",
+          "price_krw": 142500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U03-2-S4"
+        },
+        {
+          "title": "다이모 LabelWriter 550용 라벨 롤",
+          "price_krw": 20900,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U03-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U03-3",
+      "split": "holdout",
+      "family_id": "UH03",
+      "scenario": "free_gift",
+      "category": "라벨 프린터",
+      "query": "다이모 LabelWriter 550 라벨 프린터 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터 본품 + 라벨 롤 사은품 증정",
+          "price_krw": 190000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U03-3-S1"
+        },
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터 본품",
+          "price_krw": 195700,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U03-3-S2"
+        },
+        {
+          "title": "다이모 LabelWriter 450 라벨 프린터 본품 + 사은품 증정",
+          "price_krw": 161500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U03-3-S3"
+        },
+        {
+          "title": "다이모 LabelWriter 550용 라벨 롤 단품 + 사은품 증정",
+          "price_krw": 19000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U03-3-S4"
+        },
+        {
+          "title": "브라더 라벨 프린터 본품",
+          "price_krw": 171000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U03-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U03-4",
+      "split": "holdout",
+      "family_id": "UH03",
+      "scenario": "requested_part",
+      "category": "라벨 프린터",
+      "query": "다이모 LabelWriter 550 제품에 쓸 라벨 롤만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "다이모 LabelWriter 550용 라벨 롤 정품",
+          "price_krw": 26600,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U03-4-S1"
+        },
+        {
+          "title": "다이모 LabelWriter 550용 라벨 롤 1개입",
+          "price_krw": 32300,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U03-4-S2"
+        },
+        {
+          "title": "다이모 LabelWriter 550 라벨 프린터 본품",
+          "price_krw": 190000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U03-4-S3"
+        },
+        {
+          "title": "브라더 다른 모델용 라벨 롤",
+          "price_krw": 20900,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U03-4-S4"
+        },
+        {
+          "title": "다이모 LabelWriter 550용 다른 부품 교체용",
+          "price_krw": 19000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U03-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U03-5",
+      "split": "holdout",
+      "family_id": "UH03",
+      "scenario": "brand_exclusion",
+      "category": "라벨 프린터",
+      "query": "라벨 프린터 고를 건데 다이모 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "브라더 라벨 프린터 정품",
+          "price_krw": 180500,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U03-5-S1"
+        },
+        {
+          "title": "브라더 라벨 프린터 새상품",
+          "price_krw": 184300,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U03-5-S2"
+        },
+        {
+          "title": "다이모 라벨 프린터 정품",
+          "price_krw": 167200,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U03-5-S3"
+        },
+        {
+          "title": "다이모 라벨 프린터 중고",
+          "price_krw": 104500,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U03-5-S4"
+        },
+        {
+          "title": "브라더 라벨 프린터용 라벨 롤 단품",
+          "price_krw": 22800,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U03-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U04-1",
+      "split": "holdout",
+      "family_id": "UH04",
+      "scenario": "exact_sku",
+      "category": "액정 타블렛",
+      "query": "휴이온 Kamvas 13 액정 타블렛 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛",
+          "price_krw": 360000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U04-1-S1"
+        },
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛 새상품",
+          "price_krw": 367200,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U04-1-S2"
+        },
+        {
+          "title": "휴이온 Kamvas 16 액정 타블렛",
+          "price_krw": 288000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U04-1-S3"
+        },
+        {
+          "title": "휴이온 Kamvas 13용 교체 펜 단품",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U04-1-S4"
+        },
+        {
+          "title": "와콤 액정 타블렛",
+          "price_krw": 345600,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U04-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U04-2",
+      "split": "holdout",
+      "family_id": "UH04",
+      "scenario": "strict_budget",
+      "category": "액정 타블렛",
+      "query": "휴이온 Kamvas 13 액정 타블렛 가격이 421200원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 421200,
+      "items": [
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛",
+          "price_krw": 360000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U04-2-S1"
+        },
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛 정품",
+          "price_krw": 392400,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U04-2-S2"
+        },
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛 신제품",
+          "price_krw": 424200,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U04-2-S3"
+        },
+        {
+          "title": "휴이온 Kamvas 16 액정 타블렛",
+          "price_krw": 270000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U04-2-S4"
+        },
+        {
+          "title": "휴이온 Kamvas 13용 교체 펜",
+          "price_krw": 39600,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U04-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U04-3",
+      "split": "holdout",
+      "family_id": "UH04",
+      "scenario": "free_gift",
+      "category": "액정 타블렛",
+      "query": "휴이온 Kamvas 13 액정 타블렛 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛 본품 + 교체 펜 사은품 증정",
+          "price_krw": 360000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U04-3-S1"
+        },
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛 본품",
+          "price_krw": 370800,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U04-3-S2"
+        },
+        {
+          "title": "휴이온 Kamvas 16 액정 타블렛 본품 + 사은품 증정",
+          "price_krw": 306000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U04-3-S3"
+        },
+        {
+          "title": "휴이온 Kamvas 13용 교체 펜 단품 + 사은품 증정",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U04-3-S4"
+        },
+        {
+          "title": "와콤 액정 타블렛 본품",
+          "price_krw": 324000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U04-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U04-4",
+      "split": "holdout",
+      "family_id": "UH04",
+      "scenario": "requested_part",
+      "category": "액정 타블렛",
+      "query": "휴이온 Kamvas 13 제품에 쓸 교체 펜만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "휴이온 Kamvas 13용 교체 펜 정품",
+          "price_krw": 50400,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U04-4-S1"
+        },
+        {
+          "title": "휴이온 Kamvas 13용 교체 펜 1개입",
+          "price_krw": 61200,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U04-4-S2"
+        },
+        {
+          "title": "휴이온 Kamvas 13 액정 타블렛 본품",
+          "price_krw": 360000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U04-4-S3"
+        },
+        {
+          "title": "와콤 다른 모델용 교체 펜",
+          "price_krw": 39600,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U04-4-S4"
+        },
+        {
+          "title": "휴이온 Kamvas 13용 다른 부품 교체용",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U04-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U04-5",
+      "split": "holdout",
+      "family_id": "UH04",
+      "scenario": "brand_exclusion",
+      "category": "액정 타블렛",
+      "query": "액정 타블렛 고를 건데 휴이온 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "와콤 액정 타블렛 정품",
+          "price_krw": 342000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U04-5-S1"
+        },
+        {
+          "title": "와콤 액정 타블렛 새상품",
+          "price_krw": 349200,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U04-5-S2"
+        },
+        {
+          "title": "휴이온 액정 타블렛 정품",
+          "price_krw": 316800,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U04-5-S3"
+        },
+        {
+          "title": "휴이온 액정 타블렛 중고",
+          "price_krw": 198000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U04-5-S4"
+        },
+        {
+          "title": "와콤 액정 타블렛용 교체 펜 단품",
+          "price_krw": 43200,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U04-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U05-1",
+      "split": "holdout",
+      "family_id": "UH05",
+      "scenario": "exact_sku",
+      "category": "펜 타블렛",
+      "query": "와콤 Intuos Pro M 펜 타블렛 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛",
+          "price_krw": 410000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U05-1-S1"
+        },
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 새상품",
+          "price_krw": 418200,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U05-1-S2"
+        },
+        {
+          "title": "와콤 Intuos Pro S 펜 타블렛",
+          "price_krw": 328000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U05-1-S3"
+        },
+        {
+          "title": "와콤 Intuos Pro M용 펜촉 단품",
+          "price_krw": 41000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U05-1-S4"
+        },
+        {
+          "title": "휴이온 펜 타블렛",
+          "price_krw": 393600,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U05-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U05-2",
+      "split": "holdout",
+      "family_id": "UH05",
+      "scenario": "strict_budget",
+      "category": "펜 타블렛",
+      "query": "와콤 Intuos Pro M 펜 타블렛 가격이 479700원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 479700,
+      "items": [
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛",
+          "price_krw": 410000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U05-2-S1"
+        },
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 정품",
+          "price_krw": 446900,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U05-2-S2"
+        },
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 신제품",
+          "price_krw": 482700,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U05-2-S3"
+        },
+        {
+          "title": "와콤 Intuos Pro S 펜 타블렛",
+          "price_krw": 307500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U05-2-S4"
+        },
+        {
+          "title": "와콤 Intuos Pro M용 펜촉",
+          "price_krw": 45100,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U05-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U05-3",
+      "split": "holdout",
+      "family_id": "UH05",
+      "scenario": "free_gift",
+      "category": "펜 타블렛",
+      "query": "와콤 Intuos Pro M 펜 타블렛 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 본품 + 펜촉 사은품 증정",
+          "price_krw": 410000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U05-3-S1"
+        },
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 본품",
+          "price_krw": 422300,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U05-3-S2"
+        },
+        {
+          "title": "와콤 Intuos Pro S 펜 타블렛 본품 + 사은품 증정",
+          "price_krw": 348500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U05-3-S3"
+        },
+        {
+          "title": "와콤 Intuos Pro M용 펜촉 단품 + 사은품 증정",
+          "price_krw": 41000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U05-3-S4"
+        },
+        {
+          "title": "휴이온 펜 타블렛 본품",
+          "price_krw": 369000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U05-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U05-4",
+      "split": "holdout",
+      "family_id": "UH05",
+      "scenario": "requested_part",
+      "category": "펜 타블렛",
+      "query": "와콤 Intuos Pro M 제품에 쓸 펜촉만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "와콤 Intuos Pro M용 펜촉 정품",
+          "price_krw": 57400,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U05-4-S1"
+        },
+        {
+          "title": "와콤 Intuos Pro M용 펜촉 1개입",
+          "price_krw": 69700,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U05-4-S2"
+        },
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 본품",
+          "price_krw": 410000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U05-4-S3"
+        },
+        {
+          "title": "휴이온 다른 모델용 펜촉",
+          "price_krw": 45100,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U05-4-S4"
+        },
+        {
+          "title": "와콤 Intuos Pro M용 다른 부품 교체용",
+          "price_krw": 41000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U05-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U05-5",
+      "split": "holdout",
+      "family_id": "UH05",
+      "scenario": "no_eligible_new_product",
+      "category": "펜 타블렛",
+      "query": "와콤 Intuos Pro M 펜 타블렛 새제품만, 중고 또는 리퍼는 빼고 찾아줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 중고",
+          "price_krw": 287000,
+          "verdict": "FAIL",
+          "reason": "used excluded",
+          "condition": "used",
+          "id": "U05-5-S1"
+        },
+        {
+          "title": "와콤 Intuos Pro M 펜 타블렛 리퍼",
+          "price_krw": 307500,
+          "verdict": "FAIL",
+          "reason": "refurbished excluded",
+          "condition": "refurbished",
+          "id": "U05-5-S2"
+        },
+        {
+          "title": "와콤 Intuos Pro S 펜 타블렛 새상품",
+          "price_krw": 369000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U05-5-S3"
+        },
+        {
+          "title": "와콤 Intuos Pro M용 펜촉 새제품",
+          "price_krw": 49200,
+          "verdict": "FAIL",
+          "reason": "accessory not body",
+          "condition": "new",
+          "id": "U05-5-S4"
+        },
+        {
+          "title": "휴이온 펜 타블렛 새상품",
+          "price_krw": 360800,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U05-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U06-1",
+      "split": "holdout",
+      "family_id": "UH06",
+      "scenario": "exact_sku",
+      "category": "오디오 인터페이스",
+      "query": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스",
+          "price_krw": 300000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U06-1-S1"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 새상품",
+          "price_krw": 306000,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U06-1-S2"
+        },
+        {
+          "title": "포커스라이트 Scarlett Solo 오디오 인터페이스",
+          "price_krw": 240000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U06-1-S3"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대용 XLR 케이블 단품",
+          "price_krw": 30000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U06-1-S4"
+        },
+        {
+          "title": "스테인버그 오디오 인터페이스",
+          "price_krw": 288000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U06-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U06-2",
+      "split": "holdout",
+      "family_id": "UH06",
+      "scenario": "strict_budget",
+      "category": "오디오 인터페이스",
+      "query": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 가격이 351000원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 351000,
+      "items": [
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스",
+          "price_krw": 300000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U06-2-S1"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 정품",
+          "price_krw": 327000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U06-2-S2"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 신제품",
+          "price_krw": 354000,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U06-2-S3"
+        },
+        {
+          "title": "포커스라이트 Scarlett Solo 오디오 인터페이스",
+          "price_krw": 225000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U06-2-S4"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대용 XLR 케이블",
+          "price_krw": 33000,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U06-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U06-3",
+      "split": "holdout",
+      "family_id": "UH06",
+      "scenario": "free_gift",
+      "category": "오디오 인터페이스",
+      "query": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 본품 + XLR 케이블 사은품 증정",
+          "price_krw": 300000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U06-3-S1"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 본품",
+          "price_krw": 309000,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U06-3-S2"
+        },
+        {
+          "title": "포커스라이트 Scarlett Solo 오디오 인터페이스 본품 + 사은품 증정",
+          "price_krw": 255000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U06-3-S3"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대용 XLR 케이블 단품 + 사은품 증정",
+          "price_krw": 30000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U06-3-S4"
+        },
+        {
+          "title": "스테인버그 오디오 인터페이스 본품",
+          "price_krw": 270000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U06-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U06-4",
+      "split": "holdout",
+      "family_id": "UH06",
+      "scenario": "requested_part",
+      "category": "오디오 인터페이스",
+      "query": "포커스라이트 Scarlett 2i2 4세대 제품에 쓸 XLR 케이블만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대용 XLR 케이블 정품",
+          "price_krw": 42000,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U06-4-S1"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대용 XLR 케이블 1개입",
+          "price_krw": 51000,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U06-4-S2"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대 오디오 인터페이스 본품",
+          "price_krw": 300000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U06-4-S3"
+        },
+        {
+          "title": "스테인버그 다른 모델용 XLR 케이블",
+          "price_krw": 33000,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U06-4-S4"
+        },
+        {
+          "title": "포커스라이트 Scarlett 2i2 4세대용 다른 부품 교체용",
+          "price_krw": 30000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U06-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U06-5",
+      "split": "holdout",
+      "family_id": "UH06",
+      "scenario": "brand_exclusion",
+      "category": "오디오 인터페이스",
+      "query": "오디오 인터페이스 고를 건데 포커스라이트 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "스테인버그 오디오 인터페이스 정품",
+          "price_krw": 285000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U06-5-S1"
+        },
+        {
+          "title": "스테인버그 오디오 인터페이스 새상품",
+          "price_krw": 291000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U06-5-S2"
+        },
+        {
+          "title": "포커스라이트 오디오 인터페이스 정품",
+          "price_krw": 264000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U06-5-S3"
+        },
+        {
+          "title": "포커스라이트 오디오 인터페이스 중고",
+          "price_krw": 165000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U06-5-S4"
+        },
+        {
+          "title": "스테인버그 오디오 인터페이스용 XLR 케이블 단품",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U06-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U07-1",
+      "split": "holdout",
+      "family_id": "UH07",
+      "scenario": "exact_sku",
+      "category": "디지털 피아노",
+      "query": "야마하 P-225 디지털 피아노 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "야마하 P-225 디지털 피아노",
+          "price_krw": 820000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U07-1-S1"
+        },
+        {
+          "title": "야마하 P-225 디지털 피아노 새상품",
+          "price_krw": 836400,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U07-1-S2"
+        },
+        {
+          "title": "야마하 P-145 디지털 피아노",
+          "price_krw": 656000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U07-1-S3"
+        },
+        {
+          "title": "야마하 P-225용 서스테인 페달 단품",
+          "price_krw": 82000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U07-1-S4"
+        },
+        {
+          "title": "롤랜드 디지털 피아노",
+          "price_krw": 787200,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U07-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U07-2",
+      "split": "holdout",
+      "family_id": "UH07",
+      "scenario": "strict_budget",
+      "category": "디지털 피아노",
+      "query": "야마하 P-225 디지털 피아노 가격이 959400원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 959400,
+      "items": [
+        {
+          "title": "야마하 P-225 디지털 피아노",
+          "price_krw": 820000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U07-2-S1"
+        },
+        {
+          "title": "야마하 P-225 디지털 피아노 정품",
+          "price_krw": 893800,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U07-2-S2"
+        },
+        {
+          "title": "야마하 P-225 디지털 피아노 신제품",
+          "price_krw": 962400,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U07-2-S3"
+        },
+        {
+          "title": "야마하 P-145 디지털 피아노",
+          "price_krw": 615000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U07-2-S4"
+        },
+        {
+          "title": "야마하 P-225용 서스테인 페달",
+          "price_krw": 90200,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U07-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U07-3",
+      "split": "holdout",
+      "family_id": "UH07",
+      "scenario": "free_gift",
+      "category": "디지털 피아노",
+      "query": "야마하 P-225 디지털 피아노 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "야마하 P-225 디지털 피아노 본품 + 서스테인 페달 사은품 증정",
+          "price_krw": 820000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U07-3-S1"
+        },
+        {
+          "title": "야마하 P-225 디지털 피아노 본품",
+          "price_krw": 844600,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U07-3-S2"
+        },
+        {
+          "title": "야마하 P-145 디지털 피아노 본품 + 사은품 증정",
+          "price_krw": 697000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U07-3-S3"
+        },
+        {
+          "title": "야마하 P-225용 서스테인 페달 단품 + 사은품 증정",
+          "price_krw": 82000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U07-3-S4"
+        },
+        {
+          "title": "롤랜드 디지털 피아노 본품",
+          "price_krw": 738000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U07-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U07-4",
+      "split": "holdout",
+      "family_id": "UH07",
+      "scenario": "requested_part",
+      "category": "디지털 피아노",
+      "query": "야마하 P-225 제품에 쓸 서스테인 페달만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "야마하 P-225용 서스테인 페달 정품",
+          "price_krw": 114800,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U07-4-S1"
+        },
+        {
+          "title": "야마하 P-225용 서스테인 페달 1개입",
+          "price_krw": 139400,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U07-4-S2"
+        },
+        {
+          "title": "야마하 P-225 디지털 피아노 본품",
+          "price_krw": 820000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U07-4-S3"
+        },
+        {
+          "title": "롤랜드 다른 모델용 서스테인 페달",
+          "price_krw": 90200,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U07-4-S4"
+        },
+        {
+          "title": "야마하 P-225용 다른 부품 교체용",
+          "price_krw": 82000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U07-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U07-5",
+      "split": "holdout",
+      "family_id": "UH07",
+      "scenario": "brand_exclusion",
+      "category": "디지털 피아노",
+      "query": "디지털 피아노 고를 건데 야마하 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "롤랜드 디지털 피아노 정품",
+          "price_krw": 779000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U07-5-S1"
+        },
+        {
+          "title": "롤랜드 디지털 피아노 새상품",
+          "price_krw": 795400,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U07-5-S2"
+        },
+        {
+          "title": "야마하 디지털 피아노 정품",
+          "price_krw": 721600,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U07-5-S3"
+        },
+        {
+          "title": "야마하 디지털 피아노 중고",
+          "price_krw": 451000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U07-5-S4"
+        },
+        {
+          "title": "롤랜드 디지털 피아노용 서스테인 페달 단품",
+          "price_krw": 98400,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U07-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U08-1",
+      "split": "holdout",
+      "family_id": "UH08",
+      "scenario": "exact_sku",
+      "category": "전자드럼",
+      "query": "롤랜드 TD-07DMK 전자드럼 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼",
+          "price_krw": 1100000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U08-1-S1"
+        },
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼 새상품",
+          "price_krw": 1122000,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U08-1-S2"
+        },
+        {
+          "title": "롤랜드 TD-02 전자드럼",
+          "price_krw": 880000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U08-1-S3"
+        },
+        {
+          "title": "롤랜드 TD-07DMK용 드럼 패드 단품",
+          "price_krw": 110000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U08-1-S4"
+        },
+        {
+          "title": "야마하 전자드럼",
+          "price_krw": 1056000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U08-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U08-2",
+      "split": "holdout",
+      "family_id": "UH08",
+      "scenario": "strict_budget",
+      "category": "전자드럼",
+      "query": "롤랜드 TD-07DMK 전자드럼 가격이 1287000원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 1287000,
+      "items": [
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼",
+          "price_krw": 1100000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U08-2-S1"
+        },
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼 정품",
+          "price_krw": 1199000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U08-2-S2"
+        },
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼 신제품",
+          "price_krw": 1290000,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U08-2-S3"
+        },
+        {
+          "title": "롤랜드 TD-02 전자드럼",
+          "price_krw": 825000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U08-2-S4"
+        },
+        {
+          "title": "롤랜드 TD-07DMK용 드럼 패드",
+          "price_krw": 121000,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U08-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U08-3",
+      "split": "holdout",
+      "family_id": "UH08",
+      "scenario": "free_gift",
+      "category": "전자드럼",
+      "query": "롤랜드 TD-07DMK 전자드럼 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼 본품 + 드럼 패드 사은품 증정",
+          "price_krw": 1100000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U08-3-S1"
+        },
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼 본품",
+          "price_krw": 1133000,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U08-3-S2"
+        },
+        {
+          "title": "롤랜드 TD-02 전자드럼 본품 + 사은품 증정",
+          "price_krw": 935000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U08-3-S3"
+        },
+        {
+          "title": "롤랜드 TD-07DMK용 드럼 패드 단품 + 사은품 증정",
+          "price_krw": 110000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U08-3-S4"
+        },
+        {
+          "title": "야마하 전자드럼 본품",
+          "price_krw": 990000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U08-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U08-4",
+      "split": "holdout",
+      "family_id": "UH08",
+      "scenario": "requested_part",
+      "category": "전자드럼",
+      "query": "롤랜드 TD-07DMK 제품에 쓸 드럼 패드만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "롤랜드 TD-07DMK용 드럼 패드 정품",
+          "price_krw": 154000,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U08-4-S1"
+        },
+        {
+          "title": "롤랜드 TD-07DMK용 드럼 패드 1개입",
+          "price_krw": 187000,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U08-4-S2"
+        },
+        {
+          "title": "롤랜드 TD-07DMK 전자드럼 본품",
+          "price_krw": 1100000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U08-4-S3"
+        },
+        {
+          "title": "야마하 다른 모델용 드럼 패드",
+          "price_krw": 121000,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U08-4-S4"
+        },
+        {
+          "title": "롤랜드 TD-07DMK용 다른 부품 교체용",
+          "price_krw": 110000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U08-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U08-5",
+      "split": "holdout",
+      "family_id": "UH08",
+      "scenario": "brand_exclusion",
+      "category": "전자드럼",
+      "query": "전자드럼 고를 건데 롤랜드 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "야마하 전자드럼 정품",
+          "price_krw": 1045000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U08-5-S1"
+        },
+        {
+          "title": "야마하 전자드럼 새상품",
+          "price_krw": 1067000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U08-5-S2"
+        },
+        {
+          "title": "롤랜드 전자드럼 정품",
+          "price_krw": 968000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U08-5-S3"
+        },
+        {
+          "title": "롤랜드 전자드럼 중고",
+          "price_krw": 605000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U08-5-S4"
+        },
+        {
+          "title": "야마하 전자드럼용 드럼 패드 단품",
+          "price_krw": 132000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U08-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U09-1",
+      "split": "holdout",
+      "family_id": "UH09",
+      "scenario": "exact_sku",
+      "category": "마이크",
+      "query": "슈어 SM7B 마이크 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "슈어 SM7B 마이크",
+          "price_krw": 540000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U09-1-S1"
+        },
+        {
+          "title": "슈어 SM7B 마이크 새상품",
+          "price_krw": 550800,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U09-1-S2"
+        },
+        {
+          "title": "슈어 MV7 마이크",
+          "price_krw": 432000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U09-1-S3"
+        },
+        {
+          "title": "슈어 SM7B용 팝 필터 단품",
+          "price_krw": 54000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U09-1-S4"
+        },
+        {
+          "title": "로데 마이크",
+          "price_krw": 518400,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U09-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U09-2",
+      "split": "holdout",
+      "family_id": "UH09",
+      "scenario": "strict_budget",
+      "category": "마이크",
+      "query": "슈어 SM7B 마이크 가격이 631800원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 631800,
+      "items": [
+        {
+          "title": "슈어 SM7B 마이크",
+          "price_krw": 540000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U09-2-S1"
+        },
+        {
+          "title": "슈어 SM7B 마이크 정품",
+          "price_krw": 588600,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U09-2-S2"
+        },
+        {
+          "title": "슈어 SM7B 마이크 신제품",
+          "price_krw": 634800,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U09-2-S3"
+        },
+        {
+          "title": "슈어 MV7 마이크",
+          "price_krw": 405000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U09-2-S4"
+        },
+        {
+          "title": "슈어 SM7B용 팝 필터",
+          "price_krw": 59400,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U09-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U09-3",
+      "split": "holdout",
+      "family_id": "UH09",
+      "scenario": "free_gift",
+      "category": "마이크",
+      "query": "슈어 SM7B 마이크 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "슈어 SM7B 마이크 본품 + 팝 필터 사은품 증정",
+          "price_krw": 540000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U09-3-S1"
+        },
+        {
+          "title": "슈어 SM7B 마이크 본품",
+          "price_krw": 556200,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U09-3-S2"
+        },
+        {
+          "title": "슈어 MV7 마이크 본품 + 사은품 증정",
+          "price_krw": 459000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U09-3-S3"
+        },
+        {
+          "title": "슈어 SM7B용 팝 필터 단품 + 사은품 증정",
+          "price_krw": 54000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U09-3-S4"
+        },
+        {
+          "title": "로데 마이크 본품",
+          "price_krw": 486000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U09-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U09-4",
+      "split": "holdout",
+      "family_id": "UH09",
+      "scenario": "requested_part",
+      "category": "마이크",
+      "query": "슈어 SM7B 제품에 쓸 팝 필터만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "슈어 SM7B용 팝 필터 정품",
+          "price_krw": 75600,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U09-4-S1"
+        },
+        {
+          "title": "슈어 SM7B용 팝 필터 1개입",
+          "price_krw": 91800,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U09-4-S2"
+        },
+        {
+          "title": "슈어 SM7B 마이크 본품",
+          "price_krw": 540000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U09-4-S3"
+        },
+        {
+          "title": "로데 다른 모델용 팝 필터",
+          "price_krw": 59400,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U09-4-S4"
+        },
+        {
+          "title": "슈어 SM7B용 다른 부품 교체용",
+          "price_krw": 54000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U09-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U09-5",
+      "split": "holdout",
+      "family_id": "UH09",
+      "scenario": "brand_exclusion",
+      "category": "마이크",
+      "query": "마이크 고를 건데 슈어 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "로데 마이크 정품",
+          "price_krw": 513000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U09-5-S1"
+        },
+        {
+          "title": "로데 마이크 새상품",
+          "price_krw": 523800,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U09-5-S2"
+        },
+        {
+          "title": "슈어 마이크 정품",
+          "price_krw": 475200,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U09-5-S3"
+        },
+        {
+          "title": "슈어 마이크 중고",
+          "price_krw": 297000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U09-5-S4"
+        },
+        {
+          "title": "로데 마이크용 팝 필터 단품",
+          "price_krw": 64800,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U09-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U10-1",
+      "split": "holdout",
+      "family_id": "UH10",
+      "scenario": "exact_sku",
+      "category": "마이크",
+      "query": "로데 NT1 5세대 마이크 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "로데 NT1 5세대 마이크",
+          "price_krw": 360000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U10-1-S1"
+        },
+        {
+          "title": "로데 NT1 5세대 마이크 새상품",
+          "price_krw": 367200,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U10-1-S2"
+        },
+        {
+          "title": "로데 NT1 시그니처 마이크",
+          "price_krw": 288000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U10-1-S3"
+        },
+        {
+          "title": "로데 NT1 5세대용 쇼크 마운트 단품",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U10-1-S4"
+        },
+        {
+          "title": "슈어 마이크",
+          "price_krw": 345600,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U10-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U10-2",
+      "split": "holdout",
+      "family_id": "UH10",
+      "scenario": "strict_budget",
+      "category": "마이크",
+      "query": "로데 NT1 5세대 마이크 가격이 421200원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 421200,
+      "items": [
+        {
+          "title": "로데 NT1 5세대 마이크",
+          "price_krw": 360000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U10-2-S1"
+        },
+        {
+          "title": "로데 NT1 5세대 마이크 정품",
+          "price_krw": 392400,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U10-2-S2"
+        },
+        {
+          "title": "로데 NT1 5세대 마이크 신제품",
+          "price_krw": 424200,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U10-2-S3"
+        },
+        {
+          "title": "로데 NT1 시그니처 마이크",
+          "price_krw": 270000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U10-2-S4"
+        },
+        {
+          "title": "로데 NT1 5세대용 쇼크 마운트",
+          "price_krw": 39600,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U10-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U10-3",
+      "split": "holdout",
+      "family_id": "UH10",
+      "scenario": "free_gift",
+      "category": "마이크",
+      "query": "로데 NT1 5세대 마이크 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "로데 NT1 5세대 마이크 본품 + 쇼크 마운트 사은품 증정",
+          "price_krw": 360000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U10-3-S1"
+        },
+        {
+          "title": "로데 NT1 5세대 마이크 본품",
+          "price_krw": 370800,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U10-3-S2"
+        },
+        {
+          "title": "로데 NT1 시그니처 마이크 본품 + 사은품 증정",
+          "price_krw": 306000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U10-3-S3"
+        },
+        {
+          "title": "로데 NT1 5세대용 쇼크 마운트 단품 + 사은품 증정",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U10-3-S4"
+        },
+        {
+          "title": "슈어 마이크 본품",
+          "price_krw": 324000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U10-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U10-4",
+      "split": "holdout",
+      "family_id": "UH10",
+      "scenario": "requested_part",
+      "category": "마이크",
+      "query": "로데 NT1 5세대 제품에 쓸 쇼크 마운트만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "로데 NT1 5세대용 쇼크 마운트 정품",
+          "price_krw": 50400,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U10-4-S1"
+        },
+        {
+          "title": "로데 NT1 5세대용 쇼크 마운트 1개입",
+          "price_krw": 61200,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U10-4-S2"
+        },
+        {
+          "title": "로데 NT1 5세대 마이크 본품",
+          "price_krw": 360000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U10-4-S3"
+        },
+        {
+          "title": "슈어 다른 모델용 쇼크 마운트",
+          "price_krw": 39600,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U10-4-S4"
+        },
+        {
+          "title": "로데 NT1 5세대용 다른 부품 교체용",
+          "price_krw": 36000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U10-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U10-5",
+      "split": "holdout",
+      "family_id": "UH10",
+      "scenario": "no_eligible_new_product",
+      "category": "마이크",
+      "query": "로데 NT1 5세대 마이크 새제품만, 중고 또는 리퍼는 빼고 찾아줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "로데 NT1 5세대 마이크 중고",
+          "price_krw": 252000,
+          "verdict": "FAIL",
+          "reason": "used excluded",
+          "condition": "used",
+          "id": "U10-5-S1"
+        },
+        {
+          "title": "로데 NT1 5세대 마이크 리퍼",
+          "price_krw": 270000,
+          "verdict": "FAIL",
+          "reason": "refurbished excluded",
+          "condition": "refurbished",
+          "id": "U10-5-S2"
+        },
+        {
+          "title": "로데 NT1 시그니처 마이크 새상품",
+          "price_krw": 324000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U10-5-S3"
+        },
+        {
+          "title": "로데 NT1 5세대용 쇼크 마운트 새제품",
+          "price_krw": 43200,
+          "verdict": "FAIL",
+          "reason": "accessory not body",
+          "condition": "new",
+          "id": "U10-5-S4"
+        },
+        {
+          "title": "슈어 마이크 새상품",
+          "price_krw": 316800,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U10-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U11-1",
+      "split": "holdout",
+      "family_id": "UH11",
+      "scenario": "exact_sku",
+      "category": "자동 급식기",
+      "query": "펫킷 Fresh Element Solo 자동 급식기 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기",
+          "price_krw": 180000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U11-1-S1"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기 새상품",
+          "price_krw": 183600,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U11-1-S2"
+        },
+        {
+          "title": "펫킷 Fresh Element Mini 자동 급식기",
+          "price_krw": 144000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U11-1-S3"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo용 사료통 단품",
+          "price_krw": 18000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U11-1-S4"
+        },
+        {
+          "title": "캣잇 자동 급식기",
+          "price_krw": 172800,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U11-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U11-2",
+      "split": "holdout",
+      "family_id": "UH11",
+      "scenario": "strict_budget",
+      "category": "자동 급식기",
+      "query": "펫킷 Fresh Element Solo 자동 급식기 가격이 210600원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 210600,
+      "items": [
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기",
+          "price_krw": 180000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U11-2-S1"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기 정품",
+          "price_krw": 196200,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U11-2-S2"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기 신제품",
+          "price_krw": 213600,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U11-2-S3"
+        },
+        {
+          "title": "펫킷 Fresh Element Mini 자동 급식기",
+          "price_krw": 135000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U11-2-S4"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo용 사료통",
+          "price_krw": 19800,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U11-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U11-3",
+      "split": "holdout",
+      "family_id": "UH11",
+      "scenario": "free_gift",
+      "category": "자동 급식기",
+      "query": "펫킷 Fresh Element Solo 자동 급식기 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기 본품 + 사료통 사은품 증정",
+          "price_krw": 180000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U11-3-S1"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기 본품",
+          "price_krw": 185400,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U11-3-S2"
+        },
+        {
+          "title": "펫킷 Fresh Element Mini 자동 급식기 본품 + 사은품 증정",
+          "price_krw": 153000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U11-3-S3"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo용 사료통 단품 + 사은품 증정",
+          "price_krw": 18000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U11-3-S4"
+        },
+        {
+          "title": "캣잇 자동 급식기 본품",
+          "price_krw": 162000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U11-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U11-4",
+      "split": "holdout",
+      "family_id": "UH11",
+      "scenario": "requested_part",
+      "category": "자동 급식기",
+      "query": "펫킷 Fresh Element Solo 제품에 쓸 사료통만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "펫킷 Fresh Element Solo용 사료통 정품",
+          "price_krw": 25200,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U11-4-S1"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo용 사료통 1개입",
+          "price_krw": 30600,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U11-4-S2"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo 자동 급식기 본품",
+          "price_krw": 180000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U11-4-S3"
+        },
+        {
+          "title": "캣잇 다른 모델용 사료통",
+          "price_krw": 19800,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U11-4-S4"
+        },
+        {
+          "title": "펫킷 Fresh Element Solo용 다른 부품 교체용",
+          "price_krw": 18000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U11-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U11-5",
+      "split": "holdout",
+      "family_id": "UH11",
+      "scenario": "brand_exclusion",
+      "category": "자동 급식기",
+      "query": "자동 급식기 고를 건데 펫킷 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "캣잇 자동 급식기 정품",
+          "price_krw": 171000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U11-5-S1"
+        },
+        {
+          "title": "캣잇 자동 급식기 새상품",
+          "price_krw": 174600,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U11-5-S2"
+        },
+        {
+          "title": "펫킷 자동 급식기 정품",
+          "price_krw": 158400,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U11-5-S3"
+        },
+        {
+          "title": "펫킷 자동 급식기 중고",
+          "price_krw": 99000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U11-5-S4"
+        },
+        {
+          "title": "캣잇 자동 급식기용 사료통 단품",
+          "price_krw": 21600,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U11-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U12-1",
+      "split": "holdout",
+      "family_id": "UH12",
+      "scenario": "exact_sku",
+      "category": "반려동물 급수기",
+      "query": "캣잇 Pixi 반려동물 급수기 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "캣잇 Pixi 반려동물 급수기",
+          "price_krw": 76000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U12-1-S1"
+        },
+        {
+          "title": "캣잇 Pixi 반려동물 급수기 새상품",
+          "price_krw": 77520,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U12-1-S2"
+        },
+        {
+          "title": "캣잇 Flower Fountain 반려동물 급수기",
+          "price_krw": 60800,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U12-1-S3"
+        },
+        {
+          "title": "캣잇 Pixi용 교체 필터 단품",
+          "price_krw": 7600,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U12-1-S4"
+        },
+        {
+          "title": "펫킷 반려동물 급수기",
+          "price_krw": 72960,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U12-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U12-2",
+      "split": "holdout",
+      "family_id": "UH12",
+      "scenario": "strict_budget",
+      "category": "반려동물 급수기",
+      "query": "캣잇 Pixi 반려동물 급수기 가격이 89000원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 89000,
+      "items": [
+        {
+          "title": "캣잇 Pixi 반려동물 급수기",
+          "price_krw": 76000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U12-2-S1"
+        },
+        {
+          "title": "캣잇 Pixi 반려동물 급수기 정품",
+          "price_krw": 82840,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U12-2-S2"
+        },
+        {
+          "title": "캣잇 Pixi 반려동물 급수기 신제품",
+          "price_krw": 92000,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U12-2-S3"
+        },
+        {
+          "title": "캣잇 Flower Fountain 반려동물 급수기",
+          "price_krw": 57000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U12-2-S4"
+        },
+        {
+          "title": "캣잇 Pixi용 교체 필터",
+          "price_krw": 8360,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U12-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U12-3",
+      "split": "holdout",
+      "family_id": "UH12",
+      "scenario": "free_gift",
+      "category": "반려동물 급수기",
+      "query": "캣잇 Pixi 반려동물 급수기 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "캣잇 Pixi 반려동물 급수기 본품 + 교체 필터 사은품 증정",
+          "price_krw": 76000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U12-3-S1"
+        },
+        {
+          "title": "캣잇 Pixi 반려동물 급수기 본품",
+          "price_krw": 78280,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U12-3-S2"
+        },
+        {
+          "title": "캣잇 Flower Fountain 반려동물 급수기 본품 + 사은품 증정",
+          "price_krw": 64600,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U12-3-S3"
+        },
+        {
+          "title": "캣잇 Pixi용 교체 필터 단품 + 사은품 증정",
+          "price_krw": 7600,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U12-3-S4"
+        },
+        {
+          "title": "펫킷 반려동물 급수기 본품",
+          "price_krw": 68400,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U12-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U12-4",
+      "split": "holdout",
+      "family_id": "UH12",
+      "scenario": "requested_part",
+      "category": "반려동물 급수기",
+      "query": "캣잇 Pixi 제품에 쓸 교체 필터만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "캣잇 Pixi용 교체 필터 정품",
+          "price_krw": 10640,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U12-4-S1"
+        },
+        {
+          "title": "캣잇 Pixi용 교체 필터 1개입",
+          "price_krw": 12920,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U12-4-S2"
+        },
+        {
+          "title": "캣잇 Pixi 반려동물 급수기 본품",
+          "price_krw": 76000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U12-4-S3"
+        },
+        {
+          "title": "펫킷 다른 모델용 교체 필터",
+          "price_krw": 8360,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U12-4-S4"
+        },
+        {
+          "title": "캣잇 Pixi용 다른 부품 교체용",
+          "price_krw": 7600,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U12-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U12-5",
+      "split": "holdout",
+      "family_id": "UH12",
+      "scenario": "brand_exclusion",
+      "category": "반려동물 급수기",
+      "query": "반려동물 급수기 고를 건데 캣잇 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "펫킷 반려동물 급수기 정품",
+          "price_krw": 72200,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U12-5-S1"
+        },
+        {
+          "title": "펫킷 반려동물 급수기 새상품",
+          "price_krw": 73720,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U12-5-S2"
+        },
+        {
+          "title": "캣잇 반려동물 급수기 정품",
+          "price_krw": 66880,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U12-5-S3"
+        },
+        {
+          "title": "캣잇 반려동물 급수기 중고",
+          "price_krw": 41800,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U12-5-S4"
+        },
+        {
+          "title": "펫킷 반려동물 급수기용 교체 필터 단품",
+          "price_krw": 9120,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U12-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U13-1",
+      "split": "holdout",
+      "family_id": "UH13",
+      "scenario": "exact_sku",
+      "category": "디지털 온도계",
+      "query": "코멧 DTX-20 디지털 온도계 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "코멧 DTX-20 디지털 온도계",
+          "price_krw": 27000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U13-1-S1"
+        },
+        {
+          "title": "코멧 DTX-20 디지털 온도계 새상품",
+          "price_krw": 27540,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U13-1-S2"
+        },
+        {
+          "title": "코멧 DTX-10 디지털 온도계",
+          "price_krw": 21600,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U13-1-S3"
+        },
+        {
+          "title": "코멧 DTX-20용 교체 센서 단품",
+          "price_krw": 2700,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U13-1-S4"
+        },
+        {
+          "title": "샤오미 디지털 온도계",
+          "price_krw": 25920,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U13-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U13-2",
+      "split": "holdout",
+      "family_id": "UH13",
+      "scenario": "strict_budget",
+      "category": "디지털 온도계",
+      "query": "코멧 DTX-20 디지털 온도계 가격이 31600원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 31600,
+      "items": [
+        {
+          "title": "코멧 DTX-20 디지털 온도계",
+          "price_krw": 27000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U13-2-S1"
+        },
+        {
+          "title": "코멧 DTX-20 디지털 온도계 정품",
+          "price_krw": 29430,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U13-2-S2"
+        },
+        {
+          "title": "코멧 DTX-20 디지털 온도계 신제품",
+          "price_krw": 34600,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U13-2-S3"
+        },
+        {
+          "title": "코멧 DTX-10 디지털 온도계",
+          "price_krw": 20250,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U13-2-S4"
+        },
+        {
+          "title": "코멧 DTX-20용 교체 센서",
+          "price_krw": 2970,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U13-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U13-3",
+      "split": "holdout",
+      "family_id": "UH13",
+      "scenario": "free_gift",
+      "category": "디지털 온도계",
+      "query": "코멧 DTX-20 디지털 온도계 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "코멧 DTX-20 디지털 온도계 본품 + 교체 센서 사은품 증정",
+          "price_krw": 27000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U13-3-S1"
+        },
+        {
+          "title": "코멧 DTX-20 디지털 온도계 본품",
+          "price_krw": 27810,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U13-3-S2"
+        },
+        {
+          "title": "코멧 DTX-10 디지털 온도계 본품 + 사은품 증정",
+          "price_krw": 22950,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U13-3-S3"
+        },
+        {
+          "title": "코멧 DTX-20용 교체 센서 단품 + 사은품 증정",
+          "price_krw": 2700,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U13-3-S4"
+        },
+        {
+          "title": "샤오미 디지털 온도계 본품",
+          "price_krw": 24300,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U13-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U13-4",
+      "split": "holdout",
+      "family_id": "UH13",
+      "scenario": "requested_part",
+      "category": "디지털 온도계",
+      "query": "코멧 DTX-20 제품에 쓸 교체 센서만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "코멧 DTX-20용 교체 센서 정품",
+          "price_krw": 3780,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U13-4-S1"
+        },
+        {
+          "title": "코멧 DTX-20용 교체 센서 1개입",
+          "price_krw": 4590,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U13-4-S2"
+        },
+        {
+          "title": "코멧 DTX-20 디지털 온도계 본품",
+          "price_krw": 27000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U13-4-S3"
+        },
+        {
+          "title": "샤오미 다른 모델용 교체 센서",
+          "price_krw": 2970,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U13-4-S4"
+        },
+        {
+          "title": "코멧 DTX-20용 다른 부품 교체용",
+          "price_krw": 2700,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U13-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U13-5",
+      "split": "holdout",
+      "family_id": "UH13",
+      "scenario": "brand_exclusion",
+      "category": "디지털 온도계",
+      "query": "디지털 온도계 고를 건데 코멧 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "샤오미 디지털 온도계 정품",
+          "price_krw": 25650,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U13-5-S1"
+        },
+        {
+          "title": "샤오미 디지털 온도계 새상품",
+          "price_krw": 26190,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U13-5-S2"
+        },
+        {
+          "title": "코멧 디지털 온도계 정품",
+          "price_krw": 23760,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U13-5-S3"
+        },
+        {
+          "title": "코멧 디지털 온도계 중고",
+          "price_krw": 14850,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U13-5-S4"
+        },
+        {
+          "title": "샤오미 디지털 온도계용 교체 센서 단품",
+          "price_krw": 3240,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U13-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U14-1",
+      "split": "holdout",
+      "family_id": "UH14",
+      "scenario": "exact_sku",
+      "category": "전동 킥보드",
+      "query": "세그웨이 Ninebot MAX G2 전동 킥보드 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드",
+          "price_krw": 950000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U14-1-S1"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드 새상품",
+          "price_krw": 969000,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U14-1-S2"
+        },
+        {
+          "title": "세그웨이 Ninebot F2 Pro 전동 킥보드",
+          "price_krw": 760000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U14-1-S3"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2용 교체 타이어 단품",
+          "price_krw": 95000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U14-1-S4"
+        },
+        {
+          "title": "샤오미 전동 킥보드",
+          "price_krw": 912000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U14-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U14-2",
+      "split": "holdout",
+      "family_id": "UH14",
+      "scenario": "strict_budget",
+      "category": "전동 킥보드",
+      "query": "세그웨이 Ninebot MAX G2 전동 킥보드 가격이 1111500원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 1111500,
+      "items": [
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드",
+          "price_krw": 950000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U14-2-S1"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드 정품",
+          "price_krw": 1035500,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U14-2-S2"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드 신제품",
+          "price_krw": 1114500,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U14-2-S3"
+        },
+        {
+          "title": "세그웨이 Ninebot F2 Pro 전동 킥보드",
+          "price_krw": 712500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U14-2-S4"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2용 교체 타이어",
+          "price_krw": 104500,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U14-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U14-3",
+      "split": "holdout",
+      "family_id": "UH14",
+      "scenario": "free_gift",
+      "category": "전동 킥보드",
+      "query": "세그웨이 Ninebot MAX G2 전동 킥보드 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드 본품 + 교체 타이어 사은품 증정",
+          "price_krw": 950000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U14-3-S1"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드 본품",
+          "price_krw": 978500,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U14-3-S2"
+        },
+        {
+          "title": "세그웨이 Ninebot F2 Pro 전동 킥보드 본품 + 사은품 증정",
+          "price_krw": 807500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U14-3-S3"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2용 교체 타이어 단품 + 사은품 증정",
+          "price_krw": 95000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U14-3-S4"
+        },
+        {
+          "title": "샤오미 전동 킥보드 본품",
+          "price_krw": 855000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U14-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U14-4",
+      "split": "holdout",
+      "family_id": "UH14",
+      "scenario": "requested_part",
+      "category": "전동 킥보드",
+      "query": "세그웨이 Ninebot MAX G2 제품에 쓸 교체 타이어만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "세그웨이 Ninebot MAX G2용 교체 타이어 정품",
+          "price_krw": 133000,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U14-4-S1"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2용 교체 타이어 1개입",
+          "price_krw": 161500,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U14-4-S2"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2 전동 킥보드 본품",
+          "price_krw": 950000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U14-4-S3"
+        },
+        {
+          "title": "샤오미 다른 모델용 교체 타이어",
+          "price_krw": 104500,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U14-4-S4"
+        },
+        {
+          "title": "세그웨이 Ninebot MAX G2용 다른 부품 교체용",
+          "price_krw": 95000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U14-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U14-5",
+      "split": "holdout",
+      "family_id": "UH14",
+      "scenario": "brand_exclusion",
+      "category": "전동 킥보드",
+      "query": "전동 킥보드 고를 건데 세그웨이 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "샤오미 전동 킥보드 정품",
+          "price_krw": 902500,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U14-5-S1"
+        },
+        {
+          "title": "샤오미 전동 킥보드 새상품",
+          "price_krw": 921500,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U14-5-S2"
+        },
+        {
+          "title": "세그웨이 전동 킥보드 정품",
+          "price_krw": 836000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U14-5-S3"
+        },
+        {
+          "title": "세그웨이 전동 킥보드 중고",
+          "price_krw": 522500,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U14-5-S4"
+        },
+        {
+          "title": "샤오미 전동 킥보드용 교체 타이어 단품",
+          "price_krw": 114000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U14-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U15-1",
+      "split": "holdout",
+      "family_id": "UH15",
+      "scenario": "exact_sku",
+      "category": "등산 배낭",
+      "query": "오스프리 Talon 22 등산 배낭 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "오스프리 Talon 22 등산 배낭",
+          "price_krw": 180000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U15-1-S1"
+        },
+        {
+          "title": "오스프리 Talon 22 등산 배낭 새상품",
+          "price_krw": 183600,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U15-1-S2"
+        },
+        {
+          "title": "오스프리 Talon 26 등산 배낭",
+          "price_krw": 144000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U15-1-S3"
+        },
+        {
+          "title": "오스프리 Talon 22용 레인 커버 단품",
+          "price_krw": 18000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U15-1-S4"
+        },
+        {
+          "title": "도이터 등산 배낭",
+          "price_krw": 172800,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U15-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U15-2",
+      "split": "holdout",
+      "family_id": "UH15",
+      "scenario": "strict_budget",
+      "category": "등산 배낭",
+      "query": "오스프리 Talon 22 등산 배낭 가격이 210600원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 210600,
+      "items": [
+        {
+          "title": "오스프리 Talon 22 등산 배낭",
+          "price_krw": 180000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U15-2-S1"
+        },
+        {
+          "title": "오스프리 Talon 22 등산 배낭 정품",
+          "price_krw": 196200,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U15-2-S2"
+        },
+        {
+          "title": "오스프리 Talon 22 등산 배낭 신제품",
+          "price_krw": 213600,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U15-2-S3"
+        },
+        {
+          "title": "오스프리 Talon 26 등산 배낭",
+          "price_krw": 135000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U15-2-S4"
+        },
+        {
+          "title": "오스프리 Talon 22용 레인 커버",
+          "price_krw": 19800,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U15-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U15-3",
+      "split": "holdout",
+      "family_id": "UH15",
+      "scenario": "free_gift",
+      "category": "등산 배낭",
+      "query": "오스프리 Talon 22 등산 배낭 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "오스프리 Talon 22 등산 배낭 본품 + 레인 커버 사은품 증정",
+          "price_krw": 180000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U15-3-S1"
+        },
+        {
+          "title": "오스프리 Talon 22 등산 배낭 본품",
+          "price_krw": 185400,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U15-3-S2"
+        },
+        {
+          "title": "오스프리 Talon 26 등산 배낭 본품 + 사은품 증정",
+          "price_krw": 153000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U15-3-S3"
+        },
+        {
+          "title": "오스프리 Talon 22용 레인 커버 단품 + 사은품 증정",
+          "price_krw": 18000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U15-3-S4"
+        },
+        {
+          "title": "도이터 등산 배낭 본품",
+          "price_krw": 162000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U15-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U15-4",
+      "split": "holdout",
+      "family_id": "UH15",
+      "scenario": "requested_part",
+      "category": "등산 배낭",
+      "query": "오스프리 Talon 22 제품에 쓸 레인 커버만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "오스프리 Talon 22용 레인 커버 정품",
+          "price_krw": 25200,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U15-4-S1"
+        },
+        {
+          "title": "오스프리 Talon 22용 레인 커버 1개입",
+          "price_krw": 30600,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U15-4-S2"
+        },
+        {
+          "title": "오스프리 Talon 22 등산 배낭 본품",
+          "price_krw": 180000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U15-4-S3"
+        },
+        {
+          "title": "도이터 다른 모델용 레인 커버",
+          "price_krw": 19800,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U15-4-S4"
+        },
+        {
+          "title": "오스프리 Talon 22용 다른 부품 교체용",
+          "price_krw": 18000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U15-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U15-5",
+      "split": "holdout",
+      "family_id": "UH15",
+      "scenario": "no_eligible_new_product",
+      "category": "등산 배낭",
+      "query": "오스프리 Talon 22 등산 배낭 새제품만, 중고 또는 리퍼는 빼고 찾아줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "오스프리 Talon 22 등산 배낭 중고",
+          "price_krw": 126000,
+          "verdict": "FAIL",
+          "reason": "used excluded",
+          "condition": "used",
+          "id": "U15-5-S1"
+        },
+        {
+          "title": "오스프리 Talon 22 등산 배낭 리퍼",
+          "price_krw": 135000,
+          "verdict": "FAIL",
+          "reason": "refurbished excluded",
+          "condition": "refurbished",
+          "id": "U15-5-S2"
+        },
+        {
+          "title": "오스프리 Talon 26 등산 배낭 새상품",
+          "price_krw": 162000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U15-5-S3"
+        },
+        {
+          "title": "오스프리 Talon 22용 레인 커버 새제품",
+          "price_krw": 21600,
+          "verdict": "FAIL",
+          "reason": "accessory not body",
+          "condition": "new",
+          "id": "U15-5-S4"
+        },
+        {
+          "title": "도이터 등산 배낭 새상품",
+          "price_krw": 158400,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U15-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U16-1",
+      "split": "holdout",
+      "family_id": "UH16",
+      "scenario": "exact_sku",
+      "category": "유모차",
+      "query": "툴레 Urban Glide 3 유모차 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "툴레 Urban Glide 3 유모차",
+          "price_krw": 1150000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U16-1-S1"
+        },
+        {
+          "title": "툴레 Urban Glide 3 유모차 새상품",
+          "price_krw": 1173000,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U16-1-S2"
+        },
+        {
+          "title": "툴레 Urban Glide 2 유모차",
+          "price_krw": 920000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U16-1-S3"
+        },
+        {
+          "title": "툴레 Urban Glide 3용 방풍 커버 단품",
+          "price_krw": 115000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U16-1-S4"
+        },
+        {
+          "title": "치코 유모차",
+          "price_krw": 1104000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U16-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U16-2",
+      "split": "holdout",
+      "family_id": "UH16",
+      "scenario": "strict_budget",
+      "category": "유모차",
+      "query": "툴레 Urban Glide 3 유모차 가격이 1345500원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 1345500,
+      "items": [
+        {
+          "title": "툴레 Urban Glide 3 유모차",
+          "price_krw": 1150000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U16-2-S1"
+        },
+        {
+          "title": "툴레 Urban Glide 3 유모차 정품",
+          "price_krw": 1253500,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U16-2-S2"
+        },
+        {
+          "title": "툴레 Urban Glide 3 유모차 신제품",
+          "price_krw": 1348500,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U16-2-S3"
+        },
+        {
+          "title": "툴레 Urban Glide 2 유모차",
+          "price_krw": 862500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U16-2-S4"
+        },
+        {
+          "title": "툴레 Urban Glide 3용 방풍 커버",
+          "price_krw": 126500,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U16-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U16-3",
+      "split": "holdout",
+      "family_id": "UH16",
+      "scenario": "free_gift",
+      "category": "유모차",
+      "query": "툴레 Urban Glide 3 유모차 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "툴레 Urban Glide 3 유모차 본품 + 방풍 커버 사은품 증정",
+          "price_krw": 1150000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U16-3-S1"
+        },
+        {
+          "title": "툴레 Urban Glide 3 유모차 본품",
+          "price_krw": 1184500,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U16-3-S2"
+        },
+        {
+          "title": "툴레 Urban Glide 2 유모차 본품 + 사은품 증정",
+          "price_krw": 977500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U16-3-S3"
+        },
+        {
+          "title": "툴레 Urban Glide 3용 방풍 커버 단품 + 사은품 증정",
+          "price_krw": 115000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U16-3-S4"
+        },
+        {
+          "title": "치코 유모차 본품",
+          "price_krw": 1035000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U16-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U16-4",
+      "split": "holdout",
+      "family_id": "UH16",
+      "scenario": "requested_part",
+      "category": "유모차",
+      "query": "툴레 Urban Glide 3 제품에 쓸 방풍 커버만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "툴레 Urban Glide 3용 방풍 커버 정품",
+          "price_krw": 161000,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U16-4-S1"
+        },
+        {
+          "title": "툴레 Urban Glide 3용 방풍 커버 1개입",
+          "price_krw": 195500,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U16-4-S2"
+        },
+        {
+          "title": "툴레 Urban Glide 3 유모차 본품",
+          "price_krw": 1150000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U16-4-S3"
+        },
+        {
+          "title": "치코 다른 모델용 방풍 커버",
+          "price_krw": 126500,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U16-4-S4"
+        },
+        {
+          "title": "툴레 Urban Glide 3용 다른 부품 교체용",
+          "price_krw": 115000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U16-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U16-5",
+      "split": "holdout",
+      "family_id": "UH16",
+      "scenario": "brand_exclusion",
+      "category": "유모차",
+      "query": "유모차 고를 건데 툴레 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "치코 유모차 정품",
+          "price_krw": 1092500,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U16-5-S1"
+        },
+        {
+          "title": "치코 유모차 새상품",
+          "price_krw": 1115500,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U16-5-S2"
+        },
+        {
+          "title": "툴레 유모차 정품",
+          "price_krw": 1012000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U16-5-S3"
+        },
+        {
+          "title": "툴레 유모차 중고",
+          "price_krw": 632500,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U16-5-S4"
+        },
+        {
+          "title": "치코 유모차용 방풍 커버 단품",
+          "price_krw": 138000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U16-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U17-1",
+      "split": "holdout",
+      "family_id": "UH17",
+      "scenario": "exact_sku",
+      "category": "아기띠",
+      "query": "베이비뵨 Harmony 아기띠 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "베이비뵨 Harmony 아기띠",
+          "price_krw": 310000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U17-1-S1"
+        },
+        {
+          "title": "베이비뵨 Harmony 아기띠 새상품",
+          "price_krw": 316200,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U17-1-S2"
+        },
+        {
+          "title": "베이비뵨 One Air 아기띠",
+          "price_krw": 248000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U17-1-S3"
+        },
+        {
+          "title": "베이비뵨 Harmony용 침받이 단품",
+          "price_krw": 31000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U17-1-S4"
+        },
+        {
+          "title": "에르고베이비 아기띠",
+          "price_krw": 297600,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U17-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U17-2",
+      "split": "holdout",
+      "family_id": "UH17",
+      "scenario": "strict_budget",
+      "category": "아기띠",
+      "query": "베이비뵨 Harmony 아기띠 가격이 362700원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 362700,
+      "items": [
+        {
+          "title": "베이비뵨 Harmony 아기띠",
+          "price_krw": 310000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U17-2-S1"
+        },
+        {
+          "title": "베이비뵨 Harmony 아기띠 정품",
+          "price_krw": 337900,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U17-2-S2"
+        },
+        {
+          "title": "베이비뵨 Harmony 아기띠 신제품",
+          "price_krw": 365700,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U17-2-S3"
+        },
+        {
+          "title": "베이비뵨 One Air 아기띠",
+          "price_krw": 232500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U17-2-S4"
+        },
+        {
+          "title": "베이비뵨 Harmony용 침받이",
+          "price_krw": 34100,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U17-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U17-3",
+      "split": "holdout",
+      "family_id": "UH17",
+      "scenario": "free_gift",
+      "category": "아기띠",
+      "query": "베이비뵨 Harmony 아기띠 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "베이비뵨 Harmony 아기띠 본품 + 침받이 사은품 증정",
+          "price_krw": 310000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U17-3-S1"
+        },
+        {
+          "title": "베이비뵨 Harmony 아기띠 본품",
+          "price_krw": 319300,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U17-3-S2"
+        },
+        {
+          "title": "베이비뵨 One Air 아기띠 본품 + 사은품 증정",
+          "price_krw": 263500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U17-3-S3"
+        },
+        {
+          "title": "베이비뵨 Harmony용 침받이 단품 + 사은품 증정",
+          "price_krw": 31000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U17-3-S4"
+        },
+        {
+          "title": "에르고베이비 아기띠 본품",
+          "price_krw": 279000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U17-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U17-4",
+      "split": "holdout",
+      "family_id": "UH17",
+      "scenario": "requested_part",
+      "category": "아기띠",
+      "query": "베이비뵨 Harmony 제품에 쓸 침받이만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "베이비뵨 Harmony용 침받이 정품",
+          "price_krw": 43400,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U17-4-S1"
+        },
+        {
+          "title": "베이비뵨 Harmony용 침받이 1개입",
+          "price_krw": 52700,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U17-4-S2"
+        },
+        {
+          "title": "베이비뵨 Harmony 아기띠 본품",
+          "price_krw": 310000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U17-4-S3"
+        },
+        {
+          "title": "에르고베이비 다른 모델용 침받이",
+          "price_krw": 34100,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U17-4-S4"
+        },
+        {
+          "title": "베이비뵨 Harmony용 다른 부품 교체용",
+          "price_krw": 31000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U17-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U17-5",
+      "split": "holdout",
+      "family_id": "UH17",
+      "scenario": "brand_exclusion",
+      "category": "아기띠",
+      "query": "아기띠 고를 건데 베이비뵨 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "에르고베이비 아기띠 정품",
+          "price_krw": 294500,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U17-5-S1"
+        },
+        {
+          "title": "에르고베이비 아기띠 새상품",
+          "price_krw": 300700,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U17-5-S2"
+        },
+        {
+          "title": "베이비뵨 아기띠 정품",
+          "price_krw": 272800,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U17-5-S3"
+        },
+        {
+          "title": "베이비뵨 아기띠 중고",
+          "price_krw": 170500,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U17-5-S4"
+        },
+        {
+          "title": "에르고베이비 아기띠용 침받이 단품",
+          "price_krw": 37200,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U17-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U18-1",
+      "split": "holdout",
+      "family_id": "UH18",
+      "scenario": "exact_sku",
+      "category": "고압 세척기",
+      "query": "카처 K3 고압 세척기 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "카처 K3 고압 세척기",
+          "price_krw": 280000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U18-1-S1"
+        },
+        {
+          "title": "카처 K3 고압 세척기 새상품",
+          "price_krw": 285600,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U18-1-S2"
+        },
+        {
+          "title": "카처 K2 고압 세척기",
+          "price_krw": 224000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U18-1-S3"
+        },
+        {
+          "title": "카처 K3용 교체 노즐 단품",
+          "price_krw": 28000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U18-1-S4"
+        },
+        {
+          "title": "보쉬 고압 세척기",
+          "price_krw": 268800,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U18-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U18-2",
+      "split": "holdout",
+      "family_id": "UH18",
+      "scenario": "strict_budget",
+      "category": "고압 세척기",
+      "query": "카처 K3 고압 세척기 가격이 327600원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 327600,
+      "items": [
+        {
+          "title": "카처 K3 고압 세척기",
+          "price_krw": 280000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U18-2-S1"
+        },
+        {
+          "title": "카처 K3 고압 세척기 정품",
+          "price_krw": 305200,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U18-2-S2"
+        },
+        {
+          "title": "카처 K3 고압 세척기 신제품",
+          "price_krw": 330600,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U18-2-S3"
+        },
+        {
+          "title": "카처 K2 고압 세척기",
+          "price_krw": 210000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U18-2-S4"
+        },
+        {
+          "title": "카처 K3용 교체 노즐",
+          "price_krw": 30800,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U18-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U18-3",
+      "split": "holdout",
+      "family_id": "UH18",
+      "scenario": "free_gift",
+      "category": "고압 세척기",
+      "query": "카처 K3 고압 세척기 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "카처 K3 고압 세척기 본품 + 교체 노즐 사은품 증정",
+          "price_krw": 280000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U18-3-S1"
+        },
+        {
+          "title": "카처 K3 고압 세척기 본품",
+          "price_krw": 288400,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U18-3-S2"
+        },
+        {
+          "title": "카처 K2 고압 세척기 본품 + 사은품 증정",
+          "price_krw": 238000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U18-3-S3"
+        },
+        {
+          "title": "카처 K3용 교체 노즐 단품 + 사은품 증정",
+          "price_krw": 28000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U18-3-S4"
+        },
+        {
+          "title": "보쉬 고압 세척기 본품",
+          "price_krw": 252000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U18-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U18-4",
+      "split": "holdout",
+      "family_id": "UH18",
+      "scenario": "requested_part",
+      "category": "고압 세척기",
+      "query": "카처 K3 제품에 쓸 교체 노즐만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "카처 K3용 교체 노즐 정품",
+          "price_krw": 39200,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U18-4-S1"
+        },
+        {
+          "title": "카처 K3용 교체 노즐 1개입",
+          "price_krw": 47600,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U18-4-S2"
+        },
+        {
+          "title": "카처 K3 고압 세척기 본품",
+          "price_krw": 280000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U18-4-S3"
+        },
+        {
+          "title": "보쉬 다른 모델용 교체 노즐",
+          "price_krw": 30800,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U18-4-S4"
+        },
+        {
+          "title": "카처 K3용 다른 부품 교체용",
+          "price_krw": 28000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U18-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U18-5",
+      "split": "holdout",
+      "family_id": "UH18",
+      "scenario": "brand_exclusion",
+      "category": "고압 세척기",
+      "query": "고압 세척기 고를 건데 카처 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "보쉬 고압 세척기 정품",
+          "price_krw": 266000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U18-5-S1"
+        },
+        {
+          "title": "보쉬 고압 세척기 새상품",
+          "price_krw": 271600,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U18-5-S2"
+        },
+        {
+          "title": "카처 고압 세척기 정품",
+          "price_krw": 246400,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U18-5-S3"
+        },
+        {
+          "title": "카처 고압 세척기 중고",
+          "price_krw": 154000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U18-5-S4"
+        },
+        {
+          "title": "보쉬 고압 세척기용 교체 노즐 단품",
+          "price_krw": 33600,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U18-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U19-1",
+      "split": "holdout",
+      "family_id": "UH19",
+      "scenario": "exact_sku",
+      "category": "물걸레 로봇청소기",
+      "query": "아이로봇 Braava jet m6 물걸레 로봇청소기 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기",
+          "price_krw": 460000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U19-1-S1"
+        },
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기 새상품",
+          "price_krw": 469200,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U19-1-S2"
+        },
+        {
+          "title": "아이로봇 Braava jet 240 물걸레 로봇청소기",
+          "price_krw": 368000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U19-1-S3"
+        },
+        {
+          "title": "아이로봇 Braava jet m6용 교체 걸레 단품",
+          "price_krw": 46000,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U19-1-S4"
+        },
+        {
+          "title": "에코백스 물걸레 로봇청소기",
+          "price_krw": 441600,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U19-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U19-2",
+      "split": "holdout",
+      "family_id": "UH19",
+      "scenario": "strict_budget",
+      "category": "물걸레 로봇청소기",
+      "query": "아이로봇 Braava jet m6 물걸레 로봇청소기 가격이 538200원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 538200,
+      "items": [
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기",
+          "price_krw": 460000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U19-2-S1"
+        },
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기 정품",
+          "price_krw": 501400,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U19-2-S2"
+        },
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기 신제품",
+          "price_krw": 541200,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U19-2-S3"
+        },
+        {
+          "title": "아이로봇 Braava jet 240 물걸레 로봇청소기",
+          "price_krw": 345000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U19-2-S4"
+        },
+        {
+          "title": "아이로봇 Braava jet m6용 교체 걸레",
+          "price_krw": 50600,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U19-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U19-3",
+      "split": "holdout",
+      "family_id": "UH19",
+      "scenario": "free_gift",
+      "category": "물걸레 로봇청소기",
+      "query": "아이로봇 Braava jet m6 물걸레 로봇청소기 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기 본품 + 교체 걸레 사은품 증정",
+          "price_krw": 460000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U19-3-S1"
+        },
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기 본품",
+          "price_krw": 473800,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U19-3-S2"
+        },
+        {
+          "title": "아이로봇 Braava jet 240 물걸레 로봇청소기 본품 + 사은품 증정",
+          "price_krw": 391000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U19-3-S3"
+        },
+        {
+          "title": "아이로봇 Braava jet m6용 교체 걸레 단품 + 사은품 증정",
+          "price_krw": 46000,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U19-3-S4"
+        },
+        {
+          "title": "에코백스 물걸레 로봇청소기 본품",
+          "price_krw": 414000,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U19-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U19-4",
+      "split": "holdout",
+      "family_id": "UH19",
+      "scenario": "requested_part",
+      "category": "물걸레 로봇청소기",
+      "query": "아이로봇 Braava jet m6 제품에 쓸 교체 걸레만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "아이로봇 Braava jet m6용 교체 걸레 정품",
+          "price_krw": 64400,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U19-4-S1"
+        },
+        {
+          "title": "아이로봇 Braava jet m6용 교체 걸레 1개입",
+          "price_krw": 78200,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U19-4-S2"
+        },
+        {
+          "title": "아이로봇 Braava jet m6 물걸레 로봇청소기 본품",
+          "price_krw": 460000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U19-4-S3"
+        },
+        {
+          "title": "에코백스 다른 모델용 교체 걸레",
+          "price_krw": 50600,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U19-4-S4"
+        },
+        {
+          "title": "아이로봇 Braava jet m6용 다른 부품 교체용",
+          "price_krw": 46000,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U19-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U19-5",
+      "split": "holdout",
+      "family_id": "UH19",
+      "scenario": "brand_exclusion",
+      "category": "물걸레 로봇청소기",
+      "query": "물걸레 로봇청소기 고를 건데 아이로봇 제품은 절대 빼고 다른 제조사만 보여줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "에코백스 물걸레 로봇청소기 정품",
+          "price_krw": 437000,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U19-5-S1"
+        },
+        {
+          "title": "에코백스 물걸레 로봇청소기 새상품",
+          "price_krw": 446200,
+          "verdict": "PASS",
+          "reason": "allowed different brand",
+          "condition": "new",
+          "id": "U19-5-S2"
+        },
+        {
+          "title": "아이로봇 물걸레 로봇청소기 정품",
+          "price_krw": 404800,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U19-5-S3"
+        },
+        {
+          "title": "아이로봇 물걸레 로봇청소기 중고",
+          "price_krw": 253000,
+          "verdict": "FAIL",
+          "reason": "explicitly excluded brand",
+          "condition": "new",
+          "id": "U19-5-S4"
+        },
+        {
+          "title": "에코백스 물걸레 로봇청소기용 교체 걸레 단품",
+          "price_krw": 55200,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U19-5-S5"
+        }
+      ]
+    },
+    {
+      "id": "U20-1",
+      "split": "holdout",
+      "family_id": "UH20",
+      "scenario": "exact_sku",
+      "category": "심박 센서",
+      "query": "폴라 H10 심박 센서 정품 본체를 찾고 있어, 다른 모델은 빼줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "폴라 H10 심박 센서",
+          "price_krw": 115000,
+          "verdict": "PASS",
+          "reason": "requested exact model",
+          "condition": "new",
+          "id": "U20-1-S1"
+        },
+        {
+          "title": "폴라 H10 심박 센서 새상품",
+          "price_krw": 117300,
+          "verdict": "PASS",
+          "reason": "same exact model",
+          "condition": "new",
+          "id": "U20-1-S2"
+        },
+        {
+          "title": "폴라 H9 심박 센서",
+          "price_krw": 92000,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U20-1-S3"
+        },
+        {
+          "title": "폴라 H10용 가슴 스트랩 단품",
+          "price_krw": 11500,
+          "verdict": "FAIL",
+          "reason": "replacement part",
+          "condition": "new",
+          "id": "U20-1-S4"
+        },
+        {
+          "title": "가민 심박 센서",
+          "price_krw": 110400,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U20-1-S5"
+        }
+      ]
+    },
+    {
+      "id": "U20-2",
+      "split": "holdout",
+      "family_id": "UH20",
+      "scenario": "strict_budget",
+      "category": "심박 센서",
+      "query": "폴라 H10 심박 센서 가격이 134600원 넘지 않는 걸로 검색해줘",
+      "price_cap_krw": 134600,
+      "items": [
+        {
+          "title": "폴라 H10 심박 센서",
+          "price_krw": 115000,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U20-2-S1"
+        },
+        {
+          "title": "폴라 H10 심박 센서 정품",
+          "price_krw": 125350,
+          "verdict": "PASS",
+          "reason": "within cap",
+          "condition": "new",
+          "id": "U20-2-S2"
+        },
+        {
+          "title": "폴라 H10 심박 센서 신제품",
+          "price_krw": 137600,
+          "verdict": "FAIL",
+          "reason": "above hard budget",
+          "condition": "new",
+          "id": "U20-2-S3"
+        },
+        {
+          "title": "폴라 H9 심박 센서",
+          "price_krw": 86250,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U20-2-S4"
+        },
+        {
+          "title": "폴라 H10용 가슴 스트랩",
+          "price_krw": 12650,
+          "verdict": "FAIL",
+          "reason": "wrong sold object",
+          "condition": "new",
+          "id": "U20-2-S5"
+        }
+      ]
+    },
+    {
+      "id": "U20-3",
+      "split": "holdout",
+      "family_id": "UH20",
+      "scenario": "free_gift",
+      "category": "심박 센서",
+      "query": "폴라 H10 심박 센서 본품에 사은품이 붙어도 괜찮아",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "폴라 H10 심박 센서 본품 + 가슴 스트랩 사은품 증정",
+          "price_krw": 115000,
+          "verdict": "PASS",
+          "reason": "principal with gift",
+          "condition": "new",
+          "id": "U20-3-S1"
+        },
+        {
+          "title": "폴라 H10 심박 센서 본품",
+          "price_krw": 118450,
+          "verdict": "PASS",
+          "reason": "principal body",
+          "condition": "new",
+          "id": "U20-3-S2"
+        },
+        {
+          "title": "폴라 H9 심박 센서 본품 + 사은품 증정",
+          "price_krw": 97750,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U20-3-S3"
+        },
+        {
+          "title": "폴라 H10용 가슴 스트랩 단품 + 사은품 증정",
+          "price_krw": 11500,
+          "verdict": "FAIL",
+          "reason": "spare part plus gift",
+          "condition": "new",
+          "id": "U20-3-S4"
+        },
+        {
+          "title": "가민 심박 센서 본품",
+          "price_krw": 103500,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U20-3-S5"
+        }
+      ]
+    },
+    {
+      "id": "U20-4",
+      "split": "holdout",
+      "family_id": "UH20",
+      "scenario": "requested_part",
+      "category": "심박 센서",
+      "query": "폴라 H10 제품에 쓸 가슴 스트랩만 필요해. 본품은 제외해줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "폴라 H10용 가슴 스트랩 정품",
+          "price_krw": 16100,
+          "verdict": "PASS",
+          "reason": "correct model-matched part",
+          "condition": "new",
+          "id": "U20-4-S1"
+        },
+        {
+          "title": "폴라 H10용 가슴 스트랩 1개입",
+          "price_krw": 19550,
+          "verdict": "PASS",
+          "reason": "correct matched spare",
+          "condition": "new",
+          "id": "U20-4-S2"
+        },
+        {
+          "title": "폴라 H10 심박 센서 본품",
+          "price_krw": 115000,
+          "verdict": "FAIL",
+          "reason": "host device not part",
+          "condition": "new",
+          "id": "U20-4-S3"
+        },
+        {
+          "title": "가민 다른 모델용 가슴 스트랩",
+          "price_krw": 12650,
+          "verdict": "FAIL",
+          "reason": "wrong compatibility",
+          "condition": "new",
+          "id": "U20-4-S4"
+        },
+        {
+          "title": "폴라 H10용 다른 부품 교체용",
+          "price_krw": 11500,
+          "verdict": "FAIL",
+          "reason": "wrong spare noun",
+          "condition": "new",
+          "id": "U20-4-S5"
+        }
+      ]
+    },
+    {
+      "id": "U20-5",
+      "split": "holdout",
+      "family_id": "UH20",
+      "scenario": "no_eligible_new_product",
+      "category": "심박 센서",
+      "query": "폴라 H10 심박 센서 새제품만, 중고 또는 리퍼는 빼고 찾아줘",
+      "price_cap_krw": null,
+      "items": [
+        {
+          "title": "폴라 H10 심박 센서 중고",
+          "price_krw": 80500,
+          "verdict": "FAIL",
+          "reason": "used excluded",
+          "condition": "used",
+          "id": "U20-5-S1"
+        },
+        {
+          "title": "폴라 H10 심박 센서 리퍼",
+          "price_krw": 86250,
+          "verdict": "FAIL",
+          "reason": "refurbished excluded",
+          "condition": "refurbished",
+          "id": "U20-5-S2"
+        },
+        {
+          "title": "폴라 H9 심박 센서 새상품",
+          "price_krw": 103500,
+          "verdict": "FAIL",
+          "reason": "wrong model",
+          "condition": "new",
+          "id": "U20-5-S3"
+        },
+        {
+          "title": "폴라 H10용 가슴 스트랩 새제품",
+          "price_krw": 13800,
+          "verdict": "FAIL",
+          "reason": "accessory not body",
+          "condition": "new",
+          "id": "U20-5-S4"
+        },
+        {
+          "title": "가민 심박 센서 새상품",
+          "price_krw": 101200,
+          "verdict": "FAIL",
+          "reason": "wrong brand",
+          "condition": "new",
+          "id": "U20-5-S5"
+        }
+      ]
+    }
+  ]
+}
