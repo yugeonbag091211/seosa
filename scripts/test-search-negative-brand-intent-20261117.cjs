@@ -12,6 +12,8 @@ const exclusions=[
   {query:'로지텍 마우스 말고 다른 마우스 보여줘',type:'마우스',rejected:'로지텍 마우스 정품',accepted:'삼성전자 마우스 정품'},
   {query:'이어폰 중 QCY 브랜드는 절대 제외하고 추천해줘',type:'이어폰',rejected:'QCY 이어폰 정품',accepted:'삼성전자 이어폰 정품'},
   {query:'노트북 중 삼성 브랜드는 절대 제외하고 추천해줘',type:'노트북',rejected:'삼성 노트북 정품',accepted:'LG전자 노트북 정품'},
+  {query:'식탁 의자 추천하되 한샘 브랜드는 제외해줘',type:'의자',rejected:'한샘 식탁 의자',accepted:'일룸 식탁 의자'},
+  {query:'로봇 청소기 추천하되 로보락 브랜드는 제외해줘',type:'청소기',rejected:'로보락 로봇 청소기',accepted:'삼성 로봇 청소기'},
   {query:'밀폐용기 중 락앤락 브랜드는 절대 제외하고 추천해줘',type:'밀폐용기',rejected:'락앤락 밀폐용기 정품',accepted:'삼성전자 밀폐용기 정품'},
   {query:'전기면도기 중 필립스 브랜드는 절대 제외하고 추천해줘',type:'전기면도기',rejected:'필립스 전기면도기 정품',accepted:'브라운 전기면도기 정품'},
   {query:'로지텍은 절대 제외하고 마우스 추천해줘',type:'마우스',rejected:'로지텍 마우스 정품',accepted:'삼성전자 마우스 정품'}
