@@ -368,7 +368,9 @@ function parseQuery(text, opts = {}) {
   const excludedBrands = [];
   for (const match of raw.matchAll(BRAND_CATEGORY_EXCLUSION)) {
     const brands = brandsIn(match[1], { includeLines: false });
-    if (!brands.length || /^(?:브랜드|절대|반드시|꼭)$/.test(match[2])) continue;
+    // "로지텍 브랜드는 절대 제외" is a single-brand clause; do not
+    // misread "브랜드는" as the product category to preserve.
+    if (!brands.length || /^(?:브랜드|제품|상품|모델)(?:은|는|이|가)?$|^(?:절대|반드시|꼭)$/.test(match[2])) continue;
     brandExclusionPhrases.push({ text: match[0], replacement: ' ' + match[2] + ' ' });
     brands.forEach(b => excludedBrands.push(b.canon));
   }
