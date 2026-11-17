@@ -538,6 +538,7 @@ function parseQuery(text, opts = {}) {
   }
   // «맥북 백업용 외장 SSD», «아이패드용 키보드» 의 제품군은 «무엇에 쓰는가» 다 — 상품명에 있어야 할 이름이 아니다.
   const lines = tokens.filter((t, i) => lineKey(t) && t.length >= 2 && !NOT_HEAD.has(t)
+    && !(wantsAccessory && hostNoun === t && /^(?:스마트워치|손목시계)$/u.test(t))
     && !/(?:용|전용|호환)$/.test(tokens[i + 1] || '') && !/^(?:용|전용|호환|백업용)$/.test(tokens[i + 1] || ''));
   // In "9010e 복합기에 쓸 카트리지", 복합기 is the host type.
   // The seller may simply say "9010e용 카트리지" without restating 복합기.
@@ -546,7 +547,8 @@ function parseQuery(text, opts = {}) {
   const hostNoun = (raw.match(/(?:^|\s)([가-힣]{2,18})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s)/u) || [])[1] || '';
   // Keep named SKU model/line and the specifically requested part strict.
   const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand }).filter(w =>
-    !(wantsAccessory && w !== head && (w === hostNoun || TAX.explicitType(w))));
+    !(wantsAccessory && w !== head && (w === hostNoun || TAX.explicitType(w)
+      || (hostNoun && /^(?:와이파이|미러리스)$/u.test(w)))));
   // 한글 이름에 영문 한 글자가 붙은 이름 («제로S», «타워X») 은 한 덩어리다.
   for (const m of idText.matchAll(/([가-힣]{2,})([a-z])(?![a-z0-9])/gi)) {
     const compound = (m[1] + m[2]).toLowerCase();
@@ -803,7 +805,7 @@ function capacityDetails(text, allowShortG) {
 function queryCapacities(text) { return capacityDetails(text, false); }
 function listingCapacities(title) { return capacityDetails(title, true); }
 // 비교 가능한 단위만 정규화한다. 복수 용량은 옵션·구성 혼동이므로 확정하지 않는다.
-const MEASURE_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(밀리리터|리터|ml|mah|mm|cm|l|hz|헤르츠|매|켤레)(?![a-z])/gi;
+const MEASURE_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(밀리리터|리터|ml|mah|mm|cm|l|w|hz|헤르츠|매|켤레)(?![a-z])/gi;
 function measureValues(text) {
   return [...String(text || '').matchAll(MEASURE_RE)].map(m => {
     const unit = m[2].toLowerCase();
@@ -811,7 +813,8 @@ function measureValues(text) {
     const hz = /^(?:hz|헤르츠)$/.test(unit);
     const length = /^(?:mm|cm)$/.test(unit);
     const battery = unit === 'mah';
-    return { kind: volume ? 'volume_ml' : hz ? 'hz' : length ? 'length_mm' : battery ? 'battery_mah' : unit,
+    const power = unit === 'w';
+    return { kind: volume ? 'volume_ml' : hz ? 'hz' : length ? 'length_mm' : battery ? 'battery_mah' : power ? 'power_w' : unit,
       n: Number(m[1]) * (/^(?:리터|l)$/.test(unit) ? 1000 : unit === 'cm' ? 10 : 1) };
   });
 }
