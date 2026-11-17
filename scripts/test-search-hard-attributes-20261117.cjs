@@ -38,4 +38,24 @@ for(const [q,title,expected,price] of cases){
 }
 const accessoryIntent=Gate.parseQuery('쿠쿠 6인용 전기밥솥 내솥');
 assert.equal(accessoryIntent.wantsAccessory,true,'explicit inner pot accessory search must remain possible');total++;
+for(const name of ['락앤락 1.7L 밀폐용기','샤오미 20000mAh 보조배터리']){
+  const parsed=Gate.parseQuery(name);
+  assert.equal(parsed.wantsAccessory,false, 'compound main category incorrectly treated as accessory: '+name);
+  total++;
+}
+for(const [query,requested,unwanted] of [
+ ['락앤락 밀폐용기 뚜껑만 구매할래','락앤락 밀폐용기 뚜껑 정품','락앤락 1.7L 밀폐용기 본품'],
+ ['샤오미 보조배터리 충전 케이블만 구매할래','샤오미 보조배터리 충전 케이블 정품','샤오미 20000mAh 보조배터리 본품'],
+ ['이케아 침대 매트리스 커버만 구매할래','이케아 침대 매트리스 커버 정품','삼성전자 침대 프레임 케이스']
+]){
+ const parsed=Gate.parseQuery(query,{titles:[requested,unwanted]});
+ assert.equal(parsed.wantsAccessory,true,'requested accessory not identified: '+query);
+ const good=Gate.judge(parsed,{title:requested,lprice:20000});
+ const bad=Gate.judge(parsed,{title:unwanted,lprice:20000});
+ assert.equal(good.ok,true,JSON.stringify({query,hard:good.hard}));
+ assert.equal(bad.ok,false,JSON.stringify({query,bad:bad.hard}));
+ const saved=Gate.saveFilter(query,[{title:unwanted,lprice:20000}]);
+ assert.equal(saved.save.length,0,'unrelated accessory saved: '+unwanted);
+ total+=3;
+}
 console.log('SEARCH_HARD_ATTRIBUTE_GUARDS '+total+' PASS');
