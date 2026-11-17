@@ -22,6 +22,18 @@ for(const [q,correct,wrong,price] of contrasts){
  assert.equal(saved.save.length,0,'wrong option saved for '+q);
  passed++;
 }
+// Diagnostic evidence on a specific noun-head ambiguity. Synthetic only.
+{
+ const query='무인양품 3단 원목 서랍장 60cm용 서랍 레일 찾는 중이야. 본품은 말고';
+ const titles=['무인양품 3단 원목 서랍장 60cm용 서랍 레일 정품',
+   '무인양품 3단 원목 서랍장 60cm 서랍장 본품',
+   '무인양품 3단 원목 서랍장 60cm용 다른 부품 교체용'];
+ const spec=Gate.parseQuery(query,{titles});
+ console.log('DRAWER_RAIL_PARSE '+JSON.stringify({idText:spec.idText,head:spec.head,
+   wantsAccessory:spec.wantsAccessory,accessoryWords:spec.accessoryWords,
+   identityWords:spec.identityWords,models:spec.models,
+   judgments:titles.map(title=>({title,hard:Gate.judge(spec,{title,lprice:60000}).hard}))}));
+}
 const parts=[
  ['후지필름 X-S20용 교체 배터리 찾는 중이야. 본품은 말고','후지필름 X-S20용 교체 배터리 정품','후지필름 X-S20용 다른 부품 교체용'],
  ['티피링크 Archer AX73 와이파이 공유기에 쓸 전원 어댑터만 구매하고 싶어','티피링크 Archer AX73용 전원 어댑터 정품','티피링크 Archer AX73 와이파이 공유기 본품'],
