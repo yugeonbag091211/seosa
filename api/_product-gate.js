@@ -418,7 +418,7 @@ function parseQuery(text, opts = {}) {
   const selectionText = raw.replace(
     /(?:[.!?]\s*|\s+)(?:사은품(?:은|는|이|가|도)?\s*)?(?:같이|함께)\s*와도\s*(?:돼|괜찮아|상관\s*없어|좋아)(?:[.!?]+)?$/u,
     ' '
-  ).replace(OPTIONAL_GIFT_PERMISSION, ' ').replace(SEARCH_DIALOGUE_DIRECTIVE, ' ');
+  ).replace(OPTIONAL_GIFT_PERMISSION, ' ');
   // Strip exclusion clauses before REQUEST_FILLER. Otherwise its "해줘"
   // alternative truncates "제외해줘" and makes the original matched clause
   // impossible to remove ("한샘 브랜드는 제외해줘" leaked as a product name).
@@ -426,7 +426,7 @@ function parseQuery(text, opts = {}) {
   brandExclusionPhrases.forEach(phrase => {
     withoutExcluded = withoutExcluded.replace(phrase.text, phrase.replacement);
   });
-  let idText = withoutExcluded.replace(BUDGET_PHRASE, ' ')
+  let idText = withoutExcluded.replace(SEARCH_DIALOGUE_DIRECTIVE, ' ').replace(BUDGET_PHRASE, ' ')
     .replace(PURCHASE_DIRECTIVE, ' ').replace(REQUEST_FILLER, ' ')
     .replace(/(본품|본체|단품)(?:을|를|은|는)(?=\s|$)/g, '$1')
     // "가격을 동시에 충족하는 것" restates previously given constraints;
