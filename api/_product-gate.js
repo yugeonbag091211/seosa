@@ -148,7 +148,7 @@ NOT_HEAD.add && CHAT_STOP.forEach(w => NOT_HEAD.add(w));
 // 본품 검색에서 «이건 그 부속이다» 로 단정해도 되는 판매 대상 명사 (어느 범주에서나 부속).
 const UNIVERSAL_ACCESSORY = /^(?:케이스|커버|필름|보호\s*필름|강화\s*유리|보안기|키\s*스킨|스킨|파우치|슬리브|거치대|받침(?:대)?|지지대|충전기|충전\s*독|충전\s*케이블|케이블|어댑터|젠더|스트랩|(?:워치|시계|watch)\s*(?:밴드|줄|스트랩)|이어\s*팁|이어\s*패드|이어\s*캡|키캡|팜\s*레스트|손목\s*받침|마우스\s*패드|펜촉|리필|교체품|호환품|media|replacement_part|fits_sentence|브라켓|브래킷|마운트|홀더|리모컨|리시버|동글|도킹\s*스테이션|도킹|허브|소모품|부품|수리|액정|lcd|어셈블리|프레임|힌지|하판|상판|정리대|보관대|수납장|장식장|악세(?:서|사)리|액세서리|쿨러|쿨링\s*팬|쿨링\s*패드|s\s*펜|펜슬|터치\s*펜|스타일러스)$/i;
 // 질의에 이 말이 있으면 부속을 찾는 것이다 (_search 부속 사전에 없는 것).
-const EXTRA_ACCESSORY_QUERY = /쿨링\s*패드|노트북\s*쿨러|쿨링\s*거치대/;
+const EXTRA_ACCESSORY_QUERY = /쿨링\s*패드|노트북\s*쿨러|쿨링\s*거치대|(?:^|\s)(?:내솥|깔창|신발끈)(?=\s|$)/;
 // 범주에 따라 본품의 기능 표기일 수도 있는 부속 명사 — 두 번째 근거가 있어야 hard.
 const AMBIGUOUS_ACCESSORY = /^(?:필터|배터리|브러시|브러쉬|노즐|롤러|걸레|물걸레\s*패드|먼지\s*봉투|더스트\s*백|헤드|모듈|스크린|튜브|호스|연장관|매트|스탠드|팁|플러그|마이크|렌즈)$/i;
 // 범주가 정해지지 않은 검색에서도 «다른 물건을 판다» 고 볼 머리 명사(_ai-v32-listing STRONG_ACCESSORY 와 같은 계열)
@@ -514,7 +514,7 @@ function parseQuery(text, opts = {}) {
   const spec = {
     raw, idText, normalized, tokens, type, wantsAccessory, accessoryWords, head, models, brands: brandReq,
     excludedBrands, families, variants, caps, measures, filterGrade, diameterMm, sizes, people: people ? Number(people) : 0, colors, wireless, gender, kids,
-    year, budget, condition, wantsBook, wantsCar, solidWood, looseBrand, lines, identityWords,
+    year, budget, condition, wantsBook, wantsCar, solidWood, apparelSize: apparelSize(raw), beddingSize: beddingSize(raw), looseBrand, lines, identityWords,
     // 관련도 점수에 쓸 검색어 — 예산·요청 말("50만원 이하", "보여줘")이 커버리지를 깎지 않게 뺀다.
     rankText: idText || raw,
     analysis: S.analyzeQuery(idText, { titles: Array.isArray(opts.titles) ? opts.titles : [] }),
@@ -759,15 +759,34 @@ function capacityDetails(text, allowShortG) {
 function queryCapacities(text) { return capacityDetails(text, false); }
 function listingCapacities(title) { return capacityDetails(title, true); }
 // 비교 가능한 단위만 정규화한다. 복수 용량은 옵션·구성 혼동이므로 확정하지 않는다.
-const MEASURE_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(밀리리터|리터|ml|l|hz|헤르츠|매|켤레)(?![a-z])/gi;
+const MEASURE_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(밀리리터|리터|ml|mah|mm|cm|l|hz|헤르츠|매|켤레)(?![a-z])/gi;
 function measureValues(text) {
   return [...String(text || '').matchAll(MEASURE_RE)].map(m => {
     const unit = m[2].toLowerCase();
     const volume = /^(?:밀리리터|리터|ml|l)$/.test(unit);
     const hz = /^(?:hz|헤르츠)$/.test(unit);
-    return { kind: volume ? 'volume_ml' : hz ? 'hz' : unit,
-      n: Number(m[1]) * (/^(?:리터|l)$/.test(unit) ? 1000 : 1) };
+    const length = /^(?:mm|cm)$/.test(unit);
+    const battery = unit === 'mah';
+    return { kind: volume ? 'volume_ml' : hz ? 'hz' : length ? 'length_mm' : battery ? 'battery_mah' : unit,
+      n: Number(m[1]) * (/^(?:리터|l)$/.test(unit) ? 1000 : unit === 'cm' ? 10 : 1) };
   });
+}
+// Require explicit evidence for clothing and bedding dimensions, independent of
+// device model variants. Only interpret S/M/L/XL when a garment noun occurs.
+function apparelSize(text) {
+  const raw = String(text || '');
+  if (!/(?:후드(?:티)?|티셔츠|셔츠|바지|재킷|자켓|패딩|코트|원피스|치마|스웨터|니트)/i.test(raw)) return '';
+  const m = raw.match(/(?:^|[\s(/,])((?:[2-4]xl|xxxl|xxl|xl|xs|s|m|l))(?=$|[\s),/])/i);
+  if (!m) return '';
+  return m[1].toLowerCase().replace(/^2xl$/, 'xxl').replace(/^3xl$/, 'xxxl');
+}
+// Bedding size letters alone can be product codes; only full words are evidence.
+function beddingSize(text) {
+  const raw = String(text || '');
+  if (!/(?:침대|매트리스|이불|침구|토퍼|베개)/.test(raw)) return '';
+  const m = raw.match(/(?:슈퍼\s*싱글|슈퍼\s*킹|퀸|킹|싱글|더블)(?=\s|$|사이즈|형|[),/])/);
+  if (!m) return '';
+  return m[0].replace(/\s/g, '');
 }
 function querySizes(tokens) {
   const out = [];
