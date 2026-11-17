@@ -462,7 +462,9 @@ function parseQuery(text, opts = {}) {
   const inTitles = w => !!titleText && titleText.includes(normalize(w));
   // 대화체 조사 — «제품만», «칩으로», «모델로», «걸로». 남는 말이 아는 낱말일 때만 뗀다(«프로» 의 «로» 는 떼지 않는다).
   idText = idText.replace(/([가-힣]{1,8}?)(으로|로|만|은|는|도|이요|요|이야|야|예요|이에요|인데|이면|면)(?=\s|$)/g, (whole, stem, josa) => {
-    const known = NOT_HEAD.has(stem) || VARIANT.has(stem) || LINE.has(stem) || isBrandToken(stem) || ['칩', '것', '거', '제품', '모델', '버전'].includes(stem);
+    const known = NOT_HEAD.has(stem) || VARIANT.has(stem) || LINE.has(stem) || isBrandToken(stem)
+      || (josa === '만' && S.accessoryTerms(normalize(stem)).length > 0)
+      || ['칩', '것', '거', '제품', '모델', '버전'].includes(stem);
     if (known || (josa.length >= 2 && stem.length >= 2)) return stem;
     // 한 글자 조사(«유닛만», «마우스는», «텀블러도»): 후보 상품명이 뗀 말은 품고 붙인 말은 하나도 품지 않을 때만 뗀다.
     // 상품명이 낱말 그대로 품으면(«파파야», «아보카도») 이름이다. 조건·수단의 «면»·«로» 는 이 규칙에서 뺀다
