@@ -1,0 +1,25 @@
+{
+  "sealedAt": "2026-11-15T13:52:48.249Z",
+  "gitHeadAtSeal": "9c1d959ef81ec8e2eeb93931af06b88b879ea498",
+  "note": "Holdout questions and grader written before api/_product-gate.js existed. Hashes are over LF-normalized UTF-8 text. Holdout is graded once on the final code; any later edit to these files voids the holdout claim.",
+  "files": {
+    "scripts/search-eval/questions-holdout.js": "d7233ae683ed807748f395ac3ec3d49a99515808612f20f48e28b5333d80e686",
+    "scripts/search-eval/spec.js": "2191108f617883880acb43ae438744c69fa8af4146123f198806aba291ec22f6",
+    "scripts/search-eval/questions-dev.js": "3aeba1a876f5c857b4b4be27547d4a63adfffe74b1eeef93618c6faa5393480e"
+  },
+  "counts": {
+    "dev": 200,
+    "holdout": 110,
+    "byCategory": {
+      "phone_tablet": 51,
+      "laptop_pc": 40,
+      "audio": 31,
+      "appliance": 41,
+      "living": 31,
+      "fashion": 31,
+      "brand_model": 30,
+      "price_option": 25,
+      "followup": 30
+    }
+  }
+}

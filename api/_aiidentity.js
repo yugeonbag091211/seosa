@@ -139,8 +139,16 @@ function namesBrand(text) {
   return BRAND_NAME_RE.test(String(text || ''));
 }
 
+/*
+ * 한 글자 «계열» 낱말 (2026-11-16) — "갤럭시 탭 S9" 의 탭.
+ * 검색어에는 남아야 한다. api/_intent.js extractQuery 는 아래 ONE_CHAR_PRODUCTS 에 없는 한 글자 한글을 버리는데,
+ * 탭을 버리면 "갤럭시 탭 S9" 가 "갤럭시 S9"(휴대폰)로 검색되고, 이어지는 "FE 모델로" 는 "갤럭시 S9 FE" 가 됐다.
+ * 식별 낱말(slotOf 'word')로는 쓰지 않는다 — 판매 글은 "갤럭시탭" · "Galaxy Tab" 처럼 붙여 쓰거나 영어로 적어서
+ * «탭» 한 글자는 상품명에 맞지 않는다(wordHit 0). 계열은 앞 낱말(갤럭시)과 모델 번호가 정한다.
+ */
+const ONE_CHAR_LINE_WORDS = new Set(['탭']);
 /* 한 글자로 된 상품 이름 (2026-10-26) — 한 글자 토큰은 보통 식별에 쓰지 않지만 «쌀 10kg» 의 쌀은 상품이다. */
-const ONE_CHAR_PRODUCTS = new Set(['쌀', '김', '귤', '꿀', '떡', '잼', '빵', '컵', '펜', '책', '옷', '콩', '팥', '굴']);
+const ONE_CHAR_PRODUCTS = new Set(['쌀', '김', '귤', '꿀', '떡', '잼', '빵', '컵', '펜', '책', '옷', '콩', '팥', '굴', ...ONE_CHAR_LINE_WORDS]);
 const BUNDLE_WORDS = new Set(['번들', '묶음', '세트', '패키지', '구성', 'bundle', 'package', 'set']);
 
 /*
@@ -228,6 +236,7 @@ function slotOf(rawTok) {
   }
   if (/\d/.test(tok)) return 'generic';            // 15인치 · 2026 같은 규격·연식
   if (GENERIC_WORDS.has(tok) || S.COMMON_WORDS.has(tok) || (tok.length < 2 && !ONE_CHAR_PRODUCTS.has(tok))) return 'generic';
+  if (ONE_CHAR_LINE_WORDS.has(tok)) return 'generic';   // 검색어에만 남긴다 (ONE_CHAR_LINE_WORDS 주석)
   if (/^[가-힣]+$/.test(tok) && PREDICATE_RE.test(tok) && !categoryNounOf(tok)) return 'generic';
   return 'word';
 }
@@ -369,7 +378,11 @@ function splitNegations(text) {
     if (!marks.length) { positive.push(clause); return; }
     let cursor = 0;
     marks.forEach((mk, i) => {
-      const pre = clause.slice(cursor, mk.start);
+      // Negation intensifiers are not the item to exclude:
+      // "삼성 절대 빼줘" and "절대 삼성 빼줘" both exclude 삼성.
+      const pre = clause.slice(cursor, mk.start)
+        .replace(/^\s*(?:절대|반드시|꼭)\s+/u, '')
+        .replace(/(?:^|\s)(?:절대|반드시|꼭)\s*$/u, '');
       const post = clause.slice(mk.end, i + 1 < marks.length ? marks[i + 1].start : clause.length);
       // 뺄 대상 뒤의 틀 낱말("블랙 가격은")은 범위에서 뺀다 (NEG_FRAME_WORDS). 틀 낱말뿐이면("가격은 빼고") 그대로.
       const rawPreToks = tokensOf(pre);
@@ -1286,41 +1299,182 @@ function narrowByMention(mention, candidates) {
  *
  *    등급(프로·맥스…)   덮어쓴다    "프로맥스 말고 프로" → 프로
  *    용량 · 색          덮어쓴다    "검정색 말고 화이트" → 화이트 (검정은 제외로 남는다)
- *    브랜드("삼성으로")  덮어쓴다    "노트북" → "삼성 노트북" → "LG 노트북"
- *    숫자 앵커만        덮어쓴다    "MX Master 3" → "3S로" → MX Master 3S
+ *    브랜드("삼성으로")  바꾼다      "노트북" → "삼성 노트북" → "LG 노트북" (종류는 남는다 — mergeRefinement «브랜드 고르기»)
+ *    숫자 앵커만        덮어쓴다    "MX Master 3" → "3S로" → MX Master 3S · "맥북 에어" → "M3 칩으로" → 맥북 에어 M3
  *    상태·기능·규격      덧붙인다    "노이즈캔슬링 중요해" · "15인치 이하"
  *    빼 달라는 것        제외로      buildContract 가 이번 발화에서 읽는다
  *
  *  ★ 사용자 발화만 쓴다. 우리(assistant)가 한 말은 상태가 아니다.
  * ================================================================== */
 
-/* 상품을 «새로» 말했는가 — 숫자 앵커나 종류명·이름 낱말이 있는가. */
+/*
+ * 브랜드 사전 (api/_ai-v32-brands.js — 의존성 없는 표라 여기서도 읽는다).
+ *   회사 이름(삼성·LG·소니·애플)  언제나 브랜드다. 조사 없이 "삼성" 만 남아도 고른 것은 브랜드다.
+ *   계열 이름(갤럭시·그램·아이폰)  그 회사의 상품 계열이다. 다른 브랜드로 바꾸면 계열·모델 번호가 함께 빠진다.
+ */
+const BRAND_LEXICON = (() => { try { return require('./_ai-v32-brands').BRANDS || []; } catch (e) { return []; } })();
+function brandKey(w) { return stripJosa(norm(w)).replace(/\s+/g, ''); }
+const COMPANY_OF = new Map();
+const LINE_OF = new Map();
+BRAND_LEXICON.forEach(([canon, company, lines]) => {
+  (company || []).forEach(a => COMPANY_OF.set(brandKey(a), canon));
+  Object.keys(lines || {}).forEach(a => LINE_OF.set(brandKey(a), { canon, kinds: lines[a] || [] }));
+});
+/**
+ * 낱말이 가리키는 브랜드 — {canon, line, kinds} 또는 null. "삼성전자"·"LG전자" 는 회사 이름이다.
+ * compound — 붙여 쓴 꼴("갤럭시탭" · "삼성노트북" · "아이폰16")도 그 이름의 것으로 본다. 앞 상품 구절을 읽을 때만 쓴다.
+ */
+function brandOf(word, compound) {
+  const k = brandKey(word);
+  if (!k) return null;
+  const co = COMPANY_OF.get(k) || COMPANY_OF.get(k.replace(/전자$/, ''));
+  if (co) return { canon: co, line: false, kinds: [] };
+  const l = LINE_OF.get(k);
+  if (l) return { canon: l.canon, line: true, kinds: l.kinds };
+  if (!compound) return null;
+  for (const [map, line] of [[LINE_OF, true], [COMPANY_OF, false]]) {
+    for (const [alias, v] of map) {
+      if (alias.length < 2 || k.length <= alias.length || !k.startsWith(alias)) continue;
+      const rest = k.slice(alias.length);
+      if (categoryNounOf(rest) || ONE_CHAR_LINE_WORDS.has(rest) || /^[a-z]*\d[a-z0-9]*$/.test(rest)) {
+        return line ? { canon: v.canon, line: true, kinds: v.kinds } : { canon: v, line: false, kinds: [] };
+      }
+    }
+  }
+  return null;
+}
+
+/*
+ * 이름 자리를 채우는 말 — "삼성 제품으로" 의 제품, "LG 걸로" 의 걸. 고른 것은 그 앞 낱말이다.
+ * 속성 이름 — "M3 칩으로" 의 칩, "16GB 메모리로" 의 메모리. 앞 낱말은 그 속성의 값이지 브랜드·상품이 아니다.
+ */
+const PICK_FRAME_WORDS = new Set(['제품', '상품', '물건', '모델', '버전', '에디션', '시리즈', '라인', '브랜드', '메이커', '제조사', '회사',
+  '거', '것', '걸', '꺼', '껄', '쪽']);
+const SPEC_HEAD_WORDS = new Set(['칩', '칩셋', '프로세서', 'cpu', '램', 'ram', '메모리', 'ssd', 'hdd', '저장공간', '스토리지', '용량',
+  '색', '색상', '색깔', '컬러', '화면', '디스플레이']);
+
+/*
+ * 고르는 말 끝의 조사 — "삼성으로 · LG로 · 그램만 · 삼성 제품으로만 · M3 칩으로요" (2026-11-16).
+ * '으로' 는 받침(ㄹ 제외) 있는 글자 뒤, '로' 는 받침 없는 글자·ㄹ 받침·영문·숫자 뒤에 붙는다. 그 규칙으로 떼야
+ * "칩으로" 가 칩 + 으로 가 된다 — 예전 정규식은 이름을 두 글자 이상으로 잡아 "칩으" + 로 로 자르고 «칩으» 를
+ * 브랜드로 읽었다 ("맥북 에어" → "M3 칩으로" 가 «M3 칩으로» 그대로 검색됐다).
+ * 통째로 알려진 낱말(프로·고프로·코드제로)은 떼지 않는다. 한 글자에 '로'·'만' 이 붙은 꼴도 떼지 않는다("프로" ≠ 프+로)
+ * — 이름 자리를 채우는 말(걸로·꺼로)만 예외다.
+ */
+const PICK_PARTICLES = ['으로만', '로만', '만으로', '으로', '로', '만'];
+/* 받침 번호 — 0 받침 없음, 8 ㄹ 받침, -1 한글 음절이 아님. */
+function finalConsonant(ch) {
+  const code = String(ch || '').charCodeAt(0) - 0xAC00;
+  return code >= 0 && code < 11172 ? code % 28 : -1;
+}
+function particleFits(stem, particle) {
+  const last = stem.slice(-1);
+  const jong = finalConsonant(last);
+  if (jong < 0) return /[a-z0-9]/i.test(last);
+  if (particle.startsWith('으로')) return jong > 0 && jong !== 8;
+  if (particle.startsWith('로')) return jong === 0 || jong === 8;
+  return true;
+}
+function wholeName(w) {
+  const k = norm(w).replace(/\s+/g, '');
+  return S.VARIANT_KEYS.has(k) || S.SYNONYMS.has(k) || CATEGORY_NOUNS.has(k) || GENERIC_WORDS.has(k)
+    || COMPANY_OF.has(k) || LINE_OF.has(k) || (BRAND_NAME_RE.test(w) && String(w).replace(BRAND_NAME_RE, '') === '');
+}
+/** @returns {{stem:string, particle:string}} 뗄 조사가 없으면 particle 은 '' */
+function splitPickParticle(word) {
+  const raw = String(word == null ? '' : word).normalize('NFKC').replace(/[.,!?~]+$/, '');
+  const forms = raw.length > 2 && raw.endsWith('요') ? [raw.slice(0, -1), raw] : [raw];
+  for (const w of forms) {
+    if (wholeName(w)) continue;
+    // 붙여 쓴 계열+등급("에어팟프로" = 에어팟 + 프로)의 끝 조각이 알려진 낱말이면 그 끝 글자는 조사가 아니다.
+    const parts = S.splitTokens(norm(w));
+    const last = parts[parts.length - 1] || '';
+    if (parts.length > 1 && !PICK_PARTICLES.includes(last) && wholeName(last)) continue;
+    for (const p of PICK_PARTICLES) {
+      if (w.length <= p.length || !w.endsWith(p)) continue;
+      const stem = w.slice(0, -p.length);
+      if (!particleFits(stem, p)) continue;
+      if (/^[가-힣]$/.test(stem) && !p.startsWith('으로') && !PICK_FRAME_WORDS.has(stem)) continue;
+      return { stem, particle: p };
+    }
+  }
+  return { stem: raw, particle: '' };
+}
+
+/*
+ * 꾸밈말·기능 낱말 — 브랜드를 바꿔도 남는다("무선 이어폰" → "소니로" → 소니 무선 이어폰).
+ * 예전에는 종류명 앞의 첫 낱말을 브랜드로 보고 바꿔 «무선» 을 잃었다.
+ */
+function isModifierWord(n) {
+  if (!n) return false;
+  if (KIND_MODIFIER_WORDS.has(n) || /^[가-힣]{2,}용$/.test(n)) return true;
+  try { return require('./_specs').wantedFeatures(n).length > 0; } catch (e) { return false; }
+}
+
+/*
+ * 상품을 «새로» 말했는가 — 숫자 앵커나 종류명·이름 낱말이 있는가. 아니면 앞 상품을 고치는 말이다(refinement).
+ * brands — 고른 브랜드: 고르는 조사가 붙은 이름("삼성으로 · LG로 · 그램만 · 삼성 제품으로"), 또는 회사 이름
+ * ("삼성" — "삼성 제품만" 은 api/_intent.js contentText 를 지나면 "삼성" 만 남는다).
+ */
 function refinementOf(text) {
   const src = String(text == null ? '' : text);
   const pos = splitNegations(src).positive;
-  const toks = tokensOf(pos);
-  const slots = toks.map(slotOf);
-  // "삼성으로 · LG로 바꿔" — 조사 '(으)로' 가 붙은 이름은 상품이 아니라 바꿀 속성(브랜드)이다.
-  // "삼성 제품으로" 처럼 일반명에 붙었으면 그 앞 낱말이 브랜드다. 숫자 앵커("3S로")는 모델 바꾸기라 뺀다.
+  const wordsOf = s => String(s).normalize('NFKC').replace(/[.,!?]/g, ' ').split(/\s+/).filter(Boolean);
+  const srcWords = wordsOf(src);
+  const posWords = wordsOf(pos);
   const rawWords = S.splitTokens(norm(src));
-  const brandParticle = new Set();
-  const words = String(src).normalize('NFKC').replace(/[.,!?]/g, ' ').split(/\s+/).filter(Boolean);
-  words.forEach((w, i) => {
-    const m = w.match(/^([가-힣A-Za-z][가-힣A-Za-z0-9]+?)(?:으로|로)$/);
-    if (!m) return;
-    let stem = norm(m[1]);
-    if (/\d/.test(stem)) return;
-    if (slotOf(stem) === 'generic' && i > 0) stem = stripJosa(norm(words[i - 1]));
-    if (stem && slotOf(stem) === 'word' && !categoryNounOf(stem)) brandParticle.add(stem);
-  });
   let features = [];
   try { features = require('./_specs').wantedFeatures(src); } catch (e) { features = []; }
   const featureHit = w => features.some(f => w.indexOf(f) > -1 || f.indexOf(w) > -1);
-  const product = toks.some((t, i) =>
-    (slots[i] === 'word' && !brandParticle.has(t) && !featureHit(t) && !(/^[a-z]{1,2}$/.test(t)))
-    || categoryNounOf(t))
-    || (slots.includes('anchor') && slots.some((s, i) => s === 'word' && !brandParticle.has(toks[i]) && !(/^[a-z]{1,2}$/.test(toks[i]))));
-  return { refinement: !product && toks.length + rawWords.length > 0, positive: pos, brands: [...brandParticle] };
+  const brandish = n => !!n && !/\d/.test(n) && slotOf(n) === 'word' && !categoryNounOf(n)
+    && !PICK_FRAME_WORDS.has(n) && !SPEC_HEAD_WORDS.has(n) && !featureHit(n) && !isModifierWord(n);
+  const knownBrand = n => !!brandOf(n) || (BRAND_NAME_RE.test(n) && n.replace(BRAND_NAME_RE, '') === '');
+  const brands = new Set();
+  /*
+   * 고르는 조사가 붙은 이름. 이름 자리를 채우는 말에 붙었으면("삼성 제품으로") 그 앞 낱말이다. 숫자 앵커("3S로")는 모델 바꾸기다.
+   *   '(으)로'  — 붙은 이름 낱말은 새 상품이 아니라 바꿀 속성이다(예전 규칙 그대로). 브랜드로 보는 것은 꾸밈말·기능 낱말이 아닌 것뿐이다.
+   *   '만'      — 알려진 브랜드 이름일 때만 고른 브랜드다("삼성만 · LG로만"). "완제품만" · "언저리로만" 은 예전처럼 둔다.
+   */
+  const picked = new Set();
+  srcWords.forEach((w, i) => {
+    const { stem, particle } = splitPickParticle(w);
+    if (!particle) return;
+    let name = stripJosa(norm(stem));
+    if (/\d/.test(name) || SPEC_HEAD_WORDS.has(name)) return;
+    if ((PICK_FRAME_WORDS.has(name) || (slotOf(name) === 'generic' && name.length >= 2)) && i > 0) {
+      name = stripJosa(norm(splitPickParticle(srcWords[i - 1]).stem));
+    }
+    if (particle.includes('만')) {
+      if (knownBrand(name) && !categoryNounOf(name)) brands.add(name);
+      return;
+    }
+    if (name && slotOf(name) === 'word' && !categoryNounOf(name)) picked.add(name);
+    if (brandish(name)) brands.add(name);
+  });
+  const toks = tokensOf(posWords.map(w => splitPickParticle(w).stem).join(' '));
+  const slots = toks.map(slotOf);
+  /*
+   * 회사 이름은 조사 없이도 고른 브랜드다 — 그 말에 회사 이름과 옵션·일반명밖에 없을 때만 ("삼성", "삼성 15인치", "LG 블랙").
+   * "삼성 제품만" 은 api/_intent.js contentText 를 지나면 "삼성" 만 남는다. 부정 범위 밖의 말에서만 센다("삼성 말고").
+   * "애플 호환 케이스" · "보스 QC 울트라" · "삼성 S24" 처럼 다른 것이 함께 있으면 예전처럼 상품을 새로 말한 것이다.
+   */
+  const company = t => { const b = brandOf(t); return !!b && !b.line; };
+  const OPTION_SLOTS = new Set(['generic', 'storage', 'color', 'condition', 'base']);
+  if (toks.some(company) && toks.every((t, i) => company(t) || OPTION_SLOTS.has(slots[i]) || PICK_FRAME_WORDS.has(t))) {
+    toks.forEach(t => { if (company(t)) brands.add(t); });
+  }
+  /*
+   * 고르는 조사가 붙은 속성 이름("16GB 메모리로 · 인텔 칩으로")과 그 앞의 값은 상품 이름이 아니다.
+   * 조사 없이 쓴 속성 이름은 상품일 수 있다 — "DDR5 메모리 추천해줘" 는 램을 찾는 말이다.
+   */
+  const pickedSpec = new Set(posWords.map(splitPickParticle).filter(x => x.particle).map(x => stripJosa(norm(x.stem)))
+    .filter(n => SPEC_HEAD_WORDS.has(n)));
+  const specWord = i => pickedSpec.has(toks[i]) || pickedSpec.has(toks[i + 1] || '')
+    || (SPEC_HEAD_WORDS.has(toks[i]) && (slots[i - 1] === 'storage' || slots[i + 1] === 'storage'));
+  const nameWord = (t, i) => slots[i] === 'word' && !(/^[a-z]{1,2}$/.test(t)) && !PICK_FRAME_WORDS.has(t) && !specWord(i);
+  const product = toks.some((t, i) => (nameWord(t, i) && !brands.has(t) && !picked.has(t) && !featureHit(t)) || categoryNounOf(t))
+    || (slots.includes('anchor') && toks.some((t, i) => nameWord(t, i) && !picked.has(t)));
+  return { refinement: !product && toks.length + rawWords.length > 0, positive: pos, brands: [...brands] };
 }
 
 /**
@@ -1331,9 +1485,21 @@ function mergeRefinement(base, refinementText, opts) {
   const optionsOnly = !!(opts && opts.optionsOnly);
   const baseToks = String(base || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   const info = refinementOf(refinementText);
-  // 붙은 조사·물음 꼬리는 뗀다 ("3세대는?" → 3세대, "3S로" → 3S, "블랙으로" → 블랙).
+  // Independently fold explicitly typed memory and storage in a combined turn.
+  const pairRe = /(\d+(?:\.\d+)?\s*(?:gb|tb|기가|테라))\s*(ram|램|메모리|ssd|hdd|저장공간|스토리지)(?:으로|로|만)?/gi;
+  const pairs = [...info.positive.matchAll(pairRe)];
+  const remainder = info.positive.replace(pairRe, '').replace(/[\s,·+]/g, '');
+  if (pairs.length === 2 && !remainder && pairs.some(p => /^(?:ram|램|메모리)$/i.test(p[2]))
+      && pairs.some(p => /^(?:ssd|hdd|저장공간|스토리지)$/i.test(p[2]))) {
+    return pairs.reduce((current, pair) => mergeRefinement(current, pair[1] + ' ' + pair[2] + '로', opts), baseToks.join(' '));
+  }
+  // 붙은 조사·물음 꼬리는 뗀다 ("3세대는?" → 3세대, "3S로" → 3S, "블랙으로" → 블랙, "칩으로" → 칩, "삼성으로만" → 삼성).
   const add = info.positive.replace(MONEY_TEXT_RE, ' ').replace(/[?？!.,]/g, ' ').replace(/\s+/g, ' ').trim().split(' ')
-    .map(w => w.replace(/(?<=[0-9A-Za-z가-힣])(?:으로|로|은|는|이|가|을|를|도|만|야|요)$/, w2 => (/^[가-힣]+$/.test(w) && w.length <= 2 ? w2 : '')))
+    .map(w => {
+      const sp = splitPickParticle(w);
+      if (sp.particle) return sp.stem;
+      return w.replace(/(?<=[0-9A-Za-z가-힣])(?:으로|로|은|는|이|가|을|를|도|만|야|요)$/, w2 => (/^[가-힣]+$/.test(w) && w.length <= 2 ? w2 : ''));
+    })
     .filter(Boolean);
   if (!add.length) return baseToks.join(' ');
   // 낱말 하나가 붙여 쓴 여러 토큰일 수 있다 ("프로맥스" = 프로+맥스, "3세대" = 3+세대).
@@ -1348,6 +1514,8 @@ function mergeRefinement(base, refinementText, opts) {
     const bareWord = String(w).replace(/(?:으로|로)$/, '');
     if (sizeCue && /^(?:xxxl|xxl|xl|[2-4]xl|xs|s|m|l)(?:사이즈)?$/i.test(bareWord)) return 'size';
     if (quantityOf(w).size) return 'quantity';
+    // "제품·거·브랜드" 와 "칩·메모리" 는 고른 것이 아니라 그 자리의 이름이다 — 덧붙이지 않는다 (PICK_FRAME_WORDS 주석).
+    if (PICK_FRAME_WORDS.has(stripJosa(norm(w))) || SPEC_HEAD_WORDS.has(stripJosa(norm(w)))) return 'generic';
     const ts = tokensOf(w);
     if (!ts.length) return 'generic';
     const ss = ts.map(slotOf);
@@ -1373,7 +1541,34 @@ function mergeRefinement(base, refinementText, opts) {
   };
   const pick = slot => add.filter((w, i) => addSlots[i] === slot);
   replaceSlot('variant', pick('variant').concat(pick('base')));
-  replaceSlot('storage', pick('storage'));
+  // RAM and storage can coexist and both use GB. Replace only the named
+  // specification, retaining the other one and its cue across future turns.
+  const memoryCue = /^(?:ram|램|메모리)$/i;
+  const diskCue = /^(?:ssd|hdd|저장공간|스토리지|용량)$/i;
+  const incomingMemory = /(?:\bram\b|램|메모리)/i.test(info.positive);
+  const incomingDisk = /(?:\bssd\b|\bhdd\b|저장공간|스토리지)/i.test(info.positive);
+  const incomingCapacity = pick('storage');
+  if (incomingCapacity.length && incomingMemory !== incomingDisk) {
+    const target = incomingMemory ? 'memory' : 'disk';
+    const remove = new Set();
+    out.forEach((w, i) => {
+      if (slotOfRaw(w) !== 'storage') return;
+      const next = out[i + 1] || '';
+      const prev = out[i - 1] || '';
+      const amount = /^(\d+(?:\.\d+)?)\s*(gb|tb|기가|테라)/i.exec(w);
+      const priorCueIsOurs = i < 2 || slotOfRaw(out[i - 2]) !== 'storage';
+      const kind = memoryCue.test(next) ? 'memory' : diskCue.test(next) ? 'disk'
+        : priorCueIsOurs && memoryCue.test(prev) ? 'memory'
+        : priorCueIsOurs && diskCue.test(prev) ? 'disk'
+        : amount && (amount[2].toLowerCase() === 'tb' || Number(amount[1]) >= 64) ? 'disk' : 'memory';
+      if (kind !== target) return;
+      remove.add(i);
+      if ((kind === 'memory' ? memoryCue : diskCue).test(next)) remove.add(i + 1);
+      if (priorCueIsOurs && (kind === 'memory' ? memoryCue : diskCue).test(prev)) remove.add(i - 1);
+    });
+    out = out.filter((_, i) => !remove.has(i));
+    out.push(...incomingCapacity, incomingMemory ? 'RAM' : 'SSD');
+  } else replaceSlot('storage', incomingCapacity);
   replaceSlot('color', pick('color'));
   replaceSlot('condition', pick('condition'));
   replaceSlot('size', pick('size'));
@@ -1384,14 +1579,73 @@ function mergeRefinement(base, refinementText, opts) {
     const at = out.findIndex(w => slotOfRaw(w) === 'anchor');
     if (at >= 0) out.splice(at, 1, anchors[0]); else out.push(...anchors);
   }
-  // 브랜드 바꾸기 — 앞 구절 맨 앞의 이름 낱말(종류명이 아닌 것)을 바꾼다. 없으면 앞에 붙인다.
+  /*
+   * 브랜드 고르기 — 같은 종류를 그 브랜드로 찾는 말이다 (2026-11-16).
+   *   "노트북" → "삼성 제품만"          → 삼성 노트북     (예전: «삼성» 만 검색했다)
+   *   "삼성 노트북" → "LG로 바꿔"       → LG 노트북       (다른 회사의 이름·계열은 뺀다)
+   *   "아이폰 16 프로" → "삼성으로"     → 삼성 스마트폰   (아이폰의 번호·등급도 뺀다 — 종류만 남긴다)
+   *   "갤럭시 탭 S9" → "삼성 제품만"    → 갤럭시 탭 S9    (이미 삼성이다)
+   *   "노트북" → "아이폰으로"           → 아이폰          (다른 종류의 계열이면 새 상품이다)
+   *   "무선 이어폰" → "소니로"          → 소니 무선 이어폰 (꾸밈말은 남는다)
+   * 사전에 없는 이름("기가바이트로")은 예전 규칙이다 — 종류명 앞의 첫 이름 낱말을 바꾸고, 없으면 앞에 붙인다.
+   */
+  const bare = w => stripJosa(norm(w));
+  const isCategory = w => categoryNounOf(bare(w));
+  // 종류 이름 하나로 — "랩탑" → 노트북, "아이패드" → 태블릿, "삼성노트북" → 노트북, (브랜드 사전의) "시계" → 스마트워치.
+  const kindKey = k => {
+    const noun = CATEGORY_NOUNS.has(k) ? k : ([...CATEGORY_NOUNS].find(n => /^[가-힣]{2,}$/.test(n) && k.endsWith(n)) || k);
+    const fam = FAMILY_KIND.find(([, re]) => re.test(noun));
+    return HEAD_KIND[noun] || (fam && fam[0]) || (noun === '시계' ? '스마트워치' : noun);
+  };
+  const kindOfPhrase = words => {
+    const cat = words.find(isCategory);
+    if (cat) return kindKey(bare(cat));
+    const fam = FAMILY_KIND.find(([, re]) => re.test(words.join(' ')));
+    if (fam) return fam[0];
+    const line = words.map(w => brandOf(w, true)).find(b => b && b.line && b.kinds.length === 1);
+    return line ? kindKey(line.kinds[0]) : '';
+  };
+  const pickedBrands = new Set();
   info.brands.forEach(b => {
-    const surface = add.find(w => stripJosa(norm(w)) === b || norm(w).indexOf(b) === 0) || b;
-    const clean = surface.replace(/(?:으로|로)$/, '');
-    const first = out.findIndex(w => slotOfRaw(w) === 'word' && !categoryNounOf(stripJosa(norm(w))));
-    const hasCategory = out.some(w => categoryNounOf(stripJosa(norm(w))));
-    if (first >= 0 && hasCategory && first < out.findIndex(w => categoryNounOf(stripJosa(norm(w))))) out.splice(first, 1, clean);
-    else if (!out.some(w => stripJosa(norm(w)) === b)) out.unshift(clean);
+    const surface = add.find(w => brandKey(w) === b || norm(w).indexOf(b) === 0) || b;
+    const clean = splitPickParticle(surface).stem;
+    const want = brandOf(b, true);
+    pickedBrands.add(b);
+    if (out.some(w => brandKey(w) === b)) return;
+    const baseKind = kindOfPhrase(out);
+    if (want && want.line) {
+      const fam = FAMILY_KIND.find(([, re]) => re.test(b));
+      const wantKind = fam ? fam[0] : want.kinds.length === 1 ? kindKey(want.kinds[0]) : '';
+      if (wantKind && baseKind && wantKind !== baseKind) { out = [clean]; return; }
+    }
+    if (want) {
+      const sameAt = out.findIndex(w => { const o = brandOf(w, true); return o && o.canon === want.canon; });
+      if (sameAt >= 0) {
+        // 회사 이름만 있던 자리에 그 회사의 계열을 고르면 곁에 붙인다 ("LG 노트북" → "그램으로" → LG 그램 노트북).
+        if (want.line && !brandOf(out[sameAt], true).line) out.splice(sameAt + 1, 0, clean);
+        return;
+      }
+      if (out.some(w => brandOf(w, true) && !pickedBrands.has(brandKey(w)))) {
+        // 앞 상품은 다른 브랜드의 것이다 — 그 이름·계열·모델 번호·등급은 빼고 종류·꾸밈말·옵션만 남긴다.
+        const kept = out.filter(w => {
+          if (brandOf(w, true)) return pickedBrands.has(brandKey(w));
+          if (isCategory(w)) return true;
+          if (ONE_CHAR_LINE_WORDS.has(bare(w))) return false;
+          const slot = slotOfRaw(w);
+          if (slot === 'anchor' || slot === 'variant' || slot === 'base') return false;
+          // 종류를 모를 때는 이름 낱말이 곧 종류일 수 있다("LG 스탠바이미") — 그때만 남긴다.
+          return slot !== 'word' || isModifierWord(bare(w)) || !baseKind;
+        });
+        out = [clean].concat(baseKind && !kept.some(isCategory) ? [baseKind] : [], kept);
+        return;
+      }
+      out.unshift(clean);
+      return;
+    }
+    const catAt = out.findIndex(isCategory);
+    const first = out.findIndex(w => slotOfRaw(w) === 'word' && !isCategory(w) && !isModifierWord(bare(w)));
+    if (first >= 0 && catAt >= 0 && first < catAt) out.splice(first, 1, clean);
+    else out.unshift(clean);
   });
   // 그 밖(기능·규격 등)은 덧붙인다.
   if (optionsOnly) return out.join(' ').replace(/\s+/g, ' ').trim();

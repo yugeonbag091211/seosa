@@ -309,6 +309,7 @@ function resolve(state, hist, q, opts) {
   let replay;
   let intentHist = list;
   let excluded = [];
+  let excludedBrands = [];
   let absorbed = [];
   let folded;      // 이번에 상태로 접는 기록 칸
   // 예산의 범위 — 상태에서 이어받는다. 상태가 없으면 기록 창을 훑으며 처음부터 센다.
@@ -345,6 +346,7 @@ function resolve(state, hist, q, opts) {
 
     acc.c = mergeConstraints(state.constraints, null);
     excluded = (state.excludedConditions || []).slice();
+    excludedBrands = (state.excludedBrands || []).slice();
     folded.forEach(h => {
       fold(textOf(h));
       excluded = foldConditions(excluded, textOf(h));
@@ -393,6 +395,27 @@ function resolve(state, hist, q, opts) {
   // 이번 질문이 예산을 거두면 base 에서 미리 걷는다 — api/ai.js 는 그 위에 이번 질문을 그대로 겹친다.
   if (state) base = releasesBudget(q, qParsed) ? withoutBudget(acc.c) : acc.c;
 
+  // Signed brand exclusions survive the chat window. Explicit brand selection
+  // can reverse an earlier exclusion; a different product kind starts anew.
+  let brandThread = state ? String(state.product || '') : '';
+  const foldBrands = text => {
+    const own = productOf(text);
+    if (own && brandThread && productKindChanged(brandThread, own)) excludedBrands = [];
+    if (own) brandThread = own;
+    const identity = require('./_aiidentity');
+    const feedback = require('./_feedback').readFeedback(text);
+    const selected = identity.refinementOf(text);
+    const positives = selected.refinement ? selected.brands : [];
+    excludedBrands = excludedBrands.filter(name => !positives.some(b => b.toLowerCase() === name.toLowerCase()));
+    feedback.excludes.filter(e => identity.namesBrand(e.name)).forEach(e => {
+      if (!excludedBrands.some(name => name.toLowerCase() === e.name.toLowerCase())) excludedBrands.push(e.name);
+    });
+    excludedBrands = excludedBrands.slice(-8);
+  };
+  folded.forEach(h => foldBrands(textOf(h)));
+  const brandsBefore = excludedBrands.slice();
+  foldBrands(q);
+
   // 다음 상태 — 이번 질문까지 접는다.
   if (!base) {
     acc.c = emptyConstraints();
@@ -415,6 +438,7 @@ function resolve(state, hist, q, opts) {
     replay,
     intentHist,
     excludedBefore: state ? excluded : [],
+    excludedBrandsBefore: state ? brandsBefore : [],
     // 상품이 바뀌어 거둔 상품 전용 예산 (api/ai.js 가 한 줄로 알린다). 없으면 null.
     budgetDropped,
     next: {
@@ -422,6 +446,7 @@ function resolve(state, hist, q, opts) {
       // 모순(conflict)·완화 고지(budgetNotice)는 그 턴의 일이다. 다음 턴으로 넘기지 않는다.
       constraints: Object.assign({}, nextConstraints, { conflict: null, budgetNotice: '' }),
       excludedConditions: nextExcluded,
+      excludedBrands,
       absorbed: absorbed.slice(-MAX_ABSORBED),
       budgetScope: acc.scope === 'global' ? 'global' : '',
       budgetProduct: acc.scope === 'product' ? String(acc.product || '').slice(0, 120) : '',

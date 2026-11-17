@@ -1216,7 +1216,7 @@ async function resolveIntent(q, hist, view, budget, guest, intentHist, opts) {
    * 분류하면 검색 없이 말로만 답하고 카드가 사라졌다(2026-10-12 Stage A 실측). 앞 대화에 상품이
    * 있고 이번 말이 그 상품의 정정일 뿐이라는 것은 결정적으로 판정된다 — 쇼핑 경로를 유지한다.
    */
-  if (viaLlm && (viaLlm.intent === 'A' || viaLlm.intent === 'B') && det && (det.refinement || det.conditionFollowup)
+  if (viaLlm && (viaLlm.intent === 'A' || viaLlm.intent === 'B') && det && (det.refinement || det.conditionFollowup || det.brandExclusionFollowup)
       && det.stateQuery && det.query && needsShopContext(det.intent)) {
     return det;
   }
@@ -1514,6 +1514,52 @@ async function searchProducts(query, budgetMs) {
   } catch (e) {
     console.warn(`[ai] 상품 검색 실패: ${e.message}`);
     return { ok: false, items: [], reason: 'error' };
+  }
+}
+
+/**
+ * 관문에 넘길 «상품 구절». 식별 구절(identityText)이 실제 검색어를 품으면 그것(잘리지 않은 상품 구절),
+ * 아니면 실제 검색어다 — 후속 질문(«FE 모델로 바꿔줘»)의 식별 구절은 발화 그대로라 상품이 아니다.
+ */
+function aiGateQuery(cls, query) {
+  const id = String((cls && cls.identityText) || '');
+  const q = String(query || '');
+  if (!id) return q;
+  if (!q) return id;
+  const flat = s => s.normalize('NFKC').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+  // 검색어(서버가 뽑은 상품 구절)가 기준이다. 식별 구절은 대화 말투를 품으므로(«…얼마야», «그중에»)
+  // 검색어가 잘라 낸 모델 표기(«MX Master 3S» 의 3S 같은 영문·숫자 낱말)만 덧붙인다.
+  if (!flat(id).includes(flat(q))) return q;
+  const extra = id.normalize('NFKC').split(/\s+/)
+    .filter(w => /[0-9a-z]/i.test(w) && !flat(q).includes(flat(w)) && !/(?:원|만원|gb|tb)$/i.test(w));
+  return extra.length ? `${q} ${extra.join(' ')}` : q;
+}
+
+/**
+ * AI 검색 후보를 상품 정체성 관문(api/_product-gate.js)에 통과시킨다.
+ * 관문이 없거나 실패하면 원래 후보를 그대로 둔다 — 뒤의 식별 계약(AIID)이 여전히 거른다.
+ */
+function gateAiCandidates(identityQuery, items) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return list;
+  try {
+    // identityOnly — 부속·다른 기기·다른 모델 번호/세대/변형 같은 구조 판정만. 용량·색·예산·상태는 AI 가 직접 다룬다.
+    const productGate = require('./_product-gate');
+    // Preserve potentially useful alternatives, but never present a known RAM
+    // or storage contradiction as a match. Missing memory remains unknown.
+    const full = productGate.gateItems(String(identityQuery || ''), list);
+    const ramConflict = new Set(full.rejected.filter(r => r.hard.some(h =>
+      /^(?:memory_mismatch|capacity_mismatch):/.test(h))).map(r => r.item));
+    const gate = productGate.gateItems(String(identityQuery || ''), list.filter(item => !ramConflict.has(item)), { identityOnly: true });
+    if (gate.rejected.length) {
+      console.log(`[ai] 정체성 관문 제외 ${gate.rejected.length}/${list.length}건 — `
+        + gate.rejected.slice(0, 3).map(r => `${String(r.item.title).slice(0, 20)}[${r.hard[0]}]`).join(' · '));
+    }
+    // 순서는 공급원·식별 등급 순서(orderAiSearchCandidates)를 그대로 두고, 확인된 상품만 앞으로 모은다(안정 분할).
+    return gate.kept.filter(it => it.identity !== 'unverified').concat(gate.kept.filter(it => it.identity === 'unverified'));
+  } catch (e) {
+    console.warn(`[ai] 정체성 관문 실패(원래 후보 유지): ${e.message}`);
+    return list;
   }
 }
 
@@ -5263,6 +5309,19 @@ module.exports = async function handler(req, res) {
       ? FB.collectExcludes(q, hist)
       : [];
 
+    // The signed state is authoritative for recognized brand exclusions:
+    // it also records explicit reversal and a change of product kind.
+    const activeBrands = (conv.next && conv.next.excludedBrands) || [];
+    for (let i = excludes.length - 1; i >= 0; i--) {
+      const e = excludes[i];
+      if (!AIID.namesBrand(e.name)) continue;
+      if (!activeBrands.some(name => name.toLowerCase() === e.name.toLowerCase())) excludes.splice(i, 1);
+      else e.hard = true;
+    }
+    for (const name of activeBrands) {
+      if (!excludes.some(e => e.name.toLowerCase() === name.toLowerCase()))
+        excludes.push({ name, hard: true, source: 'conversation', evidence: name + ' 제외' });
+    }
     const wanted = (!intent || needsShopContext(intent)) ? collectWantedFeatures(q, hist) : [];
 
     /*
@@ -5316,6 +5375,8 @@ module.exports = async function handler(req, res) {
         const eachBudget = Math.max(1, Math.min(AI_SEARCH_TIMEOUT_MS,
           budget.remaining() - ANSWER_RESERVE_MS));
         responses = await Promise.all(comparison.map(term => searchProducts(term, eachBudget)));
+        // 비교 양쪽도 검색 화면과 같은 상품 정체성 관문을 지난 후보에서만 고른다 (api/_product-gate.js).
+        responses.forEach((result, i) => { if (result && result.ok) result.items = gateAiCandidates(comparison[i], result.items); });
         const toNorm = x => normItem(fromSearchResult(x));
         const aligned = !hardBudget && responses.every(result => result.ok)
           ? CMP.pickAlignedPair(responses.map(result => result.items), comparison, AIID, toNorm)
@@ -5425,6 +5486,13 @@ module.exports = async function handler(req, res) {
 
     if (intent && needsShopContext(intent) && shouldSearch(query, view, items)) {
       const found = await searchProducts(query, Math.max(1, budget.remaining() - ANSWER_RESERVE_MS));
+      /*
+       * 상품 정체성 관문 (2026-11-15, api/_product-gate.js) — /api/search 화면·저장과 같은 판정.
+       * 오프라인 재현(동결 카탈로그·게스트 경로): «아이패드 10세대» 에 11세대용 필름·8세대 아이패드가,
+       * «아이폰 16 프로 → 256GB로» 에 35,000원짜리 목업이 카드로 나갔다. 부속·다른 모델 번호·세대·변형·
+       * 용량이 다른 후보는 식별 계약(AIID) 이전에 뺀다. 남는 것이 없으면 «찾지 못했다» 로 정직하게 답한다.
+       */
+      if (found.ok && found.items.length) found.items = gateAiCandidates(aiGateQuery(cls, query), found.items);
       if (!found.ok) {
         searchState = 'failed';
       } else if (!found.items.length) {
@@ -7381,6 +7449,13 @@ module.exports = async function handler(req, res) {
       };
       if (guest) body.guest = true;
       return res.json(withTurnSig(body));
+    }
+
+    if (searchState === 'empty' && !cards.length) {
+      const body = { text: '조회한 상품 중 요청하신 조건에 맞는 상품을 찾지 못했어요.',
+        intent: resolvedCanonicalIntent, degraded: true };
+      if (guest) body.guest = true;
+      return res.json(withTurnSig(keepPrevRef(body)));
     }
 
     if (providerExhausted) {

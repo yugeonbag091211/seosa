@@ -1221,6 +1221,10 @@ function classify(text, hist) {
    *   예전에는 "검정색" 자체를 검색하거나 앞 상품만 이어받고 방금 고른 옵션을 버렸다.
    *   덮어쓰기·덧붙이기 규칙은 api/_aiidentity.js mergeRefinement 에 한 곳으로 둔다.
    */
+  // A brand-only exclusion may leave only the framing noun "브랜드".
+  // Do not search for that noun; inherit the previously requested product type.
+  if (AIID.splitNegations(itemText).negated.some(n => AIID.namesBrand(n.text))
+      && /^(?:브랜드|제품|상품|모델)(?:은|는)?$/u.test(positiveSpan.trim())) query = '';
   const ownQuery = !!query;   // 이 메시지 자체에서 뽑은 검색어인가
   /*
    * "아이폰 17 프로 256GB 있으면 그중에 제일 싼 것" 의 '그중' 은 같은 문장 안의 상품을 가리킨다.
@@ -1238,9 +1242,26 @@ function classify(text, hist) {
    * "저장공간이 다르면 … 비교하지" 의 '다르면'·'비교하지' 를 상품 이름으로 읽으면 앞 상품을 버리고
    * 그 낱말로 새로 검색한다. 조사는 남긴다 — "삼성으로" 의 '(으)로' 가 브랜드 바꾸기의 표시다.
    */
-  const refineText = contentText(positiveSpan);
+  // Selecting a brand while preserving the budget is a shopping follow-up,
+  // not a generic instruction. Strip only an existing-constraint preamble.
+  const refineText = contentText(positiveSpan).replace(
+    /^(?:(?:예산|가격|금액|조건)(?:은|는|을|를)?\s*(?:그대로\s*)?(?:두고|유지하고)|(?:기존|앞의)\s*(?:예산|가격|조건)(?:은|는|을|를)?\s*(?:그대로\s*)?유지하고)\s*/u,
+    ''
+  ).trim();
+  const priorProduct = Array.isArray(hist) && hist.length > 0 ? conversationProduct(hist) : '';
+  const hasPriorProduct = !!priorProduct && isProductQuery(priorProduct);
+  const refineProbe = AIID.refinementOf(refineText);
+  const choosesBrand = hasPriorProduct && refineProbe.refinement && refineProbe.brands.length > 0
+    && /(?:제품|모델|브랜드|거|걸)?\s*(?:만|으로|로|걸로)(?:\s|$)/u.test(act);
+  // Excluding a named brand changes the shopping candidate set. Do not turn
+  // this into a chat-only reply or a search for the excluded manufacturer.
+  const excludesBrand = hasPriorProduct && AIID.splitNegations(itemText).negated
+    .some(n => AIID.namesBrand(n.text));
+  if (intent === 'B' && (choosesBrand || excludesBrand) && !HOWTO_RE.test(act) && !KNOWLEDGE_RE.test(act))
+    intent = 'C';
   const refinement = ownQuery && !contextualFollowup && intent !== 'A' && intent !== 'B'
-    && Array.isArray(hist) && hist.length > 0 && AIID.refinementOf(refineText).refinement;
+    && Array.isArray(hist) && hist.length > 0 && refineProbe.refinement
+    && (!excludesBrand || choosesBrand || refineProbe.brands.length === 0);
   /*
    * 식별 구절 — 검색어는 다섯 낱말·40자로 잘리지만, 상품 식별(api/_aiidentity.js)은 사용자가
    * 실제로 말한 상품 구절 전체로 한다. 잘린 검색어로 계약을 만들면 "MX Master 3S" 의 3S 가
@@ -1280,7 +1301,7 @@ function classify(text, hist) {
   // 취향 낱말도 요청 구절에서만 센다 ("역대 최저가라고 단정하지 마" 의 '최저가' 는 가격 중시가 아니다).
   const actCons = act ? parseConstraints(act) : null;
   const constraintChange = hasBudget || !!(actCons && (actCons.priority || actCons.gift)) || !!extractUseCase(act)
-    || (!!act && CONDITION_WORD_RE.test(itemText));
+    || (!!act && CONDITION_WORD_RE.test(itemText)) || excludesBrand || choosesBrand;
   const requestsData = explicit && (intent === 'D' || intent === 'E' || NEW_REQUEST_RE.test(act));
   const conversational = ['C', 'D', 'E'].includes(intent) && directive && !ownProduct && !requestsData
     && (!constraintChange || !prior);
@@ -1337,6 +1358,7 @@ function classify(text, hist) {
     intent, query, source: 'heuristic', confidence, contextualFollowup,
     // 검색어가 이번 발화만으로 나왔는가 / 앞 대화 상태(누적 옵션 포함)에서 나왔는가 — api/ai.js resolveIntent 가 쓴다.
     ownQuery: ownQuery && !stateQuery, stateQuery, refinement: !!refinement,
+    brandExclusionFollowup: !!(excludesBrand && stateQuery),
     aboutPrevious,
     wantsAlternative: ['C', 'D'].includes(intent) && ALTERNATIVE_RE.test(s) && AIID.productEvidence(positiveSpan) === 0,
     identityText: query ? String(identityText || '').slice(0, 200) : '',

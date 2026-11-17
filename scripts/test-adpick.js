@@ -448,8 +448,8 @@ check(db.price_history.length === 0 && db.products.length === 0,
 
 reset();
 await saveProducts('여행용 캐리어', [
-  { ...ad(901, 9900), lprice: 9900, _source: 'api' },
-  { ...ad(902, 8800), lprice: 8800, _source: 'stale-cache' }
+  { ...ad(901, 9900, { title: '여행용 캐리어 테스트 상품 901' }), lprice: 9900, _source: 'api' },
+  { ...ad(902, 8800, { title: '여행용 캐리어 테스트 상품 902' }), lprice: 8800, _source: 'stale-cache' }
 ], { from: 'api' });
 check(db.price_history.length === 1,
   '★ 같은 배치에서 신선한 항목만 저장한다 (배치 하나로 뭉뚱그리지 않는다)',

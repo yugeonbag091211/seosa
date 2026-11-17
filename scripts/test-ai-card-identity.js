@@ -155,12 +155,10 @@ function item(id, title, price, mall) {
   }
 
   /* ================================================================ */
-  section('D. 다른 용량 — 카드에 두되 라벨을 붙인다 (NEAR tier)');
+  section('D. 명시된 저장공간과 다른 후보는 카드에서 제외');
   {
     /*
-     * 용량 다름(NEAR) 은 모델이 바뀐 것이 아니라 같은 모델의 다른 변형이다. 카드에는 두고 라벨만 붙인다.
-     * 이는 "블랙 추천" 뒤 "이 중에서 가장 싼 것" 에 두 색상을 비교할 수 있어야 하는 정책
-     * (test-ai-pipeline [21]) 과도 같은 규칙이다 — SIBLING 만 거르고 NEAR 는 라벨만 붙인다.
+     * 사용자가 용량을 명시한 경우 다른 용량은 라벨만 붙여 권하지 않는다.
      */
     feed = [
       item('d1', 'Apple 아이폰 17 Pro 256GB 블랙', 1599000),
@@ -169,8 +167,7 @@ function item(id, title, price, mall) {
     const r = await ask({ question: '아이폰 17 프로 256GB 추천', chatHistory: [{ role: 'user', text: '아이폰 17 프로 256GB 추천' }] });
     const by = Object.fromEntries(r.cards.map(c => [c.productId, c]));
     ok(by.d1 && !by.d1.identityNote, '요청한 용량(256GB) 카드는 라벨이 없다', by.d1 && by.d1.identityNote);
-    ok(by.d2 && /용량/.test(String((by.d2 || {}).identityNote || '')),
-      '다른 용량(512GB) 카드는 「용량 다름」 라벨', by.d2 && by.d2.identityNote);
+    ok(!by.d2, '명시한 저장공간과 다른 512GB 카드는 제외한다', by.d2);
   }
 
   /* ================================================================ */
