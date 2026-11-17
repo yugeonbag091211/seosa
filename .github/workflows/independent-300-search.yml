@@ -1,0 +1,67 @@
+name: Independent 300 synthetic search quality audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/independent-300-search.yml'
+      - 'scripts/search-eval/run-independent-300-20261117.cjs'
+      - 'reports/search-eval/independent-300-20261117.json'
+      - 'reports/search-eval/independent-300-preregistration-20261117.json'
+      - 'reports/search-eval/independent-300-seeds-20261117.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify all API implementation bytes match preregistered commit
+        run: git diff --exit-code 84feb61587272070d4d06654a095b535422279d1 HEAD -- api
+      - name: Validate and execute 200 synthetic development questions
+        run: node scripts/search-eval/run-independent-300-20261117.cjs --out independent-300-development-results.json --enforce
+      - name: Preserve failed as well as passing records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: independent-300-development-200
+          path: independent-300-development-results.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  holdout:
+    needs: development
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify holdout uses exact preregistered API code
+        run: git diff --exit-code 84feb61587272070d4d06654a095b535422279d1 HEAD -- api
+      - name: Evaluate 100 held-out product families once
+        run: node scripts/search-eval/run-independent-300-20261117.cjs --holdout --out independent-300-holdout-results.json --enforce
+      - name: Preserve unseen holdout results even if benchmark fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: independent-300-holdout-100
+          path: independent-300-holdout-results.json
+          if-no-files-found: warn
+          retention-days: 30

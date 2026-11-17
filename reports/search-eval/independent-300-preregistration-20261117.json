@@ -1,0 +1,39 @@
+{
+  "version": "2026-11-17",
+  "status": "FROZEN_BEFORE_FIRST_EVALUATION",
+  "dataset_path": "reports/search-eval/independent-300-20261117.json",
+  "dataset_git_blob_sha1": "dd5782d0f37978a3c0d0b1c848168cd66899ffb0",
+  "dataset_items": 300,
+  "development_items": 200,
+  "holdout_items": 100,
+  "disjoint_families": {
+    "development": 40,
+    "holdout": 20
+  },
+  "base_code_commit": "84feb61587272070d4d06654a095b535422279d1",
+  "split_rule": "N01..N40 (200 questions) development; N41..N60 (100 questions) holdout; each question 5 candidates",
+  "source": "synthetic handcrafted seller-style listings only, not live affiliate responses",
+  "preexecution_checks": [
+    "Unique 300 IDs and normalized query texts",
+    "No exact text collision with previously executed 120 questions",
+    "0 manually fabricated price-boundary contradictions under explicit cap",
+    "No family overlap between development and holdout",
+    "12 no-qualifying-product negative controls with zero correct candidates",
+    "All 300 inputs present and fully labeled"
+  ],
+  "safety": "No production API, no database access, no paid AI calls; global.fetch must be blocked",
+  "grading": [
+    "FAIL if any displayed or saved product contradicts a condition",
+    "PASS if at least one correct target appears in top 10 and zero wrong cards appear; report misses separately",
+    "PASS with zero displayed/saved when no eligible product exists among supplier candidates",
+    "UNVERIFIED is not PASS; label evidence ambiguity must be audited",
+    "Never use holdout results to fix code then call retest independent",
+    "Do not alter dataset or labels after first evaluation; corrections are separately disclosed"
+  ],
+  "limitations": [
+    "Templated synthetic listings cannot establish real provider precision",
+    "Holdout questions are present in the code repository but source must not be tuned after inspecting them",
+    "Two exact correct candidates exist per normal fixture question; zero in negative-control queries",
+    "Overall accuracy is candidate-pool-dependent; real supply coverage and costs are unmeasured"
+  ]
+}
