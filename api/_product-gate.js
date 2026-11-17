@@ -529,9 +529,12 @@ function parseQuery(text, opts = {}) {
     && !/(?:용|전용|호환)$/.test(tokens[i + 1] || '') && !/^(?:용|전용|호환|백업용)$/.test(tokens[i + 1] || ''));
   // In "9010e 복합기에 쓸 카트리지", 복합기 is the host type.
   // The seller may simply say "9010e용 카트리지" without restating 복합기.
-  // Keep SKU model/line and the specifically requested part as strict constraints.
+  // An explicit Korean "X에 쓸" host noun can be outside the 16 closed
+  // device taxonomy types; it is still not the name of the sold part.
+  const hostNoun = (raw.match(/(?:^|\s)([가-힣]{2,18})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s)/u) || [])[1] || '';
+  // Keep named SKU model/line and the specifically requested part strict.
   const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand }).filter(w =>
-    !(wantsAccessory && TAX.explicitType(w) && w !== head));
+    !(wantsAccessory && w !== head && (w === hostNoun || TAX.explicitType(w))));
   // 한글 이름에 영문 한 글자가 붙은 이름 («제로S», «타워X») 은 한 덩어리다.
   for (const m of idText.matchAll(/([가-힣]{2,})([a-z])(?![a-z0-9])/gi)) {
     const compound = (m[1] + m[2]).toLowerCase();
