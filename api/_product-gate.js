@@ -923,6 +923,11 @@ function judge(spec, item, opts = {}) {
     const nounIsHead = !!spec.head && (nounFlat === spec.head || headGroup.includes(nounFlat)
       || spec.head.endsWith(nounFlat) || nounFlat.endsWith(spec.head));
     const unbundled = earbudCaseFree(stripBundleItems(principalTitle));
+    // The sold target (not an included gift) is a replacement part, even when
+    // a broad classifier does not know the household object's product type.
+    // Actual accessory searches are handled by the wantsAccessory branch.
+    const soldReplacement = /(?:내솥|뚜껑|충전\s*케이블|깔창|신발끈)(?:\s*(?:단품|정품|호환(?:\s*제품)?|교체용|리필|\d+개입))*\s*$/i.exec(unbundled);
+    if (soldReplacement) hard.push(`sold_replacement:${soldReplacement[0].trim()}`);
     const deviceNouns = LST.collectNouns(T.main).filter(n => n.kind === 'device' && n.type === spec.type);
     // 범주가 정해지지 않은 검색에서 머리 명사가 부속 명사 «뒤» 에 오면 머리 명사가 판매 대상이다
     // («여권 지갑 … 카드 홀더 동전 지갑», «상판분리 바베큐 전기그릴 … 생선구이기»). 상품명은 머리가 끝에 온다.
@@ -1237,6 +1242,18 @@ function judge(spec, item, opts = {}) {
     if (m && Number(m[1]) !== spec.people) hard.push(`people_mismatch:${spec.people}≠${m[1]}`);
     else if (!m) soft.push('people_unverified');
   }
+  if (spec.apparelSize) {
+    const actual = apparelSize(title);
+    if (actual && actual !== spec.apparelSize)
+      hard.push(`apparel_size_mismatch:${spec.apparelSize}≠${actual}`);
+    else if (!actual) soft.push('apparel_size_unverified');
+  }
+  if (spec.beddingSize) {
+    const actual = beddingSize(title);
+    if (actual && actual !== spec.beddingSize)
+      hard.push(`bedding_size_mismatch:${spec.beddingSize}≠${actual}`);
+    else if (!actual) soft.push('bedding_size_unverified');
+  }
   if (spec.year && !opts.stored) {
     const years = [...title.matchAll(/(?<!\d)(20[12]\d)(?!\d)/g)].map(m => m[1]);
     if (years.length && !years.includes(spec.year)) hard.push(`year_mismatch:${spec.year}`);
@@ -1302,7 +1319,7 @@ function judge(spec, item, opts = {}) {
 const AI_EVIDENCE_ONLY = /^(?:identity_word_absent|category_absent|line_absent|model_missing|line_number_unverified|line_number_missing|implausible_device_price)/;
 
 // 저장(분류)을 막는 soft — «이 키워드의 상품» 이라고 기록할 근거가 모자란 경우.
-const IDENTITY_SOFT = /^(?:principal_unverified|brand_unverified|accessory_possible|identity_word_unverified|model_option_suffix|category_absent|measure_unverified|waterproof_unverified|condition_unverified|excluded_brand_unverified|price_unverified|wireless_unverified|filter_grade_unverified|diameter_unverified|material_unverified)/;
+const IDENTITY_SOFT = /^(?:principal_unverified|brand_unverified|accessory_possible|identity_word_unverified|model_option_suffix|category_absent|measure_unverified|waterproof_unverified|condition_unverified|excluded_brand_unverified|price_unverified|wireless_unverified|filter_grade_unverified|diameter_unverified|material_unverified|apparel_size_unverified|bedding_size_unverified)/;
 
 /**
  * 검색 결과 판정. relevance 는 _search.rankItems 가 붙인 값을 쓴다(정렬 근거).
