@@ -1277,11 +1277,11 @@ function recordedPrice(productId) {
    * ================================================================ */
   section('회귀. stale-cache / none 출처는 저장하지 않는다');
   reset();
-  let s = await saveProducts('테스트', [{ productId: '5001', mall: '쿠팡', title: 't', lprice: 1000 }],
+  let s = await saveProducts('테스트', [{ productId: '5001', mall: '쿠팡', title: '테스트 상품', lprice: 1000 }],
                              { from: 'stale-cache' });
   check(s.skipped === true && db.upserts.price_history.length === 0,
         'stale-cache 는 기록하지 않음', JSON.stringify(s));
-  s = await saveProducts('테스트', [{ productId: '5001', mall: '쿠팡', title: 't', lprice: 1000 }],
+  s = await saveProducts('테스트', [{ productId: '5001', mall: '쿠팡', title: '테스트 상품', lprice: 1000 }],
                          { from: 'api' });
   check(db.upserts.price_history.length === 1, 'api 출처는 기록함');
 

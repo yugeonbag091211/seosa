@@ -23,7 +23,8 @@ const DEVICE_NOUNS = [
   // ("공기계" = an unactivated device of ANY kind — tablets too — so it is not a phone noun)
   ['스마트폰', /(?:스마트폰|휴대폰|핸드폰|자급제폰|(?:아이폰|iphone)\s*(?:\d{1,2}|se)(?:\s*(?:프로\s*맥스|pro\s*max|프로|pro|플러스|plus|미니|mini|e))?|갤럭시\s*(?:s|a|m|z|퀀텀|와이드|점프|버디)\s*\d{1,2}|갤럭시\s*(?:z\s*)?(?:폴드|플립)\s*\d|(?:픽셀|pixel)\s*\d{1,2}a?|sm-[saf]\d{3}[a-z]?)/gi],
   ['태블릿', /(?:태블릿(?:\s*pc)?|아이패드|ipad|갤럭시\s*탭|galaxy\s*tab|아이디어\s*탭|idea\s*tab|리전\s*탭|(?:레노버|샤오미|레드미|아이뮤즈|엠피지오)\s*(?:패드|탭|tab|pad)|redmi\s*pad|xiaomi\s*pad|뮤패드|엠탭)/gi],
-  ['노트북', /(?:노트북|랩탑|laptop|맥북|macbook|(?<!\d\s?)그램(?!\s*(?:당|수))|갤럭시\s*북\s*\d?|galaxy\s*book|비보북|vivobook|젠북|zenbook|아이디어\s*패드|ideapad|씽크\s*패드|thinkpad|크롬북|chromebook|인스피론|inspiron|파빌리온|pavilion|엘리트북|elitebook|프로북|probook|울트라\s*pc)/gi],
+  // "500그램" is a weight, but a model year in front ("LG전자 2025 그램 16") is the laptop line.
+  ['노트북', /(?:노트북|랩탑|laptop|맥북|macbook|(?:(?<=(?:19|20)\d\d\s?)|(?<!\d\s?))그램(?!\s*(?:당|수))|갤럭시\s*북\s*\d?|galaxy\s*book|비보북|vivobook|젠북|zenbook|아이디어\s*패드|ideapad|씽크\s*패드|thinkpad|크롬북|chromebook|인스피론|inspiron|파빌리온|pavilion|엘리트북|elitebook|프로북|probook|울트라\s*pc)/gi],
   // v3.4: AirPods Max is an over-ear headphone (listed before the earphone row).
   ['헤드폰', /(?:헤드폰|헤드셋|headphones?|headset|에어팟\s*(?:맥스|max)|airpods\s*max)/gi],
   ['이어폰', /(?:이어폰|이어버드|earbuds?|에어팟(?!\s*(?:맥스|max))|airpods(?!\s*max)|버즈(?=\s*\d|\s*(?:프로|pro|fe|라이브|live|플러스|\+|$|\s))|buds(?=\s*\d|\s*(?:pro|fe|live|\+)|\b)|\btws\b|넥밴드|골전도|이어\s*커프|이어\s*클립)/gi],
@@ -76,6 +77,10 @@ const OTHER_DEVICE = /(?:스마트\s*tv|(?<![a-z])tv(?![a-z])|티비|텔레비�
 // ("다이슨 v10 튜브 호환 교체품 ... 청소기").
 const MEDIA = /(?:교본|악보|도서|\[?e-?book\]?|e북|레슨\s*북|강습\s*책|수록곡|라디오|mp3)(?!\s*(?:증정|포함|제공|동봉))/i;
 const REPLACEMENT_PART = /(?:교체품|호환품|교체용|호환용|리필용|대체품)(?!\s*(?:증정|포함|제공|동봉))/;
+// v3.5 (2026-11-14, 100-question offline Q020): tickets, passes and vouchers are not
+// goods. «크라이스트처치-그레이마우스 TranzAlpine 열차 티켓» passed as a MOUSE because the
+// place name contains «마우스». A bundled voucher («상품권 증정») is still an extra.
+const NON_GOODS = /(?:티켓|입장권|항공권|승차권|탑승권|(?:열차|기차|버스)\s*(?:표|패스)|숙박권|이용권|관람권|패키지\s*여행|여행\s*상품|투어(?!링)|기프티콘|모바일\s*(?:쿠폰|교환권)|상품권|교환권)(?!\s*(?:증정|포함|제공|동봉|추가))/i;
 
 const INCLUDED = /(?:포함|증정|사은품|동봉|구성품|무료\s*제공|제공|증정품|덤)/i;
 // Devices that other products are made FOR (compatibility hosts).
@@ -158,6 +163,7 @@ function principalItem(title) {
   const phrase = mainPhrase(title);
   const whole = stripTaxonomy(String(title || '').normalize('NFKC'));
   if (MEDIA.test(whole)) return { kind: 'accessory', type: null, noun: 'media', phrase };
+  if (NON_GOODS.test(whole)) return { kind: 'accessory', type: null, noun: 'non_goods', phrase };
   if (REPLACEMENT_PART.test(whole)) return { kind: 'accessory', type: null, noun: 'replacement_part', phrase };
   if (FITS_SENTENCE.test(whole)) return { kind: 'accessory', type: null, noun: 'fits_sentence', phrase };
   const nouns = collectNouns(phrase);

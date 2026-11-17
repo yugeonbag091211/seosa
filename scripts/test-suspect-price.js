@@ -118,7 +118,7 @@ const { kstToday } = require('../api/_price');
 const kst = msAgo => kstToday(new Date(Date.now() - msAgo));
 
 const PID = '7001', VID = '90001', MALL = '쿠팡';
-const TITLE = '테스트 노트북 16인치 고성능 자급형';
+const TITLE = '테스트 전기포트 1.7L 스테인리스 고급형';
 const LINK = `https://link.coupang.com/re/AFFSDP?lptag=AF8789251&pageKey=${PID}&itemId=80001&vendorItemId=${VID}`;
 function hist(daysAgo, price) {
   return { product_id: PID, mall: MALL, title: TITLE, price, link: LINK, vendor_item_id: VID, item_id: '80001',
@@ -126,7 +126,7 @@ function hist(daysAgo, price) {
 }
 function seed(prices) {
   db.price_history = prices.map(([d, p]) => hist(d, p));
-  db.products = [{ id: 1, product_id: PID, mall: MALL, keyword: '테스트 노트북', title: TITLE, lprice: 500000, oprice: 500000, save_pct: 0,
+  db.products = [{ id: 1, product_id: PID, mall: MALL, keyword: '테스트 전기포트', title: TITLE, lprice: 500000, oprice: 500000, save_pct: 0,
     link: LINK, image: 'https://img.example/a.jpg', collected_at: iso(DAY), item_id: '80001', vendor_item_id: VID, mall_label: '' }];
   db.hotdeals = [];
 }
@@ -150,7 +150,7 @@ const fs = require('fs');
 
   section('1) 저장 — products 500,000 유지 · 원장에는 90,000 기록 (원래 동작)');
   seed(ACCEPTED);
-  const saved = await shop.saveProducts('테스트 노트북', [observed(90000)], { from: 'api', source: 'search' });
+  const saved = await shop.saveProducts('테스트 전기포트', [observed(90000)], { from: 'api', source: 'search' });
   ok(saved.suspect === 1, 'suspect 1건으로 판정', saved);
   ok(db.products[0].lprice === 500000, 'products 현재가는 500,000 그대로', db.products[0].lprice);
   const todayRow = db.price_history.find(r => r.recorded_date === kstToday() && r.vendor_item_id === VID);
@@ -159,7 +159,7 @@ const fs = require('fs');
   section('2) 검색 /api/search — 500,000');
   seed(ACCEPTED);
   searchItems = [observed(90000)];
-  const s = await call(search, { keyword: '테스트 노트북' });
+  const s = await call(search, { keyword: '테스트 전기포트' });
   const sItem = (s.body || []).find(x => x.productId === PID);
   ok(sItem && sItem.lprice === 500000, '★ 검색 결과 현재가 500,000', sItem && sItem.lprice);
   ok(sItem && sItem.priceWithheld === true, '확인 전 급변임을 표시한다 (priceWithheld)');
@@ -193,7 +193,7 @@ const fs = require('fs');
   ok(aiItem.lprice === 500000, '★ AI 후보 현재가 500,000', aiItem.lprice);
   ok(ai.toCard(aiItem).lprice === 500000, '★ AI 상품 카드 가격 500,000', ai.toCard(aiItem));
   ok(!/90000/.test(JSON.stringify(aiItem)), 'AI 항목 JSON 에 90,000 이 실리지 않는다 (원 관측값은 열거되지 않는 속성)');
-  await shop.saveProducts('테스트 노트북', [aiItem], { from: 'api', source: 'ai' });
+  await shop.saveProducts('테스트 전기포트', [aiItem], { from: 'api', source: 'ai' });
   const aiLedger = db.price_history.find(r => r.recorded_date === kstToday() && r.vendor_item_id === VID);
   ok(aiLedger && aiLedger.price === 90000, '★ 저장이 화면값(500,000)이 아니라 실제 관측(90,000)을 원장에 남긴다', aiLedger);
   const stats = await loadStats([{ productId: PID, mall: MALL, vendorItemId: VID }], { strictOption: true });
@@ -210,11 +210,11 @@ const fs = require('fs');
 
   section('6) 승격 — 다음 날 같은 수준이 다시 관측되면 90,000 이 현재가');
   seed(ACCEPTED.slice(0, 7).concat([[1, 90000]]));   // 어제 90,000(suspect) · 오늘 다시 90,000
-  const promo = await shop.saveProducts('테스트 노트북', [observed(90000)], { from: 'api', source: 'search' });
+  const promo = await shop.saveProducts('테스트 전기포트', [observed(90000)], { from: 'api', source: 'search' });
   ok(promo.suspect === 0 && db.products[0].lprice === 90000, '저장: products 가 90,000 으로 승격', { promo, lprice: db.products[0].lprice });
   seed(ACCEPTED.slice(0, 7).concat([[1, 90000]]));
   searchItems = [observed(90000)];
-  const s2 = await call(search, { keyword: '테스트 노트북' });
+  const s2 = await call(search, { keyword: '테스트 전기포트' });
   const s2Item = (s2.body || []).find(x => x.productId === PID);
   ok(s2Item && s2Item.lprice === 90000 && !s2Item.priceWithheld, '★ 검색 현재가 90,000 (보류 아님)', s2Item);
   const modal2 = await call(history, { productId: PID, mall: MALL, vendorItemId: VID, deal: '1' });

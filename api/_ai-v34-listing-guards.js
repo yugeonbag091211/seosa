@@ -59,12 +59,18 @@ function mixedListing(title, category, userText = '') {
   }
   // «공기청정기/가습기/건조기 믿고사는 …»: three short category words in a row
   const m = t.match(/([가-힣]{2,6})\s*\/\s*([가-힣]{2,6})\s*\/\s*([가-힣]{2,6})/);
-  if (m && ![m[1], m[2], m[3]].every(w => COLOR_WORD.test(w)) && [m[1], m[2], m[3]].some(w => explicitType(w) === category))
+  // (2026-11-15) Without a category, explicitType('경량') === '' made every
+  // slash-formatted title («… / 블랙 / 무선 헤드폰 / 경량 / …») a store page.
+  if (m && category && ![m[1], m[2], m[3]].every(w => COLOR_WORD.test(w)) && [m[1], m[2], m[3]].some(w => explicitType(w) === category))
     return new Set([m[1], m[2], m[3]].map(w => explicitType(w) || w)).size >= 3;
   return false;
 }
-const PUBLICATION = /(?:도서|서적|교재|교본|입문서|가이드북|안내서|매거진|잡지|e-?book|이북|고릅니다|하는\s*법|의\s*모든\s*것|완벽\s*가이드|따라\s*하기|체험\s*(?:키트|클래스)|원데이\s*클래스)/i;
-function publication(title) { return PUBLICATION.test(SOLD(title)); }
+const PUBLICATION = /(?:도서|서적|교재|교본|입문서|가이드북|안내서|매거진|잡지|e-?book|이북|고릅니다|하는\s*법|의\s*모든\s*것|완벽\s*가이드|사용\s*설명서|사용\s*매뉴얼|user\s*manual|따라\s*하기|체험\s*(?:키트|클래스)|원데이\s*클래스)/i;
+function publication(title) {
+  // A manual supplied WITH a device is not itself the sold item.
+  const text = SOLD(title).replace(/(?:사용\s*설명서|사용\s*매뉴얼|user\s*manual)\s*(?:포함|동봉|증정|제공)/gi, ' ');
+  return PUBLICATION.test(text);
+}
 // A seller can keyword-stuff an unrelated device with a sought-after brand:
 // '스마트헤드셋 V1000 ... 1위 헤드셋 소니 블루투스 헤드셋'.
 // Only reject when an actual device+model is named BEFORE the promotional

@@ -1,0 +1,15 @@
+{
+  "sealedAt": "2026-11-15T14:28:04.858Z",
+  "gitHeadAtSeal": "5ad245f3862dbe7dff0bfa9b701e16c44d879d8c",
+  "note": "Replay criteria written from the cache keyword text only, before inspecting the cached items. Candidates are real Coupang/ADPICK responses read read-only from production coupang_search_cache/adpick_search_cache on 2026-11-15 (not committed: provider terms). Graded once.",
+  "files": {
+    "scripts/search-eval/questions-replay.js": "962006e28e5a8652179fadc761c98e2c208ccd0d83d8909ea090e6c3ea7aa01e",
+    "scripts/search-eval/spec.js": "2191108f617883880acb43ae438744c69fa8af4146123f198806aba291ec22f6"
+  },
+  "cache": {
+    "coupangKeywords": 998,
+    "adpickKeywords": 378,
+    "readAt": "2026-11-15T13:5xZ"
+  },
+  "count": 90
+}

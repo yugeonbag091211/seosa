@@ -1941,7 +1941,7 @@ module.exports = {
   scoreTitle, rankItems, dedupeItems, sortByRelevance, isRelevant,
   identityMatchScore, isIdentityMatch,
   // AI 경로의 식별 계약(api/_aiidentity.js)이 같은 판정을 다시 쓴다 — 두 벌로 두지 않는다.
-  variantMarkers, conditionState, conditionIntent, substituteRelation, accessoryTerms, classify, CONDITION_PATTERNS,
+  variantMarkers, conditionState, conditionIntent, stripConditionTerms, substituteRelation, accessoryTerms, classify, CONDITION_PATTERNS,
   VARIANT_KEYS, TAIL_NOISE, UNIT_RE, CAPACITY_RE, YEAR_RE, SYNONYMS,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,

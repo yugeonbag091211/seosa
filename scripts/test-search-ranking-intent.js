@@ -259,6 +259,11 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
     './_ratelimit': { guard: () => true },
     './_search': S,
+    './_ai-v31-taxonomy': require('../api/_ai-v31-taxonomy'),
+    './_ai-v32-listing': require('../api/_ai-v32-listing'),
+    './_ai-v34-listing-guards': require('../api/_ai-v34-listing-guards'),
+    // 2026-11-15: 표시·저장 판정은 상품 정체성 관문 한 곳 — 순수 함수라 진짜 모듈을 쓴다.
+    './_product-gate': require('../api/_product-gate'),
     './_search-provenance': require('../api/_search-provenance'),
     './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(items) { return items; } },
     // 구매 링크 관문 — 순수 함수라 진짜 모듈을 쓴다.
@@ -274,8 +279,8 @@ for (const g of [...F.models, { query: '삼성', items: [
   await context.module.exports({ query: { keyword: g.query } }, res);
   check(response && response[0].label === 'A', `/api/search ${g.query}: actual response starts with main product`, response && detail(response));
   check(Object.values(calls).every(n => n === 1), `/api/search ${g.query}: one existing call per helper, no additional queries`, calls);
-  if (g.query === '삼성') check(response.length === 2 && response[0].lprice === 900000,
-    '/api/search returns the scored cheapest dedupe representative', response && detail(response));
+  if (g.query === '삼성') check(response.length === 1 && response[0].lprice === 900000,
+    '/api/search excludes below-minScore matches and keeps cheapest dedupe representative', response && detail(response));
 }
 
 const passed = checks.filter(c => c.pass).length;

@@ -15,12 +15,14 @@ const MAX_RESULTS = 16;
 const MAX_CARDS = 4;
 const { extractTitleEvidence, requestedIdentity, mergeRequested, checkListingIdentity } = require('./_ai-v3-identity');
 const { canonicalCategory, canonicalName, comparisonFromUtterance, explicitType, productTypeMatches,
-  isPart, mergeFeatures, featureContext, familyCategory } = require('./_ai-v31-taxonomy');
+  isPart, mergeFeatures, featureContext, familyCategory, accessoryRequest } = require('./_ai-v31-taxonomy');
+// What v3 can verify today (_ai-v31-taxonomy TYPES) — named in the «unsupported type» answer.
+const SUPPORTED_TYPES_TEXT = '이어폰·헤드폰·노트북·태블릿·스마트폰·모니터·키보드·마우스·청소기·공기청정기·스피커·스마트워치·외장 저장장치';
 const { brandMatches, brandsFromUser, modelEvidence, modelClues, linesFromUser, brandConflict } = require('./_ai-v31-retrieval');
 const { freshOfficialHeadphone } = require('./_ai-v33-official-models');
 const { parseBudget, userExclusions, groundExclusions, excludedBy, LOOKS_LIKE_ID } = require('./_ai-v32-intent');
 const { classifyIntent } = require('./_ai-v3-classify');
-const { encodeState, decodeState, updateState } = require('./_ai-v3-state');
+const { encodeState, inspectState, updateState } = require('./_ai-v3-state');
 const { loadProfile, updateProfile, applyProfile } = require('./_ai-v3-profile');
 const { kstToday } = require('./_price');
 // v3.4: the site's single «may this price be shown as current?» rule.
@@ -496,6 +498,11 @@ async function runEngine({ planModel, decideModel, searchProducts, getUsage, loa
     plan.maxExclusive = false;
     if (plan.minPrice && plan.minPrice > plan.maxPrice) plan.minPrice = null;
   }
+  // v3.5: «더 비싼 거» — the user's latest words lift a carried ceiling (GPT may restate it).
+  if (request._referenceMinPrice) {
+    plan.minPrice = request._referenceMinPrice;
+    plan.maxPrice = null; plan.maxExclusive = false;
+  }
   if (intent.mode === 'search' && plan.mode === 'none') plan.mode = 'recommend';
   // Compare different product kinds even if the model omitted compareQuery.
   const twoKinds=intent.mode === 'none' ? null : comparisonFromUtterance(message);
@@ -604,14 +611,45 @@ async function runEngine({ planModel, decideModel, searchProducts, getUsage, loa
     cards: [], state: prior, stats: { searched: false, accepted: 0, provisional: 0, intent: intentStats(), ...usage() }
     };
   }
-  if (!plan.query || !plan.category || (plan.mode === 'compare' && !plan.compareQuery)) return {
-    status: 200, answer: '찾으시는 상품 종류나 비교할 모델을 구체적으로 알려주세요.',
-    // Keep what the user just stated (budget, exclusions) for the next turn.
-    // No cards were presented in this turn: never silently reuse cards from
-    // an older answer in a later "그중" instruction.
-    cards: [], state: { ...stateFrom(plan), presentedProductIds: [] },
-    stats: { searched: false, accepted: 0, provisional: 0, intent: intentStats(), ...usage() }
-  };
+  if (!plan.query || !plan.category || (plan.mode === 'compare' && !plan.compareQuery)) {
+    /*
+     * v3.5 (2026-11-14): say WHY there is no search. «구체적으로 알려주세요» was the
+     * answer even when the user named the product exactly ("USB-C 허브", "노트북 거치대")
+     * — the product type is simply outside what v3 can verify. An accessory of a named
+     * device is no longer searched as that device (taxonomy accessoryRequest).
+     */
+    const accessory = !plan.category ? accessoryRequest(message) : null;
+    // The planner (GPT) produced a product keyword and the user is not asking for an
+    // explanation: the user DID name something — say it is unsupported, not «be specific».
+    const shoppingAsk = !intent.informational && !intent.thanks && !intent.clarification;
+    const brands = !accessory && !plan.category ? brandsFromUser(message, '') : [];
+    // «애플 제품만 보여줘» · «샤오미 가성비 제품 추천»: a brand without a product kind.
+    const brandOnly = brands.length && !clean(String(plan.query || message)
+      .replace(new RegExp(brands.map(b => String(b).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi'), ' ')
+      .replace(/(?:제품|상품|물건|가성비|좋은|인기|괜찮은|만|뭐가|뭐|있어|보여\s*줘|보여줘|추천\s*해\s*줘|추천해줘|추천|알려\s*줘|알려줘|중에|들|\?|!)/g, ' '), 40)
+      ? brands[0] : '';
+    const named = !accessory && !brandOnly && !plan.category && plan.mode !== 'compare' && plan.query
+      && shoppingAsk ? clean(plan.query, 40) : '';
+    const answer = accessory
+      ? `'${accessory.phrase}'처럼 다른 기기에 맞춰 쓰는 액세서리·부품은 아직 서사 AI가 호환 여부를 검증해서 추천하지 못해요. `
+        + `${accessory.hostToken} 본체를 찾으시거나, 상품 검색에서 직접 확인해 주세요.`
+      : brandOnly
+        ? `${brandOnly} 제품 중 어떤 종류를 찾으시는지 알려주세요. 예를 들어 '${brandOnly} 이어폰'·'${brandOnly} 노트북'처럼 말씀해 주시면 확인된 상품만 찾아드려요.`
+      : named
+        ? `'${named}' 종류는 아직 서사 AI가 상품 종류를 검증해서 추천할 수 있는 분야가 아니라 추천 카드를 드리지 못해요. `
+          + `${SUPPORTED_TYPES_TEXT} 종류는 찾아드릴 수 있어요.`
+        : '찾으시는 상품 종류나 비교할 모델을 구체적으로 알려주세요.';
+    return {
+      status: 200, answer,
+      // Keep what the user just stated (budget, exclusions) for the next turn.
+      // No cards were presented in this turn: never silently reuse cards from
+      // an older answer in a later "그중" instruction.
+      cards: [], state: { ...stateFrom(plan), presentedProductIds: [] },
+      stats: { searched: false, accepted: 0, provisional: 0,
+        noResult: accessory ? 'unsupported_accessory' : brandOnly ? 'needs_type_with_brand' : named ? 'unsupported_type' : 'needs_detail',
+        intent: intentStats(), ...usage() }
+    };
+  }
   const subjectText=featureContext(message,plan.features);
   // ── "그중 / 위에서": re-validate the cards actually shown last turn ─────
   const refersToDisplayed=intent.referencesDisplayed&&plan.mode!=='compare'&&Array.isArray(prior.presentedProductIds);
@@ -822,7 +860,14 @@ async function createEngine(deps, request = {}) {
   const profile = deps.userId ? await loadProfile(deps.userId) : null;
   const supplied = request.state == null ? request.prior : request.state;
   const token = typeof supplied === 'string' ? supplied : supplied && supplied.token;
-  const decoded = token ? decodeState(token) : null;
+  // 받은 상태 토큰의 판정(absent | valid | invalid | expired)을 응답 stats 에 남긴다 — 하네스·운영이
+  // «후속 질문에 조건이 실제로 이어졌는가» 를 답 문장이 아니라 계약으로 확인한다.
+  const inspected = inspectState(token);
+  const decoded = inspected.state;
+  const stateStats = r => {
+    if (r && typeof r === 'object') r.stats = { ...(r.stats || {}), state: inspected.status };
+    return r;
+  };
   // Never trust the cleartext fields beside an invalid or valid signed token.
   const signingEnabled = !!(process.env.AI_V3_STATE_SECRET || process.env.AUTH_SECRET || process.env.SUPABASE_SECRET_KEY);
   let saved = token ? (decoded && decoded.lastPlan || {}) :
@@ -837,19 +882,49 @@ async function createEngine(deps, request = {}) {
     const priorState = decoded || {};
     const next = updateState(priorState, {});
     const nextToken = encodeState(next);
-    return { status: 200, answer: '어떤 상품을 말씀하시는지 첫 번째나 두 번째처럼 알려주세요.', cards: [],
-      state: nextToken ? { ...saved, token: nextToken } : saved, stats: { searched: false } };
+    return stateStats({ status: 200, answer: '어떤 상품을 말씀하시는지 첫 번째나 두 번째처럼 알려주세요.', cards: [],
+      state: nextToken ? { ...saved, token: nextToken } : saved, stats: { searched: false } });
   }
-  let referenceMaxPrice = null;
-  if (target && target.price > 1 && /(?:더\s*싸|저렴|싼\s*(?:것|거|상품|제품))/.test(msg)) {
+  let referenceMaxPrice = null, referenceMinPrice = null;
+  // «비싼 거» contains «싼 거» — never read «좀 더 비싼 거» as «cheaper» (offline Q051).
+  const asksCheaper = /(?:더\s*싸|저렴|(?<!비)싼\s*(?:것|거|걸|상품|제품|모델))/.test(msg);
+  const asksPricier = !asksCheaper && /(?:더\s*비싼|비싼\s*(?:것|거|걸|상품|제품|모델)|더\s*(?:좋은|고급|상위)\s*(?:거|것|걸|모델|제품))/.test(msg);
+  const sameSubject = !explicitType(msg) || canonicalName(explicitType(msg)) === canonicalName(saved.category);
+  if (target && target.price > 1 && asksCheaper) {
     referenceMaxPrice = target.price - 1;
     saved = { ...saved, maxPrice: Math.min(saved.maxPrice || referenceMaxPrice, referenceMaxPrice), minPrice: null };
   } else if (target && reference) {
     saved = { ...saved, presentedProductIds: [target.id] };
+  } else if (!reference && asksPricier && shown.length && parseBudget(msg).max == null && sameSubject) {
+    /*
+     * v3.5: «좀 더 비싼 거 보여줘» — the mirror of «더 싼 거». The user's latest words win
+     * over the carried ceiling (sanitizePlan's rule): pricier than the priciest shown card,
+     * and the old «20만원 이하» no longer caps it (offline Q051 showed the same range).
+     */
+    const prices = shown.map(p => p && p.price).filter(p => Number.isSafeInteger(p) && p > 1);
+    if (prices.length) {
+      referenceMinPrice = Math.max(...prices) + 1;
+      saved = { ...saved, minPrice: referenceMinPrice, maxPrice: null, maxExclusive: false };
+    }
+  } else if (!reference && asksCheaper && shown.length && parseBudget(msg).max == null
+    // Only about the SAME products: «저렴한 마우스 추천해줘» after laptops is a new search.
+    && sameSubject) {
+    /*
+     * v3.5 (2026-11-14, 100-question offline Q046): «더 싼 거 없어?» without naming one
+     * card means «cheaper than what you showed». It used to re-run the same search and
+     * show the SAME four cards. Cheaper than the cheapest shown card — every new card is
+     * then genuinely cheaper; if none exists the engine says so.
+     */
+    const prices = shown.map(p => p && p.price).filter(p => Number.isSafeInteger(p) && p > 1);
+    if (prices.length) {
+      referenceMaxPrice = Math.min(...prices) - 1;
+      saved = { ...saved, maxPrice: Math.min(saved.maxPrice || referenceMaxPrice, referenceMaxPrice), minPrice: null };
+    }
   }
   const result = await runEngine({ ...deps, profile }, { ...request, state: saved, _shownProducts: shown,
-    _referenceTarget: !!target, _referenceMaxPrice: referenceMaxPrice });
-  if (result.status !== 200) return result;
+    _referenceTarget: !!target, _referenceMaxPrice: referenceMaxPrice, _referenceMinPrice: referenceMinPrice });
+  if (result.status !== 200) return stateStats(result);
+  stateStats(result);
   const lastPlan = result.state || saved;
   const budget = parseBudget(msg);
   if (deps.userId && result.stats && result.stats.searched && result.cards && result.cards.length) {

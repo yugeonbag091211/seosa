@@ -3122,6 +3122,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
       })(),
       failureCategories: failureCategoriesTemplate(), doneBatches: 0, stoppedEarly: false,
       passStats: [], crossRecovered: 0, preCoveredSkips: 0, optionRejects: {},
+      classificationAudit: { checked: 0, match: 0, mismatch: 0, unknown: 0, samples: [] },
       facetDryGroups: (savedState && savedState.last_result && savedState.last_result.facetDryGroups) || [],
       /* 아무 일도 하지 않은 실행이 오늘의 terminal 목록을 지우면 안 된다 (P1). */
       terminalOptionFailures:
@@ -3554,9 +3555,50 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
   const noteAttemptFailure = (reason) => { failureCategories[categorizeFailure(reason)]++; };
   const noteAttemptNoMatch = () => { failureCategories.noMatch++; };
 
+  /*
+   * ── 분류 점검 (2026-11-15) ─────────────────────────────────────────
+   *
+   * 가격 갱신의 성공(상품 ID·옵션이 맞았다)과 그 행의 분류(keyword)가 맞는지는 따로 본다.
+   * 예전에는 상품 ID 로 찾은 가격을 저장하면서 keyword 를 그대로 다시 써서, 처음 잘못
+   * 저장된 분류(«수영복» 키워드의 콜라·물티슈 — 운영 스냅숏 47행 중 27행)가 매일
+   * «방금 수집한 상품» 으로 되살아났다.
+   *
+   * 판정은 api/_product-gate.classifyStoredRow — 검색·저장·홈 표시와 같은 관문이다.
+   *   mismatch  세고 표본을 남긴다(classificationAudit). 가격·카탈로그 갱신은 그대로 한다.
+   *   unknown   근거가 모자라다.
+   * 판정만 하고 조치하지 않는다: 운영 표본 정밀도가 70% 남짓(scripts/db-quality/README.md)이라
+   * 카탈로그 갱신을 보류하면 바르게 분류된 상품의 현재가까지 멈춘다. 화면은 _shop.relevantRows 가
+   * 같은 판정으로 숨기고, 행을 지우거나 keyword 를 바꾸는 정정은 scripts/db-quality 의 승인 절차로만 한다.
+   */
+  const classificationAudit = { checked: 0, match: 0, mismatch: 0, unknown: 0, samples: [] };
+  const classificationOf = new Map();
+  let classifyRow = null;
+  try { classifyRow = require('../api/_product-gate').classifyStoredRow; } catch (_) { classifyRow = null; }
+  function classificationFor(target, foundVia) {
+    const key = `${target.product_id}|${target.mall}`;
+    if (classificationOf.has(key)) return classificationOf.get(key);
+    let verdict = 'unknown', reasons = [];
+    const keyword = target.keyword || '';
+    if (classifyRow && keyword) {
+      try { ({ verdict, reasons } = classifyRow(keyword, target.title || '')); } catch (_) { verdict = 'unknown'; }
+    }
+    classificationAudit.checked++;
+    classificationAudit[verdict] = (classificationAudit[verdict] || 0) + 1;
+    if (verdict === 'mismatch' && classificationAudit.samples.length < 5) {
+      classificationAudit.samples.push({
+        productId: String(target.product_id), mall: target.mall, keyword: keyword.slice(0, 30),
+        title: String(target.title || '').slice(0, 40), reason: String(reasons[0] || '').slice(0, 40)
+      });
+    }
+    const out = { verdict, foundVia };
+    classificationOf.set(key, out);
+    return out;
+  }
+
   function addRow(target, item, foundVia) {
     const price = parseInt(item.lprice, 10) || 0;
     if (price <= 0) return false;
+    classificationFor(target, foundVia);   // 분류 점검만 — 저장 경로는 바꾸지 않는다 (classificationFor 주석)
     obsMap.set(`${target.product_id}|${target.mall}|${item.vendorItemId || ''}`, {
       productId: target.product_id,
       mall: target.mall,
@@ -3588,7 +3630,7 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
        *
        *   vid 개념이 없는 몰은 빈 문자열이고, 그때 방어막은 작동하지 않는다.
        */
-      targetVendorItemId: vendorIdOf(target),
+      targetVendorItemId: vendorIdOf(target)
     });
     return true;
   }
@@ -4849,6 +4891,11 @@ async function runMallCollection({ mallName, rows, fetchAllFn, savedState, deadl
      *   예전에는 이 자리에서 다른 옵션 가격을 대신 기록했다.
      */
     optionRejects: Object.fromEntries(optionRejects),
+    /*
+     * 분류 점검 (classificationFor 주석). 가격 성공 지표(collectorSuccessProducts)와 섞지 않는다 —
+     * mismatch 는 «가격은 정상 갱신했지만 그 행의 keyword 가 상품과 맞지 않아 보이는» 행 수다(조치 없음).
+     */
+    classificationAudit,
     // 오늘 facet 이 마른 그룹. 다음 실행이 헛되이 두드리지 않게 이어 간다.
     facetDryGroups: facetDryOut,
     /*
