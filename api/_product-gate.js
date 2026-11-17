@@ -334,6 +334,26 @@ const REQUEST_FILLER = /(?:추천\s*하되|추천\s*해\s*줘|추천해줘|추�
 // Keep the phrase-specific boundaries: don't strip model words that happen to
 // contain "가격" or "구매" as a substring.
 const PURCHASE_DIRECTIVE = /(?:구매하려는데|구매하려고|구매할래|구매하고\s*싶어|사려는데|사려고|살\s*생각인데|가격\s*순(?:서)?(?:으로|으로만)?|최저가\s*순(?:으로)?|저렴한\s*순(?:으로)?)/g;
+// A consumer's instruction must never be scored as a required SKU word.
+// Replace only complete phrases, not substrings of an actual model name.
+const SEARCH_DIALOGUE_DIRECTIVE = /(?:검색\s*해\s*줘|검색\s*해\s*주세요|검색해줘|검색해주세요|찾는\s*중이야|찾고\s*있어|살\s*건데|살\s*건데요|그대로\s*[,，]?\s*모델(?:이)?\s*바뀐\s*(?:건|것은)\s*(?:빼줘|제외해줘)|모델(?:이)?\s*바뀐\s*(?:건|것은)\s*(?:빼줘|제외해줘)|다른\s*회사의|본품(?:은|이|에)?\s*구성품(?:이|도)?\s*따라오는\s*(?:건|것은)\s*상관\s*없어|(?:중고나\s*리퍼|리퍼나\s*중고)(?:는|은)?\s*절대\s*안\s*돼)/g;
+// "X 용 replacement" is a requested spare part, not a new SKU family
+// when X is a concrete model containing a number (e.g. DS224+용 트레이).
+const MODEL_COMPATIBILITY_REQUEST = /(?:^|\s)[a-z0-9+\-]*\d[a-z0-9+\-]*용\s+[가-힣a-z][가-힣a-z\s]{1,40}/i;
+// Parse the item being bought after an explicit compatibility target rather
+// than guessing from the last noun of the full conversational sentence.
+// Example: "60cm용 서랍 레일 찾는 중이야. 본품은 말고" => 레일.
+// This is an additional *positive* proof of the sold part: model/brand/type
+// requirements still apply independently.
+function accessoryNounAfterHost(text) {
+  const raw = String(text || '').normalize('NFKC');
+  const m = raw.match(/(?:[a-z0-9+\-]*\d[a-z0-9+\-]*용|[가-힣]{2,18}에\s*(?:쓸|쓰는|사용할|사용하는))\s+([^.!?]{2,70})/iu);
+  if (!m) return '';
+  const phrase = m[1].split(/\s+(?:찾는|찾고|찾아줘|찾아주세요|찾아|구매하고|구매하려고|구매할래|구매|사고|보여줘|보여주세요|보여|추천해줘|추천해주세요|추천|원해|살래|주문|사려)(?=\s|$)/u)[0];
+  const words = (phrase.match(/[가-힣]{2,}/gu) || []).filter(w =>
+    !/^(?:전용|호환|정품|제품|상품|부품)$/.test(w));
+  return (words.at(-1) || '').replace(/(?:만|을|를)$/u, '');
+}
 const OPTIONAL_GIFT_PERMISSION = /(?:[.!?]\s*|\s+)사은품(?:은|는|이|가|도)?\s*(?:받아도|줘도|같이\s*와도|함께\s*와도|포함돼도|포함되어도)\s*(?:괜찮아|상관\s*없어|상관이\s*없어|돼|좋아)(?:[.!?]+)?$/u;
 // "마우스 중 로지텍 브랜드는 절대 제외" must exclude 로지텍, not
 // demand that product titles contain "로지텍", "브랜드" or "절대".
@@ -367,6 +387,18 @@ function parseQuery(text, opts = {}) {
   // rejected brand is never considered a positive identity requirement.
   const brandExclusionPhrases = [];
   const excludedBrands = [];
+  // "브라더 말고 다른 회사의 프린터": the named brand can be missing
+  // from the built-in vendor table. An explicit "other company" directive
+  // gives enough context to exclude that seller, without pretending the
+  // unknown brand is a *positive* product-name requirement.
+  for (const match of raw.matchAll(/(?:^|[\s,])([0-9a-z가-힣][0-9a-z가-힣-]{1,23})\s+(?:말고|빼고|제외하고)\s+다른\s*(?:회사|브랜드)(?:의)?/gi)) {
+    const word = match[1].replace(/(?:은|는|이|가|를)$/u, '');
+    if (/^(?:브랜드|제품|상품|모델|중고|리퍼|가격|다른)$/u.test(word) || TAX.explicitType(word)) continue;
+    brandExclusionPhrases.push({ text: match[0], replacement: ' ' });
+    const known = brandsIn(word, { includeLines: false });
+    if (known.length) known.forEach(b => excludedBrands.push(b.canon));
+    else excludedBrands.push(word);
+  }
   for (const match of raw.matchAll(BRAND_CATEGORY_EXCLUSION)) {
     const brands = brandsIn(match[1], { includeLines: false });
     // "로지텍 브랜드는 절대 제외" is a single-brand clause; do not
@@ -408,7 +440,7 @@ function parseQuery(text, opts = {}) {
   brandExclusionPhrases.forEach(phrase => {
     withoutExcluded = withoutExcluded.replace(phrase.text, phrase.replacement);
   });
-  let idText = withoutExcluded.replace(BUDGET_PHRASE, ' ')
+  let idText = withoutExcluded.replace(SEARCH_DIALOGUE_DIRECTIVE, ' ').replace(BUDGET_PHRASE, ' ')
     .replace(PURCHASE_DIRECTIVE, ' ').replace(REQUEST_FILLER, ' ')
     .replace(/(본품|본체|단품)(?:을|를|은|는)(?=\s|$)/g, '$1')
     // "가격을 동시에 충족하는 것" restates previously given constraints;
@@ -444,7 +476,9 @@ function parseQuery(text, opts = {}) {
   const inTitles = w => !!titleText && titleText.includes(normalize(w));
   // 대화체 조사 — «제품만», «칩으로», «모델로», «걸로». 남는 말이 아는 낱말일 때만 뗀다(«프로» 의 «로» 는 떼지 않는다).
   idText = idText.replace(/([가-힣]{1,8}?)(으로|로|만|은|는|도|이요|요|이야|야|예요|이에요|인데|이면|면)(?=\s|$)/g, (whole, stem, josa) => {
-    const known = NOT_HEAD.has(stem) || VARIANT.has(stem) || LINE.has(stem) || isBrandToken(stem) || ['칩', '것', '거', '제품', '모델', '버전'].includes(stem);
+    const known = NOT_HEAD.has(stem) || VARIANT.has(stem) || LINE.has(stem) || isBrandToken(stem)
+      || (josa === '만' && S.accessoryTerms(normalize(stem)).length > 0)
+      || ['칩', '것', '거', '제품', '모델', '버전'].includes(stem);
     if (known || (josa.length >= 2 && stem.length >= 2)) return stem;
     // 한 글자 조사(«유닛만», «마우스는», «텀블러도»): 후보 상품명이 뗀 말은 품고 붙인 말은 하나도 품지 않을 때만 뗀다.
     // 상품명이 낱말 그대로 품으면(«파파야», «아보카도») 이름이다. 조건·수단의 «면»·«로» 는 이 규칙에서 뺀다
@@ -478,7 +512,12 @@ function parseQuery(text, opts = {}) {
   // 기기 이름과 함께 부속 명사를 말했으면(«로봇청소기 물걸레 패드», «휴대폰 방수팩») 그 부속을 찾는 것이다.
   // (#236 이후 explicitType 은 «노트북 거치대» 같은 부속 구절에 종류를 돌려주지 않는다 — 언급 자체를 본다)
   const typeMentioned = !!TAX.explicitType(idText) || TAX.typeMentions(idText).length > 0;
+  const modelHostAccessoryUse = explicitTargetUse
+    && /(?:^|\s)(?:[a-z][a-z0-9+\-]*\d[a-z0-9+\-]*|\d+x\d+)(?=\s)/i.test(idText);
   let wantsAccessory = accessoryWords.length > 0
+    || MODEL_COMPATIBILITY_REQUEST.test(idText)
+    || explicitTargetUse
+    || modelHostAccessoryUse
     || EXTRA_ACCESSORY_QUERY.test(idText)
     || (principal.kind === 'accessory' && (UNIVERSAL_ACCESSORY.test(String(principal.noun || '')) || typeMentioned))
     || (!!type0 && TAX.isPart(idText, type0));
@@ -515,12 +554,33 @@ function parseQuery(text, opts = {}) {
   if (Array.isArray(opts.titles) && opts.titles.length && tokens.length > 1 && !brands.length) {
     const a = S.analyzeQuery(idText, { titles: opts.titles });
     const first = tokens[0];
-    if (a.brandHead && first !== head && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first)) looseBrand = first;
+    // Product families with a concrete model or capacity right after
+    // their seller's name can have brands omitted from the vendor table.
+    // "캐리어 16L 제습기" means Carrier HVAC, not generic luggage.
+    // Only infer a brand if supplier candidates independently show the
+    // same first token as the start of a listing.
+    const firstCandidateMatches = opts.titles.some(t =>
+      normalize(String(t || '')).startsWith(first + ' '));
+    const modelOrUnitNext = /\d/.test(tokens[1] || '');
+    const implicitBrand = modelOrUnitNext && firstCandidateMatches && first !== head
+      && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first);
+    if ((a.brandHead || implicitBrand) && first !== head && !NOT_HEAD.has(first) && !lineKey(first) && !/\d/.test(first)) looseBrand = first;
   }
+  // A type in "복합기에 쓸 잉크 카트리지" is the compatibility host.
+  const hostNoun = (raw.match(/(?:^|\s)([가-힣]{2,18})에\s*(?:쓸|쓰는|사용할|사용하는)(?=\s)/u) || [])[1] || '';
   // «맥북 백업용 외장 SSD», «아이패드용 키보드» 의 제품군은 «무엇에 쓰는가» 다 — 상품명에 있어야 할 이름이 아니다.
   const lines = tokens.filter((t, i) => lineKey(t) && t.length >= 2 && !NOT_HEAD.has(t)
+    && !(wantsAccessory && hostNoun === t && /^(?:스마트워치|손목시계)$/u.test(t))
     && !/(?:용|전용|호환)$/.test(tokens[i + 1] || '') && !/^(?:용|전용|호환|백업용)$/.test(tokens[i + 1] || ''));
-  const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand });
+  // In "9010e 복합기에 쓸 카트리지", 복합기 is the host type.
+  // The seller may simply say "9010e용 카트리지" without restating 복합기.
+  // An explicit Korean "X에 쓸" host noun can be outside the 16 closed
+  // device taxonomy types; it is still not the name of the sold part.
+
+  // Keep named SKU model/line and the specifically requested part strict.
+  const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand }).filter(w =>
+    !(wantsAccessory && w !== head && (w === hostNoun || TAX.explicitType(w)
+      || (hostNoun && /^(?:와이파이|미러리스)$/u.test(w)))));
   // 한글 이름에 영문 한 글자가 붙은 이름 («제로S», «타워X») 은 한 덩어리다.
   for (const m of idText.matchAll(/([가-힣]{2,})([a-z])(?![a-z0-9])/gi)) {
     const compound = (m[1] + m[2]).toLowerCase();
@@ -532,7 +592,7 @@ function parseQuery(text, opts = {}) {
   const spec = {
     raw, idText, normalized, tokens, type, wantsAccessory, accessoryWords, head, models, brands: brandReq,
     excludedBrands, families, variants, caps, measures, filterGrade, diameterMm, sizes, people: people ? Number(people) : 0, colors, wireless, gender, kids,
-    year, budget, condition, wantsBook, wantsCar, solidWood, apparelSize: apparelSize(raw), beddingSize: beddingSize(raw), looseBrand, lines, identityWords,
+    year, budget, condition, wantsBook, wantsCar, solidWood, apparelSize: apparelSize(raw), beddingSize: beddingSize(raw), requestedAccessoryNoun: wantsAccessory ? accessoryNounAfterHost(raw) : '', looseBrand, lines, identityWords,
     // 관련도 점수에 쓸 검색어 — 예산·요청 말("50만원 이하", "보여줘")이 커버리지를 깎지 않게 뺀다.
     rankText: idText || raw,
     analysis: S.analyzeQuery(idText, { titles: Array.isArray(opts.titles) ? opts.titles : [] }),
@@ -777,7 +837,7 @@ function capacityDetails(text, allowShortG) {
 function queryCapacities(text) { return capacityDetails(text, false); }
 function listingCapacities(title) { return capacityDetails(title, true); }
 // 비교 가능한 단위만 정규화한다. 복수 용량은 옵션·구성 혼동이므로 확정하지 않는다.
-const MEASURE_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(밀리리터|리터|ml|mah|mm|cm|l|hz|헤르츠|매|켤레)(?![a-z])/gi;
+const MEASURE_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(밀리리터|리터|ml|mah|mm|cm|l|w|hz|헤르츠|매|켤레)(?![a-z])/gi;
 function measureValues(text) {
   return [...String(text || '').matchAll(MEASURE_RE)].map(m => {
     const unit = m[2].toLowerCase();
@@ -785,7 +845,8 @@ function measureValues(text) {
     const hz = /^(?:hz|헤르츠)$/.test(unit);
     const length = /^(?:mm|cm)$/.test(unit);
     const battery = unit === 'mah';
-    return { kind: volume ? 'volume_ml' : hz ? 'hz' : length ? 'length_mm' : battery ? 'battery_mah' : unit,
+    const power = unit === 'w';
+    return { kind: volume ? 'volume_ml' : hz ? 'hz' : length ? 'length_mm' : battery ? 'battery_mah' : power ? 'power_w' : unit,
       n: Number(m[1]) * (/^(?:리터|l)$/.test(unit) ? 1000 : unit === 'cm' ? 10 : 1) };
   });
 }
@@ -941,6 +1002,10 @@ function judge(spec, item, opts = {}) {
     const nounIsHead = !!spec.head && (nounFlat === spec.head || headGroup.includes(nounFlat)
       || spec.head.endsWith(nounFlat) || nounFlat.endsWith(spec.head));
     const unbundled = earbudCaseFree(stripBundleItems(principalTitle));
+    // "수납장용 손잡이" explicitly sells something FOR a cabinet, not
+    // the cabinet itself. No catalog of accessory names is required.
+    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|$|[+,.([{])', 'i').test(unbundled))
+      hard.push(`category_is_compatibility_host:${spec.head}`);
     // The sold target (not an included gift) is a replacement part, even when
     // a broad classifier does not know the household object's product type.
     // Actual accessory searches are handled by the wantsAccessory branch.
@@ -1021,6 +1086,12 @@ function judge(spec, item, opts = {}) {
       if (m && !/(?:사용|활용|이용|겸용|다용|업무용|가정용|휴대용|게임용|사무용|학생용|대용량)$/.test(m[0])) { hard.push(`target_of:${w}`); break; }
     }
   } else {
+    // Even a product that is normally called an "accessory" (a charger)
+    // cannot be substituted by a part whose listing only says
+    // "충전기용 충전 케이블". The requested noun is the host, not the sale.
+    const primaryName = earbudCaseFree(stripBundleItems(principalTitle));
+    if (spec.head && new RegExp(escapeRe(spec.head) + '\\s*용(?=\\s|$|[+,.([{])', 'i').test(primaryName))
+      hard.push(`category_is_compatibility_host:${spec.head}`);
     // 부속을 찾았다 — 그 부속 낱말(또는 같은 뜻)이 상품명에 있어야 한다.
     const words = spec.accessoryWords.length ? spec.accessoryWords : (spec.head ? [spec.head] : []);
     const has = words.some(w => present(w, T)
@@ -1028,6 +1099,18 @@ function judge(spec, item, opts = {}) {
       || (/필름|강화유리|보호/.test(w) && /(?:필름|강화\s*유리|보호|film|glass)/i.test(title))
       || (/충전기|어댑터|charger/.test(w) && /(?:충전기|어댑터|charger|adapter|충전\s*케이블)/i.test(title)));
     if (words.length && !has) hard.push('not_requested_accessory');
+    // Exact accessory noun after the host phrase must be offered as the
+    // merchandise itself, not merely be a generic "other replacement part".
+    if (spec.requestedAccessoryNoun && !present(spec.requestedAccessoryNoun, T))
+      hard.push(`requested_part_absent:${spec.requestedAccessoryNoun}`);
+    // Generic words such as "교체/부품" are not proof of the specific
+    // requested item. "X-S20용 다른 부품" is not an X-S20 battery.
+    const headWord = spec.head && !NOT_HEAD.has(spec.head) ? spec.head : '';
+    const headMatch = headWord && (present(headWord, T)
+      || (/^(?:케이스|커버)$/u.test(headWord) && /(?:케이스|커버|case|cover|폴리오|folio)/i.test(title))
+      || (/^(?:스트랩|밴드|시계줄)$/u.test(headWord) && /(?:스트랩|밴드|시계줄|watch\s*band|strap)/i.test(title))
+      || (/^(?:충전기|어댑터)$/u.test(headWord) && /(?:충전기|어댑터|charger|adapter)/i.test(title)));
+    if (headWord && !headMatch) hard.push(`accessory_head_absent:${headWord}`);
   }
 
   /* 2. 한 글에 여러 모델·상품 — 가격이 어느 것의 것인지 알 수 없다 */
@@ -1217,6 +1300,11 @@ function judge(spec, item, opts = {}) {
       }
     }
   }
+  // XL can be a product/volume variant ("마렐라 XL"), not an apparel size.
+  // Preserve an explicitly requested non-clothing XL SKU even if no
+  // recognized electronic product line was present.
+  if (!spec.apparelSize && /(?:^|\s)xl(?=\s|$)/i.test(spec.idText)
+    && !/(?:^|\s)xl(?=\s|$)|extra\s*large/i.test(title)) hard.push('variant_missing:xl');
   if (spec.diameterMm) {
     const dm = title.match(/(?:지름|직경)\s*(\d+(?:\.\d+)?)\s*(mm|cm)/i);
     if (!dm) soft.push('diameter_unverified');

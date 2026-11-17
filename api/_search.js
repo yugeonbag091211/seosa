@@ -781,7 +781,7 @@ function conditionIntent(text) {
 
   const excluded = new Set();
   const wanted = [];
-  const NEGATED_TAIL_RE = /^\s*(?:(?:은|는|이|가|을|를|도)\s*)?(?:말고|제외(?:하고|한)?|아닌|아니라|아님|빼고|필요\s*없(?:음|고)?|없(?:이|고)?|rather\s+than|excluding|except|not)/i;
+  const NEGATED_TAIL_RE = /^\s*(?:(?:은|는|이|가|을|를|도)\s*)?(?:말고|제외(?:하고|한)?|아닌|아니라|아님|빼고|(?:절대\s*)?안\s*(?:돼|되(?:요|니|면|거나|고)?|됩니다|됨|돼요)|필요\s*없(?:음|고)?|없(?:이|고)?|rather\s+than|excluding|except|not)/i;
   /*
    * "리퍼나 중고 말고" — 목록으로 이은 상태는 뒤의 부정을 함께 받는다 (2026-10-26 1,000문항 평가).
    * 예전에는 «리퍼» 뒤가 «나» 라 부정이 아니었고, 리퍼를 «원하는» 상태로 읽어 리퍼 판매 글이 카드에 남았다.

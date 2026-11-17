@@ -1,0 +1,39 @@
+name: Search grammar development diagnostics
+
+on:
+  pull_request:
+    paths:
+      - 'api/_product-gate.js'
+      - 'scripts/search-eval/run-independent-300-20261117.cjs'
+      - 'scripts/test-search-dialogue-compat-20261117.cjs'
+      - '.github/workflows/search-grammar-dev.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dev-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Re-evaluate only previously disclosed DEVELOPMENT 200 questions
+        run: |
+          echo "POST-FAILURE DEVELOPMENT REPLAY ONLY; prior HOLDOUT 100 results must never be advertised as independent after tuning."
+          node scripts/search-eval/run-independent-300-20261117.cjs --out search-grammar-development-results.json
+      - name: Preserve developer evaluation even if later unit tests fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-grammar-development-200
+          path: search-grammar-development-results.json
+          if-no-files-found: warn
+          retention-days: 21
+      - name: Verify minimal intent and compatibility contracts
+        run: node scripts/test-search-dialogue-compat-20261117.cjs
