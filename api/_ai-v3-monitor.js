@@ -18,7 +18,14 @@ async function record(version, success, db) {
     return true;
   } catch (e) { console.warn('[ai-monitor] write unavailable'); return false; }
 }
-async function healthy(db, now = Date.now()) {
+/*
+ * 회로 판정 + 이유 (2026-11-14). 예전에는 healthy() 가 «회로 열림» 과 «측정 표를 못 읽음» 을 같은
+ * false 로 돌려줘서, 운영에서 v3 가 왜 한 번도 안 도는지 보이지 않았다 — 11-14 실측으로
+ * ai_v3_monitor_events 표가 운영 DB 에 없다(마이그레이션 20261113000001 미적용). 판정은 그대로
+ * fail-closed(측정 못 하면 v3 를 열지 않는다)이고, 이유만 함께 준다:
+ *   ok | circuit_open | monitor_unavailable
+ */
+async function check(db, now = Date.now()) {
   try {
     const source = db || require('./_supabase');
     const since = new Date(now - WINDOW_MS).toISOString();
@@ -28,8 +35,15 @@ async function healthy(db, now = Date.now()) {
       return success === null ? q : q.eq('success', success);
     };
     const [all, errors] = await deadline(Promise.all([query(null), query(false)]));
-    if (all.error || errors.error || !Number.isFinite(all.count) || !Number.isFinite(errors.count)) return false;
-    return all.count < MIN_SAMPLES || errors.count / all.count <= 0.10;
-  } catch (e) { console.warn('[ai-monitor] circuit unavailable'); return false; }
+    if (all.error || errors.error || !Number.isFinite(all.count) || !Number.isFinite(errors.count)) {
+      console.warn('[ai-monitor] circuit unavailable');
+      return { ok: false, reason: 'monitor_unavailable' };
+    }
+    const ok = all.count < MIN_SAMPLES || errors.count / all.count <= 0.10;
+    return { ok, reason: ok ? 'ok' : 'circuit_open', samples: all.count, errors: errors.count };
+  } catch (e) { console.warn('[ai-monitor] circuit unavailable'); return { ok: false, reason: 'monitor_unavailable' }; }
 }
-module.exports = { record, healthy, WINDOW_MS, MIN_SAMPLES };
+async function healthy(db, now = Date.now()) {
+  return (await check(db, now)).ok;
+}
+module.exports = { record, healthy, check, WINDOW_MS, MIN_SAMPLES };
