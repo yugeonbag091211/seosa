@@ -334,6 +334,12 @@ const REQUEST_FILLER = /(?:추천\s*하되|추천\s*해\s*줘|추천해줘|추�
 // Keep the phrase-specific boundaries: don't strip model words that happen to
 // contain "가격" or "구매" as a substring.
 const PURCHASE_DIRECTIVE = /(?:구매하려는데|구매하려고|구매할래|구매하고\s*싶어|사려는데|사려고|살\s*생각인데|가격\s*순(?:서)?(?:으로|으로만)?|최저가\s*순(?:으로)?|저렴한\s*순(?:으로)?)/g;
+// A consumer's instruction must never be scored as a required SKU word.
+// Replace only complete phrases, not substrings of an actual model name.
+const SEARCH_DIALOGUE_DIRECTIVE = /(?:검색\s*해\s*줘|검색\s*해\s*주세요|검색해줘|검색해주세요|찾는\s*중이야|찾고\s*있어|살\s*건데|살\s*건데요|그대로\s*[,，]?\s*모델(?:이)?\s*바뀐\s*(?:건|것은)\s*(?:빼줘|제외해줘)|모델(?:이)?\s*바뀐\s*(?:건|것은)\s*(?:빼줘|제외해줘)|다른\s*회사의|본품(?:은|이|에)?\s*구성품(?:이|도)?\s*따라오는\s*(?:건|것은)\s*상관\s*없어|(?:중고나\s*리퍼|리퍼나\s*중고)(?:는|은)?\s*절대\s*안\s*돼)/g;
+// "X 용 replacement" is a requested spare part, not a new SKU family
+// when X is a concrete model containing a number (e.g. DS224+용 트레이).
+const MODEL_COMPATIBILITY_REQUEST = /(?:^|\s)[a-z0-9+\-]*\d[a-z0-9+\-]*용\s+[가-힣a-z][가-힣a-z\s]{1,40}/i;
 const OPTIONAL_GIFT_PERMISSION = /(?:[.!?]\s*|\s+)사은품(?:은|는|이|가|도)?\s*(?:받아도|줘도|같이\s*와도|함께\s*와도|포함돼도|포함되어도)\s*(?:괜찮아|상관\s*없어|상관이\s*없어|돼|좋아)(?:[.!?]+)?$/u;
 // "마우스 중 로지텍 브랜드는 절대 제외" must exclude 로지텍, not
 // demand that product titles contain "로지텍", "브랜드" or "절대".
@@ -400,7 +406,7 @@ function parseQuery(text, opts = {}) {
   const selectionText = raw.replace(
     /(?:[.!?]\s*|\s+)(?:사은품(?:은|는|이|가|도)?\s*)?(?:같이|함께)\s*와도\s*(?:돼|괜찮아|상관\s*없어|좋아)(?:[.!?]+)?$/u,
     ' '
-  ).replace(OPTIONAL_GIFT_PERMISSION, ' ');
+  ).replace(OPTIONAL_GIFT_PERMISSION, ' ').replace(SEARCH_DIALOGUE_DIRECTIVE, ' ');
   // Strip exclusion clauses before REQUEST_FILLER. Otherwise its "해줘"
   // alternative truncates "제외해줘" and makes the original matched clause
   // impossible to remove ("한샘 브랜드는 제외해줘" leaked as a product name).
@@ -479,6 +485,7 @@ function parseQuery(text, opts = {}) {
   // (#236 이후 explicitType 은 «노트북 거치대» 같은 부속 구절에 종류를 돌려주지 않는다 — 언급 자체를 본다)
   const typeMentioned = !!TAX.explicitType(idText) || TAX.typeMentions(idText).length > 0;
   let wantsAccessory = accessoryWords.length > 0
+    || MODEL_COMPATIBILITY_REQUEST.test(idText)
     || EXTRA_ACCESSORY_QUERY.test(idText)
     || (principal.kind === 'accessory' && (UNIVERSAL_ACCESSORY.test(String(principal.noun || '')) || typeMentioned))
     || (!!type0 && TAX.isPart(idText, type0));
@@ -520,7 +527,11 @@ function parseQuery(text, opts = {}) {
   // «맥북 백업용 외장 SSD», «아이패드용 키보드» 의 제품군은 «무엇에 쓰는가» 다 — 상품명에 있어야 할 이름이 아니다.
   const lines = tokens.filter((t, i) => lineKey(t) && t.length >= 2 && !NOT_HEAD.has(t)
     && !/(?:용|전용|호환)$/.test(tokens[i + 1] || '') && !/^(?:용|전용|호환|백업용)$/.test(tokens[i + 1] || ''));
-  const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand });
+  // In "9010e 복합기에 쓸 카트리지", 복합기 is the host type.
+  // The seller may simply say "9010e용 카트리지" without restating 복합기.
+  // Keep SKU model/line and the specifically requested part as strict constraints.
+  const identityWords = identityWordsOf(tokens, { head, models, type, looseBrand }).filter(w =>
+    !(wantsAccessory && TAX.explicitType(w) && w !== head));
   // 한글 이름에 영문 한 글자가 붙은 이름 («제로S», «타워X») 은 한 덩어리다.
   for (const m of idText.matchAll(/([가-힣]{2,})([a-z])(?![a-z0-9])/gi)) {
     const compound = (m[1] + m[2]).toLowerCase();
