@@ -1,0 +1,6381 @@
+{
+  "metadata": {
+    "title": "SEOSA one-time challenge set",
+    "scope": "synthetic hand-curated seed products plus explicit contrast candidates, no live API",
+    "code_anchor": "0e8d7d60f12827966c7d1b85e5b45ff09cb521b1",
+    "created_by": "ChatGPT independent evaluation workflow",
+    "scenarios": [
+      "exact_body",
+      "budget_constraint",
+      "bundled_body",
+      "explicit_accessory",
+      "brand_exclusion"
+    ],
+    "questions": 120,
+    "categories": 24,
+    "candidates_per_question": 5,
+    "preregistered_before_run": true
+  },
+  "questions": [
+    {
+      "id": "B01-1",
+      "query": "로지텍 G304 무선 마우스 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "마우스",
+      "items": [
+        {
+          "id": "B01-1-P1",
+          "title": "로지텍 G304 무선 마우스",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B01-1-P2",
+          "title": "로지텍 G305 무선 마우스",
+          "price_krw": 33600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B01-1-P3",
+          "title": "로지텍 G304 무선 마우스피트",
+          "price_krw": 6300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B01-1-P4",
+          "title": "삼성전자 마우스 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B01-1-P5",
+          "title": "로지텍 G304 무선 마우스 새제품 정품",
+          "price_krw": 43200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B01-2",
+      "query": "로지텍 G304 무선 마우스 50000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "마우스",
+      "items": [
+        {
+          "id": "B01-2-P1",
+          "title": "로지텍 G304 무선 마우스",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B01-2-P2",
+          "title": "로지텍 G304 무선 마우스 새제품",
+          "price_krw": 60900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B01-2-P3",
+          "title": "로지텍 G305 무선 마우스",
+          "price_krw": 29400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B01-2-P4",
+          "title": "로지텍 G304 무선 마우스피트",
+          "price_krw": 6300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B01-2-P5",
+          "title": "로지텍 G304 무선 마우스 정품",
+          "price_krw": 45000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B01-3",
+      "query": "로지텍 G304 무선 마우스 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "마우스",
+      "items": [
+        {
+          "id": "B01-3-P1",
+          "title": "로지텍 G304 무선 마우스 본품 + 사은품 증정",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B01-3-P2",
+          "title": "로지텍 G304 무선 마우스 본품",
+          "price_krw": 45000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B01-3-P3",
+          "title": "로지텍 G304 무선 마우스피트 단품 + 필름 증정",
+          "price_krw": 4200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B01-3-P4",
+          "title": "로지텍 G305 무선 마우스 본품 + 사은품 증정",
+          "price_krw": 37800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B01-3-P5",
+          "title": "로지텍 G304 무선 마우스피트 호환 제품",
+          "price_krw": 3360,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B01-4",
+      "query": "로지텍 G304 무선 마우스피트만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "마우스",
+      "items": [
+        {
+          "id": "B01-4-P1",
+          "title": "로지텍 G304 무선 마우스피트 정품",
+          "price_krw": 4200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B01-4-P2",
+          "title": "로지텍 G304 무선 마우스 본품",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B01-4-P3",
+          "title": "삼성전자 마우스 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B01-4-P4",
+          "title": "로지텍 G304 무선 마우스피트 1개입",
+          "price_krw": 5040,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B01-4-P5",
+          "title": "로지텍 G305 무선 마우스 본품",
+          "price_krw": 35700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B01-5",
+      "query": "마우스 중 로지텍 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "마우스",
+      "items": [
+        {
+          "id": "B01-5-P1",
+          "title": "로지텍 마우스 정품",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B01-5-P2",
+          "title": "삼성전자 마우스 정품",
+          "price_krw": 46200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B01-5-P3",
+          "title": "삼성전자 마우스 새상품",
+          "price_krw": 48300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B01-5-P4",
+          "title": "로지텍 마우스 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B01-5-P5",
+          "title": "로지텍 마우스 리퍼",
+          "price_krw": 29400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B02-1",
+      "query": "캐논 EOS R50 미러리스 카메라 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "카메라",
+      "items": [
+        {
+          "id": "B02-1-P1",
+          "title": "캐논 EOS R50 미러리스 카메라",
+          "price_krw": 950000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B02-1-P2",
+          "title": "캐논 EOS R100 미러리스 카메라",
+          "price_krw": 760000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B02-1-P3",
+          "title": "캐논 EOS R50 카메라 전용 케이스",
+          "price_krw": 142500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B02-1-P4",
+          "title": "삼성전자 카메라 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B02-1-P5",
+          "title": "캐논 EOS R50 미러리스 카메라 새제품 정품",
+          "price_krw": 951200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B02-2",
+      "query": "캐논 EOS R50 미러리스 카메라 1100000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "카메라",
+      "items": [
+        {
+          "id": "B02-2-P1",
+          "title": "캐논 EOS R50 미러리스 카메라",
+          "price_krw": 950000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B02-2-P2",
+          "title": "캐논 EOS R50 미러리스 카메라 새제품",
+          "price_krw": 1377500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B02-2-P3",
+          "title": "캐논 EOS R100 미러리스 카메라",
+          "price_krw": 665000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B02-2-P4",
+          "title": "캐논 EOS R50 카메라 전용 케이스",
+          "price_krw": 142500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B02-2-P5",
+          "title": "캐논 EOS R50 미러리스 카메라 정품",
+          "price_krw": 953000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B02-3",
+      "query": "캐논 EOS R50 미러리스 카메라 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "카메라",
+      "items": [
+        {
+          "id": "B02-3-P1",
+          "title": "캐논 EOS R50 미러리스 카메라 본품 + 사은품 증정",
+          "price_krw": 950000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B02-3-P2",
+          "title": "캐논 EOS R50 미러리스 카메라 본품",
+          "price_krw": 953000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B02-3-P3",
+          "title": "캐논 EOS R50 카메라 전용 케이스 단품 + 필름 증정",
+          "price_krw": 95000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B02-3-P4",
+          "title": "캐논 EOS R100 미러리스 카메라 본품 + 사은품 증정",
+          "price_krw": 855000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B02-3-P5",
+          "title": "캐논 EOS R50 카메라 전용 케이스 호환 제품",
+          "price_krw": 76000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B02-4",
+      "query": "캐논 EOS R50 카메라 전용 케이스만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "카메라",
+      "items": [
+        {
+          "id": "B02-4-P1",
+          "title": "캐논 EOS R50 카메라 전용 케이스 정품",
+          "price_krw": 95000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B02-4-P2",
+          "title": "캐논 EOS R50 미러리스 카메라 본품",
+          "price_krw": 950000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B02-4-P3",
+          "title": "삼성전자 카메라 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B02-4-P4",
+          "title": "캐논 EOS R50 카메라 전용 케이스 1개입",
+          "price_krw": 114000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B02-4-P5",
+          "title": "캐논 EOS R100 미러리스 카메라 본품",
+          "price_krw": 807500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B02-5",
+      "query": "카메라 중 캐논 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "카메라",
+      "items": [
+        {
+          "id": "B02-5-P1",
+          "title": "캐논 카메라 정품",
+          "price_krw": 950000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B02-5-P2",
+          "title": "삼성전자 카메라 정품",
+          "price_krw": 1045000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B02-5-P3",
+          "title": "삼성전자 카메라 새상품",
+          "price_krw": 1092500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B02-5-P4",
+          "title": "캐논 카메라 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B02-5-P5",
+          "title": "캐논 카메라 리퍼",
+          "price_krw": 665000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B03-1",
+      "query": "소니 WH-1000XM5 헤드폰 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "헤드폰",
+      "items": [
+        {
+          "id": "B03-1-P1",
+          "title": "소니 WH-1000XM5 헤드폰",
+          "price_krw": 390000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B03-1-P2",
+          "title": "소니 WH-1000XM4 헤드폰",
+          "price_krw": 312000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B03-1-P3",
+          "title": "소니 WH-1000XM5 이어패드",
+          "price_krw": 58500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B03-1-P4",
+          "title": "삼성전자 헤드폰 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B03-1-P5",
+          "title": "소니 WH-1000XM5 헤드폰 새제품 정품",
+          "price_krw": 391200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B03-2",
+      "query": "소니 WH-1000XM5 헤드폰 450000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "헤드폰",
+      "items": [
+        {
+          "id": "B03-2-P1",
+          "title": "소니 WH-1000XM5 헤드폰",
+          "price_krw": 390000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B03-2-P2",
+          "title": "소니 WH-1000XM5 헤드폰 새제품",
+          "price_krw": 565500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B03-2-P3",
+          "title": "소니 WH-1000XM4 헤드폰",
+          "price_krw": 273000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B03-2-P4",
+          "title": "소니 WH-1000XM5 이어패드",
+          "price_krw": 58500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B03-2-P5",
+          "title": "소니 WH-1000XM5 헤드폰 정품",
+          "price_krw": 393000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B03-3",
+      "query": "소니 WH-1000XM5 헤드폰 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "헤드폰",
+      "items": [
+        {
+          "id": "B03-3-P1",
+          "title": "소니 WH-1000XM5 헤드폰 본품 + 사은품 증정",
+          "price_krw": 390000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B03-3-P2",
+          "title": "소니 WH-1000XM5 헤드폰 본품",
+          "price_krw": 393000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B03-3-P3",
+          "title": "소니 WH-1000XM5 이어패드 단품 + 필름 증정",
+          "price_krw": 39000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B03-3-P4",
+          "title": "소니 WH-1000XM4 헤드폰 본품 + 사은품 증정",
+          "price_krw": 351000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B03-3-P5",
+          "title": "소니 WH-1000XM5 이어패드 호환 제품",
+          "price_krw": 31200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B03-4",
+      "query": "소니 WH-1000XM5 이어패드만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "헤드폰",
+      "items": [
+        {
+          "id": "B03-4-P1",
+          "title": "소니 WH-1000XM5 이어패드 정품",
+          "price_krw": 39000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B03-4-P2",
+          "title": "소니 WH-1000XM5 헤드폰 본품",
+          "price_krw": 390000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B03-4-P3",
+          "title": "삼성전자 헤드폰 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B03-4-P4",
+          "title": "소니 WH-1000XM5 이어패드 1개입",
+          "price_krw": 46800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B03-4-P5",
+          "title": "소니 WH-1000XM4 헤드폰 본품",
+          "price_krw": 331500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B03-5",
+      "query": "헤드폰 중 소니 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "헤드폰",
+      "items": [
+        {
+          "id": "B03-5-P1",
+          "title": "소니 헤드폰 정품",
+          "price_krw": 390000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B03-5-P2",
+          "title": "삼성전자 헤드폰 정품",
+          "price_krw": 429000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B03-5-P3",
+          "title": "삼성전자 헤드폰 새상품",
+          "price_krw": 448500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B03-5-P4",
+          "title": "소니 헤드폰 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B03-5-P5",
+          "title": "소니 헤드폰 리퍼",
+          "price_krw": 273000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B04-1",
+      "query": "삼성 갤럭시 S25 울트라 256GB 스마트폰 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "스마트폰",
+      "items": [
+        {
+          "id": "B04-1-P1",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰",
+          "price_krw": 1350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B04-1-P2",
+          "title": "삼성 갤럭시 S25 플러스 256GB 스마트폰",
+          "price_krw": 1080000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B04-1-P3",
+          "title": "삼성 갤럭시 S25 울트라 케이스",
+          "price_krw": 202500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B04-1-P4",
+          "title": "LG전자 스마트폰 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B04-1-P5",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰 새제품 정품",
+          "price_krw": 1351200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B04-2",
+      "query": "삼성 갤럭시 S25 울트라 256GB 스마트폰 1560000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "스마트폰",
+      "items": [
+        {
+          "id": "B04-2-P1",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰",
+          "price_krw": 1350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B04-2-P2",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰 새제품",
+          "price_krw": 1957500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B04-2-P3",
+          "title": "삼성 갤럭시 S25 플러스 256GB 스마트폰",
+          "price_krw": 945000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B04-2-P4",
+          "title": "삼성 갤럭시 S25 울트라 케이스",
+          "price_krw": 202500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B04-2-P5",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰 정품",
+          "price_krw": 1353000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B04-3",
+      "query": "삼성 갤럭시 S25 울트라 256GB 스마트폰 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "스마트폰",
+      "items": [
+        {
+          "id": "B04-3-P1",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰 본품 + 사은품 증정",
+          "price_krw": 1350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B04-3-P2",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰 본품",
+          "price_krw": 1353000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B04-3-P3",
+          "title": "삼성 갤럭시 S25 울트라 케이스 단품 + 필름 증정",
+          "price_krw": 135000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B04-3-P4",
+          "title": "삼성 갤럭시 S25 플러스 256GB 스마트폰 본품 + 사은품 증정",
+          "price_krw": 1215000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B04-3-P5",
+          "title": "삼성 갤럭시 S25 울트라 케이스 호환 제품",
+          "price_krw": 108000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B04-4",
+      "query": "삼성 갤럭시 S25 울트라 케이스만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "스마트폰",
+      "items": [
+        {
+          "id": "B04-4-P1",
+          "title": "삼성 갤럭시 S25 울트라 케이스 정품",
+          "price_krw": 135000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B04-4-P2",
+          "title": "삼성 갤럭시 S25 울트라 256GB 스마트폰 본품",
+          "price_krw": 1350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B04-4-P3",
+          "title": "LG전자 스마트폰 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B04-4-P4",
+          "title": "삼성 갤럭시 S25 울트라 케이스 1개입",
+          "price_krw": 162000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B04-4-P5",
+          "title": "삼성 갤럭시 S25 플러스 256GB 스마트폰 본품",
+          "price_krw": 1147500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B04-5",
+      "query": "스마트폰 중 삼성 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "스마트폰",
+      "items": [
+        {
+          "id": "B04-5-P1",
+          "title": "삼성 스마트폰 정품",
+          "price_krw": 1350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B04-5-P2",
+          "title": "LG전자 스마트폰 정품",
+          "price_krw": 1485000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B04-5-P3",
+          "title": "LG전자 스마트폰 새상품",
+          "price_krw": 1552500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B04-5-P4",
+          "title": "삼성 스마트폰 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B04-5-P5",
+          "title": "삼성 스마트폰 리퍼",
+          "price_krw": 945000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B05-1",
+      "query": "애플 아이패드 에어 M3 256GB 태블릿 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "태블릿",
+      "items": [
+        {
+          "id": "B05-1-P1",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿",
+          "price_krw": 1050000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B05-1-P2",
+          "title": "애플 아이패드 에어 M2 256GB 태블릿",
+          "price_krw": 840000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B05-1-P3",
+          "title": "애플 아이패드 에어 M3 키보드 케이스",
+          "price_krw": 157500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B05-1-P4",
+          "title": "삼성전자 태블릿 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B05-1-P5",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿 새제품 정품",
+          "price_krw": 1051200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B05-2",
+      "query": "애플 아이패드 에어 M3 256GB 태블릿 1210000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "태블릿",
+      "items": [
+        {
+          "id": "B05-2-P1",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿",
+          "price_krw": 1050000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B05-2-P2",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿 새제품",
+          "price_krw": 1522500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B05-2-P3",
+          "title": "애플 아이패드 에어 M2 256GB 태블릿",
+          "price_krw": 735000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B05-2-P4",
+          "title": "애플 아이패드 에어 M3 키보드 케이스",
+          "price_krw": 157500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B05-2-P5",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿 정품",
+          "price_krw": 1053000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B05-3",
+      "query": "애플 아이패드 에어 M3 256GB 태블릿 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "태블릿",
+      "items": [
+        {
+          "id": "B05-3-P1",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿 본품 + 사은품 증정",
+          "price_krw": 1050000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B05-3-P2",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿 본품",
+          "price_krw": 1053000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B05-3-P3",
+          "title": "애플 아이패드 에어 M3 키보드 케이스 단품 + 필름 증정",
+          "price_krw": 105000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B05-3-P4",
+          "title": "애플 아이패드 에어 M2 256GB 태블릿 본품 + 사은품 증정",
+          "price_krw": 945000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B05-3-P5",
+          "title": "애플 아이패드 에어 M3 키보드 케이스 호환 제품",
+          "price_krw": 84000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B05-4",
+      "query": "애플 아이패드 에어 M3 키보드 케이스만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "태블릿",
+      "items": [
+        {
+          "id": "B05-4-P1",
+          "title": "애플 아이패드 에어 M3 키보드 케이스 정품",
+          "price_krw": 105000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B05-4-P2",
+          "title": "애플 아이패드 에어 M3 256GB 태블릿 본품",
+          "price_krw": 1050000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B05-4-P3",
+          "title": "삼성전자 태블릿 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B05-4-P4",
+          "title": "애플 아이패드 에어 M3 키보드 케이스 1개입",
+          "price_krw": 126000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B05-4-P5",
+          "title": "애플 아이패드 에어 M2 256GB 태블릿 본품",
+          "price_krw": 892500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B05-5",
+      "query": "태블릿 중 애플 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "태블릿",
+      "items": [
+        {
+          "id": "B05-5-P1",
+          "title": "애플 태블릿 정품",
+          "price_krw": 1050000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B05-5-P2",
+          "title": "삼성전자 태블릿 정품",
+          "price_krw": 1155000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B05-5-P3",
+          "title": "삼성전자 태블릿 새상품",
+          "price_krw": 1207500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B05-5-P4",
+          "title": "애플 태블릿 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B05-5-P5",
+          "title": "애플 태블릿 리퍼",
+          "price_krw": 735000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B06-1",
+      "query": "레노버 리전 5 16인치 노트북 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "노트북",
+      "items": [
+        {
+          "id": "B06-1-P1",
+          "title": "레노버 리전 5 16인치 노트북",
+          "price_krw": 1580000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B06-1-P2",
+          "title": "레노버 리전 7 16인치 노트북",
+          "price_krw": 1264000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B06-1-P3",
+          "title": "레노버 리전 5 노트북 거치대",
+          "price_krw": 237000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B06-1-P4",
+          "title": "삼성전자 노트북 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B06-1-P5",
+          "title": "레노버 리전 5 16인치 노트북 새제품 정품",
+          "price_krw": 1581200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B06-2",
+      "query": "레노버 리전 5 16인치 노트북 1820000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "노트북",
+      "items": [
+        {
+          "id": "B06-2-P1",
+          "title": "레노버 리전 5 16인치 노트북",
+          "price_krw": 1580000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B06-2-P2",
+          "title": "레노버 리전 5 16인치 노트북 새제품",
+          "price_krw": 2291000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B06-2-P3",
+          "title": "레노버 리전 7 16인치 노트북",
+          "price_krw": 1106000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B06-2-P4",
+          "title": "레노버 리전 5 노트북 거치대",
+          "price_krw": 237000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B06-2-P5",
+          "title": "레노버 리전 5 16인치 노트북 정품",
+          "price_krw": 1583000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B06-3",
+      "query": "레노버 리전 5 16인치 노트북 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "노트북",
+      "items": [
+        {
+          "id": "B06-3-P1",
+          "title": "레노버 리전 5 16인치 노트북 본품 + 사은품 증정",
+          "price_krw": 1580000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B06-3-P2",
+          "title": "레노버 리전 5 16인치 노트북 본품",
+          "price_krw": 1583000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B06-3-P3",
+          "title": "레노버 리전 5 노트북 거치대 단품 + 필름 증정",
+          "price_krw": 158000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B06-3-P4",
+          "title": "레노버 리전 7 16인치 노트북 본품 + 사은품 증정",
+          "price_krw": 1422000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B06-3-P5",
+          "title": "레노버 리전 5 노트북 거치대 호환 제품",
+          "price_krw": 126400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B06-4",
+      "query": "레노버 리전 5 노트북 거치대만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "노트북",
+      "items": [
+        {
+          "id": "B06-4-P1",
+          "title": "레노버 리전 5 노트북 거치대 정품",
+          "price_krw": 158000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B06-4-P2",
+          "title": "레노버 리전 5 16인치 노트북 본품",
+          "price_krw": 1580000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B06-4-P3",
+          "title": "삼성전자 노트북 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B06-4-P4",
+          "title": "레노버 리전 5 노트북 거치대 1개입",
+          "price_krw": 189600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B06-4-P5",
+          "title": "레노버 리전 7 16인치 노트북 본품",
+          "price_krw": 1343000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B06-5",
+      "query": "노트북 중 레노버 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "노트북",
+      "items": [
+        {
+          "id": "B06-5-P1",
+          "title": "레노버 노트북 정품",
+          "price_krw": 1580000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B06-5-P2",
+          "title": "삼성전자 노트북 정품",
+          "price_krw": 1738000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B06-5-P3",
+          "title": "삼성전자 노트북 새상품",
+          "price_krw": 1817000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B06-5-P4",
+          "title": "레노버 노트북 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B06-5-P5",
+          "title": "레노버 노트북 리퍼",
+          "price_krw": 1106000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B07-1",
+      "query": "LG 27인치 144Hz 게이밍 모니터 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "모니터",
+      "items": [
+        {
+          "id": "B07-1-P1",
+          "title": "LG 27인치 144Hz 게이밍 모니터",
+          "price_krw": 320000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B07-1-P2",
+          "title": "LG 27인치 75Hz 게이밍 모니터",
+          "price_krw": 256000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B07-1-P3",
+          "title": "LG 27인치 모니터암 거치대",
+          "price_krw": 48000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B07-1-P4",
+          "title": "삼성전자 모니터 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B07-1-P5",
+          "title": "LG 27인치 144Hz 게이밍 모니터 새제품 정품",
+          "price_krw": 321200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B07-2",
+      "query": "LG 27인치 144Hz 게이밍 모니터 370000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "모니터",
+      "items": [
+        {
+          "id": "B07-2-P1",
+          "title": "LG 27인치 144Hz 게이밍 모니터",
+          "price_krw": 320000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B07-2-P2",
+          "title": "LG 27인치 144Hz 게이밍 모니터 새제품",
+          "price_krw": 464000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B07-2-P3",
+          "title": "LG 27인치 75Hz 게이밍 모니터",
+          "price_krw": 224000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B07-2-P4",
+          "title": "LG 27인치 모니터암 거치대",
+          "price_krw": 48000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B07-2-P5",
+          "title": "LG 27인치 144Hz 게이밍 모니터 정품",
+          "price_krw": 323000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B07-3",
+      "query": "LG 27인치 144Hz 게이밍 모니터 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "모니터",
+      "items": [
+        {
+          "id": "B07-3-P1",
+          "title": "LG 27인치 144Hz 게이밍 모니터 본품 + 사은품 증정",
+          "price_krw": 320000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B07-3-P2",
+          "title": "LG 27인치 144Hz 게이밍 모니터 본품",
+          "price_krw": 323000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B07-3-P3",
+          "title": "LG 27인치 모니터암 거치대 단품 + 필름 증정",
+          "price_krw": 32000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B07-3-P4",
+          "title": "LG 27인치 75Hz 게이밍 모니터 본품 + 사은품 증정",
+          "price_krw": 288000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B07-3-P5",
+          "title": "LG 27인치 모니터암 거치대 호환 제품",
+          "price_krw": 25600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B07-4",
+      "query": "LG 27인치 모니터암 거치대만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "모니터",
+      "items": [
+        {
+          "id": "B07-4-P1",
+          "title": "LG 27인치 모니터암 거치대 정품",
+          "price_krw": 32000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B07-4-P2",
+          "title": "LG 27인치 144Hz 게이밍 모니터 본품",
+          "price_krw": 320000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B07-4-P3",
+          "title": "삼성전자 모니터 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B07-4-P4",
+          "title": "LG 27인치 모니터암 거치대 1개입",
+          "price_krw": 38400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B07-4-P5",
+          "title": "LG 27인치 75Hz 게이밍 모니터 본품",
+          "price_krw": 272000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B07-5",
+      "query": "모니터 중 LG 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "모니터",
+      "items": [
+        {
+          "id": "B07-5-P1",
+          "title": "LG 모니터 정품",
+          "price_krw": 320000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B07-5-P2",
+          "title": "삼성전자 모니터 정품",
+          "price_krw": 352000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B07-5-P3",
+          "title": "삼성전자 모니터 새상품",
+          "price_krw": 368000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B07-5-P4",
+          "title": "LG 모니터 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B07-5-P5",
+          "title": "LG 모니터 리퍼",
+          "price_krw": 224000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B08-1",
+      "query": "다이슨 V12 청소기 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "청소기",
+      "items": [
+        {
+          "id": "B08-1-P1",
+          "title": "다이슨 V12 청소기",
+          "price_krw": 730000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B08-1-P2",
+          "title": "다이슨 V11 청소기",
+          "price_krw": 584000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B08-1-P3",
+          "title": "다이슨 V12 청소기 교체 필터",
+          "price_krw": 109500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B08-1-P4",
+          "title": "삼성전자 청소기 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B08-1-P5",
+          "title": "다이슨 V12 청소기 새제품 정품",
+          "price_krw": 731200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B08-2",
+      "query": "다이슨 V12 청소기 840000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "청소기",
+      "items": [
+        {
+          "id": "B08-2-P1",
+          "title": "다이슨 V12 청소기",
+          "price_krw": 730000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B08-2-P2",
+          "title": "다이슨 V12 청소기 새제품",
+          "price_krw": 1058500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B08-2-P3",
+          "title": "다이슨 V11 청소기",
+          "price_krw": 511000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B08-2-P4",
+          "title": "다이슨 V12 청소기 교체 필터",
+          "price_krw": 109500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B08-2-P5",
+          "title": "다이슨 V12 청소기 정품",
+          "price_krw": 733000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B08-3",
+      "query": "다이슨 V12 청소기 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "청소기",
+      "items": [
+        {
+          "id": "B08-3-P1",
+          "title": "다이슨 V12 청소기 본품 + 사은품 증정",
+          "price_krw": 730000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B08-3-P2",
+          "title": "다이슨 V12 청소기 본품",
+          "price_krw": 733000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B08-3-P3",
+          "title": "다이슨 V12 청소기 교체 필터 단품 + 필름 증정",
+          "price_krw": 73000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B08-3-P4",
+          "title": "다이슨 V11 청소기 본품 + 사은품 증정",
+          "price_krw": 657000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B08-3-P5",
+          "title": "다이슨 V12 청소기 교체 필터 호환 제품",
+          "price_krw": 58400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B08-4",
+      "query": "다이슨 V12 청소기 교체 필터만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "청소기",
+      "items": [
+        {
+          "id": "B08-4-P1",
+          "title": "다이슨 V12 청소기 교체 필터 정품",
+          "price_krw": 73000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B08-4-P2",
+          "title": "다이슨 V12 청소기 본품",
+          "price_krw": 730000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B08-4-P3",
+          "title": "삼성전자 청소기 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B08-4-P4",
+          "title": "다이슨 V12 청소기 교체 필터 1개입",
+          "price_krw": 87600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B08-4-P5",
+          "title": "다이슨 V11 청소기 본품",
+          "price_krw": 620500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B08-5",
+      "query": "청소기 중 다이슨 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "청소기",
+      "items": [
+        {
+          "id": "B08-5-P1",
+          "title": "다이슨 청소기 정품",
+          "price_krw": 730000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B08-5-P2",
+          "title": "삼성전자 청소기 정품",
+          "price_krw": 803000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B08-5-P3",
+          "title": "삼성전자 청소기 새상품",
+          "price_krw": 839500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B08-5-P4",
+          "title": "다이슨 청소기 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B08-5-P5",
+          "title": "다이슨 청소기 리퍼",
+          "price_krw": 511000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B09-1",
+      "query": "로보락 S8 MaxV Ultra 로봇청소기 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "로봇청소기",
+      "items": [
+        {
+          "id": "B09-1-P1",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기",
+          "price_krw": 1590000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B09-1-P2",
+          "title": "로보락 S7 MaxV 로봇청소기",
+          "price_krw": 1272000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B09-1-P3",
+          "title": "로보락 S8 MaxV Ultra 전용 걸레 패드",
+          "price_krw": 238500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B09-1-P4",
+          "title": "삼성전자 로봇청소기 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B09-1-P5",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기 새제품 정품",
+          "price_krw": 1591200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B09-2",
+      "query": "로보락 S8 MaxV Ultra 로봇청소기 1830000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "로봇청소기",
+      "items": [
+        {
+          "id": "B09-2-P1",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기",
+          "price_krw": 1590000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B09-2-P2",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기 새제품",
+          "price_krw": 2305500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B09-2-P3",
+          "title": "로보락 S7 MaxV 로봇청소기",
+          "price_krw": 1113000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B09-2-P4",
+          "title": "로보락 S8 MaxV Ultra 전용 걸레 패드",
+          "price_krw": 238500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B09-2-P5",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기 정품",
+          "price_krw": 1593000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B09-3",
+      "query": "로보락 S8 MaxV Ultra 로봇청소기 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "로봇청소기",
+      "items": [
+        {
+          "id": "B09-3-P1",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기 본품 + 사은품 증정",
+          "price_krw": 1590000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B09-3-P2",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기 본품",
+          "price_krw": 1593000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B09-3-P3",
+          "title": "로보락 S8 MaxV Ultra 전용 걸레 패드 단품 + 필름 증정",
+          "price_krw": 159000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B09-3-P4",
+          "title": "로보락 S7 MaxV 로봇청소기 본품 + 사은품 증정",
+          "price_krw": 1431000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B09-3-P5",
+          "title": "로보락 S8 MaxV Ultra 전용 걸레 패드 호환 제품",
+          "price_krw": 127200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B09-4",
+      "query": "로보락 S8 MaxV Ultra 전용 걸레 패드만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "로봇청소기",
+      "items": [
+        {
+          "id": "B09-4-P1",
+          "title": "로보락 S8 MaxV Ultra 전용 걸레 패드 정품",
+          "price_krw": 159000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B09-4-P2",
+          "title": "로보락 S8 MaxV Ultra 로봇청소기 본품",
+          "price_krw": 1590000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B09-4-P3",
+          "title": "삼성전자 로봇청소기 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B09-4-P4",
+          "title": "로보락 S8 MaxV Ultra 전용 걸레 패드 1개입",
+          "price_krw": 190800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B09-4-P5",
+          "title": "로보락 S7 MaxV 로봇청소기 본품",
+          "price_krw": 1351500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B09-5",
+      "query": "로봇청소기 중 로보락 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "로봇청소기",
+      "items": [
+        {
+          "id": "B09-5-P1",
+          "title": "로보락 로봇청소기 정품",
+          "price_krw": 1590000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B09-5-P2",
+          "title": "삼성전자 로봇청소기 정품",
+          "price_krw": 1749000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B09-5-P3",
+          "title": "삼성전자 로봇청소기 새상품",
+          "price_krw": 1828500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B09-5-P4",
+          "title": "로보락 로봇청소기 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B09-5-P5",
+          "title": "로보락 로봇청소기 리퍼",
+          "price_krw": 1113000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B10-1",
+      "query": "닌텐도 스위치 OLED 게임기 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "게임기",
+      "items": [
+        {
+          "id": "B10-1-P1",
+          "title": "닌텐도 스위치 OLED 게임기",
+          "price_krw": 350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B10-1-P2",
+          "title": "닌텐도 스위치 라이트 게임기",
+          "price_krw": 280000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B10-1-P3",
+          "title": "닌텐도 스위치 OLED 케이스",
+          "price_krw": 52500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B10-1-P4",
+          "title": "삼성전자 게임기 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B10-1-P5",
+          "title": "닌텐도 스위치 OLED 게임기 새제품 정품",
+          "price_krw": 351200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B10-2",
+      "query": "닌텐도 스위치 OLED 게임기 410000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "게임기",
+      "items": [
+        {
+          "id": "B10-2-P1",
+          "title": "닌텐도 스위치 OLED 게임기",
+          "price_krw": 350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B10-2-P2",
+          "title": "닌텐도 스위치 OLED 게임기 새제품",
+          "price_krw": 507500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B10-2-P3",
+          "title": "닌텐도 스위치 라이트 게임기",
+          "price_krw": 245000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B10-2-P4",
+          "title": "닌텐도 스위치 OLED 케이스",
+          "price_krw": 52500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B10-2-P5",
+          "title": "닌텐도 스위치 OLED 게임기 정품",
+          "price_krw": 353000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B10-3",
+      "query": "닌텐도 스위치 OLED 게임기 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "게임기",
+      "items": [
+        {
+          "id": "B10-3-P1",
+          "title": "닌텐도 스위치 OLED 게임기 본품 + 사은품 증정",
+          "price_krw": 350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B10-3-P2",
+          "title": "닌텐도 스위치 OLED 게임기 본품",
+          "price_krw": 353000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B10-3-P3",
+          "title": "닌텐도 스위치 OLED 케이스 단품 + 필름 증정",
+          "price_krw": 35000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B10-3-P4",
+          "title": "닌텐도 스위치 라이트 게임기 본품 + 사은품 증정",
+          "price_krw": 315000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B10-3-P5",
+          "title": "닌텐도 스위치 OLED 케이스 호환 제품",
+          "price_krw": 28000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B10-4",
+      "query": "닌텐도 스위치 OLED 케이스만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "게임기",
+      "items": [
+        {
+          "id": "B10-4-P1",
+          "title": "닌텐도 스위치 OLED 케이스 정품",
+          "price_krw": 35000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B10-4-P2",
+          "title": "닌텐도 스위치 OLED 게임기 본품",
+          "price_krw": 350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B10-4-P3",
+          "title": "삼성전자 게임기 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B10-4-P4",
+          "title": "닌텐도 스위치 OLED 케이스 1개입",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B10-4-P5",
+          "title": "닌텐도 스위치 라이트 게임기 본품",
+          "price_krw": 297500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B10-5",
+      "query": "게임기 중 닌텐도 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "게임기",
+      "items": [
+        {
+          "id": "B10-5-P1",
+          "title": "닌텐도 게임기 정품",
+          "price_krw": 350000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B10-5-P2",
+          "title": "삼성전자 게임기 정품",
+          "price_krw": 385000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B10-5-P3",
+          "title": "삼성전자 게임기 새상품",
+          "price_krw": 402500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B10-5-P4",
+          "title": "닌텐도 게임기 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B10-5-P5",
+          "title": "닌텐도 게임기 리퍼",
+          "price_krw": 245000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B11-1",
+      "query": "쿠쿠 6인용 전기밥솥 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "전기밥솥",
+      "items": [
+        {
+          "id": "B11-1-P1",
+          "title": "쿠쿠 6인용 전기밥솥",
+          "price_krw": 270000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B11-1-P2",
+          "title": "쿠쿠 10인용 전기밥솥",
+          "price_krw": 216000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B11-1-P3",
+          "title": "쿠쿠 6인용 전기밥솥 내솥",
+          "price_krw": 40500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B11-1-P4",
+          "title": "삼성전자 전기밥솥 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B11-1-P5",
+          "title": "쿠쿠 6인용 전기밥솥 새제품 정품",
+          "price_krw": 271200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B11-2",
+      "query": "쿠쿠 6인용 전기밥솥 320000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "전기밥솥",
+      "items": [
+        {
+          "id": "B11-2-P1",
+          "title": "쿠쿠 6인용 전기밥솥",
+          "price_krw": 270000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B11-2-P2",
+          "title": "쿠쿠 6인용 전기밥솥 새제품",
+          "price_krw": 391500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B11-2-P3",
+          "title": "쿠쿠 10인용 전기밥솥",
+          "price_krw": 189000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B11-2-P4",
+          "title": "쿠쿠 6인용 전기밥솥 내솥",
+          "price_krw": 40500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B11-2-P5",
+          "title": "쿠쿠 6인용 전기밥솥 정품",
+          "price_krw": 273000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B11-3",
+      "query": "쿠쿠 6인용 전기밥솥 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "전기밥솥",
+      "items": [
+        {
+          "id": "B11-3-P1",
+          "title": "쿠쿠 6인용 전기밥솥 본품 + 사은품 증정",
+          "price_krw": 270000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B11-3-P2",
+          "title": "쿠쿠 6인용 전기밥솥 본품",
+          "price_krw": 273000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B11-3-P3",
+          "title": "쿠쿠 6인용 전기밥솥 내솥 단품 + 필름 증정",
+          "price_krw": 27000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B11-3-P4",
+          "title": "쿠쿠 10인용 전기밥솥 본품 + 사은품 증정",
+          "price_krw": 243000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B11-3-P5",
+          "title": "쿠쿠 6인용 전기밥솥 내솥 호환 제품",
+          "price_krw": 21600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B11-4",
+      "query": "쿠쿠 6인용 전기밥솥 내솥만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "전기밥솥",
+      "items": [
+        {
+          "id": "B11-4-P1",
+          "title": "쿠쿠 6인용 전기밥솥 내솥 정품",
+          "price_krw": 27000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B11-4-P2",
+          "title": "쿠쿠 6인용 전기밥솥 본품",
+          "price_krw": 270000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B11-4-P3",
+          "title": "삼성전자 전기밥솥 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B11-4-P4",
+          "title": "쿠쿠 6인용 전기밥솥 내솥 1개입",
+          "price_krw": 32400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B11-4-P5",
+          "title": "쿠쿠 10인용 전기밥솥 본품",
+          "price_krw": 229500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B11-5",
+      "query": "전기밥솥 중 쿠쿠 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "전기밥솥",
+      "items": [
+        {
+          "id": "B11-5-P1",
+          "title": "쿠쿠 전기밥솥 정품",
+          "price_krw": 270000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B11-5-P2",
+          "title": "삼성전자 전기밥솥 정품",
+          "price_krw": 297000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B11-5-P3",
+          "title": "삼성전자 전기밥솥 새상품",
+          "price_krw": 310500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B11-5-P4",
+          "title": "쿠쿠 전기밥솥 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B11-5-P5",
+          "title": "쿠쿠 전기밥솥 리퍼",
+          "price_krw": 189000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B12-1",
+      "query": "필립스 원블레이드 전기면도기 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "전기면도기",
+      "items": [
+        {
+          "id": "B12-1-P1",
+          "title": "필립스 원블레이드 전기면도기",
+          "price_krw": 69000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B12-1-P2",
+          "title": "브라운 전기면도기",
+          "price_krw": 55200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B12-1-P3",
+          "title": "필립스 원블레이드 교체날",
+          "price_krw": 10350,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B12-1-P4",
+          "title": "삼성전자 전기면도기 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B12-1-P5",
+          "title": "필립스 원블레이드 전기면도기 새제품 정품",
+          "price_krw": 70200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B12-2",
+      "query": "필립스 원블레이드 전기면도기 80000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "전기면도기",
+      "items": [
+        {
+          "id": "B12-2-P1",
+          "title": "필립스 원블레이드 전기면도기",
+          "price_krw": 69000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B12-2-P2",
+          "title": "필립스 원블레이드 전기면도기 새제품",
+          "price_krw": 100050,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B12-2-P3",
+          "title": "브라운 전기면도기",
+          "price_krw": 48300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B12-2-P4",
+          "title": "필립스 원블레이드 교체날",
+          "price_krw": 10350,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B12-2-P5",
+          "title": "필립스 원블레이드 전기면도기 정품",
+          "price_krw": 72000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B12-3",
+      "query": "필립스 원블레이드 전기면도기 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "전기면도기",
+      "items": [
+        {
+          "id": "B12-3-P1",
+          "title": "필립스 원블레이드 전기면도기 본품 + 사은품 증정",
+          "price_krw": 69000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B12-3-P2",
+          "title": "필립스 원블레이드 전기면도기 본품",
+          "price_krw": 72000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B12-3-P3",
+          "title": "필립스 원블레이드 교체날 단품 + 필름 증정",
+          "price_krw": 6900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B12-3-P4",
+          "title": "브라운 전기면도기 본품 + 사은품 증정",
+          "price_krw": 62100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B12-3-P5",
+          "title": "필립스 원블레이드 교체날 호환 제품",
+          "price_krw": 5520,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B12-4",
+      "query": "필립스 원블레이드 교체날만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "전기면도기",
+      "items": [
+        {
+          "id": "B12-4-P1",
+          "title": "필립스 원블레이드 교체날 정품",
+          "price_krw": 6900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B12-4-P2",
+          "title": "필립스 원블레이드 전기면도기 본품",
+          "price_krw": 69000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B12-4-P3",
+          "title": "삼성전자 전기면도기 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B12-4-P4",
+          "title": "필립스 원블레이드 교체날 1개입",
+          "price_krw": 8280,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B12-4-P5",
+          "title": "브라운 전기면도기 본품",
+          "price_krw": 58650,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B12-5",
+      "query": "전기면도기 중 필립스 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "전기면도기",
+      "items": [
+        {
+          "id": "B12-5-P1",
+          "title": "필립스 전기면도기 정품",
+          "price_krw": 69000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B12-5-P2",
+          "title": "삼성전자 전기면도기 정품",
+          "price_krw": 75900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B12-5-P3",
+          "title": "삼성전자 전기면도기 새상품",
+          "price_krw": 79350,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B12-5-P4",
+          "title": "필립스 전기면도기 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B12-5-P5",
+          "title": "필립스 전기면도기 리퍼",
+          "price_krw": 48300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B13-1",
+      "query": "키친아트 28cm 프라이팬 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "프라이팬",
+      "items": [
+        {
+          "id": "B13-1-P1",
+          "title": "키친아트 28cm 프라이팬",
+          "price_krw": 39000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B13-1-P2",
+          "title": "키친아트 24cm 프라이팬",
+          "price_krw": 31200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B13-1-P3",
+          "title": "키친아트 프라이팬 뚜껑",
+          "price_krw": 5850,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B13-1-P4",
+          "title": "삼성전자 프라이팬 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B13-1-P5",
+          "title": "키친아트 28cm 프라이팬 새제품 정품",
+          "price_krw": 40200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B13-2",
+      "query": "키친아트 28cm 프라이팬 50000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "프라이팬",
+      "items": [
+        {
+          "id": "B13-2-P1",
+          "title": "키친아트 28cm 프라이팬",
+          "price_krw": 39000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B13-2-P2",
+          "title": "키친아트 28cm 프라이팬 새제품",
+          "price_krw": 56550,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B13-2-P3",
+          "title": "키친아트 24cm 프라이팬",
+          "price_krw": 27300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B13-2-P4",
+          "title": "키친아트 프라이팬 뚜껑",
+          "price_krw": 5850,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B13-2-P5",
+          "title": "키친아트 28cm 프라이팬 정품",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B13-3",
+      "query": "키친아트 28cm 프라이팬 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "프라이팬",
+      "items": [
+        {
+          "id": "B13-3-P1",
+          "title": "키친아트 28cm 프라이팬 본품 + 사은품 증정",
+          "price_krw": 39000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B13-3-P2",
+          "title": "키친아트 28cm 프라이팬 본품",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B13-3-P3",
+          "title": "키친아트 프라이팬 뚜껑 단품 + 필름 증정",
+          "price_krw": 3900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B13-3-P4",
+          "title": "키친아트 24cm 프라이팬 본품 + 사은품 증정",
+          "price_krw": 35100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B13-3-P5",
+          "title": "키친아트 프라이팬 뚜껑 호환 제품",
+          "price_krw": 3120,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B13-4",
+      "query": "키친아트 프라이팬 뚜껑만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "프라이팬",
+      "items": [
+        {
+          "id": "B13-4-P1",
+          "title": "키친아트 프라이팬 뚜껑 정품",
+          "price_krw": 3900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B13-4-P2",
+          "title": "키친아트 28cm 프라이팬 본품",
+          "price_krw": 39000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B13-4-P3",
+          "title": "삼성전자 프라이팬 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B13-4-P4",
+          "title": "키친아트 프라이팬 뚜껑 1개입",
+          "price_krw": 4680,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B13-4-P5",
+          "title": "키친아트 24cm 프라이팬 본품",
+          "price_krw": 33150,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B13-5",
+      "query": "프라이팬 중 키친아트 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "프라이팬",
+      "items": [
+        {
+          "id": "B13-5-P1",
+          "title": "키친아트 프라이팬 정품",
+          "price_krw": 39000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B13-5-P2",
+          "title": "삼성전자 프라이팬 정품",
+          "price_krw": 42900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B13-5-P3",
+          "title": "삼성전자 프라이팬 새상품",
+          "price_krw": 44850,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B13-5-P4",
+          "title": "키친아트 프라이팬 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B13-5-P5",
+          "title": "키친아트 프라이팬 리퍼",
+          "price_krw": 27300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B14-1",
+      "query": "한샘 원목 식탁 의자 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "식탁 의자",
+      "items": [
+        {
+          "id": "B14-1-P1",
+          "title": "한샘 원목 식탁 의자",
+          "price_krw": 98000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B14-1-P2",
+          "title": "한샘 철제 식탁 의자",
+          "price_krw": 78400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B14-1-P3",
+          "title": "한샘 식탁 의자 방석",
+          "price_krw": 14700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B14-1-P4",
+          "title": "삼성전자 식탁 의자 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B14-1-P5",
+          "title": "한샘 원목 식탁 의자 새제품 정품",
+          "price_krw": 99200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B14-2",
+      "query": "한샘 원목 식탁 의자 120000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "식탁 의자",
+      "items": [
+        {
+          "id": "B14-2-P1",
+          "title": "한샘 원목 식탁 의자",
+          "price_krw": 98000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B14-2-P2",
+          "title": "한샘 원목 식탁 의자 새제품",
+          "price_krw": 142100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B14-2-P3",
+          "title": "한샘 철제 식탁 의자",
+          "price_krw": 68600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B14-2-P4",
+          "title": "한샘 식탁 의자 방석",
+          "price_krw": 14700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B14-2-P5",
+          "title": "한샘 원목 식탁 의자 정품",
+          "price_krw": 101000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B14-3",
+      "query": "한샘 원목 식탁 의자 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "식탁 의자",
+      "items": [
+        {
+          "id": "B14-3-P1",
+          "title": "한샘 원목 식탁 의자 본품 + 사은품 증정",
+          "price_krw": 98000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B14-3-P2",
+          "title": "한샘 원목 식탁 의자 본품",
+          "price_krw": 101000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B14-3-P3",
+          "title": "한샘 식탁 의자 방석 단품 + 필름 증정",
+          "price_krw": 9800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B14-3-P4",
+          "title": "한샘 철제 식탁 의자 본품 + 사은품 증정",
+          "price_krw": 88200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B14-3-P5",
+          "title": "한샘 식탁 의자 방석 호환 제품",
+          "price_krw": 7840,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B14-4",
+      "query": "한샘 식탁 의자 방석만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "식탁 의자",
+      "items": [
+        {
+          "id": "B14-4-P1",
+          "title": "한샘 식탁 의자 방석 정품",
+          "price_krw": 9800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B14-4-P2",
+          "title": "한샘 원목 식탁 의자 본품",
+          "price_krw": 98000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B14-4-P3",
+          "title": "삼성전자 식탁 의자 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B14-4-P4",
+          "title": "한샘 식탁 의자 방석 1개입",
+          "price_krw": 11760,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B14-4-P5",
+          "title": "한샘 철제 식탁 의자 본품",
+          "price_krw": 83300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B14-5",
+      "query": "식탁 의자 중 한샘 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "식탁 의자",
+      "items": [
+        {
+          "id": "B14-5-P1",
+          "title": "한샘 식탁 의자 정품",
+          "price_krw": 98000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B14-5-P2",
+          "title": "삼성전자 식탁 의자 정품",
+          "price_krw": 107800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B14-5-P3",
+          "title": "삼성전자 식탁 의자 새상품",
+          "price_krw": 112700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B14-5-P4",
+          "title": "한샘 식탁 의자 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B14-5-P5",
+          "title": "한샘 식탁 의자 리퍼",
+          "price_krw": 68600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B15-1",
+      "query": "스탠리 887ml 텀블러 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "텀블러",
+      "items": [
+        {
+          "id": "B15-1-P1",
+          "title": "스탠리 887ml 텀블러",
+          "price_krw": 45000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B15-1-P2",
+          "title": "스탠리 1.18L 텀블러",
+          "price_krw": 36000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B15-1-P3",
+          "title": "스탠리 텀블러 빨대 리필",
+          "price_krw": 6750,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B15-1-P4",
+          "title": "삼성전자 텀블러 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B15-1-P5",
+          "title": "스탠리 887ml 텀블러 새제품 정품",
+          "price_krw": 46200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B15-2",
+      "query": "스탠리 887ml 텀블러 60000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "텀블러",
+      "items": [
+        {
+          "id": "B15-2-P1",
+          "title": "스탠리 887ml 텀블러",
+          "price_krw": 45000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B15-2-P2",
+          "title": "스탠리 887ml 텀블러 새제품",
+          "price_krw": 65250,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B15-2-P3",
+          "title": "스탠리 1.18L 텀블러",
+          "price_krw": 31500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B15-2-P4",
+          "title": "스탠리 텀블러 빨대 리필",
+          "price_krw": 6750,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B15-2-P5",
+          "title": "스탠리 887ml 텀블러 정품",
+          "price_krw": 48000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B15-3",
+      "query": "스탠리 887ml 텀블러 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "텀블러",
+      "items": [
+        {
+          "id": "B15-3-P1",
+          "title": "스탠리 887ml 텀블러 본품 + 사은품 증정",
+          "price_krw": 45000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B15-3-P2",
+          "title": "스탠리 887ml 텀블러 본품",
+          "price_krw": 48000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B15-3-P3",
+          "title": "스탠리 텀블러 빨대 리필 단품 + 필름 증정",
+          "price_krw": 4500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B15-3-P4",
+          "title": "스탠리 1.18L 텀블러 본품 + 사은품 증정",
+          "price_krw": 40500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B15-3-P5",
+          "title": "스탠리 텀블러 빨대 리필 호환 제품",
+          "price_krw": 3600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B15-4",
+      "query": "스탠리 텀블러 빨대 리필만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "텀블러",
+      "items": [
+        {
+          "id": "B15-4-P1",
+          "title": "스탠리 텀블러 빨대 리필 정품",
+          "price_krw": 4500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B15-4-P2",
+          "title": "스탠리 887ml 텀블러 본품",
+          "price_krw": 45000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B15-4-P3",
+          "title": "삼성전자 텀블러 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B15-4-P4",
+          "title": "스탠리 텀블러 빨대 리필 1개입",
+          "price_krw": 5400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B15-4-P5",
+          "title": "스탠리 1.18L 텀블러 본품",
+          "price_krw": 38250,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B15-5",
+      "query": "텀블러 중 스탠리 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "텀블러",
+      "items": [
+        {
+          "id": "B15-5-P1",
+          "title": "스탠리 텀블러 정품",
+          "price_krw": 45000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B15-5-P2",
+          "title": "삼성전자 텀블러 정품",
+          "price_krw": 49500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B15-5-P3",
+          "title": "삼성전자 텀블러 새상품",
+          "price_krw": 51750,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B15-5-P4",
+          "title": "스탠리 텀블러 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B15-5-P5",
+          "title": "스탠리 텀블러 리퍼",
+          "price_krw": 31500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B16-1",
+      "query": "락앤락 1.7L 밀폐용기 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "밀폐용기",
+      "items": [
+        {
+          "id": "B16-1-P1",
+          "title": "락앤락 1.7L 밀폐용기",
+          "price_krw": 23000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B16-1-P2",
+          "title": "락앤락 1.0L 밀폐용기",
+          "price_krw": 18400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B16-1-P3",
+          "title": "락앤락 밀폐용기 뚜껑",
+          "price_krw": 3450,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B16-1-P4",
+          "title": "삼성전자 밀폐용기 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B16-1-P5",
+          "title": "락앤락 1.7L 밀폐용기 새제품 정품",
+          "price_krw": 24200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B16-2",
+      "query": "락앤락 1.7L 밀폐용기 30000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "밀폐용기",
+      "items": [
+        {
+          "id": "B16-2-P1",
+          "title": "락앤락 1.7L 밀폐용기",
+          "price_krw": 23000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B16-2-P2",
+          "title": "락앤락 1.7L 밀폐용기 새제품",
+          "price_krw": 33350,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B16-2-P3",
+          "title": "락앤락 1.0L 밀폐용기",
+          "price_krw": 16100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B16-2-P4",
+          "title": "락앤락 밀폐용기 뚜껑",
+          "price_krw": 3450,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B16-2-P5",
+          "title": "락앤락 1.7L 밀폐용기 정품",
+          "price_krw": 26000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B16-3",
+      "query": "락앤락 1.7L 밀폐용기 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "밀폐용기",
+      "items": [
+        {
+          "id": "B16-3-P1",
+          "title": "락앤락 1.7L 밀폐용기 본품 + 사은품 증정",
+          "price_krw": 23000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B16-3-P2",
+          "title": "락앤락 1.7L 밀폐용기 본품",
+          "price_krw": 26000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B16-3-P3",
+          "title": "락앤락 밀폐용기 뚜껑 단품 + 필름 증정",
+          "price_krw": 2300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B16-3-P4",
+          "title": "락앤락 1.0L 밀폐용기 본품 + 사은품 증정",
+          "price_krw": 20700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B16-3-P5",
+          "title": "락앤락 밀폐용기 뚜껑 호환 제품",
+          "price_krw": 1840,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B16-4",
+      "query": "락앤락 밀폐용기 뚜껑만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "밀폐용기",
+      "items": [
+        {
+          "id": "B16-4-P1",
+          "title": "락앤락 밀폐용기 뚜껑 정품",
+          "price_krw": 2300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B16-4-P2",
+          "title": "락앤락 1.7L 밀폐용기 본품",
+          "price_krw": 23000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B16-4-P3",
+          "title": "삼성전자 밀폐용기 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B16-4-P4",
+          "title": "락앤락 밀폐용기 뚜껑 1개입",
+          "price_krw": 2760,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B16-4-P5",
+          "title": "락앤락 1.0L 밀폐용기 본품",
+          "price_krw": 19550,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B16-5",
+      "query": "밀폐용기 중 락앤락 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "밀폐용기",
+      "items": [
+        {
+          "id": "B16-5-P1",
+          "title": "락앤락 밀폐용기 정품",
+          "price_krw": 23000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B16-5-P2",
+          "title": "삼성전자 밀폐용기 정품",
+          "price_krw": 25300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B16-5-P3",
+          "title": "삼성전자 밀폐용기 새상품",
+          "price_krw": 26450,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B16-5-P4",
+          "title": "락앤락 밀폐용기 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B16-5-P5",
+          "title": "락앤락 밀폐용기 리퍼",
+          "price_krw": 16100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B17-1",
+      "query": "샤오미 20000mAh 보조배터리 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "보조배터리",
+      "items": [
+        {
+          "id": "B17-1-P1",
+          "title": "샤오미 20000mAh 보조배터리",
+          "price_krw": 34000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B17-1-P2",
+          "title": "샤오미 10000mAh 보조배터리",
+          "price_krw": 27200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B17-1-P3",
+          "title": "샤오미 보조배터리 충전 케이블",
+          "price_krw": 5100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B17-1-P4",
+          "title": "삼성전자 보조배터리 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B17-1-P5",
+          "title": "샤오미 20000mAh 보조배터리 새제품 정품",
+          "price_krw": 35200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B17-2",
+      "query": "샤오미 20000mAh 보조배터리 40000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "보조배터리",
+      "items": [
+        {
+          "id": "B17-2-P1",
+          "title": "샤오미 20000mAh 보조배터리",
+          "price_krw": 34000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B17-2-P2",
+          "title": "샤오미 20000mAh 보조배터리 새제품",
+          "price_krw": 49300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B17-2-P3",
+          "title": "샤오미 10000mAh 보조배터리",
+          "price_krw": 23800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B17-2-P4",
+          "title": "샤오미 보조배터리 충전 케이블",
+          "price_krw": 5100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B17-2-P5",
+          "title": "샤오미 20000mAh 보조배터리 정품",
+          "price_krw": 37000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B17-3",
+      "query": "샤오미 20000mAh 보조배터리 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "보조배터리",
+      "items": [
+        {
+          "id": "B17-3-P1",
+          "title": "샤오미 20000mAh 보조배터리 본품 + 사은품 증정",
+          "price_krw": 34000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B17-3-P2",
+          "title": "샤오미 20000mAh 보조배터리 본품",
+          "price_krw": 37000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B17-3-P3",
+          "title": "샤오미 보조배터리 충전 케이블 단품 + 필름 증정",
+          "price_krw": 3400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B17-3-P4",
+          "title": "샤오미 10000mAh 보조배터리 본품 + 사은품 증정",
+          "price_krw": 30600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B17-3-P5",
+          "title": "샤오미 보조배터리 충전 케이블 호환 제품",
+          "price_krw": 2720,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B17-4",
+      "query": "샤오미 보조배터리 충전 케이블만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "보조배터리",
+      "items": [
+        {
+          "id": "B17-4-P1",
+          "title": "샤오미 보조배터리 충전 케이블 정품",
+          "price_krw": 3400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B17-4-P2",
+          "title": "샤오미 20000mAh 보조배터리 본품",
+          "price_krw": 34000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B17-4-P3",
+          "title": "삼성전자 보조배터리 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B17-4-P4",
+          "title": "샤오미 보조배터리 충전 케이블 1개입",
+          "price_krw": 4080,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B17-4-P5",
+          "title": "샤오미 10000mAh 보조배터리 본품",
+          "price_krw": 28900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B17-5",
+      "query": "보조배터리 중 샤오미 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "보조배터리",
+      "items": [
+        {
+          "id": "B17-5-P1",
+          "title": "샤오미 보조배터리 정품",
+          "price_krw": 34000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B17-5-P2",
+          "title": "삼성전자 보조배터리 정품",
+          "price_krw": 37400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B17-5-P3",
+          "title": "삼성전자 보조배터리 새상품",
+          "price_krw": 39100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B17-5-P4",
+          "title": "샤오미 보조배터리 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B17-5-P5",
+          "title": "샤오미 보조배터리 리퍼",
+          "price_krw": 23800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B18-1",
+      "query": "나이키 기모 후드티 XL 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "후드티",
+      "items": [
+        {
+          "id": "B18-1-P1",
+          "title": "나이키 기모 후드티 XL",
+          "price_krw": 99000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B18-1-P2",
+          "title": "나이키 기모 후드티 L",
+          "price_krw": 79200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B18-1-P3",
+          "title": "나이키 후드티 보관 파우치",
+          "price_krw": 14850,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B18-1-P4",
+          "title": "삼성전자 후드티 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B18-1-P5",
+          "title": "나이키 기모 후드티 XL 새제품 정품",
+          "price_krw": 100200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B18-2",
+      "query": "나이키 기모 후드티 XL 120000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "후드티",
+      "items": [
+        {
+          "id": "B18-2-P1",
+          "title": "나이키 기모 후드티 XL",
+          "price_krw": 99000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B18-2-P2",
+          "title": "나이키 기모 후드티 XL 새제품",
+          "price_krw": 143550,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B18-2-P3",
+          "title": "나이키 기모 후드티 L",
+          "price_krw": 69300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B18-2-P4",
+          "title": "나이키 후드티 보관 파우치",
+          "price_krw": 14850,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B18-2-P5",
+          "title": "나이키 기모 후드티 XL 정품",
+          "price_krw": 102000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B18-3",
+      "query": "나이키 기모 후드티 XL 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "후드티",
+      "items": [
+        {
+          "id": "B18-3-P1",
+          "title": "나이키 기모 후드티 XL 본품 + 사은품 증정",
+          "price_krw": 99000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B18-3-P2",
+          "title": "나이키 기모 후드티 XL 본품",
+          "price_krw": 102000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B18-3-P3",
+          "title": "나이키 후드티 보관 파우치 단품 + 필름 증정",
+          "price_krw": 9900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B18-3-P4",
+          "title": "나이키 기모 후드티 L 본품 + 사은품 증정",
+          "price_krw": 89100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B18-3-P5",
+          "title": "나이키 후드티 보관 파우치 호환 제품",
+          "price_krw": 7920,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B18-4",
+      "query": "나이키 후드티 보관 파우치만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "후드티",
+      "items": [
+        {
+          "id": "B18-4-P1",
+          "title": "나이키 후드티 보관 파우치 정품",
+          "price_krw": 9900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B18-4-P2",
+          "title": "나이키 기모 후드티 XL 본품",
+          "price_krw": 99000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B18-4-P3",
+          "title": "삼성전자 후드티 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B18-4-P4",
+          "title": "나이키 후드티 보관 파우치 1개입",
+          "price_krw": 11880,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B18-4-P5",
+          "title": "나이키 기모 후드티 L 본품",
+          "price_krw": 84150,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B18-5",
+      "query": "후드티 중 나이키 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "후드티",
+      "items": [
+        {
+          "id": "B18-5-P1",
+          "title": "나이키 후드티 정품",
+          "price_krw": 99000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B18-5-P2",
+          "title": "삼성전자 후드티 정품",
+          "price_krw": 108900,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B18-5-P3",
+          "title": "삼성전자 후드티 새상품",
+          "price_krw": 113850,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B18-5-P4",
+          "title": "나이키 후드티 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B18-5-P5",
+          "title": "나이키 후드티 리퍼",
+          "price_krw": 69300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B19-1",
+      "query": "아디다스 러닝화 270mm 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "러닝화",
+      "items": [
+        {
+          "id": "B19-1-P1",
+          "title": "아디다스 러닝화 270mm",
+          "price_krw": 115000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B19-1-P2",
+          "title": "아디다스 러닝화 260mm",
+          "price_krw": 92000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B19-1-P3",
+          "title": "아디다스 러닝화 신발끈",
+          "price_krw": 17250,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B19-1-P4",
+          "title": "삼성전자 러닝화 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B19-1-P5",
+          "title": "아디다스 러닝화 270mm 새제품 정품",
+          "price_krw": 116200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B19-2",
+      "query": "아디다스 러닝화 270mm 140000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "러닝화",
+      "items": [
+        {
+          "id": "B19-2-P1",
+          "title": "아디다스 러닝화 270mm",
+          "price_krw": 115000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B19-2-P2",
+          "title": "아디다스 러닝화 270mm 새제품",
+          "price_krw": 166750,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B19-2-P3",
+          "title": "아디다스 러닝화 260mm",
+          "price_krw": 80500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B19-2-P4",
+          "title": "아디다스 러닝화 신발끈",
+          "price_krw": 17250,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B19-2-P5",
+          "title": "아디다스 러닝화 270mm 정품",
+          "price_krw": 118000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B19-3",
+      "query": "아디다스 러닝화 270mm 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "러닝화",
+      "items": [
+        {
+          "id": "B19-3-P1",
+          "title": "아디다스 러닝화 270mm 본품 + 사은품 증정",
+          "price_krw": 115000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B19-3-P2",
+          "title": "아디다스 러닝화 270mm 본품",
+          "price_krw": 118000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B19-3-P3",
+          "title": "아디다스 러닝화 신발끈 단품 + 필름 증정",
+          "price_krw": 11500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B19-3-P4",
+          "title": "아디다스 러닝화 260mm 본품 + 사은품 증정",
+          "price_krw": 103500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B19-3-P5",
+          "title": "아디다스 러닝화 신발끈 호환 제품",
+          "price_krw": 9200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B19-4",
+      "query": "아디다스 러닝화 신발끈만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "러닝화",
+      "items": [
+        {
+          "id": "B19-4-P1",
+          "title": "아디다스 러닝화 신발끈 정품",
+          "price_krw": 11500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B19-4-P2",
+          "title": "아디다스 러닝화 270mm 본품",
+          "price_krw": 115000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B19-4-P3",
+          "title": "삼성전자 러닝화 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B19-4-P4",
+          "title": "아디다스 러닝화 신발끈 1개입",
+          "price_krw": 13800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B19-4-P5",
+          "title": "아디다스 러닝화 260mm 본품",
+          "price_krw": 97750,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B19-5",
+      "query": "러닝화 중 아디다스 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "러닝화",
+      "items": [
+        {
+          "id": "B19-5-P1",
+          "title": "아디다스 러닝화 정품",
+          "price_krw": 115000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B19-5-P2",
+          "title": "삼성전자 러닝화 정품",
+          "price_krw": 126500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B19-5-P3",
+          "title": "삼성전자 러닝화 새상품",
+          "price_krw": 132250,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B19-5-P4",
+          "title": "아디다스 러닝화 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B19-5-P5",
+          "title": "아디다스 러닝화 리퍼",
+          "price_krw": 80500,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B20-1",
+      "query": "무인양품 원목 책상 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "책상",
+      "items": [
+        {
+          "id": "B20-1-P1",
+          "title": "무인양품 원목 책상",
+          "price_krw": 298000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B20-1-P2",
+          "title": "무인양품 MDF 책상",
+          "price_krw": 238400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B20-1-P3",
+          "title": "무인양품 책상 서랍",
+          "price_krw": 44700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B20-1-P4",
+          "title": "삼성전자 책상 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B20-1-P5",
+          "title": "무인양품 원목 책상 새제품 정품",
+          "price_krw": 299200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B20-2",
+      "query": "무인양품 원목 책상 350000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "책상",
+      "items": [
+        {
+          "id": "B20-2-P1",
+          "title": "무인양품 원목 책상",
+          "price_krw": 298000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B20-2-P2",
+          "title": "무인양품 원목 책상 새제품",
+          "price_krw": 432100,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B20-2-P3",
+          "title": "무인양품 MDF 책상",
+          "price_krw": 208600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B20-2-P4",
+          "title": "무인양품 책상 서랍",
+          "price_krw": 44700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B20-2-P5",
+          "title": "무인양품 원목 책상 정품",
+          "price_krw": 301000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B20-3",
+      "query": "무인양품 원목 책상 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "책상",
+      "items": [
+        {
+          "id": "B20-3-P1",
+          "title": "무인양품 원목 책상 본품 + 사은품 증정",
+          "price_krw": 298000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B20-3-P2",
+          "title": "무인양품 원목 책상 본품",
+          "price_krw": 301000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B20-3-P3",
+          "title": "무인양품 책상 서랍 단품 + 필름 증정",
+          "price_krw": 29800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B20-3-P4",
+          "title": "무인양품 MDF 책상 본품 + 사은품 증정",
+          "price_krw": 268200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B20-3-P5",
+          "title": "무인양품 책상 서랍 호환 제품",
+          "price_krw": 23840,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B20-4",
+      "query": "무인양품 책상 서랍만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "책상",
+      "items": [
+        {
+          "id": "B20-4-P1",
+          "title": "무인양품 책상 서랍 정품",
+          "price_krw": 29800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B20-4-P2",
+          "title": "무인양품 원목 책상 본품",
+          "price_krw": 298000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B20-4-P3",
+          "title": "삼성전자 책상 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B20-4-P4",
+          "title": "무인양품 책상 서랍 1개입",
+          "price_krw": 35760,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B20-4-P5",
+          "title": "무인양품 MDF 책상 본품",
+          "price_krw": 253300,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B20-5",
+      "query": "책상 중 무인양품 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "책상",
+      "items": [
+        {
+          "id": "B20-5-P1",
+          "title": "무인양품 책상 정품",
+          "price_krw": 298000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B20-5-P2",
+          "title": "삼성전자 책상 정품",
+          "price_krw": 327800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B20-5-P3",
+          "title": "삼성전자 책상 새상품",
+          "price_krw": 342700,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B20-5-P4",
+          "title": "무인양품 책상 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B20-5-P5",
+          "title": "무인양품 책상 리퍼",
+          "price_krw": 208600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B21-1",
+      "query": "이케아 퀸 침대 프레임 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "침대 프레임",
+      "items": [
+        {
+          "id": "B21-1-P1",
+          "title": "이케아 퀸 침대 프레임",
+          "price_krw": 420000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B21-1-P2",
+          "title": "이케아 싱글 침대 프레임",
+          "price_krw": 336000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B21-1-P3",
+          "title": "이케아 침대 매트리스 커버",
+          "price_krw": 63000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B21-1-P4",
+          "title": "삼성전자 침대 프레임 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B21-1-P5",
+          "title": "이케아 퀸 침대 프레임 새제품 정품",
+          "price_krw": 421200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B21-2",
+      "query": "이케아 퀸 침대 프레임 490000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "침대 프레임",
+      "items": [
+        {
+          "id": "B21-2-P1",
+          "title": "이케아 퀸 침대 프레임",
+          "price_krw": 420000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B21-2-P2",
+          "title": "이케아 퀸 침대 프레임 새제품",
+          "price_krw": 609000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B21-2-P3",
+          "title": "이케아 싱글 침대 프레임",
+          "price_krw": 294000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B21-2-P4",
+          "title": "이케아 침대 매트리스 커버",
+          "price_krw": 63000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B21-2-P5",
+          "title": "이케아 퀸 침대 프레임 정품",
+          "price_krw": 423000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B21-3",
+      "query": "이케아 퀸 침대 프레임 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "침대 프레임",
+      "items": [
+        {
+          "id": "B21-3-P1",
+          "title": "이케아 퀸 침대 프레임 본품 + 사은품 증정",
+          "price_krw": 420000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B21-3-P2",
+          "title": "이케아 퀸 침대 프레임 본품",
+          "price_krw": 423000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B21-3-P3",
+          "title": "이케아 침대 매트리스 커버 단품 + 필름 증정",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B21-3-P4",
+          "title": "이케아 싱글 침대 프레임 본품 + 사은품 증정",
+          "price_krw": 378000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B21-3-P5",
+          "title": "이케아 침대 매트리스 커버 호환 제품",
+          "price_krw": 33600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B21-4",
+      "query": "이케아 침대 매트리스 커버만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "침대 프레임",
+      "items": [
+        {
+          "id": "B21-4-P1",
+          "title": "이케아 침대 매트리스 커버 정품",
+          "price_krw": 42000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B21-4-P2",
+          "title": "이케아 퀸 침대 프레임 본품",
+          "price_krw": 420000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B21-4-P3",
+          "title": "삼성전자 침대 프레임 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B21-4-P4",
+          "title": "이케아 침대 매트리스 커버 1개입",
+          "price_krw": 50400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B21-4-P5",
+          "title": "이케아 싱글 침대 프레임 본품",
+          "price_krw": 357000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B21-5",
+      "query": "침대 프레임 중 이케아 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "침대 프레임",
+      "items": [
+        {
+          "id": "B21-5-P1",
+          "title": "이케아 침대 프레임 정품",
+          "price_krw": 420000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B21-5-P2",
+          "title": "삼성전자 침대 프레임 정품",
+          "price_krw": 462000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B21-5-P3",
+          "title": "삼성전자 침대 프레임 새상품",
+          "price_krw": 483000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B21-5-P4",
+          "title": "이케아 침대 프레임 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B21-5-P5",
+          "title": "이케아 침대 프레임 리퍼",
+          "price_krw": 294000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B22-1",
+      "query": "오뚜기 진라면 매운맛 5개입 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "라면",
+      "items": [
+        {
+          "id": "B22-1-P1",
+          "title": "오뚜기 진라면 매운맛 5개입",
+          "price_krw": 4800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B22-1-P2",
+          "title": "오뚜기 진라면 순한맛 5개입",
+          "price_krw": 3840,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B22-1-P3",
+          "title": "오뚜기 진라면 매운맛 10개입",
+          "price_krw": 720,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B22-1-P4",
+          "title": "삼성전자 라면 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B22-1-P5",
+          "title": "오뚜기 진라면 매운맛 5개입 새제품 정품",
+          "price_krw": 6000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B22-2",
+      "query": "오뚜기 진라면 매운맛 5개입 10000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "라면",
+      "items": [
+        {
+          "id": "B22-2-P1",
+          "title": "오뚜기 진라면 매운맛 5개입",
+          "price_krw": 4800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B22-2-P2",
+          "title": "오뚜기 진라면 매운맛 5개입 새제품",
+          "price_krw": 6960,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B22-2-P3",
+          "title": "오뚜기 진라면 순한맛 5개입",
+          "price_krw": 3360,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B22-2-P4",
+          "title": "오뚜기 진라면 매운맛 10개입",
+          "price_krw": 720,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B22-2-P5",
+          "title": "오뚜기 진라면 매운맛 5개입 정품",
+          "price_krw": 7800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B22-3",
+      "query": "오뚜기 진라면 매운맛 5개입 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "라면",
+      "items": [
+        {
+          "id": "B22-3-P1",
+          "title": "오뚜기 진라면 매운맛 5개입 본품 + 사은품 증정",
+          "price_krw": 4800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B22-3-P2",
+          "title": "오뚜기 진라면 매운맛 5개입 본품",
+          "price_krw": 7800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B22-3-P3",
+          "title": "오뚜기 진라면 매운맛 10개입 단품 + 필름 증정",
+          "price_krw": 480,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B22-3-P4",
+          "title": "오뚜기 진라면 순한맛 5개입 본품 + 사은품 증정",
+          "price_krw": 4320,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B22-3-P5",
+          "title": "오뚜기 진라면 매운맛 10개입 호환 제품",
+          "price_krw": 384,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B22-4",
+      "query": "오뚜기 진라면 매운맛 10개입만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "라면",
+      "items": [
+        {
+          "id": "B22-4-P1",
+          "title": "오뚜기 진라면 매운맛 10개입 정품",
+          "price_krw": 480,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B22-4-P2",
+          "title": "오뚜기 진라면 매운맛 5개입 본품",
+          "price_krw": 4800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B22-4-P3",
+          "title": "삼성전자 라면 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B22-4-P4",
+          "title": "오뚜기 진라면 매운맛 10개입 1개입",
+          "price_krw": 576,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B22-4-P5",
+          "title": "오뚜기 진라면 순한맛 5개입 본품",
+          "price_krw": 4080,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B22-5",
+      "query": "라면 중 오뚜기 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "라면",
+      "items": [
+        {
+          "id": "B22-5-P1",
+          "title": "오뚜기 라면 정품",
+          "price_krw": 4800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B22-5-P2",
+          "title": "삼성전자 라면 정품",
+          "price_krw": 5280,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B22-5-P3",
+          "title": "삼성전자 라면 새상품",
+          "price_krw": 5520,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B22-5-P4",
+          "title": "오뚜기 라면 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B22-5-P5",
+          "title": "오뚜기 라면 리퍼",
+          "price_krw": 3360,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B23-1",
+      "query": "샘표 진간장 900ml 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "간장",
+      "items": [
+        {
+          "id": "B23-1-P1",
+          "title": "샘표 진간장 900ml",
+          "price_krw": 6200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B23-1-P2",
+          "title": "샘표 진간장 500ml",
+          "price_krw": 4960,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B23-1-P3",
+          "title": "샘표 간장 900ml 빈병",
+          "price_krw": 930,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B23-1-P4",
+          "title": "삼성전자 간장 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B23-1-P5",
+          "title": "샘표 진간장 900ml 새제품 정품",
+          "price_krw": 7400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B23-2",
+      "query": "샘표 진간장 900ml 10000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "간장",
+      "items": [
+        {
+          "id": "B23-2-P1",
+          "title": "샘표 진간장 900ml",
+          "price_krw": 6200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B23-2-P2",
+          "title": "샘표 진간장 900ml 새제품",
+          "price_krw": 8990,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B23-2-P3",
+          "title": "샘표 진간장 500ml",
+          "price_krw": 4340,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B23-2-P4",
+          "title": "샘표 간장 900ml 빈병",
+          "price_krw": 930,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B23-2-P5",
+          "title": "샘표 진간장 900ml 정품",
+          "price_krw": 9200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B23-3",
+      "query": "샘표 진간장 900ml 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "간장",
+      "items": [
+        {
+          "id": "B23-3-P1",
+          "title": "샘표 진간장 900ml 본품 + 사은품 증정",
+          "price_krw": 6200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B23-3-P2",
+          "title": "샘표 진간장 900ml 본품",
+          "price_krw": 9200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B23-3-P3",
+          "title": "샘표 간장 900ml 빈병 단품 + 필름 증정",
+          "price_krw": 620,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B23-3-P4",
+          "title": "샘표 진간장 500ml 본품 + 사은품 증정",
+          "price_krw": 5580,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B23-3-P5",
+          "title": "샘표 간장 900ml 빈병 호환 제품",
+          "price_krw": 496,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B23-4",
+      "query": "샘표 간장 900ml 빈병만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "간장",
+      "items": [
+        {
+          "id": "B23-4-P1",
+          "title": "샘표 간장 900ml 빈병 정품",
+          "price_krw": 620,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B23-4-P2",
+          "title": "샘표 진간장 900ml 본품",
+          "price_krw": 6200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B23-4-P3",
+          "title": "삼성전자 간장 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B23-4-P4",
+          "title": "샘표 간장 900ml 빈병 1개입",
+          "price_krw": 744,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B23-4-P5",
+          "title": "샘표 진간장 500ml 본품",
+          "price_krw": 5270,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B23-5",
+      "query": "간장 중 샘표 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "간장",
+      "items": [
+        {
+          "id": "B23-5-P1",
+          "title": "샘표 간장 정품",
+          "price_krw": 6200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B23-5-P2",
+          "title": "삼성전자 간장 정품",
+          "price_krw": 6820,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B23-5-P3",
+          "title": "삼성전자 간장 새상품",
+          "price_krw": 7130,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B23-5-P4",
+          "title": "샘표 간장 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B23-5-P5",
+          "title": "샘표 간장 리퍼",
+          "price_krw": 4340,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    },
+    {
+      "id": "B24-1",
+      "query": "QCY T13 무선 이어폰 구매하려는데 본품 가격순으로 보여줘",
+      "scenario": "exact_body",
+      "category": "이어폰",
+      "items": [
+        {
+          "id": "B24-1-P1",
+          "title": "QCY T13 무선 이어폰",
+          "price_krw": 28000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body"
+        },
+        {
+          "id": "B24-1-P2",
+          "title": "QCY T20 무선 이어폰",
+          "price_krw": 22400,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong model or variation"
+        },
+        {
+          "id": "B24-1-P3",
+          "title": "QCY T13 이어팁 리필",
+          "price_krw": 4200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory, not body"
+        },
+        {
+          "id": "B24-1-P4",
+          "title": "삼성전자 이어폰 호환 거치대",
+          "price_krw": 8000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "different brand and accessory"
+        },
+        {
+          "id": "B24-1-P5",
+          "title": "QCY T13 무선 이어폰 새제품 정품",
+          "price_krw": 29200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact body new"
+        }
+      ]
+    },
+    {
+      "id": "B24-2",
+      "query": "QCY T13 무선 이어폰 40000원 이하 상품만",
+      "scenario": "budget_constraint",
+      "category": "이어폰",
+      "items": [
+        {
+          "id": "B24-2-P1",
+          "title": "QCY T13 무선 이어폰",
+          "price_krw": 28000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "item under budget"
+        },
+        {
+          "id": "B24-2-P2",
+          "title": "QCY T13 무선 이어폰 새제품",
+          "price_krw": 40600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "over budget"
+        },
+        {
+          "id": "B24-2-P3",
+          "title": "QCY T20 무선 이어폰",
+          "price_krw": 19600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B24-2-P4",
+          "title": "QCY T13 이어팁 리필",
+          "price_krw": 4200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory"
+        },
+        {
+          "id": "B24-2-P5",
+          "title": "QCY T13 무선 이어폰 정품",
+          "price_krw": 31000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "exact within budget"
+        }
+      ]
+    },
+    {
+      "id": "B24-3",
+      "query": "QCY T13 무선 이어폰 본품 사고 싶어. 사은품은 받아도 괜찮아",
+      "scenario": "bundled_body",
+      "category": "이어폰",
+      "items": [
+        {
+          "id": "B24-3-P1",
+          "title": "QCY T13 무선 이어폰 본품 + 사은품 증정",
+          "price_krw": 28000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body with gift"
+        },
+        {
+          "id": "B24-3-P2",
+          "title": "QCY T13 무선 이어폰 본품",
+          "price_krw": 31000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "body"
+        },
+        {
+          "id": "B24-3-P3",
+          "title": "QCY T13 이어팁 리필 단품 + 필름 증정",
+          "price_krw": 2800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "accessory plus gift"
+        },
+        {
+          "id": "B24-3-P4",
+          "title": "QCY T20 무선 이어폰 본품 + 사은품 증정",
+          "price_krw": 25200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong variant"
+        },
+        {
+          "id": "B24-3-P5",
+          "title": "QCY T13 이어팁 리필 호환 제품",
+          "price_krw": 2240,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "compatible part"
+        }
+      ]
+    },
+    {
+      "id": "B24-4",
+      "query": "QCY T13 이어팁 리필만 구매할래",
+      "scenario": "explicit_accessory",
+      "category": "이어폰",
+      "items": [
+        {
+          "id": "B24-4-P1",
+          "title": "QCY T13 이어팁 리필 정품",
+          "price_krw": 2800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "correct requested part"
+        },
+        {
+          "id": "B24-4-P2",
+          "title": "QCY T13 무선 이어폰 본품",
+          "price_krw": 28000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        },
+        {
+          "id": "B24-4-P3",
+          "title": "삼성전자 이어폰 케이스",
+          "price_krw": 16000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "unrelated accessory"
+        },
+        {
+          "id": "B24-4-P4",
+          "title": "QCY T13 이어팁 리필 1개입",
+          "price_krw": 3360,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "requested part"
+        },
+        {
+          "id": "B24-4-P5",
+          "title": "QCY T20 무선 이어폰 본품",
+          "price_krw": 23800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "wrong sold item body"
+        }
+      ]
+    },
+    {
+      "id": "B24-5",
+      "query": "이어폰 중 QCY 브랜드는 절대 제외하고 추천해줘",
+      "scenario": "brand_exclusion",
+      "category": "이어폰",
+      "items": [
+        {
+          "id": "B24-5-P1",
+          "title": "QCY 이어폰 정품",
+          "price_krw": 28000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        },
+        {
+          "id": "B24-5-P2",
+          "title": "삼성전자 이어폰 정품",
+          "price_krw": 30800,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B24-5-P3",
+          "title": "삼성전자 이어폰 새상품",
+          "price_krw": 32200,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "PASS",
+          "reason": "allowed brand + category"
+        },
+        {
+          "id": "B24-5-P4",
+          "title": "QCY 이어폰 케이스",
+          "price_krw": 12000,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand accessory"
+        },
+        {
+          "id": "B24-5-P5",
+          "title": "QCY 이어폰 리퍼",
+          "price_krw": 19600,
+          "condition": "new",
+          "source": "synthetic_independent_challenge",
+          "verdict": "FAIL",
+          "reason": "excluded brand"
+        }
+      ]
+    }
+  ]
+}
