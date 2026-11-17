@@ -373,6 +373,18 @@ function parseQuery(text, opts = {}) {
   // rejected brand is never considered a positive identity requirement.
   const brandExclusionPhrases = [];
   const excludedBrands = [];
+  // "브라더 말고 다른 회사의 프린터": the named brand can be missing
+  // from the built-in vendor table. An explicit "other company" directive
+  // gives enough context to exclude that seller, without pretending the
+  // unknown brand is a *positive* product-name requirement.
+  for (const match of raw.matchAll(/(?:^|[\s,])([0-9a-z가-힣][0-9a-z가-힣-]{1,23})\s+(?:말고|빼고|제외하고)\s+다른\s*(?:회사|브랜드)(?:의)?/gi)) {
+    const word = match[1].replace(/(?:은|는|이|가|를)$/u, '');
+    if (/^(?:브랜드|제품|상품|모델|중고|리퍼|가격|다른)$/u.test(word) || TAX.explicitType(word)) continue;
+    brandExclusionPhrases.push({ text: match[0], replacement: ' ' });
+    const known = brandsIn(word, { includeLines: false });
+    if (known.length) known.forEach(b => excludedBrands.push(b.canon));
+    else excludedBrands.push(word);
+  }
   for (const match of raw.matchAll(BRAND_CATEGORY_EXCLUSION)) {
     const brands = brandsIn(match[1], { includeLines: false });
     // "로지텍 브랜드는 절대 제외" is a single-brand clause; do not
