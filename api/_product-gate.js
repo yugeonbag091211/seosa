@@ -340,6 +340,20 @@ const SEARCH_DIALOGUE_DIRECTIVE = /(?:검색\s*해\s*줘|검색\s*해\s*주세�
 // "X 용 replacement" is a requested spare part, not a new SKU family
 // when X is a concrete model containing a number (e.g. DS224+용 트레이).
 const MODEL_COMPATIBILITY_REQUEST = /(?:^|\s)[a-z0-9+\-]*\d[a-z0-9+\-]*용\s+[가-힣a-z][가-힣a-z\s]{1,40}/i;
+// Parse the item being bought after an explicit compatibility target rather
+// than guessing from the last noun of the full conversational sentence.
+// Example: "60cm용 서랍 레일 찾는 중이야. 본품은 말고" => 레일.
+// This is an additional *positive* proof of the sold part: model/brand/type
+// requirements still apply independently.
+function accessoryNounAfterHost(text) {
+  const raw = String(text || '').normalize('NFKC');
+  const m = raw.match(/(?:[a-z0-9+\-]*\d[a-z0-9+\-]*용|[가-힣]{2,18}에\s*(?:쓸|쓰는|사용할|사용하는))\s+([^.!?]{2,70})/iu);
+  if (!m) return '';
+  const phrase = m[1].split(/\s+(?:찾는|찾아|구매|사고|보여|추천|원해|살래)(?:\s|$)/u)[0];
+  const words = (phrase.match(/[가-힣]{2,}/gu) || []).filter(w =>
+    !/^(?:전용|호환|정품|제품|상품|부품)$/.test(w));
+  return (words.at(-1) || '').replace(/(?:만|을|를)$/u, '');
+}
 const OPTIONAL_GIFT_PERMISSION = /(?:[.!?]\s*|\s+)사은품(?:은|는|이|가|도)?\s*(?:받아도|줘도|같이\s*와도|함께\s*와도|포함돼도|포함되어도)\s*(?:괜찮아|상관\s*없어|상관이\s*없어|돼|좋아)(?:[.!?]+)?$/u;
 // "마우스 중 로지텍 브랜드는 절대 제외" must exclude 로지텍, not
 // demand that product titles contain "로지텍", "브랜드" or "절대".
@@ -578,7 +592,7 @@ function parseQuery(text, opts = {}) {
   const spec = {
     raw, idText, normalized, tokens, type, wantsAccessory, accessoryWords, head, models, brands: brandReq,
     excludedBrands, families, variants, caps, measures, filterGrade, diameterMm, sizes, people: people ? Number(people) : 0, colors, wireless, gender, kids,
-    year, budget, condition, wantsBook, wantsCar, solidWood, apparelSize: apparelSize(raw), beddingSize: beddingSize(raw), looseBrand, lines, identityWords,
+    year, budget, condition, wantsBook, wantsCar, solidWood, apparelSize: apparelSize(raw), beddingSize: beddingSize(raw), requestedAccessoryNoun: wantsAccessory ? accessoryNounAfterHost(raw) : '', looseBrand, lines, identityWords,
     // 관련도 점수에 쓸 검색어 — 예산·요청 말("50만원 이하", "보여줘")이 커버리지를 깎지 않게 뺀다.
     rankText: idText || raw,
     analysis: S.analyzeQuery(idText, { titles: Array.isArray(opts.titles) ? opts.titles : [] }),
@@ -1085,6 +1099,10 @@ function judge(spec, item, opts = {}) {
       || (/필름|강화유리|보호/.test(w) && /(?:필름|강화\s*유리|보호|film|glass)/i.test(title))
       || (/충전기|어댑터|charger/.test(w) && /(?:충전기|어댑터|charger|adapter|충전\s*케이블)/i.test(title)));
     if (words.length && !has) hard.push('not_requested_accessory');
+    // Exact accessory noun after the host phrase must be offered as the
+    // merchandise itself, not merely be a generic "other replacement part".
+    if (spec.requestedAccessoryNoun && !present(spec.requestedAccessoryNoun, T))
+      hard.push(`requested_part_absent:${spec.requestedAccessoryNoun}`);
     // Generic words such as "교체/부품" are not proof of the specific
     // requested item. "X-S20용 다른 부품" is not an X-S20 battery.
     const headWord = spec.head && !NOT_HEAD.has(spec.head) ? spec.head : '';
