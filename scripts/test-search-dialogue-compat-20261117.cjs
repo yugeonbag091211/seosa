@@ -63,4 +63,17 @@ for(const [query,part,body] of accessoryCases){
  assert.equal(stored.save.length,0,'wrong principal must not be stored for accessory query');
  count++;
 }
+
+// Negative purchase restrictions cannot turn refurbished/used listings into
+// requested goods just because we stripped the dialogue from idText.
+const noUsed='고프로 HERO12 액션캠 새제품만. 중고나 리퍼는 절대 안 돼';
+const noUsedSpec=Gate.parseQuery(noUsed,{titles:[
+  '고프로 HERO12 액션캠 새제품','고프로 HERO12 액션캠 중고','고프로 HERO12 액션캠 리퍼'
+]});
+assert.equal(noUsedSpec.condition.wanted,'new',JSON.stringify({wanted:noUsedSpec.condition.wanted,excluded:[...noUsedSpec.condition.excluded]}));count++;
+assert.equal(noUsedSpec.condition.excluded.has('used'),true,'used exclusion lost');count++;
+assert.equal(noUsedSpec.condition.excluded.has('refurbished'),true,'refurbished exclusion lost');count++;
+assert.equal(Gate.judge(noUsedSpec,{title:'고프로 HERO12 액션캠 중고',lprice:200000}).ok,false);count++;
+assert.equal(Gate.judge(noUsedSpec,{title:'고프로 HERO12 액션캠 리퍼',lprice:200000}).ok,false);count++;
+assert.equal(Gate.saveFilter(noUsed,[{title:'고프로 HERO12 액션캠 리퍼',lprice:200000}]).save.length,0);count++;
 console.log('SEARCH_DIALOGUE_AND_COMPAT '+count+' PASS');
