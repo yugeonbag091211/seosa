@@ -90,4 +90,17 @@ for(const [query,excluded,allowed] of [
  const ok=Gate.judge(spec,{title:allowed,lprice:110000});
  assert.equal(ok.ok,true,JSON.stringify({query,hard:ok.hard,idText:spec.idText}));count++;
 }
+// Preexisting part regression: a Roborock brush is the requested item,
+// even when the query specifies which host device it will fit.
+{
+ const q='로보락 로봇 청소기에 쓸 전용 브러시만 보여줘';
+ const title='로보락 로봇 청소기용 전용 브러시';
+ const p=Gate.parseQuery(q,{titles:[title]});
+ const judged=Gate.judge(p,{title,lprice:16000});
+ assert.equal(judged.ok,true,JSON.stringify({
+   q,idText:p.idText,head:p.head,wantsAccessory:p.wantsAccessory,
+   accessoryWords:p.accessoryWords,identityWords:p.identityWords,hard:judged.hard,soft:judged.soft
+ }));
+ count++;
+}
 console.log('SEARCH_DIALOGUE_AND_COMPAT '+count+' PASS');
