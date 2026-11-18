@@ -1265,8 +1265,7 @@ section.block{margin-top:var(--gap-sec);padding-top:0;border-top:0}
  */
 .card{background:transparent;border:0;border-radius:0;
   display:flex;flex-direction:column;position:relative;
-  transition:transform .4s var(--ease),opacity .4s var(--ease);
-  opacity:0;transform:translateY(10px)}
+  transition:transform .4s var(--ease),opacity .4s var(--ease)}
 .card.in{opacity:1;transform:none}
 .card .thumb{position:relative;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
   overflow:hidden;background:var(--surface);border-radius:var(--r-lg);
@@ -1275,6 +1274,23 @@ section.block{margin-top:var(--gap-sec);padding-top:0;border-top:0}
   object-fit:contain;z-index:2;transition:transform .5s var(--ease)}
 .card:hover .thumb img{transform:scale(1.035)}
 .card .thumb .glyph{font-size:2.4rem;opacity:.25}
+
+/* Scroll reveal only the product cards entering the viewport. */
+html[data-seosa-motion="on"] .card{opacity:1;transform:none;
+  transition:opacity .46s cubic-bezier(.22,.61,.36,1),
+    transform .54s cubic-bezier(.22,.61,.36,1);
+  transition-delay:var(--card-reveal-delay,0ms)}
+html[data-seosa-motion="on"] .card:not(.in){opacity:0;transform:translate3d(0,12px,0)}
+html[data-seosa-motion="on"] .card:not(.in) .thumb img{transform:scale(.985)}
+html[data-seosa-motion="on"] .card.in .thumb img{transform:scale(1)}
+html[data-seosa-motion="on"] .card.in:hover .thumb img{transform:scale(1.035)}
+
+/* Native cross-page transitions are a progressive enhancement in supporting browsers. */
+@media(prefers-reduced-motion:no-preference){
+  @view-transition{navigation:auto}
+  ::view-transition-old(root),::view-transition-new(root){
+    animation-duration:360ms;animation-timing-function:cubic-bezier(.22,.61,.36,1)}
+}
 /*
  * 몰 배지. IBM Plex Mono(var(--mono))는 한글 글리프가 없어 브랜드명이 한글이면
  * 조용히 다른 폰트로 대체 렌더링되고 있었다(2026-08-27 발견) — 폰트를 아예
@@ -2673,6 +2689,8 @@ html[data-theme="dark"] .autocomplete{background:var(--card-bg)}
 @media(max-width:820px){:root{--sec-gap:44px}}
 @media(prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto!important}
+  @view-transition{navigation:none}
   /* .card 는 opacity:0 으로 시작해 스크롤 진입 시 .in 이 붙어야 보인다.
      애니메이션을 꺼버리면 영영 opacity:0 에 갇히므로 최종 상태를 강제한다.
      (히어로의 rise 애니메이션은 2026-08-30 리디자인에서 전부 제거됐다) */
@@ -3247,6 +3265,24 @@ select:focus-visible,textarea:focus-visible,
   /* 성별 선택 두 칸(42.6px). 가로도 44px 을 넘겨 둔다. */
   #profileGender .tbtn{min-width:44px}
 }
+
+/* Let curated product shelves swipe naturally on phones; search results stay a grid. */
+@media(max-width:640px){
+  .grid.mobile-product-rail{
+    --rail-bleed:16px;
+    display:flex!important;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+    gap:0 14px;margin-inline:calc(var(--rail-bleed) * -1);
+    padding:0 var(--rail-bleed) 8px;
+    overscroll-behavior-inline:contain;scroll-snap-type:x proximity;
+    scroll-padding-inline:var(--rail-bleed);scrollbar-width:none;
+    -webkit-overflow-scrolling:touch
+  }
+  .grid.mobile-product-rail::-webkit-scrollbar{display:none}
+  .grid.mobile-product-rail>.card{
+    flex:0 0 min(80vw,328px);max-width:328px;scroll-snap-align:start
+  }
+}
+@media(max-width:480px){.grid.mobile-product-rail{--rail-bleed:14px}}
 </style>
 </head>
 <body>
@@ -3934,7 +3970,7 @@ select:focus-visible,textarea:focus-visible,
       </div>
     </div>
     <div class="mb-chips" id="recChips" style="margin-bottom:16px"></div>
-    <div class="grid" id="recGrid"></div>
+    <div class="grid mobile-product-rail" id="recGrid" role="region" aria-label="오늘의 셀렉션 상품" tabindex="0"></div>
   </section>
 
   <!-- 당신을 위한 추천 -->
@@ -3952,7 +3988,7 @@ select:focus-visible,textarea:focus-visible,
         <button class="tbtn" data-act="open-profile">취향 수정</button>
       </div>
     </div>
-    <div class="grid" id="forYouGrid"></div>
+    <div class="grid mobile-product-rail" id="forYouGrid" role="region" aria-label="관심 카테고리 추천 상품" tabindex="0"></div>
   </section>
 
   <!-- 최근 검색 기반 추천 -->
@@ -3969,7 +4005,7 @@ select:focus-visible,textarea:focus-visible,
         <button class="tbtn" data-act="histrec-refresh">다시 찾기</button>
       </div>
     </div>
-    <div class="grid" id="histRecGrid"></div>
+    <div class="grid mobile-product-rail" id="histRecGrid" role="region" aria-label="최근 검색 추천 상품" tabindex="0"></div>
   </section>
 
   <!-- 이달의 추천 -->
@@ -3992,7 +4028,7 @@ select:focus-visible,textarea:focus-visible,
       <button class="tbtn dark" data-act="month-more">이 키워드 더보기</button>
     </div>
     <p class="aff-note is-list" data-aff-note="monthly"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>
-    <div class="grid" id="monthGrid"></div>
+    <div class="grid mobile-product-rail" id="monthGrid" role="region" aria-label="이달의 추천 상품" tabindex="0"></div>
   </section>
 
   <!--
@@ -4049,7 +4085,7 @@ select:focus-visible,textarea:focus-visible,
       </div>
     </div>
     <p class="aff-note is-list" data-aff-note="recent"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>
-    <div class="grid" id="viewedGrid"></div>
+    <div class="grid mobile-product-rail" id="viewedGrid" role="region" aria-label="최근 본 상품" tabindex="0"></div>
   </section>
 
   <!-- 검색 결과 -->
@@ -4896,6 +4932,68 @@ var Track = {
 };
 
 var GS = true;
+
+
+/* ============================================================
+ *  Motion — viewport-aware card reveal with a reduced-motion fallback
+ * ========================================================== */
+var Motion = (function() {
+  var preference = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  var observer = null;
+
+  function show(el) {
+    if (!el) return;
+    el.classList.add('in');
+    if (observer) observer.unobserve(el);
+  }
+
+  function syncPreference() {
+    var enabled = !!(preference && !preference.matches
+      && typeof IntersectionObserver !== 'undefined');
+    if (enabled && !observer) {
+      document.documentElement.setAttribute('data-seosa-motion', 'on');
+      observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) show(entry.target);
+        });
+      }, { rootMargin: '0px 0px -6% 0px', threshold: 0.08 });
+      return;
+    }
+    if (!enabled) {
+      document.documentElement.removeAttribute('data-seosa-motion');
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      document.querySelectorAll('.card:not(.in)').forEach(show);
+    }
+  }
+
+  syncPreference();
+  if (preference) {
+    if (preference.addEventListener) preference.addEventListener('change', syncPreference);
+    else if (preference.addListener) preference.addListener(syncPreference);
+  }
+
+  return {
+    watchCard: function(card, index) {
+      if (!card) return;
+      if (!observer) {
+        show(card);
+        return;
+      }
+      var delayIndex = Math.max(0, Number(index) || 0) % 4;
+      card.style.setProperty('--card-reveal-delay',
+        (delayIndex * CONST.CARD_STAGGER_MS) + 'ms');
+      observer.observe(card);
+    },
+    clear: function(root) {
+      if (!observer || !root || !root.querySelectorAll) return;
+      root.querySelectorAll('.card').forEach(function(card) { observer.unobserve(card); });
+    }
+  };
+})();
 
 
 /* ============================================================
@@ -6365,7 +6463,10 @@ var Grid = {
 
   render: function(el, items, append) {
     if (!el) return;
-    if (!append) el.innerHTML = '';
+    if (!append) {
+      Motion.clear(el);
+      el.innerHTML = '';
+    }
 
     if (!items || !items.length) {
       if (!append) el.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>';
@@ -6385,7 +6486,7 @@ var Grid = {
       if (!card) return;
 
       el.appendChild(card);
-      setTimeout(function() { card.classList.add('in'); }, CONST.CARD_STAGGER_MS * i);
+      Motion.watchCard(card, i);
     });
 
     Grid.fillSparklines(el, items);
@@ -8131,6 +8232,7 @@ var Lazy = {
     var grid = $('resGrid');
     if (!grid) return;
 
+    Motion.clear(grid);
     grid.innerHTML = '';
     AppState.lazy.items = (items || []).slice();
     AppState.lazy.idx = 0;
