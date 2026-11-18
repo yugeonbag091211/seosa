@@ -3283,6 +3283,245 @@ select:focus-visible,textarea:focus-visible,
   }
 }
 @media(max-width:480px){.grid.mobile-product-rail{--rail-bleed:14px}}
+
+/* ── SEOSA reference UI: shared shell, home, search and mobile navigation ── */
+:root{
+  --bg:#fbfaf9;--page:#f4f1ef;--surface:#f5f2f0;--surface-2:#ece8e5;
+  --ink:#171615;--soft:#625f5c;--faint:#77716d;--line:#e9e5e2;--line-2:#d6d0cc;
+  --r:14px;--r-lg:22px;--sec-gap:64px;--ease:cubic-bezier(.22,.61,.36,1)
+}
+html,body{background:var(--bg)}
+html{scroll-padding-top:86px}
+.wrap{max-width:1480px;padding-inline:32px}
+#hdr{position:sticky;top:0;z-index:150;background:rgba(251,250,249,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid rgba(233,229,226,.8)}
+#hdr .bar{min-height:74px;display:grid;grid-template-columns:auto auto minmax(220px,500px) auto;align-items:center;gap:22px}
+#hdr .logo{gap:7px}
+#hdr .logo .logo-word{display:inline-block;font-size:1.42rem;font-weight:800;letter-spacing:-.055em}
+#hdr .logo small{display:inline-block;font-size:.75rem;letter-spacing:0;color:var(--soft);font-weight:600}
+#hdr .logo-mark{display:none}
+.primary-nav{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.primary-nav .nav-link{border:0;background:transparent;color:var(--ink);font:inherit;font-size:.89rem;font-weight:600;text-decoration:none;padding:11px 14px;border-radius:999px;cursor:pointer;transition:background .25s var(--ease),color .25s var(--ease)}
+.primary-nav .nav-link:hover,.primary-nav .nav-link:focus-visible{background:var(--surface-2);outline:none}
+.hsearch{width:100%;max-width:none}
+.hsearch .search-field{height:48px;border:1px solid var(--line-2);border-radius:999px;background:#fff;box-shadow:0 4px 16px rgba(40,29,21,.045);padding-inline:16px}
+.hsearch .search-field input{font-size:.96rem;font-weight:500}
+.hsearch .search-go{width:40px;height:40px;border-radius:50%;background:transparent}
+.nav-right{gap:8px}.nav-right .nav-ico{width:23px;height:23px}
+.icon-btn,.wish-btn{border-radius:50%;width:42px;height:42px;display:grid;place-items:center;transition:background .25s var(--ease)}
+.icon-btn:hover,.wish-btn:hover{background:var(--surface-2)}
+.nav-right .menu-btn{display:none}
+
+.hero-band{position:relative;isolation:isolate;overflow:hidden;background:linear-gradient(112deg,#fbfaf9 8%,#f7f3f1 58%,#eee8e4 100%)}
+.hero-band::before,.hero-band::after{content:"";position:absolute;z-index:-1;pointer-events:none;border-radius:50%;background:rgba(255,255,255,.44)}
+.hero-band::before{width:78vw;height:78vw;right:-28vw;top:-58vw}
+.hero-band::after{width:70vw;height:70vw;right:-42vw;top:10vw;background:rgba(232,224,219,.42)}
+.hero-carousel{position:relative;max-width:1480px;min-height:430px;margin:0 auto;padding:20px 32px 34px}
+.hc-viewport{height:380px;overflow:hidden}
+.hc-slide{height:100%;min-height:0}
+.hc-slide.on{visibility:visible}
+.hero-inner{max-width:none;width:100%;height:100%;min-height:0;display:flex;align-items:center;padding:30px 0}
+.hero-copy{width:55%;max-width:650px;padding:10px 0;position:relative;z-index:2}
+.hero-title{font-size:clamp(2.7rem,4.5vw,4.6rem);line-height:1.08;letter-spacing:-.065em;font-weight:750}
+.hero-sub{max-width:520px;font-size:1rem;line-height:1.75;color:var(--soft);margin-top:18px}
+.hero-cta{margin-top:22px;border-radius:999px;padding:13px 22px;min-height:48px;background:#211e1b;color:#fff;border:0;font-weight:650;box-shadow:0 8px 24px rgba(31,26,22,.12);transition:transform .3s var(--ease),background .3s var(--ease)}
+.hero-cta:hover{transform:translateY(-2px);background:#080807}
+.hero-art{display:none!important}
+.hero-spotlight{position:absolute;z-index:3;right:5%;top:50%;width:min(41%,520px);transform:translateY(-50%)}
+.hero-spotlight[hidden]{display:none!important}
+.hero-spotlight .spotlight-card{display:grid;grid-template-columns:minmax(170px, .9fr) 1fr;gap:0;padding:12px;background:rgba(255,255,255,.78);border:1px solid rgba(255,255,255,.9);border-radius:24px;box-shadow:0 24px 70px rgba(56,42,32,.13);backdrop-filter:blur(12px)}
+.hero-spotlight .spotlight-card>.thumb{aspect-ratio:1/1.02;border-radius:17px;background:#f5f2f0}
+.hero-spotlight .spotlight-card>.thumb img{max-width:88%;max-height:88%}
+.hero-spotlight .spotlight-card>.info{padding:16px 18px;justify-content:center;gap:7px}
+.hero-spotlight .spotlight-card .price-row{order:1}.hero-spotlight .spotlight-card .p-title{order:2;font-size:1.02rem;line-height:1.45}
+.hero-spotlight .spotlight-card .pmove{order:3}.hero-spotlight .spotlight-card .mall-line{order:4}.hero-spotlight .spotlight-card .canonical,.hero-spotlight .spotlight-card .ship-row,.hero-spotlight .spotlight-card .trust,.hero-spotlight .spotlight-card .spark{display:none}
+.hero-spotlight .spotlight-card .card-actions{order:5;display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.hero-spotlight .spotlight-card .card-actions .alert-btn{display:none}
+.hero-spotlight .spotlight-card .card-actions .buy{flex:1;min-width:110px;min-height:40px;border-radius:999px;background:#211e1b;color:white}
+.hero-spotlight .spotlight-card .heart{top:9px;right:9px}
+.hc-arrow{border-radius:50%;background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.8);box-shadow:0 5px 18px rgba(0,0,0,.08)}
+.hc-dots{bottom:14px}.hc-dot{width:7px;height:7px;border-radius:50%;background:#c7c1bc}.hc-dot.on{background:#24201d}
+
+main.wrap{padding-top:28px}
+.hero{margin:0 0 26px;padding:0;background:transparent;border:0}
+.hero .catnav{margin:0 0 12px}.hero .chips{gap:9px;justify-content:flex-start}
+.hero .chips button,.mb-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 15px;font-size:.83rem}
+.hero .chips button:hover,.mb-chip:hover{border-color:var(--line-2);background:var(--surface)}
+.seo-quicklinks{border:0;margin:8px 0 14px;padding:0;gap:9px 18px}
+.seo-quicklinks .ql-label{color:var(--soft);font-weight:650}
+.seo-quicklinks a{border:0;padding:2px 0;text-decoration:underline;text-decoration-color:#d4cec9;text-underline-offset:3px}
+.hero-ai{border:0;background:transparent;color:var(--soft);padding:4px 0;text-align:left;font-size:.82rem}
+.block{margin-top:var(--sec-gap)}
+.sec-eyebrow{font-size:.66rem;letter-spacing:.13em;color:var(--faint)}
+.sec-head{margin-bottom:18px;align-items:end}
+.sec-title{font-size:1.75rem;letter-spacing:-.045em}
+.sec-sub{margin-top:6px;color:var(--soft);font-size:.9rem;line-height:1.55}
+.sec-more,.tbtn{border-radius:999px;padding:9px 15px}
+#recGrid,#forYouGrid,#histRecGrid,#monthGrid,#viewedGrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+
+/* Product tiles keep every existing action and price field, with the image leading. */
+.card{background:rgba(255,255,255,.86);border:1px solid var(--line);border-radius:20px;padding:11px;overflow:hidden;box-shadow:0 4px 16px rgba(36,28,22,.025);transition:transform .4s var(--ease),box-shadow .4s var(--ease),opacity .4s var(--ease)}
+.card:hover{transform:translateY(-3px);box-shadow:0 14px 32px rgba(36,28,22,.08)}
+.card .thumb{aspect-ratio:1.28/1;border-radius:15px;background:linear-gradient(145deg,#f6f3f1,#f0ece9)}
+.card .thumb img{max-width:88%;max-height:88%;transition:transform .55s var(--ease)}
+.card.in:hover .thumb img{transform:scale(1.025)}
+.card .info{display:flex;flex-direction:column;gap:6px;padding:13px 5px 6px}
+.card .p-title{font-size:.96rem;line-height:1.43;min-height:2.72em;order:1}
+.card .price-row{order:2;align-items:baseline;gap:7px}.card .price{font-size:1.22rem;letter-spacing:-.04em}
+.card .pmove{order:3;min-height:0}.card .mall-line{order:4;margin-top:3px}.card .ship-row{order:5}.card .trust{order:6}.card .spark{order:7}.card .card-actions{order:8;margin-top:7px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+.card .card-actions .alert-btn,.card .card-actions .buy{min-height:36px;border-radius:999px;padding:7px 8px;font-size:.7rem}
+.card .card-actions .buy{background:#211e1b;color:#fff;border-color:#211e1b}
+.card .heart,.card .share-btn{width:34px;height:34px;top:8px;right:8px;border-radius:50%;background:rgba(255,255,255,.9);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.card .share-btn{right:48px}
+.card .save{border-radius:999px;background:#f9eae7;color:#b83c2d;padding:3px 8px}
+
+/* Search is a two-column workspace: live filters at left, four result columns at right. */
+#results.search-results-page{max-width:1480px;margin:0 auto;padding:18px 32px 76px}
+#results .result-banner{border:0;padding:6px 0 18px;margin:0 0 20px}
+#results .result-banner h3{font-size:clamp(1.45rem,2vw,2rem);letter-spacing:-.045em}
+#results .search-results-layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:26px;align-items:start}
+#results .search-sidebar{position:sticky;top:94px;min-width:0;padding:20px 18px;background:rgba(255,255,255,.84);border:1px solid var(--line);border-radius:20px;box-shadow:0 5px 24px rgba(36,28,22,.035)}
+#results .filter-bar{display:flex!important;flex-direction:column;align-items:stretch;gap:5px;padding:0 0 16px;margin:0 0 14px;border-bottom:1px solid var(--line)}
+#results .filter-bar .filter-label{font-size:.96rem;font-weight:700;color:var(--ink);margin:0 0 5px}
+#results .filter-btn{display:flex;justify-content:space-between;align-items:center;width:100%;border:0;border-radius:10px;background:transparent;text-align:left;padding:9px 10px;color:var(--soft)}
+#results .filter-btn.act{background:#231f1c;color:#fff}
+#results .facet-toggle{width:100%;justify-content:space-between;margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#f5f2f0;color:var(--ink);font-weight:650}
+#results .facet-bar{display:none!important;flex-direction:column;gap:14px;margin:0;padding:2px 0 0;background:transparent;border:0}
+#results .facet-bar.open{display:flex!important}
+#results .facet-row{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+#results .facet-label{font-size:.8rem;font-weight:700;color:var(--ink)}
+#results .price-input-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+#results .price-input{width:calc(50% - 12px);min-width:0;border:1px solid var(--line-2);border-radius:9px;padding:9px 8px;background:#fff}
+#results .price-unit{display:none}.facet-chips{display:flex;flex-wrap:wrap;gap:6px}
+#results .facet-btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 10px;font-size:.73rem}
+#results .results-main{min-width:0}
+#results .sort-bar{display:flex;align-items:center;gap:8px;margin:0 0 18px;flex-wrap:wrap}
+#results .sort-label{margin-right:3px;font-size:.78rem;color:var(--soft)}
+#results .sort-btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 13px}
+#results .sort-btn.act{background:#231f1c;color:#fff;border-color:#231f1c}
+#results #resGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+#results .ctx-ai{margin:0 0 12px;border-radius:12px;background:var(--surface);color:var(--soft)}
+#results .aff-note{margin:0 0 16px}
+
+.mobile-tabbar{display:none}
+
+@media(max-width:1200px){
+  #hdr .bar{grid-template-columns:auto minmax(0,1fr) auto;gap:16px}
+  .primary-nav{display:none}
+  #hdr .hsearch{grid-column:2}
+  #hdr .nav-right{grid-column:3}
+  #results .search-results-layout{grid-template-columns:226px minmax(0,1fr);gap:18px}
+  #results #resGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #recGrid,#forYouGrid,#histRecGrid,#monthGrid,#viewedGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:860px){
+  .wrap{padding-inline:20px}
+  #results.search-results-page{padding-inline:20px}
+  #results .search-results-layout{grid-template-columns:1fr;gap:12px}
+  #results .search-sidebar{position:static;padding:12px;background:transparent;border:0;box-shadow:none}
+  #results .filter-bar{flex-direction:row;overflow-x:auto;white-space:nowrap;scrollbar-width:none;border:0;padding:0 0 10px}
+  #results .filter-bar::-webkit-scrollbar{display:none}
+  #results .filter-bar .filter-label{display:none}
+  #results .filter-btn{width:auto;flex:0 0 auto;border:1px solid var(--line);background:#fff}
+  #results .filter-btn.act{background:#231f1c;color:#fff}
+  #results .facet-toggle{width:auto;display:inline-flex!important}
+  #results .facet-bar.open{padding:14px;background:#fff;border:1px solid var(--line);border-radius:16px}
+  #results #resGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  #recGrid,#forYouGrid,#histRecGrid,#monthGrid,#viewedGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hero-carousel{min-height:390px;padding:18px 22px 28px}
+  .hc-viewport{height:330px}
+  .hero-spotlight{right:3%;width:44%}
+}
+@media(max-width:640px){
+  .wrap{padding-inline:16px}
+  #hdr .bar{min-height:108px;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:42px 44px;align-content:center;column-gap:8px;row-gap:5px;padding:7px 16px}
+  #hdr .logo{grid-column:1;grid-row:1;gap:6px}
+  #hdr .logo .logo-word{font-size:1.2rem}
+  #hdr .logo small{font-size:.72rem}
+  #hdr .hsearch{grid-column:1/-1;grid-row:2;min-width:0}.hsearch .search-field{height:42px;padding-inline:11px}
+  .hsearch .search-field input{font-size:.84rem;min-width:0}.hsearch .search-go{width:34px;height:34px}
+  #hdr .nav-right{grid-column:2;grid-row:1;gap:0}.nav-right .wish-btn,.nav-right #profileNavBtn{display:none}.nav-right .menu-btn{display:grid;width:38px;height:38px}
+  .hero-carousel{min-height:0;padding:20px 16px 22px}
+  .hc-viewport{height:auto;overflow:visible}
+  .hc-slide,.hc-slide.on{position:relative;display:block;visibility:visible;opacity:1;transform:none;height:auto;min-height:0;transition:none}
+  .hc-slide:not(:first-child){display:none}
+  .hero-inner{display:block;padding:28px 0 12px}
+  .hero-copy{width:100%;max-width:none;padding:0}
+  .hero-title{font-size:clamp(2.15rem,9vw,3.2rem);line-height:1.12}
+  .hero-sub{font-size:.88rem;margin-top:12px;max-width:34ch}
+  .hero-cta{min-height:44px;margin-top:16px;padding:11px 18px}
+  .hero-spotlight{position:relative;top:auto;right:auto;transform:none;width:100%;margin:10px 0 0}
+  .hero-spotlight .spotlight-card{grid-template-columns:40% 1fr;border-radius:18px;padding:8px}
+  .hero-spotlight .spotlight-card>.info{padding:8px 10px;gap:4px}
+  .hero-spotlight .spotlight-card .p-title{font-size:.88rem}
+  .hero-spotlight .spotlight-card .price{font-size:1.05rem}
+  .hero-spotlight .spotlight-card .card-actions .buy{min-height:34px;font-size:.68rem}
+  .hc-arrow,.hc-dots{display:none!important}
+  main.wrap{padding-top:20px}
+  .hero{margin-bottom:18px}.seo-quicklinks{display:flex;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;padding-bottom:5px}
+  .seo-quicklinks a{flex:0 0 auto}
+  .block{margin-top:42px}.sec-title{font-size:1.38rem}.sec-sub{font-size:.8rem}
+  .sec-head{align-items:start;gap:12px}.sec-more{white-space:nowrap;padding:8px 11px}
+  #recGrid,#forYouGrid,#histRecGrid,#monthGrid,#viewedGrid{display:flex!important;flex-wrap:nowrap;overflow-x:auto;gap:0 12px;margin-inline:-16px;padding:0 16px 10px;scroll-snap-type:x proximity;scroll-padding-inline:16px;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #recGrid::-webkit-scrollbar,#forYouGrid::-webkit-scrollbar,#histRecGrid::-webkit-scrollbar,#monthGrid::-webkit-scrollbar,#viewedGrid::-webkit-scrollbar{display:none}
+  #recGrid>.card,#forYouGrid>.card,#histRecGrid>.card,#monthGrid>.card,#viewedGrid>.card{flex:0 0 min(78vw,314px);max-width:314px;scroll-snap-align:start}
+  .card{padding:9px;border-radius:18px}.card .thumb{aspect-ratio:1.22/1;border-radius:13px}.card .info{padding:11px 3px 4px;gap:5px}.card .p-title{font-size:.88rem}.card .price{font-size:1.1rem}
+  #results.search-results-page{padding:10px 16px 90px}
+  #results .result-banner{margin-bottom:10px;padding:6px 0 12px}
+  #results .search-sidebar{padding:4px 0}
+  #results .results-main{padding:0}
+  #results .sort-bar{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;padding-bottom:6px;margin-bottom:12px}
+  #results .sort-bar::-webkit-scrollbar{display:none}#results .sort-btn{white-space:nowrap;flex:0 0 auto}
+  #results #resGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  #results #resGrid .card{padding:7px;border-radius:16px;min-width:0}
+  #results #resGrid .card .thumb{aspect-ratio:1/1}
+  #results #resGrid .card .info{padding:9px 2px 3px;gap:4px}
+  #results #resGrid .card .p-title{font-size:.78rem;line-height:1.38;min-height:2.7em}
+  #results #resGrid .card .price{font-size:.98rem}
+  #results #resGrid .card .card-actions{grid-template-columns:1fr 1fr}
+  #results #resGrid .card .card-actions .alert-btn,#results #resGrid .card .card-actions .buy{font-size:.61rem;min-height:32px;padding:6px 4px}
+  #results #resGrid .card .share-btn{display:none}
+  #results .facet-bar.open{max-height:55vh;overflow:auto}
+  .fab{bottom:78px!important}.top-btn{bottom:116px!important}
+  .mobile-tabbar{position:fixed;z-index:260;inset:auto 0 0;display:grid;grid-template-columns:repeat(4,1fr);padding:7px 8px max(8px,env(safe-area-inset-bottom));background:rgba(255,255,255,.94);border-top:1px solid var(--line);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+  .mobile-tabbar button,.mobile-tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:46px;border:0;background:transparent;color:var(--soft);font:inherit;text-decoration:none}
+  .mobile-tabbar span{font-size:1.25rem;line-height:1;color:var(--ink)}.mobile-tabbar small{font-size:.63rem;font-weight:600}
+  body{padding-bottom:68px}
+}
+@media(max-width:360px){
+  .wrap{padding-inline:12px}#hdr .bar{padding-inline:12px}
+  #results.search-results-page{padding-inline:12px}
+  #results #resGrid{gap:8px}
+  #results #resGrid .card .p-title{font-size:.72rem}
+  #results #resGrid .card .price{font-size:.89rem}
+}
+html[data-theme="dark"] #hdr{background:rgba(22,24,28,.9);border-color:var(--line)}
+html[data-theme="dark"] .hero-band{background:linear-gradient(112deg,#17191d 8%,#1c1d21 58%,#252321 100%)}
+html[data-theme="dark"] .hero-band::before{background:rgba(255,255,255,.025)}
+html[data-theme="dark"] .hero-band::after{background:rgba(201,185,167,.04)}
+html[data-theme="dark"] .hsearch .search-field,
+html[data-theme="dark"] .hero-spotlight .spotlight-card,
+html[data-theme="dark"] .card,
+html[data-theme="dark"] #results .search-sidebar,
+html[data-theme="dark"] #results .filter-btn,
+html[data-theme="dark"] #results .sort-btn,
+html[data-theme="dark"] #results .price-input,
+html[data-theme="dark"] #results .facet-btn{background:var(--card-bg);color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] .card .thumb,
+html[data-theme="dark"] .hero-spotlight .spotlight-card>.thumb{background:linear-gradient(145deg,#202329,#191b20)}
+html[data-theme="dark"] .hero .chips button,
+html[data-theme="dark"] .mb-chip{background:var(--card-bg);color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] .hero-spotlight .spotlight-card .card-actions .buy,
+html[data-theme="dark"] .card .card-actions .buy,
+html[data-theme="dark"] .hero-cta{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+html[data-theme="dark"] #results .filter-btn.act,
+html[data-theme="dark"] #results .sort-btn.act{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+html[data-theme="dark"] #results .facet-toggle,
+html[data-theme="dark"] #results .facet-bar.open{background:var(--card-bg);color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] .mobile-tabbar{background:rgba(22,24,28,.94);border-color:var(--line)}
+@media(prefers-reduced-motion:reduce){
+  .hero-cta,.card,.card .thumb img,.primary-nav .nav-link{transition:none!important}
+  .hero-spotlight .spotlight-card,.card:hover{transform:none!important}
+}
 </style>
 </head>
 <body>
@@ -3324,7 +3563,15 @@ select:focus-visible,textarea:focus-visible,
   -->
   <div class="logo" data-act="home" role="link" tabindex="0" aria-label="SEOSA 홈으로">
     <svg class="logo-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><text x="32" y="43" font-family="Georgia,serif" font-size="34" font-weight="700" fill="currentColor" text-anchor="middle" letter-spacing="1">S</text></svg>
-    <span class="logo-word">SEOSA</span><small>PREMIUM CURATION</small></div>
+    <span class="logo-word">SEOSA</span><small>서사</small></div>
+
+  <nav class="primary-nav" aria-label="주요 메뉴">
+    <button class="nav-link" data-act="home">홈</button>
+    <button class="nav-link" data-act="search-focus">검색</button>
+    <button class="nav-link" data-act="scroll-today">카테고리</button>
+    <button class="nav-link" data-act="scroll-drop">핫딜</button>
+    <a class="nav-link" href="/radar.html">레이더</a>
+  </nav>
 
   <div class="hsearch search-box">
     <div class="search-field">
@@ -3337,8 +3584,6 @@ select:focus-visible,textarea:focus-visible,
   </div>
 
   <div class="nav-right">
-    <span class="nav-link hide-m" data-act="scroll-today">카테고리</span>
-    <a class="nav-link hide-m" href="#priceDrop" data-act="scroll-drop">핫딜</a>
     <span class="wish-btn" data-act="open-wish" title="내 레이더" aria-label="내 레이더">
       <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.3 4.6 13a4.6 4.6 0 0 1 6.5-6.5l.9.9.9-.9A4.6 4.6 0 0 1 19.4 13z"/></svg>
       <span class="wish-count num" id="wishCount">0</span></span>
@@ -3414,7 +3659,7 @@ select:focus-visible,textarea:focus-visible,
     .hero-title · .hero-sub · .hero-cta)는 4장이 공유한다.
   -->
   <div class="hero-band">
-   <section class="hero-carousel" id="heroCarousel" data-interval="5500"
+  <section class="hero-carousel" id="heroCarousel" data-interval="0"
             aria-roledescription="carousel" aria-label="SEOSA 주요 안내">
     <div class="hc-viewport" id="hcViewport">
 
@@ -3427,9 +3672,9 @@ select:focus-visible,textarea:focus-visible,
      <div class="hc-slide on" role="group" aria-roledescription="슬라이드" data-label="브랜드 소개">
       <div class="hero-inner">
     <div class="hero-copy">
-      <h1 class="hero-title">쇼핑하기 전에,<br>가격부터 확인하세요.</h1>
+      <h1 class="hero-title">더 좋은 선택의 서사,<br>SEOSA</h1>
       <p class="hero-sub">쿠팡·제휴몰 상품을 비교하고, 기록된 가격 변화를 확인하세요.</p>
-      <button class="hero-cta" data-act="ai-entry" data-ctx="home">AI에게 상품 추천받기 <span aria-hidden="true">→</span></button>
+      <button class="hero-cta" data-act="ai-entry" data-ctx="home">조건으로 상품 찾기 <span aria-hidden="true">→</span></button>
       <p class="aff-note" data-aff-note="hero-shelf"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>
       <div class="rb-stat" id="recordStat"></div>
     </div>
@@ -3785,6 +4030,8 @@ select:focus-visible,textarea:focus-visible,
 
     </div><!-- /.hc-viewport -->
 
+    <div class="hero-spotlight" id="heroSpotlight" aria-label="오늘의 추천 상품" hidden></div>
+
     <button class="hc-arrow hc-prev" id="hcPrev" type="button" aria-label="이전 배너">
       <span aria-hidden="true">‹</span>
     </button>
@@ -4089,28 +4336,10 @@ select:focus-visible,textarea:focus-visible,
   </section>
 
   <!-- 검색 결과 -->
-  <section id="results">
+  <section id="results" class="search-results-page">
     <div class="result-banner" id="banner"></div>
-    <!--
-      검색 결과 맥락 AI 진입점. 결과를 본 뒤 "이걸로는 못 고르겠다" 싶은
-      지점에 놓는다. 결과가 실제로 있을 때만 보인다(Search 가 토글).
-    -->
-    <button class="ctx-ai" id="resultsAi" data-act="ai-entry" data-ctx="search" style="display:none">이 결과를 더 좁혀볼까요? 서사 AI에게 묻기 →</button>
-    <div class="sort-bar" id="sortBar" style="display:none">
-      <span class="sort-label">Sort</span>
-      <!--
-        "할인율순" 을 뺐다. 근거인 save_pct 가 products 1404행 전부 0 이라
-        (oprice > lprice 인 행이 0개) 눌러도 순서가 바뀌지 않는 죽은 버튼이었다.
-        쿠팡 검색 API 가 정가(discountPrice)를 내려주지 않기 때문이다
-        (api/_price.js 상단 주석 참고). 대신 실제 관측 기록으로 판정하는
-        "가격하락순" 을 넣는다.
-      -->
-      <button class="sort-btn act" data-act="sort" data-sort="default">관련도순</button>
-      <button class="sort-btn" data-act="sort" data-sort="lowprice">최저가순</button>
-      <button class="sort-btn" data-act="sort" data-sort="highprice">최고가순</button>
-      <button class="sort-btn" data-act="sort" data-sort="trust">신뢰도순</button>
-      <button class="sort-btn" data-act="sort" data-sort="drop" id="sbDrop">가격하락순</button>
-    </div>
+    <div class="search-results-layout">
+      <aside class="search-sidebar" id="searchSidebar" aria-label="검색 결과 필터">
     <div class="filter-bar" id="filterBar" style="display:none">
       <span class="filter-label">Mall</span>
       <button class="filter-btn act" data-act="filter" data-mall="all">전체</button>
@@ -4119,7 +4348,6 @@ select:focus-visible,textarea:focus-visible,
       <button class="filter-btn" data-act="filter" data-mall="알리익스프레스" id="fbAli" style="display:none">알리<span class="fcount" id="fcAli"></span></button>
       <button class="filter-btn" data-act="filter" data-mall="adpick" id="fbAdpick" style="display:none">ADPICK<span class="fcount" id="fcAdpick"></span></button>
     </div>
-
     <!--
       상세 필터. 검색 결과가 있을 때만 보인다.
       각 줄은 "그 정보를 실제로 가진 상품이 있을 때만" 노출된다 (Filters.render).
@@ -4179,6 +4407,22 @@ select:focus-visible,textarea:focus-visible,
 
       <div class="facet-summary" id="facetSummary"></div>
     </div>
+      </aside>
+      <div class="results-main">
+    <!--
+      검색 결과 맥락 AI 진입점. 결과를 본 뒤 "이걸로는 못 고르겠다" 싶은
+      지점에 놓는다. 결과가 실제로 있을 때만 보인다(Search 가 토글).
+    -->
+    <button class="ctx-ai" id="resultsAi" data-act="ai-entry" data-ctx="search" style="display:none">이 결과를 더 좁혀볼까요? 서사 AI에게 묻기 →</button>
+    <div class="sort-bar" id="sortBar" style="display:none">
+      <span class="sort-label">Sort</span>
+      <!-- 정렬 선택은 기존 데이터와 결과 순서를 그대로 사용한다. -->
+      <button class="sort-btn act" data-act="sort" data-sort="default">관련도순</button>
+      <button class="sort-btn" data-act="sort" data-sort="lowprice">최저가순</button>
+      <button class="sort-btn" data-act="sort" data-sort="highprice">최고가순</button>
+      <button class="sort-btn" data-act="sort" data-sort="trust">신뢰도순</button>
+      <button class="sort-btn" data-act="sort" data-sort="drop" id="sbDrop">가격하락순</button>
+    </div>
     <!--
       알리익스프레스 검색 버튼은 제거된 상태입니다.
       실제 알리 연동이 없어서 /api/search(네이버+쿠팡) 결과가 그대로 다시 붙었고,
@@ -4188,8 +4432,17 @@ select:focus-visible,textarea:focus-visible,
     <div class="loader" id="loader"><div class="ring"></div><p>Curating</p></div>
     <p class="aff-note is-list" data-aff-note="results"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>
     <div class="grid" id="resGrid"></div>
+      </div>
+    </div>
   </section>
 </main>
+
+<nav class="mobile-tabbar" aria-label="모바일 주요 메뉴">
+  <button type="button" data-act="home" aria-label="홈"><span aria-hidden="true">⌂</span><small>홈</small></button>
+  <button type="button" data-act="search-focus" aria-label="검색"><span aria-hidden="true">⌕</span><small>검색</small></button>
+  <button type="button" data-act="scroll-today" aria-label="카테고리"><span aria-hidden="true">▦</span><small>카테고리</small></button>
+  <button type="button" data-act="open-wish" aria-label="저장한 상품"><span aria-hidden="true">♡</span><small>저장</small></button>
+</nav>
 
 <!-- 정책 모달들 -->
 <!-- 개인정보처리방침 -->
@@ -6459,10 +6712,38 @@ document.addEventListener('error', function(e) {
 /* ============================================================
  *  [9] Grid — 카드 목록 렌더링 + 스파크라인
  * ========================================================== */
+var HomeSpotlight = {
+  render: function(item) {
+    var target = $('heroSpotlight');
+    if (!target) return;
+    target.innerHTML = '';
+    target.hidden = true;
+    if (!item || !item.title) return;
+
+    // 홈 대표 카드는 추천 API가 준 첫 상품을 기존 카드 렌더러로 표시한다.
+    // 저장·가격 기록·비교·알림·구매 이벤트는 기존 data-act 위임을 그대로 쓴다.
+    AppState.products[productKey(item.title, item.mall, item.productId, item.vendorItemId)] = item;
+    var wrap = document.createElement('div');
+    wrap.innerHTML = Card.html(item);
+    var card = wrap.firstElementChild;
+    if (!card) return;
+    card.classList.add('spotlight-card');
+    target.appendChild(card);
+    target.hidden = false;
+    Motion.watchCard(card, 0);
+    Grid.fillSparklines(target, [item]);
+    Wish.markHearts();
+  }
+};
+
 var Grid = {
 
   render: function(el, items, append) {
     if (!el) return;
+    if (el.id === 'recGrid' && !append) {
+      HomeSpotlight.render(items && items.length ? items[0] : null);
+      items = items && items.length ? items.slice(1) : items;
+    }
     if (!append) {
       Motion.clear(el);
       el.innerHTML = '';
@@ -11721,7 +12002,10 @@ var Actions = {
 
   // ── 네비 / 홈 ──
   'home':        function() { Search.goHome(); },
-  'scroll-today':function() { var t = $('today'); if (t) t.scrollIntoView({ behavior: 'smooth' }); },
+  'scroll-today':function() {
+    if (isSearching()) Search.goHome();
+    var t = $('today'); if (t) t.scrollIntoView({ behavior: 'smooth' });
+  },
   /*
    * 헤더·메뉴의 «핫딜». 예전 «핫딜»은 /hotdeals.html 로 가는 링크라 언제 눌러도
    * 어딘가로 갔다. 섹션 스크롤로 바뀌면서 두 경우에 헛클릭이 된다 — 검색 중
@@ -11738,6 +12022,12 @@ var Actions = {
 
   // ── 검색 ──
   'search':   function() { Search.run(); },
+  'search-focus': function() {
+    var q = $('q');
+    if (!q) return;
+    q.focus();
+    q.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  },
   'chip':     function(el) { Search.run(el.dataset.kw); },
   'rs-remove':function(el, e) { e.stopPropagation(); Recent.removeSearch(el.dataset.kw); },
   'sort':     function(el) { Search.changeSort(el, el.dataset.sort); },
@@ -12562,7 +12852,8 @@ var HeroCarousel = {
       return;
     }
     this.live = $('hcLive');
-    this.interval = Math.max(2500, parseInt(root.dataset.interval, 10) || 5500);
+    var configuredInterval = parseInt(root.dataset.interval, 10);
+    this.interval = configuredInterval > 0 ? Math.max(2500, configuredInterval) : 0;
     try {
       this.reduced = window.matchMedia
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -12576,7 +12867,7 @@ var HeroCarousel = {
     this.sync();
     this.bind();
     root.classList.add('ready');   // 화살표는 배선이 끝난 뒤에 보인다
-    this.play();
+    if (this.interval) this.play();
   },
 
   buildDots: function() {
@@ -12654,6 +12945,7 @@ var HeroCarousel = {
   play: function() {
     clearInterval(this.timer);
     this.timer = 0;
+    if (!this.interval) return;
     if (this.reduced) return;       // 애니메이션 최소화 요청 — 자동 넘김 없음
     var p = this.paused;
     if (p.hover || p.focus || p.hidden || p.out || p.touch) return;

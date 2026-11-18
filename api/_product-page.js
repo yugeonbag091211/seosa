@@ -358,7 +358,104 @@ const CSS = [
   '.facts .dn{color:var(--down)}.facts .upc{color:var(--up)}.lead{font-size:.88rem;color:var(--soft);margin:0}.lead b{color:var(--ink);font-weight:600}',
   '.thumb.noimg:after{content:"이미지 없음";color:var(--soft);font-size:.8rem}',
   '.canonical-offers{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:6px}.canonical-offers ul{list-style:none;margin:8px 0 0;padding:0}.canonical-offers li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:.84rem}.canonical-offers a{font-weight:700}.canonical-offers small{display:block;color:var(--soft)}',
-  '.explore p{margin:0;font-size:.86rem}.explore a{color:var(--ink)}'
+  '.explore p{margin:0;font-size:.86rem}.explore a{color:var(--ink)}',
+  String.raw`
+  :root{--ink:#171615;--soft:#625f5c;--line:#e9e5e2;--bg:#fbfaf9;--surface:#f5f2f0;--brass:#8A6D1C;--down:#0b7a4b;--up:#c9362b}
+  body{background:var(--bg)}
+  .wrap{max-width:1480px;padding-inline:32px}
+  header{position:sticky;top:0;z-index:20;background:rgba(251,250,249,.9);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+  header .wrap{height:72px;gap:28px}
+  .logo{font-size:1.35rem;letter-spacing:-.06em}
+  .product-nav{display:flex;align-items:center;gap:8px}
+  .product-nav a{padding:10px 13px;border-radius:999px;text-decoration:none;font-size:.88rem;font-weight:600;color:var(--ink);transition:background .25s ease}
+  .product-nav a:hover{background:var(--surface)}
+  .crumb{margin:22px 0 18px}
+  .product-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(390px,.98fr);gap:36px;align-items:start}
+  .product-gallery{min-width:0}
+  .product-gallery .thumb{aspect-ratio:1.12/1;border:0;border-radius:24px;background:radial-gradient(ellipse at 50% 40%,#fff 0,#f5f2f0 76%);box-shadow:inset 0 0 0 1px rgba(233,229,226,.78);padding:26px}
+  .product-gallery .thumb img{width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply}
+  .gallery-caption{display:block;margin:8px 4px 0;text-align:right;color:var(--soft);font-size:.72rem}
+  .product-summary{padding:10px 2px 0}
+  .product-kicker{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--soft);font-size:.82rem}
+  .product-kicker span:first-child{padding:7px 13px;border-radius:999px;background:var(--surface);color:var(--ink);font-weight:650}
+  .product-summary h1{font-size:clamp(2rem,3.2vw,3rem);line-height:1.18;letter-spacing:-.055em;margin:0 0 10px;overflow-wrap:anywhere}
+  .product-summary .meta{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;font-size:.78rem}
+  .product-summary .meta span+span:before{content:none}
+  .product-summary .meta span{padding:5px 9px;border-radius:999px;background:#f2efed}
+  .current-price-panel{padding:18px 20px 17px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,#f6f3f1,#fff)}
+  .price-label{margin-bottom:2px;font-size:.76rem;font-weight:650;color:var(--soft)}
+  .product-summary .price{font-size:clamp(2.1rem,3.6vw,3.1rem);line-height:1.2;letter-spacing:-.06em}
+  .product-summary .price small{font-size:.42em}
+  .product-summary .note{margin-top:5px;line-height:1.5}
+  .product-summary .unitprice{margin:10px 0 0}
+  .product-summary .verdict{border:0;border-radius:14px;background:#f4f1ef;padding:14px 16px;margin-top:14px}
+  .product-summary .goodbuy{border-radius:14px;background:#f4f1ef;margin:12px 0}
+  .product-summary .trust{margin:10px 0;color:var(--soft)}
+  .product-actions{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:stretch;gap:9px;margin:17px 0 0}
+  .product-actions .btn{display:flex;align-items:center;justify-content:center;min-height:48px;padding:11px 15px;border-radius:999px;border-color:var(--line-2);font-size:.82rem;white-space:nowrap}
+  .product-actions .btn.primary{background:#211e1b;color:#fff;border-color:#211e1b}
+  .price-history-panel,.seller-panel{margin-top:28px;padding:24px;border:1px solid var(--line);border-radius:22px;background:rgba(255,255,255,.9);box-shadow:0 5px 24px rgba(36,28,22,.025)}
+  .panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:16px}
+  .panel-eyebrow{font-size:.63rem;font-weight:650;letter-spacing:.13em;color:var(--soft)}
+  .panel-heading h2{font-size:1.35rem;letter-spacing:-.045em;margin:2px 0 0}
+  .panel-heading .note{max-width:480px;font-size:.68rem;line-height:1.5;text-align:right}
+  .price-history-panel .facts,.price-history-panel .stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}
+  .price-history-panel .facts div,.price-history-panel .stat{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#fff}
+  .price-history-panel .facts dt,.price-history-panel .stat span{font-size:.7rem;color:var(--soft)}
+  .price-history-panel .facts dd,.price-history-panel .stat b{font-size:.94rem;font-variant-numeric:tabular-nums}
+  .price-history-panel .spark{padding:20px 12px;margin:10px 0 6px;border:0;border-radius:15px;background:#fbfaf9;overflow:hidden}
+  .price-history-panel .spark svg{display:block;width:100%;height:auto;max-height:300px}
+  .price-history-panel .lead{margin-top:9px}
+  .price-history-panel .journey{margin:18px 0;padding:17px 0}
+  .price-history-panel h2#price-summary{margin:20px 0 10px;font-size:1rem}
+  .price-history-panel .canonical-offers{background:#fff;border-radius:14px}
+  .seller-panel .panel-heading{margin-bottom:10px}
+  .seller-panel .canonical-offers{margin:0;padding:0;border:0;border-radius:0}
+  .seller-panel .canonical-offers>b{display:block;padding:12px 14px;border-radius:12px 12px 0 0;background:#f4f1ef}
+  .seller-panel .canonical-offers li{align-items:center;padding:14px;border-bottom:1px solid var(--line);border-top:0}
+  .seller-panel .canonical-offers li>a,.seller-panel .canonical-offers li span:last-child a{display:inline-block;padding:8px 13px;border-radius:999px;background:#211e1b;color:#fff;text-decoration:none;font-size:.76rem}
+  .seller-panel h2{margin-top:0}
+  footer{margin:40px auto 30px;padding-top:18px}
+  .mobile-tabbar{display:none}
+  @media(max-width:900px){
+    .wrap{padding-inline:22px}
+    .product-layout{grid-template-columns:minmax(0,1fr) minmax(340px,.95fr);gap:22px}
+    header .wrap{height:64px}
+    .price-history-panel,.seller-panel{padding:18px}
+  }
+  @media(max-width:640px){
+    .wrap{padding-inline:16px}
+    header .wrap{height:60px;gap:8px}
+    .product-nav{gap:0}
+    .product-nav a{padding:8px;font-size:.72rem}
+    .product-nav a:nth-child(3){display:none}
+    .crumb{margin:16px 0 13px;font-size:.72rem}
+    .product-layout{grid-template-columns:1fr;gap:17px}
+    .product-gallery .thumb{aspect-ratio:1.03/1;padding:18px;border-radius:18px}
+    .product-summary{padding-top:0}
+    .product-kicker{margin-bottom:8px;font-size:.75rem}
+    .product-summary h1{font-size:1.75rem}
+    .product-summary .meta{margin-bottom:12px}
+    .current-price-panel{padding:15px;border-radius:15px}
+    .product-summary .price{font-size:2.2rem}
+    .product-actions{grid-template-columns:auto auto;}
+    .product-actions .btn.primary{grid-column:1/-1;grid-row:1}
+    .product-actions .btn{min-height:44px}
+    .price-history-panel,.seller-panel{margin-top:18px;padding:15px;border-radius:18px}
+    .panel-heading{display:block;margin-bottom:12px}
+    .panel-heading .note{display:block;text-align:left;margin-top:7px}
+    .panel-heading h2{font-size:1.18rem}
+    .price-history-panel .facts,.price-history-panel .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .price-history-panel .spark{padding:12px 4px}
+    .seller-panel .canonical-offers li{align-items:flex-start;flex-direction:column;gap:5px}
+    footer{margin:28px auto 20px;font-size:.7rem}
+    .mobile-tabbar{position:fixed;z-index:260;inset:auto 0 0;display:grid;grid-template-columns:repeat(4,1fr);padding:7px 8px max(8px,env(safe-area-inset-bottom));background:rgba(255,255,255,.94);border-top:1px solid var(--line);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+    .mobile-tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:46px;color:var(--soft);text-decoration:none}
+    .mobile-tabbar span{font-size:1.25rem;line-height:1;color:var(--ink)}.mobile-tabbar small{font-size:.63rem;font-weight:600}
+    body{padding-bottom:68px}
+  }
+  @media(prefers-reduced-motion:reduce){.product-nav a{transition:none}}
+  `
 ].join('');
 
 /**
@@ -624,18 +721,29 @@ ${SEO.jsonLdScript(jsonLd)}
 <body>
 <header><div class="wrap">
   <a class="logo" href="/">SEO<b>SA</b></a>
-  <a rel="nofollow" href="/?q=${encodeURIComponent(row.keyword || title.split(' ').slice(0, 2).join(' '))}" style="font-size:.82rem;color:var(--soft);text-decoration:none">비슷한 상품 더 보기 →</a>
+  <nav class="product-nav" aria-label="주요 메뉴">
+    <a href="/">홈</a>
+    <a rel="nofollow" href="/?q=${encodeURIComponent(row.keyword || title.split(' ').slice(0, 2).join(' '))}">검색</a>
+    <a href="${category ? esc(SEO.categoryUrl(category)) : '/category'}">카테고리</a>
+    <a href="/radar.html">레이더</a>
+  </nav>
 </div></header>
 <main class="wrap">
   <nav class="crumb" aria-label="경로"><a href="/">홈</a> › ${category ? `<a href="/category/${esc(category.slug)}">${esc(category.name)}</a> › ` : ''}${esc(name)}</nav>
-  <h1>${esc(title)}</h1>
-  <div class="meta"><span>${esc(mall)}</span>${last ? `<span>${esc(last)} 관측</span>` : ''}${row.keyword ? `<span>검색어 ${esc(row.keyword)}</span>` : ''}</div>
-
-  <section class="hero">
-    <div class="thumb">${img ? `<img src="${esc(img)}" alt="${esc(SEO.shortName(title, 80))}" decoding="async" fetchpriority="high" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add('noimg');this.remove()">` : '<span style="color:var(--soft)">이미지 없음</span>'}</div>
-    <div>
-      <div class="price">${displayPrice > 0 ? `${won(displayPrice)}<small> 원</small>` : '가격 미확인'}</div>
-      ${canonical ? `<div class="note">현재 확인된 최저가 · ${esc(displayMerchant)}</div>` : ''}
+  <section class="product-layout" aria-label="상품 정보">
+    <div class="product-gallery">
+      <div class="thumb">${img ? `<img src="${esc(img)}" alt="${esc(SEO.shortName(title, 80))}" decoding="async" fetchpriority="high" referrerpolicy="no-referrer" onerror="this.parentNode.classList.add('noimg');this.remove()">` : '<span style="color:var(--soft)">이미지 없음</span>'}</div>
+      ${img ? '<span class="gallery-caption">상품 이미지</span>' : ''}
+    </div>
+    <div class="product-summary">
+      <div class="product-kicker"><span>${esc(mall)}</span><span>가격 기록 상품</span></div>
+      <h1>${esc(title)}</h1>
+      <div class="meta">${last ? `<span>${esc(last)} 관측</span>` : ''}${row.keyword ? `<span>검색어 ${esc(row.keyword)}</span>` : ''}</div>
+      <div class="current-price-panel">
+        <div class="price-label">현재 확인된 가격</div>
+        <div class="price">${displayPrice > 0 ? `${won(displayPrice)}<small> 원</small>` : '가격 미확인'}</div>
+        ${canonical ? `<div class="note">현재 확인된 최저가 · ${esc(displayMerchant)}</div>` : ''}
+      </div>
       ${unitHtml}
       <div class="verdict">
         <b>${esc(deal.label)}</b>
@@ -644,26 +752,32 @@ ${SEO.jsonLdScript(jsonLd)}
       </div>
       ${goodBuyHtml}
       ${trust}
-      <div class="cta"><button class="btn" id="saveProduct" type="button">저장</button><a class="btn" href="/radar.html">내 레이더</a></div>
+      ${displayLink ? `<p class="aff-note" data-aff-note="product"><b>제휴 안내</b><span>${AFFILIATE_DISCLOSURE}</span></p>` : ''}
+      <div class="cta product-actions"><button class="btn" id="saveProduct" type="button">저장</button><a class="btn" href="/radar.html">내 레이더</a>${displayLink ? `<a class="btn primary" id="affiliateLink" href="${esc(displayLink)}" target="_blank" rel="nofollow sponsored noopener">${esc(displayMerchant)}에서 보기 →</a>` : '<span class="btn off" aria-disabled="true">판매처 링크 없음</span>'}</div>
     </div>
   </section>
 
-  ${summaryHtml(summary)}
-  ${statsHtml}
-  ${spark ? `<div class="spark">${spark}</div><div class="note">${esc(priceSourceNote(row.mall || product.mall))}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요. ${esc(priceSourceNote(row.mall || product.mall))}</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
-  ${storyHtml}
-  ${canonicalGraphHtml}
+  <section class="price-history-panel" id="price-history" aria-label="가격 흐름">
+    <div class="panel-heading"><div><span class="panel-eyebrow">PRICE HISTORY</span><h2>가격 흐름</h2></div><span class="note">${esc(priceSourceNote(row.mall || product.mall))}</span></div>
+    ${summaryHtml(summary)}
+    ${statsHtml}
+    ${spark ? `<div class="spark">${spark}</div>` : (points.length ? `<div class="note">기록 ${points.length}일치 — 그래프를 그릴 만큼 값이 움직이지 않았어요.</div>` : '<div class="note">아직 가격 기록이 없어요. 내일부터 쌓입니다.</div>')}
+    ${storyHtml}
+    ${canonicalGraphHtml}
+  </section>
 
-  ${displayLink ? `<p class="aff-note" data-aff-note="product"><b>제휴 안내</b><span>${AFFILIATE_DISCLOSURE}</span></p>` : ''}
-  ${canonicalHtml}
-  <div class="cta">
-    ${displayLink ? `<a class="btn primary" id="affiliateLink" href="${esc(displayLink)}" target="_blank" rel="nofollow sponsored noopener">${esc(displayMerchant)}에서 보기 →</a>` : '<span class="btn off">판매처 링크 없음</span>'}
-    <a class="btn" href="/?p=${encodeURIComponent(product.productId)}">SEOSA에서 가격 추이 보기</a>
-  </div>
+  ${canonicalHtml ? `<section class="seller-panel" aria-label="판매처 가격 비교"><div class="panel-heading"><div><span class="panel-eyebrow">SELLER COMPARISON</span><h2>판매처 가격 비교</h2></div></div>${canonicalHtml}</section>` : ''}
+  <div class="cta"><a class="btn" href="/?p=${encodeURIComponent(product.productId)}">SEOSA에서 가격 추이 보기</a></div>
 
   ${sibHtml}
   ${exploreHtml}
 </main>
+<nav class="mobile-tabbar" aria-label="모바일 주요 메뉴">
+  <a href="/" aria-label="홈"><span aria-hidden="true">⌂</span><small>홈</small></a>
+  <a rel="nofollow" href="/?q=${encodeURIComponent(row.keyword || title.split(' ').slice(0, 2).join(' '))}" aria-label="검색"><span aria-hidden="true">⌕</span><small>검색</small></a>
+  <a href="${category ? esc(SEO.categoryUrl(category)) : '/category'}" aria-label="카테고리"><span aria-hidden="true">▦</span><small>카테고리</small></a>
+  <a href="/radar.html" aria-label="레이더"><span aria-hidden="true">♡</span><small>레이더</small></a>
+</nav>
 <footer class="wrap">
   SEOSA 는 상품을 직접 팔지 않아요. 위 가격은 SEOSA 가 그 시점에 <b>관측한 값</b>이고 판매처의 실제 결제 금액과 다를 수 있어요.
   판정은 SEOSA 가 수집한 기록만을 근거로 계산한 것이고 미래 가격을 예측하지 않아요.
