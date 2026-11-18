@@ -2300,7 +2300,7 @@ footer p{font-size:.75rem;color:var(--faint)}
  */
 .fab{transition:border-color .15s,transform .22s cubic-bezier(.2,.8,.2,1),opacity .18s}
 .fab.tuck{transform:translateY(calc(100% + 24px));opacity:0;pointer-events:none}
-@media(prefers-reduced-motion:reduce){.fab.tuck{transform:none;opacity:1;pointer-events:auto}}
+@media(prefers-reduced-motion:reduce){.fab.tuck{transform:none;opacity:0;pointer-events:none;visibility:hidden}}
 @media(max-width:640px){.fab{bottom:12px;right:12px;height:34px;font-size:.73rem;padding:0 11px}}
 
 /* ── 맨 위로 버튼 ── */
@@ -3461,7 +3461,7 @@ main.wrap{padding-top:28px}
   .seo-quicklinks a{flex:0 0 auto}
   .block{margin-top:42px}.sec-title{font-size:1.38rem}.sec-sub{font-size:.8rem}
   .sec-head{align-items:start;gap:12px}.sec-more{white-space:nowrap;padding:8px 11px}
-  #recGrid,#forYouGrid,#histRecGrid,#monthGrid,#viewedGrid{display:flex!important;flex-wrap:nowrap;overflow-x:auto;gap:0 12px;margin-inline:-16px;padding:0 16px 10px;scroll-snap-type:x proximity;scroll-padding-inline:16px;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  #recGrid,#forYouGrid,#histRecGrid,#monthGrid,#viewedGrid{display:flex!important;flex-wrap:nowrap;overflow-x:auto;gap:0 12px;margin-inline:calc(var(--rail-bleed,16px) * -1);padding:0 var(--rail-bleed,16px) 10px;scroll-snap-type:x proximity;scroll-padding-inline:var(--rail-bleed,16px);overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   #recGrid::-webkit-scrollbar,#forYouGrid::-webkit-scrollbar,#histRecGrid::-webkit-scrollbar,#monthGrid::-webkit-scrollbar,#viewedGrid::-webkit-scrollbar{display:none}
   #recGrid>.card,#forYouGrid>.card,#histRecGrid>.card,#monthGrid>.card,#viewedGrid>.card{flex:0 0 min(78vw,314px);max-width:314px;scroll-snap-align:start}
   .card{padding:9px;border-radius:18px}.card .thumb{aspect-ratio:1.22/1;border-radius:13px}.card .info{padding:11px 3px 4px;gap:5px}.card .p-title{font-size:.88rem}.card .price{font-size:1.1rem}
@@ -3481,7 +3481,7 @@ main.wrap{padding-top:28px}
   #results #resGrid .card .card-actions .alert-btn,#results #resGrid .card .card-actions .buy{font-size:.61rem;min-height:32px;padding:6px 4px}
   #results #resGrid .card .share-btn{display:none}
   #results .facet-bar.open{max-height:55vh;overflow:auto}
-  .fab{bottom:78px!important}.top-btn{bottom:116px!important}
+  .fab{bottom:78px!important}.fab.tuck{z-index:259}.top-btn{bottom:116px!important}
   .mobile-tabbar{position:fixed;z-index:260;inset:auto 0 0;display:grid;grid-template-columns:repeat(4,1fr);padding:7px 8px max(8px,env(safe-area-inset-bottom));background:rgba(255,255,255,.94);border-top:1px solid var(--line);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
   .mobile-tabbar button,.mobile-tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:46px;border:0;background:transparent;color:var(--soft);font:inherit;text-decoration:none}
   .mobile-tabbar span{font-size:1.25rem;line-height:1;color:var(--ink)}.mobile-tabbar small{font-size:.63rem;font-weight:600}
@@ -3489,6 +3489,9 @@ main.wrap{padding-top:28px}
 }
 @media(max-width:360px){
   .wrap{padding-inline:12px}#hdr .bar{padding-inline:12px}
+  /* The 320–360px wrapper uses a 12px inset; keep the swipe rail bleed aligned
+     with that inset so the rail edge does not widen the document by 4px. */
+  .grid.mobile-product-rail{--rail-bleed:12px}
   #results.search-results-page{padding-inline:12px}
   #results #resGrid{gap:8px}
   #results #resGrid .card .p-title{font-size:.72rem}
@@ -12390,8 +12393,61 @@ function bindInputs() {
 var Anchor = {
   lastY: 0,
   idle: null,
+  observer: null,
+  frame: 0,
   TUCK_AFTER: 240,   // 이 지점보다 위에서는 항상 보인다
   IDLE_MS: 420,      // 스크롤을 멈추고 이만큼 지나면 되돌아온다
+
+  schedule: function() {
+    if (Anchor.frame) return;
+    Anchor.frame = requestAnimationFrame(function() {
+      Anchor.frame = 0;
+      Anchor.update();
+    });
+  },
+
+  overlapsAction: function(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    var tucked = el.classList.contains('tuck');
+    var a = el.getBoundingClientRect();
+    if (a.width <= 0 || a.height <= 0) return false;
+    var aTop = a.top, aBottom = a.bottom;
+    if (tucked) {
+      // .tuck translates the button below its normal fixed position. Reverse
+      // the current transform (including an in-flight transition) for collision
+      // checks so the idle timer cannot mistake a hidden button for a clear area.
+      var transform = window.getComputedStyle(el).transform;
+      var matrix = /^matrix(3d)?\(([^)]+)\)$/.exec(transform || '');
+      if (matrix) {
+        var values = matrix[2].split(',');
+        var translateY = Number(values[matrix[1] ? 13 : 5]) || 0;
+        aTop -= translateY;
+        aBottom -= translateY;
+      }
+    }
+    var targets = document.querySelectorAll('.card .buy, .card .alert-btn, .card .heart, .product-actions > *');
+    for (var i = 0; i < targets.length; i++) {
+      var target = targets[i];
+      var style = window.getComputedStyle(target);
+      if (style.display === 'none' || style.visibility === 'hidden' || target.disabled) continue;
+      var b = target.getBoundingClientRect();
+      if (a.left < b.right && a.right > b.left && aTop < b.bottom && aBottom > b.top) return true;
+    }
+    return false;
+  },
+
+  setTucked: function(el, tucked) {
+    if (!el) return;
+    el.classList.toggle('tuck', tucked);
+    if (tucked) {
+      if (document.activeElement === el) el.blur();
+      el.setAttribute('aria-hidden', 'true');
+      el.setAttribute('tabindex', '-1');
+    } else {
+      el.removeAttribute('aria-hidden');
+      el.removeAttribute('tabindex');
+    }
+  },
 
   update: function() {
     var el = document.querySelector('.fab');
@@ -12399,12 +12455,24 @@ var Anchor = {
     var y = window.scrollY;
     var down = y > Anchor.lastY + 4;
     Anchor.lastY = y;
+    var overlaps = Anchor.overlapsAction(el);
 
-    if (y > Anchor.TUCK_AFTER && down) el.classList.add('tuck');
-    else if (!down) el.classList.remove('tuck');
+    if (overlaps || (y > Anchor.TUCK_AFTER && down)) Anchor.setTucked(el, true);
+    else if (!down) Anchor.setTucked(el, false);
 
     clearTimeout(Anchor.idle);
-    Anchor.idle = setTimeout(function() { el.classList.remove('tuck'); }, Anchor.IDLE_MS);
+    Anchor.idle = setTimeout(function() {
+      Anchor.setTucked(el, Anchor.overlapsAction(el));
+    }, Anchor.IDLE_MS);
+  },
+
+  init: function() {
+    Anchor.update();
+    if (window.MutationObserver && !Anchor.observer && document.body) {
+      Anchor.observer = new MutationObserver(Anchor.schedule);
+      Anchor.observer.observe(document.body, { childList: true, subtree: true });
+    }
+    window.addEventListener('resize', Anchor.schedule, { passive: true });
   }
 };
 
@@ -12415,7 +12483,7 @@ window.addEventListener('scroll', function() {
   var tb = $('topBtn');
   if (tb) tb.classList.toggle('show', window.scrollY > CONST.SCROLL.TOP_BTN);
 
-  Anchor.update();
+  Anchor.schedule();
 }, { passive: true });
 
 document.addEventListener('keydown', function(e) {
@@ -13094,6 +13162,7 @@ document.addEventListener('click', function(e) {
   if (e.target.id === 'businessOverlay') Policy.closeBusiness();
 }, true);
 
+Anchor.init();
 Init.run();
 </script>
 
