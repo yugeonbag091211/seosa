@@ -1,6 +1,6 @@
 {
-  "checks": 145,
-  "passed": 145,
+  "checks": 167,
+  "passed": 167,
   "failures": [],
   "diagnostics": [
     {
@@ -421,9 +421,9 @@
       "fab": {
         "left": 230.140625,
         "right": 378,
-        "top": 725.0570068359375,
-        "bottom": 769.0570068359375,
-        "transform": "matrix(1, 0, 0, 1, 0, 3.05701)"
+        "top": 723.8773193359375,
+        "bottom": 767.8773193359375,
+        "transform": "matrix(1, 0, 0, 1, 0, 1.87732)"
       },
       "buy": {
         "left": 171,
@@ -1044,6 +1044,94 @@
       "cls": 0
     },
     {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
       "kind": "viewport",
       "label": "search-long-title-mobile",
       "vw": 390,
@@ -1093,22 +1181,22 @@
       "buttons": 59,
       "cards": 20,
       "images": [],
-      "cls": 4.1268547852256
+      "cls": 3.1901232029871815
     },
     {
       "kind": "console",
       "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
-      "url": "http://127.0.0.1:64356/fixture-image-missing.svg"
+      "url": "http://127.0.0.1:54787/fixture-image-missing.svg"
     },
     {
       "kind": "console",
       "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
-      "url": "http://127.0.0.1:64356/fixture-image-missing.svg"
+      "url": "http://127.0.0.1:54787/fixture-image-missing.svg"
     },
     {
       "kind": "console",
       "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
-      "url": "http://127.0.0.1:64356/fixture-image-missing.svg"
+      "url": "http://127.0.0.1:54787/fixture-image-missing.svg"
     },
     {
       "kind": "viewport",

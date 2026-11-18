@@ -304,6 +304,7 @@ async function main() {
       const data = await metrics(`home-${width}`);
       check(data.docWidth <= data.clientWidth + 1, `home no horizontal overflow ${width}px`, `${data.docWidth}/${data.clientWidth}`);
       check(!data.actionOverlap, `home floating AI button does not cover product actions ${width}px`, `tucked=${data.fabTucked}, aria-hidden=${data.fabAriaHidden}`);
+      check(data.unnamed === 0, `home visible controls have accessible names ${width}px`, `${data.unnamed} unnamed`);
       if (width < 641 && data.fabTucked) check(data.fabZ < data.navZ, `tucked AI button moves behind bottom navigation ${width}px`, `${data.fabZ}/${data.navZ}`);
       if (width === 1440 || width === 390 || width === 320 || width === 360) await screenshot(`${capturePrefix}-${width}-home`);
     }
@@ -316,7 +317,6 @@ async function main() {
       for (let i = 0; i < 10; i++) await evalJS(`(()=>{const e=document.querySelector('#recGrid');e.scrollLeft=${i % 2 ? 0 : 280};return e.scrollLeft})()`);
       check(true, 'mobile horizontal recommendation rail responds to repeated scrolling');
     } else check(false, 'mobile horizontal recommendation rail has overflow', JSON.stringify(rail));
-
     await setViewport(390, 844);
     const chatOpened = await evalJS(`(()=>{const b=document.querySelector('.fab');if(!b)return false;b.click();return document.querySelector('#panel').classList.contains('open')})()`);
     check(chatOpened, 'AI chat UI opens without sending a prompt');
@@ -337,12 +337,31 @@ async function main() {
       await delay(25);
     }
 
+    // Repeated reloads catch initialization races without contacting real APIs.
+    await navigate(base + '/');
+    let reloadPass = true;
+    for (let i = 0; i < 10; i++) {
+      await cdp.send('Page.reload', { ignoreCache: i % 2 === 0 });
+      await waitFor(async () => (await evalJS(`document.readyState==='complete'&&!!document.querySelector('#q')&&typeof Anchor!=='undefined'`)));
+      const state = await evalJS('({doc:document.documentElement.scrollWidth,client:document.documentElement.clientWidth})');
+      reloadPass = reloadPass && state.doc <= state.client + 1;
+    }
+    check(reloadPass, 'homepage reloads ten times without initialization or overflow failure');
+
     // Search scenarios and faceting are all served from local synthetic fixtures.
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 220, downloadThroughput: 512000, uploadThroughput: 256000, connectionType: 'cellular3g' });
     await evalJS(`(()=>{const q=document.querySelector('#q');q.value='무선 이어폰';q.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-act="search"]').click()})()`);
     await waitFor(async () => (await evalJS(`document.querySelectorAll('#resGrid .card').length`)) >= 3);
     await screenshot(`${capturePrefix}-390-search`);
     const initialSearchCount = await evalJS(`document.querySelectorAll('#resGrid .card').length`);
+    await evalJS('history.back()');
+    await waitFor(async () => await evalJS(`!new URLSearchParams(location.search).has('q')`));
+    const backRestoredHome = await evalJS(`getComputedStyle(document.querySelector('.hero-band')).display!=='none'`);
+    check(backRestoredHome, 'browser Back restores the homepage state');
+    await evalJS('history.forward()');
+    await waitFor(async () => await evalJS(`new URLSearchParams(location.search).get('q')==='무선 이어폰'`));
+    await waitFor(async () => (await evalJS(`document.querySelectorAll('#resGrid .card').length`)) >= 3);
+    check(await evalJS(`document.querySelectorAll('#resGrid .card').length>0`), 'browser Forward restores cached search results');
     const mallFilter = await evalJS(`(()=>{const b=document.querySelector('#filterBar [data-act="filter"][data-mall="쿠팡"]');if(!b)return false;b.click();return document.querySelectorAll('#resGrid .card').length})()`);
     check(mallFilter && mallFilter < initialSearchCount, 'merchant filter narrows the synthetic results', `${mallFilter}/${initialSearchCount}`);
     await evalJS(`(()=>{const b=document.querySelector('#filterBar [data-act="filter"][data-mall="all"]');if(b)b.click()})()`);
@@ -369,6 +388,7 @@ async function main() {
     const searchData = await metrics('search-long-title-mobile');
     check(searchData.docWidth <= searchData.clientWidth + 1, 'long title and missing image do not widen mobile search', `${searchData.docWidth}/${searchData.clientWidth}`);
     check(!searchData.actionOverlap, 'floating AI button does not cover search result actions', `tucked=${searchData.fabTucked}`);
+    check(searchData.unnamed === 0, 'search result controls have accessible names', `${searchData.unnamed} unnamed`);
     await evalJS(`(()=>{const i=document.querySelector('#resGrid .card img[src*="fixture-image-missing"]');if(i){i.loading='eager';i.closest('.card').scrollIntoView({block:'center',behavior:'instant'})}})()`);
     await delay(500);
     const imageFallbackPassed = await evalJS(`(()=>{const i=document.querySelector('#resGrid .card img[src*="fixture-image-missing"]');return !!i&&getComputedStyle(i).display==='none'&&!!i.parentNode.querySelector('.glyph')})()`);
@@ -416,6 +436,7 @@ async function main() {
       await setViewport(width, width < 600 ? 844 : 900);
       const data = await metrics(`detail-${width}`);
       check(data.docWidth <= width + 1, `detail no horizontal overflow ${width}px`, `${data.docWidth}/${width}`);
+      check(data.unnamed === 0, `detail visible controls have accessible names ${width}px`, `${data.unnamed} unnamed`);
       if (width === 1440 || width === 390) await screenshot(`${capturePrefix}-${width}-detail`);
     }
     await setViewport(390, 844);
