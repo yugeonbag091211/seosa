@@ -108,6 +108,15 @@ process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
   check(product.includes("if(name==='affiliate_click'&&affiliate)")
     && product.includes("'&sid=SEOSA2026'"),
     'product-page click measurement ready for a future approved rollout');
+  // The product-page JS is embedded inside a server-side template literal.
+  // Substitute the two JSON expressions with fixture objects, then parse
+  // the actual inline script as the browser would (without executing it).
+  const match = product.match(/var product=\$\{radarProduct\},purchase=\$\{purchaseProduct\}[\s\S]*?<\/script>/);
+  check(!!match, 'product-page inline click script remains extractable');
+  const browserScript = match[0].replace(/\$\{radarProduct\}|\$\{purchaseProduct\}/g, '{}')
+    .replace(/<\/script>$/, '');
+  new vm.Script(browserScript, { filename: 'api/_product-page.js:inline.js' });
+  check(true, 'product-page inline JavaScript syntax valid');
   const stats=fs.readFileSync(path.join(root,'api/stats.js'),'utf8');
   check(stats.includes('channelSubId: q.sid'), 'stats endpoint forwards click channel evidence');
   console.log('PASS '+passed+' / FAIL 0 (no external API or DB writes)');
