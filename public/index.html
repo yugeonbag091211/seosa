@@ -5195,7 +5195,7 @@ var Track = {
     if (it.mall === '쿠팡' && it.link && Fmt.buyUrl(it.link, it)) {
       try {
         var u = new URL(it.link);
-        if (u.hostname === 'link.coupang.com' && /^\\/re\\/AFF[A-Z]*$/.test(u.pathname)) {
+        if (u.hostname === 'link.coupang.com' && /^\/re\/AFF[A-Z]*$/.test(u.pathname)) {
           u.searchParams.forEach(function(value, key) {
             if (key.toLowerCase() === 'subid' && value === 'SEOSA2026') {
               qs += '&sid=SEOSA2026';
