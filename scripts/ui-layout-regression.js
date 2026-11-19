@@ -309,6 +309,28 @@ async function main() {
       if (width === 1440 || width === 390 || width === 320 || width === 360) await screenshot(`${capturePrefix}-${width}-home`);
     }
 
+
+    // Keep all four carousel CTAs visible, including the longer veterans slide.
+    // Also verify that the synthetic featured product never covers the copy.
+    await navigate(base + '/');
+    for (const width of [768, 820, 1024, 1280, 1395, 1440, 1920]) {
+      await setViewport(width, 900);
+      for (let i = 0; i < 4; i++) {
+        await evalJS('HeroCarousel.go(' + i + ', 1)');
+        await delay(570);
+        const hero = await evalJS('(() => {const a=document.querySelector(".hc-slide.on"),v=document.querySelector("#hcViewport").getBoundingClientRect(),c=a.querySelector(".hero-cta").getBoundingClientRect(),t=a.querySelector(".hero-cta"),copy=a.querySelector(".hero-copy").getBoundingClientRect(),spot=document.querySelector("#heroSpotlight"),s=spot&&!spot.hidden?spot.getBoundingClientRect():null,b=spot&&spot.querySelector(".buy");return {fits:c.top>=v.top-1&&c.bottom<=v.bottom+1,clickable:document.elementFromPoint(c.left+c.width/2,c.top+c.height/2)?.closest(".hero-cta")===t,cardFits:!s||s.bottom<=v.bottom+1,cardGap:!s||copy.right<=s.left+1,underline:b?getComputedStyle(b,"::after").content:"none",doc:document.documentElement.scrollWidth,client:document.documentElement.clientWidth}})()');
+        check(hero.fits && hero.clickable, 'carousel slide ' + (i + 1) + ' CTA fits and is clickable at ' + width, JSON.stringify(hero));
+        check(hero.cardFits && hero.cardGap, 'carousel slide ' + (i + 1) + ' tile does not cover copy at ' + width, JSON.stringify(hero));
+        check(hero.doc <= hero.client + 1, 'carousel slide ' + (i + 1) + ' width at ' + width, JSON.stringify(hero));
+        check(hero.underline === 'none', 'featured purchase button underline absent at ' + width, hero.underline);
+        if (width === 1395 && i === 3) await screenshot(capturePrefix + '-1395-veteran-carousel');
+      }
+    }
+    await setViewport(390, 844);
+    const mobileHero = await evalJS('(() => {const v=document.querySelector("#hcViewport").getBoundingClientRect(),s=document.querySelector(".hc-slide:first-child"),c=s.querySelector(".hero-cta").getBoundingClientRect();return {fits:c.top>=v.top-1&&c.bottom<=v.bottom+1,active:s.classList.contains("on")&&s.getAttribute("aria-hidden")==="false",doc:document.documentElement.scrollWidth,client:document.documentElement.clientWidth}})()');
+    check(mobileHero.fits && mobileHero.active && mobileHero.doc <= mobileHero.client + 1,
+      'mobile hero CTA visible, active and no document overflow after resize', JSON.stringify(mobileHero));
+
     // Homepage interactions: repeated horizontal rail use, view preference, overlays.
     await setViewport(390, 844);
     const rail = await evalJS(`(() => {const e=document.querySelector('#recGrid');if(!e)return null;return {width:e.clientWidth,scroll:e.scrollWidth,overflow:getComputedStyle(e).overflowX,snap:getComputedStyle(e).scrollSnapType}})()`);
