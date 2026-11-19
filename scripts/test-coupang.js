@@ -72,6 +72,15 @@ const DISCOUNT_ROWS = [
 
 const server = http.createServer((req, res) => {
   lastRequest = { target: req.url, authorization: req.headers.authorization || '' };
+  if (mode === 'channel') {
+    const subId = new URL(req.url, 'http://127.0.0.1').searchParams.get('subId') || '';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ rCode: '0', data: { productData: [{
+      productId: 111, productName: '테스트 에어팟 프로', productPrice: 296000,
+      productUrl: 'https://link.coupang.com/re/AFFSDP?lptag=AF8789251&itemId=1&vendorItemId=2&subId=' + subId,
+      productImage: 'https://img/a.jpg'
+    }] } }));
+  }
   if (mode === 'options') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ rCode: '0', data: { productData: OPTION_ROWS } }));
@@ -154,7 +163,7 @@ server.listen(0, async () => {
 
   // SUBID diagnostic is opt-in and never mutates normal search behavior.
   // This stays on the local mock server: no partner quota and no DB writes.
-  mode = 'ok';
+  mode = 'channel';
   r = await searchCoupang('에어팟 프로 3', { ...common, source: 'diag', subId: 'SEOSA2026' });
   const subUrl = new URL(lastRequest.target, process.env.COUPANG_API_HOST);
   const subAuth = /signed-date=([^,]+), signature=([a-f0-9]{64})/.exec(lastRequest.authorization);
@@ -171,6 +180,7 @@ server.listen(0, async () => {
   const cachedDiag = await searchCoupang('에어팟 프로 3', { ...common, source: 'diag', useCache: true, subId: 'SEOSA2026' });
   check(cachedDiag.from === 'none' && lastRequest.target === beforeRejected,
     '기존 채널의 키워드 캐시를 읽는 SUBID 진단을 거부한다');
+  mode = 'ok';
   const noSub = await searchCoupang('에어팟 프로 3', { ...common, source: 'search' });
   const defaultUrl = new URL(lastRequest.target, process.env.COUPANG_API_HOST);
   check(noSub.from === 'api' && !defaultUrl.searchParams.has('subId'),
