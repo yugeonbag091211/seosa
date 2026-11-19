@@ -356,12 +356,26 @@ check('아침 전체 수집 크론은 재확인으로 새지 않는다 (쿼터 �
 check('크론 표현식이 vercel.json 과 일치한다', () => {
   const crons = require('../vercel.json').crons;
   const paths = Object.fromEntries(crons.map(c => [c.path, c.schedule]));
-  assert.strictEqual(paths['/api/volatile-noon'], '5 3 * * *', '점심 12:05 KST');
-  assert.strictEqual(paths['/api/volatile-evening'], '5 10 * * *', '저녁 19:05 KST');
-  assert.strictEqual(paths['/api/cron'], '0 18 * * *', '아침 수집은 그대로');
-  for (const [schedule, slot] of Object.entries(VOLATILE_SCHEDULES)) {
-    assert.ok(Object.values(paths).includes(schedule),
-      `핸들러가 아는 ${slot} 예약(${schedule}) 이 vercel.json 에 없다`);
+  if (crons.length) {
+    // Paid / enabled Vercel cron configuration: the registered schedules must
+    // exactly match the handler slots, in UTC.
+    assert.strictEqual(paths['/api/volatile-noon'], '5 3 * * *', '점심 12:05 KST');
+    assert.strictEqual(paths['/api/volatile-evening'], '5 10 * * *', '저녁 19:05 KST');
+    assert.strictEqual(paths['/api/cron'], '0 18 * * *', '아침 수집은 그대로');
+    for (const [schedule, slot] of Object.entries(VOLATILE_SCHEDULES)) {
+      assert.ok(Object.values(paths).includes(schedule),
+        `핸들러가 아는 ${slot} 예약(${schedule}) 이 vercel.json 에 없다`);
+    }
+  } else {
+    // Vercel crons are deliberately disabled in the current deployment.
+    // Do not enable them solely to satisfy a stale assertion, since they
+    // could incur cost or duplicate existing GitHub Actions collection.
+    const gh = require('fs').readFileSync(
+      require('path').join(__dirname, '..', '.github', 'workflows', 'volatile-prices.yml'), 'utf8');
+    assert.match(gh, /cron: '5,25,45 3-5 \\* \\* \\*'/,
+      'Vercel cron이 꺼져 있을 때는 GitHub 점심 재확인 스케줄 필요');
+    assert.match(gh, /cron: '5,25,45 10-12 \\* \\* \\*'/,
+      'Vercel cron이 꺼져 있을 때는 GitHub 저녁 재확인 스케줄 필요');
   }
   // Hobby 플랜은 하루 1회만 허용한다 — 분/시가 * 이면 배포가 실패한다.
   for (const c of crons) {
