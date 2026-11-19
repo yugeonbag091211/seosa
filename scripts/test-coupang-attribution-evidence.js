@@ -15,12 +15,14 @@ delete process.env.ANALYTICS_DISABLED;
 let inserts = [];
 let providerSelects = [];
 const eventRows = [];
+const partnerRows = [];
 function fakeQuery(table) {
   const chain = {
     select(cols) { providerSelects.push({table,cols});return chain; },
     gte() { return chain; },
     limit() { return Promise.resolve({
-      data: table === 'funnel_events' ? eventRows : [],
+      data: table === 'funnel_events' ? eventRows :
+        table === 'coupang_partner_channel_daily' ? partnerRows : [],
       error: null
     }); },
     insert(row) {
@@ -83,6 +85,10 @@ process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
     source:'product',sub_id:''});
   eventRows.push({event:'buy_wait_watch_view',product_id:'PID-1',mall:'쿠팡',price:299000,
     source:'product',sub_id:''});
+  partnerRows.push({
+    report_date:'2026-11-18',sub_id:'SEOSA2026',clicks:5,orders:1,
+    gmv:10000,commission:300
+  });
   const report = await funnel.report(7);
   const observed = report.clientReportedChannelClicks;
   check(observed.basis==='browser_unverified'
@@ -93,6 +99,12 @@ process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
   check(report.gmv===null && report.commissionRevenue===null
     && report.conversionsPending === true,
     'client clicks never become partner conversions/revenue');
+  check(report.partnerChannelDaily.basis==='official_partner_daily_aggregate_preliminary'
+    && report.partnerChannelDaily.reportedClicks===5
+    && report.partnerChannelDaily.reportedCommission===300
+    && report.partnerChannelDaily.completeCoverage===false
+    && report.partnerChannelDaily.finalPayout===false,
+    'official aggregate shown separately from verified conversions and payout');
   check(providerSelects.some(q=>q.table==='funnel_events' && q.cols.includes('sub_id')),
     'admin report queries sub_id field');
 
