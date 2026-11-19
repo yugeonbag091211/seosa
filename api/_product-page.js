@@ -789,11 +789,16 @@ ${SEO.jsonLdScript(jsonLd)}
    ★ 링크를 가로채지 않는다. preventDefault 도 새 탭 강제도 없다 —
      가운데 클릭·새 탭·키보드 이동을 막으면 안 된다. 계측만 얹는다. */
 var product=${radarProduct},purchase=${purchaseProduct},button=document.getElementById('saveProduct');
+// Match the anonymous browser ID used by the homepage; never collect personal data.
+function visitorId(){var v='';try{v=localStorage.getItem('seosa_vid')||''}catch(e){}
+if(!/^[a-z0-9]{8,64}$/i.test(v)){v='v'+Date.now().toString(36)+Math.random().toString(36).slice(2,12);
+try{localStorage.setItem('seosa_vid',v)}catch(e){}}
+return v}
 function track(name,item){item=item||product;try{var q='/api/stats?event='+encodeURIComponent(name)
 +(item.productId?'&pid='+encodeURIComponent(item.productId):'')
 +(item.mallLabel?'&mall='+encodeURIComponent(item.mallLabel):'')
 +((item.price||item.lprice)>0?'&price='+encodeURIComponent(String(item.price||item.lprice)):'')
-+'&src=product';fetch(q,{keepalive:true}).catch(function(){})}catch(_){}}
++'&src=product&vid='+encodeURIComponent(visitorId());fetch(q,{keepalive:true}).catch(function(){})}catch(_){}}
 function sync(){var on=!!RadarStore.find(product);button.textContent=on?'저장됨':'저장';button.setAttribute('aria-pressed',String(on))}
 button.addEventListener('click',function(){var result=RadarStore.toggle(product);track(result.saved?'radar_save':'radar_remove');sync()});
 var affiliate=document.getElementById('affiliateLink');
