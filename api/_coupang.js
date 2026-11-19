@@ -203,9 +203,18 @@ function sign(method, path, query) {
  * until partner-side attribution, new DB table, and writer rollout are checked.
  * Default is OFF; it never changes existing Production affiliate URLs.
  */
-function activeChannelSubId() {
+function activeChannelSubId(source = 'search', keyword = '') {
   if (process.env.COUPANG_CHANNEL_ROLLOUT !== '1') return '';
-  return String(process.env.COUPANG_CHANNEL_SUBID || '').trim();
+  const subId = String(process.env.COUPANG_CHANNEL_SUBID || '').trim();
+  const mode = String(process.env.COUPANG_CHANNEL_MODE || '');
+  if (mode === 'full') return subId;
+  // Canary only changes browser-facing fresh searches. Cron, collector and AI
+  // continue to use legacy affiliate URLs and the legacy keyword cache.
+  if (mode !== 'canary' || source !== 'search') return '';
+  const percent = Number(process.env.COUPANG_CHANNEL_CANARY_PERCENT);
+  if (!Number.isInteger(percent) || percent < 1 || percent > 100) return '';
+  const bucket = crypto.createHash('sha256').update(String(keyword)).digest().readUInt32BE(0) % 100;
+  return bucket < percent ? subId : '';
 }
 
 function validChannelSubId(value) {
@@ -586,7 +595,9 @@ function collapseOptions(items) {
  *   cacheTtlMs   캐시 수명
  *   forceRefresh 캐시가 신선해도 새로 받아온다 (cron 전용)
  *   subId        채널 ID 진단 전용 (source='diag' + useCache=false 조합만 허용)
- *   COUPANG_CHANNEL_ROLLOUT=1 + COUPANG_CHANNEL_SUBID=... (기본 OFF, 승인 후 모든 writer 동시 설정)
+ *   COUPANG_CHANNEL_ROLLOUT=1 + COUPANG_CHANNEL_SUBID=... + COUPANG_CHANNEL_MODE=canary|full
+ *   canary: source=search 중 고정 비율(일부 키워드)만 채널 사용, 기존 catalog 저장 금지
+ *   full: 모든 writer 동기화+ALL_WRITERS_ACK 확인 후에만 채널 사용
  * @returns {{items: Array, error: string|null, from: string, blocked: boolean}}
  *   from: 'cache' | 'stale-cache' | 'api' | 'none'
  */
@@ -612,10 +623,19 @@ async function searchCoupang(keyword, opts = {}) {
       || !validChannelSubId(diagnosticSubId))) {
     return { items: [], allItems: [], error: 'subId 진단은 source=diag, useCache=false, 영숫자 8~20자만 허용', from: 'none', blocked: false };
   }
-  const channelSubId = activeChannelSubId();
-  if (process.env.COUPANG_CHANNEL_ROLLOUT === '1' && !validChannelSubId(channelSubId)) {
-    return { items: [], allItems: [], error: '쿠팡 채널 설정 오류: COUPANG_CHANNEL_SUBID 검증 실패', from: 'none', blocked: false };
+  const requestedRollout = process.env.COUPANG_CHANNEL_ROLLOUT === '1';
+  const channelMode = String(process.env.COUPANG_CHANNEL_MODE || '');
+  const configuredSubId = String(process.env.COUPANG_CHANNEL_SUBID || '').trim();
+  const canaryPercent = Number(process.env.COUPANG_CHANNEL_CANARY_PERCENT);
+  if (requestedRollout && (
+      !validChannelSubId(configuredSubId)
+      || !['canary', 'full'].includes(channelMode)
+      || (channelMode === 'full' && process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK !== '1')
+      || (channelMode === 'canary' && (!Number.isInteger(canaryPercent) || canaryPercent < 1 || canaryPercent > 100))
+    )) {
+    return { items: [], allItems: [], error: '쿠팡 채널 설정 오류: 모드/채널 ID/승인 또는 카나리 비율 확인 필요', from: 'none', blocked: false };
   }
+  const channelSubId = activeChannelSubId(source, kw);
   // Calling sites cannot arbitrarily override the channel; only the protected,
   // uncached diagnostic source may pass an explicit subId.
   const effectiveSubId = diagnosticSubId || channelSubId;
