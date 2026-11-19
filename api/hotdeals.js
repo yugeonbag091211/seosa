@@ -30,6 +30,7 @@ const DbError = require('./_dberror');
 const TD = require('./_todaydrop');
 const { kstToday, kstDayStartUtc } = require('./_price');
 const Canonical = require('./_canonicalconsumer');
+const LinkOverlay = require('./_coupang-link-overlay');
 
 /** 사용자에게 보여줄 상태. NORMAL·REJECTED 는 목록에 오르지 않는다. */
 const VISIBLE = ['VERIFIED_HOT', 'GOOD_DEAL', 'POTENTIAL_DEAL'];
@@ -1153,7 +1154,7 @@ module.exports = async function handler(req, res) {
         return res.status(404).json({ error: '핫딜을 찾을 수 없어요' });
       }
 
-      if (canonicalReadEnabled) noStore(res); else cachePublic(res, 60);
+      if (LinkOverlay.percent() || canonicalReadEnabled) noStore(res); else cachePublic(res, 60);
       let deal = Object.assign(toListItem(data), {
         reasons: arr(data.reason_json),
         confidence: data.confidence,
@@ -1173,6 +1174,7 @@ module.exports = async function handler(req, res) {
         const grouped = await Canonical.collapseItems([deal], { db: supabase, config: canonicalConfig });
         if (grouped[0]) deal = grouped[0];
       }
+      deal = (await LinkOverlay.overlay([deal], supabase))[0];
       return res.json({
         deal
       });
@@ -1202,9 +1204,10 @@ module.exports = async function handler(req, res) {
         const grouped = await Canonical.collapseItems(drops.items, { db: supabase, config: canonicalConfig });
         drops.items = grouped.slice(0, limit);
       }
+      drops.items = await LinkOverlay.overlay(drops.items, supabase);
       // 원장은 수집기가 도는 주기로만 바뀐다. 기존 목록과 같은 120초를 쓴다.
       // 시간 상한에 걸려 일부만 읽은 응답은 짧게 — 다음 요청이 온전한 목록을 다시 만든다.
-      if (canonicalReadEnabled) noStore(res); else cachePublic(res, drops.partial ? 30 : 120);
+      if (LinkOverlay.percent() || canonicalReadEnabled) noStore(res); else cachePublic(res, drops.partial ? 30 : 120);
       return res.json({
         items: drops.items,
         nextCursor: null,
@@ -1315,8 +1318,9 @@ module.exports = async function handler(req, res) {
       items = await Canonical.collapseItems(items, { db: supabase, config: canonicalConfig });
     }
 
+    items = await LinkOverlay.overlay(items, supabase);
     // 목록은 자주 바뀌지 않는다 — 수집기가 도는 주기가 시간 단위다.
-    if (canonicalReadEnabled) noStore(res); else cachePublic(res, 120);
+    if (LinkOverlay.percent() || canonicalReadEnabled) noStore(res); else cachePublic(res, 120);
     return res.json({
       items,
       nextCursor,

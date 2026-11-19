@@ -39,6 +39,7 @@ const { statsFrom } = require('./_pricestat');
 const { dealOf } = require('./_deal');
 const { cachePublic, noStore } = require('./_http');
 const Canonical = require('./_canonicalconsumer');
+const LinkOverlay = require('./_coupang-link-overlay');
 
 /** 절대 URL 의 기준. 배포 도메인이 바뀌면 환경변수로 덮는다. */
 const SITE = String(process.env.SITE_ORIGIN || 'https://seosa.ai.kr').replace(/\/+$/, '');
@@ -830,8 +831,9 @@ async function productHandler(req, res) {
   if (!pid) return res.status(400).json({ error: '상품 식별자 없음' });
   const v = await buildView(pid, String(q.mall || '').trim());
   if (!v) return res.status(404).json({ error: '상품 없음' });
+  await LinkOverlay.overlayProductView(v, supabase);
   const canonicalConfig = Canonical.config();
-  if (canonicalConfig.enabled && canonicalConfig.percent > 0) noStore(res);
+  if (LinkOverlay.percent() || (canonicalConfig.enabled && canonicalConfig.percent > 0)) noStore(res);
   else cachePublic(res, 300);
   return res.json({
     product: v.product,
@@ -861,6 +863,7 @@ async function pageHandler(req, res) {
     cachePublic(res, 60);
     return res.status(404).end(render404(pid));
   }
+  await LinkOverlay.overlayProductView(v, supabase);
   const [siblings, ctx] = await Promise.all([
     loadSiblings(v.row),
     // 실패하면 빈 맥락 — breadcrumb 은 «홈 › 상품», brand 없음 (틀린 값보다 없는 값).
@@ -868,7 +871,7 @@ async function pageHandler(req, res) {
   ]);
   if (!v.indexable) res.setHeader('X-Robots-Tag', 'noindex');
   const canonicalConfig = Canonical.config();
-  if (canonicalConfig.enabled && canonicalConfig.percent > 0) noStore(res);
+  if (LinkOverlay.percent() || (canonicalConfig.enabled && canonicalConfig.percent > 0)) noStore(res);
   else cachePublic(res, PAGE_CACHE_S);
   return res.status(200).end(renderPage(v, siblings, ctx));
 }
