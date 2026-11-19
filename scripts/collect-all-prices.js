@@ -2642,7 +2642,7 @@ let cacheHintRpcMissing = false;
 async function cacheHintsFromDb(wantIds, mallName) {
   // search_cache_hints SQL reads legacy Coupang cache only. Never use its
   // channel-mismatched results while channel rollout is enabled.
-  if (mallName === '쿠팡' && coupangChannelSubId()) return null;
+  if (mallName === '쿠팡' && coupangChannelSubId('collect')) return null;
   if (cacheHintRpcMissing || process.env.PRICE_CACHE_HINT_RPC === '0') return null;
   const { data, error } = await supabase.rpc('search_cache_hints', { p_mall: mallName, p_ids: [...wantIds] });
   if (error) {
@@ -2701,7 +2701,7 @@ async function loadCoupangCacheRows(keywords) {
   if (cur.length) chunks.push(cur);
   const rows = [];
   for (const chunk of chunks) {
-    const subId = coupangChannelSubId();
+    const subId = coupangChannelSubId('collect');
     const table = subId ? 'coupang_channel_search_cache' : 'coupang_search_cache';
     let q = supabase.from(table).select('keyword, items');
     if (subId) q = q.eq('sub_id', subId);
@@ -2812,7 +2812,7 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡', targetsById = null
   if (mallName !== '쿠팡' && mallName !== 'ADPICK') return out;
   const fromDb = await cacheHintsFromDb(wantIds, mallName).catch(() => null);
   if (fromDb) return verifyHintOptions(fromDb, mallName, targetsById);
-  const subId = mallName === '쿠팡' ? coupangChannelSubId() : '';
+  const subId = mallName === '쿠팡' ? coupangChannelSubId('collect') : '';
   const table = mallName === 'ADPICK' ? 'adpick_search_cache'
     : (subId ? 'coupang_channel_search_cache' : 'coupang_search_cache');
   // 전체 스캔은 행을 이미 들고 있다 — 옵션 확인에 다시 읽지 않고 그 행을 넘긴다.
@@ -4911,7 +4911,7 @@ async function pruneSearchCaches() {
   ];
   // The channel table may not exist before a separately approved migration.
   // Do not probe or mutate it on legacy deployments.
-  if (coupangChannelSubId()) {
+  if (coupangChannelSubId('collect')) {
     specs.push(['coupang_channel_search_cache', cacheRetentionMs('COUPANG_STALE_MAX_MS')]);
   }
   const result = {};
