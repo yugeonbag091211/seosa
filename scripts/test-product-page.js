@@ -205,6 +205,9 @@ function seedCanonicalDisplay() {
     const r = await call({ __route: 'page', pid: '1001' });
     ok(r.status === 200, '200', String(r.status));
     ok(/^text\/html/.test(r.headers['content-type'] || ''), 'text/html');
+    ok(r.text.includes("localStorage.getItem('seosa_vid')") &&
+       r.text.includes("'&src=product&vid='+encodeURIComponent(visitorId())"),
+       '상품 상세 제휴 이벤트가 홈과 동일한 익명 방문자 ID를 전송한다');
     ok(r.text.indexOf('<script>alert("x")</script>') === -1, '★ 상품명의 스크립트가 실행 가능한 형태로 남지 않는다');
     ok(r.text.indexOf('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;') > -1, '이스케이프된 상품명이 있다');
     ok(/<meta name="robots" content="index,follow">/.test(r.text), '기록 20일 + live + 링크 → index');
