@@ -197,10 +197,13 @@ function sign(method, path, query) {
  * using the same URL object for fetch prevents the signed query from drifting
  * from the query that Node actually sends.
  */
-function buildSearchRequest(keyword, limit, host = HOST) {
+function buildSearchRequest(keyword, limit, host = HOST, subId = '') {
   const url = new URL(SEARCH_PATH, host);
   url.searchParams.set('keyword', String(keyword));
   url.searchParams.set('limit', String(limit));
+  // Optional channel identifier. Use only for isolated diagnostics until
+  // cache, stored catalogue links, and partner-side attribution are verified.
+  if (subId) url.searchParams.set('subId', String(subId));
   return { url, path: url.pathname, query: url.search.slice(1) };
 }
 
@@ -538,6 +541,7 @@ function collapseOptions(items) {
  *   useCache     캐시 사용 여부
  *   cacheTtlMs   캐시 수명
  *   forceRefresh 캐시가 신선해도 새로 받아온다 (cron 전용)
+ *   subId        채널 ID 진단 전용 (source='diag' + useCache=false 조합만 허용)
  * @returns {{items: Array, error: string|null, from: string, blocked: boolean}}
  *   from: 'cache' | 'stale-cache' | 'api' | 'none'
  */
@@ -554,6 +558,15 @@ async function searchCoupang(keyword, opts = {}) {
 
   const kw = String(keyword || '').trim().slice(0, 80);
   if (!kw) return { items: [], error: '키워드 없음', from: 'none', blocked: false };
+
+  // Do not enable SUBID on live searches. Existing keyword-only cache rows
+  // and product catalogue URLs may point to a different channel. A diagnostic
+  // request must bypass both cache reads and writes, and must not be a collector.
+  const diagnosticSubId = String(opts.subId || '').trim();
+  if (diagnosticSubId && (source !== 'diag' || useCache !== false || forceRefresh
+      || !/^[A-Za-z0-9]{8,20}$/.test(diagnosticSubId))) {
+    return { items: [], allItems: [], error: 'subId 진단은 source=diag, useCache=false, 영숫자 8~20자만 허용', from: 'none', blocked: false };
+  }
 
   if (!hasKeys()) {
     return {
@@ -614,7 +627,7 @@ async function searchCoupang(keyword, opts = {}) {
   // 호출자가 요구한 수와 상관없이 공용 캐시용으로 넉넉히 받는다 (FETCH_LIMIT 주석 참고).
   // 상한은 100 이 아니라 COUPANG_MAX_LIMIT(10) 이다. 넘기면 rCode=400.
   const reqLimit = Math.max(1, Math.min(COUPANG_MAX_LIMIT, Math.max(limit, FETCH_LIMIT)));
-  const request = buildSearchRequest(kw, reqLimit);
+  const request = buildSearchRequest(kw, reqLimit, HOST, diagnosticSubId);
 
   let r, text;
   /*
