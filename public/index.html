@@ -5190,6 +5190,20 @@ var Track = {
     if (it.productId) qs += '&pid=' + encodeURIComponent(it.productId);
     var price = Fmt.int(it.lprice);
     if (price > 0) qs += '&price=' + price;
+    // The browser reports only a URL it is actually about to open; this
+    // diagnostic is never substituted for partner-verified clicks or sales.
+    if (it.mall === '쿠팡' && it.link && Fmt.buyUrl(it.link, it)) {
+      try {
+        var u = new URL(it.link);
+        if (u.hostname === 'link.coupang.com' && /^\\/re\\/AFF[A-Z]*$/.test(u.pathname)) {
+          u.searchParams.forEach(function(value, key) {
+            if (key.toLowerCase() === 'subid' && value === 'SEOSA2026') {
+              qs += '&sid=SEOSA2026';
+            }
+          });
+        }
+      } catch (e) {}
+    }
     try { qs += '&vid=' + encodeURIComponent(Track.vid()); } catch (e) {}
     Track.ping(qs);
   }
