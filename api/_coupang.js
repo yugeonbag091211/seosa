@@ -197,6 +197,39 @@ function sign(method, path, query) {
  * using the same URL object for fetch prevents the signed query from drifting
  * from the query that Node actually sends.
  */
+/**
+ * A channel-enabled process must use the same channel in ALL writers:
+ * Vercel user searches/cron and GitHub Actions collectors. Do not enable
+ * until partner-side attribution, new DB table, and writer rollout are checked.
+ * Default is OFF; it never changes existing Production affiliate URLs.
+ */
+function activeChannelSubId() {
+  if (process.env.COUPANG_CHANNEL_ROLLOUT !== '1') return '';
+  return String(process.env.COUPANG_CHANNEL_SUBID || '').trim();
+}
+
+function validChannelSubId(value) {
+  return /^[A-Za-z0-9]{8,20}$/.test(String(value || ''));
+}
+
+function channelCacheTable(subId) {
+  return subId ? 'coupang_channel_search_cache' : 'coupang_search_cache';
+}
+
+/** Only accept a channel link if the upstream partner, not SEOSA, generated it. */
+function linkHasChannel(link, subId) {
+  if (!subId) return true;
+  try {
+    const url = new URL(link);
+    return url.protocol === 'https:'
+      && url.hostname.toLowerCase() === 'link.coupang.com'
+      && /^\/re\/AFF[A-Z]*$/.test(url.pathname)
+      && [...url.searchParams].some(([key, value]) => key.toLowerCase() === 'subid' && value === subId);
+  } catch (_) {
+    return false;
+  }
+}
+
 function buildSearchRequest(keyword, limit, host = HOST, subId = '') {
   const url = new URL(SEARCH_PATH, host);
   url.searchParams.set('keyword', String(keyword));
@@ -374,15 +407,20 @@ async function trip(minutes, reason) {
 /* ------------------------------------------------------------------ *
  *  캐시
  * ------------------------------------------------------------------ */
-async function readCache(keyword) {
+async function readCache(keyword, subId = '') {
   try {
-    const { data, error } = await supabase
-      .from('coupang_search_cache')
-      .select('items, req_limit, fetched_at')
-      .eq('keyword', keyword)
-      .maybeSingle();
-    if (error || !data) return null;
+    const table = channelCacheTable(subId);
+    let q = supabase.from(table).select('items, req_limit, fetched_at').eq('keyword', keyword);
+    if (subId) q = q.eq('sub_id', subId);
+    const { data, error } = await q.maybeSingle();
+    // Never fall back to the legacy cache on a channel query. Missing channel
+    // storage is a deployment/configuration problem, not a cache miss.
+    if (error) return subId ? { unavailable: true, error: '채널 검색 캐시 조회 실패: ' + error.message } : null;
+    if (!data) return null;
     const allItems = Array.isArray(data.items) ? data.items : [];
+    if (subId && !allItems.every(it => linkHasChannel(it.link, subId))) {
+      return { unavailable: true, error: '채널 검색 캐시의 제휴 링크 subId 불일치' };
+    }
     return {
       items: collapseOptions(allItems),
       allItems,
@@ -391,19 +429,25 @@ async function readCache(keyword) {
       ageMs: Date.now() - new Date(data.fetched_at).getTime()
     };
   } catch (e) {
-    return null;
+    return subId ? { unavailable: true, error: '채널 검색 캐시 조회 예외: ' + e.message } : null;
   }
 }
 
-async function writeCache(keyword, items, limit) {
+async function writeCache(keyword, items, limit, subId = '') {
   try {
-    await supabase.from('coupang_search_cache').upsert({
+    const row = {
       keyword,
       items,
       req_limit: limit,
       fetched_at: new Date().toISOString()
-    }, { onConflict: 'keyword' });
-  } catch (e) { /* 캐시 실패는 무시 — 다음 호출 때 다시 시도한다 */ }
+    };
+    if (subId) row.sub_id = subId;
+    const { error } = await supabase.from(channelCacheTable(subId))
+      .upsert(row, { onConflict: subId ? 'sub_id,keyword' : 'keyword' });
+    if (error && subId) console.warn('[coupang] 채널 검색 캐시 쓰기 실패: ' + error.message);
+  } catch (e) {
+    if (subId) console.warn('[coupang] 채널 검색 캐시 쓰기 예외: ' + e.message);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -542,6 +586,7 @@ function collapseOptions(items) {
  *   cacheTtlMs   캐시 수명
  *   forceRefresh 캐시가 신선해도 새로 받아온다 (cron 전용)
  *   subId        채널 ID 진단 전용 (source='diag' + useCache=false 조합만 허용)
+ *   COUPANG_CHANNEL_ROLLOUT=1 + COUPANG_CHANNEL_SUBID=... (기본 OFF, 승인 후 모든 writer 동시 설정)
  * @returns {{items: Array, error: string|null, from: string, blocked: boolean}}
  *   from: 'cache' | 'stale-cache' | 'api' | 'none'
  */
@@ -564,9 +609,16 @@ async function searchCoupang(keyword, opts = {}) {
   // request must bypass both cache reads and writes, and must not be a collector.
   const diagnosticSubId = String(opts.subId || '').trim();
   if (diagnosticSubId && (source !== 'diag' || useCache !== false || forceRefresh
-      || !/^[A-Za-z0-9]{8,20}$/.test(diagnosticSubId))) {
+      || !validChannelSubId(diagnosticSubId))) {
     return { items: [], allItems: [], error: 'subId 진단은 source=diag, useCache=false, 영숫자 8~20자만 허용', from: 'none', blocked: false };
   }
+  const channelSubId = activeChannelSubId();
+  if (process.env.COUPANG_CHANNEL_ROLLOUT === '1' && !validChannelSubId(channelSubId)) {
+    return { items: [], allItems: [], error: '쿠팡 채널 설정 오류: COUPANG_CHANNEL_SUBID 검증 실패', from: 'none', blocked: false };
+  }
+  // Calling sites cannot arbitrarily override the channel; only the protected,
+  // uncached diagnostic source may pass an explicit subId.
+  const effectiveSubId = diagnosticSubId || channelSubId;
 
   if (!hasKeys()) {
     return {
@@ -576,7 +628,10 @@ async function searchCoupang(keyword, opts = {}) {
   }
 
   // 1) 캐시 — 여기서 끝나면 쿠팡 API 호출은 0회다.
-  const cached = useCache ? await readCache(kw) : null;
+  const cached = useCache ? await readCache(kw, effectiveSubId) : null;
+  if (cached && cached.unavailable) {
+    return { items: [], allItems: [], error: cached.error, from: 'none', blocked: false, apiCalled: false };
+  }
   if (cached && cached.isTodayKst && !forceRefresh && cached.ageMs < cacheTtlMs && cached.limit >= limit) {
     state.totalCacheHits++;
     log(source, kw, 'CACHE', `age=${Math.round(cached.ageMs / 1000)}s items=${cached.items.length}`);
@@ -627,7 +682,7 @@ async function searchCoupang(keyword, opts = {}) {
   // 호출자가 요구한 수와 상관없이 공용 캐시용으로 넉넉히 받는다 (FETCH_LIMIT 주석 참고).
   // 상한은 100 이 아니라 COUPANG_MAX_LIMIT(10) 이다. 넘기면 rCode=400.
   const reqLimit = Math.max(1, Math.min(COUPANG_MAX_LIMIT, Math.max(limit, FETCH_LIMIT)));
-  const request = buildSearchRequest(kw, reqLimit, HOST, diagnosticSubId);
+  const request = buildSearchRequest(kw, reqLimit, HOST, effectiveSubId);
 
   let r, text;
   /*
@@ -738,6 +793,11 @@ async function searchCoupang(keyword, opts = {}) {
   }
 
   const allItems = normalize((data.data && data.data.productData) || []);
+  if (effectiveSubId && !allItems.every(it => linkHasChannel(it.link, effectiveSubId))) {
+    await dbFinish(gate.callId, 'channel_mismatch', r.status, rCode, 0);
+    // Do not put untagged or another channel's links into the catalogue/cache.
+    return fallback('쿠팡 제휴 링크의 채널 ID가 요청과 일치하지 않습니다', false);
+  }
   const items = collapseOptions(allItems);
   /*
    * 인자 순서: (callId, outcome, httpStatus, rCode, items)
@@ -748,7 +808,7 @@ async function searchCoupang(keyword, opts = {}) {
    * 성공 응답의 rCode 는 위에서 검사한 그 값이다 (보통 '0').
    */
   await dbFinish(gate.callId, 'ok', r.status, rCode, items.length);
-  if (useCache) await writeCache(kw, allItems, reqLimit);
+  if (useCache) await writeCache(kw, allItems, reqLimit, effectiveSubId);
 
   log(source, kw, 'API', `http=${r.status} items=${items.length}`);
   return { items: items.slice(0, limit), allItems: allItems.slice(0, limit), error: null, from: 'api', blocked: false, apiCalled: true };
@@ -810,5 +870,6 @@ module.exports = {
   permanentGateFailure, shouldDisableGlobalGateForTest, COOLDOWN_MIN, mirrorSharedBlock,
   MAX_PER_MIN, SEARCH_HARD_CAP, GLOBAL_OPERATING_CAP, GLOBAL_HARD_CAP,
   INTERACTIVE_RESERVE, COLLECTOR_BUDGET, parseRetryAfter, buildSearchRequest,
+  activeChannelSubId, validChannelSubId, channelCacheTable, linkHasChannel,
   MIN_GAP_MS, CACHE_TTL_MS, STALE_MAX_MS, FETCH_LIMIT
 };
