@@ -230,7 +230,8 @@ function linkHasChannel(link, subId) {
   if (!subId) return true;
   try {
     const url = new URL(link);
-    return url.protocol === 'https:'
+    return require('./_affiliate').classifyCoupang(link).ok
+      && url.protocol === 'https:'
       && url.hostname.toLowerCase() === 'link.coupang.com'
       && /^\/re\/AFF[A-Z]*$/.test(url.pathname)
       && [...url.searchParams].some(([key, value]) => key.toLowerCase() === 'subid' && value === subId);
