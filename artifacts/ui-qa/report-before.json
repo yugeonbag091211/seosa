@@ -1,0 +1,1558 @@
+{
+  "checks": 165,
+  "passed": 162,
+  "failures": [
+    {
+      "name": "home no horizontal overflow 320px",
+      "detail": "324/320"
+    },
+    {
+      "name": "home floating AI button does not cover product actions 320px",
+      "detail": "tucked=false, aria-hidden=false"
+    },
+    {
+      "name": "home no horizontal overflow 360px",
+      "detail": "364/360"
+    }
+  ],
+  "diagnostics": [
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "viewport",
+      "label": "home-320",
+      "vw": 324,
+      "clientWidth": 320,
+      "screenWidth": 320,
+      "visualWidth": 320,
+      "visualScale": 1,
+      "docWidth": 324,
+      "bodyWidth": 324,
+      "rail": {
+        "left": -4,
+        "right": 324,
+        "width": 328,
+        "margin": "-16px",
+        "bleed": "12px"
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": 260,
+      "fab": {
+        "left": 164.140625,
+        "right": 312,
+        "top": 733,
+        "bottom": 777,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 143,
+        "right": 285,
+        "top": 699.109375,
+        "bottom": 733.109375
+      },
+      "actionOverlap": true,
+      "overflow": [
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 321,
+          "right": 401
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 419,
+          "right": 497
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 515,
+          "right": 581
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 599,
+          "right": 659
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 677,
+          "right": 744
+        },
+        {
+          "tag": "DIV",
+          "cls": "grid",
+          "id": "recGrid",
+          "left": -4,
+          "right": 324
+        },
+        {
+          "tag": "DIV",
+          "cls": "thumb",
+          "id": "",
+          "left": 284,
+          "right": 513
+        },
+        {
+          "tag": "IMG",
+          "cls": "",
+          "id": "",
+          "left": 299,
+          "right": 498
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "heart",
+          "id": "",
+          "left": 471,
+          "right": 505
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "share-btn",
+          "id": "",
+          "left": 431,
+          "right": 465
+        },
+        {
+          "tag": "svg",
+          "cls": "[object",
+          "id": "",
+          "left": 443,
+          "right": 454
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 450,
+          "right": 452
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 444,
+          "right": 447
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 450,
+          "right": 452
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 447,
+          "right": 450
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 447,
+          "right": 450
+        },
+        {
+          "tag": "DIV",
+          "cls": "info",
+          "id": "",
+          "left": 284,
+          "right": 513
+        },
+        {
+          "tag": "DIV",
+          "cls": "price-row",
+          "id": "",
+          "left": 287,
+          "right": 510
+        },
+        {
+          "tag": "DIV",
+          "cls": "price",
+          "id": "",
+          "left": 287,
+          "right": 360
+        },
+        {
+          "tag": "SPAN",
+          "cls": "w",
+          "id": "",
+          "left": 351,
+          "right": 360
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 121,
+          "client": 116,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 48,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-360",
+      "vw": 364,
+      "clientWidth": 360,
+      "screenWidth": 360,
+      "visualWidth": 359.50616455078125,
+      "visualScale": 1.0013736486434937,
+      "docWidth": 364,
+      "bodyWidth": 364,
+      "rail": {
+        "left": -4,
+        "right": 364,
+        "width": 368,
+        "margin": "-16px",
+        "bleed": "12px"
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": 260,
+      "fab": {
+        "left": 204.140625,
+        "right": 352,
+        "top": 732,
+        "bottom": 776,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 159,
+        "right": 325,
+        "top": 696.59375,
+        "bottom": 730.59375
+      },
+      "actionOverlap": false,
+      "overflow": [
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 321,
+          "right": 401
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 419,
+          "right": 497
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 515,
+          "right": 581
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 599,
+          "right": 659
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 677,
+          "right": 744
+        },
+        {
+          "tag": "DIV",
+          "cls": "grid",
+          "id": "recGrid",
+          "left": -4,
+          "right": 364
+        },
+        {
+          "tag": "DIV",
+          "cls": "thumb",
+          "id": "",
+          "left": 315,
+          "right": 576
+        },
+        {
+          "tag": "IMG",
+          "cls": "",
+          "id": "",
+          "left": 332,
+          "right": 558
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "heart",
+          "id": "",
+          "left": 534,
+          "right": 568
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "share-btn",
+          "id": "",
+          "left": 494,
+          "right": 528
+        },
+        {
+          "tag": "svg",
+          "cls": "[object",
+          "id": "",
+          "left": 505,
+          "right": 516
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 512,
+          "right": 515
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 506,
+          "right": 509
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 512,
+          "right": 515
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 509,
+          "right": 512
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 509,
+          "right": 512
+        },
+        {
+          "tag": "DIV",
+          "cls": "info",
+          "id": "",
+          "left": 315,
+          "right": 576
+        },
+        {
+          "tag": "DIV",
+          "cls": "price-row",
+          "id": "",
+          "left": 318,
+          "right": 573
+        },
+        {
+          "tag": "DIV",
+          "cls": "price",
+          "id": "",
+          "left": 318,
+          "right": 392
+        },
+        {
+          "tag": "SPAN",
+          "cls": "w",
+          "id": "",
+          "left": 382,
+          "right": 392
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 121,
+          "client": 116,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 48,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-390",
+      "vw": 390,
+      "clientWidth": 390,
+      "screenWidth": 390,
+      "visualWidth": 385.1851501464844,
+      "visualScale": 1.0125000476837158,
+      "docWidth": 390,
+      "bodyWidth": 390,
+      "rail": {
+        "left": 0,
+        "right": 390,
+        "width": 390,
+        "margin": "-16px",
+        "bleed": "14px"
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": 260,
+      "fab": {
+        "left": 230.140625,
+        "right": 378,
+        "top": 722,
+        "bottom": 766,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 171,
+        "right": 355,
+        "top": 640.25,
+        "bottom": 674.25
+      },
+      "actionOverlap": false,
+      "overflow": [
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 325,
+          "right": 405
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 423,
+          "right": 501
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 519,
+          "right": 585
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 603,
+          "right": 663
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 681,
+          "right": 748
+        },
+        {
+          "tag": "DIV",
+          "cls": "thumb",
+          "id": "",
+          "left": 342,
+          "right": 626
+        },
+        {
+          "tag": "IMG",
+          "cls": "",
+          "id": "",
+          "left": 361,
+          "right": 607
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "heart",
+          "id": "",
+          "left": 584,
+          "right": 618
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "share-btn",
+          "id": "",
+          "left": 544,
+          "right": 578
+        },
+        {
+          "tag": "svg",
+          "cls": "[object",
+          "id": "",
+          "left": 556,
+          "right": 567
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 563,
+          "right": 566
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 557,
+          "right": 560
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 563,
+          "right": 566
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 560,
+          "right": 563
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 560,
+          "right": 563
+        },
+        {
+          "tag": "DIV",
+          "cls": "info",
+          "id": "",
+          "left": 342,
+          "right": 626
+        },
+        {
+          "tag": "DIV",
+          "cls": "price-row",
+          "id": "",
+          "left": 345,
+          "right": 623
+        },
+        {
+          "tag": "DIV",
+          "cls": "price",
+          "id": "",
+          "left": 345,
+          "right": 419
+        },
+        {
+          "tag": "SPAN",
+          "cls": "w",
+          "id": "",
+          "left": 409,
+          "right": 419
+        },
+        {
+          "tag": "SPAN",
+          "cls": "save",
+          "id": "",
+          "left": 426,
+          "right": 468
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 84,
+          "client": 79,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 49,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-430",
+      "vw": 430,
+      "clientWidth": 430,
+      "screenWidth": 430,
+      "visualWidth": 424.69134521484375,
+      "visualScale": 1.0125000476837158,
+      "docWidth": 430,
+      "bodyWidth": 430,
+      "rail": {
+        "left": 0,
+        "right": 430,
+        "width": 430,
+        "margin": "-16px",
+        "bleed": "14px"
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": 260,
+      "fab": {
+        "left": 270.140625,
+        "right": 418,
+        "top": 722,
+        "bottom": 766,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 187,
+        "right": 395,
+        "top": 629,
+        "bottom": 663
+      },
+      "actionOverlap": false,
+      "overflow": [
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 423,
+          "right": 501
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 519,
+          "right": 585
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 603,
+          "right": 663
+        },
+        {
+          "tag": "A",
+          "cls": "",
+          "id": "",
+          "left": 681,
+          "right": 748
+        },
+        {
+          "tag": "DIV",
+          "cls": "thumb",
+          "id": "",
+          "left": 352,
+          "right": 646
+        },
+        {
+          "tag": "IMG",
+          "cls": "",
+          "id": "",
+          "left": 372,
+          "right": 626
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "heart",
+          "id": "",
+          "left": 604,
+          "right": 638
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "share-btn",
+          "id": "",
+          "left": 564,
+          "right": 598
+        },
+        {
+          "tag": "svg",
+          "cls": "[object",
+          "id": "",
+          "left": 576,
+          "right": 587
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 582,
+          "right": 585
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 577,
+          "right": 580
+        },
+        {
+          "tag": "circle",
+          "cls": "[object",
+          "id": "",
+          "left": 582,
+          "right": 585
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 579,
+          "right": 583
+        },
+        {
+          "tag": "line",
+          "cls": "[object",
+          "id": "",
+          "left": 579,
+          "right": 583
+        },
+        {
+          "tag": "DIV",
+          "cls": "info",
+          "id": "",
+          "left": 352,
+          "right": 646
+        },
+        {
+          "tag": "DIV",
+          "cls": "price-row",
+          "id": "",
+          "left": 355,
+          "right": 643
+        },
+        {
+          "tag": "SPAN",
+          "cls": "save",
+          "id": "",
+          "left": 436,
+          "right": 478
+        },
+        {
+          "tag": "DIV",
+          "cls": "p-title",
+          "id": "",
+          "left": 355,
+          "right": 643
+        },
+        {
+          "tag": "DIV",
+          "cls": "mall-line",
+          "id": "",
+          "left": 355,
+          "right": 643
+        },
+        {
+          "tag": "SPAN",
+          "cls": "as-of",
+          "id": "",
+          "left": 600,
+          "right": 643
+        }
+      ],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 92,
+          "client": 87,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 56,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-768",
+      "vw": 768,
+      "clientWidth": 753,
+      "screenWidth": 768,
+      "visualWidth": 753,
+      "visualScale": 1,
+      "docWidth": 753,
+      "bodyWidth": 753,
+      "rail": {
+        "left": 20,
+        "right": 733,
+        "width": 713,
+        "margin": "0px",
+        "bleed": ""
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": null,
+      "fab": {
+        "left": 588.875,
+        "right": 737,
+        "top": 848,
+        "bottom": 884,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 600.109375,
+        "right": 710.109375,
+        "top": 336.9375,
+        "bottom": 376.9375
+      },
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 101,
+          "client": 93,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 49,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-820",
+      "vw": 820,
+      "clientWidth": 805,
+      "screenWidth": 820,
+      "visualWidth": 805,
+      "visualScale": 1,
+      "docWidth": 805,
+      "bodyWidth": 805,
+      "rail": {
+        "left": 20,
+        "right": 785,
+        "width": 765,
+        "margin": "0px",
+        "bleed": ""
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": null,
+      "fab": {
+        "left": 640.875,
+        "right": 789,
+        "top": 848,
+        "bottom": 884,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 627.671875,
+        "right": 749.859375,
+        "top": 336.9375,
+        "bottom": 376.9375
+      },
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 101,
+          "client": 93,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 49,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-1024",
+      "vw": 1024,
+      "clientWidth": 1009,
+      "screenWidth": 1024,
+      "visualWidth": 1009,
+      "visualScale": 1,
+      "docWidth": 1009,
+      "bodyWidth": 1009,
+      "rail": {
+        "left": 32,
+        "right": 977,
+        "width": 945,
+        "margin": "0px",
+        "bleed": ""
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": null,
+      "fab": {
+        "left": 844.875,
+        "right": 993,
+        "top": 848,
+        "bottom": 884,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 759.515625,
+        "right": 927.546875,
+        "top": 345.234375,
+        "bottom": 385.234375
+      },
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 157,
+          "client": 149,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 49,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-1440",
+      "vw": 1440,
+      "clientWidth": 1425,
+      "screenWidth": 1440,
+      "visualWidth": 1425,
+      "visualScale": 1,
+      "docWidth": 1425,
+      "bodyWidth": 1425,
+      "rail": {
+        "left": 32,
+        "right": 1393,
+        "width": 1361,
+        "margin": "0px",
+        "bleed": ""
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": null,
+      "fab": {
+        "left": 1260.875,
+        "right": 1409,
+        "top": 848,
+        "bottom": 884,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 1098.75,
+        "right": 1322.75,
+        "top": 343.7734375,
+        "bottom": 383.7734375
+      },
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 221,
+          "client": 210,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 53,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "home-1920",
+      "vw": 1920,
+      "clientWidth": 1905,
+      "screenWidth": 1920,
+      "visualWidth": 1905,
+      "visualScale": 1,
+      "docWidth": 1905,
+      "bodyWidth": 1905,
+      "rail": {
+        "left": 244.5,
+        "right": 1660.5,
+        "width": 1416,
+        "margin": "0px",
+        "bleed": ""
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": null,
+      "fab": {
+        "left": 1740.875,
+        "right": 1889,
+        "top": 848,
+        "bottom": 884,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 1363.5,
+        "right": 1587.5,
+        "top": 343.7734375,
+        "bottom": 383.7734375
+      },
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "hero-title",
+          "scroll": 251,
+          "client": 238,
+          "text": "더 좋은 선택의 서사,\nSEOSA"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 53,
+      "cards": 8,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+    },
+    {
+      "kind": "external-request-blocked",
+      "text": "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    },
+    {
+      "kind": "viewport",
+      "label": "search-long-title-mobile",
+      "vw": 390,
+      "clientWidth": 390,
+      "screenWidth": 390,
+      "visualWidth": 390,
+      "visualScale": 1,
+      "docWidth": 390,
+      "bodyWidth": 390,
+      "rail": {
+        "left": 0,
+        "right": 0,
+        "width": 0,
+        "margin": "-16px",
+        "bleed": "14px"
+      },
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 400,
+      "navZ": 260,
+      "fab": {
+        "left": 230.140625,
+        "right": 378,
+        "top": 722,
+        "bottom": 766,
+        "transform": "none"
+      },
+      "buy": {
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+      },
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "p-title",
+          "scroll": 276,
+          "client": 34,
+          "text": "무선 이어폰 아주 긴 상품명 아주 긴 상품명 아주 긴 상품명 아주 긴 상품명 아주 긴 상품명 아주 긴 상품명 아주 긴 상품명 "
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 59,
+      "cards": 20,
+      "images": [],
+      "cls": 2.7542961458623103
+    },
+    {
+      "kind": "console",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://127.0.0.1:56404/fixture-image-missing.svg"
+    },
+    {
+      "kind": "console",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://127.0.0.1:56404/fixture-image-missing.svg"
+    },
+    {
+      "kind": "console",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://127.0.0.1:56404/fixture-image-missing.svg"
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-320",
+      "vw": 320,
+      "clientWidth": 320,
+      "screenWidth": 320,
+      "visualWidth": 320,
+      "visualScale": 1,
+      "docWidth": 320,
+      "bodyWidth": 320,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": 260,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 46,
+          "client": 42,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-360",
+      "vw": 360,
+      "clientWidth": 360,
+      "screenWidth": 360,
+      "visualWidth": 360,
+      "visualScale": 1,
+      "docWidth": 360,
+      "bodyWidth": 360,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": 260,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 46,
+          "client": 42,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-390",
+      "vw": 390,
+      "clientWidth": 390,
+      "screenWidth": 390,
+      "visualWidth": 390,
+      "visualScale": 1,
+      "docWidth": 390,
+      "bodyWidth": 390,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": 260,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 46,
+          "client": 42,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-430",
+      "vw": 430,
+      "clientWidth": 430,
+      "screenWidth": 430,
+      "visualWidth": 430,
+      "visualScale": 1,
+      "docWidth": 430,
+      "bodyWidth": 430,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": 260,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 46,
+          "client": 42,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-768",
+      "vw": 768,
+      "clientWidth": 753,
+      "screenWidth": 768,
+      "visualWidth": 753,
+      "visualScale": 1,
+      "docWidth": 753,
+      "bodyWidth": 753,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": null,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 44,
+          "client": 40,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-820",
+      "vw": 820,
+      "clientWidth": 805,
+      "screenWidth": 820,
+      "visualWidth": 805,
+      "visualScale": 1,
+      "docWidth": 805,
+      "bodyWidth": 805,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": null,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 44,
+          "client": 40,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-1024",
+      "vw": 1024,
+      "clientWidth": 1009,
+      "screenWidth": 1024,
+      "visualWidth": 1009,
+      "visualScale": 1,
+      "docWidth": 1009,
+      "bodyWidth": 1009,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": null,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 49,
+          "client": 44,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-1440",
+      "vw": 1440,
+      "clientWidth": 1425,
+      "screenWidth": 1440,
+      "visualWidth": 1425,
+      "visualScale": 1,
+      "docWidth": 1425,
+      "bodyWidth": 1425,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": null,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "",
+          "scroll": 60,
+          "client": 54,
+          "text": "무선 이어폰 합성 상세 상품"
+        },
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 65,
+          "client": 60,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    },
+    {
+      "kind": "viewport",
+      "label": "detail-1920",
+      "vw": 1920,
+      "clientWidth": 1905,
+      "screenWidth": 1920,
+      "visualWidth": 1905,
+      "visualScale": 1,
+      "docWidth": 1905,
+      "bodyWidth": 1905,
+      "rail": null,
+      "fabTucked": false,
+      "fabAriaHidden": false,
+      "fabZ": 0,
+      "navZ": null,
+      "fab": null,
+      "buy": null,
+      "actionOverlap": false,
+      "overflow": [],
+      "clipped": [
+        {
+          "tag": "H1",
+          "id": "",
+          "cls": "",
+          "scroll": 63,
+          "client": 57,
+          "text": "무선 이어폰 합성 상세 상품"
+        },
+        {
+          "tag": "DIV",
+          "id": "",
+          "cls": "price",
+          "scroll": 65,
+          "client": 60,
+          "text": "239,000 원"
+        }
+      ],
+      "unnamed": 0,
+      "buttons": 1,
+      "cards": 0,
+      "images": [],
+      "cls": 0
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-320-home.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-360-home.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-390-home.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-1440-home.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-390-search.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-390-search-long-title.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-390-detail.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-1440-detail.png",
+    "C:\\Users\\yugeo\\.codex\\worktrees\\c780\\seosa\\artifacts\\ui-qa\\before-1440-detail-sellers.png"
+  ],
+  "unexpectedWrites": []
+}
