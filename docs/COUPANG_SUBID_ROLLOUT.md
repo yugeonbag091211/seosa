@@ -2,7 +2,7 @@
 
 ## Status (2026-11-19 KST)
 
-**DRAFT ONLY. No Production code, environment variables, database data or existing affiliate links have been changed.**
+**DRAFT CODE ONLY. No Production application code or environment variables have been changed. The new empty isolated Neon cache table WAS CREATED on 2026-11-19; legacy data and affiliate links were not modified.**
 
 - Coupang Partners channel ID `SEOSA2026` was created in the partner UI.
 - A single real Coupang Search API request with `subId=SEOSA2026` returned **HTTP 200** and a provider-generated `link.coupang.com/re/AFFSDP` affiliate URL containing an explicit `subId` query parameter. `classifyCoupang().ok=true`.
@@ -15,7 +15,7 @@
 
 `coupang_search_cache.keyword` is a legacy plain-keyword primary key and is also used by price-collector hint queries, including the `search_cache_hints` RPC. Prefixing the keyword with a SUBID would contaminate collector search terms.
 
-This PR proposes a new `coupang_channel_search_cache` table keyed by `(sub_id, keyword)`, with the same JSONB items and freshness fields. Migration source: `supabase/2026-11-19-coupang-channel-cache.sql`. **File committed; SQL not executed.** No changes to the legacy cache. If the new cache is unavailable, tagged search fails closed rather than reading an untagged cached link or repeatedly hammering the provider.
+This PR proposes a new `coupang_channel_search_cache` table keyed by `(sub_id, keyword)`, with the same JSONB items and freshness fields. Migration source: `supabase/2026-11-19-coupang-channel-cache.sql`. **Applied on Neon Production on 2026-11-19 KST**, in a non-destructive SQL transaction. RLS enabled. Verification: table empty (0 rows), legacy 3,300 cache rows and 26,137 Coupang product rows unchanged; table owner `neondb_owner` can read/write. No changes to the legacy cache. If the new cache is unavailable, tagged search fails closed rather than reading an untagged cached link or repeatedly hammering the provider.
 
 The collector's hint lookup only consults the channel table when full-channel mode is active; in search-only canary mode the collector continues to use the legacy cache and existing provider budget.
 
@@ -30,7 +30,7 @@ With `COUPANG_CHANNEL_ROLLOUT` unset or different from `1`:
 
 ### Stage 1 — approved search-only canary
 
-**Prerequisites:** migration applied after backup; Preview smoke tests; GitHub CI; account/channel readiness confirmed. Set these four environment variables **only in the intended Vercel environment**, not globally:
+**Prerequisites:** new table already exists and is empty; Preview smoke tests and GitHub CI; account/channel readiness confirmed. All existing data remain unchanged. Before activating, confirm the application's configured database role can read/write this table. Set these four environment variables **only in the intended Vercel environment**, not globally:
 
 ```
 COUPANG_CHANNEL_ROLLOUT=1
@@ -56,7 +56,7 @@ In canary mode:
 
 Do not enable until all of the following are demonstrated:
 - [ ] Genuine `SEOSA2026` channel click reported in Coupang Partners with a verified source and time window; later attributed orders/commissions verified from the partner, not inferred from site click events.
-- [ ] Migration applied, permissions checked and new cache can read/write in target environment.
+- [x] Empty table created, indexed, RLS enabled on Neon Production. [ ] Application runtime database role and canary read/write still need direct verification.
 - [ ] All writer environments audited: Vercel Production search and cron, GitHub Actions price collectors, volatile collector, manual scripts and any long-running processes.
 - [ ] Existing `products.link` and `price_history.link` overwrite/coexistence policy reviewed. Concurrent legacy writers may overwrite tagged product links. Merely switching one environment is **not safe**.
 - [ ] Every purchase route validated: home / hero, books, search, /p/ product pages, hot deals, saved items, SEO pages, historic cards; option `vendorItemId`, itemId, and partner `lptag` must remain correct.
@@ -102,4 +102,4 @@ Result: `from='api'`, `error=null`, `blocked=false`, `apiCalled=true`, tagged pr
 
 - No paid AI call, new hosting plan or mandatory third-party subscription is introduced.
 - A new channel cache table adds storage/queries and canary misses may generate some **additional provider API calls** within existing hard limits. This has not been cost-quantified.
-- The PR is Draft and not approved for Production merge or environment activation at this stage.
+- The PR remains Draft pending full-CI and live deployment validation. Empty database schema installation alone does not authorize feature activation.
