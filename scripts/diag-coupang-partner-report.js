@@ -28,7 +28,7 @@ const args = Object.fromEntries(process.argv.slice(2).filter(a=>a.startsWith('--
 const date = String(args.date || '');
 const kind = String(args.kind || '');
 const subId = String(args.subId || 'SEOSA2026');
-if (!/^20\d{6}$/.test(date)||!KINDS.has(kind)||!/^\w{8,20}$/.test(subId)) {
+if (!/^20\d{6}$/.test(date)||!KINDS.has(kind)||!(subId==='ALL'||/^\w{8,20}$/.test(subId))) {
   console.error('Usage: --date=yyyyMMdd --kind=clicks|orders|commission|cancels [--subId=SEOSA2026]');
   process.exit(2);
 }
@@ -43,7 +43,7 @@ const ts = String(iso.getUTCFullYear()).slice(-2)
 +String(iso.getUTCMinutes()).padStart(2,'0')
 +String(iso.getUTCSeconds()).padStart(2,'0')+'Z';
 const apiPath='/v2/providers/affiliate_open_api/apis/openapi/v1/reports/'+kind;
-const query=querystring.stringify({startDate:date,endDate:date,subId,page:0});
+const query=querystring.stringify({startDate:date,endDate:date,...(subId==='ALL'?{}:{subId}),page:0});
 const hmac=crypto.createHmac('sha256',process.env.COUPANG_SECRET_KEY).update(ts+'GET'+apiPath+query).digest('hex');
 const authorization='CEA algorithm=HmacSHA256, access-key='+process.env.COUPANG_ACCESS_KEY+', signed-date='+ts+', signature='+hmac;
 const ctl=new AbortController();const timeout=setTimeout(()=>ctl.abort(),12000);
@@ -58,7 +58,7 @@ const ctl=new AbortController();const timeout=setTimeout(()=>ctl.abort(),12000);
     let body;
     try {body=JSON.parse(responseText)}catch{body=null}
     const rows=Array.isArray(body&&body.data)?body.data:[];
-    const channelRows=rows.filter(r=>String(r&&r.subId||'')===subId);
+    const channelRows=subId==='ALL'?[]:rows.filter(r=>String(r&&r.subId||'')===subId);
     const n=(key)=>channelRows.reduce((s,r)=>s+(Number(r&&r[key])||0),0);
     console.log(JSON.stringify({
       report:'COUPANG_PARTNERS_OFFICIAL_API_READ_ONLY',
@@ -70,6 +70,7 @@ const ctl=new AbortController();const timeout=setTimeout(()=>ctl.abort(),12000);
       targetChannelOrders:(kind==='commission')?n('order'):null,
       targetChannelCommission:(kind==='commission')?n('commission'):null,
       fields:rows[0]?Object.keys(rows[0]).filter(k=>!/(name|id|token|secret|key)/i.test(k)).slice(0,22):[],
+      schemaOnly:subId==='ALL',
       // Shape only; NO order details/values outside the selected channel.
       completeForDate:false,
       note: 'Current-day partner reports are ordinarily published the following afternoon.'
