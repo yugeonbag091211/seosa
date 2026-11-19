@@ -111,6 +111,20 @@ function _reset() { enabled = true; warned = false; }
 function clean(v, max) { return String(v == null ? '' : v).trim().slice(0, max); }
 
 /**
+ * Browser-reported channel evidence, NOT the partner's verified click count.
+ * Accept only the configured channel; arbitrary user-supplied SUBIDs never
+ * become reporting dimensions. No raw affiliate URL is transmitted/stored.
+ */
+function clientChannel(e) {
+  if (!e || e.event !== 'affiliate_click' || e.mall !== '쿠팡') return '';
+  if (!SOURCES.includes(e.source)) return '';
+  const configured = clean(process.env.COUPANG_CHANNEL_SUBID, 20);
+  const claimed = clean(e.channelSubId, 20);
+  if (!/^[A-Za-z0-9]{8,20}$/.test(configured)) return '';
+  return claimed === configured ? configured : '';
+}
+
+/**
  * 이벤트 하나를 남긴다. ★ 절대 throw 하지 않는다.
  *
  * @param {object} e {event, productId, mall, price, source, visitorId}
@@ -135,7 +149,13 @@ async function track(e) {
       // 가격은 «관측된 값» 일 때만 남긴다. 0 이나 음수를 0원으로 적지 않는다.
       price: Number.isFinite(price) && price > 0 ? price : 0,
       source: SOURCES.indexOf(source) > -1 ? source : '',
-      visitor_id: VID_RE.test(vid) ? vid : ''
+      visitor_id: VID_RE.test(vid) ? vid : '',
+      // Unlike Coupang Partners reports this label is client-reported and
+      // could be forged; never use it as sales/commission evidence.
+      sub_id: clientChannel({
+        event, mall: clean(e && e.mall, 40), source,
+        channelSubId: e && e.channelSubId
+      })
     };
 
     const { error } = await supabase.from('funnel_events').insert(row);
@@ -160,7 +180,9 @@ async function track(e) {
 async function report(days) {
   const n = Math.max(1, Math.min(90, parseInt(days, 10) || 7));
   const since = kstToday(new Date(Date.now() - (n - 1) * 86400000));
-  const out = { days: n, since, events: {}, byMall: {}, topProducts: [], gmv: null, conversions: null };
+  const out = { days: n, since, events: {}, byMall: {}, topProducts: [],
+    clientReportedChannelClicks: { basis: 'browser_unverified', byChannel: {}, bySource: {} },
+    gmv: null, conversions: null };
   /*
    * ★ 절대 throw 하지 않는다 (track 과 같은 규칙).
    *
@@ -178,7 +200,7 @@ async function report(days) {
 async function collect(out, since) {
   const { data, error } = await supabase
     .from('funnel_events')
-    .select('event, product_id, mall, price')
+    .select('event, product_id, mall, price, source, sub_id')
     .gte('event_date', since)
     .limit(20000);
   if (error) {
@@ -190,6 +212,14 @@ async function collect(out, since) {
   (data || []).forEach(r => {
     out.events[r.event] = (out.events[r.event] || 0) + 1;
     if (r.event !== 'affiliate_click') return;
+    // This is only a diagnostic signal from the web browser, never an
+    // affiliate network's verified click count or a conversion.
+    if (r.mall === '쿠팡' && /^[A-Za-z0-9]{8,20}$/.test(r.sub_id || '')) {
+      const signal = out.clientReportedChannelClicks;
+      signal.byChannel[r.sub_id] = (signal.byChannel[r.sub_id] || 0) + 1;
+      const where = r.source || 'unknown';
+      signal.bySource[where] = (signal.bySource[where] || 0) + 1;
+    }
     if (r.mall) out.byMall[r.mall] = (out.byMall[r.mall] || 0) + 1;
     if (!r.product_id) return;
     const cur = byProduct.get(r.product_id) || { productId: r.product_id, clicks: 0, lastPrice: 0 };
@@ -325,5 +355,5 @@ function conversionCoverage() {
 
 module.exports = {
   track, report, conversionCoverage, FUNNEL_EVENTS, SOURCES,
-  _internal: { _reset, missingObject }
+  _internal: { _reset, missingObject, clientChannel }
 };
