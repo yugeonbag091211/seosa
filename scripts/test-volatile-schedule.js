@@ -372,9 +372,9 @@ check('크론 표현식이 vercel.json 과 일치한다', () => {
     // could incur cost or duplicate existing GitHub Actions collection.
     const gh = require('fs').readFileSync(
       require('path').join(__dirname, '..', '.github', 'workflows', 'volatile-prices.yml'), 'utf8');
-    assert.match(gh, /cron: '5,25,45 3-5 \\* \\* \\*'/,
+    assert.match(gh, /cron: '5,25,45 3-5 \* \* \*'/,
       'Vercel cron이 꺼져 있을 때는 GitHub 점심 재확인 스케줄 필요');
-    assert.match(gh, /cron: '5,25,45 10-12 \\* \\* \\*'/,
+    assert.match(gh, /cron: '5,25,45 10-12 \* \* \*'/,
       'Vercel cron이 꺼져 있을 때는 GitHub 저녁 재확인 스케줄 필요');
   }
   // Hobby 플랜은 하루 1회만 허용한다 — 분/시가 * 이면 배포가 실패한다.
