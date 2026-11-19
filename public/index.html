@@ -3316,11 +3316,11 @@ html{scroll-padding-top:86px}
 .hero-band::before{width:78vw;height:78vw;right:-28vw;top:-58vw}
 .hero-band::after{width:70vw;height:70vw;right:-42vw;top:10vw;background:rgba(232,224,219,.42)}
 .hero-carousel{position:relative;max-width:1480px;min-height:430px;margin:0 auto;padding:20px 32px 34px}
-.hc-viewport{height:380px;overflow:hidden}
-.hc-slide{height:100%;min-height:0}
+.hc-viewport{height:auto;min-height:380px;overflow:hidden}
+.hc-slide{height:auto;min-height:380px}
 .hc-slide.on{visibility:visible}
-.hero-inner{max-width:none;width:100%;height:100%;min-height:0;display:flex;align-items:center;padding:30px 0}
-.hero-copy{width:55%;max-width:650px;padding:10px 0;position:relative;z-index:2}
+.hero-band .hero-inner{display:flex;grid-template-columns:none;align-items:center;gap:0;max-width:1240px;height:auto;min-height:380px;padding:28px 28px 48px}
+.hero-band .hero-copy{flex:0 1 55%;width:55%;max-width:650px;min-width:0;padding:10px 0;position:relative;z-index:2}
 .hero-title{font-size:clamp(2.7rem,4.5vw,4.6rem);line-height:1.08;letter-spacing:-.065em;font-weight:750}
 .hero-sub{max-width:520px;font-size:1rem;line-height:1.75;color:var(--soft);margin-top:18px}
 .hero-cta{margin-top:22px;border-radius:999px;padding:13px 22px;min-height:48px;background:#211e1b;color:#fff;border:0;font-weight:650;box-shadow:0 8px 24px rgba(31,26,22,.12);transition:transform .3s var(--ease),background .3s var(--ease)}
@@ -3341,7 +3341,7 @@ html{scroll-padding-top:86px}
 .hc-arrow{border-radius:50%;background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.8);box-shadow:0 5px 18px rgba(0,0,0,.08)}
 .hc-dots{bottom:14px}.hc-dot{width:7px;height:7px;border-radius:50%;background:#c7c1bc}.hc-dot.on{background:#24201d}
 
-main.wrap{padding-top:28px}
+main.wrap{max-width:1180px;padding-top:28px}
 .hero{margin:0 0 26px;padding:0;background:transparent;border:0}
 .hero .catnav{margin:0 0 12px}.hero .chips{gap:9px;justify-content:flex-start}
 .hero .chips button,.mb-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 15px;font-size:.83rem}
@@ -3370,6 +3370,8 @@ main.wrap{padding-top:28px}
 .card .pmove{order:3;min-height:0}.card .mall-line{order:4;margin-top:3px}.card .ship-row{order:5}.card .trust{order:6}.card .spark{order:7}.card .card-actions{order:8;margin-top:7px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
 .card .card-actions .alert-btn,.card .card-actions .buy{min-height:36px;border-radius:999px;padding:7px 8px;font-size:.7rem}
 .card .card-actions .buy{background:#211e1b;color:#fff;border-color:#211e1b}
+/* Filled purchase buttons must not inherit the legacy text-link underline. */
+.card .card-actions .buy::after{content:none}
 .card .heart,.card .share-btn{width:34px;height:34px;top:8px;right:8px;border-radius:50%;background:rgba(255,255,255,.9);box-shadow:0 2px 8px rgba(0,0,0,.06)}
 .card .share-btn{right:48px}
 .card .save{border-radius:999px;background:#f9eae7;color:#b83c2d;padding:3px 8px}
@@ -3402,6 +3404,11 @@ main.wrap{padding-top:28px}
 #results .ctx-ai{margin:0 0 12px;border-radius:12px;background:var(--surface);color:var(--soft)}
 #results .aff-note{margin:0 0 16px}
 
+/* Leave a clear gutter between carousel copy and the product card at mid widths. */
+@media(min-width:641px) and (max-width:1360px){
+  .hero-band .hero-copy{flex-basis:50%;width:50%}
+}
+
 .mobile-tabbar{display:none}
 
 @media(max-width:1200px){
@@ -3428,7 +3435,8 @@ main.wrap{padding-top:28px}
   #results #resGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   #recGrid,#forYouGrid,#histRecGrid,#monthGrid,#viewedGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .hero-carousel{min-height:390px;padding:18px 22px 28px}
-  .hc-viewport{height:330px}
+  .hc-viewport{height:auto;min-height:330px}
+  .hc-slide,.hero-band .hero-inner{min-height:330px}
   .hero-spotlight{right:3%;width:44%}
 }
 @media(max-width:640px){
@@ -3444,8 +3452,8 @@ main.wrap{padding-top:28px}
   .hc-viewport{height:auto;overflow:visible}
   .hc-slide,.hc-slide.on{position:relative;display:block;visibility:visible;opacity:1;transform:none;height:auto;min-height:0;transition:none}
   .hc-slide:not(:first-child){display:none}
-  .hero-inner{display:block;padding:28px 0 12px}
-  .hero-copy{width:100%;max-width:none;padding:0}
+  .hero-band .hero-inner{display:block;min-height:0;padding:28px 0 12px}
+  .hero-band .hero-copy{width:100%;max-width:none;padding:0}
   .hero-title{font-size:clamp(2.15rem,9vw,3.2rem);line-height:1.12}
   .hero-sub{font-size:.88rem;margin-top:12px;max-width:34ch}
   .hero-cta{min-height:44px;margin-top:16px;padding:11px 18px}
@@ -12934,6 +12942,20 @@ var HeroCarousel = {
     this.cur = 0;
     this.sync();
     this.bind();
+    // 모바일 레이아웃은 첫 장만 보여 준다. 데스크톱에서 다른 장을 보고
+    // 창 크기를 줄였을 때 aria-hidden/활성 상태가 어긋나지 않게 맞춘다.
+    if (window.matchMedia) {
+      var compact = window.matchMedia('(max-width:640px)');
+      var resetCompact = function(e) {
+        if (!e.matches) return;
+        self.slides.forEach(function(s, i) { self.place(s, i === 0 ? 0 : 1, false); });
+        self.cur = 0;
+        self.sync();
+      };
+      if (compact.addEventListener) compact.addEventListener('change', resetCompact);
+      else if (compact.addListener) compact.addListener(resetCompact);
+      resetCompact(compact);
+    }
     root.classList.add('ready');   // 화살표는 배선이 끝난 뒤에 보인다
     if (this.interval) this.play();
   },
@@ -12976,6 +12998,8 @@ var HeroCarousel = {
     var n = this.slides.length;
     if (!n) return;
     next = ((next % n) + n) % n;    // 무한 loop — 음수도 감싼다
+    // 모바일에선 첫 장만 렌더하므로 숨겨진 장으로 넘어가지 않는다.
+    if (window.matchMedia && window.matchMedia('(max-width:640px)').matches) next = 0;
     if (next === this.cur) return;
     var from = this.slides[this.cur], to = this.slides[next];
     this.place(to, dir > 0 ? 1 : -1, false);   // 들어올 쪽에 세워 두고
