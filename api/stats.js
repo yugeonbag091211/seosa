@@ -135,7 +135,8 @@ module.exports = async function handler(req, res) {
         mall: q.mall,
         price: q.price,
         source: q.src || q.source,
-        visitorId: q.vid
+        visitorId: q.vid,
+        channelSubId: q.sid
       });
       logged = f.ok;
     }
