@@ -23,6 +23,10 @@ COMMENT ON TABLE public.coupang_channel_search_cache IS
 CREATE INDEX IF NOT EXISTS coupang_channel_search_cache_fetched_at_idx
   ON public.coupang_channel_search_cache (fetched_at);
 
--- No RLS/policy change or destructive DML to existing tables is included.
+-- Defense-in-depth: this is a server-only table. No anon/authenticated
+-- policies are granted; the application uses the Neon server database owner.
+ALTER TABLE public.coupang_channel_search_cache ENABLE ROW LEVEL SECURITY;
+
+-- No destructive DML to existing tables is included.
 -- Backend is server-only. Ensure the configured database owner/service role
 -- has necessary table privileges before enabling COUPANG_CHANNEL_ROLLOUT.
