@@ -1,62 +1,105 @@
-# Coupang Partners SEOSA2026 channel attribution — safe diagnostic
+# Coupang Partners SEOSA2026: verified API, staged channel rollout
 
-## Goal
-Prove that the *Search API* accepts Coupang Partners channel/subId `SEOSA2026` and generates affiliate URLs that can be attributed to the SEOSA channel **before** touching Production links.
+## Status (2026-11-19 KST)
 
-## Why this is not a switch to flip
-- Coupang's Partners guide calls Channel ID `SUBID` and shows channel-specific reporting.
-- `api/_coupang.js` previously sent `keyword` + `limit` only.
-- The existing `coupang_search_cache` is keyed by **keyword**, not (keyword, channel).
-- The `products` catalogue, older hot deals, homepage/book promotional links, and browser-saved links may already hold URLs generated before the channel existed.
-- Changing the query alone cannot retroactively reattribute historic clicks or old stored URLs.
+**DRAFT ONLY. No Production code, environment variables, database data or existing affiliate links have been changed.**
 
-## What this branch does
-1. `buildSearchRequest(keyword, limit, host, subId)` optionally includes `subId` in both the exact request URL and HMAC signed query.
-2. `searchCoupang(keyword, {source:'diag',useCache:false,subId:'SEOSA2026'})` permits **isolated diagnostics only**. Ordinary search/collection cannot pass `subId`; requesting it on cached calls is rejected.
-3. Offline mock-server regression checks opt-in channel, signature match, rejection of ordinary/cached injection, and unchanged legacy requests.
+- Coupang Partners channel ID `SEOSA2026` was created in the partner UI.
+- A single real Coupang Search API request with `subId=SEOSA2026` returned **HTTP 200** and a provider-generated `link.coupang.com/re/AFFSDP` affiliate URL containing an explicit `subId` query parameter. `classifyCoupang().ok=true`.
+- One returned sample product ID: `9369201576`. The request consumed **one** provider call through the existing search gate. No product/cache/conversion rows were written.
+- Production inventory on this date (read-only Neon): **26,137 Coupang products**, **zero** with an explicit SUBID in the saved link; **3,300 legacy Coupang keyword cache rows**.
+- This proves Search API parameter acceptance and tagged-link generation, **not** channel-attributed clicks, orders or commissions. Never assume the earlier default-channel purchases came from SEOSA.
+- Partner account approval status and reports showing a real SEOSA2026 click are **not yet verified**.
 
-**No environment variables, cron schedules, data migrations, existing persisted links, or Production release behavior are modified.**
+## Why channel cache must be separate
 
-## Evidence needed for a full rollout
-- [ ] Confirm API accepts one isolated `subId=SEOSA2026` query without `rCode=400`, account limit, or block. Do not repeat probes unnecessarily.
-- [ ] Compare partner-generated `SEOSA2026` short URL and API-generated URL; verify merchant/option match and `lptag` ownership. Do not infer attribution solely from a displayed URL.
-- [ ] Confirm at least one genuine click appears under the `SEOSA2026` channel in Coupang Partners' own channel report (the report may be delayed).
-- [ ] Design a channel-separated cache key/storage schema. Do not reuse keyword-only cached affiliate URLs when channel is enabled.
-- [ ] Inventory and migrate/refresh stored `products.link` and all hard-coded homepage, book, hot deal, and cached client URLs safely; do not modify `lptag` or append guessed URL parameters to old affiliate URLs.
-- [ ] Validate all affected buy paths (search, /p/, hot deals, home, historic products) and keep option `vendorItemId` invariant.
-- [ ] Audit consent/disclosure and confirm Coupang partner program approval.
-- [ ] Roll out gradually with a rollback plan; compare SEOSA2026 channel-specific reports against site's *outbound* click metrics, never equate clicks to sales.
+`coupang_search_cache.keyword` is a legacy plain-keyword primary key and is also used by price-collector hint queries, including the `search_cache_hints` RPC. Prefixing the keyword with a SUBID would contaminate collector search terms.
 
-## Run offline check
+This PR proposes a new `coupang_channel_search_cache` table keyed by `(sub_id, keyword)`, with the same JSONB items and freshness fields. Migration source: `supabase/2026-11-19-coupang-channel-cache.sql`. **File committed; SQL not executed.** No changes to the legacy cache. If the new cache is unavailable, tagged search fails closed rather than reading an untagged cached link or repeatedly hammering the provider.
+
+The collector's hint lookup only consults the channel table when full-channel mode is active; in search-only canary mode the collector continues to use the legacy cache and existing provider budget.
+
+## Feature-switch contract (all OFF by default)
+
+### Stage 0 — existing legacy behavior
+
+With `COUPANG_CHANNEL_ROLLOUT` unset or different from `1`:
+- Search/collector/cron/AI use legacy requests and legacy cache.
+- Persisted catalogue, home promotions, product pages and histories remain unchanged.
+- No new database table is queried or modified.
+
+### Stage 1 — approved search-only canary
+
+**Prerequisites:** migration applied after backup; Preview smoke tests; GitHub CI; account/channel readiness confirmed. Set these four environment variables **only in the intended Vercel environment**, not globally:
+
+```
+COUPANG_CHANNEL_ROLLOUT=1
+COUPANG_CHANNEL_MODE=canary
+COUPANG_CHANNEL_SUBID=SEOSA2026
+COUPANG_CHANNEL_CANARY_PERCENT=5
+```
+
+This selects **5% of distinct search keyword hash buckets**, *not 5% of users or page views*. The same keyword is consistently either inside or outside the cohort. Allowed values for the percentage are integers 1–100. API requests carry the provider-supported `subId`; response URLs must have both the correct partner `lptag` and matching SUBID. They are never invented by manipulating old links.
+
+In canary mode:
+- Only `source='search'` in the selected keyword buckets receives channel-tagged URLs.
+- Search responses may send those URLs to real users, enabling a genuine channel report to be inspected later.
+- `_shop.saveProducts` and direct `recordPrices({source:'search'})` explicitly exclude tagged canary observations. **No tagged URL is saved to existing `products` or `price_history`.**
+- Cron, AI and GitHub Actions collectors still use legacy links and legacy cache. Existing ~26K saved Coupang products remain untouched.
+- Channel queries use the separate `coupang_channel_search_cache` with no fallback to legacy URLs.
+- The existing global Coupang rate limiter and circuit breaker continue to apply.
+- If reports are delayed, do not claim attribution before they appear.
+
+**Rollback:** remove `COUPANG_CHANNEL_ROLLOUT` or set it to `0` for that Vercel environment and redeploy. User searches return to legacy caching without reverting catalogue rows (none were modified by the canary). Existing already-shared channel-tagged URLs remain valid; previously recorded clicks are not undone.
+
+### Stage 2 — full channel rollout (NOT approved)
+
+Do not enable until all of the following are demonstrated:
+- [ ] Genuine `SEOSA2026` channel click reported in Coupang Partners with a verified source and time window; later attributed orders/commissions verified from the partner, not inferred from site click events.
+- [ ] Migration applied, permissions checked and new cache can read/write in target environment.
+- [ ] All writer environments audited: Vercel Production search and cron, GitHub Actions price collectors, volatile collector, manual scripts and any long-running processes.
+- [ ] Existing `products.link` and `price_history.link` overwrite/coexistence policy reviewed. Concurrent legacy writers may overwrite tagged product links. Merely switching one environment is **not safe**.
+- [ ] Every purchase route validated: home / hero, books, search, /p/ product pages, hot deals, saved items, SEO pages, historic cards; option `vendorItemId`, itemId, and partner `lptag` must remain correct.
+- [ ] Affiliate disclosures and final account approval confirmed.
+- [ ] Coordinated rollout and rollback window agreed, with channel-specific click report comparisons after activation.
+
+Only after completing the gates may the responsible operator set the matching values in **all** writers:
+
+```
+COUPANG_CHANNEL_ROLLOUT=1
+COUPANG_CHANNEL_MODE=full
+COUPANG_CHANNEL_SUBID=SEOSA2026
+COUPANG_CHANNEL_ALL_WRITERS_ACK=1
+```
+
+`COUPANG_CHANNEL_ALL_WRITERS_ACK` prevents an accidental single-env full switch without explicit acknowledgement, but does not technically verify that all remote writers have been configured. Full-mode rollback must consider already-updated catalogue rows; it is **not** an instant restoration of the 26,137 legacy URLs.
+
+## Verification
+
+Offline, no provider quota and no production database writes:
+
 ```sh
 node scripts/test-coupang.js
+node scripts/test-coupang-channel-cache.js
+node scripts/test-coupang-canary-save.js
+node scripts/test-collector-hint-options.js
 node scripts/test-affiliate-integrity.js
 ```
 
-No paid API requests are made by these tests.
+The canary/cache checks run in the repository's `npm test` chain. Full `npm test` currently has unrelated failing policy-page assertions and disabled cron-schedule expectations on main; do not claim the whole suite is green until those are independently resolved.
 
-## Optional ONE live verification (not performed in this PR)
-From a machine with the project's configured `.env.local`, run **once**:
+### One-time live API diagnostic — already completed 2026-11-19
+
+Executed once in an isolated Git worktree on the authorized Windows PC with locally configured credentials:
+
 ```sh
 node scripts/diag-coupang-subid-once.js --live-once
 ```
-This makes at most one API search through the existing quota guard. It does not write catalog/cache/conversion rows. The quota ledger may record the request, as it does for normal searches. Never paste API credentials or the whole `.env.local` into chat. The output alone does not prove revenue attribution: corroborate in Coupang's channel report after genuine visitors click.
 
-**This PR must stay Draft and must not be merged on offline testing alone.**
+Result: `from='api'`, `error=null`, `blocked=false`, `apiCalled=true`, tagged provider URL generated, exit code `0`. No reason to repeat the upstream probe merely to re-prove this fact. Never paste live API credentials into chat, code review or job logs.
 
-## Actual live diagnostic — 2026-11-19 KST
+## Costs and cautions
 
-Executed **once** on the authorized Windows PC in an isolated Git worktree, using existing local credentials and the production quota guard. Command: `node -r <existing local dotenv preload> scripts/diag-coupang-subid-once.js --live-once`.
-
-Observed output (secrets and the full affiliate link intentionally not copied):
-
-- Search keyword: `에어팟 프로 3`; channel requested: `SEOSA2026`.
-- Upstream search: **HTTP 200**, `from=api`, `error=null`, `blocked=false`, `apiCalled=true`.
-- Normalized response: **1 item returned** (upstream gave 10 raw rows, collapsed to 8 unique products).
-- First product ID: `9369201576`.
-- Affiliate URL: host `link.coupang.com`, path `/re/AFFSDP`, `classifyCoupang().ok=true`.
-- Returned link contained a case-insensitive `subId` query key. **Partner-side report attribution has NOT been verified.**
-- No write to the `products` or `coupang_search_cache` tables. The existing gate records API usage as designed.
-- Existing `main`/Production links and existing local development branch were not modified.
-
-**Next gate:** show genuine traffic in `SEOSA2026` channel report before a full rollout. Historical purchases or clicks in the default Coupang channel cannot be assumed to originate from SEOSA.
+- No paid AI call, new hosting plan or mandatory third-party subscription is introduced.
+- A new channel cache table adds storage/queries and canary misses may generate some **additional provider API calls** within existing hard limits. This has not been cost-quantified.
+- The PR is Draft and not approved for Production merge or environment activation at this stage.
