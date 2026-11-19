@@ -43,7 +43,8 @@
 
 require('./_env');
 const supabase = require('../api/_supabase');
-const { searchCoupang, isBlocked: isCoupangBlockedGlobal, localStats: coupangLocalStats } = require('../api/_coupang');
+const { searchCoupang, isBlocked: isCoupangBlockedGlobal, localStats: coupangLocalStats,
+  activeChannelSubId: coupangChannelSubId } = require('../api/_coupang');
 const { searchAdpick, isBlocked: isAdpickBlockedGlobal, localStats: adpickLocalStats, hasKey: adpickHasKey } = require('../api/_adpick');
 const { recordPrices, searchPhraseFromTitle, adpickProductId } = require('../api/_shop');
 const { isTransientBlockReason } = require('../api/_blockreason');
@@ -2639,6 +2640,9 @@ function addCacheHints(out, rows, wantIds, mallName) {
  */
 let cacheHintRpcMissing = false;
 async function cacheHintsFromDb(wantIds, mallName) {
+  // search_cache_hints SQL reads legacy Coupang cache only. Never use its
+  // channel-mismatched results while channel rollout is enabled.
+  if (mallName === '쿠팡' && coupangChannelSubId('collect')) return null;
   if (cacheHintRpcMissing || process.env.PRICE_CACHE_HINT_RPC === '0') return null;
   const { data, error } = await supabase.rpc('search_cache_hints', { p_mall: mallName, p_ids: [...wantIds] });
   if (error) {
@@ -2697,7 +2701,11 @@ async function loadCoupangCacheRows(keywords) {
   if (cur.length) chunks.push(cur);
   const rows = [];
   for (const chunk of chunks) {
-    const { data, error } = await supabase.from('coupang_search_cache').select('keyword, items').in('keyword', chunk);
+    const subId = coupangChannelSubId('collect');
+    const table = subId ? 'coupang_channel_search_cache' : 'coupang_search_cache';
+    let q = supabase.from(table).select('keyword, items');
+    if (subId) q = q.eq('sub_id', subId);
+    const { data, error } = await q.in('keyword', chunk);
     if (error) throw new Error(error.message);
     rows.push(...(data || []));
   }
@@ -2804,13 +2812,18 @@ async function cacheHintQueries(wantIds, mallName = '쿠팡', targetsById = null
   if (mallName !== '쿠팡' && mallName !== 'ADPICK') return out;
   const fromDb = await cacheHintsFromDb(wantIds, mallName).catch(() => null);
   if (fromDb) return verifyHintOptions(fromDb, mallName, targetsById);
-  const table = mallName === 'ADPICK' ? 'adpick_search_cache' : 'coupang_search_cache';
+  const subId = mallName === '쿠팡' ? coupangChannelSubId('collect') : '';
+  const table = mallName === 'ADPICK' ? 'adpick_search_cache'
+    : (subId ? 'coupang_channel_search_cache' : 'coupang_search_cache');
   // 전체 스캔은 행을 이미 들고 있다 — 옵션 확인에 다시 읽지 않고 그 행을 넘긴다.
   const scanned = [];
   try {
     // 두 테이블 모두 keyword PK. keysetScan 이 PostgREST 페이지 제한을 넘겨 순회한다.
     await keysetScan({
-      build: () => supabase.from(table),
+      build: () => {
+        const q = supabase.from(table);
+        return subId ? q.eq('sub_id', subId) : q;
+      },
       columns: 'keyword, items',
       cursor: 'keyword',
       label: table + ' 조회',
@@ -4896,6 +4909,11 @@ async function pruneSearchCaches() {
     ['coupang_search_cache', cacheRetentionMs('COUPANG_STALE_MAX_MS')],
     ['adpick_search_cache', cacheRetentionMs('ADPICK_STALE_MAX_MS')]
   ];
+  // The channel table may not exist before a separately approved migration.
+  // Do not probe or mutate it on legacy deployments.
+  if (coupangChannelSubId('collect')) {
+    specs.push(['coupang_channel_search_cache', cacheRetentionMs('COUPANG_STALE_MAX_MS')]);
+  }
   const result = {};
   for (const [table, keepMs] of specs) {
     const cutoff = new Date(Date.now() - keepMs).toISOString();

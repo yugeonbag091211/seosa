@@ -72,6 +72,15 @@ const DISCOUNT_ROWS = [
 
 const server = http.createServer((req, res) => {
   lastRequest = { target: req.url, authorization: req.headers.authorization || '' };
+  if (mode === 'channel') {
+    const subId = new URL(req.url, 'http://127.0.0.1').searchParams.get('subId') || '';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ rCode: '0', data: { productData: [{
+      productId: 111, productName: '테스트 에어팟 프로', productPrice: 296000,
+      productUrl: 'https://link.coupang.com/re/AFFSDP?lptag=AF8789251&itemId=1&vendorItemId=2&subId=' + subId,
+      productImage: 'https://img/a.jpg'
+    }] } }));
+  }
   if (mode === 'options') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ rCode: '0', data: { productData: OPTION_ROWS } }));
@@ -151,6 +160,31 @@ server.listen(0, async () => {
         'apostrophe / plus / percent / slash를 canonical query로 인코딩한다');
   check(!!auth && auth[2] === expectedSignature,
         '실제 전송 query와 동일한 query로 HMAC 서명한다');
+
+  // SUBID diagnostic is opt-in and never mutates normal search behavior.
+  // This stays on the local mock server: no partner quota and no DB writes.
+  mode = 'channel';
+  r = await searchCoupang('에어팟 프로 3', { ...common, source: 'diag', subId: 'SEOSA2026' });
+  const subUrl = new URL(lastRequest.target, process.env.COUPANG_API_HOST);
+  const subAuth = /signed-date=([^,]+), signature=([a-f0-9]{64})/.exec(lastRequest.authorization);
+  const subSig = subAuth && crypto.createHmac('sha256', 'test-secret-key')
+    .update(subAuth[1] + 'GET' + subUrl.pathname + subUrl.search.slice(1)).digest('hex');
+  check(r.from === 'api' && subUrl.searchParams.get('subId') === 'SEOSA2026',
+    '진단 전용 요청에만 등록된 SUBID가 전송된다');
+  check(!!subAuth && subSig === subAuth[2],
+    'SUBID 포함 최종 전송 query로 HMAC 서명한다');
+  const beforeRejected = lastRequest.target;
+  const normal = await searchCoupang('에어팟 프로 3', { ...common, source: 'search', subId: 'SEOSA2026' });
+  check(normal.from === 'none' && /진단/.test(normal.error) && lastRequest.target === beforeRejected,
+    '일반 검색에서 SUBID 주입을 시도하면 API 호출 전에 거부한다');
+  const cachedDiag = await searchCoupang('에어팟 프로 3', { ...common, source: 'diag', useCache: true, subId: 'SEOSA2026' });
+  check(cachedDiag.from === 'none' && lastRequest.target === beforeRejected,
+    '기존 채널의 키워드 캐시를 읽는 SUBID 진단을 거부한다');
+  mode = 'ok';
+  const noSub = await searchCoupang('에어팟 프로 3', { ...common, source: 'search' });
+  const defaultUrl = new URL(lastRequest.target, process.env.COUPANG_API_HOST);
+  check(noSub.from === 'api' && !defaultUrl.searchParams.has('subId'),
+    '일반 검색에는 SUBID가 절대 자동 추가되지 않는다');
 
   // 1-b) 같은 productId 의 옵션 행 접기
   //      ★ "SEOSA 75,000원 / 쿠팡 39,900원" 신고의 정확한 기전이다.

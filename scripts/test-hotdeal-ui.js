@@ -102,7 +102,9 @@ assert(hd.includes('expires_at.is.null,expires_at.gt.'),'만료된 딜은 목록
 assert(ch.includes("DD.dailyDrop(points, { today })")&&ch.includes('if (!drop.ok)'),'수집기는 어제 대비 하락이 없으면 핫딜로 만들지 않는다');
 
 /* ── 3) 진입점 ─────────────────────────────────────────────────────── */
-assert(live.includes('<a class="nav-link hide-m" href="#priceDrop" data-act="scroll-drop">핫딜</a>'),'헤더 «핫딜» = 이 섹션');
+assert(live.includes('<button class="nav-link" data-act="scroll-drop">핫딜</button>')
+  || live.includes('<a class="nav-link hide-m" href="#priceDrop" data-act="scroll-drop">핫딜</a>'),
+  '헤더 «핫딜» = 이 섹션');
 assert(!live.includes('가격 변동</span>'),'같은 섹션을 가리키던 «가격 변동» 은 «핫딜» 로 합쳤다');
 // 헤더 1 + 모바일 메뉴 1 + 히어로 CTA 1 (히어로 캐러셀 aa10ecc 에서 추가됐다).
 assert.equal((live.match(/data-act="scroll-drop"/g)||[]).length,3,'헤더 1 + 메뉴 1 + 히어로 CTA 1');

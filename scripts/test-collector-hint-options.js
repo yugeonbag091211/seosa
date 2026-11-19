@@ -30,22 +30,24 @@ function inject(rel, ex) {
 
 /* 가짜 DB — search_cache_hints RPC 와 coupang_search_cache 의 .in('keyword', …) 만 흉내 낸다. */
 const db = { hints: [], rows: [], reads: [], failRead: false };
-function cacheQuery() {
-  const q = { cols: '', keys: null };
+function cacheQuery(table) {
+  const q = { cols: '', keys: null, subId: '' };
   const chain = {
     select(cols) { q.cols = cols; return chain; },
+    eq(field, value) { if (field === 'sub_id') q.subId = value; return chain; },
     in(col, values) { q.keys = values; return chain; },
     then(resolve) {
-      db.reads.push({ cols: q.cols, keys: q.keys });
+      db.reads.push({ table, cols: q.cols, keys: q.keys, subId: q.subId });
       if (db.failRead) return Promise.resolve({ data: null, error: { message: 'boom' } }).then(resolve);
       const want = new Set(q.keys || []);
-      return Promise.resolve({ data: db.rows.filter(r => want.has(r.keyword)), error: null }).then(resolve);
+      return Promise.resolve({ data: db.rows.filter(r =>
+        want.has(r.keyword) && (!q.subId || r.sub_id === q.subId)), error: null }).then(resolve);
     }
   };
   return chain;
 }
 inject('api/_supabase.js', {
-  from: () => cacheQuery(),
+  from: table => cacheQuery(table),
   rpc: n => Promise.resolve(n === 'search_cache_hints' ? { data: db.hints, error: null } : { data: null, error: null })
 });
 inject('api/_notify.js', { send: () => Promise.resolve({ ok: true }) });
@@ -111,6 +113,30 @@ const target = (pid, vid, link = '') => ({ product_id: pid, mall: '쿠팡', vend
     const legacy = await C.cacheHintQueries(new Set(['A']), '쿠팡');
     eq('대상 정보 없이 부르면(옛 호출부·테스트 스텁) 예전처럼 그대로', legacy.get('A'), ['다른옵션뿐']);
     eq('그때는 캐시 행을 읽지 않는다', db.reads.length, 0);
+  }
+
+  console.log('\n[4-b] SUBID 채널 캐시 힌트 격리');
+  {
+    db.reads = [];
+    db.rows = [
+      { sub_id: 'SEOSA2026', keyword: '태그검색', items: [item('CH', '11')] },
+      { sub_id: 'OTHER2026', keyword: '태그검색', items: [item('CH', '99')] }
+    ];
+    process.env.COUPANG_CHANNEL_ROLLOUT = '1';
+    process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
+    process.env.COUPANG_CHANNEL_MODE = 'full';
+    process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK = '1';
+    const direct = new Map([['CH', ['태그검색']]]);
+    const out = await C.verifyHintOptions(direct, '쿠팡', new Map([['CH', target('CH', '11')]]));
+    eq('채널 힌트는 자신의 sub_id 및 vendorItemId 만 확인한다', out.get('CH'), ['태그검색']);
+    check('legacy cache/RPC 대신 분리 테이블을 조회한다',
+      db.reads.length === 1 && db.reads[0].table === 'coupang_channel_search_cache'
+      && db.reads[0].subId === 'SEOSA2026');
+    delete process.env.COUPANG_CHANNEL_ROLLOUT;
+    delete process.env.COUPANG_CHANNEL_SUBID;
+    delete process.env.COUPANG_CHANNEL_MODE;
+    delete process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK;
+    db.rows = [];
   }
 
   console.log('\n[5] runMallCollection → hint 함수에 대상 행을 넘긴다');

@@ -408,6 +408,23 @@ function isRecordableSource(from) {
   return from === 'api' || from === 'cache';
 }
 
+/**
+ * Channel canary is intentionally search-response-only: search results show
+ * tagged URLs to genuine users, but existing products/price_history rows stay
+ * untouched until all writers and the partner report have been verified.
+ */
+function isChannelCanaryProduct(it) {
+  if (!it || it.mall !== '쿠팡'
+      || process.env.COUPANG_CHANNEL_ROLLOUT !== '1'
+      || process.env.COUPANG_CHANNEL_MODE !== 'canary') return false;
+  const subId = String(process.env.COUPANG_CHANNEL_SUBID || '').trim();
+  return !!subId && require('./_coupang').linkHasChannel(it.link, subId);
+}
+
+function recordableNonCanary(it, batchFrom = 'api') {
+  return isRecordableSource(it._source || batchFrom) && !isChannelCanaryProduct(it);
+}
+
 /* ------------------------------------------------------------------ *
  *  가격 저장
  *
@@ -807,7 +824,7 @@ async function recordPrices(observations, opts = {}) {
   // 같은 배치 안에서 키가 겹치면 upsert 가 통째로 실패한다. 먼저 접는다.
   const byKey = new Map();
   for (const it of observations || []) {
-    if (!it) continue;
+    if (!it || (source === 'search' && isChannelCanaryProduct(it))) continue;
     /*
      * product_id 에 상품명을 넣는 폴백은 없앴다.
      *
@@ -1126,7 +1143,7 @@ async function saveProducts(keyword, items, opts = {}) {
   }
 
   const batchFrom = opts.from || 'api';
-  const recordable = items.filter(it => isRecordableSource(it._source || batchFrom));
+  const recordable = items.filter(it => recordableNonCanary(it, batchFrom));
   const skipped = items.length - recordable.length;
 
   if (!recordable.length) {
@@ -1292,6 +1309,7 @@ module.exports = {
   TODAY_PICKS, fetchCoupang, fetchAdpick, adpickProductId,
   searchAll, saveProducts, recordPrices, toClientProduct, roundRobin, preferLive,
   relevantItems, relevantRows, freshRows, matchesKeyword, keywordTokens, isRecordableSource,
+  isChannelCanaryProduct, recordableNonCanary,
   orderAiSearchCandidates,
   discountPct, searchPhraseFromTitle, MAX_DISPLAY_AGE_DAYS,
   // 컬럼 폴백 판정 — test-audit-regressions 가 일시 장애 오분류를 고정한다.
