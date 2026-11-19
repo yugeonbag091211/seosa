@@ -43,3 +43,20 @@ node scripts/diag-coupang-subid-once.js --live-once
 This makes at most one API search through the existing quota guard. It does not write catalog/cache/conversion rows. The quota ledger may record the request, as it does for normal searches. Never paste API credentials or the whole `.env.local` into chat. The output alone does not prove revenue attribution: corroborate in Coupang's channel report after genuine visitors click.
 
 **This PR must stay Draft and must not be merged on offline testing alone.**
+
+## Actual live diagnostic — 2026-11-19 KST
+
+Executed **once** on the authorized Windows PC in an isolated Git worktree, using existing local credentials and the production quota guard. Command: `node -r <existing local dotenv preload> scripts/diag-coupang-subid-once.js --live-once`.
+
+Observed output (secrets and the full affiliate link intentionally not copied):
+
+- Search keyword: `에어팟 프로 3`; channel requested: `SEOSA2026`.
+- Upstream search: **HTTP 200**, `from=api`, `error=null`, `blocked=false`, `apiCalled=true`.
+- Normalized response: **1 item returned** (upstream gave 10 raw rows, collapsed to 8 unique products).
+- First product ID: `9369201576`.
+- Affiliate URL: host `link.coupang.com`, path `/re/AFFSDP`, `classifyCoupang().ok=true`.
+- Returned link contained a case-insensitive `subId` query key. **Partner-side report attribution has NOT been verified.**
+- No write to the `products` or `coupang_search_cache` tables. The existing gate records API usage as designed.
+- Existing `main`/Production links and existing local development branch were not modified.
+
+**Next gate:** show genuine traffic in `SEOSA2026` channel report before a full rollout. Historical purchases or clicks in the default Coupang channel cannot be assumed to originate from SEOSA.
