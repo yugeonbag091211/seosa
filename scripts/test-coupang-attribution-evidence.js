@@ -113,8 +113,9 @@ process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
   // the actual inline script as the browser would (without executing it).
   const match = product.match(/var product=\$\{radarProduct\},purchase=\$\{purchaseProduct\}[\s\S]*?<\/script>/);
   check(!!match, 'product-page inline click script remains extractable');
-  const browserScript = match[0].replace(/\$\{radarProduct\}|\$\{purchaseProduct\}/g, '{}')
-    .replace(/<\/script>$/, '');
+  const browserScript = '(function(){\n' +
+    match[0].replace(/\$\{radarProduct\}|\$\{purchaseProduct\}/g, '{}')
+      .replace(/<\/script>$/, '');
   new vm.Script(browserScript, { filename: 'api/_product-page.js:inline.js' });
   check(true, 'product-page inline JavaScript syntax valid');
   const stats=fs.readFileSync(path.join(root,'api/stats.js'),'utf8');
