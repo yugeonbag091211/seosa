@@ -15,6 +15,9 @@ process.env.COUPANG_MIN_GAP_MS = '1';
 process.env.COUPANG_FETCH_LIMIT = '1';
 delete process.env.COUPANG_CHANNEL_ROLLOUT;
 delete process.env.COUPANG_CHANNEL_SUBID;
+delete process.env.COUPANG_CHANNEL_MODE;
+delete process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK;
+delete process.env.COUPANG_CHANNEL_CANARY_PERCENT;
 
 const legacy = new Map();
 const channel = new Map();
@@ -103,7 +106,9 @@ server.listen(0, async () => {
 
     process.env.COUPANG_CHANNEL_ROLLOUT = '1';
     process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
-    test(C.activeChannelSubId() === 'SEOSA2026', 'explicit rollout reads configured SUBID');
+    process.env.COUPANG_CHANNEL_MODE = 'full';
+    process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK = '1';
+    test(C.activeChannelSubId() === 'SEOSA2026', 'explicit full rollout reads configured SUBID');
     r = await C.searchCoupang(kw, options);
     test(r.from === 'api' && apiCalls === 1 && C.linkHasChannel(r.items[0].link, 'SEOSA2026'),
       'channel ON skips legacy cache and returns tagged provider URL');
@@ -118,8 +123,25 @@ server.listen(0, async () => {
     test(r.from === 'cache' && apiCalls === 1 && r.items[0].link === legacyItem.link,
       'rollout OFF instantly restores legacy cache behavior');
 
+    // Search-only canary never changes collectors, cron, or AI requests.
     process.env.COUPANG_CHANNEL_ROLLOUT = '1';
     process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
+    process.env.COUPANG_CHANNEL_MODE = 'canary';
+    process.env.COUPANG_CHANNEL_CANARY_PERCENT = '100';
+    test(C.activeChannelSubId('search', kw) === 'SEOSA2026'
+      && C.activeChannelSubId('collect', kw) === ''
+      && C.activeChannelSubId('cron', kw) === ''
+      && C.activeChannelSubId('ai', kw) === '',
+      'canary applies only to live search, never collectors/cron/AI');
+    const collected = await C.searchCoupang(kw, { ...options, source: 'collect' });
+    test(collected.from === 'cache' && collected.items[0].link === legacyItem.link,
+      'collector still reads legacy cache during canary');
+    r = await C.searchCoupang(kw, { ...options, source: 'search' });
+    test(r.from === 'cache' && C.linkHasChannel(r.items[0].link, 'SEOSA2026'),
+      'real-time search reads channel cache during canary');
+
+    process.env.COUPANG_CHANNEL_MODE = 'full';
+    process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK = '1';
     failChannelRead = true;
     const beforeMissing = apiCalls;
     r = await C.searchCoupang('다른 키워드', options);
@@ -142,6 +164,9 @@ server.listen(0, async () => {
 
     delete process.env.COUPANG_CHANNEL_ROLLOUT;
     delete process.env.COUPANG_CHANNEL_SUBID;
+    delete process.env.COUPANG_CHANNEL_MODE;
+    delete process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK;
+    delete process.env.COUPANG_CHANNEL_CANARY_PERCENT;
     process.stdout.write('PASS ' + passed + ' / FAIL 0 (offline, API external 0, DB external 0)\n');
   } catch (e) {
     process.stderr.write('FAIL: ' + (e && e.stack || e) + '\n');
