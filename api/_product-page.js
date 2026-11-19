@@ -793,7 +793,15 @@ function track(name,item){item=item||product;try{var q='/api/stats?event='+encod
 +(item.productId?'&pid='+encodeURIComponent(item.productId):'')
 +(item.mallLabel?'&mall='+encodeURIComponent(item.mallLabel):'')
 +((item.price||item.lprice)>0?'&price='+encodeURIComponent(String(item.price||item.lprice)):'')
-+'&src=product';fetch(q,{keepalive:true}).catch(function(){})}catch(_){}}
++'&src=product';
+if(name==='affiliate_click'&&affiliate){
+  try{
+    var u=new URL(affiliate.href);
+    if(u.protocol==='https:'&&u.hostname==='link.coupang.com'&&u.pathname.indexOf('/re/AFF')===0
+      &&u.searchParams.get('subId')==='SEOSA2026')q+='&sid=SEOSA2026';
+  }catch(_){}
+}
+fetch(q,{keepalive:true}).catch(function(){})}catch(_){}}
 function sync(){var on=!!RadarStore.find(product);button.textContent=on?'저장됨':'저장';button.setAttribute('aria-pressed',String(on))}
 button.addEventListener('click',function(){var result=RadarStore.toggle(product);track(result.saved?'radar_save':'radar_remove');sync()});
 var affiliate=document.getElementById('affiliateLink');
