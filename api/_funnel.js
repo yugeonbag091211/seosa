@@ -316,7 +316,53 @@ async function collect(out, since) {
   out.coverageComplete = coverage.complete;
   out.measuredConfirmedGmv = out.confirmedGmv;
   out.gmv = coverage.complete ? out.confirmedGmv : null;
+  await attachPartnerChannelDaily(out, since);
   return out;
+}
+
+/**
+ * Partner API data are daily aggregates, not order-level conversions.
+ * Expose them in the authorized admin report ONLY, strictly separated from
+ * confirmed SEOSA GMV, final payouts and browser-reported clicks.
+ * Empty/unimported dates mean unknown coverage, NEVER zero sales.
+ */
+async function attachPartnerChannelDaily(out, since) {
+  const base = {
+    basis: 'official_partner_daily_aggregate_preliminary',
+    finalPayout: false,
+    completeCoverage: false,
+    importedDays: 0,
+    reportedClicks: null,
+    reportedOrders: null,
+    reportedCommission: null,
+    reportedGmv: null
+  };
+  try {
+    const { data, error } = await supabase
+      .from('coupang_partner_channel_daily')
+      .select('report_date,sub_id,clicks,orders,gmv,commission')
+      .gte('report_date', since)
+      .limit(90);
+    if (error) {
+      out.partnerChannelDaily = Object.assign(base, { unavailable: true });
+      return;
+    }
+    const rows = (data || []).filter(row =>
+      row && row.sub_id === 'SEOSA2026');
+    base.importedDays = new Set(rows.map(row => row.report_date)).size;
+    const total = field => {
+      const known = rows.filter(row => row[field] != null);
+      if (!known.length) return null;
+      return known.reduce((sum, row) => sum + Number(row[field] || 0), 0);
+    };
+    base.reportedClicks = total('clicks');
+    base.reportedOrders = total('orders');
+    base.reportedCommission = total('commission');
+    base.reportedGmv = total('gmv');
+    out.partnerChannelDaily = base;
+  } catch (_) {
+    out.partnerChannelDaily = Object.assign(base, { unavailable: true });
+  }
 }
 
 /**
