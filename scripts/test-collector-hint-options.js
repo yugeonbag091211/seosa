@@ -124,6 +124,8 @@ const target = (pid, vid, link = '') => ({ product_id: pid, mall: '쿠팡', vend
     ];
     process.env.COUPANG_CHANNEL_ROLLOUT = '1';
     process.env.COUPANG_CHANNEL_SUBID = 'SEOSA2026';
+    process.env.COUPANG_CHANNEL_MODE = 'full';
+    process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK = '1';
     const direct = new Map([['CH', ['태그검색']]]);
     const out = await C.verifyHintOptions(direct, '쿠팡', new Map([['CH', target('CH', '11')]]));
     eq('채널 힌트는 자신의 sub_id 및 vendorItemId 만 확인한다', out.get('CH'), ['태그검색']);
@@ -132,6 +134,8 @@ const target = (pid, vid, link = '') => ({ product_id: pid, mall: '쿠팡', vend
       && db.reads[0].subId === 'SEOSA2026');
     delete process.env.COUPANG_CHANNEL_ROLLOUT;
     delete process.env.COUPANG_CHANNEL_SUBID;
+    delete process.env.COUPANG_CHANNEL_MODE;
+    delete process.env.COUPANG_CHANNEL_ALL_WRITERS_ACK;
     db.rows = [];
   }
 
