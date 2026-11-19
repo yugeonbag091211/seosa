@@ -33,4 +33,13 @@ node scripts/test-coupang.js
 node scripts/test-affiliate-integrity.js
 ```
 
-No paid API requests are made by these tests. **This PR must stay Draft and must not be merged on offline testing alone.**
+No paid API requests are made by these tests.
+
+## Optional ONE live verification (not performed in this PR)
+From a machine with the project's configured `.env.local`, run **once**:
+```sh
+node scripts/diag-coupang-subid-once.js --live-once
+```
+This makes at most one API search through the existing quota guard. It does not write catalog/cache/conversion rows. The quota ledger may record the request, as it does for normal searches. Never paste API credentials or the whole `.env.local` into chat. The output alone does not prove revenue attribution: corroborate in Coupang's channel report after genuine visitors click.
+
+**This PR must stay Draft and must not be merged on offline testing alone.**
