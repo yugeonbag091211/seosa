@@ -71,6 +71,33 @@ function relevantItems(keyword, items) {
   return { kept, dropped: list.length - kept.length, allMismatch: false };
 }
 
+/**
+ * 중고·리퍼·해외직구 여부를 감지한다.
+ *
+ * 상품명(그리고 판매처 이름)에 명시된 경우에만 판단한다 — 가격·연식 등
+ * 다른 신호로 추론하지 않는다. "6세대 i5라서 구형이니 중고겠지" 같은 추측은
+ * 틀리면 멀쩡한 새 제품에 중고 딱지를 붙이게 된다.
+ *
+ * 판매처 이름까지 보는 이유: '리퍼연구소'처럼 상호에만 상태가 드러나고
+ * 제목에는 한 글자도 없는 경우가 실제로 있다(2026-11-20 "노트북" 검색 실측).
+ *
+ * 결과는 각 아이템의 isUsed / isRefurb / isOverseas 플래그로 붙는다.
+ * 거르지는 않는다 — 중고를 찾는 사람도 있다. 표시만 해서 구분되게 한다.
+ */
+const USED_PATTERN     = /중고|used\b/i;
+const REFURB_PATTERN   = /리퍼|refurb/i;
+const OVERSEAS_PATTERN = /해외|직구|구매대행/;
+
+function detectCondition(title, mallName) {
+  // 제목과 판매처명을 한 덩어리로 본다. 어느 쪽에 적혀 있든 사용자에겐 같은 사실이다.
+  const t = String(title || '') + ' ' + String(mallName || '');
+  return {
+    isUsed:     USED_PATTERN.test(t),
+    isRefurb:   REFURB_PATTERN.test(t),
+    isOverseas: OVERSEAS_PATTERN.test(t),
+  };
+}
+
 /*
  * 옵션·수량 꼬리표. 상품명 뒤에 붙는 "12개", "60g", "2세트" 같은 토큰은
  * 검색어로 쓰면 오히려 결과를 망친다.
@@ -155,6 +182,9 @@ async function fetchCoupang(keyword, limit = 6, opts = {}) {
      */
     isRocket: typeof it.isRocket === 'boolean' ? it.isRocket : null,
     isFreeShipping: typeof it.isFreeShipping === 'boolean' ? it.isFreeShipping : null,
+    // 중고·리퍼·해외직구 여부. 프론트 뱃지 표시에만 쓰인다 (거르지 않는다).
+    // 쿠팡은 판매처가 항상 '쿠팡'이라 제목만 보면 된다.
+    ...detectCondition(it.title, ''),
     // 이 항목이 어디서 왔는지(api/cache/stale-cache). saveProducts가 항목별로
     // 저장 가능 여부를 판정하는 데 쓴다 (searchAll 주석 참고).
     _source: r.from
@@ -241,6 +271,9 @@ async function fetchAdpick(keyword, limit = 10, opts = {}) {
     // 그대로 동작한다 (api/_price.js classifyPrice 참고).
     itemId: '',
     vendorItemId: '',
+    // 중고·리퍼·해외직구 여부. 프론트 뱃지 표시에만 쓰인다 (거르지 않는다).
+    // ADPICK은 판매처가 제각각이라 몰 이름('리퍼연구소' 등)까지 함께 본다.
+    ...detectCondition(it.title, it.mallLabel || it.cpName),
     _source: r.from
   }));
 

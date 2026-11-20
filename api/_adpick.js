@@ -341,15 +341,33 @@ function mallLabelFromCpName(cpName) {
 }
 
 /**
+ * 디지털 콘텐츠 플랫폼(강의·전자책·서비스) 여부.
+ *
+ * 이런 플랫폼은 제목에 "노트북"이 들어간 강의("노트북LM 완전 정복")를
+ * 쇼핑 결과로 내보내 혼란을 준다. 상품 가격비교 맥락에서 의미가 없으므로 제외한다.
+ *
+ * cp_name 기반으로 판단한다 — 제목 패턴보다 오탐이 적다.
+ * 새 플랫폼이 추가되면 이 목록에 추가한다.
+ */
+const CONTENT_PLATFORM_PATTERN = /인프런|inflearn|크몽|kmong|클래스101|class101|탈잉|taling|패스트캠퍼스|fastcampus|콜로소|coloso|유데미|udemy|링크드인러닝|linkedin.learning/i;
+
+function isContentPlatform(cpName) {
+  return CONTENT_PLATFORM_PATTERN.test(String(cpName || ''));
+}
+
+/**
  * ADPICK 응답 상품 → 내부 모양.
  *
  * commissionlink 가 없으면 이 상품을 식별할 방법도, 구매 버튼을 연결할
  * 방법도 없으므로 버린다. price 는 문자열 숫자라 parsePrice 로 정수화한다
  * (0 이하/파싱 불가 항목은 버린다 — api/_price.js parsePrice 규칙과 동일).
+ *
+ * 디지털 콘텐츠 플랫폼(인프런·크몽 등)은 가격비교 맥락에 맞지 않아 제외한다.
  */
 function normalize(raw) {
   const out = [];
   let dropped = 0;
+  let droppedContent = 0;
 
   (raw || []).forEach(it => {
     const commissionlink = String((it && it.commissionlink) || '').trim();
@@ -357,6 +375,10 @@ function normalize(raw) {
     if (!commissionlink || !price) { dropped++; return; }
 
     const cpName = (it && it.cp_name) || '';
+
+    // 강의·전자책 플랫폼은 쇼핑 결과에서 제외한다.
+    if (isContentPlatform(cpName)) { droppedContent++; return; }
+
     out.push({
       title: (it && it.title) || '',
       price,
@@ -370,6 +392,7 @@ function normalize(raw) {
   });
 
   if (dropped) console.warn(`[adpick] 가격/링크를 읽지 못한 상품 ${dropped}건 제외`);
+  if (droppedContent) console.log(`[adpick] 콘텐츠 플랫폼 상품 ${droppedContent}건 제외 (강의·전자책)`);
   return out;
 }
 

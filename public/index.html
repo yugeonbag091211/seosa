@@ -1479,6 +1479,23 @@ html[data-seosa-motion="on"] .card.in:hover .thumb img{transform:scale(1.035)}
 .ship-tag.rocket{color:var(--coupang)}
 @media(max-width:480px){.ship-tag{font-size:.68rem}}
 
+/*
+ * 상품 상태 뱃지 — 중고 · 리퍼 · 해외직구.
+ *
+ * 배송 태그(.ship-tag)와 달리 테두리가 있는 칩 형태다. 배송은 "좋은 소식"이라
+ * 점 하나로 가볍게 붙지만, 상태는 가격을 해석하는 전제 조건이라 눈에 걸려야 한다.
+ * 색은 경고가 아니라 구분이다 — 중고가 나쁜 상품이라는 뜻이 아니므로 빨강을 쓰지 않는다.
+ * 해외직구만 관세·배송기간이 실제로 결제액을 바꾸므로 조금 더 분명하게 둔다.
+ */
+.cond-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;margin-bottom:2px}
+.cond-tag{font-size:.68rem;font-weight:600;letter-spacing:-.01em;
+  padding:2px 7px;border-radius:4px;white-space:nowrap;
+  border:1px solid var(--line-2);color:var(--soft);background:transparent}
+.cond-tag.used{border-color:var(--line-2);color:var(--soft)}
+.cond-tag.refurb{border-color:var(--line-2);color:var(--soft)}
+.cond-tag.overseas{border-color:var(--up);color:var(--up)}
+@media(max-width:480px){.cond-tag{font-size:.64rem;padding:1px 6px}}
+
 .trust{display:flex;align-items:center;gap:5px;margin-top:6px;cursor:default;min-width:0}
 .trust-dot{width:6px;height:6px;border-radius:50%;flex:none}
 .trust-label{font-size:.68rem;letter-spacing:0;font-weight:700;flex:none}
@@ -3333,7 +3350,7 @@ html{scroll-padding-top:86px}
 .hero-spotlight .spotlight-card>.thumb img{max-width:88%;max-height:88%}
 .hero-spotlight .spotlight-card>.info{padding:16px 18px;justify-content:center;gap:7px}
 .hero-spotlight .spotlight-card .price-row{order:1}.hero-spotlight .spotlight-card .p-title{order:2;font-size:1.02rem;line-height:1.45}
-.hero-spotlight .spotlight-card .pmove{order:3}.hero-spotlight .spotlight-card .mall-line{order:4}.hero-spotlight .spotlight-card .canonical,.hero-spotlight .spotlight-card .ship-row,.hero-spotlight .spotlight-card .trust,.hero-spotlight .spotlight-card .spark{display:none}
+.hero-spotlight .spotlight-card .pmove{order:3}.hero-spotlight .spotlight-card .mall-line{order:4}.hero-spotlight .spotlight-card .canonical,.hero-spotlight .spotlight-card .ship-row,.hero-spotlight .spotlight-card .cond-row,.hero-spotlight .spotlight-card .trust,.hero-spotlight .spotlight-card .spark{display:none}
 .hero-spotlight .spotlight-card .card-actions{order:5;display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .hero-spotlight .spotlight-card .card-actions .alert-btn{display:none}
 .hero-spotlight .spotlight-card .card-actions .buy{flex:1;min-width:110px;min-height:40px;border-radius:999px;background:#211e1b;color:white}
@@ -3367,6 +3384,8 @@ main.wrap{max-width:1180px;padding-top:28px}
 .card .info{display:flex;flex-direction:column;gap:6px;padding:13px 5px 6px}
 .card .p-title{font-size:.96rem;line-height:1.43;min-height:2.72em;order:1}
 .card .price-row{order:2;align-items:baseline;gap:7px}.card .price{font-size:1.22rem;letter-spacing:-.04em}
+/* 상태 뱃지(중고·리퍼)는 제목보다 먼저 읽혀야 한다 — order:0. */
+.card .cond-row{order:0;margin-top:0}
 .card .pmove{order:3;min-height:0}.card .mall-line{order:4;margin-top:3px}.card .ship-row{order:5}.card .trust{order:6}.card .spark{order:7}.card .card-actions{order:8;margin-top:7px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
 .card .card-actions .alert-btn,.card .card-actions .buy{min-height:36px;border-radius:999px;padding:7px 8px;font-size:.7rem}
 .card .card-actions .buy{background:#211e1b;color:#fff;border-color:#211e1b}
@@ -6493,6 +6512,31 @@ var Card = {
   },
 
   /*
+   * 상품 상태 표시 — 중고 · 리퍼 · 해외직구 (2026-11-21).
+   *
+   * ── 왜 필요한가 ────────────────────────────────────────────
+   * "노트북" 검색 결과에 중고(21.9만) · 리퍼(73.5만) · 신품(56.9만)이
+   * 아무 구분 없이 가격순으로 섞여 있었다. 최저가 비교 서비스에서 이건
+   * 단순히 지저분한 게 아니라 **틀린 비교**다. 중고 21.9만이 신품들보다
+   * 위에 뜨면 사용자는 "노트북이 22만원부터 시작하는구나"로 읽는다.
+   *
+   * ★ 거르지 않고 표시만 한다. 중고를 일부러 찾는 사람도 있고, 서사가
+   *   할 일은 선택지를 지우는 게 아니라 무엇을 고르는지 알게 하는 것이다.
+   *
+   * ★ 값은 서버(api/_shop.js detectCondition)가 제목·판매처명에 실제로
+   *   적힌 말만 보고 판단한다. 연식이나 가격으로 추측하지 않는다 —
+   *   멀쩡한 신품에 중고 딱지가 붙는 쪽이 안 붙는 쪽보다 훨씬 나쁘다.
+   */
+  conditionHTML: function(it) {
+    if (!it) return '';
+    var tags = [];
+    if (it.isUsed === true)     tags.push('<span class="cond-tag used">중고</span>');
+    if (it.isRefurb === true)   tags.push('<span class="cond-tag refurb">리퍼</span>');
+    if (it.isOverseas === true) tags.push('<span class="cond-tag overseas">해외직구</span>');
+    return tags.length ? '<div class="cond-row">' + tags.join('') + '</div>' : '';
+  },
+
+  /*
    * 카드 액션 한 줄.
    *
    * 세 행동을 그대로 유지하되(비교·알림·구매) 세로 스택 3개 → 가로 1줄로
@@ -6602,6 +6646,9 @@ var Card = {
        * 다시 흔들리지 않게 하기 위해서다(레이아웃 시프트 방지).
        */
       + '<div class="pmove">' + (canonical ? '' : Card.changeHTML(it)) + '</div>'
+      // 상태 뱃지(중고·리퍼·해외직구)는 제목 바로 위에 둔다. 가격을 본 직후,
+      // 제목을 읽기 전에 "이게 신품인가"를 알아야 가격이 올바르게 해석된다.
+      + Card.conditionHTML(it)
       + '<div class="p-title" data-act="card-history">' + Fmt.esc(it.title) + '</div>'
       + '<div class="mall-line">' + MallBrand.render(it.mall, it.mallLabel)
       +   Card.asOfHTML(it) + '</div>'
