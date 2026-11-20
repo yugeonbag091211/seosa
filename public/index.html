@@ -3685,7 +3685,7 @@ html[data-theme="dark"] .mobile-tabbar{background:rgba(22,24,28,.94);border-colo
     <div class="hero-copy">
       <h1 class="hero-title">더 좋은 선택의 서사,<br>SEOSA</h1>
       <p class="hero-sub">쿠팡·제휴몰 상품을 비교하고, 기록된 가격 변화를 확인하세요.</p>
-      <button class="hero-cta" data-act="ai-entry" data-ctx="home">조건으로 상품 찾기 <span aria-hidden="true">→</span></button>
+      <button class="hero-cta" data-act="scroll-drop">지금 가격 하락 상품 보기 <span aria-hidden="true">→</span></button>
       <p class="aff-note" data-aff-note="hero-shelf"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>
       <div class="rb-stat" id="recordStat"></div>
     </div>
@@ -4184,7 +4184,10 @@ html[data-theme="dark"] .mobile-tabbar{background:rgba(22,24,28,.94);border-colo
         <div class="sec-sub">오늘(한국시간) 가격이 내려간 상품이에요. SEOSA 가격 이력으로 근거까지 확인한 상품에는 «SEOSA 검증» 배지를 붙였어요.</div>
         <p class="aff-note" data-aff-note="priceDrop"><b>제휴 안내</b><span>이 페이지에는 제휴 링크가 포함되어 있으며, 구매 시 SEOSA가 일정 수수료를 제공받습니다.</span></p>
       </div>
-      <button class="sec-more" id="dropMore" data-act="drop-more" style="display:none">더보기 <span aria-hidden="true">›</span></button>
+      <div class="rec-tools">
+<button class="sec-more" type="button" data-act="share-hotdeals">핫딜 공유 <span aria-hidden="true">↗</span></button>
+<button class="sec-more" id="dropMore" data-act="drop-more" style="display:none">더보기 <span aria-hidden="true">›</span></button>
+</div>
     </div>
     <div id="dropWrap">
       <div class="drop-loading" id="dropLoading"><div class="ring"></div>가격 변동 데이터를 불러오는 중…</div>
@@ -12040,7 +12043,15 @@ var Actions = {
     if (e && e.preventDefault) e.preventDefault();   // <a href="#priceDrop"> 기본 점프 대신 부드럽게
     Nav.closeMenu();
     if (isSearching()) Search.goHome();
-    if (!AppState.ready.drop) { toast('핫딜을 아직 불러오는 중이에요.'); return; }
+    if (!AppState.ready.drop) {
+      // 로드 중에는 실제로 보이는 핫딜 로딩 영역으로, 비어 있으면 셀렉션으로 이동.
+      var loading = $('priceDrop');
+      if (loading && loading.style.display !== 'none') { loading.scrollIntoView({ behavior: 'smooth' }); return; }
+      var today = $('today');
+      if (today) today.scrollIntoView({ behavior: 'smooth' });
+      toast('지금 표시할 핫딜이 없어 오늘의 셀렉션으로 안내했어요.');
+      return;
+    }
     var t = $('priceDrop'); if (t) t.scrollIntoView({ behavior: 'smooth' });
   },
   'scroll-top':  function() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
@@ -12115,6 +12126,26 @@ var Actions = {
     if (Fmt.buyUrl(info.link, info)) Track.affiliate(info, 'hotdeal');
     Recent.addViewed(info);
     openLink(info.link, info);
+  },
+  'share-hotdeals': function() {
+    // 제휴 링크가 아닌 SEOSA의 실제 핫딜 목록을 공유한다.
+    // 개별 상품의 가격/할인율은 변하므로 공유 문구에 고정하지 않는다.
+    var url = 'https://seosa.ai.kr/?utm_source=share&utm_medium=organic&utm_campaign=hotdeal#priceDrop';
+    var copy = function() {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function() {
+          toast('핫딜 링크를 복사했어요.');
+        }, function() { window.prompt('핫딜 링크를 복사해 주세요.', url); });
+      } else {
+        window.prompt('핫딜 링크를 복사해 주세요.', url);
+      }
+    };
+    if (navigator.share) {
+      navigator.share({ title: 'SEOSA 가격 하락 상품', text: '가격 변화를 확인하고 구매를 결정해 보세요.', url: url })
+        .catch(function(err) { if (!err || err.name !== 'AbortError') copy(); });
+    } else {
+      copy();
+    }
   },
   'drop-more': function() { Drop.more(); },
   'external-hot-more': function() { ExternalHot.more(); },

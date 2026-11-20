@@ -91,7 +91,7 @@
     "test:external-hotdeal": "node scripts/test-external-hotdeal.js && node scripts/test-external-hotdeal-validation.js && node scripts/test-hotdeal-api.js && node scripts/test-hotdeal-ui.js && node scripts/test-hotdeal-image-fallback.js && node scripts/test-daily-drop.js && node scripts/test-today-drop.js",
     "collect:hotdeals": "node scripts/collect-hotdeals.js",
     "collect:external-hotdeals": "node scripts/collect-external-hotdeals.js",
-    "test:hotdeal-ui": "node scripts/test-hotdeal-ui.js",
+    "test:hotdeal-ui": "node scripts/test-hotdeal-ui.js && node scripts/test-growth-hotdeal-cta.js",
     "test:radar": "node scripts/test-radar.js",
     "test:conversions": "node scripts/test-conversions.js",
     "test:radar-ui": "node scripts/test-radar-ui.js",

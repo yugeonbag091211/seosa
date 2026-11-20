@@ -106,8 +106,8 @@ assert(live.includes('<button class="nav-link" data-act="scroll-drop">핫딜</bu
   || live.includes('<a class="nav-link hide-m" href="#priceDrop" data-act="scroll-drop">핫딜</a>'),
   '헤더 «핫딜» = 이 섹션');
 assert(!live.includes('가격 변동</span>'),'같은 섹션을 가리키던 «가격 변동» 은 «핫딜» 로 합쳤다');
-// 헤더 1 + 모바일 메뉴 1 + 히어로 CTA 1 (히어로 캐러셀 aa10ecc 에서 추가됐다).
-assert.equal((live.match(/data-act="scroll-drop"/g)||[]).length,3,'헤더 1 + 메뉴 1 + 히어로 CTA 1');
+// 헤더 1 + 모바일 메뉴 1 + 히어로 CTA 2 (메인 첫 배너도 핫딜로 연결).
+assert.equal((live.match(/data-act="scroll-drop"/g)||[]).length,4,'헤더 1 + 메뉴 1 + 히어로 CTA 2');
 assert(live.includes('data-act="scroll-drop">핫딜 보기</button>'),'모바일 메뉴 «핫딜 보기»');
 assert(radar.includes('<a href="/#priceDrop">핫딜</a>'),'레이더 «핫딜» → 홈 섹션');
 assert(/location\.hash === '#priceDrop'/.test(live),'/#priceDrop 로 들어오면 데이터가 온 뒤 섹션으로 옮긴다');
@@ -118,7 +118,7 @@ assert.deepEqual((vercel.redirects||[]).find(r=>r.source==='/hotdeals.html'),{so
 {
   const m=html.match(/'scroll-drop':\s*(function\s*\(el, e\)\s*\{[\s\S]*?\r?\n  \}),/);
   assert(m,'scroll-drop 핸들러를 찾는다');
-  const run=({searching,ready})=>{
+  const run=({searching,ready,loadingVisible=false})=>{
     const log=[];
     const env={
       Nav:{closeMenu:()=>log.push('closeMenu')},
@@ -126,7 +126,8 @@ assert.deepEqual((vercel.redirects||[]).find(r=>r.source==='/hotdeals.html'),{so
       Search:{goHome:()=>{log.push('goHome');searching=false}},
       AppState:{ready:{drop:ready}},
       toast:msg=>log.push('toast:'+msg),
-      $:id=>id==='priceDrop'?{scrollIntoView:o=>log.push('scroll:'+(o&&o.behavior))}:null
+      $:id=>id==='priceDrop'?{style:{display:loadingVisible?'block':'none'},scrollIntoView:o=>log.push('scroll:'+(o&&o.behavior))}:
+        id==='today'?{scrollIntoView:o=>log.push('today-scroll:'+(o&&o.behavior))}:null
     };
     const fn=new Function(...Object.keys(env),'return '+m[1])(...Object.values(env));
     fn({}, {preventDefault:()=>log.push('preventDefault')});
@@ -134,8 +135,11 @@ assert.deepEqual((vercel.redirects||[]).find(r=>r.source==='/hotdeals.html'),{so
   };
   assert.deepEqual(run({searching:false,ready:true}),['preventDefault','closeMenu','scroll:smooth'],'평상시 — 부드럽게 섹션으로');
   assert.deepEqual(run({searching:true,ready:true}),['preventDefault','closeMenu','goHome','scroll:smooth'],'검색 중 — 홈으로 돌아간 뒤 섹션으로');
-  const empty=run({searching:false,ready:false});
-  assert(empty.some(x=>x.startsWith('toast:'))&&!empty.some(x=>x.startsWith('scroll:')),'데이터 없음 — 헛스크롤 대신 말한다');
+  assert.deepEqual(run({searching:false,ready:false,loadingVisible:true}),
+    ['preventDefault','closeMenu','scroll:smooth'],'데이터 로딩 중 — 로딩 중인 핫딜 섹션으로 이동');
+  const empty=run({searching:false,ready:false,loadingVisible:false});
+  assert(empty.includes('today-scroll:smooth')&&empty.some(x=>x.startsWith('toast:')),
+    '핫딜 데이터 없음 — 빈 섹션 대신 오늘의 셀렉션으로 안내');
 }
 
 /* ── 레이더가 읽는 핫딜 백엔드는 남아 있다 (UI 만 지웠다) ───────────── */
