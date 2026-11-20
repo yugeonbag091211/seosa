@@ -5,6 +5,7 @@ const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
+const { filterPhysicalSearchResults } = require('./_physical-search-filter');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -190,7 +191,11 @@ module.exports = async function handler(req, res) {
      */
     // rankItems normalizes text itself; retain original model separators so
     // SM-S942N is checked as a complete code, not only the S942N fragment.
-    const relevance = rankItems(rawKeyword, items, { minScore: 0 });
+    // A bare hardware-category search may match courses/services by title.
+    // Remove only explicit digital listings before relevance, counts and prices
+    // are sent to the UI; keep collected products and price history unchanged.
+    const visibleItems = filterPhysicalSearchResults(rawKeyword, items);
+    const relevance = rankItems(rawKeyword, visibleItems, { minScore: 0 });
 
     /*
      * 순서.
