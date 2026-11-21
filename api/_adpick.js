@@ -349,7 +349,19 @@ function mallLabelFromCpName(cpName) {
  * cp_name 기반으로 판단한다 — 제목 패턴보다 오탐이 적다.
  * 새 플랫폼이 추가되면 이 목록에 추가한다.
  */
-const CONTENT_PLATFORM_PATTERN = /인프런|inflearn|크몽|kmong|클래스101|class101|탈잉|taling|패스트캠퍼스|fastcampus|콜로소|coloso|유데미|udemy|링크드인러닝|linkedin.learning/i;
+/*
+ * 2026-11-21: 여행·숙박·액티비티 중개도 함께 제외한다.
+ *
+ *   "최신 아이폰" → 『(아이폰스냅) 사진 못 찍는 남자친구 대신 인생사진…』 [마이리얼트립]
+ *
+ * 촬영 서비스이지 아이폰이 아니다. 가격비교의 대상이 되는 «물건» 이 아니라
+ * 비교 결과와 최저가 계산을 모두 망친다.
+ *
+ * 같은 목록이 api/_aiidentity.js 의 SERVICE_MALL_RE 에도 있다 (AI 경로용).
+ * 여기서 require 하지 않는 이유: _adpick 은 응답 정규화 계층이라 식별
+ * 계층에 의존시키지 않는다. 한쪽에 판매처를 추가하면 다른 쪽도 본다.
+ */
+const CONTENT_PLATFORM_PATTERN = /인프런|inflearn|크몽|kmong|클래스101|class101|탈잉|taling|패스트캠퍼스|fastcampus|콜로소|coloso|유데미|udemy|링크드인러닝|linkedin.learning|마이리얼트립|myrealtrip|클룩|klook|kkday|트립닷컴|trip\.com|야놀자|여기어때|하나투어|모두투어/i;
 
 function isContentPlatform(cpName) {
   return CONTENT_PLATFORM_PATTERN.test(String(cpName || ''));

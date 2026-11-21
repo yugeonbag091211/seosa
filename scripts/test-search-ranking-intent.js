@@ -260,6 +260,9 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_ratelimit': { guard: () => true },
     './_search': S,
     './_search-provenance': require('../api/_search-provenance'),
+    // 유형 가드 — 순수 함수라 진짜 모듈을 쓴다. 여기 후보는 전부 같은 유형이라
+    // 가드가 한 건도 버리지 않아야 하고, 그 자체가 오탐 회귀 검사가 된다.
+    './_search-type-guard': require('../api/_search-type-guard'),
     './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(items) { return items; } },
     // 구매 링크 관문 — 순수 함수라 진짜 모듈을 쓴다.
     './_affiliate': require('../api/_affiliate')
@@ -274,8 +277,23 @@ for (const g of [...F.models, { query: '삼성', items: [
   await context.module.exports({ query: { keyword: g.query } }, res);
   check(response && response[0].label === 'A', `/api/search ${g.query}: actual response starts with main product`, response && detail(response));
   check(Object.values(calls).every(n => n === 1), `/api/search ${g.query}: one existing call per helper, no additional queries`, calls);
-  if (g.query === '삼성') check(response.length === 2 && response[0].lprice === 900000,
-    '/api/search returns the scored cheapest dedupe representative', response && detail(response));
+  /*
+   * 중복 제거는 «같은 상품이면 싼 쪽 하나만» 이다. 가격을 직접 본다.
+   *
+   * 2026-11-21: 목록 길이로 보던 것을 가격으로 바꿨다. 같은 후보에 들어 있는
+   * «HP LaserJet 삼성 K7용 스캐너 어셈블리» 는 유형 가드(_search-type-guard)가
+   * 빼므로 길이가 2 에서 1 이 된다. 그건 중복 제거와 무관한 변화다 —
+   * 그 상품은 HP 프린터 부품이고 "삼성" 을 찾는 사람이 원한 물건이 아니다.
+   * 아래 줄이 그 제외를 따로 고정한다.
+   */
+  if (g.query === '삼성') {
+    check(response[0].lprice === 900000,
+      '/api/search returns the scored cheapest dedupe representative', response && detail(response));
+    check(!response.some(it => /스캐너\s*어셈블리/.test(it.title)),
+      '/api/search drops a different-type part ("삼성" ≠ HP 스캐너 어셈블리)', response && detail(response));
+    check(response.filter(it => /갤럭시 S26/.test(it.title)).length === 1,
+      '/api/search keeps exactly one representative per duplicated product', response && detail(response));
+  }
 }
 
 const passed = checks.filter(c => c.pass).length;

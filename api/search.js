@@ -8,6 +8,7 @@ const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords 
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
+const { filterByProductType } = require('./_search-type-guard');
 
 const MAX_KEYWORD_LEN = 80;
 
@@ -142,7 +143,25 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    await saveProducts(keyword, allItems || items, { from, source: 'search' });
+    /*
+     * ★ 유형이 다른 상품을 걸러낸다 (api/_search-type-guard.js).
+     *
+     *   "마우스" → 마우스패드 · "키보드" → 키스킨 · "노트북" → 백팩가방·강의.
+     *   낱말은 맞지만 팔리는 물건이 다르다. _shop.matchesKeyword 는 토큰
+     *   하나만 걸려도 통과시키므로 여기까지 올라온다.
+     *
+     *   saveProducts «앞에» 둔다. 뒤에 두면 걸러낸 상품이 products 에 그대로
+     *   저장돼 홈 "오늘의 셀렉션"에 다시 올라온다 (_shop.relevantItems 주석의
+     *   «수영복 검색에 펩시» 와 같은 경로다).
+     *
+     *   전부 걸러질 때는 가드가 스스로 물러난다 — 이것 때문에 검색 결과가
+     *   0건이 되는 일은 없다.
+     */
+    const typeGuard = filterByProductType(rawKeyword, items);
+    const guardedItems = typeGuard.kept;
+    if (typeGuard.applied) res.setHeader('X-Seosa-Type-Filtered', String(typeGuard.dropped.length));
+
+    await saveProducts(keyword, typeGuard.applied ? guardedItems : (allItems || items), { from, source: 'search' });
 
     /*
      * 가격 신뢰도.
@@ -152,7 +171,7 @@ module.exports = async function handler(req, res) {
      * from 을 넘기면 '방금 확인'과 '오래된 캐시'를 구분한다.
      */
     // guardPrice: 확인 전 급변(suspect)은 현재가로 내보내지 않는다 (_trust.attachTrust 주석).
-    await attachTrust(items, { source: from, guardPrice: true });
+    await attachTrust(guardedItems, { source: from, guardPrice: true });
 
     /*
      * "최근 가격 하락" 정보.
@@ -161,7 +180,7 @@ module.exports = async function handler(req, res) {
      * 쿠팡 API 는 부르지 않는다 — Supabase 조회 1회만 늘어난다.
      * 실패해도 검색은 그대로 진행된다(하락 필터 버튼이 안 뜰 뿐이다).
      */
-    await attachPriceChange(items);
+    await attachPriceChange(guardedItems);
 
     /*
      * 관련도 점수.
@@ -190,7 +209,7 @@ module.exports = async function handler(req, res) {
      */
     // rankItems normalizes text itself; retain original model separators so
     // SM-S942N is checked as a complete code, not only the S942N fragment.
-    const relevance = rankItems(rawKeyword, items, { minScore: 0 });
+    const relevance = rankItems(rawKeyword, guardedItems, { minScore: 0 });
 
     /*
      * 순서.
@@ -248,7 +267,7 @@ module.exports = async function handler(req, res) {
     if (provenance.partialStale) res.setHeader('X-Seosa-Partial-Stale', '1');
     if (provenance.partialResults) res.setHeader('X-Seosa-Partial-Results', '1');
     res.setHeader('Access-Control-Expose-Headers',
-      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Partial-Stale, X-Seosa-Partial-Results, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest');
+      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Partial-Stale, X-Seosa-Partial-Results, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest, X-Seosa-Type-Filtered');
 
     // A single old-price listing or temporarily unavailable merchant is
     // enough to make the complete response ineligible for 5-minute Edge cache.
