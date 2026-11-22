@@ -208,6 +208,7 @@ jobs:
           ADPICK_DAY_BUDGET: '2900'
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          PRICE_REPORT_EMAIL: ${{ vars.PRICE_REPORT_EMAIL }}
           # 수집기가 «이어 붙일 가치가 있다» 고 판정했을 때만 이 파일을 쓴다
           # (collect-all-prices.js continuationDecision 주석 참고).
           PRICE_CONTINUE_FILE: /tmp/collector-continue.json
