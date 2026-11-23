@@ -2,7 +2,10 @@ import { defineConfig } from "@neon/config/v1";
 
 export default defineConfig({
   // Declare your Neon services here
-  auth: false,
+  // Managed Better Auth is provisioned on the default branch's seosa_auth database.
+  // This does not switch existing SEOSA users or API bearer tokens to Neon Auth.
+  // Review `neon config plan` before applying on any other branch.
+  auth: true,
   // Branch policy: per-branch tuning
   branch: (branch) => {
     if (branch.isDefault) {
