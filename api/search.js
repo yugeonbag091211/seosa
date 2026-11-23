@@ -206,13 +206,15 @@ module.exports = async function handler(req, res) {
     // Opt-in public Search 2.0 beta: only the already fetched, sanitized
     // candidate order changes. All products, prices and original links survive.
     // Production default remains the legacy engine until a sealed quality gate passes.
-    if (req.query && req.query.engine === 'mini') {
+    if (req.query && (req.query.engine === 'mini' || req.query.engine === 'mini21')) {
       noStore(res); // do not cache an experimental result under the default path
       let mode = 'fallback';
       try {
-        const result2 = require('./_search2-mini').rerank(rawKeyword, ranked);
+        const algorithm = req.query.engine === 'mini21'
+          ? require('./_search21') : require('./_search2-mini');
+        const result2 = algorithm.rerank(rawKeyword, ranked);
         ranked = result2.items;
-        mode = result2.applied ? 'mini' : 'fallback';
+        mode = result2.applied ? req.query.engine : 'fallback';
       } catch (err) {
         // Canary failure is nonfatal. Keep the original ranked list.
         console.warn('[search2-mini] fallback:', err && err.message);
@@ -269,7 +271,7 @@ module.exports = async function handler(req, res) {
     // A single old-price listing or temporarily unavailable merchant is
     // enough to make the complete response ineligible for 5-minute Edge cache.
     if (provenance.edgeCacheSafe && !(canonicalConfig.enabled && canonicalConfig.percent > 0)
-        && !(req.query && req.query.engine === 'mini')) {
+        && !(req.query && (req.query.engine === 'mini' || req.query.engine === 'mini21'))) {
       cachePublic(res, 300);
     } else {
       noStore(res);

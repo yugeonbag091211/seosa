@@ -66,7 +66,8 @@ test('Public canary is opt-in, default remains unchanged',()=>{
 test('Beta page fetches only existing API with opt-in flag',()=>{
  const html=fs.readFileSync(path.join(__dirname,'../public/search2.html'),'utf8');
  assert(html.includes("'/api/search?keyword='"));
- assert(html.includes("'&engine=mini'"));
+ assert(html.includes("(use21?'mini21':'mini')"));
+ assert(html.includes("X-Seosa-Source"));
  assert(html.includes('noindex,nofollow'));
  assert(html.includes('rel=')===false || html.includes('a.rel='));
 });

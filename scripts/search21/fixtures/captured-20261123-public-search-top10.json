@@ -1,0 +1,1460 @@
+{
+  "description": "Public product titles from SEOSA Production search, captured 2026-11-23; prices are historical and not current. Development data already inspected, NOT sealed independent evaluation.",
+  "rows": [
+    {
+      "query": "노트북",
+      "old": {
+        "source": "cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "삼성 노트북/NT200B5C/NT371B5J /I5 3320M 4G SSD128G/15.6인치 WIN10 Pro",
+            "mall": "쿠팡",
+            "price": 180000,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "BIRDPLAY 노트북 15.6인치 윈도우11 사무 학생용 180도 힌지 휴대 가성비 노트북, JA, WIN11 Home, 8GB, 256GB, 실버",
+            "mall": "쿠팡",
+            "price": 569900,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "LG 올화이트/실버 i7/i5 최신형 RAM 16GB 756GB UHD GRAPHICS 울트라 노트북 WIN11 PRO",
+            "mall": "ADPICK",
+            "price": 735790,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "에이치피/[26년최신] HP 15.6인치 노트북 15-fc0751AU (RYZEN7-7730U/8GB/256GB/윈11/FHD IPS 300nits) 사무용 학생용 가성비 노트북/PC/주변기기 노트북",
+            "mall": "ADPICK",
+            "price": 989000,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "[ LG 직배송]LG 그램 Pro AI 2026 노트북 [16Z95U-G.AS5ZK] (AMD 라이젠 AI 5 / 윈도우11 탑재 / 40.6cm) +무이자12개월",
+            "mall": "ADPICK",
+            "price": 2640000,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "HP 2026 노트북 14 코어i5 인텔 13세대, Natural Silver, 14-EP0312STU, 256GB, 16GB, WIN11 Home",
+            "mall": "쿠팡",
+            "price": 1119000,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "[해외] 새로운 14.1  노트북 인텔 코어 I9-9900 32GB 2TB 윈도우 11 게이밍 컴퓨터 PC 게이머 오피스 울트라 슬림 노트북 1920*1080 HD",
+            "mall": "ADPICK",
+            "price": 358200,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "[최종205만]삼성 갤럭시북5 프로 NT940XHA-K51A AI노트북 윈도우11 대학생 추천 AI체험단혜택",
+            "mall": "ADPICK",
+            "price": 2399000,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "삼성 갤럭시북 이온 NT951XCJ (i7-10510U 16GB S512GB Win10) [중고노트북]",
+            "mall": "ADPICK",
+            "price": 879000,
+            "relevance": 0.585
+          },
+          {
+            "rank": 10,
+            "title": "26 FW  조절식 스트랩 노트북 가방 M0014625238 TP450144188",
+            "mall": "ADPICK",
+            "price": 333000,
+            "relevance": 0.576
+          }
+        ]
+      }
+    },
+    {
+      "query": "무선 이어폰",
+      "old": {
+        "source": "cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "어반사운드 에어 프로 커널형 블루투스 무선 이어폰",
+            "mall": "쿠팡",
+            "price": 11990,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "KONLI 노이즈 캔슬링 커널형 무선 블루투스 이어폰  방수",
+            "mall": "쿠팡",
+            "price": 15900,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "필립스 무선 ENC노이즈캔슬링 블루투스 이어폰",
+            "mall": "쿠팡",
+            "price": 18900,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "브리츠 무선 액티브 노이즈캔슬링 블루투스 이어폰",
+            "mall": "쿠팡",
+            "price": 24900,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "재피렉스 오픈형 블루투스 무선 이어폰 초경량 러닝 운동 대쉬브리즈, 블랙, ZR-R2",
+            "mall": "쿠팡",
+            "price": 77900,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "엠포이 블루투스 이어폰 무선 귀걸이형 고음질 C타입 충전 노이즈캔슬링, 블랙, S9",
+            "mall": "쿠팡",
+            "price": 77990,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "Donerton 무선 귀걸이형 블루투스 이어폰 HD65 ENC 노이즈, 푸른 색, HD65",
+            "mall": "쿠팡",
+            "price": 144450,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "[보리보리] 아트박스 POOM 아트박스/카카오프렌즈 카카오프렌즈 TWS 춘식이 블루투스 무선 이어폰",
+            "mall": "ADPICK",
+            "price": 26910,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "아이리버 오픈형 무선 이어폰 IBO-CLIPON3 클립 귀찌형 러닝 운동 스포츠",
+            "mall": "ADPICK",
+            "price": 39800,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "아이리버 오픈형 무선 이어폰 IBO-OPENRING3 런닝 귀찌형 오픈링3",
+            "mall": "ADPICK",
+            "price": 40900,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "맥북 에어 M4",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "아트박스/힐링쉴드 맥북에어13 M4 M5 ARAG 고화질 저반사 1매 외부3종 +할인쿠폰",
+            "mall": "ADPICK",
+            "price": 85280,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "맥북에어15 M4 M5 ARAG 고화질 저반사 1매 외부3종",
+            "mall": "ADPICK",
+            "price": 89760,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "[기타] 맥북에어 15 M4 (10C CPU 10C GPU) RAM 16GB SSD 512GB MW1M3KH/A 미드나이트[이마트몰] [MW1M3KH/A]",
+            "mall": "ADPICK",
+            "price": 2475870,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "애플 맥북 에어 M4 RAM 16GB 13.6인치 리퍼 노트북",
+            "mall": "ADPICK",
+            "price": 1673685,
+            "relevance": 0.65
+          },
+          {
+            "rank": 5,
+            "title": "MOSISO 맥북 에어 15인치 케이스 | M5 M4 M3 M2 2026 2025-2023 하드쉘 노트북 커버 A3448 A3241 A3114 A2941, 1개, 미드나잇 블랙",
+            "mall": "쿠팡",
+            "price": 20500,
+            "relevance": 0.576
+          },
+          {
+            "rank": 6,
+            "title": "[해외] 네오 13 2026 맥북 에어 13.6, 15.3, M5, M4, M3, M2 프로 14, 16 모델용 프라이버시 보호 필름 (타자기 보호 기능)",
+            "mall": "ADPICK",
+            "price": 11700,
+            "relevance": 0.576
+          },
+          {
+            "rank": 7,
+            "title": "[해외] 네오 13 2026 맥북 에어 13.6, 15.3, M5, M4, M3, M2 프로 14, 16 모델용 자석 부착식 프라이버시 보호 필름 (재사용 가능)",
+            "mall": "ADPICK",
+            "price": 14050,
+            "relevance": 0.576
+          },
+          {
+            "rank": 8,
+            "title": "맥북 에어 13 M4 AR 나노텍스처 저반사 액정보호필름",
+            "mall": "ADPICK",
+            "price": 23800,
+            "relevance": 0.576
+          },
+          {
+            "rank": 9,
+            "title": "[보리보리] 아트박스 POOM 아트박스/바투카 바렌체 맥북에13 노트북파우치/ 맥북에어M4",
+            "mall": "ADPICK",
+            "price": 33840,
+            "relevance": 0.576
+          },
+          {
+            "rank": 10,
+            "title": "[기프트] 맥북에어13 M4 M5 AR 고화질 액정보호필름",
+            "mall": "ADPICK",
+            "price": 53760,
+            "relevance": 0.576
+          }
+        ]
+      }
+    },
+    {
+      "query": "로봇청소기",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "프리티케어 로봇청소기 물걸레 겸용 자율주행 강력흡입 자동충전 대용량",
+            "mall": "쿠팡",
+            "price": 121900,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "JONR 로봇청소기 T5 PRO GEN 2 열풍건조 자동세척 올인원 자동먼지비움, 화이트, T5 Pro Gen 2",
+            "mall": "쿠팡",
+            "price": 449000,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "샤오미 로봇청소기 6, 화이트, PV32GL",
+            "mall": "쿠팡",
+            "price": 689800,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "로보락 로봇청소기 Q8 MAX Pro Plus",
+            "mall": "ADPICK",
+            "price": 549000,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "[해외] 창문 청소 로봇 Liectroux S10, 8방향 물 분사, 가정용 유리·바닥·벽·타일 청소 로봇, 창문용 로봇 청소기, 지능형 내비게이션, 다중 안전 시스템, 프레임리스 작동, 리모컨 및 앱 제어, 음성 안내, 8개 마이크로스위치",
+            "mall": "ADPICK",
+            "price": 142800,
+            "relevance": 0.9
+          },
+          {
+            "rank": 6,
+            "title": "[한경희생활과학] 듀얼클리닝 스마트 창문 로봇 청소기 + 리모컨 / HWC-R110",
+            "mall": "ADPICK",
+            "price": 179000,
+            "relevance": 0.9
+          },
+          {
+            "rank": 7,
+            "title": "아쿠아 SOLAG Sol 수영장 자동 로봇 청소기 스위퍼 원터치 작동",
+            "mall": "ADPICK",
+            "price": 798500,
+            "relevance": 0.9
+          },
+          {
+            "rank": 8,
+            "title": "[해외] 정품 Deebot X12S PRO OMNI 로봇 청소기, 자동 먼지 비움 기능, 자동 세척 기능, 가정용 HEPA 필터, 자동 세척 스테이션 포함",
+            "mall": "ADPICK",
+            "price": 1726000,
+            "relevance": 0.9
+          },
+          {
+            "rank": 9,
+            "title": "[신제품] 홈리아 로봇청소기 스마트 물걸레 청소 강력 흡입 자동충전, 화이트, 클린스테이션",
+            "mall": "쿠팡",
+            "price": 289820,
+            "relevance": 0.65
+          },
+          {
+            "rank": 10,
+            "title": "드리미 올인원 로봇청소기",
+            "mall": "쿠팡",
+            "price": 479000,
+            "relevance": 0.65
+          }
+        ]
+      }
+    },
+    {
+      "query": "애플워치 스트랩",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "투에이비 애플워치 호환 가죽 슬림 볼륨 스트랩, 블랙, 1개",
+            "mall": "쿠팡",
+            "price": 7900,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "신지모루 애플워치 호환 경량 스포츠 스트랩 밴드",
+            "mall": "쿠팡",
+            "price": 8900,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "신지모루 애플워치 호환 밀레니즈 스트랩 밴드",
+            "mall": "쿠팡",
+            "price": 9900,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "MUDU 이태리 스위프트 애플워치 갤럭시워치 가죽 스트랩, 1개",
+            "mall": "쿠팡",
+            "price": 58900,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "애플워치 슬림 밀레니즈 스트랩 풀커버 케이스 세트, 1세트, 스타라이트",
+            "mall": "쿠팡",
+            "price": 13700,
+            "relevance": 0.72
+          },
+          {
+            "rank": 6,
+            "title": "아이몰 갤럭시워치 초경량 에어핏 실리콘 마그네틱 스트랩, 블랙차콜, 1개",
+            "mall": "쿠팡",
+            "price": 19800,
+            "relevance": 0.5
+          },
+          {
+            "rank": 7,
+            "title": "신지모루 3연 디자인 스테인리스 메탈 쥬빌레 스마트워치 밴드 스트랩",
+            "mall": "쿠팡",
+            "price": 14900,
+            "relevance": 0.475
+          },
+          {
+            "rank": 8,
+            "title": "Fegwilde 애플워치 호환 마그네틱 브레이드 스포츠 루프 스트랩+PC 풀커버 케이스 2개입(Series 12 11 10 ~ 1 / ultra 4 ~ 1 / SE 1 2 3), 스타라이트/스타라이트, 1개",
+            "mall": "쿠팡",
+            "price": 19900,
+            "relevance": 0.4
+          },
+          {
+            "rank": 9,
+            "title": "신지모루 방수 실리콘 밴드 스트랩",
+            "mall": "쿠팡",
+            "price": 7900,
+            "relevance": 0.25
+          }
+        ]
+      }
+    },
+    {
+      "query": "노트북 파우치",
+      "old": {
+        "source": "cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "[보리보리] 아트박스 POOM 아트박스/로마네 Brunch Brother 15형 폼폼 부클 와이드 노트북 파우치",
+            "mall": "ADPICK",
+            "price": 35100,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "[하프클럽/알티피아]Romane 15형 오픈 노트북 파우치",
+            "mall": "ADPICK",
+            "price": 47450,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "루미노라 노트북 파우치",
+            "mall": "쿠팡",
+            "price": 8900,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "리디프 올인원 노트북 파우치 15인치 16인치 17인치",
+            "mall": "쿠팡",
+            "price": 17010,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "앤라인 융쿠션 13~16인치 방수 노트북 파우치, 스카이 블루, 1개",
+            "mall": "쿠팡",
+            "price": 19810,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "핸드폰파우치 정리 가방 노트북 파우치 클러치 대형 블랙",
+            "mall": "ADPICK",
+            "price": 165870,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "[기프트] 펭수 아이패드 노트북 파우치 이북파우치",
+            "mall": "ADPICK",
+            "price": 14900,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "LG 그램 정품 노트북 가죽 파우치 14인치15인치 16인치17인치",
+            "mall": "ADPICK",
+            "price": 15000,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "[해외] 휴대용 노트북 토트백 13.3 14 15 15.6 16인치 노트북 파우치 (맥북 에어 프로, HP, 화웨이, 아수스, 델) 서류가방 핸드백",
+            "mall": "ADPICK",
+            "price": 15750,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "생활더봄 귀여운 캐릭터 노트북 태블릿 파우치 13인치 가방",
+            "mall": "ADPICK",
+            "price": 17300,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "세탁세제",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "피지 모락셀라 냄새제거 세탁세제 코튼향",
+            "mall": "쿠팡",
+            "price": 15950,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "허글리 8IN1 딥 클린 초고농축 캡슐 세탁세제 코튼캔디 향, 1개, 100개입",
+            "mall": "쿠팡",
+            "price": 16300,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "허글리 8IN1 딥 클린 초고농축 캡슐 세탁세제 파우더브리즈 향, 2개, 100개입",
+            "mall": "쿠팡",
+            "price": 27520,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "허글리 초고농축 액상 세탁세제 코튼캔디, 3개, 3L",
+            "mall": "쿠팡",
+            "price": 28900,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "키보드",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "로지텍 USB 유선 일반형 키보드",
+            "mall": "쿠팡",
+            "price": 12900,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "앱코 저소음 풀배열 멤브레인 108키 키보드",
+            "mall": "쿠팡",
+            "price": 18710,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "엑토 미니 블루투스 충전식 초슬림 유무선 텐키리스 키보드, 버터 아이보리 + 라떼 브라운, B606, 제조사축",
+            "mall": "쿠팡",
+            "price": 28310,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "에이투 게이밍 LED 유선 기계식 풀키 키보드, 블랙, AG0302, 갈축",
+            "mall": "쿠팡",
+            "price": 59900,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "플레오맥스 LED 백라이트 유선 게이밍 일반형 키보드",
+            "mall": "쿠팡",
+            "price": 10310,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "OMIIYA 키보드 유선 108키 풀배열 멤브레인 저소음 사무용",
+            "mall": "쿠팡",
+            "price": 17900,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "아이리버 Silent 듀얼모드 멀티페어링 블루투스 무소음 무선 키보드, 라벤더, MWK601, 제조사축",
+            "mall": "쿠팡",
+            "price": 28900,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "[해외] G913 탄소 섬유 패턴 컬러 키캡 로지텍 G913tkl/G813/G815용 PBT 미끄럼 방지 맞춤형 기계식 키보드 키캡",
+            "mall": "ADPICK",
+            "price": 12800,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "플럭스 저소음 키보드 마우스 콤보 PLX-KB01CBBL",
+            "mall": "ADPICK",
+            "price": 18900,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "국내정품 로지텍코리아 K270 무선 키보드 블랙 2.4GHz 나노수신기포함/KH",
+            "mall": "ADPICK",
+            "price": 29900,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "무선 마우스",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "로지텍 무선마우스",
+            "mall": "쿠팡",
+            "price": 10970,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "아이리버 항균처리 듀얼모드 멀티페어링 경량 인비저블 블루투스 무소음 무선 마우스, 화이트, MVM1",
+            "mall": "쿠팡",
+            "price": 13500,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "로지텍 무소음 블루투스 무선 마우스",
+            "mall": "쿠팡",
+            "price": 14400,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "드라이비아 무선 리시버 2.4GHz 동글 블루투스 겸용 듀얼 마우스 2 in 1 DPI 스크롤 속도 변환 초경량 무소음 USB 충전식 에어 스마트 폰 아이패드, 메튜블랙, RGB DRMA1",
+            "mall": "쿠팡",
+            "price": 14500,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "DCHK 하리보 무소음 블루투스 멀티 페어링 무선 마우스, 화이트, PTWM-02",
+            "mall": "쿠팡",
+            "price": 16900,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "로지텍 무소음 무선 마우스",
+            "mall": "쿠팡",
+            "price": 24870,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "UGREEN 유그린 5000DPI 무한휠 스크롤 멀티페어링 세미 버티컬 블루투스 무선 무소음 마우스 |인체공학 설계|가로 스크롤|자동절전| 맥북 태블릿 노트북 컴퓨터 PC 호환, Black, M751",
+            "mall": "쿠팡",
+            "price": 27900,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "FURYCUBE G11 초경량 무선 게이밍 마우스 PAW3311 센서 메테오 볼캐노 다이내믹 RGB 3모드 연결 6단계 DPI 인체공학적 디자인 대용량 장시간 사용, 컨투어 화이트, G11마우스",
+            "mall": "쿠팡",
+            "price": 49900,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "로지텍 LIGHTSPEED 무선 게이밍 마우스",
+            "mall": "쿠팡",
+            "price": 33820,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "아이리버 MVM2 멀티페어링 무선 마우스 블랙",
+            "mall": "ADPICK",
+            "price": 15500,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "커피머신",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "[국내도서] 커피머신 첫걸음",
+            "mall": "ADPICK",
+            "price": 15300,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "칼렘 전자동커피머신 에스프레소머신 밀크시스템 사무실 업소용 기업용, 실버, O203",
+            "mall": "쿠팡",
+            "price": 9900000,
+            "relevance": 0.9
+          },
+          {
+            "rank": 3,
+            "title": "[해외] 데롱기 ECAM 커피 머신 전 제품에 사용할 수 있는 물탱크 덮개 액세서리입니다.",
+            "mall": "ADPICK",
+            "price": 17100,
+            "relevance": 0.9
+          },
+          {
+            "rank": 4,
+            "title": "필립스 라떼 클래식 1200 전자동 커피 머신 EP1220/19",
+            "mall": "ADPICK",
+            "price": 668600,
+            "relevance": 0.9
+          },
+          {
+            "rank": 5,
+            "title": "2026 신형 반자동 커피머신 커피그라인더 일체형 에스프레소 아메리카노 라떼 카푸치노 1년 무상 A/S, 흰색, KF5520",
+            "mall": "쿠팡",
+            "price": 309000,
+            "relevance": 0.65
+          },
+          {
+            "rank": 6,
+            "title": "제니퍼룸 전자동 에스프레소 커피머신",
+            "mall": "쿠팡",
+            "price": 320600,
+            "relevance": 0.65
+          },
+          {
+            "rank": 7,
+            "title": "필립스 2200 전자동 에스프레소 커피머신 세트",
+            "mall": "쿠팡",
+            "price": 339890,
+            "relevance": 0.65
+          },
+          {
+            "rank": 8,
+            "title": "[네스카페 돌체구스토] 커피머신 지니오S 베이직 그라파이트+12입 스타벅스 커피캡슐 2박스(하우스블렌드)",
+            "mall": "ADPICK",
+            "price": 129999,
+            "relevance": 0.65
+          },
+          {
+            "rank": 9,
+            "title": "[공식판매점페이백] 네스프레소 공식판매점 에센자 미니 C30 캡슐 커피머신 모음",
+            "mall": "ADPICK",
+            "price": 149000,
+            "relevance": 0.65
+          },
+          {
+            "rank": 10,
+            "title": "필립스 라떼 클래식 1200 전자동 커피머신 EP1220/19",
+            "mall": "ADPICK",
+            "price": 414360,
+            "relevance": 0.65
+          }
+        ]
+      }
+    },
+    {
+      "query": "타이어",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "공기돌이 타이어 공기압 주입기 K-110 plus(신형) 자동차 공기주입기, 1개",
+            "mall": "쿠팡",
+            "price": 219000,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "차오양 H457 미니 샤크 700X25C 로드 타이어 와이어비드 무료배송, 1개",
+            "mall": "쿠팡",
+            "price": 10890,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "Raing 14인치 전기자전거 14 x 2.125 튜브리스타이어 튜브 필요 없는 타이어, 1개",
+            "mall": "쿠팡",
+            "price": 15000,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "금호타이어 솔루스 TA21 195/65R15",
+            "mall": "쿠팡",
+            "price": 68030,
+            "relevance": 0.9
+          },
+          {
+            "rank": 5,
+            "title": "금호타이어 솔루스 TA21 215/55R17",
+            "mall": "쿠팡",
+            "price": 74460,
+            "relevance": 0.9
+          },
+          {
+            "rank": 6,
+            "title": "금호타이어 크루젠 HP51 235/55R19",
+            "mall": "쿠팡",
+            "price": 116360,
+            "relevance": 0.9
+          },
+          {
+            "rank": 7,
+            "title": "금호타이어 솔루스 TA21 205/55R16",
+            "mall": "쿠팡",
+            "price": 262000,
+            "relevance": 0.9
+          },
+          {
+            "rank": 8,
+            "title": "금호타이어 솔루스 TA21 225/45R17",
+            "mall": "쿠팡",
+            "price": 352000,
+            "relevance": 0.9
+          }
+        ]
+      }
+    },
+    {
+      "query": "아이패드",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "Apple 2025 아이패드 (A16 모델)",
+            "mall": "쿠팡",
+            "price": 674100,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "Apple 2026 아이패드 에어 11(M4 모델)",
+            "mall": "쿠팡",
+            "price": 1132380,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "애플 아이패드 에어 11 M4 WiFi 128GB 스페이스 그레이 MH304KH/A",
+            "mall": "ADPICK",
+            "price": 1161570,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "아이패드 에어 13 M4 모아보기 (스펙/색상 선택가능)",
+            "mall": "ADPICK",
+            "price": 1549000,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "[해외] 2024 아이패드 프로 M4 11인치/13인치 256G/512G/1T 와이파이 셀룰러 페이스 아이디, eSIM, 오리지널 와이파이/5G 10코어 CPU 10코어 GPU",
+            "mall": "ADPICK",
+            "price": 2299000,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "뉴욕: 아이패드와 크리스마스 영화와 함께하는 크리스마스 투어 | 미국",
+            "mall": "ADPICK",
+            "price": 51144,
+            "relevance": 0.9
+          },
+          {
+            "rank": 7,
+            "title": "굿노트 데일리 플래너 5컬러 세트 _아이패드 굿노트 속지",
+            "mall": "ADPICK",
+            "price": 2500,
+            "relevance": 0.65
+          },
+          {
+            "rank": 8,
+            "title": "[국내도서] 30일 완성 아이패드 드로잉 with 프로크리에이트",
+            "mall": "ADPICK",
+            "price": 16200,
+            "relevance": 0.65
+          },
+          {
+            "rank": 9,
+            "title": "[블루투스 키보드/무료증정]애플 아이패드 8세대 32GB WIFI전용 10.2인치",
+            "mall": "ADPICK",
+            "price": 262106,
+            "relevance": 0.65
+          },
+          {
+            "rank": 10,
+            "title": "[애플] Apple 아이패드 에어 M2 13인치 128GB 블루 셀룰러 출고가 인하[이마트몰] [아이패드 에어 13 (M2 모델)]",
+            "mall": "ADPICK",
+            "price": 979000,
+            "relevance": 0.65
+          }
+        ]
+      }
+    },
+    {
+      "query": "블루투스 스피커",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "PLEIGO LED 패브릭 블루투스 스피커",
+            "mall": "쿠팡",
+            "price": 11800,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "BEVID 휴대용 미니 무선 TWS 블루투스 스피커 고음질 Type-C 충전",
+            "mall": "쿠팡",
+            "price": 15900,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "비파노 휴대용 생활방수 TWS 블루투스 스피커 플러스, 블랙, HB-08",
+            "mall": "쿠팡",
+            "price": 69800,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "[50w 고출력] 볼티움 블루투스 스피커 리버브온 R-800, VTU-R800, 샌드 베이지",
+            "mall": "쿠팡",
+            "price": 119000,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "Tronsmart T8 휴대용 무선 블루투스 스피커 40W 캠핑용 LED IPX7방수 야외용 18시간재생, 블랙, Tronsmart T8",
+            "mall": "쿠팡",
+            "price": 119000,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "[BonoBoss] BonoBoss BOS-522BT LED 북셸프 블루투스 스피커 (USB 전원)",
+            "mall": "ADPICK",
+            "price": 20948,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "[보리보리] 오너클랜 엑토 미니 무드등 캠핑 무선 블루투스 스피커 BTS-54",
+            "mall": "ADPICK",
+            "price": 49120,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "브리츠 BZ-B1 블루투스 스피커 라디오",
+            "mall": "ADPICK",
+            "price": 62900,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "비파노 휴대용 생활방수 TWS 블루투스 스피커, 블랙, HB-01",
+            "mall": "쿠팡",
+            "price": 69800,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "스누피 에디션 LP 턴테이블 무선 블루투스 스피커",
+            "mall": "ADPICK",
+            "price": 74900,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "에어프라이어",
+      "old": {
+        "source": "cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "필립스 2000 시리즈 보이는 에어프라이어 4.2L",
+            "mall": "쿠팡",
+            "price": 86400,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "리빙웰 스텐 에어프라이어 대용량 16리터 AF16, 블랙, AF16",
+            "mall": "쿠팡",
+            "price": 149000,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "닌자 크리스피 올인원 유리 에어프라이어 3.8L + 1.4L 세트, FN100KRWH, 화이트",
+            "mall": "쿠팡",
+            "price": 212160,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "최신형 리빙웰 30L 특대용량 올스텐 에어프라이어 AF300, AF300, 실버",
+            "mall": "쿠팡",
+            "price": 260000,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "[3년무상AS]플럭스 15L 올스텐 오븐형 에어프라이어",
+            "mall": "ADPICK",
+            "price": 73470,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "[보리보리] 필립스 필립스 2000시리즈 보이는 에어프라이어 4.2L NA220/00 윈도우 타입",
+            "mall": "ADPICK",
+            "price": 114000,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "[카드7%+T멤버십5%] 아이닉 16L 오븐형 에어프라이어 올스텐 로티세리 AO-16L",
+            "mall": "ADPICK",
+            "price": 169000,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "OYEAH 저소음 에어프라이어 4.5L 가정용 AF- 4501 즉시발열 간편세척",
+            "mall": "쿠팡",
+            "price": 36800,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "루미닉 대용량 보이는 에어프라이어 5L",
+            "mall": "쿠팡",
+            "price": 39800,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "홈플래닛 에어프라이어 5L",
+            "mall": "쿠팡",
+            "price": 39990,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "에어프라이어 선반",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "HK.SELL W36 에어프라이어 커피머신 선반",
+            "mall": "쿠팡",
+            "price": 25400,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "[해외] 오븐 액세서리 로티세리 도구 스틸 로스트 치킨 꼬치 요리 바베큐 그릴 치킨 포크 랙 선반 에어프라이어 주방 도구",
+            "mall": "ADPICK",
+            "price": 10500,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "[해외] 조절 가능한 주방 수납 선반, 밥솥, 에어프라이어, 조리기구용 다층 카운터 정리대",
+            "mall": "ADPICK",
+            "price": 17492,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "전자레인지 VTQ572Y9 선반 길이조절 수납장 에어프라이어",
+            "mall": "ADPICK",
+            "price": 56230,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "[보리보리] 맥킨더 전자레인지 선반 수납장 에어프라이어 밥솥 선반 길이조절 렌지대 진열장 오븐렉 N975",
+            "mall": "ADPICK",
+            "price": 89990,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "벨리카가구/(착불) 소코 500 광파오븐 렌지대 밥솥 전자렌지 수납장 에어프라이어 선반/가구/수납 선반/서랍/수납장",
+            "mall": "ADPICK",
+            "price": 141814,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "렌지대 밥솥 에어프라이어 선반 수납장 레인지대 정수기다이 800",
+            "mall": "ADPICK",
+            "price": 150575,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "아트박스/벨리카가구 소미 500 밥솥장 에어프라이어 선반 수납장 렌지대",
+            "mall": "ADPICK",
+            "price": 168820,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "[기프트] 에디 에어프라이어 주방 선반 심플 렌지대 (착불)",
+            "mall": "ADPICK",
+            "price": 171900,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "[기타] 전자레인지 212ZMK62 선반 전자렌지다이 에어프라이어선반 전자레인지수납장 에어프라이어수납장[이마트몰]",
+            "mall": "ADPICK",
+            "price": 54316,
+            "relevance": 0.933
+          }
+        ]
+      }
+    },
+    {
+      "query": "스마트워치",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "젤리타이거 통화가능 스마트워치 JELLYWATCH10",
+            "mall": "쿠팡",
+            "price": 18900,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "DAICOO 다이코 통화가능 GPS 블루투스 스마트워치 42mm R8",
+            "mall": "쿠팡",
+            "price": 19900,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "샤오미 Xiaomi 레드미 스마트워치 6 액티브",
+            "mall": "쿠팡",
+            "price": 54600,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "Donerton 통화가능 스마트워치 P99 1.96인치 대화면 한글판 GPS 스마트 워치, 블루투스, 4.953cm, 핑크 골드",
+            "mall": "쿠팡",
+            "price": 159000,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "블라우풍트 스마트 워치, 골드, 5cm, 블루투스",
+            "mall": "쿠팡",
+            "price": 72900,
+            "relevance": 0.9
+          },
+          {
+            "rank": 6,
+            "title": "Donerton 통화가능 웨어러블 블루투스 스마트 워치 P66 1.85인치 대화면 한글판, 블루투스, 4.699cm, 핑크색",
+            "mall": "쿠팡",
+            "price": 158000,
+            "relevance": 0.9
+          },
+          {
+            "rank": 7,
+            "title": "Donerton T50 블루투스 스마트 워치, 전화 걸고 받기 가능, 대화면 한글 버전, GPS + 블루투스, 46.99mm, 블랙 그레이",
+            "mall": "쿠팡",
+            "price": 140900,
+            "relevance": 0.9
+          }
+        ]
+      }
+    },
+    {
+      "query": "아이패드 케이스",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "아이드 아이패드 클리어아머 애플펜슬 수납 케이스",
+            "mall": "쿠팡",
+            "price": 9790,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "태블리 하이브리드 커버 탈착식 아이패드 케이스, 페일퍼플, 1개",
+            "mall": "쿠팡",
+            "price": 23500,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "슈퍼스킨 클리어아머 플러스 애플펜슬 수납 아이패드 케이스, 크림화이트, 1개",
+            "mall": "쿠팡",
+            "price": 16800,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "태블리 아이패드 마그네틱 분리형 하이앵글 케이스, 스모그그레이, 1개",
+            "mall": "쿠팡",
+            "price": 28500,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "[해외] 귀여운 파란색 천사 날개 모양의 Y자형 접이식 아이패드 케이스 (iPad Air 11, iPad 10세대, 11세대 A16, 9세대, iPad Pro 11, 10.9인치, 13인치 M4, M5, M3, M2 모델 호환)",
+            "mall": "ADPICK",
+            "price": 5840,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "[해외] AJIUYU 아이패드 케이스: 아이패드 프로 11, 프로 13, M4, M5, 에어 11  , 13  , 미니 6/7/8, A16, 11세대, 10세대, 프로 12.9   모델용. 펜 홀더가 있는 태블릿 스탠드 케이스.",
+            "mall": "ADPICK",
+            "price": 10400,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "아이패드 에어(M4/M3/M2) 에어5/에어4 프로 A16 10/9/8/7/6/5세대 미니5 미니6 A17Pro 케이스",
+            "mall": "ADPICK",
+            "price": 11500,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "[기프트] [오늘도착] 아이패드 클리어 애플펜슬 수납 케이스",
+            "mall": "ADPICK",
+            "price": 11990,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "[보리보리] 아트박스 POOM 아트박스/블카마켓 360도 회전 스탠드 레더 케이스 아이패드 프로",
+            "mall": "ADPICK",
+            "price": 12060,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "힐링 커버 케이스 아이패드 에어 4/5세대 10.9인치",
+            "mall": "ADPICK",
+            "price": 19900,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "보조배터리",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "보바 22.5W 휴대용 보조배터리 20000mAh, VA-121, 블랙",
+            "mall": "쿠팡",
+            "price": 42900,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "1+1 프리미엄 도킹형 일체형 미니 보조배터리 5000mAh",
+            "mall": "쿠팡",
+            "price": 9690,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "YINTO 대용량 보조배터리 고속충전 30000mAh PD 22.5W QC3.0 잔량표시",
+            "mall": "쿠팡",
+            "price": 20900,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "PIUJJA 대용량 보조배터리 30000mAh 고속충전 PD 22.5W 잔량표시 멀티단자, 블랙, T13",
+            "mall": "쿠팡",
+            "price": 69800,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "TCG모바일 도킹형 고속 충전 미니 일체형 보조배터리 5000mAh",
+            "mall": "ADPICK",
+            "price": 1999,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "4G LTE 무제한 WiFi (일본 공항 수령 / 무료 보조배터리 포함)",
+            "mall": "ADPICK",
+            "price": 2300,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "국내 SKT 데이터 무제한 포켓와이파이 + 보조배터리 | SKT (주요 공항 &amp; 부산항 수령)",
+            "mall": "ADPICK",
+            "price": 3230,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "엑티몬 일체형 8핀 보조배터리 5000mAh(8 PIN)",
+            "mall": "ADPICK",
+            "price": 8900,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "[기프트] 맥세이프 보조배터리 아이폰 무선충전 10000mAh",
+            "mall": "ADPICK",
+            "price": 13900,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "Anker 나노 22.5W 고속 충전 미니 도킹형 보조배터리 5000mAh 블랙 A1653",
+            "mall": "ADPICK",
+            "price": 22160,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "모니터",
+      "old": {
+        "source": "stale-cache",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "스카이뷰 120Hz 24인치  IPS FHD 광시야각 베젤리스 게이밍 컴퓨터 화이트 모니터",
+            "mall": "쿠팡",
+            "price": 79000,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "한성컴퓨터  FHD IPS 144Hz 게이밍 모니터",
+            "mall": "쿠팡",
+            "price": 109000,
+            "relevance": 1
+          },
+          {
+            "rank": 3,
+            "title": "에이수스 FHD IPS 144Hz 1ms sRGB 125% DCI-P3 90% TUF 게이밍 모니터",
+            "mall": "쿠팡",
+            "price": 146000,
+            "relevance": 1
+          },
+          {
+            "rank": 4,
+            "title": "34인치 울트라와이드 커브드 게이밍 모니터 165Hz UWQHD 4k, 27인치 모니터 200Hz FHD, 커브드 컴퓨터 화면, 특가 할인중, 70cm, 27inch 1k 200Hz",
+            "mall": "쿠팡",
+            "price": 232000,
+            "relevance": 1
+          },
+          {
+            "rank": 5,
+            "title": "큐빅스 FHD PC 모니터, 24인치 LED 100Hz 5ms 내장스피커 광시야각 컴퓨터모니터, DP단자, 무결점, HW240F100C 무결점, 60.45cm",
+            "mall": "쿠팡",
+            "price": 89000,
+            "relevance": 1
+          },
+          {
+            "rank": 6,
+            "title": "뷰싱크 32인치 FHD 슬림베젤 100Hz 게이밍 사무용 모니터 멀티 하이브리드, VSO321F 블랙 일반, 80cm",
+            "mall": "쿠팡",
+            "price": 152000,
+            "relevance": 1
+          },
+          {
+            "rank": 7,
+            "title": "큐빅스 QHD 게이밍 PC 모니터 32인치 LED 165Hz 1ms 광시야각 컴퓨터모니터 DP단자 무결점, CX320Q165E 무결점, 80cm",
+            "mall": "쿠팡",
+            "price": 239000,
+            "relevance": 1
+          },
+          {
+            "rank": 8,
+            "title": "디월스 이지바 모니터 램프 JDA1 노트북 조명",
+            "mall": "ADPICK",
+            "price": 7500,
+            "relevance": 1
+          },
+          {
+            "rank": 9,
+            "title": "[3년무상AS]플럭스 27형 모니터 PLX-MNT27VJWH",
+            "mall": "ADPICK",
+            "price": 129270,
+            "relevance": 1
+          },
+          {
+            "rank": 10,
+            "title": "커세어/제논 엣지 터치스크린 보조 포터블모니터 36.83cm(14.5인치) 크리스탈/PC/주변기기 PC/모니터",
+            "mall": "ADPICK",
+            "price": 309000,
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "query": "샴푸 리필",
+      "old": {
+        "source": "api",
+        "top10": [
+          {
+            "rank": 1,
+            "title": "케라시스 클린노트 샴푸 리필 퓨어 코튼",
+            "mall": "쿠팡",
+            "price": 12800,
+            "relevance": 1
+          },
+          {
+            "rank": 2,
+            "title": "리필라제 모이스처 샴푸, 4.2L, 1개",
+            "mall": "쿠팡",
+            "price": 9650,
+            "relevance": 0.967
+          },
+          {
+            "rank": 3,
+            "title": "어메이즐 탠저린 스파클링 탄산수 pH 샴푸 3L 리필형, 1개, 3L",
+            "mall": "쿠팡",
+            "price": 15900,
+            "relevance": 0.967
+          },
+          {
+            "rank": 4,
+            "title": "어메이즐 피토 딥 클린 샴푸 3L 리필형, 1개, 3L",
+            "mall": "쿠팡",
+            "price": 15900,
+            "relevance": 0.967
+          },
+          {
+            "rank": 5,
+            "title": "케라시스 엑스트라 데미지케어 샴푸",
+            "mall": "쿠팡",
+            "price": 9240,
+            "relevance": 0.667
+          },
+          {
+            "rank": 6,
+            "title": "케라시스 샤이닝 데미지 샴푸",
+            "mall": "쿠팡",
+            "price": 15810,
+            "relevance": 0.667
+          },
+          {
+            "rank": 7,
+            "title": "보드란 헤어샴푸 2000g 8개 한박스 샴푸, 8개, 2kg",
+            "mall": "쿠팡",
+            "price": 35900,
+            "relevance": 0.667
+          }
+        ]
+      }
+    }
+  ]
+}

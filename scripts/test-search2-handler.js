@@ -39,8 +39,20 @@ async function call(engine){
 (async()=>{
  const legacy=await call(null);
  const experimental=await call('mini');
+ const experimental21=await call('mini21');
  assert.equal(legacy.headers['X-Seosa-Search-Engine'],undefined);
  assert.equal(experimental.headers['X-Seosa-Search-Engine'],'mini');
+ assert.equal(experimental21.headers['X-Seosa-Search-Engine'],'mini21');
+ assert.equal(experimental21.body.length,legacy.body.length);
+ assert.deepEqual(new Set(experimental21.body.map(x=>x.productId)),new Set(legacy.body.map(x=>x.productId)));
+ assert(experimental21.body.findIndex(x=>x.productId==='c3') >
+   experimental21.body.findIndex(x=>x.productId==='a1'),'ear tips must follow actual earphones');
+ for(const id of legacy.body.map(x=>x.productId)){
+   const before=legacy.body.find(x=>x.productId===id);
+   const after=experimental21.body.find(x=>x.productId===id);
+   assert.equal(after.lprice,before.lprice);
+   assert.equal(after.link,before.link);
+ }
  assert.equal(legacy.body.length,experimental.body.length);
  assert.deepEqual(new Set(legacy.body.map(x=>x.productId)),new Set(experimental.body.map(x=>x.productId)));
  for(const id of legacy.body.map(x=>x.productId)){
@@ -50,13 +62,14 @@ async function call(engine){
    assert.equal(after.link,before.link,id);
  }
  assert(!/^public/.test(experimental.headers['Cache-Control']||''));
+ assert(!/^public/.test(experimental21.headers['Cache-Control']||''));
  assert(legacy.headers['Access-Control-Expose-Headers'].includes('X-Seosa-Search-Engine'));
  assert(experimental.headers['Access-Control-Expose-Headers'].includes('X-Seosa-Search-Engine'));
  const unknown=await call('unrecognized');
  assert.equal(unknown.headers['X-Seosa-Search-Engine'],undefined);
  assert.deepEqual(legacy.body,unknown.body);
  assert.equal(reads,0);
- assert.equal(writes,3); // The existing handler's save path once per request; NO extra writes.
+ assert.equal(writes,4); // One existing save path per request; Search21 causes NO extra writes.
  console.log('PASS handler default-unchanged + opt-in MiniSearch + strict fallback');
  console.log('PASS links, prices, source IDs, candidate counts, cache isolation');
  console.log('PASS no extra DB writes, no actual network calls');
