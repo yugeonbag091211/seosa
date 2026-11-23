@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#f8fafc">
+  <title>SEOSA Search 2.0 베타 — 실시간 상품 검색</title>
+  <link rel="icon" href="/favicon.svg">
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#161f2b;background:#f7f8fa}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh}
+    header{background:white;border-bottom:1px solid #e5e7eb}
+    .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+    .head{display:flex;align-items:center;justify-content:space-between;min-height:76px;gap:16px}
+    .logo{font-weight:800;letter-spacing:-.4px;font-size:23px;color:#151f29;text-decoration:none}
+    .badge{font-size:11px;font-weight:750;border:1px solid #c9d0db;border-radius:99px;padding:4px 9px;margin-left:8px;vertical-align:middle}
+    nav a{color:#5b6776;text-decoration:none;font-size:13px}
+    h1{font-size:clamp(29px,5vw,43px);letter-spacing:-1.5px;margin:38px 0 12px}
+    .intro{color:#637183;line-height:1.8;margin:0 0 30px;max-width:760px}
+    form{display:flex;gap:8px;margin-bottom:12px}
+    input{flex:1;min-width:0;padding:17px 19px;border:1px solid #bfc9d6;border-radius:12px;font-size:17px;background:#fff}
+    input:focus{outline:2px solid #406bcb;outline-offset:1px}
+    button{border:0;border-radius:12px;background:#1c2d44;color:white;font-weight:700;font-size:16px;padding:14px 23px;cursor:pointer}
+    button:disabled{opacity:.5}
+    .suggestions{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:20px}
+    .suggestions button{font-size:12px;font-weight:500;color:#657186;padding:8px 12px;background:white;border:1px solid #dde3eb;border-radius:99px}
+    .disclaimer{font-size:12px;color:#687787;line-height:1.7;margin:20px 0 25px}
+    .meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 15px;flex-wrap:wrap;color:#586779;font-size:13px}
+    #status{min-height:40px;color:#586779}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:13px;padding-bottom:48px}
+    .item{min-height:180px;padding:20px;background:white;border:1px solid #e2e7ee;border-radius:14px;display:flex;flex-direction:column;gap:11px}
+    .mall{font-size:12px;font-weight:650;color:#5f7a9a}
+    .title{font-size:15px;font-weight:650;line-height:1.58;overflow-wrap:anywhere;flex:1}
+    .price{font-size:19px;font-weight:800}
+    .price small{font-size:11px;font-weight:400;color:#7a8694}
+    .buy{display:inline-flex;align-items:center;justify-content:center;background:#162b46;color:white;font-size:13px;font-weight:650;padding:11px 14px;border-radius:9px;text-decoration:none}
+    .notice{padding:16px 18px;border:1px solid #dfe6ed;border-radius:10px;font-size:13px;line-height:1.65;color:#61718a;background:#fff}
+    footer{border-top:1px solid #e6eaf0;margin-top:40px;padding:24px 0 38px;color:#7c8896;font-size:12px;line-height:1.8}
+    @media(max-width:600px){.wrap{padding:0 16px}.head{min-height:66px}button{padding:13px 16px}h1{margin-top:28px}}
+  </style>
+</head>
+<body>
+<header><div class="wrap head"><a class="logo" href="/">SEOSA <span class="badge">SEARCH 2.0 BETA</span></a><nav><a href="/">기존 서사 검색으로 돌아가기</a></nav></div></header>
+<main class="wrap">
+  <h1>쇼핑 검색, 다시 설계하다.</h1>
+  <p class="intro">새 오픈소스 검색 엔진을 실제 쿠팡·제휴몰 상품 검색에 적용한 공개 베타입니다. 기존 검색과 동일한 상품 공급원·가격 기록을 사용하며, 검색 결과 정렬 방식만 실험합니다.</p>
+  <form id="searchForm">
+    <input id="keyword" name="keyword" maxlength="80" autocomplete="off" placeholder="어떤 상품을 찾으세요?" aria-label="상품 검색어" required>
+    <button id="submit" type="submit">검색</button>
+  </form>
+  <div class="suggestions" aria-label="추천 검색어">
+    <button type="button" data-q="노트북">노트북</button>
+    <button type="button" data-q="무선 이어폰">무선 이어폰</button>
+    <button type="button" data-q="로봇청소기">로봇청소기</button>
+    <button type="button" data-q="맥북 에어 M4">맥북 에어 M4</button>
+  </div>
+  <div class="notice">이 페이지는 검색 성능을 검증하기 위한 실험 서비스입니다. 검색 결과에 본품·액세서리·다른 모델이 섞일 수 있습니다. 표시 가격은 최종 결제 금액이 아니며 옵션·배송비·쿠폰에 따라 달라집니다.</div>
+  <div class="meta"><span id="summary">검색어를 입력해 주세요.</span><span id="engine"></span></div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <section id="results" class="grid" aria-label="상품 검색 결과"></section>
+  <p class="disclaimer">제휴 안내: 이 페이지에는 제휴 링크가 포함될 수 있으며, 해당 링크를 통해 구매하면 SEOSA가 일정 수수료를 받을 수 있습니다. 쇼핑몰에서 상품명·판매 조건·최종 가격을 다시 확인해 주세요.</p>
+</main>
+<footer><div class="wrap">SEOSA Search 2.0 — 오픈소스 실험 검색 · 운영 검색 기본값은 기존 엔진을 유지합니다. 이 페이지는 자동으로 검색엔진에 색인되지 않도록 설정되어 있습니다.</div></footer>
+<script>
+(function(){
+  'use strict';
+  const input=document.getElementById('keyword');
+  const form=document.getElementById('searchForm');
+  const btn=document.getElementById('submit');
+  const results=document.getElementById('results');
+  const status=document.getElementById('status');
+  const summary=document.getElementById('summary');
+  const engine=document.getElementById('engine');
+  let controller=null;
+  const money=x=>new Intl.NumberFormat('ko-KR').format(Number(x));
+  const str=x=>String(x==null?'':x);
+  function safeUrl(raw){
+    try{const u=new URL(str(raw));return ['http:','https:'].includes(u.protocol)?u.href:null;}catch{return null;}
+  }
+  function addText(parent,cls,value,tag='div'){
+    const el=document.createElement(tag);el.className=cls;el.textContent=value;parent.appendChild(el);return el;
+  }
+  function show(items){
+    results.replaceChildren();
+    for(const p of items){
+      if(!p||typeof p!=='object')continue;
+      const card=document.createElement('article');card.className='item';
+      addText(card,'mall',str(p.mall||'제휴몰'));
+      addText(card,'title',str(p.title||'상품명 확인 필요'));
+      const n=Number(p.lprice);
+      if(Number.isFinite(n)&&n>0){
+        const price=addText(card,'price',money(n)+'원');
+        const note=document.createElement('small');note.textContent='  · 표시 가격';price.appendChild(note);
+      }else addText(card,'price','가격 확인');
+      const url=safeUrl(p.link);
+      if(url){
+        const a=document.createElement('a');a.className='buy';a.href=url;
+        a.target='_blank';a.rel='noopener noreferrer sponsored';a.textContent='쇼핑몰에서 확인';
+        card.appendChild(a);
+      }
+      results.appendChild(card);
+    }
+  }
+  async function run(q){
+    q=str(q).trim().slice(0,80);if(!q)return;
+    if(controller)controller.abort();
+    controller=new AbortController();
+    btn.disabled=true;results.replaceChildren();status.textContent='상품을 검색하고 있습니다.';
+    summary.textContent='검색 중';engine.textContent='';
+    try{
+      const response=await fetch('/api/search?keyword='+encodeURIComponent(q)+'&engine=mini',{
+        signal:controller.signal,cache:'no-store',credentials:'same-origin'
+      });
+      if(!response.ok)throw new Error(response.status===429?'요청이 많습니다. 잠시 후 다시 시도해 주세요.':'검색 서버가 응답하지 않았습니다. ('+response.status+')');
+      const data=await response.json();
+      if(!Array.isArray(data))throw new Error('검색 응답 형식이 올바르지 않습니다.');
+      const mode=response.headers.get('X-Seosa-Search-Engine');
+      engine.textContent=mode==='mini'?'MiniSearch 베타 정렬':mode==='fallback'?'안전 전환 · 기존 정렬':'검색 엔진 상태 미확인';
+      status.textContent=data.length?'':'일치하는 상품을 찾지 못했습니다.';
+      summary.textContent=q+' · 상품 '+data.length+'건';
+      show(data);
+    }catch(e){
+      if(e.name==='AbortError')return;
+      status.textContent=e.message||'검색을 완료하지 못했습니다.';
+      summary.textContent='검색 실패';
+    }finally{btn.disabled=false;}
+  }
+  form.addEventListener('submit',e=>{
+    e.preventDefault();const q=input.value.trim();if(!q)return;
+    history.replaceState(null,'','/search2.html?q='+encodeURIComponent(q));run(q);
+  });
+  document.querySelectorAll('button[data-q]').forEach(b=>b.addEventListener('click',()=>{
+    input.value=b.getAttribute('data-q');form.requestSubmit();
+  }));
+  const q=new URLSearchParams(location.search).get('q');
+  if(q){input.value=q.slice(0,80);run(input.value);}
+})();
+</script>
+</body>
+</html>
