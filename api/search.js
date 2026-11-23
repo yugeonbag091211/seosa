@@ -203,6 +203,22 @@ module.exports = async function handler(req, res) {
      * (_search.sortByRelevance 주석 참고).
      */
     let ranked = sortByRelevance(relevance.items);
+    // Opt-in public Search 2.0 beta: only the already fetched, sanitized
+    // candidate order changes. All products, prices and original links survive.
+    // Production default remains the legacy engine until a sealed quality gate passes.
+    if (req.query && req.query.engine === 'mini') {
+      noStore(res); // do not cache an experimental result under the default path
+      let mode = 'fallback';
+      try {
+        const result2 = require('./_search2-mini').rerank(rawKeyword, ranked);
+        ranked = result2.items;
+        mode = result2.applied ? 'mini' : 'fallback';
+      } catch (err) {
+        // Canary failure is nonfatal. Keep the original ranked list.
+        console.warn('[search2-mini] fallback:', err && err.message);
+      }
+      res.setHeader('X-Seosa-Search-Engine', mode);
+    }
     const canonicalConfig = Canonical.config();
     if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
       // The active group state is read on every request so a suspension is immediate.
@@ -248,11 +264,12 @@ module.exports = async function handler(req, res) {
     if (provenance.partialStale) res.setHeader('X-Seosa-Partial-Stale', '1');
     if (provenance.partialResults) res.setHeader('X-Seosa-Partial-Results', '1');
     res.setHeader('Access-Control-Expose-Headers',
-      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Partial-Stale, X-Seosa-Partial-Results, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest');
+      'X-Seosa-Source, X-Seosa-Blocked, X-Seosa-Partial-Stale, X-Seosa-Partial-Results, X-Seosa-Correct, X-Seosa-Correct-Kind, X-Seosa-Suggest, X-Seosa-Search-Engine');
 
     // A single old-price listing or temporarily unavailable merchant is
     // enough to make the complete response ineligible for 5-minute Edge cache.
-    if (provenance.edgeCacheSafe && !(canonicalConfig.enabled && canonicalConfig.percent > 0)) {
+    if (provenance.edgeCacheSafe && !(canonicalConfig.enabled && canonicalConfig.percent > 0)
+        && !(req.query && req.query.engine === 'mini')) {
       cachePublic(res, 300);
     } else {
       noStore(res);
