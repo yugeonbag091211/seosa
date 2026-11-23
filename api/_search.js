@@ -1497,7 +1497,25 @@ function rankItems(keyword, items, opts = {}) {
     return { it, r, f };
   });
 
-  const kept = scored.filter(s => s.r.score >= minScore);
+  /*
+   * ★ 토큰이 «하나도» 안 걸린 상품은 minScore 0 이어도 내보내지 않는다
+   *   (2026-11-23 전수 감사, 운영 실측).
+   *
+   *   운영 «LG 그램 16» 을 최저가순으로 보면 1위가 699원 «올가드 보습 스파
+   *   핸드 마스크 16g» 였다. 그 상품의 scoreTitle 은 score 0 · hits [] —
+   *   검색어의 어느 토큰도 정확히도, 부분문자열로도, 어간으로도, 합성어
+   *   조각으로도, 동의어로도 제목에 없다. 그런데 통과 조건이 `>= minScore`
+   *   이고 api/search.js 는 0 을 넘기므로 `0 >= 0` 으로 그대로 통과했다.
+   *
+   *   minScore 0 의 뜻은 바꾸지 않는다(«무엇을 지울까가 아니라 무엇을 먼저
+   *   볼까»). 0 은 «관련도가 낮다» 가 아니라 «관련이 하나도 확인되지 않았다»
+   *   라서 다르다. 한 토큰이라도 걸리면 아무리 낮아도 남는다.
+   *
+   *   실측: 운영 검색어 34개 · 상품 506건 중 0점은 2건(0.4%)이고 둘 다
+   *   명백한 무관 상품이었다(핸드팩 · 갤럭시A25 보호필름).
+   *   scripts/test-search-zero-coverage.js 가 이 경계를 고정한다.
+   */
+  const kept = scored.filter(s => s.r.score > 0 && s.r.score >= minScore);
   if (!kept.length) {
     return { items: [], dropped: scored.length + intentDropped, removed, allBelow: true };
   }
