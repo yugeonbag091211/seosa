@@ -103,6 +103,12 @@
       results.appendChild(card);
     }
   }
+  const use21=new URLSearchParams(location.search).get('v')==='21';
+  if(use21){
+    document.title='SEOSA Search 2.1 베타 — 판매 대상 중심 검색';
+    document.querySelector('.badge').textContent='SEARCH 2.1 BETA';
+    document.querySelector('.intro').textContent='실제 판매 상품과 호환 액세서리·책·서비스를 구분한 후 관련도 순위를 정하는 Search 2.1 실험입니다. 기존 쇼핑몰·가격 데이터와 구매 링크는 유지합니다.';
+  }
   async function run(q){
     q=str(q).trim().slice(0,80);if(!q)return;
     if(controller)controller.abort();
@@ -110,15 +116,19 @@
     btn.disabled=true;results.replaceChildren();status.textContent='상품을 검색하고 있습니다.';
     summary.textContent='검색 중';engine.textContent='';
     try{
-      const response=await fetch('/api/search?keyword='+encodeURIComponent(q)+'&engine=mini',{
+      const response=await fetch('/api/search?keyword='+encodeURIComponent(q)+'&engine='+(use21?'mini21':'mini'),{
         signal:controller.signal,cache:'no-store',credentials:'same-origin'
       });
       if(!response.ok)throw new Error(response.status===429?'요청이 많습니다. 잠시 후 다시 시도해 주세요.':'검색 서버가 응답하지 않았습니다. ('+response.status+')');
       const data=await response.json();
       if(!Array.isArray(data))throw new Error('검색 응답 형식이 올바르지 않습니다.');
       const mode=response.headers.get('X-Seosa-Search-Engine');
-      engine.textContent=mode==='mini'?'MiniSearch 베타 정렬':mode==='fallback'?'안전 전환 · 기존 정렬':'검색 엔진 상태 미확인';
-      status.textContent=data.length?'':'일치하는 상품을 찾지 못했습니다.';
+      engine.textContent=mode==='mini21'?'Search 2.1 · 판매 대상 우선':mode==='mini'?'MiniSearch 2.0 정렬':mode==='fallback'?'안전 전환 · 기존 정렬':'검색 엔진 상태 미확인';
+      const stale=response.headers.get('X-Seosa-Source')==='stale-cache' || response.headers.get('X-Seosa-Partial-Stale')==='1';
+      const partial=response.headers.get('X-Seosa-Partial-Results')==='1' || response.headers.get('X-Seosa-Blocked')==='1';
+      status.textContent=[data.length?'':'일치하는 상품을 찾지 못했습니다.',
+        stale?'일부 가격은 이전 수집 기록입니다. 실제 판매가를 쇼핑몰에서 확인해 주세요.':'',
+        partial?'일부 쇼핑몰 결과가 누락되었을 수 있습니다.':''].filter(Boolean).join(' ');
       summary.textContent=q+' · 상품 '+data.length+'건';
       show(data);
     }catch(e){
@@ -129,7 +139,7 @@
   }
   form.addEventListener('submit',e=>{
     e.preventDefault();const q=input.value.trim();if(!q)return;
-    history.replaceState(null,'','/search2.html?q='+encodeURIComponent(q));run(q);
+    history.replaceState(null,'','/search2.html?'+(use21?'v=21&':'')+'q='+encodeURIComponent(q));run(q);
   });
   document.querySelectorAll('button[data-q]').forEach(b=>b.addEventListener('click',()=>{
     input.value=b.getAttribute('data-q');form.requestSubmit();
