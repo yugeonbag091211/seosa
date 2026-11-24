@@ -100,6 +100,18 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: '검색어를 다시 입력해 주세요' });
   }
 
+  /*
+   * 단계별 시간 (2026-11-24).
+   *
+   * 운영 «LG 그램 16» 검색이 41.8초 걸렸다. DB 의 외부 호출 기록으로 재 보면 공급자 단계는
+   * 요청 시작 12초 안에 끝났고(ADPICK 9.1초) 나머지 약 30초는 그 뒤 단계였다 — 그런데
+   * 어느 단계인지 가를 기록이 없었다. 그래서 단계마다 잰 값을 Server-Timing 헤더와 로그
+   * 한 줄([search-timing])로 남긴다. 동작은 바꾸지 않는다.
+   */
+  const t0 = Date.now();
+  const timing = {};
+  const since = start => Date.now() - start;
+
   try {
     // 쿠팡은 _coupang.js를 거친다. 캐시가 신선하면 API 호출 0회로 끝난다.
     //
@@ -107,6 +119,7 @@ module.exports = async function handler(req, res) {
     // 두 번 들어오기만 해도 뒤쪽은 쿠팡 결과를 통째로 잃는다. 한 칸(약 1.2초)은
     // 기다리고, 그보다 더 밀리면(=앞에 여러 건이 쌓였으면) 기다리지 않고
     // 캐시 결과로 응답한다. 사용자를 무한정 세워두지 않는다.
+    let tStage = Date.now();
     const result = await searchAll(keyword, {
       coupangLimit: RESULT_LIMIT,
       adpickLimit: ADPICK_RESULT_LIMIT,
@@ -131,6 +144,7 @@ module.exports = async function handler(req, res) {
      *   503 이면 프론트 Api.call 이 오류 경로(«검색 중 오류가 났어요 · 다시 시도»)로 간다.
      *   캐시하지 않는다 — 복구된 뒤에도 장애 응답이 남으면 안 된다.
      */
+    timing.prov = since(tStage);
     const {items, allItems, from, failed, errors} = result;
     if (failed) {
       noStore(res);
@@ -142,7 +156,9 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    tStage = Date.now();
     await saveProducts(keyword, allItems || items, { from, source: 'search' });
+    timing.save = since(tStage);
 
     /*
      * 가격 신뢰도.
@@ -152,7 +168,13 @@ module.exports = async function handler(req, res) {
      * from 을 넘기면 '방금 확인'과 '오래된 캐시'를 구분한다.
      */
     // guardPrice: 확인 전 급변(suspect)은 현재가로 내보내지 않는다 (_trust.attachTrust 주석).
-    await attachTrust(items, { source: from, guardPrice: true });
+    //
+    // ★ 아래 «최근 가격 하락» 과 함께 돈다 (2026-11-24). 둘 다 저장이 끝난 뒤의 기록을 읽기만
+    //   하고, 서로가 붙이는 값(trust · priceChange)을 읽지 않는다 — attachPriceChange 는
+    //   product_id·mall·옵션(vendorItemId)으로만 잇는다(_facets.pickRowForItem).
+    tStage = Date.now();
+    const trustDone = Promise.resolve(attachTrust(items, { source: from, guardPrice: true }))
+      .then(() => { timing.trust = since(tStage); });
 
     /*
      * "최근 가격 하락" 정보.
@@ -161,7 +183,8 @@ module.exports = async function handler(req, res) {
      * 쿠팡 API 는 부르지 않는다 — Supabase 조회 1회만 늘어난다.
      * 실패해도 검색은 그대로 진행된다(하락 필터 버튼이 안 뜰 뿐이다).
      */
-    await attachPriceChange(items);
+    const dropDone = Promise.resolve(attachPriceChange(items)).then(() => { timing.drop = since(tStage); });
+    await Promise.all([trustDone, dropDone]);
 
     /*
      * 관련도 점수.
@@ -190,6 +213,7 @@ module.exports = async function handler(req, res) {
      */
     // rankItems normalizes text itself; retain original model separators so
     // SM-S942N is checked as a complete code, not only the S942N fragment.
+    tStage = Date.now();
     const relevance = rankItems(rawKeyword, items, { minScore: 0 });
 
     /*
@@ -203,6 +227,7 @@ module.exports = async function handler(req, res) {
      * (_search.sortByRelevance 주석 참고).
      */
     let ranked = sortByRelevance(relevance.items);
+    timing.rank = since(tStage);
     // Opt-in public Search 2.0 beta: only the already fetched, sanitized
     // candidate order changes. All products, prices and original links survive.
     // Production default remains the legacy engine until a sealed quality gate passes.
@@ -225,7 +250,9 @@ module.exports = async function handler(req, res) {
     if (canonicalConfig.enabled && canonicalConfig.percent > 0) {
       // The active group state is read on every request so a suspension is immediate.
       noStore(res);
+      tStage = Date.now();
       ranked = await Canonical.collapseItems(ranked, { db: supabase, config: canonicalConfig });
+      timing.canon = since(tStage);
     }
 
     /*
@@ -276,6 +303,11 @@ module.exports = async function handler(req, res) {
     } else {
       noStore(res);
     }
+    timing.total = since(t0);
+    res.setHeader('Server-Timing', Object.entries(timing).map(([k, v]) => `${k};dur=${v}`).join(', '));
+    console.log(`[search-timing] ${JSON.stringify({ ...timing, items: ranked.length, src: provenance.source,
+      coupang: result.providerSources && result.providerSources.coupang,
+      adpick: result.providerSources && result.providerSources.adpick, kw: String(keyword).slice(0, 40) })}`);
     // 구매 링크는 공통 관문(_affiliate)을 지난 값만 내보낸다. 저장(saveProducts)은 위에서 원본으로 끝났다.
     res.json(sanitizeItemLinks(ranked));
   } catch (e) {

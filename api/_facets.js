@@ -23,6 +23,41 @@ const { plausibleDrop, parsePrice, vendorIdOf } = require('./_price');
 /** product_id in (...) 한 번에 넣을 개수. _trust.js 와 같은 이유로 나눠 보낸다. */
 const CHUNK = 100;
 
+const DROP_COLUMNS = 'product_id, mall, current_price, prev_price, all_time_low, drop_amount, drop_pct, is_all_time_low, link';
+
+/*
+ * ★ 함수가 있으면 함수로, 없으면 뷰로 (2026-11-24).
+ *
+ *   price_drop_top 뷰를 product_id IN (...) 로 읽으면 뷰 안의 all_time_low 집계가
+ *   LEFT JOIN 안쪽이라 조건이 내려가지 않는다. 검색 결과 18개를 위해 price_history
+ *   전체(565,002행)를 훑고 83,316개 그룹을 집계했다 — 운영 EXPLAIN ANALYZE 서버 실행
+ *   423~479ms, 디스크 임시 파일 7MB. 검색마다 한 번씩이다.
+ *
+ *   supabase/2026-11-24-price-drop-for-products.sql 의 함수는 같은 식을 요청한 상품만
+ *   계산한다(운영 DB 세 묶음에서 뷰와 행이 같았고 2~13ms). 그 SQL 은 승인 뒤에 적용한다.
+ *   적용 전에는 함수가 없다(PGRST202) — 그때는 한 번 확인하고 뷰로 돌아가 지금과 같다.
+ *   함수 호출이 다른 이유로 실패해도 그 묶음은 뷰로 다시 읽는다. 끄려면
+ *   SEOSA_PRICE_DROP_RPC=0.
+ */
+let dropRpcMissing = false;
+function missingFunction(error) {
+  return /could not find|does not exist|schema cache|PGRST202|42883/i
+    .test(`${(error && error.code) || ''} ${(error && error.message) || ''}`);
+}
+async function loadDropRows(ids) {
+  if (!dropRpcMissing && process.env.SEOSA_PRICE_DROP_RPC !== '0') {
+    try {
+      const { data, error } = await supabase.rpc('price_drop_for_products', { p_ids: ids });
+      if (!error && Array.isArray(data)) return { data, error: null, via: 'rpc' };
+      if (error && missingFunction(error)) dropRpcMissing = true;
+    } catch (_) {
+      // 읽기 전용 검증 환경의 RPC 차단 등 — 뷰로 읽는다.
+    }
+  }
+  const { data, error } = await supabase.from('price_drop_top').select(DROP_COLUMNS).in('product_id', ids);
+  return { data, error, via: 'view' };
+}
+
 /**
  * 이 상품에 붙여도 되는 시세판 행을 고른다. 확신이 없으면 아무것도 고르지 않는다.
  *
@@ -104,10 +139,7 @@ async function attachPriceChange(items) {
   const byKey = new Map();
 
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await supabase
-      .from('price_drop_top')
-      .select('product_id, mall, current_price, prev_price, all_time_low, drop_amount, drop_pct, is_all_time_low, link')
-      .in('product_id', ids.slice(i, i + CHUNK));
+    const { data, error } = await loadDropRows(ids.slice(i, i + CHUNK));
 
     if (error) {
       console.warn(`[facets] 가격 하락 조회 실패(하락 정보 없이 진행): ${error.message}`);
@@ -158,5 +190,5 @@ async function attachPriceChange(items) {
 module.exports = {
   attachPriceChange,
   // 테스트용 순수 함수 (다른 모듈이 부르지 않는다).
-  _internal: { pickRowForItem }
+  _internal: { pickRowForItem, loadDropRows, resetDropRpc: () => { dropRpcMissing = false; } }
 };
