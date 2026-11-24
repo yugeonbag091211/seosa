@@ -766,10 +766,124 @@ function substituteRelation(query, title) {
     : { factor: 1, reason: '' };
 }
 
+/*
+ * 판매 대상이 «물건» 이 아닌 글 — 책·음반과 체험·여행 상품 (2026-11-24).
+ *
+ * 상품명이 검색어를 그대로 품고 있어도 파는 것이 그 물건이 아닐 수 있다.
+ * 운영 공급자 캐시(검색어 4,416개)를 재생하면 짧은 상품 검색어 3,787개 중
+ *   1위가 책인 것 90개    «고추장» → «[국내도서] 고추장 심부름»
+ *                         «어쿠스틱 기타» → «[국내도서] 기초 어쿠스틱 기타 트레이닝 365일»
+ *   1위가 체험인 것 49개  «레몬» → «도쿄 신주쿠 | 야키니쿠 … 규탄노 레몬 | 좌석 예약 전용»
+ *                         «소금» → «비엘리치카 소금 광산 투어»
+ * 였다. 둘 다 검색어 커버리지가 1.0 이라 다른 관계 계수로는 내려가지 않는다.
+ *
+ * 판정은 상품명에 덧붙은 «판매 형태» 표지만 쓴다 — 낱말 사전이 아니다.
+ *   책·음반  상품명 맨 앞의 서점 분류 태그 ([국내도서]·[eBook]·[학술논문]·[음반] …).
+ *            교보문고가 ADPICK 으로 넘기는 상품명에 붙는다. 같은 판매처의 [기프트]
+ *            (일반 상품)는 해당하지 않는다.
+ *   체험     ADPICK 판매처가 여행·체험 플랫폼이다. 클룩·KKday·트립닷컴은 상품
+ *            전부가 투어·입장권·예약이었다. 마이리얼트립은 여행용품(캐리어·충전기)도
+ *            팔아서, 상품명에 체험 표지가 있을 때만 체험으로 본다.
+ *
+ * 버리지 않는다. 내려 보낼 뿐이다(«무엇을 지울까가 아니라 무엇을 먼저 볼까»).
+ * 그리고 사용자가 그것을 찾는 경우에는 걸지 않는다:
+ *   - 검색어에 책·여행 낱말이 있다 («수학 문제집», «오사카 투어»)
+ *   - 이번 후보의 절반 이상이 그 형태다 — 목록 자체가 그 검색어의 뜻을 말해 준다
+ *     («해리포터» 처럼 책 제목인 검색어). detectBrandHead 가 목록으로 브랜드를
+ *     판정하는 것과 같은 방식이다.
+ */
+const SOLD_FORM_FACTOR = 0.3;
+const BOOK_TAG_RE = /^\s*\[(?:국내도서|외국도서|해외도서|서양도서|일본도서|중국도서|ebook|e북|전자책|오디오북|중고도서|학술논문|음반|잡지)\]/i;
+const BOOK_QUERY_RE = /책(?!상|장|가방|꽂이|받침|갈피|걸이)|도서|교재|문제집|소설|만화|웹툰|동화|그림책|에세이|시집|원서|잡지|참고서|단어장|기출|수험서|교본|전집|학습지|ebook|e북|전자책|오디오북|논문|음반|앨범|\blp\b|\bcd\b|\bost\b/i;
+const EXPERIENCE_MERCHANTS = new Set(['클룩', 'KKday', '트립닷컴']);
+const EXPERIENCE_MERCHANTS_MIXED = new Set(['마이리얼트립']);
+// 마이리얼트립 상품명 1,151건(운영 공급자 캐시)으로 고른 체험 표지. 857건을 잡았고, 그 안에
+// 실물 낱말(케이블·컵·캐리어·무드등…)이 섞인 22건도 전부 체험이었다(«머그컵 만들기» 등).
+// «마사지»·«스파» 는 «진동마사지 손난로» 같은 실물을 잡아서 넣지 않았다.
+const EXPERIENCE_MARK_RE = /투어|입장권|티켓|체험|클래스|워크숍|예약|패스|크루즈|스냅|숙박|액티비티|이용권|바우처|픽업|샌딩|레스토랑|전세\s*차량|단독\s*차량|만들기|공방|콘서트|공연|전시|박물관|미술관|아쿠아리움|동물원|테마파크|하이킹|트레킹|트래킹|라운딩|스노클링|다이빙|서핑|요트|시음|시식|강좌|레슨|수업|강습|소그룹|호핑|래프팅|사파리|온천|전망대|그린피|18홀|셔틀|esim|이심|유심|\d박\s*\d일|당일\s*치기|\||^\s*\[[^\]]*\/[^\]]*\]|\btour\b|\btickets?\b|\bpass\b|\bexperience\b/i;
+const TRAVEL_QUERY_RE = /투어|여행|입장권|티켓|체험|클래스|워크숍|숙박|호텔|리조트|펜션|렌트|렌터카|유심|이심|esim|와이파이|패스|크루즈|스냅|액티비티|공항|픽업|샌딩|예약|맛집|레스토랑|바우처|이용권|관광|온천/i;
+
+/** 이 상품의 판매 형태 — 'book' · 'experience' · '' (물건). */
+function soldForm(item) {
+  const title = String((item && item.title) || '');
+  if (BOOK_TAG_RE.test(title)) return 'book';
+  if (item && item.mall === 'ADPICK') {
+    const label = String(item.mallLabel || '');
+    if (EXPERIENCE_MERCHANTS.has(label)) return 'experience';
+    if (EXPERIENCE_MERCHANTS_MIXED.has(label) && EXPERIENCE_MARK_RE.test(title)) return 'experience';
+  }
+  return '';
+}
+
+/**
+ * 판매 형태 감점이 이번 검색에서 켜질 형태들.
+ * @param {string} query 사용자가 친 검색어
+ * @param {Array} items 이번 후보 목록
+ * @returns {Set<string>}
+ */
+function soldFormContext(query, items) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  const q = String(query || '').normalize('NFKC');
+  const active = new Set();
+  if (!list.length) return active;
+  const share = form => list.filter(it => soldForm(it) === form).length / list.length;
+  if (!BOOK_QUERY_RE.test(q) && share('book') < 0.5) active.add('book');
+  if (!TRAVEL_QUERY_RE.test(q) && share('experience') < 0.5) active.add('experience');
+  return active;
+}
+
+/*
+ * «노트북 가방» — 기기 이름을 달고 파는 그 기기용 가방 (2026-11-24).
+ *
+ * 운영 «LG전자 LG그램 14ZD95U» 검색 1위가 «LG전자 2026 그램15 14ZD95U 노트북 가방 서류
+ * 초경량 방수 대용량» 이었다(관련도 1.0, 노트북 본품과 동점 → 더 싸서 1위). 가방은
+ * ACCESSORY_TIER 에 없다 — 가방 검색에서는 가방이 본품이라 낱말만으로는 넣을 수 없다.
+ *
+ * 그래서 낱말이 아니라 짝으로 본다: 기기 범주어 바로 뒤에 가방류가 붙은 «기기+가방» 이
+ * 있고, 그 기기 범주어가 제목 어디에도 따로(=판매 대상으로) 나오지 않을 때만 부속이다.
+ *   «… 노트북 가방 …»                       → 노트북은 가방의 대상일 뿐이다 → 부속
+ *   «델 XPS 15 … 고성능 노트북 노트북가방+마우스» → «노트북» 이 따로 있다 → 본품(구성품)
+ * 검색어에 가방·케이스류 낱말이 있으면 걸지 않는다(그때는 가방이 찾는 물건이다).
+ * 그리고 검색어가 기기를 가리킬 때만 건다 — 기기 범주어(노트북·카메라…)나 모델 코드
+ * («14ZD95U»)가 있어야 한다. «남녀공용 방수 대용량» 같은 검색에서는 가방이 본품일 수 있다.
+ */
+const BAG_TARGET_RE = /^(?:노트북|랩탑|맥북|태블릿|아이패드|갤럭시탭|카메라|미러리스|dslr|닌텐도|게임기|laptop|notebook|tablet|camera)$/;
+const BAG_WORD_RE = /^(?:용|전용)?(?:가방|백팩|슬리브|숄더백|크로스백|bag|backpack|sleeve)$/;
+const BAG_QUERY_RE = /가방|백팩|슬리브|파우치|케이스|커버|백(?![가-힣])|bag|sleeve|pouch|case/i;
+function deviceBagRelation(query, titleInfo, analysis) {
+  if (BAG_QUERY_RE.test(String(query || '').normalize('NFKC'))) return { factor: 1, reason: '' };
+  const queryTokens = splitTokens(normalizeText(query));
+  const aboutDevice = (analysis && analysis.modelKeys && analysis.modelKeys.length > 0)
+    || queryTokens.some(token => BAG_TARGET_RE.test(token) || !!deviceTermIn(token));
+  if (!aboutDevice) return { factor: 1, reason: '' };
+  const tokens = (titleInfo && titleInfo.tokens) || [];
+  let bag = false, standalone = false;
+  tokens.forEach((token, i) => {
+    const fused = /^(노트북|랩탑|맥북|태블릿|아이패드|갤럭시탭|카메라|미러리스)(?:용|전용)?(가방|백팩|슬리브)$/.exec(token);
+    if (fused) { bag = true; return; }
+    if (!BAG_TARGET_RE.test(token)) return;
+    if (BAG_WORD_RE.test(tokens[i + 1] || '') || (/^(?:용|전용)$/.test(tokens[i + 1] || '') && BAG_WORD_RE.test(tokens[i + 2] || ''))) bag = true;
+    else standalone = true;
+  });
+  return bag && !standalone ? { factor: 0.72, reason: 'device-bag' } : { factor: 1, reason: '' };
+}
+
+function soldFormRelation(item, active) {
+  const form = soldForm(item);
+  return form && active && active.has(form)
+    ? { factor: SOLD_FORM_FACTOR, reason: `sold-form:${form}` }
+    : { factor: 1, reason: '' };
+}
+
 const CONDITION_PATTERNS = [
   ['rental', /렌탈|대여|\brental\b|\blease\b|월\s*구독/i],
   // "리퍼나 중고 말고" · "리퍼는 빼고" — 조사가 붙은 리퍼도 읽는다(리퍼블릭 같은 낱말은 여전히 아니다).
-  ['refurbished', /리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|리퍼(?=(?:나|이나|랑|와|는|도|를|가|만)?(?![가-힣]))|\brefurbished\b|\brenewed\b/i],
+  // ★ 앞쪽 경계(2026-11-24): «슬리퍼»·«드리퍼»·«클리퍼»·«그리퍼» 의 끝 두 글자도 «리퍼» 다.
+  //   예전 식은 뒤쪽만 봐서 «실내 슬리퍼» 검색어를 «실내 슬» 로 잘랐고(stripConditionTerms),
+  //   슬리퍼 상품을 전부 리퍼 상품으로 읽었다. 운영 공급자 캐시 상품명 52,091건에서 «리퍼»
+  //   앞 글자는 슬 154 · 드 26 · 클/그 각 2 였고, 진짜 리퍼는 급(S급리퍼) 4 · 증(보증·인증리퍼) 3 ·
+  //   식(공식리퍼) 2 뿐이었다. 그래서 한글 바로 뒤의 리퍼는 급·증·식 뒤일 때만 읽는다.
+  ['refurbished', /(?:(?<![가-힣])|(?<=[급증식]))(?:리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|리퍼(?=(?:나|이나|랑|와|는|도|를|가|만)?(?![가-힣])))|\brefurbished\b|\brenewed\b/i],
   ['used', /중고(?!\s*등\s*학생)|\bused\b(?!\s+(?:for|to|by|with|as|in|on)\b)|pre[ -]?owned|second[ -]?hand/i],
   ['display', /전시\s*상품|전시품|진열\s*상품|\bdisplay\s*unit\b/i],
   ['opened', /단순\s*개봉|박스\s*개봉|개봉\s*상품|open[ -]?box|opened\s*(?:box|item)/i],
@@ -1468,6 +1582,7 @@ function rankItems(keyword, items, opts = {}) {
   // Condition words and negation belong to conditionRelation, not product identity.
   const analysis = analyzeQuery(stripConditionTerms(keyword), { titles: titleInfos });
   const requestedCondition = conditionIntent(keyword);
+  const soldForms = soldFormContext(keyword, uniq);
 
   const scored = uniq.map((it, index) => {
     const titleInfo = titleInfos[index];
@@ -1489,10 +1604,12 @@ function rankItems(keyword, items, opts = {}) {
     const variant = variantRelation(analysis, it && it.title, titleInfo);
     const condition = conditionRelation(keyword, it && it.title, it, requestedCondition);
     const substitute = substituteRelation(keyword, it && it.title);
+    const form = soldFormRelation(it, soldForms);
+    const bag = f.factor < 1 ? { factor: 1, reason: '' } : deviceBagRelation(keyword, titleInfo, analysis);
     if (it) {
-      it.relevance = Math.round(r.score * f.factor * relation.factor * variant.factor * condition.factor * substitute.factor * 1000) / 1000;
+      it.relevance = Math.round(r.score * f.factor * relation.factor * variant.factor * condition.factor * substitute.factor * form.factor * bag.factor * 1000) / 1000;
       // 왜 내려갔는지 남긴다. 진단용이고 응답 형태를 바꾸지 않는다(undefined 면 직렬화에서 빠진다).
-      it.relevanceWhy = [r.reason, f.reason, relation.reason, variant.reason, condition.reason, substitute.reason].filter(Boolean).join(',') || undefined;
+      it.relevanceWhy = [r.reason, f.reason, relation.reason, variant.reason, condition.reason, substitute.reason, form.reason, bag.reason].filter(Boolean).join(',') || undefined;
     }
     return { it, r, f };
   });
@@ -1989,6 +2106,8 @@ module.exports = {
   identityMatchScore, isIdentityMatch,
   // AI 경로의 식별 계약(api/_aiidentity.js)이 같은 판정을 다시 쓴다 — 두 벌로 두지 않는다.
   variantMarkers, conditionState, conditionIntent, substituteRelation, accessoryTerms, classify, CONDITION_PATTERNS,
+  // 판매 형태(책·체험) — test-search-sold-form.js 가 고정한다.
+  soldForm, soldFormContext, soldFormRelation, SOLD_FORM_FACTOR, stripConditionTerms, deviceBagRelation,
   VARIANT_KEYS, TAIL_NOISE, UNIT_RE, CAPACITY_RE, YEAR_RE, SYNONYMS,
   // 핵심 명사 정렬 — test-search.js 가 단일 토큰 회귀를 여기로 고정한다.
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
