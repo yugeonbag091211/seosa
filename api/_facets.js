@@ -139,7 +139,14 @@ async function attachPriceChange(items) {
   const byKey = new Map();
 
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await loadDropRows(ids.slice(i, i + CHUNK));
+    let result;
+    try {
+      result = await loadDropRows(ids.slice(i, i + CHUNK));
+    } catch (error) {
+      console.warn(`[facets] 가격 하락 조회 실패(하락 정보 없이 진행): ${error && error.message}`);
+      return list;
+    }
+    const { data, error } = result;
 
     if (error) {
       console.warn(`[facets] 가격 하락 조회 실패(하락 정보 없이 진행): ${error.message}`);

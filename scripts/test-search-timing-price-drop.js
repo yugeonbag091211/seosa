@@ -28,12 +28,13 @@ async function check(label, fn) {
 const calls = [];
 const fakeDb = {
   rpcImpl: null,
+  viewImpl: null,
   viewRows: [],
   rpc(name, params) { calls.push(['rpc', name, params]); return this.rpcImpl(name, params); },
   from(table) {
     calls.push(['from', table]);
     const rows = this.viewRows;
-    return { select() { return this; }, in(col, ids) { calls.push(['in', col, ids.length]); return Promise.resolve({ data: rows, error: null }); } };
+    return { select() { return this; }, in(col, ids) { calls.push(['in', col, ids.length]); return fakeDb.viewImpl ? fakeDb.viewImpl(col, ids) : Promise.resolve({ data: rows, error: null }); } };
   }
 };
 const dbPath = require.resolve('../api/_supabase');
@@ -112,6 +113,27 @@ const item = () => ({ productId: '9100200300', mall: '쿠팡', vendorItemId: '11
     await facets.attachPriceChange(viaView);
     assert.ok(viaRpc[0].priceChange, 'priceChange attached');
     assert.deepEqual(viaRpc[0].priceChange, viaView[0].priceChange);
+  });
+
+  await check('뷰가 오류를 반환하거나 예외를 던져도 검색 상품을 그대로 돌려준다', async () => {
+    resetDropRpc();
+    fakeDb.rpcImpl = async () => ({ data: null, error: { code: '57014', message: 'timeout' } });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      for (const viewImpl of [
+        async () => ({ data: null, error: { message: 'view failed' } }),
+        async () => { throw new Error('connection failed'); }
+      ]) {
+        fakeDb.viewImpl = viewImpl;
+        const items = [item()];
+        assert.equal(await facets.attachPriceChange(items), items);
+        assert.equal(items[0].priceChange, undefined);
+      }
+    } finally {
+      fakeDb.viewImpl = null;
+      console.warn = warn;
+    }
   });
 
   console.log('\n/api/search: 신뢰도와 가격 하락은 함께 돌고, 단계 시간이 Server-Timing 으로 나간다');
