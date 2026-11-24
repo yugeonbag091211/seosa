@@ -1498,24 +1498,37 @@ function rankItems(keyword, items, opts = {}) {
   });
 
   /*
-   * ★ 토큰이 «하나도» 안 걸린 상품은 minScore 0 이어도 내보내지 않는다
-   *   (2026-11-23 전수 감사, 운영 실측).
+   * ★ 검색어와 «숫자 조각» 으로만 이어진 상품은 minScore 0 이어도 내보내지 않는다
+   *   (2026-11-23 전수 감사 → 2026-11-24 재검증에서 범위를 좁혔다).
    *
-   *   운영 «LG 그램 16» 을 최저가순으로 보면 1위가 699원 «올가드 보습 스파
-   *   핸드 마스크 16g» 였다. 그 상품의 scoreTitle 은 score 0 · hits [] —
-   *   검색어의 어느 토큰도 정확히도, 부분문자열로도, 어간으로도, 합성어
-   *   조각으로도, 동의어로도 제목에 없다. 그런데 통과 조건이 `>= minScore`
-   *   이고 api/search.js 는 0 을 넘기므로 `0 >= 0` 으로 그대로 통과했다.
+   *   왜 빼는가: 운영 «LG 그램 16» 을 최저가순으로 보면 1위가 699원 «올가드 보습
+   *   스파 핸드 마스크 16g» 였다. 공급자 단계 필터(_shop.relevantItems)는 «16» 이
+   *   «16g» 안에 있다는 이유로 통과시켰고, 여기서는 scoreTitle 이 0 인데도
+   *   api/search.js 가 minScore 0 을 넘기므로 `0 >= 0` 으로 남았다. 화면의 정렬
+   *   코드(public/index.html Search.viewList)는 «기준선 미만 상품은 서버가 이미
+   *   걸러서 보낸다» 를 전제로 가격순 1위를 정한다.
    *
-   *   minScore 0 의 뜻은 바꾸지 않는다(«무엇을 지울까가 아니라 무엇을 먼저
-   *   볼까»). 0 은 «관련도가 낮다» 가 아니라 «관련이 하나도 확인되지 않았다»
-   *   라서 다르다. 한 토큰이라도 걸리면 아무리 낮아도 남는다.
+   *   왜 «0점이면 무조건» 이 아닌가 (11-24 재검증, 운영 캐시 4,416개 검색어 재생):
+   *   처음 규칙(score > 0)은 한 글자 검색어를 통째로 비웠다 — «김»·«컵»·«풀» 결과
+   *   0건. scoreTitle 은 한 글자 토큰을 «도시락김»·«머그컵»·«목공풀» 같은 합성어
+   *   안에서 인정하지 않는다. «굴»(생굴)·«귤»(감귤)·«쌀»(햅쌀)·«짐 백»(스포츠백)도
+   *   진짜 상품이 빠졌다. 0점은 «관련 없음» 의 증거가 아니라 «이 채점기가 못
+   *   알아봤음» 일 수 있다.
    *
-   *   실측: 운영 검색어 34개 · 상품 506건 중 0점은 2건(0.4%)이고 둘 다
-   *   명백한 무관 상품이었다(핸드팩 · 갤럭시A25 보호필름).
+   *   그래서 0점이면서, 검색어의 «낱말» 토큰(글자가 든 두 글자 이상) 중 어느 것도
+   *   제목에 부분 문자열로조차 없는 상품만 뺀다. 남는 연결 고리가 숫자 조각뿐이라는
+   *   뜻이다(«16g»·«170ml»·«A256»·«14ea»). 낱말 토큰이 없는 검색어(«5090»·«김»)는
+   *   판단 근거가 없으므로 아무것도 빼지 않는다. 그리고 목록이 통째로 비게 되면
+   *   빼지 않는다 — 이 규칙 때문에 예전보다 결과가 줄어드는 검색어는 없다.
+   *
    *   scripts/test-search-zero-coverage.js 가 이 경계를 고정한다.
    */
-  const kept = scored.filter(s => s.r.score > 0 && s.r.score >= minScore);
+  const wordTokens = splitTokens(normalizeText(keyword))
+    .filter(token => token.length >= 2 && /[a-z가-힣]/.test(token));
+  const digitOnlyLink = s => s.r.score === 0 && wordTokens.length > 0
+    && !wordTokens.some(token => canonicalKey(s.it && s.it.title).includes(token));
+  let kept = scored.filter(s => s.r.score >= minScore && !digitOnlyLink(s));
+  if (!kept.length) kept = scored.filter(s => s.r.score >= minScore);
   if (!kept.length) {
     return { items: [], dropped: scored.length + intentDropped, removed, allBelow: true };
   }

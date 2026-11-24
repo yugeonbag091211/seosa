@@ -140,6 +140,27 @@ for (const [i, g] of F.bundles.entries()) {
   check(retainMain(g, r), `${g.query} bundle: both legitimate main products retained`, detail(r));
 }
 
+/*
+ * 무엇이 «빠질» 수 있는가 (2026-11-24 재검증).
+ *
+ * notAbove() 는 «무관한 것이 목록에서 빠졌다» 를 통과로 본다. 그만큼 느슨해진
+ * 자리를 여기서 따로 조인다: 빠진 후보는 무관한 것(D)이나 다른 모델(B)뿐이어야
+ * 하고, 본품(A)·부속(C)은 한 건도 빠지면 안 된다. rankItems 의 «숫자 조각만
+ * 걸린 상품» 규칙이 넓어져 관련 상품을 지우기 시작하면 여기서 잡힌다.
+ */
+console.log('\nRemoved candidates are unrelated (D) or neighboring models (B) only');
+for (const [name, groups] of Object.entries({
+  brands: F.brands, families: F.families, brandProducts: F.brandProducts,
+  models: F.models, accessories: F.accessories, longtails: F.longtails, bundles: F.bundles
+})) {
+  for (const g of groups) {
+    const kept = new Set(S.rankItems(g.query, copy(g.items), { minScore: 0 }).items.map(it => it.productId));
+    const removed = g.items.filter(it => !kept.has(it.productId));
+    check(removed.every(it => it.label === 'D' || it.label === 'B'),
+      `${g.query} (${name}): only D/B candidates may be removed`, removed.map(it => `${it.label}:${it.title}`));
+  }
+}
+
 console.log('\nMall/price/trust cannot reverse different relevance');
 const main = F.item('bias-main', '삼성전자 갤럭시 S26 자급제', 'A', 1000000);
 const part = F.item('bias-part', 'HP LaserJet 삼성 K7용 스캐너 어셈블리', 'C', 1000, 'ADPICK');
