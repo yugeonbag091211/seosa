@@ -296,12 +296,6 @@ function splitFusedWord(word) {
 /** 머리 토큰이 이 비율을 넘는 상품명에 들어 있으면 브랜드가 아니라 범주어로 본다. */
 const BRAND_SPREAD_MAX = 0.6;
 
-/**
- * 머리 토큰으로 «시작하는» 상품명이 최소 몇 건이어야 그 검색어를 대표 머리
- * 질의(BRAND_ONLY/BRAND_PRODUCT)로 볼 것인가. analyzeQuery 의 primaryHead 참고.
- */
-const PRIMARY_HEAD_MIN_TITLES = 2;
-
 function detectBrandHead(headToken, titles) {
   if (!headToken || !Array.isArray(titles) || !titles.length) return false;
   /*
@@ -364,24 +358,24 @@ function analyzeQuery(keyword, opts = {}) {
   analysis.variantMarkers = variantMarkers(keyword, raw);
   analysis.accessories = accessoryTerms(normalized, raw);
   // A broad head query need not partition the candidates: every returned title
-  // may contain it. Infer this intent from the primary titles, without a brand list.
+  // may contain it. Infer this intent from a primary title, without a brand list.
   //
-  // ★ 한 건은 근거가 아니다 (2026-11-23 전수 감사, 운영 실측).
-  //   «운동화» 응답 20건 중 머리로 시작하는 것은 «[국내도서] 운동화 신은 뇌» 하나뿐이었다.
-  //   그 한 권 때문에 intent 가 BRAND_ONLY 로 뒤집혔고, titleRelation 의 late-head 가
-  //   «… 가벼운 운동화» 처럼 범주어를 뒤에 두는 한국어 상품명 — 즉 진짜 운동화 19건 전부 —
-  //   에 0.65를 곱했다. 운영 1위가 신발이 아니라 책이었다(1.00 vs 0.65).
-  //   브랜드는 여러 상품명의 맨 앞에 온다(detectBrandHead 주석). 그래서 둘 이상을 요구한다.
-  //   이 수를 1로 되돌리면 상품명 한 건이 다시 검색 의도를 정한다.
-  //   scripts/test-search-category-head.js 가 그 경계를 고정한다.
-  const primaryHeadTitles = !head || raw[0] !== head ? 0 : (opts.titles || []).filter(value => {
+  // ★ «둘 이상» 으로 바꿨다가 되돌렸다 (2026-11-23 → 11-24).
+  //   «운동화» 의 유일한 머리 상품명이 «[국내도서] 운동화 신은 뇌» 라서 진짜 운동화가
+  //   late-head 로 깎인 것이 계기였다. 그러나 운영 공급자 캐시 검색어 4,416개 재생에서
+  //   이 변경은 1위 99개를 바꿨고 좋아진 것(책·투어 → 상품)과 나빠진 것(진짜 마늘 →
+  //   식당 예약, 진짜 생강 → 껍질 도구)이 섞였다. 사전 등록한 봉인 세트(검색어 50개,
+  //   reports/search-sold-object-2026-11-24)에서는 1위 본품률을 올리지 못했고(운영과 같은
+  //   0.813), 책·체험 판매 형태 규칙과 함께 쓰면 0.833 → 0.813 으로 낮췄다(«우주복» 1위가
+  //   키링 인형). 그래서 철회했다. late-head 는 «머리가 뒤에 있는 다른 물건» 을 꽤 잘
+  //   내리고 있었다. 책·체험 상품이 1위에 서는 문제는 판매 형태 규칙이 따로 맡는다.
+  const primaryHead = head && raw[0] === head && (opts.titles || []).some(value => {
     const title = value && Array.isArray(value.tokens) ? value : analyzeTitle(value);
     const core = title.identityTokens || identityTokens(title.raw, title);
     if (!core[0] || !core[0].startsWith(head)) return false;
     return !compatibilityMention(analysis, title.raw, title)
       && !accessoryTerms(title.normalized, title.tokens).length;
-  }).length;
-  const primaryHead = primaryHeadTitles >= PRIMARY_HEAD_MIN_TITLES;
+  });
   analysis.intent = analysis.accessories.length ? 'ACCESSORY'
     : analysis.modelKeys.length ? 'MODEL'
     : raw.length === 1 && (brandHead || primaryHead) ? 'BRAND_ONLY'
