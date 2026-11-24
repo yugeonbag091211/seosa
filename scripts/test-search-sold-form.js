@@ -52,6 +52,24 @@ console.log('\n책: 서점 분류 태그가 붙은 글은 본품 아래다');
   check(idx(g, '트레이닝') === g.length - 1, '어쿠스틱 기타: 더 비싼 진짜 기타들이 교본보다 위다', show(g));
 }
 
+console.log('\n운동화: 2026-11-23 운영 1위였던 책이 진짜 운동화 아래로 간다 (철회한 FIX-01 의 원래 증상)');
+{
+  /* 2026-11-23 운영 /api/search?keyword=운동화 응답에서 가져온 상품명. 그때 1위가 이 책이었다.
+   * FIX-01(머리 상품명 둘 이상)은 봉인 세트에서 탈락해 철회했다 — 같은 증상을 이제 판매 형태 규칙이 막는다. */
+  const sneakers = [
+    '이더커머스 남성 발편한 가벼운 운동화',
+    '디아핏 가벼운 발편한 남성 런닝화 운동화',
+    '아디다스 바레다 로우 운동화 KI6726',
+    'JLVJ 여성 운동화 가벼운 스니커즈 데일리 런닝화',
+    '뉴발란스/뉴발란스 2002 남여공용 운동화 네이비 M2002WA/스니커즈 스니커즈'
+  ];
+  const { ranked } = rank('운동화', [
+    item('[국내도서] 운동화 신은 뇌', 'ADPICK', '교보문고', 14400),
+    ...sneakers.map((t, i) => item(t, '쿠팡', '', 11900 + i * 1000))
+  ]);
+  check(idx(ranked, '운동화 신은 뇌') === ranked.length - 1, '운동화: 「[국내도서] 운동화 신은 뇌」 가 진짜 운동화 5건 아래다', show(ranked));
+}
+
 console.log('\n책을 찾는 검색은 건드리지 않는다');
 {
   const { ranked } = rank('수학 도서', [
@@ -131,6 +149,11 @@ console.log('\n«책상»·«책장» 은 책을 찾는 검색이 아니다');
   const desk = item('리바트 책상 1200', '쿠팡', '');
   check(S.soldFormContext('책상', [book, desk, desk]).has('book'), '책상: 책 감점이 켜진다');
   check(!S.soldFormContext('동화책', [book, desk, desk]).has('book'), '동화책: 책 감점이 꺼진다');
+  /* 낱말 안의 부분 문자열로 «책·여행 검색» 이 되면 안 된다 (운동화 = 운+동화). */
+  for (const q of ['운동화', '아동화', '여행용 캐리어', '스냅백', '컨투어 브러쉬']) {
+    const ctx = S.soldFormContext(q, [book, desk, desk]);
+    check(ctx.has('book') && ctx.has('experience'), `${q}: 책·체험 감점이 둘 다 켜진다`, [...ctx]);
+  }
 }
 
 console.log('\n리퍼: «슬리퍼»·«드리퍼» 는 리퍼(재생품)가 아니다');
