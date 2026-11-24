@@ -1,0 +1,4409 @@
+{
+ "protocol": "reports/search-sold-object-2026-11-24/PROTOCOL.md",
+ "labeler": "Claude (single annotator, not human-reviewed)",
+ "labeledAt": "2026-11-24",
+ "queries": [
+  {
+   "query": "드럼 스틱",
+   "items": [
+    {
+     "id": "a:4ab2cbad11f62962d9fe80224d18adba",
+     "mall": "ADPICK",
+     "title": "[해외] 17인치 그라운드 드럼, 다채로운 색상의 양가죽 드럼 페이스, 대나무 드럼, 오르프 교육용 악기, 어린이 선물, 드럼 스틱 포함",
+     "label": "X"
+    },
+    {
+     "id": "a:5afbae16e9e525d39657f4a1857098fb",
+     "mall": "ADPICK",
+     "title": "국산 발효 흑마늘 진액 스틱 (10gx30포)",
+     "label": "X"
+    },
+    {
+     "id": "a:74414a363937437f73bc4d5c07f78492",
+     "mall": "ADPICK",
+     "title": "바르셀로나 버스 투리스틱: 야간 투어",
+     "label": "X"
+    },
+    {
+     "id": "a:3105446133173d4da103d977a2c1d4a9",
+     "mall": "ADPICK",
+     "title": "[르에센1st] 드럼스틱 휴대용 숄더백 드럼채 보관 케이스",
+     "label": "A"
+    },
+    {
+     "id": "a:c8b04083b7bb348da08be4a387fe086f",
+     "mall": "ADPICK",
+     "title": "삼익 폴더블 롤 전자드럼 패드 SERD-1 PLUS/ 블루투스/페달스틱포함",
+     "label": "X"
+    },
+    {
+     "id": "a:5e09608511cc6968c979dd2139f14fcb",
+     "mall": "ADPICK",
+     "title": "[보리보리] 진성뮤직 드럼스틱 5A 빅퍼스 아메리칸 클래식 vic firth 5a 드럼 채 용품 입문용 초보자",
+     "label": "M"
+    },
+    {
+     "id": "a:d66a032528b263292ab8a1736af7f337",
+     "mall": "ADPICK",
+     "title": "선라이즈 동 스틱 클래스",
+     "label": "X"
+    },
+    {
+     "id": "a:212a2227d7cb4ff017babb9b09a6aa68",
+     "mall": "ADPICK",
+     "title": "[해외] M MBAT Orff 플로어 드럼 10인치 양면 양가죽 탬버린 드럼스틱 포함 초보자용 어린이 타악기",
+     "label": "X"
+    },
+    {
+     "id": "a:799606be03752e7b353963cfc4ffb92e",
+     "mall": "ADPICK",
+     "title": "21kg AI 드럼세탁기 WF21DG6650BE (그레이지)",
+     "label": "X"
+    },
+    {
+     "id": "a:758f8cbb3d046f75c3f2523363e9ef25",
+     "mall": "ADPICK",
+     "title": "[FRETO] 프레토 연습용 원목 드럼스틱 메이플 드럼채 5A",
+     "label": "M"
+    },
+    {
+     "id": "a:38ebc7a46b456ad8f30148b36dfbbce5",
+     "mall": "ADPICK",
+     "title": "[기타] 주황색 오렌지 드럼 스틱 스네어 연습 패드 입문용[이마트몰] [WFR80NN]",
+     "label": "X?"
+    },
+    {
+     "id": "a:6e87751dfdf8097c91831f67968a387b",
+     "mall": "ADPICK",
+     "title": "[기프트] 드럼 연습패드 풀세트 드럼스틱(WFLOR7J)",
+     "label": "X?"
+    },
+    {
+     "id": "a:4dbdd6ba98b569551f6d23d47381e09f",
+     "mall": "ADPICK",
+     "title": "데일리오브젝트/골든볼 폼폼 인테리어 조화 소품 드럼스틱 3color/홈데코 플라워/식물",
+     "label": "X"
+    },
+    {
+     "id": "a:1a8cbe23171bab31adcfca336a862611",
+     "mall": "ADPICK",
+     "title": "알티피아 스탠드 드럼연습패드 드럼연습 패드 연습 드럼 스틱(WFR80NJ) +할인쿠폰",
+     "label": "X?"
+    },
+    {
+     "id": "a:3798eec4d45d74083fccd3e2ffb2d4ae",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]주머니형 드럼스틱홀더 보관함 케이스 가방 케이스",
+     "label": "A"
+    }
+   ]
+  },
+  {
+   "query": "프로틴",
+   "items": [
+    {
+     "id": "a:8485bd73fa78ad00dc43f9c97ca3819f",
+     "mall": "ADPICK",
+     "title": "[해외] BEHRINGER HPM1000, HPS2000, HPS3000 헤드셋용 교체용 폼 이어패드, 메모리 폼 이어패드, 프로틴 가죽 이어패드",
+     "label": "X"
+    },
+    {
+     "id": "a:1feaff9e2fffdc85eb3bd32fac8ffe01",
+     "mall": "ADPICK",
+     "title": "신타6 아이솔레이트 단백질 보충제 초콜릿맛 912g 프로틴",
+     "label": "M"
+    },
+    {
+     "id": "a:c347fb4cda52c0352832f3d6bd08a9e0",
+     "mall": "ADPICK",
+     "title": "[무료배송]얼티브 프로틴 초코맛 250ml, 18개",
+     "label": "M"
+    },
+    {
+     "id": "c:9212396109",
+     "mall": "쿠팡",
+     "title": "얼티브 프로틴 초코맛",
+     "label": "M"
+    },
+    {
+     "id": "c:9334640009",
+     "mall": "쿠팡",
+     "title": "셀렉스 프로틴 오리지널",
+     "label": "M"
+    },
+    {
+     "id": "c:7621201792",
+     "mall": "쿠팡",
+     "title": "마이밀 뉴프로틴 드링크 오리지널",
+     "label": "M"
+    },
+    {
+     "id": "c:6422282333",
+     "mall": "쿠팡",
+     "title": "EVLUTIONNUTRITION 웨이 프로틴 더블 리치 초콜릿 맛",
+     "label": "M"
+    },
+    {
+     "id": "a:01f06d996c35174dc1a7b5590864fcef",
+     "mall": "ADPICK",
+     "title": "프로틴 하우스 방콕 | 자동차",
+     "label": "X"
+    },
+    {
+     "id": "a:a95f4e5006a5beadbac93e8e91dd9acd",
+     "mall": "ADPICK",
+     "title": "하이뮨 프로틴밸런스 액티브 밀크쉐이크 250ml x 24개입",
+     "label": "M"
+    },
+    {
+     "id": "a:2dec46534368348af9f6081f20fb4a06",
+     "mall": "ADPICK",
+     "title": "함소아 미니언즈 프로틴액트 초코맛 330ml",
+     "label": "M"
+    },
+    {
+     "id": "a:c281be87b8f0affde1efd523db355aca",
+     "mall": "ADPICK",
+     "title": "마이프로틴 에너지 츄 탄수화물 바 (레몬 / 오렌지)",
+     "label": "X?"
+    },
+    {
+     "id": "a:3213889734c3992fb17ad187a82cd26c",
+     "mall": "ADPICK",
+     "title": "[품질보장] 호정가 하루단백질바 (20개입) / 맛있는 에너지 견과가득 프로틴바",
+     "label": "M"
+    },
+    {
+     "id": "a:f89c1cfe16a5873a9ce54621c3b9580d",
+     "mall": "ADPICK",
+     "title": "[보리보리] 셀렉스 셀렉스 마시는 프로틴 음료 로우슈거 125ml 48개",
+     "label": "M"
+    },
+    {
+     "id": "a:5a1f215df601d44f18933d4aa5071252",
+     "mall": "ADPICK",
+     "title": "[기프트] 풀무원 프로틴 하루견과 선물세트 20g*25ea",
+     "label": "M?"
+    },
+    {
+     "id": "a:948acb298cf3543a530c0f2bb385be19",
+     "mall": "ADPICK",
+     "title": "프로틴 하루견과 (20gx25개)",
+     "label": "M?"
+    },
+    {
+     "id": "a:dd9e684f42bac9cac0934a98de6727ec",
+     "mall": "ADPICK",
+     "title": "[기타] 마이프로틴 엘글루타민 L-Glutamine 파우더 250g[이마트몰]",
+     "label": "X?"
+    },
+    {
+     "id": "a:69b4710d5e667af7979d017d70486803",
+     "mall": "ADPICK",
+     "title": "셀렉스/프로틴 고소한맛 304G 6캔 (48일분)/건강식품 건강음료",
+     "label": "M"
+    },
+    {
+     "id": "c:8803299277",
+     "mall": "쿠팡",
+     "title": "오트몬드 프로틴 쿠키앤크림",
+     "label": "M"
+    },
+    {
+     "id": "a:8871f2fd95d45dd2e318b60e24a5c98f",
+     "mall": "ADPICK",
+     "title": "셀렉스 프로틴 고소한맛 304g 10캔 (70일분)",
+     "label": "M"
+    },
+    {
+     "id": "a:f05e75e35185cd382683af74f621ce7b",
+     "mall": "ADPICK",
+     "title": "레스노베 피토 프로틴 볼류마이징 앰플 15ml",
+     "label": "X"
+    }
+   ]
+  },
+  {
+   "query": "일상용 헤드셋",
+   "items": [
+    {
+     "id": "a:1235fa3e30df9782c0776f55085cee6f",
+     "mall": "ADPICK",
+     "title": "[국내도서] 이야기 헤드셋",
+     "label": "X"
+    },
+    {
+     "id": "a:125e2a8315a7004a1bbc96d674ff9ce3",
+     "mall": "ADPICK",
+     "title": "소니/소니 일상을 함께하는 나의 데일리 이어폰WF-C510/디지털기기 헤드셋/이어폰",
+     "label": "V?"
+    },
+    {
+     "id": "a:8d81372fe179783eb9eeb2c7d7d9891d",
+     "mall": "ADPICK",
+     "title": "젬스트 Canleen G20 가상 7.1채널 게이밍 헤드셋 핑크",
+     "label": "M"
+    },
+    {
+     "id": "a:5bbdb466ae833f4893be4954445a04b8",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/오피스큐 클래식 메탈 ENC 무선 헤드셋 dope-L6 브라운",
+     "label": "M"
+    },
+    {
+     "id": "a:95fb0b530638c43eeb1052c39e7c6f20",
+     "mall": "ADPICK",
+     "title": "[해외] FiiO EH11 레트로 컬러풀 온이어 블루투스 헤드폰, 하이파이 사운드, 무선, 가벼운 접이식 헤드셋, 음악 감상 및 일상 출퇴근용",
+     "label": "M"
+    },
+    {
+     "id": "a:691bea5b675c1af1ff05981d88efa944",
+     "mall": "ADPICK",
+     "title": "[기타] 헤드셋 100개입 위생 가정용 휴대 생활가전 사무실 일상 사용 헤드셋커버 위생커버 헤드셋덮개[이마트몰] [WFRC7UB]",
+     "label": "A"
+    },
+    {
+     "id": "c:9802128772",
+     "mall": "쿠팡",
+     "title": "ROG DELTA S 게이밍 설정, 사무용 헤드셋 백업 및 일상 데스크 오디오 사용을 위한 컴팩트한 일체형 구조의 USB-C 헤드셋 수신기 교체 동글",
+     "label": "A"
+    },
+    {
+     "id": "a:878aaaf082e02bb153ecea28ec8f5026",
+     "mall": "ADPICK",
+     "title": "젬스트 Canleen G20 가상 7.1채널 게이밍 헤드셋 퍼플",
+     "label": "M"
+    },
+    {
+     "id": "a:25e5ba2d0a8ee906f0c5009d5075a328",
+     "mall": "ADPICK",
+     "title": "[현대백화점] [블랙야크] 남성 데일리 일상용 등산 방수 방풍자켓 슈프레 레인자켓 1BYJKF4001 1BYJKF4001 +할인쿠폰",
+     "label": "X"
+    },
+    {
+     "id": "a:0ca96f07a5121bc4eec09b13583503cf",
+     "mall": "ADPICK",
+     "title": "[기타] 루미나D 헤드셋 tm용 ip폰 고객센터 가정용 사무실 데스크 일상사용 기기용품 콜센터헤드셋 TM용[이마트몰] [WFRBVLM]",
+     "label": "M"
+    },
+    {
+     "id": "a:f3a2a3d3bf2a54d0cd1c67851cd9a6b9",
+     "mall": "ADPICK",
+     "title": "[해외] 2026년 최신 모델, 판매량 1위를 기록한 Monster Ac530 Plus 무선 블루투스 6.0 이어훅 헤드셋, AI 번역 기능이 탑재된 이어폰으로, 일상생활, 여행, 업무에 적합합니다.",
+     "label": "M?"
+    },
+    {
+     "id": "a:4431bec4f57d26f38d3fbdb546fb533c",
+     "mall": "ADPICK",
+     "title": "C타입 유선 이어폰 진열용 개별케이스포장 마이크내장 헤드셋 볼륨조절 리모컨",
+     "label": "V?"
+    },
+    {
+     "id": "a:d8b9f386d0518a162de1ac6608ea22c0",
+     "mall": "ADPICK",
+     "title": "[해외] 여성용 풀 헤드셋 스타일의 짧은 머리 가발, 학생용, 일상용, 로리타 코스프레, 공주 가발 세트 (앞머리 포함)",
+     "label": "X"
+    },
+    {
+     "id": "a:a19835825989ea5e7429c52ba4bee272",
+     "mall": "ADPICK",
+     "title": "오디오테크니카 공식수입원 ATH-M20xSTS 스트리밍 헤드셋",
+     "label": "M"
+    },
+    {
+     "id": "c:9802164076",
+     "mall": "쿠팡",
+     "title": "1쌍 교체용 헤드셋 이어 패드, 타원형 오버이어 폼 쿠션, 1쌍 블랙 이어 패드 세트 10X8.5cm, 터틀 비치 스텔스 600 Gen3 게임, 음악 감상 및 일상 헤드셋 갱신용",
+     "label": "A"
+    },
+    {
+     "id": "a:354a00609c139c12dd80cde1e3795ba1",
+     "mall": "ADPICK",
+     "title": "[기프트] 아이리버 무선 헤드셋 액티브 노이즈캔슬링 IB-HS01H",
+     "label": "M"
+    },
+    {
+     "id": "a:b5df9150ce1605c22a17ebfaff76c48d",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/오피스큐 클래식 디자인 메탈 ENC 무선 헤드셋(dope-L6 블랙)",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "트렌치코트 여성",
+   "items": [
+    {
+     "id": "c:8969213082",
+     "mall": "쿠팡",
+     "title": "올리비아로렌 싱글 트렌치 코트 VOCEB5F8211",
+     "label": "M"
+    },
+    {
+     "id": "c:8658004751",
+     "mall": "쿠팡",
+     "title": "708090 봄 트렌치코트 여성 심플 작은 키 미디 코트",
+     "label": "M"
+    },
+    {
+     "id": "c:9674940282",
+     "mall": "쿠팡",
+     "title": "708090 여성용 자외선 차단 패션 트렌치코트",
+     "label": "M"
+    },
+    {
+     "id": "c:9699520658",
+     "mall": "쿠팡",
+     "title": "가을겨울 여성 기모 트렌치 코트 고급 도톰한 데일리룩 바람막이 점퍼 하프코드",
+     "label": "M"
+    },
+    {
+     "id": "c:9792721455",
+     "mall": "쿠팡",
+     "title": "1/1+1 중장기장 기모 트렌치코트 외투 슬림해 보이는 트렌치코트",
+     "label": "M"
+    },
+    {
+     "id": "c:8301927948",
+     "mall": "쿠팡",
+     "title": "(퀄리티/인생핏보장) 어던무드 여성 트렌치코트 빅사이즈 봄 가을 롱코트",
+     "label": "M"
+    },
+    {
+     "id": "c:9018506685",
+     "mall": "쿠팡",
+     "title": "여성 카라넥 캐주얼 롱 트렌지 코트 GD-HQ61",
+     "label": "M"
+    },
+    {
+     "id": "c:9746340975",
+     "mall": "쿠팡",
+     "title": "미녹지구 여성용 트렌치코트 캐주얼 루즈핏 미디코트 가을여성자켓",
+     "label": "M"
+    },
+    {
+     "id": "c:9732775393",
+     "mall": "쿠팡",
+     "title": "708090 여성용 포인트칼라 싱글버튼 롱 트렌치코트",
+     "label": "M"
+    },
+    {
+     "id": "c:9815426146",
+     "mall": "쿠팡",
+     "title": "양가죽 롱 가죽 트렌치코트, 오버핏 롱 레더 코트, 벨티드 후드 롱 가죽코트  new-10",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "모기향",
+   "items": [
+    {
+     "id": "a:e97ed9cc965e125bd713bb333909ef4b",
+     "mall": "ADPICK",
+     "title": "[핫트랙스] 홈키파 모기향 무색소 무향료 캔형 50개입(WFPFDYC)",
+     "label": "M"
+    },
+    {
+     "id": "c:9552627870",
+     "mall": "쿠팡",
+     "title": "홈키파 모기향 50p",
+     "label": "M"
+    },
+    {
+     "id": "a:e4a7bd9fefed8eb8ed848633ec62a60a",
+     "mall": "ADPICK",
+     "title": "홈매트 전자 전기 모기향 훈증기 매트 리필 패드 60매/모기/패치/퇴치기/퇴치/연소기/모기약/가정용/기피",
+     "label": "V?"
+    },
+    {
+     "id": "a:26f11d7b1a4caff5afafb9af05c4a849",
+     "mall": "ADPICK",
+     "title": "[뷰티 (기타)]홈키파 모기향 50p(캔) x2",
+     "label": "M"
+    },
+    {
+     "id": "a:53d2f9296856f7daca75e857032883c9",
+     "mall": "ADPICK",
+     "title": "유한양행해피홈 코일형 모기향 40+40P 6개 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "c:9709991423",
+     "mall": "쿠팡",
+     "title": "킬파프 리퀴드파워 전자모기향 플러그형 훈증기 + 액상 세트 29ml, 1세트",
+     "label": "V?"
+    },
+    {
+     "id": "a:e81a61691db9d42a0d7ea9793f0c91d8",
+     "mall": "ADPICK",
+     "title": "해피홈 모기향 30개입 x 4개",
+     "label": "M"
+    },
+    {
+     "id": "a:eb207500ada48e15594de3ae0423769c",
+     "mall": "ADPICK",
+     "title": "모기향거치대 모기퇴치 캠핑용품 모기향홀더 고리형",
+     "label": "A"
+    },
+    {
+     "id": "c:9483323055",
+     "mall": "쿠팡",
+     "title": "에프킬라 모기향 라벤다향 10p",
+     "label": "M"
+    },
+    {
+     "id": "a:0285cdb666fe3b18a7a213091d3035f5",
+     "mall": "ADPICK",
+     "title": "[보리보리] 헨켈 홈키파 모기향 10P",
+     "label": "M"
+    },
+    {
+     "id": "c:20137898",
+     "mall": "쿠팡",
+     "title": "홈매트 리퀴드 1.3m코드 훈증기 (히터 1개 / 리필 1개입) / 리퀴드에스 코드훈증기 리필 액체 전자모기향 모기향, 29ml, 1세트",
+     "label": "V?"
+    },
+    {
+     "id": "a:2d9b0a16e3ee88a0bf1ab12235a65b02",
+     "mall": "ADPICK",
+     "title": "[해외] 새로운 자석식 만능 클립, 캠핑 모기향 거치대, 아트 컬러링 클립, 야외용 모기 퇴치 향꽂이",
+     "label": "A"
+    },
+    {
+     "id": "a:93ae14061952687f5bae950e7901cc0b",
+     "mall": "ADPICK",
+     "title": "일상나눔/모기향 완전 연소 거치대 블랙＆브라운/캠핑용품 기타캠핑용품",
+     "label": "A"
+    },
+    {
+     "id": "a:5b97182bc461124e23686476114a669e",
+     "mall": "ADPICK",
+     "title": "[국내도서] 모기향",
+     "label": "X"
+    },
+    {
+     "id": "a:9b1d27f307d04d849aebbb29d4751c21",
+     "mall": "ADPICK",
+     "title": "[무료배송] 삼각 모기향 거치대",
+     "label": "A"
+    }
+   ]
+  },
+  {
+   "query": "스위치 게임팩",
+   "items": [
+    {
+     "id": "c:7927924158",
+     "mall": "쿠팡",
+     "title": "[공식판매처]닌텐도 스위치 젤다의전설 브레스 오브 더 와일드 야숨 한글판 증정품 스위치용 화면보호필름",
+     "label": "M"
+    },
+    {
+     "id": "c:8787135385",
+     "mall": "쿠팡",
+     "title": "디심플 닌텐도 칩 케이스 스위치 게임칩 보관함",
+     "label": "A"
+    },
+    {
+     "id": "a:6fff2c3089f54c2b10a9ab1f4f615cdb",
+     "mall": "ADPICK",
+     "title": "[기프트] 스위치 라이트 가방 (본체 및 게임팩 4개 수납)",
+     "label": "A"
+    },
+    {
+     "id": "c:7636902811",
+     "mall": "쿠팡",
+     "title": "닌텐도 스위치 보더랜드 3 얼티메이트 에디션",
+     "label": "M"
+    },
+    {
+     "id": "a:088c46ae83a08d32d4b764fd9da35b47",
+     "mall": "ADPICK",
+     "title": "닌텐도 스위치2 오비탈스 스위치 2 전용 게임팩",
+     "label": "M"
+    },
+    {
+     "id": "a:a9c0f35c55082d4a1d4d8fe05341fe5d",
+     "mall": "ADPICK",
+     "title": "[에코너] MT06 전선 스위치형 1.8M 큐브멀티탭 4000W 고용량 (3구/C타입/USB)",
+     "label": "X"
+    },
+    {
+     "id": "a:42d714aaa8a38ccd5e739fd35b7c2e10",
+     "mall": "ADPICK",
+     "title": "[기타] 닌텐도 스위치 NS 게임팩케이스 24in1 아영 게임 (52206971)[이마트몰]",
+     "label": "A"
+    },
+    {
+     "id": "c:8008847201",
+     "mall": "쿠팡",
+     "title": "레이맨 레전드 디피니티브 에디션 (RAYMAN Legends)닌텐도 스위치 정품 게임 타이틀 팩 (국내 발송)",
+     "label": "M"
+    },
+    {
+     "id": "a:0463dfffc4503b57dc7a1b18d8955c99",
+     "mall": "ADPICK",
+     "title": "[에코너] MT05 플러그 스위치형 큐브멀티탭 4000W 고용량 (3구/C타입/USB)",
+     "label": "X"
+    },
+    {
+     "id": "a:9706f32d03f680906ada52f73b918fb0",
+     "mall": "ADPICK",
+     "title": "[해외] 기아 포르테 2019, 2020년형 차량용 운전석 앞쪽 전동 창문 스위치 제어 버튼 (부품 번호: 93570-M6100, 93570-M6120)",
+     "label": "X"
+    },
+    {
+     "id": "c:9792525172",
+     "mall": "쿠팡",
+     "title": "닌텐도 스위치2 스포츠 리조트",
+     "label": "M"
+    },
+    {
+     "id": "a:2da6d190a9c176cdf3f549eb0d98836c",
+     "mall": "ADPICK",
+     "title": "닌텐도 스위치 oled 미코 Mikko 게임팩 케이스",
+     "label": "A"
+    },
+    {
+     "id": "a:2c3289fafe3cc972787aca32609cf26c",
+     "mall": "ADPICK",
+     "title": "[보리보리] 오너클랜 인터넷 스위치 허브 공유기 신호 증폭 이더넷 공유기",
+     "label": "X"
+    },
+    {
+     "id": "a:508108c341d7c60975aff71836d43793",
+     "mall": "ADPICK",
+     "title": "[해외] 93571-M6100, 기아 포르테, 세라토, K3 (2019-2021)용 전동식 윈도우 스위치 버튼, 자동차 부품, 액세서리, 93571M6100.",
+     "label": "X"
+    },
+    {
+     "id": "c:5535729151",
+     "mall": "쿠팡",
+     "title": "닌텐도 스위치 커비 파이터즈2 한글판",
+     "label": "M"
+    },
+    {
+     "id": "a:2885b87422bc0e5aad71acda8c5aad8c",
+     "mall": "ADPICK",
+     "title": "닌텐도 스위치2 스포츠 리조트 게임팩+20in1 액세서리 키트",
+     "label": "M"
+    },
+    {
+     "id": "a:c749cea1c04006db861d2b07c3827ac8",
+     "mall": "ADPICK",
+     "title": "겜맥 닌텐도 스위치 NS 게임팩케이스 24in1",
+     "label": "A"
+    },
+    {
+     "id": "a:9304bfc984799eab9f664f3532ec783e",
+     "mall": "ADPICK",
+     "title": "닌텐도스위치2 + 포켓몬포코피아 한글판 게임팩 + 전용파우치 포함WOW",
+     "label": "V?"
+    },
+    {
+     "id": "a:66369f084e47662a68a9ff73bc02e1cc",
+     "mall": "ADPICK",
+     "title": "닌텐도 스위치 게임팩케이스 24in1",
+     "label": "A"
+    },
+    {
+     "id": "c:158994392",
+     "mall": "쿠팡",
+     "title": "닌텐도 스위치 포켓몬스터 레츠고 이브이 타이틀 한국어",
+     "label": "M"
+    },
+    {
+     "id": "c:9824175345",
+     "mall": "쿠팡",
+     "title": "닌텐도 스위치 포켓몬스터 레전드 Z-A 포켓몬 ZA 한글판 실물 게임팩 새상품 + 게임칩 케이스 증정",
+     "label": "M"
+    },
+    {
+     "id": "a:c4fdb5506124cfe3c8e9b8ac44dd2afa",
+     "mall": "ADPICK",
+     "title": "스위치/TOTE BRIEF 001 WIDE L Glossy Black/토트백 토트백",
+     "label": "X"
+    },
+    {
+     "id": "a:594dfe85ff43d07d3523df5b92a208be",
+     "mall": "ADPICK",
+     "title": "닌텐도악세사리 닌텐도 스위치 게임팩케이스 24in1",
+     "label": "A"
+    }
+   ]
+  },
+  {
+   "query": "쿠첸 그레인",
+   "items": [
+    {
+     "id": "a:94cdad30bc2218beebd1d881088741a0",
+     "mall": "ADPICK",
+     "title": "쿠첸 그레인 올스테인리스 6인용 IH밥솥 샌드베이지 CRT-UPDS0671SB, 1개",
+     "label": "M"
+    },
+    {
+     "id": "a:c9addb6098dda074c1075139bea2cdce",
+     "mall": "ADPICK",
+     "title": "[해외] 펀치 프리 우드 그레인 벽걸이형 주방 쓰레기통 플립 뚜껑 캐비닛 도어 음식물 쓰레기통-【대형】",
+     "label": "X"
+    },
+    {
+     "id": "a:54c3e9573608eb135a90b4e135e5d91f",
+     "mall": "ADPICK",
+     "title": "쿠첸/ /쿠첸 그레인 6인용 올스테인리스 IH전기압력밥솥 CRT-UPDS0670W/주방가전 전기밥솥",
+     "label": "M"
+    },
+    {
+     "id": "a:2312509ca4aac0f43517c9cd34658ad1",
+     "mall": "ADPICK",
+     "title": "그레인 미니바이트 바나나 (20g)",
+     "label": "X"
+    },
+    {
+     "id": "a:9506ea38ddf74d92ff6b1410b13512b9",
+     "mall": "ADPICK",
+     "title": "쿠첸 그레인 10인용 올스테인리스 IH전기압력밥솥 CRT-UPDS1070B",
+     "label": "M"
+    },
+    {
+     "id": "c:8565375629",
+     "mall": "쿠팡",
+     "title": "쿠첸 그레인 올스테인리스 듀얼프레셔 IH 전기 압력밥솥 6인용",
+     "label": "M"
+    },
+    {
+     "id": "c:8565400895",
+     "mall": "쿠팡",
+     "title": "쿠첸 그레인 올스테인리스 듀얼프레셔 IH 전기 압력밥솥 6인용",
+     "label": "M"
+    },
+    {
+     "id": "a:925beb8cc70b09717c2c8a82c4992d76",
+     "mall": "ADPICK",
+     "title": "그레인 헤리티지 핸드크림 5종 기프트세트 (50ml*5개입)",
+     "label": "X"
+    },
+    {
+     "id": "a:2d13d3ec6965b4eaf7f07cdaad02e79a",
+     "mall": "ADPICK",
+     "title": "그레인 미니바이트 초코 (20g)",
+     "label": "X"
+    },
+    {
+     "id": "c:8924289094",
+     "mall": "쿠팡",
+     "title": "쿠첸 그레인 듀얼프레셔 IH 전기압력밥솥 6인용",
+     "label": "M"
+    },
+    {
+     "id": "a:d6e352f7b14f4702c04cb36822e49578",
+     "mall": "ADPICK",
+     "title": "[해외] WUTA 8-10oz 토스카나 컬러풀 풀그레인 소가죽 어깨 및 엉덩이 3-4mm 두께 천연 식물성 유약 가죽 시트 DIY 공구 가죽 공예 벨트 스트랩 나이프 시스 소재",
+     "label": "X"
+    },
+    {
+     "id": "a:0f22499185a582955f97a9d8bad45f27",
+     "mall": "ADPICK",
+     "title": "쿠첸 그레인 올스테인리스 10인용 IH밥솥 샌드베이지 CRT-UPDS1071SB, 1개",
+     "label": "M"
+    },
+    {
+     "id": "a:0424799cd766483e559ab7fabc0b8e66",
+     "mall": "ADPICK",
+     "title": "쿠첸 그레인 IH전기압력밥솥 CRT-UPD0672KEW / CRT-UPD1072KEW",
+     "label": "M"
+    },
+    {
+     "id": "c:8924289093",
+     "mall": "쿠팡",
+     "title": "쿠첸 그레인 듀얼프레셔 IH 전기압력밥솥 10인용",
+     "label": "M"
+    },
+    {
+     "id": "a:95d183fd202ba85743b8a5f48564b685",
+     "mall": "ADPICK",
+     "title": "쿠첸 그레인 10인용 IH전기압력밥솥 CRT-LUPDKS1010",
+     "label": "M"
+    },
+    {
+     "id": "c:8276650266",
+     "mall": "쿠팡",
+     "title": "쿠첸 그레인 풀스테인리스 듀얼프레셔 IH 전기압력밥솥 10인용",
+     "label": "M"
+    },
+    {
+     "id": "a:3ab5e47b5926cdbd6d9190ab00b1b568",
+     "mall": "ADPICK",
+     "title": "쿠첸/ /쿠첸 그레인 10인용 올스테인리스 IH전기압력밥솥 CRT-UPDS1070W/주방가전 전기밥솥",
+     "label": "M"
+    },
+    {
+     "id": "a:24e7adf6501921c5550f69fe7e115467",
+     "mall": "ADPICK",
+     "title": "보노하우스 러쉬그레인 우드상판 와이드 플라스틱 서랍장 2단~6단 옷 수납 정리함 수납장",
+     "label": "X"
+    },
+    {
+     "id": "a:18a5ea4632470e381761847d979781a6",
+     "mall": "ADPICK",
+     "title": "쿠첸 그레인 10인용 올스테인리스 IH전기압력밥솥 샌드베이지 CRT-UPDS1070SB",
+     "label": "M"
+    },
+    {
+     "id": "c:8565375664",
+     "mall": "쿠팡",
+     "title": "쿠첸 그레인 올스테인리스 듀얼프레셔 IH 전기압력밥솥 10인용",
+     "label": "M"
+    },
+    {
+     "id": "a:ac85b3adaa6d00c35b3a056d8384c057",
+     "mall": "ADPICK",
+     "title": "EnB)파라다이스그레인레몬블렌드(3g x 30포)",
+     "label": "X"
+    },
+    {
+     "id": "a:863586b1da500462655fca9c3b6627e7",
+     "mall": "ADPICK",
+     "title": "쿠첸 그레인 6인용 올스테인리스 IH전기압력밥솥 CRT-UPDS0671W",
+     "label": "M"
+    },
+    {
+     "id": "c:8275392430",
+     "mall": "쿠팡",
+     "title": "쿠첸 그레인 풀스테인리스 전기압력밥솥 6인용",
+     "label": "M"
+    },
+    {
+     "id": "a:f84e33a0e80e6bf6875da8fce256cf0e",
+     "mall": "ADPICK",
+     "title": "보노하우스 러쉬그레인 플라스틱 와이드 서랍장 5단 옷 수납 정리함 수납장",
+     "label": "X"
+    }
+   ]
+  },
+  {
+   "query": "마샬 스피커",
+   "items": [
+    {
+     "id": "c:8955406650",
+     "mall": "쿠팡",
+     "title": "브리츠 플러스 블루투스 스피커, BZ-GBUTTON, 브라운",
+     "label": "V"
+    },
+    {
+     "id": "c:9225565445",
+     "mall": "쿠팡",
+     "title": "마샬 액톤3 스피커",
+     "label": "M"
+    },
+    {
+     "id": "c:8051483255",
+     "mall": "쿠팡",
+     "title": "코지테일러 CT-20W TWS EQ모드 블루투스 스피커 B140, 화이트, CT-20W",
+     "label": "V"
+    },
+    {
+     "id": "c:9615114662",
+     "mall": "쿠팡",
+     "title": "브리츠 60W 프리미엄 거실용 매장용 블루투스 스피커, 아이보리, BZ-MG80 Pro",
+     "label": "V"
+    },
+    {
+     "id": "c:9225565449",
+     "mall": "쿠팡",
+     "title": "마샬 엠버튼3 블루투스 스피커",
+     "label": "M"
+    },
+    {
+     "id": "c:9689168988",
+     "mall": "쿠팡",
+     "title": "마샬 액톤4 블루투스 스피커",
+     "label": "M"
+    },
+    {
+     "id": "c:9225565444",
+     "mall": "쿠팡",
+     "title": "마샬 월렌2 블루투스 스피커",
+     "label": "M"
+    },
+    {
+     "id": "c:8660078022",
+     "mall": "쿠팡",
+     "title": "마샬 블루투스 스피커",
+     "label": "M"
+    },
+    {
+     "id": "c:8321300487",
+     "mall": "쿠팡",
+     "title": "브리츠 레트로 블루투스 스피커, BZ-JB9700, 화이트",
+     "label": "V"
+    }
+   ]
+  },
+  {
+   "query": "서류가방",
+   "items": [
+    {
+     "id": "c:9573908860",
+     "mall": "쿠팡",
+     "title": "익스클라메이션마크 남성 프리미엄 소가죽 서류가방 클러치백 토트백 크로스백 3WAY 직장인 가방 B#E100",
+     "label": "M"
+    },
+    {
+     "id": "c:7883390027",
+     "mall": "쿠팡",
+     "title": "CaecnKoen 남성 노트북 서류가방 남자 패션 브랜드 01",
+     "label": "M"
+    },
+    {
+     "id": "a:62d5022f33218530364034c3b5313aaa",
+     "mall": "ADPICK",
+     "title": "남성 서류가방 크로스백  노트북가방 백팩 캔버스 가죽 남자 여성  맨스백",
+     "label": "M"
+    },
+    {
+     "id": "a:89d1660ddd724bf10cad0252f38ed9e3",
+     "mall": "ADPICK",
+     "title": "루이비통 다미에 인피니트 포르트 도큐먼 비즈니스 브리프케이스 서류가방",
+     "label": "M"
+    },
+    {
+     "id": "a:ba1dc5d523ce69d91716843dbd3fd60d",
+     "mall": "ADPICK",
+     "title": "[아메리칸투어리스터] RUBIO 루비오 포트폴리오 서류가방 HL409012_EIS[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "c:9512095335",
+     "mall": "쿠팡",
+     "title": "노르 토트백 크로스 서류 가방 어깨끈 노트북 수납 브리프케이스",
+     "label": "M"
+    },
+    {
+     "id": "a:09b33a8a19621ecead9e7907ea66139d",
+     "mall": "ADPICK",
+     "title": "[해외] 대형 컴퓨터 가방, 에어 쿠션이 내장된 세련된 디자인의 출퇴근용 서류 가방, 컴퓨터 수납 공간을 완벽하게 감싸줍니다.",
+     "label": "M"
+    },
+    {
+     "id": "a:9c7136f0443c34e9b9fdd973aa29fb04",
+     "mall": "ADPICK",
+     "title": "제노바 808 회사원 서류가방 서류가방 회사원가방",
+     "label": "M"
+    },
+    {
+     "id": "a:88e5c9fac3e4800968986248eb538bcd",
+     "mall": "ADPICK",
+     "title": "[기프트] 손잡이 파일케이스 낮은형 서류 가방 문서정리",
+     "label": "M?"
+    },
+    {
+     "id": "c:4713297474",
+     "mall": "쿠팡",
+     "title": "애드에딧 남성용 포스트 서류가방",
+     "label": "M"
+    },
+    {
+     "id": "c:9700510119",
+     "mall": "쿠팡",
+     "title": "서류가방  노트북 수납 옥스포드 원단",
+     "label": "M"
+    },
+    {
+     "id": "c:9587082033",
+     "mall": "쿠팡",
+     "title": "로건 남성 레더 크로스 토트백 14인치 노트북 서류 가방",
+     "label": "M"
+    },
+    {
+     "id": "c:8164289044",
+     "mall": "쿠팡",
+     "title": "Gmpz 남자 사무용 가죽 서류가방",
+     "label": "M"
+    },
+    {
+     "id": "a:ac9a3354dd670358e6985f9fdd780e38",
+     "mall": "ADPICK",
+     "title": "[헤지스] 브라운 로고배색 서류가방 HJBA5E851W3",
+     "label": "M"
+    },
+    {
+     "id": "a:3124cda9327955a517380b066871b9f0",
+     "mall": "ADPICK",
+     "title": "쌤소나이트 Samsonite Black Label BOWLEY 보울리 서류가방 UC209002",
+     "label": "M"
+    },
+    {
+     "id": "a:a3eaee9ffc71a9a61b55c292559af724",
+     "mall": "ADPICK",
+     "title": "아메리칸투어리스터/AT SPEEDAIR LAPTOP 항균 서류가방 M BLACK 23Z09017/기기케이스/스트랩 노트북케이스",
+     "label": "M"
+    },
+    {
+     "id": "a:72c4f49400a1b7764d610664e9d55ec6",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/익스트리모 Everyday simple 서류가방 2color CH021",
+     "label": "M"
+    },
+    {
+     "id": "a:64a230a08a79b0eca4739d099fa2047c",
+     "mall": "ADPICK",
+     "title": "어반백 서류가방 서류가방URB_M362",
+     "label": "M"
+    },
+    {
+     "id": "a:5235badc421d51ec67e426e3cdbc628b",
+     "mall": "ADPICK",
+     "title": "[하프클럽/빌리버스]빌리버스 남자 서류가방 BJI482 소가죽 브리프케이스 직",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "ahxjka",
+   "items": [
+    {
+     "id": "c:9009949102",
+     "mall": "쿠팡",
+     "title": "AHXJKA 23.8\" 휴대용 모니터 350nits 100Hz sRGB IPS PC 노트북 전화 XBox 스위치용 사무실 디스플레이 확",
+     "label": "M"
+    },
+    {
+     "id": "c:9823010791",
+     "mall": "쿠팡",
+     "title": "14 인치 휴대용  포인트 스크린 IPS 노트북 XBox / 5 스위치 TV 박스 셀 AHXJKA 두 번째 외부 화면",
+     "label": "M"
+    },
+    {
+     "id": "a:9bf28871130e4623d3d14ff1993e1a0e",
+     "mall": "ADPICK",
+     "title": "[해외] AHXJKA 14인치 휴대용 모니터 HD 1366*768P 60Hz TN 패널 Type-C 미니 HDMI 노트북, 휴대폰, Xbox용 휴대용 디스플레이",
+     "label": "M"
+    },
+    {
+     "id": "c:9823049580",
+     "mall": "쿠팡",
+     "title": "AHXJKA 17.3인치 휴대용  IPS HD 1600*900 해상도 72% sRGB VESA 마운트 지원 노트북 TV PC 게임 콘솔용 외",
+     "label": "M"
+    },
+    {
+     "id": "c:9588997906",
+     "mall": "쿠팡",
+     "title": "AHXJKA 듀얼 스크린 휴대용 모니터 15.6인치 화면2개 포터블 업무용 접이식 FHD 1080P 서브 보조 모니터",
+     "label": "M"
+    },
+    {
+     "id": "a:18e4e45b942544b2b5860921dd796381",
+     "mall": "ADPICK",
+     "title": "[해외] AHXJKA 17.3인치 900P HD 휴대용 모니터, 16:9 화면 비율, 72% sRGB, IPS 패널, Type-C 및 Mini HDMI 포트 지원, 스마트폰, 게임, 노트북, Xbox, PS4/5, Mac, Nintendo Switch에 적합.",
+     "label": "M"
+    },
+    {
+     "id": "c:9743096524",
+     "mall": "쿠팡",
+     "title": "AHXJKA 17.3인치 16:10 휴대용 모니터 IPS 게임용 보조모니터",
+     "label": "M"
+    },
+    {
+     "id": "c:9179801260",
+     "mall": "쿠팡",
+     "title": "AHXJKA 23.8인치 휴대용 모니터 350nits 100Hz 100% sRGB IPS PC 노트북 전화 XBox 스위치용 사무실 디스플",
+     "label": "M"
+    },
+    {
+     "id": "a:6e2c6884394dff27b17c440a119447b2",
+     "mall": "ADPICK",
+     "title": "AHXJKA 4.2인치 자기식 터치 셀카 디스플레이 셀프 촬영 라이브 방송 휴대폰 후면 카메라 뷰파인더",
+     "label": "M"
+    },
+    {
+     "id": "a:ef48f5b55cf3df257ba785b35ce8f39a",
+     "mall": "ADPICK",
+     "title": "AHXJKA 15.6인치 휴대용 모니터 1920x1080P 확장 디스플레이 IPS 패널 펜홀 스탠드 VESA USBC 미니 HDMI",
+     "label": "M"
+    },
+    {
+     "id": "a:7041e4a673464f91a1caf3fdaf42a38d",
+     "mall": "ADPICK",
+     "title": "AHXJKA 173인치 휴대용 모니터 FHD IPS 스크린 768P 1610 디스플레이VESA 홀 포함 USB Type-C 외부 보조",
+     "label": "M"
+    },
+    {
+     "id": "c:9825644561",
+     "mall": "쿠팡",
+     "title": "AHXJKA 11.6인치 터치스크린 휴대용 모니터, HD, 72% sRGB, 768P Steam Deck, 노트북, 스위치, PS4, PS5, Xbox용 여행용 디스플레이.",
+     "label": "M"
+    },
+    {
+     "id": "c:9835559688",
+     "mall": "쿠팡",
+     "title": "AHXJKA 17.3인치 휴대용 모니터 HD 1600x900 TN 72%sRGB 16:9 Type-C HDMI 플러그 앤 플레이 노트북용 외장 보조 디스플레이",
+     "label": "M"
+    },
+    {
+     "id": "c:9561764123",
+     "mall": "쿠팡",
+     "title": "AHXJKA 17 3인치 휴대용 16 게임용 모니터 모바일 패널 250CD PS5 디스플레이 박스 IPS 1600 TV 스크린 10 900P",
+     "label": "M"
+    },
+    {
+     "id": "a:dcd5df542da58efc5c114bc47306c1fa",
+     "mall": "ADPICK",
+     "title": "[해외] AHXJKA 17.3인치 휴대용 모니터, 1600x900 해상도, 16:9 화면 비율, 250cd/m² 밝기, 노트북, PC, Xbox, PS4/5, Switch, Mac 게임용 외장 확장 디스플레이",
+     "label": "M"
+    },
+    {
+     "id": "a:b7afd689bb0c47827ab494dd8816becf",
+     "mall": "ADPICK",
+     "title": "AHXJKA 15.6인치 무선 휴대용 모니터 미러링 노트북 XBox PS4 PS5 스위치 호환",
+     "label": "M"
+    },
+    {
+     "id": "a:6d9b96aff69a445eeb3ab44c80300e54",
+     "mall": "ADPICK",
+     "title": "[해외] AHXJKA 15.6인치 HD 768P 휴대용 모니터 60Hz TN 72%sRGB PC·노트북·Mac·Switch·Xbox·PS4용 외장 보조 디스플레이",
+     "label": "M"
+    },
+    {
+     "id": "c:9063318036",
+     "mall": "쿠팡",
+     "title": "AHXJKA 17 3인치 FHD 휴대용 모니터 60Hz 1800P PC 디스플레이 확장 게임 화면 노트북 휴대폰 맥 Xbox PS4",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "아이라이너",
+   "items": [
+    {
+     "id": "a:f66e9014c8b3232a4865d0f9df018c4f",
+     "mall": "ADPICK",
+     "title": "메이크업 10배 돋보기거울 아이라이너 눈썹정리",
+     "label": "X"
+    },
+    {
+     "id": "a:f2bc30e64500403abd797f41ab373c09",
+     "mall": "ADPICK",
+     "title": "[현대백화점] [맥]카잘 엑세스 롱웨어스모키 아이라이너 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:f94c007d5a180f03b46b2b16ac6e04cf",
+     "mall": "ADPICK",
+     "title": "[해외] 12개/세트 부드러운 컬러 아이라이너, 방수, 속건성, 내추럴 매트 마감, 초보자와 미용 애호가에게 적합",
+     "label": "M"
+    },
+    {
+     "id": "a:d15de5a9a293f61eaf81a87ca8eeb4dc",
+     "mall": "ADPICK",
+     "title": "오띠 슬림핏 드로잉 펜슬 아이라이너 (블랙) 0.12g",
+     "label": "M"
+    },
+    {
+     "id": "a:6488cd1b28febdd49525660fa9f6d793",
+     "mall": "ADPICK",
+     "title": "미샤/[더블유위크][30% 쿠폰]/[미샤] 롱웨어 젤 펜슬 라이너 4종/아이메이크업 아이라이너",
+     "label": "M"
+    },
+    {
+     "id": "a:49211e0c91e16a9391cf1d59fc7df0a1",
+     "mall": "ADPICK",
+     "title": "[키스미][NEW] 잉크 베일 아이라이너",
+     "label": "M"
+    },
+    {
+     "id": "a:ea6d5d445119554d09690eb6a4433236",
+     "mall": "ADPICK",
+     "title": "[본사공식] 리르 룩스 리퀴드 아이라이너 - 아이라인 붓펜 리퀴드 워터프루프",
+     "label": "M"
+    },
+    {
+     "id": "a:9a4e13cd32bd7f41ea095d1fc3c80e6e",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/리르 (1+1) 리르 룩스 젤 펜슬 아이라이너/워터프루프",
+     "label": "M"
+    },
+    {
+     "id": "a:e7c6602eedc5d7c8e59aba35b300002d",
+     "mall": "ADPICK",
+     "title": "[해외] 블랙 박스에 담긴 휴대용 아이 메이크업 스탬프 펜 세트 - 3초 만에 빠르게 사용 가능, 아랫 속눈썹용 포함, 아이라이너 및 점 찍기 등 다용도로 활용 가능",
+     "label": "M?"
+    },
+    {
+     "id": "a:018e7931012e97a15fc21039cd823a37",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/리르 리르 리얼 타투 펜 아이라이너",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "커피머신 돌체구스토",
+   "items": [
+    {
+     "id": "c:8991794934",
+     "mall": "쿠팡",
+     "title": "돌체구스토 네오 카페 커피머신",
+     "label": "M"
+    },
+    {
+     "id": "c:9751252669",
+     "mall": "쿠팡",
+     "title": "돌체구스토 지니오s 쉐어 커피머신",
+     "label": "M"
+    },
+    {
+     "id": "c:1947444077",
+     "mall": "쿠팡",
+     "title": "돌체구스토 지니오S 베이직 캡슐 커피머신",
+     "label": "M"
+    },
+    {
+     "id": "c:7496138686",
+     "mall": "쿠팡",
+     "title": "돌체구스토 지니오S 캡슐 커피머신 스타벅스 앳홈 팩",
+     "label": "M"
+    },
+    {
+     "id": "c:7660355019",
+     "mall": "쿠팡",
+     "title": "돌체구스토 지니오S 플러스 캡슐 커피머신",
+     "label": "M"
+    },
+    {
+     "id": "c:5435108153",
+     "mall": "쿠팡",
+     "title": "돌체구스토 지니오S 터치 캡슐 커피머신",
+     "label": "M"
+    },
+    {
+     "id": "c:9801933067",
+     "mall": "쿠팡",
+     "title": "돌체구스토 네오 쉐어 캡슐머신 + 스타벅스 캡슐홀더 번들팩 세트",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "에너지 절약 멀티탭",
+   "items": [
+    {
+     "id": "a:da615fdb43b6246e1d39d6ce30efff62",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/꾸밈 ch014-펭귄에너지절약",
+     "label": "X"
+    },
+    {
+     "id": "a:4630bfd3b38815a9d3d5e0912666bf45",
+     "mall": "ADPICK",
+     "title": "에너지랑 오렌지&amp;파인애플 (4.5L) (150mlx30개입)",
+     "label": "X"
+    },
+    {
+     "id": "c:8883374272",
+     "mall": "쿠팡",
+     "title": "ORDFLES 고용량 4000W 12구 과부하차단 USB 충전 타워형 멀티탭 (2~5m 선택 가능), 1개, 블랙, 2m",
+     "label": "M?"
+    },
+    {
+     "id": "c:9837299376",
+     "mall": "쿠팡",
+     "title": "E27 LED 전구 AC 220V 110V G80 G95 G125 에너지 절약 글로벌 라이트 Lampada Ampoule LED 전구 차가운 따뜻한 흰색 램프",
+     "label": "X"
+    },
+    {
+     "id": "a:117a3d306991b013e44843734f56e70b",
+     "mall": "ADPICK",
+     "title": "[아이치/나고야] 초특가! 원하는 등급 선택 및 헤어 스타일링 포함 4,950엔!! 여성분들을 위한 특별 학생 할인 플랜으로 최대 4,180엔까지 절약하세요",
+     "label": "X"
+    },
+    {
+     "id": "a:4c3a633207508d3fe30bba4ae34db5ac",
+     "mall": "ADPICK",
+     "title": "5구 멀티탭 에너지절약 전기코드선 안전한멀티탭",
+     "label": "M"
+    },
+    {
+     "id": "c:9549005502",
+     "mall": "쿠팡",
+     "title": "알루바프로 과부하차단 고용량멀티탭 알루미늄 서버탭 6구 디에스이, 블랙, 1개, 3m",
+     "label": "M?"
+    },
+    {
+     "id": "a:1ddbfcf1e406d64963f5a632283430f1",
+     "mall": "ADPICK",
+     "title": "최대 3,200엔 절약! 오카야마 하레타비 패스포트 왕복권 (오카야마현 오카야마시)",
+     "label": "X"
+    },
+    {
+     "id": "c:9835185099",
+     "mall": "쿠팡",
+     "title": "전원 탭 개별 스위치 연장 코드 USB 콘센트 적격 송장 발행 가능 Type-C 1포트 USB-A 2포트 플러그 4구 먼지 방지 셔터 번개 가드 에너지 절약 PSE 인증",
+     "label": "M"
+    },
+    {
+     "id": "c:9548507290",
+     "mall": "쿠팡",
+     "title": "알루바프로 누전차단 고용량멀티탭 알루미늄 서버탭 6구 디에스이, 블랙, 1개, 3m",
+     "label": "M?"
+    },
+    {
+     "id": "a:d99447c160ca4cd917ad7914e756abf2",
+     "mall": "ADPICK",
+     "title": "[해외] 리안통 2L 스테인리스 미니 압력솥 CE 인증 방폭 빠른 조리 에너지 절약 밥 &amp; 음식 조리기구",
+     "label": "X"
+    },
+    {
+     "id": "a:888f55490d12f62362338d966c597f66",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]온습도계 실내 온도 습도 측정 에너지절약",
+     "label": "X"
+    },
+    {
+     "id": "c:8915745853",
+     "mall": "쿠팡",
+     "title": "고용량 과부하차단 5구 멀티탭 4000w 냉장고 에어컨 개별스위치 멀티콘센트, 1개, 화이트, 5m",
+     "label": "M"
+    },
+    {
+     "id": "a:8198f0351454d59be7f6364a4ecf0e85",
+     "mall": "ADPICK",
+     "title": "에너지절약 온습도계 학교 관공서 주민센터 은행 G",
+     "label": "X"
+    },
+    {
+     "id": "a:3179d38287fc90cfa83b85183f50bb09",
+     "mall": "ADPICK",
+     "title": "주간타이머 전력감소 전기절약 일주일 콘센트 전력절약 에너지효율 스마트타이머 TLj01489",
+     "label": "X"
+    },
+    {
+     "id": "a:07fd6e563106a9ad4df7cb851fade640",
+     "mall": "ADPICK",
+     "title": "[렌탈] LG 트롬 건조기 10kg 듀얼 인버터 에너지절약 RH10WTA.BKOR 60개월 33000",
+     "label": "X"
+    },
+    {
+     "id": "a:ecee89a574ff86add53a6226feb33afd",
+     "mall": "ADPICK",
+     "title": "[해외] 팬, 리모컨, 디밍 기능이 있는 스마트 천장등, 침실 장식용, 보이지 않는 에어 블레이드, LED 에너지 절약",
+     "label": "X"
+    },
+    {
+     "id": "a:01e696490940f6ad70aa65d3ba2d9327",
+     "mall": "ADPICK",
+     "title": "에너지 절약 기록장",
+     "label": "X"
+    },
+    {
+     "id": "c:9803242028",
+     "mall": "쿠팡",
+     "title": "필립스 멀티탭 맥스 서지보호 6구 고용량 개별스위치 과부하차단",
+     "label": "M"
+    },
+    {
+     "id": "a:923bfb207982a467b5ae3dd6cfe72219",
+     "mall": "ADPICK",
+     "title": "[eBook] 철학적 사유와 인식 에너지 절약 운동과 환경윤리 실천",
+     "label": "X"
+    },
+    {
+     "id": "a:2405060784e2efccd0bb484a389dd165",
+     "mall": "ADPICK",
+     "title": "[리얼괌] 괌공항 한인택시 단독차량 4인까지OK 경비절약",
+     "label": "X"
+    },
+    {
+     "id": "c:8630083970",
+     "mall": "쿠팡",
+     "title": "KOZI 3구 절전형 멀티탭 개별스위치",
+     "label": "M"
+    },
+    {
+     "id": "a:931fb818ec7edebd3428fab7bb5c1d50",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/꾸밈 cm016-에너지절약(북극곰)",
+     "label": "X"
+    },
+    {
+     "id": "a:9acf3ddc0fc5cf96588d6259822f7552",
+     "mall": "ADPICK",
+     "title": "[기타] 멀티탭 5구 3m 안전콘센트 에너지절약 안전멀티탭 대기전력차단콘센트 멀티콘센트 접지멀티탭[이마트몰] [WFR6T78]",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "맥박 산소계",
+   "items": [
+    {
+     "id": "a:68223e6ffb0eaa4494e9bbf5c35bf868",
+     "mall": "ADPICK",
+     "title": "[보리보리] 몰리스서즈 몰리스서즈 옥시젠 화이트너 1.15kg 흰옷 와이셔츠목때 얼룩제거제 통돌이 산소계표백제 2개",
+     "label": "X"
+    },
+    {
+     "id": "a:ca0be4fdb4e6ca026451d0a678066335",
+     "mall": "ADPICK",
+     "title": "[유한양행] [유한양행]유한젠 산소계표백제(분말) 파우치형 3kg 2개[이마트몰]",
+     "label": "X"
+    },
+    {
+     "id": "a:909ebd7b4c7b9983c7ffdd59cfc7f071",
+     "mall": "ADPICK",
+     "title": "[유한양행] 유한젠 산소계 표백제 액체형 리필 1.8L 1개",
+     "label": "X"
+    },
+    {
+     "id": "a:b7d6a477d88b5d521b31875ecca703aa",
+     "mall": "ADPICK",
+     "title": "다큐멘터리 - 아메리카의 맥박 &amp; 저스틴 타운즈 얼 라이브 콘서트 (Country Roads - The Heartbeat of America) (한글자막)(DVD) (2014) - 여러 아티스트",
+     "label": "X"
+    },
+    {
+     "id": "a:92450343a9a5f1f5b69e8a45fb2d4205",
+     "mall": "ADPICK",
+     "title": "[유한양행] 유한젠 산소계 표백제 액체형 리필 1.8L x 3개",
+     "label": "X"
+    },
+    {
+     "id": "a:99545a052e77b4173732097a05bc3f91",
+     "mall": "ADPICK",
+     "title": "유한양행유한젠 액체형 산소계표백제 용기 1.4L 8개 +할인쿠폰",
+     "label": "X"
+    },
+    {
+     "id": "a:3d197987326d7039501b7dbca7164189",
+     "mall": "ADPICK",
+     "title": "무궁화 브라이트 산소계 표백제 1.5kg",
+     "label": "X"
+    },
+    {
+     "id": "a:0191533fb2b128d0e86b0fd7b7c6fdf9",
+     "mall": "ADPICK",
+     "title": "스티브 라이히: 맥박 &amp; 사중주 (Steve Reich: Pulse &amp; Quartet) (LP) - Colin Currie Group",
+     "label": "X"
+    },
+    {
+     "id": "a:516246f7e6373e0ed162dddcba2d00eb",
+     "mall": "ADPICK",
+     "title": "[해외] Nellcor DB7 핀 애니멀/수의학 이어클립과 호환 Spo2 센서, 맥박 산소 농도계 센서, 산소 프로브, 1m/3ft TPU 사용",
+     "label": "A"
+    },
+    {
+     "id": "a:d56fdf32ef2e83b55155342d4087d515",
+     "mall": "ADPICK",
+     "title": "[기프트] 산소포화도 측정기 맥박 건강 관리 용품 검사 진단",
+     "label": "M"
+    },
+    {
+     "id": "a:deca322bb6ddaffe3e3e1bc7dc617a84",
+     "mall": "ADPICK",
+     "title": "[보리보리] 몰리스서즈 몰리스서즈 옥시젠 화이트너 1.15kg 흰옷 와이셔츠목때 얼룩제거제 통돌이 산소계표백제 4개",
+     "label": "X"
+    },
+    {
+     "id": "a:f5ea1884423031adc58bc6cac28795bb",
+     "mall": "ADPICK",
+     "title": "[해외] 신제품 재사용 가능 노닌 8000AA SpO2 센서 맥박 산소 농도계 센서, 성인용 손가락 클립 1M DB9 7 핀, CE 승인",
+     "label": "A"
+    },
+    {
+     "id": "a:12c67eda643c6c0f477ecd4cd72fb4e4",
+     "mall": "ADPICK",
+     "title": "맥박 산소포화계 옥시미터 핑거클립 무선 블루투스 산소계 산소 측정기 A2 감지기",
+     "label": "M"
+    },
+    {
+     "id": "a:7b2401f5a0e86e4dc1106df90e584057",
+     "mall": "ADPICK",
+     "title": "[하프클럽/셀러허브]휴비딕 팔뚝형 혈압계 비피첵 프로 HBP-1500 가정용 측정기 맥박 D",
+     "label": "X"
+    },
+    {
+     "id": "a:bebc9dd731beb4a45647eb9e9cacffbb",
+     "mall": "ADPICK",
+     "title": "[엄지척] 탑 311UZM07 과탄산소다 산소계 표백제 세탁세제 가루세제 6kg[이마트몰]",
+     "label": "X"
+    },
+    {
+     "id": "a:3eb679a00074d7c60012938939508a55",
+     "mall": "ADPICK",
+     "title": "DS105 산소포화도측정기 맥박 산소계 손가락클립",
+     "label": "M"
+    },
+    {
+     "id": "a:eea4bc359756478db2f46c1bde0f59a1",
+     "mall": "ADPICK",
+     "title": "한의학으로 내 몸 읽기 ? 맥박·안색·혀로 보는 TCM 체질 진단 1시간",
+     "label": "X"
+    }
+   ]
+  },
+  {
+   "query": "피자 소스",
+   "items": [
+    {
+     "id": "c:7038410831",
+     "mall": "쿠팡",
+     "title": "오뚜기 맛있는 피자소스",
+     "label": "M"
+    },
+    {
+     "id": "c:152038829",
+     "mall": "쿠팡",
+     "title": "코다노 피자소스",
+     "label": "M"
+    },
+    {
+     "id": "c:6568491216",
+     "mall": "쿠팡",
+     "title": "치리오 피자소스",
+     "label": "M"
+    },
+    {
+     "id": "c:6723471460",
+     "mall": "쿠팡",
+     "title": "오뚜기 맛있는 피자소스",
+     "label": "M"
+    },
+    {
+     "id": "c:6281729930",
+     "mall": "쿠팡",
+     "title": "코다노 피자소스 2kg",
+     "label": "M"
+    },
+    {
+     "id": "c:6215139655",
+     "mall": "쿠팡",
+     "title": "오뚜기 오쉐프 피자소스",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "솔라 랜턴",
+   "items": [
+    {
+     "id": "a:82f330ac32367b56e28d45680438c572",
+     "mall": "ADPICK",
+     "title": "솔라랜턴 자바라/방수보틀/랜턴/캠핑랜턴/무드등/100루멘/led랜턴/태양광충전",
+     "label": "M"
+    },
+    {
+     "id": "a:5666cfd461ad0a37bbe3d2cfd9ce5ad3",
+     "mall": "ADPICK",
+     "title": "LED 랜턴 스타일 솔라 캡모자 올리브 고품질 야간 낚",
+     "label": "X"
+    },
+    {
+     "id": "a:7c5e7c1ff1b82986a39678920c89ba3c",
+     "mall": "ADPICK",
+     "title": "[기프트] 정원등 10개 가로등 조명등 솔라등 펜션등 야외등 마당랜턴 마당조명(WFPAC8K)",
+     "label": "V?"
+    },
+    {
+     "id": "a:be72a33bf5733a0fd8829eddcab7d702",
+     "mall": "ADPICK",
+     "title": "[기타] 다용도 캠핑용 led 랜턴 솔라 태양광 충전 필수품 조명 캠핑용LED랜턴 태양광충전랜턴[이마트몰] [WFQVRLI]",
+     "label": "M"
+    },
+    {
+     "id": "a:958b4bb273ded34c27f3d7c35d40a9ec",
+     "mall": "ADPICK",
+     "title": "태양광 라디오 손전등 자가발전 카드 비상용 조명 충전 발전기 방재 백업 솔라 비상",
+     "label": "V?"
+    },
+    {
+     "id": "a:d7068a7d3188442a9b0e0404fd4271ce",
+     "mall": "ADPICK",
+     "title": "감성 캠핑랜턴 충전식 랜턴 접이식 삼각대 캠핑 조명",
+     "label": "V"
+    },
+    {
+     "id": "a:8c8ed0d0dcb1e459a69b8870b18faab7",
+     "mall": "ADPICK",
+     "title": "[해외] 야외 COB 캠핑 솔라 램프 휴대용 충전식 걸이형 조명 방수 하이킹 낚시 가정용 비상 랜턴 (후크 포함)",
+     "label": "M"
+    },
+    {
+     "id": "a:31c883c2c427b309d49db61df2f3e1db",
+     "mall": "ADPICK",
+     "title": "콜맨/콜맨 쿼드 멀티 패널 랜턴 2000031270/용품 기타 잡화",
+     "label": "V"
+    },
+    {
+     "id": "a:60209aac4efef90ab5cecd5af8ec5e88",
+     "mall": "ADPICK",
+     "title": "[해외] 솔라 캠핑 램프 10미터 스트링 라이트 야외 텐트 램프 타입-C 분위기 랜턴 LED 손전등 후크 조명 포함 야외용",
+     "label": "M?"
+    },
+    {
+     "id": "a:bca200cd371fa5ec1749283701b8e16b",
+     "mall": "ADPICK",
+     "title": "LED 태양광 캠핑랜턴",
+     "label": "M"
+    },
+    {
+     "id": "a:521a876fcbba0d6b09a82de9ad74f2e8",
+     "mall": "ADPICK",
+     "title": "캠프365 2IN1 노스키토 솔라 해충 킬러 랜턴 모기퇴치 캠핑 감성",
+     "label": "V?"
+    },
+    {
+     "id": "a:c2107011c9164960b14da7b541e0de86",
+     "mall": "ADPICK",
+     "title": "[보리보리] 오너클랜 충전 LED 자석 자바라 작업 조명 캠핑 랜턴 실내등",
+     "label": "V"
+    },
+    {
+     "id": "a:9ae0a91a47e1f43e8a7eccde4ef9ab7f",
+     "mall": "ADPICK",
+     "title": "솔라랜턴 손잡이후레쉬 조명램프 대 +할인쿠폰",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "실내 고양이 사료",
+   "items": [
+    {
+     "id": "c:9031412639",
+     "mall": "쿠팡",
+     "title": "우성 전연령 고양이 이지케어 구내건강 건식사료, 2kg, 1개, 연어",
+     "label": "M?"
+    },
+    {
+     "id": "c:9818324111",
+     "mall": "쿠팡",
+     "title": "3651 프로밀 전연령 고양이 사료",
+     "label": "M?"
+    },
+    {
+     "id": "c:7716589999",
+     "mall": "쿠팡",
+     "title": "힐스사이언스다이어트 어덜트 고양이 기능성 사료",
+     "label": "M?"
+    },
+    {
+     "id": "c:9698008047",
+     "mall": "쿠팡",
+     "title": "유한양행레시피브이 고양이 노블 기능성 사료, 인도어, 1.2kg, 1개",
+     "label": "M"
+    },
+    {
+     "id": "c:9467980292",
+     "mall": "쿠팡",
+     "title": "럭셔리발란스 참좋은 고양이 황태사료, 1개, 1kg, 가수분해닭",
+     "label": "M?"
+    },
+    {
+     "id": "c:6047061",
+     "mall": "쿠팡",
+     "title": "테이스트오브더와일드 토우 캣 송어 훈제연어 고양이 기능성 사료, 피부/피모+알러지, 4.5kg, 1개",
+     "label": "M?"
+    },
+    {
+     "id": "c:8826394168",
+     "mall": "쿠팡",
+     "title": "캣퓨어 고양이 유산균 포뮬러 기능성 사료, 헤어볼+장건강, 1.2kg, 1개",
+     "label": "M?"
+    },
+    {
+     "id": "c:8791772730",
+     "mall": "쿠팡",
+     "title": "웰츠 캣 기능성 사료",
+     "label": "M?"
+    },
+    {
+     "id": "c:1593850924",
+     "mall": "쿠팡",
+     "title": "퓨리나 캣차우 1세이상 인도어 2.86KG 고양이 사료",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "우주복",
+   "items": [
+    {
+     "id": "a:fa3ab6ca91b9c1bedd18465964e25395",
+     "mall": "ADPICK",
+     "title": "몰랑 라잉 가방고리 우주복",
+     "label": "X"
+    },
+    {
+     "id": "c:8410895438",
+     "mall": "쿠팡",
+     "title": "지누오  오토바이 방한복 배달 라이딩 일체형 우주복 허리조절가능스키복 겨울 스즈끼복 배달 방한복 바이크 방한 용품 패딩",
+     "label": "M"
+    },
+    {
+     "id": "a:556e78bd56e01cc01de6d730e3fe2122",
+     "mall": "ADPICK",
+     "title": "[쇼콜라] 에트왈썸머우주복 TNPRQX621WA [TNPRQX621WA]",
+     "label": "M"
+    },
+    {
+     "id": "a:cb1ccc022ecc0fae5f194d33743d0ac1",
+     "mall": "ADPICK",
+     "title": "폴로 9M 유아 점프수트 점프슈트 기모안감 우주복 C-원피스-150",
+     "label": "M"
+    },
+    {
+     "id": "a:06e0916ee8b7a0546ccd53a32844f7e2",
+     "mall": "ADPICK",
+     "title": "겨울정비복 스즈끼 우주복 상하일체형 패딩 융털 내피 방수 작업복 W077",
+     "label": "M"
+    },
+    {
+     "id": "c:8457635564",
+     "mall": "쿠팡",
+     "title": "couyor 겨울 라이딩 오토바이 방한복 방한 방풍 배달 방한복 라이더 우주복 겨울 배달 우주복 기모안감 바이크 방한복",
+     "label": "M"
+    },
+    {
+     "id": "c:9769893910",
+     "mall": "쿠팡",
+     "title": "겨울 라이더 스즈키복 오토바이 방한복 배달 우주복 일체형 방한 스즈끼 스즈키 노다가 스즈끼복 BA01",
+     "label": "M"
+    },
+    {
+     "id": "a:d208d43e8d4f72459b097572c319bd0c",
+     "mall": "ADPICK",
+     "title": "BL)미니아일렛우주복 46A70-041-14--",
+     "label": "M"
+    },
+    {
+     "id": "a:eda826ec1117fa41a71fd166a9049859",
+     "mall": "ADPICK",
+     "title": "애플베베 남아여아 순면 긴팔 우주복 206291",
+     "label": "M"
+    },
+    {
+     "id": "a:540ced40f3963d37150457a19c4966eb",
+     "mall": "ADPICK",
+     "title": "아기옷 클라우드 누빔 곰돌이후드 패딩 우주복 206051",
+     "label": "M"
+    },
+    {
+     "id": "a:6478c37b39e7cb398e8bb4bb94191a9e",
+     "mall": "ADPICK",
+     "title": "타티네쇼콜라/UJ말로뽀글우주복/의류 바디수트",
+     "label": "M"
+    },
+    {
+     "id": "a:d163b6e991fdf347553e50f10695d29b",
+     "mall": "ADPICK",
+     "title": "[현대백화점] [압소바](26FW)레슬레 코튼모달 우주복(조끼 모자)(아기선물) WAB2671NU21 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "c:7844185193",
+     "mall": "쿠팡",
+     "title": "켓와일로 오토바이 겨울 방한우주복 C30",
+     "label": "M"
+    },
+    {
+     "id": "a:9b0494539b88065406b662dc92538394",
+     "mall": "ADPICK",
+     "title": "[보리보리] 에뜨와 엘리아우주복(O/WHITE)_07S157581",
+     "label": "M"
+    },
+    {
+     "id": "a:f366ba8b260942a52bd002b0897e7a94",
+     "mall": "ADPICK",
+     "title": "[국내도서] 우주복 있음, 출장 가능",
+     "label": "X"
+    },
+    {
+     "id": "c:7723100767",
+     "mall": "쿠팡",
+     "title": "켓와일로 오토바이 겨울 방한우주복 C20",
+     "label": "M"
+    },
+    {
+     "id": "c:9209900992",
+     "mall": "쿠팡",
+     "title": "노르반 오토바이 우주복 겨울 스즈끼복 방한복",
+     "label": "M"
+    },
+    {
+     "id": "c:9797228227",
+     "mall": "쿠팡",
+     "title": "ZHINUO 지누오  오토바이 방풍복 패딩 우주복 일체형 스즈끼복 겨울 작업복 배달 방한복 라이딩 낚시복 스키복 허리 저퍼 허리 조절",
+     "label": "M"
+    },
+    {
+     "id": "a:9f2248289cc678a00ecaa5df0ae17f38",
+     "mall": "ADPICK",
+     "title": "[압소바] 메리 퍼 우주복(보넷) AB2672OR10 크림",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "주걱",
+   "items": [
+    {
+     "id": "a:826aabd9e690a1d33bcccb1f95e96366",
+     "mall": "ADPICK",
+     "title": "(국내배송) 벨루티 슈혼 구두주걱",
+     "label": "X"
+    },
+    {
+     "id": "a:0913ef8ce685976e2fd0187180ed7f3a",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/키즈키즈 헬로키티 올드스쿨 주걱세트(H507861)",
+     "label": "M"
+    },
+    {
+     "id": "a:ed987fd29afaa9ca2654d56a377562ab",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/키즈키즈 리락쿠마 마스코트 주걱 (H65172)",
+     "label": "M"
+    },
+    {
+     "id": "a:ef1cee75205163f1f576033942d14a25",
+     "mall": "ADPICK",
+     "title": "[산리오] 헬로키티 주걱 (받침대 포함)",
+     "label": "M"
+    },
+    {
+     "id": "a:eb348025a3a676edba1f35210224b9f3",
+     "mall": "ADPICK",
+     "title": "냄비바닥긁개 도비주걱 볶음주걱 요리주걱",
+     "label": "M"
+    },
+    {
+     "id": "a:7554b9603411de5ea1b078d59d099b66",
+     "mall": "ADPICK",
+     "title": "25SS 크롬하츠 구두주걱",
+     "label": "X"
+    },
+    {
+     "id": "a:644e7fe7cbf8224f891c92b5e7f6e597",
+     "mall": "ADPICK",
+     "title": "[제이큐] 타파웨어 밥주걱 엠보싱 스탠딩 밥솥 주걱 세트 민트 연핑크 2p[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:fd56cc3e05bf1b174694902ce9cec9dd",
+     "mall": "ADPICK",
+     "title": "타파웨어/스탠딩 주걱 세트(2)/조리도구 키친툴",
+     "label": "M"
+    },
+    {
+     "id": "a:be54ff0f618fe2b6108a52e5a4d3a63f",
+     "mall": "ADPICK",
+     "title": "히메토 2세대 밥알이 붙지않는 밥주걱",
+     "label": "M"
+    },
+    {
+     "id": "a:3e24201f69d39381a852c29427ff948b",
+     "mall": "ADPICK",
+     "title": "타파웨어 스탠딩 주걱 세트2개",
+     "label": "M"
+    },
+    {
+     "id": "a:00caf2c1150b86390d2b89c4bcbc78bf",
+     "mall": "ADPICK",
+     "title": "[JAJU] 마스터실리콘볶음주걱_5.5X27CM J71N902066600[이마트몰] [J71N9020666]",
+     "label": "M"
+    },
+    {
+     "id": "a:56de9c7afe12a022db99ce4968e71c7d",
+     "mall": "ADPICK",
+     "title": "[N365] 진공 손잡이 알뜰 주걱",
+     "label": "M"
+    },
+    {
+     "id": "a:b61324a92e19610c1630b604022dc872",
+     "mall": "ADPICK",
+     "title": "키친몰링/보렌 실리콘 초대형 볶음 주걱 42cm 3colcor 택1/조리도구 키친툴",
+     "label": "M"
+    },
+    {
+     "id": "a:338fdd8f55d4c1012c5f3596deaeba2e",
+     "mall": "ADPICK",
+     "title": "타파웨어 스탠딩 주걱 세트 2개",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "프린터 본품만",
+   "items": [
+    {
+     "id": "a:fac341d27b7a6f53f22548d910da6209",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/오피스큐 엡손 라벨프린터 LW K200BL 173x109x58mm",
+     "label": "M"
+    },
+    {
+     "id": "a:4073fb0519859db6ee0d74bf468dbcae",
+     "mall": "ADPICK",
+     "title": "캐논 정품셀피프린터 CP1500 핑크본체+등록카드+인화지108장+잉크2개+꾸미지 재료 +가방 풀세트",
+     "label": "M"
+    },
+    {
+     "id": "a:b30498b41185636dacf78a6a8e82d942",
+     "mall": "ADPICK",
+     "title": "엡손 L8050 무한잉크 포토프린터 6색 컬러 인쇄, WIFI 지원 CD 인쇄 사진 인화 [잉크포함]",
+     "label": "M"
+    },
+    {
+     "id": "a:25f500e70e69043f3a7ad445b38fa8d2",
+     "mall": "ADPICK",
+     "title": "[기프트] Meemo 스마트 미니 라벨 프린터 M02S",
+     "label": "M"
+    },
+    {
+     "id": "c:9804907093",
+     "mall": "쿠팡",
+     "title": "[라벨터치] 마로킷 라벨프린터 자판형+블루투스앱 올인원 하이브리드 라벨기",
+     "label": "M"
+    },
+    {
+     "id": "c:9838470589",
+     "mall": "쿠팡",
+     "title": "자동 잉크젯 마킹기 산업용 유동기한 프린터 인자기 25.4mm+검정 잉크+플로어 스탠드",
+     "label": "M?"
+    },
+    {
+     "id": "a:33d12ee2bdf54350ef635726bb30d2ef",
+     "mall": "ADPICK",
+     "title": "[캐논] 정품 포토프린터 SElPHY CP 1500 핸드폰사진인화기(로그인시추가할인)",
+     "label": "M"
+    },
+    {
+     "id": "a:2805236982fd057bf65cca0878c3c0ef",
+     "mall": "ADPICK",
+     "title": "[기타] 신도리코 N910 검정 정품토너 N910T40K 복합기 프린터 프린트[이마트몰] [WFQZUFN]",
+     "label": "A"
+    },
+    {
+     "id": "a:663d2389d20b206a30c6136bc2583ed9",
+     "mall": "ADPICK",
+     "title": "캐논인스픽/캐논 인스픽P2 휴대용 포토프린터 PV-223 스마트폰 전용 사진인화 iNSPiC P2/PC/주변기기 프린터/복합기",
+     "label": "M"
+    },
+    {
+     "id": "a:172fc384ddf5127c30596d1be1864ce9",
+     "mall": "ADPICK",
+     "title": "캐논 LBP335X 흑백 레이저 프린터 43ppm 유무선 네트워크 자동양면인쇄 토너포함",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "히터",
+   "items": [
+    {
+     "id": "c:9018541325",
+     "mall": "쿠팡",
+     "title": "홈플래닛 2단 석영관 히터",
+     "label": "M"
+    },
+    {
+     "id": "c:9768294438",
+     "mall": "쿠팡",
+     "title": "에어보나 세라믹 가정용 업소용 전기히터",
+     "label": "M"
+    },
+    {
+     "id": "c:9779588408",
+     "mall": "쿠팡",
+     "title": "프리미엄 전기 컨벡션 히터 리모컨",
+     "label": "M"
+    },
+    {
+     "id": "c:9185978442",
+     "mall": "쿠팡",
+     "title": "슈어홈 3초 강력난방 전기세 절약 컨벡션 히터",
+     "label": "M"
+    },
+    {
+     "id": "c:9769457752",
+     "mall": "쿠팡",
+     "title": "[27년형 인공지능] 한경희 무소음 컨벡션 히터 라디에이터 온풍기",
+     "label": "M"
+    },
+    {
+     "id": "c:7635451471",
+     "mall": "쿠팡",
+     "title": "모리츠 5방향 전기히터",
+     "label": "M"
+    },
+    {
+     "id": "c:6773488903",
+     "mall": "쿠팡",
+     "title": "포첸 2단 쿼츠 히터",
+     "label": "M"
+    },
+    {
+     "id": "c:6079713270",
+     "mall": "쿠팡",
+     "title": "홈플래닛 리모컨 컨벡션 히터",
+     "label": "M"
+    },
+    {
+     "id": "c:5885162592",
+     "mall": "쿠팡",
+     "title": "홈플래닛 전기히터",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "주철 프라이팬",
+   "items": [
+    {
+     "id": "a:701b3182f66f83f302a434ce6bf97f52",
+     "mall": "ADPICK",
+     "title": "무쇠 철판 구이팬 주철 볶음팬 호떡 닭갈비 전판 로스터 궁중팬 사각 불판 캠핑용",
+     "label": "M?"
+    },
+    {
+     "id": "c:9809249694",
+     "mall": "쿠팡",
+     "title": "1+1 넉넉한 대용량 논스틱 딥팬 일본수제 고순도 철 수제 주철 프라이팬",
+     "label": "M"
+    },
+    {
+     "id": "a:0eb4786007fda0aeec9a38efe6396ef3",
+     "mall": "ADPICK",
+     "title": "[보리보리] 락앤락 슈트IH인덕션 스텐 프라이팬 20cm (CSF2020)",
+     "label": "V"
+    },
+    {
+     "id": "a:2f5b191ad322e59fb164ab02b3f6f0a7",
+     "mall": "ADPICK",
+     "title": "[기프트] 주철 후라이팬 손잡이 포함 조리용 팬 마강판 39CM(WFLUWCD)",
+     "label": "M"
+    },
+    {
+     "id": "c:9813217265",
+     "mall": "쿠팡",
+     "title": "[100년 동안 녹슬지 않음] 순철 논스틱 프라이팬 99.9% 고순도 철 무쇠 주철 후라이팬 주물팬 인덕션 후라이팬 무코팅 건강 냄비 전골 냄비 세트 수제로 단조한 궁중팬 가마솥",
+     "label": "M"
+    },
+    {
+     "id": "c:9700882445",
+     "mall": "쿠팡",
+     "title": "[당일 발송] 1/1+1 순철 논스틱 프라이팬 99.9% 고순도 철 수제 주철 프라이팬 논스틱 프라이팬 무쇠 후라이팬 수공예해머텍스쳐정품 인덕션 후라이팬 1위 24cm YONICE",
+     "label": "M"
+    },
+    {
+     "id": "a:edb38d093aff5b8f6156669ec46478ce",
+     "mall": "ADPICK",
+     "title": "프라이팬 삼보넷 0185104428 NERO TP973692548",
+     "label": "V?"
+    },
+    {
+     "id": "a:36130d38450daef8615b6bc1f1abc180",
+     "mall": "ADPICK",
+     "title": "[해외] 내구성이 뛰어난 주철 프라이팬으로, 눌어붙지 않는 표면 처리가 되어 있어 아침 식사, 육류, 채소 등을 실내 또는 실외에서 다양하게 요리할 수 있습니다.",
+     "label": "M"
+    },
+    {
+     "id": "a:13fc43cbc0a5a77443500cdd7d646c96",
+     "mall": "ADPICK",
+     "title": "[해외] 일본식 냄비 요리에 사용되는 생선 모양의 주철 프라이팬, 바비큐 그릴용",
+     "label": "M"
+    },
+    {
+     "id": "a:bff9ca08744f75fb89ddc02917ac93f5",
+     "mall": "ADPICK",
+     "title": "[보리보리] 락앤락 데일리 스테인리스 스틸 프라이팬 26cm",
+     "label": "V"
+    },
+    {
+     "id": "a:f9bc82256bf6014d48eeab8b59505525",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]주철 후라이팬 손잡이 포함 조리용 팬 마강판 39CM",
+     "label": "M"
+    },
+    {
+     "id": "c:9079074211",
+     "mall": "쿠팡",
+     "title": "[추석 선물] 1/1+1 순철 논스틱 프라이팬 99.9% 고순도 철 무쇠 후라이팬 무코팅 건강 냄비 인덕션 후라이팬 주철 주물팬 수공예 해머 텍스처 냄비 세트 대형 포장증정",
+     "label": "M"
+    },
+    {
+     "id": "a:4c8960b8c091a118f5ea2e4fbe397733",
+     "mall": "ADPICK",
+     "title": "[기타] 후라이잉소서 오리지널 볶음 및 조림용 주철 프라이팬 20cm 일본산 IH[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:edb8b1937b4cf19ae401efc98483a8f0",
+     "mall": "ADPICK",
+     "title": "알텐바흐/디펜더스S 팬팟 통5중 후라이팬 냄비 탈부착 손잡이 2종 택1/냄비/팬/솥 프라이팬",
+     "label": "V"
+    },
+    {
+     "id": "c:8502482099",
+     "mall": "쿠팡",
+     "title": "실바트 인덕션 까리노 프라이팬, 28cm, 1개, 블랙계열, 까리노 28cm팬",
+     "label": "V"
+    },
+    {
+     "id": "a:26b426970c53ed390c7609d90d6e29c2",
+     "mall": "ADPICK",
+     "title": "[하프클럽/캔버라]캠핑 주철 후라이팬 가죽 핸들 커버",
+     "label": "A"
+    },
+    {
+     "id": "a:ddf09d3073f5610f7f7e3ae40154a96c",
+     "mall": "ADPICK",
+     "title": "주철 후라이팬 뉴후라이팬 프라이팬 다용도팬",
+     "label": "M"
+    },
+    {
+     "id": "c:9805055258",
+     "mall": "쿠팡",
+     "title": "두꺼운 주철 무쇠 팬 가정용 무코팅 전병 논스틱 프라이팬 노점",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "플랫슈즈",
+   "items": [
+    {
+     "id": "a:627ed5ef6ffb90ef5baaae2e07390f2b",
+     "mall": "ADPICK",
+     "title": "[당일발송] CHANEL 샤넬 펌프스 리본 깜봉 발레리나 플랫 슈즈 35C / G02819",
+     "label": "M"
+    },
+    {
+     "id": "a:e9574b9fa256bdfceb96942c0e1b9006",
+     "mall": "ADPICK",
+     "title": "[기프트] [애슬릿]사각장식 패브릭 심플 플랫슈즈 1.5cm",
+     "label": "M"
+    },
+    {
+     "id": "a:ce132cb7ea5bdf4a59706041d2bc96b3",
+     "mall": "ADPICK",
+     "title": "안벗겨지는 스타킹덧신 덧신 플랫슈즈 구두덧신 전체",
+     "label": "A"
+    },
+    {
+     "id": "a:9069372d799b69d0abc500b5e6279f1d",
+     "mall": "ADPICK",
+     "title": "[현대백화점] [바바라] BABARA 바바라 리본 하트 여성 플랫슈즈 BBH533 2종 BBH533",
+     "label": "M"
+    },
+    {
+     "id": "a:4f7491e3973fa70eab524f94ba3e5050",
+     "mall": "ADPICK",
+     "title": "피카딜리/272015 메리제인 플랫슈즈_스웨이드브라운(1cm)/플랫슈즈 메리제인",
+     "label": "M"
+    },
+    {
+     "id": "a:028338fe6a6fa9d844fadead250d577b",
+     "mall": "ADPICK",
+     "title": "[본사운영] 바바라 양가죽 골드 비죠 퀄팅 여성 플랫 슈즈 1cm_BBH546",
+     "label": "M"
+    },
+    {
+     "id": "a:15db6a1a5ce49c6a1fddf03b3849bed1",
+     "mall": "ADPICK",
+     "title": "[베스트 재입고][파우치 제공] 잘로 젤리플랫슈즈",
+     "label": "M"
+    },
+    {
+     "id": "a:857b78c10485eb95d7839d34a96f6296",
+     "mall": "ADPICK",
+     "title": "[PICCADILLY] 피카딜리 122039 플랫슈즈_블랙 (1.5cm)",
+     "label": "M"
+    },
+    {
+     "id": "a:99886e4bb4652da408fc2ad203330905",
+     "mall": "ADPICK",
+     "title": "[보리보리] 피카딜리 AK수원점 272015 메리제인 플랫슈즈 1CM (272015)",
+     "label": "M"
+    },
+    {
+     "id": "a:5b65e5dfa6fcb24bdf295fc93de85764",
+     "mall": "ADPICK",
+     "title": "[스칼퍼스] 클락스 월라비 카우 프린트 플랫 슈즈 / 78956 ANIMAL PRINT[이마트몰] [78956]",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "s26",
+   "items": [
+    {
+     "id": "a:5e2b8ef4a40dc0e4ef21a5f35742a466",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/삼성전자 삼성 정품 갤럭시 S26 울트라 클리어 마그넷 케이스",
+     "label": "A"
+    },
+    {
+     "id": "a:c408c7d6ebe3a8357dedae15aa6d750a",
+     "mall": "ADPICK",
+     "title": "[사은품/무료증정]삼성 갤럭시 S26 플러스 256GB 6.7인치",
+     "label": "M"
+    },
+    {
+     "id": "a:147c65028fcbe84bcb882cc54db7ebe0",
+     "mall": "ADPICK",
+     "title": "당일, 3color 고양이 귀 범퍼 케이스/아이폰 12 13 14 15 16 17 18프로/갤럭시 S23 S24 S25 S26/고양이케이스 폰케이스 아이폰케이스 갤럭시케이스",
+     "label": "A"
+    },
+    {
+     "id": "a:1a3e8618833de194827fdc39986e1c51",
+     "mall": "ADPICK",
+     "title": "[S26 울트라 512GB 결제가 187만]삼성 공식 갤럭시 S26 울트라 자급제 SM-S948N",
+     "label": "M"
+    },
+    {
+     "id": "a:1a0aee04bdcdaf5185ad76ef64329ef7",
+     "mall": "ADPICK",
+     "title": "갤럭시 S26 플러스 256GB 자급제폰 SM-S947N +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:bd65b697933c4acd42aebecef656818d",
+     "mall": "ADPICK",
+     "title": "삼성 정품 갤럭시 S26 울트라 맥세이프 마그넷 슬림 케이스 EF-SS948",
+     "label": "A"
+    },
+    {
+     "id": "a:cf87c0d5e857979e42e9b79e8225c4a0",
+     "mall": "ADPICK",
+     "title": "[기프트] 갤럭시 S26 울트라 고플렉스 플러스 액정보호필름 2매",
+     "label": "A"
+    },
+    {
+     "id": "a:87d6061009a6b4088538fd23de1065ed",
+     "mall": "ADPICK",
+     "title": "[리퍼상품] 비스카 접이식 멀티포트 전기주전자 VK-S2600NK",
+     "label": "X"
+    },
+    {
+     "id": "a:5b18226a08123366d5b4462077afbb2c",
+     "mall": "ADPICK",
+     "title": "[1mm슬림]변색없는 전기종 투명 케이스 갤럭시 S 26 25 24 23 22 21 20 A 50 90 31 51 71 노트20 10 아이폰 18 17 16 SE 3 2 플러스 울트라 엣지 프로 맥스 미니 필름 듀오",
+     "label": "A"
+    },
+    {
+     "id": "a:94e2a250d46b60a51d2ba8aaf3d8aef6",
+     "mall": "ADPICK",
+     "title": "모나니스튜디오/[범퍼글라스] 그린 클로버 블러 별 실버 갤럭시 아이폰 18 17 S26 S25 핸드폰 범퍼 아크릴 글라스 케이스 폰케이스 iPhone Phonecase/모바일 액세서리 아이폰케이스",
+     "label": "A"
+    },
+    {
+     "id": "a:19a190a942c9064c33a60ec9369ede04",
+     "mall": "ADPICK",
+     "title": "[삼성] [KT기기변경] 갤럭시 S26 256G 공시지원 현금완납폰[이마트몰] [SM-S942N]",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "그래블 바이크",
+   "items": [
+    {
+     "id": "a:2c91729378d89f2f399b02acdc1faeb8",
+     "mall": "ADPICK",
+     "title": "[에스쿠다마] 바이크 백팩 HS-M1717",
+     "label": "X"
+    },
+    {
+     "id": "a:460574cafb29a4365adab75196c22034",
+     "mall": "ADPICK",
+     "title": "[해외] 인체공학적 디자인의 자전거 핸들바 엔드피스 - MTB, 산악자전거, 로드바이크, 그래블바이크, 시티바이크용 핸들바 연장 액세서리",
+     "label": "A"
+    },
+    {
+     "id": "a:294b11532a9a8a31ebab63ec3759ad87",
+     "mall": "ADPICK",
+     "title": "SQUALO 초경량 EVA 자전거 바 테이프 로드 그래블 바이크 핸들바 랩 바엔드 플러그 포함 카멜레온",
+     "label": "A"
+    },
+    {
+     "id": "a:8c5da9ac27c899d6005b759810309fa6",
+     "mall": "ADPICK",
+     "title": "[기타] 예거 가토4 입문용 가성비 그래블 바이크 시마노 GRX 20단 로드 자전거[이마트몰] [가토4]",
+     "label": "M"
+    },
+    {
+     "id": "a:b9bc4b56b2bd17feddb45cfb30442e35",
+     "mall": "ADPICK",
+     "title": "INNOVA-PRO 700x32C 그래블 자전거 타이어 ATRIA 120TPI 60-75PSI 경량 그래블 로드 바이크 접이식 컬러풀",
+     "label": "A"
+    },
+    {
+     "id": "a:750962bf5abbc6983d5bf006b462314b",
+     "mall": "ADPICK",
+     "title": "가죽 자전거 바테이프 로드바이크 핸들 그래블자전거 +할인쿠폰",
+     "label": "A"
+    },
+    {
+     "id": "a:69346f7d786f1e46cf387697598cf5c7",
+     "mall": "ADPICK",
+     "title": "[기프트] 가죽 자전거 바테이프 로드바이크 핸들 그래블자전거(WFR80XB)",
+     "label": "A"
+    },
+    {
+     "id": "a:e14a5ab813e5b0d49c151d50d697bc14",
+     "mall": "ADPICK",
+     "title": "알티피아 가죽 자전거 바테이프 로드바이크 핸들 그래블자전거(WFR80XB) +할인쿠폰",
+     "label": "A"
+    },
+    {
+     "id": "a:a7d2f6d62a17cfaa5b3250c4f421e656",
+     "mall": "ADPICK",
+     "title": "[트위터] 트위터그래블자전거GRAVEL V2 SRAM RIVAL22단 유압DISC 센터락세라믹허브[이마트몰] [트위터그래블자전거GRAVEL V2 SRAM RIVAL22단 유압DISC 센터락세라믹허브]",
+     "label": "M"
+    },
+    {
+     "id": "a:e2c82526e112bb52f8b931116dea0756",
+     "mall": "ADPICK",
+     "title": "[올인클루시브] 우붓: 프리미엄 시설을 갖춘 아융 강 래프팅 + ATV 쿼드 바이크 어드벤",
+     "label": "X"
+    },
+    {
+     "id": "a:253eef35d71f50bb62310549c921a2d8",
+     "mall": "ADPICK",
+     "title": "[해외] SENICX GR4 로드 크랭크셋 42T 30-46T 체인셋, BB 24mm 크랭크 암 포함, 자전거용 170mm 체인휠 110 Bcd, 그래블 바이크 부품용",
+     "label": "A"
+    },
+    {
+     "id": "a:0115d7addc32cb6c581e7587dcb4f6c2",
+     "mall": "ADPICK",
+     "title": "[업체직영/신규 입점 할인/한국어상담] 두바이사막사파리, 듄 배싱, 쿼드바이크, BBQ",
+     "label": "X"
+    },
+    {
+     "id": "a:8c44693c90683e3a1a4db98614089071",
+     "mall": "ADPICK",
+     "title": "[해외] 로드 바이크/그래블 바이크 핸들바 22.2MM*31.8MM 알루미늄 합금 핸들바/크로몰리 스틸 핸들바 자전거 액세서리",
+     "label": "A"
+    }
+   ]
+  },
+  {
+   "query": "텀블러 개인 컵",
+   "items": [
+    {
+     "id": "a:5869c23391135efe34407d8bf78dcc19",
+     "mall": "ADPICK",
+     "title": "[쿠팸] M5 휴대용 무선 미니 텀블러 믹서기 400ml",
+     "label": "X"
+    },
+    {
+     "id": "a:589932c5cd58ea74bfe99b0af3e1f35c",
+     "mall": "ADPICK",
+     "title": "[100% 맞춤형 여행] 남부 발리 개인 투어: 나만의 일정 만들기 (공항 드롭오프 가능)",
+     "label": "X"
+    },
+    {
+     "id": "a:c048363cef984a4074a1349f08632735",
+     "mall": "ADPICK",
+     "title": "[기타] 대용량 텀블러손잡이 개인컵 홀더 [HSJ-WF491BC]",
+     "label": "A"
+    },
+    {
+     "id": "a:3042b025725fcb4f770b811ef64239d1",
+     "mall": "ADPICK",
+     "title": "휴대용 JK39HS78 스텐 텀블러 휴대용 개인컵 480ml",
+     "label": "M"
+    },
+    {
+     "id": "a:85d2af171c934ad3affcd01c8abb7333",
+     "mall": "ADPICK",
+     "title": "스탠리/[한정특가]/스탠리 퀜처 H2.0 플로우 스테이트 텀블러 591ml 포멜로/컵/잔/텀블러 텀블러/보온병",
+     "label": "M"
+    },
+    {
+     "id": "a:630b28c4347e22eb9cac8f53fe32fa77",
+     "mall": "ADPICK",
+     "title": "텀블러 캠핑용 휴대텀블러 물병 개인용 컵",
+     "label": "M"
+    },
+    {
+     "id": "a:274d5dfcf2c44901340dae9a4ee72d92",
+     "mall": "ADPICK",
+     "title": "에비츄 텀블러 빨대 물통 개인컵 캐릭터 물병",
+     "label": "M"
+    },
+    {
+     "id": "a:bb287460735fd8b700e2eed200cce9e1",
+     "mall": "ADPICK",
+     "title": "스텐텀블러 텀블러 보온보냉/미니/보온/보냉/보온병/휴대용/소형/학생/보냉병/소형텀블러/보온보냉병/개인",
+     "label": "M"
+    },
+    {
+     "id": "a:907803d4778fe04952a906dbd2843412",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/데이니즈 산리오 캐릭터즈 텀블러 실리콘 뚜껑 스테인리스컵",
+     "label": "M"
+    },
+    {
+     "id": "a:8d84d76b318000e35657fdaeb7bcef0a",
+     "mall": "ADPICK",
+     "title": "[해외] 맞춤형 애완동물 사진이 새겨진 40온스 텀블러(뚜껑과 빨대 포함), 개인 맞춤형 강아지 사진이 새겨진 여행용 커피 머그컵, 의미 있는 크리스마스 선물.",
+     "label": "M"
+    },
+    {
+     "id": "a:69ab3965ddec79db5feecfa0d3946fc1",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/블카마켓 미니멀 와인 텀블러 위생 스텐 304 미니 머그컵 캠핑",
+     "label": "M?"
+    },
+    {
+     "id": "a:6b5303490356fd8e26a2010f51302af8",
+     "mall": "ADPICK",
+     "title": "[기프트] 플라워 텀블러 목걸이 스트랩 퍼플 개인 컵 고리 휴대용 액세서리(WFP98FV)",
+     "label": "A"
+    },
+    {
+     "id": "a:a103265bcf3ca6633e3078c54518af7d",
+     "mall": "ADPICK",
+     "title": "[해외] Chamvin 개인 컬렉션 Johnnie Walker 유리 위스키 유리 싱글 몰트 크리스탈 와인 텀블러 보드카 코냑 브랜디 스니프터 컵",
+     "label": "V?"
+    },
+    {
+     "id": "a:fbc0aa9af9a2f7cba01785403d870ceb",
+     "mall": "ADPICK",
+     "title": "커피 운동 티텀블러 차텀블러 홀더 컵텀 개인용 캠핑 보온병 빨대",
+     "label": "M?"
+    },
+    {
+     "id": "a:8b4d5612442127d9c747e6b518264bf0",
+     "mall": "ADPICK",
+     "title": "[100% 맞춤형] 고객님의 일정에 맞춰 구성된 남부 발리 개인 투어 (한국어/영어 가능)",
+     "label": "X"
+    }
+   ]
+  },
+  {
+   "query": "노트북 8GB SSD",
+   "items": [
+    {
+     "id": "c:9837925618",
+     "mall": "쿠팡",
+     "title": "레노버 아이디어패드 Slim3 14AHP10 83K9000FKR(R5-8640HS/Win11Home/OLED)(8GB 추가(총16GB) SSD 512GB 교체)",
+     "label": "M"
+    },
+    {
+     "id": "c:9837907820",
+     "mall": "쿠팡",
+     "title": "레노버 IdeaPad Slim3 14IWC11 Core5 W11 83RQ003QKR(Core5 320/8GB/256GB/Win11H)(16GB(16GBx1)/512GB SSD교체)",
+     "label": "M"
+    },
+    {
+     "id": "c:9837907836",
+     "mall": "쿠팡",
+     "title": "(레노버) IdeaPad Slim 3 14IWC11 83RQ0054KR (Core5 320/8GB/256GB)(16GB(16GBx1)/512GB SSD교체/W11P)",
+     "label": "M"
+    },
+    {
+     "id": "c:9837926232",
+     "mall": "쿠팡",
+     "title": "MSI 사이보그 A17 AI B2HWEKG-R7 (008)(Ryzen7 260/8GB/512GB/RTX5050/FD)(16GB RAM(8GBx2)+1TB NVMe SSD교체)",
+     "label": "M"
+    },
+    {
+     "id": "c:9824866982",
+     "mall": "쿠팡",
+     "title": "루나컴베스트상품 lunacom_15UB470 i5 DDR4 SSD장착 15인치",
+     "label": "M"
+    },
+    {
+     "id": "c:9837926247",
+     "mall": "쿠팡",
+     "title": "(레노버) 아이디어패드 Slim3 15ARP10 2.5K OLED (R5-7533HS)(Win11Home FPP 설치+8GB 추가(총16GB)+SSD 1TB 교체)",
+     "label": "M"
+    },
+    {
+     "id": "c:9837742188",
+     "mall": "쿠팡",
+     "title": "레노버 IdeaPad Slim 3 16IWC11 Core3 83RS004AKR (Core3 304/8GB/256GB)(16GB(16GBx1)/512GB SSD교체/W11H)",
+     "label": "M"
+    },
+    {
+     "id": "c:9837907788",
+     "mall": "쿠팡",
+     "title": "레노버 IdeaPad Slim 3 16IWC11 Core3 83RS004AKR(Core3 304/8GB/256GB)(16GB(16GBx1)/512GB SSD교체/W11Pro)",
+     "label": "M"
+    },
+    {
+     "id": "c:9837907765",
+     "mall": "쿠팡",
+     "title": "레노버 IdeaPad Slim 3 16IWC11 Core5 W11 83RS002HKR(Core5 320/8GB/Win11H)(16GB(16GBx1)/512GB SSD교체)",
+     "label": "M"
+    },
+    {
+     "id": "c:9837740622",
+     "mall": "쿠팡",
+     "title": "레노버 IdeaPad Slim 3 16IWC11 83RS003AKR(Core5 320/8GB/256GB/FD)(RAM 16GB(16GBx1)/512GB SSD교체/W11P 설치)",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "아몬드 오일",
+   "items": [
+    {
+     "id": "c:9392366285",
+     "mall": "쿠팡",
+     "title": "Now Solutions 스위트 아몬드 오일, 118ml, 1개",
+     "label": "M"
+    },
+    {
+     "id": "c:8059509581",
+     "mall": "쿠팡",
+     "title": "천연화장품재료-스윗아몬드오일100%(정제)",
+     "label": "M"
+    },
+    {
+     "id": "c:6761355363",
+     "mall": "쿠팡",
+     "title": "청양식품 꼬손 아몬드100% 아몬드기름 아몬드오일 120ml",
+     "label": "M"
+    },
+    {
+     "id": "c:26461",
+     "mall": "쿠팡",
+     "title": "나우푸드 스위트 아몬드 모이스처라이징 오일, 473ml, 1개",
+     "label": "M"
+    },
+    {
+     "id": "c:9786223331",
+     "mall": "쿠팡",
+     "title": "스윗아몬드 오일 1L 아몬드 천연 화장품 비누 만들기 베이스오일",
+     "label": "M"
+    },
+    {
+     "id": "c:197275163",
+     "mall": "쿠팡",
+     "title": "코리아씨밀락 스윗 아몬드 오일",
+     "label": "M"
+    },
+    {
+     "id": "c:8476369609",
+     "mall": "쿠팡",
+     "title": "자연의숲 스윗아몬드오일 비누베이스/기타재료, 500ml, 1개",
+     "label": "M"
+    },
+    {
+     "id": "c:9361058788",
+     "mall": "쿠팡",
+     "title": "[에코디언트] 100% 퓨어 스윗 아몬드 오일, 1개, 220ml",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "조미김",
+   "items": [
+    {
+     "id": "a:fe274967ef9715e6b75c27bf9bbbb550",
+     "mall": "ADPICK",
+     "title": "광천김 곱창김 도시락김 128봉/조미김/구운김",
+     "label": "M"
+    },
+    {
+     "id": "a:9f572785e9be0280810ec976f75df71f",
+     "mall": "ADPICK",
+     "title": "[룽스_6922]광천우리맛김 조미 조미김 식탁김 광천김",
+     "label": "M"
+    },
+    {
+     "id": "a:0ce7a28567ace3f3a68a47e1bb454388",
+     "mall": "ADPICK",
+     "title": "[보리보리] 사조대림 더 고소한 재래김 도시락9봉 X 2개 /도시락김/조미김",
+     "label": "M"
+    },
+    {
+     "id": "a:c42996806473122e87ac0045d21a5a16",
+     "mall": "ADPICK",
+     "title": "[기프트] [산들해랑] 장흥 유기 조미김 전장 5장x5봉",
+     "label": "M"
+    },
+    {
+     "id": "a:11bc7d9b1cd112d06c71ef094bc17f79",
+     "mall": "ADPICK",
+     "title": "대천김 조미김 재래김 전장김 20봉 x 1박스/구운김",
+     "label": "M"
+    },
+    {
+     "id": "a:19696dce7eacb64d2a6799aad108d334",
+     "mall": "ADPICK",
+     "title": "광천김 올리브유 녹차 도시락김 90봉/조미김/구운김 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:efe8b7f507d33ee190b060ca63e49541",
+     "mall": "ADPICK",
+     "title": "[셀러허브] 대천김 파래김 조미김 30봉 (S51815041)[이마트몰] [51815041]",
+     "label": "M"
+    },
+    {
+     "id": "a:13e4deff3edab742a9d9da3d57ae102c",
+     "mall": "ADPICK",
+     "title": "대천김 명품 곱창김 캔김 선물세트 (15캔)/조미김/구운김",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "여름 선풍기",
+   "items": [
+    {
+     "id": "a:460c3660e4bf9897ef572abb05a07cb8",
+     "mall": "ADPICK",
+     "title": "여름선풍기 써큘레이터형 선풍기 리모컨 발터치스위치 스탠드형",
+     "label": "M"
+    },
+    {
+     "id": "a:df647e7e7dd3f95cb0a77bffe0a91f78",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/카카오프렌즈 (여름SET)포켓 핸디 선풍기+쿨링 넥밴드",
+     "label": "M"
+    },
+    {
+     "id": "c:9593954470",
+     "mall": "쿠팡",
+     "title": "휴대용 멀티 선풍기 199단계 강풍조절 LED 디지털 디스플레이 여름 쿨링 선풍기",
+     "label": "M"
+    },
+    {
+     "id": "a:b783533265b715d4bae3cca824d4d80e",
+     "mall": "ADPICK",
+     "title": "넥스코 선풍기형 벽걸이 열선풍기 가정용 업소용 선풍기히터 벽걸이형 40CM",
+     "label": "X"
+    },
+    {
+     "id": "a:9d111cb0e7ea7a3234f437253c2223e5",
+     "mall": "ADPICK",
+     "title": "[제이큐] 한일 화이트 14형 선풍기 선풍기 여름선풍기[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:50dd778af1f896851a6e0ff3c6f1ce5f",
+     "mall": "ADPICK",
+     "title": "르젠/르젠 레트로 BLDC 리모컨 선풍기 LZLF-2525/계절가전 선풍기",
+     "label": "M"
+    },
+    {
+     "id": "a:ae1acd73ebd1234f0481839a23d93e7e",
+     "mall": "ADPICK",
+     "title": "LND (당일출고) 작업용 반사판 선풍기조끼 선풍기 세트 얼음팩포켓 얼음조끼 안전 여름 작업 냉풍 조끼 공",
+     "label": "V?"
+    },
+    {
+     "id": "a:70bd2ac68f2a7c16654d691151e4f9c4",
+     "mall": "ADPICK",
+     "title": "[3년무상AS]플럭스 40CM 기계식 선풍기",
+     "label": "M"
+    },
+    {
+     "id": "c:8057359659",
+     "mall": "쿠팡",
+     "title": "유파 좌석식 선풍기 35cm(14인치)",
+     "label": "M"
+    },
+    {
+     "id": "c:8090715797",
+     "mall": "쿠팡",
+     "title": "KONLI 휴대용 손풍기 무선 접이식 미니 선풍기 겸용 대용량 보조배터리 F6",
+     "label": "M"
+    },
+    {
+     "id": "a:9a8168874eba4e90a02e173b62dce017",
+     "mall": "ADPICK",
+     "title": "알리사 100단 아이스터보MAX 휴대용선풍기 급속 냉각 에어컨 손선풍기 미니 핸디 핸드",
+     "label": "M"
+    },
+    {
+     "id": "a:fcd20b5d7cd2474e7ca26645b2f51c16",
+     "mall": "ADPICK",
+     "title": "[기프트] 여름 아이스 등산 골프 선풍기조끼",
+     "label": "V?"
+    },
+    {
+     "id": "a:78e34f0c95f632438bf7ec74546a70e1",
+     "mall": "ADPICK",
+     "title": "[해외] 새로운 듀얼 아웃렛 디지털 디스플레이 허리 장착형 선풍기, 야외 여름 냉방, 여행, 낚시, 휴대용, 목걸이형 소형 선풍기",
+     "label": "M"
+    },
+    {
+     "id": "a:8895fb5027a8f417fef36eb391e4aba3",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]체크무늬 대나무 방석 차량 가정 시원한 여름방석",
+     "label": "X"
+    },
+    {
+     "id": "c:9567003464",
+     "mall": "쿠팡",
+     "title": "[특별 할인] 휴대용 넥밴드 선풍기 BLDC 대용량 4000mAh 부직포주머니 포함 M5",
+     "label": "M"
+    },
+    {
+     "id": "c:8729229302",
+     "mall": "쿠팡",
+     "title": "카프 빅팬 접이식 핸디 선풍기",
+     "label": "M"
+    },
+    {
+     "id": "a:4068dede0699f0248f04ca60d2f15d73",
+     "mall": "ADPICK",
+     "title": "춘식이 탁상용 무선 선풍기 썸머 홀리데이 여름용품 쿨링 필수",
+     "label": "M"
+    },
+    {
+     "id": "c:9561116282",
+     "mall": "쿠팡",
+     "title": "탁상용 선풍기 무선 선풍기 벽걸이 선풍기 에어 써큘레이터 선풍기 저소음 가정 기숙사 충전식 선풍기 무음 자동 회전 대풍량 순환팬 12시간타이머 USB 선풍기 가정용/캠핑용",
+     "label": "M"
+    },
+    {
+     "id": "a:9548e62426efc1a20d9d43cb6c9e9353",
+     "mall": "ADPICK",
+     "title": "[하프클럽/에스이엔몰 ]여름 선풍기 접이식 가벼운 대나무 부채",
+     "label": "X"
+    },
+    {
+     "id": "c:8068435134",
+     "mall": "쿠팡",
+     "title": "백화상점 미니 무선 탁상용 선풍기 사무실 테이블 책상 캠핑",
+     "label": "M"
+    },
+    {
+     "id": "c:9449557591",
+     "mall": "쿠팡",
+     "title": "JGUG 휴대용 허리 선풍기 강력바람 강도조절 목걸이 손풍기 무선 USB 충전식 바디쿨러",
+     "label": "M"
+    },
+    {
+     "id": "c:8824909212",
+     "mall": "쿠팡",
+     "title": "크로티 무선 탁상용 선풍기 접이식 캠핑용 L25",
+     "label": "M"
+    },
+    {
+     "id": "a:57da22be88797644c6745270d411e29d",
+     "mall": "ADPICK",
+     "title": "[해외] 듀얼 아웃렛 반도체 냉각 허리 착용형 야외 낚시용 충전식 디지털 디스플레이 고풍량 여름용 선풍기",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "반려동물 보험",
+   "items": [
+    {
+     "id": "a:40921e7e670eec2bf25040f711ff5080",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/피에이치 PH 반려동물 60ml 젖병 젖꼭지 세척솔 세트 CP01",
+     "label": "X"
+    },
+    {
+     "id": "a:145081c017800707722264c1d4f6b491",
+     "mall": "ADPICK",
+     "title": "[기타] 반려동물 수납 계단 강아지 수납 계단 논슬립 고양이 애견 3단[이마트몰] [WFR95I1]",
+     "label": "X"
+    },
+    {
+     "id": "a:13dc7bd69acf3809720d2bb550340d1c",
+     "mall": "ADPICK",
+     "title": "[학술논문] 반려동물 소유자의 반려동물 보험 가입 및 가입 의향에 대한 결정요인 분석",
+     "label": "X"
+    },
+    {
+     "id": "a:9ffb6ada62d904a236c7a499c44ab486",
+     "mall": "ADPICK",
+     "title": "[허니문/반자유여행] 하얏트리젠시와이키키+스노클링+노쇼핑 섬일주+시내관광+스냅+보험",
+     "label": "X"
+    },
+    {
+     "id": "a:5988b24de506026df8a5ba5fe36a6a13",
+     "mall": "ADPICK",
+     "title": "고프/GOPE Striped Patchwork Dog Cushion BRNA/반려동물 펫가구",
+     "label": "X"
+    },
+    {
+     "id": "a:c01baa98b2b0972ef1fa4363b3b2097c",
+     "mall": "ADPICK",
+     "title": "[세미허니문]노쇼핑+오션프론트객실+스노클링+섬일주+다이아몬드헤드+트롤리+무료스냅+보험",
+     "label": "X"
+    },
+    {
+     "id": "a:266f1ede250d01c97174eae4290c833f",
+     "mall": "ADPICK",
+     "title": "PH 반려동물 60ml 젖병 젖꼭지 세척솔 세트 CP01",
+     "label": "X"
+    },
+    {
+     "id": "a:3ee2337a0c1b51426216b8a0e17436bf",
+     "mall": "ADPICK",
+     "title": "[해외] 후드형 반려동물 침대, 따뜻한 동굴형 테디·소형·중형견 및 고양이용, 부드럽고 세탁 가능한 수면 쿠션 겸 담요, 반려동물 둥지",
+     "label": "X"
+    },
+    {
+     "id": "a:c27d876deabe78d622cf8dbe15d224a0",
+     "mall": "ADPICK",
+     "title": "[해외] 부드러운 플러시 반려동물 침대 매트, 미끄럼 방지 바닥, 세탁 가능, 따뜻한 수면 쿠션, 대형·중형·소형견 및 고양이용, 소파·차량 겨울용품",
+     "label": "X"
+    },
+    {
+     "id": "a:0502db05c8e8340fa9121e9e7f0c3db4",
+     "mall": "ADPICK",
+     "title": "채집총 곤충채집기 휴대용 흡충기 취미 곤충학 보험교육 야외 교육 관찰 버그캐처",
+     "label": "X"
+    },
+    {
+     "id": "a:52bfb41f8270557527d50fbe9b35b7c4",
+     "mall": "ADPICK",
+     "title": "애견계단 애견수납계단 3단 강아지 고양이 반려동물 논슬립 스",
+     "label": "X"
+    }
+   ]
+  },
+  {
+   "query": "어린이 우산",
+   "items": [
+    {
+     "id": "a:d680931f4085181279788eb1244024e0",
+     "mall": "ADPICK",
+     "title": "[미야코 섬 | 당일 예약 가능] 1세~70세 입장 가능 | 어린이 동반 가족에게 최고! | 픽업 및 드롭오프 서비스 제공 | 사진 데이터 무제한! 초보자 및 가족 환영 | 바다거북과 니모와 함께하는 스노클링",
+     "label": "X"
+    },
+    {
+     "id": "a:8899f8f360abb804bdf649251ebb3470",
+     "mall": "ADPICK",
+     "title": "피키펭 풍선 어린이 우산 우의 레인코트 WT0234",
+     "label": "M?"
+    },
+    {
+     "id": "c:9599736638",
+     "mall": "쿠팡",
+     "title": "아이나라에듀 레트로 자동차 투명 소형 장우산 FREE",
+     "label": "M"
+    },
+    {
+     "id": "c:9750304868",
+     "mall": "쿠팡",
+     "title": "투명 반사우산 55cm 어린이 안전우산 교통 안전 속도제한 디자인 그린",
+     "label": "M"
+    },
+    {
+     "id": "a:964db7803f383757d2f2b9d06443504b",
+     "mall": "ADPICK",
+     "title": "[?빨간바지?] 런던 내셔널갤러리 투어 |어린이 할인|매일 출발|즉시확정",
+     "label": "X"
+    },
+    {
+     "id": "a:c774b7cd334b126f3bd7124318a8e9be",
+     "mall": "ADPICK",
+     "title": "베베누보 아기 롤링 우산 어린이 유아 투명 바퀴 우산",
+     "label": "M"
+    },
+    {
+     "id": "c:7412948392",
+     "mall": "쿠팡",
+     "title": "포켓몬스터 47 몬스터볼 입체 홀로그램 장우산 LUPMU10003",
+     "label": "M"
+    },
+    {
+     "id": "a:963fa0331b7151ea8b9c4ca8dc2cf9ce",
+     "mall": "ADPICK",
+     "title": "[해외] 반사 스트립이 있는 어린이 자동 우산, 남아 여아용 텔레스코픽 유아 우산, 학교 및 야외 활동용 자외선 차단 기능 포함",
+     "label": "M"
+    },
+    {
+     "id": "a:1dd2db202eeeb023d984bcb1394cc97e",
+     "mall": "ADPICK",
+     "title": "totes 학생용 돔형 투명장우산 모음전 A238/ 어린이용/ 초등학생용 안전우산",
+     "label": "M"
+    },
+    {
+     "id": "c:7907475566",
+     "mall": "쿠팡",
+     "title": "카르페디엠 스마트 베이직 자동 장우산",
+     "label": "V?"
+    },
+    {
+     "id": "a:37e79e58633ecf0faf0645b84a2f62eb",
+     "mall": "ADPICK",
+     "title": "[보리보리] 지니스타키즈 포켓몬스터 POE 60 무지개 장우산 LUPMU80001",
+     "label": "M"
+    },
+    {
+     "id": "c:7324776221",
+     "mall": "쿠팡",
+     "title": "포켓몬스터 아동용 53 프렌즈 장우산 LUPMU10004",
+     "label": "M"
+    },
+    {
+     "id": "a:45045a8edab755bac020d45083fc1586",
+     "mall": "ADPICK",
+     "title": "시나모롤 어린이 우산 산리오 캐릭터 안전 우산 초등학생 선물",
+     "label": "M"
+    },
+    {
+     "id": "a:686080ce332dfa1bd55a6ffbaa5cd7a6",
+     "mall": "ADPICK",
+     "title": "[기타] [룽스_6923]프리미엄 어린이우산 오리엔탈 레이스 (53053679)[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:f6de43202be293f7284831b81dac7c52",
+     "mall": "ADPICK",
+     "title": "디즈니스토어/[공식] 디즈니 프린세스 아동용 우산 (1000100934)/우산/양산 우산/양산",
+     "label": "M"
+    },
+    {
+     "id": "a:b050802d0b3f28d13fb0648cdd99ef10",
+     "mall": "ADPICK",
+     "title": "[룽스_6923]프리미엄 어린이우산 오리엔탈 레이스",
+     "label": "M"
+    },
+    {
+     "id": "a:34fac5c087a4ea6368566b9c766d5581",
+     "mall": "ADPICK",
+     "title": "마이멜로디 장우산 60cm 예쁜우산 어린이우산 투명우산",
+     "label": "M"
+    },
+    {
+     "id": "c:7385221942",
+     "mall": "쿠팡",
+     "title": "포켓몬스터 60와글와글 투명 장우산",
+     "label": "M"
+    },
+    {
+     "id": "a:2747e02a99ffe429ec6b9afaa9ea3c8f",
+     "mall": "ADPICK",
+     "title": "[해외] 투명 레인보우 어린이 우산 긴 손잡이 방풍 플라스틱 비 우산 유치원 어린이용 간편 개폐 가정용",
+     "label": "M"
+    },
+    {
+     "id": "c:8570295230",
+     "mall": "쿠팡",
+     "title": "지니스타 아동용 속도제한 안전우산 OUJSU80013",
+     "label": "M"
+    },
+    {
+     "id": "a:f963bbfa9278abdb08d3bd3fc1b7ab17",
+     "mall": "ADPICK",
+     "title": "투명장우산 땡땡이우산  캐릭터 아동 어린이우산 자동 패션장우산",
+     "label": "M"
+    },
+    {
+     "id": "c:9536086754",
+     "mall": "쿠팡",
+     "title": "상상봉봉 카피바라 모던 투명 튼튼한 학생 장우산",
+     "label": "M?"
+    },
+    {
+     "id": "c:9557920342",
+     "mall": "쿠팡",
+     "title": "팝키즈 학생용 휴대용 튼튼한 스마일 소프트 3단 원터치 자동우산",
+     "label": "M"
+    },
+    {
+     "id": "a:ea6852dacfa9bc653c27ea0ed58057a0",
+     "mall": "ADPICK",
+     "title": "[국내도서] 우산도 우산이 필요해",
+     "label": "X"
+    }
+   ]
+  },
+  {
+   "query": "하이브리드 매트리스",
+   "items": [
+    {
+     "id": "c:8659825390",
+     "mall": "쿠팡",
+     "title": "Qicco 침대 매트리스 무음 포켓스프링 바닥 매트리스, 20cm, 중간",
+     "label": "M?"
+    },
+    {
+     "id": "c:9000313355",
+     "mall": "쿠팡",
+     "title": "KURUA 허리에 좋은 하이브리드 포켓스프링 매트리스",
+     "label": "M"
+    },
+    {
+     "id": "c:9710533252",
+     "mall": "쿠팡",
+     "title": "슈퍼 하이브리드 스프링 침대는 설치 없이 열어서 사용할 수 있습니다 컴포트 25cm 매트리스, 250mm, 중간",
+     "label": "M"
+    },
+    {
+     "id": "c:9737588665",
+     "mall": "쿠팡",
+     "title": "지누스 얼티마 럭스S 하이브리드 매트리스 방문설치",
+     "label": "M"
+    },
+    {
+     "id": "c:9086858453",
+     "mall": "쿠팡",
+     "title": "슈퍼 하이브리드 스프링 침대는 설치 없이 열어서 사용할 수 있습니다 컴포트 매트리스, 200mm, 중간",
+     "label": "M"
+    },
+    {
+     "id": "c:8944016965",
+     "mall": "쿠팡",
+     "title": "KURUA 프리미엄 매트리스 무음 독립스프링 매트리스, 중간 단단함, 25cm",
+     "label": "M?"
+    },
+    {
+     "id": "c:9322545414",
+     "mall": "쿠팡",
+     "title": "라이프먼트 베이직 하이브리드 스프링 매트리스",
+     "label": "M"
+    },
+    {
+     "id": "c:9636744017",
+     "mall": "쿠팡",
+     "title": "지누스 그린티 에어 하이브리드 스프링 매트리스 방문설치",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "샤오미 미지아",
+   "items": [
+    {
+     "id": "c:6715680029",
+     "mall": "쿠팡",
+     "title": "샤오미 미지아 스마트 대용량 가습기 2 4.5L",
+     "label": "M"
+    },
+    {
+     "id": "c:8553664979",
+     "mall": "쿠팡",
+     "title": "샤오미 다용도 에어펌프 2 블랙",
+     "label": "M?"
+    },
+    {
+     "id": "c:7572876964",
+     "mall": "쿠팡",
+     "title": "샤오미 미지아 H501 SE 고속 헤어 드라이어 + 파우치",
+     "label": "M"
+    },
+    {
+     "id": "c:8633896466",
+     "mall": "쿠팡",
+     "title": "샤오미 LED 컴퓨터 모니터 조명 라이트 바",
+     "label": "M?"
+    },
+    {
+     "id": "c:8810716494",
+     "mall": "쿠팡",
+     "title": "샤오미 미지아 다기능 차량용 핸디 흡입 청소기+에어건 무선 휴대용 자동차 사무실 클리너",
+     "label": "M"
+    },
+    {
+     "id": "c:7387656810",
+     "mall": "쿠팡",
+     "title": "샤오미 미지아 H501 고속 헤어 드라이어 + 파우치",
+     "label": "M"
+    },
+    {
+     "id": "c:8449779782",
+     "mall": "쿠팡",
+     "title": "샤오미 미지아 전동 구강 세정기 2",
+     "label": "M"
+    },
+    {
+     "id": "c:9637206781",
+     "mall": "쿠팡",
+     "title": "샤오미 1S 미지아 모니터 장착 램프 MJGJD02YL",
+     "label": "M"
+    },
+    {
+     "id": "c:4791966396",
+     "mall": "쿠팡",
+     "title": "샤오미 미지아 wiha 고정밀 드라이버 세트",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "가열 가습기",
+   "items": [
+    {
+     "id": "a:cf5f507d2d54cd7a6fc8018841a1688d",
+     "mall": "ADPICK",
+     "title": "[듀플렉스] 가열식 가습기 대용량 신생아 아기 가습기 4.5L DP-XB40SH",
+     "label": "M"
+    },
+    {
+     "id": "a:afa945965fe05728b30adc07454d9228",
+     "mall": "ADPICK",
+     "title": "[무료배송] 미로 가열이지 미로팟 가열식 가습기 miro-MSH03 4L 무드등 자동세척 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:4e7939a521c7979b88a1e2728d534233",
+     "mall": "ADPICK",
+     "title": "스타일리스 주전자 가열식가습기 신생아 아기 가열 가습기 스테인레스 1.7L",
+     "label": "M"
+    },
+    {
+     "id": "a:80ce8b7dde57f8d41d935bfcc05071c1",
+     "mall": "ADPICK",
+     "title": "에어메이드/에어메이드 가열 살균 가습기 세척 미니 가습 아쿠아마린 7000/계절가전 가습기",
+     "label": "M"
+    },
+    {
+     "id": "a:5c8916e17a0e8b81fda684d48425b48b",
+     "mall": "ADPICK",
+     "title": "알리사 숲속안개 가습기 미니 초음파 사무용 무선 탁상용 충전식 700ml+필터 4개",
+     "label": "V"
+    },
+    {
+     "id": "a:8c6c3b691cd6dcd52a74da861a0c79b0",
+     "mall": "ADPICK",
+     "title": "[스타일리스] 주전자 가열식가습기 신생아 아기 가열 가습기 스테인레스 1.7L[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:aa85b0d9f1b051909383408e6796b8b0",
+     "mall": "ADPICK",
+     "title": "알리사 무선 미니 가습기 AH1 전용 필터 6매 1세트 단일상품",
+     "label": "A"
+    },
+    {
+     "id": "a:3435fa6ecbe2aecd5b7e05fdea03c8ce",
+     "mall": "ADPICK",
+     "title": "[리퍼상품] 비스카 가열식 스텐 가습기 3.5L VK-HF400Y",
+     "label": "M"
+    },
+    {
+     "id": "a:410627742024e7f2a346faff9a4c992e",
+     "mall": "ADPICK",
+     "title": "스타일리스 주전자 가열식가습기 신생아 아기 가열 가습기 스테인레스 1.7L",
+     "label": "M"
+    },
+    {
+     "id": "a:52a5605d7dfac10c18caf81fc9ee5dae",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/신일 대용량 복합식가습기 저온가열 하이브리드 타워",
+     "label": "M?"
+    },
+    {
+     "id": "a:9c7d5c35331901040b66f4a73a24ea64",
+     "mall": "ADPICK",
+     "title": "[해외] 얼굴 스티머 얼굴 가열 분무기, 피부 보습 모공 클리너, 얼굴 뜨거운 안개 스티머, 홈 스파 기계 관리, 피부 가습기",
+     "label": "X"
+    },
+    {
+     "id": "a:c5571377c4476ed2c9496e7acbf0e050",
+     "mall": "ADPICK",
+     "title": "신일 대용량 복합식가습기 저온가열 하이브리드 타워",
+     "label": "M?"
+    },
+    {
+     "id": "a:3f0700667e4e649e162d852f6c7e8676",
+     "mall": "ADPICK",
+     "title": "[기프트] 미라스 가열식 가습기 4L 대용량 분리형 물멍 가습기",
+     "label": "M"
+    },
+    {
+     "id": "a:7246be2a2e407b569b53c0a508748a34",
+     "mall": "ADPICK",
+     "title": "복합식 가습기 화이트 WLTM750-JWK (7.5L, 상부급수, 5단계 가습조절)",
+     "label": "M?"
+    },
+    {
+     "id": "a:ee310efd9dc20cc924671f4fab5ee021",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/신일 신일 대용량 복합식가습기 하이브리드 저온가열",
+     "label": "M?"
+    },
+    {
+     "id": "a:d016c873a618f143d59eea750594e183",
+     "mall": "ADPICK",
+     "title": "신일 대용량 복합식가습기 하이브리드 타워 저온가열",
+     "label": "M?"
+    }
+   ]
+  },
+  {
+   "query": "엑스피펜 Artist 22",
+   "items": [
+    {
+     "id": "c:9836013935",
+     "mall": "쿠팡",
+     "title": "미디어커버마켓 XP-Pen Artist Pro 22 Gen2 호환 필름",
+     "label": "A"
+    },
+    {
+     "id": "c:8783818193",
+     "mall": "쿠팡",
+     "title": "[길라잡이] XP-PEN Artist 종이질감 액정보호필름 2매",
+     "label": "A"
+    },
+    {
+     "id": "c:9836346119",
+     "mall": "쿠팡",
+     "title": "공식 중부점 (당일발송 8종사은품 증정) 한국정품 XP-PEN ARTIST 22 (2ND) 액정타블렛/18개월 무상AS 연장",
+     "label": "M"
+    },
+    {
+     "id": "c:9834336380",
+     "mall": "쿠팡",
+     "title": "공식 중부점 [엑스피펜 8종사은품 증정] 한국정품 XP-PEN 아티스트 Pro 22 (2nd) 2.5K 액정타블렛/24개월 무상AS연장",
+     "label": "V"
+    },
+    {
+     "id": "c:8529563524",
+     "mall": "쿠팡",
+     "title": "엑스피펜 ARTIST PRO 22 2세대 QHD 액정 타블렛",
+     "label": "V"
+    },
+    {
+     "id": "c:9834347530",
+     "mall": "쿠팡",
+     "title": "공식 중부점 [엑스피펜 8종사은품증정] 한국정품 XP-PEN ARTIST 22 Plus 액정타블렛/전용스탠드 포함",
+     "label": "V"
+    },
+    {
+     "id": "c:9834341669",
+     "mall": "쿠팡",
+     "title": "공식 중부점 [엑스피펜 8종시은품 증정] 한국정품 XP-PEN 아티스트 22 (2nd) 액정타블렛/전용스탠드 포함",
+     "label": "M"
+    },
+    {
+     "id": "c:5694334407",
+     "mall": "쿠팡",
+     "title": "엑스피펜 Artist 22 2세대 액정타블렛",
+     "label": "M"
+    },
+    {
+     "id": "c:9086644247",
+     "mall": "쿠팡",
+     "title": "(리뷰이벤트)엑스피펜 아티스트 22 2세대 22인치 FHD 액정타블렛 XPPEN ARTIST 22 2세대",
+     "label": "M"
+    },
+    {
+     "id": "c:7825987568",
+     "mall": "쿠팡",
+     "title": "엑스피펜 Artist 22 Plus 액정 타블렛",
+     "label": "V"
+    }
+   ]
+  },
+  {
+   "query": "2.1채널 사운드바",
+   "items": [
+    {
+     "id": "a:09c3764f36edf3dd04bdaba280b943e0",
+     "mall": "ADPICK",
+     "title": "아이리버 IBS-V200 블루투스 2.1채널 사운드바 스피커",
+     "label": "M"
+    },
+    {
+     "id": "a:1ef51c6529e612c1dd73a4db3c95fc44",
+     "mall": "ADPICK",
+     "title": "아이리버 IBS-V200 사운드바 2.1채널 블루투스 스피커",
+     "label": "M"
+    },
+    {
+     "id": "a:d7d4abf89bb834931aae35248d0e6eb1",
+     "mall": "ADPICK",
+     "title": "필립스 컴퓨터 PC 사운드바 스피커 SPA4000+AAA건전지10개",
+     "label": "V"
+    },
+    {
+     "id": "a:498019a8c38038e7922aad5382f476a5",
+     "mall": "ADPICK",
+     "title": "[엠지텍] 6.2채널 블루투스 스피커 사운드바 락클래식 Q9900",
+     "label": "V"
+    },
+    {
+     "id": "a:90a96c305c900c5018015abcc9bf8da2",
+     "mall": "ADPICK",
+     "title": "BZ-SP200X 2채널 컴퓨터 모니터 노트북 데스크탑 PC 스피커 유선 USB LED 게이밍 사운드바 스피커바",
+     "label": "V"
+    },
+    {
+     "id": "a:88e38a996ee1ae042a57dec112839a14",
+     "mall": "ADPICK",
+     "title": "[기프트] 브리츠 BZ-L1 PC 사운드바 컴퓨터 스피커",
+     "label": "V?"
+    },
+    {
+     "id": "a:dc87266c9fb3536254c9ed3b1e3ac6fa",
+     "mall": "ADPICK",
+     "title": "Creative Stage SE 미니 컴팩트 언더 모니터 사운드바 블루투스 5.3 USB 디지털 오디오 PC 및 모바일용",
+     "label": "V?"
+    },
+    {
+     "id": "a:d051668a57de82fa50f04a1d221251e6",
+     "mall": "ADPICK",
+     "title": "[기프트] 에이튜브 A200U 사운드바 스피커 PC 컴퓨터 스피커",
+     "label": "V?"
+    },
+    {
+     "id": "a:4db285e6e050f89bf2a2825ddd43d52f",
+     "mall": "ADPICK",
+     "title": "[LG] [S] LG 사운드바 2.1 채널 S40T[이마트몰] [S40T]",
+     "label": "M"
+    },
+    {
+     "id": "a:f2666ac6efd0983917284747bf826546",
+     "mall": "ADPICK",
+     "title": "[LG] LG 사운드바 2.1 채널 S40T[이마트몰] [S40T]",
+     "label": "M"
+    },
+    {
+     "id": "a:49f955af22915e836ff632e8e7948727",
+     "mall": "ADPICK",
+     "title": "삼성공식파트너 JBL SB510 MK2 3.1채널 사운드바 TV 스피커 홈시어터",
+     "label": "V"
+    },
+    {
+     "id": "a:d7895e2213037b3178fef176839a5718",
+     "mall": "ADPICK",
+     "title": "[해외] 에디파이어 G1500 바형 데스크탑 사운드바, 컴퓨터 스피커, 7.1 채널 서라운드 사운드, 블루투스 5.3, USB-A 연결, RGB 조명, 마이크 내장",
+     "label": "V"
+    },
+    {
+     "id": "a:b14b0ec3409a36d4a4c6c59f0f8f66b3",
+     "mall": "ADPICK",
+     "title": "ABKO SP56 게이밍 사운드바(화이트)",
+     "label": "V?"
+    },
+    {
+     "id": "a:a53f4172afb711550189794296ad8eac",
+     "mall": "ADPICK",
+     "title": "[해외] HDMI EARC ARC-옵티컬 SPDIF 오디오 변환기, 2M USB 전원 공급, 디지털 오디오 변환, 5.1 채널 서라운드 사운드 지원, TV 사운드바용.",
+     "label": "A?"
+    }
+   ]
+  },
+  {
+   "query": "30평 공기청정기",
+   "items": [
+    {
+     "id": "a:d6316db6b3c20922023849f248f443eb",
+     "mall": "ADPICK",
+     "title": "[해외] 디지털 디스플레이, 듀얼 노즐, 회전 기능, USB 연결, 저소음, 시원한 미스트 분사, 침실 및 사무실용 데스크탑 가습 겸용 공기 청정기",
+     "label": "V"
+    },
+    {
+     "id": "a:34b7e8ddf0053e7ad5bd3b89509558a6",
+     "mall": "ADPICK",
+     "title": "LG 퓨리케어 AI 오브제컬렉션 360 공기청정기 M7 AS356NSMA AS356NGMA 서클 디스플레이 액정보호필름",
+     "label": "A"
+    },
+    {
+     "id": "a:91f771a8ab0759b10a10383aaf2ce964",
+     "mall": "ADPICK",
+     "title": "[해외] 미지아 공기청정기 6 Pro, 듀얼 코어, 1461m³/h의 미세먼지 제거량, 1000m³/h의 포름알데히드 제거량, 권장 사용 면적 150m²",
+     "label": "M?"
+    },
+    {
+     "id": "a:4449e48d3bb81cedc795217cb78c623f",
+     "mall": "ADPICK",
+     "title": "[기프트] 초미세먼지 제거 헤파필터 퓨어 미니 공기청정기",
+     "label": "V"
+    },
+    {
+     "id": "a:452b41451258a9b39378da7cc266854c",
+     "mall": "ADPICK",
+     "title": "엘지전자/LG 퓨리케어 에어로미니 공기청정기 AS076MWHC 원룸 소형/생활가전 공기청정기",
+     "label": "V"
+    },
+    {
+     "id": "a:21d261048c8a5d79dc204aec186e5d58",
+     "mall": "ADPICK",
+     "title": "필립스 퓨어 프로텍트 30평형 펫 공기청정기 3000 시리즈 AC3360/11 화이트",
+     "label": "M"
+    },
+    {
+     "id": "a:52d65e796d620b41a6b25a2f8dd18c21",
+     "mall": "ADPICK",
+     "title": "[렌탈] 쿠쿠 인스퓨어 헤리티지 30평 공기청정기 AC-30AH30FEDG 셀프형",
+     "label": "M?"
+    },
+    {
+     "id": "a:f5f6f225a98efb61e671994f61e30ca9",
+     "mall": "ADPICK",
+     "title": "[기프트] 다이슨 허쉬젯 컴팩트 공기청정기 화이트",
+     "label": "V"
+    },
+    {
+     "id": "a:d95000d10f64e80b13a14c7a5cf30b8c",
+     "mall": "ADPICK",
+     "title": "혜택가 63만 LG 퓨리케어 360도 공기청정기 AS285DWWC 크리미스노우 28평형",
+     "label": "V?"
+    },
+    {
+     "id": "a:fb3805469ebb99670130ffb7bf5edfa5",
+     "mall": "ADPICK",
+     "title": "[에어메이드] 윈더 콤팩트 미니 소형 공기청정기 AMP-300",
+     "label": "V"
+    },
+    {
+     "id": "a:918f01a0e93566ddea088fd3959e3a7b",
+     "mall": "ADPICK",
+     "title": "쿠쿠 인스퓨어 공기청정기(116㎡)  AC-35U20FWGH",
+     "label": "M?"
+    },
+    {
+     "id": "a:ad642c3c7d30decdf1b1ce94b47168ae",
+     "mall": "ADPICK",
+     "title": "리아 공기청정기 필터세트 (1회 교체분,양면 교체)",
+     "label": "A"
+    }
+   ]
+  },
+  {
+   "query": "보쉬 청소기",
+   "items": [
+    {
+     "id": "a:f7e073736ef671559f9f90ffd9ffab7a",
+     "mall": "ADPICK",
+     "title": "[보쉬] 청소기 충천식 리튬이온 (10.8V)",
+     "label": "M"
+    },
+    {
+     "id": "a:b3679c32a5be4dc7a59cc5198c2eee8a",
+     "mall": "ADPICK",
+     "title": "[오너클랜]인기상품 보쉬 가든툴 고압세척기액세서리 카워시 액세서리세트 (422) F016800422 1SET [WFQE5OL_261002]",
+     "label": "X"
+    },
+    {
+     "id": "c:9614948163",
+     "mall": "쿠팡",
+     "title": "에어렉스 흡입력 좋은 업소용 무선 청소기 BLDC 건습식 진공청소기 대용량 20L, 블랙, 에어렉스 청소기",
+     "label": "V"
+    },
+    {
+     "id": "a:88ce73a15b0e78c8913af1f3b90362d2",
+     "mall": "ADPICK",
+     "title": "[기프트] 프로살림 지우개 청소기 가루 똥 청소 지우개싹",
+     "label": "X"
+    },
+    {
+     "id": "a:081b2d1bf72e06ff8fe706c3b2305a56",
+     "mall": "ADPICK",
+     "title": "[보리보리] 오너클랜 DEWALT 청소기(스텐) DXV30SA 건.습식/송풍/30L/48mm/호스길이2.1M/1050W",
+     "label": "V"
+    },
+    {
+     "id": "a:ac4610a190c0767abf4659f52a14565f",
+     "mall": "ADPICK",
+     "title": "보쉬 충전송풍기 18V 120 SOLO 본체 청소기 먼지/핸드/가정용/바닥/핸드형/핸디/무선/진공/가정/사무실",
+     "label": "X?"
+    },
+    {
+     "id": "a:61c078c62e7c81e876da8c594076f577",
+     "mall": "ADPICK",
+     "title": "테팔/[테팔] 무선청소기 엑스퍼트 7.60 TY6A17KO+유한클로락스 세정티슈 증정/생활가전 청소기",
+     "label": "V"
+    },
+    {
+     "id": "a:c3cc4a5ac1c068f886068bd54d576fde",
+     "mall": "ADPICK",
+     "title": "[보리보리] 오너클랜 DEWALT 청소기(스텐) DXV38SPTA 건.습식/송풍/연동/38L/48mm/호스길이2.1M/1250W",
+     "label": "V"
+    },
+    {
+     "id": "a:d9ee653b6bc55084a070c5a59b97bc50",
+     "mall": "ADPICK",
+     "title": "[오너클랜]인기상품 보쉬 가든툴 고압세척기액세서리 다용도 액세서리세트 (423) F016800423 1SET [WFQE5OM_261002]",
+     "label": "X"
+    },
+    {
+     "id": "a:257873138d3523e3d29514d04d18d9aa",
+     "mall": "ADPICK",
+     "title": "비스카 무선 전동 욕실 청소기 VK-S372BT",
+     "label": "X"
+    },
+    {
+     "id": "c:7520972579",
+     "mall": "쿠팡",
+     "title": "보쉬 핸디 청소기 베어툴 GAS18V-1",
+     "label": "M"
+    },
+    {
+     "id": "c:8159209722",
+     "mall": "쿠팡",
+     "title": "보쉬 GAS 35 M AFC 유선 집진기 세트 06019C31B0, 1세트",
+     "label": "M"
+    },
+    {
+     "id": "c:9103635985",
+     "mall": "쿠팡",
+     "title": "필모어 초강력 휴대용 무선 진공 청소기, 노블블랙, FM_13_BK",
+     "label": "V"
+    },
+    {
+     "id": "c:9710607513",
+     "mall": "쿠팡",
+     "title": "보쉬 GAS18V-6LS solo",
+     "label": "M"
+    },
+    {
+     "id": "a:20260da557296ee3d08c1a0858b2d294",
+     "mall": "ADPICK",
+     "title": "테팔/[테팔] 무선청소기 에어포스 라이트 TY6547/생활가전 청소기",
+     "label": "V"
+    },
+    {
+     "id": "c:4320058224",
+     "mall": "쿠팡",
+     "title": "보쉬 휴대용 청소기 GAS 10.8V-LI solo 06019E30B0",
+     "label": "M"
+    },
+    {
+     "id": "c:7813761009",
+     "mall": "쿠팡",
+     "title": "[KC인증]보쉬 충전 청소기 휠 액세서리 베어툴 세트",
+     "label": "A"
+    },
+    {
+     "id": "a:771a1c2348667810cd6dd912ba75739e",
+     "mall": "ADPICK",
+     "title": "[보쉬] 고압세척기 가정용 이지아쿠아탁100 (1200W(100bar))",
+     "label": "X"
+    },
+    {
+     "id": "a:f3502e33b2a0ff4ac48bda7bbed9b36c",
+     "mall": "ADPICK",
+     "title": "보쉬 GAS12-25PL 유선 건습식 청소기 1250W 집진기 25L 공업용 진공 060197C100",
+     "label": "M"
+    },
+    {
+     "id": "c:8285500915",
+     "mall": "쿠팡",
+     "title": "[KC인증]보쉬 진공청소기 건습식 GAS10PS C5049332",
+     "label": "M"
+    },
+    {
+     "id": "c:6148266454",
+     "mall": "쿠팡",
+     "title": "카처 초경량 대용량 블로우 업소용 건습식 진공청소기, WD1s, 블랙 + 실버 + 옐로우",
+     "label": "V"
+    },
+    {
+     "id": "a:c0883718a79da35c2988fc92e89acdb0",
+     "mall": "ADPICK",
+     "title": "[기프트] 클래파 가벼운 핸디형 진공 미니 무선 청소기 BVC-H10",
+     "label": "V"
+    },
+    {
+     "id": "c:9738477529",
+     "mall": "쿠팡",
+     "title": "보쉬 GAS18V-10L Wheel Set 배터리1개 공업용청소기, 1개",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "쪼끼",
+   "items": [
+    {
+     "id": "a:708ddbbf3d81115d6cde75a431f4291c",
+     "mall": "ADPICK",
+     "title": "[기프트] 남성 패딩 조끼 경량 쪼끼 남자 패딩 베스트",
+     "label": "M"
+    },
+    {
+     "id": "a:7027579928e4e537c688fd23ea73ec16",
+     "mall": "ADPICK",
+     "title": "[기타] [당일 출고] 더 오리지널 여름여자조끼 썸머 V넥 레이어드 니트 조끼 베스트 쪼끼[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:d4e1211b10fe3795bdc485606de38112",
+     "mall": "ADPICK",
+     "title": "[하프클럽/골피아]여성 크롭니트조끼 니트조끼 니트쪼끼",
+     "label": "M"
+    },
+    {
+     "id": "a:8f79a954a6743a8843385aa8827df36f",
+     "mall": "ADPICK",
+     "title": "다잇템 캐시미어 여성 니트 조끼 브이넥 쪼끼 베스트 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:2b8a8750823b9ef54ceb0d281e2c321a",
+     "mall": "ADPICK",
+     "title": "(국내당일배송)노비스 파보 패딩 베스트 쪼끼",
+     "label": "M"
+    },
+    {
+     "id": "a:4538bb48c261fab1e186160cf9ca4fe3",
+     "mall": "ADPICK",
+     "title": "[패션] 루즈핏 레이디스 풀오버 컴포트 경량베스트 브이칼라걸 쪼끼 풀오버 슬리브리스",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "구찌 가방",
+   "items": [
+    {
+     "id": "a:cad821afb645b966fa8a672a2d043d7f",
+     "mall": "ADPICK",
+     "title": "디몬트 구찌 여성 GG 오피디아 미니 토트백(베이지) 781490 96IWG 8745",
+     "label": "M"
+    },
+    {
+     "id": "a:1bcec2b7773397c4a4f386c99bff17ff",
+     "mall": "ADPICK",
+     "title": "[봇짐] 가방, 짐 보관 서비스 (공항 픽업 드랍 무료, 가격 비교 필수!!)",
+     "label": "X"
+    },
+    {
+     "id": "a:ff76b37f722c54ed49307182520702f0",
+     "mall": "ADPICK",
+     "title": "[기프트] 구찌 GG 오피디아 미니 크로스백 779890 96IWT 8745",
+     "label": "M"
+    },
+    {
+     "id": "a:1b815949ae423fdf1e029c0159bea74f",
+     "mall": "ADPICK",
+     "title": "구찌 여자가방 오피디아 스몰 숄더백 베이지에보니 브라운 838476 FAE0P 9746 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:870a7ee864dcc2aa57f4a011c7f50b31",
+     "mall": "ADPICK",
+     "title": "구찌 가방 476433 DTD5N 2754 마틀라세 마몬트 GG 수퍼 미니 체인 여성숄더백 당일발송",
+     "label": "M"
+    },
+    {
+     "id": "a:5f3d0eda5229bd653cdff731b8acd66b",
+     "mall": "ADPICK",
+     "title": "구찌 점보 GG 미니 토트백 699406-UKMDG-2570",
+     "label": "M"
+    },
+    {
+     "id": "a:74d8571b124bdf7569331a6957313003",
+     "mall": "ADPICK",
+     "title": "[보리보리] 구찌 구찌 키즈 가방 베이지/블루/레드",
+     "label": "M"
+    },
+    {
+     "id": "a:80486d90ab941f579f8e3641b984e58d",
+     "mall": "ADPICK",
+     "title": "[구찌] 26FW 구찌 가방 A005XW AAG8N1068[이마트몰] [A005XW AAG8N1068]",
+     "label": "M"
+    },
+    {
+     "id": "c:9677381011",
+     "mall": "쿠팡",
+     "title": "[구찌] 25SS (510303 CAO0G 1000) 여성 인터로킹 GG 체인 숄더백",
+     "label": "M"
+    },
+    {
+     "id": "a:b2c53189095e9e6a59c5324db86e77ed",
+     "mall": "ADPICK",
+     "title": "구찌/[구찌] SS27가방 A00DH0FAGRS 7680740/가방 숄더백",
+     "label": "M"
+    },
+    {
+     "id": "c:9677381005",
+     "mall": "쿠팡",
+     "title": "[구찌] 25SS (474575 DTD1T 1000) 여성 GG마몬트 미니 체인 크로스백",
+     "label": "M"
+    },
+    {
+     "id": "a:7cb7a0ece0f39ed80ca87601ae892688",
+     "mall": "ADPICK",
+     "title": "구찌 벤두옥 터널 투어 (최대 12인 소규모, 오전/오후 출발)",
+     "label": "X"
+    },
+    {
+     "id": "a:78365da01bbc6e3c5efe3d7b5b4a410a",
+     "mall": "ADPICK",
+     "title": "[벨럭] 파타야 호텔↔수완나품 공항/돈므앙 공항/방콕 호텔 가방 배송 서비스",
+     "label": "X"
+    },
+    {
+     "id": "a:53d97075ef1edafa03affc69e8122e31",
+     "mall": "ADPICK",
+     "title": "구찌 가방 476433 DTD5N 2754 마틀라세 마몬트 GG 수퍼 미니 체인 여성숄더백",
+     "label": "M"
+    },
+    {
+     "id": "a:281c74325c1393756663f12ca2778ea7",
+     "mall": "ADPICK",
+     "title": "구찌 문 사이드 미니 숄더백 블랙 786015",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "다이슨 V12 리퍼",
+   "items": [
+    {
+     "id": "a:5a86a1afbdeb4bd4b336e7ca6023019a",
+     "mall": "ADPICK",
+     "title": "다이슨 V12 오리진 플러피 국내AS .",
+     "label": "V"
+    },
+    {
+     "id": "a:c961f55c78472d7fb9ef2f5e13b3d1ef",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/다이슨 V12s 디텍트 슬림 서브마린 컴플리트 (골드/골드)",
+     "label": "V"
+    },
+    {
+     "id": "a:19c3584a60052468948d8c88557537ba",
+     "mall": "ADPICK",
+     "title": "아트박스/다이슨 V12 오리진 플러피 국내AS .",
+     "label": "V"
+    },
+    {
+     "id": "a:e0b339bc811ccec4cb128c37c3d8d1cf",
+     "mall": "ADPICK",
+     "title": "[다이슨] 다이슨 V12 오리진 플러피 스탠드형 충전거치대 포함 국내AS[이마트몰] [V12 오리진 플러피]",
+     "label": "V"
+    },
+    {
+     "id": "a:543931d97360c592c03efa174c574017",
+     "mall": "ADPICK",
+     "title": "2027 마이스토리 다이어리 v12 (날짜형) + 일정관리스티커",
+     "label": "X"
+    },
+    {
+     "id": "a:76180918ce8de3e41669d8be056b4a55",
+     "mall": "ADPICK",
+     "title": "[국내도서] 제임스 다이슨",
+     "label": "X"
+    },
+    {
+     "id": "a:4883b25bbc765ecf17c6aa61a9fe9a77",
+     "mall": "ADPICK",
+     "title": "다이슨 V12 오리진 플러피 (니켈/퍼플) /국내배송/정품/ iuy",
+     "label": "V"
+    },
+    {
+     "id": "a:ffa0a5208b50c8bf063bbeca27c65cb7",
+     "mall": "ADPICK",
+     "title": "아이에너지 2N PD PLUS (25,600mAh) PD 100W출력/DC 5V9V12V16V19V24V 출력 / QC3,0 보조배터리 블랙박스 드론 노트북 캠핑용 밧데리",
+     "label": "X"
+    },
+    {
+     "id": "a:d093852f44351741a0e4fd6187b7866d",
+     "mall": "ADPICK",
+     "title": "[해외] 다이슨 V12 디텍트 슬림 V10 무선 진공청소기용, 전체 영역을 비추는 녹색 LED 조명, 직접 구동 방식의 바닥 브러시 헤드, 교체용 부품",
+     "label": "A"
+    },
+    {
+     "id": "a:cc4bc1dc0ee192a7042a41dee234e601",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/다이슨 V12s 디텍트 슬림 서브마린 (옐로/니켈)",
+     "label": "V"
+    },
+    {
+     "id": "a:bfba414a9ac770787a0fe4033324c98b",
+     "mall": "ADPICK",
+     "title": "다이슨 청소기 리퍼 먼지통 V12 + 포스트 필터 세트",
+     "label": "A"
+    },
+    {
+     "id": "a:6ec1e231bf43ab246bffac0becdff8cb",
+     "mall": "ADPICK",
+     "title": "[해외] 다이슨 V12 디텍트 슬림, V10 디지털 슬림, SV18, SV20, V12 슬림 무선 진공 청소기용 먼지통 부품 교체",
+     "label": "A"
+    },
+    {
+     "id": "a:0dc4fcdbdecb10801097d6af3da93bf9",
+     "mall": "ADPICK",
+     "title": "다이슨/[다이슨] V12 디텍트 슬림(골드골드) 무선청소기/생활가전 청소기",
+     "label": "V"
+    }
+   ]
+  },
+  {
+   "query": "건담 피규어",
+   "items": [
+    {
+     "id": "a:b911fe218413f133cebbd43562efbef0",
+     "mall": "ADPICK",
+     "title": "큐포스켓 기동전사 건담 수성의 마녀 미오리네 렘블랑 피규어",
+     "label": "M"
+    },
+    {
+     "id": "a:2306af361fea6c24b242271b3f50c9bb",
+     "mall": "ADPICK",
+     "title": "기동전사 건담 시드 반프레스토 G&amp;G 피규어 루나마리아 호크 레이싱 ver",
+     "label": "M"
+    },
+    {
+     "id": "a:9c480b01460121eb530927b3cf62b153",
+     "mall": "ADPICK",
+     "title": "T형 액션베이스 피규어용 검정 건담. 프라모델",
+     "label": "A"
+    },
+    {
+     "id": "a:39afab1652c4cb01b3e69510c821cec2",
+     "mall": "ADPICK",
+     "title": "디즈니스토어/[공식] 인사이드 아웃 2 피규어 플레이 세트 (1000097738)/취미 토이/피규어",
+     "label": "X"
+    },
+    {
+     "id": "a:88cedd9e8e1b90851e6292f80292d25a",
+     "mall": "ADPICK",
+     "title": "[해외] 유니버설 애니메이션 캐릭터 피규어 모델 보관함, 레고, 애니메이션 모델, 건담 모델용 조립식 정리함, 쌓을 수 있음",
+     "label": "A"
+    },
+    {
+     "id": "a:29f67484c8f9741cd5b18696a518b700",
+     "mall": "ADPICK",
+     "title": "반다이 삼국창걸전 26 전위 마스터 건담 (BD5058302)",
+     "label": "M?"
+    },
+    {
+     "id": "a:de2dc0d3bf2eaf10a8f8802fdbdfc173",
+     "mall": "ADPICK",
+     "title": "건담 반다이 피규어 데스사이즈 (GU-06) XXXG-01D",
+     "label": "M"
+    },
+    {
+     "id": "a:03759bf7da2916b6e0bd1320f5cf5877",
+     "mall": "ADPICK",
+     "title": "[해외] 유니버설 애니메이션 만화 캐릭터 피규어 모델 보관함 인터로킹 오거나이저 레고, 애니메이션 모델, 건담 모델용 스태커블",
+     "label": "A"
+    },
+    {
+     "id": "a:d6abd219c9c68cac2a6162833e19813b",
+     "mall": "ADPICK",
+     "title": "코이 유리장식장 피규어 건담 프라모델 수납장 진열장",
+     "label": "A"
+    },
+    {
+     "id": "a:98243a761e55ed553004898a52e47d42",
+     "mall": "ADPICK",
+     "title": "아테네 800 고급 다용도 유리장식장 양주 피규어 건담 레고 인테리어",
+     "label": "A"
+    },
+    {
+     "id": "a:876d9b3f4c5dbda8532adb15c529e73f",
+     "mall": "ADPICK",
+     "title": "갓 피규어 엔트리 초사이어인 그레이드 +할인쿠폰",
+     "label": "X"
+    },
+    {
+     "id": "a:a6a59434415d3bf4c80139b1da46b80e",
+     "mall": "ADPICK",
+     "title": "벨리카가구/(착불) 코이 유리장식장 피규어 건담 프라모델 수납장 진열장/가구/수납 선반/서랍/수납장",
+     "label": "A"
+    },
+    {
+     "id": "a:33ae01e2ba34e5c0d36e20216c0f907c",
+     "mall": "ADPICK",
+     "title": "아크릴케이스 피규어장식장 레고 건담 프라모델 진열 보관함 투명 2T",
+     "label": "A"
+    },
+    {
+     "id": "a:aef4173a81951cb1648c6ac4a2682b63",
+     "mall": "ADPICK",
+     "title": "투명 T형 건담. 피규어용 액션베이스 프라모델",
+     "label": "A"
+    },
+    {
+     "id": "a:e06378f1891ee80028490c171b72ff3e",
+     "mall": "ADPICK",
+     "title": "코이 유리장식장 피규어 건담 프라모델 수납장 진열장 +할인쿠폰",
+     "label": "A"
+    },
+    {
+     "id": "a:4c5a6c86b0616acf28b505cab85b32b9",
+     "mall": "ADPICK",
+     "title": "모형 반다이 피규어 건담 데스사이즈 (GU-06) XXXG-01D",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "여성수영복 블루밍 도트",
+   "items": [
+    {
+     "id": "a:ca1af65b3062f7d9bfb8e171657ba01f",
+     "mall": "ADPICK",
+     "title": "[기타] 블루밍 데이 투피스 수영복 여성수영복 모노키니 바캉스 비치웨어[이마트몰] [WFR6WCS]",
+     "label": "V"
+    },
+    {
+     "id": "a:716a4e023040cbe82cbe0c1db10727c0",
+     "mall": "ADPICK",
+     "title": "[하프클럽/에이치플러스몰]여성수영복 블루밍 데이 투피스 수영복",
+     "label": "V"
+    },
+    {
+     "id": "a:ab31660afeb7038b895a68363db037d7",
+     "mall": "ADPICK",
+     "title": "[기프트] 코듀로이 도트 토글 단추 북파우치",
+     "label": "X"
+    },
+    {
+     "id": "a:633b4d9cad66b753897ba2f9ae8d0259",
+     "mall": "ADPICK",
+     "title": "크로커다일 플라워 도트 펀칭 UV 자외선 차단 99% 3단 레이스 암막 우양산 미니우산",
+     "label": "X"
+    },
+    {
+     "id": "a:33c782f5f2c32628f730bd97164c0f07",
+     "mall": "ADPICK",
+     "title": "노이토/티니핑노이토 X백 도트 네이비/원피스 수영복 원피스",
+     "label": "V?"
+    },
+    {
+     "id": "a:8dec08e3a48c6d042fd90e105755777b",
+     "mall": "ADPICK",
+     "title": "블루밍 젤리 여성용 비키니 세트 폴카 도트 스캘럽 투피스 수영복 발랄한 트라이앵글 탑 스트링 미드",
+     "label": "M"
+    },
+    {
+     "id": "a:046d7f4791e45e410eb5f978e0dfafe1",
+     "mall": "ADPICK",
+     "title": "여성 초커 레이스 머플러 도트 프릴 나시 티 가디건 세트 SET [3color 멘헤라 옷 지뢰계 일본 패션 땡땡이 캉캉 민소매 여리핏]",
+     "label": "X"
+    },
+    {
+     "id": "a:524e6be623cab604ce0d942306fb00f9",
+     "mall": "ADPICK",
+     "title": "[해외] 영화 베이워치 코스프레 C.J. 파커 여성 수영복 점프수트 여름 해변 의류 수영복 1989 TV 베이워치 코스튬 롤플레이 의상",
+     "label": "V?"
+    },
+    {
+     "id": "a:b598af83c9e8ba3c7987a87ae20740c1",
+     "mall": "ADPICK",
+     "title": "랠리 여성 수영복 블루밍 원피스 더블스트랩 엑스백 핑크 RSLA420 +가방",
+     "label": "V"
+    },
+    {
+     "id": "a:ff1466c648a5e585d2baa1f047ceb22c",
+     "mall": "ADPICK",
+     "title": "[나이키스윔공식] 여자수영복 도트 컬쳐럴 패스트백 NESSC050-437 +할인쿠폰",
+     "label": "V"
+    }
+   ]
+  },
+  {
+   "query": "조선미녀 선크림",
+   "items": [
+    {
+     "id": "c:9517859226",
+     "mall": "쿠팡",
+     "title": "조선미녀 맑은쌀 선크림 SPF50 PA++++ 50ml + 아쿠아 프레쉬 10ml 디럭스 세트",
+     "label": "M"
+    },
+    {
+     "id": "c:7183475029",
+     "mall": "쿠팡",
+     "title": "제로이드 이지 워시 마일드 선크림 SPF30 PA++++, 3개, 50ml",
+     "label": "V"
+    },
+    {
+     "id": "c:9517847737",
+     "mall": "쿠팡",
+     "title": "조선미녀 디럭스 세트 맑은쌀 선크림 아쿠아프레쉬 50ml + 맑은쌀 선크림 10ml 세트",
+     "label": "M"
+    },
+    {
+     "id": "c:9442036464",
+     "mall": "쿠팡",
+     "title": "[홈쇼핑완판템] 전인화의 비오진 알부민 멜라 리셋 톤업 선 크림 SPF50+ PA++++, 3개, 50ml",
+     "label": "V"
+    },
+    {
+     "id": "c:9729725817",
+     "mall": "쿠팡",
+     "title": "조선미녀 춘식이 콜라보 맑은쌀 선크림 50ml x 2p + 기획 스트레스볼 세트",
+     "label": "M"
+    },
+    {
+     "id": "c:6220984702",
+     "mall": "쿠팡",
+     "title": "일명 기미잡는 선크림 눈시림없는 자연스러운 피부톤업 무자극 민감피부용 SPF 50+ PA++++, 50ml, 1개",
+     "label": "V"
+    },
+    {
+     "id": "c:9778586730",
+     "mall": "쿠팡",
+     "title": "조선미녀 데이스크린 틴티드 선크림 17N",
+     "label": "M"
+    },
+    {
+     "id": "c:7944158023",
+     "mall": "쿠팡",
+     "title": "센텔리안24 마데카 더마 쉴드 세이프 수분 선크림 SPF50+ PA++++, 50ml, 2개",
+     "label": "V"
+    },
+    {
+     "id": "c:9513578702",
+     "mall": "쿠팡",
+     "title": "조선미녀 데일리 틴티드 선세럼 베일커버 LN120 SPF50+ PA++++",
+     "label": "M?"
+    }
+   ]
+  },
+  {
+   "query": "파운드케이크 믹스",
+   "items": [
+    {
+     "id": "c:7899897793",
+     "mall": "쿠팡",
+     "title": "브레드가든 초코파운드케이크믹스(250g) 케이크만들기 홈베이킹 DIY 화이트데이",
+     "label": "M"
+    },
+    {
+     "id": "c:7899901653",
+     "mall": "쿠팡",
+     "title": "브레드가든 레몬파운드케이크믹스(300g) 케이크만들기 홈베이킹 DIY 화이트데이",
+     "label": "M"
+    },
+    {
+     "id": "c:9349974379",
+     "mall": "쿠팡",
+     "title": "글루텐프리 비건 베이킹 믹스 (플레인), 1개, 150g",
+     "label": "V?"
+    },
+    {
+     "id": "c:9750307117",
+     "mall": "쿠팡",
+     "title": "[브레드가든]초코파운드케이크믹스 파운드케이크 만들기 믹스",
+     "label": "M"
+    },
+    {
+     "id": "c:9392284352",
+     "mall": "쿠팡",
+     "title": "글루텐프리 비건 베이킹 믹스 (초코), 1개, 150g",
+     "label": "V?"
+    },
+    {
+     "id": "c:9683951339",
+     "mall": "쿠팡",
+     "title": "[브레드가든]레몬파운드케이크믹스 파운드케이크 만들기 베이킹믹스",
+     "label": "M"
+    },
+    {
+     "id": "c:1824846114",
+     "mall": "쿠팡",
+     "title": "곰표 찜케익믹스 1kg 대한제분 소분, 1kg, 1개",
+     "label": "V"
+    },
+    {
+     "id": "c:1757785791",
+     "mall": "쿠팡",
+     "title": "쿡앤베이크 머핀 믹스 프리",
+     "label": "V"
+    }
+   ]
+  },
+  {
+   "query": "오뚜기 컵라면",
+   "items": [
+    {
+     "id": "a:bca07d01a2ddbaf5010d12acd119d878",
+     "mall": "ADPICK",
+     "title": "오뚜기 진라면 컵라면소컵 매운맛 65g 24개",
+     "label": "M"
+    },
+    {
+     "id": "a:03fa58916f343c5c629ffe175a68d009",
+     "mall": "ADPICK",
+     "title": "[오뚜기] 컵라면 소컵 진라면 매운맛 3개 + 진라면 순한맛 3개",
+     "label": "M"
+    },
+    {
+     "id": "a:7f8078cc33c4df61563854cc6bb77235",
+     "mall": "ADPICK",
+     "title": "[오뚜기] 오뚜기 컵라면 참깨라면(110g) 1BOX(12개입)",
+     "label": "M"
+    },
+    {
+     "id": "a:f85638b54f47015e430c0464a40c9928",
+     "mall": "ADPICK",
+     "title": "팔도/팔도 왕뚜껑 컵라면 18개 / 왕뚜껑 김치왕뚜껑 짬뽕왕뚜껑 (3종 택1)/간편식/밀키트 간편식/도시락",
+     "label": "V"
+    },
+    {
+     "id": "a:db2250f6ffdfed3394674bb6d1e7d425",
+     "mall": "ADPICK",
+     "title": "[오뚜기] 컵라면 5종 혼합 30개(육개장6개+진라면6개+불닭6개+신라면6개+새우...[이마트몰]",
+     "label": "M?"
+    },
+    {
+     "id": "a:745462877a39d6a82309aef2f0f4c32a",
+     "mall": "ADPICK",
+     "title": "[영양친구] 오뚜기 육개장 컵라면 104g x 24개 4박스",
+     "label": "M"
+    },
+    {
+     "id": "a:994aecf6f10c93b2044b81027bb66396",
+     "mall": "ADPICK",
+     "title": "[기타] 오뚜기 스낵면 컵라면미니컵 소컵 62g 30개 컵라_6928 (53147948)[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:781ee5a10773650334c1de629df873e7",
+     "mall": "ADPICK",
+     "title": "[해외] 할로윈 버거 토마토 소스 피자 돼지 배꼽 컵라면 코스프레 애니메이션 인형 재미있는 공연 의상 빠른 배송",
+     "label": "X"
+    },
+    {
+     "id": "a:267450ce419eccce631bc8146e4b0120",
+     "mall": "ADPICK",
+     "title": "오뚜기 육개장 사발면 104g x 6개",
+     "label": "M"
+    },
+    {
+     "id": "a:e2b00500ae275a72216f7ab129247c47",
+     "mall": "ADPICK",
+     "title": "컵라면 1 박스 김치 육개장사발면 신라면 진라면 소컵 큰컵 왕뚜껑 짜장범벅 짜파게티 새우탕 튀김우동",
+     "label": "V?"
+    },
+    {
+     "id": "a:d9225ce00b6de75e22be917f3b300d43",
+     "mall": "ADPICK",
+     "title": "[보리보리] 더자연 오뚜기 컵라면 진라면 매운맛 110gx12개입/1BOX",
+     "label": "M"
+    },
+    {
+     "id": "a:48ba809c521ade2fff08363d80f41d92",
+     "mall": "ADPICK",
+     "title": "[한국어진행] 거북이스노클링+수중스쿠터+이야스메 무스비+컵라면(욜로하와이)",
+     "label": "X"
+    },
+    {
+     "id": "a:416445af76886e30e1e7961a0728db1b",
+     "mall": "ADPICK",
+     "title": "[해외] 1150ml 용량의 뚜껑이 있는 세라믹 컵라면 그릇으로, 기숙사나 가정 주방에서 사용하기에 적합하며, 면을 신선하고 따뜻하게 유지해 줍니다.",
+     "label": "X"
+    },
+    {
+     "id": "a:b378130949ac9740629e738033877766",
+     "mall": "ADPICK",
+     "title": "[보리보리] 더자연 오뚜기 컵라면 콕콕콕 스파게티 120gx12개입/1BOX",
+     "label": "M?"
+    }
+   ]
+  },
+  {
+   "query": "고양이 습식사료",
+   "items": [
+    {
+     "id": "a:2161bbfad760202abdaa689916eec352",
+     "mall": "ADPICK",
+     "title": "고양이 파우치 고양이습식사료 고등어 80g 3P 위스카스 파우치사료 반려묘 사료",
+     "label": "M"
+    },
+    {
+     "id": "a:562f3a0653e0005eae78f5d85cf4d302",
+     "mall": "ADPICK",
+     "title": "[기프트] 반려묘습식사료 냥이캔 고양이가좋아하는간식(WFPEY4T)",
+     "label": "M?"
+    },
+    {
+     "id": "a:a56656be5bb405b81cfe0665873368dc",
+     "mall": "ADPICK",
+     "title": "알모네이쳐 캣 HFC 무스 주식캔 70g 24개입 고양이 습식사료",
+     "label": "M"
+    },
+    {
+     "id": "a:90de1d75b3c7d51a3d78d14fc080240a",
+     "mall": "ADPICK",
+     "title": "로얄캐닌 고양이사료 인도어 4kg+습식1",
+     "label": "V"
+    },
+    {
+     "id": "a:304bf2c10fb8a93c687777495412823d",
+     "mall": "ADPICK",
+     "title": "건강담은식단 고양이 체중케어 (40g)",
+     "label": "M?"
+    },
+    {
+     "id": "a:b0fba3f70e73362b60f96a7534efdc66",
+     "mall": "ADPICK",
+     "title": "퓨리나 팬시피스트 쁘띠 딜라이트 치킨 50g 반려묘사료 습식사료 고양이영양사료 고양이습식사료 치킨사료",
+     "label": "M"
+    },
+    {
+     "id": "a:539f2ca5e576c1276a7df8df0d71b308",
+     "mall": "ADPICK",
+     "title": "건강담은식단 고양이 헤어볼케어 (40g)",
+     "label": "M?"
+    },
+    {
+     "id": "a:61a051d70f05c0bedf17d269ae7a931b",
+     "mall": "ADPICK",
+     "title": "[기프트] 고양이습식사료주식 고양이닭고기간식 고양이간식캔 치킨 24EA(WFPB9CK)",
+     "label": "M"
+    },
+    {
+     "id": "a:1d34a7f9ba1be5b29a952cff245610bb",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]위스카스 고양이 습식사료 참치 80g 캣푸드 묘 간식",
+     "label": "M"
+    },
+    {
+     "id": "a:39d7c1bd601c933cd72ed0e3860d3a46",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]위스카스 고양이 습식사료 구운 고등어 80g 묘묘 간식 파우치",
+     "label": "M"
+    },
+    {
+     "id": "a:49011095cbff2fe310b5704fb8144ed0",
+     "mall": "ADPICK",
+     "title": "알모네이쳐 캣 파우치 HFC 하이드레이션 헬프 50g 12개입 고양이 습식사료",
+     "label": "M"
+    },
+    {
+     "id": "a:e4b00af8855ca95fba3a573135de7e3e",
+     "mall": "ADPICK",
+     "title": "프로 뉴트리플랜 피부와 모질 반려묘 습식 사료 160g",
+     "label": "M"
+    },
+    {
+     "id": "a:66ec2007bad4ddd7f61fd8ad5685c851",
+     "mall": "ADPICK",
+     "title": "프로 뉴트리플랜 면역과 유리너리 반려묘 습식 사료 160g",
+     "label": "M"
+    },
+    {
+     "id": "a:59e69a9d69edb15d36c6de8e275fb0b5",
+     "mall": "ADPICK",
+     "title": "로얄캐닌 고양이사료 키튼 10kg+습식1",
+     "label": "V"
+    }
+   ]
+  },
+  {
+   "query": "에어컨 리모컨",
+   "items": [
+    {
+     "id": "a:6de105fdf0f359f881ec0d5deb12f811",
+     "mall": "ADPICK",
+     "title": "[보리보리] 오너클랜 삼성 무설정 스탠드 천장 벽걸이 에어컨 만능 리모컨 히터 가정용 천장형",
+     "label": "M"
+    },
+    {
+     "id": "a:ecba191c380deece544f9be2ca346ea8",
+     "mall": "ADPICK",
+     "title": "[해외] 벽걸이형 에어컨 온풍기 10m 리모컨 1800W 침실용 에어컨 히터",
+     "label": "X"
+    },
+    {
+     "id": "a:517278341d230d9e80ba9a09dcdb1cb9",
+     "mall": "ADPICK",
+     "title": "스틸덕 155cm 맥세이프 최고봉 셀카봉 삼각대 올인원 블루투스 C타입 리모컨",
+     "label": "X"
+    },
+    {
+     "id": "a:5edcc91acca462836ff95a8c3417a362",
+     "mall": "ADPICK",
+     "title": "삼성 솔라셀 에어컨 리모컨 무풍콤보 갤러리용 AFR-TC9F / 에어컨 구매시 배송되는 상품 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:bd3fff6c43e17e70d098e65bad33794f",
+     "mall": "ADPICK",
+     "title": "HICKIES TV 에어컨 소파 테이블 소품정리 화이트 가죽 거실 리모컨 수납함",
+     "label": "A"
+    },
+    {
+     "id": "a:eff80399ec7e3c839613b5bde8b70393",
+     "mall": "ADPICK",
+     "title": "[기타] 에어컨 리모컨 벽걸이형 리모컨 냉난방기 시스템 삼성 통합 겸용[이마트몰] [WFQPVBV]",
+     "label": "M"
+    },
+    {
+     "id": "a:479d7da5066d9fa45f8e2aaa8d307f8b",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]삼성 에어컨 리모컨 삼성 냉난방기 리모컨 다용도 통합 벽걸이형 천장형 무선 조절 벽걸이 냉난방 통합형",
+     "label": "M"
+    },
+    {
+     "id": "a:1d2abaece862ab1130269c3527dd31ea",
+     "mall": "ADPICK",
+     "title": "삼성 무풍 에어컨 리모컨 시스템 스탠드 냉방 남방 겸용 OD-331",
+     "label": "M"
+    },
+    {
+     "id": "a:eb160f3a023fea8ae8a7ab2a28292838",
+     "mall": "ADPICK",
+     "title": "HICKIES TV 에어컨 소파 테이블 소품정리 화이트 가죽 거실 리모컨 수납함",
+     "label": "A"
+    },
+    {
+     "id": "a:79af06c1257f35b716a2d49a007ff12e",
+     "mall": "ADPICK",
+     "title": "스틸덕 155cm 최고봉 셀카봉 삼각대 올인원 블루투스 C타입 리모컨",
+     "label": "X"
+    },
+    {
+     "id": "a:6dab739f9d08815c54dc0304e31be09e",
+     "mall": "ADPICK",
+     "title": "유니콘IOT 스마트 LCD온습도센서+만능IR리모컨 냉난방 에어컨 제어통합 WIFI방식 TS-HR11",
+     "label": "M"
+    },
+    {
+     "id": "a:952a691067334af5f7f36bf4102c40cc",
+     "mall": "ADPICK",
+     "title": "[기프트] 에어컨 만능리모콘 공용리모콘 리모컨 다기능리모컨 리모컨 리모콘(WFLQEWI)",
+     "label": "M"
+    },
+    {
+     "id": "a:9f88e2c3ea57f217268c7d548dc1b2e3",
+     "mall": "ADPICK",
+     "title": "휘센 통합 에어컨리모컨 냉난방기 전자 휘센 벽걸이",
+     "label": "M"
+    },
+    {
+     "id": "a:574fd28cfbe000bcb0960d46e7c0c3aa",
+     "mall": "ADPICK",
+     "title": "엔뚜마노/엔뚜마노 실외기없는 리모컨 창문형 에어컨 EM-WA100/계절가전 에어컨",
+     "label": "X"
+    },
+    {
+     "id": "a:fb26d511ce15d1941531701655c5d04f",
+     "mall": "ADPICK",
+     "title": "HICKIES TV 에어컨 소파 테이블 소품정리 화이트 가죽 거실 리모컨 수납함",
+     "label": "A"
+    },
+    {
+     "id": "a:6e4616827deb132dbc249a14507711b5",
+     "mall": "ADPICK",
+     "title": "[해외] 원래 에어컨 리모컨 AKB74235402, AKB74235403 에어컨용 LAN120HVP, LAN120HYV, LAN180HSV2, LAN240HSV2",
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "query": "캠핑용 아이스박스",
+   "items": [
+    {
+     "id": "c:5264028363",
+     "mall": "쿠팡",
+     "title": "올리빙 도트 아이스박스",
+     "label": "M"
+    },
+    {
+     "id": "c:7516019780",
+     "mall": "쿠팡",
+     "title": "대용량 접이식 카트 보냉가방 보쿤 캠핑 아이스박스",
+     "label": "M"
+    },
+    {
+     "id": "a:f9080ea3fe26e4cb41db5257fe553f83",
+     "mall": "ADPICK",
+     "title": "[기타] 캠핑용아이스박스 나들이아이스박스 차박용아박 캠핑아이스박스 음료아이스박스 보냉박스[이마트몰]",
+     "label": "M"
+    },
+    {
+     "id": "a:2e26fd0f11dc95e029ba674b1ed69cb8",
+     "mall": "ADPICK",
+     "title": "쓰리고/펩시 캠핑아이스박스 차량용 미니아이스박스 대형 보냉가방 소형쿨러 18L PEP-ICEB01/캠핑용품 기타캠핑용품",
+     "label": "M"
+    },
+    {
+     "id": "c:7183716260",
+     "mall": "쿠팡",
+     "title": "SHINWA 홀리데이 아이스 박스 + 스티커 세트",
+     "label": "M"
+    },
+    {
+     "id": "a:9d7a15f79209ce6cdc0cb3d2df3b04df",
+     "mall": "ADPICK",
+     "title": "히키스 휴대용 야외 캠핑 피크닉 낚시 여행 아이스박스 16L",
+     "label": "M"
+    },
+    {
+     "id": "a:c41ccf3d27505388db35e4bb6a8e6937",
+     "mall": "ADPICK",
+     "title": "접이식 아이스박스 보온보냉백 보냉보온가방 캠핑용아이스박스 +할인쿠폰",
+     "label": "M"
+    },
+    {
+     "id": "a:a0b21c9b27b75a7566b2634b13e9f9c8",
+     "mall": "ADPICK",
+     "title": "밀리터리 국내산 휴대용 보냉 캠핑용 아이스박스 23L",
+     "label": "M"
+    },
+    {
+     "id": "a:c3441c6fd137625590470d9740add647",
+     "mall": "ADPICK",
+     "title": "보냉 가방 박스 아이스박스 ICEBOX 차박",
+     "label": "M"
+    },
+    {
+     "id": "a:adef1730cb9764702d25668dbe7e9cef",
+     "mall": "ADPICK",
+     "title": "[보리보리] 아트박스 POOM 아트박스/진하오 동남 레저 캠핑 아이스박스 15리터 / 보온 보냉",
+     "label": "M"
+    },
+    {
+     "id": "a:aad5b4e1a7d37313d54f56e466363eff",
+     "mall": "ADPICK",
+     "title": "[해외] 가볍고 접을 수 있는 쿨러용 보관대, 단열 아이스박스 홀더, 캠핑 및 바비큐 여행용 액세서리",
+     "label": "A"
+    },
+    {
+     "id": "a:927058ce03657314dd196b1272802967",
+     "mall": "ADPICK",
+     "title": "대만 타이중 캠핑카 렌탈 | 침낭·파워뱅크·아이스박스",
+     "label": "X"
+    },
+    {
+     "id": "a:4fa2d662acde815dc80c60fcd2881953",
+     "mall": "ADPICK",
+     "title": "[기프트] 캠핑용 아이스박스 쿨러 보냉백 가방(30L)",
+     "label": "M"
+    },
+    {
+     "id": "a:31e7dfa6f36385652eda72a66ef67354",
+     "mall": "ADPICK",
+     "title": "[해외] 휴대용 손잡이가 달린 6L 보온/보냉 아이스박스, 캠핑, 해변, 피크닉, 야외 판매대 등에서 사용하기 적합",
+     "label": "M"
+    },
+    {
+     "id": "a:5ca4d31619453b2b8b182b4c3ec8140f",
+     "mall": "ADPICK",
+     "title": "[1톤~5톤 대량주문 특별행사] 아이스박스/스티로폼/스티로폼아이스박스 40종/택배/포장/김치",
+     "label": "V?"
+    },
+    {
+     "id": "a:ccb7576b8e5102f1c7a6cb6fea3ae005",
+     "mall": "ADPICK",
+     "title": "[선샤인코스트] 바비큐 폰툰 보트 대여 + 아이스박스 낚시장비 포함",
+     "label": "X"
+    },
+    {
+     "id": "c:8355566687",
+     "mall": "쿠팡",
+     "title": "클리프타운 테이블 아이스박스",
+     "label": "M"
+    },
+    {
+     "id": "a:2bb9610ffd7732a38d018acd6e9f1bd8",
+     "mall": "ADPICK",
+     "title": "[하프클럽/알티피아]접이식 캠핑 보냉 가방 대용량 캠핑용 아이스박스 피크닉 쿨러",
+     "label": "M"
+    },
+    {
+     "id": "c:7327986084",
+     "mall": "쿠팡",
+     "title": "코멧 테이블 아이스 박스 대용량 27L",
+     "label": "M"
+    },
+    {
+     "id": "a:36a05ce94c8cd479081cdf83d739434f",
+     "mall": "ADPICK",
+     "title": "아도라하우스 캠핑 모노 아이스박스 17쿼터",
+     "label": "M"
+    }
+   ]
+  }
+ ]
+}
