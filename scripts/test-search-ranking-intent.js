@@ -50,6 +50,24 @@ function above(ranked, better, worse) {
   const a = positions(ranked, better), b = positions(ranked, worse);
   return a.length > 0 && b.length > 0 && Math.max(...a) < Math.min(...b);
 }
+/*
+ * `worse` 가 `better` 를 앞지르지 않는다 — «아래에 있다» 와 «아예 빠졌다» 를
+ * 모두 통과로 본다 (2026-11-23).
+ *
+ * 원래는 above() 하나로 봤는데, 그건 «worse 가 목록에 남아 있을 것» 까지 함께
+ * 요구한다. 검색어 토큰이 하나도 안 걸린 상품을 빼기 시작하면서
+ * (api/_search.js rankItems 의 zero-coverage 주석) 픽스처의 D(무관 상품)가
+ * 목록에서 사라졌고, 그 체크들이 «빠졌다» 를 실패로 읽었다.
+ *
+ * 지키려는 명제는 «무관한 것이 관련 있는 것보다 위에 오지 않는다» 이다.
+ * 빠진 것은 아무것도 앞지를 수 없으므로 그 명제를 더 강하게 만족한다.
+ * better 쪽은 여전히 반드시 남아 있어야 한다 — 그게 빠지면 진짜 회귀다.
+ */
+function notAbove(ranked, worse, better) {
+  const a = positions(ranked, better), b = positions(ranked, worse);
+  if (!a.length) return false;
+  return b.length === 0 || Math.max(...a) < Math.min(...b);
+}
 function detail(ranked) { return ranked.map(it => `${it.label}:${it.relevance}:${it.title}`); }
 function retainMain(g, ranked) {
   const expected = g.items.filter(it => it.label === 'A').map(it => it.productId);
@@ -62,7 +80,7 @@ for (const g of F.brands) {
   const r = rank(g, 'brand-only');
   check(above(r, 'A', 'C'), `${g.query}: A > C, including consumables and English compatibility`, detail(r));
   check(r.slice(0, 3).every(it => it.label === 'A'), `${g.query}: top 3 contains main products`, detail(r.slice(0, 3)));
-  check(above(r, 'C', 'D') && above(r, 'A', 'D'), `${g.query}: unrelated is below relevant candidates`, detail(r));
+  check(notAbove(r, 'D', 'C') && notAbove(r, 'D', 'A'), `${g.query}: unrelated is below relevant candidates (or removed)`, detail(r));
   check(retainMain(g, r), `${g.query}: main-product recall preserved`, detail(r));
 }
 
@@ -70,7 +88,7 @@ console.log('\nProduct-family queries');
 for (const g of F.families) {
   const r = rank(g, 'product-family');
   check(above(r, 'A', 'C'), `${g.query}: main family > compatible accessory`, detail(r));
-  check(above(r, 'A', 'D') && r[0].label === 'A', `${g.query}: requested family first, unrelated last`, detail(r));
+  check(notAbove(r, 'D', 'A') && r[0].label === 'A', `${g.query}: requested family first, unrelated last (or removed)`, detail(r));
   check(retainMain(g, r), `${g.query}: main-family recall preserved`, detail(r));
 }
 
@@ -81,18 +99,19 @@ for (const g of F.brandProducts) {
     `${g.query}: primary title evidence identifies brand plus product intent`);
   check(above(r, 'A', 'B'), `${g.query}: exact family > same-brand different family`, detail(r));
   check(above(r, 'B', 'C'), `${g.query}: brand main product > compatible part`, detail(r));
-  check(above(r, 'C', 'D'), `${g.query}: compatible result > unrelated`, detail(r));
+  check(notAbove(r, 'D', 'C'), `${g.query}: compatible result > unrelated (or removed)`, detail(r));
 }
 
 console.log('\nExact model: exact main product first; model tokens remain dominant');
 for (const g of F.models) {
   const r = rank(g, 'exact-model');
   check(above(r, 'A', 'C'), `${g.query}: exact main product > exact-model accessory`, detail(r));
-  check(above(r, 'A', 'B') && r[0].label === 'A', `${g.query}: exact model > neighboring model`, detail(r));
+  check(notAbove(r, 'B', 'A') && r[0].label === 'A', `${g.query}: exact model > neighboring model (or removed)`, detail(r));
   const a = r.find(it => it.label === 'A');
   const b = r.find(it => it.label === 'B');
-  check(a && b && a.relevance - b.relevance >= 0.4,
-    `${g.query}: exact-model relevance lead >= 0.4`, detail(r));
+  // b 가 빠졌으면 격차는 더 벌어진 것이다 — 그 경우도 통과로 본다 (notAbove 주석).
+  check(!!a && (!b || a.relevance - b.relevance >= 0.4),
+    `${g.query}: exact-model relevance lead >= 0.4 (or neighbor removed)`, detail(r));
 }
 
 console.log('\nExplicit accessories: C > A, query-target accessory recall retained');
@@ -110,7 +129,7 @@ console.log('\nUnknown/long-tail heads: same rules without a brand allowlist');
 for (const g of F.longtails) {
   const r = rank(g, 'long-tail');
   check(above(r, 'A', 'C'), `${g.query}: unknown-head main product > compatible part`, detail(r));
-  check(above(r, 'C', 'D'), `${g.query}: compatible part > unrelated`, detail(r));
+  check(notAbove(r, 'D', 'C'), `${g.query}: compatible part > unrelated (or removed)`, detail(r));
   check(retainMain(g, r), `${g.query}: unknown-head recall preserved`, detail(r));
 }
 
@@ -119,6 +138,27 @@ for (const [i, g] of F.bundles.entries()) {
   const r = rank(g, `bundle-${i}`);
   check(above(r, 'A', 'C'), `${g.query} bundle: main product with included accessory > standalone accessory`, detail(r));
   check(retainMain(g, r), `${g.query} bundle: both legitimate main products retained`, detail(r));
+}
+
+/*
+ * 무엇이 «빠질» 수 있는가 (2026-11-24 재검증).
+ *
+ * notAbove() 는 «무관한 것이 목록에서 빠졌다» 를 통과로 본다. 그만큼 느슨해진
+ * 자리를 여기서 따로 조인다: 빠진 후보는 무관한 것(D)이나 다른 모델(B)뿐이어야
+ * 하고, 본품(A)·부속(C)은 한 건도 빠지면 안 된다. rankItems 의 «숫자 조각만
+ * 걸린 상품» 규칙이 넓어져 관련 상품을 지우기 시작하면 여기서 잡힌다.
+ */
+console.log('\nRemoved candidates are unrelated (D) or neighboring models (B) only');
+for (const [name, groups] of Object.entries({
+  brands: F.brands, families: F.families, brandProducts: F.brandProducts,
+  models: F.models, accessories: F.accessories, longtails: F.longtails, bundles: F.bundles
+})) {
+  for (const g of groups) {
+    const kept = new Set(S.rankItems(g.query, copy(g.items), { minScore: 0 }).items.map(it => it.productId));
+    const removed = g.items.filter(it => !kept.has(it.productId));
+    check(removed.every(it => it.label === 'D' || it.label === 'B'),
+      `${g.query} (${name}): only D/B candidates may be removed`, removed.map(it => `${it.label}:${it.title}`));
+  }
 }
 
 console.log('\nMall/price/trust cannot reverse different relevance');

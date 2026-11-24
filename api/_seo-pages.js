@@ -558,8 +558,8 @@ function renderListing(o) {
 
   const title = `${name} 최저가·가격비교${page > 1 ? ` ${page}페이지` : ''} | SEOSA`;
   const description = stats
-    ? `${page > 1 ? `${page}페이지 · ` : ''}${name} 목록 ${stats.count}개 상품의 현재가 범위 ${won(stats.low)}원~${won(stats.high)}원. ${stats.malls.map(m => m[0]).slice(0, 3).join('·')} 가격을 SEOSA가 매일 기록해 비교합니다.`.slice(0, 160)
-    : `${name} 가격을 SEOSA가 매일 기록해 비교합니다.`;
+    ? `${page > 1 ? `${page}페이지 · ` : ''}${name} 목록 ${stats.count}개 상품의 현재가 범위 ${won(stats.low)}원~${won(stats.high)}원. ${stats.malls.map(m => m[0]).slice(0, 3).join('·')} 가격을 SEOSA가 기록해 비교합니다.`.slice(0, 160)
+    : `${name} 가격을 SEOSA가 기록해 비교합니다.`;
 
   const facts = stats ? `
   <dl class="facts">
@@ -702,7 +702,7 @@ async function hubHandler(req, res) {
   const body = `
   ${crumbs([{ name: '홈', href: '/' }, { name: '카테고리·브랜드' }])}
   <h1>카테고리·브랜드별 최저가</h1>
-  <p class="meta">SEOSA 가 매일 가격을 기록하는 상품을 카테고리와 브랜드로 묶었어요. 지금 현재가를 확인한 상품이 ${SEO.CATEGORY_MIN_PRODUCTS}개 이상이고 가격 기록이 충분히 쌓인 상품이 ${SEO.CATEGORY_MIN_TRACKED}개 이상인 묶음만 보여드려요.</p>
+  <p class="meta">SEOSA 가 가격을 기록하는 상품을 카테고리와 브랜드로 묶었어요. 지금 현재가를 확인한 상품이 ${SEO.CATEGORY_MIN_PRODUCTS}개 이상이고 가격 기록이 충분히 쌓인 상품이 ${SEO.CATEGORY_MIN_TRACKED}개 이상인 묶음만 보여드려요.</p>
   <h2 id="categories">카테고리</h2>
   ${cats.length ? `<ul class="tiles">${cats.map(tile).join('')}</ul>` : '<p class="meta">지금 보여드릴 카테고리가 없어요.</p>'}
   <h2 id="brands">브랜드</h2>
@@ -710,7 +710,7 @@ async function hubHandler(req, res) {
   cachePublic(res, PAGE_CACHE_S);
   return sendHtml(res, 200, layout({
     title: '카테고리·브랜드별 최저가·가격비교 | SEOSA',
-    description: `${cats.slice(0, 6).map(e => e.def.name).join('·')} 등 카테고리와 브랜드별로 SEOSA가 매일 기록한 최저가와 가격 추이를 비교하세요.`.slice(0, 160),
+    description: `${cats.slice(0, 6).map(e => e.def.name).join('·')} 등 카테고리와 브랜드별로 SEOSA가 기록한 최저가와 가격 추이를 비교하세요.`.slice(0, 160),
     canonical, indexable, body,
     jsonLd: [
       SEO.breadcrumbJsonLd([{ name: '홈', url: `${SITE}/` }, { name: '카테고리·브랜드', url: canonical }]),

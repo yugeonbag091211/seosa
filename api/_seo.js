@@ -249,7 +249,7 @@ function productDescription(o) {
   if (s && s.window30 && s.window30.count >= 3) {
     parts.push(`최근 30일 최저 ${won(s.window30.low)}원·평균 ${won(s.window30.avg)}원.`);
   }
-  parts.push('SEOSA가 매일 기록한 가격 추이와 구매 시점 판정을 확인하세요.');
+  parts.push('SEOSA가 기록한 가격 추이와 구매 시점 판정을 확인하세요.');
   let out = parts.join(' ');
   if (out.length > 160) out = parts.slice(0, -1).join(' ');
   return out.slice(0, 160);
