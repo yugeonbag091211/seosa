@@ -301,15 +301,21 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_search': S,
     './_physical-search-filter': require('../api/_physical-search-filter'),
     './_search-type-guard': require('../api/_search-type-guard'),
+    // 2026-11-25: 기본 OFF(PRODUCT_KIND_CLASSIFY_ENABLED) — 꺼진 채로 돌아가는지만 확인한다.
+    './_product-kind-store': require('../api/_product-kind-store'),
     './_search-provenance': require('../api/_search-provenance'),
     './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(items) { return items; } },
     // 구매 링크 관문 — 순수 함수라 진짜 모듈을 쓴다.
     './_affiliate': require('../api/_affiliate')
   };
-  const context = { module: { exports: {} }, console, require(name) {
-    if (!(name in dependencies)) throw new Error(`unexpected dependency: ${name}`);
-    return dependencies[name];
-  }, fetch() { throw new Error('unexpected network request'); } };
+  const context = {
+    module: { exports: {} }, console, process,
+    require(name) {
+      if (!(name in dependencies)) throw new Error(`unexpected dependency: ${name}`);
+      return dependencies[name];
+    },
+    fetch() { throw new Error('unexpected network request'); }
+  };
   vm.runInNewContext(handlerSource, context, { filename: 'api/search.js' });
   let response;
   const res = { setHeader() {}, status() { return this; }, json(items) { response = items; } };
@@ -333,6 +339,74 @@ for (const g of [...F.models, { query: '삼성', items: [
     check(response.filter(it => /갤럭시 S26/.test(it.title)).length === 1,
       '/api/search keeps exactly one representative per duplicated product', response && detail(response));
   }
+}
+
+console.log('\nPRODUCT_KIND_CLASSIFY_ENABLED=1: GPT 1회 분류 안전망 연결 확인');
+{
+  async function runWithFlag(items, query, fakeSyncProductKinds) {
+    const calls = { search: 0, save: 0, trust: 0, facets: 0 };
+    const dependencies = {
+      './_supabase': { from() { throw new Error('unexpected dictionary DB query'); } },
+      './_shop': {
+        TODAY_PICKS: [],
+        async searchAll() { calls.search++; return { items: copy(items), from: 'cache' }; },
+        async saveProducts() { calls.save++; }
+      },
+      './_trust': { async attachTrust() { calls.trust++; } },
+      './_facets': { async attachPriceChange() { calls.facets++; } },
+      './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
+      './_ratelimit': { guard: () => true },
+      './_search': S,
+      './_physical-search-filter': require('../api/_physical-search-filter'),
+      './_search-type-guard': require('../api/_search-type-guard'),
+      './_product-kind-store': { syncProductKinds: fakeSyncProductKinds },
+      './_search-provenance': require('../api/_search-provenance'),
+      './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(it) { return it; } },
+      './_affiliate': require('../api/_affiliate')
+    };
+    const envBackup = process.env.PRODUCT_KIND_CLASSIFY_ENABLED;
+    process.env.PRODUCT_KIND_CLASSIFY_ENABLED = '1';
+    const context = {
+      module: { exports: {} }, console, process,
+      require(name) {
+        if (!(name in dependencies)) throw new Error(`unexpected dependency: ${name}`);
+        return dependencies[name];
+      },
+      fetch() { throw new Error('unexpected network request'); }
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'api', 'search.js'), 'utf8'), context,
+      { filename: 'api/search.js' });
+    let response;
+    const res = { setHeader() {}, status() { return this; }, json(it) { response = it; } };
+    try {
+      await context.module.exports({ query: { keyword: query } }, res);
+    } finally {
+      process.env.PRODUCT_KIND_CLASSIFY_ENABLED = envBackup;
+    }
+    return response;
+  }
+
+  // GPT가 "트레이는 부속이다"라고 답했다고 가정 — 사전(ACCESSORY_TIER)에는
+  // 없는 단어라 기존 _search-type-guard 만으로는 못 잡는 케이스다.
+  const items = [
+    F.item('nas-body', '시놀로지 DS224+ NAS 2베이', 'A', 450000),
+    F.item('nas-tray', 'DS224+용 호환 하드 트레이', 'C', 15000)
+  ];
+  const kinds = new Map([['nas-tray', 'accessory']]);
+  const response = await runWithFlag(items, 'DS224+', async () => kinds);
+  check(response && response.length === 1 && response[0].productId === 'nas-body',
+    'GPT가 accessory로 answer한 상품은 응답에서 빠진다(사전엔 없던 "트레이")', response && detail(response));
+
+  // 전부 accessory로 나오면(판정 과잉 의심) 적용을 포기하고 원본을 그대로 보여준다.
+  const allAccessory = new Map([['nas-body', 'accessory'], ['nas-tray', 'accessory']]);
+  const response2 = await runWithFlag(items, 'DS224+', async () => allAccessory);
+  check(response2 && response2.length === 2,
+    '전부 accessory로 나오면 가드를 적용하지 않는다(본품까지 사라지는 사고 방지)', response2 && detail(response2));
+
+  // syncProductKinds가 실패해도(타임아웃/네트워크) 검색 자체는 멈추지 않는다.
+  const response3 = await runWithFlag(items, 'DS224+', async () => { throw new Error('timeout'); });
+  check(response3 && response3.length === 2,
+    'GPT 분류가 실패해도 검색은 그대로 응답한다(기존 결과 유지)', response3 && detail(response3));
 }
 
 const passed = checks.filter(c => c.pass).length;
