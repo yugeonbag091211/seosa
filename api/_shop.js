@@ -85,7 +85,13 @@ function relevantItems(keyword, items) {
  * 거르지는 않는다 — 중고를 찾는 사람도 있다. 표시만 해서 구분되게 한다.
  */
 const USED_PATTERN     = /중고|used\b/i;
-const REFURB_PATTERN   = /리퍼|refurb/i;
+/*
+ * ★ «리퍼» 앞뒤 경계 (2026-11-24). 예전 식 /리퍼/ 는 «슬리퍼»·«드리퍼»·«클리퍼»·«그리퍼»
+ *   상품마다 «리퍼» 뱃지를 달았다(운영 공급자 캐시 상품명 52,091건 중 슬리퍼 154 · 드리퍼 26건).
+ *   «바나나 리퍼블릭» 같은 브랜드도 리퍼로 읽었다. 한글 바로 뒤의 리퍼는 S급·보증·인증·공식
+ *   (급·증·식) 뒤일 때만 리퍼로 본다 — api/_search.js CONDITION_PATTERNS 의 refurbished 와 같은 경계다.
+ */
+const REFURB_PATTERN   = /(?:(?<![가-힣])|(?<=[급증식]))리퍼(?!블릭)|refurb/i;
 const OVERSEAS_PATTERN = /해외|직구|구매대행/;
 
 function detectCondition(title, mallName) {

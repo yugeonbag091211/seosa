@@ -1,0 +1,396 @@
+{
+ "protocol": "reports/search-sold-object-2026-11-24/PROTOCOL.md",
+ "labelsSha256": "9e1957ce1433e99b8d94e2d8664314f12cc42f679ccc8b5d9bb8153b48bed777",
+ "ranAt": "2026-11-24T06:36:19.327Z",
+ "baseline": "main",
+ "externalCalls": 0,
+ "dbQueries": 0,
+ "table": {
+  "main": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8611,
+   "p5": 0.8719,
+   "x3": 0.0556,
+   "x3Count": 8,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": []
+  },
+  "pr265-original": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8611,
+   "p5": 0.8719,
+   "x3": 0.0556,
+   "x3Count": 8,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  },
+  "stage1": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8611,
+   "p5": 0.8719,
+   "x3": 0.0556,
+   "x3Count": 8,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  },
+  "final": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8681,
+   "p5": 0.8844,
+   "x3": 0.0486,
+   "x3Count": 7,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  },
+  "final-minus-fix01": {
+   "queries": 48,
+   "top1M": 0.8333,
+   "top1MCount": 40,
+   "p3": 0.8681,
+   "p5": 0.8844,
+   "x3": 0.0486,
+   "x3Count": 7,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "M"
+    }
+   ]
+  },
+  "final-minus-fix02": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8681,
+   "p5": 0.8844,
+   "x3": 0.0486,
+   "x3Count": 7,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  },
+  "final-minus-book": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8611,
+   "p5": 0.8719,
+   "x3": 0.0556,
+   "x3Count": 8,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  },
+  "final-minus-experience": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8681,
+   "p5": 0.8844,
+   "x3": 0.0486,
+   "x3Count": 7,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  },
+  "final-minus-devicebag": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8681,
+   "p5": 0.8844,
+   "x3": 0.0486,
+   "x3Count": 7,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  },
+  "final-minus-refurb": {
+   "queries": 48,
+   "top1M": 0.8125,
+   "top1MCount": 39,
+   "p3": 0.8681,
+   "p5": 0.8844,
+   "x3": 0.0486,
+   "x3Count": 7,
+   "mOmission": 0,
+   "mMissing": 0,
+   "relatedOmission": 0,
+   "relatedMissing": 0,
+   "flipsMtoX": [],
+   "top1Changes": [
+    {
+     "query": "모기향",
+     "from": "M",
+     "to": "M"
+    },
+    {
+     "query": "우주복",
+     "from": "X",
+     "to": "X"
+    }
+   ]
+  }
+ },
+ "verdicts": {
+  "fix01": {
+   "keep": false,
+   "criteria": {
+    "1_noNewMainOmission": true,
+    "2_noNewRelatedOmission": true,
+    "3_top1NotLower": false,
+    "4_p5NotLower": true,
+    "5_noMtoXFlip": false
+   },
+   "withComponent": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "without": {
+    "top1M": 0.8333,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "flipsMtoX": [
+    "우주복"
+   ]
+  },
+  "fix02": {
+   "keep": true,
+   "criteria": {
+    "1_noNewMainOmission": true,
+    "2_noNewRelatedOmission": true,
+    "3_top1NotLower": true,
+    "4_p5NotLower": true,
+    "5_noMtoXFlip": true
+   },
+   "withComponent": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "without": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "flipsMtoX": []
+  },
+  "book": {
+   "keep": true,
+   "criteria": {
+    "1_noNewMainOmission": true,
+    "2_noNewRelatedOmission": true,
+    "3_top1NotLower": true,
+    "4_p5NotLower": true,
+    "5_noMtoXFlip": true
+   },
+   "withComponent": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "without": {
+    "top1M": 0.8125,
+    "p5": 0.8719,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "flipsMtoX": []
+  },
+  "experience": {
+   "keep": true,
+   "criteria": {
+    "1_noNewMainOmission": true,
+    "2_noNewRelatedOmission": true,
+    "3_top1NotLower": true,
+    "4_p5NotLower": true,
+    "5_noMtoXFlip": true
+   },
+   "withComponent": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "without": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "flipsMtoX": []
+  },
+  "devicebag": {
+   "keep": true,
+   "criteria": {
+    "1_noNewMainOmission": true,
+    "2_noNewRelatedOmission": true,
+    "3_top1NotLower": true,
+    "4_p5NotLower": true,
+    "5_noMtoXFlip": true
+   },
+   "withComponent": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "without": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "flipsMtoX": []
+  },
+  "refurb": {
+   "keep": true,
+   "criteria": {
+    "1_noNewMainOmission": true,
+    "2_noNewRelatedOmission": true,
+    "3_top1NotLower": true,
+    "4_p5NotLower": true,
+    "5_noMtoXFlip": true
+   },
+   "withComponent": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "without": {
+    "top1M": 0.8125,
+    "p5": 0.8844,
+    "mMissing": 0,
+    "relatedMissing": 0
+   },
+   "flipsMtoX": []
+  }
+ }
+}
