@@ -31,9 +31,7 @@ function check(name, cond, detail) {
   check('대문자 MAIN도 소문자 변환 후 인식',
     JSON.stringify(parseResponse('["MAIN"]', 1)) === JSON.stringify(['main']));
 
-  console.log('\n4. parseResponse — 길이가 안 맞거나 JSON이 아니면 전부 unknown');
-  check('빈 문자열', JSON.stringify(parseResponse('', 2)) === JSON.stringify(['unknown', 'unknown']));
-  check('JSON 아님', JSON.stringify(parseResponse('모르겠어요', 2)) === JSON.stringify(['unknown', 'unknown']));
+  console.log('\n4. parseResponse — 배열은 찾았는데 길이가 모자라면 그 자리만 unknown');
   check('배열보다 짧은 응답은 모자란 자리만 unknown',
     JSON.stringify(parseResponse('["main"]', 3)) === JSON.stringify(['main', 'unknown', 'unknown']));
 
@@ -45,19 +43,28 @@ function check(name, cond, detail) {
     check('3건 분류 결과', JSON.stringify(r) === JSON.stringify(['main', 'accessory', 'main']), r);
   }
 
-  console.log('\n6. classifyBatch — LLM이 실패해도(ok:false) 전부 unknown, 안 터진다');
+  console.log('\n6. classifyBatch — LLM이 실패해도(ok:false) 전부 null(= 못 물어봄), 안 터진다');
   {
+    // ★ 2026-11-25: 타임아웃/쿨다운은 "몰랐다"(unknown)가 아니라 "못 물어봤다"(null)다.
+    //   이 둘을 섞어서 전부 unknown으로 캐싱했다가, 운영 리허설에서 타임아웃난 상품이
+    //   영구히 재분류 안 되는 사고가 났다 — null 이어야 store.js가 재시도 대상으로 남긴다.
     const fakeChat = async () => ({ ok: false, reason: 'cooldown' });
     const r = await classifyBatch(['아무 상품'], { chat: fakeChat });
-    check('ok:false → unknown', JSON.stringify(r) === JSON.stringify(['unknown']));
+    check('ok:false → null(재시도 대상)', JSON.stringify(r) === JSON.stringify([null]));
   }
 
-  console.log('\n7. classifyBatch — chat()이 예외를 던져도 안 터진다');
+  console.log('\n7. classifyBatch — chat()이 예외를 던져도 안 터진다 (역시 null)');
   {
     const fakeChat = async () => { throw new Error('network down'); };
     const r = await classifyBatch(['상품A', '상품B'], { chat: fakeChat });
-    check('예외 → 전부 unknown', JSON.stringify(r) === JSON.stringify(['unknown', 'unknown']));
+    check('예외 → 전부 null(재시도 대상)', JSON.stringify(r) === JSON.stringify([null, null]));
   }
+
+  console.log('\n6b. parseResponse — 응답 자체를 못 알아보면 null, 배열 속 이상한 값만 unknown');
+  check('빈 문자열은 null(= 답을 못 받음)', JSON.stringify(parseResponse('', 2)) === JSON.stringify([null, null]));
+  check('JSON 아니면 null', JSON.stringify(parseResponse('모르겠어요', 2)) === JSON.stringify([null, null]));
+  check('배열은 왔는데 한 자리가 이상하면 그 자리만 unknown',
+    JSON.stringify(parseResponse('["main","???"]', 2)) === JSON.stringify(['main', 'unknown']));
 
   console.log('\n8. classifyBatch — 빈 배열/미지정 입력');
   check('빈 배열 → 빈 배열', JSON.stringify(await classifyBatch([])) === '[]');

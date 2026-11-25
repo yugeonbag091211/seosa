@@ -99,6 +99,31 @@ function fakeSupabase(rows, { selectShouldFail = false, updateShouldFail = false
     check('맵에는 X 하나', map.size === 1 && map.get('X') === 'main');
   }
 
+  console.log('\n3b. 일부만 타임아웃나면(null) 그 상품만 캐싱 안 하고 재시도 대상으로 남긴다');
+  {
+    // ★ 2026-11-25 실측 리허설 재현: "마우스" 검색에서 GPT가 타임아웃났는데
+    //   9개 상품이 전부 'unknown'으로 영구 저장된 사고. null인 자리는 맵에도
+    //   DB에도 안 남아야 다음 검색에서 다시 물어본다.
+    const rows = [];
+    const supabase = fakeSupabase(rows);
+    // A는 정상 응답(main), B는 타임아웃(null), C는 GPT가 실제로 애매하다고 답함(unknown).
+    const classify = async () => ['main', null, 'unknown'];
+    const map = await syncProductKinds(
+      [
+        { productId: 'A', title: '마우스' },
+        { productId: 'B', title: '마우스패드' },
+        { productId: 'C', title: '애매한 상품' }
+      ],
+      { supabase, classify }
+    );
+    check('타임아웃난 B는 맵에 없음(= 모른다, 안전하게 kept 유지)', !map.has('B'), [...map]);
+    check('정상 응답(A)과 실제 unknown(C)은 맵에 들어감',
+      map.get('A') === 'main' && map.get('C') === 'unknown', [...map]);
+    check('DB에도 A·C 두 건만 기록(B는 재시도 대상이라 안 씀)',
+      supabase._updates.length === 2 && supabase._updates.every(u => u.product_id !== 'B'),
+      supabase._updates);
+  }
+
   console.log('\n4. DB 조회 자체가 실패하면(컬럼 없음 등) 빈 맵으로 안전하게 넘어간다');
   {
     const supabase = fakeSupabase([], { selectShouldFail: true });

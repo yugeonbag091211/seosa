@@ -96,13 +96,26 @@ async function syncProductKinds(items, opts = {}) {
     }
     if (!Array.isArray(kinds) || kinds.length !== missing.length) return out;
 
-    missing.forEach((m, i) => out.set(m.productId, kinds[i]));
+    /*
+     * ★ null 은 "답을 못 받았다"(타임아웃·호출 실패) — 맵에도 안 넣고 DB에도
+     *   안 쓴다. 다음 검색에서 다시 "안 물어본 상품" 취급돼 재시도된다.
+     *
+     *   2026-11-25 실측 리허설에서 이걸 안 가리고 전부 캐싱한 적이 있다:
+     *   "마우스" 검색에서 GPT 응답이 타임아웃났는데(=null이어야 할 상황) 9개
+     *   상품이 그대로 'unknown' 으로 영구 저장돼, 재검색 때도 다시 안 물어봤다
+     *   (api/_product-kind-classifier.js 상단 주석 참고). unknown 은 "GPT가
+     *   실제로 답했는데 애매했다" 는 뜻일 때만 저장한다 — 그건 또 물어봐도
+     *   똑같이 애매할 가능성이 커서 재질문을 막는 게 맞다.
+     */
+    const writes = [];
+    missing.forEach((m, i) => {
+      const kind = kinds[i];
+      if (kind == null) return; // null — 모른다, 재시도 대상. 맵/DB 둘 다 건드리지 않는다.
+      out.set(m.productId, kind);
+      writes.push({ productId: m.productId, kind });
+    });
+    if (!writes.length) return out;
 
-    // 저장은 "안 지 있는 것만" — unknown 도 저장해 둔다. 안 그러면 unknown 상품을
-    // 매번 다시 물어보게 된다(비용 낭비). null 로 둘지 unknown 으로 둘지 선택지가
-    // 있었는데, unknown 저장을 택했다: "아직 안 물어봤다"(null)와 "물어봤는데
-    // 애매했다"(unknown)를 구분해야 재시도 정책을 나중에 따로 정할 수 있다.
-    const writes = missing.map((m, i) => ({ productId: m.productId, kind: kinds[i] }));
     try {
       await Promise.all(writes.map(w => supabase
         .from('products')
