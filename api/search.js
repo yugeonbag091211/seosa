@@ -5,6 +5,7 @@ const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
+const { filterPhysicalSearchResults } = require('./_physical-search-filter');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -190,7 +191,13 @@ module.exports = async function handler(req, res) {
      */
     // rankItems normalizes text itself; retain original model separators so
     // SM-S942N is checked as a complete code, not only the S942N fragment.
-    const relevance = rankItems(rawKeyword, items, { minScore: 0 });
+    //
+    // ★ "노트북" 같은 맨 기기명 검색에 크몽·인프런 강의가 섞여 최저가를
+    //   왜곡하는 문제(PR #259, 2026-11-20)를 rankItems 전에 걷어낸다.
+    //   "노트북 강의"·"노트북 거치대"처럼 다른 낱말이 더 붙으면 건드리지
+    //   않는다 — _physical-search-filter.PHYSICAL_DEVICE_QUERIES 참고.
+    const visibleItems = filterPhysicalSearchResults(rawKeyword, items);
+    const relevance = rankItems(rawKeyword, visibleItems, { minScore: 0 });
 
     /*
      * 순서.
