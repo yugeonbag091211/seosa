@@ -7,7 +7,7 @@ const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords, productIntentContext } = require('./_search');
 const { filterPhysicalSearchResults } = require('./_physical-search-filter');
 const { filterByProductType } = require('./_search-type-guard');
-const { syncProductKinds } = require('./_product-kind-store');
+const { lookupProductKinds } = require('./_product-kind-store');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -208,23 +208,31 @@ module.exports = async function handler(req, res) {
 
     /*
      * ★ GPT 1회 분류 — 사전(ACCESSORY_TIER)에 없는 새 부속 단어를 잡는 두 번째
-     *   안전망 (2026-11-25). "팜레스트"를 추가했던 것처럼 사전은 계속 새 단어를
-     *   놓친다. 이건 그 사전을 매번 고치는 대신, 처음 보는 상품만 GPT에게
-     *   "본품이냐 부속이냐" 한 번 물어서 product_id 에 영구 캐싱한다
-     *   (api/_product-kind-store.js). 검색어와 무관한 상품 자체의 성격이라
-     *   한 번 물으면 끝이고, 다음부터는 DB에서 바로 읽는다.
+     *   안전망 (2026-11-25, 2026-11-25 배치 분리). "팜레스트"를 추가했던 것처럼
+     *   사전은 계속 새 단어를 놓친다. 이건 그 사전을 매번 고치는 대신, 상품마다
+     *   GPT에게 "본품이냐 부속이냐" 한 번 물어서 product_id 에 영구 캐싱해 둔
+     *   값을 여기서 꺼내 쓴다.
      *
-     *   기본은 꺼져 있다(PRODUCT_KIND_CLASSIFY_ENABLED=1). 운영에서 지연시간·
-     *   비용을 확인한 뒤 켜는 롤아웃 방식 — api/_coupang.js 의
-     *   COUPANG_CHANNEL_ROLLOUT 과 같은 패턴이다. 켜져 있어도 시간 제한 안에
-     *   못 끝나면 그냥 건너뛴다 — 이것 때문에 검색이 느려지거나 깨지지 않는다.
+     *   ★ GPT 호출은 여기서 하지 않는다. 처음엔 모르는 상품을 만나면 이 자리에서
+     *   바로 GPT에게 물어봤는데, 그러면 손님이 그 응답을 기다리는 동안 검색이
+     *   1.8~2.9초 더 걸렸다(Codex 실측). 그래서 "GPT에게 묻고 저장"하는 일은
+     *   따로 도는 배치 작업(scripts/classify-product-kinds-batch.js)으로
+     *   옮겼고, 여기서는 그 작업이 이미 저장해 둔 값만 DB에서 읽는다
+     *   (api/_product-kind-store.js 의 lookupProductKinds — 수십 ms 수준).
+     *   아직 배치가 못 본 새 상품은 "모른다"로 남고 기존 사전 가드만 적용된다
+     *   — 다음 배치 실행 때 분류되어 그 다음 검색부터 반영된다.
+     *
+     *   기본은 꺼져 있다(PRODUCT_KIND_CLASSIFY_ENABLED=1). 운영에서 확인한 뒤
+     *   켜는 롤아웃 방식 — api/_coupang.js 의 COUPANG_CHANNEL_ROLLOUT 과 같은
+     *   패턴이다. 켜져 있어도 시간 제한 안에 못 끝나면 그냥 건너뛴다 —
+     *   이것 때문에 검색이 느려지거나 깨지지 않는다.
      */
     let kindFiltered = typeGuard.kept;
     if (process.env.PRODUCT_KIND_CLASSIFY_ENABLED === '1') {
       try {
-        const kinds = await syncProductKinds(
-          typeGuard.kept.map(it => ({ productId: it.productId, title: it.title })),
-          { timeBudgetMs: Number(process.env.PRODUCT_KIND_CLASSIFY_BUDGET_MS) || 3000 }
+        const kinds = await lookupProductKinds(
+          typeGuard.kept.map(it => it.productId),
+          { timeBudgetMs: Number(process.env.PRODUCT_KIND_CLASSIFY_BUDGET_MS) || 1200 }
         );
         if (kinds.size) {
           const wantsAccessory = (() => {

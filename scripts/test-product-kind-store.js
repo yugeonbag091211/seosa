@@ -5,7 +5,9 @@
  */
 'use strict';
 
-const { syncProductKinds, DEFAULT_TIME_BUDGET_MS } = require('../api/_product-kind-store');
+const {
+  syncProductKinds, lookupProductKinds, DEFAULT_TIME_BUDGET_MS, DEFAULT_LOOKUP_BUDGET_MS
+} = require('../api/_product-kind-store');
 
 const checks = [];
 function check(name, cond, detail) {
@@ -168,6 +170,51 @@ function fakeSupabase(rows, { selectShouldFail = false, updateShouldFail = false
     check('빈 배열 → 빈 맵', map.size === 0);
   }
   check(`기본 시간 예산이 합리적 범위(1~10초)`, DEFAULT_TIME_BUDGET_MS >= 1000 && DEFAULT_TIME_BUDGET_MS <= 10000);
+
+  console.log('\n9. lookupProductKinds — 손님 검색 경로: 저장된 값만 읽고 GPT는 절대 안 부른다');
+  {
+    const rows = [
+      { product_id: 'A', product_kind: 'main' },
+      { product_id: 'B', product_kind: 'accessory' }
+    ];
+    const supabase = fakeSupabase(rows);
+    const map = await lookupProductKinds(['A', 'B', 'C'], { supabase }); // C는 아직 배치가 못 본 상품
+    check('이미 저장된 A·B는 그대로 반환', map.get('A') === 'main' && map.get('B') === 'accessory', [...map]);
+    check('아직 모르는 C는 맵에 없음(= 기존 사전 가드만 적용)', !map.has('C'), [...map]);
+    check('update는 한 번도 호출 안 함(쓰기 없음, 읽기 전용)', supabase._updates.length === 0, supabase._updates);
+  }
+
+  console.log('\n10. lookupProductKinds — DB 조회 자체가 실패해도 빈 맵으로 안전하게 넘어간다');
+  {
+    const supabase = fakeSupabase([], { selectShouldFail: true });
+    const map = await lookupProductKinds(['A'], { supabase });
+    check('빈 맵 반환(에러 안 던짐)', map.size === 0);
+  }
+
+  console.log('\n11. lookupProductKinds — 시간 예산을 넘기면(DB가 느려도) 기다리지 않고 돌아온다');
+  {
+    // select 자체가 2초 걸리는 느린 가짜 DB — 손님 검색을 절대 묶어두면 안 된다.
+    const supabase = {
+      from(table) {
+        if (table !== 'products') throw new Error(`예상 밖 테이블: ${table}`);
+        return { select: () => ({ in: () => new Promise(resolve => setTimeout(() => resolve({ data: [], error: null }), 2000)) }) };
+      }
+    };
+    const startedAt = Date.now();
+    const map = await lookupProductKinds(['A'], { supabase, timeBudgetMs: 150 });
+    const elapsed = Date.now() - startedAt;
+    check('150ms 예산을 크게 넘기지 않고 반환', elapsed < 1000, elapsed);
+    check('제때 못 받으면 빈 맵(= 모른다, 안전)', map.size === 0);
+  }
+
+  console.log('\n12. lookupProductKinds — 빈 입력');
+  {
+    const supabase = fakeSupabase([]);
+    const map = await lookupProductKinds([], { supabase });
+    check('빈 배열 → 빈 맵', map.size === 0);
+  }
+  check('조회 전용 기본 시간 예산이 라이브 검색에 맞게 짧다(200ms~2초)',
+    DEFAULT_LOOKUP_BUDGET_MS >= 200 && DEFAULT_LOOKUP_BUDGET_MS <= 2000, DEFAULT_LOOKUP_BUDGET_MS);
 
   const passed = checks.filter(c => c.pass).length;
   const failed = checks.length - passed;
