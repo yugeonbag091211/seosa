@@ -1,0 +1,93 @@
+name: Product Kind Classification (background)
+
+# ── 왜 이 워크플로가 생겼나 (2026-11-25) ─────────────────────────────
+#
+# "본품 vs 부속" GPT 분류(api/_product-kind-classifier.js)는 원래 손님이
+# 검색할 때 그 자리에서 처음 보는 상품을 물어봤다. 운영 환경에서 Codex로
+# 직접 돌려보니 그 첫 질문 한 번에 검색이 1.8~2.9초 더 걸렸다(실측).
+#
+# 그래서 "GPT에게 묻고 저장"하는 일을 손님 요청과 완전히 떼어내 여기서
+# 미리 해 둔다. 손님이 검색할 때는 api/_product-kind-store.js의
+# lookupProductKinds가 이미 저장된 값만 읽는다 — GPT를 부르지 않으므로
+# 수십 ms밖에 안 걸린다. scripts/classify-product-kinds-batch.js 참고.
+#
+# ── 왜 하루 한 번이면 충분한가 ───────────────────────────────────────
+#
+# 새 상품은 매일의 가격 수집(daily-prices.yml)으로만 늘어난다. 하루 한 번
+# 분류 대상을 쓸어가도, 못 쓸어간 상품은 손님 검색에서 "모른다"로 남아
+# 기존 사전(ACCESSORY_TIER) 가드만 적용될 뿐 검색이 막히지는 않는다
+# (api/search.js의 kindFiltered 안전장치). 비용·호출량을 생각하면 촘촘한
+# 칸을 깔 이유가 없다 — daily-prices.yml 과는 사정이 다르다.
+#
+# ── 비용 ────────────────────────────────────────────────────────────
+#
+# Codex 실측(2026-11-25): 상품 1개 분류에 평균 입력 ~430 토큰 / 출력 ~22
+# 토큰, 비용 약 $0.00005/개. 기본 한도 1,000개/실행이면 하루 약 $0.05 수준.
+on:
+  schedule:
+    # UTC 18:00 = KST 03:00 — daily-prices.yml 의 야간 수집 창(KST 01~08) 뒤라,
+    # 그날 새로 들어온 상품이 이미 products 테이블에 쌓여 있을 시간대다.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: '이번 실행에서 다룰 최대 상품 수'
+        required: false
+        default: '1000'
+      dry_run:
+        description: 'true면 GPT 호출·저장 없이 대상 개수만 확인'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: product-kind-classify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      - name: Classify unclassified products
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PRODUCT_KIND_BATCH_ROWS: ${{ github.event.inputs.rows || '1000' }}
+          # 긴급 중단: Settings -> Variables -> Actions PRODUCT_KIND_BATCH_OFF=1
+          PRODUCT_KIND_BATCH_OFF: ${{ vars.PRODUCT_KIND_BATCH_OFF }}
+        run: |
+          if [ "${PRODUCT_KIND_BATCH_OFF}" = "1" ]; then
+            echo "PRODUCT_KIND_BATCH_OFF=1 — 이번 실행은 건너뜁니다."
+            exit 0
+          fi
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          node scripts/classify-product-kinds-batch.js $ARGS 2>&1 | tee /tmp/product-kind-batch.log
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 본품/부속 배치 분류"
+            echo ""
+            echo '```'
+            tail -5 /tmp/product-kind-batch.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

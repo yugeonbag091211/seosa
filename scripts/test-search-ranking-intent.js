@@ -343,7 +343,7 @@ for (const g of [...F.models, { query: '삼성', items: [
 
 console.log('\nPRODUCT_KIND_CLASSIFY_ENABLED=1: GPT 1회 분류 안전망 연결 확인');
 {
-  async function runWithFlag(items, query, fakeSyncProductKinds) {
+  async function runWithFlag(items, query, fakeLookupProductKinds) {
     const calls = { search: 0, save: 0, trust: 0, facets: 0 };
     const dependencies = {
       './_supabase': { from() { throw new Error('unexpected dictionary DB query'); } },
@@ -359,7 +359,9 @@ console.log('\nPRODUCT_KIND_CLASSIFY_ENABLED=1: GPT 1회 분류 안전망 연결
       './_search': S,
       './_physical-search-filter': require('../api/_physical-search-filter'),
       './_search-type-guard': require('../api/_search-type-guard'),
-      './_product-kind-store': { syncProductKinds: fakeSyncProductKinds },
+      // 2026-11-25 배치 분리: 검색 경로는 이제 lookupProductKinds(읽기 전용)만 쓴다 —
+      // syncProductKinds(GPT 호출+저장)는 배치 스크립트 전용이라 여기선 호출되지 않는다.
+      './_product-kind-store': { lookupProductKinds: fakeLookupProductKinds },
       './_search-provenance': require('../api/_search-provenance'),
       './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(it) { return it; } },
       './_affiliate': require('../api/_affiliate')
@@ -403,7 +405,7 @@ console.log('\nPRODUCT_KIND_CLASSIFY_ENABLED=1: GPT 1회 분류 안전망 연결
   check(response2 && response2.length === 2,
     '전부 accessory로 나오면 가드를 적용하지 않는다(본품까지 사라지는 사고 방지)', response2 && detail(response2));
 
-  // syncProductKinds가 실패해도(타임아웃/네트워크) 검색 자체는 멈추지 않는다.
+  // lookupProductKinds가 실패해도(타임아웃/네트워크) 검색 자체는 멈추지 않는다.
   const response3 = await runWithFlag(items, 'DS224+', async () => { throw new Error('timeout'); });
   check(response3 && response3.length === 2,
     'GPT 분류가 실패해도 검색은 그대로 응답한다(기존 결과 유지)', response3 && detail(response3));

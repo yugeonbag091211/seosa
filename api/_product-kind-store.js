@@ -5,23 +5,37 @@
  * api/_product-kind-classifier.js 가 "어떻게 물어볼까" 라면, 이 파일은
  * "언제 묻고 언제 DB에서 꺼내 쓸까" 다.
  *
- *   1) 이번 검색에 나온 상품 중, 이미 물어본 적 있는 건 DB(products.product_kind)
- *      에서 그대로 읽어 쓴다 — 다시 묻지 않는다.
- *   2) 처음 보는 상품만 모아서 한 번에 묻는다(_product-kind-classifier.classifyBatch).
- *   3) 그 결과를 DB에 저장해 다음부터는 1)번 경로를 타게 한다.
+ * ── 2026-11-25 구조 변경: 왜 함수가 두 개로 나뉘었나 ──────────────────
+ * 처음엔 검색이 들어올 때마다 "모르는 상품이면 그 자리에서 GPT한테 물어보고
+ * 저장까지" 한 번에 다 했다(syncProductKinds). 그런데 실제로 운영 환경에서
+ * 돌려보니(Codex 실측) GPT를 처음 물어보는 순간 검색 한 번에 1.8~2.9초가
+ * 그대로 더 걸렸다 — 손님은 그만큼 더 기다린 것이다.
  *
- * ── 시간 제한 ────────────────────────────────────────────────────
- * GPT 호출은 느릴 수 있다. 검색 응답이 그걸 기다리다 느려지면 본말전도다.
- * timeBudgetMs 안에 못 끝내면 그 회차는 그냥 분류 없이 넘어간다(기존 제목
- * 기반 가드만 적용됨) — 다음 검색에서 다시 시도된다. 이 모듈 때문에 검색이
- * 느려지거나 실패하는 일은 없다.
+ * 그래서 "언제 GPT한테 물어볼까"와 "손님이 검색할 때 뭘 보여줄까"를 분리했다:
+ *
+ *   · lookupProductKinds — 손님이 검색할 때 쓴다. DB에 이미 저장된 값만
+ *     읽어온다. GPT는 절대 안 부른다 — 그래서 빠르다(수십 ms 수준).
+ *     아직 분류 안 된 상품은 그냥 "모른다"로 남고, 기존 제목 기반 가드만
+ *     적용된다. 손님 입장에서 손해볼 게 없다.
+ *
+ *   · syncProductKinds — 손님과 상관없이 따로 도는 배치 작업
+ *     (scripts/classify-product-kinds-batch.js)이 쓴다. 아직 분류 안 된
+ *     상품들을 모아서 GPT에게 미리 물어보고 DB에 저장해 둔다. 여기서 1~2초
+ *     걸리는 건 상관없다 — 아무도 그 시간만큼 기다리고 있지 않기 때문이다.
+ *     그래서 다음 손님이 같은 상품을 검색할 땐 이미 저장된 답을
+ *     lookupProductKinds가 바로 꺼내 쓴다.
+ *
+ * 비유하면: 손님이 계산대 앞에서 기다리는 동안 점원이 바코드를 찾아보는 게
+ * 아니라(느림), 한가할 때 미리 상품마다 바코드를 붙여 놓고(배치 작업), 손님이
+ * 오면 그냥 스캔만 하는 것(lookupProductKinds)이다.
  *
  * ── 실패 처리 ────────────────────────────────────────────────────
  * DB 읽기/쓰기가 실패해도(컬럼이 아직 없는 환경 포함) 예외를 던지지 않는다.
- * 그런 경우 이번 회차는 전부 'unknown' 취급 — 기존 동작과 같다.
+ * 그런 경우 이번 회차는 전부 "모른다" 취급 — 기존 제목 기반 가드만 적용된다.
  */
 
 const DEFAULT_TIME_BUDGET_MS = 4000;
+const DEFAULT_LOOKUP_BUDGET_MS = 1200;
 
 function withTimeout(promise, ms, fallback) {
   let timer;
@@ -30,6 +44,54 @@ function withTimeout(promise, ms, fallback) {
 }
 
 /**
+ * 손님 검색 경로 전용 — DB에 이미 저장된 분류만 읽는다. GPT는 절대 호출하지
+ * 않으므로 느려질 일이 없다(읽기 1번, 수십 ms).
+ *
+ * @param {Array<string>} productIds
+ * @param {object} [opts]
+ * @param {object} [opts.supabase]     주입 가능 — 테스트에서 가짜 DB로 교체한다.
+ * @param {number} [opts.timeBudgetMs] 조회 제한 시간(기본 1200ms) — 이마저 못
+ *   끝내면 빈 맵을 돌려주고, 기존 제목 기반 가드만 적용된다.
+ * @returns {Promise<Map<string,'main'|'accessory'|'unknown'>>}
+ */
+async function lookupProductKinds(productIds, opts = {}) {
+  const ids = [...new Set(
+    (Array.isArray(productIds) ? productIds : [])
+      .map(id => (id == null ? '' : String(id)))
+      .filter(Boolean)
+  )];
+  const out = new Map();
+  if (!ids.length) return out;
+
+  const supabase = opts.supabase || require('./_supabase');
+  const timeBudgetMs = Math.max(200, Number(opts.timeBudgetMs) || DEFAULT_LOOKUP_BUDGET_MS);
+
+  const work = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('product_id, product_kind')
+        .in('product_id', ids);
+      if (error) throw new Error(error.message || String(error));
+      const rows = Array.isArray(data) ? data : [];
+      for (const row of rows) {
+        if (row && row.product_kind) out.set(String(row.product_id), row.product_kind);
+      }
+    } catch (e) {
+      // 컬럼이 아직 없거나 DB가 잠깐 안 받아도 검색은 막지 않는다 — 그냥 "모른다".
+      console.warn(`[product-kind] 캐시 조회 실패(이번 회차는 생략): ${e.message}`);
+    }
+    return out;
+  })();
+
+  return withTimeout(work, timeBudgetMs, out);
+}
+
+/**
+ * 배치 작업 전용(scripts/classify-product-kinds-batch.js) — 모르는 상품을
+ * GPT에게 물어보고 DB에 저장까지 한다. 손님 요청 경로에서는 더 이상 쓰지
+ * 않는다(1.8~2.9초 지연의 원인이었다) — 대신 lookupProductKinds를 쓴다.
+ *
  * @param {Array<{productId:string, title:string}>} items
  * @param {object} [opts]
  * @param {object}   [opts.supabase]     주입 가능 — 테스트에서 가짜 DB로 교체한다.
@@ -132,4 +194,9 @@ async function syncProductKinds(items, opts = {}) {
   return withTimeout(work, timeBudgetMs, out);
 }
 
-module.exports = { syncProductKinds, DEFAULT_TIME_BUDGET_MS };
+module.exports = {
+  lookupProductKinds,
+  syncProductKinds,
+  DEFAULT_TIME_BUDGET_MS,
+  DEFAULT_LOOKUP_BUDGET_MS
+};
