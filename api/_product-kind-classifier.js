@@ -26,9 +26,22 @@
  * ── 안전장치 ─────────────────────────────────────────────────────
  *
  * GPT 호출이 실패하거나, 응답을 못 알아듣거나, 네트워크가 막히면 전부
- * 'unknown' 으로 떨어진다. 'unknown' 은 "본품이 아니라고 확신 못 함" 과
- * 같은 뜻이라 — 이 모듈 때문에 상품이 사라지는 일은 없다(판단을 보류할
- * 뿐, kept 쪽에 남는다). 오늘 만든 _search-type-guard.js 와 같은 원칙이다.
+ * null 로 떨어진다(= "못 물어봤다"). 이 모듈 때문에 상품이 사라지는 일은
+ * 없다(null 은 호출부가 "모른다"로 다루고 kept 쪽에 남긴다). 오늘 만든
+ * _search-type-guard.js 와 같은 원칙이다.
+ *
+ * ★ null 과 'unknown' 을 구분한다 (2026-11-25, 실측 운영 리허설에서 발견).
+ *
+ *   null     = 아예 답을 못 받았다(타임아웃·네트워크 실패·응답 파싱 실패).
+ *              "다음에 다시 물어봐도 된다" — api/_product-kind-store.js 가
+ *              이 경우 DB에 저장하지 않는다.
+ *   'unknown'= GPT가 실제로 응답했는데 "애매하다"고 답했다.
+ *              "또 물어봐도 똑같이 애매할 거다" — DB에 저장해 재질문을 막는다.
+ *
+ *   처음 구현은 이 둘을 구분하지 않고 전부 'unknown' 으로 캐싱했다. 그 결과
+ *   "마우스" 검색에서 GPT 응답이 타임아웃났을 뿐인데 9개 상품이 영구히
+ *   'unknown' 으로 저장돼, 다음 검색에서도 다시 묻지 않는 사고가 났다
+ *   (실제로 못 물어본 건데 "물어봤는데 몰랐다"로 잘못 기록된 것).
  */
 
 const DEFAULT_MAX_BATCH = 20;
@@ -53,15 +66,21 @@ function buildPrompt(titles) {
   ];
 }
 
-/** GPT 응답(코드펜스·설명 섞여도)에서 분류 배열을 뽑아낸다. 실패하면 전부 'unknown'. */
+/**
+ * GPT 응답(코드펜스·설명 섞여도)에서 분류 배열을 뽑아낸다.
+ * 응답 자체를 못 알아보면(배열이 없거나 JSON이 아니면) 전부 null —
+ * "답을 못 받았다"와 같은 취급이다(위 "안전장치" 주석 참고). 배열은
+ * 찾았는데 한 자리가 main/accessory/unknown이 아니면 그 자리만 'unknown'
+ * 으로 — GPT가 뭔가 응답은 했으니 "애매하다"에 가깝게 본다.
+ */
 function parseResponse(text, count) {
-  const fallback = () => Array.from({ length: count }, () => 'unknown');
-  if (!text) return fallback();
+  const unreachable = () => Array.from({ length: count }, () => null);
+  if (!text) return unreachable();
   const m = String(text).match(/\[[\s\S]*\]/);
-  if (!m) return fallback();
+  if (!m) return unreachable();
   let arr;
-  try { arr = JSON.parse(m[0]); } catch (e) { return fallback(); }
-  if (!Array.isArray(arr)) return fallback();
+  try { arr = JSON.parse(m[0]); } catch (e) { return unreachable(); }
+  if (!Array.isArray(arr)) return unreachable();
   const out = [];
   for (let i = 0; i < count; i++) {
     const v = String(arr[i] || '').trim().toLowerCase();
@@ -76,7 +95,8 @@ function parseResponse(text, count) {
  * @param {string[]} titles
  * @param {object} [opts]
  * @param {Function} [opts.chat]  주입 가능 — 테스트에서 가짜 LLM으로 교체한다.
- * @returns {Promise<string[]>}  titles 와 같은 길이. 각 원소는 'main'|'accessory'|'unknown'.
+ * @returns {Promise<Array<string|null>>}  titles 와 같은 길이. 각 원소는
+ *   'main'|'accessory'|'unknown'(GPT가 답했다) 또는 null(못 물어봤다 — 재시도 대상).
  */
 async function classifyBatch(titles, opts = {}) {
   const list = Array.isArray(titles) ? titles : [];
@@ -101,11 +121,13 @@ async function classifyBatch(titles, opts = {}) {
       temperature: 0,
       budgetMs: opts.budgetMs || 8000
     });
-    if (!r || !r.ok) return Array.from({ length: list.length }, () => 'unknown');
+    // r.ok === false 는 타임아웃·쿨다운·공급자 실패 전부를 뜻한다 — 답을
+    // 못 받은 것이지 "몰랐다"가 아니다. null 로 돌려줘 재시도 대상으로 남긴다.
+    if (!r || !r.ok) return Array.from({ length: list.length }, () => null);
     return parseResponse(r.text, list.length);
   } catch (e) {
-    console.warn(`[product-kind] 분류 실패(전부 unknown 처리): ${e.message}`);
-    return Array.from({ length: list.length }, () => 'unknown');
+    console.warn(`[product-kind] 분류 호출 실패(재시도 대상으로 남김): ${e.message}`);
+    return Array.from({ length: list.length }, () => null);
   }
 }
 
