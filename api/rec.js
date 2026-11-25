@@ -20,6 +20,14 @@ const CATEGORY_KEYWORDS = {
   '식품':     ['아이스크림']
 };
 
+// Select recommendations in Korean local time. Keep existing summer picks only in summer.
+// Other months use existing category keywords, not newly invented collection targets.
+function seasonalPicks(now = new Date()) {
+  const month = new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCMonth() + 1;
+  if (month >= 6 && month <= 8) return TODAY_PICKS;
+  return ['무선 이어폰', '노트북', '스마트워치', '키보드', '운동화', '텀블러', '조명', '향수'];
+}
+
 function mapCatsToKeywords(cats) {
   const out = new Set();
   cats.forEach(c => {
@@ -47,7 +55,7 @@ module.exports = async function handler(req, res) {
         if (Array.isArray(parsed)) cats = parsed.filter(c => typeof c === 'string' && c);
       } catch (e) { /* 무시 */ }
 
-      const keywords = cats.length ? mapCatsToKeywords(cats) : TODAY_PICKS;
+      const keywords = cats.length ? mapCatsToKeywords(cats) : seasonalPicks();
 
       const { data, error } = await supabase
         .from('products')
@@ -66,7 +74,8 @@ module.exports = async function handler(req, res) {
     }
 
     // 그 외(오늘의 셀렉션 / 이 키워드 더보기)는 기존대로 단일 키워드 조회
-    const keyword = q.keyword || TODAY_PICKS[Math.floor(Math.random() * TODAY_PICKS.length)];
+    const picks = seasonalPicks();
+    const keyword = q.keyword || picks[Math.floor(Math.random() * picks.length)];
     const offset = Math.max(0, parseInt(q.offset || '0', 10) || 0);
 
     /*
