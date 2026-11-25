@@ -6,6 +6,7 @@ const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
 const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
 const { filterPhysicalSearchResults } = require('./_physical-search-filter');
+const { filterByProductType } = require('./_search-type-guard');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -197,7 +198,13 @@ module.exports = async function handler(req, res) {
     //   "노트북 강의"·"노트북 거치대"처럼 다른 낱말이 더 붙으면 건드리지
     //   않는다 — _physical-search-filter.PHYSICAL_DEVICE_QUERIES 참고.
     const visibleItems = filterPhysicalSearchResults(rawKeyword, items);
-    const relevance = rankItems(rawKeyword, visibleItems, { minScore: 0 });
+    // ★ "마우스" 검색에 마우스패드·손목받침 같은 "부속"이 본품과 같은 자리에
+    //   섞이는 문제(PR #261, 2026-11-20)를 여기서 걷어낸다. 저장(saveProducts)
+    //   은 위에서 이미 원본 그대로 끝났으므로, 이 가드는 "화면에 무엇을 먼저
+    //   보여줄까"만 바꾸고 DB에 쌓이는 값·홈 추천에는 손대지 않는다.
+    //   _search-type-guard.filterByProductType 참고 (적용 실패 시 그대로 통과).
+    const typeGuard = filterByProductType(rawKeyword, visibleItems);
+    const relevance = rankItems(rawKeyword, typeGuard.kept, { minScore: 0 });
 
     /*
      * 순서.
