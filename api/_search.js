@@ -359,6 +359,16 @@ function analyzeQuery(keyword, opts = {}) {
   analysis.accessories = accessoryTerms(normalized, raw);
   // A broad head query need not partition the candidates: every returned title
   // may contain it. Infer this intent from a primary title, without a brand list.
+  //
+  // ★ «둘 이상» 으로 바꿨다가 되돌렸다 (2026-11-23 → 11-24).
+  //   «운동화» 의 유일한 머리 상품명이 «[국내도서] 운동화 신은 뇌» 라서 진짜 운동화가
+  //   late-head 로 깎인 것이 계기였다. 그러나 운영 공급자 캐시 검색어 4,416개 재생에서
+  //   이 변경은 1위 99개를 바꿨고 좋아진 것(책·투어 → 상품)과 나빠진 것(진짜 마늘 →
+  //   식당 예약, 진짜 생강 → 껍질 도구)이 섞였다. 사전 등록한 봉인 세트(검색어 50개,
+  //   reports/search-sold-object-2026-11-24)에서는 1위 본품률을 올리지 못했고(운영과 같은
+  //   0.813), 책·체험 판매 형태 규칙과 함께 쓰면 0.833 → 0.813 으로 낮췄다(«우주복» 1위가
+  //   키링 인형). 그래서 철회했다. late-head 는 «머리가 뒤에 있는 다른 물건» 을 꽤 잘
+  //   내리고 있었다. 책·체험 상품이 1위에 서는 문제는 판매 형태 규칙이 따로 맡는다.
   const primaryHead = head && raw[0] === head && (opts.titles || []).some(value => {
     const title = value && Array.isArray(value.tokens) ? value : analyzeTitle(value);
     const core = title.identityTokens || identityTokens(title.raw, title);
@@ -1481,7 +1491,38 @@ function rankItems(keyword, items, opts = {}) {
     return { it, r, f };
   });
 
-  const kept = scored.filter(s => s.r.score >= minScore);
+  /*
+   * ★ 검색어와 «숫자 조각» 으로만 이어진 상품은 minScore 0 이어도 내보내지 않는다
+   *   (2026-11-23 전수 감사 → 2026-11-24 재검증에서 범위를 좁혔다).
+   *
+   *   왜 빼는가: 운영 «LG 그램 16» 을 최저가순으로 보면 1위가 699원 «올가드 보습
+   *   스파 핸드 마스크 16g» 였다. 공급자 단계 필터(_shop.relevantItems)는 «16» 이
+   *   «16g» 안에 있다는 이유로 통과시켰고, 여기서는 scoreTitle 이 0 인데도
+   *   api/search.js 가 minScore 0 을 넘기므로 `0 >= 0` 으로 남았다. 화면의 정렬
+   *   코드(public/index.html Search.viewList)는 «기준선 미만 상품은 서버가 이미
+   *   걸러서 보낸다» 를 전제로 가격순 1위를 정한다.
+   *
+   *   왜 «0점이면 무조건» 이 아닌가 (11-24 재검증, 운영 캐시 4,416개 검색어 재생):
+   *   처음 규칙(score > 0)은 한 글자 검색어를 통째로 비웠다 — «김»·«컵»·«풀» 결과
+   *   0건. scoreTitle 은 한 글자 토큰을 «도시락김»·«머그컵»·«목공풀» 같은 합성어
+   *   안에서 인정하지 않는다. «굴»(생굴)·«귤»(감귤)·«쌀»(햅쌀)·«짐 백»(스포츠백)도
+   *   진짜 상품이 빠졌다. 0점은 «관련 없음» 의 증거가 아니라 «이 채점기가 못
+   *   알아봤음» 일 수 있다.
+   *
+   *   그래서 0점이면서, 검색어의 «낱말» 토큰(글자가 든 두 글자 이상) 중 어느 것도
+   *   제목에 부분 문자열로조차 없는 상품만 뺀다. 남는 연결 고리가 숫자 조각뿐이라는
+   *   뜻이다(«16g»·«170ml»·«A256»·«14ea»). 낱말 토큰이 없는 검색어(«5090»·«김»)는
+   *   판단 근거가 없으므로 아무것도 빼지 않는다. 그리고 목록이 통째로 비게 되면
+   *   빼지 않는다 — 이 규칙 때문에 예전보다 결과가 줄어드는 검색어는 없다.
+   *
+   *   scripts/test-search-zero-coverage.js 가 이 경계를 고정한다.
+   */
+  const wordTokens = splitTokens(normalizeText(keyword))
+    .filter(token => token.length >= 2 && /[a-z가-힣]/.test(token));
+  const digitOnlyLink = s => s.r.score === 0 && wordTokens.length > 0
+    && !wordTokens.some(token => canonicalKey(s.it && s.it.title).includes(token));
+  let kept = scored.filter(s => s.r.score >= minScore && !digitOnlyLink(s));
+  if (!kept.length) kept = scored.filter(s => s.r.score >= minScore);
   if (!kept.length) {
     return { items: [], dropped: scored.length + intentDropped, removed, allBelow: true };
   }

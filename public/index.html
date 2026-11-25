@@ -36,7 +36,7 @@
   "모든 쇼핑몰"이라고 넓히지는 않는다 — 그건 사실이 아니다(지시 2).
   수집하는 범위를 있는 그대로 적는다.
 -->
-<meta name="description" content="쿠팡·제휴몰 상품의 최저가와 가격 추이를 매일 기록해 비교합니다. 가격이 내려간 상품을 확인하고, 지금이 살 때인지 데이터로 판단하세요. 목표가에 도달하면 이메일로 알려드립니다.">
+<meta name="description" content="쿠팡·제휴몰 상품의 최저가와 가격 추이를 기록해 비교합니다. 가격이 내려간 상품을 확인하고, 지금이 살 때인지 데이터로 판단하세요. 목표가에 도달하면 이메일로 알려드립니다.">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://seosa.ai.kr/">
 <!--
@@ -110,7 +110,7 @@
       "url": "https://seosa.ai.kr/",
       "name": "SEOSA",
       "inLanguage": "ko-KR",
-      "description": "쿠팡과 제휴몰의 가격을 매일 기록해 지금이 살 때인지 알려주는 가격비교 서비스",
+      "description": "쿠팡과 제휴몰의 가격을 기록해 지금이 살 때인지 알려주는 가격비교 서비스",
       "publisher": { "@id": "https://seosa.ai.kr/#org" },
       "potentialAction": {
         "@type": "SearchAction",
@@ -4881,7 +4881,7 @@ html[data-theme="dark"] .mobile-tabbar{background:rgba(22,24,28,.94);border-colo
     <button type="button" class="chat-width-reset" data-act="chat-width-reset" title="채팅창을 원래 너비로">기본 크기</button>
     <button class="panel-close" data-act="close-ai">×</button></div>
   <div class="chat" id="chat">
-    <div class="bubble b-ai"><span class="nm">서사</span>반갑습니다. 쇼핑 큐레이터 <b>서사</b>입니다.<br>찾으시는 상품과 예산을 말씀해 주시면 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 알려 드릴게요.<br><br>예) "10만원 이하 무선 이어폰", "데일리 향수 추천"</div>
+    <div class="bubble b-ai"><span class="nm">서사</span>반갑습니다. 쇼핑 큐레이터 <b>서사</b>입니다.<br>찾으시는 상품과 예산을 말씀해 주시면 그동안 기록한 가격을 근거로 지금 사도 좋은 값인지 알려 드릴게요.<br><br>예) "10만원 이하 무선 이어폰", "데일리 향수 추천"</div>
   </div>
   <div class="chat-suggest" id="chatSuggest"></div>
   <div class="chat-input">
@@ -9906,7 +9906,7 @@ var Chat = {
 
     first.innerHTML = '<span class="nm">서사</span>'
       + Fmt.esc(prof.nickname) + '님, 반갑습니다. 쇼핑 큐레이터 <b>서사</b>입니다.<br>'
-      + '찾으시는 상품과 예산을 말씀해 주시면 매일 기록한 가격을 근거로 지금 사도 좋은 값인지 알려 드릴게요.<br><br>'
+      + '찾으시는 상품과 예산을 말씀해 주시면 그동안 기록한 가격을 근거로 지금 사도 좋은 값인지 알려 드릴게요.<br><br>'
       + (prof.cats.length
           ? '관심 카테고리 <b>' + Fmt.esc(prof.cats.join(', ')) + '</b> 기반으로 추천드릴게요.'
           : '예) "10만원 이하 무선 이어폰", "데일리 향수 추천"');
@@ -10885,7 +10885,7 @@ var Modal = {
     if (AppState.modalHist.length < 2) {
       v.className = 'verdict';
       v.innerHTML = '<span class="vi">🗓</span><div class="vt"><b>가격 추이를 수집하고 있어요</b>'
-        + '<span>매일 새벽 자동 수집되며, 데이터가 쌓이면 그래프가 표시됩니다.</span></div>';
+        + '<span>가격이 확인될 때마다 기록되며, 데이터가 쌓이면 그래프가 표시됩니다.</span></div>';
       setHTML('stats', '');
       return;
     }
