@@ -4,9 +4,10 @@ const { attachTrust } = require('./_trust');
 const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords } = require('./_search');
+const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords, productIntentContext } = require('./_search');
 const { filterPhysicalSearchResults } = require('./_physical-search-filter');
 const { filterByProductType } = require('./_search-type-guard');
+const { syncProductKinds } = require('./_product-kind-store');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -204,7 +205,46 @@ module.exports = async function handler(req, res) {
     //   보여줄까"만 바꾸고 DB에 쌓이는 값·홈 추천에는 손대지 않는다.
     //   _search-type-guard.filterByProductType 참고 (적용 실패 시 그대로 통과).
     const typeGuard = filterByProductType(rawKeyword, visibleItems);
-    const relevance = rankItems(rawKeyword, typeGuard.kept, { minScore: 0 });
+
+    /*
+     * ★ GPT 1회 분류 — 사전(ACCESSORY_TIER)에 없는 새 부속 단어를 잡는 두 번째
+     *   안전망 (2026-11-25). "팜레스트"를 추가했던 것처럼 사전은 계속 새 단어를
+     *   놓친다. 이건 그 사전을 매번 고치는 대신, 처음 보는 상품만 GPT에게
+     *   "본품이냐 부속이냐" 한 번 물어서 product_id 에 영구 캐싱한다
+     *   (api/_product-kind-store.js). 검색어와 무관한 상품 자체의 성격이라
+     *   한 번 물으면 끝이고, 다음부터는 DB에서 바로 읽는다.
+     *
+     *   기본은 꺼져 있다(PRODUCT_KIND_CLASSIFY_ENABLED=1). 운영에서 지연시간·
+     *   비용을 확인한 뒤 켜는 롤아웃 방식 — api/_coupang.js 의
+     *   COUPANG_CHANNEL_ROLLOUT 과 같은 패턴이다. 켜져 있어도 시간 제한 안에
+     *   못 끝나면 그냥 건너뛴다 — 이것 때문에 검색이 느려지거나 깨지지 않는다.
+     */
+    let kindFiltered = typeGuard.kept;
+    if (process.env.PRODUCT_KIND_CLASSIFY_ENABLED === '1') {
+      try {
+        const kinds = await syncProductKinds(
+          typeGuard.kept.map(it => ({ productId: it.productId, title: it.title })),
+          { timeBudgetMs: Number(process.env.PRODUCT_KIND_CLASSIFY_BUDGET_MS) || 3000 }
+        );
+        if (kinds.size) {
+          const wantsAccessory = (() => {
+            try {
+              return productIntentContext(rawKeyword, typeGuard.kept.map(it => String(it.title || ''))).intent
+                === 'ACCESSORY_INTENT';
+            } catch (e) { return false; }
+          })();
+          if (!wantsAccessory) {
+            const kept = typeGuard.kept.filter(it => kinds.get(String(it.productId)) !== 'accessory');
+            // 모두 걸러지면(가드 오판 가능성) 적용하지 않는다 — _search-type-guard.js와 같은 안전장치.
+            if (kept.length) kindFiltered = kept;
+          }
+        }
+      } catch (e) {
+        console.warn(`[search:${rawKeyword}] GPT 분류 안전망 실패(생략하고 계속): ${e.message}`);
+      }
+    }
+
+    const relevance = rankItems(rawKeyword, kindFiltered, { minScore: 0 });
 
     /*
      * 순서.
