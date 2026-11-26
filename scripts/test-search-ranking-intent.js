@@ -303,6 +303,9 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_search-type-guard': require('../api/_search-type-guard'),
     // 2026-11-25: 기본 OFF(PRODUCT_KIND_CLASSIFY_ENABLED) — 꺼진 채로 돌아가는지만 확인한다.
     './_product-kind-store': require('../api/_product-kind-store'),
+    // 2026-11-26: 기본 OFF(SEARCH_CATEGORY_GUARD_ENABLED) — 꺼진 채로 돌아가는지만 확인한다.
+    './_search-category-guard': require('../api/_search-category-guard'),
+    './_category-store': require('../api/_category-store'),
     './_search-provenance': require('../api/_search-provenance'),
     './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(items) { return items; } },
     // 구매 링크 관문 — 순수 함수라 진짜 모듈을 쓴다.
@@ -362,6 +365,9 @@ console.log('\nPRODUCT_KIND_CLASSIFY_ENABLED=1: GPT 1회 분류 안전망 연결
       // 2026-11-25 배치 분리: 검색 경로는 이제 lookupProductKinds(읽기 전용)만 쓴다 —
       // syncProductKinds(GPT 호출+저장)는 배치 스크립트 전용이라 여기선 호출되지 않는다.
       './_product-kind-store': { lookupProductKinds: fakeLookupProductKinds },
+      // 2026-11-26: 기본 OFF(SEARCH_CATEGORY_GUARD_ENABLED) — 꺼진 채로 돌아가는지만 확인한다.
+      './_search-category-guard': require('../api/_search-category-guard'),
+      './_category-store': require('../api/_category-store'),
       './_search-provenance': require('../api/_search-provenance'),
       './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(it) { return it; } },
       './_affiliate': require('../api/_affiliate')
@@ -409,6 +415,79 @@ console.log('\nPRODUCT_KIND_CLASSIFY_ENABLED=1: GPT 1회 분류 안전망 연결
   const response3 = await runWithFlag(items, 'DS224+', async () => { throw new Error('timeout'); });
   check(response3 && response3.length === 2,
     'GPT 분류가 실패해도 검색은 그대로 응답한다(기존 결과 유지)', response3 && detail(response3));
+}
+
+console.log('\nSEARCH_CATEGORY_GUARD_ENABLED=1: 카테고리 안전망 연결 확인 (PR #277, 2026-11-26)');
+{
+  async function runWithCategoryFlag(items, query, fakeLookupCategories) {
+    const calls = { search: 0, save: 0, trust: 0, facets: 0 };
+    const dependencies = {
+      './_supabase': { from() { throw new Error('unexpected dictionary DB query'); } },
+      './_shop': {
+        TODAY_PICKS: [],
+        async searchAll() { calls.search++; return { items: copy(items), from: 'cache' }; },
+        async saveProducts() { calls.save++; }
+      },
+      './_trust': { async attachTrust() { calls.trust++; } },
+      './_facets': { async attachPriceChange() { calls.facets++; } },
+      './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
+      './_ratelimit': { guard: () => true },
+      './_search': S,
+      './_physical-search-filter': require('../api/_physical-search-filter'),
+      './_search-type-guard': require('../api/_search-type-guard'),
+      './_product-kind-store': require('../api/_product-kind-store'),
+      // 카테고리 가드만 켠다 — filterByCategory는 진짜 모듈을 쓰고, lookupCategories만
+      // 가짜로 바꿔 "배치가 이미 저장해 둔 값"을 흉내 낸다.
+      './_search-category-guard': require('../api/_search-category-guard'),
+      './_category-store': { lookupCategories: fakeLookupCategories },
+      './_search-provenance': require('../api/_search-provenance'),
+      './_canonicalconsumer': { config: () => ({ enabled: false, percent: 0 }), async collapseItems(it) { return it; } },
+      './_affiliate': require('../api/_affiliate')
+    };
+    const envBackup = process.env.SEARCH_CATEGORY_GUARD_ENABLED;
+    process.env.SEARCH_CATEGORY_GUARD_ENABLED = '1';
+    const context = {
+      module: { exports: {} }, console, process,
+      require(name) {
+        if (!(name in dependencies)) throw new Error(`unexpected dependency: ${name}`);
+        return dependencies[name];
+      },
+      fetch() { throw new Error('unexpected network request'); }
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'api', 'search.js'), 'utf8'), context,
+      { filename: 'api/search.js' });
+    let response;
+    const res = { setHeader() {}, status() { return this; }, json(it) { response = it; } };
+    try {
+      await context.module.exports({ query: { keyword: query } }, res);
+    } finally {
+      process.env.SEARCH_CATEGORY_GUARD_ENABLED = envBackup;
+    }
+    return response;
+  }
+
+  // 오늘 실사용에서 제보된 바로 그 사고 — "그래픽카드" 검색에 글자만 겹친 옷이
+  // 섞여 들어온 것(PR #277). 배치가 이미 "GPU=전자기기, 맨투맨=패션의류"로
+  // 분류해 뒀다고 가정하면, 카테고리 가드가 옷을 완전히 걸러내야 한다.
+  const gpuItems = [
+    F.item('gpu', 'RTX 4070 그래픽카드 지포스 게이밍 PC용', 'A', 700000),
+    F.item('sweatshirt', '오픈런 아토가토 그래픽 맨투맨뒤면 게임 트럼프카드 니트패턴', 'C', 35000)
+  ];
+  const cats = new Map([['gpu', '전자기기'], ['sweatshirt', '패션의류']]);
+  const r1 = await runWithCategoryFlag(gpuItems, '그래픽카드', async () => cats);
+  check(r1 && r1.length === 1 && r1[0].productId === 'gpu',
+    '카테고리가 다른 "트럼프카드" 맨투맨은 응답에서 완전히 빠진다', r1 && detail(r1));
+
+  // 전부 다른 카테고리로 나오면(판정 과잉 의심) 적용을 포기하고 원본을 그대로 보여준다.
+  const allMismatch = new Map([['gpu', '패션의류'], ['sweatshirt', '패션의류']]);
+  const r2 = await runWithCategoryFlag(gpuItems, '그래픽카드', async () => allMismatch);
+  check(r2 && r2.length === 2,
+    '전부 불일치로 나오면 가드를 적용하지 않는다(진짜 GPU까지 사라지는 사고 방지)', r2 && detail(r2));
+
+  // lookupCategories가 실패해도(타임아웃/네트워크) 검색 자체는 멈추지 않는다.
+  const r3 = await runWithCategoryFlag(gpuItems, '그래픽카드', async () => { throw new Error('timeout'); });
+  check(r3 && r3.length === 2,
+    '카테고리 조회가 실패해도 검색은 그대로 응답한다(기존 결과 유지)', r3 && detail(r3));
 }
 
 const passed = checks.filter(c => c.pass).length;

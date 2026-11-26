@@ -736,4 +736,74 @@ node scripts/test-search-adversarial.js       2,311/2,311 PASS (accessory_false_
   어댑터 특성상 요청값과 무관하게 한 번에 최대 1,000행까지만 실제로
   가져온다 — 그래서 배치가 여러 라운드로 쪼개져 돈다. 기능엔 문제없음.
 - 라이브 검색 중 미분류 상품에 대한 실시간 GPT 폴백은 의도적으로 안 함
-  (지연 문제 재발 방지) — 사용자 확인 후 "배치만 사용"으로 확정.
+  (지연 문제 재방지) — 사용자 확인 후 "배치만 사용"으로 확정.
+
+## N. 2026-11-26 검색 품질 — 글자 매칭 버그 수정 + 카테고리 안전망 (PR #277)
+
+운영에서 "그래픽카드"를 검색하면 그래픽 맨투맨/루이비통 자카드 후드티
+같은 옷이 진짜 GPU와 거의 같은 점수로 섞여 나오는 사고가 보고됐다.
+
+### 원인과 1차 수정 — 글자 매칭(`api/_search.js`)
+
+`tokenQuality()`의 합성어 분해 로직이 "그래픽"·"카드" 두 조각이 제목
+어디에든(붙어 있든 떨어져 있든) 있으면 거의 완전 일치(`Q.COMPOUND=0.85`)로
+쳐줬다. "카드"는 흔한 글자라 "트럼프카드"·"자카드"·"슈퍼카드" 속에도
+우연히 들어있어 오판의 원인이 됐다. 같은 유형의 구멍이 동의어 경로
+(`SYNONYMS`)에도 있어("케이스"의 동의어 "커버"가 "커버낫" 브랜드명 속
+글자에 걸림) 함께 고쳤다.
+
+- 합성어 조각이 전부 있어도 실제로 이어 붙어 있지 않으면 완전 일치로
+  치지 않고, 기존에 있던 "조각 일부만 있을 때"의 부분 일치 등급으로
+  낮춘다(매직 넘버가 아니라 기존 등급 재사용).
+- 동의어는 제목에 토큰 경계를 지키며 그대로 있을 때(길이 무관)만
+  인정하고, 띄어쓰기 차이만 허용하는 부분 문자열 찾기는 3글자 이상일
+  때만 인정한다.
+
+### 2차 안전망 — 카테고리 가드 (독립적인 두 번째 방어선)
+
+글자 매칭은 아무리 정교하게 고쳐도 한국어 단어 경계가 없어 새로운 우연의
+일치가 또 나올 수 있다(두더지 잡기). 그래서 "본품/부속 분류"(위 M 항목)와
+완전히 같은 패턴으로, 상품마다 GPT가 한 번 매긴 대분류 카테고리
+(`products.category` — `전자기기`/`패션의류`/`패션잡화`/`뷰티`/`식품`/
+`생활용품`/`가구인테리어`/`스포츠레저`/`완구취미`/`반려동물용품`/
+`도서문구`/`여행티켓`/`기타`)와, 검색어의 "기대 카테고리"
+(`api/_search-category-guard.js`의 `QUERY_CATEGORY_HINTS` 정적 사전 —
+GPT 호출 없이 즉시 조회, "카드"·"워치"·"케이스" 같은 애매한 조각은
+의도적으로 사전에 넣지 않음)가 완전히 다르면, 글자 점수가 아무리 높아도
+걸러낸다.
+
+- 구조: `api/_category-classifier.js`(분류 프롬프트) →
+  `api/_category-store.js`(`lookupCategories`=읽기 전용/`syncCategories`=배치용,
+  M 항목의 `_product-kind-store.js`와 동일 구조) →
+  `scripts/classify-product-categories-batch.js` →
+  `.github/workflows/product-category-classify.yml`(자가 체이닝, 매일
+  03:30 KST, `product-kind-classify.yml` 바로 뒤).
+- `api/search.js`에 `SEARCH_CATEGORY_GUARD_ENABLED=1`로 롤아웃(기본 OFF,
+  `PRODUCT_KIND_CLASSIFY_ENABLED`와 같은 패턴) — 카테고리를 모르면(배치 전
+  상품, 사전에 없는 검색어, GPT가 unknown으로 답함) 아무것도 안 건드리는
+  안전 기본값. 전부 불일치로 나오면(오판 의심) 가드 자체를 포기한다.
+- **마이그레이션 필요**: `supabase/2026-11-26-product-category.sql`
+  (products.category 컬럼 추가) — Supabase SQL Editor에서 수동 실행 필요,
+  미적용 상태에선 카테고리 가드가 그냥 "모른다"로 넘어가 검색엔 영향 없음.
+  적용 + 배치 돌고 + `SEARCH_CATEGORY_GUARD_ENABLED=1` 켜야 실제로 작동.
+
+### 검증
+
+```
+node scripts/test-search.js                             254/254 PASS (오늘 반례 5건 포함)
+node scripts/test-search-ranking-intent.js               187/187 PASS (카테고리 가드 연결 확인 3건 포함)
+node scripts/test-category-classifier.js                  13/13 PASS
+node scripts/test-category-store.js                       28/28 PASS
+node scripts/test-classify-product-categories-batch.js    18/18 PASS
+node scripts/test-search-category-guard.js                21/21 PASS
+npm test (전체)                                            exit code 0
+```
+
+### 알려진 제약
+
+- 카테고리 안전망은 아직 운영에서 켜지 않았다(마이그레이션 미적용 +
+  `SEARCH_CATEGORY_GUARD_ENABLED` 미설정) — 코드는 준비됐지만 적용은
+  사용자의 마이그레이션 실행 + 배치 첫 라운드 + 플래그 ON 순서가 필요하다.
+- `QUERY_CATEGORY_HINTS`는 닫힌 사전이라, 새로운 검색어는 자동으로
+  커버되지 않는다 — 새 충돌 사례가 보고될 때마다 사전에 추가한다
+  (`SYNONYM_GROUPS`/`ACCESSORY_TIER`와 같은 운영 방식).

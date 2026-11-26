@@ -1,0 +1,110 @@
+name: Product Category Classification (background)
+
+# ── 왜 이 워크플로가 생겼나 (2026-11-26) ─────────────────────────────
+#
+# "그래픽카드" 검색에 "트럼프카드" 맨투맨이 글자만 겹쳐서 섞여 들어오는
+# 문제(PR #277)의 두 번째 안전망이다. 글자 매칭을 아무리 정교하게 고쳐도
+# 한국어는 단어 경계가 없어서 또 생길 수 있는 문제라, "이게 같은 종류의
+# 물건인가" 를 GPT로 한 번 분류해 둔 값(products.category)과 검색어의
+# 기대 카테고리를 비교하는 독립적인 가드를 둔다
+# (api/_search-category-guard.js).
+#
+# .github/workflows/product-kind-classify.yml 과 완전히 같은 이유로 배치로
+# 분리했다 — 검색할 때마다 GPT를 부르면 느려진다.
+on:
+  schedule:
+    # product-kind-classify.yml 바로 뒤 — 같은 시간대에 새 상품이 쌓여 있다.
+    - cron: '30 18 * * *'
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: '이번 실행에서 다룰 최대 상품 수'
+        required: false
+        default: '1000'
+      dry_run:
+        description: 'true면 GPT 호출·저장 없이 대상 개수만 확인'
+        type: boolean
+        required: false
+        default: false
+      chain:
+        description: '이어 붙이기 사슬 깊이 (수동 실행은 0 으로 둔다)'
+        required: false
+        default: '0'
+
+concurrency:
+  group: product-category-classify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      - name: Classify uncategorized products
+        id: classify
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEOSA_DB_BACKEND: ${{ vars.SEOSA_DB_BACKEND }}
+          SEOSA_NEON_EXPERIMENTAL: ${{ vars.SEOSA_NEON_EXPERIMENTAL }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PRODUCT_CATEGORY_BATCH_ROWS: ${{ github.event.inputs.rows || '1000' }}
+          PRODUCT_CATEGORY_CONTINUE_MARKER: /tmp/product-category-continue.json
+          # 긴급 중단: Settings -> Variables -> Actions PRODUCT_CATEGORY_BATCH_OFF=1
+          PRODUCT_CATEGORY_BATCH_OFF: ${{ vars.PRODUCT_CATEGORY_BATCH_OFF }}
+        run: |
+          if [ "${PRODUCT_CATEGORY_BATCH_OFF}" = "1" ]; then
+            echo "PRODUCT_CATEGORY_BATCH_OFF=1 — 이번 실행은 건너뜁니다."
+            exit 0
+          fi
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          node scripts/classify-product-categories-batch.js $ARGS 2>&1 | tee /tmp/product-category-batch.log
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 상품 카테고리 배치 분류"
+            echo ""
+            echo '```'
+            tail -5 /tmp/product-category-batch.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 이어 붙이기 ──────────────────────────────────────────────────
+      - name: Continue classification (dispatch next run)
+        if: always() && steps.classify.outcome == 'success' && github.event.inputs.dry_run != 'true' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHAIN: ${{ inputs.chain }}
+          MAX_CHAIN: '200'
+        run: |
+          if [ ! -f /tmp/product-category-continue.json ]; then
+            echo "이어 붙이지 않음 — 미분류 상품이 안 남았거나 표식 생략됨"
+            exit 0
+          fi
+          case "$CHAIN" in ''|*[!0-9]*) CHAIN=0 ;; esac
+          if [ "$CHAIN" -ge "$MAX_CHAIN" ]; then
+            echo "사슬 상한 $MAX_CHAIN 도달 — 다음 예약 칸(내일)에 맡긴다"
+            exit 0
+          fi
+          gh workflow run product-category-classify.yml --ref main \
+            -f rows="${{ github.event.inputs.rows || '1000' }}" \
+            -f chain=$((CHAIN + 1))
+          echo "다음 실행을 만들었습니다 (chain=$((CHAIN + 1)))"
