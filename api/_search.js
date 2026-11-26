@@ -566,6 +566,23 @@ function matchIndex(token, toks) {
       for (const sy of syn) if (sy.length >= 2 && tt.indexOf(sy) > -1) return i;
     }
   }
+  /*
+   * 2026-11-26: 검색어는 붙여 썼는데("커피머신") 제목은 띄어 썼으면("커피 머신")
+   * 위 루프가 못 찾는다 — 제목 토큰 어디에도 "커피머신" 이 통째로 들어있지
+   * 않기 때문이다. token.parts 는 analyzeQuery 가 이미 쪼개 둔 조각들이니,
+   * 그 조각들이 제목 토큰에 순서대로 이어 붙어 있으면 첫 조각 자리를 앵커로 쓴다.
+   * ("데롱기 ECAM 커피 머신... 액세서리입니다" 가 "커피머신" 검색에서 부속으로
+   * 안 걸러지던 문제 — isAccessoryListing 이 앵커를 못 찾아 그냥 통과시켰다.)
+   */
+  if (token.parts && token.parts.length) {
+    for (const parts of token.parts) {
+      if (!parts || parts.length < 2) continue;
+      for (let i = 0; i + parts.length <= toks.length; i++) {
+        const fits = parts.every((p, k) => toks[i + k] === p || (p.length >= 2 && toks[i + k].indexOf(p) > -1));
+        if (fits) return i;
+      }
+    }
+  }
   return -1;
 }
 
@@ -599,6 +616,11 @@ const ACCESSORY_TIER = [
   // 2026-11-25: "키보드" 검색에 섞이던 키보드 전용 부속 — 팜레스트·손목받침·키캡은
   // 키보드 본체와 따로 파는 다른 물건이다 (api/_search-type-guard.js 참고).
   ['팜레스트', 0.72], ['손목받침', 0.72], ['키캡', 0.72],
+  // 2026-11-26: 판매자가 제목에서 아예 "액세서리/부속품"이라고 못박은 경우 —
+  // 구체적 품목명(케이스·필터 등)이 전혀 없어도 가장 확실한 신호라 strong에 둔다.
+  // ("데롱기 ECAM 커피머신... 물탱크 덮개 액세서리입니다" 가 안 걸러지던 문제, api/_aiidentity.js
+  // 의 ACCESSORY_CATEGORY_WORDS 는 검색어 쪽 분류에만 쓰이고 제목 쪽은 이 목록만 본다.)
+  ['액세서리', 0.72], ['액세서리류', 0.72], ['부속품', 0.72], ['accessory', 0.72], ['accessories', 0.72],
   // medium
   ['충전기', 0.85], ['뚜껑', 0.85], ['필터', 0.85], ['홀더', 0.85],
   ['스탠드', 0.85], ['마개', 0.85], ['브러시', 0.85], ['클리너', 0.85],
