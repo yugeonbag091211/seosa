@@ -1180,11 +1180,19 @@ function tokenQuality(token, T) {
   });
   if (best) return best;
 
-  // 동의어 / 한영 표기 변형
+  /*
+   * 동의어 / 한영 표기 변형.
+   * 2026-11-26: "케이스" 의 동의어 "커버" 처럼 2글자짜리 흔한 동의어를
+   * T.flat(띄어쓰기 지운 제목) 안에서 그냥 부분 문자열로 찾으면, "커버낫"
+   * (브랜드명) 같은 전혀 무관한 상품 속 글자에도 걸린다. 제목에 실제로
+   * «그 낱말 자체»로 들어있을 때(T.set — 토큰 경계가 있는 진짜 낱말)는
+   * 길이 상관없이 인정하고, 띄어쓰기 차이만 허용하는 부분 문자열 찾기는
+   * 3글자 이상일 때만 쓴다 — 2글자는 우연히 겹칠 확률이 너무 높다.
+   */
   const syn = SYNONYMS.get(t);
   if (syn) {
     for (const s of syn) {
-      if (T.set.has(s) || (s.length >= 2 && T.flat.indexOf(s) > -1)) return Q.SYNONYM;
+      if (T.set.has(s) || (s.length >= 3 && T.flat.indexOf(s) > -1)) return Q.SYNONYM;
     }
   }
 
