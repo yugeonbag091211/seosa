@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const { runBatchClassification, chunk } = require('./classify-product-kinds-batch');
+const { runBatchClassification, chunk, writeContinueMarkerIfNeeded } = require('./classify-product-kinds-batch');
 
 const checks = [];
 function check(name, cond, detail) {
@@ -98,6 +98,38 @@ function check(name, cond, detail) {
       sync: async () => new Map()
     });
     check('rowLimit 그대로 전달', askedLimit === 77, askedLimit);
+  }
+
+  console.log('\n8. writeContinueMarkerIfNeeded — 아직 남아있으면 표식 파일을 쓴다');
+  {
+    let written = null;
+    const ok = await writeContinueMarkerIfNeeded({
+      fetchUnclassified: async (limit) => { check('1개만 물어봄(가벼운 확인)', limit === 1, limit); return [{ productId: 'X', title: 'x' }]; },
+      markerPath: '/tmp/fake-marker.json',
+      writeFile: (p, c) => { written = { p, c }; }
+    });
+    check('표식 남김(true 반환)', ok === true, ok);
+    check('마커 파일 경로/내용 기록됨', written && written.p === '/tmp/fake-marker.json' && JSON.parse(written.c).remaining === true, written);
+  }
+
+  console.log('\n9. writeContinueMarkerIfNeeded — 남은 게 없으면 표식을 안 쓴다');
+  {
+    let written = null;
+    const ok = await writeContinueMarkerIfNeeded({
+      fetchUnclassified: async () => [],
+      writeFile: (p, c) => { written = { p, c }; }
+    });
+    check('표식 안 남김(false 반환)', ok === false, ok);
+    check('writeFile 호출 안 됨', written === null, written);
+  }
+
+  console.log('\n10. writeContinueMarkerIfNeeded — 확인 자체가 실패해도 죽지 않는다');
+  {
+    const ok = await writeContinueMarkerIfNeeded({
+      fetchUnclassified: async () => { throw new Error('db down'); },
+      writeFile: () => { throw new Error('호출되면 안 됨'); }
+    });
+    check('에러 삼키고 false 반환(배치 자체는 성공 처리)', ok === false, ok);
   }
 
   const passed = checks.filter(c => c.pass).length;

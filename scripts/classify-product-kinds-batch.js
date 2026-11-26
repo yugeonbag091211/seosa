@@ -134,6 +134,44 @@ async function main() {
   const sec = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`[product-kind-batch] 대상 ${result.candidates}개, 분류 완료 ${result.classified}개, `
     + `재시도 대상(타임아웃 등) ${result.stillUnknown}개, 라운드 ${result.rounds}회, 소요 ${sec}s`);
+
+  await writeContinueMarkerIfNeeded({ supabase });
+}
+
+/**
+ * ── 이어 붙이기 표식 (2026-11-26) ───────────────────────────────────────
+ * 오늘처럼 밀린 게 몇만 건일 땐 한 번 실행(최대 rows개)으로 끝나지 않는다.
+ * 이번 실행이 처리한 뒤에도 아직 product_kind가 빈 상품이 남아있으면, 그
+ * 사실만 파일로 남긴다 — daily-prices.yml의 "이어 붙이기" 표식과 같은 패턴.
+ * 실제로 다음 실행을 만드는 건 워크플로의 별도 단계가 한다(이 스크립트는
+ * GitHub API를 모른다 — 그냥 "더 남았다"는 사실만 보고한다).
+ *
+ * @param {object} [opts]
+ * @param {object}   [opts.supabase]
+ * @param {Function} [opts.fetchUnclassified] 주입 가능 — 테스트용.
+ * @param {string}   [opts.markerPath]
+ * @param {Function} [opts.writeFile] 주입 가능 — 테스트에서 실제 파일 안 쓰고 검증.
+ * @returns {Promise<boolean>} 표식을 남겼으면 true.
+ */
+async function writeContinueMarkerIfNeeded(opts = {}) {
+  const client = opts.supabase || supabase;
+  const fetchFn = opts.fetchUnclassified || ((limit) => fetchUnclassified(client, limit));
+  const markerPath = opts.markerPath || process.env.PRODUCT_KIND_CONTINUE_MARKER || '/tmp/product-kind-continue.json';
+  const writeFile = opts.writeFile || ((p, c) => require('fs').writeFileSync(p, c));
+
+  try {
+    const remaining = await fetchFn(1);
+    if (remaining.length) {
+      writeFile(markerPath, JSON.stringify({ remaining: true }));
+      console.log(`[product-kind-batch] 아직 미분류 상품이 남아있음 — 이어 붙이기 표식 작성(${markerPath})`);
+      return true;
+    }
+    console.log('[product-kind-batch] 미분류 상품 0개 — 다 끝남');
+    return false;
+  } catch (e) {
+    console.warn(`[product-kind-batch] 잔여 확인 실패(이어 붙이기 판단 생략): ${e.message}`);
+    return false;
+  }
 }
 
 if (require.main === module) {
@@ -143,4 +181,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runBatchClassification, fetchUnclassified, chunk };
+module.exports = { runBatchClassification, fetchUnclassified, chunk, writeContinueMarkerIfNeeded };
