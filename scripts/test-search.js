@@ -1083,5 +1083,19 @@ check(sweatshirtScore < gpuScore - 0.3,
 check(hoodieScore < gpuScore - 0.3,
   'LV 자카드 후드티도 GPU보다 훨씬 낮게 — "자카드" 안의 "카드" 조각만 우연히 겹친 것', { gpuScore, hoodieScore });
 
+/*
+ * 위 수정(이어 붙여서 실제로 붙어 있나만 확인)으로는 부족했다 — 조각이
+ * 떨어져 있을 때 0.6 을 곱하는 것만으로는 "스마트워치" 같은 2음절 합성어에서
+ * 여전히 MIN_SCORE(0.3)를 넉넉히 넘는 점수가 나왔다("워치독" 같은 완전
+ * 무관한 상품도 0.51). 떨어져 있으면 "조각 하나는 아예 없는 것"과 똑같이
+ * 쳐서(기존에 이미 있던 부분 일치 등급과 맞춰서) 더 낮춘다.
+ */
+const watchScore = score('스마트워치', '리눅스 서버 워치독 타이머 스마트 모니터링 센서 모듈');
+const bagScore = score('노트북가방', '커버낫 여행 캠핑 보스턴 여행가방 대형 러기지');
+check(watchScore <= 0.85 * (1 / 2) + 1e-9,
+  '"워치독" 은 "스마트"+"워치" 조각이 떨어져 있으니 부분 일치(조각 하나 수준)보다 높지 않다', watchScore);
+check(bagScore <= 0.85 * (1 / 2) + 1e-9,
+  '"여행가방" 은 "노트북"+"가방" 조각이 떨어져 있으니 부분 일치(조각 하나 수준)보다 높지 않다', bagScore);
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);

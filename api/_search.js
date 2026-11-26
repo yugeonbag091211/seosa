@@ -1166,7 +1166,13 @@ function tokenQuality(token, T) {
     if (!hit) return;
     let q;
     if (hit === parts.length) {
-      q = T.flat.indexOf(parts.join('')) > -1 ? Q.COMPOUND : Q.COMPOUND * (hit / parts.length) * 0.6;
+      // 조각이 전부 있어도 이어 붙여서(띄어쓰기 차이만 허용) 실제로 붙어 있지
+      // 않으면, 조각 하나가 우연히 걸린 것과 똑같이 — "조각 하나는 빠진 것"
+      // 만큼만 쳐준다. 그래야 "트럼프카드"·"워치독"처럼 흔한 조각 하나가
+      // 전혀 다른 낱말 속에 숨어 있을 때 거의 완전 일치로 둔갑하지 않는다.
+      q = T.flat.indexOf(parts.join('')) > -1
+        ? Q.COMPOUND
+        : Q.COMPOUND * Math.max(0, hit - 1) / parts.length;
     } else {
       q = Q.COMPOUND * (hit / parts.length);
     }
