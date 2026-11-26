@@ -681,3 +681,59 @@ npm run verify:models             사슬 6종 전부 실존 확인
 유료 id 가 `_llm.js` 밖에 없다 · 기본 사슬이 전부 무료다 · 유료 id 를 적어도
 나가지 않는다 · 사슬을 뚫고 온 유료도 막힌다 · 게스트는 LLM 을 0회 부른다 ·
 요청당 1회다 · 무료가 전부 429 여도 유료로 넘어가지 않는다.
+
+---
+
+## M. 2026-11-26 검색 품질 — 본품/부속 분류 시스템 (PR #270~#275)
+
+"키보드" 검색에 키캡·팜레스트가 섞이고, "커피머신" 검색에 부속품(물탱크
+덮개 등)이 섞이는 문제를 없애려고 두 겹짜리 필터를 완성했다.
+
+### 구조
+
+1. **사전 기반 즉시 필터** (`api/_search-type-guard.js` → `filterByProductType`,
+   `api/_search.js` → `accessoryTerms`/`ACCESSORY_TIER`): 제목에 구체적 품목명
+   (케이스·필터·충전기 등)이나 포괄 단어("액세서리"·"부속품")가 있으면
+   검색 즉시 제외. DB·외부 API 호출 없이 순수 문자열 로직이라 지연 없음.
+2. **GPT 사전 분류 배치** (`api/_product-kind-store.js`, `api/_product-kind-classifier.js`,
+   `scripts/classify-product-kinds-batch.js`): 전 상품(79,415개)을 GPT가 미리
+   본품/부속으로 분류해 `products.product_kind` 컬럼에 저장. 검색 중엔
+   `lookupProductKinds()`로 저장된 값만 읽어 적용 — 라이브 GPT 호출 없음
+   (`PRODUCT_KIND_CLASSIFY_ENABLED=1`, 운영 ON, Vercel 확인 완료).
+
+PR #273 이전엔 GPT 분류가 검색 요청 안에서 동기로 일어나 지연 문제가
+있었는데, 그걸 떼어내 백그라운드 배치로 옮긴 게 #273. #274 는 배치가
+GitHub Actions에서 자기 자신을 체이닝 호출하도록 만들어 수동 개입 없이
+밀린 수만 건을 끝까지 처리하게 함. #275 는 사전 필터 쪽의 버그 두 개
+(포괄 단어 "액세서리"/"부속품" 자체가 사전에 없던 것, 검색어·제목의
+띄어쓰기가 다르면 앵커를 못 찾던 것)를 고침.
+
+### 분류 배치 현황 (2026-11-26 04:22 UTC 기준, 완료)
+
+| 항목 | 값 |
+|---|---|
+| 전체 상품 수 | 79,415 |
+| 분류 완료 | 79,415 (100%) |
+| 실패(영구) | 0 — 타임아웃 재시도 140건 포함 전부 다음 라운드에서 성공 |
+| 소요 | 약 4시간 (GitHub Actions 자가 체이닝, 2분 간격 1,000개씩) |
+| 일일 운영 | 매일 03:00 KST 스케줄 실행, 신규/미분류 상품만 증분 분류 |
+
+### 검증
+
+```
+node scripts/test-search-type-guard.js        49/49 PASS (데롱기 액세서리·에어프라이어 부속품 회귀 테스트 포함)
+node scripts/test-search.js                   247/247 PASS
+node scripts/test-search-ranking-intent.js    184/184 PASS
+node scripts/test-search-adversarial.js       2,311/2,311 PASS (accessory_false_positive 300/300)
+```
+
+운영(`seosa.ai.kr`) 실제 검색으로 "커피머신"·"에어프라이어" 확인 —
+부속/필터 단품 결과 0건.
+
+### 알려진 제약 (고치지 않음, 사실만 기록)
+
+- `scripts/classify-product-kinds-batch.js`의 `fetchUnclassified`가 Neon
+  어댑터 특성상 요청값과 무관하게 한 번에 최대 1,000행까지만 실제로
+  가져온다 — 그래서 배치가 여러 라운드로 쪼개져 돈다. 기능엔 문제없음.
+- 라이브 검색 중 미분류 상품에 대한 실시간 GPT 폴백은 의도적으로 안 함
+  (지연 문제 재발 방지) — 사용자 확인 후 "배치만 사용"으로 확정.
