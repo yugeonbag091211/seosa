@@ -1064,5 +1064,24 @@ check(filtered.length === 1 && /Pro 256GB/.test(filtered[0].title),
   'hard exclusion matches fused Korean identity in English title without excluding sibling', filtered.map(x => x.title));
 
 
+/*
+ * 2026-11-26 — "그래픽카드" 실사용 반례. tokenQuality() 의 합성어 분해가
+ * 조각("그래픽"·"카드")이 제목 어디에든(붙어 있든 떨어져 있든) 있기만 하면
+ * 거의 완전 일치로 쳐줬다. "카드" 는 흔한 글자라 "트럼프카드"(플레이 카드),
+ * "자카드"(직물 짜임), "슈퍼카드"(여행 혜택 카드) 안에도 들어있어서,
+ * 그래픽 카드(GPU)와 전혀 상관없는 옷·여행 상품이 진짜 GPU 와 거의
+ * 같은 점수로 통과했다. 조각이 전부 있어도 실제로 붙어 있지 않으면
+ * (다른 낱말이 끼어 있으면) 완전 일치로 치지 않도록 고쳤다.
+ */
+section('⑦ "그래픽카드" 처럼 흔한 조각이 엉뚱한 낱말 속에 숨어 있는 경우');
+const gpuScore = score('그래픽카드', 'RTX 4070 그래픽카드 지포스 게이밍 PC용');
+const sweatshirtScore = score('그래픽카드', '오픈런 아토가토 그래픽 맨투맨뒤면 게임 트럼프카드 니트패턴');
+const hoodieScore = score('그래픽카드', '루이비통 1AHCN1 블랙 모노그램 그래픽 자카드 익스플로러 남성 후드티셔츠aa67070');
+check(gpuScore === 1, '★ 진짜 그래픽카드(GPU)는 여전히 만점', gpuScore);
+check(sweatshirtScore < gpuScore - 0.3,
+  '그래픽 맨투맨 + 트럼프카드 티셔츠는 GPU보다 훨씬 낮게 — "카드" 조각만 우연히 겹친 것', { gpuScore, sweatshirtScore });
+check(hoodieScore < gpuScore - 0.3,
+  'LV 자카드 후드티도 GPU보다 훨씬 낮게 — "자카드" 안의 "카드" 조각만 우연히 겹친 것', { gpuScore, hoodieScore });
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);
