@@ -41,6 +41,35 @@ assert.equal(filterPhysicalSearchResults('카메라', [
   { title: '카메라 본품 4K', mall: '쿠팡' }
 ]).length, 1);
 assert.deepEqual(filterPhysicalSearchResults('노트북', null), []);
+
+// 2026-11-26: Codex-reported FAILs — 검색어가 제목에 그대로 들어있지만
+// 실제로는 그 물건을 파는 게 아닌 경우 (PR #277 후속).
+const gpuRows = [
+  { title: 'RTX 4070 그래픽카드 지포스 게이밍 PC용', mall: '쿠팡', lprice: 890000 },
+  { title: '[eBook] 8GB 그래픽카드로 시작하는 AI 이미지·영상 만들기', mall: 'ADPICK', mallLabel: '교보문고', lprice: 12000 }
+];
+const gpuFiltered = filterPhysicalSearchResults('그래픽카드', gpuRows);
+assert.equal(gpuFiltered.length, 1, '그래픽카드 eBook 제외');
+assert.equal(gpuFiltered[0].title.includes('지포스'), true);
+
+const caseRows = [
+  { title: '삼성 갤럭시 S24 실리콘 케이스', mall: '쿠팡', lprice: 9900 },
+  {
+    title: '[서울/중구] 가죽 소품 만들기 카드지갑, 네임택, 필통, 에어팟케이스, 코스터, 목줄',
+    mall: 'ADPICK',
+    mallLabel: '프립',
+    lprice: 39000
+  }
+];
+const caseFiltered = filterPhysicalSearchResults('케이스', caseRows);
+assert.equal(caseFiltered.length, 1, '케이스 가죽공방 체험 제외');
+assert.equal(caseFiltered[0].title.includes('실리콘'), true);
+
+// 체험/공방 신호가 없으면(지역 태그·만들기 체험 표현 없음) 그대로 둔다.
+assert.equal(filterPhysicalSearchResults('케이스', [
+  { title: '아이폰15 프로 맥스 가죽 케이스 수제 공방 핸드메이드', mall: '쿠팡' }
+]).length, 1, '공방이라는 단어만으로는 걸러내지 않음');
+
 const handler = fs.readFileSync(path.join(__dirname, '../api/search.js'), 'utf8');
 assert.match(handler, /filterPhysicalSearchResults\(rawKeyword, items\)/);
 console.log('Physical-device search digital-listing regression: PASS');

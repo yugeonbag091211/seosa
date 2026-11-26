@@ -8,6 +8,8 @@ const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords,
 const { filterPhysicalSearchResults } = require('./_physical-search-filter');
 const { filterByProductType } = require('./_search-type-guard');
 const { lookupProductKinds } = require('./_product-kind-store');
+const { filterByCategory } = require('./_search-category-guard');
+const { lookupCategories } = require('./_category-store');
 const { sanitizeItemLinks } = require('./_affiliate');
 const Canonical = require('./_canonicalconsumer');
 const { summarizeSearchProvenance } = require('./_search-provenance');
@@ -252,7 +254,35 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const relevance = rankItems(rawKeyword, kindFiltered, { minScore: 0 });
+    /*
+     * ★ 카테고리 안전망 (2026-11-26, PR #277) — "그래픽카드" 검색에 "트럼프카드"
+     *   맨투맨이 글자만 겹쳐서(tokenQuality 조각 매칭) 섞여 들어온 사고의
+     *   두 번째 방어선이다. 위 kindFiltered(본품/부속)와 똑같은 패턴: 상품마다
+     *   GPT로 한 번 매긴 대분류 카테고리(products.category)를 배치가 미리
+     *   저장해 두면, 여기서는 그 값만 읽는다(GPT 호출 없음, 수십 ms).
+     *
+     *   검색어의 "기대 카테고리"를 사전(QUERY_CATEGORY_HINTS)에서 못 찾거나
+     *   상품의 카테고리를 아직 모르면 그대로 둔다 — 안전 기본값. 기본은 꺼져
+     *   있다(SEARCH_CATEGORY_GUARD_ENABLED=1) — product_kind 와 같은 롤아웃
+     *   방식이다.
+     */
+    let categoryFiltered = kindFiltered;
+    if (process.env.SEARCH_CATEGORY_GUARD_ENABLED === '1') {
+      try {
+        const categories = await lookupCategories(
+          kindFiltered.map(it => it.productId),
+          { timeBudgetMs: Number(process.env.SEARCH_CATEGORY_GUARD_BUDGET_MS) || 1200 }
+        );
+        if (categories.size) {
+          const guard2 = filterByCategory(rawKeyword, kindFiltered, categories);
+          if (guard2.applied) categoryFiltered = guard2.kept;
+        }
+      } catch (e) {
+        console.warn(`[search:${rawKeyword}] 카테고리 안전망 실패(생략하고 계속): ${e.message}`);
+      }
+    }
+
+    const relevance = rankItems(rawKeyword, categoryFiltered, { minScore: 0 });
 
     /*
      * 순서.

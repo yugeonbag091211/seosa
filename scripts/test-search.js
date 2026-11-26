@@ -1064,5 +1064,53 @@ check(filtered.length === 1 && /Pro 256GB/.test(filtered[0].title),
   'hard exclusion matches fused Korean identity in English title without excluding sibling', filtered.map(x => x.title));
 
 
+/*
+ * 2026-11-26 — "그래픽카드" 실사용 반례. tokenQuality() 의 합성어 분해가
+ * 조각("그래픽"·"카드")이 제목 어디에든(붙어 있든 떨어져 있든) 있기만 하면
+ * 거의 완전 일치로 쳐줬다. "카드" 는 흔한 글자라 "트럼프카드"(플레이 카드),
+ * "자카드"(직물 짜임), "슈퍼카드"(여행 혜택 카드) 안에도 들어있어서,
+ * 그래픽 카드(GPU)와 전혀 상관없는 옷·여행 상품이 진짜 GPU 와 거의
+ * 같은 점수로 통과했다. 조각이 전부 있어도 실제로 붙어 있지 않으면
+ * (다른 낱말이 끼어 있으면) 완전 일치로 치지 않도록 고쳤다.
+ */
+section('⑦ "그래픽카드" 처럼 흔한 조각이 엉뚱한 낱말 속에 숨어 있는 경우');
+const gpuScore = score('그래픽카드', 'RTX 4070 그래픽카드 지포스 게이밍 PC용');
+const sweatshirtScore = score('그래픽카드', '오픈런 아토가토 그래픽 맨투맨뒤면 게임 트럼프카드 니트패턴');
+const hoodieScore = score('그래픽카드', '루이비통 1AHCN1 블랙 모노그램 그래픽 자카드 익스플로러 남성 후드티셔츠aa67070');
+check(gpuScore === 1, '★ 진짜 그래픽카드(GPU)는 여전히 만점', gpuScore);
+check(sweatshirtScore < gpuScore - 0.3,
+  '그래픽 맨투맨 + 트럼프카드 티셔츠는 GPU보다 훨씬 낮게 — "카드" 조각만 우연히 겹친 것', { gpuScore, sweatshirtScore });
+check(hoodieScore < gpuScore - 0.3,
+  'LV 자카드 후드티도 GPU보다 훨씬 낮게 — "자카드" 안의 "카드" 조각만 우연히 겹친 것', { gpuScore, hoodieScore });
+
+/*
+ * 위 수정(이어 붙여서 실제로 붙어 있나만 확인)으로는 부족했다 — 조각이
+ * 떨어져 있을 때 0.6 을 곱하는 것만으로는 "스마트워치" 같은 2음절 합성어에서
+ * 여전히 MIN_SCORE(0.3)를 넉넉히 넘는 점수가 나왔다("워치독" 같은 완전
+ * 무관한 상품도 0.51). 떨어져 있으면 "조각 하나는 아예 없는 것"과 똑같이
+ * 쳐서(기존에 이미 있던 부분 일치 등급과 맞춰서) 더 낮춘다.
+ */
+const watchScore = score('스마트워치', '리눅스 서버 워치독 타이머 스마트 모니터링 센서 모듈');
+const bagScore = score('노트북가방', '커버낫 여행 캠핑 보스턴 여행가방 대형 러기지');
+check(watchScore <= 0.85 * (1 / 2) + 1e-9,
+  '"워치독" 은 "스마트"+"워치" 조각이 떨어져 있으니 부분 일치(조각 하나 수준)보다 높지 않다', watchScore);
+check(bagScore <= 0.85 * (1 / 2) + 1e-9,
+  '"여행가방" 은 "노트북"+"가방" 조각이 떨어져 있으니 부분 일치(조각 하나 수준)보다 높지 않다', bagScore);
+
+/*
+ * 같은 유형의 버그가 합성어 분해가 아니라 «동의어» 경로에도 있었다.
+ * "케이스" 의 동의어 "커버" 는 2글자라서, T.flat(띄어쓰기 지운 제목)
+ * 안에서 부분 문자열로 찾으면 "커버낫"(의류 브랜드명) 속 글자에도 걸려
+ * 전혀 무관한 옷이 "케이스"와 거의 일치(0.75)로 나왔다. 제목에 «낱말
+ * 그대로»(토큰 경계 있음) 들어있을 때만 인정하거나, 부분 문자열로 찾을
+ * 땐 3글자 이상일 때만 인정하도록 좁혔다.
+ */
+const caseOnBrand = score('케이스', '커버낫 여행 캠핑 보스턴 여행가방 대형 러기지');
+const caseOnCover = score('케이스', '삼성 갤럭시 S24 실리콘 커버');
+check(caseOnBrand === 0,
+  '"커버낫" 브랜드명 속 "커버" 글자에 "케이스" 동의어가 우연히 걸리지 않는다', caseOnBrand);
+check(caseOnCover === 0.75,
+  '진짜 "실리콘 커버"(케이스의 동의어)는 그대로 동의어로 인정된다 — 낱말 그대로 있을 땐 길이 상관없음', caseOnCover);
+
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);

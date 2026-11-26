@@ -1152,21 +1152,47 @@ function tokenQuality(token, T) {
   // 용도 접미사만 다른 경우 ("여행용" ↔ "여행")
   if (token.stem && T.flat.indexOf(token.stem) > -1) return Q.STEM;
 
-  // 합성어 분해 — 조각이 모두 있으면 거의 일치, 일부만 있으면 그 비율만큼
+  /*
+   * 합성어 분해 — 조각이 모두 있으면 거의 일치, 일부만 있으면 그 비율만큼.
+   * 2026-11-26: "조각이 제목 어디에든 있으면" 으로만 보면 "카드" 처럼 흔한
+   * 조각이 전혀 다른 낱말 속에 우연히 들어있어도("트럼프카드"·"자카드"·"슈퍼카드")
+   * "그래픽카드" 와 거의 똑같이 쳐버린다. 조각이 전부 있는 경우엔 이어 붙여도
+   * 실제로 붙어 있는지(띄어쓰기 차이만 허용) 한 번 더 확인하고, 떨어져 있으면
+   * 부분 일치로 깎는다.
+   */
   let best = 0;
   token.parts.forEach(parts => {
     const hit = parts.filter(p => T.flat.indexOf(p) > -1).length;
     if (!hit) return;
-    const q = hit === parts.length ? Q.COMPOUND : Q.COMPOUND * (hit / parts.length);
+    let q;
+    if (hit === parts.length) {
+      // 조각이 전부 있어도 이어 붙여서(띄어쓰기 차이만 허용) 실제로 붙어 있지
+      // 않으면, 조각 하나가 우연히 걸린 것과 똑같이 — "조각 하나는 빠진 것"
+      // 만큼만 쳐준다. 그래야 "트럼프카드"·"워치독"처럼 흔한 조각 하나가
+      // 전혀 다른 낱말 속에 숨어 있을 때 거의 완전 일치로 둔갑하지 않는다.
+      q = T.flat.indexOf(parts.join('')) > -1
+        ? Q.COMPOUND
+        : Q.COMPOUND * Math.max(0, hit - 1) / parts.length;
+    } else {
+      q = Q.COMPOUND * (hit / parts.length);
+    }
     if (q > best) best = q;
   });
   if (best) return best;
 
-  // 동의어 / 한영 표기 변형
+  /*
+   * 동의어 / 한영 표기 변형.
+   * 2026-11-26: "케이스" 의 동의어 "커버" 처럼 2글자짜리 흔한 동의어를
+   * T.flat(띄어쓰기 지운 제목) 안에서 그냥 부분 문자열로 찾으면, "커버낫"
+   * (브랜드명) 같은 전혀 무관한 상품 속 글자에도 걸린다. 제목에 실제로
+   * «그 낱말 자체»로 들어있을 때(T.set — 토큰 경계가 있는 진짜 낱말)는
+   * 길이 상관없이 인정하고, 띄어쓰기 차이만 허용하는 부분 문자열 찾기는
+   * 3글자 이상일 때만 쓴다 — 2글자는 우연히 겹칠 확률이 너무 높다.
+   */
   const syn = SYNONYMS.get(t);
   if (syn) {
     for (const s of syn) {
-      if (T.set.has(s) || (s.length >= 2 && T.flat.indexOf(s) > -1)) return Q.SYNONYM;
+      if (T.set.has(s) || (s.length >= 3 && T.flat.indexOf(s) > -1)) return Q.SYNONYM;
     }
   }
 
