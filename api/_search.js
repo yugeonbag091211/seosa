@@ -1102,6 +1102,84 @@ function soldKind(analysis, T) {
 }
 
 /** 상품명을 한 번만 분석해 두고 여러 검색어에 재사용한다. */
+/*
+ * 형태소 분석기 의존성 주입.
+ * _search.js 자신은 api/_morph-analyzer.js(키위 + ~90MB 모델)를 전혀 모른다.
+ * api/search.js 가 콜드스타트 때 한 번 준비해서 setMorphProvider 로 함수만
+ * 꽂아준다 — 그래야 ai.js·cron.js 등 _search.js 를 쓰는 다른 함수들의 번들이
+ * 커지지 않는다. 주입이 없으면(provider === null) 예전처럼 동작한다.
+ */
+let morphProvider = null;
+function setMorphProvider(fn) {
+  morphProvider = typeof fn === 'function' ? fn : null;
+}
+
+/**
+ * needle 이 flat(공백 제거된 제목) 안에서, 우연히 다른 낱말 속에 걸린 게
+ * 아니라 실제 형태소 경계와 맞아떨어지는 자리에 있는지 확인한다.
+ * morph 분석이 없으면(아직 콜드스타트 중이거나 주입 안 됐으면) 예전처럼
+ * 그냥 부분 문자열 여부만 본다 — 동작이 더 나빠지지는 않는다.
+ *
+ * 예: "스테어케이스"는 형태소 분석상 하나의 낱말이라 "케이스"가 그 안에서
+ * 경계와 안 맞고(뒤 3글자만 잘라낸 꼴) → 거부.
+ * "햇빛가리개"는 "햇빛"+"가리개" 두 낱말이라 "햇빛"이 첫 낱말 경계와
+ * 정확히 맞음 → 인정.
+ */
+function morphBoundaryOk(morphTokens, start, len) {
+  const end = start + len;
+  for (const m of morphTokens) {
+    const mEnd = m.position + m.length;
+    const overlaps = m.position < end && mEnd > start;
+    if (overlaps && (m.position < start || mEnd > end)) return false;
+  }
+  return true;
+}
+
+/*
+ * 2026-11-27: 처음엔 T.flat(공백 다 지운 제목 전체)을 그대로 키위에 넣었는데,
+ * "디유 더블벤티 대용량 텀블러 빨대 스텐 보온보냉" 같은 — 브랜드명 + 여러
+ * 낱말이 섞인 — 제목을 공백 없이 통째로 넣으면 키위가 경계를 못 잡고
+ * 20글자를 그냥 "하나의 미등록 낱말"로 묶어버리는 경우가 있었다(실측:
+ * "텀블러"·"빨대"가 따로 있는 합성어 분해 테스트가 깨짐). 띄어쓰기가
+ * 그 자체로 강한 경계 신호라 공백을 지우면 오히려 분석이 나빠진다.
+ * 그래서 공백이 살아있는 T.normalized 를 키위에 넣고, "flat 에서 찾은
+ * 위치"를 "normalized 에서의 위치"로 옮겨주는 색인(flatToNorm)을 따로
+ * 만들어 둔다.
+ */
+function buildFlatToNorm(normalized, tokens) {
+  const map = new Array(tokens.reduce((n, t) => n + t.length, 0));
+  let flatCursor = 0;
+  let normCursor = 0;
+  for (const tok of tokens) {
+    const pos = normalized.indexOf(tok, normCursor);
+    const start = pos > -1 ? pos : normCursor;
+    for (let j = 0; j < tok.length; j++) map[flatCursor + j] = start + j;
+    flatCursor += tok.length;
+    normCursor = start + tok.length;
+  }
+  return map;
+}
+
+function morphAlignedIndexOf(T, needle) {
+  if (!needle) return false;
+  if (!morphProvider) return T.flat.indexOf(needle) > -1;
+  const morph = morphProvider(T.normalized);
+  if (!morph) return T.flat.indexOf(needle) > -1;
+  let idx = T.flat.indexOf(needle);
+  while (idx > -1) {
+    const normStart = T.flatToNorm[idx];
+    const normEnd = T.flatToNorm[idx + needle.length - 1] + 1;
+    // flat 에서는 붙어 있어도 원문에서 떨어져 있던 두 토큰에 걸치면
+    // (사이 글자 수가 안 맞으면) 형태소 검사를 믿을 수 없으니 그냥 인정한다 —
+    // 이미 "붙여쓰기 차이"로 찾은 것이니 기존 동작을 유지.
+    if (normStart == null || normEnd - normStart !== needle.length || morphBoundaryOk(morph, normStart, needle.length)) {
+      return true;
+    }
+    idx = T.flat.indexOf(needle, idx + 1);
+  }
+  return false;
+}
+
 function analyzeTitle(title) {
   const raw = String(title || '');
   const normalized = normalizeText(title);
@@ -1115,6 +1193,7 @@ function analyzeTitle(title) {
     tokens,
     set: new Set(tokens),
     flat: tokens.join(''),
+    flatToNorm: morphProvider ? buildFlatToNorm(normalized, tokens) : null,
     modelKeys: modelCodesFromTokens(tokens),
     variantMarkers: variantMarkers(raw, tokens),
     identityTokens: coreTokensFromTokens(identityBase).filter(token => !COMMON_WORDS.has(token)
@@ -1147,10 +1226,10 @@ function tokenQuality(token, T) {
   }
 
   // 붙여쓰기 차이 — 공백을 지운 제목에서 찾는다 ("무선 이어폰" → "무선이어폰")
-  if (t.length >= 2 && T.flat.indexOf(t) > -1) return Q.SUBSTRING;
+  if (t.length >= 2 && morphAlignedIndexOf(T, t)) return Q.SUBSTRING;
 
   // 용도 접미사만 다른 경우 ("여행용" ↔ "여행")
-  if (token.stem && T.flat.indexOf(token.stem) > -1) return Q.STEM;
+  if (token.stem && morphAlignedIndexOf(T, token.stem)) return Q.STEM;
 
   /*
    * 합성어 분해 — 조각이 모두 있으면 거의 일치, 일부만 있으면 그 비율만큼.
@@ -1162,7 +1241,7 @@ function tokenQuality(token, T) {
    */
   let best = 0;
   token.parts.forEach(parts => {
-    const hit = parts.filter(p => T.flat.indexOf(p) > -1).length;
+    const hit = parts.filter(p => morphAlignedIndexOf(T, p)).length;
     if (!hit) return;
     let q;
     if (hit === parts.length) {
@@ -1170,7 +1249,7 @@ function tokenQuality(token, T) {
       // 않으면, 조각 하나가 우연히 걸린 것과 똑같이 — "조각 하나는 빠진 것"
       // 만큼만 쳐준다. 그래야 "트럼프카드"·"워치독"처럼 흔한 조각 하나가
       // 전혀 다른 낱말 속에 숨어 있을 때 거의 완전 일치로 둔갑하지 않는다.
-      q = T.flat.indexOf(parts.join('')) > -1
+      q = morphAlignedIndexOf(T, parts.join(''))
         ? Q.COMPOUND
         : Q.COMPOUND * Math.max(0, hit - 1) / parts.length;
     } else {
@@ -1192,7 +1271,28 @@ function tokenQuality(token, T) {
   const syn = SYNONYMS.get(t);
   if (syn) {
     for (const s of syn) {
-      if (T.set.has(s) || (s.length >= 3 && T.flat.indexOf(s) > -1)) return Q.SYNONYM;
+      if (T.set.has(s) || (s.length >= 3 && morphAlignedIndexOf(T, s))) return Q.SYNONYM;
+    }
+  }
+
+  /*
+   * 외래어 표기 변형 — "서큘레이터"/"써큘레이터"처럼 한두 자모만 다른,
+   * 사실상 같은 낱말.
+   * 2026-11-27: 위 SUBSTRING/COMPOUND 는 "조각이 제목 어딘가에 붙어
+   * 있는지"만 보는데, 형태소 경계 검사(morphAlignedIndexOf)를 켠 뒤로는
+   * "스테어케이스" 속 "케이스" 오매칭을 막는 대가로 이런 표기 차이도
+   * 같이 걸러진다 — 둘 다 "낱말 하나의 일부만 겹친다"는 점에서 글자
+   * 수준에서는 구별이 안 되기 때문이다. 하지만 이 케이스는 "부분 일치"가
+   * 아니라 "낱말 전체 대 낱말 전체"가 자모 한두 개만 다른 경우라, 쪼개서
+   * 찾지 않고 제목의 낱말 하나하나와 통째로 비교하면 구별된다 — "스테어
+   * 케이스"는 "케이스"와 길이·자모가 전혀 안 맞아서 안 걸린다.
+   */
+  if (t.length >= 4) {
+    for (const tok of T.tokens) {
+      if (Math.abs(tok.length - t.length) > 1) continue;
+      const jt = toJamo(t);
+      const jTok = toJamo(tok);
+      if (editDistance(jt, jTok) <= allowedDistance(jt.length)) return Q.STEM;
     }
   }
 
@@ -2039,5 +2139,7 @@ module.exports = {
   productFocus, coreTokens, ACCESSORY_TIER, productIntentContext, accessoryFocus, filterMainProductCandidates,
   toJamo, editDistance, fromKeyboardLayout, suggestKeywords, isValidSuggestion,
   mallNameOf, mallRank, MALL_ORDER, MALL_BONUS_MAX,
-  MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY
+  MIN_SCORE, KIND, COMMON_WORDS, MIN_SUGGEST_SIMILARITY,
+  // 형태소 분석기 의존성 주입 (api/search.js 전용 — 위 설명 참고)
+  setMorphProvider
 };
