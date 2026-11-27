@@ -1639,7 +1639,7 @@ function rankItems(keyword, items, opts = {}) {
       // 왜 내려갔는지 남긴다. 진단용이고 응답 형태를 바꾸지 않는다(undefined 면 직렬화에서 빠진다).
       it.relevanceWhy = [r.reason, f.reason, relation.reason, variant.reason, condition.reason, substitute.reason].filter(Boolean).join(',') || undefined;
     }
-    return { it, r, f };
+    return { it, r, f, titleInfo };
   });
 
   /*
@@ -1670,8 +1670,16 @@ function rankItems(keyword, items, opts = {}) {
    */
   const wordTokens = splitTokens(normalizeText(keyword))
     .filter(token => token.length >= 2 && /[a-z가-힣]/.test(token));
+  /*
+   * 2026-11-27: 여기서도 형태소 경계를 봐야 한다. 평범한 부분 문자열(canonicalKey
+   * .includes)만 보면 "케이스"가 "스테어케이스" 안에 우연히 끼어 있는 것도
+   * "낱말 연결고리가 있다"로 쳐서, scoreTitle 이 0으로 정확히 걸러낸 걸
+   * 여기서 도로 살려버린다 — minScore:0 으로 호출하는 api/search.js 에서 실제로
+   * 이 경로로 되살아났다(운영 확인). morphAlignedIndexOf 는 분석기가 없으면
+   * (주입 안 된 다른 호출부) 예전처럼 그냥 부분 문자열만 본다.
+   */
   const digitOnlyLink = s => s.r.score === 0 && wordTokens.length > 0
-    && !wordTokens.some(token => canonicalKey(s.it && s.it.title).includes(token));
+    && !wordTokens.some(token => morphAlignedIndexOf(s.titleInfo, token));
   let kept = scored.filter(s => s.r.score >= minScore && !digitOnlyLink(s));
   if (!kept.length) kept = scored.filter(s => s.r.score >= minScore);
   if (!kept.length) {
