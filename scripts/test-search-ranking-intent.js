@@ -299,6 +299,7 @@ for (const g of [...F.models, { query: '삼성', items: [
     './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
     './_ratelimit': { guard: () => true },
     './_search': S,
+    './_morph-analyzer': { async ensureReady() {}, analyzeFlatSync() { return null; }, isReady() { return false; } },
     './_physical-search-filter': require('../api/_physical-search-filter'),
     './_search-type-guard': require('../api/_search-type-guard'),
     // 2026-11-25: 기본 OFF(PRODUCT_KIND_CLASSIFY_ENABLED) — 꺼진 채로 돌아가는지만 확인한다.
@@ -360,6 +361,7 @@ console.log('\nPRODUCT_KIND_CLASSIFY_ENABLED=1: GPT 1회 분류 안전망 연결
       './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
       './_ratelimit': { guard: () => true },
       './_search': S,
+      './_morph-analyzer': { async ensureReady() {}, analyzeFlatSync() { return null; }, isReady() { return false; } },
       './_physical-search-filter': require('../api/_physical-search-filter'),
       './_search-type-guard': require('../api/_search-type-guard'),
       // 2026-11-25 배치 분리: 검색 경로는 이제 lookupProductKinds(읽기 전용)만 쓴다 —
@@ -433,6 +435,7 @@ console.log('\nSEARCH_CATEGORY_GUARD_ENABLED=1: 카테고리 안전망 연결 �
       './_http': { applyCors: () => true, cachePublic() {}, noStore() {}, fail(_res, err) { throw err; } },
       './_ratelimit': { guard: () => true },
       './_search': S,
+      './_morph-analyzer': { async ensureReady() {}, analyzeFlatSync() { return null; }, isReady() { return false; } },
       './_physical-search-filter': require('../api/_physical-search-filter'),
       './_search-type-guard': require('../api/_search-type-guard'),
       './_product-kind-store': require('../api/_product-kind-store'),

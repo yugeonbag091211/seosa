@@ -4,7 +4,15 @@ const { attachTrust } = require('./_trust');
 const { attachPriceChange } = require('./_facets');
 const { applyCors, cachePublic, noStore, fail } = require('./_http');
 const { guard } = require('./_ratelimit');
-const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords, productIntentContext } = require('./_search');
+const SEARCH = require('./_search');
+const { normalizeText, splitTokens, rankItems, sortByRelevance, suggestKeywords, productIntentContext } = SEARCH;
+/*
+ * 형태소 분석기(키위)는 이 파일에서만 불러온다. _search.js 자신은 이 모듈의
+ * 존재를 모르고, setMorphProvider 로 함수만 전달받는다 — 그래야 ai.js·
+ * cron.js 등 _search.js 를 쓰는 다른 함수들이 ~90MB 모델을 번들에 끌고
+ * 들어가지 않는다 (api/_morph-analyzer.js 상단 설명 참고).
+ */
+const MorphAnalyzer = require('./_morph-analyzer');
 const { filterPhysicalSearchResults } = require('./_physical-search-filter');
 const { filterByProductType } = require('./_search-type-guard');
 const { lookupProductKinds } = require('./_product-kind-store');
@@ -67,8 +75,27 @@ function encodeList(list) {
 const RESULT_LIMIT = 10;
 const ADPICK_RESULT_LIMIT = 20;
 
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
   if (!applyCors(req, res, 'public')) return;
+
+  /*
+   * 콜드스타트 방지용 "깨어있기" 핑.
+   *
+   * 왜 필요한가: 이 함수가 ~90MB 형태소 분석 모델을 들고 있다 보니 콜드스타트가
+   * (measured) 1.5~2초 걸린다. 트래픽이 뜸하면 Vercel 이 이 함수를 재웠다가,
+   * 다음 손님이 그 1.5~2초를 그대로 기다리게 된다. 그래서 몇 분마다 한 번씩
+   * (.github/workflows/search-keep-warm.yml) 이 토큰만 확인하고 바로 끝나는
+   * 요청을 보내 함수를 깨어있게 유지한다.
+   *
+   * 쿠팡 호출도 DB 쓰기도 레이트리밋도 거치지 않는다 — 진짜 검색과 절대
+   * 섞이지 않도록 맨 위에서 분기한다. 토큰이 설정 안 돼 있으면(로컬 등)
+   * 이 분기는 절대 타지 않는다.
+   */
+  const warmupToken = process.env.SEARCH_WARMUP_TOKEN;
+  if (warmupToken && req.query && req.query.__warmup === warmupToken) {
+    await MorphAnalyzer.ensureReady();
+    return res.status(200).json({ warm: MorphAnalyzer.isReady() });
+  }
 
   // 이 엔드포인트는 호출 한 번당 쿠팡 API를 호출하고 DB에도 쓴다.
   // 무제한으로 열어두면 외부 API 일일 쿼터와 DB 비용이 그대로 소진된다.
@@ -104,6 +131,14 @@ module.exports = async function handler(req, res) {
   if (!splitTokens(keyword).length) {
     return res.status(400).json({ error: '검색어를 다시 입력해 주세요' });
   }
+
+  /*
+   * 콜드스타트 때만 실제로 모델을 로딩한다(1~2초). 이미 떠 있는 인스턴스면
+   * 즉시 반환된다. 실패해도(모델 파일 문제 등) throw 하지 않으므로 검색
+   * 자체는 항상 진행되고, 다만 "형태소 경계 인식" 보강만 빠진다.
+   */
+  await MorphAnalyzer.ensureReady();
+  SEARCH.setMorphProvider(MorphAnalyzer.analyzeFlatSync);
 
   try {
     // 쿠팡은 _coupang.js를 거친다. 캐시가 신선하면 API 호출 0회로 끝난다.
@@ -374,4 +409,6 @@ module.exports = async function handler(req, res) {
     // 내부 오류 문구(Supabase·쿠팡 메시지)는 로그에만 남긴다.
     fail(res, e, { where: 'search', route: '/api/search', message: '검색 중 오류가 났어요. 잠시 후 다시 시도해 주세요.' });
   }
-};
+}
+
+module.exports = handler;

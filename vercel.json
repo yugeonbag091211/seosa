@@ -217,6 +217,10 @@
     },
     "api/ai.js": {
       "maxDuration": 40
+    },
+    "api/search.js": {
+      "maxDuration": 20,
+      "includeFiles": "api/kiwi-model/**"
     }
   },
   "regions": [

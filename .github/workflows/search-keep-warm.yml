@@ -1,0 +1,41 @@
+name: Search Function Keep-Warm
+
+# 왜 필요한가 (2026-11-27)
+#
+# api/search.js 는 한국어 형태소 분석기(키위) 모델(~90MB)을 번들에 들고
+# 있다. 콜드스타트 때 그 모델을 메모리에 올리는 데 1.5~2초가 걸린다
+# (scripts/test-morph-analyzer.js 로 실측). 트래픽이 뜸하면 Vercel 이
+# 이 함수의 컨테이너를 내렸다가, 다음 검색 요청이 그 1.5~2초를 그대로
+# 떠안는다.
+#
+# 그래서 몇 분마다 한 번씩 api/search.js 를 "깨어있기 전용" 토큰으로
+# 핑친다. 이 경로는 쿠팡 호출도 DB 쓰기도 레이트리밋도 거치지 않고
+# MorphAnalyzer.ensureReady() 만 부르고 바로 끝난다 (api/search.js 상단
+# 주석 참고) — 외부 API 쿼터도, 상품 DB 도 전혀 건드리지 않는다.
+#
+# GitHub Actions 예약 실행의 최소 간격은 5분이고, 공개 저장소라 Actions
+# 분도 과금되지 않는다(daily-prices.yml 과 같은 전제).
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping search function warmup route
+        env:
+          SEARCH_WARMUP_TOKEN: ${{ secrets.SEARCH_WARMUP_TOKEN }}
+        run: |
+          if [ -z "$SEARCH_WARMUP_TOKEN" ]; then
+            echo "SEARCH_WARMUP_TOKEN 시크릿이 없습니다 — 설정 전까지는 핑을 건너뜁니다."
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/warmup.json -w '%{http_code}' \
+            "https://seosa.ai.kr/api/search?__warmup=${SEARCH_WARMUP_TOKEN}")
+          cat /tmp/warmup.json
+          echo "HTTP $code"
+          [ "$code" = "200" ]
