@@ -1,0 +1,9 @@
+{"at":"2026-11-02T09:16:48.679Z","event":"start","until":50,"done":0,"pending":50,"gapMs":20000,"maxUsd":18}
+{"at":"2026-11-02T09:16:56.996Z","event":"neon","computeHours":6.61,"activeHours":26.29,"transferGB":0.406}
+{"at":"2026-11-02T09:17:03.685Z","event":"neon","computeHours":6.61,"activeHours":26.29,"transferGB":0.406}
+{"at":"2026-11-02T09:34:29.523Z","event":"end","until":50,"stopReason":"done","cost":{"usd":0.0234123,"inTok":209673,"outTok":4890,"n":47},"neon":{"at":"2026-11-02T09:34:29.519Z","computeHours":6.61,"activeHours":26.29,"transferGB":0.406}}
+{"at":"2026-11-02T09:38:05.214Z","event":"start","until":200,"done":50,"pending":150,"gapMs":20000,"maxUsd":18}
+{"at":"2026-11-02T09:38:15.999Z","event":"neon","computeHours":6.61,"activeHours":26.29,"transferGB":0.406}
+{"at":"2026-11-02T09:38:22.864Z","event":"neon","computeHours":6.61,"activeHours":26.29,"transferGB":0.406}
+{"at":"2026-11-02T10:08:38.483Z","event":"neon","computeHours":6.61,"activeHours":26.29,"transferGB":0.406}
+{"at":"2026-11-02T10:29:07.293Z","event":"end","until":200,"stopReason":"done","cost":{"usd":0.08855350000000002,"inTok":793370,"outTok":18433,"n":184},"neon":{"at":"2026-11-02T10:29:07.280Z","computeHours":6.91,"activeHours":27.51,"transferGB":0.464}}
