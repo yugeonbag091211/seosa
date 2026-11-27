@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>구매 타이밍 예측 · SEOSA 2.0</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg">
+<script src="/hot-theme.js"></script>
+<link rel="stylesheet" href="/v2/v2.css">
+<script defer src="/v2/v2.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 이동</a>
+<header><nav class="wrap" aria-label="주요 탐색">
+  <a class="logo" href="/" aria-label="SEOSA 홈으로">S</a>
+  <a href="/v2/index.html">SEOSA 2.0</a>
+  <a href="/v2/timing.html" aria-current="page">구매 타이밍</a>
+  <button id="theme" class="spacer" type="button">다크모드</button>
+</nav></header>
+<main class="wrap" id="main" tabindex="-1">
+  <p class="eyebrow">① PURCHASE TIMING</p>
+  <h1>지금 살까, 기다릴까</h1>
+  <p class="intro">이 상품이 과거에 지금과 비슷한 가격이었던 날들에 그 뒤로 실제 무슨 일이 있었는지를 세어 알려 드려요. 같은 방법을 이 상품의 과거 기록에 적용해 얼마나 맞았는지도 함께 보여 드려요.</p>
+
+  <form id="f" class="card" autocomplete="off">
+    <div class="row">
+      <div><label for="pid">상품 번호 (쿠팡 productId)</label><input id="pid" name="productId" inputmode="numeric" required placeholder="예: 6899919825"></div>
+      <div><label for="mall">판매처</label><select id="mall" name="mall"><option value="쿠팡">쿠팡</option><option value="ADPICK">ADPICK</option></select></div>
+      <div><label for="vid">옵션 번호 (선택)</label><input id="vid" name="vendorItemId" inputmode="numeric" placeholder="vendorItemId"></div>
+      <div><label for="h">예측 기간</label><select id="h" name="horizon"><option value="7">7일</option><option value="14" selected>14일</option><option value="30">30일</option></select></div>
+      <div class="shrink"><button class="primary" type="submit">분석하기</button></div>
+    </div>
+  </form>
+
+  <p id="status" role="status" class="muted"></p>
+  <div id="out" hidden>
+    <h2 id="title"></h2>
+    <p><span id="action" class="badge"></span> <span id="actionLabel"></span></p>
+    <div class="grid" id="kpis"></div>
+    <div id="chart"></div>
+    <h3>이렇게 판단했어요</h3>
+    <ul id="reasons" class="plain"></ul>
+    <div id="cautionsWrap" hidden><h3>주의할 점</h3><ul id="cautions" class="plain warn"></ul></div>
+    <h2>이 상품의 과거로 검증한 결과</h2>
+    <div class="grid" id="bt"></div>
+    <p id="btNote" class="muted"></p>
+    <details><summary>검증 방법</summary>
+      <p class="muted">과거의 각 날에 서서, 그날까지 이미 끝난 기록만으로 예측하고 그 뒤 실제 가격과 맞춰 봤어요. 브라이어 점수는 낮을수록 좋고, 기본값은 «평소 하락 빈도» 로만 맞춘 점수예요. «기다려라» 를 따랐을 때의 절약은 예측 중앙값을 목표가로 걸어 두고, 기간 안에 닿지 않으면 마지막 날 가격에 샀다고 보고 계산했어요. 그래서 손해(음수)도 그대로 나와요.</p>
+    </details>
+    <h3>불확실성: <span id="unc"></span></h3>
+    <ul id="uncNotes" class="plain muted"></ul>
+    <p><a id="wait" class="button" href="#">이 가격에 알림 받기 (구매 대기실)</a></p>
+  </div>
+  <div id="err" class="error" hidden></div>
+</main>
+<footer class="wrap">예측은 과거 기록에서 나온 확률이지 약속이 아니에요. 가격은 SEOSA가 확인한 시점의 기록이며, 실제 결제 금액은 판매처에서 확인해 주세요.</footer>
+<script>
+(function () {
+  'use strict';
+  var ACTION_CLASS = { BUY_NOW: 'down', WAIT: 'warn', NEUTRAL: '', INSUFFICIENT: '' };
+  var ACTION_NAME = { BUY_NOW: '지금 구매', WAIT: '기다리기', NEUTRAL: '중립', INSUFFICIENT: '판단 보류' };
+  var UNC = { low: '낮음', medium: '보통', high: '높음', unknown: '알 수 없음' };
+  function $(id) { return document.getElementById(id); }
+  function li(list) { return (list || []).map(function (t) { return '<li>' + V2.esc(t) + '</li>'; }).join(''); }
+  function kpi(v, label) { return '<div class="kpi"><b>' + V2.esc(v) + '</b><span>' + V2.esc(label) + '</span></div>'; }
+  function p100(x) { return x == null ? '—' : Math.round(x * 100) + '%'; }
+
+  function render(r) {
+    var V = window.V2;
+    $('title').textContent = (r.product && r.product.title) || ('상품 ' + r.product.productId);
+    var a = r.recommendation.action;
+    $('action').className = 'badge ' + (ACTION_CLASS[a] || '');
+    $('action').textContent = ACTION_NAME[a] || a;
+    $('actionLabel').textContent = r.recommendation.label;
+    var f = r.forecast, lv = r.level || {};
+    var k = kpi(V.won(f.currentPrice), '지금 가격 (' + (r.lastDate || '—') + ' 기록)');
+    k += kpi(lv.pctRank == null ? (lv.label || '—') : '하위 ' + lv.pctRank + '%', '최근 ' + (lv.windowDays || 90) + '일 중 위치 · ' + (lv.label || ''));
+    if (f.dropProbability) {
+      k += kpi(p100(f.dropProbability.pct5), f.horizonDays + '일 안 5% 이상 내려갈 확률');
+      k += kpi(p100(f.dropProbability.pct10), f.horizonDays + '일 안 10% 이상 내려갈 확률');
+      k += kpi(V.won(f.expectedMin.p50), f.horizonDays + '일 안 최저가 예상 (중앙값)');
+      k += kpi(V.won(f.expectedMin.p10) + ' ~ ' + V.won(f.expectedMin.p90), '최저가 예상 범위 (10~90%)');
+    }
+    k += kpi(r.observations + '일', '가격 기록 (' + (r.firstDate || '—') + ' 부터)');
+    $('kpis').innerHTML = k;
+    $('chart').innerHTML = V.chart(r.points, {
+      label: '가격 추이',
+      band: f.expectedMin ? { lo: f.expectedMin.p10, hi: f.expectedMin.p90 } : null
+    });
+    $('reasons').innerHTML = li(r.recommendation.reasons);
+    $('cautions').innerHTML = li(r.recommendation.cautions);
+    $('cautionsWrap').hidden = !(r.recommendation.cautions || []).length;
+    var b = r.backtest;
+    var bt = kpi(b.samples + '일', '검증한 과거 날');
+    bt += kpi(b.brier == null ? '—' : b.brier + ' / ' + b.brierBaseline, '브라이어 점수 (예측 / 기본값, 낮을수록 좋음)');
+    bt += kpi(b.bandCoverage == null ? '—' : p100(b.bandCoverage), '실제 최저가가 예측 범위 안에 든 비율');
+    bt += kpi(b.decisionHitRate == null ? '—' : p100(b.decisionHitRate) + ' (' + b.decisions + '회)', '권고 적중률');
+    bt += kpi(b.avgSavingPct == null ? '—' : b.avgSavingPct + '%', '«기다려라» 를 따랐을 때 평균 절약');
+    $('bt').innerHTML = bt;
+    $('btNote').textContent = b.note || '';
+    $('unc').textContent = UNC[r.uncertainty.level] || r.uncertainty.level;
+    $('uncNotes').innerHTML = li(r.uncertainty.notes);
+    var target = f.expectedMin ? f.expectedMin.p50 : '';
+    $('wait').href = '/v2/waitroom.html' + V.qs({ add: 1, productId: r.product.productId, mall: r.product.mall,
+      vendorItemId: r.product.vendorItemId, title: r.product.title || '', target: target });
+    $('out').hidden = false;
+  }
+
+  function run(e) {
+    if (e) e.preventDefault();
+    var V = window.V2;
+    var q = { productId: $('pid').value.trim(), mall: $('mall').value, vendorItemId: $('vid').value.trim(), horizon: $('h').value };
+    if (!/^\d+$/.test(q.productId)) { $('status').textContent = '상품 번호는 숫자로 입력해 주세요.'; return; }
+    $('status').textContent = '가격 기록을 분석하는 중…';
+    $('err').hidden = true; $('out').hidden = true;
+    V.api('/api/timing' + V.qs(q)).then(function (r) {
+      $('status').textContent = '';
+      if (!r.ok) { $('err').textContent = r.error; $('err').hidden = false; return; }
+      render(r);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var V = window.V2;
+    $('pid').value = V.param('productId');
+    if (V.param('mall')) $('mall').value = V.param('mall');
+    $('vid').value = V.param('vendorItemId');
+    if (V.param('horizon')) $('h').value = V.param('horizon');
+    $('f').addEventListener('submit', run);
+    if ($('pid').value) run();
+  });
+})();
+</script>
+</body>
+</html>
