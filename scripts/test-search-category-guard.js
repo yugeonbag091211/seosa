@@ -142,6 +142,49 @@ console.log('\n13. ★ 실사용 반례(2026-11-27, Codex 운영 확인) — "�
   check('아이라이너·유산균 2건은 제외됨', r.dropped.length === 2, r.dropped);
 }
 
+console.log('\n14. ★ 운영 실측(2026-11-28) — 분류기는 생활가전을 «생활용품» 으로 매긴다');
+{
+  // 운영 «가습기» 검색에서 본품(product_kind=main) 12건이 category=생활용품 이라 숨겨졌다.
+  // 기대가 전자기기여도 생활용품은 이웃 카테고리로 보고 남긴다. 완전히 다른 것(도서)은 여전히 거른다.
+  const items = [
+    { productId: '1', title: '홈플래닛 초음파 가습기 4L' },
+    { productId: '2', title: '[LG] LG전자 퓨리케어 자연기화 가습기 HW300BBB' },
+    { productId: '3', title: '[국내도서] 가습기 살균제 참사의 기록' }
+  ];
+  const categoryMap = new Map([['1', '생활용품'], ['2', '전자기기'], ['3', '도서문구']]);
+  const r = filterByCategory('가습기', items, categoryMap);
+  check('생활용품 가습기 본품이 남는다', r.kept.some(it => it.productId === '1'), r.kept);
+  check('도서는 여전히 제외', r.dropped.length === 1 && r.dropped[0].productId === '3', r.dropped);
+}
+{
+  const items = [
+    { productId: '1', title: '드럼세탁기세제 앨지 테크 베이킹소다 구연산 액체세제 2L' },
+    { productId: '2', title: '[해외] 60cm 버팔로 드럼 스킨 페인트 라틴' },
+    { productId: '3', title: 'LG전자 트롬 드럼 세탁기 21kg FX21WSQ' }
+  ];
+  const categoryMap = new Map([['1', '생활용품'], ['2', '완구취미'], ['3', '전자기기']]);
+  const r = filterByCategory('드럼 세탁기 세제', items, categoryMap);
+  check('«드럼 세탁기 세제» 에서 세제(생활용품)가 남는다', r.kept.some(it => it.productId === '1'), r.kept);
+  check('악기 드럼 스킨(완구취미)은 여전히 제외', r.dropped.length === 1 && r.dropped[0].productId === '2', r.dropped);
+}
+{
+  const items = [
+    { productId: '1', title: '요넥스 배드민턴 가방 3단 라켓백' },
+    { productId: '2', title: '요넥스 배드민턴 백팩 가방 BA26' },
+    { productId: '3', title: '[국내도서] 배드민턴 교본' }
+  ];
+  const categoryMap = new Map([['1', '스포츠레저'], ['2', '패션잡화'], ['3', '도서문구']]);
+  const r = filterByCategory('배드민턴 가방', items, categoryMap);
+  check('«배드민턴 가방» 의 스포츠레저 가방을 거르지 않는다', r.kept.some(it => it.productId === '1'), r);
+  check('도서는 여전히 제외', r.dropped.length === 1 && r.dropped[0].productId === '3', r.dropped);
+}
+
+console.log('\n15. 뜻이 갈리는 낱말은 사전의 단독 키가 아니다 (운영 일치율 0~22%)');
+check('"쿠션" 단독 키 없음 (쿠션 파운데이션 / 방석·목쿠션)', !QUERY_CATEGORY_HINTS.has('쿠션'));
+check('"트렁크" 단독 키 없음 (여행 트렁크 / 차량 트렁크 정리함)', !QUERY_CATEGORY_HINTS.has('트렁크'));
+check('"신발" 단독 키 없음 (신발 정리대·방향제)', !QUERY_CATEGORY_HINTS.has('신발'));
+check('"화장품" 단독 키 없음 (화장품 파우치·정리대)', !QUERY_CATEGORY_HINTS.has('화장품'));
+
 const passed = checks.filter(c => c.pass).length;
 const failed = checks.length - passed;
 console.log(`\n${'='.repeat(60)}\n검색 카테고리 안전망 테스트: ${passed} PASS / ${failed} FAIL\n${'='.repeat(60)}`);
