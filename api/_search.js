@@ -793,8 +793,12 @@ function substituteRelation(query, title) {
 const CONDITION_PATTERNS = [
   ['rental', /렌탈|대여|\brental\b|\blease\b|월\s*구독/i],
   // "리퍼나 중고 말고" · "리퍼는 빼고" — 조사가 붙은 리퍼도 읽는다(리퍼블릭 같은 낱말은 여전히 아니다).
-  ['refurbished', /리퍼비시|리퍼\s*(?:제품|상품|폰|스마트폰)|리퍼(?=(?:나|이나|랑|와|는|도|를|가|만)?(?![가-힣]))|\brefurbished\b|\brenewed\b/i],
-  ['used', /중고(?!\s*등\s*학생)|\bused\b(?!\s+(?:for|to|by|with|as|in|on)\b)|pre[ -]?owned|second[ -]?hand/i],
+  // 2026-11-28: 앞 글자도 본다 — «슬리퍼·드리퍼·클리퍼·그리퍼·스트리퍼» 의 리퍼는 상태가 아니다
+  // (운영 products 8건이 리퍼로 읽혔다). «아이패드리퍼» 처럼 '패드' 뒤에 붙은 리퍼는 그대로 리퍼다.
+  ['refurbished', /(?<![슬클그트])(?<!(?<!패)드)리퍼(?:비시|\s*(?:제품|상품|폰|스마트폰)|(?=(?:나|이나|랑|와|는|도|를|가|만)?(?![가-힣])))|\brefurbished\b|\brenewed\b/i],
+  // 2026-11-28: «중고생·중고등(수학)·중고딩·초중고» 는 중고가 아니다. 예전에는 «중고등학생» 만 예외라
+  // 검색어 «중고생 백팩» 이 «중고 원함» 으로 읽히고 stripConditionTerms 가 «생 백팩» 만 남겼다.
+  ['used', /(?<!초)중고(?!\s*등\s*학생|등|생|딩)|\bused\b(?!\s+(?:for|to|by|with|as|in|on)\b)|pre[ -]?owned|second[ -]?hand/i],
   ['display', /전시\s*상품|전시품|진열\s*상품|\bdisplay\s*unit\b/i],
   ['opened', /단순\s*개봉|박스\s*개봉|개봉\s*상품|open[ -]?box|opened\s*(?:box|item)/i],
   ['sealed', /미개봉|미개봉품|\bsealed\b|\bbrand\s*new\b/i],

@@ -1128,5 +1128,37 @@ check(score('토너', '아이소이 불가리안 로즈 스킨 토너 130ml') ==
   const keySkin = S.scoreTitle(S.analyzeQuery('LG전자 LG그램 14ZD95U'), 'LG전자 2026 그램14 14ZD95U-GX5WK 키보드키커버 키스킨');
   check(/accessory/.test(keySkin.reason), '진짜 부속 «키스킨» 은 여전히 부속 감점을 받는다', keySkin);
 }
+[
+  ['스마일 실내슬리퍼 푹신한 거실화 쿠션 실내화', ''],
+  ['HICKIES 여름 클로그 스포티 방수 샌들 키높이 밴드 슬리퍼 LS910', ''],
+  ['[HEIM] 로렌조 스텐 필터 겸 드리퍼 (골드)', ''],
+  ['칼리타 커피드리퍼 102', ''],
+  ['잔스포츠 중고생 백팩 학생가방 블랙', ''],
+  ['쎈 중고등 수학 문제집 2026', ''],
+  ['초중고 학습 플래너 스터디 다이어리', ''],
+  ['[리퍼] LG전자 그램14 14Z90Q 12세대 i5', 'refurbished'],
+  ['애플 맥북 에어 M4 RAM 16GB 13.6인치 리퍼 노트북', 'refurbished'],
+  ['공식리퍼 아이폰 15 128GB', 'refurbished'],
+  ['애플 아이패드리퍼 9세대 64GB', 'refurbished'],
+  ['리퍼비시 새상품급 삼성 갤럭시북 플렉스', 'refurbished'],
+  ['[중고]NVIDIA 지포스 GTX1080Ti 11G 그래픽카드', 'used'],
+  ['중고 맥북Pro A2338 2020 M1 16GB', 'used']
+].forEach(([title, want]) => {
+  const got = S.conditionState(title);
+  check(got === want, `상태 판정: «${title.slice(0, 26)}» → ${want || '표기 없음'}`, got);
+});
+check(S.conditionIntent('중고생 백팩').wanted === '', '«중고생 백팩» 은 중고를 원하는 검색이 아니다', S.conditionIntent('중고생 백팩'));
+{
+  const i = S.conditionIntent('리퍼나 중고 말고 아이폰');
+  check(i.excluded.has('refurbished') && i.excluded.has('used'), '«리퍼나 중고 말고» 는 여전히 둘 다 제외로 읽는다', [...i.excluded]);
+}
+{
+  const r = S.rankItems('중고생 백팩', [
+    { productId: '1', title: '잔스포츠 중고생 백팩 학생가방 블랙', lprice: 30000 },
+    { productId: '2', title: '[중고] 노스페이스 백팩 빅샷', lprice: 20000 }
+  ], { minScore: 0 });
+  const rel = Object.fromEntries(r.items.map(x => [x.productId, x.relevance]));
+  check(rel['1'] === 1 && rel['2'] < rel['1'], '«중고생 백팩» 검색에서 진짜 중고 상품이 목표 상품과 동점이 되지 않는다', rel);
+}
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);
