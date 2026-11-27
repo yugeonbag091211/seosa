@@ -75,7 +75,36 @@ async function main() {
     score('그래픽카드', 'RTX 4070 그래픽카드 12GB')
   );
 
-  section('③ 기존 254개 회귀 테스트가 분석기를 꽂은 상태에서도 그대로 통과하는지');
+  section('③ api/search.js 가 실제로 쓰는 경로(rankItems, minScore:0)로도 재확인');
+  /*
+   * 2026-11-27: ①은 scoreTitle 을 직접 불렀는데, 실제 운영 배포에서 "케이스"
+   * 검색에 "스테어케이스"가 그대로 남아 있었다 — scoreTitle 은 0점을 정확히
+   * 냈지만, api/search.js 가 부르는 rankItems(keyword, items, {minScore:0})
+   * 안의 digitOnlyLink 세이프넷이 "그래도 글자는 겹치니(canonicalKey 부분
+   * 문자열) 봐주자"고 도로 살려줬기 때문 — ①의 score() 헬퍼는 이 경로를
+   * 아예 거치지 않아서 로컬 테스트로는 못 잡았다. 이제부터는 반드시 이
+   * 경로로도 같이 확인한다.
+   */
+  (() => {
+    const items = [
+      { title: '아이폰15 프로 맥스 실리콘 케이스 투명', productId: 'real-case' },
+      { title: '그랜드 스테어케이스 에스칼란테 자율 주행 오디오 투어', productId: 'stair-case' },
+    ];
+    const { items: kept } = S.rankItems('케이스', items, { minScore: 0 });
+    const ids = kept.map(it => it.productId);
+    check(
+      ids.includes('real-case'),
+      'rankItems(minScore:0) — 진짜 케이스 상품은 그대로 남음',
+      ids
+    );
+    check(
+      !ids.includes('stair-case'),
+      'rankItems(minScore:0) — "스테어케이스"는 digitOnlyLink 세이프넷을 통해서도 되살아나지 않음',
+      ids
+    );
+  })();
+
+  section('④ 기존 254개 회귀 테스트가 분석기를 꽂은 상태에서도 그대로 통과하는지');
   // 전체를 여기서 다시 돌리진 않되(별도 스크립트가 책임), 대표적으로
   // 분석기 도입 전 reverted 했던 두 핵심 케이스만 재확인한다.
   check(
