@@ -37,6 +37,11 @@
  * 않는다 — 검색어 전체(정규화된 토큰 하나)가 그대로 일치할 때만 쓴다.
  * api/_search.js 의 SYNONYM_GROUPS 와 같은 정신으로, 새 충돌 사례가
  * 나올 때마다 여기 추가한다.
+ *
+ * 2026-11-28: '쿠션'·'트렁크'·'신발'·'화장품' 을 뺐다. 운영 products 에서 이 낱말이 든
+ * 검색어의 상품이 사전 카테고리와 맞는 비율이 22%·0%·22%·6% 였다 — «헤드레스트 쿠션»(생활용품),
+ * «트렁크 정리함», «신발 방향제», «화장품 파우치» 처럼 수식어로 더 많이 쓰여, 켜 두면 사용자가
+ * 찾는 바로 그 상품을 지운다.
  */
 const QUERY_CATEGORY_HINTS = new Map(Object.entries({
   // 전자기기
@@ -56,11 +61,11 @@ const QUERY_CATEGORY_HINTS = new Map(Object.entries({
   '원피스': '패션의류', '스커트': '패션의류', '패딩': '패션의류', '가디건': '패션의류', '조끼': '패션의류',
   // 패션잡화
   '가방': '패션잡화', '백팩': '패션잡화', '크로스백': '패션잡화', '지갑': '패션잡화',
-  '벨트': '패션잡화', '모자': '패션잡화', '신발': '패션잡화', '운동화': '패션잡화', '구두': '패션잡화',
-  '캐리어': '패션잡화', '여행가방': '패션잡화', '트렁크': '패션잡화',
+  '벨트': '패션잡화', '모자': '패션잡화', '운동화': '패션잡화', '구두': '패션잡화',
+  '캐리어': '패션잡화', '여행가방': '패션잡화',
   // 뷰티
-  '화장품': '뷰티', '스킨': '뷰티', '로션': '뷰티', '선크림': '뷰티', '향수': '뷰티', '퍼퓸': '뷰티',
-  '립스틱': '뷰티', '쿠션': '뷰티', '파운데이션': '뷰티',
+  '스킨': '뷰티', '로션': '뷰티', '선크림': '뷰티', '향수': '뷰티', '퍼퓸': '뷰티',
+  '립스틱': '뷰티', '파운데이션': '뷰티',
   // 식품
   '원두': '식품', '라면': '식품', '과자': '식품', '영양제': '식품', '비타민': '식품',
   // 가구인테리어
@@ -72,6 +77,34 @@ const QUERY_CATEGORY_HINTS = new Map(Object.entries({
   // 도서문구
   '다이어리': '도서문구', '볼펜': '도서문구'
 }));
+
+/*
+ * 경계가 흐린 «이웃» 카테고리는 다른 물건으로 보지 않는다 (2026-11-28 운영 실측).
+ *
+ * 분류기(api/_category-classifier.js)는 생활가전을 대부분 '생활용품' 으로 매긴다 — 운영 쿠팡
+ * 상품 기준 가습기 41/42, 선풍기 19/20, 서큘레이터 18/21 이 생활용품이다(같은 신일 서큘레이터도
+ * 모델에 따라 생활용품·전자기기로 갈린다). 사전은 이들을 '전자기기' 로 기대하므로, 이웃을 허용하지
+ * 않으면 진짜 본품이 걸러진다 — 운영 «가습기» 검색에서 product_kind=main 인 가습기 12건이
+ * category=생활용품 이라 숨겨졌다. 쿠팡 상품(고정 ID) 기준으로 가드가 숨기던 463건이 이 표로 75건이 된다.
+ *
+ * 이 가드가 거를 대상은 «완전히 다른» 물건이다(그래픽카드 검색의 맨투맨, 서큘레이터 검색의
+ * 아이라이너). 이웃끼리는 분류기 자신도 흔들리므로 여기서는 같은 쪽으로 본다.
+ */
+const COMPATIBLE_CATEGORIES = new Map(Object.entries({
+  '전자기기': ['생활용품'],
+  '생활용품': ['전자기기', '가구인테리어', '뷰티'],
+  '가구인테리어': ['생활용품'],
+  '패션의류': ['패션잡화', '스포츠레저'],
+  '패션잡화': ['패션의류', '스포츠레저'],
+  '스포츠레저': ['패션의류', '패션잡화'],
+  '뷰티': ['생활용품', '식품'],
+  '식품': ['뷰티']
+}).map(([k, v]) => [k, new Set(v)]));
+
+function compatibleCategory(expected, actual) {
+  const near = COMPATIBLE_CATEGORIES.get(expected);
+  return !!(near && near.has(actual));
+}
 
 /**
  * 검색어에서 "기대 카테고리"를 뽑는다. 여러 토큰이 서로 다른 카테고리를
@@ -127,7 +160,8 @@ function filterByCategory(keyword, items, categoryMap, opts = {}) {
     const productCategory = cats.get(String(it && it.productId));
     // 상품 카테고리를 모르거나(아직 배치가 못 봄) GPT가 애매하다고 했으면
     // (unknown) 그대로 둔다 — 안전 기본값.
-    const mismatched = productCategory && productCategory !== 'unknown' && productCategory !== queryCategory;
+    const mismatched = productCategory && productCategory !== 'unknown' && productCategory !== queryCategory
+      && !compatibleCategory(queryCategory, productCategory);
     (mismatched ? dropped : kept).push(it);
   });
 
@@ -150,4 +184,4 @@ function filterByCategory(keyword, items, categoryMap, opts = {}) {
   return { kept, dropped, applied: true, reason: 'filtered', queryCategory };
 }
 
-module.exports = { filterByCategory, expectedCategory, QUERY_CATEGORY_HINTS };
+module.exports = { filterByCategory, expectedCategory, QUERY_CATEGORY_HINTS, COMPATIBLE_CATEGORIES };
