@@ -1112,5 +1112,21 @@ check(caseOnBrand === 0,
 check(caseOnCover === 0.75,
   '진짜 "실리콘 커버"(케이스의 동의어)는 그대로 동의어로 인정된다 — 낱말 그대로 있을 땐 길이 상관없음', caseOnCover);
 
+/*
+ * 2026-11-28 감사 — 같은 «글자 경계» 버그가 부속 감점(ACCESSORY_WORDS)과
+ * 상태 판정(CONDITION_PATTERNS)에도 따로 숨어 있었다. 아래 제목은 운영 products
+ * (2026-11-26~27 수집)에서 그대로 가져왔다.
+ */
+section('⑧ 부속 감점·상태 판정의 글자 경계 (2026-11-28 감사)');
+check(score('마우스', 'AMSKY 무선 버티컬 마우스 인체공학 블루투스 무소음 손목보호 사무용 VertiLift Wireless') === 1,
+  '«손목보호» 기능 설명 때문에 본품 마우스가 부속 감점(0.8)을 받지 않는다');
+check(score('선크림', '라운드랩 자작나무 수분 선크림 피부보호 50ml') === 1,
+  '«피부보호» 가 든 선크림 본품은 감점 없음');
+check(score('토너', '아이소이 불가리안 로즈 스킨 토너 130ml') === 1,
+  '«스킨» 이 든 화장품 토너 본품은 감점 없음');
+{
+  const keySkin = S.scoreTitle(S.analyzeQuery('LG전자 LG그램 14ZD95U'), 'LG전자 2026 그램14 14ZD95U-GX5WK 키보드키커버 키스킨');
+  check(/accessory/.test(keySkin.reason), '진짜 부속 «키스킨» 은 여전히 부속 감점을 받는다', keySkin);
+}
 console.log(`\n결과: ${pass} PASS / ${fail} FAIL\n`);
 process.exit(fail ? 1 : 0);
