@@ -121,6 +121,27 @@ console.log('\n12. 사전 자체는 애매한 한 글자짜리 키를 담지 않
   check('"케이스" 단독 키 없음 (전자기기/잡화 둘 다 쓰임)', !QUERY_CATEGORY_HINTS.has('케이스'));
 }
 
+console.log('\n13. ★ 실사용 반례(2026-11-27, Codex 운영 확인) — "서큘레이터"도 전자기기로 걸러진다');
+{
+  // "서큘레이터 S11 슬림핏" 검색에 아이라이너·다이어트 보조제가 섞여 나왔다.
+  // 원인은 "서큘레이터"가 QUERY_CATEGORY_HINTS 에 아예 없어서 가드가
+  // "모른다"고 보고 적용 안 된 것 — 다른 전자기기 키워드들처럼 사전에
+  // 추가해서 막는다.
+  check('"서큘레이터" → 전자기기', expectedCategory(analyzeQuery('서큘레이터')) === '전자기기');
+  check('"선풍기" → 전자기기', expectedCategory(analyzeQuery('선풍기')) === '전자기기');
+
+  const items = [
+    { productId: '1', title: '신일 서큘레이터 S11 슬림핏 무선 선풍기' },
+    { productId: '2', title: '오띠 슬림핏 드로잉 펜슬 아이라이너 (블랙) 0.12g' },
+    { productId: '3', title: '데일리 슬림핏 다이어트&유산균 3.5g x 30포' }
+  ];
+  const categoryMap = new Map([['1', '전자기기'], ['2', '뷰티'], ['3', '식품']]);
+  const r = filterByCategory('서큘레이터 S11 슬림핏', items, categoryMap);
+  check('적용됨(applied)', r.applied === true, r);
+  check('진짜 서큘레이터만 남음', r.kept.length === 1 && r.kept[0].productId === '1', r.kept);
+  check('아이라이너·유산균 2건은 제외됨', r.dropped.length === 2, r.dropped);
+}
+
 const passed = checks.filter(c => c.pass).length;
 const failed = checks.length - passed;
 console.log(`\n${'='.repeat(60)}\n검색 카테고리 안전망 테스트: ${passed} PASS / ${failed} FAIL\n${'='.repeat(60)}`);
