@@ -1189,6 +1189,58 @@ function morphAlignedIndexOf(T, needle) {
   return false;
 }
 
+/*
+ * 2026-11-28: 형태소 경계 검사 재설계 — "거부" 대신 "감점".
+ *
+ * #278(경계 검사 도입) 이후 Codex 가 운영 제목 6,284건을 Kiwi로 직접 분석해
+ * 보니, Kiwi가 "롤방충망"·"볶음귀리"·"곤약젤리"처럼 붙여 쓴 복합명사를
+ * 자기 사전에 없다는 이유로 하나의 미등록 형태소로 통째로 묶어버리는 경우가
+ * 223건 있었다. 그러면 "방충망"·"귀리" 검색이 "경계 위반"으로 완전히
+ * 거부돼 — 진짜 자기 상품인데도 결과에서 통째로 빠진다(3,000건 재생 중
+ * 56건 제외, 그중 32건은 실제 상품 손실로 확인됨).
+ *
+ * 근본 문제: Kiwi의 품사 태그만으로는 "스테어케이스"(사실상 하나의
+ * 외래어 낱말)와 "롤방충망"(롤 + 방충망, 진짜 두 낱말인데 사전에 없어서
+ * 못 쪼갠 것)을 구별할 수 없다 — 둘 다 같은 NNG/NNP 태그를 받는다. 즉
+ * "경계 위반"이라는 신호 자체가 100% 믿을 수 없다 — 맞을 때도, 틀릴 때도
+ * 있다.
+ *
+ * 그래서 경계 위반을 "존재하지 않음(0점)"이 아니라 "낮은 신뢰도"로
+ * 다룬다 — morphMatchConfidence 가 1(경계 일치) / MORPH_BOUNDARY_DEMOTE
+ * (글자는 있는데 경계가 안 맞음) / 0(아예 없음) 세 단계를 반환하고,
+ * tokenQuality 의 SUBSTRING·STEM·COMPOUND·SYNONYM 네 단계가 이 값을
+ * 곱해서 점수를 깎는다. 완전히 숨기지는 않되(= "롤방충망"이 "방충망"
+ * 검색 결과에 다시 나타난다), 진짜 일치보다는 한참 낮게 깔린다(=
+ * "스테어케이스"가 "케이스" 검색 최상단에 뜨는 일은 없다). 카테고리
+ * 안전망(api/_search-category-guard.js)이 독립적인 두 번째 방어선으로
+ * 남아 있어서, "스테어케이스"처럼 카테고리 자체가 다른 엉뚱한 상품은
+ * 거기서 또 한 번 걸러진다.
+ *
+ * digitOnlyLink(rankItems)는 그대로 둔다 — 감점된 토큰은 이제 0점이
+ * 아니라 낮은 양수 점수를 받으므로 애초에 digitOnlyLink 의 "0점짜리
+ * 안전망" 대상에서 벗어난다.
+ */
+const MORPH_BOUNDARY_DEMOTE = 0.2;
+
+function morphMatchConfidence(T, needle) {
+  if (!needle) return 0;
+  if (!morphProvider) return T.flat.indexOf(needle) > -1 ? 1 : 0;
+  const morph = morphProvider(T.normalized);
+  if (!morph) return T.flat.indexOf(needle) > -1 ? 1 : 0;
+  let idx = T.flat.indexOf(needle);
+  let violated = false;
+  while (idx > -1) {
+    const normStart = T.flatToNorm[idx];
+    const normEnd = T.flatToNorm[idx + needle.length - 1] + 1;
+    if (normStart == null || normEnd - normStart !== needle.length || morphBoundaryOk(morph, normStart, needle.length)) {
+      return 1;
+    }
+    violated = true;
+    idx = T.flat.indexOf(needle, idx + 1);
+  }
+  return violated ? MORPH_BOUNDARY_DEMOTE : 0;
+}
+
 function analyzeTitle(title) {
   const raw = String(title || '');
   const normalized = normalizeText(title);
@@ -1235,10 +1287,18 @@ function tokenQuality(token, T) {
   }
 
   // 붙여쓰기 차이 — 공백을 지운 제목에서 찾는다 ("무선 이어폰" → "무선이어폰")
-  if (t.length >= 2 && morphAlignedIndexOf(T, t)) return Q.SUBSTRING;
+  // 경계 위반(글자는 있는데 Kiwi가 다른 낱말과 한 덩어리로 묶음)이면 0이 아니라
+  // 감점된 점수를 준다 — 위 morphMatchConfidence 주석 참고.
+  if (t.length >= 2) {
+    const substringConf = morphMatchConfidence(T, t);
+    if (substringConf > 0) return Q.SUBSTRING * substringConf;
+  }
 
   // 용도 접미사만 다른 경우 ("여행용" ↔ "여행")
-  if (token.stem && morphAlignedIndexOf(T, token.stem)) return Q.STEM;
+  if (token.stem) {
+    const stemConf = morphMatchConfidence(T, token.stem);
+    if (stemConf > 0) return Q.STEM * stemConf;
+  }
 
   /*
    * 합성어 분해 — 조각이 모두 있으면 거의 일치, 일부만 있으면 그 비율만큼.
@@ -1250,7 +1310,10 @@ function tokenQuality(token, T) {
    */
   let best = 0;
   token.parts.forEach(parts => {
-    const hit = parts.filter(p => morphAlignedIndexOf(T, p)).length;
+    // 조각마다 경계 신뢰도(0~1)를 따로 구한다 — 전부 있어도(hit===parts.length)
+    // 경계가 하나라도 위반이면 밑에서 이어붙인 확인으로 다시 깎인다.
+    const partConfs = parts.map(p => morphMatchConfidence(T, p));
+    const hit = partConfs.filter(c => c > 0).length;
     if (!hit) return;
     let q;
     if (hit === parts.length) {
@@ -1258,8 +1321,9 @@ function tokenQuality(token, T) {
       // 않으면, 조각 하나가 우연히 걸린 것과 똑같이 — "조각 하나는 빠진 것"
       // 만큼만 쳐준다. 그래야 "트럼프카드"·"워치독"처럼 흔한 조각 하나가
       // 전혀 다른 낱말 속에 숨어 있을 때 거의 완전 일치로 둔갑하지 않는다.
-      q = morphAlignedIndexOf(T, parts.join(''))
-        ? Q.COMPOUND
+      const joinedConf = morphMatchConfidence(T, parts.join(''));
+      q = joinedConf > 0
+        ? Q.COMPOUND * joinedConf
         : Q.COMPOUND * Math.max(0, hit - 1) / parts.length;
     } else {
       q = Q.COMPOUND * (hit / parts.length);
@@ -1280,7 +1344,11 @@ function tokenQuality(token, T) {
   const syn = SYNONYMS.get(t);
   if (syn) {
     for (const s of syn) {
-      if (T.set.has(s) || (s.length >= 3 && morphAlignedIndexOf(T, s))) return Q.SYNONYM;
+      if (T.set.has(s)) return Q.SYNONYM;
+      if (s.length >= 3) {
+        const synConf = morphMatchConfidence(T, s);
+        if (synConf > 0) return Q.SYNONYM * synConf;
+      }
     }
   }
 
