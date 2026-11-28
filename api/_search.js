@@ -678,13 +678,41 @@ function accessoryTermAt(word, tokens, at) {
   if (word === '토너' || word === '잉크') {
     return new RegExp(`^(?:정품|재생|호환|교체용)?${word}(?:카트리지|세트|팩)?$`).test(tokens[at]);
   }
+  /*
+   * 2026-11-28: Codex 운영 재생 118건 감사 — "스탠드형" 반례.
+   * "스탠드" 가 ACCESSORY_TIER 에 있어서 termInToken 이 부분 문자열로
+   * 걸리는데, "스탠드형 OO"(스탠드형 무선청소기·스탠드형 선풍기)는 제품의
+   * «형태»를 말하는 것이지 스탠드라는 부속이 아니다. "스탠드형" 토큰
+   * 하나만 정확히 제외한다 — 바로 뒤에 진짜 "스탠드" 토큰이 또 있으면
+   * (드물게 "스탠드형 스탠드 거치대") 그건 그대로 걸린다. 이 자리에서
+   * 막아야 아래 모든 호출부(검색어 쪽 부속 판정·soldObject 등)에 똑같이
+   * 적용된다 — "스탠드형" 은 어느 맥락에서도 그 자체로 «스탠드» 가 아니다.
+   */
+  if (word === '스탠드' && tokens[at] === '스탠드형') return false;
   return termInToken(word, tokens[at]) && (word !== 'ear'
     || /^(tips?|pads?)$/.test(tokens[at + 1] || ''));
 }
 
 function accessoryTerms(normalized, tokens = splitTokens(normalized)) {
+  /*
+   * 2026-11-28: Codex 운영 재생 118건 감사 — "필터 증정"·"케이스 포함"
+   * 반례. 이 함수(=_aiidentity.js 의 «본품이 아닌 부속» MISMATCH 판정에
+   * 쓰인다)는 soldObject 와 달리 "포함·증정 류가 붙으면 딸려오는 구성일
+   * 뿐" 이라는 문맥을 전혀 안 보고 낱말만 봤다 — "위닉스 올인원 가습기
+   * +사은품 필터 증정" 같은 진짜 가습기가 "필터" 부속으로 잘못 찍혔다.
+   *
+   * soldObject(1049줄)가 이미 쓰는 것과 같은 안전장치를 그대로 가져온다:
+   * 기기 범주어(DEVICE_NOUNS)가 제목에 있을 때만 "포함·증정" 뒤의 부속
+   * 낱말을 면제한다. 기기 범주어가 없으면("에어팟 프로 2 실리콘 케이스
+   * 포함 카라비너 세트" — "에어팟" 은 브랜드라 DEVICE_NOUNS 에 없다)
+   * 면제하지 않는다 — 그건 부속끼리의 묶음(케이스+카라비너 세트)이라
+   * 그대로 부속으로 남아야 한다. scripts/test-search.js 의 "AI 본품
+   * 후보에서 부속 세트를 뺀다" 테스트가 이 경계를 고정한다.
+   */
+  const hasDeviceNoun = tokens.some(tok => !!deviceTermIn(tok));
   return [...ACCESSORY_TIER, ...COMPONENT_TIER, ['토너', 0.55], ['잉크', 0.55], ['기어', 0.45]]
-    .filter(([word]) => tokens.some((token, i) => accessoryTermAt(word, tokens, i)))
+    .filter(([word]) => tokens.some((token, i) => accessoryTermAt(word, tokens, i)
+      && !(hasDeviceNoun && BUNDLE_MARK_RE.test(tokens[i + 1] || ''))))
     .map(([word]) => word);
 }
 
