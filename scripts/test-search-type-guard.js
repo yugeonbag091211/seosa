@@ -208,6 +208,47 @@ AUDIT.forEach(([q, main, noise]) => {
 });
 check(lost === 0, `감사 표본 ${AUDIT.length}개 품목에서 본품 손실 0건`, { lost });
 
+/* ================================================================== *
+ *  §8  부속 가드 의미규칙 보강 (2026-11-28) — 스탠드형 / +사은품
+ *
+ *  Codex 가 실제 운영 데이터 118건을 재생해 찾아낸 3건의 본품 오탐:
+ *
+ *   "스탠드형 무선청소기" / "스탠드형 선풍기" — termInToken('스탠드', …)
+ *    이 «스탠드형» 토큰까지 부분일치로 잡아 거치대 취급을 해버렸다.
+ *    «스탠드형»은 형태 설명이고 부속 «스탠드»와 다르다.
+ *
+ *   "+사은품 필터 증정" — accessoryTerms() 는 soldObject() 와 달리
+ *    기기 명사(DEVICE_NOUNS)·동봉 표지(BUNDLE_MARK_RE) 문맥을 보지 않아
+ *    사은품으로 딸려온 필터 하나 때문에 가습기 본품 자체가 부속 판정났다.
+ *
+ *  동시에 같은 수정의 1차 시도에서 터진 회귀도 함께 고정한다:
+ *  «에어팟 케이스 포함 카라비너 세트» 처럼 기기 명사가 없는 순수 부속
+ *  묶음은 "포함"이 있어도 여전히 부속으로 빠져야 한다 (soldObject 의
+ *  기존 주석: «포함»이 붙어도 기기가 없으면 부속끼리의 묶음이다).
+ * ================================================================== */
+section('8. 부속 가드 의미규칙 — 스탠드형 / +사은품 (2026-11-28)');
+
+const standVac = keptTitles(filterByProductType('청소기',
+  items(['다이슨 V15 디텍트 슬림 플러피 스탠드형 무선청소기 세트', '삼성 비스포크 제트 청소기 거치대'])));
+check(standVac.some(t => /스탠드형 무선청소기/.test(t)), '「스탠드형 무선청소기」는 본품으로 남는다', standVac);
+check(!standVac.some(t => /거치대/.test(t)), '「청소기 거치대」는 여전히 부속으로 빠진다', standVac);
+
+const standFan = keptTitles(filterByProductType('선풍기',
+  items(['신일 20인치 스탠드형 리모컨 선풍기 SIF-A200', '선풍기 스탠드 거치대 범용'])));
+check(standFan.some(t => /스탠드형 리모컨 선풍기/.test(t)), '「스탠드형 선풍기」는 본품으로 남는다', standFan);
+check(!standFan.some(t => /거치대/.test(t)), '「선풍기 스탠드 거치대」는 여전히 부속으로 빠진다', standFan);
+
+const humid = keptTitles(filterByProductType('가습기',
+  items(['위닉스 올인원 가습기 +사은품 필터 증정', '가습기 리필 패드 10매'])));
+check(humid.some(t => /올인원 가습기/.test(t)), '「가습기 +사은품 필터」는 본품으로 남는다', humid);
+check(!humid.some(t => /리필 패드/.test(t)), '「가습기 리필 패드」는 여전히 부속으로 빠진다', humid);
+
+const airpods = keptTitles(filterByProductType('에어팟',
+  items(['애플 에어팟 프로 2', '에어팟 프로 2 실리콘 케이스 포함 카라비너 세트'])));
+check(airpods.some(t => /^애플 에어팟 프로 2$/.test(t)), '「에어팟 프로 2」본품은 남는다', airpods);
+check(!airpods.some(t => /카라비너/.test(t)),
+  '「케이스 포함 카라비너 세트」는 기기 명사가 없으므로 여전히 부속으로 빠진다 (회귀 방지)', airpods);
+
 /* ------------------------------------------------------------------ */
 console.log('\n' + '='.repeat(66));
 console.log(`검색 부속 가드 테스트:  ${pass} PASS / ${fail} FAIL`);
