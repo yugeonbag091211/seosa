@@ -185,6 +185,73 @@ check('"트렁크" 단독 키 없음 (여행 트렁크 / 차량 트렁크 정리
 check('"신발" 단독 키 없음 (신발 정리대·방향제)', !QUERY_CATEGORY_HINTS.has('신발'));
 check('"화장품" 단독 키 없음 (화장품 파우치·정리대)', !QUERY_CATEGORY_HINTS.has('화장품'));
 
+console.log('\n16. ★ 운영 재앙(2026-11-28, Codex 118건 재생) — 이웃 하나가 would-empty 를 풀어 본품 덩어리가 숨겨지던 문제');
+{
+  // «에어 매트리스»: 사전은 매트리스→가구인테리어. 그러나 운영 상품 대부분이
+  // 스포츠레저(캠핑 에어매트)로 분류된다. 생활용품(가구인테리어의 이웃) 하나가
+  // kept 로 통과하면서 would-empty 가 풀리고, 스포츠레저 본품 8개가 통째로 숨겨졌다.
+  // 기대(가구인테리어)를 직접 확증하는 상품도, 판단 보류 상품도 없으므로 물러나야 한다.
+  const items = [
+    ...Array.from({ length: 8 }, (_, i) => ({ productId: `s${i}`, title: `인텍스 에어매트리스 더블 ${i}` })),
+    { productId: 'n1', title: '에어매트리스 커버 생활용품' }
+  ];
+  const categoryMap = new Map([
+    ...items.slice(0, 8).map(it => [it.productId, '스포츠레저']),
+    ['n1', '생활용품']
+  ]);
+  const r = filterByCategory('에어 매트리스', items, categoryMap);
+  check('적용 안 됨(compatible-only) — 이웃만 남아 있으면 물러난다', r.applied === false && r.reason === 'compatible-only', r);
+  check('스포츠레저 본품 8개가 전부 보존된다', r.kept.length === 9, { kept: r.kept.length });
+}
+{
+  // «스마트폰 장갑»: 사전이 수식어 «스마트폰»(전자기기)을 집는다. 진짜 상품은 장갑
+  // (의류/스포츠)이다. 생활용품으로 분류된 장갑 하나가 이웃으로 통과하면, 나머지
+  // 의류·스포츠 장갑 본품이 숨겨진다 — 정확 확증·판단 보류가 없으므로 물러나야 한다.
+  const items = [
+    ...Array.from({ length: 6 }, (_, i) => ({ productId: `g${i}`, title: `터치 스마트폰 장갑 겨울 ${i}` })),
+    { productId: 'n1', title: '스마트폰 장갑 보관함' }
+  ];
+  const categoryMap = new Map([
+    ...items.slice(0, 3).map(it => [it.productId, '패션의류']),
+    ...items.slice(3, 6).map(it => [it.productId, '스포츠레저']),
+    ['n1', '생활용품']
+  ]);
+  const r = filterByCategory('스마트폰 장갑', items, categoryMap);
+  check('적용 안 됨(compatible-only)', r.applied === false && r.reason === 'compatible-only', r);
+  check('의류·스포츠 장갑 본품 6개가 보존된다', r.kept.length === 7, { kept: r.kept.length });
+}
+{
+  // «소파 보호 패드 고양이»: 사전이 수식어 «소파»(가구인테리어)를 집는다. 진짜 상품은
+  // 반려동물용 보호 패드다. 가구인테리어의 이웃(생활용품) 하나만 통과하고 정확 확증이
+  // 없으면 물러난다 — 반려동물용품 본품을 지키지 않던 버그.
+  const items = [
+    { productId: 'p1', title: '고양이 소파 스크래치 방지 보호 패드 1' },
+    { productId: 'p2', title: '고양이 소파 보호 패드 투명 2' },
+    { productId: 'n1', title: '소파 보호 패드 생활용품 커버' }
+  ];
+  const categoryMap = new Map([['p1', '반려동물용품'], ['p2', '반려동물용품'], ['n1', '생활용품']]);
+  const r = filterByCategory('소파 보호 패드 고양이', items, categoryMap);
+  check('적용 안 됨(compatible-only)', r.applied === false && r.reason === 'compatible-only', r);
+  check('반려동물용품 본품 2건이 보존된다', r.kept.length === 3, { kept: r.kept.length });
+}
+
+console.log('\n17. 정확 확증 상품이 하나라도 있으면 기존대로 거른다 (16의 물러남이 과하지 않음을 고정)');
+{
+  // 가전은 대부분 생활용품(이웃)이지만, 분류 전 신상품(모름) 하나가 섞이면 «판단 보류»가
+  // 있으므로 가드가 계속 동작한다 — 완전히 다른 도서를 걸러낸다. (compatible-only 는
+  // 오직 «이웃만» 남는 좁은 경우에만 물러난다는 것을 고정.)
+  const items = [
+    { productId: '1', title: '홈플래닛 초음파 가습기 4L' },        // 생활용품(이웃)
+    { productId: '2', title: '막 등록돼 아직 분류 안 된 가습기 신상품' }, // 모름(판단 보류)
+    { productId: '3', title: '[국내도서] 가습기 살균제 참사의 기록' }  // 도서문구(완전히 다름)
+  ];
+  const categoryMap = new Map([['1', '생활용품'], ['3', '도서문구']]); // 2번은 일부러 지도에 없음(모름)
+  const r = filterByCategory('가습기', items, categoryMap);
+  check('적용됨 — 판단 보류가 있으면 이웃만이어도 동작', r.applied === true, r);
+  check('도서만 제외', r.dropped.length === 1 && r.dropped[0].productId === '3', r.dropped);
+  check('가습기 본품과 신상품은 남는다', r.kept.length === 2, r.kept);
+}
+
 const passed = checks.filter(c => c.pass).length;
 const failed = checks.length - passed;
 console.log(`\n${'='.repeat(60)}\n검색 카테고리 안전망 테스트: ${passed} PASS / ${failed} FAIL\n${'='.repeat(60)}`);

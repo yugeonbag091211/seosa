@@ -30,6 +30,10 @@
  * - 상품 카테고리를 모르면(아직 배치가 못 본 상품) 그 상품은 그대로 둔다.
  * - 전부 걸러지면(가드 오판 가능성) 적용하지 않는다 — _search-type-guard.js
  *   와 같은 안전장치.
+ * - 남는 게 «호환 이웃» 분류뿐이면(기대를 직접 확증하는 상품도, 판단 보류
+ *   상품도 없음) 적용 안 함 (2026-11-28). 사전이 수식어를 집어 엉뚱한
+ *   카테고리를 기대했을 때 진짜 본품 덩어리가 통째로 숨겨지던 사고를 막는다.
+ *   자세한 근거는 filterByCategory 안의 주석 참고.
  */
 
 /**
@@ -156,13 +160,19 @@ function filterByCategory(keyword, items, categoryMap, opts = {}) {
   }
 
   const kept = [], dropped = [];
+  let exactKept = 0, neutralKept = 0; // 기대와 정확히 같은 분류 / 모름·unknown(판단 보류)
   list.forEach(it => {
     const productCategory = cats.get(String(it && it.productId));
+    const known = productCategory && productCategory !== 'unknown';
     // 상품 카테고리를 모르거나(아직 배치가 못 봄) GPT가 애매하다고 했으면
     // (unknown) 그대로 둔다 — 안전 기본값.
-    const mismatched = productCategory && productCategory !== 'unknown' && productCategory !== queryCategory
+    const mismatched = known && productCategory !== queryCategory
       && !compatibleCategory(queryCategory, productCategory);
-    (mismatched ? dropped : kept).push(it);
+    if (mismatched) { dropped.push(it); return; }
+    kept.push(it);
+    if (!known) neutralKept += 1;               // 모름/unknown — 이 상품은 판단하지 않음
+    else if (productCategory === queryCategory) exactKept += 1; // 기대 카테고리를 직접 확증
+    // 나머지(호환 이웃)는 kept 되지만 «약한» 근거다 — 아래에서 따로 센다.
   });
 
   if (!dropped.length) {
@@ -175,6 +185,31 @@ function filterByCategory(keyword, items, categoryMap, opts = {}) {
       + ` — 가드를 적용하지 않습니다 (기대: ${queryCategory})`
     );
     return { kept: list, dropped: [], applied: false, reason: 'would-empty', queryCategory };
+  }
+
+  // would-empty 의 일반화 (2026-11-28 운영 재앙 수정).
+  //
+  // kept 가 «오직 호환 이웃» 뿐이면 — 기대 카테고리를 정확히 확증하는 상품도,
+  // 판단 보류(모름/unknown) 상품도 하나 없으면 — 사전의 해석이 분류기로
+  // 확증되지 않은 것이다. 이때 큰 덩어리를 걸러내는 것은 위험하다.
+  //
+  // 실제 사고: «에어 매트리스» 는 사전상 매트리스→가구인테리어지만, 운영
+  // 상품 대부분이 스포츠레저로 분류됐다. 생활용품(가구인테리어의 이웃) 하나가
+  // kept 로 통과하면서 would-empty 가 풀렸고, 스포츠레저 본품 8개가 통째로
+  // 숨겨졌다. «스마트폰 장갑»(의류·스포츠 본품 6개), «소파 보호 패드»(반려동물
+  // 본품)도 같은 꼴 — 사전이 수식어(스마트폰·소파)를 집어 엉뚱한 카테고리를
+  // 기대한 경우다.
+  //
+  // 이웃 하나만으로는 «이게 정말 그 물건» 이라고 보기에 약하다. 정확 일치나
+  // 판단 보류 상품이 하나라도 있어야 가드를 적용한다. 가전(가습기·선풍기 등)은
+  // 대부분 생활용품(이웃)이지만 보통 분류 전 신상품(모름)이 섞여 있어 가드가
+  // 계속 동작한다 — 재앙 꼴(이웃만 남고 큰 덩어리가 떨어짐)에서만 물러난다.
+  if (exactKept === 0 && neutralKept === 0) {
+    console.warn(
+      `[category-guard:${keyword}] 남은 ${kept.length}건이 모두 호환 이웃 분류뿐 — 기대(${queryCategory})를`
+      + ` 직접 확증하는 상품이 없어 가드를 적용하지 않습니다 (불일치 ${dropped.length}건 보존)`
+    );
+    return { kept: list, dropped: [], applied: false, reason: 'compatible-only', queryCategory };
   }
 
   console.log(
